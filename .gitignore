@@ -45,6 +45,7 @@ local-validation-reports/
 *.nc
 *.nc4
 *.cdf
+*.netcdf
 *.ctl
 *.dat
 *.grb
@@ -52,6 +53,10 @@ local-validation-reports/
 *.grib2
 *.npy
 *.npz
+thumbnails/
+previews/
+generated-thumbnails/
+generated-previews/
 
 # Large visualization artifacts
 *.vtk

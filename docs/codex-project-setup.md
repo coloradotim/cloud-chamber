@@ -119,3 +119,15 @@ Do not hard-code this in app logic. Store in local settings.
 5. Start with fake fixtures before requiring real CM1 in tests.
 6. Use local paths/settings, not global assumptions.
 7. Prefer one end-to-end scenario before many partial features.
+
+## Codex Workflow
+
+- Start from current `main`.
+- Work on a branch for each issue or tightly related issue set.
+- Open a PR; do not push directly to `main`.
+- Keep work scoped to the GitHub issue.
+- Add tests and docs with implementation changes.
+- Do not commit generated CM1 artifacts.
+- Do not auto-merge Codex feature PRs without user review.
+
+See also the root `AGENTS.md`.

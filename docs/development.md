@@ -33,6 +33,39 @@ python -m pytest
 
 Normal backend checks must not require a local CM1 runtime. Real CM1 paths belong in local settings, not hard-coded app constants.
 
+Future backend implementation should use Python/FastAPI with `uv`, pytest, ruff, and mypy. Data/science work should prefer xarray, netCDF4 or h5netcdf, numpy, and pydantic when those layers are added.
+
+## Repo Layout
+
+Expected structure:
+
+```text
+app/frontend/
+app/backend/
+docs/
+scripts/
+scripts/cm1/
+scenarios/lower-atmosphere/
+.github/workflows/
+.github/ISSUE_TEMPLATE/
+```
+
+Keep top-level folders minimal and understandable.
+
+## Runtime Home
+
+Runtime data belongs outside the repo by default:
+
+```text
+~/CloudChamber/
+  settings.json
+  runs/
+  cache/
+  logs/
+```
+
+Use `./local-data/` only as a gitignored development override. Do not commit generated CM1 run packages, NetCDF outputs, local validation reports, thumbnails, previews, or large visualization artifacts.
+
 ## Whole Repo
 
 From the repo root:

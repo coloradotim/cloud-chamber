@@ -1,23 +1,25 @@
 ---
-name: Docs
-about: Improve documentation
+name: Docs/task
+about: Improve documentation or project hygiene
 title: ""
-labels: docs
+labels: area:docs
 assignees: ""
 ---
 
-## User goal
+## Objective
 
 ## Acceptance criteria
 
 ## Non-goals
 
-## Tests/checks
+## Docs impact
 
-## Docs updates
+## Testing impact
 
-## Data/output policy
+## Generated-data risk
 
-Confirm whether the docs mention generated CM1 output, NetCDF files, local run folders, or large processed visualization artifacts.
+Confirm whether the docs mention generated CM1 output, NetCDF files, local run folders, local runtime files, or large processed visualization artifacts.
 
-## Screenshots/logs
+## CM1 source-of-truth risk
+
+Explain whether the task changes language around CM1, preview estimates, CM1 results, or visualization interpretation.
