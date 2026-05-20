@@ -66,6 +66,8 @@ Runtime data belongs outside the repo by default:
 
 Use `./local-data/` only as a gitignored development override. Do not commit generated CM1 run packages, NetCDF outputs, local validation reports, thumbnails, previews, or large visualization artifacts.
 
+If `data/` exists in the repo, treat it as placeholder/fixture-only. Runtime storage belongs in `~/CloudChamber`, not in the source tree.
+
 ## Whole Repo
 
 From the repo root:

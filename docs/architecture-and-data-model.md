@@ -194,6 +194,8 @@ Default runtime data belongs outside the repo:
 
 The repo may support `./local-data/` as a gitignored development override, but the default should remain `~/CloudChamber`.
 
+The top-level `data/` directory, if present, is reserved for documented tiny fixtures or placeholders only. It is not a runtime storage location.
+
 Optional ignored local development layout:
 
 ```text
