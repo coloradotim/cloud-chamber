@@ -6,7 +6,7 @@ labels: bug
 assignees: ""
 ---
 
-## User goal
+## Objective
 
 ## What happened
 
@@ -16,12 +16,16 @@ assignees: ""
 
 ## Non-goals
 
-## Tests/checks
+## Docs impact
 
-## Docs updates
+## Testing impact
 
-## Data/output policy
+## Generated-data risk
 
-Confirm whether logs, generated CM1 output, NetCDF files, local run folders, or large processed visualization artifacts are involved.
+Confirm whether logs, generated CM1 output, NetCDF files, local run folders, local runtime files, or large processed visualization artifacts are involved.
+
+## CM1 source-of-truth risk
+
+Explain whether this affects preview estimates, generated CM1 configuration, running/completed CM1 results, or visualization interpretation.
 
 ## Screenshots/logs

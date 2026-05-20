@@ -54,6 +54,7 @@ Reason:
 - Python is better for NetCDF/xarray preprocessing.
 - React is good for UI/visualization.
 - Local server avoids browser filesystem limitations.
+- Use `uv` for Python dependency/project workflows when backend implementation expands.
 
 Later, package with Tauri/Electron if needed.
 
@@ -181,7 +182,19 @@ result manifest
 
 ## Storage Layout
 
-Recommended local layout inside project, all ignored except templates/docs:
+Default runtime data belongs outside the repo:
+
+```text
+~/CloudChamber/
+  settings.json
+  runs/
+  cache/
+  logs/
+```
+
+The repo may support `./local-data/` as a gitignored development override, but the default should remain `~/CloudChamber`.
+
+Optional ignored local development layout:
 
 ```text
 local-data/
@@ -202,6 +215,26 @@ local-data/
     index.json
 ```
 
+## Settings Model
+
+Settings should support:
+
+- Cloud Chamber runtime home, defaulting to `~/CloudChamber`.
+- CM1 root path.
+- CM1 run directory path.
+- optional cache/log directories.
+- environment override such as `CLOUD_CHAMBER_CM1_ROOT`.
+- saved config in `~/CloudChamber/settings.json`.
+
+Likely local CM1 probe paths may include:
+
+```text
+/Users/timpeterson/cm1r21.1
+/Users/timpeterson/cm1r21.1/run
+```
+
+These are probes/defaults, not hard-coded requirements. If CM1 is missing, Cloud Chamber should fail clearly with settings guidance rather than silently pretending work succeeded.
+
 Committed scenario templates:
 
 ```text
@@ -212,7 +245,26 @@ scenarios/
     capped-suppressed/
     humid-vigorous/
     low-stratus/
+    warm-rain/
 ```
+
+## Run Manifest Concept
+
+Run manifests should record the scenario template, adjusted controls, generated CM1-facing files, runtime paths, lifecycle state, validation status, timestamps, and later output paths. A manifest should not require NetCDF output to exist.
+
+Lifecycle states:
+
+```text
+created
+packaged
+queued
+running
+completed
+failed
+canceled
+```
+
+`packaged` means Cloud Chamber generated a dry-run package. It is not equivalent to queued, running, or completed CM1 output.
 
 ## Process Control
 
@@ -245,6 +297,20 @@ The app checks:
 - required Python/xarray/netCDF dependencies
 
 Do not vendor CM1.
+
+## NetCDF And Visualization Data Contract
+
+Raw NetCDF is authoritative CM1 output, but it is not ideal for direct browser rendering. The ingestion layer should create explicit metadata and browser-friendly derivatives that preserve provenance:
+
+- source model
+- run ID
+- scenario ID
+- field name and units
+- time coordinate
+- processing method
+- rendering method
+
+Generated visualization artifacts are interpretations of CM1 data and must be labeled that way.
 
 ## Visualization Data Strategy
 
