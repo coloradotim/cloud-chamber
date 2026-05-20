@@ -74,6 +74,8 @@ Runtime data belongs outside the repo by default:
 
 `./local-data/` may be used as a gitignored development override, but generated CM1 runs and outputs should not live in source control.
 
+The top-level `data/` directory is placeholder/fixture-only. It is not the runtime data home.
+
 ## Initial Scope
 
 This scaffold does not implement the CM1 scenario UI, 3-D visualizer, CM1 run manager, CM1 vendoring, real NetCDF sample data, complex deployment, or heavy 3-D rendering dependencies.

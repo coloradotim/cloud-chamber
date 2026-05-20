@@ -25,6 +25,36 @@ echo "== Script syntax checks =="
 cd "$ROOT_DIR"
 find scripts -name "*.sh" -print0 | xargs -0 -r bash -n
 
+echo "== Forbidden tracked artifact checks =="
+forbidden_tracked="$(git ls-files \
+  'local-data/*' \
+  'runs/*' \
+  'local-runs/*' \
+  'cm1-runs/*' \
+  'generated-runs/*' \
+  'processed/*' \
+  'validation-reports/*' \
+  'local-validation-reports/*' \
+  'cm1r*/*' \
+  'LANDUSE.TBL' \
+  '*.nc' \
+  '*.nc4' \
+  '*.cdf' \
+  '*.netcdf' \
+  '*.vtk' \
+  '*.vti' \
+  '*.vtr' \
+  '*.vts' \
+  '*.vtu' \
+  '*.mp4' \
+  '*.mov' \
+  '*.webm')"
+if [[ -n "$forbidden_tracked" ]]; then
+  echo "Forbidden generated/local artifacts are tracked:" >&2
+  echo "$forbidden_tracked" >&2
+  exit 1
+fi
+
 echo "== Docs/JSON/YAML sanity checks =="
 "$BACKEND_PYTHON" - <<'PY'
 import json
