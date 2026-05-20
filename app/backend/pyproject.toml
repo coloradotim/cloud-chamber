@@ -1,0 +1,41 @@
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "cloud-chamber-backend"
+version = "0.1.0"
+description = "Local backend tooling for Cloud Chamber CM1 experiments."
+requires-python = ">=3.12"
+dependencies = []
+
+[project.optional-dependencies]
+dev = [
+  "mypy>=1.10",
+  "pytest>=8.2",
+  "pyyaml>=6.0",
+  "ruff>=0.5",
+]
+
+[project.scripts]
+cloud-chamber = "cloud_chamber.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["cloud_chamber*"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+packages = ["cloud_chamber"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"

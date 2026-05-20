@@ -1,0 +1,68 @@
+# OS junk
+.DS_Store
+Thumbs.db
+
+# Environment and local secrets
+.env
+.env.*
+!.env.example
+
+# Python
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.egg-info/
+
+# Node / frontend
+node_modules/
+app/frontend/dist/
+app/frontend/coverage/
+app/frontend/.vite/
+app/frontend/.eslintcache
+app/frontend/reference-indexes/
+
+# CM1 runtime and generated output
+cm1.exe
+LANDUSE.TBL
+cm1-source/
+cm1-src/
+cm1r*/
+external-cm1/
+local-data/
+data/generated/
+data/local/
+local-runs/
+runs/
+cm1-runs/
+generated-runs/
+processed/
+validation-reports/
+local-validation-reports/
+*.nc
+*.nc4
+*.cdf
+*.ctl
+*.dat
+*.grb
+*.grib
+*.grib2
+*.npy
+*.npz
+
+# Large visualization artifacts
+*.vtk
+*.vti
+*.vtr
+*.vts
+*.vtu
+*.obj
+*.ply
+*.glb
+*.gltf
+*.mp4
+*.mov
+*.webm
