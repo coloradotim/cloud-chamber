@@ -14,6 +14,8 @@ Short version:
 
 CM1 is the high-fidelity simulation engine; Cloud Chamber is the local experiment builder, run manager, and visualizer.
 
+The lesson from earlier Cloud Lab-style experimentation is simple: do not rebuild CM1 poorly. Cloud Chamber should wrap CM1 with a clearer product workflow, not replace the atmospheric model with hidden fake physics.
+
 ## What Cloud Chamber Is
 
 Cloud Chamber is a local-first experiment and visualization environment for CM1.
@@ -45,6 +47,21 @@ Cloud Chamber is not:
 ## Core Product Promise
 
 A user can choose or configure an atmospheric experiment, run CM1 locally, and explore the output in a beautiful 3-D visualizer with understandable controls and diagnostics.
+
+## First Useful Workflow
+
+The first useful workflow is not a full visualizer. It is the scenario package spine:
+
+```text
+scenario template
+-> user-adjusted experiment config
+-> validation
+-> run manifest
+-> generated CM1 run package
+-> dry-run report
+```
+
+That spine should lead directly to local CM1 launch/monitoring, then ingest and visualization.
 
 ## Primary User Loop
 
@@ -133,10 +150,10 @@ Start with:
 3. Capped/suppressed cumulus
 4. Humid vigorous cloud / humid low-cloud contrast
 5. Low stratus / low-cloud layer
+6. Warm rain / precipitating shallow cloud
 
 Later:
 
-6. Warm rain / precipitating shallow cloud
 7. Terrain/orographic cloud
 8. Layered atmosphere
 9. Fog / near-surface cloud

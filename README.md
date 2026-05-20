@@ -10,6 +10,22 @@ CM1 is the high-fidelity simulation engine; Cloud Chamber is the local experimen
 
 Build a local CM1 configuration, run-management, and 3-D visualization environment for guided cloud-physics experiments.
 
+## Core Workflow
+
+```text
+Choose experiment
+-> adjust meaningful atmospheric controls
+-> preview likely behavior with a lightweight predictor
+-> generate/launch a local CM1 run
+-> monitor status/logs
+-> ingest results
+-> visualize cloud evolution in 3-D
+-> save/name/tag useful runs
+-> duplicate/tweak/rerun
+```
+
+This repo is early-stage. The current code is project foundation, not the full product workflow.
+
 ## Docs
 
 - [Product vision](docs/product-vision.md)
@@ -43,6 +59,20 @@ scripts/check.sh
 ```
 
 The script is executable and runs the same fast checks as CI.
+
+## Runtime Data
+
+Runtime data belongs outside the repo by default:
+
+```text
+~/CloudChamber/
+  settings.json
+  runs/
+  cache/
+  logs/
+```
+
+`./local-data/` may be used as a gitignored development override, but generated CM1 runs and outputs should not live in source control.
 
 ## Initial Scope
 

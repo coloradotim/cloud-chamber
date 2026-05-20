@@ -16,3 +16,12 @@ Before adding physics or science behavior, document:
 2. what user control it enables
 3. what diagnostics validate it
 4. what limitations must be disclosed
+
+## Initial Decisions To Record
+
+Future ADRs should capture at least:
+
+- CM1 remains the source of truth.
+- Runtime data lives outside the repo by default.
+- Preview is labeled guidance only.
+- Real CM1 runs do not run in CI.

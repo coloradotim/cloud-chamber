@@ -56,11 +56,13 @@ Do commit:
 ## Development Expectations
 
 - Use GitHub issues and PRs.
+- Work on branches; do not push directly to `main`.
 - Keep work scoped to the issue.
 - Add tests for new behavior.
 - Update docs when architecture/workflow changes.
 - Use local fake fixtures in CI; do not require real CM1 in automated tests.
 - Do not weaken scientific honesty to make UI look better.
+- Do not auto-merge Codex feature PRs without user review.
 
 ## Initial Architecture Bias
 
@@ -83,6 +85,14 @@ Likely local path for Tim:
 ```
 
 Treat this as a local setting, not a hard-coded app constant.
+
+Default Cloud Chamber runtime data belongs outside the repo:
+
+```text
+~/CloudChamber/
+```
+
+`./local-data/` is only a gitignored development override.
 
 ## UI Language
 

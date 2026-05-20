@@ -8,6 +8,8 @@ The product should make CM1 approachable without hiding scientific limits.
 
 CM1 is the high-fidelity simulation engine; Cloud Chamber is the local experiment builder, run manager, and visualizer.
 
+Cloud Chamber's main flow should be product-shaped, not namelist-shaped. Friendly atmospheric controls come first; raw CM1 namelist settings belong in advanced/developer views.
+
 ## Personas
 
 ### Primary User
@@ -33,8 +35,8 @@ A scientist/developer who wants a cleaner CM1 workflow for curated idealized cas
 ### Workflow 2 — Preview Setup
 
 1. Adjust controls.
-2. Preview diagnostics update quickly.
-3. App explains likely cloud outcome.
+2. Placeholder preview panel reserves space for future guidance.
+3. Future preview diagnostics update quickly when implemented.
 4. User understands that preview is not CM1.
 
 ### Workflow 3 — Launch CM1 Run
@@ -128,6 +130,15 @@ validation_status:
 notes:
 ```
 
+Initial scenario templates should include:
+
+1. Baseline shallow cumulus.
+2. Dry failed cumulus.
+3. Capped/suppressed cumulus.
+4. Humid vigorous cumulus / humid low-cloud contrast.
+5. Low stratus / low-cloud layer.
+6. Warm rain / precipitating shallow cloud.
+
 ## Run Manifest Schema
 
 Each run should write a manifest like:
@@ -166,6 +177,20 @@ user:
   notes:
 ```
 
+Run lifecycle states should include:
+
+```text
+created
+packaged
+queued
+running
+completed
+failed
+canceled
+```
+
+Dry-run packaged experiments must be distinct from queued/running/completed CM1 runs.
+
 ## MVP Scope
 
 ### In Scope
@@ -190,6 +215,14 @@ user:
 - True production LES workflow guarantee
 - Terrain/orographic cases unless explicitly added
 - Warm-rain microphysics beyond fields CM1 already outputs
+
+### Current Near-Term Non-Goals
+
+- Build the full 3-D visualizer before the package/run spine exists.
+- Implement a fake physics predictor.
+- Vendor CM1.
+- Commit generated CM1 output or real NetCDF outputs.
+- Overbuild deployment.
 
 ## 3-D Visualizer MVP
 
@@ -224,6 +257,7 @@ Do not commit:
 - generated run directories
 - thumbnails if large
 - processed volume artifacts if large
+- local runtime data under `~/CloudChamber`
 
 Commit:
 
