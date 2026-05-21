@@ -274,6 +274,7 @@ Settings should support:
 - CM1 run directory path.
 - optional cache/log directories.
 - environment override such as `CLOUD_CHAMBER_CM1_ROOT`.
+- optional runtime-home override `CLOUD_CHAMBER_RUNTIME_HOME` for tests/local development.
 - saved config in `~/CloudChamber/settings.json`.
 
 Likely local CM1 probe paths may include:
@@ -284,6 +285,8 @@ Likely local CM1 probe paths may include:
 ```
 
 These are probes/defaults, not hard-coded requirements. If CM1 is missing, Cloud Chamber should fail clearly with settings guidance rather than silently pretending work succeeded.
+
+The backend settings model loads saved JSON config from the runtime home, lets `CLOUD_CHAMBER_CM1_ROOT` override saved CM1 root paths, infers `<cm1_root>/run` when only a root is provided, and reports a ready/missing CM1 discovery status without launching CM1 or writing runtime data into the repo.
 
 Committed scenario templates:
 

@@ -53,6 +53,33 @@ Backend work should assume one local CM1 run at a time for the MVP and should av
 
 When implementing scenario, manifest, result, or visualization contracts, keep product state and provenance labels explicit: preview estimate, generated CM1 configuration, packaged dry-run output, running/completed CM1 result, ingested result metadata, visualizer interpretation, and saved result/notebook entry are different things.
 
+## Local Settings
+
+Cloud Chamber runtime settings are local-only. The default runtime home is:
+
+```text
+~/CloudChamber
+```
+
+The backend reads optional saved settings from:
+
+```text
+~/CloudChamber/settings.json
+```
+
+Supported settings fields include:
+
+```json
+{
+  "cm1_root": "/Users/timpeterson/cm1r21.1",
+  "cm1_run_dir": "/Users/timpeterson/cm1r21.1/run",
+  "cache_dir": "~/CloudChamber/cache",
+  "log_dir": "~/CloudChamber/logs"
+}
+```
+
+`CLOUD_CHAMBER_CM1_ROOT` can override the saved CM1 root for local development. `CLOUD_CHAMBER_RUNTIME_HOME` can point tests or local experiments at a different runtime home. These are local settings only; do not commit `settings.json`, CM1 binaries, CM1 source, generated run directories, or NetCDF output.
+
 ## Repo Layout
 
 Expected structure:
