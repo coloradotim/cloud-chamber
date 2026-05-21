@@ -283,6 +283,8 @@ Shared controls are controls that can be compared across multiple lower-atmosphe
 
 ## Run Manifest Schema
 
+Run manifests are validated metadata records. They describe what Cloud Chamber generated, where it lives, how it maps toward CM1, and what product state it is in. They do not require NetCDF output to exist.
+
 Each run should write a manifest like:
 
 ```yaml
@@ -338,6 +340,8 @@ saved
 ```
 
 Dry-run packaged experiments must be distinct from queued/running/completed CM1 runs.
+
+Validation rules should reject packaged dry-run manifests that include NetCDF output paths, completed/saved manifests that still claim to be dry-run packages, unknown lifecycle states, and saved result entries that are not marked as user-saved.
 
 ## Product States And Provenance
 
