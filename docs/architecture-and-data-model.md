@@ -80,6 +80,8 @@ Responsibilities:
 
 Baseline Shallow Cumulus is the first hero case. Warm rain remains early but does not block the Golden Path.
 
+Scenario templates are validated before package generation. The schema supports stable IDs, display names, descriptions, physical questions, learning goals, friendly controls, advanced/developer-only settings, run-size presets, expected diagnostics, CM1 mapping notes, visualization defaults, warnings, limitations, and one-control variation metadata. Invalid templates should fail with actionable validation messages before any CM1-facing files are generated.
+
 ### Configuration Builder
 
 Turns a scenario + user controls into:
