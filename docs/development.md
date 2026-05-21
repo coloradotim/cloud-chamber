@@ -113,6 +113,8 @@ Use `./local-data/` only as a gitignored development override. Do not commit gen
 
 If `data/` exists in the repo, treat it as placeholder/fixture-only. Runtime storage belongs in `~/CloudChamber`, not in the source tree.
 
+Dry-run package tests must point runtime home at a temporary directory. Do not run dry-run package generation against the repository root or commit generated package directories.
+
 ## Whole Repo
 
 From the repo root:

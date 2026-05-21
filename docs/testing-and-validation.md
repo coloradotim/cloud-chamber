@@ -32,6 +32,8 @@ Scenario-template tests should cover both valid templates and targeted invalid t
 
 CM1 input contract tests should use structured/snapshot assertions for generated fragments such as namelist defaults and input-sounding notes. These tests must not write generated run packages into the repo, launch CM1, or require real CM1 runtime files.
 
+Dry-run package tests should use temporary runtime homes and assert overwrite protection, manifest/report content, and absence of NetCDF output. A dry-run package is packaged metadata and placeholder CM1 inputs only; it is not a completed CM1 result.
+
 Local validation uses `scripts/check.sh` as the canonical gate. CI mirrors it through split equivalent jobs so branch protection can require `Frontend`, `Backend`, and `Scripts and config` independently. Keep the local script and CI jobs in sync as new implemented layers add fast checks.
 
 ## Local CM1 Workflow Tests
