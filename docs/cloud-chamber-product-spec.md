@@ -273,6 +273,17 @@ Default cloud-scale assumptions:
 
 If a scenario needs different size, spacing, runtime, cadence, or runtime files, the deviation must be explicit and documented.
 
+Dry-run package generation creates these files for review without launching CM1:
+
+- `run_manifest.json`
+- `case_manifest.json`
+- `namelist.input`
+- `input_sounding`
+- `dry_run_report.json`
+- `runtime_file_checklist.json`
+
+The dry-run report must state that it is not a completed CM1 result, record that CM1 was not launched, include selected run-size preset, include physical question and controls, include expected diagnostics and visualization defaults, and use `unknown until validated` for unvalidated cost/size estimates.
+
 ## Curated Controls And Diagnostics
 
 The first lower-atmosphere controls should use atmospheric language:

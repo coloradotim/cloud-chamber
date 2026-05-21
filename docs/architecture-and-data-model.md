@@ -109,6 +109,8 @@ output cadence: about 300 s
 
 Scenario-specific deviations from these defaults must be explicit in the scenario template or generated report.
 
+Dry-run package generation uses the validated scenario template and CM1 input contract to create a reviewable package under the configured runtime home, normally `~/CloudChamber/runs/<run-id>/`. The package writer should refuse to overwrite existing run directories, validate controls before writing, and produce only package inputs/reports, not CM1 output.
+
 ### Preview Engine
 
 Fast reduced/light predictor.
