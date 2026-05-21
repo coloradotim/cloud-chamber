@@ -246,6 +246,33 @@ Baseline shallow cumulus is the first hero case. Warm rain remains early but doe
 
 The initial lower-atmosphere templates live under `scenarios/lower-atmosphere/` as validated JSON metadata. They are honest scenario definitions and teaching contracts, not final scientific calibration. CM1 mapping fields are placeholders until local/manual CM1 validation accepts the generated configurations.
 
+## CM1 Input Generation Contract
+
+Generated run packages should eventually include:
+
+```text
+run_manifest.json
+case_manifest.json
+namelist.input
+input_sounding
+dry_run_report.json
+runtime_file_checklist.json
+```
+
+The current contract can render deterministic namelist and sounding fragments for review, but these fragments are scientific placeholders until local/manual CM1 validation. They must keep product-facing controls separate from advanced/developer CM1 settings.
+
+Default cloud-scale assumptions:
+
+```text
+16 km x 16 km x 6 km domain
+200 m horizontal spacing
+125 m vertical spacing
+7200 s runtime
+300 s output cadence
+```
+
+If a scenario needs different size, spacing, runtime, cadence, or runtime files, the deviation must be explicit and documented.
+
 ## Curated Controls And Diagnostics
 
 The first lower-atmosphere controls should use atmospheric language:
