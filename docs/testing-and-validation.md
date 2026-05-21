@@ -28,6 +28,8 @@ Future fast tests should cover:
 
 These tests must not require CM1 source, CM1 binaries, NetCDF output, generated run directories, or large local data.
 
+Scenario-template tests should cover both valid templates and targeted invalid templates, including missing product-facing controls, invalid choice defaults, missing runtime profiles, and variation policies that reference unknown controls. These tests validate metadata only; they do not generate CM1 output or launch CM1.
+
 Local validation uses `scripts/check.sh` as the canonical gate. CI mirrors it through split equivalent jobs so branch protection can require `Frontend`, `Backend`, and `Scripts and config` independently. Keep the local script and CI jobs in sync as new implemented layers add fast checks.
 
 ## Local CM1 Workflow Tests

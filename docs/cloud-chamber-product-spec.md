@@ -182,7 +182,7 @@ Runtime tier metadata should be carried through scenario templates, generated ru
 
 ## Preset Scenario Schema
 
-Each scenario should define:
+Backend scenario templates are validated by the `ScenarioTemplate` contract. Each scenario should define:
 
 ```yaml
 id:
@@ -221,6 +221,17 @@ validation_status:
   unrun | generated | accepted | needs_calibration
 notes:
 ```
+
+Validation rules should reject templates that:
+
+- omit product-facing controls
+- define a choice control whose default is not one of its options
+- define a number control without a valid range
+- omit one of the quick / standard / deep run-size presets
+- reference unknown controls from the one-control variation policy
+- include undeclared fields
+
+The schema is intentionally product-first. Raw CM1/developer controls can exist as advanced metadata, but product-facing controls remain the primary path.
 
 Initial scenario templates should include:
 
