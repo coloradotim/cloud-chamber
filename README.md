@@ -8,7 +8,9 @@ CM1 is the high-fidelity simulation engine; Cloud Chamber is the local experimen
 
 ## Core Direction
 
-Build a local CM1 configuration, run-management, and 3-D visualization environment for guided cloud-physics experiments.
+Build a local-first, personal-use CM1 configuration, run-management, and 3-D visualization environment for guided cloud-physics experiments.
+
+The first Golden Path is **Baseline Shallow Cumulus**: a credible idealized CM1 case for learning how lower-atmosphere controls shape cloud formation.
 
 ## Core Workflow
 
@@ -21,7 +23,8 @@ Choose experiment
 -> ingest results
 -> visualize cloud evolution in 3-D
 -> save/name/tag useful runs
--> duplicate/tweak/rerun
+-> replay and inspect them later
+-> optionally create a new variation from the same setup
 ```
 
 This repo is early-stage. The current code is project foundation, not the full product workflow.
@@ -47,6 +50,10 @@ This repo is early-stage. The current code is project foundation, not the full p
 ## Guardrails
 
 Cloud Chamber should not pretend to be CM1. Lightweight previews may support explanation, rough guidance, and sanity checks, but CM1 remains the source of truth for cloud evolution.
+
+Saved results should behave like experiment notebook entries: named, tagged, replayable, inspectable, and explainable. Rerunning or duplicating a saved setup is useful later, but replay/inspect/save is the core MVP result behavior.
+
+Optional remote compute is future research only. Cloud Chamber remains local-first for the MVP.
 
 Do not commit CM1 source, CM1 binaries, NetCDF output, generated run directories, `LANDUSE.TBL`, local data, or large processed visualization artifacts.
 
