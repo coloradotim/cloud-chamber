@@ -42,6 +42,8 @@ Small fixtures may be committed when they are intentionally tiny and do not incl
 
 Committed NetCDF fixtures must be tiny, synthetic, intentional, and documented under a test fixture path. Real CM1 outputs are local/manual/offline artifacts and must stay out of git.
 
+If a tiny synthetic NetCDF fixture is needed later, create it with a deterministic test helper or fixture-generation script, keep only the smallest fields needed by the test, document the generating command and intended assertions next to the fixture, and confirm it is not copied from a real CM1 run. Do not commit broad sample outputs, local run directories, or generated validation reports.
+
 ## Real CM1 Validation
 
 Real CM1 runs are local/manual/offline validation. They are useful for scientific confidence but should not be required in CI.
