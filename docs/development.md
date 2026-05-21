@@ -23,6 +23,16 @@ The frontend uses TypeScript, React, Vite, Vitest, ESLint, and Prettier. Do not 
 From `app/backend`:
 
 ```sh
+uv sync --extra dev
+uv run ruff format --check .
+uv run ruff check .
+uv run mypy .
+uv run pytest
+```
+
+If `uv` is not installed in a local environment yet, the current CI-compatible pip flow is:
+
+```sh
 python3.12 -m venv .venv
 source .venv/bin/activate
 python -m pip install --upgrade pip
@@ -35,7 +45,7 @@ python -m pytest
 
 Normal backend checks must not require a local CM1 runtime. Real CM1 paths belong in local settings, not hard-coded app constants.
 
-Future backend implementation should use Python/FastAPI with `uv`, pytest, ruff, and mypy. Data/science work should prefer xarray, netCDF4 or h5netcdf, numpy, and pydantic when those layers are added.
+The backend skeleton uses Python/FastAPI with pytest, ruff, and mypy. Data/science work should prefer xarray, netCDF4 or h5netcdf, numpy, and pydantic when those layers are added.
 
 Backend work should assume one local CM1 run at a time for the MVP and should avoid large in-memory processing paths for local MacBook Air-scale machines.
 
