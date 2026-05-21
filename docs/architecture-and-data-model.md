@@ -8,6 +8,8 @@ CM1 is the high-fidelity simulation engine; Cloud Chamber is the local experimen
 
 The first MVP target is a 2024 MacBook Air with 8GB RAM. Design for one local CM1 run at a time, conservative output handling, and backend-side processing/downsampling. Optional cloud compute can be researched later, but it is not part of the core architecture.
 
+Replay / inspect / save is core MVP. Duplicate / tweak / rerun is later and should not drive the first result storage model.
+
 Recommended architecture:
 
 ```text
@@ -76,6 +78,8 @@ Responsibilities:
 - define run-size presets and one-control variation metadata around a baseline
 - define the physical question and learning goals
 
+Baseline Shallow Cumulus is the first hero case. Warm rain remains early but does not block the Golden Path.
+
 ### Configuration Builder
 
 Turns a scenario + user controls into:
@@ -84,6 +88,10 @@ Turns a scenario + user controls into:
 - `input_sounding`
 - `case_manifest.json`
 - run manifest
+- dry-run report
+- visualization defaults
+
+For the Baseline Shallow Cumulus Golden Path, the generated package should preserve the physical question, curated controls, run-size preset, expected diagnostics, expected output fields, and provenance labels before CM1 starts.
 
 ### Preview Engine
 
@@ -160,6 +168,8 @@ scenario + controls
 
 Runtime tier metadata should flow through this path: scenario templates define available run-size presets, generated run packages record the selected preset, run manifests preserve it during execution, and result metadata keeps it available for later inspection.
 
+If size/runtime estimates are not validated yet, manifests and reports should record that explicitly rather than presenting guessed precision.
+
 ### Execute Run
 
 ```text
@@ -203,6 +213,20 @@ result notebook entry
 ```
 
 These file names are conceptual for now. Implementation should choose concrete schemas when the result model is built.
+
+The result manifest should be able to answer:
+
+```text
+What scenario was this?
+What physical question was tested?
+What controls were used?
+What run-size preset was selected?
+What did CM1 do?
+What diagnostics summarize the cloud evolution?
+Can I replay it?
+Can I open it in the 3-D visualizer?
+Can I find it again later?
+```
 
 ## Storage Layout
 
@@ -290,9 +314,13 @@ running
 completed
 failed
 canceled
+ingested
+saved
 ```
 
 `packaged` means Cloud Chamber generated a dry-run package. It is not equivalent to queued, running, or completed CM1 output.
+
+`ingested` means Cloud Chamber has derived metadata or browser-friendly artifacts from completed CM1 output. `saved` means the user has a named/tagged experiment notebook entry. Neither state changes the underlying CM1 output provenance.
 
 ## Process Control
 
@@ -385,6 +413,8 @@ Rendering method examples:
 - isosurface
 - volume opacity interpretation
 
+Result-card metadata should include the same provenance labels used by visualization data so the Results Library and visualizer tell the same truth about the source model, run, processing, and rendering method.
+
 ## Testing Strategy
 
 Early tests should cover:
@@ -398,6 +428,8 @@ Early tests should cover:
 - result manifest generation
 - visualizer metadata loading
 - no generated outputs committed
+
+Golden Path implementation tests should use fake/minimal fixtures for scenario schema, package generation, manifest lifecycle, result-card serialization, and visualization metadata. Real CM1 validation remains local/manual/offline.
 
 ## Safety / Guardrails
 

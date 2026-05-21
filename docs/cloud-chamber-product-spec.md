@@ -12,6 +12,8 @@ Cloud Chamber's main flow should be product-shaped, not namelist-shaped. Friendl
 
 The first Golden Path case is Baseline Shallow Cumulus. Warm rain remains early, but it should not block completing that first end-to-end case.
 
+Replay / inspect / save is core MVP. Duplicate / tweak / rerun is later.
+
 ## Personas
 
 ### Primary User
@@ -25,6 +27,59 @@ They are comfortable with long-running local jobs, but do not want to manually e
 A scientist/developer who wants a cleaner CM1 workflow for curated idealized cases and visual exploration.
 
 ## Key Workflows
+
+### Workflow 0 — Baseline Shallow Cumulus Golden Path
+
+The first complete product loop is:
+
+```text
+Pick Baseline Shallow Cumulus
+-> adjust curated controls
+-> choose run-size preset
+-> validate setup
+-> generate CM1 run package
+-> launch local CM1
+-> monitor logs/status
+-> ingest NetCDF output
+-> create result card / experiment notebook entry
+-> replay cloud evolution
+-> open 3-D visualizer
+-> save/name/tag result
+```
+
+Physical question:
+
+```text
+How do low-level moisture, surface heating, cap strength, cap height, dry air aloft, and mixing/entrainment affect shallow-cumulus formation, timing, depth, updraft strength, and cloud-water evolution?
+```
+
+Expected CM1-facing package contents:
+
+```text
+run_manifest.json
+scenario metadata / case_manifest.json
+namelist.input
+input_sounding or sounding/input profile file
+runtime file checklist
+dry-run report
+visualization defaults
+```
+
+Expected diagnostics:
+
+```text
+cloud formed / failed
+first cloud time
+cloud base
+cloud top
+max vertical velocity
+max or summary cloud water
+cloud-water time evolution
+rain onset if available
+main limiting factor or interpretation note
+```
+
+Exact morphology is not pass/fail. The acceptance question is whether the product honestly configures, runs, records, ingests, replays, inspects, and visualizes a credible idealized CM1 result.
 
 ### Workflow 1 — Choose Preset Experiment
 
@@ -123,6 +178,8 @@ This workflow is useful, but it is not the core first-MVP result behavior. Repla
 
 Runtime estimates are approximate until locally validated for a specific CM1 build, scenario, and machine. The first local hardware target is a 2024 MacBook Air with 8GB RAM, so the MVP should assume one local CM1 run at a time and conservative output handling.
 
+Runtime tier metadata should be carried through scenario templates, generated run packages, dry-run reports, run manifests, result metadata, and result cards. If estimate data is not locally validated yet, the UI/report should say `unknown until validated` instead of inventing precision.
+
 ## Preset Scenario Schema
 
 Each scenario should define:
@@ -158,6 +215,8 @@ run_size_presets:
   deep_overnight
 physical_question:
 learning_goals:
+variation_policy:
+  one_control_at_a_time_from_baseline: true
 validation_status:
   unrun | generated | accepted | needs_calibration
 notes:
@@ -171,6 +230,8 @@ Initial scenario templates should include:
 4. Humid vigorous cumulus / humid low-cloud contrast.
 5. Low stratus / low-cloud layer.
 6. Warm rain / precipitating shallow cloud.
+
+Baseline shallow cumulus is the first hero case. Warm rain remains early but does not block the Golden Path.
 
 ## Curated Controls And Diagnostics
 
@@ -205,6 +266,8 @@ main limiting factor
 
 First variations should favor one-control-at-a-time changes around Baseline Shallow Cumulus. Large arbitrary parameter sweeps are not the primary learning path.
 
+Shared controls are controls that can be compared across multiple lower-atmosphere scenarios, such as low-level humidity, surface heating, cap strength, cap height, dry air aloft, and mixing/entrainment. Scenario-specific controls should be introduced only when a scenario needs them to answer its physical question.
+
 ## Run Manifest Schema
 
 Each run should write a manifest like:
@@ -237,6 +300,10 @@ ingestion:
 visualization:
   default_view:
   thumbnails:
+result:
+  result_id:
+  diagnostics_summary:
+  key_frames:
 user:
   saved:
   tags:
@@ -253,6 +320,8 @@ running
 completed
 failed
 canceled
+ingested
+saved
 ```
 
 Dry-run packaged experiments must be distinct from queued/running/completed CM1 runs.
@@ -275,6 +344,16 @@ Saved result/notebook entry
 
 A preview or dry-run package is not a completed CM1 result. A visualization is an interpretation of CM1 output, not a new physical source of truth.
 
+Product copy and state names should prefer nouns that reveal provenance:
+
+- `Preview estimate`
+- `CM1 configuration package`
+- `CM1 run`
+- `Completed CM1 result`
+- `Ingested result metadata`
+- `Visualizer interpretation`
+- `Saved experiment notebook entry`
+
 ## Result Card / Experiment Notebook
 
 A completed run should produce a replayable saved result. It should feel like an experiment notebook entry, not a disposable job row.
@@ -282,23 +361,32 @@ A completed run should produce a replayable saved result. It should feel like an
 Result cards should support:
 
 ```text
+result_id
+run_id
 name
 tags
-scenario
+scenario_id
+scenario_name
 physical question
+created_at
+completed_at
 controls used
 run-size preset
-CM1 status
-run logs
+CM1 version/path metadata
+status
+generated config paths
 output paths
+run logs
 diagnostics summary
 first cloud time
 cloud base/top
-max updraft
-cloud water summary
+max vertical velocity
+cloud-water summary
 rain onset if available
 key frames or bookmarked times
+visualization defaults
 notes
+provenance labels
 open in visualizer action
 ```
 

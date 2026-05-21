@@ -85,6 +85,20 @@ Choose experiment
 → optionally create a new variation from the same setup
 ```
 
+Replay / inspect / save is core MVP. Duplicate / tweak / rerun is later.
+
+## Golden Path Principle
+
+Baseline Shallow Cumulus is the first hero case because it can prove the whole Cloud Chamber loop with one scientifically honest, approachable CM1 experiment.
+
+The first hero case should answer:
+
+```text
+How do low-level moisture, surface heating, cap strength, and dry air aloft shape whether shallow cumulus forms, when it appears, how tall it gets, and how much cloud water develops?
+```
+
+Warm rain remains early, but it should not block the Golden Path. Precipitating shallow cloud workflows should build on the baseline loop after the baseline case can be configured, packaged, run locally, ingested, replayed, inspected, and opened in the visualizer.
+
 ## User-Facing Concepts
 
 The product should use atmospheric language first:
@@ -104,6 +118,17 @@ The product should use atmospheric language first:
 - cloud water
 
 Raw CM1 namelist settings belong in an advanced/developer view.
+
+The first controls should favor relative, teachable changes around a baseline:
+
+- drier / baseline / more humid low-level air
+- weaker / baseline / stronger surface heating
+- lower / baseline / higher cap
+- weaker / baseline / stronger cap
+- less dry / baseline / drier air aloft
+- weaker / baseline / stronger mixing/entrainment
+
+The first variation workflow should change one control at a time. This is a product teaching choice, not a claim that the atmosphere changes one variable at a time.
 
 ## Product Layers
 
@@ -194,14 +219,20 @@ Always distinguish:
 
 ```text
 Preview estimate
-CM1 run configuration
-CM1 running/completed result
+Generated CM1 configuration
+Packaged dry-run output
+Queued/running CM1 process
+Completed CM1 result
+Failed/canceled CM1 run
+Ingested result metadata
 Visualizer interpretation
+Saved result/notebook entry
 ```
 
 Never imply:
 
 - a preview is CM1 output
+- a dry-run package is a completed result
 - a visualization interpretation is a raw model field
 - CM1 runs live in browser
 - a scenario is validated if it has not been inspected

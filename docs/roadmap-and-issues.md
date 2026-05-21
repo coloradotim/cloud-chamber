@@ -18,6 +18,8 @@ CM1 remains the source of truth. Preview estimates are guidance only, and visual
 
 Cloud Chamber is a personal, scientifically honest CM1 cloud playground: curated lower-atmosphere experiments, meaningful controls, local-first CM1 runs, replayable saved results, and a beautiful 3-D viewer.
 
+Replay / inspect / save is core MVP. Duplicate / tweak / rerun is later.
+
 ## Golden Path: Baseline Shallow Cumulus
 
 Baseline Shallow Cumulus is the first complete product loop:
@@ -39,6 +41,37 @@ Pick Baseline Shallow Cumulus
 
 The Golden Path should test a clear physical question, expose curated lower-atmosphere controls, preserve CM1 as the source of truth, and make exact cloud morphology an inspection result rather than a brittle pass/fail expectation.
 
+Physical question:
+
+```text
+How do low-level moisture, surface heating, cap strength, cap height, dry air aloft, and mixing/entrainment affect shallow-cumulus formation, timing, depth, updraft strength, and cloud-water evolution?
+```
+
+Expected generated CM1-facing files:
+
+```text
+run_manifest.json
+case_manifest.json or scenario metadata
+namelist.input
+input_sounding or equivalent profile file
+runtime file checklist
+dry-run report
+visualization defaults
+```
+
+Expected diagnostics:
+
+```text
+cloud formed / failed
+first cloud time
+cloud base
+cloud top
+max vertical velocity
+cloud-water summary
+rain onset if present
+main limiting factor / interpretation note
+```
+
 ## Runtime Tiers
 
 Cloud Chamber should support run-size presets that make local cost and confidence visible:
@@ -48,6 +81,26 @@ Cloud Chamber should support run-size presets that make local cost and confidenc
 - **Deep / overnight**: longer richer runs that may take hours or overnight; used for prettier, more detailed, or higher-confidence result exploration.
 
 Runtime estimates are approximate until locally validated. The MVP should assume a 2024 MacBook Air with 8GB RAM, one local CM1 run at a time, conservative output handling, and backend-side processing/downsampling.
+
+Runtime tier metadata should be represented in scenario templates, generated package reports, run manifests, result metadata, and result cards. Unknown estimates should be labeled as unknown until locally validated.
+
+## Product State And Provenance Contract
+
+Implementation issues should preserve these product states and labels:
+
+```text
+Preview estimate
+Generated CM1 configuration
+Packaged dry-run output
+Queued/running CM1 process
+Completed CM1 result
+Failed/canceled CM1 run
+Ingested result metadata
+Visualizer interpretation
+Saved result/notebook entry
+```
+
+The UI and docs should not call a preview, dry-run package, or visualization interpretation a completed CM1 result.
 
 ## M0 Repo Foundation
 
@@ -84,6 +137,15 @@ Deliverables:
 - Preview placeholder.
 - Manual local validation loop documentation.
 
+Implementation anchors:
+
+- #20 should carry run-size presets, physical questions, learning goals, expected diagnostics, and one-control variation metadata.
+- #21 should mark Baseline Shallow Cumulus as the first hero case and keep warm rain early but non-blocking.
+- #22 should preserve lifecycle/provenance distinctions.
+- #23 should include run-size preset, physical question, expected diagnostics, visualization defaults, and explicit unknown estimate fields in dry-run reports.
+- #24 should map curated atmospheric controls to CM1-facing configuration without exposing raw namelist fields as the primary user language.
+- #25, #26, and #27 should use Golden Path wording and never imply a preview or dry-run package is a completed CM1 result.
+
 The dry-run package flow must be followed directly by local CM1 launch/monitoring work. Dry-run generation is a stepping stone, not a dead end.
 
 ## M1.5 Golden Path Manual CM1 Validation
@@ -115,6 +177,10 @@ Deliverables:
 - overwrite protection.
 - local/manual validation path.
 
+Implementation anchor:
+
+- #29 should assume one local CM1 run at a time, account for long/overnight runs, and preserve logs for result notebook entries.
+
 ## M3 Results Library + Experiment Notebook
 
 Goal: turn CM1 outputs into replayable, inspectable, searchable experiment notebook entries.
@@ -130,6 +196,10 @@ Deliverables:
 - open saved result in visualizer.
 - duplicate/tweak/rerun foundation later, after replay/inspect/save is reliable.
 
+Implementation anchor:
+
+- #30 should make replayable/inspectable saved result cards the core behavior. Duplicate/tweak/rerun should remain optional or later.
+
 ## M4 3-D Visualizer MVP
 
 Goal: deliver the main payoff: inspect CM1 cloud evolution in 3-D.
@@ -143,6 +213,10 @@ Deliverables:
 - horizontal/vertical slices.
 - cloud-water isosurface or opacity approximation.
 - simple lighting.
+
+Implementation anchor:
+
+- #31 should open from saved results, support time replay and camera exploration, avoid requiring reruns, and display provenance/rendering-method labels.
 
 ## M5 Visual Polish + Export
 
