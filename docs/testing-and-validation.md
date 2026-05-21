@@ -17,7 +17,10 @@ Future fast tests should cover:
 
 - scenario schema validation
 - quick/standard/deep runtime preset metadata validation
+- physical question and learning-goal metadata validation
+- one-control-at-a-time variation metadata validation
 - generated manifests
+- product state/provenance label validation
 - CM1 path/settings handling
 - run-package generation using temp directories
 - result-card / experiment-notebook metadata serialization
@@ -50,6 +53,10 @@ Real CM1 runs are local/manual/offline validation. They are useful for scientifi
 
 The Baseline Shallow Cumulus Golden Path is the first manual/local acceptance target. Quick/standard/deep runtime tiers should be validated in CI through schema/config tests, not by running CM1.
 
+Replay / inspect / save is core MVP and should be covered by future metadata, serialization, and UI tests. Duplicate / tweak / rerun is later and should not be required by first result-library tests.
+
+Warm rain remains early, but baseline shallow-cumulus tests and manual validation should not be blocked on warm-rain behavior.
+
 Manual validation should record:
 
 - the physical question being tested
@@ -69,17 +76,21 @@ Validation notes should be written as docs or issue comments when useful. Local 
 Manual baseline shallow-cumulus acceptance should capture:
 
 ```text
+physical question
 run-size preset
 CM1 version/path
 grid/domain
 runtime
 output cadence
+generated CM1-facing files reviewed
 first cloud time
 cloud base/top
 max updraft
 cloud water
 rain onset if present
 logs
+result card / notebook fields
+visualizer provenance labels
 visual inspection notes
 ```
 
