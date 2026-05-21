@@ -78,6 +78,12 @@ scripts/check.sh
 
 This executable script runs the same fast checks as CI: frontend lint/test/build, backend ruff format/check, backend mypy, backend pytest, shell syntax checks, and basic docs/JSON/YAML sanity.
 
+`scripts/check.sh` is the canonical local validation gate for developers and Codex. It also checks for tracked generated/runtime artifacts and old user-facing product naming.
+
+CI keeps equivalent split jobs named `Frontend`, `Backend`, and `Scripts and config` so branch protection can require stable, readable check names. When adding future scenario-schema, run-manifest, dry-run-package, NetCDF-ingest, or visualizer-metadata checks, update both `scripts/check.sh` and the matching CI job or document why a CI-only/local-only split is necessary.
+
+The local gate intentionally does not run real CM1, require a local CM1 installation, require real NetCDF output, or create generated CM1 artifacts in the repo.
+
 ## Scaffold Scope
 
 Do not implement product features in this scaffold PR.

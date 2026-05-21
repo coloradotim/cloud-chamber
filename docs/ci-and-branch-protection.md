@@ -9,6 +9,8 @@ The CI workflow should pass before merge:
 - frontend install, lint, test, and build
 - backend install, ruff format/check, mypy, and pytest
 - script syntax checks
+- `scripts/check.sh` executable-bit assertion
+- forbidden tracked artifact checks
 - docs/config JSON and YAML sanity checks
 - simple markdown sanity checks
 
@@ -19,6 +21,8 @@ Expected GitHub Actions check names from this workflow are:
 - `Scripts and config`
 
 Confirm the exact displayed names from the first PR before adding required checks to branch protection.
+
+`scripts/check.sh` is the canonical local validation gate. CI uses split equivalent jobs instead of calling only that script so required checks stay granular and readable in branch protection. When future fast checks are added locally, mirror them in CI or explicitly document why they only run in one place.
 
 ## Recommended GitHub Settings
 

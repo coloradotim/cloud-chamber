@@ -4,18 +4,36 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BACKEND_PYTHON="${BACKEND_PYTHON:-python}"
 
+require_command() {
+  local command_name="$1"
+  local install_hint="$2"
+
+  if ! command -v "$command_name" >/dev/null 2>&1; then
+    echo "Missing required command: $command_name" >&2
+    echo "$install_hint" >&2
+    exit 127
+  fi
+}
+
 if [[ -x "$ROOT_DIR/app/backend/.venv/bin/python" && "${BACKEND_PYTHON}" == "python" ]]; then
   BACKEND_PYTHON="$ROOT_DIR/app/backend/.venv/bin/python"
 fi
+require_command "$BACKEND_PYTHON" "Install Python, or set BACKEND_PYTHON to the Python executable for app/backend."
 
 echo "== Frontend checks =="
 cd "$ROOT_DIR/app/frontend"
+require_command npm "Install Node.js/npm, then run npm install in app/frontend."
 npm run lint
 npm run test
 npm run build
 
 echo "== Backend checks =="
 cd "$ROOT_DIR/app/backend"
+if ! "$BACKEND_PYTHON" -c "import mypy, pytest, ruff" >/dev/null 2>&1; then
+  echo "Missing backend development dependencies for $BACKEND_PYTHON." >&2
+  echo "Run: cd app/backend && python -m pip install -e '.[dev]'" >&2
+  exit 127
+fi
 "$BACKEND_PYTHON" -m ruff format --check .
 "$BACKEND_PYTHON" -m ruff check .
 "$BACKEND_PYTHON" -m mypy .
@@ -23,9 +41,11 @@ cd "$ROOT_DIR/app/backend"
 
 echo "== Script syntax checks =="
 cd "$ROOT_DIR"
+require_command bash "Install bash or run this script from an environment with bash available."
 find scripts -name "*.sh" -print0 | xargs -0 -r bash -n
 
 echo "== Forbidden tracked artifact checks =="
+require_command git "Install git before running the local validation gate."
 forbidden_tracked="$(git ls-files \
   'local-data/*' \
   'runs/*' \
@@ -56,6 +76,11 @@ if [[ -n "$forbidden_tracked" ]]; then
 fi
 
 echo "== Docs/JSON/YAML sanity checks =="
+if ! "$BACKEND_PYTHON" -c "import yaml" >/dev/null 2>&1; then
+  echo "Missing Python dependency: PyYAML." >&2
+  echo "Run: cd app/backend && python -m pip install -e '.[dev]'" >&2
+  exit 127
+fi
 "$BACKEND_PYTHON" - <<'PY'
 import json
 from pathlib import Path

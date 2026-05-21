@@ -60,6 +60,8 @@ scripts/check.sh
 
 The script is executable and runs the same fast checks as CI.
 
+`scripts/check.sh` is the canonical local validation gate. Run it before opening PRs. It intentionally does not run real CM1, require a local CM1 installation, use NetCDF sample output, or create generated CM1 artifacts.
+
 ## Runtime Data
 
 Runtime data belongs outside the repo by default:

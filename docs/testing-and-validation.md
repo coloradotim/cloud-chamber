@@ -10,6 +10,8 @@ Fast CI tests run on every pull request and push to `main`.
 - Backend ruff format/check, mypy, and pytest.
 - Shell script syntax checks.
 - JSON/YAML sanity checks where practical.
+- `scripts/check.sh` executable-bit assertion.
+- forbidden tracked artifact checks.
 
 Future fast tests should cover:
 
@@ -20,6 +22,8 @@ Future fast tests should cover:
 - frontend component tests for Scenario Builder behavior and state distinctions
 
 These tests must not require CM1 source, CM1 binaries, NetCDF output, generated run directories, or large local data.
+
+Local validation uses `scripts/check.sh` as the canonical gate. CI mirrors it through split equivalent jobs so branch protection can require `Frontend`, `Backend`, and `Scripts and config` independently. Keep the local script and CI jobs in sync as new implemented layers add fast checks.
 
 ## Local CM1 Workflow Tests
 

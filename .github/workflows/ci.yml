@@ -82,7 +82,40 @@ jobs:
           python-version: "3.12"
 
       - name: Shell syntax
-        run: find scripts -name "*.sh" -print0 | xargs -0 -r bash -n
+        run: |
+          test -x scripts/check.sh
+          find scripts -name "*.sh" -print0 | xargs -0 -r bash -n
+
+      - name: Forbidden tracked artifacts
+        run: |
+          forbidden_tracked="$(git ls-files \
+            'local-data/*' \
+            'runs/*' \
+            'local-runs/*' \
+            'cm1-runs/*' \
+            'generated-runs/*' \
+            'processed/*' \
+            'validation-reports/*' \
+            'local-validation-reports/*' \
+            'cm1r*/*' \
+            'LANDUSE.TBL' \
+            '*.nc' \
+            '*.nc4' \
+            '*.cdf' \
+            '*.netcdf' \
+            '*.vtk' \
+            '*.vti' \
+            '*.vtr' \
+            '*.vts' \
+            '*.vtu' \
+            '*.mp4' \
+            '*.mov' \
+            '*.webm')"
+          if [[ -n "$forbidden_tracked" ]]; then
+            echo "Forbidden generated/local artifacts are tracked:" >&2
+            echo "$forbidden_tracked" >&2
+            exit 1
+          fi
 
       - name: Docs, JSON, and YAML sanity
         run: |
