@@ -1,0 +1,76 @@
+{
+  "schema_version": "1",
+  "id": "capped-suppressed-cumulus",
+  "display_name": "Capped / Suppressed Cumulus",
+  "category": "lower-atmosphere",
+  "description": "A contrast case focused on how a stronger cap can suppress or delay shallow cumulus.",
+  "physical_question": "How do cap strength and cap height limit rising thermals and cloud depth?",
+  "learning_goals": ["Identify cap-limited cloud behavior.", "Compare cap strength and cap height against the baseline."],
+  "intended_behavior": "A capped lower-atmosphere case with delayed, shallow, or suppressed clouds.",
+  "expected_behavior": "Clouds may remain shallow, form late, or fail if the cap is too strong.",
+  "controls": [
+    {
+      "id": "cap_strength",
+      "label": "Cap strength",
+      "description": "Relative strength of the stable layer above the mixed layer.",
+      "type": "choice",
+      "audience": "product",
+      "default": "stronger",
+      "options": [
+        {"value": "weaker", "label": "Weaker"},
+        {"value": "baseline", "label": "Baseline"},
+        {"value": "stronger", "label": "Stronger"}
+      ],
+      "cm1_mapping_notes": "Future mapping should adjust stability near the cap."
+    },
+    {
+      "id": "cap_height",
+      "label": "Cap height",
+      "description": "Relative height of the capping layer.",
+      "type": "choice",
+      "audience": "product",
+      "default": "baseline",
+      "options": [
+        {"value": "lower", "label": "Lower"},
+        {"value": "baseline", "label": "Baseline"},
+        {"value": "higher", "label": "Higher"}
+      ],
+      "cm1_mapping_notes": "Future mapping should adjust the vertical sounding structure."
+    }
+  ],
+  "run_size_presets": [
+    {"id": "quick_look", "label": "Quick look", "purpose": "Check cap-limited behavior.", "expected_runtime": "roughly 10-20 minutes when feasible", "confidence": "lower confidence until locally validated", "output_notes": "coarser cadence acceptable"},
+    {"id": "standard", "label": "Standard", "purpose": "Useful capped contrast result.", "expected_runtime": "normal local run", "confidence": "balanced confidence and runtime", "output_notes": "record cloud-top and updraft diagnostics"},
+    {"id": "deep_overnight", "label": "Deep / overnight", "purpose": "Longer capped-case exploration.", "expected_runtime": "may take hours or overnight", "confidence": "higher detail after validation", "output_notes": "output size must be explicit"}
+  ],
+  "expected_diagnostics": {
+    "cloud_formed": true,
+    "first_cloud_time": "record delayed or absent first cloud time",
+    "cloud_base_top": "record cap-limited cloud depth",
+    "max_updraft": "record maximum vertical velocity",
+    "cloud_water_summary": "summarize weak or capped cloud-water signal",
+    "rain_onset": "not expected",
+    "notes": ["Suppression can be a valid result."]
+  },
+  "cm1_template": {
+    "namelist_template": "templates/lower-atmosphere/capped-suppressed-cumulus/namelist.input.j2",
+    "input_sounding_template": "templates/lower-atmosphere/capped-suppressed-cumulus/input_sounding.j2",
+    "runtime_files_needed": ["LANDUSE.TBL"],
+    "mapping_notes": "Placeholder mapping until local CM1 validation."
+  },
+  "visualization_defaults": {
+    "primary_field": "qc",
+    "secondary_fields": ["w"],
+    "camera": "orbit view with vertical slice emphasis",
+    "rendering_method": "cloud-water opacity approximation"
+  },
+  "variation_policy": {
+    "baseline_scenario_id": "baseline-shallow-cumulus",
+    "one_control_at_a_time": true,
+    "suggested_controls": ["cap_strength", "cap_height"],
+    "non_goals": ["large parameter sweeps"]
+  },
+  "warnings": ["Preview estimates are guidance only."],
+  "limitations": ["Cap behavior requires local/manual CM1 validation."],
+  "advanced_settings_notes": "Raw CM1 settings remain advanced/developer-only."
+}

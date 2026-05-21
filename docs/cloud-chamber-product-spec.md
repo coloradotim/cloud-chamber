@@ -244,6 +244,8 @@ Initial scenario templates should include:
 
 Baseline shallow cumulus is the first hero case. Warm rain remains early but does not block the Golden Path.
 
+The initial lower-atmosphere templates live under `scenarios/lower-atmosphere/` as validated JSON metadata. They are honest scenario definitions and teaching contracts, not final scientific calibration. CM1 mapping fields are placeholders until local/manual CM1 validation accepts the generated configurations.
+
 ## Curated Controls And Diagnostics
 
 The first lower-atmosphere controls should use atmospheric language:
