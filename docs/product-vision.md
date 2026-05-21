@@ -12,13 +12,19 @@ Short version:
 
 > A local studio for playing with CM1 and seeing cloud physics come alive.
 
+Internal anchor:
+
+> Cloud Chamber is a personal, scientifically honest CM1 cloud playground: curated lower-atmosphere experiments, meaningful controls, local-first CM1 runs, replayable saved results, and a beautiful 3-D viewer.
+
 CM1 is the high-fidelity simulation engine; Cloud Chamber is the local experiment builder, run manager, and visualizer.
 
 The lesson from earlier Cloud Lab-style experimentation is simple: do not rebuild CM1 poorly. Cloud Chamber should wrap CM1 with a clearer product workflow, not replace the atmospheric model with hidden fake physics.
 
+Cloud Lab should be treated as archived lesson/source material only. New product work belongs in Cloud Chamber, with useful lessons ported intentionally.
+
 ## What Cloud Chamber Is
 
-Cloud Chamber is a local-first experiment and visualization environment for CM1.
+Cloud Chamber is a local-first experiment and visualization environment for CM1, primarily for personal exploration and learning.
 
 It should help a user:
 
@@ -30,6 +36,7 @@ Choose a cloud scenario
 → track the run
 → ingest and organize results
 → visualize the 3-D cloud evolution beautifully
+→ replay and inspect saved results later
 → understand what happened
 ```
 
@@ -74,7 +81,8 @@ Choose experiment
 → open result
 → visualize in 3-D
 → save/name/tag
-→ duplicate/tweak/rerun
+→ replay and inspect later
+→ optionally create a new variation from the same setup
 ```
 
 ## User-Facing Concepts
@@ -121,7 +129,7 @@ CM1 runs can be long and local. The user should be able to start a run, leave it
 
 Local library of completed/failed/running CM1 experiments.
 
-Users can name, save, tag, inspect, duplicate, and delete runs.
+Users can name, save, tag, replay, inspect, explain, and delete runs. Saved completed results should behave like experiment notebook entries. Duplicating or rerunning a saved setup is useful later, but the first MVP does not need to make rerun a central result-library feature.
 
 ### 5. 3-D Visualizer
 
@@ -151,6 +159,10 @@ Start with:
 4. Humid vigorous cloud / humid low-cloud contrast
 5. Low stratus / low-cloud layer
 6. Warm rain / precipitating shallow cloud
+
+Baseline shallow cumulus is the first end-to-end Golden Path scenario. Warm rain remains early and important, but it should not block proving the baseline shallow-cumulus loop first.
+
+The first variation workflow should favor one-control-at-a-time changes around the baseline instead of arbitrary giant parameter sweeps. This keeps the learning path understandable and keeps CM1 as the truth source.
 
 Later:
 
@@ -207,4 +219,11 @@ The MVP should let a user:
 7. Open the result in a basic 3-D viewer.
 8. Replay cloud evolution over time.
 9. Save/name/tag the run.
-10. Duplicate and rerun a scenario.
+10. Reopen, replay, inspect, and explain a saved result later.
+
+Optional later behavior:
+
+- Create a new variation from the same setup.
+- Duplicate and rerun a scenario when that workflow is implemented.
+
+The MVP scientific standard is a credible idealized CM1 cloud lab for personal learning and exploration. It is not a publication-quality LES workflow and not operational forecasting.

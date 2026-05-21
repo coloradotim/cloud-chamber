@@ -2,13 +2,15 @@
 
 ## Product Summary
 
-Cloud Chamber is a local-first desktop/browser application for configuring, running, managing, and visualizing CM1 cloud experiments.
+Cloud Chamber is a local-first desktop/browser application for configuring, running, managing, and visualizing CM1 cloud experiments for personal learning and exploration.
 
 The product should make CM1 approachable without hiding scientific limits.
 
 CM1 is the high-fidelity simulation engine; Cloud Chamber is the local experiment builder, run manager, and visualizer.
 
 Cloud Chamber's main flow should be product-shaped, not namelist-shaped. Friendly atmospheric controls come first; raw CM1 namelist settings belong in advanced/developer views.
+
+The first Golden Path case is Baseline Shallow Cumulus. Warm rain remains early, but it should not block completing that first end-to-end case.
 
 ## Personas
 
@@ -71,6 +73,7 @@ For each run:
 2. App ingests or loads processed data.
 3. App shows diagnostics and visualizer.
 4. User can save/name/tag result.
+5. User can replay and inspect the saved result later.
 
 ### Workflow 6 — 3-D Visualization
 
@@ -95,6 +98,30 @@ The visualizer should support:
 3. Preview likely difference.
 4. Launch a new CM1 run.
 5. Compare results later.
+
+This workflow is useful, but it is not the core first-MVP result behavior. Replay, inspect, save, name, and tag completed CM1 results first; duplicate/tweak/rerun can mature after the Result Card / Experiment Notebook model is reliable.
+
+## Run Size Presets
+
+### Quick look
+
+- Target: roughly 10-20 minutes when feasible on the local Mac.
+- Purpose: sanity checks, setup inspection, and rough cloud behavior.
+- Lower confidence, shorter runtime, coarser resolution, or coarser output cadence is acceptable if clearly labeled.
+
+### Standard
+
+- Target: normal personal exploration run.
+- Purpose: useful saved result and diagnostics.
+- Expected to balance runtime, output size, and confidence for repeated local use.
+
+### Deep / overnight
+
+- Target: long richer runs that may take hours or overnight.
+- Purpose: prettier, more detailed, or higher-confidence result exploration.
+- Should be explicit about local resource use and output size before launch.
+
+Runtime estimates are approximate until locally validated for a specific CM1 build, scenario, and machine. The first local hardware target is a 2024 MacBook Air with 8GB RAM, so the MVP should assume one local CM1 run at a time and conservative output handling.
 
 ## Preset Scenario Schema
 
@@ -125,6 +152,12 @@ visualization_defaults:
   camera
   fields
   color/opacity
+run_size_presets:
+  quick_look
+  standard
+  deep_overnight
+physical_question:
+learning_goals:
 validation_status:
   unrun | generated | accepted | needs_calibration
 notes:
@@ -138,6 +171,39 @@ Initial scenario templates should include:
 4. Humid vigorous cumulus / humid low-cloud contrast.
 5. Low stratus / low-cloud layer.
 6. Warm rain / precipitating shallow cloud.
+
+## Curated Controls And Diagnostics
+
+The first lower-atmosphere controls should use atmospheric language:
+
+```text
+low-level humidity
+surface heating
+surface moisture / moisture supply
+cap strength
+cap height
+dry air aloft
+mixing / entrainment
+```
+
+Early controls can be relative presets such as drier/baseline/more humid, weaker/baseline/stronger heating, lower/baseline/higher cap, and less dry/baseline/drier air aloft. Raw namelist fields belong in advanced/developer views.
+
+Initial diagnostics should include:
+
+```text
+cloud formed / failed
+first cloud time
+cloud base
+cloud top
+max vertical velocity
+max or summary cloud water
+cloud-water time evolution
+rain onset if available
+rain-water summary if available
+main limiting factor
+```
+
+First variations should favor one-control-at-a-time changes around Baseline Shallow Cumulus. Large arbitrary parameter sweeps are not the primary learning path.
 
 ## Run Manifest Schema
 
@@ -191,6 +257,53 @@ canceled
 
 Dry-run packaged experiments must be distinct from queued/running/completed CM1 runs.
 
+## Product States And Provenance
+
+Cloud Chamber must preserve these distinctions in UI labels, manifests, result cards, and visualizer copy:
+
+```text
+Preview estimate
+Generated CM1 configuration
+Packaged dry-run output
+Queued/running CM1 process
+Completed CM1 result
+Failed/canceled CM1 run
+Ingested result metadata
+Visualizer interpretation
+Saved result/notebook entry
+```
+
+A preview or dry-run package is not a completed CM1 result. A visualization is an interpretation of CM1 output, not a new physical source of truth.
+
+## Result Card / Experiment Notebook
+
+A completed run should produce a replayable saved result. It should feel like an experiment notebook entry, not a disposable job row.
+
+Result cards should support:
+
+```text
+name
+tags
+scenario
+physical question
+controls used
+run-size preset
+CM1 status
+run logs
+output paths
+diagnostics summary
+first cloud time
+cloud base/top
+max updraft
+cloud water summary
+rain onset if available
+key frames or bookmarked times
+notes
+open in visualizer action
+```
+
+Completed results should be replayable and inspectable without rerunning CM1. Duplicate/tweak/rerun is useful later, but replay/inspect/save is the core MVP result-library behavior.
+
 ## MVP Scope
 
 ### In Scope
@@ -205,6 +318,7 @@ Dry-run packaged experiments must be distinct from queued/running/completed CM1 
 - Basic 3-D visualizer MVP
 - Result library
 - Save/name/tag runs
+- Replay and inspect saved results
 
 ### Out Of Scope For MVP
 
@@ -215,6 +329,8 @@ Dry-run packaged experiments must be distinct from queued/running/completed CM1 
 - True production LES workflow guarantee
 - Terrain/orographic cases unless explicitly added
 - Warm-rain microphysics beyond fields CM1 already outputs
+- Publication-quality LES guarantees
+- Operational forecasting workflows
 
 ### Current Near-Term Non-Goals
 
@@ -246,6 +362,8 @@ Later:
 - cloud-base darkening
 - fly-through
 - cinematic export
+
+True fly-through or move-through should remain on the roadmap after the MVP. Orbit/pan/zoom, reset camera, time replay, slices, field selection, and cloud-water isosurface/opacity approximation are enough for the first visualizer.
 
 ## Local Data Policy
 

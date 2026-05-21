@@ -6,6 +6,8 @@ Cloud Chamber should be local-first.
 
 CM1 is the high-fidelity simulation engine; Cloud Chamber is the local experiment builder, run manager, and visualizer.
 
+The first MVP target is a 2024 MacBook Air with 8GB RAM. Design for one local CM1 run at a time, conservative output handling, and backend-side processing/downsampling. Optional cloud compute can be researched later, but it is not part of the core architecture.
+
 Recommended architecture:
 
 ```text
@@ -71,6 +73,8 @@ Responsibilities:
 - map friendly controls to CM1 configuration
 - define expected outputs
 - define visualization defaults
+- define run-size presets and one-control variation metadata around a baseline
+- define the physical question and learning goals
 
 ### Configuration Builder
 
@@ -129,6 +133,8 @@ Responsibilities:
 - duplicate setup
 - delete local output safely
 
+For MVP, replayable and inspectable saved results are more important than rerunning a saved setup. Duplicate/tweak/rerun can build on the same metadata later.
+
 ### 3-D Visualizer
 
 Responsibilities:
@@ -151,6 +157,8 @@ scenario + controls
 → run directory
 → run manifest
 ```
+
+Runtime tier metadata should flow through this path: scenario templates define available run-size presets, generated run packages record the selected preset, run manifests preserve it during execution, and result metadata keeps it available for later inspection.
 
 ### Execute Run
 
@@ -179,6 +187,22 @@ result manifest
 → visualizer data loader
 → 3-D view
 ```
+
+### Result Notebook Entry
+
+Conceptually, a saved result can be represented as a notebook-style entry:
+
+```text
+result notebook entry
+  result_manifest.json
+  run_manifest.json
+  diagnostics_summary.json
+  key_frames.json
+  user_notes.md or notes field
+  visualization_defaults.json
+```
+
+These file names are conceptual for now. Implementation should choose concrete schemas when the result model is built.
 
 ## Storage Layout
 
@@ -254,6 +278,8 @@ scenarios/
 
 Run manifests should record the scenario template, adjusted controls, generated CM1-facing files, runtime paths, lifecycle state, validation status, timestamps, and later output paths. A manifest should not require NetCDF output to exist.
 
+Run manifests should also record the selected run-size preset, physical question, expected diagnostics, and visualization defaults when those concepts are available from the scenario template.
+
 Lifecycle states:
 
 ```text
@@ -299,6 +325,8 @@ The app checks:
 - required Python/xarray/netCDF dependencies
 
 Do not vendor CM1.
+
+The app should avoid assuming large in-memory NetCDF processing. Ingestion should prefer selected fields, selected frames, chunking, downsampling, or other backend-side reductions before browser visualization.
 
 ## NetCDF And Visualization Data Contract
 
