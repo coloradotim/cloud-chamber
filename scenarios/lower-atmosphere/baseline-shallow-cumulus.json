@@ -1,0 +1,94 @@
+{
+  "schema_version": "1",
+  "id": "baseline-shallow-cumulus",
+  "display_name": "Baseline Shallow Cumulus",
+  "category": "lower-atmosphere",
+  "description": "First Golden Path hero case for a credible idealized shallow-cumulus experiment.",
+  "physical_question": "How do low-level moisture, surface heating, cap strength, cap height, dry air aloft, and mixing/entrainment affect shallow-cumulus formation, timing, depth, updraft strength, and cloud-water evolution?",
+  "learning_goals": [
+    "Recognize first cloud time and cloud depth in a baseline lower-atmosphere setup.",
+    "Use the baseline as the reference for one-control-at-a-time variations.",
+    "Understand that exact cloud morphology is inspected, not treated as a brittle pass/fail result."
+  ],
+  "intended_behavior": "A balanced shallow-cumulus case that can form clouds under local CM1 validation.",
+  "expected_behavior": "Clouds may form after heating and mixing erode inhibition; timing and depth remain subject to CM1 validation.",
+  "controls": [
+    {
+      "id": "low_level_humidity",
+      "label": "Low-level humidity",
+      "description": "Relative moisture in the lower atmosphere around the baseline profile.",
+      "type": "choice",
+      "audience": "product",
+      "default": "baseline",
+      "options": [
+        {"value": "drier", "label": "Drier"},
+        {"value": "baseline", "label": "Baseline"},
+        {"value": "more_humid", "label": "More humid"}
+      ],
+      "cm1_mapping_notes": "Future mapping should adjust low-level sounding moisture while preserving scientific disclosure."
+    },
+    {
+      "id": "surface_heating",
+      "label": "Surface heating",
+      "description": "Relative daytime heating strength for boundary-layer growth.",
+      "type": "choice",
+      "audience": "product",
+      "default": "baseline",
+      "options": [
+        {"value": "weaker", "label": "Weaker"},
+        {"value": "baseline", "label": "Baseline"},
+        {"value": "stronger", "label": "Stronger"}
+      ],
+      "cm1_mapping_notes": "Future mapping should adjust surface flux or related idealized forcing."
+    },
+    {
+      "id": "cap_strength",
+      "label": "Cap strength",
+      "description": "Relative resistance to rising thermals near the capping layer.",
+      "type": "choice",
+      "audience": "product",
+      "default": "baseline",
+      "options": [
+        {"value": "weaker", "label": "Weaker"},
+        {"value": "baseline", "label": "Baseline"},
+        {"value": "stronger", "label": "Stronger"}
+      ],
+      "cm1_mapping_notes": "Future mapping should adjust sounding stability near the cap."
+    }
+  ],
+  "run_size_presets": [
+    {"id": "quick_look", "label": "Quick look", "purpose": "Sanity-check setup and rough cloud behavior.", "expected_runtime": "roughly 10-20 minutes when feasible on the local Mac", "confidence": "lower confidence until locally validated", "output_notes": "coarser output cadence is acceptable if clearly labeled"},
+    {"id": "standard", "label": "Standard", "purpose": "Normal personal exploration and useful saved diagnostics.", "expected_runtime": "normal local personal exploration run", "confidence": "balanced runtime and diagnostic value", "output_notes": "intended result-card/notebook source"},
+    {"id": "deep_overnight", "label": "Deep / overnight", "purpose": "Richer or prettier result exploration.", "expected_runtime": "may take hours or overnight", "confidence": "higher detail only after local validation", "output_notes": "larger output should be explicit before launch"}
+  ],
+  "expected_diagnostics": {
+    "cloud_formed": true,
+    "first_cloud_time": "record if and when shallow cumulus first appears",
+    "cloud_base_top": "record cloud base and cloud top if clouds form",
+    "max_updraft": "record maximum vertical velocity",
+    "cloud_water_summary": "summarize cloud-water maximum and time evolution",
+    "rain_onset": "not expected for baseline, but record if present",
+    "notes": ["Exact morphology is not pass/fail."]
+  },
+  "cm1_template": {
+    "namelist_template": "templates/lower-atmosphere/baseline-shallow-cumulus/namelist.input.j2",
+    "input_sounding_template": "templates/lower-atmosphere/baseline-shallow-cumulus/input_sounding.j2",
+    "runtime_files_needed": ["LANDUSE.TBL"],
+    "mapping_notes": "Mapping is a documented placeholder until manually validated against local CM1."
+  },
+  "visualization_defaults": {
+    "primary_field": "qc",
+    "secondary_fields": ["w", "qr"],
+    "camera": "orbit view over lower-atmosphere domain",
+    "rendering_method": "cloud-water opacity approximation"
+  },
+  "variation_policy": {
+    "baseline_scenario_id": "baseline-shallow-cumulus",
+    "one_control_at_a_time": true,
+    "suggested_controls": ["low_level_humidity", "surface_heating", "cap_strength"],
+    "non_goals": ["arbitrary large parameter sweeps", "publication-quality LES claims"]
+  },
+  "warnings": ["Preview estimates are guidance only; CM1 output is the source of truth."],
+  "limitations": ["Template mapping is not scientifically accepted until local/manual CM1 validation."],
+  "advanced_settings_notes": "Raw CM1 namelist fields belong in advanced/developer views."
+}

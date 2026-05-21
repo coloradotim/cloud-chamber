@@ -1,0 +1,76 @@
+{
+  "schema_version": "1",
+  "id": "low-stratus",
+  "display_name": "Low Stratus / Low-Cloud Layer",
+  "category": "lower-atmosphere",
+  "description": "A low-cloud contrast case for layer-like cloud behavior near the lower atmosphere.",
+  "physical_question": "How do surface moisture, cap height, and weak mixing favor lower cloud layers instead of isolated shallow cumulus?",
+  "learning_goals": ["Contrast layer-like low cloud with baseline shallow cumulus.", "Inspect cloud base/top and cloud-water distribution."],
+  "intended_behavior": "A low-cloud or stratus-like setup for later CM1 validation.",
+  "expected_behavior": "A lower, broader cloud layer may develop if moisture and stability support it.",
+  "controls": [
+    {
+      "id": "surface_moisture",
+      "label": "Surface moisture",
+      "description": "Relative moisture supply near the surface.",
+      "type": "choice",
+      "audience": "product",
+      "default": "moister",
+      "options": [
+        {"value": "drier", "label": "Drier"},
+        {"value": "baseline", "label": "Baseline"},
+        {"value": "moister", "label": "Moister"}
+      ],
+      "cm1_mapping_notes": "Future mapping should adjust near-surface moisture or surface-flux assumptions."
+    },
+    {
+      "id": "mixing_entrainment",
+      "label": "Mixing / entrainment",
+      "description": "Relative mixing with air above the lower cloud layer.",
+      "type": "choice",
+      "audience": "product",
+      "default": "weaker",
+      "options": [
+        {"value": "weaker", "label": "Weaker"},
+        {"value": "baseline", "label": "Baseline"},
+        {"value": "stronger", "label": "Stronger"}
+      ],
+      "cm1_mapping_notes": "Future mapping should document how this control affects idealized setup assumptions."
+    }
+  ],
+  "run_size_presets": [
+    {"id": "quick_look", "label": "Quick look", "purpose": "Check low-cloud setup.", "expected_runtime": "roughly 10-20 minutes when feasible", "confidence": "lower confidence until locally validated", "output_notes": "coarser cadence acceptable"},
+    {"id": "standard", "label": "Standard", "purpose": "Useful low-cloud result.", "expected_runtime": "normal local run", "confidence": "balanced confidence and runtime", "output_notes": "record cloud layer diagnostics"},
+    {"id": "deep_overnight", "label": "Deep / overnight", "purpose": "Longer low-cloud exploration.", "expected_runtime": "may take hours or overnight", "confidence": "higher detail after validation", "output_notes": "output size must be explicit"}
+  ],
+  "expected_diagnostics": {
+    "cloud_formed": true,
+    "first_cloud_time": "record low-cloud onset",
+    "cloud_base_top": "record low cloud base/top",
+    "max_updraft": "record weak or layered vertical velocity signals",
+    "cloud_water_summary": "summarize low-cloud water distribution",
+    "rain_onset": "not expected",
+    "notes": ["Layer-like morphology requires CM1 validation."]
+  },
+  "cm1_template": {
+    "namelist_template": "templates/lower-atmosphere/low-stratus/namelist.input.j2",
+    "input_sounding_template": "templates/lower-atmosphere/low-stratus/input_sounding.j2",
+    "runtime_files_needed": ["LANDUSE.TBL"],
+    "mapping_notes": "Placeholder mapping until local CM1 validation."
+  },
+  "visualization_defaults": {
+    "primary_field": "qc",
+    "secondary_fields": ["w"],
+    "camera": "low orbit view with horizontal slice emphasis",
+    "rendering_method": "cloud-water opacity approximation"
+  },
+  "variation_policy": {
+    "baseline_scenario_id": "baseline-shallow-cumulus",
+    "one_control_at_a_time": true,
+    "suggested_controls": ["surface_moisture", "mixing_entrainment"],
+    "non_goals": ["large parameter sweeps"]
+  },
+  "warnings": ["Preview estimates are guidance only."],
+  "limitations": ["Low-stratus behavior requires local/manual CM1 validation."],
+  "advanced_settings_notes": "Raw CM1 settings remain advanced/developer-only."
+}

@@ -1,0 +1,74 @@
+{
+  "schema_version": "1",
+  "id": "warm-rain",
+  "display_name": "Warm Rain / Precipitating Shallow Cloud",
+  "category": "lower-atmosphere",
+  "description": "An early but non-blocking precipitating shallow-cloud scenario for later Golden Path extension.",
+  "physical_question": "When does a shallow warm cloud produce rain, and how do moisture and depth affect rain onset?",
+  "learning_goals": ["Track rain onset if present.", "Compare precipitating shallow cloud with the non-precipitating baseline."],
+  "intended_behavior": "A wetter/deeper shallow-cloud case where warm rain may occur after local CM1 validation.",
+  "expected_behavior": "Rain may form if the cloud becomes deep and moist enough; this remains early but does not block the baseline Golden Path.",
+  "controls": [
+    {
+      "id": "low_level_humidity",
+      "label": "Low-level humidity",
+      "description": "Lower-atmosphere moisture relative to the baseline.",
+      "type": "choice",
+      "audience": "product",
+      "default": "more_humid",
+      "options": [
+        {"value": "baseline", "label": "Baseline"},
+        {"value": "more_humid", "label": "More humid"}
+      ],
+      "cm1_mapping_notes": "Future mapping should increase low-level sounding moisture."
+    },
+    {
+      "id": "cloud_depth_potential",
+      "label": "Cloud depth potential",
+      "description": "Relative tendency for a cloud to grow deep enough for warm rain.",
+      "type": "choice",
+      "audience": "product",
+      "default": "deeper",
+      "options": [
+        {"value": "baseline", "label": "Baseline"},
+        {"value": "deeper", "label": "Deeper"}
+      ],
+      "cm1_mapping_notes": "Future mapping should document cap, moisture, and microphysics assumptions."
+    }
+  ],
+  "run_size_presets": [
+    {"id": "quick_look", "label": "Quick look", "purpose": "Check whether rain behavior is plausible enough for further exploration.", "expected_runtime": "roughly 10-20 minutes when feasible", "confidence": "lower confidence until locally validated", "output_notes": "rain onset may require longer output"},
+    {"id": "standard", "label": "Standard", "purpose": "Useful precipitating shallow-cloud result.", "expected_runtime": "normal local run", "confidence": "balanced confidence and runtime", "output_notes": "record cloud-water and rain-water diagnostics"},
+    {"id": "deep_overnight", "label": "Deep / overnight", "purpose": "Richer rain-onset exploration.", "expected_runtime": "may take hours or overnight", "confidence": "higher detail after validation", "output_notes": "larger output should be explicit before launch"}
+  ],
+  "expected_diagnostics": {
+    "cloud_formed": true,
+    "first_cloud_time": "record first cloud time",
+    "cloud_base_top": "record cloud depth",
+    "max_updraft": "record maximum vertical velocity",
+    "cloud_water_summary": "summarize cloud-water evolution",
+    "rain_onset": "record rain onset if present",
+    "notes": ["Warm rain remains early but does not block the baseline Golden Path."]
+  },
+  "cm1_template": {
+    "namelist_template": "templates/lower-atmosphere/warm-rain/namelist.input.j2",
+    "input_sounding_template": "templates/lower-atmosphere/warm-rain/input_sounding.j2",
+    "runtime_files_needed": ["LANDUSE.TBL"],
+    "mapping_notes": "Placeholder mapping until local CM1 validation; do not claim precipitation authority before CM1 inspection."
+  },
+  "visualization_defaults": {
+    "primary_field": "qc",
+    "secondary_fields": ["qr", "w"],
+    "camera": "orbit view with rain-water field available",
+    "rendering_method": "cloud-water opacity approximation"
+  },
+  "variation_policy": {
+    "baseline_scenario_id": "baseline-shallow-cumulus",
+    "one_control_at_a_time": true,
+    "suggested_controls": ["low_level_humidity", "cloud_depth_potential"],
+    "non_goals": ["making warm rain block baseline shallow-cumulus delivery"]
+  },
+  "warnings": ["Preview estimates are guidance only; CM1 output is the source of truth."],
+  "limitations": ["Warm-rain behavior requires local/manual CM1 validation and may need longer runs."],
+  "advanced_settings_notes": "Raw microphysics and namelist settings remain advanced/developer-only."
+}

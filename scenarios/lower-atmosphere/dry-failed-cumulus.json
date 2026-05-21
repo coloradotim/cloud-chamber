@@ -1,0 +1,76 @@
+{
+  "schema_version": "1",
+  "id": "dry-failed-cumulus",
+  "display_name": "Dry Failed Cumulus",
+  "category": "lower-atmosphere",
+  "description": "A dry lower-atmosphere contrast case where shallow cumulus may fail to form.",
+  "physical_question": "How does insufficient low-level moisture limit cloud formation even with daytime heating?",
+  "learning_goals": ["Compare no-cloud or weak-cloud behavior against the baseline.", "Identify moisture limitation as a possible main limiting factor."],
+  "intended_behavior": "A drier contrast around the baseline shallow-cumulus setup.",
+  "expected_behavior": "Clouds may be delayed, shallow, or absent if the lower atmosphere is too dry.",
+  "controls": [
+    {
+      "id": "low_level_humidity",
+      "label": "Low-level humidity",
+      "description": "Lower-atmosphere moisture relative to the baseline.",
+      "type": "choice",
+      "audience": "product",
+      "default": "drier",
+      "options": [
+        {"value": "drier", "label": "Drier"},
+        {"value": "baseline", "label": "Baseline"},
+        {"value": "more_humid", "label": "More humid"}
+      ],
+      "cm1_mapping_notes": "Future mapping should reduce low-level sounding moisture."
+    },
+    {
+      "id": "surface_heating",
+      "label": "Surface heating",
+      "description": "Heating strength available to grow thermals.",
+      "type": "choice",
+      "audience": "product",
+      "default": "baseline",
+      "options": [
+        {"value": "weaker", "label": "Weaker"},
+        {"value": "baseline", "label": "Baseline"},
+        {"value": "stronger", "label": "Stronger"}
+      ],
+      "cm1_mapping_notes": "Future mapping should adjust idealized heating/flux forcing."
+    }
+  ],
+  "run_size_presets": [
+    {"id": "quick_look", "label": "Quick look", "purpose": "Check whether dry setup suppresses cloud formation.", "expected_runtime": "roughly 10-20 minutes when feasible", "confidence": "lower confidence until locally validated", "output_notes": "coarser cadence acceptable"},
+    {"id": "standard", "label": "Standard", "purpose": "Useful dry contrast result.", "expected_runtime": "normal local run", "confidence": "balanced confidence and runtime", "output_notes": "record failed/weak cloud diagnostics"},
+    {"id": "deep_overnight", "label": "Deep / overnight", "purpose": "Longer dry-case exploration.", "expected_runtime": "may take hours or overnight", "confidence": "higher detail after validation", "output_notes": "output size must be explicit"}
+  ],
+  "expected_diagnostics": {
+    "cloud_formed": false,
+    "first_cloud_time": "record if clouds unexpectedly form",
+    "cloud_base_top": "record if clouds form",
+    "max_updraft": "record maximum vertical velocity",
+    "cloud_water_summary": "summarize near-zero or weak cloud-water signal",
+    "rain_onset": "not expected",
+    "notes": ["Failed cloud formation can be a valid learning result."]
+  },
+  "cm1_template": {
+    "namelist_template": "templates/lower-atmosphere/dry-failed-cumulus/namelist.input.j2",
+    "input_sounding_template": "templates/lower-atmosphere/dry-failed-cumulus/input_sounding.j2",
+    "runtime_files_needed": ["LANDUSE.TBL"],
+    "mapping_notes": "Placeholder mapping until local CM1 validation."
+  },
+  "visualization_defaults": {
+    "primary_field": "qc",
+    "secondary_fields": ["w"],
+    "camera": "orbit view over lower-atmosphere domain",
+    "rendering_method": "cloud-water opacity approximation"
+  },
+  "variation_policy": {
+    "baseline_scenario_id": "baseline-shallow-cumulus",
+    "one_control_at_a_time": true,
+    "suggested_controls": ["low_level_humidity", "surface_heating"],
+    "non_goals": ["large parameter sweeps"]
+  },
+  "warnings": ["Preview estimates are guidance only."],
+  "limitations": ["Dry failure behavior requires local/manual CM1 validation."],
+  "advanced_settings_notes": "Raw CM1 settings remain advanced/developer-only."
+}

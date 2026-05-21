@@ -245,6 +245,8 @@ M1 should include:
 
 Baseline shallow cumulus is the first hero case. Warm rain remains early, but it should not block the baseline Golden Path.
 
+Initial lower-atmosphere templates live under `scenarios/lower-atmosphere/` and should validate against the scenario schema before any package generation work uses them. The templates include teaching goals, expected diagnostics, run-size preset notes, limitations, and one-control variation metadata.
+
 Initial controls should be atmospheric and curated, such as low-level humidity, surface heating, surface moisture, cap strength, cap height, dry air aloft, and mixing/entrainment. Raw namelist fields belong in advanced/developer views.
 
 First variations should favor one-control-at-a-time changes around baseline rather than arbitrary large parameter sweeps.

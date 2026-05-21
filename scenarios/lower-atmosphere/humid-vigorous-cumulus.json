@@ -1,0 +1,76 @@
+{
+  "schema_version": "1",
+  "id": "humid-vigorous-cumulus",
+  "display_name": "Humid Vigorous Cumulus",
+  "category": "lower-atmosphere",
+  "description": "A humid contrast case for stronger or deeper shallow-cumulus behavior.",
+  "physical_question": "How does additional low-level moisture change cloud timing, depth, updrafts, and cloud water?",
+  "learning_goals": ["Compare humid behavior against the baseline.", "Inspect stronger cloud-water and updraft signals without treating preview as truth."],
+  "intended_behavior": "A moister contrast with potentially earlier or deeper cloud development.",
+  "expected_behavior": "Clouds may form earlier, grow deeper, or show stronger cloud-water signals.",
+  "controls": [
+    {
+      "id": "low_level_humidity",
+      "label": "Low-level humidity",
+      "description": "Lower-atmosphere moisture relative to the baseline.",
+      "type": "choice",
+      "audience": "product",
+      "default": "more_humid",
+      "options": [
+        {"value": "drier", "label": "Drier"},
+        {"value": "baseline", "label": "Baseline"},
+        {"value": "more_humid", "label": "More humid"}
+      ],
+      "cm1_mapping_notes": "Future mapping should increase low-level sounding moisture."
+    },
+    {
+      "id": "surface_heating",
+      "label": "Surface heating",
+      "description": "Heating strength available to grow thermals.",
+      "type": "choice",
+      "audience": "product",
+      "default": "baseline",
+      "options": [
+        {"value": "weaker", "label": "Weaker"},
+        {"value": "baseline", "label": "Baseline"},
+        {"value": "stronger", "label": "Stronger"}
+      ],
+      "cm1_mapping_notes": "Future mapping should adjust idealized heating/flux forcing."
+    }
+  ],
+  "run_size_presets": [
+    {"id": "quick_look", "label": "Quick look", "purpose": "Check humid contrast behavior.", "expected_runtime": "roughly 10-20 minutes when feasible", "confidence": "lower confidence until locally validated", "output_notes": "coarser cadence acceptable"},
+    {"id": "standard", "label": "Standard", "purpose": "Useful humid result.", "expected_runtime": "normal local run", "confidence": "balanced confidence and runtime", "output_notes": "record updraft and cloud-water diagnostics"},
+    {"id": "deep_overnight", "label": "Deep / overnight", "purpose": "Longer humid-case exploration.", "expected_runtime": "may take hours or overnight", "confidence": "higher detail after validation", "output_notes": "output size must be explicit"}
+  ],
+  "expected_diagnostics": {
+    "cloud_formed": true,
+    "first_cloud_time": "record possibly earlier first cloud time",
+    "cloud_base_top": "record cloud depth",
+    "max_updraft": "record maximum vertical velocity",
+    "cloud_water_summary": "summarize stronger cloud-water evolution if present",
+    "rain_onset": "record if present, but warm rain has a separate scenario",
+    "notes": ["Humid vigorous behavior is subject to CM1 validation."]
+  },
+  "cm1_template": {
+    "namelist_template": "templates/lower-atmosphere/humid-vigorous-cumulus/namelist.input.j2",
+    "input_sounding_template": "templates/lower-atmosphere/humid-vigorous-cumulus/input_sounding.j2",
+    "runtime_files_needed": ["LANDUSE.TBL"],
+    "mapping_notes": "Placeholder mapping until local CM1 validation."
+  },
+  "visualization_defaults": {
+    "primary_field": "qc",
+    "secondary_fields": ["w", "qr"],
+    "camera": "orbit view over lower-atmosphere domain",
+    "rendering_method": "cloud-water opacity approximation"
+  },
+  "variation_policy": {
+    "baseline_scenario_id": "baseline-shallow-cumulus",
+    "one_control_at_a_time": true,
+    "suggested_controls": ["low_level_humidity", "surface_heating"],
+    "non_goals": ["large parameter sweeps"]
+  },
+  "warnings": ["Preview estimates are guidance only."],
+  "limitations": ["Humid behavior requires local/manual CM1 validation."],
+  "advanced_settings_notes": "Raw CM1 settings remain advanced/developer-only."
+}
