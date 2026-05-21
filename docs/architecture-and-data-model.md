@@ -95,6 +95,20 @@ Turns a scenario + user controls into:
 
 For the Baseline Shallow Cumulus Golden Path, the generated package should preserve the physical question, curated controls, run-size preset, expected diagnostics, expected output fields, and provenance labels before CM1 starts.
 
+The CM1 input generation contract is deterministic and testable before full package generation. It documents the expected generated files, preserves product-facing controls separately from raw namelist/developer settings, and marks namelist/sounding fragments as placeholders until local/manual CM1 validation accepts them.
+
+Cloud-scale defaults for the first lower-atmosphere contract are:
+
+```text
+domain: about 16 km x 16 km x 6 km
+horizontal spacing: about 200 m
+vertical spacing: about 125 m
+runtime: about 7200 s
+output cadence: about 300 s
+```
+
+Scenario-specific deviations from these defaults must be explicit in the scenario template or generated report.
+
 ### Preview Engine
 
 Fast reduced/light predictor.
