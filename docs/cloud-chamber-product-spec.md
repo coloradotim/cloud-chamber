@@ -288,7 +288,11 @@ dry_run_report.json
 runtime_file_checklist.json
 ```
 
-The current Baseline Shallow Cumulus contract renders CM1-facing `namelist.input` using CM1's BOMEX shallow-cumulus reference path (`testcase = 3`, `isnd = 19`) with Cloud Chamber quick-look grid/runtime settings. It also writes a numeric CM1-readable `input_sounding` reference profile, although the baseline namelist uses CM1's built-in BOMEX analytic sounding rather than reading that file by default. These inputs are runnable package candidates, but remain scientifically provisional until the local/manual smoke run in #56 succeeds.
+The current Baseline Shallow Cumulus contract renders CM1-facing `namelist.input` using CM1's BOMEX shallow-cumulus reference path (`testcase = 3`, `isnd = 19`) with Cloud Chamber quick-look grid/runtime settings. It also writes a numeric CM1-readable `input_sounding` reference profile, although the baseline namelist uses CM1's built-in BOMEX analytic sounding rather than reading that file by default.
+
+The first full-sequence NetCDF ingest of `dry-run-157b09a178e1` found 25 model-output files and 25 time steps, but no usable cloud or vertical velocity: `max_qc_kg_kg = 0.0`, `max_w_m_s = 0.0`, and multiple NaN/Infinity caveats in surface and thermodynamic fields. The generated quick-look package therefore now uses a fixed small ocean roughness length (`set_znt = 1`, `cnst_znt = 0.0002`) instead of the reference dynamic roughness / fixed friction-velocity path that produced invalid local output.
+
+A follow-up local/manual validation run, `dry-run-calibration-20260522132903`, confirmed the fixed roughness value is written and CM1 completes with NetCDF output, but it still produces no cloud, no vertical motion, and NaN/Infinity caveats in target fields. This is a stability-oriented Cloud Chamber quick-look calibration attempt, not scientific acceptance. Baseline Shallow Cumulus still needs deeper CM1 namelist/sounding calibration before it can serve as the Golden Path cloud-producing case.
 
 Default cloud-scale assumptions:
 

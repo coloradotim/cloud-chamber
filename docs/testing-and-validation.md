@@ -119,6 +119,8 @@ visualizer provenance labels
 visual inspection notes
 ```
 
+The first full-sequence NetCDF re-ingest of `dry-run-157b09a178e1` evaluated 25 model-output files from 0 to 7200 seconds and still found no cloud formation, with `max_qc_kg_kg = 0.0`, `max_w_m_s = 0.0`, and NaN/Infinity caveats in target and surface fields. The next calibration attempt regenerated the quick-look package with fixed small ocean roughness. That follow-up run, `dry-run-calibration-20260522132903`, completed with NetCDF output but still found no cloud formation, no vertical motion, and NaN/Infinity caveats. Acceptance still requires a future fresh manual run, full-sequence ingest, and recorded diagnostics; the fixed-roughness change alone is not scientific acceptance.
+
 ### Baseline Shallow Cumulus Manual Smoke-Run Loop
 
 Use this loop after a dry-run package has been generated and before broader CM1 launcher work is trusted. This is a manual/local/offline validation path; do not run it in CI.
