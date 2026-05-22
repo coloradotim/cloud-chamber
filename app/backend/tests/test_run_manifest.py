@@ -108,3 +108,17 @@ def test_completed_manifest_cannot_be_dry_run_package() -> None:
 
     with pytest.raises(RunManifestError, match="cannot be dry-run packages"):
         validate_run_manifest(data)
+
+
+def test_completed_process_without_output_product_state_is_valid_needs_review() -> None:
+    data = valid_manifest_data()
+    data["lifecycle_state"] = "completed"
+    data["validation_status"] = "needs_review"
+    provenance = data["provenance"]
+    assert isinstance(provenance, dict)
+    provenance["product_state"] = "process_completed_no_output"
+
+    manifest = validate_run_manifest(data)
+
+    assert manifest.lifecycle_state == LifecycleState.COMPLETED
+    assert manifest.provenance.product_state == ProductState.PROCESS_COMPLETED_NO_OUTPUT

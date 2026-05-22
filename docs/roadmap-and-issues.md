@@ -208,6 +208,8 @@ The first implementation uses fake subprocesses in automated tests and does not 
 
 #56 found that the original dry-run package was still placeholder-only. The follow-up package-readiness work must keep #56 open/blocked until Baseline Shallow Cumulus packages generate CM1-facing inputs, reject placeholder-only packages before launch, stage local runtime files such as `LANDUSE.TBL`, and then retry the manual smoke run.
 
+The next calibration pass from #60 distinguishes process completion from usable CM1 result completion: exit code 0 without NetCDF, `cm1out*`, or stats-style output should be `needs_review`, not an accepted result.
+
 ## M3 Results Library + Experiment Notebook
 
 Goal: turn CM1 outputs into replayable, inspectable, searchable experiment notebook entries.

@@ -261,7 +261,7 @@ def render_cm1_namelist(contract: CM1InputContract) -> str:
  kdiv    = 0.10,
  alph    = 0.60,
  rdalpha = 3.3333333333e-3,
- zd      =  2500.0,
+ zd      =  4500.0,
  xhd     = 100000.0,
  alphobc = 60.0,
  umove   = 12.5,

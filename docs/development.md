@@ -79,6 +79,8 @@ The local run manager assumes one active CM1 run at a time for the MVP. It captu
 
 Launch preflight also refuses placeholder-only CM1-facing files. Older packages containing `&cloud_chamber_domain` or notes-only `input_sounding` files must be regenerated before launch. For Baseline Shallow Cumulus, generated packages now use a CM1 BOMEX shallow-cumulus namelist path with quick-look grid/runtime settings; the package remains provisional until #56 is retried manually.
 
+Baseline Shallow Cumulus currently uses `zd = 4500.0` for Rayleigh damping in the 6 km quick-look domain. Preflight rejects namelists where Rayleigh damping would begin at or below half the configured domain top. A CM1 process that exits `0` without NetCDF, `cm1out*`, or stats-style output is recorded as `validation_status: needs_review` and `product_state: process_completed_no_output`, not as a completed usable CM1 result.
+
 Required runtime files such as `LANDUSE.TBL` are copied from the configured local CM1 run directory into the generated package at launch time. These copied files are local/generated artifacts under `~/CloudChamber/runs/<run-id>/`; do not commit them.
 
 The backend skeleton uses Python/FastAPI with pytest, ruff, and mypy. Data/science work should prefer xarray, netCDF4 or h5netcdf, numpy, and pydantic when those layers are added.
