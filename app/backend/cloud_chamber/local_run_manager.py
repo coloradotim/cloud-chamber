@@ -205,17 +205,23 @@ class LocalRunManager:
         active = self._active
         self._close_active()
         manifest = load_run_manifest(active.manifest_path)
+        run_dir = Path(manifest.generated_inputs.run_directory).expanduser()
         completed_state = LifecycleState.COMPLETED if exit_code == 0 else LifecycleState.FAILED
-        product_state = (
-            ProductState.COMPLETED_CM1_RESULT
-            if exit_code == 0
-            else ProductState.FAILED_CANCELED_CM1_RUN
-        )
+        if exit_code == 0 and _usable_output_paths(run_dir):
+            product_state = ProductState.COMPLETED_CM1_RESULT
+            validation_status = manifest.validation_status
+        elif exit_code == 0:
+            product_state = ProductState.PROCESS_COMPLETED_NO_OUTPUT
+            validation_status = ValidationStatus.NEEDS_REVIEW
+        else:
+            product_state = ProductState.FAILED_CANCELED_CM1_RUN
+            validation_status = ValidationStatus.FAILED
         updated = self._with_state(
             manifest,
             state=completed_state,
             product_state=product_state,
             exit_code=exit_code,
+            validation_status=validation_status,
         )
         write_run_manifest(active.manifest_path, updated)
 
@@ -236,6 +242,7 @@ class LocalRunManager:
         stdout_log: Path | None = None,
         stderr_log: Path | None = None,
         exit_code: int | None = None,
+        validation_status: ValidationStatus | None = None,
     ) -> RunManifest:
         now = datetime.now(UTC)
         existing_execution = manifest.execution
@@ -267,7 +274,7 @@ class LocalRunManager:
                 "stderr_log": str(stderr_log) if stderr_log else existing_execution.stderr_log,
             }
         )
-        validation_status = (
+        next_validation_status = validation_status or (
             ValidationStatus.FAILED
             if state in {LifecycleState.FAILED, LifecycleState.CANCELED}
             else manifest.validation_status
@@ -275,7 +282,7 @@ class LocalRunManager:
         return manifest.model_copy(
             update={
                 "lifecycle_state": state,
-                "validation_status": validation_status,
+                "validation_status": next_validation_status,
                 "runtime_paths": RuntimePaths.model_validate(runtime_paths.model_dump()),
                 "execution": ExecutionMetadata.model_validate(execution.model_dump()),
                 "provenance": ProvenanceMetadata(product_state=product_state),
@@ -299,7 +306,14 @@ def _status_from_manifest(manifest: RunManifest, manifest_path: Path) -> RunStat
 
 
 def _existing_output_paths(run_dir: Path) -> tuple[Path, ...]:
-    patterns = ("*.nc", "*.nc4", "*.cdf", "*.netcdf", "cm1out*")
+    return _matching_paths(run_dir, ("*.nc", "*.nc4", "*.cdf", "*.netcdf", "cm1out*", "stats*"))
+
+
+def _usable_output_paths(run_dir: Path) -> tuple[Path, ...]:
+    return _matching_paths(run_dir, ("*.nc", "*.nc4", "*.cdf", "*.netcdf", "cm1out*", "stats*"))
+
+
+def _matching_paths(run_dir: Path, patterns: tuple[str, ...]) -> tuple[Path, ...]:
     paths: list[Path] = []
     for pattern in patterns:
         paths.extend(run_dir.glob(pattern))
@@ -322,6 +336,8 @@ def _preflight_cm1_inputs(manifest: RunManifest) -> None:
             raise LocalRunManagerError(
                 f"Refusing to launch placeholder-only CM1 input: {path.name}"
             )
+        if path.name == "namelist.input":
+            _validate_rayleigh_damping(text)
 
 
 def _is_placeholder_input(text: str) -> bool:
@@ -331,6 +347,45 @@ def _is_placeholder_input(text: str) -> bool:
         or "cloud chamber input_sounding notes" in lowered
         or "&cloud_chamber_domain" in lowered
     )
+
+
+def _validate_rayleigh_damping(namelist_text: str) -> None:
+    zd = _namelist_float(namelist_text, "zd")
+    maxz = _domain_top_m(namelist_text)
+    if zd is None or maxz is None:
+        return
+    if zd <= maxz / 2:
+        raise LocalRunManagerError(
+            "Rayleigh damping starts too low for the configured domain: "
+            f"zd={zd:g}, maxz={maxz:g}. Damping must not cover more than half the domain."
+        )
+
+
+def _domain_top_m(namelist_text: str) -> float | None:
+    ztop = _namelist_float(namelist_text, "ztop")
+    if ztop is not None:
+        return ztop
+    nz = _namelist_float(namelist_text, "nz")
+    dz = _namelist_float(namelist_text, "dz")
+    if nz is None or dz is None:
+        return None
+    return nz * dz
+
+
+def _namelist_float(namelist_text: str, name: str) -> float | None:
+    prefix = f"{name.lower()}"
+    for line in namelist_text.splitlines():
+        stripped = line.split("!", 1)[0].strip()
+        if not stripped.lower().startswith(prefix):
+            continue
+        if "=" not in stripped:
+            continue
+        value = stripped.split("=", 1)[1].split(",", 1)[0].strip()
+        try:
+            return float(value)
+        except ValueError:
+            return None
+    return None
 
 
 def _stage_required_runtime_files(

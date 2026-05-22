@@ -152,10 +152,12 @@ The first implemented local run manager is intentionally conservative:
 - lifecycle states move through queued, running, completed, failed, or canceled;
 - launch refuses packages that already contain output-like files such as NetCDF or `cm1out*`;
 - launch refuses placeholder-only `namelist.input` or notes-only `input_sounding` files;
+- launch rejects Rayleigh damping settings that start too low and would damp more than half the vertical domain;
 - launch stages required local runtime files such as `LANDUSE.TBL` from the configured CM1 run directory into the generated package directory;
+- process exit code 0 is not enough to mark a usable completed CM1 result; output-like files must exist before `completed_cm1_result` is used;
 - tests inject fake subprocesses, so CI never needs a real CM1 executable.
 
-Real CM1 execution remains a manual/local responsibility until the user has local settings and runtime files in place. The manager must fail clearly when CM1 paths are missing rather than pretending a run started.
+Real CM1 execution remains a manual/local responsibility until the user has local settings and runtime files in place. The manager must fail clearly when CM1 paths are missing rather than pretending a run started. If the process exits successfully but no NetCDF, `cm1out*`, or stats-style output exists, the manifest remains `completed` at the process level but uses `validation_status: needs_review` and `product_state: process_completed_no_output`.
 
 ### Output Ingester
 

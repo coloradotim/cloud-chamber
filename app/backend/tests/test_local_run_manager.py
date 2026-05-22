@@ -106,7 +106,7 @@ def test_launch_constructs_cm1_command_and_captures_logs(tmp_path: Path) -> None
     assert manifest.execution.command == [str(settings.cm1_run_dir / "cm1.exe")]
 
 
-def test_completed_process_updates_manifest_state(tmp_path: Path) -> None:
+def test_exit_zero_without_output_needs_review_not_completed_result(tmp_path: Path) -> None:
     manifest_path = dry_run_manifest_path(tmp_path)
     fake_process = FakeProcess()
     manager = LocalRunManager(
@@ -122,6 +122,28 @@ def test_completed_process_updates_manifest_state(tmp_path: Path) -> None:
     assert status.exit_code == 0
     manifest = load_run_manifest(manifest_path)
     assert manifest.lifecycle_state == LifecycleState.COMPLETED
+    assert manifest.validation_status.value == "needs_review"
+    assert manifest.provenance.product_state == ProductState.PROCESS_COMPLETED_NO_OUTPUT
+
+
+def test_exit_zero_with_output_marks_completed_result(tmp_path: Path) -> None:
+    manifest_path = dry_run_manifest_path(tmp_path)
+    run_dir = tmp_path / "CloudChamber" / "runs" / "run-001"
+    fake_process = FakeProcess()
+    manager = LocalRunManager(
+        settings=fake_settings(tmp_path),
+        process_factory=FakeProcessFactory(fake_process),
+    )
+    manager.launch(manifest_path)
+    (run_dir / "cm1out_000001.nc").write_text("fake output")
+
+    fake_process.exit_code = 0
+    status = manager.status(manifest_path)
+
+    assert status.lifecycle_state == LifecycleState.COMPLETED
+    assert status.exit_code == 0
+    manifest = load_run_manifest(manifest_path)
+    assert manifest.validation_status.value == "valid"
     assert manifest.provenance.product_state == ProductState.COMPLETED_CM1_RESULT
 
 
@@ -210,6 +232,20 @@ def test_launch_refuses_placeholder_only_inputs(tmp_path: Path) -> None:
     manager = LocalRunManager(settings=settings)
 
     with pytest.raises(LocalRunManagerError, match="placeholder-only CM1 input"):
+        manager.launch(manifest_path)
+
+
+def test_launch_refuses_rayleigh_damping_over_half_domain(tmp_path: Path) -> None:
+    settings = fake_settings(tmp_path)
+    manifest_path = dry_run_manifest_path(tmp_path)
+    run_dir = tmp_path / "CloudChamber" / "runs" / "run-001"
+    namelist = (run_dir / "namelist.input").read_text()
+    (run_dir / "namelist.input").write_text(
+        namelist.replace("zd      =  4500.0,", "zd      =  2500.0,")
+    )
+    manager = LocalRunManager(settings=settings)
+
+    with pytest.raises(LocalRunManagerError, match="Rayleigh damping starts too low"):
         manager.launch(manifest_path)
 
 

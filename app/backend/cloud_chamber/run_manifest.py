@@ -40,6 +40,7 @@ class ProductState(StrEnum):
     PACKAGED_DRY_RUN_OUTPUT = "packaged_dry_run_output"
     QUEUED_RUNNING_CM1_PROCESS = "queued_running_cm1_process"
     COMPLETED_CM1_RESULT = "completed_cm1_result"
+    PROCESS_COMPLETED_NO_OUTPUT = "process_completed_no_output"
     FAILED_CANCELED_CM1_RUN = "failed_canceled_cm1_run"
     INGESTED_RESULT_METADATA = "ingested_result_metadata"
     VISUALIZER_INTERPRETATION = "visualizer_interpretation"

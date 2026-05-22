@@ -42,7 +42,7 @@ Baseline Shallow Cumulus input tests should assert the generated `namelist.input
 Dry-run package tests should use temporary runtime homes and assert overwrite protection, manifest/report content, CM1-facing input readiness, and absence of NetCDF output. A dry-run package is packaged configuration and metadata only; it is not a launched process or completed CM1 result.
 
 Local launcher tests must inject fake subprocess handles. They should assert command construction, stdout/stderr log capture, one-active-run refusal, queued/running/completed/failed/canceled state transitions, missing-settings failure, and protection against pre-existing output-like files. They must not launch real CM1 or require local runtime files in CI.
-They should also assert placeholder-only packages are rejected before launch and required runtime files such as `LANDUSE.TBL` are staged from temp CM1 run directories, not from the repo.
+They should also assert placeholder-only packages are rejected before launch, Rayleigh damping/domain checks catch damping over more than half the domain, required runtime files such as `LANDUSE.TBL` are staged from temp CM1 run directories, and exit code 0 without output becomes `needs_review` rather than `completed_cm1_result`.
 
 Local validation uses `scripts/check.sh` as the canonical gate. CI mirrors it through split equivalent jobs so branch protection can require `Frontend`, `Backend`, and `Scripts and config` independently. Keep the local script and CI jobs in sync as new implemented layers add fast checks.
 
@@ -120,7 +120,8 @@ Use this loop after a dry-run package has been generated and before broader CM1 
    - confirm the selected run-size preset, physical question, controls, expected diagnostics, and visualization defaults match the intended scenario;
    - confirm `dry_run_report.json` says CM1 was not launched and is not a completed result;
    - confirm `namelist.input` is not the old `&cloud_chamber_domain` placeholder fragment;
-   - confirm `input_sounding` is not notes-only.
+   - confirm `input_sounding` is not notes-only;
+   - confirm Rayleigh damping starts above half the configured domain top.
 3. Compare generated files against the local CM1 runtime requirements:
    - check `~/CloudChamber/settings.json`, `CLOUD_CHAMBER_CM1_ROOT`, or the default probe paths;
    - expected local probes include `/Users/timpeterson/cm1r21.1` and `/Users/timpeterson/cm1r21.1/run`;
