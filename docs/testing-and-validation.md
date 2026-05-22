@@ -37,10 +37,12 @@ These tests must not require CM1 source, CM1 binaries, NetCDF output, generated 
 Scenario-template tests should cover both valid templates and targeted invalid templates, including missing product-facing controls, invalid choice defaults, missing runtime profiles, and variation policies that reference unknown controls. These tests validate metadata only; they do not generate CM1 output or launch CM1.
 
 CM1 input contract tests should use structured/snapshot assertions for generated fragments such as namelist defaults and input-sounding notes. These tests must not write generated run packages into the repo, launch CM1, or require real CM1 runtime files.
+Baseline Shallow Cumulus input tests should assert the generated `namelist.input` is no longer the old `&cloud_chamber_domain` placeholder fragment and that generated `input_sounding` is numeric/CM1-readable rather than notes-only.
 
-Dry-run package tests should use temporary runtime homes and assert overwrite protection, manifest/report content, and absence of NetCDF output. A dry-run package is packaged metadata and placeholder CM1 inputs only; it is not a completed CM1 result.
+Dry-run package tests should use temporary runtime homes and assert overwrite protection, manifest/report content, CM1-facing input readiness, and absence of NetCDF output. A dry-run package is packaged configuration and metadata only; it is not a launched process or completed CM1 result.
 
 Local launcher tests must inject fake subprocess handles. They should assert command construction, stdout/stderr log capture, one-active-run refusal, queued/running/completed/failed/canceled state transitions, missing-settings failure, and protection against pre-existing output-like files. They must not launch real CM1 or require local runtime files in CI.
+They should also assert placeholder-only packages are rejected before launch and required runtime files such as `LANDUSE.TBL` are staged from temp CM1 run directories, not from the repo.
 
 Local validation uses `scripts/check.sh` as the canonical gate. CI mirrors it through split equivalent jobs so branch protection can require `Frontend`, `Backend`, and `Scripts and config` independently. Keep the local script and CI jobs in sync as new implemented layers add fast checks.
 
@@ -116,7 +118,9 @@ Use this loop after a dry-run package has been generated and before broader CM1 
 2. Inspect the package before launch:
    - confirm `run_manifest.json`, `case_manifest.json`, `namelist.input`, `input_sounding`, `dry_run_report.json`, and `runtime_file_checklist.json` exist;
    - confirm the selected run-size preset, physical question, controls, expected diagnostics, and visualization defaults match the intended scenario;
-   - confirm `dry_run_report.json` says CM1 was not launched and is not a completed result.
+   - confirm `dry_run_report.json` says CM1 was not launched and is not a completed result;
+   - confirm `namelist.input` is not the old `&cloud_chamber_domain` placeholder fragment;
+   - confirm `input_sounding` is not notes-only.
 3. Compare generated files against the local CM1 runtime requirements:
    - check `~/CloudChamber/settings.json`, `CLOUD_CHAMBER_CM1_ROOT`, or the default probe paths;
    - expected local probes include `/Users/timpeterson/cm1r21.1` and `/Users/timpeterson/cm1r21.1/run`;

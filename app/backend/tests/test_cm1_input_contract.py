@@ -51,37 +51,40 @@ def test_cm1_contract_keeps_product_controls_separate_from_mapping_notes() -> No
     assert low_level_humidity.audience == ControlAudience.PRODUCT
     assert low_level_humidity.selected_value == "more_humid"
     assert "sounding moisture" in low_level_humidity.cm1_mapping_notes
-    assert "placeholder until local/manual CM1 validation" in low_level_humidity.scientific_status
-
-
-def test_rendered_namelist_fragment_is_deterministic_snapshot() -> None:
-    contract = build_cm1_input_contract(baseline_scenario())
-
-    assert render_namelist_fragment(contract) == (
-        "# Cloud Chamber CM1 namelist fragment\n"
-        "# Status: placeholder until local/manual CM1 validation\n"
-        "# scenario_id = baseline-shallow-cumulus\n"
-        "&cloud_chamber_domain\n"
-        "  x_extent_km = 16,\n"
-        "  y_extent_km = 16,\n"
-        "  z_extent_km = 6,\n"
-        "  dx_m = 200,\n"
-        "  dz_m = 125,\n"
-        "  runtime_seconds = 7200,\n"
-        "  output_cadence_seconds = 300,\n"
-        "/\n"
+    assert "provisional until local/manual smoke-run validation" in (
+        low_level_humidity.scientific_status
     )
 
 
-def test_rendered_sounding_notes_include_only_product_controls() -> None:
+def test_rendered_namelist_is_cm1_ready_bomex_baseline() -> None:
     contract = build_cm1_input_contract(baseline_scenario())
-    notes = render_input_sounding_notes(contract)
+    namelist = render_namelist_fragment(contract)
 
-    assert "# physical_question = How do low-level moisture" in notes
-    assert "# - low_level_humidity = baseline" in notes
-    assert "# - surface_heating = baseline" in notes
-    assert "# - cap_strength = baseline" in notes
-    assert "advanced/developer" not in notes
+    assert "&param0" in namelist
+    assert "nx           =      80," in namelist
+    assert "ny           =      80," in namelist
+    assert "nz           =      48," in namelist
+    assert "dx     =   200.0," in namelist
+    assert "dy     =   200.0," in namelist
+    assert "dz     =   125.0," in namelist
+    assert "timax  = 7200.0," in namelist
+    assert "tapfrq =  300.0," in namelist
+    assert "testcase  =  3," in namelist
+    assert "isnd      = 19," in namelist
+    assert "&cloud_chamber_domain" not in namelist
+    assert "placeholder until local/manual CM1 validation" not in namelist
+
+
+def test_rendered_input_sounding_is_cm1_readable_not_notes() -> None:
+    contract = build_cm1_input_contract(baseline_scenario())
+    sounding = render_input_sounding_notes(contract)
+    lines = sounding.splitlines()
+
+    assert len(lines[0].split()) == 3
+    assert all(len(line.split()) == 5 for line in lines[1:])
+    assert float(lines[-1].split()[0]) > 6000
+    assert "Cloud Chamber input_sounding notes" not in sounding
+    assert "placeholder until local/manual CM1 validation" not in sounding
 
 
 def test_cm1_contract_includes_expected_diagnostics_and_visualization_defaults() -> None:

@@ -87,16 +87,19 @@ def test_dry_run_package_validates_controls_before_writing(tmp_path: Path) -> No
     assert not (tmp_path / "runs" / "run-004").exists()
 
 
-def test_dry_run_package_writes_placeholder_inputs_not_outputs(tmp_path: Path) -> None:
+def test_dry_run_package_writes_cm1_ready_inputs_not_outputs(tmp_path: Path) -> None:
     result = generate_dry_run_package(
         scenario_data=load_baseline_template(),
         runtime_home=tmp_path,
         run_id="run-005",
     )
+    namelist = (result.package_dir / "namelist.input").read_text()
+    sounding = (result.package_dir / "input_sounding").read_text()
 
-    assert (
-        "placeholder until local/manual CM1 validation"
-        in (result.package_dir / "namelist.input").read_text()
-    )
-    assert "Product controls" in (result.package_dir / "input_sounding").read_text()
+    assert "&param0" in namelist
+    assert "testcase  =  3," in namelist
+    assert "&cloud_chamber_domain" not in namelist
+    assert "placeholder until local/manual CM1 validation" not in namelist
+    assert len(sounding.splitlines()[0].split()) == 3
+    assert "Cloud Chamber input_sounding notes" not in sounding
     assert not list(result.package_dir.glob("*.nc"))

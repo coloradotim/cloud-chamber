@@ -258,7 +258,7 @@ Initial scenario templates should include:
 
 Baseline shallow cumulus is the first hero case. Warm rain remains early but does not block the Golden Path.
 
-The initial lower-atmosphere templates live under `scenarios/lower-atmosphere/` as validated JSON metadata. They are honest scenario definitions and teaching contracts, not final scientific calibration. CM1 mapping fields are placeholders until local/manual CM1 validation accepts the generated configurations.
+The initial lower-atmosphere templates live under `scenarios/lower-atmosphere/` as validated JSON metadata. They are honest scenario definitions and teaching contracts, not final scientific calibration. Baseline Shallow Cumulus now has a CM1-facing package candidate, while broader control-to-CM1 mapping fields remain provisional until local/manual CM1 validation accepts them.
 
 ## CM1 Input Generation Contract
 
@@ -273,7 +273,7 @@ dry_run_report.json
 runtime_file_checklist.json
 ```
 
-The current contract can render deterministic namelist and sounding fragments for review, but these fragments are scientific placeholders until local/manual CM1 validation. They must keep product-facing controls separate from advanced/developer CM1 settings.
+The current Baseline Shallow Cumulus contract renders CM1-facing `namelist.input` using CM1's BOMEX shallow-cumulus reference path (`testcase = 3`, `isnd = 19`) with Cloud Chamber quick-look grid/runtime settings. It also writes a numeric CM1-readable `input_sounding` reference profile, although the baseline namelist uses CM1's built-in BOMEX analytic sounding rather than reading that file by default. These inputs are runnable package candidates, but remain scientifically provisional until the local/manual smoke run in #56 succeeds.
 
 Default cloud-scale assumptions:
 
@@ -297,6 +297,8 @@ Dry-run package generation creates these files for review without launching CM1:
 - `runtime_file_checklist.json`
 
 The dry-run report must state that it is not a completed CM1 result, record that CM1 was not launched, include selected run-size preset, include physical question and controls, include expected diagnostics and visualization defaults, and use `unknown until validated` for unvalidated cost/size estimates.
+
+Launch preflight must reject placeholder-only CM1-facing files, including old `&cloud_chamber_domain` fragments or notes-only `input_sounding` artifacts. Required external runtime files such as `LANDUSE.TBL` are copied from the configured local CM1 run directory into the generated runtime package at launch time. These staged files are local/generated artifacts and must not be committed.
 
 ## Curated Controls And Diagnostics
 
