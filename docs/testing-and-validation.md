@@ -42,7 +42,7 @@ Baseline Shallow Cumulus input tests should assert the generated `namelist.input
 Dry-run package tests should use temporary runtime homes and assert overwrite protection, manifest/report content, CM1-facing input readiness, and absence of NetCDF output. A dry-run package is packaged configuration and metadata only; it is not a launched process or completed CM1 result.
 
 Local launcher tests must inject fake subprocess handles. They should assert command construction, stdout/stderr log capture, one-active-run refusal, queued/running/completed/failed/canceled state transitions, missing-settings failure, and protection against pre-existing output-like files. They must not launch real CM1 or require local runtime files in CI.
-They should also assert placeholder-only packages are rejected before launch, Rayleigh damping/domain checks catch damping over more than half the domain, required runtime files such as `LANDUSE.TBL` are staged from temp CM1 run directories, and exit code 0 without output becomes `needs_review` rather than `completed_cm1_result`.
+They should also assert placeholder-only packages are rejected before launch, Rayleigh damping/domain checks catch damping over more than half the domain, required runtime files such as `LANDUSE.TBL` are staged from temp CM1 run directories, `.dat/.ctl` and NetCDF output artifacts are cataloged separately in the manifest, stderr floating-point flags are surfaced as runtime warnings, and exit code 0 without output becomes `needs_review` rather than `completed_cm1_result`.
 
 Local validation uses `scripts/check.sh` as the canonical gate. CI mirrors it through split equivalent jobs so branch protection can require `Frontend`, `Backend`, and `Scripts and config` independently. Keep the local script and CI jobs in sync as new implemented layers add fast checks.
 
@@ -136,8 +136,10 @@ Use this loop after a dry-run package has been generated and before broader CM1 
 7. Detect outputs without committing them:
    - record output directory and file names/counts;
    - confirm whether NetCDF files appeared;
+   - if `.dat/.ctl` files appeared, record them as raw CM1 artifacts rather than ingested results;
    - estimate local output size;
-   - leave NetCDF, logs, validation reports, copied runtime files, and generated run folders out of git.
+   - surface stderr floating-point exception flags as caveats, not automatic failures;
+   - leave NetCDF, `.dat/.ctl` output, logs, validation reports, copied runtime files, and generated run folders out of git.
 8. If ingest tooling exists, run it locally and record the ingest status. Until then, note what a future ingest should read and any schema gaps found.
 9. Record result-card/notebook acceptance notes:
    - scenario name and physical question;

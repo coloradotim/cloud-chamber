@@ -177,12 +177,12 @@ Generate Baseline Shallow Cumulus dry-run package
 -> manually stage package into the local CM1 run workflow
 -> launch CM1 outside CI
 -> capture logs/status/runtime/output paths
--> detect NetCDF output without committing it
+-> detect NetCDF or raw CM1 .dat/.ctl output without committing it
 -> record diagnostics and limitations
 -> document ingest/result-card/visualizer readiness notes
 ```
 
-Expected local probes include `CLOUD_CHAMBER_CM1_ROOT`, `~/CloudChamber/settings.json`, `/Users/timpeterson/cm1r21.1`, and `/Users/timpeterson/cm1r21.1/run`. Generated CM1 outputs, logs, NetCDF files, validation reports, copied runtime files, `LANDUSE.TBL`, and local run folders must stay gitignored.
+Expected local probes include `CLOUD_CHAMBER_CM1_ROOT`, `~/CloudChamber/settings.json`, `/Users/timpeterson/cm1r21.1`, and `/Users/timpeterson/cm1r21.1/run`. Generated CM1 outputs, logs, NetCDF files, `.dat/.ctl` files, validation reports, copied runtime files, `LANDUSE.TBL`, and local run folders must stay gitignored.
 
 The direct follow-up is #29: automate the local CM1 launcher and status/log monitor with one local run at a time, explicit failure/cancel states, and tests that use fake subprocesses rather than real CM1.
 
@@ -208,7 +208,9 @@ The first implementation uses fake subprocesses in automated tests and does not 
 
 #56 found that the original dry-run package was still placeholder-only. The follow-up package-readiness work must keep #56 open/blocked until Baseline Shallow Cumulus packages generate CM1-facing inputs, reject placeholder-only packages before launch, stage local runtime files such as `LANDUSE.TBL`, and then retry the manual smoke run.
 
-The next calibration pass from #60 distinguishes process completion from usable CM1 result completion: exit code 0 without NetCDF, `cm1out*`, or stats-style output should be `needs_review`, not an accepted result.
+#56 produced the first accepted-with-notes local CM1 execution from a Cloud Chamber-generated Baseline Shallow Cumulus package. That run produced `cm1out_*.dat` and `.ctl` artifacts rather than NetCDF, so #62 bridges M2 to M3 by cataloging raw CM1 output artifacts honestly while keeping NetCDF as the preferred ingest path.
+
+#60 distinguishes process completion from usable CM1 result completion: exit code 0 without NetCDF or raw CM1 `.dat/.ctl` output should be `needs_review`, not an accepted result.
 
 ## M3 Results Library + Experiment Notebook
 
@@ -217,6 +219,7 @@ Goal: turn CM1 outputs into replayable, inspectable, searchable experiment noteb
 Deliverables:
 
 - NetCDF ingest.
+- Raw CM1 `.dat/.ctl` artifact cataloging as a transitional/fallback record, not full ingest.
 - run metadata extraction.
 - diagnostics summary.
 - logs/result status.

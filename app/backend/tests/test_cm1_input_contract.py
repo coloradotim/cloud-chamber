@@ -71,6 +71,8 @@ def test_rendered_namelist_is_cm1_ready_bomex_baseline() -> None:
     assert "tapfrq =  300.0," in namelist
     assert "zd      =  4500.0," in namelist
     assert "ztop      =  6000.0," in namelist
+    assert "output_format    = 2," in namelist
+    assert "output_filetype  = 2," in namelist
     assert "testcase  =  3," in namelist
     assert "isnd      = 19," in namelist
     assert "&cloud_chamber_domain" not in namelist

@@ -17,6 +17,7 @@ from typing import Protocol, TextIO
 from cloud_chamber.run_manifest import (
     ExecutionMetadata,
     LifecycleState,
+    OutputMetadata,
     ProductState,
     ProvenanceMetadata,
     RunManifest,
@@ -68,6 +69,15 @@ class _ActiveRun:
     process: ProcessHandle
     stdout_handle: TextIO
     stderr_handle: TextIO
+
+
+NETCDF_OUTPUT_PATTERNS = ("*.nc", "*.nc4", "*.cdf", "*.netcdf")
+RAW_CM1_OUTPUT_PATTERNS = ("cm1out_*.dat", "cm1out_*.ctl")
+FLOATING_POINT_WARNING_FLAGS = (
+    "IEEE_INVALID_FLAG",
+    "IEEE_DIVIDE_BY_ZERO",
+    "IEEE_OVERFLOW_FLAG",
+)
 
 
 def default_process_factory(
@@ -206,8 +216,10 @@ class LocalRunManager:
         self._close_active()
         manifest = load_run_manifest(active.manifest_path)
         run_dir = Path(manifest.generated_inputs.run_directory).expanduser()
+        output_metadata = _detect_output_metadata(run_dir, manifest.execution.stderr_log)
+        output_exists = bool(output_metadata.netcdf_paths or output_metadata.raw_cm1_artifacts)
         completed_state = LifecycleState.COMPLETED if exit_code == 0 else LifecycleState.FAILED
-        if exit_code == 0 and _usable_output_paths(run_dir):
+        if exit_code == 0 and output_exists:
             product_state = ProductState.COMPLETED_CM1_RESULT
             validation_status = manifest.validation_status
         elif exit_code == 0:
@@ -222,6 +234,7 @@ class LocalRunManager:
             product_state=product_state,
             exit_code=exit_code,
             validation_status=validation_status,
+            outputs=output_metadata,
         )
         write_run_manifest(active.manifest_path, updated)
 
@@ -243,6 +256,7 @@ class LocalRunManager:
         stderr_log: Path | None = None,
         exit_code: int | None = None,
         validation_status: ValidationStatus | None = None,
+        outputs: OutputMetadata | None = None,
     ) -> RunManifest:
         now = datetime.now(UTC)
         existing_execution = manifest.execution
@@ -285,6 +299,7 @@ class LocalRunManager:
                 "validation_status": next_validation_status,
                 "runtime_paths": RuntimePaths.model_validate(runtime_paths.model_dump()),
                 "execution": ExecutionMetadata.model_validate(execution.model_dump()),
+                "outputs": outputs or manifest.outputs,
                 "provenance": ProvenanceMetadata(product_state=product_state),
                 "updated_at": now,
             }
@@ -306,11 +321,34 @@ def _status_from_manifest(manifest: RunManifest, manifest_path: Path) -> RunStat
 
 
 def _existing_output_paths(run_dir: Path) -> tuple[Path, ...]:
-    return _matching_paths(run_dir, ("*.nc", "*.nc4", "*.cdf", "*.netcdf", "cm1out*", "stats*"))
+    return _output_artifact_paths(run_dir)
 
 
-def _usable_output_paths(run_dir: Path) -> tuple[Path, ...]:
-    return _matching_paths(run_dir, ("*.nc", "*.nc4", "*.cdf", "*.netcdf", "cm1out*", "stats*"))
+def _output_artifact_paths(run_dir: Path) -> tuple[Path, ...]:
+    return _matching_paths(run_dir, NETCDF_OUTPUT_PATTERNS + RAW_CM1_OUTPUT_PATTERNS)
+
+
+def _detect_output_metadata(run_dir: Path, stderr_log: str | None) -> OutputMetadata:
+    netcdf_paths = _matching_paths(run_dir, NETCDF_OUTPUT_PATTERNS)
+    raw_cm1_artifacts = _matching_paths(run_dir, RAW_CM1_OUTPUT_PATTERNS)
+    return OutputMetadata(
+        netcdf_paths=[str(path) for path in netcdf_paths],
+        raw_cm1_artifacts=[str(path) for path in raw_cm1_artifacts],
+        runtime_warnings=_runtime_warnings_from_stderr(stderr_log),
+    )
+
+
+def _runtime_warnings_from_stderr(stderr_log: str | None) -> list[str]:
+    if not stderr_log:
+        return []
+    path = Path(stderr_log).expanduser()
+    if not path.exists():
+        return []
+    text = path.read_text(errors="replace")
+    flags = [flag for flag in FLOATING_POINT_WARNING_FLAGS if flag in text]
+    if not flags:
+        return []
+    return ["CM1 stderr reported floating-point exception flags: " + ", ".join(flags)]
 
 
 def _matching_paths(run_dir: Path, patterns: tuple[str, ...]) -> tuple[Path, ...]:

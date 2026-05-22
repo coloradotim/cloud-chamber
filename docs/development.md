@@ -79,7 +79,16 @@ The local run manager assumes one active CM1 run at a time for the MVP. It captu
 
 Launch preflight also refuses placeholder-only CM1-facing files. Older packages containing `&cloud_chamber_domain` or notes-only `input_sounding` files must be regenerated before launch. For Baseline Shallow Cumulus, generated packages now use a CM1 BOMEX shallow-cumulus namelist path with quick-look grid/runtime settings; the package remains provisional until #56 is retried manually.
 
-Baseline Shallow Cumulus currently uses `zd = 4500.0` for Rayleigh damping in the 6 km quick-look domain. Preflight rejects namelists where Rayleigh damping would begin at or below half the configured domain top. A CM1 process that exits `0` without NetCDF, `cm1out*`, or stats-style output is recorded as `validation_status: needs_review` and `product_state: process_completed_no_output`, not as a completed usable CM1 result.
+Baseline Shallow Cumulus currently uses `zd = 4500.0` for Rayleigh damping in the 6 km quick-look domain. Preflight rejects namelists where Rayleigh damping would begin at or below half the configured domain top. A CM1 process that exits `0` without NetCDF or raw CM1 `.dat/.ctl` artifacts is recorded as `validation_status: needs_review` and `product_state: process_completed_no_output`, not as a completed usable CM1 result.
+
+Generated Baseline Shallow Cumulus packages prefer CM1 NetCDF output with `output_format = 2` and `output_filetype = 2`. CM1 documents `output_format = 1` as GrADS/direct-access output and `output_format = 2` as NetCDF. The first successful smoke run produced `.dat/.ctl` files, so those are cataloged as raw CM1 artifacts while the next manual run should verify the NetCDF path.
+
+When a run completes, manifest output metadata should keep these buckets separate:
+
+- `raw_cm1_artifacts` for `.dat/.ctl` CM1 output files;
+- `netcdf_paths` for preferred NetCDF output;
+- `processed_artifacts` for future Cloud Chamber-derived ingest/visualization artifacts;
+- `runtime_warnings` for caveats surfaced from logs, such as CM1 floating-point exception flags.
 
 Required runtime files such as `LANDUSE.TBL` are copied from the configured local CM1 run directory into the generated package at launch time. These copied files are local/generated artifacts under `~/CloudChamber/runs/<run-id>/`; do not commit them.
 
@@ -172,7 +181,8 @@ Before automated launch is trusted, use the Baseline Shallow Cumulus dry-run pac
 6. Compare the package against local CM1 runtime needs, including `cm1.exe` and local-only runtime files such as `LANDUSE.TBL`.
 7. Regenerate any package that still contains placeholder-only `namelist.input` or notes-only `input_sounding` files.
 8. Run CM1 manually from the local runtime path when ready. Record the exact command, CM1 version/path, Cloud Chamber commit, run-size preset, controls, runtime, output cadence, log paths, output paths, and any warnings/errors.
-9. Keep generated packages, copied runtime files, logs, NetCDF output, and validation reports out of git unless a future policy explicitly creates a tiny synthetic fixture.
+9. Confirm whether the generated `output_format = 2` package produces NetCDF on the local CM1 build. If it does not, keep `.dat/.ctl` output cataloged as raw artifacts and document the blocker before changing ingest strategy.
+10. Keep generated packages, copied runtime files, logs, NetCDF output, `.dat/.ctl` output, and validation reports out of git unless a future policy explicitly creates a tiny synthetic fixture.
 
 The automated local CM1 launcher/log monitor now follows this policy for the first MVP. It preserves the same distinctions: dry-run package, queued/running CM1 process, completed/failed/canceled CM1 run, ingested metadata, and saved result/notebook entry are separate states.
 
@@ -190,7 +200,7 @@ This executable script runs the same fast checks as CI: frontend lint/test/build
 
 CI keeps equivalent split jobs named `Frontend`, `Backend`, and `Scripts and config` so branch protection can require stable, readable check names. When adding future scenario-schema, run-manifest, dry-run-package, NetCDF-ingest, or visualizer-metadata checks, update both `scripts/check.sh` and the matching CI job or document why a CI-only/local-only split is necessary.
 
-The local gate intentionally does not run real CM1, require a local CM1 installation, require real NetCDF output, or create generated CM1 artifacts in the repo.
+The local gate intentionally does not run real CM1, require a local CM1 installation, require real NetCDF or `.dat/.ctl` output, or create generated CM1 artifacts in the repo.
 
 ## Scaffold Scope
 
