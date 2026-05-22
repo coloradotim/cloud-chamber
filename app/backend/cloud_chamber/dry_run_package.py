@@ -120,9 +120,16 @@ def generate_dry_run_package(
     runtime_checklist = {
         "status": "external_runtime_files_not_committed",
         "required_files": scenario.cm1_template.runtime_files_needed,
+        "source_candidates": {
+            "LANDUSE.TBL": [
+                "config_files/les_ShallowCu/LANDUSE.TBL",
+                "LANDUSE.TBL",
+            ]
+        },
         "notes": (
-            "CM1 remains external to the repo. Required runtime files are staged from the "
-            "configured local CM1 run directory at launch time, never committed to the repo."
+            "CM1 remains external to the repo. Required runtime files are staged from "
+            "the configured local CM1 run directory, preferring the les_ShallowCu "
+            "reference case where available, never committed to the repo."
         ),
     }
 

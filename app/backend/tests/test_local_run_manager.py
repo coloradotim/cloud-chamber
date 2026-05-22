@@ -69,7 +69,10 @@ def fake_settings(tmp_path: Path) -> CloudChamberSettings:
     cm1_run_dir = cm1_root / "run"
     cm1_run_dir.mkdir(parents=True)
     (cm1_run_dir / "cm1.exe").write_text("# fake executable\n")
-    (cm1_run_dir / "LANDUSE.TBL").write_text("fake local runtime file\n")
+    (cm1_run_dir / "LANDUSE.TBL").write_text("fallback local runtime file\n")
+    reference_dir = cm1_run_dir / "config_files" / "les_ShallowCu"
+    reference_dir.mkdir(parents=True)
+    (reference_dir / "LANDUSE.TBL").write_text("fake reference runtime file\n")
     return CloudChamberSettings(
         runtime_home=tmp_path / "CloudChamber",
         cm1_root=cm1_root,
@@ -104,7 +107,7 @@ def test_launch_constructs_cm1_command_and_captures_logs(tmp_path: Path) -> None
     assert factory.cwd is not None
     assert status.stdout_log.read_text() == "fake cm1 stdout\n"
     assert status.stderr_log.read_text() == "fake cm1 stderr\n"
-    assert (factory.cwd / "LANDUSE.TBL").read_text() == "fake local runtime file\n"
+    assert (factory.cwd / "LANDUSE.TBL").read_text() == "fake reference runtime file\n"
 
     manifest = load_run_manifest(manifest_path)
     assert manifest.lifecycle_state == LifecycleState.RUNNING
@@ -305,7 +308,7 @@ def test_launch_refuses_rayleigh_damping_over_half_domain(tmp_path: Path) -> Non
     run_dir = tmp_path / "CloudChamber" / "runs" / "run-001"
     namelist = (run_dir / "namelist.input").read_text()
     (run_dir / "namelist.input").write_text(
-        namelist.replace("zd      =  4500.0,", "zd      =  2500.0,")
+        namelist.replace("ztop      = 18000.0,", "ztop      =  6000.0,")
     )
     manager = LocalRunManager(settings=settings)
 
@@ -317,6 +320,7 @@ def test_launch_reports_missing_runtime_file(tmp_path: Path) -> None:
     settings = fake_settings(tmp_path)
     assert settings.cm1_run_dir is not None
     (settings.cm1_run_dir / "LANDUSE.TBL").unlink()
+    (settings.cm1_run_dir / "config_files" / "les_ShallowCu" / "LANDUSE.TBL").unlink()
     manifest_path = dry_run_manifest_path(tmp_path)
     manager = LocalRunManager(settings=settings)
 

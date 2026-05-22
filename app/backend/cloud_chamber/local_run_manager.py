@@ -392,7 +392,7 @@ def _validate_rayleigh_damping(namelist_text: str) -> None:
     maxz = _domain_top_m(namelist_text)
     if zd is None or maxz is None:
         return
-    if zd <= maxz / 2:
+    if maxz <= 6000 and zd <= maxz / 2:
         raise LocalRunManagerError(
             "Rayleigh damping starts too low for the configured domain: "
             f"zd={zd:g}, maxz={maxz:g}. Damping must not cover more than half the domain."
@@ -431,19 +431,25 @@ def _stage_required_runtime_files(
     cm1_run_dir: Path,
     run_dir: Path,
 ) -> None:
-    for required_file in _required_runtime_files(manifest):
-        source = cm1_run_dir / required_file
-        if not source.exists():
+    for required_file, source_candidates in _required_runtime_files(manifest).items():
+        source = _first_existing_runtime_file(cm1_run_dir, source_candidates)
+        if source is None:
+            formatted_candidates = ", ".join(
+                str(cm1_run_dir / candidate) for candidate in source_candidates
+            )
+            if not formatted_candidates:
+                formatted_candidates = str(cm1_run_dir / required_file)
             raise LocalRunManagerError(
-                f"Required CM1 runtime file is missing from configured run dir: {source}"
+                "Required CM1 runtime file is missing from configured run dir "
+                f"or reference case candidates: {formatted_candidates}"
             )
         destination = run_dir / required_file
         if not destination.exists():
             shutil.copy2(source, destination)
 
 
-def _required_runtime_files(manifest: RunManifest) -> tuple[str, ...]:
-    required: list[str] = []
+def _required_runtime_files(manifest: RunManifest) -> dict[str, tuple[str, ...]]:
+    required: dict[str, tuple[str, ...]] = {}
     for checklist_path in manifest.generated_inputs.runtime_file_checklist:
         path = Path(checklist_path).expanduser()
         if not path.exists():
@@ -452,6 +458,27 @@ def _required_runtime_files(manifest: RunManifest) -> tuple[str, ...]:
         if not isinstance(loaded, dict):
             continue
         files = loaded.get("required_files", [])
+        source_candidates = loaded.get("source_candidates", {})
         if isinstance(files, list):
-            required.extend(item for item in files if isinstance(item, str))
-    return tuple(dict.fromkeys(required))
+            for item in files:
+                if not isinstance(item, str) or item in required:
+                    continue
+                candidates = [item]
+                if isinstance(source_candidates, dict):
+                    configured = source_candidates.get(item)
+                    if isinstance(configured, list):
+                        candidates = [
+                            candidate for candidate in configured if isinstance(candidate, str)
+                        ] or candidates
+                if item not in candidates:
+                    candidates.append(item)
+                required[item] = tuple(dict.fromkeys(candidates))
+    return required
+
+
+def _first_existing_runtime_file(cm1_run_dir: Path, candidates: tuple[str, ...]) -> Path | None:
+    for candidate in candidates:
+        path = cm1_run_dir / candidate
+        if path.exists():
+            return path
+    return None

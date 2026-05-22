@@ -288,20 +288,24 @@ dry_run_report.json
 runtime_file_checklist.json
 ```
 
-The current Baseline Shallow Cumulus contract renders CM1-facing `namelist.input` using CM1's BOMEX shallow-cumulus reference path (`testcase = 3`, `isnd = 19`) with Cloud Chamber quick-look grid/runtime settings. It also writes a numeric CM1-readable `input_sounding` reference profile, although the baseline namelist uses CM1's built-in BOMEX analytic sounding rather than reading that file by default.
+The current Baseline Shallow Cumulus recovery contract renders CM1-facing `namelist.input` from CM1's local `les_ShallowCu` reference path (`testcase = 3`, `isnd = 19`). It preserves the reference grid, runtime, domain top, Rayleigh damping, surface/ocean/flux settings, and surface stress path as much as possible. It also writes a numeric CM1-readable `input_sounding` reference profile, although the baseline namelist uses CM1's built-in BOMEX analytic sounding rather than reading that file by default.
 
 The first full-sequence NetCDF ingest of `dry-run-157b09a178e1` found 25 model-output files and 25 time steps, but no usable cloud or vertical velocity: `max_qc_kg_kg = 0.0`, `max_w_m_s = 0.0`, and multiple NaN/Infinity caveats in surface and thermodynamic fields. The generated quick-look package therefore now uses a fixed small ocean roughness length (`set_znt = 1`, `cnst_znt = 0.0002`) instead of the reference dynamic roughness / fixed friction-velocity path that produced invalid local output.
 
-A follow-up local/manual validation run, `dry-run-calibration-20260522132903`, confirmed the fixed roughness value is written and CM1 completes with NetCDF output, but it still produces no cloud, no vertical motion, and NaN/Infinity caveats in target fields. This is a stability-oriented Cloud Chamber quick-look calibration attempt, not scientific acceptance. Baseline Shallow Cumulus still needs deeper CM1 namelist/sounding calibration before it can serve as the Golden Path cloud-producing case.
+A follow-up local/manual validation run, `dry-run-calibration-20260522132903`, confirmed the fixed roughness value is written and CM1 completes with NetCDF output, but it still produces no cloud, no vertical motion, and NaN/Infinity caveats in target fields. The fixed-roughness derivative is therefore not the recovery baseline. Cloud Chamber should recover from `les_ShallowCu` first, then introduce any quick-look scaling one change at a time.
+
+The first `les_ShallowCu` reference-derived Cloud Chamber run, `dry-run-les-shallowcu-20260522140642`, completed with `exit_code = 0`, produced NetCDF output, and ingested 7 model-output time steps from 0 to 21600 seconds. First-pass diagnostics reported `cloud formed; rain detected`, first cloud time at 3600 seconds, `max_qc_kg_kg = 0.002192789688706398`, `max_w_m_s = 6.962291717529297`, and `min_w_m_s = -3.7671568393707275`. This validates the recovery direction: use the reference-derived case as the Baseline Shallow Cumulus Golden Path source, then derive shorter quick-look variants later.
 
 Default cloud-scale assumptions:
 
 ```text
-16 km x 16 km x 6 km domain
-200 m horizontal spacing
-125 m vertical spacing
-7200 s runtime
-300 s output cadence
+64 x 64 x 75 grid
+100 m horizontal spacing
+40 m nominal vertical spacing
+18000 m domain top
+21600 s runtime
+3600 s output cadence
+NetCDF output as the intentional Cloud Chamber ingest-path change
 ```
 
 If a scenario needs different size, spacing, runtime, cadence, or runtime files, the deviation must be explicit and documented.

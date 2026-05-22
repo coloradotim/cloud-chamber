@@ -98,10 +98,26 @@ def test_dry_run_package_writes_cm1_ready_inputs_not_outputs(tmp_path: Path) -> 
 
     assert "&param0" in namelist
     assert "testcase  =  3," in namelist
-    assert "set_znt    =      1," in namelist
-    assert "cnst_znt   =   0.0002," in namelist
+    assert "nx           =      64," in namelist
+    assert "ny           =      64," in namelist
+    assert "nz           =      75," in namelist
+    assert "dx     =   100.0," in namelist
+    assert "dy     =   100.0," in namelist
+    assert "dz     =   40.0," in namelist
+    assert "timax  = 21600.0," in namelist
+    assert "tapfrq =  3600.0," in namelist
+    assert "ztop      = 18000.0," in namelist
+    assert "set_znt    =      0," in namelist
+    assert "cnst_znt   =   0.00," in namelist
+    assert "set_ust    =      1," in namelist
+    assert "cnst_ust   =   0.28," in namelist
     assert "&cloud_chamber_domain" not in namelist
     assert "placeholder until local/manual CM1 validation" not in namelist
     assert len(sounding.splitlines()[0].split()) == 3
     assert "Cloud Chamber input_sounding notes" not in sounding
     assert not list(result.package_dir.glob("*.nc"))
+
+    checklist = json.loads((result.package_dir / "runtime_file_checklist.json").read_text())
+    assert checklist["source_candidates"]["LANDUSE.TBL"][0] == (
+        "config_files/les_ShallowCu/LANDUSE.TBL"
+    )

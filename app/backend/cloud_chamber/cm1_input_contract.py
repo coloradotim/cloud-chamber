@@ -23,13 +23,18 @@ class GeneratedFileRole(StrEnum):
 
 @dataclass(frozen=True)
 class CloudScaleDefaults:
-    horizontal_extent_km: int = 16
-    y_extent_km: int = 16
-    vertical_extent_km: int = 6
-    horizontal_spacing_m: int = 200
-    vertical_spacing_m: int = 125
-    runtime_seconds: int = 7200
-    output_cadence_seconds: int = 300
+    nx: int = 64
+    ny: int = 64
+    nz: int = 75
+    horizontal_extent_km: float = 6.4
+    y_extent_km: float = 6.4
+    vertical_extent_km: float = 18.0
+    horizontal_spacing_m: int = 100
+    vertical_spacing_m: int = 40
+    runtime_seconds: int = 21600
+    output_cadence_seconds: int = 3600
+    restart_cadence_seconds: int = 10800
+    rayleigh_damping_start_m: int = 2500
 
 
 @dataclass(frozen=True)
@@ -84,8 +89,8 @@ GENERATED_FILE_SPECS = (
         relative_path="namelist.input",
         description="CM1 namelist input generated from validated scenario controls.",
         scientific_status=(
-            "CM1-ready provisional Cloud Chamber quick-look baseline derived from "
-            "local CM1 BOMEX example"
+            "CM1-ready provisional reference-derived baseline from the local CM1 "
+            "les_ShallowCu example"
         ),
     ),
     GeneratedFileSpec(
@@ -161,24 +166,21 @@ def render_namelist_fragment(contract: CM1InputContract) -> str:
 def render_cm1_namelist(contract: CM1InputContract) -> str:
     """Render a runnable CM1 namelist for the baseline shallow-cumulus package.
 
-    The first baseline uses CM1's built-in BOMEX shallow-cumulus analytic profile
-    (`testcase = 3`, `isnd = 19`) from the local CM1 reference case. The grid/runtime
-    are adjusted to Cloud Chamber's quick-look cloud-scale starting point. A local
-    full-sequence validation run showed invalid surface/thermo fields with the
-    reference dynamic roughness path, so the quick-look package uses a small fixed
-    ocean roughness length while preserving the BOMEX sounding, fluxes, and NetCDF
-    output path.
+    The recovery baseline follows CM1's local ``les_ShallowCu`` reference case:
+    ``testcase = 3``, ``isnd = 19``, the 64 x 64 x 75 grid, 100 m horizontal
+    spacing, 40 m nominal vertical spacing, 18 km model top, 6-hour runtime,
+    1-hour output cadence, reference Rayleigh damping, and reference surface
+    stress/roughness settings. The only intentional product-path change is
+    ``output_format = 2`` so Cloud Chamber can ingest NetCDF output when the
+    local CM1 build supports it.
     """
 
     defaults = contract.cloud_scale_defaults
-    nx = int(defaults.horizontal_extent_km * 1000 / defaults.horizontal_spacing_m)
-    ny = int(defaults.y_extent_km * 1000 / defaults.horizontal_spacing_m)
-    nz = int(defaults.vertical_extent_km * 1000 / defaults.vertical_spacing_m)
     return f"""
  &param0
- nx           =      {nx},
- ny           =      {ny},
- nz           =      {nz},
+ nx           =      {defaults.nx},
+ ny           =      {defaults.ny},
+ nz           =      {defaults.nz},
  ppnode       =     128,
  timeformat   =       2,
  timestats    =       1,
@@ -194,7 +196,7 @@ def render_cm1_namelist(contract: CM1InputContract) -> str:
  timax  = {float(defaults.runtime_seconds):.1f},
  run_time =  -999.9,
  tapfrq =  {float(defaults.output_cadence_seconds):.1f},
- rstfrq = -3600.0,
+ rstfrq = {float(defaults.restart_cadence_seconds):.1f},
  statfrq =   60.0,
  prclfrq =   60.0,
  /
@@ -268,7 +270,7 @@ def render_cm1_namelist(contract: CM1InputContract) -> str:
  kdiv    = 0.10,
  alph    = 0.60,
  rdalpha = 3.3333333333e-3,
- zd      =  4500.0,
+ zd      =  {float(defaults.rayleigh_damping_start_m):.1f},
  xhd     = 100000.0,
  alphobc = 60.0,
  umove   = 12.5,
@@ -318,10 +320,10 @@ def render_cm1_namelist(contract: CM1InputContract) -> str:
  set_flx    =      1,
  cnst_shflx = 8.0e-3,
  cnst_lhflx = 5.2e-5,
- set_znt    =      1,
- cnst_znt   =   0.0002,
- set_ust    =      0,
- cnst_ust   =   0.00,
+ set_znt    =      0,
+ cnst_znt   =   0.00,
+ set_ust    =      1,
+ cnst_ust   =   0.28,
  ramp_sgs   =      1,
  ramp_time  = 1800.0,
  t2p_avg   =       1,
@@ -345,7 +347,7 @@ def render_cm1_namelist(contract: CM1InputContract) -> str:
 
  &param6
  stretch_z =  0,
- ztop      =  {float(defaults.vertical_extent_km * 1000):.1f},
+ ztop      = {float(defaults.vertical_extent_km * 1000):.1f},
  str_bot   =     0.0,
  str_top   =  2000.0,
  dz_bot    =   125.0,

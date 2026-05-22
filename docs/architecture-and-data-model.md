@@ -99,18 +99,21 @@ For the Baseline Shallow Cumulus Golden Path, the generated package should prese
 
 The CM1 input generation contract is deterministic and testable before full package generation. It documents the expected generated files and preserves product-facing controls separately from raw namelist/developer settings.
 
-For Baseline Shallow Cumulus, the first CM1-facing package uses CM1's BOMEX shallow-cumulus reference behavior (`testcase = 3`, `isnd = 19`) with Cloud Chamber quick-look grid/runtime settings. The generated `input_sounding` is numeric and CM1-readable, but the baseline namelist uses CM1's built-in analytic BOMEX sounding by default.
+For Baseline Shallow Cumulus, the recovery package is derived from CM1's local `les_ShallowCu` reference case (`testcase = 3`, `isnd = 19`). It preserves the reference grid, runtime, domain top, Rayleigh damping, surface/ocean/flux settings, and surface stress path as much as possible. The intentional Cloud Chamber change is NetCDF output (`output_format = 2`) so the completed run can flow into ingest and diagnostics.
 
-The first full-sequence NetCDF ingest of the local quick-look run confirmed that all 25 model-output files were evaluated, but the run produced no cloud, no vertical motion, and NaN/Infinity caveats in surface/thermodynamic fields. The quick-look baseline now keeps the BOMEX sounding and surface-flux approach but uses fixed small ocean roughness (`set_znt = 1`, `cnst_znt = 0.0002`) rather than the dynamic roughness / fixed friction-velocity path that produced invalid local output. A subsequent fixed-roughness validation package completed and produced NetCDF output, but still had no cloud, no vertical motion, and NaN/Infinity caveats. This keeps the case a Cloud Chamber-tuned BOMEX-style quick-look candidate, not a scientifically accepted reference simulation.
+The earlier Cloud Chamber quick-look derivative is not scientifically accepted: full-sequence ingest evaluated all 25 model-output files, but the run produced no cloud, no vertical motion, and NaN/Infinity caveats; a fixed-roughness follow-up still failed in the same way. Quick-look scaling should happen only after the reference-derived package works, and future changes should be introduced one at a time with manual CM1 validation.
+
+The first reference-derived validation run, `dry-run-les-shallowcu-20260522140642`, completed locally with NetCDF output and ingested 7 model-output time steps over 21600 seconds. It produced cloud water and vertical velocity diagnostics, so the architecture should treat the reference-derived package as the recovery baseline and the earlier compact derivative as invalid evidence rather than a tuning base.
 
 Cloud-scale defaults for the first lower-atmosphere contract are:
 
 ```text
-domain: about 16 km x 16 km x 6 km
-horizontal spacing: about 200 m
-vertical spacing: about 125 m
-runtime: about 7200 s
-output cadence: about 300 s
+domain/grid: 64 x 64 x 75
+horizontal spacing: 100 m
+nominal vertical spacing: 40 m
+domain top: 18000 m
+runtime: 21600 s
+output cadence: 3600 s
 ```
 
 Scenario-specific deviations from these defaults must be explicit in the scenario template or generated report.
