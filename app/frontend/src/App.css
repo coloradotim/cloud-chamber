@@ -441,6 +441,48 @@ td small {
     0 0 22px rgba(143, 216, 182, 0.32);
 }
 
+.slice-plane {
+  position: absolute;
+  z-index: 1;
+  display: grid;
+  gap: 0.35rem;
+  width: min(38%, 17rem);
+  border: 1px solid rgba(216, 255, 240, 0.34);
+  border-radius: 8px;
+  padding: 0.45rem;
+  background: rgba(17, 24, 32, 0.68);
+  box-shadow: 0 0 28px rgba(78, 164, 206, 0.18);
+}
+
+.slice-plane-horizontal {
+  right: 10%;
+  bottom: 14%;
+  transform: perspective(720px) rotateX(62deg);
+}
+
+.slice-plane-vertical {
+  left: 10%;
+  top: 22%;
+  transform: perspective(720px) rotateY(-34deg);
+}
+
+.slice-plane-label {
+  color: #f7fbff;
+  font-size: 0.72rem;
+  font-weight: 850;
+}
+
+.slice-plane-cells {
+  display: grid;
+  gap: 2px;
+}
+
+.slice-plane-cell {
+  aspect-ratio: 1;
+  min-width: 0.45rem;
+  border-radius: 2px;
+}
+
 .scene-empty-state {
   position: relative;
   z-index: 2;
@@ -477,6 +519,20 @@ td small {
   gap: 0.4rem;
   color: #eff7fa;
   font-weight: 800;
+}
+
+.slice-plane-summary {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.slice-plane-card {
+  display: grid;
+  gap: 0.55rem;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 8px;
+  padding: 0.75rem;
+  background: rgba(255, 255, 255, 0.06);
 }
 
 .segmented-buttons {

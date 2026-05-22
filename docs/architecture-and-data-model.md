@@ -324,8 +324,18 @@ downsampling and labels it. The frontend renders only the returned
 visualization-ready points and must label the result as a CM1-derived
 interpretation.
 
-It must not create isosurfaces, draw 3-D slice planes, parse raw NetCDF in the
-browser, interpolate native grids, ray march, or invent synthetic cloud physics.
+3-D slice planes reuse the same backend slice endpoint as the 2-D inspector:
+
+- horizontal plane: `orientation=horizontal`;
+- vertical plane: `orientation=vertical_x` or `orientation=vertical_y`;
+- fields: `qc` and `w` first;
+- time: synced with the visualizer time state and cloud-water point cloud.
+
+The browser receives JSON slice payloads with field metadata, min/max stats,
+dimension order, selected native-grid location, caveats, and provenance labels.
+The scene may draw simple inspection planes from those payloads, but it must not
+parse raw NetCDF in the browser, interpolate native grids, ray march, or invent
+synthetic cloud physics.
 
 ### Visualization-Ready Field Slices
 

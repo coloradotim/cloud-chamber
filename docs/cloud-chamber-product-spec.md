@@ -639,6 +639,13 @@ march, or invent cloud physics. The rendering method should be labeled
 `thresholded_point_cloud`, and the processing method should identify the native
 grid threshold operation.
 
+The first 3-D slice planes reuse the #72 JSON slice endpoint. The scene requests
+one horizontal and one vertical native-grid slice for the selected slice field
+(`qc` or `w`) at the same output time as the cloud-water point cloud. The UI
+must show field name, units, selected time, slice location, min/max, native-grid
+caveats, and provenance labels. These planes are inspection overlays, not
+ray-marched volumes or interpolated fields.
+
 ## 2-D Field Inspection MVP
 
 The first inspector opens from a saved or ingested Result Card / Experiment
