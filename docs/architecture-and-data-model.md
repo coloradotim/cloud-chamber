@@ -309,9 +309,23 @@ field catalog, and exposes:
 - loading, empty, and error states;
 - provenance and rendering-method labels.
 
-It must not render `qc`, create isosurfaces, draw 3-D slice planes, parse raw
-NetCDF, or invent synthetic cloud physics. Until #78 lands, the scene shell's
-rendering method should remain explicitly labeled as no field rendering.
+Cloud-water rendering starts as a thresholded point cloud for `qc`, not an
+isosurface or volume renderer. The backend owns field selection and thresholding
+through:
+
+- `GET /api/results/{result_id}/visualization/point-cloud`
+
+The point-cloud endpoint reads the selected NetCDF output time, uses native
+`zh/yh/xh` coordinates for `qc`, returns `[x, y, z, value]` points where `qc`
+meets the requested threshold, and records source count, returned count,
+min/max value, downsampling status, coordinate units, and provenance. If source
+points exceed `max_points`, the backend applies deterministic stride
+downsampling and labels it. The frontend renders only the returned
+visualization-ready points and must label the result as a CM1-derived
+interpretation.
+
+It must not create isosurfaces, draw 3-D slice planes, parse raw NetCDF in the
+browser, interpolate native grids, ray march, or invent synthetic cloud physics.
 
 ### Visualization-Ready Field Slices
 
@@ -323,6 +337,7 @@ Implemented MVP endpoints:
 
 - `GET /api/results/{result_id}/visualization/fields`
 - `GET /api/results/{result_id}/visualization/slice`
+- `GET /api/results/{result_id}/visualization/point-cloud`
 
 The field catalog exposes available visualizable fields, starting with `qc`
 and `w` and including `qr` when present. It maps raw CM1 field names to product

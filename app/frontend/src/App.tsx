@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import type { FormEvent } from "react";
+import type { CSSProperties, FormEvent } from "react";
 
 import "./App.css";
 
@@ -196,6 +196,33 @@ type SliceResponse = {
   caveats: string[];
 };
 
+type PointCloudResponse = {
+  result_id: string;
+  run_id: string;
+  scenario_id: string;
+  field: VisualizableField;
+  selection: {
+    field: string;
+    time_index: number;
+    time_seconds: number | null;
+    threshold: number;
+    max_points: number;
+  };
+  coordinate_units: Record<string, string | null>;
+  point_order: string[];
+  points: Array<[number, number, number, number]>;
+  stats: {
+    source_count: number;
+    returned_count: number;
+    min_value: number | null;
+    max_value: number | null;
+    downsampled: boolean;
+    downsample_stride: number;
+  };
+  provenance: ProvenancePayload;
+  caveats: string[];
+};
+
 async function fetchScenarioCatalog(): Promise<ScenarioResponse> {
   const response = await fetch("/api/scenarios");
   if (!response.ok) {
@@ -284,6 +311,29 @@ async function fetchVisualizationSlice(
     throw new Error(await responseError(response, "Unable to load visualization slice."));
   }
   return response.json() as Promise<SliceResponse>;
+}
+
+async function fetchVisualizationPointCloud(
+  resultId: string,
+  params: {
+    field: string;
+    timeIndex: number;
+    threshold: number;
+    maxPoints: number;
+  },
+): Promise<PointCloudResponse> {
+  const search = new URLSearchParams({
+    field: params.field,
+    time_index: String(params.timeIndex),
+    threshold: String(params.threshold),
+    max_points: String(params.maxPoints),
+    encoding: "json",
+  });
+  const response = await fetch(`/api/results/${resultId}/visualization/point-cloud?${search}`);
+  if (!response.ok) {
+    throw new Error(await responseError(response, "Unable to load cloud-water point cloud."));
+  }
+  return response.json() as Promise<PointCloudResponse>;
 }
 
 async function responseError(response: Response, fallback: string): Promise<string> {
@@ -862,8 +912,14 @@ function VisualizerSceneShell({ result }: { result: ResultCard }) {
   const [timeIndex, setTimeIndex] = useState(0);
   const [cameraMode, setCameraMode] = useState<"orbit" | "pan">("orbit");
   const [zoom, setZoom] = useState(100);
+  const [threshold, setThreshold] = useState(1e-6);
+  const [opacity, setOpacity] = useState(0.45);
+  const [pointSize, setPointSize] = useState(8);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [pointCloud, setPointCloud] = useState<PointCloudResponse | null>(null);
   const [sceneStatus, setSceneStatus] = useState("Loading scene data...");
   const [sceneError, setSceneError] = useState<string | null>(null);
+  const maxPoints = 50_000;
 
   useEffect(() => {
     let active = true;
@@ -873,6 +929,11 @@ function VisualizerSceneShell({ result }: { result: ResultCard }) {
     setTimeIndex(0);
     setCameraMode("orbit");
     setZoom(100);
+    setThreshold(1e-6);
+    setOpacity(0.45);
+    setPointSize(8);
+    setIsPlaying(false);
+    setPointCloud(null);
     setSceneStatus("Loading scene data...");
     fetchVisualizationFields(result.result_id)
       .then((payload) => {
@@ -900,13 +961,63 @@ function VisualizerSceneShell({ result }: { result: ResultCard }) {
     () => catalog?.available_fields.find((field) => field.raw_field_name === selectedFieldName),
     [catalog, selectedFieldName],
   );
+  const qcField = useMemo(
+    () => catalog?.available_fields.find((field) => field.raw_field_name === "qc"),
+    [catalog],
+  );
 
   const timeOptions = selectedField?.time_coordinate_values ?? [];
   const timeMax = Math.max(0, timeOptions.length - 1);
+  const canRenderCloudWater = selectedFieldName === "qc" && Boolean(qcField);
   const provenanceLabel =
+    pointCloud?.provenance.provenance_label ??
     selectedField?.provenance.provenance_label ??
     catalog?.provenance.provenance_label ??
     "CM1-derived visualization-ready data; rendering not implemented";
+
+  useEffect(() => {
+    if (!selectedField || selectedField.raw_field_name !== "qc") {
+      setPointCloud(null);
+      return;
+    }
+    let active = true;
+    setSceneError(null);
+    setSceneStatus("Loading cloud-water points...");
+    fetchVisualizationPointCloud(result.result_id, {
+      field: "qc",
+      timeIndex,
+      threshold,
+      maxPoints,
+    })
+      .then((payload) => {
+        if (!active) return;
+        setPointCloud(payload);
+        setSceneStatus(
+          payload.points.length > 0
+            ? "Cloud-water point cloud loaded"
+            : "No cloud water above threshold",
+        );
+      })
+      .catch((caught: unknown) => {
+        if (!active) return;
+        setPointCloud(null);
+        setSceneError(
+          caught instanceof Error ? caught.message : "Unable to load cloud-water point cloud.",
+        );
+        setSceneStatus("Point cloud unavailable");
+      });
+    return () => {
+      active = false;
+    };
+  }, [maxPoints, result.result_id, selectedField, threshold, timeIndex]);
+
+  useEffect(() => {
+    if (!isPlaying || timeMax <= 0) return;
+    const interval = window.setInterval(() => {
+      setTimeIndex((current) => (current >= timeMax ? 0 : current + 1));
+    }, 1000);
+    return () => window.clearInterval(interval);
+  }, [isPlaying, timeMax]);
 
   function resetCamera() {
     setCameraMode("orbit");
@@ -924,8 +1035,8 @@ function VisualizerSceneShell({ result }: { result: ResultCard }) {
       </div>
 
       <p>
-        This is the 3-D interaction shell for a CM1-derived result. It does not render cloud water,
-        parse raw NetCDF in the browser, or create synthetic cloud physics.
+        This is a thresholded point-cloud interpretation of CM1 cloud water. The browser is not
+        parsing raw NetCDF, and the points use native-grid qc values without interpolation.
       </p>
 
       {sceneError && <p role="alert">{sceneError}</p>}
@@ -938,14 +1049,37 @@ function VisualizerSceneShell({ result }: { result: ResultCard }) {
         <div className="scene-container" aria-label="3-D scene container">
           <div className="scene-horizon" />
           <div className="scene-grid" />
-          <div className="scene-empty-state">
-            <p className="eyebrow">Rendering placeholder</p>
-            <h3>Cloud rendering not implemented</h3>
-            <p>
-              #78 will render cloud-water from visualization-ready backend data. This shell only
-              establishes the scene, camera, field, time, and provenance structure.
-            </p>
-          </div>
+          {pointCloud && pointCloud.points.length > 0 && (
+            <div className="point-cloud-layer" aria-label="Cloud-water point cloud">
+              {pointCloud.points.map((point, index) => (
+                <span
+                  className="cloud-point"
+                  key={`${point.join("-")}-${index}`}
+                  style={cloudPointStyle(
+                    point,
+                    pointCloud.points,
+                    pointCloud.stats,
+                    opacity,
+                    pointSize,
+                  )}
+                />
+              ))}
+            </div>
+          )}
+          {(!pointCloud || pointCloud.points.length === 0) && (
+            <div className="scene-empty-state">
+              <p className="eyebrow">Cloud-water point cloud</p>
+              <h3>
+                {!qcField
+                  ? "Cloud water field qc is not available for this result."
+                  : "No cloud water above the selected threshold at this time."}
+              </h3>
+              <p>
+                Adjust the time or threshold after qc is available. Rendering remains an
+                interpretation of CM1-derived data.
+              </p>
+            </div>
+          )}
         </div>
 
         <aside className="visualizer-controls" aria-label="3-D scene controls">
@@ -1014,6 +1148,51 @@ function VisualizerSceneShell({ result }: { result: ResultCard }) {
                   onChange={(event) => setTimeIndex(Number(event.target.value))}
                 />
               </label>
+              <button type="button" onClick={() => setIsPlaying((current) => !current)}>
+                {isPlaying ? "Pause time" : "Play time"}
+              </button>
+            </fieldset>
+          )}
+
+          {catalog && selectedField && (
+            <fieldset>
+              <legend>Cloud-water rendering</legend>
+              <label htmlFor="cloud-threshold">
+                Threshold
+                <input
+                  id="cloud-threshold"
+                  type="number"
+                  min={0}
+                  step="0.000001"
+                  value={threshold}
+                  onChange={(event) => setThreshold(Number(event.target.value))}
+                  disabled={!canRenderCloudWater}
+                />
+              </label>
+              <label htmlFor="cloud-opacity">
+                Opacity
+                <input
+                  id="cloud-opacity"
+                  type="range"
+                  min={0.1}
+                  max={1}
+                  step={0.05}
+                  value={opacity}
+                  onChange={(event) => setOpacity(Number(event.target.value))}
+                />
+              </label>
+              <label htmlFor="cloud-point-size">
+                Point size
+                <input
+                  id="cloud-point-size"
+                  type="range"
+                  min={3}
+                  max={18}
+                  value={pointSize}
+                  onChange={(event) => setPointSize(Number(event.target.value))}
+                />
+              </label>
+              <p>Default max points: {maxPoints.toLocaleString()}</p>
             </fieldset>
           )}
 
@@ -1021,6 +1200,8 @@ function VisualizerSceneShell({ result }: { result: ResultCard }) {
             <Metric label="Run ID" value={result.run_id} />
             <Metric label="Camera mode" value={cameraMode} />
             <Metric label="Zoom" value={`${zoom}%`} />
+            <Metric label="Opacity" value={String(opacity)} />
+            <Metric label="Point size" value={`${pointSize}px`} />
             <Metric
               label="Selected time"
               value={formatTimeValue(timeOptions[Math.min(timeIndex, timeMax)] ?? null)}
@@ -1033,16 +1214,47 @@ function VisualizerSceneShell({ result }: { result: ResultCard }) {
                   : "Unavailable"
               }
             />
-            <Metric label="Rendering method" value="scene_shell_no_field_rendering" />
+            <Metric label="Threshold" value={formatScientific(threshold, "kg/kg")} />
+            <Metric label="Rendering method" value="thresholded_point_cloud" />
+            <Metric
+              label="Points"
+              value={
+                pointCloud
+                  ? `${pointCloud.stats.returned_count.toLocaleString()} of ${pointCloud.stats.source_count.toLocaleString()}`
+                  : "Unavailable"
+              }
+            />
+            <Metric
+              label="Cloud-water range"
+              value={
+                pointCloud
+                  ? `${formatMaybeNumber(pointCloud.stats.min_value, selectedField?.units ?? "kg/kg")} to ${formatMaybeNumber(
+                      pointCloud.stats.max_value,
+                      selectedField?.units ?? "kg/kg",
+                    )}`
+                  : "Unavailable"
+              }
+            />
           </dl>
+
+          {pointCloud?.stats.downsampled && (
+            <p role="status">
+              Point cloud downsampled with deterministic stride {pointCloud.stats.downsample_stride}
+              .
+            </p>
+          )}
 
           <section aria-labelledby="visualizer-provenance-title">
             <h3 id="visualizer-provenance-title">Provenance / rendering labels</h3>
             <ul className="compact-list">
               <li>{provenanceLabel}</li>
               <li>Visualizer interpretation of CM1-derived output</li>
+              <li>Processing method: native-grid thresholded point cloud</li>
+              <li>Rendering method: thresholded point cloud</li>
               <li>No raw NetCDF parsing in the browser</li>
-              <li>No cloud-water rendering in this shell</li>
+              <li>
+                No interpolation, ray marching, isosurface extraction, or synthetic cloud physics
+              </li>
             </ul>
           </section>
         </aside>
@@ -1378,6 +1590,36 @@ function formatTimeValue(value: number | string | null): string {
   if (value === null) return "Time unavailable";
   if (typeof value === "number") return `${value.toLocaleString()} s`;
   return value;
+}
+
+function cloudPointStyle(
+  point: [number, number, number, number],
+  points: Array<[number, number, number, number]>,
+  stats: PointCloudResponse["stats"],
+  opacity: number,
+  pointSize: number,
+): CSSProperties {
+  const xs = points.map((candidate) => candidate[0]);
+  const ys = points.map((candidate) => candidate[1]);
+  const zs = points.map((candidate) => candidate[2]);
+  const x = normalize(point[0], Math.min(...xs), Math.max(...xs));
+  const y = normalize(point[1], Math.min(...ys), Math.max(...ys));
+  const z = normalize(point[2], Math.min(...zs), Math.max(...zs));
+  const intensity = normalize(point[3], stats.min_value ?? point[3], stats.max_value ?? point[3]);
+  return {
+    left: `${12 + x * 76}%`,
+    bottom: `${16 + y * 44}%`,
+    width: `${pointSize}px`,
+    height: `${pointSize}px`,
+    opacity,
+    transform: `translate(-50%, 50%) translateY(${-z * 92}px) scale(${0.8 + intensity * 0.75})`,
+    background: `rgba(229, 250, 255, ${0.44 + intensity * 0.46})`,
+  };
+}
+
+function normalize(value: number, min: number, max: number): number {
+  if (max <= min) return 0.5;
+  return (value - min) / (max - min);
 }
 
 function formatDate(value: string | null): string {

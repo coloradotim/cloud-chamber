@@ -613,7 +613,8 @@ MVP visualizer work should be staged:
 1. Visualization-ready backend data contract.
 2. 2-D field inspection for orientation, time indexing, scaling, and field availability.
 3. 3-D scene shell with orbit/pan/zoom, reset camera, time slider, field selector, and provenance/rendering labels.
-4. Cloud-water rendering MVP for `qc` using visualization-ready data.
+4. Cloud-water rendering MVP for `qc` using a thresholded point cloud from
+   visualization-ready data.
 5. Horizontal and vertical slice planes for `qc` and `w`.
 
 Later:
@@ -629,10 +630,14 @@ True fly-through or move-through should remain on the roadmap after the MVP. Orb
 
 The browser should not parse raw CM1 NetCDF directly. Backend ingest and visualization-ready preprocessing should provide selected, provenance-labeled fields for inspection and rendering.
 
-The scene shell is intentionally a container and interaction layer first. It
-should show clearly labeled empty/loading/error states and a rendering-method
-label such as `scene_shell_no_field_rendering` until #78 adds cloud-water
-rendering from visualization-ready data.
+The first cloud-water renderer uses a thresholded point cloud. The backend
+selects `qc` at a chosen output time, keeps native `zh/yh/xh` grid coordinates,
+returns points where `qc >= 1e-6 kg/kg` by default, and deterministically
+downsamples if needed. The browser renders those returned points only; it does
+not parse raw NetCDF, interpolate, run marching cubes, extract isosurfaces, ray
+march, or invent cloud physics. The rendering method should be labeled
+`thresholded_point_cloud`, and the processing method should identify the native
+grid threshold operation.
 
 ## 2-D Field Inspection MVP
 

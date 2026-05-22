@@ -8,6 +8,7 @@ CM1 output directly in the browser.
 from __future__ import annotations
 
 import importlib
+import itertools
 import math
 from pathlib import Path
 from typing import Any, Literal
@@ -134,6 +135,43 @@ class SliceResponse(BaseModel):
     caveats: list[str] = Field(default_factory=list)
 
 
+class PointCloudSelectionMetadata(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    field: str
+    time_index: int
+    time_seconds: float | None = None
+    threshold: float
+    max_points: int
+
+
+class PointCloudStats(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    source_count: int
+    returned_count: int
+    min_value: float | None = None
+    max_value: float | None = None
+    downsampled: bool
+    downsample_stride: int
+
+
+class PointCloudResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    result_id: str
+    run_id: str
+    scenario_id: str
+    field: VisualizableField
+    selection: PointCloudSelectionMetadata
+    coordinate_units: dict[str, str | None] = Field(default_factory=dict)
+    point_order: list[str]
+    points: list[list[float]]
+    stats: PointCloudStats
+    provenance: ProvenancePayload
+    caveats: list[str] = Field(default_factory=list)
+
+
 def field_catalog(settings: CloudChamberSettings, result_id: str) -> FieldCatalogResponse:
     """Return visualizable field metadata for an ingested result."""
     metadata = get_result_metadata(settings, result_id)
@@ -152,6 +190,104 @@ def field_catalog(settings: CloudChamberSettings, result_id: str) -> FieldCatalo
             available_fields=fields,
             provenance=_provenance(metadata),
             caveats=_dedupe(_catalog_caveats(metadata, fields)),
+        )
+    finally:
+        _close_all(close_datasets)
+
+
+def point_cloud(
+    settings: CloudChamberSettings,
+    result_id: str,
+    *,
+    field: str,
+    time_index: int,
+    threshold: float,
+    max_points: int,
+    encoding: VisualizationEncoding = "json",
+) -> PointCloudResponse:
+    """Return thresholded native-grid points for cloud-water visualization."""
+    if encoding != "json":
+        raise VisualizationDataError("Only encoding=json is supported for MVP point clouds.")
+    if field != "qc":
+        raise VisualizationDataError("Only field=qc is supported for MVP cloud-water rendering.")
+    if not math.isfinite(threshold) or threshold < 0:
+        raise VisualizationDataError("threshold must be a finite non-negative number.")
+    if max_points <= 0:
+        raise VisualizationDataError("max_points must be greater than 0.")
+
+    metadata = get_result_metadata(settings, result_id)
+    dataset, close_datasets = _open_dataset_sequence(metadata)
+    try:
+        if field not in dataset.data_vars:
+            raise VisualizationDataError("Cloud water field qc is not available for this result.")
+        data_array = dataset[field]
+        dims = _field_dimensions(data_array)
+        if not dims.time:
+            raise VisualizationDataError("Field qc has no time dimension.")
+        if not dims.vertical or not dims.y or not dims.x:
+            raise VisualizationDataError("Field qc must have native vertical/y/x dimensions.")
+        _validate_index(time_index, int(data_array.sizes[dims.time]), "time_index")
+        at_time = data_array.isel({dims.time: time_index})
+        source_points = _threshold_points(
+            at_time,
+            dims=dims,
+            dataset=dataset,
+            threshold=threshold,
+        )
+        source_count = len(source_points)
+        stride = max(1, math.ceil(source_count / max_points)) if source_count else 1
+        returned_points = source_points[::stride][:max_points]
+        values = [point[3] for point in source_points]
+        visual_field = _visualizable_field(metadata, dataset, field)
+        caveats = _dedupe(
+            [
+                *_field_caveats(field, visual_field.coordinate_names),
+                "native_grid_thresholded_point_cloud",
+                "visualizer_interpretation_of_cm1_qc",
+                *(
+                    ["deterministic_stride_downsampling_applied"]
+                    if source_count > max_points
+                    else []
+                ),
+            ]
+        )
+        return PointCloudResponse(
+            result_id=metadata.result_id,
+            run_id=metadata.run_id,
+            scenario_id=metadata.scenario_id,
+            field=visual_field,
+            selection=PointCloudSelectionMetadata(
+                field=field,
+                time_index=time_index,
+                time_seconds=_time_value_seconds(dataset, dims.time, time_index),
+                threshold=threshold,
+                max_points=max_points,
+            ),
+            coordinate_units={
+                str(dims.x): _coordinate_units(dataset, dims.x),
+                str(dims.y): _coordinate_units(dataset, dims.y),
+                str(dims.vertical): _coordinate_units(dataset, dims.vertical),
+            },
+            point_order=["x", "y", "z", "value"],
+            points=returned_points,
+            stats=PointCloudStats(
+                source_count=source_count,
+                returned_count=len(returned_points),
+                min_value=min(values) if values else None,
+                max_value=max(values) if values else None,
+                downsampled=source_count > max_points,
+                downsample_stride=stride,
+            ),
+            provenance=_provenance(
+                metadata,
+                processing_method="backend_xarray_native_grid_threshold",
+                rendering_method="thresholded_point_cloud",
+                provenance_label=(
+                    "CM1-derived cloud-water point cloud; native-grid threshold; "
+                    "visualizer interpretation"
+                ),
+            ),
+            caveats=caveats,
         )
     finally:
         _close_all(close_datasets)
@@ -351,6 +487,57 @@ def _slice_spatial_array(
     return data_array.isel({selected_dimension: level_index}), selected_dimension
 
 
+def _threshold_points(
+    data_array: Any,
+    *,
+    dims: _FieldDimensions,
+    dataset: Any,
+    threshold: float,
+) -> list[list[float]]:
+    if not dims.vertical or not dims.y or not dims.x:
+        return []
+    points: list[list[float]] = []
+    values = data_array.values
+    z_values = _coordinate_values(dataset, dims.vertical)
+    y_values = _coordinate_values(dataset, dims.y)
+    x_values = _coordinate_values(dataset, dims.x)
+    vertical_axis = data_array.dims.index(dims.vertical)
+    y_axis = data_array.dims.index(dims.y)
+    x_axis = data_array.dims.index(dims.x)
+
+    # Iterate in native array order so stride downsampling is deterministic.
+    for native_index in itertools.product(*(range(int(size)) for size in data_array.shape)):
+        raw_value = values[native_index]
+        try:
+            numeric = float(raw_value)
+        except (TypeError, ValueError):
+            continue
+        if not math.isfinite(numeric) or numeric < threshold:
+            continue
+        z_index = native_index[vertical_axis]
+        y_index = native_index[y_axis]
+        x_index = native_index[x_axis]
+        points.append(
+            [
+                _coordinate_number(x_values, x_index),
+                _coordinate_number(y_values, y_index),
+                _coordinate_number(z_values, z_index),
+                numeric,
+            ]
+        )
+    return points
+
+
+def _coordinate_number(values: list[float | str | None], index: int) -> float:
+    if index < len(values):
+        try:
+            value = values[index]
+            return float(value) if value is not None else float(index)
+        except (TypeError, ValueError):
+            return float(index)
+    return float(index)
+
+
 def _validate_index(index: int, size: int, label: str) -> None:
     if index < 0 or index >= size:
         raise VisualizationDataError(f"{label}={index} is outside valid range 0..{size - 1}.")
@@ -384,7 +571,15 @@ def _field_caveats(field_name: str, coordinates: FieldCoordinateMetadata) -> lis
     return caveats
 
 
-def _provenance(metadata: ResultMetadata) -> ProvenancePayload:
+def _provenance(
+    metadata: ResultMetadata,
+    *,
+    processing_method: str = "backend_xarray_native_grid_slice",
+    rendering_method: str = "json_2d_slice_for_inspection",
+    provenance_label: str = (
+        "CM1-derived visualization-ready data; native-grid view; no interpolation"
+    ),
+) -> ProvenancePayload:
     return ProvenancePayload(
         source_model=metadata.source_model,
         result_id=metadata.result_id,
@@ -392,9 +587,9 @@ def _provenance(metadata: ResultMetadata) -> ProvenancePayload:
         scenario_id=metadata.scenario_id,
         source_product_state=metadata.source_product_state,
         result_state=metadata.result_state,
-        processing_method="backend_xarray_native_grid_slice",
-        rendering_method="json_2d_slice_for_inspection",
-        provenance_label="CM1-derived visualization-ready data; native-grid view; no interpolation",
+        processing_method=processing_method,
+        rendering_method=rendering_method,
+        provenance_label=provenance_label,
     )
 
 
