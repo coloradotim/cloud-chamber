@@ -12,11 +12,16 @@ from pydantic import BaseModel, Field
 from cloud_chamber.cli import ENGINE_NOTE
 from cloud_chamber.dry_run_package import generate_dry_run_package, read_dry_run_report
 from cloud_chamber.local_run_manager import LocalRunManager, LocalRunManagerError, RunStatus
+from cloud_chamber.result_cards import (
+    ResultCardUpdate,
+    get_result_card,
+    list_result_cards,
+    save_result_card,
+    update_result_card,
+)
 from cloud_chamber.result_ingest import (
     ResultIngestError,
-    get_result_metadata,
     ingest_completed_run,
-    list_result_metadata,
 )
 from cloud_chamber.runtime_storage import (
     RuntimeStorageError,
@@ -160,16 +165,32 @@ def ingest_result(request: IngestResultRequest) -> dict[str, object]:
 @app.get("/api/results")
 def list_results() -> dict[str, object]:
     return {
-        "results": [
-            result.model_dump(mode="json") for result in list_result_metadata(load_settings())
-        ]
+        "results": [card.model_dump(mode="json") for card in list_result_cards(load_settings())]
     }
 
 
 @app.get("/api/results/{result_id}")
 def get_result(result_id: str) -> dict[str, object]:
     try:
-        result = get_result_metadata(load_settings(), result_id)
+        result = get_result_card(load_settings(), result_id)
+    except ResultIngestError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return result.model_dump(mode="json")
+
+
+@app.patch("/api/results/{result_id}")
+def patch_result(result_id: str, request: ResultCardUpdate) -> dict[str, object]:
+    try:
+        result = update_result_card(load_settings(), result_id, request)
+    except ResultIngestError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return result.model_dump(mode="json")
+
+
+@app.post("/api/results/{result_id}/save")
+def save_result(result_id: str) -> dict[str, object]:
+    try:
+        result = save_result_card(load_settings(), result_id)
     except ResultIngestError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     return result.model_dump(mode="json")

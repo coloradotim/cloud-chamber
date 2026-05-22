@@ -77,8 +77,10 @@ Implemented backend API endpoints:
 - `GET /api/storage/inventory` reports configured runtime-home disk usage and per-run metadata under `~/CloudChamber/runs/`.
 - `POST /api/storage/delete-run` previews or deletes one selected run directory under the configured runtime home.
 - `POST /api/results/ingest` creates result metadata from a completed run manifest with NetCDF output.
-- `GET /api/results` lists ingested result metadata under the configured runtime home.
-- `GET /api/results/{result_id}` returns one ingested result metadata record.
+- `GET /api/results` lists Result Card / Experiment Notebook entries under the configured runtime home.
+- `GET /api/results/{result_id}` returns one Result Card with run ID, scenario, run-size preset, physical question, diagnostics summary, first cloud time, max `qc`, max/min `w`, rain yes/no, caveats, output file summary, saved/protected flag, and editable name/tags/notes.
+- `PATCH /api/results/{result_id}` updates notebook fields: `name`, `tags`, `notes`, `saved`, and `protected`.
+- `POST /api/results/{result_id}/save` marks a card saved/protected without rerunning CM1.
 
 The local run manager assumes one active CM1 run at a time for the MVP. It captures stdout/stderr under the run package `logs/` directory, updates the run manifest through queued/running/completed/failed/canceled states, refuses output-like files before launch, and fails clearly when CM1 settings are missing. Normal tests use fake subprocesses; real CM1 execution remains manual/local and is not required in CI.
 
@@ -108,6 +110,11 @@ The backend skeleton uses Python/FastAPI with pytest, ruff, and mypy. Data/scien
 The first result ingest path uses xarray to read tiny or local NetCDF files and writes `result_metadata.json` next to the run manifest under the generated run directory. It extracts metadata only: dimensions, coordinates, variables, units, time coordinate, grid shape, source paths, provenance, and warnings. It does not compute diagnostics, create visualization-ready arrays, parse `.dat/.ctl` payloads, or copy real output into git.
 
 NetCDF ingest reads the full CM1 model-output sequence when a run writes files such as `cm1out_000001.nc`, `cm1out_000002.nc`, and later output indices. Stats files such as `cm1out_stats.nc` are classified separately from model-field time-series files. Re-ingesting a completed run rewrites `result_metadata.json` with model-output file count, total time steps, first/last output time, direct-or-inferred time source, diagnostics, and caveats for skipped/corrupt files.
+
+Result cards are derived from `result_metadata.json` and optional local
+`result_card.json` notebook state. Updating or saving a result card writes only
+that small notebook-state file under the run directory; it does not copy,
+rewrite, or commit NetCDF output.
 
 Backend work should assume one local CM1 run at a time for the MVP and should avoid large in-memory processing paths for local MacBook Air-scale machines.
 

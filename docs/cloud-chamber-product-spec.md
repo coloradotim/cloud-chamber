@@ -526,6 +526,29 @@ provenance labels
 open in visualizer action
 ```
 
+The first backend Result Card / Experiment Notebook API exposes a scan-friendly
+card over ingested result metadata:
+
+```text
+run id
+scenario
+run-size preset
+physical question
+diagnostics summary
+first cloud time
+max qc
+max/min w
+rain yes/no
+caveats
+output file summary
+saved/protected flag
+notes/tags/name
+```
+
+Editable notebook state lives beside the local run as `result_card.json`; it
+stores `name`, `tags`, `notes`, `saved`, and `protected` without modifying or
+copying CM1 output. Saving a card marks it as a saved/protected notebook entry.
+
 Completed results should be replayable and inspectable without rerunning CM1. Duplicate/tweak/rerun is useful later, but replay/inspect/save is the core MVP result-library behavior.
 
 ## MVP Scope

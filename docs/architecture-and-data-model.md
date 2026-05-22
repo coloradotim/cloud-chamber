@@ -224,6 +224,21 @@ CM1 may write a completed run as a sequence of NetCDF model-output files such as
 
 Result metadata records model-output paths separately from stats NetCDF paths, skipped/corrupt files, contributing model-output file count, total time steps, first/last output time, and whether time came directly from a NetCDF coordinate or an inferred fallback.
 
+### Result Cards / Experiment Notebook Entries
+
+The backend result-card layer is the product-facing view over ingested metadata.
+It does not rerun CM1 and does not parse raw output directly. It summarizes:
+
+- run ID, scenario, run-size preset, and physical question;
+- diagnostics summary, first cloud time, max `qc`, max/min `w`, rain yes/no, and caveats;
+- output file summary, including NetCDF/model-output/stat/raw/processed counts and time-step range;
+- provenance labels that distinguish completed CM1 result, ingested metadata, and saved notebook entry;
+- editable notebook fields: name, tags, notes, saved, and protected.
+
+Editable notebook state is stored as `result_card.json` beside `result_metadata.json`.
+The saved/protected flag prevents accidental cleanup through the runtime storage
+layer, while CM1 output remains local/generated and uncommitted.
+
 Current diagnostics compute:
 
 - cloud formed yes/no using `qc >= 1e-6 kg/kg` and a minimum 10 cloudy grid-cell rule;
