@@ -99,7 +99,9 @@ For the Baseline Shallow Cumulus Golden Path, the generated package should prese
 
 The CM1 input generation contract is deterministic and testable before full package generation. It documents the expected generated files and preserves product-facing controls separately from raw namelist/developer settings.
 
-For Baseline Shallow Cumulus, the first CM1-facing package uses CM1's BOMEX shallow-cumulus reference behavior (`testcase = 3`, `isnd = 19`) with Cloud Chamber quick-look grid/runtime settings. The generated `input_sounding` is numeric and CM1-readable, but the baseline namelist uses CM1's built-in analytic BOMEX sounding by default. This is a runnable package candidate, not scientific acceptance; #56 must be retried locally before the case is treated as validated.
+For Baseline Shallow Cumulus, the first CM1-facing package uses CM1's BOMEX shallow-cumulus reference behavior (`testcase = 3`, `isnd = 19`) with Cloud Chamber quick-look grid/runtime settings. The generated `input_sounding` is numeric and CM1-readable, but the baseline namelist uses CM1's built-in analytic BOMEX sounding by default.
+
+The first full-sequence NetCDF ingest of the local quick-look run confirmed that all 25 model-output files were evaluated, but the run produced no cloud, no vertical motion, and NaN/Infinity caveats in surface/thermodynamic fields. The quick-look baseline now keeps the BOMEX sounding and surface-flux approach but uses fixed small ocean roughness (`set_znt = 1`, `cnst_znt = 0.0002`) rather than the dynamic roughness / fixed friction-velocity path that produced invalid local output. A subsequent fixed-roughness validation package completed and produced NetCDF output, but still had no cloud, no vertical motion, and NaN/Infinity caveats. This keeps the case a Cloud Chamber-tuned BOMEX-style quick-look candidate, not a scientifically accepted reference simulation.
 
 Cloud-scale defaults for the first lower-atmosphere contract are:
 

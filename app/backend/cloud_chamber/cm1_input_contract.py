@@ -83,7 +83,10 @@ GENERATED_FILE_SPECS = (
         role=GeneratedFileRole.NAMELIST,
         relative_path="namelist.input",
         description="CM1 namelist input generated from validated scenario controls.",
-        scientific_status="CM1-ready provisional baseline derived from local CM1 BOMEX example",
+        scientific_status=(
+            "CM1-ready provisional Cloud Chamber quick-look baseline derived from "
+            "local CM1 BOMEX example"
+        ),
     ),
     GeneratedFileSpec(
         role=GeneratedFileRole.INPUT_SOUNDING,
@@ -160,7 +163,11 @@ def render_cm1_namelist(contract: CM1InputContract) -> str:
 
     The first baseline uses CM1's built-in BOMEX shallow-cumulus analytic profile
     (`testcase = 3`, `isnd = 19`) from the local CM1 reference case. The grid/runtime
-    are adjusted to Cloud Chamber's quick-look cloud-scale starting point.
+    are adjusted to Cloud Chamber's quick-look cloud-scale starting point. A local
+    full-sequence validation run showed invalid surface/thermo fields with the
+    reference dynamic roughness path, so the quick-look package uses a small fixed
+    ocean roughness length while preserving the BOMEX sounding, fluxes, and NetCDF
+    output path.
     """
 
     defaults = contract.cloud_scale_defaults
@@ -311,10 +318,10 @@ def render_cm1_namelist(contract: CM1InputContract) -> str:
  set_flx    =      1,
  cnst_shflx = 8.0e-3,
  cnst_lhflx = 5.2e-5,
- set_znt    =      0,
- cnst_znt   =   0.00,
- set_ust    =      1,
- cnst_ust   =   0.28,
+ set_znt    =      1,
+ cnst_znt   =   0.0002,
+ set_ust    =      0,
+ cnst_ust   =   0.00,
  ramp_sgs   =      1,
  ramp_time  = 1800.0,
  t2p_avg   =       1,

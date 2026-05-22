@@ -98,6 +98,8 @@ def test_dry_run_package_writes_cm1_ready_inputs_not_outputs(tmp_path: Path) -> 
 
     assert "&param0" in namelist
     assert "testcase  =  3," in namelist
+    assert "set_znt    =      1," in namelist
+    assert "cnst_znt   =   0.0002," in namelist
     assert "&cloud_chamber_domain" not in namelist
     assert "placeholder until local/manual CM1 validation" not in namelist
     assert len(sounding.splitlines()[0].split()) == 3

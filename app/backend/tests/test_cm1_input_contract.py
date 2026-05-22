@@ -71,6 +71,10 @@ def test_rendered_namelist_is_cm1_ready_bomex_baseline() -> None:
     assert "tapfrq =  300.0," in namelist
     assert "zd      =  4500.0," in namelist
     assert "ztop      =  6000.0," in namelist
+    assert "set_znt    =      1," in namelist
+    assert "cnst_znt   =   0.0002," in namelist
+    assert "set_ust    =      0," in namelist
+    assert "cnst_ust   =   0.00," in namelist
     assert "output_format    = 2," in namelist
     assert "output_filetype  = 2," in namelist
     assert "testcase  =  3," in namelist
