@@ -36,7 +36,7 @@ Configure these manually in GitHub for `main`:
 - Disallow force pushes to `main`.
 - Disallow direct pushes to `main` if practical.
 - Enable auto-merge only after required checks pass.
-- Keep feature PR review manual.
+- Allow Codex issue PRs to auto-merge after required checks pass unless the user marks a PR for manual review or the change is high-risk/destructive.
 
 ## Manual GitHub Settings After First CI Run
 
@@ -56,27 +56,31 @@ After the first PR exists and GitHub Actions has reported checks:
 12. Add the exact CI check names from the first PR.
 13. Block force pushes.
 14. Restrict deletions.
-15. Keep feature PR review manual.
+15. Allow Codex issue PRs to auto-merge after required checks pass unless the user marks a PR for manual review or the change is high-risk/destructive.
 16. Allow conservative Dependabot patch/minor auto-merge only after CI is stable.
 
 ## Auto-Merge Guidance
 
-Auto-merge is recommended only for Dependabot patch/minor updates after CI passes.
+Auto-merge is recommended for routine Codex issue PRs after required CI passes. This is the default workflow for this repo so issue work closes cleanly without a second manual merge step.
 
-If a Dependabot auto-merge workflow is added later, it must be conservative:
+Do not enable auto-merge when the user explicitly asks for manual review, or when the PR is high-risk/destructive. High-risk examples include:
+
+- destructive cleanup behavior
+- generated-data policy changes
+- CM1 runtime execution semantics
+- scientific interpretation or diagnostic definitions
+- visualization semantics that could misrepresent CM1 output
+- major dependency version bumps
+
+Dependabot auto-merge, if added later, must remain conservative:
 
 - Dependabot PRs only.
 - Patch/minor updates only.
 - Only after CI passes.
 - No major version bumps.
-- No feature PR auto-merge.
-- No Codex feature PR auto-merge.
 
 Do not auto-merge:
 
 - major version bumps
-- feature PRs
-- Codex feature PRs
-- changes that affect generated-data policy, CM1 runtime behavior, scientific interpretation, or visualization semantics
-
-Codex feature PRs should still be reviewed by the user.
+- PRs the user marked for manual review
+- high-risk/destructive changes unless the user says to proceed

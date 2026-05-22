@@ -128,6 +128,7 @@ Do not hard-code this in app logic. Store in local settings.
 - Keep work scoped to the GitHub issue.
 - Add tests and docs with implementation changes.
 - Do not commit generated CM1 artifacts.
-- Do not auto-merge Codex feature PRs without user review.
+- For Codex issue work, enable auto-merge after required CI checks pass unless the user explicitly asks for manual review or the PR is high-risk/destructive.
+- Treat destructive cleanup, generated-data policy changes, scientific interpretation changes, and real CM1 execution changes as high-risk unless the user says otherwise.
 
 See also the root `AGENTS.md`.
