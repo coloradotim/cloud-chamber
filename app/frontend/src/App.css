@@ -110,7 +110,9 @@ small {
 .builder-panel,
 .status-panel,
 .table-panel,
-.notebook-card {
+.notebook-card,
+.field-inspector,
+.slice-panel {
   border: 1px solid rgba(255, 255, 255, 0.14);
   border-radius: 8px;
   background: rgba(255, 255, 255, 0.07);
@@ -371,11 +373,67 @@ td small {
   flex-wrap: wrap;
 }
 
+.field-inspector {
+  display: grid;
+  gap: 1rem;
+  padding: 1rem;
+}
+
+.inspector-controls {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(150px, 1fr));
+  gap: 0.75rem;
+}
+
+.inspector-controls label {
+  display: grid;
+  gap: 0.4rem;
+  color: #eff7fa;
+  font-weight: 800;
+}
+
+.slice-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+}
+
+.slice-panel {
+  display: grid;
+  gap: 0.75rem;
+  padding: 1rem;
+}
+
+.slice-values {
+  display: grid;
+  gap: 0.25rem;
+  overflow-x: auto;
+}
+
+.slice-row {
+  display: flex;
+  gap: 0.25rem;
+}
+
+.slice-cell {
+  min-width: 3.5rem;
+  border-radius: 6px;
+  padding: 0.35rem 0.45rem;
+  background: rgba(255, 255, 255, 0.08);
+  color: #f7fbff;
+  font-variant-numeric: tabular-nums;
+}
+
 @media (max-width: 860px) {
   .topbar,
   .builder-layout,
   .results-layout,
+  .slice-grid,
   .control-row {
+    grid-template-columns: 1fr;
+  }
+
+  .inspector-controls {
     grid-template-columns: 1fr;
   }
 

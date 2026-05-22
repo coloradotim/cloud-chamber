@@ -556,8 +556,9 @@ summary, cloud/rain outcome, first cloud time, max `qc`, max/min `w`, caveats,
 output summary, provenance labels, saved/protected state, and editable
 name/tags/notes. It can save/protect a result through the backend API.
 
-The library may reserve disabled space for a future Inspect fields action, but
-field slices, replay, 2-D inspection, and 3-D visualization are later work.
+The library opens a 2-D field inspector from a result detail/notebook entry.
+The inspector is a CM1-output inspection surface, not a visualizer or replay
+system.
 
 Completed results should be replayable and inspectable without rerunning CM1. Duplicate/tweak/rerun is useful later, but replay/inspect/save is the core MVP result-library behavior.
 
@@ -621,6 +622,28 @@ Later:
 True fly-through or move-through should remain on the roadmap after the MVP. Orbit/pan/zoom, reset camera, time replay, slices, field selection, and cloud-water isosurface/opacity approximation are enough for the first visualizer.
 
 The browser should not parse raw CM1 NetCDF directly. Backend ingest and visualization-ready preprocessing should provide selected, provenance-labeled fields for inspection and rendering.
+
+## 2-D Field Inspection MVP
+
+The first inspector opens from a saved or ingested Result Card / Experiment
+Notebook entry. It consumes the #72 backend fields/slice API; the browser never
+parses raw CM1 NetCDF.
+
+MVP behavior:
+
+- list available fields from the backend, starting with `qc` and `w`, and `qr`
+  when present;
+- allow field selection and output time selection;
+- request horizontal and vertical slice payloads from the backend;
+- show field units, native grid, selected time, slice shape/dimensions,
+  min/max, finite and non-finite counts, and provenance labels;
+- represent missing fields and bad slice requests as UI errors instead of
+  crashing;
+- clearly label slices as CM1-derived inspection data, not 3-D rendering.
+
+The 2-D inspector is deliberately practical and small. It helps verify field
+orientation, time indexing, vertical coordinates, units, and scaling before the
+3-D scene shell and cloud rendering work begin.
 
 ## Visualization-Ready Data Contract
 

@@ -123,6 +123,79 @@ type ResultsResponse = {
   results: ResultCard[];
 };
 
+type ProvenancePayload = {
+  source_model: string;
+  result_id: string;
+  run_id: string;
+  scenario_id: string;
+  source_product_state: string;
+  result_state: string;
+  processing_method: string;
+  rendering_method: string;
+  provenance_label: string;
+};
+
+type VisualizableField = {
+  raw_field_name: string;
+  canonical_field_name: string;
+  display_name: string;
+  units: string | null;
+  dimensions: string[];
+  shape: number[];
+  native_grid: string;
+  coordinate_names: {
+    time: string | null;
+    vertical: string | null;
+    y: string | null;
+    x: string | null;
+  };
+  time_coordinate_values: Array<number | string | null>;
+  provenance: ProvenancePayload;
+  caveats: string[];
+};
+
+type FieldCatalogResponse = {
+  result_id: string;
+  run_id: string;
+  scenario_id: string;
+  source_model: string;
+  available_fields: VisualizableField[];
+  provenance: ProvenancePayload;
+  caveats: string[];
+};
+
+type SliceResponse = {
+  result_id: string;
+  run_id: string;
+  scenario_id: string;
+  field: VisualizableField;
+  selection: {
+    time_index: number;
+    time_seconds: number | null;
+    orientation: "horizontal" | "vertical_x" | "vertical_y";
+    selected_dimension: string;
+    selected_index: number;
+    selected_coordinate_value: number | string | null;
+    level_units: string | null;
+    level_coordinate_value: number | string | null;
+    level_meters: number | null;
+  };
+  coordinate_units: Record<string, string | null>;
+  shape: number[];
+  dimension_order: string[];
+  data_encoding: "json";
+  values: Array<Array<number | null>>;
+  stats: {
+    min: number | null;
+    max: number | null;
+    mean: number | null;
+    finite_count: number;
+    non_finite_count: number;
+  };
+  provenance: ProvenancePayload;
+  caveats: string[];
+};
+
 async function fetchScenarioCatalog(): Promise<ScenarioResponse> {
   const response = await fetch("/api/scenarios");
   if (!response.ok) {
@@ -182,6 +255,46 @@ async function saveResultCard(resultId: string): Promise<ResultCard> {
   return response.json() as Promise<ResultCard>;
 }
 
+async function fetchVisualizationFields(resultId: string): Promise<FieldCatalogResponse> {
+  const response = await fetch(`/api/results/${resultId}/visualization/fields`);
+  if (!response.ok) {
+    throw new Error(await responseError(response, "Unable to load visualization fields."));
+  }
+  return response.json() as Promise<FieldCatalogResponse>;
+}
+
+async function fetchVisualizationSlice(
+  resultId: string,
+  params: {
+    field: string;
+    timeIndex: number;
+    orientation: "horizontal" | "vertical_x" | "vertical_y";
+    levelIndex: number;
+  },
+): Promise<SliceResponse> {
+  const search = new URLSearchParams({
+    field: params.field,
+    time_index: String(params.timeIndex),
+    orientation: params.orientation,
+    level_index: String(params.levelIndex),
+    encoding: "json",
+  });
+  const response = await fetch(`/api/results/${resultId}/visualization/slice?${search}`);
+  if (!response.ok) {
+    throw new Error(await responseError(response, "Unable to load visualization slice."));
+  }
+  return response.json() as Promise<SliceResponse>;
+}
+
+async function responseError(response: Response, fallback: string): Promise<string> {
+  try {
+    const payload = (await response.json()) as { detail?: string };
+    return payload.detail ?? fallback;
+  } catch {
+    return fallback;
+  }
+}
+
 export function App() {
   const [scenarios, setScenarios] = useState<Scenario[]>([]);
   const [selectedScenarioId, setSelectedScenarioId] = useState("baseline-shallow-cumulus");
@@ -191,6 +304,7 @@ export function App() {
   const [results, setResults] = useState<ResultCard[]>([]);
   const [selectedResultId, setSelectedResultId] = useState<string | null>(null);
   const [resultDraft, setResultDraft] = useState({ name: "", tags: "", notes: "" });
+  const [inspectedResultId, setInspectedResultId] = useState<string | null>(null);
   const [resultsStatus, setResultsStatus] = useState("Loading results...");
   const [status, setStatus] = useState("Loading scenarios...");
   const [error, setError] = useState<string | null>(null);
@@ -485,8 +599,13 @@ export function App() {
             onDraftChange={setResultDraft}
             onSubmit={handleResultUpdate}
             onSave={handleResultSave}
+            onInspect={() => setInspectedResultId(selectedResult?.result_id ?? null)}
           />
         </div>
+
+        {inspectedResultId && selectedResult && selectedResult.result_id === inspectedResultId && (
+          <FieldInspector result={selectedResult} />
+        )}
       </section>
     </main>
   );
@@ -598,12 +717,14 @@ function ResultNotebookCard({
   onDraftChange,
   onSubmit,
   onSave,
+  onInspect,
 }: {
   result: ResultCard | undefined;
   draft: { name: string; tags: string; notes: string };
   onDraftChange: (draft: { name: string; tags: string; notes: string }) => void;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
   onSave: () => void;
+  onInspect: () => void;
 }) {
   if (!result) {
     return (
@@ -713,11 +834,290 @@ function ResultNotebookCard({
           <button type="button" onClick={onSave}>
             Save result
           </button>
-          <button type="button" disabled title="Available after #73">
+          <button type="button" onClick={onInspect}>
             Inspect fields
           </button>
         </div>
       </form>
+    </section>
+  );
+}
+
+function FieldInspector({ result }: { result: ResultCard }) {
+  const [catalog, setCatalog] = useState<FieldCatalogResponse | null>(null);
+  const [selectedFieldName, setSelectedFieldName] = useState("qc");
+  const [timeIndex, setTimeIndex] = useState(0);
+  const [horizontalLevelIndex, setHorizontalLevelIndex] = useState(0);
+  const [verticalLevelIndex, setVerticalLevelIndex] = useState(0);
+  const [verticalOrientation, setVerticalOrientation] = useState<"vertical_x" | "vertical_y">(
+    "vertical_x",
+  );
+  const [horizontalSlice, setHorizontalSlice] = useState<SliceResponse | null>(null);
+  const [verticalSlice, setVerticalSlice] = useState<SliceResponse | null>(null);
+  const [inspectorStatus, setInspectorStatus] = useState("Loading fields...");
+  const [inspectorError, setInspectorError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    setInspectorStatus("Loading fields...");
+    setInspectorError(null);
+    setCatalog(null);
+    setHorizontalSlice(null);
+    setVerticalSlice(null);
+    fetchVisualizationFields(result.result_id)
+      .then((payload) => {
+        if (!active) return;
+        setCatalog(payload);
+        const firstPreferred =
+          payload.available_fields.find((field) => field.raw_field_name === "qc") ??
+          payload.available_fields[0];
+        setSelectedFieldName(firstPreferred?.raw_field_name ?? "");
+        setInspectorStatus(
+          payload.available_fields.length > 0 ? "Fields loaded" : "No fields available",
+        );
+      })
+      .catch((caught: unknown) => {
+        if (!active) return;
+        setInspectorError(caught instanceof Error ? caught.message : "Unable to load fields.");
+        setInspectorStatus("Field inspection unavailable");
+      });
+    return () => {
+      active = false;
+    };
+  }, [result.result_id]);
+
+  const selectedField = useMemo(
+    () => catalog?.available_fields.find((field) => field.raw_field_name === selectedFieldName),
+    [catalog, selectedFieldName],
+  );
+
+  useEffect(() => {
+    if (!selectedField) return;
+    setTimeIndex(0);
+    setHorizontalLevelIndex(0);
+    setVerticalLevelIndex(0);
+  }, [selectedField]);
+
+  useEffect(() => {
+    if (!selectedField) return;
+    let active = true;
+    setInspectorStatus("Loading slices...");
+    setInspectorError(null);
+    Promise.all([
+      fetchVisualizationSlice(result.result_id, {
+        field: selectedField.raw_field_name,
+        timeIndex,
+        orientation: "horizontal",
+        levelIndex: horizontalLevelIndex,
+      }),
+      fetchVisualizationSlice(result.result_id, {
+        field: selectedField.raw_field_name,
+        timeIndex,
+        orientation: verticalOrientation,
+        levelIndex: verticalLevelIndex,
+      }),
+    ])
+      .then(([horizontal, vertical]) => {
+        if (!active) return;
+        setHorizontalSlice(horizontal);
+        setVerticalSlice(vertical);
+        setInspectorStatus("Slices loaded");
+      })
+      .catch((caught: unknown) => {
+        if (!active) return;
+        setHorizontalSlice(null);
+        setVerticalSlice(null);
+        setInspectorError(caught instanceof Error ? caught.message : "Unable to load slices.");
+        setInspectorStatus("Slice request failed");
+      });
+    return () => {
+      active = false;
+    };
+  }, [
+    horizontalLevelIndex,
+    result.result_id,
+    selectedField,
+    timeIndex,
+    verticalLevelIndex,
+    verticalOrientation,
+  ]);
+
+  const timeOptions = selectedField?.time_coordinate_values ?? [];
+  const verticalSize = selectedField?.coordinate_names.vertical
+    ? selectedField.shape[selectedField.dimensions.indexOf(selectedField.coordinate_names.vertical)]
+    : 1;
+  const ySize = selectedField?.coordinate_names.y
+    ? selectedField.shape[selectedField.dimensions.indexOf(selectedField.coordinate_names.y)]
+    : 1;
+  const xSize = selectedField?.coordinate_names.x
+    ? selectedField.shape[selectedField.dimensions.indexOf(selectedField.coordinate_names.x)]
+    : 1;
+  const verticalSliceMax = verticalOrientation === "vertical_x" ? ySize : xSize;
+
+  return (
+    <section className="field-inspector" aria-labelledby="field-inspector-title">
+      <div className="section-heading">
+        <div>
+          <p className="eyebrow">2-D field inspection</p>
+          <h2 id="field-inspector-title">Inspect CM1 fields</h2>
+        </div>
+        <p className="state-chip">{inspectorStatus}</p>
+      </div>
+
+      <p>
+        These slices are backend-prepared inspections of CM1 output. The browser is not parsing raw
+        NetCDF, and this is not a 3-D visualization.
+      </p>
+
+      {inspectorError && <p role="alert">{inspectorError}</p>}
+
+      {catalog && catalog.available_fields.length === 0 && (
+        <p role="status">No qc/w/qr fields are available for this result.</p>
+      )}
+
+      {catalog && selectedField && (
+        <>
+          <div className="inspector-controls">
+            <label htmlFor="inspect-field">
+              Field
+              <select
+                id="inspect-field"
+                value={selectedFieldName}
+                onChange={(event) => setSelectedFieldName(event.target.value)}
+              >
+                {catalog.available_fields.map((field) => (
+                  <option key={field.raw_field_name} value={field.raw_field_name}>
+                    {field.raw_field_name} - {field.display_name}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <label htmlFor="inspect-time">
+              Time
+              <select
+                id="inspect-time"
+                value={timeIndex}
+                onChange={(event) => setTimeIndex(Number(event.target.value))}
+              >
+                {timeOptions.map((value, index) => (
+                  <option key={`${value}-${index}`} value={index}>
+                    {formatTimeValue(value)}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <label htmlFor="horizontal-level">
+              Horizontal level
+              <input
+                id="horizontal-level"
+                type="number"
+                min={0}
+                max={Math.max(0, verticalSize - 1)}
+                value={horizontalLevelIndex}
+                onChange={(event) => setHorizontalLevelIndex(Number(event.target.value))}
+              />
+            </label>
+
+            <label htmlFor="vertical-orientation">
+              Vertical slice
+              <select
+                id="vertical-orientation"
+                value={verticalOrientation}
+                onChange={(event) =>
+                  setVerticalOrientation(event.target.value as "vertical_x" | "vertical_y")
+                }
+              >
+                <option value="vertical_x">vertical_x</option>
+                <option value="vertical_y">vertical_y</option>
+              </select>
+            </label>
+
+            <label htmlFor="vertical-index">
+              Vertical slice index
+              <input
+                id="vertical-index"
+                type="number"
+                min={0}
+                max={Math.max(0, verticalSliceMax - 1)}
+                value={verticalLevelIndex}
+                onChange={(event) => setVerticalLevelIndex(Number(event.target.value))}
+              />
+            </label>
+          </div>
+
+          <dl className="metric-grid">
+            <Metric
+              label="Field"
+              value={`${selectedField.raw_field_name} (${selectedField.display_name})`}
+            />
+            <Metric label="Units" value={selectedField.units ?? "Units unavailable"} />
+            <Metric label="Native grid" value={selectedField.native_grid} />
+            <Metric label="Provenance" value={catalog.provenance.provenance_label} />
+          </dl>
+
+          <div className="slice-grid">
+            <SlicePanel title="Horizontal slice" slice={horizontalSlice} />
+            <SlicePanel title="Vertical slice" slice={verticalSlice} />
+          </div>
+        </>
+      )}
+    </section>
+  );
+}
+
+function SlicePanel({ title, slice }: { title: string; slice: SliceResponse | null }) {
+  if (!slice) {
+    return (
+      <section className="slice-panel" aria-label={title}>
+        <h3>{title}</h3>
+        <p>Slice unavailable.</p>
+      </section>
+    );
+  }
+
+  return (
+    <section className="slice-panel" aria-label={title}>
+      <h3>{title}</h3>
+      <dl className="metric-grid">
+        <Metric label="Orientation" value={slice.selection.orientation} />
+        <Metric label="Time" value={formatSeconds(slice.selection.time_seconds)} />
+        <Metric label="Shape" value={slice.shape.join(" x ")} />
+        <Metric label="Dimensions" value={slice.dimension_order.join(", ")} />
+        <Metric label="Min" value={formatMaybeNumber(slice.stats.min, slice.field.units)} />
+        <Metric label="Max" value={formatMaybeNumber(slice.stats.max, slice.field.units)} />
+        <Metric label="Finite values" value={String(slice.stats.finite_count)} />
+        <Metric label="Non-finite values" value={String(slice.stats.non_finite_count)} />
+      </dl>
+      {slice.selection.level_units && (
+        <p>
+          Selected level: {String(slice.selection.level_coordinate_value)}{" "}
+          {slice.selection.level_units}
+          {slice.selection.level_meters !== null
+            ? ` (${slice.selection.level_meters.toLocaleString()} m)`
+            : ""}
+        </p>
+      )}
+      <div className="slice-values" role="table" aria-label={`${title} values`}>
+        {slice.values.map((row, rowIndex) => (
+          <div className="slice-row" role="row" key={`${title}-${rowIndex}`}>
+            {row.map((value, columnIndex) => (
+              <span className="slice-cell" role="cell" key={`${title}-${rowIndex}-${columnIndex}`}>
+                {value === null ? "null" : formatCompactNumber(value)}
+              </span>
+            ))}
+          </div>
+        ))}
+      </div>
+      <p>{slice.provenance.provenance_label}</p>
+      {slice.caveats.length > 0 && (
+        <ul className="compact-list">
+          {slice.caveats.map((caveat) => (
+            <li key={caveat}>{caveat}</li>
+          ))}
+        </ul>
+      )}
     </section>
   );
 }
@@ -751,6 +1151,25 @@ function formatScientific(value: number | null, units: string): string {
 function formatNumber(value: number | null, units: string): string {
   if (value === null) return "Unavailable";
   return `${Number(value.toFixed(3)).toLocaleString()} ${units}`;
+}
+
+function formatMaybeNumber(value: number | null, units: string | null): string {
+  if (value === null) return "Unavailable";
+  const suffix = units ? ` ${units}` : "";
+  return `${formatCompactNumber(value)}${suffix}`;
+}
+
+function formatCompactNumber(value: number): string {
+  if (Math.abs(value) > 0 && Math.abs(value) < 0.001) {
+    return value.toExponential(3);
+  }
+  return Number(value.toFixed(4)).toLocaleString();
+}
+
+function formatTimeValue(value: number | string | null): string {
+  if (value === null) return "Time unavailable";
+  if (typeof value === "number") return `${value.toLocaleString()} s`;
+  return value;
 }
 
 function formatDate(value: string | null): string {

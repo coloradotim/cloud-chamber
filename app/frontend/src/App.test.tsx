@@ -163,6 +163,136 @@ const resultsResponse = {
   results: [resultCard, missingDiagnosticsCard],
 };
 
+const provenance = {
+  source_model: "CM1",
+  result_id: "result-dry-run-quicklook",
+  run_id: "dry-run-quicklook",
+  scenario_id: "baseline-shallow-cumulus",
+  source_product_state: "completed_cm1_result",
+  result_state: "ingested_result_metadata",
+  processing_method: "backend_xarray_native_grid_slice",
+  rendering_method: "json_2d_slice_for_inspection",
+  provenance_label: "CM1-derived visualization-ready data; native-grid view; no interpolation",
+};
+
+const fieldCatalogResponse = {
+  result_id: "result-dry-run-quicklook",
+  run_id: "dry-run-quicklook",
+  scenario_id: "baseline-shallow-cumulus",
+  source_model: "CM1",
+  provenance,
+  caveats: [],
+  available_fields: [
+    {
+      raw_field_name: "qc",
+      canonical_field_name: "cloud_water",
+      display_name: "Cloud water",
+      units: "kg/kg",
+      dimensions: ["time", "zh", "yh", "xh"],
+      shape: [2, 2, 2, 3],
+      native_grid: "zh/yh/xh",
+      coordinate_names: { time: "time", vertical: "zh", y: "yh", x: "xh" },
+      time_coordinate_values: [0, 900],
+      provenance,
+      caveats: ["native_grid_view_no_interpolation"],
+    },
+    {
+      raw_field_name: "w",
+      canonical_field_name: "vertical_velocity",
+      display_name: "Vertical velocity",
+      units: "m/s",
+      dimensions: ["time", "zf", "yh", "xh"],
+      shape: [2, 3, 2, 3],
+      native_grid: "zf/yh/xh",
+      coordinate_names: { time: "time", vertical: "zf", y: "yh", x: "xh" },
+      time_coordinate_values: [0, 900],
+      provenance,
+      caveats: ["native_grid_view_no_interpolation"],
+    },
+  ],
+};
+
+const missingFieldCatalogResponse = {
+  ...fieldCatalogResponse,
+  result_id: "result-no-diagnostics",
+  run_id: "dry-run-no-diagnostics",
+  caveats: ["missing_visualization_field:qc"],
+  available_fields: [
+    {
+      ...fieldCatalogResponse.available_fields[1],
+      provenance: {
+        ...provenance,
+        result_id: "result-no-diagnostics",
+        run_id: "dry-run-no-diagnostics",
+      },
+    },
+  ],
+};
+
+function sliceResponse({
+  field = "qc",
+  orientation = "horizontal",
+  timeIndex = 0,
+}: {
+  field?: "qc" | "w";
+  orientation?: "horizontal" | "vertical_x" | "vertical_y";
+  timeIndex?: number;
+}) {
+  const fieldMetadata =
+    fieldCatalogResponse.available_fields.find((candidate) => candidate.raw_field_name === field) ??
+    fieldCatalogResponse.available_fields[0];
+  const units = fieldMetadata.units;
+  const isVertical = orientation !== "horizontal";
+  const values =
+    field === "qc"
+      ? timeIndex === 0
+        ? [
+            [0, 0.000002, null],
+            [0.000004, 0.000006, 0.000008],
+          ]
+        : [
+            [0.00001, 0.000012, 0.000014],
+            [0.000016, 0.000018, 0.00002],
+          ]
+      : [
+          [1.5, 2.5, 3.5],
+          [4.5, 5.5, 6.5],
+        ];
+  return {
+    result_id: "result-dry-run-quicklook",
+    run_id: "dry-run-quicklook",
+    scenario_id: "baseline-shallow-cumulus",
+    field: fieldMetadata,
+    selection: {
+      time_index: timeIndex,
+      time_seconds: timeIndex === 0 ? 0 : 900,
+      orientation,
+      selected_dimension:
+        orientation === "vertical_y" ? "xh" : orientation === "vertical_x" ? "yh" : "zh",
+      selected_index: 0,
+      selected_coordinate_value: orientation === "horizontal" ? 0.8 : 0,
+      level_units: orientation === "horizontal" ? "km" : null,
+      level_coordinate_value: orientation === "horizontal" ? 0.8 : null,
+      level_meters: orientation === "horizontal" ? 800 : null,
+    },
+    coordinate_units: isVertical ? { zh: "km", xh: "km" } : { yh: "km", xh: "km" },
+    shape: [2, 3],
+    dimension_order: isVertical ? ["zh", "xh"] : ["yh", "xh"],
+    data_encoding: "json",
+    values,
+    stats: {
+      min: field === "qc" ? 0 : 1.5,
+      max: field === "qc" ? (timeIndex === 0 ? 0.000008 : 0.00002) : 6.5,
+      mean: field === "qc" ? 0.000004 : 4,
+      finite_count: 5,
+      non_finite_count: field === "qc" && timeIndex === 0 ? 1 : 0,
+    },
+    provenance,
+    caveats: ["native_grid_view_no_interpolation", "json_numeric_slice_mvp"],
+    units,
+  };
+}
+
 beforeEach(() => {
   vi.stubGlobal(
     "fetch",
@@ -176,6 +306,42 @@ beforeEach(() => {
       }
       if (url === "/api/results") {
         return Promise.resolve(new Response(JSON.stringify(resultsResponse), { status: 200 }));
+      }
+      if (url === "/api/results/result-dry-run-quicklook/visualization/fields") {
+        return Promise.resolve(new Response(JSON.stringify(fieldCatalogResponse), { status: 200 }));
+      }
+      if (url === "/api/results/result-no-diagnostics/visualization/fields") {
+        return Promise.resolve(
+          new Response(JSON.stringify(missingFieldCatalogResponse), { status: 200 }),
+        );
+      }
+      if (url.includes("/visualization/slice")) {
+        const parsed = new URL(url, "http://localhost");
+        const levelIndex = parsed.searchParams.get("level_index");
+        if (levelIndex === "99") {
+          return Promise.resolve(
+            new Response(JSON.stringify({ detail: "level_index=99 is outside valid range" }), {
+              status: 400,
+            }),
+          );
+        }
+        return Promise.resolve(
+          new Response(
+            JSON.stringify(
+              sliceResponse({
+                field: parsed.searchParams.get("field") === "w" ? "w" : "qc",
+                orientation:
+                  parsed.searchParams.get("orientation") === "vertical_y"
+                    ? "vertical_y"
+                    : parsed.searchParams.get("orientation") === "vertical_x"
+                      ? "vertical_x"
+                      : "horizontal",
+                timeIndex: Number(parsed.searchParams.get("time_index") ?? 0),
+              }),
+            ),
+            { status: 200 },
+          ),
+        );
       }
       if (url === "/api/results/result-dry-run-quicklook" && init?.method === "PATCH") {
         return Promise.resolve(
@@ -283,7 +449,7 @@ describe("App", () => {
       screen.getByText("CM1 stderr reported floating-point exception flags: IEEE_INVALID_FLAG"),
     ).toBeInTheDocument();
     expect(screen.getByText("source_model:CM1")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Inspect fields" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Inspect fields" })).toBeEnabled();
   });
 
   it("supports name tag notes editing and save through the backend API", async () => {
@@ -336,5 +502,62 @@ describe("App", () => {
     expect(screen.getByText("missing_w_field")).toBeInTheDocument();
     expect(screen.queryByText(/horizontal slice/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/vertical slice/i)).not.toBeInTheDocument();
+  });
+
+  it("opens the 2-D field inspector from a result and shows qc slices", async () => {
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Inspect fields" }));
+
+    expect(await screen.findByRole("heading", { name: "Inspect CM1 fields" })).toBeInTheDocument();
+    await screen.findByText("Slices loaded");
+    expect(screen.getByText(/browser is not parsing raw NetCDF/)).toBeInTheDocument();
+    expect(screen.getByLabelText("Field")).toHaveValue("qc");
+    expect(screen.getByText("qc (Cloud water)")).toBeInTheDocument();
+    expect(screen.getAllByText("kg/kg").length).toBeGreaterThan(0);
+    expect(screen.getByText("zh/yh/xh")).toBeInTheDocument();
+    expect(screen.getAllByText("Horizontal slice").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Vertical slice").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("8.000e-6 kg/kg").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("1").length).toBeGreaterThan(0);
+    expect(screen.getByText("Selected level: 0.8 km (800 m)")).toBeInTheDocument();
+    expect(screen.getAllByText("native_grid_view_no_interpolation").length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/CM1-derived visualization-ready data/).length).toBeGreaterThan(0);
+  });
+
+  it("supports field and time selection through visualization-ready APIs", async () => {
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Inspect fields" }));
+    fireEvent.change(await screen.findByLabelText("Field"), { target: { value: "w" } });
+    fireEvent.change(screen.getByLabelText("Time"), { target: { value: "1" } });
+
+    await waitFor(() => {
+      expect(screen.getByText("w (Vertical velocity)")).toBeInTheDocument();
+    });
+    expect(screen.getByText("zf/yh/xh")).toBeInTheDocument();
+    expect(screen.getAllByText("900 s").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("6.5 m/s").length).toBeGreaterThan(0);
+    expect(fetch).toHaveBeenCalledWith(
+      expect.stringContaining("/api/results/result-dry-run-quicklook/visualization/slice?field=w"),
+    );
+  });
+
+  it("handles missing fields and bad slice requests gracefully", async () => {
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "No diagnostics yet" }));
+    fireEvent.click(screen.getByRole("button", { name: "Inspect fields" }));
+
+    expect(await screen.findByRole("heading", { name: "Inspect CM1 fields" })).toBeInTheDocument();
+    await screen.findByText("Slices loaded");
+    expect(screen.getByLabelText("Field")).toHaveValue("w");
+    expect(screen.queryByRole("option", { name: /qc/ })).not.toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText("Horizontal level"), { target: { value: "99" } });
+
+    await waitFor(() => {
+      expect(screen.getByRole("alert")).toHaveTextContent("level_index=99 is outside valid range");
+    });
   });
 });
