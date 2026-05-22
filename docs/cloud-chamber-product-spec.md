@@ -160,6 +160,21 @@ The visualizer should support:
 - brightness/contrast
 - cloud appearance presets
 
+The broad original visualizer goal in #31 has been superseded by staged implementation issues. The visualizer should build from saved/ingested results and backend visualization-ready data, not from raw NetCDF parsing in the browser.
+
+Staged visualizer path:
+
+```text
+Visualization-ready data contract (#72)
+-> 2-D field inspection MVP (#73)
+-> 3-D scene shell (#77)
+-> cloud-water rendering MVP (#78)
+-> slice planes (#79)
+-> later visual polish / fly-through / export (#80)
+```
+
+Every visualizer stage must preserve provenance labels and make clear that rendered output is an interpretation of CM1-derived data.
+
 ### Workflow 7 — Duplicate / Tweak / Rerun
 
 1. Duplicate previous setup.
@@ -503,15 +518,13 @@ Completed results should be replayable and inspectable without rerunning CM1. Du
 
 Start with a practical visualizer, not a cinematic renderer.
 
-MVP visual modes:
+MVP visualizer work should be staged:
 
-1. Cloud water isosurface
-2. Cloud water volume/opacity approximation
-3. X/Z/Y slices
-4. Time replay
-5. Camera orbit/pan/zoom
-6. Field selector
-7. Simple lighting controls
+1. Visualization-ready backend data contract.
+2. 2-D field inspection for orientation, time indexing, scaling, and field availability.
+3. 3-D scene shell with orbit/pan/zoom, reset camera, time slider, field selector, and provenance/rendering labels.
+4. Cloud-water rendering MVP for `qc` using visualization-ready data.
+5. Horizontal and vertical slice planes for `qc` and `w`.
 
 Later:
 
@@ -523,6 +536,8 @@ Later:
 - cinematic export
 
 True fly-through or move-through should remain on the roadmap after the MVP. Orbit/pan/zoom, reset camera, time replay, slices, field selection, and cloud-water isosurface/opacity approximation are enough for the first visualizer.
+
+The browser should not parse raw CM1 NetCDF directly. Backend ingest and visualization-ready preprocessing should provide selected, provenance-labeled fields for inspection and rendering.
 
 ## Local Data Policy
 
