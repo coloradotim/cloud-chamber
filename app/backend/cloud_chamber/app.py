@@ -39,6 +39,7 @@ from cloud_chamber.visualization_data import (
     VisualizationOrientation,
     field_catalog,
     field_slice,
+    point_cloud,
 )
 
 app = FastAPI(
@@ -235,6 +236,34 @@ def get_visualization_slice(
             time_index=time_index,
             orientation=checked_orientation,
             level_index=level_index,
+            encoding="json",
+        )
+    except ResultIngestError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except VisualizationDataError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return result.model_dump(mode="json")
+
+
+@app.get("/api/results/{result_id}/visualization/point-cloud")
+def get_visualization_point_cloud(
+    result_id: str,
+    field: str = "qc",
+    time_index: int = 0,
+    threshold: float = 1e-6,
+    max_points: int = 50_000,
+    encoding: str = "json",
+) -> dict[str, object]:
+    if encoding != "json":
+        raise HTTPException(status_code=400, detail="Only encoding=json is supported.")
+    try:
+        result = point_cloud(
+            load_settings(),
+            result_id,
+            field=field,
+            time_index=time_index,
+            threshold=threshold,
+            max_points=max_points,
             encoding="json",
         )
     except ResultIngestError as exc:

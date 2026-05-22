@@ -18,7 +18,12 @@ from cloud_chamber.run_manifest import (
     write_run_manifest,
 )
 from cloud_chamber.settings import CloudChamberSettings
-from cloud_chamber.visualization_data import field_catalog, field_slice
+from cloud_chamber.visualization_data import (
+    VisualizationDataError,
+    field_catalog,
+    field_slice,
+    point_cloud,
+)
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 BASELINE_TEMPLATE = REPO_ROOT / "scenarios/lower-atmosphere/baseline-shallow-cumulus.json"
@@ -226,6 +231,145 @@ def test_w_slice_uses_native_zf_grid(tmp_path: Path) -> None:
     assert sliced.shape == [3, 4]
     assert sliced.stats.min == 60.0
     assert sliced.stats.max == 71.0
+
+
+def test_point_cloud_returns_qc_points_above_threshold(tmp_path: Path) -> None:
+    settings, result_id, _run_dir = create_visualization_result(tmp_path)
+
+    cloud = point_cloud(
+        settings,
+        result_id,
+        field="qc",
+        time_index=0,
+        threshold=1e-6,
+        max_points=50_000,
+    )
+
+    assert cloud.field.raw_field_name == "qc"
+    assert cloud.field.canonical_field_name == "cloud_water"
+    assert cloud.selection.threshold == 1e-6
+    assert cloud.selection.time_seconds == 0.0
+    assert cloud.point_order == ["x", "y", "z", "value"]
+    assert cloud.coordinate_units == {"xh": "km", "yh": "km", "zh": "km"}
+    assert cloud.stats.source_count == 23
+    assert cloud.stats.returned_count == 23
+    assert cloud.stats.downsampled is False
+    assert cloud.stats.min_value == 1e-6
+    assert cloud.stats.max_value == 2.3e-05
+    assert cloud.points[0] == [1.0, 0.0, 0.4, 1e-6]
+    assert cloud.provenance.processing_method == "backend_xarray_native_grid_threshold"
+    assert cloud.provenance.rendering_method == "thresholded_point_cloud"
+    assert "native_grid_thresholded_point_cloud" in cloud.caveats
+
+
+def test_point_cloud_reports_no_points_above_threshold(tmp_path: Path) -> None:
+    settings, result_id, _run_dir = create_visualization_result(tmp_path)
+
+    cloud = point_cloud(
+        settings,
+        result_id,
+        field="qc",
+        time_index=0,
+        threshold=1.0,
+        max_points=50_000,
+    )
+
+    assert cloud.points == []
+    assert cloud.stats.source_count == 0
+    assert cloud.stats.returned_count == 0
+    assert cloud.stats.min_value is None
+    assert cloud.stats.max_value is None
+
+
+def test_point_cloud_missing_qc_reports_clear_error(tmp_path: Path) -> None:
+    settings, result_id, _run_dir = create_visualization_result(
+        tmp_path,
+        include_qc=False,
+        include_w=True,
+    )
+
+    with pytest.raises(VisualizationDataError, match="qc is not available"):
+        point_cloud(
+            settings,
+            result_id,
+            field="qc",
+            time_index=0,
+            threshold=1e-6,
+            max_points=50_000,
+        )
+
+
+@pytest.mark.parametrize(
+    ("time_index", "threshold", "max_points", "message"),
+    [
+        (8, 1e-6, 50_000, "time_index"),
+        (0, -1.0, 50_000, "threshold"),
+        (0, float("nan"), 50_000, "threshold"),
+        (0, 1e-6, 0, "max_points"),
+    ],
+)
+def test_point_cloud_validates_query_values(
+    tmp_path: Path,
+    time_index: int,
+    threshold: float,
+    max_points: int,
+    message: str,
+) -> None:
+    settings, result_id, _run_dir = create_visualization_result(tmp_path)
+
+    with pytest.raises(VisualizationDataError, match=message):
+        point_cloud(
+            settings,
+            result_id,
+            field="qc",
+            time_index=time_index,
+            threshold=threshold,
+            max_points=max_points,
+        )
+
+
+def test_point_cloud_uses_deterministic_stride_downsampling(tmp_path: Path) -> None:
+    settings, result_id, _run_dir = create_visualization_result(tmp_path)
+
+    cloud = point_cloud(
+        settings,
+        result_id,
+        field="qc",
+        time_index=0,
+        threshold=1e-6,
+        max_points=5,
+    )
+
+    assert cloud.stats.source_count == 23
+    assert cloud.stats.returned_count == 5
+    assert cloud.stats.downsampled is True
+    assert cloud.stats.downsample_stride == 5
+    assert [point[3] for point in cloud.points] == [1e-6, 6e-6, 1.1e-05, 1.6e-05, 2.1e-05]
+    assert "deterministic_stride_downsampling_applied" in cloud.caveats
+
+
+def test_point_cloud_endpoint_returns_payload_and_errors(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    settings, result_id, _run_dir = create_visualization_result(tmp_path)
+    monkeypatch.setenv("CLOUD_CHAMBER_RUNTIME_HOME", str(settings.runtime_home))
+    client = TestClient(app)
+
+    ok = client.get(
+        f"/api/results/{result_id}/visualization/point-cloud",
+        params={"field": "qc", "time_index": 0, "threshold": 1e-6, "max_points": 5},
+    )
+    bad = client.get(
+        f"/api/results/{result_id}/visualization/point-cloud",
+        params={"field": "w", "time_index": 0, "threshold": 1e-6, "max_points": 5},
+    )
+
+    assert ok.status_code == 200
+    assert ok.json()["stats"]["downsampled"] is True
+    assert ok.json()["provenance"]["rendering_method"] == "thresholded_point_cloud"
+    assert bad.status_code == 400
+    assert "Only field=qc" in bad.json()["detail"]
 
 
 @pytest.mark.parametrize(

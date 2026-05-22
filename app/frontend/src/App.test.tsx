@@ -310,6 +310,59 @@ function sliceResponse({
   };
 }
 
+function pointCloudResponse({
+  threshold = 0.000001,
+  timeIndex = 0,
+  points,
+}: {
+  threshold?: number;
+  timeIndex?: number;
+  points?: Array<[number, number, number, number]>;
+} = {}) {
+  const returnedPoints =
+    points ??
+    (threshold >= 1
+      ? []
+      : [
+          [0, 0, 0.8, 0.000002],
+          [1, 1, 0.8, 0.000006],
+          [2, 1, 1.2, 0.000008],
+        ]);
+  const values = returnedPoints.map((point) => point[3]);
+  return {
+    result_id: "result-dry-run-quicklook",
+    run_id: "dry-run-quicklook",
+    scenario_id: "baseline-shallow-cumulus",
+    field: fieldCatalogResponse.available_fields[0],
+    selection: {
+      field: "qc",
+      time_index: timeIndex,
+      time_seconds: timeIndex === 0 ? 0 : 900,
+      threshold,
+      max_points: 50000,
+    },
+    coordinate_units: { xh: "km", yh: "km", zh: "km" },
+    point_order: ["x", "y", "z", "value"],
+    points: returnedPoints,
+    stats: {
+      source_count: returnedPoints.length,
+      returned_count: returnedPoints.length,
+      min_value: values.length ? Math.min(...values) : null,
+      max_value: values.length ? Math.max(...values) : null,
+      downsampled: false,
+      downsample_stride: 1,
+    },
+    provenance: {
+      ...provenance,
+      processing_method: "backend_xarray_native_grid_threshold",
+      rendering_method: "thresholded_point_cloud",
+      provenance_label:
+        "CM1-derived cloud-water point cloud; native-grid threshold; visualizer interpretation",
+    },
+    caveats: ["native_grid_thresholded_point_cloud", "visualizer_interpretation_of_cm1_qc"],
+  };
+}
+
 beforeEach(() => {
   vi.stubGlobal(
     "fetch",
@@ -335,6 +388,20 @@ beforeEach(() => {
       if (url === "/api/results/result-empty-visualizer/visualization/fields") {
         return Promise.resolve(
           new Response(JSON.stringify(emptyFieldCatalogResponse), { status: 200 }),
+        );
+      }
+      if (url.includes("/visualization/point-cloud")) {
+        const parsed = new URL(url, "http://localhost");
+        return Promise.resolve(
+          new Response(
+            JSON.stringify(
+              pointCloudResponse({
+                threshold: Number(parsed.searchParams.get("threshold") ?? 0.000001),
+                timeIndex: Number(parsed.searchParams.get("time_index") ?? 0),
+              }),
+            ),
+            { status: 200 },
+          ),
         );
       }
       if (url.includes("/visualization/slice")) {
@@ -428,7 +495,11 @@ describe("App", () => {
   it("requests a dry-run package and displays generated files without claiming CM1 ran", async () => {
     render(<App />);
 
-    fireEvent.change(await screen.findByLabelText("Low-level humidity"), {
+    const humidityControl = await screen.findByLabelText("Low-level humidity");
+    await waitFor(() => {
+      expect(humidityControl).toHaveValue("baseline");
+    });
+    fireEvent.change(humidityControl, {
       target: { value: "more_humid" },
     });
     fireEvent.click(screen.getByRole("button", { name: "Create dry-run package" }));
@@ -477,7 +548,11 @@ describe("App", () => {
   it("supports name tag notes editing and save through the backend API", async () => {
     render(<App />);
 
-    fireEvent.change(await screen.findByLabelText("Name"), {
+    const nameInput = await screen.findByLabelText("Name");
+    await waitFor(() => {
+      expect(nameInput).toHaveValue("Quick-look shallow cumulus");
+    });
+    fireEvent.change(nameInput, {
       target: { value: "Saved notebook entry" },
     });
     fireEvent.change(screen.getByLabelText("Tags"), {
@@ -583,23 +658,29 @@ describe("App", () => {
     });
   });
 
-  it("opens the 3-D visualizer scene shell without rendering cloud fields", async () => {
+  it("renders cloud-water point cloud in the 3-D visualizer", async () => {
     render(<App />);
 
     fireEvent.click(await screen.findByRole("button", { name: "Open 3-D scene shell" }));
 
     expect(await screen.findByRole("heading", { name: "Scene shell" })).toBeInTheDocument();
-    await screen.findByText("Scene shell ready");
+    await screen.findByText("Cloud-water point cloud loaded");
     expect(screen.getByLabelText("3-D scene container")).toBeInTheDocument();
-    expect(screen.getByText("Cloud rendering not implemented")).toBeInTheDocument();
+    expect(screen.getByLabelText("Cloud-water point cloud")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Orbit" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Pan" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Reset camera" })).toBeInTheDocument();
     expect(screen.getByLabelText("Zoom")).toHaveValue("100");
     expect(screen.getByLabelText("Field")).toHaveValue("qc");
     expect(screen.getByLabelText("Time")).toBeInTheDocument();
-    expect(screen.getByText("scene_shell_no_field_rendering")).toBeInTheDocument();
+    expect(screen.getByText("thresholded_point_cloud")).toBeInTheDocument();
+    expect(screen.getByText("3 of 3")).toBeInTheDocument();
+    expect(screen.getByText("2.000e-6 kg/kg to 8.000e-6 kg/kg")).toBeInTheDocument();
     expect(screen.getByText("Visualizer interpretation of CM1-derived output")).toBeInTheDocument();
+    expect(
+      screen.getByText("Processing method: native-grid thresholded point cloud"),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Rendering method: thresholded point cloud")).toBeInTheDocument();
     expect(screen.getByText("No raw NetCDF parsing in the browser")).toBeInTheDocument();
   });
 
@@ -607,7 +688,7 @@ describe("App", () => {
     render(<App />);
 
     fireEvent.click(await screen.findByRole("button", { name: "Open 3-D scene shell" }));
-    await screen.findByText("Scene shell ready");
+    await screen.findByText("Cloud-water point cloud loaded");
 
     fireEvent.click(screen.getByRole("button", { name: "Pan" }));
     fireEvent.change(screen.getByLabelText("Zoom"), { target: { value: "150" } });
@@ -621,6 +702,46 @@ describe("App", () => {
     expect(screen.getByText("100%")).toBeInTheDocument();
   });
 
+  it("updates cloud-water threshold opacity point size and time requests", async () => {
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Open 3-D scene shell" }));
+    await screen.findByText("Cloud-water point cloud loaded");
+
+    fireEvent.change(screen.getByLabelText("Threshold"), { target: { value: "1" } });
+
+    await screen.findByText("No cloud water above threshold");
+    expect(
+      screen.getByText("No cloud water above the selected threshold at this time."),
+    ).toBeInTheDocument();
+    expect(fetch).toHaveBeenCalledWith(expect.stringContaining("threshold=1"));
+
+    fireEvent.change(screen.getByLabelText("Opacity"), { target: { value: "0.8" } });
+    fireEvent.change(screen.getByLabelText("Point size"), { target: { value: "14" } });
+    fireEvent.change(screen.getByLabelText("Time"), { target: { value: "1" } });
+
+    expect(screen.getByText("0.8")).toBeInTheDocument();
+    expect(screen.getByText("14px")).toBeInTheDocument();
+    await waitFor(() => {
+      expect(fetch).toHaveBeenCalledWith(expect.stringContaining("time_index=1"));
+    });
+  });
+
+  it("handles missing qc in the 3-D point-cloud renderer", async () => {
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "No diagnostics yet" }));
+    fireEvent.click(screen.getByRole("button", { name: "Open 3-D scene shell" }));
+
+    expect(await screen.findByRole("heading", { name: "Scene shell" })).toBeInTheDocument();
+    await screen.findByText("Scene shell ready");
+    expect(
+      screen.getByText("Cloud water field qc is not available for this result."),
+    ).toBeInTheDocument();
+    expect(screen.getByLabelText("Field")).toHaveValue("w");
+    expect(screen.getByLabelText("Threshold")).toBeDisabled();
+  });
+
   it("handles a 3-D scene shell result with no visualization-ready fields", async () => {
     render(<App />);
 
@@ -632,6 +753,8 @@ describe("App", () => {
     expect(
       screen.getByText("No visualization-ready fields are available for this result."),
     ).toBeInTheDocument();
-    expect(screen.getByText("Cloud rendering not implemented")).toBeInTheDocument();
+    expect(
+      screen.getByText("Cloud water field qc is not available for this result."),
+    ).toBeInTheDocument();
   });
 });

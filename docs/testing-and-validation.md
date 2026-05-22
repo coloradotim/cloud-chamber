@@ -80,6 +80,17 @@ and no-field/error states. They must not assert cloud-water rendering,
 isosurfaces, 3-D slice planes, or volumetric effects until the later visualizer
 issues implement those layers.
 
+Cloud-water point-cloud tests should use tiny synthetic NetCDF fixtures on the
+backend and mocked visualization-ready point payloads on the frontend. Backend
+tests should cover `qc` points above threshold, no points above threshold,
+missing `qc`, bad time/threshold/max-point inputs, deterministic stride
+downsampling, stats, coordinate units, and provenance labels. Frontend tests
+should cover rendered point-cloud state, missing `qc`, no-cloud-above-threshold
+state, threshold/time/opacity/point-size controls, provenance/rendering labels,
+and the guarantee that the browser does not parse raw NetCDF. These tests must
+not add ray marching, isosurfaces, shadows, fly-through, export, or generated
+CM1 output.
+
 CM1 runtime floating-point exception flags such as `IEEE_INVALID_FLAG`, `IEEE_DIVIDE_BY_ZERO`, and `IEEE_OVERFLOW_FLAG` should be preserved as caveats. Automated diagnostics should then check whether target fields contain non-finite values. If `qc`, `w`, and `qr` are finite/usable, diagnostics can complete with the runtime warning still visible. If root-cause investigation requires CM1 source-level debugging, that belongs in a separate issue rather than CI.
 
 Local validation uses `scripts/check.sh` as the canonical gate. CI mirrors it through split equivalent jobs so branch protection can require `Frontend`, `Backend`, and `Scripts and config` independently. Keep the local script and CI jobs in sync as new implemented layers add fast checks.
