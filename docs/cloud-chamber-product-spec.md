@@ -549,6 +549,16 @@ Editable notebook state lives beside the local run as `result_card.json`; it
 stores `name`, `tags`, `notes`, `saved`, and `protected` without modifying or
 copying CM1 output. Saving a card marks it as a saved/protected notebook entry.
 
+The first Results Library UI is intentionally table-first. It lists result
+cards from the backend, lets the user select one result, and shows a
+detail/notebook card with scenario, run-size preset, status, diagnostics
+summary, cloud/rain outcome, first cloud time, max `qc`, max/min `w`, caveats,
+output summary, provenance labels, saved/protected state, and editable
+name/tags/notes. It can save/protect a result through the backend API.
+
+The library may reserve disabled space for a future Inspect fields action, but
+field slices, replay, 2-D inspection, and 3-D visualization are later work.
+
 Completed results should be replayable and inspectable without rerunning CM1. Duplicate/tweak/rerun is useful later, but replay/inspect/save is the core MVP result-library behavior.
 
 ## MVP Scope

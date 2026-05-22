@@ -82,6 +82,12 @@ Implemented backend API endpoints:
 - `PATCH /api/results/{result_id}` updates notebook fields: `name`, `tags`, `notes`, `saved`, and `protected`.
 - `POST /api/results/{result_id}/save` marks a card saved/protected without rerunning CM1.
 
+The frontend Results Library shell consumes those Result Card endpoints. It
+starts as a scan-friendly table plus a selected result detail/notebook card,
+with editable name/tags/notes and save/protect actions when the backend
+supports them. The disabled Inspect fields placeholder is intentionally not a
+2-D inspector, replay surface, or 3-D visualizer; those remain #73 and later.
+
 The local run manager assumes one active CM1 run at a time for the MVP. It captures stdout/stderr under the run package `logs/` directory, updates the run manifest through queued/running/completed/failed/canceled states, refuses output-like files before launch, and fails clearly when CM1 settings are missing. Normal tests use fake subprocesses; real CM1 execution remains manual/local and is not required in CI.
 
 Launch preflight also refuses placeholder-only CM1-facing files. Older packages containing `&cloud_chamber_domain` or notes-only `input_sounding` files must be regenerated before launch. For Baseline Shallow Cumulus, generated packages now use a CM1 BOMEX shallow-cumulus namelist path with quick-look grid/runtime settings; the package remains provisional until #56 is retried manually.
