@@ -18,7 +18,9 @@ npm run test
 npm run build
 ```
 
-The frontend uses TypeScript, React, Vite, Vitest, ESLint, and Prettier. Do not add heavy 3-D rendering dependencies until the visualizer work starts.
+The frontend uses TypeScript, React, Vite, Vitest, ESLint, and Prettier. During local development, Vite proxies `/api` requests to `http://127.0.0.1:8000`.
+
+The current first Scenario Builder flow loads Baseline Shallow Cumulus from the backend, shows curated controls and the physical question, requests a dry-run package, and reviews generated files. Preview is explicitly not implemented and not CM1 output. Do not add heavy 3-D rendering dependencies until the visualizer work starts.
 
 ## Backend
 
@@ -26,6 +28,7 @@ From `app/backend`:
 
 ```sh
 uv sync --extra dev
+uv run python -m uvicorn cloud_chamber.app:app --reload
 uv run ruff format --check .
 uv run ruff check .
 uv run mypy .
@@ -39,6 +42,7 @@ python3.12 -m venv .venv
 source .venv/bin/activate
 python -m pip install --upgrade pip
 python -m pip install -e ".[dev]"
+python -m uvicorn cloud_chamber.app:app --reload
 python -m ruff format --check .
 python -m ruff check .
 python -m mypy .
@@ -46,6 +50,11 @@ python -m pytest
 ```
 
 Normal backend checks must not require a local CM1 runtime. Real CM1 paths belong in local settings, not hard-coded app constants.
+
+Implemented backend API endpoints:
+
+- `GET /api/scenarios` lists validated scenario templates for the Scenario Builder and marks Baseline Shallow Cumulus as the Golden Path scenario.
+- `POST /api/dry-run-package` validates selected controls and writes a reviewable dry-run package under the configured runtime home. It does not launch CM1, create NetCDF output, or write generated packages into the repo during tests.
 
 The backend skeleton uses Python/FastAPI with pytest, ruff, and mypy. Data/science work should prefer xarray, netCDF4 or h5netcdf, numpy, and pydantic when those layers are added.
 
@@ -133,11 +142,10 @@ The local gate intentionally does not run real CM1, require a local CM1 installa
 
 ## Scaffold Scope
 
-Do not implement product features in this scaffold PR.
+Do not rebuild the initial scaffold when doing issue work.
 
 Specifically do not:
 
-- build the CM1 scenario UI yet
 - implement the 3-D visualizer yet
 - implement the CM1 run manager yet
 - vendor CM1
