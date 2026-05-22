@@ -158,11 +158,33 @@ Deliverables:
 - run-size preset notes from local/manual execution.
 - generated package inspection checklist.
 - launch/log/status checklist.
+- output and NetCDF detection checklist.
+- ingest readiness checklist.
+- result-card/notebook acceptance checklist.
+- first visualizer inspection checklist.
 - first diagnostics capture: first cloud time, cloud base/top, max updraft, cloud-water summary, and rain onset if present.
 - result-card/notebook acceptance notes.
 - visual inspection notes.
 
 This milestone remains local/manual/offline. CI should not run real CM1.
+
+Manual validation path:
+
+```text
+Generate Baseline Shallow Cumulus dry-run package
+-> inspect generated manifests, namelist, sounding notes, report, and runtime checklist
+-> compare package against local CM1 root/run-dir probes
+-> manually stage package into the local CM1 run workflow
+-> launch CM1 outside CI
+-> capture logs/status/runtime/output paths
+-> detect NetCDF output without committing it
+-> record diagnostics and limitations
+-> document ingest/result-card/visualizer readiness notes
+```
+
+Expected local probes include `CLOUD_CHAMBER_CM1_ROOT`, `~/CloudChamber/settings.json`, `/Users/timpeterson/cm1r21.1`, and `/Users/timpeterson/cm1r21.1/run`. Generated CM1 outputs, logs, NetCDF files, validation reports, copied runtime files, `LANDUSE.TBL`, and local run folders must stay gitignored.
+
+The direct follow-up is #29: automate the local CM1 launcher and status/log monitor with one local run at a time, explicit failure/cancel states, and tests that use fake subprocesses rather than real CM1.
 
 ## M2 Local CM1 Run Manager
 

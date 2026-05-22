@@ -106,6 +106,44 @@ visualizer provenance labels
 visual inspection notes
 ```
 
+### Baseline Shallow Cumulus Manual Smoke-Run Loop
+
+Use this loop after a dry-run package has been generated and before broader CM1 launcher work is trusted. This is a manual/local/offline validation path; do not run it in CI.
+
+1. Generate or identify a Baseline Shallow Cumulus dry-run package under the local runtime home, normally `~/CloudChamber/runs/<run-id>/`.
+2. Inspect the package before launch:
+   - confirm `run_manifest.json`, `case_manifest.json`, `namelist.input`, `input_sounding`, `dry_run_report.json`, and `runtime_file_checklist.json` exist;
+   - confirm the selected run-size preset, physical question, controls, expected diagnostics, and visualization defaults match the intended scenario;
+   - confirm `dry_run_report.json` says CM1 was not launched and is not a completed result.
+3. Compare generated files against the local CM1 runtime requirements:
+   - check `~/CloudChamber/settings.json`, `CLOUD_CHAMBER_CM1_ROOT`, or the default probe paths;
+   - expected local probes include `/Users/timpeterson/cm1r21.1` and `/Users/timpeterson/cm1r21.1/run`;
+   - confirm the CM1 run directory contains the local executable, normally `cm1.exe`;
+   - confirm required runtime files such as `LANDUSE.TBL` are available locally, but not copied into git.
+4. Manually stage the package for CM1 according to the local CM1 build's expected run-directory behavior. Record whether files were copied, symlinked, or run in place.
+5. Launch CM1 manually outside CI. Capture the exact command, CM1 version/path, start time, run-size preset, and Cloud Chamber commit.
+6. Watch status and logs:
+   - record queued/running/completed/failed/canceled observations;
+   - preserve stdout/stderr or CM1 log paths for the future result notebook entry;
+   - record warnings, errors, elapsed time, and any manual intervention.
+7. Detect outputs without committing them:
+   - record output directory and file names/counts;
+   - confirm whether NetCDF files appeared;
+   - estimate local output size;
+   - leave NetCDF, logs, validation reports, copied runtime files, and generated run folders out of git.
+8. If ingest tooling exists, run it locally and record the ingest status. Until then, note what a future ingest should read and any schema gaps found.
+9. Record result-card/notebook acceptance notes:
+   - scenario name and physical question;
+   - controls used;
+   - run-size preset;
+   - CM1 version/path metadata;
+   - output/log paths;
+   - first cloud time, cloud base/top, max vertical velocity, cloud-water summary, and rain onset if present;
+   - limitations and interpretation notes.
+10. If visualizer tooling exists, open the result and record first visual inspection notes. Until then, record the expected visualizer entry point and provenance labels that should be shown later.
+
+Exact cloud morphology is not a pass/fail criterion. The manual acceptance question is whether the generated package can lead to a scientifically honest local CM1 run whose logs, outputs, diagnostics, and limitations are recorded clearly enough for future replay/inspect/save behavior.
+
 ## Generated Output Policy
 
 Never commit:
