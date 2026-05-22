@@ -566,6 +566,30 @@ The library opens a 2-D field inspector from a result detail/notebook entry.
 The inspector is a CM1-output inspection surface, not a visualizer or replay
 system.
 
+The MVP frontend is organized as a task-based workspace:
+
+```text
+Build
+Results
+Inspect
+Visualize
+```
+
+The app should open on `Results`, because the most useful first click path is to
+choose the validated quick-look Baseline Shallow Cumulus result and open it in
+3-D. Results should prioritize saved/protected, completed, cloud-forming
+quick-look baseline entries ahead of failed/no-cloud or unsaved historical
+attempts. User-facing labels should say `Completed CM1 result`, `Ingested`,
+`Saved`, `Needs review`, `Cloud formed`, `No cloud`, and `Rain detected` rather
+than leading with raw lifecycle strings. Raw lifecycle/product/provenance labels
+remain available under technical details.
+
+The selected result is shared by the Results, Inspect, and Visualize sections.
+Inspect and Visualize should default to an interesting output time: first cloud
+time when available, otherwise time of max cloud water when available, otherwise
+the latest output time. The 3-D view should not open at `t=0` when diagnostics
+show clouds appear later.
+
 Completed results should be replayable and inspectable without rerunning CM1. Duplicate/tweak/rerun is useful later, but replay/inspect/save is the core MVP result-library behavior.
 
 ## MVP Scope
@@ -646,6 +670,13 @@ one horizontal and one vertical native-grid slice for the selected slice field
 must show field name, units, selected time, slice location, min/max, native-grid
 caveats, and provenance labels. These planes are inspection overlays, not
 ray-marched volumes or interpolated fields.
+
+The 3-D viewer should provide quick jumps for first cloud, max cloud water, and
+max updraft when result diagnostics provide enough timing metadata. Slice-plane
+defaults should avoid empty zero-index views where a center/cloud-bearing level
+is more useful. Native-grid/no-interpolation caveats and rendering provenance
+must stay available, but long technical labels belong under `About this
+visualization` rather than dominating the primary view.
 
 ### Post-MVP Visual Polish, Fly-Through, and Export
 

@@ -72,13 +72,20 @@ slice display, units, min/max, finite/non-finite counts, provenance labels,
 missing fields, and bad slice requests. They must not add rendering
 dependencies or test a 3-D scene.
 
+Guided workspace tests should cover task navigation across `Build`, `Results`,
+`Inspect`, and `Visualize`; the default `Results` landing state; selected-result
+context flowing into Inspect and Visualize; prioritizing a validated
+cloud-forming quick-look baseline over historical attempts; user-facing status
+labels replacing raw internal lifecycle strings; and technical details keeping
+raw provenance available without dominating the main view.
+
 3-D scene shell component tests should also mock the visualization-ready field
 catalog instead of reading NetCDF in the browser. They should cover opening from
 a Result Card, scene container rendering, orbit/pan controls, zoom/reset camera
-controls, time slider shell, field selector shell, provenance/rendering labels,
-and no-field/error states. They must not assert cloud-water rendering,
-isosurfaces, 3-D slice planes, or volumetric effects until the later visualizer
-issues implement those layers.
+controls, time slider shell, field selector shell, interesting-time defaults,
+first-cloud/max-cloud/max-updraft jump controls, provenance/rendering details,
+and no-field/error states. They must not assert isosurfaces or volumetric
+effects until the later visualizer issues implement those layers.
 
 Cloud-water point-cloud tests should use tiny synthetic NetCDF fixtures on the
 backend and mocked visualization-ready point payloads on the frontend. Backend

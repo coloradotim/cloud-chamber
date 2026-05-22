@@ -123,6 +123,8 @@ type ResultsResponse = {
   results: ResultCard[];
 };
 
+type WorkspaceSection = "build" | "results" | "inspect" | "visualize";
+
 type ProvenancePayload = {
   source_model: string;
   result_id: string;
@@ -346,6 +348,7 @@ async function responseError(response: Response, fallback: string): Promise<stri
 }
 
 export function App() {
+  const [activeSection, setActiveSection] = useState<WorkspaceSection>("results");
   const [scenarios, setScenarios] = useState<Scenario[]>([]);
   const [selectedScenarioId, setSelectedScenarioId] = useState("baseline-shallow-cumulus");
   const [controls, setControls] = useState<Record<string, string | number | boolean>>({});
@@ -354,8 +357,6 @@ export function App() {
   const [results, setResults] = useState<ResultCard[]>([]);
   const [selectedResultId, setSelectedResultId] = useState<string | null>(null);
   const [resultDraft, setResultDraft] = useState({ name: "", tags: "", notes: "" });
-  const [inspectedResultId, setInspectedResultId] = useState<string | null>(null);
-  const [visualizerResultId, setVisualizerResultId] = useState<string | null>(null);
   const [resultsStatus, setResultsStatus] = useState("Loading results...");
   const [status, setStatus] = useState("Loading scenarios...");
   const [error, setError] = useState<string | null>(null);
@@ -384,8 +385,9 @@ export function App() {
     fetchResults()
       .then((payload) => {
         if (!active) return;
-        setResults(payload.results);
-        setSelectedResultId((current) => current ?? payload.results[0]?.result_id ?? null);
+        const prioritized = prioritizeResults(payload.results);
+        setResults(prioritized);
+        setSelectedResultId((current) => current ?? prioritized[0]?.result_id ?? null);
         setResultsStatus(payload.results.length > 0 ? "Results loaded" : "No ingested results");
       })
       .catch((caught: unknown) => {
@@ -455,7 +457,9 @@ export function App() {
 
   function updateResultInList(updated: ResultCard) {
     setResults((current) =>
-      current.map((result) => (result.result_id === updated.result_id ? updated : result)),
+      prioritizeResults(
+        current.map((result) => (result.result_id === updated.result_id ? updated : result)),
+      ),
     );
     setSelectedResultId(updated.result_id);
   }
@@ -509,18 +513,152 @@ export function App() {
           <p className="eyebrow">Local CM1 experiment lab</p>
           <h1>Cloud Chamber</h1>
         </div>
-        <p className="state-chip">{status}</p>
+        <p className="state-chip">{sectionLabel(activeSection)}</p>
       </header>
 
+      <nav className="workspace-nav" aria-label="Cloud Chamber workspace">
+        {(["build", "results", "inspect", "visualize"] as WorkspaceSection[]).map((section) => (
+          <button
+            key={section}
+            type="button"
+            className={activeSection === section ? "active-control" : ""}
+            onClick={() => setActiveSection(section)}
+          >
+            {sectionLabel(section)}
+          </button>
+        ))}
+      </nav>
+
+      {activeSection === "build" && (
+        <BuildWorkspace
+          status={status}
+          scenarios={scenarios}
+          selectedScenario={selectedScenario}
+          selectedScenarioId={selectedScenarioId}
+          controls={controls}
+          runSizePreset={runSizePreset}
+          validationMessages={validationMessages}
+          dryRun={dryRun}
+          onSelectScenario={setSelectedScenarioId}
+          onControlChange={(id, value) =>
+            setControls((current) => ({
+              ...current,
+              [id]: value,
+            }))
+          }
+          onRunSizeChange={setRunSizePreset}
+          onDryRun={handleDryRun}
+        />
+      )}
+
+      {activeSection === "results" && (
+        <ResultsWorkspace
+          results={results}
+          selectedResult={selectedResult}
+          selectedResultId={selectedResult?.result_id ?? null}
+          resultsStatus={resultsStatus}
+          resultsError={resultsError}
+          draft={resultDraft}
+          onSelectResult={setSelectedResultId}
+          onDraftChange={setResultDraft}
+          onSubmit={handleResultUpdate}
+          onSave={handleResultSave}
+          onInspect={() => {
+            setActiveSection("inspect");
+          }}
+          onOpenVisualizer={() => {
+            setActiveSection("visualize");
+          }}
+        />
+      )}
+
+      {activeSection === "inspect" && (
+        <section className="workspace-section" aria-labelledby="inspect-workspace-title">
+          <div className="section-heading">
+            <div>
+              <p className="eyebrow">Inspect</p>
+              <h2 id="inspect-workspace-title">Inspect fields</h2>
+            </div>
+            <p className="state-chip">{selectedResult ? selectedResult.name : "No result"}</p>
+          </div>
+          {selectedResult ? (
+            <FieldInspector result={selectedResult} />
+          ) : (
+            <section className="status-panel">
+              <p>Select an ingested result before inspecting fields.</p>
+            </section>
+          )}
+        </section>
+      )}
+
+      {activeSection === "visualize" && (
+        <section className="workspace-section" aria-labelledby="visualize-workspace-title">
+          <div className="section-heading">
+            <div>
+              <p className="eyebrow">Visualize</p>
+              <h2 id="visualize-workspace-title">3-D cloud view</h2>
+            </div>
+            <p className="state-chip">{selectedResult ? selectedResult.name : "No result"}</p>
+          </div>
+          {selectedResult ? (
+            <VisualizerSceneShell result={selectedResult} />
+          ) : (
+            <section className="status-panel">
+              <p>Select an ingested result before opening the 3-D view.</p>
+            </section>
+          )}
+        </section>
+      )}
+    </main>
+  );
+}
+
+function BuildWorkspace({
+  status,
+  scenarios,
+  selectedScenario,
+  selectedScenarioId,
+  controls,
+  runSizePreset,
+  validationMessages,
+  dryRun,
+  onSelectScenario,
+  onControlChange,
+  onRunSizeChange,
+  onDryRun,
+}: {
+  status: string;
+  scenarios: Scenario[];
+  selectedScenario: Scenario | undefined;
+  selectedScenarioId: string;
+  controls: Record<string, string | number | boolean>;
+  runSizePreset: string;
+  validationMessages: string[];
+  dryRun: DryRunResponse | null;
+  onSelectScenario: (scenarioId: string) => void;
+  onControlChange: (controlId: string, value: string) => void;
+  onRunSizeChange: (presetId: string) => void;
+  onDryRun: (event: FormEvent<HTMLFormElement>) => void;
+}) {
+  return (
+    <section className="workspace-section" aria-labelledby="build-title">
+      <div className="section-heading">
+        <div>
+          <p className="eyebrow">Build</p>
+          <h2 id="build-title">Create a CM1 run package</h2>
+        </div>
+        <p className="state-chip">{status}</p>
+      </div>
+
       <section className="builder-layout" aria-label="Scenario Builder">
-        <form className="builder-panel" onSubmit={handleDryRun}>
+        <form className="builder-panel" onSubmit={onDryRun}>
           <label className="field-label" htmlFor="scenario">
             Scenario
           </label>
           <select
             id="scenario"
             value={selectedScenarioId}
-            onChange={(event) => setSelectedScenarioId(event.target.value)}
+            onChange={(event) => onSelectScenario(event.target.value)}
           >
             {scenarios.map((scenario) => (
               <option key={scenario.id} value={scenario.id}>
@@ -555,12 +693,7 @@ export function App() {
                     <select
                       id={`control-${control.id}`}
                       value={String(controls[control.id] ?? control.default)}
-                      onChange={(event) =>
-                        setControls((current) => ({
-                          ...current,
-                          [control.id]: event.target.value,
-                        }))
-                      }
+                      onChange={(event) => onControlChange(control.id, event.target.value)}
                     >
                       {control.options.map((option) => (
                         <option key={option.value} value={option.value}>
@@ -578,7 +711,7 @@ export function App() {
               <select
                 id="run-size"
                 value={runSizePreset}
-                onChange={(event) => setRunSizePreset(event.target.value)}
+                onChange={(event) => onRunSizeChange(event.target.value)}
               >
                 {selectedScenario.run_size_presets.map((preset) => (
                   <option key={preset.id} value={preset.id}>
@@ -596,16 +729,16 @@ export function App() {
               )}
 
               <button type="submit" disabled={validationMessages.length > 0}>
-                Create dry-run package
+                Create run package
               </button>
             </>
           )}
         </form>
 
         <aside className="side-stack">
-          <section className="status-panel" aria-labelledby="preview-title">
-            <p className="eyebrow">Preview estimate</p>
-            <h3 id="preview-title">Preview not implemented</h3>
+          <section className="status-panel secondary-panel" aria-labelledby="preview-title">
+            <p className="eyebrow">Future guidance</p>
+            <h3 id="preview-title">Preview estimate not implemented</h3>
             <p>
               Future preview estimates will be guidance only. This panel is not CM1 output, not a
               completed result, and not a visualization interpretation.
@@ -613,59 +746,107 @@ export function App() {
           </section>
 
           <section className="status-panel" aria-labelledby="review-title">
-            <p className="eyebrow">Dry-run review</p>
-            <h3 id="review-title">What will be generated</h3>
+            <p className="eyebrow">Generated package</p>
+            <h3 id="review-title">Review before local CM1 run</h3>
             {dryRun ? (
               <DryRunReview dryRun={dryRun} />
             ) : (
               <p>
-                Request a package to review the manifest, CM1 input placeholders, runtime checklist,
-                and dry-run report before any local CM1 launch exists.
+                Create a package to review the manifest, CM1 inputs, runtime checklist, and run
+                report before launching local CM1 or ingesting a saved result.
               </p>
             )}
           </section>
         </aside>
       </section>
+    </section>
+  );
+}
 
-      <section className="results-library" aria-labelledby="results-title">
-        <div className="section-heading">
+function ResultsWorkspace({
+  results,
+  selectedResult,
+  selectedResultId,
+  resultsStatus,
+  resultsError,
+  draft,
+  onSelectResult,
+  onDraftChange,
+  onSubmit,
+  onSave,
+  onInspect,
+  onOpenVisualizer,
+}: {
+  results: ResultCard[];
+  selectedResult: ResultCard | undefined;
+  selectedResultId: string | null;
+  resultsStatus: string;
+  resultsError: string | null;
+  draft: { name: string; tags: string; notes: string };
+  onSelectResult: (resultId: string) => void;
+  onDraftChange: (draft: { name: string; tags: string; notes: string }) => void;
+  onSubmit: (event: FormEvent<HTMLFormElement>) => void;
+  onSave: () => void;
+  onInspect: () => void;
+  onOpenVisualizer: () => void;
+}) {
+  return (
+    <section className="results-library" aria-labelledby="results-title">
+      <div className="section-heading">
+        <div>
+          <p className="eyebrow">Results</p>
+          <h2 id="results-title">Experiment Notebook</h2>
+        </div>
+        <p className="state-chip">{resultsStatus}</p>
+      </div>
+
+      {selectedResult && (
+        <section className="featured-result" aria-label="Selected result">
           <div>
-            <p className="eyebrow">Results Library</p>
-            <h2 id="results-title">Experiment Notebook</h2>
+            <p className="eyebrow">Ready to inspect</p>
+            <h3>{selectedResult.name}</h3>
+            <p>
+              {selectedResult.scenario_name ?? selectedResult.scenario_id} ·{" "}
+              {humanize(selectedResult.run_size_preset)}
+            </p>
           </div>
-          <p className="state-chip">{resultsStatus}</p>
-        </div>
+          <div className="badge-row">
+            {isValidatedQuickLookBaseline(selectedResult) && (
+              <StatusBadge label="Validated quick-look baseline" tone="good" />
+            )}
+            <OutcomeBadge result={selectedResult} />
+            <StatusBadge label={rainOutcome(selectedResult.rain_present)} tone="neutral" />
+            {selectedResult.saved || selectedResult.protected ? (
+              <StatusBadge label="Saved" tone="good" />
+            ) : (
+              <StatusBadge label="Unsaved" tone="neutral" />
+            )}
+          </div>
+          <button type="button" onClick={onOpenVisualizer}>
+            Open 3-D
+          </button>
+        </section>
+      )}
 
-        {resultsError && <p role="alert">{resultsError}</p>}
+      {resultsError && <p role="alert">{resultsError}</p>}
 
-        <div className="results-layout">
-          <ResultsTable
-            results={results}
-            selectedResultId={selectedResult?.result_id ?? null}
-            onSelect={setSelectedResultId}
-          />
-          <ResultNotebookCard
-            result={selectedResult}
-            draft={resultDraft}
-            onDraftChange={setResultDraft}
-            onSubmit={handleResultUpdate}
-            onSave={handleResultSave}
-            onInspect={() => setInspectedResultId(selectedResult?.result_id ?? null)}
-            onOpenVisualizer={() => setVisualizerResultId(selectedResult?.result_id ?? null)}
-          />
-        </div>
-
-        {inspectedResultId && selectedResult && selectedResult.result_id === inspectedResultId && (
-          <FieldInspector result={selectedResult} />
-        )}
-
-        {visualizerResultId &&
-          selectedResult &&
-          selectedResult.result_id === visualizerResultId && (
-            <VisualizerSceneShell result={selectedResult} />
-          )}
-      </section>
-    </main>
+      <div className="results-layout">
+        <ResultsTable
+          results={results}
+          selectedResultId={selectedResultId}
+          onSelect={onSelectResult}
+        />
+        <ResultNotebookCard
+          result={selectedResult}
+          draft={draft}
+          onDraftChange={onDraftChange}
+          onSubmit={onSubmit}
+          onSave={onSave}
+          onInspect={onInspect}
+          onOpenVisualizer={onOpenVisualizer}
+        />
+      </div>
+    </section>
   );
 }
 
@@ -751,16 +932,33 @@ function ResultsTable({
                   className="link-button"
                   onClick={() => onSelect(result.result_id)}
                 >
-                  {result.name}
+                  {compactResultName(result.name)}
                 </button>
                 <small>{formatDate(result.completed_at ?? result.created_at)}</small>
               </td>
               <td>{result.scenario_name ?? result.scenario_id}</td>
-              <td>{humanize(result.status)}</td>
+              <td>
+                <StatusBadge label={userFacingStatus(result)} tone={statusTone(result)} />
+              </td>
               <td>{humanize(result.run_size_preset)}</td>
-              <td>{result.diagnostics_summary ?? "Diagnostics unavailable"}</td>
+              <td>
+                <div className="badge-row">
+                  <OutcomeBadge result={result} />
+                  {isValidatedQuickLookBaseline(result) && (
+                    <StatusBadge label="Validated quick-look baseline" tone="good" />
+                  )}
+                  <StatusBadge label={rainOutcome(result.rain_present)} tone="neutral" />
+                  {result.caveats.length > 0 && <StatusBadge label="Needs review" tone="warning" />}
+                </div>
+                <small>{result.diagnostics_summary ?? "Diagnostics unavailable"}</small>
+              </td>
               <td>{outputSummary(result.output_file_summary)}</td>
-              <td>{result.saved || result.protected ? "Saved / protected" : "Not saved"}</td>
+              <td>
+                <StatusBadge
+                  label={result.saved || result.protected ? "Saved" : "Unsaved"}
+                  tone={result.saved || result.protected ? "good" : "neutral"}
+                />
+              </td>
             </tr>
           ))}
         </tbody>
@@ -801,16 +999,23 @@ function ResultNotebookCard({
           <p className="eyebrow">Result detail / notebook card</p>
           <h3>{result.name}</h3>
         </div>
-        <span className={result.saved || result.protected ? "saved-badge" : "plain-badge"}>
-          {result.saved || result.protected ? "Saved / protected" : "Not saved"}
-        </span>
+        <StatusBadge
+          label={result.saved || result.protected ? "Saved" : "Unsaved"}
+          tone={result.saved || result.protected ? "good" : "neutral"}
+        />
+      </div>
+
+      <div className="badge-row">
+        <OutcomeBadge result={result} />
+        <StatusBadge label={rainOutcome(result.rain_present)} tone="neutral" />
+        {result.caveats.length > 0 && <StatusBadge label="Needs review" tone="warning" />}
+        <StatusBadge label={userFacingStatus(result)} tone={statusTone(result)} />
       </div>
 
       <dl className="metric-grid">
         <Metric label="Run ID" value={result.run_id} />
         <Metric label="Scenario" value={result.scenario_name ?? result.scenario_id} />
         <Metric label="Run-size preset" value={humanize(result.run_size_preset)} />
-        <Metric label="Status" value={humanize(result.status)} />
         <Metric
           label="Diagnostics"
           value={result.diagnostics_summary ?? "Diagnostics unavailable"}
@@ -823,26 +1028,6 @@ function ResultNotebookCard({
         <Metric label="Min w" value={formatNumber(result.min_w_m_s, "m/s")} />
         <Metric label="Output" value={outputSummary(result.output_file_summary)} />
       </dl>
-
-      <section aria-labelledby="result-question-title">
-        <h4 id="result-question-title">Physical question</h4>
-        <p>{result.physical_question}</p>
-      </section>
-
-      <section aria-labelledby="controls-used-title">
-        <h4 id="controls-used-title">Controls used</h4>
-        {Object.keys(result.controls).length > 0 ? (
-          <ul className="compact-list">
-            {Object.entries(result.controls).map(([key, value]) => (
-              <li key={key}>
-                {humanize(key)}: {String(value)}
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <p>No controls recorded.</p>
-        )}
-      </section>
 
       <section aria-labelledby="caveats-title">
         <h4 id="caveats-title">Caveats / warnings</h4>
@@ -857,14 +1042,43 @@ function ResultNotebookCard({
         )}
       </section>
 
-      <section aria-labelledby="provenance-title">
-        <h4 id="provenance-title">Provenance labels</h4>
-        <ul className="tag-list">
-          {result.provenance_labels.map((label) => (
-            <li key={label}>{label}</li>
-          ))}
-        </ul>
-      </section>
+      <details>
+        <summary>Technical details</summary>
+        <section aria-labelledby="result-question-title">
+          <h4 id="result-question-title">Physical question</h4>
+          <p>{result.physical_question}</p>
+        </section>
+
+        <section aria-labelledby="controls-used-title">
+          <h4 id="controls-used-title">Controls used</h4>
+          {Object.keys(result.controls).length > 0 ? (
+            <ul className="compact-list">
+              {Object.entries(result.controls).map(([key, value]) => (
+                <li key={key}>
+                  {humanize(key)}: {String(value)}
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p>No controls recorded.</p>
+          )}
+        </section>
+
+        <section aria-labelledby="provenance-title">
+          <h4 id="provenance-title">Provenance labels</h4>
+          <ul className="tag-list">
+            {result.provenance_labels.map((label) => (
+              <li key={label}>{label}</li>
+            ))}
+          </ul>
+          <dl className="metric-grid">
+            <Metric label="Lifecycle" value={result.source_lifecycle_state} />
+            <Metric label="Product state" value={result.source_product_state} />
+            <Metric label="Result state" value={result.status} />
+            <Metric label="Source model" value={result.source_model} />
+          </dl>
+        </section>
+      </details>
 
       <form className="notebook-form" onSubmit={onSubmit}>
         <label htmlFor="result-name">Name</label>
@@ -898,7 +1112,7 @@ function ResultNotebookCard({
             Inspect fields
           </button>
           <button type="button" onClick={onOpenVisualizer}>
-            Open 3-D scene shell
+            Open 3-D
           </button>
         </div>
       </form>
@@ -958,8 +1172,15 @@ function VisualizerSceneShell({ result }: { result: ResultCard }) {
         const firstPreferred =
           payload.available_fields.find((field) => field.raw_field_name === "qc") ??
           payload.available_fields[0];
+        const initialTimeIndex = interestingTimeIndex(
+          firstPreferred?.time_coordinate_values ?? [],
+          result,
+        );
         setSelectedFieldName(firstPreferred?.raw_field_name ?? "");
         setSliceFieldName(firstPreferred?.raw_field_name ?? "");
+        setTimeIndex(initialTimeIndex);
+        setHorizontalSliceLevel(defaultHorizontalLevel(firstPreferred));
+        setVerticalSliceIndex(defaultVerticalIndex(firstPreferred, "vertical_x"));
         setSceneStatus(
           payload.available_fields.length > 0 ? "Scene shell ready" : "No fields available",
         );
@@ -972,7 +1193,7 @@ function VisualizerSceneShell({ result }: { result: ResultCard }) {
     return () => {
       active = false;
     };
-  }, [result.result_id]);
+  }, [result]);
 
   const selectedField = useMemo(
     () => catalog?.available_fields.find((field) => field.raw_field_name === selectedFieldName),
@@ -1204,8 +1425,13 @@ function VisualizerSceneShell({ result }: { result: ResultCard }) {
                   id="scene-field"
                   value={selectedFieldName}
                   onChange={(event) => {
+                    const nextField = catalog.available_fields.find(
+                      (field) => field.raw_field_name === event.target.value,
+                    );
                     setSelectedFieldName(event.target.value);
-                    setTimeIndex(0);
+                    setTimeIndex(
+                      interestingTimeIndex(nextField?.time_coordinate_values ?? [], result),
+                    );
                   }}
                 >
                   {catalog.available_fields.map((field) => (
@@ -1229,6 +1455,26 @@ function VisualizerSceneShell({ result }: { result: ResultCard }) {
               <button type="button" onClick={() => setIsPlaying((current) => !current)}>
                 {isPlaying ? "Pause time" : "Play time"}
               </button>
+              <div className="button-row">
+                <button
+                  type="button"
+                  onClick={() => setTimeIndex(jumpTimeIndex(timeOptions, result, "first-cloud"))}
+                >
+                  Jump to first cloud
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setTimeIndex(jumpTimeIndex(timeOptions, result, "max-qc"))}
+                >
+                  Jump to max cloud water
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setTimeIndex(jumpTimeIndex(timeOptions, result, "max-w"))}
+                >
+                  Jump to max updraft
+                </button>
+              </div>
             </fieldset>
           )}
 
@@ -1283,9 +1529,12 @@ function VisualizerSceneShell({ result }: { result: ResultCard }) {
                   id="slice-field"
                   value={sliceFieldName}
                   onChange={(event) => {
+                    const nextField = catalog.available_fields.find(
+                      (field) => field.raw_field_name === event.target.value,
+                    );
                     setSliceFieldName(event.target.value);
-                    setHorizontalSliceLevel(0);
-                    setVerticalSliceIndex(0);
+                    setHorizontalSliceLevel(defaultHorizontalLevel(nextField));
+                    setVerticalSliceIndex(defaultVerticalIndex(nextField, sliceOrientation));
                   }}
                 >
                   {catalog.available_fields
@@ -1315,9 +1564,11 @@ function VisualizerSceneShell({ result }: { result: ResultCard }) {
                 <select
                   id="scene-vertical-orientation"
                   value={sliceOrientation}
-                  onChange={(event) =>
-                    setSliceOrientation(event.target.value as "vertical_x" | "vertical_y")
-                  }
+                  onChange={(event) => {
+                    const nextOrientation = event.target.value as "vertical_x" | "vertical_y";
+                    setSliceOrientation(nextOrientation);
+                    setVerticalSliceIndex(defaultVerticalIndex(sliceField, nextOrientation));
+                  }}
                 >
                   <option value="vertical_x">vertical_x</option>
                   <option value="vertical_y">vertical_y</option>
@@ -1337,41 +1588,10 @@ function VisualizerSceneShell({ result }: { result: ResultCard }) {
             </fieldset>
           )}
 
-          <dl className="metric-grid">
-            <Metric label="Run ID" value={result.run_id} />
-            <Metric label="Camera mode" value={cameraMode} />
-            <Metric label="Zoom" value={`${zoom}%`} />
-            <Metric label="Opacity" value={String(opacity)} />
-            <Metric label="Point size" value={`${pointSize}px`} />
+          <div className="summary-strip">
             <Metric
               label="Selected time"
               value={formatTimeValue(timeOptions[Math.min(timeIndex, timeMax)] ?? null)}
-            />
-            <Metric
-              label="Selected field"
-              value={
-                selectedField
-                  ? `${selectedField.raw_field_name} (${selectedField.display_name})`
-                  : "Unavailable"
-              }
-            />
-            <Metric label="Threshold" value={formatScientific(threshold, "kg/kg")} />
-            <Metric label="Rendering method" value="thresholded_point_cloud" />
-            <Metric
-              label="Slice field"
-              value={
-                sliceField
-                  ? `${sliceField.raw_field_name} (${sliceField.display_name})`
-                  : "Unavailable"
-              }
-            />
-            <Metric
-              label="Slice orientation"
-              value={
-                sceneVerticalSlice
-                  ? `${sceneVerticalSlice.selection.orientation} at ${sceneVerticalSlice.selection.selected_dimension}[${sceneVerticalSlice.selection.selected_index}]`
-                  : "Unavailable"
-              }
             />
             <Metric
               label="Points"
@@ -1392,7 +1612,7 @@ function VisualizerSceneShell({ result }: { result: ResultCard }) {
                   : "Unavailable"
               }
             />
-          </dl>
+          </div>
 
           {pointCloud?.stats.downsampled && (
             <p role="status">
@@ -1402,25 +1622,62 @@ function VisualizerSceneShell({ result }: { result: ResultCard }) {
           )}
           {sliceError && <p role="alert">{sliceError}</p>}
 
-          <div className="slice-plane-summary">
-            <SceneSliceSummary title="Horizontal slice plane" slice={sceneHorizontalSlice} />
-            <SceneSliceSummary title="Vertical slice plane" slice={sceneVerticalSlice} />
-          </div>
+          <details>
+            <summary>About this visualization</summary>
+            <dl className="metric-grid">
+              <Metric label="Run ID" value={result.run_id} />
+              <Metric label="Camera mode" value={cameraMode} />
+              <Metric label="Zoom" value={`${zoom}%`} />
+              <Metric label="Opacity" value={String(opacity)} />
+              <Metric label="Point size" value={`${pointSize}px`} />
+              <Metric
+                label="Selected field"
+                value={
+                  selectedField
+                    ? `${selectedField.raw_field_name} (${selectedField.display_name})`
+                    : "Unavailable"
+                }
+              />
+              <Metric label="Threshold" value={formatScientific(threshold, "kg/kg")} />
+              <Metric label="Rendering method" value="thresholded_point_cloud" />
+              <Metric
+                label="Slice field"
+                value={
+                  sliceField
+                    ? `${sliceField.raw_field_name} (${sliceField.display_name})`
+                    : "Unavailable"
+                }
+              />
+              <Metric
+                label="Slice orientation"
+                value={
+                  sceneVerticalSlice
+                    ? `${sceneVerticalSlice.selection.orientation} at ${sceneVerticalSlice.selection.selected_dimension}[${sceneVerticalSlice.selection.selected_index}]`
+                    : "Unavailable"
+                }
+              />
+            </dl>
 
-          <section aria-labelledby="visualizer-provenance-title">
-            <h3 id="visualizer-provenance-title">Provenance / rendering labels</h3>
-            <ul className="compact-list">
-              <li>{provenanceLabel}</li>
-              <li>Visualizer interpretation of CM1-derived output</li>
-              <li>Processing method: native-grid thresholded point cloud</li>
-              <li>Rendering method: thresholded point cloud</li>
-              <li>Slice planes: native-grid JSON slices from the backend</li>
-              <li>No raw NetCDF parsing in the browser</li>
-              <li>
-                No interpolation, ray marching, isosurface extraction, or synthetic cloud physics
-              </li>
-            </ul>
-          </section>
+            <div className="slice-plane-summary">
+              <SceneSliceSummary title="Horizontal slice plane" slice={sceneHorizontalSlice} />
+              <SceneSliceSummary title="Vertical slice plane" slice={sceneVerticalSlice} />
+            </div>
+
+            <section aria-labelledby="visualizer-provenance-title">
+              <h3 id="visualizer-provenance-title">Provenance / rendering labels</h3>
+              <ul className="compact-list">
+                <li>{provenanceLabel}</li>
+                <li>Visualizer interpretation of CM1-derived output</li>
+                <li>Processing method: native-grid thresholded point cloud</li>
+                <li>Rendering method: thresholded point cloud</li>
+                <li>Slice planes: native-grid JSON slices from the backend</li>
+                <li>No raw NetCDF parsing in the browser</li>
+                <li>
+                  No interpolation, ray marching, isosurface extraction, or synthetic cloud physics
+                </li>
+              </ul>
+            </section>
+          </details>
         </aside>
       </div>
     </section>
@@ -1533,6 +1790,9 @@ function FieldInspector({ result }: { result: ResultCard }) {
           payload.available_fields.find((field) => field.raw_field_name === "qc") ??
           payload.available_fields[0];
         setSelectedFieldName(firstPreferred?.raw_field_name ?? "");
+        setTimeIndex(interestingTimeIndex(firstPreferred?.time_coordinate_values ?? [], result));
+        setHorizontalLevelIndex(defaultHorizontalLevel(firstPreferred));
+        setVerticalLevelIndex(defaultVerticalIndex(firstPreferred, "vertical_x"));
         setInspectorStatus(
           payload.available_fields.length > 0 ? "Fields loaded" : "No fields available",
         );
@@ -1545,7 +1805,7 @@ function FieldInspector({ result }: { result: ResultCard }) {
     return () => {
       active = false;
     };
-  }, [result.result_id]);
+  }, [result]);
 
   const selectedField = useMemo(
     () => catalog?.available_fields.find((field) => field.raw_field_name === selectedFieldName),
@@ -1554,10 +1814,10 @@ function FieldInspector({ result }: { result: ResultCard }) {
 
   useEffect(() => {
     if (!selectedField) return;
-    setTimeIndex(0);
-    setHorizontalLevelIndex(0);
-    setVerticalLevelIndex(0);
-  }, [selectedField]);
+    setTimeIndex(interestingTimeIndex(selectedField.time_coordinate_values, result));
+    setHorizontalLevelIndex(defaultHorizontalLevel(selectedField));
+    setVerticalLevelIndex(defaultVerticalIndex(selectedField, verticalOrientation));
+  }, [result, selectedField, verticalOrientation]);
 
   useEffect(() => {
     if (!selectedField) return;
@@ -1783,6 +2043,20 @@ function SlicePanel({ title, slice }: { title: string; slice: SliceResponse | nu
   );
 }
 
+function OutcomeBadge({ result }: { result: ResultCard }) {
+  const label = cloudOutcome(result);
+  return (
+    <StatusBadge
+      label={label}
+      tone={label === "Cloud formed" ? "good" : label === "No cloud formed" ? "warning" : "neutral"}
+    />
+  );
+}
+
+function StatusBadge({ label, tone }: { label: string; tone: "good" | "warning" | "neutral" }) {
+  return <span className={`status-badge status-badge-${tone}`}>{label}</span>;
+}
+
 function Metric({ label, value }: { label: string; value: string }) {
   return (
     <div>
@@ -1885,6 +2159,60 @@ function humanize(value: string): string {
   return value.replaceAll("_", " ");
 }
 
+function sectionLabel(section: WorkspaceSection): string {
+  const labels: Record<WorkspaceSection, string> = {
+    build: "Build",
+    results: "Results",
+    inspect: "Inspect",
+    visualize: "Visualize",
+  };
+  return labels[section];
+}
+
+function compactResultName(value: string): string {
+  return value.length > 34 ? `${value.slice(0, 31)}...` : value;
+}
+
+function prioritizeResults(results: ResultCard[]): ResultCard[] {
+  return [...results].sort((left, right) => resultPriority(right) - resultPriority(left));
+}
+
+function resultPriority(result: ResultCard): number {
+  let score = 0;
+  if (result.scenario_id === "baseline-shallow-cumulus") score += 30;
+  if (result.run_size_preset === "quick_look") score += 20;
+  if (result.source_lifecycle_state === "completed") score += 20;
+  if (cloudOutcome(result) === "Cloud formed") score += 20;
+  if (result.saved || result.protected) score += 10;
+  score += new Date(result.completed_at ?? result.created_at).getTime() / 1_000_000_000_000;
+  return score;
+}
+
+function isValidatedQuickLookBaseline(result: ResultCard): boolean {
+  return (
+    result.scenario_id === "baseline-shallow-cumulus" &&
+    result.run_size_preset === "quick_look" &&
+    result.source_lifecycle_state === "completed" &&
+    cloudOutcome(result) === "Cloud formed"
+  );
+}
+
+function userFacingStatus(result: ResultCard): string {
+  if (result.saved || result.protected) return "Saved";
+  if (result.source_lifecycle_state === "completed" && result.status.includes("ingested")) {
+    return "Completed CM1 result";
+  }
+  if (result.status.includes("ingested")) return "Ingested";
+  if (result.caveats.length > 0) return "Needs review";
+  return humanize(result.status);
+}
+
+function statusTone(result: ResultCard): "good" | "warning" | "neutral" {
+  if (result.caveats.length > 0 && cloudOutcome(result) !== "Cloud formed") return "warning";
+  if (result.source_lifecycle_state === "completed") return "good";
+  return "neutral";
+}
+
 function cloudOutcome(result: ResultCard): string {
   if (!result.diagnostics_summary) return "Unknown";
   return result.diagnostics_summary.includes("cloud formed") &&
@@ -1906,4 +2234,72 @@ function outputSummary(summary: OutputFileSummary): string {
   if (summary.stats_netcdf_count > 0) parts.push(`${summary.stats_netcdf_count} stats files`);
   if (summary.raw_cm1_artifact_count > 0) parts.push(`${summary.raw_cm1_artifact_count} raw files`);
   return parts.join(", ");
+}
+
+function interestingTimeIndex(
+  timeOptions: Array<number | string | null>,
+  result: ResultCard,
+): number {
+  const target =
+    result.first_cloud_time_seconds ?? result.output_file_summary.last_output_time_seconds;
+  return closestTimeIndex(timeOptions, target);
+}
+
+function jumpTimeIndex(
+  timeOptions: Array<number | string | null>,
+  result: ResultCard,
+  target: "first-cloud" | "max-qc" | "max-w",
+): number {
+  const preferred =
+    target === "first-cloud"
+      ? result.first_cloud_time_seconds
+      : (result.first_cloud_time_seconds ?? result.output_file_summary.last_output_time_seconds);
+  return closestTimeIndex(timeOptions, preferred);
+}
+
+function closestTimeIndex(
+  timeOptions: Array<number | string | null>,
+  target: number | null,
+): number {
+  if (timeOptions.length === 0) return 0;
+  if (target === null) return timeOptions.length - 1;
+  let bestIndex = 0;
+  let bestDistance = Number.POSITIVE_INFINITY;
+  timeOptions.forEach((value, index) => {
+    const seconds = numericTimeSeconds(value);
+    if (seconds === null) return;
+    const distance = Math.abs(seconds - target);
+    if (distance < bestDistance) {
+      bestDistance = distance;
+      bestIndex = index;
+    }
+  });
+  return bestIndex;
+}
+
+function numericTimeSeconds(value: number | string | null): number | null {
+  if (typeof value === "number") return value;
+  if (typeof value !== "string") return null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function defaultHorizontalLevel(field: VisualizableField | undefined): number {
+  return Math.max(0, Math.floor(verticalDimensionSize(field) / 3));
+}
+
+function defaultVerticalIndex(
+  field: VisualizableField | undefined,
+  orientation: "vertical_x" | "vertical_y",
+): number {
+  const dimension =
+    orientation === "vertical_x" ? field?.coordinate_names.y : field?.coordinate_names.x;
+  if (!field || !dimension) return 0;
+  const size = field.shape[field.dimensions.indexOf(dimension)] ?? 1;
+  return Math.max(0, Math.floor(size / 2));
+}
+
+function verticalDimensionSize(field: VisualizableField | undefined): number {
+  if (!field?.coordinate_names.vertical) return 1;
+  return field.shape[field.dimensions.indexOf(field.coordinate_names.vertical)] ?? 1;
 }

@@ -198,10 +198,10 @@ const fieldCatalogResponse = {
       display_name: "Cloud water",
       units: "kg/kg",
       dimensions: ["time", "zh", "yh", "xh"],
-      shape: [2, 2, 2, 3],
+      shape: [3, 2, 2, 3],
       native_grid: "zh/yh/xh",
       coordinate_names: { time: "time", vertical: "zh", y: "yh", x: "xh" },
-      time_coordinate_values: [0, 900],
+      time_coordinate_values: [0, 900, 1800],
       provenance,
       caveats: ["native_grid_view_no_interpolation"],
     },
@@ -211,10 +211,10 @@ const fieldCatalogResponse = {
       display_name: "Vertical velocity",
       units: "m/s",
       dimensions: ["time", "zf", "yh", "xh"],
-      shape: [2, 3, 2, 3],
+      shape: [3, 3, 2, 3],
       native_grid: "zf/yh/xh",
       coordinate_names: { time: "time", vertical: "zf", y: "yh", x: "xh" },
-      time_coordinate_values: [0, 900],
+      time_coordinate_values: [0, 900, 1800],
       provenance,
       caveats: ["native_grid_view_no_interpolation"],
     },
@@ -262,7 +262,7 @@ function sliceResponse({
   const isVertical = orientation !== "horizontal";
   const values =
     field === "qc"
-      ? timeIndex === 0
+      ? timeIndex < 2
         ? [
             [0, 0.000002, null],
             [0.000004, 0.000006, 0.000008],
@@ -282,7 +282,7 @@ function sliceResponse({
     field: fieldMetadata,
     selection: {
       time_index: timeIndex,
-      time_seconds: timeIndex === 0 ? 0 : 900,
+      time_seconds: [0, 900, 1800][timeIndex] ?? 1800,
       orientation,
       selected_dimension:
         orientation === "vertical_y" ? "xh" : orientation === "vertical_x" ? "yh" : "zh",
@@ -299,10 +299,10 @@ function sliceResponse({
     values,
     stats: {
       min: field === "qc" ? 0 : 1.5,
-      max: field === "qc" ? (timeIndex === 0 ? 0.000008 : 0.00002) : 6.5,
+      max: field === "qc" ? (timeIndex < 2 ? 0.000008 : 0.00002) : 6.5,
       mean: field === "qc" ? 0.000004 : 4,
       finite_count: 5,
-      non_finite_count: field === "qc" && timeIndex === 0 ? 1 : 0,
+      non_finite_count: field === "qc" && timeIndex < 2 ? 1 : 0,
     },
     provenance,
     caveats: ["native_grid_view_no_interpolation", "json_numeric_slice_mvp"],
@@ -312,7 +312,7 @@ function sliceResponse({
 
 function pointCloudResponse({
   threshold = 0.000001,
-  timeIndex = 0,
+  timeIndex = 2,
   points,
 }: {
   threshold?: number;
@@ -321,7 +321,7 @@ function pointCloudResponse({
 } = {}) {
   const returnedPoints =
     points ??
-    (threshold >= 1
+    (threshold >= 1 || timeIndex === 0
       ? []
       : [
           [0, 0, 0.8, 0.000002],
@@ -337,7 +337,7 @@ function pointCloudResponse({
     selection: {
       field: "qc",
       time_index: timeIndex,
-      time_seconds: timeIndex === 0 ? 0 : 900,
+      time_seconds: [0, 900, 1800][timeIndex] ?? 1800,
       threshold,
       max_points: 50000,
     },
@@ -471,6 +471,7 @@ describe("App", () => {
   it("renders Baseline Shallow Cumulus controls and physical question", async () => {
     render(<App />);
 
+    fireEvent.click(await screen.findByRole("button", { name: "Build" }));
     expect(
       await screen.findByRole("heading", { name: "Baseline Shallow Cumulus" }),
     ).toBeInTheDocument();
@@ -484,8 +485,9 @@ describe("App", () => {
   it("labels preview as not implemented and not CM1 output", async () => {
     render(<App />);
 
+    fireEvent.click(await screen.findByRole("button", { name: "Build" }));
     expect(
-      await screen.findByRole("heading", { name: "Preview not implemented" }),
+      await screen.findByRole("heading", { name: "Preview estimate not implemented" }),
     ).toBeInTheDocument();
     expect(screen.getByText(/guidance only/)).toBeInTheDocument();
     expect(screen.getByText(/not CM1 output/)).toBeInTheDocument();
@@ -495,6 +497,7 @@ describe("App", () => {
   it("requests a dry-run package and displays generated files without claiming CM1 ran", async () => {
     render(<App />);
 
+    fireEvent.click(await screen.findByRole("button", { name: "Build" }));
     const humidityControl = await screen.findByLabelText("Low-level humidity");
     await waitFor(() => {
       expect(humidityControl).toHaveValue("baseline");
@@ -502,7 +505,7 @@ describe("App", () => {
     fireEvent.change(humidityControl, {
       target: { value: "more_humid" },
     });
-    fireEvent.click(screen.getByRole("button", { name: "Create dry-run package" }));
+    fireEvent.click(screen.getByRole("button", { name: "Create run package" }));
 
     await waitFor(() => {
       expect(screen.getByText("/tmp/CloudChamber/runs/dry-run-001")).toBeInTheDocument();
@@ -524,7 +527,13 @@ describe("App", () => {
   it("lists result cards in a table and shows notebook diagnostics", async () => {
     render(<App />);
 
+    expect(await screen.findByRole("button", { name: "Results" })).toHaveClass("active-control");
     expect(await screen.findByRole("heading", { name: "Experiment Notebook" })).toBeInTheDocument();
+    expect(screen.getByLabelText("Selected result")).toHaveTextContent(
+      "Quick-look shallow cumulus",
+    );
+    expect(screen.getAllByText("Validated quick-look baseline").length).toBeGreaterThan(0);
+    expect(screen.getAllByRole("button", { name: "Open 3-D" }).length).toBeGreaterThan(0);
     expect(screen.getByRole("button", { name: "Quick-look shallow cumulus" })).toBeInTheDocument();
     expect(screen.getAllByText("Baseline Shallow Cumulus").length).toBeGreaterThan(0);
     expect(screen.getAllByText("quick look").length).toBeGreaterThan(0);
@@ -532,8 +541,8 @@ describe("App", () => {
     expect(
       screen.getAllByText("13 model files, 13 time steps, 1 stats files").length,
     ).toBeGreaterThan(0);
-    expect(screen.getByText("Cloud formed")).toBeInTheDocument();
-    expect(screen.getByText("Rain detected")).toBeInTheDocument();
+    expect(screen.getAllByText("Cloud formed").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Rain detected").length).toBeGreaterThan(0);
     expect(screen.getByText("1,800 s")).toBeInTheDocument();
     expect(screen.getByText("2.193e-3 kg/kg")).toBeInTheDocument();
     expect(screen.getByText("6.867 m/s")).toBeInTheDocument();
@@ -541,7 +550,8 @@ describe("App", () => {
     expect(
       screen.getByText("CM1 stderr reported floating-point exception flags: IEEE_INVALID_FLAG"),
     ).toBeInTheDocument();
-    expect(screen.getByText("source_model:CM1")).toBeInTheDocument();
+    expect(screen.getByText("Technical details")).toBeInTheDocument();
+    expect(screen.getAllByText("Completed CM1 result").length).toBeGreaterThan(0);
     expect(screen.getByRole("button", { name: "Inspect fields" })).toBeEnabled();
   });
 
@@ -579,7 +589,7 @@ describe("App", () => {
     await waitFor(() => {
       expect(screen.getByText("Result card saved")).toBeInTheDocument();
     });
-    expect(screen.getAllByText("Saved / protected").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Saved").length).toBeGreaterThan(0);
     expect(fetch).toHaveBeenCalledWith(
       "/api/results/result-dry-run-quicklook/save",
       expect.objectContaining({ method: "POST" }),
@@ -592,8 +602,8 @@ describe("App", () => {
     fireEvent.click(await screen.findByRole("button", { name: "No diagnostics yet" }));
 
     expect(screen.getAllByText("Diagnostics unavailable").length).toBeGreaterThan(0);
-    expect(screen.getByText("Unknown")).toBeInTheDocument();
-    expect(screen.getByText("No rain detected")).toBeInTheDocument();
+    expect(screen.getAllByText("Unknown").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("No rain detected").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Unavailable").length).toBeGreaterThan(0);
     expect(screen.getByText("missing_qc_field")).toBeInTheDocument();
     expect(screen.getByText("missing_w_field")).toBeInTheDocument();
@@ -615,8 +625,7 @@ describe("App", () => {
     expect(screen.getByText("zh/yh/xh")).toBeInTheDocument();
     expect(screen.getAllByText("Horizontal slice").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Vertical slice").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("8.000e-6 kg/kg").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("1").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("2.000e-5 kg/kg").length).toBeGreaterThan(0);
     expect(screen.getByText("Selected level: 0.8 km (800 m)")).toBeInTheDocument();
     expect(screen.getAllByText("native_grid_view_no_interpolation").length).toBeGreaterThan(0);
     expect(screen.getAllByText(/CM1-derived visualization-ready data/).length).toBeGreaterThan(0);
@@ -661,7 +670,7 @@ describe("App", () => {
   it("renders cloud-water point cloud in the 3-D visualizer", async () => {
     render(<App />);
 
-    fireEvent.click(await screen.findByRole("button", { name: "Open 3-D scene shell" }));
+    fireEvent.click((await screen.findAllByRole("button", { name: "Open 3-D" }))[0]);
 
     expect(await screen.findByRole("heading", { name: "Scene shell" })).toBeInTheDocument();
     await screen.findByText("Cloud-water point cloud loaded");
@@ -681,6 +690,7 @@ describe("App", () => {
       screen.getByText("Slice planes: native-grid JSON slices from the backend"),
     ).toBeInTheDocument();
     expect(screen.getByText("3 of 3")).toBeInTheDocument();
+    expect(screen.getAllByText("1,800 s").length).toBeGreaterThan(0);
     expect(screen.getByText("2.000e-6 kg/kg to 8.000e-6 kg/kg")).toBeInTheDocument();
     expect(screen.getByText("Visualizer interpretation of CM1-derived output")).toBeInTheDocument();
     expect(
@@ -688,12 +698,13 @@ describe("App", () => {
     ).toBeInTheDocument();
     expect(screen.getByText("Rendering method: thresholded point cloud")).toBeInTheDocument();
     expect(screen.getByText("No raw NetCDF parsing in the browser")).toBeInTheDocument();
+    expect(fetch).toHaveBeenCalledWith(expect.stringContaining("time_index=2"));
   });
 
   it("supports qc and w slice planes synced to visualizer time", async () => {
     render(<App />);
 
-    fireEvent.click(await screen.findByRole("button", { name: "Open 3-D scene shell" }));
+    fireEvent.click((await screen.findAllByRole("button", { name: "Open 3-D" }))[0]);
     await screen.findByText("Cloud-water point cloud loaded");
 
     expect(screen.getAllByText("Horizontal slice plane").length).toBeGreaterThan(0);
@@ -718,7 +729,7 @@ describe("App", () => {
   it("updates and resets the 3-D scene shell camera controls", async () => {
     render(<App />);
 
-    fireEvent.click(await screen.findByRole("button", { name: "Open 3-D scene shell" }));
+    fireEvent.click((await screen.findAllByRole("button", { name: "Open 3-D" }))[0]);
     await screen.findByText("Cloud-water point cloud loaded");
 
     fireEvent.click(screen.getByRole("button", { name: "Pan" }));
@@ -736,7 +747,7 @@ describe("App", () => {
   it("updates cloud-water threshold opacity point size and time requests", async () => {
     render(<App />);
 
-    fireEvent.click(await screen.findByRole("button", { name: "Open 3-D scene shell" }));
+    fireEvent.click((await screen.findAllByRole("button", { name: "Open 3-D" }))[0]);
     await screen.findByText("Cloud-water point cloud loaded");
 
     fireEvent.change(screen.getByLabelText("Threshold"), { target: { value: "1" } });
@@ -762,7 +773,7 @@ describe("App", () => {
     render(<App />);
 
     fireEvent.click(await screen.findByRole("button", { name: "No diagnostics yet" }));
-    fireEvent.click(screen.getByRole("button", { name: "Open 3-D scene shell" }));
+    fireEvent.click(screen.getAllByRole("button", { name: "Open 3-D" })[0]);
 
     expect(await screen.findByRole("heading", { name: "Scene shell" })).toBeInTheDocument();
     await screen.findByText("Scene shell ready");
@@ -777,7 +788,7 @@ describe("App", () => {
     render(<App />);
 
     fireEvent.click(await screen.findByRole("button", { name: "No visual fields" }));
-    fireEvent.click(screen.getByRole("button", { name: "Open 3-D scene shell" }));
+    fireEvent.click(screen.getAllByRole("button", { name: "Open 3-D" })[0]);
 
     expect(await screen.findByRole("heading", { name: "Scene shell" })).toBeInTheDocument();
     await screen.findByText("No fields available");

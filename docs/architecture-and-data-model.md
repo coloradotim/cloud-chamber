@@ -391,6 +391,21 @@ for the first 2-D inspector.
 
 ### 2-D Field Inspector
 
+The frontend uses a task-based workspace shell with `Build`, `Results`,
+`Inspect`, and `Visualize` sections. `Results` is the default landing section so
+the selected result context is obvious before field inspection or 3-D
+visualization. The selected result ID flows from the Results Library into the
+2-D inspector and 3-D visualizer; those consumers request backend-prepared
+payloads for that result rather than opening files directly.
+
+User-facing state labels are separate from technical provenance. The primary UI
+may translate raw states like `ingested_result_metadata` or
+`completed_cm1_result` into `Ingested`, `Completed CM1 result`, `Saved`, or
+`Needs review`. The raw lifecycle, product state, source model, processing
+method, rendering method, and native-grid caveats remain available under
+technical details so scientific honesty is preserved without making the main
+workflow read like a manifest.
+
 The first field inspector is a frontend consumer of the visualization-ready
 fields/slice API. It opens from a Result Card / Experiment Notebook entry and
 does not read raw NetCDF or parse CM1 files in the browser.
@@ -407,6 +422,12 @@ non-finite counts, JSON slice values, caveats, and provenance labels. Errors
 from unavailable fields or invalid slice selections remain UI-level inspection
 errors; they do not alter the underlying result metadata or imply a failed CM1
 run.
+
+The 2-D inspector and 3-D visualizer both choose an initial interesting time
+from result diagnostics: first cloud time when present, otherwise time of max
+cloud water when available, otherwise the latest output time. This prevents the
+validated Baseline Shallow Cumulus quick-look result from opening at an empty
+`t=0` frame when clouds form later.
 
 This is not a 3-D viewer, replay engine, or rendering pipeline. It is the
 orientation/scaling check that should happen before 3-D visualizer work.
