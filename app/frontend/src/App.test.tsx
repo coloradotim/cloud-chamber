@@ -667,13 +667,19 @@ describe("App", () => {
     await screen.findByText("Cloud-water point cloud loaded");
     expect(screen.getByLabelText("3-D scene container")).toBeInTheDocument();
     expect(screen.getByLabelText("Cloud-water point cloud")).toBeInTheDocument();
+    expect(screen.getAllByLabelText("Horizontal slice plane").length).toBeGreaterThan(0);
+    expect(screen.getAllByLabelText("Vertical slice plane").length).toBeGreaterThan(0);
     expect(screen.getByRole("button", { name: "Orbit" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Pan" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Reset camera" })).toBeInTheDocument();
     expect(screen.getByLabelText("Zoom")).toHaveValue("100");
     expect(screen.getByLabelText("Field")).toHaveValue("qc");
+    expect(screen.getByLabelText("Slice field")).toHaveValue("qc");
     expect(screen.getByLabelText("Time")).toBeInTheDocument();
     expect(screen.getByText("thresholded_point_cloud")).toBeInTheDocument();
+    expect(
+      screen.getByText("Slice planes: native-grid JSON slices from the backend"),
+    ).toBeInTheDocument();
     expect(screen.getByText("3 of 3")).toBeInTheDocument();
     expect(screen.getByText("2.000e-6 kg/kg to 8.000e-6 kg/kg")).toBeInTheDocument();
     expect(screen.getByText("Visualizer interpretation of CM1-derived output")).toBeInTheDocument();
@@ -682,6 +688,31 @@ describe("App", () => {
     ).toBeInTheDocument();
     expect(screen.getByText("Rendering method: thresholded point cloud")).toBeInTheDocument();
     expect(screen.getByText("No raw NetCDF parsing in the browser")).toBeInTheDocument();
+  });
+
+  it("supports qc and w slice planes synced to visualizer time", async () => {
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Open 3-D scene shell" }));
+    await screen.findByText("Cloud-water point cloud loaded");
+
+    expect(screen.getAllByText("Horizontal slice plane").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Vertical slice plane").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("qc (Cloud water)").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("native_grid_view_no_interpolation").length).toBeGreaterThan(0);
+
+    fireEvent.change(screen.getByLabelText("Slice field"), { target: { value: "w" } });
+    fireEvent.change(screen.getByLabelText("Time"), { target: { value: "1" } });
+
+    await waitFor(() => {
+      expect(screen.getAllByText("w (Vertical velocity)").length).toBeGreaterThan(0);
+    });
+    expect(screen.getAllByText("900 s").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("6.5 m/s").length).toBeGreaterThan(0);
+    expect(fetch).toHaveBeenCalledWith(
+      expect.stringContaining("/api/results/result-dry-run-quicklook/visualization/slice?field=w"),
+    );
+    expect(fetch).toHaveBeenCalledWith(expect.stringContaining("time_index=1"));
   });
 
   it("updates and resets the 3-D scene shell camera controls", async () => {

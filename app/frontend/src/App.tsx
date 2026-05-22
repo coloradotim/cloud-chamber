@@ -917,8 +917,17 @@ function VisualizerSceneShell({ result }: { result: ResultCard }) {
   const [pointSize, setPointSize] = useState(8);
   const [isPlaying, setIsPlaying] = useState(false);
   const [pointCloud, setPointCloud] = useState<PointCloudResponse | null>(null);
+  const [sliceFieldName, setSliceFieldName] = useState("qc");
+  const [sliceOrientation, setSliceOrientation] = useState<"vertical_x" | "vertical_y">(
+    "vertical_x",
+  );
+  const [horizontalSliceLevel, setHorizontalSliceLevel] = useState(0);
+  const [verticalSliceIndex, setVerticalSliceIndex] = useState(0);
+  const [sceneHorizontalSlice, setSceneHorizontalSlice] = useState<SliceResponse | null>(null);
+  const [sceneVerticalSlice, setSceneVerticalSlice] = useState<SliceResponse | null>(null);
   const [sceneStatus, setSceneStatus] = useState("Loading scene data...");
   const [sceneError, setSceneError] = useState<string | null>(null);
+  const [sliceError, setSliceError] = useState<string | null>(null);
   const maxPoints = 50_000;
 
   useEffect(() => {
@@ -934,6 +943,13 @@ function VisualizerSceneShell({ result }: { result: ResultCard }) {
     setPointSize(8);
     setIsPlaying(false);
     setPointCloud(null);
+    setSliceFieldName("qc");
+    setSliceOrientation("vertical_x");
+    setHorizontalSliceLevel(0);
+    setVerticalSliceIndex(0);
+    setSceneHorizontalSlice(null);
+    setSceneVerticalSlice(null);
+    setSliceError(null);
     setSceneStatus("Loading scene data...");
     fetchVisualizationFields(result.result_id)
       .then((payload) => {
@@ -943,6 +959,7 @@ function VisualizerSceneShell({ result }: { result: ResultCard }) {
           payload.available_fields.find((field) => field.raw_field_name === "qc") ??
           payload.available_fields[0];
         setSelectedFieldName(firstPreferred?.raw_field_name ?? "");
+        setSliceFieldName(firstPreferred?.raw_field_name ?? "");
         setSceneStatus(
           payload.available_fields.length > 0 ? "Scene shell ready" : "No fields available",
         );
@@ -965,10 +982,24 @@ function VisualizerSceneShell({ result }: { result: ResultCard }) {
     () => catalog?.available_fields.find((field) => field.raw_field_name === "qc"),
     [catalog],
   );
+  const sliceField = useMemo(
+    () => catalog?.available_fields.find((field) => field.raw_field_name === sliceFieldName),
+    [catalog, sliceFieldName],
+  );
 
   const timeOptions = selectedField?.time_coordinate_values ?? [];
   const timeMax = Math.max(0, timeOptions.length - 1);
   const canRenderCloudWater = selectedFieldName === "qc" && Boolean(qcField);
+  const sliceVerticalSize = sliceField?.coordinate_names.vertical
+    ? sliceField.shape[sliceField.dimensions.indexOf(sliceField.coordinate_names.vertical)]
+    : 1;
+  const sliceYSize = sliceField?.coordinate_names.y
+    ? sliceField.shape[sliceField.dimensions.indexOf(sliceField.coordinate_names.y)]
+    : 1;
+  const sliceXSize = sliceField?.coordinate_names.x
+    ? sliceField.shape[sliceField.dimensions.indexOf(sliceField.coordinate_names.x)]
+    : 1;
+  const verticalSliceMax = sliceOrientation === "vertical_x" ? sliceYSize : sliceXSize;
   const provenanceLabel =
     pointCloud?.provenance.provenance_label ??
     selectedField?.provenance.provenance_label ??
@@ -1012,6 +1043,51 @@ function VisualizerSceneShell({ result }: { result: ResultCard }) {
   }, [maxPoints, result.result_id, selectedField, threshold, timeIndex]);
 
   useEffect(() => {
+    if (!sliceField) {
+      setSceneHorizontalSlice(null);
+      setSceneVerticalSlice(null);
+      return;
+    }
+    let active = true;
+    setSliceError(null);
+    Promise.all([
+      fetchVisualizationSlice(result.result_id, {
+        field: sliceField.raw_field_name,
+        timeIndex,
+        orientation: "horizontal",
+        levelIndex: horizontalSliceLevel,
+      }),
+      fetchVisualizationSlice(result.result_id, {
+        field: sliceField.raw_field_name,
+        timeIndex,
+        orientation: sliceOrientation,
+        levelIndex: verticalSliceIndex,
+      }),
+    ])
+      .then(([horizontal, vertical]) => {
+        if (!active) return;
+        setSceneHorizontalSlice(horizontal);
+        setSceneVerticalSlice(vertical);
+      })
+      .catch((caught: unknown) => {
+        if (!active) return;
+        setSceneHorizontalSlice(null);
+        setSceneVerticalSlice(null);
+        setSliceError(caught instanceof Error ? caught.message : "Unable to load slice planes.");
+      });
+    return () => {
+      active = false;
+    };
+  }, [
+    horizontalSliceLevel,
+    result.result_id,
+    sliceField,
+    sliceOrientation,
+    timeIndex,
+    verticalSliceIndex,
+  ]);
+
+  useEffect(() => {
     if (!isPlaying || timeMax <= 0) return;
     const interval = window.setInterval(() => {
       setTimeIndex((current) => (current >= timeMax ? 0 : current + 1));
@@ -1049,6 +1125,8 @@ function VisualizerSceneShell({ result }: { result: ResultCard }) {
         <div className="scene-container" aria-label="3-D scene container">
           <div className="scene-horizon" />
           <div className="scene-grid" />
+          <SlicePlane title="Horizontal slice plane" slice={sceneHorizontalSlice} />
+          <SlicePlane title="Vertical slice plane" slice={sceneVerticalSlice} />
           {pointCloud && pointCloud.points.length > 0 && (
             <div className="point-cloud-layer" aria-label="Cloud-water point cloud">
               {pointCloud.points.map((point, index) => (
@@ -1196,6 +1274,69 @@ function VisualizerSceneShell({ result }: { result: ResultCard }) {
             </fieldset>
           )}
 
+          {catalog && sliceField && (
+            <fieldset>
+              <legend>Slice planes</legend>
+              <label htmlFor="slice-field">
+                Slice field
+                <select
+                  id="slice-field"
+                  value={sliceFieldName}
+                  onChange={(event) => {
+                    setSliceFieldName(event.target.value);
+                    setHorizontalSliceLevel(0);
+                    setVerticalSliceIndex(0);
+                  }}
+                >
+                  {catalog.available_fields
+                    .filter(
+                      (field) => field.raw_field_name === "qc" || field.raw_field_name === "w",
+                    )
+                    .map((field) => (
+                      <option key={field.raw_field_name} value={field.raw_field_name}>
+                        {field.raw_field_name} - {field.display_name}
+                      </option>
+                    ))}
+                </select>
+              </label>
+              <label htmlFor="scene-horizontal-level">
+                Horizontal slice level
+                <input
+                  id="scene-horizontal-level"
+                  type="number"
+                  min={0}
+                  max={Math.max(0, sliceVerticalSize - 1)}
+                  value={horizontalSliceLevel}
+                  onChange={(event) => setHorizontalSliceLevel(Number(event.target.value))}
+                />
+              </label>
+              <label htmlFor="scene-vertical-orientation">
+                Vertical orientation
+                <select
+                  id="scene-vertical-orientation"
+                  value={sliceOrientation}
+                  onChange={(event) =>
+                    setSliceOrientation(event.target.value as "vertical_x" | "vertical_y")
+                  }
+                >
+                  <option value="vertical_x">vertical_x</option>
+                  <option value="vertical_y">vertical_y</option>
+                </select>
+              </label>
+              <label htmlFor="scene-vertical-index">
+                Vertical slice index
+                <input
+                  id="scene-vertical-index"
+                  type="number"
+                  min={0}
+                  max={Math.max(0, verticalSliceMax - 1)}
+                  value={verticalSliceIndex}
+                  onChange={(event) => setVerticalSliceIndex(Number(event.target.value))}
+                />
+              </label>
+            </fieldset>
+          )}
+
           <dl className="metric-grid">
             <Metric label="Run ID" value={result.run_id} />
             <Metric label="Camera mode" value={cameraMode} />
@@ -1216,6 +1357,22 @@ function VisualizerSceneShell({ result }: { result: ResultCard }) {
             />
             <Metric label="Threshold" value={formatScientific(threshold, "kg/kg")} />
             <Metric label="Rendering method" value="thresholded_point_cloud" />
+            <Metric
+              label="Slice field"
+              value={
+                sliceField
+                  ? `${sliceField.raw_field_name} (${sliceField.display_name})`
+                  : "Unavailable"
+              }
+            />
+            <Metric
+              label="Slice orientation"
+              value={
+                sceneVerticalSlice
+                  ? `${sceneVerticalSlice.selection.orientation} at ${sceneVerticalSlice.selection.selected_dimension}[${sceneVerticalSlice.selection.selected_index}]`
+                  : "Unavailable"
+              }
+            />
             <Metric
               label="Points"
               value={
@@ -1243,6 +1400,12 @@ function VisualizerSceneShell({ result }: { result: ResultCard }) {
               .
             </p>
           )}
+          {sliceError && <p role="alert">{sliceError}</p>}
+
+          <div className="slice-plane-summary">
+            <SceneSliceSummary title="Horizontal slice plane" slice={sceneHorizontalSlice} />
+            <SceneSliceSummary title="Vertical slice plane" slice={sceneVerticalSlice} />
+          </div>
 
           <section aria-labelledby="visualizer-provenance-title">
             <h3 id="visualizer-provenance-title">Provenance / rendering labels</h3>
@@ -1251,6 +1414,7 @@ function VisualizerSceneShell({ result }: { result: ResultCard }) {
               <li>Visualizer interpretation of CM1-derived output</li>
               <li>Processing method: native-grid thresholded point cloud</li>
               <li>Rendering method: thresholded point cloud</li>
+              <li>Slice planes: native-grid JSON slices from the backend</li>
               <li>No raw NetCDF parsing in the browser</li>
               <li>
                 No interpolation, ray marching, isosurface extraction, or synthetic cloud physics
@@ -1259,6 +1423,83 @@ function VisualizerSceneShell({ result }: { result: ResultCard }) {
           </section>
         </aside>
       </div>
+    </section>
+  );
+}
+
+function SlicePlane({ title, slice }: { title: string; slice: SliceResponse | null }) {
+  if (!slice) return null;
+  const cells = slice.values.flat();
+  return (
+    <div
+      className={
+        slice.selection.orientation === "horizontal"
+          ? "slice-plane slice-plane-horizontal"
+          : "slice-plane slice-plane-vertical"
+      }
+      aria-label={title}
+    >
+      <span className="slice-plane-label">
+        {slice.field.raw_field_name} {slice.selection.orientation}
+      </span>
+      <div
+        className="slice-plane-cells"
+        style={{ gridTemplateColumns: `repeat(${slice.values[0]?.length ?? 1}, minmax(0, 1fr))` }}
+      >
+        {cells.map((value, index) => (
+          <span
+            className="slice-plane-cell"
+            key={`${title}-${index}`}
+            style={sliceCellStyle(value, slice.stats)}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function SceneSliceSummary({ title, slice }: { title: string; slice: SliceResponse | null }) {
+  if (!slice) {
+    return (
+      <section className="slice-plane-card" aria-label={title}>
+        <h3>{title}</h3>
+        <p>Slice unavailable.</p>
+      </section>
+    );
+  }
+  const selected = `${slice.selection.selected_dimension}[${slice.selection.selected_index}]`;
+  const coordinate =
+    slice.selection.level_coordinate_value !== null
+      ? ` (${slice.selection.level_coordinate_value} ${slice.selection.level_units ?? ""}${
+          slice.selection.level_meters !== null
+            ? ` / ${slice.selection.level_meters.toLocaleString()} m`
+            : ""
+        })`
+      : "";
+  return (
+    <section className="slice-plane-card" aria-label={title}>
+      <h3>{title}</h3>
+      <dl className="metric-grid">
+        <Metric
+          label="Field"
+          value={`${slice.field.raw_field_name} (${slice.field.display_name})`}
+        />
+        <Metric label="Units" value={slice.field.units ?? "Units unavailable"} />
+        <Metric label="Time" value={formatSeconds(slice.selection.time_seconds)} />
+        <Metric label="Location" value={`${selected}${coordinate}`} />
+        <Metric label="Min" value={formatMaybeNumber(slice.stats.min, slice.field.units)} />
+        <Metric label="Max" value={formatMaybeNumber(slice.stats.max, slice.field.units)} />
+        <Metric label="Dimensions" value={slice.dimension_order.join(", ")} />
+        <Metric label="Rendering method" value={slice.provenance.rendering_method} />
+      </dl>
+      <p>{slice.provenance.provenance_label}</p>
+      {slice.caveats.length > 0 && (
+        <ul className="compact-list">
+          {slice.caveats.map((caveat) => (
+            <li key={`${title}-${caveat}`}>{caveat}</li>
+          ))}
+        </ul>
+      )}
     </section>
   );
 }
@@ -1620,6 +1861,16 @@ function cloudPointStyle(
 function normalize(value: number, min: number, max: number): number {
   if (max <= min) return 0.5;
   return (value - min) / (max - min);
+}
+
+function sliceCellStyle(value: number | null, stats: SliceResponse["stats"]): CSSProperties {
+  if (value === null) {
+    return { background: "rgba(255, 255, 255, 0.12)" };
+  }
+  const intensity = normalize(value, stats.min ?? value, stats.max ?? value);
+  return {
+    background: `rgba(${78 + intensity * 110}, ${164 + intensity * 70}, ${206 + intensity * 40}, 0.72)`,
+  };
 }
 
 function formatDate(value: string | null): string {

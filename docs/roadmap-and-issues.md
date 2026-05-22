@@ -263,7 +263,7 @@ Implementation anchor:
 - #73 builds the 2-D field inspection MVP on top of the #72 fields/slice API before the full 3-D viewer so field orientation, time indexing, vertical coordinates, scaling, and basic cloud evolution can be checked. It opens from the Results Library detail, enables field/time selection, shows horizontal and vertical slices, and keeps the browser away from raw NetCDF parsing.
 - #77 builds the 3-D scene shell from the Results Library detail: scene container, orbit/pan/zoom controls, reset camera, time slider shell, field selector shell, loading/empty/error states, and provenance/rendering labels. It does not render cloud water, slices, or raw NetCDF data in the browser.
 - #78 renders the first cloud-water field from visualization-ready data as a thresholded `qc` point cloud. The backend selects native-grid points and the browser renders only that payload; no raw NetCDF parsing, interpolation, isosurface extraction, ray marching, or cinematic lighting belongs in this step.
-- #79 adds horizontal and vertical slice planes using the same provenance-labeled data path and native-grid caveats.
+- #79 adds horizontal and vertical slice planes using the same provenance-labeled #72 slice API and native-grid caveats. Slice-plane time stays synced with the point cloud, supports `qc` and `w`, and remains an inspection overlay rather than raw NetCDF parsing or volumetric rendering.
 
 Recommended implementation order:
 
