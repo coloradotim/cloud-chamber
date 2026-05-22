@@ -232,7 +232,7 @@ Deliverables:
 Implementation anchor:
 
 - #30 should make replayable/inspectable saved result cards the core behavior. Duplicate/tweak/rerun should remain optional or later.
-- #64 adds the storage bridge needed after the first successful 852 MB smoke run: inventory runtime-home usage, classify runs conservatively, and delete only explicitly selected run directories under `~/CloudChamber/runs/`. Cleanup must never target the repo, home directory, runtime home itself, or the external CM1 installation.
+- #64 adds the storage bridge needed after the first successful 852 MB smoke run: inventory runtime-home usage, warn at the 50 GB MVP threshold, classify runs conservatively, and delete only explicitly selected run directories under `~/CloudChamber/runs/`. Cleanup must never target the repo, home directory, runtime home itself, or the external CM1 installation, and threshold warnings must never auto-delete anything.
 
 ## M4 3-D Visualizer MVP
 

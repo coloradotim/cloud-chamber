@@ -164,7 +164,7 @@ The first successful Baseline Shallow Cumulus smoke run produced GrADS/direct-ac
 
 ### Runtime Storage Inventory And Cleanup
 
-Cloud Chamber runtime cleanup operates only under the configured runtime home, normally `~/CloudChamber`. The backend storage service inventories `~/CloudChamber/runs/<run-id>/` directories, reads `run_manifest.json` when available, reports total runtime-home size, per-run size, lifecycle/provenance metadata, output artifact counts, and conservative categories:
+Cloud Chamber runtime cleanup operates only under the configured runtime home, normally `~/CloudChamber`. The backend storage service inventories `~/CloudChamber/runs/<run-id>/` directories, reads `run_manifest.json` when available, reports total runtime-home size, the 50 GB MVP warning threshold, whether the runtime home is above that threshold, per-run size, lifecycle/provenance metadata, output artifact counts, and conservative categories:
 
 ```text
 dry_run_only
@@ -180,6 +180,8 @@ unknown
 ```
 
 Malformed or missing manifests are reported without crashing inventory. Largest runs are surfaced by size so the user can see what is consuming disk.
+
+The 50 GB warning threshold is a configurable product default, not a scientific limit. Crossing the threshold should point the user to the largest-run inventory and safe cleanup actions. It must not trigger automatic deletion.
 
 Deletion is explicit and scoped to one selected run directory. The cleanup service refuses path traversal, symlink escapes, the runtime home itself, the user's home directory, the source repo by construction, and configured CM1 root/run paths. It also refuses running runs and saved/protected runs unless a force flag is provided. A dry-run delete returns the selected path and estimated size reclaimed without deleting files; a real delete requires explicit confirmation.
 

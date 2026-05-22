@@ -16,6 +16,8 @@ from cloud_chamber.run_manifest import (
 )
 from cloud_chamber.settings import CloudChamberSettings
 
+DEFAULT_STORAGE_WARNING_THRESHOLD_BYTES = 50 * 1024**3
+
 
 class RuntimeStorageError(RuntimeError):
     """Raised when runtime storage inventory or cleanup cannot proceed."""
@@ -50,6 +52,9 @@ class RuntimeStorageInventory(BaseModel):
     runtime_home: str
     runs_directory: str
     total_size_bytes: int
+    warning_threshold_bytes: int
+    above_warning_threshold: bool
+    warning_message: str | None = None
     runs: list[RunStorageEntry]
     largest_runs: list[RunStorageEntry]
 
@@ -71,10 +76,20 @@ def runtime_storage_inventory(settings: CloudChamberSettings) -> RuntimeStorageI
     runs_dir = runtime_home / "runs"
     run_entries = [_run_storage_entry(path) for path in _run_directories(runs_dir)]
     largest = sorted(run_entries, key=lambda entry: entry.size_bytes, reverse=True)
+    total_size_bytes = _directory_size(runtime_home)
+    above_warning_threshold = total_size_bytes >= DEFAULT_STORAGE_WARNING_THRESHOLD_BYTES
     return RuntimeStorageInventory(
         runtime_home=str(runtime_home),
         runs_directory=str(runs_dir),
-        total_size_bytes=_directory_size(runtime_home),
+        total_size_bytes=total_size_bytes,
+        warning_threshold_bytes=DEFAULT_STORAGE_WARNING_THRESHOLD_BYTES,
+        above_warning_threshold=above_warning_threshold,
+        warning_message=(
+            "Runtime storage is at or above the 50 GB warning threshold. "
+            "Review largest_runs and use dry-run cleanup before deleting selected runs."
+            if above_warning_threshold
+            else None
+        ),
         runs=run_entries,
         largest_runs=largest,
     )

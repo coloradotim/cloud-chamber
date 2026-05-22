@@ -14,6 +14,7 @@ from cloud_chamber.run_manifest import (
     write_run_manifest,
 )
 from cloud_chamber.runtime_storage import (
+    DEFAULT_STORAGE_WARNING_THRESHOLD_BYTES,
     RuntimeStorageError,
     delete_runtime_run,
     runtime_storage_inventory,
@@ -85,6 +86,9 @@ def test_inventory_reports_total_size_per_run_size_and_largest_runs(tmp_path: Pa
 
     by_id = {entry.run_id: entry for entry in inventory.runs}
     assert inventory.total_size_bytes >= 110
+    assert inventory.warning_threshold_bytes == DEFAULT_STORAGE_WARNING_THRESHOLD_BYTES
+    assert inventory.above_warning_threshold is False
+    assert inventory.warning_message is None
     assert by_id["run-small"].size_bytes >= 10
     assert by_id["run-large"].size_bytes >= 100
     assert inventory.largest_runs[0].size_bytes >= inventory.largest_runs[-1].size_bytes
@@ -133,6 +137,25 @@ def test_inventory_classifies_missing_and_malformed_manifests(tmp_path: Path) ->
     assert by_id["missing-manifest"].category == "missing_manifest"
     assert by_id["malformed-manifest"].category == "malformed_manifest"
     assert by_id["malformed-manifest"].manifest_error
+
+
+def test_inventory_warns_at_runtime_storage_threshold(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    settings = fake_settings(tmp_path)
+    create_run(tmp_path, "run-large")
+    monkeypatch.setattr(
+        "cloud_chamber.runtime_storage.DEFAULT_STORAGE_WARNING_THRESHOLD_BYTES",
+        1,
+    )
+
+    inventory = runtime_storage_inventory(settings)
+
+    assert inventory.warning_threshold_bytes == 1
+    assert inventory.above_warning_threshold is True
+    assert inventory.warning_message is not None
+    assert "dry-run cleanup" in inventory.warning_message
 
 
 def test_delete_dry_run_returns_plan_without_deleting(tmp_path: Path) -> None:

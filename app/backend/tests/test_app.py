@@ -139,6 +139,8 @@ def test_storage_inventory_api_uses_runtime_home_override(
     assert response.status_code == 200
     payload = response.json()
     assert payload["runtime_home"] == str(tmp_path)
+    assert payload["warning_threshold_bytes"] == 50 * 1024**3
+    assert payload["above_warning_threshold"] is False
     assert payload["runs"][0]["run_id"] == "manual-run"
     assert payload["runs"][0]["category"] == "missing_manifest"
 
