@@ -95,7 +95,7 @@ When a run completes, manifest output metadata should keep these buckets separat
 - `processed_artifacts` for future Cloud Chamber-derived ingest/visualization artifacts;
 - `runtime_warnings` for caveats surfaced from logs, such as CM1 floating-point exception flags.
 
-Required runtime files such as `LANDUSE.TBL` are copied from the configured local CM1 run directory into the generated package at launch time. These copied files are local/generated artifacts under `~/CloudChamber/runs/<run-id>/`; do not commit them.
+Required runtime files such as `LANDUSE.TBL` are copied from the configured local CM1 run directory into the generated package at launch time. Baseline Shallow Cumulus recovery packages prefer `config_files/les_ShallowCu/LANDUSE.TBL` when that local CM1 reference file is available. These copied files are local/generated artifacts under `~/CloudChamber/runs/<run-id>/`; do not commit them.
 
 Runtime output can grow quickly. The storage inventory endpoint scans only the configured Cloud Chamber runtime home, normally `~/CloudChamber`, and reports total size plus per-run size, manifest metadata, output artifact counts, and conservative cleanup categories such as `dry_run_only`, `completed_with_output`, `completed_no_output`, `failed`, `canceled`, `saved_or_protected`, `missing_manifest`, and `malformed_manifest`.
 

@@ -119,7 +119,9 @@ visualizer provenance labels
 visual inspection notes
 ```
 
-The first full-sequence NetCDF re-ingest of `dry-run-157b09a178e1` evaluated 25 model-output files from 0 to 7200 seconds and still found no cloud formation, with `max_qc_kg_kg = 0.0`, `max_w_m_s = 0.0`, and NaN/Infinity caveats in target and surface fields. The next calibration attempt regenerated the quick-look package with fixed small ocean roughness. That follow-up run, `dry-run-calibration-20260522132903`, completed with NetCDF output but still found no cloud formation, no vertical motion, and NaN/Infinity caveats. Acceptance still requires a future fresh manual run, full-sequence ingest, and recorded diagnostics; the fixed-roughness change alone is not scientific acceptance.
+The first full-sequence NetCDF re-ingest of `dry-run-157b09a178e1` evaluated 25 model-output files from 0 to 7200 seconds and still found no cloud formation, with `max_qc_kg_kg = 0.0`, `max_w_m_s = 0.0`, and NaN/Infinity caveats in target and surface fields. A fixed-roughness quick-look derivative, `dry-run-calibration-20260522132903`, completed with NetCDF output but still found no cloud formation, no vertical motion, and NaN/Infinity caveats. The accepted recovery path is now to start from CM1's `les_ShallowCu` reference case, preserve its science/numerics, validate that reference-derived package locally, and only then reintroduce quick-look scaling one change at a time.
+
+The first reference-derived validation run, `dry-run-les-shallowcu-20260522140642`, completed with `exit_code = 0`, ingested 7 model-output time steps, and produced `cloud formed; rain detected`. Recorded diagnostics included first cloud time at 3600 seconds, `max_qc_kg_kg = 0.002192789688706398`, `max_w_m_s = 6.962291717529297`, `min_w_m_s = -3.7671568393707275`, and a vertical-coordinate caveat because cloud base/top units were reported as kilometers. This is the current baseline evidence for future quick-look downscaling.
 
 ### Baseline Shallow Cumulus Manual Smoke-Run Loop
 
@@ -132,7 +134,7 @@ Use this loop after a dry-run package has been generated and before broader CM1 
    - confirm `dry_run_report.json` says CM1 was not launched and is not a completed result;
    - confirm `namelist.input` is not the old `&cloud_chamber_domain` placeholder fragment;
    - confirm `input_sounding` is not notes-only;
-   - confirm Rayleigh damping starts above half the configured domain top.
+   - confirm Rayleigh damping matches the selected package mode. Compact quick-look derivatives must not damp more than half the domain; `les_ShallowCu` recovery packages should preserve the reference damping setting.
 3. Compare generated files against the local CM1 runtime requirements:
    - check `~/CloudChamber/settings.json`, `CLOUD_CHAMBER_CM1_ROOT`, or the default probe paths;
    - expected local probes include `/Users/timpeterson/cm1r21.1` and `/Users/timpeterson/cm1r21.1/run`;
