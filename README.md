@@ -27,7 +27,7 @@ Choose experiment
 -> optionally create a new variation from the same setup
 ```
 
-This repo is early-stage. The current code is project foundation, not the full product workflow.
+This repo is early-stage. The current app can load the first Scenario Builder flow, select Baseline Shallow Cumulus, show curated controls and the physical question, create a dry-run CM1 package for review, and label preview as not implemented. It does not launch CM1, ingest outputs, or visualize completed results yet.
 
 ## Docs
 
@@ -44,6 +44,7 @@ This repo is early-stage. The current code is project foundation, not the full p
 
 - Frontend: TypeScript, React, Vite, Vitest, ESLint, Prettier.
 - Backend/tooling: Python 3.12+, pytest, ruff, mypy.
+- First Scenario Builder flow: Baseline Shallow Cumulus selection, curated controls, physical question, dry-run package request, and generated-file review.
 - Local checks: `scripts/check.sh`.
 - CI: GitHub Actions jobs for frontend, backend, scripts, docs, and config sanity.
 
@@ -85,6 +86,6 @@ Runtime data belongs outside the repo by default:
 
 The top-level `data/` directory is placeholder/fixture-only. It is not the runtime data home.
 
-## Initial Scope
+## Current Near-Term Scope
 
-This scaffold does not implement the CM1 scenario UI, 3-D visualizer, CM1 run manager, CM1 vendoring, real NetCDF sample data, complex deployment, or heavy 3-D rendering dependencies.
+The first Scenario Builder and dry-run review flow exists. Cloud Chamber still does not implement preview physics, the 3-D visualizer, CM1 run manager, CM1 vendoring, real NetCDF sample data, complex deployment, or heavy 3-D rendering dependencies.

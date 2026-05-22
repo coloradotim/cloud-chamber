@@ -161,6 +161,13 @@ def _effective_controls(
     }
 
 
+def read_dry_run_report(path: Path) -> dict[str, object]:
+    loaded = json.loads(path.read_text())
+    if not isinstance(loaded, dict):
+        raise DryRunPackageError(f"Dry-run report must be a JSON object: {path}")
+    return loaded
+
+
 def _case_manifest_payload(
     scenario: ScenarioTemplate,
     contract: CM1InputContract,

@@ -82,6 +82,8 @@ Baseline Shallow Cumulus is the first hero case. Warm rain remains early but doe
 
 Scenario templates are validated before package generation. The schema supports stable IDs, display names, descriptions, physical questions, learning goals, friendly controls, advanced/developer-only settings, run-size presets, expected diagnostics, CM1 mapping notes, visualization defaults, warnings, limitations, and one-control variation metadata. Invalid templates should fail with actionable validation messages before any CM1-facing files are generated.
 
+The local FastAPI backend exposes the implemented catalog through `GET /api/scenarios`. The response should include the Golden Path scenario ID and product-facing scenario summaries only; advanced/developer controls can remain in the template but should not appear in the primary Scenario Builder flow.
+
 ### Configuration Builder
 
 Turns a scenario + user controls into:
@@ -110,6 +112,8 @@ output cadence: about 300 s
 Scenario-specific deviations from these defaults must be explicit in the scenario template or generated report.
 
 Dry-run package generation uses the validated scenario template and CM1 input contract to create a reviewable package under the configured runtime home, normally `~/CloudChamber/runs/<run-id>/`. The package writer should refuse to overwrite existing run directories, validate controls before writing, and produce only package inputs/reports, not CM1 output.
+
+The implemented dry-run API is `POST /api/dry-run-package`. It accepts scenario ID, selected product controls, and run-size preset, then returns the package paths and dry-run report summary for UI review. It must not launch CM1, write NetCDF, or place generated packages inside the source tree during tests.
 
 ### Preview Engine
 

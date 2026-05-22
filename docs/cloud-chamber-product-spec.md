@@ -89,12 +89,26 @@ Exact morphology is not pass/fail. The acceptance question is whether the produc
 4. See expected behavior, controls, run cost, and output fields.
 5. Optionally adjust controls.
 
+The first implemented Scenario Builder flow is intentionally narrow: it loads validated scenario templates from the local backend, defaults to Baseline Shallow Cumulus, displays the scenario description and physical question, exposes only product-facing curated controls, lets the user choose a run-size preset, and requests a dry-run package for review.
+
+The UI must continue to avoid raw CM1 namelist fields in the primary flow. Raw generated files can be listed in dry-run review because they are outputs of the package step, not user-facing controls.
+
 ### Workflow 2 — Preview Setup
 
 1. Adjust controls.
 2. Placeholder preview panel reserves space for future guidance.
 3. Future preview diagnostics update quickly when implemented.
 4. User understands that preview is not CM1.
+
+Current behavior is a placeholder only. It must explicitly say preview is not implemented, not CM1 output, not a completed result, and not a visualization interpretation.
+
+### Workflow 2.5 — Review Dry-Run Package
+
+1. Request a dry-run package from the Scenario Builder.
+2. Backend validates the scenario template and selected controls.
+3. Backend writes package files under the configured runtime home, not the repo.
+4. UI displays package path, validation/product state, generated files, physical question, selected run-size preset, and cost/size notes.
+5. UI states that CM1 was not launched and the package is not a completed CM1 result.
 
 ### Workflow 3 — Launch CM1 Run
 

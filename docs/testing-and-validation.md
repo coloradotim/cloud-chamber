@@ -13,18 +13,24 @@ Fast CI tests run on every pull request and push to `main`.
 - `scripts/check.sh` executable-bit assertion.
 - forbidden tracked artifact checks.
 
-Future fast tests should cover:
+Implemented fast tests cover:
 
 - scenario schema validation
 - quick/standard/deep runtime preset metadata validation
 - physical question and learning-goal metadata validation
 - one-control-at-a-time variation metadata validation
-- generated manifests
+- generated manifests and dry-run packages
 - product state/provenance label validation
-- CM1 path/settings handling
+- CM1 path/settings handling through local runtime settings
 - run-package generation using temp directories
+- frontend component tests for Scenario Builder behavior, dry-run review, and preview-not-implemented state distinctions
+
+Future fast tests should cover:
+
 - result-card / experiment-notebook metadata serialization
-- frontend component tests for Scenario Builder behavior and state distinctions
+- run-manager fake process execution
+- NetCDF ingest with tiny synthetic fixtures when that layer exists
+- visualizer metadata loading when that layer exists
 
 These tests must not require CM1 source, CM1 binaries, NetCDF output, generated run directories, or large local data.
 
