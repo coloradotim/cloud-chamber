@@ -203,6 +203,10 @@ The first implemented ingest step creates `result_metadata.json` in the complete
 
 The next implemented step attaches first-pass Baseline Shallow Cumulus diagnostics to that result metadata. Diagnostics read NetCDF fields through the backend and summarize `qc`, `w`, and optional `qr` without parsing raw `.dat/.ctl` artifacts. Raw `.dat/.ctl` artifacts remain cataloged on the run metadata but are not parsed as ingest input.
 
+CM1 may write a completed run as a sequence of NetCDF model-output files such as `cm1out_000001.nc` through `cm1out_000025.nc`. Cloud Chamber must ingest the model-field sequence, not just the first NetCDF file, before making cloud/no-cloud statements. Stats files such as `cm1out_stats.nc` are NetCDF artifacts but are not model-field time-series inputs for `qc`, `w`, and `qr` diagnostics.
+
+Result metadata records model-output paths separately from stats NetCDF paths, skipped/corrupt files, contributing model-output file count, total time steps, first/last output time, and whether time came directly from a NetCDF coordinate or an inferred fallback.
+
 Current diagnostics compute:
 
 - cloud formed yes/no using `qc >= 1e-6 kg/kg` and a minimum 10 cloudy grid-cell rule;
