@@ -228,6 +228,25 @@ Responsibilities:
 - field controls
 - rendering labels/provenance
 
+#31 has been superseded by staged visualizer implementation issues. The architecture should not treat a single broad visualizer issue as the implementation plan anymore.
+
+The staged dependency path is:
+
+```text
+NetCDF ingest (#68)
+-> diagnostics (#69)
+-> result cards / notebook entries (#70)
+-> Results Library UI (#71)
+-> visualization-ready data contract (#72)
+-> 2-D field inspection (#73)
+-> 3-D scene shell (#77)
+-> cloud-water rendering (#78)
+-> slice planes (#79)
+-> visual polish / fly-through / export later (#80)
+```
+
+The 3-D viewer should open from saved or ingested results and consume visualization-ready backend data. It should not parse raw NetCDF directly in the browser. Rendering remains a visualizer interpretation of CM1-derived output and must carry source model, run/result, field, processing, and rendering-method provenance.
+
 ## Data Flow
 
 ### Create Run
@@ -460,6 +479,8 @@ Raw NetCDF is authoritative CM1 output, but it is not ideal for direct browser r
 - rendering method
 
 Generated visualization artifacts are interpretations of CM1 data and must be labeled that way.
+
+The practical path before 3-D rendering is to define the visualization-ready data contract, then build a 2-D field inspector that can verify orientation, time indexing, field availability, units, and scaling. The 3-D scene shell, cloud-water rendering, and slice planes should build on that same contract.
 
 ## Visualization Data Strategy
 

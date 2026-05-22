@@ -251,7 +251,29 @@ Deliverables:
 
 Implementation anchor:
 
-- #31 should open from saved results, support time replay and camera exploration, avoid requiring reruns, and display provenance/rendering-method labels.
+- #31 has been superseded by staged visualizer implementation issues. It captured the right broad goal, but was too large to implement safely as one PR.
+- #72 defines the visualization-ready data contract. The browser should not parse raw NetCDF directly.
+- #73 builds the 2-D field inspection MVP before the full 3-D viewer so field orientation, time indexing, vertical coordinates, scaling, and basic cloud evolution can be checked.
+- #77 builds the 3-D scene shell with orbit/pan/zoom, reset camera, time slider, field selector, empty/error states, and provenance/rendering labels.
+- #78 renders the first cloud-water field from visualization-ready data.
+- #79 adds horizontal and vertical slice planes using the same provenance-labeled data path.
+
+Recommended implementation order:
+
+```text
+#68 NetCDF ingest
+-> #69 diagnostics
+-> #70 result cards / notebook entries
+-> #71 Results Library UI
+-> #72 visualization-ready data contract
+-> #73 2-D field inspection
+-> #77 3-D scene shell
+-> #78 cloud-water rendering
+-> #79 slice planes
+-> #80 visual polish / fly-through / export later
+```
+
+The 3-D visualizer should open from saved or ingested results, should not require rerunning CM1, and should label visual output as an interpretation of CM1-derived data with clear provenance and rendering-method labels.
 
 ## M5 Visual Polish + Export
 
@@ -266,6 +288,10 @@ Deliverables:
 - fly-through/move-through.
 - cinematic export.
 - thumbnails/previews with strict generated-artifact policy.
+
+Implementation anchor:
+
+- #80 plans post-MVP visual polish, fly-through/move-through, cinematic export, and generated thumbnail/preview policy. These are later features, not prerequisites for the first inspectable CM1 result loop.
 
 ## Initial Lower-Atmosphere Scenario Set
 
