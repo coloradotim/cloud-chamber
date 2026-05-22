@@ -261,7 +261,7 @@ Implementation anchor:
 - #31 has been superseded by staged visualizer implementation issues. It captured the right broad goal, but was too large to implement safely as one PR.
 - #72 defines and implements the backend visualization-ready data contract. The browser should not parse raw NetCDF directly; it should consume fields and JSON slice payloads from backend endpoints. The MVP supports `qc` and `w`, native grids (`zh/yh/xh` for `qc`, `zf/yh/xh` for `w`), provenance/rendering labels, finite/non-finite stats, and vertical unit display metadata without interpolation.
 - #73 builds the 2-D field inspection MVP on top of the #72 fields/slice API before the full 3-D viewer so field orientation, time indexing, vertical coordinates, scaling, and basic cloud evolution can be checked. It opens from the Results Library detail, enables field/time selection, shows horizontal and vertical slices, and keeps the browser away from raw NetCDF parsing.
-- #77 builds the 3-D scene shell with orbit/pan/zoom, reset camera, time slider, field selector, empty/error states, and provenance/rendering labels.
+- #77 builds the 3-D scene shell from the Results Library detail: scene container, orbit/pan/zoom controls, reset camera, time slider shell, field selector shell, loading/empty/error states, and provenance/rendering labels. It does not render cloud water, slices, or raw NetCDF data in the browser.
 - #78 renders the first cloud-water field from visualization-ready data without reading raw NetCDF in the browser.
 - #79 adds horizontal and vertical slice planes using the same provenance-labeled data path and native-grid caveats.
 

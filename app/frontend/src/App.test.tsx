@@ -159,8 +159,17 @@ const missingDiagnosticsCard = {
   },
 };
 
+const emptyVisualizerCard = {
+  ...resultCard,
+  result_id: "result-empty-visualizer",
+  run_id: "dry-run-empty-visualizer",
+  name: "No visual fields",
+  diagnostics_summary: "ingested result with no visualizable fields",
+  caveats: ["missing_visualization_fields"],
+};
+
 const resultsResponse = {
-  results: [resultCard, missingDiagnosticsCard],
+  results: [resultCard, missingDiagnosticsCard, emptyVisualizerCard],
 };
 
 const provenance = {
@@ -227,6 +236,14 @@ const missingFieldCatalogResponse = {
       },
     },
   ],
+};
+
+const emptyFieldCatalogResponse = {
+  ...fieldCatalogResponse,
+  result_id: "result-empty-visualizer",
+  run_id: "dry-run-empty-visualizer",
+  caveats: ["missing_visualization_fields"],
+  available_fields: [],
 };
 
 function sliceResponse({
@@ -313,6 +330,11 @@ beforeEach(() => {
       if (url === "/api/results/result-no-diagnostics/visualization/fields") {
         return Promise.resolve(
           new Response(JSON.stringify(missingFieldCatalogResponse), { status: 200 }),
+        );
+      }
+      if (url === "/api/results/result-empty-visualizer/visualization/fields") {
+        return Promise.resolve(
+          new Response(JSON.stringify(emptyFieldCatalogResponse), { status: 200 }),
         );
       }
       if (url.includes("/visualization/slice")) {
@@ -559,5 +581,57 @@ describe("App", () => {
     await waitFor(() => {
       expect(screen.getByRole("alert")).toHaveTextContent("level_index=99 is outside valid range");
     });
+  });
+
+  it("opens the 3-D visualizer scene shell without rendering cloud fields", async () => {
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Open 3-D scene shell" }));
+
+    expect(await screen.findByRole("heading", { name: "Scene shell" })).toBeInTheDocument();
+    await screen.findByText("Scene shell ready");
+    expect(screen.getByLabelText("3-D scene container")).toBeInTheDocument();
+    expect(screen.getByText("Cloud rendering not implemented")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Orbit" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Pan" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Reset camera" })).toBeInTheDocument();
+    expect(screen.getByLabelText("Zoom")).toHaveValue("100");
+    expect(screen.getByLabelText("Field")).toHaveValue("qc");
+    expect(screen.getByLabelText("Time")).toBeInTheDocument();
+    expect(screen.getByText("scene_shell_no_field_rendering")).toBeInTheDocument();
+    expect(screen.getByText("Visualizer interpretation of CM1-derived output")).toBeInTheDocument();
+    expect(screen.getByText("No raw NetCDF parsing in the browser")).toBeInTheDocument();
+  });
+
+  it("updates and resets the 3-D scene shell camera controls", async () => {
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Open 3-D scene shell" }));
+    await screen.findByText("Scene shell ready");
+
+    fireEvent.click(screen.getByRole("button", { name: "Pan" }));
+    fireEvent.change(screen.getByLabelText("Zoom"), { target: { value: "150" } });
+
+    expect(screen.getByText("pan")).toBeInTheDocument();
+    expect(screen.getByText("150%")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Reset camera" }));
+
+    expect(screen.getByText("orbit")).toBeInTheDocument();
+    expect(screen.getByText("100%")).toBeInTheDocument();
+  });
+
+  it("handles a 3-D scene shell result with no visualization-ready fields", async () => {
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "No visual fields" }));
+    fireEvent.click(screen.getByRole("button", { name: "Open 3-D scene shell" }));
+
+    expect(await screen.findByRole("heading", { name: "Scene shell" })).toBeInTheDocument();
+    await screen.findByText("No fields available");
+    expect(
+      screen.getByText("No visualization-ready fields are available for this result."),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Cloud rendering not implemented")).toBeInTheDocument();
   });
 });
