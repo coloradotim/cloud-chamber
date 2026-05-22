@@ -57,6 +57,14 @@ ingested metadata, listing/getting cards, updating name/tags/notes, saving and
 protecting cards, missing diagnostics, provenance labels, output file summary,
 and serialization round trips. They must not use real CM1 output.
 
+Visualization-ready data contract tests should use tiny synthetic NetCDF
+fixtures and temporary runtime homes only. They should cover the fields endpoint,
+`qc` and `w` availability, missing `qc`/`w`, horizontal and vertical slices,
+native `zh/yh/xh` and `zf/yh/xh` grids, bad field/time/level errors,
+provenance labels, JSON array shape/order, finite and non-finite stats, and
+safe vertical kilometer-to-meter display conversion. They must not implement UI,
+rendering, interpolation, or large-output processing.
+
 CM1 runtime floating-point exception flags such as `IEEE_INVALID_FLAG`, `IEEE_DIVIDE_BY_ZERO`, and `IEEE_OVERFLOW_FLAG` should be preserved as caveats. Automated diagnostics should then check whether target fields contain non-finite values. If `qc`, `w`, and `qr` are finite/usable, diagnostics can complete with the runtime warning still visible. If root-cause investigation requires CM1 source-level debugging, that belongs in a separate issue rather than CI.
 
 Local validation uses `scripts/check.sh` as the canonical gate. CI mirrors it through split equivalent jobs so branch protection can require `Frontend`, `Backend`, and `Scripts and config` independently. Keep the local script and CI jobs in sync as new implemented layers add fast checks.

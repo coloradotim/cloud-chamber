@@ -296,6 +296,43 @@ NetCDF ingest (#68)
 
 The 3-D viewer should open from saved or ingested results and consume visualization-ready backend data. It should not parse raw NetCDF directly in the browser. Rendering remains a visualizer interpretation of CM1-derived output and must carry source model, run/result, field, processing, and rendering-method provenance.
 
+### Visualization-Ready Field Slices
+
+The backend owns NetCDF/xarray field selection. Browsers should request
+visualization-ready payloads from ingested results instead of opening raw CM1
+NetCDF files.
+
+Implemented MVP endpoints:
+
+- `GET /api/results/{result_id}/visualization/fields`
+- `GET /api/results/{result_id}/visualization/slice`
+
+The field catalog exposes available visualizable fields, starting with `qc`
+and `w` and including `qr` when present. It maps raw CM1 field names to product
+canonical names such as `cloud_water` and `vertical_velocity`, includes native
+dimensions, coordinate names, units, time values, source model/run/result
+provenance, processing method, and rendering method labels.
+
+The slice endpoint returns JSON numeric arrays for the slice-first MVP. It
+supports horizontal slices and vertical `x`/`y` slices on native grids:
+
+- `qc`: `time, zh, yh, xh`
+- `w`: `time, zf, yh, xh`
+
+It does not interpolate staggered fields. Payloads include the selected time,
+orientation, level/index, dimension order, shape, min/max/mean, finite and
+non-finite counts, caveats, and provenance. Non-finite values are represented
+as `null` in JSON arrays and counted in stats.
+
+Vertical coordinate units are preserved. When a vertical coordinate is in
+kilometers, payloads may include a safe meter display conversion while still
+recording the native units and native value.
+
+Future 3-D block data should use JSON metadata plus binary `float32` arrays
+with explicit downsampling/max-voxel controls. That binary block contract should
+build on the same provenance labels and native-grid rules, but it is not needed
+for the first 2-D inspector.
+
 ## Data Flow
 
 ### Create Run
@@ -533,19 +570,24 @@ The practical path before 3-D rendering is to define the visualization-ready dat
 
 ## Visualization Data Strategy
 
-Raw NetCDF is not ideal for direct browser rendering.
+Raw NetCDF is not ideal for direct browser rendering, and the browser should
+not parse raw CM1 output. The local backend should load CM1 NetCDF through
+xarray, select only the requested field/time/slice, and return a bounded,
+provenance-labeled payload.
 
 Recommended staged path:
 
 1. Load/inspect NetCDF in backend.
 2. Extract selected fields and time frames.
-3. Downsample or chunk as needed.
-4. Store browser-friendly arrays.
-5. Load fields into Three.js/WebGL viewer.
+3. Return JSON 2-D slices for the slice-first MVP.
+4. Downsample or chunk as needed for future larger payloads.
+5. Use JSON metadata plus binary `float32` arrays for future 3-D blocks.
+6. Load fields into the 2-D inspector or later Three.js/WebGL viewer.
 
 Potential processed formats:
 
-- JSON metadata + binary float arrays
+- JSON numeric arrays for MVP 2-D slices
+- JSON metadata + binary `float32` arrays for future 3-D blocks
 - Zarr later
 - compressed chunks later
 - PNG/texture stacks for MVP if easier
