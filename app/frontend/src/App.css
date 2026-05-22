@@ -112,6 +112,7 @@ small {
 .table-panel,
 .notebook-card,
 .field-inspector,
+.visualizer-shell,
 .slice-panel {
   border: 1px solid rgba(255, 255, 255, 0.14);
   border-radius: 8px;
@@ -379,6 +380,106 @@ td small {
   padding: 1rem;
 }
 
+.visualizer-shell {
+  display: grid;
+  gap: 1rem;
+  padding: 1rem;
+}
+
+.visualizer-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) minmax(280px, 0.6fr);
+  gap: 1rem;
+  align-items: stretch;
+}
+
+.scene-container {
+  position: relative;
+  display: grid;
+  place-items: center;
+  min-height: 420px;
+  overflow: hidden;
+  border: 1px solid rgba(171, 215, 214, 0.28);
+  border-radius: 8px;
+  background:
+    linear-gradient(180deg, rgba(116, 172, 194, 0.18), transparent 46%),
+    linear-gradient(0deg, rgba(22, 37, 50, 0.92), rgba(17, 24, 32, 0.82));
+}
+
+.scene-horizon {
+  position: absolute;
+  inset: 30% 0 auto;
+  height: 1px;
+  background: rgba(171, 215, 214, 0.35);
+}
+
+.scene-grid {
+  position: absolute;
+  inset: auto 7% 9%;
+  height: 44%;
+  border: 1px solid rgba(143, 216, 182, 0.28);
+  background:
+    linear-gradient(rgba(143, 216, 182, 0.16) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(143, 216, 182, 0.16) 1px, transparent 1px);
+  background-size: 48px 48px;
+  transform: perspective(720px) rotateX(64deg);
+  transform-origin: center bottom;
+}
+
+.scene-empty-state {
+  position: relative;
+  z-index: 1;
+  width: min(28rem, calc(100% - 2rem));
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 8px;
+  padding: 1rem;
+  background: rgba(17, 24, 32, 0.84);
+}
+
+.visualizer-controls {
+  display: grid;
+  align-content: start;
+  gap: 1rem;
+}
+
+.visualizer-controls fieldset {
+  display: grid;
+  gap: 0.75rem;
+  min-width: 0;
+  margin: 0;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 8px;
+  padding: 0.9rem;
+}
+
+.visualizer-controls legend {
+  color: #f7fbff;
+  font-weight: 850;
+}
+
+.visualizer-controls label {
+  display: grid;
+  gap: 0.4rem;
+  color: #eff7fa;
+  font-weight: 800;
+}
+
+.segmented-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.segmented-buttons button {
+  background: rgba(255, 255, 255, 0.1);
+  color: #f7fbff;
+}
+
+.segmented-buttons .active-control {
+  background: #91d9b7;
+  color: #102018;
+}
+
 .inspector-controls {
   display: grid;
   grid-template-columns: repeat(5, minmax(150px, 1fr));
@@ -428,6 +529,7 @@ td small {
   .topbar,
   .builder-layout,
   .results-layout,
+  .visualizer-layout,
   .slice-grid,
   .control-row {
     grid-template-columns: 1fr;

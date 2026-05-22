@@ -72,6 +72,14 @@ slice display, units, min/max, finite/non-finite counts, provenance labels,
 missing fields, and bad slice requests. They must not add rendering
 dependencies or test a 3-D scene.
 
+3-D scene shell component tests should also mock the visualization-ready field
+catalog instead of reading NetCDF in the browser. They should cover opening from
+a Result Card, scene container rendering, orbit/pan controls, zoom/reset camera
+controls, time slider shell, field selector shell, provenance/rendering labels,
+and no-field/error states. They must not assert cloud-water rendering,
+isosurfaces, 3-D slice planes, or volumetric effects until the later visualizer
+issues implement those layers.
+
 CM1 runtime floating-point exception flags such as `IEEE_INVALID_FLAG`, `IEEE_DIVIDE_BY_ZERO`, and `IEEE_OVERFLOW_FLAG` should be preserved as caveats. Automated diagnostics should then check whether target fields contain non-finite values. If `qc`, `w`, and `qr` are finite/usable, diagnostics can complete with the runtime warning still visible. If root-cause investigation requires CM1 source-level debugging, that belongs in a separate issue rather than CI.
 
 Local validation uses `scripts/check.sh` as the canonical gate. CI mirrors it through split equivalent jobs so branch protection can require `Frontend`, `Backend`, and `Scripts and config` independently. Keep the local script and CI jobs in sync as new implemented layers add fast checks.

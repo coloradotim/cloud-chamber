@@ -296,6 +296,23 @@ NetCDF ingest (#68)
 
 The 3-D viewer should open from saved or ingested results and consume visualization-ready backend data. It should not parse raw NetCDF directly in the browser. Rendering remains a visualizer interpretation of CM1-derived output and must carry source model, run/result, field, processing, and rendering-method provenance.
 
+The first 3-D scene shell is the frontend interaction/container layer. It opens
+from a Result Card / Experiment Notebook entry, requests the visualization-ready
+field catalog, and exposes:
+
+- scene container;
+- orbit/pan camera mode shell;
+- zoom control;
+- reset camera action;
+- time slider shell;
+- field selector shell;
+- loading, empty, and error states;
+- provenance and rendering-method labels.
+
+It must not render `qc`, create isosurfaces, draw 3-D slice planes, parse raw
+NetCDF, or invent synthetic cloud physics. Until #78 lands, the scene shell's
+rendering method should remain explicitly labeled as no field rendering.
+
 ### Visualization-Ready Field Slices
 
 The backend owns NetCDF/xarray field selection. Browsers should request

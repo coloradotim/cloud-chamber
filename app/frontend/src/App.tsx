@@ -305,6 +305,7 @@ export function App() {
   const [selectedResultId, setSelectedResultId] = useState<string | null>(null);
   const [resultDraft, setResultDraft] = useState({ name: "", tags: "", notes: "" });
   const [inspectedResultId, setInspectedResultId] = useState<string | null>(null);
+  const [visualizerResultId, setVisualizerResultId] = useState<string | null>(null);
   const [resultsStatus, setResultsStatus] = useState("Loading results...");
   const [status, setStatus] = useState("Loading scenarios...");
   const [error, setError] = useState<string | null>(null);
@@ -600,12 +601,19 @@ export function App() {
             onSubmit={handleResultUpdate}
             onSave={handleResultSave}
             onInspect={() => setInspectedResultId(selectedResult?.result_id ?? null)}
+            onOpenVisualizer={() => setVisualizerResultId(selectedResult?.result_id ?? null)}
           />
         </div>
 
         {inspectedResultId && selectedResult && selectedResult.result_id === inspectedResultId && (
           <FieldInspector result={selectedResult} />
         )}
+
+        {visualizerResultId &&
+          selectedResult &&
+          selectedResult.result_id === visualizerResultId && (
+            <VisualizerSceneShell result={selectedResult} />
+          )}
       </section>
     </main>
   );
@@ -718,6 +726,7 @@ function ResultNotebookCard({
   onSubmit,
   onSave,
   onInspect,
+  onOpenVisualizer,
 }: {
   result: ResultCard | undefined;
   draft: { name: string; tags: string; notes: string };
@@ -725,6 +734,7 @@ function ResultNotebookCard({
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
   onSave: () => void;
   onInspect: () => void;
+  onOpenVisualizer: () => void;
 }) {
   if (!result) {
     return (
@@ -837,8 +847,206 @@ function ResultNotebookCard({
           <button type="button" onClick={onInspect}>
             Inspect fields
           </button>
+          <button type="button" onClick={onOpenVisualizer}>
+            Open 3-D scene shell
+          </button>
         </div>
       </form>
+    </section>
+  );
+}
+
+function VisualizerSceneShell({ result }: { result: ResultCard }) {
+  const [catalog, setCatalog] = useState<FieldCatalogResponse | null>(null);
+  const [selectedFieldName, setSelectedFieldName] = useState("");
+  const [timeIndex, setTimeIndex] = useState(0);
+  const [cameraMode, setCameraMode] = useState<"orbit" | "pan">("orbit");
+  const [zoom, setZoom] = useState(100);
+  const [sceneStatus, setSceneStatus] = useState("Loading scene data...");
+  const [sceneError, setSceneError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    setCatalog(null);
+    setSceneError(null);
+    setSelectedFieldName("");
+    setTimeIndex(0);
+    setCameraMode("orbit");
+    setZoom(100);
+    setSceneStatus("Loading scene data...");
+    fetchVisualizationFields(result.result_id)
+      .then((payload) => {
+        if (!active) return;
+        setCatalog(payload);
+        const firstPreferred =
+          payload.available_fields.find((field) => field.raw_field_name === "qc") ??
+          payload.available_fields[0];
+        setSelectedFieldName(firstPreferred?.raw_field_name ?? "");
+        setSceneStatus(
+          payload.available_fields.length > 0 ? "Scene shell ready" : "No fields available",
+        );
+      })
+      .catch((caught: unknown) => {
+        if (!active) return;
+        setSceneError(caught instanceof Error ? caught.message : "Unable to load scene data.");
+        setSceneStatus("Scene unavailable");
+      });
+    return () => {
+      active = false;
+    };
+  }, [result.result_id]);
+
+  const selectedField = useMemo(
+    () => catalog?.available_fields.find((field) => field.raw_field_name === selectedFieldName),
+    [catalog, selectedFieldName],
+  );
+
+  const timeOptions = selectedField?.time_coordinate_values ?? [];
+  const timeMax = Math.max(0, timeOptions.length - 1);
+  const provenanceLabel =
+    selectedField?.provenance.provenance_label ??
+    catalog?.provenance.provenance_label ??
+    "CM1-derived visualization-ready data; rendering not implemented";
+
+  function resetCamera() {
+    setCameraMode("orbit");
+    setZoom(100);
+  }
+
+  return (
+    <section className="visualizer-shell" aria-labelledby="visualizer-shell-title">
+      <div className="section-heading">
+        <div>
+          <p className="eyebrow">3-D visualizer</p>
+          <h2 id="visualizer-shell-title">Scene shell</h2>
+        </div>
+        <p className="state-chip">{sceneStatus}</p>
+      </div>
+
+      <p>
+        This is the 3-D interaction shell for a CM1-derived result. It does not render cloud water,
+        parse raw NetCDF in the browser, or create synthetic cloud physics.
+      </p>
+
+      {sceneError && <p role="alert">{sceneError}</p>}
+
+      {catalog && catalog.available_fields.length === 0 && (
+        <p role="status">No visualization-ready fields are available for this result.</p>
+      )}
+
+      <div className="visualizer-layout">
+        <div className="scene-container" aria-label="3-D scene container">
+          <div className="scene-horizon" />
+          <div className="scene-grid" />
+          <div className="scene-empty-state">
+            <p className="eyebrow">Rendering placeholder</p>
+            <h3>Cloud rendering not implemented</h3>
+            <p>
+              #78 will render cloud-water from visualization-ready backend data. This shell only
+              establishes the scene, camera, field, time, and provenance structure.
+            </p>
+          </div>
+        </div>
+
+        <aside className="visualizer-controls" aria-label="3-D scene controls">
+          <fieldset>
+            <legend>Camera</legend>
+            <div className="segmented-buttons">
+              <button
+                type="button"
+                className={cameraMode === "orbit" ? "active-control" : ""}
+                onClick={() => setCameraMode("orbit")}
+              >
+                Orbit
+              </button>
+              <button
+                type="button"
+                className={cameraMode === "pan" ? "active-control" : ""}
+                onClick={() => setCameraMode("pan")}
+              >
+                Pan
+              </button>
+            </div>
+            <label htmlFor="scene-zoom">
+              Zoom
+              <input
+                id="scene-zoom"
+                type="range"
+                min={50}
+                max={180}
+                value={zoom}
+                onChange={(event) => setZoom(Number(event.target.value))}
+              />
+            </label>
+            <button type="button" onClick={resetCamera}>
+              Reset camera
+            </button>
+          </fieldset>
+
+          {catalog && selectedField && (
+            <fieldset>
+              <legend>Field and time</legend>
+              <label htmlFor="scene-field">
+                Field
+                <select
+                  id="scene-field"
+                  value={selectedFieldName}
+                  onChange={(event) => {
+                    setSelectedFieldName(event.target.value);
+                    setTimeIndex(0);
+                  }}
+                >
+                  {catalog.available_fields.map((field) => (
+                    <option key={field.raw_field_name} value={field.raw_field_name}>
+                      {field.raw_field_name} - {field.display_name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label htmlFor="scene-time">
+                Time
+                <input
+                  id="scene-time"
+                  type="range"
+                  min={0}
+                  max={timeMax}
+                  value={Math.min(timeIndex, timeMax)}
+                  onChange={(event) => setTimeIndex(Number(event.target.value))}
+                />
+              </label>
+            </fieldset>
+          )}
+
+          <dl className="metric-grid">
+            <Metric label="Run ID" value={result.run_id} />
+            <Metric label="Camera mode" value={cameraMode} />
+            <Metric label="Zoom" value={`${zoom}%`} />
+            <Metric
+              label="Selected time"
+              value={formatTimeValue(timeOptions[Math.min(timeIndex, timeMax)] ?? null)}
+            />
+            <Metric
+              label="Selected field"
+              value={
+                selectedField
+                  ? `${selectedField.raw_field_name} (${selectedField.display_name})`
+                  : "Unavailable"
+              }
+            />
+            <Metric label="Rendering method" value="scene_shell_no_field_rendering" />
+          </dl>
+
+          <section aria-labelledby="visualizer-provenance-title">
+            <h3 id="visualizer-provenance-title">Provenance / rendering labels</h3>
+            <ul className="compact-list">
+              <li>{provenanceLabel}</li>
+              <li>Visualizer interpretation of CM1-derived output</li>
+              <li>No raw NetCDF parsing in the browser</li>
+              <li>No cloud-water rendering in this shell</li>
+            </ul>
+          </section>
+        </aside>
+      </div>
     </section>
   );
 }

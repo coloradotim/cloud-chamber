@@ -175,6 +175,12 @@ Visualization-ready data contract (#72)
 
 Every visualizer stage must preserve provenance labels and make clear that rendered output is an interpretation of CM1-derived data.
 
+The first 3-D scene shell opens from a Result Card / Experiment Notebook entry.
+It provides the scene container, orbit/pan/zoom controls, reset camera, time
+slider shell, field selector shell, loading/empty/error states, and
+provenance/rendering labels. It does not render cloud water, slices, or
+synthetic cloud physics; those belong to later visualizer issues.
+
 ### Workflow 7 — Duplicate / Tweak / Rerun
 
 1. Duplicate previous setup.
@@ -622,6 +628,11 @@ Later:
 True fly-through or move-through should remain on the roadmap after the MVP. Orbit/pan/zoom, reset camera, time replay, slices, field selection, and cloud-water isosurface/opacity approximation are enough for the first visualizer.
 
 The browser should not parse raw CM1 NetCDF directly. Backend ingest and visualization-ready preprocessing should provide selected, provenance-labeled fields for inspection and rendering.
+
+The scene shell is intentionally a container and interaction layer first. It
+should show clearly labeled empty/loading/error states and a rendering-method
+label such as `scene_shell_no_field_rendering` until #78 adds cloud-water
+rendering from visualization-ready data.
 
 ## 2-D Field Inspection MVP
 

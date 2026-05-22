@@ -20,7 +20,7 @@ npm run build
 
 The frontend uses TypeScript, React, Vite, Vitest, ESLint, and Prettier. During local development, Vite proxies `/api` requests to `http://127.0.0.1:8000`.
 
-The current first Scenario Builder flow loads Baseline Shallow Cumulus from the backend, shows curated controls and the physical question, requests a dry-run package, and reviews generated files. Preview is explicitly not implemented and not CM1 output. Do not add heavy 3-D rendering dependencies until the visualizer work starts.
+The current first Scenario Builder flow loads Baseline Shallow Cumulus from the backend, shows curated controls and the physical question, requests a dry-run package, and reviews generated files. Preview is explicitly not implemented and not CM1 output. The first 3-D visualizer work is a scene shell only: use existing React/CSS controls, consume visualization-ready backend metadata, and do not add rendering dependencies until a concrete rendering issue requires them.
 
 ## Dev Server Helper
 
