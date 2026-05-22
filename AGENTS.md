@@ -62,7 +62,8 @@ Do commit:
 - Update docs when architecture/workflow changes.
 - Use local fake fixtures in CI; do not require real CM1 in automated tests.
 - Do not weaken scientific honesty to make UI look better.
-- Do not auto-merge Codex feature PRs without user review.
+- For Codex issue work, enable auto-merge after required CI checks pass unless the user explicitly asks for manual review or the PR is high-risk/destructive.
+- Treat destructive cleanup, generated-data policy changes, scientific interpretation changes, and real CM1 execution changes as high-risk unless the user says otherwise.
 
 ## Initial Architecture Bias
 
