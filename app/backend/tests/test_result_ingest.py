@@ -93,6 +93,52 @@ def write_tiny_netcdf(
     dataset.to_netcdf(path, engine="scipy")
 
 
+def write_model_netcdf(
+    path: Path,
+    *,
+    times: list[float],
+    qc_values: list[float],
+    w_values: list[float],
+    include_qc: bool = True,
+    include_w: bool = True,
+) -> None:
+    data_vars = {}
+    if include_qc:
+        data_vars["qc"] = (
+            ("time", "z", "y", "x"),
+            [
+                [[[qc_value for _x in range(4)] for _y in range(3)] for _z in range(2)]
+                for qc_value in qc_values
+            ],
+            {"units": "kg/kg"},
+        )
+    if include_w:
+        data_vars["w"] = (
+            ("time", "z", "y", "x"),
+            [
+                [[[w_value for _x in range(4)] for _y in range(3)] for _z in range(2)]
+                for w_value in w_values
+            ],
+            {"units": "m/s"},
+        )
+    xr.Dataset(
+        data_vars=data_vars,
+        coords={
+            "time": times,
+            "z": [500.0, 1500.0],
+            "y": [0.0, 200.0, 400.0],
+            "x": [0.0, 200.0, 400.0, 600.0],
+        },
+    ).to_netcdf(path, engine="scipy")
+
+
+def write_stats_netcdf(path: Path) -> None:
+    xr.Dataset(
+        data_vars={"mass": (("time",), [1.0], {"units": "kg"})},
+        coords={"time": [0.0]},
+    ).to_netcdf(path, engine="scipy")
+
+
 def test_ingests_valid_tiny_netcdf_metadata(tmp_path: Path) -> None:
     manifest_path = create_manifest(tmp_path)
     run_dir = manifest_path.parent
@@ -160,6 +206,103 @@ def test_result_metadata_serializes_and_lists_from_runtime_home(tmp_path: Path) 
     assert round_tripped == result
     assert listed == [result]
     assert found == result
+
+
+def test_ingests_multifile_model_output_sequence_and_excludes_stats(tmp_path: Path) -> None:
+    manifest_path = create_manifest(tmp_path, run_id="run-multifile")
+    run_dir = manifest_path.parent
+    first = run_dir / "cm1out_000001.nc"
+    second = run_dir / "cm1out_000002.nc"
+    stats = run_dir / "cm1out_stats.nc"
+    write_model_netcdf(first, times=[300.0], qc_values=[0.0], w_values=[-5.0])
+    write_model_netcdf(second, times=[600.0], qc_values=[2e-6], w_values=[7.0])
+    write_stats_netcdf(stats)
+    complete_manifest(
+        manifest_path,
+        OutputMetadata(netcdf_paths=[str(second), str(stats), str(first)]),
+    )
+
+    result = ingest_completed_run(manifest_path)
+
+    assert result.model_output_paths == [str(first), str(second)]
+    assert result.stats_netcdf_paths == [str(stats)]
+    assert result.model_output_file_count == 2
+    assert result.time_steps == 2
+    assert result.first_output_time_seconds == 300.0
+    assert result.last_output_time_seconds == 600.0
+    assert result.time_coordinate_source == "netcdf_time_coordinate"
+    assert result.time_coordinate_fallback_used is False
+    assert result.diagnostics is not None
+    assert result.diagnostics.cloud.formed is True
+    assert result.diagnostics.cloud.first_cloud_time_seconds == 600.0
+    assert len(result.diagnostics.cloud.qc_max_time_series) == 2
+    assert result.diagnostics.cloud.max_qc_kg_kg == 2e-6
+    assert result.diagnostics.cloud.time_of_max_qc_seconds == 600.0
+    assert result.diagnostics.vertical_velocity.min_w_m_s == -5.0
+    assert result.diagnostics.vertical_velocity.max_w_m_s == 7.0
+
+
+def test_ingests_multifile_with_multiple_timesteps_per_file(tmp_path: Path) -> None:
+    manifest_path = create_manifest(tmp_path, run_id="run-multistep")
+    run_dir = manifest_path.parent
+    first = run_dir / "cm1out_000001.nc"
+    second = run_dir / "cm1out_000002.nc"
+    write_model_netcdf(first, times=[0.0, 300.0], qc_values=[0.0, 0.0], w_values=[-1.0, 2.0])
+    write_model_netcdf(
+        second,
+        times=[600.0, 900.0],
+        qc_values=[0.0, 4e-6],
+        w_values=[3.0, 4.0],
+    )
+    complete_manifest(
+        manifest_path,
+        OutputMetadata(netcdf_paths=[str(second), str(first)]),
+    )
+
+    result = ingest_completed_run(manifest_path)
+
+    assert result.model_output_file_count == 2
+    assert result.time_steps == 4
+    assert result.first_output_time_seconds == 0.0
+    assert result.last_output_time_seconds == 900.0
+    assert result.diagnostics is not None
+    assert len(result.diagnostics.cloud.qc_max_time_series) == 4
+    assert result.diagnostics.cloud.formed is True
+    assert result.diagnostics.cloud.first_cloud_time_seconds == 900.0
+    assert result.diagnostics.vertical_velocity.time_of_max_w_seconds == 900.0
+
+
+def test_ingest_records_corrupt_model_file_caveat_and_uses_remaining_outputs(
+    tmp_path: Path,
+) -> None:
+    manifest_path = create_manifest(tmp_path, run_id="run-corrupt")
+    run_dir = manifest_path.parent
+    first = run_dir / "cm1out_000001.nc"
+    corrupt = run_dir / "cm1out_000002.nc"
+    write_model_netcdf(first, times=[300.0], qc_values=[0.0], w_values=[1.0])
+    corrupt.write_text("not netcdf")
+    complete_manifest(
+        manifest_path,
+        OutputMetadata(netcdf_paths=[str(corrupt), str(first)]),
+    )
+
+    result = ingest_completed_run(manifest_path)
+
+    assert result.model_output_paths == [str(first)]
+    assert result.model_output_file_count == 1
+    assert len(result.skipped_netcdf_paths) == 1
+    assert str(corrupt) in result.skipped_netcdf_paths[0]
+    assert any("skipped_netcdf_output" in warning for warning in result.warnings)
+
+
+def test_ingest_fails_when_only_stats_netcdf_exists(tmp_path: Path) -> None:
+    manifest_path = create_manifest(tmp_path)
+    stats = manifest_path.parent / "cm1out_stats.nc"
+    write_stats_netcdf(stats)
+    complete_manifest(manifest_path, OutputMetadata(netcdf_paths=[str(stats)]))
+
+    with pytest.raises(ResultIngestError, match="No CM1 model-field NetCDF output files"):
+        ingest_completed_run(manifest_path)
 
 
 def test_missing_netcdf_output_fails_gracefully(tmp_path: Path) -> None:

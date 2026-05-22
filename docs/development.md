@@ -107,6 +107,8 @@ The backend skeleton uses Python/FastAPI with pytest, ruff, and mypy. Data/scien
 
 The first result ingest path uses xarray to read tiny or local NetCDF files and writes `result_metadata.json` next to the run manifest under the generated run directory. It extracts metadata only: dimensions, coordinates, variables, units, time coordinate, grid shape, source paths, provenance, and warnings. It does not compute diagnostics, create visualization-ready arrays, parse `.dat/.ctl` payloads, or copy real output into git.
 
+NetCDF ingest reads the full CM1 model-output sequence when a run writes files such as `cm1out_000001.nc`, `cm1out_000002.nc`, and later output indices. Stats files such as `cm1out_stats.nc` are classified separately from model-field time-series files. Re-ingesting a completed run rewrites `result_metadata.json` with model-output file count, total time steps, first/last output time, direct-or-inferred time source, diagnostics, and caveats for skipped/corrupt files.
+
 Backend work should assume one local CM1 run at a time for the MVP and should avoid large in-memory processing paths for local MacBook Air-scale machines.
 
 When implementing scenario, manifest, result, or visualization contracts, keep product state and provenance labels explicit: preview estimate, generated CM1 configuration, packaged dry-run output, running/completed CM1 result, ingested result metadata, visualizer interpretation, and saved result/notebook entry are different things.
