@@ -123,6 +123,10 @@ The first full-sequence NetCDF re-ingest of `dry-run-157b09a178e1` evaluated 25 
 
 The first reference-derived validation run, `dry-run-les-shallowcu-20260522140642`, completed with `exit_code = 0`, ingested 7 model-output time steps, and produced `cloud formed; rain detected`. Recorded diagnostics included first cloud time at 3600 seconds, `max_qc_kg_kg = 0.002192789688706398`, `max_w_m_s = 6.962291717529297`, `min_w_m_s = -3.7671568393707275`, and a vertical-coordinate caveat because cloud base/top units were reported as kilometers. This is the current baseline evidence for future quick-look downscaling.
 
+The first quick-look variant should be validated as a runtime-only change from that recovered baseline: `timax = 10800.0` and `tapfrq = 900.0`. Tests must assert that the quick-look namelist still preserves the reference-derived grid/domain, surface stress/roughness path, moisture/sounding, surface fluxes, turbulence/SGS settings, damping settings, boundary conditions, NetCDF output, and reference `LANDUSE.TBL` staging behavior. Manual validation should then confirm whether the shorter run still forms useful cloud by the existing diagnostics.
+
+The first quick-look validation run, `dry-run-quicklook-les-shallowcu-20260522151536`, completed with `exit_code = 0`, ingested 13 model-output time steps from 0 to 10800 seconds, and produced `cloud formed; rain detected`. Recorded diagnostics included first cloud time at 1800 seconds, `max_qc_kg_kg = 0.002192789688706398`, `max_w_m_s = 6.866957187652588`, `min_w_m_s = -4.21529483795166`, rain present, package size 206 MB, stderr `IEEE_UNDERFLOW_FLAG`, and the existing vertical-coordinate caveat because cloud base/top units were reported as kilometers.
+
 ### Baseline Shallow Cumulus Manual Smoke-Run Loop
 
 Use this loop after a dry-run package has been generated and before broader CM1 launcher work is trusted. This is a manual/local/offline validation path; do not run it in CI.

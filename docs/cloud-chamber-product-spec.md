@@ -191,13 +191,16 @@ This workflow is useful, but it is not the core first-MVP result behavior. Repla
 
 - Target: roughly 10-20 minutes when feasible on the local Mac.
 - Purpose: sanity checks, setup inspection, and rough cloud behavior.
-- Lower confidence, shorter runtime, coarser resolution, or coarser output cadence is acceptable if clearly labeled.
+- For Baseline Shallow Cumulus, this is the first runtime-only variant derived from the validated `les_ShallowCu` baseline: `timax = 10800.0` and `tapfrq = 900.0`.
+- It preserves the reference grid, vertical spacing, domain top, surface stress/roughness path, moisture/sounding, surface fluxes, turbulence/SGS settings, damping settings, boundary conditions, NetCDF output, and reference `LANDUSE.TBL` staging behavior.
+- Lower confidence is acceptable if clearly labeled; do not use the old compact quick-look derivative as evidence or as a tuning base.
 
 ### Standard
 
-- Target: normal personal exploration run.
+- Target: normal personal exploration run and the current Baseline Shallow Cumulus reference-derived baseline.
 - Purpose: useful saved result and diagnostics.
-- Expected to balance runtime, output size, and confidence for repeated local use.
+- For Baseline Shallow Cumulus, this preserves the validated `les_ShallowCu` timing: `timax = 21600.0` and `tapfrq = 3600.0`.
+- Expected to balance runtime, output size, and confidence for repeated local use after manual validation.
 
 ### Deep / overnight
 
@@ -296,6 +299,10 @@ A follow-up local/manual validation run, `dry-run-calibration-20260522132903`, c
 
 The first `les_ShallowCu` reference-derived Cloud Chamber run, `dry-run-les-shallowcu-20260522140642`, completed with `exit_code = 0`, produced NetCDF output, and ingested 7 model-output time steps from 0 to 21600 seconds. First-pass diagnostics reported `cloud formed; rain detected`, first cloud time at 3600 seconds, `max_qc_kg_kg = 0.002192789688706398`, `max_w_m_s = 6.962291717529297`, and `min_w_m_s = -3.7671568393707275`. This validates the recovery direction: use the reference-derived case as the Baseline Shallow Cumulus Golden Path source, then derive shorter quick-look variants later.
 
+The first quick-look Baseline Shallow Cumulus variant is derived from that validated reference package by changing only runtime and output cadence: `timax = 10800.0` and `tapfrq = 900.0`. It intentionally preserves the reference domain/grid, vertical spacing, domain top, surface stress/roughness path, moisture/sounding, surface fluxes, turbulence/SGS settings, damping settings, boundary conditions, NetCDF output, and reference `LANDUSE.TBL` staging behavior.
+
+The first quick-look validation run, `dry-run-quicklook-les-shallowcu-20260522151536`, completed with `exit_code = 0`, produced NetCDF output, and ingested 13 model-output time steps from 0 to 10800 seconds. Package size was 206 MB. First-pass diagnostics reported `cloud formed; rain detected`, first cloud time at 1800 seconds, `max_qc_kg_kg = 0.002192789688706398`, `max_w_m_s = 6.866957187652588`, and `min_w_m_s = -4.21529483795166`. This confirms the shorter runtime/cadence-only quick-look variant still produces cloud and vertical motion while preserving the reference-derived settings.
+
 Default cloud-scale assumptions:
 
 ```text
@@ -306,6 +313,14 @@ Default cloud-scale assumptions:
 21600 s runtime
 3600 s output cadence
 NetCDF output as the intentional Cloud Chamber ingest-path change
+```
+
+Quick-look timing for Baseline Shallow Cumulus:
+
+```text
+10800 s runtime
+900 s output cadence
+all other reference-derived case settings preserved
 ```
 
 If a scenario needs different size, spacing, runtime, cadence, or runtime files, the deviation must be explicit and documented.
