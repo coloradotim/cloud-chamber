@@ -201,7 +201,20 @@ Responsibilities:
 
 The first implemented ingest step creates `result_metadata.json` in the completed run directory. It reads NetCDF with xarray and records result ID, run ID, scenario, physical question, controls, run-size preset, source lifecycle/product/provenance state, raw CM1 artifacts, NetCDF paths, processed artifact placeholders, dimensions, coordinates, variables, units, time coordinate, grid shape, warnings, and timestamps.
 
-This result metadata is not a Result Card UI, not diagnostics, and not visualization-ready data. It is the backend bridge that later diagnostics, result cards, and inspectors can consume. Raw `.dat/.ctl` artifacts remain cataloged on the run metadata but are not parsed as NetCDF ingest input.
+The next implemented step attaches first-pass Baseline Shallow Cumulus diagnostics to that result metadata. Diagnostics read NetCDF fields through the backend and summarize `qc`, `w`, and optional `qr` without parsing raw `.dat/.ctl` artifacts. Raw `.dat/.ctl` artifacts remain cataloged on the run metadata but are not parsed as ingest input.
+
+Current diagnostics compute:
+
+- cloud formed yes/no using `qc >= 1e-6 kg/kg` and a minimum 10 cloudy grid-cell rule;
+- first cloud time from the NetCDF time coordinate when available, otherwise inferred output index;
+- first-pass cloud base/top from available vertical coordinates;
+- max `qc`, time of max `qc`, `qc` max time series, cloud fraction time series, and cloud-present time steps;
+- max/min `w`, time of max/min `w`, and `w` max/min time series;
+- optional rain summary from `qr >= 1e-7 kg/kg`.
+
+Diagnostics preserve runtime warnings from the run manifest/result metadata. CM1 floating-point exception flags are caveats, not automatic failure. The diagnostics also count non-finite values in target fields where practical, ignore NaN/infinity for finite summaries, and record field-specific caveats if `qc`, `w`, or `qr` are missing or entirely non-finite.
+
+This result metadata is not a Result Card UI and not visualization-ready data. It is the backend bridge that later result cards and inspectors can consume.
 
 ### Result Library
 

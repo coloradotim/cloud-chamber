@@ -234,6 +234,7 @@ Implementation anchor:
 - #30 should make replayable/inspectable saved result cards the core behavior. Duplicate/tweak/rerun should remain optional or later.
 - #64 adds the storage bridge needed after the first successful 852 MB smoke run: inventory runtime-home usage, warn at the 50 GB MVP threshold, classify runs conservatively, and delete only explicitly selected run directories under `~/CloudChamber/runs/`. Cleanup must never target the repo, home directory, runtime home itself, or the external CM1 installation, and threshold warnings must never auto-delete anything.
 - #68 establishes the backend NetCDF ingest bridge: read completed-run NetCDF output with xarray, write `result_metadata.json`, preserve raw `.dat/.ctl` artifact cataloging without parsing it, and leave diagnostics/result-card UI/visualization-ready data to follow-up issues.
+- #69 adds first Baseline Shallow Cumulus diagnostics to ingested NetCDF result metadata: cloud formed yes/no with `qc >= 1e-6 kg/kg` and at least 10 cloudy grid cells, first cloud time, cloud base/top when vertical coordinates are available, `qc` summaries/time series/cloud fraction, `w` max/min summaries/time series, optional `qr` rain detection with `qr >= 1e-7 kg/kg`, and caveats for missing, inferred, or non-finite fields.
 
 ## M4 3-D Visualizer MVP
 
