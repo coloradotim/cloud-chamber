@@ -612,6 +612,59 @@ True fly-through or move-through should remain on the roadmap after the MVP. Orb
 
 The browser should not parse raw CM1 NetCDF directly. Backend ingest and visualization-ready preprocessing should provide selected, provenance-labeled fields for inspection and rendering.
 
+## Visualization-Ready Data Contract
+
+The first visualization contract is slice-first and backend-owned. The browser
+does not parse raw NetCDF; it asks the local backend for selected,
+provenance-labeled field metadata and JSON slice payloads from an ingested CM1
+result.
+
+Implemented backend endpoints:
+
+```text
+GET /api/results/{result_id}/visualization/fields
+GET /api/results/{result_id}/visualization/slice
+```
+
+The field catalog supports `qc` and `w` first, with `qr` exposed when present.
+Initial canonical mapping:
+
+```text
+qc   -> cloud_water
+w    -> vertical_velocity
+qr   -> rain_water
+rain -> accumulated_surface_rain
+dbz  -> reflectivity
+```
+
+The slice endpoint supports:
+
+```text
+horizontal: fixed vertical level, y-x plane
+vertical_x: fixed y index, z-x plane
+vertical_y: fixed x index, z-y plane
+```
+
+MVP slices use native CM1 grids and do not interpolate staggered fields:
+
+```text
+qc: time, zh, yh, xh
+w:  time, zf, yh, xh
+```
+
+Every slice payload includes field metadata, selected time/index, shape,
+dimension order, JSON numeric values, min/max/mean, finite/non-finite counts,
+native coordinate units, caveats, and provenance/rendering/processing labels.
+Non-finite values are represented as `null` in JSON.
+
+Vertical coordinate units are preserved. If a vertical coordinate is in
+kilometers, Cloud Chamber may add a meter display value while still returning
+the native coordinate value and native units.
+
+Future 3-D block payloads should use JSON metadata plus binary `float32` arrays
+with max-voxel/downsampling controls. This is a future backend contract, not a
+requirement for the 2-D inspector.
+
 ## Local Data Policy
 
 Do not commit:

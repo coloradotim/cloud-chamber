@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 from uuid import uuid4
 
 from fastapi import FastAPI, HTTPException
@@ -34,6 +34,12 @@ from cloud_chamber.scenario_catalog import (
     scenario_summary,
 )
 from cloud_chamber.settings import load_settings
+from cloud_chamber.visualization_data import (
+    VisualizationDataError,
+    VisualizationOrientation,
+    field_catalog,
+    field_slice,
+)
 
 app = FastAPI(
     title="Cloud Chamber Backend",
@@ -193,6 +199,48 @@ def save_result(result_id: str) -> dict[str, object]:
         result = save_result_card(load_settings(), result_id)
     except ResultIngestError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return result.model_dump(mode="json")
+
+
+@app.get("/api/results/{result_id}/visualization/fields")
+def get_visualization_fields(result_id: str) -> dict[str, object]:
+    try:
+        result = field_catalog(load_settings(), result_id)
+    except ResultIngestError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except VisualizationDataError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return result.model_dump(mode="json")
+
+
+@app.get("/api/results/{result_id}/visualization/slice")
+def get_visualization_slice(
+    result_id: str,
+    field: str,
+    time_index: int = 0,
+    orientation: str = "horizontal",
+    level_index: int = 0,
+    encoding: str = "json",
+) -> dict[str, object]:
+    if orientation not in {"horizontal", "vertical_x", "vertical_y"}:
+        raise HTTPException(status_code=400, detail=f"Unsupported orientation: {orientation}")
+    if encoding != "json":
+        raise HTTPException(status_code=400, detail="Only encoding=json is supported.")
+    checked_orientation = cast(VisualizationOrientation, orientation)
+    try:
+        result = field_slice(
+            load_settings(),
+            result_id,
+            field=field,
+            time_index=time_index,
+            orientation=checked_orientation,
+            level_index=level_index,
+            encoding="json",
+        )
+    except ResultIngestError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except VisualizationDataError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     return result.model_dump(mode="json")
 
 
