@@ -337,6 +337,20 @@ The scene may draw simple inspection planes from those payloads, but it must not
 parse raw NetCDF in the browser, interpolate native grids, ray march, or invent
 synthetic cloud physics.
 
+Post-MVP visual polish is a later rendering layer, not part of the data-source
+contract. Volumetric ray marching, shadows, edge brightening, cloud-base
+darkening, fly-through/move-through camera modes, cinematic export, and
+generated thumbnails should build on the same ingested result and
+visualization-ready data contracts. They must continue to label rendered output
+as an interpretation of CM1-derived data and carry source model, run/result,
+field, processing method, rendering method, and caveats.
+
+Future export artifacts should be treated as local/generated outputs unless a
+specific policy says otherwise. Generated thumbnails, preview frames, videos,
+large processed visualization data, and browser-ready render caches should not
+be committed. If small visual fixtures are needed for tests, they should be
+intentionally tiny and documented separately from real CM1 output.
+
 ### Visualization-Ready Field Slices
 
 The backend owns NetCDF/xarray field selection. Browsers should request

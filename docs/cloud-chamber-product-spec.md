@@ -625,6 +625,7 @@ Later:
 - cloud-base darkening
 - fly-through
 - cinematic export
+- thumbnails/previews with strict generated-artifact policy
 
 True fly-through or move-through should remain on the roadmap after the MVP. Orbit/pan/zoom, reset camera, time replay, slices, field selection, and cloud-water isosurface/opacity approximation are enough for the first visualizer.
 
@@ -645,6 +646,35 @@ one horizontal and one vertical native-grid slice for the selected slice field
 must show field name, units, selected time, slice location, min/max, native-grid
 caveats, and provenance labels. These planes are inspection overlays, not
 ray-marched volumes or interpolated fields.
+
+### Post-MVP Visual Polish, Fly-Through, and Export
+
+Visual polish is deliberately post-MVP. The first product loop should prove that
+Cloud Chamber can generate CM1 packages, run CM1 locally, ingest results,
+produce diagnostics, save/reopen result cards, inspect fields, and render a
+practical 3-D interpretation. Only after that loop is useful should the
+visualizer pursue cinematic work.
+
+Post-MVP visual work may include:
+
+- volumetric ray marching for cloud-water fields;
+- shadows and simple atmospheric lighting;
+- edge brightening to make cloud boundaries readable;
+- cloud-base darkening to emphasize vertical structure;
+- fly-through / move-through camera modes;
+- cinematic export for short videos or stills;
+- generated thumbnails or previews for saved results.
+
+These features must remain interpretations of CM1-derived data. The UI should
+continue to show the source result, field, units, processing method, rendering
+method, and any caveats. Visual polish must not imply extra model detail,
+interpolate native grids without disclosure, or turn preview imagery into a
+completed CM1 result.
+
+Generated thumbnails, videos, preview frames, and other visual artifacts are
+local/generated outputs by default. They should stay outside git unless a future
+issue defines a tiny fixture or documented artifact policy for tests. Large
+visualization artifacts must not be committed.
 
 ## 2-D Field Inspection MVP
 
