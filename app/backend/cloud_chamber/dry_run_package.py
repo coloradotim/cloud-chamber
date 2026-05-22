@@ -121,7 +121,8 @@ def generate_dry_run_package(
         "status": "external_runtime_files_not_committed",
         "required_files": scenario.cm1_template.runtime_files_needed,
         "notes": (
-            "CM1 remains external to the repo; dry-run generation does not copy runtime files."
+            "CM1 remains external to the repo. Required runtime files are staged from the "
+            "configured local CM1 run directory at launch time, never committed to the repo."
         ),
     }
 
@@ -180,7 +181,10 @@ def _case_manifest_payload(
         "expected_behavior": scenario.expected_behavior,
         "warnings": scenario.warnings,
         "limitations": scenario.limitations,
-        "cm1_mapping_status": "placeholder until local/manual CM1 validation",
+        "cm1_mapping_status": (
+            "CM1-ready provisional baseline package; still pending local/manual smoke-run "
+            "scientific validation"
+        ),
         "contract": asdict(contract),
     }
 

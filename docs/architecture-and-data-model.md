@@ -97,7 +97,9 @@ Turns a scenario + user controls into:
 
 For the Baseline Shallow Cumulus Golden Path, the generated package should preserve the physical question, curated controls, run-size preset, expected diagnostics, expected output fields, and provenance labels before CM1 starts.
 
-The CM1 input generation contract is deterministic and testable before full package generation. It documents the expected generated files, preserves product-facing controls separately from raw namelist/developer settings, and marks namelist/sounding fragments as placeholders until local/manual CM1 validation accepts them.
+The CM1 input generation contract is deterministic and testable before full package generation. It documents the expected generated files and preserves product-facing controls separately from raw namelist/developer settings.
+
+For Baseline Shallow Cumulus, the first CM1-facing package uses CM1's BOMEX shallow-cumulus reference behavior (`testcase = 3`, `isnd = 19`) with Cloud Chamber quick-look grid/runtime settings. The generated `input_sounding` is numeric and CM1-readable, but the baseline namelist uses CM1's built-in analytic BOMEX sounding by default. This is a runnable package candidate, not scientific acceptance; #56 must be retried locally before the case is treated as validated.
 
 Cloud-scale defaults for the first lower-atmosphere contract are:
 
@@ -149,6 +151,8 @@ The first implemented local run manager is intentionally conservative:
 - stdout and stderr are written into the run package `logs/` directory for later result notebook provenance;
 - lifecycle states move through queued, running, completed, failed, or canceled;
 - launch refuses packages that already contain output-like files such as NetCDF or `cm1out*`;
+- launch refuses placeholder-only `namelist.input` or notes-only `input_sounding` files;
+- launch stages required local runtime files such as `LANDUSE.TBL` from the configured CM1 run directory into the generated package directory;
 - tests inject fake subprocesses, so CI never needs a real CM1 executable.
 
 Real CM1 execution remains a manual/local responsibility until the user has local settings and runtime files in place. The manager must fail clearly when CM1 paths are missing rather than pretending a run started.

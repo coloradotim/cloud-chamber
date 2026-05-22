@@ -10,12 +10,13 @@ from cloud_chamber.settings import (
 )
 
 
-def test_settings_default_to_cloud_chamber_runtime_home() -> None:
-    settings = load_settings(environ={}, probe_paths=())
+def test_settings_default_to_cloud_chamber_runtime_home(tmp_path: Path) -> None:
+    settings = load_settings(home=tmp_path / "CloudChamber", environ={}, probe_paths=())
 
-    assert settings.runtime_home == DEFAULT_RUNTIME_HOME.expanduser()
-    assert settings.cache_dir == DEFAULT_RUNTIME_HOME.expanduser() / "cache"
-    assert settings.log_dir == DEFAULT_RUNTIME_HOME.expanduser() / "logs"
+    assert DEFAULT_RUNTIME_HOME.expanduser().name == "CloudChamber"
+    assert settings.runtime_home == tmp_path / "CloudChamber"
+    assert settings.cache_dir == tmp_path / "CloudChamber" / "cache"
+    assert settings.log_dir == tmp_path / "CloudChamber" / "logs"
     assert settings.cm1_root is None
     assert settings.cm1_run_dir is None
 
@@ -77,7 +78,7 @@ def test_probe_paths_are_defaults_not_requirements(tmp_path: Path) -> None:
     cm1_root = tmp_path / "cm1r21.1"
     (cm1_root / "run").mkdir(parents=True)
 
-    settings = load_settings(environ={}, probe_paths=(cm1_root,))
+    settings = load_settings(home=tmp_path / "CloudChamber", environ={}, probe_paths=(cm1_root,))
 
     assert settings.cm1_root == cm1_root
     assert settings.cm1_run_dir == cm1_root / "run"

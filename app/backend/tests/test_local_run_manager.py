@@ -63,6 +63,7 @@ def fake_settings(tmp_path: Path) -> CloudChamberSettings:
     cm1_run_dir = cm1_root / "run"
     cm1_run_dir.mkdir(parents=True)
     (cm1_run_dir / "cm1.exe").write_text("# fake executable\n")
+    (cm1_run_dir / "LANDUSE.TBL").write_text("fake local runtime file\n")
     return CloudChamberSettings(
         runtime_home=tmp_path / "CloudChamber",
         cm1_root=cm1_root,
@@ -94,8 +95,10 @@ def test_launch_constructs_cm1_command_and_captures_logs(tmp_path: Path) -> None
     assert status.lifecycle_state == LifecycleState.RUNNING
     assert factory.commands == [[str(settings.cm1_run_dir / "cm1.exe")]]
     assert factory.cwd == tmp_path / "CloudChamber" / "runs" / "run-001"
+    assert factory.cwd is not None
     assert status.stdout_log.read_text() == "fake cm1 stdout\n"
     assert status.stderr_log.read_text() == "fake cm1 stderr\n"
+    assert (factory.cwd / "LANDUSE.TBL").read_text() == "fake local runtime file\n"
 
     manifest = load_run_manifest(manifest_path)
     assert manifest.lifecycle_state == LifecycleState.RUNNING
@@ -194,4 +197,28 @@ def test_launch_refuses_existing_output_like_files(tmp_path: Path) -> None:
     manager = LocalRunManager(settings=settings)
 
     with pytest.raises(LocalRunManagerError, match="output-like files already exist"):
+        manager.launch(manifest_path)
+
+
+def test_launch_refuses_placeholder_only_inputs(tmp_path: Path) -> None:
+    settings = fake_settings(tmp_path)
+    manifest_path = dry_run_manifest_path(tmp_path)
+    run_dir = tmp_path / "CloudChamber" / "runs" / "run-001"
+    (run_dir / "namelist.input").write_text(
+        "# Status: placeholder until local/manual CM1 validation\n&cloud_chamber_domain\n/\n"
+    )
+    manager = LocalRunManager(settings=settings)
+
+    with pytest.raises(LocalRunManagerError, match="placeholder-only CM1 input"):
+        manager.launch(manifest_path)
+
+
+def test_launch_reports_missing_runtime_file(tmp_path: Path) -> None:
+    settings = fake_settings(tmp_path)
+    assert settings.cm1_run_dir is not None
+    (settings.cm1_run_dir / "LANDUSE.TBL").unlink()
+    manifest_path = dry_run_manifest_path(tmp_path)
+    manager = LocalRunManager(settings=settings)
+
+    with pytest.raises(LocalRunManagerError, match="Required CM1 runtime file is missing"):
         manager.launch(manifest_path)

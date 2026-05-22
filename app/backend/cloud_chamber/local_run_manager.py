@@ -6,6 +6,8 @@ Tests inject fake processes; CI never requires a real CM1 runtime.
 
 from __future__ import annotations
 
+import json
+import shutil
 import subprocess
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -114,12 +116,14 @@ class LocalRunManager:
         run_dir = Path(manifest.generated_inputs.run_directory).expanduser()
         if not run_dir.exists():
             raise LocalRunManagerError(f"Run package directory does not exist: {run_dir}")
+        _preflight_cm1_inputs(manifest)
         if _existing_output_paths(run_dir):
             raise LocalRunManagerError(
                 f"Refusing to launch because output-like files already exist in {run_dir}"
             )
         if self._settings.cm1_run_dir is None:
             raise LocalRunManagerError("CM1 run directory is not configured.")
+        _stage_required_runtime_files(manifest, self._settings.cm1_run_dir, run_dir)
 
         command = [str(self._settings.cm1_run_dir / "cm1.exe")]
         log_dir = run_dir / "logs"
@@ -300,3 +304,61 @@ def _existing_output_paths(run_dir: Path) -> tuple[Path, ...]:
     for pattern in patterns:
         paths.extend(run_dir.glob(pattern))
     return tuple(sorted(set(paths)))
+
+
+def _preflight_cm1_inputs(manifest: RunManifest) -> None:
+    checks = {
+        "namelist.input": manifest.generated_inputs.namelist_input,
+        "input_sounding": manifest.generated_inputs.input_sounding,
+    }
+    for label, configured_path in checks.items():
+        if configured_path is None:
+            raise LocalRunManagerError(f"Missing generated CM1 input path: {label}")
+        path = Path(configured_path).expanduser()
+        if not path.exists():
+            raise LocalRunManagerError(f"Generated CM1 input does not exist: {path}")
+        text = path.read_text()
+        if _is_placeholder_input(text):
+            raise LocalRunManagerError(
+                f"Refusing to launch placeholder-only CM1 input: {path.name}"
+            )
+
+
+def _is_placeholder_input(text: str) -> bool:
+    lowered = text.lower()
+    return (
+        "placeholder until local/manual cm1 validation" in lowered
+        or "cloud chamber input_sounding notes" in lowered
+        or "&cloud_chamber_domain" in lowered
+    )
+
+
+def _stage_required_runtime_files(
+    manifest: RunManifest,
+    cm1_run_dir: Path,
+    run_dir: Path,
+) -> None:
+    for required_file in _required_runtime_files(manifest):
+        source = cm1_run_dir / required_file
+        if not source.exists():
+            raise LocalRunManagerError(
+                f"Required CM1 runtime file is missing from configured run dir: {source}"
+            )
+        destination = run_dir / required_file
+        if not destination.exists():
+            shutil.copy2(source, destination)
+
+
+def _required_runtime_files(manifest: RunManifest) -> tuple[str, ...]:
+    required: list[str] = []
+    for checklist_path in manifest.generated_inputs.runtime_file_checklist:
+        path = Path(checklist_path).expanduser()
+        if not path.exists():
+            continue
+        loaded = json.loads(path.read_text())
+        if not isinstance(loaded, dict):
+            continue
+        files = loaded.get("required_files", [])
+        if isinstance(files, list):
+            required.extend(item for item in files if isinstance(item, str))
+    return tuple(dict.fromkeys(required))
