@@ -150,20 +150,24 @@ The first implemented local run manager is intentionally conservative:
 - command construction points at the configured local `cm1.exe`;
 - stdout and stderr are written into the run package `logs/` directory for later result notebook provenance;
 - lifecycle states move through queued, running, completed, failed, or canceled;
-- launch refuses packages that already contain output-like files such as NetCDF or `cm1out*`;
+- launch refuses packages that already contain output-like files such as NetCDF,
+  `cm1out_*.dat`, or `cm1out_*.ctl`;
 - launch refuses placeholder-only `namelist.input` or notes-only `input_sounding` files;
 - launch rejects Rayleigh damping settings that start too low and would damp more than half the vertical domain;
 - launch stages required local runtime files such as `LANDUSE.TBL` from the configured CM1 run directory into the generated package directory;
-- process exit code 0 is not enough to mark a usable completed CM1 result; output-like files must exist before `completed_cm1_result` is used;
+- process exit code 0 is not enough to mark a usable completed CM1 result; NetCDF or raw CM1 `.dat/.ctl` output artifacts must exist before `completed_cm1_result` is used;
 - tests inject fake subprocesses, so CI never needs a real CM1 executable.
 
-Real CM1 execution remains a manual/local responsibility until the user has local settings and runtime files in place. The manager must fail clearly when CM1 paths are missing rather than pretending a run started. If the process exits successfully but no NetCDF, `cm1out*`, or stats-style output exists, the manifest remains `completed` at the process level but uses `validation_status: needs_review` and `product_state: process_completed_no_output`.
+Real CM1 execution remains a manual/local responsibility until the user has local settings and runtime files in place. The manager must fail clearly when CM1 paths are missing rather than pretending a run started. If the process exits successfully but no NetCDF or raw CM1 `.dat/.ctl` output exists, the manifest remains `completed` at the process level but uses `validation_status: needs_review` and `product_state: process_completed_no_output`.
+
+The first successful Baseline Shallow Cumulus smoke run produced GrADS/direct-access CM1 artifacts (`cm1out_*.dat` plus `.ctl` descriptors) rather than NetCDF. That proves local execution but is not full ingest. The manifest should catalog those raw artifacts separately from NetCDF paths and processed visualization artifacts. Floating-point exception flags reported in stderr should be surfaced as runtime warnings/caveats, not automatically treated as launch failure.
 
 ### Output Ingester
 
 Responsibilities:
 
-- inspect NetCDF outputs
+- inspect preferred NetCDF outputs
+- catalog raw CM1 `.dat/.ctl` artifacts until NetCDF ingest is verified
 - extract metadata and fields
 - produce app-friendly artifacts
 - compute diagnostics
@@ -349,6 +353,15 @@ Run manifests should also record the selected run-size preset, physical question
 
 The backend run-manifest schema records run ID, scenario reference/version, adjusted controls, generated CM1 input paths, CM1 root/run paths, app metadata, timestamps, lifecycle state, validation status, output paths, user notes/tags, and provenance labels. It serializes/deserializes as JSON and does not require NetCDF output.
 
+Output metadata distinguishes:
+
+- `raw_cm1_artifacts`: local CM1 `.dat/.ctl` files such as `cm1out_000001_s.dat`, `cm1out_s.ctl`, `cm1out_stats.dat`, and `cm1out_metadata.ctl`;
+- `netcdf_paths`: preferred self-describing CM1 output files such as `.nc`, `.nc4`, `.cdf`, or `.netcdf`;
+- `processed_artifacts`: future Cloud Chamber-derived browser/diagnostic artifacts;
+- `runtime_warnings`: caveats captured from logs, such as CM1 floating-point exception flags.
+
+Raw `.dat/.ctl` artifact detection is an honest catalog, not full ingest, diagnostics extraction, or visualization preprocessing.
+
 Lifecycle states:
 
 ```text
@@ -402,6 +415,10 @@ Do not vendor CM1.
 The app should avoid assuming large in-memory NetCDF processing. Ingestion should prefer selected fields, selected frames, chunking, downsampling, or other backend-side reductions before browser visualization.
 
 ## NetCDF And Visualization Data Contract
+
+NetCDF is Cloud Chamber's preferred ingest path because it is self-describing, portable, and well suited for Python/xarray diagnostics. CM1 can also write GrADS/direct-access `.dat/.ctl` output. Cloud Chamber should catalog those raw files, but the main product should not become a full `.dat/.ctl` parser unless NetCDF proves blocked or impractical.
+
+The current Baseline Shallow Cumulus generator sets CM1 `output_format = 2`, which CM1 documents as NetCDF output. The first successful local smoke run used the prior `.dat/.ctl` path, so the next manual validation should confirm whether the generated NetCDF configuration works with the local CM1 build.
 
 Raw NetCDF is authoritative CM1 output, but it is not ideal for direct browser rendering. The ingestion layer should create explicit metadata and browser-friendly derivatives that preserve provenance:
 

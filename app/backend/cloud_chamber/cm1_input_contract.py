@@ -377,7 +377,7 @@ def render_cm1_namelist(contract: CM1InputContract) -> str:
  /
 
  &param9
- output_format    = 1,
+ output_format    = 2,
  output_filetype  = 2,
  output_interp    = 0,
  output_rain      = 1,

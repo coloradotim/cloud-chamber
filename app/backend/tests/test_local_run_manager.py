@@ -32,8 +32,14 @@ class FakeProcess:
 
 
 class FakeProcessFactory:
-    def __init__(self, process: FakeProcess) -> None:
+    def __init__(
+        self,
+        process: FakeProcess,
+        *,
+        stderr_text: str = "fake cm1 stderr\n",
+    ) -> None:
         self.process = process
+        self.stderr_text = stderr_text
         self.commands: list[list[str]] = []
         self.cwd: Path | None = None
 
@@ -49,7 +55,7 @@ class FakeProcessFactory:
         self.cwd = cwd
         stdout.write("fake cm1 stdout\n")
         stdout.flush()
-        stderr.write("fake cm1 stderr\n")
+        stderr.write(self.stderr_text)
         stderr.flush()
         return self.process
 
@@ -124,9 +130,11 @@ def test_exit_zero_without_output_needs_review_not_completed_result(tmp_path: Pa
     assert manifest.lifecycle_state == LifecycleState.COMPLETED
     assert manifest.validation_status.value == "needs_review"
     assert manifest.provenance.product_state == ProductState.PROCESS_COMPLETED_NO_OUTPUT
+    assert manifest.outputs.netcdf_paths == []
+    assert manifest.outputs.raw_cm1_artifacts == []
 
 
-def test_exit_zero_with_output_marks_completed_result(tmp_path: Path) -> None:
+def test_exit_zero_with_netcdf_output_marks_completed_result(tmp_path: Path) -> None:
     manifest_path = dry_run_manifest_path(tmp_path)
     run_dir = tmp_path / "CloudChamber" / "runs" / "run-001"
     fake_process = FakeProcess()
@@ -145,6 +153,62 @@ def test_exit_zero_with_output_marks_completed_result(tmp_path: Path) -> None:
     manifest = load_run_manifest(manifest_path)
     assert manifest.validation_status.value == "valid"
     assert manifest.provenance.product_state == ProductState.COMPLETED_CM1_RESULT
+    assert manifest.outputs.netcdf_paths == [str(run_dir / "cm1out_000001.nc")]
+    assert manifest.outputs.raw_cm1_artifacts == []
+
+
+def test_exit_zero_with_dat_ctl_outputs_marks_completed_result(tmp_path: Path) -> None:
+    manifest_path = dry_run_manifest_path(tmp_path)
+    run_dir = tmp_path / "CloudChamber" / "runs" / "run-001"
+    fake_process = FakeProcess()
+    manager = LocalRunManager(
+        settings=fake_settings(tmp_path),
+        process_factory=FakeProcessFactory(fake_process),
+    )
+    manager.launch(manifest_path)
+    (run_dir / "cm1out_000001_s.dat").write_text("fake scalar output")
+    (run_dir / "cm1out_s.ctl").write_text("fake descriptor")
+    (run_dir / "cm1out_stats.dat").write_text("fake stats")
+    (run_dir / "cm1out_metadata.ctl").write_text("fake metadata descriptor")
+
+    fake_process.exit_code = 0
+    status = manager.status(manifest_path)
+
+    assert status.lifecycle_state == LifecycleState.COMPLETED
+    manifest = load_run_manifest(manifest_path)
+    assert manifest.validation_status.value == "valid"
+    assert manifest.provenance.product_state == ProductState.COMPLETED_CM1_RESULT
+    assert manifest.outputs.netcdf_paths == []
+    assert manifest.outputs.raw_cm1_artifacts == [
+        str(run_dir / "cm1out_000001_s.dat"),
+        str(run_dir / "cm1out_metadata.ctl"),
+        str(run_dir / "cm1out_s.ctl"),
+        str(run_dir / "cm1out_stats.dat"),
+    ]
+
+
+def test_exit_zero_surfaces_stderr_floating_point_warnings(tmp_path: Path) -> None:
+    manifest_path = dry_run_manifest_path(tmp_path)
+    run_dir = tmp_path / "CloudChamber" / "runs" / "run-001"
+    fake_process = FakeProcess()
+    manager = LocalRunManager(
+        settings=fake_settings(tmp_path),
+        process_factory=FakeProcessFactory(
+            fake_process,
+            stderr_text="Note: IEEE_INVALID_FLAG IEEE_DIVIDE_BY_ZERO IEEE_OVERFLOW_FLAG\n",
+        ),
+    )
+    manager.launch(manifest_path)
+    (run_dir / "cm1out_000001_s.dat").write_text("fake scalar output")
+
+    fake_process.exit_code = 0
+    manager.status(manifest_path)
+
+    manifest = load_run_manifest(manifest_path)
+    assert manifest.outputs.runtime_warnings == [
+        "CM1 stderr reported floating-point exception flags: "
+        "IEEE_INVALID_FLAG, IEEE_DIVIDE_BY_ZERO, IEEE_OVERFLOW_FLAG"
+    ]
 
 
 def test_failed_process_updates_manifest_state(tmp_path: Path) -> None:

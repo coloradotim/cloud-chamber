@@ -98,8 +98,10 @@ class ExecutionMetadata(BaseModel):
 class OutputMetadata(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
+    raw_cm1_artifacts: list[str] = Field(default_factory=list)
     netcdf_paths: list[str] = Field(default_factory=list)
     processed_artifacts: list[str] = Field(default_factory=list)
+    runtime_warnings: list[str] = Field(default_factory=list)
     diagnostics_summary: str | None = None
     visualization_defaults: str | None = None
 
@@ -151,8 +153,8 @@ class RunManifest(BaseModel):
         if self.lifecycle_state == LifecycleState.PACKAGED:
             if self.provenance.product_state != ProductState.PACKAGED_DRY_RUN_OUTPUT:
                 raise ValueError("packaged manifests must use packaged dry-run product state")
-            if self.outputs.netcdf_paths:
-                raise ValueError("packaged dry-run manifests must not include NetCDF outputs")
+            if self.outputs.netcdf_paths or self.outputs.raw_cm1_artifacts:
+                raise ValueError("packaged dry-run manifests must not include output artifacts")
         if self.lifecycle_state in {
             LifecycleState.COMPLETED,
             LifecycleState.INGESTED,

@@ -52,7 +52,12 @@ def valid_manifest_data() -> dict[str, object]:
         "created_at": created_at,
         "updated_at": created_at,
         "execution": {"command": []},
-        "outputs": {"netcdf_paths": [], "processed_artifacts": []},
+        "outputs": {
+            "raw_cm1_artifacts": [],
+            "netcdf_paths": [],
+            "processed_artifacts": [],
+            "runtime_warnings": [],
+        },
         "user": {"name": "Baseline check", "tags": ["golden-path"], "saved": False},
     }
 
@@ -81,13 +86,13 @@ def test_invalid_lifecycle_state_fails() -> None:
         validate_run_manifest(data)
 
 
-def test_packaged_manifest_cannot_include_netcdf_outputs() -> None:
+def test_packaged_manifest_cannot_include_output_artifacts() -> None:
     data = valid_manifest_data()
     outputs = data["outputs"]
     assert isinstance(outputs, dict)
-    outputs["netcdf_paths"] = ["cm1out_000001.nc"]
+    outputs["raw_cm1_artifacts"] = ["cm1out_000001_s.dat"]
 
-    with pytest.raises(RunManifestError, match="must not include NetCDF"):
+    with pytest.raises(RunManifestError, match="must not include output artifacts"):
         validate_run_manifest(data)
 
 
@@ -122,3 +127,30 @@ def test_completed_process_without_output_product_state_is_valid_needs_review() 
 
     assert manifest.lifecycle_state == LifecycleState.COMPLETED
     assert manifest.provenance.product_state == ProductState.PROCESS_COMPLETED_NO_OUTPUT
+
+
+def test_completed_manifest_serializes_output_artifact_metadata() -> None:
+    data = valid_manifest_data()
+    data["lifecycle_state"] = "completed"
+    provenance = data["provenance"]
+    assert isinstance(provenance, dict)
+    provenance["product_state"] = "completed_cm1_result"
+    outputs = data["outputs"]
+    assert isinstance(outputs, dict)
+    outputs["raw_cm1_artifacts"] = ["cm1out_000001_s.dat", "cm1out_s.ctl"]
+    outputs["netcdf_paths"] = ["cm1out_000001.nc"]
+    outputs["runtime_warnings"] = [
+        "CM1 stderr reported floating-point exception flags: IEEE_INVALID_FLAG"
+    ]
+
+    manifest = validate_run_manifest(data)
+    round_tripped = run_manifest_from_json(manifest.to_json_text())
+
+    assert round_tripped.outputs.raw_cm1_artifacts == [
+        "cm1out_000001_s.dat",
+        "cm1out_s.ctl",
+    ]
+    assert round_tripped.outputs.netcdf_paths == ["cm1out_000001.nc"]
+    assert round_tripped.outputs.runtime_warnings == [
+        "CM1 stderr reported floating-point exception flags: IEEE_INVALID_FLAG"
+    ]
