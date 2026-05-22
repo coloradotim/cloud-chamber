@@ -141,6 +141,18 @@ Responsibilities:
 - expose logs
 - prevent accidental overwrite
 
+The first implemented local run manager is intentionally conservative:
+
+- one local CM1 process may be active at a time;
+- launch requires valid local CM1 settings and a generated `run_manifest.json`;
+- command construction points at the configured local `cm1.exe`;
+- stdout and stderr are written into the run package `logs/` directory for later result notebook provenance;
+- lifecycle states move through queued, running, completed, failed, or canceled;
+- launch refuses packages that already contain output-like files such as NetCDF or `cm1out*`;
+- tests inject fake subprocesses, so CI never needs a real CM1 executable.
+
+Real CM1 execution remains a manual/local responsibility until the user has local settings and runtime files in place. The manager must fail clearly when CM1 paths are missing rather than pretending a run started.
+
 ### Output Ingester
 
 Responsibilities:

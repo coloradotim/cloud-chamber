@@ -24,11 +24,11 @@ Implemented fast tests cover:
 - CM1 path/settings handling through local runtime settings
 - run-package generation using temp directories
 - frontend component tests for Scenario Builder behavior, dry-run review, and preview-not-implemented state distinctions
+- local CM1 launcher command construction, one-run-at-a-time behavior, manifest state transitions, log capture, cancellation, missing-settings failure, and overwrite protection with fake subprocesses
 
 Future fast tests should cover:
 
 - result-card / experiment-notebook metadata serialization
-- run-manager fake process execution
 - NetCDF ingest with tiny synthetic fixtures when that layer exists
 - visualizer metadata loading when that layer exists
 
@@ -39,6 +39,8 @@ Scenario-template tests should cover both valid templates and targeted invalid t
 CM1 input contract tests should use structured/snapshot assertions for generated fragments such as namelist defaults and input-sounding notes. These tests must not write generated run packages into the repo, launch CM1, or require real CM1 runtime files.
 
 Dry-run package tests should use temporary runtime homes and assert overwrite protection, manifest/report content, and absence of NetCDF output. A dry-run package is packaged metadata and placeholder CM1 inputs only; it is not a completed CM1 result.
+
+Local launcher tests must inject fake subprocess handles. They should assert command construction, stdout/stderr log capture, one-active-run refusal, queued/running/completed/failed/canceled state transitions, missing-settings failure, and protection against pre-existing output-like files. They must not launch real CM1 or require local runtime files in CI.
 
 Local validation uses `scripts/check.sh` as the canonical gate. CI mirrors it through split equivalent jobs so branch protection can require `Frontend`, `Backend`, and `Scripts and config` independently. Keep the local script and CI jobs in sync as new implemented layers add fast checks.
 
