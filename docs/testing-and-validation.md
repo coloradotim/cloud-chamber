@@ -29,7 +29,6 @@ Implemented fast tests cover:
 Future fast tests should cover:
 
 - result-card / experiment-notebook metadata serialization
-- NetCDF ingest with tiny synthetic fixtures when that layer exists
 - visualizer metadata loading when that layer exists
 
 These tests must not require CM1 source, CM1 binaries, NetCDF output, generated run directories, or large local data.
@@ -45,6 +44,8 @@ Local launcher tests must inject fake subprocess handles. They should assert com
 They should also assert placeholder-only packages are rejected before launch, Rayleigh damping/domain checks catch damping over more than half the domain, required runtime files such as `LANDUSE.TBL` are staged from temp CM1 run directories, `.dat/.ctl` and NetCDF output artifacts are cataloged separately in the manifest, stderr floating-point flags are surfaced as runtime warnings, and exit code 0 without output becomes `needs_review` rather than `completed_cm1_result`.
 
 Runtime storage tests must use temporary runtime homes only. They should cover total runtime-home size, the 50 GB warning-threshold fields, per-run sizes, largest-run ordering, valid manifest classification, missing and malformed manifests, dry-run delete previews, confirmed deletion of one selected run directory, and refusal cases for running runs, saved/protected runs, path traversal, runtime-home self-targeting, and symlink escapes. They must not read from or delete real `~/CloudChamber`, the source repo, or the external CM1 installation.
+
+NetCDF ingest tests use tiny synthetic NetCDF files in temporary run directories. They should assert valid metadata extraction, result metadata serialization, missing-output failures, malformed-NetCDF failures, missing expected field warnings, and that raw `.dat/.ctl` artifacts are cataloged but not treated as NetCDF input. These tests must not use real CM1 output.
 
 Local validation uses `scripts/check.sh` as the canonical gate. CI mirrors it through split equivalent jobs so branch protection can require `Frontend`, `Backend`, and `Scripts and config` independently. Keep the local script and CI jobs in sync as new implemented layers add fast checks.
 

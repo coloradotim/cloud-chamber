@@ -12,6 +12,12 @@ from pydantic import BaseModel, Field
 from cloud_chamber.cli import ENGINE_NOTE
 from cloud_chamber.dry_run_package import generate_dry_run_package, read_dry_run_report
 from cloud_chamber.local_run_manager import LocalRunManager, LocalRunManagerError, RunStatus
+from cloud_chamber.result_ingest import (
+    ResultIngestError,
+    get_result_metadata,
+    ingest_completed_run,
+    list_result_metadata,
+)
 from cloud_chamber.runtime_storage import (
     RuntimeStorageError,
     delete_runtime_run,
@@ -58,6 +64,10 @@ class DeleteRunRequest(BaseModel):
     dry_run: bool = True
     confirm: bool = False
     force_saved: bool = False
+
+
+class IngestResultRequest(BaseModel):
+    manifest_path: str
 
 
 @app.get("/api/scenarios")
@@ -135,6 +145,33 @@ def delete_run(request: DeleteRunRequest) -> dict[str, object]:
         )
     except RuntimeStorageError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return result.model_dump(mode="json")
+
+
+@app.post("/api/results/ingest")
+def ingest_result(request: IngestResultRequest) -> dict[str, object]:
+    try:
+        result = ingest_completed_run(Path(request.manifest_path).expanduser())
+    except ResultIngestError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return result.model_dump(mode="json")
+
+
+@app.get("/api/results")
+def list_results() -> dict[str, object]:
+    return {
+        "results": [
+            result.model_dump(mode="json") for result in list_result_metadata(load_settings())
+        ]
+    }
+
+
+@app.get("/api/results/{result_id}")
+def get_result(result_id: str) -> dict[str, object]:
+    try:
+        result = get_result_metadata(load_settings(), result_id)
+    except ResultIngestError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
     return result.model_dump(mode="json")
 
 

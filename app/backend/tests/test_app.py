@@ -1,11 +1,24 @@
+import json
 from pathlib import Path
 
 import pytest
+import xarray as xr
 from fastapi.testclient import TestClient
 
 from cloud_chamber.app import app
+from cloud_chamber.dry_run_package import generate_dry_run_package
 from cloud_chamber.local_run_manager import LocalRunManagerError, RunStatus
-from cloud_chamber.run_manifest import LifecycleState
+from cloud_chamber.run_manifest import (
+    LifecycleState,
+    OutputMetadata,
+    ProductState,
+    ProvenanceMetadata,
+    load_run_manifest,
+    write_run_manifest,
+)
+
+REPO_ROOT = Path(__file__).resolve().parents[3]
+BASELINE_TEMPLATE = REPO_ROOT / "scenarios/lower-atmosphere/baseline-shallow-cumulus.json"
 
 
 class FakeRunManager:
@@ -177,3 +190,59 @@ def test_storage_delete_run_api_requires_explicit_confirm(
     assert deleted.status_code == 200
     assert deleted.json()["deleted"] is True
     assert not run_dir.exists()
+
+
+def test_results_ingest_and_lookup_api(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("CLOUD_CHAMBER_RUNTIME_HOME", str(tmp_path / "CloudChamber"))
+    package = generate_dry_run_package(
+        scenario_data=json.loads(BASELINE_TEMPLATE.read_text()),
+        runtime_home=tmp_path / "CloudChamber",
+        run_id="run-api-ingest",
+    )
+    netcdf_path = package.package_dir / "cm1out_000001.nc"
+    xr.Dataset(
+        data_vars={
+            "qc": (
+                ("time", "z", "y", "x"),
+                [[[[0.0]]]],
+                {"units": "kg/kg"},
+            ),
+            "w": (
+                ("time", "z", "y", "x"),
+                [[[[1.0]]]],
+                {"units": "m/s"},
+            ),
+        },
+        coords={"time": [0.0], "z": [125.0], "y": [0.0], "x": [0.0]},
+    ).to_netcdf(netcdf_path, engine="scipy")
+    manifest = load_run_manifest(package.manifest_path)
+    write_run_manifest(
+        package.manifest_path,
+        manifest.model_copy(
+            update={
+                "lifecycle_state": LifecycleState.COMPLETED,
+                "provenance": ProvenanceMetadata(product_state=ProductState.COMPLETED_CM1_RESULT),
+                "outputs": OutputMetadata(netcdf_paths=[str(netcdf_path)]),
+            }
+        ),
+    )
+
+    ingest_response = TestClient(app).post(
+        "/api/results/ingest",
+        json={"manifest_path": str(package.manifest_path)},
+    )
+    list_response = TestClient(app).get("/api/results")
+    get_response = TestClient(app).get("/api/results/result-run-api-ingest")
+
+    assert ingest_response.status_code == 200
+    assert ingest_response.json()["result_id"] == "result-run-api-ingest"
+    assert ingest_response.json()["variables"] == ["qc", "w"]
+    assert list_response.status_code == 200
+    assert [result["result_id"] for result in list_response.json()["results"]] == [
+        "result-run-api-ingest"
+    ]
+    assert get_response.status_code == 200
+    assert get_response.json()["run_id"] == "run-api-ingest"

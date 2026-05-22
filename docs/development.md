@@ -76,6 +76,9 @@ Implemented backend API endpoints:
 - `POST /api/runs/cancel` cancels the active local run when technically practical.
 - `GET /api/storage/inventory` reports configured runtime-home disk usage and per-run metadata under `~/CloudChamber/runs/`.
 - `POST /api/storage/delete-run` previews or deletes one selected run directory under the configured runtime home.
+- `POST /api/results/ingest` creates result metadata from a completed run manifest with NetCDF output.
+- `GET /api/results` lists ingested result metadata under the configured runtime home.
+- `GET /api/results/{result_id}` returns one ingested result metadata record.
 
 The local run manager assumes one active CM1 run at a time for the MVP. It captures stdout/stderr under the run package `logs/` directory, updates the run manifest through queued/running/completed/failed/canceled states, refuses output-like files before launch, and fails clearly when CM1 settings are missing. Normal tests use fake subprocesses; real CM1 execution remains manual/local and is not required in CI.
 
@@ -101,6 +104,8 @@ The MVP storage warning threshold is 50 GB for the configured runtime home. Inve
 Run deletion is explicit and conservative. A preview request uses `dry_run: true`; a real delete requires `dry_run: false` and `confirm: true`. Cleanup only targets `~/CloudChamber/runs/<run-id>/`, refuses path traversal and symlink escapes, refuses running runs, and refuses saved/protected runs unless `force_saved: true` is supplied. Deleting a run removes its local generated package, output artifacts, copied runtime files, and logs. Cleanup must never target the source repo, home directory, runtime home itself, or the external CM1 installation.
 
 The backend skeleton uses Python/FastAPI with pytest, ruff, and mypy. Data/science work should prefer xarray, netCDF4 or h5netcdf, numpy, and pydantic when those layers are added.
+
+The first result ingest path uses xarray to read tiny or local NetCDF files and writes `result_metadata.json` next to the run manifest under the generated run directory. It extracts metadata only: dimensions, coordinates, variables, units, time coordinate, grid shape, source paths, provenance, and warnings. It does not compute diagnostics, create visualization-ready arrays, parse `.dat/.ctl` payloads, or copy real output into git.
 
 Backend work should assume one local CM1 run at a time for the MVP and should avoid large in-memory processing paths for local MacBook Air-scale machines.
 
