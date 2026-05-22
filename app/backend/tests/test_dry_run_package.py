@@ -92,6 +92,7 @@ def test_dry_run_package_writes_cm1_ready_inputs_not_outputs(tmp_path: Path) -> 
         scenario_data=load_baseline_template(),
         runtime_home=tmp_path,
         run_id="run-005",
+        run_size_preset="standard",
     )
     namelist = (result.package_dir / "namelist.input").read_text()
     sounding = (result.package_dir / "input_sounding").read_text()
@@ -121,3 +122,31 @@ def test_dry_run_package_writes_cm1_ready_inputs_not_outputs(tmp_path: Path) -> 
     assert checklist["source_candidates"]["LANDUSE.TBL"][0] == (
         "config_files/les_ShallowCu/LANDUSE.TBL"
     )
+
+
+def test_dry_run_package_quick_look_changes_only_runtime_timing(tmp_path: Path) -> None:
+    result = generate_dry_run_package(
+        scenario_data=load_baseline_template(),
+        runtime_home=tmp_path,
+        run_id="run-006",
+        run_size_preset="quick_look",
+    )
+    namelist = (result.package_dir / "namelist.input").read_text()
+    report = json.loads(result.report_path.read_text())
+
+    assert report["run_size_preset"] == "quick_look"
+    assert "timax  = 10800.0," in namelist
+    assert "tapfrq =  900.0," in namelist
+    assert "nx           =      64," in namelist
+    assert "ny           =      64," in namelist
+    assert "nz           =      75," in namelist
+    assert "dx     =   100.0," in namelist
+    assert "dy     =   100.0," in namelist
+    assert "dz     =   40.0," in namelist
+    assert "ztop      = 18000.0," in namelist
+    assert "set_znt    =      0," in namelist
+    assert "set_ust    =      1," in namelist
+    assert "cnst_ust   =   0.28," in namelist
+    assert "testcase  =  3," in namelist
+    assert "isnd      = 19," in namelist
+    assert "output_format    = 2," in namelist

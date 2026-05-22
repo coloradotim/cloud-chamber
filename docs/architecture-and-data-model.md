@@ -105,6 +105,10 @@ The earlier Cloud Chamber quick-look derivative is not scientifically accepted: 
 
 The first reference-derived validation run, `dry-run-les-shallowcu-20260522140642`, completed locally with NetCDF output and ingested 7 model-output time steps over 21600 seconds. It produced cloud water and vertical velocity diagnostics, so the architecture should treat the reference-derived package as the recovery baseline and the earlier compact derivative as invalid evidence rather than a tuning base.
 
+Run-size presets now vary only runtime timing for this recovered baseline. The standard/reference package preserves `timax = 21600.0` and `tapfrq = 3600.0`. The first quick-look variant preserves every reference-derived science/numerics setting and changes only `timax = 10800.0` and `tapfrq = 900.0`. Domain/grid, vertical spacing, domain top, surface stress/roughness path, moisture/sounding, surface fluxes, turbulence/SGS settings, damping settings, boundary conditions, NetCDF output, and reference `LANDUSE.TBL` staging should remain unchanged.
+
+The first quick-look validation run, `dry-run-quicklook-les-shallowcu-20260522151536`, preserved those settings, completed locally, and ingested 13 model-output time steps over 10800 seconds. Diagnostics still reported cloud formation, vertical motion, and rain, so the architecture can treat this runtime-only quick-look preset as the first validated shorter Baseline Shallow Cumulus variant.
+
 Cloud-scale defaults for the first lower-atmosphere contract are:
 
 ```text
@@ -114,6 +118,14 @@ nominal vertical spacing: 40 m
 domain top: 18000 m
 runtime: 21600 s
 output cadence: 3600 s
+```
+
+Baseline Shallow Cumulus quick-look timing:
+
+```text
+runtime: 10800 s
+output cadence: 900 s
+unchanged: reference-derived grid/domain/surface/damping/boundary settings
 ```
 
 Scenario-specific deviations from these defaults must be explicit in the scenario template or generated report.

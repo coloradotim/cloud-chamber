@@ -38,6 +38,19 @@ class CloudScaleDefaults:
 
 
 @dataclass(frozen=True)
+class RuntimePreset:
+    runtime_seconds: int
+    output_cadence_seconds: int
+
+
+RUNTIME_PRESETS: dict[str, RuntimePreset] = {
+    "quick_look": RuntimePreset(runtime_seconds=10800, output_cadence_seconds=900),
+    "standard": RuntimePreset(runtime_seconds=21600, output_cadence_seconds=3600),
+    "deep_overnight": RuntimePreset(runtime_seconds=21600, output_cadence_seconds=3600),
+}
+
+
+@dataclass(frozen=True)
 class GeneratedFileSpec:
     role: GeneratedFileRole
     relative_path: str
@@ -144,7 +157,7 @@ def build_cm1_input_contract(
         scenario_id=scenario.id,
         physical_question=scenario.physical_question,
         run_size_preset=run_size_preset,
-        cloud_scale_defaults=CloudScaleDefaults(),
+        cloud_scale_defaults=_cloud_scale_defaults_for_preset(run_size_preset),
         generated_files=GENERATED_FILE_SPECS,
         control_fragments=control_fragments,
         expected_diagnostics=_diagnostic_names(scenario),
@@ -159,6 +172,14 @@ def build_cm1_input_contract(
     )
 
 
+def _cloud_scale_defaults_for_preset(run_size_preset: str) -> CloudScaleDefaults:
+    preset = RUNTIME_PRESETS.get(run_size_preset, RUNTIME_PRESETS["standard"])
+    return CloudScaleDefaults(
+        runtime_seconds=preset.runtime_seconds,
+        output_cadence_seconds=preset.output_cadence_seconds,
+    )
+
+
 def render_namelist_fragment(contract: CM1InputContract) -> str:
     return render_cm1_namelist(contract)
 
@@ -168,11 +189,13 @@ def render_cm1_namelist(contract: CM1InputContract) -> str:
 
     The recovery baseline follows CM1's local ``les_ShallowCu`` reference case:
     ``testcase = 3``, ``isnd = 19``, the 64 x 64 x 75 grid, 100 m horizontal
-    spacing, 40 m nominal vertical spacing, 18 km model top, 6-hour runtime,
-    1-hour output cadence, reference Rayleigh damping, and reference surface
-    stress/roughness settings. The only intentional product-path change is
-    ``output_format = 2`` so Cloud Chamber can ingest NetCDF output when the
-    local CM1 build supports it.
+    spacing, 40 m nominal vertical spacing, 18 km model top, reference Rayleigh
+    damping, and reference surface stress/roughness settings. Run-size presets
+    only adjust runtime and output cadence: the standard/reference preset keeps
+    the 6-hour/1-hour reference timing, and quick-look uses a 3-hour runtime with
+    15-minute output. The only intentional product-path change outside timing is
+    ``output_format = 2`` so Cloud Chamber can ingest NetCDF output when the local
+    CM1 build supports it.
     """
 
     defaults = contract.cloud_scale_defaults

@@ -22,9 +22,10 @@ def baseline_scenario() -> ScenarioTemplate:
 
 
 def test_cm1_contract_documents_expected_generated_files_and_defaults() -> None:
-    contract = build_cm1_input_contract(baseline_scenario(), run_size_preset="quick_look")
+    contract = build_cm1_input_contract(baseline_scenario(), run_size_preset="standard")
 
     assert contract.scenario_id == "baseline-shallow-cumulus"
+    assert contract.run_size_preset == "standard"
     assert {file.role for file in contract.generated_files} == set(GeneratedFileRole)
     assert contract.cloud_scale_defaults.nx == 64
     assert contract.cloud_scale_defaults.ny == 64
@@ -57,8 +58,8 @@ def test_cm1_contract_keeps_product_controls_separate_from_mapping_notes() -> No
     )
 
 
-def test_rendered_namelist_is_cm1_ready_bomex_baseline() -> None:
-    contract = build_cm1_input_contract(baseline_scenario())
+def test_rendered_namelist_standard_preset_preserves_reference_timing() -> None:
+    contract = build_cm1_input_contract(baseline_scenario(), run_size_preset="standard")
     namelist = render_namelist_fragment(contract)
 
     assert "&param0" in namelist
@@ -83,6 +84,30 @@ def test_rendered_namelist_is_cm1_ready_bomex_baseline() -> None:
     assert "isnd      = 19," in namelist
     assert "&cloud_chamber_domain" not in namelist
     assert "placeholder until local/manual CM1 validation" not in namelist
+
+
+def test_rendered_namelist_quick_look_only_changes_runtime_and_cadence() -> None:
+    contract = build_cm1_input_contract(baseline_scenario(), run_size_preset="quick_look")
+    namelist = render_namelist_fragment(contract)
+
+    assert contract.run_size_preset == "quick_look"
+    assert "timax  = 10800.0," in namelist
+    assert "tapfrq =  900.0," in namelist
+    assert "nx           =      64," in namelist
+    assert "ny           =      64," in namelist
+    assert "nz           =      75," in namelist
+    assert "dx     =   100.0," in namelist
+    assert "dy     =   100.0," in namelist
+    assert "dz     =   40.0," in namelist
+    assert "ztop      = 18000.0," in namelist
+    assert "zd      =  2500.0," in namelist
+    assert "set_znt    =      0," in namelist
+    assert "cnst_znt   =   0.00," in namelist
+    assert "set_ust    =      1," in namelist
+    assert "cnst_ust   =   0.28," in namelist
+    assert "testcase  =  3," in namelist
+    assert "isnd      = 19," in namelist
+    assert "output_format    = 2," in namelist
 
 
 def test_rendered_input_sounding_is_cm1_readable_not_notes() -> None:
