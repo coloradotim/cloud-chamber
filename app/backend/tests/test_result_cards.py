@@ -1,0 +1,203 @@
+import json
+from datetime import UTC, datetime
+from pathlib import Path
+
+import xarray as xr
+
+from cloud_chamber.dry_run_package import generate_dry_run_package
+from cloud_chamber.result_cards import (
+    RESULT_CARD_FILENAME,
+    ResultCard,
+    ResultCardUpdate,
+    get_result_card,
+    list_result_cards,
+    save_result_card,
+    update_result_card,
+)
+from cloud_chamber.result_ingest import ingest_completed_run
+from cloud_chamber.run_manifest import (
+    ExecutionMetadata,
+    LifecycleState,
+    OutputMetadata,
+    ProductState,
+    ProvenanceMetadata,
+    load_run_manifest,
+    write_run_manifest,
+)
+from cloud_chamber.settings import CloudChamberSettings
+
+REPO_ROOT = Path(__file__).resolve().parents[3]
+BASELINE_TEMPLATE = REPO_ROOT / "scenarios/lower-atmosphere/baseline-shallow-cumulus.json"
+
+
+def fake_settings(tmp_path: Path) -> CloudChamberSettings:
+    runtime_home = tmp_path / "CloudChamber"
+    return CloudChamberSettings(
+        runtime_home=runtime_home,
+        cm1_root=tmp_path / "cm1r21.1",
+        cm1_run_dir=tmp_path / "cm1r21.1" / "run",
+        cache_dir=runtime_home / "cache",
+        log_dir=runtime_home / "logs",
+    )
+
+
+def create_completed_result(
+    tmp_path: Path,
+    *,
+    run_id: str = "run-card",
+    include_diagnostics_fields: bool = True,
+) -> tuple[CloudChamberSettings, str, Path]:
+    settings = fake_settings(tmp_path)
+    package = generate_dry_run_package(
+        scenario_data=json.loads(BASELINE_TEMPLATE.read_text()),
+        runtime_home=settings.runtime_home,
+        run_id=run_id,
+        run_size_preset="quick_look",
+    )
+    netcdf_path = package.package_dir / "cm1out_000001.nc"
+    write_result_netcdf(netcdf_path, include_diagnostics_fields=include_diagnostics_fields)
+    manifest = load_run_manifest(package.manifest_path)
+    finished_at = datetime(2026, 5, 22, 15, 32, 21, tzinfo=UTC)
+    write_run_manifest(
+        package.manifest_path,
+        manifest.model_copy(
+            update={
+                "lifecycle_state": LifecycleState.COMPLETED,
+                "provenance": ProvenanceMetadata(product_state=ProductState.COMPLETED_CM1_RESULT),
+                "execution": ExecutionMetadata(finished_at=finished_at, exit_code=0),
+                "outputs": OutputMetadata(
+                    netcdf_paths=[str(netcdf_path)],
+                    runtime_warnings=["CM1 stderr reported floating-point exception flags: TEST"],
+                ),
+            }
+        ),
+    )
+    result = ingest_completed_run(package.manifest_path)
+    return settings, result.result_id, package.package_dir
+
+
+def write_result_netcdf(path: Path, *, include_diagnostics_fields: bool) -> None:
+    data_vars = {}
+    if include_diagnostics_fields:
+        data_vars["qc"] = (
+            ("time", "z", "y", "x"),
+            [[[[2e-6 for _x in range(4)] for _y in range(3)] for _z in range(2)]],
+            {"units": "kg/kg"},
+        )
+        data_vars["w"] = (
+            ("time", "z", "y", "x"),
+            [[[[1.0, 2.0, 3.0, 4.0] for _y in range(3)] for _z in range(2)]],
+            {"units": "m/s"},
+        )
+        data_vars["qr"] = (
+            ("time", "z", "y", "x"),
+            [[[[2e-7 for _x in range(4)] for _y in range(3)] for _z in range(2)]],
+            {"units": "kg/kg"},
+        )
+    else:
+        data_vars["temperature"] = (
+            ("time", "z", "y", "x"),
+            [[[[300.0 for _x in range(4)] for _y in range(3)] for _z in range(2)]],
+            {"units": "K"},
+        )
+    xr.Dataset(
+        data_vars=data_vars,
+        coords={
+            "time": [1800.0],
+            "z": [0.54, 1.94],
+            "y": [0.0, 100.0, 200.0],
+            "x": [0.0, 100.0, 200.0, 300.0],
+        },
+    ).to_netcdf(path, engine="scipy")
+
+
+def test_result_card_created_from_ingested_metadata(tmp_path: Path) -> None:
+    settings, result_id, _run_dir = create_completed_result(tmp_path)
+
+    card = get_result_card(settings, result_id)
+
+    assert card.result_id == result_id
+    assert card.run_id == "run-card"
+    assert card.name == "baseline-shallow-cumulus"
+    assert card.scenario_id == "baseline-shallow-cumulus"
+    assert card.run_size_preset == "quick_look"
+    assert card.physical_question
+    assert card.diagnostics_summary == "cloud formed; rain detected"
+    assert card.first_cloud_time_seconds == 1800.0
+    assert card.max_qc_kg_kg == 2e-6
+    assert card.max_w_m_s == 4.0
+    assert card.min_w_m_s == 1.0
+    assert card.rain_present is True
+    assert card.output_file_summary.netcdf_count == 1
+    assert card.output_file_summary.model_output_count == 1
+    assert card.output_file_summary.time_steps == 1
+    assert card.saved is False
+    assert card.protected is False
+    assert "source_model:CM1" in card.provenance_labels
+    assert "CM1 stderr reported floating-point exception flags: TEST" in card.caveats
+    assert "cloud_base_top_vertical_units_missing_assumed_meters" in card.caveats
+    assert card.completed_at == datetime(2026, 5, 22, 15, 32, 21, tzinfo=UTC)
+
+
+def test_list_get_and_result_card_serialization_round_trip(tmp_path: Path) -> None:
+    settings, result_id, _run_dir = create_completed_result(tmp_path)
+
+    listed = list_result_cards(settings)
+    found = get_result_card(settings, result_id)
+    round_tripped = ResultCard.model_validate_json(found.model_dump_json())
+
+    assert [card.result_id for card in listed] == [result_id]
+    assert found == listed[0]
+    assert round_tripped == found
+
+
+def test_update_name_tags_notes_and_saved_flags(tmp_path: Path) -> None:
+    settings, result_id, run_dir = create_completed_result(tmp_path)
+
+    updated = update_result_card(
+        settings,
+        result_id,
+        ResultCardUpdate(
+            name="Quick-look baseline",
+            tags=["golden-path", "quick-look"],
+            notes="Useful first notebook entry.",
+            saved=True,
+        ),
+    )
+
+    assert updated.name == "Quick-look baseline"
+    assert updated.tags == ["golden-path", "quick-look"]
+    assert updated.notes == "Useful first notebook entry."
+    assert updated.saved is True
+    assert updated.protected is True
+    assert updated.status == "saved_result_notebook_entry"
+    assert (run_dir / RESULT_CARD_FILENAME).exists()
+
+
+def test_save_result_card_marks_saved_and_protected(tmp_path: Path) -> None:
+    settings, result_id, _run_dir = create_completed_result(tmp_path)
+
+    saved = save_result_card(settings, result_id)
+
+    assert saved.saved is True
+    assert saved.protected is True
+    assert saved.status == "saved_result_notebook_entry"
+
+
+def test_result_card_handles_missing_diagnostics_gracefully(tmp_path: Path) -> None:
+    settings, result_id, _run_dir = create_completed_result(
+        tmp_path,
+        run_id="run-missing-diagnostics",
+        include_diagnostics_fields=False,
+    )
+
+    card = get_result_card(settings, result_id)
+
+    assert card.diagnostics_summary == "no cloud formed; no rain detected"
+    assert card.first_cloud_time_seconds is None
+    assert card.max_qc_kg_kg is None
+    assert card.max_w_m_s is None
+    assert card.min_w_m_s is None
+    assert card.rain_present is False
+    assert "missing_qc_field" in card.caveats
+    assert "missing_w_field" in card.caveats

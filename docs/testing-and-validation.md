@@ -51,6 +51,12 @@ Multi-file NetCDF ingest tests should use tiny generated fixtures under temporar
 
 Baseline Shallow Cumulus diagnostics tests use tiny synthetic NetCDF fixtures only. They cover no-cloud and cloud-formed cases, the `qc >= 1e-6 kg/kg` threshold, the minimum 10 cloudy grid-cell rule, first cloud time, cloud base/top from vertical coordinates, max `qc`, `qc` max time series, cloud fraction time series, max/min `w`, optional `qr` rain detection with `qr >= 1e-7 kg/kg`, missing `qc`/`w`/`qr`, NaN/infinity handling, entirely non-finite fields, NetCDF time-coordinate use, and inferred output-index fallback. These diagnostics are learning summaries, not morphology validation.
 
+Result Card / Experiment Notebook tests should use tiny synthetic NetCDF
+fixtures and temporary runtime homes. They should cover creating a card from
+ingested metadata, listing/getting cards, updating name/tags/notes, saving and
+protecting cards, missing diagnostics, provenance labels, output file summary,
+and serialization round trips. They must not use real CM1 output.
+
 CM1 runtime floating-point exception flags such as `IEEE_INVALID_FLAG`, `IEEE_DIVIDE_BY_ZERO`, and `IEEE_OVERFLOW_FLAG` should be preserved as caveats. Automated diagnostics should then check whether target fields contain non-finite values. If `qc`, `w`, and `qr` are finite/usable, diagnostics can complete with the runtime warning still visible. If root-cause investigation requires CM1 source-level debugging, that belongs in a separate issue rather than CI.
 
 Local validation uses `scripts/check.sh` as the canonical gate. CI mirrors it through split equivalent jobs so branch protection can require `Frontend`, `Backend`, and `Scripts and config` independently. Keep the local script and CI jobs in sync as new implemented layers add fast checks.

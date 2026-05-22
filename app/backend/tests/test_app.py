@@ -244,5 +244,79 @@ def test_results_ingest_and_lookup_api(
     assert [result["result_id"] for result in list_response.json()["results"]] == [
         "result-run-api-ingest"
     ]
+    assert list_response.json()["results"][0]["output_file_summary"]["model_output_count"] == 1
     assert get_response.status_code == 200
     assert get_response.json()["run_id"] == "run-api-ingest"
+    assert get_response.json()["saved"] is False
+
+
+def test_result_card_update_and_save_api(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("CLOUD_CHAMBER_RUNTIME_HOME", str(tmp_path / "CloudChamber"))
+    package = generate_dry_run_package(
+        scenario_data=json.loads(BASELINE_TEMPLATE.read_text()),
+        runtime_home=tmp_path / "CloudChamber",
+        run_id="run-api-card",
+    )
+    netcdf_path = package.package_dir / "cm1out_000001.nc"
+    xr.Dataset(
+        data_vars={
+            "qc": (
+                ("time", "z", "y", "x"),
+                [[[[2e-6 for _x in range(4)] for _y in range(3)] for _z in range(2)]],
+                {"units": "kg/kg"},
+            ),
+            "w": (
+                ("time", "z", "y", "x"),
+                [[[[1.0, 2.0, 3.0, 4.0] for _y in range(3)] for _z in range(2)]],
+                {"units": "m/s"},
+            ),
+        },
+        coords={
+            "time": [1800.0],
+            "z": [0.54, 1.94],
+            "y": [0.0, 100.0, 200.0],
+            "x": [0.0, 100.0, 200.0, 300.0],
+        },
+    ).to_netcdf(netcdf_path, engine="scipy")
+    manifest = load_run_manifest(package.manifest_path)
+    write_run_manifest(
+        package.manifest_path,
+        manifest.model_copy(
+            update={
+                "lifecycle_state": LifecycleState.COMPLETED,
+                "provenance": ProvenanceMetadata(product_state=ProductState.COMPLETED_CM1_RESULT),
+                "outputs": OutputMetadata(netcdf_paths=[str(netcdf_path)]),
+            }
+        ),
+    )
+    client = TestClient(app)
+    ingest_response = client.post(
+        "/api/results/ingest",
+        json={"manifest_path": str(package.manifest_path)},
+    )
+    result_id = ingest_response.json()["result_id"]
+
+    patch_response = client.patch(
+        f"/api/results/{result_id}",
+        json={
+            "name": "API notebook card",
+            "tags": ["saved", "baseline"],
+            "notes": "Opened after ingest.",
+        },
+    )
+    save_response = client.post(f"/api/results/{result_id}/save")
+
+    assert patch_response.status_code == 200
+    assert patch_response.json()["name"] == "API notebook card"
+    assert patch_response.json()["tags"] == ["saved", "baseline"]
+    assert patch_response.json()["notes"] == "Opened after ingest."
+    assert patch_response.json()["first_cloud_time_seconds"] == 1800.0
+    assert patch_response.json()["max_qc_kg_kg"] == 2e-6
+    assert patch_response.json()["max_w_m_s"] == 4.0
+    assert patch_response.json()["min_w_m_s"] == 1.0
+    assert save_response.status_code == 200
+    assert save_response.json()["saved"] is True
+    assert save_response.json()["protected"] is True
