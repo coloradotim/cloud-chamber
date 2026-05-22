@@ -74,6 +74,8 @@ Implemented backend API endpoints:
 - `POST /api/runs/launch` starts one local CM1 run from a generated manifest when local CM1 settings validate.
 - `GET /api/runs/status?manifest_path=...` refreshes and returns lifecycle status/log metadata for a run manifest.
 - `POST /api/runs/cancel` cancels the active local run when technically practical.
+- `GET /api/storage/inventory` reports configured runtime-home disk usage and per-run metadata under `~/CloudChamber/runs/`.
+- `POST /api/storage/delete-run` previews or deletes one selected run directory under the configured runtime home.
 
 The local run manager assumes one active CM1 run at a time for the MVP. It captures stdout/stderr under the run package `logs/` directory, updates the run manifest through queued/running/completed/failed/canceled states, refuses output-like files before launch, and fails clearly when CM1 settings are missing. Normal tests use fake subprocesses; real CM1 execution remains manual/local and is not required in CI.
 
@@ -91,6 +93,10 @@ When a run completes, manifest output metadata should keep these buckets separat
 - `runtime_warnings` for caveats surfaced from logs, such as CM1 floating-point exception flags.
 
 Required runtime files such as `LANDUSE.TBL` are copied from the configured local CM1 run directory into the generated package at launch time. These copied files are local/generated artifacts under `~/CloudChamber/runs/<run-id>/`; do not commit them.
+
+Runtime output can grow quickly. The storage inventory endpoint scans only the configured Cloud Chamber runtime home, normally `~/CloudChamber`, and reports total size plus per-run size, manifest metadata, output artifact counts, and conservative cleanup categories such as `dry_run_only`, `completed_with_output`, `completed_no_output`, `failed`, `canceled`, `saved_or_protected`, `missing_manifest`, and `malformed_manifest`.
+
+Run deletion is explicit and conservative. A preview request uses `dry_run: true`; a real delete requires `dry_run: false` and `confirm: true`. Cleanup only targets `~/CloudChamber/runs/<run-id>/`, refuses path traversal and symlink escapes, refuses running runs, and refuses saved/protected runs unless `force_saved: true` is supplied. Deleting a run removes its local generated package, output artifacts, copied runtime files, and logs. Cleanup must never target the source repo, home directory, runtime home itself, or the external CM1 installation.
 
 The backend skeleton uses Python/FastAPI with pytest, ruff, and mypy. Data/science work should prefer xarray, netCDF4 or h5netcdf, numpy, and pydantic when those layers are added.
 

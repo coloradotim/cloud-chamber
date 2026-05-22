@@ -123,3 +123,55 @@ def test_launch_run_api_reports_clear_failure(monkeypatch: pytest.MonkeyPatch) -
 
     assert response.status_code == 400
     assert response.json()["detail"] == "CM1 is not ready"
+
+
+def test_storage_inventory_api_uses_runtime_home_override(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("CLOUD_CHAMBER_RUNTIME_HOME", str(tmp_path))
+    run_dir = tmp_path / "runs" / "manual-run"
+    run_dir.mkdir(parents=True)
+    (run_dir / "cm1out_s.ctl").write_text("fake descriptor")
+
+    response = TestClient(app).get("/api/storage/inventory")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["runtime_home"] == str(tmp_path)
+    assert payload["runs"][0]["run_id"] == "manual-run"
+    assert payload["runs"][0]["category"] == "missing_manifest"
+
+
+def test_storage_delete_run_api_requires_explicit_confirm(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("CLOUD_CHAMBER_RUNTIME_HOME", str(tmp_path))
+    run_dir = tmp_path / "runs" / "manual-run"
+    run_dir.mkdir(parents=True)
+    (run_dir / "cm1out_s.ctl").write_text("fake descriptor")
+
+    preview = TestClient(app).post(
+        "/api/storage/delete-run",
+        json={"run_id": "manual-run", "dry_run": True, "confirm": False},
+    )
+    blocked = TestClient(app).post(
+        "/api/storage/delete-run",
+        json={"run_id": "manual-run", "dry_run": False, "confirm": False},
+    )
+    assert preview.status_code == 200
+    assert preview.json()["deleted"] is False
+    assert run_dir.exists()
+    assert blocked.status_code == 400
+    assert blocked.json()["detail"] == "Real delete requires confirm=true."
+    assert run_dir.exists()
+
+    deleted = TestClient(app).post(
+        "/api/storage/delete-run",
+        json={"run_id": "manual-run", "dry_run": False, "confirm": True},
+    )
+
+    assert deleted.status_code == 200
+    assert deleted.json()["deleted"] is True
+    assert not run_dir.exists()

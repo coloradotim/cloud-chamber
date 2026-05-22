@@ -223,6 +223,7 @@ Deliverables:
 - run metadata extraction.
 - diagnostics summary.
 - logs/result status.
+- runtime storage inventory and explicit safe run cleanup under the configured runtime home.
 - save/name/tag/search/filter/delete.
 - result-card / experiment-notebook model.
 - open saved result in visualizer.
@@ -231,6 +232,7 @@ Deliverables:
 Implementation anchor:
 
 - #30 should make replayable/inspectable saved result cards the core behavior. Duplicate/tweak/rerun should remain optional or later.
+- #64 adds the storage bridge needed after the first successful 852 MB smoke run: inventory runtime-home usage, classify runs conservatively, and delete only explicitly selected run directories under `~/CloudChamber/runs/`. Cleanup must never target the repo, home directory, runtime home itself, or the external CM1 installation.
 
 ## M4 3-D Visualizer MVP
 

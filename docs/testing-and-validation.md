@@ -44,6 +44,8 @@ Dry-run package tests should use temporary runtime homes and assert overwrite pr
 Local launcher tests must inject fake subprocess handles. They should assert command construction, stdout/stderr log capture, one-active-run refusal, queued/running/completed/failed/canceled state transitions, missing-settings failure, and protection against pre-existing output-like files. They must not launch real CM1 or require local runtime files in CI.
 They should also assert placeholder-only packages are rejected before launch, Rayleigh damping/domain checks catch damping over more than half the domain, required runtime files such as `LANDUSE.TBL` are staged from temp CM1 run directories, `.dat/.ctl` and NetCDF output artifacts are cataloged separately in the manifest, stderr floating-point flags are surfaced as runtime warnings, and exit code 0 without output becomes `needs_review` rather than `completed_cm1_result`.
 
+Runtime storage tests must use temporary runtime homes only. They should cover total runtime-home size, per-run sizes, largest-run ordering, valid manifest classification, missing and malformed manifests, dry-run delete previews, confirmed deletion of one selected run directory, and refusal cases for running runs, saved/protected runs, path traversal, runtime-home self-targeting, and symlink escapes. They must not read from or delete real `~/CloudChamber`, the source repo, or the external CM1 installation.
+
 Local validation uses `scripts/check.sh` as the canonical gate. CI mirrors it through split equivalent jobs so branch protection can require `Frontend`, `Backend`, and `Scripts and config` independently. Keep the local script and CI jobs in sync as new implemented layers add fast checks.
 
 ## Local CM1 Workflow Tests
@@ -140,6 +142,7 @@ Use this loop after a dry-run package has been generated and before broader CM1 
    - estimate local output size;
    - surface stderr floating-point exception flags as caveats, not automatic failures;
    - leave NetCDF, `.dat/.ctl` output, logs, validation reports, copied runtime files, and generated run folders out of git.
+   - if deleting local test runs, use the runtime storage preview first and confirm the selected path is under the configured runtime home.
 8. If ingest tooling exists, run it locally and record the ingest status. Until then, note what a future ingest should read and any schema gaps found.
 9. Record result-card/notebook acceptance notes:
    - scenario name and physical question;

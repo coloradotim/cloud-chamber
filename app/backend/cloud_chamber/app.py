@@ -12,6 +12,11 @@ from pydantic import BaseModel, Field
 from cloud_chamber.cli import ENGINE_NOTE
 from cloud_chamber.dry_run_package import generate_dry_run_package, read_dry_run_report
 from cloud_chamber.local_run_manager import LocalRunManager, LocalRunManagerError, RunStatus
+from cloud_chamber.runtime_storage import (
+    RuntimeStorageError,
+    delete_runtime_run,
+    runtime_storage_inventory,
+)
 from cloud_chamber.scenario_catalog import (
     load_scenario_template,
     load_scenario_templates,
@@ -46,6 +51,13 @@ class DryRunRequest(BaseModel):
 
 class LaunchRunRequest(BaseModel):
     manifest_path: str
+
+
+class DeleteRunRequest(BaseModel):
+    run_id: str
+    dry_run: bool = True
+    confirm: bool = False
+    force_saved: bool = False
 
 
 @app.get("/api/scenarios")
@@ -103,6 +115,27 @@ def cancel_run() -> dict[str, object]:
     except LocalRunManagerError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return _run_status_payload(status)
+
+
+@app.get("/api/storage/inventory")
+def storage_inventory() -> dict[str, object]:
+    inventory = runtime_storage_inventory(load_settings())
+    return inventory.model_dump(mode="json")
+
+
+@app.post("/api/storage/delete-run")
+def delete_run(request: DeleteRunRequest) -> dict[str, object]:
+    try:
+        result = delete_runtime_run(
+            load_settings(),
+            run_id=request.run_id,
+            dry_run=request.dry_run,
+            confirm=request.confirm,
+            force_saved=request.force_saved,
+        )
+    except RuntimeStorageError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return result.model_dump(mode="json")
 
 
 def _get_local_run_manager() -> LocalRunManager:

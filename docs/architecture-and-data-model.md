@@ -162,6 +162,29 @@ Real CM1 execution remains a manual/local responsibility until the user has loca
 
 The first successful Baseline Shallow Cumulus smoke run produced GrADS/direct-access CM1 artifacts (`cm1out_*.dat` plus `.ctl` descriptors) rather than NetCDF. That proves local execution but is not full ingest. The manifest should catalog those raw artifacts separately from NetCDF paths and processed visualization artifacts. Floating-point exception flags reported in stderr should be surfaced as runtime warnings/caveats, not automatically treated as launch failure.
 
+### Runtime Storage Inventory And Cleanup
+
+Cloud Chamber runtime cleanup operates only under the configured runtime home, normally `~/CloudChamber`. The backend storage service inventories `~/CloudChamber/runs/<run-id>/` directories, reads `run_manifest.json` when available, reports total runtime-home size, per-run size, lifecycle/provenance metadata, output artifact counts, and conservative categories:
+
+```text
+dry_run_only
+running
+completed_with_output
+completed_no_output
+failed
+canceled
+saved_or_protected
+missing_manifest
+malformed_manifest
+unknown
+```
+
+Malformed or missing manifests are reported without crashing inventory. Largest runs are surfaced by size so the user can see what is consuming disk.
+
+Deletion is explicit and scoped to one selected run directory. The cleanup service refuses path traversal, symlink escapes, the runtime home itself, the user's home directory, the source repo by construction, and configured CM1 root/run paths. It also refuses running runs and saved/protected runs unless a force flag is provided. A dry-run delete returns the selected path and estimated size reclaimed without deleting files; a real delete requires explicit confirmation.
+
+Deleting a run removes local generated CM1 inputs, copied runtime files, logs, raw CM1 output, NetCDF output, and processed artifacts inside that run directory. It does not delete result-library metadata outside that directory, repo files, or the external CM1 installation.
+
 ### Output Ingester
 
 Responsibilities:
