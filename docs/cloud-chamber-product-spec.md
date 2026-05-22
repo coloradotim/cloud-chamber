@@ -348,6 +348,33 @@ main limiting factor
 
 First variations should favor one-control-at-a-time changes around Baseline Shallow Cumulus. Large arbitrary parameter sweeps are not the primary learning path.
 
+### First Baseline Shallow Cumulus Diagnostics
+
+The first implemented diagnostics are personal-learning summaries, not publication-quality LES validation. Exact cloud morphology is not pass/fail.
+
+Cloud detection uses:
+
+```text
+qc_cloud_threshold_kg_kg = 1e-6
+minimum_cloud_grid_cells = 10
+```
+
+Cloud Chamber marks `cloud_formed` only when at least one output time has 10 or more finite grid cells with `qc >= 1e-6 kg/kg`. This avoids declaring cloud from one isolated noisy cell. First cloud time is the first output time meeting the same rule.
+
+Cloud-water diagnostics include max `qc`, time of max `qc`, a `qc` max time series, cloud fraction time series, cloud-present time steps, and first-pass cloud base/top when a vertical coordinate is available. Cloud fraction is the count of finite cells at or above the `qc` threshold divided by the count of finite `qc` cells. Cloud base/top is a grid-cell diagnostic: lowest/highest vertical coordinate where any finite grid cell has `qc` above threshold. It is not yet a polished meteorological cloud-base product.
+
+Vertical velocity diagnostics use `w` when present and compute max/min `w`, time of max/min `w`, and max/min time series while preserving units when available.
+
+Rain diagnostics use `qr` when present:
+
+```text
+qr_rain_threshold_kg_kg = 1e-7
+```
+
+If `qr` is absent, the user-facing result says `No rain detected.` and the metadata records that the `qr` field was absent. Missing `qr` does not fail the diagnostics.
+
+NaN and infinity values are ignored for finite min/max and fraction summaries. Field-specific caveats record non-finite values or entirely non-finite target fields. CM1 runtime floating-point exception flags are preserved as caveats and evaluated against the target diagnostic fields rather than treated as automatic run failure.
+
 Shared controls are controls that can be compared across multiple lower-atmosphere scenarios, such as low-level humidity, surface heating, cap strength, cap height, dry air aloft, and mixing/entrainment. Scenario-specific controls should be introduced only when a scenario needs them to answer its physical question.
 
 ## Run Manifest Schema

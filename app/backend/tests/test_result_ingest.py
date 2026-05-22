@@ -135,7 +135,10 @@ def test_ingests_valid_tiny_netcdf_metadata(tmp_path: Path) -> None:
         ("qc", "kg/kg"),
         ("w", "m/s"),
     ]
-    assert result.diagnostics_summary is None
+    assert result.diagnostics_summary == "no cloud formed; no rain detected"
+    assert result.diagnostics is not None
+    assert result.diagnostics.cloud.formed is False
+    assert result.diagnostics.rain.field_absent is True
     assert result.warnings == [
         "CM1 stderr reported floating-point exception flags: IEEE_INVALID_FLAG"
     ]
@@ -200,5 +203,7 @@ def test_missing_expected_fields_are_warnings_not_claimed_diagnostics(tmp_path: 
     result = ingest_completed_run(manifest_path)
 
     assert result.variables == ["w"]
-    assert result.diagnostics_summary is None
+    assert result.diagnostics_summary == "no cloud formed; no rain detected"
+    assert result.diagnostics is not None
+    assert result.diagnostics.cloud.available is False
     assert result.warnings == ["Expected fields missing from NetCDF metadata: qc"]

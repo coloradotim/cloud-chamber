@@ -10,6 +10,7 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from cloud_chamber.result_diagnostics import ResultDiagnostics, compute_baseline_diagnostics
 from cloud_chamber.run_manifest import LifecycleState, ProductState, RunManifest, load_run_manifest
 from cloud_chamber.settings import CloudChamberSettings
 
@@ -56,6 +57,7 @@ class ResultMetadata(BaseModel):
     grid_shape: list[int] | None = None
     warnings: list[str] = Field(default_factory=list)
     diagnostics_summary: str | None = None
+    diagnostics: ResultDiagnostics | None = None
     created_at: datetime
     updated_at: datetime
 
@@ -171,6 +173,7 @@ def _result_from_dataset(
         warnings.append(
             "Expected fields missing from NetCDF metadata: " + ", ".join(missing_expected)
         )
+    diagnostics = compute_baseline_diagnostics(dataset, warnings)
 
     return ResultMetadata(
         result_id=f"result-{manifest.run_id}",
@@ -194,6 +197,8 @@ def _result_from_dataset(
         time_steps=time_steps,
         grid_shape=grid_shape,
         warnings=warnings,
+        diagnostics_summary=_diagnostics_summary(diagnostics),
+        diagnostics=diagnostics,
         created_at=now,
         updated_at=now,
     )
@@ -228,3 +233,9 @@ def _grid_shape(dimensions: dict[str, int]) -> list[int] | None:
         size for name, size in dimensions.items() if name.lower() not in {"time", "mtime", "t"}
     ]
     return spatial or None
+
+
+def _diagnostics_summary(diagnostics: ResultDiagnostics) -> str:
+    cloud_status = "cloud formed" if diagnostics.cloud.formed else "no cloud formed"
+    rain_status = "rain detected" if diagnostics.rain.present else "no rain detected"
+    return f"{cloud_status}; {rain_status}"
