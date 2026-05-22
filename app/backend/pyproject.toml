@@ -9,6 +9,8 @@ description = "Local backend tooling for Cloud Chamber CM1 experiments."
 requires-python = ">=3.12"
 dependencies = [
   "fastapi>=0.115",
+  "scipy>=1.14",
+  "xarray>=2024.7",
 ]
 
 [project.optional-dependencies]

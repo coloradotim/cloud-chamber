@@ -193,11 +193,15 @@ Responsibilities:
 
 - inspect preferred NetCDF outputs
 - catalog raw CM1 `.dat/.ctl` artifacts until NetCDF ingest is verified
-- extract metadata and fields
+- extract NetCDF metadata and fields
 - produce app-friendly artifacts
 - compute diagnostics
 - create thumbnails/previews
 - record provenance
+
+The first implemented ingest step creates `result_metadata.json` in the completed run directory. It reads NetCDF with xarray and records result ID, run ID, scenario, physical question, controls, run-size preset, source lifecycle/product/provenance state, raw CM1 artifacts, NetCDF paths, processed artifact placeholders, dimensions, coordinates, variables, units, time coordinate, grid shape, warnings, and timestamps.
+
+This result metadata is not a Result Card UI, not diagnostics, and not visualization-ready data. It is the backend bridge that later diagnostics, result cards, and inspectors can consume. Raw `.dat/.ctl` artifacts remain cataloged on the run metadata but are not parsed as NetCDF ingest input.
 
 ### Result Library
 
