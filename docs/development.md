@@ -140,6 +140,30 @@ If `data/` exists in the repo, treat it as placeholder/fixture-only. Runtime sto
 
 Dry-run package tests must point runtime home at a temporary directory. Do not run dry-run package generation against the repository root or commit generated package directories.
 
+## Manual CM1 Validation
+
+Before automated launch is trusted, use the Baseline Shallow Cumulus dry-run package as a manual/local/offline bridge into CM1.
+
+1. Create a dry-run package from the Scenario Builder or API.
+2. Inspect the generated package under `~/CloudChamber/runs/<run-id>/`.
+3. Confirm the package contains:
+   - `run_manifest.json`
+   - `case_manifest.json`
+   - `namelist.input`
+   - `input_sounding`
+   - `dry_run_report.json`
+   - `runtime_file_checklist.json`
+4. Confirm the report still says CM1 was not launched and is not a completed result.
+5. Confirm local CM1 settings:
+   - `CLOUD_CHAMBER_CM1_ROOT`, if set;
+   - `~/CloudChamber/settings.json`, if present;
+   - default probes such as `/Users/timpeterson/cm1r21.1` and `/Users/timpeterson/cm1r21.1/run`.
+6. Compare the package against local CM1 runtime needs, including `cm1.exe` and local-only runtime files such as `LANDUSE.TBL`.
+7. Run CM1 manually from the local runtime path when ready. Record the exact command, CM1 version/path, Cloud Chamber commit, run-size preset, controls, runtime, output cadence, log paths, output paths, and any warnings/errors.
+8. Keep generated packages, copied runtime files, logs, NetCDF output, and validation reports out of git unless a future policy explicitly creates a tiny synthetic fixture.
+
+The next implementation step is the automated local CM1 launcher and log/status monitor. It should preserve the same distinctions: dry-run package, queued/running CM1 process, completed/failed/canceled CM1 run, ingested metadata, and saved result/notebook entry are separate states.
+
 ## Whole Repo
 
 From the repo root:
