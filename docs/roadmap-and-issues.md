@@ -192,16 +192,19 @@ Goal: make Cloud Chamber actually launch and monitor local CM1 runs.
 
 Deliverables:
 
-- Local CM1 launcher.
-- stdout/stderr capture.
-- lifecycle state management.
-- cancel/failure handling.
-- overwrite protection.
+- Local CM1 launcher from generated run manifests.
+- one-local-run-at-a-time guard.
+- stdout/stderr capture into run package logs.
+- lifecycle state management for queued/running/completed/failed/canceled.
+- cancel/failure handling with clear manifest state.
+- overwrite protection for output-like files.
 - local/manual validation path.
 
 Implementation anchor:
 
 - #29 should assume one local CM1 run at a time, account for long/overnight runs, and preserve logs for result notebook entries.
+
+The first implementation uses fake subprocesses in automated tests and does not require real CM1 in CI. Real execution remains local/manual and depends on the user's configured CM1 root/run directory.
 
 ## M3 Results Library + Experiment Notebook
 

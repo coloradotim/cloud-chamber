@@ -1,0 +1,302 @@
+"""Local CM1 launch and status monitoring.
+
+The manager launches an external CM1 executable from a generated run package.
+Tests inject fake processes; CI never requires a real CM1 runtime.
+"""
+
+from __future__ import annotations
+
+import subprocess
+from dataclasses import dataclass
+from datetime import UTC, datetime
+from pathlib import Path
+from typing import Protocol, TextIO
+
+from cloud_chamber.run_manifest import (
+    ExecutionMetadata,
+    LifecycleState,
+    ProductState,
+    ProvenanceMetadata,
+    RunManifest,
+    RuntimePaths,
+    ValidationStatus,
+    load_run_manifest,
+    write_run_manifest,
+)
+from cloud_chamber.settings import CloudChamberSettings, discover_cm1
+
+
+class LocalRunManagerError(RuntimeError):
+    """Raised when a local CM1 launch or status update cannot proceed."""
+
+
+class ProcessHandle(Protocol):
+    def poll(self) -> int | None: ...
+
+    def wait(self, timeout: float | None = None) -> int: ...
+
+    def terminate(self) -> None: ...
+
+
+class ProcessFactory(Protocol):
+    def __call__(
+        self,
+        command: list[str],
+        *,
+        cwd: Path,
+        stdout: TextIO,
+        stderr: TextIO,
+    ) -> ProcessHandle: ...
+
+
+@dataclass(frozen=True)
+class RunStatus:
+    run_id: str
+    lifecycle_state: LifecycleState
+    manifest_path: Path
+    command: tuple[str, ...]
+    stdout_log: Path
+    stderr_log: Path
+    exit_code: int | None
+
+
+@dataclass
+class _ActiveRun:
+    manifest_path: Path
+    process: ProcessHandle
+    stdout_handle: TextIO
+    stderr_handle: TextIO
+
+
+def default_process_factory(
+    command: list[str],
+    *,
+    cwd: Path,
+    stdout: TextIO,
+    stderr: TextIO,
+) -> ProcessHandle:
+    return subprocess.Popen(command, cwd=cwd, stdout=stdout, stderr=stderr, text=True)
+
+
+class LocalRunManager:
+    """Launch and monitor one local CM1 process at a time."""
+
+    def __init__(
+        self,
+        *,
+        settings: CloudChamberSettings,
+        process_factory: ProcessFactory = default_process_factory,
+    ) -> None:
+        self._settings = settings
+        self._process_factory = process_factory
+        self._active: _ActiveRun | None = None
+
+    def launch(self, manifest_path: Path) -> RunStatus:
+        self._refresh_active()
+        if self._active is not None:
+            active_manifest = load_run_manifest(self._active.manifest_path)
+            raise LocalRunManagerError(
+                f"Another local CM1 run is already active: {active_manifest.run_id}"
+            )
+
+        discovery = discover_cm1(self._settings)
+        if not discovery.ready:
+            missing = "; ".join(discovery.missing)
+            raise LocalRunManagerError(f"{discovery.message} Missing: {missing}")
+
+        manifest = load_run_manifest(manifest_path)
+        if manifest.lifecycle_state != LifecycleState.PACKAGED:
+            raise LocalRunManagerError(
+                f"Run {manifest.run_id} must be packaged before launch; "
+                f"found {manifest.lifecycle_state.value}."
+            )
+
+        run_dir = Path(manifest.generated_inputs.run_directory).expanduser()
+        if not run_dir.exists():
+            raise LocalRunManagerError(f"Run package directory does not exist: {run_dir}")
+        if _existing_output_paths(run_dir):
+            raise LocalRunManagerError(
+                f"Refusing to launch because output-like files already exist in {run_dir}"
+            )
+        if self._settings.cm1_run_dir is None:
+            raise LocalRunManagerError("CM1 run directory is not configured.")
+
+        command = [str(self._settings.cm1_run_dir / "cm1.exe")]
+        log_dir = run_dir / "logs"
+        log_dir.mkdir(parents=True, exist_ok=True)
+        stdout_log = log_dir / "stdout.log"
+        stderr_log = log_dir / "stderr.log"
+
+        queued = self._with_state(
+            manifest,
+            state=LifecycleState.QUEUED,
+            product_state=ProductState.QUEUED_RUNNING_CM1_PROCESS,
+            command=command,
+            stdout_log=stdout_log,
+            stderr_log=stderr_log,
+        )
+        write_run_manifest(manifest_path, queued)
+
+        stdout_handle = stdout_log.open("w")
+        stderr_handle = stderr_log.open("w")
+        try:
+            process = self._process_factory(
+                command,
+                cwd=run_dir,
+                stdout=stdout_handle,
+                stderr=stderr_handle,
+            )
+        except Exception as exc:
+            stdout_handle.close()
+            stderr_handle.close()
+            failed = self._with_state(
+                queued,
+                state=LifecycleState.FAILED,
+                product_state=ProductState.FAILED_CANCELED_CM1_RUN,
+                exit_code=None,
+            )
+            write_run_manifest(manifest_path, failed)
+            raise LocalRunManagerError(f"Failed to launch CM1 process: {exc}") from exc
+
+        running = self._with_state(
+            queued,
+            state=LifecycleState.RUNNING,
+            product_state=ProductState.QUEUED_RUNNING_CM1_PROCESS,
+        )
+        write_run_manifest(manifest_path, running)
+        self._active = _ActiveRun(manifest_path, process, stdout_handle, stderr_handle)
+        return _status_from_manifest(running, manifest_path)
+
+    def status(self, manifest_path: Path) -> RunStatus:
+        self._refresh_active()
+        return _status_from_manifest(load_run_manifest(manifest_path), manifest_path)
+
+    def cancel(self) -> RunStatus:
+        if self._active is None:
+            raise LocalRunManagerError("No local CM1 run is active.")
+
+        active = self._active
+        manifest = load_run_manifest(active.manifest_path)
+        active.process.terminate()
+        exit_code = active.process.wait(timeout=5)
+        self._close_active()
+
+        canceled = self._with_state(
+            manifest,
+            state=LifecycleState.CANCELED,
+            product_state=ProductState.FAILED_CANCELED_CM1_RUN,
+            exit_code=exit_code,
+        )
+        write_run_manifest(active.manifest_path, canceled)
+        return _status_from_manifest(canceled, active.manifest_path)
+
+    def _refresh_active(self) -> None:
+        if self._active is None:
+            return
+
+        exit_code = self._active.process.poll()
+        if exit_code is None:
+            return
+
+        active = self._active
+        self._close_active()
+        manifest = load_run_manifest(active.manifest_path)
+        completed_state = LifecycleState.COMPLETED if exit_code == 0 else LifecycleState.FAILED
+        product_state = (
+            ProductState.COMPLETED_CM1_RESULT
+            if exit_code == 0
+            else ProductState.FAILED_CANCELED_CM1_RUN
+        )
+        updated = self._with_state(
+            manifest,
+            state=completed_state,
+            product_state=product_state,
+            exit_code=exit_code,
+        )
+        write_run_manifest(active.manifest_path, updated)
+
+    def _close_active(self) -> None:
+        if self._active is None:
+            return
+        self._active.stdout_handle.close()
+        self._active.stderr_handle.close()
+        self._active = None
+
+    def _with_state(
+        self,
+        manifest: RunManifest,
+        *,
+        state: LifecycleState,
+        product_state: ProductState,
+        command: list[str] | None = None,
+        stdout_log: Path | None = None,
+        stderr_log: Path | None = None,
+        exit_code: int | None = None,
+    ) -> RunManifest:
+        now = datetime.now(UTC)
+        existing_execution = manifest.execution
+        started_at = existing_execution.started_at
+        if state in {LifecycleState.QUEUED, LifecycleState.RUNNING} and started_at is None:
+            started_at = now
+        finished_at = existing_execution.finished_at
+        if state in {LifecycleState.COMPLETED, LifecycleState.FAILED, LifecycleState.CANCELED}:
+            finished_at = now
+
+        runtime_paths = manifest.runtime_paths.model_copy(
+            update={
+                "runtime_home": str(self._settings.runtime_home),
+                "cm1_root": str(self._settings.cm1_root) if self._settings.cm1_root else None,
+                "cm1_run_dir": (
+                    str(self._settings.cm1_run_dir) if self._settings.cm1_run_dir else None
+                ),
+                "cache_dir": str(self._settings.cache_dir),
+                "log_dir": str(self._settings.log_dir),
+            }
+        )
+        execution = existing_execution.model_copy(
+            update={
+                "command": command or existing_execution.command,
+                "started_at": started_at,
+                "finished_at": finished_at,
+                "exit_code": exit_code,
+                "stdout_log": str(stdout_log) if stdout_log else existing_execution.stdout_log,
+                "stderr_log": str(stderr_log) if stderr_log else existing_execution.stderr_log,
+            }
+        )
+        validation_status = (
+            ValidationStatus.FAILED
+            if state in {LifecycleState.FAILED, LifecycleState.CANCELED}
+            else manifest.validation_status
+        )
+        return manifest.model_copy(
+            update={
+                "lifecycle_state": state,
+                "validation_status": validation_status,
+                "runtime_paths": RuntimePaths.model_validate(runtime_paths.model_dump()),
+                "execution": ExecutionMetadata.model_validate(execution.model_dump()),
+                "provenance": ProvenanceMetadata(product_state=product_state),
+                "updated_at": now,
+            }
+        )
+
+
+def _status_from_manifest(manifest: RunManifest, manifest_path: Path) -> RunStatus:
+    stdout_log = Path(manifest.execution.stdout_log or "")
+    stderr_log = Path(manifest.execution.stderr_log or "")
+    return RunStatus(
+        run_id=manifest.run_id,
+        lifecycle_state=manifest.lifecycle_state,
+        manifest_path=manifest_path,
+        command=tuple(manifest.execution.command),
+        stdout_log=stdout_log,
+        stderr_log=stderr_log,
+        exit_code=manifest.execution.exit_code,
+    )
+
+
+def _existing_output_paths(run_dir: Path) -> tuple[Path, ...]:
+    patterns = ("*.nc", "*.nc4", "*.cdf", "*.netcdf", "cm1out*")
+    paths: list[Path] = []
+    for pattern in patterns:
+        paths.extend(run_dir.glob(pattern))
+    return tuple(sorted(set(paths)))

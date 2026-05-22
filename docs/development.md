@@ -71,6 +71,11 @@ Implemented backend API endpoints:
 
 - `GET /api/scenarios` lists validated scenario templates for the Scenario Builder and marks Baseline Shallow Cumulus as the Golden Path scenario.
 - `POST /api/dry-run-package` validates selected controls and writes a reviewable dry-run package under the configured runtime home. It does not launch CM1, create NetCDF output, or write generated packages into the repo during tests.
+- `POST /api/runs/launch` starts one local CM1 run from a generated manifest when local CM1 settings validate.
+- `GET /api/runs/status?manifest_path=...` refreshes and returns lifecycle status/log metadata for a run manifest.
+- `POST /api/runs/cancel` cancels the active local run when technically practical.
+
+The local run manager assumes one active CM1 run at a time for the MVP. It captures stdout/stderr under the run package `logs/` directory, updates the run manifest through queued/running/completed/failed/canceled states, refuses output-like files before launch, and fails clearly when CM1 settings are missing. Normal tests use fake subprocesses; real CM1 execution remains manual/local and is not required in CI.
 
 The backend skeleton uses Python/FastAPI with pytest, ruff, and mypy. Data/science work should prefer xarray, netCDF4 or h5netcdf, numpy, and pydantic when those layers are added.
 
@@ -162,7 +167,7 @@ Before automated launch is trusted, use the Baseline Shallow Cumulus dry-run pac
 7. Run CM1 manually from the local runtime path when ready. Record the exact command, CM1 version/path, Cloud Chamber commit, run-size preset, controls, runtime, output cadence, log paths, output paths, and any warnings/errors.
 8. Keep generated packages, copied runtime files, logs, NetCDF output, and validation reports out of git unless a future policy explicitly creates a tiny synthetic fixture.
 
-The next implementation step is the automated local CM1 launcher and log/status monitor. It should preserve the same distinctions: dry-run package, queued/running CM1 process, completed/failed/canceled CM1 run, ingested metadata, and saved result/notebook entry are separate states.
+The automated local CM1 launcher/log monitor now follows this policy for the first MVP. It preserves the same distinctions: dry-run package, queued/running CM1 process, completed/failed/canceled CM1 run, ingested metadata, and saved result/notebook entry are separate states.
 
 ## Whole Repo
 

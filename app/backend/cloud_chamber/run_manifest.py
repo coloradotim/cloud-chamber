@@ -184,3 +184,7 @@ def run_manifest_from_json(text: str) -> RunManifest:
 
 def load_run_manifest(path: Path) -> RunManifest:
     return run_manifest_from_json(path.read_text())
+
+
+def write_run_manifest(path: Path, manifest: RunManifest) -> None:
+    path.write_text(manifest.to_json_text())
