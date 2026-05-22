@@ -70,6 +70,18 @@ The script is executable and runs the same fast checks as CI.
 
 `scripts/check.sh` is the canonical local validation gate. Run it before opening PRs. It intentionally does not run real CM1, require a local CM1 installation, use NetCDF sample output, or create generated CM1 artifacts.
 
+## Local Dev Servers
+
+From the repo root:
+
+```sh
+scripts/dev.sh start
+scripts/dev.sh restart
+scripts/dev.sh stop
+```
+
+The helper runs the FastAPI backend on `http://127.0.0.1:8000` and the Vite frontend on `http://localhost:5173`, with logs and PID files under `.dev/`.
+
 ## Runtime Data
 
 Runtime data belongs outside the repo by default:

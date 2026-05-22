@@ -22,6 +22,22 @@ The frontend uses TypeScript, React, Vite, Vitest, ESLint, and Prettier. During 
 
 The current first Scenario Builder flow loads Baseline Shallow Cumulus from the backend, shows curated controls and the physical question, requests a dry-run package, and reviews generated files. Preview is explicitly not implemented and not CM1 output. Do not add heavy 3-D rendering dependencies until the visualizer work starts.
 
+## Dev Server Helper
+
+From the repo root:
+
+```sh
+scripts/dev.sh start
+scripts/dev.sh status
+scripts/dev.sh restart
+scripts/dev.sh stop
+scripts/dev.sh logs
+```
+
+The helper starts the backend at `http://127.0.0.1:8000` and the frontend at `http://localhost:5173`, tracks PIDs under `.dev/`, and writes logs to `.dev/backend.log` and `.dev/frontend.log`. Use `scripts/dev.sh restart` after UI or API changes when you want a clean local server state.
+
+The helper expects backend dev dependencies to be installed and `app/frontend/node_modules` to exist. It prefers `app/backend/.venv/bin/python` when present; set `BACKEND_PYTHON`, `BACKEND_PORT`, or `FRONTEND_PORT` to override local defaults.
+
 ## Backend
 
 From `app/backend`:
