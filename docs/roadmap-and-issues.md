@@ -264,6 +264,7 @@ Implementation anchor:
 - #77 builds the 3-D scene shell from the Results Library detail: scene container, orbit/pan/zoom controls, reset camera, time slider shell, field selector shell, loading/empty/error states, and provenance/rendering labels. It does not render cloud water, slices, or raw NetCDF data in the browser.
 - #78 renders the first cloud-water field from visualization-ready data as a thresholded `qc` point cloud. The backend selects native-grid points and the browser renders only that payload; no raw NetCDF parsing, interpolation, isosurface extraction, ray marching, or cinematic lighting belongs in this step.
 - #79 adds horizontal and vertical slice planes using the same provenance-labeled #72 slice API and native-grid caveats. Slice-plane time stays synced with the point cloud, supports `qc` and `w`, and remains an inspection overlay rather than raw NetCDF parsing or volumetric rendering.
+- #80 plans visual polish, fly-through/move-through, cinematic export, and thumbnail/preview policy after the practical 3-D MVP. It must not add rendering dependencies or implementation code.
 
 Recommended implementation order:
 
@@ -299,6 +300,10 @@ Deliverables:
 Implementation anchor:
 
 - #80 plans post-MVP visual polish, fly-through/move-through, cinematic export, and generated thumbnail/preview policy. These are later features, not prerequisites for the first inspectable CM1 result loop.
+- Rendering remains an interpretation of CM1-derived data. Future polish must preserve provenance labels for source model, run/result, field, processing method, rendering method, units, and caveats.
+- Candidate post-MVP work includes volumetric ray marching, shadows, edge brightening, cloud-base darkening, fly-through or move-through camera modes, cinematic still/video export, and generated thumbnails/previews for saved results.
+- Generated visual artifacts remain local/generated outputs by default. Do not commit thumbnails, videos, render caches, large processed visualization data, or generated previews unless a future issue defines a strict tiny-fixture policy.
+- M5 should start only after the inspectable result loop is useful: NetCDF ingest, diagnostics, result cards, Results Library UI, visualization-ready data, 2-D field inspection, 3-D scene shell, thresholded cloud-water rendering, and slice planes.
 
 ## Initial Lower-Atmosphere Scenario Set
 
