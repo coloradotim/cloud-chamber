@@ -333,6 +333,28 @@ with explicit downsampling/max-voxel controls. That binary block contract should
 build on the same provenance labels and native-grid rules, but it is not needed
 for the first 2-D inspector.
 
+### 2-D Field Inspector
+
+The first field inspector is a frontend consumer of the visualization-ready
+fields/slice API. It opens from a Result Card / Experiment Notebook entry and
+does not read raw NetCDF or parse CM1 files in the browser.
+
+The inspector requests:
+
+- the field catalog for the selected result;
+- one horizontal slice for the selected field/time/vertical level;
+- one vertical slice for the selected field/time and `vertical_x` or
+  `vertical_y` orientation.
+
+It displays field name, units, native grid, selected time, min/max, finite and
+non-finite counts, JSON slice values, caveats, and provenance labels. Errors
+from unavailable fields or invalid slice selections remain UI-level inspection
+errors; they do not alter the underlying result metadata or imply a failed CM1
+run.
+
+This is not a 3-D viewer, replay engine, or rendering pipeline. It is the
+orientation/scaling check that should happen before 3-D visualizer work.
+
 ## Data Flow
 
 ### Create Run

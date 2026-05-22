@@ -85,8 +85,12 @@ Implemented backend API endpoints:
 The frontend Results Library shell consumes those Result Card endpoints. It
 starts as a scan-friendly table plus a selected result detail/notebook card,
 with editable name/tags/notes and save/protect actions when the backend
-supports them. The disabled Inspect fields placeholder is intentionally not a
-2-D inspector, replay surface, or 3-D visualizer; those remain #73 and later.
+supports them.
+
+The first 2-D field inspector opens from a Results Library detail/notebook card
+and consumes the backend visualization fields/slice endpoints. It requests JSON
+slice payloads only; it does not parse raw NetCDF in the browser, replay fields,
+or implement 3-D visualization.
 
 The local run manager assumes one active CM1 run at a time for the MVP. It captures stdout/stderr under the run package `logs/` directory, updates the run manifest through queued/running/completed/failed/canceled states, refuses output-like files before launch, and fails clearly when CM1 settings are missing. Normal tests use fake subprocesses; real CM1 execution remains manual/local and is not required in CI.
 

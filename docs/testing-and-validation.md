@@ -65,6 +65,13 @@ provenance labels, JSON array shape/order, finite and non-finite stats, and
 safe vertical kilometer-to-meter display conversion. They must not implement UI,
 rendering, interpolation, or large-output processing.
 
+2-D field inspector component tests should mock the visualization-ready API
+payloads rather than reading NetCDF in the browser. They should cover opening
+from a Result Card, field selection, time selection, horizontal and vertical
+slice display, units, min/max, finite/non-finite counts, provenance labels,
+missing fields, and bad slice requests. They must not add rendering
+dependencies or test a 3-D scene.
+
 CM1 runtime floating-point exception flags such as `IEEE_INVALID_FLAG`, `IEEE_DIVIDE_BY_ZERO`, and `IEEE_OVERFLOW_FLAG` should be preserved as caveats. Automated diagnostics should then check whether target fields contain non-finite values. If `qc`, `w`, and `qr` are finite/usable, diagnostics can complete with the runtime warning still visible. If root-cause investigation requires CM1 source-level debugging, that belongs in a separate issue rather than CI.
 
 Local validation uses `scripts/check.sh` as the canonical gate. CI mirrors it through split equivalent jobs so branch protection can require `Frontend`, `Backend`, and `Scripts and config` independently. Keep the local script and CI jobs in sync as new implemented layers add fast checks.
