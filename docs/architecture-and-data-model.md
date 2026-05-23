@@ -386,6 +386,13 @@ The scene may draw simple inspection planes from those payloads, but it must not
 parse raw NetCDF in the browser, interpolate native grids, ray march, or invent
 synthetic cloud physics.
 
+The 3-D viewer can expose slice-plane controls over this same contract. A
+horizontal `z` plane moves up/down by changing the vertical level index. A
+vertical `x-z` plane moves through `y`; a vertical `y-z` plane moves through
+`x`. Each movement issues a normal visualization-ready slice request with a new
+`orientation` and `level_index`. The control is a native-grid selector, not a
+camera rotation, browser-side NetCDF parser, or interpolated resampling step.
+
 Post-MVP visual polish is a later rendering layer, not part of the data-source
 contract. Volumetric ray marching, shadows, edge brightening, cloud-base
 darkening, fly-through/move-through camera modes, cinematic export, and

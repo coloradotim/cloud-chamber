@@ -256,6 +256,7 @@ type ViewDefaultsResponse = {
 type InspectorViewMode = "horizontal" | "vertical_x" | "vertical_y" | "compare";
 type SceneViewPreset = "cloud-overview" | "vertical-cross-section" | "top-down-slice" | "updraft";
 type ProjectionMode = "oblique" | "side_xz" | "side_yz" | "top_down";
+type SceneSlicePlane = "horizontal" | "vertical_x" | "vertical_y";
 
 async function fetchScenarioCatalog(): Promise<ScenarioResponse> {
   const response = await fetch("/api/scenarios");
@@ -1414,6 +1415,7 @@ function VisualizerSceneShell({ result }: { result: ResultCard }) {
   const [projectionMode, setProjectionMode] = useState<ProjectionMode>("oblique");
   const [showSlicePlanes, setShowSlicePlanes] = useState(false);
   const [sliceFieldName, setSliceFieldName] = useState("qc");
+  const [activeSlicePlane, setActiveSlicePlane] = useState<SceneSlicePlane>("horizontal");
   const [sliceOrientation, setSliceOrientation] = useState<"vertical_x" | "vertical_y">("vertical_x");
   const [horizontalSliceLevel, setHorizontalSliceLevel] = useState(0);
   const [verticalSliceIndex, setVerticalSliceIndex] = useState(0);
@@ -1442,6 +1444,7 @@ function VisualizerSceneShell({ result }: { result: ResultCard }) {
     setProjectionMode("oblique");
     setShowSlicePlanes(false);
     setSliceFieldName("qc");
+    setActiveSlicePlane("horizontal");
     setSliceOrientation("vertical_x");
     setHorizontalSliceLevel(0);
     setVerticalSliceIndex(0);
@@ -1509,14 +1512,25 @@ function VisualizerSceneShell({ result }: { result: ResultCard }) {
   const sliceXSize = sliceField?.coordinate_names.x
     ? sliceField.shape[sliceField.dimensions.indexOf(sliceField.coordinate_names.x)]
     : 1;
-  const verticalSliceMax = sliceOrientation === "vertical_x" ? sliceYSize : sliceXSize;
+  const activeSliceMax =
+    activeSlicePlane === "horizontal"
+      ? sliceVerticalSize
+      : activeSlicePlane === "vertical_x"
+        ? sliceYSize
+        : sliceXSize;
+  const activeSliceIndex =
+    activeSlicePlane === "horizontal" ? horizontalSliceLevel : verticalSliceIndex;
+  const activeSlicePositionLabel = activeSlicePosition(
+    activeSlicePlane,
+    sceneHorizontalSlice,
+    sceneVerticalSlice,
+  );
   const provenanceLabel =
     pointCloud?.provenance.provenance_label ??
     selectedField?.provenance.provenance_label ??
     catalog?.provenance.provenance_label ??
     "CM1-derived visualization-ready data; rendering not implemented";
   const selectedDefaults = defaultsForField(viewDefaults, selectedFieldName);
-  const sliceDefaults = defaultsForField(viewDefaults, sliceFieldName);
   const selectedTimeFieldDefaults = defaultsForField(selectedTimeDefaults, selectedFieldName);
   const selectedTimeSliceDefaults = defaultsForField(selectedTimeDefaults, sliceFieldName);
   const selectedTimeValue = timeOptions[Math.min(timeIndex, timeMax)] ?? null;
@@ -1689,15 +1703,18 @@ function VisualizerSceneShell({ result }: { result: ResultCard }) {
                 <span>{selectedTimeLabel}</span>
                 <span>Cloud-water threshold {formatScientific(threshold, "kg/kg")}</span>
               </div>
-              {showSlicePlanes && (
-                <>
-                  {viewPreset === "top-down-slice" || viewPreset === "cloud-overview" ? (
-                    <SlicePlane title="Horizontal slice plane" slice={sceneHorizontalSlice} />
-                  ) : null}
-                  {viewPreset !== "top-down-slice" ? (
-                    <SlicePlane title="Vertical slice plane" slice={sceneVerticalSlice} />
-                  ) : null}
-                </>
+              {showSlicePlanes && activeSlicePlane === "horizontal" && (
+                <SlicePlane title="Horizontal z slice plane" slice={sceneHorizontalSlice} />
+              )}
+              {showSlicePlanes && activeSlicePlane !== "horizontal" && (
+                <SlicePlane
+                  title={
+                    activeSlicePlane === "vertical_x"
+                      ? "Vertical x-z slice plane"
+                      : "Vertical y-z slice plane"
+                  }
+                  slice={sceneVerticalSlice}
+                />
               )}
               {pointCloud && pointCloud.points.length > 0 && (
                 <div className="point-cloud-layer" aria-label="Cloud-water point cloud">
@@ -1780,6 +1797,7 @@ function VisualizerSceneShell({ result }: { result: ResultCard }) {
                       setTimeIndex,
                       setHorizontalSliceLevel,
                       setVerticalSliceIndex,
+                      setActiveSlicePlane,
                       setSliceOrientation,
                       setShowSlicePlanes,
                       setProjectionMode,
@@ -1802,6 +1820,7 @@ function VisualizerSceneShell({ result }: { result: ResultCard }) {
                       setTimeIndex,
                       setHorizontalSliceLevel,
                       setVerticalSliceIndex,
+                      setActiveSlicePlane,
                       setSliceOrientation,
                       setShowSlicePlanes,
                       setProjectionMode,
@@ -1824,6 +1843,7 @@ function VisualizerSceneShell({ result }: { result: ResultCard }) {
                       setTimeIndex,
                       setHorizontalSliceLevel,
                       setVerticalSliceIndex,
+                      setActiveSlicePlane,
                       setSliceOrientation,
                       setShowSlicePlanes,
                       setProjectionMode,
@@ -1846,6 +1866,7 @@ function VisualizerSceneShell({ result }: { result: ResultCard }) {
                       setTimeIndex,
                       setHorizontalSliceLevel,
                       setVerticalSliceIndex,
+                      setActiveSlicePlane,
                       setSliceOrientation,
                       setShowSlicePlanes,
                       setProjectionMode,
@@ -2012,10 +2033,61 @@ function VisualizerSceneShell({ result }: { result: ResultCard }) {
                   type="checkbox"
                   checked={showSlicePlanes}
                   onChange={(event) => setShowSlicePlanes(event.target.checked)}
-                />
-                Show slice planes
-              </label>
-              <label htmlFor="slice-field">
+	                />
+	                Show slice planes
+	              </label>
+	              <div className="segmented-buttons" aria-label="Slice plane orientation">
+	                <button
+	                  type="button"
+	                  className={activeSlicePlane === "horizontal" ? "active-control" : ""}
+	                  onClick={() => {
+	                    setActiveSlicePlane("horizontal");
+	                    setShowSlicePlanes(true);
+	                    setProjectionMode("top_down");
+	                  }}
+	                >
+	                  Horizontal z
+	                </button>
+	                <button
+	                  type="button"
+	                  className={activeSlicePlane === "vertical_x" ? "active-control" : ""}
+	                  onClick={() => {
+	                    setActiveSlicePlane("vertical_x");
+	                    setSliceOrientation("vertical_x");
+	                    setVerticalSliceIndex(
+	                      defaultVerticalIndex(
+	                        sliceField,
+	                        "vertical_x",
+	                        selectedTimeSliceDefaults ?? defaultsForField(viewDefaults, sliceFieldName),
+	                      ),
+	                    );
+	                    setShowSlicePlanes(true);
+	                    setProjectionMode("side_xz");
+	                  }}
+	                >
+	                  Vertical x-z
+	                </button>
+	                <button
+	                  type="button"
+	                  className={activeSlicePlane === "vertical_y" ? "active-control" : ""}
+	                  onClick={() => {
+	                    setActiveSlicePlane("vertical_y");
+	                    setSliceOrientation("vertical_y");
+	                    setVerticalSliceIndex(
+	                      defaultVerticalIndex(
+	                        sliceField,
+	                        "vertical_y",
+	                        selectedTimeSliceDefaults ?? defaultsForField(viewDefaults, sliceFieldName),
+	                      ),
+	                    );
+	                    setShowSlicePlanes(true);
+	                    setProjectionMode("side_yz");
+	                  }}
+	                >
+	                  Vertical y-z
+	                </button>
+	              </div>
+	              <label htmlFor="slice-field">
                 Slice field
                 <select
                   id="slice-field"
@@ -2043,45 +2115,64 @@ function VisualizerSceneShell({ result }: { result: ResultCard }) {
                     ))}
                 </select>
               </label>
-              <label htmlFor="scene-horizontal-level">
-                Horizontal slice level
-                <input
-                  id="scene-horizontal-level"
-                  type="number"
-                  min={0}
-                  max={Math.max(0, sliceVerticalSize - 1)}
-                  value={horizontalSliceLevel}
-                  onChange={(event) => setHorizontalSliceLevel(Number(event.target.value))}
-                />
-              </label>
-              <label htmlFor="scene-vertical-orientation">
-                Vertical orientation
-                <select
-                  id="scene-vertical-orientation"
-                  value={sliceOrientation}
-                  onChange={(event) => {
-                    const nextOrientation = event.target.value as "vertical_x" | "vertical_y";
-                    setSliceOrientation(nextOrientation);
-                    setVerticalSliceIndex(
-                      defaultVerticalIndex(sliceField, nextOrientation, sliceDefaults),
-                    );
-                  }}
-                >
-                  <option value="vertical_x">vertical_x</option>
-                  <option value="vertical_y">vertical_y</option>
-                </select>
-              </label>
-              <label htmlFor="scene-vertical-index">
-                Vertical slice index
-                <input
-                  id="scene-vertical-index"
-                  type="number"
-                  min={0}
-                  max={Math.max(0, verticalSliceMax - 1)}
-                  value={verticalSliceIndex}
-                  onChange={(event) => setVerticalSliceIndex(Number(event.target.value))}
-                />
-              </label>
+	              <label htmlFor="active-slice-position">
+	                {activeSlicePlaneLabel(activeSlicePlane)}
+	                <input
+	                  id="active-slice-position"
+	                  type="range"
+	                  min={0}
+	                  max={Math.max(0, activeSliceMax - 1)}
+	                  value={activeSliceIndex}
+	                  onChange={(event) => {
+	                    const nextIndex = Number(event.target.value);
+	                    if (activeSlicePlane === "horizontal") {
+	                      setHorizontalSliceLevel(nextIndex);
+	                    } else {
+	                      setVerticalSliceIndex(nextIndex);
+	                    }
+	                  }}
+	                />
+	              </label>
+	              <div className="button-row">
+	                <button
+	                  type="button"
+	                  onClick={() => {
+	                    const nextIndex = Math.max(0, activeSliceIndex - 1);
+	                    if (activeSlicePlane === "horizontal") {
+	                      setHorizontalSliceLevel(nextIndex);
+	                    } else {
+	                      setVerticalSliceIndex(nextIndex);
+	                    }
+	                  }}
+	                >
+	                  {activeSlicePlane === "horizontal" ? "Move down" : "Move back"}
+	                </button>
+	                <button
+	                  type="button"
+	                  onClick={() => {
+	                    const nextIndex = Math.min(
+	                      Math.max(0, activeSliceMax - 1),
+	                      activeSliceIndex + 1,
+	                    );
+	                    if (activeSlicePlane === "horizontal") {
+	                      setHorizontalSliceLevel(nextIndex);
+	                    } else {
+	                      setVerticalSliceIndex(nextIndex);
+	                    }
+	                  }}
+	                >
+	                  {activeSlicePlane === "horizontal" ? "Move up" : "Move forward"}
+	                </button>
+	              </div>
+	              <p>
+	                Active slice: {activeSlicePlaneDescription(activeSlicePlane)} at index{" "}
+	                {activeSliceIndex}
+	                {activeSlicePositionLabel ? ` (${activeSlicePositionLabel})` : ""}.
+	              </p>
+	              <small>
+	                Slice controls move native-grid slices only. They do not interpolate, rotate raw
+	                NetCDF, or change the CM1 result.
+	              </small>
             </fieldset>
           )}
 
@@ -2153,8 +2244,10 @@ function VisualizerSceneShell({ result }: { result: ResultCard }) {
               <Metric
                 label="Slice orientation"
                 value={
-                  sceneVerticalSlice
-                    ? `${sceneVerticalSlice.selection.orientation} at ${sceneVerticalSlice.selection.selected_dimension}[${sceneVerticalSlice.selection.selected_index}]`
+                  activeSlicePlane === "horizontal" && sceneHorizontalSlice
+                    ? `${sceneHorizontalSlice.selection.orientation} at ${sceneHorizontalSlice.selection.selected_dimension}[${sceneHorizontalSlice.selection.selected_index}]`
+                    : sceneVerticalSlice
+                      ? `${sceneVerticalSlice.selection.orientation} at ${sceneVerticalSlice.selection.selected_dimension}[${sceneVerticalSlice.selection.selected_index}]`
                     : "Unavailable"
                 }
               />
@@ -2359,6 +2452,39 @@ function SceneSliceSummary({ title, slice }: { title: string; slice: SliceRespon
       )}
     </section>
   );
+}
+
+function activeSlicePlaneLabel(activeSlicePlane: SceneSlicePlane): string {
+  const labels: Record<SceneSlicePlane, string> = {
+    horizontal: "Height level (up/down)",
+    vertical_x: "Y position (forward/back)",
+    vertical_y: "X position (left/right)",
+  };
+  return labels[activeSlicePlane];
+}
+
+function activeSlicePlaneDescription(activeSlicePlane: SceneSlicePlane): string {
+  const descriptions: Record<SceneSlicePlane, string> = {
+    horizontal: "horizontal z/height slice",
+    vertical_x: "vertical x-z slice",
+    vertical_y: "vertical y-z slice",
+  };
+  return descriptions[activeSlicePlane];
+}
+
+function activeSlicePosition(
+  activeSlicePlane: SceneSlicePlane,
+  horizontalSlice: SliceResponse | null,
+  verticalSlice: SliceResponse | null,
+): string {
+  const slice = activeSlicePlane === "horizontal" ? horizontalSlice : verticalSlice;
+  if (!slice) return "";
+  const coordinate = slice.selection.selected_coordinate_value;
+  const units = slice.selection.level_units ?? slice.coordinate_units[slice.selection.selected_dimension];
+  if (coordinate === null || coordinate === undefined) return "";
+  const numericCoordinate = typeof coordinate === "number" ? coordinate : Number(coordinate);
+  if (!Number.isFinite(numericCoordinate)) return String(coordinate);
+  return `${formatCompactNumber(numericCoordinate)}${units ? ` ${units}` : ""}`;
 }
 
 function FieldInspector({ result }: { result: ResultCard }) {
@@ -3109,6 +3235,7 @@ function applyScenePreset(
     setTimeIndex: (index: number) => void;
     setHorizontalSliceLevel: (index: number) => void;
     setVerticalSliceIndex: (index: number) => void;
+    setActiveSlicePlane: (plane: SceneSlicePlane) => void;
     setSliceOrientation: (orientation: "vertical_x" | "vertical_y") => void;
     setShowSlicePlanes: (show: boolean) => void;
     setProjectionMode: (mode: ProjectionMode) => void;
@@ -3121,13 +3248,16 @@ function applyScenePreset(
     options.catalog.available_fields[0];
   if (!field) return;
   const defaults = defaultsForField(options.viewDefaults, field.raw_field_name);
-  const orientation = "vertical_x";
+  const orientation = preset === "updraft" ? "vertical_y" : "vertical_x";
+  const activeSlicePlane: SceneSlicePlane =
+    preset === "top-down-slice" || preset === "cloud-overview" ? "horizontal" : orientation;
   options.setViewPreset(preset);
   options.setSelectedFieldName(field.raw_field_name);
   options.setSliceFieldName(field.raw_field_name);
   options.setTimeIndex(defaultTimeIndex(field, options.result, defaults));
   options.setHorizontalSliceLevel(defaultHorizontalLevel(field, defaults));
   options.setVerticalSliceIndex(defaultVerticalIndex(field, orientation, defaults));
+  options.setActiveSlicePlane(activeSlicePlane);
   options.setSliceOrientation(orientation);
   options.setShowSlicePlanes(preset !== "cloud-overview");
   options.setProjectionMode(
