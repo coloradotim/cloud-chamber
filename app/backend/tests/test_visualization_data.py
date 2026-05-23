@@ -23,6 +23,7 @@ from cloud_chamber.visualization_data import (
     field_catalog,
     field_slice,
     point_cloud,
+    view_defaults,
 )
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -262,6 +263,28 @@ def test_point_cloud_returns_qc_points_above_threshold(tmp_path: Path) -> None:
     assert "native_grid_thresholded_point_cloud" in cloud.caveats
 
 
+def test_view_defaults_choose_native_grid_max_locations(tmp_path: Path) -> None:
+    settings, result_id, _run_dir = create_visualization_result(tmp_path)
+
+    defaults = view_defaults(settings, result_id)
+
+    assert defaults.preferred_field == "qc"
+    assert defaults.fields["qc"].source == "max_qc_native_grid_location"
+    assert defaults.fields["qc"].time_index == 1
+    assert defaults.fields["qc"].time_seconds == 900.0
+    assert defaults.fields["qc"].horizontal_level_index == 1
+    assert defaults.fields["qc"].vertical_x_index == 2
+    assert defaults.fields["qc"].vertical_y_index == 2
+    assert defaults.fields["qc"].max_value == 4.6e-05
+    assert defaults.fields["w"].source == "max_w_native_grid_location"
+    assert defaults.fields["w"].time_index == 1
+    assert defaults.fields["w"].horizontal_level_index == 2
+    assert defaults.fields["w"].vertical_x_index == 2
+    assert defaults.fields["w"].vertical_y_index == 3
+    assert "default_locations_are_native_grid_indices" in defaults.caveats
+    assert defaults.provenance.processing_method == "backend_xarray_interesting_view_defaults"
+
+
 def test_point_cloud_reports_no_points_above_threshold(tmp_path: Path) -> None:
     settings, result_id, _run_dir = create_visualization_result(tmp_path)
 
@@ -416,6 +439,7 @@ def test_visualization_api_returns_field_catalog_and_slice(
     client = TestClient(app)
 
     catalog = client.get(f"/api/results/{result_id}/visualization/fields")
+    defaults = client.get(f"/api/results/{result_id}/visualization/defaults")
     sliced = client.get(
         f"/api/results/{result_id}/visualization/slice",
         params={
@@ -429,6 +453,9 @@ def test_visualization_api_returns_field_catalog_and_slice(
 
     assert catalog.status_code == 200
     assert catalog.json()["available_fields"][0]["provenance"]["source_model"] == "CM1"
+    assert defaults.status_code == 200
+    assert defaults.json()["fields"]["qc"]["source"] == "max_qc_native_grid_location"
+    assert defaults.json()["fields"]["w"]["source"] == "max_w_native_grid_location"
     assert sliced.status_code == 200
     payload = sliced.json()
     assert payload["field"]["canonical_field_name"] == "cloud_water"

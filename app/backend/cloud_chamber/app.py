@@ -40,6 +40,7 @@ from cloud_chamber.visualization_data import (
     field_catalog,
     field_slice,
     point_cloud,
+    view_defaults,
 )
 
 app = FastAPI(
@@ -207,6 +208,17 @@ def save_result(result_id: str) -> dict[str, object]:
 def get_visualization_fields(result_id: str) -> dict[str, object]:
     try:
         result = field_catalog(load_settings(), result_id)
+    except ResultIngestError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except VisualizationDataError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return result.model_dump(mode="json")
+
+
+@app.get("/api/results/{result_id}/visualization/defaults")
+def get_visualization_defaults(result_id: str) -> dict[str, object]:
+    try:
+        result = view_defaults(load_settings(), result_id)
     except ResultIngestError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except VisualizationDataError as exc:

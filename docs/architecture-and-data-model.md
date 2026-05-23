@@ -476,6 +476,20 @@ planes should provide spatial context without overwhelming the point cloud, and
 long provenance/rendering labels should sit in technical details rather than in
 the main scene controls.
 
+The backend also exposes an interesting-view defaults contract for UI startup:
+
+```text
+GET /api/results/{result_id}/visualization/defaults
+```
+
+The response reports per-field native-grid defaults for `qc` and `w`, including
+time index/seconds, horizontal level index, vertical `x`/`y` slice indices,
+source label, max value when available, caveats, and provenance. These defaults
+are computed from backend xarray access to ingested NetCDF output. The browser
+uses them to pick cloud-bearing or max-updraft views but still requests normal
+slice/point-cloud payloads for rendering. The defaults endpoint does not
+interpolate fields, parse raw NetCDF in the browser, or change result metadata.
+
 This is not a 3-D viewer, replay engine, or rendering pipeline. It is the
 orientation/scaling check that should happen before 3-D visualizer work.
 
@@ -725,10 +739,12 @@ Recommended staged path:
 
 1. Load/inspect NetCDF in backend.
 2. Extract selected fields and time frames.
-3. Return JSON 2-D slices for the slice-first MVP.
-4. Downsample or chunk as needed for future larger payloads.
-5. Use JSON metadata plus binary `float32` arrays for future 3-D blocks.
-6. Load fields into the 2-D inspector or later Three.js/WebGL viewer.
+3. Return interesting native-grid defaults for `qc`/`w` field/time/slice
+   startup state.
+4. Return JSON 2-D slices for the slice-first MVP.
+5. Downsample or chunk as needed for future larger payloads.
+6. Use JSON metadata plus binary `float32` arrays for future 3-D blocks.
+7. Load fields into the 2-D inspector or later Three.js/WebGL viewer.
 
 Potential processed formats:
 

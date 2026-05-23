@@ -172,6 +172,32 @@ class PointCloudResponse(BaseModel):
     caveats: list[str] = Field(default_factory=list)
 
 
+class FieldViewDefaults(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    field: str
+    time_index: int
+    time_seconds: float | None = None
+    horizontal_level_index: int
+    vertical_x_index: int
+    vertical_y_index: int
+    source: str
+    max_value: float | None = None
+    caveats: list[str] = Field(default_factory=list)
+
+
+class ViewDefaultsResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    result_id: str
+    run_id: str
+    scenario_id: str
+    preferred_field: str | None = None
+    fields: dict[str, FieldViewDefaults]
+    provenance: ProvenancePayload
+    caveats: list[str] = Field(default_factory=list)
+
+
 def field_catalog(settings: CloudChamberSettings, result_id: str) -> FieldCatalogResponse:
     """Return visualizable field metadata for an ingested result."""
     metadata = get_result_metadata(settings, result_id)
@@ -190,6 +216,44 @@ def field_catalog(settings: CloudChamberSettings, result_id: str) -> FieldCatalo
             available_fields=fields,
             provenance=_provenance(metadata),
             caveats=_dedupe(_catalog_caveats(metadata, fields)),
+        )
+    finally:
+        _close_all(close_datasets)
+
+
+def view_defaults(settings: CloudChamberSettings, result_id: str) -> ViewDefaultsResponse:
+    """Return physically interesting default field/time/slice locations."""
+    metadata = get_result_metadata(settings, result_id)
+    dataset, close_datasets = _open_dataset_sequence(metadata)
+    try:
+        fields: dict[str, FieldViewDefaults] = {}
+        for field_name in ("qc", "w"):
+            if field_name in dataset.data_vars:
+                fields[field_name] = _field_view_defaults(metadata, dataset, field_name)
+        preferred = "qc" if "qc" in fields else next(iter(fields), None)
+        return ViewDefaultsResponse(
+            result_id=metadata.result_id,
+            run_id=metadata.run_id,
+            scenario_id=metadata.scenario_id,
+            preferred_field=preferred,
+            fields=fields,
+            provenance=_provenance(
+                metadata,
+                processing_method="backend_xarray_interesting_view_defaults",
+                rendering_method="field_slice_and_point_cloud_default_selection",
+                provenance_label=(
+                    "CM1-derived visualization defaults; max-value native-grid location; "
+                    "no interpolation"
+                ),
+            ),
+            caveats=_dedupe(
+                [
+                    "default_locations_are_native_grid_indices",
+                    *metadata.warnings,
+                    *(["missing_visualization_field:qc"] if "qc" not in fields else []),
+                    *(["missing_visualization_field:w"] if "w" not in fields else []),
+                ]
+            ),
         )
     finally:
         _close_all(close_datasets)
@@ -291,6 +355,94 @@ def point_cloud(
         )
     finally:
         _close_all(close_datasets)
+
+
+def _field_view_defaults(
+    metadata: ResultMetadata,
+    dataset: Any,
+    field_name: str,
+) -> FieldViewDefaults:
+    data_array = dataset[field_name]
+    dims = _field_dimensions(data_array)
+    caveats = _field_caveats(field_name, dims.coordinates)
+    if not dims.time or not dims.vertical or not dims.y or not dims.x:
+        return _fallback_view_defaults(
+            dataset,
+            data_array,
+            field_name=field_name,
+            dims=dims,
+            source="domain_center_missing_required_dimensions",
+            caveats=caveats,
+        )
+
+    values = data_array.values
+    best_value: float | None = None
+    best_index: tuple[int, ...] | None = None
+    for native_index in itertools.product(*(range(int(size)) for size in data_array.shape)):
+        raw_value = values[native_index]
+        try:
+            numeric = float(raw_value)
+        except (TypeError, ValueError):
+            continue
+        if not math.isfinite(numeric):
+            continue
+        if best_value is None or numeric > best_value:
+            best_value = numeric
+            best_index = native_index
+
+    if best_index is None:
+        return _fallback_view_defaults(
+            dataset,
+            data_array,
+            field_name=field_name,
+            dims=dims,
+            source="domain_center_no_finite_values",
+            caveats=[*caveats, f"no_finite_values_in_{field_name}"],
+        )
+
+    time_axis = data_array.dims.index(dims.time)
+    vertical_axis = data_array.dims.index(dims.vertical)
+    y_axis = data_array.dims.index(dims.y)
+    x_axis = data_array.dims.index(dims.x)
+    time_index = int(best_index[time_axis])
+    return FieldViewDefaults(
+        field=field_name,
+        time_index=time_index,
+        time_seconds=_time_value_seconds(dataset, dims.time, time_index),
+        horizontal_level_index=int(best_index[vertical_axis]),
+        vertical_x_index=int(best_index[y_axis]),
+        vertical_y_index=int(best_index[x_axis]),
+        source=f"max_{field_name}_native_grid_location",
+        max_value=best_value,
+        caveats=_dedupe([*caveats, "default_location_uses_field_maximum"]),
+    )
+
+
+def _fallback_view_defaults(
+    dataset: Any,
+    data_array: Any,
+    *,
+    field_name: str,
+    dims: _FieldDimensions,
+    source: str,
+    caveats: list[str],
+) -> FieldViewDefaults:
+    time_size = int(data_array.sizes[dims.time]) if dims.time else 1
+    vertical_size = int(data_array.sizes[dims.vertical]) if dims.vertical else 1
+    y_size = int(data_array.sizes[dims.y]) if dims.y else 1
+    x_size = int(data_array.sizes[dims.x]) if dims.x else 1
+    time_index = max(0, time_size - 1)
+    return FieldViewDefaults(
+        field=field_name,
+        time_index=time_index,
+        time_seconds=_time_value_seconds(dataset, dims.time, time_index),
+        horizontal_level_index=max(0, vertical_size // 2),
+        vertical_x_index=max(0, y_size // 2),
+        vertical_y_index=max(0, x_size // 2),
+        source=source,
+        max_value=None,
+        caveats=_dedupe([*caveats, "default_location_fell_back_to_domain_center"]),
+    )
 
 
 def field_slice(
