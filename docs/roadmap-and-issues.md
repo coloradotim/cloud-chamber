@@ -186,6 +186,47 @@ Expected local probes include `CLOUD_CHAMBER_CM1_ROOT`, `~/CloudChamber/settings
 
 The direct follow-up is #29: automate the local CM1 launcher and status/log monitor with one local run at a time, explicit failure/cancel states, and tests that use fake subprocesses rather than real CM1.
 
+### Dry Failed Cumulus Planning
+
+Dry Failed Cumulus is the first planned contrast case after the validated
+Baseline Shallow Cumulus quick-look loop. It should teach moisture limitation:
+
+```text
+How does insufficient low-level moisture prevent shallow cumulus formation even when boundary-layer thermals and vertical motion are present?
+```
+
+The target contrast is:
+
+```text
+Baseline Shallow Cumulus:
+  cloud formed
+  rain detected
+  qc and w both active
+
+Dry Failed Cumulus:
+  thermals / vertical motion remain
+  little or no qc
+  no rain
+  main limiting factor is low-level moisture / saturation deficit
+```
+
+No cloud by itself is not success. A useful Dry Failed Cumulus run must complete
+cleanly, produce NetCDF, ingest the full output sequence, keep `cloud_formed =
+false` and `rain_present = false`, retain meaningful nonzero `w`, and avoid
+severe NaN/Infinity caveats in target fields. No cloud plus no vertical motion
+is not Dry Failed Cumulus.
+
+Planning sequence:
+
+1. #102 validates external-sounding Baseline Shallow Cumulus reproduction from the
+   accepted `les_ShallowCu` reference-derived setup.
+2. #103 implements Dry Failed Cumulus as a moisture-limited variant from that
+   external-sounding baseline, changing only low-level moisture first.
+
+The old compact quick-look derivative that produced no cloud, no vertical
+motion, and NaN/Infinity caveats is invalid evidence and must not be used as a
+scenario base.
+
 ## M2 Local CM1 Run Manager
 
 Goal: make Cloud Chamber actually launch and monitor local CM1 runs.
@@ -329,6 +370,8 @@ First variations should favor one-control-at-a-time changes around baseline rath
 
 Future scenario roadmap:
 
+- Dry Failed Cumulus: moisture-limited failed cumulus with thermals and
+  meaningful vertical motion but little/no `qc`.
 - Terrain/orographic cloud.
 - Layered atmosphere.
 - Fog / near-surface cloud.

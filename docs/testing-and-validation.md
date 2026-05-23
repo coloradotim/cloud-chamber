@@ -187,6 +187,39 @@ The first quick-look variant should be validated as a runtime-only change from t
 
 The first quick-look validation run, `dry-run-quicklook-les-shallowcu-20260522151536`, completed with `exit_code = 0`, ingested 13 model-output time steps from 0 to 10800 seconds, and produced `cloud formed; rain detected`. Recorded diagnostics included first cloud time at 1800 seconds, `max_qc_kg_kg = 0.002192789688706398`, `max_w_m_s = 6.866957187652588`, `min_w_m_s = -4.21529483795166`, rain present, package size 206 MB, stderr `IEEE_UNDERFLOW_FLAG`, and the existing vertical-coordinate caveat because cloud base/top units were reported as kilometers.
 
+Dry Failed Cumulus validation should happen only after an external-sounding
+Baseline Shallow Cumulus reproduction has been accepted. The future Dry Failed
+run should be considered useful only if it is moisture-limited and numerically
+healthy: CM1 exits cleanly, NetCDF output exists, full-sequence ingest succeeds,
+`cloud_formed = false`, `rain_present = false`, `max_qc_kg_kg` stays below the
+cloud threshold or fewer than 10 grid cells exceed it, `max_w_m_s` is
+meaningfully nonzero, `min_w_m_s` is finite and preferably negative/nonzero,
+and `qc`/`w`/`qv`/thermodynamic target fields do not carry severe NaN/Infinity
+caveats. No cloud plus no vertical motion is not an accepted Dry Failed result.
+No cloud plus NaNs/Infs is not an accepted Dry Failed result.
+
+Future Dry Failed manual validation should record:
+
+```text
+run ID and package path
+validated baseline commit / package source
+external-sounding reproduction evidence
+the one intended moisture/sounding change
+CM1 command, runtime, exit code, logs, and package size
+NetCDF file count and full-sequence ingest status
+cloud_formed and first_cloud_time
+max_qc and cloud fraction summary
+rain_present
+max_w and min_w
+main limiting factor: low-level moisture / saturation deficit
+qc and w 2-D inspection notes
+3-D cloud-water point-cloud absence/presence notes
+caveats and target-field non-finite checks
+```
+
+Do not run Dry Failed CM1 cases in CI and do not commit generated output,
+NetCDF files, logs, runtime files, local reports, or copied `LANDUSE.TBL`.
+
 ### Baseline Shallow Cumulus Manual Smoke-Run Loop
 
 Use this loop after a dry-run package has been generated and before broader CM1 launcher work is trusted. This is a manual/local/offline validation path; do not run it in CI.

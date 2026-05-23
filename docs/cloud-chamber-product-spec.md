@@ -309,6 +309,85 @@ The first quick-look Baseline Shallow Cumulus variant is derived from that valid
 
 The first quick-look validation run, `dry-run-quicklook-les-shallowcu-20260522151536`, completed with `exit_code = 0`, produced NetCDF output, and ingested 13 model-output time steps from 0 to 10800 seconds. Package size was 206 MB. First-pass diagnostics reported `cloud formed; rain detected`, first cloud time at 1800 seconds, `max_qc_kg_kg = 0.002192789688706398`, `max_w_m_s = 6.866957187652588`, and `min_w_m_s = -4.21529483795166`. This confirms the shorter runtime/cadence-only quick-look variant still produces cloud and vertical motion while preserving the reference-derived settings.
 
+### Dry Failed Cumulus Planning
+
+Dry Failed Cumulus is the next planned lower-atmosphere contrast case after
+Baseline Shallow Cumulus. It should answer:
+
+```text
+How does insufficient low-level moisture prevent shallow cumulus formation even when boundary-layer thermals and vertical motion are present?
+```
+
+This is a moisture-limited failed-cumulus case. It should not mean a dead
+simulation, a too-stable/capped atmosphere, weak surface forcing, numerical
+failure, or "no cloud" by itself. The target is thermals without meaningful
+cloud.
+
+Teaching contrast:
+
+```text
+Baseline Shallow Cumulus:
+  thermals rise
+  cloud water forms
+  rain may appear
+  qc and w are both visually/scientifically interesting
+
+Dry Failed Cumulus:
+  thermals still rise
+  parcels do not reach enough saturation
+  qc stays below cloud threshold or appears only as trace amounts
+  rain does not appear
+  w remains scientifically meaningful
+```
+
+The MVP product-facing variation should change one physical factor:
+
+```text
+low-level humidity = drier
+```
+
+Other curated controls should stay at the validated baseline for the first
+implementation:
+
+```text
+surface heating = baseline
+cap strength = baseline
+dry air aloft = baseline
+mixing / entrainment = baseline
+```
+
+The diagnostic target is:
+
+```text
+CM1 completes cleanly
+NetCDF output is produced
+full output sequence ingests
+cloud_formed = false
+rain_present = false
+max_qc_kg_kg remains below the 1e-6 kg/kg cloud threshold,
+  or fewer than 10 grid cells exceed threshold
+max_w_m_s is meaningfully nonzero
+min_w_m_s is finite and preferably negative/nonzero
+no severe NaN/Infinity caveats in qc/w/qv/thermodynamic target fields
+main limiting factor = insufficient low-level moisture / saturation deficit
+```
+
+Inspection should show `w` without meaningful `qc`: 2-D `qc` slices should be
+mostly empty/trace while `w` slices still show thermal/updraft structure. The
+3-D cloud-water point cloud should be mostly absent, while slice planes remain
+useful for explaining the failed-cloud contrast.
+
+Dry Failed must start from the validated reference-derived Baseline Shallow
+Cumulus setup, not the old compact quick-look derivative that produced no
+cloud, no vertical motion, and NaN/Infinity caveats. The planned implementation
+path is:
+
+1. #102 validates an external-sounding Baseline Shallow Cumulus reproduction while
+   preserving the validated grid/domain/runtime/surface/damping/boundary
+   settings.
+2. #103 implements the moisture-limited Dry Failed variant by drying the validated
+   external-sounding baseline and preserving vertical motion.
+
 Default cloud-scale assumptions:
 
 ```text
