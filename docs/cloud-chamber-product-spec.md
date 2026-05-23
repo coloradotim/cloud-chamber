@@ -797,11 +797,14 @@ overview` is an interpretive overview. The domain box, floor, axis labels, and
 points should use the same coordinate transform, with technical details showing
 the actual coordinate units and visualized extent.
 
-The MVP viewer uses a stable plotting viewport rather than pretending to have a
-full physical camera. The primary controls are projection mode, zoom, and reset
-view. Zoom scales the rendered plotting group while preserving the underlying
-CM1 coordinate transform; it does not change the model data, slice selection, or
-diagnostic values. Projection labels should be explicit:
+The MVP viewer uses a fixed scientific workbench rather than a long scrolling
+page section or a pretend physical camera. The workbench should keep primary
+visual controls near the viewport, keep timeline and slice-position controls
+directly below the render, and move provenance/details into a secondary
+collapsible panel. Zoom scales the rendered data layer while preserving the
+underlying CM1 coordinate transform; it does not change the model data, slice
+selection, axes labels, or diagnostic values. Projection labels should be
+explicit:
 
 - `Side x-z`: height is vertical; `y` is compressed or hidden.
 - `Side y-z`: height is vertical; `x` is compressed or hidden.

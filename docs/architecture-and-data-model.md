@@ -365,13 +365,15 @@ oblique overview modes. The domain box, floor, axes, and points must share the
 same transform so horizontal `y` does not masquerade as height. Oblique overview
 is an interpretation for orientation, not a literal atmospheric photograph.
 
-The frontend viewport should use one stable internal plotting coordinate system
-for the domain box, floor/grid, slice planes, scale markers, and point cloud.
-Zoom scales that plotting group while preserving aspect ratio; it does not
-change CM1 coordinates or data selection. Until a true camera is implemented,
-controls should be described as view/projection controls rather than orbit or
-pan camera controls. Scale markers should expose horizontal distance, visible
-height, the domain floor, and active cloud-water `z` range.
+The frontend viewport should be a fixed scientific workbench: a primary control
+rail, a stable render viewport, a bottom timeline/slice-position strip, and a
+secondary technical details panel. The domain box, floor/grid, slice planes, and
+point cloud share one data-layer transform. Zoom scales that data layer while
+preserving aspect ratio; axes, scale markers, and annotations remain readable
+and do not become part of the zoomed data layer. Until a true camera is
+implemented, controls should be described as view/projection controls rather
+than orbit or pan camera controls. Scale markers should expose horizontal
+distance, visible height, the domain floor, and active cloud-water `z` range.
 
 3-D slice planes reuse the same backend slice endpoint as the 2-D inspector:
 
