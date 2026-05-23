@@ -719,8 +719,14 @@ output/time-step summary, saved/protected state, and quick actions to Inspect
 or Visualize each result. It should explain that Dry Failed Cumulus is not a
 failed model run when vertical motion is present and cloud water stays below
 threshold. Technical run IDs, lifecycle strings, and provenance labels remain
-available in details rather than primary comparison copy. Side-by-side 2-D
-slice comparison belongs in a follow-up after this first result-card workflow.
+available in details rather than primary comparison copy.
+
+The next comparison step adds side-by-side 2-D slices for the same accepted lab
+pair. It consumes the existing backend visualization-ready fields/slice API for
+`qc` and `w`, supports shared output-index selection with mismatch labels when
+times differ, and shows units, min/max, finite/non-finite counts, and provenance
+for each result. The browser still does not parse raw NetCDF or implement new
+3-D rendering for this comparison.
 
 Completed results should be replayable and inspectable without rerunning CM1. Duplicate/tweak/rerun is useful later, but replay/inspect/save is the core MVP result-library behavior.
 
