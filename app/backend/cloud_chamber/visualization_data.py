@@ -152,8 +152,19 @@ class PointCloudStats(BaseModel):
     returned_count: int
     min_value: float | None = None
     max_value: float | None = None
+    active_z_min: float | None = None
+    active_z_max: float | None = None
+    max_value_location: dict[str, float] | None = None
     downsampled: bool
     downsample_stride: int
+
+
+class CoordinateExtent(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    min: float
+    max: float
+    units: str | None = None
 
 
 class PointCloudResponse(BaseModel):
@@ -165,6 +176,7 @@ class PointCloudResponse(BaseModel):
     field: VisualizableField
     selection: PointCloudSelectionMetadata
     coordinate_units: dict[str, str | None] = Field(default_factory=dict)
+    coordinate_extents: dict[str, CoordinateExtent] = Field(default_factory=dict)
     point_order: list[str]
     points: list[list[float]]
     stats: PointCloudStats
@@ -183,6 +195,8 @@ class FieldViewDefaults(BaseModel):
     vertical_y_index: int
     source: str
     max_value: float | None = None
+    selected_time_index: int | None = None
+    selected_time_seconds: float | None = None
     caveats: list[str] = Field(default_factory=list)
 
 
@@ -221,7 +235,12 @@ def field_catalog(settings: CloudChamberSettings, result_id: str) -> FieldCatalo
         _close_all(close_datasets)
 
 
-def view_defaults(settings: CloudChamberSettings, result_id: str) -> ViewDefaultsResponse:
+def view_defaults(
+    settings: CloudChamberSettings,
+    result_id: str,
+    *,
+    time_index: int | None = None,
+) -> ViewDefaultsResponse:
     """Return physically interesting default field/time/slice locations."""
     metadata = get_result_metadata(settings, result_id)
     dataset, close_datasets = _open_dataset_sequence(metadata)
@@ -229,7 +248,12 @@ def view_defaults(settings: CloudChamberSettings, result_id: str) -> ViewDefault
         fields: dict[str, FieldViewDefaults] = {}
         for field_name in ("qc", "w"):
             if field_name in dataset.data_vars:
-                fields[field_name] = _field_view_defaults(metadata, dataset, field_name)
+                fields[field_name] = _field_view_defaults(
+                    metadata,
+                    dataset,
+                    field_name,
+                    time_index=time_index,
+                )
         preferred = "qc" if "qc" in fields else next(iter(fields), None)
         return ViewDefaultsResponse(
             result_id=metadata.result_id,
@@ -249,6 +273,11 @@ def view_defaults(settings: CloudChamberSettings, result_id: str) -> ViewDefault
             caveats=_dedupe(
                 [
                     "default_locations_are_native_grid_indices",
+                    *(
+                        ["default_locations_are_selected_time_native_grid_indices"]
+                        if time_index is not None
+                        else []
+                    ),
                     *metadata.warnings,
                     *(["missing_visualization_field:qc"] if "qc" not in fields else []),
                     *(["missing_visualization_field:w"] if "w" not in fields else []),
@@ -302,6 +331,16 @@ def point_cloud(
         stride = max(1, math.ceil(source_count / max_points)) if source_count else 1
         returned_points = source_points[::stride][:max_points]
         values = [point[3] for point in source_points]
+        coordinate_extents = {
+            str(dims.x): _coordinate_extent(dataset, dims.x),
+            str(dims.y): _coordinate_extent(dataset, dims.y),
+            str(dims.vertical): _coordinate_extent(dataset, dims.vertical),
+        }
+        finite_extents = {
+            name: extent for name, extent in coordinate_extents.items() if extent is not None
+        }
+        active_z_values = [point[2] for point in source_points]
+        max_location = _max_point_location(source_points)
         visual_field = _visualizable_field(metadata, dataset, field)
         caveats = _dedupe(
             [
@@ -332,6 +371,7 @@ def point_cloud(
                 str(dims.y): _coordinate_units(dataset, dims.y),
                 str(dims.vertical): _coordinate_units(dataset, dims.vertical),
             },
+            coordinate_extents=finite_extents,
             point_order=["x", "y", "z", "value"],
             points=returned_points,
             stats=PointCloudStats(
@@ -339,6 +379,9 @@ def point_cloud(
                 returned_count=len(returned_points),
                 min_value=min(values) if values else None,
                 max_value=max(values) if values else None,
+                active_z_min=min(active_z_values) if active_z_values else None,
+                active_z_max=max(active_z_values) if active_z_values else None,
+                max_value_location=max_location,
                 downsampled=source_count > max_points,
                 downsample_stride=stride,
             ),
@@ -361,6 +404,8 @@ def _field_view_defaults(
     metadata: ResultMetadata,
     dataset: Any,
     field_name: str,
+    *,
+    time_index: int | None = None,
 ) -> FieldViewDefaults:
     data_array = dataset[field_name]
     dims = _field_dimensions(data_array)
@@ -373,12 +418,20 @@ def _field_view_defaults(
             dims=dims,
             source="domain_center_missing_required_dimensions",
             caveats=caveats,
+            selected_time_index=time_index,
         )
 
-    values = data_array.values
+    selected_time_seconds: float | None = None
+    search_array = data_array
+    if time_index is not None:
+        _validate_index(time_index, int(data_array.sizes[dims.time]), "time_index")
+        search_array = data_array.isel({dims.time: time_index})
+        selected_time_seconds = _time_value_seconds(dataset, dims.time, time_index)
+        caveats = [*caveats, "default_location_uses_selected_time_maximum"]
+    values = search_array.values
     best_value: float | None = None
     best_index: tuple[int, ...] | None = None
-    for native_index in itertools.product(*(range(int(size)) for size in data_array.shape)):
+    for native_index in itertools.product(*(range(int(size)) for size in search_array.shape)):
         raw_value = values[native_index]
         try:
             numeric = float(raw_value)
@@ -398,22 +451,39 @@ def _field_view_defaults(
             dims=dims,
             source="domain_center_no_finite_values",
             caveats=[*caveats, f"no_finite_values_in_{field_name}"],
+            selected_time_index=time_index,
         )
 
     time_axis = data_array.dims.index(dims.time)
     vertical_axis = data_array.dims.index(dims.vertical)
     y_axis = data_array.dims.index(dims.y)
     x_axis = data_array.dims.index(dims.x)
-    time_index = int(best_index[time_axis])
+    if time_index is None:
+        resolved_time_index = int(best_index[time_axis])
+        resolved_best_index = best_index
+    else:
+        resolved_time_index = time_index
+        axes_without_time = [dimension for dimension in data_array.dims if dimension != dims.time]
+        resolved_lookup = dict(zip(axes_without_time, best_index, strict=True))
+        resolved_best_index = tuple(
+            time_index if dimension == dims.time else int(resolved_lookup[dimension])
+            for dimension in data_array.dims
+        )
     return FieldViewDefaults(
         field=field_name,
-        time_index=time_index,
-        time_seconds=_time_value_seconds(dataset, dims.time, time_index),
-        horizontal_level_index=int(best_index[vertical_axis]),
-        vertical_x_index=int(best_index[y_axis]),
-        vertical_y_index=int(best_index[x_axis]),
-        source=f"max_{field_name}_native_grid_location",
+        time_index=resolved_time_index,
+        time_seconds=_time_value_seconds(dataset, dims.time, resolved_time_index),
+        horizontal_level_index=int(resolved_best_index[vertical_axis]),
+        vertical_x_index=int(resolved_best_index[y_axis]),
+        vertical_y_index=int(resolved_best_index[x_axis]),
+        source=(
+            f"selected_time_max_{field_name}_native_grid_location"
+            if time_index is not None
+            else f"max_{field_name}_native_grid_location"
+        ),
         max_value=best_value,
+        selected_time_index=time_index,
+        selected_time_seconds=selected_time_seconds,
         caveats=_dedupe([*caveats, "default_location_uses_field_maximum"]),
     )
 
@@ -426,12 +496,17 @@ def _fallback_view_defaults(
     dims: _FieldDimensions,
     source: str,
     caveats: list[str],
+    selected_time_index: int | None = None,
 ) -> FieldViewDefaults:
     time_size = int(data_array.sizes[dims.time]) if dims.time else 1
     vertical_size = int(data_array.sizes[dims.vertical]) if dims.vertical else 1
     y_size = int(data_array.sizes[dims.y]) if dims.y else 1
     x_size = int(data_array.sizes[dims.x]) if dims.x else 1
-    time_index = max(0, time_size - 1)
+    time_index = (
+        max(0, min(selected_time_index, time_size - 1))
+        if selected_time_index is not None
+        else max(0, time_size - 1)
+    )
     return FieldViewDefaults(
         field=field_name,
         time_index=time_index,
@@ -441,6 +516,10 @@ def _fallback_view_defaults(
         vertical_y_index=max(0, x_size // 2),
         source=source,
         max_value=None,
+        selected_time_index=selected_time_index,
+        selected_time_seconds=_time_value_seconds(dataset, dims.time, time_index)
+        if selected_time_index is not None
+        else None,
         caveats=_dedupe([*caveats, "default_location_fell_back_to_domain_center"]),
     )
 
@@ -688,6 +767,37 @@ def _coordinate_number(values: list[float | str | None], index: int) -> float:
         except (TypeError, ValueError):
             return float(index)
     return float(index)
+
+
+def _coordinate_extent(dataset: Any, coordinate_name: str | None) -> CoordinateExtent | None:
+    values = [
+        value
+        for value in (_coordinate_number_values(dataset, coordinate_name))
+        if math.isfinite(value)
+    ]
+    if not values or coordinate_name is None:
+        return None
+    return CoordinateExtent(
+        min=min(values),
+        max=max(values),
+        units=_coordinate_units(dataset, coordinate_name),
+    )
+
+
+def _coordinate_number_values(dataset: Any, coordinate_name: str | None) -> list[float]:
+    if coordinate_name is None:
+        return []
+    return [
+        _coordinate_number(_coordinate_values(dataset, coordinate_name), index)
+        for index in range(int(dataset.sizes.get(coordinate_name, 0)))
+    ]
+
+
+def _max_point_location(points: list[list[float]]) -> dict[str, float] | None:
+    if not points:
+        return None
+    best = max(points, key=lambda point: point[3])
+    return {"x": best[0], "y": best[1], "z": best[2], "value": best[3]}
 
 
 def _validate_index(index: int, size: int, label: str) -> None:

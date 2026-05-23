@@ -105,20 +105,23 @@ Cloud-water point-cloud tests should use tiny synthetic NetCDF fixtures on the
 backend and mocked visualization-ready point payloads on the frontend. Backend
 tests should cover `qc` points above threshold, no points above threshold,
 missing `qc`, bad time/threshold/max-point inputs, deterministic stride
-downsampling, stats, coordinate units, and provenance labels. Frontend tests
-should cover rendered point-cloud state, missing `qc`, no-cloud-above-threshold
-state, threshold/time/opacity/point-size controls, provenance/rendering labels,
-and the guarantee that the browser does not parse raw NetCDF. These tests must
-not add ray marching, isosurfaces, shadows, fly-through, export, or generated
-CM1 output.
+downsampling, stats, full coordinate extents, active `z` range, max-value
+location, coordinate units, and provenance labels. Frontend tests should cover
+rendered point-cloud state, missing `qc`, no-cloud-above-threshold state,
+threshold/time/opacity/point-size controls, side/elevation projection controls
+where model `z` is the visual height, domain extent/debug labels,
+provenance/rendering labels, and the guarantee that the browser does not parse
+raw NetCDF. These tests must not add ray marching, isosurfaces, shadows,
+fly-through, export, or generated CM1 output.
 
 3-D slice-plane tests should mock the #72 visualization-ready slice API. They
 should cover horizontal and vertical slice planes, `qc` and `w` field selection,
 time synchronization with the 3-D point cloud, native-grid caveats/provenance
-labels, slice-plane show/hide behavior, view presets, and clear error states for
-missing fields or bad slice requests. They must not parse raw NetCDF in the
-browser, add rendering dependencies, or test ray marching, cinematic lighting,
-export, fly-through, or generated CM1 output.
+labels, selected-time max `qc`/`w` default locations, slice-plane show/hide
+behavior, view presets, and clear error states for missing fields or bad slice
+requests. They must not parse raw NetCDF in the browser, add rendering
+dependencies, or test ray marching, cinematic lighting, export, fly-through, or
+generated CM1 output.
 Visual first-impression tests should also keep the validated quick-look baseline
 on a cloud-bearing time, show a visible point-cloud state, keep slice planes
 optional and secondary, and keep technical provenance reachable without making

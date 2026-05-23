@@ -252,11 +252,20 @@ def test_point_cloud_returns_qc_points_above_threshold(tmp_path: Path) -> None:
     assert cloud.selection.time_seconds == 0.0
     assert cloud.point_order == ["x", "y", "z", "value"]
     assert cloud.coordinate_units == {"xh": "km", "yh": "km", "zh": "km"}
+    assert cloud.coordinate_extents["xh"].min == 0.0
+    assert cloud.coordinate_extents["xh"].max == 3.0
+    assert cloud.coordinate_extents["yh"].min == 0.0
+    assert cloud.coordinate_extents["yh"].max == 2.0
+    assert cloud.coordinate_extents["zh"].min == 0.4
+    assert cloud.coordinate_extents["zh"].max == 0.8
     assert cloud.stats.source_count == 23
     assert cloud.stats.returned_count == 23
     assert cloud.stats.downsampled is False
     assert cloud.stats.min_value == 1e-6
     assert cloud.stats.max_value == 2.3e-05
+    assert cloud.stats.active_z_min == 0.4
+    assert cloud.stats.active_z_max == 0.8
+    assert cloud.stats.max_value_location == {"x": 3.0, "y": 2.0, "z": 0.8, "value": 2.3e-05}
     assert cloud.points[0] == [1.0, 0.0, 0.4, 1e-6]
     assert cloud.provenance.processing_method == "backend_xarray_native_grid_threshold"
     assert cloud.provenance.rendering_method == "thresholded_point_cloud"
@@ -283,6 +292,29 @@ def test_view_defaults_choose_native_grid_max_locations(tmp_path: Path) -> None:
     assert defaults.fields["w"].vertical_y_index == 3
     assert "default_locations_are_native_grid_indices" in defaults.caveats
     assert defaults.provenance.processing_method == "backend_xarray_interesting_view_defaults"
+
+
+def test_view_defaults_can_choose_selected_time_max_locations(tmp_path: Path) -> None:
+    settings, result_id, _run_dir = create_visualization_result(tmp_path)
+
+    defaults = view_defaults(settings, result_id, time_index=0)
+
+    assert defaults.fields["qc"].source == "selected_time_max_qc_native_grid_location"
+    assert defaults.fields["qc"].time_index == 0
+    assert defaults.fields["qc"].time_seconds == 0.0
+    assert defaults.fields["qc"].selected_time_index == 0
+    assert defaults.fields["qc"].selected_time_seconds == 0.0
+    assert defaults.fields["qc"].horizontal_level_index == 1
+    assert defaults.fields["qc"].vertical_x_index == 2
+    assert defaults.fields["qc"].vertical_y_index == 3
+    assert defaults.fields["qc"].max_value == 2.3e-05
+    assert defaults.fields["w"].source == "selected_time_max_w_native_grid_location"
+    assert defaults.fields["w"].time_index == 0
+    assert defaults.fields["w"].horizontal_level_index == 2
+    assert defaults.fields["w"].vertical_x_index == 2
+    assert defaults.fields["w"].vertical_y_index == 3
+    assert defaults.fields["w"].max_value == 35.0
+    assert "default_locations_are_selected_time_native_grid_indices" in defaults.caveats
 
 
 def test_point_cloud_reports_no_points_above_threshold(tmp_path: Path) -> None:
@@ -439,7 +471,10 @@ def test_visualization_api_returns_field_catalog_and_slice(
     client = TestClient(app)
 
     catalog = client.get(f"/api/results/{result_id}/visualization/fields")
-    defaults = client.get(f"/api/results/{result_id}/visualization/defaults")
+    defaults = client.get(
+        f"/api/results/{result_id}/visualization/defaults",
+        params={"time_index": 0},
+    )
     sliced = client.get(
         f"/api/results/{result_id}/visualization/slice",
         params={
@@ -454,8 +489,8 @@ def test_visualization_api_returns_field_catalog_and_slice(
     assert catalog.status_code == 200
     assert catalog.json()["available_fields"][0]["provenance"]["source_model"] == "CM1"
     assert defaults.status_code == 200
-    assert defaults.json()["fields"]["qc"]["source"] == "max_qc_native_grid_location"
-    assert defaults.json()["fields"]["w"]["source"] == "max_w_native_grid_location"
+    assert defaults.json()["fields"]["qc"]["source"] == "selected_time_max_qc_native_grid_location"
+    assert defaults.json()["fields"]["w"]["source"] == "selected_time_max_w_native_grid_location"
     assert sliced.status_code == 200
     payload = sliced.json()
     assert payload["field"]["canonical_field_name"] == "cloud_water"

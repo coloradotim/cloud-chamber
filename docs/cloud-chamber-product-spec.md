@@ -780,12 +780,21 @@ The browser should not parse raw CM1 NetCDF directly. Backend ingest and visuali
 
 The first cloud-water renderer uses a thresholded point cloud. The backend
 selects `qc` at a chosen output time, keeps native `zh/yh/xh` grid coordinates,
-returns points where `qc >= 1e-6 kg/kg` by default, and deterministically
-downsamples if needed. The browser renders those returned points only; it does
-not parse raw NetCDF, interpolate, run marching cubes, extract isosurfaces, ray
-march, or invent cloud physics. The rendering method should be labeled
-`thresholded_point_cloud`, and the processing method should identify the native
-grid threshold operation.
+returns points where `qc >= 1e-6 kg/kg` by default, reports full NetCDF
+coordinate extents, active cloud-water height range, point count, max value, and
+max-value location, and deterministically downsamples if needed. The browser
+renders those returned points only; it does not parse raw NetCDF, interpolate,
+run marching cubes, extract isosurfaces, ray march, or invent cloud physics. The
+rendering method should be labeled `thresholded_point_cloud`, and the processing
+method should identify the native grid threshold operation.
+
+Point placement must use full coordinate extents from the payload, not the
+min/max of returned cloudy points. Side/elevation views are the first scientific
+check: `Side x-z` and `Side y-z` map model height `z` to visual height so cloud
+base/top are legible. `Top-down x-y` is for horizontal footprint, and `Oblique
+overview` is an interpretive overview. The domain box, floor, axis labels, and
+points should use the same coordinate transform, with technical details showing
+the actual coordinate units and visualized extent.
 
 The first 3-D slice planes reuse the #72 JSON slice endpoint. The scene can
 request horizontal and vertical native-grid slices for the selected slice field
@@ -808,9 +817,12 @@ The 3-D viewer should provide simple view presets:
 The viewer should also provide quick jumps for first cloud, max cloud water, and
 max updraft when result diagnostics provide enough timing metadata. Slice-plane
 defaults should avoid empty zero-index views where a center/cloud-bearing level
-is more useful. Native-grid/no-interpolation caveats and rendering provenance
-must stay available, but long technical labels belong under `About this
-visualization` rather than dominating the primary view.
+is more useful. Slice defaults should be selected for the current output time:
+`qc` slices should center on the selected-time max cloud-water cell, and `w`
+slices should center on the selected-time max-updraft cell. Native-grid/no-
+interpolation caveats and rendering provenance must stay available, but long
+technical labels belong under `About this visualization` rather than dominating
+the primary view.
 
 The first 3-D impression should make the validated quick-look baseline obvious:
 opening from Results should land on the first-cloud or max-cloud-water time when

@@ -211,6 +211,7 @@ type PointCloudResponse = {
     max_points: number;
   };
   coordinate_units: Record<string, string | null>;
+  coordinate_extents: Record<string, { min: number; max: number; units: string | null }>;
   point_order: string[];
   points: Array<[number, number, number, number]>;
   stats: {
@@ -218,6 +219,9 @@ type PointCloudResponse = {
     returned_count: number;
     min_value: number | null;
     max_value: number | null;
+    active_z_min: number | null;
+    active_z_max: number | null;
+    max_value_location: { x: number; y: number; z: number; value: number } | null;
     downsampled: boolean;
     downsample_stride: number;
   };
@@ -234,6 +238,8 @@ type FieldViewDefaults = {
   vertical_y_index: number;
   source: string;
   max_value: number | null;
+  selected_time_index: number | null;
+  selected_time_seconds: number | null;
   caveats: string[];
 };
 
@@ -249,6 +255,7 @@ type ViewDefaultsResponse = {
 
 type InspectorViewMode = "horizontal" | "vertical_x" | "vertical_y" | "compare";
 type SceneViewPreset = "cloud-overview" | "vertical-cross-section" | "top-down-slice" | "updraft";
+type ProjectionMode = "oblique" | "side_xz" | "side_yz" | "top_down";
 
 async function fetchScenarioCatalog(): Promise<ScenarioResponse> {
   const response = await fetch("/api/scenarios");
@@ -317,8 +324,12 @@ async function fetchVisualizationFields(resultId: string): Promise<FieldCatalogR
   return response.json() as Promise<FieldCatalogResponse>;
 }
 
-async function fetchVisualizationDefaults(resultId: string): Promise<ViewDefaultsResponse> {
-  const response = await fetch(`/api/results/${resultId}/visualization/defaults`);
+async function fetchVisualizationDefaults(
+  resultId: string,
+  timeIndex?: number,
+): Promise<ViewDefaultsResponse> {
+  const search = timeIndex === undefined ? "" : `?time_index=${timeIndex}`;
+  const response = await fetch(`/api/results/${resultId}/visualization/defaults${search}`);
   if (!response.ok) {
     throw new Error(await responseError(response, "Unable to load visualization defaults."));
   }
@@ -1390,6 +1401,7 @@ function ResultNotebookCard({
 function VisualizerSceneShell({ result }: { result: ResultCard }) {
   const [catalog, setCatalog] = useState<FieldCatalogResponse | null>(null);
   const [viewDefaults, setViewDefaults] = useState<ViewDefaultsResponse | null>(null);
+  const [selectedTimeDefaults, setSelectedTimeDefaults] = useState<ViewDefaultsResponse | null>(null);
   const [selectedFieldName, setSelectedFieldName] = useState("");
   const [timeIndex, setTimeIndex] = useState(0);
   const [cameraMode, setCameraMode] = useState<"orbit" | "pan">("orbit");
@@ -1400,6 +1412,7 @@ function VisualizerSceneShell({ result }: { result: ResultCard }) {
   const [isPlaying, setIsPlaying] = useState(false);
   const [pointCloud, setPointCloud] = useState<PointCloudResponse | null>(null);
   const [viewPreset, setViewPreset] = useState<SceneViewPreset>("cloud-overview");
+  const [projectionMode, setProjectionMode] = useState<ProjectionMode>("oblique");
   const [showSlicePlanes, setShowSlicePlanes] = useState(false);
   const [sliceFieldName, setSliceFieldName] = useState("qc");
   const [sliceOrientation, setSliceOrientation] = useState<"vertical_x" | "vertical_y">("vertical_x");
@@ -1416,6 +1429,7 @@ function VisualizerSceneShell({ result }: { result: ResultCard }) {
     let active = true;
     setCatalog(null);
     setViewDefaults(null);
+    setSelectedTimeDefaults(null);
     setSceneError(null);
     setSelectedFieldName("");
     setTimeIndex(0);
@@ -1427,6 +1441,7 @@ function VisualizerSceneShell({ result }: { result: ResultCard }) {
     setIsPlaying(false);
     setPointCloud(null);
     setViewPreset("cloud-overview");
+    setProjectionMode("oblique");
     setShowSlicePlanes(false);
     setSliceFieldName("qc");
     setSliceOrientation("vertical_x");
@@ -1504,6 +1519,8 @@ function VisualizerSceneShell({ result }: { result: ResultCard }) {
     "CM1-derived visualization-ready data; rendering not implemented";
   const selectedDefaults = defaultsForField(viewDefaults, selectedFieldName);
   const sliceDefaults = defaultsForField(viewDefaults, sliceFieldName);
+  const selectedTimeFieldDefaults = defaultsForField(selectedTimeDefaults, selectedFieldName);
+  const selectedTimeSliceDefaults = defaultsForField(selectedTimeDefaults, sliceFieldName);
   const selectedTimeValue = timeOptions[Math.min(timeIndex, timeMax)] ?? null;
   const selectedTimeLabel = formatTimeValue(selectedTimeValue);
 
@@ -1529,6 +1546,23 @@ function VisualizerSceneShell({ result }: { result: ResultCard }) {
             ? "Cloud-water point cloud loaded"
             : "No cloud water above threshold",
         );
+        return fetchVisualizationDefaults(result.result_id, timeIndex)
+          .then((defaults) => {
+            if (!active) return;
+            setSelectedTimeDefaults(defaults);
+            const fieldDefaults = defaultsForField(defaults, selectedField.raw_field_name);
+            if (fieldDefaults) {
+              setHorizontalSliceLevel(fieldDefaults.horizontal_level_index);
+              setVerticalSliceIndex(
+                sliceOrientation === "vertical_y"
+                  ? fieldDefaults.vertical_y_index
+                  : fieldDefaults.vertical_x_index,
+              );
+            }
+          })
+          .catch(() => {
+            if (active) setSelectedTimeDefaults(null);
+          });
       })
       .catch((caught: unknown) => {
         if (!active) return;
@@ -1541,7 +1575,7 @@ function VisualizerSceneShell({ result }: { result: ResultCard }) {
     return () => {
       active = false;
     };
-  }, [maxPoints, result.result_id, selectedField, threshold, timeIndex]);
+  }, [maxPoints, result.result_id, selectedField, sliceOrientation, threshold, timeIndex]);
 
   useEffect(() => {
     if (!sliceField) {
@@ -1626,10 +1660,19 @@ function VisualizerSceneShell({ result }: { result: ResultCard }) {
         <div className="scene-container" aria-label="3-D scene container">
           <div className="scene-horizon" />
           <div className="scene-grid" />
-          <div className="domain-box" aria-label="Domain bounding box">
-            <span className="axis-label axis-label-x">x</span>
-            <span className="axis-label axis-label-y">y</span>
-            <span className="axis-label axis-label-z">height</span>
+          <div
+            className={`domain-box domain-box-${projectionMode}`}
+            aria-label="Domain bounding box"
+          >
+            <span className="axis-label axis-label-x">
+              {projectionMode === "side_yz" ? "y" : "x"}
+            </span>
+            <span className="axis-label axis-label-y">
+              {projectionMode === "side_xz" ? "depth y" : projectionMode === "top_down" ? "y" : "depth y"}
+            </span>
+            <span className="axis-label axis-label-z">
+              {projectionMode === "top_down" ? "top-down x-y" : "height z"}
+            </span>
             <span className="ground-label">domain floor</span>
           </div>
           <div className="scene-context-label">
@@ -1654,7 +1697,8 @@ function VisualizerSceneShell({ result }: { result: ResultCard }) {
                   key={`${point.join("-")}-${index}`}
                   style={cloudPointStyle(
                     point,
-                    pointCloud.points,
+                    pointCloud,
+                    projectionMode,
                     pointCloud.stats,
                     opacity,
                     pointSize,
@@ -1734,6 +1778,7 @@ function VisualizerSceneShell({ result }: { result: ResultCard }) {
                       setVerticalSliceIndex,
                       setSliceOrientation,
                       setShowSlicePlanes,
+                      setProjectionMode,
                     })
                   }
                 >
@@ -1755,6 +1800,7 @@ function VisualizerSceneShell({ result }: { result: ResultCard }) {
                       setVerticalSliceIndex,
                       setSliceOrientation,
                       setShowSlicePlanes,
+                      setProjectionMode,
                     })
                   }
                 >
@@ -1776,6 +1822,7 @@ function VisualizerSceneShell({ result }: { result: ResultCard }) {
                       setVerticalSliceIndex,
                       setSliceOrientation,
                       setShowSlicePlanes,
+                      setProjectionMode,
                     })
                   }
                 >
@@ -1797,6 +1844,7 @@ function VisualizerSceneShell({ result }: { result: ResultCard }) {
                       setVerticalSliceIndex,
                       setSliceOrientation,
                       setShowSlicePlanes,
+                      setProjectionMode,
                     })
                   }
                 >
@@ -1806,6 +1854,45 @@ function VisualizerSceneShell({ result }: { result: ResultCard }) {
               <small>
                 Defaults use first cloud time or native-grid maxima when available; fallback is the
                 domain center.
+              </small>
+            </fieldset>
+          )}
+
+          {catalog && selectedField && (
+            <fieldset>
+              <legend>Projection</legend>
+              <div className="segmented-buttons">
+                <button
+                  type="button"
+                  className={projectionMode === "side_xz" ? "active-control" : ""}
+                  onClick={() => setProjectionMode("side_xz")}
+                >
+                  Side x-z
+                </button>
+                <button
+                  type="button"
+                  className={projectionMode === "side_yz" ? "active-control" : ""}
+                  onClick={() => setProjectionMode("side_yz")}
+                >
+                  Side y-z
+                </button>
+                <button
+                  type="button"
+                  className={projectionMode === "top_down" ? "active-control" : ""}
+                  onClick={() => setProjectionMode("top_down")}
+                >
+                  Top-down x-y
+                </button>
+                <button
+                  type="button"
+                  className={projectionMode === "oblique" ? "active-control" : ""}
+                  onClick={() => setProjectionMode("oblique")}
+                >
+                  Oblique overview
+                </button>
+              </div>
+              <small>
+                Side views map model height z to screen height for cloud-base and cloud-top checks.
               </small>
             </fieldset>
           )}
@@ -2049,7 +2136,7 @@ function VisualizerSceneShell({ result }: { result: ResultCard }) {
               <Metric label="View preset" value={humanize(viewPreset)} />
               <Metric
                 label="Default source"
-                value={selectedDefaults?.source ?? "domain center fallback"}
+                value={selectedTimeFieldDefaults?.source ?? selectedDefaults?.source ?? "domain center fallback"}
               />
               <Metric
                 label="Slice field"
@@ -2066,6 +2153,38 @@ function VisualizerSceneShell({ result }: { result: ResultCard }) {
                     ? `${sceneVerticalSlice.selection.orientation} at ${sceneVerticalSlice.selection.selected_dimension}[${sceneVerticalSlice.selection.selected_index}]`
                     : "Unavailable"
                 }
+              />
+              <Metric label="Projection" value={humanize(projectionMode)} />
+              <Metric
+                label="Domain x extent"
+                value={extentLabel(pointCloud, "xh")}
+              />
+              <Metric
+                label="Domain y extent"
+                value={extentLabel(pointCloud, "yh")}
+              />
+              <Metric
+                label="Domain z extent"
+                value={extentLabel(pointCloud, "zh")}
+              />
+              <Metric
+                label="Active cloud z range"
+                value={
+                  pointCloud
+                    ? `${formatMaybeNumber(pointCloud.stats.active_z_min, pointCloud.coordinate_units.zh ?? null)} to ${formatMaybeNumber(
+                        pointCloud.stats.active_z_max,
+                        pointCloud.coordinate_units.zh ?? null,
+                      )}`
+                    : "Unavailable"
+                }
+              />
+              <Metric
+                label="Max cloud-water location"
+                value={maxPointLocationLabel(pointCloud)}
+              />
+              <Metric
+                label="Selected-time slice default"
+                value={selectedTimeSliceDefaults?.source ?? "Unavailable"}
               />
             </dl>
 
@@ -2604,32 +2723,77 @@ function formatTimeValue(value: number | string | null): string {
 
 function cloudPointStyle(
   point: [number, number, number, number],
-  points: Array<[number, number, number, number]>,
+  pointCloud: PointCloudResponse,
+  projectionMode: ProjectionMode,
   stats: PointCloudResponse["stats"],
   opacity: number,
   pointSize: number,
 ): CSSProperties {
-  const xs = points.map((candidate) => candidate[0]);
-  const ys = points.map((candidate) => candidate[1]);
-  const zs = points.map((candidate) => candidate[2]);
-  const x = normalize(point[0], Math.min(...xs), Math.max(...xs));
-  const y = normalize(point[1], Math.min(...ys), Math.max(...ys));
-  const z = normalize(point[2], Math.min(...zs), Math.max(...zs));
+  const x = normalizeWithExtent(point[0], pointCloud.coordinate_extents.xh);
+  const y = normalizeWithExtent(point[1], pointCloud.coordinate_extents.yh);
+  const z = normalizeWithExtent(point[2], pointCloud.coordinate_extents.zh);
   const intensity = normalize(point[3], stats.min_value ?? point[3], stats.max_value ?? point[3]);
+  const projected = projectPoint(x, y, z, projectionMode);
+  const depthOpacity = projectionMode === "side_xz" ? 0.65 + y * 0.35 : 0.65 + x * 0.35;
   return {
-    left: `${12 + x * 76}%`,
-    bottom: `${16 + y * 44}%`,
+    left: `${projected.left}%`,
+    bottom: `${projected.bottom}%`,
     width: `${pointSize}px`,
     height: `${pointSize}px`,
-    opacity,
-    transform: `translate(-50%, 50%) translateY(${-z * 92}px) scale(${0.8 + intensity * 0.75})`,
+    opacity: opacity * depthOpacity,
+    transform: `translate(-50%, 50%) scale(${0.8 + intensity * 0.75})`,
     background: `rgba(229, 250, 255, ${0.44 + intensity * 0.46})`,
   };
+}
+
+function projectPoint(
+  x: number,
+  y: number,
+  z: number,
+  projectionMode: ProjectionMode,
+): { left: number; bottom: number } {
+  if (projectionMode === "side_xz") {
+    return { left: 12 + x * 76, bottom: 14 + z * 72 };
+  }
+  if (projectionMode === "side_yz") {
+    return { left: 12 + y * 76, bottom: 14 + z * 72 };
+  }
+  if (projectionMode === "top_down") {
+    return { left: 12 + x * 76, bottom: 14 + y * 72 };
+  }
+  return {
+    left: 18 + (x * 0.72 + y * 0.28) * 64,
+    bottom: 16 + z * 62 + y * 10,
+  };
+}
+
+function normalizeWithExtent(
+  value: number,
+  extent: { min: number; max: number; units: string | null } | undefined,
+): number {
+  if (!extent) return 0.5;
+  return normalize(value, extent.min, extent.max);
 }
 
 function normalize(value: number, min: number, max: number): number {
   if (max <= min) return 0.5;
   return (value - min) / (max - min);
+}
+
+function extentLabel(pointCloud: PointCloudResponse | null, coordinate: string): string {
+  const extent = pointCloud?.coordinate_extents[coordinate];
+  if (!extent) return "Unavailable";
+  const suffix = extent.units ? ` ${extent.units}` : "";
+  return `${formatCompactNumber(extent.min)} to ${formatCompactNumber(extent.max)}${suffix}`;
+}
+
+function maxPointLocationLabel(pointCloud: PointCloudResponse | null): string {
+  const location = pointCloud?.stats.max_value_location;
+  if (!location) return "Unavailable";
+  const units = pointCloud?.coordinate_units.zh ?? "";
+  return `x ${formatCompactNumber(location.x)}, y ${formatCompactNumber(location.y)}, z ${formatCompactNumber(
+    location.z,
+  )}${units ? ` ${units}` : ""}, value ${formatCompactNumber(location.value)}`;
 }
 
 function sliceCellStyle(value: number | null, stats: SliceResponse["stats"]): CSSProperties {
@@ -2857,6 +3021,7 @@ function applyScenePreset(
     setVerticalSliceIndex: (index: number) => void;
     setSliceOrientation: (orientation: "vertical_x" | "vertical_y") => void;
     setShowSlicePlanes: (show: boolean) => void;
+    setProjectionMode: (mode: ProjectionMode) => void;
   },
 ): void {
   const fieldName = preset === "updraft" ? "w" : "qc";
@@ -2875,6 +3040,15 @@ function applyScenePreset(
   options.setVerticalSliceIndex(defaultVerticalIndex(field, orientation, defaults));
   options.setSliceOrientation(orientation);
   options.setShowSlicePlanes(preset !== "cloud-overview");
+  options.setProjectionMode(
+    preset === "vertical-cross-section"
+      ? "side_xz"
+      : preset === "top-down-slice"
+        ? "top_down"
+        : preset === "updraft"
+          ? "side_yz"
+          : "oblique",
+  );
 }
 
 function closestTimeIndex(

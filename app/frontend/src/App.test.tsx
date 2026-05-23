@@ -264,6 +264,8 @@ const viewDefaultsResponse = {
       vertical_y_index: 2,
       source: "max_qc_native_grid_location",
       max_value: 0.00002,
+      selected_time_index: null,
+      selected_time_seconds: null,
       caveats: ["default_location_uses_field_maximum"],
     },
     w: {
@@ -275,6 +277,8 @@ const viewDefaultsResponse = {
       vertical_y_index: 2,
       source: "max_w_native_grid_location",
       max_value: 6.5,
+      selected_time_index: null,
+      selected_time_seconds: null,
       caveats: ["default_location_uses_field_maximum"],
     },
   },
@@ -287,6 +291,43 @@ const viewDefaultsResponse = {
   },
   caveats: ["default_locations_are_native_grid_indices"],
 };
+
+function selectedTimeDefaultsResponse(url: string) {
+  const parsed = new URL(url, "http://localhost");
+  const timeIndex = parsed.searchParams.get("time_index");
+  if (timeIndex === null) return viewDefaultsResponse;
+  return {
+    ...viewDefaultsResponse,
+    fields: {
+      qc: {
+        ...viewDefaultsResponse.fields.qc,
+        time_index: Number(timeIndex),
+        time_seconds: Number(timeIndex) * 900,
+        horizontal_level_index: 1,
+        vertical_x_index: 1,
+        vertical_y_index: 2,
+        source: "selected_time_max_qc_native_grid_location",
+        selected_time_index: Number(timeIndex),
+        selected_time_seconds: Number(timeIndex) * 900,
+      },
+      w: {
+        ...viewDefaultsResponse.fields.w,
+        time_index: Number(timeIndex),
+        time_seconds: Number(timeIndex) * 900,
+        horizontal_level_index: 2,
+        vertical_x_index: 1,
+        vertical_y_index: 2,
+        source: "selected_time_max_w_native_grid_location",
+        selected_time_index: Number(timeIndex),
+        selected_time_seconds: Number(timeIndex) * 900,
+      },
+    },
+    caveats: [
+      "default_locations_are_native_grid_indices",
+      "default_locations_are_selected_time_native_grid_indices",
+    ],
+  };
+}
 
 const missingFieldCatalogResponse = {
   ...fieldCatalogResponse,
@@ -425,6 +466,11 @@ function pointCloudResponse({
       max_points: 50000,
     },
     coordinate_units: { xh: "km", yh: "km", zh: "km" },
+    coordinate_extents: {
+      xh: { min: -3.2, max: 3.2, units: "km" },
+      yh: { min: -3.2, max: 3.2, units: "km" },
+      zh: { min: 0.0, max: 3.0, units: "km" },
+    },
     point_order: ["x", "y", "z", "value"],
     points: returnedPoints,
     stats: {
@@ -432,6 +478,16 @@ function pointCloudResponse({
       returned_count: returnedPoints.length,
       min_value: values.length ? Math.min(...values) : null,
       max_value: values.length ? Math.max(...values) : null,
+      active_z_min: values.length ? Math.min(...returnedPoints.map((point) => point[2])) : null,
+      active_z_max: values.length ? Math.max(...returnedPoints.map((point) => point[2])) : null,
+      max_value_location: returnedPoints.length
+        ? {
+            x: returnedPoints[returnedPoints.length - 1][0],
+            y: returnedPoints[returnedPoints.length - 1][1],
+            z: returnedPoints[returnedPoints.length - 1][2],
+            value: returnedPoints[returnedPoints.length - 1][3],
+          }
+        : null,
       downsampled: false,
       downsample_stride: 1,
     },
@@ -463,9 +519,9 @@ beforeEach(() => {
       if (url === "/api/results/result-dry-run-quicklook/visualization/fields") {
         return Promise.resolve(new Response(JSON.stringify(fieldCatalogResponse), { status: 200 }));
       }
-      if (url === "/api/results/result-dry-run-quicklook/visualization/defaults") {
+      if (url.startsWith("/api/results/result-dry-run-quicklook/visualization/defaults")) {
         return Promise.resolve(
-          new Response(JSON.stringify(viewDefaultsResponse), { status: 200 }),
+          new Response(JSON.stringify(selectedTimeDefaultsResponse(url)), { status: 200 }),
         );
       }
       if (url === "/api/results/result-no-diagnostics/visualization/fields") {
@@ -473,7 +529,7 @@ beforeEach(() => {
           new Response(JSON.stringify(missingFieldCatalogResponse), { status: 200 }),
         );
       }
-      if (url === "/api/results/result-no-diagnostics/visualization/defaults") {
+      if (url.startsWith("/api/results/result-no-diagnostics/visualization/defaults")) {
         return Promise.resolve(
           new Response(
             JSON.stringify({
@@ -491,7 +547,7 @@ beforeEach(() => {
           new Response(JSON.stringify(emptyFieldCatalogResponse), { status: 200 }),
         );
       }
-      if (url === "/api/results/result-empty-visualizer/visualization/defaults") {
+      if (url.startsWith("/api/results/result-empty-visualizer/visualization/defaults")) {
         return Promise.resolve(
           new Response(JSON.stringify({ ...viewDefaultsResponse, preferred_field: null, fields: {} }), {
             status: 200,
@@ -503,7 +559,7 @@ beforeEach(() => {
           new Response(JSON.stringify(dryFailedFieldCatalogResponse), { status: 200 }),
         );
       }
-      if (url === "/api/results/result-dry-failed-cumulus/visualization/defaults") {
+      if (url.startsWith("/api/results/result-dry-failed-cumulus/visualization/defaults")) {
         return Promise.resolve(
           new Response(
             JSON.stringify({
@@ -910,7 +966,7 @@ describe("App", () => {
     expect(screen.getByLabelText("Cloud-water point cloud")).toBeInTheDocument();
     expect(screen.getByLabelText("Domain bounding box")).toBeInTheDocument();
     expect(screen.getByText("domain floor")).toBeInTheDocument();
-    expect(screen.getByText("height")).toBeInTheDocument();
+    expect(screen.getByText("height z")).toBeInTheDocument();
     expect(screen.getByLabelText("Show slice planes")).not.toBeChecked();
     const scene = screen.getByLabelText("3-D scene container");
     expect(within(scene).queryByLabelText("Horizontal slice plane")).not.toBeInTheDocument();
@@ -918,11 +974,23 @@ describe("App", () => {
     expect(screen.getByRole("button", { name: "Orbit" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Pan" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Reset camera" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Side x-z" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Side y-z" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Top-down x-y" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Oblique overview" })).toHaveClass(
+      "active-control",
+    );
     expect(screen.getByLabelText("Zoom")).toHaveValue("100");
     expect(screen.getByLabelText("Field")).toHaveValue("qc");
     expect(screen.getByLabelText("Slice field")).toHaveValue("qc");
     expect(screen.getByLabelText("Time")).toBeInTheDocument();
     expect(screen.getByText("thresholded_point_cloud")).toBeInTheDocument();
+    expect(
+      screen.getAllByText("selected_time_max_qc_native_grid_location").length,
+    ).toBeGreaterThan(0);
+    expect(screen.getByText("0 to 3 km")).toBeInTheDocument();
+    expect(screen.getByText("0.8 km to 1.2 km")).toBeInTheDocument();
+    expect(screen.getByText("x 2, y 1, z 1.2 km, value 8.000e-6")).toBeInTheDocument();
     expect(
       screen.getByText("Slice planes: native-grid JSON slices from the backend"),
     ).toBeInTheDocument();
@@ -936,6 +1004,9 @@ describe("App", () => {
     expect(screen.getByText("Rendering method: thresholded point cloud")).toBeInTheDocument();
     expect(screen.getByText("No raw NetCDF parsing in the browser")).toBeInTheDocument();
     expect(fetch).toHaveBeenCalledWith(expect.stringContaining("time_index=2"));
+    expect(fetch).toHaveBeenCalledWith(
+      "/api/results/result-dry-run-quicklook/visualization/defaults?time_index=2",
+    );
   });
 
   it("supports qc and w slice planes synced to visualizer time", async () => {
@@ -975,6 +1046,7 @@ describe("App", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Vertical cross-section" }));
     expect(screen.getByLabelText("Show slice planes")).toBeChecked();
+    expect(screen.getByRole("button", { name: "Side x-z" })).toHaveClass("active-control");
     const scene = screen.getByLabelText("3-D scene container");
     await waitFor(() => {
       expect(within(scene).getByLabelText("Vertical slice plane")).toBeInTheDocument();
@@ -982,13 +1054,15 @@ describe("App", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Top-down slice" }));
     expect(screen.getByLabelText("Show slice planes")).toBeChecked();
+    expect(screen.getByRole("button", { name: "Top-down x-y" })).toHaveClass("active-control");
     await waitFor(() => {
       expect(within(scene).getByLabelText("Horizontal slice plane")).toBeInTheDocument();
     });
 
     fireEvent.click(screen.getByRole("button", { name: "Updraft view" }));
     expect(screen.getByLabelText("Slice field")).toHaveValue("w");
-    expect(screen.getByText("max_w_native_grid_location")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Side y-z" })).toHaveClass("active-control");
+    expect(screen.getAllByText(/max_w_native_grid_location/).length).toBeGreaterThan(0);
     await waitFor(() => {
       expect(fetch).toHaveBeenCalledWith(expect.stringContaining("field=w"));
     });
