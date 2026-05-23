@@ -83,6 +83,14 @@ technical details keeping raw provenance available without dominating the main
 view. They should distinguish successful cloud-forming results with minor
 caveats from results that truly need review.
 
+Guided local run workflow tests should mock the backend API sequence rather
+than launching CM1: package generation, launch request, running status, completed
+status with output-artifact counts, ingest request, and post-ingest actions into
+Results, Inspect, and Visualize. They should also cover missing local CM1
+settings or preflight failures as actionable UI errors. Automated tests must not
+execute `cm1.exe`, parse real local NetCDF output in the browser, or write
+generated run directories into the repo.
+
 Comparison tests should use mocked Result Card data for the accepted Baseline
 Shallow Cumulus quick-look and Dry Failed Cumulus quick-look pair. They should
 verify side-by-side scenario names, run-size presets, cloud/rain outcomes, first

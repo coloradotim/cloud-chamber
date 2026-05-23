@@ -107,16 +107,16 @@ Current behavior is a placeholder only. It must explicitly say preview is not im
 1. Request a dry-run package from the Scenario Builder.
 2. Backend validates the scenario template and selected controls.
 3. Backend writes package files under the configured runtime home, not the repo.
-4. UI displays package path, validation/product state, generated files, physical question, selected run-size preset, and cost/size notes.
+4. UI displays run ID, package path, manifest path, scenario, validation/product state, generated files, physical question, selected run-size preset, expected diagnostics, and cost/size notes.
 5. UI states that CM1 was not launched and the package is not a completed CM1 result.
 
 ### Workflow 3 — Launch CM1 Run
 
-1. Click `Run CM1` or `Create run`.
-2. App writes a run manifest, namelist, input sounding, and run directory.
-3. App launches local CM1 process or gives a command to run.
-4. Status changes to queued/running.
-5. Logs are captured.
+1. Click `Launch local CM1` from the generated-package review.
+2. Backend launches local CM1 from the generated run package only after preflight passes.
+3. UI shows the running state, command/log paths, stdout/stderr tail when available, and one-local-run-at-a-time policy.
+4. If local CM1 settings are missing, the UI shows the backend failure reason and no run is implied.
+5. The UI continues to distinguish the package, running CM1 process, completed CM1 result, and later ingest/result states.
 
 ### Workflow 4 — Monitor Runs
 
@@ -135,6 +135,8 @@ For each run:
 - output files seen
 - estimated output size
 - final status
+
+The Build workspace now provides the first guided local loop without curl commands: create package, launch local CM1, refresh status/logs, see output-artifact counts, ingest completed NetCDF output, then open the created Result Card in Results, Inspect, or Visualize. This is local-first orchestration only; CI still uses fake fixtures and never runs CM1.
 
 ### Workflow 5 — Open Result
 

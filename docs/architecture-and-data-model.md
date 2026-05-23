@@ -167,6 +167,23 @@ Dry-run package generation uses the validated scenario template and CM1 input co
 
 The implemented dry-run API is `POST /api/dry-run-package`. It accepts scenario ID, selected product controls, and run-size preset, then returns the package paths and dry-run report summary for UI review. It must not launch CM1, write NetCDF, or place generated packages inside the source tree during tests.
 
+The Build workspace is the first guided app-side run loop over the existing
+backend contracts:
+
+```text
+POST /api/dry-run-package
+-> POST /api/runs/launch
+-> GET /api/runs/status?manifest_path=...
+-> POST /api/results/ingest
+-> GET /api/results
+```
+
+The browser receives only API summaries: run/package paths, lifecycle/product
+states, stdout/stderr log paths and short tails, output artifact counts, runtime
+warnings, and the ingested result ID. It does not read local files directly,
+does not parse NetCDF, and does not imply that a dry-run package is already a
+completed or ingested result.
+
 ### Preview Engine
 
 Fast reduced/light predictor.
@@ -206,6 +223,7 @@ The first implemented local run manager is intentionally conservative:
 - launch rejects Rayleigh damping settings that start too low and would damp more than half the vertical domain;
 - launch stages required local runtime files such as `LANDUSE.TBL` from the configured CM1 run directory into the generated package directory;
 - process exit code 0 is not enough to mark a usable completed CM1 result; NetCDF or raw CM1 `.dat/.ctl` output artifacts must exist before `completed_cm1_result` is used;
+- status responses expose enough UI-safe metadata for the guided app flow: lifecycle/product/validation state, command/log paths, short stdout/stderr tails, output-artifact counts, runtime warnings, and timestamps;
 - tests inject fake subprocesses, so CI never needs a real CM1 executable.
 
 Real CM1 execution remains a manual/local responsibility until the user has local settings and runtime files in place. The manager must fail clearly when CM1 paths are missing rather than pretending a run started. If the process exits successfully but no NetCDF or raw CM1 `.dat/.ctl` output exists, the manifest remains `completed` at the process level but uses `validation_status: needs_review` and `product_state: process_completed_no_output`.
