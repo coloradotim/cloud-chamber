@@ -73,6 +73,7 @@ class CM1InputContract:
     scenario_id: str
     physical_question: str
     run_size_preset: str
+    moisture_profile: str
     cloud_scale_defaults: CloudScaleDefaults
     generated_files: tuple[GeneratedFileSpec, ...]
     control_fragments: tuple[ControlMappingFragment, ...]
@@ -155,10 +156,13 @@ def build_cm1_input_contract(
         for control in scenario.controls
     )
 
+    moisture_profile = _moisture_profile_from_controls(scenario.id, control_fragments)
+
     return CM1InputContract(
         scenario_id=scenario.id,
         physical_question=scenario.physical_question,
         run_size_preset=run_size_preset,
+        moisture_profile=moisture_profile,
         cloud_scale_defaults=_cloud_scale_defaults_for_preset(run_size_preset),
         generated_files=GENERATED_FILE_SPECS,
         control_fragments=control_fragments,
@@ -536,7 +540,7 @@ def render_cm1_input_sounding(contract: CM1InputContract) -> str:
     """
 
     header, body = _baseline_shallow_cumulus_sounding_profile(
-        moisture_profile=_moisture_profile_for_contract(contract)
+        moisture_profile=contract.moisture_profile
     )
     lines = [
         f"{header[0]:10.2f} {header[1]:12.4f} {header[2]:12.5f}",
@@ -650,17 +654,22 @@ def _baseline_shallow_cumulus_sounding_profile(
     return header, levels
 
 
-def _moisture_profile_for_contract(contract: CM1InputContract) -> str:
-    if contract.scenario_id != "dry-failed-cumulus":
-        return "baseline"
-    selected = _selected_control_value(contract, "low_level_humidity")
-    return "dry_failed" if selected == "drier" else "baseline"
+def _moisture_profile_from_controls(
+    scenario_id: str,
+    control_fragments: tuple[ControlMappingFragment, ...],
+) -> str:
+    selected = _selected_control_value(control_fragments, "low_level_humidity")
+    if scenario_id == "dry-failed-cumulus":
+        return "dry_failed" if selected == "drier" else "baseline"
+    if scenario_id == "baseline-shallow-cumulus" and selected in {"drier", "more_humid"}:
+        return str(selected)
+    return "baseline"
 
 
 def _selected_control_value(
-    contract: CM1InputContract, control_id: str
+    control_fragments: tuple[ControlMappingFragment, ...], control_id: str
 ) -> str | float | bool | None:
-    for fragment in contract.control_fragments:
+    for fragment in control_fragments:
         if fragment.control_id == control_id:
             return fragment.selected_value
     return None
@@ -683,13 +692,18 @@ def _adjust_mixing_ratio_gkg(
 
 
 def _moisture_scale(height_m: float, moisture_profile: str) -> float:
-    if moisture_profile != "dry_failed":
-        return 1.0
+    low_level_scales = {
+        "drier": (0.82, 0.95),
+        "baseline": (1.0, 1.0),
+        "more_humid": (1.08, 1.02),
+        "dry_failed": (0.45, 0.75),
+    }
+    low_scale, upper_scale = low_level_scales.get(moisture_profile, low_level_scales["baseline"])
     if height_m <= 3000.0:
-        return 0.45
+        return low_scale
     if height_m >= 6000.0:
-        return 0.75
-    return _interpolate(height_m, 3000.0, 6000.0, 0.45, 0.75)
+        return upper_scale
+    return _interpolate(height_m, 3000.0, 6000.0, low_scale, upper_scale)
 
 
 def _specific_humidity_to_mixing_ratio_gkg(specific_humidity: float) -> float:

@@ -327,6 +327,24 @@ rain detected`, first cloud time at 1800 seconds, `max_qc_kg_kg =
 -4.416495323181152`. This accepts the external `input_sounding` path as the
 baseline reproduction path for the next one-factor moisture experiment.
 
+The Baseline Shallow Cumulus low-level humidity ladder now uses that accepted
+external-sounding path. `drier`, `baseline`, and `more humid` preserve the same
+grid/domain, runtime preset, surface/ocean/flux settings, stress/roughness
+path, damping, turbulence/SGS settings, boundary conditions, NetCDF output, and
+runtime-file staging. The only intended generated-input difference is the
+low-level moisture profile in `input_sounding`. These variants are disciplined
+one-control-at-a-time experiments, not arbitrary parameter sweeps.
+
+Initial quick-look validation supports the ladder direction. The drier run
+`dry-run-004bd57bb8cc` completed, produced 13 model-output time steps, ingested
+successfully, and reported `no cloud formed; no rain detected` with meaningful
+vertical motion (`max_w_m_s = 2.0368008613586426`, `min_w_m_s =
+-1.26932954788208`). The more-humid run `dry-run-4e64317c62ec` completed,
+produced 13 model-output time steps, ingested successfully, and reported `cloud
+formed; rain detected`, first cloud at 900 seconds, `max_qc_kg_kg =
+0.00285167433321476`, `max_w_m_s = 10.37020206451416`, and `min_w_m_s =
+-5.2025837898254395`.
+
 ### Dry Failed Cumulus Planning
 
 Dry Failed Cumulus is the next planned lower-atmosphere contrast case after

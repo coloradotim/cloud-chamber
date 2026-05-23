@@ -161,6 +161,70 @@ def test_dry_run_package_quick_look_changes_only_runtime_timing(tmp_path: Path) 
     assert "output_format    = 2," in namelist
 
 
+def test_baseline_humidity_ladder_packages_change_only_sounding_moisture(
+    tmp_path: Path,
+) -> None:
+    drier = generate_dry_run_package(
+        scenario_data=load_baseline_template(),
+        runtime_home=tmp_path,
+        run_id="run-baseline-drier",
+        controls={"low_level_humidity": "drier"},
+        run_size_preset="quick_look",
+    )
+    baseline = generate_dry_run_package(
+        scenario_data=load_baseline_template(),
+        runtime_home=tmp_path,
+        run_id="run-baseline",
+        controls={"low_level_humidity": "baseline"},
+        run_size_preset="quick_look",
+    )
+    more_humid = generate_dry_run_package(
+        scenario_data=load_baseline_template(),
+        runtime_home=tmp_path,
+        run_id="run-baseline-more-humid",
+        controls={"low_level_humidity": "more_humid"},
+        run_size_preset="quick_look",
+    )
+
+    baseline_namelist = (baseline.package_dir / "namelist.input").read_text()
+    drier_namelist = (drier.package_dir / "namelist.input").read_text()
+    humid_namelist = (more_humid.package_dir / "namelist.input").read_text()
+    drier_sounding = (drier.package_dir / "input_sounding").read_text().splitlines()
+    baseline_sounding = (baseline.package_dir / "input_sounding").read_text().splitlines()
+    humid_sounding = (more_humid.package_dir / "input_sounding").read_text().splitlines()
+    drier_report = json.loads(drier.report_path.read_text())
+    humid_report = json.loads(more_humid.report_path.read_text())
+    drier_manifest = load_run_manifest(drier.manifest_path)
+
+    assert drier_namelist == baseline_namelist == humid_namelist
+    assert "timax  = 10800.0," in baseline_namelist
+    assert "tapfrq =  900.0," in baseline_namelist
+    assert "testcase  =  3," in baseline_namelist
+    assert "isnd      = 17," in baseline_namelist
+    assert "iwnd      =  9," in baseline_namelist
+    assert "set_znt    =      0," in baseline_namelist
+    assert "set_ust    =      1," in baseline_namelist
+    assert "cnst_ust   =   0.28," in baseline_namelist
+    assert "output_format    = 2," in baseline_namelist
+
+    assert drier_manifest.controls["low_level_humidity"] == "drier"
+    assert drier_report["variant_metadata"]["moisture_profile"] == "drier"
+    assert humid_report["variant_metadata"]["moisture_profile"] == "more_humid"
+    assert drier_report["controls"]["low_level_humidity"] == "drier"
+    assert humid_report["controls"]["low_level_humidity"] == "more_humid"
+
+    assert float(drier_sounding[0].split()[2]) < float(baseline_sounding[0].split()[2])
+    assert float(humid_sounding[0].split()[2]) > float(baseline_sounding[0].split()[2])
+    assert float(drier_sounding[1].split()[2]) < float(baseline_sounding[1].split()[2])
+    assert float(humid_sounding[1].split()[2]) > float(baseline_sounding[1].split()[2])
+    assert drier_sounding[1].split()[0:2] == baseline_sounding[1].split()[0:2]
+    assert humid_sounding[1].split()[0:2] == baseline_sounding[1].split()[0:2]
+    assert drier_sounding[1].split()[3:] == baseline_sounding[1].split()[3:]
+    assert humid_sounding[1].split()[3:] == baseline_sounding[1].split()[3:]
+    assert not list(drier.package_dir.glob("*.nc"))
+    assert not list(more_humid.package_dir.glob("*.nc"))
+
+
 def test_dry_failed_package_preserves_baseline_namelist_and_drives_sounding_drier(
     tmp_path: Path,
 ) -> None:
