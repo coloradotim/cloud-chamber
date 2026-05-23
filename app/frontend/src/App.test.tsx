@@ -241,6 +241,113 @@ const resultsResponse = {
   results: [resultCard, dryFailedCard, missingDiagnosticsCard, emptyVisualizerCard],
 };
 
+const storageRuns = [
+  {
+      run_id: "dry-run-large-output",
+      scenario_id: "baseline-shallow-cumulus",
+      scenario_name: null,
+      lifecycle_state: "completed",
+      validation_status: "valid",
+      product_state: "completed_cm1_result",
+      run_size_preset: "quick_look",
+      created_at: "2026-05-22T15:15:36Z",
+      updated_at: "2026-05-22T15:45:36Z",
+      saved: false,
+      protected: false,
+      output_artifact_count: 14,
+      output_summary: {
+        raw_cm1_artifacts: 0,
+        netcdf_paths: 14,
+        processed_artifacts: 0,
+      },
+      size_bytes: 852 * 1024 ** 2,
+      path: "/tmp/CloudChamber/runs/dry-run-large-output",
+      category: "completed_with_output",
+      manifest_path: "/tmp/CloudChamber/runs/dry-run-large-output/run_manifest.json",
+      manifest_error: null,
+    },
+    {
+      run_id: "dry-run-saved",
+      scenario_id: "baseline-shallow-cumulus",
+      scenario_name: "Baseline Shallow Cumulus",
+      lifecycle_state: "completed",
+      validation_status: "valid",
+      product_state: "completed_cm1_result",
+      run_size_preset: "quick_look",
+      created_at: "2026-05-22T15:15:36Z",
+      updated_at: "2026-05-22T15:45:36Z",
+      saved: true,
+      protected: true,
+      output_artifact_count: 14,
+      output_summary: {
+        raw_cm1_artifacts: 0,
+        netcdf_paths: 14,
+        processed_artifacts: 0,
+      },
+      size_bytes: 200 * 1024 ** 2,
+      path: "/tmp/CloudChamber/runs/dry-run-saved",
+      category: "saved_or_protected",
+      manifest_path: "/tmp/CloudChamber/runs/dry-run-saved/run_manifest.json",
+      manifest_error: null,
+    },
+    {
+      run_id: "dry-run-running",
+      scenario_id: "dry-failed-cumulus",
+      scenario_name: "Dry Failed Cumulus",
+      lifecycle_state: "running",
+      validation_status: "unvalidated",
+      product_state: "queued_running_cm1_process",
+      run_size_preset: "quick_look",
+      created_at: "2026-05-22T15:15:36Z",
+      updated_at: "2026-05-22T15:45:36Z",
+      saved: false,
+      protected: false,
+      output_artifact_count: 0,
+      output_summary: {
+        raw_cm1_artifacts: 0,
+        netcdf_paths: 0,
+        processed_artifacts: 0,
+      },
+      size_bytes: 20 * 1024 ** 2,
+      path: "/tmp/CloudChamber/runs/dry-run-running",
+      category: "running",
+      manifest_path: "/tmp/CloudChamber/runs/dry-run-running/run_manifest.json",
+      manifest_error: null,
+    },
+    {
+      run_id: "orphan-folder",
+      scenario_id: null,
+      scenario_name: null,
+      lifecycle_state: null,
+      validation_status: null,
+      product_state: null,
+      run_size_preset: null,
+      created_at: null,
+      updated_at: null,
+      saved: false,
+      protected: false,
+      output_artifact_count: 0,
+      output_summary: {},
+      size_bytes: 1024,
+      path: "/tmp/CloudChamber/runs/orphan-folder",
+      category: "missing_manifest",
+      manifest_path: null,
+      manifest_error: null,
+    },
+];
+
+const storageInventoryResponse = {
+  runtime_home: "/tmp/CloudChamber",
+  runs_directory: "/tmp/CloudChamber/runs",
+  total_size_bytes: 60 * 1024 ** 3,
+  warning_threshold_bytes: 50 * 1024 ** 3,
+  above_warning_threshold: true,
+  warning_message:
+    "Runtime storage is at or above the 50 GB warning threshold. Review largest_runs and use dry-run cleanup before deleting selected runs.",
+  runs: storageRuns,
+  largest_runs: storageRuns,
+};
+
 const provenance = {
   source_model: "CM1",
   result_id: "result-dry-run-quicklook",
@@ -576,6 +683,47 @@ beforeEach(() => {
       }
       if (url === "/api/results") {
         return Promise.resolve(new Response(JSON.stringify(resultsResponse), { status: 200 }));
+      }
+      if (url === "/api/storage/inventory") {
+        return Promise.resolve(new Response(JSON.stringify(storageInventoryResponse), { status: 200 }));
+      }
+      if (url === "/api/storage/delete-run" && init?.method === "POST") {
+        const body = JSON.parse(String(init.body)) as { run_id: string; dry_run: boolean };
+        if (body.run_id === "dry-run-running") {
+          return Promise.resolve(
+            new Response(JSON.stringify({ detail: "Refusing to delete running run" }), {
+              status: 400,
+            }),
+          );
+        }
+        if (body.dry_run) {
+          return Promise.resolve(
+            new Response(
+              JSON.stringify({
+                run_id: body.run_id,
+                run_directory: `/tmp/CloudChamber/runs/${body.run_id}`,
+                dry_run: true,
+                deleted: false,
+                size_bytes: 852 * 1024 ** 2,
+                message: "Dry run only; no files were deleted.",
+              }),
+              { status: 200 },
+            ),
+          );
+        }
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              run_id: body.run_id,
+              run_directory: `/tmp/CloudChamber/runs/${body.run_id}`,
+              dry_run: false,
+              deleted: true,
+              size_bytes: 852 * 1024 ** 2,
+              message: "Run directory deleted.",
+            }),
+            { status: 200 },
+          ),
+        );
       }
       if (url === "/api/results/result-dry-run-quicklook/visualization/fields") {
         return Promise.resolve(new Response(JSON.stringify(fieldCatalogResponse), { status: 200 }));
@@ -1036,6 +1184,112 @@ describe("App", () => {
     expect(screen.getByText("missing_w_field")).toBeInTheDocument();
     expect(screen.queryByText(/horizontal slice/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/vertical slice/i)).not.toBeInTheDocument();
+  });
+
+  it("shows runtime storage inventory and safe cleanup affordances", async () => {
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Storage" }));
+
+    expect(await screen.findByRole("heading", { name: "Runtime storage cleanup" })).toBeInTheDocument();
+    expect(screen.getByText("/tmp/CloudChamber")).toBeInTheDocument();
+    expect(screen.getByText("60 GB")).toBeInTheDocument();
+    expect(screen.getByText("50 GB")).toBeInTheDocument();
+    expect(screen.getByText("At or above 50 GB warning threshold")).toBeInTheDocument();
+    expect(screen.getByText(/dry-run cleanup/)).toBeInTheDocument();
+    expect(screen.getByText("dry-run-large-output")).toBeInTheDocument();
+    expect(screen.getByText("852 MB")).toBeInTheDocument();
+    expect(screen.getAllByText("14 NetCDF, 0 raw CM1, 0 processed").length).toBeGreaterThan(0);
+    expect(screen.getByText("saved or protected")).toBeInTheDocument();
+    expect(screen.getByText("missing manifest")).toBeInTheDocument();
+
+    const runtimeRuns = screen.getByLabelText("Runtime runs");
+    const buttons = within(runtimeRuns).getAllByRole("button", { name: "Preview delete" });
+    expect(buttons[0]).toBeEnabled();
+    expect(buttons[1]).toBeDisabled();
+    expect(buttons[2]).toBeDisabled();
+    expect(screen.getByText("Saved/protected runs are not deleted from this UI.")).toBeInTheDocument();
+    expect(screen.getByText("Running runs cannot be deleted.")).toBeInTheDocument();
+
+    fireEvent.click(buttons[0]);
+
+    expect(await screen.findByRole("heading", { name: "Delete preview" })).toBeInTheDocument();
+    expect(screen.getByText("Dry run only; no files were deleted.")).toBeInTheDocument();
+    expect(
+      screen.getAllByText("/tmp/CloudChamber/runs/dry-run-large-output").length,
+    ).toBeGreaterThan(0);
+    expect(screen.getByRole("button", { name: "Confirm delete selected run" })).toBeInTheDocument();
+    expect(fetch).toHaveBeenCalledWith(
+      "/api/storage/delete-run",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({
+          run_id: "dry-run-large-output",
+          dry_run: true,
+          confirm: false,
+          force_saved: false,
+        }),
+      }),
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Confirm delete selected run" }));
+
+    expect(await screen.findByText(/Run directory deleted/)).toBeInTheDocument();
+    expect(fetch).toHaveBeenCalledWith(
+      "/api/storage/delete-run",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({
+          run_id: "dry-run-large-output",
+          dry_run: false,
+          confirm: true,
+          force_saved: false,
+        }),
+      }),
+    );
+  });
+
+  it("shows cleanup failure details without deleting from unsafe UI paths", async () => {
+    vi.mocked(fetch).mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url === "/api/scenarios") {
+        return Promise.resolve(new Response(JSON.stringify(scenarioResponse), { status: 200 }));
+      }
+      if (url === "/api/results") {
+        return Promise.resolve(new Response(JSON.stringify(resultsResponse), { status: 200 }));
+      }
+      if (url === "/api/storage/inventory") {
+        return Promise.resolve(new Response(JSON.stringify(storageInventoryResponse), { status: 200 }));
+      }
+      if (url === "/api/storage/delete-run" && init?.method === "POST") {
+        return Promise.resolve(
+          new Response(JSON.stringify({ detail: "Refusing to delete outside runtime home" }), {
+            status: 400,
+          }),
+        );
+      }
+      return Promise.resolve(new Response("not found", { status: 404 }));
+    });
+
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Storage" }));
+    fireEvent.click((await screen.findAllByRole("button", { name: "Preview delete" }))[0]);
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Refusing to delete outside runtime home",
+    );
+    expect(fetch).toHaveBeenCalledWith(
+      "/api/storage/delete-run",
+      expect.objectContaining({
+        body: JSON.stringify({
+          run_id: "dry-run-large-output",
+          dry_run: true,
+          confirm: false,
+          force_saved: false,
+        }),
+      }),
+    );
   });
 
   it("opens the 2-D field inspector from a result and shows qc slices", async () => {
