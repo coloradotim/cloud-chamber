@@ -142,6 +142,13 @@ retaining meaningful vertical motion. This establishes the first two-outcome
 lab pair: Baseline forms cloud; Dry Failed has thermals without meaningful
 cloud water.
 
+Baseline humidity ladder variants reuse the accepted external-sounding
+Baseline Shallow Cumulus namelist family. The package generator records the
+selected `low_level_humidity` control and a moisture-profile variant, then
+changes only the generated `input_sounding` moisture values for `drier` or
+`more_humid`. The namelist, runtime preset, NetCDF output, and runtime-file
+staging remain the same for the selected preset.
+
 Cloud-scale defaults for the first lower-atmosphere contract are:
 
 ```text

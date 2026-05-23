@@ -282,6 +282,22 @@ and `qc`/`w`/`qv`/thermodynamic target fields do not carry severe NaN/Infinity
 caveats. No cloud plus no vertical motion is not an accepted Dry Failed result.
 No cloud plus NaNs/Infs is not an accepted Dry Failed result.
 
+Baseline humidity ladder tests should assert that `low_level_humidity = drier`,
+`baseline`, and `more_humid` emit the intended moisture-profile metadata and
+change only the numeric moisture values in `input_sounding`. They should verify
+the non-moisture reference settings stay fixed: grid/domain, runtime/cadence for
+the selected preset, surface/ocean/flux settings, surface stress/roughness path,
+Rayleigh damping, turbulence/SGS settings, boundary conditions, NetCDF output,
+and runtime-file staging behavior. These tests must use temp dirs and must not
+launch CM1 or commit generated output.
+
+The first local quick-look validation for this ladder ran outside the repo under
+the configured runtime home. `dry-run-004bd57bb8cc` validated the drier variant
+as a dry/no-cloud contrast with finite vertical motion. `dry-run-4e64317c62ec`
+validated the more-humid variant as an earlier/stronger cloud-forming case. The
+generated NetCDF output, logs, result metadata, and copied runtime files remain
+local generated artifacts and must not be committed.
+
 Future Dry Failed manual validation should record:
 
 ```text

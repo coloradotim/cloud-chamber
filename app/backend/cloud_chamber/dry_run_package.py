@@ -210,6 +210,14 @@ def _dry_run_report_payload(
         "scenario_id": scenario.id,
         "physical_question": scenario.physical_question,
         "controls": manifest.controls,
+        "variant_metadata": {
+            "moisture_profile": contract.moisture_profile,
+            "low_level_humidity": manifest.controls.get("low_level_humidity"),
+            "mapping": (
+                "external input_sounding moisture profile; non-moisture namelist settings "
+                "remain inherited from the validated baseline"
+            ),
+        },
         "run_size_preset": manifest.run_size_preset,
         "estimated_cost_or_size": "unknown until validated",
         "expected_diagnostics": manifest.expected_diagnostics,

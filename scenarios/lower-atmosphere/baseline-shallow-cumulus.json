@@ -25,7 +25,7 @@
         {"value": "baseline", "label": "Baseline"},
         {"value": "more_humid", "label": "More humid"}
       ],
-      "cm1_mapping_notes": "Future mapping should adjust low-level sounding moisture while preserving scientific disclosure."
+      "cm1_mapping_notes": "Maps to drier/baseline/more humid external input_sounding moisture profiles while preserving the validated baseline namelist family."
     },
     {
       "id": "surface_heating",

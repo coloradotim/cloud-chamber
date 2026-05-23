@@ -61,6 +61,7 @@ def test_cm1_contract_keeps_product_controls_separate_from_mapping_notes() -> No
     assert "provisional until local/manual smoke-run validation" in (
         low_level_humidity.scientific_status
     )
+    assert contract.moisture_profile == "more_humid"
 
 
 def test_rendered_namelist_standard_preset_preserves_reference_timing() -> None:
@@ -131,6 +132,52 @@ def test_rendered_input_sounding_is_external_baseline_profile() -> None:
     assert "-4.61" in lines[-1]
     assert "Cloud Chamber input_sounding notes" not in sounding
     assert "placeholder until local/manual CM1 validation" not in sounding
+
+
+def test_baseline_humidity_ladder_only_changes_low_level_moisture_profile() -> None:
+    scenario = baseline_scenario()
+    drier_contract = build_cm1_input_contract(
+        scenario,
+        selected_controls={"low_level_humidity": "drier"},
+    )
+    baseline_contract = build_cm1_input_contract(
+        scenario,
+        selected_controls={"low_level_humidity": "baseline"},
+    )
+    humid_contract = build_cm1_input_contract(
+        scenario,
+        selected_controls={"low_level_humidity": "more_humid"},
+    )
+
+    assert drier_contract.moisture_profile == "drier"
+    assert baseline_contract.moisture_profile == "baseline"
+    assert humid_contract.moisture_profile == "more_humid"
+    assert render_namelist_fragment(drier_contract) == render_namelist_fragment(baseline_contract)
+    assert render_namelist_fragment(humid_contract) == render_namelist_fragment(baseline_contract)
+
+    drier_lines = render_input_sounding_notes(drier_contract).splitlines()
+    baseline_lines = render_input_sounding_notes(baseline_contract).splitlines()
+    humid_lines = render_input_sounding_notes(humid_contract).splitlines()
+
+    assert len(drier_lines) == len(baseline_lines) == len(humid_lines)
+    assert float(drier_lines[0].split()[2]) < float(baseline_lines[0].split()[2])
+    assert float(humid_lines[0].split()[2]) > float(baseline_lines[0].split()[2])
+    assert float(drier_lines[1].split()[2]) < float(baseline_lines[1].split()[2])
+    assert float(humid_lines[1].split()[2]) > float(baseline_lines[1].split()[2])
+
+    for drier_line, baseline_line, humid_line in zip(
+        drier_lines[1:],
+        baseline_lines[1:],
+        humid_lines[1:],
+        strict=True,
+    ):
+        drier_parts = drier_line.split()
+        baseline_parts = baseline_line.split()
+        humid_parts = humid_line.split()
+        assert drier_parts[0:2] == baseline_parts[0:2]
+        assert humid_parts[0:2] == baseline_parts[0:2]
+        assert drier_parts[3:] == baseline_parts[3:]
+        assert humid_parts[3:] == baseline_parts[3:]
 
 
 def test_dry_failed_sounding_only_drives_low_level_moisture_drier() -> None:
