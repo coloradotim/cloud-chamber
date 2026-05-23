@@ -109,6 +109,23 @@ Run-size presets now vary only runtime timing for this recovered baseline. The s
 
 The first quick-look validation run, `dry-run-quicklook-les-shallowcu-20260522151536`, preserved those settings, completed locally, and ingested 13 model-output time steps over 10800 seconds. Diagnostics still reported cloud formation, vertical motion, and rain, so the architecture can treat this runtime-only quick-look preset as the first validated shorter Baseline Shallow Cumulus variant.
 
+Dry Failed Cumulus should branch from this validated reference-derived family,
+not from the invalid compact quick-look derivative. Architecturally, it is a
+moisture-limited contrast case: preserve the validated grid/domain, surface
+forcing, stress/roughness path, damping, turbulence/SGS settings, boundary
+conditions, NetCDF output, runtime-file staging, and quick-look timing, then
+change only the lower-atmosphere moisture/sounding path once that path has been
+validated. The intended product control is `low-level humidity = drier`; raw
+sounding or namelist edits belong in developer implementation details.
+
+Because the current validated baseline relies on the CM1 `les_ShallowCu`
+reference behavior, the next architecture step is to prove Cloud Chamber can
+reproduce the accepted baseline through an external `input_sounding` path
+without changing the rest of the case. Only after that reproduction succeeds
+should Dry Failed reduce low-level moisture. A run with no cloud and no
+meaningful vertical motion, or no cloud with severe NaN/Infinity caveats, is
+not a valid Dry Failed Cumulus result.
+
 Cloud-scale defaults for the first lower-atmosphere contract are:
 
 ```text
