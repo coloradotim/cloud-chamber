@@ -512,18 +512,21 @@ details[open] > summary {
 
 .visualizer-layout {
   display: grid;
-  grid-template-columns: minmax(0, 1.4fr) minmax(280px, 0.6fr);
+  grid-template-columns: minmax(0, 1fr) minmax(18rem, 22rem);
   gap: 1rem;
-  align-items: stretch;
+  align-items: start;
 }
 
 .scene-container {
   position: relative;
   display: grid;
   place-items: center;
-  min-height: 32rem;
-  aspect-ratio: 16 / 10;
+  width: 100%;
+  min-width: 0;
+  min-height: clamp(26rem, 52vw, 38rem);
   overflow: hidden;
+  isolation: isolate;
+  contain: layout paint;
   border: 1px solid rgba(171, 215, 214, 0.28);
   border-radius: 8px;
   background:
@@ -533,7 +536,7 @@ details[open] > summary {
 
 .viewport-frame {
   position: relative;
-  width: min(96%, 62rem);
+  width: min(96%, 100%);
   aspect-ratio: 16 / 10;
   overflow: hidden;
 }
@@ -763,9 +766,12 @@ details[open] > summary {
 }
 
 .visualizer-controls {
+  position: relative;
+  z-index: 5;
   display: grid;
   align-content: start;
   gap: 1rem;
+  min-width: 0;
 }
 
 .visualizer-controls fieldset {
