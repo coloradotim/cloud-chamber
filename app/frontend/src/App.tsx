@@ -1668,94 +1668,15 @@ function VisualizerSceneShell({ result }: { result: ResultCard }) {
         <p role="status">No visualization-ready fields are available for this result.</p>
       )}
 
-      <div className="visualizer-layout">
-        <div className="scene-container" aria-label="3-D scene container">
-          <div className="viewport-frame">
-            <div
-              className="plotting-layer"
-              aria-label="Stable visualizer plotting group"
-              style={{ transform: `scale(${zoom / 100})` }}
-            >
-              <div className="scene-horizon" />
-              <div className="scene-grid" />
-              <div
-                className={`domain-box domain-box-${projectionMode}`}
-                aria-label="Domain bounding box"
-              >
-                <span className="axis-label axis-label-x">
-                  {projectionMode === "side_yz" ? "y" : "x"}
-                </span>
-                <span className="axis-label axis-label-y">
-                  {projectionMode === "side_xz"
-                    ? "depth y"
-                    : projectionMode === "top_down"
-                      ? "y"
-                      : "depth y"}
-                </span>
-                <span className="axis-label axis-label-z">
-                  {projectionMode === "top_down" ? "top-down x-y" : "height z"}
-                </span>
-                <span className="ground-label">domain floor</span>
-              </div>
-              <ScaleMarkers pointCloud={pointCloud} projectionMode={projectionMode} />
-              <div className="scene-context-label">
-                <strong>{projectionLabel(projectionMode)}</strong>
-                <span>{selectedTimeLabel}</span>
-                <span>Cloud-water threshold {formatScientific(threshold, "kg/kg")}</span>
-              </div>
-              {showSlicePlanes && activeSlicePlane === "horizontal" && (
-                <SlicePlane title="Horizontal z slice plane" slice={sceneHorizontalSlice} />
-              )}
-              {showSlicePlanes && activeSlicePlane !== "horizontal" && (
-                <SlicePlane
-                  title={
-                    activeSlicePlane === "vertical_x"
-                      ? "Vertical x-z slice plane"
-                      : "Vertical y-z slice plane"
-                  }
-                  slice={sceneVerticalSlice}
-                />
-              )}
-              {pointCloud && pointCloud.points.length > 0 && (
-                <div className="point-cloud-layer" aria-label="Cloud-water point cloud">
-                  {pointCloud.points.map((point, index) => (
-                    <span
-                      className="cloud-point"
-                      key={`${point.join("-")}-${index}`}
-                      style={cloudPointStyle(
-                        point,
-                        pointCloud,
-                        projectionMode,
-                        pointCloud.stats,
-                        opacity,
-                        pointSize,
-                      )}
-                    />
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
-          <p className="projection-description" aria-label="Projection description">
-            {projectionDescription(projectionMode)}
-          </p>
-          {(!pointCloud || pointCloud.points.length === 0) && (
-            <div className="scene-empty-state">
-              <p className="eyebrow">Cloud-water point cloud</p>
-              <h3>
-                {!qcField
-                  ? "Cloud water field qc is not available for this result."
-                  : "No cloud water above the selected threshold at this time."}
-              </h3>
-              <p>
-                Adjust the time or threshold after qc is available. Rendering remains an
-                interpretation of CM1-derived data.
-              </p>
-            </div>
-          )}
+      <div className="visualizer-workbench" aria-label="Scientific visualization workbench">
+        <div className="workbench-status-strip" aria-label="Result scenario time status">
+          <Metric label="Result" value={result.name || result.run_id} />
+          <Metric label="Scenario" value={result.scenario_name ?? result.scenario_id} />
+          <Metric label="Time" value={selectedTimeLabel} />
+          <Metric label="Status" value={sceneStatus} />
         </div>
 
-        <aside className="visualizer-controls" aria-label="3-D scene controls">
+        <aside className="visualizer-controls visualizer-primary-controls" aria-label="Primary visualizer controls">
           <fieldset>
             <legend>View controls</legend>
             <label htmlFor="scene-zoom">
@@ -1774,7 +1695,7 @@ function VisualizerSceneShell({ result }: { result: ResultCard }) {
               Reset view
             </button>
             <small>
-              Zoom scales the plotting group only; it does not change CM1 coordinates or slice
+              Zoom scales the data layer only; it does not change CM1 coordinates or slice
               selection.
             </small>
           </fieldset>
@@ -1924,7 +1845,7 @@ function VisualizerSceneShell({ result }: { result: ResultCard }) {
 
           {catalog && selectedField && (
             <fieldset>
-              <legend>Field and time</legend>
+              <legend>Field</legend>
               <label htmlFor="scene-field">
                 Field
                 <select
@@ -1945,40 +1866,6 @@ function VisualizerSceneShell({ result }: { result: ResultCard }) {
                   ))}
                 </select>
               </label>
-              <label htmlFor="scene-time">
-                Time
-                <input
-                  id="scene-time"
-                  type="range"
-                  min={0}
-                  max={timeMax}
-                  value={Math.min(timeIndex, timeMax)}
-                  onChange={(event) => setTimeIndex(Number(event.target.value))}
-                />
-              </label>
-              <button type="button" onClick={() => setIsPlaying((current) => !current)}>
-                {isPlaying ? "Pause time" : "Play time"}
-              </button>
-              <div className="button-row">
-                <button
-                  type="button"
-                  onClick={() => setTimeIndex(jumpTimeIndex(timeOptions, result, "first-cloud"))}
-                >
-                  Jump to first cloud
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setTimeIndex(jumpTimeIndex(timeOptions, result, "max-qc"))}
-                >
-                  Jump to max cloud water
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setTimeIndex(jumpTimeIndex(timeOptions, result, "max-w"))}
-                >
-                  Jump to max updraft
-                </button>
-              </div>
             </fieldset>
           )}
 
@@ -2033,61 +1920,10 @@ function VisualizerSceneShell({ result }: { result: ResultCard }) {
                   type="checkbox"
                   checked={showSlicePlanes}
                   onChange={(event) => setShowSlicePlanes(event.target.checked)}
-	                />
-	                Show slice planes
-	              </label>
-	              <div className="segmented-buttons" aria-label="Slice plane orientation">
-	                <button
-	                  type="button"
-	                  className={activeSlicePlane === "horizontal" ? "active-control" : ""}
-	                  onClick={() => {
-	                    setActiveSlicePlane("horizontal");
-	                    setShowSlicePlanes(true);
-	                    setProjectionMode("top_down");
-	                  }}
-	                >
-	                  Horizontal z
-	                </button>
-	                <button
-	                  type="button"
-	                  className={activeSlicePlane === "vertical_x" ? "active-control" : ""}
-	                  onClick={() => {
-	                    setActiveSlicePlane("vertical_x");
-	                    setSliceOrientation("vertical_x");
-	                    setVerticalSliceIndex(
-	                      defaultVerticalIndex(
-	                        sliceField,
-	                        "vertical_x",
-	                        selectedTimeSliceDefaults ?? defaultsForField(viewDefaults, sliceFieldName),
-	                      ),
-	                    );
-	                    setShowSlicePlanes(true);
-	                    setProjectionMode("side_xz");
-	                  }}
-	                >
-	                  Vertical x-z
-	                </button>
-	                <button
-	                  type="button"
-	                  className={activeSlicePlane === "vertical_y" ? "active-control" : ""}
-	                  onClick={() => {
-	                    setActiveSlicePlane("vertical_y");
-	                    setSliceOrientation("vertical_y");
-	                    setVerticalSliceIndex(
-	                      defaultVerticalIndex(
-	                        sliceField,
-	                        "vertical_y",
-	                        selectedTimeSliceDefaults ?? defaultsForField(viewDefaults, sliceFieldName),
-	                      ),
-	                    );
-	                    setShowSlicePlanes(true);
-	                    setProjectionMode("side_yz");
-	                  }}
-	                >
-	                  Vertical y-z
-	                </button>
-	              </div>
-	              <label htmlFor="slice-field">
+                />
+                Show slice planes
+              </label>
+              <label htmlFor="slice-field">
                 Slice field
                 <select
                   id="slice-field"
@@ -2115,67 +1951,260 @@ function VisualizerSceneShell({ result }: { result: ResultCard }) {
                     ))}
                 </select>
               </label>
-	              <label htmlFor="active-slice-position">
-	                {activeSlicePlaneLabel(activeSlicePlane)}
-	                <input
-	                  id="active-slice-position"
-	                  type="range"
-	                  min={0}
-	                  max={Math.max(0, activeSliceMax - 1)}
-	                  value={activeSliceIndex}
-	                  onChange={(event) => {
-	                    const nextIndex = Number(event.target.value);
-	                    if (activeSlicePlane === "horizontal") {
-	                      setHorizontalSliceLevel(nextIndex);
-	                    } else {
-	                      setVerticalSliceIndex(nextIndex);
-	                    }
-	                  }}
-	                />
-	              </label>
-	              <div className="button-row">
-	                <button
-	                  type="button"
-	                  onClick={() => {
-	                    const nextIndex = Math.max(0, activeSliceIndex - 1);
-	                    if (activeSlicePlane === "horizontal") {
-	                      setHorizontalSliceLevel(nextIndex);
-	                    } else {
-	                      setVerticalSliceIndex(nextIndex);
-	                    }
-	                  }}
-	                >
-	                  {activeSlicePlane === "horizontal" ? "Move down" : "Move back"}
-	                </button>
-	                <button
-	                  type="button"
-	                  onClick={() => {
-	                    const nextIndex = Math.min(
-	                      Math.max(0, activeSliceMax - 1),
-	                      activeSliceIndex + 1,
-	                    );
-	                    if (activeSlicePlane === "horizontal") {
-	                      setHorizontalSliceLevel(nextIndex);
-	                    } else {
-	                      setVerticalSliceIndex(nextIndex);
-	                    }
-	                  }}
-	                >
-	                  {activeSlicePlane === "horizontal" ? "Move up" : "Move forward"}
-	                </button>
-	              </div>
-	              <p>
-	                Active slice: {activeSlicePlaneDescription(activeSlicePlane)} at index{" "}
-	                {activeSliceIndex}
-	                {activeSlicePositionLabel ? ` (${activeSlicePositionLabel})` : ""}.
-	              </p>
-	              <small>
-	                Slice controls move native-grid slices only. They do not interpolate, rotate raw
-	                NetCDF, or change the CM1 result.
-	              </small>
             </fieldset>
           )}
+        </aside>
 
+        <div className="visualizer-stage" aria-label="Fixed visualization viewport region">
+          <div className="scene-container" aria-label="3-D scene container">
+            <div className="viewport-frame">
+              <div
+                className="plot-data-layer"
+                aria-label="Zoomable visualizer data layer"
+                style={{ transform: `scale(${zoom / 100})` }}
+              >
+                <div className="scene-horizon" />
+                <div className="scene-grid" />
+                <div
+                  className={`domain-box domain-box-${projectionMode}`}
+                  aria-label="Domain bounding box"
+                >
+                  <span className="axis-label axis-label-x">
+                    {projectionMode === "side_yz" ? "y" : "x"}
+                  </span>
+                  <span className="axis-label axis-label-y">
+                    {projectionMode === "side_xz"
+                      ? "depth y"
+                      : projectionMode === "top_down"
+                        ? "y"
+                        : "depth y"}
+                  </span>
+                  <span className="axis-label axis-label-z">
+                    {projectionMode === "top_down" ? "top-down x-y" : "height z"}
+                  </span>
+                  <span className="ground-label">domain floor</span>
+                </div>
+                {showSlicePlanes && activeSlicePlane === "horizontal" && (
+                  <SlicePlane title="Horizontal z slice plane" slice={sceneHorizontalSlice} />
+                )}
+                {showSlicePlanes && activeSlicePlane !== "horizontal" && (
+                  <SlicePlane
+                    title={
+                      activeSlicePlane === "vertical_x"
+                        ? "Vertical x-z slice plane"
+                        : "Vertical y-z slice plane"
+                    }
+                    slice={sceneVerticalSlice}
+                  />
+                )}
+                {pointCloud && pointCloud.points.length > 0 && (
+                  <div className="point-cloud-layer" aria-label="Cloud-water point cloud">
+                    {pointCloud.points.map((point, index) => (
+                      <span
+                        className="cloud-point"
+                        key={`${point.join("-")}-${index}`}
+                        style={cloudPointStyle(
+                          point,
+                          pointCloud,
+                          projectionMode,
+                          pointCloud.stats,
+                          opacity,
+                          pointSize,
+                        )}
+                      />
+                    ))}
+                  </div>
+                )}
+              </div>
+              <ScaleMarkers pointCloud={pointCloud} projectionMode={projectionMode} />
+              <div className="scene-context-label">
+                <strong>{projectionLabel(projectionMode)}</strong>
+                <span>{selectedTimeLabel}</span>
+                <span>Cloud-water threshold {formatScientific(threshold, "kg/kg")}</span>
+              </div>
+              <p className="active-slice-label" aria-label="Active slice label">
+                {activeSlicePlaneDescription(activeSlicePlane)}: index {activeSliceIndex}
+                {activeSlicePositionLabel ? ` (${activeSlicePositionLabel})` : ""}
+              </p>
+            </div>
+            <p className="projection-description" aria-label="Projection description">
+              {projectionDescription(projectionMode)}
+            </p>
+            {(!pointCloud || pointCloud.points.length === 0) && (
+              <div className="scene-empty-state">
+                <p className="eyebrow">Cloud-water point cloud</p>
+                <h3>
+                  {!qcField
+                    ? "Cloud water field qc is not available for this result."
+                    : "No cloud water above the selected threshold at this time."}
+                </h3>
+                <p>
+                  Adjust the time or threshold after qc is available. Rendering remains an
+                  interpretation of CM1-derived data.
+                </p>
+              </div>
+            )}
+          </div>
+
+          <div className="visualizer-bottom-controls" aria-label="Timeline and slice controls">
+            {catalog && selectedField && (
+              <fieldset>
+                <legend>Timeline</legend>
+                <label htmlFor="scene-time">
+                  Time
+                  <input
+                    id="scene-time"
+                    type="range"
+                    min={0}
+                    max={timeMax}
+                    value={Math.min(timeIndex, timeMax)}
+                    onChange={(event) => setTimeIndex(Number(event.target.value))}
+                  />
+                </label>
+                <button type="button" onClick={() => setIsPlaying((current) => !current)}>
+                  {isPlaying ? "Pause time" : "Play time"}
+                </button>
+                <div className="button-row">
+                  <button
+                    type="button"
+                    onClick={() => setTimeIndex(jumpTimeIndex(timeOptions, result, "first-cloud"))}
+                  >
+                    Jump to first cloud
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setTimeIndex(jumpTimeIndex(timeOptions, result, "max-qc"))}
+                  >
+                    Jump to max cloud water
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setTimeIndex(jumpTimeIndex(timeOptions, result, "max-w"))}
+                  >
+                    Jump to max updraft
+                  </button>
+                </div>
+              </fieldset>
+            )}
+
+            {catalog && sliceField && (
+              <fieldset>
+                <legend>Slice position</legend>
+                <div className="segmented-buttons" aria-label="Slice plane orientation">
+                  <button
+                    type="button"
+                    className={activeSlicePlane === "horizontal" ? "active-control" : ""}
+                    onClick={() => {
+                      setActiveSlicePlane("horizontal");
+                      setShowSlicePlanes(true);
+                      setProjectionMode("top_down");
+                    }}
+                  >
+                    Horizontal z
+                  </button>
+                  <button
+                    type="button"
+                    className={activeSlicePlane === "vertical_x" ? "active-control" : ""}
+                    onClick={() => {
+                      setActiveSlicePlane("vertical_x");
+                      setSliceOrientation("vertical_x");
+                      setVerticalSliceIndex(
+                        defaultVerticalIndex(
+                          sliceField,
+                          "vertical_x",
+                          selectedTimeSliceDefaults ?? defaultsForField(viewDefaults, sliceFieldName),
+                        ),
+                      );
+                      setShowSlicePlanes(true);
+                      setProjectionMode("side_xz");
+                    }}
+                  >
+                    Vertical x-z
+                  </button>
+                  <button
+                    type="button"
+                    className={activeSlicePlane === "vertical_y" ? "active-control" : ""}
+                    onClick={() => {
+                      setActiveSlicePlane("vertical_y");
+                      setSliceOrientation("vertical_y");
+                      setVerticalSliceIndex(
+                        defaultVerticalIndex(
+                          sliceField,
+                          "vertical_y",
+                          selectedTimeSliceDefaults ?? defaultsForField(viewDefaults, sliceFieldName),
+                        ),
+                      );
+                      setShowSlicePlanes(true);
+                      setProjectionMode("side_yz");
+                    }}
+                  >
+                    Vertical y-z
+                  </button>
+                </div>
+                <label htmlFor="active-slice-position">
+                  {activeSlicePlaneLabel(activeSlicePlane)}
+                  <input
+                    id="active-slice-position"
+                    type="range"
+                    min={0}
+                    max={Math.max(0, activeSliceMax - 1)}
+                    value={activeSliceIndex}
+                    onChange={(event) => {
+                      const nextIndex = Number(event.target.value);
+                      if (activeSlicePlane === "horizontal") {
+                        setHorizontalSliceLevel(nextIndex);
+                      } else {
+                        setVerticalSliceIndex(nextIndex);
+                      }
+                    }}
+                  />
+                </label>
+                <div className="button-row">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const nextIndex = Math.max(0, activeSliceIndex - 1);
+                      if (activeSlicePlane === "horizontal") {
+                        setHorizontalSliceLevel(nextIndex);
+                      } else {
+                        setVerticalSliceIndex(nextIndex);
+                      }
+                    }}
+                  >
+                    {activeSlicePlane === "horizontal" ? "Move down" : "Move back"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const nextIndex = Math.min(
+                        Math.max(0, activeSliceMax - 1),
+                        activeSliceIndex + 1,
+                      );
+                      if (activeSlicePlane === "horizontal") {
+                        setHorizontalSliceLevel(nextIndex);
+                      } else {
+                        setVerticalSliceIndex(nextIndex);
+                      }
+                    }}
+                  >
+                    {activeSlicePlane === "horizontal" ? "Move up" : "Move forward"}
+                  </button>
+                </div>
+                <p>
+                  Active slice: {activeSlicePlaneDescription(activeSlicePlane)} at index{" "}
+                  {activeSliceIndex}
+                  {activeSlicePositionLabel ? ` (${activeSlicePositionLabel})` : ""}.
+                </p>
+                <small>
+                  Slice controls move native-grid slices only. They do not interpolate, rotate raw
+                  NetCDF, or change the CM1 result.
+                </small>
+            </fieldset>
+          )}
+          </div>
+        </div>
+
+        <aside className="visualizer-details-panel" aria-label="Visualization details">
           <div className="summary-strip">
             <Metric
               label="Selected time"
@@ -2214,7 +2243,7 @@ function VisualizerSceneShell({ result }: { result: ResultCard }) {
             <summary>About this visualization</summary>
             <dl className="metric-grid">
               <Metric label="Run ID" value={result.run_id} />
-              <Metric label="View control" value="zoom-only CSS plotting transform" />
+              <Metric label="View control" value="zoom-only data-layer transform" />
               <Metric label="Zoom" value={`${zoom}%`} />
               <Metric label="Opacity" value={String(opacity)} />
               <Metric label="Point size" value={`${pointSize}px`} />

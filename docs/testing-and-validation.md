@@ -97,10 +97,11 @@ catalog instead of reading NetCDF in the browser. They should cover opening from
 a Result Card, scene container rendering, projection/view controls, zoom/reset
 view controls, time slider shell, field selector shell, interesting-time/default
 slice selection, first-cloud/max-cloud/max-updraft jump controls, domain box,
-axes/height/floor labels, scale markers, stable plotting-group transforms,
-projection descriptions, provenance/rendering details, and no-field/error
-states. They must not assert isosurfaces, true camera orbit/pan behavior, or
-volumetric effects until later visualizer issues implement those layers.
+axes/height/floor labels, scale markers, fixed workbench regions, stable
+data-layer transforms, projection descriptions, provenance/rendering details,
+and no-field/error states. They must not assert isosurfaces, true camera
+orbit/pan behavior, or volumetric effects until later visualizer issues
+implement those layers.
 
 Cloud-water point-cloud tests should use tiny synthetic NetCDF fixtures on the
 backend and mocked visualization-ready point payloads on the frontend. Backend
@@ -116,12 +117,22 @@ raw NetCDF. These tests must not add ray marching, isosurfaces, shadows,
 fly-through, export, or generated CM1 output.
 
 Viewport-stability tests should verify that the domain box, floor/grid, slice
-planes, scale markers, and cloud-water point cloud live inside the same plotting
-group, that zoom scales that group without changing data selection, and that
-reset view restores zoom and projection defaults. Side views should state that
-height is vertical, top-down should state that height is not shown vertically,
-and oblique should be labeled an interpretive overview rather than a true
-perspective camera.
+planes, and cloud-water point cloud live inside the same zoomable data layer,
+that axes/scale markers remain outside that zoomed layer and readable, that the
+workbench exposes primary controls, viewport, bottom timeline/slice controls,
+and technical details as separate regions, and that reset view restores zoom and
+projection defaults. Side views should state that height is vertical, top-down
+should state that height is not shown vertically, and oblique should be labeled
+an interpretive overview rather than a true perspective camera.
+
+The fixed visualizer workbench should also get a real browser smoke check after
+layout changes, not only component tests. Open the app, navigate to Results,
+open the validated quick-look baseline in Visualize, and confirm by screenshot
+or direct browser inspection that the render viewport does not cover primary
+controls, bottom controls, or technical details. At minimum verify that the
+primary control rail, fixed viewport, timeline/slice-position strip, and details
+panel are all reachable while cloud-water points and slice planes remain visible
+inside the viewport.
 
 3-D slice-plane tests should mock the #72 visualization-ready slice API. They
 should cover horizontal and vertical slice planes, `qc` and `w` field selection,

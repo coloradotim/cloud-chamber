@@ -510,11 +510,37 @@ details[open] > summary {
   padding: 1rem;
 }
 
-.visualizer-layout {
+.visualizer-workbench {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(18rem, 22rem);
+  grid-template-columns: minmax(14rem, 16rem) minmax(0, 1fr) minmax(16rem, 18rem);
+  grid-template-areas:
+    "status status status"
+    "controls stage details";
   gap: 1rem;
   align-items: start;
+}
+
+.workbench-status-strip {
+  grid-area: status;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.65rem;
+}
+
+.workbench-status-strip > div {
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  padding: 0.65rem;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.visualizer-stage {
+  grid-area: stage;
+  position: sticky;
+  top: 1rem;
+  display: grid;
+  gap: 0.75rem;
+  min-width: 0;
 }
 
 .scene-container {
@@ -541,7 +567,7 @@ details[open] > summary {
   overflow: hidden;
 }
 
-.plotting-layer {
+.plot-data-layer {
   position: absolute;
   inset: 0;
   transform-origin: center center;
@@ -623,6 +649,20 @@ details[open] > summary {
 .scene-context-label span {
   color: #cfdae0;
   font-weight: 700;
+}
+
+.active-slice-label {
+  position: absolute;
+  left: 1rem;
+  bottom: 1rem;
+  z-index: 4;
+  margin: 0;
+  border-radius: 8px;
+  padding: 0.28rem 0.45rem;
+  background: rgba(6, 12, 18, 0.72);
+  color: #d8fff0;
+  font-size: 0.74rem;
+  font-weight: 850;
 }
 
 .projection-description {
@@ -766,12 +806,58 @@ details[open] > summary {
 }
 
 .visualizer-controls {
+  grid-area: controls;
   position: relative;
   z-index: 5;
   display: grid;
   align-content: start;
   gap: 1rem;
   min-width: 0;
+}
+
+.visualizer-primary-controls {
+  position: sticky;
+  top: 1rem;
+  max-height: calc(100vh - 2rem);
+  overflow: auto;
+}
+
+.visualizer-bottom-controls {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 0.75rem;
+}
+
+.visualizer-bottom-controls fieldset,
+.visualizer-details-panel {
+  display: grid;
+  gap: 0.75rem;
+  min-width: 0;
+  margin: 0;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 8px;
+  padding: 0.9rem;
+}
+
+.visualizer-bottom-controls legend {
+  color: #f7fbff;
+  font-weight: 850;
+}
+
+.visualizer-bottom-controls label {
+  display: grid;
+  gap: 0.4rem;
+  color: #eff7fa;
+  font-weight: 800;
+}
+
+.visualizer-details-panel {
+  grid-area: details;
+  align-content: start;
+  position: sticky;
+  top: 1rem;
+  max-height: calc(100vh - 2rem);
+  overflow: auto;
 }
 
 .visualizer-controls fieldset {
@@ -957,10 +1043,27 @@ details[open] > summary {
   .builder-layout,
   .results-layout,
   .comparison-grid,
-  .visualizer-layout,
+  .visualizer-workbench,
+  .workbench-status-strip,
+  .visualizer-bottom-controls,
   .slice-grid,
   .control-row {
     grid-template-columns: 1fr;
+  }
+
+  .visualizer-workbench {
+    grid-template-areas:
+      "status"
+      "stage"
+      "controls"
+      "details";
+  }
+
+  .visualizer-stage,
+  .visualizer-primary-controls,
+  .visualizer-details-panel {
+    position: static;
+    max-height: none;
   }
 
   .inspector-controls {

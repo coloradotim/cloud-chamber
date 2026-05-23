@@ -799,7 +799,7 @@ describe("App", () => {
     fireEvent.click(screen.getByRole("button", { name: "Visualize Dry Failed" }));
 
     expect(await screen.findByRole("heading", { name: "3-D cloud view" })).toBeInTheDocument();
-    expect(screen.getByText("Dry Failed Cumulus quick-look")).toBeInTheDocument();
+    expect(screen.getAllByText("Dry Failed Cumulus quick-look").length).toBeGreaterThan(0);
     expect(await screen.findByRole("heading", { name: "Scene shell" })).toBeInTheDocument();
     expect(fetch).toHaveBeenCalledWith(
       "/api/results/result-dry-failed-cumulus/visualization/defaults",
@@ -964,7 +964,7 @@ describe("App", () => {
     fireEvent.click((await screen.findAllByRole("button", { name: "Open 3-D" }))[0]);
 
     expect(await screen.findByRole("heading", { name: "Scene shell" })).toBeInTheDocument();
-    await screen.findByText("Cloud-water point cloud loaded");
+    await screen.findAllByText("Cloud-water point cloud loaded");
     expect(screen.getByLabelText("3-D scene container")).toBeInTheDocument();
     expect(screen.getByLabelText("Cloud-water point cloud")).toBeInTheDocument();
     expect(screen.getByLabelText("Domain bounding box")).toBeInTheDocument();
@@ -972,13 +972,21 @@ describe("App", () => {
     expect(screen.getByText("height z")).toBeInTheDocument();
     expect(screen.getByLabelText("Show slice planes")).not.toBeChecked();
     const scene = screen.getByLabelText("3-D scene container");
-    const plottingGroup = within(scene).getByLabelText("Stable visualizer plotting group");
+    expect(screen.getByLabelText("Scientific visualization workbench")).toBeInTheDocument();
+    expect(screen.getByLabelText("Primary visualizer controls")).toBeInTheDocument();
+    expect(screen.getByLabelText("Fixed visualization viewport region")).toBeInTheDocument();
+    expect(screen.getByLabelText("Timeline and slice controls")).toBeInTheDocument();
+    expect(screen.getByLabelText("Visualization details")).toBeInTheDocument();
+    const plottingGroup = within(scene).getByLabelText("Zoomable visualizer data layer");
     expect(plottingGroup).toBeInTheDocument();
     expect(within(plottingGroup).getByLabelText("Domain bounding box")).toBeInTheDocument();
     expect(within(plottingGroup).getByLabelText("Cloud-water point cloud")).toBeInTheDocument();
-    expect(within(plottingGroup).getByLabelText("Scale markers")).toBeInTheDocument();
-    expect(within(plottingGroup).getByLabelText("x-axis ticks")).toBeInTheDocument();
-    expect(within(plottingGroup).getByLabelText("height-axis ticks")).toBeInTheDocument();
+    expect(within(scene).getByLabelText("Scale markers")).toBeInTheDocument();
+    expect(within(scene).getByLabelText("x-axis ticks")).toBeInTheDocument();
+    expect(within(scene).getByLabelText("height-axis ticks")).toBeInTheDocument();
+    expect(within(scene).getByLabelText("Active slice label")).toHaveTextContent(
+      "horizontal z/height slice",
+    );
     expect(screen.getByText("x: -3.2 km")).toBeInTheDocument();
     expect(screen.getByText("x: 0 km")).toBeInTheDocument();
     expect(screen.getByText("x: 3.2 km")).toBeInTheDocument();
@@ -1039,7 +1047,7 @@ describe("App", () => {
     render(<App />);
 
     fireEvent.click((await screen.findAllByRole("button", { name: "Open 3-D" }))[0]);
-    await screen.findByText("Cloud-water point cloud loaded");
+    await screen.findAllByText("Cloud-water point cloud loaded");
 
     const scene = screen.getByLabelText("3-D scene container");
     expect(within(scene).queryByLabelText("Horizontal z slice plane")).not.toBeInTheDocument();
@@ -1093,7 +1101,7 @@ describe("App", () => {
     render(<App />);
 
     fireEvent.click((await screen.findAllByRole("button", { name: "Open 3-D" }))[0]);
-    await screen.findByText("Cloud-water point cloud loaded");
+    await screen.findAllByText("Cloud-water point cloud loaded");
 
     fireEvent.click(screen.getByRole("button", { name: "Vertical cross-section" }));
     expect(screen.getByLabelText("Show slice planes")).toBeChecked();
@@ -1132,16 +1140,16 @@ describe("App", () => {
     render(<App />);
 
     fireEvent.click((await screen.findAllByRole("button", { name: "Open 3-D" }))[0]);
-    await screen.findByText("Cloud-water point cloud loaded");
+    await screen.findAllByText("Cloud-water point cloud loaded");
 
-    const plottingGroup = screen.getByLabelText("Stable visualizer plotting group");
+    const plottingGroup = screen.getByLabelText("Zoomable visualizer data layer");
     fireEvent.click(screen.getByRole("button", { name: "Side x-z" }));
     fireEvent.change(screen.getByLabelText("Zoom"), { target: { value: "150" } });
 
     expect(screen.getByRole("button", { name: "Side x-z" })).toHaveClass("active-control");
     expect(plottingGroup).toHaveStyle({ transform: "scale(1.5)" });
     expect(screen.getByText("150%")).toBeInTheDocument();
-    expect(screen.getByText("zoom-only CSS plotting transform")).toBeInTheDocument();
+    expect(screen.getByText("zoom-only data-layer transform")).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Reset view" }));
 
@@ -1156,11 +1164,11 @@ describe("App", () => {
     render(<App />);
 
     fireEvent.click((await screen.findAllByRole("button", { name: "Open 3-D" }))[0]);
-    await screen.findByText("Cloud-water point cloud loaded");
+    await screen.findAllByText("Cloud-water point cloud loaded");
 
     fireEvent.change(screen.getByLabelText("Threshold"), { target: { value: "1" } });
 
-    await screen.findByText("No cloud water above threshold");
+    await screen.findAllByText("No cloud water above threshold");
     expect(
       screen.getByText("No cloud water above the selected threshold at this time."),
     ).toBeInTheDocument();
@@ -1184,7 +1192,7 @@ describe("App", () => {
     fireEvent.click(screen.getAllByRole("button", { name: "Open 3-D" })[0]);
 
     expect(await screen.findByRole("heading", { name: "Scene shell" })).toBeInTheDocument();
-    await screen.findByText("Scene shell ready");
+    await screen.findAllByText("Scene shell ready");
     expect(
       screen.getByText("Cloud water field qc is not available for this result."),
     ).toBeInTheDocument();
@@ -1199,7 +1207,7 @@ describe("App", () => {
     fireEvent.click(screen.getAllByRole("button", { name: "Open 3-D" })[0]);
 
     expect(await screen.findByRole("heading", { name: "Scene shell" })).toBeInTheDocument();
-    await screen.findByText("No fields available");
+    await screen.findAllByText("No fields available");
     expect(
       screen.getByText("No visualization-ready fields are available for this result."),
     ).toBeInTheDocument();
