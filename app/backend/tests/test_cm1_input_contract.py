@@ -15,10 +15,15 @@ from cloud_chamber.scenario_schema import (
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 BASELINE_TEMPLATE = REPO_ROOT / "scenarios/lower-atmosphere/baseline-shallow-cumulus.json"
+DRY_FAILED_TEMPLATE = REPO_ROOT / "scenarios/lower-atmosphere/dry-failed-cumulus.json"
 
 
 def baseline_scenario() -> ScenarioTemplate:
     return validate_scenario_template(json.loads(BASELINE_TEMPLATE.read_text()))
+
+
+def dry_failed_scenario() -> ScenarioTemplate:
+    return validate_scenario_template(json.loads(DRY_FAILED_TEMPLATE.read_text()))
 
 
 def test_cm1_contract_documents_expected_generated_files_and_defaults() -> None:
@@ -126,6 +131,29 @@ def test_rendered_input_sounding_is_external_baseline_profile() -> None:
     assert "-4.61" in lines[-1]
     assert "Cloud Chamber input_sounding notes" not in sounding
     assert "placeholder until local/manual CM1 validation" not in sounding
+
+
+def test_dry_failed_sounding_only_drives_low_level_moisture_drier() -> None:
+    baseline = render_input_sounding_notes(build_cm1_input_contract(baseline_scenario()))
+    dry_failed = render_input_sounding_notes(build_cm1_input_contract(dry_failed_scenario()))
+
+    baseline_lines = baseline.splitlines()
+    dry_lines = dry_failed.splitlines()
+
+    assert len(baseline_lines) == len(dry_lines)
+    assert dry_lines[0].split()[:2] == baseline_lines[0].split()[:2]
+    assert float(dry_lines[0].split()[2]) < float(baseline_lines[0].split()[2])
+
+    for baseline_line, dry_line in zip(baseline_lines[1:], dry_lines[1:], strict=True):
+        baseline_parts = baseline_line.split()
+        dry_parts = dry_line.split()
+        assert dry_parts[0] == baseline_parts[0]
+        assert dry_parts[1] == baseline_parts[1]
+        assert dry_parts[3:] == baseline_parts[3:]
+
+    assert float(dry_lines[1].split()[2]) < float(baseline_lines[1].split()[2])
+    assert float(dry_lines[6].split()[2]) < float(baseline_lines[6].split()[2])
+    assert dry_lines[-1].split()[2] == baseline_lines[-1].split()[2]
 
 
 def test_cm1_contract_includes_expected_diagnostics_and_visualization_defaults() -> None:
