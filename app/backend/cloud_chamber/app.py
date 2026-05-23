@@ -23,6 +23,7 @@ from cloud_chamber.result_ingest import (
     ResultIngestError,
     ingest_completed_run,
 )
+from cloud_chamber.run_manifest import RunManifestError, load_run_manifest
 from cloud_chamber.runtime_storage import (
     RuntimeStorageError,
     delete_runtime_run,
@@ -293,12 +294,64 @@ def _get_local_run_manager() -> LocalRunManager:
 
 
 def _run_status_payload(status: RunStatus) -> dict[str, object]:
+    try:
+        manifest = load_run_manifest(status.manifest_path)
+    except (OSError, RunManifestError):
+        return {
+            "run_id": status.run_id,
+            "lifecycle_state": status.lifecycle_state.value,
+            "product_state": None,
+            "validation_status": None,
+            "manifest_path": str(status.manifest_path),
+            "command": list(status.command),
+            "stdout_log": str(status.stdout_log),
+            "stderr_log": str(status.stderr_log),
+            "stdout_tail": _tail_text(status.stdout_log),
+            "stderr_tail": _tail_text(status.stderr_log),
+            "exit_code": status.exit_code,
+            "started_at": None,
+            "finished_at": None,
+            "output_summary": {
+                "raw_cm1_artifacts": 0,
+                "netcdf_paths": 0,
+                "processed_artifacts": 0,
+            },
+            "runtime_warnings": [],
+        }
     return {
         "run_id": status.run_id,
         "lifecycle_state": status.lifecycle_state.value,
+        "product_state": manifest.provenance.product_state.value,
+        "validation_status": manifest.validation_status.value,
         "manifest_path": str(status.manifest_path),
         "command": list(status.command),
         "stdout_log": str(status.stdout_log),
         "stderr_log": str(status.stderr_log),
+        "stdout_tail": _tail_text(status.stdout_log),
+        "stderr_tail": _tail_text(status.stderr_log),
         "exit_code": status.exit_code,
+        "started_at": manifest.execution.started_at.isoformat()
+        if manifest.execution.started_at
+        else None,
+        "finished_at": manifest.execution.finished_at.isoformat()
+        if manifest.execution.finished_at
+        else None,
+        "output_summary": {
+            "raw_cm1_artifacts": len(manifest.outputs.raw_cm1_artifacts),
+            "netcdf_paths": len(manifest.outputs.netcdf_paths),
+            "processed_artifacts": len(manifest.outputs.processed_artifacts),
+        },
+        "runtime_warnings": manifest.outputs.runtime_warnings,
     }
+
+
+def _tail_text(path: Path, *, max_lines: int = 12) -> str | None:
+    if not str(path):
+        return None
+    try:
+        if not path.exists():
+            return None
+        lines = path.read_text(errors="replace").splitlines()
+    except OSError:
+        return None
+    return "\n".join(lines[-max_lines:]) if lines else ""

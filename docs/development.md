@@ -72,7 +72,7 @@ Implemented backend API endpoints:
 - `GET /api/scenarios` lists validated scenario templates for the Scenario Builder and marks Baseline Shallow Cumulus as the Golden Path scenario.
 - `POST /api/dry-run-package` validates selected controls and writes a reviewable dry-run package under the configured runtime home. It does not launch CM1, create NetCDF output, or write generated packages into the repo during tests.
 - `POST /api/runs/launch` starts one local CM1 run from a generated manifest when local CM1 settings validate.
-- `GET /api/runs/status?manifest_path=...` refreshes and returns lifecycle status/log metadata for a run manifest.
+- `GET /api/runs/status?manifest_path=...` refreshes and returns lifecycle status, product/validation state, command/log paths, short stdout/stderr tails, output-artifact counts, runtime warnings, and timestamps for a run manifest.
 - `POST /api/runs/cancel` cancels the active local run when technically practical.
 - `GET /api/storage/inventory` reports configured runtime-home disk usage and per-run metadata under `~/CloudChamber/runs/`.
 - `POST /api/storage/delete-run` previews or deletes one selected run directory under the configured runtime home.
@@ -217,6 +217,12 @@ Before automated launch is trusted, use the Baseline Shallow Cumulus dry-run pac
 10. Keep generated packages, copied runtime files, logs, NetCDF output, `.dat/.ctl` output, and validation reports out of git unless a future policy explicitly creates a tiny synthetic fixture.
 
 The automated local CM1 launcher/log monitor now follows this policy for the first MVP. It preserves the same distinctions: dry-run package, queued/running CM1 process, completed/failed/canceled CM1 run, ingested metadata, and saved result/notebook entry are separate states.
+
+The Build workspace now stitches the local loop together in the app: create a
+package, launch local CM1, refresh status/logs, review output counts, ingest
+completed NetCDF output, then open the resulting card in Results, Inspect, or
+Visualize. Use mocked backend responses for automated UI tests. Do not run real
+CM1 or write generated output in CI.
 
 ## Whole Repo
 

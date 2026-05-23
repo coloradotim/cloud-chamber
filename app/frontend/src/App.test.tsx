@@ -89,6 +89,47 @@ const dryRunResponse = {
   },
 };
 
+const runningRunStatus = {
+  run_id: "dry-run-001",
+  lifecycle_state: "running",
+  product_state: "queued_running_cm1_process",
+  validation_status: "unvalidated",
+  manifest_path: "/tmp/CloudChamber/runs/dry-run-001/run_manifest.json",
+  command: ["/Users/timpeterson/cm1r21.1/run/cm1.exe"],
+  stdout_log: "/tmp/CloudChamber/runs/dry-run-001/logs/stdout.log",
+  stderr_log: "/tmp/CloudChamber/runs/dry-run-001/logs/stderr.log",
+  stdout_tail: "CM1 started",
+  stderr_tail: "",
+  exit_code: null,
+  started_at: "2026-05-22T15:15:36Z",
+  finished_at: null,
+  output_summary: {
+    raw_cm1_artifacts: 0,
+    netcdf_paths: 0,
+    processed_artifacts: 0,
+  },
+  runtime_warnings: [],
+};
+
+const completedRunStatus = {
+  ...runningRunStatus,
+  lifecycle_state: "completed",
+  product_state: "completed_cm1_result",
+  validation_status: "valid",
+  stdout_tail: "Program terminated normally",
+  stderr_tail: "IEEE_INVALID_FLAG",
+  exit_code: 0,
+  finished_at: "2026-05-22T15:45:36Z",
+  output_summary: {
+    raw_cm1_artifacts: 0,
+    netcdf_paths: 14,
+    processed_artifacts: 0,
+  },
+  runtime_warnings: [
+    "CM1 stderr reported floating-point exception flags: IEEE_INVALID_FLAG",
+  ],
+};
+
 const resultCard = {
   result_id: "result-dry-run-quicklook",
   run_id: "dry-run-quicklook",
@@ -515,6 +556,24 @@ beforeEach(() => {
       if (url === "/api/dry-run-package") {
         return Promise.resolve(new Response(JSON.stringify(dryRunResponse), { status: 200 }));
       }
+      if (url === "/api/runs/launch") {
+        return Promise.resolve(new Response(JSON.stringify(runningRunStatus), { status: 200 }));
+      }
+      if (url.startsWith("/api/runs/status")) {
+        return Promise.resolve(new Response(JSON.stringify(completedRunStatus), { status: 200 }));
+      }
+      if (url === "/api/results/ingest") {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              result_id: "result-dry-run-quicklook",
+              run_id: "dry-run-001",
+              diagnostics_summary: "cloud formed; rain detected",
+            }),
+            { status: 200 },
+          ),
+        );
+      }
       if (url === "/api/results") {
         return Promise.resolve(new Response(JSON.stringify(resultsResponse), { status: 200 }));
       }
@@ -709,6 +768,93 @@ describe("App", () => {
         body: expect.stringContaining("more_humid"),
       }),
     );
+  });
+
+  it("guides a local run from package launch through ingest actions", async () => {
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Build" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Create run package" }));
+
+    expect(await screen.findByText("dry-run-001")).toBeInTheDocument();
+    expect(screen.getByText("Manifest path").nextElementSibling).toHaveTextContent(
+      "/tmp/CloudChamber/runs/dry-run-001/run_manifest.json",
+    );
+    expect(screen.getByText(/Expected diagnostics/)).toHaveTextContent("first_cloud_time");
+    expect(screen.getByRole("button", { name: "Launch local CM1" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Ingest output" })).toBeDisabled();
+
+    fireEvent.click(screen.getByRole("button", { name: "Launch local CM1" }));
+
+    await waitFor(() => {
+      expect(screen.getAllByText("Running").length).toBeGreaterThan(0);
+    });
+    expect(screen.getByText("stdout log").nextElementSibling).toHaveTextContent("stdout.log");
+    expect(screen.getByText("CM1 started")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Refresh status" }));
+
+    await waitFor(() => {
+      expect(screen.getAllByText("Completed CM1 result").length).toBeGreaterThan(0);
+    });
+    expect(screen.getByText("Output summary").nextElementSibling).toHaveTextContent(
+      "14 NetCDF",
+    );
+    expect(screen.getAllByText(/IEEE_INVALID_FLAG/).length).toBeGreaterThan(0);
+    expect(screen.getByRole("button", { name: "Ingest output" })).toBeEnabled();
+
+    fireEvent.click(screen.getByRole("button", { name: "Ingest output" }));
+
+    expect(await screen.findByText(/Result metadata created/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Open in Results" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Inspect fields" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Open 3-D visualization" })).toBeInTheDocument();
+    expect(fetch).toHaveBeenCalledWith(
+      "/api/runs/launch",
+      expect.objectContaining({ method: "POST" }),
+    );
+    expect(fetch).toHaveBeenCalledWith(
+      "/api/results/ingest",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({
+          manifest_path: "/tmp/CloudChamber/runs/dry-run-001/run_manifest.json",
+        }),
+      }),
+    );
+  });
+
+  it("shows an actionable launch failure when local CM1 settings are missing", async () => {
+    vi.mocked(fetch).mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url === "/api/scenarios") {
+        return Promise.resolve(new Response(JSON.stringify(scenarioResponse), { status: 200 }));
+      }
+      if (url === "/api/dry-run-package") {
+        return Promise.resolve(new Response(JSON.stringify(dryRunResponse), { status: 200 }));
+      }
+      if (url === "/api/results") {
+        return Promise.resolve(new Response(JSON.stringify(resultsResponse), { status: 200 }));
+      }
+      if (url === "/api/runs/launch" && init?.method === "POST") {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({ detail: "CM1 executable is missing. Missing: cm1.exe" }),
+            { status: 400 },
+          ),
+        );
+      }
+      return Promise.resolve(new Response("not found", { status: 404 }));
+    });
+
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Build" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Create run package" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Launch local CM1" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("CM1 executable is missing");
+    expect(screen.getByRole("button", { name: "Launch local CM1" })).toBeEnabled();
   });
 
   it("lists result cards in a table and shows notebook diagnostics", async () => {

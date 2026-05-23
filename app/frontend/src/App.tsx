@@ -73,6 +73,34 @@ type DryRunResponse = {
   report: DryRunReport;
 };
 
+type RunStatusResponse = {
+  run_id: string;
+  lifecycle_state: string;
+  product_state: string;
+  validation_status: string;
+  manifest_path: string;
+  command: string[];
+  stdout_log: string;
+  stderr_log: string;
+  stdout_tail: string | null;
+  stderr_tail: string | null;
+  exit_code: number | null;
+  started_at: string | null;
+  finished_at: string | null;
+  output_summary: {
+    raw_cm1_artifacts: number;
+    netcdf_paths: number;
+    processed_artifacts: number;
+  };
+  runtime_warnings: string[];
+};
+
+type IngestResponse = {
+  result_id: string;
+  run_id: string;
+  diagnostics_summary: string | null;
+};
+
 type OutputFileSummary = {
   netcdf_count: number;
   model_output_count: number;
@@ -286,6 +314,39 @@ async function requestDryRunPackage(
   return response.json() as Promise<DryRunResponse>;
 }
 
+async function launchLocalRun(manifestPath: string): Promise<RunStatusResponse> {
+  const response = await fetch("/api/runs/launch", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ manifest_path: manifestPath }),
+  });
+  if (!response.ok) {
+    throw new Error(await responseError(response, "Unable to launch local CM1."));
+  }
+  return response.json() as Promise<RunStatusResponse>;
+}
+
+async function fetchRunStatus(manifestPath: string): Promise<RunStatusResponse> {
+  const search = new URLSearchParams({ manifest_path: manifestPath });
+  const response = await fetch(`/api/runs/status?${search}`);
+  if (!response.ok) {
+    throw new Error(await responseError(response, "Unable to refresh run status."));
+  }
+  return response.json() as Promise<RunStatusResponse>;
+}
+
+async function ingestCompletedRun(manifestPath: string): Promise<IngestResponse> {
+  const response = await fetch("/api/results/ingest", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ manifest_path: manifestPath }),
+  });
+  if (!response.ok) {
+    throw new Error(await responseError(response, "Unable to ingest completed CM1 output."));
+  }
+  return response.json() as Promise<IngestResponse>;
+}
+
 async function fetchResults(): Promise<ResultsResponse> {
   const response = await fetch("/api/results");
   if (!response.ok) {
@@ -399,6 +460,9 @@ export function App() {
   const [controls, setControls] = useState<Record<string, string | number | boolean>>({});
   const [runSizePreset, setRunSizePreset] = useState("quick_look");
   const [dryRun, setDryRun] = useState<DryRunResponse | null>(null);
+  const [runStatus, setRunStatus] = useState<RunStatusResponse | null>(null);
+  const [runWorkflowError, setRunWorkflowError] = useState<string | null>(null);
+  const [ingestedResultId, setIngestedResultId] = useState<string | null>(null);
   const [results, setResults] = useState<ResultCard[]>([]);
   const [selectedResultId, setSelectedResultId] = useState<string | null>(null);
   const [resultDraft, setResultDraft] = useState({ name: "", tags: "", notes: "" });
@@ -464,6 +528,9 @@ export function App() {
     setControls(defaults);
     setRunSizePreset(selectedScenario.run_size_presets[0]?.id ?? "quick_look");
     setDryRun(null);
+    setRunStatus(null);
+    setRunWorkflowError(null);
+    setIngestedResultId(null);
   }, [selectedScenario]);
 
   useEffect(() => {
@@ -491,6 +558,9 @@ export function App() {
     setStatus("Creating dry-run package");
     setError(null);
     setDryRun(null);
+    setRunStatus(null);
+    setRunWorkflowError(null);
+    setIngestedResultId(null);
     try {
       const result = await requestDryRunPackage(selectedScenario.id, controls, runSizePreset);
       setDryRun(result);
@@ -498,6 +568,60 @@ export function App() {
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Unable to create dry-run package.");
       setStatus("Scenario setup");
+    }
+  }
+
+  async function handleLaunchRun() {
+    if (!dryRun) return;
+    setRunWorkflowError(null);
+    setStatus("Launching local CM1");
+    try {
+      const launched = await launchLocalRun(dryRun.manifest_path);
+      setRunStatus(launched);
+      setStatus(userFacingRunWorkflowStatus(launched));
+    } catch (caught) {
+      setRunWorkflowError(caught instanceof Error ? caught.message : "Unable to launch local CM1.");
+      setStatus("Launch blocked");
+    }
+  }
+
+  async function handleRefreshRunStatus() {
+    if (!dryRun) return;
+    setRunWorkflowError(null);
+    try {
+      const refreshed = await fetchRunStatus(dryRun.manifest_path);
+      setRunStatus(refreshed);
+      setStatus(userFacingRunWorkflowStatus(refreshed));
+    } catch (caught) {
+      setRunWorkflowError(
+        caught instanceof Error ? caught.message : "Unable to refresh local CM1 status.",
+      );
+    }
+  }
+
+  async function refreshResults(selectResultId?: string) {
+    const payload = await fetchResults();
+    const prioritized = prioritizeResults(payload.results);
+    setResults(prioritized);
+    setSelectedResultId(selectResultId ?? prioritized[0]?.result_id ?? null);
+    setResultsStatus(payload.results.length > 0 ? "Results loaded" : "No ingested results");
+    return prioritized;
+  }
+
+  async function handleIngestRun() {
+    if (!dryRun) return;
+    setRunWorkflowError(null);
+    setStatus("Ingesting completed CM1 output");
+    try {
+      const ingested = await ingestCompletedRun(dryRun.manifest_path);
+      setIngestedResultId(ingested.result_id);
+      await refreshResults(ingested.result_id);
+      setStatus("Ingested result metadata");
+    } catch (caught) {
+      setRunWorkflowError(
+        caught instanceof Error ? caught.message : "Unable to ingest completed CM1 output.",
+      );
+      setStatus("Ingest blocked");
     }
   }
 
@@ -585,6 +709,9 @@ export function App() {
           runSizePreset={runSizePreset}
           validationMessages={validationMessages}
           dryRun={dryRun}
+          runStatus={runStatus}
+          runWorkflowError={runWorkflowError}
+          ingestedResultId={ingestedResultId}
           onSelectScenario={setSelectedScenarioId}
           onControlChange={(id, value) =>
             setControls((current) => ({
@@ -594,6 +721,21 @@ export function App() {
           }
           onRunSizeChange={setRunSizePreset}
           onDryRun={handleDryRun}
+          onLaunchRun={handleLaunchRun}
+          onRefreshRunStatus={handleRefreshRunStatus}
+          onIngestRun={handleIngestRun}
+          onOpenInResults={() => {
+            if (ingestedResultId) setSelectedResultId(ingestedResultId);
+            setActiveSection("results");
+          }}
+          onInspectIngested={() => {
+            if (ingestedResultId) setSelectedResultId(ingestedResultId);
+            setActiveSection("inspect");
+          }}
+          onVisualizeIngested={() => {
+            if (ingestedResultId) setSelectedResultId(ingestedResultId);
+            setActiveSection("visualize");
+          }}
         />
       )}
 
@@ -682,10 +824,19 @@ function BuildWorkspace({
   runSizePreset,
   validationMessages,
   dryRun,
+  runStatus,
+  runWorkflowError,
+  ingestedResultId,
   onSelectScenario,
   onControlChange,
   onRunSizeChange,
   onDryRun,
+  onLaunchRun,
+  onRefreshRunStatus,
+  onIngestRun,
+  onOpenInResults,
+  onInspectIngested,
+  onVisualizeIngested,
 }: {
   status: string;
   scenarios: Scenario[];
@@ -695,10 +846,19 @@ function BuildWorkspace({
   runSizePreset: string;
   validationMessages: string[];
   dryRun: DryRunResponse | null;
+  runStatus: RunStatusResponse | null;
+  runWorkflowError: string | null;
+  ingestedResultId: string | null;
   onSelectScenario: (scenarioId: string) => void;
   onControlChange: (controlId: string, value: string) => void;
   onRunSizeChange: (presetId: string) => void;
   onDryRun: (event: FormEvent<HTMLFormElement>) => void;
+  onLaunchRun: () => void;
+  onRefreshRunStatus: () => void;
+  onIngestRun: () => void;
+  onOpenInResults: () => void;
+  onInspectIngested: () => void;
+  onVisualizeIngested: () => void;
 }) {
   return (
     <section className="workspace-section" aria-labelledby="build-title">
@@ -809,7 +969,18 @@ function BuildWorkspace({
             <p className="eyebrow">Generated package</p>
             <h3 id="review-title">Review before local CM1 run</h3>
             {dryRun ? (
-              <DryRunReview dryRun={dryRun} />
+              <GuidedRunWorkflow
+                dryRun={dryRun}
+                runStatus={runStatus}
+                error={runWorkflowError}
+                ingestedResultId={ingestedResultId}
+                onLaunchRun={onLaunchRun}
+                onRefreshRunStatus={onRefreshRunStatus}
+                onIngestRun={onIngestRun}
+                onOpenInResults={onOpenInResults}
+                onInspectIngested={onInspectIngested}
+                onVisualizeIngested={onVisualizeIngested}
+              />
             ) : (
               <p>
                 Create a package to review the manifest, CM1 inputs, runtime checklist, and run
@@ -1130,8 +1301,20 @@ function DryRunReview({ dryRun }: { dryRun: DryRunResponse }) {
     <div className="dry-run-review">
       <dl>
         <div>
+          <dt>Run ID</dt>
+          <dd>{runIdFromPackage(dryRun)}</dd>
+        </div>
+        <div>
           <dt>Package path</dt>
           <dd>{dryRun.package_dir}</dd>
+        </div>
+        <div>
+          <dt>Manifest path</dt>
+          <dd>{dryRun.manifest_path}</dd>
+        </div>
+        <div>
+          <dt>Scenario</dt>
+          <dd>{dryRun.report.scenario_id}</dd>
         </div>
         <div>
           <dt>Validation status</dt>
@@ -1159,7 +1342,150 @@ function DryRunReview({ dryRun }: { dryRun: DryRunResponse }) {
       <h4>Manifest summary</h4>
       <p>{dryRun.report.physical_question}</p>
       <p>Run-size preset: {dryRun.report.run_size_preset}</p>
+      <p>Expected diagnostics: {dryRun.report.expected_diagnostics.join(", ")}</p>
       <p>Product state: {dryRun.report.provenance.product_state}</p>
+    </div>
+  );
+}
+
+function GuidedRunWorkflow({
+  dryRun,
+  runStatus,
+  error,
+  ingestedResultId,
+  onLaunchRun,
+  onRefreshRunStatus,
+  onIngestRun,
+  onOpenInResults,
+  onInspectIngested,
+  onVisualizeIngested,
+}: {
+  dryRun: DryRunResponse;
+  runStatus: RunStatusResponse | null;
+  error: string | null;
+  ingestedResultId: string | null;
+  onLaunchRun: () => void;
+  onRefreshRunStatus: () => void;
+  onIngestRun: () => void;
+  onOpenInResults: () => void;
+  onInspectIngested: () => void;
+  onVisualizeIngested: () => void;
+}) {
+  const isRunning =
+    runStatus?.lifecycle_state === "queued" || runStatus?.lifecycle_state === "running";
+  const canIngest =
+    runStatus?.lifecycle_state === "completed" &&
+    runStatus.product_state === "completed_cm1_result" &&
+    !ingestedResultId;
+  const outputCount = runStatus
+    ? Object.values(runStatus.output_summary).reduce((total, value) => total + value, 0)
+    : 0;
+
+  return (
+    <div className="guided-run-workflow">
+      <DryRunReview dryRun={dryRun} />
+
+      <section aria-labelledby="local-run-title">
+        <h4 id="local-run-title">Local CM1 run</h4>
+        <ol className="workflow-steps">
+          <li className="complete">Package ready</li>
+          <li className={runStatus ? "complete" : ""}>
+            {isRunning ? "Running" : runStatus ? userFacingRunWorkflowStatus(runStatus) : "Ready to launch"}
+          </li>
+          <li className={runStatus?.lifecycle_state === "completed" ? "complete" : ""}>
+            {runStatus?.lifecycle_state === "completed" ? "Ready to ingest" : "Waiting for CM1 output"}
+          </li>
+          <li className={ingestedResultId ? "complete" : ""}>
+            {ingestedResultId ? "Ingested" : "Not ingested yet"}
+          </li>
+        </ol>
+
+        {error && <p role="alert">{error}</p>}
+
+        <div className="button-row">
+          <button type="button" onClick={onLaunchRun} disabled={Boolean(runStatus)}>
+            Launch local CM1
+          </button>
+          <button type="button" onClick={onRefreshRunStatus} disabled={!runStatus}>
+            Refresh status
+          </button>
+          <button type="button" onClick={onIngestRun} disabled={!canIngest}>
+            Ingest output
+          </button>
+        </div>
+
+        {runStatus ? (
+          <div className="run-status-panel" aria-label="Local run status">
+            <dl>
+              <Metric label="Lifecycle state" value={humanize(runStatus.lifecycle_state)} />
+              <Metric label="Product state" value={humanize(runStatus.product_state)} />
+              <Metric label="Validation" value={humanize(runStatus.validation_status)} />
+              <Metric label="Exit code" value={runStatus.exit_code?.toString() ?? "Running"} />
+              <Metric label="Started" value={runStatus.started_at ?? "Not recorded"} />
+              <Metric label="Finished" value={runStatus.finished_at ?? "Not finished"} />
+              <Metric label="stdout log" value={runStatus.stdout_log || "Unavailable"} />
+              <Metric label="stderr log" value={runStatus.stderr_log || "Unavailable"} />
+              <Metric
+                label="Output summary"
+                value={
+                  outputCount > 0
+                    ? `${runStatus.output_summary.netcdf_paths} NetCDF, ${runStatus.output_summary.raw_cm1_artifacts} raw CM1, ${runStatus.output_summary.processed_artifacts} processed`
+                    : "No output artifacts detected yet"
+                }
+              />
+            </dl>
+            {runStatus.runtime_warnings.length > 0 && (
+              <div>
+                <h5>Runtime caveats</h5>
+                <ul>
+                  {runStatus.runtime_warnings.map((warning) => (
+                    <li key={warning}>{warning}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            {(runStatus.stdout_tail || runStatus.stderr_tail) && (
+              <details>
+                <summary>Latest log tail</summary>
+                {runStatus.stdout_tail && (
+                  <>
+                    <h5>stdout</h5>
+                    <pre>{runStatus.stdout_tail}</pre>
+                  </>
+                )}
+                {runStatus.stderr_tail && (
+                  <>
+                    <h5>stderr</h5>
+                    <pre>{runStatus.stderr_tail}</pre>
+                  </>
+                )}
+              </details>
+            )}
+          </div>
+        ) : (
+          <p>
+            Launch uses the configured local CM1 install and preserves one local run at a time.
+            If CM1 settings are missing, launch will fail before any process starts.
+          </p>
+        )}
+
+        {ingestedResultId && (
+          <div className="post-ingest-actions" aria-label="Ingested result actions">
+            <p>Result metadata created: {ingestedResultId}</p>
+            <div className="button-row">
+              <button type="button" onClick={onOpenInResults}>
+                Open in Results
+              </button>
+              <button type="button" onClick={onInspectIngested}>
+                Inspect fields
+              </button>
+              <button type="button" onClick={onVisualizeIngested}>
+                Open 3-D visualization
+              </button>
+            </div>
+          </div>
+        )}
+      </section>
     </div>
   );
 }
@@ -2944,6 +3270,23 @@ function formatTimeValue(value: number | string | null): string {
   if (value === null) return "Time unavailable";
   if (typeof value === "number") return `${value.toLocaleString()} s`;
   return value;
+}
+
+function runIdFromPackage(dryRun: DryRunResponse): string {
+  return dryRun.package_dir.split("/").filter(Boolean).at(-1) ?? dryRun.report.scenario_id;
+}
+
+function userFacingRunWorkflowStatus(status: RunStatusResponse): string {
+  if (status.lifecycle_state === "queued") return "Queued";
+  if (status.lifecycle_state === "running") return "Running";
+  if (status.lifecycle_state === "completed") {
+    return status.product_state === "completed_cm1_result"
+      ? "Completed CM1 result"
+      : "Completed with no usable output";
+  }
+  if (status.lifecycle_state === "failed") return "Failed";
+  if (status.lifecycle_state === "canceled") return "Canceled";
+  return humanize(status.lifecycle_state);
 }
 
 function cloudPointStyle(
