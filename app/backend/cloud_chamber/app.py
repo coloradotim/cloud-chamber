@@ -216,9 +216,9 @@ def get_visualization_fields(result_id: str) -> dict[str, object]:
 
 
 @app.get("/api/results/{result_id}/visualization/defaults")
-def get_visualization_defaults(result_id: str) -> dict[str, object]:
+def get_visualization_defaults(result_id: str, time_index: int | None = None) -> dict[str, object]:
     try:
-        result = view_defaults(load_settings(), result_id)
+        result = view_defaults(load_settings(), result_id, time_index=time_index)
     except ResultIngestError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except VisualizationDataError as exc:

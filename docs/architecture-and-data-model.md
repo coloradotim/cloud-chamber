@@ -351,11 +351,19 @@ through:
 The point-cloud endpoint reads the selected NetCDF output time, uses native
 `zh/yh/xh` coordinates for `qc`, returns `[x, y, z, value]` points where `qc`
 meets the requested threshold, and records source count, returned count,
-min/max value, downsampling status, coordinate units, and provenance. If source
-points exceed `max_points`, the backend applies deterministic stride
-downsampling and labels it. The frontend renders only the returned
+min/max value, active `z` range, max-value location, full coordinate extents,
+downsampling status, coordinate units, and provenance. If source points exceed
+`max_points`, the backend applies deterministic stride downsampling and labels
+it. The frontend renders only the returned
 visualization-ready points and must label the result as a CM1-derived
 interpretation.
+
+The frontend point projection uses those full coordinate extents, not the
+min/max of returned cloudy points. Scientific views should include side/elevation
+projections where model height `z` is the visual vertical axis, plus top-down and
+oblique overview modes. The domain box, floor, axes, and points must share the
+same transform so horizontal `y` does not masquerade as height. Oblique overview
+is an interpretation for orientation, not a literal atmospheric photograph.
 
 3-D slice planes reuse the same backend slice endpoint as the 2-D inspector:
 
@@ -497,10 +505,13 @@ GET /api/results/{result_id}/visualization/defaults
 The response reports per-field native-grid defaults for `qc` and `w`, including
 time index/seconds, horizontal level index, vertical `x`/`y` slice indices,
 source label, max value when available, caveats, and provenance. These defaults
-are computed from backend xarray access to ingested NetCDF output. The browser
-uses them to pick cloud-bearing or max-updraft views but still requests normal
-slice/point-cloud payloads for rendering. The defaults endpoint does not
-interpolate fields, parse raw NetCDF in the browser, or change result metadata.
+are computed from backend xarray access to ingested NetCDF output. The endpoint
+also accepts an optional `time_index` so the visualizer can ask for selected-time
+max `qc` or selected-time max `w` slice locations instead of reusing a global
+max from a different output time. The browser uses those defaults to pick
+cloud-centered or updraft-centered views but still requests normal slice/point-
+cloud payloads for rendering. The defaults endpoint does not interpolate fields,
+parse raw NetCDF in the browser, or change result metadata.
 
 This is not a 3-D viewer, replay engine, or rendering pipeline. It is the
 orientation/scaling check that should happen before 3-D visualizer work.
