@@ -374,10 +374,12 @@ function sliceResponse({
   field = "qc",
   orientation = "horizontal",
   timeIndex = 0,
+  levelIndex = 0,
 }: {
   field?: "qc" | "w";
   orientation?: "horizontal" | "vertical_x" | "vertical_y";
   timeIndex?: number;
+  levelIndex?: number;
 }) {
   const fieldMetadata =
     fieldCatalogResponse.available_fields.find((candidate) => candidate.raw_field_name === field) ??
@@ -410,11 +412,11 @@ function sliceResponse({
       orientation,
       selected_dimension:
         orientation === "vertical_y" ? "xh" : orientation === "vertical_x" ? "yh" : "zh",
-      selected_index: 0,
-      selected_coordinate_value: orientation === "horizontal" ? 0.8 : 0,
+      selected_index: levelIndex,
+      selected_coordinate_value: orientation === "horizontal" ? [0.4, 0.8, 1.2][levelIndex] ?? 0.8 : [-3.2, 0, 3.2][levelIndex] ?? 0,
       level_units: orientation === "horizontal" ? "km" : null,
-      level_coordinate_value: orientation === "horizontal" ? 0.8 : null,
-      level_meters: orientation === "horizontal" ? 800 : null,
+      level_coordinate_value: orientation === "horizontal" ? [0.4, 0.8, 1.2][levelIndex] ?? 0.8 : null,
+      level_meters: orientation === "horizontal" ? ([0.4, 0.8, 1.2][levelIndex] ?? 0.8) * 1000 : null,
     },
     coordinate_units: isVertical ? { zh: "km", xh: "km" } : { yh: "km", xh: "km" },
     shape: [2, 3],
@@ -610,6 +612,7 @@ beforeEach(() => {
                       ? "vertical_x"
                       : "horizontal",
                 timeIndex: Number(parsed.searchParams.get("time_index") ?? 0),
+                levelIndex: Number(parsed.searchParams.get("level_index") ?? 0),
               }),
             ),
             { status: 200 },
@@ -1002,6 +1005,10 @@ describe("App", () => {
     expect(screen.getByLabelText("Zoom")).toHaveValue("100");
     expect(screen.getByLabelText("Field")).toHaveValue("qc");
     expect(screen.getByLabelText("Slice field")).toHaveValue("qc");
+    expect(screen.getByRole("button", { name: "Horizontal z" })).toHaveClass("active-control");
+    expect(screen.getByRole("button", { name: "Vertical x-z" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Vertical y-z" })).toBeInTheDocument();
+    expect(screen.getByLabelText("Height level (up/down)")).toHaveValue("1");
     expect(screen.getByLabelText("Time")).toBeInTheDocument();
     expect(screen.getByText("thresholded_point_cloud")).toBeInTheDocument();
     expect(
@@ -1035,13 +1042,38 @@ describe("App", () => {
     await screen.findByText("Cloud-water point cloud loaded");
 
     const scene = screen.getByLabelText("3-D scene container");
-    expect(within(scene).queryByLabelText("Horizontal slice plane")).not.toBeInTheDocument();
-    expect(within(scene).queryByLabelText("Vertical slice plane")).not.toBeInTheDocument();
+    expect(within(scene).queryByLabelText("Horizontal z slice plane")).not.toBeInTheDocument();
+    expect(within(scene).queryByLabelText("Vertical x-z slice plane")).not.toBeInTheDocument();
     fireEvent.click(screen.getByLabelText("Show slice planes"));
-    expect(within(scene).getByLabelText("Horizontal slice plane")).toBeInTheDocument();
-    expect(within(scene).getByLabelText("Vertical slice plane")).toBeInTheDocument();
+    expect(within(scene).getByLabelText("Horizontal z slice plane")).toBeInTheDocument();
+    expect(within(scene).queryByLabelText("Vertical x-z slice plane")).not.toBeInTheDocument();
     expect(screen.getAllByText("qc (Cloud water)").length).toBeGreaterThan(0);
     expect(screen.getAllByText("native_grid_view_no_interpolation").length).toBeGreaterThan(0);
+    fireEvent.click(screen.getByRole("button", { name: "Move down" }));
+    expect(screen.getByLabelText("Height level (up/down)")).toHaveValue("0");
+    await waitFor(() => {
+      expect(fetch).toHaveBeenCalledWith(expect.stringContaining("orientation=horizontal"));
+      expect(fetch).toHaveBeenCalledWith(expect.stringContaining("level_index=0"));
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Vertical x-z" }));
+    expect(screen.getByRole("button", { name: "Vertical x-z" })).toHaveClass("active-control");
+    expect(screen.getByLabelText("Y position (forward/back)")).toHaveValue("1");
+    expect(within(scene).queryByLabelText("Horizontal z slice plane")).not.toBeInTheDocument();
+    expect(within(scene).getByLabelText("Vertical x-z slice plane")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Vertical y-z" }));
+    expect(screen.getByRole("button", { name: "Vertical y-z" })).toHaveClass("active-control");
+    expect(screen.getByLabelText("X position (left/right)")).toHaveValue("2");
+    expect(screen.getByRole("button", { name: "Side y-z" })).toHaveClass("active-control");
+    await waitFor(() => {
+      expect(fetch).toHaveBeenCalledWith(expect.stringContaining("orientation=vertical_y"));
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Move back" }));
+    expect(screen.getByLabelText("X position (left/right)")).toHaveValue("1");
+    await waitFor(() => {
+      expect(fetch).toHaveBeenCalledWith(expect.stringContaining("level_index=1"));
+    });
 
     fireEvent.change(screen.getByLabelText("Slice field"), { target: { value: "w" } });
     fireEvent.change(screen.getByLabelText("Time"), { target: { value: "1" } });
@@ -1071,7 +1103,7 @@ describe("App", () => {
     );
     const scene = screen.getByLabelText("3-D scene container");
     await waitFor(() => {
-      expect(within(scene).getByLabelText("Vertical slice plane")).toBeInTheDocument();
+      expect(within(scene).getByLabelText("Vertical x-z slice plane")).toBeInTheDocument();
     });
 
     fireEvent.click(screen.getByRole("button", { name: "Top-down slice" }));
@@ -1083,12 +1115,13 @@ describe("App", () => {
     expect(within(scene).getByLabelText("y-axis ticks")).toBeInTheDocument();
     expect(within(scene).queryByLabelText("height-axis ticks")).not.toBeInTheDocument();
     await waitFor(() => {
-      expect(within(scene).getByLabelText("Horizontal slice plane")).toBeInTheDocument();
+      expect(within(scene).getByLabelText("Horizontal z slice plane")).toBeInTheDocument();
     });
 
     fireEvent.click(screen.getByRole("button", { name: "Updraft view" }));
     expect(screen.getByLabelText("Slice field")).toHaveValue("w");
     expect(screen.getByRole("button", { name: "Side y-z" })).toHaveClass("active-control");
+    expect(screen.getByRole("button", { name: "Vertical y-z" })).toHaveClass("active-control");
     expect(screen.getAllByText(/max_w_native_grid_location/).length).toBeGreaterThan(0);
     await waitFor(() => {
       expect(fetch).toHaveBeenCalledWith(expect.stringContaining("field=w"));

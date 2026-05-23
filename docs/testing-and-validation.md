@@ -127,10 +127,11 @@ perspective camera.
 should cover horizontal and vertical slice planes, `qc` and `w` field selection,
 time synchronization with the 3-D point cloud, native-grid caveats/provenance
 labels, selected-time max `qc`/`w` default locations, slice-plane show/hide
-behavior, view presets, and clear error states for missing fields or bad slice
-requests. They must not parse raw NetCDF in the browser, add rendering
-dependencies, or test ray marching, cinematic lighting, export, fly-through, or
-generated CM1 output.
+behavior, view presets, explicit horizontal `z`, vertical `x-z`, and vertical
+`y-z` orientation controls, up/down or forward/back level-index movement, and
+clear error states for missing fields or bad slice requests. They must not parse
+raw NetCDF in the browser, add rendering dependencies, or test ray marching,
+cinematic lighting, export, fly-through, or generated CM1 output.
 Visual first-impression tests should also keep the validated quick-look baseline
 on a cloud-bearing time, show a visible point-cloud state, keep slice planes
 optional and secondary, and keep technical provenance reachable without making

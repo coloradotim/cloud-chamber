@@ -822,6 +822,17 @@ units, selected time, slice location, min/max, native-grid caveats, and
 provenance labels. These planes are inspection overlays, not ray-marched volumes
 or interpolated fields.
 
+Slice-plane controls should let the user choose the native-grid plane and move
+it through the domain:
+
+- horizontal `z` / height slice: moves up and down through vertical levels;
+- vertical `x-z` slice: moves forward/back through `y`;
+- vertical `y-z` slice: moves left/right through `x`.
+
+These controls change the selected slice request to the backend. They are not
+true 3-D rotation controls, do not interpolate staggered grids, and do not
+change the underlying CM1 result.
+
 The 3-D viewer should provide simple view presets:
 
 - Cloud overview: cloud-water points with no planes or one subtle reference
