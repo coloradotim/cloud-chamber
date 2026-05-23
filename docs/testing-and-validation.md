@@ -75,13 +75,22 @@ and bad slice requests. They must not add rendering dependencies or test a 3-D
 scene.
 
 Guided workspace tests should cover task navigation across `Build`, `Results`,
-`Inspect`, and `Visualize`; the default `Results` landing state; selected-result
-context flowing into Inspect and Visualize; prioritizing a validated
-cloud-forming quick-look baseline over historical attempts; user-facing status
-labels replacing raw internal lifecycle strings; and technical details keeping
-raw provenance available without dominating the main view.
-They should distinguish successful cloud-forming results with minor caveats
-from results that truly need review.
+`Compare`, `Inspect`, and `Visualize`; the default `Results` landing state;
+selected-result context flowing into Inspect and Visualize; prioritizing a
+validated cloud-forming quick-look baseline over historical attempts;
+user-facing status labels replacing raw internal lifecycle strings; and
+technical details keeping raw provenance available without dominating the main
+view. They should distinguish successful cloud-forming results with minor
+caveats from results that truly need review.
+
+Comparison tests should use mocked Result Card data for the accepted Baseline
+Shallow Cumulus quick-look and Dry Failed Cumulus quick-look pair. They should
+verify side-by-side scenario names, run-size presets, cloud/rain outcomes, first
+cloud time, max `qc`, max/min `w`, caveats, output summaries, saved/protected
+state, moisture-limited interpretation, missing-pair handling, and quick actions
+that route to the existing Inspect and Visualize sections. They must not read
+raw NetCDF in the browser or implement side-by-side slice rendering until the
+follow-up comparison issue.
 
 3-D scene shell component tests should also mock the visualization-ready field
 catalog instead of reading NetCDF in the browser. They should cover opening from

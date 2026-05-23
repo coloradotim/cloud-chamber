@@ -687,6 +687,12 @@ floating-point flags or vertical-coordinate unit notes. `Needs review` remains
 appropriate for no-cloud, missing-diagnostics, failed, or otherwise incomplete
 results.
 
+Dry Failed Cumulus is an intentional no-cloud contrast case, not a failed run,
+when it completes locally, ingests successfully, preserves meaningful vertical
+motion, and keeps cloud water below threshold. Its primary badges should read
+like an accepted moisture-limited outcome: `No cloud formed`, `No rain
+detected`, and `Moisture-limited`, with caveats secondary.
+
 The selected result is shared by the Results, Inspect, and Visualize sections.
 Inspect and Visualize should default to physically interesting output views, not
 arbitrary zero-index slices. The backend should provide default field/time/slice
@@ -695,6 +701,17 @@ max cloud-water location; for `w`, the max-updraft location. If those locations
 are unavailable, the UI may fall back to domain-center slices and clearly keep
 the native-grid/provenance caveats available. The 3-D view should not open at
 `t=0` when diagnostics show clouds appear later.
+
+The first comparison workflow is Baseline Shallow Cumulus vs Dry Failed
+Cumulus. It should start as a side-by-side result-card comparison, not a new
+renderer. The view should show scenario names, run-size presets, cloud formed
+yes/no, first cloud time, rain yes/no, max `qc`, max/min `w`, caveats/warnings,
+output/time-step summary, saved/protected state, and quick actions to Inspect
+or Visualize each result. It should explain that Dry Failed Cumulus is not a
+failed model run when vertical motion is present and cloud water stays below
+threshold. Technical run IDs, lifecycle strings, and provenance labels remain
+available in details rather than primary comparison copy. Side-by-side 2-D
+slice comparison belongs in a follow-up after this first result-card workflow.
 
 Completed results should be replayable and inspectable without rerunning CM1. Duplicate/tweak/rerun is useful later, but replay/inspect/save is the core MVP result-library behavior.
 

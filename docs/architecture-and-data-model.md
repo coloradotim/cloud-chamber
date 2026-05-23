@@ -425,7 +425,7 @@ for the first 2-D inspector.
 ### 2-D Field Inspector
 
 The frontend uses a task-based workspace shell with `Build`, `Results`,
-`Inspect`, and `Visualize` sections. `Results` is the default landing section so
+`Compare`, `Inspect`, and `Visualize` sections. `Results` is the default landing section so
 the selected result context is obvious before field inspection or 3-D
 visualization. The selected result ID flows from the Results Library into the
 2-D inspector and 3-D visualizer; those consumers request backend-prepared
@@ -444,6 +444,18 @@ warnings or coordinate notes exist but the run is still inspectable. `Needs
 review` should be reserved for failed, no-cloud, missing-diagnostics, or
 incomplete states where the result needs closer attention before it is treated
 as a validated learning case.
+
+Dry Failed Cumulus is the exception to the naive "no cloud means review" rule:
+when the run is accepted, ingested, and has meaningful vertical motion without
+meaningful `qc`, it is a valid moisture-limited contrast. The Compare workspace
+derives the default lab pair from Result Card metadata: a cloud-forming
+Baseline Shallow Cumulus quick-look result and an accepted Dry Failed Cumulus
+quick-look result. It does not need a new backend comparison model for the first
+MVP; it reads the same result-card fields as the table and detail card, keeps
+run IDs/provenance in technical details, and routes quick actions into the
+existing Inspect and Visualize sections. Side-by-side slice comparison should
+reuse the visualization-ready slice API in a follow-up rather than duplicating
+NetCDF parsing or result-card logic.
 
 The first field inspector is a frontend consumer of the visualization-ready
 fields/slice API. It opens from a Result Card / Experiment Notebook entry and
