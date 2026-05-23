@@ -406,6 +406,12 @@ method, rendering method, and native-grid caveats remain available under
 technical details so scientific honesty is preserved without making the main
 workflow read like a manifest.
 
+Successful cloud-forming results can show `Minor caveat` in the primary UI when
+warnings or coordinate notes exist but the run is still inspectable. `Needs
+review` should be reserved for failed, no-cloud, missing-diagnostics, or
+incomplete states where the result needs closer attention before it is treated
+as a validated learning case.
+
 The first field inspector is a frontend consumer of the visualization-ready
 fields/slice API. It opens from a Result Card / Experiment Notebook entry and
 does not read raw NetCDF or parse CM1 files in the browser.
@@ -418,16 +424,24 @@ The inspector requests:
   `vertical_y` orientation.
 
 It displays field name, units, native grid, selected time, min/max, finite and
-non-finite counts, JSON slice values, caveats, and provenance labels. Errors
-from unavailable fields or invalid slice selections remain UI-level inspection
-errors; they do not alter the underlying result metadata or imply a failed CM1
-run.
+non-finite counts, heatmap slices, caveats, and provenance labels. The raw JSON
+numeric slice values remain available under technical details for audit and
+debugging, but the primary inspection surface should be a readable heatmap.
+Errors from unavailable fields or invalid slice selections remain UI-level
+inspection errors; they do not alter the underlying result metadata or imply a
+failed CM1 run.
 
 The 2-D inspector and 3-D visualizer both choose an initial interesting time
 from result diagnostics: first cloud time when present, otherwise time of max
 cloud water when available, otherwise the latest output time. This prevents the
 validated Baseline Shallow Cumulus quick-look result from opening at an empty
 `t=0` frame when clouds form later.
+
+The 3-D viewer keeps the same data-source contract while improving first-look
+readability: cloud-water points should be visible at the default time, slice
+planes should provide spatial context without overwhelming the point cloud, and
+long provenance/rendering labels should sit in technical details rather than in
+the main scene controls.
 
 This is not a 3-D viewer, replay engine, or rendering pipeline. It is the
 orientation/scaling check that should happen before 3-D visualizer work.

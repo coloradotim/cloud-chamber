@@ -948,7 +948,9 @@ function ResultsTable({
                     <StatusBadge label="Validated quick-look baseline" tone="good" />
                   )}
                   <StatusBadge label={rainOutcome(result.rain_present)} tone="neutral" />
-                  {result.caveats.length > 0 && <StatusBadge label="Needs review" tone="warning" />}
+                  {result.caveats.length > 0 && (
+                    <StatusBadge label={caveatLabel(result)} tone={caveatTone(result)} />
+                  )}
                 </div>
                 <small>{result.diagnostics_summary ?? "Diagnostics unavailable"}</small>
               </td>
@@ -1008,7 +1010,9 @@ function ResultNotebookCard({
       <div className="badge-row">
         <OutcomeBadge result={result} />
         <StatusBadge label={rainOutcome(result.rain_present)} tone="neutral" />
-        {result.caveats.length > 0 && <StatusBadge label="Needs review" tone="warning" />}
+        {result.caveats.length > 0 && (
+          <StatusBadge label={caveatLabel(result)} tone={caveatTone(result)} />
+        )}
         <StatusBadge label={userFacingStatus(result)} tone={statusTone(result)} />
       </div>
 
@@ -1127,8 +1131,8 @@ function VisualizerSceneShell({ result }: { result: ResultCard }) {
   const [cameraMode, setCameraMode] = useState<"orbit" | "pan">("orbit");
   const [zoom, setZoom] = useState(100);
   const [threshold, setThreshold] = useState(1e-6);
-  const [opacity, setOpacity] = useState(0.45);
-  const [pointSize, setPointSize] = useState(8);
+  const [opacity, setOpacity] = useState(0.68);
+  const [pointSize, setPointSize] = useState(11);
   const [isPlaying, setIsPlaying] = useState(false);
   const [pointCloud, setPointCloud] = useState<PointCloudResponse | null>(null);
   const [sliceFieldName, setSliceFieldName] = useState("qc");
@@ -1153,8 +1157,8 @@ function VisualizerSceneShell({ result }: { result: ResultCard }) {
     setCameraMode("orbit");
     setZoom(100);
     setThreshold(1e-6);
-    setOpacity(0.45);
-    setPointSize(8);
+    setOpacity(0.68);
+    setPointSize(11);
     setIsPlaying(false);
     setPointCloud(null);
     setSliceFieldName("qc");
@@ -1332,8 +1336,8 @@ function VisualizerSceneShell({ result }: { result: ResultCard }) {
       </div>
 
       <p>
-        This is a thresholded point-cloud interpretation of CM1 cloud water. The browser is not
-        parsing raw NetCDF, and the points use native-grid qc values without interpolation.
+        This view shows cloud-water points and slice planes prepared from CM1-derived fields. The
+        browser is not parsing raw NetCDF.
       </p>
 
       {sceneError && <p role="alert">{sceneError}</p>}
@@ -2020,26 +2024,58 @@ function SlicePanel({ title, slice }: { title: string; slice: SliceResponse | nu
             : ""}
         </p>
       )}
-      <div className="slice-values" role="table" aria-label={`${title} values`}>
-        {slice.values.map((row, rowIndex) => (
-          <div className="slice-row" role="row" key={`${title}-${rowIndex}`}>
-            {row.map((value, columnIndex) => (
-              <span className="slice-cell" role="cell" key={`${title}-${rowIndex}-${columnIndex}`}>
-                {value === null ? "null" : formatCompactNumber(value)}
-              </span>
-            ))}
-          </div>
-        ))}
+      <SliceHeatmap title={title} slice={slice} />
+      <div className="heatmap-legend" aria-label={`${title} color scale`}>
+        <span>{formatMaybeNumber(slice.stats.min, slice.field.units)}</span>
+        <span className="heatmap-scale" />
+        <span>{formatMaybeNumber(slice.stats.max, slice.field.units)}</span>
       </div>
-      <p>{slice.provenance.provenance_label}</p>
-      {slice.caveats.length > 0 && (
-        <ul className="compact-list">
-          {slice.caveats.map((caveat) => (
-            <li key={caveat}>{caveat}</li>
+      <details>
+        <summary>Technical slice details</summary>
+        <p>{slice.provenance.provenance_label}</p>
+        {slice.caveats.length > 0 && (
+          <ul className="compact-list">
+            {slice.caveats.map((caveat) => (
+              <li key={caveat}>{caveat}</li>
+            ))}
+          </ul>
+        )}
+        <div className="slice-values" role="table" aria-label={`${title} raw values`}>
+          {slice.values.map((row, rowIndex) => (
+            <div className="slice-row" role="row" key={`${title}-${rowIndex}`}>
+              {row.map((value, columnIndex) => (
+                <span
+                  className="slice-cell"
+                  role="cell"
+                  key={`${title}-${rowIndex}-${columnIndex}`}
+                >
+                  {value === null ? "null" : formatCompactNumber(value)}
+                </span>
+              ))}
+            </div>
           ))}
-        </ul>
-      )}
+        </div>
+      </details>
     </section>
+  );
+}
+
+function SliceHeatmap({ title, slice }: { title: string; slice: SliceResponse }) {
+  return (
+    <div className="slice-heatmap" role="img" aria-label={`${title} heatmap`}>
+      {slice.values.map((row, rowIndex) => (
+        <div className="heatmap-row" key={`${title}-heatmap-${rowIndex}`}>
+          {row.map((value, columnIndex) => (
+            <span
+              className="heatmap-cell"
+              key={`${title}-heatmap-${rowIndex}-${columnIndex}`}
+              title={value === null ? "missing" : formatMaybeNumber(value, slice.field.units)}
+              style={sliceCellStyle(value, slice.stats)}
+            />
+          ))}
+        </div>
+      ))}
+    </div>
   );
 }
 
@@ -2205,6 +2241,14 @@ function userFacingStatus(result: ResultCard): string {
   if (result.status.includes("ingested")) return "Ingested";
   if (result.caveats.length > 0) return "Needs review";
   return humanize(result.status);
+}
+
+function caveatLabel(result: ResultCard): string {
+  return cloudOutcome(result) === "Cloud formed" ? "Minor caveat" : "Needs review";
+}
+
+function caveatTone(result: ResultCard): "good" | "warning" | "neutral" {
+  return cloudOutcome(result) === "Cloud formed" ? "neutral" : "warning";
 }
 
 function statusTone(result: ResultCard): "good" | "warning" | "neutral" {
