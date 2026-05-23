@@ -76,19 +76,23 @@ provenance labels, raw numeric values under technical details, missing fields,
 and bad slice requests. They must not add rendering dependencies or test a 3-D
 scene.
 
-Guided workspace tests should cover task navigation across `Build`, `Results`,
-`Compare`, `Inspect`, and `Visualize`; the default `Results` landing state;
-selected-result context flowing into Inspect and Visualize; prioritizing a
-validated cloud-forming quick-look baseline over historical attempts;
-user-facing status labels replacing raw internal lifecycle strings; and
-technical details keeping raw provenance available without dominating the main
-view. They should distinguish successful cloud-forming results with minor
-caveats from results that truly need review.
+Guided workspace tests should cover task navigation across the top-level
+`Build`, `Results`, and `Explore` sections. They should verify that Results
+contains `Notebook`, `Compare`, and `Storage` sub-tabs; Explore contains `2-D
+Slices` and `3-D View`; the app still defaults to Results; selected-result
+context flows from Results into Explore; and the old implementation pages
+(`Compare`, `Storage`, `Inspect`, `Visualize`) are no longer top-level
+workspaces. They should also cover prioritizing a validated cloud-forming
+quick-look baseline over historical attempts, user-facing status labels
+replacing raw internal lifecycle strings, and technical details keeping raw
+provenance available without dominating the main view. They should distinguish
+successful cloud-forming results with minor caveats from results that truly need
+review.
 
 Guided local run workflow tests should mock the backend API sequence rather
 than launching CM1: package generation, launch request, running status, completed
 status with output-artifact counts, ingest request, and post-ingest actions into
-Results, Inspect, and Visualize. They should also cover missing local CM1
+Results and Explore. They should also cover missing local CM1
 settings or preflight failures as actionable UI errors. Automated tests must not
 execute `cm1.exe`, parse real local NetCDF output in the browser, or write
 generated run directories into the repo.
@@ -98,7 +102,7 @@ Shallow Cumulus quick-look and Dry Failed Cumulus quick-look pair. They should
 verify side-by-side scenario names, run-size presets, cloud/rain outcomes, first
 cloud time, max `qc`, max/min `w`, caveats, output summaries, saved/protected
 state, moisture-limited interpretation, missing-pair handling, and quick actions
-that route to the existing Inspect and Visualize sections.
+that route to Explore / 2-D Slices and Explore / 3-D View.
 
 Side-by-side slice comparison tests should mock the #72 visualization-ready
 fields/slice API for both accepted results. They should cover default Baseline
@@ -140,9 +144,10 @@ projection defaults. Side views should state that height is vertical, top-down
 should state that height is not shown vertically, and oblique should be labeled
 an interpretive overview rather than a true perspective camera.
 
-The fixed visualizer workbench should also get a real browser smoke check after
+The consolidated Results/Explore shell and fixed visualizer workbench should
+also get a real browser smoke check after
 layout changes, not only component tests. Open the app, navigate to Results,
-open the validated quick-look baseline in Visualize, and confirm by screenshot
+open the validated quick-look baseline in Explore / 3-D View, and confirm by screenshot
 or direct browser inspection that the render viewport does not cover primary
 controls, bottom controls, or technical details. At minimum verify that the
 primary control rail, fixed viewport, timeline/slice-position strip, and details

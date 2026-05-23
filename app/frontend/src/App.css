@@ -100,7 +100,8 @@ small {
   font-weight: 750;
 }
 
-.workspace-nav {
+.workspace-nav,
+.subtab-nav {
   display: flex;
   flex-wrap: wrap;
   gap: 0.65rem;
@@ -110,12 +111,14 @@ small {
   background: rgba(3, 8, 13, 0.38);
 }
 
-.workspace-nav button {
+.workspace-nav button,
+.subtab-nav button {
   background: rgba(255, 255, 255, 0.08);
   color: #f7fbff;
 }
 
-.workspace-nav .active-control {
+.workspace-nav .active-control,
+.subtab-nav .active-control {
   background: #91d9b7;
   color: #102018;
 }
@@ -426,13 +429,19 @@ button:disabled {
 
 .featured-result {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto auto;
+  grid-template-columns: minmax(0, 1fr) minmax(0, auto) auto;
   gap: 1rem;
   align-items: center;
   border: 1px solid rgba(145, 217, 183, 0.35);
   border-radius: 8px;
   padding: 1rem;
   background: rgba(145, 217, 183, 0.12);
+}
+
+.featured-result .badge-row,
+.featured-result .button-row {
+  min-width: 0;
+  justify-content: end;
 }
 
 .section-heading,

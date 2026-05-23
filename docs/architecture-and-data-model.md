@@ -472,13 +472,32 @@ with explicit downsampling/max-voxel controls. That binary block contract should
 build on the same provenance labels and native-grid rules, but it is not needed
 for the first 2-D inspector.
 
-### 2-D Field Inspector
+### Task-Based Frontend Workspaces
 
-The frontend uses a task-based workspace shell with `Build`, `Results`,
-`Compare`, `Inspect`, and `Visualize` sections. `Results` is the default landing section so
-the selected result context is obvious before field inspection or 3-D
-visualization. The selected result ID flows from the Results Library into the
-2-D inspector and 3-D visualizer; those consumers request backend-prepared
+The frontend uses a task-based workspace shell with three top-level sections:
+`Build`, `Results`, and `Explore`.
+
+```text
+Build
+  Create and run experiments.
+
+Results
+  Review, compare, save, and manage experiment results.
+
+Explore
+  Inspect and visualize the selected result's CM1 fields.
+```
+
+`Results` is the default landing section so the selected result context is
+obvious before field inspection or 3-D visualization. It contains `Notebook`,
+`Compare`, and `Storage` sub-tabs. `Compare` remains result-pair oriented, while
+`Storage` joins runtime folders to result cards when possible so the user sees a
+result display name first and raw run IDs/paths second. Saved/protected result
+cards disable normal cleanup because they are keeper notebook entries.
+
+`Explore` contains `2-D Slices` and `3-D View` sub-tabs for one selected result.
+The selected result ID flows from Results / Notebook, Results / Compare, and
+Results / Storage into Explore; those consumers request backend-prepared
 payloads for that result rather than opening files directly.
 
 User-facing state labels are separate from technical provenance. The primary UI
@@ -497,16 +516,15 @@ as a validated learning case.
 
 Dry Failed Cumulus is the exception to the naive "no cloud means review" rule:
 when the run is accepted, ingested, and has meaningful vertical motion without
-meaningful `qc`, it is a valid moisture-limited contrast. The Compare workspace
+meaningful `qc`, it is a valid moisture-limited contrast. The Results / Compare workspace
 derives the default lab pair from Result Card metadata: a cloud-forming
 Baseline Shallow Cumulus quick-look result and an accepted Dry Failed Cumulus
 quick-look result. It does not need a new backend comparison model for the first
 MVP; it reads the same result-card fields as the table and detail card, keeps
-run IDs/provenance in technical details, and routes quick actions into the
-existing Inspect and Visualize sections.
+run IDs/provenance in technical details, and routes quick actions into Explore.
 
 The side-by-side slice comparison reuses the same visualization-ready fields
-and slice endpoints as Inspect. The frontend requests one slice payload per
+and slice endpoints as Explore / 2-D Slices. The frontend requests one slice payload per
 result, field, output index, and orientation, then renders the two JSON slice
 arrays side by side with their own stats and provenance. There is no new backend
 comparison model, no browser-side NetCDF parsing, and no interpolation step.
