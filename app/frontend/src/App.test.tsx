@@ -125,9 +125,7 @@ const completedRunStatus = {
     netcdf_paths: 14,
     processed_artifacts: 0,
   },
-  runtime_warnings: [
-    "CM1 stderr reported floating-point exception flags: IEEE_INVALID_FLAG",
-  ],
+  runtime_warnings: ["CM1 stderr reported floating-point exception flags: IEEE_INVALID_FLAG"],
 };
 
 const resultCard = {
@@ -243,97 +241,97 @@ const resultsResponse = {
 
 const storageRuns = [
   {
-      run_id: "dry-run-large-output",
-      scenario_id: "baseline-shallow-cumulus",
-      scenario_name: null,
-      lifecycle_state: "completed",
-      validation_status: "valid",
-      product_state: "completed_cm1_result",
-      run_size_preset: "quick_look",
-      created_at: "2026-05-22T15:15:36Z",
-      updated_at: "2026-05-22T15:45:36Z",
-      saved: false,
-      protected: false,
-      output_artifact_count: 14,
-      output_summary: {
-        raw_cm1_artifacts: 0,
-        netcdf_paths: 14,
-        processed_artifacts: 0,
-      },
-      size_bytes: 852 * 1024 ** 2,
-      path: "/tmp/CloudChamber/runs/dry-run-large-output",
-      category: "completed_with_output",
-      manifest_path: "/tmp/CloudChamber/runs/dry-run-large-output/run_manifest.json",
-      manifest_error: null,
+    run_id: "dry-run-quicklook",
+    scenario_id: "baseline-shallow-cumulus",
+    scenario_name: null,
+    lifecycle_state: "completed",
+    validation_status: "valid",
+    product_state: "completed_cm1_result",
+    run_size_preset: "quick_look",
+    created_at: "2026-05-22T15:15:36Z",
+    updated_at: "2026-05-22T15:45:36Z",
+    saved: false,
+    protected: false,
+    output_artifact_count: 14,
+    output_summary: {
+      raw_cm1_artifacts: 0,
+      netcdf_paths: 14,
+      processed_artifacts: 0,
     },
-    {
-      run_id: "dry-run-saved",
-      scenario_id: "baseline-shallow-cumulus",
-      scenario_name: "Baseline Shallow Cumulus",
-      lifecycle_state: "completed",
-      validation_status: "valid",
-      product_state: "completed_cm1_result",
-      run_size_preset: "quick_look",
-      created_at: "2026-05-22T15:15:36Z",
-      updated_at: "2026-05-22T15:45:36Z",
-      saved: true,
-      protected: true,
-      output_artifact_count: 14,
-      output_summary: {
-        raw_cm1_artifacts: 0,
-        netcdf_paths: 14,
-        processed_artifacts: 0,
-      },
-      size_bytes: 200 * 1024 ** 2,
-      path: "/tmp/CloudChamber/runs/dry-run-saved",
-      category: "saved_or_protected",
-      manifest_path: "/tmp/CloudChamber/runs/dry-run-saved/run_manifest.json",
-      manifest_error: null,
+    size_bytes: 852 * 1024 ** 2,
+    path: "/tmp/CloudChamber/runs/dry-run-quicklook",
+    category: "completed_with_output",
+    manifest_path: "/tmp/CloudChamber/runs/dry-run-quicklook/run_manifest.json",
+    manifest_error: null,
+  },
+  {
+    run_id: "dry-run-saved",
+    scenario_id: "baseline-shallow-cumulus",
+    scenario_name: "Baseline Shallow Cumulus",
+    lifecycle_state: "completed",
+    validation_status: "valid",
+    product_state: "completed_cm1_result",
+    run_size_preset: "quick_look",
+    created_at: "2026-05-22T15:15:36Z",
+    updated_at: "2026-05-22T15:45:36Z",
+    saved: true,
+    protected: true,
+    output_artifact_count: 14,
+    output_summary: {
+      raw_cm1_artifacts: 0,
+      netcdf_paths: 14,
+      processed_artifacts: 0,
     },
-    {
-      run_id: "dry-run-running",
-      scenario_id: "dry-failed-cumulus",
-      scenario_name: "Dry Failed Cumulus",
-      lifecycle_state: "running",
-      validation_status: "unvalidated",
-      product_state: "queued_running_cm1_process",
-      run_size_preset: "quick_look",
-      created_at: "2026-05-22T15:15:36Z",
-      updated_at: "2026-05-22T15:45:36Z",
-      saved: false,
-      protected: false,
-      output_artifact_count: 0,
-      output_summary: {
-        raw_cm1_artifacts: 0,
-        netcdf_paths: 0,
-        processed_artifacts: 0,
-      },
-      size_bytes: 20 * 1024 ** 2,
-      path: "/tmp/CloudChamber/runs/dry-run-running",
-      category: "running",
-      manifest_path: "/tmp/CloudChamber/runs/dry-run-running/run_manifest.json",
-      manifest_error: null,
+    size_bytes: 200 * 1024 ** 2,
+    path: "/tmp/CloudChamber/runs/dry-run-saved",
+    category: "saved_or_protected",
+    manifest_path: "/tmp/CloudChamber/runs/dry-run-saved/run_manifest.json",
+    manifest_error: null,
+  },
+  {
+    run_id: "dry-run-running",
+    scenario_id: "dry-failed-cumulus",
+    scenario_name: "Dry Failed Cumulus",
+    lifecycle_state: "running",
+    validation_status: "unvalidated",
+    product_state: "queued_running_cm1_process",
+    run_size_preset: "quick_look",
+    created_at: "2026-05-22T15:15:36Z",
+    updated_at: "2026-05-22T15:45:36Z",
+    saved: false,
+    protected: false,
+    output_artifact_count: 0,
+    output_summary: {
+      raw_cm1_artifacts: 0,
+      netcdf_paths: 0,
+      processed_artifacts: 0,
     },
-    {
-      run_id: "orphan-folder",
-      scenario_id: null,
-      scenario_name: null,
-      lifecycle_state: null,
-      validation_status: null,
-      product_state: null,
-      run_size_preset: null,
-      created_at: null,
-      updated_at: null,
-      saved: false,
-      protected: false,
-      output_artifact_count: 0,
-      output_summary: {},
-      size_bytes: 1024,
-      path: "/tmp/CloudChamber/runs/orphan-folder",
-      category: "missing_manifest",
-      manifest_path: null,
-      manifest_error: null,
-    },
+    size_bytes: 20 * 1024 ** 2,
+    path: "/tmp/CloudChamber/runs/dry-run-running",
+    category: "running",
+    manifest_path: "/tmp/CloudChamber/runs/dry-run-running/run_manifest.json",
+    manifest_error: null,
+  },
+  {
+    run_id: "orphan-folder",
+    scenario_id: null,
+    scenario_name: null,
+    lifecycle_state: null,
+    validation_status: null,
+    product_state: null,
+    run_size_preset: null,
+    created_at: null,
+    updated_at: null,
+    saved: false,
+    protected: false,
+    output_artifact_count: 0,
+    output_summary: {},
+    size_bytes: 1024,
+    path: "/tmp/CloudChamber/runs/orphan-folder",
+    category: "missing_manifest",
+    manifest_path: null,
+    manifest_error: null,
+  },
 ];
 
 const storageInventoryResponse = {
@@ -561,10 +559,15 @@ function sliceResponse({
       selected_dimension:
         orientation === "vertical_y" ? "xh" : orientation === "vertical_x" ? "yh" : "zh",
       selected_index: levelIndex,
-      selected_coordinate_value: orientation === "horizontal" ? [0.4, 0.8, 1.2][levelIndex] ?? 0.8 : [-3.2, 0, 3.2][levelIndex] ?? 0,
+      selected_coordinate_value:
+        orientation === "horizontal"
+          ? ([0.4, 0.8, 1.2][levelIndex] ?? 0.8)
+          : ([-3.2, 0, 3.2][levelIndex] ?? 0),
       level_units: orientation === "horizontal" ? "km" : null,
-      level_coordinate_value: orientation === "horizontal" ? [0.4, 0.8, 1.2][levelIndex] ?? 0.8 : null,
-      level_meters: orientation === "horizontal" ? ([0.4, 0.8, 1.2][levelIndex] ?? 0.8) * 1000 : null,
+      level_coordinate_value:
+        orientation === "horizontal" ? ([0.4, 0.8, 1.2][levelIndex] ?? 0.8) : null,
+      level_meters:
+        orientation === "horizontal" ? ([0.4, 0.8, 1.2][levelIndex] ?? 0.8) * 1000 : null,
     },
     coordinate_units: isVertical ? { zh: "km", xh: "km" } : { yh: "km", xh: "km" },
     shape: [2, 3],
@@ -685,7 +688,9 @@ beforeEach(() => {
         return Promise.resolve(new Response(JSON.stringify(resultsResponse), { status: 200 }));
       }
       if (url === "/api/storage/inventory") {
-        return Promise.resolve(new Response(JSON.stringify(storageInventoryResponse), { status: 200 }));
+        return Promise.resolve(
+          new Response(JSON.stringify(storageInventoryResponse), { status: 200 }),
+        );
       }
       if (url === "/api/storage/delete-run" && init?.method === "POST") {
         const body = JSON.parse(String(init.body)) as { run_id: string; dry_run: boolean };
@@ -758,9 +763,12 @@ beforeEach(() => {
       }
       if (url.startsWith("/api/results/result-empty-visualizer/visualization/defaults")) {
         return Promise.resolve(
-          new Response(JSON.stringify({ ...viewDefaultsResponse, preferred_field: null, fields: {} }), {
-            status: 200,
-          }),
+          new Response(
+            JSON.stringify({ ...viewDefaultsResponse, preferred_field: null, fields: {} }),
+            {
+              status: 200,
+            },
+          ),
         );
       }
       if (url === "/api/results/result-dry-failed-cumulus/visualization/fields") {
@@ -945,9 +953,7 @@ describe("App", () => {
     await waitFor(() => {
       expect(screen.getAllByText("Completed CM1 result").length).toBeGreaterThan(0);
     });
-    expect(screen.getByText("Output summary").nextElementSibling).toHaveTextContent(
-      "14 NetCDF",
-    );
+    expect(screen.getByText("Output summary").nextElementSibling).toHaveTextContent("14 NetCDF");
     expect(screen.getAllByText(/IEEE_INVALID_FLAG/).length).toBeGreaterThan(0);
     expect(screen.getByRole("button", { name: "Ingest output" })).toBeEnabled();
 
@@ -986,10 +992,9 @@ describe("App", () => {
       }
       if (url === "/api/runs/launch" && init?.method === "POST") {
         return Promise.resolve(
-          new Response(
-            JSON.stringify({ detail: "CM1 executable is missing. Missing: cm1.exe" }),
-            { status: 400 },
-          ),
+          new Response(JSON.stringify({ detail: "CM1 executable is missing. Missing: cm1.exe" }), {
+            status: 400,
+          }),
         );
       }
       return Promise.resolve(new Response("not found", { status: 404 }));
@@ -1009,6 +1014,17 @@ describe("App", () => {
     render(<App />);
 
     expect(await screen.findByRole("button", { name: "Results" })).toHaveClass("active-control");
+    const topNav = screen.getByRole("navigation", { name: "Cloud Chamber workspace" });
+    expect(within(topNav).getByRole("button", { name: "Build" })).toBeInTheDocument();
+    expect(within(topNav).getByRole("button", { name: "Results" })).toBeInTheDocument();
+    expect(within(topNav).getByRole("button", { name: "Explore" })).toBeInTheDocument();
+    expect(within(topNav).queryByRole("button", { name: "Compare" })).not.toBeInTheDocument();
+    expect(within(topNav).queryByRole("button", { name: "Storage" })).not.toBeInTheDocument();
+    expect(within(topNav).queryByRole("button", { name: "Inspect" })).not.toBeInTheDocument();
+    expect(within(topNav).queryByRole("button", { name: "Visualize" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Notebook" })).toHaveClass("active-control");
+    expect(screen.getByRole("button", { name: "Compare" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Storage" })).toBeInTheDocument();
     expect(await screen.findByRole("heading", { name: "Experiment Notebook" })).toBeInTheDocument();
     expect(screen.getByLabelText("Selected result")).toHaveTextContent(
       "Quick-look shallow cumulus",
@@ -1046,9 +1062,7 @@ describe("App", () => {
       await screen.findByRole("heading", { name: "Baseline vs Dry Failed Cumulus" }),
     ).toBeInTheDocument();
     expect(screen.getByText("Lab pair ready")).toBeInTheDocument();
-    expect(screen.getByLabelText("Baseline result")).toHaveTextContent(
-      "Baseline Shallow Cumulus",
-    );
+    expect(screen.getByLabelText("Baseline result")).toHaveTextContent("Baseline Shallow Cumulus");
     expect(screen.getByLabelText("Dry Failed result")).toHaveTextContent("Dry Failed Cumulus");
     expect(screen.getAllByText("Cloud formed").length).toBeGreaterThan(0);
     expect(screen.getAllByText("No cloud formed").length).toBeGreaterThan(0);
@@ -1062,14 +1076,14 @@ describe("App", () => {
     expect(screen.getAllByText("1.949 m/s").length).toBeGreaterThan(0);
     expect(screen.getAllByText("-4.215 m/s").length).toBeGreaterThan(0);
     expect(screen.getAllByText("-1.087 m/s").length).toBeGreaterThan(0);
-    expect(
-      screen.getByText(/Dry Failed Cumulus is not a failed model run/),
-    ).toBeInTheDocument();
+    expect(screen.getByText(/Dry Failed Cumulus is not a failed model run/)).toBeInTheDocument();
     expect(screen.getByText(/Compare qc against w/)).toBeInTheDocument();
     expect(screen.getByText("Technical comparison details")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Inspect Dry Failed" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Visualize Dry Failed" })).toBeInTheDocument();
-    expect(await screen.findByRole("heading", { name: "Baseline vs Dry Failed slices" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Open Dry Failed in Explore" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Open Dry Failed 3-D" })).toBeInTheDocument();
+    expect(
+      await screen.findByRole("heading", { name: "Baseline vs Dry Failed slices" }),
+    ).toBeInTheDocument();
     await screen.findByText("Comparison slices loaded");
     expect(screen.getByLabelText("Comparison field")).toHaveValue("qc");
     expect(screen.getByLabelText("Comparison time")).toHaveValue("2");
@@ -1085,7 +1099,7 @@ describe("App", () => {
     expect(screen.getAllByText("Non-finite cells").length).toBeGreaterThan(0);
     expect(screen.getAllByText(/CM1-derived visualization-ready data/).length).toBeGreaterThan(0);
     expect(screen.getByText(/browser is not parsing raw NetCDF/)).toBeInTheDocument();
-    });
+  });
 
   it("switches side-by-side field comparison from qc to w", async () => {
     render(<App />);
@@ -1115,9 +1129,11 @@ describe("App", () => {
     render(<App />);
 
     fireEvent.click(await screen.findByRole("button", { name: "Compare" }));
-    fireEvent.click(await screen.findByRole("button", { name: "Inspect Dry Failed" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Open Dry Failed in Explore" }));
 
-    expect(await screen.findByRole("heading", { name: "Inspect fields" })).toBeInTheDocument();
+    expect(
+      await screen.findByRole("heading", { name: "Inspect and visualize fields" }),
+    ).toBeInTheDocument();
     expect(screen.getByText("Dry Failed Cumulus quick-look")).toBeInTheDocument();
     expect(await screen.findByRole("heading", { name: "Inspect CM1 fields" })).toBeInTheDocument();
     expect(fetch).toHaveBeenCalledWith(
@@ -1127,12 +1143,16 @@ describe("App", () => {
     fireEvent.click(
       within(screen.getByRole("navigation", { name: "Cloud Chamber workspace" })).getByRole(
         "button",
-        { name: "Compare" },
+        { name: "Results" },
       ),
     );
-    fireEvent.click(screen.getByRole("button", { name: "Visualize Dry Failed" }));
+    fireEvent.click(screen.getByRole("button", { name: "Compare" }));
+    fireEvent.click(screen.getByRole("button", { name: "Open Dry Failed 3-D" }));
 
-    expect(await screen.findByRole("heading", { name: "3-D cloud view" })).toBeInTheDocument();
+    expect(
+      await screen.findByRole("heading", { name: "Inspect and visualize fields" }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "3-D View" })).toHaveClass("active-control");
     expect(screen.getAllByText("Dry Failed Cumulus quick-look").length).toBeGreaterThan(0);
     expect(await screen.findByRole("heading", { name: "Scene shell" })).toBeInTheDocument();
     expect(fetch).toHaveBeenCalledWith(
@@ -1231,15 +1251,20 @@ describe("App", () => {
 
     fireEvent.click(await screen.findByRole("button", { name: "Storage" }));
 
-    expect(await screen.findByRole("heading", { name: "Runtime storage cleanup" })).toBeInTheDocument();
+    expect(
+      await screen.findByRole("heading", { name: "Runtime storage cleanup" }),
+    ).toBeInTheDocument();
     expect(screen.getByText("/tmp/CloudChamber")).toBeInTheDocument();
     expect(screen.getByText("60 GB")).toBeInTheDocument();
     expect(screen.getByText("50 GB")).toBeInTheDocument();
     expect(screen.getByText("At or above 50 GB warning threshold")).toBeInTheDocument();
     expect(screen.getByText(/dry-run cleanup/)).toBeInTheDocument();
-    expect(screen.getByText("dry-run-large-output")).toBeInTheDocument();
+    expect(screen.getAllByText("Quick-look shallow cumulus").length).toBeGreaterThan(1);
+    expect(screen.getByText("dry-run-quicklook")).toBeInTheDocument();
     expect(screen.getByText("852 MB")).toBeInTheDocument();
-    expect(screen.getAllByText("14 NetCDF, 0 raw CM1, 0 processed").length).toBeGreaterThan(0);
+    expect(
+      screen.getAllByText("13 model files, 13 time steps, 1 stats files").length,
+    ).toBeGreaterThan(0);
     expect(screen.getByText("saved or protected")).toBeInTheDocument();
     expect(screen.getByText("missing manifest")).toBeInTheDocument();
 
@@ -1248,23 +1273,25 @@ describe("App", () => {
     expect(buttons[0]).toBeEnabled();
     expect(buttons[1]).toBeDisabled();
     expect(buttons[2]).toBeDisabled();
-    expect(screen.getByText("Saved/protected runs are not deleted from this UI.")).toBeInTheDocument();
+    expect(
+      screen.getByText("Saved/protected runs are not deleted from this UI."),
+    ).toBeInTheDocument();
     expect(screen.getByText("Running runs cannot be deleted.")).toBeInTheDocument();
 
     fireEvent.click(buttons[0]);
 
     expect(await screen.findByRole("heading", { name: "Delete preview" })).toBeInTheDocument();
     expect(screen.getByText("Dry run only; no files were deleted.")).toBeInTheDocument();
-    expect(
-      screen.getAllByText("/tmp/CloudChamber/runs/dry-run-large-output").length,
-    ).toBeGreaterThan(0);
+    expect(screen.getAllByText("/tmp/CloudChamber/runs/dry-run-quicklook").length).toBeGreaterThan(
+      0,
+    );
     expect(screen.getByRole("button", { name: "Confirm delete selected run" })).toBeInTheDocument();
     expect(fetch).toHaveBeenCalledWith(
       "/api/storage/delete-run",
       expect.objectContaining({
         method: "POST",
         body: JSON.stringify({
-          run_id: "dry-run-large-output",
+          run_id: "dry-run-quicklook",
           dry_run: true,
           confirm: false,
           force_saved: false,
@@ -1280,7 +1307,7 @@ describe("App", () => {
       expect.objectContaining({
         method: "POST",
         body: JSON.stringify({
-          run_id: "dry-run-large-output",
+          run_id: "dry-run-quicklook",
           dry_run: false,
           confirm: true,
           force_saved: false,
@@ -1299,7 +1326,9 @@ describe("App", () => {
         return Promise.resolve(new Response(JSON.stringify(resultsResponse), { status: 200 }));
       }
       if (url === "/api/storage/inventory") {
-        return Promise.resolve(new Response(JSON.stringify(storageInventoryResponse), { status: 200 }));
+        return Promise.resolve(
+          new Response(JSON.stringify(storageInventoryResponse), { status: 200 }),
+        );
       }
       if (url === "/api/storage/delete-run" && init?.method === "POST") {
         return Promise.resolve(
@@ -1323,7 +1352,7 @@ describe("App", () => {
       "/api/storage/delete-run",
       expect.objectContaining({
         body: JSON.stringify({
-          run_id: "dry-run-large-output",
+          run_id: "dry-run-quicklook",
           dry_run: true,
           confirm: false,
           force_saved: false,
@@ -1444,9 +1473,7 @@ describe("App", () => {
     expect(screen.getByRole("button", { name: "Side x-z" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Side y-z" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Top-down x-y" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Oblique overview" })).toHaveClass(
-      "active-control",
-    );
+    expect(screen.getByRole("button", { name: "Oblique overview" })).toHaveClass("active-control");
     expect(screen.getByLabelText("Projection description")).toHaveTextContent(
       "Oblique overview: interpretive overview based on CM1 coordinates, not a true perspective camera.",
     );
@@ -1459,9 +1486,9 @@ describe("App", () => {
     expect(screen.getByLabelText("Height level (up/down)")).toHaveValue("1");
     expect(screen.getByLabelText("Time")).toBeInTheDocument();
     expect(screen.getByText("thresholded_point_cloud")).toBeInTheDocument();
-    expect(
-      screen.getAllByText("selected_time_max_qc_native_grid_location").length,
-    ).toBeGreaterThan(0);
+    expect(screen.getAllByText("selected_time_max_qc_native_grid_location").length).toBeGreaterThan(
+      0,
+    );
     expect(screen.getByText("0 to 3 km")).toBeInTheDocument();
     expect(screen.getByText("0.8 km to 1.2 km")).toBeInTheDocument();
     expect(screen.getByText("x 2, y 1, z 1.2 km, value 8.000e-6")).toBeInTheDocument();
@@ -1593,9 +1620,7 @@ describe("App", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Reset view" }));
 
-    expect(screen.getByRole("button", { name: "Oblique overview" })).toHaveClass(
-      "active-control",
-    );
+    expect(screen.getByRole("button", { name: "Oblique overview" })).toHaveClass("active-control");
     expect(plottingGroup).toHaveStyle({ transform: "scale(1)" });
     expect(screen.getByText("100%")).toBeInTheDocument();
   });

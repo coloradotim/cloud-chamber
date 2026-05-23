@@ -136,11 +136,11 @@ For each run:
 - estimated output size
 - final status
 
-The Build workspace now provides the first guided local loop without curl commands: create package, launch local CM1, refresh status/logs, see output-artifact counts, ingest completed NetCDF output, then open the created Result Card in Results, Inspect, or Visualize. This is local-first orchestration only; CI still uses fake fixtures and never runs CM1.
+The Build workspace now provides the first guided local loop without curl commands: create package, launch local CM1, refresh status/logs, see output-artifact counts, ingest completed NetCDF output, then open the created Result Card in Results or Explore. This is local-first orchestration only; CI still uses fake fixtures and never runs CM1.
 
 ### Workflow 4.5 — Manage Runtime Storage
 
-The Storage workspace exposes the runtime-home inventory from the backend. It shows total runtime-home size, the 50 GB warning-threshold status, run directories sorted by size, scenario/preset/state metadata, saved/protected state, output-artifact summaries, and conservative cleanup categories.
+Results / Storage exposes the runtime-home inventory from the backend. It shows total runtime-home size, the 50 GB warning-threshold status, run directories sorted by size, scenario/preset/state metadata, result-card names when available, saved/protected state, output-artifact summaries, and conservative cleanup categories.
 
 Deletion is always explicit. The UI first requests a dry-run delete preview for one selected run, then requires a separate confirm action before deleting. Running runs cannot be deleted from the UI, and saved/protected runs are disabled rather than force-deleted. The warning threshold never auto-deletes anything.
 
@@ -694,13 +694,14 @@ The MVP frontend is organized as a task-based workspace:
 ```text
 Build
 Results
-Inspect
-Visualize
+Explore
 ```
 
-The app should open on `Results`, because the most useful first click path is to
-choose the validated quick-look Baseline Shallow Cumulus result and open it in
-3-D. Results should prioritize saved/protected, completed, cloud-forming
+`Build` creates and runs experiments. `Results` reviews, compares, saves, and
+manages experiment results. `Explore` inspects and visualizes one selected
+result's CM1 fields. The app should open on `Results`, because the most useful
+first click path is to choose the validated quick-look Baseline Shallow Cumulus
+result and open it in Explore or 3-D. Results should prioritize saved/protected, completed, cloud-forming
 quick-look baseline entries ahead of failed/no-cloud or unsaved historical
 attempts. User-facing labels should say `Completed CM1 result`, `Ingested`,
 `Saved`, `Needs review`, `Cloud formed`, `No cloud`, and `Rain detected` rather
@@ -720,8 +721,17 @@ motion, and keeps cloud water below threshold. Its primary badges should read
 like an accepted moisture-limited outcome: `No cloud formed`, `No rain
 detected`, and `Moisture-limited`, with caveats secondary.
 
-The selected result is shared by the Results, Inspect, and Visualize sections.
-Inspect and Visualize should default to physically interesting output views, not
+`Results` contains `Notebook`, `Compare`, and `Storage` sub-tabs. Notebook is
+the table-first Result Card / Experiment Notebook. Compare is result-pair
+oriented and belongs with Results because it compares experiment outcomes.
+Storage is also part of Results because it manages local run directories and
+their relationship to named result cards.
+
+`Explore` contains `2-D Slices` and `3-D View` sub-tabs. The selected result is
+shared by Results and Explore. Selecting a result in Notebook or opening a
+comparison/storage row in Explore should preserve that context. If no selected
+result is available, Explore should tell the user to select an ingested result
+from Results. The 2-D and 3-D views should default to physically interesting output views, not
 arbitrary zero-index slices. The backend should provide default field/time/slice
 locations from native-grid data when possible: for `qc`, first cloud time or the
 max cloud-water location; for `w`, the max-updraft location. If those locations
@@ -733,8 +743,8 @@ The first comparison workflow is Baseline Shallow Cumulus vs Dry Failed
 Cumulus. It should start as a side-by-side result-card comparison, not a new
 renderer. The view should show scenario names, run-size presets, cloud formed
 yes/no, first cloud time, rain yes/no, max `qc`, max/min `w`, caveats/warnings,
-output/time-step summary, saved/protected state, and quick actions to Inspect
-or Visualize each result. It should explain that Dry Failed Cumulus is not a
+output/time-step summary, saved/protected state, and quick actions to open each
+result in Explore. It should explain that Dry Failed Cumulus is not a
 failed model run when vertical motion is present and cloud water stays below
 threshold. Technical run IDs, lifecycle strings, and provenance labels remain
 available in details rather than primary comparison copy.
@@ -998,7 +1008,7 @@ native coordinate units, caveats, and provenance/rendering/processing labels.
 Non-finite values are represented as `null` in JSON.
 
 The defaults endpoint chooses physically interesting native-grid locations for
-Inspect and Visualize. It reports max-value locations for `qc` and `w` when
+Explore / 2-D Slices and Explore / 3-D View. It reports max-value locations for `qc` and `w` when
 available, including selected time index, horizontal level, vertical slice
 indices, source label, and caveats. It does not interpolate or invent data; if
 the field is missing or non-finite, the UI falls back to domain-center slices.

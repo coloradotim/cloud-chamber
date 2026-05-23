@@ -196,7 +196,9 @@ type DeleteRunResponse = {
   message: string;
 };
 
-type WorkspaceSection = "build" | "results" | "compare" | "storage" | "inspect" | "visualize";
+type WorkspaceSection = "build" | "results" | "explore";
+type ResultsTab = "notebook" | "compare" | "storage";
+type ExploreTab = "slices" | "view3d";
 
 type ProvenancePayload = {
   source_model: string;
@@ -542,6 +544,8 @@ async function responseError(response: Response, fallback: string): Promise<stri
 
 export function App() {
   const [activeSection, setActiveSection] = useState<WorkspaceSection>("results");
+  const [activeResultsTab, setActiveResultsTab] = useState<ResultsTab>("notebook");
+  const [activeExploreTab, setActiveExploreTab] = useState<ExploreTab>("view3d");
   const [scenarios, setScenarios] = useState<Scenario[]>([]);
   const [selectedScenarioId, setSelectedScenarioId] = useState("baseline-shallow-cumulus");
   const [controls, setControls] = useState<Record<string, string | number | boolean>>({});
@@ -603,8 +607,7 @@ export function App() {
 
   useEffect(() => {
     let active = true;
-    refreshStorageInventory()
-      .catch(() => undefined);
+    refreshStorageInventory().catch(() => undefined);
     return () => {
       active = false;
     };
@@ -719,9 +722,24 @@ export function App() {
     const payload = await fetchResults();
     const prioritized = prioritizeResults(payload.results);
     setResults(prioritized);
-    setSelectedResultId(selectResultId ?? prioritized[0]?.result_id ?? null);
+    setSelectedResultId((current) => {
+      if (selectResultId) return selectResultId;
+      if (current && prioritized.some((result) => result.result_id === current)) return current;
+      return prioritized[0]?.result_id ?? null;
+    });
     setResultsStatus(payload.results.length > 0 ? "Results loaded" : "No ingested results");
     return prioritized;
+  }
+
+  async function handleRefreshResults() {
+    setResultsError(null);
+    setResultsStatus("Refreshing results");
+    try {
+      await refreshResults();
+    } catch (caught) {
+      setResultsError(caught instanceof Error ? caught.message : "Unable to refresh results.");
+      setResultsStatus("Results unavailable");
+    }
   }
 
   async function handleIngestRun() {
@@ -850,7 +868,7 @@ export function App() {
       </header>
 
       <nav className="workspace-nav" aria-label="Cloud Chamber workspace">
-        {(["build", "results", "compare", "storage", "inspect", "visualize"] as WorkspaceSection[]).map((section) => (
+        {(["build", "results", "explore"] as WorkspaceSection[]).map((section) => (
           <button
             key={section}
             type="button"
@@ -890,102 +908,81 @@ export function App() {
           onOpenInResults={() => {
             if (ingestedResultId) setSelectedResultId(ingestedResultId);
             setActiveSection("results");
+            setActiveResultsTab("notebook");
           }}
           onInspectIngested={() => {
             if (ingestedResultId) setSelectedResultId(ingestedResultId);
-            setActiveSection("inspect");
+            setActiveSection("explore");
+            setActiveExploreTab("slices");
           }}
           onVisualizeIngested={() => {
             if (ingestedResultId) setSelectedResultId(ingestedResultId);
-            setActiveSection("visualize");
+            setActiveSection("explore");
+            setActiveExploreTab("view3d");
           }}
         />
       )}
 
       {activeSection === "results" && (
         <ResultsWorkspace
+          activeTab={activeResultsTab}
           results={results}
           selectedResult={selectedResult}
           selectedResultId={selectedResult?.result_id ?? null}
           resultsStatus={resultsStatus}
           resultsError={resultsError}
+          comparisonPair={comparisonPair}
+          storageInventory={storageInventory}
+          storageStatus={storageStatus}
+          storageError={storageError}
+          deletePreview={deletePreview}
+          deleteMessage={deleteMessage}
+          onTabChange={setActiveResultsTab}
           draft={resultDraft}
           onSelectResult={setSelectedResultId}
           onDraftChange={setResultDraft}
           onSubmit={handleResultUpdate}
           onSave={handleResultSave}
+          onRefreshResults={handleRefreshResults}
           onInspect={() => {
-            setActiveSection("inspect");
+            setActiveSection("explore");
+            setActiveExploreTab("slices");
           }}
           onOpenVisualizer={() => {
-            setActiveSection("visualize");
+            setActiveSection("explore");
+            setActiveExploreTab("view3d");
           }}
-        />
-      )}
-
-      {activeSection === "compare" && (
-        <ComparisonWorkspace
-          pair={comparisonPair}
-          onInspect={(resultId) => {
+          onCompareInspect={(resultId) => {
             setSelectedResultId(resultId);
-            setActiveSection("inspect");
+            setActiveSection("explore");
+            setActiveExploreTab("slices");
           }}
-          onVisualize={(resultId) => {
+          onCompareVisualize={(resultId) => {
             setSelectedResultId(resultId);
-            setActiveSection("visualize");
+            setActiveSection("explore");
+            setActiveExploreTab("view3d");
           }}
-        />
-      )}
-
-      {activeSection === "storage" && (
-        <StorageWorkspace
-          inventory={storageInventory}
-          status={storageStatus}
-          error={storageError}
-          deletePreview={deletePreview}
-          deleteMessage={deleteMessage}
-          onRefresh={handleRefreshStorage}
+          onStorageOpenResult={(resultId) => {
+            setSelectedResultId(resultId);
+            setActiveResultsTab("notebook");
+          }}
+          onStorageExploreResult={(resultId) => {
+            setSelectedResultId(resultId);
+            setActiveSection("explore");
+            setActiveExploreTab("slices");
+          }}
+          onRefreshStorage={handleRefreshStorage}
           onPreviewDelete={handlePreviewRunDelete}
           onConfirmDelete={handleConfirmRunDelete}
         />
       )}
 
-      {activeSection === "inspect" && (
-        <section className="workspace-section" aria-labelledby="inspect-workspace-title">
-          <div className="section-heading">
-            <div>
-              <p className="eyebrow">Inspect</p>
-              <h2 id="inspect-workspace-title">Inspect fields</h2>
-            </div>
-            <p className="state-chip">{selectedResult ? selectedResult.name : "No result"}</p>
-          </div>
-          {selectedResult ? (
-            <FieldInspector result={selectedResult} />
-          ) : (
-            <section className="status-panel">
-              <p>Select an ingested result before inspecting fields.</p>
-            </section>
-          )}
-        </section>
-      )}
-
-      {activeSection === "visualize" && (
-        <section className="workspace-section" aria-labelledby="visualize-workspace-title">
-          <div className="section-heading">
-            <div>
-              <p className="eyebrow">Visualize</p>
-              <h2 id="visualize-workspace-title">3-D cloud view</h2>
-            </div>
-            <p className="state-chip">{selectedResult ? selectedResult.name : "No result"}</p>
-          </div>
-          {selectedResult ? (
-            <VisualizerSceneShell result={selectedResult} />
-          ) : (
-            <section className="status-panel">
-              <p>Select an ingested result before opening the 3-D view.</p>
-            </section>
-          )}
-        </section>
+      {activeSection === "explore" && (
+        <ExploreWorkspace
+          activeTab={activeExploreTab}
+          selectedResult={selectedResult}
+          onTabChange={setActiveExploreTab}
+        />
       )}
     </main>
   );
@@ -1171,46 +1168,91 @@ function BuildWorkspace({
 }
 
 function ResultsWorkspace({
+  activeTab,
   results,
   selectedResult,
   selectedResultId,
   resultsStatus,
   resultsError,
+  comparisonPair,
+  storageInventory,
+  storageStatus,
+  storageError,
+  deletePreview,
+  deleteMessage,
+  onTabChange,
   draft,
   onSelectResult,
   onDraftChange,
   onSubmit,
   onSave,
+  onRefreshResults,
   onInspect,
   onOpenVisualizer,
+  onCompareInspect,
+  onCompareVisualize,
+  onStorageOpenResult,
+  onStorageExploreResult,
+  onRefreshStorage,
+  onPreviewDelete,
+  onConfirmDelete,
 }: {
+  activeTab: ResultsTab;
   results: ResultCard[];
   selectedResult: ResultCard | undefined;
   selectedResultId: string | null;
   resultsStatus: string;
   resultsError: string | null;
+  comparisonPair: { baseline: ResultCard | undefined; dryFailed: ResultCard | undefined };
+  storageInventory: StorageInventoryResponse | null;
+  storageStatus: string;
+  storageError: string | null;
+  deletePreview: DeleteRunResponse | null;
+  deleteMessage: string | null;
+  onTabChange: (tab: ResultsTab) => void;
   draft: { name: string; tags: string; notes: string };
   onSelectResult: (resultId: string) => void;
   onDraftChange: (draft: { name: string; tags: string; notes: string }) => void;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
   onSave: () => void;
+  onRefreshResults: () => void;
   onInspect: () => void;
   onOpenVisualizer: () => void;
+  onCompareInspect: (resultId: string) => void;
+  onCompareVisualize: (resultId: string) => void;
+  onStorageOpenResult: (resultId: string) => void;
+  onStorageExploreResult: (resultId: string) => void;
+  onRefreshStorage: () => void;
+  onPreviewDelete: (runId: string) => void;
+  onConfirmDelete: (runId: string) => void;
 }) {
   return (
     <section className="results-library" aria-labelledby="results-title">
       <div className="section-heading">
         <div>
           <p className="eyebrow">Results</p>
-          <h2 id="results-title">Experiment Notebook</h2>
+          <h2 id="results-title">Review, compare, and manage experiments</h2>
         </div>
         <p className="state-chip">{resultsStatus}</p>
       </div>
 
+      <nav className="subtab-nav" aria-label="Results workspace sections">
+        {(["notebook", "compare", "storage"] as ResultsTab[]).map((tab) => (
+          <button
+            key={tab}
+            type="button"
+            className={activeTab === tab ? "active-control" : ""}
+            onClick={() => onTabChange(tab)}
+          >
+            {resultsTabLabel(tab)}
+          </button>
+        ))}
+      </nav>
+
       {selectedResult && (
         <section className="featured-result" aria-label="Selected result">
           <div>
-            <p className="eyebrow">Ready to inspect</p>
+            <p className="eyebrow">Selected experiment</p>
             <h3>{selectedResult.name}</h3>
             <p>
               {selectedResult.scenario_name ?? selectedResult.scenario_id} ·{" "}
@@ -1229,14 +1271,102 @@ function ResultsWorkspace({
               <StatusBadge label="Unsaved" tone="neutral" />
             )}
           </div>
-          <button type="button" onClick={onOpenVisualizer}>
-            Open 3-D
-          </button>
+          <div className="button-row">
+            <button type="button" onClick={onInspect}>
+              Open in Explore
+            </button>
+            <button type="button" onClick={onOpenVisualizer}>
+              Open 3-D
+            </button>
+          </div>
         </section>
       )}
 
       {resultsError && <p role="alert">{resultsError}</p>}
 
+      {activeTab === "notebook" && (
+        <NotebookWorkspace
+          results={results}
+          selectedResult={selectedResult}
+          selectedResultId={selectedResultId}
+          draft={draft}
+          onSelectResult={onSelectResult}
+          onDraftChange={onDraftChange}
+          onSubmit={onSubmit}
+          onSave={onSave}
+          onRefreshResults={onRefreshResults}
+          onInspect={onInspect}
+          onOpenVisualizer={onOpenVisualizer}
+        />
+      )}
+
+      {activeTab === "compare" && (
+        <ComparisonWorkspace
+          pair={comparisonPair}
+          onInspect={onCompareInspect}
+          onVisualize={onCompareVisualize}
+          onSelectInNotebook={(resultId) => {
+            onSelectResult(resultId);
+            onTabChange("notebook");
+          }}
+        />
+      )}
+
+      {activeTab === "storage" && (
+        <StorageWorkspace
+          inventory={storageInventory}
+          results={results}
+          status={storageStatus}
+          error={storageError}
+          deletePreview={deletePreview}
+          deleteMessage={deleteMessage}
+          onRefresh={onRefreshStorage}
+          onPreviewDelete={onPreviewDelete}
+          onConfirmDelete={onConfirmDelete}
+          onOpenResult={onStorageOpenResult}
+          onExploreResult={onStorageExploreResult}
+        />
+      )}
+    </section>
+  );
+}
+
+function NotebookWorkspace({
+  results,
+  selectedResult,
+  selectedResultId,
+  draft,
+  onSelectResult,
+  onDraftChange,
+  onSubmit,
+  onSave,
+  onRefreshResults,
+  onInspect,
+  onOpenVisualizer,
+}: {
+  results: ResultCard[];
+  selectedResult: ResultCard | undefined;
+  selectedResultId: string | null;
+  draft: { name: string; tags: string; notes: string };
+  onSelectResult: (resultId: string) => void;
+  onDraftChange: (draft: { name: string; tags: string; notes: string }) => void;
+  onSubmit: (event: FormEvent<HTMLFormElement>) => void;
+  onSave: () => void;
+  onRefreshResults: () => void;
+  onInspect: () => void;
+  onOpenVisualizer: () => void;
+}) {
+  return (
+    <section className="workspace-section" aria-labelledby="notebook-title">
+      <div className="section-heading">
+        <div>
+          <p className="eyebrow">Notebook</p>
+          <h3 id="notebook-title">Experiment Notebook</h3>
+        </div>
+        <button type="button" onClick={onRefreshResults}>
+          Refresh results
+        </button>
+      </div>
       <div className="results-layout">
         <ResultsTable
           results={results}
@@ -1257,14 +1387,73 @@ function ResultsWorkspace({
   );
 }
 
+function ExploreWorkspace({
+  activeTab,
+  selectedResult,
+  onTabChange,
+}: {
+  activeTab: ExploreTab;
+  selectedResult: ResultCard | undefined;
+  onTabChange: (tab: ExploreTab) => void;
+}) {
+  return (
+    <section className="workspace-section" aria-labelledby="explore-workspace-title">
+      <div className="section-heading">
+        <div>
+          <p className="eyebrow">Explore</p>
+          <h2 id="explore-workspace-title">Inspect and visualize fields</h2>
+        </div>
+        <p className="state-chip">{selectedResult ? selectedResult.name : "No result"}</p>
+      </div>
+
+      <nav className="subtab-nav" aria-label="Explore workspace sections">
+        {(["slices", "view3d"] as ExploreTab[]).map((tab) => (
+          <button
+            key={tab}
+            type="button"
+            className={activeTab === tab ? "active-control" : ""}
+            onClick={() => onTabChange(tab)}
+          >
+            {exploreTabLabel(tab)}
+          </button>
+        ))}
+      </nav>
+
+      {!selectedResult && (
+        <section className="status-panel">
+          <p>Select an ingested result from Results to inspect or visualize it.</p>
+        </section>
+      )}
+
+      {selectedResult && activeTab === "slices" && (
+        <section aria-labelledby="explore-slices-title">
+          <p className="eyebrow">2-D Slices</p>
+          <h3 id="explore-slices-title">2-D Slices</h3>
+          <FieldInspector result={selectedResult} />
+        </section>
+      )}
+
+      {selectedResult && activeTab === "view3d" && (
+        <section aria-labelledby="explore-3d-title">
+          <p className="eyebrow">3-D View</p>
+          <h3 id="explore-3d-title">3-D View</h3>
+          <VisualizerSceneShell result={selectedResult} />
+        </section>
+      )}
+    </section>
+  );
+}
+
 function ComparisonWorkspace({
   pair,
   onInspect,
   onVisualize,
+  onSelectInNotebook,
 }: {
   pair: { baseline: ResultCard | undefined; dryFailed: ResultCard | undefined };
   onInspect: (resultId: string) => void;
   onVisualize: (resultId: string) => void;
+  onSelectInNotebook: (resultId: string) => void;
 }) {
   const missing = comparisonMissingItems(pair);
 
@@ -1313,12 +1502,14 @@ function ComparisonWorkspace({
               result={pair.baseline}
               onInspect={onInspect}
               onVisualize={onVisualize}
+              onSelectInNotebook={onSelectInNotebook}
             />
             <ComparisonResultCard
               roleLabel="Dry Failed"
               result={pair.dryFailed}
               onInspect={onInspect}
               onVisualize={onVisualize}
+              onSelectInNotebook={onSelectInNotebook}
             />
           </div>
 
@@ -1358,11 +1549,13 @@ function ComparisonResultCard({
   result,
   onInspect,
   onVisualize,
+  onSelectInNotebook,
 }: {
   roleLabel: "Baseline" | "Dry Failed";
   result: ResultCard | undefined;
   onInspect: (resultId: string) => void;
   onVisualize: (resultId: string) => void;
+  onSelectInNotebook: (resultId: string) => void;
 }) {
   if (!result) return null;
   const moistureLimited = isDryFailedContrast(result);
@@ -1421,10 +1614,13 @@ function ComparisonResultCard({
 
       <div className="button-row">
         <button type="button" onClick={() => onInspect(result.result_id)}>
-          Inspect {roleLabel}
+          Open {roleLabel} in Explore
         </button>
         <button type="button" onClick={() => onVisualize(result.result_id)}>
-          Visualize {roleLabel}
+          Open {roleLabel} 3-D
+        </button>
+        <button type="button" onClick={() => onSelectInNotebook(result.result_id)}>
+          Select {roleLabel} in Notebook
         </button>
       </div>
     </section>
@@ -1445,9 +1641,10 @@ function SliceComparisonPanel({
     baseline: FieldCatalogResponse;
     dryFailed: FieldCatalogResponse;
   } | null>(null);
-  const [slices, setSlices] = useState<{ baseline: SliceResponse; dryFailed: SliceResponse } | null>(
-    null,
-  );
+  const [slices, setSlices] = useState<{
+    baseline: SliceResponse;
+    dryFailed: SliceResponse;
+  } | null>(null);
   const [status, setStatus] = useState("Loading field catalogs...");
   const [error, setError] = useState<string | null>(null);
 
@@ -1469,7 +1666,9 @@ function SliceComparisonPanel({
           bothCatalogsContainField(baselineCatalog, dryFailedCatalog, candidate),
         );
         setFieldName(preferred ?? baselineCatalog.available_fields[0]?.raw_field_name ?? "");
-        setTimeIndex(interestingTimeIndexForComparison(baselineCatalog, dryFailedCatalog, preferred));
+        setTimeIndex(
+          interestingTimeIndexForComparison(baselineCatalog, dryFailedCatalog, preferred),
+        );
         setStatus("Field catalogs loaded");
       })
       .catch((caught: unknown) => {
@@ -1496,14 +1695,15 @@ function SliceComparisonPanel({
       bothCatalogsContainField(catalogs.baseline, catalogs.dryFailed, candidate),
     );
   }, [catalogs]);
-  const timeOptions = baselineField?.time_coordinate_values ?? dryFailedField?.time_coordinate_values ?? [];
+  const timeOptions =
+    baselineField?.time_coordinate_values ?? dryFailedField?.time_coordinate_values ?? [];
   const clampedTimeIndex = clampIndex(timeIndex, timeOptions.length || 1);
   const levelIndex = comparisonLevelIndex(baselineField, orientation);
   const timeMismatch = Boolean(
     baselineField &&
-      dryFailedField &&
-      JSON.stringify(baselineField.time_coordinate_values) !==
-        JSON.stringify(dryFailedField.time_coordinate_values),
+    dryFailedField &&
+    JSON.stringify(baselineField.time_coordinate_values) !==
+      JSON.stringify(dryFailedField.time_coordinate_values),
   );
 
   useEffect(() => {
@@ -1539,7 +1739,16 @@ function SliceComparisonPanel({
     return () => {
       active = false;
     };
-  }, [baseline, dryFailed, baselineField, dryFailedField, fieldName, clampedTimeIndex, orientation, levelIndex]);
+  }, [
+    baseline,
+    dryFailed,
+    baselineField,
+    dryFailedField,
+    fieldName,
+    clampedTimeIndex,
+    orientation,
+    levelIndex,
+  ]);
 
   if (!baseline || !dryFailed) return null;
 
@@ -1655,11 +1864,17 @@ function ComparedSliceCard({
           <p className="eyebrow">{roleLabel}</p>
           <h4>{result.scenario_name ?? result.scenario_id}</h4>
         </div>
-        <StatusBadge label={cloudOutcome(result)} tone={cloudOutcome(result) === "Cloud formed" ? "good" : "warning"} />
+        <StatusBadge
+          label={cloudOutcome(result)}
+          tone={cloudOutcome(result) === "Cloud formed" ? "good" : "warning"}
+        />
       </div>
       <SliceHeatmap title={`${roleLabel} ${slice.field.raw_field_name} comparison`} slice={slice} />
       <dl className="metric-grid">
-        <Metric label="Field" value={`${slice.field.raw_field_name} (${slice.field.display_name})`} />
+        <Metric
+          label="Field"
+          value={`${slice.field.raw_field_name} (${slice.field.display_name})`}
+        />
         <Metric label="Units" value={slice.field.units ?? "Units unavailable"} />
         <Metric label="Time" value={formatSeconds(slice.selection.time_seconds)} />
         <Metric label="Orientation" value={humanize(slice.selection.orientation)} />
@@ -1728,6 +1943,7 @@ function ComparisonTechnicalDetails({
 
 function StorageWorkspace({
   inventory,
+  results,
   status,
   error,
   deletePreview,
@@ -1735,8 +1951,11 @@ function StorageWorkspace({
   onRefresh,
   onPreviewDelete,
   onConfirmDelete,
+  onOpenResult,
+  onExploreResult,
 }: {
   inventory: StorageInventoryResponse | null;
+  results: ResultCard[];
   status: string;
   error: string | null;
   deletePreview: DeleteRunResponse | null;
@@ -1744,6 +1963,8 @@ function StorageWorkspace({
   onRefresh: () => void;
   onPreviewDelete: (runId: string) => void;
   onConfirmDelete: (runId: string) => void;
+  onOpenResult: (resultId: string) => void;
+  onExploreResult: (resultId: string) => void;
 }) {
   return (
     <section className="storage-workspace" aria-labelledby="storage-title">
@@ -1798,8 +2019,8 @@ function StorageWorkspace({
         <section className="delete-preview" aria-label="Delete preview">
           <h3>Delete preview</h3>
           <p>
-            Deleting this run will remove local generated inputs, copied runtime files, output,
-            and logs under the selected run directory. No files have been deleted yet.
+            Deleting this run will remove local generated inputs, copied runtime files, output, and
+            logs under the selected run directory. No files have been deleted yet.
           </p>
           <dl className="metric-grid">
             <Metric label="Run ID" value={deletePreview.run_id} />
@@ -1815,7 +2036,10 @@ function StorageWorkspace({
 
       <RuntimeRunsTable
         runs={inventory?.largest_runs ?? []}
+        results={results}
         onPreviewDelete={onPreviewDelete}
+        onOpenResult={onOpenResult}
+        onExploreResult={onExploreResult}
       />
     </section>
   );
@@ -1823,10 +2047,16 @@ function StorageWorkspace({
 
 function RuntimeRunsTable({
   runs,
+  results,
   onPreviewDelete,
+  onOpenResult,
+  onExploreResult,
 }: {
   runs: RunStorageEntry[];
+  results: ResultCard[];
   onPreviewDelete: (runId: string) => void;
+  onOpenResult: (resultId: string) => void;
+  onExploreResult: (resultId: string) => void;
 }) {
   if (runs.length === 0) {
     return (
@@ -1850,41 +2080,90 @@ function RuntimeRunsTable({
           </tr>
         </thead>
         <tbody>
-          {runs.map((run) => (
-            <tr key={run.run_id}>
-              <td>
-                <strong>{run.run_id}</strong>
-                <small>{run.path}</small>
-                {run.manifest_error && <small>{run.manifest_error}</small>}
-              </td>
-              <td>
-                {run.scenario_name ?? run.scenario_id ?? "Unknown scenario"}
-                <small>{run.run_size_preset ? humanize(run.run_size_preset) : "Preset unknown"}</small>
-              </td>
-              <td>
-                <div className="badge-row">
-                  <StatusBadge label={humanize(run.category)} tone={storageCategoryTone(run)} />
-                  <StatusBadge
-                    label={run.saved || run.protected ? "Saved/protected" : "Not protected"}
-                    tone={run.saved || run.protected ? "good" : "neutral"}
-                  />
-                </div>
-                <small>{run.lifecycle_state ? humanize(run.lifecycle_state) : "No manifest state"}</small>
-              </td>
-              <td>{storageOutputSummary(run)}</td>
-              <td>{formatBytes(run.size_bytes)}</td>
-              <td>
-                <button
-                  type="button"
-                  disabled={!canPreviewDelete(run)}
-                  onClick={() => onPreviewDelete(run.run_id)}
-                >
-                  Preview delete
-                </button>
-                {!canPreviewDelete(run) && <small>{deleteDisabledReason(run)}</small>}
-              </td>
-            </tr>
-          ))}
+          {runs.map((run) => {
+            const associatedResult = resultForRun(results, run.run_id);
+            const displayName =
+              associatedResult?.name ?? run.scenario_name ?? run.scenario_id ?? run.run_id;
+            const savedOrProtected =
+              associatedResult?.saved || associatedResult?.protected || run.saved || run.protected;
+            const deleteBlockedRun = {
+              ...run,
+              saved: Boolean(savedOrProtected),
+              protected: Boolean(savedOrProtected),
+            };
+            return (
+              <tr key={run.run_id}>
+                <td>
+                  <strong>{displayName}</strong>
+                  <small>{run.run_id}</small>
+                  <small>{run.path}</small>
+                  {run.manifest_error && <small>{run.manifest_error}</small>}
+                </td>
+                <td>
+                  {associatedResult?.scenario_name ??
+                    run.scenario_name ??
+                    run.scenario_id ??
+                    "Unknown scenario"}
+                  <small>
+                    {humanize(
+                      associatedResult?.run_size_preset ?? run.run_size_preset ?? "preset unknown",
+                    )}
+                    {associatedResult
+                      ? ` · ${storageControlSummary(associatedResult.controls)}`
+                      : ""}
+                  </small>
+                </td>
+                <td>
+                  <div className="badge-row">
+                    <StatusBadge label={humanize(run.category)} tone={storageCategoryTone(run)} />
+                    <StatusBadge
+                      label={associatedResult ? "Ingested result" : "Not ingested"}
+                      tone={associatedResult ? "good" : "neutral"}
+                    />
+                    <StatusBadge
+                      label={savedOrProtected ? "Saved/protected" : "Not saved"}
+                      tone={savedOrProtected ? "good" : "neutral"}
+                    />
+                  </div>
+                  <small>
+                    {run.lifecycle_state ? humanize(run.lifecycle_state) : "No manifest state"}
+                  </small>
+                </td>
+                <td>{storageResultOutputSummary(run, associatedResult)}</td>
+                <td>{formatBytes(run.size_bytes)}</td>
+                <td>
+                  <div className="button-row">
+                    <button
+                      type="button"
+                      disabled={!associatedResult}
+                      onClick={() => associatedResult && onOpenResult(associatedResult.result_id)}
+                    >
+                      Open result
+                    </button>
+                    <button
+                      type="button"
+                      disabled={!associatedResult}
+                      onClick={() =>
+                        associatedResult && onExploreResult(associatedResult.result_id)
+                      }
+                    >
+                      Open in Explore
+                    </button>
+                    <button
+                      type="button"
+                      disabled={!canPreviewDelete(deleteBlockedRun)}
+                      onClick={() => onPreviewDelete(run.run_id)}
+                    >
+                      Preview delete
+                    </button>
+                  </div>
+                  {!canPreviewDelete(deleteBlockedRun) && (
+                    <small>{deleteDisabledReason(deleteBlockedRun)}</small>
+                  )}
+                </td>
+              </tr>
+            );
+          })}
         </tbody>
       </table>
     </section>
@@ -1985,10 +2264,16 @@ function GuidedRunWorkflow({
         <ol className="workflow-steps">
           <li className="complete">Package ready</li>
           <li className={runStatus ? "complete" : ""}>
-            {isRunning ? "Running" : runStatus ? userFacingRunWorkflowStatus(runStatus) : "Ready to launch"}
+            {isRunning
+              ? "Running"
+              : runStatus
+                ? userFacingRunWorkflowStatus(runStatus)
+                : "Ready to launch"}
           </li>
           <li className={runStatus?.lifecycle_state === "completed" ? "complete" : ""}>
-            {runStatus?.lifecycle_state === "completed" ? "Ready to ingest" : "Waiting for CM1 output"}
+            {runStatus?.lifecycle_state === "completed"
+              ? "Ready to ingest"
+              : "Waiting for CM1 output"}
           </li>
           <li className={ingestedResultId ? "complete" : ""}>
             {ingestedResultId ? "Ingested" : "Not ingested yet"}
@@ -2059,8 +2344,8 @@ function GuidedRunWorkflow({
           </div>
         ) : (
           <p>
-            Launch uses the configured local CM1 install and preserves one local run at a time.
-            If CM1 settings are missing, launch will fail before any process starts.
+            Launch uses the configured local CM1 install and preserves one local run at a time. If
+            CM1 settings are missing, launch will fail before any process starts.
           </p>
         )}
 
@@ -2323,7 +2608,9 @@ function ResultNotebookCard({
 function VisualizerSceneShell({ result }: { result: ResultCard }) {
   const [catalog, setCatalog] = useState<FieldCatalogResponse | null>(null);
   const [viewDefaults, setViewDefaults] = useState<ViewDefaultsResponse | null>(null);
-  const [selectedTimeDefaults, setSelectedTimeDefaults] = useState<ViewDefaultsResponse | null>(null);
+  const [selectedTimeDefaults, setSelectedTimeDefaults] = useState<ViewDefaultsResponse | null>(
+    null,
+  );
   const [selectedFieldName, setSelectedFieldName] = useState("");
   const [timeIndex, setTimeIndex] = useState(0);
   const [zoom, setZoom] = useState(100);
@@ -2337,7 +2624,9 @@ function VisualizerSceneShell({ result }: { result: ResultCard }) {
   const [showSlicePlanes, setShowSlicePlanes] = useState(false);
   const [sliceFieldName, setSliceFieldName] = useState("qc");
   const [activeSlicePlane, setActiveSlicePlane] = useState<SceneSlicePlane>("horizontal");
-  const [sliceOrientation, setSliceOrientation] = useState<"vertical_x" | "vertical_y">("vertical_x");
+  const [sliceOrientation, setSliceOrientation] = useState<"vertical_x" | "vertical_y">(
+    "vertical_x",
+  );
   const [horizontalSliceLevel, setHorizontalSliceLevel] = useState(0);
   const [verticalSliceIndex, setVerticalSliceIndex] = useState(0);
   const [sceneHorizontalSlice, setSceneHorizontalSlice] = useState<SliceResponse | null>(null);
@@ -2597,7 +2886,10 @@ function VisualizerSceneShell({ result }: { result: ResultCard }) {
           <Metric label="Status" value={sceneStatus} />
         </div>
 
-        <aside className="visualizer-controls visualizer-primary-controls" aria-label="Primary visualizer controls">
+        <aside
+          className="visualizer-controls visualizer-primary-controls"
+          aria-label="Primary visualizer controls"
+        >
           <fieldset>
             <legend>View controls</legend>
             <label htmlFor="scene-zoom">
@@ -2777,7 +3069,13 @@ function VisualizerSceneShell({ result }: { result: ResultCard }) {
                       (field) => field.raw_field_name === event.target.value,
                     );
                     setSelectedFieldName(event.target.value);
-                    setTimeIndex(defaultTimeIndex(nextField, result, defaultsForField(viewDefaults, event.target.value)));
+                    setTimeIndex(
+                      defaultTimeIndex(
+                        nextField,
+                        result,
+                        defaultsForField(viewDefaults, event.target.value),
+                      ),
+                    );
                   }}
                 >
                   {catalog.available_fields.map((field) => (
@@ -3033,7 +3331,8 @@ function VisualizerSceneShell({ result }: { result: ResultCard }) {
                         defaultVerticalIndex(
                           sliceField,
                           "vertical_x",
-                          selectedTimeSliceDefaults ?? defaultsForField(viewDefaults, sliceFieldName),
+                          selectedTimeSliceDefaults ??
+                            defaultsForField(viewDefaults, sliceFieldName),
                         ),
                       );
                       setShowSlicePlanes(true);
@@ -3052,7 +3351,8 @@ function VisualizerSceneShell({ result }: { result: ResultCard }) {
                         defaultVerticalIndex(
                           sliceField,
                           "vertical_y",
-                          selectedTimeSliceDefaults ?? defaultsForField(viewDefaults, sliceFieldName),
+                          selectedTimeSliceDefaults ??
+                            defaultsForField(viewDefaults, sliceFieldName),
                         ),
                       );
                       setShowSlicePlanes(true);
@@ -3120,8 +3420,8 @@ function VisualizerSceneShell({ result }: { result: ResultCard }) {
                   Slice controls move native-grid slices only. They do not interpolate, rotate raw
                   NetCDF, or change the CM1 result.
                 </small>
-            </fieldset>
-          )}
+              </fieldset>
+            )}
           </div>
         </div>
 
@@ -3181,7 +3481,11 @@ function VisualizerSceneShell({ result }: { result: ResultCard }) {
               <Metric label="View preset" value={humanize(viewPreset)} />
               <Metric
                 label="Default source"
-                value={selectedTimeFieldDefaults?.source ?? selectedDefaults?.source ?? "domain center fallback"}
+                value={
+                  selectedTimeFieldDefaults?.source ??
+                  selectedDefaults?.source ??
+                  "domain center fallback"
+                }
               />
               <Metric
                 label="Slice field"
@@ -3198,22 +3502,13 @@ function VisualizerSceneShell({ result }: { result: ResultCard }) {
                     ? `${sceneHorizontalSlice.selection.orientation} at ${sceneHorizontalSlice.selection.selected_dimension}[${sceneHorizontalSlice.selection.selected_index}]`
                     : sceneVerticalSlice
                       ? `${sceneVerticalSlice.selection.orientation} at ${sceneVerticalSlice.selection.selected_dimension}[${sceneVerticalSlice.selection.selected_index}]`
-                    : "Unavailable"
+                      : "Unavailable"
                 }
               />
               <Metric label="Projection" value={humanize(projectionMode)} />
-              <Metric
-                label="Domain x extent"
-                value={extentLabel(pointCloud, "xh")}
-              />
-              <Metric
-                label="Domain y extent"
-                value={extentLabel(pointCloud, "yh")}
-              />
-              <Metric
-                label="Domain z extent"
-                value={extentLabel(pointCloud, "zh")}
-              />
+              <Metric label="Domain x extent" value={extentLabel(pointCloud, "xh")} />
+              <Metric label="Domain y extent" value={extentLabel(pointCloud, "yh")} />
+              <Metric label="Domain z extent" value={extentLabel(pointCloud, "zh")} />
               <Metric
                 label="Active cloud z range"
                 value={
@@ -3225,10 +3520,7 @@ function VisualizerSceneShell({ result }: { result: ResultCard }) {
                     : "Unavailable"
                 }
               />
-              <Metric
-                label="Max cloud-water location"
-                value={maxPointLocationLabel(pointCloud)}
-              />
+              <Metric label="Max cloud-water location" value={maxPointLocationLabel(pointCloud)} />
               <Metric
                 label="Selected-time slice default"
                 value={selectedTimeSliceDefaults?.source ?? "Unavailable"}
@@ -3311,9 +3603,15 @@ function ScaleMarkers({
 
   return (
     <div className="scale-markers" aria-label="Scale markers">
-      <div className="axis-ticks axis-ticks-horizontal" aria-label={`${horizontalLabel}-axis ticks`}>
+      <div
+        className="axis-ticks axis-ticks-horizontal"
+        aria-label={`${horizontalLabel}-axis ticks`}
+      >
         {extentTicks(pointCloud, horizontalCoordinate).map((tick) => (
-          <span key={`${horizontalCoordinate}-${tick.position}`} style={{ left: `${tick.position}%` }}>
+          <span
+            key={`${horizontalCoordinate}-${tick.position}`}
+            style={{ left: `${tick.position}%` }}
+          >
             {horizontalLabel}: {tick.label}
           </span>
         ))}
@@ -3336,9 +3634,7 @@ function ScaleMarkers({
           ))}
         </div>
       )}
-      {showHeight && (
-        <p className="active-z-range">active cloud water: {activeRange}</p>
-      )}
+      {showHeight && <p className="active-z-range">active cloud water: {activeRange}</p>}
     </div>
   );
 }
@@ -3430,7 +3726,8 @@ function activeSlicePosition(
   const slice = activeSlicePlane === "horizontal" ? horizontalSlice : verticalSlice;
   if (!slice) return "";
   const coordinate = slice.selection.selected_coordinate_value;
-  const units = slice.selection.level_units ?? slice.coordinate_units[slice.selection.selected_dimension];
+  const units =
+    slice.selection.level_units ?? slice.coordinate_units[slice.selection.selected_dimension];
   if (coordinate === null || coordinate === undefined) return "";
   const numericCoordinate = typeof coordinate === "number" ? coordinate : Number(coordinate);
   if (!Number.isFinite(numericCoordinate)) return String(coordinate);
@@ -3503,7 +3800,9 @@ function FieldInspector({ result }: { result: ResultCard }) {
     if (!selectedField) return;
     setTimeIndex(defaultTimeIndex(selectedField, result, selectedDefaults));
     setHorizontalLevelIndex(defaultHorizontalLevel(selectedField, selectedDefaults));
-    setVerticalLevelIndex(defaultVerticalIndex(selectedField, verticalOrientation, selectedDefaults));
+    setVerticalLevelIndex(
+      defaultVerticalIndex(selectedField, verticalOrientation, selectedDefaults),
+    );
   }, [result, selectedDefaults, selectedField, verticalOrientation]);
 
   useEffect(() => {
@@ -3683,7 +3982,9 @@ function FieldInspector({ result }: { result: ResultCard }) {
             <Metric label="Units" value={selectedField.units ?? "Units unavailable"} />
             <Metric
               label="Selected time"
-              value={formatTimeValue(timeOptions[Math.min(timeIndex, timeOptions.length - 1)] ?? null)}
+              value={formatTimeValue(
+                timeOptions[Math.min(timeIndex, timeOptions.length - 1)] ?? null,
+              )}
             />
             <Metric label="Default source" value={selectedDefaults?.source ?? "domain center"} />
             <Metric label="Native grid" value={selectedField.native_grid} />
@@ -3984,10 +4285,13 @@ function projectionLabel(projectionMode: ProjectionMode): string {
 
 function projectionDescription(projectionMode: ProjectionMode): string {
   const descriptions: Record<ProjectionMode, string> = {
-    side_xz: "Side x-z: height is vertical; y is compressed into point opacity for cloud-base and cloud-top checks.",
-    side_yz: "Side y-z: height is vertical; x is compressed into point opacity for cloud-base and cloud-top checks.",
+    side_xz:
+      "Side x-z: height is vertical; y is compressed into point opacity for cloud-base and cloud-top checks.",
+    side_yz:
+      "Side y-z: height is vertical; x is compressed into point opacity for cloud-base and cloud-top checks.",
     top_down: "Top-down x-y: horizontal map view; height is not shown as vertical position.",
-    oblique: "Oblique overview: interpretive overview based on CM1 coordinates, not a true perspective camera.",
+    oblique:
+      "Oblique overview: interpretive overview based on CM1 coordinates, not a true perspective camera.",
   };
   return descriptions[projectionMode];
 }
@@ -4018,12 +4322,26 @@ function sectionLabel(section: WorkspaceSection): string {
   const labels: Record<WorkspaceSection, string> = {
     build: "Build",
     results: "Results",
-    compare: "Compare",
-    storage: "Storage",
-    inspect: "Inspect",
-    visualize: "Visualize",
+    explore: "Explore",
   };
   return labels[section];
+}
+
+function resultsTabLabel(tab: ResultsTab): string {
+  const labels: Record<ResultsTab, string> = {
+    notebook: "Notebook",
+    compare: "Compare",
+    storage: "Storage",
+  };
+  return labels[tab];
+}
+
+function exploreTabLabel(tab: ExploreTab): string {
+  const labels: Record<ExploreTab, string> = {
+    slices: "2-D Slices",
+    view3d: "3-D View",
+  };
+  return labels[tab];
 }
 
 function compactResultName(value: string): string {
@@ -4081,8 +4399,7 @@ function defaultComparisonPair(results: ResultCard[]): {
     results.find(isDryFailedContrast) ??
     results.find(
       (result) =>
-        result.scenario_id === "dry-failed-cumulus" &&
-        result.run_size_preset === "quick_look",
+        result.scenario_id === "dry-failed-cumulus" && result.run_size_preset === "quick_look",
     ) ??
     results.find((result) => result.scenario_id === "dry-failed-cumulus");
   return { baseline, dryFailed };
@@ -4174,6 +4491,24 @@ function storageOutputSummary(run: RunStorageEntry): string {
   return `${netcdf} NetCDF, ${raw} raw CM1, ${processed} processed`;
 }
 
+function storageResultOutputSummary(run: RunStorageEntry, result: ResultCard | undefined): string {
+  if (result) return outputSummary(result.output_file_summary);
+  return storageOutputSummary(run);
+}
+
+function resultForRun(results: ResultCard[], runId: string): ResultCard | undefined {
+  return results.find((result) => result.run_id === runId);
+}
+
+function storageControlSummary(controls: ResultCard["controls"]): string {
+  const keys = ["low_level_humidity", "surface_heating", "cap_strength"];
+  const parts = keys.flatMap((key) => {
+    const value = controls[key];
+    return value === undefined ? [] : `${humanize(key)} ${humanize(String(value))}`;
+  });
+  return parts.length > 0 ? parts.join(" · ") : "controls recorded";
+}
+
 function canPreviewDelete(run: RunStorageEntry): boolean {
   return run.category !== "running" && !run.saved && !run.protected;
 }
@@ -4219,7 +4554,9 @@ function interestingTimeIndexForComparison(
   const baselineField = baselineCatalog.available_fields.find(
     (field) => field.raw_field_name === fieldName,
   );
-  const dryField = dryFailedCatalog.available_fields.find((field) => field.raw_field_name === fieldName);
+  const dryField = dryFailedCatalog.available_fields.find(
+    (field) => field.raw_field_name === fieldName,
+  );
   const length = Math.min(
     baselineField?.time_coordinate_values.length ?? 0,
     dryField?.time_coordinate_values.length ?? 0,
