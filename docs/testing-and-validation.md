@@ -208,6 +208,17 @@ existing vertical-coordinate caveat because cloud base/top units were reported
 as kilometers. This accepts the external-sounding baseline path for the next
 moisture-limited Dry Failed planning step.
 
+The first Dry Failed Cumulus validation run,
+`dry-run-dry-failed-cumulus-20260522192000`, completed with `exit_code = 0`,
+ingested 13 model-output time steps from 0 to 10800 seconds, and produced `no
+cloud formed; no rain detected`. Recorded diagnostics included `max_qc_kg_kg =
+0.0`, cloud fraction `0.0` at every output time, `max_w_m_s =
+1.949130654335022`, `min_w_m_s = -1.0865488052368164`, rain absent, stderr
+`IEEE_UNDERFLOW_FLAG`, and the existing vertical-coordinate caveat because
+cloud base/top units were reported as kilometers. This is accepted as a
+moisture-limited failed-cumulus case because vertical motion remains healthy
+while cloud water and rain stay absent.
+
 Dry Failed Cumulus validation should happen only after an external-sounding
 Baseline Shallow Cumulus reproduction has been accepted. The future Dry Failed
 run should be considered useful only if it is moisture-limited and numerically

@@ -535,8 +535,9 @@ def render_cm1_input_sounding(contract: CM1InputContract) -> str:
     18 km model top as required by CM1's input_sounding reader.
     """
 
-    del contract
-    header, body = _baseline_shallow_cumulus_sounding_profile()
+    header, body = _baseline_shallow_cumulus_sounding_profile(
+        moisture_profile=_moisture_profile_for_contract(contract)
+    )
     lines = [
         f"{header[0]:10.2f} {header[1]:12.4f} {header[2]:12.5f}",
     ]
@@ -547,7 +548,10 @@ def render_cm1_input_sounding(contract: CM1InputContract) -> str:
     return "\n".join(lines) + "\n"
 
 
-def _baseline_shallow_cumulus_sounding_profile() -> tuple[
+def _baseline_shallow_cumulus_sounding_profile(
+    *,
+    moisture_profile: str = "baseline",
+) -> tuple[
     tuple[float, float, float],
     tuple[tuple[float, float, float, float, float], ...],
 ]:
@@ -562,7 +566,7 @@ def _baseline_shallow_cumulus_sounding_profile() -> tuple[
     convert those breakpoints to mixing ratio before writing the file.
     """
 
-    surface_specific_humidity = 0.0170
+    surface_specific_humidity = _adjust_specific_humidity(0.0170, 0.0, moisture_profile)
     header = (
         1015.0,
         298.7,
@@ -572,14 +576,18 @@ def _baseline_shallow_cumulus_sounding_profile() -> tuple[
         (
             0.0,
             298.7,
-            _specific_humidity_to_mixing_ratio_gkg(0.0170),
+            _specific_humidity_to_mixing_ratio_gkg(
+                _adjust_specific_humidity(0.0170, 0.0, moisture_profile)
+            ),
             _bomex_u_wind(0.0),
             0.0,
         ),
         (
             520.0,
             298.7,
-            _specific_humidity_to_mixing_ratio_gkg(0.0163),
+            _specific_humidity_to_mixing_ratio_gkg(
+                _adjust_specific_humidity(0.0163, 520.0, moisture_profile)
+            ),
             _bomex_u_wind(520.0),
             0.0,
         ),
@@ -587,7 +595,11 @@ def _baseline_shallow_cumulus_sounding_profile() -> tuple[
             700.0,
             _interpolate(700.0, 520.0, 1480.0, 298.7, 302.4),
             _specific_humidity_to_mixing_ratio_gkg(
-                _interpolate(700.0, 520.0, 1480.0, 0.0163, 0.0107)
+                _adjust_specific_humidity(
+                    _interpolate(700.0, 520.0, 1480.0, 0.0163, 0.0107),
+                    700.0,
+                    moisture_profile,
+                )
             ),
             _bomex_u_wind(700.0),
             0.0,
@@ -595,29 +607,89 @@ def _baseline_shallow_cumulus_sounding_profile() -> tuple[
         (
             1480.0,
             302.4,
-            _specific_humidity_to_mixing_ratio_gkg(0.0107),
+            _specific_humidity_to_mixing_ratio_gkg(
+                _adjust_specific_humidity(0.0107, 1480.0, moisture_profile)
+            ),
             _bomex_u_wind(1480.0),
             0.0,
         ),
         (
             2000.0,
             308.2,
-            _specific_humidity_to_mixing_ratio_gkg(0.0042),
+            _specific_humidity_to_mixing_ratio_gkg(
+                _adjust_specific_humidity(0.0042, 2000.0, moisture_profile)
+            ),
             _bomex_u_wind(2000.0),
             0.0,
         ),
         (
             3000.0,
             311.85,
-            _specific_humidity_to_mixing_ratio_gkg(0.0030),
+            _specific_humidity_to_mixing_ratio_gkg(
+                _adjust_specific_humidity(0.0030, 3000.0, moisture_profile)
+            ),
             _bomex_u_wind(3000.0),
             0.0,
         ),
-        (6000.0, 330.0, 1.0, _bomex_u_wind(6000.0), 0.0),
-        (7000.0, 340.0, 0.5, _bomex_u_wind(7000.0), 0.0),
+        (
+            6000.0,
+            330.0,
+            _adjust_mixing_ratio_gkg(1.0, 6000.0, moisture_profile),
+            _bomex_u_wind(6000.0),
+            0.0,
+        ),
+        (
+            7000.0,
+            340.0,
+            _adjust_mixing_ratio_gkg(0.5, 7000.0, moisture_profile),
+            _bomex_u_wind(7000.0),
+            0.0,
+        ),
         (20000.0, 430.0, 0.01, _bomex_u_wind(20000.0), 0.0),
     )
     return header, levels
+
+
+def _moisture_profile_for_contract(contract: CM1InputContract) -> str:
+    if contract.scenario_id != "dry-failed-cumulus":
+        return "baseline"
+    selected = _selected_control_value(contract, "low_level_humidity")
+    return "dry_failed" if selected == "drier" else "baseline"
+
+
+def _selected_control_value(
+    contract: CM1InputContract, control_id: str
+) -> str | float | bool | None:
+    for fragment in contract.control_fragments:
+        if fragment.control_id == control_id:
+            return fragment.selected_value
+    return None
+
+
+def _adjust_specific_humidity(
+    specific_humidity: float,
+    height_m: float,
+    moisture_profile: str,
+) -> float:
+    return specific_humidity * _moisture_scale(height_m, moisture_profile)
+
+
+def _adjust_mixing_ratio_gkg(
+    mixing_ratio_gkg: float,
+    height_m: float,
+    moisture_profile: str,
+) -> float:
+    return mixing_ratio_gkg * _moisture_scale(height_m, moisture_profile)
+
+
+def _moisture_scale(height_m: float, moisture_profile: str) -> float:
+    if moisture_profile != "dry_failed":
+        return 1.0
+    if height_m <= 3000.0:
+        return 0.45
+    if height_m >= 6000.0:
+        return 0.75
+    return _interpolate(height_m, 3000.0, 6000.0, 0.45, 0.75)
 
 
 def _specific_humidity_to_mixing_ratio_gkg(specific_humidity: float) -> float:

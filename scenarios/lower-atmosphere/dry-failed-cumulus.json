@@ -3,11 +3,11 @@
   "id": "dry-failed-cumulus",
   "display_name": "Dry Failed Cumulus",
   "category": "lower-atmosphere",
-  "description": "A dry lower-atmosphere contrast case where shallow cumulus may fail to form.",
-  "physical_question": "How does insufficient low-level moisture limit cloud formation even with daytime heating?",
-  "learning_goals": ["Compare no-cloud or weak-cloud behavior against the baseline.", "Identify moisture limitation as a possible main limiting factor."],
-  "intended_behavior": "A drier contrast around the baseline shallow-cumulus setup.",
-  "expected_behavior": "Clouds may be delayed, shallow, or absent if the lower atmosphere is too dry.",
+  "description": "A moisture-limited contrast case where thermals rise but shallow cumulus fails to form meaningfully.",
+  "physical_question": "How does insufficient low-level moisture prevent shallow cumulus formation even when boundary-layer thermals and vertical motion are present?",
+  "learning_goals": ["Compare w-without-qc behavior against the validated baseline.", "Identify low-level moisture and saturation deficit as the main limiting factor.", "Separate a healthy failed-cloud case from a dead or numerically broken no-cloud run."],
+  "intended_behavior": "A drier contrast around the external-sounding Baseline Shallow Cumulus setup.",
+  "expected_behavior": "Boundary-layer thermals and vertical motion remain, but cloud water stays below the cloud-formation diagnostic threshold or appears only as trace amounts.",
   "controls": [
     {
       "id": "low_level_humidity",
@@ -21,7 +21,7 @@
         {"value": "baseline", "label": "Baseline"},
         {"value": "more_humid", "label": "More humid"}
       ],
-      "cm1_mapping_notes": "Future mapping should reduce low-level sounding moisture."
+      "cm1_mapping_notes": "Maps to a drier external input_sounding profile while preserving the validated baseline dynamics."
     },
     {
       "id": "surface_heating",
@@ -35,7 +35,7 @@
         {"value": "baseline", "label": "Baseline"},
         {"value": "stronger", "label": "Stronger"}
       ],
-      "cm1_mapping_notes": "Future mapping should adjust idealized heating/flux forcing."
+      "cm1_mapping_notes": "Held at the validated baseline for the first Dry Failed implementation."
     }
   ],
   "run_size_presets": [
@@ -50,13 +50,13 @@
     "max_updraft": "record maximum vertical velocity",
     "cloud_water_summary": "summarize near-zero or weak cloud-water signal",
     "rain_onset": "not expected",
-    "notes": ["Failed cloud formation can be a valid learning result."]
+    "notes": ["Failed cloud formation is useful only when vertical motion remains healthy and target fields avoid severe NaN/Infinity caveats."]
   },
   "cm1_template": {
     "namelist_template": "templates/lower-atmosphere/dry-failed-cumulus/namelist.input.j2",
     "input_sounding_template": "templates/lower-atmosphere/dry-failed-cumulus/input_sounding.j2",
     "runtime_files_needed": ["LANDUSE.TBL"],
-    "mapping_notes": "Placeholder mapping until local CM1 validation."
+    "mapping_notes": "Derived from the accepted external-sounding Baseline Shallow Cumulus path by drying the lower-atmosphere moisture profile."
   },
   "visualization_defaults": {
     "primary_field": "qc",
@@ -70,7 +70,7 @@
     "suggested_controls": ["low_level_humidity", "surface_heating"],
     "non_goals": ["large parameter sweeps"]
   },
-  "warnings": ["Preview estimates are guidance only."],
-  "limitations": ["Dry failure behavior requires local/manual CM1 validation."],
+  "warnings": ["Preview estimates are guidance only.", "No cloud plus no vertical motion is not an accepted Dry Failed result."],
+  "limitations": ["Dry failure behavior requires local/manual CM1 validation.", "The first implementation intentionally varies only low-level moisture."],
   "advanced_settings_notes": "Raw CM1 settings remain advanced/developer-only."
 }

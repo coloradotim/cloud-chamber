@@ -386,16 +386,24 @@ mostly empty/trace while `w` slices still show thermal/updraft structure. The
 3-D cloud-water point cloud should be mostly absent, while slice planes remain
 useful for explaining the failed-cloud contrast.
 
-Dry Failed must start from the validated reference-derived Baseline Shallow
-Cumulus setup, not the old compact quick-look derivative that produced no
-cloud, no vertical motion, and NaN/Infinity caveats. The planned implementation
-path is:
+Dry Failed starts from the validated reference-derived Baseline Shallow Cumulus
+setup, not the old compact quick-look derivative that produced no cloud, no
+vertical motion, and NaN/Infinity caveats. The implementation path is:
 
 1. #102 validates an external-sounding Baseline Shallow Cumulus reproduction while
    preserving the validated grid/domain/runtime/surface/damping/boundary
    settings and changing only the thermodynamic sounding source.
 2. #103 implements the moisture-limited Dry Failed variant by drying the validated
    external-sounding baseline and preserving vertical motion.
+
+The first Dry Failed Cumulus validation run,
+`dry-run-dry-failed-cumulus-20260522192000`, completed with `exit_code = 0`,
+produced NetCDF output, and ingested 13 model-output time steps from 0 to
+10800 seconds. First-pass diagnostics reported `no cloud formed; no rain
+detected`, `max_qc_kg_kg = 0.0`, `max_w_m_s = 1.949130654335022`, and
+`min_w_m_s = -1.0865488052368164`. This is the first accepted
+moisture-limited contrast case: thermals and vertical motion remain, but cloud
+water and rain stay absent by the MVP diagnostics.
 
 Default cloud-scale assumptions:
 

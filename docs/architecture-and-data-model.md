@@ -133,6 +133,15 @@ that reproduction succeeds should Dry Failed reduce low-level moisture. A run
 with no cloud and no meaningful vertical motion, or no cloud with severe
 NaN/Infinity caveats, is not a valid Dry Failed Cumulus result.
 
+The first accepted Dry Failed implementation uses the same generated namelist as
+the accepted external-sounding baseline and changes only the generated
+lower-atmosphere moisture profile for `low_level_humidity = drier`. Validation
+run `dry-run-dry-failed-cumulus-20260522192000` completed locally, produced
+NetCDF, ingested 13 model-output time steps, and produced no cloud/rain while
+retaining meaningful vertical motion. This establishes the first two-outcome
+lab pair: Baseline forms cloud; Dry Failed has thermals without meaningful
+cloud water.
+
 Cloud-scale defaults for the first lower-atmosphere contract are:
 
 ```text
