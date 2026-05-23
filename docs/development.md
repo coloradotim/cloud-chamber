@@ -111,9 +111,11 @@ Required runtime files such as `LANDUSE.TBL` are copied from the configured loca
 
 Runtime output can grow quickly. The storage inventory endpoint scans only the configured Cloud Chamber runtime home, normally `~/CloudChamber`, and reports total size plus per-run size, manifest metadata, output artifact counts, and conservative cleanup categories such as `dry_run_only`, `completed_with_output`, `completed_no_output`, `failed`, `canceled`, `saved_or_protected`, `missing_manifest`, and `malformed_manifest`.
 
+The frontend Storage workspace uses the same endpoints. It shows the runtime-home summary, the 50 GB warning-threshold state, largest run directories first, output artifact counts, saved/protected state, and cleanup categories. It never deletes automatically.
+
 The MVP storage warning threshold is 50 GB for the configured runtime home. Inventory reports the threshold and whether runtime storage is at or above it. This is a configurable product default, not a hard scientific limit, and it never auto-deletes anything. When the threshold is reached, use the inventory's largest-run list and dry-run cleanup mode before confirming deletion of selected runs.
 
-Run deletion is explicit and conservative. A preview request uses `dry_run: true`; a real delete requires `dry_run: false` and `confirm: true`. Cleanup only targets `~/CloudChamber/runs/<run-id>/`, refuses path traversal and symlink escapes, refuses running runs, and refuses saved/protected runs unless `force_saved: true` is supplied. Deleting a run removes its local generated package, output artifacts, copied runtime files, and logs. Cleanup must never target the source repo, home directory, runtime home itself, or the external CM1 installation.
+Run deletion is explicit and conservative. A preview request uses `dry_run: true`; a real delete requires `dry_run: false` and `confirm: true`. Cleanup only targets `~/CloudChamber/runs/<run-id>/`, refuses path traversal and symlink escapes, refuses running runs, and refuses saved/protected runs unless `force_saved: true` is supplied. The MVP UI does not expose force deletion for saved/protected runs. Deleting a run removes its local generated package, output artifacts, copied runtime files, and logs. Cleanup must never target the source repo, home directory, runtime home itself, or the external CM1 installation.
 
 The backend skeleton uses Python/FastAPI with pytest, ruff, and mypy. Data/science work should prefer xarray, netCDF4 or h5netcdf, numpy, and pydantic when those layers are added.
 

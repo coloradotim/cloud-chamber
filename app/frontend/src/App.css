@@ -327,6 +327,27 @@ button:disabled {
   gap: 1rem;
 }
 
+.storage-workspace {
+  display: grid;
+  gap: 1rem;
+}
+
+.storage-summary,
+.delete-preview {
+  display: grid;
+  gap: 1rem;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 8px;
+  padding: 1rem;
+  background: rgba(255, 255, 255, 0.07);
+  box-shadow: 0 18px 44px rgba(0, 0, 0, 0.18);
+}
+
+.delete-preview {
+  border-color: rgba(255, 206, 115, 0.42);
+  background: rgba(255, 206, 115, 0.1);
+}
+
 .comparison-intro,
 .comparison-interpretation {
   border: 1px solid rgba(145, 217, 183, 0.28);

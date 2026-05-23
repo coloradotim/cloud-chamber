@@ -138,6 +138,12 @@ For each run:
 
 The Build workspace now provides the first guided local loop without curl commands: create package, launch local CM1, refresh status/logs, see output-artifact counts, ingest completed NetCDF output, then open the created Result Card in Results, Inspect, or Visualize. This is local-first orchestration only; CI still uses fake fixtures and never runs CM1.
 
+### Workflow 4.5 — Manage Runtime Storage
+
+The Storage workspace exposes the runtime-home inventory from the backend. It shows total runtime-home size, the 50 GB warning-threshold status, run directories sorted by size, scenario/preset/state metadata, saved/protected state, output-artifact summaries, and conservative cleanup categories.
+
+Deletion is always explicit. The UI first requests a dry-run delete preview for one selected run, then requires a separate confirm action before deleting. Running runs cannot be deleted from the UI, and saved/protected runs are disabled rather than force-deleted. The warning threshold never auto-deletes anything.
+
 ### Workflow 5 — Open Result
 
 1. Select completed run.

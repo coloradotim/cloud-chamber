@@ -151,7 +151,52 @@ type ResultsResponse = {
   results: ResultCard[];
 };
 
-type WorkspaceSection = "build" | "results" | "compare" | "inspect" | "visualize";
+type RunStorageEntry = {
+  run_id: string;
+  scenario_id: string | null;
+  scenario_name: string | null;
+  lifecycle_state: string | null;
+  validation_status: string | null;
+  product_state: string | null;
+  run_size_preset: string | null;
+  created_at: string | null;
+  updated_at: string | null;
+  saved: boolean;
+  protected: boolean;
+  output_artifact_count: number;
+  output_summary: {
+    raw_cm1_artifacts?: number;
+    netcdf_paths?: number;
+    processed_artifacts?: number;
+  };
+  size_bytes: number;
+  path: string;
+  category: string;
+  manifest_path: string | null;
+  manifest_error: string | null;
+};
+
+type StorageInventoryResponse = {
+  runtime_home: string;
+  runs_directory: string;
+  total_size_bytes: number;
+  warning_threshold_bytes: number;
+  above_warning_threshold: boolean;
+  warning_message: string | null;
+  runs: RunStorageEntry[];
+  largest_runs: RunStorageEntry[];
+};
+
+type DeleteRunResponse = {
+  run_id: string;
+  run_directory: string;
+  dry_run: boolean;
+  deleted: boolean;
+  size_bytes: number;
+  message: string;
+};
+
+type WorkspaceSection = "build" | "results" | "compare" | "storage" | "inspect" | "visualize";
 
 type ProvenancePayload = {
   source_model: string;
@@ -378,6 +423,48 @@ async function saveResultCard(resultId: string): Promise<ResultCard> {
   return response.json() as Promise<ResultCard>;
 }
 
+async function fetchStorageInventory(): Promise<StorageInventoryResponse> {
+  const response = await fetch("/api/storage/inventory");
+  if (!response.ok) {
+    throw new Error(await responseError(response, "Unable to load runtime storage inventory."));
+  }
+  return response.json() as Promise<StorageInventoryResponse>;
+}
+
+async function requestRunDeletePreview(runId: string): Promise<DeleteRunResponse> {
+  const response = await fetch("/api/storage/delete-run", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      run_id: runId,
+      dry_run: true,
+      confirm: false,
+      force_saved: false,
+    }),
+  });
+  if (!response.ok) {
+    throw new Error(await responseError(response, "Unable to preview run deletion."));
+  }
+  return response.json() as Promise<DeleteRunResponse>;
+}
+
+async function confirmRunDelete(runId: string): Promise<DeleteRunResponse> {
+  const response = await fetch("/api/storage/delete-run", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      run_id: runId,
+      dry_run: false,
+      confirm: true,
+      force_saved: false,
+    }),
+  });
+  if (!response.ok) {
+    throw new Error(await responseError(response, "Unable to delete selected run."));
+  }
+  return response.json() as Promise<DeleteRunResponse>;
+}
+
 async function fetchVisualizationFields(resultId: string): Promise<FieldCatalogResponse> {
   const response = await fetch(`/api/results/${resultId}/visualization/fields`);
   if (!response.ok) {
@@ -467,6 +554,11 @@ export function App() {
   const [selectedResultId, setSelectedResultId] = useState<string | null>(null);
   const [resultDraft, setResultDraft] = useState({ name: "", tags: "", notes: "" });
   const [resultsStatus, setResultsStatus] = useState("Loading results...");
+  const [storageInventory, setStorageInventory] = useState<StorageInventoryResponse | null>(null);
+  const [storageStatus, setStorageStatus] = useState("Loading storage inventory...");
+  const [storageError, setStorageError] = useState<string | null>(null);
+  const [deletePreview, setDeletePreview] = useState<DeleteRunResponse | null>(null);
+  const [deleteMessage, setDeleteMessage] = useState<string | null>(null);
   const [status, setStatus] = useState("Loading scenarios...");
   const [error, setError] = useState<string | null>(null);
   const [resultsError, setResultsError] = useState<string | null>(null);
@@ -507,6 +599,30 @@ export function App() {
     return () => {
       active = false;
     };
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    refreshStorageInventory()
+      .catch(() => undefined);
+    return () => {
+      active = false;
+    };
+
+    async function refreshStorageInventory() {
+      try {
+        const payload = await fetchStorageInventory();
+        if (!active) return;
+        setStorageInventory(payload);
+        setStorageStatus(payload.runs.length > 0 ? "Storage inventory loaded" : "No runtime runs");
+      } catch (caught) {
+        if (!active) return;
+        setStorageError(
+          caught instanceof Error ? caught.message : "Unable to load runtime storage inventory.",
+        );
+        setStorageStatus("Storage unavailable");
+      }
+    }
   }, []);
 
   const selectedScenario = useMemo(
@@ -667,6 +783,53 @@ export function App() {
     }
   }
 
+  async function handleRefreshStorage() {
+    setStorageError(null);
+    setStorageStatus("Refreshing storage inventory");
+    setDeletePreview(null);
+    setDeleteMessage(null);
+    try {
+      const payload = await fetchStorageInventory();
+      setStorageInventory(payload);
+      setStorageStatus(payload.runs.length > 0 ? "Storage inventory loaded" : "No runtime runs");
+    } catch (caught) {
+      setStorageError(
+        caught instanceof Error ? caught.message : "Unable to load runtime storage inventory.",
+      );
+      setStorageStatus("Storage unavailable");
+    }
+  }
+
+  async function handlePreviewRunDelete(runId: string) {
+    setStorageError(null);
+    setDeleteMessage(null);
+    setStorageStatus("Preparing delete preview");
+    try {
+      const preview = await requestRunDeletePreview(runId);
+      setDeletePreview(preview);
+      setStorageStatus("Delete preview ready");
+    } catch (caught) {
+      setStorageError(caught instanceof Error ? caught.message : "Unable to preview run deletion.");
+      setStorageStatus("Storage inventory loaded");
+    }
+  }
+
+  async function handleConfirmRunDelete(runId: string) {
+    setStorageError(null);
+    setStorageStatus("Deleting selected run");
+    try {
+      const deleted = await confirmRunDelete(runId);
+      setDeleteMessage(`${deleted.message} Reclaimed ${formatBytes(deleted.size_bytes)}.`);
+      setDeletePreview(null);
+      const payload = await fetchStorageInventory();
+      setStorageInventory(payload);
+      setStorageStatus("Run deleted");
+    } catch (caught) {
+      setStorageError(caught instanceof Error ? caught.message : "Unable to delete selected run.");
+      setStorageStatus("Delete failed");
+    }
+  }
+
   if (error && scenarios.length === 0) {
     return (
       <main className="app-shell">
@@ -687,7 +850,7 @@ export function App() {
       </header>
 
       <nav className="workspace-nav" aria-label="Cloud Chamber workspace">
-        {(["build", "results", "compare", "inspect", "visualize"] as WorkspaceSection[]).map((section) => (
+        {(["build", "results", "compare", "storage", "inspect", "visualize"] as WorkspaceSection[]).map((section) => (
           <button
             key={section}
             type="button"
@@ -771,6 +934,19 @@ export function App() {
             setSelectedResultId(resultId);
             setActiveSection("visualize");
           }}
+        />
+      )}
+
+      {activeSection === "storage" && (
+        <StorageWorkspace
+          inventory={storageInventory}
+          status={storageStatus}
+          error={storageError}
+          deletePreview={deletePreview}
+          deleteMessage={deleteMessage}
+          onRefresh={handleRefreshStorage}
+          onPreviewDelete={handlePreviewRunDelete}
+          onConfirmDelete={handleConfirmRunDelete}
         />
       )}
 
@@ -1292,6 +1468,171 @@ function ComparisonTechnicalDetails({
           <li key={label}>{label}</li>
         ))}
       </ul>
+    </section>
+  );
+}
+
+function StorageWorkspace({
+  inventory,
+  status,
+  error,
+  deletePreview,
+  deleteMessage,
+  onRefresh,
+  onPreviewDelete,
+  onConfirmDelete,
+}: {
+  inventory: StorageInventoryResponse | null;
+  status: string;
+  error: string | null;
+  deletePreview: DeleteRunResponse | null;
+  deleteMessage: string | null;
+  onRefresh: () => void;
+  onPreviewDelete: (runId: string) => void;
+  onConfirmDelete: (runId: string) => void;
+}) {
+  return (
+    <section className="storage-workspace" aria-labelledby="storage-title">
+      <div className="section-heading">
+        <div>
+          <p className="eyebrow">Storage</p>
+          <h2 id="storage-title">Runtime storage cleanup</h2>
+        </div>
+        <p className="state-chip">{status}</p>
+      </div>
+
+      {error && <p role="alert">{error}</p>}
+      {deleteMessage && <p role="status">{deleteMessage}</p>}
+
+      <section className="storage-summary" aria-label="Runtime storage summary">
+        <dl className="metric-grid">
+          <Metric label="Runtime home" value={inventory?.runtime_home ?? "Unavailable"} />
+          <Metric label="Runs directory" value={inventory?.runs_directory ?? "Unavailable"} />
+          <Metric
+            label="Total runtime-home size"
+            value={inventory ? formatBytes(inventory.total_size_bytes) : "Unavailable"}
+          />
+          <Metric
+            label="Warning threshold"
+            value={inventory ? formatBytes(inventory.warning_threshold_bytes) : "Unavailable"}
+          />
+          <Metric
+            label="Threshold status"
+            value={
+              inventory
+                ? inventory.above_warning_threshold
+                  ? "At or above 50 GB warning threshold"
+                  : "Below 50 GB warning threshold"
+                : "Unavailable"
+            }
+          />
+          <Metric label="Run directories" value={String(inventory?.runs.length ?? 0)} />
+        </dl>
+        {inventory?.warning_message && (
+          <p className="validation" role="status">
+            {inventory.warning_message}
+          </p>
+        )}
+        <div className="button-row">
+          <button type="button" onClick={onRefresh}>
+            Refresh storage
+          </button>
+        </div>
+      </section>
+
+      {deletePreview && (
+        <section className="delete-preview" aria-label="Delete preview">
+          <h3>Delete preview</h3>
+          <p>
+            Deleting this run will remove local generated inputs, copied runtime files, output,
+            and logs under the selected run directory. No files have been deleted yet.
+          </p>
+          <dl className="metric-grid">
+            <Metric label="Run ID" value={deletePreview.run_id} />
+            <Metric label="Selected path" value={deletePreview.run_directory} />
+            <Metric label="Estimated reclaimed" value={formatBytes(deletePreview.size_bytes)} />
+            <Metric label="Preview status" value={deletePreview.message} />
+          </dl>
+          <button type="button" onClick={() => onConfirmDelete(deletePreview.run_id)}>
+            Confirm delete selected run
+          </button>
+        </section>
+      )}
+
+      <RuntimeRunsTable
+        runs={inventory?.largest_runs ?? []}
+        onPreviewDelete={onPreviewDelete}
+      />
+    </section>
+  );
+}
+
+function RuntimeRunsTable({
+  runs,
+  onPreviewDelete,
+}: {
+  runs: RunStorageEntry[];
+  onPreviewDelete: (runId: string) => void;
+}) {
+  if (runs.length === 0) {
+    return (
+      <section className="status-panel" aria-label="Runtime runs">
+        <p>No local Cloud Chamber run directories were found.</p>
+      </section>
+    );
+  }
+
+  return (
+    <section className="table-panel" aria-label="Runtime runs">
+      <table>
+        <thead>
+          <tr>
+            <th scope="col">Run</th>
+            <th scope="col">Scenario</th>
+            <th scope="col">State</th>
+            <th scope="col">Output</th>
+            <th scope="col">Size</th>
+            <th scope="col">Cleanup</th>
+          </tr>
+        </thead>
+        <tbody>
+          {runs.map((run) => (
+            <tr key={run.run_id}>
+              <td>
+                <strong>{run.run_id}</strong>
+                <small>{run.path}</small>
+                {run.manifest_error && <small>{run.manifest_error}</small>}
+              </td>
+              <td>
+                {run.scenario_name ?? run.scenario_id ?? "Unknown scenario"}
+                <small>{run.run_size_preset ? humanize(run.run_size_preset) : "Preset unknown"}</small>
+              </td>
+              <td>
+                <div className="badge-row">
+                  <StatusBadge label={humanize(run.category)} tone={storageCategoryTone(run)} />
+                  <StatusBadge
+                    label={run.saved || run.protected ? "Saved/protected" : "Not protected"}
+                    tone={run.saved || run.protected ? "good" : "neutral"}
+                  />
+                </div>
+                <small>{run.lifecycle_state ? humanize(run.lifecycle_state) : "No manifest state"}</small>
+              </td>
+              <td>{storageOutputSummary(run)}</td>
+              <td>{formatBytes(run.size_bytes)}</td>
+              <td>
+                <button
+                  type="button"
+                  disabled={!canPreviewDelete(run)}
+                  onClick={() => onPreviewDelete(run.run_id)}
+                >
+                  Preview delete
+                </button>
+                {!canPreviewDelete(run) && <small>{deleteDisabledReason(run)}</small>}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </section>
   );
 }
@@ -3266,6 +3607,19 @@ function formatCompactNumber(value: number): string {
   return Number(value.toFixed(4)).toLocaleString();
 }
 
+function formatBytes(value: number): string {
+  if (value < 1024) return `${value.toLocaleString()} B`;
+  const units = ["KB", "MB", "GB", "TB"];
+  let size = value / 1024;
+  let unitIndex = 0;
+  while (size >= 1024 && unitIndex < units.length - 1) {
+    size /= 1024;
+    unitIndex += 1;
+  }
+  const digits = size >= 10 ? 1 : 2;
+  return `${Number(size.toFixed(digits)).toLocaleString()} ${units[unitIndex]}`;
+}
+
 function formatTimeValue(value: number | string | null): string {
   if (value === null) return "Time unavailable";
   if (typeof value === "number") return `${value.toLocaleString()} s`;
@@ -3411,6 +3765,7 @@ function sectionLabel(section: WorkspaceSection): string {
     build: "Build",
     results: "Results",
     compare: "Compare",
+    storage: "Storage",
     inspect: "Inspect",
     visualize: "Visualize",
   };
@@ -3555,6 +3910,39 @@ function outputSummary(summary: OutputFileSummary): string {
   if (summary.stats_netcdf_count > 0) parts.push(`${summary.stats_netcdf_count} stats files`);
   if (summary.raw_cm1_artifact_count > 0) parts.push(`${summary.raw_cm1_artifact_count} raw files`);
   return parts.join(", ");
+}
+
+function storageOutputSummary(run: RunStorageEntry): string {
+  const netcdf = run.output_summary.netcdf_paths ?? 0;
+  const raw = run.output_summary.raw_cm1_artifacts ?? 0;
+  const processed = run.output_summary.processed_artifacts ?? 0;
+  if (run.output_artifact_count === 0) return "No output artifacts";
+  return `${netcdf} NetCDF, ${raw} raw CM1, ${processed} processed`;
+}
+
+function canPreviewDelete(run: RunStorageEntry): boolean {
+  return run.category !== "running" && !run.saved && !run.protected;
+}
+
+function deleteDisabledReason(run: RunStorageEntry): string {
+  if (run.category === "running") return "Running runs cannot be deleted.";
+  if (run.saved || run.protected) return "Saved/protected runs are not deleted from this UI.";
+  return "Cleanup unavailable.";
+}
+
+function storageCategoryTone(run: RunStorageEntry): "good" | "warning" | "neutral" {
+  if (run.category === "completed_with_output" || run.category === "saved_or_protected") {
+    return "good";
+  }
+  if (
+    run.category === "failed" ||
+    run.category === "canceled" ||
+    run.category === "malformed_manifest" ||
+    run.category === "missing_manifest"
+  ) {
+    return "warning";
+  }
+  return "neutral";
 }
 
 function defaultsForField(
