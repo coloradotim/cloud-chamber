@@ -68,9 +68,9 @@ rendering, interpolation, or large-output processing.
 2-D field inspector component tests should mock the visualization-ready API
 payloads rather than reading NetCDF in the browser. They should cover opening
 from a Result Card, field selection, time selection, horizontal and vertical
-slice display, units, min/max, finite/non-finite counts, provenance labels,
-missing fields, and bad slice requests. They must not add rendering
-dependencies or test a 3-D scene.
+slice heatmaps, units, min/max, finite/non-finite counts, provenance labels,
+raw numeric values under technical details, missing fields, and bad slice
+requests. They must not add rendering dependencies or test a 3-D scene.
 
 Guided workspace tests should cover task navigation across `Build`, `Results`,
 `Inspect`, and `Visualize`; the default `Results` landing state; selected-result
@@ -78,6 +78,8 @@ context flowing into Inspect and Visualize; prioritizing a validated
 cloud-forming quick-look baseline over historical attempts; user-facing status
 labels replacing raw internal lifecycle strings; and technical details keeping
 raw provenance available without dominating the main view.
+They should distinguish successful cloud-forming results with minor caveats
+from results that truly need review.
 
 3-D scene shell component tests should also mock the visualization-ready field
 catalog instead of reading NetCDF in the browser. They should cover opening from
@@ -104,6 +106,10 @@ time synchronization with the 3-D point cloud, native-grid caveats/provenance
 labels, and clear error states for missing fields or bad slice requests. They
 must not parse raw NetCDF in the browser, add rendering dependencies, or test
 ray marching, cinematic lighting, export, fly-through, or generated CM1 output.
+Visual first-impression tests should also keep the validated quick-look baseline
+on a cloud-bearing time, show a visible point-cloud state, show slice planes as
+secondary context, and keep technical provenance reachable without making it the
+primary reading path.
 
 CM1 runtime floating-point exception flags such as `IEEE_INVALID_FLAG`, `IEEE_DIVIDE_BY_ZERO`, and `IEEE_OVERFLOW_FLAG` should be preserved as caveats. Automated diagnostics should then check whether target fields contain non-finite values. If `qc`, `w`, and `qr` are finite/usable, diagnostics can complete with the runtime warning still visible. If root-cause investigation requires CM1 source-level debugging, that belongs in a separate issue rather than CI.
 

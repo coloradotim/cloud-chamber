@@ -584,6 +584,13 @@ attempts. User-facing labels should say `Completed CM1 result`, `Ingested`,
 than leading with raw lifecycle strings. Raw lifecycle/product/provenance labels
 remain available under technical details.
 
+For completed cloud-forming results, minor runtime or coordinate caveats should
+read as caveats, not failed-run warnings. A result can be a successful,
+inspectable CM1 run while still carrying `Minor caveat` details such as
+floating-point flags or vertical-coordinate unit notes. `Needs review` remains
+appropriate for no-cloud, missing-diagnostics, failed, or otherwise incomplete
+results.
+
 The selected result is shared by the Results, Inspect, and Visualize sections.
 Inspect and Visualize should default to an interesting output time: first cloud
 time when available, otherwise time of max cloud water when available, otherwise
@@ -678,6 +685,11 @@ is more useful. Native-grid/no-interpolation caveats and rendering provenance
 must stay available, but long technical labels belong under `About this
 visualization` rather than dominating the primary view.
 
+The first 3-D impression should make the validated quick-look baseline obvious:
+opening from Results should land on the first-cloud time when available, show a
+visible cloud-water point cloud, keep slice planes visible but secondary, and
+place detailed provenance/rendering labels under `About this visualization`.
+
 ### Post-MVP Visual Polish, Fly-Through, and Export
 
 Visual polish is deliberately post-MVP. The first product loop should prove that
@@ -719,8 +731,11 @@ MVP behavior:
   when present;
 - allow field selection and output time selection;
 - request horizontal and vertical slice payloads from the backend;
-- show field units, native grid, selected time, slice shape/dimensions,
-  min/max, finite and non-finite counts, and provenance labels;
+- show heatmaps for horizontal and vertical slices, with field units, native
+  grid, selected time, slice shape/dimensions, min/max, finite and non-finite
+  counts, and provenance labels;
+- keep raw JSON numeric slice values available under technical details rather
+  than making matrix dumps the primary UI;
 - represent missing fields and bad slice requests as UI errors instead of
   crashing;
 - clearly label slices as CM1-derived inspection data, not 3-D rendering.

@@ -533,6 +533,7 @@ describe("App", () => {
       "Quick-look shallow cumulus",
     );
     expect(screen.getAllByText("Validated quick-look baseline").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Minor caveat").length).toBeGreaterThan(0);
     expect(screen.getAllByRole("button", { name: "Open 3-D" }).length).toBeGreaterThan(0);
     expect(screen.getByRole("button", { name: "Quick-look shallow cumulus" })).toBeInTheDocument();
     expect(screen.getAllByText("Baseline Shallow Cumulus").length).toBeGreaterThan(0);
@@ -625,8 +626,12 @@ describe("App", () => {
     expect(screen.getByText("zh/yh/xh")).toBeInTheDocument();
     expect(screen.getAllByText("Horizontal slice").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Vertical slice").length).toBeGreaterThan(0);
+    expect(screen.getByLabelText("Horizontal slice heatmap")).toBeInTheDocument();
+    expect(screen.getByLabelText("Vertical slice heatmap")).toBeInTheDocument();
+    expect(screen.getByLabelText("Horizontal slice color scale")).toBeInTheDocument();
     expect(screen.getAllByText("2.000e-5 kg/kg").length).toBeGreaterThan(0);
     expect(screen.getByText("Selected level: 0.8 km (800 m)")).toBeInTheDocument();
+    expect(screen.getAllByText("Technical slice details").length).toBeGreaterThan(0);
     expect(screen.getAllByText("native_grid_view_no_interpolation").length).toBeGreaterThan(0);
     expect(screen.getAllByText(/CM1-derived visualization-ready data/).length).toBeGreaterThan(0);
   });
