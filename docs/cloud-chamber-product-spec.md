@@ -688,10 +688,13 @@ appropriate for no-cloud, missing-diagnostics, failed, or otherwise incomplete
 results.
 
 The selected result is shared by the Results, Inspect, and Visualize sections.
-Inspect and Visualize should default to an interesting output time: first cloud
-time when available, otherwise time of max cloud water when available, otherwise
-the latest output time. The 3-D view should not open at `t=0` when diagnostics
-show clouds appear later.
+Inspect and Visualize should default to physically interesting output views, not
+arbitrary zero-index slices. The backend should provide default field/time/slice
+locations from native-grid data when possible: for `qc`, first cloud time or the
+max cloud-water location; for `w`, the max-updraft location. If those locations
+are unavailable, the UI may fall back to domain-center slices and clearly keep
+the native-grid/provenance caveats available. The 3-D view should not open at
+`t=0` when diagnostics show clouds appear later.
 
 Completed results should be replayable and inspectable without rerunning CM1. Duplicate/tweak/rerun is useful later, but replay/inspect/save is the core MVP result-library behavior.
 
@@ -767,14 +770,25 @@ march, or invent cloud physics. The rendering method should be labeled
 `thresholded_point_cloud`, and the processing method should identify the native
 grid threshold operation.
 
-The first 3-D slice planes reuse the #72 JSON slice endpoint. The scene requests
-one horizontal and one vertical native-grid slice for the selected slice field
-(`qc` or `w`) at the same output time as the cloud-water point cloud. The UI
-must show field name, units, selected time, slice location, min/max, native-grid
-caveats, and provenance labels. These planes are inspection overlays, not
-ray-marched volumes or interpolated fields.
+The first 3-D slice planes reuse the #72 JSON slice endpoint. The scene can
+request horizontal and vertical native-grid slices for the selected slice field
+(`qc` or `w`) at the same output time as the cloud-water point cloud. Slice
+planes are optional inspection aids, not the cloud itself: they should be
+toggleable, visually secondary, semi-transparent, and tied to the same
+interesting native-grid locations used by Inspect. The UI must show field name,
+units, selected time, slice location, min/max, native-grid caveats, and
+provenance labels. These planes are inspection overlays, not ray-marched volumes
+or interpolated fields.
 
-The 3-D viewer should provide quick jumps for first cloud, max cloud water, and
+The 3-D viewer should provide simple view presets:
+
+- Cloud overview: cloud-water points with no planes or one subtle reference
+  slice.
+- Vertical cross-section: a vertical slice through max `qc` or max `w`.
+- Top-down slice: a horizontal slice through the cloud-bearing level.
+- Updraft view: `w` slice through the max-updraft location.
+
+The viewer should also provide quick jumps for first cloud, max cloud water, and
 max updraft when result diagnostics provide enough timing metadata. Slice-plane
 defaults should avoid empty zero-index views where a center/cloud-bearing level
 is more useful. Native-grid/no-interpolation caveats and rendering provenance
@@ -782,9 +796,11 @@ must stay available, but long technical labels belong under `About this
 visualization` rather than dominating the primary view.
 
 The first 3-D impression should make the validated quick-look baseline obvious:
-opening from Results should land on the first-cloud time when available, show a
-visible cloud-water point cloud, keep slice planes visible but secondary, and
-place detailed provenance/rendering labels under `About this visualization`.
+opening from Results should land on the first-cloud or max-cloud-water time when
+available, show a visible cloud-water point cloud, show the domain box, axes,
+ground/base plane, current time, and threshold, keep slice planes optional and
+secondary, and place detailed provenance/rendering labels under `About this
+visualization`.
 
 ### Post-MVP Visual Polish, Fly-Through, and Export
 
@@ -826,8 +842,12 @@ MVP behavior:
 - list available fields from the backend, starting with `qc` and `w`, and `qr`
   when present;
 - allow field selection and output time selection;
+- default to a physically interesting time and slice location using backend
+  defaults when available;
 - request horizontal and vertical slice payloads from the backend;
-- show heatmaps for horizontal and vertical slices, with field units, native
+- show one primary heatmap by default, with `Horizontal`, `Vertical X`,
+  `Vertical Y`, and `Compare` modes;
+- show heatmaps with field units, native
   grid, selected time, slice shape/dimensions, min/max, finite and non-finite
   counts, and provenance labels;
 - keep raw JSON numeric slice values available under technical details rather
@@ -851,6 +871,7 @@ Implemented backend endpoints:
 
 ```text
 GET /api/results/{result_id}/visualization/fields
+GET /api/results/{result_id}/visualization/defaults
 GET /api/results/{result_id}/visualization/slice
 ```
 
@@ -884,6 +905,12 @@ Every slice payload includes field metadata, selected time/index, shape,
 dimension order, JSON numeric values, min/max/mean, finite/non-finite counts,
 native coordinate units, caveats, and provenance/rendering/processing labels.
 Non-finite values are represented as `null` in JSON.
+
+The defaults endpoint chooses physically interesting native-grid locations for
+Inspect and Visualize. It reports max-value locations for `qc` and `w` when
+available, including selected time index, horizontal level, vertical slice
+indices, source label, and caveats. It does not interpolate or invent data; if
+the field is missing or non-finite, the UI falls back to domain-center slices.
 
 Vertical coordinate units are preserved. If a vertical coordinate is in
 kilometers, Cloud Chamber may add a meter display value while still returning

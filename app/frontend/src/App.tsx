@@ -225,6 +225,31 @@ type PointCloudResponse = {
   caveats: string[];
 };
 
+type FieldViewDefaults = {
+  field: string;
+  time_index: number;
+  time_seconds: number | null;
+  horizontal_level_index: number;
+  vertical_x_index: number;
+  vertical_y_index: number;
+  source: string;
+  max_value: number | null;
+  caveats: string[];
+};
+
+type ViewDefaultsResponse = {
+  result_id: string;
+  run_id: string;
+  scenario_id: string;
+  preferred_field: string | null;
+  fields: Record<string, FieldViewDefaults>;
+  provenance: ProvenancePayload;
+  caveats: string[];
+};
+
+type InspectorViewMode = "horizontal" | "vertical_x" | "vertical_y" | "compare";
+type SceneViewPreset = "cloud-overview" | "vertical-cross-section" | "top-down-slice" | "updraft";
+
 async function fetchScenarioCatalog(): Promise<ScenarioResponse> {
   const response = await fetch("/api/scenarios");
   if (!response.ok) {
@@ -290,6 +315,14 @@ async function fetchVisualizationFields(resultId: string): Promise<FieldCatalogR
     throw new Error(await responseError(response, "Unable to load visualization fields."));
   }
   return response.json() as Promise<FieldCatalogResponse>;
+}
+
+async function fetchVisualizationDefaults(resultId: string): Promise<ViewDefaultsResponse> {
+  const response = await fetch(`/api/results/${resultId}/visualization/defaults`);
+  if (!response.ok) {
+    throw new Error(await responseError(response, "Unable to load visualization defaults."));
+  }
+  return response.json() as Promise<ViewDefaultsResponse>;
 }
 
 async function fetchVisualizationSlice(
@@ -1126,6 +1159,7 @@ function ResultNotebookCard({
 
 function VisualizerSceneShell({ result }: { result: ResultCard }) {
   const [catalog, setCatalog] = useState<FieldCatalogResponse | null>(null);
+  const [viewDefaults, setViewDefaults] = useState<ViewDefaultsResponse | null>(null);
   const [selectedFieldName, setSelectedFieldName] = useState("");
   const [timeIndex, setTimeIndex] = useState(0);
   const [cameraMode, setCameraMode] = useState<"orbit" | "pan">("orbit");
@@ -1135,10 +1169,10 @@ function VisualizerSceneShell({ result }: { result: ResultCard }) {
   const [pointSize, setPointSize] = useState(11);
   const [isPlaying, setIsPlaying] = useState(false);
   const [pointCloud, setPointCloud] = useState<PointCloudResponse | null>(null);
+  const [viewPreset, setViewPreset] = useState<SceneViewPreset>("cloud-overview");
+  const [showSlicePlanes, setShowSlicePlanes] = useState(false);
   const [sliceFieldName, setSliceFieldName] = useState("qc");
-  const [sliceOrientation, setSliceOrientation] = useState<"vertical_x" | "vertical_y">(
-    "vertical_x",
-  );
+  const [sliceOrientation, setSliceOrientation] = useState<"vertical_x" | "vertical_y">("vertical_x");
   const [horizontalSliceLevel, setHorizontalSliceLevel] = useState(0);
   const [verticalSliceIndex, setVerticalSliceIndex] = useState(0);
   const [sceneHorizontalSlice, setSceneHorizontalSlice] = useState<SliceResponse | null>(null);
@@ -1151,6 +1185,7 @@ function VisualizerSceneShell({ result }: { result: ResultCard }) {
   useEffect(() => {
     let active = true;
     setCatalog(null);
+    setViewDefaults(null);
     setSceneError(null);
     setSelectedFieldName("");
     setTimeIndex(0);
@@ -1161,6 +1196,8 @@ function VisualizerSceneShell({ result }: { result: ResultCard }) {
     setPointSize(11);
     setIsPlaying(false);
     setPointCloud(null);
+    setViewPreset("cloud-overview");
+    setShowSlicePlanes(false);
     setSliceFieldName("qc");
     setSliceOrientation("vertical_x");
     setHorizontalSliceLevel(0);
@@ -1169,22 +1206,27 @@ function VisualizerSceneShell({ result }: { result: ResultCard }) {
     setSceneVerticalSlice(null);
     setSliceError(null);
     setSceneStatus("Loading scene data...");
-    fetchVisualizationFields(result.result_id)
-      .then((payload) => {
+    Promise.all([
+      fetchVisualizationFields(result.result_id),
+      fetchVisualizationDefaults(result.result_id).catch(() => null),
+    ])
+      .then(([payload, defaults]) => {
         if (!active) return;
         setCatalog(payload);
+        setViewDefaults(defaults);
         const firstPreferred =
+          payload.available_fields.find(
+            (field) => field.raw_field_name === (defaults?.preferred_field ?? "qc"),
+          ) ??
           payload.available_fields.find((field) => field.raw_field_name === "qc") ??
           payload.available_fields[0];
-        const initialTimeIndex = interestingTimeIndex(
-          firstPreferred?.time_coordinate_values ?? [],
-          result,
-        );
+        const initialDefaults = defaultsForField(defaults, firstPreferred?.raw_field_name);
+        const initialTimeIndex = defaultTimeIndex(firstPreferred, result, initialDefaults);
         setSelectedFieldName(firstPreferred?.raw_field_name ?? "");
         setSliceFieldName(firstPreferred?.raw_field_name ?? "");
         setTimeIndex(initialTimeIndex);
-        setHorizontalSliceLevel(defaultHorizontalLevel(firstPreferred));
-        setVerticalSliceIndex(defaultVerticalIndex(firstPreferred, "vertical_x"));
+        setHorizontalSliceLevel(defaultHorizontalLevel(firstPreferred, initialDefaults));
+        setVerticalSliceIndex(defaultVerticalIndex(firstPreferred, "vertical_x", initialDefaults));
         setSceneStatus(
           payload.available_fields.length > 0 ? "Scene shell ready" : "No fields available",
         );
@@ -1230,6 +1272,10 @@ function VisualizerSceneShell({ result }: { result: ResultCard }) {
     selectedField?.provenance.provenance_label ??
     catalog?.provenance.provenance_label ??
     "CM1-derived visualization-ready data; rendering not implemented";
+  const selectedDefaults = defaultsForField(viewDefaults, selectedFieldName);
+  const sliceDefaults = defaultsForField(viewDefaults, sliceFieldName);
+  const selectedTimeValue = timeOptions[Math.min(timeIndex, timeMax)] ?? null;
+  const selectedTimeLabel = formatTimeValue(selectedTimeValue);
 
   useEffect(() => {
     if (!selectedField || selectedField.raw_field_name !== "qc") {
@@ -1336,8 +1382,8 @@ function VisualizerSceneShell({ result }: { result: ResultCard }) {
       </div>
 
       <p>
-        This view shows cloud-water points and slice planes prepared from CM1-derived fields. The
-        browser is not parsing raw NetCDF.
+        Cloud-water points are CM1 grid cells where qc exceeds the selected threshold. Slice planes
+        are optional native-grid inspection aids; the browser is not parsing raw NetCDF.
       </p>
 
       {sceneError && <p role="alert">{sceneError}</p>}
@@ -1350,8 +1396,26 @@ function VisualizerSceneShell({ result }: { result: ResultCard }) {
         <div className="scene-container" aria-label="3-D scene container">
           <div className="scene-horizon" />
           <div className="scene-grid" />
-          <SlicePlane title="Horizontal slice plane" slice={sceneHorizontalSlice} />
-          <SlicePlane title="Vertical slice plane" slice={sceneVerticalSlice} />
+          <div className="domain-box" aria-label="Domain bounding box">
+            <span className="axis-label axis-label-x">x</span>
+            <span className="axis-label axis-label-y">y</span>
+            <span className="axis-label axis-label-z">height</span>
+            <span className="ground-label">domain floor</span>
+          </div>
+          <div className="scene-context-label">
+            <strong>{selectedTimeLabel}</strong>
+            <span>Cloud-water threshold {formatScientific(threshold, "kg/kg")}</span>
+          </div>
+          {showSlicePlanes && (
+            <>
+              {viewPreset === "top-down-slice" || viewPreset === "cloud-overview" ? (
+                <SlicePlane title="Horizontal slice plane" slice={sceneHorizontalSlice} />
+              ) : null}
+              {viewPreset !== "top-down-slice" ? (
+                <SlicePlane title="Vertical slice plane" slice={sceneVerticalSlice} />
+              ) : null}
+            </>
+          )}
           {pointCloud && pointCloud.points.length > 0 && (
             <div className="point-cloud-layer" aria-label="Cloud-water point cloud">
               {pointCloud.points.map((point, index) => (
@@ -1422,6 +1486,102 @@ function VisualizerSceneShell({ result }: { result: ResultCard }) {
 
           {catalog && selectedField && (
             <fieldset>
+              <legend>View presets</legend>
+              <div className="segmented-buttons">
+                <button
+                  type="button"
+                  className={viewPreset === "cloud-overview" ? "active-control" : ""}
+                  onClick={() =>
+                    applyScenePreset("cloud-overview", {
+                      catalog,
+                      viewDefaults,
+                      result,
+                      setViewPreset,
+                      setSelectedFieldName,
+                      setSliceFieldName,
+                      setTimeIndex,
+                      setHorizontalSliceLevel,
+                      setVerticalSliceIndex,
+                      setSliceOrientation,
+                      setShowSlicePlanes,
+                    })
+                  }
+                >
+                  Cloud overview
+                </button>
+                <button
+                  type="button"
+                  className={viewPreset === "vertical-cross-section" ? "active-control" : ""}
+                  onClick={() =>
+                    applyScenePreset("vertical-cross-section", {
+                      catalog,
+                      viewDefaults,
+                      result,
+                      setViewPreset,
+                      setSelectedFieldName,
+                      setSliceFieldName,
+                      setTimeIndex,
+                      setHorizontalSliceLevel,
+                      setVerticalSliceIndex,
+                      setSliceOrientation,
+                      setShowSlicePlanes,
+                    })
+                  }
+                >
+                  Vertical cross-section
+                </button>
+                <button
+                  type="button"
+                  className={viewPreset === "top-down-slice" ? "active-control" : ""}
+                  onClick={() =>
+                    applyScenePreset("top-down-slice", {
+                      catalog,
+                      viewDefaults,
+                      result,
+                      setViewPreset,
+                      setSelectedFieldName,
+                      setSliceFieldName,
+                      setTimeIndex,
+                      setHorizontalSliceLevel,
+                      setVerticalSliceIndex,
+                      setSliceOrientation,
+                      setShowSlicePlanes,
+                    })
+                  }
+                >
+                  Top-down slice
+                </button>
+                <button
+                  type="button"
+                  className={viewPreset === "updraft" ? "active-control" : ""}
+                  onClick={() =>
+                    applyScenePreset("updraft", {
+                      catalog,
+                      viewDefaults,
+                      result,
+                      setViewPreset,
+                      setSelectedFieldName,
+                      setSliceFieldName,
+                      setTimeIndex,
+                      setHorizontalSliceLevel,
+                      setVerticalSliceIndex,
+                      setSliceOrientation,
+                      setShowSlicePlanes,
+                    })
+                  }
+                >
+                  Updraft view
+                </button>
+              </div>
+              <small>
+                Defaults use first cloud time or native-grid maxima when available; fallback is the
+                domain center.
+              </small>
+            </fieldset>
+          )}
+
+          {catalog && selectedField && (
+            <fieldset>
               <legend>Field and time</legend>
               <label htmlFor="scene-field">
                 Field
@@ -1433,9 +1593,7 @@ function VisualizerSceneShell({ result }: { result: ResultCard }) {
                       (field) => field.raw_field_name === event.target.value,
                     );
                     setSelectedFieldName(event.target.value);
-                    setTimeIndex(
-                      interestingTimeIndex(nextField?.time_coordinate_values ?? [], result),
-                    );
+                    setTimeIndex(defaultTimeIndex(nextField, result, defaultsForField(viewDefaults, event.target.value)));
                   }}
                 >
                   {catalog.available_fields.map((field) => (
@@ -1527,6 +1685,15 @@ function VisualizerSceneShell({ result }: { result: ResultCard }) {
           {catalog && sliceField && (
             <fieldset>
               <legend>Slice planes</legend>
+              <label htmlFor="show-slice-planes" className="checkbox-label">
+                <input
+                  id="show-slice-planes"
+                  type="checkbox"
+                  checked={showSlicePlanes}
+                  onChange={(event) => setShowSlicePlanes(event.target.checked)}
+                />
+                Show slice planes
+              </label>
               <label htmlFor="slice-field">
                 Slice field
                 <select
@@ -1537,8 +1704,11 @@ function VisualizerSceneShell({ result }: { result: ResultCard }) {
                       (field) => field.raw_field_name === event.target.value,
                     );
                     setSliceFieldName(event.target.value);
-                    setHorizontalSliceLevel(defaultHorizontalLevel(nextField));
-                    setVerticalSliceIndex(defaultVerticalIndex(nextField, sliceOrientation));
+                    const nextDefaults = defaultsForField(viewDefaults, event.target.value);
+                    setHorizontalSliceLevel(defaultHorizontalLevel(nextField, nextDefaults));
+                    setVerticalSliceIndex(
+                      defaultVerticalIndex(nextField, sliceOrientation, nextDefaults),
+                    );
                   }}
                 >
                   {catalog.available_fields
@@ -1571,7 +1741,9 @@ function VisualizerSceneShell({ result }: { result: ResultCard }) {
                   onChange={(event) => {
                     const nextOrientation = event.target.value as "vertical_x" | "vertical_y";
                     setSliceOrientation(nextOrientation);
-                    setVerticalSliceIndex(defaultVerticalIndex(sliceField, nextOrientation));
+                    setVerticalSliceIndex(
+                      defaultVerticalIndex(sliceField, nextOrientation, sliceDefaults),
+                    );
                   }}
                 >
                   <option value="vertical_x">vertical_x</option>
@@ -1644,6 +1816,11 @@ function VisualizerSceneShell({ result }: { result: ResultCard }) {
               />
               <Metric label="Threshold" value={formatScientific(threshold, "kg/kg")} />
               <Metric label="Rendering method" value="thresholded_point_cloud" />
+              <Metric label="View preset" value={humanize(viewPreset)} />
+              <Metric
+                label="Default source"
+                value={selectedDefaults?.source ?? "domain center fallback"}
+              />
               <Metric
                 label="Slice field"
                 value={
@@ -1767,13 +1944,12 @@ function SceneSliceSummary({ title, slice }: { title: string; slice: SliceRespon
 
 function FieldInspector({ result }: { result: ResultCard }) {
   const [catalog, setCatalog] = useState<FieldCatalogResponse | null>(null);
+  const [viewDefaults, setViewDefaults] = useState<ViewDefaultsResponse | null>(null);
   const [selectedFieldName, setSelectedFieldName] = useState("qc");
   const [timeIndex, setTimeIndex] = useState(0);
   const [horizontalLevelIndex, setHorizontalLevelIndex] = useState(0);
   const [verticalLevelIndex, setVerticalLevelIndex] = useState(0);
-  const [verticalOrientation, setVerticalOrientation] = useState<"vertical_x" | "vertical_y">(
-    "vertical_x",
-  );
+  const [viewMode, setViewMode] = useState<InspectorViewMode>("vertical_x");
   const [horizontalSlice, setHorizontalSlice] = useState<SliceResponse | null>(null);
   const [verticalSlice, setVerticalSlice] = useState<SliceResponse | null>(null);
   const [inspectorStatus, setInspectorStatus] = useState("Loading fields...");
@@ -1784,19 +1960,29 @@ function FieldInspector({ result }: { result: ResultCard }) {
     setInspectorStatus("Loading fields...");
     setInspectorError(null);
     setCatalog(null);
+    setViewDefaults(null);
     setHorizontalSlice(null);
     setVerticalSlice(null);
-    fetchVisualizationFields(result.result_id)
-      .then((payload) => {
+    setViewMode("vertical_x");
+    Promise.all([
+      fetchVisualizationFields(result.result_id),
+      fetchVisualizationDefaults(result.result_id).catch(() => null),
+    ])
+      .then(([payload, defaults]) => {
         if (!active) return;
         setCatalog(payload);
+        setViewDefaults(defaults);
         const firstPreferred =
+          payload.available_fields.find(
+            (field) => field.raw_field_name === (defaults?.preferred_field ?? "qc"),
+          ) ??
           payload.available_fields.find((field) => field.raw_field_name === "qc") ??
           payload.available_fields[0];
+        const fieldDefaults = defaultsForField(defaults, firstPreferred?.raw_field_name);
         setSelectedFieldName(firstPreferred?.raw_field_name ?? "");
-        setTimeIndex(interestingTimeIndex(firstPreferred?.time_coordinate_values ?? [], result));
-        setHorizontalLevelIndex(defaultHorizontalLevel(firstPreferred));
-        setVerticalLevelIndex(defaultVerticalIndex(firstPreferred, "vertical_x"));
+        setTimeIndex(defaultTimeIndex(firstPreferred, result, fieldDefaults));
+        setHorizontalLevelIndex(defaultHorizontalLevel(firstPreferred, fieldDefaults));
+        setVerticalLevelIndex(defaultVerticalIndex(firstPreferred, "vertical_x", fieldDefaults));
         setInspectorStatus(
           payload.available_fields.length > 0 ? "Fields loaded" : "No fields available",
         );
@@ -1815,13 +2001,15 @@ function FieldInspector({ result }: { result: ResultCard }) {
     () => catalog?.available_fields.find((field) => field.raw_field_name === selectedFieldName),
     [catalog, selectedFieldName],
   );
+  const selectedDefaults = defaultsForField(viewDefaults, selectedFieldName);
+  const verticalOrientation = viewMode === "vertical_y" ? "vertical_y" : "vertical_x";
 
   useEffect(() => {
     if (!selectedField) return;
-    setTimeIndex(interestingTimeIndex(selectedField.time_coordinate_values, result));
-    setHorizontalLevelIndex(defaultHorizontalLevel(selectedField));
-    setVerticalLevelIndex(defaultVerticalIndex(selectedField, verticalOrientation));
-  }, [result, selectedField, verticalOrientation]);
+    setTimeIndex(defaultTimeIndex(selectedField, result, selectedDefaults));
+    setHorizontalLevelIndex(defaultHorizontalLevel(selectedField, selectedDefaults));
+    setVerticalLevelIndex(defaultVerticalIndex(selectedField, verticalOrientation, selectedDefaults));
+  }, [result, selectedDefaults, selectedField, verticalOrientation]);
 
   useEffect(() => {
     if (!selectedField) return;
@@ -1903,6 +2091,40 @@ function FieldInspector({ result }: { result: ResultCard }) {
       {catalog && selectedField && (
         <>
           <div className="inspector-controls">
+            <fieldset className="view-mode-control">
+              <legend>Slice view</legend>
+              <div className="segmented-buttons">
+                <button
+                  type="button"
+                  className={viewMode === "horizontal" ? "active-control" : ""}
+                  onClick={() => setViewMode("horizontal")}
+                >
+                  Horizontal
+                </button>
+                <button
+                  type="button"
+                  className={viewMode === "vertical_x" ? "active-control" : ""}
+                  onClick={() => setViewMode("vertical_x")}
+                >
+                  Vertical X
+                </button>
+                <button
+                  type="button"
+                  className={viewMode === "vertical_y" ? "active-control" : ""}
+                  onClick={() => setViewMode("vertical_y")}
+                >
+                  Vertical Y
+                </button>
+                <button
+                  type="button"
+                  className={viewMode === "compare" ? "active-control" : ""}
+                  onClick={() => setViewMode("compare")}
+                >
+                  Compare
+                </button>
+              </div>
+            </fieldset>
+
             <label htmlFor="inspect-field">
               Field
               <select
@@ -1945,20 +2167,6 @@ function FieldInspector({ result }: { result: ResultCard }) {
               />
             </label>
 
-            <label htmlFor="vertical-orientation">
-              Vertical slice
-              <select
-                id="vertical-orientation"
-                value={verticalOrientation}
-                onChange={(event) =>
-                  setVerticalOrientation(event.target.value as "vertical_x" | "vertical_y")
-                }
-              >
-                <option value="vertical_x">vertical_x</option>
-                <option value="vertical_y">vertical_y</option>
-              </select>
-            </label>
-
             <label htmlFor="vertical-index">
               Vertical slice index
               <input
@@ -1978,14 +2186,35 @@ function FieldInspector({ result }: { result: ResultCard }) {
               value={`${selectedField.raw_field_name} (${selectedField.display_name})`}
             />
             <Metric label="Units" value={selectedField.units ?? "Units unavailable"} />
+            <Metric
+              label="Selected time"
+              value={formatTimeValue(timeOptions[Math.min(timeIndex, timeOptions.length - 1)] ?? null)}
+            />
+            <Metric label="Default source" value={selectedDefaults?.source ?? "domain center"} />
             <Metric label="Native grid" value={selectedField.native_grid} />
-            <Metric label="Provenance" value={catalog.provenance.provenance_label} />
           </dl>
 
-          <div className="slice-grid">
-            <SlicePanel title="Horizontal slice" slice={horizontalSlice} />
-            <SlicePanel title="Vertical slice" slice={verticalSlice} />
+          <div className={viewMode === "compare" ? "slice-grid" : "primary-slice-grid"}>
+            {(viewMode === "horizontal" || viewMode === "compare") && (
+              <SlicePanel title="Horizontal slice" slice={horizontalSlice} />
+            )}
+            {(viewMode === "vertical_x" || viewMode === "vertical_y" || viewMode === "compare") && (
+              <SlicePanel
+                title={viewMode === "vertical_y" ? "Vertical Y slice" : "Vertical X slice"}
+                slice={verticalSlice}
+              />
+            )}
           </div>
+
+          <details>
+            <summary>Technical field details</summary>
+            <p>{catalog.provenance.provenance_label}</p>
+            <ul className="compact-list">
+              <li>Native-grid view; no interpolation</li>
+              <li>Raw numeric values live under each slice's technical details.</li>
+              <li>No raw NetCDF parsing in the browser</li>
+            </ul>
+          </details>
         </>
       )}
     </section>
@@ -2280,6 +2509,23 @@ function outputSummary(summary: OutputFileSummary): string {
   return parts.join(", ");
 }
 
+function defaultsForField(
+  defaults: ViewDefaultsResponse | null,
+  fieldName: string | undefined,
+): FieldViewDefaults | undefined {
+  if (!fieldName) return undefined;
+  return defaults?.fields[fieldName];
+}
+
+function defaultTimeIndex(
+  field: VisualizableField | undefined,
+  result: ResultCard,
+  defaults: FieldViewDefaults | undefined,
+): number {
+  if (defaults) return defaults.time_index;
+  return interestingTimeIndex(field?.time_coordinate_values ?? [], result);
+}
+
 function interestingTimeIndex(
   timeOptions: Array<number | string | null>,
   result: ResultCard,
@@ -2299,6 +2545,40 @@ function jumpTimeIndex(
       ? result.first_cloud_time_seconds
       : (result.first_cloud_time_seconds ?? result.output_file_summary.last_output_time_seconds);
   return closestTimeIndex(timeOptions, preferred);
+}
+
+function applyScenePreset(
+  preset: SceneViewPreset,
+  options: {
+    catalog: FieldCatalogResponse;
+    viewDefaults: ViewDefaultsResponse | null;
+    result: ResultCard;
+    setViewPreset: (preset: SceneViewPreset) => void;
+    setSelectedFieldName: (field: string) => void;
+    setSliceFieldName: (field: string) => void;
+    setTimeIndex: (index: number) => void;
+    setHorizontalSliceLevel: (index: number) => void;
+    setVerticalSliceIndex: (index: number) => void;
+    setSliceOrientation: (orientation: "vertical_x" | "vertical_y") => void;
+    setShowSlicePlanes: (show: boolean) => void;
+  },
+): void {
+  const fieldName = preset === "updraft" ? "w" : "qc";
+  const field =
+    options.catalog.available_fields.find((candidate) => candidate.raw_field_name === fieldName) ??
+    options.catalog.available_fields.find((candidate) => candidate.raw_field_name === "qc") ??
+    options.catalog.available_fields[0];
+  if (!field) return;
+  const defaults = defaultsForField(options.viewDefaults, field.raw_field_name);
+  const orientation = "vertical_x";
+  options.setViewPreset(preset);
+  options.setSelectedFieldName(field.raw_field_name);
+  options.setSliceFieldName(field.raw_field_name);
+  options.setTimeIndex(defaultTimeIndex(field, options.result, defaults));
+  options.setHorizontalSliceLevel(defaultHorizontalLevel(field, defaults));
+  options.setVerticalSliceIndex(defaultVerticalIndex(field, orientation, defaults));
+  options.setSliceOrientation(orientation);
+  options.setShowSlicePlanes(preset !== "cloud-overview");
 }
 
 function closestTimeIndex(
@@ -2328,14 +2608,22 @@ function numericTimeSeconds(value: number | string | null): number | null {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
-function defaultHorizontalLevel(field: VisualizableField | undefined): number {
+function defaultHorizontalLevel(
+  field: VisualizableField | undefined,
+  defaults?: FieldViewDefaults,
+): number {
+  if (defaults) return defaults.horizontal_level_index;
   return Math.max(0, Math.floor(verticalDimensionSize(field) / 3));
 }
 
 function defaultVerticalIndex(
   field: VisualizableField | undefined,
   orientation: "vertical_x" | "vertical_y",
+  defaults?: FieldViewDefaults,
 ): number {
+  if (defaults) {
+    return orientation === "vertical_x" ? defaults.vertical_x_index : defaults.vertical_y_index;
+  }
   const dimension =
     orientation === "vertical_x" ? field?.coordinate_names.y : field?.coordinate_names.x;
   if (!field || !dimension) return 0;

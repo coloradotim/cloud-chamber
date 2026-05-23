@@ -67,10 +67,12 @@ rendering, interpolation, or large-output processing.
 
 2-D field inspector component tests should mock the visualization-ready API
 payloads rather than reading NetCDF in the browser. They should cover opening
-from a Result Card, field selection, time selection, horizontal and vertical
-slice heatmaps, units, min/max, finite/non-finite counts, provenance labels,
-raw numeric values under technical details, missing fields, and bad slice
-requests. They must not add rendering dependencies or test a 3-D scene.
+from a Result Card, field selection, time selection, backend-provided
+interesting defaults, a single-primary-slice layout, compare mode, horizontal
+and vertical slice heatmaps, units, min/max, finite/non-finite counts,
+provenance labels, raw numeric values under technical details, missing fields,
+and bad slice requests. They must not add rendering dependencies or test a 3-D
+scene.
 
 Guided workspace tests should cover task navigation across `Build`, `Results`,
 `Inspect`, and `Visualize`; the default `Results` landing state; selected-result
@@ -84,10 +86,11 @@ from results that truly need review.
 3-D scene shell component tests should also mock the visualization-ready field
 catalog instead of reading NetCDF in the browser. They should cover opening from
 a Result Card, scene container rendering, orbit/pan controls, zoom/reset camera
-controls, time slider shell, field selector shell, interesting-time defaults,
-first-cloud/max-cloud/max-updraft jump controls, provenance/rendering details,
-and no-field/error states. They must not assert isosurfaces or volumetric
-effects until the later visualizer issues implement those layers.
+controls, time slider shell, field selector shell, interesting-time/default
+slice selection, first-cloud/max-cloud/max-updraft jump controls, domain box,
+axes/height/floor labels, provenance/rendering details, and no-field/error
+states. They must not assert isosurfaces or volumetric effects until the later
+visualizer issues implement those layers.
 
 Cloud-water point-cloud tests should use tiny synthetic NetCDF fixtures on the
 backend and mocked visualization-ready point payloads on the frontend. Backend
@@ -103,13 +106,14 @@ CM1 output.
 3-D slice-plane tests should mock the #72 visualization-ready slice API. They
 should cover horizontal and vertical slice planes, `qc` and `w` field selection,
 time synchronization with the 3-D point cloud, native-grid caveats/provenance
-labels, and clear error states for missing fields or bad slice requests. They
-must not parse raw NetCDF in the browser, add rendering dependencies, or test
-ray marching, cinematic lighting, export, fly-through, or generated CM1 output.
+labels, slice-plane show/hide behavior, view presets, and clear error states for
+missing fields or bad slice requests. They must not parse raw NetCDF in the
+browser, add rendering dependencies, or test ray marching, cinematic lighting,
+export, fly-through, or generated CM1 output.
 Visual first-impression tests should also keep the validated quick-look baseline
-on a cloud-bearing time, show a visible point-cloud state, show slice planes as
-secondary context, and keep technical provenance reachable without making it the
-primary reading path.
+on a cloud-bearing time, show a visible point-cloud state, keep slice planes
+optional and secondary, and keep technical provenance reachable without making
+it the primary reading path.
 
 CM1 runtime floating-point exception flags such as `IEEE_INVALID_FLAG`, `IEEE_DIVIDE_BY_ZERO`, and `IEEE_OVERFLOW_FLAG` should be preserved as caveats. Automated diagnostics should then check whether target fields contain non-finite values. If `qc`, `w`, and `qr` are finite/usable, diagnostics can complete with the runtime warning still visible. If root-cause investigation requires CM1 source-level debugging, that belongs in a separate issue rather than CI.
 
