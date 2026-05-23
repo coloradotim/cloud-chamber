@@ -102,15 +102,17 @@ GENERATED_FILE_SPECS = (
         relative_path="namelist.input",
         description="CM1 namelist input generated from validated scenario controls.",
         scientific_status=(
-            "CM1-ready provisional reference-derived baseline from the local CM1 "
-            "les_ShallowCu example"
+            "CM1-ready external-sounding reproduction path derived from the local "
+            "CM1 les_ShallowCu example"
         ),
     ),
     GeneratedFileSpec(
         role=GeneratedFileRole.INPUT_SOUNDING,
         relative_path="input_sounding",
         description="CM1 sounding/profile input generated from validated scenario controls.",
-        scientific_status="CM1-readable provisional profile; baseline namelist uses built-in BOMEX",
+        scientific_status=(
+            "CM1-readable external sounding profile used by the baseline reproduction path"
+        ),
     ),
     GeneratedFileSpec(
         role=GeneratedFileRole.DRY_RUN_REPORT,
@@ -187,13 +189,14 @@ def render_namelist_fragment(contract: CM1InputContract) -> str:
 def render_cm1_namelist(contract: CM1InputContract) -> str:
     """Render a runnable CM1 namelist for the baseline shallow-cumulus package.
 
-    The recovery baseline follows CM1's local ``les_ShallowCu`` reference case:
-    ``testcase = 3``, ``isnd = 19``, the 64 x 64 x 75 grid, 100 m horizontal
-    spacing, 40 m nominal vertical spacing, 18 km model top, reference Rayleigh
-    damping, and reference surface stress/roughness settings. Run-size presets
-    only adjust runtime and output cadence: the standard/reference preset keeps
-    the 6-hour/1-hour reference timing, and quick-look uses a 3-hour runtime with
-    15-minute output. The only intentional product-path change outside timing is
+    The recovery baseline follows CM1's local ``les_ShallowCu`` reference case.
+    The external-sounding reproduction keeps ``testcase = 3``, the 64 x 64 x 75
+    grid, 100 m horizontal spacing, 40 m nominal vertical spacing, 18 km model
+    top, reference Rayleigh damping, reference wind profile, and reference
+    surface stress/roughness settings, but switches the thermodynamic source
+    from built-in ``isnd = 19`` to CM1's external ``input_sounding`` path via
+    ``isnd = 17``. Run-size presets only adjust runtime and output cadence. The
+    intentional product-path change outside the sounding source is
     ``output_format = 2`` so Cloud Chamber can ingest NetCDF output when the local
     CM1 build supports it.
     """
@@ -270,7 +273,7 @@ def render_cm1_namelist(contract: CM1InputContract) -> str:
  irbc      =  4,
  roflux    =  0,
  nudgeobc  =  0,
- isnd      = 19,
+ isnd      = 17,
  iwnd      =  9,
  itern     =  0,
  iinit     =  0,
@@ -525,24 +528,119 @@ def render_input_sounding_notes(contract: CM1InputContract) -> str:
 def render_cm1_input_sounding(contract: CM1InputContract) -> str:
     """Render a CM1-readable external sounding profile.
 
-    The current baseline namelist uses CM1's built-in BOMEX sounding (`isnd = 19`),
-    so CM1 will not read this file for the first smoke run. We still generate a
-    numeric CM1/WRF-format profile so package preflight can reject notes-only
-    artifacts and future external-sounding experiments have a concrete starting point.
+    CM1 documents ``isnd = 17`` as the external ``input_sounding`` route that
+    reads thermodynamics from this file while preserving the namelist wind
+    profile. The profile is derived from the BOMEX/Siebesma shallow-cumulus
+    breakpoints used by CM1's ``isnd = 19`` reference case and extends above the
+    18 km model top as required by CM1's input_sounding reader.
     """
 
     del contract
+    header, body = _baseline_shallow_cumulus_sounding_profile()
     lines = [
-        "1015.0 298.7 17.0",
-        "0.0 298.7 17.0 -8.75 0.0",
-        "520.0 298.7 16.3 -8.75 0.0",
-        "1480.0 302.4 10.7 -8.75 0.0",
-        "2000.0 308.2 4.2 -8.75 0.0",
-        "3000.0 311.8 3.0 -8.75 0.0",
-        "6000.0 330.0 1.0 -8.75 0.0",
-        "7000.0 340.0 0.5 -8.75 0.0",
+        f"{header[0]:10.2f} {header[1]:12.4f} {header[2]:12.5f}",
     ]
+    lines.extend(
+        f"{z:10.1f} {theta:12.4f} {qv_gkg:12.5f} {u_ms:8.2f} {v_ms:7.2f}"
+        for z, theta, qv_gkg, u_ms, v_ms in body
+    )
     return "\n".join(lines) + "\n"
+
+
+def _baseline_shallow_cumulus_sounding_profile() -> tuple[
+    tuple[float, float, float],
+    tuple[tuple[float, float, float, float, float], ...],
+]:
+    """Return BOMEX-like external-sounding rows for the les_ShallowCu baseline.
+
+    The first row is the CM1 input_sounding header:
+    surface pressure (mb), surface theta (K), surface qv (g/kg).
+
+    Subsequent rows are z (m), theta (K), qv (g/kg), u (m/s), v (m/s). CM1's
+    external reader expects mixing ratio in g/kg. The isnd=19 shallow-cumulus
+    reference stores moisture breakpoints as specific humidity, so these rows
+    convert those breakpoints to mixing ratio before writing the file.
+    """
+
+    surface_specific_humidity = 0.0170
+    header = (
+        1015.0,
+        298.7,
+        _specific_humidity_to_mixing_ratio_gkg(surface_specific_humidity),
+    )
+    levels = (
+        (
+            0.0,
+            298.7,
+            _specific_humidity_to_mixing_ratio_gkg(0.0170),
+            _bomex_u_wind(0.0),
+            0.0,
+        ),
+        (
+            520.0,
+            298.7,
+            _specific_humidity_to_mixing_ratio_gkg(0.0163),
+            _bomex_u_wind(520.0),
+            0.0,
+        ),
+        (
+            700.0,
+            _interpolate(700.0, 520.0, 1480.0, 298.7, 302.4),
+            _specific_humidity_to_mixing_ratio_gkg(
+                _interpolate(700.0, 520.0, 1480.0, 0.0163, 0.0107)
+            ),
+            _bomex_u_wind(700.0),
+            0.0,
+        ),
+        (
+            1480.0,
+            302.4,
+            _specific_humidity_to_mixing_ratio_gkg(0.0107),
+            _bomex_u_wind(1480.0),
+            0.0,
+        ),
+        (
+            2000.0,
+            308.2,
+            _specific_humidity_to_mixing_ratio_gkg(0.0042),
+            _bomex_u_wind(2000.0),
+            0.0,
+        ),
+        (
+            3000.0,
+            311.85,
+            _specific_humidity_to_mixing_ratio_gkg(0.0030),
+            _bomex_u_wind(3000.0),
+            0.0,
+        ),
+        (6000.0, 330.0, 1.0, _bomex_u_wind(6000.0), 0.0),
+        (7000.0, 340.0, 0.5, _bomex_u_wind(7000.0), 0.0),
+        (20000.0, 430.0, 0.01, _bomex_u_wind(20000.0), 0.0),
+    )
+    return header, levels
+
+
+def _specific_humidity_to_mixing_ratio_gkg(specific_humidity: float) -> float:
+    return 1000.0 * specific_humidity / (1.0 - specific_humidity)
+
+
+def _interpolate(
+    value: float,
+    low_value: float,
+    high_value: float,
+    low_result: float,
+    high_result: float,
+) -> float:
+    fraction = (value - low_value) / (high_value - low_value)
+    return low_result + fraction * (high_result - low_result)
+
+
+def _bomex_u_wind(height_m: float) -> float:
+    if height_m <= 700.0:
+        return -8.75
+    if height_m >= 3000.0:
+        return -4.61
+    return _interpolate(height_m, 700.0, 3000.0, -8.75, -4.61)
 
 
 def _diagnostic_names(scenario: ScenarioTemplate) -> tuple[str, ...]:

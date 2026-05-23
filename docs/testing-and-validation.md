@@ -187,6 +187,27 @@ The first quick-look variant should be validated as a runtime-only change from t
 
 The first quick-look validation run, `dry-run-quicklook-les-shallowcu-20260522151536`, completed with `exit_code = 0`, ingested 13 model-output time steps from 0 to 10800 seconds, and produced `cloud formed; rain detected`. Recorded diagnostics included first cloud time at 1800 seconds, `max_qc_kg_kg = 0.002192789688706398`, `max_w_m_s = 6.866957187652588`, `min_w_m_s = -4.21529483795166`, rain present, package size 206 MB, stderr `IEEE_UNDERFLOW_FLAG`, and the existing vertical-coordinate caveat because cloud base/top units were reported as kilometers.
 
+External-sounding Baseline Shallow Cumulus reproduction should preserve the
+validated reference-derived settings and change only the thermodynamic sounding
+source from built-in `isnd = 19` to CM1's external `input_sounding` route
+(`isnd = 17`). Automated tests should assert that generated packages still
+preserve the reference grid/domain, runtime presets, wind profile, surface
+flux/stress path, damping, turbulence/SGS settings, boundary conditions,
+NetCDF output, and reference `LANDUSE.TBL` staging. Manual validation should
+record whether the external-sounding reproduction still completes, produces
+NetCDF, ingests the full sequence, forms cloud, and preserves meaningful
+vertical motion before Dry Failed Cumulus dries the profile.
+
+The external-sounding reproduction run, `dry-run-external-sounding-baseline-20260522185000`,
+completed with `exit_code = 0`, ingested 13 model-output time steps from 0 to
+10800 seconds, and produced `cloud formed; rain detected`. Recorded diagnostics
+included first cloud time at 1800 seconds, `max_qc_kg_kg =
+0.001976807601749897`, `max_w_m_s = 6.270190238952637`, `min_w_m_s =
+-4.416495323181152`, rain present, stderr `IEEE_UNDERFLOW_FLAG`, and the
+existing vertical-coordinate caveat because cloud base/top units were reported
+as kilometers. This accepts the external-sounding baseline path for the next
+moisture-limited Dry Failed planning step.
+
 Dry Failed Cumulus validation should happen only after an external-sounding
 Baseline Shallow Cumulus reproduction has been accepted. The future Dry Failed
 run should be considered useful only if it is moisture-limited and numerically

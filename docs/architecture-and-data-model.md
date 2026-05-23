@@ -99,7 +99,7 @@ For the Baseline Shallow Cumulus Golden Path, the generated package should prese
 
 The CM1 input generation contract is deterministic and testable before full package generation. It documents the expected generated files and preserves product-facing controls separately from raw namelist/developer settings.
 
-For Baseline Shallow Cumulus, the recovery package is derived from CM1's local `les_ShallowCu` reference case (`testcase = 3`, `isnd = 19`). It preserves the reference grid, runtime, domain top, Rayleigh damping, surface/ocean/flux settings, and surface stress path as much as possible. The intentional Cloud Chamber change is NetCDF output (`output_format = 2`) so the completed run can flow into ingest and diagnostics.
+For Baseline Shallow Cumulus, the recovery package is derived from CM1's local `les_ShallowCu` reference case. It preserves `testcase = 3`, the reference grid, runtime, domain top, Rayleigh damping, surface/ocean/flux settings, surface stress path, and wind profile as much as possible. The external-sounding reproduction changes the thermodynamic source from the built-in BOMEX analytic sounding (`isnd = 19`) to CM1's `input_sounding` route (`isnd = 17`) so future one-control moisture experiments have a validated profile path. The intentional Cloud Chamber output-path change remains NetCDF output (`output_format = 2`) so the completed run can flow into ingest and diagnostics.
 
 The earlier Cloud Chamber quick-look derivative is not scientifically accepted: full-sequence ingest evaluated all 25 model-output files, but the run produced no cloud, no vertical motion, and NaN/Infinity caveats; a fixed-roughness follow-up still failed in the same way. Quick-look scaling should happen only after the reference-derived package works, and future changes should be introduced one at a time with manual CM1 validation.
 
@@ -108,6 +108,14 @@ The first reference-derived validation run, `dry-run-les-shallowcu-2026052214064
 Run-size presets now vary only runtime timing for this recovered baseline. The standard/reference package preserves `timax = 21600.0` and `tapfrq = 3600.0`. The first quick-look variant preserves every reference-derived science/numerics setting and changes only `timax = 10800.0` and `tapfrq = 900.0`. Domain/grid, vertical spacing, domain top, surface stress/roughness path, moisture/sounding, surface fluxes, turbulence/SGS settings, damping settings, boundary conditions, NetCDF output, and reference `LANDUSE.TBL` staging should remain unchanged.
 
 The first quick-look validation run, `dry-run-quicklook-les-shallowcu-20260522151536`, preserved those settings, completed locally, and ingested 13 model-output time steps over 10800 seconds. Diagnostics still reported cloud formation, vertical motion, and rain, so the architecture can treat this runtime-only quick-look preset as the first validated shorter Baseline Shallow Cumulus variant.
+
+The external-sounding reproduction run, `dry-run-external-sounding-baseline-20260522185000`,
+preserved the same quick-look timing and used `isnd = 17` with a generated
+numeric `input_sounding`. It completed locally, produced NetCDF, ingested 13
+model-output time steps over 10800 seconds, and retained cloud formation,
+vertical motion, and rain. The architecture can now treat external-sounding
+Baseline Shallow Cumulus as the accepted profile path for one-factor moisture
+experiments.
 
 Dry Failed Cumulus should branch from this validated reference-derived family,
 not from the invalid compact quick-look derivative. Architecturally, it is a
@@ -118,13 +126,12 @@ change only the lower-atmosphere moisture/sounding path once that path has been
 validated. The intended product control is `low-level humidity = drier`; raw
 sounding or namelist edits belong in developer implementation details.
 
-Because the current validated baseline relies on the CM1 `les_ShallowCu`
-reference behavior, the next architecture step is to prove Cloud Chamber can
-reproduce the accepted baseline through an external `input_sounding` path
-without changing the rest of the case. Only after that reproduction succeeds
-should Dry Failed reduce low-level moisture. A run with no cloud and no
-meaningful vertical motion, or no cloud with severe NaN/Infinity caveats, is
-not a valid Dry Failed Cumulus result.
+Because the accepted baseline originally relied on the CM1 `les_ShallowCu`
+built-in sounding behavior, Cloud Chamber must preserve evidence for the
+external `input_sounding` reproduction before drying the profile. Only after
+that reproduction succeeds should Dry Failed reduce low-level moisture. A run
+with no cloud and no meaningful vertical motion, or no cloud with severe
+NaN/Infinity caveats, is not a valid Dry Failed Cumulus result.
 
 Cloud-scale defaults for the first lower-atmosphere contract are:
 
