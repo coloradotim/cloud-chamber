@@ -81,7 +81,8 @@ def test_rendered_namelist_standard_preset_preserves_reference_timing() -> None:
     assert "output_format    = 2," in namelist
     assert "output_filetype  = 2," in namelist
     assert "testcase  =  3," in namelist
-    assert "isnd      = 19," in namelist
+    assert "isnd      = 17," in namelist
+    assert "iwnd      =  9," in namelist
     assert "&cloud_chamber_domain" not in namelist
     assert "placeholder until local/manual CM1 validation" not in namelist
 
@@ -106,18 +107,23 @@ def test_rendered_namelist_quick_look_only_changes_runtime_and_cadence() -> None
     assert "set_ust    =      1," in namelist
     assert "cnst_ust   =   0.28," in namelist
     assert "testcase  =  3," in namelist
-    assert "isnd      = 19," in namelist
+    assert "isnd      = 17," in namelist
+    assert "iwnd      =  9," in namelist
     assert "output_format    = 2," in namelist
 
 
-def test_rendered_input_sounding_is_cm1_readable_not_notes() -> None:
+def test_rendered_input_sounding_is_external_baseline_profile() -> None:
     contract = build_cm1_input_contract(baseline_scenario())
     sounding = render_input_sounding_notes(contract)
     lines = sounding.splitlines()
 
     assert len(lines[0].split()) == 3
     assert all(len(line.split()) == 5 for line in lines[1:])
-    assert float(lines[-1].split()[0]) > 6000
+    assert lines[0].split()[0] == "1015.00"
+    assert float(lines[0].split()[2]) > 17.0
+    assert float(lines[-1].split()[0]) > 18000
+    assert "-8.75" in lines[1]
+    assert "-4.61" in lines[-1]
     assert "Cloud Chamber input_sounding notes" not in sounding
     assert "placeholder until local/manual CM1 validation" not in sounding
 

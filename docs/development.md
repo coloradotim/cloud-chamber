@@ -94,7 +94,7 @@ or implement 3-D visualization.
 
 The local run manager assumes one active CM1 run at a time for the MVP. It captures stdout/stderr under the run package `logs/` directory, updates the run manifest through queued/running/completed/failed/canceled states, refuses output-like files before launch, and fails clearly when CM1 settings are missing. Normal tests use fake subprocesses; real CM1 execution remains manual/local and is not required in CI.
 
-Launch preflight also refuses placeholder-only CM1-facing files. Older packages containing `&cloud_chamber_domain` or notes-only `input_sounding` files must be regenerated before launch. For Baseline Shallow Cumulus, generated packages now use a CM1 BOMEX shallow-cumulus namelist path with quick-look grid/runtime settings; the package remains provisional until #56 is retried manually.
+Launch preflight also refuses placeholder-only CM1-facing files. Older packages containing `&cloud_chamber_domain` or notes-only `input_sounding` files must be regenerated before launch. For Baseline Shallow Cumulus, generated packages now preserve the validated `les_ShallowCu` reference-derived settings while using CM1's external `input_sounding` route for the thermodynamic profile, quick-look runtime/cadence when selected, and NetCDF output for ingest.
 
 Baseline Shallow Cumulus currently uses `zd = 4500.0` for Rayleigh damping in the 6 km quick-look domain. Preflight rejects namelists where Rayleigh damping would begin at or below half the configured domain top. A CM1 process that exits `0` without NetCDF or raw CM1 `.dat/.ctl` artifacts is recorded as `validation_status: needs_review` and `product_state: process_completed_no_output`, not as a completed usable CM1 result.
 

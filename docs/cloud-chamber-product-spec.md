@@ -297,7 +297,7 @@ dry_run_report.json
 runtime_file_checklist.json
 ```
 
-The current Baseline Shallow Cumulus recovery contract renders CM1-facing `namelist.input` from CM1's local `les_ShallowCu` reference path (`testcase = 3`, `isnd = 19`). It preserves the reference grid, runtime, domain top, Rayleigh damping, surface/ocean/flux settings, and surface stress path as much as possible. It also writes a numeric CM1-readable `input_sounding` reference profile, although the baseline namelist uses CM1's built-in BOMEX analytic sounding rather than reading that file by default.
+The current Baseline Shallow Cumulus recovery contract renders CM1-facing `namelist.input` from CM1's local `les_ShallowCu` reference path. The external-sounding reproduction keeps `testcase = 3`, the reference grid, runtime, domain top, Rayleigh damping, surface/ocean/flux settings, surface stress path, and wind profile as much as possible, but switches the thermodynamic source from CM1's built-in BOMEX analytic sounding (`isnd = 19`) to CM1's external `input_sounding` route (`isnd = 17`). The generated `input_sounding` is a numeric CM1-readable BOMEX/Siebesma profile that extends above the 18 km model top.
 
 The first full-sequence NetCDF ingest of `dry-run-157b09a178e1` found 25 model-output files and 25 time steps, but no usable cloud or vertical velocity: `max_qc_kg_kg = 0.0`, `max_w_m_s = 0.0`, and multiple NaN/Infinity caveats in surface and thermodynamic fields. The generated quick-look package therefore now uses a fixed small ocean roughness length (`set_znt = 1`, `cnst_znt = 0.0002`) instead of the reference dynamic roughness / fixed friction-velocity path that produced invalid local output.
 
@@ -308,6 +308,15 @@ The first `les_ShallowCu` reference-derived Cloud Chamber run, `dry-run-les-shal
 The first quick-look Baseline Shallow Cumulus variant is derived from that validated reference package by changing only runtime and output cadence: `timax = 10800.0` and `tapfrq = 900.0`. It intentionally preserves the reference domain/grid, vertical spacing, domain top, surface stress/roughness path, moisture/sounding, surface fluxes, turbulence/SGS settings, damping settings, boundary conditions, NetCDF output, and reference `LANDUSE.TBL` staging behavior.
 
 The first quick-look validation run, `dry-run-quicklook-les-shallowcu-20260522151536`, completed with `exit_code = 0`, produced NetCDF output, and ingested 13 model-output time steps from 0 to 10800 seconds. Package size was 206 MB. First-pass diagnostics reported `cloud formed; rain detected`, first cloud time at 1800 seconds, `max_qc_kg_kg = 0.002192789688706398`, `max_w_m_s = 6.866957187652588`, and `min_w_m_s = -4.21529483795166`. This confirms the shorter runtime/cadence-only quick-look variant still produces cloud and vertical motion while preserving the reference-derived settings.
+
+The external-sounding Baseline Shallow Cumulus reproduction run,
+`dry-run-external-sounding-baseline-20260522185000`, completed with
+`exit_code = 0`, produced NetCDF output, and ingested 13 model-output time
+steps from 0 to 10800 seconds. First-pass diagnostics reported `cloud formed;
+rain detected`, first cloud time at 1800 seconds, `max_qc_kg_kg =
+0.001976807601749897`, `max_w_m_s = 6.270190238952637`, and `min_w_m_s =
+-4.416495323181152`. This accepts the external `input_sounding` path as the
+baseline reproduction path for the next one-factor moisture experiment.
 
 ### Dry Failed Cumulus Planning
 
@@ -384,7 +393,7 @@ path is:
 
 1. #102 validates an external-sounding Baseline Shallow Cumulus reproduction while
    preserving the validated grid/domain/runtime/surface/damping/boundary
-   settings.
+   settings and changing only the thermodynamic sounding source.
 2. #103 implements the moisture-limited Dry Failed variant by drying the validated
    external-sounding baseline and preserving vertical motion.
 
