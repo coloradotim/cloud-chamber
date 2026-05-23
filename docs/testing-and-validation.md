@@ -98,9 +98,14 @@ Shallow Cumulus quick-look and Dry Failed Cumulus quick-look pair. They should
 verify side-by-side scenario names, run-size presets, cloud/rain outcomes, first
 cloud time, max `qc`, max/min `w`, caveats, output summaries, saved/protected
 state, moisture-limited interpretation, missing-pair handling, and quick actions
-that route to the existing Inspect and Visualize sections. They must not read
-raw NetCDF in the browser or implement side-by-side slice rendering until the
-follow-up comparison issue.
+that route to the existing Inspect and Visualize sections.
+
+Side-by-side slice comparison tests should mock the #72 visualization-ready
+fields/slice API for both accepted results. They should cover default Baseline
+vs Dry Failed selection, `qc` comparison, `w` comparison, missing shared fields,
+time-index mismatch labeling where practical, units, min/max, finite/non-finite
+counts, provenance labels, and the guarantee that raw NetCDF is not parsed in
+the browser.
 
 3-D scene shell component tests should also mock the visualization-ready field
 catalog instead of reading NetCDF in the browser. They should cover opening from

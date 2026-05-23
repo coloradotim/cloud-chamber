@@ -496,9 +496,13 @@ Baseline Shallow Cumulus quick-look result and an accepted Dry Failed Cumulus
 quick-look result. It does not need a new backend comparison model for the first
 MVP; it reads the same result-card fields as the table and detail card, keeps
 run IDs/provenance in technical details, and routes quick actions into the
-existing Inspect and Visualize sections. Side-by-side slice comparison should
-reuse the visualization-ready slice API in a follow-up rather than duplicating
-NetCDF parsing or result-card logic.
+existing Inspect and Visualize sections.
+
+The side-by-side slice comparison reuses the same visualization-ready fields
+and slice endpoints as Inspect. The frontend requests one slice payload per
+result, field, output index, and orientation, then renders the two JSON slice
+arrays side by side with their own stats and provenance. There is no new backend
+comparison model, no browser-side NetCDF parsing, and no interpolation step.
 
 The first field inspector is a frontend consumer of the visualization-ready
 fields/slice API. It opens from a Result Card / Experiment Notebook entry and

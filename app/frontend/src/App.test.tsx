@@ -1069,6 +1069,46 @@ describe("App", () => {
     expect(screen.getByText("Technical comparison details")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Inspect Dry Failed" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Visualize Dry Failed" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Baseline vs Dry Failed slices" })).toBeInTheDocument();
+    await screen.findByText("Comparison slices loaded");
+    expect(screen.getByLabelText("Comparison field")).toHaveValue("qc");
+    expect(screen.getByLabelText("Comparison time")).toHaveValue("2");
+    expect(screen.getByLabelText("Baseline comparison slice")).toHaveTextContent(
+      "Baseline Shallow Cumulus",
+    );
+    expect(screen.getByLabelText("Dry Failed comparison slice")).toHaveTextContent(
+      "Dry Failed Cumulus",
+    );
+    expect(screen.getAllByText("qc (Cloud water)").length).toBeGreaterThan(0);
+    expect(screen.getAllByLabelText(/qc comparison heatmap/).length).toBe(2);
+    expect(screen.getAllByText("Finite cells").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Non-finite cells").length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/CM1-derived visualization-ready data/).length).toBeGreaterThan(0);
+    expect(screen.getByText(/browser is not parsing raw NetCDF/)).toBeInTheDocument();
+    });
+
+  it("switches side-by-side field comparison from qc to w", async () => {
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Compare" }));
+    await screen.findByText("Comparison slices loaded");
+
+    fireEvent.change(screen.getByLabelText("Comparison field"), { target: { value: "w" } });
+    fireEvent.click(screen.getByRole("button", { name: "Horizontal" }));
+    fireEvent.change(screen.getByLabelText("Comparison time"), { target: { value: "1" } });
+
+    await waitFor(() => {
+      expect(screen.getAllByText("w (Vertical velocity)").length).toBeGreaterThan(0);
+    });
+    expect(screen.getByRole("button", { name: "Horizontal" })).toHaveClass("active-control");
+    expect(screen.getAllByText("m/s").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("900 s").length).toBeGreaterThan(0);
+    expect(fetch).toHaveBeenCalledWith(
+      expect.stringContaining("/api/results/result-dry-run-quicklook/visualization/slice?field=w"),
+    );
+    expect(fetch).toHaveBeenCalledWith(
+      expect.stringContaining("/api/results/result-dry-failed-cumulus/visualization/slice?field=w"),
+    );
   });
 
   it("opens inspect and visualize from comparison quick actions", async () => {

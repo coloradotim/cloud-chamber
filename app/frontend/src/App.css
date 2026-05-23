@@ -356,6 +356,50 @@ button:disabled {
   background: rgba(145, 217, 183, 0.1);
 }
 
+.slice-comparison-panel {
+  display: grid;
+  gap: 1rem;
+  border: 1px solid rgba(171, 215, 214, 0.22);
+  border-radius: 8px;
+  padding: 1rem;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.comparison-controls {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.75rem;
+  align-items: end;
+}
+
+.comparison-controls label {
+  display: grid;
+  gap: 0.4rem;
+  color: #eff7fa;
+  font-weight: 800;
+}
+
+.comparison-controls fieldset {
+  display: grid;
+  gap: 0.5rem;
+  min-width: 0;
+  margin: 0;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 8px;
+  padding: 0.75rem;
+}
+
+.comparison-controls legend {
+  color: #f7fbff;
+  font-weight: 850;
+}
+
+.slice-comparison-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+}
+
 .comparison-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));

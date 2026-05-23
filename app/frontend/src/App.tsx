@@ -1333,10 +1333,12 @@ function ComparisonWorkspace({
               />
               <Metric
                 label="Slice comparison"
-                value="Side-by-side 2-D slices are planned as follow-up; use Inspect for one result at a time."
+                value="Use the field comparison below for side-by-side CM1-derived qc and w slices."
               />
             </dl>
           </section>
+
+          <SliceComparisonPanel baseline={pair.baseline} dryFailed={pair.dryFailed} />
 
           <details>
             <summary>Technical comparison details</summary>
@@ -1425,6 +1427,258 @@ function ComparisonResultCard({
           Visualize {roleLabel}
         </button>
       </div>
+    </section>
+  );
+}
+
+function SliceComparisonPanel({
+  baseline,
+  dryFailed,
+}: {
+  baseline: ResultCard | undefined;
+  dryFailed: ResultCard | undefined;
+}) {
+  const [fieldName, setFieldName] = useState("qc");
+  const [orientation, setOrientation] = useState<"horizontal" | "vertical_x">("vertical_x");
+  const [timeIndex, setTimeIndex] = useState(0);
+  const [catalogs, setCatalogs] = useState<{
+    baseline: FieldCatalogResponse;
+    dryFailed: FieldCatalogResponse;
+  } | null>(null);
+  const [slices, setSlices] = useState<{ baseline: SliceResponse; dryFailed: SliceResponse } | null>(
+    null,
+  );
+  const [status, setStatus] = useState("Loading field catalogs...");
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!baseline || !dryFailed) return;
+    let active = true;
+    setCatalogs(null);
+    setSlices(null);
+    setError(null);
+    setStatus("Loading field catalogs...");
+    Promise.all([
+      fetchVisualizationFields(baseline.result_id),
+      fetchVisualizationFields(dryFailed.result_id),
+    ])
+      .then(([baselineCatalog, dryFailedCatalog]) => {
+        if (!active) return;
+        setCatalogs({ baseline: baselineCatalog, dryFailed: dryFailedCatalog });
+        const preferred = ["qc", "w"].find((candidate) =>
+          bothCatalogsContainField(baselineCatalog, dryFailedCatalog, candidate),
+        );
+        setFieldName(preferred ?? baselineCatalog.available_fields[0]?.raw_field_name ?? "");
+        setTimeIndex(interestingTimeIndexForComparison(baselineCatalog, dryFailedCatalog, preferred));
+        setStatus("Field catalogs loaded");
+      })
+      .catch((caught: unknown) => {
+        if (!active) return;
+        setError(caught instanceof Error ? caught.message : "Unable to load comparison fields.");
+        setStatus("Comparison unavailable");
+      });
+    return () => {
+      active = false;
+    };
+  }, [baseline, dryFailed]);
+
+  const baselineField = useMemo(
+    () => catalogs?.baseline.available_fields.find((field) => field.raw_field_name === fieldName),
+    [catalogs, fieldName],
+  );
+  const dryFailedField = useMemo(
+    () => catalogs?.dryFailed.available_fields.find((field) => field.raw_field_name === fieldName),
+    [catalogs, fieldName],
+  );
+  const comparableFields = useMemo(() => {
+    if (!catalogs) return [];
+    return ["qc", "w"].filter((candidate) =>
+      bothCatalogsContainField(catalogs.baseline, catalogs.dryFailed, candidate),
+    );
+  }, [catalogs]);
+  const timeOptions = baselineField?.time_coordinate_values ?? dryFailedField?.time_coordinate_values ?? [];
+  const clampedTimeIndex = clampIndex(timeIndex, timeOptions.length || 1);
+  const levelIndex = comparisonLevelIndex(baselineField, orientation);
+  const timeMismatch = Boolean(
+    baselineField &&
+      dryFailedField &&
+      JSON.stringify(baselineField.time_coordinate_values) !==
+        JSON.stringify(dryFailedField.time_coordinate_values),
+  );
+
+  useEffect(() => {
+    if (!baseline || !dryFailed || !baselineField || !dryFailedField || !fieldName) return;
+    let active = true;
+    setSlices(null);
+    setError(null);
+    setStatus("Loading comparison slices...");
+    Promise.all([
+      fetchVisualizationSlice(baseline.result_id, {
+        field: fieldName,
+        timeIndex: clampedTimeIndex,
+        orientation,
+        levelIndex,
+      }),
+      fetchVisualizationSlice(dryFailed.result_id, {
+        field: fieldName,
+        timeIndex: clampedTimeIndex,
+        orientation,
+        levelIndex,
+      }),
+    ])
+      .then(([baselineSlice, dryFailedSlice]) => {
+        if (!active) return;
+        setSlices({ baseline: baselineSlice, dryFailed: dryFailedSlice });
+        setStatus("Comparison slices loaded");
+      })
+      .catch((caught: unknown) => {
+        if (!active) return;
+        setError(caught instanceof Error ? caught.message : "Unable to load comparison slices.");
+        setStatus("Comparison slice unavailable");
+      });
+    return () => {
+      active = false;
+    };
+  }, [baseline, dryFailed, baselineField, dryFailedField, fieldName, clampedTimeIndex, orientation, levelIndex]);
+
+  if (!baseline || !dryFailed) return null;
+
+  return (
+    <section className="slice-comparison-panel" aria-labelledby="slice-comparison-title">
+      <div className="section-heading">
+        <div>
+          <p className="eyebrow">2-D field comparison</p>
+          <h3 id="slice-comparison-title">Baseline vs Dry Failed slices</h3>
+        </div>
+        <p className="state-chip">{status}</p>
+      </div>
+
+      <p>
+        Dry Failed Cumulus is an intentional moisture-limited contrast when vertical motion is
+        present and cloud water remains below threshold. These slices are CM1-derived backend
+        payloads; the browser is not parsing raw NetCDF.
+      </p>
+
+      {error && <p role="alert">{error}</p>}
+
+      <div className="comparison-controls">
+        <label>
+          Field
+          <select
+            aria-label="Comparison field"
+            value={fieldName}
+            onChange={(event) => setFieldName(event.target.value)}
+          >
+            {comparableFields.length > 0 ? (
+              comparableFields.map((candidate) => (
+                <option key={candidate} value={candidate}>
+                  {candidate} ({candidate === "qc" ? "Cloud water" : "Vertical velocity"})
+                </option>
+              ))
+            ) : (
+              <option value="">No shared qc/w fields</option>
+            )}
+          </select>
+        </label>
+
+        <label>
+          Time
+          <input
+            aria-label="Comparison time"
+            type="range"
+            min="0"
+            max={Math.max(0, timeOptions.length - 1)}
+            value={clampedTimeIndex}
+            onChange={(event) => setTimeIndex(Number(event.target.value))}
+            disabled={timeOptions.length === 0}
+          />
+          <span>{formatTimeValue(timeOptions[clampedTimeIndex] ?? null)}</span>
+        </label>
+
+        <fieldset>
+          <legend>Slice orientation</legend>
+          <div className="segmented-buttons">
+            <button
+              type="button"
+              className={orientation === "horizontal" ? "active-control" : ""}
+              onClick={() => setOrientation("horizontal")}
+            >
+              Horizontal
+            </button>
+            <button
+              type="button"
+              className={orientation === "vertical_x" ? "active-control" : ""}
+              onClick={() => setOrientation("vertical_x")}
+            >
+              Vertical x-z
+            </button>
+          </div>
+        </fieldset>
+      </div>
+
+      {timeMismatch && (
+        <p className="validation" role="status">
+          Output times differ between these results. The comparison uses the selected output index
+          and labels each slice with its own time metadata.
+        </p>
+      )}
+
+      {comparableFields.length === 0 && (
+        <section className="status-panel">
+          <p>These results do not share qc or w visualization-ready fields.</p>
+        </section>
+      )}
+
+      {slices && (
+        <div className="slice-comparison-grid">
+          <ComparedSliceCard roleLabel="Baseline" result={baseline} slice={slices.baseline} />
+          <ComparedSliceCard roleLabel="Dry Failed" result={dryFailed} slice={slices.dryFailed} />
+        </div>
+      )}
+    </section>
+  );
+}
+
+function ComparedSliceCard({
+  roleLabel,
+  result,
+  slice,
+}: {
+  roleLabel: string;
+  result: ResultCard;
+  slice: SliceResponse;
+}) {
+  return (
+    <section className="slice-panel" aria-label={`${roleLabel} comparison slice`}>
+      <div className="notebook-title">
+        <div>
+          <p className="eyebrow">{roleLabel}</p>
+          <h4>{result.scenario_name ?? result.scenario_id}</h4>
+        </div>
+        <StatusBadge label={cloudOutcome(result)} tone={cloudOutcome(result) === "Cloud formed" ? "good" : "warning"} />
+      </div>
+      <SliceHeatmap title={`${roleLabel} ${slice.field.raw_field_name} comparison`} slice={slice} />
+      <dl className="metric-grid">
+        <Metric label="Field" value={`${slice.field.raw_field_name} (${slice.field.display_name})`} />
+        <Metric label="Units" value={slice.field.units ?? "Units unavailable"} />
+        <Metric label="Time" value={formatSeconds(slice.selection.time_seconds)} />
+        <Metric label="Orientation" value={humanize(slice.selection.orientation)} />
+        <Metric label="Min" value={formatMaybeNumber(slice.stats.min, slice.field.units)} />
+        <Metric label="Max" value={formatMaybeNumber(slice.stats.max, slice.field.units)} />
+        <Metric label="Finite cells" value={slice.stats.finite_count.toLocaleString()} />
+        <Metric label="Non-finite cells" value={slice.stats.non_finite_count.toLocaleString()} />
+      </dl>
+      <details>
+        <summary>Provenance labels</summary>
+        <ul className="compact-list">
+          <li>{slice.provenance.provenance_label}</li>
+          <li>Processing method: {slice.provenance.processing_method}</li>
+          <li>Rendering method: {slice.provenance.rendering_method}</li>
+          {slice.caveats.map((caveat) => (
+            <li key={caveat}>{caveat}</li>
+          ))}
+        </ul>
+      </details>
     </section>
   );
 }
@@ -3943,6 +4197,47 @@ function storageCategoryTone(run: RunStorageEntry): "good" | "warning" | "neutra
     return "warning";
   }
   return "neutral";
+}
+
+function bothCatalogsContainField(
+  left: FieldCatalogResponse,
+  right: FieldCatalogResponse,
+  fieldName: string | undefined,
+): boolean {
+  if (!fieldName) return false;
+  return (
+    left.available_fields.some((field) => field.raw_field_name === fieldName) &&
+    right.available_fields.some((field) => field.raw_field_name === fieldName)
+  );
+}
+
+function interestingTimeIndexForComparison(
+  baselineCatalog: FieldCatalogResponse,
+  dryFailedCatalog: FieldCatalogResponse,
+  fieldName: string | undefined,
+): number {
+  const baselineField = baselineCatalog.available_fields.find(
+    (field) => field.raw_field_name === fieldName,
+  );
+  const dryField = dryFailedCatalog.available_fields.find((field) => field.raw_field_name === fieldName);
+  const length = Math.min(
+    baselineField?.time_coordinate_values.length ?? 0,
+    dryField?.time_coordinate_values.length ?? 0,
+  );
+  return Math.max(0, length - 1);
+}
+
+function clampIndex(index: number, length: number): number {
+  return Math.min(Math.max(0, index), Math.max(0, length - 1));
+}
+
+function comparisonLevelIndex(
+  field: VisualizableField | undefined,
+  orientation: "horizontal" | "vertical_x",
+): number {
+  if (!field) return 0;
+  if (orientation === "horizontal") return defaultHorizontalLevel(field);
+  return defaultVerticalIndex(field, "vertical_x");
 }
 
 function defaultsForField(
