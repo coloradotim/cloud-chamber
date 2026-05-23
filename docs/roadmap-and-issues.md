@@ -294,7 +294,7 @@ Goal: deliver the main payoff: inspect CM1 cloud evolution in 3-D.
 Deliverables:
 
 - 3-D scene shell.
-- orbit/pan/zoom/reset camera.
+- projection/view controls, zoom, and reset view.
 - time slider/replay.
 - field selector.
 - horizontal/vertical slices.
@@ -306,13 +306,14 @@ Implementation anchor:
 - #31 has been superseded by staged visualizer implementation issues. It captured the right broad goal, but was too large to implement safely as one PR.
 - #72 defines and implements the backend visualization-ready data contract. The browser should not parse raw NetCDF directly; it should consume fields and JSON slice payloads from backend endpoints. The MVP supports `qc` and `w`, native grids (`zh/yh/xh` for `qc`, `zf/yh/xh` for `w`), provenance/rendering labels, finite/non-finite stats, and vertical unit display metadata without interpolation.
 - #73 builds the 2-D field inspection MVP on top of the #72 fields/slice API before the full 3-D viewer so field orientation, time indexing, vertical coordinates, scaling, and basic cloud evolution can be checked. It opens from the Results Library detail, enables field/time selection, shows horizontal and vertical slices, and keeps the browser away from raw NetCDF parsing.
-- #77 builds the 3-D scene shell from the Results Library detail: scene container, orbit/pan/zoom controls, reset camera, time slider shell, field selector shell, loading/empty/error states, and provenance/rendering labels. It does not render cloud water, slices, or raw NetCDF data in the browser.
+- #77 builds the 3-D scene shell from the Results Library detail: scene container, projection/view controls, zoom, reset view, time slider shell, field selector shell, loading/empty/error states, and provenance/rendering labels. It does not render cloud water, slices, or raw NetCDF data in the browser.
 - #78 renders the first cloud-water field from visualization-ready data as a thresholded `qc` point cloud. The backend selects native-grid points and the browser renders only that payload; no raw NetCDF parsing, interpolation, isosurface extraction, ray marching, or cinematic lighting belongs in this step.
 - #79 adds horizontal and vertical slice planes using the same provenance-labeled #72 slice API and native-grid caveats. Slice-plane time stays synced with the point cloud, supports `qc` and `w`, and remains an inspection overlay rather than raw NetCDF parsing or volumetric rendering.
 - #98 also makes Inspect and Visualize inherit the selected result and default to an interesting time: first cloud when available, otherwise max cloud-water time if available, otherwise latest output. Technical rendering/provenance details stay available but secondary.
 - #100 sharpens the first usable inspection path: Results should surface the validated quick-look baseline, successful cloud-forming runs with caveats should read as `Minor caveat` rather than failed review states, the 2-D inspector should show slice heatmaps before raw matrix values, and the 3-D viewer should open with visible cloud-water points plus readable slice context.
 - #105 makes Inspect and Visualize physically interpretable rather than debug-like: the backend provides native-grid default view locations for `qc` and `w`, Inspect defaults to one primary heatmap with `Horizontal` / `Vertical X` / `Vertical Y` / `Compare` modes, Visualize adds domain box/axes/height/floor/time/threshold context, slice planes are toggleable and secondary, and view presets expose Cloud overview, Vertical cross-section, Top-down slice, and Updraft view.
 - #115 fixes the 3-D visualizer coordinate projection so point placement uses full NetCDF coordinate extents rather than returned cloudy-point extents. Side x-z and y-z views make model height the visual vertical axis, top-down x-y shows footprint, oblique remains an interpretive overview, and selected-time max `qc`/`w` defaults keep slice planes centered on the current cloud or updraft location.
+- #119 stabilizes the 3-D visualizer viewport around an explicit plotting group shared by the domain box, floor/grid, scale markers, slice planes, and point cloud. The MVP controls should be view/projection mode, zoom, and reset view rather than fake orbit/pan camera controls, with projection descriptions and scale markers visible at normal browser zoom.
 - #80 plans visual polish, fly-through/move-through, cinematic export, and thumbnail/preview policy after the practical 3-D MVP. It must not add rendering dependencies or implementation code.
 
 Recommended implementation order:

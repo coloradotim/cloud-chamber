@@ -521,13 +521,28 @@ details[open] > summary {
   position: relative;
   display: grid;
   place-items: center;
-  min-height: 500px;
+  min-height: 32rem;
+  aspect-ratio: 16 / 10;
   overflow: hidden;
   border: 1px solid rgba(171, 215, 214, 0.28);
   border-radius: 8px;
   background:
     linear-gradient(180deg, rgba(79, 133, 154, 0.16), transparent 42%),
     linear-gradient(0deg, rgba(9, 17, 24, 0.98), rgba(11, 18, 25, 0.94));
+}
+
+.viewport-frame {
+  position: relative;
+  width: min(96%, 62rem);
+  aspect-ratio: 16 / 10;
+  overflow: hidden;
+}
+
+.plotting-layer {
+  position: absolute;
+  inset: 0;
+  transform-origin: center center;
+  transition: transform 140ms ease;
 }
 
 .scene-horizon {
@@ -605,6 +620,77 @@ details[open] > summary {
 .scene-context-label span {
   color: #cfdae0;
   font-weight: 700;
+}
+
+.projection-description {
+  position: absolute;
+  left: 1rem;
+  right: 1rem;
+  bottom: 0.75rem;
+  z-index: 4;
+  margin: 0;
+  border-radius: 8px;
+  padding: 0.45rem 0.65rem;
+  background: rgba(6, 12, 18, 0.72);
+  color: #f7fbff;
+  font-size: 0.82rem;
+}
+
+.scale-markers {
+  position: absolute;
+  inset: 10% 8% 11%;
+  z-index: 3;
+  pointer-events: none;
+}
+
+.axis-ticks {
+  position: absolute;
+  color: #f7fbff;
+  font-size: 0.68rem;
+  font-weight: 800;
+}
+
+.axis-ticks span {
+  position: absolute;
+  border-radius: 8px;
+  padding: 0.18rem 0.32rem;
+  background: rgba(6, 12, 18, 0.7);
+  white-space: nowrap;
+}
+
+.axis-ticks-horizontal {
+  right: 0;
+  bottom: -1.85rem;
+  left: 0;
+}
+
+.axis-ticks-horizontal span {
+  transform: translateX(-50%);
+}
+
+.axis-ticks-height,
+.axis-ticks-y {
+  top: 0;
+  bottom: 0;
+  left: -0.55rem;
+}
+
+.axis-ticks-height span,
+.axis-ticks-y span {
+  transform: translate(-100%, 50%);
+}
+
+.active-z-range {
+  position: absolute;
+  top: 0.6rem;
+  left: 0.7rem;
+  margin: 0;
+  border-radius: 8px;
+  padding: 0.28rem 0.45rem;
+  background: rgba(6, 12, 18, 0.76);
+  color: #d8fff0;
+  font-size: 0.74rem;
+  font-weight: 850;
 }
 
 .point-cloud-layer {

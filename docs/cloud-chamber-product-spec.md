@@ -149,8 +149,9 @@ For each run:
 The visualizer should support:
 
 - time slider/playback
-- orbit/pan/zoom camera
-- reset camera
+- projection/view mode controls
+- zoom
+- reset view
 - vertical slice
 - horizontal slice
 - isosurface threshold
@@ -176,8 +177,8 @@ Visualization-ready data contract (#72)
 Every visualizer stage must preserve provenance labels and make clear that rendered output is an interpretation of CM1-derived data.
 
 The first 3-D scene shell opens from a Result Card / Experiment Notebook entry.
-It provides the scene container, orbit/pan/zoom controls, reset camera, time
-slider shell, field selector shell, loading/empty/error states, and
+It provides the scene container, projection/view controls, zoom, reset view,
+time slider shell, field selector shell, loading/empty/error states, and
 provenance/rendering labels. It does not render cloud water, slices, or
 synthetic cloud physics; those belong to later visualizer issues.
 
@@ -759,7 +760,7 @@ MVP visualizer work should be staged:
 
 1. Visualization-ready backend data contract.
 2. 2-D field inspection for orientation, time indexing, scaling, and field availability.
-3. 3-D scene shell with orbit/pan/zoom, reset camera, time slider, field selector, and provenance/rendering labels.
+3. 3-D scene shell with projection/view controls, zoom, reset view, time slider, field selector, and provenance/rendering labels.
 4. Cloud-water rendering MVP for `qc` using a thresholded point cloud from
    visualization-ready data.
 5. Horizontal and vertical slice planes for `qc` and `w`.
@@ -774,7 +775,7 @@ Later:
 - cinematic export
 - thumbnails/previews with strict generated-artifact policy
 
-True fly-through or move-through should remain on the roadmap after the MVP. Orbit/pan/zoom, reset camera, time replay, slices, field selection, and cloud-water isosurface/opacity approximation are enough for the first visualizer.
+True fly-through or move-through should remain on the roadmap after the MVP. Projection/view controls, zoom, reset view, time replay, slices, field selection, and cloud-water point/opacity approximation are enough for the first visualizer.
 
 The browser should not parse raw CM1 NetCDF directly. Backend ingest and visualization-ready preprocessing should provide selected, provenance-labeled fields for inspection and rendering.
 
@@ -795,6 +796,21 @@ base/top are legible. `Top-down x-y` is for horizontal footprint, and `Oblique
 overview` is an interpretive overview. The domain box, floor, axis labels, and
 points should use the same coordinate transform, with technical details showing
 the actual coordinate units and visualized extent.
+
+The MVP viewer uses a stable plotting viewport rather than pretending to have a
+full physical camera. The primary controls are projection mode, zoom, and reset
+view. Zoom scales the rendered plotting group while preserving the underlying
+CM1 coordinate transform; it does not change the model data, slice selection, or
+diagnostic values. Projection labels should be explicit:
+
+- `Side x-z`: height is vertical; `y` is compressed or hidden.
+- `Side y-z`: height is vertical; `x` is compressed or hidden.
+- `Top-down x-y`: horizontal footprint; height is not shown vertically.
+- `Oblique overview`: interpretive overview, not a true perspective camera.
+
+Scale markers should show horizontal distance, height when visible, the domain
+floor, and the active cloud-water height range so the view remains readable at
+normal browser zoom and across common screen sizes.
 
 The first 3-D slice planes reuse the #72 JSON slice endpoint. The scene can
 request horizontal and vertical native-grid slices for the selected slice field

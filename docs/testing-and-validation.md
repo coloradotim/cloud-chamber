@@ -94,12 +94,13 @@ follow-up comparison issue.
 
 3-D scene shell component tests should also mock the visualization-ready field
 catalog instead of reading NetCDF in the browser. They should cover opening from
-a Result Card, scene container rendering, orbit/pan controls, zoom/reset camera
-controls, time slider shell, field selector shell, interesting-time/default
+a Result Card, scene container rendering, projection/view controls, zoom/reset
+view controls, time slider shell, field selector shell, interesting-time/default
 slice selection, first-cloud/max-cloud/max-updraft jump controls, domain box,
-axes/height/floor labels, provenance/rendering details, and no-field/error
-states. They must not assert isosurfaces or volumetric effects until the later
-visualizer issues implement those layers.
+axes/height/floor labels, scale markers, stable plotting-group transforms,
+projection descriptions, provenance/rendering details, and no-field/error
+states. They must not assert isosurfaces, true camera orbit/pan behavior, or
+volumetric effects until later visualizer issues implement those layers.
 
 Cloud-water point-cloud tests should use tiny synthetic NetCDF fixtures on the
 backend and mocked visualization-ready point payloads on the frontend. Backend
@@ -113,6 +114,14 @@ where model `z` is the visual height, domain extent/debug labels,
 provenance/rendering labels, and the guarantee that the browser does not parse
 raw NetCDF. These tests must not add ray marching, isosurfaces, shadows,
 fly-through, export, or generated CM1 output.
+
+Viewport-stability tests should verify that the domain box, floor/grid, slice
+planes, scale markers, and cloud-water point cloud live inside the same plotting
+group, that zoom scales that group without changing data selection, and that
+reset view restores zoom and projection defaults. Side views should state that
+height is vertical, top-down should state that height is not shown vertically,
+and oblique should be labeled an interpretive overview rather than a true
+perspective camera.
 
 3-D slice-plane tests should mock the #72 visualization-ready slice API. They
 should cover horizontal and vertical slice planes, `qc` and `w` field selection,

@@ -163,8 +163,8 @@ The main payoff.
 Visualize CM1 output with:
 
 - time replay
-- orbit/pan/zoom
-- pan/tilt/zoom camera controls
+- projection/view controls
+- zoom and reset view
 - fly-through / move-through later
 - sun angle
 - color temperature
@@ -209,9 +209,9 @@ Useful views:
 - Vertical slices
 - Cloud top/base diagnostics
 - Time replay
-- 3-D camera exploration
+- 3-D projection exploration
 - Appearance rendering from cloud water
-- Lighting and camera controls
+- Lighting and view controls
 
 ## Trust/Honesty Rules
 
