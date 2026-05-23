@@ -1404,7 +1404,6 @@ function VisualizerSceneShell({ result }: { result: ResultCard }) {
   const [selectedTimeDefaults, setSelectedTimeDefaults] = useState<ViewDefaultsResponse | null>(null);
   const [selectedFieldName, setSelectedFieldName] = useState("");
   const [timeIndex, setTimeIndex] = useState(0);
-  const [cameraMode, setCameraMode] = useState<"orbit" | "pan">("orbit");
   const [zoom, setZoom] = useState(100);
   const [threshold, setThreshold] = useState(1e-6);
   const [opacity, setOpacity] = useState(0.68);
@@ -1433,7 +1432,6 @@ function VisualizerSceneShell({ result }: { result: ResultCard }) {
     setSceneError(null);
     setSelectedFieldName("");
     setTimeIndex(0);
-    setCameraMode("orbit");
     setZoom(100);
     setThreshold(1e-6);
     setOpacity(0.68);
@@ -1630,9 +1628,9 @@ function VisualizerSceneShell({ result }: { result: ResultCard }) {
     return () => window.clearInterval(interval);
   }, [isPlaying, timeMax]);
 
-  function resetCamera() {
-    setCameraMode("orbit");
+  function resetView() {
     setZoom(100);
+    setProjectionMode("oblique");
   }
 
   return (
@@ -1658,55 +1656,72 @@ function VisualizerSceneShell({ result }: { result: ResultCard }) {
 
       <div className="visualizer-layout">
         <div className="scene-container" aria-label="3-D scene container">
-          <div className="scene-horizon" />
-          <div className="scene-grid" />
-          <div
-            className={`domain-box domain-box-${projectionMode}`}
-            aria-label="Domain bounding box"
-          >
-            <span className="axis-label axis-label-x">
-              {projectionMode === "side_yz" ? "y" : "x"}
-            </span>
-            <span className="axis-label axis-label-y">
-              {projectionMode === "side_xz" ? "depth y" : projectionMode === "top_down" ? "y" : "depth y"}
-            </span>
-            <span className="axis-label axis-label-z">
-              {projectionMode === "top_down" ? "top-down x-y" : "height z"}
-            </span>
-            <span className="ground-label">domain floor</span>
-          </div>
-          <div className="scene-context-label">
-            <strong>{selectedTimeLabel}</strong>
-            <span>Cloud-water threshold {formatScientific(threshold, "kg/kg")}</span>
-          </div>
-          {showSlicePlanes && (
-            <>
-              {viewPreset === "top-down-slice" || viewPreset === "cloud-overview" ? (
-                <SlicePlane title="Horizontal slice plane" slice={sceneHorizontalSlice} />
-              ) : null}
-              {viewPreset !== "top-down-slice" ? (
-                <SlicePlane title="Vertical slice plane" slice={sceneVerticalSlice} />
-              ) : null}
-            </>
-          )}
-          {pointCloud && pointCloud.points.length > 0 && (
-            <div className="point-cloud-layer" aria-label="Cloud-water point cloud">
-              {pointCloud.points.map((point, index) => (
-                <span
-                  className="cloud-point"
-                  key={`${point.join("-")}-${index}`}
-                  style={cloudPointStyle(
-                    point,
-                    pointCloud,
-                    projectionMode,
-                    pointCloud.stats,
-                    opacity,
-                    pointSize,
-                  )}
-                />
-              ))}
+          <div className="viewport-frame">
+            <div
+              className="plotting-layer"
+              aria-label="Stable visualizer plotting group"
+              style={{ transform: `scale(${zoom / 100})` }}
+            >
+              <div className="scene-horizon" />
+              <div className="scene-grid" />
+              <div
+                className={`domain-box domain-box-${projectionMode}`}
+                aria-label="Domain bounding box"
+              >
+                <span className="axis-label axis-label-x">
+                  {projectionMode === "side_yz" ? "y" : "x"}
+                </span>
+                <span className="axis-label axis-label-y">
+                  {projectionMode === "side_xz"
+                    ? "depth y"
+                    : projectionMode === "top_down"
+                      ? "y"
+                      : "depth y"}
+                </span>
+                <span className="axis-label axis-label-z">
+                  {projectionMode === "top_down" ? "top-down x-y" : "height z"}
+                </span>
+                <span className="ground-label">domain floor</span>
+              </div>
+              <ScaleMarkers pointCloud={pointCloud} projectionMode={projectionMode} />
+              <div className="scene-context-label">
+                <strong>{projectionLabel(projectionMode)}</strong>
+                <span>{selectedTimeLabel}</span>
+                <span>Cloud-water threshold {formatScientific(threshold, "kg/kg")}</span>
+              </div>
+              {showSlicePlanes && (
+                <>
+                  {viewPreset === "top-down-slice" || viewPreset === "cloud-overview" ? (
+                    <SlicePlane title="Horizontal slice plane" slice={sceneHorizontalSlice} />
+                  ) : null}
+                  {viewPreset !== "top-down-slice" ? (
+                    <SlicePlane title="Vertical slice plane" slice={sceneVerticalSlice} />
+                  ) : null}
+                </>
+              )}
+              {pointCloud && pointCloud.points.length > 0 && (
+                <div className="point-cloud-layer" aria-label="Cloud-water point cloud">
+                  {pointCloud.points.map((point, index) => (
+                    <span
+                      className="cloud-point"
+                      key={`${point.join("-")}-${index}`}
+                      style={cloudPointStyle(
+                        point,
+                        pointCloud,
+                        projectionMode,
+                        pointCloud.stats,
+                        opacity,
+                        pointSize,
+                      )}
+                    />
+                  ))}
+                </div>
+              )}
             </div>
-          )}
+          </div>
+          <p className="projection-description" aria-label="Projection description">
+            {projectionDescription(projectionMode)}
+          </p>
           {(!pointCloud || pointCloud.points.length === 0) && (
             <div className="scene-empty-state">
               <p className="eyebrow">Cloud-water point cloud</p>
@@ -1725,23 +1740,7 @@ function VisualizerSceneShell({ result }: { result: ResultCard }) {
 
         <aside className="visualizer-controls" aria-label="3-D scene controls">
           <fieldset>
-            <legend>Camera</legend>
-            <div className="segmented-buttons">
-              <button
-                type="button"
-                className={cameraMode === "orbit" ? "active-control" : ""}
-                onClick={() => setCameraMode("orbit")}
-              >
-                Orbit
-              </button>
-              <button
-                type="button"
-                className={cameraMode === "pan" ? "active-control" : ""}
-                onClick={() => setCameraMode("pan")}
-              >
-                Pan
-              </button>
-            </div>
+            <legend>View controls</legend>
             <label htmlFor="scene-zoom">
               Zoom
               <input
@@ -1753,9 +1752,14 @@ function VisualizerSceneShell({ result }: { result: ResultCard }) {
                 onChange={(event) => setZoom(Number(event.target.value))}
               />
             </label>
-            <button type="button" onClick={resetCamera}>
-              Reset camera
+            <p>Zoom: {zoom}%</p>
+            <button type="button" onClick={resetView}>
+              Reset view
             </button>
+            <small>
+              Zoom scales the plotting group only; it does not change CM1 coordinates or slice
+              selection.
+            </small>
           </fieldset>
 
           {catalog && selectedField && (
@@ -2119,7 +2123,7 @@ function VisualizerSceneShell({ result }: { result: ResultCard }) {
             <summary>About this visualization</summary>
             <dl className="metric-grid">
               <Metric label="Run ID" value={result.run_id} />
-              <Metric label="Camera mode" value={cameraMode} />
+              <Metric label="View control" value="zoom-only CSS plotting transform" />
               <Metric label="Zoom" value={`${zoom}%`} />
               <Metric label="Opacity" value={String(opacity)} />
               <Metric label="Point size" value={`${pointSize}px`} />
@@ -2243,6 +2247,72 @@ function SlicePlane({ title, slice }: { title: string; slice: SliceResponse | nu
       </div>
     </div>
   );
+}
+
+function ScaleMarkers({
+  pointCloud,
+  projectionMode,
+}: {
+  pointCloud: PointCloudResponse | null;
+  projectionMode: ProjectionMode;
+}) {
+  const showHeight = projectionMode !== "top_down";
+  const horizontalCoordinate = projectionMode === "side_yz" ? "yh" : "xh";
+  const horizontalLabel = projectionMode === "side_yz" ? "y" : "x";
+  const activeRange =
+    pointCloud?.stats.active_z_min !== null && pointCloud?.stats.active_z_max !== null
+      ? `${formatCompactNumber(pointCloud?.stats.active_z_min ?? 0)}-${formatCompactNumber(
+          pointCloud?.stats.active_z_max ?? 0,
+        )} ${pointCloud?.coordinate_units.zh ?? ""}`.trim()
+      : "unavailable";
+
+  return (
+    <div className="scale-markers" aria-label="Scale markers">
+      <div className="axis-ticks axis-ticks-horizontal" aria-label={`${horizontalLabel}-axis ticks`}>
+        {extentTicks(pointCloud, horizontalCoordinate).map((tick) => (
+          <span key={`${horizontalCoordinate}-${tick.position}`} style={{ left: `${tick.position}%` }}>
+            {horizontalLabel}: {tick.label}
+          </span>
+        ))}
+      </div>
+      {projectionMode === "top_down" && (
+        <div className="axis-ticks axis-ticks-y" aria-label="y-axis ticks">
+          {extentTicks(pointCloud, "yh").map((tick) => (
+            <span key={`y-${tick.position}`} style={{ bottom: `${tick.position}%` }}>
+              y: {tick.label}
+            </span>
+          ))}
+        </div>
+      )}
+      {showHeight && (
+        <div className="axis-ticks axis-ticks-height" aria-label="height-axis ticks">
+          {extentTicks(pointCloud, "zh").map((tick) => (
+            <span key={`z-${tick.position}`} style={{ bottom: `${tick.position}%` }}>
+              height: {tick.label}
+            </span>
+          ))}
+        </div>
+      )}
+      {showHeight && (
+        <p className="active-z-range">active cloud water: {activeRange}</p>
+      )}
+    </div>
+  );
+}
+
+function extentTicks(
+  pointCloud: PointCloudResponse | null,
+  coordinate: string,
+): Array<{ position: number; label: string }> {
+  const extent = pointCloud?.coordinate_extents[coordinate];
+  if (!extent) return [];
+  const midpoint = (extent.min + extent.max) / 2;
+  const units = extent.units ? ` ${extent.units}` : "";
+  return [
+    { position: 12, label: `${formatCompactNumber(extent.min)}${units}` },
+    { position: 50, label: `${formatCompactNumber(midpoint)}${units}` },
+    { position: 88, label: `${formatCompactNumber(extent.max)}${units}` },
+  ];
 }
 
 function SceneSliceSummary({ title, slice }: { title: string; slice: SliceResponse | null }) {
@@ -2794,6 +2864,26 @@ function maxPointLocationLabel(pointCloud: PointCloudResponse | null): string {
   return `x ${formatCompactNumber(location.x)}, y ${formatCompactNumber(location.y)}, z ${formatCompactNumber(
     location.z,
   )}${units ? ` ${units}` : ""}, value ${formatCompactNumber(location.value)}`;
+}
+
+function projectionLabel(projectionMode: ProjectionMode): string {
+  const labels: Record<ProjectionMode, string> = {
+    side_xz: "Side x-z",
+    side_yz: "Side y-z",
+    top_down: "Top-down x-y",
+    oblique: "Oblique overview",
+  };
+  return labels[projectionMode];
+}
+
+function projectionDescription(projectionMode: ProjectionMode): string {
+  const descriptions: Record<ProjectionMode, string> = {
+    side_xz: "Side x-z: height is vertical; y is compressed into point opacity for cloud-base and cloud-top checks.",
+    side_yz: "Side y-z: height is vertical; x is compressed into point opacity for cloud-base and cloud-top checks.",
+    top_down: "Top-down x-y: horizontal map view; height is not shown as vertical position.",
+    oblique: "Oblique overview: interpretive overview based on CM1 coordinates, not a true perspective camera.",
+  };
+  return descriptions[projectionMode];
 }
 
 function sliceCellStyle(value: number | null, stats: SliceResponse["stats"]): CSSProperties {

@@ -969,16 +969,35 @@ describe("App", () => {
     expect(screen.getByText("height z")).toBeInTheDocument();
     expect(screen.getByLabelText("Show slice planes")).not.toBeChecked();
     const scene = screen.getByLabelText("3-D scene container");
+    const plottingGroup = within(scene).getByLabelText("Stable visualizer plotting group");
+    expect(plottingGroup).toBeInTheDocument();
+    expect(within(plottingGroup).getByLabelText("Domain bounding box")).toBeInTheDocument();
+    expect(within(plottingGroup).getByLabelText("Cloud-water point cloud")).toBeInTheDocument();
+    expect(within(plottingGroup).getByLabelText("Scale markers")).toBeInTheDocument();
+    expect(within(plottingGroup).getByLabelText("x-axis ticks")).toBeInTheDocument();
+    expect(within(plottingGroup).getByLabelText("height-axis ticks")).toBeInTheDocument();
+    expect(screen.getByText("x: -3.2 km")).toBeInTheDocument();
+    expect(screen.getByText("x: 0 km")).toBeInTheDocument();
+    expect(screen.getByText("x: 3.2 km")).toBeInTheDocument();
+    expect(screen.getByText("height: 0 km")).toBeInTheDocument();
+    expect(screen.getByText("height: 1.5 km")).toBeInTheDocument();
+    expect(screen.getByText("height: 3 km")).toBeInTheDocument();
+    expect(screen.getByText("active cloud water: 0.8-1.2 km")).toBeInTheDocument();
     expect(within(scene).queryByLabelText("Horizontal slice plane")).not.toBeInTheDocument();
     expect(within(scene).queryByLabelText("Vertical slice plane")).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Orbit" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Pan" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Reset camera" })).toBeInTheDocument();
+    expect(screen.getByText("View controls")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Reset view" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Orbit" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Pan" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Reset camera" })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Side x-z" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Side y-z" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Top-down x-y" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Oblique overview" })).toHaveClass(
       "active-control",
+    );
+    expect(screen.getByLabelText("Projection description")).toHaveTextContent(
+      "Oblique overview: interpretive overview based on CM1 coordinates, not a true perspective camera.",
     );
     expect(screen.getByLabelText("Zoom")).toHaveValue("100");
     expect(screen.getByLabelText("Field")).toHaveValue("qc");
@@ -1047,6 +1066,9 @@ describe("App", () => {
     fireEvent.click(screen.getByRole("button", { name: "Vertical cross-section" }));
     expect(screen.getByLabelText("Show slice planes")).toBeChecked();
     expect(screen.getByRole("button", { name: "Side x-z" })).toHaveClass("active-control");
+    expect(screen.getByLabelText("Projection description")).toHaveTextContent(
+      "Side x-z: height is vertical",
+    );
     const scene = screen.getByLabelText("3-D scene container");
     await waitFor(() => {
       expect(within(scene).getByLabelText("Vertical slice plane")).toBeInTheDocument();
@@ -1055,6 +1077,11 @@ describe("App", () => {
     fireEvent.click(screen.getByRole("button", { name: "Top-down slice" }));
     expect(screen.getByLabelText("Show slice planes")).toBeChecked();
     expect(screen.getByRole("button", { name: "Top-down x-y" })).toHaveClass("active-control");
+    expect(screen.getByLabelText("Projection description")).toHaveTextContent(
+      "Top-down x-y: horizontal map view; height is not shown as vertical position.",
+    );
+    expect(within(scene).getByLabelText("y-axis ticks")).toBeInTheDocument();
+    expect(within(scene).queryByLabelText("height-axis ticks")).not.toBeInTheDocument();
     await waitFor(() => {
       expect(within(scene).getByLabelText("Horizontal slice plane")).toBeInTheDocument();
     });
@@ -1068,21 +1095,27 @@ describe("App", () => {
     });
   });
 
-  it("updates and resets the 3-D scene shell camera controls", async () => {
+  it("updates and resets the 3-D scene shell view controls", async () => {
     render(<App />);
 
     fireEvent.click((await screen.findAllByRole("button", { name: "Open 3-D" }))[0]);
     await screen.findByText("Cloud-water point cloud loaded");
 
-    fireEvent.click(screen.getByRole("button", { name: "Pan" }));
+    const plottingGroup = screen.getByLabelText("Stable visualizer plotting group");
+    fireEvent.click(screen.getByRole("button", { name: "Side x-z" }));
     fireEvent.change(screen.getByLabelText("Zoom"), { target: { value: "150" } });
 
-    expect(screen.getByText("pan")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Side x-z" })).toHaveClass("active-control");
+    expect(plottingGroup).toHaveStyle({ transform: "scale(1.5)" });
     expect(screen.getByText("150%")).toBeInTheDocument();
+    expect(screen.getByText("zoom-only CSS plotting transform")).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: "Reset camera" }));
+    fireEvent.click(screen.getByRole("button", { name: "Reset view" }));
 
-    expect(screen.getByText("orbit")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Oblique overview" })).toHaveClass(
+      "active-control",
+    );
+    expect(plottingGroup).toHaveStyle({ transform: "scale(1)" });
     expect(screen.getByText("100%")).toBeInTheDocument();
   });
 
