@@ -123,7 +123,7 @@ type ResultsResponse = {
   results: ResultCard[];
 };
 
-type WorkspaceSection = "build" | "results" | "inspect" | "visualize";
+type WorkspaceSection = "build" | "results" | "compare" | "inspect" | "visualize";
 
 type ProvenancePayload = {
   source_model: string;
@@ -442,6 +442,7 @@ export function App() {
     () => results.find((result) => result.result_id === selectedResultId) ?? results[0],
     [results, selectedResultId],
   );
+  const comparisonPair = useMemo(() => defaultComparisonPair(results), [results]);
 
   useEffect(() => {
     if (!selectedScenario) return;
@@ -550,7 +551,7 @@ export function App() {
       </header>
 
       <nav className="workspace-nav" aria-label="Cloud Chamber workspace">
-        {(["build", "results", "inspect", "visualize"] as WorkspaceSection[]).map((section) => (
+        {(["build", "results", "compare", "inspect", "visualize"] as WorkspaceSection[]).map((section) => (
           <button
             key={section}
             type="button"
@@ -600,6 +601,20 @@ export function App() {
             setActiveSection("inspect");
           }}
           onOpenVisualizer={() => {
+            setActiveSection("visualize");
+          }}
+        />
+      )}
+
+      {activeSection === "compare" && (
+        <ComparisonWorkspace
+          pair={comparisonPair}
+          onInspect={(resultId) => {
+            setSelectedResultId(resultId);
+            setActiveSection("inspect");
+          }}
+          onVisualize={(resultId) => {
+            setSelectedResultId(resultId);
             setActiveSection("visualize");
           }}
         />
@@ -879,6 +894,221 @@ function ResultsWorkspace({
           onOpenVisualizer={onOpenVisualizer}
         />
       </div>
+    </section>
+  );
+}
+
+function ComparisonWorkspace({
+  pair,
+  onInspect,
+  onVisualize,
+}: {
+  pair: { baseline: ResultCard | undefined; dryFailed: ResultCard | undefined };
+  onInspect: (resultId: string) => void;
+  onVisualize: (resultId: string) => void;
+}) {
+  const missing = comparisonMissingItems(pair);
+
+  return (
+    <section className="comparison-workspace" aria-labelledby="comparison-title">
+      <div className="section-heading">
+        <div>
+          <p className="eyebrow">Compare</p>
+          <h2 id="comparison-title">Baseline vs Dry Failed Cumulus</h2>
+        </div>
+        <p className="state-chip">
+          {missing.length === 0 ? "Lab pair ready" : "Waiting for lab pair"}
+        </p>
+      </div>
+
+      {missing.length > 0 ? (
+        <section className="status-panel" aria-label="Comparison requirements">
+          <h3>Comparison needs Baseline and Dry Failed results</h3>
+          <p>
+            Ingested quick-look results are needed before Cloud Chamber can compare cloud-forming
+            and moisture-limited outcomes.
+          </p>
+          <ul className="compact-list">
+            {missing.map((item) => (
+              <li key={item}>{item}</li>
+            ))}
+          </ul>
+        </section>
+      ) : (
+        <>
+          <section className="comparison-intro">
+            <p>
+              This comparison shows the first useful Cloud Chamber lab pair: Baseline Shallow
+              Cumulus forms cloud, while Dry Failed Cumulus is an intentional moisture-limited
+              contrast with vertical motion but little or no cloud water.
+            </p>
+            <p>
+              Dry Failed Cumulus is not a failed model run when thermals are present and cloud water
+              stays below threshold. It teaches how low-level moisture changes the outcome.
+            </p>
+          </section>
+
+          <div className="comparison-grid">
+            <ComparisonResultCard
+              roleLabel="Baseline"
+              result={pair.baseline}
+              onInspect={onInspect}
+              onVisualize={onVisualize}
+            />
+            <ComparisonResultCard
+              roleLabel="Dry Failed"
+              result={pair.dryFailed}
+              onInspect={onInspect}
+              onVisualize={onVisualize}
+            />
+          </div>
+
+          <section className="comparison-interpretation" aria-labelledby="comparison-meaning-title">
+            <h3 id="comparison-meaning-title">What changed?</h3>
+            <dl className="metric-grid">
+              <Metric label="Baseline" value={comparisonMeaning(pair.baseline)} />
+              <Metric label="Dry Failed" value={comparisonMeaning(pair.dryFailed)} />
+              <Metric
+                label="Learning target"
+                value="Compare qc against w to see moisture limitation separate from vertical motion."
+              />
+              <Metric
+                label="Slice comparison"
+                value="Side-by-side 2-D slices are planned as follow-up; use Inspect for one result at a time."
+              />
+            </dl>
+          </section>
+
+          <details>
+            <summary>Technical comparison details</summary>
+            <div className="comparison-grid">
+              <ComparisonTechnicalDetails title="Baseline provenance" result={pair.baseline} />
+              <ComparisonTechnicalDetails title="Dry Failed provenance" result={pair.dryFailed} />
+            </div>
+          </details>
+        </>
+      )}
+    </section>
+  );
+}
+
+function ComparisonResultCard({
+  roleLabel,
+  result,
+  onInspect,
+  onVisualize,
+}: {
+  roleLabel: "Baseline" | "Dry Failed";
+  result: ResultCard | undefined;
+  onInspect: (resultId: string) => void;
+  onVisualize: (resultId: string) => void;
+}) {
+  if (!result) return null;
+  const moistureLimited = isDryFailedContrast(result);
+
+  return (
+    <section className="comparison-card" aria-label={`${roleLabel} result`}>
+      <div className="comparison-card-header">
+        <div>
+          <p className="eyebrow">{roleLabel}</p>
+          <h3>{result.scenario_name ?? result.scenario_id}</h3>
+          <p>{humanize(result.run_size_preset)} result card</p>
+        </div>
+        <StatusBadge
+          label={result.saved || result.protected ? "Saved" : "Unsaved"}
+          tone={result.saved || result.protected ? "good" : "neutral"}
+        />
+      </div>
+
+      <div className="badge-row">
+        <OutcomeBadge result={result} />
+        <StatusBadge label={rainOutcome(result.rain_present)} tone="neutral" />
+        {moistureLimited && <StatusBadge label="Moisture-limited" tone="warning" />}
+        {result.caveats.length > 0 && (
+          <StatusBadge label={caveatLabel(result)} tone={caveatTone(result)} />
+        )}
+      </div>
+
+      <dl className="metric-grid">
+        <Metric label="Scenario" value={result.scenario_name ?? result.scenario_id} />
+        <Metric label="Run-size preset" value={humanize(result.run_size_preset)} />
+        <Metric
+          label="Diagnostics"
+          value={result.diagnostics_summary ?? "Diagnostics unavailable"}
+        />
+        <Metric label="Cloud" value={cloudOutcome(result)} />
+        <Metric label="First cloud time" value={formatSeconds(result.first_cloud_time_seconds)} />
+        <Metric label="Rain" value={rainOutcome(result.rain_present)} />
+        <Metric label="Max qc" value={formatScientific(result.max_qc_kg_kg, "kg/kg")} />
+        <Metric label="Max w" value={formatNumber(result.max_w_m_s, "m/s")} />
+        <Metric label="Min w" value={formatNumber(result.min_w_m_s, "m/s")} />
+        <Metric label="Output" value={outputSummary(result.output_file_summary)} />
+      </dl>
+
+      <section aria-labelledby={`${result.result_id}-caveats`}>
+        <h4 id={`${result.result_id}-caveats`}>Caveats / warnings</h4>
+        {result.caveats.length > 0 ? (
+          <ul className="compact-list">
+            {result.caveats.map((caveat) => (
+              <li key={caveat}>{caveat}</li>
+            ))}
+          </ul>
+        ) : (
+          <p>No caveats recorded.</p>
+        )}
+      </section>
+
+      <div className="button-row">
+        <button type="button" onClick={() => onInspect(result.result_id)}>
+          Inspect {roleLabel}
+        </button>
+        <button type="button" onClick={() => onVisualize(result.result_id)}>
+          Visualize {roleLabel}
+        </button>
+      </div>
+    </section>
+  );
+}
+
+function ComparisonTechnicalDetails({
+  title,
+  result,
+}: {
+  title: string;
+  result: ResultCard | undefined;
+}) {
+  if (!result) return null;
+  return (
+    <section className="status-panel" aria-label={title}>
+      <h3>{title}</h3>
+      <dl className="metric-grid">
+        <Metric label="Run ID" value={result.run_id} />
+        <Metric label="Result ID" value={result.result_id} />
+        <Metric label="Source model" value={result.source_model} />
+        <Metric label="Lifecycle" value={result.source_lifecycle_state} />
+        <Metric label="Product state" value={result.source_product_state} />
+        <Metric label="Result state" value={result.status} />
+      </dl>
+      <h4>Physical question</h4>
+      <p>{result.physical_question}</p>
+      <h4>Controls used</h4>
+      {Object.keys(result.controls).length > 0 ? (
+        <ul className="compact-list">
+          {Object.entries(result.controls).map(([key, value]) => (
+            <li key={key}>
+              {humanize(key)}: {String(value)}
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p>No controls recorded.</p>
+      )}
+      <h4>Provenance labels</h4>
+      <ul className="tag-list">
+        {result.provenance_labels.map((label) => (
+          <li key={label}>{label}</li>
+        ))}
+      </ul>
     </section>
   );
 }
@@ -2428,6 +2658,7 @@ function sectionLabel(section: WorkspaceSection): string {
   const labels: Record<WorkspaceSection, string> = {
     build: "Build",
     results: "Results",
+    compare: "Compare",
     inspect: "Inspect",
     visualize: "Visualize",
   };
@@ -2462,6 +2693,61 @@ function isValidatedQuickLookBaseline(result: ResultCard): boolean {
   );
 }
 
+function isDryFailedContrast(result: ResultCard): boolean {
+  return (
+    result.scenario_id === "dry-failed-cumulus" &&
+    result.run_size_preset === "quick_look" &&
+    result.source_lifecycle_state === "completed" &&
+    cloudOutcome(result) === "No cloud formed" &&
+    result.rain_present === false &&
+    (result.max_w_m_s ?? 0) > 0
+  );
+}
+
+function defaultComparisonPair(results: ResultCard[]): {
+  baseline: ResultCard | undefined;
+  dryFailed: ResultCard | undefined;
+} {
+  const baseline =
+    results.find(isValidatedQuickLookBaseline) ??
+    results.find(
+      (result) =>
+        result.scenario_id === "baseline-shallow-cumulus" &&
+        result.run_size_preset === "quick_look",
+    ) ??
+    results.find((result) => result.scenario_id === "baseline-shallow-cumulus");
+  const dryFailed =
+    results.find(isDryFailedContrast) ??
+    results.find(
+      (result) =>
+        result.scenario_id === "dry-failed-cumulus" &&
+        result.run_size_preset === "quick_look",
+    ) ??
+    results.find((result) => result.scenario_id === "dry-failed-cumulus");
+  return { baseline, dryFailed };
+}
+
+function comparisonMissingItems(pair: {
+  baseline: ResultCard | undefined;
+  dryFailed: ResultCard | undefined;
+}): string[] {
+  const missing = [];
+  if (!pair.baseline) missing.push("Baseline Shallow Cumulus quick-look");
+  if (!pair.dryFailed) missing.push("Dry Failed Cumulus quick-look");
+  return missing;
+}
+
+function comparisonMeaning(result: ResultCard | undefined): string {
+  if (!result) return "Unavailable";
+  if (isDryFailedContrast(result)) {
+    return "Moisture-limited failed cumulus: vertical motion is present, but qc stays below the cloud threshold and rain is absent.";
+  }
+  if (isValidatedQuickLookBaseline(result)) {
+    return "Cloud-forming baseline: qc crosses the cloud threshold, rain is detected, and vertical motion is strong.";
+  }
+  return result.diagnostics_summary ?? "Diagnostics unavailable";
+}
+
 function userFacingStatus(result: ResultCard): string {
   if (result.saved || result.protected) return "Saved";
   if (result.source_lifecycle_state === "completed" && result.status.includes("ingested")) {
@@ -2473,15 +2759,25 @@ function userFacingStatus(result: ResultCard): string {
 }
 
 function caveatLabel(result: ResultCard): string {
-  return cloudOutcome(result) === "Cloud formed" ? "Minor caveat" : "Needs review";
+  return cloudOutcome(result) === "Cloud formed" || isDryFailedContrast(result)
+    ? "Minor caveat"
+    : "Needs review";
 }
 
 function caveatTone(result: ResultCard): "good" | "warning" | "neutral" {
-  return cloudOutcome(result) === "Cloud formed" ? "neutral" : "warning";
+  return cloudOutcome(result) === "Cloud formed" || isDryFailedContrast(result)
+    ? "neutral"
+    : "warning";
 }
 
 function statusTone(result: ResultCard): "good" | "warning" | "neutral" {
-  if (result.caveats.length > 0 && cloudOutcome(result) !== "Cloud formed") return "warning";
+  if (
+    result.caveats.length > 0 &&
+    cloudOutcome(result) !== "Cloud formed" &&
+    !isDryFailedContrast(result)
+  ) {
+    return "warning";
+  }
   if (result.source_lifecycle_state === "completed") return "good";
   return "neutral";
 }

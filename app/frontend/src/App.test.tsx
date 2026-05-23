@@ -140,6 +140,34 @@ const resultCard = {
   updated_at: "2026-05-22T15:46:36Z",
 };
 
+const dryFailedCard = {
+  ...resultCard,
+  result_id: "result-dry-failed-cumulus",
+  run_id: "dry-run-dry-failed-cumulus-20260522192000",
+  name: "Dry Failed Cumulus quick-look",
+  tags: ["dry-failed", "quick-look"],
+  notes: "Moisture-limited contrast case.",
+  scenario_id: "dry-failed-cumulus",
+  scenario_name: "Dry Failed Cumulus",
+  physical_question:
+    "How does insufficient low-level moisture prevent shallow cumulus formation even when boundary-layer thermals and vertical motion are present?",
+  controls: {
+    low_level_humidity: "drier",
+    surface_heating: "baseline",
+  },
+  diagnostics_summary: "no cloud formed; no rain detected",
+  first_cloud_time_seconds: null,
+  max_qc_kg_kg: 0,
+  max_w_m_s: 1.949130654335022,
+  min_w_m_s: -1.0865488052368164,
+  rain_present: false,
+  caveats: ["cloud_base_top_unavailable:no_cloud_cells"],
+  created_at: "2026-05-22T19:20:00Z",
+  completed_at: "2026-05-22T19:50:00Z",
+  ingested_at: "2026-05-22T19:52:00Z",
+  updated_at: "2026-05-22T19:52:00Z",
+};
+
 const missingDiagnosticsCard = {
   ...resultCard,
   result_id: "result-no-diagnostics",
@@ -169,7 +197,7 @@ const emptyVisualizerCard = {
 };
 
 const resultsResponse = {
-  results: [resultCard, missingDiagnosticsCard, emptyVisualizerCard],
+  results: [resultCard, dryFailedCard, missingDiagnosticsCard, emptyVisualizerCard],
 };
 
 const provenance = {
@@ -283,6 +311,22 @@ const emptyFieldCatalogResponse = {
   run_id: "dry-run-empty-visualizer",
   caveats: ["missing_visualization_fields"],
   available_fields: [],
+};
+
+const dryFailedFieldCatalogResponse = {
+  ...fieldCatalogResponse,
+  result_id: "result-dry-failed-cumulus",
+  run_id: "dry-run-dry-failed-cumulus-20260522192000",
+  scenario_id: "dry-failed-cumulus",
+  available_fields: fieldCatalogResponse.available_fields.map((field) => ({
+    ...field,
+    provenance: {
+      ...field.provenance,
+      result_id: "result-dry-failed-cumulus",
+      run_id: "dry-run-dry-failed-cumulus-20260522192000",
+      scenario_id: "dry-failed-cumulus",
+    },
+  })),
 };
 
 function sliceResponse({
@@ -454,6 +498,26 @@ beforeEach(() => {
           }),
         );
       }
+      if (url === "/api/results/result-dry-failed-cumulus/visualization/fields") {
+        return Promise.resolve(
+          new Response(JSON.stringify(dryFailedFieldCatalogResponse), { status: 200 }),
+        );
+      }
+      if (url === "/api/results/result-dry-failed-cumulus/visualization/defaults") {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              ...viewDefaultsResponse,
+              result_id: "result-dry-failed-cumulus",
+              run_id: "dry-run-dry-failed-cumulus-20260522192000",
+              scenario_id: "dry-failed-cumulus",
+              preferred_field: "w",
+              fields: { w: viewDefaultsResponse.fields.w },
+            }),
+            { status: 200 },
+          ),
+        );
+      }
       if (url.includes("/visualization/point-cloud")) {
         const parsed = new URL(url, "http://localhost");
         return Promise.resolve(
@@ -618,6 +682,99 @@ describe("App", () => {
     expect(screen.getByText("Technical details")).toBeInTheDocument();
     expect(screen.getAllByText("Completed CM1 result").length).toBeGreaterThan(0);
     expect(screen.getByRole("button", { name: "Inspect fields" })).toBeEnabled();
+  });
+
+  it("compares baseline and dry failed results side by side", async () => {
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Compare" }));
+
+    expect(
+      await screen.findByRole("heading", { name: "Baseline vs Dry Failed Cumulus" }),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Lab pair ready")).toBeInTheDocument();
+    expect(screen.getByLabelText("Baseline result")).toHaveTextContent(
+      "Baseline Shallow Cumulus",
+    );
+    expect(screen.getByLabelText("Dry Failed result")).toHaveTextContent("Dry Failed Cumulus");
+    expect(screen.getAllByText("Cloud formed").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("No cloud formed").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Rain detected").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("No rain detected").length).toBeGreaterThan(0);
+    expect(screen.getByText("Moisture-limited")).toBeInTheDocument();
+    expect(screen.getAllByText("Minor caveat").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("2.193e-3 kg/kg").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("0.000e+0 kg/kg").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("6.867 m/s").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("1.949 m/s").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("-4.215 m/s").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("-1.087 m/s").length).toBeGreaterThan(0);
+    expect(
+      screen.getByText(/Dry Failed Cumulus is not a failed model run/),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/Compare qc against w/)).toBeInTheDocument();
+    expect(screen.getByText("Technical comparison details")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Inspect Dry Failed" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Visualize Dry Failed" })).toBeInTheDocument();
+  });
+
+  it("opens inspect and visualize from comparison quick actions", async () => {
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Compare" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Inspect Dry Failed" }));
+
+    expect(await screen.findByRole("heading", { name: "Inspect fields" })).toBeInTheDocument();
+    expect(screen.getByText("Dry Failed Cumulus quick-look")).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Inspect CM1 fields" })).toBeInTheDocument();
+    expect(fetch).toHaveBeenCalledWith(
+      "/api/results/result-dry-failed-cumulus/visualization/fields",
+    );
+
+    fireEvent.click(
+      within(screen.getByRole("navigation", { name: "Cloud Chamber workspace" })).getByRole(
+        "button",
+        { name: "Compare" },
+      ),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Visualize Dry Failed" }));
+
+    expect(await screen.findByRole("heading", { name: "3-D cloud view" })).toBeInTheDocument();
+    expect(screen.getByText("Dry Failed Cumulus quick-look")).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Scene shell" })).toBeInTheDocument();
+    expect(fetch).toHaveBeenCalledWith(
+      "/api/results/result-dry-failed-cumulus/visualization/defaults",
+    );
+  });
+
+  it("handles a missing dry failed comparison result", async () => {
+    vi.mocked(fetch).mockImplementationOnce((input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url === "/api/scenarios") {
+        return Promise.resolve(new Response(JSON.stringify(scenarioResponse), { status: 200 }));
+      }
+      return Promise.resolve(new Response("not found", { status: 404 }));
+    });
+    vi.mocked(fetch).mockImplementationOnce((input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url === "/api/results") {
+        return Promise.resolve(
+          new Response(JSON.stringify({ results: [resultCard] }), { status: 200 }),
+        );
+      }
+      return Promise.resolve(new Response("not found", { status: 404 }));
+    });
+
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Compare" }));
+
+    expect(
+      await screen.findByRole("heading", {
+        name: "Comparison needs Baseline and Dry Failed results",
+      }),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Dry Failed Cumulus quick-look")).toBeInTheDocument();
   });
 
   it("supports name tag notes editing and save through the backend API", async () => {

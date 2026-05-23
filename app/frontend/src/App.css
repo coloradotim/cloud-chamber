@@ -268,6 +268,43 @@ button:disabled {
   gap: 1rem;
 }
 
+.comparison-workspace {
+  display: grid;
+  gap: 1rem;
+}
+
+.comparison-intro,
+.comparison-interpretation {
+  border: 1px solid rgba(145, 217, 183, 0.28);
+  border-radius: 8px;
+  padding: 1rem;
+  background: rgba(145, 217, 183, 0.1);
+}
+
+.comparison-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+  align-items: start;
+}
+
+.comparison-card {
+  display: grid;
+  gap: 1rem;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 8px;
+  padding: 1rem;
+  background: rgba(255, 255, 255, 0.07);
+  box-shadow: 0 18px 44px rgba(0, 0, 0, 0.18);
+}
+
+.comparison-card-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  align-items: start;
+}
+
 .featured-result {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto auto;
@@ -827,6 +864,7 @@ details[open] > summary {
   .topbar,
   .builder-layout,
   .results-layout,
+  .comparison-grid,
   .visualizer-layout,
   .slice-grid,
   .control-row {
@@ -846,7 +884,8 @@ details[open] > summary {
   }
 
   .section-heading,
-  .notebook-title {
+  .notebook-title,
+  .comparison-card-header {
     display: grid;
   }
 
