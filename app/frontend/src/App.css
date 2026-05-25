@@ -172,6 +172,20 @@ small {
   padding-left: 1rem;
 }
 
+.scenario-state-panel {
+  display: grid;
+  gap: 0.65rem;
+  border: 1px solid rgba(171, 215, 214, 0.28);
+  border-radius: 8px;
+  padding: 1rem;
+  background: rgba(3, 8, 13, 0.28);
+}
+
+.scenario-state-panel h3,
+.scenario-state-panel p {
+  margin-bottom: 0;
+}
+
 .field-label,
 .control-row {
   display: grid;

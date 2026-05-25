@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import type { CSSProperties, FormEvent } from "react";
 
 import "./App.css";
@@ -199,6 +199,7 @@ type DeleteRunResponse = {
 type WorkspaceSection = "build" | "results" | "explore";
 type ResultsTab = "notebook" | "compare" | "storage";
 type ExploreTab = "slices" | "view3d";
+type ScenarioLoadState = "loading" | "loaded" | "failed" | "empty";
 
 type ProvenancePayload = {
   source_model: string;
@@ -564,26 +565,48 @@ export function App() {
   const [deletePreview, setDeletePreview] = useState<DeleteRunResponse | null>(null);
   const [deleteMessage, setDeleteMessage] = useState<string | null>(null);
   const [status, setStatus] = useState("Loading scenarios...");
+  const [scenarioLoadState, setScenarioLoadState] = useState<ScenarioLoadState>("loading");
+  const [scenarioError, setScenarioError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [resultsError, setResultsError] = useState<string | null>(null);
 
+  const loadScenarios = useCallback(async (active: () => boolean = () => true) => {
+    setScenarioLoadState("loading");
+    setScenarioError(null);
+    setError(null);
+    setStatus("Loading scenarios...");
+    setScenarios([]);
+    setDryRun(null);
+    setRunStatus(null);
+    setRunWorkflowError(null);
+    setIngestedResultId(null);
+    try {
+      const catalog = await fetchScenarioCatalog();
+      if (!active()) return;
+      setScenarios(catalog.scenarios);
+      setSelectedScenarioId(catalog.golden_path_scenario_id);
+      if (catalog.scenarios.length === 0) {
+        setScenarioLoadState("empty");
+        setStatus("No scenarios available");
+      } else {
+        setScenarioLoadState("loaded");
+        setStatus("Scenario setup");
+      }
+    } catch (caught: unknown) {
+      if (!active()) return;
+      setScenarioLoadState("failed");
+      setScenarioError(caught instanceof Error ? caught.message : "Unable to load scenarios.");
+      setStatus("Scenario load failed");
+    }
+  }, []);
+
   useEffect(() => {
     let active = true;
-    fetchScenarioCatalog()
-      .then((catalog) => {
-        if (!active) return;
-        setScenarios(catalog.scenarios);
-        setSelectedScenarioId(catalog.golden_path_scenario_id);
-        setStatus("Scenario setup");
-      })
-      .catch((caught: unknown) => {
-        if (!active) return;
-        setError(caught instanceof Error ? caught.message : "Unable to load scenarios.");
-      });
+    loadScenarios(() => active);
     return () => {
       active = false;
     };
-  }, []);
+  }, [loadScenarios]);
 
   useEffect(() => {
     let active = true;
@@ -848,15 +871,6 @@ export function App() {
     }
   }
 
-  if (error && scenarios.length === 0) {
-    return (
-      <main className="app-shell">
-        <h1>Cloud Chamber</h1>
-        <p role="alert">{error}</p>
-      </main>
-    );
-  }
-
   return (
     <main className="app-shell">
       <header className="topbar">
@@ -883,6 +897,9 @@ export function App() {
       {activeSection === "build" && (
         <BuildWorkspace
           status={status}
+          scenarioLoadState={scenarioLoadState}
+          scenarioError={scenarioError}
+          packageError={error}
           scenarios={scenarios}
           selectedScenario={selectedScenario}
           selectedScenarioId={selectedScenarioId}
@@ -919,6 +936,9 @@ export function App() {
             if (ingestedResultId) setSelectedResultId(ingestedResultId);
             setActiveSection("explore");
             setActiveExploreTab("view3d");
+          }}
+          onRetryScenarios={() => {
+            void loadScenarios();
           }}
         />
       )}
@@ -990,6 +1010,9 @@ export function App() {
 
 function BuildWorkspace({
   status,
+  scenarioLoadState,
+  scenarioError,
+  packageError,
   scenarios,
   selectedScenario,
   selectedScenarioId,
@@ -1010,8 +1033,12 @@ function BuildWorkspace({
   onOpenInResults,
   onInspectIngested,
   onVisualizeIngested,
+  onRetryScenarios,
 }: {
   status: string;
+  scenarioLoadState: ScenarioLoadState;
+  scenarioError: string | null;
+  packageError: string | null;
   scenarios: Scenario[];
   selectedScenario: Scenario | undefined;
   selectedScenarioId: string;
@@ -1032,7 +1059,10 @@ function BuildWorkspace({
   onOpenInResults: () => void;
   onInspectIngested: () => void;
   onVisualizeIngested: () => void;
+  onRetryScenarios: () => void;
 }) {
+  const scenarioControlsReady = scenarioLoadState === "loaded" && selectedScenario !== undefined;
+
   return (
     <section className="workspace-section" aria-labelledby="build-title">
       <div className="section-heading">
@@ -1050,9 +1080,11 @@ function BuildWorkspace({
           </label>
           <select
             id="scenario"
-            value={selectedScenarioId}
+            value={scenarioControlsReady ? selectedScenarioId : ""}
+            disabled={!scenarioControlsReady}
             onChange={(event) => onSelectScenario(event.target.value)}
           >
+            {!scenarioControlsReady && <option value="">Scenario unavailable</option>}
             {scenarios.map((scenario) => (
               <option key={scenario.id} value={scenario.id}>
                 {scenario.display_name}
@@ -1060,7 +1092,34 @@ function BuildWorkspace({
             ))}
           </select>
 
-          {selectedScenario && (
+          {scenarioLoadState === "loading" && (
+            <ScenarioStatePanel
+              title="Loading scenario catalog"
+              body="Cloud Chamber is waiting for the local backend to return available CM1 scenario templates. Package controls will appear after a scenario is loaded."
+            />
+          )}
+
+          {scenarioLoadState === "failed" && (
+            <ScenarioStatePanel
+              title="Scenario catalog unavailable"
+              body={`Cloud Chamber could not load scenario templates from the local backend. ${
+                scenarioError ?? "The backend may be stopped or temporarily unavailable."
+              }`}
+              actionLabel="Retry scenarios"
+              onAction={onRetryScenarios}
+            />
+          )}
+
+          {scenarioLoadState === "empty" && (
+            <ScenarioStatePanel
+              title="No scenarios available"
+              body="The local backend responded, but it did not return any scenario templates. Package generation is unavailable until at least one scenario is configured."
+              actionLabel="Retry scenarios"
+              onAction={onRetryScenarios}
+            />
+          )}
+
+          {scenarioControlsReady && (
             <>
               <div className="hero-case">
                 <p className="eyebrow">First Golden Path hero case</p>
@@ -1121,6 +1180,12 @@ function BuildWorkspace({
                 </div>
               )}
 
+              {packageError && (
+                <div className="validation" role="alert">
+                  <p>{packageError}</p>
+                </div>
+              )}
+
               <button type="submit" disabled={validationMessages.length > 0}>
                 Create run package
               </button>
@@ -1163,6 +1228,30 @@ function BuildWorkspace({
           </section>
         </aside>
       </section>
+    </section>
+  );
+}
+
+function ScenarioStatePanel({
+  title,
+  body,
+  actionLabel,
+  onAction,
+}: {
+  title: string;
+  body: string;
+  actionLabel?: string;
+  onAction?: () => void;
+}) {
+  return (
+    <section className="scenario-state-panel" aria-live="polite">
+      <h3>{title}</h3>
+      <p>{body}</p>
+      {actionLabel && onAction && (
+        <button type="button" onClick={onAction}>
+          {actionLabel}
+        </button>
+      )}
     </section>
   );
 }
