@@ -3338,7 +3338,7 @@ function VisualizerSceneShell({ result }: { result: ResultCard }) {
 
         <div className="visualizer-stage" aria-label="Fixed visualization viewport region">
           <div className="scene-container" aria-label="3-D scene container">
-            <div className="viewport-frame">
+            <div className="viewport-frame" style={plotFrameStyle(pointCloud, projectionMode)}>
               <div
                 className="plot-data-layer"
                 aria-label="Zoomable visualizer data layer"
@@ -4372,7 +4372,7 @@ function cloudPointStyle(
   const y = normalizeWithExtent(point[1], pointCloud.coordinate_extents.yh);
   const z = normalizeWithExtent(point[2], pointCloud.coordinate_extents.zh);
   const intensity = normalize(point[3], stats.min_value ?? point[3], stats.max_value ?? point[3]);
-  const projected = projectPoint(x, y, z, projectionMode);
+  const projected = projectPoint(x, y, z, projectionMode, pointCloud);
   const depthOpacity = projectionMode === "side_xz" ? 0.65 + y * 0.35 : 0.65 + x * 0.35;
   return {
     left: `${projected.left}%`,
@@ -4390,20 +4390,68 @@ function projectPoint(
   y: number,
   z: number,
   projectionMode: ProjectionMode,
+  pointCloud: PointCloudResponse,
 ): { left: number; bottom: number } {
+  const frame = plotFrame(pointCloud, projectionMode);
   if (projectionMode === "side_xz") {
-    return { left: 12 + x * 76, bottom: 14 + z * 72 };
+    return { left: frame.left + x * frame.width, bottom: frame.bottom + z * frame.height };
   }
   if (projectionMode === "side_yz") {
-    return { left: 12 + y * 76, bottom: 14 + z * 72 };
+    return { left: frame.left + y * frame.width, bottom: frame.bottom + z * frame.height };
   }
   if (projectionMode === "top_down") {
-    return { left: 12 + x * 76, bottom: 14 + y * 72 };
+    return { left: frame.left + x * frame.width, bottom: frame.bottom + y * frame.height };
   }
+  const verticalSpan = frame.height * 0.86;
+  const depthLift = frame.height * 0.14;
   return {
-    left: 18 + (x * 0.72 + y * 0.28) * 64,
-    bottom: 16 + z * 62 + y * 10,
+    left: frame.left + (x * 0.72 + y * 0.28) * frame.width,
+    bottom: frame.bottom + z * verticalSpan + y * depthLift,
   };
+}
+
+function plotFrameStyle(
+  pointCloud: PointCloudResponse | null,
+  projectionMode: ProjectionMode,
+): CSSProperties & Record<string, string> {
+  const frame = plotFrame(pointCloud, projectionMode);
+  return {
+    "--plot-left": `${frame.left}%`,
+    "--plot-bottom": `${frame.bottom}%`,
+    "--plot-width": `${frame.width}%`,
+    "--plot-height": `${frame.height}%`,
+  };
+}
+
+function plotFrame(
+  pointCloud: PointCloudResponse | null,
+  projectionMode: ProjectionMode,
+): { left: number; bottom: number; width: number; height: number } {
+  const left = 14;
+  const width = 76;
+  const horizontalCoordinate = projectionMode === "side_yz" ? "yh" : "xh";
+  const verticalCoordinate = projectionMode === "top_down" ? "yh" : "zh";
+  const horizontalRange = coordinateRange(pointCloud, horizontalCoordinate);
+  const verticalRange = coordinateRange(pointCloud, verticalCoordinate);
+  const ratio = horizontalRange > 0 ? verticalRange / horizontalRange : 0.7;
+  const height = clamp(width * ratio, 20, 64);
+  return {
+    left,
+    width,
+    height,
+    bottom: clamp((100 - height) / 2 - 3, 14, 32),
+  };
+}
+
+function coordinateRange(pointCloud: PointCloudResponse | null, coordinate: string): number {
+  const extent = pointCloud?.coordinate_extents[coordinate];
+  if (!extent) return 1;
+  const range = extent.max - extent.min;
+  return Number.isFinite(range) && range > 0 ? range : 1;
+}
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(Math.max(value, min), max);
 }
 
 function normalizeWithExtent(
