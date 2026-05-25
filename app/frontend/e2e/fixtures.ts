@@ -364,7 +364,10 @@ export async function mockCloudChamberApis(page: Page) {
       coordinate_extents: {
         x: { min: 0, max: 6.4, units: "km" },
         y: { min: 0, max: 6.4, units: "km" },
-        z: { min: 0, max: 18, units: "km" },
+        z: { min: 0, max: 3, units: "km" },
+        xh: { min: 0, max: 6.4, units: "km" },
+        yh: { min: 0, max: 6.4, units: "km" },
+        zh: { min: 0, max: 3, units: "km" },
       },
       point_order: ["x", "y", "z", "value"],
       points: [
