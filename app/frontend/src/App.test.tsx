@@ -1009,7 +1009,8 @@ describe("App", () => {
     fireEvent.change(humidityControl, {
       target: { value: "more_humid" },
     });
-    fireEvent.click(screen.getByRole("button", { name: "Create run package" }));
+    expect(screen.getByTestId("create-package-btn")).toBeEnabled();
+    fireEvent.click(screen.getByTestId("create-package-btn"));
 
     await waitFor(() => {
       expect(screen.getByText("/tmp/CloudChamber/runs/dry-run-001")).toBeInTheDocument();
@@ -1032,17 +1033,19 @@ describe("App", () => {
     render(<App />);
 
     fireEvent.click(await screen.findByRole("button", { name: "Build" }));
-    fireEvent.click(await screen.findByRole("button", { name: "Create run package" }));
+    fireEvent.click(await screen.findByTestId("create-package-btn"));
 
     expect(await screen.findByText("dry-run-001")).toBeInTheDocument();
+    expect(screen.getByTestId("package-review-panel")).toBeInTheDocument();
     expect(screen.getByText("Manifest path").nextElementSibling).toHaveTextContent(
       "/tmp/CloudChamber/runs/dry-run-001/run_manifest.json",
     );
     expect(screen.getByText(/Expected diagnostics/)).toHaveTextContent("first_cloud_time");
-    expect(screen.getByRole("button", { name: "Launch local CM1" })).toBeEnabled();
-    expect(screen.getByRole("button", { name: "Ingest output" })).toBeDisabled();
+    expect(screen.getByTestId("launch-cm1-btn")).toBeEnabled();
+    expect(screen.getByTestId("refresh-status-btn")).toBeDisabled();
+    expect(screen.getByTestId("ingest-results-btn")).toBeDisabled();
 
-    fireEvent.click(screen.getByRole("button", { name: "Launch local CM1" }));
+    fireEvent.click(screen.getByTestId("launch-cm1-btn"));
 
     await waitFor(() => {
       expect(screen.getAllByText("Running").length).toBeGreaterThan(0);
@@ -1050,16 +1053,16 @@ describe("App", () => {
     expect(screen.getByText("stdout log").nextElementSibling).toHaveTextContent("stdout.log");
     expect(screen.getByText("CM1 started")).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: "Refresh status" }));
+    fireEvent.click(screen.getByTestId("refresh-status-btn"));
 
     await waitFor(() => {
       expect(screen.getAllByText("Completed CM1 result").length).toBeGreaterThan(0);
     });
     expect(screen.getByText("Output summary").nextElementSibling).toHaveTextContent("14 NetCDF");
     expect(screen.getAllByText(/IEEE_INVALID_FLAG/).length).toBeGreaterThan(0);
-    expect(screen.getByRole("button", { name: "Ingest output" })).toBeEnabled();
+    expect(screen.getByTestId("ingest-results-btn")).toBeEnabled();
 
-    fireEvent.click(screen.getByRole("button", { name: "Ingest output" }));
+    fireEvent.click(screen.getByTestId("ingest-results-btn"));
 
     expect(await screen.findByText(/Result metadata created/)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Open in Results" })).toBeInTheDocument();
@@ -1105,11 +1108,11 @@ describe("App", () => {
     render(<App />);
 
     fireEvent.click(await screen.findByRole("button", { name: "Build" }));
-    fireEvent.click(await screen.findByRole("button", { name: "Create run package" }));
-    fireEvent.click(await screen.findByRole("button", { name: "Launch local CM1" }));
+    fireEvent.click(await screen.findByTestId("create-package-btn"));
+    fireEvent.click(await screen.findByTestId("launch-cm1-btn"));
 
     expect(await screen.findByRole("alert")).toHaveTextContent("CM1 executable is missing");
-    expect(screen.getByRole("button", { name: "Launch local CM1" })).toBeEnabled();
+    expect(screen.getByTestId("launch-cm1-btn")).toBeEnabled();
   });
 
   it("lists result cards in a table and shows notebook diagnostics", async () => {
@@ -1124,9 +1127,9 @@ describe("App", () => {
     expect(within(topNav).queryByRole("button", { name: "Storage" })).not.toBeInTheDocument();
     expect(within(topNav).queryByRole("button", { name: "Inspect" })).not.toBeInTheDocument();
     expect(within(topNav).queryByRole("button", { name: "Visualize" })).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Notebook" })).toHaveClass("active-control");
-    expect(screen.getByRole("button", { name: "Compare" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Storage" })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "Notebook" })).toHaveClass("active-control");
+    expect(screen.getByRole("tab", { name: "Compare" })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "Storage" })).toBeInTheDocument();
     expect(await screen.findByRole("heading", { name: "Experiment Notebook" })).toBeInTheDocument();
     expect(screen.getByLabelText("Selected result")).toHaveTextContent(
       "Quick-look shallow cumulus",
@@ -1209,7 +1212,7 @@ describe("App", () => {
   it("compares baseline and dry failed results side by side", async () => {
     render(<App />);
 
-    fireEvent.click(await screen.findByRole("button", { name: "Compare" }));
+    fireEvent.click(await screen.findByRole("tab", { name: "Compare" }));
 
     expect(
       await screen.findByRole("heading", { name: "Baseline vs Dry Failed Cumulus" }),
@@ -1257,7 +1260,7 @@ describe("App", () => {
   it("switches side-by-side field comparison from qc to w", async () => {
     render(<App />);
 
-    fireEvent.click(await screen.findByRole("button", { name: "Compare" }));
+    fireEvent.click(await screen.findByRole("tab", { name: "Compare" }));
     await screen.findByText("Comparison slices loaded");
 
     fireEvent.change(screen.getByLabelText("Comparison field"), { target: { value: "w" } });
@@ -1281,7 +1284,7 @@ describe("App", () => {
   it("opens inspect and visualize from comparison quick actions", async () => {
     render(<App />);
 
-    fireEvent.click(await screen.findByRole("button", { name: "Compare" }));
+    fireEvent.click(await screen.findByRole("tab", { name: "Compare" }));
     fireEvent.click(await screen.findByRole("button", { name: "Open Dry Failed in Explore" }));
 
     expect(
@@ -1299,13 +1302,13 @@ describe("App", () => {
         { name: "Results" },
       ),
     );
-    fireEvent.click(screen.getByRole("button", { name: "Compare" }));
+    fireEvent.click(screen.getByRole("tab", { name: "Compare" }));
     fireEvent.click(screen.getByRole("button", { name: "Open Dry Failed 3-D" }));
 
     expect(
       await screen.findByRole("heading", { name: "Inspect and visualize fields" }),
     ).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "3-D View" })).toHaveClass("active-control");
+    expect(screen.getByRole("tab", { name: "3-D View" })).toHaveClass("active-control");
     expect(screen.getAllByText("Dry Failed Cumulus quick-look").length).toBeGreaterThan(0);
     expect(await screen.findByRole("heading", { name: "Scene shell" })).toBeInTheDocument();
     expect(fetch).toHaveBeenCalledWith(
@@ -1333,7 +1336,7 @@ describe("App", () => {
 
     render(<App />);
 
-    fireEvent.click(await screen.findByRole("button", { name: "Compare" }));
+    fireEvent.click(await screen.findByRole("tab", { name: "Compare" }));
 
     expect(
       await screen.findByRole("heading", {
@@ -1402,7 +1405,7 @@ describe("App", () => {
   it("shows runtime storage inventory and safe cleanup affordances", async () => {
     render(<App />);
 
-    fireEvent.click(await screen.findByRole("button", { name: "Storage" }));
+    fireEvent.click(await screen.findByRole("tab", { name: "Storage" }));
 
     expect(
       await screen.findByRole("heading", { name: "Runtime storage cleanup" }),
@@ -1495,7 +1498,7 @@ describe("App", () => {
 
     render(<App />);
 
-    fireEvent.click(await screen.findByRole("button", { name: "Storage" }));
+    fireEvent.click(await screen.findByRole("tab", { name: "Storage" }));
     fireEvent.click((await screen.findAllByRole("button", { name: "Preview delete" }))[0]);
 
     expect(await screen.findByRole("alert")).toHaveTextContent(
