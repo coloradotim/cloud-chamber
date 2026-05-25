@@ -25,6 +25,10 @@ app/frontend/coverage/
 app/frontend/.vite/
 app/frontend/.eslintcache
 app/frontend/reference-indexes/
+app/frontend/playwright-report/
+app/frontend/test-results/
+app/frontend/blob-report/
+app/frontend/e2e/.auth/
 
 # CM1 runtime and generated output
 cm1.exe

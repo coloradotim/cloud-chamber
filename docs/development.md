@@ -22,6 +22,40 @@ The frontend uses TypeScript, React, Vite, Vitest, ESLint, and Prettier. During 
 
 The current first Scenario Builder flow loads Baseline Shallow Cumulus from the backend, shows curated controls and the physical question, requests a dry-run package, and reviews generated files. Preview is explicitly not implemented and not CM1 output. The first 3-D visualizer work is a scene shell only: use existing React/CSS controls, consume visualization-ready backend metadata, and do not add rendering dependencies until a concrete rendering issue requires them.
 
+### Playwright E2E
+
+Browser-level UI checks live under `app/frontend/e2e/` and are split into:
+
+- `mocked-smoke/` for deterministic, mocked API workflows that are safe to run
+  repeatedly;
+- `local-data/` for read-only checks against a local backend/runtime home, with
+  skips when prerequisites are absent;
+- `visual-manual/` for partial layout-heavy checks that support focused manual
+  review.
+
+From `app/frontend`:
+
+```sh
+npm run test:e2e
+npm run test:e2e:headed
+npm run test:e2e:report
+```
+
+From the repo root:
+
+```sh
+scripts/check-e2e.sh
+```
+
+`scripts/check-e2e.sh` requires the frontend dev server at
+`http://localhost:5173` and runs only the mocked smoke tests. It is intentionally
+separate from `scripts/check.sh` for now so the full external-style browser
+suite does not become a required gate before it has had time to settle. Use it
+for UI workflow, navigation, form-flow, and layout changes. Playwright tests
+must not launch CM1, mutate real notebook data, delete real run directories, or
+commit screenshots, videos, traces, reports, NetCDF files, logs, or generated
+run output.
+
 ## Dev Server Helper
 
 From the repo root:

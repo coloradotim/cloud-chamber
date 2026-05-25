@@ -96,6 +96,21 @@ moisture-limitation story, or whether Storage makes deletion feel safe. Bad
 manual QA asks someone to click every tab, verify all standard navigation by
 hand, or manually inspect long objective checklists.
 
+The Playwright suite lives under `app/frontend/e2e/`:
+
+- `mocked-smoke/` is deterministic, uses mocked API routes, and is what
+  `scripts/check-e2e.sh` runs by default;
+- `local-data/` is read-only against a live local backend and may skip when
+  required local results or runtime data are absent;
+- `visual-manual/` performs partial browser checks for layout-heavy visualizer
+  behavior and records the qualitative question that still needs human eyes.
+
+Playwright reports, screenshots, videos, traces, NetCDF files, logs, generated
+run directories, and other runtime artifacts are not source fixtures and should
+not be committed. Known product follow-ups surfaced while stabilizing the suite
+are tracked in #133, #134, #135, #136, and #139; future skips should identify
+the missing prerequisite or linked issue rather than hiding a failure.
+
 Codex UI PR summaries should explicitly report:
 
 ```text
