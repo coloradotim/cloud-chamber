@@ -884,6 +884,106 @@ describe("App", () => {
     expect(screen.queryByText(/namelist/i)).not.toBeInTheDocument();
   });
 
+  it("shows an explicit loading state before scenario package controls are available", async () => {
+    vi.mocked(fetch).mockImplementation((input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url === "/api/scenarios") {
+        return new Promise<Response>(() => undefined);
+      }
+      if (url === "/api/results") {
+        return new Promise<Response>(() => undefined);
+      }
+      if (url === "/api/storage/inventory") {
+        return new Promise<Response>(() => undefined);
+      }
+      return Promise.resolve(new Response("not found", { status: 404 }));
+    });
+
+    render(<App />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Build" }));
+    expect(screen.getByText("Loading scenarios...")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Loading scenario catalog" })).toBeInTheDocument();
+    expect(screen.getByLabelText("Scenario")).toBeDisabled();
+    expect(screen.queryByRole("button", { name: "Create run package" })).not.toBeInTheDocument();
+  });
+
+  it("shows a retryable scenario-loading failure state", async () => {
+    let scenarioRequestCount = 0;
+    vi.mocked(fetch).mockImplementation((input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url === "/api/scenarios") {
+        scenarioRequestCount += 1;
+        if (scenarioRequestCount === 1) {
+          return Promise.resolve(new Response("backend unavailable", { status: 503 }));
+        }
+        return Promise.resolve(new Response(JSON.stringify(scenarioResponse), { status: 200 }));
+      }
+      if (url === "/api/results") {
+        return Promise.resolve(new Response(JSON.stringify(resultsResponse), { status: 200 }));
+      }
+      if (url === "/api/storage/inventory") {
+        return Promise.resolve(
+          new Response(JSON.stringify(storageInventoryResponse), { status: 200 }),
+        );
+      }
+      return Promise.resolve(new Response("not found", { status: 404 }));
+    });
+
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Build" }));
+    expect(
+      await screen.findByRole("heading", { name: "Scenario catalog unavailable" }),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/local backend/)).toBeInTheDocument();
+    expect(screen.getByLabelText("Scenario")).toBeDisabled();
+    expect(screen.queryByRole("button", { name: "Create run package" })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Retry scenarios" }));
+
+    expect(
+      await screen.findByRole("heading", { name: "Baseline Shallow Cumulus" }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Create run package" })).toBeEnabled();
+  });
+
+  it("shows an empty scenario state without enabling package creation", async () => {
+    vi.mocked(fetch).mockImplementation((input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url === "/api/scenarios") {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              golden_path_scenario_id: "",
+              scenarios: [],
+            }),
+            { status: 200 },
+          ),
+        );
+      }
+      if (url === "/api/results") {
+        return Promise.resolve(new Response(JSON.stringify(resultsResponse), { status: 200 }));
+      }
+      if (url === "/api/storage/inventory") {
+        return Promise.resolve(
+          new Response(JSON.stringify(storageInventoryResponse), { status: 200 }),
+        );
+      }
+      return Promise.resolve(new Response("not found", { status: 404 }));
+    });
+
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Build" }));
+    expect(
+      await screen.findByRole("heading", { name: "No scenarios available" }),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/did not return any scenario templates/)).toBeInTheDocument();
+    expect(screen.getByLabelText("Scenario")).toBeDisabled();
+    expect(screen.queryByRole("button", { name: "Create run package" })).not.toBeInTheDocument();
+  });
+
   it("labels preview as not implemented and not CM1 output", async () => {
     render(<App />);
 

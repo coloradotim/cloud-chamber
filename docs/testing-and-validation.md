@@ -47,6 +47,68 @@ Runtime storage tests must use temporary runtime homes only. They should cover t
 
 Runtime storage UI tests should mock the storage inventory and delete endpoints. They should verify the 50 GB warning state, largest-run table, completed/saved/running/missing-manifest categories, disabled cleanup for running and saved/protected runs, dry-run delete preview, explicit confirmed delete, and visible backend failure messages. Automated UI tests must not delete real local run directories.
 
+## UI Testing Standard
+
+For UI issues, do not rely only on `scripts/check.sh` and component tests. Use
+the right layer for the work:
+
+```text
+unit/component tests:
+  logic, rendering branches, API-shape handling, small component behavior
+
+Playwright/browser tests:
+  user workflows, navigation, tab behavior, form flows, save/delete flows,
+  console-error hygiene, layout regressions, occlusion/overlay bugs,
+  critical Build -> Results -> Explore paths
+
+manual QA:
+  qualitative UX and science judgment only
+```
+
+Manual QA should not be a broad checklist of objective behaviors. Objective
+checks should become automated tests. Manual review should focus on things
+automation cannot judge well: visual plausibility, scientific trust, wording
+clarity, workflow clarity, whether the page teaches the right lesson, whether a
+visualization feels physically believable, whether saved/delete/protection
+semantics feel safe, and whether the experience is enjoyable rather than
+debug-like.
+
+For any issue that changes navigation, Results, Storage, Compare, Explore,
+Build workflow, or visualizer layout:
+
+- add or update unit/component tests for logic;
+- add or update Playwright tests for user-path/browser behavior;
+- run `scripts/check.sh`;
+- run `scripts/check-e2e.sh` when the change affects user workflows or layout;
+- use manual QA only for qualitative judgment, not as a substitute for tests.
+
+When manual review is needed, keep it focused:
+
+1. What user goal is being evaluated?
+2. What screenshots or flows should be reviewed?
+3. What qualitative judgment is needed?
+4. Which objective checks should become automated tests?
+5. What follow-up issue, if any, is needed?
+
+Good manual QA asks whether the 3-D cloud geometry looks physically plausible
+in side `x-z` view, whether Baseline vs Dry Failed teaches the
+moisture-limitation story, or whether Storage makes deletion feel safe. Bad
+manual QA asks someone to click every tab, verify all standard navigation by
+hand, or manually inspect long objective checklists.
+
+Codex UI PR summaries should explicitly report:
+
+```text
+Unit/component tests added or updated:
+Playwright tests added or updated:
+Manual QA needed:
+  yes/no
+  if yes, what qualitative question should Tim review?
+Commands run:
+  scripts/check.sh
+  scripts/check-e2e.sh, if applicable
+```
+
 NetCDF ingest tests use tiny synthetic NetCDF files in temporary run directories. They should assert valid metadata extraction, result metadata serialization, missing-output failures, malformed-NetCDF failures, missing expected field warnings, and that raw `.dat/.ctl` artifacts are cataloged but not treated as NetCDF input. These tests must not use real CM1 output.
 
 Multi-file NetCDF ingest tests should use tiny generated fixtures under temporary run directories. They should cover CM1-style sequences such as `cm1out_000001.nc`, `cm1out_000002.nc`, and `cm1out_stats.nc`; verify model-field files are sorted by output index; exclude or separately classify stats NetCDF files; count total model output files and time steps; preserve first/last output time; record direct-vs-inferred time handling; tolerate corrupt individual output files with caveats when enough valid files remain; and ensure diagnostics time series span the full model-field sequence. A full-run no-cloud result is meaningful only after all usable model-output files have been evaluated.
