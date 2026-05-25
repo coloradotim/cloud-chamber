@@ -945,7 +945,9 @@ describe("App", () => {
     expect(
       await screen.findByRole("heading", { name: "Baseline Shallow Cumulus" }),
     ).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Create run package" })).toBeEnabled();
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Create run package" })).toBeEnabled();
+    });
   });
 
   it("shows an empty scenario state without enabling package creation", async () => {
@@ -1151,6 +1153,57 @@ describe("App", () => {
     expect(screen.getByText("Technical details")).toBeInTheDocument();
     expect(screen.getAllByText("Completed CM1 result").length).toBeGreaterThan(0);
     expect(screen.getByRole("button", { name: "Inspect fields" })).toBeEnabled();
+  });
+
+  it("accepts legacy array results responses without crashing", async () => {
+    vi.mocked(fetch).mockImplementation((input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url === "/api/scenarios") {
+        return Promise.resolve(new Response(JSON.stringify(scenarioResponse), { status: 200 }));
+      }
+      if (url === "/api/results") {
+        return Promise.resolve(new Response(JSON.stringify([resultCard]), { status: 200 }));
+      }
+      if (url === "/api/storage/inventory") {
+        return Promise.resolve(
+          new Response(JSON.stringify(storageInventoryResponse), { status: 200 }),
+        );
+      }
+      return Promise.resolve(new Response("not found", { status: 404 }));
+    });
+
+    render(<App />);
+
+    expect(await screen.findByRole("heading", { name: "Experiment Notebook" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Quick-look shallow cumulus" })).toBeInTheDocument();
+    expect(screen.queryByText(/results is not iterable/i)).not.toBeInTheDocument();
+  });
+
+  it("shows a clean results load failure state for malformed results payloads", async () => {
+    vi.mocked(fetch).mockImplementation((input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url === "/api/scenarios") {
+        return Promise.resolve(new Response(JSON.stringify(scenarioResponse), { status: 200 }));
+      }
+      if (url === "/api/results") {
+        return Promise.resolve(
+          new Response(JSON.stringify({ detail: "unexpected shape" }), { status: 200 }),
+        );
+      }
+      if (url === "/api/storage/inventory") {
+        return Promise.resolve(
+          new Response(JSON.stringify(storageInventoryResponse), { status: 200 }),
+        );
+      }
+      return Promise.resolve(new Response("not found", { status: 404 }));
+    });
+
+    render(<App />);
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("Could not load results");
+    expect(screen.getByText("No ingested CM1 results yet.")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Refresh results" })).toBeInTheDocument();
+    expect(screen.queryByText(/results is not iterable/i)).not.toBeInTheDocument();
   });
 
   it("compares baseline and dry failed results side by side", async () => {

@@ -398,9 +398,23 @@ async function ingestCompletedRun(manifestPath: string): Promise<IngestResponse>
 async function fetchResults(): Promise<ResultsResponse> {
   const response = await fetch("/api/results");
   if (!response.ok) {
-    throw new Error("Unable to load results.");
+    throw new Error("Could not load results.");
   }
-  return response.json() as Promise<ResultsResponse>;
+  return normalizeResultsResponse(await response.json());
+}
+
+function normalizeResultsResponse(payload: unknown): ResultsResponse {
+  if (Array.isArray(payload)) {
+    return { results: payload as ResultCard[] };
+  }
+  if (isObject(payload) && Array.isArray(payload.results)) {
+    return { results: payload.results as ResultCard[] };
+  }
+  throw new Error("Could not load results.");
+}
+
+function isObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
 }
 
 async function patchResultCard(
@@ -620,7 +634,9 @@ export function App() {
       })
       .catch((caught: unknown) => {
         if (!active) return;
-        setResultsError(caught instanceof Error ? caught.message : "Unable to load results.");
+        setResults([]);
+        setSelectedResultId(null);
+        setResultsError(caught instanceof Error ? caught.message : "Could not load results.");
         setResultsStatus("Results unavailable");
       });
     return () => {
@@ -760,7 +776,9 @@ export function App() {
     try {
       await refreshResults();
     } catch (caught) {
-      setResultsError(caught instanceof Error ? caught.message : "Unable to refresh results.");
+      setResults([]);
+      setSelectedResultId(null);
+      setResultsError(caught instanceof Error ? caught.message : "Could not load results.");
       setResultsStatus("Results unavailable");
     }
   }
