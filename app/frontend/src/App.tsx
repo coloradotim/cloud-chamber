@@ -1204,7 +1204,11 @@ function BuildWorkspace({
                 </div>
               )}
 
-              <button type="submit" disabled={validationMessages.length > 0}>
+              <button
+                type="submit"
+                data-testid="create-package-btn"
+                disabled={validationMessages.length > 0}
+              >
                 Create run package
               </button>
             </>
@@ -1221,7 +1225,11 @@ function BuildWorkspace({
             </p>
           </section>
 
-          <section className="status-panel" aria-labelledby="review-title">
+          <section
+            className="status-panel"
+            aria-labelledby="review-title"
+            data-testid="package-review-panel"
+          >
             <p className="eyebrow">Generated package</p>
             <h3 id="review-title">Review before local CM1 run</h3>
             {dryRun ? (
@@ -1343,11 +1351,15 @@ function ResultsWorkspace({
         <p className="state-chip">{resultsStatus}</p>
       </div>
 
-      <nav className="subtab-nav" aria-label="Results workspace sections">
+      <nav className="subtab-nav" role="tablist" aria-label="Results views">
         {(["notebook", "compare", "storage"] as ResultsTab[]).map((tab) => (
           <button
             key={tab}
             type="button"
+            id={`${tab}-tab`}
+            role="tab"
+            aria-selected={activeTab === tab}
+            aria-controls={`${tab}-panel`}
             className={activeTab === tab ? "active-control" : ""}
             onClick={() => onTabChange(tab)}
           >
@@ -1464,7 +1476,12 @@ function NotebookWorkspace({
   onOpenVisualizer: () => void;
 }) {
   return (
-    <section className="workspace-section" aria-labelledby="notebook-title">
+    <section
+      className="workspace-section"
+      role="tabpanel"
+      id="notebook-panel"
+      aria-labelledby="notebook-tab notebook-title"
+    >
       <div className="section-heading">
         <div>
           <p className="eyebrow">Notebook</p>
@@ -1513,11 +1530,15 @@ function ExploreWorkspace({
         <p className="state-chip">{selectedResult ? selectedResult.name : "No result"}</p>
       </div>
 
-      <nav className="subtab-nav" aria-label="Explore workspace sections">
+      <nav className="subtab-nav" role="tablist" aria-label="Explore views">
         {(["slices", "view3d"] as ExploreTab[]).map((tab) => (
           <button
             key={tab}
             type="button"
+            id={`${tab}-tab`}
+            role="tab"
+            aria-selected={activeTab === tab}
+            aria-controls={`${tab}-panel`}
             className={activeTab === tab ? "active-control" : ""}
             onClick={() => onTabChange(tab)}
           >
@@ -1527,13 +1548,22 @@ function ExploreWorkspace({
       </nav>
 
       {!selectedResult && (
-        <section className="status-panel">
+        <section
+          className="status-panel"
+          role="tabpanel"
+          id={`${activeTab}-panel`}
+          aria-labelledby={`${activeTab}-tab`}
+        >
           <p>Select an ingested result from Results to inspect or visualize it.</p>
         </section>
       )}
 
       {selectedResult && activeTab === "slices" && (
-        <section aria-labelledby="explore-slices-title">
+        <section
+          role="tabpanel"
+          id="slices-panel"
+          aria-labelledby="slices-tab explore-slices-title"
+        >
           <p className="eyebrow">2-D Slices</p>
           <h3 id="explore-slices-title">2-D Slices</h3>
           <FieldInspector result={selectedResult} />
@@ -1541,7 +1571,7 @@ function ExploreWorkspace({
       )}
 
       {selectedResult && activeTab === "view3d" && (
-        <section aria-labelledby="explore-3d-title">
+        <section role="tabpanel" id="view3d-panel" aria-labelledby="view3d-tab explore-3d-title">
           <p className="eyebrow">3-D View</p>
           <h3 id="explore-3d-title">3-D View</h3>
           <VisualizerSceneShell result={selectedResult} />
@@ -1565,7 +1595,12 @@ function ComparisonWorkspace({
   const missing = comparisonMissingItems(pair);
 
   return (
-    <section className="comparison-workspace" aria-labelledby="comparison-title">
+    <section
+      className="comparison-workspace"
+      role="tabpanel"
+      id="compare-panel"
+      aria-labelledby="compare-tab comparison-title"
+    >
       <div className="section-heading">
         <div>
           <p className="eyebrow">Compare</p>
@@ -2074,7 +2109,12 @@ function StorageWorkspace({
   onExploreResult: (resultId: string) => void;
 }) {
   return (
-    <section className="storage-workspace" aria-labelledby="storage-title">
+    <section
+      className="storage-workspace"
+      role="tabpanel"
+      id="storage-panel"
+      aria-labelledby="storage-tab storage-title"
+    >
       <div className="section-heading">
         <div>
           <p className="eyebrow">Storage</p>
@@ -2390,13 +2430,28 @@ function GuidedRunWorkflow({
         {error && <p role="alert">{error}</p>}
 
         <div className="button-row">
-          <button type="button" onClick={onLaunchRun} disabled={Boolean(runStatus)}>
+          <button
+            type="button"
+            data-testid="launch-cm1-btn"
+            onClick={onLaunchRun}
+            disabled={Boolean(runStatus)}
+          >
             Launch local CM1
           </button>
-          <button type="button" onClick={onRefreshRunStatus} disabled={!runStatus}>
+          <button
+            type="button"
+            data-testid="refresh-status-btn"
+            onClick={onRefreshRunStatus}
+            disabled={!runStatus}
+          >
             Refresh status
           </button>
-          <button type="button" onClick={onIngestRun} disabled={!canIngest}>
+          <button
+            type="button"
+            data-testid="ingest-results-btn"
+            onClick={onIngestRun}
+            disabled={!canIngest}
+          >
             Ingest output
           </button>
         </div>
