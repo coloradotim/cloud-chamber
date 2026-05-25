@@ -149,6 +149,24 @@ changes only the generated `input_sounding` moisture values for `drier` or
 `more_humid`. The namelist, runtime preset, NetCDF output, and runtime-file
 staging remain the same for the selected preset.
 
+Capped / Suppressed Cumulus should also branch from the accepted
+external-sounding Baseline Shallow Cumulus family, but it is not a moisture
+experiment. The first planned implementation (#140) should preserve the
+accepted baseline grid/domain, vertical spacing, domain top, runtime/cadence
+model, surface/ocean/flux settings, surface stress/roughness path, Rayleigh
+damping, turbulence/SGS settings, boundary conditions, NetCDF output,
+`LANDUSE.TBL` staging, low-level humidity, surface heating, and the baseline
+wind profile. It should change only the potential-temperature / stability
+structure near the capping layer in the generated external `input_sounding`.
+
+Architecturally, the product control is `cap_strength = stronger`. Cap height
+stays at the accepted baseline for the first implementation; lower cap height
+is later work. The scenario should not reuse the invalid compact quick-look
+derivative, should not dry the low-level moisture profile, and should not vary
+surface heating. Its result-card interpretation should be cap/stability-limited:
+moisture and thermals are present, but the stronger cap limits vertical cloud
+growth.
+
 Cloud-scale defaults for the first lower-atmosphere contract are:
 
 ```text

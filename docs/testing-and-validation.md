@@ -325,6 +325,58 @@ caveats and target-field non-finite checks
 Do not run Dry Failed CM1 cases in CI and do not commit generated output,
 NetCDF files, logs, runtime files, local reports, or copied `LANDUSE.TBL`.
 
+Capped / Suppressed Cumulus planning tests should remain docs/planning-only
+until #140 implements package generation. The future automated tests should use
+temporary runtime homes and assert that `cap_strength = stronger` changes only
+the generated external `input_sounding` stability structure near the cap while
+preserving the accepted external-sounding baseline's grid/domain, runtime
+preset, surface/ocean/flux settings, surface stress/roughness path, Rayleigh
+damping, turbulence/SGS settings, boundary conditions, NetCDF output,
+`LANDUSE.TBL` staging behavior, low-level humidity, and surface heating.
+
+Future Capped / Suppressed manual validation should record:
+
+```text
+run ID and package path
+accepted external-sounding baseline source
+the one intended cap/stability change
+confirmation that low-level humidity remains baseline
+confirmation that surface heating remains baseline
+confirmation that cap height remains baseline
+CM1 command, runtime, exit code, logs, and package size
+NetCDF file count and full-sequence ingest status
+cloud_formed and first_cloud_time
+cloud_top compared with accepted baseline
+max_qc and cloud fraction compared with accepted baseline
+rain_present compared with accepted baseline
+max_w and min_w
+main limiting factor: cap / stability
+qc and w 2-D inspection notes
+3-D limited-growth inspection notes
+caveats and target-field non-finite checks
+```
+
+Acceptance categories for future Capped / Suppressed validation:
+
+- `accepted`: CM1 completes, NetCDF ingests, vertical motion remains meaningful,
+  moisture remains baseline/available, cloud is shallower/weaker/delayed than
+  baseline, cloud top is lower when cloud forms, max `qc` and/or cloud fraction
+  are reduced, rain is absent or reduced, and no severe target-field caveats
+  appear.
+- `accepted_with_notes`: the run is healthy and cap effect is present but
+  subtle, or rain still occurs while cloud top / max `qc` / cloud fraction are
+  clearly reduced.
+- `needs_calibration`: the run is too similar to baseline, becomes
+  indistinguishable from Dry Failed, or current diagnostics cannot distinguish
+  cap limitation clearly.
+- `failed`: CM1 fails, NetCDF is missing, ingest fails, vertical motion is
+  absent, severe NaN/Infinity caveats appear in target fields, or more than
+  cap/stability changed unexpectedly.
+
+Do not run Capped / Suppressed CM1 cases in CI and do not commit generated
+output, NetCDF files, logs, runtime files, local reports, or copied
+`LANDUSE.TBL`.
+
 ### Baseline Shallow Cumulus Manual Smoke-Run Loop
 
 Use this loop after a dry-run package has been generated and before broader CM1 launcher work is trusted. This is a manual/local/offline validation path; do not run it in CI.
