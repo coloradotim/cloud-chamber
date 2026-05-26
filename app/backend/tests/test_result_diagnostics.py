@@ -2,7 +2,10 @@ from pathlib import Path
 
 import xarray as xr
 
-from cloud_chamber.result_diagnostics import compute_baseline_diagnostics
+from cloud_chamber.result_diagnostics import (
+    compute_baseline_diagnostics,
+    compute_process_diagnostics,
+)
 
 
 def write_dataset(path: Path, dataset: xr.Dataset) -> xr.Dataset:
@@ -105,6 +108,16 @@ def test_cloud_formed_requires_ten_grid_cells_and_reports_base_top(tmp_path: Pat
     assert diagnostics.cloud.first_cloud_time_seconds == 300.0
     assert diagnostics.cloud.cloud_base_m == 500.0
     assert diagnostics.cloud.cloud_top_m == 1500.0
+    assert [point.value for point in diagnostics.cloud.cloud_base_time_series] == [None, 500.0]
+    assert [point.value for point in diagnostics.cloud.cloud_top_time_series] == [None, 1500.0]
+    assert [point.value for point in diagnostics.cloud.max_qc_height_time_series] == [
+        500.0,
+        1500.0,
+    ]
+    assert [point.value for point in diagnostics.vertical_velocity.max_w_height_time_series] == [
+        1500.0,
+        1500.0,
+    ]
     assert diagnostics.cloud.cloud_present_time_steps == [300.0]
 
 
@@ -265,3 +278,93 @@ def test_netcdf_time_coordinate_and_inferred_fallback(tmp_path: Path) -> None:
     assert inferred.time.source == "inferred_output_index"
     assert inferred.time.fallback_used is True
     assert inferred.cloud.first_cloud_time_seconds == 1.0
+
+
+def test_process_diagnostics_label_moisture_limited_thermal_without_cloud(
+    tmp_path: Path,
+) -> None:
+    dataset = write_dataset(
+        tmp_path / "dry_thermal.nc",
+        base_dataset(qc_values=zeros(), w_values=w_field()),
+    )
+    diagnostics = compute_baseline_diagnostics(dataset, [])
+
+    process = compute_process_diagnostics(
+        diagnostics,
+        scenario_id="dry-failed-cumulus",
+        controls={"low_level_humidity": "drier"},
+        variables=["qc", "w"],
+    )
+
+    assert process.interpretation_support.thermal_fate_label == "Thermal without cloud"
+    assert process.interpretation_support.confidence == "supported"
+    assert process.interpretation_support.main_limiting_factor == "moisture"
+    assert "moisture_limitation_inferred_without_saturation_deficit" in (
+        process.interpretation_support.caveats
+    )
+    assert process.deep_breakthrough.status == "unsupported_missing_fields"
+    assert process.precipitation_feedback.status == "unsupported_missing_fields"
+
+
+def test_process_diagnostics_marks_capped_result_as_candidate(tmp_path: Path) -> None:
+    dataset = write_dataset(
+        tmp_path / "capped.nc",
+        base_dataset(qc_values=with_cloud(12), w_values=w_field()),
+    )
+    diagnostics = compute_baseline_diagnostics(dataset, [])
+
+    process = compute_process_diagnostics(
+        diagnostics,
+        scenario_id="capped-suppressed-cumulus",
+        controls={"cap_strength": "stronger"},
+        variables=["qc", "w"],
+    )
+
+    assert process.interpretation_support.thermal_fate_label == "Capped / suppressed cumulus"
+    assert process.interpretation_support.confidence == "candidate"
+    assert process.interpretation_support.main_limiting_factor == "cap/stability"
+    assert process.cap_inversion.status == "candidate"
+    assert "cap_limitation_candidate_requires_baseline_comparison" in (
+        process.interpretation_support.caveats
+    )
+
+
+def test_process_diagnostics_handles_missing_required_fields(tmp_path: Path) -> None:
+    dataset = write_dataset(tmp_path / "missing.nc", base_dataset())
+    diagnostics = compute_baseline_diagnostics(dataset, [])
+
+    process = compute_process_diagnostics(
+        diagnostics,
+        scenario_id="baseline-shallow-cumulus",
+        controls={},
+        variables=[],
+    )
+
+    assert process.interpretation_support.thermal_fate_label == "Insufficient evidence"
+    assert process.interpretation_support.confidence == "unsupported_missing_fields"
+    assert process.thermal_fate.status == "unsupported_missing_fields"
+    assert process.cloud_lifecycle.status == "unsupported_missing_fields"
+    assert process.updrafts.status == "unsupported_missing_fields"
+
+
+def test_process_diagnostics_marks_growing_cumulus_candidate(tmp_path: Path) -> None:
+    qc = zeros()
+    for y_index in range(3):
+        for x_index in range(4):
+            qc[0][0][y_index][x_index] = 2e-6
+            qc[1][1][y_index][x_index] = 4e-6
+    dataset = write_dataset(
+        tmp_path / "growing.nc",
+        base_dataset(qc_values=qc, w_values=w_field()),
+    )
+    diagnostics = compute_baseline_diagnostics(dataset, [])
+
+    process = compute_process_diagnostics(
+        diagnostics,
+        scenario_id="baseline-shallow-cumulus",
+        controls={},
+        variables=["qc", "w"],
+    )
+
+    assert process.interpretation_support.thermal_fate_label == "Growing cumulus"
+    assert process.interpretation_support.confidence == "candidate"

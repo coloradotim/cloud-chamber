@@ -50,6 +50,13 @@ Renderer upgrades follow process needs. They should not drive the product
 direction before Cloud Chamber can explain thermal fate with CM1-derived
 diagnostics, selected-region evidence, comparison, and caveats.
 
+#149 adds the first backend global/process diagnostics bridge. It attaches
+`process_diagnostics` to ingested result metadata, exposes conservative
+Thermal Fate labels/confidence/main-limiting-factor fields on result cards, and
+keeps deep-breakthrough, buoyancy, precipitation-feedback, and selected-region
+diagnostics unavailable or candidate/caveated until their required fields and
+follow-up issues exist.
+
 ## Golden Path: Baseline Shallow Cumulus
 
 Baseline Shallow Cumulus is the first complete product loop:

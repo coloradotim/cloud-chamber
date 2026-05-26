@@ -10,9 +10,16 @@ from pydantic import BaseModel, ConfigDict, Field
 QC_CLOUD_THRESHOLD_KG_KG = 1e-6
 QR_RAIN_THRESHOLD_KG_KG = 1e-7
 MINIMUM_CLOUD_GRID_CELLS = 10
+MEANINGFUL_UPDRAFT_THRESHOLD_M_S = 0.5
 
 TIME_DIMENSION_CANDIDATES = ("time", "mtime", "t")
 VERTICAL_COORDINATE_CANDIDATES = ("z", "zh", "height", "height_m")
+THERMAL_FATE_CONFIDENCE_VALUES = (
+    "supported",
+    "candidate",
+    "insufficient_evidence",
+    "unsupported_missing_fields",
+)
 
 
 class TimeValue(BaseModel):
@@ -39,8 +46,11 @@ class CloudDiagnostics(BaseModel):
     first_cloud_time_seconds: float | None = None
     cloud_base_m: float | None = None
     cloud_top_m: float | None = None
+    cloud_base_time_series: list[TimeValue] = Field(default_factory=list)
+    cloud_top_time_series: list[TimeValue] = Field(default_factory=list)
     max_qc_kg_kg: float | None = None
     time_of_max_qc_seconds: float | None = None
+    max_qc_height_time_series: list[TimeValue] = Field(default_factory=list)
     qc_max_time_series: list[TimeValue] = Field(default_factory=list)
     cloud_fraction_time_series: list[TimeValue] = Field(default_factory=list)
     cloud_present_time_steps: list[float | None] = Field(default_factory=list)
@@ -54,6 +64,7 @@ class VerticalVelocityDiagnostics(BaseModel):
     time_of_max_w_seconds: float | None = None
     min_w_m_s: float | None = None
     time_of_min_w_seconds: float | None = None
+    max_w_height_time_series: list[TimeValue] = Field(default_factory=list)
     w_max_time_series: list[TimeValue] = Field(default_factory=list)
     w_min_time_series: list[TimeValue] = Field(default_factory=list)
     units: str | None = None
@@ -82,6 +93,222 @@ class ResultDiagnostics(BaseModel):
     rain: RainDiagnostics
     time: TimeDiagnostics
     caveats: list[str] = Field(default_factory=list)
+
+
+class ProcessDiagnosticState(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    status: str
+    summary: str | None = None
+    direct_fields: list[str] = Field(default_factory=list)
+    derived_diagnostics: list[str] = Field(default_factory=list)
+    proxy_diagnostics: list[str] = Field(default_factory=list)
+    caveats: list[str] = Field(default_factory=list)
+
+
+class InterpretationSupport(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    main_limiting_factor: str = "unknown"
+    thermal_fate_label: str = "Insufficient evidence"
+    confidence: str = "insufficient_evidence"
+    caveats: list[str] = Field(default_factory=list)
+
+
+class ProcessDiagnostics(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    thermal_fate: ProcessDiagnosticState
+    cloud_lifecycle: ProcessDiagnosticState
+    updrafts: ProcessDiagnosticState
+    moisture_saturation: ProcessDiagnosticState
+    cap_inversion: ProcessDiagnosticState
+    buoyancy: ProcessDiagnosticState
+    deep_breakthrough: ProcessDiagnosticState
+    precipitation_feedback: ProcessDiagnosticState
+    local_region_support: ProcessDiagnosticState
+    interpretation_support: InterpretationSupport
+
+
+def compute_process_diagnostics(
+    diagnostics: ResultDiagnostics,
+    *,
+    scenario_id: str,
+    controls: dict[str, str | float | bool],
+    variables: list[str],
+) -> ProcessDiagnostics:
+    """Compute conservative Thermal Fate process summaries from supported diagnostics."""
+
+    available_fields = set(variables)
+    caveats: list[str] = []
+    if not diagnostics.cloud.available:
+        caveats.append("thermal_fate_missing_qc")
+    if not diagnostics.vertical_velocity.available:
+        caveats.append("thermal_fate_missing_w")
+    if "qv" not in available_fields:
+        caveats.append("moisture_saturation_unsupported_missing_qv")
+    if "th" not in available_fields:
+        caveats.append("buoyancy_unsupported_missing_th")
+
+    updraft_meaningful = (
+        diagnostics.vertical_velocity.available
+        and diagnostics.vertical_velocity.max_w_m_s is not None
+        and diagnostics.vertical_velocity.max_w_m_s >= MEANINGFUL_UPDRAFT_THRESHOLD_M_S
+    )
+    has_cloud = diagnostics.cloud.available and diagnostics.cloud.formed
+    has_rain = diagnostics.rain.available and diagnostics.rain.present
+
+    label = "Insufficient evidence"
+    confidence = "insufficient_evidence"
+    main_limiting_factor = "unknown"
+    summary = "Available diagnostics are insufficient for a Thermal Fate label."
+
+    if not diagnostics.cloud.available or not diagnostics.vertical_velocity.available:
+        confidence = "unsupported_missing_fields"
+        summary = "Thermal Fate label unavailable because required qc or w fields are missing."
+    elif not updraft_meaningful and not has_cloud:
+        label = "No meaningful thermal"
+        confidence = "supported"
+        summary = "No meaningful updraft or cloud-water signal was detected."
+    elif updraft_meaningful and not has_cloud:
+        label = "Thermal without cloud"
+        confidence = "supported"
+        main_limiting_factor = "moisture"
+        summary = "Meaningful vertical motion occurred, but cloud water stayed below threshold."
+        caveats.append("moisture_limitation_inferred_without_saturation_deficit")
+    elif _is_capped_scenario(scenario_id, controls):
+        label = "Capped / suppressed cumulus"
+        confidence = "candidate"
+        main_limiting_factor = "cap/stability"
+        summary = (
+            "Cloud and vertical motion are present in a stronger-cap scenario; "
+            "cap limitation remains a candidate until baseline comparison or "
+            "cap diagnostics support it."
+        )
+        caveats.append("cap_limitation_candidate_requires_baseline_comparison")
+    elif has_cloud and _cloud_top_increases(diagnostics.cloud.cloud_top_time_series):
+        label = "Growing cumulus"
+        confidence = "candidate"
+        summary = "Cloud formed and cloud top increased over available output times."
+    elif has_cloud:
+        label = "Fair-weather cumulus"
+        confidence = "candidate"
+        summary = "Cloud formed with available updraft and cloud-water diagnostics."
+
+    thermal_fate = ProcessDiagnosticState(
+        status=confidence,
+        summary=summary,
+        direct_fields=_present(["qc", "w", "qr"], available_fields),
+        derived_diagnostics=[
+            "cloud_formed",
+            "first_cloud_time",
+            "cloud_base_top",
+            "cloud_fraction_time_series",
+            "qc_max_time_series",
+            "w_max_min_time_series",
+            "rain_summary",
+        ],
+        caveats=_dedupe(caveats),
+    )
+    cloud_lifecycle = ProcessDiagnosticState(
+        status="supported" if diagnostics.cloud.available else "unsupported_missing_fields",
+        summary="Cloud lifecycle uses qc threshold, base/top, cloud fraction, and qc series.",
+        direct_fields=_present(["qc"], available_fields),
+        derived_diagnostics=[
+            "cloud_base_time_series",
+            "cloud_top_time_series",
+            "max_qc_height_time_series",
+            "cloud_fraction_time_series",
+        ],
+        caveats=[] if diagnostics.cloud.available else ["missing_qc_field"],
+    )
+    updrafts = ProcessDiagnosticState(
+        status="supported"
+        if diagnostics.vertical_velocity.available
+        else "unsupported_missing_fields",
+        summary="Updraft diagnostics use w max/min and max-height summaries.",
+        direct_fields=_present(["w"], available_fields),
+        derived_diagnostics=["w_max_time_series", "w_min_time_series", "max_w_height_time_series"],
+        caveats=[] if diagnostics.vertical_velocity.available else ["missing_w_field"],
+    )
+    moisture_saturation = ProcessDiagnosticState(
+        status="unsupported_missing_fields",
+        summary=(
+            "Saturation deficit/RH diagnostics are not yet implemented from "
+            "qv/thermodynamic fields."
+        ),
+        direct_fields=_present(["qv"], available_fields),
+        caveats=["moisture_saturation_unsupported_missing_qv"],
+    )
+    cap_inversion = ProcessDiagnosticState(
+        status="candidate"
+        if _is_capped_scenario(scenario_id, controls)
+        else "insufficient_evidence",
+        summary=(
+            "Capped scenario metadata suggests cap/stability interpretation, but cap-relative "
+            "diagnostics are not computed yet."
+        )
+        if _is_capped_scenario(scenario_id, controls)
+        else "Cap/inversion diagnostics require cap metadata from generated soundings.",
+        proxy_diagnostics=["scenario_control:cap_strength=stronger"]
+        if _is_capped_scenario(scenario_id, controls)
+        else [],
+        caveats=["cap_inversion_metadata_not_computed"],
+    )
+    buoyancy = ProcessDiagnosticState(
+        status="unsupported_missing_fields",
+        summary=(
+            "Buoyancy/theta-v diagnostics are not implemented until required "
+            "thermodynamic fields exist."
+        ),
+        direct_fields=_present(["th", "theta_v"], available_fields),
+        caveats=["buoyancy_unsupported_missing_thermodynamic_fields"],
+    )
+    deep_breakthrough = ProcessDiagnosticState(
+        status="unsupported_missing_fields",
+        summary=(
+            "Deep-breakthrough diagnostics require CAPE/CIN/LFC/EL and sustained-updraft metadata."
+        ),
+        caveats=["deep_breakthrough_unsupported_missing_cape_cin_lfc_el"],
+    )
+    precipitation_feedback = ProcessDiagnosticState(
+        status="candidate" if has_rain else "unsupported_missing_fields",
+        summary=(
+            "Rain water is present, but downdraft/cold-pool feedback diagnostics "
+            "are not implemented."
+            if has_rain
+            else (
+                "Precipitation-feedback diagnostics require rain and near-surface "
+                "thermodynamic fields."
+            )
+        ),
+        direct_fields=_present(["qr", "w"], available_fields),
+        derived_diagnostics=["rain_onset", "min_w"] if has_rain else [],
+        caveats=["precipitation_feedback_requires_downdraft_and_cold_pool_diagnostics"],
+    )
+    local_region_support = ProcessDiagnosticState(
+        status="insufficient_evidence",
+        summary="Global process metadata is ready for future selected-region diagnostics.",
+        caveats=["selected_region_diagnostics_not_computed_in_global_ingest"],
+    )
+
+    return ProcessDiagnostics(
+        thermal_fate=thermal_fate,
+        cloud_lifecycle=cloud_lifecycle,
+        updrafts=updrafts,
+        moisture_saturation=moisture_saturation,
+        cap_inversion=cap_inversion,
+        buoyancy=buoyancy,
+        deep_breakthrough=deep_breakthrough,
+        precipitation_feedback=precipitation_feedback,
+        local_region_support=local_region_support,
+        interpretation_support=InterpretationSupport(
+            main_limiting_factor=main_limiting_factor,
+            thermal_fate_label=label,
+            confidence=confidence,
+            caveats=_dedupe(caveats),
+        ),
+    )
 
 
 def compute_baseline_diagnostics(dataset: Any, inherited_caveats: list[str]) -> ResultDiagnostics:
@@ -129,6 +356,9 @@ def _cloud_diagnostics(dataset: Any, time: _TimeContext, caveats: list[str]) -> 
     series_arrays = _time_slices(qc, time.dimension)
     qc_max_series: list[TimeValue] = []
     cloud_fraction_series: list[TimeValue] = []
+    cloud_base_series: list[TimeValue] = []
+    cloud_top_series: list[TimeValue] = []
+    max_qc_height_series: list[TimeValue] = []
     cloud_present_steps: list[float | None] = []
     first_cloud_time: float | None = None
     max_qc: float | None = None
@@ -140,8 +370,14 @@ def _cloud_diagnostics(dataset: Any, time: _TimeContext, caveats: list[str]) -> 
         cloudy_count = _threshold_count(array, QC_CLOUD_THRESHOLD_KG_KG)
         finite_count = _finite_count(array)
         cloud_fraction = (cloudy_count / finite_count) if finite_count else None
+        cloud_base, cloud_top = _cloud_base_top(array, caveats)
         qc_max_series.append(TimeValue(time_seconds=time_seconds, value=slice_max))
         cloud_fraction_series.append(TimeValue(time_seconds=time_seconds, value=cloud_fraction))
+        cloud_base_series.append(TimeValue(time_seconds=time_seconds, value=cloud_base))
+        cloud_top_series.append(TimeValue(time_seconds=time_seconds, value=cloud_top))
+        max_qc_height_series.append(
+            TimeValue(time_seconds=time_seconds, value=_height_of_level_max(array, caveats))
+        )
         if cloudy_count >= MINIMUM_CLOUD_GRID_CELLS:
             cloud_present_steps.append(time_seconds)
             if first_cloud_time is None:
@@ -156,8 +392,11 @@ def _cloud_diagnostics(dataset: Any, time: _TimeContext, caveats: list[str]) -> 
         first_cloud_time_seconds=first_cloud_time,
         cloud_base_m=cloud_base,
         cloud_top_m=cloud_top,
+        cloud_base_time_series=cloud_base_series,
+        cloud_top_time_series=cloud_top_series,
         max_qc_kg_kg=max_qc,
         time_of_max_qc_seconds=time_of_max_qc,
+        max_qc_height_time_series=max_qc_height_series,
         qc_max_time_series=qc_max_series,
         cloud_fraction_time_series=cloud_fraction_series,
         cloud_present_time_steps=cloud_present_steps,
@@ -184,6 +423,7 @@ def _vertical_velocity_diagnostics(
 
     max_series: list[TimeValue] = []
     min_series: list[TimeValue] = []
+    max_height_series: list[TimeValue] = []
     max_w: float | None = None
     time_of_max_w: float | None = None
     min_w: float | None = None
@@ -195,6 +435,9 @@ def _vertical_velocity_diagnostics(
         slice_min = _finite_min(array)
         max_series.append(TimeValue(time_seconds=time_seconds, value=slice_max))
         min_series.append(TimeValue(time_seconds=time_seconds, value=slice_min))
+        max_height_series.append(
+            TimeValue(time_seconds=time_seconds, value=_height_of_level_max(array, caveats))
+        )
         if slice_max is not None and (max_w is None or slice_max > max_w):
             max_w = slice_max
             time_of_max_w = time_seconds
@@ -207,6 +450,7 @@ def _vertical_velocity_diagnostics(
         time_of_max_w_seconds=time_of_max_w,
         min_w_m_s=min_w,
         time_of_min_w_seconds=time_of_min_w,
+        max_w_height_time_series=max_height_series,
         w_max_time_series=max_series,
         w_min_time_series=min_series,
         units=units,
@@ -280,6 +524,36 @@ def _cloud_base_top(qc: Any, caveats: list[str]) -> tuple[float | None, float | 
     if not cloudy_values:
         return None, None
     return min(cloudy_values), max(cloudy_values)
+
+
+def _height_of_level_max(data_array: Any, caveats: list[str]) -> float | None:
+    vertical_name = _first_present(VERTICAL_COORDINATE_CANDIDATES, list(data_array.dims))
+    if vertical_name is None:
+        caveats.append("max_height_unavailable_missing_vertical_coordinate")
+        return None
+    vertical_values = _vertical_values(data_array, vertical_name, caveats)
+    best_value: float | None = None
+    best_height: float | None = None
+    for index in range(int(data_array.sizes[vertical_name])):
+        level_value = _finite_max(data_array.isel({vertical_name: index}))
+        if level_value is not None and (best_value is None or level_value > best_value):
+            best_value = level_value
+            best_height = vertical_values[index]
+    return best_height
+
+
+def _vertical_values(data_array: Any, vertical_name: str, caveats: list[str]) -> list[float | None]:
+    if vertical_name not in data_array.coords:
+        caveats.append("vertical_coordinate_inferred_from_index")
+        return [float(index) for index in range(int(data_array.sizes[vertical_name]))]
+    vertical_coord = data_array.coords[vertical_name]
+    vertical_values = [_to_float_or_none(value) for value in vertical_coord.values.tolist()]
+    units = _attr_string(vertical_coord, "units")
+    if units is None:
+        caveats.append("vertical_units_missing_assumed_meters")
+    elif units not in {"m", "meter", "meters"}:
+        caveats.append(f"vertical_units_not_meters:{units}")
+    return vertical_values
 
 
 def _time_context(dataset: Any, time_dimension: str | None) -> _TimeContext:
@@ -409,3 +683,19 @@ def _first_present(candidates: tuple[str, ...], names: list[str]) -> str | None:
 
 def _dedupe(values: list[str]) -> list[str]:
     return list(dict.fromkeys(values))
+
+
+def _present(names: list[str], available_fields: set[str]) -> list[str]:
+    return [name for name in names if name in available_fields]
+
+
+def _is_capped_scenario(
+    scenario_id: str,
+    controls: dict[str, str | float | bool],
+) -> bool:
+    return scenario_id == "capped-suppressed-cumulus" or controls.get("cap_strength") == "stronger"
+
+
+def _cloud_top_increases(series: list[TimeValue]) -> bool:
+    values = [point.value for point in series if point.value is not None]
+    return len(values) >= 2 and values[-1] > values[0]
