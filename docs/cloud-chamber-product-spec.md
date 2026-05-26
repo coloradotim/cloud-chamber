@@ -33,6 +33,16 @@ simulation run with latency, logs, outputs, and caveats.
 See [Thermal Fate process diagnostics](thermal-fate-process-diagnostics.md) for
 the current process-diagnostics contract.
 
+Explore should now feel like a process workbench, not just a raw field viewer.
+The 2-D Slices and 3-D View workspaces expose Thermal Fate process modes for
+Thermal Fate summary, Cloud Water, Updrafts, Cloud Lifecycle, Cap / Inversion,
+Moisture / Saturation, Buoyancy, Deep Breakthrough, and Precipitation Feedback.
+Each mode must show whether the evidence is supported, candidate, insufficient,
+or unavailable. Unsupported diagnostic groups remain visible with caveats
+instead of disappearing. The browser receives only backend-prepared slices,
+point clouds, result-card process fields, and bounded summaries; it does not
+parse raw NetCDF or invent process claims.
+
 ## Personas
 
 ### Primary User

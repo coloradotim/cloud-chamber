@@ -154,6 +154,9 @@ const resultCard = {
     "result_state:ingested_result_metadata",
   ],
   diagnostics_summary: "cloud formed; rain detected",
+  thermal_fate_label: "Growing cumulus",
+  thermal_fate_confidence: "candidate",
+  main_limiting_factor: "unknown",
   first_cloud_time_seconds: 1800,
   max_qc_kg_kg: 0.002192789688706398,
   max_w_m_s: 6.866957187652588,
@@ -195,6 +198,9 @@ const dryFailedCard = {
     surface_heating: "baseline",
   },
   diagnostics_summary: "no cloud formed; no rain detected",
+  thermal_fate_label: "Thermal without cloud",
+  thermal_fate_confidence: "supported",
+  main_limiting_factor: "moisture",
   first_cloud_time_seconds: null,
   max_qc_kg_kg: 0,
   max_w_m_s: 1.949130654335022,
@@ -1565,6 +1571,26 @@ describe("App", () => {
     );
   });
 
+  it("shows process-aware 2-D overlays with unavailable diagnostic groups caveated", async () => {
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Inspect fields" }));
+
+    expect(await screen.findByText("Thermal Fate overlay")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Thermal Fate summary" })).toBeInTheDocument();
+    expect(screen.getByText(/Growing cumulus/)).toBeInTheDocument();
+    expect(screen.getAllByText("Candidate").length).toBeGreaterThan(0);
+
+    fireEvent.change(screen.getByLabelText("Process mode"), {
+      target: { value: "moisture" },
+    });
+
+    expect(screen.getByRole("heading", { name: "Moisture / Saturation" })).toBeInTheDocument();
+    expect(screen.getByText(/need qv\/RH or saturation-deficit fields/)).toBeInTheDocument();
+    expect(screen.getAllByText("Unavailable").length).toBeGreaterThan(0);
+    expect(screen.getByText("moisture_unsupported_missing_fields")).toBeInTheDocument();
+  });
+
   it("handles missing fields and bad slice requests gracefully", async () => {
     render(<App />);
 
@@ -1637,6 +1663,8 @@ describe("App", () => {
     expect(screen.getByLabelText("Field")).toHaveValue("qc");
     expect(screen.getByLabelText("Slice field")).toHaveValue("qc");
     expect(screen.getByRole("button", { name: "Horizontal z" })).toHaveClass("active-control");
+    expect(screen.getByLabelText("Thermal Fate process overlay")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Thermal Fate summary" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Vertical x-z" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Vertical y-z" })).toBeInTheDocument();
     expect(screen.getByLabelText("Height level (up/down)")).toHaveValue("1");

@@ -63,6 +63,11 @@ column, and box regions, returning CM1-derived local summaries, conservative
 labels, provenance, caveats, and comparison-to-domain values without returning
 large raw arrays or moving NetCDF parsing into the browser.
 
+#150 adds the first Explore process-overlay layer. The 2-D and 3-D Explore
+views can show Thermal Fate process modes, direct-field evidence, candidate or
+unsupported states, and caveats while preserving the existing slice/point-cloud
+workflows. Selected-region click/brush inspection remains #152.
+
 ## Golden Path: Baseline Shallow Cumulus
 
 Baseline Shallow Cumulus is the first complete product loop:

@@ -426,6 +426,14 @@ The endpoint returns summaries only. It does not return large raw arrays, does
 not perform cloud-object tracking, and does not let the browser parse raw
 NetCDF.
 
+Explore process overlays consume the existing result-card process fields and
+visualization-ready field/slice/point payloads. They should present supported
+or candidate process modes when backend evidence exists and explicit
+unavailable/caveated states when fields such as `qv`, buoyancy inputs,
+CAPE/CIN/LFC/EL, or cold-pool diagnostics are absent. The frontend can select
+process modes and display annotations, but it must not compute the scientific
+classification itself or parse raw NetCDF.
+
 ### Result Library
 
 Responsibilities:

@@ -1115,11 +1115,39 @@ details[open] > summary {
   font-weight: 850;
 }
 
+.process-mode-control {
+  display: grid;
+  gap: 0.55rem;
+  grid-column: 1 / -1;
+  margin: 0;
+  border: 1px solid rgba(171, 215, 214, 0.22);
+  border-radius: 8px;
+  padding: 0.75rem;
+}
+
+.process-mode-control legend {
+  color: #f7fbff;
+  font-weight: 850;
+}
+
 .inspector-controls label {
   display: grid;
   gap: 0.4rem;
   color: #eff7fa;
   font-weight: 800;
+}
+
+.process-overlay-panel {
+  display: grid;
+  gap: 0.75rem;
+  border: 1px solid rgba(171, 215, 214, 0.28);
+  border-radius: 8px;
+  padding: 0.85rem;
+  background: rgba(3, 8, 13, 0.3);
+}
+
+.compact-heading {
+  gap: 0.65rem;
 }
 
 .slice-grid {

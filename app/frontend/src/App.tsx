@@ -134,6 +134,9 @@ type ResultCard = {
   source_model: string;
   provenance_labels: string[];
   diagnostics_summary: string | null;
+  thermal_fate_label?: string | null;
+  thermal_fate_confidence?: string | null;
+  main_limiting_factor?: string | null;
   first_cloud_time_seconds: number | null;
   max_qc_kg_kg: number | null;
   max_w_m_s: number | null;
@@ -330,6 +333,16 @@ type ViewDefaultsResponse = {
 };
 
 type InspectorViewMode = "horizontal" | "vertical_x" | "vertical_y" | "compare";
+type ProcessMode =
+  | "thermal_fate"
+  | "cloud_water"
+  | "updrafts"
+  | "moisture"
+  | "buoyancy"
+  | "cap"
+  | "cloud_lifecycle"
+  | "deep_breakthrough"
+  | "precipitation_feedback";
 type SceneViewPreset = "cloud-overview" | "vertical-cross-section" | "top-down-slice" | "updraft";
 type ProjectionMode = "oblique" | "side_xz" | "side_yz" | "top_down";
 type SceneSlicePlane = "horizontal" | "vertical_x" | "vertical_y";
@@ -2781,6 +2794,7 @@ function VisualizerSceneShell({ result }: { result: ResultCard }) {
   const [pointSize, setPointSize] = useState(11);
   const [isPlaying, setIsPlaying] = useState(false);
   const [pointCloud, setPointCloud] = useState<PointCloudResponse | null>(null);
+  const [processMode, setProcessMode] = useState<ProcessMode>("thermal_fate");
   const [viewPreset, setViewPreset] = useState<SceneViewPreset>("cloud-overview");
   const [projectionMode, setProjectionMode] = useState<ProjectionMode>("oblique");
   const [showSlicePlanes, setShowSlicePlanes] = useState(false);
@@ -2812,6 +2826,7 @@ function VisualizerSceneShell({ result }: { result: ResultCard }) {
     setPointSize(11);
     setIsPlaying(false);
     setPointCloud(null);
+    setProcessMode("thermal_fate");
     setViewPreset("cloud-overview");
     setProjectionMode("oblique");
     setShowSlicePlanes(false);
@@ -3052,6 +3067,8 @@ function VisualizerSceneShell({ result }: { result: ResultCard }) {
           className="visualizer-controls visualizer-primary-controls"
           aria-label="Primary visualizer controls"
         >
+          <ProcessModeControl processMode={processMode} onProcessModeChange={setProcessMode} />
+
           <fieldset>
             <legend>View controls</legend>
             <label htmlFor="scene-zoom">
@@ -3588,6 +3605,14 @@ function VisualizerSceneShell({ result }: { result: ResultCard }) {
         </div>
 
         <aside className="visualizer-details-panel" aria-label="Visualization details">
+          <ProcessOverlayPanel
+            result={result}
+            catalog={catalog}
+            selectedField={selectedField}
+            processMode={processMode}
+            slice={activeSlicePlane === "horizontal" ? sceneHorizontalSlice : sceneVerticalSlice}
+          />
+
           <div className="summary-strip">
             <Metric
               label="Selected time"
@@ -3904,6 +3929,7 @@ function FieldInspector({ result }: { result: ResultCard }) {
   const [horizontalLevelIndex, setHorizontalLevelIndex] = useState(0);
   const [verticalLevelIndex, setVerticalLevelIndex] = useState(0);
   const [viewMode, setViewMode] = useState<InspectorViewMode>("vertical_x");
+  const [processMode, setProcessMode] = useState<ProcessMode>("thermal_fate");
   const [horizontalSlice, setHorizontalSlice] = useState<SliceResponse | null>(null);
   const [verticalSlice, setVerticalSlice] = useState<SliceResponse | null>(null);
   const [inspectorStatus, setInspectorStatus] = useState("Loading fields...");
@@ -3918,6 +3944,7 @@ function FieldInspector({ result }: { result: ResultCard }) {
     setHorizontalSlice(null);
     setVerticalSlice(null);
     setViewMode("vertical_x");
+    setProcessMode("thermal_fate");
     Promise.all([
       fetchVisualizationFields(result.result_id),
       fetchVisualizationDefaults(result.result_id).catch(() => null),
@@ -4047,6 +4074,8 @@ function FieldInspector({ result }: { result: ResultCard }) {
       {catalog && selectedField && (
         <>
           <div className="inspector-controls">
+            <ProcessModeControl processMode={processMode} onProcessModeChange={setProcessMode} />
+
             <fieldset className="view-mode-control">
               <legend>Slice view</legend>
               <div className="segmented-buttons">
@@ -4152,6 +4181,14 @@ function FieldInspector({ result }: { result: ResultCard }) {
             <Metric label="Native grid" value={selectedField.native_grid} />
           </dl>
 
+          <ProcessOverlayPanel
+            result={result}
+            catalog={catalog}
+            selectedField={selectedField}
+            processMode={processMode}
+            slice={viewMode === "horizontal" ? horizontalSlice : verticalSlice}
+          />
+
           <div className={viewMode === "compare" ? "slice-grid" : "primary-slice-grid"}>
             {(viewMode === "horizontal" || viewMode === "compare") && (
               <SlicePanel title="Horizontal slice" slice={horizontalSlice} />
@@ -4247,6 +4284,85 @@ function SlicePanel({ title, slice }: { title: string; slice: SliceResponse | nu
   );
 }
 
+function ProcessModeControl({
+  processMode,
+  onProcessModeChange,
+}: {
+  processMode: ProcessMode;
+  onProcessModeChange: (mode: ProcessMode) => void;
+}) {
+  return (
+    <fieldset className="process-mode-control">
+      <legend>Process mode</legend>
+      <select
+        aria-label="Process mode"
+        value={processMode}
+        onChange={(event) => onProcessModeChange(event.target.value as ProcessMode)}
+      >
+        {PROCESS_MODES.map((mode) => (
+          <option key={mode} value={mode}>
+            {processModeLabel(mode)}
+          </option>
+        ))}
+      </select>
+    </fieldset>
+  );
+}
+
+function ProcessOverlayPanel({
+  result,
+  catalog,
+  selectedField,
+  processMode,
+  slice,
+}: {
+  result: ResultCard;
+  catalog: FieldCatalogResponse | null;
+  selectedField: VisualizableField | undefined;
+  processMode: ProcessMode;
+  slice?: SliceResponse | null;
+}) {
+  const summary = processModeSummary(processMode, result, catalog, selectedField, slice ?? null);
+  return (
+    <section className="process-overlay-panel" aria-label="Thermal Fate process overlay">
+      <div className="section-heading compact-heading">
+        <div>
+          <p className="eyebrow">Thermal Fate overlay</p>
+          <h3>{processModeLabel(processMode)}</h3>
+        </div>
+        <StatusBadge
+          label={processSupportLabel(summary.support)}
+          tone={summary.support === "supported" ? "good" : summary.support === "candidate" ? "neutral" : "warning"}
+        />
+      </div>
+      <p>{summary.description}</p>
+      <dl className="metric-grid">
+        <Metric label="Evidence type" value={summary.evidenceType} />
+        <Metric label="Source" value={summary.source} />
+        <Metric label="Process confidence" value={processSupportLabel(summary.support)} />
+        <Metric label="Selected field" value={selectedField?.raw_field_name ?? "Unavailable"} />
+      </dl>
+      {summary.annotations.length > 0 && (
+        <ul className="compact-list">
+          {summary.annotations.map((annotation) => (
+            <li key={annotation}>{annotation}</li>
+          ))}
+        </ul>
+      )}
+      {summary.caveats.length > 0 && (
+        <details>
+          <summary>Process caveats</summary>
+          <ul className="compact-list">
+            {summary.caveats.map((caveat) => (
+              <li key={caveat}>{caveat}</li>
+            ))}
+          </ul>
+        </details>
+      )}
+    </section>
+  );
+}
+
 function SliceHeatmap({ title, slice }: { title: string; slice: SliceResponse }) {
   return (
     <div className="slice-heatmap" role="img" aria-label={`${title} heatmap`}>
@@ -4287,6 +4403,211 @@ function Metric({ label, value }: { label: string; value: string }) {
       <dd>{value}</dd>
     </div>
   );
+}
+
+const PROCESS_MODES: ProcessMode[] = [
+  "thermal_fate",
+  "cloud_water",
+  "updrafts",
+  "cloud_lifecycle",
+  "cap",
+  "moisture",
+  "buoyancy",
+  "deep_breakthrough",
+  "precipitation_feedback",
+];
+
+type ProcessSupport = "supported" | "candidate" | "insufficient_evidence" | "unsupported_missing_fields";
+
+type ProcessModeSummary = {
+  support: ProcessSupport;
+  evidenceType: string;
+  source: string;
+  description: string;
+  annotations: string[];
+  caveats: string[];
+};
+
+function processModeSummary(
+  mode: ProcessMode,
+  result: ResultCard,
+  catalog: FieldCatalogResponse | null,
+  selectedField: VisualizableField | undefined,
+  slice: SliceResponse | null,
+): ProcessModeSummary {
+  const fields = new Set(catalog?.available_fields.map((field) => field.raw_field_name) ?? []);
+  const caveats = [...result.caveats];
+  const thermalLabel = result.thermal_fate_label ?? "Insufficient evidence";
+  const confidence = normalizeProcessSupport(result.thermal_fate_confidence);
+  const fieldSource = selectedField
+    ? `${selectedField.raw_field_name} on native ${selectedField.native_grid}`
+    : "No selected field";
+  const sliceAnnotation = slice
+    ? `Active slice ${slice.selection.orientation} shows ${slice.field.raw_field_name} min ${formatMaybeNumber(
+        slice.stats.min,
+        slice.field.units,
+      )}, max ${formatMaybeNumber(slice.stats.max, slice.field.units)}.`
+    : "No active slice summary is available yet.";
+
+  if (mode === "thermal_fate") {
+    return {
+      support: confidence,
+      evidenceType: "backend process diagnostics",
+      source: "Result Card process fields from ingested CM1 output",
+      description: `${thermalLabel}. ${
+        result.main_limiting_factor && result.main_limiting_factor !== "unknown"
+          ? `Main limiting factor: ${result.main_limiting_factor}.`
+          : "No supported main limiting factor is available yet."
+      }`,
+      annotations: [
+        `Diagnostics summary: ${result.diagnostics_summary ?? "Unavailable"}`,
+        `Cloud: ${cloudOutcome(result)}; rain: ${rainOutcome(result.rain_present)}`,
+      ],
+      caveats,
+    };
+  }
+
+  if (mode === "cloud_water") {
+    return {
+      support: fields.has("qc") ? "supported" : "unsupported_missing_fields",
+      evidenceType: "direct CM1 field plus derived threshold diagnostics",
+      source: fieldSource,
+      description: fields.has("qc")
+        ? "Cloud-water overlay uses direct qc output with the documented cloud threshold."
+        : "Cloud-water overlay is unavailable because qc is missing for this result.",
+      annotations: [
+        `Max qc: ${formatScientific(result.max_qc_kg_kg, "kg/kg")}`,
+        `First cloud time: ${formatSeconds(result.first_cloud_time_seconds)}`,
+        sliceAnnotation,
+      ],
+      caveats: fields.has("qc") ? caveats : [...caveats, "missing_visualization_field:qc"],
+    };
+  }
+
+  if (mode === "updrafts") {
+    return {
+      support: fields.has("w") ? "supported" : "unsupported_missing_fields",
+      evidenceType: "direct CM1 vertical-velocity field",
+      source: fieldSource,
+      description: fields.has("w")
+        ? "Updraft overlay uses direct w output and max/min vertical velocity summaries."
+        : "Updraft overlay is unavailable because w is missing for this result.",
+      annotations: [
+        `Max w: ${formatNumber(result.max_w_m_s, "m/s")}`,
+        `Min w: ${formatNumber(result.min_w_m_s, "m/s")}`,
+        sliceAnnotation,
+      ],
+      caveats: fields.has("w") ? caveats : [...caveats, "missing_visualization_field:w"],
+    };
+  }
+
+  if (mode === "cloud_lifecycle") {
+    const available = result.first_cloud_time_seconds !== null || result.max_qc_kg_kg !== null;
+    return {
+      support: available ? "candidate" : "insufficient_evidence",
+      evidenceType: "derived cloud lifecycle diagnostics",
+      source: "Ingested result diagnostics",
+      description: available
+        ? "Cloud lifecycle uses first cloud time, qc summaries, cloud fraction, and slice annotations where available."
+        : "Cloud lifecycle diagnostics are not available for this result.",
+      annotations: [
+        `First cloud time: ${formatSeconds(result.first_cloud_time_seconds)}`,
+        `Max qc: ${formatScientific(result.max_qc_kg_kg, "kg/kg")}`,
+        sliceAnnotation,
+      ],
+      caveats,
+    };
+  }
+
+  if (mode === "cap") {
+    const capped = result.scenario_id.includes("capped") || result.controls.cap_strength === "stronger";
+    return {
+      support: capped ? "candidate" : "insufficient_evidence",
+      evidenceType: "scenario/control proxy plus cloud-top diagnostics",
+      source: "Scenario metadata and derived diagnostics",
+      description: capped
+        ? "Cap/inversion overlay is a candidate process view; current data suggests cap context but does not directly diagnose inhibition."
+        : "Cap/inversion overlay needs stronger-cap metadata or cap-relative diagnostics before making a process claim.",
+      annotations: [
+        `Cap strength: ${String(result.controls.cap_strength ?? "not recorded")}`,
+        `Thermal Fate label: ${thermalLabel}`,
+      ],
+      caveats: [...caveats, "cap_layer_annotation_is_proxy_without_full_cap_diagnostics"],
+    };
+  }
+
+  if (mode === "precipitation_feedback") {
+    return {
+      support: result.rain_present ? "candidate" : "unsupported_missing_fields",
+      evidenceType: "qr/rain and downdraft proxy diagnostics",
+      source: "Rain summary and w min diagnostics",
+      description: result.rain_present
+        ? "Rain is present, but precipitation-feedback needs downdraft/cold-pool evidence before a stronger claim."
+        : "Precipitation-feedback overlay is unavailable because rain/qr was not detected or not output.",
+      annotations: [
+        `Rain: ${rainOutcome(result.rain_present)}`,
+        `Min w: ${formatNumber(result.min_w_m_s, "m/s")}`,
+      ],
+      caveats: [...caveats, "precipitation_feedback_requires_downdraft_and_cold_pool_diagnostics"],
+    };
+  }
+
+  const unavailableLabels: Record<ProcessMode, string> = {
+    thermal_fate: "",
+    cloud_water: "",
+    updrafts: "",
+    cloud_lifecycle: "",
+    cap: "",
+    precipitation_feedback: "",
+    moisture: "Moisture / saturation diagnostics need qv/RH or saturation-deficit fields.",
+    buoyancy: "Buoyancy diagnostics need thermodynamic fields and a documented buoyancy method.",
+    deep_breakthrough: "Deep-breakthrough diagnostics need CAPE/CIN/LFC/EL and sustained-updraft context.",
+  };
+  return {
+    support: "unsupported_missing_fields",
+    evidenceType: "unavailable diagnostic group",
+    source: "Required source fields were not ingested",
+    description: unavailableLabels[mode],
+    annotations: ["Unavailable diagnostics are shown explicitly rather than hidden."],
+    caveats: [...caveats, `${mode}_unsupported_missing_fields`],
+  };
+}
+
+function processModeLabel(mode: ProcessMode): string {
+  const labels: Record<ProcessMode, string> = {
+    thermal_fate: "Thermal Fate summary",
+    cloud_water: "Cloud Water",
+    updrafts: "Updrafts",
+    moisture: "Moisture / Saturation",
+    buoyancy: "Buoyancy",
+    cap: "Cap / Inversion",
+    cloud_lifecycle: "Cloud Lifecycle",
+    deep_breakthrough: "Deep Breakthrough",
+    precipitation_feedback: "Precipitation Feedback",
+  };
+  return labels[mode];
+}
+
+function normalizeProcessSupport(value: string | null | undefined): ProcessSupport {
+  if (
+    value === "supported" ||
+    value === "candidate" ||
+    value === "insufficient_evidence" ||
+    value === "unsupported_missing_fields"
+  ) {
+    return value;
+  }
+  return "insufficient_evidence";
+}
+
+function processSupportLabel(value: ProcessSupport): string {
+  const labels: Record<ProcessSupport, string> = {
+    supported: "Supported",
+    candidate: "Candidate",
+    insufficient_evidence: "Insufficient evidence",
+    unsupported_missing_fields: "Unavailable",
+  };
+  return labels[value];
 }
 
 function parseTags(value: string): string[] {
