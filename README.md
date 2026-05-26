@@ -1,16 +1,25 @@
 # Cloud Chamber
 
-Cloud Chamber is a local CM1 experiment builder, run manager, and 3-D cloud visualization lab.
+Cloud Chamber is a local CM1 experiment builder, run manager, results notebook,
+and Thermal Fate exploration workbench.
 
-It helps users configure CM1 scenarios, run them locally, ingest outputs, and explore cloud evolution through beautiful scientific and atmospheric visualizations.
+It helps users configure CM1 scenarios, run them locally, ingest outputs, save
+and compare results, inspect CM1 fields, and understand the fate of thermals
+through diagnostics and provenance-labeled visualizations.
 
-CM1 is the high-fidelity simulation engine; Cloud Chamber is the local experiment builder, run manager, and visualizer.
+CM1 is the high-fidelity simulation engine; Cloud Chamber is the local
+experiment builder, run manager, result notebook, diagnostics layer, and
+visualizer.
 
 ## Core Direction
 
-Build a local-first, personal-use CM1 configuration, run-management, and 3-D visualization environment for guided cloud-physics experiments.
+Build a local-first, personal-use CM1 configuration, run-management,
+diagnostics, and visualization environment for guided cloud-physics
+experiments.
 
-The first Golden Path is **Baseline Shallow Cumulus**: a credible idealized CM1 case for learning how lower-atmosphere controls shape cloud formation.
+The first executable Golden Path is **Baseline Shallow Cumulus**: a credible
+idealized CM1 case for learning how lower-atmosphere controls shape thermal
+fate, cloud formation, vertical motion, and rain.
 
 ## Core Workflow
 
@@ -21,30 +30,40 @@ Choose experiment
 -> generate/launch a local CM1 run
 -> monitor status/logs
 -> ingest results
--> visualize cloud evolution in 3-D
+-> inspect and visualize CM1-derived fields
 -> save/name/tag useful runs
 -> replay and inspect them later
--> optionally create a new variation from the same setup
+-> compare scenario variants
+-> ask what happened to a selected thermal/region as diagnostics mature
 ```
 
-This repo is early-stage. The current app can load the first Scenario Builder flow, select Baseline Shallow Cumulus, show curated controls and the physical question, create a dry-run CM1 package for review, and label preview as not implemented. It does not launch CM1, ingest outputs, or visualize completed results yet.
+This repo is still evolving, but it is no longer only the initial scaffold. The
+current app has a guided local run loop, local CM1 launch/status handling,
+NetCDF ingest, result cards/notebook entries, Results/Compare/Storage
+workspaces, 2-D field inspection, and an initial 3-D cloud-water/slice
+visualization path. Real CM1 execution remains local/manual and outside CI.
 
 ## Docs
 
 - [Product vision](docs/product-vision.md)
 - [Product spec](docs/cloud-chamber-product-spec.md)
 - [Architecture and data model](docs/architecture-and-data-model.md)
+- [Thermal Fate process diagnostics](docs/thermal-fate-process-diagnostics.md)
 - [Roadmap and issues](docs/roadmap-and-issues.md)
 - [Codex project setup](docs/codex-project-setup.md)
 - [Development](docs/development.md)
 - [Testing and validation](docs/testing-and-validation.md)
 - [CI and branch protection](docs/ci-and-branch-protection.md)
 
-## Current Scaffold
+## Current App Shape
 
 - Frontend: TypeScript, React, Vite, Vitest, ESLint, Prettier.
 - Backend/tooling: Python 3.12+, pytest, ruff, mypy.
-- First Scenario Builder flow: Baseline Shallow Cumulus selection, curated controls, physical question, dry-run package request, and generated-file review.
+- Build workspace: scenario selection, curated controls, package generation,
+  launch/status review, and ingest action against local backend APIs.
+- Results workspace: result notebook, comparison, and runtime storage views.
+- Explore workspace: 2-D slices and initial 3-D visualization over backend
+  visualization-ready data.
 - Local checks: `scripts/check.sh`.
 - CI: GitHub Actions jobs for frontend, backend, scripts, docs, and config sanity.
 
@@ -100,4 +119,8 @@ The top-level `data/` directory is placeholder/fixture-only. It is not the runti
 
 ## Current Near-Term Scope
 
-The first Scenario Builder and dry-run review flow exists. Cloud Chamber still does not implement preview physics, the 3-D visualizer, CM1 run manager, CM1 vendoring, real NetCDF sample data, complex deployment, or heavy 3-D rendering dependencies.
+Near-term work is shifting from the first executable Baseline Shallow Cumulus
+loop toward Thermal Fate diagnostics: process summaries, selected-region
+`What happened here?` inspection, surface-heating and deep-breakthrough
+scenario families, precipitation-feedback/cold-pool reasoning, and renderer
+upgrades only after those process needs are clear.

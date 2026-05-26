@@ -6,17 +6,23 @@
 
 ## North Star
 
-Cloud Chamber helps users configure, run, manage, and beautifully visualize local CM1 cloud experiments.
+Cloud Chamber helps users configure, run, manage, inspect, explain, and
+beautifully visualize local CM1 cloud experiments.
 
 Short version:
 
-> A local studio for playing with CM1 and seeing cloud physics come alive.
+> A local CM1 workbench for exploring thermal fate and seeing cloud physics come alive.
 
 Internal anchor:
 
-> Cloud Chamber is a personal, scientifically honest CM1 cloud playground: curated lower-atmosphere experiments, meaningful controls, local-first CM1 runs, replayable saved results, and a beautiful 3-D viewer.
+> Cloud Chamber is a personal, scientifically honest CM1 Thermal Fate workbench:
+> curated experiments, meaningful controls, local-first CM1 runs, replayable
+> saved results, process diagnostics, selected-region inspection, and beautiful
+> visualization.
 
-CM1 is the high-fidelity simulation engine; Cloud Chamber is the local experiment builder, run manager, and visualizer.
+CM1 is the high-fidelity simulation engine; Cloud Chamber is the local
+experiment builder, run manager, result notebook, diagnostics layer, and
+visualizer.
 
 The lesson from earlier Cloud Lab-style experimentation is simple: do not rebuild CM1 poorly. Cloud Chamber should wrap CM1 with a clearer product workflow, not replace the atmospheric model with hidden fake physics.
 
@@ -24,7 +30,12 @@ Cloud Lab should be treated as archived lesson/source material only. New product
 
 ## What Cloud Chamber Is
 
-Cloud Chamber is a local-first experiment and visualization environment for CM1, primarily for personal exploration and learning.
+Cloud Chamber is a local-first experiment and visualization environment for
+CM1, primarily for personal exploration and learning. Its organizing product
+concept is **Thermal Fate**: why air rises, why some thermals do or do not form
+cloud, why some clouds stay shallow, why others grow taller, why some break
+through into deep convection, and how precipitation feedback can reorganize or
+suppress convection.
 
 It should help a user:
 
@@ -35,7 +46,7 @@ Choose a cloud scenario
 → run CM1 locally
 → track the run
 → ingest and organize results
-→ visualize the 3-D cloud evolution beautifully
+→ inspect and visualize CM1-derived fields beautifully
 → replay and inspect saved results later
 → understand what happened
 ```
@@ -50,10 +61,17 @@ Cloud Chamber is not:
 - a web app that runs CM1 in the browser
 - a dashboard full of raw namelist parameters
 - a toy renderer with hidden fake physics
+- a real-time slider toy for CM1 execution
 
 ## Core Product Promise
 
-A user can choose or configure an atmospheric experiment, run CM1 locally, and explore the output in a beautiful 3-D visualizer with understandable controls and diagnostics.
+A user can choose or configure an atmospheric experiment, run CM1 locally, save
+the completed result, and explore what happened through diagnostics, comparison,
+selected-region inspection, and provenance-labeled visualization.
+
+CM1 run latency is part of the product model: scenario design, result browsing,
+comparison, and inspection are interactive; CM1 execution is a local simulation
+run, not an instant slider update.
 
 ## First Useful Workflow
 
@@ -79,9 +97,11 @@ Choose experiment
 → launch CM1 run
 → monitor status/logs
 → open result
-→ visualize in 3-D
+→ inspect diagnostics and fields
+→ visualize in 2-D/3-D
 → save/name/tag
 → replay and inspect later
+→ compare with related scenario variants
 → optionally create a new variation from the same setup
 ```
 
@@ -98,6 +118,12 @@ How do low-level moisture, surface heating, cap strength, and dry air aloft shap
 ```
 
 Warm rain remains early, but it should not block the Golden Path. Precipitating shallow cloud workflows should build on the baseline loop after the baseline case can be configured, packaged, run locally, ingested, replayed, inspected, and opened in the visualizer.
+
+Baseline Shallow Cumulus proves the first executable loop. It is not the entire
+product vision. The broader product should grow into Thermal Fate scenario
+families: moisture-limited, surface-heating-driven, cap-limited,
+dry-air-aloft/dilution-limited, deep-convection breakthrough, precipitation
+feedback/cold-pool interaction, and low-cloud/stratus cases where useful.
 
 ## User-Facing Concepts
 
@@ -116,8 +142,18 @@ The product should use atmospheric language first:
 - rain onset
 - updraft strength
 - cloud water
+- thermal fate
+- selected region
+- What happened here?
+- saturation deficit
+- deep breakthrough
+- precipitation feedback
+- downdraft
+- cold pool
+- outflow boundary
 
-Raw CM1 namelist settings belong in an advanced/developer view.
+Raw CM1 namelist settings and raw variable names belong in technical,
+advanced, or developer views.
 
 The first controls should favor relative, teachable changes around a baseline:
 
@@ -156,9 +192,21 @@ Local library of completed/failed/running CM1 experiments.
 
 Users can name, save, tag, replay, inspect, explain, and delete runs. Saved completed results should behave like experiment notebook entries. Duplicating or rerunning a saved setup is useful later, but the first MVP does not need to make rerun a central result-library feature.
 
-### 5. 3-D Visualizer
+### 5. Thermal Fate Diagnostics
 
-The main payoff.
+Backend-owned diagnostics should sit between result ingest and visualization.
+They should distinguish global run diagnostics, local selected-region
+diagnostics, comparison diagnostics, and visualizer interpretation.
+
+The selected-region product question is:
+
+```text
+What happened here?
+```
+
+### 6. 3-D Visualizer
+
+An important payoff, but not the only product center of gravity.
 
 Visualize CM1 output with:
 
@@ -176,29 +224,32 @@ Visualize CM1 output with:
 
 ## First Scenario Set
 
-Start with:
+Thermal Fate scenario families should start with:
 
-1. Baseline shallow cumulus
-2. Dry failed cumulus
-3. Capped/suppressed cumulus
-4. Humid vigorous cloud / humid low-cloud contrast
-5. Low stratus / low-cloud layer
-6. Warm rain / precipitating shallow cloud
+1. Moisture-limited thermal fate: Baseline, Dry Failed, and humidity ladder.
+2. Surface-heating-driven thermal fate.
+3. Cap-limited thermal fate: Capped / Suppressed Cumulus.
+4. Dry-air-aloft / dilution-limited thermal fate.
+5. Deep-convection breakthrough.
+6. Precipitation feedback / cold-pool interaction.
+7. Low stratus / low-cloud layer where appropriate.
 
 Baseline shallow cumulus is the first end-to-end Golden Path scenario. Warm rain remains early and important, but it should not block proving the baseline shallow-cumulus loop first.
 
 The first variation workflow should favor one-control-at-a-time changes around the baseline instead of arbitrary giant parameter sweeps. This keeps the learning path understandable and keeps CM1 as the truth source.
 
-Later:
+Later product families can include terrain/orographic cloud, layered
+atmospheres, fog / near-surface cloud, and mixed-phase / ice.
 
-7. Terrain/orographic cloud
-8. Layered atmosphere
-9. Fog / near-surface cloud
-10. Mixed-phase / ice
-
-## Visualization Philosophy
+## Thermal Fate And Visualization Philosophy
 
 CM1 output is physical source data. The visualizer may interpret it, but must label the interpretation.
+
+The visualizer should serve the Thermal Fate workbench: process overlays,
+selected-region markers, cloud base/top, cap/inversion context, updrafts,
+moisture/saturation evidence, and precipitation-feedback caveats should guide
+renderer choices. Visual polish follows process needs, not the other way
+around.
 
 Useful views:
 
@@ -247,8 +298,8 @@ The MVP should let a user:
 4. Launch CM1 locally.
 5. Track whether the run is queued/running/done/failed.
 6. Ingest NetCDF output into an app-friendly format.
-7. Open the result in a basic 3-D viewer.
-8. Replay cloud evolution over time.
+7. Open diagnostics and visualization-ready fields.
+8. Replay and inspect cloud evolution over time.
 9. Save/name/tag the run.
 10. Reopen, replay, inspect, and explain a saved result later.
 

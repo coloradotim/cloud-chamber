@@ -4,7 +4,9 @@
 
 Cloud Chamber should be local-first.
 
-CM1 is the high-fidelity simulation engine; Cloud Chamber is the local experiment builder, run manager, and visualizer.
+CM1 is the high-fidelity simulation engine; Cloud Chamber is the local
+experiment builder, run manager, result notebook, diagnostics layer, and
+visualizer.
 
 The first MVP target is a 2024 MacBook Air with 8GB RAM. Design for one local CM1 run at a time, conservative output handling, and backend-side processing/downsampling. Optional cloud compute can be researched later, but it is not part of the core architecture.
 
@@ -27,8 +29,16 @@ Output watcher / ingester
   ↓
 Local result store
   ↓
+Thermal Fate diagnostics
+  ↓
 3-D visualizer
 ```
+
+The Thermal Fate diagnostics layer sits between ingest/result metadata and
+visualization. It should distinguish global run diagnostics, local
+selected-region diagnostics, comparison diagnostics, and visualizer
+interpretation. The browser should continue to receive bounded summaries,
+visualization-ready slices/points, and provenance labels rather than raw NetCDF.
 
 ## Suggested Stack
 
@@ -337,6 +347,49 @@ Diagnostics preserve runtime warnings from the run manifest/result metadata. CM1
 
 This result metadata is not a Result Card UI and not visualization-ready data. It is the backend bridge that later result cards and inspectors can consume.
 
+### Thermal Fate Diagnostics
+
+Thermal Fate diagnostics are the process layer between ingested result metadata
+and visualization. They should answer what happened to thermals without making
+unsupported claims.
+
+The layer should distinguish:
+
+```text
+global run diagnostics
+local selected-region diagnostics
+comparison diagnostics
+visualizer interpretation
+```
+
+Global diagnostics summarize the whole completed CM1 result. Local
+selected-region diagnostics support the future `What happened here?` inspector
+for points, columns, or boxes. Comparison diagnostics explain what changed
+between saved results such as Baseline vs Dry Failed, Baseline vs Capped, and
+future surface-heating or deep-breakthrough variants.
+
+The data model should make room for process groups even before every group is
+implemented:
+
+```text
+thermal_fate
+cloud_lifecycle
+updrafts
+moisture_saturation
+cap_inversion
+buoyancy
+deep_breakthrough
+precipitation_feedback
+local_region_support
+interpretation_support
+```
+
+Deep-breakthrough and precipitation-feedback diagnostics should be represented
+as unavailable, candidate, or supported states until required fields and
+derived diagnostics exist. The browser should see bounded summaries and
+visualization-ready payloads only; backend xarray/NetCDF code owns direct field
+access, processing, and downsampling.
+
 ### Result Library
 
 Responsibilities:
@@ -376,8 +429,14 @@ NetCDF ingest (#68)
 -> 3-D scene shell (#77)
 -> cloud-water rendering (#78)
 -> slice planes (#79)
+-> Thermal Fate process contract and diagnostics (#148/#149/#151)
+-> renderer upgrade decision after process needs are clear (#112)
 -> visual polish / fly-through / export later (#80)
 ```
+
+The renderer is downstream of the process-diagnostics contract. If a rendering
+upgrade does not help expose thermal fate, selected-region evidence, or
+comparison diagnostics, it should wait.
 
 The 3-D viewer should open from saved or ingested results and consume visualization-ready backend data. It should not parse raw NetCDF directly in the browser. Rendering remains a visualizer interpretation of CM1-derived output and must carry source model, run/result, field, processing, and rendering-method provenance.
 

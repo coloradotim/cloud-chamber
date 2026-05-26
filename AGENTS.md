@@ -2,11 +2,15 @@
 
 ## Project Identity
 
-Cloud Chamber is a local-first configuration, run-management, and visualization environment for CM1 cloud experiments.
+Cloud Chamber is a local-first configuration, run-management, diagnostics, and
+visualization environment for CM1 cloud experiments.
 
-The goal is to make CM1 usable and beautiful for guided cloud-physics exploration.
+The goal is to make CM1 usable, beautiful, and explainable for guided
+cloud-physics exploration.
 
-CM1 is the high-fidelity simulation engine; Cloud Chamber is the local experiment builder, run manager, and visualizer.
+CM1 is the high-fidelity simulation engine; Cloud Chamber is the local
+experiment builder, run manager, result notebook, diagnostics layer, and
+visualizer.
 
 ## Product Rule
 
@@ -99,6 +103,9 @@ Default Cloud Chamber runtime data belongs outside the repo:
 
 Use atmospheric language first:
 
+- thermal fate
+- What happened here?
+- selected region
 - lower-atmosphere humidity
 - surface moisture
 - surface heating
@@ -106,12 +113,21 @@ Use atmospheric language first:
 - cap height
 - dry air aloft
 - mixing / entrainment
+- updraft strength
+- saturation deficit
+- deep breakthrough
+- precipitation feedback
+- downdraft
+- cold pool
+- outflow boundary
 - cloud base
 - cloud top
 - first cloud time
 - rain onset
 
-Raw namelist settings belong in advanced/developer views.
+Raw namelist settings and raw CM1 variable names belong in technical,
+advanced, or developer views. Product-facing views should start with thermal
+fate, selected-region inspection, and atmospheric process language.
 
 ## Testing Notes
 
