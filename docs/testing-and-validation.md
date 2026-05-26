@@ -162,6 +162,15 @@ missing required fields as `unsupported_missing_fields`, serialization through
 result metadata, and unavailable/caveated deep-breakthrough and
 precipitation-feedback placeholders. Selected-region diagnostics remain #151.
 
+Selected-region Thermal Fate diagnostics tests use tiny synthetic NetCDF
+fixtures and temporary runtime homes. They cover point, column, and box region
+requests; out-of-bounds validation; missing `qc`/`w`/`qr` caveats; local max/min
+`w`; local max `qc`; first local cloud time; local cloud fraction; local cloud
+base/top and max-height time series; local rain onset when `qr` exists;
+comparison-to-domain summaries; provenance labels; and API payload shape. These
+tests exercise backend xarray/NetCDF access only and must not require browser
+raw-NetCDF parsing or real CM1 output.
+
 Thermal Fate tests must distinguish direct CM1 fields, derived diagnostics,
 proxy diagnostics, and unsupported claims. Missing fields should produce
 explicit caveats, not crashes or fabricated values. The browser must not parse

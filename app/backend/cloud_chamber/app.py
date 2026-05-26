@@ -34,6 +34,12 @@ from cloud_chamber.scenario_catalog import (
     load_scenario_templates,
     scenario_summary,
 )
+from cloud_chamber.selected_region_diagnostics import (
+    RegionType,
+    SelectedRegionError,
+    SelectedRegionRequest,
+    selected_region_diagnostics,
+)
 from cloud_chamber.settings import load_settings
 from cloud_chamber.visualization_data import (
     VisualizationDataError,
@@ -282,6 +288,48 @@ def get_visualization_point_cloud(
     except ResultIngestError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except VisualizationDataError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return result.model_dump(mode="json")
+
+
+@app.get("/api/results/{result_id}/diagnostics/selected-region")
+def get_selected_region_diagnostics(
+    result_id: str,
+    region_type: str,
+    x_index: int | None = None,
+    y_index: int | None = None,
+    z_index: int | None = None,
+    x_start: int | None = None,
+    x_end: int | None = None,
+    y_start: int | None = None,
+    y_end: int | None = None,
+    z_start: int | None = None,
+    z_end: int | None = None,
+    neighborhood: int = 0,
+) -> dict[str, object]:
+    if region_type not in {"point", "column", "box"}:
+        raise HTTPException(status_code=400, detail=f"Unsupported region_type: {region_type}")
+    checked_region_type = cast(RegionType, region_type)
+    try:
+        request = SelectedRegionRequest(
+            region_type=checked_region_type,
+            x_index=x_index,
+            y_index=y_index,
+            z_index=z_index,
+            x_start=x_start,
+            x_end=x_end,
+            y_start=y_start,
+            y_end=y_end,
+            z_start=z_start,
+            z_end=z_end,
+            neighborhood=neighborhood,
+        )
+        result = selected_region_diagnostics(load_settings(), result_id, request)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except ResultIngestError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except SelectedRegionError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return result.model_dump(mode="json")
 

@@ -57,6 +57,12 @@ keeps deep-breakthrough, buoyancy, precipitation-feedback, and selected-region
 diagnostics unavailable or candidate/caveated until their required fields and
 follow-up issues exist.
 
+#151 adds the backend selected-region diagnostics bridge for the future Thermal
+Fate Inspector. It lets the app ask `What happened here?` for bounded point,
+column, and box regions, returning CM1-derived local summaries, conservative
+labels, provenance, caveats, and comparison-to-domain values without returning
+large raw arrays or moving NetCDF parsing into the browser.
+
 ## Golden Path: Baseline Shallow Cumulus
 
 Baseline Shallow Cumulus is the first complete product loop:
