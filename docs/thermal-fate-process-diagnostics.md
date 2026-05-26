@@ -574,6 +574,30 @@ Shallow vs Deep Convection
 The main UI should present atmospheric concepts first. Raw CM1 field names belong
 in technical details.
 
+The first Explore overlay implementation exposes these modes in both 2-D
+Slices and 3-D View:
+
+```text
+Thermal Fate summary
+Cloud Water
+Updrafts
+Cloud Lifecycle
+Cap / Inversion
+Moisture / Saturation
+Buoyancy
+Deep Breakthrough
+Precipitation Feedback
+```
+
+Cloud Water and Updrafts are direct-field views when `qc` and `w` are
+available. Cloud Lifecycle and Thermal Fate summary are derived from ingested
+result diagnostics and result-card process fields. Cap / Inversion starts as a
+candidate/proxy view when scenario/control metadata supports it. Moisture /
+Saturation, Buoyancy, Deep Breakthrough, and full Precipitation Feedback remain
+explicitly unavailable or caveated until required fields and methods exist.
+These overlays are annotations and explanations over backend-prepared slices
+and point clouds; they are not frontend-side physics.
+
 ## Explanation Contract
 
 Explanations must be driven by diagnostics and caveats, not hardcoded story

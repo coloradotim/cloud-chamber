@@ -171,6 +171,14 @@ comparison-to-domain summaries; provenance labels; and API payload shape. These
 tests exercise backend xarray/NetCDF access only and must not require browser
 raw-NetCDF parsing or real CM1 output.
 
+Thermal Fate overlay UI tests should mock result cards and visualization-ready
+API payloads. They should cover process mode selection, supported and candidate
+labels, unsupported/unavailable diagnostic groups, cloud base/top or slice
+annotations, cap/inversion proxy caveats, precipitation-feedback and
+deep-breakthrough caveats, and the guarantee that frontend code displays
+backend-derived evidence instead of parsing raw NetCDF or inventing process
+classification.
+
 Thermal Fate tests must distinguish direct CM1 fields, derived diagnostics,
 proxy diagnostics, and unsupported claims. Missing fields should produce
 explicit caveats, not crashes or fabricated values. The browser must not parse

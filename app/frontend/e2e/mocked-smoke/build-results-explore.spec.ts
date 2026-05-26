@@ -56,11 +56,14 @@ test.describe("mocked smoke: Build, Results, Explore path", () => {
     await openExploreTab(page, /^2-D Slices$/);
     await expect(page.getByText(/inspect cm1 fields/i).first()).toBeVisible({ timeout: 10_000 });
     await expect(page.getByText(/2-d field inspection/i).first()).toBeVisible();
+    await expect(page.getByText(/thermal fate overlay/i).first()).toBeVisible();
+    await expect(page.getByText(/growing cumulus/i).first()).toBeVisible();
     await expect(page.getByText(/\[\[[\d.,\s]+\]\]/)).not.toBeVisible();
 
     await openExploreTab(page, /^3-D View$/);
     await expect(page.getByText(/scene shell/i).first()).toBeVisible({ timeout: 12_000 });
     await expect(page.getByText(/oblique overview/i).first()).toBeVisible();
+    await expect(page.getByText(/thermal fate overlay/i).first()).toBeVisible();
     await expect(page.getByRole("button", { name: /reset view/i })).toBeVisible();
   });
 });
