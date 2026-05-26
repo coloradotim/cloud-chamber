@@ -2,17 +2,36 @@
 
 ## Product Summary
 
-Cloud Chamber is a local-first desktop/browser application for configuring, running, managing, and visualizing CM1 cloud experiments for personal learning and exploration.
+Cloud Chamber is a local-first desktop/browser application for configuring,
+running, managing, diagnosing, comparing, and visualizing CM1 cloud experiments
+for personal learning and exploration.
 
 The product should make CM1 approachable without hiding scientific limits.
 
-CM1 is the high-fidelity simulation engine; Cloud Chamber is the local experiment builder, run manager, and visualizer.
+CM1 is the high-fidelity simulation engine; Cloud Chamber is the local
+experiment builder, run manager, result notebook, diagnostics layer, and
+visualizer.
 
 Cloud Chamber's main flow should be product-shaped, not namelist-shaped. Friendly atmospheric controls come first; raw CM1 namelist settings belong in advanced/developer views.
 
 The first Golden Path case is Baseline Shallow Cumulus. Warm rain remains early, but it should not block completing that first end-to-end case.
 
 Replay / inspect / save is core MVP. Duplicate / tweak / rerun is later.
+
+The organizing product concept is **Thermal Fate**: Cloud Chamber should help
+explain why air rises, why some thermals do or do not form cloud, why some
+clouds stay shallow, why others grow taller, why some break through into deep
+convection, and how precipitation feedback can reorganize or suppress
+convection. The visualizer remains important, but the product center of gravity
+is completed/saved CM1 results, process diagnostics, selected-region
+inspection, comparison across scenario variants, and visual polish later.
+
+Cloud Chamber is not a real-time slider toy. Scenario design, result browsing,
+comparison, and inspection should feel interactive; CM1 execution is a local
+simulation run with latency, logs, outputs, and caveats.
+
+See [Thermal Fate process diagnostics](thermal-fate-process-diagnostics.md) for
+the current process-diagnostics contract.
 
 ## Personas
 
@@ -179,6 +198,8 @@ Visualization-ready data contract (#72)
 -> 3-D scene shell (#77)
 -> cloud-water rendering MVP (#78)
 -> slice planes (#79)
+-> Thermal Fate diagnostics and selected-region process needs (#148/#149/#151)
+-> renderer upgrade decision (#112)
 -> later visual polish / fly-through / export (#80)
 ```
 
@@ -190,6 +211,22 @@ time slider shell, field selector shell, loading/empty/error states, and
 provenance/rendering labels. It does not render cloud water, slices, or
 synthetic cloud physics; those belong to later visualizer issues.
 
+### Workflow 6.5 — What Happened Here?
+
+The selected-region Thermal Fate workflow is a core future workflow:
+
+```text
+open a completed/saved result
+-> select a point, column, or box in Explore
+-> ask What happened here?
+-> backend computes local selected-region diagnostics
+-> UI explains the supported thermal-fate label, evidence, and caveats
+-> compare the selected region with whole-domain behavior or a scenario variant
+```
+
+This workflow must use backend diagnostics over CM1-derived fields. The browser
+must not parse raw NetCDF or invent scientific explanations.
+
 ### Workflow 7 — Duplicate / Tweak / Rerun
 
 1. Duplicate previous setup.
@@ -199,6 +236,25 @@ synthetic cloud physics; those belong to later visualizer issues.
 5. Compare results later.
 
 This workflow is useful, but it is not the core first-MVP result behavior. Replay, inspect, save, name, and tag completed CM1 results first; duplicate/tweak/rerun can mature after the Result Card / Experiment Notebook model is reliable.
+
+## Thermal Fate Diagnostic Scope
+
+Product diagnostics should be framed at three levels:
+
+- **Global run diagnostics**: cloud formed, first cloud time, cloud base/top,
+  `qc`, `w`, rain, cloud fraction, and later process summaries for the whole
+  completed CM1 result.
+- **Local selected-region diagnostics**: the `What happened here?` point,
+  column, or box story, including local `qc`, `w`, rain, saturation/cap evidence
+  where supported, and comparison to domain behavior.
+- **Comparison diagnostics**: what changed between Baseline and a variant, such
+  as Dry Failed, Capped / Suppressed, humidity-ladder, or future
+  surface-heating/deep-breakthrough cases.
+
+Deep-convection breakthrough and precipitation-feedback/cold-pool diagnostics
+are first-class product families, but they should remain unavailable,
+candidate, or insufficient-evidence states until the required CM1 fields and
+derived diagnostics exist.
 
 ## Run Size Presets
 
@@ -280,14 +336,16 @@ Validation rules should reject templates that:
 
 The schema is intentionally product-first. Raw CM1/developer controls can exist as advanced metadata, but product-facing controls remain the primary path.
 
-Initial scenario templates should include:
+Thermal Fate scenario families should include:
 
-1. Baseline shallow cumulus.
-2. Dry failed cumulus.
-3. Capped/suppressed cumulus.
-4. Humid vigorous cumulus / humid low-cloud contrast.
-5. Low stratus / low-cloud layer.
-6. Warm rain / precipitating shallow cloud.
+1. Moisture-limited thermal fate: Baseline, Dry Failed, and humidity ladder.
+2. Surface-heating-driven thermal fate: weaker/baseline/stronger heating,
+   focused warm patch, patchy heating, and gradients.
+3. Cap-limited thermal fate: Capped / Suppressed Cumulus.
+4. Dry-air-aloft / dilution-limited thermal fate.
+5. Deep-convection breakthrough: growing, towering, and cumulonimbus candidates.
+6. Precipitation feedback / cold-pool interaction.
+7. Low stratus / low-cloud layer where appropriate.
 
 Baseline shallow cumulus is the first hero case. Warm rain remains early but does not block the Golden Path.
 

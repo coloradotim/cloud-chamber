@@ -11,14 +11,44 @@ scenario template
 -> dry-run report
 -> local CM1 launch
 -> ingest
--> 3-D visualization
+-> result diagnostics
+-> Thermal Fate inspection
+-> provenance-labeled visualization
 ```
 
 CM1 remains the source of truth. Preview estimates are guidance only, and visualization is an interpretation of CM1-derived data.
 
-Cloud Chamber is a personal, scientifically honest CM1 cloud playground: curated lower-atmosphere experiments, meaningful controls, local-first CM1 runs, replayable saved results, and a beautiful 3-D viewer.
+Cloud Chamber is a personal, scientifically honest CM1 Thermal Fate workbench:
+curated scenario families, meaningful controls, local-first CM1 runs,
+replayable saved results, process diagnostics, selected-region inspection,
+comparison across variants, and beautiful visualization.
 
 Replay / inspect / save is core MVP. Duplicate / tweak / rerun is later.
+
+## Thermal Fate Roadmap
+
+Thermal Fate is the organizing product concept: Cloud Chamber should explain why
+air rises, why some thermals do or do not form cloud, why some clouds stay
+shallow, why others grow taller, why some break through into deep convection,
+and how precipitation feedback can reorganize or suppress convection.
+
+The execution sequence should be:
+
+```text
+#148 Thermal Fate Framework / process contract
+-> #149 global/process diagnostics
+-> #151 selected-region backend diagnostics
+-> #150 Thermal Fate overlays in Explore
+-> #152 Thermal Fate Inspector UI
+-> #153 surface-heating scenario family
+-> #154 deep-convection breakthrough scenario family
+-> #155 precipitation feedback / cold-pool scenario family
+-> #112 renderer upgrade after process needs are clear
+```
+
+Renderer upgrades follow process needs. They should not drive the product
+direction before Cloud Chamber can explain thermal fate with CM1-derived
+diagnostics, selected-region evidence, comparison, and caveats.
 
 ## Golden Path: Baseline Shallow Cumulus
 

@@ -1,6 +1,8 @@
 # Testing And Validation
 
-CM1 is the high-fidelity simulation engine; Cloud Chamber is the local experiment builder, run manager, and visualizer. Tests must preserve that distinction.
+CM1 is the high-fidelity simulation engine; Cloud Chamber is the local
+experiment builder, run manager, result notebook, diagnostics layer, and
+visualizer. Tests must preserve that distinction.
 
 ## Fast CI Tests
 
@@ -143,6 +145,20 @@ native `zh/yh/xh` and `zf/yh/xh` grids, bad field/time/level errors,
 provenance labels, JSON array shape/order, finite and non-finite stats, and
 safe vertical kilometer-to-meter display conversion. They must not implement UI,
 rendering, interpolation, or large-output processing.
+
+Thermal Fate process-diagnostics tests should use tiny synthetic NetCDF
+fixtures and temporary runtime homes only. They should cover thermal-fate labels
+and confidence states, supported / candidate / insufficient-evidence language,
+global process diagnostics, selected-region diagnostics, comparison diagnostics,
+and unavailable/candidate/supported states for deep breakthrough and
+precipitation feedback. Surface-heating scenario tests should cover product
+metadata and package-generation contracts without exposing raw namelist fields
+as the primary UI.
+
+Thermal Fate tests must distinguish direct CM1 fields, derived diagnostics,
+proxy diagnostics, and unsupported claims. Missing fields should produce
+explicit caveats, not crashes or fabricated values. The browser must not parse
+raw NetCDF, and CI must not run real CM1.
 
 2-D field inspector component tests should mock the visualization-ready API
 payloads rather than reading NetCDF in the browser. They should cover opening
