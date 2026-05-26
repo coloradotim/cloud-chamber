@@ -401,6 +401,90 @@ export async function mockCloudChamberApis(page: Page) {
     }),
   );
 
+  await page.route("**/api/results/*/diagnostics/selected-region**", (route) =>
+    json(route, {
+      result_id: "result-baseline",
+      run_id: "dry-run-baseline",
+      scenario_id: "baseline-shallow-cumulus",
+      region: {
+        region_type: "column",
+        requested: { region_type: "column", x_index: 1, y_index: 1, neighborhood: 1 },
+        x: {
+          dimension: "xh",
+          start_index: 0,
+          end_index: 2,
+          start_coordinate: 0,
+          end_coordinate: 3.2,
+          units: "km",
+        },
+        y: {
+          dimension: "yh",
+          start_index: 0,
+          end_index: 2,
+          start_coordinate: 0,
+          end_coordinate: 3.2,
+          units: "km",
+        },
+        vertical: {
+          dimension: "zh",
+          start_index: 0,
+          end_index: 3,
+          start_coordinate: 0.4,
+          end_coordinate: 1.6,
+          units: "km",
+        },
+        native_grid: "zh/yh/xh",
+        cell_count: 36,
+      },
+      diagnostics: {
+        available: true,
+        local_max_w_m_s: 4.5,
+        time_of_local_max_w_seconds: 1800,
+        local_min_w_m_s: -1.1,
+        time_of_local_min_w_seconds: 1800,
+        local_w_max_time_series: [{ time_seconds: 1800, value: 4.5 }],
+        local_w_min_time_series: [{ time_seconds: 1800, value: -1.1 }],
+        local_max_qc_kg_kg: 0.002,
+        time_of_local_max_qc_seconds: 1800,
+        first_local_cloud_time_seconds: 1800,
+        local_cloud_fraction_time_series: [{ time_seconds: 1800, value: 0.5 }],
+        local_qc_max_time_series: [{ time_seconds: 1800, value: 0.002 }],
+        local_cloud_base_time_series: [],
+        local_cloud_top_time_series: [],
+        local_max_qc_height_time_series: [],
+        local_max_w_height_time_series: [],
+        local_rain_present: true,
+        first_local_rain_time_seconds: 1800,
+        local_max_qr_kg_kg: 0.000001,
+        time_of_local_max_qr_seconds: 1800,
+        local_qr_max_time_series: [{ time_seconds: 1800, value: 0.000001 }],
+      },
+      comparison_to_domain: {
+        local_max_w_fraction_of_domain: 0.64,
+        local_max_qc_fraction_of_domain: 0.91,
+        local_first_cloud_time_delta_seconds: 0,
+        local_cloud_top_fraction_of_domain: 0.75,
+        local_first_rain_time_delta_seconds: 0,
+        caveats: [],
+      },
+      interpretation: {
+        thermal_fate_label: "Growing cumulus",
+        confidence: "candidate",
+        main_limiting_factor: "unknown",
+        summary: "Cloud water appeared locally where upward motion strengthened.",
+        caveats: ["selected_region_is_not_cloud_object_tracking"],
+      },
+      provenance: {
+        ...fieldCatalog("result-baseline").provenance,
+        processing_method: "backend_xarray_selected_region_diagnostics",
+        rendering_method: "thermal_fate_inspector_summary",
+        provenance_label:
+          "CM1-derived selected-region diagnostics; native-grid summary; browser receives bounded payload only",
+      },
+      caveats: ["native_grid_region_summary_no_interpolation"],
+    }),
+  );
+
   await page.route("**/api/storage/inventory", (route) =>
     json(route, {
       runtime_home: "/tmp/cloud-chamber-e2e",

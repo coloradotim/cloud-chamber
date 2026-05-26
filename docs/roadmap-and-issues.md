@@ -68,6 +68,13 @@ views can show Thermal Fate process modes, direct-field evidence, candidate or
 unsupported states, and caveats while preserving the existing slice/point-cloud
 workflows. Selected-region click/brush inspection remains #152.
 
+#152 adds the first Thermal Fate Inspector UI. Explore / 2-D Slices can now turn
+a slice-cell or bounded center selection into a backend selected-region
+diagnostics request, then render `What happened here?` with the returned label,
+confidence, local `qc`/`w`/rain summaries, selected bounds, domain comparison,
+caveats, and provenance. The browser still does not parse raw NetCDF or compute
+scientific classification.
+
 ## Golden Path: Baseline Shallow Cumulus
 
 Baseline Shallow Cumulus is the first complete product loop:

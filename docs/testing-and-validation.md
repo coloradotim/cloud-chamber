@@ -179,6 +179,14 @@ deep-breakthrough caveats, and the guarantee that frontend code displays
 backend-derived evidence instead of parsing raw NetCDF or inventing process
 classification.
 
+Thermal Fate Inspector UI tests should mock the selected-region diagnostics API.
+They should cover selecting a slice cell, selecting a bounded center point or
+small box, clearing selection, successful inspector payloads, backend failures,
+thermal-fate label/confidence/caveats, local `qc`/`w`/rain summaries,
+selected-region bounds, comparison-to-domain values, technical provenance, and
+the guarantee that the frontend presents backend scientific classification
+rather than computing it.
+
 Thermal Fate tests must distinguish direct CM1 fields, derived diagnostics,
 proxy diagnostics, and unsupported claims. Missing fields should produce
 explicit caveats, not crashes or fabricated values. The browser must not parse
