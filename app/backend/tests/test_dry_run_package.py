@@ -9,6 +9,7 @@ from cloud_chamber.run_manifest import load_run_manifest
 REPO_ROOT = Path(__file__).resolve().parents[3]
 BASELINE_TEMPLATE = REPO_ROOT / "scenarios/lower-atmosphere/baseline-shallow-cumulus.json"
 DRY_FAILED_TEMPLATE = REPO_ROOT / "scenarios/lower-atmosphere/dry-failed-cumulus.json"
+CAPPED_TEMPLATE = REPO_ROOT / "scenarios/lower-atmosphere/capped-suppressed-cumulus.json"
 
 
 def load_baseline_template() -> object:
@@ -17,6 +18,10 @@ def load_baseline_template() -> object:
 
 def load_dry_failed_template() -> object:
     return json.loads(DRY_FAILED_TEMPLATE.read_text())
+
+
+def load_capped_template() -> object:
+    return json.loads(CAPPED_TEMPLATE.read_text())
 
 
 def test_generate_dry_run_package_writes_expected_files_to_temp_runtime_home(
@@ -261,3 +266,59 @@ def test_dry_failed_package_preserves_baseline_namelist_and_drives_sounding_drie
     assert dry_sounding[1].split()[0:2] == baseline_sounding[1].split()[0:2]
     assert dry_sounding[1].split()[3:] == baseline_sounding[1].split()[3:]
     assert dry_sounding[-1] == baseline_sounding[-1]
+
+
+def test_capped_suppressed_package_preserves_baseline_namelist_and_strengthens_cap(
+    tmp_path: Path,
+) -> None:
+    baseline = generate_dry_run_package(
+        scenario_data=load_baseline_template(),
+        runtime_home=tmp_path,
+        run_id="run-baseline",
+        run_size_preset="quick_look",
+    )
+    capped = generate_dry_run_package(
+        scenario_data=load_capped_template(),
+        runtime_home=tmp_path,
+        run_id="run-capped",
+        run_size_preset="quick_look",
+    )
+
+    baseline_namelist = (baseline.package_dir / "namelist.input").read_text()
+    capped_namelist = (capped.package_dir / "namelist.input").read_text()
+    baseline_sounding = (baseline.package_dir / "input_sounding").read_text().splitlines()
+    capped_sounding = (capped.package_dir / "input_sounding").read_text().splitlines()
+    capped_report = json.loads(capped.report_path.read_text())
+    capped_manifest = load_run_manifest(capped.manifest_path)
+
+    assert capped_report["scenario_id"] == "capped-suppressed-cumulus"
+    assert capped_report["controls"]["cap_strength"] == "stronger"
+    assert capped_report["controls"]["cap_height"] == "baseline"
+    assert capped_report["variant_metadata"]["moisture_profile"] == "baseline"
+    assert capped_report["variant_metadata"]["stability_profile"] == "stronger_cap"
+    assert capped_manifest.controls["cap_strength"] == "stronger"
+    assert capped_namelist == baseline_namelist
+    assert "timax  = 10800.0," in capped_namelist
+    assert "tapfrq =  900.0," in capped_namelist
+    assert "isnd      = 17," in capped_namelist
+    assert "output_format    = 2," in capped_namelist
+
+    assert len(capped_sounding) == len(baseline_sounding)
+    assert capped_sounding[0] == baseline_sounding[0]
+    assert capped_sounding[1] == baseline_sounding[1]
+    assert capped_sounding[2] == baseline_sounding[2]
+    for baseline_line, capped_line in zip(
+        baseline_sounding[1:],
+        capped_sounding[1:],
+        strict=True,
+    ):
+        baseline_parts = baseline_line.split()
+        capped_parts = capped_line.split()
+        assert capped_parts[0] == baseline_parts[0]
+        assert capped_parts[2:] == baseline_parts[2:]
+
+    assert float(capped_sounding[3].split()[1]) > float(baseline_sounding[3].split()[1])
+    assert float(capped_sounding[4].split()[1]) > float(baseline_sounding[4].split()[1])
+    assert float(capped_sounding[5].split()[1]) > float(baseline_sounding[5].split()[1])
+    assert capped_sounding[6] == baseline_sounding[6]
+    assert not list(capped.package_dir.glob("*.nc"))

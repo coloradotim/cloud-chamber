@@ -251,18 +251,18 @@ Capped / Suppressed:
   moisture + thermals okay, but stronger cap -> shallow/limited cloud
 ```
 
-The first implementation follow-up is #140. It should start from the accepted
-external-sounding Baseline Shallow Cumulus path and vary only:
+The first implementation, #140, starts from the accepted external-sounding
+Baseline Shallow Cumulus path and varies only:
 
 ```text
 cap_strength = stronger
 ```
 
-It should keep `cap_height`, `low_level_humidity`, and `surface_heating` at the
-accepted baseline. The likely CM1-facing adjustment is a stronger stable layer
-in the generated external `input_sounding` potential-temperature profile near
-the cap. Do not use the old compact quick-look derivative, do not tune moisture,
-and do not vary cap height in the first implementation.
+It keeps `cap_height`, `low_level_humidity`, and `surface_heating` at the
+accepted baseline. The CM1-facing adjustment is a stronger stable layer in the
+generated external `input_sounding` potential-temperature profile near the cap.
+Do not use the old compact quick-look derivative, do not tune moisture, and do
+not vary cap height in the first implementation.
 
 Expected diagnostics:
 
@@ -348,6 +348,7 @@ Implementation anchor:
 - #107 adds the first comparison workflow over those accepted result cards under Results / Compare: Baseline Shallow Cumulus quick-look vs Dry Failed Cumulus quick-look. The first version is a side-by-side result-card comparison with cloud/rain outcomes, first cloud time, max `qc`, max/min `w`, caveats, output/time-step summaries, saved/protected state, and quick actions into Explore. It keeps technical provenance secondary.
 - #116 adds side-by-side 2-D slice comparison for that accepted lab pair using the existing #72/#73 visualization-ready fields/slice API. It compares `qc` and `w`, supports shared output-index selection, shows units/stats/provenance, and keeps raw NetCDF parsing out of the browser.
 - #110 adds the disciplined Baseline Shallow Cumulus low-level humidity ladder. `drier`, `baseline`, and `more_humid` preserve the accepted external-sounding namelist family and change only the generated `input_sounding` moisture profile for one-control-at-a-time learning. Initial local quick-look validation completed and ingested: `drier` produced no cloud/rain with meaningful vertical motion, while `more_humid` produced earlier cloud, rain, stronger `qc`, and stronger updrafts.
+- #140 implements the first Capped / Suppressed Cumulus stronger-cap package from the accepted external-sounding baseline. The package preserves the namelist family and changes only potential-temperature / stability near the cap for `cap_strength = stronger`. Validation run `dry-run-capped-suppressed-20260526015634` completed and ingested 13 model-output time steps with `cloud formed; rain detected`, but cloud top, max `qc`, cloud fraction, max/min `w`, and max rain water were all reduced relative to the accepted baseline. Treat it as `accepted_with_notes` / cap-limited candidate until process diagnostics can directly explain the cap limitation.
 
 ## M4 3-D Visualizer MVP
 

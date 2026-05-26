@@ -4,10 +4,10 @@
   "display_name": "Capped / Suppressed Cumulus",
   "category": "lower-atmosphere",
   "description": "A contrast case focused on how a stronger cap can suppress or delay shallow cumulus.",
-  "physical_question": "How do cap strength and cap height limit rising thermals and cloud depth?",
-  "learning_goals": ["Identify cap-limited cloud behavior.", "Compare cap strength and cap height against the baseline."],
-  "intended_behavior": "A capped lower-atmosphere case with delayed, shallow, or suppressed clouds.",
-  "expected_behavior": "Clouds may remain shallow, form late, or fail if the cap is too strong.",
+  "physical_question": "How does a stronger cap suppress or limit shallow-cumulus growth even when moisture and boundary-layer thermals are available?",
+  "learning_goals": ["Identify cap-limited cloud behavior.", "Compare stronger-cap cloud depth, cloud water, and rain against the baseline.", "Separate cap/stability limitation from moisture-limited Dry Failed behavior."],
+  "intended_behavior": "A stronger-cap contrast around the accepted external-sounding Baseline Shallow Cumulus setup.",
+  "expected_behavior": "Moisture and thermals remain available, but clouds should be shallower, weaker, delayed, or less rainy than baseline.",
   "controls": [
     {
       "id": "cap_strength",
@@ -21,7 +21,7 @@
         {"value": "baseline", "label": "Baseline"},
         {"value": "stronger", "label": "Stronger"}
       ],
-      "cm1_mapping_notes": "Future mapping should adjust stability near the cap."
+      "cm1_mapping_notes": "Maps to a stronger potential-temperature/stability structure near the cap in the generated external input_sounding while preserving the accepted baseline namelist family."
     },
     {
       "id": "cap_height",
@@ -35,7 +35,7 @@
         {"value": "baseline", "label": "Baseline"},
         {"value": "higher", "label": "Higher"}
       ],
-      "cm1_mapping_notes": "Future mapping should adjust the vertical sounding structure."
+      "cm1_mapping_notes": "Held at the accepted baseline for the first Capped / Suppressed implementation."
     }
   ],
   "run_size_presets": [
@@ -56,7 +56,7 @@
     "namelist_template": "templates/lower-atmosphere/capped-suppressed-cumulus/namelist.input.j2",
     "input_sounding_template": "templates/lower-atmosphere/capped-suppressed-cumulus/input_sounding.j2",
     "runtime_files_needed": ["LANDUSE.TBL"],
-    "mapping_notes": "Placeholder mapping until local CM1 validation."
+    "mapping_notes": "Derived from the accepted external-sounding Baseline Shallow Cumulus path by strengthening only the potential-temperature/stability structure near the cap."
   },
   "visualization_defaults": {
     "primary_field": "qc",
@@ -67,10 +67,10 @@
   "variation_policy": {
     "baseline_scenario_id": "baseline-shallow-cumulus",
     "one_control_at_a_time": true,
-    "suggested_controls": ["cap_strength", "cap_height"],
-    "non_goals": ["large parameter sweeps"]
+    "suggested_controls": ["cap_strength"],
+    "non_goals": ["large parameter sweeps", "varying cap height in the first implementation", "varying low-level humidity", "varying surface heating"]
   },
   "warnings": ["Preview estimates are guidance only."],
-  "limitations": ["Cap behavior requires local/manual CM1 validation."],
+  "limitations": ["Cap behavior requires local/manual CM1 validation.", "The first implementation intentionally varies only cap strength; cap height, low-level humidity, and surface heating remain baseline."],
   "advanced_settings_notes": "Raw CM1 settings remain advanced/developer-only."
 }

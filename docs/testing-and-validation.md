@@ -402,14 +402,30 @@ caveats and target-field non-finite checks
 Do not run Dry Failed CM1 cases in CI and do not commit generated output,
 NetCDF files, logs, runtime files, local reports, or copied `LANDUSE.TBL`.
 
-Capped / Suppressed Cumulus planning tests should remain docs/planning-only
-until #140 implements package generation. The future automated tests should use
-temporary runtime homes and assert that `cap_strength = stronger` changes only
-the generated external `input_sounding` stability structure near the cap while
-preserving the accepted external-sounding baseline's grid/domain, runtime
-preset, surface/ocean/flux settings, surface stress/roughness path, Rayleigh
-damping, turbulence/SGS settings, boundary conditions, NetCDF output,
-`LANDUSE.TBL` staging behavior, low-level humidity, and surface heating.
+Capped / Suppressed Cumulus package tests use temporary runtime homes and assert
+that `cap_strength = stronger` changes only the generated external
+`input_sounding` stability structure near the cap while preserving the accepted
+external-sounding baseline's grid/domain, runtime preset, surface/ocean/flux
+settings, surface stress/roughness path, Rayleigh damping, turbulence/SGS
+settings, boundary conditions, NetCDF output, `LANDUSE.TBL` staging behavior,
+low-level humidity, and surface heating.
+
+The first Capped / Suppressed stronger-cap validation run,
+`dry-run-capped-suppressed-20260526015634`, completed local CM1 from the
+generated package with `exit_code = 0`, produced NetCDF output, ingested 13
+model-output time steps from 0 to 10800 seconds, and produced `cloud formed;
+rain detected`. The package was 196 MB and runtime was about 48.7 minutes on the
+local machine. Compared with the accepted external-sounding baseline, it
+reduced cloud top from about 2.14 km to about 1.34 km, reduced
+`max_qc_kg_kg` from 0.001976807601749897 to 0.0013941252836957574, reduced max
+cloud fraction from about 0.01273 to about 0.00847, reduced max/min `w` from
+about 6.27 / -4.42 m/s to about 3.52 / -1.67 m/s, and reduced max `qr` from
+about `1.3015507647651248e-05` to `4.473397439141991e-06`. Rain still occurred
+and first cloud time stayed at 1800 seconds, so the accepted status is
+`accepted_with_notes` / cap-limited candidate. Stderr reported
+`IEEE_UNDERFLOW_FLAG`; target diagnostics remained finite and usable, and the
+existing cloud-base/top vertical-coordinate caveat remains because NetCDF
+vertical coordinates are in kilometers.
 
 Future Capped / Suppressed manual validation should record:
 

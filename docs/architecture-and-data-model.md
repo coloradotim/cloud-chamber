@@ -149,23 +149,32 @@ changes only the generated `input_sounding` moisture values for `drier` or
 `more_humid`. The namelist, runtime preset, NetCDF output, and runtime-file
 staging remain the same for the selected preset.
 
-Capped / Suppressed Cumulus should also branch from the accepted
-external-sounding Baseline Shallow Cumulus family, but it is not a moisture
-experiment. The first planned implementation (#140) should preserve the
-accepted baseline grid/domain, vertical spacing, domain top, runtime/cadence
-model, surface/ocean/flux settings, surface stress/roughness path, Rayleigh
-damping, turbulence/SGS settings, boundary conditions, NetCDF output,
-`LANDUSE.TBL` staging, low-level humidity, surface heating, and the baseline
-wind profile. It should change only the potential-temperature / stability
-structure near the capping layer in the generated external `input_sounding`.
+Capped / Suppressed Cumulus also branches from the accepted external-sounding
+Baseline Shallow Cumulus family, but it is not a moisture experiment. The first
+implementation (#140) preserves the accepted baseline grid/domain, vertical
+spacing, domain top, runtime/cadence model, surface/ocean/flux settings,
+surface stress/roughness path, Rayleigh damping, turbulence/SGS settings,
+boundary conditions, NetCDF output, `LANDUSE.TBL` staging, low-level humidity,
+surface heating, and the baseline wind profile. It changes only the
+potential-temperature / stability structure near the capping layer in the
+generated external `input_sounding`.
 
 Architecturally, the product control is `cap_strength = stronger`. Cap height
 stays at the accepted baseline for the first implementation; lower cap height
-is later work. The scenario should not reuse the invalid compact quick-look
-derivative, should not dry the low-level moisture profile, and should not vary
-surface heating. Its result-card interpretation should be cap/stability-limited:
-moisture and thermals are present, but the stronger cap limits vertical cloud
-growth.
+is later work. The scenario does not reuse the invalid compact quick-look
+derivative, does not dry the low-level moisture profile, and does not vary
+surface heating. The package contract records the selected `cap_strength` and
+`stability_profile = stronger_cap` while preserving the baseline moisture
+profile. Its result-card interpretation should use cap-limited candidate
+language unless current diagnostics directly support a stronger process claim.
+
+The first stronger-cap validation run,
+`dry-run-capped-suppressed-20260526015634`, completed and ingested with 13
+model-output time steps. It reduced cloud top, max `qc`, cloud fraction, max/min
+`w`, and max `qr` relative to the accepted external-sounding baseline while
+still producing rain. That is enough to treat it as an accepted-with-notes
+cap/stability contrast candidate, not enough to claim rain suppression or a
+fully diagnosed cap-limitation mechanism.
 
 Cloud-scale defaults for the first lower-atmosphere contract are:
 

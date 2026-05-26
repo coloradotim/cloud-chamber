@@ -500,11 +500,10 @@ surface_heating:
   baseline for first implementation
 ```
 
-The first implementation follow-up is #140. It should use
-`cap_strength = stronger`, keep cap height at the accepted baseline, keep
-low-level humidity and surface heating at baseline, and change only the
-potential-temperature / stability structure near the capping layer in the
-generated external `input_sounding`.
+The first implementation, #140, uses `cap_strength = stronger`, keeps cap
+height at the accepted baseline, keeps low-level humidity and surface heating
+at baseline, and changes only the potential-temperature / stability structure
+near the capping layer in the generated external `input_sounding`.
 
 Expected MVP target:
 
@@ -528,6 +527,22 @@ available moisture plus limited cloud depth because of the stronger cap. If the
 run becomes indistinguishable from Dry Failed Cumulus, or if diagnostics cannot
 separate cap limitation from moisture limitation, the scenario should be marked
 `needs_calibration` rather than overclaimed.
+
+The first stronger-cap validation run,
+`dry-run-capped-suppressed-20260526015634`, is accepted with notes as a
+cap-limited candidate. It completed local CM1 with `exit_code = 0`, produced
+NetCDF output, ingested 13 model-output time steps from 0 to 10800 seconds, and
+produced `cloud formed; rain detected`. Compared with the accepted
+external-sounding Baseline Shallow Cumulus quick-look, it reduced cloud top
+from about 2.14 km to about 1.34 km, reduced `max_qc_kg_kg` from
+0.001976807601749897 to 0.0013941252836957574, reduced max cloud fraction from
+about 0.01273 to about 0.00847, reduced max/min vertical velocity from about
+6.27 / -4.42 m/s to about 3.52 / -1.67 m/s, and reduced max rain water from
+about `1.3015507647651248e-05` to `4.473397439141991e-06`. Rain still occurred
+and first cloud time stayed at 1800 seconds, so the result should not be
+overstated as fully rain-suppressed or definitively process-diagnosed yet.
+Current language should remain candidate/accepted-with-notes until process
+diagnostics can directly explain cap limitation.
 
 Default cloud-scale assumptions:
 
