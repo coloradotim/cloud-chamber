@@ -39,6 +39,11 @@ visualization. It should distinguish global run diagnostics, local
 selected-region diagnostics, comparison diagnostics, and visualizer
 interpretation. The browser should continue to receive bounded summaries,
 visualization-ready slices/points, and provenance labels rather than raw NetCDF.
+Explore's Thermal Fate Inspector follows that boundary: slice-cell or bounded
+region selections are sent to the backend selected-region diagnostics endpoint,
+and the frontend renders only the returned local summaries, conservative label,
+confidence, caveats, selected native-grid bounds, domain comparison, and
+provenance.
 
 ## Suggested Stack
 

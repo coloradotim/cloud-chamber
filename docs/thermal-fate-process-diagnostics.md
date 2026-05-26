@@ -83,6 +83,13 @@ NetCDF ingest
 -> renderer upgrade decision
 ```
 
+The first Thermal Fate Inspector UI is bounded and backend-driven. In Explore /
+2-D Slices, a user can click a displayed slice cell or choose a small bounded
+point/box selection, then the frontend calls the selected-region diagnostics
+API and renders the returned `What happened here?` story. The UI may map labels
+to badges and layout, but it must not compute the fate label, confidence,
+limiting factor, or unsupported scientific explanation in browser code.
+
 ## Thermal Fate Ladder
 
 Use conservative labels that can be marked as `supported`, `candidate`,

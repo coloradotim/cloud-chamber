@@ -308,6 +308,91 @@ type PointCloudResponse = {
   caveats: string[];
 };
 
+type RegionType = "point" | "column" | "box";
+
+type SelectedRegionRequest = {
+  regionType: RegionType;
+  xIndex?: number;
+  yIndex?: number;
+  zIndex?: number;
+  xStart?: number;
+  xEnd?: number;
+  yStart?: number;
+  yEnd?: number;
+  zStart?: number;
+  zEnd?: number;
+  neighborhood?: number;
+};
+
+type AxisSelection = {
+  dimension: string;
+  start_index: number;
+  end_index: number;
+  start_coordinate: number | string | null;
+  end_coordinate: number | string | null;
+  units: string | null;
+};
+
+type TimeValue = {
+  time_seconds: number | null;
+  value: number | null;
+};
+
+type SelectedRegionDiagnosticsResponse = {
+  result_id: string;
+  run_id: string;
+  scenario_id: string;
+  region: {
+    region_type: RegionType;
+    requested: Record<string, unknown>;
+    x: AxisSelection | null;
+    y: AxisSelection | null;
+    vertical: AxisSelection | null;
+    native_grid: string | null;
+    cell_count: number | null;
+  };
+  diagnostics: {
+    available: boolean;
+    local_max_w_m_s: number | null;
+    time_of_local_max_w_seconds: number | null;
+    local_min_w_m_s: number | null;
+    time_of_local_min_w_seconds: number | null;
+    local_w_max_time_series: TimeValue[];
+    local_w_min_time_series: TimeValue[];
+    local_max_qc_kg_kg: number | null;
+    time_of_local_max_qc_seconds: number | null;
+    first_local_cloud_time_seconds: number | null;
+    local_cloud_fraction_time_series: TimeValue[];
+    local_qc_max_time_series: TimeValue[];
+    local_cloud_base_time_series: TimeValue[];
+    local_cloud_top_time_series: TimeValue[];
+    local_max_qc_height_time_series: TimeValue[];
+    local_max_w_height_time_series: TimeValue[];
+    local_rain_present: boolean;
+    first_local_rain_time_seconds: number | null;
+    local_max_qr_kg_kg: number | null;
+    time_of_local_max_qr_seconds: number | null;
+    local_qr_max_time_series: TimeValue[];
+  };
+  comparison_to_domain: {
+    local_max_w_fraction_of_domain: number | null;
+    local_max_qc_fraction_of_domain: number | null;
+    local_first_cloud_time_delta_seconds: number | null;
+    local_cloud_top_fraction_of_domain: number | null;
+    local_first_rain_time_delta_seconds: number | null;
+    caveats: string[];
+  };
+  interpretation: {
+    thermal_fate_label: string;
+    confidence: ProcessSupport;
+    main_limiting_factor: string;
+    summary: string;
+    caveats: string[];
+  };
+  provenance: ProvenancePayload;
+  caveats: string[];
+};
+
 type FieldViewDefaults = {
   field: string;
   time_index: number;
@@ -559,6 +644,34 @@ async function fetchVisualizationPointCloud(
     throw new Error(await responseError(response, "Unable to load cloud-water point cloud."));
   }
   return response.json() as Promise<PointCloudResponse>;
+}
+
+async function fetchSelectedRegionDiagnostics(
+  resultId: string,
+  request: SelectedRegionRequest,
+): Promise<SelectedRegionDiagnosticsResponse> {
+  const search = new URLSearchParams({
+    region_type: request.regionType,
+    neighborhood: String(request.neighborhood ?? 0),
+  });
+  addOptionalIndex(search, "x_index", request.xIndex);
+  addOptionalIndex(search, "y_index", request.yIndex);
+  addOptionalIndex(search, "z_index", request.zIndex);
+  addOptionalIndex(search, "x_start", request.xStart);
+  addOptionalIndex(search, "x_end", request.xEnd);
+  addOptionalIndex(search, "y_start", request.yStart);
+  addOptionalIndex(search, "y_end", request.yEnd);
+  addOptionalIndex(search, "z_start", request.zStart);
+  addOptionalIndex(search, "z_end", request.zEnd);
+  const response = await fetch(`/api/results/${resultId}/diagnostics/selected-region?${search}`);
+  if (!response.ok) {
+    throw new Error(await responseError(response, "Unable to inspect the selected region."));
+  }
+  return response.json() as Promise<SelectedRegionDiagnosticsResponse>;
+}
+
+function addOptionalIndex(search: URLSearchParams, key: string, value: number | undefined) {
+  if (value !== undefined) search.set(key, String(value));
 }
 
 async function responseError(response: Response, fallback: string): Promise<string> {
@@ -3932,6 +4045,11 @@ function FieldInspector({ result }: { result: ResultCard }) {
   const [processMode, setProcessMode] = useState<ProcessMode>("thermal_fate");
   const [horizontalSlice, setHorizontalSlice] = useState<SliceResponse | null>(null);
   const [verticalSlice, setVerticalSlice] = useState<SliceResponse | null>(null);
+  const [selectedRegion, setSelectedRegion] = useState<SelectedRegionRequest | null>(null);
+  const [regionDiagnostics, setRegionDiagnostics] =
+    useState<SelectedRegionDiagnosticsResponse | null>(null);
+  const [regionStatus, setRegionStatus] = useState("Select a slice cell to inspect a region.");
+  const [regionError, setRegionError] = useState<string | null>(null);
   const [inspectorStatus, setInspectorStatus] = useState("Loading fields...");
   const [inspectorError, setInspectorError] = useState<string | null>(null);
 
@@ -3943,6 +4061,10 @@ function FieldInspector({ result }: { result: ResultCard }) {
     setViewDefaults(null);
     setHorizontalSlice(null);
     setVerticalSlice(null);
+    setSelectedRegion(null);
+    setRegionDiagnostics(null);
+    setRegionError(null);
+    setRegionStatus("Select a slice cell to inspect a region.");
     setViewMode("vertical_x");
     setProcessMode("thermal_fate");
     Promise.all([
@@ -4038,6 +4160,36 @@ function FieldInspector({ result }: { result: ResultCard }) {
     verticalOrientation,
   ]);
 
+  useEffect(() => {
+    if (!selectedRegion) {
+      setRegionDiagnostics(null);
+      setRegionError(null);
+      setRegionStatus("Select a slice cell to inspect a region.");
+      return;
+    }
+    let active = true;
+    setRegionDiagnostics(null);
+    setRegionError(null);
+    setRegionStatus("Loading selected-region diagnostics...");
+    fetchSelectedRegionDiagnostics(result.result_id, selectedRegion)
+      .then((payload) => {
+        if (!active) return;
+        setRegionDiagnostics(payload);
+        setRegionStatus("Selected-region diagnostics loaded");
+      })
+      .catch((caught: unknown) => {
+        if (!active) return;
+        setRegionDiagnostics(null);
+        setRegionError(
+          caught instanceof Error ? caught.message : "Unable to inspect the selected region.",
+        );
+        setRegionStatus("Selected-region request failed");
+      });
+    return () => {
+      active = false;
+    };
+  }, [result.result_id, selectedRegion]);
+
   const timeOptions = selectedField?.time_coordinate_values ?? [];
   const verticalSize = selectedField?.coordinate_names.vertical
     ? selectedField.shape[selectedField.dimensions.indexOf(selectedField.coordinate_names.vertical)]
@@ -4049,6 +4201,34 @@ function FieldInspector({ result }: { result: ResultCard }) {
     ? selectedField.shape[selectedField.dimensions.indexOf(selectedField.coordinate_names.x)]
     : 1;
   const verticalSliceMax = verticalOrientation === "vertical_x" ? ySize : xSize;
+  const activeSlice = viewMode === "horizontal" ? horizontalSlice : verticalSlice;
+
+  function selectRegionFromSlice(slice: SliceResponse, rowIndex: number, columnIndex: number) {
+    setSelectedRegion(selectionFromSlice(slice, rowIndex, columnIndex, "column"));
+  }
+
+  function selectPointFromActiveSlice() {
+    if (!activeSlice) return;
+    const rowIndex = Math.floor(activeSlice.values.length / 2);
+    const columnIndex = Math.floor((activeSlice.values[0]?.length ?? 1) / 2);
+    setSelectedRegion(selectionFromSlice(activeSlice, rowIndex, columnIndex, "point"));
+  }
+
+  function selectBoxFromActiveSlice() {
+    if (!activeSlice) return;
+    const rowIndex = Math.floor(activeSlice.values.length / 2);
+    const columnIndex = Math.floor((activeSlice.values[0]?.length ?? 1) / 2);
+    const center = selectionFromSlice(activeSlice, rowIndex, columnIndex, "column");
+    setSelectedRegion({
+      regionType: "box",
+      xStart: Math.max(0, (center.xIndex ?? 0) - 1),
+      xEnd: (center.xIndex ?? 0) + 1,
+      yStart: Math.max(0, (center.yIndex ?? 0) - 1),
+      yEnd: (center.yIndex ?? 0) + 1,
+      zStart: Math.max(0, (center.zIndex ?? 0) - 1),
+      zEnd: (center.zIndex ?? 0) + 1,
+    });
+  }
 
   return (
     <section className="field-inspector" aria-labelledby="field-inspector-title">
@@ -4189,17 +4369,39 @@ function FieldInspector({ result }: { result: ResultCard }) {
             slice={viewMode === "horizontal" ? horizontalSlice : verticalSlice}
           />
 
+          <SelectedRegionControls
+            selectedRegion={selectedRegion}
+            regionStatus={regionStatus}
+            onSelectPoint={selectPointFromActiveSlice}
+            onSelectBox={selectBoxFromActiveSlice}
+            onClear={() => setSelectedRegion(null)}
+          />
+
           <div className={viewMode === "compare" ? "slice-grid" : "primary-slice-grid"}>
             {(viewMode === "horizontal" || viewMode === "compare") && (
-              <SlicePanel title="Horizontal slice" slice={horizontalSlice} />
+              <SlicePanel
+                title="Horizontal slice"
+                slice={horizontalSlice}
+                selectedRegion={selectedRegion}
+                onSelectRegion={selectRegionFromSlice}
+              />
             )}
             {(viewMode === "vertical_x" || viewMode === "vertical_y" || viewMode === "compare") && (
               <SlicePanel
                 title={viewMode === "vertical_y" ? "Vertical Y slice" : "Vertical X slice"}
                 slice={verticalSlice}
+                selectedRegion={selectedRegion}
+                onSelectRegion={selectRegionFromSlice}
               />
             )}
           </div>
+
+          <SelectedRegionInspector
+            selectedRegion={selectedRegion}
+            diagnostics={regionDiagnostics}
+            status={regionStatus}
+            error={regionError}
+          />
 
           <details>
             <summary>Technical field details</summary>
@@ -4216,7 +4418,17 @@ function FieldInspector({ result }: { result: ResultCard }) {
   );
 }
 
-function SlicePanel({ title, slice }: { title: string; slice: SliceResponse | null }) {
+function SlicePanel({
+  title,
+  slice,
+  selectedRegion,
+  onSelectRegion,
+}: {
+  title: string;
+  slice: SliceResponse | null;
+  selectedRegion?: SelectedRegionRequest | null;
+  onSelectRegion?: (slice: SliceResponse, rowIndex: number, columnIndex: number) => void;
+}) {
   if (!slice) {
     return (
       <section className="slice-panel" aria-label={title}>
@@ -4248,7 +4460,12 @@ function SlicePanel({ title, slice }: { title: string; slice: SliceResponse | nu
             : ""}
         </p>
       )}
-      <SliceHeatmap title={title} slice={slice} />
+      <SliceHeatmap
+        title={title}
+        slice={slice}
+        selectedRegion={selectedRegion}
+        onSelectRegion={onSelectRegion}
+      />
       <div className="heatmap-legend" aria-label={`${title} color scale`}>
         <span>{formatMaybeNumber(slice.stats.min, slice.field.units)}</span>
         <span className="heatmap-scale" />
@@ -4363,19 +4580,208 @@ function ProcessOverlayPanel({
   );
 }
 
-function SliceHeatmap({ title, slice }: { title: string; slice: SliceResponse }) {
+function SelectedRegionControls({
+  selectedRegion,
+  regionStatus,
+  onSelectPoint,
+  onSelectBox,
+  onClear,
+}: {
+  selectedRegion: SelectedRegionRequest | null;
+  regionStatus: string;
+  onSelectPoint: () => void;
+  onSelectBox: () => void;
+  onClear: () => void;
+}) {
+  return (
+    <section className="selected-region-controls" aria-label="Selected-region controls">
+      <div>
+        <p className="eyebrow">What happened here?</p>
+        <h3>Thermal Fate Inspector</h3>
+        <p>
+          Click a slice cell to inspect the nearest column, or use the buttons below for a bounded
+          point or box around the current view center.
+        </p>
+      </div>
+      <div className="segmented-buttons">
+        <button type="button" onClick={onSelectPoint}>
+          Inspect center point
+        </button>
+        <button type="button" onClick={onSelectBox}>
+          Inspect small box
+        </button>
+        <button type="button" onClick={onClear} disabled={!selectedRegion}>
+          Clear selection
+        </button>
+      </div>
+      <p className="state-chip">{selectedRegion ? selectionLabel(selectedRegion) : regionStatus}</p>
+    </section>
+  );
+}
+
+function SelectedRegionInspector({
+  selectedRegion,
+  diagnostics,
+  status,
+  error,
+}: {
+  selectedRegion: SelectedRegionRequest | null;
+  diagnostics: SelectedRegionDiagnosticsResponse | null;
+  status: string;
+  error: string | null;
+}) {
+  return (
+    <section className="selected-region-inspector" aria-label="Thermal Fate Inspector">
+      <div className="section-heading compact-heading">
+        <div>
+          <p className="eyebrow">Selected region</p>
+          <h3>What happened here?</h3>
+        </div>
+        <p className="state-chip">{status}</p>
+      </div>
+
+      {!selectedRegion && (
+        <p>
+          No region is selected. Select a point, column, or box to request backend Thermal Fate
+          diagnostics.
+        </p>
+      )}
+
+      {error && <p role="alert">{error}</p>}
+
+      {diagnostics && (
+        <>
+          <div className="inspector-summary">
+            <StatusBadge
+              label={diagnostics.interpretation.thermal_fate_label}
+              tone={
+                diagnostics.interpretation.confidence === "supported"
+                  ? "good"
+                  : diagnostics.interpretation.confidence === "candidate"
+                    ? "neutral"
+                    : "warning"
+              }
+            />
+            <p>{diagnostics.interpretation.summary}</p>
+          </div>
+
+          <dl className="metric-grid">
+            <Metric
+              label="Confidence"
+              value={processSupportLabel(diagnostics.interpretation.confidence)}
+            />
+            <Metric
+              label="Main limiting factor"
+              value={humanize(diagnostics.interpretation.main_limiting_factor)}
+            />
+            <Metric label="Region type" value={humanize(diagnostics.region.region_type)} />
+            <Metric label="Native grid" value={diagnostics.region.native_grid ?? "Unavailable"} />
+            <Metric label="Cell count" value={String(diagnostics.region.cell_count ?? "unknown")} />
+            <Metric
+              label="First local cloud time"
+              value={formatSeconds(diagnostics.diagnostics.first_local_cloud_time_seconds)}
+            />
+            <Metric
+              label="Local max qc"
+              value={formatScientific(diagnostics.diagnostics.local_max_qc_kg_kg, "kg/kg")}
+            />
+            <Metric
+              label="Local max w"
+              value={formatNumber(diagnostics.diagnostics.local_max_w_m_s, "m/s")}
+            />
+            <Metric
+              label="Local min w"
+              value={formatNumber(diagnostics.diagnostics.local_min_w_m_s, "m/s")}
+            />
+            <Metric
+              label="Local rain"
+              value={diagnostics.diagnostics.local_rain_present ? "Rain detected" : "No rain detected"}
+            />
+          </dl>
+
+          <section aria-label="Selected-region bounds">
+            <h4>Selected-region bounds</h4>
+            <dl className="metric-grid">
+              <Metric label="x" value={axisSelectionLabel(diagnostics.region.x)} />
+              <Metric label="y" value={axisSelectionLabel(diagnostics.region.y)} />
+              <Metric label="vertical" value={axisSelectionLabel(diagnostics.region.vertical)} />
+            </dl>
+          </section>
+
+          <section aria-label="Domain comparison">
+            <h4>Compared with whole result</h4>
+            <dl className="metric-grid">
+              <Metric
+                label="Max w fraction"
+                value={formatRatio(diagnostics.comparison_to_domain.local_max_w_fraction_of_domain)}
+              />
+              <Metric
+                label="Max qc fraction"
+                value={formatRatio(diagnostics.comparison_to_domain.local_max_qc_fraction_of_domain)}
+              />
+              <Metric
+                label="First cloud delta"
+                value={formatSignedSeconds(
+                  diagnostics.comparison_to_domain.local_first_cloud_time_delta_seconds,
+                )}
+              />
+              <Metric
+                label="Cloud-top fraction"
+                value={formatRatio(diagnostics.comparison_to_domain.local_cloud_top_fraction_of_domain)}
+              />
+            </dl>
+          </section>
+
+          <details>
+            <summary>Technical selected-region details</summary>
+            <p>{diagnostics.provenance.provenance_label}</p>
+            <ul className="compact-list">
+              <li>Backend xarray selected-region diagnostics; no raw NetCDF parsing in browser.</li>
+              <li>Selected region is not cloud-object tracking.</li>
+              {_dedupeStrings([
+                ...diagnostics.caveats,
+                ...diagnostics.interpretation.caveats,
+                ...diagnostics.comparison_to_domain.caveats,
+              ]).map((caveat) => (
+                <li key={caveat}>{caveat}</li>
+              ))}
+            </ul>
+          </details>
+        </>
+      )}
+    </section>
+  );
+}
+
+function SliceHeatmap({
+  title,
+  slice,
+  selectedRegion,
+  onSelectRegion,
+}: {
+  title: string;
+  slice: SliceResponse;
+  selectedRegion?: SelectedRegionRequest | null;
+  onSelectRegion?: (slice: SliceResponse, rowIndex: number, columnIndex: number) => void;
+}) {
   return (
     <div className="slice-heatmap" role="img" aria-label={`${title} heatmap`}>
       {slice.values.map((row, rowIndex) => (
         <div className="heatmap-row" key={`${title}-heatmap-${rowIndex}`}>
-          {row.map((value, columnIndex) => (
-            <span
-              className="heatmap-cell"
-              key={`${title}-heatmap-${rowIndex}-${columnIndex}`}
-              title={value === null ? "missing" : formatMaybeNumber(value, slice.field.units)}
-              style={sliceCellStyle(value, slice.stats)}
-            />
-          ))}
+          {row.map((value, columnIndex) => {
+            const selected = isSelectedSliceCell(slice, selectedRegion, rowIndex, columnIndex);
+            return (
+              <button
+                type="button"
+                className={`heatmap-cell${selected ? " heatmap-cell-selected" : ""}`}
+                key={`${title}-heatmap-${rowIndex}-${columnIndex}`}
+                title={value === null ? "missing" : formatMaybeNumber(value, slice.field.units)}
+                aria-label={`Inspect ${title} row ${rowIndex + 1}, column ${columnIndex + 1}`}
+                style={sliceCellStyle(value, slice.stats)}
+                onClick={() => onSelectRegion?.(slice, rowIndex, columnIndex)}
+              />
+            );
+          })}
         </div>
       ))}
     </div>
@@ -4608,6 +5014,104 @@ function processSupportLabel(value: ProcessSupport): string {
     unsupported_missing_fields: "Unavailable",
   };
   return labels[value];
+}
+
+function selectionFromSlice(
+  slice: SliceResponse,
+  rowIndex: number,
+  columnIndex: number,
+  regionType: "point" | "column",
+): SelectedRegionRequest {
+  const orientation = slice.selection.orientation;
+  if (orientation === "horizontal") {
+    return {
+      regionType,
+      xIndex: columnIndex,
+      yIndex: rowIndex,
+      zIndex: slice.selection.selected_index,
+      neighborhood: regionType === "point" ? 0 : 1,
+    };
+  }
+  if (orientation === "vertical_x") {
+    return {
+      regionType,
+      xIndex: columnIndex,
+      yIndex: slice.selection.selected_index,
+      zIndex: rowIndex,
+      neighborhood: regionType === "point" ? 0 : 1,
+    };
+  }
+  return {
+    regionType,
+    xIndex: slice.selection.selected_index,
+    yIndex: columnIndex,
+    zIndex: rowIndex,
+    neighborhood: regionType === "point" ? 0 : 1,
+  };
+}
+
+function isSelectedSliceCell(
+  slice: SliceResponse,
+  selectedRegion: SelectedRegionRequest | null | undefined,
+  rowIndex: number,
+  columnIndex: number,
+): boolean {
+  if (!selectedRegion) return false;
+  const candidate = selectionFromSlice(slice, rowIndex, columnIndex, "point");
+  if (selectedRegion.regionType === "box") {
+    return (
+      candidate.xIndex !== undefined &&
+      candidate.yIndex !== undefined &&
+      candidate.zIndex !== undefined &&
+      candidate.xIndex >= (selectedRegion.xStart ?? -Infinity) &&
+      candidate.xIndex <= (selectedRegion.xEnd ?? Infinity) &&
+      candidate.yIndex >= (selectedRegion.yStart ?? -Infinity) &&
+      candidate.yIndex <= (selectedRegion.yEnd ?? Infinity) &&
+      candidate.zIndex >= (selectedRegion.zStart ?? -Infinity) &&
+      candidate.zIndex <= (selectedRegion.zEnd ?? Infinity)
+    );
+  }
+  return (
+    selectedRegion.xIndex === candidate.xIndex &&
+    selectedRegion.yIndex === candidate.yIndex &&
+    (selectedRegion.regionType === "column" || selectedRegion.zIndex === candidate.zIndex)
+  );
+}
+
+function selectionLabel(selection: SelectedRegionRequest): string {
+  if (selection.regionType === "box") {
+    return `Box x ${selection.xStart}-${selection.xEnd}, y ${selection.yStart}-${selection.yEnd}, z ${selection.zStart}-${selection.zEnd}`;
+  }
+  const z = selection.regionType === "point" ? `, z ${selection.zIndex}` : "";
+  return `${humanize(selection.regionType)} x ${selection.xIndex}, y ${selection.yIndex}${z}`;
+}
+
+function axisSelectionLabel(axis: AxisSelection | null): string {
+  if (!axis) return "Unavailable";
+  const coordinate =
+    axis.start_coordinate === axis.end_coordinate
+      ? String(axis.start_coordinate ?? "unknown")
+      : `${String(axis.start_coordinate ?? "unknown")} to ${String(axis.end_coordinate ?? "unknown")}`;
+  const index =
+    axis.start_index === axis.end_index
+      ? `${axis.dimension}[${axis.start_index}]`
+      : `${axis.dimension}[${axis.start_index}..${axis.end_index}]`;
+  return `${index}; ${coordinate}${axis.units ? ` ${axis.units}` : ""}`;
+}
+
+function formatRatio(value: number | null): string {
+  if (value === null || !Number.isFinite(value)) return "Unavailable";
+  return `${formatCompactNumber(value * 100)}%`;
+}
+
+function formatSignedSeconds(value: number | null): string {
+  if (value === null || !Number.isFinite(value)) return "Unavailable";
+  const prefix = value > 0 ? "+" : "";
+  return `${prefix}${formatSeconds(value)}`;
+}
+
+function _dedupeStrings(values: string[]): string[] {
+  return [...new Set(values)];
 }
 
 function parseTags(value: string): string[] {

@@ -223,7 +223,7 @@ synthetic cloud physics; those belong to later visualizer issues.
 
 ### Workflow 6.5 — What Happened Here?
 
-The selected-region Thermal Fate workflow is a core future workflow:
+The selected-region Thermal Fate workflow is a core Explore workflow:
 
 ```text
 open a completed/saved result
@@ -236,6 +236,14 @@ open a completed/saved result
 
 This workflow must use backend diagnostics over CM1-derived fields. The browser
 must not parse raw NetCDF or invent scientific explanations.
+
+The first UI implementation lives in Explore / 2-D Slices. Users can click a
+backend-prepared heatmap cell to inspect the nearest native-grid column, select
+a bounded center point or small box, clear the selection, and review the
+backend-returned Thermal Fate label, confidence, caveats, local `qc`/`w`/rain
+summaries, selected-region bounds, domain comparison, and provenance. The UI is
+presentation-only for scientific interpretation: labels and summaries come from
+the selected-region diagnostics API.
 
 ### Workflow 7 — Duplicate / Tweak / Rerun
 

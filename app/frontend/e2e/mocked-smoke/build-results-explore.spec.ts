@@ -58,6 +58,16 @@ test.describe("mocked smoke: Build, Results, Explore path", () => {
     await expect(page.getByText(/2-d field inspection/i).first()).toBeVisible();
     await expect(page.getByText(/thermal fate overlay/i).first()).toBeVisible();
     await expect(page.getByText(/growing cumulus/i).first()).toBeVisible();
+    await expect(page.getByText(/what happened here/i).first()).toBeVisible();
+    await page
+      .getByRole("button", { name: /inspect vertical x slice row 2, column 2/i })
+      .first()
+      .click();
+    await expect(page.getByText(/selected-region diagnostics loaded/i)).toBeVisible();
+    await expect(page.getByText(/cloud water appeared locally/i)).toBeVisible();
+    await expect(page.getByText(/local max w/i)).toBeVisible();
+    await page.getByRole("button", { name: /clear selection/i }).click();
+    await expect(page.getByText(/no region is selected/i)).toBeVisible();
     await expect(page.getByText(/\[\[[\d.,\s]+\]\]/)).not.toBeVisible();
 
     await openExploreTab(page, /^3-D View$/);

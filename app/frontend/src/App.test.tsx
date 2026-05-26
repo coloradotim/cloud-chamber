@@ -661,6 +661,115 @@ function pointCloudResponse({
   };
 }
 
+function selectedRegionResponse() {
+  return {
+    result_id: "result-dry-run-quicklook",
+    run_id: "dry-run-quicklook",
+    scenario_id: "baseline-shallow-cumulus",
+    region: {
+      region_type: "column",
+      requested: {
+        region_type: "column",
+        x_index: 1,
+        y_index: 0,
+        neighborhood: 1,
+      },
+      x: {
+        dimension: "xh",
+        start_index: 0,
+        end_index: 2,
+        start_coordinate: -3.2,
+        end_coordinate: 3.2,
+        units: "km",
+      },
+      y: {
+        dimension: "yh",
+        start_index: 0,
+        end_index: 1,
+        start_coordinate: -3.2,
+        end_coordinate: 0,
+        units: "km",
+      },
+      vertical: {
+        dimension: "zh",
+        start_index: 0,
+        end_index: 1,
+        start_coordinate: 0.4,
+        end_coordinate: 0.8,
+        units: "km",
+      },
+      native_grid: "zh/yh/xh",
+      cell_count: 12,
+    },
+    diagnostics: {
+      available: true,
+      local_max_w_m_s: 4.5,
+      time_of_local_max_w_seconds: 1800,
+      local_min_w_m_s: -1.2,
+      time_of_local_min_w_seconds: 900,
+      local_w_max_time_series: [
+        { time_seconds: 0, value: 1.2 },
+        { time_seconds: 900, value: 2.4 },
+        { time_seconds: 1800, value: 4.5 },
+      ],
+      local_w_min_time_series: [
+        { time_seconds: 0, value: -0.1 },
+        { time_seconds: 900, value: -1.2 },
+        { time_seconds: 1800, value: -0.7 },
+      ],
+      local_max_qc_kg_kg: 0.00002,
+      time_of_local_max_qc_seconds: 1800,
+      first_local_cloud_time_seconds: 900,
+      local_cloud_fraction_time_series: [
+        { time_seconds: 0, value: 0 },
+        { time_seconds: 900, value: 0.25 },
+        { time_seconds: 1800, value: 0.5 },
+      ],
+      local_qc_max_time_series: [
+        { time_seconds: 0, value: 0 },
+        { time_seconds: 900, value: 0.000006 },
+        { time_seconds: 1800, value: 0.00002 },
+      ],
+      local_cloud_base_time_series: [],
+      local_cloud_top_time_series: [],
+      local_max_qc_height_time_series: [],
+      local_max_w_height_time_series: [],
+      local_rain_present: true,
+      first_local_rain_time_seconds: 1800,
+      local_max_qr_kg_kg: 0.000001,
+      time_of_local_max_qr_seconds: 1800,
+      local_qr_max_time_series: [{ time_seconds: 1800, value: 0.000001 }],
+    },
+    comparison_to_domain: {
+      local_max_w_fraction_of_domain: 0.66,
+      local_max_qc_fraction_of_domain: 0.91,
+      local_first_cloud_time_delta_seconds: -900,
+      local_cloud_top_fraction_of_domain: 0.78,
+      local_first_rain_time_delta_seconds: 0,
+      caveats: ["comparison_uses_global_result_summary"],
+    },
+    interpretation: {
+      thermal_fate_label: "Growing cumulus",
+      confidence: "candidate",
+      main_limiting_factor: "unknown",
+      summary:
+        "Cloud water appeared locally after upward motion strengthened, then remained active.",
+      caveats: ["selected_region_is_not_cloud_object_tracking"],
+    },
+    provenance: {
+      ...provenance,
+      processing_method: "backend_xarray_selected_region_diagnostics",
+      rendering_method: "thermal_fate_inspector_summary",
+      provenance_label:
+        "CM1-derived selected-region diagnostics; native-grid summary; browser receives bounded payload only",
+    },
+    caveats: [
+      "native_grid_region_summary_no_interpolation",
+      "selected_region_is_not_cloud_object_tracking",
+    ],
+  };
+}
+
 beforeEach(() => {
   vi.stubGlobal(
     "fetch",
@@ -809,6 +918,18 @@ beforeEach(() => {
             ),
             { status: 200 },
           ),
+        );
+      }
+      if (url.includes("/diagnostics/selected-region")) {
+        if (url.includes("x_index=99")) {
+          return Promise.resolve(
+            new Response(JSON.stringify({ detail: "x_index=99 is outside valid range" }), {
+              status: 400,
+            }),
+          );
+        }
+        return Promise.resolve(
+          new Response(JSON.stringify(selectedRegionResponse()), { status: 200 }),
         );
       }
       if (url.includes("/visualization/slice")) {
@@ -1551,6 +1672,87 @@ describe("App", () => {
     expect(screen.getAllByText("Horizontal slice").length).toBeGreaterThan(0);
     expect(screen.getByLabelText("Horizontal slice heatmap")).toBeInTheDocument();
     expect(screen.getByText("Selected level: 0.8 km (800 m)")).toBeInTheDocument();
+  });
+
+  it("selects a slice region and renders backend Thermal Fate Inspector diagnostics", async () => {
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Inspect fields" }));
+    await screen.findByText("Slices loaded");
+
+    const heatmap = screen.getByLabelText("Vertical X slice heatmap");
+    fireEvent.click(within(heatmap).getByRole("button", { name: /row 1, column 2/i }));
+
+    expect(await screen.findByText("Selected-region diagnostics loaded")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "What happened here?" })).toBeInTheDocument();
+    expect(screen.getAllByText("Growing cumulus").length).toBeGreaterThan(0);
+    expect(
+      screen.getByText(/Cloud water appeared locally after upward motion strengthened/),
+    ).toBeInTheDocument();
+    expect(screen.getByText("First local cloud time")).toBeInTheDocument();
+    expect(screen.getByText("Local max qc")).toBeInTheDocument();
+    expect(screen.getAllByText("2.000e-5 kg/kg").length).toBeGreaterThan(0);
+    expect(screen.getByText("Local max w")).toBeInTheDocument();
+    expect(screen.getByText("4.5 m/s")).toBeInTheDocument();
+    expect(screen.getByText("Local rain")).toBeInTheDocument();
+    expect(screen.getByText("Rain detected")).toBeInTheDocument();
+    expect(screen.getByText("Compared with whole result")).toBeInTheDocument();
+    expect(screen.getByText(/backend xarray selected-region diagnostics/i)).toBeInTheDocument();
+    expect(fetch).toHaveBeenCalledWith(
+      expect.stringContaining(
+        "/api/results/result-dry-run-quicklook/diagnostics/selected-region?region_type=column",
+      ),
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Clear selection" }));
+
+    expect(screen.getByText(/No region is selected/)).toBeInTheDocument();
+  });
+
+  it("shows selected-region backend failures as actionable inspector errors", async () => {
+    vi.mocked(fetch).mockImplementation((input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url === "/api/scenarios") {
+        return Promise.resolve(new Response(JSON.stringify(scenarioResponse), { status: 200 }));
+      }
+      if (url === "/api/results") {
+        return Promise.resolve(new Response(JSON.stringify(resultsResponse), { status: 200 }));
+      }
+      if (url.includes("/visualization/fields")) {
+        return Promise.resolve(new Response(JSON.stringify(fieldCatalogResponse), { status: 200 }));
+      }
+      if (url.includes("/visualization/defaults")) {
+        return Promise.resolve(new Response(JSON.stringify(viewDefaultsResponse), { status: 200 }));
+      }
+      if (url.includes("/visualization/slice")) {
+        return Promise.resolve(
+          new Response(JSON.stringify(sliceResponse({ orientation: "vertical_x" })), {
+            status: 200,
+          }),
+        );
+      }
+      if (url.includes("/diagnostics/selected-region")) {
+        return Promise.resolve(
+          new Response(JSON.stringify({ detail: "Unsupported selected region." }), {
+            status: 400,
+          }),
+        );
+      }
+      return Promise.resolve(new Response("not found", { status: 404 }));
+    });
+
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Inspect fields" }));
+    await screen.findByText("Slices loaded");
+    fireEvent.click(
+      within(screen.getByLabelText("Vertical X slice heatmap")).getByRole("button", {
+        name: /row 1, column 1/i,
+      }),
+    );
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("Unsupported selected region.");
+    expect(screen.getByText("Selected-region request failed")).toBeInTheDocument();
   });
 
   it("supports field and time selection through visualization-ready APIs", async () => {
