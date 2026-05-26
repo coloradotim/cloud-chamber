@@ -155,6 +155,13 @@ precipitation feedback. Surface-heating scenario tests should cover product
 metadata and package-generation contracts without exposing raw namelist fields
 as the primary UI.
 
+The first implemented process-diagnostics tests cover global result metadata and
+result-card summaries only. They assert moisture-limited thermal-without-cloud
+support, capped-cumulus candidate support, growing-cumulus candidate support,
+missing required fields as `unsupported_missing_fields`, serialization through
+result metadata, and unavailable/caveated deep-breakthrough and
+precipitation-feedback placeholders. Selected-region diagnostics remain #151.
+
 Thermal Fate tests must distinguish direct CM1 fields, derived diagnostics,
 proxy diagnostics, and unsupported claims. Missing fields should produce
 explicit caveats, not crashes or fabricated values. The browser must not parse

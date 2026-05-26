@@ -11,7 +11,12 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from cloud_chamber.result_diagnostics import ResultDiagnostics, compute_baseline_diagnostics
+from cloud_chamber.result_diagnostics import (
+    ProcessDiagnostics,
+    ResultDiagnostics,
+    compute_baseline_diagnostics,
+    compute_process_diagnostics,
+)
 from cloud_chamber.run_manifest import LifecycleState, ProductState, RunManifest, load_run_manifest
 from cloud_chamber.settings import CloudChamberSettings
 
@@ -69,6 +74,7 @@ class ResultMetadata(BaseModel):
     warnings: list[str] = Field(default_factory=list)
     diagnostics_summary: str | None = None
     diagnostics: ResultDiagnostics | None = None
+    process_diagnostics: ProcessDiagnostics | None = None
     created_at: datetime
     updated_at: datetime
 
@@ -278,6 +284,12 @@ def _result_from_dataset(
             "Expected fields missing from NetCDF metadata: " + ", ".join(missing_expected)
         )
     diagnostics = compute_baseline_diagnostics(dataset, warnings)
+    process_diagnostics = compute_process_diagnostics(
+        diagnostics,
+        scenario_id=manifest.scenario.id,
+        controls=manifest.controls,
+        variables=variables,
+    )
 
     return ResultMetadata(
         result_id=f"result-{manifest.run_id}",
@@ -311,6 +323,7 @@ def _result_from_dataset(
         warnings=warnings,
         diagnostics_summary=_diagnostics_summary(diagnostics),
         diagnostics=diagnostics,
+        process_diagnostics=process_diagnostics,
         created_at=now,
         updated_at=now,
     )

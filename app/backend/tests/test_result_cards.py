@@ -123,6 +123,9 @@ def test_result_card_created_from_ingested_metadata(tmp_path: Path) -> None:
     assert card.run_size_preset == "quick_look"
     assert card.physical_question
     assert card.diagnostics_summary == "cloud formed; rain detected"
+    assert card.thermal_fate_label == "Fair-weather cumulus"
+    assert card.thermal_fate_confidence == "candidate"
+    assert card.main_limiting_factor == "unknown"
     assert card.first_cloud_time_seconds == 1800.0
     assert card.max_qc_kg_kg == 2e-6
     assert card.max_w_m_s == 4.0

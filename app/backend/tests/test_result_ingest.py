@@ -185,6 +185,13 @@ def test_ingests_valid_tiny_netcdf_metadata(tmp_path: Path) -> None:
     assert result.diagnostics is not None
     assert result.diagnostics.cloud.formed is False
     assert result.diagnostics.rain.field_absent is True
+    assert result.process_diagnostics is not None
+    assert (
+        result.process_diagnostics.interpretation_support.thermal_fate_label
+        == "Thermal without cloud"
+    )
+    assert result.process_diagnostics.interpretation_support.confidence == "supported"
+    assert result.process_diagnostics.deep_breakthrough.status == "unsupported_missing_fields"
     assert result.warnings == [
         "CM1 stderr reported floating-point exception flags: IEEE_INVALID_FLAG"
     ]

@@ -390,6 +390,25 @@ derived diagnostics exist. The browser should see bounded summaries and
 visualization-ready payloads only; backend xarray/NetCDF code owns direct field
 access, processing, and downsampling.
 
+The first implemented process-diagnostics layer attaches `process_diagnostics`
+to `result_metadata.json` during NetCDF ingest. It preserves the existing
+cloud/rain/updraft diagnostics and adds conservative Thermal Fate interpretation
+support:
+
+- moisture-limited `Thermal without cloud` when meaningful `w` exists but `qc`
+  stays below the cloud threshold;
+- `Capped / suppressed cumulus` as a candidate when the scenario/control path is
+  the stronger-cap case;
+- `Growing cumulus` as a candidate when cloud-top time series rises;
+- `Fair-weather cumulus` as a candidate for cloud-forming shallow cases without
+  stronger process evidence;
+- unavailable/caveated placeholders for buoyancy, deep breakthrough, and
+  precipitation feedback until required fields and diagnostics exist.
+
+Result cards expose the conservative `thermal_fate_label`,
+`thermal_fate_confidence`, and `main_limiting_factor` fields without replacing
+the existing cloud/rain/updraft summary.
+
 ### Result Library
 
 Responsibilities:

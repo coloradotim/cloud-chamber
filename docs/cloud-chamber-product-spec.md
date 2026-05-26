@@ -256,6 +256,14 @@ are first-class product families, but they should remain unavailable,
 candidate, or insufficient-evidence states until the required CM1 fields and
 derived diagnostics exist.
 
+The first backend process-diagnostics implementation supports a conservative
+global result summary. It can label moisture-limited thermal-without-cloud
+results when `w` is meaningful and `qc` stays below threshold, mark
+Capped / Suppressed as a candidate when the stronger-cap scenario/control path
+is selected, and expose growing/fair-weather cumulus candidate labels from
+available cloud-top and cloud-water diagnostics. It does not compute buoyancy,
+entrainment, CAPE/CIN/LFC/EL, cold pools, or selected-region explanations yet.
+
 ## Run Size Presets
 
 ### Quick look

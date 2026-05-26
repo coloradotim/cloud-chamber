@@ -84,6 +84,9 @@ class ResultCard(BaseModel):
     source_model: str
     provenance_labels: list[str] = Field(default_factory=list)
     diagnostics_summary: str | None = None
+    thermal_fate_label: str | None = None
+    thermal_fate_confidence: str | None = None
+    main_limiting_factor: str | None = None
     first_cloud_time_seconds: float | None = None
     max_qc_kg_kg: float | None = None
     max_w_m_s: float | None = None
@@ -167,6 +170,8 @@ def _card_from_metadata(
     completed_at: datetime | None,
 ) -> ResultCard:
     diagnostics = metadata.diagnostics
+    process_diagnostics = metadata.process_diagnostics
+    interpretation = process_diagnostics.interpretation_support if process_diagnostics else None
     cloud = diagnostics.cloud if diagnostics else None
     vertical_velocity = diagnostics.vertical_velocity if diagnostics else None
     rain = diagnostics.rain if diagnostics else None
@@ -197,6 +202,9 @@ def _card_from_metadata(
             f"result_state:{metadata.result_state}",
         ],
         diagnostics_summary=metadata.diagnostics_summary,
+        thermal_fate_label=interpretation.thermal_fate_label if interpretation else None,
+        thermal_fate_confidence=interpretation.confidence if interpretation else None,
+        main_limiting_factor=interpretation.main_limiting_factor if interpretation else None,
         first_cloud_time_seconds=cloud.first_cloud_time_seconds if cloud else None,
         max_qc_kg_kg=cloud.max_qc_kg_kg if cloud else None,
         max_w_m_s=vertical_velocity.max_w_m_s if vertical_velocity else None,
