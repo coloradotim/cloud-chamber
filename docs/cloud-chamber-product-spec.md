@@ -432,6 +432,103 @@ detected`, `max_qc_kg_kg = 0.0`, `max_w_m_s = 1.949130654335022`, and
 moisture-limited contrast case: thermals and vertical motion remain, but cloud
 water and rain stay absent by the MVP diagnostics.
 
+### Capped / Suppressed Cumulus Planning
+
+Capped / Suppressed Cumulus is the next planned lower-atmosphere contrast after
+Dry Failed Cumulus and the low-level humidity ladder. It should tell a distinct
+stability/inhibition story:
+
+```text
+How does a stronger cap suppress or limit shallow-cumulus growth even when moisture and boundary-layer thermals are available?
+```
+
+Dry Failed Cumulus is the moisture-limited no-cloud contrast. Capped /
+Suppressed Cumulus should not target a total no-cloud case for the first
+version. The first target is:
+
+```text
+same cloud setup, but a stronger lid
+```
+
+Moisture remains available and thermals still rise. Shallow or weak cloud may
+still form, but the stronger cap should limit cloud depth, reduce cloud water
+or cloud fraction, and suppress or reduce rain relative to the accepted Baseline
+Shallow Cumulus quick-look.
+
+Teaching contrast:
+
+```text
+Baseline Shallow Cumulus:
+  thermals rise
+  cloud water forms
+  cloud grows deeper
+  rain may appear
+  qc and w are both visually/scientifically interesting
+
+Dry Failed Cumulus:
+  thermals rise
+  lower atmosphere is too dry
+  cloud water stays absent or below threshold
+  rain does not appear
+  w remains scientifically meaningful
+
+Capped / Suppressed Cumulus:
+  thermals rise
+  moisture is available
+  cloud may still form
+  stronger cap limits vertical growth
+  cloud tops are lower
+  max qc / cloud fraction are reduced
+  rain is suppressed or absent
+```
+
+First product-facing controls:
+
+```text
+cap_strength:
+  baseline
+  stronger
+
+cap_height:
+  baseline initially
+  lower later
+
+low_level_humidity:
+  baseline for first implementation
+
+surface_heating:
+  baseline for first implementation
+```
+
+The first implementation follow-up is #140. It should use
+`cap_strength = stronger`, keep cap height at the accepted baseline, keep
+low-level humidity and surface heating at baseline, and change only the
+potential-temperature / stability structure near the capping layer in the
+generated external `input_sounding`.
+
+Expected MVP target:
+
+```text
+CM1 completes cleanly
+NetCDF output exists
+full output sequence ingests
+max w is meaningfully nonzero
+min w is finite
+cloud_formed may be true
+first_cloud_time may be delayed
+cloud_top lower than baseline
+max_qc lower than baseline
+cloud_fraction lower than baseline
+rain_present false or reduced
+main_limiting_factor = cap/stability
+```
+
+Exact morphology is not pass/fail. The key outcome is healthy thermals plus
+available moisture plus limited cloud depth because of the stronger cap. If the
+run becomes indistinguishable from Dry Failed Cumulus, or if diagnostics cannot
+separate cap limitation from moisture limitation, the scenario should be marked
+`needs_calibration` rather than overclaimed.
+
 Default cloud-scale assumptions:
 
 ```text

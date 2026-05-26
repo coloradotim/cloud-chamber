@@ -172,6 +172,20 @@ small {
   padding-left: 1rem;
 }
 
+.scenario-state-panel {
+  display: grid;
+  gap: 0.65rem;
+  border: 1px solid rgba(171, 215, 214, 0.28);
+  border-radius: 8px;
+  padding: 1rem;
+  background: rgba(3, 8, 13, 0.28);
+}
+
+.scenario-state-panel h3,
+.scenario-state-panel p {
+  margin-bottom: 0;
+}
+
 .field-label,
 .control-row {
   display: grid;
@@ -674,10 +688,13 @@ details[open] > summary {
 .scene-container {
   position: relative;
   display: grid;
-  place-items: center;
+  place-items: stretch center;
+  align-content: center;
+  gap: 0.65rem;
   width: 100%;
   min-width: 0;
   min-height: clamp(26rem, 52vw, 38rem);
+  padding: 1rem 1rem 0.85rem;
   overflow: hidden;
   isolation: isolate;
   contain: layout paint;
@@ -693,6 +710,10 @@ details[open] > summary {
   width: min(96%, 100%);
   aspect-ratio: 16 / 10;
   overflow: hidden;
+  --plot-left: 14%;
+  --plot-bottom: 16%;
+  --plot-width: 76%;
+  --plot-height: 52%;
 }
 
 .plot-data-layer {
@@ -711,8 +732,10 @@ details[open] > summary {
 
 .scene-grid {
   position: absolute;
-  inset: auto 7% 9%;
-  height: 44%;
+  left: calc(var(--plot-left) - 1%);
+  bottom: calc(var(--plot-bottom) - 3%);
+  width: calc(var(--plot-width) + 2%);
+  height: min(44%, calc(var(--plot-height) * 0.72));
   border: 1px solid rgba(143, 216, 182, 0.28);
   background:
     linear-gradient(rgba(143, 216, 182, 0.16) 1px, transparent 1px),
@@ -724,7 +747,10 @@ details[open] > summary {
 
 .domain-box {
   position: absolute;
-  inset: 10% 8% 11%;
+  left: var(--plot-left);
+  bottom: var(--plot-bottom);
+  width: var(--plot-width);
+  height: var(--plot-height);
   border: 1px solid rgba(216, 255, 240, 0.32);
   border-radius: 8px;
   box-shadow:
@@ -767,10 +793,11 @@ details[open] > summary {
 }
 
 .scene-context-label {
-  top: 1rem;
-  right: 1rem;
+  top: 0.65rem;
+  right: 0.65rem;
   display: grid;
   gap: 0.15rem;
+  max-width: min(22rem, calc(100% - 1.3rem));
   text-align: right;
 }
 
@@ -794,11 +821,9 @@ details[open] > summary {
 }
 
 .projection-description {
-  position: absolute;
-  left: 1rem;
-  right: 1rem;
-  bottom: 0.75rem;
-  z-index: 4;
+  position: relative;
+  z-index: 1;
+  width: min(96%, 100%);
   margin: 0;
   border-radius: 8px;
   padding: 0.45rem 0.65rem;
@@ -809,7 +834,10 @@ details[open] > summary {
 
 .scale-markers {
   position: absolute;
-  inset: 10% 8% 11%;
+  left: var(--plot-left);
+  bottom: var(--plot-bottom);
+  width: var(--plot-width);
+  height: var(--plot-height);
   z-index: 3;
   pointer-events: none;
 }
@@ -1023,6 +1051,10 @@ details[open] > summary {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 0.65rem;
+}
+
+.visualizer-details-panel .summary-strip {
+  grid-template-columns: minmax(0, 1fr);
 }
 
 .summary-strip > div {

@@ -47,6 +47,83 @@ Runtime storage tests must use temporary runtime homes only. They should cover t
 
 Runtime storage UI tests should mock the storage inventory and delete endpoints. They should verify the 50 GB warning state, largest-run table, completed/saved/running/missing-manifest categories, disabled cleanup for running and saved/protected runs, dry-run delete preview, explicit confirmed delete, and visible backend failure messages. Automated UI tests must not delete real local run directories.
 
+## UI Testing Standard
+
+For UI issues, do not rely only on `scripts/check.sh` and component tests. Use
+the right layer for the work:
+
+```text
+unit/component tests:
+  logic, rendering branches, API-shape handling, small component behavior
+
+Playwright/browser tests:
+  user workflows, navigation, tab behavior, form flows, save/delete flows,
+  console-error hygiene, layout regressions, occlusion/overlay bugs,
+  critical Build -> Results -> Explore paths
+
+manual QA:
+  qualitative UX and science judgment only
+```
+
+Manual QA should not be a broad checklist of objective behaviors. Objective
+checks should become automated tests. Manual review should focus on things
+automation cannot judge well: visual plausibility, scientific trust, wording
+clarity, workflow clarity, whether the page teaches the right lesson, whether a
+visualization feels physically believable, whether saved/delete/protection
+semantics feel safe, and whether the experience is enjoyable rather than
+debug-like.
+
+For any issue that changes navigation, Results, Storage, Compare, Explore,
+Build workflow, or visualizer layout:
+
+- add or update unit/component tests for logic;
+- add or update Playwright tests for user-path/browser behavior;
+- run `scripts/check.sh`;
+- run `scripts/check-e2e.sh` when the change affects user workflows or layout;
+- use manual QA only for qualitative judgment, not as a substitute for tests.
+
+When manual review is needed, keep it focused:
+
+1. What user goal is being evaluated?
+2. What screenshots or flows should be reviewed?
+3. What qualitative judgment is needed?
+4. Which objective checks should become automated tests?
+5. What follow-up issue, if any, is needed?
+
+Good manual QA asks whether the 3-D cloud geometry looks physically plausible
+in side `x-z` view, whether Baseline vs Dry Failed teaches the
+moisture-limitation story, or whether Storage makes deletion feel safe. Bad
+manual QA asks someone to click every tab, verify all standard navigation by
+hand, or manually inspect long objective checklists.
+
+The Playwright suite lives under `app/frontend/e2e/`:
+
+- `mocked-smoke/` is deterministic, uses mocked API routes, and is what
+  `scripts/check-e2e.sh` runs by default;
+- `local-data/` is read-only against a live local backend and may skip when
+  required local results or runtime data are absent;
+- `visual-manual/` performs partial browser checks for layout-heavy visualizer
+  behavior and records the qualitative question that still needs human eyes.
+
+Playwright reports, screenshots, videos, traces, NetCDF files, logs, generated
+run directories, and other runtime artifacts are not source fixtures and should
+not be committed. Known product follow-ups surfaced while stabilizing the suite
+are tracked in #133, #134, #135, #136, and #139; future skips should identify
+the missing prerequisite or linked issue rather than hiding a failure.
+
+Codex UI PR summaries should explicitly report:
+
+```text
+Unit/component tests added or updated:
+Playwright tests added or updated:
+Manual QA needed:
+  yes/no
+  if yes, what qualitative question should Tim review?
+Commands run:
+  scripts/check.sh
+  scripts/check-e2e.sh, if applicable
+```
+
 NetCDF ingest tests use tiny synthetic NetCDF files in temporary run directories. They should assert valid metadata extraction, result metadata serialization, missing-output failures, malformed-NetCDF failures, missing expected field warnings, and that raw `.dat/.ctl` artifacts are cataloged but not treated as NetCDF input. These tests must not use real CM1 output.
 
 Multi-file NetCDF ingest tests should use tiny generated fixtures under temporary run directories. They should cover CM1-style sequences such as `cm1out_000001.nc`, `cm1out_000002.nc`, and `cm1out_stats.nc`; verify model-field files are sorted by output index; exclude or separately classify stats NetCDF files; count total model output files and time steps; preserve first/last output time; record direct-vs-inferred time handling; tolerate corrupt individual output files with caveats when enough valid files remain; and ensure diagnostics time series span the full model-field sequence. A full-run no-cloud result is meaningful only after all usable model-output files have been evaluated.
@@ -324,6 +401,58 @@ caveats and target-field non-finite checks
 
 Do not run Dry Failed CM1 cases in CI and do not commit generated output,
 NetCDF files, logs, runtime files, local reports, or copied `LANDUSE.TBL`.
+
+Capped / Suppressed Cumulus planning tests should remain docs/planning-only
+until #140 implements package generation. The future automated tests should use
+temporary runtime homes and assert that `cap_strength = stronger` changes only
+the generated external `input_sounding` stability structure near the cap while
+preserving the accepted external-sounding baseline's grid/domain, runtime
+preset, surface/ocean/flux settings, surface stress/roughness path, Rayleigh
+damping, turbulence/SGS settings, boundary conditions, NetCDF output,
+`LANDUSE.TBL` staging behavior, low-level humidity, and surface heating.
+
+Future Capped / Suppressed manual validation should record:
+
+```text
+run ID and package path
+accepted external-sounding baseline source
+the one intended cap/stability change
+confirmation that low-level humidity remains baseline
+confirmation that surface heating remains baseline
+confirmation that cap height remains baseline
+CM1 command, runtime, exit code, logs, and package size
+NetCDF file count and full-sequence ingest status
+cloud_formed and first_cloud_time
+cloud_top compared with accepted baseline
+max_qc and cloud fraction compared with accepted baseline
+rain_present compared with accepted baseline
+max_w and min_w
+main limiting factor: cap / stability
+qc and w 2-D inspection notes
+3-D limited-growth inspection notes
+caveats and target-field non-finite checks
+```
+
+Acceptance categories for future Capped / Suppressed validation:
+
+- `accepted`: CM1 completes, NetCDF ingests, vertical motion remains meaningful,
+  moisture remains baseline/available, cloud is shallower/weaker/delayed than
+  baseline, cloud top is lower when cloud forms, max `qc` and/or cloud fraction
+  are reduced, rain is absent or reduced, and no severe target-field caveats
+  appear.
+- `accepted_with_notes`: the run is healthy and cap effect is present but
+  subtle, or rain still occurs while cloud top / max `qc` / cloud fraction are
+  clearly reduced.
+- `needs_calibration`: the run is too similar to baseline, becomes
+  indistinguishable from Dry Failed, or current diagnostics cannot distinguish
+  cap limitation clearly.
+- `failed`: CM1 fails, NetCDF is missing, ingest fails, vertical motion is
+  absent, severe NaN/Infinity caveats appear in target fields, or more than
+  cap/stability changed unexpectedly.
+
+Do not run Capped / Suppressed CM1 cases in CI and do not commit generated
+output, NetCDF files, logs, runtime files, local reports, or copied
+`LANDUSE.TBL`.
 
 ### Baseline Shallow Cumulus Manual Smoke-Run Loop
 

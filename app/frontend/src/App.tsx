@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import type { CSSProperties, FormEvent } from "react";
 
 import "./App.css";
@@ -199,6 +199,7 @@ type DeleteRunResponse = {
 type WorkspaceSection = "build" | "results" | "explore";
 type ResultsTab = "notebook" | "compare" | "storage";
 type ExploreTab = "slices" | "view3d";
+type ScenarioLoadState = "loading" | "loaded" | "failed" | "empty";
 
 type ProvenancePayload = {
   source_model: string;
@@ -397,9 +398,23 @@ async function ingestCompletedRun(manifestPath: string): Promise<IngestResponse>
 async function fetchResults(): Promise<ResultsResponse> {
   const response = await fetch("/api/results");
   if (!response.ok) {
-    throw new Error("Unable to load results.");
+    throw new Error("Could not load results.");
   }
-  return response.json() as Promise<ResultsResponse>;
+  return normalizeResultsResponse(await response.json());
+}
+
+function normalizeResultsResponse(payload: unknown): ResultsResponse {
+  if (Array.isArray(payload)) {
+    return { results: payload as ResultCard[] };
+  }
+  if (isObject(payload) && Array.isArray(payload.results)) {
+    return { results: payload.results as ResultCard[] };
+  }
+  throw new Error("Could not load results.");
+}
+
+function isObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
 }
 
 async function patchResultCard(
@@ -564,26 +579,48 @@ export function App() {
   const [deletePreview, setDeletePreview] = useState<DeleteRunResponse | null>(null);
   const [deleteMessage, setDeleteMessage] = useState<string | null>(null);
   const [status, setStatus] = useState("Loading scenarios...");
+  const [scenarioLoadState, setScenarioLoadState] = useState<ScenarioLoadState>("loading");
+  const [scenarioError, setScenarioError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [resultsError, setResultsError] = useState<string | null>(null);
 
+  const loadScenarios = useCallback(async (active: () => boolean = () => true) => {
+    setScenarioLoadState("loading");
+    setScenarioError(null);
+    setError(null);
+    setStatus("Loading scenarios...");
+    setScenarios([]);
+    setDryRun(null);
+    setRunStatus(null);
+    setRunWorkflowError(null);
+    setIngestedResultId(null);
+    try {
+      const catalog = await fetchScenarioCatalog();
+      if (!active()) return;
+      setScenarios(catalog.scenarios);
+      setSelectedScenarioId(catalog.golden_path_scenario_id);
+      if (catalog.scenarios.length === 0) {
+        setScenarioLoadState("empty");
+        setStatus("No scenarios available");
+      } else {
+        setScenarioLoadState("loaded");
+        setStatus("Scenario setup");
+      }
+    } catch (caught: unknown) {
+      if (!active()) return;
+      setScenarioLoadState("failed");
+      setScenarioError(caught instanceof Error ? caught.message : "Unable to load scenarios.");
+      setStatus("Scenario load failed");
+    }
+  }, []);
+
   useEffect(() => {
     let active = true;
-    fetchScenarioCatalog()
-      .then((catalog) => {
-        if (!active) return;
-        setScenarios(catalog.scenarios);
-        setSelectedScenarioId(catalog.golden_path_scenario_id);
-        setStatus("Scenario setup");
-      })
-      .catch((caught: unknown) => {
-        if (!active) return;
-        setError(caught instanceof Error ? caught.message : "Unable to load scenarios.");
-      });
+    loadScenarios(() => active);
     return () => {
       active = false;
     };
-  }, []);
+  }, [loadScenarios]);
 
   useEffect(() => {
     let active = true;
@@ -597,7 +634,9 @@ export function App() {
       })
       .catch((caught: unknown) => {
         if (!active) return;
-        setResultsError(caught instanceof Error ? caught.message : "Unable to load results.");
+        setResults([]);
+        setSelectedResultId(null);
+        setResultsError(caught instanceof Error ? caught.message : "Could not load results.");
         setResultsStatus("Results unavailable");
       });
     return () => {
@@ -737,7 +776,9 @@ export function App() {
     try {
       await refreshResults();
     } catch (caught) {
-      setResultsError(caught instanceof Error ? caught.message : "Unable to refresh results.");
+      setResults([]);
+      setSelectedResultId(null);
+      setResultsError(caught instanceof Error ? caught.message : "Could not load results.");
       setResultsStatus("Results unavailable");
     }
   }
@@ -848,15 +889,6 @@ export function App() {
     }
   }
 
-  if (error && scenarios.length === 0) {
-    return (
-      <main className="app-shell">
-        <h1>Cloud Chamber</h1>
-        <p role="alert">{error}</p>
-      </main>
-    );
-  }
-
   return (
     <main className="app-shell">
       <header className="topbar">
@@ -883,6 +915,9 @@ export function App() {
       {activeSection === "build" && (
         <BuildWorkspace
           status={status}
+          scenarioLoadState={scenarioLoadState}
+          scenarioError={scenarioError}
+          packageError={error}
           scenarios={scenarios}
           selectedScenario={selectedScenario}
           selectedScenarioId={selectedScenarioId}
@@ -919,6 +954,9 @@ export function App() {
             if (ingestedResultId) setSelectedResultId(ingestedResultId);
             setActiveSection("explore");
             setActiveExploreTab("view3d");
+          }}
+          onRetryScenarios={() => {
+            void loadScenarios();
           }}
         />
       )}
@@ -990,6 +1028,9 @@ export function App() {
 
 function BuildWorkspace({
   status,
+  scenarioLoadState,
+  scenarioError,
+  packageError,
   scenarios,
   selectedScenario,
   selectedScenarioId,
@@ -1010,8 +1051,12 @@ function BuildWorkspace({
   onOpenInResults,
   onInspectIngested,
   onVisualizeIngested,
+  onRetryScenarios,
 }: {
   status: string;
+  scenarioLoadState: ScenarioLoadState;
+  scenarioError: string | null;
+  packageError: string | null;
   scenarios: Scenario[];
   selectedScenario: Scenario | undefined;
   selectedScenarioId: string;
@@ -1032,7 +1077,10 @@ function BuildWorkspace({
   onOpenInResults: () => void;
   onInspectIngested: () => void;
   onVisualizeIngested: () => void;
+  onRetryScenarios: () => void;
 }) {
+  const scenarioControlsReady = scenarioLoadState === "loaded" && selectedScenario !== undefined;
+
   return (
     <section className="workspace-section" aria-labelledby="build-title">
       <div className="section-heading">
@@ -1050,9 +1098,11 @@ function BuildWorkspace({
           </label>
           <select
             id="scenario"
-            value={selectedScenarioId}
+            value={scenarioControlsReady ? selectedScenarioId : ""}
+            disabled={!scenarioControlsReady}
             onChange={(event) => onSelectScenario(event.target.value)}
           >
+            {!scenarioControlsReady && <option value="">Scenario unavailable</option>}
             {scenarios.map((scenario) => (
               <option key={scenario.id} value={scenario.id}>
                 {scenario.display_name}
@@ -1060,7 +1110,34 @@ function BuildWorkspace({
             ))}
           </select>
 
-          {selectedScenario && (
+          {scenarioLoadState === "loading" && (
+            <ScenarioStatePanel
+              title="Loading scenario catalog"
+              body="Cloud Chamber is waiting for the local backend to return available CM1 scenario templates. Package controls will appear after a scenario is loaded."
+            />
+          )}
+
+          {scenarioLoadState === "failed" && (
+            <ScenarioStatePanel
+              title="Scenario catalog unavailable"
+              body={`Cloud Chamber could not load scenario templates from the local backend. ${
+                scenarioError ?? "The backend may be stopped or temporarily unavailable."
+              }`}
+              actionLabel="Retry scenarios"
+              onAction={onRetryScenarios}
+            />
+          )}
+
+          {scenarioLoadState === "empty" && (
+            <ScenarioStatePanel
+              title="No scenarios available"
+              body="The local backend responded, but it did not return any scenario templates. Package generation is unavailable until at least one scenario is configured."
+              actionLabel="Retry scenarios"
+              onAction={onRetryScenarios}
+            />
+          )}
+
+          {scenarioControlsReady && (
             <>
               <div className="hero-case">
                 <p className="eyebrow">First Golden Path hero case</p>
@@ -1121,7 +1198,17 @@ function BuildWorkspace({
                 </div>
               )}
 
-              <button type="submit" disabled={validationMessages.length > 0}>
+              {packageError && (
+                <div className="validation" role="alert">
+                  <p>{packageError}</p>
+                </div>
+              )}
+
+              <button
+                type="submit"
+                data-testid="create-package-btn"
+                disabled={validationMessages.length > 0}
+              >
                 Create run package
               </button>
             </>
@@ -1138,7 +1225,11 @@ function BuildWorkspace({
             </p>
           </section>
 
-          <section className="status-panel" aria-labelledby="review-title">
+          <section
+            className="status-panel"
+            aria-labelledby="review-title"
+            data-testid="package-review-panel"
+          >
             <p className="eyebrow">Generated package</p>
             <h3 id="review-title">Review before local CM1 run</h3>
             {dryRun ? (
@@ -1163,6 +1254,30 @@ function BuildWorkspace({
           </section>
         </aside>
       </section>
+    </section>
+  );
+}
+
+function ScenarioStatePanel({
+  title,
+  body,
+  actionLabel,
+  onAction,
+}: {
+  title: string;
+  body: string;
+  actionLabel?: string;
+  onAction?: () => void;
+}) {
+  return (
+    <section className="scenario-state-panel" aria-live="polite">
+      <h3>{title}</h3>
+      <p>{body}</p>
+      {actionLabel && onAction && (
+        <button type="button" onClick={onAction}>
+          {actionLabel}
+        </button>
+      )}
     </section>
   );
 }
@@ -1236,11 +1351,15 @@ function ResultsWorkspace({
         <p className="state-chip">{resultsStatus}</p>
       </div>
 
-      <nav className="subtab-nav" aria-label="Results workspace sections">
+      <nav className="subtab-nav" role="tablist" aria-label="Results views">
         {(["notebook", "compare", "storage"] as ResultsTab[]).map((tab) => (
           <button
             key={tab}
             type="button"
+            id={`${tab}-tab`}
+            role="tab"
+            aria-selected={activeTab === tab}
+            aria-controls={`${tab}-panel`}
             className={activeTab === tab ? "active-control" : ""}
             onClick={() => onTabChange(tab)}
           >
@@ -1357,7 +1476,12 @@ function NotebookWorkspace({
   onOpenVisualizer: () => void;
 }) {
   return (
-    <section className="workspace-section" aria-labelledby="notebook-title">
+    <section
+      className="workspace-section"
+      role="tabpanel"
+      id="notebook-panel"
+      aria-labelledby="notebook-tab notebook-title"
+    >
       <div className="section-heading">
         <div>
           <p className="eyebrow">Notebook</p>
@@ -1406,11 +1530,15 @@ function ExploreWorkspace({
         <p className="state-chip">{selectedResult ? selectedResult.name : "No result"}</p>
       </div>
 
-      <nav className="subtab-nav" aria-label="Explore workspace sections">
+      <nav className="subtab-nav" role="tablist" aria-label="Explore views">
         {(["slices", "view3d"] as ExploreTab[]).map((tab) => (
           <button
             key={tab}
             type="button"
+            id={`${tab}-tab`}
+            role="tab"
+            aria-selected={activeTab === tab}
+            aria-controls={`${tab}-panel`}
             className={activeTab === tab ? "active-control" : ""}
             onClick={() => onTabChange(tab)}
           >
@@ -1420,13 +1548,22 @@ function ExploreWorkspace({
       </nav>
 
       {!selectedResult && (
-        <section className="status-panel">
+        <section
+          className="status-panel"
+          role="tabpanel"
+          id={`${activeTab}-panel`}
+          aria-labelledby={`${activeTab}-tab`}
+        >
           <p>Select an ingested result from Results to inspect or visualize it.</p>
         </section>
       )}
 
       {selectedResult && activeTab === "slices" && (
-        <section aria-labelledby="explore-slices-title">
+        <section
+          role="tabpanel"
+          id="slices-panel"
+          aria-labelledby="slices-tab explore-slices-title"
+        >
           <p className="eyebrow">2-D Slices</p>
           <h3 id="explore-slices-title">2-D Slices</h3>
           <FieldInspector result={selectedResult} />
@@ -1434,7 +1571,7 @@ function ExploreWorkspace({
       )}
 
       {selectedResult && activeTab === "view3d" && (
-        <section aria-labelledby="explore-3d-title">
+        <section role="tabpanel" id="view3d-panel" aria-labelledby="view3d-tab explore-3d-title">
           <p className="eyebrow">3-D View</p>
           <h3 id="explore-3d-title">3-D View</h3>
           <VisualizerSceneShell result={selectedResult} />
@@ -1458,7 +1595,12 @@ function ComparisonWorkspace({
   const missing = comparisonMissingItems(pair);
 
   return (
-    <section className="comparison-workspace" aria-labelledby="comparison-title">
+    <section
+      className="comparison-workspace"
+      role="tabpanel"
+      id="compare-panel"
+      aria-labelledby="compare-tab comparison-title"
+    >
       <div className="section-heading">
         <div>
           <p className="eyebrow">Compare</p>
@@ -1967,7 +2109,12 @@ function StorageWorkspace({
   onExploreResult: (resultId: string) => void;
 }) {
   return (
-    <section className="storage-workspace" aria-labelledby="storage-title">
+    <section
+      className="storage-workspace"
+      role="tabpanel"
+      id="storage-panel"
+      aria-labelledby="storage-tab storage-title"
+    >
       <div className="section-heading">
         <div>
           <p className="eyebrow">Storage</p>
@@ -2283,13 +2430,28 @@ function GuidedRunWorkflow({
         {error && <p role="alert">{error}</p>}
 
         <div className="button-row">
-          <button type="button" onClick={onLaunchRun} disabled={Boolean(runStatus)}>
+          <button
+            type="button"
+            data-testid="launch-cm1-btn"
+            onClick={onLaunchRun}
+            disabled={Boolean(runStatus)}
+          >
             Launch local CM1
           </button>
-          <button type="button" onClick={onRefreshRunStatus} disabled={!runStatus}>
+          <button
+            type="button"
+            data-testid="refresh-status-btn"
+            onClick={onRefreshRunStatus}
+            disabled={!runStatus}
+          >
             Refresh status
           </button>
-          <button type="button" onClick={onIngestRun} disabled={!canIngest}>
+          <button
+            type="button"
+            data-testid="ingest-results-btn"
+            onClick={onIngestRun}
+            disabled={!canIngest}
+          >
             Ingest output
           </button>
         </div>
@@ -3176,7 +3338,7 @@ function VisualizerSceneShell({ result }: { result: ResultCard }) {
 
         <div className="visualizer-stage" aria-label="Fixed visualization viewport region">
           <div className="scene-container" aria-label="3-D scene container">
-            <div className="viewport-frame">
+            <div className="viewport-frame" style={plotFrameStyle(pointCloud, projectionMode)}>
               <div
                 className="plot-data-layer"
                 aria-label="Zoomable visualizer data layer"
@@ -4210,7 +4372,7 @@ function cloudPointStyle(
   const y = normalizeWithExtent(point[1], pointCloud.coordinate_extents.yh);
   const z = normalizeWithExtent(point[2], pointCloud.coordinate_extents.zh);
   const intensity = normalize(point[3], stats.min_value ?? point[3], stats.max_value ?? point[3]);
-  const projected = projectPoint(x, y, z, projectionMode);
+  const projected = projectPoint(x, y, z, projectionMode, pointCloud);
   const depthOpacity = projectionMode === "side_xz" ? 0.65 + y * 0.35 : 0.65 + x * 0.35;
   return {
     left: `${projected.left}%`,
@@ -4228,20 +4390,68 @@ function projectPoint(
   y: number,
   z: number,
   projectionMode: ProjectionMode,
+  pointCloud: PointCloudResponse,
 ): { left: number; bottom: number } {
+  const frame = plotFrame(pointCloud, projectionMode);
   if (projectionMode === "side_xz") {
-    return { left: 12 + x * 76, bottom: 14 + z * 72 };
+    return { left: frame.left + x * frame.width, bottom: frame.bottom + z * frame.height };
   }
   if (projectionMode === "side_yz") {
-    return { left: 12 + y * 76, bottom: 14 + z * 72 };
+    return { left: frame.left + y * frame.width, bottom: frame.bottom + z * frame.height };
   }
   if (projectionMode === "top_down") {
-    return { left: 12 + x * 76, bottom: 14 + y * 72 };
+    return { left: frame.left + x * frame.width, bottom: frame.bottom + y * frame.height };
   }
+  const verticalSpan = frame.height * 0.86;
+  const depthLift = frame.height * 0.14;
   return {
-    left: 18 + (x * 0.72 + y * 0.28) * 64,
-    bottom: 16 + z * 62 + y * 10,
+    left: frame.left + (x * 0.72 + y * 0.28) * frame.width,
+    bottom: frame.bottom + z * verticalSpan + y * depthLift,
   };
+}
+
+function plotFrameStyle(
+  pointCloud: PointCloudResponse | null,
+  projectionMode: ProjectionMode,
+): CSSProperties & Record<string, string> {
+  const frame = plotFrame(pointCloud, projectionMode);
+  return {
+    "--plot-left": `${frame.left}%`,
+    "--plot-bottom": `${frame.bottom}%`,
+    "--plot-width": `${frame.width}%`,
+    "--plot-height": `${frame.height}%`,
+  };
+}
+
+function plotFrame(
+  pointCloud: PointCloudResponse | null,
+  projectionMode: ProjectionMode,
+): { left: number; bottom: number; width: number; height: number } {
+  const left = 14;
+  const width = 76;
+  const horizontalCoordinate = projectionMode === "side_yz" ? "yh" : "xh";
+  const verticalCoordinate = projectionMode === "top_down" ? "yh" : "zh";
+  const horizontalRange = coordinateRange(pointCloud, horizontalCoordinate);
+  const verticalRange = coordinateRange(pointCloud, verticalCoordinate);
+  const ratio = horizontalRange > 0 ? verticalRange / horizontalRange : 0.7;
+  const height = clamp(width * ratio, 20, 64);
+  return {
+    left,
+    width,
+    height,
+    bottom: clamp((100 - height) / 2 - 3, 14, 32),
+  };
+}
+
+function coordinateRange(pointCloud: PointCloudResponse | null, coordinate: string): number {
+  const extent = pointCloud?.coordinate_extents[coordinate];
+  if (!extent) return 1;
+  const range = extent.max - extent.min;
+  return Number.isFinite(range) && range > 0 ? range : 1;
+}
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(Math.max(value, min), max);
 }
 
 function normalizeWithExtent(

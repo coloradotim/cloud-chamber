@@ -227,6 +227,64 @@ The old compact quick-look derivative that produced no cloud, no vertical
 motion, and NaN/Infinity caveats is invalid evidence and must not be used as a
 scenario base.
 
+### Capped / Suppressed Cumulus Planning
+
+Capped / Suppressed Cumulus is the next planned contrast after Dry Failed
+Cumulus. Dry Failed tests moisture limitation. Capped / Suppressed should test
+stability and inhibition:
+
+```text
+How does a stronger cap suppress or limit shallow-cumulus growth even when moisture and boundary-layer thermals are available?
+```
+
+The first target is not total no-cloud failure. The target is shallow or weak
+cloud limited by a stronger cap:
+
+```text
+Baseline:
+  moisture + thermals + normal cap -> cloud grows
+
+Dry Failed:
+  thermals + cap okay, but too dry -> no meaningful cloud
+
+Capped / Suppressed:
+  moisture + thermals okay, but stronger cap -> shallow/limited cloud
+```
+
+The first implementation follow-up is #140. It should start from the accepted
+external-sounding Baseline Shallow Cumulus path and vary only:
+
+```text
+cap_strength = stronger
+```
+
+It should keep `cap_height`, `low_level_humidity`, and `surface_heating` at the
+accepted baseline. The likely CM1-facing adjustment is a stronger stable layer
+in the generated external `input_sounding` potential-temperature profile near
+the cap. Do not use the old compact quick-look derivative, do not tune moisture,
+and do not vary cap height in the first implementation.
+
+Expected diagnostics:
+
+```text
+cloud_formed: true or weak/limited; false only if w remains healthy and moisture is not the limiting factor
+first_cloud_time: delayed relative to baseline, or null if fully suppressed
+cloud_top: lower than baseline
+max_qc: lower than baseline
+cloud_fraction: lower than baseline
+rain_present: preferably false or reduced
+max_w: meaningfully nonzero
+min_w: finite, preferably negative/nonzero
+main_limiting_factor: cap/stability
+```
+
+Potential future diagnostics include `cloud_top_time_series`,
+`max_qc_height_time_series`, cloud-fraction time-series comparison, cap-level or
+inversion metadata from the generated sounding, and `max_w_below_cap` if
+practical. If current diagnostics cannot clearly determine whether the cap
+limited vertical growth, create a follow-up diagnostics issue rather than
+overclaiming.
+
 ## M2 Local CM1 Run Manager
 
 Goal: make Cloud Chamber actually launch and monitor local CM1 runs.
