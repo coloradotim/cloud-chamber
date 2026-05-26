@@ -212,10 +212,14 @@ def _dry_run_report_payload(
         "controls": manifest.controls,
         "variant_metadata": {
             "moisture_profile": contract.moisture_profile,
+            "stability_profile": contract.stability_profile,
             "low_level_humidity": manifest.controls.get("low_level_humidity"),
+            "cap_strength": manifest.controls.get("cap_strength"),
+            "cap_height": manifest.controls.get("cap_height"),
             "mapping": (
-                "external input_sounding moisture profile; non-moisture namelist settings "
-                "remain inherited from the validated baseline"
+                "external input_sounding profile; namelist settings remain inherited from the "
+                "validated baseline; capped/suppressed variants change only stability near the "
+                "cap when cap_strength is stronger"
             ),
         },
         "run_size_preset": manifest.run_size_preset,

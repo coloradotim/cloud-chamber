@@ -16,6 +16,7 @@ from cloud_chamber.scenario_schema import (
 REPO_ROOT = Path(__file__).resolve().parents[3]
 BASELINE_TEMPLATE = REPO_ROOT / "scenarios/lower-atmosphere/baseline-shallow-cumulus.json"
 DRY_FAILED_TEMPLATE = REPO_ROOT / "scenarios/lower-atmosphere/dry-failed-cumulus.json"
+CAPPED_TEMPLATE = REPO_ROOT / "scenarios/lower-atmosphere/capped-suppressed-cumulus.json"
 
 
 def baseline_scenario() -> ScenarioTemplate:
@@ -24,6 +25,10 @@ def baseline_scenario() -> ScenarioTemplate:
 
 def dry_failed_scenario() -> ScenarioTemplate:
     return validate_scenario_template(json.loads(DRY_FAILED_TEMPLATE.read_text()))
+
+
+def capped_scenario() -> ScenarioTemplate:
+    return validate_scenario_template(json.loads(CAPPED_TEMPLATE.read_text()))
 
 
 def test_cm1_contract_documents_expected_generated_files_and_defaults() -> None:
@@ -201,6 +206,41 @@ def test_dry_failed_sounding_only_drives_low_level_moisture_drier() -> None:
     assert float(dry_lines[1].split()[2]) < float(baseline_lines[1].split()[2])
     assert float(dry_lines[6].split()[2]) < float(baseline_lines[6].split()[2])
     assert dry_lines[-1].split()[2] == baseline_lines[-1].split()[2]
+
+
+def test_capped_suppressed_sounding_changes_only_cap_stability() -> None:
+    baseline = render_input_sounding_notes(build_cm1_input_contract(baseline_scenario()))
+    capped = render_input_sounding_notes(build_cm1_input_contract(capped_scenario()))
+
+    baseline_lines = baseline.splitlines()
+    capped_lines = capped.splitlines()
+
+    assert len(capped_lines) == len(baseline_lines)
+    assert capped_lines[0] == baseline_lines[0]
+
+    unchanged_low_level_indexes = [1, 2]
+    for index in unchanged_low_level_indexes:
+        assert capped_lines[index] == baseline_lines[index]
+
+    for baseline_line, capped_line in zip(baseline_lines[1:], capped_lines[1:], strict=True):
+        baseline_parts = baseline_line.split()
+        capped_parts = capped_line.split()
+        assert capped_parts[0] == baseline_parts[0]
+        assert capped_parts[2:] == baseline_parts[2:]
+
+    assert float(capped_lines[3].split()[1]) > float(baseline_lines[3].split()[1])
+    assert float(capped_lines[4].split()[1]) > float(baseline_lines[4].split()[1])
+    assert float(capped_lines[5].split()[1]) > float(baseline_lines[5].split()[1])
+    assert capped_lines[6] == baseline_lines[6]
+
+
+def test_capped_suppressed_keeps_baseline_namelist_family() -> None:
+    baseline_contract = build_cm1_input_contract(baseline_scenario(), run_size_preset="quick_look")
+    capped_contract = build_cm1_input_contract(capped_scenario(), run_size_preset="quick_look")
+
+    assert capped_contract.moisture_profile == "baseline"
+    assert capped_contract.stability_profile == "stronger_cap"
+    assert render_namelist_fragment(capped_contract) == render_namelist_fragment(baseline_contract)
 
 
 def test_cm1_contract_includes_expected_diagnostics_and_visualization_defaults() -> None:

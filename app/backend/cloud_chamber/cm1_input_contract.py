@@ -74,6 +74,7 @@ class CM1InputContract:
     physical_question: str
     run_size_preset: str
     moisture_profile: str
+    stability_profile: str
     cloud_scale_defaults: CloudScaleDefaults
     generated_files: tuple[GeneratedFileSpec, ...]
     control_fragments: tuple[ControlMappingFragment, ...]
@@ -157,12 +158,14 @@ def build_cm1_input_contract(
     )
 
     moisture_profile = _moisture_profile_from_controls(scenario.id, control_fragments)
+    stability_profile = _stability_profile_from_controls(scenario.id, control_fragments)
 
     return CM1InputContract(
         scenario_id=scenario.id,
         physical_question=scenario.physical_question,
         run_size_preset=run_size_preset,
         moisture_profile=moisture_profile,
+        stability_profile=stability_profile,
         cloud_scale_defaults=_cloud_scale_defaults_for_preset(run_size_preset),
         generated_files=GENERATED_FILE_SPECS,
         control_fragments=control_fragments,
@@ -540,7 +543,8 @@ def render_cm1_input_sounding(contract: CM1InputContract) -> str:
     """
 
     header, body = _baseline_shallow_cumulus_sounding_profile(
-        moisture_profile=contract.moisture_profile
+        moisture_profile=contract.moisture_profile,
+        stability_profile=contract.stability_profile,
     )
     lines = [
         f"{header[0]:10.2f} {header[1]:12.4f} {header[2]:12.5f}",
@@ -555,6 +559,7 @@ def render_cm1_input_sounding(contract: CM1InputContract) -> str:
 def _baseline_shallow_cumulus_sounding_profile(
     *,
     moisture_profile: str = "baseline",
+    stability_profile: str = "baseline",
 ) -> tuple[
     tuple[float, float, float],
     tuple[tuple[float, float, float, float, float], ...],
@@ -579,7 +584,7 @@ def _baseline_shallow_cumulus_sounding_profile(
     levels = (
         (
             0.0,
-            298.7,
+            _adjust_potential_temperature(298.7, 0.0, stability_profile),
             _specific_humidity_to_mixing_ratio_gkg(
                 _adjust_specific_humidity(0.0170, 0.0, moisture_profile)
             ),
@@ -588,7 +593,7 @@ def _baseline_shallow_cumulus_sounding_profile(
         ),
         (
             520.0,
-            298.7,
+            _adjust_potential_temperature(298.7, 520.0, stability_profile),
             _specific_humidity_to_mixing_ratio_gkg(
                 _adjust_specific_humidity(0.0163, 520.0, moisture_profile)
             ),
@@ -597,7 +602,11 @@ def _baseline_shallow_cumulus_sounding_profile(
         ),
         (
             700.0,
-            _interpolate(700.0, 520.0, 1480.0, 298.7, 302.4),
+            _adjust_potential_temperature(
+                _interpolate(700.0, 520.0, 1480.0, 298.7, 302.4),
+                700.0,
+                stability_profile,
+            ),
             _specific_humidity_to_mixing_ratio_gkg(
                 _adjust_specific_humidity(
                     _interpolate(700.0, 520.0, 1480.0, 0.0163, 0.0107),
@@ -610,7 +619,7 @@ def _baseline_shallow_cumulus_sounding_profile(
         ),
         (
             1480.0,
-            302.4,
+            _adjust_potential_temperature(302.4, 1480.0, stability_profile),
             _specific_humidity_to_mixing_ratio_gkg(
                 _adjust_specific_humidity(0.0107, 1480.0, moisture_profile)
             ),
@@ -619,7 +628,7 @@ def _baseline_shallow_cumulus_sounding_profile(
         ),
         (
             2000.0,
-            308.2,
+            _adjust_potential_temperature(308.2, 2000.0, stability_profile),
             _specific_humidity_to_mixing_ratio_gkg(
                 _adjust_specific_humidity(0.0042, 2000.0, moisture_profile)
             ),
@@ -628,7 +637,7 @@ def _baseline_shallow_cumulus_sounding_profile(
         ),
         (
             3000.0,
-            311.85,
+            _adjust_potential_temperature(311.85, 3000.0, stability_profile),
             _specific_humidity_to_mixing_ratio_gkg(
                 _adjust_specific_humidity(0.0030, 3000.0, moisture_profile)
             ),
@@ -637,14 +646,14 @@ def _baseline_shallow_cumulus_sounding_profile(
         ),
         (
             6000.0,
-            330.0,
+            _adjust_potential_temperature(330.0, 6000.0, stability_profile),
             _adjust_mixing_ratio_gkg(1.0, 6000.0, moisture_profile),
             _bomex_u_wind(6000.0),
             0.0,
         ),
         (
             7000.0,
-            340.0,
+            _adjust_potential_temperature(340.0, 7000.0, stability_profile),
             _adjust_mixing_ratio_gkg(0.5, 7000.0, moisture_profile),
             _bomex_u_wind(7000.0),
             0.0,
@@ -663,6 +672,16 @@ def _moisture_profile_from_controls(
         return "dry_failed" if selected == "drier" else "baseline"
     if scenario_id == "baseline-shallow-cumulus" and selected in {"drier", "more_humid"}:
         return str(selected)
+    return "baseline"
+
+
+def _stability_profile_from_controls(
+    scenario_id: str,
+    control_fragments: tuple[ControlMappingFragment, ...],
+) -> str:
+    selected = _selected_control_value(control_fragments, "cap_strength")
+    if scenario_id == "capped-suppressed-cumulus" and selected == "stronger":
+        return "stronger_cap"
     return "baseline"
 
 
@@ -704,6 +723,28 @@ def _moisture_scale(height_m: float, moisture_profile: str) -> float:
     if height_m >= 6000.0:
         return upper_scale
     return _interpolate(height_m, 3000.0, 6000.0, low_scale, upper_scale)
+
+
+def _adjust_potential_temperature(
+    potential_temperature_k: float,
+    height_m: float,
+    stability_profile: str,
+) -> float:
+    return potential_temperature_k + _cap_temperature_increment(height_m, stability_profile)
+
+
+def _cap_temperature_increment(height_m: float, stability_profile: str) -> float:
+    if stability_profile != "stronger_cap":
+        return 0.0
+    if height_m <= 520.0:
+        return 0.0
+    if height_m <= 1480.0:
+        return _interpolate(height_m, 520.0, 1480.0, 0.0, 1.8)
+    if height_m <= 2000.0:
+        return _interpolate(height_m, 1480.0, 2000.0, 1.8, 2.4)
+    if height_m <= 3000.0:
+        return _interpolate(height_m, 2000.0, 3000.0, 2.4, 0.0)
+    return 0.0
 
 
 def _specific_humidity_to_mixing_ratio_gkg(specific_humidity: float) -> float:

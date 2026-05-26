@@ -198,7 +198,10 @@ def test_exit_zero_surfaces_stderr_floating_point_warnings(tmp_path: Path) -> No
         settings=fake_settings(tmp_path),
         process_factory=FakeProcessFactory(
             fake_process,
-            stderr_text="Note: IEEE_INVALID_FLAG IEEE_DIVIDE_BY_ZERO IEEE_OVERFLOW_FLAG\n",
+            stderr_text=(
+                "Note: IEEE_INVALID_FLAG IEEE_DIVIDE_BY_ZERO "
+                "IEEE_OVERFLOW_FLAG IEEE_UNDERFLOW_FLAG\n"
+            ),
         ),
     )
     manager.launch(manifest_path)
@@ -210,7 +213,8 @@ def test_exit_zero_surfaces_stderr_floating_point_warnings(tmp_path: Path) -> No
     manifest = load_run_manifest(manifest_path)
     assert manifest.outputs.runtime_warnings == [
         "CM1 stderr reported floating-point exception flags: "
-        "IEEE_INVALID_FLAG, IEEE_DIVIDE_BY_ZERO, IEEE_OVERFLOW_FLAG"
+        "IEEE_INVALID_FLAG, IEEE_DIVIDE_BY_ZERO, "
+        "IEEE_OVERFLOW_FLAG, IEEE_UNDERFLOW_FLAG"
     ]
 
 
