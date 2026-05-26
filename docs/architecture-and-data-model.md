@@ -409,6 +409,23 @@ Result cards expose the conservative `thermal_fate_label`,
 `thermal_fate_confidence`, and `main_limiting_factor` fields without replacing
 the existing cloud/rain/updraft summary.
 
+The selected-region diagnostics API builds on that global metadata for the
+Thermal Fate Inspector. `GET /api/results/{result_id}/diagnostics/selected-region`
+accepts a bounded native-grid point, column, or box request and returns:
+
+- region bounds, native-grid coordinate metadata, and cell count;
+- local max/min `w` time series and summary;
+- local max `qc`, first local cloud time, cloud fraction, cloud base/top, and
+  max-height time series;
+- local `qr` rain onset and max summary when `qr` exists;
+- comparison-to-domain ratios or time deltas where global diagnostics are
+  available;
+- a conservative local Thermal Fate label with confidence and caveats.
+
+The endpoint returns summaries only. It does not return large raw arrays, does
+not perform cloud-object tracking, and does not let the browser parse raw
+NetCDF.
+
 ### Result Library
 
 Responsibilities:

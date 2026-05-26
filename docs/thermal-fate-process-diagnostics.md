@@ -500,6 +500,26 @@ comparison to domain diagnostics where available
 The first implementation should not attempt full cloud-object tracking. Point,
 column, and box summaries are enough to make `What happened here?` useful.
 
+The backend implementation exposes a bounded selected-region diagnostics
+endpoint:
+
+```text
+GET /api/results/{result_id}/diagnostics/selected-region
+```
+
+Supported request shapes are native-grid point, column, and box selections. A
+point request requires `x_index`, `y_index`, and `z_index` plus an optional
+`neighborhood`. A column request requires `x_index` and `y_index` and summarizes
+the vertical extent at that horizontal location. A box request requires
+`x_start`, `x_end`, `y_start`, `y_end`, `z_start`, and `z_end`.
+
+The response includes local max/min `w`, local max `qc`, first local cloud
+time, local cloud fraction, local cloud base/top and max-height series, local
+rain onset/max `qr` when available, comparison-to-domain summaries, a
+conservative local Thermal Fate label, confidence, provenance, and caveats. It
+is intentionally not cloud-object tracking and does not return raw NetCDF arrays
+to the browser.
+
 ## Comparison Diagnostics
 
 Comparison diagnostics should explain what changed between a baseline and a
