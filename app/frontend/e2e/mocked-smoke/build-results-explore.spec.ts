@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 
-import { gotoApp, gotoBuild, gotoResults, openExploreTab, openResultsTab } from "../helpers";
+import { gotoApp, gotoBuild, gotoResults, openResultsTab } from "../helpers";
 import { mockCloudChamberApis } from "../fixtures";
 
 test.describe("mocked smoke: Build, Results, Explore path", () => {
@@ -42,7 +42,7 @@ test.describe("mocked smoke: Build, Results, Explore path", () => {
     await expect(page.getByText("Cloud formed").first()).toBeVisible();
     await expect(page.getByText("Rain detected").first()).toBeVisible();
     await expect(page.getByRole("button", { name: "Open in Explore" }).first()).toBeVisible();
-    await expect(page.getByRole("button", { name: "Open 3-D" }).first()).toBeVisible();
+    await expect(page.getByRole("button", { name: "Open in Explore" }).first()).toBeVisible();
     const resultDetail = page.getByLabel("Result detail");
     await resultDetail.getByText("Technical details").click();
     await expect(resultDetail.getByText("Run ID")).toBeVisible();
@@ -78,75 +78,64 @@ test.describe("mocked smoke: Build, Results, Explore path", () => {
     await gotoResults(page);
     await page.getByRole("button", { name: "Open in Explore" }).first().click();
 
-    await expect(page.getByRole("tab", { name: "2-D Slices" })).toBeVisible();
-
-    await openExploreTab(page, /^2-D Slices$/);
-    await expect(page.getByText(/what happened in this result/i).first()).toBeVisible({ timeout: 10_000 });
-    await expect(
-      page.getByText(/vertical x slice at y = .*horizontal axis: x\. vertical axis: height/i),
-    ).toBeVisible();
+    await expect(page.getByText(/what happened in this result/i).first()).toBeVisible({
+      timeout: 10_000,
+    });
+    await expect(page.getByLabel("Shared Explore controls")).toBeVisible();
+    await expect(page.getByLabel("3-D scene container")).toBeVisible({ timeout: 12_000 });
+    await expect(page.getByRole("heading", { name: "Inspect the current slice" })).toBeVisible();
+    await expect(page.getByText(/Horizontal layer at z = /i).first()).toBeVisible();
     await expect(page.getByLabel("Slice position")).toBeVisible();
-    await expect(page.getByRole("button", { name: /move back/i })).toBeVisible();
-    await expect(page.getByRole("button", { name: /move forward/i })).toBeVisible();
+    await expect(page.getByRole("button", { name: /move down/i })).toBeVisible();
+    await expect(page.getByRole("button", { name: /move up/i })).toBeVisible();
     await expect(page.getByText(/what happened here/i).first()).toBeVisible();
-    await expect(page.getByText(/select a spot or region/i).first()).toBeVisible();
-    const verticalHeatmap = page.getByLabel("Vertical X slice heatmap");
-    await expect(verticalHeatmap).toBeVisible();
-    const fieldControlsPrecedeHeatmap = await verticalHeatmap.evaluate((element) => {
-      const fieldControl = document.querySelector("#inspect-field");
+    await expect(page.getByText(/click a slice cell to inspect that point/i).first()).toBeVisible();
+    const heatmap = page.getByRole("img", { name: /heatmap/i });
+    await expect(heatmap).toBeVisible();
+    const fieldControlsPrecedeHeatmap = await heatmap.evaluate((element) => {
+      const fieldControl = document.querySelector("#explore-slice-field");
       return Boolean(
         fieldControl &&
           (fieldControl.compareDocumentPosition(element) & Node.DOCUMENT_POSITION_FOLLOWING),
       );
     });
     expect(fieldControlsPrecedeHeatmap).toBe(true);
-    await page.getByText("Technical details").first().click();
-    await expect(page.getByText(/evidence/i).first()).toBeVisible();
-    await expect(page.getByText(/growing cumulus/i).first()).toBeVisible();
     await page
-      .getByRole("button", { name: /inspect vertical x slice row 2, column 2/i })
+      .getByRole("button", { name: /inspect .*row 2, column 2/i })
       .first()
       .click();
-    await expect(page.getByText(/selected-region diagnostics loaded/i)).toBeVisible();
+    await expect(page.getByText(/selected-point diagnostics loaded/i)).toBeVisible();
     await expect(page.getByText(/cloud water appeared locally/i)).toBeVisible();
     await expect(page.getByText(/local max w/i)).toBeVisible();
-    await page.getByRole("button", { name: /clear selection/i }).click();
-    await expect(page.getByText(/select a spot or region/i).first()).toBeVisible();
+    await page.getByText("Technical slice details").first().click();
+    await expect(page.getByText(/finite values/i).first()).toBeVisible();
     await expect(page.getByText(/\[\[[\d.,\s]+\]\]/)).not.toBeVisible();
 
-    await openExploreTab(page, /^3-D View$/);
-    await expect(page.getByText(/what happened in this result/i).first()).toBeVisible({ timeout: 12_000 });
-    await expect(page.getByText(/what happened here/i).first()).toBeVisible();
     await expect(page.getByText("Cloud formed in this result")).toBeVisible();
     await expect(page.getByText("Cloud formed here")).toHaveCount(0);
     await expect(page.getByRole("button", { name: /reset view/i })).toBeVisible();
-    const visualizerControls = page.getByLabel("Primary visualizer controls");
-    await visualizerControls.getByText("Projection and rendering details").click();
-    await expect(visualizerControls.getByRole("button", { name: /oblique overview/i })).toBeVisible();
-    await page.getByText("Evidence details").click();
-    await expect(page.getByRole("heading", { name: /thermal fate summary/i })).toBeVisible();
+    const visualizerControls = page.getByLabel("Shared Explore controls");
+    await expect(visualizerControls.getByRole("button", { name: /oblique/i })).toBeVisible();
+    await expect(visualizerControls.getByRole("button", { name: /side x-?z/i })).toBeVisible();
   });
 
   test("Results to Explore loads cloud-forming qc and w fields", async ({ page }) => {
     await gotoResults(page);
     await page.getByRole("button", { name: "Open in Explore" }).first().click();
 
-    await openExploreTab(page, /^2-D Slices$/);
-    await expect(page.getByText(/slices loaded/i).first()).toBeVisible({ timeout: 10_000 });
-    await expect(page.locator("#inspect-field")).toHaveValue("qc");
-    await expect(page.locator("#inspect-field option", { hasText: "qc - Cloud water" })).toHaveCount(
+    await expect(page.getByText(/slice synced/i).first()).toBeVisible({ timeout: 10_000 });
+    await expect(page.locator("#explore-slice-field")).toHaveValue("qc");
+    await expect(page.locator("#explore-slice-field option", { hasText: "qc - Cloud water" })).toHaveCount(
       1,
     );
     await expect(
-      page.locator("#inspect-field option", { hasText: "w - Vertical velocity" }),
+      page.locator("#explore-slice-field option", { hasText: "w - Vertical velocity" }),
     ).toHaveCount(1);
     await expect(page.getByText(/loading fields/i)).not.toBeVisible();
 
-    await openExploreTab(page, /^3-D View$/);
     await expect(page.getByText(/cloud-water point cloud loaded/i).first()).toBeVisible({
       timeout: 12_000,
     });
-    await expect(page.locator("#scene-field")).toHaveValue("qc");
     await expect(page.getByText(/cloud-water point cloud/i).first()).toBeVisible();
   });
 
@@ -155,12 +144,13 @@ test.describe("mocked smoke: Build, Results, Explore path", () => {
   }) => {
     await gotoResults(page);
     await openResultsTab(page, /^Compare$/);
-    await page.getByRole("button", { name: "Open Dry Failed 3-D" }).click();
+    await page.getByRole("button", { name: "Open Dry Failed in Explore" }).click();
 
-    await expect(page.getByRole("tab", { name: "2-D Slices" })).toBeVisible();
     await expect(page.getByText("Dry Failed Cumulus — Quick Look").first()).toBeVisible();
-    await expect(page.getByText(/cloud view ready/i).first()).toBeVisible({ timeout: 12_000 });
-    await expect(page.locator("#scene-field")).toHaveValue("w");
+    await expect(page.getByText(/No cloud water formed in this result/i).first()).toBeVisible({
+      timeout: 12_000,
+    });
+    await expect(page.locator("#explore-slice-field")).toHaveValue("w");
     await expect(
       page.getByText(/No cloud water formed in this result; vertical velocity is available/i),
     ).toBeVisible();
@@ -170,11 +160,10 @@ test.describe("mocked smoke: Build, Results, Explore path", () => {
     await expect(page.getByText("No cloud formed in this result")).toBeVisible();
     await expect(page.getByText("No cloud formed here")).toHaveCount(0);
 
-    await openExploreTab(page, /^2-D Slices$/);
-    await expect(page.getByText(/slices loaded/i).first()).toBeVisible({ timeout: 10_000 });
-    await expect(page.locator("#inspect-field")).toHaveValue("w");
+    await expect(page.getByText(/slice synced/i).first()).toBeVisible({ timeout: 10_000 });
+    await expect(page.locator("#explore-slice-field")).toHaveValue("w");
     await expect(
-      page.locator("#inspect-field option", { hasText: "w - Vertical velocity" }),
+      page.locator("#explore-slice-field option", { hasText: "w - Vertical velocity" }),
     ).toHaveCount(1);
   });
 
@@ -191,7 +180,6 @@ test.describe("mocked smoke: Build, Results, Explore path", () => {
 
     await gotoResults(page);
     await page.getByRole("button", { name: "Open in Explore" }).first().click();
-    await openExploreTab(page, /^2-D Slices$/);
 
     await expect(page.getByRole("alert")).toContainText(
       "Visualization fields temporarily failed.",
@@ -207,19 +195,18 @@ test.describe("mocked smoke: Build, Results, Explore path", () => {
     await gotoResults(page);
     await page.getByRole("button", { name: "Open in Explore" }).first().click();
 
-    await openExploreTab(page, /^2-D Slices$/);
-    await expect(
-      page.getByText(/vertical x slice at y = .*horizontal axis: x\. vertical axis: height/i),
-    ).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByText(/Horizontal layer at z = /i).first()).toBeVisible({
+      timeout: 10_000,
+    });
     await expect(page.getByLabel("Slice position")).toBeVisible();
-    const heatmap = page.getByLabel("Vertical X slice heatmap");
+    const heatmap = page.getByRole("img", { name: /heatmap/i });
     await expect(heatmap).toBeVisible({ timeout: 10_000 });
-    await expect(page.getByLabel("Selected-region controls")).toBeVisible();
-    await expect(page.getByLabel("Selected-region controls")).toContainText(/what happened here/i);
+    await expect(page.getByLabel("What happened here panel")).toBeVisible();
+    await expect(page.getByLabel("What happened here panel")).toContainText(/what happened here/i);
 
     const heatmapPrecedesTechnicalDetails = await heatmap.evaluate((element) => {
       const technicalSummary = Array.from(document.querySelectorAll("summary")).find((summary) =>
-        summary.textContent?.includes("Technical details"),
+        summary.textContent?.includes("Technical slice details"),
       );
       return Boolean(
         technicalSummary &&
@@ -228,7 +215,6 @@ test.describe("mocked smoke: Build, Results, Explore path", () => {
     });
     expect(heatmapPrecedesTechnicalDetails).toBe(true);
 
-    await openExploreTab(page, /^3-D View$/);
     const scene = page.getByLabel("3-D scene container");
     const explanation = page.getByLabel("Visualization details");
     await expect(scene).toBeVisible({ timeout: 12_000 });

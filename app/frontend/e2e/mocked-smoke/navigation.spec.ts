@@ -64,8 +64,10 @@ test.describe("mocked smoke: app shell", () => {
     await expect(page.getByRole("tab", { name: "Storage" })).toBeVisible();
 
     await gotoExplore(page);
-    await expect(page.getByRole("tab", { name: "2-D Slices" })).toBeVisible();
-    await expect(page.getByRole("tab", { name: "3-D View" })).toBeVisible();
+    await expect(page.getByLabel("Explore this result")).toBeVisible();
+    await expect(page.getByLabel("Shared Explore controls")).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByRole("tab", { name: "2-D Slices" })).toHaveCount(0);
+    await expect(page.getByRole("tab", { name: "3-D View" })).toHaveCount(0);
   });
 
   test("uses atmospheric notebook chrome instead of dark terminal styling", async ({ page }) => {
@@ -118,7 +120,8 @@ test.describe("mocked smoke: app shell", () => {
       await gotoResults(page);
       await expect(page.getByRole("heading", { name: "Experiment Notebook" })).toBeVisible();
       await gotoExplore(page);
-      await expect(page.getByRole("tab", { name: "2-D Slices" }))
+      await expect(page.getByLabel("Explore this result")).toBeVisible();
+      await expect(page.getByRole("heading", { name: "What happened in this result?" }))
         .toBeVisible();
     });
   }

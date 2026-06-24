@@ -89,9 +89,13 @@ class ResultCard(BaseModel):
     main_limiting_factor: str | None = None
     first_cloud_time_seconds: float | None = None
     max_qc_kg_kg: float | None = None
+    time_of_max_qc_seconds: float | None = None
     max_w_m_s: float | None = None
+    time_of_max_w_seconds: float | None = None
     min_w_m_s: float | None = None
+    time_of_min_w_seconds: float | None = None
     rain_present: bool | None = None
+    first_rain_time_seconds: float | None = None
     caveats: list[str] = Field(default_factory=list)
     output_file_summary: OutputFileSummary
     created_at: datetime
@@ -207,9 +211,17 @@ def _card_from_metadata(
         main_limiting_factor=interpretation.main_limiting_factor if interpretation else None,
         first_cloud_time_seconds=cloud.first_cloud_time_seconds if cloud else None,
         max_qc_kg_kg=cloud.max_qc_kg_kg if cloud else None,
+        time_of_max_qc_seconds=cloud.time_of_max_qc_seconds if cloud else None,
         max_w_m_s=vertical_velocity.max_w_m_s if vertical_velocity else None,
+        time_of_max_w_seconds=vertical_velocity.time_of_max_w_seconds
+        if vertical_velocity
+        else None,
         min_w_m_s=vertical_velocity.min_w_m_s if vertical_velocity else None,
+        time_of_min_w_seconds=vertical_velocity.time_of_min_w_seconds
+        if vertical_velocity
+        else None,
         rain_present=rain.present if rain else None,
+        first_rain_time_seconds=rain.first_rain_time_seconds if rain else None,
         caveats=_dedupe(caveats),
         output_file_summary=_output_file_summary(metadata),
         created_at=metadata.created_at,

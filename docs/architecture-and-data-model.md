@@ -525,15 +525,16 @@ oblique overview modes. The domain box, floor, axes, and points must share the
 same transform so horizontal `y` does not masquerade as height. Oblique overview
 is an interpretation for orientation, not a literal atmospheric photograph.
 
-The frontend viewport should be a fixed scientific workbench: a primary control
-rail, a stable render viewport, a bottom timeline/slice-position strip, and a
-secondary technical details panel. The domain box, floor/grid, slice planes, and
-point cloud share one data-layer transform. Zoom scales that data layer while
-preserving aspect ratio; axes, scale markers, and annotations remain readable
-and do not become part of the zoomed data layer. Until a true camera is
-implemented, controls should be described as view/projection controls rather
-than orbit or pan camera controls. Scale markers should expose horizontal
-distance, visible height, the domain floor, and active cloud-water `z` range.
+The frontend viewport should be a fixed scientific workbench inside the unified
+Explore workflow: shared field/time/slice controls, a stable render viewport,
+the matching 2-D slice inspector, selected-point explanation, and secondary
+technical details. The domain box, floor/grid, slice planes, and point cloud
+share one data-layer transform. Zoom scales that data layer while preserving
+aspect ratio; axes, scale markers, and annotations remain readable and do not
+become part of the zoomed data layer. Until a true camera is implemented,
+controls should be described as view/projection controls rather than orbit or
+pan camera controls. Scale markers should expose horizontal distance, visible
+height, the domain floor, and active cloud-water `z` range.
 
 3-D slice planes reuse the same backend slice endpoint as the 2-D inspector:
 
@@ -638,17 +639,22 @@ metadata such as raw run IDs, lifecycle/product states, controls used,
 provenance labels, and detailed caveats remains in disclosure so it is available
 without overwhelming the first read.
 
-`Explore` contains `2-D Slices` and `3-D View` sub-tabs for one selected result.
-The selected result ID flows from Results / Notebook, Results / Compare, and
-Results / Storage into Explore; those consumers request backend-prepared
-payloads for that result rather than opening files directly.
+`Explore` is one desktop workflow for one selected result, not separate
+implementation destinations. The selected result ID flows from Results /
+Notebook, Results / Compare, and Results / Storage into Explore; that workspace
+then requests backend-prepared field catalogs, defaults, point-cloud payloads,
+slices, and selected-point diagnostics for the same result. The browser does not
+open NetCDF files or classify the physics itself.
 
 Explore's UI contract is explanation-first. The selected result summary,
-cloud/no-cloud state, field-loading state, and `What happened here?` panel are
-primary state. Technical Thermal Fate process modes, native-grid caveats,
-rendering/projection details, and provenance stay available in disclosure so the
-browser remains a presentation layer over backend diagnostics instead of a
-scientific classifier.
+cloud/no-cloud state, field-loading state, shared field/time/slice controls,
+3-D cloud-water context, visible slice plane, 2-D slice inspector, and `What
+happened here?` selected-point panel are primary state. The 3-D context renders
+`qc` as a thresholded cloud-water point cloud; broader variables such as `w`
+are inspected through synchronized native-grid slices. Technical Thermal Fate
+process modes, native-grid caveats, rendering/projection details, and
+provenance stay available in disclosure so the browser remains a presentation
+layer over backend diagnostics instead of a scientific classifier.
 
 User-facing state labels are separate from technical provenance. The primary UI
 may translate raw states like `ingested_result_metadata` or
@@ -674,7 +680,7 @@ MVP; it reads the same result-card fields as the table and detail card, keeps
 run IDs/provenance in technical details, and routes quick actions into Explore.
 
 The side-by-side slice comparison reuses the same visualization-ready fields
-and slice endpoints as Explore / 2-D Slices. The frontend requests one slice payload per
+and slice endpoints as Explore. The frontend requests one slice payload per
 result, field, output index, and orientation, then renders the two JSON slice
 arrays side by side with their own stats and provenance. There is no new backend
 comparison model, no browser-side NetCDF parsing, and no interpolation step.

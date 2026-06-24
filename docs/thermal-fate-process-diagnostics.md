@@ -83,12 +83,12 @@ NetCDF ingest
 -> renderer upgrade decision
 ```
 
-The first Thermal Fate Inspector UI is bounded and backend-driven. In Explore /
-2-D Slices, a user can click a displayed slice cell or choose a small bounded
-point/box selection, then the frontend calls the selected-region diagnostics
-API and renders the returned `What happened here?` story. The UI may map labels
-to badges and layout, but it must not compute the fate label, confidence,
-limiting factor, or unsupported scientific explanation in browser code.
+The first Thermal Fate Inspector UI is bounded and backend-driven. In the
+unified Explore workflow, a user can click a displayed slice cell to inspect
+that exact point, then the frontend calls the selected-region diagnostics API
+and renders the returned `What happened here?` story. The UI may map labels to
+badges and layout, but it must not compute the fate label, confidence, limiting
+factor, or unsupported scientific explanation in browser code.
 
 ## Thermal Fate Ladder
 
@@ -581,8 +581,9 @@ Shallow vs Deep Convection
 The main UI should present atmospheric concepts first. Raw CM1 field names belong
 in technical details.
 
-The first Explore overlay implementation exposes these modes in both 2-D
-Slices and 3-D View:
+The first Explore overlay implementation exposes these modes inside the unified
+Explore workflow, with 3-D `qc` cloud context and broader variable inspection
+through synchronized 2-D slices:
 
 ```text
 Thermal Fate summary

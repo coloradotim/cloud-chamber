@@ -128,9 +128,13 @@ def test_result_card_created_from_ingested_metadata(tmp_path: Path) -> None:
     assert card.main_limiting_factor == "unknown"
     assert card.first_cloud_time_seconds == 1800.0
     assert card.max_qc_kg_kg == 2e-6
+    assert card.time_of_max_qc_seconds == 1800.0
     assert card.max_w_m_s == 4.0
+    assert card.time_of_max_w_seconds == 1800.0
     assert card.min_w_m_s == 1.0
+    assert card.time_of_min_w_seconds == 1800.0
     assert card.rain_present is True
+    assert card.first_rain_time_seconds == 1800.0
     assert card.output_file_summary.netcdf_count == 1
     assert card.output_file_summary.model_output_count == 1
     assert card.output_file_summary.time_steps == 1
@@ -199,8 +203,12 @@ def test_result_card_handles_missing_diagnostics_gracefully(tmp_path: Path) -> N
     assert card.diagnostics_summary == "no cloud formed; no rain detected"
     assert card.first_cloud_time_seconds is None
     assert card.max_qc_kg_kg is None
+    assert card.time_of_max_qc_seconds is None
     assert card.max_w_m_s is None
+    assert card.time_of_max_w_seconds is None
     assert card.min_w_m_s is None
+    assert card.time_of_min_w_seconds is None
     assert card.rain_present is False
+    assert card.first_rain_time_seconds is None
     assert "missing_qc_field" in card.caveats
     assert "missing_w_field" in card.caveats

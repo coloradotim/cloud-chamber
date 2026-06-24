@@ -970,19 +970,25 @@ Compare is result-pair oriented and belongs with Results because it compares
 experiment outcomes. Storage is also part of Results because it manages local
 run directories and their relationship to named result cards.
 
-`Explore` contains `2-D Slices` and `3-D View` sub-tabs. The selected result is
-shared by Results and Explore. Selecting a result in Notebook or opening a
+`Explore` is one desktop cloud-context and slice-inspection workflow for a
+single selected result. The old `2-D Slices` / `3-D View` split was useful
+scaffolding while capabilities were built separately, but the product workflow
+is now a unified instrument: compact selected-result context, shared
+field/time/slice controls, a 3-D cloud-water context, a visible native-grid
+slice plane, the matching 2-D slice inspector, and a `What happened here?`
+selected-point explanation panel. Selecting a result in Notebook or opening a
 comparison/storage row in Explore should preserve that context. If no selected
 result is available, Explore should tell the user to select an ingested result
 from Results.
 
 The first-read Explore screen should be an explanation workspace, not a
-process-mode cockpit. Both `2-D Slices` and `3-D View` should show a selected
-result summary, a dominant CM1-derived visual surface, and a visible `What
-happened here?` explanation panel. Core field/time/view controls stay visible;
-process focus, projection/rendering details, slice-plane controls, and long
-provenance labels belong behind details/disclosure until the user asks for
-them.
+process-mode cockpit. The 3-D context renders `qc` cloud-water points only; it
+does not pretend that every field has a 3-D cloud rendering. Broader field
+inspection, including `w`, happens through synchronized native-grid slices.
+Core field/time/slice controls stay visible and shared across the 3-D context
+and slice inspector. Process focus, projection/rendering details, raw
+coordinate metadata, and long provenance labels belong behind
+details/disclosure until the user asks for them.
 
 The 2-D and 3-D views should default to physically interesting output views, not
 arbitrary zero-index slices. The backend should provide default field/time/slice
@@ -1137,7 +1143,7 @@ The 3-D viewer should provide simple view presets:
   slice.
 - Vertical cross-section: a vertical slice through max `qc` or max `w`.
 - Top-down slice: a horizontal slice through the cloud-bearing level.
-- Updraft view: `w` slice through the max-updraft location.
+- Inspect updraft slice: `w` slice through the max-updraft location.
 
 The viewer should also provide quick jumps for first cloud, max cloud water, and
 max updraft when result diagnostics provide enough timing metadata. Slice-plane
@@ -1261,7 +1267,7 @@ native coordinate units, caveats, and provenance/rendering/processing labels.
 Non-finite values are represented as `null` in JSON.
 
 The defaults endpoint chooses physically interesting native-grid locations for
-Explore / 2-D Slices and Explore / 3-D View. It reports max-value locations for `qc` and `w` when
+the unified Explore workflow. It reports max-value locations for `qc` and `w` when
 available, including selected time index, horizontal level, vertical slice
 indices, source label, and caveats. It does not interpolate or invent data; if
 the field is missing or non-finite, the UI falls back to domain-center slices.
