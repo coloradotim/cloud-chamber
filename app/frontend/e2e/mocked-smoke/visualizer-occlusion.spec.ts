@@ -60,9 +60,12 @@ test.describe("mocked smoke: visualizer occlusion regression", () => {
   });
 
   test("3-D scene does not cover its primary controls", async ({ page }) => {
-    await expect(page.getByText(/scene shell/i).first()).toBeVisible({ timeout: 12_000 });
-    await expect(page.getByText(/oblique overview/i).first()).toBeVisible();
-    await expect(page.getByText(/side x-?z/i).first()).toBeVisible();
+    await expect(page.getByText(/what happened in this result/i).first()).toBeVisible({ timeout: 12_000 });
+    await expect(page.getByText(/what happened here/i).first()).toBeVisible();
+    const visualizerControls = page.getByLabel("Primary visualizer controls");
+    await visualizerControls.getByText("Projection and rendering details").click();
+    await expect(visualizerControls.getByRole("button", { name: /oblique overview/i })).toBeVisible();
+    await expect(visualizerControls.getByRole("button", { name: /side x-?z/i })).toBeVisible();
 
     await expectClickableCenter(
       page,

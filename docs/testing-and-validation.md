@@ -103,6 +103,13 @@ selected-region state, clearing the selection, successful explanation payloads,
 backend failure states, missing diagnostics states, technical details
 disclosure, and selected-result flow from Results to Explore.
 
+Explore redesign tests should also cover the current #172 contract: the page
+uses `Explore this result` / `What happened here?` language, opens cloud-forming
+results with `qc` and `w` available, opens no-cloud Dry Failed results as useful
+`w`/updraft inspection cases rather than broken visualizations, shows retryable
+field-loading failures, and keeps advanced process/rendering/provenance controls
+behind disclosure instead of replacing the primary explanation flow.
+
 Do not turn the reset into a broad manual checklist of objective behaviors.
 If a requested acceptance criterion is objective and repeatable, convert it
 into a unit/component or Playwright test.

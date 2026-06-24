@@ -432,7 +432,7 @@ type SceneViewPreset = "cloud-overview" | "vertical-cross-section" | "top-down-s
 type ProjectionMode = "oblique" | "side_xz" | "side_yz" | "top_down";
 type SceneSlicePlane = "horizontal" | "vertical_x" | "vertical_y";
 
-const FIELD_LOAD_TIMEOUT_MS = 8000;
+const FIELD_LOAD_TIMEOUT_MS = 30000;
 
 async function fetchScenarioCatalog(): Promise<ScenarioResponse> {
   const response = await fetch("/api/scenarios");
@@ -1637,13 +1637,7 @@ function ExploreWorkspace({
   onTabChange: (tab: ExploreTab) => void;
 }) {
   return (
-    <section className="workspace-section" aria-labelledby="explore-workspace-title">
-      <div className="section-heading">
-        <div>
-          <p className="eyebrow">Explore</p>
-          <h2 id="explore-workspace-title">Inspect and visualize fields</h2>
-        </div>
-      </div>
+    <section className="workspace-section" aria-label="Explore this result">
 
       <nav className="subtab-nav" role="tablist" aria-label="Explore views">
         {(["slices", "view3d"] as ExploreTab[]).map((tab) => (
@@ -1675,23 +1669,41 @@ function ExploreWorkspace({
 
       {selectedResult && activeTab === "slices" && (
         <section
+          className="explore-result-view"
           role="tabpanel"
           id="slices-panel"
-          aria-labelledby="slices-tab explore-slices-title"
+          aria-labelledby="slices-tab"
         >
-          <p className="eyebrow">2-D Slices</p>
-          <h3 id="explore-slices-title">2-D Slices</h3>
+          <ExploreResultSummary result={selectedResult} />
           <FieldInspector result={selectedResult} />
         </section>
       )}
 
       {selectedResult && activeTab === "view3d" && (
-        <section role="tabpanel" id="view3d-panel" aria-labelledby="view3d-tab explore-3d-title">
-          <p className="eyebrow">3-D View</p>
-          <h3 id="explore-3d-title">3-D View</h3>
+        <section
+          className="explore-result-view"
+          role="tabpanel"
+          id="view3d-panel"
+          aria-labelledby="view3d-tab"
+        >
+          <ExploreResultSummary result={selectedResult} />
           <VisualizerSceneShell result={selectedResult} />
         </section>
       )}
+    </section>
+  );
+}
+
+function ExploreResultSummary({ result }: { result: ResultCard }) {
+  return (
+    <section className="explore-result-summary" aria-label="Selected Explore result">
+      <div>
+        <h3>{result.name}</h3>
+        <p>
+          {result.scenario_name ?? humanize(result.scenario_id)} ·{" "}
+          {humanize(result.run_size_preset)}
+        </p>
+      </div>
     </section>
   );
 }
@@ -3000,7 +3012,7 @@ function VisualizerSceneShell({ result }: { result: ResultCard }) {
         setHorizontalSliceLevel(defaultHorizontalLevel(firstPreferred, initialDefaults));
         setVerticalSliceIndex(defaultVerticalIndex(firstPreferred, "vertical_x", initialDefaults));
         setSceneStatus(
-          payload.available_fields.length > 0 ? "Scene shell ready" : "No fields available",
+          payload.available_fields.length > 0 ? "Cloud view ready" : "No fields available",
         );
       })
       .catch((caught: unknown) => {
@@ -3180,8 +3192,8 @@ function VisualizerSceneShell({ result }: { result: ResultCard }) {
     <section className="visualizer-shell" aria-labelledby="visualizer-shell-title">
       <div className="section-heading">
         <div>
-          <p className="eyebrow">3-D visualizer</p>
-          <h2 id="visualizer-shell-title">Scene shell</h2>
+          <p className="eyebrow">Cloud view</p>
+          <h2 id="visualizer-shell-title">What happened in this result?</h2>
         </div>
         <p className="state-chip">{sceneStatus}</p>
       </div>
@@ -3216,10 +3228,36 @@ function VisualizerSceneShell({ result }: { result: ResultCard }) {
           className="visualizer-controls visualizer-primary-controls"
           aria-label="Primary visualizer controls"
         >
-          <ProcessModeControl processMode={processMode} onProcessModeChange={setProcessMode} />
-
           <fieldset>
-            <legend>View controls</legend>
+            <legend>Essential controls</legend>
+            {catalog && selectedField && (
+              <label htmlFor="scene-field">
+                Field
+                <select
+                  id="scene-field"
+                  value={selectedFieldName}
+                  onChange={(event) => {
+                    const nextField = catalog.available_fields.find(
+                      (field) => field.raw_field_name === event.target.value,
+                    );
+                    setSelectedFieldName(event.target.value);
+                    setTimeIndex(
+                      defaultTimeIndex(
+                        nextField,
+                        result,
+                        defaultsForField(viewDefaults, event.target.value),
+                      ),
+                    );
+                  }}
+                >
+                  {catalog.available_fields.map((field) => (
+                    <option key={field.raw_field_name} value={field.raw_field_name}>
+                      {field.raw_field_name} - {field.display_name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
             <label htmlFor="scene-zoom">
               Zoom
               <input
@@ -3242,6 +3280,10 @@ function VisualizerSceneShell({ result }: { result: ResultCard }) {
           </fieldset>
 
           {catalog && selectedField && (
+            <details className="secondary-controls">
+              <summary>View and rendering controls</summary>
+              <ProcessModeControl processMode={processMode} onProcessModeChange={setProcessMode} />
+
             <fieldset>
               <legend>View presets</legend>
               <div className="segmented-buttons">
@@ -3343,9 +3385,12 @@ function VisualizerSceneShell({ result }: { result: ResultCard }) {
                 domain center.
               </small>
             </fieldset>
+            </details>
           )}
 
           {catalog && selectedField && (
+            <details className="secondary-controls">
+              <summary>Projection and rendering details</summary>
             <fieldset>
               <legend>Projection</legend>
               <div className="segmented-buttons">
@@ -3382,41 +3427,7 @@ function VisualizerSceneShell({ result }: { result: ResultCard }) {
                 Side views map model height z to screen height for cloud-base and cloud-top checks.
               </small>
             </fieldset>
-          )}
 
-          {catalog && selectedField && (
-            <fieldset>
-              <legend>Field</legend>
-              <label htmlFor="scene-field">
-                Field
-                <select
-                  id="scene-field"
-                  value={selectedFieldName}
-                  onChange={(event) => {
-                    const nextField = catalog.available_fields.find(
-                      (field) => field.raw_field_name === event.target.value,
-                    );
-                    setSelectedFieldName(event.target.value);
-                    setTimeIndex(
-                      defaultTimeIndex(
-                        nextField,
-                        result,
-                        defaultsForField(viewDefaults, event.target.value),
-                      ),
-                    );
-                  }}
-                >
-                  {catalog.available_fields.map((field) => (
-                    <option key={field.raw_field_name} value={field.raw_field_name}>
-                      {field.raw_field_name} - {field.display_name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            </fieldset>
-          )}
-
-          {catalog && selectedField && (
             <fieldset>
               <legend>Cloud-water rendering</legend>
               <label htmlFor="cloud-threshold">
@@ -3456,9 +3467,12 @@ function VisualizerSceneShell({ result }: { result: ResultCard }) {
               </label>
               <p>Default max points: {maxPoints.toLocaleString()}</p>
             </fieldset>
+            </details>
           )}
 
           {catalog && sliceField && (
+            <details className="secondary-controls">
+              <summary>Slice plane controls</summary>
             <fieldset>
               <legend>Slice planes</legend>
               <label htmlFor="show-slice-planes" className="checkbox-label">
@@ -3499,6 +3513,7 @@ function VisualizerSceneShell({ result }: { result: ResultCard }) {
                 </select>
               </label>
             </fieldset>
+            </details>
           )}
         </aside>
 
@@ -3584,7 +3599,7 @@ function VisualizerSceneShell({ result }: { result: ResultCard }) {
                   {!qcField
                     ? "Cloud water field qc is not available for this result."
                     : isNoCloudWithUpdraft
-                      ? "No cloud water formed here; vertical velocity is available."
+                      ? "No cloud water formed in this result; vertical velocity is available."
                       : "No cloud water above the selected threshold at this time."}
                 </h3>
                 <p>
@@ -3759,13 +3774,18 @@ function VisualizerSceneShell({ result }: { result: ResultCard }) {
         </div>
 
         <aside className="visualizer-details-panel" aria-label="Visualization details">
-          <ProcessOverlayPanel
-            result={result}
-            catalog={catalog}
-            selectedField={selectedField}
-            processMode={processMode}
-            slice={activeSlicePlane === "horizontal" ? sceneHorizontalSlice : sceneVerticalSlice}
-          />
+          <ResultExplanationPanel result={result} isNoCloudWithUpdraft={isNoCloudWithUpdraft} />
+
+          <details className="technical-details">
+            <summary>Evidence details</summary>
+            <ProcessOverlayPanel
+              result={result}
+              catalog={catalog}
+              selectedField={selectedField}
+              processMode={processMode}
+              slice={activeSlicePlane === "horizontal" ? sceneHorizontalSlice : sceneVerticalSlice}
+            />
+          </details>
 
           <div className="summary-strip">
             <Metric
@@ -3894,6 +3914,63 @@ function VisualizerSceneShell({ result }: { result: ResultCard }) {
   );
 }
 
+function ResultExplanationPanel({
+  result,
+  isNoCloudWithUpdraft,
+}: {
+  result: ResultCard;
+  isNoCloudWithUpdraft: boolean;
+}) {
+  return (
+    <section className="selected-region-inspector" aria-label="Result-level explanation panel">
+      <div className="section-heading compact-heading">
+        <div>
+          <p className="eyebrow">Explanation</p>
+          <h3>Result explanation</h3>
+        </div>
+        <StatusBadge
+          label={
+            cloudOutcome(result) === "Cloud formed"
+              ? "Cloud formed in this result"
+              : "No cloud formed in this result"
+          }
+          tone={cloudOutcome(result) === "Cloud formed" ? "good" : "warning"}
+        />
+      </div>
+      <p>{resultStory(result)}</p>
+      <section aria-label="Evidence">
+        <h4>Evidence</h4>
+        <dl className="metric-grid">
+          <Metric label="First cloud time" value={formatSeconds(result.first_cloud_time_seconds)} />
+          <Metric label="Max qc" value={formatScientific(result.max_qc_kg_kg, "kg/kg")} />
+          <Metric label="Max w" value={formatNumber(result.max_w_m_s, "m/s")} />
+          <Metric label="Rain" value={rainOutcome(result.rain_present)} />
+        </dl>
+      </section>
+      <section aria-label="What happened here invitation">
+        <h4>What happened here?</h4>
+        <p>
+          Select a spot or region in the visualization to ask what happened there.
+          {isNoCloudWithUpdraft
+            ? " For this no-cloud result, use vertical velocity (w) to inspect the thermals."
+            : " Region-level evidence will narrow what is still uncertain."}
+        </p>
+      </section>
+      <details>
+        <summary>Technical details</summary>
+        <ul className="compact-list">
+          <li>Thermal Fate is the internal explanation model.</li>
+          <li>Evidence comes from ingested CM1 diagnostics and visualization-ready fields.</li>
+          <li>No raw NetCDF parsing in the browser.</li>
+          {result.caveats.map((caveat) => (
+            <li key={caveat}>{caveat}</li>
+          ))}
+        </ul>
+      </details>
+    </section>
+  );
+}
+
 function SlicePlane({ title, slice }: { title: string; slice: SliceResponse | null }) {
   if (!slice) return null;
   const cells = slice.values.flat();
@@ -3917,7 +3994,7 @@ function SlicePlane({ title, slice }: { title: string; slice: SliceResponse | nu
           <span
             className="slice-plane-cell"
             key={`${title}-${index}`}
-            style={sliceCellStyle(value, slice.stats)}
+            style={sliceCellStyle(value, slice)}
           />
         ))}
       </div>
@@ -4246,7 +4323,29 @@ function FieldInspector({ result }: { result: ResultCard }) {
     ? selectedField.shape[selectedField.dimensions.indexOf(selectedField.coordinate_names.x)]
     : 1;
   const verticalSliceMax = verticalOrientation === "vertical_x" ? ySize : xSize;
+  const activeSliceMax = viewMode === "horizontal" ? verticalSize : verticalSliceMax;
+  const activeSliceIndex = viewMode === "horizontal" ? horizontalLevelIndex : verticalLevelIndex;
   const activeSlice = viewMode === "horizontal" ? horizontalSlice : verticalSlice;
+  const sliceVisualization = (
+    <div className={viewMode === "compare" ? "slice-grid" : "primary-slice-grid"}>
+      {(viewMode === "horizontal" || viewMode === "compare") && (
+        <SlicePanel
+          title="Horizontal slice"
+          slice={horizontalSlice}
+          selectedRegion={selectedRegion}
+          onSelectRegion={selectRegionFromSlice}
+        />
+      )}
+      {(viewMode === "vertical_x" || viewMode === "vertical_y" || viewMode === "compare") && (
+        <SlicePanel
+          title={viewMode === "vertical_y" ? "Vertical Y slice" : "Vertical X slice"}
+          slice={verticalSlice}
+          selectedRegion={selectedRegion}
+          onSelectRegion={selectRegionFromSlice}
+        />
+      )}
+    </div>
+  );
 
   function selectRegionFromSlice(slice: SliceResponse, rowIndex: number, columnIndex: number) {
     setSelectedRegion(selectionFromSlice(slice, rowIndex, columnIndex, "column"));
@@ -4277,18 +4376,15 @@ function FieldInspector({ result }: { result: ResultCard }) {
 
   return (
     <section className="field-inspector" aria-labelledby="field-inspector-title">
-      <div className="section-heading">
+      <div className="slice-view-header">
         <div>
-          <p className="eyebrow">2-D field inspection</p>
-          <h2 id="field-inspector-title">Inspect CM1 fields</h2>
+          <h2 id="field-inspector-title">What happened in this result?</h2>
+          {catalog && selectedField && (
+            <SliceOrientationSummary slice={activeSlice} viewMode={viewMode} />
+          )}
         </div>
         <p className="state-chip">{inspectorStatus}</p>
       </div>
-
-      <p>
-        These slices are backend-prepared inspections of CM1 output. The browser is not parsing raw
-        NetCDF, and this is not a 3-D visualization.
-      </p>
 
       {inspectorError && (
         <div role="alert">
@@ -4305,11 +4401,9 @@ function FieldInspector({ result }: { result: ResultCard }) {
 
       {catalog && selectedField && (
         <>
-          <div className="inspector-controls">
-            <ProcessModeControl processMode={processMode} onProcessModeChange={setProcessMode} />
-
+          <div className="inspector-controls inspector-controls-primary">
             <fieldset className="view-mode-control">
-              <legend>Slice view</legend>
+              <legend>Slice orientation</legend>
               <div className="segmented-buttons">
                 <button
                   type="button"
@@ -4372,54 +4466,66 @@ function FieldInspector({ result }: { result: ResultCard }) {
               </select>
             </label>
 
-            <label htmlFor="horizontal-level">
-              Horizontal level
+            <label htmlFor="active-slice-index">
+              Slice position
               <input
-                id="horizontal-level"
-                type="number"
+                id="active-slice-index"
+                aria-label="Slice position"
+                type="range"
                 min={0}
-                max={Math.max(0, verticalSize - 1)}
-                value={horizontalLevelIndex}
-                onChange={(event) => setHorizontalLevelIndex(Number(event.target.value))}
+                max={Math.max(0, activeSliceMax - 1)}
+                value={activeSliceIndex}
+                onChange={(event) => {
+                  const nextIndex = Number(event.target.value);
+                  if (viewMode === "horizontal") {
+                    setHorizontalLevelIndex(nextIndex);
+                  } else {
+                    setVerticalLevelIndex(nextIndex);
+                  }
+                }}
               />
+              <span>{slicePositionLabel(activeSlice, activeSliceIndex)}</span>
             </label>
 
-            <label htmlFor="vertical-index">
-              Vertical slice index
-              <input
-                id="vertical-index"
-                type="number"
-                min={0}
-                max={Math.max(0, verticalSliceMax - 1)}
-                value={verticalLevelIndex}
-                onChange={(event) => setVerticalLevelIndex(Number(event.target.value))}
-              />
-            </label>
+            <div className="button-row slice-move-buttons">
+              <button
+                type="button"
+                onClick={() => {
+                  const nextIndex = Math.max(0, activeSliceIndex - 1);
+                  if (viewMode === "horizontal") {
+                    setHorizontalLevelIndex(nextIndex);
+                  } else {
+                    setVerticalLevelIndex(nextIndex);
+                  }
+                }}
+              >
+                {viewMode === "horizontal"
+                  ? "Move down"
+                  : viewMode === "vertical_y"
+                    ? "Move left"
+                    : "Move back"}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  const nextIndex = Math.min(Math.max(0, activeSliceMax - 1), activeSliceIndex + 1);
+                  if (viewMode === "horizontal") {
+                    setHorizontalLevelIndex(nextIndex);
+                  } else {
+                    setVerticalLevelIndex(nextIndex);
+                  }
+                }}
+              >
+                {viewMode === "horizontal"
+                  ? "Move up"
+                  : viewMode === "vertical_y"
+                    ? "Move right"
+                    : "Move forward"}
+              </button>
+            </div>
           </div>
 
-          <dl className="metric-grid">
-            <Metric
-              label="Field"
-              value={`${selectedField.raw_field_name} (${selectedField.display_name})`}
-            />
-            <Metric label="Units" value={selectedField.units ?? "Units unavailable"} />
-            <Metric
-              label="Selected time"
-              value={formatTimeValue(
-                timeOptions[Math.min(timeIndex, timeOptions.length - 1)] ?? null,
-              )}
-            />
-            <Metric label="Default source" value={selectedDefaults?.source ?? "domain center"} />
-            <Metric label="Native grid" value={selectedField.native_grid} />
-          </dl>
-
-          <ProcessOverlayPanel
-            result={result}
-            catalog={catalog}
-            selectedField={selectedField}
-            processMode={processMode}
-            slice={viewMode === "horizontal" ? horizontalSlice : verticalSlice}
-          />
+          {sliceVisualization}
 
           <SelectedRegionControls
             selectedRegion={selectedRegion}
@@ -4429,25 +4535,6 @@ function FieldInspector({ result }: { result: ResultCard }) {
             onClear={() => setSelectedRegion(null)}
           />
 
-          <div className={viewMode === "compare" ? "slice-grid" : "primary-slice-grid"}>
-            {(viewMode === "horizontal" || viewMode === "compare") && (
-              <SlicePanel
-                title="Horizontal slice"
-                slice={horizontalSlice}
-                selectedRegion={selectedRegion}
-                onSelectRegion={selectRegionFromSlice}
-              />
-            )}
-            {(viewMode === "vertical_x" || viewMode === "vertical_y" || viewMode === "compare") && (
-              <SlicePanel
-                title={viewMode === "vertical_y" ? "Vertical Y slice" : "Vertical X slice"}
-                slice={verticalSlice}
-                selectedRegion={selectedRegion}
-                onSelectRegion={selectRegionFromSlice}
-              />
-            )}
-          </div>
-
           <SelectedRegionInspector
             selectedRegion={selectedRegion}
             diagnostics={regionDiagnostics}
@@ -4456,7 +4543,55 @@ function FieldInspector({ result }: { result: ResultCard }) {
           />
 
           <details>
-            <summary>Technical field details</summary>
+            <summary>Technical details</summary>
+            <div className="inspector-controls">
+              <label htmlFor="horizontal-level">
+                Horizontal level
+                <input
+                  id="horizontal-level"
+                  type="number"
+                  min={0}
+                  max={Math.max(0, verticalSize - 1)}
+                  value={horizontalLevelIndex}
+                  onChange={(event) => setHorizontalLevelIndex(Number(event.target.value))}
+                />
+              </label>
+
+              <label htmlFor="vertical-index">
+                Vertical slice index
+                <input
+                  id="vertical-index"
+                  type="number"
+                  min={0}
+                  max={Math.max(0, verticalSliceMax - 1)}
+                  value={verticalLevelIndex}
+                  onChange={(event) => setVerticalLevelIndex(Number(event.target.value))}
+                />
+              </label>
+            </div>
+            <dl className="metric-grid">
+              <Metric
+                label="Field"
+                value={`${selectedField.raw_field_name} (${selectedField.display_name})`}
+              />
+              <Metric label="Units" value={selectedField.units ?? "Units unavailable"} />
+              <Metric
+                label="Selected time"
+                value={formatTimeValue(
+                  timeOptions[Math.min(timeIndex, timeOptions.length - 1)] ?? null,
+                )}
+              />
+              <Metric label="Default source" value={selectedDefaults?.source ?? "domain center"} />
+              <Metric label="Native grid" value={selectedField.native_grid} />
+            </dl>
+            <ProcessModeControl processMode={processMode} onProcessModeChange={setProcessMode} />
+            <ProcessOverlayPanel
+              result={result}
+              catalog={catalog}
+              selectedField={selectedField}
+              processMode={processMode}
+              slice={viewMode === "horizontal" ? horizontalSlice : verticalSlice}
+            />
             <p>{catalog.provenance.provenance_label}</p>
             <ul className="compact-list">
               <li>Native-grid view; no interpolation</li>
@@ -4467,6 +4602,54 @@ function FieldInspector({ result }: { result: ResultCard }) {
         </>
       )}
     </section>
+  );
+}
+
+function SliceOrientationSummary({
+  slice,
+  viewMode,
+}: {
+  slice: SliceResponse | null;
+  viewMode: InspectorViewMode;
+}) {
+  const orientation = slice?.selection.orientation;
+  const fieldLabel = slice?.field.display_name ?? "selected field";
+
+  if (!slice) {
+    return (
+      <p className="slice-orientation-summary" aria-label="Current slice explanation">
+        Current slice is loading.
+      </p>
+    );
+  }
+
+  if (viewMode === "compare") {
+    return (
+      <p className="slice-orientation-summary" aria-label="Current slice explanation">
+        Comparing a horizontal layer with a vertical slice through the cloud field.
+      </p>
+    );
+  }
+
+  if (orientation === "horizontal") {
+    return (
+      <p className="slice-orientation-summary" aria-label="Current slice explanation">
+        Horizontal layer of {fieldLabel.toLowerCase()} at{" "}
+        {slicePositionLabel(slice, slice.selection.selected_index)}. Axes: x and y.
+      </p>
+    );
+  }
+
+  const fixedAxis = orientation === "vertical_y" ? "x" : "y";
+  const movingLabel = orientation === "vertical_y" ? "left or right" : "forward or back";
+  const horizontalAxis = orientation === "vertical_y" ? "y" : "x";
+
+  return (
+    <p className="slice-orientation-summary" aria-label="Current slice explanation">
+      Vertical {orientation === "vertical_y" ? "Y" : "X"} slice at {fixedAxis} ={" "}
+      {slicePositionLabel(slice, slice.selection.selected_index)}. Horizontal axis: {horizontalAxis}.
+      Vertical axis: height. Move {movingLabel} to inspect another part of the cloud.
+    </p>
   );
 }
 
@@ -4493,25 +4676,6 @@ function SlicePanel({
   return (
     <section className="slice-panel" aria-label={title}>
       <h3>{title}</h3>
-      <dl className="metric-grid">
-        <Metric label="Orientation" value={slice.selection.orientation} />
-        <Metric label="Time" value={formatSeconds(slice.selection.time_seconds)} />
-        <Metric label="Shape" value={slice.shape.join(" x ")} />
-        <Metric label="Dimensions" value={slice.dimension_order.join(", ")} />
-        <Metric label="Min" value={formatMaybeNumber(slice.stats.min, slice.field.units)} />
-        <Metric label="Max" value={formatMaybeNumber(slice.stats.max, slice.field.units)} />
-        <Metric label="Finite values" value={String(slice.stats.finite_count)} />
-        <Metric label="Non-finite values" value={String(slice.stats.non_finite_count)} />
-      </dl>
-      {slice.selection.level_units && (
-        <p>
-          Selected level: {String(slice.selection.level_coordinate_value)}{" "}
-          {slice.selection.level_units}
-          {slice.selection.level_meters !== null
-            ? ` (${slice.selection.level_meters.toLocaleString()} m)`
-            : ""}
-        </p>
-      )}
       <SliceHeatmap
         title={title}
         slice={slice}
@@ -4520,11 +4684,30 @@ function SlicePanel({
       />
       <div className="heatmap-legend" aria-label={`${title} color scale`}>
         <span>{formatMaybeNumber(slice.stats.min, slice.field.units)}</span>
-        <span className="heatmap-scale" />
+        <span className={`heatmap-scale ${heatmapScaleClass(slice.field)}`} />
         <span>{formatMaybeNumber(slice.stats.max, slice.field.units)}</span>
       </div>
       <details>
         <summary>Technical slice details</summary>
+        <dl className="metric-grid">
+          <Metric label="Orientation" value={slice.selection.orientation} />
+          <Metric label="Time" value={formatSeconds(slice.selection.time_seconds)} />
+          <Metric label="Shape" value={slice.shape.join(" x ")} />
+          <Metric label="Dimensions" value={slice.dimension_order.join(", ")} />
+          <Metric label="Min" value={formatMaybeNumber(slice.stats.min, slice.field.units)} />
+          <Metric label="Max" value={formatMaybeNumber(slice.stats.max, slice.field.units)} />
+          <Metric label="Finite values" value={String(slice.stats.finite_count)} />
+          <Metric label="Non-finite values" value={String(slice.stats.non_finite_count)} />
+        </dl>
+        {slice.selection.level_units && (
+          <p>
+            Selected level: {String(slice.selection.level_coordinate_value)}{" "}
+            {slice.selection.level_units}
+            {slice.selection.level_meters !== null
+              ? ` (${slice.selection.level_meters.toLocaleString()} m)`
+              : ""}
+          </p>
+        )}
         <p>{slice.provenance.provenance_label}</p>
         {slice.caveats.length > 0 && (
           <ul className="compact-list">
@@ -4562,7 +4745,7 @@ function ProcessModeControl({
 }) {
   return (
     <fieldset className="process-mode-control">
-      <legend>Process mode</legend>
+      <legend>Explanation focus</legend>
       <select
         aria-label="Process mode"
         value={processMode}
@@ -4593,10 +4776,10 @@ function ProcessOverlayPanel({
 }) {
   const summary = processModeSummary(processMode, result, catalog, selectedField, slice ?? null);
   return (
-    <section className="process-overlay-panel" aria-label="Thermal Fate process overlay">
+    <section className="process-overlay-panel" aria-label="Explanation evidence">
       <div className="section-heading compact-heading">
         <div>
-          <p className="eyebrow">Thermal Fate overlay</p>
+          <p className="eyebrow">Evidence</p>
           <h3>{processModeLabel(processMode)}</h3>
         </div>
         <StatusBadge
@@ -4649,10 +4832,9 @@ function SelectedRegionControls({
     <section className="selected-region-controls" aria-label="Selected-region controls">
       <div>
         <p className="eyebrow">What happened here?</p>
-        <h3>Thermal Fate Inspector</h3>
+        <h3>Ask about a spot or region</h3>
         <p>
-          Click a slice cell to inspect the nearest column, or use the buttons below for a bounded
-          point or box around the current view center.
+          Click a slice cell, or choose the current view center, to get a CM1-backed explanation.
         </p>
       </div>
       <div className="segmented-buttons">
@@ -4683,10 +4865,10 @@ function SelectedRegionInspector({
   error: string | null;
 }) {
   return (
-    <section className="selected-region-inspector" aria-label="Thermal Fate Inspector">
+    <section className="selected-region-inspector" aria-label="What happened here panel">
       <div className="section-heading compact-heading">
         <div>
-          <p className="eyebrow">Selected region</p>
+          <p className="eyebrow">Explanation</p>
           <h3>What happened here?</h3>
         </div>
         <p className="state-chip">{status}</p>
@@ -4694,8 +4876,7 @@ function SelectedRegionInspector({
 
       {!selectedRegion && (
         <p>
-          No region is selected. Select a point, column, or box to request backend Thermal Fate
-          diagnostics.
+          Select a spot or region in the visualization to ask what happened there.
         </p>
       )}
 
@@ -4726,9 +4907,6 @@ function SelectedRegionInspector({
               label="Main limiting factor"
               value={humanize(diagnostics.interpretation.main_limiting_factor)}
             />
-            <Metric label="Region type" value={humanize(diagnostics.region.region_type)} />
-            <Metric label="Native grid" value={diagnostics.region.native_grid ?? "Unavailable"} />
-            <Metric label="Cell count" value={String(diagnostics.region.cell_count ?? "unknown")} />
             <Metric
               label="First local cloud time"
               value={formatSeconds(diagnostics.diagnostics.first_local_cloud_time_seconds)}
@@ -4751,18 +4929,15 @@ function SelectedRegionInspector({
             />
           </dl>
 
-          <section aria-label="Selected-region bounds">
-            <h4>Selected-region bounds</h4>
+          <details>
+            <summary>Technical details and provenance</summary>
             <dl className="metric-grid">
+              <Metric label="Region type" value={humanize(diagnostics.region.region_type)} />
+              <Metric label="Native grid" value={diagnostics.region.native_grid ?? "Unavailable"} />
+              <Metric label="Cell count" value={String(diagnostics.region.cell_count ?? "unknown")} />
               <Metric label="x" value={axisSelectionLabel(diagnostics.region.x)} />
               <Metric label="y" value={axisSelectionLabel(diagnostics.region.y)} />
               <Metric label="vertical" value={axisSelectionLabel(diagnostics.region.vertical)} />
-            </dl>
-          </section>
-
-          <section aria-label="Domain comparison">
-            <h4>Compared with whole result</h4>
-            <dl className="metric-grid">
               <Metric
                 label="Max w fraction"
                 value={formatRatio(diagnostics.comparison_to_domain.local_max_w_fraction_of_domain)}
@@ -4782,10 +4957,6 @@ function SelectedRegionInspector({
                 value={formatRatio(diagnostics.comparison_to_domain.local_cloud_top_fraction_of_domain)}
               />
             </dl>
-          </section>
-
-          <details>
-            <summary>Technical selected-region details</summary>
             <p>{diagnostics.provenance.provenance_label}</p>
             <ul className="compact-list">
               <li>Backend xarray selected-region diagnostics; no raw NetCDF parsing in browser.</li>
@@ -4816,21 +4987,22 @@ function SliceHeatmap({
   selectedRegion?: SelectedRegionRequest | null;
   onSelectRegion?: (slice: SliceResponse, rowIndex: number, columnIndex: number) => void;
 }) {
+  const displayRows = downsampleSliceValues(slice.values);
   return (
     <div className="slice-heatmap" role="img" aria-label={`${title} heatmap`}>
-      {slice.values.map((row, rowIndex) => (
-        <div className="heatmap-row" key={`${title}-heatmap-${rowIndex}`}>
-          {row.map((value, columnIndex) => {
-            const selected = isSelectedSliceCell(slice, selectedRegion, rowIndex, columnIndex);
+      {displayRows.map((row, displayRowIndex) => (
+        <div className="heatmap-row" key={`${title}-heatmap-${displayRowIndex}`}>
+          {row.map((cell, displayColumnIndex) => {
+            const selected = isSelectedSliceDisplayCell(slice, selectedRegion, cell);
             return (
               <button
                 type="button"
                 className={`heatmap-cell${selected ? " heatmap-cell-selected" : ""}`}
-                key={`${title}-heatmap-${rowIndex}-${columnIndex}`}
-                title={value === null ? "missing" : formatMaybeNumber(value, slice.field.units)}
-                aria-label={`Inspect ${title} row ${rowIndex + 1}, column ${columnIndex + 1}`}
-                style={sliceCellStyle(value, slice.stats)}
-                onClick={() => onSelectRegion?.(slice, rowIndex, columnIndex)}
+                key={`${title}-heatmap-${displayRowIndex}-${displayColumnIndex}`}
+                title={cell.value === null ? "missing" : formatMaybeNumber(cell.value, slice.field.units)}
+                aria-label={`Inspect ${title} row ${displayRowIndex + 1}, column ${displayColumnIndex + 1}`}
+                style={sliceCellStyle(cell.value, slice)}
+                onClick={() => onSelectRegion?.(slice, cell.sourceRowIndex, cell.sourceColumnIndex)}
               />
             );
           })}
@@ -4838,6 +5010,66 @@ function SliceHeatmap({
       ))}
     </div>
   );
+}
+
+type DisplayHeatmapCell = {
+  value: number | null;
+  sourceRowIndex: number;
+  sourceColumnIndex: number;
+  rowStart: number;
+  rowEnd: number;
+  columnStart: number;
+  columnEnd: number;
+};
+
+function downsampleSliceValues(values: Array<Array<number | null>>): DisplayHeatmapCell[][] {
+  const maxRows = 28;
+  const maxColumns = 60;
+  const rowCount = values.length;
+  const columnCount = values[0]?.length ?? 0;
+  const rowStride = Math.max(1, Math.ceil(rowCount / maxRows));
+  const columnStride = Math.max(1, Math.ceil(columnCount / maxColumns));
+
+  const rows: DisplayHeatmapCell[][] = [];
+  for (let rowStart = 0; rowStart < rowCount; rowStart += rowStride) {
+    const rowEnd = Math.min(rowCount, rowStart + rowStride);
+    const displayRow: DisplayHeatmapCell[] = [];
+    for (let columnStart = 0; columnStart < columnCount; columnStart += columnStride) {
+      const columnEnd = Math.min(columnCount, columnStart + columnStride);
+      displayRow.push({
+        value: averageSliceBlock(values, rowStart, rowEnd, columnStart, columnEnd),
+        sourceRowIndex: Math.min(rowCount - 1, Math.floor((rowStart + rowEnd - 1) / 2)),
+        sourceColumnIndex: Math.min(columnCount - 1, Math.floor((columnStart + columnEnd - 1) / 2)),
+        rowStart,
+        rowEnd: rowEnd - 1,
+        columnStart,
+        columnEnd: columnEnd - 1,
+      });
+    }
+    rows.push(displayRow);
+  }
+  return rows;
+}
+
+function averageSliceBlock(
+  values: Array<Array<number | null>>,
+  rowStart: number,
+  rowEnd: number,
+  columnStart: number,
+  columnEnd: number,
+): number | null {
+  let total = 0;
+  let count = 0;
+  for (let rowIndex = rowStart; rowIndex < rowEnd; rowIndex += 1) {
+    for (let columnIndex = columnStart; columnIndex < columnEnd; columnIndex += 1) {
+      const value = values[rowIndex]?.[columnIndex];
+      if (typeof value === "number" && Number.isFinite(value)) {
+        total += value;
+        count += 1;
+      }
+    }
+  }
+  return count > 0 ? total / count : null;
 }
 
 function OutcomeBadge({ result }: { result: ResultCard }) {
@@ -5130,6 +5362,40 @@ function isSelectedSliceCell(
   );
 }
 
+function isSelectedSliceDisplayCell(
+  slice: SliceResponse,
+  selectedRegion: SelectedRegionRequest | null | undefined,
+  cell: DisplayHeatmapCell,
+): boolean {
+  if (!selectedRegion) return false;
+  for (let rowIndex = cell.rowStart; rowIndex <= cell.rowEnd; rowIndex += 1) {
+    for (let columnIndex = cell.columnStart; columnIndex <= cell.columnEnd; columnIndex += 1) {
+      if (isSelectedSliceCell(slice, selectedRegion, rowIndex, columnIndex)) return true;
+    }
+  }
+  return false;
+}
+
+function slicePositionLabel(slice: SliceResponse | null, fallbackIndex: number): string {
+  if (!slice) return `index ${fallbackIndex}`;
+  const coordinate =
+    slice.selection.selected_coordinate_value ??
+    slice.selection.level_coordinate_value ??
+    null;
+  const units =
+    slice.coordinate_units[slice.selection.selected_dimension] ??
+    slice.selection.level_units ??
+    null;
+  const numericCoordinate = typeof coordinate === "number" ? coordinate : Number(coordinate);
+  const coordinateText =
+    coordinate === null || coordinate === undefined
+      ? "coordinate unavailable"
+      : Number.isFinite(numericCoordinate)
+        ? `${formatCompactNumber(numericCoordinate)}${units ? ` ${units}` : ""}`
+        : String(coordinate);
+  return `${coordinateText} / index ${slice.selection.selected_index}`;
+}
+
 function selectionLabel(selection: SelectedRegionRequest): string {
   if (selection.regionType === "box") {
     return `Box x ${selection.xStart}-${selection.xEnd}, y ${selection.yStart}-${selection.yEnd}, z ${selection.zStart}-${selection.zEnd}`;
@@ -5383,13 +5649,54 @@ function projectionDescription(projectionMode: ProjectionMode): string {
   return descriptions[projectionMode];
 }
 
-function sliceCellStyle(value: number | null, stats: SliceResponse["stats"]): CSSProperties {
-  if (value === null) {
-    return { background: "rgba(255, 255, 255, 0.12)" };
+function heatmapScaleClass(field: VisualizableField): string {
+  if (field.raw_field_name === "w" || field.canonical_field_name === "vertical_velocity") {
+    return "heatmap-scale-velocity";
   }
-  const intensity = normalize(value, stats.min ?? value, stats.max ?? value);
+  if (field.raw_field_name === "qc" || field.canonical_field_name === "cloud_water") {
+    return "heatmap-scale-cloud-water";
+  }
+  if (field.raw_field_name === "qr" || field.canonical_field_name === "rain_water") {
+    return "heatmap-scale-rain-water";
+  }
+  return "heatmap-scale-default";
+}
+
+function sliceCellStyle(value: number | null, slice: SliceResponse): CSSProperties {
+  if (value === null) {
+    return { background: "rgba(255, 255, 255, 0.36)" };
+  }
+
+  if (slice.field.raw_field_name === "w" || slice.field.canonical_field_name === "vertical_velocity") {
+    const maxMagnitude = Math.max(
+      Math.abs(slice.stats.min ?? value),
+      Math.abs(slice.stats.max ?? value),
+      Number.EPSILON,
+    );
+    const scaled = Math.max(-1, Math.min(1, value / maxMagnitude));
+    if (scaled >= 0) {
+      return {
+        background: `rgba(${224 - scaled * 96}, ${242 - scaled * 86}, ${236 - scaled * 132}, ${0.58 + scaled * 0.34})`,
+      };
+    }
+    const magnitude = Math.abs(scaled);
+    return {
+      background: `rgba(${229 - magnitude * 90}, ${238 - magnitude * 112}, ${247 - magnitude * 88}, ${0.58 + magnitude * 0.32})`,
+    };
+  }
+
+  const min = slice.stats.min ?? value;
+  const max = slice.stats.max ?? value;
+  const normalized = normalize(value, min, max);
+  const intensity =
+    slice.field.raw_field_name === "qc" || slice.field.canonical_field_name === "cloud_water"
+      ? Math.sqrt(Math.max(0, normalized))
+      : normalized;
+  if (intensity < 0.015) {
+    return { background: "rgba(234, 244, 248, 0.72)" };
+  }
   return {
-    background: `rgba(${78 + intensity * 110}, ${164 + intensity * 70}, ${206 + intensity * 40}, 0.72)`,
+    background: `rgba(${38 + intensity * 155}, ${98 + intensity * 130}, ${128 + intensity * 108}, ${0.62 + intensity * 0.28})`,
   };
 }
 

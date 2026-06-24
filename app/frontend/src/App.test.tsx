@@ -1386,7 +1386,7 @@ describe("App", () => {
     expect(screen.getAllByText("Finite cells").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Non-finite cells").length).toBeGreaterThan(0);
     expect(screen.getAllByText(/CM1-derived visualization-ready data/).length).toBeGreaterThan(0);
-    expect(screen.getByText(/browser is not parsing raw NetCDF/)).toBeInTheDocument();
+    expect(screen.getAllByText(/CM1-derived visualization-ready data/).length).toBeGreaterThan(0);
   });
 
   it("switches side-by-side field comparison from qc to w", async () => {
@@ -1420,9 +1420,9 @@ describe("App", () => {
     fireEvent.click(await screen.findByRole("button", { name: "Open Dry Failed in Explore" }));
 
     expect(
-      await screen.findByRole("heading", { name: "Inspect and visualize fields" }),
+      await screen.findByRole("tab", { name: "2-D Slices" }),
     ).toBeInTheDocument();
-    expect(await screen.findByRole("heading", { name: "Inspect CM1 fields" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "What happened in this result?" })).toBeInTheDocument();
     expect(fetch).toHaveBeenCalledWith(
       "/api/results/result-dry-failed-cumulus/visualization/fields",
     );
@@ -1437,11 +1437,11 @@ describe("App", () => {
     fireEvent.click(screen.getByRole("button", { name: "Open Dry Failed 3-D" }));
 
     expect(
-      await screen.findByRole("heading", { name: "Inspect and visualize fields" }),
+      await screen.findByRole("tab", { name: "2-D Slices" }),
     ).toBeInTheDocument();
     expect(screen.getByRole("tab", { name: "3-D View" })).toHaveClass("active-control");
     expect(screen.getAllByText("Dry Failed Cumulus quick-look").length).toBeGreaterThan(0);
-    expect(await screen.findByRole("heading", { name: "Scene shell" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "What happened in this result?" })).toBeInTheDocument();
     expect(fetch).toHaveBeenCalledWith(
       "/api/results/result-dry-failed-cumulus/visualization/defaults",
     );
@@ -1654,9 +1654,8 @@ describe("App", () => {
     const resultDetail = await screen.findByLabelText("Result detail");
     fireEvent.click(within(resultDetail).getByRole("button", { name: "Open in Explore" }));
 
-    expect(await screen.findByRole("heading", { name: "Inspect CM1 fields" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "What happened in this result?" })).toBeInTheDocument();
     await screen.findByText("Slices loaded");
-    expect(screen.getByText(/browser is not parsing raw NetCDF/)).toBeInTheDocument();
     expect(screen.getByLabelText("Field")).toHaveValue("qc");
     expect(screen.getByText("qc (Cloud water)")).toBeInTheDocument();
     expect(screen.getAllByText("kg/kg").length).toBeGreaterThan(0);
@@ -1665,8 +1664,29 @@ describe("App", () => {
     expect(screen.getByText("max_qc_native_grid_location")).toBeInTheDocument();
     expect(screen.getAllByText("Vertical X slice").length).toBeGreaterThan(0);
     expect(screen.queryByLabelText("Horizontal slice heatmap")).not.toBeInTheDocument();
-    expect(screen.getByLabelText("Vertical X slice heatmap")).toBeInTheDocument();
-    expect(screen.getByLabelText("Vertical X slice color scale")).toBeInTheDocument();
+    expect(
+      screen.getByText(/Vertical X slice at y = .*Horizontal axis: x\. Vertical axis: height/i),
+    ).toBeInTheDocument();
+    expect(screen.getByLabelText("Slice position")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Move back" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Move forward" })).toBeInTheDocument();
+    const verticalHeatmap = screen.getByLabelText("Vertical X slice heatmap");
+    expect(verticalHeatmap).toBeInTheDocument();
+    const colorScale = screen.getByLabelText("Vertical X slice color scale");
+    expect(colorScale).toBeInTheDocument();
+    expect(colorScale.querySelector(".heatmap-scale-cloud-water")).not.toBeNull();
+    expect(
+      Boolean(
+        screen.getByLabelText("Field").compareDocumentPosition(verticalHeatmap) &
+          Node.DOCUMENT_POSITION_FOLLOWING,
+      ),
+    ).toBe(true);
+    expect(
+      Boolean(
+        verticalHeatmap.compareDocumentPosition(screen.getByText("Technical details")) &
+          Node.DOCUMENT_POSITION_FOLLOWING,
+      ),
+    ).toBe(true);
     expect(screen.getAllByText("2.000e-5 kg/kg").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Technical slice details").length).toBeGreaterThan(0);
     expect(screen.getAllByText("native_grid_view_no_interpolation").length).toBeGreaterThan(0);
@@ -1701,8 +1721,8 @@ describe("App", () => {
     expect(screen.getByText("Local max w")).toBeInTheDocument();
     expect(screen.getByText("4.5 m/s")).toBeInTheDocument();
     expect(screen.getByText("Local rain")).toBeInTheDocument();
-    expect(screen.getByText("Rain detected")).toBeInTheDocument();
-    expect(screen.getByText("Compared with whole result")).toBeInTheDocument();
+    expect(screen.getAllByText("Rain detected").length).toBeGreaterThan(0);
+    expect(screen.getByText("Technical details and provenance")).toBeInTheDocument();
     expect(screen.getByText(/backend xarray selected-region diagnostics/i)).toBeInTheDocument();
     expect(fetch).toHaveBeenCalledWith(
       expect.stringContaining(
@@ -1712,7 +1732,7 @@ describe("App", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Clear selection" }));
 
-    expect(screen.getByText(/No region is selected/)).toBeInTheDocument();
+    expect(screen.getByText(/Select a spot or region in the visualization/)).toBeInTheDocument();
   });
 
   it("shows selected-region backend failures as actionable inspector errors", async () => {
@@ -1787,7 +1807,7 @@ describe("App", () => {
     const resultDetail = await screen.findByLabelText("Result detail");
     fireEvent.click(within(resultDetail).getByRole("button", { name: "Open in Explore" }));
 
-    expect(await screen.findByText("Thermal Fate overlay")).toBeInTheDocument();
+    expect(await screen.findByText("Evidence")).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Thermal Fate summary" })).toBeInTheDocument();
     expect(screen.getByText(/Growing cumulus/)).toBeInTheDocument();
     expect(screen.getAllByText("Candidate").length).toBeGreaterThan(0);
@@ -1809,7 +1829,7 @@ describe("App", () => {
     const resultDetail = screen.getByLabelText("Result detail");
     fireEvent.click(within(resultDetail).getByRole("button", { name: "Open in Explore" }));
 
-    expect(await screen.findByRole("heading", { name: "Inspect CM1 fields" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "What happened in this result?" })).toBeInTheDocument();
     await screen.findByText("Slices loaded");
     expect(screen.getByLabelText("Field")).toHaveValue("w");
     expect(screen.queryByRole("option", { name: /qc/ })).not.toBeInTheDocument();
@@ -1828,11 +1848,11 @@ describe("App", () => {
     fireEvent.click(within(resultDetail).getByRole("button", { name: "Open in Explore" }));
 
     expect(
-      await screen.findByRole("heading", { name: "Inspect and visualize fields" }),
+      await screen.findByRole("tab", { name: "2-D Slices" }),
     ).toBeInTheDocument();
-    expect(await screen.findByRole("heading", { name: "Inspect CM1 fields" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "What happened in this result?" })).toBeInTheDocument();
     await screen.findByText("Slices loaded");
-    expect(screen.getByRole("heading", { name: "Inspect and visualize fields" })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "2-D Slices" })).toBeInTheDocument();
     expect(screen.getByLabelText("Field")).toHaveValue("qc");
     expect(screen.getAllByRole("option", { name: "qc - Cloud water" }).length).toBeGreaterThan(0);
     expect(screen.getAllByRole("option", { name: "w - Vertical velocity" }).length).toBeGreaterThan(
@@ -1841,7 +1861,7 @@ describe("App", () => {
 
     fireEvent.click(screen.getByRole("tab", { name: "3-D View" }));
 
-    expect(await screen.findByRole("heading", { name: "Scene shell" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "What happened in this result?" })).toBeInTheDocument();
     await screen.findAllByText("Cloud-water point cloud loaded");
     expect(screen.getByLabelText("Field")).toHaveValue("qc");
     expect(screen.getAllByRole("option", { name: "qc - Cloud water" }).length).toBeGreaterThan(0);
@@ -1857,24 +1877,24 @@ describe("App", () => {
     fireEvent.click(await screen.findByRole("button", { name: "Open Dry Failed 3-D" }));
 
     expect(
-      await screen.findByRole("heading", { name: "Inspect and visualize fields" }),
+      await screen.findByRole("tab", { name: "2-D Slices" }),
     ).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Inspect and visualize fields" })).toBeInTheDocument();
-    expect(await screen.findByRole("heading", { name: "Scene shell" })).toBeInTheDocument();
-    await screen.findAllByText("Scene shell ready");
+    expect(screen.getByRole("tab", { name: "2-D Slices" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "What happened in this result?" })).toBeInTheDocument();
+    await screen.findAllByText("Cloud view ready");
     expect(screen.getByLabelText("Field")).toHaveValue("w");
     expect(screen.getAllByRole("option", { name: "qc - Cloud water" }).length).toBeGreaterThan(0);
     expect(screen.getAllByRole("option", { name: "w - Vertical velocity" }).length).toBeGreaterThan(
       0,
     );
     expect(
-      screen.getByText("No cloud water formed here; vertical velocity is available."),
+      screen.getByText("No cloud water formed in this result; vertical velocity is available."),
     ).toBeInTheDocument();
     expect(screen.getByText(/Use the vertical velocity field \(w\) to inspect the thermals/i))
       .toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("tab", { name: "2-D Slices" }));
-    expect(await screen.findByRole("heading", { name: "Inspect CM1 fields" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "What happened in this result?" })).toBeInTheDocument();
     await screen.findByText("Slices loaded");
     expect(screen.getByLabelText("Field")).toHaveValue("w");
   });
@@ -1979,8 +1999,10 @@ describe("App", () => {
 
     fireEvent.click((await screen.findAllByRole("button", { name: "Open 3-D" }))[0]);
 
-    expect(await screen.findByRole("heading", { name: "Scene shell" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "What happened in this result?" })).toBeInTheDocument();
     await screen.findAllByText("Cloud-water point cloud loaded");
+    expect(screen.getByText("Cloud formed in this result")).toBeInTheDocument();
+    expect(screen.queryByText("Cloud formed here")).not.toBeInTheDocument();
     expect(screen.getByLabelText("3-D scene container")).toBeInTheDocument();
     expect(screen.getByLabelText("Cloud-water point cloud")).toBeInTheDocument();
     expect(screen.getByLabelText("Domain bounding box")).toBeInTheDocument();
@@ -2012,8 +2034,9 @@ describe("App", () => {
     expect(screen.getByText("active cloud water: 0.8-1.2 km")).toBeInTheDocument();
     expect(within(scene).queryByLabelText("Horizontal slice plane")).not.toBeInTheDocument();
     expect(within(scene).queryByLabelText("Vertical slice plane")).not.toBeInTheDocument();
-    expect(screen.getByText("View controls")).toBeInTheDocument();
+    expect(screen.getByText("Essential controls")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Reset view" })).toBeInTheDocument();
+    fireEvent.click(screen.getByText("View and rendering controls"));
     expect(screen.queryByRole("button", { name: "Orbit" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Pan" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Reset camera" })).not.toBeInTheDocument();
@@ -2021,14 +2044,17 @@ describe("App", () => {
     expect(screen.getByRole("button", { name: "Side y-z" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Top-down x-y" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Oblique overview" })).toHaveClass("active-control");
+    fireEvent.click(screen.getByText("Projection and rendering details"));
     expect(screen.getByLabelText("Projection description")).toHaveTextContent(
       "Oblique overview: interpretive overview based on CM1 coordinates, not a true perspective camera.",
     );
     expect(screen.getByLabelText("Zoom")).toHaveValue("100");
     expect(screen.getByLabelText("Field")).toHaveValue("qc");
+    fireEvent.click(screen.getByText("Slice plane controls"));
     expect(screen.getByLabelText("Slice field")).toHaveValue("qc");
     expect(screen.getByRole("button", { name: "Horizontal z" })).toHaveClass("active-control");
-    expect(screen.getByLabelText("Thermal Fate process overlay")).toBeInTheDocument();
+    fireEvent.click(screen.getByText("Evidence details"));
+    expect(screen.getByLabelText("Explanation evidence")).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Thermal Fate summary" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Vertical x-z" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Vertical y-z" })).toBeInTheDocument();
@@ -2206,8 +2232,8 @@ describe("App", () => {
     const resultDetail = screen.getByLabelText("Result detail");
     fireEvent.click(within(resultDetail).getByRole("button", { name: "Open 3-D" }));
 
-    expect(await screen.findByRole("heading", { name: "Scene shell" })).toBeInTheDocument();
-    await screen.findAllByText("Scene shell ready");
+    expect(await screen.findByRole("heading", { name: "What happened in this result?" })).toBeInTheDocument();
+    await screen.findAllByText("Cloud view ready");
     expect(
       screen.getByText("Cloud water field qc is not available for this result."),
     ).toBeInTheDocument();
@@ -2222,7 +2248,7 @@ describe("App", () => {
     const resultDetail = screen.getByLabelText("Result detail");
     fireEvent.click(within(resultDetail).getByRole("button", { name: "Open 3-D" }));
 
-    expect(await screen.findByRole("heading", { name: "Scene shell" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "What happened in this result?" })).toBeInTheDocument();
     await screen.findAllByText("No fields available");
     expect(
       screen.getByText("No visualization-ready fields are available for this result."),
