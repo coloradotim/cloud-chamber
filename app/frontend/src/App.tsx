@@ -2576,6 +2576,7 @@ function LocalRunWorkflowPanel({
               type="submit"
               form="build-run-package-form"
               data-testid="create-package-btn"
+              className={dryRun ? "secondary-button" : undefined}
               disabled={!canCreatePackage}
             >
               {dryRun ? "Create another package" : "Create run package"}
@@ -2909,10 +2910,7 @@ function PipelineRunCard({
       </div>
       <div className="badge-row">
         <StatusBadge label={stateLabel} tone={pipelineRunTone(run, result)} />
-        <StatusBadge
-          label={result ? "Ingested result" : "Not ingested"}
-          tone={result ? "good" : "neutral"}
-        />
+        {!result && <StatusBadge label="Not ingested" tone="neutral" />}
         <StatusBadge label={savedOrProtected ? "Saved/protected" : "Not saved"} tone="neutral" />
       </div>
       <p>
@@ -3037,7 +3035,7 @@ function selectPipelineRuns(runs: RunStorageEntry[], currentRunId: string | null
 
 function pipelineRunStateLabel(run: RunStorageEntry, result: ResultCard | undefined): string {
   if (result?.saved || result?.protected || run.saved || run.protected) return "Saved/protected";
-  if (result) return "Ingested result";
+  if (result) return "Ready to review";
   const labels: Record<string, string> = {
     dry_run_only: "Ready to launch",
     running: "Running",
@@ -6049,12 +6047,24 @@ function rainOutcome(value: boolean | null): string {
 }
 
 function outputSummary(summary: OutputFileSummary): string {
+  const safeSummary = summary as Partial<OutputFileSummary>;
+  const modelFileCount = safeSummary.model_output_count ?? safeSummary.model_output_file_count;
+  const outputFileLabel =
+    modelFileCount !== undefined
+      ? `${modelFileCount} model files`
+      : safeSummary.netcdf_count !== undefined
+        ? `${safeSummary.netcdf_count} NetCDF files`
+        : "unknown output files";
   const parts = [
-    `${summary.model_output_count} model files`,
-    `${summary.time_steps ?? "unknown"} time steps`,
+    outputFileLabel,
+    `${safeSummary.time_steps ?? "unknown"} time steps`,
   ];
-  if (summary.stats_netcdf_count > 0) parts.push(`${summary.stats_netcdf_count} stats files`);
-  if (summary.raw_cm1_artifact_count > 0) parts.push(`${summary.raw_cm1_artifact_count} raw files`);
+  if ((safeSummary.stats_netcdf_count ?? 0) > 0) {
+    parts.push(`${safeSummary.stats_netcdf_count} stats files`);
+  }
+  if ((safeSummary.raw_cm1_artifact_count ?? 0) > 0) {
+    parts.push(`${safeSummary.raw_cm1_artifact_count} raw files`);
+  }
   return parts.join(", ");
 }
 

@@ -169,7 +169,6 @@ const resultCard = {
   caveats: ["CM1 stderr reported floating-point exception flags: IEEE_INVALID_FLAG"],
   output_file_summary: {
     netcdf_count: 14,
-    model_output_count: 13,
     stats_netcdf_count: 1,
     raw_cm1_artifact_count: 0,
     processed_artifact_count: 0,
@@ -1275,6 +1274,8 @@ describe("App", () => {
     expect(screen.getAllByText("Ready to ingest").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Saved/protected").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Running").length).toBeGreaterThan(0);
+    expect(screen.getByText("Ready to review")).toBeInTheDocument();
+    expect(screen.queryByText("Ingested result")).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Launch package" })).toBeInTheDocument();
     expect(screen.getByTestId("create-package-btn")).toBeEnabled();
     expect(screen.getAllByRole("button", { name: "Create run package" })).toHaveLength(1);
@@ -1322,7 +1323,9 @@ describe("App", () => {
     });
     expect(screen.getAllByText("Package ready").length).toBeGreaterThan(0);
     expect(screen.getByText("Latest generated package")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Create another package" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Create another package" })).toHaveClass(
+      "secondary-button",
+    );
     expect(screen.getByText("Expected output directory").nextElementSibling).toHaveTextContent(
       "/tmp/CloudChamber/runs/dry-run-001",
     );
