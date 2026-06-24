@@ -89,6 +89,20 @@ Does the page teach the right lesson?
 Does the app feel like a tool worth reopening?
 ```
 
+For the `What happened here?` Explore interaction, manual QA remains
+qualitative:
+
+```text
+Does clicking a spot make the result easier to understand?
+Does the explanation feel like a learning moment rather than a diagnostic dump?
+Does the app preserve scientific honesty without burying the user?
+```
+
+When implementation begins, objective checks should become automated tests for
+selected-region state, clearing the selection, successful explanation payloads,
+backend failure states, missing diagnostics states, technical details
+disclosure, and selected-result flow from Results to Explore.
+
 Do not turn the reset into a broad manual checklist of objective behaviors.
 If a requested acceptance criterion is objective and repeatable, convert it
 into a unit/component or Playwright test.

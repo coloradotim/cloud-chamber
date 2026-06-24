@@ -34,6 +34,11 @@ See [UX Reset: Guided Experiment Notebook](ux-reset-guided-experiment-notebook.m
 Future UX implementation should follow that reset before renderer upgrades or
 future scenario-family expansion.
 
+Explore's key user-facing concept is `What happened here?`: click a spot or
+region in a completed cloud result, then receive a clear explanation backed by
+CM1-derived diagnostics. Thermal Fate and selected-region diagnostics remain
+the scientific model behind that answer, not the first-read UI structure.
+
 Replay / inspect / save is core MVP. Duplicate / tweak / rerun is later.
 
 ## UX Reset Track
@@ -50,6 +55,9 @@ Results:
 
 Explore:
   A focused visualization plus explanation screen for one selected result.
+  The core interaction is What happened here? -- select a cloud, updraft,
+  clear-air thermal, or no-cloud region and receive a CM1-backed explanation of
+  what happened there and why.
 ```
 
 Thermal Fate remains the internal scientific diagnostic/explanation model. It
@@ -64,6 +72,7 @@ Immediate UX reset sequence:
 -> #169 Fix Explore selected-result and field-loading trust states
 -> #170 Refine Cloud Chamber navigation and layout style
 -> #171 Redesign Results as a scan-friendly experiment notebook
+-> #175 Make What happened here? the core Explore interaction
 -> #172 Redesign Explore around one primary visualization and one explanation panel
 -> #173 Redesign Build as guided experiment selection, not a form-first setup page
 -> #112 Revisit renderer upgrade only after the simplified Explore UX is defined
@@ -73,6 +82,10 @@ Immediate UX reset sequence:
 This track comes before renderer upgrades and before expanding the future
 scenario-family roadmap. Objective behavior should be covered by automated
 tests; manual QA for this reset is qualitative only.
+
+#172 depends on #175's interaction model. Explore redesign should preserve
+`What happened here?` as the central action instead of becoming a generic
+visualization-plus-panel redesign.
 
 ## Thermal Fate Roadmap
 
@@ -111,23 +124,23 @@ keeps deep-breakthrough, buoyancy, precipitation-feedback, and selected-region
 diagnostics unavailable or candidate/caveated until their required fields and
 follow-up issues exist.
 
-#151 adds the backend selected-region diagnostics bridge for the future Thermal
-Fate Inspector. It lets the app ask `What happened here?` for bounded point,
-column, and box regions, returning CM1-derived local summaries, conservative
-labels, provenance, caveats, and comparison-to-domain values without returning
-large raw arrays or moving NetCDF parsing into the browser.
+#151 adds the backend selected-region diagnostics bridge for the user-facing
+`What happened here?` interaction. It lets the app ask that question for
+bounded point, column, and box regions, returning CM1-derived local summaries,
+conservative labels, provenance, caveats, and comparison-to-domain values
+without returning large raw arrays or moving NetCDF parsing into the browser.
 
 #150 adds the first Explore process-overlay layer. The 2-D and 3-D Explore
 views can show Thermal Fate process modes, direct-field evidence, candidate or
 unsupported states, and caveats while preserving the existing slice/point-cloud
 workflows. Selected-region click/brush inspection remains #152.
 
-#152 adds the first Thermal Fate Inspector UI. Explore / 2-D Slices can now turn
-a slice-cell or bounded center selection into a backend selected-region
-diagnostics request, then render `What happened here?` with the returned label,
-confidence, local `qc`/`w`/rain summaries, selected bounds, domain comparison,
-caveats, and provenance. The browser still does not parse raw NetCDF or compute
-scientific classification.
+#152 adds the first backend-supported selected-region UI foundation. Under the
+UX reset, future Explore work should promote that capability into the primary
+`What happened here?` interaction: click a cloud, updraft, clear-air thermal, or
+no-cloud region, mark the selected spot or region, and render an explanation
+with evidence, uncertainty, caveats, and technical details on demand. The
+browser still does not parse raw NetCDF or compute scientific classification.
 
 ## Golden Path: Baseline Shallow Cumulus
 
