@@ -1365,7 +1365,7 @@ describe("App", () => {
       "first_cloud_time",
     );
     expect(screen.getByTestId("launch-cm1-btn")).toBeEnabled();
-    expect(screen.getByTestId("ingest-results-btn")).toBeDisabled();
+    expect(screen.queryByTestId("ingest-results-btn")).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByTestId("launch-cm1-btn"));
 
@@ -1439,7 +1439,19 @@ describe("App", () => {
     fireEvent.click(await screen.findByTestId("launch-cm1-btn"));
 
     expect(await screen.findByRole("alert")).toHaveTextContent("CM1 executable is missing");
+    const packageReview = screen.getByTestId("package-review-panel");
+    expect(packageReview).toHaveTextContent("Package ready");
+    expect(packageReview).toHaveTextContent("/tmp/CloudChamber/runs/dry-run-001");
+    expect(packageReview).toHaveTextContent(
+      "/tmp/CloudChamber/runs/dry-run-001/run_manifest.json",
+    );
+    expect(screen.getByText("Current lifecycle state").nextElementSibling).toHaveTextContent(
+      "Package ready",
+    );
+    expect(screen.queryByLabelText("Local run status")).not.toBeInTheDocument();
     expect(screen.getByTestId("launch-cm1-btn")).toBeEnabled();
+    fireEvent.click(screen.getByText("Technical package details"));
+    expect(screen.getByText("CM1 launched").nextElementSibling).toHaveTextContent("No");
   });
 
   it("lists result cards as notebook entries and shows diagnostics", async () => {

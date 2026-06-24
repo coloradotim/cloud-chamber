@@ -2536,7 +2536,7 @@ function LocalRunWorkflowPanel({
   const showCreatePackageButton = showCreatePackageAction;
   const showLaunchButton = Boolean(dryRun && stage === "package_ready");
   const showRefreshButton = Boolean(dryRun && runStatus);
-  const showIngestButton = Boolean(dryRun);
+  const showIngestButton = Boolean(dryRun && canIngest);
   const showActionRow =
     showCreatePackageButton || showLaunchButton || showRefreshButton || showIngestButton;
 
