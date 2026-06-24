@@ -935,6 +935,17 @@ attempts. User-facing labels should say `Completed CM1 result`, `Ingested`,
 than leading with raw lifecycle strings. Raw lifecycle/product/provenance labels
 remain available under technical details.
 
+The shared visual system should read as an atmospheric experiment notebook, not
+a terminal dashboard or cockpit. The app chrome should use a soft neutral /
+pale blue-gray background, light or very soft slate surfaces, cloud/sky-inspired
+panels, blue / blue-gray primary accents, subtle amber warnings, and subtle red
+destructive/error states. Green is reserved for success or healthy states only;
+it is not the brand or primary navigation color. Visualization viewports may use
+dark plotting backgrounds when they make CM1-derived fields easier to read, but
+the surrounding app shell, navigation, cards, buttons, badges, loading/error
+states, and technical-detail areas should stay calm, readable, and secondary to
+the workspace content.
+
 For completed cloud-forming results, minor runtime or coordinate caveats should
 read as caveats, not failed-run warnings. A result can be a successful,
 inspectable CM1 run while still carrying `Minor caveat` details such as

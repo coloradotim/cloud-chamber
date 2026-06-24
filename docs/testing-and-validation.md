@@ -116,6 +116,13 @@ Build workflow, or visualizer layout:
 - run `scripts/check-e2e.sh` when the change affects user workflows or layout;
 - use manual QA only for qualitative judgment, not as a substitute for tests.
 
+For visual-system or app-shell issues, Playwright should also cover the
+objective parts of the style contract: Build / Results / Explore remain
+reachable at common viewport sizes, current workspace indication remains clear,
+the Results default landing still renders, and the app chrome does not regress
+to a black/green terminal-style shell. Qualitative review can still judge
+whether the result feels atmospheric, trustworthy, and notebook-like.
+
 When manual review is needed, keep it focused:
 
 1. What user goal is being evaluated?
