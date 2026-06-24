@@ -30,8 +30,9 @@ The first Golden Path case is Baseline Shallow Cumulus. Warm rain remains early,
 Replay / inspect / save is core MVP. Duplicate / tweak / rerun is later.
 
 The user-facing product model is guided experiments, an experiment notebook,
-focused visualization, plain-language explanation, comparison between variants,
-and technical details on demand.
+focused visualization, `What happened here?` selected-region explanation,
+plain-language explanation, comparison between variants, and technical details
+on demand.
 
 **Thermal Fate** remains the internal scientific diagnostic and explanation
 model. It should power explanations, confidence/caveat labels, comparison
@@ -46,11 +47,14 @@ See [Thermal Fate process diagnostics](thermal-fate-process-diagnostics.md) for
 the current process-diagnostics contract.
 
 Explore should be a focused visualization plus explanation screen for one
-selected result. Thermal Fate process evidence remains available in secondary
-or technical layers, but the primary view should lead with the experiment
-story, outcome, visualization, and next action. The browser receives only
-backend-prepared slices, point clouds, result-card process fields, and bounded
-summaries; it does not parse raw NetCDF or invent process claims.
+selected result. Its core interaction is `What happened here?`: select a cloud,
+updraft, clear-air thermal, or no-cloud region and receive a CM1-backed
+explanation of what happened there and why. Thermal Fate process evidence
+remains available in secondary or technical layers, but the primary view should
+lead with the experiment story, outcome, visualization, selected-region
+explanation, and next action. The browser receives only backend-prepared
+slices, point clouds, result-card process fields, and bounded summaries; it
+does not parse raw NetCDF or invent process claims.
 
 ## Personas
 
@@ -232,27 +236,45 @@ synthetic cloud physics; those belong to later visualizer issues.
 
 ### Workflow 6.5 — What Happened Here?
 
-The selected-region Thermal Fate workflow is a core Explore workflow:
+`What happened here?` is the core Explore interaction, not a buried technical
+diagnostics panel:
 
 ```text
 open a completed/saved result
--> select a point, column, or box in Explore
--> ask What happened here?
--> backend computes local selected-region diagnostics
--> UI explains the supported thermal-fate label, evidence, and caveats
--> compare the selected region with whole-domain behavior or a scenario variant
+-> see the main 2-D or 3-D visualization
+-> click a cloud, updraft, clear-air thermal, or no-cloud region
+-> the app marks the selected spot or region
+-> the app opens an explanation panel
+-> the panel answers what happened there, what evidence supports it, and what is uncertain
 ```
 
 This workflow must use backend diagnostics over CM1-derived fields. The browser
 must not parse raw NetCDF or invent scientific explanations.
 
-The first UI implementation lives in Explore / 2-D Slices. Users can click a
-backend-prepared heatmap cell to inspect the nearest native-grid column, select
-a bounded center point or small box, clear the selection, and review the
-backend-returned Thermal Fate label, confidence, caveats, local `qc`/`w`/rain
-summaries, selected-region bounds, domain comparison, and provenance. The UI is
-presentation-only for scientific interpretation: labels and summaries come from
-the selected-region diagnostics API.
+The first implementation can start with 2-D selection if 3-D selection is too
+hard. Users can click a backend-prepared heatmap cell to inspect the nearest
+native-grid column, select a bounded center point or small box, clear the
+selection, and review the backend-returned explanation, confidence, caveats,
+local `qc`/`w`/rain summaries, selected-region bounds, domain comparison, and
+provenance. The UI is presentation-only for scientific interpretation: labels
+and summaries come from the selected-region diagnostics API.
+
+The explanation should use simple primary language such as:
+
+```text
+What happened here?
+Cloud formed here
+Thermal without cloud
+Cloud stayed shallow
+Growth was limited
+Evidence
+Still uncertain
+Technical details
+```
+
+Thermal Fate labels, native variables, source fields, confidence details, and
+provenance remain available behind details/disclosure. They should not be the
+first-read interaction model.
 
 ### Workflow 7 — Duplicate / Tweak / Rerun
 

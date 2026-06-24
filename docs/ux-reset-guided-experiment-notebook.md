@@ -14,8 +14,9 @@ the relevant issue or doc.
 
 The reset keeps the scientific and CM1 pipeline work intact, but changes what
 the primary app surface should emphasize. The user-facing model is guided
-experiments, an experiment notebook, focused visualization, plain-language
-explanation, comparison between variants, and technical details on demand.
+experiments, an experiment notebook, focused visualization, a prominent `What
+happened here?` Explore interaction, plain-language explanation, comparison
+between variants, and technical details on demand.
 
 ## 2. Why The Reset Is Needed
 
@@ -45,6 +46,7 @@ Primary user-facing concepts:
 Guided experiments
 Experiment notebook
 Focused visualization
+What happened here?
 Plain-language explanation
 Comparison between variants
 Technical details on demand
@@ -53,6 +55,14 @@ Technical details on demand
 Primary screens should start from the experiment story, outcome,
 visualization, and next action. They should not start from implementation
 surfaces, raw run folders, source-field tables, or process taxonomy menus.
+
+Explore should make the most compelling Cloud Chamber interaction obvious:
+
+```text
+Click a spot or region in a completed cloud result
+-> ask What happened here?
+-> get a clear explanation backed by CM1-derived diagnostics
+```
 
 ## 4. Thermal Fate Behind The Curtain
 
@@ -70,6 +80,15 @@ technical provenance
 
 Thermal Fate should not dominate the primary visible UI as a process-taxonomy
 cockpit.
+
+Selected-region diagnostics are not being discarded. They power the
+user-facing `What happened here?` explanation: the user selects a cloud,
+updraft, clear-air thermal, or no-cloud region, and the app explains what
+happened there, what evidence supports it, and what is still uncertain.
+
+The frontend should present backend-supported diagnostics, confidence, and
+caveats. It should not expose the Thermal Fate taxonomy first, and it should
+not invent scientific explanations.
 
 The user should still be able to inspect technical evidence, caveats, native
 fields, and provenance. Those details belong in the technical layer, generally
@@ -96,6 +115,9 @@ Results:
 
 Explore:
   A focused visualization plus explanation screen for one selected result.
+  The core interaction is "What happened here?" -- select a cloud, updraft,
+  clear-air thermal, or no-cloud region and receive a CM1-backed explanation of
+  what happened there and why.
 ```
 
 Build should feel like guided experiment setup, not a form-first namelist
@@ -105,7 +127,8 @@ Results should feel like the experiment notebook: what was run, what happened,
 what is worth saving, and how variants compare.
 
 Explore should focus on one selected result at a time: what it looks like, what
-the outcome means, and what technical evidence is available if requested.
+the outcome means, what happened in a selected region, and what technical
+evidence is available if requested.
 
 ## 6. Information Hierarchy: Primary / Secondary / Technical
 
@@ -182,6 +205,34 @@ Explore should not start as a grid/source-field cockpit. It should make the
 visualization and plain-language explanation readable first, with concise
 evidence and technical details available on demand.
 
+Desired Explore flow:
+
+```text
+Open a result in Explore
+-> see the main 2-D or 3-D visualization
+-> click a cloud, updraft, clear-air thermal, or no-cloud region
+-> the app marks the selected spot or region
+-> the explanation panel answers what happened, what evidence supports it, and what is still uncertain
+```
+
+The explanation panel should be able to answer, when supported by backend
+diagnostics:
+
+```text
+Did air rise here?
+Did cloud water form here?
+When did cloud first appear here?
+How high did the cloud get here?
+Did it stay shallow, grow, stall, or fade?
+Was the area moisture-limited, cap-limited, or still uncertain?
+How does this spot compare with the whole result or baseline?
+What evidence supports this?
+What evidence is missing?
+```
+
+The first implementation can start with 2-D selection if 3-D selection is too
+hard. It may use existing selected-region diagnostics APIs when available.
+
 ## 8. What Moves Behind Disclosure
 
 The following should generally move behind details, disclosure, drawer, or an
@@ -215,6 +266,13 @@ guided experiment
 experiment notebook
 cloud formed
 no cloud formed
+What happened here?
+Cloud formed here
+Thermal without cloud
+Cloud stayed shallow
+Growth was limited
+Evidence
+Still uncertain
 stayed shallow
 grew stronger
 rain detected
@@ -266,11 +324,16 @@ The immediate UX reset sequence is:
 -> #169 Fix Explore selected-result and field-loading trust states
 -> #170 Refine Cloud Chamber navigation and layout style
 -> #171 Redesign Results as a scan-friendly experiment notebook
+-> #175 Make What happened here? the core Explore interaction
 -> #172 Redesign Explore around one primary visualization and one explanation panel
 -> #173 Redesign Build as guided experiment selection, not a form-first setup page
 -> #112 Revisit renderer upgrade only after the simplified Explore UX is defined
 -> #153/#154/#155 Future scenario-family expansion after the app is compelling and trustworthy
 ```
+
+#172 depends on #175's interaction model. The Explore redesign should not
+proceed as a generic visualization-plus-panel redesign without preserving
+`What happened here?` as the center of the interaction.
 
 Renderer upgrades and future scenario-family expansion should wait until the
 simplified guided experiment notebook UX is defined and trustworthy.
