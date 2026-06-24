@@ -74,10 +74,15 @@ test.describe("mocked smoke: visualizer occlusion regression", () => {
     );
     await expectClickableCenter(
       page,
-      page.getByRole("tab", { name: "2-D Slices" }),
-      "2-D Slices tab",
+      page.getByLabel("Slice position"),
+      "Slice position slider",
     );
-    await expectClickableCenter(page, page.getByRole("tab", { name: "3-D View" }), "3-D View tab");
+    await expectClickableCenter(
+      page,
+      page.getByRole("button", { name: /vertical x-z slice/i }),
+      "Vertical x-z slice control",
+    );
+    await expect(page.getByRole("heading", { name: "Inspect the current slice" })).toBeVisible();
   });
 
   test("3-D plot labels stay visible and use a non-stretched scale frame", async ({ page }) => {

@@ -249,8 +249,9 @@ scene.
 
 Guided workspace tests should cover task navigation across the top-level
 `Build`, `Results`, and `Explore` sections. They should verify that Results
-contains `Notebook`, `Compare`, and `Storage` sub-tabs; Explore contains `2-D
-Slices` and `3-D View`; the app still defaults to Results; selected-result
+contains `Notebook`, `Compare`, and `Storage` sub-tabs; Explore is one desktop
+cloud-context and slice-inspection workflow rather than separate `2-D Slices`
+and `3-D View` destinations; the app still defaults to Results; selected-result
 context flows from Results into Explore; and the old implementation pages
 (`Compare`, `Storage`, `Inspect`, `Visualize`) are no longer top-level
 workspaces. They should also cover prioritizing a validated cloud-forming
@@ -283,7 +284,7 @@ Shallow Cumulus quick-look and Dry Failed Cumulus quick-look pair. They should
 verify side-by-side scenario names, run-size presets, cloud/rain outcomes, first
 cloud time, max `qc`, max/min `w`, caveats, output summaries, saved/protected
 state, moisture-limited interpretation, missing-pair handling, and quick actions
-that route to Explore / 2-D Slices and Explore / 3-D View.
+that route either compared result into the unified Explore workflow.
 
 Side-by-side slice comparison tests should mock the #72 visualization-ready
 fields/slice API for both accepted results. They should cover default Baseline
@@ -316,34 +317,40 @@ provenance/rendering labels, and the guarantee that the browser does not parse
 raw NetCDF. These tests must not add ray marching, isosurfaces, shadows,
 fly-through, export, or generated CM1 output.
 
-Viewport-stability tests should verify that the domain box, floor/grid, slice
-planes, and cloud-water point cloud live inside the same zoomable data layer,
-that axes/scale markers remain outside that zoomed layer and readable, that the
-workbench exposes primary controls, viewport, bottom timeline/slice controls,
-and technical details as separate regions, and that reset view restores zoom and
-projection defaults. Side views should state that height is vertical, top-down
-should state that height is not shown vertically, and oblique should be labeled
-an interpretive overview rather than a true perspective camera.
+Viewport-stability tests should verify that the domain box, floor/grid, active
+slice plane, and cloud-water point cloud live inside the same zoomable data
+layer, that axes/scale markers remain outside that zoomed layer and readable,
+that the unified Explore workbench exposes shared field/time/slice controls,
+the fixed viewport, the matching 2-D slice inspector, the selected-point `What
+happened here?` explanation, and technical details as reachable regions, and
+that reset view restores zoom and projection defaults. Side views should state
+that height is vertical, top-down should state that height is not shown
+vertically, and oblique should be labeled an interpretive overview rather than a
+true perspective camera.
 
 The consolidated Results/Explore shell and fixed visualizer workbench should
 also get a real browser smoke check after
 layout changes, not only component tests. Open the app, navigate to Results,
-open the validated quick-look baseline in Explore / 3-D View, and confirm by screenshot
-or direct browser inspection that the render viewport does not cover primary
-controls, bottom controls, or technical details. At minimum verify that the
-primary control rail, fixed viewport, timeline/slice-position strip, and details
-panel are all reachable while cloud-water points and slice planes remain visible
-inside the viewport.
+open the validated quick-look baseline in Explore, and confirm by screenshot or
+direct browser inspection that the 3-D cloud-water context, visible slice plane,
+shared controls, 2-D slice inspector, and selected-point explanation are all
+reachable without the render viewport covering controls or details. At minimum
+verify desktop viewports around 1470x956 and 1720x1440, because #184's
+acceptance target is desktop; mobile checks are smoke coverage, not a separate
+mobile redesign acceptance gate.
 
 3-D slice-plane tests should mock the #72 visualization-ready slice API. They
 should cover horizontal and vertical slice planes, `qc` and `w` field selection,
 time synchronization with the 3-D point cloud, native-grid caveats/provenance
-labels, selected-time max `qc`/`w` default locations, slice-plane show/hide
-behavior, view presets, explicit horizontal `z`, vertical `x-z`, and vertical
-`y-z` orientation controls, up/down or forward/back level-index movement, and
-clear error states for missing fields or bad slice requests. They must not parse
-raw NetCDF in the browser, add rendering dependencies, or test ray marching,
-cinematic lighting, export, fly-through, or generated CM1 output.
+labels, selected-time max `qc`/`w` default locations, visible slice-plane
+orientation changes, view presets, explicit horizontal `z`, vertical `x-z`, and
+vertical `y-z` controls, up/down or forward/back level-index movement, selected
+slice-cell point diagnostics, and clear error states for missing fields or bad
+slice requests. They must not parse raw NetCDF in the browser, add rendering
+dependencies, or test ray marching, cinematic lighting, export, fly-through, or
+generated CM1 output. The 3-D point context remains `qc` cloud water only; `w`
+and broader variable inspection should be tested through the synchronized slice
+path unless a future issue adds a scientifically honest 3-D representation.
 Visual first-impression tests should also keep the validated quick-look baseline
 on a cloud-bearing time, show a visible point-cloud state, keep slice planes
 optional and secondary, and keep technical provenance reachable without making

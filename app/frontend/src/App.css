@@ -178,6 +178,11 @@ small {
   gap: 1rem;
 }
 
+.explore-workspace {
+  width: min(100%, 94rem);
+  margin: 0 auto;
+}
+
 .builder-layout {
   display: grid;
   grid-template-columns: minmax(0, 1.45fr) minmax(300px, 0.85fr);
@@ -875,7 +880,9 @@ details[open] > summary {
 
 .explore-result-summary {
   display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
   gap: 0.15rem;
+  align-items: center;
   border-left: 3px solid rgba(47, 116, 168, 0.24);
   padding: 0.15rem 0 0.15rem 0.55rem;
 }
@@ -896,18 +903,83 @@ details[open] > summary {
 
 .visualizer-shell {
   display: grid;
-  gap: 1rem;
-  padding: 1rem;
+  gap: 0.55rem;
+  padding: 0;
+}
+
+.explore-shared-controls {
+  display: grid;
+  grid-template-columns: minmax(8rem, 0.55fr) minmax(15rem, 0.75fr) minmax(10rem, 0.65fr) minmax(17rem, 1fr) minmax(12rem, 0.75fr) auto;
+  gap: 0.4rem;
+  align-items: end;
+  border: 1px solid rgba(47, 116, 168, 0.18);
+  border-radius: 8px;
+  padding: 0.4rem 0.48rem;
+  background: rgba(255, 255, 255, 0.78);
+}
+
+.explore-shared-controls label,
+.explore-shared-controls fieldset {
+  min-width: 0;
+}
+
+.explore-shared-controls label {
+  display: grid;
+  gap: 0.2rem;
+  color: var(--color-text-primary);
+  font-size: 0.86rem;
+  font-weight: 800;
+}
+
+.explore-shared-controls fieldset {
+  margin: 0;
+  border: 0;
+  padding: 0;
+}
+
+.explore-shared-controls legend {
+  margin-bottom: 0.2rem;
+  color: var(--color-text-primary);
+  font-size: 0.86rem;
+  font-weight: 850;
+}
+
+.explore-shared-controls select,
+.explore-shared-controls input {
+  min-width: 0;
+}
+
+.explore-shared-controls button {
+  padding: 0.38rem 0.52rem;
+  box-shadow: none;
+  white-space: nowrap;
+}
+
+.time-preset-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+}
+
+.time-preset-buttons button,
+.explore-shared-controls .slice-move-buttons button {
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-accent-primary);
+}
+
+.unified-slice-inspector {
+  display: grid;
+  gap: 0.65rem;
 }
 
 .visualizer-workbench {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(18rem, 21rem);
   grid-template-areas:
-    "status status"
     "stage controls"
     "stage details";
-  gap: 1rem;
+  gap: 0.75rem;
   align-items: start;
 }
 
@@ -1630,7 +1702,6 @@ details[open] > summary {
 
   .visualizer-workbench {
     grid-template-areas:
-      "status"
       "stage"
       "details"
       "controls";
