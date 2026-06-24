@@ -75,6 +75,24 @@ visualization feels physically believable, whether saved/delete/protection
 semantics feel safe, and whether the experience is enjoyable rather than
 debug-like.
 
+For UX reset work, use
+[UX Reset: Guided Experiment Notebook](ux-reset-guided-experiment-notebook.md)
+as the PM/design source of truth. The reset keeps objective behavior in
+automated tests and reserves manual QA for qualitative judgment only.
+
+UX reset manual QA should answer:
+
+```text
+Does this screen make the experiment understandable?
+Does the visualization feel physically plausible?
+Does the page teach the right lesson?
+Does the app feel like a tool worth reopening?
+```
+
+Do not turn the reset into a broad manual checklist of objective behaviors.
+If a requested acceptance criterion is objective and repeatable, convert it
+into a unit/component or Playwright test.
+
 For any issue that changes navigation, Results, Storage, Compare, Explore,
 Build workflow, or visualizer layout:
 

@@ -12,19 +12,31 @@ CM1 is the high-fidelity simulation engine; Cloud Chamber is the local
 experiment builder, run manager, result notebook, diagnostics layer, and
 visualizer.
 
-Cloud Chamber's main flow should be product-shaped, not namelist-shaped. Friendly atmospheric controls come first; raw CM1 namelist settings belong in advanced/developer views.
+Cloud Chamber's main flow should be product-shaped, not namelist-shaped.
+Friendly atmospheric controls come first; raw CM1 namelist settings belong in
+advanced/developer views.
+
+The current UX reset direction is:
+
+```text
+Cloud Chamber is a guided experiment notebook for understanding why clouds formed, failed, stayed shallow, or grew stronger.
+```
+
+See [UX Reset: Guided Experiment Notebook](ux-reset-guided-experiment-notebook.md)
+for the PM/design source of truth for future UX work.
 
 The first Golden Path case is Baseline Shallow Cumulus. Warm rain remains early, but it should not block completing that first end-to-end case.
 
 Replay / inspect / save is core MVP. Duplicate / tweak / rerun is later.
 
-The organizing product concept is **Thermal Fate**: Cloud Chamber should help
-explain why air rises, why some thermals do or do not form cloud, why some
-clouds stay shallow, why others grow taller, why some break through into deep
-convection, and how precipitation feedback can reorganize or suppress
-convection. The visualizer remains important, but the product center of gravity
-is completed/saved CM1 results, process diagnostics, selected-region
-inspection, comparison across scenario variants, and visual polish later.
+The user-facing product model is guided experiments, an experiment notebook,
+focused visualization, plain-language explanation, comparison between variants,
+and technical details on demand.
+
+**Thermal Fate** remains the internal scientific diagnostic and explanation
+model. It should power explanations, confidence/caveat labels, comparison
+summaries, selected-region diagnostics, and technical provenance. It should not
+dominate the primary visible UI as a process-taxonomy cockpit.
 
 Cloud Chamber is not a real-time slider toy. Scenario design, result browsing,
 comparison, and inspection should feel interactive; CM1 execution is a local
@@ -33,15 +45,12 @@ simulation run with latency, logs, outputs, and caveats.
 See [Thermal Fate process diagnostics](thermal-fate-process-diagnostics.md) for
 the current process-diagnostics contract.
 
-Explore should now feel like a process workbench, not just a raw field viewer.
-The 2-D Slices and 3-D View workspaces expose Thermal Fate process modes for
-Thermal Fate summary, Cloud Water, Updrafts, Cloud Lifecycle, Cap / Inversion,
-Moisture / Saturation, Buoyancy, Deep Breakthrough, and Precipitation Feedback.
-Each mode must show whether the evidence is supported, candidate, insufficient,
-or unavailable. Unsupported diagnostic groups remain visible with caveats
-instead of disappearing. The browser receives only backend-prepared slices,
-point clouds, result-card process fields, and bounded summaries; it does not
-parse raw NetCDF or invent process claims.
+Explore should be a focused visualization plus explanation screen for one
+selected result. Thermal Fate process evidence remains available in secondary
+or technical layers, but the primary view should lead with the experiment
+story, outcome, visualization, and next action. The browser receives only
+backend-prepared slices, point clouds, result-card process fields, and bounded
+summaries; it does not parse raw NetCDF or invent process claims.
 
 ## Personas
 

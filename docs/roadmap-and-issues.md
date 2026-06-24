@@ -18,21 +18,74 @@ scenario template
 
 CM1 remains the source of truth. Preview estimates are guidance only, and visualization is an interpretation of CM1-derived data.
 
-Cloud Chamber is a personal, scientifically honest CM1 Thermal Fate workbench:
+Cloud Chamber is a personal, scientifically honest guided experiment notebook:
 curated scenario families, meaningful controls, local-first CM1 runs,
 replayable saved results, process diagnostics, selected-region inspection,
 comparison across variants, and beautiful visualization.
 
+The current UX reset reframes the visible product as a guided experiment
+notebook:
+
+```text
+Cloud Chamber is a guided experiment notebook for understanding why clouds formed, failed, stayed shallow, or grew stronger.
+```
+
+See [UX Reset: Guided Experiment Notebook](ux-reset-guided-experiment-notebook.md).
+Future UX implementation should follow that reset before renderer upgrades or
+future scenario-family expansion.
+
 Replay / inspect / save is core MVP. Duplicate / tweak / rerun is later.
+
+## UX Reset Track
+
+The UX reset is now the roadmap gate for future user-facing work. It keeps the
+three top-level workspaces but changes their visible contract:
+
+```text
+Build:
+  Choose/setup a guided experiment and safely create/launch a local CM1 package.
+
+Results:
+  The experiment notebook and comparison home.
+
+Explore:
+  A focused visualization plus explanation screen for one selected result.
+```
+
+Thermal Fate remains the internal scientific diagnostic/explanation model. It
+powers explanations, confidence/caveat labels, comparison summaries,
+selected-region diagnostics, and technical provenance. It should not dominate
+the primary visible UI as a process-taxonomy cockpit.
+
+Immediate UX reset sequence:
+
+```text
+#168 Codify Cloud Chamber UX reset decisions in product docs
+-> #169 Fix Explore selected-result and field-loading trust states
+-> #170 Refine Cloud Chamber navigation and layout style
+-> #171 Redesign Results as a scan-friendly experiment notebook
+-> #172 Redesign Explore around one primary visualization and one explanation panel
+-> #173 Redesign Build as guided experiment selection, not a form-first setup page
+-> #112 Revisit renderer upgrade only after the simplified Explore UX is defined
+-> #153/#154/#155 Future scenario-family expansion after the app is compelling and trustworthy
+```
+
+This track comes before renderer upgrades and before expanding the future
+scenario-family roadmap. Objective behavior should be covered by automated
+tests; manual QA for this reset is qualitative only.
 
 ## Thermal Fate Roadmap
 
-Thermal Fate is the organizing product concept: Cloud Chamber should explain why
-air rises, why some thermals do or do not form cloud, why some clouds stay
-shallow, why others grow taller, why some break through into deep convection,
-and how precipitation feedback can reorganize or suppress convection.
+Thermal Fate is the internal organizing scientific model: Cloud Chamber should
+explain why air rises, why some thermals do or do not form cloud, why some
+clouds stay shallow, why others grow taller, why some break through into deep
+convection, and how precipitation feedback can reorganize or suppress
+convection.
 
-The execution sequence should be:
+Thermal Fate remains the internal scientific model behind the guided experiment
+notebook UX. The visible app should use the UX reset track above before
+returning to renderer upgrades or future scenario-family expansion. The
+diagnostic execution sequence is:
 
 ```text
 #148 Thermal Fate Framework / process contract
@@ -40,10 +93,11 @@ The execution sequence should be:
 -> #151 selected-region backend diagnostics
 -> #150 Thermal Fate overlays in Explore
 -> #152 Thermal Fate Inspector UI
+-> #168-#173 guided experiment notebook UX reset
+-> #112 renderer upgrade after simplified Explore UX is defined
 -> #153 surface-heating scenario family
 -> #154 deep-convection breakthrough scenario family
 -> #155 precipitation feedback / cold-pool scenario family
--> #112 renderer upgrade after process needs are clear
 ```
 
 Renderer upgrades follow process needs. They should not drive the product
