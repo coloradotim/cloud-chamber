@@ -216,7 +216,7 @@ Dry-run package generation uses the validated scenario template and CM1 input co
 
 The implemented dry-run API is `POST /api/dry-run-package`. It accepts scenario ID, selected product controls, and run-size preset, then returns the package paths and dry-run report summary for UI review. It must not launch CM1, write NetCDF, or place generated packages inside the source tree during tests.
 
-The Build workspace is the first guided app-side run loop over the existing
+The Build workspace is the first guided app-side launchpad over the existing
 backend contracts:
 
 ```text
@@ -229,9 +229,28 @@ POST /api/dry-run-package
 
 The browser receives only API summaries: run/package paths, lifecycle/product
 states, stdout/stderr log paths and short tails, output artifact counts, runtime
-warnings, and the ingested result ID. It does not read local files directly,
+warnings, storage inventory entries, associated result-card identities when
+available, and the ingested result ID. It does not read local files directly,
 does not parse NetCDF, and does not imply that a dry-run package is already a
 completed or ingested result.
+
+Build is intentionally not modeled as one single active package. Local runtime
+state can contain multiple package/run folders in different lifecycle stages:
+packaged-only, running, completed with output, completed without usable output,
+failed, ingested, saved/protected, or missing/malformed manifest. The launchpad
+uses the runtime storage inventory to show those states and offers only safe
+state-appropriate transitions:
+
+- create a new package through `POST /api/dry-run-package`;
+- launch an eligible packaged run through `POST /api/runs/launch`;
+- refresh current status through `GET /api/runs/status`;
+- ingest completed output through `POST /api/results/ingest`;
+- open associated results in Results or Explore;
+- route cleanup decisions to Results / Storage.
+
+Storage remains the owner of deletion policy and cleanup actions. Build may show
+that a run is cleanup-only or saved/protected, but it should not duplicate the
+delete workflow.
 
 ### Preview Engine
 

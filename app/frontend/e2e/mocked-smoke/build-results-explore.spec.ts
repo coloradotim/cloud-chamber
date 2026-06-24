@@ -17,16 +17,39 @@ test.describe("mocked smoke: Build, Results, Explore path", () => {
     await expect(page.locator("select").first()).toBeVisible();
     await expect(page.getByText(/physical question/i).first()).toBeVisible();
     await expect(page.getByText(/how do low-level moisture/i).first()).toBeVisible();
-    await expect(page.getByText(/preview estimate not implemented/i)).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Local run launchpad" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Packages, runs, and results" })).toBeVisible();
+    await expect(
+      page.getByTestId("package-review-panel").getByText("Not packaged yet").first(),
+    ).toBeVisible();
+    await expect(page.getByText("Local experiment pipeline")).toBeVisible();
+    await expect(page.getByText("Ready to ingest")).toBeVisible();
+    await expect(page.getByRole("button", { name: "Open Storage cleanup" })).toBeVisible();
+    await page.getByLabel("Low-level humidity").selectOption("more_humid");
+    await expect(page.getByText(/Selected: More humid/i)).toBeVisible();
 
     await page.getByTestId("create-package-btn").scrollIntoViewIfNeeded();
     await page.getByTestId("create-package-btn").click();
 
     await expect(page.getByTestId("package-review-panel")).toBeVisible();
+    await expect(page.getByText("Package ready").first()).toBeVisible();
+    await expect(page.getByText("Latest generated package")).toBeVisible();
+    await expect(page.getByRole("button", { name: "Create another package" })).toBeVisible();
     await expect(page.getByText("/tmp/cloud-chamber-e2e/run/run_manifest.json")).toBeVisible();
-    await expect(page.getByText("CM1 launched").locator("..")).toContainText("No");
-    await expect(page.getByText(/not a completed|dry-run/i).first()).toBeVisible();
+    await expect(page.getByText("Expected output directory").locator("..")).toContainText(
+      "/tmp/cloud-chamber-e2e/run",
+    );
+    await expect(page.getByText(/not a completed CM1 result/i).first()).toBeVisible();
     await expect(page.getByTestId("launch-cm1-btn")).toBeEnabled();
+
+    await page.getByTestId("launch-cm1-btn").click();
+    await expect(page.getByText("Completed").first()).toBeVisible();
+    await expect(page.getByTestId("ingest-results-btn")).toBeEnabled();
+
+    await page.getByTestId("ingest-results-btn").click();
+    await expect(page.getByText("Ingested").first()).toBeVisible();
+    await page.getByRole("button", { name: "Open in Results" }).click();
+    await expect(page.getByRole("heading", { name: "Experiment Notebook" })).toBeVisible();
   });
 
   test("Results notebook, Compare, and Storage render with mocked data", async ({ page }) => {

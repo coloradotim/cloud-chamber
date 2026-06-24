@@ -101,6 +101,14 @@ type IngestResponse = {
   diagnostics_summary: string | null;
 };
 
+type BuildRunStage =
+  | "not_packaged"
+  | "package_ready"
+  | "running"
+  | "completed"
+  | "failed"
+  | "ingested";
+
 type OutputFileSummary = {
   netcdf_count: number;
   model_output_count: number;
@@ -848,6 +856,22 @@ export function App() {
     });
   }, [controls, selectedScenario]);
 
+  async function refreshStorageAfterWorkflow(statusWhenLoaded?: string) {
+    try {
+      const payload = await fetchStorageInventory();
+      setStorageInventory(payload);
+      setStorageStatus(
+        statusWhenLoaded ??
+          (payload.runs.length > 0 ? "Storage inventory loaded" : "No runtime runs"),
+      );
+    } catch (caught) {
+      setStorageError(
+        caught instanceof Error ? caught.message : "Unable to load runtime storage inventory.",
+      );
+      setStorageStatus("Storage unavailable");
+    }
+  }
+
   async function handleDryRun(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!selectedScenario || validationMessages.length > 0) return;
@@ -861,6 +885,7 @@ export function App() {
       const result = await requestDryRunPackage(selectedScenario.id, controls, runSizePreset);
       setDryRun(result);
       setStatus("Packaged dry-run output");
+      await refreshStorageAfterWorkflow("Package added to local pipeline");
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Unable to create dry-run package.");
       setStatus("Scenario setup");
@@ -875,6 +900,7 @@ export function App() {
       const launched = await launchLocalRun(dryRun.manifest_path);
       setRunStatus(launched);
       setStatus(userFacingRunWorkflowStatus(launched));
+      await refreshStorageAfterWorkflow("Local pipeline updated");
     } catch (caught) {
       setRunWorkflowError(caught instanceof Error ? caught.message : "Unable to launch local CM1.");
       setStatus("Launch blocked");
@@ -888,6 +914,7 @@ export function App() {
       const refreshed = await fetchRunStatus(dryRun.manifest_path);
       setRunStatus(refreshed);
       setStatus(userFacingRunWorkflowStatus(refreshed));
+      await refreshStorageAfterWorkflow("Local pipeline updated");
     } catch (caught) {
       setRunWorkflowError(
         caught instanceof Error ? caught.message : "Unable to refresh local CM1 status.",
@@ -929,6 +956,38 @@ export function App() {
       const ingested = await ingestCompletedRun(dryRun.manifest_path);
       setIngestedResultId(ingested.result_id);
       await refreshResults(ingested.result_id);
+      await refreshStorageAfterWorkflow("Local pipeline updated");
+      setStatus("Ingested result metadata");
+    } catch (caught) {
+      setRunWorkflowError(
+        caught instanceof Error ? caught.message : "Unable to ingest completed CM1 output.",
+      );
+      setStatus("Ingest blocked");
+    }
+  }
+
+  async function handleLaunchStoredRun(manifestPath: string) {
+    setRunWorkflowError(null);
+    setStatus("Launching selected local package");
+    try {
+      const launched = await launchLocalRun(manifestPath);
+      setRunStatus(launched);
+      setStatus(userFacingRunWorkflowStatus(launched));
+      await refreshStorageAfterWorkflow("Local pipeline updated");
+    } catch (caught) {
+      setRunWorkflowError(caught instanceof Error ? caught.message : "Unable to launch local CM1.");
+      setStatus("Launch blocked");
+    }
+  }
+
+  async function handleIngestStoredRun(manifestPath: string) {
+    setRunWorkflowError(null);
+    setStatus("Ingesting selected completed output");
+    try {
+      const ingested = await ingestCompletedRun(manifestPath);
+      setIngestedResultId(ingested.result_id);
+      await refreshResults(ingested.result_id);
+      await refreshStorageAfterWorkflow("Local pipeline updated");
       setStatus("Ingested result metadata");
     } catch (caught) {
       setRunWorkflowError(
@@ -1064,6 +1123,10 @@ export function App() {
           runStatus={runStatus}
           runWorkflowError={runWorkflowError}
           ingestedResultId={ingestedResultId}
+          storageInventory={storageInventory}
+          storageStatus={storageStatus}
+          storageError={storageError}
+          results={results}
           onSelectScenario={setSelectedScenarioId}
           onControlChange={(id, value) =>
             setControls((current) => ({
@@ -1076,6 +1139,8 @@ export function App() {
           onLaunchRun={handleLaunchRun}
           onRefreshRunStatus={handleRefreshRunStatus}
           onIngestRun={handleIngestRun}
+          onLaunchStoredRun={handleLaunchStoredRun}
+          onIngestStoredRun={handleIngestStoredRun}
           onOpenInResults={() => {
             if (ingestedResultId) setSelectedResultId(ingestedResultId);
             setActiveSection("results");
@@ -1085,6 +1150,20 @@ export function App() {
             if (ingestedResultId) setSelectedResultId(ingestedResultId);
             setActiveSection("explore");
           }}
+          onOpenStoredResult={(resultId) => {
+            setSelectedResultId(resultId);
+            setActiveSection("results");
+            setActiveResultsTab("notebook");
+          }}
+          onExploreStoredResult={(resultId) => {
+            setSelectedResultId(resultId);
+            setActiveSection("explore");
+          }}
+          onOpenStorage={() => {
+            setActiveSection("results");
+            setActiveResultsTab("storage");
+          }}
+          onRefreshStorage={handleRefreshStorage}
           onRetryScenarios={() => {
             void loadScenarios();
           }}
@@ -1154,6 +1233,10 @@ function BuildWorkspace({
   runStatus,
   runWorkflowError,
   ingestedResultId,
+  storageInventory,
+  storageStatus,
+  storageError,
+  results,
   onSelectScenario,
   onControlChange,
   onRunSizeChange,
@@ -1161,8 +1244,14 @@ function BuildWorkspace({
   onLaunchRun,
   onRefreshRunStatus,
   onIngestRun,
+  onLaunchStoredRun,
+  onIngestStoredRun,
   onOpenInResults,
   onInspectIngested,
+  onOpenStoredResult,
+  onExploreStoredResult,
+  onOpenStorage,
+  onRefreshStorage,
   onRetryScenarios,
 }: {
   scenarioLoadState: ScenarioLoadState;
@@ -1178,6 +1267,10 @@ function BuildWorkspace({
   runStatus: RunStatusResponse | null;
   runWorkflowError: string | null;
   ingestedResultId: string | null;
+  storageInventory: StorageInventoryResponse | null;
+  storageStatus: string;
+  storageError: string | null;
+  results: ResultCard[];
   onSelectScenario: (scenarioId: string) => void;
   onControlChange: (controlId: string, value: string) => void;
   onRunSizeChange: (presetId: string) => void;
@@ -1185,25 +1278,34 @@ function BuildWorkspace({
   onLaunchRun: () => void;
   onRefreshRunStatus: () => void;
   onIngestRun: () => void;
+  onLaunchStoredRun: (manifestPath: string) => void;
+  onIngestStoredRun: (manifestPath: string) => void;
   onOpenInResults: () => void;
   onInspectIngested: () => void;
+  onOpenStoredResult: (resultId: string) => void;
+  onExploreStoredResult: (resultId: string) => void;
+  onOpenStorage: () => void;
+  onRefreshStorage: () => void;
   onRetryScenarios: () => void;
 }) {
   const scenarioControlsReady = scenarioLoadState === "loaded" && selectedScenario !== undefined;
+  const selectedRunSize = selectedScenario?.run_size_presets.find(
+    (preset) => preset.id === runSizePreset,
+  );
 
   return (
     <section className="workspace-section" aria-labelledby="build-title">
       <div className="section-heading">
         <div>
           <p className="eyebrow">Build</p>
-          <h2 id="build-title">Create a CM1 run package</h2>
+          <h2 id="build-title">Build and run a CM1 experiment</h2>
         </div>
       </div>
 
       <section className="builder-layout" aria-label="Scenario Builder">
-        <form className="builder-panel" onSubmit={onDryRun}>
+        <form id="build-run-package-form" className="builder-panel" onSubmit={onDryRun}>
           <label className="field-label" htmlFor="scenario">
-            Scenario
+            Experiment
           </label>
           <select
             id="scenario"
@@ -1249,7 +1351,7 @@ function BuildWorkspace({
           {scenarioControlsReady && (
             <>
               <div className="hero-case">
-                <p className="eyebrow">First Golden Path hero case</p>
+                <p className="eyebrow">Guided local CM1 experiment</p>
                 <h2>{selectedScenario.display_name}</h2>
                 <p>{selectedScenario.description}</p>
               </div>
@@ -1257,6 +1359,25 @@ function BuildWorkspace({
               <section aria-labelledby="physical-question-title">
                 <h3 id="physical-question-title">Physical Question</h3>
                 <p>{selectedScenario.physical_question}</p>
+              </section>
+
+              <section className="experiment-summary" aria-labelledby="experiment-summary-title">
+                <h3 id="experiment-summary-title">Experiment setup summary</h3>
+                <dl className="compact-metrics">
+                  <Metric label="Expected outcome" value={selectedScenario.expected_behavior} />
+                  <Metric
+                    label="Readiness"
+                    value="Supported local package template from the scenario catalog"
+                  />
+                  <Metric
+                    label="What changes"
+                    value={selectedScenario.controls.map((control) => control.label).join(", ")}
+                  />
+                  <Metric
+                    label="What stays controlled"
+                    value="CM1 remains the source of truth; raw namelist details stay in technical review."
+                  />
+                </dl>
               </section>
 
               <section aria-labelledby="controls-title">
@@ -1268,6 +1389,14 @@ function BuildWorkspace({
                         <strong>{control.label}</strong>
                       </label>
                       <small>{control.description}</small>
+                      <small>
+                        Selected:{" "}
+                        {selectedControlOption(control, controls)?.label ??
+                          String(controls[control.id] ?? control.default)}
+                        .{" "}
+                        {selectedControlOption(control, controls)?.description ??
+                          "Supported scenario option; raw CM1 settings remain in technical review."}
+                      </small>
                     </span>
                     <select
                       id={`control-${control.id}`}
@@ -1298,6 +1427,12 @@ function BuildWorkspace({
                   </option>
                 ))}
               </select>
+              {selectedRunSize && (
+                <p className="field-help">
+                  {selectedRunSize.purpose}. Expected runtime: {selectedRunSize.expected_runtime}.
+                  Confidence: {selectedRunSize.confidence}. Output: {selectedRunSize.output_notes}.
+                </p>
+              )}
 
               {validationMessages.length > 0 && (
                 <div className="validation" role="alert">
@@ -1313,53 +1448,34 @@ function BuildWorkspace({
                 </div>
               )}
 
-              <button
-                type="submit"
-                data-testid="create-package-btn"
-                disabled={validationMessages.length > 0}
-              >
-                Create run package
-              </button>
             </>
           )}
         </form>
 
         <aside className="side-stack">
-          <section className="status-panel secondary-panel" aria-labelledby="preview-title">
-            <p className="eyebrow">Future guidance</p>
-            <h3 id="preview-title">Preview estimate not implemented</h3>
-            <p>
-              Future preview estimates will be guidance only. This panel is not CM1 output, not a
-              completed result, and not a visualization interpretation.
-            </p>
-          </section>
-
-          <section
-            className="status-panel"
-            aria-labelledby="review-title"
-            data-testid="package-review-panel"
-          >
-            <p className="eyebrow">Generated package</p>
-            <h3 id="review-title">Review before local CM1 run</h3>
-            {dryRun ? (
-              <GuidedRunWorkflow
-                dryRun={dryRun}
-                runStatus={runStatus}
-                error={runWorkflowError}
-                ingestedResultId={ingestedResultId}
-                onLaunchRun={onLaunchRun}
-                onRefreshRunStatus={onRefreshRunStatus}
-                onIngestRun={onIngestRun}
-                onOpenInResults={onOpenInResults}
-                onInspectIngested={onInspectIngested}
-              />
-            ) : (
-              <p>
-                Create a package to review the manifest, CM1 inputs, runtime checklist, and run
-                report before launching local CM1 or ingesting a saved result.
-              </p>
-            )}
-          </section>
+          <LocalRunWorkflowPanel
+            dryRun={dryRun}
+            runStatus={runStatus}
+            error={runWorkflowError}
+            ingestedResultId={ingestedResultId}
+            showCreatePackageAction={scenarioControlsReady}
+            canCreatePackage={validationMessages.length === 0}
+            onLaunchRun={onLaunchRun}
+            onRefreshRunStatus={onRefreshRunStatus}
+            onIngestRun={onIngestRun}
+            storageInventory={storageInventory}
+            storageStatus={storageStatus}
+            storageError={storageError}
+            results={results}
+            onLaunchStoredRun={onLaunchStoredRun}
+            onIngestStoredRun={onIngestStoredRun}
+            onOpenInResults={onOpenInResults}
+            onInspectIngested={onInspectIngested}
+            onOpenStoredResult={onOpenStoredResult}
+            onExploreStoredResult={onExploreStoredResult}
+            onOpenStorage={onOpenStorage}
+            onRefreshStorage={onRefreshStorage}
+          />
         </aside>
       </section>
     </section>
@@ -2360,81 +2476,54 @@ function RuntimeRunsTable({
   );
 }
 
-function DryRunReview({ dryRun }: { dryRun: DryRunResponse }) {
-  return (
-    <div className="dry-run-review">
-      <dl>
-        <div>
-          <dt>Run ID</dt>
-          <dd>{runIdFromPackage(dryRun)}</dd>
-        </div>
-        <div>
-          <dt>Package path</dt>
-          <dd>{dryRun.package_dir}</dd>
-        </div>
-        <div>
-          <dt>Manifest path</dt>
-          <dd>{dryRun.manifest_path}</dd>
-        </div>
-        <div>
-          <dt>Scenario</dt>
-          <dd>{dryRun.report.scenario_id}</dd>
-        </div>
-        <div>
-          <dt>Validation status</dt>
-          <dd>
-            {dryRun.report.not_a_completed_cm1_result ? "Packaged dry-run output" : "Unknown"}
-          </dd>
-        </div>
-        <div>
-          <dt>CM1 launched</dt>
-          <dd>{dryRun.report.cm1_was_launched ? "Yes" : "No"}</dd>
-        </div>
-        <div>
-          <dt>Cost / size</dt>
-          <dd>{dryRun.report.estimated_cost_or_size}</dd>
-        </div>
-      </dl>
-
-      <h4>Generated files</h4>
-      <ul>
-        {Object.values(dryRun.report.generated_files).map((path) => (
-          <li key={path}>{path.split("/").at(-1)}</li>
-        ))}
-      </ul>
-
-      <h4>Manifest summary</h4>
-      <p>{dryRun.report.physical_question}</p>
-      <p>Run-size preset: {dryRun.report.run_size_preset}</p>
-      <p>Expected diagnostics: {dryRun.report.expected_diagnostics.join(", ")}</p>
-      <p>Product state: {dryRun.report.provenance.product_state}</p>
-    </div>
-  );
-}
-
-function GuidedRunWorkflow({
+function LocalRunWorkflowPanel({
   dryRun,
   runStatus,
   error,
   ingestedResultId,
+  storageInventory,
+  storageStatus,
+  storageError,
+  results,
+  showCreatePackageAction,
+  canCreatePackage,
   onLaunchRun,
   onRefreshRunStatus,
   onIngestRun,
+  onLaunchStoredRun,
+  onIngestStoredRun,
   onOpenInResults,
   onInspectIngested,
+  onOpenStoredResult,
+  onExploreStoredResult,
+  onOpenStorage,
+  onRefreshStorage,
 }: {
-  dryRun: DryRunResponse;
+  dryRun: DryRunResponse | null;
   runStatus: RunStatusResponse | null;
   error: string | null;
   ingestedResultId: string | null;
+  storageInventory: StorageInventoryResponse | null;
+  storageStatus: string;
+  storageError: string | null;
+  results: ResultCard[];
+  showCreatePackageAction: boolean;
+  canCreatePackage: boolean;
   onLaunchRun: () => void;
   onRefreshRunStatus: () => void;
   onIngestRun: () => void;
+  onLaunchStoredRun: (manifestPath: string) => void;
+  onIngestStoredRun: (manifestPath: string) => void;
   onOpenInResults: () => void;
   onInspectIngested: () => void;
+  onOpenStoredResult: (resultId: string) => void;
+  onExploreStoredResult: (resultId: string) => void;
+  onOpenStorage: () => void;
+  onRefreshStorage: () => void;
 }) {
   const isRunning =
     runStatus?.lifecycle_state === "queued" || runStatus?.lifecycle_state === "running";
+  const stage = buildRunStage(dryRun, runStatus, ingestedResultId);
   const canIngest =
     runStatus?.lifecycle_state === "completed" &&
     runStatus.product_state === "completed_cm1_result" &&
@@ -2442,60 +2531,119 @@ function GuidedRunWorkflow({
   const outputCount = runStatus
     ? Object.values(runStatus.output_summary).reduce((total, value) => total + value, 0)
     : 0;
+  const generatedInputNames = dryRun ? generatedInputSummary(dryRun) : [];
+  const currentRunId = dryRun ? runIdFromPackage(dryRun) : null;
+  const showCreatePackageButton = showCreatePackageAction;
+  const showLaunchButton = Boolean(dryRun && stage === "package_ready");
+  const showRefreshButton = Boolean(dryRun && runStatus);
+  const showIngestButton = Boolean(dryRun);
+  const showActionRow =
+    showCreatePackageButton || showLaunchButton || showRefreshButton || showIngestButton;
 
   return (
-    <div className="guided-run-workflow">
-      <DryRunReview dryRun={dryRun} />
+    <section
+      className="status-panel local-run-panel"
+      aria-labelledby="local-run-title"
+      data-testid="package-review-panel"
+    >
+      <div className="panel-heading-row">
+        <div>
+          <p className="eyebrow">Local run workflow</p>
+          <h3 id="local-run-title">Local run launchpad</h3>
+        </div>
+        <StatusBadge label={buildStageLabel(stage)} tone={buildStageTone(stage)} />
+      </div>
 
-      <section aria-labelledby="local-run-title">
-        <h4 id="local-run-title">Local CM1 run</h4>
-        <ol className="workflow-steps">
-          <li className="complete">Package ready</li>
-          <li className={runStatus ? "complete" : ""}>
-            {isRunning
-              ? "Running"
-              : runStatus
-                ? userFacingRunWorkflowStatus(runStatus)
-                : "Ready to launch"}
-          </li>
-          <li className={runStatus?.lifecycle_state === "completed" ? "complete" : ""}>
-            {runStatus?.lifecycle_state === "completed"
-              ? "Ready to ingest"
-              : "Waiting for CM1 output"}
-          </li>
-          <li className={ingestedResultId ? "complete" : ""}>
-            {ingestedResultId ? "Ingested" : "Not ingested yet"}
-          </li>
-        </ol>
+      <div className="run-state-card package-setup-card">
+        <div className="panel-heading-row">
+          <div>
+            <p className="eyebrow">Package this setup</p>
+            <h4>{dryRun ? "Latest generated package" : "Create a local run package"}</h4>
+          </div>
+          <strong className="next-action">{buildStageLabel(stage)}</strong>
+        </div>
+
+        <p className="state-note">
+          Packages are repeatable local run directories. Create a new package for this setup, then
+          use the pipeline below to launch, monitor, ingest, or route old runs to cleanup.
+        </p>
 
         {error && <p role="alert">{error}</p>}
 
-        <div className="button-row">
-          <button
-            type="button"
-            data-testid="launch-cm1-btn"
-            onClick={onLaunchRun}
-            disabled={Boolean(runStatus)}
-          >
-            Launch local CM1
-          </button>
-          <button
-            type="button"
-            data-testid="refresh-status-btn"
-            onClick={onRefreshRunStatus}
-            disabled={!runStatus}
-          >
-            Refresh status
-          </button>
-          <button
-            type="button"
-            data-testid="ingest-results-btn"
-            onClick={onIngestRun}
-            disabled={!canIngest}
-          >
-            Ingest output
-          </button>
-        </div>
+        {showCreatePackageButton && (
+          <div className="button-row">
+            <button
+              type="submit"
+              form="build-run-package-form"
+              data-testid="create-package-btn"
+              disabled={!canCreatePackage}
+            >
+              {dryRun ? "Create another package" : "Create run package"}
+            </button>
+          </div>
+        )}
+
+        {dryRun ? (
+          <>
+            <dl className="compact-metrics">
+              <Metric label="Run ID" value={runIdFromPackage(dryRun)} />
+              <Metric label="Package path" value={dryRun.package_dir} />
+              <Metric label="Manifest path" value={dryRun.manifest_path} />
+              <Metric label="Expected output directory" value={dryRun.package_dir} />
+              <Metric
+                label="Generated inputs"
+                value={
+                  generatedInputNames.length > 0
+                    ? generatedInputNames.join(", ")
+                    : "No generated inputs reported"
+                }
+              />
+              <Metric
+                label="CM1 executable / settings"
+                value={
+                  runStatus?.command.length
+                    ? runStatus.command.join(" ")
+                    : "Checked by backend launch preflight"
+                }
+              />
+              <Metric
+                label="Current lifecycle state"
+                value={runStatus ? userFacingRunWorkflowStatus(runStatus) : "Package ready"}
+              />
+            </dl>
+            <p className="state-note">
+              A generated package is not a completed CM1 result. Launch, output detection, ingest,
+              and saved result review are separate states.
+            </p>
+          </>
+        ) : (
+          <p>No package has been created from the current setup in this browser session.</p>
+        )}
+
+        {showActionRow && dryRun && (
+          <div className="button-row">
+            {showLaunchButton && (
+              <button type="button" data-testid="launch-cm1-btn" onClick={onLaunchRun}>
+                Launch local CM1
+              </button>
+            )}
+            {showRefreshButton && (
+              <button type="button" data-testid="refresh-status-btn" onClick={onRefreshRunStatus}>
+                {stage === "running" || stage === "failed" ? "View status / logs" : "Refresh status"}
+              </button>
+            )}
+            {showIngestButton && (
+              <button
+                type="button"
+                data-testid="ingest-results-btn"
+                onClick={onIngestRun}
+                disabled={!canIngest}
+              >
+                Ingest completed output
+              </button>
+            )}
+          </div>
+        )}
 
         {runStatus ? (
           <div className="run-status-panel" aria-label="Local run status">
@@ -2546,10 +2694,42 @@ function GuidedRunWorkflow({
             )}
           </div>
         ) : (
-          <p>
-            Launch uses the configured local CM1 install and preserves one local run at a time. If
-            CM1 settings are missing, launch will fail before any process starts.
-          </p>
+          dryRun && (
+            <p>
+              Launch uses the configured local CM1 install and preserves one local run at a time.
+              If CM1 settings are missing, launch will fail before any process starts.
+            </p>
+          )
+        )}
+
+        {dryRun && (
+          <details className="technical-details">
+            <summary>Technical package details</summary>
+            <dl className="compact-metrics">
+              <Metric label="Scenario ID" value={dryRun.report.scenario_id} />
+              <Metric label="Run-size preset" value={humanize(dryRun.report.run_size_preset)} />
+              <Metric label="Cost / size" value={dryRun.report.estimated_cost_or_size} />
+              <Metric
+                label="CM1 launched"
+                value={dryRun.report.cm1_was_launched ? "Yes" : "No"}
+              />
+              <Metric
+                label="Product state"
+                value={humanize(dryRun.report.provenance.product_state)}
+              />
+              <Metric
+                label="Expected diagnostics"
+                value={dryRun.report.expected_diagnostics.join(", ")}
+              />
+            </dl>
+            <h5>Generated files</h5>
+            <ul>
+              {Object.values(dryRun.report.generated_files).map((path) => (
+                <li key={path}>{path.split("/").at(-1)}</li>
+              ))}
+            </ul>
+            <p>{dryRun.report.physical_question}</p>
+          </details>
         )}
 
         {ingestedResultId && (
@@ -2560,14 +2740,365 @@ function GuidedRunWorkflow({
                 Open in Results
               </button>
               <button type="button" onClick={onInspectIngested}>
-                Inspect fields
+                Open in Explore
               </button>
             </div>
           </div>
         )}
-      </section>
-    </div>
+      </div>
+
+      <LocalPipelinePanel
+        inventory={storageInventory}
+        status={storageStatus}
+        error={storageError}
+        results={results}
+        currentRunId={currentRunId}
+        onLaunchStoredRun={onLaunchStoredRun}
+        onIngestStoredRun={onIngestStoredRun}
+        onOpenStoredResult={onOpenStoredResult}
+        onExploreStoredResult={onExploreStoredResult}
+        onOpenStorage={onOpenStorage}
+        onRefreshStorage={onRefreshStorage}
+      />
+
+      <details className="workflow-reference">
+        <summary>Local experiment loop</summary>
+        <ol className="workflow-steps" aria-label="Local CM1 run workflow">
+          <li className={stageRank(stage) >= 1 ? "complete" : "current"}>
+            <strong>1. Create run package</strong>
+            <span>Generate CM1-facing files in the configured runtime home.</span>
+          </li>
+          <li className={stageRank(stage) >= 1 ? "complete" : ""}>
+            <strong>2. Review manifest and generated inputs</strong>
+            <span>Confirm package paths, inputs, expected diagnostics, and provenance.</span>
+          </li>
+          <li
+            className={
+              stageRank(stage) >= 2 ? "complete" : stage === "package_ready" ? "current" : ""
+            }
+          >
+            <strong>3. Launch local CM1</strong>
+            <span>Run from a selected package after backend preflight checks.</span>
+          </li>
+          <li className={stageRank(stage) >= 3 ? "complete" : isRunning ? "current" : ""}>
+            <strong>4. Monitor logs/status</strong>
+            <span>Refresh lifecycle state, log paths, output counts, and runtime caveats.</span>
+          </li>
+          <li
+            className={stageRank(stage) >= 4 ? "complete" : stage === "completed" ? "current" : ""}
+          >
+            <strong>5. Ingest completed output</strong>
+            <span>Create result metadata from completed CM1 output.</span>
+          </li>
+          <li className={stage === "ingested" ? "complete" : ""}>
+            <strong>6. Open result in Results / Explore</strong>
+            <span>Review the notebook entry or inspect fields once ingest succeeds.</span>
+          </li>
+        </ol>
+      </details>
+    </section>
   );
+}
+
+function LocalPipelinePanel({
+  inventory,
+  status,
+  error,
+  results,
+  currentRunId,
+  onLaunchStoredRun,
+  onIngestStoredRun,
+  onOpenStoredResult,
+  onExploreStoredResult,
+  onOpenStorage,
+  onRefreshStorage,
+}: {
+  inventory: StorageInventoryResponse | null;
+  status: string;
+  error: string | null;
+  results: ResultCard[];
+  currentRunId: string | null;
+  onLaunchStoredRun: (manifestPath: string) => void;
+  onIngestStoredRun: (manifestPath: string) => void;
+  onOpenStoredResult: (resultId: string) => void;
+  onExploreStoredResult: (resultId: string) => void;
+  onOpenStorage: () => void;
+  onRefreshStorage: () => void;
+}) {
+  const runs = selectPipelineRuns(inventory?.runs ?? [], currentRunId);
+
+  return (
+    <section className="pipeline-panel" aria-labelledby="pipeline-title">
+      <div className="panel-heading-row">
+        <div>
+          <p className="eyebrow">Local experiment pipeline</p>
+          <h4 id="pipeline-title">Packages, runs, and results</h4>
+        </div>
+        <StatusBadge label={status} tone={error ? "warning" : "neutral"} />
+      </div>
+      <p className="state-note">
+        See existing local run directories and move them forward when possible. Cleanup stays in
+        Storage so saved results and running runs remain protected.
+      </p>
+      {error && <p role="alert">{error}</p>}
+      <div className="button-row">
+        <button type="button" className="secondary-button" onClick={onRefreshStorage}>
+          Refresh pipeline
+        </button>
+        <button type="button" className="secondary-button" onClick={onOpenStorage}>
+          Open Storage cleanup
+        </button>
+      </div>
+
+      {runs.length === 0 ? (
+        <p>No local packages or run directories were found yet.</p>
+      ) : (
+        <div className="pipeline-run-list" aria-label="Local packages and runs">
+          {runs.map((run) => (
+            <PipelineRunCard
+              key={run.run_id}
+              run={run}
+              result={resultForRun(results, run.run_id)}
+              current={run.run_id === currentRunId}
+              onLaunchStoredRun={onLaunchStoredRun}
+              onIngestStoredRun={onIngestStoredRun}
+              onOpenStoredResult={onOpenStoredResult}
+              onExploreStoredResult={onExploreStoredResult}
+              onOpenStorage={onOpenStorage}
+            />
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function PipelineRunCard({
+  run,
+  result,
+  current,
+  onLaunchStoredRun,
+  onIngestStoredRun,
+  onOpenStoredResult,
+  onExploreStoredResult,
+  onOpenStorage,
+}: {
+  run: RunStorageEntry;
+  result: ResultCard | undefined;
+  current: boolean;
+  onLaunchStoredRun: (manifestPath: string) => void;
+  onIngestStoredRun: (manifestPath: string) => void;
+  onOpenStoredResult: (resultId: string) => void;
+  onExploreStoredResult: (resultId: string) => void;
+  onOpenStorage: () => void;
+}) {
+  const displayName = result?.name ?? run.scenario_name ?? run.scenario_id ?? run.run_id;
+  const canLaunch = Boolean(run.manifest_path && run.category === "dry_run_only");
+  const canIngest = Boolean(run.manifest_path && run.category === "completed_with_output" && !result);
+  const savedOrProtected = Boolean(result?.saved || result?.protected || run.saved || run.protected);
+  const stateLabel = pipelineRunStateLabel(run, result);
+
+  return (
+    <article className={current ? "pipeline-run-card current" : "pipeline-run-card"}>
+      <div className="panel-heading-row">
+        <div>
+          <h5>{displayName}</h5>
+          <small>{run.run_id}</small>
+        </div>
+        {current && <StatusBadge label="Current package" tone="neutral" />}
+      </div>
+      <div className="badge-row">
+        <StatusBadge label={stateLabel} tone={pipelineRunTone(run, result)} />
+        <StatusBadge
+          label={result ? "Ingested result" : "Not ingested"}
+          tone={result ? "good" : "neutral"}
+        />
+        <StatusBadge label={savedOrProtected ? "Saved/protected" : "Not saved"} tone="neutral" />
+      </div>
+      <p>
+        {humanize(result?.scenario_id ?? run.scenario_id ?? "unknown scenario")} ·{" "}
+        {humanize(result?.run_size_preset ?? run.run_size_preset ?? "preset unknown")}
+      </p>
+      <p className="state-note">
+        {storageResultOutputSummary(run, result)} · {formatBytes(run.size_bytes)}
+      </p>
+      <p className="state-note">{pipelineRunNextStep(run, result)}</p>
+      <div className="button-row">
+        {canLaunch && run.manifest_path && (
+          <button
+            type="button"
+            className="secondary-button"
+            onClick={() => onLaunchStoredRun(run.manifest_path!)}
+          >
+            Launch package
+          </button>
+        )}
+        {canIngest && run.manifest_path && (
+          <button
+            type="button"
+            className="secondary-button"
+            onClick={() => onIngestStoredRun(run.manifest_path!)}
+          >
+            Ingest output
+          </button>
+        )}
+        {result && (
+          <button
+            type="button"
+            className="secondary-button"
+            onClick={() => onOpenStoredResult(result.result_id)}
+          >
+            Open result
+          </button>
+        )}
+        {result && (
+          <button
+            type="button"
+            className="secondary-button"
+            onClick={() => onExploreStoredResult(result.result_id)}
+          >
+            Open in Explore
+          </button>
+        )}
+        <button type="button" className="secondary-button" onClick={onOpenStorage}>
+          Manage cleanup
+        </button>
+      </div>
+    </article>
+  );
+}
+
+function buildRunStage(
+  dryRun: DryRunResponse | null,
+  runStatus: RunStatusResponse | null,
+  ingestedResultId: string | null,
+): BuildRunStage {
+  if (ingestedResultId) return "ingested";
+  if (!dryRun) return "not_packaged";
+  if (!runStatus) return "package_ready";
+  if (runStatus.lifecycle_state === "queued" || runStatus.lifecycle_state === "running") {
+    return "running";
+  }
+  if (runStatus.lifecycle_state === "completed") return "completed";
+  if (runStatus.lifecycle_state === "failed" || runStatus.lifecycle_state === "canceled") {
+    return "failed";
+  }
+  return "package_ready";
+}
+
+function stageRank(stage: BuildRunStage): number {
+  const ranks: Record<BuildRunStage, number> = {
+    not_packaged: 0,
+    package_ready: 1,
+    running: 2,
+    failed: 2,
+    completed: 4,
+    ingested: 5,
+  };
+  return ranks[stage];
+}
+
+function buildStageLabel(stage: BuildRunStage): string {
+  const labels: Record<BuildRunStage, string> = {
+    not_packaged: "Not packaged yet",
+    package_ready: "Package ready",
+    running: "Running",
+    completed: "Completed",
+    failed: "Failed",
+    ingested: "Ingested",
+  };
+  return labels[stage];
+}
+
+function buildStageTone(stage: BuildRunStage): "good" | "warning" | "neutral" {
+  if (stage === "completed" || stage === "ingested") return "good";
+  if (stage === "failed") return "warning";
+  return "neutral";
+}
+
+function generatedInputSummary(dryRun: DryRunResponse): string[] {
+  return Object.values(dryRun.report.generated_files)
+    .map((path) => path.split("/").at(-1) ?? path)
+    .filter((name) => name === "namelist.input" || name === "input_sounding");
+}
+
+function selectPipelineRuns(runs: RunStorageEntry[], currentRunId: string | null): RunStorageEntry[] {
+  const sorted = [...runs].sort((left, right) => {
+    if (currentRunId) {
+      if (left.run_id === currentRunId) return -1;
+      if (right.run_id === currentRunId) return 1;
+    }
+    const leftTime = Date.parse(left.updated_at ?? left.created_at ?? "");
+    const rightTime = Date.parse(right.updated_at ?? right.created_at ?? "");
+    return (Number.isFinite(rightTime) ? rightTime : 0) - (Number.isFinite(leftTime) ? leftTime : 0);
+  });
+  return sorted.slice(0, 6);
+}
+
+function pipelineRunStateLabel(run: RunStorageEntry, result: ResultCard | undefined): string {
+  if (result?.saved || result?.protected || run.saved || run.protected) return "Saved/protected";
+  if (result) return "Ingested result";
+  const labels: Record<string, string> = {
+    dry_run_only: "Ready to launch",
+    running: "Running",
+    completed_with_output: "Ready to ingest",
+    completed_no_output: "Completed with no output",
+    failed: "Failed",
+    canceled: "Canceled",
+    missing_manifest: "Missing manifest",
+    malformed_manifest: "Manifest problem",
+    saved_or_protected: "Saved/protected",
+    unknown: "Needs review",
+  };
+  return labels[run.category] ?? humanize(run.category);
+}
+
+function pipelineRunTone(
+  run: RunStorageEntry,
+  result: ResultCard | undefined,
+): "good" | "warning" | "neutral" {
+  if (result?.saved || result?.protected || result) return "good";
+  if (run.category === "completed_with_output") return "good";
+  if (
+    run.category === "failed" ||
+    run.category === "canceled" ||
+    run.category === "completed_no_output" ||
+    run.category === "missing_manifest" ||
+    run.category === "malformed_manifest"
+  ) {
+    return "warning";
+  }
+  return "neutral";
+}
+
+function pipelineRunNextStep(run: RunStorageEntry, result: ResultCard | undefined): string {
+  if (result?.saved || result?.protected || run.saved || run.protected) {
+    return "Keeper result; normal cleanup is protected in Storage.";
+  }
+  if (result) return "Review in Results or Explore fields; cleanup remains available in Storage.";
+  if (run.category === "dry_run_only") return "Package is ready for backend launch preflight.";
+  if (run.category === "running") return "CM1 is active or queued; refresh the pipeline for status.";
+  if (run.category === "completed_with_output") {
+    return "CM1 output exists; ingest it to create a notebook result.";
+  }
+  if (run.category === "completed_no_output") {
+    return "CM1 completed without usable output; inspect logs or clean up safely.";
+  }
+  if (run.category === "failed" || run.category === "canceled") {
+    return "Run did not complete; inspect logs or clean up safely.";
+  }
+  if (run.category === "missing_manifest" || run.category === "malformed_manifest") {
+    return "Run directory needs cleanup review before trusting it.";
+  }
+  return "Review in Storage for the safest next action.";
+}
+
+function selectedControlOption(
+  control: ScenarioControl,
+  controls: Record<string, string | number | boolean>,
+): ControlOption | undefined {
+  const value = String(controls[control.id] ?? control.default);
+  return control.options.find((option) => option.value === value);
 }
 
 function ExperimentNotebookList({

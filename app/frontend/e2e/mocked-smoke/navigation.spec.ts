@@ -56,7 +56,7 @@ test.describe("mocked smoke: app shell", () => {
     await gotoApp(page);
 
     await gotoBuild(page);
-    await expect(page.getByRole("heading", { name: "Create a CM1 run package" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Local run launchpad" })).toBeVisible();
 
     await gotoResults(page);
     await expect(page.getByRole("tab", { name: "Notebook" })).toBeVisible();
@@ -116,7 +116,7 @@ test.describe("mocked smoke: app shell", () => {
       }
 
       await gotoBuild(page);
-      await expect(page.getByRole("heading", { name: "Create a CM1 run package" })).toBeVisible();
+      await expect(page.getByRole("heading", { name: "Local run launchpad" })).toBeVisible();
       await gotoResults(page);
       await expect(page.getByRole("heading", { name: "Experiment Notebook" })).toBeVisible();
       await gotoExplore(page);
