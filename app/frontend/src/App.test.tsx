@@ -169,7 +169,6 @@ const resultCard = {
   caveats: ["CM1 stderr reported floating-point exception flags: IEEE_INVALID_FLAG"],
   output_file_summary: {
     netcdf_count: 14,
-    model_output_count: 13,
     stats_netcdf_count: 1,
     raw_cm1_artifact_count: 0,
     processed_artifact_count: 0,
@@ -259,6 +258,30 @@ const resultsResponse = {
 
 const storageRuns = [
   {
+    run_id: "dry-run-packaged",
+    scenario_id: "baseline-shallow-cumulus",
+    scenario_name: "Baseline Shallow Cumulus",
+    lifecycle_state: "packaged",
+    validation_status: "valid",
+    product_state: "packaged_dry_run_output",
+    run_size_preset: "quick_look",
+    created_at: "2026-05-22T15:55:36Z",
+    updated_at: "2026-05-22T16:05:36Z",
+    saved: false,
+    protected: false,
+    output_artifact_count: 0,
+    output_summary: {
+      raw_cm1_artifacts: 0,
+      netcdf_paths: 0,
+      processed_artifacts: 0,
+    },
+    size_bytes: 12 * 1024 ** 2,
+    path: "/tmp/CloudChamber/runs/dry-run-packaged",
+    category: "dry_run_only",
+    manifest_path: "/tmp/CloudChamber/runs/dry-run-packaged/run_manifest.json",
+    manifest_error: null,
+  },
+  {
     run_id: "dry-run-quicklook",
     scenario_id: "baseline-shallow-cumulus",
     scenario_name: null,
@@ -280,6 +303,30 @@ const storageRuns = [
     path: "/tmp/CloudChamber/runs/dry-run-quicklook",
     category: "completed_with_output",
     manifest_path: "/tmp/CloudChamber/runs/dry-run-quicklook/run_manifest.json",
+    manifest_error: null,
+  },
+  {
+    run_id: "dry-run-uningested",
+    scenario_id: "baseline-shallow-cumulus",
+    scenario_name: "Baseline Shallow Cumulus",
+    lifecycle_state: "completed",
+    validation_status: "valid",
+    product_state: "completed_cm1_result",
+    run_size_preset: "quick_look",
+    created_at: "2026-05-22T15:20:36Z",
+    updated_at: "2026-05-22T15:50:36Z",
+    saved: false,
+    protected: false,
+    output_artifact_count: 14,
+    output_summary: {
+      raw_cm1_artifacts: 0,
+      netcdf_paths: 14,
+      processed_artifacts: 0,
+    },
+    size_bytes: 300 * 1024 ** 2,
+    path: "/tmp/CloudChamber/runs/dry-run-uningested",
+    category: "completed_with_output",
+    manifest_path: "/tmp/CloudChamber/runs/dry-run-uningested/run_manifest.json",
     manifest_error: null,
   },
   {
@@ -328,6 +375,54 @@ const storageRuns = [
     path: "/tmp/CloudChamber/runs/dry-run-running",
     category: "running",
     manifest_path: "/tmp/CloudChamber/runs/dry-run-running/run_manifest.json",
+    manifest_error: null,
+  },
+  {
+    run_id: "dry-run-no-output",
+    scenario_id: "baseline-shallow-cumulus",
+    scenario_name: "Baseline Shallow Cumulus",
+    lifecycle_state: "completed",
+    validation_status: "valid",
+    product_state: "process_completed_no_output",
+    run_size_preset: "quick_look",
+    created_at: "2026-05-22T15:14:36Z",
+    updated_at: "2026-05-22T15:20:36Z",
+    saved: false,
+    protected: false,
+    output_artifact_count: 0,
+    output_summary: {
+      raw_cm1_artifacts: 0,
+      netcdf_paths: 0,
+      processed_artifacts: 0,
+    },
+    size_bytes: 10 * 1024 ** 2,
+    path: "/tmp/CloudChamber/runs/dry-run-no-output",
+    category: "completed_no_output",
+    manifest_path: "/tmp/CloudChamber/runs/dry-run-no-output/run_manifest.json",
+    manifest_error: null,
+  },
+  {
+    run_id: "dry-run-failed",
+    scenario_id: "baseline-shallow-cumulus",
+    scenario_name: "Baseline Shallow Cumulus",
+    lifecycle_state: "failed",
+    validation_status: "invalid",
+    product_state: "failed_canceled_cm1_run",
+    run_size_preset: "quick_look",
+    created_at: "2026-05-22T15:10:36Z",
+    updated_at: "2026-05-22T15:12:36Z",
+    saved: false,
+    protected: false,
+    output_artifact_count: 0,
+    output_summary: {
+      raw_cm1_artifacts: 0,
+      netcdf_paths: 0,
+      processed_artifacts: 0,
+    },
+    size_bytes: 9 * 1024 ** 2,
+    path: "/tmp/CloudChamber/runs/dry-run-failed",
+    category: "failed",
+    manifest_path: "/tmp/CloudChamber/runs/dry-run-failed/run_manifest.json",
     manifest_error: null,
   },
   {
@@ -1032,18 +1127,37 @@ afterEach(() => {
 });
 
 describe("App", () => {
-  it("renders Baseline Shallow Cumulus controls and physical question", async () => {
+  it("renders guided Build setup with extensible experiment metadata", async () => {
     render(<App />);
 
     fireEvent.click(await screen.findByRole("button", { name: "Build" }));
     expect(
-      await screen.findByRole("heading", { name: "Baseline Shallow Cumulus" }),
+      await screen.findByRole("heading", { name: "Build and run a CM1 experiment" }),
     ).toBeInTheDocument();
-    expect(screen.getByText("First Golden Path hero case")).toBeInTheDocument();
+    expect(
+      (await screen.findAllByRole("heading", { name: "Baseline Shallow Cumulus" })).length,
+    ).toBeGreaterThan(0);
+    expect(screen.getByText("Guided local CM1 experiment")).toBeInTheDocument();
     expect(screen.getAllByText(/How do low-level moisture/).length).toBeGreaterThan(0);
+    expect(screen.getByRole("heading", { name: "Experiment setup summary" })).toBeInTheDocument();
+    expect(screen.getByText("Expected outcome").nextElementSibling).toHaveTextContent(
+      "Clouds may form after heating and mixing",
+    );
+    expect(screen.getByText("What changes").nextElementSibling).toHaveTextContent(
+      "Low-level humidity, Surface heating",
+    );
+    expect(screen.getByText("What stays controlled").nextElementSibling).toHaveTextContent("CM1");
     expect(screen.getByLabelText("Low-level humidity")).toBeInTheDocument();
     expect(screen.getByLabelText("Surface heating")).toBeInTheDocument();
-    expect(screen.queryByText(/namelist/i)).not.toBeInTheDocument();
+    expect(screen.getAllByText(/Selected: Baseline/).length).toBeGreaterThan(0);
+    expect(screen.getByText(/Expected runtime: roughly 10-20 minutes/)).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Local run launchpad" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Packages, runs, and results" })).toBeInTheDocument();
+    expect(screen.getAllByText("Not packaged yet").length).toBeGreaterThan(0);
+    expect(screen.getByText("No package has been created from the current setup in this browser session.")).toBeInTheDocument();
+    expect(screen.getByText("Local run inventory")).toBeInTheDocument();
+    expect(screen.queryByText("Local experiment loop")).not.toBeInTheDocument();
+    expect(screen.queryByText("namelist.input")).not.toBeInTheDocument();
   });
 
   it("shows an explicit loading state before scenario package controls are available", async () => {
@@ -1065,7 +1179,7 @@ describe("App", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Build" }));
     expect(screen.getByRole("heading", { name: "Loading scenario catalog" })).toBeInTheDocument();
-    expect(screen.getByLabelText("Scenario")).toBeDisabled();
+    expect(screen.getByLabelText("Experiment")).toBeDisabled();
     expect(screen.queryByRole("button", { name: "Create run package" })).not.toBeInTheDocument();
   });
 
@@ -1098,14 +1212,14 @@ describe("App", () => {
       await screen.findByRole("heading", { name: "Scenario catalog unavailable" }),
     ).toBeInTheDocument();
     expect(screen.getByText(/local backend/)).toBeInTheDocument();
-    expect(screen.getByLabelText("Scenario")).toBeDisabled();
+    expect(screen.getByLabelText("Experiment")).toBeDisabled();
     expect(screen.queryByRole("button", { name: "Create run package" })).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Retry scenarios" }));
 
     expect(
-      await screen.findByRole("heading", { name: "Baseline Shallow Cumulus" }),
-    ).toBeInTheDocument();
+      (await screen.findAllByRole("heading", { name: "Baseline Shallow Cumulus" })).length,
+    ).toBeGreaterThan(0);
     await waitFor(() => {
       expect(screen.getByRole("button", { name: "Create run package" })).toBeEnabled();
     });
@@ -1143,20 +1257,52 @@ describe("App", () => {
       await screen.findByRole("heading", { name: "No scenarios available" }),
     ).toBeInTheDocument();
     expect(screen.getByText(/did not return any scenario templates/)).toBeInTheDocument();
-    expect(screen.getByLabelText("Scenario")).toBeDisabled();
+    expect(screen.getByLabelText("Experiment")).toBeDisabled();
     expect(screen.queryByRole("button", { name: "Create run package" })).not.toBeInTheDocument();
   });
 
-  it("labels preview as not implemented and not CM1 output", async () => {
+  it("shows the local run workflow before package creation", async () => {
     render(<App />);
 
     fireEvent.click(await screen.findByRole("button", { name: "Build" }));
     expect(
-      await screen.findByRole("heading", { name: "Preview estimate not implemented" }),
+      await screen.findByRole("heading", { name: "Local run launchpad" }),
     ).toBeInTheDocument();
-    expect(screen.getByText(/guidance only/)).toBeInTheDocument();
-    expect(screen.getByText(/not CM1 output/)).toBeInTheDocument();
-    expect(screen.getByText(/not a completed result/)).toBeInTheDocument();
+    expect(screen.queryByText("Local experiment loop")).not.toBeInTheDocument();
+    expect(screen.getByText("Local run inventory")).toBeInTheDocument();
+    expect(screen.getByText("Packages, runs, and results")).toBeInTheDocument();
+    expect(screen.getByText("Ready to run")).toBeInTheDocument();
+    expect(screen.getAllByText("Ready to ingest").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Saved/protected").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Running").length).toBeGreaterThan(0);
+    expect(screen.getByText("Ready to review")).toBeInTheDocument();
+    expect(screen.queryByText("Ingested result")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Run with local CM1" })).toBeInTheDocument();
+    expect(screen.getByTestId("create-package-btn")).toBeEnabled();
+    expect(screen.getAllByRole("button", { name: "Create run package" })).toHaveLength(1);
+    expect(screen.getByRole("button", { name: "Open Storage cleanup" })).toBeInTheDocument();
+    expect(screen.queryByTestId("create-package-next-btn")).not.toBeInTheDocument();
+    expect(screen.queryByText(/Preview estimate not implemented/)).not.toBeInTheDocument();
+  });
+
+  it("can move completed local output from the Build pipeline into result ingest", async () => {
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Build" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Ingest output" }));
+
+    await waitFor(() => {
+      expect(fetch).toHaveBeenCalledWith(
+        "/api/results/ingest",
+        expect.objectContaining({
+          method: "POST",
+          body: JSON.stringify({
+            manifest_path: "/tmp/CloudChamber/runs/dry-run-uningested/run_manifest.json",
+          }),
+        }),
+      );
+    });
+    expect(await screen.findByText(/Result metadata created/)).toBeInTheDocument();
   });
 
   it("requests a dry-run package and displays generated files without claiming CM1 ran", async () => {
@@ -1174,11 +1320,28 @@ describe("App", () => {
     fireEvent.click(screen.getByTestId("create-package-btn"));
 
     await waitFor(() => {
-      expect(screen.getByText("/tmp/CloudChamber/runs/dry-run-001")).toBeInTheDocument();
+      expect(screen.getAllByText("/tmp/CloudChamber/runs/dry-run-001").length).toBeGreaterThan(0);
     });
-    expect(screen.getAllByText("Packaged dry-run output").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Package ready").length).toBeGreaterThan(0);
+    expect(screen.getByText("Latest generated package")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Create another package" })).toHaveClass(
+      "secondary-button",
+    );
+    expect(screen.getByText("Expected output directory").nextElementSibling).toHaveTextContent(
+      "/tmp/CloudChamber/runs/dry-run-001",
+    );
+    expect(screen.getByText("Generated inputs").nextElementSibling).toHaveTextContent(
+      "namelist.input, input_sounding",
+    );
+    expect(screen.getByText("Current lifecycle state").nextElementSibling).toHaveTextContent(
+      "Package ready",
+    );
+    expect(screen.getByText(/not a completed CM1 result/)).toBeInTheDocument();
+    fireEvent.click(screen.getByText("Technical package details"));
     expect(screen.getByText("CM1 launched").nextElementSibling).toHaveTextContent("No");
-    expect(screen.getByText("unknown until validated")).toBeInTheDocument();
+    expect(screen.getByText("Cost / size").nextElementSibling).toHaveTextContent(
+      "unknown until validated",
+    );
     expect(screen.getByText("run_manifest.json")).toBeInTheDocument();
     expect(screen.getByText("input_sounding")).toBeInTheDocument();
     expect(fetch).toHaveBeenCalledWith(
@@ -1201,10 +1364,12 @@ describe("App", () => {
     expect(screen.getByText("Manifest path").nextElementSibling).toHaveTextContent(
       "/tmp/CloudChamber/runs/dry-run-001/run_manifest.json",
     );
-    expect(screen.getByText(/Expected diagnostics/)).toHaveTextContent("first_cloud_time");
+    fireEvent.click(screen.getByText("Technical package details"));
+    expect(screen.getByText("Expected diagnostics").nextElementSibling).toHaveTextContent(
+      "first_cloud_time",
+    );
     expect(screen.getByTestId("launch-cm1-btn")).toBeEnabled();
-    expect(screen.getByTestId("refresh-status-btn")).toBeDisabled();
-    expect(screen.getByTestId("ingest-results-btn")).toBeDisabled();
+    expect(screen.queryByTestId("ingest-results-btn")).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByTestId("launch-cm1-btn"));
 
@@ -1214,7 +1379,7 @@ describe("App", () => {
     expect(screen.getByText("stdout log").nextElementSibling).toHaveTextContent("stdout.log");
     expect(screen.getByText("CM1 started")).toBeInTheDocument();
 
-    fireEvent.click(screen.getByTestId("refresh-status-btn"));
+    fireEvent.click(screen.getByRole("button", { name: "View status / logs" }));
 
     await waitFor(() => {
       expect(screen.getAllByText("Completed CM1 result").length).toBeGreaterThan(0);
@@ -1227,7 +1392,8 @@ describe("App", () => {
 
     expect(await screen.findByText(/Result metadata created/)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Open in Results" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Inspect fields" })).toBeInTheDocument();
+    expect(screen.getAllByRole("button", { name: "Open in Explore" }).length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Ingested").length).toBeGreaterThan(0);
     expect(fetch).toHaveBeenCalledWith(
       "/api/runs/launch",
       expect.objectContaining({ method: "POST" }),
@@ -1255,6 +1421,11 @@ describe("App", () => {
       if (url === "/api/results") {
         return Promise.resolve(new Response(JSON.stringify(resultsResponse), { status: 200 }));
       }
+      if (url === "/api/storage/inventory") {
+        return Promise.resolve(
+          new Response(JSON.stringify(storageInventoryResponse), { status: 200 }),
+        );
+      }
       if (url === "/api/runs/launch" && init?.method === "POST") {
         return Promise.resolve(
           new Response(JSON.stringify({ detail: "CM1 executable is missing. Missing: cm1.exe" }), {
@@ -1272,7 +1443,19 @@ describe("App", () => {
     fireEvent.click(await screen.findByTestId("launch-cm1-btn"));
 
     expect(await screen.findByRole("alert")).toHaveTextContent("CM1 executable is missing");
+    const packageReview = screen.getByTestId("package-review-panel");
+    expect(packageReview).toHaveTextContent("Package ready");
+    expect(packageReview).toHaveTextContent("/tmp/CloudChamber/runs/dry-run-001");
+    expect(packageReview).toHaveTextContent(
+      "/tmp/CloudChamber/runs/dry-run-001/run_manifest.json",
+    );
+    expect(screen.getByText("Current lifecycle state").nextElementSibling).toHaveTextContent(
+      "Package ready",
+    );
+    expect(screen.queryByLabelText("Local run status")).not.toBeInTheDocument();
     expect(screen.getByTestId("launch-cm1-btn")).toBeEnabled();
+    fireEvent.click(screen.getByText("Technical package details"));
+    expect(screen.getByText("CM1 launched").nextElementSibling).toHaveTextContent("No");
   });
 
   it("lists result cards as notebook entries and shows diagnostics", async () => {
@@ -1580,23 +1763,31 @@ describe("App", () => {
       screen.getAllByText("13 model files, 13 time steps, 1 stats files").length,
     ).toBeGreaterThan(0);
     expect(screen.getByText("saved or protected")).toBeInTheDocument();
+    expect(screen.getByText("dry run only")).toBeInTheDocument();
+    expect(screen.getByText("completed no output")).toBeInTheDocument();
+    expect(screen.getAllByText("failed").length).toBeGreaterThan(0);
     expect(screen.getByText("missing manifest")).toBeInTheDocument();
 
     const runtimeRuns = screen.getByLabelText("Runtime runs");
-    const buttons = within(runtimeRuns).getAllByRole("button", { name: "Preview delete" });
-    expect(buttons[0]).toBeEnabled();
-    expect(buttons[1]).toBeDisabled();
-    expect(buttons[2]).toBeDisabled();
+    const packageRow = within(runtimeRuns).getByText("dry-run-packaged").closest("tr");
+    const savedRow = within(runtimeRuns).getByText("dry-run-saved").closest("tr");
+    const runningRow = within(runtimeRuns).getByText("dry-run-running").closest("tr");
+    expect(packageRow).not.toBeNull();
+    expect(savedRow).not.toBeNull();
+    expect(runningRow).not.toBeNull();
+    expect(within(packageRow as HTMLElement).getByRole("button", { name: "Preview delete" })).toBeEnabled();
+    expect(within(savedRow as HTMLElement).getByRole("button", { name: "Preview delete" })).toBeDisabled();
+    expect(within(runningRow as HTMLElement).getByRole("button", { name: "Preview delete" })).toBeDisabled();
     expect(
       screen.getByText("Saved/protected runs are not deleted from this UI."),
     ).toBeInTheDocument();
     expect(screen.getByText("Running runs cannot be deleted.")).toBeInTheDocument();
 
-    fireEvent.click(buttons[0]);
+    fireEvent.click(within(packageRow as HTMLElement).getByRole("button", { name: "Preview delete" }));
 
     expect(await screen.findByRole("heading", { name: "Delete preview" })).toBeInTheDocument();
     expect(screen.getByText("Dry run only; no files were deleted.")).toBeInTheDocument();
-    expect(screen.getAllByText("/tmp/CloudChamber/runs/dry-run-quicklook").length).toBeGreaterThan(
+    expect(screen.getAllByText("/tmp/CloudChamber/runs/dry-run-packaged").length).toBeGreaterThan(
       0,
     );
     expect(screen.getByRole("button", { name: "Confirm delete selected run" })).toBeInTheDocument();
@@ -1605,7 +1796,7 @@ describe("App", () => {
       expect.objectContaining({
         method: "POST",
         body: JSON.stringify({
-          run_id: "dry-run-quicklook",
+          run_id: "dry-run-packaged",
           dry_run: true,
           confirm: false,
           force_saved: false,
@@ -1621,7 +1812,7 @@ describe("App", () => {
       expect.objectContaining({
         method: "POST",
         body: JSON.stringify({
-          run_id: "dry-run-quicklook",
+          run_id: "dry-run-packaged",
           dry_run: false,
           confirm: true,
           force_saved: false,
@@ -1666,7 +1857,7 @@ describe("App", () => {
       "/api/storage/delete-run",
       expect.objectContaining({
         body: JSON.stringify({
-          run_id: "dry-run-quicklook",
+          run_id: "dry-run-packaged",
           dry_run: true,
           confirm: false,
           force_saved: false,

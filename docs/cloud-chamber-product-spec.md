@@ -133,6 +133,13 @@ Exact morphology is not pass/fail. The acceptance question is whether the produc
 
 The first implemented Scenario Builder flow is intentionally narrow: it loads validated scenario templates from the local backend, defaults to Baseline Shallow Cumulus, displays the scenario description and physical question, exposes only product-facing curated controls, lets the user choose a run-size preset, and requests a dry-run package for review.
 
+Build should not assume the user is working one perfectly linear package at a
+time. Local experiments can be packaged, running, failed, completed-but-not-
+ingested, ingested, saved/protected, or ready for cleanup at the same time. The
+Build workspace should therefore include a compact local run launchpad that
+shows the nearby package/run/result pipeline and lets the user move eligible
+runs forward without using curl commands.
+
 The UI must continue to avoid raw CM1 namelist fields in the primary flow. Raw generated files can be listed in dry-run review because they are outputs of the package step, not user-facing controls.
 
 ### Workflow 2 — Preview Setup
@@ -144,17 +151,20 @@ The UI must continue to avoid raw CM1 namelist fields in the primary flow. Raw g
 
 Current behavior is a placeholder only. It must explicitly say preview is not implemented, not CM1 output, not a completed result, and not a visualization interpretation.
 
-### Workflow 2.5 — Review Dry-Run Package
+### Workflow 2.5 — Package And Review Local Runs
 
 1. Request a dry-run package from the Scenario Builder.
 2. Backend validates the scenario template and selected controls.
 3. Backend writes package files under the configured runtime home, not the repo.
 4. UI displays run ID, package path, manifest path, scenario, validation/product state, generated files, physical question, selected run-size preset, expected diagnostics, and cost/size notes.
 5. UI states that CM1 was not launched and the package is not a completed CM1 result.
+6. The launchpad also surfaces other local package/run directories from the
+   runtime inventory so the user can see what is already packaged, running,
+   complete, ingested, saved/protected, failed, or cleanup-only.
 
 ### Workflow 3 — Launch CM1 Run
 
-1. Click `Launch local CM1` from the generated-package review.
+1. Click `Run with local CM1` from an eligible packaged run in the launchpad.
 2. Backend launches local CM1 from the generated run package only after preflight passes.
 3. UI shows the running state, command/log paths, stdout/stderr tail when available, and one-local-run-at-a-time policy.
 4. If local CM1 settings are missing, the UI shows the backend failure reason and no run is implied.
@@ -178,13 +188,23 @@ For each run:
 - estimated output size
 - final status
 
-The Build workspace now provides the first guided local loop without curl commands: create package, launch local CM1, refresh status/logs, see output-artifact counts, ingest completed NetCDF output, then open the created Result Card in Results or Explore. This is local-first orchestration only; CI still uses fake fixtures and never runs CM1.
+The Build workspace provides the first guided local launchpad without curl
+commands: create package, launch eligible local CM1 packages, refresh status/log
+summaries, see output-artifact counts, ingest completed NetCDF output, and open
+created Result Cards in Results or Explore. It is a pipeline view over local
+runtime state, not a single active wizard. This is local-first orchestration
+only; CI still uses fake fixtures and never runs CM1.
 
 ### Workflow 4.5 — Manage Runtime Storage
 
 Results / Storage exposes the runtime-home inventory from the backend. It shows total runtime-home size, the 50 GB warning-threshold status, run directories sorted by size, scenario/preset/state metadata, result-card names when available, saved/protected state, output-artifact summaries, and conservative cleanup categories.
 
 Deletion is always explicit. The UI first requests a dry-run delete preview for one selected run, then requires a separate confirm action before deleting. Running runs cannot be deleted from the UI, and saved/protected runs are disabled rather than force-deleted. The warning threshold never auto-deletes anything.
+
+Build may link to Storage for cleanup, but it should not duplicate deletion
+logic. The follow-up Storage cleanup work in #189 should make the relationship
+between Build's package/run launchpad, Results notebook entries, and Storage
+cleanup clearer so users do not have to manage local CM1 folders by raw run ID.
 
 ### Workflow 5 — Open Result
 

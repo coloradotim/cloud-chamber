@@ -274,10 +274,24 @@ primary notebook view.
 Guided local run workflow tests should mock the backend API sequence rather
 than launching CM1: package generation, launch request, running status, completed
 status with output-artifact counts, ingest request, and post-ingest actions into
-Results and Explore. They should also cover missing local CM1
-settings or preflight failures as actionable UI errors. Automated tests must not
-execute `cm1.exe`, parse real local NetCDF output in the browser, or write
-generated run directories into the repo.
+Results and Explore. They should also mock a storage-inventory state matrix so
+Build can be tested without real local packages in every state:
+
+- packaged-only / ready to launch;
+- running;
+- completed with output / ready to ingest;
+- completed with no usable output;
+- failed;
+- ingested result;
+- saved/protected result;
+- missing or malformed manifest.
+
+These tests should assert that Build presents safe state-appropriate actions and
+routes cleanup to Results / Storage instead of duplicating deletion behavior.
+They should also cover missing local CM1 settings or preflight failures as
+actionable UI errors. Automated tests must not execute `cm1.exe`, parse real
+local NetCDF output in the browser, or write generated run directories into the
+repo.
 
 Comparison tests should use mocked Result Card data for the accepted Baseline
 Shallow Cumulus quick-look and Dry Failed Cumulus quick-look pair. They should
