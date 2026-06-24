@@ -22,7 +22,8 @@ test.describe("mocked smoke: Build, Results, Explore path", () => {
     await expect(
       page.getByTestId("package-review-panel").getByText("Not packaged yet").first(),
     ).toBeVisible();
-    await expect(page.getByText("Local experiment pipeline")).toBeVisible();
+    await expect(page.getByText("Local run inventory")).toBeVisible();
+    await expect(page.getByText("Local experiment loop")).not.toBeVisible();
     await expect(page.getByText("Ready to ingest")).toBeVisible();
     await expect(page.getByRole("button", { name: "Open Storage cleanup" })).toBeVisible();
     await page.getByLabel("Low-level humidity").selectOption("more_humid");

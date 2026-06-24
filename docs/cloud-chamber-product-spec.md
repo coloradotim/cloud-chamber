@@ -164,7 +164,7 @@ Current behavior is a placeholder only. It must explicitly say preview is not im
 
 ### Workflow 3 — Launch CM1 Run
 
-1. Click `Launch local CM1` from an eligible packaged run in the launchpad.
+1. Click `Run with local CM1` from an eligible packaged run in the launchpad.
 2. Backend launches local CM1 from the generated run package only after preflight passes.
 3. UI shows the running state, command/log paths, stdout/stderr tail when available, and one-local-run-at-a-time policy.
 4. If local CM1 settings are missing, the UI shows the backend failure reason and no run is implied.

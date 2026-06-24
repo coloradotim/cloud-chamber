@@ -415,38 +415,6 @@ button:disabled {
   gap: 1.1rem;
 }
 
-.workflow-steps {
-  display: grid;
-  gap: 0.5rem;
-  margin: 0 0 1rem;
-  padding: 0;
-  list-style: none;
-}
-
-.workflow-steps li {
-  display: grid;
-  gap: 0.2rem;
-  border: 1px solid var(--color-border);
-  border-radius: 8px;
-  padding: 0.6rem 0.75rem;
-  background: var(--color-surface-muted);
-}
-
-.workflow-steps li span {
-  color: var(--color-text-muted);
-  font-size: 0.92rem;
-}
-
-.workflow-steps li.current {
-  border-color: rgba(51, 113, 169, 0.42);
-  background: var(--color-accent-soft);
-}
-
-.workflow-steps li.complete {
-  border-color: rgba(77, 139, 106, 0.38);
-  background: var(--color-success-soft);
-}
-
 .run-state-card {
   display: grid;
   gap: 0.9rem;

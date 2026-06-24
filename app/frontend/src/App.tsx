@@ -2521,8 +2521,6 @@ function LocalRunWorkflowPanel({
   onOpenStorage: () => void;
   onRefreshStorage: () => void;
 }) {
-  const isRunning =
-    runStatus?.lifecycle_state === "queued" || runStatus?.lifecycle_state === "running";
   const stage = buildRunStage(dryRun, runStatus, ingestedResultId);
   const canIngest =
     runStatus?.lifecycle_state === "completed" &&
@@ -2548,7 +2546,7 @@ function LocalRunWorkflowPanel({
     >
       <div className="panel-heading-row">
         <div>
-          <p className="eyebrow">Local run workflow</p>
+          <p className="eyebrow">Run management</p>
           <h3 id="local-run-title">Local run launchpad</h3>
         </div>
         <StatusBadge label={buildStageLabel(stage)} tone={buildStageTone(stage)} />
@@ -2565,7 +2563,8 @@ function LocalRunWorkflowPanel({
 
         <p className="state-note">
           Packages are repeatable local run directories. Create a new package for this setup, then
-          use the pipeline below to launch, monitor, ingest, or route old runs to cleanup.
+          use the package list below to run CM1, ingest completed output, or route old runs to
+          cleanup.
         </p>
 
         {error && <p role="alert">{error}</p>}
@@ -2604,7 +2603,7 @@ function LocalRunWorkflowPanel({
                 value={
                   runStatus?.command.length
                     ? runStatus.command.join(" ")
-                    : "Checked by backend launch preflight"
+                    : "Checked before CM1 starts"
                 }
               />
               <Metric
@@ -2625,7 +2624,7 @@ function LocalRunWorkflowPanel({
           <div className="button-row">
             {showLaunchButton && (
               <button type="button" data-testid="launch-cm1-btn" onClick={onLaunchRun}>
-                Launch local CM1
+                Run with local CM1
               </button>
             )}
             {showRefreshButton && (
@@ -2697,8 +2696,8 @@ function LocalRunWorkflowPanel({
         ) : (
           dryRun && (
             <p>
-              Launch uses the configured local CM1 install and preserves one local run at a time.
-              If CM1 settings are missing, launch will fail before any process starts.
+              Running uses the configured local CM1 install and preserves one local run at a time.
+              If CM1 settings are missing, Cloud Chamber will stop before any CM1 process starts.
             </p>
           )
         )}
@@ -2762,41 +2761,6 @@ function LocalRunWorkflowPanel({
         onRefreshStorage={onRefreshStorage}
       />
 
-      <details className="workflow-reference">
-        <summary>Local experiment loop</summary>
-        <ol className="workflow-steps" aria-label="Local CM1 run workflow">
-          <li className={stageRank(stage) >= 1 ? "complete" : "current"}>
-            <strong>1. Create run package</strong>
-            <span>Generate CM1-facing files in the configured runtime home.</span>
-          </li>
-          <li className={stageRank(stage) >= 1 ? "complete" : ""}>
-            <strong>2. Review manifest and generated inputs</strong>
-            <span>Confirm package paths, inputs, expected diagnostics, and provenance.</span>
-          </li>
-          <li
-            className={
-              stageRank(stage) >= 2 ? "complete" : stage === "package_ready" ? "current" : ""
-            }
-          >
-            <strong>3. Launch local CM1</strong>
-            <span>Run from a selected package after backend preflight checks.</span>
-          </li>
-          <li className={stageRank(stage) >= 3 ? "complete" : isRunning ? "current" : ""}>
-            <strong>4. Monitor logs/status</strong>
-            <span>Refresh lifecycle state, log paths, output counts, and runtime caveats.</span>
-          </li>
-          <li
-            className={stageRank(stage) >= 4 ? "complete" : stage === "completed" ? "current" : ""}
-          >
-            <strong>5. Ingest completed output</strong>
-            <span>Create result metadata from completed CM1 output.</span>
-          </li>
-          <li className={stage === "ingested" ? "complete" : ""}>
-            <strong>6. Open result in Results / Explore</strong>
-            <span>Review the notebook entry or inspect fields once ingest succeeds.</span>
-          </li>
-        </ol>
-      </details>
     </section>
   );
 }
@@ -2832,19 +2796,19 @@ function LocalPipelinePanel({
     <section className="pipeline-panel" aria-labelledby="pipeline-title">
       <div className="panel-heading-row">
         <div>
-          <p className="eyebrow">Local experiment pipeline</p>
+          <p className="eyebrow">Local run inventory</p>
           <h4 id="pipeline-title">Packages, runs, and results</h4>
         </div>
         <StatusBadge label={status} tone={error ? "warning" : "neutral"} />
       </div>
       <p className="state-note">
-        See existing local run directories and move them forward when possible. Cleanup stays in
+        See local run directories by state and move them forward when possible. Cleanup stays in
         Storage so saved results and running runs remain protected.
       </p>
       {error && <p role="alert">{error}</p>}
       <div className="button-row">
         <button type="button" className="secondary-button" onClick={onRefreshStorage}>
-          Refresh pipeline
+          Refresh runs
         </button>
         <button type="button" className="secondary-button" onClick={onOpenStorage}>
           Open Storage cleanup
@@ -2928,7 +2892,7 @@ function PipelineRunCard({
             className="secondary-button"
             onClick={() => onLaunchStoredRun(run.manifest_path!)}
           >
-            Launch package
+            Run with local CM1
           </button>
         )}
         {canIngest && run.manifest_path && (
@@ -2984,18 +2948,6 @@ function buildRunStage(
   return "package_ready";
 }
 
-function stageRank(stage: BuildRunStage): number {
-  const ranks: Record<BuildRunStage, number> = {
-    not_packaged: 0,
-    package_ready: 1,
-    running: 2,
-    failed: 2,
-    completed: 4,
-    ingested: 5,
-  };
-  return ranks[stage];
-}
-
 function buildStageLabel(stage: BuildRunStage): string {
   const labels: Record<BuildRunStage, string> = {
     not_packaged: "Not packaged yet",
@@ -3037,7 +2989,7 @@ function pipelineRunStateLabel(run: RunStorageEntry, result: ResultCard | undefi
   if (result?.saved || result?.protected || run.saved || run.protected) return "Saved/protected";
   if (result) return "Ready to review";
   const labels: Record<string, string> = {
-    dry_run_only: "Ready to launch",
+    dry_run_only: "Ready to run",
     running: "Running",
     completed_with_output: "Ready to ingest",
     completed_no_output: "Completed with no output",
@@ -3074,8 +3026,8 @@ function pipelineRunNextStep(run: RunStorageEntry, result: ResultCard | undefine
     return "Keeper result; normal cleanup is protected in Storage.";
   }
   if (result) return "Review in Results or Explore fields; cleanup remains available in Storage.";
-  if (run.category === "dry_run_only") return "Package is ready for backend launch preflight.";
-  if (run.category === "running") return "CM1 is active or queued; refresh the pipeline for status.";
+  if (run.category === "dry_run_only") return "Ready to run after CM1 checks.";
+  if (run.category === "running") return "CM1 is active or queued; refresh runs for status.";
   if (run.category === "completed_with_output") {
     return "CM1 output exists; ingest it to create a notebook result.";
   }

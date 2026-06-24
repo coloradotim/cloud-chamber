@@ -1155,7 +1155,8 @@ describe("App", () => {
     expect(screen.getByRole("heading", { name: "Packages, runs, and results" })).toBeInTheDocument();
     expect(screen.getAllByText("Not packaged yet").length).toBeGreaterThan(0);
     expect(screen.getByText("No package has been created from the current setup in this browser session.")).toBeInTheDocument();
-    expect(screen.getByText("Local experiment pipeline")).toBeInTheDocument();
+    expect(screen.getByText("Local run inventory")).toBeInTheDocument();
+    expect(screen.queryByText("Local experiment loop")).not.toBeInTheDocument();
     expect(screen.queryByText("namelist.input")).not.toBeInTheDocument();
   });
 
@@ -1267,16 +1268,16 @@ describe("App", () => {
     expect(
       await screen.findByRole("heading", { name: "Local run launchpad" }),
     ).toBeInTheDocument();
-    expect(screen.getByText("Local experiment loop")).toBeInTheDocument();
-    expect(screen.getByText("Local experiment pipeline")).toBeInTheDocument();
+    expect(screen.queryByText("Local experiment loop")).not.toBeInTheDocument();
+    expect(screen.getByText("Local run inventory")).toBeInTheDocument();
     expect(screen.getByText("Packages, runs, and results")).toBeInTheDocument();
-    expect(screen.getByText("Ready to launch")).toBeInTheDocument();
+    expect(screen.getByText("Ready to run")).toBeInTheDocument();
     expect(screen.getAllByText("Ready to ingest").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Saved/protected").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Running").length).toBeGreaterThan(0);
     expect(screen.getByText("Ready to review")).toBeInTheDocument();
     expect(screen.queryByText("Ingested result")).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Launch package" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Run with local CM1" })).toBeInTheDocument();
     expect(screen.getByTestId("create-package-btn")).toBeEnabled();
     expect(screen.getAllByRole("button", { name: "Create run package" })).toHaveLength(1);
     expect(screen.getByRole("button", { name: "Open Storage cleanup" })).toBeInTheDocument();
