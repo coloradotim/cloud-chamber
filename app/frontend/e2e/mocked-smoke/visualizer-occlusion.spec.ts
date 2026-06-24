@@ -55,16 +55,15 @@ test.describe("mocked smoke: visualizer occlusion regression", () => {
     await mockCloudChamberApis(page);
     await gotoApp(page);
     await gotoResults(page);
-    await page.getByRole("button", { name: "Open 3-D" }).first().click();
+    await page.getByRole("button", { name: "Open in Explore" }).first().click();
     await gotoExplore(page);
   });
 
   test("3-D scene does not cover its primary controls", async ({ page }) => {
     await expect(page.getByText(/what happened in this result/i).first()).toBeVisible({ timeout: 12_000 });
     await expect(page.getByText(/what happened here/i).first()).toBeVisible();
-    const visualizerControls = page.getByLabel("Primary visualizer controls");
-    await visualizerControls.getByText("Projection and rendering details").click();
-    await expect(visualizerControls.getByRole("button", { name: /oblique overview/i })).toBeVisible();
+    const visualizerControls = page.getByLabel("Shared Explore controls");
+    await expect(visualizerControls.getByRole("button", { name: /oblique/i })).toBeVisible();
     await expect(visualizerControls.getByRole("button", { name: /side x-?z/i })).toBeVisible();
 
     await expectClickableCenter(

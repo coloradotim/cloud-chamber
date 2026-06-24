@@ -14,12 +14,15 @@ test.describe("visual/manual: 3-D workbench layout", () => {
     await mockCloudChamberApis(page);
     await gotoApp(page);
     await gotoResults(page);
-    await page.getByRole("button", { name: "Open 3-D" }).first().click();
+    await page.getByRole("button", { name: "Open in Explore" }).first().click();
 
-    await expect(page.getByText(/scene shell/i).first()).toBeVisible({ timeout: 12_000 });
+    await expect(page.getByText(/what happened in this result/i).first()).toBeVisible({ timeout: 12_000 });
+    await expect(page.getByText(/cloud-water point cloud loaded/i).first()).toBeVisible({
+      timeout: 12_000,
+    });
     await expect(page.getByText(/cloud-water threshold/i).first()).toBeVisible();
     await expect(page.getByText(/oblique overview/i).first()).toBeVisible();
-    await expect(page.getByText(/side x-?z/i).first()).toBeVisible();
+    await expect(page.getByRole("button", { name: /side x-?z/i })).toBeVisible();
     await page
       .getByText(/about this visualization/i)
       .first()

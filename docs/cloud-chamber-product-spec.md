@@ -1143,7 +1143,7 @@ The 3-D viewer should provide simple view presets:
   slice.
 - Vertical cross-section: a vertical slice through max `qc` or max `w`.
 - Top-down slice: a horizontal slice through the cloud-bearing level.
-- Updraft view: `w` slice through the max-updraft location.
+- Inspect updraft slice: `w` slice through the max-updraft location.
 
 The viewer should also provide quick jumps for first cloud, max cloud water, and
 max updraft when result diagnostics provide enough timing metadata. Slice-plane
