@@ -179,7 +179,7 @@ Pick Baseline Shallow Cumulus
 -> ingest NetCDF output
 -> create result card / experiment notebook entry
 -> replay cloud evolution
--> open 3-D visualizer
+-> open Explore
 -> save/name/tag result
 ```
 
@@ -494,19 +494,21 @@ Implementation anchor:
 - #110 adds the disciplined Baseline Shallow Cumulus low-level humidity ladder. `drier`, `baseline`, and `more_humid` preserve the accepted external-sounding namelist family and change only the generated `input_sounding` moisture profile for one-control-at-a-time learning. Initial local quick-look validation completed and ingested: `drier` produced no cloud/rain with meaningful vertical motion, while `more_humid` produced earlier cloud, rain, stronger `qc`, and stronger updrafts.
 - #140 implements the first Capped / Suppressed Cumulus stronger-cap package from the accepted external-sounding baseline. The package preserves the namelist family and changes only potential-temperature / stability near the cap for `cap_strength = stronger`. Validation run `dry-run-capped-suppressed-20260526015634` completed and ingested 13 model-output time steps with `cloud formed; rain detected`, but cloud top, max `qc`, cloud fraction, max/min `w`, and max rain water were all reduced relative to the accepted baseline. Treat it as `accepted_with_notes` / cap-limited candidate until process diagnostics can directly explain the cap limitation.
 
-## M4 3-D Visualizer MVP
+## M4 Unified Explore MVP
 
-Goal: deliver the main payoff: inspect CM1 cloud evolution in 3-D.
+Goal: deliver the main payoff as a stable selected-result Explore loop: see the
+cloud context, inspect synchronized slices, click a cell/region, and ask `What
+happened here?`
 
 Deliverables:
 
-- 3-D scene shell.
-- projection/view controls, zoom, and reset view.
-- time slider/replay.
-- field selector.
-- horizontal/vertical slices.
-- cloud-water isosurface or opacity approximation.
-- simple lighting.
+- selected-result trust and field-loading states.
+- unified desktop Explore workflow.
+- 3-D `qc` cloud-water context as an interpretation of CM1 output.
+- shared time / field / slice controls.
+- horizontal/vertical native-grid slices.
+- selected-cell `What happened here?` explanation.
+- technical details and provenance on demand.
 
 Implementation anchor:
 
@@ -525,7 +527,10 @@ Implementation anchor:
 - #125 refactors the visualizer into a fixed scientific workbench: primary visual controls sit beside the viewport, timeline and slice-position controls sit below the render, technical details move to a secondary panel, and axes/scale/annotation labels stay readable outside the zoomed data layer. Browser visual checks are required for layout changes so the scene cannot cover controls again.
 - #172 redesigns Explore around one primary visualization plus one explanation panel. The visible interaction should be `What happened here?`; technical Thermal Fate/process controls, rendering details, and provenance stay accessible without dominating the first read.
 - #184 consolidates the former `2-D Slices` / `3-D View` scaffold into one desktop Explore workflow. The current target is compact selected-result context, shared field/time/slice controls, 3-D `qc` cloud-water context, a visible native-grid slice plane, the matching 2-D slice inspector, and selected-cell `What happened here?` diagnostics. `w` and other broader fields are inspected through slices, not through fake 3-D point rendering.
-- #80 plans visual polish, fly-through/move-through, cinematic export, and thumbnail/preview policy after the practical 3-D MVP. It must not add rendering dependencies or implementation code.
+- #185 cleans the Explore test suite after #184 so tests protect the unified workflow rather than the old separate `2-D Slices` / `3-D View` scaffold.
+- #177 keeps older visualizer-roadmap language from pulling near-term work back toward renderer polish before the UX/product loop is stable.
+- #112 is the renderer-upgrade decision point after the simplified Explore loop is stable.
+- #80 plans visual polish, fly-through/move-through, cinematic export, and thumbnail/preview policy later. It must not add rendering dependencies or implementation code.
 
 Recommended implementation order:
 
@@ -539,10 +544,16 @@ Recommended implementation order:
 -> #77 3-D scene shell
 -> #78 cloud-water rendering
 -> #79 slice planes
+-> #169 selected-result trust states
+-> #170/#171 notebook visual system and Results
+-> #175 What happened here? interaction model
+-> #172/#184 unified Explore explanation workflow
+-> #185 Explore test cleanup
+-> #112 renderer upgrade decision later
 -> #80 visual polish / fly-through / export later
 ```
 
-The 3-D visualizer should open from saved or ingested results, should not require rerunning CM1, and should label visual output as an interpretation of CM1-derived data with clear provenance and rendering-method labels.
+Explore should open from saved or ingested results, should not require rerunning CM1, and should label visual output as an interpretation of CM1-derived data with clear provenance and rendering-method labels.
 
 ## M5 Visual Polish + Export
 
@@ -564,7 +575,7 @@ Implementation anchor:
 - Rendering remains an interpretation of CM1-derived data. Future polish must preserve provenance labels for source model, run/result, field, processing method, rendering method, units, and caveats.
 - Candidate post-MVP work includes volumetric ray marching, shadows, edge brightening, cloud-base darkening, fly-through or move-through camera modes, cinematic still/video export, and generated thumbnails/previews for saved results.
 - Generated visual artifacts remain local/generated outputs by default. Do not commit thumbnails, videos, render caches, large processed visualization data, or generated previews unless a future issue defines a strict tiny-fixture policy.
-- M5 should start only after the inspectable result loop is useful: NetCDF ingest, diagnostics, result cards, Results Library UI, visualization-ready data, 2-D field inspection, 3-D scene shell, thresholded cloud-water rendering, and slice planes.
+- M5 should start only after the inspectable result loop is useful and stable: NetCDF ingest, diagnostics, result cards, Results, unified Explore, selected-region explanation, and test coverage for the current product loop.
 
 ## Initial Lower-Atmosphere Scenario Set
 
@@ -604,7 +615,7 @@ The canonical startup backlog now lives in GitHub issues and milestones:
 - M1.5 Golden Path Manual CM1 Validation
 - M2 Local CM1 Run Manager
 - M3 Results Library + Experiment Notebook
-- M4 3-D Visualizer MVP
+- M4 Unified Explore MVP
 - M5 Visual Polish + Export
 
 Issue work should remain scoped, testable, and honest about whether it is preview guidance, generated CM1 configuration, running/completed CM1 result, or visualization interpretation.

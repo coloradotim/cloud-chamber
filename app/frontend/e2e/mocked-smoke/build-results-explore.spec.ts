@@ -42,7 +42,6 @@ test.describe("mocked smoke: Build, Results, Explore path", () => {
     await expect(page.getByText("Cloud formed").first()).toBeVisible();
     await expect(page.getByText("Rain detected").first()).toBeVisible();
     await expect(page.getByRole("button", { name: "Open in Explore" }).first()).toBeVisible();
-    await expect(page.getByRole("button", { name: "Open in Explore" }).first()).toBeVisible();
     const resultDetail = page.getByLabel("Result detail");
     await resultDetail.getByText("Technical details").click();
     await expect(resultDetail.getByText("Run ID")).toBeVisible();
@@ -74,7 +73,7 @@ test.describe("mocked smoke: Build, Results, Explore path", () => {
     await expect(page.getByRole("button", { name: "Open in Explore" }).first()).toBeVisible();
   });
 
-  test("Explore 2-D and 3-D views render from the selected result", async ({ page }) => {
+  test("Unified Explore renders cloud context, slice inspector, and explanation", async ({ page }) => {
     await gotoResults(page);
     await page.getByRole("button", { name: "Open in Explore" }).first().click();
 

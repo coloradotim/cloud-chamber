@@ -204,23 +204,23 @@ The selected-region product question is:
 What happened here?
 ```
 
-### 6. 3-D Visualizer
+### 6. Unified Explore
 
-An important payoff, but not the only product center of gravity.
+An important payoff, but not the only product center of gravity. Explore should
+first feel like one trustworthy instrument for understanding a selected result:
+cloud context, synchronized slices, `What happened here?`, and technical
+evidence on demand.
 
-Visualize CM1 output with:
+Near-term Explore should support:
 
 - time replay
 - projection/view controls
 - zoom and reset view
-- fly-through / move-through later
-- sun angle
-- color temperature
-- opacity/brightness controls
 - slices
 - projections
-- isosurfaces
-- volume rendering eventually
+- selected-region markers
+- plain-language explanations
+- provenance and caveats
 
 ## First Scenario Set
 
@@ -251,18 +251,22 @@ moisture/saturation evidence, and precipitation-feedback caveats should guide
 renderer choices. Visual polish follows process needs, not the other way
 around.
 
-Useful views:
+Useful views for the current Explore loop:
 
-- Cloud-water volume / isosurface
+- Cloud-water context
 - Rain-water field
 - Vertical velocity field
 - Horizontal slices
 - Vertical slices
 - Cloud top/base diagnostics
 - Time replay
-- 3-D projection exploration
-- Appearance rendering from cloud water
-- Lighting and view controls
+- 3-D projection context
+- Selected-region explanation
+- Technical evidence and caveats
+
+Renderer upgrades such as isosurfaces, volumetric rendering, cinematic lighting,
+fly-through, export, and appearance polish should wait until the notebook,
+comparison, and `What happened here?` loop are stable.
 
 ## Trust/Honesty Rules
 
