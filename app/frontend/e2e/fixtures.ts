@@ -159,12 +159,33 @@ function json(route: Route, body: unknown, status = 200) {
   });
 }
 
-function fieldCatalog(resultId: string) {
-  const provenance = {
-    source_model: "CM1",
+function resultMeta(resultId: string) {
+  if (resultId === "result-dry-failed") {
+    return {
+      result_id: resultId,
+      run_id: "dry-run-dry-failed",
+      scenario_id: "dry-failed-cumulus",
+    };
+  }
+  return {
     result_id: resultId,
     run_id: "dry-run-baseline",
     scenario_id: "baseline-shallow-cumulus",
+  };
+}
+
+function resultIdFromUrl(url: string) {
+  const match = url.match(/\/api\/results\/([^/]+)/);
+  return match?.[1] ?? "result-baseline";
+}
+
+function fieldCatalog(resultId: string) {
+  const meta = resultMeta(resultId);
+  const provenance = {
+    source_model: "CM1",
+    result_id: meta.result_id,
+    run_id: meta.run_id,
+    scenario_id: meta.scenario_id,
     source_product_state: "completed_cm1_result",
     result_state: "ingested",
     processing_method: "native-grid slice",
@@ -172,9 +193,9 @@ function fieldCatalog(resultId: string) {
     provenance_label: "CM1-derived visualization-ready payload",
   };
   return {
-    result_id: resultId,
-    run_id: "dry-run-baseline",
-    scenario_id: "baseline-shallow-cumulus",
+    result_id: meta.result_id,
+    run_id: meta.run_id,
+    scenario_id: meta.scenario_id,
     source_model: "CM1",
     available_fields: ["qc", "w"].map((name) => ({
       raw_field_name: name,
@@ -191,6 +212,176 @@ function fieldCatalog(resultId: string) {
     })),
     provenance,
     caveats: [],
+  };
+}
+
+function viewDefaults(resultId: string, timeIndex?: number) {
+  const dryFailed = resultId === "result-dry-failed";
+  const meta = resultMeta(resultId);
+  const selectedTime = timeIndex ?? (dryFailed ? 1 : 1);
+  return {
+    result_id: meta.result_id,
+    run_id: meta.run_id,
+    scenario_id: meta.scenario_id,
+    preferred_field: dryFailed ? "w" : "qc",
+    fields: {
+      qc: {
+        field: "qc",
+        time_index: selectedTime,
+        time_seconds: [0, 1800, 3600][selectedTime] ?? 1800,
+        horizontal_level_index: dryFailed ? 0 : 2,
+        vertical_x_index: 1,
+        vertical_y_index: 1,
+        source: dryFailed ? "no_cloud_qc_zero_native_grid" : "first_cloud_time",
+        max_value: dryFailed ? 0 : 0.00219,
+        selected_time_index: timeIndex ?? null,
+        selected_time_seconds: timeIndex === undefined ? null : [0, 1800, 3600][selectedTime],
+        caveats: dryFailed ? ["qc_present_but_below_cloud_threshold"] : [],
+      },
+      w: {
+        field: "w",
+        time_index: selectedTime,
+        time_seconds: [0, 1800, 3600][selectedTime] ?? 1800,
+        horizontal_level_index: 2,
+        vertical_x_index: 1,
+        vertical_y_index: 1,
+        source: "max_w_native_grid_location",
+        max_value: dryFailed ? 1.95 : 6.96,
+        selected_time_index: timeIndex ?? null,
+        selected_time_seconds: timeIndex === undefined ? null : [0, 1800, 3600][selectedTime],
+        caveats: [],
+      },
+    },
+    provenance: fieldCatalog(resultId).provenance,
+    caveats: dryFailed ? ["no_cloud_result_qc_zero_w_available"] : [],
+  };
+}
+
+function slicePayload(resultId: string, url: string) {
+  const parsed = new URL(url);
+  const fieldName = parsed.searchParams.get("field") ?? "qc";
+  const orientation = parsed.searchParams.get("orientation") ?? "horizontal";
+  const timeIndex = Number(parsed.searchParams.get("time_index") ?? 1);
+  const dryFailed = resultId === "result-dry-failed";
+  const catalog = fieldCatalog(resultId);
+  const field =
+    catalog.available_fields.find((candidate) => candidate.raw_field_name === fieldName) ??
+    catalog.available_fields[0];
+  const qcValues = dryFailed
+    ? [
+        [0, 0, 0, 0],
+        [0, 0, 0, 0],
+        [0, 0, 0, 0],
+        [0, 0, 0, 0],
+      ]
+    : [
+        [0, 0.001, 0.002, 0],
+        [0, 0.002, 0.001, 0],
+        [0, 0.001, 0.002, 0],
+        [0, 0, 0.001, 0],
+      ];
+  const wValues = dryFailed
+    ? [
+        [0.2, 0.8, 1.2, 0.3],
+        [0.1, 1.95, 1.1, -0.4],
+        [0.0, 0.7, 0.5, -1.09],
+        [0.1, 0.4, 0.2, -0.2],
+      ]
+    : [
+        [0.5, 2.1, 4.8, 1.0],
+        [0.2, 6.96, 3.7, -1.4],
+        [0.1, 2.4, 1.2, -3.77],
+        [0.0, 0.8, 0.4, -0.6],
+      ];
+  const values = fieldName === "w" ? wValues : qcValues;
+  const flat = values.flat();
+  return {
+    result_id: resultId,
+    run_id: resultMeta(resultId).run_id,
+    scenario_id: resultMeta(resultId).scenario_id,
+    field,
+    selection: {
+      time_index: timeIndex,
+      time_seconds: [0, 1800, 3600][timeIndex] ?? 1800,
+      orientation,
+      selected_dimension:
+        orientation === "vertical_y" ? "xh" : orientation === "vertical_x" ? "yh" : "zh",
+      selected_index: Number(parsed.searchParams.get("level_index") ?? 1),
+      selected_coordinate_value: orientation === "horizontal" ? 0.8 : 0,
+      level_units: orientation === "horizontal" ? "km" : null,
+      level_coordinate_value: orientation === "horizontal" ? 0.8 : null,
+      level_meters: orientation === "horizontal" ? 800 : null,
+    },
+    coordinate_units: { zh: "km", yh: "km", xh: "km" },
+    shape: [4, 4],
+    dimension_order: orientation === "horizontal" ? ["yh", "xh"] : ["zh", "xh"],
+    data_encoding: "json",
+    values,
+    stats: {
+      min: Math.min(...flat),
+      max: Math.max(...flat),
+      mean: flat.reduce((sum, value) => sum + value, 0) / flat.length,
+      finite_count: flat.length,
+      non_finite_count: 0,
+    },
+    provenance: catalog.provenance,
+    caveats: ["native_grid_no_interpolation"],
+  };
+}
+
+function pointCloudPayload(resultId: string, url: string) {
+  const parsed = new URL(url);
+  const dryFailed = resultId === "result-dry-failed";
+  const points = dryFailed
+    ? []
+    : [
+        [2, 2, 0.8, 0.001],
+        [2.5, 2.3, 1.2, 0.002],
+        [3, 2.5, 1.8, 0.0015],
+      ];
+  const values = points.map((point) => point[3]);
+  return {
+    result_id: resultId,
+    run_id: resultMeta(resultId).run_id,
+    scenario_id: resultMeta(resultId).scenario_id,
+    field: fieldCatalog(resultId).available_fields[0],
+    selection: {
+      field: "qc",
+      time_index: Number(parsed.searchParams.get("time_index") ?? 1),
+      time_seconds: 1800,
+      threshold: Number(parsed.searchParams.get("threshold") ?? 0.000001),
+      max_points: Number(parsed.searchParams.get("max_points") ?? 50000),
+    },
+    coordinate_units: { xh: "km", yh: "km", zh: "km" },
+    coordinate_extents: {
+      x: { min: 0, max: 6.4, units: "km" },
+      y: { min: 0, max: 6.4, units: "km" },
+      z: { min: 0, max: 3, units: "km" },
+      xh: { min: 0, max: 6.4, units: "km" },
+      yh: { min: 0, max: 6.4, units: "km" },
+      zh: { min: 0, max: 3, units: "km" },
+    },
+    point_order: ["x", "y", "z", "value"],
+    points,
+    stats: {
+      source_count: points.length,
+      returned_count: points.length,
+      min_value: values.length ? Math.min(...values) : null,
+      max_value: values.length ? Math.max(...values) : null,
+      active_z_min: values.length ? Math.min(...points.map((point) => point[2])) : null,
+      active_z_max: values.length ? Math.max(...points.map((point) => point[2])) : null,
+      max_value_location: points.length
+        ? { x: points[1][0], y: points[1][1], z: points[1][2], value: points[1][3] }
+        : null,
+      downsampled: false,
+      downsample_stride: 1,
+    },
+    provenance: {
+      ...fieldCatalog(resultId).provenance,
+      processing_method: "native-grid thresholded point cloud",
+      rendering_method: "thresholded point cloud",
+    },
+    caveats: dryFailed ? ["qc_present_but_no_points_above_threshold"] : [],
   };
 }
 
@@ -291,115 +482,27 @@ export async function mockCloudChamberApis(page: Page) {
   });
 
   await page.route("**/api/results/*/visualization/fields", (route) =>
-    json(route, fieldCatalog("result-baseline")),
+    json(route, fieldCatalog(resultIdFromUrl(route.request().url()))),
   );
 
-  await page.route("**/api/results/*/visualization/defaults**", (route) =>
-    json(route, {
-      result_id: "result-baseline",
-      run_id: "dry-run-baseline",
-      scenario_id: "baseline-shallow-cumulus",
-      preferred_field: "qc",
-      fields: {
-        qc: {
-          field: "qc",
-          time_index: 1,
-          time_seconds: 1800,
-          horizontal_level_index: 2,
-          vertical_x_index: 1,
-          vertical_y_index: 1,
-          source: "first_cloud_time",
-          max_value: 0.00219,
-          selected_time_index: 1,
-          selected_time_seconds: 1800,
-          caveats: [],
-        },
-      },
-      provenance: fieldCatalog("result-baseline").provenance,
-      caveats: [],
-    }),
-  );
+  await page.route("**/api/results/*/visualization/defaults**", (route) => {
+    const url = route.request().url();
+    const parsed = new URL(url);
+    const timeIndex = parsed.searchParams.has("time_index")
+      ? Number(parsed.searchParams.get("time_index"))
+      : undefined;
+    return json(route, viewDefaults(resultIdFromUrl(url), timeIndex));
+  });
 
-  await page.route("**/api/results/*/visualization/slice**", (route) =>
-    json(route, {
-      result_id: "result-baseline",
-      run_id: "dry-run-baseline",
-      scenario_id: "baseline-shallow-cumulus",
-      field: fieldCatalog("result-baseline").available_fields[0],
-      selection: {
-        time_index: 1,
-        time_seconds: 1800,
-        orientation: "horizontal",
-        selected_dimension: "zh",
-        selected_index: 2,
-        selected_coordinate_value: 0.8,
-        level_units: "km",
-        level_coordinate_value: 0.8,
-        level_meters: 800,
-      },
-      coordinate_units: { zh: "km", yh: "km", xh: "km" },
-      shape: [4, 4],
-      dimension_order: ["yh", "xh"],
-      data_encoding: "json",
-      values: [
-        [0, 0.001, 0.002, 0],
-        [0, 0.002, 0.001, 0],
-        [0, 0.001, 0.002, 0],
-        [0, 0, 0.001, 0],
-      ],
-      stats: { min: 0, max: 0.002, mean: 0.0007, finite_count: 16, non_finite_count: 0 },
-      provenance: fieldCatalog("result-baseline").provenance,
-      caveats: ["native_grid_no_interpolation"],
-    }),
-  );
+  await page.route("**/api/results/*/visualization/slice**", (route) => {
+    const url = route.request().url();
+    return json(route, slicePayload(resultIdFromUrl(url), url));
+  });
 
-  await page.route("**/api/results/*/visualization/point-cloud**", (route) =>
-    json(route, {
-      result_id: "result-baseline",
-      run_id: "dry-run-baseline",
-      scenario_id: "baseline-shallow-cumulus",
-      field: fieldCatalog("result-baseline").available_fields[0],
-      selection: {
-        field: "qc",
-        time_index: 1,
-        time_seconds: 1800,
-        threshold: 0.000001,
-        max_points: 50000,
-      },
-      coordinate_units: { xh: "km", yh: "km", zh: "km" },
-      coordinate_extents: {
-        x: { min: 0, max: 6.4, units: "km" },
-        y: { min: 0, max: 6.4, units: "km" },
-        z: { min: 0, max: 3, units: "km" },
-        xh: { min: 0, max: 6.4, units: "km" },
-        yh: { min: 0, max: 6.4, units: "km" },
-        zh: { min: 0, max: 3, units: "km" },
-      },
-      point_order: ["x", "y", "z", "value"],
-      points: [
-        [2, 2, 0.8, 0.001],
-        [2.5, 2.3, 1.2, 0.002],
-        [3, 2.5, 1.8, 0.0015],
-      ],
-      stats: {
-        source_count: 3,
-        returned_count: 3,
-        min_value: 0.001,
-        max_value: 0.002,
-        active_z_min: 0.8,
-        active_z_max: 1.8,
-        max_value_location: { x: 2.5, y: 2.3, z: 1.2, value: 0.002 },
-        downsampled: false,
-        downsample_stride: 1,
-      },
-      provenance: {
-        ...fieldCatalog("result-baseline").provenance,
-        processing_method: "native-grid thresholded point cloud",
-        rendering_method: "thresholded point cloud",
-      },
-      caveats: [],
-    }),
-  );
+  await page.route("**/api/results/*/visualization/point-cloud**", (route) => {
+    const url = route.request().url();
+    return json(route, pointCloudPayload(resultIdFromUrl(url), url));
+  });
 
   await page.route("**/api/results/*/diagnostics/selected-region**", (route) =>
     json(route, {
