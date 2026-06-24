@@ -85,7 +85,7 @@ Pick Baseline Shallow Cumulus
 -> ingest NetCDF output
 -> create result card / experiment notebook entry
 -> replay cloud evolution
--> open 3-D visualizer
+-> open Explore
 -> save/name/tag result
 ```
 
@@ -190,49 +190,36 @@ Deletion is always explicit. The UI first requests a dry-run delete preview for 
 
 1. Select completed run.
 2. App ingests or loads processed data.
-3. App shows diagnostics and visualizer.
+3. App shows diagnostics and a unified Explore workspace.
 4. User can save/name/tag result.
-5. User can replay and inspect the saved result later.
+5. User can reopen, inspect, explain, and compare the saved result later.
 
-### Workflow 6 — 3-D Visualization
+### Workflow 6 — Unified Explore
 
-The visualizer should support:
-
-- time slider/playback
-- projection/view mode controls
-- zoom
-- reset view
-- vertical slice
-- horizontal slice
-- isosurface threshold
-- volume opacity controls
-- sun angle
-- color temperature
-- brightness/contrast
-- cloud appearance presets
-
-The broad original visualizer goal in #31 has been superseded by staged implementation issues. The visualizer should build from saved/ingested results and backend visualization-ready data, not from raw NetCDF parsing in the browser.
-
-Staged visualizer path:
+Explore is now the single selected-result inspection and explanation workspace.
+It should keep the current product loop focused on:
 
 ```text
-Visualization-ready data contract (#72)
--> 2-D field inspection MVP (#73)
--> 3-D scene shell (#77)
--> cloud-water rendering MVP (#78)
--> slice planes (#79)
--> Thermal Fate diagnostics and selected-region process needs (#148/#149/#151)
--> renderer upgrade decision (#112)
--> later visual polish / fly-through / export (#80)
+selected-result trust
+-> 3-D cloud-water context
+-> shared time / field / slice controls
+-> visible native-grid slice plane
+-> matching 2-D slice inspector
+-> click-cell "What happened here?" explanation
+-> technical details on demand
 ```
 
-Every visualizer stage must preserve provenance labels and make clear that rendered output is an interpretation of CM1-derived data.
+The broad original visualizer goal in #31 has been superseded by staged
+implementation issues and the UX reset. Explore should build from saved/ingested
+results and backend visualization-ready data, not from raw NetCDF parsing in the
+browser. Every stage must preserve provenance labels and make clear that rendered
+output is an interpretation of CM1-derived data.
 
-The first 3-D scene shell opens from a Result Card / Experiment Notebook entry.
-It provides the scene container, projection/view controls, zoom, reset view,
-time slider shell, field selector shell, loading/empty/error states, and
-provenance/rendering labels. It does not render cloud water, slices, or
-synthetic cloud physics; those belong to later visualizer issues.
+Renderer upgrades such as isosurfaces, volumetric opacity, cinematic lighting,
+appearance presets, fly-through, and export are not near-term payoff work. They
+remain deferred to the renderer-upgrade decision (#112) and later visual polish
+planning (#80) after the guided experiment notebook and `What happened here?`
+loop are stable.
 
 ### Workflow 6.5 — What Happened Here?
 
@@ -990,13 +977,14 @@ and slice inspector. Process focus, projection/rendering details, raw
 coordinate metadata, and long provenance labels belong behind
 details/disclosure until the user asks for them.
 
-The 2-D and 3-D views should default to physically interesting output views, not
-arbitrary zero-index slices. The backend should provide default field/time/slice
-locations from native-grid data when possible: for `qc`, first cloud time or the
-max cloud-water location; for `w`, the max-updraft location. If those locations
-are unavailable, the UI may fall back to domain-center slices and clearly keep
-the native-grid/provenance caveats available. The 3-D view should not open at
-`t=0` when diagnostics show clouds appear later.
+Explore's cloud context and slice inspector should default to physically
+interesting output views, not arbitrary zero-index slices. The backend should
+provide default field/time/slice locations from native-grid data when possible:
+for `qc`, first cloud time or the max cloud-water location; for `w`, the
+max-updraft location. If those locations are unavailable, the UI may fall back
+to domain-center slices and clearly keep the native-grid/provenance caveats
+available. Explore should not open at `t=0` when diagnostics show clouds appear
+later.
 
 The first comparison workflow is Baseline Shallow Cumulus vs Dry Failed
 Cumulus. It should start as a side-by-side result-card comparison, not a new
@@ -1028,7 +1016,7 @@ Completed results should be replayable and inspectable without rerunning CM1. Du
 - Launch CM1 through local command
 - Track process/log status
 - Ingest NetCDF output or create intermediate artifacts
-- Basic 3-D visualizer MVP
+- Unified Explore cloud context, slice inspector, and explanation workflow
 - Result library
 - Save/name/tag runs
 - Replay and inspect saved results
@@ -1053,30 +1041,27 @@ Completed results should be replayable and inspectable without rerunning CM1. Du
 - Commit generated CM1 output or real NetCDF outputs.
 - Overbuild deployment.
 
-## 3-D Visualizer MVP
+## Unified Explore MVP
 
-Start with a practical visualizer, not a cinematic renderer.
+Start with a practical, trustworthy Explore instrument, not a cinematic
+renderer. The near-term MVP is the product loop: select a saved result, see the
+cloud-water context, inspect the synchronized native-grid slice, click a cell,
+and get a CM1-backed `What happened here?` explanation.
 
-MVP visualizer work should be staged:
+The implemented/near-term Explore layers are:
 
 1. Visualization-ready backend data contract.
-2. 2-D field inspection for orientation, time indexing, scaling, and field availability.
-3. 3-D scene shell with projection/view controls, zoom, reset view, time slider, field selector, and provenance/rendering labels.
-4. Cloud-water rendering MVP for `qc` using a thresholded point cloud from
+2. Native-grid slice inspection for orientation, time indexing, scaling, and
+   field availability.
+3. Cloud-water context for `qc` using a thresholded point cloud from
    visualization-ready data.
-5. Horizontal and vertical slice planes for `qc` and `w`.
+4. Horizontal and vertical slice planes for `qc` and `w`.
+5. Selected-cell / selected-region explanation backed by Thermal Fate
+   diagnostics.
 
-Later:
-
-- volumetric ray marching
-- shadows
-- edge brightening
-- cloud-base darkening
-- fly-through
-- cinematic export
-- thumbnails/previews with strict generated-artifact policy
-
-True fly-through or move-through should remain on the roadmap after the MVP. Projection/view controls, zoom, reset view, time replay, slices, field selection, and cloud-water point/opacity approximation are enough for the first visualizer.
+Later renderer decisions live in #112 and #80, not in the near-term Explore MVP:
+volumetric ray marching, isosurfaces, lighting, appearance controls,
+fly-through/move-through, cinematic export, and thumbnail/preview generation.
 
 The browser should not parse raw CM1 NetCDF directly. Backend ingest and visualization-ready preprocessing should provide selected, provenance-labeled fields for inspection and rendering.
 
@@ -1217,8 +1202,9 @@ MVP behavior:
 - clearly label slices as CM1-derived inspection data, not 3-D rendering.
 
 The 2-D inspector is deliberately practical and small. It helps verify field
-orientation, time indexing, vertical coordinates, units, and scaling before the
-3-D scene shell and cloud rendering work begin.
+orientation, time indexing, vertical coordinates, units, and scaling inside the
+unified Explore workflow before any later renderer upgrade changes the visual
+representation.
 
 ## Visualization-Ready Data Contract
 

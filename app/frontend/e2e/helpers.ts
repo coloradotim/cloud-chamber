@@ -23,10 +23,6 @@ export async function openResultsTab(page: Page, tabName: RegExp) {
   await page.getByRole("tab", { name: tabName }).click();
 }
 
-export async function openExploreTab(page: Page, tabName: RegExp) {
-  await page.getByRole("tab", { name: tabName }).click();
-}
-
 export function collectConsoleProblems(page: Page): string[] {
   const problems: string[] = [];
   page.on("console", (message) => {

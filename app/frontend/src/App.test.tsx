@@ -1545,7 +1545,7 @@ describe("App", () => {
     );
   });
 
-  it("shows missing diagnostics and warnings without field inspection UI", async () => {
+  it("shows missing diagnostics and warnings without exposing Explore slice controls in Results", async () => {
     render(<App />);
 
     fireEvent.click(await screen.findByRole("button", { name: "No diagnostics yet" }));
@@ -2075,7 +2075,7 @@ describe("App", () => {
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   });
 
-  it("renders cloud-water point cloud in the 3-D visualizer", async () => {
+  it("renders cloud-water context in unified Explore", async () => {
     render(<App />);
 
     fireEvent.click((await screen.findAllByRole("button", { name: "Open in Explore" }))[0]);
@@ -2162,7 +2162,7 @@ describe("App", () => {
     );
   });
 
-  it("supports qc and w slice planes synced to visualizer time", async () => {
+  it("supports qc and w slice planes synced to Explore time", async () => {
     render(<App />);
 
     fireEvent.click((await screen.findAllByRole("button", { name: "Open in Explore" }))[0]);
@@ -2249,7 +2249,7 @@ describe("App", () => {
     });
   });
 
-  it("updates and resets the 3-D scene shell view controls", async () => {
+  it("updates and resets unified Explore view controls", async () => {
     render(<App />);
 
     fireEvent.click((await screen.findAllByRole("button", { name: "Open in Explore" }))[0]);
@@ -2298,7 +2298,7 @@ describe("App", () => {
     });
   });
 
-  it("handles missing qc in the 3-D point-cloud renderer", async () => {
+  it("handles missing qc in the unified Explore cloud context", async () => {
     render(<App />);
 
     fireEvent.click(await screen.findByRole("button", { name: "No diagnostics yet" }));
@@ -2315,7 +2315,7 @@ describe("App", () => {
     expect(screen.getByLabelText("Cloud-water threshold")).toBeDisabled();
   });
 
-  it("handles a 3-D scene shell result with no visualization-ready fields", async () => {
+  it("handles an Explore result with no visualization-ready fields", async () => {
     render(<App />);
 
     fireEvent.click(await screen.findByRole("button", { name: "No visual fields" }));
