@@ -1244,7 +1244,7 @@ describe("App", () => {
     expect(screen.getByTestId("launch-cm1-btn")).toBeEnabled();
   });
 
-  it("lists result cards in a table and shows notebook diagnostics", async () => {
+  it("lists result cards as notebook entries and shows diagnostics", async () => {
     render(<App />);
 
     expect(await screen.findByRole("button", { name: "Results" })).toHaveClass("active-control");
@@ -1260,31 +1260,34 @@ describe("App", () => {
     expect(screen.getByRole("tab", { name: "Compare" })).toBeInTheDocument();
     expect(screen.getByRole("tab", { name: "Storage" })).toBeInTheDocument();
     expect(await screen.findByRole("heading", { name: "Experiment Notebook" })).toBeInTheDocument();
-    expect(screen.getByLabelText("Selected result")).toHaveTextContent(
-      "Quick-look shallow cumulus",
-    );
-    expect(screen.getAllByText("Validated quick-look baseline").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("Minor caveat").length).toBeGreaterThan(0);
+    expect(
+      screen.getByText("Review saved cloud experiments, compare variants, and open results for explanation."),
+    ).toBeInTheDocument();
+    expect(screen.getByLabelText("Results list")).toBeInTheDocument();
+    const resultDetail = screen.getByLabelText("Result detail");
+    expect(resultDetail).toHaveTextContent("Quick-look shallow cumulus");
+    expect(screen.getAllByText(/Validated quick-look baseline/).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/Minor caveat/).length).toBeGreaterThan(0);
     expect(screen.getAllByRole("button", { name: "Open 3-D" }).length).toBeGreaterThan(0);
     expect(screen.getByRole("button", { name: "Quick-look shallow cumulus" })).toBeInTheDocument();
-    expect(screen.getAllByText("Baseline Shallow Cumulus").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("quick look").length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/Baseline Shallow Cumulus/).length).toBeGreaterThan(0);
+    expect(resultDetail).toHaveTextContent("quick look");
     expect(screen.getAllByText("cloud formed; rain detected").length).toBeGreaterThan(0);
-    expect(
-      screen.getAllByText("13 model files, 13 time steps, 1 stats files").length,
-    ).toBeGreaterThan(0);
     expect(screen.getAllByText("Cloud formed").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Rain detected").length).toBeGreaterThan(0);
     expect(screen.getByText("1,800 s")).toBeInTheDocument();
     expect(screen.getByText("2.193e-3 kg/kg")).toBeInTheDocument();
     expect(screen.getByText("6.867 m/s")).toBeInTheDocument();
     expect(screen.getByText("-4.215 m/s")).toBeInTheDocument();
+    fireEvent.click(within(resultDetail).getByText("Technical details"));
+    expect(
+      screen.getAllByText("13 model files, 13 time steps, 1 stats files").length,
+    ).toBeGreaterThan(0);
     expect(
       screen.getByText("CM1 stderr reported floating-point exception flags: IEEE_INVALID_FLAG"),
     ).toBeInTheDocument();
-    expect(screen.getByText("Technical details")).toBeInTheDocument();
     expect(screen.getAllByText("Completed CM1 result").length).toBeGreaterThan(0);
-    expect(screen.getByRole("button", { name: "Inspect fields" })).toBeEnabled();
+    expect(within(resultDetail).getByRole("button", { name: "Open in Explore" })).toBeEnabled();
   });
 
   it("accepts legacy array results responses without crashing", async () => {
@@ -1648,7 +1651,8 @@ describe("App", () => {
   it("opens the 2-D field inspector from a result and shows qc slices", async () => {
     render(<App />);
 
-    fireEvent.click(await screen.findByRole("button", { name: "Inspect fields" }));
+    const resultDetail = await screen.findByLabelText("Result detail");
+    fireEvent.click(within(resultDetail).getByRole("button", { name: "Open in Explore" }));
 
     expect(await screen.findByRole("heading", { name: "Inspect CM1 fields" })).toBeInTheDocument();
     await screen.findByText("Slices loaded");
@@ -1678,7 +1682,8 @@ describe("App", () => {
   it("selects a slice region and renders backend Thermal Fate Inspector diagnostics", async () => {
     render(<App />);
 
-    fireEvent.click(await screen.findByRole("button", { name: "Inspect fields" }));
+    const resultDetail = await screen.findByLabelText("Result detail");
+    fireEvent.click(within(resultDetail).getByRole("button", { name: "Open in Explore" }));
     await screen.findByText("Slices loaded");
 
     const heatmap = screen.getByLabelText("Vertical X slice heatmap");
@@ -1744,7 +1749,8 @@ describe("App", () => {
 
     render(<App />);
 
-    fireEvent.click(await screen.findByRole("button", { name: "Inspect fields" }));
+    const resultDetail = await screen.findByLabelText("Result detail");
+    fireEvent.click(within(resultDetail).getByRole("button", { name: "Open in Explore" }));
     await screen.findByText("Slices loaded");
     fireEvent.click(
       within(screen.getByLabelText("Vertical X slice heatmap")).getByRole("button", {
@@ -1759,7 +1765,8 @@ describe("App", () => {
   it("supports field and time selection through visualization-ready APIs", async () => {
     render(<App />);
 
-    fireEvent.click(await screen.findByRole("button", { name: "Inspect fields" }));
+    const resultDetail = await screen.findByLabelText("Result detail");
+    fireEvent.click(within(resultDetail).getByRole("button", { name: "Open in Explore" }));
     fireEvent.change(await screen.findByLabelText("Field"), { target: { value: "w" } });
     fireEvent.change(screen.getByLabelText("Time"), { target: { value: "1" } });
 
@@ -1777,7 +1784,8 @@ describe("App", () => {
   it("shows process-aware 2-D overlays with unavailable diagnostic groups caveated", async () => {
     render(<App />);
 
-    fireEvent.click(await screen.findByRole("button", { name: "Inspect fields" }));
+    const resultDetail = await screen.findByLabelText("Result detail");
+    fireEvent.click(within(resultDetail).getByRole("button", { name: "Open in Explore" }));
 
     expect(await screen.findByText("Thermal Fate overlay")).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Thermal Fate summary" })).toBeInTheDocument();
@@ -1798,7 +1806,8 @@ describe("App", () => {
     render(<App />);
 
     fireEvent.click(await screen.findByRole("button", { name: "No diagnostics yet" }));
-    fireEvent.click(screen.getByRole("button", { name: "Inspect fields" }));
+    const resultDetail = screen.getByLabelText("Result detail");
+    fireEvent.click(within(resultDetail).getByRole("button", { name: "Open in Explore" }));
 
     expect(await screen.findByRole("heading", { name: "Inspect CM1 fields" })).toBeInTheDocument();
     await screen.findByText("Slices loaded");
@@ -1815,7 +1824,8 @@ describe("App", () => {
   it("opens a cloud-forming result in Explore with qc and w available in both views", async () => {
     render(<App />);
 
-    fireEvent.click(await screen.findByRole("button", { name: "Inspect fields" }));
+    const resultDetail = await screen.findByLabelText("Result detail");
+    fireEvent.click(within(resultDetail).getByRole("button", { name: "Open in Explore" }));
 
     expect(
       await screen.findByRole("heading", { name: "Inspect and visualize fields" }),
@@ -1912,7 +1922,8 @@ describe("App", () => {
 
     render(<App />);
 
-    fireEvent.click(await screen.findByRole("button", { name: "Inspect fields" }));
+    const resultDetail = await screen.findByLabelText("Result detail");
+    fireEvent.click(within(resultDetail).getByRole("button", { name: "Open in Explore" }));
 
     expect(await screen.findByRole("alert")).toHaveTextContent(
       "Visualization fields temporarily failed.",
@@ -2192,7 +2203,8 @@ describe("App", () => {
     render(<App />);
 
     fireEvent.click(await screen.findByRole("button", { name: "No diagnostics yet" }));
-    fireEvent.click(screen.getAllByRole("button", { name: "Open 3-D" })[0]);
+    const resultDetail = screen.getByLabelText("Result detail");
+    fireEvent.click(within(resultDetail).getByRole("button", { name: "Open 3-D" }));
 
     expect(await screen.findByRole("heading", { name: "Scene shell" })).toBeInTheDocument();
     await screen.findAllByText("Scene shell ready");
@@ -2207,7 +2219,8 @@ describe("App", () => {
     render(<App />);
 
     fireEvent.click(await screen.findByRole("button", { name: "No visual fields" }));
-    fireEvent.click(screen.getAllByRole("button", { name: "Open 3-D" })[0]);
+    const resultDetail = screen.getByLabelText("Result detail");
+    fireEvent.click(within(resultDetail).getByRole("button", { name: "Open 3-D" }));
 
     expect(await screen.findByRole("heading", { name: "Scene shell" })).toBeInTheDocument();
     await screen.findAllByText("No fields available");

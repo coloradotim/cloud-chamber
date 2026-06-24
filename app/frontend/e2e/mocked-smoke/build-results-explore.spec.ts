@@ -33,8 +33,20 @@ test.describe("mocked smoke: Build, Results, Explore path", () => {
     await gotoResults(page);
 
     await expect(page.getByRole("heading", { name: "Experiment Notebook" })).toBeVisible();
+    const resultsList = page.getByLabel("Results list");
+    await expect(resultsList).toBeVisible();
     await expect(page.getByText("Baseline Shallow Cumulus — Quick Look").first()).toBeVisible();
-    await expect(page.getByText("cloud formed; rain detected").first()).toBeVisible();
+    await expect(
+      resultsList.getByText(/Cloud water formed in the validated quick-look baseline/i),
+    ).toBeVisible();
+    await expect(page.getByText("Cloud formed").first()).toBeVisible();
+    await expect(page.getByText("Rain detected").first()).toBeVisible();
+    await expect(page.getByRole("button", { name: "Open in Explore" }).first()).toBeVisible();
+    await expect(page.getByRole("button", { name: "Open 3-D" }).first()).toBeVisible();
+    const resultDetail = page.getByLabel("Result detail");
+    await resultDetail.getByText("Technical details").click();
+    await expect(resultDetail.getByText("Run ID")).toBeVisible();
+    await expect(resultDetail.getByText("Product state")).toBeVisible();
 
     await openResultsTab(page, /^Compare$/);
     await expect(
@@ -45,6 +57,21 @@ test.describe("mocked smoke: Build, Results, Explore path", () => {
     await openResultsTab(page, /^Storage$/);
     await expect(page.getByRole("heading", { name: "Runtime storage cleanup" })).toBeVisible();
     await expect(page.getByText("/tmp/cloud-chamber-e2e").first()).toBeVisible();
+  });
+
+  test("Results notebook remains card-first on mobile", async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await gotoResults(page);
+
+    await expect(page.getByRole("heading", { name: "Experiment Notebook" })).toBeVisible();
+    const resultsList = page.getByLabel("Results list");
+    await expect(resultsList).toBeVisible();
+    await expect(page.getByText("Baseline Shallow Cumulus — Quick Look").first()).toBeVisible();
+    await expect(
+      resultsList.getByText(/Cloud water formed in the validated quick-look baseline/i),
+    ).toBeVisible();
+    await expect(page.getByLabel("Result detail")).toBeVisible();
+    await expect(page.getByRole("button", { name: "Open in Explore" }).first()).toBeVisible();
   });
 
   test("Explore 2-D and 3-D views render from the selected result", async ({ page }) => {

@@ -253,6 +253,16 @@ provenance available without dominating the main view. They should distinguish
 successful cloud-forming results with minor caveats from results that truly need
 review.
 
+Results notebook redesign tests should cover the mobile-first experiment-card
+contract rather than table mechanics. Component and Playwright tests should
+verify that Results / Notebook presents scan-friendly experiment entries,
+selected result details, cloud/rain outcomes, first cloud time, max `qc`,
+max/min `w`, caveats, saved/protected state, editable name/tags/notes, and
+actions into Explore or 3-D. They should also verify that raw run IDs,
+lifecycle/product states, controls, provenance labels, and detailed warnings
+remain available under technical-details disclosure instead of dominating the
+primary notebook view.
+
 Guided local run workflow tests should mock the backend API sequence rather
 than launching CM1: package generation, launch request, running status, completed
 status with output-artifact counts, ingest request, and post-ingest actions into

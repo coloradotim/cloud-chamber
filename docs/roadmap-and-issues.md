@@ -95,6 +95,13 @@ surfaces are limited to visualization plotting areas when they improve CM1
 field readability. Later Results and Explore redesign issues should build on
 these tokens and should not reintroduce black/green terminal chrome.
 
+#171 redesigns Results as a mobile-first experiment notebook rather than a
+dense admin table. Notebook should use scan-friendly experiment cards and a
+selected result detail card; cloud/rain outcomes, key diagnostics, caveats,
+saved/protected state, and open/compare actions belong in the first read, while
+raw run IDs, lifecycle/product states, controls, provenance, and detailed
+warnings belong under technical details.
+
 ## Thermal Fate Roadmap
 
 Thermal Fate is the internal organizing scientific model: Cloud Chamber should
@@ -465,7 +472,7 @@ Implementation anchor:
 - #68 establishes the backend NetCDF ingest bridge: read completed-run NetCDF output with xarray, write `result_metadata.json`, preserve raw `.dat/.ctl` artifact cataloging without parsing it, and leave diagnostics/result-card UI/visualization-ready data to follow-up issues.
 - #69 adds first Baseline Shallow Cumulus diagnostics to ingested NetCDF result metadata: cloud formed yes/no with `qc >= 1e-6 kg/kg` and at least 10 cloudy grid cells, first cloud time, cloud base/top when vertical coordinates are available, `qc` summaries/time series/cloud fraction, `w` max/min summaries/time series, optional `qr` rain detection with `qr >= 1e-7 kg/kg`, and caveats for missing, inferred, or non-finite fields.
 - #70 adds the backend Result Card / Experiment Notebook API over ingested metadata: list/get cards, update name/tags/notes, save/protect results, and summarize run ID, scenario, run-size preset, physical question, diagnostics, caveats, and output files without rerunning CM1.
-- #71 adds the first frontend Results Library shell over the #70 API: a scan-friendly results table, selected result detail/notebook card, diagnostics/caveats/output summaries, saved/protected state, and editable name/tags/notes. It must not implement replay or 3-D visualization.
+- #71 adds the first frontend Results Library shell over the #70 API: result cards, selected result detail/notebook card, diagnostics/caveats/output summaries, saved/protected state, and editable name/tags/notes. It must not implement replay or 3-D visualization.
 - #98 refactors the frontend into a guided MVP workspace and #131 consolidates it into the task-based `Build`, `Results`, and `Explore` model. The default landing path should be `Results -> validated quick-look baseline -> Open in Explore/Open 3-D`, with user-facing result labels in the primary UI and raw lifecycle/provenance labels under technical details.
 - #108 makes the Build workspace a guided local run loop: create package, launch local CM1, refresh status/log tails, review output-artifact counts, ingest completed NetCDF output, and open the resulting card in Results or Explore. Automated tests must mock these API responses and never run real CM1.
 - #109 adds runtime storage management under Results / Storage over the runtime storage backend: total runtime-home usage, 50 GB warning-threshold state, largest run directories, result-card names when associated, saved/protected state, output summaries, dry-run delete preview, explicit confirmed deletion, and disabled cleanup for running or saved/protected runs.

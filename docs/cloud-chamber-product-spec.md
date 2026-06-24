@@ -905,12 +905,16 @@ Editable notebook state lives beside the local run as `result_card.json`; it
 stores `name`, `tags`, `notes`, `saved`, and `protected` without modifying or
 copying CM1 output. Saving a card marks it as a saved/protected notebook entry.
 
-The first Results Library UI is intentionally table-first. It lists result
-cards from the backend, lets the user select one result, and shows a
-detail/notebook card with scenario, run-size preset, status, diagnostics
-summary, cloud/rain outcome, first cloud time, max `qc`, max/min `w`, caveats,
-output summary, provenance labels, saved/protected state, and editable
+The Results Library UI is an experiment notebook, not an admin table. It lists
+result cards from the backend as scan-friendly experiment entries, lets the user
+select one result, and shows a detail/notebook card with scenario, run-size
+preset, cloud/rain outcome, diagnostics summary, first cloud time, max `qc`,
+max/min `w`, caveats, output summary, saved/protected state, and editable
 name/tags/notes. It can save/protect a result through the backend API.
+Technical metadata such as raw lifecycle/product states, run IDs, provenance
+labels, controls, and detailed caveats remain available under disclosure rather
+than dominating the first read. The layout should be mobile-first: cards stack
+naturally on narrow screens, and desktop can use a list/detail notebook split.
 
 The library opens a 2-D field inspector from a result detail/notebook entry.
 The inspector is a CM1-output inspection surface, not a visualizer or replay
@@ -960,10 +964,11 @@ like an accepted moisture-limited outcome: `No cloud formed`, `No rain
 detected`, and `Moisture-limited`, with caveats secondary.
 
 `Results` contains `Notebook`, `Compare`, and `Storage` sub-tabs. Notebook is
-the table-first Result Card / Experiment Notebook. Compare is result-pair
-oriented and belongs with Results because it compares experiment outcomes.
-Storage is also part of Results because it manages local run directories and
-their relationship to named result cards.
+the Result Card / Experiment Notebook: a scan-friendly list of experiment cards
+plus a selected notebook detail, with technical run metadata kept secondary.
+Compare is result-pair oriented and belongs with Results because it compares
+experiment outcomes. Storage is also part of Results because it manages local
+run directories and their relationship to named result cards.
 
 `Explore` contains `2-D Slices` and `3-D View` sub-tabs. The selected result is
 shared by Results and Explore. Selecting a result in Notebook or opening a
