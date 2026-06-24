@@ -716,7 +716,7 @@ export function App() {
   const [storageError, setStorageError] = useState<string | null>(null);
   const [deletePreview, setDeletePreview] = useState<DeleteRunResponse | null>(null);
   const [deleteMessage, setDeleteMessage] = useState<string | null>(null);
-  const [status, setStatus] = useState("Loading scenarios...");
+  const [, setStatus] = useState("Loading scenarios...");
   const [scenarioLoadState, setScenarioLoadState] = useState<ScenarioLoadState>("loading");
   const [scenarioError, setScenarioError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -1030,29 +1030,27 @@ export function App() {
   return (
     <main className="app-shell">
       <header className="topbar">
-        <div>
+        <div className="brand-mark">
           <p className="eyebrow">Local CM1 experiment lab</p>
           <h1>Cloud Chamber</h1>
         </div>
-        <p className="state-chip">{sectionLabel(activeSection)}</p>
-      </header>
 
-      <nav className="workspace-nav" aria-label="Cloud Chamber workspace">
-        {(["build", "results", "explore"] as WorkspaceSection[]).map((section) => (
-          <button
-            key={section}
-            type="button"
-            className={activeSection === section ? "active-control" : ""}
-            onClick={() => setActiveSection(section)}
-          >
-            {sectionLabel(section)}
-          </button>
-        ))}
-      </nav>
+        <nav className="workspace-nav" aria-label="Cloud Chamber workspace">
+          {(["build", "results", "explore"] as WorkspaceSection[]).map((section) => (
+            <button
+              key={section}
+              type="button"
+              className={activeSection === section ? "active-control" : ""}
+              onClick={() => setActiveSection(section)}
+            >
+              {sectionLabel(section)}
+            </button>
+          ))}
+        </nav>
+      </header>
 
       {activeSection === "build" && (
         <BuildWorkspace
-          status={status}
           scenarioLoadState={scenarioLoadState}
           scenarioError={scenarioError}
           packageError={error}
@@ -1165,7 +1163,6 @@ export function App() {
 }
 
 function BuildWorkspace({
-  status,
   scenarioLoadState,
   scenarioError,
   packageError,
@@ -1191,7 +1188,6 @@ function BuildWorkspace({
   onVisualizeIngested,
   onRetryScenarios,
 }: {
-  status: string;
   scenarioLoadState: ScenarioLoadState;
   scenarioError: string | null;
   packageError: string | null;
@@ -1226,7 +1222,6 @@ function BuildWorkspace({
           <p className="eyebrow">Build</p>
           <h2 id="build-title">Create a CM1 run package</h2>
         </div>
-        <p className="state-chip">{status}</p>
       </div>
 
       <section className="builder-layout" aria-label="Scenario Builder">
@@ -1486,8 +1481,12 @@ function ResultsWorkspace({
           <p className="eyebrow">Results</p>
           <h2 id="results-title">Review, compare, and manage experiments</h2>
         </div>
-        <p className="state-chip">{resultsStatus}</p>
       </div>
+      {resultsStatus !== "Results loaded" && resultsStatus !== "Loading results..." && (
+        <p className="inline-status" role="status">
+          {resultsStatus}
+        </p>
+      )}
 
       <nav className="subtab-nav" role="tablist" aria-label="Results views">
         {(["notebook", "compare", "storage"] as ResultsTab[]).map((tab) => (
@@ -1518,7 +1517,7 @@ function ResultsWorkspace({
           </div>
           <div className="badge-row">
             {isValidatedQuickLookBaseline(selectedResult) && (
-              <StatusBadge label="Validated quick-look baseline" tone="good" />
+              <StatusBadge label="Validated quick-look baseline" tone="neutral" />
             )}
             <OutcomeBadge result={selectedResult} />
             <StatusBadge label={rainOutcome(selectedResult.rain_present)} tone="neutral" />
@@ -1532,7 +1531,7 @@ function ResultsWorkspace({
             <button type="button" onClick={onInspect}>
               Open in Explore
             </button>
-            <button type="button" onClick={onOpenVisualizer}>
+            <button type="button" className="secondary-button" onClick={onOpenVisualizer}>
               Open 3-D
             </button>
           </div>
@@ -1665,7 +1664,6 @@ function ExploreWorkspace({
           <p className="eyebrow">Explore</p>
           <h2 id="explore-workspace-title">Inspect and visualize fields</h2>
         </div>
-        <p className="state-chip">{selectedResult ? selectedResult.name : "No result"}</p>
       </div>
 
       <nav className="subtab-nav" role="tablist" aria-label="Explore views">
@@ -2313,7 +2311,11 @@ function StorageWorkspace({
             <Metric label="Estimated reclaimed" value={formatBytes(deletePreview.size_bytes)} />
             <Metric label="Preview status" value={deletePreview.message} />
           </dl>
-          <button type="button" onClick={() => onConfirmDelete(deletePreview.run_id)}>
+          <button
+            type="button"
+            className="danger-button"
+            onClick={() => onConfirmDelete(deletePreview.run_id)}
+          >
             Confirm delete selected run
           </button>
         </section>
@@ -2726,7 +2728,7 @@ function ResultsTable({
                 <div className="badge-row">
                   <OutcomeBadge result={result} />
                   {isValidatedQuickLookBaseline(result) && (
-                    <StatusBadge label="Validated quick-look baseline" tone="good" />
+                    <StatusBadge label="Validated quick-look baseline" tone="neutral" />
                   )}
                   <StatusBadge label={rainOutcome(result.rain_present)} tone="neutral" />
                   {result.caveats.length > 0 && (

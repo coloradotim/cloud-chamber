@@ -87,6 +87,14 @@ tests; manual QA for this reset is qualitative only.
 `What happened here?` as the central action instead of becoming a generic
 visualization-plus-panel redesign.
 
+#170 establishes the shared atmospheric notebook visual system that later UX
+reset issues should inherit. The app shell should feel calm, pale, and
+notebook-like; blue / blue-gray is the primary accent; green is reserved for
+success states; warnings and destructive actions use subtle amber/red; and dark
+surfaces are limited to visualization plotting areas when they improve CM1
+field readability. Later Results and Explore redesign issues should build on
+these tokens and should not reintroduce black/green terminal chrome.
+
 ## Thermal Fate Roadmap
 
 Thermal Fate is the internal organizing scientific model: Cloud Chamber should
