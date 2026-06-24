@@ -87,6 +87,13 @@ tests; manual QA for this reset is qualitative only.
 `What happened here?` as the central action instead of becoming a generic
 visualization-plus-panel redesign.
 
+#172 applies that model to the current Explore shell: the page should read as
+`Explore this result`, keep the selected result and cloud/no-cloud trust state
+obvious, make the primary CM1-derived visual surface dominant, and keep a
+visible `What happened here?` explanation panel beside the view. Process modes,
+projection/rendering controls, slice-plane controls, and detailed provenance
+remain available but secondary behind disclosure.
+
 #170 establishes the shared atmospheric notebook visual system that later UX
 reset issues should inherit. The app shell should feel calm, pale, and
 notebook-like; blue / blue-gray is the primary accent; green is reserved for
@@ -516,6 +523,7 @@ Implementation anchor:
 - #119 stabilizes the 3-D visualizer viewport around an explicit plotting group shared by the domain box, floor/grid, scale markers, slice planes, and point cloud. The MVP controls should be view/projection mode, zoom, and reset view rather than fake orbit/pan camera controls, with projection descriptions and scale markers visible at normal browser zoom.
 - #121 adds explicit 3-D slice-plane controls: horizontal `z` slices can move up/down, vertical `x-z` slices can move through `y`, and vertical `y-z` slices can move through `x`. These controls reuse the backend slice API and remain native-grid selectors, not interpolation or true camera rotation.
 - #125 refactors the visualizer into a fixed scientific workbench: primary visual controls sit beside the viewport, timeline and slice-position controls sit below the render, technical details move to a secondary panel, and axes/scale/annotation labels stay readable outside the zoomed data layer. Browser visual checks are required for layout changes so the scene cannot cover controls again.
+- #172 redesigns Explore around one primary visualization plus one explanation panel. The visible interaction should be `What happened here?`; technical Thermal Fate/process controls, rendering details, and provenance stay accessible without dominating the first read.
 - #80 plans visual polish, fly-through/move-through, cinematic export, and thumbnail/preview policy after the practical 3-D MVP. It must not add rendering dependencies or implementation code.
 
 Recommended implementation order:

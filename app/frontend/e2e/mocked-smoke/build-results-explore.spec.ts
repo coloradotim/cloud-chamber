@@ -78,14 +78,31 @@ test.describe("mocked smoke: Build, Results, Explore path", () => {
     await gotoResults(page);
     await page.getByRole("button", { name: "Open in Explore" }).first().click();
 
-    await expect(page.getByRole("heading", { name: "Inspect and visualize fields" })).toBeVisible();
+    await expect(page.getByRole("tab", { name: "2-D Slices" })).toBeVisible();
 
     await openExploreTab(page, /^2-D Slices$/);
-    await expect(page.getByText(/inspect cm1 fields/i).first()).toBeVisible({ timeout: 10_000 });
-    await expect(page.getByText(/2-d field inspection/i).first()).toBeVisible();
-    await expect(page.getByText(/thermal fate overlay/i).first()).toBeVisible();
-    await expect(page.getByText(/growing cumulus/i).first()).toBeVisible();
+    await expect(page.getByText(/what happened in this result/i).first()).toBeVisible({ timeout: 10_000 });
+    await expect(
+      page.getByText(/vertical x slice at y = .*horizontal axis: x\. vertical axis: height/i),
+    ).toBeVisible();
+    await expect(page.getByLabel("Slice position")).toBeVisible();
+    await expect(page.getByRole("button", { name: /move back/i })).toBeVisible();
+    await expect(page.getByRole("button", { name: /move forward/i })).toBeVisible();
     await expect(page.getByText(/what happened here/i).first()).toBeVisible();
+    await expect(page.getByText(/select a spot or region/i).first()).toBeVisible();
+    const verticalHeatmap = page.getByLabel("Vertical X slice heatmap");
+    await expect(verticalHeatmap).toBeVisible();
+    const fieldControlsPrecedeHeatmap = await verticalHeatmap.evaluate((element) => {
+      const fieldControl = document.querySelector("#inspect-field");
+      return Boolean(
+        fieldControl &&
+          (fieldControl.compareDocumentPosition(element) & Node.DOCUMENT_POSITION_FOLLOWING),
+      );
+    });
+    expect(fieldControlsPrecedeHeatmap).toBe(true);
+    await page.getByText("Technical details").first().click();
+    await expect(page.getByText(/evidence/i).first()).toBeVisible();
+    await expect(page.getByText(/growing cumulus/i).first()).toBeVisible();
     await page
       .getByRole("button", { name: /inspect vertical x slice row 2, column 2/i })
       .first()
@@ -94,14 +111,20 @@ test.describe("mocked smoke: Build, Results, Explore path", () => {
     await expect(page.getByText(/cloud water appeared locally/i)).toBeVisible();
     await expect(page.getByText(/local max w/i)).toBeVisible();
     await page.getByRole("button", { name: /clear selection/i }).click();
-    await expect(page.getByText(/no region is selected/i)).toBeVisible();
+    await expect(page.getByText(/select a spot or region/i).first()).toBeVisible();
     await expect(page.getByText(/\[\[[\d.,\s]+\]\]/)).not.toBeVisible();
 
     await openExploreTab(page, /^3-D View$/);
-    await expect(page.getByText(/scene shell/i).first()).toBeVisible({ timeout: 12_000 });
-    await expect(page.getByText(/oblique overview/i).first()).toBeVisible();
-    await expect(page.getByText(/thermal fate overlay/i).first()).toBeVisible();
+    await expect(page.getByText(/what happened in this result/i).first()).toBeVisible({ timeout: 12_000 });
+    await expect(page.getByText(/what happened here/i).first()).toBeVisible();
+    await expect(page.getByText("Cloud formed in this result")).toBeVisible();
+    await expect(page.getByText("Cloud formed here")).toHaveCount(0);
     await expect(page.getByRole("button", { name: /reset view/i })).toBeVisible();
+    const visualizerControls = page.getByLabel("Primary visualizer controls");
+    await visualizerControls.getByText("Projection and rendering details").click();
+    await expect(visualizerControls.getByRole("button", { name: /oblique overview/i })).toBeVisible();
+    await page.getByText("Evidence details").click();
+    await expect(page.getByRole("heading", { name: /thermal fate summary/i })).toBeVisible();
   });
 
   test("Results to Explore loads cloud-forming qc and w fields", async ({ page }) => {
@@ -134,16 +157,18 @@ test.describe("mocked smoke: Build, Results, Explore path", () => {
     await openResultsTab(page, /^Compare$/);
     await page.getByRole("button", { name: "Open Dry Failed 3-D" }).click();
 
-    await expect(page.getByRole("heading", { name: "Inspect and visualize fields" })).toBeVisible();
+    await expect(page.getByRole("tab", { name: "2-D Slices" })).toBeVisible();
     await expect(page.getByText("Dry Failed Cumulus — Quick Look").first()).toBeVisible();
-    await expect(page.getByText(/scene shell ready/i).first()).toBeVisible({ timeout: 12_000 });
+    await expect(page.getByText(/cloud view ready/i).first()).toBeVisible({ timeout: 12_000 });
     await expect(page.locator("#scene-field")).toHaveValue("w");
     await expect(
-      page.getByText(/No cloud water formed here; vertical velocity is available/i),
+      page.getByText(/No cloud water formed in this result; vertical velocity is available/i),
     ).toBeVisible();
     await expect(
       page.getByText(/Use the vertical velocity field \(w\) to inspect the thermals/i),
     ).toBeVisible();
+    await expect(page.getByText("No cloud formed in this result")).toBeVisible();
+    await expect(page.getByText("No cloud formed here")).toHaveCount(0);
 
     await openExploreTab(page, /^2-D Slices$/);
     await expect(page.getByText(/slices loaded/i).first()).toBeVisible({ timeout: 10_000 });
@@ -173,5 +198,47 @@ test.describe("mocked smoke: Build, Results, Explore path", () => {
     );
     await expect(page.getByRole("button", { name: "Retry loading fields" })).toBeVisible();
     await expect(page.getByText("Loading fields...", { exact: true })).not.toBeVisible();
+  });
+
+  test("Explore mobile puts visualization and explanation before technical controls", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await gotoResults(page);
+    await page.getByRole("button", { name: "Open in Explore" }).first().click();
+
+    await openExploreTab(page, /^2-D Slices$/);
+    await expect(
+      page.getByText(/vertical x slice at y = .*horizontal axis: x\. vertical axis: height/i),
+    ).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByLabel("Slice position")).toBeVisible();
+    const heatmap = page.getByLabel("Vertical X slice heatmap");
+    await expect(heatmap).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByLabel("Selected-region controls")).toBeVisible();
+    await expect(page.getByLabel("Selected-region controls")).toContainText(/what happened here/i);
+
+    const heatmapPrecedesTechnicalDetails = await heatmap.evaluate((element) => {
+      const technicalSummary = Array.from(document.querySelectorAll("summary")).find((summary) =>
+        summary.textContent?.includes("Technical details"),
+      );
+      return Boolean(
+        technicalSummary &&
+          (element.compareDocumentPosition(technicalSummary) & Node.DOCUMENT_POSITION_FOLLOWING),
+      );
+    });
+    expect(heatmapPrecedesTechnicalDetails).toBe(true);
+
+    await openExploreTab(page, /^3-D View$/);
+    const scene = page.getByLabel("3-D scene container");
+    const explanation = page.getByLabel("Visualization details");
+    await expect(scene).toBeVisible({ timeout: 12_000 });
+    await expect(explanation).toBeVisible();
+    const scenePrecedesExplanation = await scene.evaluate((element) => {
+      const details = document.querySelector('[aria-label="Visualization details"]');
+      return Boolean(
+        details && element.compareDocumentPosition(details) & Node.DOCUMENT_POSITION_FOLLOWING,
+      );
+    });
+    expect(scenePrecedesExplanation).toBe(true);
   });
 });

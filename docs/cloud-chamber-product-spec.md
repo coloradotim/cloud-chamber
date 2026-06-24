@@ -974,7 +974,17 @@ run directories and their relationship to named result cards.
 shared by Results and Explore. Selecting a result in Notebook or opening a
 comparison/storage row in Explore should preserve that context. If no selected
 result is available, Explore should tell the user to select an ingested result
-from Results. The 2-D and 3-D views should default to physically interesting output views, not
+from Results.
+
+The first-read Explore screen should be an explanation workspace, not a
+process-mode cockpit. Both `2-D Slices` and `3-D View` should show a selected
+result summary, a dominant CM1-derived visual surface, and a visible `What
+happened here?` explanation panel. Core field/time/view controls stay visible;
+process focus, projection/rendering details, slice-plane controls, and long
+provenance labels belong behind details/disclosure until the user asks for
+them.
+
+The 2-D and 3-D views should default to physically interesting output views, not
 arbitrary zero-index slices. The backend should provide default field/time/slice
 locations from native-grid data when possible: for `qc`, first cloud time or the
 max cloud-water location; for `w`, the max-updraft location. If those locations

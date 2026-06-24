@@ -118,7 +118,7 @@ test.describe("mocked smoke: app shell", () => {
       await gotoResults(page);
       await expect(page.getByRole("heading", { name: "Experiment Notebook" })).toBeVisible();
       await gotoExplore(page);
-      await expect(page.getByRole("heading", { name: "Inspect and visualize fields" }))
+      await expect(page.getByRole("tab", { name: "2-D Slices" }))
         .toBeVisible();
     });
   }

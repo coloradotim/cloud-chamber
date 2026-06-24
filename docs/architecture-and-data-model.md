@@ -643,6 +643,13 @@ The selected result ID flows from Results / Notebook, Results / Compare, and
 Results / Storage into Explore; those consumers request backend-prepared
 payloads for that result rather than opening files directly.
 
+Explore's UI contract is explanation-first. The selected result summary,
+cloud/no-cloud state, field-loading state, and `What happened here?` panel are
+primary state. Technical Thermal Fate process modes, native-grid caveats,
+rendering/projection details, and provenance stay available in disclosure so the
+browser remains a presentation layer over backend diagnostics instead of a
+scientific classifier.
+
 User-facing state labels are separate from technical provenance. The primary UI
 may translate raw states like `ingested_result_metadata` or
 `completed_cm1_result` into `Ingested`, `Completed CM1 result`, `Saved`, or
