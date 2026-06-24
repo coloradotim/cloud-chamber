@@ -76,4 +76,75 @@ test.describe("mocked smoke: Build, Results, Explore path", () => {
     await expect(page.getByText(/thermal fate overlay/i).first()).toBeVisible();
     await expect(page.getByRole("button", { name: /reset view/i })).toBeVisible();
   });
+
+  test("Results to Explore loads cloud-forming qc and w fields", async ({ page }) => {
+    await gotoResults(page);
+    await page.getByRole("button", { name: "Open in Explore" }).first().click();
+
+    await openExploreTab(page, /^2-D Slices$/);
+    await expect(page.getByText(/slices loaded/i).first()).toBeVisible({ timeout: 10_000 });
+    await expect(page.locator("#inspect-field")).toHaveValue("qc");
+    await expect(page.locator("#inspect-field option", { hasText: "qc - Cloud water" })).toHaveCount(
+      1,
+    );
+    await expect(
+      page.locator("#inspect-field option", { hasText: "w - Vertical velocity" }),
+    ).toHaveCount(1);
+    await expect(page.getByText(/loading fields/i)).not.toBeVisible();
+
+    await openExploreTab(page, /^3-D View$/);
+    await expect(page.getByText(/cloud-water point cloud loaded/i).first()).toBeVisible({
+      timeout: 12_000,
+    });
+    await expect(page.locator("#scene-field")).toHaveValue("qc");
+    await expect(page.getByText(/cloud-water point cloud/i).first()).toBeVisible();
+  });
+
+  test("Results to Explore treats Dry Failed as no-cloud with updraft inspection", async ({
+    page,
+  }) => {
+    await gotoResults(page);
+    await openResultsTab(page, /^Compare$/);
+    await page.getByRole("button", { name: "Open Dry Failed 3-D" }).click();
+
+    await expect(page.getByRole("heading", { name: "Inspect and visualize fields" })).toBeVisible();
+    await expect(page.getByText("Dry Failed Cumulus — Quick Look").first()).toBeVisible();
+    await expect(page.getByText(/scene shell ready/i).first()).toBeVisible({ timeout: 12_000 });
+    await expect(page.locator("#scene-field")).toHaveValue("w");
+    await expect(
+      page.getByText(/No cloud water formed here; vertical velocity is available/i),
+    ).toBeVisible();
+    await expect(
+      page.getByText(/Use the vertical velocity field \(w\) to inspect the thermals/i),
+    ).toBeVisible();
+
+    await openExploreTab(page, /^2-D Slices$/);
+    await expect(page.getByText(/slices loaded/i).first()).toBeVisible({ timeout: 10_000 });
+    await expect(page.locator("#inspect-field")).toHaveValue("w");
+    await expect(
+      page.locator("#inspect-field option", { hasText: "w - Vertical velocity" }),
+    ).toHaveCount(1);
+  });
+
+  test("Explore field loading failure shows an error and retry instead of a stuck spinner", async ({
+    page,
+  }) => {
+    await page.route("**/api/results/result-baseline/visualization/fields", (route) =>
+      route.fulfill({
+        status: 503,
+        contentType: "application/json",
+        body: JSON.stringify({ detail: "Visualization fields temporarily failed." }),
+      }),
+    );
+
+    await gotoResults(page);
+    await page.getByRole("button", { name: "Open in Explore" }).first().click();
+    await openExploreTab(page, /^2-D Slices$/);
+
+    await expect(page.getByRole("alert")).toContainText(
+      "Visualization fields temporarily failed.",
+    );
+    await expect(page.getByRole("button", { name: "Retry loading fields" })).toBeVisible();
+    await expect(page.getByText("Loading fields...", { exact: true })).not.toBeVisible();
+  });
 });

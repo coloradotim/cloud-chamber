@@ -908,12 +908,14 @@ beforeEach(() => {
       }
       if (url.includes("/visualization/point-cloud")) {
         const parsed = new URL(url, "http://localhost");
+        const isDryFailed = parsed.pathname.includes("result-dry-failed-cumulus");
         return Promise.resolve(
           new Response(
             JSON.stringify(
               pointCloudResponse({
                 threshold: Number(parsed.searchParams.get("threshold") ?? 0.000001),
                 timeIndex: Number(parsed.searchParams.get("time_index") ?? 0),
+                points: isDryFailed ? [] : undefined,
               }),
             ),
             { status: 200 },
@@ -993,6 +995,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  vi.useRealTimers();
   vi.unstubAllGlobals();
 });
 
@@ -1809,6 +1812,157 @@ describe("App", () => {
     await waitFor(() => {
       expect(screen.getByRole("alert")).toHaveTextContent("level_index=99 is outside valid range");
     });
+  });
+
+  it("opens a cloud-forming result in Explore with qc and w available in both views", async () => {
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Inspect fields" }));
+
+    expect(
+      await screen.findByRole("heading", { name: "Inspect and visualize fields" }),
+    ).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Inspect CM1 fields" })).toBeInTheDocument();
+    await screen.findByText("Slices loaded");
+    expect(screen.getByText("Quick-look shallow cumulus")).toBeInTheDocument();
+    expect(screen.getByLabelText("Field")).toHaveValue("qc");
+    expect(screen.getAllByRole("option", { name: "qc - Cloud water" }).length).toBeGreaterThan(0);
+    expect(screen.getAllByRole("option", { name: "w - Vertical velocity" }).length).toBeGreaterThan(
+      0,
+    );
+
+    fireEvent.click(screen.getByRole("tab", { name: "3-D View" }));
+
+    expect(await screen.findByRole("heading", { name: "Scene shell" })).toBeInTheDocument();
+    await screen.findAllByText("Cloud-water point cloud loaded");
+    expect(screen.getByLabelText("Field")).toHaveValue("qc");
+    expect(screen.getAllByRole("option", { name: "qc - Cloud water" }).length).toBeGreaterThan(0);
+    expect(screen.getAllByRole("option", { name: "w - Vertical velocity" }).length).toBeGreaterThan(
+      0,
+    );
+  });
+
+  it("opens Dry Failed as a no-cloud result with a useful w/updraft path", async () => {
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("tab", { name: "Compare" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Open Dry Failed 3-D" }));
+
+    expect(
+      await screen.findByRole("heading", { name: "Inspect and visualize fields" }),
+    ).toBeInTheDocument();
+    expect(screen.getAllByText("Dry Failed Cumulus quick-look").length).toBeGreaterThan(0);
+    expect(await screen.findByRole("heading", { name: "Scene shell" })).toBeInTheDocument();
+    await screen.findAllByText("Scene shell ready");
+    expect(screen.getByLabelText("Field")).toHaveValue("w");
+    expect(screen.getAllByRole("option", { name: "qc - Cloud water" }).length).toBeGreaterThan(0);
+    expect(screen.getAllByRole("option", { name: "w - Vertical velocity" }).length).toBeGreaterThan(
+      0,
+    );
+    expect(
+      screen.getByText("No cloud water formed here; vertical velocity is available."),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/Use the vertical velocity field \(w\) to inspect the thermals/i))
+      .toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("tab", { name: "2-D Slices" }));
+    expect(await screen.findByRole("heading", { name: "Inspect CM1 fields" })).toBeInTheDocument();
+    await screen.findByText("Slices loaded");
+    expect(screen.getByLabelText("Field")).toHaveValue("w");
+  });
+
+  it("shows field-loading failures with retry instead of a permanent loading state", async () => {
+    let fieldsAttempts = 0;
+    vi.mocked(fetch).mockImplementation((input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url === "/api/scenarios") {
+        return Promise.resolve(new Response(JSON.stringify(scenarioResponse), { status: 200 }));
+      }
+      if (url === "/api/results") {
+        return Promise.resolve(new Response(JSON.stringify(resultsResponse), { status: 200 }));
+      }
+      if (url === "/api/storage/inventory") {
+        return Promise.resolve(
+          new Response(JSON.stringify(storageInventoryResponse), { status: 200 }),
+        );
+      }
+      if (url === "/api/results/result-dry-run-quicklook/visualization/fields") {
+        fieldsAttempts += 1;
+        if (fieldsAttempts === 1) {
+          return Promise.resolve(
+            new Response(JSON.stringify({ detail: "Visualization fields temporarily failed." }), {
+              status: 503,
+            }),
+          );
+        }
+        return Promise.resolve(new Response(JSON.stringify(fieldCatalogResponse), { status: 200 }));
+      }
+      if (url.startsWith("/api/results/result-dry-run-quicklook/visualization/defaults")) {
+        return Promise.resolve(
+          new Response(JSON.stringify(selectedTimeDefaultsResponse(url)), { status: 200 }),
+        );
+      }
+      if (url.includes("/visualization/slice")) {
+        return Promise.resolve(
+          new Response(JSON.stringify(sliceResponse({ orientation: "vertical_x" })), {
+            status: 200,
+          }),
+        );
+      }
+      return Promise.resolve(new Response("not found", { status: 404 }));
+    });
+
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Inspect fields" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Visualization fields temporarily failed.",
+    );
+    expect(screen.getByText("Field inspection unavailable")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Retry loading fields" })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Retry loading fields" }));
+
+    expect(await screen.findByText("Slices loaded")).toBeInTheDocument();
+    expect(screen.queryByText("Loading fields...")).not.toBeInTheDocument();
+  });
+
+  it("clears 3-D field-loading errors after retry succeeds", async () => {
+    const defaultFetch = vi.mocked(fetch).getMockImplementation();
+    let fieldsAttempts = 0;
+    vi.mocked(fetch).mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url === "/api/results/result-dry-run-quicklook/visualization/fields") {
+        fieldsAttempts += 1;
+        if (fieldsAttempts === 1) {
+          return Promise.resolve(
+            new Response(JSON.stringify({ detail: "Visualization fields temporarily failed." }), {
+              status: 503,
+            }),
+          );
+        }
+      }
+      return (
+        defaultFetch?.(input, init) ?? Promise.resolve(new Response("not found", { status: 404 }))
+      );
+    });
+
+    render(<App />);
+
+    fireEvent.click((await screen.findAllByRole("button", { name: "Open 3-D" }))[0]);
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Visualization fields temporarily failed.",
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Retry loading fields" }));
+
+    await screen.findAllByText("Cloud-water point cloud loaded");
+    await waitFor(() => {
+      expect(screen.queryByText("Visualization fields temporarily failed.")).not.toBeInTheDocument();
+    });
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   });
 
   it("renders cloud-water point cloud in the 3-D visualizer", async () => {

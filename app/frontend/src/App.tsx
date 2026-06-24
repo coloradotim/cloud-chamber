@@ -432,6 +432,8 @@ type SceneViewPreset = "cloud-overview" | "vertical-cross-section" | "top-down-s
 type ProjectionMode = "oblique" | "side_xz" | "side_yz" | "top_down";
 type SceneSlicePlane = "horizontal" | "vertical_x" | "vertical_y";
 
+const FIELD_LOAD_TIMEOUT_MS = 8000;
+
 async function fetchScenarioCatalog(): Promise<ScenarioResponse> {
   const response = await fetch("/api/scenarios");
   if (!response.ok) {
@@ -586,6 +588,16 @@ async function fetchVisualizationFields(resultId: string): Promise<FieldCatalogR
     throw new Error(await responseError(response, "Unable to load visualization fields."));
   }
   return response.json() as Promise<FieldCatalogResponse>;
+}
+
+function withTimeout<T>(promise: Promise<T>, message: string, timeoutMs = FIELD_LOAD_TIMEOUT_MS) {
+  let timeoutId: number | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    timeoutId = window.setTimeout(() => reject(new Error(message)), timeoutMs);
+  });
+  return Promise.race([promise, timeout]).finally(() => {
+    if (timeoutId !== undefined) window.clearTimeout(timeoutId);
+  });
 }
 
 async function fetchVisualizationDefaults(
@@ -2923,6 +2935,7 @@ function VisualizerSceneShell({ result }: { result: ResultCard }) {
   const [sceneStatus, setSceneStatus] = useState("Loading scene data...");
   const [sceneError, setSceneError] = useState<string | null>(null);
   const [sliceError, setSliceError] = useState<string | null>(null);
+  const [fieldLoadAttempt, setFieldLoadAttempt] = useState(0);
   const maxPoints = 50_000;
 
   useEffect(() => {
@@ -2952,12 +2965,16 @@ function VisualizerSceneShell({ result }: { result: ResultCard }) {
     setSceneVerticalSlice(null);
     setSliceError(null);
     setSceneStatus("Loading scene data...");
-    Promise.all([
-      fetchVisualizationFields(result.result_id),
-      fetchVisualizationDefaults(result.result_id).catch(() => null),
-    ])
+    withTimeout(
+      Promise.all([
+        fetchVisualizationFields(result.result_id),
+        fetchVisualizationDefaults(result.result_id).catch(() => null),
+      ]),
+      "Timed out loading visualization fields. Check the backend and retry.",
+    )
       .then(([payload, defaults]) => {
         if (!active) return;
+        setSceneError(null);
         setCatalog(payload);
         setViewDefaults(defaults);
         const firstPreferred =
@@ -2985,7 +3002,7 @@ function VisualizerSceneShell({ result }: { result: ResultCard }) {
     return () => {
       active = false;
     };
-  }, [result]);
+  }, [fieldLoadAttempt, result]);
 
   const selectedField = useMemo(
     () => catalog?.available_fields.find((field) => field.raw_field_name === selectedFieldName),
@@ -3003,6 +3020,9 @@ function VisualizerSceneShell({ result }: { result: ResultCard }) {
   const timeOptions = selectedField?.time_coordinate_values ?? [];
   const timeMax = Math.max(0, timeOptions.length - 1);
   const canRenderCloudWater = selectedFieldName === "qc" && Boolean(qcField);
+  const wField = catalog?.available_fields.find((field) => field.raw_field_name === "w");
+  const isNoCloudWithUpdraft =
+    cloudOutcome(result) === "No cloud formed" && Boolean(wField) && (result.max_w_m_s ?? 0) > 0;
   const sliceVerticalSize = sliceField?.coordinate_names.vertical
     ? sliceField.shape[sliceField.dimensions.indexOf(sliceField.coordinate_names.vertical)]
     : 1;
@@ -3162,7 +3182,14 @@ function VisualizerSceneShell({ result }: { result: ResultCard }) {
         are optional native-grid inspection aids; the browser is not parsing raw NetCDF.
       </p>
 
-      {sceneError && <p role="alert">{sceneError}</p>}
+      {sceneError && (
+        <div role="alert">
+          <p>{sceneError}</p>
+          <button type="button" onClick={() => setFieldLoadAttempt((current) => current + 1)}>
+            Retry loading fields
+          </button>
+        </div>
+      )}
 
       {catalog && catalog.available_fields.length === 0 && (
         <p role="status">No visualization-ready fields are available for this result.</p>
@@ -3547,11 +3574,16 @@ function VisualizerSceneShell({ result }: { result: ResultCard }) {
                 <h3>
                   {!qcField
                     ? "Cloud water field qc is not available for this result."
-                    : "No cloud water above the selected threshold at this time."}
+                    : isNoCloudWithUpdraft
+                      ? "No cloud water formed here; vertical velocity is available."
+                      : "No cloud water above the selected threshold at this time."}
                 </h3>
                 <p>
-                  Adjust the time or threshold after qc is available. Rendering remains an
-                  interpretation of CM1-derived data.
+                  {!qcField
+                    ? "Use available fields such as vertical velocity when present. Rendering remains an interpretation of CM1-derived data."
+                    : isNoCloudWithUpdraft
+                      ? "This no-cloud result is still useful: use the vertical velocity field (w) to inspect the thermals."
+                      : "Adjust the time or threshold after qc is available. Rendering remains an interpretation of CM1-derived data."}
                 </p>
               </div>
             )}
@@ -4052,6 +4084,7 @@ function FieldInspector({ result }: { result: ResultCard }) {
   const [regionError, setRegionError] = useState<string | null>(null);
   const [inspectorStatus, setInspectorStatus] = useState("Loading fields...");
   const [inspectorError, setInspectorError] = useState<string | null>(null);
+  const [fieldLoadAttempt, setFieldLoadAttempt] = useState(0);
 
   useEffect(() => {
     let active = true;
@@ -4067,10 +4100,13 @@ function FieldInspector({ result }: { result: ResultCard }) {
     setRegionStatus("Select a slice cell to inspect a region.");
     setViewMode("vertical_x");
     setProcessMode("thermal_fate");
-    Promise.all([
-      fetchVisualizationFields(result.result_id),
-      fetchVisualizationDefaults(result.result_id).catch(() => null),
-    ])
+    withTimeout(
+      Promise.all([
+        fetchVisualizationFields(result.result_id),
+        fetchVisualizationDefaults(result.result_id).catch(() => null),
+      ]),
+      "Timed out loading visualization fields. Check the backend and retry.",
+    )
       .then(([payload, defaults]) => {
         if (!active) return;
         setCatalog(payload);
@@ -4098,7 +4134,7 @@ function FieldInspector({ result }: { result: ResultCard }) {
     return () => {
       active = false;
     };
-  }, [result]);
+  }, [fieldLoadAttempt, result]);
 
   const selectedField = useMemo(
     () => catalog?.available_fields.find((field) => field.raw_field_name === selectedFieldName),
@@ -4245,7 +4281,14 @@ function FieldInspector({ result }: { result: ResultCard }) {
         NetCDF, and this is not a 3-D visualization.
       </p>
 
-      {inspectorError && <p role="alert">{inspectorError}</p>}
+      {inspectorError && (
+        <div role="alert">
+          <p>{inspectorError}</p>
+          <button type="button" onClick={() => setFieldLoadAttempt((current) => current + 1)}>
+            Retry loading fields
+          </button>
+        </div>
+      )}
 
       {catalog && catalog.available_fields.length === 0 && (
         <p role="status">No qc/w/qr fields are available for this result.</p>
