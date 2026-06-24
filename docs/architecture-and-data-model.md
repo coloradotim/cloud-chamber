@@ -630,6 +630,14 @@ obvious before field inspection or 3-D visualization. It contains `Notebook`,
 result display name first and raw run IDs/paths second. Saved/protected result
 cards disable normal cleanup because they are keeper notebook entries.
 
+`Notebook` renders result-card metadata as mobile-first experiment notebook
+entries rather than an admin table. The primary view should surface the result
+story, cloud/rain outcomes, first cloud time, `qc` and `w` summaries,
+caveats/warnings, saved/protected state, and open/compare actions. Technical
+metadata such as raw run IDs, lifecycle/product states, controls used,
+provenance labels, and detailed caveats remains in disclosure so it is available
+without overwhelming the first read.
+
 `Explore` contains `2-D Slices` and `3-D View` sub-tabs for one selected result.
 The selected result ID flows from Results / Notebook, Results / Compare, and
 Results / Storage into Explore; those consumers request backend-prepared

@@ -1478,8 +1478,8 @@ function ResultsWorkspace({
     <section className="results-library" aria-labelledby="results-title">
       <div className="section-heading">
         <div>
-          <p className="eyebrow">Results</p>
-          <h2 id="results-title">Review, compare, and manage experiments</h2>
+          <h2 id="results-title">Experiment Notebook</h2>
+          <p>Review saved cloud experiments, compare variants, and open results for explanation.</p>
         </div>
       </div>
       {resultsStatus !== "Results loaded" && resultsStatus !== "Loading results..." && (
@@ -1505,39 +1505,6 @@ function ResultsWorkspace({
         ))}
       </nav>
 
-      {selectedResult && (
-        <section className="featured-result" aria-label="Selected result">
-          <div>
-            <p className="eyebrow">Selected experiment</p>
-            <h3>{selectedResult.name}</h3>
-            <p>
-              {selectedResult.scenario_name ?? selectedResult.scenario_id} ·{" "}
-              {humanize(selectedResult.run_size_preset)}
-            </p>
-          </div>
-          <div className="badge-row">
-            {isValidatedQuickLookBaseline(selectedResult) && (
-              <StatusBadge label="Validated quick-look baseline" tone="neutral" />
-            )}
-            <OutcomeBadge result={selectedResult} />
-            <StatusBadge label={rainOutcome(selectedResult.rain_present)} tone="neutral" />
-            {selectedResult.saved || selectedResult.protected ? (
-              <StatusBadge label="Saved" tone="good" />
-            ) : (
-              <StatusBadge label="Unsaved" tone="neutral" />
-            )}
-          </div>
-          <div className="button-row">
-            <button type="button" onClick={onInspect}>
-              Open in Explore
-            </button>
-            <button type="button" className="secondary-button" onClick={onOpenVisualizer}>
-              Open 3-D
-            </button>
-          </div>
-        </section>
-      )}
-
       {resultsError && <p role="alert">{resultsError}</p>}
 
       {activeTab === "notebook" && (
@@ -1553,6 +1520,9 @@ function ResultsWorkspace({
           onRefreshResults={onRefreshResults}
           onInspect={onInspect}
           onOpenVisualizer={onOpenVisualizer}
+          onCompare={() => onTabChange("compare")}
+          onOpenResultInExplore={onCompareInspect}
+          onOpenResultVisualizer={onCompareVisualize}
         />
       )}
 
@@ -1599,6 +1569,9 @@ function NotebookWorkspace({
   onRefreshResults,
   onInspect,
   onOpenVisualizer,
+  onCompare,
+  onOpenResultInExplore,
+  onOpenResultVisualizer,
 }: {
   results: ResultCard[];
   selectedResult: ResultCard | undefined;
@@ -1611,6 +1584,9 @@ function NotebookWorkspace({
   onRefreshResults: () => void;
   onInspect: () => void;
   onOpenVisualizer: () => void;
+  onCompare: () => void;
+  onOpenResultInExplore: (resultId: string) => void;
+  onOpenResultVisualizer: (resultId: string) => void;
 }) {
   return (
     <section
@@ -1621,18 +1597,20 @@ function NotebookWorkspace({
     >
       <div className="section-heading">
         <div>
-          <p className="eyebrow">Notebook</p>
-          <h3 id="notebook-title">Experiment Notebook</h3>
+              <p className="eyebrow">Notebook</p>
+              <h3 id="notebook-title">Notebook entries</h3>
         </div>
         <button type="button" onClick={onRefreshResults}>
           Refresh results
         </button>
       </div>
       <div className="results-layout">
-        <ResultsTable
+        <ExperimentNotebookList
           results={results}
           selectedResultId={selectedResultId}
           onSelect={onSelectResult}
+          onOpenExplore={onOpenResultInExplore}
+          onOpenVisualizer={onOpenResultVisualizer}
         />
         <ResultNotebookCard
           result={selectedResult}
@@ -1642,6 +1620,7 @@ function NotebookWorkspace({
           onSave={onSave}
           onInspect={onInspect}
           onOpenVisualizer={onOpenVisualizer}
+          onCompare={onCompare}
         />
       </div>
     </section>
@@ -2672,82 +2651,90 @@ function GuidedRunWorkflow({
   );
 }
 
-function ResultsTable({
+function ExperimentNotebookList({
   results,
   selectedResultId,
   onSelect,
+  onOpenExplore,
+  onOpenVisualizer,
 }: {
   results: ResultCard[];
   selectedResultId: string | null;
   onSelect: (resultId: string) => void;
+  onOpenExplore: (resultId: string) => void;
+  onOpenVisualizer: (resultId: string) => void;
 }) {
   if (results.length === 0) {
     return (
-      <section className="status-panel" aria-label="Results list">
-        <p>No ingested CM1 results yet.</p>
+      <section className="notebook-list-panel empty-results" aria-label="Results list">
+        <p className="eyebrow">Notebook empty</p>
+        <h3>No ingested CM1 results yet.</h3>
+        <p>
+          Completed and ingested CM1 runs will appear here as experiment notebook entries.
+        </p>
       </section>
     );
   }
 
   return (
-    <section className="table-panel" aria-label="Results list">
-      <table>
-        <thead>
-          <tr>
-            <th scope="col">Name</th>
-            <th scope="col">Scenario</th>
-            <th scope="col">Status</th>
-            <th scope="col">Run size</th>
-            <th scope="col">Outcome</th>
-            <th scope="col">Output</th>
-            <th scope="col">Saved</th>
-          </tr>
-        </thead>
-        <tbody>
-          {results.map((result) => (
-            <tr
+    <section className="notebook-list-panel" aria-label="Results list">
+      <p className="eyebrow">Experiment list</p>
+      <div className="experiment-card-list">
+        {results.map((result) => {
+          const selected = result.result_id === selectedResultId;
+          return (
+            <article
               key={result.result_id}
-              className={result.result_id === selectedResultId ? "selected-row" : ""}
+              className={`experiment-card${selected ? " selected-experiment-card" : ""}`}
+              aria-label={`${result.name} experiment`}
             >
-              <td>
+              <div className="experiment-card-main">
                 <button
                   type="button"
                   className="link-button"
                   onClick={() => onSelect(result.result_id)}
+                  aria-pressed={selected}
                 >
-                  {compactResultName(result.name)}
+                  {result.name}
                 </button>
-                <small>{formatDate(result.completed_at ?? result.created_at)}</small>
-              </td>
-              <td>{result.scenario_name ?? result.scenario_id}</td>
-              <td>
-                <StatusBadge label={userFacingStatus(result)} tone={statusTone(result)} />
-              </td>
-              <td>{humanize(result.run_size_preset)}</td>
-              <td>
+                <p className="experiment-subtitle">
+                  {result.scenario_name ?? humanize(result.scenario_id)} ·{" "}
+                  {humanize(result.run_size_preset)} · {formatDate(result.completed_at ?? result.created_at)}
+                </p>
                 <div className="badge-row">
                   <OutcomeBadge result={result} />
-                  {isValidatedQuickLookBaseline(result) && (
-                    <StatusBadge label="Validated quick-look baseline" tone="neutral" />
-                  )}
-                  <StatusBadge label={rainOutcome(result.rain_present)} tone="neutral" />
-                  {result.caveats.length > 0 && (
-                    <StatusBadge label={caveatLabel(result)} tone={caveatTone(result)} />
-                  )}
+                  <StatusBadge
+                    label={result.saved || result.protected ? "Saved" : "Unsaved"}
+                    tone={result.saved || result.protected ? "good" : "neutral"}
+                  />
                 </div>
-                <small>{result.diagnostics_summary ?? "Diagnostics unavailable"}</small>
-              </td>
-              <td>{outputSummary(result.output_file_summary)}</td>
-              <td>
-                <StatusBadge
-                  label={result.saved || result.protected ? "Saved" : "Unsaved"}
-                  tone={result.saved || result.protected ? "good" : "neutral"}
-                />
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+                <p className="result-story">{resultStory(result)}</p>
+              </div>
+              <div className="experiment-card-actions">
+                <button type="button" onClick={() => onOpenExplore(result.result_id)}>
+                  Open in Explore
+                </button>
+                <button
+                  type="button"
+                  className="secondary-button"
+                  onClick={() => onOpenVisualizer(result.result_id)}
+                >
+                  Open 3-D
+                </button>
+              </div>
+              <details className="technical-details">
+                <summary>Technical details</summary>
+                <dl className="metric-grid">
+                  <Metric label="Run ID" value={result.run_id} />
+                  <Metric label="Scenario ID" value={result.scenario_id} />
+                  <Metric label="State" value={userFacingStatus(result)} />
+                  <Metric label="Output" value={outputSummary(result.output_file_summary)} />
+                </dl>
+              </details>
+            </article>
+          );
+        })}
+      </div>
     </section>
   );
 }
@@ -2760,6 +2747,7 @@ function ResultNotebookCard({
   onSave,
   onInspect,
   onOpenVisualizer,
+  onCompare,
 }: {
   result: ResultCard | undefined;
   draft: { name: string; tags: string; notes: string };
@@ -2768,6 +2756,7 @@ function ResultNotebookCard({
   onSave: () => void;
   onInspect: () => void;
   onOpenVisualizer: () => void;
+  onCompare: () => void;
 }) {
   if (!result) {
     return (
@@ -2781,8 +2770,12 @@ function ResultNotebookCard({
     <section className="notebook-card" aria-label="Result detail">
       <div className="notebook-title">
         <div>
-          <p className="eyebrow">Result detail / notebook card</p>
+          <p className="eyebrow">Notebook entry</p>
           <h3>{result.name}</h3>
+          <p>
+            {result.scenario_name ?? humanize(result.scenario_id)} ·{" "}
+            {humanize(result.run_size_preset)}
+          </p>
         </div>
         <StatusBadge
           label={result.saved || result.protected ? "Saved" : "Unsaved"}
@@ -2793,44 +2786,46 @@ function ResultNotebookCard({
       <div className="badge-row">
         <OutcomeBadge result={result} />
         <StatusBadge label={rainOutcome(result.rain_present)} tone="neutral" />
-        {result.caveats.length > 0 && (
-          <StatusBadge label={caveatLabel(result)} tone={caveatTone(result)} />
-        )}
-        <StatusBadge label={userFacingStatus(result)} tone={statusTone(result)} />
       </div>
 
-      <dl className="metric-grid">
-        <Metric label="Run ID" value={result.run_id} />
-        <Metric label="Scenario" value={result.scenario_name ?? result.scenario_id} />
-        <Metric label="Run-size preset" value={humanize(result.run_size_preset)} />
-        <Metric
-          label="Diagnostics"
-          value={result.diagnostics_summary ?? "Diagnostics unavailable"}
-        />
+      <p className="result-story">{resultStory(result)}</p>
+
+      {(isValidatedQuickLookBaseline(result) || result.caveats.length > 0) && (
+        <p className="secondary-result-note">
+          {[
+            isValidatedQuickLookBaseline(result) ? "Validated quick-look baseline" : null,
+            result.caveats.length > 0 ? caveatLabel(result) : null,
+          ]
+            .filter(Boolean)
+            .join(" · ")}
+        </p>
+      )}
+
+      <dl className="metric-grid key-result-values">
         <Metric label="Cloud" value={cloudOutcome(result)} />
         <Metric label="Rain" value={rainOutcome(result.rain_present)} />
         <Metric label="First cloud time" value={formatSeconds(result.first_cloud_time_seconds)} />
         <Metric label="Max qc" value={formatScientific(result.max_qc_kg_kg, "kg/kg")} />
         <Metric label="Max w" value={formatNumber(result.max_w_m_s, "m/s")} />
         <Metric label="Min w" value={formatNumber(result.min_w_m_s, "m/s")} />
-        <Metric label="Output" value={outputSummary(result.output_file_summary)} />
       </dl>
 
-      <section aria-labelledby="caveats-title">
-        <h4 id="caveats-title">Caveats / warnings</h4>
-        {result.caveats.length > 0 ? (
-          <ul className="compact-list">
-            {result.caveats.map((caveat) => (
-              <li key={caveat}>{caveat}</li>
-            ))}
-          </ul>
-        ) : (
-          <p>No caveats recorded.</p>
-        )}
-      </section>
-
-      <details>
+      <details className="technical-details">
         <summary>Technical details</summary>
+        <dl className="metric-grid">
+          <Metric label="Run ID" value={result.run_id} />
+          <Metric label="Scenario ID" value={result.scenario_id} />
+          <Metric label="Lifecycle" value={result.source_lifecycle_state} />
+          <Metric label="Product state" value={result.source_product_state} />
+          <Metric label="Result state" value={result.status} />
+          <Metric label="Source model" value={result.source_model} />
+          <Metric label="Output" value={outputSummary(result.output_file_summary)} />
+          <Metric
+            label="Raw diagnostics"
+            value={result.diagnostics_summary ?? "Diagnostics unavailable"}
+          />
+        </dl>
+
         <section aria-labelledby="result-question-title">
           <h4 id="result-question-title">Physical question</h4>
           <p>{result.physical_question}</p>
@@ -2858,12 +2853,19 @@ function ResultNotebookCard({
               <li key={label}>{label}</li>
             ))}
           </ul>
-          <dl className="metric-grid">
-            <Metric label="Lifecycle" value={result.source_lifecycle_state} />
-            <Metric label="Product state" value={result.source_product_state} />
-            <Metric label="Result state" value={result.status} />
-            <Metric label="Source model" value={result.source_model} />
-          </dl>
+        </section>
+
+        <section aria-labelledby="caveats-title">
+          <h4 id="caveats-title">Caveats / warnings</h4>
+          {result.caveats.length > 0 ? (
+            <ul className="compact-list">
+              {result.caveats.map((caveat) => (
+                <li key={caveat}>{caveat}</li>
+              ))}
+            </ul>
+          ) : (
+            <p>No caveats recorded.</p>
+          )}
         </section>
       </details>
 
@@ -2891,15 +2893,20 @@ function ResultNotebookCard({
         />
 
         <div className="button-row">
-          <button type="submit">Update notebook</button>
-          <button type="button" onClick={onSave}>
-            Save result
-          </button>
           <button type="button" onClick={onInspect}>
-            Inspect fields
+            Open in Explore
           </button>
-          <button type="button" onClick={onOpenVisualizer}>
+          <button type="button" className="secondary-button" onClick={onOpenVisualizer}>
             Open 3-D
+          </button>
+          <button type="button" className="secondary-button" onClick={onCompare}>
+            Compare
+          </button>
+          <button type="submit" className="secondary-button">
+            Update notebook
+          </button>
+          <button type="button" className="secondary-button" onClick={onSave}>
+            Save result
           </button>
         </div>
       </form>
@@ -5424,10 +5431,6 @@ function exploreTabLabel(tab: ExploreTab): string {
   return labels[tab];
 }
 
-function compactResultName(value: string): string {
-  return value.length > 34 ? `${value.slice(0, 31)}...` : value;
-}
-
 function prioritizeResults(results: ResultCard[]): ResultCard[] {
   return [...results].sort((left, right) => resultPriority(right) - resultPriority(left));
 }
@@ -5506,6 +5509,22 @@ function comparisonMeaning(result: ResultCard | undefined): string {
   return result.diagnostics_summary ?? "Diagnostics unavailable";
 }
 
+function resultStory(result: ResultCard): string {
+  if (isDryFailedContrast(result)) {
+    return "Thermals rose, but low-level moisture stayed too dry for meaningful cloud water or rain.";
+  }
+  if (isValidatedQuickLookBaseline(result)) {
+    return "Cloud water formed in the validated quick-look baseline; vertical motion and rain were both detected.";
+  }
+  if (cloudOutcome(result) === "Cloud formed") {
+    return "Cloud water formed during this run. Open it in Explore to inspect the cloud and updraft structure.";
+  }
+  if (cloudOutcome(result) === "No cloud formed") {
+    return "No cloud formed by the current diagnostic threshold. The vertical velocity field may still explain the thermal behavior.";
+  }
+  return result.diagnostics_summary ?? "Diagnostics are not available yet.";
+}
+
 function userFacingStatus(result: ResultCard): string {
   if (result.saved || result.protected) return "Saved";
   if (result.source_lifecycle_state === "completed" && result.status.includes("ingested")) {
@@ -5526,18 +5545,6 @@ function caveatTone(result: ResultCard): "good" | "warning" | "neutral" {
   return cloudOutcome(result) === "Cloud formed" || isDryFailedContrast(result)
     ? "neutral"
     : "warning";
-}
-
-function statusTone(result: ResultCard): "good" | "warning" | "neutral" {
-  if (
-    result.caveats.length > 0 &&
-    cloudOutcome(result) !== "Cloud formed" &&
-    !isDryFailedContrast(result)
-  ) {
-    return "warning";
-  }
-  if (result.source_lifecycle_state === "completed") return "good";
-  return "neutral";
 }
 
 function cloudOutcome(result: ResultCard): string {

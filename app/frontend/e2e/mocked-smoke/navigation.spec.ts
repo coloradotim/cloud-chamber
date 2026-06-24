@@ -41,13 +41,14 @@ test.describe("mocked smoke: app shell", () => {
 
     await gotoApp(page);
 
-    await expect(page.getByRole("button", { name: /^Build$/ })).toBeVisible();
-    await expect(page.getByRole("button", { name: /^Results$/ })).toBeVisible();
-    await expect(page.getByRole("button", { name: /^Explore$/ })).toBeVisible();
-    await expect(page.getByRole("button", { name: /^Compare$/ })).toHaveCount(0);
-    await expect(page.getByRole("button", { name: /^Storage$/ })).toHaveCount(0);
-    await expect(page.getByRole("button", { name: /^Inspect$/ })).toHaveCount(0);
-    await expect(page.getByRole("button", { name: /^Visualize$/ })).toHaveCount(0);
+    const topNav = page.getByRole("navigation", { name: "Cloud Chamber workspace" });
+    await expect(topNav.getByRole("button", { name: /^Build$/ })).toBeVisible();
+    await expect(topNav.getByRole("button", { name: /^Results$/ })).toBeVisible();
+    await expect(topNav.getByRole("button", { name: /^Explore$/ })).toBeVisible();
+    await expect(topNav.getByRole("button", { name: /^Compare$/ })).toHaveCount(0);
+    await expect(topNav.getByRole("button", { name: /^Storage$/ })).toHaveCount(0);
+    await expect(topNav.getByRole("button", { name: /^Inspect$/ })).toHaveCount(0);
+    await expect(topNav.getByRole("button", { name: /^Visualize$/ })).toHaveCount(0);
     expect(consoleProblems).toEqual([]);
   });
 
