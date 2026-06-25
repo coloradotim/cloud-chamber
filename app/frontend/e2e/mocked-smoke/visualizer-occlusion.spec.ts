@@ -61,16 +61,18 @@ test.describe("mocked smoke: visualizer occlusion regression", () => {
 
   test("3-D scene does not cover its primary controls", async ({ page }) => {
     await expect(page.getByText(/what happened in this result/i).first()).toBeVisible({ timeout: 12_000 });
-    await expect(page.getByText(/what happened here/i).first()).toBeVisible();
-    const visualizerControls = page.getByLabel("Shared Explore controls");
-    await expect(visualizerControls.getByRole("button", { name: /oblique/i })).toBeVisible();
-    await expect(visualizerControls.getByRole("button", { name: /side x-?z/i })).toBeVisible();
+    await expect(page.getByLabel("True 3-D cloud-water viewer")).toBeVisible({
+      timeout: 12_000,
+    });
+    await expect(page.getByLabel("3-D camera controls")).toBeVisible();
 
     await expectClickableCenter(
       page,
-      page.getByRole("button", { name: /reset view/i }),
-      "Reset view",
+      page.getByRole("button", { name: /reset camera/i }),
+      "Reset camera",
     );
+    await expectClickableCenter(page, page.getByRole("button", { name: /zoom in/i }), "Zoom in");
+    await expectClickableCenter(page, page.getByRole("button", { name: /zoom out/i }), "Zoom out");
     await expectClickableCenter(
       page,
       page.getByLabel("Slice position"),
@@ -84,32 +86,22 @@ test.describe("mocked smoke: visualizer occlusion regression", () => {
     await expect(page.getByRole("heading", { name: "Inspect the current slice" })).toBeVisible();
   });
 
-  test("3-D plot labels stay visible and use a non-stretched scale frame", async ({ page }) => {
-    const scene = page.getByLabel("3-D scene container");
-    const description = page.getByLabel("Projection description");
-    const xAxisTicks = page.getByLabel(/x-axis ticks/).locator("span");
-    const contextLabel = page.locator(".scene-context-label").first();
-    const viewportFrame = page.locator(".viewport-frame").first();
+  test("true 3-D scene labels stay inside the viewer frame", async ({ page }) => {
+    const scene = page.getByLabel("True 3-D cloud-water viewer");
+    const canvasMount = page.getByLabel(
+      "Interactive Three.js scene showing CM1 cloud water, domain bounds, slice plane, and selected point",
+    );
+    const contextLabel = page.locator(".true3d-scene-label").first();
+    const sliceLabel = page.locator(".true3d-slice-label").first();
+    const cameraControls = page.getByLabel("3-D camera controls");
 
     await expect(scene).toBeVisible();
-    await expect(description).toBeVisible();
-    await expect(xAxisTicks.last()).toBeVisible();
-    await expectNoOverlap(xAxisTicks.last(), description, "Bottom x-axis label and description");
+    await expect(canvasMount).toBeVisible();
+    await expect(contextLabel).toBeVisible();
+    await expect(sliceLabel).toBeVisible();
+    await expect(cameraControls).toBeVisible();
     await expectInside(scene, contextLabel, "Scene context label");
-
-    const plotFrame = await viewportFrame.evaluate((element) => {
-      const styles = getComputedStyle(element);
-      return {
-        width: Number.parseFloat(styles.getPropertyValue("--plot-width")),
-        height: Number.parseFloat(styles.getPropertyValue("--plot-height")),
-      };
-    });
-
-    expect(plotFrame.height).toBeGreaterThan(0);
-    expect(plotFrame.width).toBeGreaterThan(0);
-    expect(
-      plotFrame.height,
-      "vertical plot scale should not stretch to match horizontal width",
-    ).toBeLessThan(plotFrame.width * 0.7);
+    await expectInside(scene, sliceLabel, "Slice plane label");
+    await expectNoOverlap(canvasMount, cameraControls, "Canvas mount and camera controls");
   });
 });

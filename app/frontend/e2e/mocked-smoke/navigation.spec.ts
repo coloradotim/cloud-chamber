@@ -65,7 +65,7 @@ test.describe("mocked smoke: app shell", () => {
 
     await gotoExplore(page);
     await expect(page.getByLabel("Explore this result")).toBeVisible();
-    await expect(page.getByLabel("Shared Explore controls")).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByLabel("Explore viewer controls")).toBeVisible({ timeout: 10_000 });
     await expect(page.getByRole("tab", { name: "2-D Slices" })).toHaveCount(0);
     await expect(page.getByRole("tab", { name: "3-D View" })).toHaveCount(0);
   });

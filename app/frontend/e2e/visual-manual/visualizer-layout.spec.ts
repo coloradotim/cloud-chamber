@@ -20,14 +20,12 @@ test.describe("visual/manual: 3-D workbench layout", () => {
     await expect(page.getByText(/cloud-water point cloud loaded/i).first()).toBeVisible({
       timeout: 12_000,
     });
-    await expect(page.getByText(/cloud-water threshold/i).first()).toBeVisible();
-    await expect(page.getByText(/oblique overview/i).first()).toBeVisible();
-    await expect(page.getByRole("button", { name: /side x-?z/i })).toBeVisible();
-    await page
-      .getByText(/about this visualization/i)
-      .first()
-      .click();
+    await expect(page.getByText("Cloud-water rendering").first()).toBeVisible();
+    await expect(page.getByLabel("Cloud-water threshold")).toBeVisible();
+    await expect(page.getByLabel("True 3-D cloud-water viewer")).toBeVisible();
+    await expect(page.getByRole("button", { name: /reset camera/i })).toBeVisible();
+    await expect(page.getByLabel("Domain axis dimensions")).toBeVisible();
+    await page.getByText(/technical visualization details/i).first().click();
     await expect(page.getByText(/visualizer interpretation/i).first()).toBeVisible();
-    await expect(page.getByRole("button", { name: /reset view/i })).toBeVisible();
   });
 });

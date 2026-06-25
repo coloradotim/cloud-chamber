@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import type { CSSProperties, FormEvent } from "react";
 
 import "./App.css";
+import { True3DViewer } from "./True3DViewer";
 
 type ControlOption = {
   value: string;
@@ -438,7 +439,6 @@ type ProcessMode =
   | "cloud_lifecycle"
   | "deep_breakthrough"
   | "precipitation_feedback";
-type ProjectionMode = "oblique" | "side_xz" | "side_yz" | "top_down";
 type SceneSlicePlane = "horizontal" | "vertical_x" | "vertical_y";
 
 const FIELD_LOAD_TIMEOUT_MS = 30000;
@@ -3364,13 +3364,11 @@ function VisualizerSceneShell({ result }: { result: ResultCard }) {
   );
   const [selectedFieldName, setSelectedFieldName] = useState("");
   const [timeIndex, setTimeIndex] = useState(0);
-  const [zoom, setZoom] = useState(100);
   const [threshold, setThreshold] = useState(1e-6);
   const [opacity, setOpacity] = useState(0.68);
   const [pointSize, setPointSize] = useState(11);
   const [pointCloud, setPointCloud] = useState<PointCloudResponse | null>(null);
   const [processMode, setProcessMode] = useState<ProcessMode>("thermal_fate");
-  const [projectionMode, setProjectionMode] = useState<ProjectionMode>("oblique");
   const [showSlicePlanes, setShowSlicePlanes] = useState(true);
   const [sliceFieldName, setSliceFieldName] = useState("qc");
   const [activeSlicePlane, setActiveSlicePlane] = useState<SceneSlicePlane>("horizontal");
@@ -3401,13 +3399,11 @@ function VisualizerSceneShell({ result }: { result: ResultCard }) {
     setSceneError(null);
     setSelectedFieldName("");
     setTimeIndex(0);
-    setZoom(100);
     setThreshold(1e-6);
     setOpacity(0.68);
     setPointSize(11);
     setPointCloud(null);
     setProcessMode("thermal_fate");
-    setProjectionMode("oblique");
     setShowSlicePlanes(true);
     setSliceFieldName("qc");
     setActiveSlicePlane("horizontal");
@@ -3517,14 +3513,7 @@ function VisualizerSceneShell({ result }: { result: ResultCard }) {
   const selectedTimeLabel = formatTimeValue(selectedTimeValue);
   const activeSlice = activeSlicePlane === "horizontal" ? sceneHorizontalSlice : sceneVerticalSlice;
   const activeSliceLabel = slicePlainLabel(activeSlice, activeSlicePlane, activeSliceIndex);
-  const activeSliceAxisSummary = sliceAxisSummary(activeSlice, activeSlicePlane);
   const selectedSliceValue = selectedSliceCellValue(activeSlice, selectedRegion);
-  const selectedContextPointStyle = selectedRegionContextPointStyle(
-    selectedRegion,
-    { x: sliceXSize, y: sliceYSize, z: sliceVerticalSize },
-    pointCloud,
-    projectionMode,
-  );
   const timePresets = [
     result.time_of_max_qc_seconds !== null && result.time_of_max_qc_seconds !== undefined
       ? { label: "Max cloud water", seconds: result.time_of_max_qc_seconds }
@@ -3686,11 +3675,6 @@ function VisualizerSceneShell({ result }: { result: ResultCard }) {
     setSelectedRegion(selectionFromSlice(slice, rowIndex, columnIndex, "point"));
   }
 
-  function resetView() {
-    setZoom(100);
-    setProjectionMode("oblique");
-  }
-
   return (
     <section className="visualizer-shell" aria-labelledby="visualizer-shell-title">
       <div className="section-heading">
@@ -3714,356 +3698,250 @@ function VisualizerSceneShell({ result }: { result: ResultCard }) {
         <p role="status">No visualization-ready fields are available for this result.</p>
       )}
 
-      {catalog && sliceField && selectedField && (
-        <section className="explore-shared-controls" aria-label="Shared Explore controls">
-          <div className="explore-control-group explore-control-group-time">
-            <label htmlFor="explore-time">
-              Time
-              <select
-                id="explore-time"
-                value={Math.min(timeIndex, timeMax)}
-                onChange={(event) => setTimeIndex(Number(event.target.value))}
-              >
-                {timeOptions.map((value, index) => (
-                  <option key={`${value}-${index}`} value={index}>
-                    {formatTimeValue(value)}
-                  </option>
-                ))}
-              </select>
-            </label>
-
-            <div className="time-preset-buttons" aria-label="Time presets">
-              {timePresets.map((preset) => (
-                <button
-                  key={preset.label}
-                  type="button"
-                  onClick={() => setTimeIndex(closestTimeIndex(timeOptions, preset.seconds))}
-                >
-                  {preset.label}
-                </button>
-              ))}
-              <button type="button" onClick={() => setTimeIndex(timeMax)}>Last frame</button>
-            </div>
-          </div>
-
-          <div className="explore-control-group explore-control-group-slice">
-            <label htmlFor="explore-slice-field">
-              Slice field
-              <select
-                id="explore-slice-field"
-                value={sliceFieldName}
-                onChange={(event) => {
-                  const nextField = catalog.available_fields.find(
-                    (field) => field.raw_field_name === event.target.value,
-                  );
-                  setSliceFieldName(event.target.value);
-                  const nextDefaults = defaultsForField(viewDefaults, event.target.value);
-                  setHorizontalSliceLevel(defaultHorizontalLevel(nextField, nextDefaults));
-                  setVerticalSliceIndex(defaultVerticalIndex(nextField, sliceOrientation, nextDefaults));
-                  setSelectedRegion(null);
-                }}
-              >
-                {catalog.available_fields.map((field) => (
-                  <option key={field.raw_field_name} value={field.raw_field_name}>
-                    {field.raw_field_name} - {field.display_name}
-                  </option>
-                ))}
-              </select>
-            </label>
-
-            <fieldset className="view-mode-control">
-              <legend>Slice orientation</legend>
-              <div className="segmented-buttons">
-                <button
-                  type="button"
-                  className={activeSlicePlane === "horizontal" ? "active-control" : ""}
-                  onClick={() => {
-                    setActiveSlicePlane("horizontal");
-                    setProjectionMode("top_down");
-                    setSelectedRegion(null);
-                  }}
-                >
-                  Horizontal layer
-                </button>
-                <button
-                  type="button"
-                  className={activeSlicePlane === "vertical_x" ? "active-control" : ""}
-                  onClick={() => {
-                    setActiveSlicePlane("vertical_x");
-                    setSliceOrientation("vertical_x");
-                    setProjectionMode("side_xz");
-                    setSelectedRegion(null);
-                  }}
-                >
-                  Vertical x-z slice
-                </button>
-                <button
-                  type="button"
-                  className={activeSlicePlane === "vertical_y" ? "active-control" : ""}
-                  onClick={() => {
-                    setActiveSlicePlane("vertical_y");
-                    setSliceOrientation("vertical_y");
-                    setProjectionMode("side_yz");
-                    setSelectedRegion(null);
-                  }}
-                >
-                  Vertical y-z slice
-                </button>
-              </div>
-            </fieldset>
-          </div>
-
-          <div className="explore-control-group explore-control-group-position">
-            <label htmlFor="explore-slice-position">
-              Slice position
-              <input
-                id="explore-slice-position"
-                aria-label="Slice position"
-                type="range"
-                min={0}
-                max={Math.max(0, activeSliceMax - 1)}
-                value={activeSliceIndex}
-                onChange={(event) => {
-                  const nextIndex = Number(event.target.value);
-                  if (activeSlicePlane === "horizontal") {
-                    setHorizontalSliceLevel(nextIndex);
-                  } else {
-                    setVerticalSliceIndex(nextIndex);
-                  }
-                  setSelectedRegion(null);
-                }}
-              />
-              <span className="slice-position-label">
-                {activeSlicePositionLabel || `index ${activeSliceIndex}`}{" "}
-                <small>index {activeSliceIndex}</small>
-              </span>
-            </label>
-
-            <div className="button-row slice-move-buttons">
-              <button
-                type="button"
-                onClick={() => {
-                  const nextIndex = Math.max(0, activeSliceIndex - 1);
-                  if (activeSlicePlane === "horizontal") {
-                    setHorizontalSliceLevel(nextIndex);
-                  } else {
-                    setVerticalSliceIndex(nextIndex);
-                  }
-                  setSelectedRegion(null);
-                }}
-              >
-                {activeSlicePlane === "horizontal" ? "Move down" : "Move back"}
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  const nextIndex = Math.min(Math.max(0, activeSliceMax - 1), activeSliceIndex + 1);
-                  if (activeSlicePlane === "horizontal") {
-                    setHorizontalSliceLevel(nextIndex);
-                  } else {
-                    setVerticalSliceIndex(nextIndex);
-                  }
-                  setSelectedRegion(null);
-                }}
-              >
-                {activeSlicePlane === "horizontal" ? "Move up" : "Move forward"}
-              </button>
-            </div>
-          </div>
-
-          <div className="explore-control-group explore-control-group-view">
-            <fieldset className="view-mode-control">
-              <legend>View</legend>
-              <div className="segmented-buttons">
-                <button
-                  type="button"
-                  className={projectionMode === "oblique" ? "active-control" : ""}
-                  onClick={() => setProjectionMode("oblique")}
-                >
-                  Oblique
-                </button>
-                <button
-                  type="button"
-                  className={projectionMode === "side_xz" ? "active-control" : ""}
-                  onClick={() => setProjectionMode("side_xz")}
-                >
-                  Side x-z
-                </button>
-                <button
-                  type="button"
-                  className={projectionMode === "side_yz" ? "active-control" : ""}
-                  onClick={() => setProjectionMode("side_yz")}
-                >
-                  Side y-z
-                </button>
-                <button
-                  type="button"
-                  className={projectionMode === "top_down" ? "active-control" : ""}
-                  onClick={() => setProjectionMode("top_down")}
-                >
-                  Top-down
-                </button>
-              </div>
-            </fieldset>
-
-            <label htmlFor="scene-zoom">
-              Zoom
-              <input
-                id="scene-zoom"
-                aria-label="Zoom"
-                type="range"
-                min={70}
-                max={160}
-                value={zoom}
-                onChange={(event) => setZoom(Number(event.target.value))}
-              />
-              <span>{zoom}%</span>
-            </label>
-
-            <label className="checkbox-label" htmlFor="show-slice-plane">
-              <input
-                id="show-slice-plane"
-                type="checkbox"
-                checked={showSlicePlanes}
-                onChange={(event) => setShowSlicePlanes(event.target.checked)}
-              />
-              Show slice plane
-            </label>
-
-            <button type="button" onClick={resetView}>
-              Reset view
-            </button>
-          </div>
-        </section>
-      )}
-
-      {catalog && sliceField && (
-        <div className="linked-view-strip" aria-label="Linked Explore view summary">
-          <span>
-            <strong>3-D context:</strong>{" "}
-            {qcField ? "qc — Cloud water" : "cloud-water context unavailable"}
-          </span>
-          <span>
-            <strong>Current slice plane:</strong> {activeSliceLabel}
-          </span>
-          <span>
-            <strong>Slice axes:</strong> {activeSliceAxisSummary}
-          </span>
-          <span>
-            <strong>2-D slice field:</strong> {sliceField.raw_field_name} —{" "}
-            {sliceField.display_name}
-          </span>
-        </div>
-      )}
-
       <div className="visualizer-workbench" aria-label="Scientific visualization workbench">
         <div className="visualizer-stage" aria-label="Fixed visualization viewport region">
-          <div className="scene-container" aria-label="3-D scene container">
-            <div className="viewport-frame" style={plotFrameStyle(pointCloud, projectionMode)}>
-              <div className="scene-horizon" />
-              <div className={`scene-grid scene-grid-${projectionMode}`} />
-              <div className="plot-axis-labels" aria-label="Domain axes">
-                <span className="axis-label axis-label-x">
-                  {projectionMode === "side_yz" ? "y" : "x"}
-                </span>
-                <span className="axis-label axis-label-y">
-                  {projectionMode === "side_xz"
-                    ? "viewing along y"
-                    : projectionMode === "top_down"
-                      ? "y"
-                      : "depth y"}
-                </span>
-                <span className="axis-label axis-label-z">
-                  {projectionMode === "top_down" ? "top-down x-y" : "height z"}
-                </span>
-                <span className="ground-label">domain floor</span>
-              </div>
-              <div
-                className="plot-data-layer"
-                aria-label="Zoomable visualizer data layer"
-                style={{ transform: `scale(${zoom / 100})` }}
-              >
-                {showSlicePlanes && (
-                  <SliceGuidePlane
-                    title={activeSliceLabel}
-                    slice={
-                      activeSlicePlane === "horizontal" ? sceneHorizontalSlice : sceneVerticalSlice
-                    }
-                    pointCloud={pointCloud}
-                    projectionMode={projectionMode}
-                  />
-                )}
-                {pointCloud && pointCloud.points.length > 0 && (
-                  <div className="point-cloud-layer" aria-label="Cloud-water point cloud">
-                    {pointCloud.points.map((point, index) => (
-                      <span
-                        className="cloud-point"
-                        key={`${point.join("-")}-${index}`}
-                        style={cloudPointStyle(
-                          point,
-                          pointCloud,
-                          projectionMode,
-                          pointCloud.stats,
-                          opacity,
-                          pointSize,
-                        )}
-                      />
+          <True3DViewer
+            resultName={result.name}
+            pointCloud={pointCloud}
+            activeSlice={
+              activeSlicePlane === "horizontal" ? sceneHorizontalSlice : sceneVerticalSlice
+            }
+            activeSliceLabel={activeSliceLabel}
+            showSlicePlane={showSlicePlanes}
+            selectedRegion={selectedRegion}
+            coordinateSizes={{ x: sliceXSize, y: sliceYSize, z: sliceVerticalSize }}
+            selectedTimeLabel={selectedTimeLabel}
+            thresholdLabel={formatScientific(threshold, "kg/kg")}
+            opacity={opacity}
+            pointSize={pointSize}
+            status={sceneStatus}
+            provenanceLabel={provenanceLabel}
+            noCloudMessage={
+              !qcField
+                ? "Cloud water field qc is not available for this result."
+                : isNoCloudWithUpdraft
+                  ? "No cloud water formed in this result; vertical velocity is available."
+                  : "No cloud water above the selected threshold at this time."
+            }
+          />
+          {catalog && sliceField && selectedField && (
+            <section className="explore-control-deck" aria-label="Explore viewer controls">
+              <fieldset className="explore-control-card explore-control-card-time">
+                <legend>Time</legend>
+                <label htmlFor="explore-time">
+                  Output time
+                  <select
+                    id="explore-time"
+                    aria-label="Time"
+                    value={Math.min(timeIndex, timeMax)}
+                    onChange={(event) => setTimeIndex(Number(event.target.value))}
+                  >
+                    {timeOptions.map((value, index) => (
+                      <option key={`${value}-${index}`} value={index}>
+                        {formatTimeValue(value)}
+                      </option>
                     ))}
-                  </div>
-                )}
-                {selectedContextPointStyle && (
-                  <span
-                    className="selected-context-point"
-                    aria-label="Selected point in context view"
-                    style={selectedContextPointStyle}
+                  </select>
+                </label>
+
+                <div className="time-preset-buttons" aria-label="Time presets">
+                  {timePresets.map((preset) => (
+                    <button
+                      key={preset.label}
+                      type="button"
+                      onClick={() => setTimeIndex(closestTimeIndex(timeOptions, preset.seconds))}
+                    >
+                      {preset.label}
+                    </button>
+                  ))}
+                  <button type="button" onClick={() => setTimeIndex(timeMax)}>Last frame</button>
+                </div>
+              </fieldset>
+
+              <fieldset className="explore-control-card explore-control-card-slice">
+                <legend>Slice</legend>
+                <label htmlFor="explore-slice-field">
+                  Field
+                  <select
+                    id="explore-slice-field"
+                    aria-label="Slice field"
+                    value={sliceFieldName}
+                    onChange={(event) => {
+                      const nextField = catalog.available_fields.find(
+                        (field) => field.raw_field_name === event.target.value,
+                      );
+                      setSliceFieldName(event.target.value);
+                      const nextDefaults = defaultsForField(viewDefaults, event.target.value);
+                      setHorizontalSliceLevel(defaultHorizontalLevel(nextField, nextDefaults));
+                      setVerticalSliceIndex(defaultVerticalIndex(nextField, sliceOrientation, nextDefaults));
+                      setSelectedRegion(null);
+                    }}
+                  >
+                    {catalog.available_fields.map((field) => (
+                      <option key={field.raw_field_name} value={field.raw_field_name}>
+                        {field.raw_field_name} - {field.display_name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+
+                <div className="segmented-buttons" aria-label="Slice orientation">
+                  <button
+                    type="button"
+                    className={activeSlicePlane === "horizontal" ? "active-control" : ""}
+                    onClick={() => {
+                      setActiveSlicePlane("horizontal");
+                      setSelectedRegion(null);
+                    }}
+                  >
+                    Horizontal layer
+                  </button>
+                  <button
+                    type="button"
+                    className={activeSlicePlane === "vertical_x" ? "active-control" : ""}
+                    onClick={() => {
+                      setActiveSlicePlane("vertical_x");
+                      setSliceOrientation("vertical_x");
+                      setSelectedRegion(null);
+                    }}
+                  >
+                    Vertical x-z slice
+                  </button>
+                  <button
+                    type="button"
+                    className={activeSlicePlane === "vertical_y" ? "active-control" : ""}
+                    onClick={() => {
+                      setActiveSlicePlane("vertical_y");
+                      setSliceOrientation("vertical_y");
+                      setSelectedRegion(null);
+                    }}
+                  >
+                    Vertical y-z slice
+                  </button>
+                </div>
+
+                <label htmlFor="explore-slice-position">
+                  Position
+                  <input
+                    id="explore-slice-position"
+                    aria-label="Slice position"
+                    type="range"
+                    min={0}
+                    max={Math.max(0, activeSliceMax - 1)}
+                    value={activeSliceIndex}
+                    onChange={(event) => {
+                      const nextIndex = Number(event.target.value);
+                      if (activeSlicePlane === "horizontal") {
+                        setHorizontalSliceLevel(nextIndex);
+                      } else {
+                        setVerticalSliceIndex(nextIndex);
+                      }
+                      setSelectedRegion(null);
+                    }}
                   />
-                )}
-              </div>
-              {showSlicePlanes && (
-                <SliceGuideLabel
-                  title={activeSliceLabel}
-                  slice={activeSlicePlane === "horizontal" ? sceneHorizontalSlice : sceneVerticalSlice}
-                  pointCloud={pointCloud}
-                  projectionMode={projectionMode}
-                />
-              )}
-              <ScaleMarkers pointCloud={pointCloud} projectionMode={projectionMode} />
-              <div className="scene-context-label">
-                <strong>{projectionLabel(projectionMode)}</strong>
-                <span>{selectedTimeLabel}</span>
-                <span>Cloud-water threshold {formatScientific(threshold, "kg/kg")}</span>
-              </div>
-            </div>
-            <p className="projection-description" aria-label="Projection description">
-              {projectionDescription(projectionMode)}
-            </p>
-            {(!pointCloud || pointCloud.points.length === 0) && (
-              <div className="scene-empty-state">
-                <p className="eyebrow">Cloud-water point cloud</p>
-                <h3>
-                  {!qcField
-                    ? "Cloud water field qc is not available for this result."
-                    : isNoCloudWithUpdraft
-                      ? "No cloud water formed in this result; vertical velocity is available."
-                      : "No cloud water above the selected threshold at this time."}
-                </h3>
-                <p>
-                  {!qcField
-                    ? "Use available fields such as vertical velocity when present. Rendering remains an interpretation of CM1-derived data."
-                    : isNoCloudWithUpdraft
-                      ? "This no-cloud result is still useful: use the vertical velocity field (w) to inspect the thermals."
-                      : "Adjust the time or threshold after qc is available. Rendering remains an interpretation of CM1-derived data."}
-                </p>
-              </div>
-            )}
-          </div>
+                  <span className="slice-position-label">
+                    {activeSlicePositionLabel || `index ${activeSliceIndex}`}{" "}
+                    <small>index {activeSliceIndex}</small>
+                  </span>
+                </label>
+
+                <div className="button-row slice-move-buttons">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const nextIndex = Math.max(0, activeSliceIndex - 1);
+                      if (activeSlicePlane === "horizontal") {
+                        setHorizontalSliceLevel(nextIndex);
+                      } else {
+                        setVerticalSliceIndex(nextIndex);
+                      }
+                      setSelectedRegion(null);
+                    }}
+                  >
+                    {activeSlicePlane === "horizontal" ? "Move down" : "Move back"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const nextIndex = Math.min(
+                        Math.max(0, activeSliceMax - 1),
+                        activeSliceIndex + 1,
+                      );
+                      if (activeSlicePlane === "horizontal") {
+                        setHorizontalSliceLevel(nextIndex);
+                      } else {
+                        setVerticalSliceIndex(nextIndex);
+                      }
+                      setSelectedRegion(null);
+                    }}
+                  >
+                    {activeSlicePlane === "horizontal" ? "Move up" : "Move forward"}
+                  </button>
+                </div>
+
+                <label className="checkbox-label" htmlFor="show-slice-plane">
+                  <input
+                    id="show-slice-plane"
+                    type="checkbox"
+                    checked={showSlicePlanes}
+                    onChange={(event) => setShowSlicePlanes(event.target.checked)}
+                  />
+                  Show slice plane
+                </label>
+              </fieldset>
+
+              <fieldset className="explore-control-card explore-control-card-rendering">
+                <legend>Cloud-water rendering</legend>
+                <label htmlFor="cloud-threshold">
+                  Threshold
+                  <input
+                    id="cloud-threshold"
+                    aria-label="Cloud-water threshold"
+                    type="number"
+                    min={0}
+                    step="0.000001"
+                    value={threshold}
+                    onChange={(event) => setThreshold(Number(event.target.value))}
+                    disabled={!qcField}
+                  />
+                </label>
+                <label htmlFor="cloud-opacity">
+                  Opacity
+                  <input
+                    id="cloud-opacity"
+                    aria-label="Cloud opacity"
+                    type="range"
+                    min={0.1}
+                    max={1}
+                    step={0.05}
+                    value={opacity}
+                    onChange={(event) => setOpacity(Number(event.target.value))}
+                  />
+                  <output htmlFor="cloud-opacity">{opacity}</output>
+                </label>
+                <label htmlFor="cloud-point-size">
+                  Point size
+                  <input
+                    id="cloud-point-size"
+                    aria-label="Point size"
+                    type="range"
+                    min={3}
+                    max={18}
+                    value={pointSize}
+                    onChange={(event) => setPointSize(Number(event.target.value))}
+                  />
+                  <output htmlFor="cloud-point-size">{pointSize}px</output>
+                </label>
+              </fieldset>
+            </section>
+          )}
         </div>
 
         <aside className="visualizer-details-panel" aria-label="Visualization details">
           <ResultExplanationPanel result={result} isNoCloudWithUpdraft={isNoCloudWithUpdraft} />
 
           <details className="technical-details">
-            <summary>Evidence details</summary>
+            <summary>Process evidence details</summary>
             <ProcessModeControl processMode={processMode} onProcessModeChange={setProcessMode} />
             <ProcessOverlayPanel
               result={result}
@@ -4074,97 +3952,57 @@ function VisualizerSceneShell({ result }: { result: ResultCard }) {
             />
           </details>
 
-          <div className="summary-strip">
-            <Metric
-              label="Selected time"
-              value={formatTimeValue(timeOptions[Math.min(timeIndex, timeMax)] ?? null)}
-            />
-            <Metric
-              label="Points"
-              value={
-                pointCloud
-                  ? `${pointCloud.stats.returned_count.toLocaleString()} of ${pointCloud.stats.source_count.toLocaleString()}`
-                  : "Unavailable"
-              }
-            />
-            <Metric
-              label="Cloud-water range"
-              value={
-                pointCloud
-                  ? `${formatMaybeNumber(pointCloud.stats.min_value, selectedField?.units ?? "kg/kg")} to ${formatMaybeNumber(
-                      pointCloud.stats.max_value,
-                      selectedField?.units ?? "kg/kg",
-                    )}`
-                  : "Unavailable"
-              }
-            />
-          </div>
-
-          {pointCloud?.stats.downsampled && (
-            <p role="status">
-              Point cloud downsampled with deterministic stride {pointCloud.stats.downsample_stride}
-              .
-            </p>
-          )}
           {sliceError && <p role="alert">{sliceError}</p>}
 
-          <details>
-            <summary>About this visualization</summary>
-            <fieldset className="technical-rendering-controls">
-              <legend>Rendering controls</legend>
-              <label htmlFor="cloud-threshold">
-                Cloud-water threshold
-                <input
-                  id="cloud-threshold"
-                  type="number"
-                  min={0}
-                  step="0.000001"
-                  value={threshold}
-                  onChange={(event) => setThreshold(Number(event.target.value))}
-                  disabled={!qcField}
-                />
-              </label>
-              <label htmlFor="cloud-opacity">
-                Cloud opacity
-                <input
-                  id="cloud-opacity"
-                  type="range"
-                  min={0.1}
-                  max={1}
-                  step={0.05}
-                  value={opacity}
-                  onChange={(event) => setOpacity(Number(event.target.value))}
-                />
-              </label>
-              <label htmlFor="cloud-point-size">
-                Point size
-                <input
-                  id="cloud-point-size"
-                  type="range"
-                  min={3}
-                  max={18}
-                  value={pointSize}
-                  onChange={(event) => setPointSize(Number(event.target.value))}
-                />
-              </label>
-            </fieldset>
+          <details className="technical-details">
+            <summary>Technical visualization details</summary>
             <dl className="metric-grid">
               <Metric label="Run ID" value={result.run_id} />
-              <Metric label="View control" value="2.5-D fixed projection; data-only zoom" />
-              <Metric label="Zoom" value={`${zoom}%`} />
-              <Metric label="Opacity" value={String(opacity)} />
-              <Metric label="Point size" value={`${pointSize}px`} />
-              <Metric label="Slice plane visible" value={showSlicePlanes ? "Yes" : "No"} />
               <Metric
-                label="Selected field"
+                label="Renderer"
+                value="Direct Three.js point cloud"
+              />
+              <Metric
+                label="Source field"
                 value={
                   selectedField
                     ? `${selectedField.raw_field_name} (${selectedField.display_name})`
                     : "Unavailable"
                 }
               />
+              <Metric label="Selected time" value={selectedTimeLabel} />
+              <Metric label="Slice plane" value={activeSliceLabel} />
+              <Metric label="Slice plane visible" value={showSlicePlanes ? "Yes" : "No"} />
               <Metric label="Threshold" value={formatScientific(threshold, "kg/kg")} />
-              <Metric label="Rendering method" value="thresholded_point_cloud" />
+              <Metric label="Opacity" value={String(opacity)} />
+              <Metric label="Point size" value={`${pointSize}px`} />
+              <Metric
+                label="Point count"
+                value={
+                  pointCloud
+                    ? `${pointCloud.stats.returned_count.toLocaleString()} of ${pointCloud.stats.source_count.toLocaleString()}`
+                    : "Unavailable"
+                }
+              />
+              <Metric
+                label="Cloud-water range"
+                value={
+                  pointCloud
+                    ? `${formatMaybeNumber(pointCloud.stats.min_value, selectedField?.units ?? "kg/kg")} to ${formatMaybeNumber(
+                        pointCloud.stats.max_value,
+                        selectedField?.units ?? "kg/kg",
+                      )}`
+                    : "Unavailable"
+                }
+              />
+              <Metric
+                label="Downsampling"
+                value={
+                  pointCloud?.stats.downsampled
+                    ? `Deterministic stride ${pointCloud.stats.downsample_stride}`
+                    : "Not applied"
+                }
+              />
               <Metric
                 label="Default source"
                 value={
@@ -4174,7 +4012,7 @@ function VisualizerSceneShell({ result }: { result: ResultCard }) {
                 }
               />
               <Metric
-                label="Slice field"
+                label="Slice source"
                 value={
                   sliceField
                     ? `${sliceField.raw_field_name} (${sliceField.display_name})`
@@ -4188,10 +4026,9 @@ function VisualizerSceneShell({ result }: { result: ResultCard }) {
                     ? `${sceneHorizontalSlice.selection.orientation} at ${sceneHorizontalSlice.selection.selected_dimension}[${sceneHorizontalSlice.selection.selected_index}]`
                     : sceneVerticalSlice
                       ? `${sceneVerticalSlice.selection.orientation} at ${sceneVerticalSlice.selection.selected_dimension}[${sceneVerticalSlice.selection.selected_index}]`
-                      : "Unavailable"
+                  : "Unavailable"
                 }
               />
-              <Metric label="Projection" value={humanize(projectionMode)} />
               <Metric label="Domain x extent" value={extentLabel(pointCloud, "xh")} />
               <Metric label="Domain y extent" value={extentLabel(pointCloud, "yh")} />
               <Metric label="Domain z extent" value={extentLabel(pointCloud, "zh")} />
@@ -4213,18 +4050,13 @@ function VisualizerSceneShell({ result }: { result: ResultCard }) {
               />
             </dl>
 
-            <div className="slice-plane-summary">
-              <SceneSliceSummary title="Horizontal slice plane" slice={sceneHorizontalSlice} />
-              <SceneSliceSummary title="Vertical slice plane" slice={sceneVerticalSlice} />
-            </div>
-
             <section aria-labelledby="visualizer-provenance-title">
               <h3 id="visualizer-provenance-title">Provenance / rendering labels</h3>
               <ul className="compact-list">
                 <li>{provenanceLabel}</li>
                 <li>Visualizer interpretation of CM1-derived output</li>
                 <li>Processing method: native-grid thresholded point cloud</li>
-                <li>Rendering method: thresholded point cloud</li>
+                <li>Rendering method: direct Three.js thresholded point cloud</li>
                 <li>Slice planes: native-grid JSON slices from the backend</li>
                 <li>No raw NetCDF parsing in the browser</li>
                 <li>
@@ -4327,315 +4159,6 @@ function ResultExplanationPanel({
           ))}
         </ul>
       </details>
-    </section>
-  );
-}
-
-function SliceGuidePlane({
-  title,
-  slice,
-  pointCloud,
-  projectionMode,
-}: {
-  title: string;
-  slice: SliceResponse | null;
-  pointCloud: PointCloudResponse | null;
-  projectionMode: ProjectionMode;
-}) {
-  if (!slice) return null;
-  const marker = sliceGuidePlaneStyle(slice, pointCloud, projectionMode);
-  return (
-    <div
-      className={`slice-guide-plane slice-guide-plane-${slice.selection.orientation}`}
-      aria-label={`${title} full-domain slice plane`}
-      role="note"
-      style={marker}
-    />
-  );
-}
-
-function SliceGuideLabel({
-  title,
-  slice,
-  pointCloud,
-  projectionMode,
-}: {
-  title: string;
-  slice: SliceResponse | null;
-  pointCloud: PointCloudResponse | null;
-  projectionMode: ProjectionMode;
-}) {
-  if (!slice) return null;
-  return (
-    <p className="slice-guide-label" style={sliceGuideLabelStyle(slice, pointCloud, projectionMode)}>
-      {title}
-    </p>
-  );
-}
-
-function sliceGuidePlaneStyle(
-  slice: SliceResponse,
-  pointCloud: PointCloudResponse | null,
-  projectionMode: ProjectionMode,
-): CSSProperties & Record<string, string> {
-  const fixed = selectedSliceNormalizedCoordinate(slice, pointCloud);
-  const frame = plotFrame(pointCloud, projectionMode);
-
-  if (slice.selection.orientation === "horizontal") {
-    const projected = projectPoint(0, 0, fixed, projectionMode, pointCloud);
-    const planeDepth =
-      projectionMode === "top_down"
-        ? frame.height
-        : projectionMode === "oblique"
-          ? Math.max(16, frame.height * 0.52)
-          : Math.max(2.2, frame.height * 0.045);
-    const planeBottom =
-      projectionMode === "top_down"
-        ? frame.bottom
-        : projectionMode === "oblique"
-          ? projected.bottom - planeDepth * 0.18
-          : projected.bottom - planeDepth / 2;
-    return {
-      "--slice-guide-left": `${frame.left}%`,
-      "--slice-guide-bottom": `${planeBottom}%`,
-      "--slice-guide-width": `${frame.width}%`,
-      "--slice-guide-height": `${planeDepth}%`,
-      "--slice-guide-transform":
-        projectionMode === "oblique" ? "perspective(760px) rotateX(64deg)" : "none",
-    };
-  }
-
-  const useYCoordinate = slice.selection.orientation === "vertical_x";
-  if (
-    (projectionMode === "side_xz" && useYCoordinate) ||
-    (projectionMode === "side_yz" && !useYCoordinate)
-  ) {
-    return {
-      "--slice-guide-left": `${frame.left}%`,
-      "--slice-guide-bottom": `${frame.bottom}%`,
-      "--slice-guide-width": `${frame.width}%`,
-      "--slice-guide-height": `${frame.height}%`,
-      "--slice-guide-transform": "none",
-    };
-  }
-
-  if (projectionMode === "top_down") {
-    const projected = projectPoint(
-      useYCoordinate ? 0 : fixed,
-      useYCoordinate ? fixed : 0,
-      0,
-      projectionMode,
-      pointCloud,
-    );
-    return {
-      "--slice-guide-left": `${useYCoordinate ? frame.left : projected.left - frame.width * 0.012}%`,
-      "--slice-guide-bottom": `${useYCoordinate ? projected.bottom - frame.height * 0.012 : frame.bottom}%`,
-      "--slice-guide-width": `${useYCoordinate ? frame.width : Math.max(1.4, frame.width * 0.024)}%`,
-      "--slice-guide-height": `${useYCoordinate ? Math.max(1.4, frame.height * 0.024) : frame.height}%`,
-      "--slice-guide-transform": "none",
-    };
-  }
-
-  const projected = projectPoint(useYCoordinate ? 0 : fixed, useYCoordinate ? fixed : 0, 0, projectionMode, pointCloud);
-  return {
-    "--slice-guide-left": `${
-      useYCoordinate ? projected.left : Math.max(frame.left, projected.left - frame.width * 0.12)
-    }%`,
-    "--slice-guide-bottom": `${frame.bottom}%`,
-    "--slice-guide-width": `${useYCoordinate ? frame.width * 0.72 : frame.width * 0.28}%`,
-    "--slice-guide-height": `${frame.height}%`,
-    "--slice-guide-transform": useYCoordinate ? "skewX(-14deg)" : "skewX(16deg)",
-  };
-}
-
-function sliceGuideLabelStyle(
-  slice: SliceResponse,
-  pointCloud: PointCloudResponse | null,
-  projectionMode: ProjectionMode,
-): CSSProperties {
-  const fixed = selectedSliceNormalizedCoordinate(slice, pointCloud);
-  const frame = plotFrame(pointCloud, projectionMode);
-  const projected =
-    slice.selection.orientation === "horizontal"
-      ? projectPoint(0.06, 0.08, fixed, projectionMode, pointCloud)
-      : slice.selection.orientation === "vertical_x"
-        ? projectPoint(0.04, fixed, 0.72, projectionMode, pointCloud)
-        : projectPoint(fixed, 0.04, 0.72, projectionMode, pointCloud);
-  return {
-    left: `${clamp(projected.left, frame.left + 1, frame.left + frame.width - 20)}%`,
-    bottom: `${clamp(projected.bottom + 1.6, frame.bottom + 1, frame.bottom + frame.height - 4)}%`,
-  };
-}
-
-function selectedRegionContextPointStyle(
-  selectedRegion: SelectedRegionRequest | null,
-  sizes: { x: number; y: number; z: number },
-  pointCloud: PointCloudResponse | null,
-  projectionMode: ProjectionMode,
-): CSSProperties | null {
-  if (
-    !selectedRegion ||
-    selectedRegion.xIndex === undefined ||
-    selectedRegion.yIndex === undefined ||
-    selectedRegion.zIndex === undefined
-  ) {
-    return null;
-  }
-  const x = normalizeIndex(selectedRegion.xIndex, sizes.x);
-  const y = normalizeIndex(selectedRegion.yIndex, sizes.y);
-  const z = normalizeIndex(selectedRegion.zIndex, sizes.z);
-  const point = projectPoint(x, y, z, projectionMode, pointCloud);
-  return {
-    left: `${point.left}%`,
-    bottom: `${point.bottom}%`,
-  };
-}
-
-function normalizeIndex(index: number, size: number): number {
-  if (!Number.isFinite(index) || size <= 1) return 0.5;
-  return clamp((index + 0.5) / size, 0, 1);
-}
-
-function selectedSliceNormalizedCoordinate(
-  slice: SliceResponse,
-  pointCloud: PointCloudResponse | null,
-): number {
-  const coordinate = slice.selection.selected_coordinate_value ?? slice.selection.level_coordinate_value;
-  const numericCoordinate = typeof coordinate === "number" ? coordinate : Number(coordinate);
-  if (!Number.isFinite(numericCoordinate)) return 0.5;
-  if (slice.selection.orientation === "horizontal") {
-    return normalizeWithExtent(numericCoordinate, pointCloud?.coordinate_extents.zh);
-  }
-  if (slice.selection.orientation === "vertical_x") {
-    return normalizeWithExtent(numericCoordinate, pointCloud?.coordinate_extents.yh);
-  }
-  return normalizeWithExtent(numericCoordinate, pointCloud?.coordinate_extents.xh);
-}
-
-function ScaleMarkers({
-  pointCloud,
-  projectionMode,
-}: {
-  pointCloud: PointCloudResponse | null;
-  projectionMode: ProjectionMode;
-}) {
-  const showHeight = projectionMode !== "top_down";
-  const horizontalCoordinate = projectionMode === "side_yz" ? "yh" : "xh";
-  const horizontalLabel = projectionMode === "side_yz" ? "y" : "x";
-  const activeRange =
-    pointCloud?.stats.active_z_min !== null && pointCloud?.stats.active_z_max !== null
-      ? `${formatCompactNumber(pointCloud?.stats.active_z_min ?? 0)}-${formatCompactNumber(
-          pointCloud?.stats.active_z_max ?? 0,
-        )} ${pointCloud?.coordinate_units.zh ?? ""}`.trim()
-      : "unavailable";
-
-  return (
-    <div className="scale-markers" aria-label="Scale markers">
-      <div
-        className="axis-ticks axis-ticks-horizontal"
-        aria-label={`${horizontalLabel}-axis ticks`}
-      >
-        {extentTicks(pointCloud, horizontalCoordinate).map((tick) => (
-          <span
-            key={`${horizontalCoordinate}-${tick.position}`}
-            style={{ left: `${tick.position}%` }}
-          >
-            {horizontalLabel}: {tick.label}
-          </span>
-        ))}
-      </div>
-      {projectionMode === "top_down" && (
-        <div className="axis-ticks axis-ticks-y" aria-label="y-axis ticks">
-          {extentTicks(pointCloud, "yh").map((tick) => (
-            <span key={`y-${tick.position}`} style={{ bottom: `${tick.position}%` }}>
-              y: {tick.label}
-            </span>
-          ))}
-        </div>
-      )}
-      {showHeight && (
-        <div className="axis-ticks axis-ticks-height" aria-label="height-axis ticks">
-          {heightTicks(pointCloud).map((tick) => (
-            <span key={`z-${tick.position}`} style={{ bottom: `${tick.position}%` }}>
-              height: {tick.label}
-            </span>
-          ))}
-        </div>
-      )}
-      {showHeight && <p className="active-z-range">active cloud water: {activeRange}</p>}
-    </div>
-  );
-}
-
-function extentTicks(
-  pointCloud: PointCloudResponse | null,
-  coordinate: string,
-): Array<{ position: number; label: string }> {
-  const extent = pointCloud?.coordinate_extents[coordinate];
-  if (!extent) return [];
-  const midpoint = (extent.min + extent.max) / 2;
-  const units = extent.units ? ` ${extent.units}` : "";
-  return [
-    { position: 12, label: `${formatCompactNumber(extent.min)}${units}` },
-    { position: 50, label: `${formatCompactNumber(midpoint)}${units}` },
-    { position: 88, label: `${formatCompactNumber(extent.max)}${units}` },
-  ];
-}
-
-function heightTicks(pointCloud: PointCloudResponse | null): Array<{ position: number; label: string }> {
-  const extent = pointCloud?.coordinate_extents.zh;
-  if (!extent) return [];
-  const units = extent?.units ? ` ${extent.units}` : "";
-  const midpoint = (extent.min + extent.max) / 2;
-  return [
-    { position: 12, label: `${formatCompactNumber(extent.min)}${units}` },
-    { position: 50, label: `${formatCompactNumber(midpoint)}${units}` },
-    { position: 88, label: `${formatCompactNumber(extent.max)}${units}` },
-  ];
-}
-
-function SceneSliceSummary({ title, slice }: { title: string; slice: SliceResponse | null }) {
-  if (!slice) {
-    return (
-      <section className="slice-plane-card" aria-label={title}>
-        <h3>{title}</h3>
-        <p>Slice unavailable.</p>
-      </section>
-    );
-  }
-  const selected = `${slice.selection.selected_dimension}[${slice.selection.selected_index}]`;
-  const coordinate =
-    slice.selection.level_coordinate_value !== null
-      ? ` (${slice.selection.level_coordinate_value} ${slice.selection.level_units ?? ""}${
-          slice.selection.level_meters !== null
-            ? ` / ${slice.selection.level_meters.toLocaleString()} m`
-            : ""
-        })`
-      : "";
-  return (
-    <section className="slice-plane-card" aria-label={title}>
-      <h3>{title}</h3>
-      <dl className="metric-grid">
-        <Metric
-          label="Field"
-          value={`${slice.field.raw_field_name} (${slice.field.display_name})`}
-        />
-        <Metric label="Units" value={slice.field.units ?? "Units unavailable"} />
-        <Metric label="Time" value={formatSeconds(slice.selection.time_seconds)} />
-        <Metric label="Location" value={`${selected}${coordinate}`} />
-        <Metric label="Min" value={formatMaybeNumber(slice.stats.min, slice.field.units)} />
-        <Metric label="Max" value={formatMaybeNumber(slice.stats.max, slice.field.units)} />
-        <Metric label="Dimensions" value={slice.dimension_order.join(", ")} />
-        <Metric label="Rendering method" value={slice.provenance.rendering_method} />
-      </dl>
-      <p>{slice.provenance.provenance_label}</p>
-      {slice.caveats.length > 0 && (
-        <ul className="compact-list">
-          {slice.caveats.map((caveat) => (
-            <li key={`${title}-${caveat}`}>{caveat}</li>
-          ))}
-        </ul>
-      )}
     </section>
   );
 }
@@ -4968,6 +4491,10 @@ function SelectedRegionInspector({
   status: string;
   error: string | null;
 }) {
+  if (!selectedRegion && !error) {
+    return null;
+  }
+
   return (
     <section className="selected-region-inspector" aria-label="What happened here panel">
       <div className="section-heading compact-heading">
@@ -4977,12 +4504,6 @@ function SelectedRegionInspector({
         </div>
         <p className="state-chip">{status}</p>
       </div>
-
-      {!selectedRegion && (
-        <p>
-          Click a slice cell to inspect that point.
-        </p>
-      )}
 
       {error && <p role="alert">{error}</p>}
 
@@ -5696,109 +5217,6 @@ function userFacingRunWorkflowStatus(status: RunStatusResponse): string {
   return humanize(status.lifecycle_state);
 }
 
-function cloudPointStyle(
-  point: [number, number, number, number],
-  pointCloud: PointCloudResponse,
-  projectionMode: ProjectionMode,
-  stats: PointCloudResponse["stats"],
-  opacity: number,
-  pointSize: number,
-): CSSProperties {
-  const x = normalizeWithExtent(point[0], pointCloud.coordinate_extents.xh);
-  const y = normalizeWithExtent(point[1], pointCloud.coordinate_extents.yh);
-  const z = normalizeWithExtent(point[2], pointCloud.coordinate_extents.zh);
-  const intensity = normalize(point[3], stats.min_value ?? point[3], stats.max_value ?? point[3]);
-  const projected = projectPoint(x, y, z, projectionMode, pointCloud);
-  const depthOpacity = projectionMode === "side_xz" ? 0.65 + y * 0.35 : 0.65 + x * 0.35;
-  return {
-    left: `${projected.left}%`,
-    bottom: `${projected.bottom}%`,
-    width: `${pointSize}px`,
-    height: `${pointSize}px`,
-    opacity: opacity * depthOpacity,
-    transform: `translate(-50%, 50%) scale(${0.8 + intensity * 0.75})`,
-    background: `rgba(63, 178, 206, ${0.36 + intensity * 0.52})`,
-  };
-}
-
-function projectPoint(
-  x: number,
-  y: number,
-  z: number,
-  projectionMode: ProjectionMode,
-  pointCloud: PointCloudResponse | null,
-): { left: number; bottom: number } {
-  const frame = plotFrame(pointCloud, projectionMode);
-  if (projectionMode === "side_xz") {
-    return { left: frame.left + x * frame.width, bottom: frame.bottom + z * frame.height };
-  }
-  if (projectionMode === "side_yz") {
-    return { left: frame.left + y * frame.width, bottom: frame.bottom + z * frame.height };
-  }
-  if (projectionMode === "top_down") {
-    return { left: frame.left + x * frame.width, bottom: frame.bottom + y * frame.height };
-  }
-  const verticalSpan = frame.height * 0.86;
-  const depthLift = frame.height * 0.14;
-  return {
-    left: frame.left + (x * 0.72 + y * 0.28) * frame.width,
-    bottom: frame.bottom + z * verticalSpan + y * depthLift,
-  };
-}
-
-function plotFrameStyle(
-  pointCloud: PointCloudResponse | null,
-  projectionMode: ProjectionMode,
-): CSSProperties & Record<string, string> {
-  const frame = plotFrame(pointCloud, projectionMode);
-  return {
-    "--plot-left": `${frame.left}%`,
-    "--plot-bottom": `${frame.bottom}%`,
-    "--plot-width": `${frame.width}%`,
-    "--plot-height": `${frame.height}%`,
-  };
-}
-
-function plotFrame(
-  pointCloud: PointCloudResponse | null,
-  projectionMode: ProjectionMode,
-): { left: number; bottom: number; width: number; height: number } {
-  const left = 8;
-  const width = 88;
-  const horizontalCoordinate = projectionMode === "side_yz" ? "yh" : "xh";
-  const verticalCoordinate = projectionMode === "top_down" ? "yh" : "zh";
-  const horizontalRange = coordinateRange(pointCloud, horizontalCoordinate);
-  const verticalRange = coordinateRange(pointCloud, verticalCoordinate);
-  const ratio = horizontalRange > 0 ? verticalRange / horizontalRange : 0.7;
-  const height =
-    projectionMode === "top_down" ? clamp(width * ratio, 34, 68) : clamp(width * ratio * 1.3, 48, 64);
-  return {
-    left,
-    width,
-    height,
-    bottom: 10,
-  };
-}
-
-function coordinateRange(pointCloud: PointCloudResponse | null, coordinate: string): number {
-  const extent = pointCloud?.coordinate_extents[coordinate];
-  if (!extent) return 1;
-  const range = extent.max - extent.min;
-  return Number.isFinite(range) && range > 0 ? range : 1;
-}
-
-function clamp(value: number, min: number, max: number): number {
-  return Math.min(Math.max(value, min), max);
-}
-
-function normalizeWithExtent(
-  value: number,
-  extent: { min: number; max: number; units: string | null } | undefined,
-): number {
-  if (!extent) return 0.5;
-  return normalize(value, extent.min, extent.max);
-}
-
 function normalize(value: number, min: number, max: number): number {
   if (max <= min) return 0.5;
   return (value - min) / (max - min);
@@ -5818,29 +5236,6 @@ function maxPointLocationLabel(pointCloud: PointCloudResponse | null): string {
   return `x ${formatCompactNumber(location.x)}, y ${formatCompactNumber(location.y)}, z ${formatCompactNumber(
     location.z,
   )}${units ? ` ${units}` : ""}, value ${formatCompactNumber(location.value)}`;
-}
-
-function projectionLabel(projectionMode: ProjectionMode): string {
-  const labels: Record<ProjectionMode, string> = {
-    side_xz: "Side x-z",
-    side_yz: "Side y-z",
-    top_down: "Top-down x-y",
-    oblique: "Oblique overview",
-  };
-  return labels[projectionMode];
-}
-
-function projectionDescription(projectionMode: ProjectionMode): string {
-  const descriptions: Record<ProjectionMode, string> = {
-    side_xz:
-      "Side x-z: height is vertical; y is compressed into point opacity for cloud-base and cloud-top checks.",
-    side_yz:
-      "Side y-z: height is vertical; x is compressed into point opacity for cloud-base and cloud-top checks.",
-    top_down: "Top-down x-y: horizontal map view; height is not shown as vertical position.",
-    oblique:
-      "Oblique overview: interpretive overview based on CM1 coordinates, not a true perspective camera.",
-  };
-  return descriptions[projectionMode];
 }
 
 function heatmapScaleClass(field: VisualizableField): string {
