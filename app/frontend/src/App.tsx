@@ -722,6 +722,7 @@ export function App() {
   const [storageInventory, setStorageInventory] = useState<StorageInventoryResponse | null>(null);
   const [storageStatus, setStorageStatus] = useState("Loading storage inventory...");
   const [storageError, setStorageError] = useState<string | null>(null);
+  const [focusedStorageRunId, setFocusedStorageRunId] = useState<string | null>(null);
   const [deletePreview, setDeletePreview] = useState<DeleteRunResponse | null>(null);
   const [deleteMessage, setDeleteMessage] = useState<string | null>(null);
   const [, setStatus] = useState("Loading scenarios...");
@@ -982,6 +983,8 @@ export function App() {
 
   async function handleIngestStoredRun(manifestPath: string) {
     setRunWorkflowError(null);
+    setStorageError(null);
+    setStorageStatus("Ingesting completed output");
     setStatus("Ingesting selected completed output");
     try {
       const ingested = await ingestCompletedRun(manifestPath);
@@ -989,11 +992,16 @@ export function App() {
       await refreshResults(ingested.result_id);
       await refreshStorageAfterWorkflow("Local pipeline updated");
       setStatus("Ingested result metadata");
+      setStorageStatus("Ingested result metadata");
     } catch (caught) {
+      const message =
+        caught instanceof Error ? caught.message : "Unable to ingest completed CM1 output.";
       setRunWorkflowError(
-        caught instanceof Error ? caught.message : "Unable to ingest completed CM1 output.",
+        message,
       );
+      setStorageError(message);
       setStatus("Ingest blocked");
+      setStorageStatus("Ingest blocked");
     }
   }
 
@@ -1159,7 +1167,8 @@ export function App() {
             setSelectedResultId(resultId);
             setActiveSection("explore");
           }}
-          onOpenStorage={() => {
+          onOpenStorage={(runId) => {
+            setFocusedStorageRunId(runId ?? null);
             setActiveSection("results");
             setActiveResultsTab("storage");
           }}
@@ -1182,6 +1191,7 @@ export function App() {
           storageInventory={storageInventory}
           storageStatus={storageStatus}
           storageError={storageError}
+          focusedRunId={focusedStorageRunId}
           deletePreview={deletePreview}
           deleteMessage={deleteMessage}
           onTabChange={setActiveResultsTab}
@@ -1193,6 +1203,11 @@ export function App() {
           onRefreshResults={handleRefreshResults}
           onInspect={() => {
             setActiveSection("explore");
+          }}
+          onManageLocalFiles={(result) => {
+            setSelectedResultId(result.result_id);
+            setFocusedStorageRunId(result.run_id);
+            setActiveResultsTab("storage");
           }}
           onCompareInspect={(resultId) => {
             setSelectedResultId(resultId);
@@ -1206,6 +1221,7 @@ export function App() {
             setSelectedResultId(resultId);
             setActiveSection("explore");
           }}
+          onStorageIngestRun={handleIngestStoredRun}
           onRefreshStorage={handleRefreshStorage}
           onPreviewDelete={handlePreviewRunDelete}
           onConfirmDelete={handleConfirmRunDelete}
@@ -1284,7 +1300,7 @@ function BuildWorkspace({
   onInspectIngested: () => void;
   onOpenStoredResult: (resultId: string) => void;
   onExploreStoredResult: (resultId: string) => void;
-  onOpenStorage: () => void;
+  onOpenStorage: (runId?: string | null) => void;
   onRefreshStorage: () => void;
   onRetryScenarios: () => void;
 }) {
@@ -1517,6 +1533,7 @@ function ResultsWorkspace({
   storageInventory,
   storageStatus,
   storageError,
+  focusedRunId,
   deletePreview,
   deleteMessage,
   onTabChange,
@@ -1527,9 +1544,11 @@ function ResultsWorkspace({
   onSave,
   onRefreshResults,
   onInspect,
+  onManageLocalFiles,
   onCompareInspect,
   onStorageOpenResult,
   onStorageExploreResult,
+  onStorageIngestRun,
   onRefreshStorage,
   onPreviewDelete,
   onConfirmDelete,
@@ -1544,6 +1563,7 @@ function ResultsWorkspace({
   storageInventory: StorageInventoryResponse | null;
   storageStatus: string;
   storageError: string | null;
+  focusedRunId: string | null;
   deletePreview: DeleteRunResponse | null;
   deleteMessage: string | null;
   onTabChange: (tab: ResultsTab) => void;
@@ -1554,9 +1574,11 @@ function ResultsWorkspace({
   onSave: () => void;
   onRefreshResults: () => void;
   onInspect: () => void;
+  onManageLocalFiles: (result: ResultCard) => void;
   onCompareInspect: (resultId: string) => void;
   onStorageOpenResult: (resultId: string) => void;
   onStorageExploreResult: (resultId: string) => void;
+  onStorageIngestRun: (manifestPath: string) => void;
   onRefreshStorage: () => void;
   onPreviewDelete: (runId: string) => void;
   onConfirmDelete: (runId: string) => void;
@@ -1606,6 +1628,7 @@ function ResultsWorkspace({
           onSave={onSave}
           onRefreshResults={onRefreshResults}
           onInspect={onInspect}
+          onManageLocalFiles={onManageLocalFiles}
           onCompare={() => onTabChange("compare")}
           onOpenResultInExplore={onCompareInspect}
         />
@@ -1628,6 +1651,7 @@ function ResultsWorkspace({
           results={results}
           status={storageStatus}
           error={storageError}
+          focusedRunId={focusedRunId}
           deletePreview={deletePreview}
           deleteMessage={deleteMessage}
           onRefresh={onRefreshStorage}
@@ -1635,6 +1659,7 @@ function ResultsWorkspace({
           onConfirmDelete={onConfirmDelete}
           onOpenResult={onStorageOpenResult}
           onExploreResult={onStorageExploreResult}
+          onIngestRun={onStorageIngestRun}
         />
       )}
     </section>
@@ -1652,6 +1677,7 @@ function NotebookWorkspace({
   onSave,
   onRefreshResults,
   onInspect,
+  onManageLocalFiles,
   onCompare,
   onOpenResultInExplore,
 }: {
@@ -1665,6 +1691,7 @@ function NotebookWorkspace({
   onSave: () => void;
   onRefreshResults: () => void;
   onInspect: () => void;
+  onManageLocalFiles: (result: ResultCard) => void;
   onCompare: () => void;
   onOpenResultInExplore: (resultId: string) => void;
 }) {
@@ -1698,6 +1725,7 @@ function NotebookWorkspace({
           onSubmit={onSubmit}
           onSave={onSave}
           onInspect={onInspect}
+          onManageLocalFiles={onManageLocalFiles}
           onCompare={onCompare}
         />
       </div>
@@ -2243,6 +2271,7 @@ function StorageWorkspace({
   results,
   status,
   error,
+  focusedRunId,
   deletePreview,
   deleteMessage,
   onRefresh,
@@ -2250,11 +2279,13 @@ function StorageWorkspace({
   onConfirmDelete,
   onOpenResult,
   onExploreResult,
+  onIngestRun,
 }: {
   inventory: StorageInventoryResponse | null;
   results: ResultCard[];
   status: string;
   error: string | null;
+  focusedRunId: string | null;
   deletePreview: DeleteRunResponse | null;
   deleteMessage: string | null;
   onRefresh: () => void;
@@ -2262,7 +2293,11 @@ function StorageWorkspace({
   onConfirmDelete: (runId: string) => void;
   onOpenResult: (resultId: string) => void;
   onExploreResult: (resultId: string) => void;
+  onIngestRun: (manifestPath: string) => void;
 }) {
+  const displayedRuns =
+    inventory && inventory.largest_runs.length > 0 ? inventory.largest_runs : inventory?.runs ?? [];
+
   return (
     <section
       className="storage-workspace"
@@ -2273,7 +2308,11 @@ function StorageWorkspace({
       <div className="section-heading">
         <div>
           <p className="eyebrow">Storage</p>
-          <h2 id="storage-title">Runtime storage cleanup</h2>
+          <h2 id="storage-title">Runtime inventory and cleanup</h2>
+          <p>
+            Review generated packages, running CM1 jobs, completed output, ingested results, and
+            cleanup candidates under the local runtime home.
+          </p>
         </div>
         <p className="state-chip">{status}</p>
       </div>
@@ -2321,8 +2360,10 @@ function StorageWorkspace({
         <section className="delete-preview" aria-label="Delete preview">
           <h3>Delete preview</h3>
           <p>
-            Deleting this run will remove local generated inputs, copied runtime files, output, and
-            logs under the selected run directory. No files have been deleted yet.
+            Cleanup removes local generated package files, copied runtime files, CM1 output, logs,
+            and any local metadata stored under the selected run directory. It does not touch the
+            source repo, the runtime home itself, or the external CM1 install. No files have been
+            deleted yet.
           </p>
           <dl className="metric-grid">
             <Metric label="Run ID" value={deletePreview.run_id} />
@@ -2341,11 +2382,13 @@ function StorageWorkspace({
       )}
 
       <RuntimeRunsTable
-        runs={inventory?.largest_runs ?? []}
+        runs={displayedRuns}
         results={results}
+        focusedRunId={focusedRunId}
         onPreviewDelete={onPreviewDelete}
         onOpenResult={onOpenResult}
         onExploreResult={onExploreResult}
+        onIngestRun={onIngestRun}
       />
     </section>
   );
@@ -2354,15 +2397,19 @@ function StorageWorkspace({
 function RuntimeRunsTable({
   runs,
   results,
+  focusedRunId,
   onPreviewDelete,
   onOpenResult,
   onExploreResult,
+  onIngestRun,
 }: {
   runs: RunStorageEntry[];
   results: ResultCard[];
+  focusedRunId: string | null;
   onPreviewDelete: (runId: string) => void;
   onOpenResult: (resultId: string) => void;
   onExploreResult: (resultId: string) => void;
+  onIngestRun: (manifestPath: string) => void;
 }) {
   if (runs.length === 0) {
     return (
@@ -2382,14 +2429,13 @@ function RuntimeRunsTable({
             <th scope="col">State</th>
             <th scope="col">Output</th>
             <th scope="col">Size</th>
-            <th scope="col">Cleanup</th>
+            <th scope="col">Actions</th>
           </tr>
         </thead>
         <tbody>
           {runs.map((run) => {
             const associatedResult = resultForRun(results, run.run_id);
-            const displayName =
-              associatedResult?.name ?? run.scenario_name ?? run.scenario_id ?? run.run_id;
+            const displayName = storageDisplayName(run, associatedResult);
             const savedOrProtected =
               associatedResult?.saved || associatedResult?.protected || run.saved || run.protected;
             const deleteBlockedRun = {
@@ -2397,66 +2443,60 @@ function RuntimeRunsTable({
               saved: Boolean(savedOrProtected),
               protected: Boolean(savedOrProtected),
             };
+            const canIngest = canIngestStorageRun(run, associatedResult);
             return (
-              <tr key={run.run_id}>
+              <tr key={run.run_id} className={focusedRunId === run.run_id ? "selected-row" : ""}>
                 <td>
                   <strong>{displayName}</strong>
-                  <small>{run.run_id}</small>
+                  <small>{storageScenarioSummary(run, associatedResult)}</small>
+                  <small>Run ID: {run.run_id}</small>
                   <small>{run.path}</small>
                   {run.manifest_error && <small>{run.manifest_error}</small>}
                 </td>
                 <td>
-                  {associatedResult?.scenario_name ??
-                    run.scenario_name ??
-                    run.scenario_id ??
-                    "Unknown scenario"}
-                  <small>
-                    {humanize(
-                      associatedResult?.run_size_preset ?? run.run_size_preset ?? "preset unknown",
-                    )}
-                    {associatedResult
-                      ? ` · ${storageControlSummary(associatedResult.controls)}`
-                      : ""}
-                  </small>
+                  {storageScenarioName(run, associatedResult)}
+                  <small>{storagePresetAndControls(run, associatedResult)}</small>
                 </td>
                 <td>
                   <div className="badge-row">
-                    <StatusBadge label={humanize(run.category)} tone={storageCategoryTone(run)} />
-                    <StatusBadge
-                      label={associatedResult ? "Ingested result" : "Not ingested"}
-                      tone={associatedResult ? "good" : "neutral"}
-                    />
-                    <StatusBadge
-                      label={savedOrProtected ? "Saved/protected" : "Not saved"}
-                      tone={savedOrProtected ? "good" : "neutral"}
-                    />
+                    {storageStateBadges(run, associatedResult).map((badge) => (
+                      <StatusBadge key={badge.label} label={badge.label} tone={badge.tone} />
+                    ))}
                   </div>
-                  <small>
-                    {run.lifecycle_state ? humanize(run.lifecycle_state) : "No manifest state"}
-                  </small>
+                  <small>{storageNextStep(run, associatedResult)}</small>
                 </td>
                 <td>{storageResultOutputSummary(run, associatedResult)}</td>
                 <td>{formatBytes(run.size_bytes)}</td>
                 <td>
                   <div className="button-row">
+                    {associatedResult && (
+                      <button
+                        type="button"
+                        onClick={() => onOpenResult(associatedResult.result_id)}
+                      >
+                        Open result
+                      </button>
+                    )}
+                    {associatedResult && (
+                      <button
+                        type="button"
+                        className="secondary-button"
+                        onClick={() => onExploreResult(associatedResult.result_id)}
+                      >
+                        Open in Explore
+                      </button>
+                    )}
+                    {canIngest && run.manifest_path && (
+                      <button
+                        type="button"
+                        onClick={() => onIngestRun(run.manifest_path!)}
+                      >
+                        Ingest completed output
+                      </button>
+                    )}
                     <button
                       type="button"
-                      disabled={!associatedResult}
-                      onClick={() => associatedResult && onOpenResult(associatedResult.result_id)}
-                    >
-                      Open result
-                    </button>
-                    <button
-                      type="button"
-                      disabled={!associatedResult}
-                      onClick={() =>
-                        associatedResult && onExploreResult(associatedResult.result_id)
-                      }
-                    >
-                      Open in Explore
-                    </button>
-                    <button
-                      type="button"
+                      className="secondary-button"
                       disabled={!canPreviewDelete(deleteBlockedRun)}
                       onClick={() => onPreviewDelete(run.run_id)}
                     >
@@ -2518,7 +2558,7 @@ function LocalRunWorkflowPanel({
   onInspectIngested: () => void;
   onOpenStoredResult: (resultId: string) => void;
   onExploreStoredResult: (resultId: string) => void;
-  onOpenStorage: () => void;
+  onOpenStorage: (runId?: string | null) => void;
   onRefreshStorage: () => void;
 }) {
   const stage = buildRunStage(dryRun, runStatus, ingestedResultId);
@@ -2787,7 +2827,7 @@ function LocalPipelinePanel({
   onIngestStoredRun: (manifestPath: string) => void;
   onOpenStoredResult: (resultId: string) => void;
   onExploreStoredResult: (resultId: string) => void;
-  onOpenStorage: () => void;
+  onOpenStorage: (runId?: string | null) => void;
   onRefreshStorage: () => void;
 }) {
   const runs = selectPipelineRuns(inventory?.runs ?? [], currentRunId);
@@ -2810,7 +2850,7 @@ function LocalPipelinePanel({
         <button type="button" className="secondary-button" onClick={onRefreshStorage}>
           Refresh runs
         </button>
-        <button type="button" className="secondary-button" onClick={onOpenStorage}>
+        <button type="button" className="secondary-button" onClick={() => onOpenStorage()}>
           Open Storage cleanup
         </button>
       </div>
@@ -2855,13 +2895,14 @@ function PipelineRunCard({
   onIngestStoredRun: (manifestPath: string) => void;
   onOpenStoredResult: (resultId: string) => void;
   onExploreStoredResult: (resultId: string) => void;
-  onOpenStorage: () => void;
+  onOpenStorage: (runId?: string | null) => void;
 }) {
   const displayName = result?.name ?? run.scenario_name ?? run.scenario_id ?? run.run_id;
   const canLaunch = Boolean(run.manifest_path && run.category === "dry_run_only");
   const canIngest = Boolean(run.manifest_path && run.category === "completed_with_output" && !result);
   const savedOrProtected = Boolean(result?.saved || result?.protected || run.saved || run.protected);
   const stateLabel = pipelineRunStateLabel(run, result);
+  const showSavedStateBadge = stateLabel !== "Saved/protected";
 
   return (
     <article className={current ? "pipeline-run-card current" : "pipeline-run-card"}>
@@ -2875,7 +2916,9 @@ function PipelineRunCard({
       <div className="badge-row">
         <StatusBadge label={stateLabel} tone={pipelineRunTone(run, result)} />
         {!result && <StatusBadge label="Not ingested" tone="neutral" />}
-        <StatusBadge label={savedOrProtected ? "Saved/protected" : "Not saved"} tone="neutral" />
+        {showSavedStateBadge && (
+          <StatusBadge label={savedOrProtected ? "Saved/protected" : "Not saved"} tone="neutral" />
+        )}
       </div>
       <p>
         {humanize(result?.scenario_id ?? run.scenario_id ?? "unknown scenario")} ·{" "}
@@ -2922,7 +2965,11 @@ function PipelineRunCard({
             Open in Explore
           </button>
         )}
-        <button type="button" className="secondary-button" onClick={onOpenStorage}>
+        <button
+          type="button"
+          className="secondary-button"
+          onClick={() => onOpenStorage(run.run_id)}
+        >
           Manage cleanup
         </button>
       </div>
@@ -2986,8 +3033,8 @@ function selectPipelineRuns(runs: RunStorageEntry[], currentRunId: string | null
 }
 
 function pipelineRunStateLabel(run: RunStorageEntry, result: ResultCard | undefined): string {
-  if (result?.saved || result?.protected || run.saved || run.protected) return "Saved/protected";
   if (result) return "Ready to review";
+  if (run.saved || run.protected) return "Saved/protected";
   const labels: Record<string, string> = {
     dry_run_only: "Ready to run",
     running: "Running",
@@ -3137,6 +3184,7 @@ function ResultNotebookCard({
   onSubmit,
   onSave,
   onInspect,
+  onManageLocalFiles,
   onCompare,
 }: {
   result: ResultCard | undefined;
@@ -3145,6 +3193,7 @@ function ResultNotebookCard({
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
   onSave: () => void;
   onInspect: () => void;
+  onManageLocalFiles: (result: ResultCard) => void;
   onCompare: () => void;
 }) {
   if (!result) {
@@ -3287,6 +3336,13 @@ function ResultNotebookCard({
           </button>
           <button type="button" className="secondary-button" onClick={onCompare}>
             Compare
+          </button>
+          <button
+            type="button"
+            className="secondary-button"
+            onClick={() => onManageLocalFiles(result)}
+          >
+            Manage local files
           </button>
           <button type="submit" className="secondary-button">
             Update notebook
@@ -6020,12 +6076,98 @@ function outputSummary(summary: OutputFileSummary): string {
   return parts.join(", ");
 }
 
+function storageDisplayName(run: RunStorageEntry, result: ResultCard | undefined): string {
+  return result?.name ?? run.scenario_name ?? (run.scenario_id ? humanize(run.scenario_id) : run.run_id);
+}
+
+function storageScenarioName(run: RunStorageEntry, result: ResultCard | undefined): string {
+  return result?.scenario_name ?? run.scenario_name ?? humanize(run.scenario_id ?? "unknown scenario");
+}
+
+function storageScenarioSummary(run: RunStorageEntry, result: ResultCard | undefined): string {
+  const scenario = storageScenarioName(run, result);
+  const preset = humanize(result?.run_size_preset ?? run.run_size_preset ?? "preset unknown");
+  return `${scenario} · ${preset}`;
+}
+
+function storagePresetAndControls(run: RunStorageEntry, result: ResultCard | undefined): string {
+  const preset = humanize(result?.run_size_preset ?? run.run_size_preset ?? "preset unknown");
+  if (!result) return preset;
+  return `${preset} · ${storageControlSummary(result.controls)}`;
+}
+
+function canIngestStorageRun(run: RunStorageEntry, result: ResultCard | undefined): boolean {
+  return Boolean(!result && run.manifest_path && run.category === "completed_with_output");
+}
+
+function storageStateBadges(
+  run: RunStorageEntry,
+  result: ResultCard | undefined,
+): Array<{ label: string; tone: "good" | "warning" | "neutral" }> {
+  const savedOrProtected = Boolean(result?.saved || result?.protected || run.saved || run.protected);
+  if (savedOrProtected) {
+    return [
+      { label: "Saved/protected", tone: "good" },
+      { label: result ? "Ingested / ready to review" : "Protected local run", tone: "neutral" },
+    ];
+  }
+  if (result) {
+    return [
+      { label: "Ingested / ready to review", tone: "good" },
+      { label: "Not saved", tone: "neutral" },
+    ];
+  }
+  const primary: Record<string, { label: string; tone: "good" | "warning" | "neutral" }> = {
+    dry_run_only: { label: "Ready-to-run package", tone: "neutral" },
+    running: { label: "Running CM1 process", tone: "neutral" },
+    completed_with_output: { label: "Ready to ingest", tone: "good" },
+    completed_no_output: { label: "Completed with no usable output", tone: "warning" },
+    failed: { label: "Failed run", tone: "warning" },
+    canceled: { label: "Canceled run", tone: "warning" },
+    missing_manifest: { label: "Needs cleanup review", tone: "warning" },
+    malformed_manifest: { label: "Needs cleanup review", tone: "warning" },
+    unknown: { label: "Needs cleanup review", tone: "warning" },
+  };
+  const badge = primary[run.category] ?? { label: humanize(run.category), tone: "neutral" };
+  const badges = [badge];
+  if (run.category !== "running" && run.category !== "dry_run_only") {
+    badges.push({ label: "Not saved", tone: "neutral" });
+  }
+  return badges;
+}
+
+function storageNextStep(run: RunStorageEntry, result: ResultCard | undefined): string {
+  if (result?.saved || result?.protected || run.saved || run.protected) {
+    return "Keeper result; normal cleanup is blocked here.";
+  }
+  if (result) return "Review in Results or Explore; cleanup preview remains available.";
+  if (run.category === "dry_run_only") return "Package is generated and can be launched from Build.";
+  if (run.category === "running") return "CM1 is active or queued; cleanup is blocked until it stops.";
+  if (run.category === "completed_with_output") {
+    return "Output exists; ingest to create a notebook result before deciding cleanup.";
+  }
+  if (run.category === "completed_no_output") {
+    return "No usable output was detected; inspect logs or preview cleanup.";
+  }
+  if (run.category === "failed" || run.category === "canceled") {
+    return "Run did not complete; inspect logs or preview cleanup.";
+  }
+  if (run.category === "missing_manifest" || run.category === "malformed_manifest") {
+    return "Manifest is missing or unreadable; review carefully before cleanup.";
+  }
+  return "Review the local directory state before cleanup.";
+}
+
 function storageOutputSummary(run: RunStorageEntry): string {
   const netcdf = run.output_summary.netcdf_paths ?? 0;
   const raw = run.output_summary.raw_cm1_artifacts ?? 0;
   const processed = run.output_summary.processed_artifacts ?? 0;
   if (run.output_artifact_count === 0) return "No output artifacts";
-  return `${netcdf} NetCDF, ${raw} raw CM1, ${processed} processed`;
+  const parts = [];
+  if (netcdf > 0) parts.push(`${netcdf} NetCDF files`);
+  if (raw > 0) parts.push(`${raw} raw CM1 files`);
+  if (processed > 0) parts.push(`${processed} processed files`);
+  return parts.length > 0 ? parts.join(", ") : `${run.output_artifact_count} output artifacts`;
 }
 
 function storageResultOutputSummary(run: RunStorageEntry, result: ResultCard | undefined): string {
@@ -6054,21 +6196,6 @@ function deleteDisabledReason(run: RunStorageEntry): string {
   if (run.category === "running") return "Running runs cannot be deleted.";
   if (run.saved || run.protected) return "Saved/protected runs are not deleted from this UI.";
   return "Cleanup unavailable.";
-}
-
-function storageCategoryTone(run: RunStorageEntry): "good" | "warning" | "neutral" {
-  if (run.category === "completed_with_output" || run.category === "saved_or_protected") {
-    return "good";
-  }
-  if (
-    run.category === "failed" ||
-    run.category === "canceled" ||
-    run.category === "malformed_manifest" ||
-    run.category === "missing_manifest"
-  ) {
-    return "warning";
-  }
-  return "neutral";
 }
 
 function bothCatalogsContainField(

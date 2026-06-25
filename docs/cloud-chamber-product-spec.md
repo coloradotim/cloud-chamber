@@ -197,14 +197,19 @@ only; CI still uses fake fixtures and never runs CM1.
 
 ### Workflow 4.5 — Manage Runtime Storage
 
-Results / Storage exposes the runtime-home inventory from the backend. It shows total runtime-home size, the 50 GB warning-threshold status, run directories sorted by size, scenario/preset/state metadata, result-card names when available, saved/protected state, output-artifact summaries, and conservative cleanup categories.
+Results / Storage exposes the runtime-home inventory from the backend. It shows total runtime-home size, the 50 GB warning-threshold status, run directories sorted by size, and lifecycle-aware identities for each run directory. When a run has an associated Result Card / notebook entry, the notebook name is primary and the raw run ID/path are secondary. If no result exists yet, Storage falls back to scenario name, scenario ID, and then run ID.
+
+Storage should describe each local run directory as part of the experiment lifecycle: ready-to-run package, running/queued CM1 process, completed with usable output, completed with no usable output, failed/canceled, ready to ingest, ingested/ready to review, saved/protected, or missing/malformed manifest that needs cleanup review. It should avoid duplicate or contradictory badges.
+
+Storage offers non-destructive state transitions where they belong: open associated results in Results or Explore, and ingest completed output when a completed-with-output run has a manifest but no associated result. Destructive cleanup remains only in Storage behind preview and confirmation.
 
 Deletion is always explicit. The UI first requests a dry-run delete preview for one selected run, then requires a separate confirm action before deleting. Running runs cannot be deleted from the UI, and saved/protected runs are disabled rather than force-deleted. The warning threshold never auto-deletes anything.
 
 Build may link to Storage for cleanup, but it should not duplicate deletion
-logic. The follow-up Storage cleanup work in #189 should make the relationship
-between Build's package/run launchpad, Results notebook entries, and Storage
-cleanup clearer so users do not have to manage local CM1 folders by raw run ID.
+logic. Results may link a selected notebook entry to its local files in Storage,
+but Results is not a deletion surface. The relationship should be clear:
+Build moves local runs forward, Results reviews and protects experiment
+notebook entries, and Storage manages local generated files safely.
 
 ### Workflow 5 — Open Result
 
@@ -975,7 +980,9 @@ the Result Card / Experiment Notebook: a scan-friendly list of experiment cards
 plus a selected notebook detail, with technical run metadata kept secondary.
 Compare is result-pair oriented and belongs with Results because it compares
 experiment outcomes. Storage is also part of Results because it manages local
-run directories and their relationship to named result cards.
+run directories and their relationship to named result cards. Storage should
+read as local runtime inventory for the experiment lifecycle, not a raw folder
+table keyed by run ID.
 
 `Explore` is one desktop cloud-context and slice-inspection workflow for a
 single selected result. The old `2-D Slices` / `3-D View` split was useful
