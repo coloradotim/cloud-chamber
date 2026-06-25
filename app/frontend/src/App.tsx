@@ -2429,7 +2429,7 @@ function RuntimeRunsTable({
             <th scope="col">State</th>
             <th scope="col">Output</th>
             <th scope="col">Size</th>
-            <th scope="col">Cleanup</th>
+            <th scope="col">Actions</th>
           </tr>
         </thead>
         <tbody>
