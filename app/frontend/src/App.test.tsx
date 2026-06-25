@@ -1749,33 +1749,47 @@ describe("App", () => {
     fireEvent.click(await screen.findByRole("tab", { name: "Storage" }));
 
     expect(
-      await screen.findByRole("heading", { name: "Runtime storage cleanup" }),
+      await screen.findByRole("heading", { name: "Runtime inventory and cleanup" }),
     ).toBeInTheDocument();
+    expect(screen.getByText(/Review generated packages, running CM1 jobs/)).toBeInTheDocument();
     expect(screen.getByText("/tmp/CloudChamber")).toBeInTheDocument();
     expect(screen.getByText("60 GB")).toBeInTheDocument();
     expect(screen.getByText("50 GB")).toBeInTheDocument();
     expect(screen.getByText("At or above 50 GB warning threshold")).toBeInTheDocument();
     expect(screen.getByText(/dry-run cleanup/)).toBeInTheDocument();
     expect(screen.getAllByText("Quick-look shallow cumulus").length).toBeGreaterThan(0);
-    expect(screen.getByText("dry-run-quicklook")).toBeInTheDocument();
+    expect(screen.getAllByText(/dry-run-quicklook/).length).toBeGreaterThan(0);
     expect(screen.getByText("852 MB")).toBeInTheDocument();
     expect(
       screen.getAllByText("13 model files, 13 time steps, 1 stats files").length,
     ).toBeGreaterThan(0);
-    expect(screen.getByText("saved or protected")).toBeInTheDocument();
-    expect(screen.getByText("dry run only")).toBeInTheDocument();
-    expect(screen.getByText("completed no output")).toBeInTheDocument();
-    expect(screen.getAllByText("failed").length).toBeGreaterThan(0);
-    expect(screen.getByText("missing manifest")).toBeInTheDocument();
+    expect(screen.getAllByText("Saved/protected").length).toBeGreaterThan(0);
+    expect(screen.getByText("Ready-to-run package")).toBeInTheDocument();
+    expect(screen.getAllByText("Ready to ingest").length).toBeGreaterThan(0);
+    expect(screen.getByText("Completed with no usable output")).toBeInTheDocument();
+    expect(screen.getByText("Failed run")).toBeInTheDocument();
+    expect(screen.getByText("Needs cleanup review")).toBeInTheDocument();
 
     const runtimeRuns = screen.getByLabelText("Runtime runs");
-    const packageRow = within(runtimeRuns).getByText("dry-run-packaged").closest("tr");
-    const savedRow = within(runtimeRuns).getByText("dry-run-saved").closest("tr");
-    const runningRow = within(runtimeRuns).getByText("dry-run-running").closest("tr");
+    const packageRow = within(runtimeRuns).getAllByText(/dry-run-packaged/)[0].closest("tr");
+    const ingestReadyRow = within(runtimeRuns)
+      .getAllByText(/dry-run-uningested/)[0]
+      .closest("tr");
+    const savedRow = within(runtimeRuns).getAllByText(/dry-run-saved/)[0].closest("tr");
+    const runningRow = within(runtimeRuns).getAllByText(/dry-run-running/)[0].closest("tr");
     expect(packageRow).not.toBeNull();
+    expect(ingestReadyRow).not.toBeNull();
     expect(savedRow).not.toBeNull();
     expect(runningRow).not.toBeNull();
     expect(within(packageRow as HTMLElement).getByRole("button", { name: "Preview delete" })).toBeEnabled();
+    expect(
+      within(ingestReadyRow as HTMLElement).getByRole("button", {
+        name: "Ingest completed output",
+      }),
+    ).toBeEnabled();
+    expect(
+      within(ingestReadyRow as HTMLElement).queryByRole("button", { name: "Open result" }),
+    ).not.toBeInTheDocument();
     expect(within(savedRow as HTMLElement).getByRole("button", { name: "Preview delete" })).toBeDisabled();
     expect(within(runningRow as HTMLElement).getByRole("button", { name: "Preview delete" })).toBeDisabled();
     expect(
@@ -1783,9 +1797,27 @@ describe("App", () => {
     ).toBeInTheDocument();
     expect(screen.getByText("Running runs cannot be deleted.")).toBeInTheDocument();
 
+    fireEvent.click(
+      within(ingestReadyRow as HTMLElement).getByRole("button", {
+        name: "Ingest completed output",
+      }),
+    );
+    await waitFor(() =>
+      expect(fetch).toHaveBeenCalledWith(
+        "/api/results/ingest",
+        expect.objectContaining({
+          method: "POST",
+          body: JSON.stringify({
+            manifest_path: "/tmp/CloudChamber/runs/dry-run-uningested/run_manifest.json",
+          }),
+        }),
+      ),
+    );
+
     fireEvent.click(within(packageRow as HTMLElement).getByRole("button", { name: "Preview delete" }));
 
     expect(await screen.findByRole("heading", { name: "Delete preview" })).toBeInTheDocument();
+    expect(screen.getByText(/does not touch the source repo/)).toBeInTheDocument();
     expect(screen.getByText("Dry run only; no files were deleted.")).toBeInTheDocument();
     expect(screen.getAllByText("/tmp/CloudChamber/runs/dry-run-packaged").length).toBeGreaterThan(
       0,
@@ -1819,6 +1851,45 @@ describe("App", () => {
         }),
       }),
     );
+  });
+
+  it("routes Results notebook entries to their local Storage row", async () => {
+    render(<App />);
+
+    const resultDetail = await screen.findByLabelText("Result detail");
+    fireEvent.click(within(resultDetail).getByRole("button", { name: "Manage local files" }));
+
+    expect(
+      await screen.findByRole("heading", { name: "Runtime inventory and cleanup" }),
+    ).toBeInTheDocument();
+    const runtimeRuns = screen.getByLabelText("Runtime runs");
+    const focusedRow = within(runtimeRuns).getAllByText(/dry-run-quicklook/)[0].closest("tr");
+    expect(focusedRow).not.toBeNull();
+    expect(focusedRow).toHaveClass("selected-row");
+    expect(within(focusedRow as HTMLElement).getByRole("button", { name: "Open result" })).toBeEnabled();
+    expect(
+      within(focusedRow as HTMLElement).getByRole("button", { name: "Open in Explore" }),
+    ).toBeEnabled();
+  });
+
+  it("routes Build pipeline cleanup to Storage without adding delete controls to Build", async () => {
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Build" }));
+    expect(await screen.findByRole("heading", { name: "Packages, runs, and results" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Preview delete" })).not.toBeInTheDocument();
+
+    const pipelineRuns = screen.getByLabelText("Local packages and runs");
+    const pipelineRun = within(pipelineRuns).getAllByText(/dry-run-uningested/)[0].closest("article");
+    expect(pipelineRun).not.toBeNull();
+    fireEvent.click(within(pipelineRun as HTMLElement).getByRole("button", { name: "Manage cleanup" }));
+
+    expect(
+      await screen.findByRole("heading", { name: "Runtime inventory and cleanup" }),
+    ).toBeInTheDocument();
+    const runtimeRuns = screen.getByLabelText("Runtime runs");
+    const focusedRow = within(runtimeRuns).getAllByText(/dry-run-uningested/)[0].closest("tr");
+    expect(focusedRow).toHaveClass("selected-row");
   });
 
   it("shows cleanup failure details without deleting from unsafe UI paths", async () => {

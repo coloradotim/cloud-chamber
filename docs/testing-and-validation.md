@@ -293,6 +293,14 @@ actionable UI errors. Automated tests must not execute `cm1.exe`, parse real
 local NetCDF output in the browser, or write generated run directories into the
 repo.
 
+Storage lifecycle UI tests should use mocked inventory/results joins. They
+should verify notebook names are primary when a result card exists, raw run IDs
+and paths remain secondary, completed-with-output runs without results expose
+`Ingest completed output`, associated results expose `Open result` and `Open in
+Explore`, and running or saved/protected runs block normal delete preview.
+Results notebook tests should verify `Manage local files` routes the selected
+experiment to Results / Storage without adding delete controls to Results.
+
 Comparison tests should use mocked Result Card data for the accepted Baseline
 Shallow Cumulus quick-look and Dry Failed Cumulus quick-look pair. They should
 verify side-by-side scenario names, run-size presets, cloud/rain outcomes, first
