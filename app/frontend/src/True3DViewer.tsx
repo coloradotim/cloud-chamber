@@ -96,6 +96,12 @@ type SceneBounds = {
 
 type CameraPreset = "overview" | "top_down_xy" | "look_along_x" | "look_along_y";
 
+type AxisLabel = {
+  axis: "x" | "y" | "z";
+  text: string;
+  position: THREE.Vector3;
+};
+
 const DEFAULT_BOUNDS: SceneBounds = {
   x: { min: -3.2, max: 3.2, units: "km" },
   y: { min: -3.2, max: 3.2, units: "km" },
@@ -123,11 +129,13 @@ export function True3DViewer({
   noCloudMessage,
 }: True3DViewerProps) {
   const mountRef = useRef<HTMLDivElement | null>(null);
+  const axisLabelLayerRef = useRef<HTMLDivElement | null>(null);
   const refs = useRef<SceneRefs | null>(null);
   const [renderError, setRenderError] = useState<string | null>(null);
   const [cameraStatus, setCameraStatus] = useState("Camera ready");
 
   const bounds = useMemo(() => sceneBounds(pointCloud), [pointCloud]);
+  const axisLabels = useMemo(() => axisLabelDefinitions(bounds), [bounds]);
   const selectedPoint = useMemo(
     () => selectedRegionPoint(selectedRegion, coordinateSizes, bounds),
     [bounds, coordinateSizes, selectedRegion],
@@ -202,6 +210,7 @@ export function True3DViewer({
       const animate = () => {
         controls.update();
         renderer.render(scene, camera);
+        positionAxisLabels(axisLabelLayerRef.current, renderer.domElement, camera, axisLabels);
         const current = refs.current;
         if (current) current.animationFrame = window.requestAnimationFrame(animate);
       };
@@ -235,7 +244,7 @@ export function True3DViewer({
       );
       return undefined;
     }
-  }, [bounds]);
+  }, [axisLabels, bounds]);
 
   useEffect(() => {
     const current = refs.current;
@@ -283,20 +292,21 @@ export function True3DViewer({
           <span>{selectedTimeLabel}</span>
           <span>Threshold {thresholdLabel}</span>
         </div>
-        <dl className="true3d-axis-key" aria-label="Domain axis dimensions">
-          <div>
-            <dt>x</dt>
-            <dd>{extentText(bounds.x)}</dd>
-          </div>
-          <div>
-            <dt>y</dt>
-            <dd>{extentText(bounds.y)}</dd>
-          </div>
-          <div>
-            <dt>z</dt>
-            <dd>{extentText(bounds.z)}</dd>
-          </div>
-        </dl>
+        <div
+          ref={axisLabelLayerRef}
+          className="true3d-axis-label-layer"
+          aria-label="3-D axis tick labels"
+        >
+          {axisLabels.map((label, index) => (
+            <span
+              key={`${label.axis}-${label.text}-${index}`}
+              className={`true3d-axis-label true3d-axis-label-${label.axis}`}
+              data-axis-label-index={index}
+            >
+              {label.text}
+            </span>
+          ))}
+        </div>
         {showSlicePlane && activeSlice && (
           <p className="true3d-slice-label">Slice plane: {activeSliceLabel}</p>
         )}
@@ -395,11 +405,10 @@ function rebuildScene(
   key.position.set(bounds.xRange * 0.6, bounds.zRange, bounds.yRange * 0.8);
   scene.add(key);
 
-  const floorGrid = new THREE.GridHelper(bounds.maxRange, 12, 0x4f788e, 0x90adbc);
-  floorGrid.position.y = -bounds.zRange / 2;
-  scene.add(floorGrid);
+  scene.add(domainFloorGrid(bounds));
   scene.add(domainBox(bounds));
   scene.add(axisLines(bounds));
+  scene.add(axisTickMarks(bounds));
 
   if (pointCloud?.points.length) {
     scene.add(cloudPointLayer(pointCloud, bounds, opacity, pointSize));
@@ -431,6 +440,50 @@ function domainBox(bounds: SceneBounds): THREE.Object3D {
   return new THREE.LineSegments(edges, material);
 }
 
+function domainFloorGrid(bounds: SceneBounds): THREE.Group {
+  const group = new THREE.Group();
+  const floor = -bounds.zRange / 2;
+  const xMin = -bounds.xRange / 2;
+  const xMax = bounds.xRange / 2;
+  const yMin = -bounds.yRange / 2;
+  const yMax = bounds.yRange / 2;
+  const minorMaterial = new THREE.LineBasicMaterial({
+    color: 0x82aabf,
+    transparent: true,
+    opacity: 0.34,
+  });
+  const majorMaterial = new THREE.LineBasicMaterial({
+    color: 0x6b9ab2,
+    transparent: true,
+    opacity: 0.6,
+  });
+  const zeroMaterial = new THREE.LineBasicMaterial({
+    color: 0x426f86,
+    transparent: true,
+    opacity: 0.82,
+  });
+
+  for (const value of gridTickValues(bounds.x, 0.5)) {
+    const x = centeredCoordinate(value, bounds.x);
+    const geometry = new THREE.BufferGeometry().setFromPoints([
+      new THREE.Vector3(x, floor, yMin),
+      new THREE.Vector3(x, floor, yMax),
+    ]);
+    group.add(new THREE.Line(geometry, gridLineMaterial(value, minorMaterial, majorMaterial, zeroMaterial)));
+  }
+
+  for (const value of gridTickValues(bounds.y, 0.5)) {
+    const y = centeredCoordinate(value, bounds.y);
+    const geometry = new THREE.BufferGeometry().setFromPoints([
+      new THREE.Vector3(xMin, floor, y),
+      new THREE.Vector3(xMax, floor, y),
+    ]);
+    group.add(new THREE.Line(geometry, gridLineMaterial(value, minorMaterial, majorMaterial, zeroMaterial)));
+  }
+
+  return group;
+}
+
 function axisLines(bounds: SceneBounds): THREE.Group {
   const group = new THREE.Group();
   const origin = new THREE.Vector3(-bounds.xRange / 2, -bounds.zRange / 2, -bounds.yRange / 2);
@@ -447,6 +500,92 @@ function axisLine(start: THREE.Vector3, end: THREE.Vector3, color: number): THRE
   const geometry = new THREE.BufferGeometry().setFromPoints([start, end]);
   const material = new THREE.LineBasicMaterial({ color, linewidth: 2 });
   return new THREE.Line(geometry, material);
+}
+
+function axisTickMarks(bounds: SceneBounds): THREE.Group {
+  const group = new THREE.Group();
+  const tickLength = Math.max(0.08, bounds.maxRange * 0.018);
+  const floor = -bounds.zRange / 2;
+  const xMin = -bounds.xRange / 2;
+  const yMin = -bounds.yRange / 2;
+
+  for (const value of majorTickValues(bounds.x)) {
+    const x = centeredCoordinate(value, bounds.x);
+    group.add(axisLine(new THREE.Vector3(x, floor, yMin), new THREE.Vector3(x, floor, yMin - tickLength), 0x2f7fb5));
+  }
+  for (const value of majorTickValues(bounds.y)) {
+    const y = centeredCoordinate(value, bounds.y);
+    group.add(axisLine(new THREE.Vector3(xMin, floor, y), new THREE.Vector3(xMin - tickLength, floor, y), 0x4f8f7a));
+  }
+  for (const value of majorTickValues(bounds.z)) {
+    const z = centeredCoordinate(value, bounds.z);
+    group.add(axisLine(new THREE.Vector3(xMin, z, yMin), new THREE.Vector3(xMin - tickLength, z, yMin), 0xa76f24));
+  }
+  return group;
+}
+
+function axisLabelDefinitions(bounds: SceneBounds): AxisLabel[] {
+  const labelOffset = Math.max(0.18, bounds.maxRange * 0.035);
+  const floor = -bounds.zRange / 2;
+  const xMin = -bounds.xRange / 2;
+  const yMin = -bounds.yRange / 2;
+  const labels: AxisLabel[] = [];
+
+  for (const value of labeledTickValues(bounds.x)) {
+    labels.push({
+      axis: "x",
+      text: `x ${formatSignedCoordinate(value, bounds.x.units)}`,
+      position: new THREE.Vector3(centeredCoordinate(value, bounds.x), floor, yMin - labelOffset),
+    });
+  }
+  for (const value of labeledTickValues(bounds.y)) {
+    labels.push({
+      axis: "y",
+      text: `y ${formatSignedCoordinate(value, bounds.y.units)}`,
+      position: new THREE.Vector3(xMin - labelOffset, floor, centeredCoordinate(value, bounds.y)),
+    });
+  }
+  for (const value of majorTickValues(bounds.z)) {
+    labels.push({
+      axis: "z",
+      text: `z ${formatSignedCoordinate(value, bounds.z.units)}`,
+      position: new THREE.Vector3(xMin - labelOffset, centeredCoordinate(value, bounds.z), yMin),
+    });
+  }
+  return labels;
+}
+
+function positionAxisLabels(
+  layer: HTMLDivElement | null,
+  canvas: HTMLCanvasElement,
+  camera: THREE.Camera,
+  labels: AxisLabel[],
+) {
+  if (!layer) return;
+  const width = canvas.clientWidth;
+  const height = canvas.clientHeight;
+  const cameraDirection = new THREE.Vector3();
+  camera.getWorldDirection(cameraDirection);
+
+  labels.forEach((label, index) => {
+    const element = layer.querySelector<HTMLElement>(`[data-axis-label-index="${index}"]`);
+    if (!element) return;
+    const projected = label.position.clone().project(camera);
+    const cameraToLabel = label.position.clone().sub(camera.position);
+    const inFrontOfCamera = cameraToLabel.dot(cameraDirection) > 0;
+    const x = (projected.x * 0.5 + 0.5) * width;
+    const y = (-projected.y * 0.5 + 0.5) * height;
+    const visible =
+      inFrontOfCamera &&
+      projected.z >= -1 &&
+      projected.z <= 1 &&
+      x >= -24 &&
+      x <= width + 24 &&
+      y >= -24 &&
+      y <= height + 24;
+    element.style.transform = `translate(${x}px, ${y}px) translate(-50%, -50%)`;
+    element.style.opacity = visible ? "1" : "0";
+  });
 }
 
 function cloudPointLayer(
@@ -668,17 +807,58 @@ function range(extent: CoordinateExtent): number {
   return Number.isFinite(value) && value > 0 ? value : 1;
 }
 
+function majorTickValues(extent: CoordinateExtent): number[] {
+  const min = Math.ceil(extent.min);
+  const max = Math.floor(extent.max);
+  const values: number[] = [];
+  for (let value = min; value <= max; value += 1) {
+    values.push(Object.is(value, -0) ? 0 : value);
+  }
+  if (values.length > 0) return values;
+  return [extent.min, extent.max];
+}
+
+function gridTickValues(extent: CoordinateExtent, spacing: number): number[] {
+  const first = Math.ceil(extent.min / spacing) * spacing;
+  const values: number[] = [];
+  for (let value = first; value <= extent.max + spacing * 0.001; value += spacing) {
+    values.push(roundTick(Object.is(value, -0) ? 0 : value));
+  }
+  return values;
+}
+
+function gridLineMaterial(
+  value: number,
+  minorMaterial: THREE.LineBasicMaterial,
+  majorMaterial: THREE.LineBasicMaterial,
+  zeroMaterial: THREE.LineBasicMaterial,
+): THREE.LineBasicMaterial {
+  if (Math.abs(value) < 0.0001) return zeroMaterial;
+  return Math.abs(value - Math.round(value)) < 0.0001 ? majorMaterial : minorMaterial;
+}
+
+function roundTick(value: number): number {
+  return Math.round(value * 1000) / 1000;
+}
+
+function labeledTickValues(extent: CoordinateExtent): number[] {
+  const ticks = majorTickValues(extent);
+  return ticks.filter((value) => value === 0 || Math.abs(value) === Math.max(...ticks.map(Math.abs)));
+}
+
 function normalize(value: number, min: number, max: number): number {
   if (!Number.isFinite(value) || max <= min) return 0.5;
   return Math.min(Math.max((value - min) / (max - min), 0), 1);
 }
 
-function extentText(extent: CoordinateExtent): string {
-  return `${formatCoordinate(extent.min, extent.units)} to ${formatCoordinate(extent.max, extent.units)}`;
-}
-
 function formatCoordinate(value: number, units: string | null): string {
   return `${formatCompactNumber(value)}${units ? ` ${units}` : ""}`;
+}
+
+function formatSignedCoordinate(value: number, units: string | null): string {
+  const rounded = formatCompactNumber(value);
+  const signed = value > 0 ? `+${rounded}` : rounded;
+  return `${signed}${units ? ` ${units}` : ""}`;
 }
 
 function formatCompactNumber(value: number): string {

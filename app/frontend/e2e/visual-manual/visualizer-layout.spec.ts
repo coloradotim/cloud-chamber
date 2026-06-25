@@ -24,7 +24,7 @@ test.describe("visual/manual: 3-D workbench layout", () => {
     await expect(page.getByLabel("Cloud-water threshold")).toBeVisible();
     await expect(page.getByLabel("True 3-D cloud-water viewer")).toBeVisible();
     await expect(page.getByRole("button", { name: /reset camera/i })).toBeVisible();
-    await expect(page.getByLabel("Domain axis dimensions")).toBeVisible();
+    await expect(page.getByLabel("3-D axis tick labels")).toBeVisible();
     await page.getByText(/technical visualization details/i).first().click();
     await expect(page.getByText(/visualizer interpretation/i).first()).toBeVisible();
   });

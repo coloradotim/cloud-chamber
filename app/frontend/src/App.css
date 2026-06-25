@@ -1201,47 +1201,39 @@ details[open] > summary {
   font-weight: 700;
 }
 
-.true3d-axis-key {
+.true3d-axis-label-layer {
   position: absolute;
-  left: 0.85rem;
-  right: 0.85rem;
-  bottom: 0.7rem;
+  inset: 0;
   z-index: 2;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.6rem 1rem;
-  align-items: center;
   margin: 0;
-  color: #294b60;
-  font-size: 0.78rem;
-  font-weight: 760;
   pointer-events: none;
 }
 
-.true3d-axis-key div {
-  display: inline-flex;
-  gap: 0.35rem;
-  align-items: baseline;
+.true3d-axis-label {
+  position: absolute;
+  left: 0;
+  top: 0;
+  color: #28485a;
+  font-size: 0.74rem;
+  font-weight: 850;
+  letter-spacing: 0;
+  text-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.92),
+    0 0 5px rgba(255, 255, 255, 0.82);
+  white-space: nowrap;
+  transition: opacity 120ms ease;
 }
 
-.true3d-axis-key dt {
-  margin: 0;
-  border-bottom: 2px solid #2f7fb5;
-  color: #14374a;
-  font-weight: 900;
+.true3d-axis-label-x {
+  color: #1f6795;
 }
 
-.true3d-axis-key div:nth-child(2) dt {
-  border-bottom-color: #4f8f7a;
+.true3d-axis-label-y {
+  color: #3d755f;
 }
 
-.true3d-axis-key div:nth-child(3) dt {
-  border-bottom-color: #a76f24;
-}
-
-.true3d-axis-key dd {
-  margin: 0;
-  color: var(--color-text-muted);
+.true3d-axis-label-z {
+  color: #8a5a12;
 }
 
 .true3d-slice-label {
@@ -2138,11 +2130,6 @@ details[open] > summary {
   .explore-control-card-slice,
   .true3d-controls {
     grid-template-columns: 1fr;
-  }
-
-  .true3d-axis-key {
-    right: 4.5rem;
-    gap: 0.35rem 0.75rem;
   }
 
   .notebook-list-panel {
