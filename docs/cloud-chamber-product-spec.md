@@ -288,6 +288,19 @@ Thermal Fate labels, native variables, source fields, confidence details, and
 provenance remain available behind details/disclosure. They should not be the
 first-read interaction model.
 
+Process evidence controls in Explore should be result-aware. The primary
+`Explanation focus` control should show only supported modes and caveated modes
+that are still useful for the selected result. For example, direct `qc` cloud
+water and `w` updraft evidence can be normal focus choices when those fields are
+available, moisture limitation can be a candidate focus for Dry Failed-style
+results, and cap/inversion can be a candidate focus for stronger-cap results.
+Modes that need missing fields or future backend diagnostics, such as buoyancy,
+deep breakthrough, or precipitation feedback without cold-pool/outflow evidence,
+belong under a collapsed `Not available for this result` disclosure with plain
+reasons. The browser may gate presentation from existing result metadata,
+support/confidence labels, caveats, and available visualization fields, but it
+must not invent unsupported scientific classifications.
+
 ### Workflow 7 — Duplicate / Tweak / Rerun
 
 1. Duplicate previous setup.

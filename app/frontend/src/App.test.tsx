@@ -220,6 +220,42 @@ const dryFailedCard = {
   updated_at: "2026-05-22T19:52:00Z",
 };
 
+const cappedCard = {
+  ...resultCard,
+  result_id: "result-capped-cumulus",
+  run_id: "dry-run-capped-suppressed-20260526015634",
+  name: "Capped / Suppressed Cumulus quick-look",
+  tags: ["capped", "quick-look"],
+  notes: "Stronger-cap contrast candidate.",
+  scenario_id: "capped-suppressed-cumulus",
+  scenario_name: "Capped / Suppressed Cumulus",
+  physical_question:
+    "How does a stronger cap suppress or limit shallow-cumulus growth even when moisture and boundary-layer thermals are available?",
+  controls: {
+    low_level_humidity: "baseline",
+    surface_heating: "baseline",
+    cap_strength: "stronger",
+  },
+  diagnostics_summary: "cloud formed; rain detected",
+  thermal_fate_label: "Capped / suppressed cumulus candidate",
+  thermal_fate_confidence: "candidate",
+  main_limiting_factor: "cap/stability",
+  first_cloud_time_seconds: 2700,
+  max_qc_kg_kg: 0.0004778,
+  time_of_max_qc_seconds: 3600,
+  max_w_m_s: 3.1,
+  time_of_max_w_seconds: 3600,
+  min_w_m_s: -1.8,
+  time_of_min_w_seconds: 4500,
+  rain_present: true,
+  first_rain_time_seconds: 7200,
+  caveats: ["cap_layer_annotation_is_proxy_without_full_cap_diagnostics"],
+  created_at: "2026-05-26T01:56:34Z",
+  completed_at: "2026-05-26T02:15:00Z",
+  ingested_at: "2026-05-26T02:20:00Z",
+  updated_at: "2026-05-26T02:20:00Z",
+};
+
 const missingDiagnosticsCard = {
   ...resultCard,
   result_id: "result-no-diagnostics",
@@ -253,7 +289,7 @@ const emptyVisualizerCard = {
 };
 
 const resultsResponse = {
-  results: [resultCard, dryFailedCard, missingDiagnosticsCard, emptyVisualizerCard],
+  results: [resultCard, dryFailedCard, cappedCard, missingDiagnosticsCard, emptyVisualizerCard],
 };
 
 const storageRuns = [
@@ -628,6 +664,23 @@ const dryFailedFieldCatalogResponse = {
     },
   })),
 };
+
+const cappedFieldCatalogResponse = {
+  ...fieldCatalogResponse,
+  result_id: "result-capped-cumulus",
+  run_id: "dry-run-capped-suppressed-20260526015634",
+  scenario_id: "capped-suppressed-cumulus",
+  available_fields: fieldCatalogResponse.available_fields.map((field) => ({
+    ...field,
+    provenance: {
+      ...field.provenance,
+      result_id: "result-capped-cumulus",
+      run_id: "dry-run-capped-suppressed-20260526015634",
+      scenario_id: "capped-suppressed-cumulus",
+    },
+  })),
+};
+
 
 function sliceResponse({
   field = "qc",
@@ -1028,6 +1081,25 @@ beforeEach(() => {
               scenario_id: "dry-failed-cumulus",
               preferred_field: "w",
               fields: { w: viewDefaultsResponse.fields.w },
+            }),
+            { status: 200 },
+          ),
+        );
+      }
+      if (url === "/api/results/result-capped-cumulus/visualization/fields") {
+        return Promise.resolve(
+          new Response(JSON.stringify(cappedFieldCatalogResponse), { status: 200 }),
+        );
+      }
+      if (url.startsWith("/api/results/result-capped-cumulus/visualization/defaults")) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              ...viewDefaultsResponse,
+              result_id: "result-capped-cumulus",
+              run_id: "dry-run-capped-suppressed-20260526015634",
+              scenario_id: "capped-suppressed-cumulus",
+              preferred_field: "qc",
             }),
             { status: 200 },
           ),
@@ -2159,7 +2231,7 @@ describe("App", () => {
     );
   });
 
-  it("keeps process-aware evidence available behind technical controls", async () => {
+  it("keeps only supported process evidence modes in the Baseline primary focus control", async () => {
     render(<App />);
 
     const resultDetail = await screen.findByLabelText("Result detail");
@@ -2172,11 +2244,76 @@ describe("App", () => {
       .toBeGreaterThan(0);
 
     fireEvent.click(screen.getByText("Process evidence details"));
-    fireEvent.change(screen.getByLabelText("Process mode"), {
-      target: { value: "moisture" },
-    });
+    const processMode = screen.getByLabelText("Process mode");
+    expect(processMode).toHaveValue("thermal_fate");
+    expect(within(processMode).getByRole("option", { name: /Thermal Fate summary/ }))
+      .toBeInTheDocument();
+    expect(within(processMode).getByRole("option", { name: "Cloud Water" })).toBeInTheDocument();
+    expect(within(processMode).getByRole("option", { name: "Updrafts" })).toBeInTheDocument();
+    expect(within(processMode).getByRole("option", { name: /Cloud Lifecycle/ })).toBeInTheDocument();
+    expect(within(processMode).queryByRole("option", { name: /Moisture/ })).not.toBeInTheDocument();
+    expect(within(processMode).queryByRole("option", { name: /Buoyancy/ })).not.toBeInTheDocument();
+    expect(within(processMode).queryByRole("option", { name: /Deep Breakthrough/ })).not
+      .toBeInTheDocument();
+    expect(within(processMode).queryByRole("option", { name: /Precipitation Feedback/ })).not
+      .toBeInTheDocument();
 
-    expect(screen.getByLabelText("Process mode")).toHaveValue("moisture");
+    fireEvent.change(processMode, { target: { value: "cloud_water" } });
+
+    expect(processMode).toHaveValue("cloud_water");
+    expect(screen.getByRole("heading", { name: "Cloud Water" })).toBeInTheDocument();
+
+    expect(screen.getByText("Not available for this result")).toBeInTheDocument();
+    fireEvent.click(screen.getByText("Not available for this result"));
+    expect(screen.getByText(/Moisture \/ Saturation/)).toBeInTheDocument();
+    expect(screen.getByText(/missing required CM1 fields/i)).toBeInTheDocument();
+    expect(screen.getByText(/Deep Breakthrough/)).toBeInTheDocument();
+    expect(screen.getAllByText(/Future diagnostic/i).length).toBeGreaterThan(0);
+  });
+
+  it("shows Dry Failed moisture limitation as a candidate focus instead of a dead-end", async () => {
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Dry Failed Cumulus quick-look" }));
+    const resultDetail = await screen.findByLabelText("Result detail");
+    fireEvent.click(within(resultDetail).getByRole("button", { name: "Open in Explore" }));
+
+    expect(await screen.findByRole("heading", { name: "What happened in this result?" })).toBeInTheDocument();
+    await screen.findByText("Slice synced");
+    fireEvent.click(screen.getByText("Process evidence details"));
+    const processMode = screen.getByLabelText("Process mode");
+    expect(within(processMode).getByRole("option", { name: /Moisture \/ Saturation \(candidate\)/ }))
+      .toBeInTheDocument();
+    expect(within(processMode).queryByRole("option", { name: /Buoyancy/ })).not.toBeInTheDocument();
+
+    fireEvent.change(processMode, { target: { value: "moisture" } });
+
+    expect(processMode).toHaveValue("moisture");
+    expect(screen.getByRole("heading", { name: "Moisture / Saturation" })).toBeInTheDocument();
+    expect(screen.getAllByText("Candidate").length).toBeGreaterThan(0);
+    expect(screen.getByText(/thermals are present while cloud water and rain stay below threshold/i))
+      .toBeInTheDocument();
+  });
+
+  it("shows capped-style results with cap inversion as a candidate focus", async () => {
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Capped / Suppressed Cumulus quick-look" }));
+    const resultDetail = await screen.findByLabelText("Result detail");
+    fireEvent.click(within(resultDetail).getByRole("button", { name: "Open in Explore" }));
+
+    expect(await screen.findByRole("heading", { name: "What happened in this result?" })).toBeInTheDocument();
+    await screen.findByText("Slice synced");
+    fireEvent.click(screen.getByText("Process evidence details"));
+    const processMode = screen.getByLabelText("Process mode");
+    expect(within(processMode).getByRole("option", { name: /Cap \/ Inversion \(candidate\)/ }))
+      .toBeInTheDocument();
+
+    fireEvent.change(processMode, { target: { value: "cap" } });
+
+    expect(processMode).toHaveValue("cap");
+    expect(screen.getByRole("heading", { name: "Cap / Inversion" })).toBeInTheDocument();
+    expect(screen.getByText(/candidate process view/i)).toBeInTheDocument();
   });
 
   it("handles missing qc fields without treating no-qc as a broken Explore state", async () => {

@@ -177,6 +177,37 @@ test.describe("mocked smoke: Build, Results, Explore path", () => {
     await expect(page.getByText(/selected point: x/i)).toBeVisible();
   });
 
+  test("Explore process evidence offers useful modes and moves unsupported modes secondary", async ({
+    page,
+  }) => {
+    await gotoResults(page);
+    await page.getByRole("button", { name: "Open in Explore" }).first().click();
+
+    await expect(page.getByText(/what happened in this result/i).first()).toBeVisible({
+      timeout: 10_000,
+    });
+    await page.getByText("Process evidence details").click();
+
+    const processMode = page.getByLabel("Process mode");
+    await expect(processMode).toBeVisible();
+    await expect(processMode.locator("option", { hasText: "Thermal Fate summary" })).toHaveCount(
+      1,
+    );
+    await expect(processMode.locator("option", { hasText: "Cloud Water" })).toHaveCount(1);
+    await expect(processMode.locator("option", { hasText: "Updrafts" })).toHaveCount(1);
+    await expect(processMode.locator("option", { hasText: "Moisture" })).toHaveCount(0);
+    await expect(processMode.locator("option", { hasText: "Buoyancy" })).toHaveCount(0);
+    await expect(processMode.locator("option", { hasText: "Deep Breakthrough" })).toHaveCount(0);
+    await expect(processMode.locator("option", { hasText: "Precipitation Feedback" })).toHaveCount(
+      0,
+    );
+
+    await page.getByText("Not available for this result").click();
+    await expect(page.getByText("Moisture / Saturation", { exact: true })).toBeVisible();
+    await expect(page.getByText("Deep Breakthrough", { exact: true })).toBeVisible();
+    await expect(page.getByText(/missing required CM1 fields/i)).toBeVisible();
+  });
+
   test("Results to Explore loads cloud-forming qc and w fields", async ({ page }) => {
     await gotoResults(page);
     await page.getByRole("button", { name: "Open in Explore" }).first().click();
