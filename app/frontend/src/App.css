@@ -989,144 +989,91 @@ details[open] > summary {
   order: 0;
 }
 
-.explore-shared-controls {
+.explore-control-deck {
   display: grid;
-  grid-template-columns:
-    minmax(9.5rem, 0.7fr)
-    minmax(19rem, 1.35fr)
-    minmax(14rem, 0.9fr)
-    minmax(18rem, 1.2fr);
-  gap: 0.5rem;
+  grid-template-columns: minmax(12rem, 0.9fr) minmax(22rem, 1.55fr) minmax(16rem, 1fr);
+  gap: 0.55rem;
   align-items: stretch;
-  border: 1px solid rgba(47, 116, 168, 0.18);
-  border-radius: 8px;
-  padding: 0.45rem;
-  background: rgba(255, 255, 255, 0.78);
-  order: 3;
 }
 
-.explore-control-group {
+.explore-control-card {
   display: grid;
-  gap: 0.35rem;
-  align-content: end;
+  gap: 0.42rem;
   min-width: 0;
-  border-left: 1px solid rgba(47, 116, 168, 0.14);
-  padding-left: 0.55rem;
-}
-
-.explore-control-group:first-child {
-  border-left: 0;
-  padding-left: 0;
-}
-
-.explore-control-group-time {
-  align-content: end;
-}
-
-.explore-control-group-slice,
-.explore-control-group-view {
-  grid-template-columns: minmax(9.5rem, 0.58fr) minmax(0, 1fr);
-  align-items: end;
-}
-
-.explore-control-group-position {
-  grid-template-columns: minmax(10rem, 1fr) auto;
-  align-items: end;
-}
-
-.explore-control-group-view {
-  grid-template-columns: minmax(13rem, 1fr) minmax(8rem, 0.55fr);
-  grid-template-areas:
-    "view zoom"
-    "plane reset";
-}
-
-.explore-control-group-view .view-mode-control {
-  grid-area: view;
-}
-
-.explore-control-group-view label[for="scene-zoom"] {
-  grid-area: zoom;
-}
-
-.explore-control-group-view .checkbox-label {
-  grid-area: plane;
-}
-
-.explore-control-group-view > button {
-  grid-area: reset;
-  justify-self: start;
-}
-
-.explore-shared-controls label,
-.explore-shared-controls fieldset {
-  min-width: 0;
-}
-
-.explore-shared-controls label {
-  display: grid;
-  gap: 0.2rem;
-  color: var(--color-text-primary);
-  font-size: 0.86rem;
-  font-weight: 800;
-}
-
-.explore-shared-controls fieldset {
   margin: 0;
-  border: 0;
-  padding: 0;
+  border: 1px solid rgba(47, 116, 168, 0.16);
+  border-radius: 8px;
+  padding: 0.55rem;
+  background: rgba(255, 255, 255, 0.78);
 }
 
-.explore-shared-controls legend {
-  margin-bottom: 0.2rem;
+.explore-control-card legend {
+  padding: 0 0.25rem;
   color: var(--color-text-primary);
-  font-size: 0.86rem;
+  font-size: 0.84rem;
   font-weight: 850;
 }
 
-.explore-shared-controls select,
-.explore-shared-controls input {
+.explore-control-card label {
+  display: grid;
+  gap: 0.24rem;
+  color: var(--color-text-primary);
+  font-size: 0.82rem;
+  font-weight: 800;
+}
+
+.explore-control-card output {
+  color: var(--color-text-muted);
+  font-size: 0.78rem;
+  font-weight: 750;
+}
+
+.explore-control-card select,
+.explore-control-card input {
   min-width: 0;
 }
 
-.explore-shared-controls button {
+.explore-control-card button {
   padding: 0.34rem 0.48rem;
   box-shadow: none;
   white-space: nowrap;
 }
 
-.explore-shared-controls .view-mode-control {
-  gap: 0.2rem;
-  border: 0;
-  padding: 0;
+.explore-control-card-slice {
+  grid-template-columns: minmax(10rem, 0.85fr) minmax(12rem, 1fr);
+  align-items: end;
 }
 
-.explore-shared-controls .segmented-buttons {
-  flex-wrap: wrap;
-  gap: 0.25rem;
+.explore-control-card-slice legend {
+  grid-column: 1 / -1;
 }
 
-.explore-shared-controls .checkbox-label {
-  display: flex;
-  gap: 0.42rem;
-  align-items: center;
-  align-self: center;
-  min-height: 2.35rem;
-  white-space: nowrap;
-}
-
-.explore-shared-controls .checkbox-label input {
-  width: auto;
-}
-
+.explore-control-card-slice .segmented-buttons,
+.explore-control-card-slice .slice-move-buttons,
 .time-preset-buttons {
   display: flex;
   flex-wrap: wrap;
   gap: 0.25rem;
 }
 
+.explore-control-card-slice label[for="explore-slice-position"] {
+  grid-column: 1 / -1;
+}
+
+.explore-control-card-slice .checkbox-label {
+  display: flex;
+  gap: 0.42rem;
+  align-items: center;
+  align-self: center;
+  white-space: nowrap;
+}
+
+.explore-control-card-slice .checkbox-label input {
+  width: auto;
+}
+
 .time-preset-buttons button,
-.explore-shared-controls .slice-move-buttons button {
+.explore-control-card .slice-move-buttons button {
   border: 1px solid var(--color-border);
   background: var(--color-surface);
   color: var(--color-accent-primary);
@@ -1142,24 +1089,6 @@ details[open] > summary {
 .slice-position-label small {
   color: var(--color-text-muted);
   font-weight: 700;
-}
-
-.linked-view-strip {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.35rem 0.85rem;
-  align-items: center;
-  border: 1px solid var(--color-border);
-  border-radius: 8px;
-  padding: 0.45rem 0.65rem;
-  background: var(--color-surface-muted);
-  color: var(--color-text-muted);
-  font-size: 0.88rem;
-  order: 1;
-}
-
-.linked-view-strip strong {
-  color: var(--color-text-primary);
 }
 
 .unified-slice-inspector {
@@ -1194,6 +1123,214 @@ details[open] > summary {
   gap: 0.75rem;
   min-width: 0;
   overflow: hidden;
+}
+
+.true3d-viewer {
+  display: grid;
+  gap: 0.55rem;
+  border: 1px solid rgba(95, 143, 168, 0.26);
+  border-radius: 10px;
+  padding: 0.75rem;
+  background:
+    radial-gradient(circle at 22% 0%, rgba(255, 255, 255, 0.9), transparent 17rem),
+    linear-gradient(180deg, #f6fbfd 0%, #e8f5fa 100%);
+}
+
+.true3d-scene-header {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  justify-content: space-between;
+  align-items: start;
+}
+
+.true3d-scene-header h3 {
+  margin-bottom: 0;
+}
+
+.true3d-scene-frame {
+  position: relative;
+  overflow: hidden;
+  min-height: clamp(24rem, 46vw, 42rem);
+  border: 1px solid rgba(84, 132, 158, 0.32);
+  border-radius: 8px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.72), rgba(221, 239, 247, 0.42)),
+    var(--color-visualization-background);
+}
+
+.true3d-canvas-mount,
+.true3d-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.true3d-canvas {
+  display: block;
+}
+
+.true3d-scene-label,
+.true3d-slice-label,
+.true3d-selected-point-label,
+.true3d-render-error {
+  position: absolute;
+  z-index: 2;
+  border: 1px solid rgba(180, 210, 224, 0.72);
+  border-radius: 8px;
+  padding: 0.38rem 0.52rem;
+  background: rgba(255, 255, 255, 0.82);
+  color: #243f52;
+  box-shadow: 0 8px 24px rgba(40, 80, 110, 0.08);
+  pointer-events: none;
+}
+
+.true3d-scene-label {
+  top: 0.75rem;
+  right: 0.75rem;
+  display: grid;
+  gap: 0.12rem;
+  max-width: min(25rem, calc(100% - 1.5rem));
+  text-align: right;
+  font-size: 0.82rem;
+}
+
+.true3d-scene-label span {
+  color: var(--color-text-muted);
+  font-weight: 700;
+}
+
+.true3d-axis-label-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  margin: 0;
+  pointer-events: none;
+}
+
+.true3d-axis-label {
+  position: absolute;
+  left: 0;
+  top: 0;
+  color: #28485a;
+  font-size: 0.74rem;
+  font-weight: 850;
+  letter-spacing: 0;
+  text-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.92),
+    0 0 5px rgba(255, 255, 255, 0.82);
+  white-space: nowrap;
+  transition: opacity 120ms ease;
+}
+
+.true3d-axis-label-x {
+  color: #1f6795;
+}
+
+.true3d-axis-label-y {
+  color: #3d755f;
+}
+
+.true3d-axis-label-z {
+  color: #8a5a12;
+}
+
+.true3d-slice-label {
+  left: 0.75rem;
+  top: 0.75rem;
+  border-color: rgba(202, 138, 4, 0.35);
+  background: rgba(255, 251, 235, 0.9);
+  color: #7c4a03;
+  font-weight: 850;
+}
+
+.true3d-selected-point-label {
+  left: 0.75rem;
+  top: 3.65rem;
+  border-color: rgba(217, 119, 6, 0.36);
+  background: rgba(255, 247, 237, 0.9);
+  color: #7c2d12;
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
+.true3d-render-error {
+  left: 0.75rem;
+  right: 0.75rem;
+  bottom: 4.25rem;
+  border-color: rgba(185, 28, 28, 0.28);
+  color: var(--color-danger);
+  pointer-events: auto;
+}
+
+.true3d-empty-state {
+  position: absolute;
+  z-index: 2;
+  right: 1rem;
+  bottom: 4.65rem;
+  max-width: min(28rem, calc(100% - 2rem));
+  border: 1px solid rgba(180, 210, 224, 0.72);
+  border-radius: 10px;
+  padding: 0.8rem;
+  background: rgba(255, 255, 255, 0.9);
+  box-shadow: 0 12px 30px rgba(40, 80, 110, 0.1);
+}
+
+.true3d-empty-state h4 {
+  margin-bottom: 0.3rem;
+}
+
+.true3d-empty-state p:last-child {
+  margin-bottom: 0;
+}
+
+.true3d-controls {
+  display: grid;
+  grid-template-columns: minmax(18rem, auto) minmax(14rem, auto) minmax(18rem, 1fr);
+  gap: 0.55rem;
+  align-items: center;
+  border: 1px solid rgba(215, 226, 232, 0.82);
+  border-radius: 8px;
+  padding: 0.45rem;
+  background: rgba(255, 255, 255, 0.74);
+}
+
+.true3d-control-section {
+  display: grid;
+  gap: 0.24rem;
+  min-width: 0;
+}
+
+.true3d-control-section > span {
+  color: var(--color-text-muted);
+  font-size: 0.74rem;
+  font-weight: 850;
+  text-transform: uppercase;
+}
+
+.true3d-preset-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.true3d-controls button {
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-accent-primary);
+  box-shadow: none;
+}
+
+.true3d-controls p {
+  margin: 0;
+  font-size: 0.84rem;
+}
+
+.true3d-provenance {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: 0.8rem;
 }
 
 .scene-container {
@@ -1543,30 +1680,6 @@ details[open] > summary {
   color: var(--color-text-primary);
 }
 
-.technical-rendering-controls {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
-  gap: 0.65rem;
-  margin: 0 0 0.85rem;
-  border: 1px solid var(--color-border);
-  border-radius: 8px;
-  padding: 0.75rem;
-  background: var(--color-surface-muted);
-}
-
-.technical-rendering-controls legend {
-  color: var(--color-text-primary);
-  font-weight: 850;
-}
-
-.technical-rendering-controls label {
-  display: grid;
-  gap: 0.35rem;
-  color: var(--color-text-primary);
-  font-size: 0.84rem;
-  font-weight: 800;
-}
-
 .visualizer-bottom-controls legend {
   color: var(--color-text-primary);
   font-weight: 850;
@@ -1617,37 +1730,6 @@ details[open] > summary {
 
 .checkbox-label input {
   width: auto;
-}
-
-.summary-strip {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 0.65rem;
-}
-
-.visualizer-details-panel .summary-strip {
-  grid-template-columns: minmax(0, 1fr);
-}
-
-.summary-strip > div {
-  border: 1px solid var(--color-border);
-  border-radius: 8px;
-  padding: 0.65rem;
-  background: var(--color-surface-muted);
-}
-
-.slice-plane-summary {
-  display: grid;
-  gap: 0.75rem;
-}
-
-.slice-plane-card {
-  display: grid;
-  gap: 0.55rem;
-  border: 1px solid var(--color-border);
-  border-radius: 8px;
-  padding: 0.75rem;
-  background: var(--color-surface-muted);
 }
 
 .slice-axis-summary {
@@ -2036,13 +2118,18 @@ details[open] > summary {
     grid-template-columns: 1fr;
   }
 
-  .summary-strip,
   .experiment-card {
     grid-template-columns: 1fr;
   }
 
   .experiment-card-actions {
     justify-content: start;
+  }
+
+  .explore-control-deck,
+  .explore-control-card-slice,
+  .true3d-controls {
+    grid-template-columns: 1fr;
   }
 
   .notebook-list-panel {

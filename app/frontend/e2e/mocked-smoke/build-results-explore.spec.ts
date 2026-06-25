@@ -134,15 +134,21 @@ test.describe("mocked smoke: Build, Results, Explore path", () => {
     await expect(page.getByText(/what happened in this result/i).first()).toBeVisible({
       timeout: 10_000,
     });
-    await expect(page.getByLabel("Shared Explore controls")).toBeVisible();
-    await expect(page.getByLabel("3-D scene container")).toBeVisible({ timeout: 12_000 });
+    await expect(page.getByLabel("Explore viewer controls")).toBeVisible();
+    await expect(page.getByLabel("True 3-D cloud-water viewer")).toBeVisible({
+      timeout: 12_000,
+    });
+    await expect(
+      page.getByLabel(
+        "Interactive Three.js scene showing CM1 cloud water, domain bounds, slice plane, and selected point",
+      ),
+    ).toBeVisible();
+    await expect(page.getByLabel("3-D camera controls")).toBeVisible();
     await expect(page.getByRole("heading", { name: "Inspect the current slice" })).toBeVisible();
     await expect(page.getByText(/Horizontal layer at z = /i).first()).toBeVisible();
     await expect(page.getByLabel("Slice position")).toBeVisible();
     await expect(page.getByRole("button", { name: /move down/i })).toBeVisible();
     await expect(page.getByRole("button", { name: /move up/i })).toBeVisible();
-    await expect(page.getByText(/what happened here/i).first()).toBeVisible();
-    await expect(page.getByText(/click a slice cell to inspect that point/i).first()).toBeVisible();
     const heatmap = page.getByRole("img", { name: /heatmap/i });
     await expect(heatmap).toBeVisible();
     const fieldControlsPrecedeHeatmap = await heatmap.evaluate((element) => {
@@ -157,6 +163,7 @@ test.describe("mocked smoke: Build, Results, Explore path", () => {
       .getByRole("button", { name: /inspect .*row 2, column 2/i })
       .first()
       .click();
+    await expect(page.getByText(/what happened here/i).first()).toBeVisible();
     await expect(page.getByText(/selected-point diagnostics loaded/i)).toBeVisible();
     await expect(page.getByText(/cloud water appeared locally/i)).toBeVisible();
     await expect(page.getByText(/local max w/i)).toBeVisible();
@@ -166,10 +173,8 @@ test.describe("mocked smoke: Build, Results, Explore path", () => {
 
     await expect(page.getByText("Cloud formed in this result")).toBeVisible();
     await expect(page.getByText("Cloud formed here")).toHaveCount(0);
-    await expect(page.getByRole("button", { name: /reset view/i })).toBeVisible();
-    const visualizerControls = page.getByLabel("Shared Explore controls");
-    await expect(visualizerControls.getByRole("button", { name: /oblique/i })).toBeVisible();
-    await expect(visualizerControls.getByRole("button", { name: /side x-?z/i })).toBeVisible();
+    await expect(page.getByRole("button", { name: /reset camera/i })).toBeVisible();
+    await expect(page.getByText(/selected point: x/i)).toBeVisible();
   });
 
   test("Results to Explore loads cloud-forming qc and w fields", async ({ page }) => {
@@ -206,9 +211,6 @@ test.describe("mocked smoke: Build, Results, Explore path", () => {
     await expect(page.locator("#explore-slice-field")).toHaveValue("w");
     await expect(
       page.getByText(/No cloud water formed in this result; vertical velocity is available/i),
-    ).toBeVisible();
-    await expect(
-      page.getByText(/Use the vertical velocity field \(w\) to inspect the thermals/i),
     ).toBeVisible();
     await expect(page.getByText("No cloud formed in this result")).toBeVisible();
     await expect(page.getByText("No cloud formed here")).toHaveCount(0);
@@ -254,8 +256,6 @@ test.describe("mocked smoke: Build, Results, Explore path", () => {
     await expect(page.getByLabel("Slice position")).toBeVisible();
     const heatmap = page.getByRole("img", { name: /heatmap/i });
     await expect(heatmap).toBeVisible({ timeout: 10_000 });
-    await expect(page.getByLabel("What happened here panel")).toBeVisible();
-    await expect(page.getByLabel("What happened here panel")).toContainText(/what happened here/i);
 
     const heatmapPrecedesTechnicalDetails = await heatmap.evaluate((element) => {
       const technicalSummary = Array.from(document.querySelectorAll("summary")).find((summary) =>
@@ -268,7 +268,7 @@ test.describe("mocked smoke: Build, Results, Explore path", () => {
     });
     expect(heatmapPrecedesTechnicalDetails).toBe(true);
 
-    const scene = page.getByLabel("3-D scene container");
+    const scene = page.getByLabel("True 3-D cloud-water viewer");
     const explanation = page.getByLabel("Visualization details");
     await expect(scene).toBeVisible({ timeout: 12_000 });
     await expect(explanation).toBeVisible();
