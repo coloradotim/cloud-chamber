@@ -219,11 +219,14 @@ raw-NetCDF parsing or real CM1 output.
 
 Thermal Fate overlay UI tests should mock result cards and visualization-ready
 API payloads. They should cover process mode selection, supported and candidate
-labels, unsupported/unavailable diagnostic groups, cloud base/top or slice
-annotations, cap/inversion proxy caveats, precipitation-feedback and
-deep-breakthrough caveats, and the guarantee that frontend code displays
-backend-derived evidence instead of parsing raw NetCDF or inventing process
-classification.
+labels, result-aware filtering of the primary `Explanation focus` control,
+unsupported/unavailable diagnostic groups under a collapsed `Not available for
+this result` disclosure, cloud base/top or slice annotations, cap/inversion
+proxy caveats, precipitation-feedback and deep-breakthrough caveats, and the
+guarantee that frontend code displays backend-derived evidence instead of
+parsing raw NetCDF or inventing process classification. Baseline, Dry Failed,
+and capped-style mocked result states should remain covered so candidate modes
+appear only when the selected result has useful evidence or metadata.
 
 Thermal Fate Inspector UI tests should mock the selected-region diagnostics API.
 They should cover selecting a slice cell, selecting a bounded center point or

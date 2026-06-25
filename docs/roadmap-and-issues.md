@@ -531,6 +531,7 @@ Implementation anchor:
 - #184 consolidates the former `2-D Slices` / `3-D View` scaffold into one desktop Explore workflow. The current target is compact selected-result context, shared field/time/slice controls, 3-D `qc` cloud-water context, a visible native-grid slice plane, the matching 2-D slice inspector, and selected-cell `What happened here?` diagnostics. `w` and other broader fields are inspected through slices, not through fake 3-D point rendering.
 - #185 cleans the Explore test suite after #184 so tests protect the unified workflow rather than the old separate `2-D Slices` / `3-D View` scaffold.
 - #177 keeps older visualizer-roadmap language from pulling near-term work back toward renderer polish before the UX/product loop is stable.
+- #196 cleans up process evidence focus states in Explore. The primary `Explanation focus` control should be result-aware and show only supported or useful candidate modes; missing/future diagnostics remain visible under a collapsed `Not available for this result` section with evidence requirements and caveats.
 - #112 is the renderer-upgrade decision point after the simplified Explore loop is stable.
 - #80 plans visual polish, fly-through/move-through, cinematic export, and thumbnail/preview policy later. It must not add rendering dependencies or implementation code.
 

@@ -3514,6 +3514,18 @@ function VisualizerSceneShell({ result }: { result: ResultCard }) {
   const activeSlice = activeSlicePlane === "horizontal" ? sceneHorizontalSlice : sceneVerticalSlice;
   const activeSliceLabel = slicePlainLabel(activeSlice, activeSlicePlane, activeSliceIndex);
   const selectedSliceValue = selectedSliceCellValue(activeSlice, selectedRegion);
+  const processModeStates = useMemo(
+    () => processModeClassifications(result, catalog, sliceField, activeSlice),
+    [activeSlice, catalog, result, sliceField],
+  );
+  const primaryProcessModes = processModeStates.filter((state) => state.primary);
+  const unavailableProcessModes = processModeStates.filter((state) => !state.primary);
+  const activeProcessMode = primaryProcessModes.some((state) => state.mode === processMode)
+    ? processMode
+    : (primaryProcessModes[0]?.mode ?? "thermal_fate");
+  const activeProcessModeState =
+    primaryProcessModes.find((state) => state.mode === activeProcessMode) ??
+    processModeStates.find((state) => state.mode === activeProcessMode);
   const timePresets = [
     result.time_of_max_qc_seconds !== null && result.time_of_max_qc_seconds !== undefined
       ? { label: "Max cloud water", seconds: result.time_of_max_qc_seconds }
@@ -3528,6 +3540,12 @@ function VisualizerSceneShell({ result }: { result: ResultCard }) {
       ? { label: "Rain onset", seconds: result.first_rain_time_seconds }
       : null,
   ].filter((preset): preset is { label: string; seconds: number } => preset !== null);
+
+  useEffect(() => {
+    if (processMode !== activeProcessMode) {
+      setProcessMode(activeProcessMode);
+    }
+  }, [activeProcessMode, processMode]);
 
   useEffect(() => {
     if (!selectedField || selectedField.raw_field_name !== "qc") {
@@ -3942,12 +3960,18 @@ function VisualizerSceneShell({ result }: { result: ResultCard }) {
 
           <details className="technical-details">
             <summary>Process evidence details</summary>
-            <ProcessModeControl processMode={processMode} onProcessModeChange={setProcessMode} />
+            <ProcessModeControl
+              processMode={activeProcessMode}
+              processModeStates={primaryProcessModes}
+              activeProcessModeState={activeProcessModeState}
+              unavailableProcessModes={unavailableProcessModes}
+              onProcessModeChange={setProcessMode}
+            />
             <ProcessOverlayPanel
               result={result}
               catalog={catalog}
               selectedField={sliceField}
-              processMode={processMode}
+              processMode={activeProcessMode}
               slice={activeSlicePlane === "horizontal" ? sceneHorizontalSlice : sceneVerticalSlice}
             />
           </details>
@@ -4399,25 +4423,68 @@ function axisSize(slice: SliceResponse, dimension: string | null): number {
 
 function ProcessModeControl({
   processMode,
+  processModeStates,
+  activeProcessModeState,
+  unavailableProcessModes,
   onProcessModeChange,
 }: {
   processMode: ProcessMode;
+  processModeStates: ProcessModeClassification[];
+  activeProcessModeState: ProcessModeClassification | undefined;
+  unavailableProcessModes: ProcessModeClassification[];
   onProcessModeChange: (mode: ProcessMode) => void;
 }) {
   return (
     <fieldset className="process-mode-control">
       <legend>Explanation focus</legend>
-      <select
-        aria-label="Process mode"
-        value={processMode}
-        onChange={(event) => onProcessModeChange(event.target.value as ProcessMode)}
-      >
-        {PROCESS_MODES.map((mode) => (
-          <option key={mode} value={mode}>
-            {processModeLabel(mode)}
-          </option>
-        ))}
-      </select>
+      {processModeStates.length > 0 ? (
+        <>
+          <select
+            aria-label="Process mode"
+            value={processMode}
+            onChange={(event) => onProcessModeChange(event.target.value as ProcessMode)}
+          >
+            {processModeStates.map((state) => (
+              <option key={state.mode} value={state.mode}>
+                {processModeLabel(state.mode)}
+                {state.support === "candidate" ? " (candidate)" : ""}
+              </option>
+            ))}
+          </select>
+          {activeProcessModeState && (
+            <p className="process-mode-helper">
+              <StatusBadge
+                label={processSupportLabel(activeProcessModeState.support)}
+                tone={
+                  activeProcessModeState.support === "supported"
+                    ? "good"
+                    : activeProcessModeState.support === "candidate"
+                      ? "neutral"
+                      : "warning"
+                }
+              />
+              <span>{activeProcessModeState.primaryReason}</span>
+            </p>
+          )}
+        </>
+      ) : (
+        <p>No supported process evidence focus is available for this result yet.</p>
+      )}
+      {unavailableProcessModes.length > 0 && (
+        <details className="unavailable-diagnostics">
+          <summary>Not available for this result</summary>
+          <ul className="compact-list">
+            {unavailableProcessModes.map((state) => (
+              <li key={state.mode}>
+                <strong>{processModeLabel(state.mode)}</strong>{" "}
+                <span className="muted-text">
+                  {processSupportLabel(state.support)}. {state.primaryReason} {state.description}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </details>
+      )}
     </fieldset>
   );
 }
@@ -4466,7 +4533,7 @@ function ProcessOverlayPanel({
         <details>
           <summary>Process caveats</summary>
           <ul className="compact-list">
-            {summary.caveats.map((caveat) => (
+            {_dedupeStrings(summary.caveats).map((caveat) => (
               <li key={caveat}>{caveat}</li>
             ))}
           </ul>
@@ -4839,7 +4906,12 @@ const PROCESS_MODES: ProcessMode[] = [
   "precipitation_feedback",
 ];
 
-type ProcessSupport = "supported" | "candidate" | "insufficient_evidence" | "unsupported_missing_fields";
+type ProcessSupport =
+  | "supported"
+  | "candidate"
+  | "insufficient_evidence"
+  | "unsupported_missing_fields"
+  | "future";
 
 type ProcessModeSummary = {
   support: ProcessSupport;
@@ -4848,6 +4920,12 @@ type ProcessModeSummary = {
   description: string;
   annotations: string[];
   caveats: string[];
+};
+
+type ProcessModeClassification = ProcessModeSummary & {
+  mode: ProcessMode;
+  primary: boolean;
+  primaryReason: string;
 };
 
 function processModeSummary(
@@ -4872,8 +4950,11 @@ function processModeSummary(
     : "No active slice summary is available yet.";
 
   if (mode === "thermal_fate") {
+    const hasResultSummary = Boolean(result.thermal_fate_label || result.diagnostics_summary);
+    const summarySupport =
+      confidence === "insufficient_evidence" && hasResultSummary ? "candidate" : confidence;
     return {
-      support: confidence,
+      support: summarySupport,
       evidenceType: "backend process diagnostics",
       source: "Result Card process fields from ingested CM1 output",
       description: `${thermalLabel}. ${
@@ -4958,14 +5039,42 @@ function processModeSummary(
     };
   }
 
+  if (mode === "moisture") {
+    const moistureLimited =
+      result.main_limiting_factor === "moisture" ||
+      result.scenario_id.includes("dry-failed") ||
+      result.caveats.some((caveat) => caveat.includes("moisture"));
+    return {
+      support: moistureLimited ? "candidate" : "unsupported_missing_fields",
+      evidenceType: moistureLimited
+        ? "scenario/control proxy plus cloud-water and updraft diagnostics"
+        : "unavailable moisture diagnostic group",
+      source: moistureLimited
+        ? "Dry Failed / moisture-limited result metadata and derived diagnostics"
+        : "Required humidity, qv, RH, or saturation-deficit fields were not ingested",
+      description: moistureLimited
+        ? "Moisture limitation is a candidate explanation for this contrast case because thermals are present while cloud water and rain stay below threshold."
+        : "Moisture / saturation diagnostics need qv, RH, or saturation-deficit fields before they can be selected as a focus.",
+      annotations: [
+        `Main limiting factor: ${String(result.main_limiting_factor ?? "not recorded")}`,
+        `Cloud: ${cloudOutcome(result)}; max w: ${formatNumber(result.max_w_m_s, "m/s")}`,
+      ],
+      caveats: moistureLimited
+        ? [...caveats, "moisture_limitation_is_candidate_without_direct_qv_or_rh_diagnostics"]
+        : [...caveats, "moisture_unsupported_missing_fields"],
+    };
+  }
+
   if (mode === "precipitation_feedback") {
     return {
-      support: result.rain_present ? "candidate" : "unsupported_missing_fields",
+      support: "future",
       evidenceType: "qr/rain and downdraft proxy diagnostics",
-      source: "Rain summary and w min diagnostics",
+      source: result.rain_present
+        ? "Rain summary exists, but cold-pool/outflow evidence is not available"
+        : "Required rain, downdraft, cold-pool, and outflow evidence is not available",
       description: result.rain_present
-        ? "Rain is present, but precipitation-feedback needs downdraft/cold-pool evidence before a stronger claim."
-        : "Precipitation-feedback overlay is unavailable because rain/qr was not detected or not output.",
+        ? "Rain is present, but precipitation-feedback needs downdraft/cold-pool evidence before it can be selected as a normal focus."
+        : "Precipitation feedback is future work for this result because rain/cold-pool/outflow diagnostics are not available.",
       annotations: [
         `Rain: ${rainOutcome(result.rain_present)}`,
         `Min w: ${formatNumber(result.min_w_m_s, "m/s")}`,
@@ -4980,19 +5089,77 @@ function processModeSummary(
     updrafts: "",
     cloud_lifecycle: "",
     cap: "",
-    precipitation_feedback: "",
     moisture: "Moisture / saturation diagnostics need qv/RH or saturation-deficit fields.",
     buoyancy: "Buoyancy diagnostics need thermodynamic fields and a documented buoyancy method.",
     deep_breakthrough: "Deep-breakthrough diagnostics need CAPE/CIN/LFC/EL and sustained-updraft context.",
+    precipitation_feedback:
+      "Precipitation-feedback diagnostics need rain, downdraft, cold-pool, and outflow evidence.",
   };
   return {
-    support: "unsupported_missing_fields",
+    support: mode === "buoyancy" || mode === "deep_breakthrough" ? "future" : "unsupported_missing_fields",
     evidenceType: "unavailable diagnostic group",
     source: "Required source fields were not ingested",
     description: unavailableLabels[mode],
     annotations: ["Unavailable diagnostics are shown explicitly rather than hidden."],
     caveats: [...caveats, `${mode}_unsupported_missing_fields`],
   };
+}
+
+function processModeClassifications(
+  result: ResultCard,
+  catalog: FieldCatalogResponse | null,
+  selectedField: VisualizableField | undefined,
+  slice: SliceResponse | null,
+): ProcessModeClassification[] {
+  return PROCESS_MODES.map((mode) => {
+    const summary = processModeSummary(mode, result, catalog, selectedField, slice);
+    const primary = processModeIsPrimary(mode, summary, result);
+    return {
+      mode,
+      ...summary,
+      primary,
+      primaryReason: primary
+        ? "Supported or useful candidate for this result."
+        : unavailableProcessReason(mode, summary),
+    };
+  });
+}
+
+function processModeIsPrimary(
+  mode: ProcessMode,
+  summary: ProcessModeSummary,
+  result: ResultCard,
+): boolean {
+  if (summary.support === "supported") return true;
+  if (summary.support !== "candidate") return false;
+  if (mode === "precipitation_feedback") return false;
+  if (mode === "cap") {
+    return result.scenario_id.includes("capped") || result.controls.cap_strength === "stronger";
+  }
+  if (mode === "moisture") {
+    return (
+      result.main_limiting_factor === "moisture" ||
+      result.scenario_id.includes("dry-failed") ||
+      result.caveats.some((caveat) => caveat.includes("moisture"))
+    );
+  }
+  return true;
+}
+
+function unavailableProcessReason(mode: ProcessMode, summary: ProcessModeSummary): string {
+  if (summary.support === "future") {
+    return "Future diagnostic: required backend evidence is not implemented for this result family.";
+  }
+  if (summary.support === "unsupported_missing_fields") {
+    return "Missing required CM1 fields or derived diagnostics for this selected result.";
+  }
+  if (summary.support === "insufficient_evidence") {
+    return "Evidence is present but not enough to make this a useful primary focus.";
+  }
+  if (summary.support === "candidate" && mode === "precipitation_feedback") {
+    return "Rain alone is not enough to select precipitation feedback without downdraft/cold-pool evidence.";
+  }
+  return "Not useful as a primary focus for this selected result.";
 }
 
 function processModeLabel(mode: ProcessMode): string {
@@ -5015,7 +5182,8 @@ function normalizeProcessSupport(value: string | null | undefined): ProcessSuppo
     value === "supported" ||
     value === "candidate" ||
     value === "insufficient_evidence" ||
-    value === "unsupported_missing_fields"
+    value === "unsupported_missing_fields" ||
+    value === "future"
   ) {
     return value;
   }
@@ -5028,6 +5196,7 @@ function processSupportLabel(value: ProcessSupport): string {
     candidate: "Candidate",
     insufficient_evidence: "Insufficient evidence",
     unsupported_missing_fields: "Unavailable",
+    future: "Future",
   };
   return labels[value];
 }
