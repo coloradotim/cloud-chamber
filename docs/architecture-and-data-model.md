@@ -252,6 +252,15 @@ Storage remains the owner of deletion policy and cleanup actions. Build may show
 that a run is cleanup-only or saved/protected, but it should not duplicate the
 delete workflow.
 
+Results / Storage is the canonical local runtime inventory for these same
+states. It joins storage entries to Result Cards when possible so the notebook
+name becomes the primary identity and run ID/path stay secondary technical
+metadata. Rows expose only state-appropriate non-destructive actions: open the
+associated result, open it in Explore, or ingest completed output when a
+completed-with-output run has a manifest and no associated result. Delete
+preview/confirmation remains scoped to Storage and is blocked for running or
+saved/protected runs.
+
 ### Preview Engine
 
 Fast reduced/light predictor.
@@ -322,6 +331,11 @@ The 50 GB warning threshold is a configurable product default, not a scientific 
 Deletion is explicit and scoped to one selected run directory. The cleanup service refuses path traversal, symlink escapes, the runtime home itself, the user's home directory, the source repo by construction, and configured CM1 root/run paths. It also refuses running runs and saved/protected runs unless a force flag is provided. A dry-run delete returns the selected path and estimated size reclaimed without deleting files; a real delete requires explicit confirmation.
 
 Deleting a run removes local generated CM1 inputs, copied runtime files, logs, raw CM1 output, NetCDF output, and processed artifacts inside that run directory. It does not delete result-library metadata outside that directory, repo files, or the external CM1 installation.
+
+If local result metadata is stored inside the selected run directory, cleanup
+also removes those local metadata files as part of deleting the directory. Saved
+or protected notebook entries remain blocked from normal cleanup so keeper
+results are not removed accidentally.
 
 ### Output Ingester
 
@@ -647,8 +661,11 @@ Explore
 obvious before field inspection or 3-D visualization. It contains `Notebook`,
 `Compare`, and `Storage` sub-tabs. `Compare` remains result-pair oriented, while
 `Storage` joins runtime folders to result cards when possible so the user sees a
-result display name first and raw run IDs/paths second. Saved/protected result
-cards disable normal cleanup because they are keeper notebook entries.
+result display name first and raw run IDs/paths second. Storage also surfaces
+ready-to-run packages, running/queued processes, completed output that is ready
+to ingest, completed runs with no usable output, failed/canceled runs, and
+missing/malformed manifests as distinct cleanup/review states. Saved/protected
+result cards disable normal cleanup because they are keeper notebook entries.
 
 `Notebook` renders result-card metadata as mobile-first experiment notebook
 entries rather than an admin table. The primary view should surface the result

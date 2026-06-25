@@ -70,6 +70,7 @@ test.describe("mocked smoke: Build, Results, Explore path", () => {
     await resultDetail.getByText("Technical details").click();
     await expect(resultDetail.getByText("Run ID")).toBeVisible();
     await expect(resultDetail.getByText("Product state")).toBeVisible();
+    await expect(resultDetail.getByRole("button", { name: "Manage local files" })).toBeVisible();
 
     await openResultsTab(page, /^Compare$/);
     await expect(
@@ -78,8 +79,37 @@ test.describe("mocked smoke: Build, Results, Explore path", () => {
     await expect(page.getByText("Moisture-limited", { exact: true })).toBeVisible();
 
     await openResultsTab(page, /^Storage$/);
-    await expect(page.getByRole("heading", { name: "Runtime storage cleanup" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Runtime inventory and cleanup" })).toBeVisible();
     await expect(page.getByText("/tmp/cloud-chamber-e2e").first()).toBeVisible();
+    await expect(page.getByText("Ready to ingest")).toBeVisible();
+    await expect(page.getByRole("button", { name: "Ingest completed output" })).toBeVisible();
+    await expect(page.getByText("Running CM1 process")).toBeVisible();
+  });
+
+  test("Results and Storage share lifecycle-aware local file actions", async ({ page }) => {
+    await gotoResults(page);
+
+    const resultDetail = page.getByLabel("Result detail");
+    await resultDetail.getByRole("button", { name: "Manage local files" }).click();
+
+    await expect(page.getByRole("heading", { name: "Runtime inventory and cleanup" })).toBeVisible();
+    const savedRow = page.locator("tr", { hasText: "dry-run-baseline" });
+    await expect(savedRow.getByText("Baseline Shallow Cumulus — Quick Look")).toBeVisible();
+    await expect(savedRow.getByText("Run ID: dry-run-baseline")).toBeVisible();
+    await expect(savedRow.getByText("Saved/protected", { exact: true }).first()).toBeVisible();
+    await expect(savedRow.getByRole("button", { name: "Preview delete" })).toBeDisabled();
+
+    const ingestReadyRow = page.locator("tr", { hasText: "dry-run-disposable" });
+    await expect(ingestReadyRow.getByText("Ready to ingest")).toBeVisible();
+    await ingestReadyRow.getByRole("button", { name: "Ingest completed output" }).click();
+    await expect(page.getByText("Ingested result metadata")).toBeVisible();
+
+    const runningRow = page.locator("tr", { hasText: "dry-run-running" });
+    await expect(runningRow.getByText("Running CM1 process")).toBeVisible();
+    await expect(runningRow.getByRole("button", { name: "Preview delete" })).toBeDisabled();
+
+    await savedRow.getByRole("button", { name: "Open in Explore" }).click();
+    await expect(page.getByText(/what happened in this result/i).first()).toBeVisible();
   });
 
   test("Results notebook remains card-first on mobile", async ({ page }) => {
