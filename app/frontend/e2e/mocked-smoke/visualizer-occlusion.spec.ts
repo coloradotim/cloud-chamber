@@ -61,7 +61,7 @@ test.describe("mocked smoke: visualizer occlusion regression", () => {
 
   test("3-D scene does not cover its primary controls", async ({ page }) => {
     await expect(page.getByText(/what happened in this result/i).first()).toBeVisible({ timeout: 12_000 });
-    await expect(page.getByLabel("True 3-D cloud-water viewer")).toBeVisible({
+    await expect(page.getByLabel("True 3-D scalar field viewer")).toBeVisible({
       timeout: 12_000,
     });
     await expect(page.getByLabel("3-D camera controls")).toBeVisible();
@@ -87,9 +87,9 @@ test.describe("mocked smoke: visualizer occlusion regression", () => {
   });
 
   test("true 3-D scene labels stay inside the viewer frame", async ({ page }) => {
-    const scene = page.getByLabel("True 3-D cloud-water viewer");
+    const scene = page.getByLabel("True 3-D scalar field viewer");
     const canvasMount = page.getByLabel(
-      "Interactive Three.js scene showing CM1 cloud water, domain bounds, slice plane, and selected point",
+      "Interactive Three.js scene showing a CM1 scalar field, domain bounds, slice plane, and selected point",
     );
     const contextLabel = page.locator(".true3d-scene-label").first();
     const sliceLabel = page.locator(".true3d-slice-label").first();

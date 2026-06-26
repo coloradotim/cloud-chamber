@@ -28,6 +28,11 @@ type PointCloudResponse = {
   stats: {
     source_count: number;
     returned_count: number;
+    field_min_value: number | null;
+    field_max_value: number | null;
+    field_mean_value: number | null;
+    field_finite_count: number;
+    field_non_finite_count: number;
     min_value: number | null;
     max_value: number | null;
     active_z_min: number | null;
@@ -61,6 +66,8 @@ type SelectedRegionRequest = {
 type True3DViewerProps = {
   resultName: string;
   pointCloud: PointCloudResponse | null;
+  fieldLabel: string;
+  valueChannelLabel: string;
   activeSlice: SliceResponse | null;
   activeSliceLabel: string;
   showSlicePlane: boolean;
@@ -115,6 +122,8 @@ const DEFAULT_BOUNDS: SceneBounds = {
 export function True3DViewer({
   resultName,
   pointCloud,
+  fieldLabel,
+  valueChannelLabel,
   activeSlice,
   activeSliceLabel,
   showSlicePlane,
@@ -134,7 +143,8 @@ export function True3DViewer({
   const [renderError, setRenderError] = useState<string | null>(null);
   const [cameraStatus, setCameraStatus] = useState("Camera ready");
 
-  const bounds = useMemo(() => sceneBounds(pointCloud), [pointCloud]);
+  const boundsKey = boundsSignature(pointCloud);
+  const bounds = useMemo(() => sceneBoundsFromSignature(boundsKey), [boundsKey]);
   const axisLabels = useMemo(() => axisLabelDefinitions(bounds), [bounds]);
   const selectedPoint = useMemo(
     () => selectedRegionPoint(selectedRegion, coordinateSizes, bounds),
@@ -271,7 +281,7 @@ export function True3DViewer({
   ]);
 
   return (
-    <section className="true3d-viewer" aria-label="True 3-D cloud-water viewer">
+    <section className="true3d-viewer" aria-label="True 3-D scalar field viewer">
       <div className="true3d-scene-header">
         <div>
           <p className="eyebrow">True 3-D scene</p>
@@ -285,13 +295,27 @@ export function True3DViewer({
           ref={mountRef}
           className="true3d-canvas-mount"
           role="img"
-          aria-label="Interactive Three.js scene showing CM1 cloud water, domain bounds, slice plane, and selected point"
+          aria-label="Interactive Three.js scene showing a CM1 scalar field, domain bounds, slice plane, and selected point"
         />
         <div className="true3d-scene-label true3d-scene-label-context">
-          <strong>Cloud water</strong>
+          <strong>{fieldLabel}</strong>
           <span>{selectedTimeLabel}</span>
           <span>Threshold {thresholdLabel}</span>
         </div>
+        {pointCloud && (
+          <div className="true3d-field-legend" aria-label="3-D field color legend">
+            <span>{pointCloud.field.display_name}</span>
+            <div className="true3d-field-legend-row">
+              <small>{fieldLegendMinimum(pointCloud)}</small>
+              <span
+                className={`true3d-field-ramp true3d-field-ramp-${scalarRampKey(
+                  pointCloud.field.raw_field_name,
+                )}`}
+              />
+              <small>{fieldLegendMaximum(pointCloud)}</small>
+            </div>
+          </div>
+        )}
         <div
           ref={axisLabelLayerRef}
           className="true3d-axis-label-layer"
@@ -324,7 +348,7 @@ export function True3DViewer({
         )}
         {(!pointCloud || pointCloud.points.length === 0) && (
           <div className="true3d-empty-state">
-            <p className="eyebrow">Cloud-water layer</p>
+            <p className="eyebrow">3-D scalar layer</p>
             <h4>{noCloudMessage}</h4>
             <p>The domain and slice plane remain visible so the result does not look broken.</p>
           </div>
@@ -366,8 +390,8 @@ export function True3DViewer({
         <p>{cameraStatus}. Drag to orbit, right-drag to pan, scroll to zoom.</p>
       </div>
       <p className="true3d-provenance" aria-label="3-D provenance labels">
-        CM1-derived visualization-ready cloud-water points and native-grid slice plane; rendered
-        with direct Three.js. {provenanceLabel}
+        {valueChannelLabel} CM1-derived visualization-ready scalar points and native-grid slice
+        plane; rendered with direct Three.js. {provenanceLabel}
       </p>
     </section>
   );
@@ -423,10 +447,29 @@ function rebuildScene(
   }
 }
 
-function sceneBounds(pointCloud: PointCloudResponse | null): SceneBounds {
-  const x = pointCloud?.coordinate_extents.xh ?? pointCloud?.coordinate_extents.x ?? DEFAULT_BOUNDS.x;
-  const y = pointCloud?.coordinate_extents.yh ?? pointCloud?.coordinate_extents.y ?? DEFAULT_BOUNDS.y;
-  const z = pointCloud?.coordinate_extents.zh ?? pointCloud?.coordinate_extents.z ?? DEFAULT_BOUNDS.z;
+function boundsSignature(pointCloud: PointCloudResponse | null): string {
+  const extents = pointCloud?.coordinate_extents;
+  const x = extents?.xh ?? extents?.x ?? DEFAULT_BOUNDS.x;
+  const y = extents?.yh ?? extents?.y ?? DEFAULT_BOUNDS.y;
+  const z = extents?.zh ?? extents?.z ?? DEFAULT_BOUNDS.z;
+  return [
+    x.min,
+    x.max,
+    x.units ?? "",
+    y.min,
+    y.max,
+    y.units ?? "",
+    z.min,
+    z.max,
+    z.units ?? "",
+  ].join("|");
+}
+
+function sceneBoundsFromSignature(signature: string): SceneBounds {
+  const [xMin, xMax, xUnits, yMin, yMax, yUnits, zMin, zMax, zUnits] = signature.split("|");
+  const x = { min: Number(xMin), max: Number(xMax), units: xUnits || null };
+  const y = { min: Number(yMin), max: Number(yMax), units: yUnits || null };
+  const z = { min: Number(zMin), max: Number(zMax), units: zUnits || null };
   const xRange = range(x);
   const yRange = range(y);
   const zRange = range(z);
@@ -604,9 +647,10 @@ function cloudPointLayer(
     positions[index * 3 + 1] = mapped.y;
     positions[index * 3 + 2] = mapped.z;
     const intensity = normalize(point[3], min, max);
-    colors[index * 3] = 0.24 + intensity * 0.55;
-    colors[index * 3 + 1] = 0.66 + intensity * 0.3;
-    colors[index * 3 + 2] = 0.78 + intensity * 0.18;
+    const color = scalarPointColor(pointCloud.field.raw_field_name, intensity, point[3]);
+    colors[index * 3] = color.r;
+    colors[index * 3 + 1] = color.g;
+    colors[index * 3 + 2] = color.b;
   });
 
   const geometry = new THREE.BufferGeometry();
@@ -621,6 +665,86 @@ function cloudPointLayer(
     sizeAttenuation: true,
   });
   return new THREE.Points(geometry, material);
+}
+
+function scalarPointColor(
+  fieldName: string,
+  intensity: number,
+  value: number,
+): { r: number; g: number; b: number } {
+  if (fieldName === "rain") {
+    return {
+      r: 0.18 + intensity * 0.2,
+      g: 0.45 + intensity * 0.28,
+      b: 0.74 + intensity * 0.18,
+    };
+  }
+  if (fieldName === "qr") {
+    return {
+      r: 0.28 + intensity * 0.38,
+      g: 0.44 + intensity * 0.32,
+      b: 0.86 + intensity * 0.1,
+    };
+  }
+  if (fieldName === "qv") {
+    return {
+      r: 0.24 + intensity * 0.22,
+      g: 0.58 + intensity * 0.34,
+      b: 0.76 + intensity * 0.1,
+    };
+  }
+  if (fieldName === "dbz") {
+    return radarReflectivityColor(value);
+  }
+  return {
+    r: 0.24 + intensity * 0.55,
+    g: 0.66 + intensity * 0.3,
+    b: 0.78 + intensity * 0.18,
+  };
+}
+
+function radarReflectivityColor(dbz: number): { r: number; g: number; b: number } {
+  const stops = [
+    { value: 0, color: { r: 0.15, g: 0.38, b: 0.78 } },
+    { value: 10, color: { r: 0.18, g: 0.72, b: 0.82 } },
+    { value: 20, color: { r: 0.22, g: 0.66, b: 0.26 } },
+    { value: 30, color: { r: 0.96, g: 0.86, b: 0.2 } },
+    { value: 40, color: { r: 0.93, g: 0.36, b: 0.12 } },
+    { value: 50, color: { r: 0.76, g: 0.1, b: 0.12 } },
+    { value: 60, color: { r: 0.66, g: 0.18, b: 0.74 } },
+  ];
+  if (!Number.isFinite(dbz)) return stops[0].color;
+  if (dbz <= stops[0].value) return stops[0].color;
+  for (let index = 1; index < stops.length; index += 1) {
+    const lower = stops[index - 1];
+    const upper = stops[index];
+    if (dbz <= upper.value) {
+      const amount = (dbz - lower.value) / (upper.value - lower.value);
+      return {
+        r: lower.color.r + (upper.color.r - lower.color.r) * amount,
+        g: lower.color.g + (upper.color.g - lower.color.g) * amount,
+        b: lower.color.b + (upper.color.b - lower.color.b) * amount,
+      };
+    }
+  }
+  return stops[stops.length - 1].color;
+}
+
+function scalarRampKey(fieldName: string): string {
+  if (fieldName === "qr" || fieldName === "rain") return "rain";
+  if (fieldName === "qv") return "qv";
+  if (fieldName === "dbz") return "dbz";
+  return "qc";
+}
+
+function fieldLegendMinimum(pointCloud: PointCloudResponse): string {
+  if (pointCloud.field.raw_field_name === "dbz") return "0 dBZ";
+  return formatValue(pointCloud.stats.min_value, pointCloud.field.units);
+}
+
+function fieldLegendMaximum(pointCloud: PointCloudResponse): string {
+  if (pointCloud.field.raw_field_name === "dbz") return "60+ dBZ";
+  return formatValue(pointCloud.stats.max_value, pointCloud.field.units);
 }
 
 function slicePlane(slice: SliceResponse, label: string, bounds: SceneBounds): THREE.Group {
@@ -852,6 +976,14 @@ function normalize(value: number, min: number, max: number): number {
 }
 
 function formatCoordinate(value: number, units: string | null): string {
+  return `${formatCompactNumber(value)}${units ? ` ${units}` : ""}`;
+}
+
+function formatValue(value: number | null, units: string | null): string {
+  if (value === null) return "Unavailable";
+  if (Math.abs(value) > 0 && Math.abs(value) < 0.001) {
+    return `${value.toExponential(3)}${units ? ` ${units}` : ""}`;
+  }
   return `${formatCompactNumber(value)}${units ? ` ${units}` : ""}`;
 }
 

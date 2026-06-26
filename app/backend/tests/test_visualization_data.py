@@ -1,5 +1,6 @@
 import json
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 import pytest
@@ -46,6 +47,9 @@ def create_visualization_result(
     *,
     include_qc: bool = True,
     include_w: bool = True,
+    include_qr: bool = False,
+    include_qv: bool = True,
+    include_dbz: bool = True,
     run_id: str = "run-visualization",
 ) -> tuple[CloudChamberSettings, str, Path]:
     settings = fake_settings(tmp_path)
@@ -56,7 +60,14 @@ def create_visualization_result(
         run_size_preset="quick_look",
     )
     netcdf_path = package.package_dir / "cm1out_000001.nc"
-    write_visualization_netcdf(netcdf_path, include_qc=include_qc, include_w=include_w)
+    write_visualization_netcdf(
+        netcdf_path,
+        include_qc=include_qc,
+        include_w=include_w,
+        include_qr=include_qr,
+        include_qv=include_qv,
+        include_dbz=include_dbz,
+    )
     manifest = load_run_manifest(package.manifest_path)
     write_run_manifest(
         package.manifest_path,
@@ -77,8 +88,11 @@ def write_visualization_netcdf(
     *,
     include_qc: bool,
     include_w: bool,
+    include_qr: bool,
+    include_qv: bool,
+    include_dbz: bool,
 ) -> None:
-    data_vars = {}
+    data_vars: dict[str, Any] = {}
     if include_qc:
         qc = np.arange(2 * 2 * 3 * 4, dtype=float).reshape(2, 2, 3, 4) * 1e-6
         qc[0, 0, 0, 0] = np.nan
@@ -95,10 +109,42 @@ def write_visualization_netcdf(
             w,
             {"units": "m/s"},
         )
+    if include_qr:
+        qr = np.arange(2 * 2 * 3 * 4, dtype=float).reshape(2, 2, 3, 4) * 1e-7
+        data_vars["qr"] = (
+            ("time", "zh", "yh", "xh"),
+            qr,
+            {"units": "kg/kg"},
+        )
     data_vars["theta"] = (
         ("time", "zh", "yh", "xh"),
-        np.zeros((2, 2, 3, 4), dtype=float),
+        300.0 + np.arange(2 * 2 * 3 * 4, dtype=float).reshape(2, 2, 3, 4) * 0.1,
         {"units": "K"},
+    )
+    data_vars["temperature"] = (
+        ("time", "zh", "yh", "xh"),
+        285.0 + np.arange(2 * 2 * 3 * 4, dtype=float).reshape(2, 2, 3, 4) * 0.2,
+        {"units": "K"},
+    )
+    if include_qv:
+        qv = 0.010 + np.arange(2 * 2 * 3 * 4, dtype=float).reshape(2, 2, 3, 4) * 1e-5
+        data_vars["qv"] = (
+            ("time", "zh", "yh", "xh"),
+            qv,
+            {"units": "kg/kg"},
+        )
+    if include_dbz:
+        dbz = np.arange(2 * 2 * 3 * 4, dtype=float).reshape(2, 2, 3, 4) - 10.0
+        data_vars["dbz"] = (
+            ("time", "zh", "yh", "xh"),
+            dbz,
+            {"units": "dBZ"},
+        )
+    rain = np.arange(2 * 3 * 4, dtype=float).reshape(2, 3, 4) * 0.25
+    data_vars["rain"] = (
+        ("time", "yh", "xh"),
+        rain,
+        {"units": "mm"},
     )
     xr.Dataset(
         data_vars=data_vars,
@@ -126,6 +172,14 @@ def test_field_catalog_includes_qc_and_w_with_provenance(tmp_path: Path) -> None
     assert fields["w"].canonical_field_name == "vertical_velocity"
     assert fields["w"].native_grid == "zf/yh/xh"
     assert fields["w"].coordinate_names.vertical == "zf"
+    assert fields["theta"].canonical_field_name == "potential_temperature"
+    assert fields["theta"].units == "K"
+    assert fields["temperature"].canonical_field_name == "temperature"
+    assert fields["temperature"].units == "K"
+    assert fields["qv"].canonical_field_name == "water_vapor"
+    assert fields["dbz"].canonical_field_name == "reflectivity"
+    assert fields["rain"].canonical_field_name == "accumulated_surface_rain"
+    assert fields["rain"].native_grid == "surface/yh/xh"
     assert catalog.provenance.source_model == "CM1"
     assert "native-grid view" in catalog.provenance.provenance_label
 
@@ -211,6 +265,64 @@ def test_vertical_qc_slices_have_stable_shape_and_order(tmp_path: Path) -> None:
     assert vertical_y.dimension_order == ["zh", "yh"]
 
 
+def test_temperature_slice_is_available_when_direct_temperature_exists(tmp_path: Path) -> None:
+    settings, result_id, _run_dir = create_visualization_result(tmp_path)
+
+    sliced = field_slice(
+        settings,
+        result_id,
+        field="temperature",
+        time_index=0,
+        orientation="horizontal",
+        level_index=1,
+    )
+
+    assert sliced.field.raw_field_name == "temperature"
+    assert sliced.field.canonical_field_name == "temperature"
+    assert sliced.field.units == "K"
+    assert sliced.selection.selected_dimension == "zh"
+    assert sliced.dimension_order == ["yh", "xh"]
+    assert sliced.stats.min == 287.4
+    assert sliced.stats.max == 289.6
+
+
+def test_surface_rain_slice_is_horizontal_floor_map(tmp_path: Path) -> None:
+    settings, result_id, _run_dir = create_visualization_result(tmp_path)
+
+    sliced = field_slice(
+        settings,
+        result_id,
+        field="rain",
+        time_index=1,
+        orientation="horizontal",
+        level_index=0,
+    )
+
+    assert sliced.field.raw_field_name == "rain"
+    assert sliced.field.native_grid == "surface/yh/xh"
+    assert sliced.selection.selected_dimension == "surface"
+    assert sliced.selection.level_coordinate_value == 0.0
+    assert sliced.selection.level_units == "km"
+    assert sliced.dimension_order == ["yh", "xh"]
+    assert sliced.shape == [3, 4]
+    assert sliced.stats.max == 5.75
+    assert "surface_field_rendered_on_domain_floor" in sliced.caveats
+
+
+def test_surface_rain_rejects_vertical_slice_orientation(tmp_path: Path) -> None:
+    settings, result_id, _run_dir = create_visualization_result(tmp_path)
+
+    with pytest.raises(VisualizationDataError, match="surface field.*horizontal slices"):
+        field_slice(
+            settings,
+            result_id,
+            field="rain",
+            time_index=0,
+            orientation="vertical_x",
+            level_index=0,
+        )
+
+
 def test_w_slice_uses_native_zf_grid(tmp_path: Path) -> None:
     settings, result_id, _run_dir = create_visualization_result(tmp_path)
 
@@ -260,6 +372,10 @@ def test_point_cloud_returns_qc_points_above_threshold(tmp_path: Path) -> None:
     assert cloud.coordinate_extents["zh"].max == 0.8
     assert cloud.stats.source_count == 23
     assert cloud.stats.returned_count == 23
+    assert cloud.stats.field_finite_count == 23
+    assert cloud.stats.field_non_finite_count == 1
+    assert cloud.stats.field_min_value == 1e-6
+    assert cloud.stats.field_max_value == 2.3e-05
     assert cloud.stats.downsampled is False
     assert cloud.stats.min_value == 1e-6
     assert cloud.stats.max_value == 2.3e-05
@@ -270,6 +386,85 @@ def test_point_cloud_returns_qc_points_above_threshold(tmp_path: Path) -> None:
     assert cloud.provenance.processing_method == "backend_xarray_native_grid_threshold"
     assert cloud.provenance.rendering_method == "thresholded_point_cloud"
     assert "native_grid_thresholded_point_cloud" in cloud.caveats
+
+
+def test_point_cloud_returns_qr_points_when_rain_water_is_available(tmp_path: Path) -> None:
+    settings, result_id, _run_dir = create_visualization_result(tmp_path, include_qr=True)
+
+    rain = point_cloud(
+        settings,
+        result_id,
+        field="qr",
+        time_index=0,
+        threshold=5e-7,
+        max_points=50_000,
+    )
+
+    assert rain.field.raw_field_name == "qr"
+    assert rain.field.canonical_field_name == "rain_water"
+    assert rain.selection.threshold == 5e-7
+    assert rain.stats.source_count == 19
+    assert rain.stats.returned_count == 19
+    assert rain.stats.min_value == 5e-7
+    assert rain.stats.max_value == 2.3e-06
+    assert rain.provenance.provenance_label.startswith("CM1-derived rain water point cloud")
+    assert "visualizer_interpretation_of_cm1_qr" in rain.caveats
+
+
+def test_point_cloud_rejects_potential_temperature_for_now(tmp_path: Path) -> None:
+    settings, result_id, _run_dir = create_visualization_result(tmp_path)
+
+    with pytest.raises(VisualizationDataError, match="2-D slices but not 3-D point-cloud"):
+        point_cloud(
+            settings,
+            result_id,
+            field="theta",
+            time_index=0,
+            threshold=0,
+            max_points=50_000,
+        )
+
+
+@pytest.mark.parametrize(
+    ("field_name", "canonical_name", "threshold", "expected_count"),
+    [
+        ("qv", "water_vapor", 0.0, 24),
+        ("dbz", "reflectivity", 0.0, 14),
+        ("rain", "accumulated_surface_rain", 0.0, 12),
+    ],
+)
+def test_point_cloud_returns_additional_scalar_fields(
+    tmp_path: Path,
+    field_name: str,
+    canonical_name: str,
+    threshold: float,
+    expected_count: int,
+) -> None:
+    settings, result_id, _run_dir = create_visualization_result(tmp_path)
+
+    scalar = point_cloud(
+        settings,
+        result_id,
+        field=field_name,
+        time_index=0,
+        threshold=threshold,
+        max_points=50_000,
+    )
+
+    assert scalar.field.raw_field_name == field_name
+    assert scalar.field.canonical_field_name == canonical_name
+    assert scalar.stats.source_count == expected_count
+    assert scalar.stats.returned_count == expected_count
+    assert scalar.stats.field_finite_count > 0
+    assert scalar.stats.field_max_value is not None
+    assert f"visualizer_interpretation_of_cm1_{field_name}" in scalar.caveats
+    if field_name == "dbz":
+        assert scalar.stats.field_min_value == -10.0
+        assert scalar.stats.field_max_value == 13.0
+    if field_name == "rain":
+        assert scalar.stats.active_z_min == 0.0
+        assert scalar.stats.active_z_max == 0.0
+        assert "surface_field_rendered_on_domain_floor" in scalar.caveats
 
 
 def test_view_defaults_choose_native_grid_max_locations(tmp_path: Path) -> None:
@@ -290,6 +485,12 @@ def test_view_defaults_choose_native_grid_max_locations(tmp_path: Path) -> None:
     assert defaults.fields["w"].horizontal_level_index == 2
     assert defaults.fields["w"].vertical_x_index == 2
     assert defaults.fields["w"].vertical_y_index == 3
+    assert defaults.fields["theta"].source == "max_theta_native_grid_location"
+    assert defaults.fields["theta"].horizontal_level_index == 1
+    assert defaults.fields["temperature"].source == "max_temperature_native_grid_location"
+    assert defaults.fields["qv"].source == "max_qv_native_grid_location"
+    assert defaults.fields["dbz"].source == "max_dbz_native_grid_location"
+    assert defaults.fields["rain"].source == "domain_center_missing_required_dimensions"
     assert "default_locations_are_native_grid_indices" in defaults.caveats
     assert defaults.provenance.processing_method == "backend_xarray_interesting_view_defaults"
 
@@ -332,24 +533,40 @@ def test_point_cloud_reports_no_points_above_threshold(tmp_path: Path) -> None:
     assert cloud.points == []
     assert cloud.stats.source_count == 0
     assert cloud.stats.returned_count == 0
+    assert cloud.stats.field_finite_count == 23
+    assert cloud.stats.field_max_value == 2.3e-05
     assert cloud.stats.min_value is None
     assert cloud.stats.max_value is None
 
 
-def test_point_cloud_missing_qc_reports_clear_error(tmp_path: Path) -> None:
+def test_point_cloud_missing_field_reports_clear_error(tmp_path: Path) -> None:
     settings, result_id, _run_dir = create_visualization_result(
         tmp_path,
         include_qc=False,
         include_w=True,
     )
 
-    with pytest.raises(VisualizationDataError, match="qc is not available"):
+    with pytest.raises(VisualizationDataError, match="Field is not available.*qc"):
         point_cloud(
             settings,
             result_id,
             field="qc",
             time_index=0,
             threshold=1e-6,
+            max_points=50_000,
+        )
+
+
+def test_point_cloud_rejects_signed_flow_fields_for_now(tmp_path: Path) -> None:
+    settings, result_id, _run_dir = create_visualization_result(tmp_path)
+
+    with pytest.raises(VisualizationDataError, match="signed-flow 3-D rendering"):
+        point_cloud(
+            settings,
+            result_id,
+            field="w",
+            time_index=0,
+            threshold=0,
             max_points=50_000,
         )
 
@@ -424,7 +641,7 @@ def test_point_cloud_endpoint_returns_payload_and_errors(
     assert ok.json()["stats"]["downsampled"] is True
     assert ok.json()["provenance"]["rendering_method"] == "thresholded_point_cloud"
     assert bad.status_code == 400
-    assert "Only field=qc" in bad.json()["detail"]
+    assert "signed-flow 3-D rendering" in bad.json()["detail"]
 
 
 @pytest.mark.parametrize(

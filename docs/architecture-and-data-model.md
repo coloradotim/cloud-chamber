@@ -535,21 +535,31 @@ field catalog, and exposes:
 - loading, empty, and error states;
 - provenance and rendering-method labels.
 
-Cloud-water rendering starts as a thresholded point cloud for `qc`, not an
-isosurface or volume renderer. The backend owns field selection and thresholding
-through:
+3-D scalar rendering starts as backend-prepared thresholded point clouds for
+selected native-grid fields, not isosurfaces or a volume renderer. The backend
+owns field selection and thresholding through:
 
 - `GET /api/results/{result_id}/visualization/point-cloud`
 
 The point-cloud endpoint reads the selected NetCDF output time, uses native
-`zh/yh/xh` coordinates for `qc`, returns `[x, y, z, value]` points where `qc`
-meets the requested threshold, and records source count, returned count,
-min/max value, active `z` range, max-value location, full coordinate extents,
+coordinates for the selected field, returns `[x, y, z, value]` points where the
+field meets the requested threshold, and records source count, returned count,
+thresholded-value range, full selected-field min/max/mean stats, active `z`
+range where applicable, max-value location, full coordinate extents,
 downsampling status, coordinate units, and provenance. If source points exceed
 `max_points`, the backend applies deterministic stride downsampling and labels
-it. The frontend renders only the returned
-visualization-ready points and must label the result as a CM1-derived
-interpretation.
+it. Surface `rain` is represented as a floor layer rather than a vertical cloud
+volume. The frontend renders only returned visualization-ready points and must
+label the result as a CM1-derived interpretation.
+
+The first supported 3-D fields are `qc` cloud water, `qr` rain water, `qv` water
+vapor, `dbz` reflectivity, and surface `rain` when present. Potential
+temperature, direct temperature, and `w` vertical velocity remain slice-first
+inspection fields until future issues define field-specific 3-D rendering that
+does not overclaim physical meaning. Reflectivity uses a fixed weather-radar
+dBZ scale from 0 to 60+ dBZ rather than a dynamic per-run color range; shallow
+cumulus may legitimately show weak or sparse reflectivity even when rain water
+is present.
 
 The frontend point projection uses those full coordinate extents, not the
 min/max of returned cloudy points. Scientific views should include side/elevation
@@ -573,8 +583,10 @@ height, the domain floor, and active cloud-water `z` range.
 
 - horizontal plane: `orientation=horizontal`;
 - vertical plane: `orientation=vertical_x` or `orientation=vertical_y`;
-- fields: `qc` and `w` first;
-- time: synced with the visualizer time state and cloud-water point cloud.
+- fields: native-grid slice-capable fields from the catalog, including `qc`,
+  `w`, `qr`, `qv`, `dbz`, direct temperature, potential temperature, and
+  surface `rain` where supported;
+- time: synced with the visualizer time state and the 3-D scalar layer.
 
 The browser receives JSON slice payloads with field metadata, min/max stats,
 dimension order, selected native-grid location, caveats, and provenance labels.
@@ -616,16 +628,21 @@ Implemented MVP endpoints:
 - `GET /api/results/{result_id}/visualization/point-cloud`
 
 The field catalog exposes available visualizable fields, starting with `qc`
-and `w` and including `qr` when present. It maps raw CM1 field names to product
-canonical names such as `cloud_water` and `vertical_velocity`, includes native
-dimensions, coordinate names, units, time values, source model/run/result
-provenance, processing method, and rendering method labels.
+and `w` and expanding to supported fields such as `qr`, `qv`, `dbz`, surface
+`rain`, potential temperature, and direct temperature when present. It maps raw
+CM1 field names to product canonical names such as `cloud_water`,
+`vertical_velocity`, `rain_water`, `water_vapor`, and `reflectivity`, includes
+native dimensions, coordinate names, units, time values, source
+model/run/result provenance, processing method, and rendering method labels.
 
 The slice endpoint returns JSON numeric arrays for the slice-first MVP. It
 supports horizontal slices and vertical `x`/`y` slices on native grids:
 
 - `qc`: `time, zh, yh, xh`
 - `w`: `time, zf, yh, xh`
+- `qr`, `qv`, `dbz`, direct temperature, and potential temperature: native
+  `time, z, y, x` style grids when those fields are present
+- surface `rain`: horizontal floor map only
 
 It does not interpolate staggered fields. Payloads include the selected time,
 orientation, level/index, dimension order, shape, min/max/mean, finite and
@@ -684,11 +701,12 @@ open NetCDF files or classify the physics itself.
 
 Explore's UI contract is explanation-first. The selected result summary,
 cloud/no-cloud state, field-loading state, shared field/time/slice controls,
-3-D cloud-water context, visible slice plane, 2-D slice inspector, and `What
+3-D scalar-field context, visible slice plane, 2-D slice inspector, and `What
 happened here?` selected-point panel are primary state. The 3-D context renders
-`qc` as a thresholded cloud-water point cloud; broader variables such as `w`
-are inspected through synchronized native-grid slices. Technical Thermal Fate
-process modes, native-grid caveats, rendering/projection details, and
+only supported scalar/floor layers such as `qc`, `qr`, `qv`, `dbz`, and surface
+`rain`; motion and thermodynamic fields such as `w`, potential temperature, and
+temperature are inspected through synchronized native-grid slices. Technical
+Thermal Fate process modes, native-grid caveats, rendering/projection details, and
 provenance stay available in disclosure so the browser remains a presentation
 layer over backend diagnostics instead of a scientific classifier.
 

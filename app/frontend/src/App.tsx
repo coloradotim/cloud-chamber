@@ -308,6 +308,11 @@ type PointCloudResponse = {
   stats: {
     source_count: number;
     returned_count: number;
+    field_min_value: number | null;
+    field_max_value: number | null;
+    field_mean_value: number | null;
+    field_finite_count: number;
+    field_non_finite_count: number;
     min_value: number | null;
     max_value: number | null;
     active_z_min: number | null;
@@ -318,6 +323,18 @@ type PointCloudResponse = {
   };
   provenance: ProvenancePayload;
   caveats: string[];
+};
+
+type ThreeDScalarEncoding = {
+  field: VisualizableField;
+  defaultThreshold: number;
+  thresholdStep: number;
+  statusLabel: string;
+  emptyStateTitle: string;
+  thresholdAriaLabel: string;
+  thresholdLabel: string;
+  rangeLabel: string;
+  valueChannel: string;
 };
 
 type RegionType = "point" | "column" | "box";
@@ -662,7 +679,7 @@ async function fetchVisualizationPointCloud(
   });
   const response = await fetch(`/api/results/${resultId}/visualization/point-cloud?${search}`);
   if (!response.ok) {
-    throw new Error(await responseError(response, "Unable to load cloud-water point cloud."));
+    throw new Error(await responseError(response, "Unable to load 3-D scalar point layer."));
   }
   return response.json() as Promise<PointCloudResponse>;
 }
@@ -3356,6 +3373,124 @@ function ResultNotebookCard({
   );
 }
 
+function threeDScalarEncoding(field: VisualizableField | undefined): ThreeDScalarEncoding | null {
+  if (!field || !field.coordinate_names.time || !field.coordinate_names.y || !field.coordinate_names.x) {
+    return null;
+  }
+  if (field.raw_field_name === "w" || field.canonical_field_name === "vertical_velocity") {
+    return null;
+  }
+  if (isSliceOnlyTemperatureField(field)) return null;
+  const hasVerticalGrid = Boolean(field.coordinate_names.vertical);
+
+  if (field.canonical_field_name === "cloud_water" || field.raw_field_name === "qc") {
+    if (!hasVerticalGrid) return null;
+    return {
+      field,
+      defaultThreshold: 1e-6,
+      thresholdStep: 1e-6,
+      statusLabel: "Cloud-water point layer loaded",
+      emptyStateTitle: "No cloud water above the selected threshold at this time.",
+      thresholdAriaLabel: "Cloud-water threshold",
+      thresholdLabel: "Cloud-water threshold",
+      rangeLabel: "Cloud-water range",
+      valueChannel:
+        "Color intensity shows cloud-water magnitude above threshold; opacity and point size are rendering controls.",
+    };
+  }
+
+  if (field.canonical_field_name === "rain_water" || field.raw_field_name === "qr") {
+    if (!hasVerticalGrid) return null;
+    return {
+      field,
+      defaultThreshold: 1e-7,
+      thresholdStep: 1e-7,
+      statusLabel: "Rain-water point layer loaded",
+      emptyStateTitle: "No rain water above the selected threshold at this time.",
+      thresholdAriaLabel: "Rain-water threshold",
+      thresholdLabel: "Rain-water threshold",
+      rangeLabel: "Rain-water range",
+      valueChannel:
+        "Color intensity shows rain-water magnitude above threshold; opacity and point size are rendering controls.",
+    };
+  }
+
+  if (field.canonical_field_name === "reflectivity" || field.raw_field_name === "dbz") {
+    if (!hasVerticalGrid) return null;
+    return {
+      field,
+      defaultThreshold: 0,
+      thresholdStep: 1,
+      statusLabel: "Reflectivity point layer loaded",
+      emptyStateTitle: "No reflectivity values above the selected threshold at this time.",
+      thresholdAriaLabel: "Reflectivity threshold",
+      thresholdLabel: "Reflectivity threshold",
+      rangeLabel: "Reflectivity range",
+      valueChannel:
+        "Color intensity shows reflectivity value; point size stays globally controlled and does not imply mass.",
+    };
+  }
+
+  if (field.canonical_field_name === "water_vapor" || field.raw_field_name === "qv") {
+    if (!hasVerticalGrid) return null;
+    return {
+      field,
+      defaultThreshold: 0.01,
+      thresholdStep: 1e-6,
+      statusLabel: "Water-vapor point layer loaded",
+      emptyStateTitle: "No water-vapor values above the selected threshold at this time.",
+      thresholdAriaLabel: "Water-vapor visible minimum",
+      thresholdLabel: "Water-vapor visible minimum",
+      rangeLabel: "Water-vapor range",
+      valueChannel:
+        "Color intensity shows water-vapor magnitude above threshold; opacity and point size are rendering controls.",
+    };
+  }
+
+  if (isSurfaceRainField(field)) {
+    return {
+      field,
+      defaultThreshold: 0,
+      thresholdStep: 0.1,
+      statusLabel: "Surface-rain floor layer loaded",
+      emptyStateTitle: "No accumulated surface rain above the selected threshold at this time.",
+      thresholdAriaLabel: "Surface-rain threshold",
+      thresholdLabel: "Surface-rain threshold",
+      rangeLabel: "Surface-rain range",
+      valueChannel:
+        "Color intensity shows accumulated surface rain on the domain floor; opacity and point size are rendering controls.",
+    };
+  }
+
+  return null;
+}
+
+function isSurfaceRainField(field: VisualizableField | undefined): boolean {
+  if (!field) return false;
+  return (
+    field.raw_field_name === "rain" ||
+    field.canonical_field_name === "accumulated_surface_rain"
+  );
+}
+
+function isSliceOnlyTemperatureField(field: VisualizableField | undefined): boolean {
+  if (!field) return false;
+  return (
+    field.canonical_field_name === "potential_temperature" ||
+    field.canonical_field_name === "temperature" ||
+    field.raw_field_name === "th" ||
+    field.raw_field_name === "theta" ||
+    field.raw_field_name === "t" ||
+    field.raw_field_name === "temp" ||
+    field.raw_field_name === "temperature"
+  );
+}
+
+function sliceFieldOptionLabel(field: VisualizableField): string {
+  const suffix = threeDScalarEncoding(field) ? "" : " (slice only)";
+  return `${field.raw_field_name} - ${field.display_name}${suffix}`;
+}
+
 function VisualizerSceneShell({ result }: { result: ResultCard }) {
   const [catalog, setCatalog] = useState<FieldCatalogResponse | null>(null);
   const [viewDefaults, setViewDefaults] = useState<ViewDefaultsResponse | null>(null);
@@ -3431,24 +3566,37 @@ function VisualizerSceneShell({ result }: { result: ResultCard }) {
         setSceneError(null);
         setCatalog(payload);
         setViewDefaults(defaults);
+        const renderableEncodings = payload.available_fields
+          .map(threeDScalarEncoding)
+          .filter((encoding): encoding is ThreeDScalarEncoding => encoding !== null);
         const firstPreferred =
           payload.available_fields.find(
             (field) => field.raw_field_name === (defaults?.preferred_field ?? "qc"),
           ) ??
           payload.available_fields.find((field) => field.raw_field_name === "qc") ??
           payload.available_fields[0];
-        const cloudContextField =
-          payload.available_fields.find((field) => field.raw_field_name === "qc") ??
-          firstPreferred;
-        const initialDefaults = defaultsForField(defaults, firstPreferred?.raw_field_name);
-        const initialTimeIndex = defaultTimeIndex(firstPreferred, result, initialDefaults);
-        setSelectedFieldName(cloudContextField?.raw_field_name ?? "");
-        setSliceFieldName(firstPreferred?.raw_field_name ?? "");
+        const firstRenderable =
+          renderableEncodings.find(
+            (encoding) => encoding.field.raw_field_name === (defaults?.preferred_field ?? "qc"),
+          ) ??
+          renderableEncodings.find((encoding) => encoding.field.raw_field_name === "qc") ??
+          renderableEncodings[0] ??
+          null;
+        const initialSliceField = firstPreferred ?? firstRenderable?.field ?? payload.available_fields[0];
+        const initialDefaults = defaultsForField(defaults, initialSliceField?.raw_field_name);
+        const initialTimeIndex = defaultTimeIndex(initialSliceField, result, initialDefaults);
+        setSelectedFieldName(firstRenderable?.field.raw_field_name ?? "");
+        setSliceFieldName(initialSliceField?.raw_field_name ?? "");
         setTimeIndex(initialTimeIndex);
-        setHorizontalSliceLevel(defaultHorizontalLevel(firstPreferred, initialDefaults));
-        setVerticalSliceIndex(defaultVerticalIndex(firstPreferred, "vertical_x", initialDefaults));
+        setThreshold(firstRenderable?.defaultThreshold ?? 1e-6);
+        setHorizontalSliceLevel(defaultHorizontalLevel(initialSliceField, initialDefaults));
+        setVerticalSliceIndex(defaultVerticalIndex(initialSliceField, "vertical_x", initialDefaults));
         setSceneStatus(
-          payload.available_fields.length > 0 ? "Cloud view ready" : "No fields available",
+          payload.available_fields.length === 0
+            ? "No fields available"
+            : firstRenderable
+              ? "Field view ready"
+              : "Slice fields ready; no 3-D scalar field available",
         );
       })
       .catch((caught: unknown) => {
@@ -3465,23 +3613,36 @@ function VisualizerSceneShell({ result }: { result: ResultCard }) {
     () => catalog?.available_fields.find((field) => field.raw_field_name === selectedFieldName),
     [catalog, selectedFieldName],
   );
-  const qcField = useMemo(
-    () => catalog?.available_fields.find((field) => field.raw_field_name === "qc"),
-    [catalog],
-  );
   const sliceField = useMemo(
     () => catalog?.available_fields.find((field) => field.raw_field_name === sliceFieldName),
     [catalog, sliceFieldName],
   );
+  const threeDScalarEncodings = useMemo(
+    () =>
+      (catalog?.available_fields ?? [])
+        .map(threeDScalarEncoding)
+        .filter((encoding): encoding is ThreeDScalarEncoding => encoding !== null),
+    [catalog],
+  );
+  const selectedEncoding = useMemo(
+    () =>
+      threeDScalarEncodings.find(
+        (encoding) => encoding.field.raw_field_name === selectedFieldName,
+      ) ?? null,
+    [selectedFieldName, threeDScalarEncodings],
+  );
+  const controlField = selectedField ?? sliceField;
 
-  const timeOptions = selectedField?.time_coordinate_values ?? [];
+  const timeOptions = controlField?.time_coordinate_values ?? [];
   const timeMax = Math.max(0, timeOptions.length - 1);
+  const resolvedTimeIndex = Math.min(timeIndex, timeMax);
   const wField = catalog?.available_fields.find((field) => field.raw_field_name === "w");
   const isNoCloudWithUpdraft =
     cloudOutcome(result) === "No cloud formed" && Boolean(wField) && (result.max_w_m_s ?? 0) > 0;
   const sliceVerticalSize = sliceField?.coordinate_names.vertical
     ? sliceField.shape[sliceField.dimensions.indexOf(sliceField.coordinate_names.vertical)]
     : 1;
+  const sliceSupportsVertical = Boolean(sliceField?.coordinate_names.vertical);
   const sliceYSize = sliceField?.coordinate_names.y
     ? sliceField.shape[sliceField.dimensions.indexOf(sliceField.coordinate_names.y)]
     : 1;
@@ -3509,7 +3670,7 @@ function VisualizerSceneShell({ result }: { result: ResultCard }) {
   const selectedDefaults = defaultsForField(viewDefaults, selectedFieldName);
   const selectedTimeFieldDefaults = defaultsForField(selectedTimeDefaults, selectedFieldName);
   const selectedTimeSliceDefaults = defaultsForField(selectedTimeDefaults, sliceFieldName);
-  const selectedTimeValue = timeOptions[Math.min(timeIndex, timeMax)] ?? null;
+  const selectedTimeValue = timeOptions[resolvedTimeIndex] ?? null;
   const selectedTimeLabel = formatTimeValue(selectedTimeValue);
   const activeSlice = activeSlicePlane === "horizontal" ? sceneHorizontalSlice : sceneVerticalSlice;
   const activeSliceLabel = slicePlainLabel(activeSlice, activeSlicePlane, activeSliceIndex);
@@ -3548,16 +3709,23 @@ function VisualizerSceneShell({ result }: { result: ResultCard }) {
   }, [activeProcessMode, processMode]);
 
   useEffect(() => {
-    if (!selectedField || selectedField.raw_field_name !== "qc") {
+    if (!sliceSupportsVertical && activeSlicePlane !== "horizontal") {
+      setActiveSlicePlane("horizontal");
+      setSelectedRegion(null);
+    }
+  }, [activeSlicePlane, sliceSupportsVertical]);
+
+  useEffect(() => {
+    if (!selectedEncoding) {
       setPointCloud(null);
       return;
     }
     let active = true;
     setSceneError(null);
-    setSceneStatus("Loading cloud-water points...");
+    setSceneStatus(`Loading ${selectedEncoding.field.display_name.toLowerCase()} points...`);
     fetchVisualizationPointCloud(result.result_id, {
-      field: "qc",
-      timeIndex,
+      field: selectedEncoding.field.raw_field_name,
+      timeIndex: resolvedTimeIndex,
       threshold,
       maxPoints,
     })
@@ -3566,16 +3734,16 @@ function VisualizerSceneShell({ result }: { result: ResultCard }) {
         setPointCloud(payload);
         setSceneStatus(
           payload.points.length > 0
-            ? "Cloud-water point cloud loaded"
-            : "No cloud water above threshold",
+            ? selectedEncoding.statusLabel
+            : emptyPointCloudStatus(payload, selectedEncoding),
         );
-        return fetchVisualizationDefaults(result.result_id, timeIndex)
+        return fetchVisualizationDefaults(result.result_id, resolvedTimeIndex)
           .then((defaults) => {
             if (!active) return;
             setSelectedTimeDefaults(defaults);
             const fieldDefaults =
               defaultsForField(defaults, sliceFieldName) ??
-              defaultsForField(defaults, selectedField.raw_field_name);
+              defaultsForField(defaults, selectedEncoding.field.raw_field_name);
             if (fieldDefaults) {
               setHorizontalSliceLevel(fieldDefaults.horizontal_level_index);
               setVerticalSliceIndex(
@@ -3593,9 +3761,9 @@ function VisualizerSceneShell({ result }: { result: ResultCard }) {
         if (!active) return;
         setPointCloud(null);
         setSceneError(
-          caught instanceof Error ? caught.message : "Unable to load cloud-water point cloud.",
+          caught instanceof Error ? caught.message : "Unable to load 3-D scalar point layer.",
         );
-        setSceneStatus("Point cloud unavailable");
+        setSceneStatus("3-D scalar layer unavailable");
       });
     return () => {
       active = false;
@@ -3603,11 +3771,11 @@ function VisualizerSceneShell({ result }: { result: ResultCard }) {
   }, [
     maxPoints,
     result.result_id,
-    selectedField,
+    resolvedTimeIndex,
+    selectedEncoding,
     sliceFieldName,
     sliceOrientation,
     threshold,
-    timeIndex,
   ]);
 
   useEffect(() => {
@@ -3620,20 +3788,21 @@ function VisualizerSceneShell({ result }: { result: ResultCard }) {
     let active = true;
     setSliceLoading(true);
     setSliceError(null);
-    Promise.all([
-      fetchVisualizationSlice(result.result_id, {
-        field: sliceField.raw_field_name,
-        timeIndex,
-        orientation: "horizontal",
-        levelIndex: horizontalSliceLevel,
-      }),
-      fetchVisualizationSlice(result.result_id, {
-        field: sliceField.raw_field_name,
-        timeIndex,
-        orientation: sliceOrientation,
-        levelIndex: verticalSliceIndex,
-      }),
-    ])
+    const horizontalPromise = fetchVisualizationSlice(result.result_id, {
+      field: sliceField.raw_field_name,
+      timeIndex: resolvedTimeIndex,
+      orientation: "horizontal",
+      levelIndex: horizontalSliceLevel,
+    });
+    const verticalPromise = sliceSupportsVertical
+      ? fetchVisualizationSlice(result.result_id, {
+          field: sliceField.raw_field_name,
+          timeIndex: resolvedTimeIndex,
+          orientation: sliceOrientation,
+          levelIndex: verticalSliceIndex,
+        })
+      : Promise.resolve(null);
+    Promise.all([horizontalPromise, verticalPromise])
       .then(([horizontal, vertical]) => {
         if (!active) return;
         setSceneHorizontalSlice(horizontal);
@@ -3653,9 +3822,10 @@ function VisualizerSceneShell({ result }: { result: ResultCard }) {
   }, [
     horizontalSliceLevel,
     result.result_id,
+    resolvedTimeIndex,
     sliceField,
+    sliceSupportsVertical,
     sliceOrientation,
-    timeIndex,
     verticalSliceIndex,
   ]);
 
@@ -3697,7 +3867,7 @@ function VisualizerSceneShell({ result }: { result: ResultCard }) {
     <section className="visualizer-shell" aria-labelledby="visualizer-shell-title">
       <div className="section-heading">
         <div>
-          <p className="eyebrow">Cloud view</p>
+          <p className="eyebrow">Field view</p>
           <h2 id="visualizer-shell-title">What happened in this result?</h2>
         </div>
         <p className="state-chip">{sceneStatus}</p>
@@ -3721,6 +3891,12 @@ function VisualizerSceneShell({ result }: { result: ResultCard }) {
           <True3DViewer
             resultName={result.name}
             pointCloud={pointCloud}
+            fieldLabel={
+              selectedEncoding
+                ? `${selectedEncoding.field.raw_field_name} — ${selectedEncoding.field.display_name}`
+                : "No supported 3-D scalar field"
+            }
+            valueChannelLabel={selectedEncoding?.valueChannel ?? "3-D scalar rendering unavailable."}
             activeSlice={
               activeSlicePlane === "horizontal" ? sceneHorizontalSlice : sceneVerticalSlice
             }
@@ -3729,20 +3905,20 @@ function VisualizerSceneShell({ result }: { result: ResultCard }) {
             selectedRegion={selectedRegion}
             coordinateSizes={{ x: sliceXSize, y: sliceYSize, z: sliceVerticalSize }}
             selectedTimeLabel={selectedTimeLabel}
-            thresholdLabel={formatScientific(threshold, "kg/kg")}
+            thresholdLabel={formatScientific(threshold, selectedEncoding?.field.units ?? "")}
             opacity={opacity}
             pointSize={pointSize}
             status={sceneStatus}
             provenanceLabel={provenanceLabel}
             noCloudMessage={
-              !qcField
-                ? "Cloud water field qc is not available for this result."
-                : isNoCloudWithUpdraft
-                  ? "No cloud water formed in this result; vertical velocity is available."
-                  : "No cloud water above the selected threshold at this time."
+              !selectedEncoding
+                ? "No supported 3-D scalar field is available for this result. Use the 2-D slice inspector for available fields."
+                : selectedEncoding.field.raw_field_name === "qc" && isNoCloudWithUpdraft
+                  ? "No cloud water formed in this result; vertical velocity is available in the 2-D slice inspector."
+                  : selectedEncoding.emptyStateTitle
             }
           />
-          {catalog && sliceField && selectedField && (
+          {catalog && sliceField && (
             <section className="explore-control-deck" aria-label="Explore viewer controls">
               <fieldset className="explore-control-card explore-control-card-time">
                 <legend>Time</legend>
@@ -3751,7 +3927,7 @@ function VisualizerSceneShell({ result }: { result: ResultCard }) {
                   <select
                     id="explore-time"
                     aria-label="Time"
-                    value={Math.min(timeIndex, timeMax)}
+                    value={resolvedTimeIndex}
                     onChange={(event) => setTimeIndex(Number(event.target.value))}
                   >
                     {timeOptions.map((value, index) => (
@@ -3779,7 +3955,7 @@ function VisualizerSceneShell({ result }: { result: ResultCard }) {
               <fieldset className="explore-control-card explore-control-card-slice">
                 <legend>Slice</legend>
                 <label htmlFor="explore-slice-field">
-                  Field
+                  2-D slice field
                   <select
                     id="explore-slice-field"
                     aria-label="Slice field"
@@ -3792,12 +3968,15 @@ function VisualizerSceneShell({ result }: { result: ResultCard }) {
                       const nextDefaults = defaultsForField(viewDefaults, event.target.value);
                       setHorizontalSliceLevel(defaultHorizontalLevel(nextField, nextDefaults));
                       setVerticalSliceIndex(defaultVerticalIndex(nextField, sliceOrientation, nextDefaults));
+                      if (!nextField?.coordinate_names.vertical) {
+                        setActiveSlicePlane("horizontal");
+                      }
                       setSelectedRegion(null);
                     }}
                   >
                     {catalog.available_fields.map((field) => (
                       <option key={field.raw_field_name} value={field.raw_field_name}>
-                        {field.raw_field_name} - {field.display_name}
+                        {sliceFieldOptionLabel(field)}
                       </option>
                     ))}
                   </select>
@@ -3817,6 +3996,7 @@ function VisualizerSceneShell({ result }: { result: ResultCard }) {
                   <button
                     type="button"
                     className={activeSlicePlane === "vertical_x" ? "active-control" : ""}
+                    disabled={!sliceSupportsVertical}
                     onClick={() => {
                       setActiveSlicePlane("vertical_x");
                       setSliceOrientation("vertical_x");
@@ -3828,6 +4008,7 @@ function VisualizerSceneShell({ result }: { result: ResultCard }) {
                   <button
                     type="button"
                     className={activeSlicePlane === "vertical_y" ? "active-control" : ""}
+                    disabled={!sliceSupportsVertical}
                     onClick={() => {
                       setActiveSlicePlane("vertical_y");
                       setSliceOrientation("vertical_y");
@@ -3909,25 +4090,83 @@ function VisualizerSceneShell({ result }: { result: ResultCard }) {
               </fieldset>
 
               <fieldset className="explore-control-card explore-control-card-rendering">
-                <legend>Cloud-water rendering</legend>
+                <legend>3-D scalar layer</legend>
+                <label htmlFor="explore-3d-field">
+                  3-D field
+                  <select
+                    id="explore-3d-field"
+                    aria-label="3-D scalar field"
+                    value={selectedFieldName}
+                    disabled={threeDScalarEncodings.length === 0}
+                    onChange={(event) => {
+                      const nextEncoding =
+                        threeDScalarEncodings.find(
+                          (encoding) => encoding.field.raw_field_name === event.target.value,
+                        ) ?? null;
+                      setSelectedFieldName(event.target.value);
+                      if (nextEncoding) {
+                        setSliceFieldName(nextEncoding.field.raw_field_name);
+                        setThreshold(nextEncoding.defaultThreshold);
+                        if (!nextEncoding.field.coordinate_names.vertical) {
+                          setActiveSlicePlane("horizontal");
+                        }
+                        const nextDefaults =
+                          defaultsForField(selectedTimeDefaults, nextEncoding.field.raw_field_name) ??
+                          defaultsForField(viewDefaults, nextEncoding.field.raw_field_name);
+                        setHorizontalSliceLevel(
+                          defaultHorizontalLevel(nextEncoding.field, nextDefaults),
+                        );
+                        setVerticalSliceIndex(
+                          defaultVerticalIndex(nextEncoding.field, sliceOrientation, nextDefaults),
+                        );
+                      }
+                      setSelectedRegion(null);
+                    }}
+                  >
+                    {threeDScalarEncodings.length === 0 && (
+                      <option value="">No 3-D scalar fields</option>
+                    )}
+                    {threeDScalarEncodings.map((encoding) => (
+                      <option
+                        key={encoding.field.raw_field_name}
+                        value={encoding.field.raw_field_name}
+                      >
+                        {encoding.field.raw_field_name} - {encoding.field.display_name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <p className="control-help">
+                  {selectedEncoding
+                    ? selectedEncoding.valueChannel
+                    : "Only fields with a defined 3-D scalar encoding appear here; vertical velocity remains slice-only."}
+                </p>
+                {pointCloud && selectedEncoding && (
+                  <p className="control-help">
+                    {pointCloudFieldSummary(pointCloud)}
+                    {selectedEncoding.field.raw_field_name === "dbz"
+                      ? " Weather-radar colors use a fixed 0 to 60+ dBZ scale."
+                      : ""}
+                  </p>
+                )}
                 <label htmlFor="cloud-threshold">
-                  Threshold
+                  {selectedEncoding?.thresholdLabel ?? "Visible minimum"}
                   <input
                     id="cloud-threshold"
-                    aria-label="Cloud-water threshold"
+                    aria-label={selectedEncoding?.thresholdAriaLabel ?? "3-D scalar threshold"}
                     type="number"
                     min={0}
-                    step="0.000001"
+                    step={selectedEncoding?.thresholdStep ?? 0.000001}
                     value={threshold}
                     onChange={(event) => setThreshold(Number(event.target.value))}
-                    disabled={!qcField}
+                    disabled={!selectedEncoding}
                   />
                 </label>
                 <label htmlFor="cloud-opacity">
                   Opacity
                   <input
                     id="cloud-opacity"
-                    aria-label="Cloud opacity"
+                    aria-label="Layer opacity"
                     type="range"
                     min={0.1}
                     max={1}
@@ -3987,7 +4226,7 @@ function VisualizerSceneShell({ result }: { result: ResultCard }) {
                 value="Direct Three.js point cloud"
               />
               <Metric
-                label="Source field"
+                label="3-D field"
                 value={
                   selectedField
                     ? `${selectedField.raw_field_name} (${selectedField.display_name})`
@@ -3997,7 +4236,10 @@ function VisualizerSceneShell({ result }: { result: ResultCard }) {
               <Metric label="Selected time" value={selectedTimeLabel} />
               <Metric label="Slice plane" value={activeSliceLabel} />
               <Metric label="Slice plane visible" value={showSlicePlanes ? "Yes" : "No"} />
-              <Metric label="Threshold" value={formatScientific(threshold, "kg/kg")} />
+              <Metric
+                label={selectedEncoding?.thresholdLabel ?? "Visible threshold"}
+                value={formatScientific(threshold, selectedField?.units ?? "")}
+              />
               <Metric label="Opacity" value={String(opacity)} />
               <Metric label="Point size" value={`${pointSize}px`} />
               <Metric
@@ -4009,11 +4251,25 @@ function VisualizerSceneShell({ result }: { result: ResultCard }) {
                 }
               />
               <Metric
-                label="Cloud-water range"
+                label={selectedEncoding?.rangeLabel ?? "3-D field range"}
                 value={
                   pointCloud
                     ? `${formatMaybeNumber(pointCloud.stats.min_value, selectedField?.units ?? "kg/kg")} to ${formatMaybeNumber(
                         pointCloud.stats.max_value,
+                        selectedField?.units ?? "kg/kg",
+                      )}`
+                    : "Unavailable"
+                }
+              />
+              <Metric
+                label="Selected-field range"
+                value={
+                  pointCloud
+                    ? `${formatMaybeNumber(
+                        pointCloud.stats.field_min_value,
+                        selectedField?.units ?? "kg/kg",
+                      )} to ${formatMaybeNumber(
+                        pointCloud.stats.field_max_value,
                         selectedField?.units ?? "kg/kg",
                       )}`
                     : "Unavailable"
@@ -4055,19 +4311,19 @@ function VisualizerSceneShell({ result }: { result: ResultCard }) {
               />
               <Metric label="Domain x extent" value={extentLabel(pointCloud, "xh")} />
               <Metric label="Domain y extent" value={extentLabel(pointCloud, "yh")} />
-              <Metric label="Domain z extent" value={extentLabel(pointCloud, "zh")} />
+              <Metric label="Domain z extent" value={verticalExtentLabel(pointCloud)} />
               <Metric
                 label="Active cloud z range"
                 value={
                   pointCloud
-                    ? `${formatMaybeNumber(pointCloud.stats.active_z_min, pointCloud.coordinate_units.zh ?? null)} to ${formatMaybeNumber(
+                    ? `${formatMaybeNumber(pointCloud.stats.active_z_min, verticalCoordinateUnit(pointCloud))} to ${formatMaybeNumber(
                         pointCloud.stats.active_z_max,
-                        pointCloud.coordinate_units.zh ?? null,
+                        verticalCoordinateUnit(pointCloud),
                       )}`
                     : "Unavailable"
                 }
               />
-              <Metric label="Max cloud-water location" value={maxPointLocationLabel(pointCloud)} />
+              <Metric label="Max 3-D field location" value={maxPointLocationLabel(pointCloud)} />
               <Metric
                 label="Selected-time slice default"
                 value={selectedTimeSliceDefaults?.source ?? "Unavailable"}
@@ -4079,8 +4335,15 @@ function VisualizerSceneShell({ result }: { result: ResultCard }) {
               <ul className="compact-list">
                 <li>{provenanceLabel}</li>
                 <li>Visualizer interpretation of CM1-derived output</li>
-                <li>Processing method: native-grid thresholded point cloud</li>
-                <li>Rendering method: direct Three.js thresholded point cloud</li>
+                <li>
+                  Value channel:{" "}
+                  {selectedEncoding?.valueChannel ?? "3-D scalar rendering unavailable"}
+                </li>
+                <li>
+                  Processing method: backend native-grid thresholded point cloud for supported
+                  scalar fields
+                </li>
+                <li>Rendering method: direct Three.js scalar point cloud</li>
                 <li>Slice planes: native-grid JSON slices from the backend</li>
                 <li>No raw NetCDF parsing in the browser</li>
                 <li>
@@ -4309,9 +4572,9 @@ function SlicePanel({
         <span className="slice-map-anchor slice-map-anchor-bottom">{anchors.bottom}</span>
       </div>
       <div className="heatmap-legend" aria-label={`${title} color scale`}>
-        <span>{formatMaybeNumber(slice.stats.min, slice.field.units)}</span>
+        <span>{sliceLegendMinimum(slice)}</span>
         <span className={`heatmap-scale ${heatmapScaleClass(slice.field)}`} />
-        <span>{formatMaybeNumber(slice.stats.max, slice.field.units)}</span>
+        <span>{sliceLegendMaximum(slice)}</span>
       </div>
       <details>
         <summary>Technical slice details</summary>
@@ -5329,7 +5592,7 @@ function formatSeconds(value: number | null): string {
 
 function formatScientific(value: number | null, units: string): string {
   if (value === null) return "Unavailable";
-  return `${value.toExponential(3)} ${units}`;
+  return `${value.toExponential(3)}${units ? ` ${units}` : ""}`;
 }
 
 function formatNumber(value: number | null, units: string): string {
@@ -5398,10 +5661,51 @@ function extentLabel(pointCloud: PointCloudResponse | null, coordinate: string):
   return `${formatCompactNumber(extent.min)} to ${formatCompactNumber(extent.max)}${suffix}`;
 }
 
+function verticalExtentLabel(pointCloud: PointCloudResponse | null): string {
+  const extent =
+    pointCloud?.coordinate_extents.zh ??
+    pointCloud?.coordinate_extents.zf ??
+    pointCloud?.coordinate_extents.z;
+  if (!extent) return "Unavailable";
+  const suffix = extent.units ? ` ${extent.units}` : "";
+  return `${formatCompactNumber(extent.min)} to ${formatCompactNumber(extent.max)}${suffix}`;
+}
+
+function verticalCoordinateUnit(pointCloud: PointCloudResponse | null): string | null {
+  return (
+    pointCloud?.coordinate_units.zh ??
+    pointCloud?.coordinate_units.zf ??
+    pointCloud?.coordinate_units.z ??
+    null
+  );
+}
+
+function pointCloudFieldSummary(pointCloud: PointCloudResponse): string {
+  const units = pointCloud.field.units ?? "";
+  const maxValue = formatMaybeNumber(pointCloud.stats.field_max_value, units);
+  const threshold = formatScientific(pointCloud.selection.threshold, units);
+  return `Current field max: ${maxValue}. Visible points above ${threshold}: ${pointCloud.stats.source_count.toLocaleString()}.`;
+}
+
+function emptyPointCloudStatus(
+  pointCloud: PointCloudResponse,
+  selectedEncoding: ThreeDScalarEncoding,
+): string {
+  const maxValue = formatMaybeNumber(
+    pointCloud.stats.field_max_value,
+    selectedEncoding.field.units ?? "",
+  );
+  const threshold = formatScientific(
+    pointCloud.selection.threshold,
+    selectedEncoding.field.units ?? "",
+  );
+  return `${selectedEncoding.field.display_name} max is ${maxValue}; no points are above ${threshold}`;
+}
+
 function maxPointLocationLabel(pointCloud: PointCloudResponse | null): string {
   const location = pointCloud?.stats.max_value_location;
   if (!location) return "Unavailable";
-  const units = pointCloud?.coordinate_units.zh ?? "";
+  const units = verticalCoordinateUnit(pointCloud) ?? "";
   return `x ${formatCompactNumber(location.x)}, y ${formatCompactNumber(location.y)}, z ${formatCompactNumber(
     location.z,
   )}${units ? ` ${units}` : ""}, value ${formatCompactNumber(location.value)}`;
@@ -5410,6 +5714,21 @@ function maxPointLocationLabel(pointCloud: PointCloudResponse | null): string {
 function heatmapScaleClass(field: VisualizableField): string {
   if (field.raw_field_name === "w" || field.canonical_field_name === "vertical_velocity") {
     return "heatmap-scale-velocity";
+  }
+  if (field.raw_field_name === "dbz" || field.canonical_field_name === "reflectivity") {
+    return "heatmap-scale-reflectivity";
+  }
+  if (field.canonical_field_name === "temperature") {
+    return "heatmap-scale-temperature";
+  }
+  if (field.canonical_field_name === "potential_temperature") {
+    return "heatmap-scale-potential-temperature";
+  }
+  if (field.raw_field_name === "qv" || field.canonical_field_name === "water_vapor") {
+    return "heatmap-scale-water-vapor";
+  }
+  if (isSurfaceRainField(field)) {
+    return "heatmap-scale-surface-rain";
   }
   if (field.raw_field_name === "qc" || field.canonical_field_name === "cloud_water") {
     return "heatmap-scale-cloud-water";
@@ -5443,19 +5762,100 @@ function sliceCellStyle(value: number | null, slice: SliceResponse): CSSProperti
     };
   }
 
+  if (slice.field.raw_field_name === "dbz" || slice.field.canonical_field_name === "reflectivity") {
+    return { background: radarReflectivityBackground(value) };
+  }
+
   const min = slice.stats.min ?? value;
   const max = slice.stats.max ?? value;
   const normalized = normalize(value, min, max);
-  const intensity =
-    slice.field.raw_field_name === "qc" || slice.field.canonical_field_name === "cloud_water"
-      ? Math.sqrt(Math.max(0, normalized))
-      : normalized;
+  if (
+    slice.field.canonical_field_name === "temperature" ||
+    slice.field.canonical_field_name === "potential_temperature"
+  ) {
+    return { background: temperatureBackground(normalized) };
+  }
+
+  const intensity = Math.sqrt(Math.max(0, normalized));
   if (intensity < 0.015) {
     return { background: "rgba(234, 244, 248, 0.72)" };
   }
-  return {
-    background: `rgba(${38 + intensity * 155}, ${98 + intensity * 130}, ${128 + intensity * 108}, ${0.62 + intensity * 0.28})`,
-  };
+  return { background: scalarMagnitudeBackground(slice.field, intensity) };
+}
+
+function sliceLegendMinimum(slice: SliceResponse): string {
+  if (slice.field.raw_field_name === "dbz" || slice.field.canonical_field_name === "reflectivity") {
+    return "0 dBZ";
+  }
+  return formatMaybeNumber(slice.stats.min, slice.field.units);
+}
+
+function sliceLegendMaximum(slice: SliceResponse): string {
+  if (slice.field.raw_field_name === "dbz" || slice.field.canonical_field_name === "reflectivity") {
+    return "60+ dBZ";
+  }
+  return formatMaybeNumber(slice.stats.max, slice.field.units);
+}
+
+function radarReflectivityBackground(dbz: number): string {
+  const stops = [
+    { value: 0, color: [37, 97, 199] },
+    { value: 10, color: [46, 184, 208] },
+    { value: 20, color: [56, 169, 65] },
+    { value: 30, color: [245, 220, 51] },
+    { value: 40, color: [237, 92, 31] },
+    { value: 50, color: [194, 27, 42] },
+    { value: 60, color: [165, 45, 188] },
+  ];
+  const alpha = 0.72;
+  if (!Number.isFinite(dbz)) return "rgba(255, 255, 255, 0.36)";
+  if (dbz <= stops[0].value) return `rgba(${stops[0].color.join(", ")}, ${alpha})`;
+  for (let index = 1; index < stops.length; index += 1) {
+    const lower = stops[index - 1];
+    const upper = stops[index];
+    if (dbz <= upper.value) {
+      const amount = (dbz - lower.value) / (upper.value - lower.value);
+      const color = lower.color.map((component, componentIndex) =>
+        Math.round(component + (upper.color[componentIndex] - component) * amount),
+      );
+      return `rgba(${color.join(", ")}, ${alpha})`;
+    }
+  }
+  return `rgba(${stops[stops.length - 1].color.join(", ")}, ${alpha})`;
+}
+
+function scalarMagnitudeBackground(field: VisualizableField, intensity: number): string {
+  const alpha = 0.58 + intensity * 0.34;
+  let start = [234, 244, 248];
+  let end = [180, 239, 228];
+  if (field.raw_field_name === "qr" || field.canonical_field_name === "rain_water") {
+    start = [231, 239, 255];
+    end = [134, 116, 217];
+  } else if (field.raw_field_name === "qv" || field.canonical_field_name === "water_vapor") {
+    start = [232, 248, 245];
+    end = [77, 170, 146];
+  } else if (isSurfaceRainField(field)) {
+    start = [229, 242, 255];
+    end = [46, 116, 190];
+  }
+  const color = start.map((component, index) =>
+    Math.round(component + (end[index] - component) * intensity),
+  );
+  return `rgba(${color.join(", ")}, ${alpha})`;
+}
+
+function temperatureBackground(intensity: number): string {
+  const clamped = Math.max(0, Math.min(1, intensity));
+  const cold = [74, 143, 232];
+  const middle = [214, 189, 105];
+  const warm = [240, 143, 78];
+  const lower = clamped < 0.5 ? cold : middle;
+  const upper = clamped < 0.5 ? middle : warm;
+  const amount = clamped < 0.5 ? clamped * 2 : (clamped - 0.5) * 2;
+  const color = lower.map((component, index) =>
+    Math.round(component + (upper[index] - component) * amount),
+  );
+  return `rgba(${color.join(", ")}, ${0.52 + clamped * 0.34})`;
 }
 
 function formatDate(value: string | null): string {

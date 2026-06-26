@@ -506,7 +506,7 @@ Deliverables:
 
 - selected-result trust and field-loading states.
 - unified desktop Explore workflow.
-- 3-D `qc` cloud-water context as an interpretation of CM1 output.
+- 3-D scalar-field context as an interpretation of CM1 output.
 - shared time / field / slice controls.
 - horizontal/vertical native-grid slices.
 - selected-cell `What happened here?` explanation.
@@ -528,10 +528,11 @@ Implementation anchor:
 - #121 adds explicit 3-D slice-plane controls: horizontal `z` slices can move up/down, vertical `x-z` slices can move through `y`, and vertical `y-z` slices can move through `x`. These controls reuse the backend slice API and remain native-grid selectors, not interpolation or true camera rotation.
 - #125 refactors the visualizer into a fixed scientific workbench: primary visual controls sit beside the viewport, timeline and slice-position controls sit below the render, technical details move to a secondary panel, and axes/scale/annotation labels stay readable outside the zoomed data layer. Browser visual checks are required for layout changes so the scene cannot cover controls again.
 - #172 redesigns Explore around one primary visualization plus one explanation panel. The visible interaction should be `What happened here?`; technical Thermal Fate/process controls, rendering details, and provenance stay accessible without dominating the first read.
-- #184 consolidates the former `2-D Slices` / `3-D View` scaffold into one desktop Explore workflow. The current target is compact selected-result context, shared field/time/slice controls, 3-D `qc` cloud-water context, a visible native-grid slice plane, the matching 2-D slice inspector, and selected-cell `What happened here?` diagnostics. `w` and other broader fields are inspected through slices, not through fake 3-D point rendering.
+- #184 consolidates the former `2-D Slices` / `3-D View` scaffold into one desktop Explore workflow. The current target is compact selected-result context, shared field/time/slice controls, a supported 3-D scalar context, a visible native-grid slice plane, the matching 2-D slice inspector, and selected-cell `What happened here?` diagnostics.
 - #185 cleans the Explore test suite after #184 so tests protect the unified workflow rather than the old separate `2-D Slices` / `3-D View` scaffold.
 - #177 keeps older visualizer-roadmap language from pulling near-term work back toward renderer polish before the UX/product loop is stable.
 - #196 cleans up process evidence focus states in Explore. The primary `Explanation focus` control should be result-aware and show only supported or useful candidate modes; missing/future diagnostics remain visible under a collapsed `Not available for this result` section with evidence requirements and caveats.
+- #199 expands the Explore field-view contract without pretending every field has the same rendering semantics. The 3-D scalar layer supports backend-prepared `qc`, `qr`, `qv`, `dbz`, and surface `rain` payloads when present; `w`, potential temperature, and direct temperature remain slice-first inspection fields. Reflectivity uses a fixed 0 to 60+ dBZ radar-style scale, while the UI reports the current field max so weak shallow-cumulus echoes are understandable.
 - #112 is the renderer-upgrade decision point after the simplified Explore loop is stable.
 - #80 plans visual polish, fly-through/move-through, cinematic export, and thumbnail/preview policy later. It must not add rendering dependencies or implementation code.
 

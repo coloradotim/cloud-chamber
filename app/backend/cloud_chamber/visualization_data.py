@@ -28,12 +28,23 @@ FIELD_DEFINITIONS: dict[str, tuple[str, str]] = {
     "qc": ("cloud_water", "Cloud water"),
     "w": ("vertical_velocity", "Vertical velocity"),
     "qr": ("rain_water", "Rain water"),
+    "qv": ("water_vapor", "Water vapor"),
+    "t": ("temperature", "Temperature"),
+    "temp": ("temperature", "Temperature"),
+    "temperature": ("temperature", "Temperature"),
+    "th": ("potential_temperature", "Potential temperature"),
+    "theta": ("potential_temperature", "Potential temperature"),
     "rain": ("accumulated_surface_rain", "Accumulated surface rain"),
     "dbz": ("reflectivity", "Reflectivity"),
 }
 
+SIGNED_FLOW_FIELDS = {"w"}
+SURFACE_POINT_FIELDS = {"rain"}
+POINT_CLOUD_FIELDS = {"qc", "qr", "qv", "dbz", *SURFACE_POINT_FIELDS}
+
 TIME_DIMENSION_CANDIDATES = ("time", "mtime", "t")
 VERTICAL_DIMENSION_CANDIDATES = ("zh", "zf", "z", "height", "height_m", "height_km")
+SURFACE_VERTICAL_CANDIDATES = ("zf", "zh", "z", "height", "height_m", "height_km")
 Y_DIMENSION_CANDIDATES = ("yh", "y")
 X_DIMENSION_CANDIDATES = ("xh", "x")
 
@@ -150,6 +161,11 @@ class PointCloudStats(BaseModel):
 
     source_count: int
     returned_count: int
+    field_min_value: float | None = None
+    field_max_value: float | None = None
+    field_mean_value: float | None = None
+    field_finite_count: int
+    field_non_finite_count: int
     min_value: float | None = None
     max_value: float | None = None
     active_z_min: float | None = None
@@ -246,7 +262,7 @@ def view_defaults(
     dataset, close_datasets = _open_dataset_sequence(metadata)
     try:
         fields: dict[str, FieldViewDefaults] = {}
-        for field_name in ("qc", "w"):
+        for field_name in FIELD_DEFINITIONS:
             if field_name in dataset.data_vars:
                 fields[field_name] = _field_view_defaults(
                     metadata,
@@ -298,11 +314,19 @@ def point_cloud(
     max_points: int,
     encoding: VisualizationEncoding = "json",
 ) -> PointCloudResponse:
-    """Return thresholded native-grid points for cloud-water visualization."""
+    """Return thresholded native-grid points for supported 3-D scalar visualization."""
     if encoding != "json":
         raise VisualizationDataError("Only encoding=json is supported for MVP point clouds.")
-    if field != "qc":
-        raise VisualizationDataError("Only field=qc is supported for MVP cloud-water rendering.")
+    if field not in FIELD_DEFINITIONS:
+        raise VisualizationDataError(f"Unsupported visualization field: {field}")
+    if field in SIGNED_FLOW_FIELDS:
+        raise VisualizationDataError(
+            f"Field {field} requires signed-flow 3-D rendering and is slice-only for now."
+        )
+    if field not in POINT_CLOUD_FIELDS:
+        raise VisualizationDataError(
+            f"Field {field} is available for 2-D slices but not 3-D point-cloud rendering."
+        )
     if not math.isfinite(threshold) or threshold < 0:
         raise VisualizationDataError("threshold must be a finite non-negative number.")
     if max_points <= 0:
@@ -312,29 +336,41 @@ def point_cloud(
     dataset, close_datasets = _open_dataset_sequence(metadata)
     try:
         if field not in dataset.data_vars:
-            raise VisualizationDataError("Cloud water field qc is not available for this result.")
+            raise VisualizationDataError(f"Field is not available for this result: {field}")
         data_array = dataset[field]
         dims = _field_dimensions(data_array)
         if not dims.time:
-            raise VisualizationDataError("Field qc has no time dimension.")
-        if not dims.vertical or not dims.y or not dims.x:
-            raise VisualizationDataError("Field qc must have native vertical/y/x dimensions.")
+            raise VisualizationDataError(f"Field {field} has no time dimension.")
+        is_surface_field = field in SURFACE_POINT_FIELDS and not dims.vertical and dims.y and dims.x
+        if not is_surface_field and (not dims.vertical or not dims.y or not dims.x):
+            raise VisualizationDataError(f"Field {field} must have native vertical/y/x dimensions.")
         _validate_index(time_index, int(data_array.sizes[dims.time]), "time_index")
         at_time = data_array.isel({dims.time: time_index})
-        source_points = _threshold_points(
-            at_time,
-            dims=dims,
-            dataset=dataset,
-            threshold=threshold,
+        source_points = (
+            _threshold_surface_points(at_time, dims=dims, dataset=dataset, threshold=threshold)
+            if is_surface_field
+            else _threshold_points(
+                at_time,
+                dims=dims,
+                dataset=dataset,
+                threshold=threshold,
+            )
         )
         source_count = len(source_points)
+        selected_field_stats = _slice_stats(at_time)
         stride = max(1, math.ceil(source_count / max_points)) if source_count else 1
         returned_points = source_points[::stride][:max_points]
         values = [point[3] for point in source_points]
+        vertical_extent = (
+            _surface_vertical_extent(dataset)
+            if is_surface_field
+            else _coordinate_extent(dataset, dims.vertical)
+        )
+        vertical_extent_name = "z" if is_surface_field else str(dims.vertical)
         coordinate_extents = {
             str(dims.x): _coordinate_extent(dataset, dims.x),
             str(dims.y): _coordinate_extent(dataset, dims.y),
-            str(dims.vertical): _coordinate_extent(dataset, dims.vertical),
+            vertical_extent_name: vertical_extent,
         }
         finite_extents = {
             name: extent for name, extent in coordinate_extents.items() if extent is not None
@@ -346,7 +382,8 @@ def point_cloud(
             [
                 *_field_caveats(field, visual_field.coordinate_names),
                 "native_grid_thresholded_point_cloud",
-                "visualizer_interpretation_of_cm1_qc",
+                f"visualizer_interpretation_of_cm1_{field}",
+                *(["surface_field_rendered_on_domain_floor"] if is_surface_field else []),
                 *(
                     ["deterministic_stride_downsampling_applied"]
                     if source_count > max_points
@@ -369,7 +406,9 @@ def point_cloud(
             coordinate_units={
                 str(dims.x): _coordinate_units(dataset, dims.x),
                 str(dims.y): _coordinate_units(dataset, dims.y),
-                str(dims.vertical): _coordinate_units(dataset, dims.vertical),
+                vertical_extent_name: vertical_extent.units
+                if vertical_extent
+                else _coordinate_units(dataset, dims.vertical),
             },
             coordinate_extents=finite_extents,
             point_order=["x", "y", "z", "value"],
@@ -377,6 +416,11 @@ def point_cloud(
             stats=PointCloudStats(
                 source_count=source_count,
                 returned_count=len(returned_points),
+                field_min_value=selected_field_stats.min,
+                field_max_value=selected_field_stats.max,
+                field_mean_value=selected_field_stats.mean,
+                field_finite_count=selected_field_stats.finite_count,
+                field_non_finite_count=selected_field_stats.non_finite_count,
                 min_value=min(values) if values else None,
                 max_value=max(values) if values else None,
                 active_z_min=min(active_z_values) if active_z_values else None,
@@ -390,8 +434,9 @@ def point_cloud(
                 processing_method="backend_xarray_native_grid_threshold",
                 rendering_method="thresholded_point_cloud",
                 provenance_label=(
-                    "CM1-derived cloud-water point cloud; native-grid threshold; "
-                    "visualizer interpretation"
+                    f"CM1-derived {visual_field.display_name.lower()} "
+                    f"{'floor layer' if is_surface_field else 'point cloud'}; "
+                    "native-grid threshold; visualizer interpretation"
                 ),
             ),
             caveats=caveats,
@@ -552,6 +597,55 @@ def field_slice(
         _validate_index(time_index, int(data_array.sizes[dims.time]), "time_index")
         at_time = data_array.isel({dims.time: time_index})
         spatial_dims = [dimension for dimension in at_time.dims]
+        if len(spatial_dims) == 2 and dims.y and dims.x and not dims.vertical:
+            if orientation != "horizontal":
+                raise VisualizationDataError(
+                    f"Field {field} is a surface field and only supports horizontal slices."
+                )
+            _validate_index(level_index, 1, "level_index")
+            sliced = at_time.transpose(dims.y, dims.x)
+            values = _json_values(sliced)
+            stats = _slice_stats(sliced)
+            visual_field = _visualizable_field(metadata, dataset, field)
+            surface_extent = _surface_vertical_extent(dataset)
+            selected_value = surface_extent.min if surface_extent else 0.0
+            level_units = surface_extent.units if surface_extent else None
+            caveats = _dedupe(
+                [
+                    *_field_caveats(field, visual_field.coordinate_names),
+                    "surface_field_no_vertical_dimension",
+                    "surface_field_rendered_on_domain_floor",
+                    "native_grid_view_no_interpolation",
+                    "json_numeric_slice_mvp",
+                ]
+            )
+            return SliceResponse(
+                result_id=metadata.result_id,
+                run_id=metadata.run_id,
+                scenario_id=metadata.scenario_id,
+                field=visual_field,
+                selection=SliceSelectionMetadata(
+                    time_index=time_index,
+                    time_seconds=_time_value_seconds(dataset, dims.time, time_index),
+                    orientation=orientation,
+                    selected_dimension="surface",
+                    selected_index=0,
+                    selected_coordinate_value=selected_value,
+                    level_units=level_units,
+                    level_coordinate_value=selected_value,
+                    level_meters=_meters_if_safe(selected_value, level_units),
+                ),
+                coordinate_units={
+                    dimension: _coordinate_units(dataset, dimension) for dimension in sliced.dims
+                },
+                shape=[int(size) for size in sliced.shape],
+                dimension_order=[str(dimension) for dimension in sliced.dims],
+                data_encoding=encoding,
+                values=values,
+                stats=stats,
+                provenance=_provenance(metadata),
+                caveats=caveats,
+            )
         if len(spatial_dims) != 3:
             raise VisualizationDataError(
                 f"Field {field} must have three native spatial dimensions after time selection."
@@ -566,7 +660,7 @@ def field_slice(
         values = _json_values(sliced)
         stats = _slice_stats(sliced)
         visual_field = _visualizable_field(metadata, dataset, field)
-        selected_value = _coordinate_value(dataset, selected_dimension, level_index)
+        selected_coordinate_value = _coordinate_value(dataset, selected_dimension, level_index)
         vertical_dim = dims.vertical
         vertical_units = _coordinate_units(dataset, vertical_dim)
         level_units = _coordinate_units(dataset, selected_dimension)
@@ -583,10 +677,12 @@ def field_slice(
             orientation=orientation,
             selected_dimension=selected_dimension,
             selected_index=level_index,
-            selected_coordinate_value=selected_value,
+            selected_coordinate_value=selected_coordinate_value,
             level_units=level_units,
-            level_coordinate_value=selected_value if selected_dimension == vertical_dim else None,
-            level_meters=_meters_if_safe(selected_value, level_units)
+            level_coordinate_value=selected_coordinate_value
+            if selected_dimension == vertical_dim
+            else None,
+            level_meters=_meters_if_safe(selected_coordinate_value, level_units)
             if selected_dimension == vertical_dim
             else None,
         )
@@ -759,6 +855,45 @@ def _threshold_points(
     return points
 
 
+def _threshold_surface_points(
+    data_array: Any,
+    *,
+    dims: _FieldDimensions,
+    dataset: Any,
+    threshold: float,
+) -> list[list[float]]:
+    if not dims.y or not dims.x:
+        return []
+    points: list[list[float]] = []
+    values = data_array.values
+    y_values = _coordinate_values(dataset, dims.y)
+    x_values = _coordinate_values(dataset, dims.x)
+    y_axis = data_array.dims.index(dims.y)
+    x_axis = data_array.dims.index(dims.x)
+    z_value = _surface_vertical_extent(dataset).min
+
+    # Iterate in native array order so stride downsampling is deterministic.
+    for native_index in itertools.product(*(range(int(size)) for size in data_array.shape)):
+        raw_value = values[native_index]
+        try:
+            numeric = float(raw_value)
+        except (TypeError, ValueError):
+            continue
+        if not math.isfinite(numeric) or numeric < threshold:
+            continue
+        y_index = native_index[y_axis]
+        x_index = native_index[x_axis]
+        points.append(
+            [
+                _coordinate_number(x_values, x_index),
+                _coordinate_number(y_values, y_index),
+                z_value,
+                numeric,
+            ]
+        )
+    return points
+
+
 def _coordinate_number(values: list[float | str | None], index: int) -> float:
     if index < len(values):
         try:
@@ -782,6 +917,14 @@ def _coordinate_extent(dataset: Any, coordinate_name: str | None) -> CoordinateE
         max=max(values),
         units=_coordinate_units(dataset, coordinate_name),
     )
+
+
+def _surface_vertical_extent(dataset: Any) -> CoordinateExtent:
+    for coordinate_name in SURFACE_VERTICAL_CANDIDATES:
+        extent = _coordinate_extent(dataset, coordinate_name)
+        if extent is not None:
+            return extent
+    return CoordinateExtent(min=0.0, max=1.0, units=None)
 
 
 def _coordinate_number_values(dataset: Any, coordinate_name: str | None) -> list[float]:
@@ -809,6 +952,8 @@ def _native_grid_label(coordinates: FieldCoordinateMetadata) -> str:
     spatial = [coordinates.vertical, coordinates.y, coordinates.x]
     if all(spatial):
         return "/".join(str(dimension) for dimension in spatial)
+    if not coordinates.vertical and coordinates.y and coordinates.x:
+        return f"surface/{coordinates.y}/{coordinates.x}"
     return "unknown_native_grid"
 
 
@@ -830,6 +975,8 @@ def _field_caveats(field_name: str, coordinates: FieldCoordinateMetadata) -> lis
         caveats.append("qc_native_vertical_grid_not_zh")
     if field_name == "w" and coordinates.vertical != "zf":
         caveats.append("w_native_vertical_grid_not_zf")
+    if field_name in SURFACE_POINT_FIELDS and not coordinates.vertical:
+        caveats.append("surface_field_no_vertical_dimension")
     return caveats
 
 
