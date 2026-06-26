@@ -329,15 +329,18 @@ projection descriptions, provenance/rendering details, and no-field/error
 states. They must not assert isosurfaces, true camera orbit/pan behavior, or
 volumetric effects until later renderer issues implement those layers.
 
-Cloud-water point-cloud tests should use tiny synthetic NetCDF fixtures on the
+Scalar point-cloud tests should use tiny synthetic NetCDF fixtures on the
 backend and mocked visualization-ready point payloads on the frontend. Backend
-tests should cover `qc` points above threshold, no points above threshold,
-missing `qc`, bad time/threshold/max-point inputs, deterministic stride
-downsampling, stats, full coordinate extents, active `z` range, max-value
-location, coordinate units, and provenance labels. Frontend tests should cover
-rendered point-cloud state, missing `qc`, no-cloud-above-threshold state,
-threshold/time/opacity/point-size controls, side/elevation projection controls
-where model `z` is the visual height, domain extent/debug labels,
+tests should cover supported 3-D fields (`qc`, `qr`, `qv`, `dbz`, and surface
+`rain`), no points above threshold, missing fields, slice-only fields rejected
+from the 3-D endpoint, bad time/threshold/max-point inputs, deterministic stride
+downsampling, thresholded stats, full selected-field min/max/mean stats, full
+coordinate extents, active `z` range where applicable, max-value location,
+coordinate units, and provenance labels. Frontend tests should cover rendered
+scalar point-cloud states, fixed weather-radar dBZ legend scaling, surface-rain
+floor rendering, no-points-above-threshold states that still show the current
+field max, threshold/time/opacity/point-size controls, side/elevation projection
+controls where model `z` is the visual height, domain extent labels,
 provenance/rendering labels, and the guarantee that the browser does not parse
 raw NetCDF. These tests must not add ray marching, isosurfaces, shadows,
 fly-through, export, or generated CM1 output.
@@ -353,11 +356,16 @@ that height is vertical, top-down should state that height is not shown
 vertically, and oblique should be labeled an interpretive overview rather than a
 true perspective camera.
 
+Browser checks for field-view changes should inspect `qc`, `qr`, `qv`, `dbz`,
+and surface `rain` when mocked or local data exposes them. Reflectivity checks
+should confirm the fixed 0 to 60+ dBZ legend and current-field-max copy rather
+than expecting shallow-cumulus runs to contain strong radar echoes.
+
 The consolidated Results/Explore shell and fixed Explore workbench should also
 get a real browser smoke check after layout changes, not only component tests.
 Open the app, navigate to Results, open the validated quick-look baseline in
 Explore, and confirm by screenshot or direct browser inspection that the 3-D
-cloud-water context, visible slice plane, shared controls, matching slice
+scalar-field context, visible slice plane, shared controls, matching slice
 inspector, and selected-point explanation are all reachable without the render
 viewport covering controls or details. At minimum verify desktop viewports
 around 1470x956 and 1720x1440, because #184's acceptance target is desktop;
@@ -366,17 +374,17 @@ gate.
 
 Unified Explore slice-plane tests should mock the #72 visualization-ready slice
 API. They should cover horizontal and vertical slice planes, `qc` and `w` field
-selection, time synchronization with the cloud-water context, native-grid
+selection, time synchronization with the 3-D scalar context, native-grid
 caveats/provenance labels, selected-time max `qc`/`w` default locations, visible
 slice-plane orientation changes, projection controls, explicit horizontal `z`,
 vertical `x-z`, and vertical `y-z` controls, up/down or forward/back
 level-index movement, selected slice-cell point diagnostics, and clear error
 states for missing fields or bad slice requests. They must not parse raw NetCDF
 in the browser, add rendering dependencies, or test ray marching, cinematic
-lighting, export, fly-through, or generated CM1 output. The 3-D point context
-remains `qc` cloud water only; `w` and broader variable inspection should be
-tested through the synchronized slice path unless a future issue adds a
-scientifically honest 3-D representation.
+lighting, export, fly-through, or generated CM1 output. The 3-D point context is
+limited to explicitly supported scalar/floor layers; `w`, potential
+temperature, and direct temperature should be tested through synchronized slices
+unless a future issue adds a scientifically honest 3-D representation for them.
 Visual first-impression tests should also keep the validated quick-look baseline
 on a cloud-bearing time, show a visible point-cloud state, keep slice planes
 optional and secondary, and keep technical provenance reachable without making

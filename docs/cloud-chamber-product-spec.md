@@ -226,7 +226,7 @@ It should keep the current product loop focused on:
 
 ```text
 selected-result trust
--> 3-D cloud-water context
+-> 3-D scalar-field context
 -> shared time / field / slice controls
 -> visible native-grid slice plane
 -> matching 2-D slice inspector
@@ -1001,7 +1001,7 @@ table keyed by run ID.
 single selected result. The old `2-D Slices` / `3-D View` split was useful
 scaffolding while capabilities were built separately, but the product workflow
 is now a unified instrument: compact selected-result context, shared
-field/time/slice controls, a 3-D cloud-water context, a visible native-grid
+field/time/slice controls, a 3-D scalar-field context, a visible native-grid
 slice plane, the matching 2-D slice inspector, and a `What happened here?`
 selected-point explanation panel. Selecting a result in Notebook or opening a
 comparison/storage row in Explore should preserve that context. If no selected
@@ -1009,13 +1009,16 @@ result is available, Explore should tell the user to select an ingested result
 from Results.
 
 The first-read Explore screen should be an explanation workspace, not a
-process-mode cockpit. The 3-D context renders `qc` cloud-water points only; it
-does not pretend that every field has a 3-D cloud rendering. Broader field
-inspection, including `w`, happens through synchronized native-grid slices.
-Core field/time/slice controls stay visible and shared across the 3-D context
-and slice inspector. Process focus, projection/rendering details, raw
-coordinate metadata, and long provenance labels belong behind
-details/disclosure until the user asks for them.
+process-mode cockpit. The 3-D context renders only backend-supported scalar
+layers: `qc` cloud water, `qr` rain water, `qv` water vapor, `dbz`
+reflectivity, and surface `rain` when those fields exist in the ingested result.
+It does not pretend that every CM1 output field has a trustworthy 3-D rendering.
+`w`, potential temperature, and direct temperature remain native-grid slice
+inspection fields until a later issue defines scientifically honest 3-D
+rendering for them. Core field/time/slice controls stay visible and shared
+across the 3-D context and slice inspector. Process focus,
+projection/rendering details, raw coordinate metadata, and long provenance
+labels belong behind details/disclosure until the user asks for them.
 
 Explore's cloud context and slice inspector should default to physically
 interesting output views, not arbitrary zero-index slices. The backend should
@@ -1085,7 +1088,7 @@ Completed results should be replayable and inspectable without rerunning CM1. Du
 
 Start with a practical, trustworthy Explore instrument, not a cinematic
 renderer. The near-term MVP is the product loop: select a saved result, see the
-cloud-water context, inspect the synchronized native-grid slice, click a cell,
+scalar-field context, inspect the synchronized native-grid slice, click a cell,
 and get a CM1-backed `What happened here?` explanation.
 
 The implemented/near-term Explore layers are:
@@ -1093,9 +1096,11 @@ The implemented/near-term Explore layers are:
 1. Visualization-ready backend data contract.
 2. Native-grid slice inspection for orientation, time indexing, scaling, and
    field availability.
-3. Cloud-water context for `qc` using a thresholded point cloud from
-   visualization-ready data.
-4. Horizontal and vertical slice planes for `qc` and `w`.
+3. Scalar 3-D context for supported fields using thresholded backend-prepared
+   point payloads (`qc`, `qr`, `qv`, `dbz`) and a surface-floor layer for
+   surface `rain`.
+4. Horizontal and vertical slice planes for native-grid fields such as `qc`,
+   `w`, `qr`, `qv`, `dbz`, temperature, and potential temperature when present.
 5. Selected-cell / selected-region explanation backed by Thermal Fate
    diagnostics.
 
@@ -1105,15 +1110,23 @@ fly-through/move-through, cinematic export, and thumbnail/preview generation.
 
 The browser should not parse raw CM1 NetCDF directly. Backend ingest and visualization-ready preprocessing should provide selected, provenance-labeled fields for inspection and rendering.
 
-The first cloud-water renderer uses a thresholded point cloud. The backend
-selects `qc` at a chosen output time, keeps native `zh/yh/xh` grid coordinates,
-returns points where `qc >= 1e-6 kg/kg` by default, reports full NetCDF
-coordinate extents, active cloud-water height range, point count, max value, and
-max-value location, and deterministically downsamples if needed. The browser
-renders those returned points only; it does not parse raw NetCDF, interpolate,
-run marching cubes, extract isosurfaces, ray march, or invent cloud physics. The
-rendering method should be labeled `thresholded_point_cloud`, and the processing
-method should identify the native grid threshold operation.
+The first 3-D scalar renderer uses thresholded point clouds and a surface-floor
+layer, not volumes or isosurfaces. The backend selects a supported field at a
+chosen output time, keeps native coordinates, returns points that pass the
+field-specific threshold, reports full NetCDF coordinate extents, active height
+range where applicable, thresholded point count, full selected-field
+min/max/mean stats, max-value location, and deterministic downsampling if
+needed. The browser renders those returned points only; it does not parse raw
+NetCDF, interpolate, run marching cubes, extract isosurfaces, ray march, or
+invent cloud physics. The rendering method should be labeled as a direct scalar
+point cloud or surface-floor layer, and the processing method should identify
+the backend native-grid threshold operation.
+
+Reflectivity uses weather-radar-style fixed dBZ colors rather than a dynamic
+per-run scale. The legend should cover 0 to 60+ dBZ even when a shallow-cumulus
+result only contains weak or sparse reflectivity. The UI should show the current
+field max and the visible-point threshold so a low-reflectivity case is
+understandable without presenting it as a rendering failure.
 
 Point placement must use full coordinate extents from the payload, not the
 min/max of returned cloudy points. Side/elevation views are the first scientific
@@ -1143,7 +1156,7 @@ normal browser zoom and across common screen sizes.
 
 The first 3-D slice planes reuse the #72 JSON slice endpoint. The scene can
 request horizontal and vertical native-grid slices for the selected slice field
-(`qc` or `w`) at the same output time as the cloud-water point cloud. Slice
+at the same output time as the 3-D scalar layer. Slice
 planes are optional inspection aids, not the cloud itself: they should be
 toggleable, visually secondary, semi-transparent, and tied to the same
 interesting native-grid locations used by Inspect. The UI must show field name,

@@ -507,6 +507,9 @@ const provenance = {
   provenance_label: "CM1-derived visualization-ready data; native-grid view; no interpolation",
 };
 
+type MockVisualFieldName = "qc" | "w" | "qr" | "theta" | "temperature" | "qv" | "dbz" | "rain";
+type MockPointFieldName = "qc" | "qr" | "qv" | "dbz" | "rain";
+
 const fieldCatalogResponse = {
   result_id: "result-dry-run-quicklook",
   run_id: "dry-run-quicklook",
@@ -540,6 +543,84 @@ const fieldCatalogResponse = {
       time_coordinate_values: [0, 900, 1800],
       provenance,
       caveats: ["native_grid_view_no_interpolation"],
+    },
+    {
+      raw_field_name: "qr",
+      canonical_field_name: "rain_water",
+      display_name: "Rain water",
+      units: "kg/kg",
+      dimensions: ["time", "zh", "yh", "xh"],
+      shape: [3, 2, 2, 3],
+      native_grid: "zh/yh/xh",
+      coordinate_names: { time: "time", vertical: "zh", y: "yh", x: "xh" },
+      time_coordinate_values: [0, 900, 1800],
+      provenance,
+      caveats: ["native_grid_view_no_interpolation"],
+    },
+    {
+      raw_field_name: "theta",
+      canonical_field_name: "potential_temperature",
+      display_name: "Potential temperature",
+      units: "K",
+      dimensions: ["time", "zh", "yh", "xh"],
+      shape: [3, 2, 2, 3],
+      native_grid: "zh/yh/xh",
+      coordinate_names: { time: "time", vertical: "zh", y: "yh", x: "xh" },
+      time_coordinate_values: [0, 900, 1800],
+      provenance,
+      caveats: ["native_grid_view_no_interpolation"],
+    },
+    {
+      raw_field_name: "temperature",
+      canonical_field_name: "temperature",
+      display_name: "Temperature",
+      units: "K",
+      dimensions: ["time", "zh", "yh", "xh"],
+      shape: [3, 2, 2, 3],
+      native_grid: "zh/yh/xh",
+      coordinate_names: { time: "time", vertical: "zh", y: "yh", x: "xh" },
+      time_coordinate_values: [0, 900, 1800],
+      provenance,
+      caveats: ["native_grid_view_no_interpolation"],
+    },
+    {
+      raw_field_name: "qv",
+      canonical_field_name: "water_vapor",
+      display_name: "Water vapor",
+      units: "kg/kg",
+      dimensions: ["time", "zh", "yh", "xh"],
+      shape: [3, 2, 2, 3],
+      native_grid: "zh/yh/xh",
+      coordinate_names: { time: "time", vertical: "zh", y: "yh", x: "xh" },
+      time_coordinate_values: [0, 900, 1800],
+      provenance,
+      caveats: ["native_grid_view_no_interpolation"],
+    },
+    {
+      raw_field_name: "dbz",
+      canonical_field_name: "reflectivity",
+      display_name: "Reflectivity",
+      units: "dBZ",
+      dimensions: ["time", "zh", "yh", "xh"],
+      shape: [3, 2, 2, 3],
+      native_grid: "zh/yh/xh",
+      coordinate_names: { time: "time", vertical: "zh", y: "yh", x: "xh" },
+      time_coordinate_values: [0, 900, 1800],
+      provenance,
+      caveats: ["native_grid_view_no_interpolation"],
+    },
+    {
+      raw_field_name: "rain",
+      canonical_field_name: "accumulated_surface_rain",
+      display_name: "Accumulated surface rain",
+      units: "mm",
+      dimensions: ["time", "yh", "xh"],
+      shape: [3, 2, 3],
+      native_grid: "surface/yh/xh",
+      coordinate_names: { time: "time", vertical: null, y: "yh", x: "xh" },
+      time_coordinate_values: [0, 900, 1800],
+      provenance,
+      caveats: ["native_grid_view_no_interpolation", "surface_field_no_vertical_dimension"],
     },
   ],
 };
@@ -576,6 +657,84 @@ const viewDefaultsResponse = {
       selected_time_seconds: null,
       caveats: ["default_location_uses_field_maximum"],
     },
+    qr: {
+      field: "qr",
+      time_index: 2,
+      time_seconds: 1800,
+      horizontal_level_index: 1,
+      vertical_x_index: 1,
+      vertical_y_index: 2,
+      source: "max_qr_native_grid_location",
+      max_value: 0.000002,
+      selected_time_index: null,
+      selected_time_seconds: null,
+      caveats: ["default_location_uses_field_maximum"],
+    },
+    theta: {
+      field: "theta",
+      time_index: 0,
+      time_seconds: 0,
+      horizontal_level_index: 1,
+      vertical_x_index: 1,
+      vertical_y_index: 2,
+      source: "max_theta_native_grid_location",
+      max_value: 302,
+      selected_time_index: null,
+      selected_time_seconds: null,
+      caveats: ["default_location_uses_field_maximum"],
+    },
+    temperature: {
+      field: "temperature",
+      time_index: 0,
+      time_seconds: 0,
+      horizontal_level_index: 1,
+      vertical_x_index: 1,
+      vertical_y_index: 2,
+      source: "max_temperature_native_grid_location",
+      max_value: 289,
+      selected_time_index: null,
+      selected_time_seconds: null,
+      caveats: ["default_location_uses_field_maximum"],
+    },
+    qv: {
+      field: "qv",
+      time_index: 1,
+      time_seconds: 900,
+      horizontal_level_index: 1,
+      vertical_x_index: 1,
+      vertical_y_index: 2,
+      source: "max_qv_native_grid_location",
+      max_value: 0.012,
+      selected_time_index: null,
+      selected_time_seconds: null,
+      caveats: ["default_location_uses_field_maximum"],
+    },
+    dbz: {
+      field: "dbz",
+      time_index: 2,
+      time_seconds: 1800,
+      horizontal_level_index: 1,
+      vertical_x_index: 1,
+      vertical_y_index: 2,
+      source: "max_dbz_native_grid_location",
+      max_value: 28,
+      selected_time_index: null,
+      selected_time_seconds: null,
+      caveats: ["default_location_uses_field_maximum"],
+    },
+    rain: {
+      field: "rain",
+      time_index: 2,
+      time_seconds: 1800,
+      horizontal_level_index: 0,
+      vertical_x_index: 0,
+      vertical_y_index: 0,
+      source: "surface_rain_domain_floor",
+      max_value: 4.2,
+      selected_time_index: null,
+      selected_time_seconds: null,
+      caveats: ["surface_field_rendered_on_domain_floor"],
+    },
   },
   provenance: {
     ...provenance,
@@ -594,6 +753,7 @@ function selectedTimeDefaultsResponse(url: string) {
   return {
     ...viewDefaultsResponse,
     fields: {
+      ...viewDefaultsResponse.fields,
       qc: {
         ...viewDefaultsResponse.fields.qc,
         time_index: Number(timeIndex),
@@ -613,6 +773,48 @@ function selectedTimeDefaultsResponse(url: string) {
         vertical_x_index: 1,
         vertical_y_index: 2,
         source: "selected_time_max_w_native_grid_location",
+        selected_time_index: Number(timeIndex),
+        selected_time_seconds: Number(timeIndex) * 900,
+      },
+      qr: {
+        ...viewDefaultsResponse.fields.qr,
+        time_index: Number(timeIndex),
+        time_seconds: Number(timeIndex) * 900,
+        selected_time_index: Number(timeIndex),
+        selected_time_seconds: Number(timeIndex) * 900,
+      },
+      theta: {
+        ...viewDefaultsResponse.fields.theta,
+        time_index: Number(timeIndex),
+        time_seconds: Number(timeIndex) * 900,
+        selected_time_index: Number(timeIndex),
+        selected_time_seconds: Number(timeIndex) * 900,
+      },
+      temperature: {
+        ...viewDefaultsResponse.fields.temperature,
+        time_index: Number(timeIndex),
+        time_seconds: Number(timeIndex) * 900,
+        selected_time_index: Number(timeIndex),
+        selected_time_seconds: Number(timeIndex) * 900,
+      },
+      qv: {
+        ...viewDefaultsResponse.fields.qv,
+        time_index: Number(timeIndex),
+        time_seconds: Number(timeIndex) * 900,
+        selected_time_index: Number(timeIndex),
+        selected_time_seconds: Number(timeIndex) * 900,
+      },
+      dbz: {
+        ...viewDefaultsResponse.fields.dbz,
+        time_index: Number(timeIndex),
+        time_seconds: Number(timeIndex) * 900,
+        selected_time_index: Number(timeIndex),
+        selected_time_seconds: Number(timeIndex) * 900,
+      },
+      rain: {
+        ...viewDefaultsResponse.fields.rain,
+        time_index: Number(timeIndex),
+        time_seconds: Number(timeIndex) * 900,
         selected_time_index: Number(timeIndex),
         selected_time_seconds: Number(timeIndex) * 900,
       },
@@ -688,7 +890,7 @@ function sliceResponse({
   timeIndex = 0,
   levelIndex = 0,
 }: {
-  field?: "qc" | "w";
+  field?: MockVisualFieldName;
   orientation?: "horizontal" | "vertical_x" | "vertical_y";
   timeIndex?: number;
   levelIndex?: number;
@@ -697,22 +899,18 @@ function sliceResponse({
     fieldCatalogResponse.available_fields.find((candidate) => candidate.raw_field_name === field) ??
     fieldCatalogResponse.available_fields[0];
   const units = fieldMetadata.units;
-  const isVertical = orientation !== "horizontal";
+  const isSurface = field === "rain";
+  const isVertical = orientation !== "horizontal" && !isSurface;
   const values =
-    field === "qc"
-      ? timeIndex < 2
-        ? [
-            [0, 0.000002, null],
-            [0.000004, 0.000006, 0.000008],
-          ]
-        : [
-            [0.00001, 0.000012, 0.000014],
-            [0.000016, 0.000018, 0.00002],
-          ]
-      : [
+    field === "w"
+      ? [
           [1.5, 2.5, 3.5],
           [4.5, 5.5, 6.5],
-        ];
+        ]
+      : mockSliceValues(field, timeIndex);
+  const finiteValues = values
+    .flat()
+    .filter((value): value is number => typeof value === "number" && Number.isFinite(value));
   return {
     result_id: "result-dry-run-quicklook",
     run_id: "dry-run-quicklook",
@@ -722,18 +920,24 @@ function sliceResponse({
       time_index: timeIndex,
       time_seconds: [0, 900, 1800][timeIndex] ?? 1800,
       orientation,
-      selected_dimension:
-        orientation === "vertical_y" ? "xh" : orientation === "vertical_x" ? "yh" : "zh",
-      selected_index: levelIndex,
-      selected_coordinate_value:
-        orientation === "horizontal"
+      selected_dimension: isSurface
+        ? "surface"
+        : orientation === "vertical_y"
+          ? "xh"
+          : orientation === "vertical_x"
+            ? "yh"
+            : "zh",
+      selected_index: isSurface ? 0 : levelIndex,
+      selected_coordinate_value: isSurface
+        ? 0
+        : orientation === "horizontal"
           ? ([0.4, 0.8, 1.2][levelIndex] ?? 0.8)
           : ([-3.2, 0, 3.2][levelIndex] ?? 0),
       level_units: orientation === "horizontal" ? "km" : null,
       level_coordinate_value:
-        orientation === "horizontal" ? ([0.4, 0.8, 1.2][levelIndex] ?? 0.8) : null,
+        orientation === "horizontal" ? (isSurface ? 0 : ([0.4, 0.8, 1.2][levelIndex] ?? 0.8)) : null,
       level_meters:
-        orientation === "horizontal" ? ([0.4, 0.8, 1.2][levelIndex] ?? 0.8) * 1000 : null,
+        orientation === "horizontal" ? (isSurface ? 0 : ([0.4, 0.8, 1.2][levelIndex] ?? 0.8) * 1000) : null,
     },
     coordinate_units: isVertical ? { zh: "km", xh: "km" } : { yh: "km", xh: "km" },
     shape: [2, 3],
@@ -741,11 +945,11 @@ function sliceResponse({
     data_encoding: "json",
     values,
     stats: {
-      min: field === "qc" ? 0 : 1.5,
-      max: field === "qc" ? (timeIndex < 2 ? 0.000008 : 0.00002) : 6.5,
-      mean: field === "qc" ? 0.000004 : 4,
-      finite_count: 5,
-      non_finite_count: field === "qc" && timeIndex < 2 ? 1 : 0,
+      min: Math.min(...finiteValues),
+      max: Math.max(...finiteValues),
+      mean: finiteValues.reduce((sum, value) => sum + value, 0) / finiteValues.length,
+      finite_count: finiteValues.length,
+      non_finite_count: values.flat().length - finiteValues.length,
     },
     provenance,
     caveats: ["native_grid_view_no_interpolation", "json_numeric_slice_mvp"],
@@ -753,48 +957,142 @@ function sliceResponse({
   };
 }
 
+function mockSliceValues(field: MockVisualFieldName, timeIndex: number): Array<Array<number | null>> {
+  if (field === "theta") {
+    return timeIndex < 2
+      ? [
+          [300, 301, null],
+          [302, 303, 304],
+        ]
+      : [
+          [305, 306, 307],
+          [308, 309, 310],
+        ];
+  }
+  if (field === "temperature") {
+    return timeIndex < 2
+      ? [
+          [285, 286, null],
+          [287, 288, 289],
+        ]
+      : [
+          [289, 290, 291],
+          [292, 293, 294],
+        ];
+  }
+  if (field === "qv") {
+    return timeIndex < 2
+      ? [
+          [0.0101, 0.0104, null],
+          [0.0107, 0.0109, 0.0112],
+        ]
+      : [
+          [0.0113, 0.0115, 0.0118],
+          [0.012, 0.0122, 0.0124],
+        ];
+  }
+  if (field === "dbz") {
+    return timeIndex < 2
+      ? [
+          [-8, 2, null],
+          [8, 14, 20],
+        ]
+      : [
+          [6, 12, 18],
+          [22, 26, 30],
+        ];
+  }
+  if (field === "rain") {
+    return timeIndex < 2
+      ? [
+          [0, 0.2, null],
+          [0.6, 0.8, 1.1],
+        ]
+      : [
+          [1.3, 1.8, 2.1],
+          [2.6, 3.4, 4.2],
+        ];
+  }
+  return timeIndex < 2
+    ? [
+        [0, field === "qr" ? 2e-7 : 0.000002, null],
+        [
+          field === "qr" ? 4e-7 : 0.000004,
+          field === "qr" ? 6e-7 : 0.000006,
+          field === "qr" ? 8e-7 : 0.000008,
+        ],
+      ]
+    : [
+        [
+          field === "qr" ? 1e-6 : 0.00001,
+          field === "qr" ? 1.2e-6 : 0.000012,
+          field === "qr" ? 1.4e-6 : 0.000014,
+        ],
+        [
+          field === "qr" ? 1.6e-6 : 0.000016,
+          field === "qr" ? 1.8e-6 : 0.000018,
+          field === "qr" ? 2e-6 : 0.00002,
+        ],
+      ];
+}
+
 function pointCloudResponse({
+  field = "qc",
   threshold = 0.000001,
   timeIndex = 2,
   points,
+  fieldRange,
 }: {
+  field?: MockPointFieldName;
   threshold?: number;
   timeIndex?: number;
   points?: Array<[number, number, number, number]>;
+  fieldRange?: { min: number; max: number; mean: number };
 } = {}) {
+  const fieldMetadata =
+    fieldCatalogResponse.available_fields.find((candidate) => candidate.raw_field_name === field) ??
+    fieldCatalogResponse.available_fields[0];
+  const isSurface = field === "rain";
   const returnedPoints =
     points ??
     (threshold >= 1 || timeIndex === 0
       ? []
       : [
-          [0, 0, 0.8, 0.000002],
-          [1, 1, 0.8, 0.000006],
-          [2, 1, 1.2, 0.000008],
+          [0, 0, field === "rain" ? 0 : 0.8, mockPointValue(field, 0)],
+          [1, 1, field === "rain" ? 0 : 0.8, mockPointValue(field, 1)],
+          [2, 1, field === "rain" ? 0 : 1.2, mockPointValue(field, 2)],
         ]);
   const values = returnedPoints.map((point) => point[3]);
   return {
     result_id: "result-dry-run-quicklook",
     run_id: "dry-run-quicklook",
     scenario_id: "baseline-shallow-cumulus",
-    field: fieldCatalogResponse.available_fields[0],
+    field: fieldMetadata,
     selection: {
-      field: "qc",
+      field,
       time_index: timeIndex,
       time_seconds: [0, 900, 1800][timeIndex] ?? 1800,
       threshold,
       max_points: 50000,
     },
-    coordinate_units: { xh: "km", yh: "km", zh: "km" },
+    coordinate_units: isSurface ? { xh: "km", yh: "km", z: "km" } : { xh: "km", yh: "km", zh: "km" },
     coordinate_extents: {
       xh: { min: -3.2, max: 3.2, units: "km" },
       yh: { min: -3.2, max: 3.2, units: "km" },
-      zh: { min: 0.0, max: 3.0, units: "km" },
+      ...(isSurface
+        ? { z: { min: 0.0, max: 3.0, units: "km" } }
+        : { zh: { min: 0.0, max: 3.0, units: "km" } }),
     },
     point_order: ["x", "y", "z", "value"],
     points: returnedPoints,
     stats: {
       source_count: returnedPoints.length,
       returned_count: returnedPoints.length,
+      field_min_value: (fieldRange ?? mockFieldRange(field)).min,
+      field_max_value: (fieldRange ?? mockFieldRange(field)).max,
+      field_mean_value: (fieldRange ?? mockFieldRange(field)).mean,
+      field_finite_count: 24,
+      field_non_finite_count: 0,
       min_value: values.length ? Math.min(...values) : null,
       max_value: values.length ? Math.max(...values) : null,
       active_z_min: values.length ? Math.min(...returnedPoints.map((point) => point[2])) : null,
@@ -815,10 +1113,54 @@ function pointCloudResponse({
       processing_method: "backend_xarray_native_grid_threshold",
       rendering_method: "thresholded_point_cloud",
       provenance_label:
-        "CM1-derived cloud-water point cloud; native-grid threshold; visualizer interpretation",
+        `CM1-derived ${fieldMetadata.display_name.toLowerCase()} point cloud; native-grid threshold; visualizer interpretation`,
     },
-    caveats: ["native_grid_thresholded_point_cloud", "visualizer_interpretation_of_cm1_qc"],
+    caveats: ["native_grid_thresholded_point_cloud", `visualizer_interpretation_of_cm1_${field}`],
   };
+}
+
+function mockFieldRange(field: MockPointFieldName): { min: number; max: number; mean: number } {
+  const ranges: Record<MockPointFieldName, { min: number; max: number; mean: number }> = {
+    qc: { min: 0, max: 0.000008, mean: 0.000002 },
+    qr: { min: 0, max: 0.0000008, mean: 0.0000002 },
+    qv: { min: 0.0098, max: 0.0124, mean: 0.0111 },
+    dbz: { min: -8, max: 30, mean: 9.5 },
+    rain: { min: 0, max: 4.2, mean: 1.4 },
+  };
+  return ranges[field];
+}
+
+function mockPointValue(field: MockPointFieldName, index: number): number {
+  const values: Record<MockPointFieldName, number[]> = {
+    qc: [0.000002, 0.000006, 0.000008],
+    qr: [0.0000002, 0.0000006, 0.0000008],
+    qv: [0.0104, 0.0112, 0.0124],
+    dbz: [8, 18, 30],
+    rain: [0.8, 2.2, 4.2],
+  };
+  return values[field][index] ?? values[field][0];
+}
+
+function mockFieldFromParam(value: string | null): MockVisualFieldName {
+  if (
+    value === "w" ||
+    value === "qr" ||
+    value === "theta" ||
+    value === "temperature" ||
+    value === "qv" ||
+    value === "dbz" ||
+    value === "rain"
+  ) {
+    return value;
+  }
+  return "qc";
+}
+
+function mockPointFieldFromParam(value: string | null): MockPointFieldName {
+  if (value === "qr" || value === "qv" || value === "dbz" || value === "rain") {
+    return value;
+  }
+  return "qc";
 }
 
 function selectedRegionResponse() {
@@ -1108,13 +1450,16 @@ beforeEach(() => {
       if (url.includes("/visualization/point-cloud")) {
         const parsed = new URL(url, "http://localhost");
         const isDryFailed = parsed.pathname.includes("result-dry-failed-cumulus");
+        const requestedField = mockPointFieldFromParam(parsed.searchParams.get("field"));
         return Promise.resolve(
           new Response(
             JSON.stringify(
               pointCloudResponse({
+                field: requestedField,
                 threshold: Number(parsed.searchParams.get("threshold") ?? 0.000001),
                 timeIndex: Number(parsed.searchParams.get("time_index") ?? 0),
                 points: isDryFailed ? [] : undefined,
+                fieldRange: isDryFailed && requestedField === "qc" ? { min: 0, max: 0, mean: 0 } : undefined,
               }),
             ),
             { status: 200 },
@@ -1147,7 +1492,7 @@ beforeEach(() => {
           new Response(
             JSON.stringify(
               sliceResponse({
-                field: parsed.searchParams.get("field") === "w" ? "w" : "qc",
+                field: mockFieldFromParam(parsed.searchParams.get("field")),
                 orientation:
                   parsed.searchParams.get("orientation") === "vertical_y"
                     ? "vertical_y"
@@ -1722,7 +2067,7 @@ describe("App", () => {
 
     expect(screen.getAllByText("Dry Failed Cumulus quick-look").length).toBeGreaterThan(0);
     expect(await screen.findByRole("heading", { name: "What happened in this result?" })).toBeInTheDocument();
-    expect(screen.getByLabelText("True 3-D cloud-water viewer")).toBeInTheDocument();
+    expect(screen.getByLabelText("True 3-D scalar field viewer")).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Inspect the current slice" })).toBeInTheDocument();
     expect(fetch).toHaveBeenCalledWith(
       "/api/results/result-dry-failed-cumulus/visualization/defaults",
@@ -2155,10 +2500,12 @@ describe("App", () => {
       }
       if (url.includes("/visualization/point-cloud")) {
         const parsed = new URL(url, "http://localhost");
+        const requestedField = mockPointFieldFromParam(parsed.searchParams.get("field"));
         return Promise.resolve(
           new Response(
             JSON.stringify(
               pointCloudResponse({
+                field: requestedField,
                 threshold: Number(parsed.searchParams.get("threshold") ?? 0.000001),
                 timeIndex: Number(parsed.searchParams.get("time_index") ?? 0),
               }),
@@ -2173,7 +2520,7 @@ describe("App", () => {
           new Response(
             JSON.stringify(
               sliceResponse({
-                field: parsed.searchParams.get("field") === "w" ? "w" : "qc",
+                field: mockFieldFromParam(parsed.searchParams.get("field")),
                 orientation:
                   parsed.searchParams.get("orientation") === "vertical_y"
                     ? "vertical_y"
@@ -2238,7 +2585,7 @@ describe("App", () => {
     fireEvent.click(within(resultDetail).getByRole("button", { name: "Open in Explore" }));
 
     expect(await screen.findByRole("heading", { name: "What happened in this result?" })).toBeInTheDocument();
-    await screen.findAllByText("Cloud-water point cloud loaded");
+    await screen.findAllByText("Cloud-water point layer loaded");
     expect(screen.getByText("Result explanation")).toBeInTheDocument();
     expect(screen.getAllByText(/Cloud water formed in the validated quick-look baseline/).length)
       .toBeGreaterThan(0);
@@ -2327,7 +2674,7 @@ describe("App", () => {
     await screen.findByText("Slice synced");
     expect(screen.getByLabelText("Slice field")).toHaveValue("w");
     expect(screen.queryByRole("option", { name: /qc/ })).not.toBeInTheDocument();
-    expect(screen.getByLabelText("True 3-D cloud-water viewer")).toBeInTheDocument();
+    expect(screen.getByLabelText("True 3-D scalar field viewer")).toBeInTheDocument();
     expect(screen.getByLabelText("Slice position")).toBeInTheDocument();
   });
 
@@ -2339,20 +2686,96 @@ describe("App", () => {
 
     expect(await screen.findByRole("heading", { name: "What happened in this result?" })).toBeInTheDocument();
     await screen.findByText("Slice synced");
-    expect(screen.getByLabelText("True 3-D cloud-water viewer")).toBeInTheDocument();
+    expect(screen.getByLabelText("True 3-D scalar field viewer")).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Inspect the current slice" })).toBeInTheDocument();
     expect(screen.getByLabelText("Slice field")).toHaveValue("qc");
     expect(screen.getAllByRole("option", { name: "qc - Cloud water" }).length).toBeGreaterThan(0);
-    expect(screen.getAllByRole("option", { name: "w - Vertical velocity" }).length).toBeGreaterThan(
+    expect(screen.getAllByRole("option", { name: "w - Vertical velocity (slice only)" }).length).toBeGreaterThan(
       0,
     );
 
-    await screen.findAllByText("Cloud-water point cloud loaded");
+    await screen.findAllByText("Cloud-water point layer loaded");
     expect(screen.getByLabelText("Slice field")).toHaveValue("qc");
     expect(screen.getAllByRole("option", { name: "qc - Cloud water" }).length).toBeGreaterThan(0);
-    expect(screen.getAllByRole("option", { name: "w - Vertical velocity" }).length).toBeGreaterThan(
+    expect(screen.getAllByRole("option", { name: "w - Vertical velocity (slice only)" }).length).toBeGreaterThan(
       0,
     );
+  });
+
+  it("separates 3-D scalar fields from slice-only fields", async () => {
+    render(<App />);
+
+    const resultDetail = await screen.findByLabelText("Result detail");
+    fireEvent.click(within(resultDetail).getByRole("button", { name: "Open in Explore" }));
+    await screen.findAllByText("Cloud-water point layer loaded");
+
+    const threeDField = screen.getByLabelText("3-D scalar field") as HTMLSelectElement;
+    const threeDOptions = Array.from(threeDField.options).map((option) => option.textContent);
+    expect(threeDOptions).toEqual(
+      expect.arrayContaining([
+        "qc - Cloud water",
+        "qr - Rain water",
+        "qv - Water vapor",
+        "dbz - Reflectivity",
+        "rain - Accumulated surface rain",
+      ]),
+    );
+    expect(threeDOptions.join(" ")).not.toContain("theta");
+    expect(threeDOptions.join(" ")).not.toContain("temperature");
+    expect(threeDOptions.join(" ")).not.toContain("Vertical velocity");
+
+    const sliceField = screen.getByLabelText("Slice field") as HTMLSelectElement;
+    const sliceOptions = Array.from(sliceField.options).map((option) => option.textContent);
+    expect(sliceOptions).toEqual(
+      expect.arrayContaining([
+        "w - Vertical velocity (slice only)",
+        "theta - Potential temperature (slice only)",
+        "temperature - Temperature (slice only)",
+      ]),
+    );
+
+    fireEvent.change(sliceField, { target: { value: "temperature" } });
+    await waitFor(() => {
+      expect(screen.getByLabelText("Slice field")).toHaveValue("temperature");
+    });
+    expect(screen.getByLabelText("3-D scalar field")).toHaveValue("qc");
+  });
+
+  it("renders expanded 3-D scalar fields with honest legends and floor-layer rain", async () => {
+    render(<App />);
+
+    const resultDetail = await screen.findByLabelText("Result detail");
+    fireEvent.click(within(resultDetail).getByRole("button", { name: "Open in Explore" }));
+    await screen.findAllByText("Cloud-water point layer loaded");
+
+    const threeDField = screen.getByLabelText("3-D scalar field");
+    fireEvent.change(threeDField, { target: { value: "qr" } });
+    expect((await screen.findAllByText("Rain-water point layer loaded")).length).toBeGreaterThan(0);
+    expect(screen.getByLabelText("Slice field")).toHaveValue("qr");
+    expect(screen.getAllByText("Rain water").length).toBeGreaterThan(0);
+
+    fireEvent.change(threeDField, { target: { value: "qv" } });
+    expect((await screen.findAllByText("Water-vapor point layer loaded")).length).toBeGreaterThan(
+      0,
+    );
+    expect(screen.getByLabelText("Slice field")).toHaveValue("qv");
+    expect(screen.getAllByText("Water vapor").length).toBeGreaterThan(0);
+
+    fireEvent.change(threeDField, { target: { value: "dbz" } });
+    expect((await screen.findAllByText("Reflectivity point layer loaded")).length).toBeGreaterThan(
+      0,
+    );
+    expect(screen.getByLabelText("Slice field")).toHaveValue("dbz");
+    expect(screen.getAllByText("0 dBZ").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("60+ dBZ").length).toBeGreaterThan(0);
+
+    fireEvent.change(threeDField, { target: { value: "rain" } });
+    expect((await screen.findAllByText("Surface-rain floor layer loaded")).length).toBeGreaterThan(
+      0,
+    );
+    expect(screen.getByLabelText("Slice field")).toHaveValue("rain");
+    expect(screen.getByRole("button", { name: "Vertical x-z slice" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Vertical y-z slice" })).toBeDisabled();
   });
 
   it("opens Dry Failed as a no-cloud result with a useful w/updraft path", async () => {
@@ -2362,19 +2785,18 @@ describe("App", () => {
     fireEvent.click(await screen.findByRole("button", { name: "Open Dry Failed in Explore" }));
 
     expect(await screen.findByRole("heading", { name: "What happened in this result?" })).toBeInTheDocument();
-    await screen.findAllByText("Cloud view ready");
+    await screen.findAllByText("Cloud water max is 0 kg/kg; no points are above 1.000e-6 kg/kg");
     expect(screen.getByRole("heading", { name: "Inspect the current slice" })).toBeInTheDocument();
     expect(screen.getByLabelText("Slice field")).toHaveValue("w");
     expect(screen.getAllByRole("option", { name: "qc - Cloud water" }).length).toBeGreaterThan(0);
-    expect(screen.getAllByRole("option", { name: "w - Vertical velocity" }).length).toBeGreaterThan(
+    expect(screen.getAllByRole("option", { name: "w - Vertical velocity (slice only)" }).length).toBeGreaterThan(
       0,
     );
     expect(
-      screen.getByText("No cloud water formed in this result; vertical velocity is available."),
-    ).toBeInTheDocument();
-    expect(screen.getByText(/use vertical velocity \(w\) slices to inspect the thermals/i))
-      .toBeInTheDocument();
-
+      screen.getAllByText(
+        "Thermals rose, but low-level moisture stayed too dry for meaningful cloud water or rain.",
+      ).length,
+    ).toBeGreaterThan(0);
     await screen.findByText("Slice synced");
     expect(screen.getByLabelText("Slice field")).toHaveValue("w");
   });
@@ -2467,7 +2889,7 @@ describe("App", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Retry loading fields" }));
 
-    await screen.findAllByText("Cloud-water point cloud loaded");
+    await screen.findAllByText("Cloud-water point layer loaded");
     await waitFor(() => {
       expect(screen.queryByText("Visualization fields temporarily failed.")).not.toBeInTheDocument();
     });
@@ -2480,14 +2902,14 @@ describe("App", () => {
     fireEvent.click((await screen.findAllByRole("button", { name: "Open in Explore" }))[0]);
 
     expect(await screen.findByRole("heading", { name: "What happened in this result?" })).toBeInTheDocument();
-    await screen.findAllByText("Cloud-water point cloud loaded");
+    await screen.findAllByText("Cloud-water point layer loaded");
     expect(screen.getByText("Cloud formed in this result")).toBeInTheDocument();
     expect(screen.queryByText("Cloud formed here")).not.toBeInTheDocument();
-    const viewer = screen.getByLabelText("True 3-D cloud-water viewer");
+    const viewer = screen.getByLabelText("True 3-D scalar field viewer");
     expect(viewer).toBeInTheDocument();
     expect(
       screen.getByLabelText(
-        "Interactive Three.js scene showing CM1 cloud water, domain bounds, slice plane, and selected point",
+        "Interactive Three.js scene showing a CM1 scalar field, domain bounds, slice plane, and selected point",
       ),
     ).toBeInTheDocument();
     expect(screen.getByLabelText("Scientific visualization workbench")).toBeInTheDocument();
@@ -2522,9 +2944,7 @@ describe("App", () => {
     expect(screen.getByRole("button", { name: "Vertical y-z slice" })).toBeInTheDocument();
     expect(screen.getByLabelText("Time")).toBeInTheDocument();
     expect(screen.getByLabelText("Show slice plane")).toBeChecked();
-    expect(screen.getAllByText("selected_time_max_qc_native_grid_location").length).toBeGreaterThan(
-      0,
-    );
+    expect(screen.getAllByText("Current field max: 8.000e-6 kg/kg. Visible points above 1.000e-6 kg/kg: 3.").length).toBeGreaterThan(0);
     expect(screen.getByText("0 to 3 km")).toBeInTheDocument();
     expect(screen.getByText("0.8 km to 1.2 km")).toBeInTheDocument();
     expect(screen.getByText("x 2, y 1, z 1.2 km, value 8.000e-6")).toBeInTheDocument();
@@ -2536,9 +2956,11 @@ describe("App", () => {
     expect(screen.getByText("2.000e-6 kg/kg to 8.000e-6 kg/kg")).toBeInTheDocument();
     expect(screen.getByText("Visualizer interpretation of CM1-derived output")).toBeInTheDocument();
     expect(
-      screen.getByText("Processing method: native-grid thresholded point cloud"),
+      screen.getByText(
+        "Processing method: backend native-grid thresholded point cloud for supported scalar fields",
+      ),
     ).toBeInTheDocument();
-    expect(screen.getByText("Rendering method: direct Three.js thresholded point cloud"))
+    expect(screen.getByText("Rendering method: direct Three.js scalar point cloud"))
       .toBeInTheDocument();
     expect(screen.getByText("No raw NetCDF parsing in the browser")).toBeInTheDocument();
     expect(fetch).toHaveBeenCalledWith(expect.stringContaining("time_index=2"));
@@ -2551,9 +2973,9 @@ describe("App", () => {
     render(<App />);
 
     fireEvent.click((await screen.findAllByRole("button", { name: "Open in Explore" }))[0]);
-    await screen.findAllByText("Cloud-water point cloud loaded");
+    await screen.findAllByText("Cloud-water point layer loaded");
 
-    const viewer = screen.getByLabelText("True 3-D cloud-water viewer");
+    const viewer = screen.getByLabelText("True 3-D scalar field viewer");
     expect(within(viewer).getByText(/Slice plane: Horizontal layer at z = /)).toBeInTheDocument();
     expect(within(viewer).queryByText(/Slice plane: Vertical x-z slice at y = /))
       .not.toBeInTheDocument();
@@ -2605,10 +3027,10 @@ describe("App", () => {
     render(<App />);
 
     fireEvent.click((await screen.findAllByRole("button", { name: "Open in Explore" }))[0]);
-    await screen.findAllByText("Cloud-water point cloud loaded");
+    await screen.findAllByText("Cloud-water point layer loaded");
 
     fireEvent.click(screen.getByRole("button", { name: "Vertical x-z slice" }));
-    const viewer = screen.getByLabelText("True 3-D cloud-water viewer");
+    const viewer = screen.getByLabelText("True 3-D scalar field viewer");
     await waitFor(() => {
       expect(within(viewer).getByText(/Slice plane: Vertical x-z slice at y = /))
         .toBeInTheDocument();
@@ -2632,7 +3054,7 @@ describe("App", () => {
     render(<App />);
 
     fireEvent.click((await screen.findAllByRole("button", { name: "Open in Explore" }))[0]);
-    await screen.findAllByText("Cloud-water point cloud loaded");
+    await screen.findAllByText("Cloud-water point layer loaded");
 
     const cameraControls = screen.getByLabelText("3-D camera controls");
     expect(within(cameraControls).getByText(/Camera ready/)).toBeInTheDocument();
@@ -2660,17 +3082,17 @@ describe("App", () => {
     render(<App />);
 
     fireEvent.click((await screen.findAllByRole("button", { name: "Open in Explore" }))[0]);
-    await screen.findAllByText("Cloud-water point cloud loaded");
+    await screen.findAllByText("Cloud-water point layer loaded");
 
     fireEvent.change(screen.getByLabelText("Cloud-water threshold"), { target: { value: "1" } });
 
-    await screen.findAllByText("No cloud water above threshold");
+    await screen.findAllByText("Cloud water max is 8.000e-6 kg/kg; no points are above 1.000e+0 kg/kg");
     expect(
       screen.getByText("No cloud water above the selected threshold at this time."),
     ).toBeInTheDocument();
     expect(fetch).toHaveBeenCalledWith(expect.stringContaining("threshold=1"));
 
-    fireEvent.change(screen.getByLabelText("Cloud opacity"), { target: { value: "0.8" } });
+    fireEvent.change(screen.getByLabelText("Layer opacity"), { target: { value: "0.8" } });
     fireEvent.change(screen.getByLabelText("Point size"), { target: { value: "14" } });
     fireEvent.change(screen.getByLabelText("Time"), { target: { value: "1" } });
 
@@ -2689,12 +3111,10 @@ describe("App", () => {
     fireEvent.click(within(resultDetail).getByRole("button", { name: "Open in Explore" }));
 
     expect(await screen.findByRole("heading", { name: "What happened in this result?" })).toBeInTheDocument();
-    await screen.findAllByText("Cloud view ready");
-    expect(
-      screen.getByText("Cloud water field qc is not available for this result."),
-    ).toBeInTheDocument();
+    await screen.findAllByText("Slice fields ready; no 3-D scalar field available");
+    expect(screen.getByText("No supported 3-D scalar field")).toBeInTheDocument();
     expect(screen.getByLabelText("Slice field")).toHaveValue("w");
-    expect(screen.getByLabelText("Cloud-water threshold")).toBeDisabled();
+    expect(screen.getByLabelText("3-D scalar field")).toBeDisabled();
   });
 
   it("handles an Explore result with no visualization-ready fields", async () => {
@@ -2709,8 +3129,6 @@ describe("App", () => {
     expect(
       screen.getByText("No visualization-ready fields are available for this result."),
     ).toBeInTheDocument();
-    expect(
-      screen.getByText("Cloud water field qc is not available for this result."),
-    ).toBeInTheDocument();
+    expect(screen.getByText("No supported 3-D scalar field")).toBeInTheDocument();
   });
 });

@@ -179,19 +179,28 @@ The browser must not parse raw NetCDF.
 For the first implementation, prefer reusing current backend visualization-ready payloads:
 
 - field catalog;
-- `qc` point-cloud payload;
+- scalar point-cloud payloads;
 - slice payloads;
 - selected-region diagnostics payloads.
 
 Only add or change backend endpoints if the current payloads are missing essential scene information such as domain extents or stable coordinate metadata.
 
-The first `qc` layer can remain thresholded point rendering. It does not need isosurfaces, opacity approximation, or volume rendering. Coordinate extents, units, thresholds, max point counts, downsampling notes, and provenance/caveats should remain visible or available on demand.
+The first scalar layers can remain thresholded point rendering or a surface-floor
+layer for surface rain. They do not need isosurfaces, opacity approximation, or
+volume rendering. Coordinate extents, units, thresholds, max point counts,
+selected-field min/max/mean stats, downsampling notes, and provenance/caveats
+should remain visible or available on demand.
 
 ## Relationship to vertical velocity
 
 Do not fold #183 into #187 by default.
 
-#187 should establish the scene, camera, labels, slice plane, and cloud-water layer. #183 should then add the first additional 3-D science layer: signed `w` for updrafts and downdrafts.
+#187 should establish the scene, camera, labels, slice plane, and initial scalar
+field layer. Later field-layer work can add supported scalar views such as
+`qc`, `qr`, `qv`, `dbz`, and surface `rain` when the backend can provide
+trustworthy visualization-ready payloads. #183 should still remain separate for
+signed `w` updrafts and downdrafts, because vector/signed-motion fields need
+their own representation and should not be hidden inside a generic scalar layer.
 
 This sequencing matters because vertical velocity needs its own data contract and visual defaults. It should not be hidden inside the base viewer PR.
 

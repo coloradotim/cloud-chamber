@@ -135,12 +135,12 @@ test.describe("mocked smoke: Build, Results, Explore path", () => {
       timeout: 10_000,
     });
     await expect(page.getByLabel("Explore viewer controls")).toBeVisible();
-    await expect(page.getByLabel("True 3-D cloud-water viewer")).toBeVisible({
+    await expect(page.getByLabel("True 3-D scalar field viewer")).toBeVisible({
       timeout: 12_000,
     });
     await expect(
       page.getByLabel(
-        "Interactive Three.js scene showing CM1 cloud water, domain bounds, slice plane, and selected point",
+        "Interactive Three.js scene showing a CM1 scalar field, domain bounds, slice plane, and selected point",
       ),
     ).toBeVisible();
     await expect(page.getByLabel("3-D camera controls")).toBeVisible();
@@ -218,14 +218,57 @@ test.describe("mocked smoke: Build, Results, Explore path", () => {
       1,
     );
     await expect(
-      page.locator("#explore-slice-field option", { hasText: "w - Vertical velocity" }),
+      page.locator("#explore-slice-field option", { hasText: "w - Vertical velocity (slice only)" }),
     ).toHaveCount(1);
     await expect(page.getByText(/loading fields/i)).not.toBeVisible();
 
-    await expect(page.getByText(/cloud-water point cloud loaded/i).first()).toBeVisible({
+    await expect(page.getByText(/cloud-water point layer loaded/i).first()).toBeVisible({
       timeout: 12_000,
     });
-    await expect(page.getByText(/cloud-water point cloud/i).first()).toBeVisible();
+    await expect(page.getByText(/cloud-water point layer/i).first()).toBeVisible();
+  });
+
+  test("Explore exposes expanded 3-D scalar fields without promoting slice-only fields", async ({
+    page,
+  }) => {
+    await gotoResults(page);
+    await page.getByRole("button", { name: "Open in Explore" }).first().click();
+
+    await expect(page.getByText(/cloud-water point layer loaded/i).first()).toBeVisible({
+      timeout: 12_000,
+    });
+    const threeDField = page.locator("#explore-3d-field");
+    await expect(threeDField).toBeVisible();
+    await expect(threeDField.locator("option", { hasText: "qc - Cloud water" })).toHaveCount(1);
+    await expect(threeDField.locator("option", { hasText: "qr - Rain water" })).toHaveCount(1);
+    await expect(threeDField.locator("option", { hasText: "qv - Water vapor" })).toHaveCount(1);
+    await expect(threeDField.locator("option", { hasText: "dbz - Reflectivity" })).toHaveCount(1);
+    await expect(
+      threeDField.locator("option", { hasText: "rain - Accumulated surface rain" }),
+    ).toHaveCount(1);
+    await expect(threeDField.locator("option", { hasText: "temperature" })).toHaveCount(0);
+    await expect(threeDField.locator("option", { hasText: "theta" })).toHaveCount(0);
+    await expect(threeDField.locator("option", { hasText: "Vertical velocity" })).toHaveCount(0);
+
+    await threeDField.selectOption("qr");
+    await expect(page.getByText("Rain-water point layer loaded").first()).toBeVisible();
+    await expect(page.locator("#explore-slice-field")).toHaveValue("qr");
+
+    await threeDField.selectOption("qv");
+    await expect(page.getByText("Water-vapor point layer loaded").first()).toBeVisible();
+    await expect(page.locator("#explore-slice-field")).toHaveValue("qv");
+
+    await threeDField.selectOption("dbz");
+    await expect(page.getByText("Reflectivity point layer loaded").first()).toBeVisible();
+    const threeDLegend = page.getByLabel("3-D field color legend");
+    await expect(threeDLegend.getByText("0 dBZ")).toBeVisible();
+    await expect(threeDLegend.getByText("60+ dBZ")).toBeVisible();
+
+    await threeDField.selectOption("rain");
+    await expect(page.getByText("Surface-rain floor layer loaded").first()).toBeVisible();
+    await expect(page.locator("#explore-slice-field")).toHaveValue("rain");
+    await expect(page.getByRole("button", { name: "Vertical x-z slice" })).toBeDisabled();
+    await expect(page.getByRole("button", { name: "Vertical y-z slice" })).toBeDisabled();
   });
 
   test("Results to Explore treats Dry Failed as no-cloud with updraft inspection", async ({
@@ -249,7 +292,7 @@ test.describe("mocked smoke: Build, Results, Explore path", () => {
     await expect(page.getByText(/slice synced/i).first()).toBeVisible({ timeout: 10_000 });
     await expect(page.locator("#explore-slice-field")).toHaveValue("w");
     await expect(
-      page.locator("#explore-slice-field option", { hasText: "w - Vertical velocity" }),
+      page.locator("#explore-slice-field option", { hasText: "w - Vertical velocity (slice only)" }),
     ).toHaveCount(1);
   });
 
@@ -299,7 +342,7 @@ test.describe("mocked smoke: Build, Results, Explore path", () => {
     });
     expect(heatmapPrecedesTechnicalDetails).toBe(true);
 
-    const scene = page.getByLabel("True 3-D cloud-water viewer");
+    const scene = page.getByLabel("True 3-D scalar field viewer");
     const explanation = page.getByLabel("Visualization details");
     await expect(scene).toBeVisible({ timeout: 12_000 });
     await expect(explanation).toBeVisible();

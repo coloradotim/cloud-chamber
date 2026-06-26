@@ -200,23 +200,108 @@ function fieldCatalog(resultId: string) {
     rendering_method: "json heatmap",
     provenance_label: "CM1-derived visualization-ready payload",
   };
+  const fields = [
+    {
+      raw: "qc",
+      canonical: "cloud_water",
+      display: "Cloud water",
+      units: "kg/kg",
+      dimensions: ["time", "zh", "yh", "xh"],
+      shape: [3, 4, 4, 4],
+      nativeGrid: "zh/yh/xh",
+      vertical: "zh",
+    },
+    {
+      raw: "w",
+      canonical: "vertical_velocity",
+      display: "Vertical velocity",
+      units: "m/s",
+      dimensions: ["time", "zf", "yh", "xh"],
+      shape: [3, 4, 4, 4],
+      nativeGrid: "zf/yh/xh",
+      vertical: "zf",
+    },
+    {
+      raw: "qr",
+      canonical: "rain_water",
+      display: "Rain water",
+      units: "kg/kg",
+      dimensions: ["time", "zh", "yh", "xh"],
+      shape: [3, 4, 4, 4],
+      nativeGrid: "zh/yh/xh",
+      vertical: "zh",
+    },
+    {
+      raw: "theta",
+      canonical: "potential_temperature",
+      display: "Potential temperature",
+      units: "K",
+      dimensions: ["time", "zh", "yh", "xh"],
+      shape: [3, 4, 4, 4],
+      nativeGrid: "zh/yh/xh",
+      vertical: "zh",
+    },
+    {
+      raw: "temperature",
+      canonical: "temperature",
+      display: "Temperature",
+      units: "K",
+      dimensions: ["time", "zh", "yh", "xh"],
+      shape: [3, 4, 4, 4],
+      nativeGrid: "zh/yh/xh",
+      vertical: "zh",
+    },
+    {
+      raw: "qv",
+      canonical: "water_vapor",
+      display: "Water vapor",
+      units: "kg/kg",
+      dimensions: ["time", "zh", "yh", "xh"],
+      shape: [3, 4, 4, 4],
+      nativeGrid: "zh/yh/xh",
+      vertical: "zh",
+    },
+    {
+      raw: "dbz",
+      canonical: "reflectivity",
+      display: "Reflectivity",
+      units: "dBZ",
+      dimensions: ["time", "zh", "yh", "xh"],
+      shape: [3, 4, 4, 4],
+      nativeGrid: "zh/yh/xh",
+      vertical: "zh",
+    },
+    {
+      raw: "rain",
+      canonical: "accumulated_surface_rain",
+      display: "Accumulated surface rain",
+      units: "mm",
+      dimensions: ["time", "yh", "xh"],
+      shape: [3, 4, 4],
+      nativeGrid: "surface/yh/xh",
+      vertical: null,
+    },
+  ];
   return {
     result_id: meta.result_id,
     run_id: meta.run_id,
     scenario_id: meta.scenario_id,
     source_model: "CM1",
-    available_fields: ["qc", "w"].map((name) => ({
-      raw_field_name: name,
-      canonical_field_name: name === "qc" ? "cloud_water" : "vertical_velocity",
-      display_name: name === "qc" ? "Cloud water" : "Vertical velocity",
-      units: name === "qc" ? "kg/kg" : "m/s",
-      dimensions: name === "qc" ? ["time", "zh", "yh", "xh"] : ["time", "zf", "yh", "xh"],
-      shape: [3, 4, 4, 4],
-      native_grid: name === "qc" ? "zh/yh/xh" : "zf/yh/xh",
-      coordinate_names: { time: "time", vertical: name === "qc" ? "zh" : "zf", y: "yh", x: "xh" },
+    available_fields: fields.map((field) => ({
+      raw_field_name: field.raw,
+      canonical_field_name: field.canonical,
+      display_name: field.display,
+      units: field.units,
+      dimensions: field.dimensions,
+      shape: field.shape,
+      native_grid: field.nativeGrid,
+      coordinate_names: { time: "time", vertical: field.vertical, y: "yh", x: "xh" },
       time_coordinate_values: [0, 1800, 3600],
       provenance,
-      caveats: ["native_grid_no_interpolation"],
+      caveats:
+        field.raw === "rain"
+          ? ["native_grid_no_interpolation", "surface_field_no_vertical_dimension"]
+          : ["native_grid_no_interpolation"],
     })),
     provenance,
     caveats: [],
@@ -259,6 +344,84 @@ function viewDefaults(resultId: string, timeIndex?: number) {
         selected_time_seconds: timeIndex === undefined ? null : [0, 1800, 3600][selectedTime],
         caveats: [],
       },
+      qr: {
+        field: "qr",
+        time_index: selectedTime,
+        time_seconds: [0, 1800, 3600][selectedTime] ?? 1800,
+        horizontal_level_index: 1,
+        vertical_x_index: 1,
+        vertical_y_index: 2,
+        source: "max_qr_native_grid_location",
+        max_value: dryFailed ? 0 : 0.000001,
+        selected_time_index: timeIndex ?? null,
+        selected_time_seconds: timeIndex === undefined ? null : [0, 1800, 3600][selectedTime],
+        caveats: [],
+      },
+      theta: {
+        field: "theta",
+        time_index: selectedTime,
+        time_seconds: [0, 1800, 3600][selectedTime] ?? 1800,
+        horizontal_level_index: 2,
+        vertical_x_index: 1,
+        vertical_y_index: 2,
+        source: "max_theta_native_grid_location",
+        max_value: 304,
+        selected_time_index: timeIndex ?? null,
+        selected_time_seconds: timeIndex === undefined ? null : [0, 1800, 3600][selectedTime],
+        caveats: [],
+      },
+      temperature: {
+        field: "temperature",
+        time_index: selectedTime,
+        time_seconds: [0, 1800, 3600][selectedTime] ?? 1800,
+        horizontal_level_index: 2,
+        vertical_x_index: 1,
+        vertical_y_index: 2,
+        source: "max_temperature_native_grid_location",
+        max_value: 292,
+        selected_time_index: timeIndex ?? null,
+        selected_time_seconds: timeIndex === undefined ? null : [0, 1800, 3600][selectedTime],
+        caveats: [],
+      },
+      qv: {
+        field: "qv",
+        time_index: selectedTime,
+        time_seconds: [0, 1800, 3600][selectedTime] ?? 1800,
+        horizontal_level_index: 1,
+        vertical_x_index: 1,
+        vertical_y_index: 2,
+        source: "max_qv_native_grid_location",
+        max_value: 0.012,
+        selected_time_index: timeIndex ?? null,
+        selected_time_seconds: timeIndex === undefined ? null : [0, 1800, 3600][selectedTime],
+        caveats: [],
+      },
+      dbz: {
+        field: "dbz",
+        time_index: selectedTime,
+        time_seconds: [0, 1800, 3600][selectedTime] ?? 1800,
+        horizontal_level_index: 1,
+        vertical_x_index: 1,
+        vertical_y_index: 2,
+        source: "max_dbz_native_grid_location",
+        max_value: dryFailed ? 0 : 32,
+        selected_time_index: timeIndex ?? null,
+        selected_time_seconds: timeIndex === undefined ? null : [0, 1800, 3600][selectedTime],
+        caveats: [],
+      },
+      rain: {
+        field: "rain",
+        time_index: selectedTime,
+        time_seconds: [0, 1800, 3600][selectedTime] ?? 1800,
+        horizontal_level_index: 0,
+        vertical_x_index: 0,
+        vertical_y_index: 0,
+        source: "surface_rain_domain_floor",
+        max_value: dryFailed ? 0 : 4.5,
+        selected_time_index: timeIndex ?? null,
+        selected_time_seconds: timeIndex === undefined ? null : [0, 1800, 3600][selectedTime],
+        caveats: ["surface_field_rendered_on_domain_floor"],
+      },
     },
     provenance: fieldCatalog(resultId).provenance,
     caveats: dryFailed ? ["no_cloud_result_qc_zero_w_available"] : [],
@@ -275,34 +438,10 @@ function slicePayload(resultId: string, url: string) {
   const field =
     catalog.available_fields.find((candidate) => candidate.raw_field_name === fieldName) ??
     catalog.available_fields[0];
-  const qcValues = dryFailed
-    ? [
-        [0, 0, 0, 0],
-        [0, 0, 0, 0],
-        [0, 0, 0, 0],
-        [0, 0, 0, 0],
-      ]
-    : [
-        [0, 0.001, 0.002, 0],
-        [0, 0.002, 0.001, 0],
-        [0, 0.001, 0.002, 0],
-        [0, 0, 0.001, 0],
-      ];
-  const wValues = dryFailed
-    ? [
-        [0.2, 0.8, 1.2, 0.3],
-        [0.1, 1.95, 1.1, -0.4],
-        [0.0, 0.7, 0.5, -1.09],
-        [0.1, 0.4, 0.2, -0.2],
-      ]
-    : [
-        [0.5, 2.1, 4.8, 1.0],
-        [0.2, 6.96, 3.7, -1.4],
-        [0.1, 2.4, 1.2, -3.77],
-        [0.0, 0.8, 0.4, -0.6],
-      ];
-  const values = fieldName === "w" ? wValues : qcValues;
+  const values = mockSliceValues(fieldName, dryFailed);
   const flat = values.flat();
+  const isSurface = fieldName === "rain";
+  const isVertical = orientation !== "horizontal" && !isSurface;
   return {
     result_id: resultId,
     run_id: resultMeta(resultId).run_id,
@@ -313,14 +452,20 @@ function slicePayload(resultId: string, url: string) {
       time_seconds: [0, 1800, 3600][timeIndex] ?? 1800,
       orientation,
       selected_dimension:
-        orientation === "vertical_y" ? "xh" : orientation === "vertical_x" ? "yh" : "zh",
+        isSurface
+          ? "surface"
+          : orientation === "vertical_y"
+            ? "xh"
+            : orientation === "vertical_x"
+              ? "yh"
+              : (field.coordinate_names.vertical ?? "zh"),
       selected_index: Number(parsed.searchParams.get("level_index") ?? 1),
-      selected_coordinate_value: orientation === "horizontal" ? 0.8 : 0,
+      selected_coordinate_value: isSurface ? 0 : orientation === "horizontal" ? 0.8 : 0,
       level_units: orientation === "horizontal" ? "km" : null,
-      level_coordinate_value: orientation === "horizontal" ? 0.8 : null,
-      level_meters: orientation === "horizontal" ? 800 : null,
+      level_coordinate_value: orientation === "horizontal" ? (isSurface ? 0 : 0.8) : null,
+      level_meters: orientation === "horizontal" ? (isSurface ? 0 : 800) : null,
     },
-    coordinate_units: { zh: "km", yh: "km", xh: "km" },
+    coordinate_units: isVertical ? { zh: "km", xh: "km" } : { yh: "km", xh: "km" },
     shape: [4, 4],
     dimension_order: orientation === "horizontal" ? ["yh", "xh"] : ["zh", "xh"],
     data_encoding: "json",
@@ -333,47 +478,137 @@ function slicePayload(resultId: string, url: string) {
       non_finite_count: 0,
     },
     provenance: catalog.provenance,
-    caveats: ["native_grid_no_interpolation"],
+    caveats: isSurface
+      ? ["native_grid_no_interpolation", "surface_field_no_vertical_dimension", "surface_field_rendered_on_domain_floor"]
+      : ["native_grid_no_interpolation"],
   };
+}
+
+function mockSliceValues(fieldName: string, dryFailed: boolean) {
+  if (fieldName === "w") {
+    return dryFailed
+      ? [
+          [0.2, 0.8, 1.2, 0.3],
+          [0.1, 1.95, 1.1, -0.4],
+          [0.0, 0.7, 0.5, -1.09],
+          [0.1, 0.4, 0.2, -0.2],
+        ]
+      : [
+          [0.5, 2.1, 4.8, 1.0],
+          [0.2, 6.96, 3.7, -1.4],
+          [0.1, 2.4, 1.2, -3.77],
+          [0.0, 0.8, 0.4, -0.6],
+        ];
+  }
+  if (fieldName === "qr") {
+    return dryFailed ? zeroGrid() : scaleGrid(0.000001);
+  }
+  if (fieldName === "qv") {
+    return [
+      [0.0101, 0.0104, 0.0108, 0.0103],
+      [0.0105, 0.0112, 0.0118, 0.0109],
+      [0.0107, 0.0114, 0.0124, 0.0111],
+      [0.0102, 0.0107, 0.0112, 0.0105],
+    ];
+  }
+  if (fieldName === "dbz") {
+    return dryFailed
+      ? [
+          [-10, -5, 0, -8],
+          [-4, 0, 4, -2],
+          [-6, 0, 2, -3],
+          [-10, -5, 0, -8],
+        ]
+      : [
+          [0, 8, 18, 3],
+          [12, 24, 32, 16],
+          [8, 20, 28, 10],
+          [0, 6, 14, 2],
+        ];
+  }
+  if (fieldName === "temperature") {
+    return [
+      [287, 288, 289, 287.5],
+      [286, 289, 292, 288],
+      [285.5, 288, 291, 287],
+      [285, 286, 287, 286],
+    ];
+  }
+  if (fieldName === "theta") {
+    return [
+      [300, 301, 302, 301],
+      [300.5, 302, 304, 302],
+      [301, 302.5, 303.5, 302],
+      [300, 301, 302, 301],
+    ];
+  }
+  if (fieldName === "rain") {
+    return dryFailed ? zeroGrid() : scaleGrid(4.2);
+  }
+  return dryFailed ? zeroGrid() : scaleGrid(0.002);
+}
+
+function zeroGrid() {
+  return [
+    [0, 0, 0, 0],
+    [0, 0, 0, 0],
+    [0, 0, 0, 0],
+    [0, 0, 0, 0],
+  ];
+}
+
+function scaleGrid(maximum: number) {
+  return [
+    [0, maximum * 0.35, maximum * 0.7, 0],
+    [maximum * 0.2, maximum, maximum * 0.6, maximum * 0.1],
+    [maximum * 0.1, maximum * 0.5, maximum * 0.85, maximum * 0.2],
+    [0, maximum * 0.2, maximum * 0.45, 0],
+  ];
 }
 
 function pointCloudPayload(resultId: string, url: string) {
   const parsed = new URL(url);
   const dryFailed = resultId === "result-dry-failed";
-  const points = dryFailed
-    ? []
-    : [
-        [2, 2, 0.8, 0.001],
-        [2.5, 2.3, 1.2, 0.002],
-        [3, 2.5, 1.8, 0.0015],
-      ];
+  const fieldName = parsed.searchParams.get("field") ?? "qc";
+  const threshold = Number(parsed.searchParams.get("threshold") ?? (fieldName === "qr" ? 0.0000001 : 0.000001));
+  const points = mockPointCloudPoints(fieldName, dryFailed, threshold);
   const values = points.map((point) => point[3]);
+  const catalog = fieldCatalog(resultId);
+  const field =
+    catalog.available_fields.find((candidate) => candidate.raw_field_name === fieldName) ??
+    catalog.available_fields[0];
+  const isSurface = fieldName === "rain";
   return {
     result_id: resultId,
     run_id: resultMeta(resultId).run_id,
     scenario_id: resultMeta(resultId).scenario_id,
-    field: fieldCatalog(resultId).available_fields[0],
+    field,
     selection: {
-      field: "qc",
+      field: field.raw_field_name,
       time_index: Number(parsed.searchParams.get("time_index") ?? 1),
       time_seconds: 1800,
-      threshold: Number(parsed.searchParams.get("threshold") ?? 0.000001),
+      threshold,
       max_points: Number(parsed.searchParams.get("max_points") ?? 50000),
     },
-    coordinate_units: { xh: "km", yh: "km", zh: "km" },
+    coordinate_units: isSurface ? { xh: "km", yh: "km", z: "km" } : { xh: "km", yh: "km", zh: "km" },
     coordinate_extents: {
       x: { min: 0, max: 6.4, units: "km" },
       y: { min: 0, max: 6.4, units: "km" },
       z: { min: 0, max: 3, units: "km" },
       xh: { min: 0, max: 6.4, units: "km" },
       yh: { min: 0, max: 6.4, units: "km" },
-      zh: { min: 0, max: 3, units: "km" },
+      ...(isSurface ? {} : { zh: { min: 0, max: 3, units: "km" } }),
     },
     point_order: ["x", "y", "z", "value"],
     points,
     stats: {
       source_count: points.length,
       returned_count: points.length,
+      field_min_value: mockPointFieldRange(fieldName, dryFailed).min,
+      field_max_value: mockPointFieldRange(fieldName, dryFailed).max,
+      field_mean_value: mockPointFieldRange(fieldName, dryFailed).mean,
+      field_finite_count: 64,
+      field_non_finite_count: 0,
       min_value: values.length ? Math.min(...values) : null,
       max_value: values.length ? Math.max(...values) : null,
       active_z_min: values.length ? Math.min(...points.map((point) => point[2])) : null,
@@ -385,12 +620,58 @@ function pointCloudPayload(resultId: string, url: string) {
       downsample_stride: 1,
     },
     provenance: {
-      ...fieldCatalog(resultId).provenance,
+      ...catalog.provenance,
       processing_method: "native-grid thresholded point cloud",
-      rendering_method: "thresholded point cloud",
+      rendering_method: isSurface ? "surface floor layer" : "thresholded point cloud",
     },
-    caveats: dryFailed ? ["qc_present_but_no_points_above_threshold"] : [],
+    caveats: [
+      ...(dryFailed ? [`${fieldName}_present_but_no_points_above_threshold`] : []),
+      ...(isSurface ? ["surface_field_rendered_on_domain_floor"] : []),
+    ],
   };
+}
+
+function mockPointFieldRange(fieldName: string, dryFailed: boolean) {
+  if (dryFailed && fieldName === "qc") return { min: 0, max: 0, mean: 0 };
+  if (fieldName === "qr") return dryFailed ? { min: 0, max: 0, mean: 0 } : { min: 0, max: 0.000001, mean: 0.0000003 };
+  if (fieldName === "qv") return { min: 0.0101, max: 0.0124, mean: 0.0111 };
+  if (fieldName === "dbz") {
+    return dryFailed ? { min: -10, max: 4, mean: -3 } : { min: 0, max: 32, mean: 14 };
+  }
+  if (fieldName === "rain") return dryFailed ? { min: 0, max: 0, mean: 0 } : { min: 0, max: 4.2, mean: 1.3 };
+  return dryFailed ? { min: 0, max: 0, mean: 0 } : { min: 0, max: 0.002, mean: 0.0006 };
+}
+
+function mockPointCloudPoints(fieldName: string, dryFailed: boolean, threshold: number) {
+  if (dryFailed && fieldName === "qc") return [];
+  const pointValues: Record<string, Array<[number, number, number, number]>> = {
+    qc: [
+      [2, 2, 0.8, 0.001],
+      [2.5, 2.3, 1.2, 0.002],
+      [3, 2.5, 1.8, 0.0015],
+    ],
+    qr: [
+      [2, 2, 0.8, 0.0000002],
+      [2.5, 2.3, 1.2, 0.0000006],
+      [3, 2.5, 1.8, 0.0000009],
+    ],
+    qv: [
+      [1.5, 1.2, 0.6, 0.0104],
+      [2.5, 2.3, 1.2, 0.0113],
+      [3.4, 2.5, 1.8, 0.0124],
+    ],
+    dbz: [
+      [1.5, 1.2, 0.6, 8],
+      [2.5, 2.3, 1.2, 22],
+      [3.4, 2.5, 1.8, 38],
+    ],
+    rain: [
+      [1.5, 1.2, 0, 0.8],
+      [2.5, 2.3, 0, 2.4],
+      [3.4, 2.5, 0, 4.2],
+    ],
+  };
+  return (pointValues[fieldName] ?? pointValues.qc).filter((point) => point[3] >= threshold);
 }
 
 export async function mockCloudChamberApis(page: Page) {
