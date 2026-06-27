@@ -330,12 +330,16 @@ The 50 GB warning threshold is a configurable product default, not a scientific 
 
 Deletion is explicit and scoped to one selected run directory. The cleanup service refuses path traversal, symlink escapes, the runtime home itself, the user's home directory, the source repo by construction, and configured CM1 root/run paths. It also refuses running runs and saved/protected runs unless a force flag is provided. A dry-run delete returns the selected path and estimated size reclaimed without deleting files; a real delete requires explicit confirmation.
 
-Deleting a run removes local generated CM1 inputs, copied runtime files, logs, raw CM1 output, NetCDF output, and processed artifacts inside that run directory. It does not delete result-library metadata outside that directory, repo files, or the external CM1 installation.
+Deleting a run removes local generated CM1 inputs, copied runtime files, logs, raw CM1 output, NetCDF output, processed artifacts, and any local metadata stored inside that run directory. It does not delete repo files or the external CM1 installation.
 
-If local result metadata is stored inside the selected run directory, cleanup
-also removes those local metadata files as part of deleting the directory. Saved
-or protected notebook entries remain blocked from normal cleanup so keeper
-results are not removed accidentally.
+The current code-backed lifecycle contract is documented in [Ingest, Results,
+And Storage Lifecycle Audit](ingest-results-storage-lifecycle.md). As of that
+audit, `result_metadata.json` and `result_card.json` live inside the selected
+run directory, so deleting the whole directory also removes the implemented
+Result/Explore record. The frontend Storage workspace joins Result Cards to
+disable normal cleanup for saved/protected cards, while the backend delete
+guard currently reads manifest-level saved state. That split is a known
+lifecycle caveat, not a desired long-term product boundary.
 
 ### Output Ingester
 
@@ -369,8 +373,11 @@ It does not rerun CM1 and does not parse raw output directly. It summarizes:
 - editable notebook fields: name, tags, notes, saved, and protected.
 
 Editable notebook state is stored as `result_card.json` beside `result_metadata.json`.
-The saved/protected flag prevents accidental cleanup through the runtime storage
-layer, while CM1 output remains local/generated and uncommitted.
+The saved/protected flag prevents accidental cleanup in the current UI, while
+CM1 output remains local/generated and uncommitted. The backend storage service
+does not yet use Result Card state as its single source of truth for delete
+protection; see the lifecycle audit for the current split between manifest
+state, Result Card state, and frontend Storage joins.
 
 Current diagnostics compute:
 
