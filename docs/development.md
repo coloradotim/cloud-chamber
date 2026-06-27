@@ -151,6 +151,13 @@ The MVP storage warning threshold is 50 GB for the configured runtime home. Inve
 
 Run deletion is explicit and conservative. A preview request uses `dry_run: true`; a real delete requires `dry_run: false` and `confirm: true`. Cleanup only targets `~/CloudChamber/runs/<run-id>/`, refuses path traversal and symlink escapes, refuses running runs, and refuses saved/protected runs unless `force_saved: true` is supplied. The MVP UI does not expose force deletion for saved/protected runs. Deleting a run removes its local generated package, output artifacts, copied runtime files, and logs. Cleanup must never target the source repo, home directory, runtime home itself, or the external CM1 installation.
 
+For the current code-backed package/run/result/storage contract, see
+[Ingest, Results, And Storage Lifecycle Audit](ingest-results-storage-lifecycle.md).
+Today `result_metadata.json` and `result_card.json` are local sidecar files
+inside the generated run directory, so deleting that whole directory also
+removes the implemented Results/Explore record for that run. Treat this as a
+known lifecycle caveat when changing Storage, Results, or cleanup behavior.
+
 The backend skeleton uses Python/FastAPI with pytest, ruff, and mypy. Data/science work should prefer xarray, netCDF4 or h5netcdf, numpy, and pydantic when those layers are added.
 
 The first result ingest path uses xarray to read tiny or local NetCDF files and writes `result_metadata.json` next to the run manifest under the generated run directory. It extracts metadata only: dimensions, coordinates, variables, units, time coordinate, grid shape, source paths, provenance, and warnings. It does not compute diagnostics, create visualization-ready arrays, parse `.dat/.ctl` payloads, or copy real output into git.

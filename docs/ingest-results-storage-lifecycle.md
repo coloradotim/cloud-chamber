@@ -1,0 +1,321 @@
+# Ingest, Results, And Storage Lifecycle Audit
+
+This audit records the current implementation contract for generated packages,
+local CM1 runs, ingested result metadata, Result Cards, Explore data, and
+Storage cleanup.
+
+It is evidence, not a redesign. The code paths cited below are the current
+source of truth.
+
+## Evidence Map
+
+- Package generation: `generate_dry_run_package` in
+  `app/backend/cloud_chamber/dry_run_package.py`.
+- Run manifest state schema: `RunManifest`, `LifecycleState`, `ProductState`,
+  and `UserMetadata` in `app/backend/cloud_chamber/run_manifest.py`.
+- Local launch/status/output detection: `LocalRunManager.launch`,
+  `LocalRunManager._refresh_active`, `_detect_output_metadata`, and
+  `_runtime_warnings_from_stderr` in
+  `app/backend/cloud_chamber/local_run_manager.py`.
+- Result ingest: `ingest_completed_run`, `list_result_metadata`, and
+  `get_result_metadata` in `app/backend/cloud_chamber/result_ingest.py`.
+- Result Card / notebook state: `list_result_cards`, `update_result_card`,
+  `save_result_card`, and `_card_from_metadata_path` in
+  `app/backend/cloud_chamber/result_cards.py`.
+- Explore data: `field_catalog`, `field_slice`, `point_cloud`, and
+  `view_defaults` in `app/backend/cloud_chamber/visualization_data.py`.
+- Storage inventory and deletion: `runtime_storage_inventory`,
+  `delete_runtime_run`, `_entry_from_manifest`, and `_classify_run` in
+  `app/backend/cloud_chamber/runtime_storage.py`.
+- API routing: `/api/dry-run-package`, `/api/runs/launch`,
+  `/api/runs/status`, `/api/results/ingest`, `/api/results`,
+  `/api/results/{result_id}`, `/api/results/{result_id}/visualization/*`,
+  `/api/storage/inventory`, and `/api/storage/delete-run` in
+  `app/backend/cloud_chamber/app.py`.
+- Frontend ownership and joins: `requestDryRunPackage`, `launchLocalRun`,
+  `ingestCompletedRun`, `fetchResults`, `patchResultCard`,
+  `saveResultCard`, `fetchStorageInventory`, `requestRunDeletePreview`,
+  `confirmRunDelete`, `StorageWorkspace`, `RuntimeRunsTable`,
+  `ResultNotebookCard`, `canIngestStorageRun`, and `storageStateBadges` in
+  `app/frontend/src/App.tsx`.
+
+## Current Lifecycle Table
+
+| Stage | Files/records created | UI page that owns it | Actions available | Cleanup behavior | Notes/caveats |
+| --- | --- | --- | --- | --- | --- |
+| Generated package | `~/CloudChamber/runs/<run-id>/run_manifest.json`, `case_manifest.json`, `namelist.input`, `input_sounding`, `dry_run_report.json`, `runtime_file_checklist.json` | Build creates it; Storage inventories it | Launch from Build or stored-package actions; review generated paths/details | Category `dry_run_only`; eligible for Storage preview/delete unless a future guard blocks it | Manifest is `lifecycle_state=packaged` and `product_state=packaged_dry_run_output`; it is not a CM1 result. |
+| Launched/running run | Same run directory plus `logs/stdout.log`, `logs/stderr.log`; manifest execution command/log paths/timestamps; staged runtime files such as `LANDUSE.TBL` if needed | Build launches and polls; Storage inventories | Refresh status; cancel active run through backend API | Category `running`; Storage backend refuses deletion | One local process is allowed at a time by `LocalRunManager`. |
+| Completed run with output | Manifest updated to `lifecycle_state=completed`, `product_state=completed_cm1_result`, exit code, finish time, detected NetCDF/raw artifact paths, runtime warnings | Build/Storage can show completed output; Storage can offer ingest | Ingest completed output | Category `completed_with_output`; eligible for Storage preview/delete unless UI or backend protection applies | Output detection looks for NetCDF patterns and raw CM1 `.dat/.ctl` patterns in the run directory. |
+| Completed run without usable output | Manifest updated to `lifecycle_state=completed`, `product_state=process_completed_no_output`, `validation_status=needs_review` | Build/Storage | Inspect logs; cleanup review | Category `completed_no_output`; eligible for Storage preview/delete | Cannot be ingested by current NetCDF ingest because it lacks model-field NetCDF. |
+| Failed/canceled run | Manifest updated to `failed` or `canceled`, failed/canceled product state, exit code/timestamps when available | Build/Storage | Inspect logs; cleanup review | Category `failed` or `canceled`; eligible for Storage preview/delete unless protected by manifest state | Failed launch after queued state can leave logs/manifest but no useful output. |
+| Ingested result | `result_metadata.json` written inside the same run directory | Results owns review; Explore uses it; Storage joins to result list in the frontend | Open in Results, open in Explore, edit notebook fields, save/protect | Backend Storage still classifies from manifest only; frontend Storage treats associated result state as important | Ingest does not move metadata to a separate database. It derives metadata from local NetCDF files and keeps source paths pointing at the run directory. |
+| Editable notebook entry | Optional `result_card.json` beside `result_metadata.json` in the run directory | Results / Notebook | Rename, edit tags/notes, save/protect | Frontend Storage disables cleanup when joined Result Card is saved/protected; backend delete guard does not currently read `result_card.json` | `result_card.json` stores only user-editable state: `name`, `tags`, `notes`, `saved`, `protected`, `updated_at`. |
+| Storage-protected run/result | `result_card.json` may have `saved=true` and `protected=true`; older manifest `user.saved` can also mark saved/protected | Results sets it; Storage displays it | Open result/Explore; normal delete disabled in UI | Backend only blocks delete from manifest `user.saved`; frontend additionally blocks based on joined Result Card saved/protected state | This is the biggest current mismatch: UI protection and backend protection are not the same source of truth. |
+| Cleanup-eligible run/result | No new file; eligibility is derived from manifest category and frontend result join | Storage | Dry-run delete preview, then confirmed delete | Deletes the entire selected `~/CloudChamber/runs/<run-id>/` directory | Deleting a run directory deletes generated package files, outputs, logs, `result_metadata.json`, and `result_card.json` if present. |
+| Deleted run directory | Run directory removed with `shutil.rmtree` | Storage | None after deletion except refresh | Removed from inventory and Results/Explore if their metadata lived there | If metadata/card lived only in the deleted directory, Results and Explore can no longer load that result. |
+
+## Direct Answers
+
+### 1. After package generation, what files/directories exist and where are they stored?
+
+`generate_dry_run_package` creates one directory under
+`<runtime_home>/runs/<run-id>`, normally `~/CloudChamber/runs/<run-id>`. It
+writes:
+
+- `run_manifest.json`
+- `case_manifest.json`
+- `namelist.input`
+- `input_sounding`
+- `dry_run_report.json`
+- `runtime_file_checklist.json`
+
+The manifest records `lifecycle_state=packaged` and
+`product_state=packaged_dry_run_output`.
+
+### 2. After launch, what files/directories exist and what state is recorded?
+
+`LocalRunManager.launch` requires a packaged manifest, stages required runtime
+files from the configured local CM1 run directory, creates `logs/stdout.log` and
+`logs/stderr.log`, records the CM1 command, and updates the manifest through
+queued/running states. The product state is
+`queued_running_cm1_process`.
+
+### 3. After CM1 completion, what output files are expected and how are they identified?
+
+`LocalRunManager._refresh_active` detects output after the process exits.
+`_detect_output_metadata` identifies NetCDF artifacts by `*.nc`, `*.nc4`,
+`*.cdf`, and `*.netcdf`, and raw CM1 artifacts by `cm1out_*.dat` and
+`cm1out_*.ctl`. If exit code is 0 and output exists, the manifest becomes
+`lifecycle_state=completed` and `product_state=completed_cm1_result`.
+
+Runtime warning caveats are derived from stderr floating-point flags such as
+`IEEE_INVALID_FLAG`, `IEEE_DIVIDE_BY_ZERO`, `IEEE_OVERFLOW_FLAG`, and
+`IEEE_UNDERFLOW_FLAG`.
+
+### 4. After ingest, what new files/records are created?
+
+`ingest_completed_run` creates one `result_metadata.json` file in the completed
+run directory. It does not create a database record, copy NetCDF output, or
+write a `result_card.json` by itself.
+
+### 5. Where does `result_metadata.json` live?
+
+It lives inside the original run directory:
+
+```text
+~/CloudChamber/runs/<run-id>/result_metadata.json
+```
+
+`list_result_metadata` finds results by scanning
+`<runtime_home>/runs/*/result_metadata.json`.
+
+### 6. Where does `result_card.json` live?
+
+It also lives inside the original run directory:
+
+```text
+~/CloudChamber/runs/<run-id>/result_card.json
+```
+
+It is optional. It is written when `update_result_card` or `save_result_card`
+updates editable notebook state.
+
+### 7. What does Results read from?
+
+The Results API lists Result Cards by scanning run directories for
+`result_metadata.json` and deriving a product-facing card from each metadata
+file plus optional sibling `result_card.json`. Results does not read from a
+central database today.
+
+### 8. What does Explore read from?
+
+Explore first uses Result Card data from `/api/results`. Its field catalog,
+slice, point-cloud, defaults, and selected-region endpoints then call
+`get_result_metadata`, which again scans for `result_metadata.json`. The
+visualization endpoints open the NetCDF paths referenced by the result metadata
+using backend xarray code.
+
+### 9. Does Explore require the original run directory / NetCDF files to remain on disk?
+
+Yes. Explore requires:
+
+- `result_metadata.json` to remain discoverable under `~/CloudChamber/runs/*`;
+- the NetCDF files referenced by `model_output_paths` / `netcdf_paths` to remain
+  readable on disk.
+
+If the original run directory is deleted, Explore loses both the metadata and
+the source NetCDF files.
+
+### 10. What does Storage cleanup delete?
+
+`delete_runtime_run` deletes one directory:
+
+```text
+~/CloudChamber/runs/<run-id>/
+```
+
+using `shutil.rmtree`. The UI delete preview text correctly says this removes
+generated package files, copied runtime files, CM1 output, logs, and local
+metadata stored under the selected run directory. It does not target the repo,
+runtime home itself, home directory, or external CM1 install.
+
+### 11. What exactly does the current `saved` field do?
+
+There are two current saved fields:
+
+1. `RunManifest.user.saved` in `run_manifest.json`.
+   - Used by backend Storage classification and delete refusal.
+   - If true, `_classify_run` returns `saved_or_protected`.
+   - `delete_runtime_run` refuses deletion unless `force_saved=true`.
+2. `ResultCardState.saved` in `result_card.json`.
+   - Used by Results to show saved/not saved and by frontend Storage after it
+     joins results to runs.
+   - `save_result_card` sets `saved=true` and `protected=true`.
+   - It does not update `run_manifest.json`.
+
+So `saved` is currently split between manifest-level local-run protection and
+Result Card notebook state.
+
+### 12. What exactly does the current `protected` field do?
+
+`protected` exists on Result Card state and Result Card responses. Saving a card
+sets `protected=true`, and `_card_from_metadata` returns `protected` as
+`state.protected or state.saved`.
+
+The backend Storage delete guard does not currently read `result_card.json`, so
+Result Card protection blocks normal cleanup in the frontend join, not in the
+storage backend's own inventory/delete contract. Backend hard protection still
+comes from `run_manifest.json` `user.saved`.
+
+### 13. What happens if a run directory is deleted after ingest?
+
+The run directory deletion removes:
+
+- `run_manifest.json`
+- CM1 inputs
+- logs
+- NetCDF/raw output
+- `result_metadata.json`
+- `result_card.json`
+
+After refresh, Results no longer lists that result because it scans run
+directories for `result_metadata.json`. Explore cannot load it because
+`get_result_metadata` cannot find the metadata, and even a stale UI card would
+point to missing NetCDF files.
+
+### 14. What breaks if metadata lives inside the deleted run directory?
+
+Deleting the run directory deletes the only implemented durable record for:
+
+- result identity;
+- source output paths;
+- diagnostics;
+- process diagnostics;
+- visualization field availability;
+- editable notebook state, if `result_card.json` exists.
+
+That means Results, Explore, comparison, visualization-ready data, and
+selected-region diagnostics all break for that result unless the run directory
+and NetCDF files remain available.
+
+### 15. What user-facing labels/actions currently map to these backend fields?
+
+- `Ready-to-run package` maps to Storage category `dry_run_only`, derived from
+  manifest lifecycle `packaged`.
+- `Running CM1 process` maps to Storage category `running`, derived from
+  manifest lifecycle `queued` or `running`.
+- `Ready to ingest` maps to Storage category `completed_with_output` when no
+  associated Result Card exists.
+- `Ingested / ready to review` maps to a frontend join where a Result Card has
+  the same `run_id` as the Storage entry.
+- `Saved/protected` maps to either joined Result Card `saved/protected` or
+  manifest `user.saved`.
+- `Open result` and `Open in Explore` require an associated Result Card.
+- `Ingest completed output` requires category `completed_with_output`, a
+  manifest path, and no associated Result Card.
+- `Preview delete` is disabled in the UI when the joined result or manifest
+  state is saved/protected, or when the run is running. Backend delete only
+  enforces running and manifest `user.saved`.
+
+## Mismatches And Caveats
+
+### Ingested vs notebook entry
+
+Current code already makes an ingested result appear in Results as a Result Card
+because Result Cards are derived from `result_metadata.json`. However, there is
+no separate durable notebook store. The card is not independent of the run
+directory.
+
+### Save changes vs save/protect
+
+The desired distinction:
+
+```text
+Save changes = title/notes/tags edits.
+Storage protection = whether bulky local run data can be cleaned up.
+```
+
+is only partially supported. Current `PATCH /api/results/{result_id}` writes
+name/tags/notes to `result_card.json`, which matches "save changes." But
+`POST /api/results/{result_id}/save` sets both `saved` and `protected`, and
+there is no separate product action that protects data without also marking the
+notebook entry saved.
+
+### Storage protection source of truth
+
+The strongest mismatch is protection. The frontend Storage table protects rows
+using both joined Result Card state and manifest state. The backend Storage
+delete service protects only manifest `user.saved`. Because Result Card save
+does not update the manifest, a direct backend delete request can delete a
+Result Card-saved run unless the manifest is also saved or the caller refuses
+to send the request.
+
+The current MVP UI avoids that by disabling cleanup for joined saved/protected
+Result Cards, but the backend contract is weaker than the product language.
+
+### Run directory as result store
+
+The current storage architecture makes local run directories the store for both
+bulky output and notebook metadata. That is simple and local-first, but it
+means cleanup is not just "delete bulky output." It also deletes the Result
+Card and diagnostics unless those are moved or copied elsewhere first.
+
+## Compatibility With The Desired Product Model
+
+Desired future model to evaluate:
+
+```text
+Ingested = appears in Results as an experiment notebook entry.
+Save changes = title/notes/tags edits.
+Storage protection = whether bulky local run data can be cleaned up.
+```
+
+Current compatibility: **partially compatible, blocked by storage architecture
+and split protection state.**
+
+- Compatible: ingest already creates metadata that appears in Results.
+- Compatible: title/notes/tags edits are already local Result Card state.
+- Partially compatible: saved/protected semantics exist, but saving currently
+  also protects and protection is not a single backend-enforced source of truth.
+- Blocked: because `result_metadata.json` and `result_card.json` live inside the
+  run directory, deleting "bulky local run data" also deletes the notebook entry
+  and diagnostics. A true "ingested notebook entry can remain after local output
+  cleanup" model requires moving or copying result metadata/card state outside
+  the deletable run directory, or adding an archive/metadata-only cleanup mode
+  that preserves those files while removing large output.
+
+## Product Decision Hooks
+
+Before changing UI labels or cleanup behavior, decide these separately:
+
+1. Should ingested metadata move to a stable notebook/results directory outside
+   `runs/<run-id>`?
+2. Should `result_card.json` remain sidecar state, or become part of a central
+   notebook store?
+3. Should Storage cleanup support "remove bulky output but keep metadata/card"
+   as a distinct action from "delete entire run directory"?
+4. Should backend delete protection read Result Card state, update manifest
+   state when a card is saved, or both?
+5. Should "Saved" mean editable notebook changes are persisted, or should the
+   UI use different language such as "Protected" / "Keep local output" for
+   cleanup protection?
