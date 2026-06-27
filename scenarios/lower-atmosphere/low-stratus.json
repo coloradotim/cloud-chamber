@@ -41,7 +41,7 @@
   "run_size_presets": [
     {"id": "quick_look", "label": "Quick look", "purpose": "Check low-cloud setup.", "expected_runtime": "roughly 10-20 minutes when feasible", "confidence": "lower confidence until locally validated", "output_notes": "coarser cadence acceptable"},
     {"id": "standard", "label": "Standard", "purpose": "Useful low-cloud result.", "expected_runtime": "normal local run", "confidence": "balanced confidence and runtime", "output_notes": "record cloud layer diagnostics"},
-    {"id": "deep_overnight", "label": "Deep / overnight", "purpose": "Longer low-cloud exploration.", "expected_runtime": "may take hours or overnight", "confidence": "higher detail after validation", "output_notes": "output size must be explicit"}
+    {"id": "deep_overnight", "label": "Deep / overnight", "purpose": "Expensive opt-in run for higher-resolution low-cloud structure and smoother timelapse.", "expected_runtime": "target roughly 10-12x Standard wall-clock; may take hours locally", "confidence": "higher-detail package settings require local/manual validation", "output_notes": "192 x 192 horizontal grid at about 33.333 m, 300 s saved-output cadence, and larger output should be explicit before launch"}
   ],
   "expected_diagnostics": {
     "cloud_formed": true,

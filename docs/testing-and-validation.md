@@ -466,6 +466,17 @@ The first quick-look variant should be validated as a runtime-only change from t
 
 The first quick-look validation run, `dry-run-quicklook-les-shallowcu-20260522151536`, completed with `exit_code = 0`, ingested 13 model-output time steps from 0 to 10800 seconds, and produced `cloud formed; rain detected`. Recorded diagnostics included first cloud time at 1800 seconds, `max_qc_kg_kg = 0.002192789688706398`, `max_w_m_s = 6.866957187652588`, `min_w_m_s = -4.21529483795166`, rain present, package size 206 MB, stderr `IEEE_UNDERFLOW_FLAG`, and the existing vertical-coordinate caveat because cloud base/top units were reported as kilometers.
 
+Deep Overnight package tests must assert that the preset is no longer identical
+to Standard. The first implementation target preserves the physical domain and
+validated scenario controls, but changes generated run-size settings to
+`nx = 192`, `ny = 192`, `dx = 33.333 m`, `dy = 33.333 m`, `dtl = 3.0 s`, and
+`tapfrq = 300 s`. Manual validation should record Standard wall-clock, Deep
+Overnight wall-clock, actual multiplier, output file count, package size,
+whether Explore/timelapse benefit is visible, and whether the run remains
+numerically stable and scientifically comparable. The target is roughly 10-12x
+Standard wall-clock, with follow-up calibration if local I/O, memory,
+or machine variability lands far outside that range.
+
 External-sounding Baseline Shallow Cumulus reproduction should preserve the
 validated reference-derived settings and change only the thermodynamic sounding
 source from built-in `isnd = 19` to CM1's external `input_sounding` route

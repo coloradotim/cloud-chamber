@@ -65,9 +65,14 @@ def test_dry_run_manifest_and_report_include_golden_path_metadata(tmp_path: Path
     assert "first_cloud_time" in manifest.expected_diagnostics
     assert report["not_a_completed_cm1_result"] is True
     assert report["cm1_was_launched"] is False
-    assert report["estimated_cost_or_size"] == "unknown until validated"
+    assert report["estimated_cost_or_size"] == (
+        "Normal local run-size preset; estimates remain approximate until local validation."
+    )
     assert report["physical_question"] == manifest.physical_question
     assert report["visualization_defaults"]["primary_field"] == "qc"
+    assert report["run_size_details"]["runtime_seconds"] == 21600
+    assert report["run_size_details"]["output_cadence_seconds"] == 3600
+    assert report["run_size_details"]["expected_output_frames"] == 7
 
 
 def test_dry_run_package_refuses_to_overwrite_existing_run_dir(tmp_path: Path) -> None:
@@ -164,6 +169,45 @@ def test_dry_run_package_quick_look_changes_only_runtime_timing(tmp_path: Path) 
     assert "isnd      = 17," in namelist
     assert "iwnd      =  9," in namelist
     assert "output_format    = 2," in namelist
+
+
+def test_dry_run_package_deep_overnight_reports_resolution_and_cost(tmp_path: Path) -> None:
+    result = generate_dry_run_package(
+        scenario_data=load_baseline_template(),
+        runtime_home=tmp_path,
+        run_id="run-deep-001",
+        run_size_preset="deep_overnight",
+    )
+    namelist = (result.package_dir / "namelist.input").read_text()
+    report = json.loads(result.report_path.read_text())
+    details = report["run_size_details"]
+
+    assert report["run_size_preset"] == "deep_overnight"
+    assert "Deep Overnight is an expensive local run" in report["estimated_cost_or_size"]
+    assert details["nx"] == 192
+    assert details["ny"] == 192
+    assert details["nz"] == 75
+    assert details["dx_m"] == pytest.approx(33.3333333333)
+    assert details["dy_m"] == pytest.approx(33.3333333333)
+    assert details["dz_m"] == 40
+    assert details["runtime_seconds"] == 21600
+    assert details["output_cadence_seconds"] == 300
+    assert details["expected_output_frames"] == 73
+    assert details["grid_cell_multiplier_vs_standard"] == 9.0
+    assert details["time_step_seconds"] == 3.0
+    assert details["time_step_multiplier_vs_standard"] == 1.0
+    assert details["output_frame_multiplier_vs_standard"] == 10.43
+    assert details["estimated_compute_multiplier_vs_standard"] == 9.0
+    assert details["estimated_output_volume_multiplier_vs_standard"] == 93.86
+    assert details["target_wall_clock_multiplier_vs_standard"] == "10-12x"
+    assert "keeps the Standard CM1 solver timestep" in details["time_step_note"]
+
+    assert "nx           =      192," in namelist
+    assert "ny           =      192," in namelist
+    assert "dx     =   33.333," in namelist
+    assert "dy     =   33.333," in namelist
+    assert "dtl    =   3.000," in namelist
+    assert "tapfrq =  300.0," in namelist
 
 
 def test_baseline_humidity_ladder_packages_change_only_sounding_moisture(

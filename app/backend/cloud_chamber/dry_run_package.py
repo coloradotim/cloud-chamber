@@ -14,6 +14,7 @@ from cloud_chamber import __version__
 from cloud_chamber.cm1_input_contract import (
     CM1InputContract,
     build_cm1_input_contract,
+    cloud_scale_defaults_for_preset,
     render_input_sounding_notes,
     render_namelist_fragment,
 )
@@ -203,6 +204,7 @@ def _dry_run_report_payload(
     contract: CM1InputContract,
     generated_files: dict[str, Path],
 ) -> dict[str, object]:
+    run_size_details = _run_size_details(contract)
     return {
         "status": "dry_run_package_only",
         "not_a_completed_cm1_result": True,
@@ -223,7 +225,8 @@ def _dry_run_report_payload(
             ),
         },
         "run_size_preset": manifest.run_size_preset,
-        "estimated_cost_or_size": "unknown until validated",
+        "run_size_details": run_size_details,
+        "estimated_cost_or_size": run_size_details["cost_warning"],
         "expected_diagnostics": manifest.expected_diagnostics,
         "visualization_defaults": contract.visualization_defaults,
         "generated_files": {name: str(path) for name, path in generated_files.items()},
@@ -234,6 +237,79 @@ def _dry_run_report_payload(
             "visualizer_is_interpretation": manifest.provenance.visualizer_is_interpretation,
         },
     }
+
+
+def _run_size_details(contract: CM1InputContract) -> dict[str, object]:
+    defaults = contract.cloud_scale_defaults
+    standard = cloud_scale_defaults_for_preset("standard")
+    grid_cells = defaults.nx * defaults.ny * defaults.nz
+    standard_grid_cells = standard.nx * standard.ny * standard.nz
+    output_frames = _expected_output_frames(
+        defaults.runtime_seconds, defaults.output_cadence_seconds
+    )
+    standard_output_frames = _expected_output_frames(
+        standard.runtime_seconds, standard.output_cadence_seconds
+    )
+    grid_multiplier = grid_cells / standard_grid_cells
+    timestep_multiplier = standard.time_step_seconds / defaults.time_step_seconds
+    output_frame_multiplier = output_frames / standard_output_frames
+    runtime_multiplier = defaults.runtime_seconds / standard.runtime_seconds
+    estimated_compute_multiplier = grid_multiplier * timestep_multiplier * runtime_multiplier
+    estimated_output_volume_multiplier = grid_multiplier * output_frame_multiplier
+    is_deep = contract.run_size_preset == "deep_overnight"
+    return {
+        "preset": contract.run_size_preset,
+        "runtime_seconds": defaults.runtime_seconds,
+        "output_cadence_seconds": defaults.output_cadence_seconds,
+        "expected_output_frames": output_frames,
+        "nx": defaults.nx,
+        "ny": defaults.ny,
+        "nz": defaults.nz,
+        "dx_m": defaults.horizontal_spacing_m,
+        "dy_m": defaults.horizontal_spacing_m,
+        "dz_m": defaults.vertical_spacing_m,
+        "model_top_m": defaults.vertical_extent_km * 1000.0,
+        "time_step_seconds": defaults.time_step_seconds,
+        "time_step_note": (
+            "Deep Overnight keeps the Standard CM1 solver timestep; cost comes from "
+            "higher spatial resolution and much higher saved-output cadence."
+            if is_deep
+            else "Preset uses the Standard CM1 solver timestep."
+        ),
+        "grid_cell_count": grid_cells,
+        "grid_cell_multiplier_vs_standard": round(grid_multiplier, 2),
+        "time_step_multiplier_vs_standard": round(timestep_multiplier, 2),
+        "output_frame_multiplier_vs_standard": round(output_frame_multiplier, 2),
+        "estimated_compute_multiplier_vs_standard": round(estimated_compute_multiplier, 2),
+        "estimated_output_volume_multiplier_vs_standard": round(
+            estimated_output_volume_multiplier, 2
+        ),
+        "target_wall_clock_multiplier_vs_standard": "10-12x" if is_deep else "1x",
+        "cost_warning": (
+            "Deep Overnight is an expensive local run intended to take roughly "
+            "10-12x Standard wall-clock after manual validation. It increases "
+            "horizontal resolution to about 33.333 m, saves output every 300 s, "
+            "and may produce much larger output for better Explore, cloud "
+            "appearance, field-view, and timelapse data."
+            if is_deep
+            else (
+                "Normal local run-size preset; estimates remain approximate until local validation."
+            )
+        ),
+        "validation_note": (
+            "Deep Overnight preserves the physical domain and scenario controls while "
+            "changing horizontal resolution and saved-output cadence. Wall-clock "
+            "and storage estimates require manual local validation before launch."
+            if is_deep
+            else "Preset preserves the validated reference-derived spatial grid."
+        ),
+    }
+
+
+def _expected_output_frames(runtime_seconds: int, output_cadence_seconds: int) -> int:
+    if output_cadence_seconds <= 0:
+        return 0
+    return runtime_seconds // output_cadence_seconds + 1
 
 
 def _write_json(path: Path, payload: object) -> None:

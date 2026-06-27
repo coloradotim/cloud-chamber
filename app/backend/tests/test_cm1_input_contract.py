@@ -1,6 +1,8 @@
 import json
 from pathlib import Path
 
+import pytest
+
 from cloud_chamber.cm1_input_contract import (
     GeneratedFileRole,
     build_cm1_input_contract,
@@ -120,6 +122,41 @@ def test_rendered_namelist_quick_look_only_changes_runtime_and_cadence() -> None
     assert "testcase  =  3," in namelist
     assert "isnd      = 17," in namelist
     assert "iwnd      =  9," in namelist
+    assert "output_format    = 2," in namelist
+
+
+def test_rendered_namelist_deep_overnight_increases_resolution_and_cadence() -> None:
+    standard = build_cm1_input_contract(baseline_scenario(), run_size_preset="standard")
+    deep = build_cm1_input_contract(baseline_scenario(), run_size_preset="deep_overnight")
+    namelist = render_namelist_fragment(deep)
+
+    assert deep.run_size_preset == "deep_overnight"
+    assert deep.cloud_scale_defaults.nx == 192
+    assert deep.cloud_scale_defaults.ny == 192
+    assert deep.cloud_scale_defaults.nz == standard.cloud_scale_defaults.nz
+    assert deep.cloud_scale_defaults.horizontal_spacing_m == pytest.approx(33.3333333333)
+    assert deep.cloud_scale_defaults.vertical_spacing_m == 40
+    assert deep.cloud_scale_defaults.vertical_extent_km == 18.0
+    assert deep.cloud_scale_defaults.output_cadence_seconds == 300
+    assert (
+        deep.cloud_scale_defaults.time_step_seconds
+        == standard.cloud_scale_defaults.time_step_seconds
+    )
+    assert standard.cloud_scale_defaults.nx == 64
+    assert standard.cloud_scale_defaults.output_cadence_seconds == 3600
+
+    assert "nx           =      192," in namelist
+    assert "ny           =      192," in namelist
+    assert "nz           =      75," in namelist
+    assert "dx     =   33.333," in namelist
+    assert "dy     =   33.333," in namelist
+    assert "dz     =   40.0," in namelist
+    assert "dtl    =   3.000," in namelist
+    assert "timax  = 21600.0," in namelist
+    assert "tapfrq =  300.0," in namelist
+    assert "ztop      = 18000.0," in namelist
+    assert "testcase  =  3," in namelist
+    assert "isnd      = 17," in namelist
     assert "output_format    = 2," in namelist
 
 

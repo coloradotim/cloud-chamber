@@ -51,6 +51,14 @@ const scenarioResponse = {
           confidence: "lower confidence",
           output_notes: "coarser output",
         },
+        {
+          id: "deep_overnight",
+          label: "Deep / overnight",
+          purpose: "Expensive opt-in run for high spatial and saved-output resolution",
+          expected_runtime: "target roughly 10-12x Standard wall-clock",
+          confidence: "requires local/manual validation",
+          output_notes: "192 x 192 grid at about 33.333 m and 300 s saved-output cadence",
+        },
       ],
     },
   ],
@@ -70,6 +78,29 @@ const dryRunResponse = {
     },
     run_size_preset: "quick_look",
     estimated_cost_or_size: "unknown until validated",
+    run_size_details: {
+      preset: "quick_look",
+      runtime_seconds: 10800,
+      output_cadence_seconds: 900,
+      expected_output_frames: 13,
+      nx: 64,
+      ny: 64,
+      nz: 75,
+      dx_m: 100,
+      dy_m: 100,
+      dz_m: 40,
+      model_top_m: 18000,
+      time_step_seconds: 3,
+      grid_cell_count: 307200,
+      grid_cell_multiplier_vs_standard: 1,
+      time_step_multiplier_vs_standard: 1,
+      output_frame_multiplier_vs_standard: 1.86,
+      estimated_compute_multiplier_vs_standard: 0.5,
+      estimated_output_volume_multiplier_vs_standard: 1.86,
+      target_wall_clock_multiplier_vs_standard: "1x",
+      cost_warning: "Normal local run-size preset; estimates remain approximate until local validation.",
+      validation_note: "Preset preserves the validated reference-derived spatial grid.",
+    },
     expected_diagnostics: ["first_cloud_time", "cloud_water_summary"],
     visualization_defaults: { primary_field: "qc" },
     generated_files: {
@@ -85,6 +116,43 @@ const dryRunResponse = {
       source_model: "CM1",
       preview_is_guidance_only: true,
       visualizer_is_interpretation: true,
+    },
+  },
+};
+
+const deepDryRunResponse = {
+  ...dryRunResponse,
+  report: {
+    ...dryRunResponse.report,
+    run_size_preset: "deep_overnight",
+    estimated_cost_or_size:
+      "Deep Overnight is an expensive local run intended to take roughly 10-12x Standard wall-clock after manual validation.",
+    run_size_details: {
+      preset: "deep_overnight",
+      runtime_seconds: 21600,
+      output_cadence_seconds: 300,
+      expected_output_frames: 73,
+      nx: 192,
+      ny: 192,
+      nz: 75,
+      dx_m: 33.3333333333,
+      dy_m: 33.3333333333,
+      dz_m: 40,
+      model_top_m: 18000,
+      time_step_seconds: 3,
+      time_step_note:
+        "Deep Overnight keeps the Standard CM1 solver timestep; cost comes from higher spatial resolution and much higher saved-output cadence.",
+      grid_cell_count: 2764800,
+      grid_cell_multiplier_vs_standard: 9,
+      time_step_multiplier_vs_standard: 1,
+      output_frame_multiplier_vs_standard: 10.43,
+      estimated_compute_multiplier_vs_standard: 9,
+      estimated_output_volume_multiplier_vs_standard: 93.86,
+      target_wall_clock_multiplier_vs_standard: "10-12x",
+      cost_warning:
+        "Deep Overnight is an expensive local run intended to take roughly 10-12x Standard wall-clock after manual validation.",
+      validation_note:
+        "Deep Overnight preserves the physical domain and scenario controls while changing horizontal resolution and saved-output cadence.",
     },
   },
 };
@@ -1575,6 +1643,52 @@ describe("App", () => {
     expect(screen.getByText("Local run inventory")).toBeInTheDocument();
     expect(screen.queryByText("Local experiment loop")).not.toBeInTheDocument();
     expect(screen.queryByText("namelist.input")).not.toBeInTheDocument();
+  });
+
+  it("shows Deep Overnight as an expensive distinct generated package", async () => {
+    vi.mocked(fetch).mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url === "/api/scenarios") {
+        return Promise.resolve(new Response(JSON.stringify(scenarioResponse), { status: 200 }));
+      }
+      if (url === "/api/dry-run-package") {
+        expect(init?.body).toEqual(expect.stringContaining("deep_overnight"));
+        return Promise.resolve(new Response(JSON.stringify(deepDryRunResponse), { status: 200 }));
+      }
+      if (url === "/api/results") {
+        return Promise.resolve(new Response(JSON.stringify(resultsResponse), { status: 200 }));
+      }
+      if (url === "/api/storage/inventory") {
+        return Promise.resolve(
+          new Response(JSON.stringify(storageInventoryResponse), { status: 200 }),
+        );
+      }
+      return Promise.resolve(new Response("not found", { status: 404 }));
+    });
+
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Build" }));
+    fireEvent.change(await screen.findByLabelText("Run-size preset"), {
+      target: { value: "deep_overnight" },
+    });
+
+    expect(screen.getAllByText(/10-12x Standard wall-clock/).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/expensive opt-in preset/i).length).toBeGreaterThan(0);
+
+    fireEvent.click(screen.getByTestId("create-package-btn"));
+
+    const packageReview = await screen.findByTestId("package-review-panel");
+    expect(packageReview).toHaveTextContent("192 x 192 x 75");
+    expect(packageReview).toHaveTextContent("dx/dy 33.333 m");
+    expect(packageReview).toHaveTextContent("300 s output");
+    expect(packageReview).toHaveTextContent("73 saved frames");
+    expect(packageReview).toHaveTextContent("9x grid");
+    expect(packageReview).toHaveTextContent("1x timestep");
+    expect(packageReview).toHaveTextContent("10.43x saved frames");
+    expect(packageReview).toHaveTextContent("93.86x output volume");
+    expect(packageReview).toHaveTextContent("Deep Overnight is an expensive local run");
+    expect(packageReview).toHaveTextContent("keeps the Standard CM1 solver timestep");
   });
 
   it("shows an explicit loading state before scenario package controls are available", async () => {

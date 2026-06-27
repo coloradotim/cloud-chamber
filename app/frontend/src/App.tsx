@@ -47,12 +47,38 @@ type ScenarioResponse = {
   scenarios: Scenario[];
 };
 
+type RunSizeDetails = {
+  preset: string;
+  runtime_seconds: number;
+  output_cadence_seconds: number;
+  expected_output_frames: number;
+  nx: number;
+  ny: number;
+  nz: number;
+  dx_m: number;
+  dy_m: number;
+  dz_m: number;
+  model_top_m: number;
+  time_step_seconds: number;
+  time_step_note?: string;
+  grid_cell_count: number;
+  grid_cell_multiplier_vs_standard: number;
+  time_step_multiplier_vs_standard: number;
+  output_frame_multiplier_vs_standard: number;
+  estimated_compute_multiplier_vs_standard: number;
+  estimated_output_volume_multiplier_vs_standard: number;
+  target_wall_clock_multiplier_vs_standard: string;
+  cost_warning: string;
+  validation_note: string;
+};
+
 type DryRunReport = {
   scenario_id: string;
   physical_question: string;
   controls: Record<string, string | number | boolean>;
   run_size_preset: string;
   estimated_cost_or_size: string;
+  run_size_details?: RunSizeDetails;
   expected_diagnostics: string[];
   visualization_defaults: Record<string, unknown>;
   generated_files: Record<string, string>;
@@ -1466,6 +1492,13 @@ function BuildWorkspace({
                   Confidence: {selectedRunSize.confidence}. Output: {selectedRunSize.output_notes}.
                 </p>
               )}
+              {runSizePreset === "deep_overnight" && (
+                <p className="field-help">
+                  Deep Overnight is the expensive opt-in preset. It targets roughly 10-12x
+                  Standard wall-clock for higher-resolution Explore/timelapse data; validate
+                  runtime and storage locally before treating it as calibrated.
+                </p>
+              )}
 
               {validationMessages.length > 0 && (
                 <div className="validation" role="alert">
@@ -2655,6 +2688,22 @@ function LocalRunWorkflowPanel({
                     : "No generated inputs reported"
                 }
               />
+              {dryRun.report.run_size_details && (
+                <>
+                  <Metric
+                    label="Generated grid"
+                    value={runSizeGridSummary(dryRun.report.run_size_details)}
+                  />
+                  <Metric
+                    label="Runtime / saved frames"
+                    value={runSizeTimingSummary(dryRun.report.run_size_details)}
+                  />
+                  <Metric
+                    label="Estimated multipliers"
+                    value={runSizeMultiplierSummary(dryRun.report.run_size_details)}
+                  />
+                </>
+              )}
               <Metric
                 label="CM1 executable / settings"
                 value={
@@ -2672,6 +2721,14 @@ function LocalRunWorkflowPanel({
               A generated package is not a completed CM1 result. Launch, output detection, ingest,
               and saved result review are separate states.
             </p>
+            {dryRun.report.run_size_preset === "deep_overnight" && (
+              <>
+                <p className="state-note">{dryRun.report.estimated_cost_or_size}</p>
+                {dryRun.report.run_size_details?.time_step_note && (
+                  <p className="state-note">{dryRun.report.run_size_details.time_step_note}</p>
+                )}
+              </>
+            )}
           </>
         ) : (
           <p>No package has been created from the current setup in this browser session.</p>
@@ -2766,6 +2823,22 @@ function LocalRunWorkflowPanel({
               <Metric label="Scenario ID" value={dryRun.report.scenario_id} />
               <Metric label="Run-size preset" value={humanize(dryRun.report.run_size_preset)} />
               <Metric label="Cost / size" value={dryRun.report.estimated_cost_or_size} />
+              {dryRun.report.run_size_details && (
+                <>
+                  <Metric
+                    label="Output cadence"
+                    value={`${dryRun.report.run_size_details.output_cadence_seconds.toLocaleString()} s`}
+                  />
+                  <Metric
+                    label="Model top"
+                    value={`${(dryRun.report.run_size_details.model_top_m / 1000).toLocaleString()} km`}
+                  />
+                  <Metric
+                    label="Grid cells"
+                    value={dryRun.report.run_size_details.grid_cell_count.toLocaleString()}
+                  />
+                </>
+              )}
               <Metric
                 label="CM1 launched"
                 value={dryRun.report.cm1_was_launched ? "Yes" : "No"}
@@ -5588,6 +5661,23 @@ function parseTags(value: string): string[] {
 function formatSeconds(value: number | null): string {
   if (value === null) return "Unavailable";
   return `${value.toLocaleString()} s`;
+}
+
+function runSizeGridSummary(details: RunSizeDetails): string {
+  return `${details.nx} x ${details.ny} x ${details.nz}; dx/dy ${formatMeters(details.dx_m)}, dz ${formatMeters(details.dz_m)}`;
+}
+
+function runSizeTimingSummary(details: RunSizeDetails): string {
+  return `${formatSeconds(details.runtime_seconds)} runtime; ${details.output_cadence_seconds.toLocaleString()} s output; ${details.expected_output_frames.toLocaleString()} saved frames; ${details.time_step_seconds.toLocaleString()} s timestep`;
+}
+
+function runSizeMultiplierSummary(details: RunSizeDetails): string {
+  return `${details.grid_cell_multiplier_vs_standard.toLocaleString()}x grid, ${details.time_step_multiplier_vs_standard.toLocaleString()}x timestep, ${details.output_frame_multiplier_vs_standard.toLocaleString()}x saved frames, ${details.estimated_output_volume_multiplier_vs_standard.toLocaleString()}x output volume vs Standard; target ${details.target_wall_clock_multiplier_vs_standard} wall-clock`;
+}
+
+function formatMeters(value: number): string {
+  const text = value.toFixed(3).replace(/\.?0+$/, "");
+  return `${text} m`;
 }
 
 function formatScientific(value: number | null, units: string): string {

@@ -208,14 +208,14 @@ This sequencing matters because vertical velocity needs its own data contract an
 
 Do not require higher-resolution CM1 runs before #187.
 
-Current validated quick-look and standard results are sufficient to test whether the viewer works. Higher-resolution model output should wait until the viewer reveals the actual limitation:
+Current validated quick-look and standard results are sufficient to test whether the viewer works. Deep Overnight is the opt-in higher-resolution / higher-cadence package path for later local validation when the user wants better visual/timelapse data:
 
 - sparse points may be a threshold/downsampling issue;
 - jumpy evolution may be output cadence;
 - blocky structure may be grid resolution;
 - sluggish browser behavior may be payload size or rendering strategy.
 
-#193 should evaluate visualization-quality presets later. Start with output cadence before changing grid resolution unless evidence says otherwise.
+#193 defines that visualization-quality preset as a real generated package, not a viewer dependency. Viewer features should still work on quick-look and standard results; Deep Overnight is for users who choose to spend the extra local compute after the interaction model is useful.
 
 ## Testing strategy
 
