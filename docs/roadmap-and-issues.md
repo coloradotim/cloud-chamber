@@ -222,7 +222,7 @@ Cloud Chamber should support run-size presets that make local cost and confidenc
 
 - **Quick look**: roughly 10-20 minutes when feasible on the local Mac; used for sanity checks, setup inspection, and rough cloud behavior.
 - **Standard**: normal personal exploration run; used for useful saved results and diagnostics.
-- **Deep / overnight**: longer richer runs that may take hours or overnight; used for prettier, more detailed, or higher-confidence result exploration.
+- **Deep / overnight**: expensive opt-in local run, targeted at roughly 10-12x Standard wall-clock after local validation; used for better 3-D cloud structure, smoother timelapse, and higher-detail field inspection. It must materially change generated spatial resolution and saved-output cadence instead of duplicating Standard.
 
 Runtime estimates are approximate until locally validated. The MVP should assume a 2024 MacBook Air with 8GB RAM, one local CM1 run at a time, conservative output handling, and backend-side processing/downsampling.
 

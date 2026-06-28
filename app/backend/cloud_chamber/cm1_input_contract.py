@@ -29,8 +29,9 @@ class CloudScaleDefaults:
     horizontal_extent_km: float = 6.4
     y_extent_km: float = 6.4
     vertical_extent_km: float = 18.0
-    horizontal_spacing_m: int = 100
+    horizontal_spacing_m: float = 100.0
     vertical_spacing_m: int = 40
+    time_step_seconds: float = 3.0
     runtime_seconds: int = 21600
     output_cadence_seconds: int = 3600
     restart_cadence_seconds: int = 10800
@@ -41,12 +42,22 @@ class CloudScaleDefaults:
 class RuntimePreset:
     runtime_seconds: int
     output_cadence_seconds: int
+    nx: int = 64
+    ny: int = 64
+    horizontal_spacing_m: float = 100.0
+    time_step_seconds: float = 3.0
 
 
 RUNTIME_PRESETS: dict[str, RuntimePreset] = {
     "quick_look": RuntimePreset(runtime_seconds=10800, output_cadence_seconds=900),
     "standard": RuntimePreset(runtime_seconds=21600, output_cadence_seconds=3600),
-    "deep_overnight": RuntimePreset(runtime_seconds=21600, output_cadence_seconds=3600),
+    "deep_overnight": RuntimePreset(
+        runtime_seconds=21600,
+        output_cadence_seconds=300,
+        nx=192,
+        ny=192,
+        horizontal_spacing_m=100.0 * 64.0 / 192.0,
+    ),
 }
 
 
@@ -166,7 +177,7 @@ def build_cm1_input_contract(
         run_size_preset=run_size_preset,
         moisture_profile=moisture_profile,
         stability_profile=stability_profile,
-        cloud_scale_defaults=_cloud_scale_defaults_for_preset(run_size_preset),
+        cloud_scale_defaults=cloud_scale_defaults_for_preset(run_size_preset),
         generated_files=GENERATED_FILE_SPECS,
         control_fragments=control_fragments,
         expected_diagnostics=_diagnostic_names(scenario),
@@ -181,9 +192,13 @@ def build_cm1_input_contract(
     )
 
 
-def _cloud_scale_defaults_for_preset(run_size_preset: str) -> CloudScaleDefaults:
+def cloud_scale_defaults_for_preset(run_size_preset: str) -> CloudScaleDefaults:
     preset = RUNTIME_PRESETS.get(run_size_preset, RUNTIME_PRESETS["standard"])
     return CloudScaleDefaults(
+        nx=preset.nx,
+        ny=preset.ny,
+        horizontal_spacing_m=preset.horizontal_spacing_m,
+        time_step_seconds=preset.time_step_seconds,
         runtime_seconds=preset.runtime_seconds,
         output_cadence_seconds=preset.output_cadence_seconds,
     )
@@ -197,13 +212,14 @@ def render_cm1_namelist(contract: CM1InputContract) -> str:
     """Render a runnable CM1 namelist for the baseline shallow-cumulus package.
 
     The recovery baseline follows CM1's local ``les_ShallowCu`` reference case.
-    The external-sounding reproduction keeps ``testcase = 3``, the 64 x 64 x 75
-    grid, 100 m horizontal spacing, 40 m nominal vertical spacing, 18 km model
-    top, reference Rayleigh damping, reference wind profile, and reference
-    surface stress/roughness settings, but switches the thermodynamic source
-    from built-in ``isnd = 19`` to CM1's external ``input_sounding`` path via
-    ``isnd = 17``. Run-size presets only adjust runtime and output cadence. The
-    intentional product-path change outside the sounding source is
+    The external-sounding reproduction keeps ``testcase = 3``, 40 m nominal
+    vertical spacing, 18 km model top, reference Rayleigh damping, reference
+    wind profile, and reference surface stress/roughness settings, but switches
+    the thermodynamic source from built-in ``isnd = 19`` to CM1's external
+    ``input_sounding`` path via ``isnd = 17``. Run-size presets adjust runtime,
+    saved-output cadence, and, for Deep Overnight, horizontal grid spacing while
+    preserving the physical domain and Standard solver timestep. The intentional
+    product-path change outside the sounding source is
     ``output_format = 2`` so Cloud Chamber can ingest NetCDF output when the local
     CM1 build supports it.
     """
@@ -222,10 +238,10 @@ def render_cm1_namelist(contract: CM1InputContract) -> str:
  /
 
  &param1
- dx     =   {float(defaults.horizontal_spacing_m):.1f},
- dy     =   {float(defaults.horizontal_spacing_m):.1f},
+ dx     =   {_format_cm1_float(defaults.horizontal_spacing_m)},
+ dy     =   {_format_cm1_float(defaults.horizontal_spacing_m)},
  dz     =   {float(defaults.vertical_spacing_m):.1f},
- dtl    =   3.000,
+ dtl    =   {defaults.time_step_seconds:.3f},
  timax  = {float(defaults.runtime_seconds):.1f},
  run_time =  -999.9,
  tapfrq =  {float(defaults.output_cadence_seconds):.1f},
@@ -526,6 +542,13 @@ def render_cm1_namelist(contract: CM1InputContract) -> str:
    cnoh    = 4.e4,
  /
 """.lstrip()
+
+
+def _format_cm1_float(value: float) -> str:
+    text = f"{value:.3f}".rstrip("0").rstrip(".")
+    if "." not in text:
+        return f"{text}.0"
+    return text
 
 
 def render_input_sounding_notes(contract: CM1InputContract) -> str:

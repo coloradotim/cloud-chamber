@@ -357,9 +357,22 @@ entrainment, CAPE/CIN/LFC/EL, cold pools, or selected-region explanations yet.
 
 ### Deep / overnight
 
-- Target: long richer runs that may take hours or overnight.
-- Purpose: prettier, more detailed, or higher-confidence result exploration.
-- Should be explicit about local resource use and output size before launch.
+- Target: expensive opt-in local run, roughly 10-12x Standard wall-clock after
+  local validation.
+- Purpose: meaningfully higher spatial resolution, much higher saved-output time
+  resolution, better cloud appearance, smoother timelapse, and more useful
+  scalar-field inspection in Explore.
+- For Baseline Shallow Cumulus, this preserves the physical domain and
+  scenario controls while changing generated run-size settings to `nx = 192`,
+  `ny = 192`, `dx = 33.333 m`, `dy = 33.333 m`, and
+  `tapfrq = 300 s`, while keeping the Standard solver timestep. Vertical grid,
+  model top, surface/ocean/flux settings,
+  damping, boundary conditions, NetCDF output, and external-sounding science
+  path remain inherited from the validated baseline.
+- The dry-run report must show runtime, output cadence, expected saved frames,
+  grid dimensions, spacing, model top, grid-cell multiplier, output-frame
+  multiplier, compute multiplier, output-volume multiplier, and a clear warning
+  that wall-clock and storage estimates need local/manual validation.
 
 Runtime estimates are approximate until locally validated for a specific CM1 build, scenario, and machine. The first local hardware target is a 2024 MacBook Air with 8GB RAM, so the MVP should assume one local CM1 run at a time and conservative output handling.
 
@@ -684,7 +697,7 @@ overstated as fully rain-suppressed or definitively process-diagnosed yet.
 Current language should remain candidate/accepted-with-notes until process
 diagnostics can directly explain cap limitation.
 
-Default cloud-scale assumptions:
+Standard cloud-scale assumptions:
 
 ```text
 64 x 64 x 75 grid
@@ -702,6 +715,19 @@ Quick-look timing for Baseline Shallow Cumulus:
 10800 s runtime
 900 s output cadence
 all other reference-derived case settings preserved
+```
+
+Deep / overnight differences:
+
+```text
+192 x 192 x 75 grid
+about 33.333 m horizontal spacing
+40 m nominal vertical spacing
+18000 m domain top
+21600 s runtime
+300 s output cadence
+3.0 s model timestep (unchanged from Standard)
+physical domain and reference-derived science settings preserved
 ```
 
 If a scenario needs different size, spacing, runtime, cadence, or runtime files, the deviation must be explicit and documented.
