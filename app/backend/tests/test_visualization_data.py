@@ -83,6 +83,44 @@ def create_visualization_result(
     return settings, result.result_id, package.package_dir
 
 
+def create_multifile_visualization_result(
+    tmp_path: Path,
+    *,
+    file_count: int = 3,
+    run_id: str = "run-multifile-visualization",
+) -> tuple[CloudChamberSettings, str, Path]:
+    settings = fake_settings(tmp_path)
+    package = generate_dry_run_package(
+        scenario_data=json.loads(BASELINE_TEMPLATE.read_text()),
+        runtime_home=settings.runtime_home,
+        run_id=run_id,
+        run_size_preset="quick_look",
+    )
+    paths: list[Path] = []
+    for index in range(file_count):
+        path = package.package_dir / f"cm1out_{index + 1:06d}.nc"
+        write_single_time_visualization_netcdf(
+            path,
+            time_seconds=float(index * 600),
+            qc_value=(index + 1) * 1e-5,
+            w_value=float(index + 1),
+        )
+        paths.append(path)
+    manifest = load_run_manifest(package.manifest_path)
+    write_run_manifest(
+        package.manifest_path,
+        manifest.model_copy(
+            update={
+                "lifecycle_state": LifecycleState.COMPLETED,
+                "provenance": ProvenanceMetadata(product_state=ProductState.COMPLETED_CM1_RESULT),
+                "outputs": OutputMetadata(netcdf_paths=[str(path) for path in paths]),
+            }
+        ),
+    )
+    result = ingest_completed_run(package.manifest_path)
+    return settings, result.result_id, package.package_dir
+
+
 def write_visualization_netcdf(
     path: Path,
     *,
@@ -158,6 +196,36 @@ def write_visualization_netcdf(
     ).to_netcdf(path, engine="scipy")
 
 
+def write_single_time_visualization_netcdf(
+    path: Path,
+    *,
+    time_seconds: float,
+    qc_value: float,
+    w_value: float,
+) -> None:
+    xr.Dataset(
+        data_vars={
+            "qc": (
+                ("time", "zh", "yh", "xh"),
+                np.full((1, 2, 3, 4), qc_value, dtype=float),
+                {"units": "kg/kg"},
+            ),
+            "w": (
+                ("time", "zf", "yh", "xh"),
+                np.full((1, 3, 3, 4), w_value, dtype=float),
+                {"units": "m/s"},
+            ),
+        },
+        coords={
+            "time": ("time", [time_seconds], {"units": "s"}),
+            "zh": ("zh", [0.4, 0.8], {"units": "km"}),
+            "zf": ("zf", [0.0, 0.4, 0.8], {"units": "km"}),
+            "yh": ("yh", [0.0, 1.0, 2.0], {"units": "km"}),
+            "xh": ("xh", [0.0, 1.0, 2.0, 3.0], {"units": "km"}),
+        },
+    ).to_netcdf(path, engine="scipy")
+
+
 def test_field_catalog_includes_qc_and_w_with_provenance(tmp_path: Path) -> None:
     settings, result_id, _run_dir = create_visualization_result(tmp_path)
 
@@ -184,6 +252,20 @@ def test_field_catalog_includes_qc_and_w_with_provenance(tmp_path: Path) -> None
     assert "native-grid view" in catalog.provenance.provenance_label
 
 
+def test_field_catalog_uses_ingested_metadata_without_reopening_netcdf(tmp_path: Path) -> None:
+    settings, result_id, run_dir = create_visualization_result(tmp_path)
+    for path in run_dir.glob("cm1out_*.nc"):
+        path.unlink()
+
+    catalog = field_catalog(settings, result_id)
+
+    fields = {field.raw_field_name: field for field in catalog.available_fields}
+    assert set(fields) >= {"qc", "w"}
+    assert fields["qc"].shape == [2, 2, 3, 4]
+    assert fields["qc"].time_coordinate_values == [0.0, 900.0]
+    assert catalog.provenance.processing_method == "ingested_result_metadata_field_catalog"
+
+
 def test_field_catalog_handles_missing_qc_and_missing_w(tmp_path: Path) -> None:
     settings_qc_missing, result_id_qc_missing, _run_dir = create_visualization_result(
         tmp_path / "qc-missing",
@@ -205,6 +287,46 @@ def test_field_catalog_handles_missing_qc_and_missing_w(tmp_path: Path) -> None:
     assert "missing_visualization_field:qc" in qc_missing.caveats
     assert "w" not in {field.raw_field_name for field in w_missing.available_fields}
     assert "missing_visualization_field:w" in w_missing.caveats
+
+
+def test_multifile_slice_reads_requested_output_time_without_combining_all_files(
+    tmp_path: Path,
+) -> None:
+    settings, result_id, _run_dir = create_multifile_visualization_result(tmp_path)
+
+    sliced = field_slice(
+        settings,
+        result_id,
+        field="qc",
+        time_index=2,
+        orientation="horizontal",
+        level_index=1,
+    )
+
+    assert sliced.selection.time_index == 2
+    assert sliced.selection.time_seconds == 1200.0
+    assert sliced.values[0][0] == pytest.approx(3e-5)
+
+
+def test_multifile_point_cloud_reads_requested_output_time_without_combining_all_files(
+    tmp_path: Path,
+) -> None:
+    settings, result_id, _run_dir = create_multifile_visualization_result(tmp_path)
+
+    cloud = point_cloud(
+        settings,
+        result_id,
+        field="qc",
+        time_index=2,
+        threshold=2e-5,
+        max_points=100,
+    )
+
+    assert cloud.selection.time_index == 2
+    assert cloud.selection.time_seconds == 1200.0
+    assert cloud.stats.source_count == 24
+    assert cloud.stats.min_value == pytest.approx(3e-5)
+    assert cloud.stats.max_value == pytest.approx(3e-5)
 
 
 def test_horizontal_qc_slice_uses_json_values_and_counts_non_finite(

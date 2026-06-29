@@ -228,27 +228,278 @@ class ViewDefaultsResponse(BaseModel):
     caveats: list[str] = Field(default_factory=list)
 
 
+def _metadata_visualizable_fields(metadata: ResultMetadata) -> list[VisualizableField]:
+    field_by_name = {field.name: field for field in metadata.fields_detected}
+    fields: list[VisualizableField] = []
+    for field_name in FIELD_DEFINITIONS:
+        field = field_by_name.get(field_name)
+        if field is None:
+            continue
+        fields.append(_visualizable_field_from_metadata(metadata, field))
+    return fields
+
+
+def _visualizable_field_from_metadata(
+    metadata: ResultMetadata,
+    field: Any,
+) -> VisualizableField:
+    canonical, display = FIELD_DEFINITIONS[field.name]
+    coordinates = _field_coordinates_from_dimensions(field.dimensions)
+    return VisualizableField(
+        raw_field_name=field.name,
+        canonical_field_name=canonical,
+        display_name=display,
+        units=field.units,
+        dimensions=[str(dimension) for dimension in field.dimensions],
+        shape=[int(size) for size in field.shape],
+        native_grid=_native_grid_label(coordinates),
+        coordinate_names=coordinates,
+        time_coordinate_values=_metadata_time_values(metadata, coordinates.time),
+        provenance=_provenance(
+            metadata,
+            processing_method="ingested_result_metadata_field_catalog",
+            rendering_method="field_catalog_for_visualization",
+            provenance_label=(
+                "CM1-derived field metadata from result ingest; selected payloads "
+                "still come from NetCDF/xarray native-grid views"
+            ),
+        ),
+        caveats=_field_caveats(field.name, coordinates),
+    )
+
+
+def _field_coordinates_from_dimensions(dimensions: list[str]) -> FieldCoordinateMetadata:
+    time = _first_present(TIME_DIMENSION_CANDIDATES, dimensions)
+    vertical = _first_present(VERTICAL_DIMENSION_CANDIDATES, dimensions)
+    y = _first_present(Y_DIMENSION_CANDIDATES, dimensions)
+    x = _first_present(X_DIMENSION_CANDIDATES, dimensions)
+    return FieldCoordinateMetadata(time=time, vertical=vertical, y=y, x=x)
+
+
+def _metadata_time_values(
+    metadata: ResultMetadata,
+    time_coordinate: str | None,
+) -> list[float | str | None]:
+    if time_coordinate is None or metadata.time_steps is None or metadata.time_steps <= 0:
+        return []
+    if metadata.first_output_time_seconds is None or metadata.last_output_time_seconds is None:
+        return [float(index) for index in range(metadata.time_steps)]
+    if metadata.time_steps == 1:
+        return [metadata.first_output_time_seconds]
+    step = (metadata.last_output_time_seconds - metadata.first_output_time_seconds) / (
+        metadata.time_steps - 1
+    )
+    return [
+        metadata.first_output_time_seconds + index * step for index in range(metadata.time_steps)
+    ]
+
+
+def _should_use_metadata_defaults(metadata: ResultMetadata) -> bool:
+    # Exact max-location scans are helpful for tiny fixtures but too expensive for
+    # deep runs: field defaults must not require opening and scanning gigabytes
+    # before Explore can render.
+    if len(metadata.model_output_paths) > 8:
+        return True
+    largest_field_size = 0
+    for field in metadata.fields_detected:
+        size = 1
+        for dimension_size in field.shape:
+            size *= max(1, int(dimension_size))
+        largest_field_size = max(largest_field_size, size)
+    return largest_field_size > 10_000_000
+
+
+def _metadata_view_defaults(
+    metadata: ResultMetadata,
+    *,
+    time_index: int | None = None,
+) -> ViewDefaultsResponse:
+    fields: dict[str, FieldViewDefaults] = {}
+    for visual_field in _metadata_visualizable_fields(metadata):
+        fields[visual_field.raw_field_name] = _metadata_field_view_defaults(
+            metadata,
+            visual_field,
+            selected_time_index=time_index,
+        )
+    preferred = "qc" if "qc" in fields else next(iter(fields), None)
+    return ViewDefaultsResponse(
+        result_id=metadata.result_id,
+        run_id=metadata.run_id,
+        scenario_id=metadata.scenario_id,
+        preferred_field=preferred,
+        fields=fields,
+        provenance=_provenance(
+            metadata,
+            processing_method="ingested_result_metadata_view_defaults",
+            rendering_method="field_slice_and_point_cloud_default_selection",
+            provenance_label=(
+                "CM1-derived visualization defaults from ingested diagnostics and "
+                "metadata; selected payloads still come from NetCDF/xarray"
+            ),
+        ),
+        caveats=_dedupe(
+            [
+                "default_locations_are_metadata_based_for_large_output",
+                "default_locations_fall_back_to_domain_center",
+                *(
+                    ["default_locations_are_selected_time_native_grid_indices"]
+                    if time_index is not None
+                    else []
+                ),
+                *metadata.warnings,
+                *(["missing_visualization_field:qc"] if "qc" not in fields else []),
+                *(["missing_visualization_field:w"] if "w" not in fields else []),
+            ]
+        ),
+    )
+
+
+def _metadata_field_view_defaults(
+    metadata: ResultMetadata,
+    field: VisualizableField,
+    *,
+    selected_time_index: int | None,
+) -> FieldViewDefaults:
+    time_size = _dimension_size(field, field.coordinate_names.time, fallback=1)
+    vertical_size = _dimension_size(field, field.coordinate_names.vertical, fallback=1)
+    y_size = _dimension_size(field, field.coordinate_names.y, fallback=1)
+    x_size = _dimension_size(field, field.coordinate_names.x, fallback=1)
+    resolved_time = (
+        max(0, min(selected_time_index, time_size - 1))
+        if selected_time_index is not None
+        else _metadata_interesting_time_index(metadata, field.raw_field_name, time_size)
+    )
+    return FieldViewDefaults(
+        field=field.raw_field_name,
+        time_index=resolved_time,
+        time_seconds=_metadata_time_seconds(metadata, resolved_time),
+        horizontal_level_index=max(0, vertical_size // 2),
+        vertical_x_index=max(0, y_size // 2),
+        vertical_y_index=max(0, x_size // 2),
+        source=(
+            "selected_time_metadata_domain_center"
+            if selected_time_index is not None
+            else "metadata_interesting_time_domain_center"
+        ),
+        max_value=_metadata_field_max_value(metadata, field.raw_field_name),
+        selected_time_index=selected_time_index,
+        selected_time_seconds=_metadata_time_seconds(metadata, selected_time_index)
+        if selected_time_index is not None
+        else None,
+        caveats=_dedupe(
+            [
+                *_field_caveats(field.raw_field_name, field.coordinate_names),
+                "default_location_uses_ingested_metadata_not_full_field_scan",
+                "default_location_fell_back_to_domain_center",
+            ]
+        ),
+    )
+
+
+def _dimension_size(field: VisualizableField, dimension: str | None, *, fallback: int) -> int:
+    if dimension is None:
+        return fallback
+    for index, field_dimension in enumerate(field.dimensions):
+        if field_dimension == dimension and index < len(field.shape):
+            return int(field.shape[index])
+    return fallback
+
+
+def _metadata_interesting_time_index(
+    metadata: ResultMetadata,
+    field_name: str,
+    time_size: int,
+) -> int:
+    seconds: float | None = None
+    if metadata.diagnostics is not None:
+        if field_name == "qc":
+            seconds = metadata.diagnostics.cloud.time_of_max_qc_seconds
+        elif field_name == "w":
+            seconds = metadata.diagnostics.vertical_velocity.time_of_max_w_seconds
+        elif field_name == "qr":
+            seconds = metadata.diagnostics.rain.time_of_max_qr_seconds
+        elif field_name in {"rain", "dbz", "qv"}:
+            seconds = (
+                metadata.diagnostics.cloud.time_of_max_qc_seconds
+                or metadata.diagnostics.rain.time_of_max_qr_seconds
+            )
+    if seconds is None:
+        return max(0, min(time_size - 1, time_size // 2))
+    return _metadata_time_index_for_seconds(metadata, seconds, time_size)
+
+
+def _metadata_time_index_for_seconds(
+    metadata: ResultMetadata,
+    seconds: float,
+    time_size: int,
+) -> int:
+    values = _metadata_time_values(metadata, metadata.time_coordinate)
+    numeric_values: list[float] = []
+    for value in values:
+        if value is None:
+            numeric_values.append(float(len(numeric_values)))
+            continue
+        try:
+            numeric_values.append(float(value))
+        except (TypeError, ValueError):
+            numeric_values.append(float(len(numeric_values)))
+    if numeric_values:
+        best_index = min(
+            range(len(numeric_values)),
+            key=lambda index: abs(numeric_values[index] - seconds),
+        )
+        return max(0, min(time_size - 1, best_index))
+    return max(0, min(time_size - 1, int(round(seconds))))
+
+
+def _metadata_time_seconds(metadata: ResultMetadata, time_index: int | None) -> float | None:
+    if time_index is None:
+        return None
+    values = _metadata_time_values(metadata, metadata.time_coordinate)
+    if 0 <= time_index < len(values):
+        value = values[time_index]
+        if value is None:
+            return None
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return None
+    return None
+
+
+def _metadata_field_max_value(metadata: ResultMetadata, field_name: str) -> float | None:
+    if metadata.diagnostics is None:
+        return None
+    if field_name == "qc":
+        return metadata.diagnostics.cloud.max_qc_kg_kg
+    if field_name == "w":
+        return metadata.diagnostics.vertical_velocity.max_w_m_s
+    if field_name == "qr":
+        return metadata.diagnostics.rain.max_qr_kg_kg
+    return None
+
+
 def field_catalog(settings: CloudChamberSettings, result_id: str) -> FieldCatalogResponse:
     """Return visualizable field metadata for an ingested result."""
     metadata = get_result_metadata(settings, result_id)
-    dataset, close_datasets = _open_dataset_sequence(metadata)
-    try:
-        fields = [
-            _visualizable_field(metadata, dataset, field_name)
-            for field_name in FIELD_DEFINITIONS
-            if field_name in dataset.data_vars
-        ]
-        return FieldCatalogResponse(
-            result_id=metadata.result_id,
-            run_id=metadata.run_id,
-            scenario_id=metadata.scenario_id,
-            source_model=metadata.source_model,
-            available_fields=fields,
-            provenance=_provenance(metadata),
-            caveats=_dedupe(_catalog_caveats(metadata, fields)),
-        )
-    finally:
-        _close_all(close_datasets)
+    fields = _metadata_visualizable_fields(metadata)
+    return FieldCatalogResponse(
+        result_id=metadata.result_id,
+        run_id=metadata.run_id,
+        scenario_id=metadata.scenario_id,
+        source_model=metadata.source_model,
+        available_fields=fields,
+        provenance=_provenance(
+            metadata,
+            processing_method="ingested_result_metadata_field_catalog",
+            rendering_method="field_catalog_for_visualization",
+            provenance_label=(
+                "CM1-derived field catalog from ingested result metadata; raw NetCDF "
+                "opened only for selected native-grid view data payloads"
+            ),
+        ),
+        caveats=_dedupe(_catalog_caveats(metadata, fields)),
+    )
 
 
 def view_defaults(
@@ -259,6 +510,9 @@ def view_defaults(
 ) -> ViewDefaultsResponse:
     """Return physically interesting default field/time/slice locations."""
     metadata = get_result_metadata(settings, result_id)
+    if _should_use_metadata_defaults(metadata):
+        return _metadata_view_defaults(metadata, time_index=time_index)
+
     dataset, close_datasets = _open_dataset_sequence(metadata)
     try:
         fields: dict[str, FieldViewDefaults] = {}
@@ -333,7 +587,7 @@ def point_cloud(
         raise VisualizationDataError("max_points must be greater than 0.")
 
     metadata = get_result_metadata(settings, result_id)
-    dataset, close_datasets = _open_dataset_sequence(metadata)
+    dataset, close_datasets, local_time_index = _open_dataset_for_time(metadata, time_index)
     try:
         if field not in dataset.data_vars:
             raise VisualizationDataError(f"Field is not available for this result: {field}")
@@ -344,8 +598,8 @@ def point_cloud(
         is_surface_field = field in SURFACE_POINT_FIELDS and not dims.vertical and dims.y and dims.x
         if not is_surface_field and (not dims.vertical or not dims.y or not dims.x):
             raise VisualizationDataError(f"Field {field} must have native vertical/y/x dimensions.")
-        _validate_index(time_index, int(data_array.sizes[dims.time]), "time_index")
-        at_time = data_array.isel({dims.time: time_index})
+        _validate_index(local_time_index, int(data_array.sizes[dims.time]), "time_index")
+        at_time = data_array.isel({dims.time: local_time_index})
         source_points = (
             _threshold_surface_points(at_time, dims=dims, dataset=dataset, threshold=threshold)
             if is_surface_field
@@ -399,7 +653,8 @@ def point_cloud(
             selection=PointCloudSelectionMetadata(
                 field=field,
                 time_index=time_index,
-                time_seconds=_time_value_seconds(dataset, dims.time, time_index),
+                time_seconds=_time_value_seconds(dataset, dims.time, local_time_index)
+                or _metadata_time_seconds(metadata, time_index),
                 threshold=threshold,
                 max_points=max_points,
             ),
@@ -584,7 +839,7 @@ def field_slice(
         raise VisualizationDataError("Only encoding=json is supported for MVP 2-D slices.")
 
     metadata = get_result_metadata(settings, result_id)
-    dataset, close_datasets = _open_dataset_sequence(metadata)
+    dataset, close_datasets, local_time_index = _open_dataset_for_time(metadata, time_index)
     try:
         if field not in FIELD_DEFINITIONS:
             raise VisualizationDataError(f"Unsupported visualization field: {field}")
@@ -594,8 +849,8 @@ def field_slice(
         dims = _field_dimensions(data_array)
         if not dims.time:
             raise VisualizationDataError(f"Field {field} has no time dimension.")
-        _validate_index(time_index, int(data_array.sizes[dims.time]), "time_index")
-        at_time = data_array.isel({dims.time: time_index})
+        _validate_index(local_time_index, int(data_array.sizes[dims.time]), "time_index")
+        at_time = data_array.isel({dims.time: local_time_index})
         spatial_dims = [dimension for dimension in at_time.dims]
         if len(spatial_dims) == 2 and dims.y and dims.x and not dims.vertical:
             if orientation != "horizontal":
@@ -626,7 +881,8 @@ def field_slice(
                 field=visual_field,
                 selection=SliceSelectionMetadata(
                     time_index=time_index,
-                    time_seconds=_time_value_seconds(dataset, dims.time, time_index),
+                    time_seconds=_time_value_seconds(dataset, dims.time, local_time_index)
+                    or _metadata_time_seconds(metadata, time_index),
                     orientation=orientation,
                     selected_dimension="surface",
                     selected_index=0,
@@ -673,7 +929,8 @@ def field_slice(
         )
         selection = SliceSelectionMetadata(
             time_index=time_index,
-            time_seconds=_time_value_seconds(dataset, dims.time, time_index),
+            time_seconds=_time_value_seconds(dataset, dims.time, local_time_index)
+            or _metadata_time_seconds(metadata, time_index),
             orientation=orientation,
             selected_dimension=selected_dimension,
             selected_index=level_index,
@@ -738,12 +995,54 @@ def _open_dataset_sequence(metadata: ResultMetadata) -> tuple[Any, list[Any]]:
     return combined, [*opened, combined]
 
 
+def _open_dataset_for_time(metadata: ResultMetadata, time_index: int) -> tuple[Any, list[Any], int]:
+    time_steps = metadata.time_steps
+    if time_steps is not None:
+        _validate_index(time_index, time_steps, "time_index")
+    paths = [Path(path).expanduser() for path in metadata.model_output_paths]
+    if (
+        time_steps is not None
+        and time_steps > 1
+        and len(paths) == time_steps
+        and 0 <= time_index < len(paths)
+    ):
+        xarray = importlib.import_module("xarray")
+        path = paths[time_index]
+        try:
+            dataset = xarray.open_dataset(path)
+        except Exception as exc:
+            raise VisualizationDataError(f"Could not open NetCDF output {path}: {exc}") from exc
+        normalized = _normalize_single_time_file(dataset, metadata, time_index)
+        close_datasets = [dataset]
+        if normalized is not dataset:
+            close_datasets.append(normalized)
+        return normalized, close_datasets, 0
+
+    dataset, close_datasets = _open_dataset_sequence(metadata)
+    return dataset, close_datasets, time_index
+
+
 def _normalize_time_dimension(dataset: Any, file_index: int) -> Any:
     if "time" not in dataset.dims:
         return dataset.expand_dims(time=[float(file_index)])
     if "time" not in dataset.coords:
         size = int(dataset.sizes["time"])
         return dataset.assign_coords(time=[float(file_index + offset) for offset in range(size)])
+    return dataset
+
+
+def _normalize_single_time_file(dataset: Any, metadata: ResultMetadata, time_index: int) -> Any:
+    if "time" not in dataset.dims:
+        return dataset.expand_dims(
+            time=[_metadata_time_seconds(metadata, time_index) or float(time_index)]
+        )
+    if "time" not in dataset.coords:
+        size = int(dataset.sizes["time"])
+        if size == 1:
+            return dataset.assign_coords(
+                time=[_metadata_time_seconds(metadata, time_index) or float(time_index)]
+            )
+        return dataset.assign_coords(time=[float(time_index + offset) for offset in range(size)])
     return dataset
 
 
