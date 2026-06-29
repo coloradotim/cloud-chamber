@@ -658,6 +658,11 @@ Realistic LES Input Contract
   Atmospheric profile
     source: generated reference | observed sounding | edited observed sounding
     file: input_sounding
+    station/location metadata
+    station elevation
+    valid time/date
+    source/provider
+    source units and converted units
     wind handling: from sounding | reference wind | generated profile
     validation: moisture/stability/cap sanity checks
 
@@ -728,6 +733,13 @@ soundings.
 Build boundary:
 
 - generated file work
+- metadata preservation from the first version:
+  - station/location
+  - station elevation
+  - valid time/date
+  - source/provider
+  - source units and converted CM1 units
+  - wind profile handling
 - validation/sanity checks
 - docs/tests with tiny fixtures
 - no new map/GIS/radiation claims
@@ -787,6 +799,209 @@ Why later:
 CM1 documentation points to `init_surface.F` and `init_terrain.F` for arbitrary
 spatial fields. This is a larger architecture decision.
 
+## Immediate Product Call
+
+Draft PM input, not final:
+
+- Do not implement Bench Mode UI yet.
+- Do not implement GIS/map inputs yet.
+- Do not implement #153 surface heterogeneity yet.
+- Do not expose raw CM1 namelist fields as primary user controls.
+- The next implementation should be a realistic input contract and observed
+  sounding path with metadata/provenance, reviewed before UI expansion.
+
+## Recommended Next Issues
+
+These are recommended issue candidates only. This memo does not create GitHub
+issues automatically.
+
+### Define Realistic LES Input Contract Schema
+
+Goal:
+
+Define the backend/schema contract for realistic LES inputs before adding UI.
+
+Scope:
+
+- Add a documented schema or contract for realistic LES input metadata:
+  atmospheric profile, place/time, radiation intent, surface assumptions,
+  compute tier, required runtime files, and output/diagnostic requirements.
+- Preserve provenance fields for source data, units, conversions, inferred
+  values, and caveats.
+- Keep the current accepted Baseline package path unchanged.
+
+Non-goals:
+
+- No UI.
+- No new scenario family.
+- No CM1 package behavior change until the contract is reviewed.
+- No GIS/map input support.
+
+Why now:
+
+The research shows multiple realism levels are possible, but they require
+different implementation mechanisms. A schema first prevents hidden namelist
+tweaks from becoming product promises.
+
+Dependencies:
+
+- PM review of this memo.
+- Current scenario/package generation tests remain green.
+
+### Add Observed Sounding Import Research / Prototype
+
+Goal:
+
+Prototype conversion of an observed or detailed sounding into CM1
+`input_sounding` while preserving metadata and scientific caveats.
+
+Scope:
+
+- Accept tiny fixture soundings in tests.
+- Preserve station/location, elevation, valid time/date, source/provider,
+  source units, converted units, and wind-handling metadata.
+- Validate profile sanity enough to fail clearly before package generation.
+- Document whether the prototype uses `isnd = 17` with reference/generated wind
+  or `isnd = 7` with sounding winds.
+
+Non-goals:
+
+- No production UI.
+- No arbitrary web data fetching.
+- No radiation/location controls beyond preserving metadata.
+- No claim that any observed sounding is automatically numerically stable.
+
+Why now:
+
+External soundings are the closest realistic-input step to current Cloud
+Chamber because the generator already writes `input_sounding`.
+
+Dependencies:
+
+- Realistic LES input contract schema.
+- Inspection of CM1 `base.F` external-sounding reader expectations if the file
+  format requirements remain ambiguous.
+
+### Audit / Package CM1 les_ShallowCuLand As A Reference Case
+
+Goal:
+
+Determine whether CM1 `les_ShallowCuLand` can become a trusted land/diurnal
+reference path for Cloud Chamber.
+
+Scope:
+
+- Compare `les_ShallowCuLand` namelist and runtime files against the accepted
+  Baseline package path.
+- Identify how its documented land/diurnal behavior is implemented, especially
+  because the local example has `radopt = 0`.
+- Document required generated files, runtime files, output fields, and expected
+  local compute/storage tier.
+
+Non-goals:
+
+- No UI.
+- No scenario-family expansion.
+- No tuning.
+- No CM1 run in CI.
+
+Why now:
+
+`les_ShallowCuLand` is the strongest local CM1 reference candidate for
+realistic land/diurnal shallow cumulus, but its forcing path is not yet clear
+enough to productize.
+
+Dependencies:
+
+- Realistic LES input contract schema.
+- PM decision that land/diurnal shallow cumulus is the next realism target.
+
+### Validate Location / Date / Start-Time / Radiation Packaging
+
+Goal:
+
+Validate a controlled package path for CM1 radiation and place/time metadata.
+
+Scope:
+
+- Use a tiny/manual package validation path after PM approval.
+- Determine required RRTMG or NASA-Goddard runtime files.
+- Confirm compatibility with the chosen microphysics and output fields.
+- Document whether radiation should combine with, replace, or remain separate
+  from current idealized testcase forcing.
+
+Non-goals:
+
+- No general real-world weather claims.
+- No GIS/map inputs.
+- No arbitrary location UI.
+- No changes to current package generation until validation succeeds.
+
+Why now:
+
+CM1 clearly exposes radiation and place/time namelist parameters, but the
+scientific and runtime-file implications need a focused validation before UI.
+
+Dependencies:
+
+- Realistic LES input contract schema.
+- Runtime file checklist decision for radiation data.
+- Manual local CM1 validation outside CI.
+
+### Define Surface Flux / Wet-Surface Proxy Scenario Architecture
+
+Goal:
+
+Decide how Cloud Chamber should represent surface moisture or wet-surface
+effects without overclaiming hydrology.
+
+Scope:
+
+- Map product language such as "wet surface" or "moisture source" to supported
+  CM1 controls such as constant latent heat flux, moisture availability, or
+  reference-case surface settings.
+- Document units, assumptions, diagnostics, and caveats.
+- Decide which outputs are required to inspect surface-flux behavior.
+
+Non-goals:
+
+- No GIS/imagery wetness maps.
+- No dynamic soil hydrology claim.
+- No arbitrary parameter sweep.
+- No new scenario family before PM approval.
+
+Why now:
+
+Surface moisture is a core user-facing concept, but the CM1-supported MVP path
+is probably a proxy. It should be designed explicitly before implementation.
+
+Dependencies:
+
+- Realistic LES input contract schema.
+- Output/visualization prioritization from #210.
+
+## Handoff To Output / Visualization Spike
+
+#210 should use this memo to prioritize output fields, derived diagnostics, and
+visualization-ready payloads for realistic-input runs. In particular, #210
+should consider:
+
+- observed sounding runs: preserve and expose source profile metadata, vertical
+  coordinates, wind-handling caveats, and sounding-derived stability/moisture
+  diagnostics where supported
+- location/date/radiation runs: request and document radiation-relevant outputs
+  such as radiative tendencies, surface parameters, and top-of-atmosphere or
+  surface radiation diagnostics when `radopt >= 1`
+- surface flux / wet-surface proxy runs: prioritize surface sensible/latent
+  flux fields, 2 m temperature/moisture, surface diagnostics, and caveats that
+  distinguish proxy behavior from real soil hydrology
+- land/diurnal reference cases: prioritize fields that show diurnal timing,
+  boundary-layer growth, cloud onset, cloud top/base, surface fluxes, and
+  whether the land/diurnal forcing is directly supported or inferred
+
+This handoff is intentionally short. It does not decide #210's output contract
+or visualization implementation.
+
 ## Unknowns To Resolve Before Building
 
 - How does `les_ShallowCuLand` implement land/diurnal behavior while its
@@ -812,6 +1027,10 @@ This spike does not recommend:
 
 - exposing raw namelist fields as primary user controls
 - claiming arbitrary real-world weather simulation
+- implementing Bench Mode UI before the realistic input contract is reviewed
+- implementing GIS/map inputs before a preprocessing and CM1 initialization
+  strategy exists
+- implementing #153 surface heterogeneity as the next step
 - importing satellite/map imagery directly into CM1 without a preprocessing and
   validation architecture
 - editing CM1 Fortran as part of the current package generator
