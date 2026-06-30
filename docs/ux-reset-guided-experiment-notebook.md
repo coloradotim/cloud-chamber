@@ -182,7 +182,7 @@ How do variants compare?
 What should I open next?
 ```
 
-Results should emphasize experiment names, outcomes, saved/protected status,
+Results should emphasize experiment names, outcomes, notebook edit state,
 plain-language diagnostics, and comparison between variants. Raw output counts,
 run IDs, lifecycle/product state values, source-field tables, and full caveat
 lists belong in the technical layer.

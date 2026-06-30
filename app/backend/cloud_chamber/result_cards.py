@@ -1,9 +1,10 @@
 """Result card / experiment notebook API models.
 
 Result cards are a product-facing view over ingested result metadata. They keep
-the completed CM1 result, ingested metadata, and saved notebook entry states
-distinct while allowing user-editable name, tags, notes, and saved/protected
-flags to live beside the generated run output under the local runtime home.
+the completed CM1 result, ingested metadata, and notebook entry states distinct
+while allowing user-editable name, tags, and notes to live beside the generated
+run output under the local runtime home. Older cards may still include
+saved/protected compatibility fields.
 """
 
 from __future__ import annotations

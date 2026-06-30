@@ -18,11 +18,11 @@ test.describe("mocked smoke: Build, Results, Explore path", () => {
     await expect(page.getByText(/physical question/i).first()).toBeVisible();
     await expect(page.getByText(/how do low-level moisture/i).first()).toBeVisible();
     await expect(page.getByRole("heading", { name: "Local run launchpad" })).toBeVisible();
-    await expect(page.getByRole("heading", { name: "Packages, runs, and results" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Packages and runs needing action" })).toBeVisible();
     await expect(
       page.getByTestId("package-review-panel").getByText("Not packaged yet").first(),
     ).toBeVisible();
-    await expect(page.getByText("Local run inventory")).toBeVisible();
+    await expect(page.getByText("Build pipeline")).toBeVisible();
     await expect(page.getByText("Local experiment loop")).not.toBeVisible();
     await expect(page.getByText("Ready to ingest")).toBeVisible();
     await expect(page.getByRole("button", { name: "Open Storage cleanup" })).toBeVisible();
@@ -96,8 +96,8 @@ test.describe("mocked smoke: Build, Results, Explore path", () => {
     const savedRow = page.locator("tr", { hasText: "dry-run-baseline" });
     await expect(savedRow.getByText("Baseline Shallow Cumulus — Quick Look")).toBeVisible();
     await expect(savedRow.getByText("Run ID: dry-run-baseline")).toBeVisible();
-    await expect(savedRow.getByText("Saved/protected", { exact: true }).first()).toBeVisible();
-    await expect(savedRow.getByRole("button", { name: "Preview delete" })).toBeDisabled();
+    await expect(savedRow.getByText("Ingested / ready to review", { exact: true }).first()).toBeVisible();
+    await expect(savedRow.getByRole("button", { name: "Preview delete" })).toBeEnabled();
 
     const ingestReadyRow = page.locator("tr", { hasText: "dry-run-disposable" });
     await expect(ingestReadyRow.getByText("Ready to ingest")).toBeVisible();

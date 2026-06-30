@@ -765,11 +765,6 @@ export async function mockCloudChamberApis(page: Page) {
 
   await page.route("**/api/results", (route) => json(route, { results }));
 
-  await page.route("**/api/results/*/save", (route) => {
-    const result = results[0];
-    return json(route, { ...result, saved: true, protected: true });
-  });
-
   await page.route("**/api/results/*/visualization/fields", (route) =>
     json(route, fieldCatalog(resultIdFromUrl(route.request().url()))),
   );

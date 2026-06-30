@@ -1588,19 +1588,6 @@ beforeEach(() => {
           ),
         );
       }
-      if (url === "/api/results/result-dry-run-quicklook/save" && init?.method === "POST") {
-        return Promise.resolve(
-          new Response(
-            JSON.stringify({
-              ...resultCard,
-              saved: true,
-              protected: true,
-              status: "saved_result_notebook_entry",
-            }),
-            { status: 200 },
-          ),
-        );
-      }
       return Promise.resolve(new Response("not found", { status: 404 }));
     }),
   );
@@ -1637,10 +1624,10 @@ describe("App", () => {
     expect(screen.getAllByText(/Selected: Baseline/).length).toBeGreaterThan(0);
     expect(screen.getByText(/Expected runtime: roughly 10-20 minutes/)).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Local run launchpad" })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Packages, runs, and results" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Packages and runs needing action" })).toBeInTheDocument();
     expect(screen.getAllByText("Not packaged yet").length).toBeGreaterThan(0);
     expect(screen.getByText("No package has been created from the current setup in this browser session.")).toBeInTheDocument();
-    expect(screen.getByText("Local run inventory")).toBeInTheDocument();
+    expect(screen.getByText("Build pipeline")).toBeInTheDocument();
     expect(screen.queryByText("Local experiment loop")).not.toBeInTheDocument();
     expect(screen.queryByText("namelist.input")).not.toBeInTheDocument();
   });
@@ -1800,13 +1787,13 @@ describe("App", () => {
       await screen.findByRole("heading", { name: "Local run launchpad" }),
     ).toBeInTheDocument();
     expect(screen.queryByText("Local experiment loop")).not.toBeInTheDocument();
-    expect(screen.getByText("Local run inventory")).toBeInTheDocument();
-    expect(screen.getByText("Packages, runs, and results")).toBeInTheDocument();
+    expect(screen.getByText("Build pipeline")).toBeInTheDocument();
+    expect(screen.getByText("Packages and runs needing action")).toBeInTheDocument();
     expect(screen.getByText("Ready to run")).toBeInTheDocument();
     expect(screen.getAllByText("Ready to ingest").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("Saved/protected").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Running").length).toBeGreaterThan(0);
-    expect(screen.getByText("Ready to review")).toBeInTheDocument();
+    expect(screen.queryByText("Ready to review")).not.toBeInTheDocument();
+    expect(screen.queryByText("Quick-look shallow cumulus")).not.toBeInTheDocument();
     expect(screen.queryByText("Ingested result")).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Run with local CM1" })).toBeInTheDocument();
     expect(screen.getByTestId("create-package-btn")).toBeEnabled();
@@ -2006,7 +1993,7 @@ describe("App", () => {
     expect(screen.getByRole("tab", { name: "Storage" })).toBeInTheDocument();
     expect(await screen.findByRole("heading", { name: "Experiment Notebook" })).toBeInTheDocument();
     expect(
-      screen.getByText("Review saved cloud experiments, compare variants, and open results for explanation."),
+      screen.getByText("Review ingested cloud experiments, compare variants, and open results for explanation."),
     ).toBeInTheDocument();
     expect(screen.getByLabelText("Results list")).toBeInTheDocument();
     const resultDetail = screen.getByLabelText("Result detail");
@@ -2218,7 +2205,7 @@ describe("App", () => {
     expect(screen.getByText("Dry Failed Cumulus quick-look")).toBeInTheDocument();
   });
 
-  it("supports name tag notes editing and save through the backend API", async () => {
+  it("supports name tag notes editing through the backend API", async () => {
     render(<App />);
 
     const nameInput = await screen.findByLabelText("Name");
@@ -2234,10 +2221,10 @@ describe("App", () => {
     fireEvent.change(screen.getByLabelText("Notes"), {
       target: { value: "Updated from the library." },
     });
-    fireEvent.click(screen.getByRole("button", { name: "Update notebook" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
 
     await waitFor(() => {
-      expect(screen.getByText("Result card updated")).toBeInTheDocument();
+      expect(screen.getByText("Notebook changes saved")).toBeInTheDocument();
     });
     expect(fetch).toHaveBeenCalledWith(
       "/api/results/result-dry-run-quicklook",
@@ -2246,17 +2233,9 @@ describe("App", () => {
         body: expect.stringContaining("Saved notebook entry"),
       }),
     );
-
-    fireEvent.click(screen.getByRole("button", { name: "Save result" }));
-
-    await waitFor(() => {
-      expect(screen.getByText("Result card saved")).toBeInTheDocument();
-    });
-    expect(screen.getAllByText("Saved").length).toBeGreaterThan(0);
-    expect(fetch).toHaveBeenCalledWith(
-      "/api/results/result-dry-run-quicklook/save",
-      expect.objectContaining({ method: "POST" }),
-    );
+    expect(screen.queryByRole("button", { name: "Save result" })).not.toBeInTheDocument();
+    expect(screen.queryByText("Unsaved")).not.toBeInTheDocument();
+    expect(screen.queryByText("Protected")).not.toBeInTheDocument();
   });
 
   it("shows missing diagnostics and warnings without exposing Explore slice controls in Results", async () => {
@@ -2294,7 +2273,7 @@ describe("App", () => {
     expect(
       screen.getAllByText("13 model files, 13 time steps, 1 stats files").length,
     ).toBeGreaterThan(0);
-    expect(screen.getAllByText("Saved/protected").length).toBeGreaterThan(0);
+    expect(screen.queryByText("Saved/protected")).not.toBeInTheDocument();
     expect(screen.getByText("Ready-to-run package")).toBeInTheDocument();
     expect(screen.getAllByText("Ready to ingest").length).toBeGreaterThan(0);
     expect(screen.getByText("Completed with no usable output")).toBeInTheDocument();
@@ -2321,11 +2300,9 @@ describe("App", () => {
     expect(
       within(ingestReadyRow as HTMLElement).queryByRole("button", { name: "Open result" }),
     ).not.toBeInTheDocument();
-    expect(within(savedRow as HTMLElement).getByRole("button", { name: "Preview delete" })).toBeDisabled();
+    expect(within(savedRow as HTMLElement).getByRole("button", { name: "Preview delete" })).toBeEnabled();
     expect(within(runningRow as HTMLElement).getByRole("button", { name: "Preview delete" })).toBeDisabled();
-    expect(
-      screen.getByText("Saved/protected runs are not deleted from this UI."),
-    ).toBeInTheDocument();
+    expect(screen.queryByText("Saved/protected runs are not deleted from this UI.")).not.toBeInTheDocument();
     expect(screen.getByText("Running runs cannot be deleted.")).toBeInTheDocument();
 
     fireEvent.click(
@@ -2347,13 +2324,16 @@ describe("App", () => {
 
     fireEvent.click(within(packageRow as HTMLElement).getByRole("button", { name: "Preview delete" }));
 
-    expect(await screen.findByRole("heading", { name: "Delete preview" })).toBeInTheDocument();
+    expect(
+      await screen.findByRole("heading", { name: "Delete result and local run data preview" }),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/result will disappear from Results, Explore, Compare, and Storage inventory/)).toBeInTheDocument();
     expect(screen.getByText(/does not touch the source repo/)).toBeInTheDocument();
     expect(screen.getByText("Dry run only; no files were deleted.")).toBeInTheDocument();
     expect(screen.getAllByText("/tmp/CloudChamber/runs/dry-run-packaged").length).toBeGreaterThan(
       0,
     );
-    expect(screen.getByRole("button", { name: "Confirm delete selected run" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Confirm delete result and local run data" })).toBeInTheDocument();
     expect(fetch).toHaveBeenCalledWith(
       "/api/storage/delete-run",
       expect.objectContaining({
@@ -2367,7 +2347,7 @@ describe("App", () => {
       }),
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "Confirm delete selected run" }));
+    fireEvent.click(screen.getByRole("button", { name: "Confirm delete result and local run data" }));
 
     expect(await screen.findByText(/Run directory deleted/)).toBeInTheDocument();
     expect(fetch).toHaveBeenCalledWith(
@@ -2407,7 +2387,7 @@ describe("App", () => {
     render(<App />);
 
     fireEvent.click(await screen.findByRole("button", { name: "Build" }));
-    expect(await screen.findByRole("heading", { name: "Packages, runs, and results" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Packages and runs needing action" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Preview delete" })).not.toBeInTheDocument();
 
     const pipelineRuns = screen.getByLabelText("Local packages and runs");

@@ -677,7 +677,7 @@ These decisions should be made before or during the first implementation issue:
   inside a sibling derived-products directory, or both via pointer?
 - Should derived products be rebuilt automatically on demand, or only through
   explicit product-build actions?
-- Which derived products are protected when a result is saved/protected?
+- Which derived products should be retained if a future archive or keep-local-output mode is introduced?
 - What is the first supported binary/chunked payload format after JSON slices
   become too large?
 - Which fields are MVP profile/time-height fields?

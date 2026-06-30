@@ -112,14 +112,13 @@ Implemented backend API endpoints:
 - `POST /api/storage/delete-run` previews or deletes one selected run directory under the configured runtime home.
 - `POST /api/results/ingest` creates result metadata from a completed run manifest with NetCDF output.
 - `GET /api/results` lists Result Card / Experiment Notebook entries under the configured runtime home.
-- `GET /api/results/{result_id}` returns one Result Card with run ID, scenario, run-size preset, physical question, diagnostics summary, first cloud time, max `qc`, max/min `w`, rain yes/no, caveats, output file summary, saved/protected flag, and editable name/tags/notes.
-- `PATCH /api/results/{result_id}` updates notebook fields: `name`, `tags`, `notes`, `saved`, and `protected`.
-- `POST /api/results/{result_id}/save` marks a card saved/protected without rerunning CM1.
+- `GET /api/results/{result_id}` returns one Result Card with run ID, scenario, run-size preset, physical question, diagnostics summary, first cloud time, max `qc`, max/min `w`, rain yes/no, caveats, output file summary, and editable name/tags/notes.
+- `PATCH /api/results/{result_id}` updates notebook fields: `name`, `tags`, and `notes`.
+- `POST /api/results/{result_id}/save` remains as a compatibility endpoint for older clients. The current UI does not expose a separate save/protect mode; ingested results already appear in Results, and notebook edits use `PATCH`.
 
 The frontend Results Library shell consumes those Result Card endpoints. It
 starts as a scan-friendly table plus a selected result detail/notebook card,
-with editable name/tags/notes and save/protect actions when the backend
-supports them.
+with editable name/tags/notes and a `Save changes` action.
 
 The first 2-D field inspector opens from a Results Library detail/notebook card
 and consumes the backend visualization fields/slice endpoints. It requests JSON
@@ -143,13 +142,13 @@ When a run completes, manifest output metadata should keep these buckets separat
 
 Required runtime files such as `LANDUSE.TBL` are copied from the configured local CM1 run directory into the generated package at launch time. Baseline Shallow Cumulus recovery packages prefer `config_files/les_ShallowCu/LANDUSE.TBL` when that local CM1 reference file is available. These copied files are local/generated artifacts under `~/CloudChamber/runs/<run-id>/`; do not commit them.
 
-Runtime output can grow quickly. The storage inventory endpoint scans only the configured Cloud Chamber runtime home, normally `~/CloudChamber`, and reports total size plus per-run size, manifest metadata, output artifact counts, and conservative cleanup categories such as `dry_run_only`, `completed_with_output`, `completed_no_output`, `failed`, `canceled`, `saved_or_protected`, `missing_manifest`, and `malformed_manifest`.
+Runtime output can grow quickly. The storage inventory endpoint scans only the configured Cloud Chamber runtime home, normally `~/CloudChamber`, and reports total size plus per-run size, manifest metadata, output artifact counts, and conservative cleanup categories such as `dry_run_only`, `completed_with_output`, `completed_no_output`, `failed`, `canceled`, `saved_or_protected`, `missing_manifest`, and `malformed_manifest`. Legacy `saved_or_protected` categories may still appear in manifests, but they are no longer a user-facing Results mode.
 
-Results / Storage uses the same endpoints. It shows the runtime-home summary, the 50 GB warning-threshold state, largest run directories first, result-card names when associated, output artifact counts, saved/protected state, and cleanup categories. It never deletes automatically.
+Results / Storage uses the same endpoints. It shows the runtime-home summary, the 50 GB warning-threshold state, largest run directories first, result-card names when associated, output artifact counts, ingestion/review state, and cleanup categories. It never deletes automatically.
 
 The MVP storage warning threshold is 50 GB for the configured runtime home. Inventory reports the threshold and whether runtime storage is at or above it. This is a configurable product default, not a hard scientific limit, and it never auto-deletes anything. When the threshold is reached, use the inventory's largest-run list and dry-run cleanup mode before confirming deletion of selected runs.
 
-Run deletion is explicit and conservative. A preview request uses `dry_run: true`; a real delete requires `dry_run: false` and `confirm: true`. Cleanup only targets `~/CloudChamber/runs/<run-id>/`, refuses path traversal and symlink escapes, refuses running runs, and refuses saved/protected runs unless `force_saved: true` is supplied. The MVP UI does not expose force deletion for saved/protected runs. Deleting a run removes its local generated package, output artifacts, copied runtime files, and logs. Cleanup must never target the source repo, home directory, runtime home itself, or the external CM1 installation.
+Run deletion is explicit and conservative. A preview request uses `dry_run: true`; a real delete requires `dry_run: false` and `confirm: true`. Cleanup only targets `~/CloudChamber/runs/<run-id>/`, refuses path traversal and symlink escapes, and refuses running runs. Deleting a run removes its local generated package, output artifacts, copied runtime files, logs, result metadata, notebook edits, diagnostics, and Explore backing references stored under that run directory. Cleanup must never target the source repo, home directory, runtime home itself, or the external CM1 installation.
 
 For the current code-backed package/run/result/storage contract, see
 [Ingest, Results, And Storage Lifecycle Audit](ingest-results-storage-lifecycle.md).
