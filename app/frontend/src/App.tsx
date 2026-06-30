@@ -2313,6 +2313,10 @@ function StorageWorkspace({
 }) {
   const displayedRuns =
     inventory && inventory.largest_runs.length > 0 ? inventory.largest_runs : inventory?.runs ?? [];
+  const deletePreviewResult = deletePreview
+    ? resultForRun(results, deletePreview.run_id)
+    : undefined;
+  const deletePreviewHasResult = Boolean(deletePreviewResult);
 
   return (
     <section
@@ -2374,14 +2378,27 @@ function StorageWorkspace({
 
       {deletePreview && (
         <section className="delete-preview" aria-label="Delete preview">
-          <h3>Delete result and local run data preview</h3>
-          <p>
-            Cleanup removes local generated package files, copied runtime files, CM1 output, logs,
-            result metadata, notebook edits, diagnostics, and Explore backing references stored
-            under the selected run directory. The result will disappear from Results, Explore,
-            Compare, and Storage inventory after confirmation. It does not touch the source repo,
-            the runtime home itself, or the external CM1 install. No files have been deleted yet.
-          </p>
+          <h3>
+            {deletePreviewHasResult
+              ? "Delete result and local run data preview"
+              : "Delete local run data preview"}
+          </h3>
+          {deletePreviewHasResult ? (
+            <p>
+              Cleanup removes local generated package files, copied runtime files, CM1 output, logs,
+              result metadata, notebook edits, diagnostics, and Explore backing references stored
+              under the selected run directory. The result will disappear from Results, Explore,
+              Compare, and Storage inventory after confirmation. It does not touch the source repo,
+              the runtime home itself, or the external CM1 install. No files have been deleted yet.
+            </p>
+          ) : (
+            <p>
+              Cleanup removes local generated package files, copied runtime files, CM1 output/logs
+              if present, and any metadata stored under the selected run directory. It does not
+              touch the source repo, the runtime home itself, or the external CM1 install. No files
+              have been deleted yet.
+            </p>
+          )}
           <dl className="metric-grid">
             <Metric label="Run ID" value={deletePreview.run_id} />
             <Metric label="Selected path" value={deletePreview.run_directory} />
@@ -2393,7 +2410,9 @@ function StorageWorkspace({
             className="danger-button"
             onClick={() => onConfirmDelete(deletePreview.run_id)}
           >
-            Confirm delete result and local run data
+            {deletePreviewHasResult
+              ? "Confirm delete result and local run data"
+              : "Confirm delete local run data"}
           </button>
         </section>
       )}

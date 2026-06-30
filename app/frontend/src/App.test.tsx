@@ -2285,10 +2285,12 @@ describe("App", () => {
     const ingestReadyRow = within(runtimeRuns)
       .getAllByText(/dry-run-uningested/)[0]
       .closest("tr");
+    const resultRow = within(runtimeRuns).getAllByText(/dry-run-quicklook/)[0].closest("tr");
     const savedRow = within(runtimeRuns).getAllByText(/dry-run-saved/)[0].closest("tr");
     const runningRow = within(runtimeRuns).getAllByText(/dry-run-running/)[0].closest("tr");
     expect(packageRow).not.toBeNull();
     expect(ingestReadyRow).not.toBeNull();
+    expect(resultRow).not.toBeNull();
     expect(savedRow).not.toBeNull();
     expect(runningRow).not.toBeNull();
     expect(within(packageRow as HTMLElement).getByRole("button", { name: "Preview delete" })).toBeEnabled();
@@ -2322,7 +2324,7 @@ describe("App", () => {
       ),
     );
 
-    fireEvent.click(within(packageRow as HTMLElement).getByRole("button", { name: "Preview delete" }));
+    fireEvent.click(within(resultRow as HTMLElement).getByRole("button", { name: "Preview delete" }));
 
     expect(
       await screen.findByRole("heading", { name: "Delete result and local run data preview" }),
@@ -2330,10 +2332,20 @@ describe("App", () => {
     expect(screen.getByText(/result will disappear from Results, Explore, Compare, and Storage inventory/)).toBeInTheDocument();
     expect(screen.getByText(/does not touch the source repo/)).toBeInTheDocument();
     expect(screen.getByText("Dry run only; no files were deleted.")).toBeInTheDocument();
+    expect(screen.getAllByText("/tmp/CloudChamber/runs/dry-run-quicklook").length).toBeGreaterThan(0);
+    expect(screen.getByRole("button", { name: "Confirm delete result and local run data" })).toBeInTheDocument();
+
+    fireEvent.click(within(packageRow as HTMLElement).getByRole("button", { name: "Preview delete" }));
+
+    expect(
+      await screen.findByRole("heading", { name: "Delete local run data preview" }),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/CM1 output\/logs if present/)).toBeInTheDocument();
+    expect(screen.queryByText(/result will disappear from Results, Explore, Compare, and Storage inventory/)).not.toBeInTheDocument();
     expect(screen.getAllByText("/tmp/CloudChamber/runs/dry-run-packaged").length).toBeGreaterThan(
       0,
     );
-    expect(screen.getByRole("button", { name: "Confirm delete result and local run data" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Confirm delete local run data" })).toBeInTheDocument();
     expect(fetch).toHaveBeenCalledWith(
       "/api/storage/delete-run",
       expect.objectContaining({
@@ -2347,7 +2359,7 @@ describe("App", () => {
       }),
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "Confirm delete result and local run data" }));
+    fireEvent.click(screen.getByRole("button", { name: "Confirm delete local run data" }));
 
     expect(await screen.findByText(/Run directory deleted/)).toBeInTheDocument();
     expect(fetch).toHaveBeenCalledWith(

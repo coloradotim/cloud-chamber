@@ -98,9 +98,19 @@ test.describe("mocked smoke: Build, Results, Explore path", () => {
     await expect(savedRow.getByText("Run ID: dry-run-baseline")).toBeVisible();
     await expect(savedRow.getByText("Ingested / ready to review", { exact: true }).first()).toBeVisible();
     await expect(savedRow.getByRole("button", { name: "Preview delete" })).toBeEnabled();
+    await savedRow.getByRole("button", { name: "Preview delete" }).click();
+    await expect(page.getByRole("heading", { name: "Delete result and local run data preview" })).toBeVisible();
+    await expect(page.getByText(/result will disappear from Results, Explore, Compare, and Storage inventory/)).toBeVisible();
+    await expect(page.getByRole("button", { name: "Confirm delete result and local run data" })).toBeVisible();
 
     const ingestReadyRow = page.locator("tr", { hasText: "dry-run-disposable" });
     await expect(ingestReadyRow.getByText("Ready to ingest")).toBeVisible();
+    await ingestReadyRow.getByRole("button", { name: "Preview delete" }).click();
+    await expect(page.getByRole("heading", { name: "Delete local run data preview" })).toBeVisible();
+    await expect(page.getByText(/CM1 output\/logs if present/)).toBeVisible();
+    await expect(page.getByText(/result will disappear from Results, Explore, Compare, and Storage inventory/)).not.toBeVisible();
+    await expect(page.getByRole("button", { name: "Confirm delete local run data" })).toBeVisible();
+
     await ingestReadyRow.getByRole("button", { name: "Ingest completed output" }).click();
     await expect(page.getByText("Ingested result metadata")).toBeVisible();
 

@@ -946,14 +946,16 @@ export async function mockCloudChamberApis(page: Page) {
     }),
   );
 
-  await page.route("**/api/storage/delete-run", (route) =>
-    json(route, {
-      run_id: "dry-run-disposable",
-      run_directory: "/tmp/cloud-chamber-e2e/runs/dry-run-disposable",
-      dry_run: true,
-      deleted: false,
+  await page.route("**/api/storage/delete-run", (route) => {
+    const body = route.request().postDataJSON() as { run_id?: string; dry_run?: boolean } | null;
+    const runId = body?.run_id ?? "dry-run-disposable";
+    return json(route, {
+      run_id: runId,
+      run_directory: `/tmp/cloud-chamber-e2e/runs/${runId}`,
+      dry_run: Boolean(body?.dry_run),
+      deleted: !body?.dry_run,
       size_bytes: 1024,
-      message: "Preview only.",
-    }),
-  );
+      message: body?.dry_run ? "Preview only." : "Run directory deleted.",
+    });
+  });
 }
