@@ -52,8 +52,6 @@ implementation boundary that future issues should build from.
 
 ## Active Execution Sequence
 
-0. Finish Build/Results/Storage lifecycle cleanup from #204/#205/#218 if this
-   roadmap is read on a branch where that work has not merged.
 1. Implement output product manifest plus robust file/time index mapping.
 2. Add interesting-time output products.
 3. Prototype observed/detailed sounding import with metadata and provenance
@@ -67,6 +65,14 @@ implementation boundary that future issues should build from.
 This order is intentional. It keeps the product grounded in trustworthy local
 LES inputs and bounded output products before adding broader UI surfaces,
 renderer technology, or new scenario families.
+
+## Recently Completed
+
+#204/#205/#218 cleaned up the Build/Results/Storage lifecycle model.
+
+- **Build** shows active and incomplete package/run/ingest pipeline work.
+- **Results** owns ingested notebook review.
+- **Storage** owns explicit destructive cleanup.
 
 ## Recommended Issue Candidates
 
@@ -123,6 +129,28 @@ existing external `input_sounding` path.
 Dependencies:
 [Realistic LES Input Specification](contracts/realistic-les-input-specification.md).
 
+### Expand Field Catalog For Realistic LES Outputs
+
+Goal: make realistic LES output fields discoverable and honestly classified
+before Explore, diagnostics, or future render/export tools expose them.
+
+Scope: field catalog expansion for realistic-output fields such as `qv`,
+theta/temperature/pressure, surface sensible and latent fluxes, surface
+diagnostics, radiation terms when present, `lwp`, `CAPE`, `CIN`, `LCL`, and
+`LFC` when present. Include capability classification, units, coordinates,
+native-grid metadata, supported product types, provenance, caveats, and tiny
+fixture or metadata-backed tests.
+
+Non-goals: package-generation changes, browser NetCDF parsing, arbitrary raw
+field dump UI, renderer work, or new scenario families.
+
+Why now: realistic inputs will only be useful if Results and Explore can
+explain which model fields exist, what Cloud Chamber can safely do with them,
+and which fields are merely present versus scientifically supported.
+
+Dependencies: output product manifest, time-index mapping, and the
+[Output Product Specification](contracts/output-product-specification.md).
+
 ### Define Profile And Time-Height Output Products
 
 Goal: specify and add skeleton derived products that make realistic-input runs
@@ -153,6 +181,27 @@ Why now: location/date/radiation should come after observed sounding metadata
 and before any map-like product promise.
 
 Dependencies: realistic LES input contract and observed sounding prototype.
+
+### Prototype External Visualization / Diagnostics Exports
+
+Goal: test whether Cloud Chamber should hand selected output products to
+external visualization or diagnostics tools after the internal product
+contracts exist.
+
+Scope: prototype export manifests or small bundles for tools such as VAPOR,
+ParaView/VTK, xarray-style notebooks, or future local diagnostics sidecars.
+Use bounded output products rather than raw browser-side NetCDF parsing, and
+document provenance, caveats, file sizes, and cleanup expectations.
+
+Non-goals: immediate product UI, renderer dependencies, Render Studio,
+Diagnostics Lab, or committing generated export artifacts.
+
+Why later: exports are valuable only after output product manifests,
+time-index mapping, field catalogs, interesting times, and profile/time-height
+products define what Cloud Chamber can safely hand off.
+
+Dependencies: output product manifest, expanded field catalog, profile/time-
+height products, and explicit PM review of external-tool direction.
 
 ## Not Now / Parked
 
