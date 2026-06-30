@@ -79,7 +79,7 @@ Local/source evidence:
 - Roadmap and product docs:
   `docs/cloud-chamber-product-spec.md`,
   `docs/architecture-and-data-model.md`,
-  `docs/roadmap-and-issues.md`,
+  `docs/current-roadmap.md`,
   `docs/testing-and-validation.md`,
   `docs/product-vision.md`
 - GitHub issues inspected: #80, #112, #183, #187, #210.

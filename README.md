@@ -49,7 +49,7 @@ visualization path. Real CM1 execution remains local/manual and outside CI.
 - [Product spec](docs/cloud-chamber-product-spec.md)
 - [Architecture and data model](docs/architecture-and-data-model.md)
 - [Thermal Fate process diagnostics](docs/thermal-fate-process-diagnostics.md)
-- [Roadmap and issues](docs/roadmap-and-issues.md)
+- [Current roadmap](docs/current-roadmap.md)
 - [Codex project setup](docs/codex-project-setup.md)
 - [Development](docs/development.md)
 - [Testing and validation](docs/testing-and-validation.md)

@@ -6,6 +6,9 @@ The first Golden Path is Baseline Shallow Cumulus. Saved results are meant to be
 
 Replay / inspect / save is core MVP. Duplicate / tweak / rerun is later. Warm rain remains early, but it does not block the Baseline Shallow Cumulus Golden Path.
 
+Use [Current Roadmap](current-roadmap.md) for active implementation sequencing.
+The archived issue roadmap is historical context only.
+
 ## Frontend
 
 From `app/frontend`:

@@ -25,6 +25,10 @@ Cloud Chamber is a guided experiment notebook for understanding why clouds forme
 See [UX Reset: Guided Experiment Notebook](ux-reset-guided-experiment-notebook.md)
 for the PM/design source of truth for future UX work.
 
+See [Current Roadmap](current-roadmap.md) for active sequencing after the
+realistic-input and output-product contracts. The legacy issue-by-issue roadmap
+is archived reference only.
+
 The first Golden Path case is Baseline Shallow Cumulus. Warm rain remains early, but it should not block completing that first end-to-end case.
 
 Replay / inspect / save is core MVP. Duplicate / tweak / rerun is later.
