@@ -583,6 +583,16 @@ Implementation anchor:
 - Generated visual artifacts remain local/generated outputs by default. Do not commit thumbnails, videos, render caches, large processed visualization data, or generated previews unless a future issue defines a strict tiny-fixture policy.
 - M5 and broader renderer/scenario expansion should start only after the local product loop is useful and stable: Build can package/launch/ingest, Results can review/save/compare, Storage can manage runtime files safely, unified Explore can explain selected results/regions, and tests cover the current loop with mocked local state.
 
+## Realistic LES Input Expansion
+
+Before adding Bench Mode UI, observed sounding import, location/date/radiation
+controls, surface-flux controls, or GIS/map inputs, use the
+[Cloud Chamber realistic LES input specification](contracts/realistic-les-input-specification.md)
+as the input-side contract. #213 makes observed/detailed sounding metadata plus
+CM1 `input_sounding` conversion the first realistic-input path, preserves
+place/time/source metadata from the beginning, and keeps GIS/map/imagery
+surfaces and #153 surface heterogeneity as later architecture work.
+
 ## Initial Lower-Atmosphere Scenario Set
 
 M1 should include:

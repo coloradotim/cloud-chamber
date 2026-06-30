@@ -53,6 +53,13 @@ Results, Explore, Storage, Diagnostics Lab, and Render Studio work should use
 that contract instead of inventing ad hoc output discovery or browser-side
 NetCDF parsing.
 
+The [Cloud Chamber realistic LES input specification](contracts/realistic-les-input-specification.md)
+defines the input-side contract before realistic sounding, place/time,
+radiation, surface, terrain/GIS, compute-tier, or Bench Mode work. Future
+package-generation changes should preserve observed sounding metadata,
+place/time/source provenance, conversion choices, and caveats before exposing
+new product controls.
+
 ## Suggested Stack
 
 This is not final, but a reasonable starting point:
