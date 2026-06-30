@@ -2,7 +2,7 @@
 
 Issue: #214
 
-Status: draft product/data contract
+Status: v1 product/data contract
 
 Source context:
 
@@ -103,7 +103,7 @@ The output product manifest should define a global output-time index:
 {
   "time_index": 12,
   "time_seconds": 7200.0,
-  "source_file": "/Users/timpeterson/CloudChamber/runs/<run-id>/cm1out_000013.nc",
+  "source_file": "<runtime-home>/runs/<run-id>/cm1out_000013.nc",
   "source_file_kind": "model_output_netcdf",
   "local_time_index": 0,
   "time_source": "netcdf_time_coordinate",
