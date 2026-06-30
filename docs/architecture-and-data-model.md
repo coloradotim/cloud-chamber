@@ -45,6 +45,14 @@ and the frontend renders only the returned local summaries, conservative label,
 confidence, caveats, selected native-grid bounds, domain comparison, and
 provenance.
 
+The [Cloud Chamber output product specification](contracts/output-product-specification.md)
+defines the next data-contract layer between raw CM1 NetCDF output, result
+metadata, derived scientific products, visualization-ready payloads, future
+render-ready products, and external export bundles. Future backend ingest,
+Results, Explore, Storage, Diagnostics Lab, and Render Studio work should use
+that contract instead of inventing ad hoc output discovery or browser-side
+NetCDF parsing.
+
 ## Suggested Stack
 
 This is not final, but a reasonable starting point:

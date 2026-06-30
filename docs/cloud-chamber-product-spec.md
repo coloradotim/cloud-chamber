@@ -46,6 +46,14 @@ simulation run with latency, logs, outputs, and caveats.
 See [Thermal Fate process diagnostics](thermal-fate-process-diagnostics.md) for
 the current process-diagnostics contract.
 
+See [Cloud Chamber output product specification](contracts/output-product-specification.md)
+for the contract that separates raw CM1 NetCDF output, result metadata,
+derived scientific products, visualization-ready payloads, future render-ready
+products, and external export bundles. Future Explore, Diagnostics Lab, Render
+Studio, Storage, and export work should preserve that browser/backend boundary:
+the browser receives bounded backend-prepared products and does not parse raw
+NetCDF.
+
 Explore should be a focused visualization plus explanation screen for one
 selected result. Its core interaction is `What happened here?`: select a cloud,
 updraft, clear-air thermal, or no-cloud region and receive a CM1-backed
