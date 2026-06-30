@@ -59,9 +59,9 @@ file/time mapping, and browser/UI tests should never parse raw NetCDF.
 Local launcher tests must inject fake subprocess handles. They should assert command construction, stdout/stderr log capture, one-active-run refusal, queued/running/completed/failed/canceled state transitions, missing-settings failure, and protection against pre-existing output-like files. They must not launch real CM1 or require local runtime files in CI.
 They should also assert placeholder-only packages are rejected before launch, Rayleigh damping/domain checks catch damping over more than half the domain, required runtime files such as `LANDUSE.TBL` are staged from temp CM1 run directories, `.dat/.ctl` and NetCDF output artifacts are cataloged separately in the manifest, stderr floating-point flags are surfaced as runtime warnings, and exit code 0 without output becomes `needs_review` rather than `completed_cm1_result`.
 
-Runtime storage tests must use temporary runtime homes only. They should cover total runtime-home size, the 50 GB warning-threshold fields, per-run sizes, largest-run ordering, valid manifest classification, missing and malformed manifests, dry-run delete previews, confirmed deletion of one selected run directory, and refusal cases for running runs, saved/protected runs, path traversal, runtime-home self-targeting, and symlink escapes. They must not read from or delete real `~/CloudChamber`, the source repo, or the external CM1 installation.
+Runtime storage tests must use temporary runtime homes only. They should cover total runtime-home size, the 50 GB warning-threshold fields, per-run sizes, largest-run ordering, valid manifest classification, missing and malformed manifests, dry-run delete previews, confirmed deletion of one selected run directory, refusal cases for running runs, path traversal, runtime-home self-targeting, and symlink escapes, and legacy saved/protected metadata that no longer blocks an explicit delete after preview/confirmation. They must not read from or delete real `~/CloudChamber`, the source repo, or the external CM1 installation.
 
-Runtime storage UI tests should mock the storage inventory and delete endpoints. They should verify the 50 GB warning state, largest-run table, completed/saved/running/missing-manifest categories, disabled cleanup for running and saved/protected runs, dry-run delete preview, explicit confirmed delete, and visible backend failure messages. Automated UI tests must not delete real local run directories.
+Runtime storage UI tests should mock the storage inventory and delete endpoints. They should verify the 50 GB warning state, largest-run table, completed/running/missing-manifest categories, disabled cleanup for running runs, dry-run delete preview, explicit confirmed delete, and visible backend failure messages. Automated UI tests must not delete real local run directories.
 
 ## UI Testing Standard
 
@@ -282,8 +282,8 @@ Results notebook redesign tests should cover the mobile-first experiment-card
 contract rather than table mechanics. Component and Playwright tests should
 verify that Results / Notebook presents scan-friendly experiment entries,
 selected result details, cloud/rain outcomes, first cloud time, max `qc`,
-max/min `w`, caveats, saved/protected state, editable name/tags/notes, and
-actions into the unified Explore workflow. They should also verify that raw run IDs,
+max/min `w`, caveats, editable name/tags/notes, and actions into the unified
+Explore workflow. They should also verify that raw run IDs,
 lifecycle/product states, controls, provenance labels, and detailed warnings
 remain available under technical-details disclosure instead of dominating the
 primary notebook view.
@@ -300,11 +300,10 @@ Build can be tested without real local packages in every state:
 - completed with no usable output;
 - failed;
 - ingested result;
-- saved/protected result;
+- legacy saved/protected metadata;
 - missing or malformed manifest.
 
-These tests should assert that Build presents safe state-appropriate actions and
-routes cleanup to Results / Storage instead of duplicating deletion behavior.
+These tests should assert that Build presents only active and incomplete package/run work that still needs launch, troubleshooting, status review, or ingest, and routes cleanup to Results / Storage instead of duplicating deletion behavior. Fully ingested results belong in Results/Storage, not the Build action list.
 They should also cover missing local CM1 settings or preflight failures as
 actionable UI errors. Automated tests must not execute `cm1.exe`, parse real
 local NetCDF output in the browser, or write generated run directories into the
@@ -314,15 +313,17 @@ Storage lifecycle UI tests should use mocked inventory/results joins. They
 should verify notebook names are primary when a result card exists, raw run IDs
 and paths remain secondary, completed-with-output runs without results expose
 `Ingest completed output`, associated results expose `Open result` and `Open in
-Explore`, and running or saved/protected runs block normal delete preview.
+Explore`, running runs block normal delete preview, and explicit delete preview
+copy explains that deleting the run directory also removes result metadata,
+notebook edits, diagnostics, and Explore backing references stored there.
 Results notebook tests should verify `Manage local files` routes the selected
 experiment to Results / Storage without adding delete controls to Results.
 
 Comparison tests should use mocked Result Card data for the accepted Baseline
 Shallow Cumulus quick-look and Dry Failed Cumulus quick-look pair. They should
 verify side-by-side scenario names, run-size presets, cloud/rain outcomes, first
-cloud time, max `qc`, max/min `w`, caveats, output summaries, saved/protected
-state, moisture-limited interpretation, missing-pair handling, and quick actions
+cloud time, max `qc`, max/min `w`, caveats, output summaries, notebook edit
+metadata, moisture-limited interpretation, missing-pair handling, and quick actions
 that route either compared result into the unified Explore workflow.
 
 Side-by-side slice comparison tests should mock the #72 visualization-ready
@@ -682,7 +683,7 @@ Use this loop after a dry-run package has been generated and before broader CM1 
    - limitations and interpretation notes.
 10. If visualizer tooling exists, open the result and record first visual inspection notes. Until then, record the expected visualizer entry point and provenance labels that should be shown later.
 
-Exact cloud morphology is not a pass/fail criterion. The manual acceptance question is whether the generated package can lead to a scientifically honest local CM1 run whose logs, outputs, diagnostics, and limitations are recorded clearly enough for future replay/inspect/save behavior.
+Exact cloud morphology is not a pass/fail criterion. The manual acceptance question is whether the generated package can lead to a scientifically honest local CM1 run whose logs, outputs, diagnostics, and limitations are recorded clearly enough for future replay, inspection, comparison, and notebook edits.
 
 ## Generated Output Policy
 

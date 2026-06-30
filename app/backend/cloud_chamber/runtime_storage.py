@@ -104,6 +104,9 @@ def delete_runtime_run(
     force_saved: bool = False,
 ) -> DeleteRunResult:
     """Delete one generated run directory after safety checks."""
+    # Backward-compatible request shape: saved/protected is no longer a normal
+    # product mode or deletion blocker, but older callers may still send this.
+    _ = force_saved
     runtime_home = settings.runtime_home.expanduser()
     runs_dir = runtime_home / "runs"
     run_dir = _safe_run_directory(runtime_home, run_id)
@@ -121,10 +124,6 @@ def delete_runtime_run(
     entry = _run_storage_entry(run_dir)
     if entry.category == "running":
         raise RuntimeStorageError(f"Refusing to delete running run: {run_id}")
-    if entry.protected and not force_saved:
-        raise RuntimeStorageError(
-            f"Refusing to delete saved/protected run without force_saved: {run_id}"
-        )
     if not dry_run and not confirm:
         raise RuntimeStorageError("Real delete requires confirm=true.")
 

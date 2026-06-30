@@ -150,10 +150,12 @@ The first implemented Scenario Builder flow is intentionally narrow: it loads va
 
 Build should not assume the user is working one perfectly linear package at a
 time. Local experiments can be packaged, running, failed, completed-but-not-
-ingested, ingested, saved/protected, or ready for cleanup at the same time. The
-Build workspace should therefore include a compact local run launchpad that
-shows the nearby package/run/result pipeline and lets the user move eligible
-runs forward without using curl commands.
+ingested, ingested, carrying legacy saved/protected metadata, or ready for
+cleanup at the same time. The Build workspace should include a compact local
+run launchpad for active and incomplete package/run work only: create packages,
+launch eligible packages, refresh running/failed/completed status, troubleshoot
+failed or no-output runs, and ingest completed output. Fully ingested results
+belong in Results and Storage.
 
 The UI must continue to avoid raw CM1 namelist fields in the primary flow. Raw generated files can be listed in dry-run review because they are outputs of the package step, not user-facing controls.
 
@@ -174,8 +176,10 @@ Current behavior is a placeholder only. It must explicitly say preview is not im
 4. UI displays run ID, package path, manifest path, scenario, validation/product state, generated files, physical question, selected run-size preset, expected diagnostics, and cost/size notes.
 5. UI states that CM1 was not launched and the package is not a completed CM1 result.
 6. The launchpad also surfaces other local package/run directories from the
-   runtime inventory so the user can see what is already packaged, running,
-   complete, ingested, saved/protected, failed, or cleanup-only.
+   runtime inventory when they still need Build action: packaged-only, running,
+   completed with output and not yet ingested, completed without usable output,
+   failed/canceled, or malformed/missing manifest. Fully ingested results are
+   reviewed in Results and managed in Storage.
 
 ### Workflow 3 — Launch CM1 Run
 
@@ -214,24 +218,24 @@ only; CI still uses fake fixtures and never runs CM1.
 
 Results / Storage exposes the runtime-home inventory from the backend. It shows total runtime-home size, the 50 GB warning-threshold status, run directories sorted by size, and lifecycle-aware identities for each run directory. When a run has an associated Result Card / notebook entry, the notebook name is primary and the raw run ID/path are secondary. If no result exists yet, Storage falls back to scenario name, scenario ID, and then run ID.
 
-Storage should describe each local run directory as part of the experiment lifecycle: ready-to-run package, running/queued CM1 process, completed with usable output, completed with no usable output, failed/canceled, ready to ingest, ingested/ready to review, saved/protected, or missing/malformed manifest that needs cleanup review. It should avoid duplicate or contradictory badges.
+Storage should describe each local run directory as part of the experiment lifecycle: ready-to-run package, running/queued CM1 process, completed with usable output, completed with no usable output, failed/canceled, ready to ingest, ingested/ready to review, legacy saved/protected metadata, or missing/malformed manifest that needs cleanup review. It should avoid duplicate or contradictory badges.
 
 Storage offers non-destructive state transitions where they belong: open associated results in Results or Explore, and ingest completed output when a completed-with-output run has a manifest but no associated result. Destructive cleanup remains only in Storage behind preview and confirmation.
 
-Deletion is always explicit. The UI first requests a dry-run delete preview for one selected run, then requires a separate confirm action before deleting. Running runs cannot be deleted from the UI, and saved/protected runs are disabled rather than force-deleted. The warning threshold never auto-deletes anything.
+Deletion is always explicit. The UI first requests a dry-run delete preview for one selected run, then requires a separate confirm action before deleting. Running runs cannot be deleted from the UI. Legacy saved/protected metadata does not make a non-running run undeletable; instead Storage states plainly that deleting the selected run directory removes local generated package/runtime/output/log files plus result metadata, notebook edits, diagnostics, and Explore backing references stored there. The warning threshold never auto-deletes anything.
 
 Build may link to Storage for cleanup, but it should not duplicate deletion
 logic. Results may link a selected notebook entry to its local files in Storage,
 but Results is not a deletion surface. The relationship should be clear:
-Build moves local runs forward, Results reviews and protects experiment
-notebook entries, and Storage manages local generated files safely.
+Build moves local runs forward, Results reviews and edits experiment notebook
+entries, and Storage manages local generated files safely.
 
 ### Workflow 5 — Open Result
 
 1. Select completed run.
 2. App ingests or loads processed data.
 3. App shows diagnostics and a unified Explore workspace.
-4. User can save/name/tag result.
+4. User can name, tag, and annotate the result.
 5. User can reopen, inspect, explain, and compare the saved result later.
 
 ### Workflow 6 — Unified Explore
@@ -267,7 +271,7 @@ loop are stable.
 diagnostics panel:
 
 ```text
-open a completed/saved result
+open a completed or ingested result
 -> see the main 2-D or 3-D visualization
 -> click a cloud, updraft, clear-air thermal, or no-cloud region
 -> the app marks the selected spot or region
@@ -882,7 +886,7 @@ saved
 
 Dry-run packaged experiments must be distinct from queued/running/completed CM1 runs.
 
-Validation rules should reject packaged dry-run manifests that include NetCDF output paths, completed/saved manifests that still claim to be dry-run packages, unknown lifecycle states, and saved result entries that are not marked as user-saved.
+Validation rules should reject packaged dry-run manifests that include NetCDF output paths, completed/ingested manifests that still claim to be dry-run packages, unknown lifecycle states, and inconsistent legacy saved metadata.
 
 ## Product States And Provenance
 
@@ -963,20 +967,20 @@ max/min w
 rain yes/no
 caveats
 output file summary
-saved/protected flag
 notes/tags/name
 ```
 
 Editable notebook state lives beside the local run as `result_card.json`; it
-stores `name`, `tags`, `notes`, `saved`, and `protected` without modifying or
-copying CM1 output. Saving a card marks it as a saved/protected notebook entry.
+stores `name`, `tags`, and `notes` without modifying or copying CM1 output.
+Older cards may still include `saved` and `protected` fields for compatibility,
+but the current product does not expose a separate save/protect mode.
 
 The Results Library UI is an experiment notebook, not an admin table. It lists
 result cards from the backend as scan-friendly experiment entries, lets the user
 select one result, and shows a detail/notebook card with scenario, run-size
 preset, cloud/rain outcome, diagnostics summary, first cloud time, max `qc`,
-max/min `w`, caveats, output summary, saved/protected state, and editable
-name/tags/notes. It can save/protect a result through the backend API.
+max/min `w`, caveats, output summary, and editable name/tags/notes. Notebook
+edits use `Save changes`; ingested results already appear in Results.
 Technical metadata such as raw lifecycle/product states, run IDs, provenance
 labels, controls, and detailed caveats remain available under disclosure rather
 than dominating the first read. The layout should be mobile-first: cards stack
@@ -994,14 +998,14 @@ Results
 Explore
 ```
 
-`Build` creates and runs experiments. `Results` reviews, compares, saves, and
+`Build` creates and runs experiments. `Results` reviews, compares, edits, and
 manages experiment results. `Explore` inspects and visualizes one selected
 result's CM1 fields. The app should open on `Results`, because the most useful
 first click path is to choose the validated quick-look Baseline Shallow Cumulus
-result and open it in Explore or 3-D. Results should prioritize saved/protected, completed, cloud-forming
-quick-look baseline entries ahead of failed/no-cloud or unsaved historical
+result and open it in Explore or 3-D. Results should prioritize completed, ingested, cloud-forming
+quick-look baseline entries ahead of failed/no-cloud or historical
 attempts. User-facing labels should say `Completed CM1 result`, `Ingested`,
-`Saved`, `Needs review`, `Cloud formed`, `No cloud`, and `Rain detected` rather
+`Needs review`, `Cloud formed`, `No cloud`, and `Rain detected` rather
 than leading with raw lifecycle strings. Raw lifecycle/product/provenance labels
 remain available under technical details.
 
@@ -1074,7 +1078,7 @@ The first comparison workflow is Baseline Shallow Cumulus vs Dry Failed
 Cumulus. It should start as a side-by-side result-card comparison, not a new
 renderer. The view should show scenario names, run-size presets, cloud formed
 yes/no, first cloud time, rain yes/no, max `qc`, max/min `w`, caveats/warnings,
-output/time-step summary, saved/protected state, and quick actions to open each
+output/time-step summary, notebook edit state, and quick actions to open each
 result in Explore. It should explain that Dry Failed Cumulus is not a
 failed model run when vertical motion is present and cloud water stays below
 threshold. Technical run IDs, lifecycle strings, and provenance labels remain
@@ -1087,7 +1091,7 @@ times differ, and shows units, min/max, finite/non-finite counts, and provenance
 for each result. The browser still does not parse raw NetCDF or implement new
 3-D rendering for this comparison.
 
-Completed results should be replayable and inspectable without rerunning CM1. Duplicate/tweak/rerun is useful later, but replay/inspect/save is the core MVP result-library behavior.
+Completed results should be replayable and inspectable without rerunning CM1. Duplicate/tweak/rerun is useful later, but replay, inspect, compare, and edit notebook fields are the core MVP result-library behavior.
 
 ## MVP Scope
 

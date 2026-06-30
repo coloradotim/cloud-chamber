@@ -205,7 +205,7 @@ def test_delete_refuses_running_run(tmp_path: Path) -> None:
         delete_runtime_run(settings, run_id="run-running", dry_run=False, confirm=True)
 
 
-def test_delete_refuses_saved_run_without_force(tmp_path: Path) -> None:
+def test_delete_allows_legacy_saved_run_after_explicit_preview(tmp_path: Path) -> None:
     settings = fake_settings(tmp_path)
     manifest_path = create_run(tmp_path, "run-saved")
     mark_manifest(
@@ -215,17 +215,18 @@ def test_delete_refuses_saved_run_without_force(tmp_path: Path) -> None:
         saved=True,
     )
 
-    with pytest.raises(RuntimeStorageError, match="saved/protected"):
-        delete_runtime_run(settings, run_id="run-saved", dry_run=False, confirm=True)
-
-    result = delete_runtime_run(
+    preview = delete_runtime_run(
         settings,
         run_id="run-saved",
         dry_run=True,
         confirm=False,
-        force_saved=True,
     )
-    assert result.deleted is False
+    assert preview.deleted is False
+    assert manifest_path.parent.exists()
+
+    result = delete_runtime_run(settings, run_id="run-saved", dry_run=False, confirm=True)
+    assert result.deleted is True
+    assert not manifest_path.parent.exists()
 
 
 def test_delete_refuses_path_traversal_and_runtime_home_itself(tmp_path: Path) -> None:

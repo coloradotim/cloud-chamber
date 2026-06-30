@@ -571,7 +571,7 @@ function isObject(value: unknown): value is Record<string, unknown> {
 
 async function patchResultCard(
   resultId: string,
-  update: Partial<Pick<ResultCard, "name" | "tags" | "notes" | "saved" | "protected">>,
+  update: Partial<Pick<ResultCard, "name" | "tags" | "notes">>,
 ): Promise<ResultCard> {
   const response = await fetch(`/api/results/${resultId}`, {
     method: "PATCH",
@@ -580,14 +580,6 @@ async function patchResultCard(
   });
   if (!response.ok) {
     throw new Error("Unable to update result card.");
-  }
-  return response.json() as Promise<ResultCard>;
-}
-
-async function saveResultCard(resultId: string): Promise<ResultCard> {
-  const response = await fetch(`/api/results/${resultId}/save`, { method: "POST" });
-  if (!response.ok) {
-    throw new Error("Unable to save result card.");
   }
   return response.json() as Promise<ResultCard>;
 }
@@ -1061,7 +1053,7 @@ export function App() {
     event.preventDefault();
     if (!selectedResult) return;
     setResultsError(null);
-    setResultsStatus("Updating result card");
+    setResultsStatus("Saving notebook changes");
     try {
       const updated = await patchResultCard(selectedResult.result_id, {
         name: resultDraft.name,
@@ -1069,23 +1061,9 @@ export function App() {
         notes: resultDraft.notes,
       });
       updateResultInList(updated);
-      setResultsStatus("Result card updated");
+      setResultsStatus("Notebook changes saved");
     } catch (caught) {
-      setResultsError(caught instanceof Error ? caught.message : "Unable to update result card.");
-      setResultsStatus("Results loaded");
-    }
-  }
-
-  async function handleResultSave() {
-    if (!selectedResult) return;
-    setResultsError(null);
-    setResultsStatus("Saving result card");
-    try {
-      const saved = await saveResultCard(selectedResult.result_id);
-      updateResultInList(saved);
-      setResultsStatus("Result card saved");
-    } catch (caught) {
-      setResultsError(caught instanceof Error ? caught.message : "Unable to save result card.");
+      setResultsError(caught instanceof Error ? caught.message : "Unable to save notebook changes.");
       setResultsStatus("Results loaded");
     }
   }
@@ -1242,7 +1220,6 @@ export function App() {
           onSelectResult={setSelectedResultId}
           onDraftChange={setResultDraft}
           onSubmit={handleResultUpdate}
-          onSave={handleResultSave}
           onRefreshResults={handleRefreshResults}
           onInspect={() => {
             setActiveSection("explore");
@@ -1591,7 +1568,6 @@ function ResultsWorkspace({
   onSelectResult,
   onDraftChange,
   onSubmit,
-  onSave,
   onRefreshResults,
   onInspect,
   onManageLocalFiles,
@@ -1621,7 +1597,6 @@ function ResultsWorkspace({
   onSelectResult: (resultId: string) => void;
   onDraftChange: (draft: { name: string; tags: string; notes: string }) => void;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
-  onSave: () => void;
   onRefreshResults: () => void;
   onInspect: () => void;
   onManageLocalFiles: (result: ResultCard) => void;
@@ -1638,7 +1613,7 @@ function ResultsWorkspace({
       <div className="section-heading">
         <div>
           <h2 id="results-title">Experiment Notebook</h2>
-          <p>Review saved cloud experiments, compare variants, and open results for explanation.</p>
+          <p>Review ingested cloud experiments, compare variants, and open results for explanation.</p>
         </div>
       </div>
       {resultsStatus !== "Results loaded" && resultsStatus !== "Loading results..." && (
@@ -1675,7 +1650,6 @@ function ResultsWorkspace({
           onSelectResult={onSelectResult}
           onDraftChange={onDraftChange}
           onSubmit={onSubmit}
-          onSave={onSave}
           onRefreshResults={onRefreshResults}
           onInspect={onInspect}
           onManageLocalFiles={onManageLocalFiles}
@@ -1724,7 +1698,6 @@ function NotebookWorkspace({
   onSelectResult,
   onDraftChange,
   onSubmit,
-  onSave,
   onRefreshResults,
   onInspect,
   onManageLocalFiles,
@@ -1738,7 +1711,6 @@ function NotebookWorkspace({
   onSelectResult: (resultId: string) => void;
   onDraftChange: (draft: { name: string; tags: string; notes: string }) => void;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
-  onSave: () => void;
   onRefreshResults: () => void;
   onInspect: () => void;
   onManageLocalFiles: (result: ResultCard) => void;
@@ -1773,7 +1745,6 @@ function NotebookWorkspace({
           draft={draft}
           onDraftChange={onDraftChange}
           onSubmit={onSubmit}
-          onSave={onSave}
           onInspect={onInspect}
           onManageLocalFiles={onManageLocalFiles}
           onCompare={onCompare}
@@ -1817,7 +1788,6 @@ function ExploreResultSummary({ result }: { result: ResultCard }) {
       <div className="badge-row">
         <OutcomeBadge result={result} />
         <StatusBadge label={rainOutcome(result.rain_present)} tone="neutral" />
-        {result.saved ? <StatusBadge label="Saved" tone="good" /> : null}
       </div>
     </section>
   );
@@ -1946,10 +1916,6 @@ function ComparisonResultCard({
           <h3>{result.scenario_name ?? result.scenario_id}</h3>
           <p>{humanize(result.run_size_preset)} result card</p>
         </div>
-        <StatusBadge
-          label={result.saved || result.protected ? "Saved" : "Unsaved"}
-          tone={result.saved || result.protected ? "good" : "neutral"}
-        />
       </div>
 
       <div className="badge-row">
@@ -2347,6 +2313,10 @@ function StorageWorkspace({
 }) {
   const displayedRuns =
     inventory && inventory.largest_runs.length > 0 ? inventory.largest_runs : inventory?.runs ?? [];
+  const deletePreviewResult = deletePreview
+    ? resultForRun(results, deletePreview.run_id)
+    : undefined;
+  const deletePreviewHasResult = Boolean(deletePreviewResult);
 
   return (
     <section
@@ -2408,13 +2378,27 @@ function StorageWorkspace({
 
       {deletePreview && (
         <section className="delete-preview" aria-label="Delete preview">
-          <h3>Delete preview</h3>
-          <p>
-            Cleanup removes local generated package files, copied runtime files, CM1 output, logs,
-            and any local metadata stored under the selected run directory. It does not touch the
-            source repo, the runtime home itself, or the external CM1 install. No files have been
-            deleted yet.
-          </p>
+          <h3>
+            {deletePreviewHasResult
+              ? "Delete result and local run data preview"
+              : "Delete local run data preview"}
+          </h3>
+          {deletePreviewHasResult ? (
+            <p>
+              Cleanup removes local generated package files, copied runtime files, CM1 output, logs,
+              result metadata, notebook edits, diagnostics, and Explore backing references stored
+              under the selected run directory. The result will disappear from Results, Explore,
+              Compare, and Storage inventory after confirmation. It does not touch the source repo,
+              the runtime home itself, or the external CM1 install. No files have been deleted yet.
+            </p>
+          ) : (
+            <p>
+              Cleanup removes local generated package files, copied runtime files, CM1 output/logs
+              if present, and any metadata stored under the selected run directory. It does not
+              touch the source repo, the runtime home itself, or the external CM1 install. No files
+              have been deleted yet.
+            </p>
+          )}
           <dl className="metric-grid">
             <Metric label="Run ID" value={deletePreview.run_id} />
             <Metric label="Selected path" value={deletePreview.run_directory} />
@@ -2426,7 +2410,9 @@ function StorageWorkspace({
             className="danger-button"
             onClick={() => onConfirmDelete(deletePreview.run_id)}
           >
-            Confirm delete selected run
+            {deletePreviewHasResult
+              ? "Confirm delete result and local run data"
+              : "Confirm delete local run data"}
           </button>
         </section>
       )}
@@ -2486,13 +2472,6 @@ function RuntimeRunsTable({
           {runs.map((run) => {
             const associatedResult = resultForRun(results, run.run_id);
             const displayName = storageDisplayName(run, associatedResult);
-            const savedOrProtected =
-              associatedResult?.saved || associatedResult?.protected || run.saved || run.protected;
-            const deleteBlockedRun = {
-              ...run,
-              saved: Boolean(savedOrProtected),
-              protected: Boolean(savedOrProtected),
-            };
             const canIngest = canIngestStorageRun(run, associatedResult);
             return (
               <tr key={run.run_id} className={focusedRunId === run.run_id ? "selected-row" : ""}>
@@ -2547,14 +2526,14 @@ function RuntimeRunsTable({
                     <button
                       type="button"
                       className="secondary-button"
-                      disabled={!canPreviewDelete(deleteBlockedRun)}
+                      disabled={!canPreviewDelete(run)}
                       onClick={() => onPreviewDelete(run.run_id)}
                     >
                       Preview delete
                     </button>
                   </div>
-                  {!canPreviewDelete(deleteBlockedRun) && (
-                    <small>{deleteDisabledReason(deleteBlockedRun)}</small>
+                  {!canPreviewDelete(run) && (
+                    <small>{deleteDisabledReason(run)}</small>
                   )}
                 </td>
               </tr>
@@ -2920,20 +2899,20 @@ function LocalPipelinePanel({
   onOpenStorage: (runId?: string | null) => void;
   onRefreshStorage: () => void;
 }) {
-  const runs = selectPipelineRuns(inventory?.runs ?? [], currentRunId);
+  const runs = selectPipelineRuns(inventory?.runs ?? [], results, currentRunId);
 
   return (
     <section className="pipeline-panel" aria-labelledby="pipeline-title">
       <div className="panel-heading-row">
         <div>
-          <p className="eyebrow">Local run inventory</p>
-          <h4 id="pipeline-title">Packages, runs, and results</h4>
+          <p className="eyebrow">Build pipeline</p>
+          <h4 id="pipeline-title">Packages and runs needing action</h4>
         </div>
         <StatusBadge label={status} tone={error ? "warning" : "neutral"} />
       </div>
       <p className="state-note">
-        See local run directories by state and move them forward when possible. Cleanup stays in
-        Storage so saved results and running runs remain protected.
+        Active packages and runs that still need launch, status review, troubleshooting, or ingest.
+        Ingested results live in Results and Storage.
       </p>
       {error && <p role="alert">{error}</p>}
       <div className="button-row">
@@ -2946,7 +2925,7 @@ function LocalPipelinePanel({
       </div>
 
       {runs.length === 0 ? (
-        <p>No local packages or run directories were found yet.</p>
+        <p>No active or incomplete packages/runs need Build action. Ingested results are in Results, and cleanup is in Storage.</p>
       ) : (
         <div className="pipeline-run-list" aria-label="Local packages and runs">
           {runs.map((run) => (
@@ -2990,9 +2969,7 @@ function PipelineRunCard({
   const displayName = result?.name ?? run.scenario_name ?? run.scenario_id ?? run.run_id;
   const canLaunch = Boolean(run.manifest_path && run.category === "dry_run_only");
   const canIngest = Boolean(run.manifest_path && run.category === "completed_with_output" && !result);
-  const savedOrProtected = Boolean(result?.saved || result?.protected || run.saved || run.protected);
   const stateLabel = pipelineRunStateLabel(run, result);
-  const showSavedStateBadge = stateLabel !== "Saved/protected";
 
   return (
     <article className={current ? "pipeline-run-card current" : "pipeline-run-card"}>
@@ -3006,9 +2983,6 @@ function PipelineRunCard({
       <div className="badge-row">
         <StatusBadge label={stateLabel} tone={pipelineRunTone(run, result)} />
         {!result && <StatusBadge label="Not ingested" tone="neutral" />}
-        {showSavedStateBadge && (
-          <StatusBadge label={savedOrProtected ? "Saved/protected" : "Not saved"} tone="neutral" />
-        )}
       </div>
       <p>
         {humanize(result?.scenario_id ?? run.scenario_id ?? "unknown scenario")} ·{" "}
@@ -3109,8 +3083,27 @@ function generatedInputSummary(dryRun: DryRunResponse): string[] {
     .filter((name) => name === "namelist.input" || name === "input_sounding");
 }
 
-function selectPipelineRuns(runs: RunStorageEntry[], currentRunId: string | null): RunStorageEntry[] {
-  const sorted = [...runs].sort((left, right) => {
+function selectPipelineRuns(
+  runs: RunStorageEntry[],
+  results: ResultCard[],
+  currentRunId: string | null,
+): RunStorageEntry[] {
+  const activeRuns = runs.filter((run) => {
+    if (currentRunId && run.run_id === currentRunId) return true;
+    if (resultForRun(results, run.run_id)) return false;
+    return [
+      "dry_run_only",
+      "running",
+      "completed_with_output",
+      "completed_no_output",
+      "failed",
+      "canceled",
+      "missing_manifest",
+      "malformed_manifest",
+      "unknown",
+    ].includes(run.category);
+  });
+  const sorted = [...activeRuns].sort((left, right) => {
     if (currentRunId) {
       if (left.run_id === currentRunId) return -1;
       if (right.run_id === currentRunId) return 1;
@@ -3124,7 +3117,6 @@ function selectPipelineRuns(runs: RunStorageEntry[], currentRunId: string | null
 
 function pipelineRunStateLabel(run: RunStorageEntry, result: ResultCard | undefined): string {
   if (result) return "Ready to review";
-  if (run.saved || run.protected) return "Saved/protected";
   const labels: Record<string, string> = {
     dry_run_only: "Ready to run",
     running: "Running",
@@ -3134,7 +3126,7 @@ function pipelineRunStateLabel(run: RunStorageEntry, result: ResultCard | undefi
     canceled: "Canceled",
     missing_manifest: "Missing manifest",
     malformed_manifest: "Manifest problem",
-    saved_or_protected: "Saved/protected",
+    saved_or_protected: "Cleanup review",
     unknown: "Needs review",
   };
   return labels[run.category] ?? humanize(run.category);
@@ -3159,9 +3151,6 @@ function pipelineRunTone(
 }
 
 function pipelineRunNextStep(run: RunStorageEntry, result: ResultCard | undefined): string {
-  if (result?.saved || result?.protected || run.saved || run.protected) {
-    return "Keeper result; normal cleanup is protected in Storage.";
-  }
   if (result) return "Review in Results or Explore fields; cleanup remains available in Storage.";
   if (run.category === "dry_run_only") return "Ready to run after CM1 checks.";
   if (run.category === "running") return "CM1 is active or queued; refresh runs for status.";
@@ -3238,10 +3227,6 @@ function ExperimentNotebookList({
                 </p>
                 <div className="badge-row">
                   <OutcomeBadge result={result} />
-                  <StatusBadge
-                    label={result.saved || result.protected ? "Saved" : "Unsaved"}
-                    tone={result.saved || result.protected ? "good" : "neutral"}
-                  />
                 </div>
                 <p className="result-story">{resultStory(result)}</p>
               </div>
@@ -3272,7 +3257,6 @@ function ResultNotebookCard({
   draft,
   onDraftChange,
   onSubmit,
-  onSave,
   onInspect,
   onManageLocalFiles,
   onCompare,
@@ -3281,7 +3265,6 @@ function ResultNotebookCard({
   draft: { name: string; tags: string; notes: string };
   onDraftChange: (draft: { name: string; tags: string; notes: string }) => void;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
-  onSave: () => void;
   onInspect: () => void;
   onManageLocalFiles: (result: ResultCard) => void;
   onCompare: () => void;
@@ -3305,10 +3288,6 @@ function ResultNotebookCard({
             {humanize(result.run_size_preset)}
           </p>
         </div>
-        <StatusBadge
-          label={result.saved || result.protected ? "Saved" : "Unsaved"}
-          tone={result.saved || result.protected ? "good" : "neutral"}
-        />
       </div>
 
       <div className="badge-row">
@@ -3435,10 +3414,7 @@ function ResultNotebookCard({
             Manage local files
           </button>
           <button type="submit" className="secondary-button">
-            Update notebook
-          </button>
-          <button type="button" className="secondary-button" onClick={onSave}>
-            Save result
+            Save changes
           </button>
         </div>
       </form>
@@ -6074,7 +6050,6 @@ function resultStory(result: ResultCard): string {
 }
 
 function userFacingStatus(result: ResultCard): string {
-  if (result.saved || result.protected) return "Saved";
   if (result.source_lifecycle_state === "completed" && result.status.includes("ingested")) {
     return "Completed CM1 result";
   }
@@ -6158,17 +6133,9 @@ function storageStateBadges(
   run: RunStorageEntry,
   result: ResultCard | undefined,
 ): Array<{ label: string; tone: "good" | "warning" | "neutral" }> {
-  const savedOrProtected = Boolean(result?.saved || result?.protected || run.saved || run.protected);
-  if (savedOrProtected) {
-    return [
-      { label: "Saved/protected", tone: "good" },
-      { label: result ? "Ingested / ready to review" : "Protected local run", tone: "neutral" },
-    ];
-  }
   if (result) {
     return [
       { label: "Ingested / ready to review", tone: "good" },
-      { label: "Not saved", tone: "neutral" },
     ];
   }
   const primary: Record<string, { label: string; tone: "good" | "warning" | "neutral" }> = {
@@ -6180,21 +6147,18 @@ function storageStateBadges(
     canceled: { label: "Canceled run", tone: "warning" },
     missing_manifest: { label: "Needs cleanup review", tone: "warning" },
     malformed_manifest: { label: "Needs cleanup review", tone: "warning" },
+    saved_or_protected: { label: "Cleanup review", tone: "neutral" },
     unknown: { label: "Needs cleanup review", tone: "warning" },
   };
   const badge = primary[run.category] ?? { label: humanize(run.category), tone: "neutral" };
   const badges = [badge];
-  if (run.category !== "running" && run.category !== "dry_run_only") {
-    badges.push({ label: "Not saved", tone: "neutral" });
-  }
   return badges;
 }
 
 function storageNextStep(run: RunStorageEntry, result: ResultCard | undefined): string {
-  if (result?.saved || result?.protected || run.saved || run.protected) {
-    return "Keeper result; normal cleanup is blocked here.";
+  if (result) {
+    return "Review in Results or Explore, or preview deletion here if you want to remove the result and local run data.";
   }
-  if (result) return "Review in Results or Explore; cleanup preview remains available.";
   if (run.category === "dry_run_only") return "Package is generated and can be launched from Build.";
   if (run.category === "running") return "CM1 is active or queued; cleanup is blocked until it stops.";
   if (run.category === "completed_with_output") {
@@ -6243,12 +6207,11 @@ function storageControlSummary(controls: ResultCard["controls"]): string {
 }
 
 function canPreviewDelete(run: RunStorageEntry): boolean {
-  return run.category !== "running" && !run.saved && !run.protected;
+  return run.category !== "running";
 }
 
 function deleteDisabledReason(run: RunStorageEntry): string {
   if (run.category === "running") return "Running runs cannot be deleted.";
-  if (run.saved || run.protected) return "Saved/protected runs are not deleted from this UI.";
   return "Cleanup unavailable.";
 }
 

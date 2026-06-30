@@ -252,9 +252,11 @@ completed or ingested result.
 Build is intentionally not modeled as one single active package. Local runtime
 state can contain multiple package/run folders in different lifecycle stages:
 packaged-only, running, completed with output, completed without usable output,
-failed, ingested, saved/protected, or missing/malformed manifest. The launchpad
-uses the runtime storage inventory to show those states and offers only safe
-state-appropriate transitions:
+failed, ingested, legacy saved/protected metadata, or missing/malformed manifest.
+Build shows only active or incomplete package/run work that still needs launch,
+status review, troubleshooting, or ingest. Fully ingested results belong in
+Results and Storage. The launchpad uses the runtime storage inventory to show
+eligible states and offers only safe state-appropriate transitions:
 
 - create a new package through `POST /api/dry-run-package`;
 - launch an eligible packaged run through `POST /api/runs/launch`;
@@ -263,9 +265,8 @@ state-appropriate transitions:
 - open associated results in Results or Explore;
 - route cleanup decisions to Results / Storage.
 
-Storage remains the owner of deletion policy and cleanup actions. Build may show
-that a run is cleanup-only or saved/protected, but it should not duplicate the
-delete workflow.
+Storage remains the owner of deletion policy and cleanup actions. Build may link
+to Storage for cleanup, but it should not duplicate the delete workflow.
 
 Results / Storage is the canonical local runtime inventory for these same
 states. It joins storage entries to Result Cards when possible so the notebook
@@ -274,7 +275,7 @@ metadata. Rows expose only state-appropriate non-destructive actions: open the
 associated result, open it in Explore, or ingest completed output when a
 completed-with-output run has a manifest and no associated result. Delete
 preview/confirmation remains scoped to Storage and is blocked for running or
-saved/protected runs.
+otherwise unsafe runs.
 
 ### Preview Engine
 
@@ -343,7 +344,7 @@ Malformed or missing manifests are reported without crashing inventory. Largest 
 
 The 50 GB warning threshold is a configurable product default, not a scientific limit. Crossing the threshold should point the user to the largest-run inventory and safe cleanup actions. It must not trigger automatic deletion.
 
-Deletion is explicit and scoped to one selected run directory. The cleanup service refuses path traversal, symlink escapes, the runtime home itself, the user's home directory, the source repo by construction, and configured CM1 root/run paths. It also refuses running runs and saved/protected runs unless a force flag is provided. A dry-run delete returns the selected path and estimated size reclaimed without deleting files; a real delete requires explicit confirmation.
+Deletion is explicit and scoped to one selected run directory. The cleanup service refuses path traversal, symlink escapes, the runtime home itself, the user's home directory, the source repo by construction, configured CM1 root/run paths, and running runs. Legacy saved/protected metadata no longer blocks an explicit delete after preview and confirmation. A dry-run delete returns the selected path and estimated size reclaimed without deleting files; a real delete requires explicit confirmation.
 
 Deleting a run removes local generated CM1 inputs, copied runtime files, logs, raw CM1 output, NetCDF output, processed artifacts, and any local metadata stored inside that run directory. It does not delete repo files or the external CM1 installation.
 
@@ -351,10 +352,9 @@ The current code-backed lifecycle contract is documented in [Ingest, Results,
 And Storage Lifecycle Audit](ingest-results-storage-lifecycle.md). As of that
 audit, `result_metadata.json` and `result_card.json` live inside the selected
 run directory, so deleting the whole directory also removes the implemented
-Result/Explore record. The frontend Storage workspace joins Result Cards to
-disable normal cleanup for saved/protected cards, while the backend delete
-guard currently reads manifest-level saved state. That split is a known
-lifecycle caveat, not a desired long-term product boundary.
+Result/Explore record. The frontend Storage workspace makes that consequence
+explicit before confirmation instead of treating legacy saved/protected flags as
+the primary product model.
 
 ### Output Ingester
 
@@ -384,15 +384,15 @@ It does not rerun CM1 and does not parse raw output directly. It summarizes:
 - run ID, scenario, run-size preset, and physical question;
 - diagnostics summary, first cloud time, max `qc`, max/min `w`, rain yes/no, and caveats;
 - output file summary, including NetCDF/model-output/stat/raw/processed counts and time-step range;
-- provenance labels that distinguish completed CM1 result, ingested metadata, and saved notebook entry;
-- editable notebook fields: name, tags, notes, saved, and protected.
+- provenance labels that distinguish completed CM1 result, ingested metadata, and notebook entry;
+- editable notebook fields: name, tags, and notes.
 
 Editable notebook state is stored as `result_card.json` beside `result_metadata.json`.
-The saved/protected flag prevents accidental cleanup in the current UI, while
-CM1 output remains local/generated and uncommitted. The backend storage service
-does not yet use Result Card state as its single source of truth for delete
-protection; see the lifecycle audit for the current split between manifest
-state, Result Card state, and frontend Storage joins.
+Legacy `saved` and `protected` fields may remain in older `result_card.json`
+files for compatibility, but they are not current user-facing Results modes.
+CM1 output remains local/generated and uncommitted. See the lifecycle audit for
+the current relationship between result metadata, notebook edits, and run
+directory cleanup.
 
 Current diagnostics compute:
 
@@ -499,13 +499,13 @@ classification itself or parse raw NetCDF.
 Responsibilities:
 
 - list runs/results
-- rename/save/tag
+- rename/tag/annotate
 - search/filter
 - open visualizer
 - duplicate setup
 - delete local output safely
 
-For MVP, replayable and inspectable saved results are more important than rerunning a saved setup. Duplicate/tweak/rerun can build on the same metadata later.
+For MVP, replayable and inspectable ingested results with editable notebook fields are more important than rerunning a saved setup. Duplicate/tweak/rerun can build on the same metadata later.
 
 ### 3-D Visualizer
 
@@ -702,14 +702,15 @@ obvious before field inspection or 3-D visualization. It contains `Notebook`,
 `Storage` joins runtime folders to result cards when possible so the user sees a
 result display name first and raw run IDs/paths second. Storage also surfaces
 ready-to-run packages, running/queued processes, completed output that is ready
-to ingest, completed runs with no usable output, failed/canceled runs, and
-missing/malformed manifests as distinct cleanup/review states. Saved/protected
-result cards disable normal cleanup because they are keeper notebook entries.
+to ingest, completed runs with no usable output, failed/canceled runs, ingested
+results, legacy saved/protected metadata, and missing/malformed manifests as
+distinct cleanup/review states. Running runs block cleanup; non-running run
+directories require explicit preview and confirmation.
 
 `Notebook` renders result-card metadata as mobile-first experiment notebook
 entries rather than an admin table. The primary view should surface the result
 story, cloud/rain outcomes, first cloud time, `qc` and `w` summaries,
-caveats/warnings, saved/protected state, and open/compare actions. Technical
+caveats/warnings, notebook edit state, and open/compare actions. Technical
 metadata such as raw run IDs, lifecycle/product states, controls used,
 provenance labels, and detailed caveats remains in disclosure so it is available
 without overwhelming the first read.
