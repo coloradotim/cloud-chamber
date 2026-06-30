@@ -11,6 +11,11 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from cloud_chamber.output_products import (
+    build_output_product_manifest_for_result,
+    default_output_product_manifest_path,
+    write_output_product_manifest,
+)
 from cloud_chamber.result_diagnostics import (
     ProcessDiagnostics,
     ResultDiagnostics,
@@ -128,7 +133,18 @@ def ingest_completed_run(manifest_path: Path) -> ResultMetadata:
                 close()
 
     result_path = run_dir / RESULT_METADATA_FILENAME
+    product_manifest_path = default_output_product_manifest_path(run_dir)
+    result = result.model_copy(
+        update={"processed_artifacts": [*result.processed_artifacts, str(product_manifest_path)]}
+    )
+    product_manifest = build_output_product_manifest_for_result(
+        result,
+        result_metadata_path=result_path,
+        run_manifest_path=manifest_path.expanduser(),
+        product_root=product_manifest_path.parent,
+    )
     result_path.write_text(result.to_json_text())
+    write_output_product_manifest(product_manifest_path, product_manifest)
     return result
 
 
