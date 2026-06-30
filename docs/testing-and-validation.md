@@ -40,6 +40,13 @@ Scenario-template tests should cover both valid templates and targeted invalid t
 CM1 input contract tests should use structured/snapshot assertions for generated fragments such as namelist defaults and input-sounding notes. These tests must not write generated run packages into the repo, launch CM1, or require real CM1 runtime files.
 Baseline Shallow Cumulus input tests should assert the generated `namelist.input` is no longer the old `&cloud_chamber_domain` placeholder fragment and that generated `input_sounding` is numeric/CM1-readable rather than notes-only.
 
+Realistic LES input tests should follow the
+[Cloud Chamber realistic LES input specification](contracts/realistic-les-input-specification.md):
+observed/detailed sounding fixtures must preserve station/location, elevation,
+valid time/date, source/provider, source units, converted units, wind handling,
+smoothing/interpolation choices, place/time provenance, and caveats without
+running CM1 or requiring local runtime artifacts.
+
 Dry-run package tests should use temporary runtime homes and assert overwrite protection, manifest/report content, CM1-facing input readiness, and absence of NetCDF output. A dry-run package is packaged configuration and metadata only; it is not a launched process or completed CM1 result.
 
 Output product tests should follow the

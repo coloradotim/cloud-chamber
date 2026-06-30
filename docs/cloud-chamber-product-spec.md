@@ -54,6 +54,13 @@ Studio, Storage, and export work should preserve that browser/backend boundary:
 the browser receives bounded backend-prepared products and does not parse raw
 NetCDF.
 
+See [Cloud Chamber realistic LES input specification](contracts/realistic-les-input-specification.md)
+for the input-side contract before observed sounding import, location/date/
+radiation controls, surface-flux controls, GIS/map inputs, or Bench Mode UI.
+The first realistic-input path is observed/detailed sounding metadata plus the
+CM1 `input_sounding` conversion path, with place/time/source provenance
+preserved even when radiation remains disabled.
+
 Explore should be a focused visualization plus explanation screen for one
 selected result. Its core interaction is `What happened here?`: select a cloud,
 updraft, clear-air thermal, or no-cloud region and receive a CM1-backed
