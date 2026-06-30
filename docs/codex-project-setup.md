@@ -24,7 +24,7 @@ AGENTS.md
 docs/product-vision.md
 docs/cloud-chamber-product-spec.md
 docs/architecture-and-data-model.md
-docs/roadmap-and-issues.md
+docs/current-roadmap.md
 ```
 
 ## Suggested Skeleton
@@ -40,7 +40,7 @@ cloud-chamber/
     product-vision.md
     cloud-chamber-product-spec.md
     architecture-and-data-model.md
-    roadmap-and-issues.md
+    current-roadmap.md
     data-policy.md
   scenarios/
     lower-atmosphere/

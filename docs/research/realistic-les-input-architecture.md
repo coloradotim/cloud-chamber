@@ -45,7 +45,7 @@ Confirmed local/source files inspected:
   - `docs/cloud-chamber-product-spec.md`
   - `docs/architecture-and-data-model.md`
   - `docs/testing-and-validation.md`
-  - `docs/roadmap-and-issues.md`
+  - `docs/current-roadmap.md`
   - `docs/development.md`
 
 ## Executive Recommendation

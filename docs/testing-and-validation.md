@@ -4,6 +4,9 @@ CM1 is the high-fidelity simulation engine; Cloud Chamber is the local
 experiment builder, run manager, result notebook, diagnostics layer, and
 visualizer. Tests must preserve that distinction.
 
+Use [Current Roadmap](current-roadmap.md) for active testing priorities after
+the realistic-input and output-product contracts.
+
 ## Fast CI Tests
 
 Fast CI tests run on every pull request and push to `main`.

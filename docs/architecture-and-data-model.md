@@ -12,6 +12,10 @@ The first MVP target is a 2024 MacBook Air with 8GB RAM. Design for one local CM
 
 Replay / inspect / save is core MVP. Duplicate / tweak / rerun is later and should not drive the first result storage model.
 
+Active sequencing lives in [Current Roadmap](current-roadmap.md). Historical
+issue sequencing in the archived roadmap should not drive new architecture
+decisions.
+
 Recommended architecture:
 
 ```text
