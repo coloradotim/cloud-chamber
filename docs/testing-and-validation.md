@@ -59,6 +59,14 @@ metadata-only observed-wind limitation. Large real station downloads, such as a
 full local IGRA file from `~/Downloads`, are manual validation inputs only and
 must not be committed.
 
+Recent IGRA catalog/cache tests must also use tiny fixtures only. They should
+cover directory-listing parsing for `*-data-beg*.txt.zip`, station-id extraction,
+station metadata joins, the documented Great Plains / Midwest lat/lon filter,
+runtime-local cache manifest writes, already-cached status, safe ZIP extraction,
+zip-slip/absolute-path rejection, and deterministic refresh/update behavior.
+CI must not fetch live NOAA/NCEI data, parse remote archives in the browser, or
+write downloaded ZIP/text/cache manifests outside temp runtime homes.
+
 Dry-run package tests should use temporary runtime homes and assert overwrite protection, manifest/report content, CM1-facing input readiness, and absence of NetCDF output. A dry-run package is packaged configuration and metadata only; it is not a launched process or completed CM1 result.
 
 Output product tests should follow the
