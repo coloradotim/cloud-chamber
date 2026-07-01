@@ -9,6 +9,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import StrEnum
 
+from cloud_chamber.observed_sounding import ObservedSoundingRecord, render_observed_input_sounding
 from cloud_chamber.scenario_schema import ControlAudience, ScenarioTemplate
 
 
@@ -92,6 +93,7 @@ class CM1InputContract:
     expected_diagnostics: tuple[str, ...]
     visualization_defaults: dict[str, str | list[str]]
     limitations: tuple[str, ...]
+    observed_sounding: ObservedSoundingRecord | None = None
 
 
 GENERATED_FILE_SPECS = (
@@ -150,6 +152,7 @@ def build_cm1_input_contract(
     scenario: ScenarioTemplate,
     selected_controls: dict[str, str | float | bool] | None = None,
     run_size_preset: str = "quick_look",
+    observed_sounding: ObservedSoundingRecord | None = None,
 ) -> CM1InputContract:
     selected = selected_controls or {}
     control_fragments = tuple(
@@ -189,6 +192,7 @@ def build_cm1_input_contract(
             "provenance_label": scenario.visualization_defaults.provenance_label,
         },
         limitations=tuple(scenario.limitations),
+        observed_sounding=observed_sounding,
     )
 
 
@@ -564,6 +568,9 @@ def render_cm1_input_sounding(contract: CM1InputContract) -> str:
     breakpoints used by CM1's ``isnd = 19`` reference case and extends above the
     18 km model top as required by CM1's input_sounding reader.
     """
+
+    if contract.observed_sounding is not None:
+        return render_observed_input_sounding(contract.observed_sounding)
 
     header, body = _baseline_shallow_cumulus_sounding_profile(
         moisture_profile=contract.moisture_profile,

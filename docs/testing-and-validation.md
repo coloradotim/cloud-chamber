@@ -50,6 +50,15 @@ valid time/date, source/provider, source units, converted units, wind handling,
 smoothing/interpolation choices, place/time provenance, and caveats without
 running CM1 or requiring local runtime artifacts.
 
+Observed IGRA sounding tests must use tiny synthetic station-data fixtures in
+the repo. They should cover multiple available sounding times, latest-time
+default selection, explicit time selection, malformed uploads, too-shallow
+profiles, station-elevation/model-bottom anchoring, numeric CM1
+`input_sounding` rendering, run-manifest/report provenance, and the current
+metadata-only observed-wind limitation. Large real station downloads, such as a
+full local IGRA file from `~/Downloads`, are manual validation inputs only and
+must not be committed.
+
 Dry-run package tests should use temporary runtime homes and assert overwrite protection, manifest/report content, CM1-facing input readiness, and absence of NetCDF output. A dry-run package is packaged configuration and metadata only; it is not a launched process or completed CM1 result.
 
 Output product tests should follow the
@@ -508,6 +517,14 @@ NetCDF output, and reference `LANDUSE.TBL` staging. Manual validation should
 record whether the external-sounding reproduction still completes, produces
 NetCDF, ingests the full sequence, forms cloud, and preserves meaningful
 vertical motion before Dry Failed Cumulus dries the profile.
+
+Observed-sounding package tests should additionally assert that uploading an
+IGRA station sounding changes only the generated external thermodynamic/moisture
+profile and package metadata unless a later validated issue explicitly changes
+wind, radiation, surface, or location/date behavior. The package review should
+show station, valid time, uploaded filename, vertical datum, model-bottom
+elevation, usable level count, caveats, and wind-handling metadata before the
+package is created.
 
 The external-sounding reproduction run, `dry-run-external-sounding-baseline-20260522185000`,
 completed with `exit_code = 0`, ingested 13 model-output time steps from 0 to

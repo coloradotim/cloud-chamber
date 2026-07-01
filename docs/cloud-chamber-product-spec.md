@@ -65,6 +65,19 @@ The first realistic-input path is observed/detailed sounding metadata plus the
 CM1 `input_sounding` conversion path, with place/time/source provenance
 preserved even when radiation remains disabled.
 
+The first implemented observed-sounding path is intentionally local and
+bounded. Build can accept an uploaded NOAA/NCEI IGRA station sounding-data text
+file, parse the available sounding times, default to the latest sounding, and
+show a package-review summary before generation. Cloud Chamber does not fetch
+remote sounding archives in v1. The converted package anchors CM1 `z = 0` to
+the station surface elevation, converts geopotential height above mean sea
+level into model height above the station, preserves station/location/elevation,
+valid time, source format, units, wind metadata, and caveats, and renders a
+numeric CM1-readable `input_sounding`. Current observed wind values are
+preserved as metadata only; the generated CM1 namelist keeps the validated
+external-sounding wind-handling path until a separate validation accepts
+observed-wind forcing.
+
 Explore should be a focused visualization plus explanation screen for one
 selected result. Its core interaction is `What happened here?`: select a cloud,
 updraft, clear-air thermal, or no-cloud region and receive a CM1-backed
@@ -483,6 +496,16 @@ runtime_file_checklist.json
 ```
 
 The current Baseline Shallow Cumulus recovery contract renders CM1-facing `namelist.input` from CM1's local `les_ShallowCu` reference path. The external-sounding reproduction keeps `testcase = 3`, the reference grid, runtime, domain top, Rayleigh damping, surface/ocean/flux settings, surface stress path, and wind profile as much as possible, but switches the thermodynamic source from CM1's built-in BOMEX analytic sounding (`isnd = 19`) to CM1's external `input_sounding` route (`isnd = 17`). The generated `input_sounding` is a numeric CM1-readable BOMEX/Siebesma profile that extends above the 18 km model top.
+
+Observed IGRA sounding import uses the same external `input_sounding` route.
+The generated thermodynamic/moisture profile comes from the selected observed
+sounding after unit conversion and vertical-datum handling. The generated
+package records the selected station, valid time, uploaded filename,
+provider/format, model-bottom elevation, conversion choices, wind-handling
+limitation, validation status, and caveats in the run manifest, case manifest,
+and dry-run report. It must not imply location/date/radiation behavior beyond
+the observed-profile provenance; radiation remains whatever the scenario
+package currently configures.
 
 The first full-sequence NetCDF ingest of `dry-run-157b09a178e1` found 25 model-output files and 25 time steps, but no usable cloud or vertical velocity: `max_qc_kg_kg = 0.0`, `max_w_m_s = 0.0`, and multiple NaN/Infinity caveats in surface and thermodynamic fields. The generated quick-look package therefore now uses a fixed small ocean roughness length (`set_znt = 1`, `cnst_znt = 0.0002`) instead of the reference dynamic roughness / fixed friction-velocity path that produced invalid local output.
 

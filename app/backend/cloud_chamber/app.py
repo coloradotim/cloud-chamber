@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 from pathlib import Path
 from typing import Any, cast
 from uuid import uuid4
@@ -20,6 +21,7 @@ from cloud_chamber.lan_worker import (
     start_lan_worker_run,
 )
 from cloud_chamber.local_run_manager import LocalRunManager, LocalRunManagerError, RunStatus
+from cloud_chamber.observed_sounding import ObservedSoundingError, parse_igra_station_text
 from cloud_chamber.result_cards import (
     ResultCardUpdate,
     get_result_card,
@@ -81,6 +83,13 @@ class DryRunRequest(BaseModel):
     scenario_id: str = "baseline-shallow-cumulus"
     controls: dict[str, str | float | bool] = Field(default_factory=dict)
     run_size_preset: str = "quick_look"
+    observed_sounding: dict[str, object] | None = None
+
+
+class ObservedSoundingParseRequest(BaseModel):
+    uploaded_filename: str
+    text: str
+    selected_time_utc: str | None = None
 
 
 class LaunchRunRequest(BaseModel):
@@ -121,6 +130,7 @@ def create_dry_run_package(request: DryRunRequest) -> dict[str, Any]:
         run_id=f"dry-run-{uuid4().hex[:12]}",
         controls=request.controls,
         run_size_preset=request.run_size_preset,
+        observed_sounding=request.observed_sounding,
     )
     report = read_dry_run_report(result.report_path)
     return {
@@ -130,6 +140,24 @@ def create_dry_run_package(request: DryRunRequest) -> dict[str, Any]:
         "generated_files": [str(path) for path in result.generated_files],
         "report": report,
     }
+
+
+@app.post("/api/observed-soundings/parse")
+def parse_observed_sounding(request: ObservedSoundingParseRequest) -> dict[str, object]:
+    try:
+        selected_time = (
+            datetime.fromisoformat(request.selected_time_utc.replace("Z", "+00:00"))
+            if request.selected_time_utc
+            else None
+        )
+        result = parse_igra_station_text(
+            request.text,
+            uploaded_filename=request.uploaded_filename,
+            selected_time_utc=selected_time,
+        )
+    except ObservedSoundingError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return result.model_dump(mode="json")
 
 
 @app.post("/api/runs/launch")

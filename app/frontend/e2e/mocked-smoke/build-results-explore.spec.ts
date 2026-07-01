@@ -53,6 +53,34 @@ test.describe("mocked smoke: Build, Results, Explore path", () => {
     await expect(page.getByRole("heading", { name: "Experiment Notebook" })).toBeVisible();
   });
 
+  test("Build can review an observed IGRA sounding before package creation", async ({
+    page,
+  }) => {
+    await gotoBuild(page);
+
+    await page.getByLabel("Use uploaded sounding").check();
+    await page.getByLabel("IGRA station sounding-data file").setInputFiles({
+      name: "USM00072558-data.txt",
+      mimeType: "text/plain",
+      buffer: Buffer.from("#USM00072558 2025 01 02 00"),
+    });
+
+    await expect(page.getByText("Observed sounding validated for package review")).toBeVisible();
+    await expect(page.getByText("USM00072558 · Valley, Nebraska")).toBeVisible();
+    await expect(page.locator("#observed-sounding-time")).toHaveValue("2025-01-02T00:00:00Z");
+    await expect(page.getByText(/CM1 z=0 is station surface at 351.5 m MSL/i)).toBeVisible();
+    await expect(page.getByText(/observed winds metadata only/i)).toBeVisible();
+
+    await page.getByText("Observed-sounding caveats").click();
+    await expect(page.getByText("Station elevation joined from igra station fixture")).toBeVisible();
+
+    await page.getByTestId("create-package-btn").scrollIntoViewIfNeeded();
+    await page.getByTestId("create-package-btn").click();
+
+    await expect(page.getByText("Package ready").first()).toBeVisible();
+    await expect(page.getByText("/tmp/cloud-chamber-e2e/run/run_manifest.json")).toBeVisible();
+  });
+
   test("Results notebook, Compare, and Storage render with mocked data", async ({ page }) => {
     await gotoResults(page);
 

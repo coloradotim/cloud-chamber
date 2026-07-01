@@ -18,6 +18,7 @@ from cloud_chamber.cm1_input_contract import (
     render_input_sounding_notes,
     render_namelist_fragment,
 )
+from cloud_chamber.observed_sounding import ObservedSoundingRecord, observed_sounding_from_payload
 from cloud_chamber.run_manifest import (
     AppMetadata,
     GeneratedInputs,
@@ -56,6 +57,7 @@ def generate_dry_run_package(
     user_name: str | None = None,
     allow_overwrite: bool = False,
     app_commit: str | None = None,
+    observed_sounding: dict[str, object] | ObservedSoundingRecord | None = None,
 ) -> DryRunPackageResult:
     scenario = validate_scenario_template(scenario_data)
     selected_controls = controls or {}
@@ -66,10 +68,13 @@ def generate_dry_run_package(
         raise DryRunPackageError(f"Run package already exists: {package_dir}")
     package_dir.mkdir(parents=True, exist_ok=allow_overwrite)
 
+    observed_record = _observed_sounding_record(observed_sounding)
+
     contract = build_cm1_input_contract(
         scenario,
         selected_controls=selected_controls,
         run_size_preset=run_size_preset,
+        observed_sounding=observed_record,
     )
     now = datetime.now(UTC)
 
@@ -109,6 +114,9 @@ def generate_dry_run_package(
         created_at=now,
         updated_at=now,
         user=UserMetadata(name=user_name or scenario.display_name),
+        observed_sounding=(
+            observed_record.model_dump(mode="json") if observed_record is not None else None
+        ),
     )
 
     case_manifest = _case_manifest_payload(scenario, contract)
@@ -160,6 +168,19 @@ def _validate_selected_controls(
         raise DryRunPackageError("Unknown controls: " + ", ".join(unknown_controls))
 
 
+def _observed_sounding_record(
+    observed_sounding: dict[str, object] | ObservedSoundingRecord | None,
+) -> ObservedSoundingRecord | None:
+    if observed_sounding is None:
+        return None
+    if isinstance(observed_sounding, ObservedSoundingRecord):
+        return observed_sounding
+    try:
+        return observed_sounding_from_payload(observed_sounding)
+    except Exception as exc:
+        raise DryRunPackageError(f"Invalid observed sounding: {exc}") from exc
+
+
 def _effective_controls(
     scenario: ScenarioTemplate,
     selected_controls: dict[str, str | float | bool],
@@ -193,7 +214,7 @@ def _case_manifest_payload(
             "CM1-ready provisional baseline package; still pending local/manual smoke-run "
             "scientific validation"
         ),
-        "contract": asdict(contract),
+        "contract": _contract_payload(contract),
     }
 
 
@@ -215,15 +236,31 @@ def _dry_run_report_payload(
         "variant_metadata": {
             "moisture_profile": contract.moisture_profile,
             "stability_profile": contract.stability_profile,
+            "sounding_source": (
+                "observed_igra_station_text"
+                if contract.observed_sounding is not None
+                else "generated_reference"
+            ),
             "low_level_humidity": manifest.controls.get("low_level_humidity"),
             "cap_strength": manifest.controls.get("cap_strength"),
             "cap_height": manifest.controls.get("cap_height"),
             "mapping": (
-                "external input_sounding profile; namelist settings remain inherited from the "
-                "validated baseline; capped/suppressed variants change only stability near the "
-                "cap when cap_strength is stronger"
+                "observed IGRA external input_sounding profile; namelist settings remain "
+                "inherited from the validated baseline; observed winds are preserved as metadata "
+                "while isnd=17/iwnd=9 keeps reference wind handling"
+                if contract.observed_sounding is not None
+                else (
+                    "external input_sounding profile; namelist settings remain inherited from "
+                    "the validated baseline; capped/suppressed variants change only stability "
+                    "near the cap when cap_strength is stronger"
+                )
             ),
         },
+        "observed_sounding": (
+            _observed_sounding_summary(contract.observed_sounding)
+            if contract.observed_sounding is not None
+            else None
+        ),
         "run_size_preset": manifest.run_size_preset,
         "run_size_details": run_size_details,
         "estimated_cost_or_size": run_size_details["cost_warning"],
@@ -236,6 +273,37 @@ def _dry_run_report_payload(
             "preview_is_guidance_only": manifest.provenance.preview_is_guidance_only,
             "visualizer_is_interpretation": manifest.provenance.visualizer_is_interpretation,
         },
+    }
+
+
+def _contract_payload(contract: CM1InputContract) -> dict[str, object]:
+    payload = asdict(contract)
+    if contract.observed_sounding is not None:
+        payload["observed_sounding"] = contract.observed_sounding.model_dump(mode="json")
+    return payload
+
+
+def _observed_sounding_summary(record: ObservedSoundingRecord) -> dict[str, object]:
+    return {
+        "source_provider": record.source_provider,
+        "source_format": record.source_format,
+        "uploaded_filename": record.uploaded_filename,
+        "station_id": record.station_id,
+        "station_name": record.station_name,
+        "station_latitude": record.station_latitude,
+        "station_longitude": record.station_longitude,
+        "station_elevation_m_msl": record.station_elevation_m_msl,
+        "valid_time_utc": record.valid_time_utc.isoformat(),
+        "source_vertical_coordinate_type": record.source_vertical_coordinate_type,
+        "model_bottom_elevation_m_msl": record.model_bottom_elevation_m_msl,
+        "usable_levels": len(record.levels),
+        "lowest_model_z_m": record.levels[0].model_z_m if record.levels else None,
+        "highest_model_z_m": record.levels[-1].model_z_m if record.levels else None,
+        "wind_handling": record.wind_handling,
+        "validation_status": record.validation.status,
+        "validation_errors": record.validation.errors,
+        "caveats": record.validation.caveats,
+        "provenance": record.provenance,
     }
 
 

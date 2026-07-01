@@ -90,6 +90,7 @@ type DryRunReport = {
     preview_is_guidance_only: boolean;
     visualizer_is_interpretation: boolean;
   };
+  observed_sounding?: ObservedSoundingSummary | null;
 };
 
 type DryRunResponse = {
@@ -98,6 +99,85 @@ type DryRunResponse = {
   report_path: string;
   generated_files: string[];
   report: DryRunReport;
+};
+
+type SoundingTimeSummary = {
+  station_id: string;
+  valid_time_utc: string;
+  source_time_text: string;
+  num_levels: number;
+  pressure_source: string;
+  non_pressure_source: string;
+};
+
+type ObservedSoundingLevel = {
+  pressure_pa: number;
+  source_height_m_msl: number;
+  model_z_m: number;
+  temperature_c: number;
+  potential_temperature_k: number;
+  qv_g_kg: number;
+  wind_direction_degrees?: number | null;
+  wind_speed_m_s?: number | null;
+  u_wind_m_s?: number | null;
+  v_wind_m_s?: number | null;
+};
+
+type ObservedSoundingRecord = {
+  source_type: string;
+  source_provider: string;
+  source_format: string;
+  uploaded_filename: string;
+  station_id: string;
+  station_name?: string | null;
+  station_latitude?: number | null;
+  station_longitude?: number | null;
+  station_elevation_m_msl: number;
+  valid_time_utc: string;
+  source_time_text: string;
+  source_units: Record<string, string>;
+  converted_cm1_units: Record<string, string>;
+  source_vertical_coordinate_type: string;
+  model_bottom_elevation_m_msl: number;
+  levels: ObservedSoundingLevel[];
+  wind_handling: string;
+  conversion_choices: Record<string, string>;
+  validation: {
+    status: string;
+    errors: string[];
+    caveats: string[];
+  };
+  provenance: Record<string, string>;
+};
+
+type ObservedSoundingParseResponse = {
+  source_provider: string;
+  source_format: string;
+  uploaded_filename: string;
+  available_soundings: SoundingTimeSummary[];
+  selected_sounding: ObservedSoundingRecord;
+};
+
+type ObservedSoundingSummary = {
+  source_provider: string;
+  source_format: string;
+  uploaded_filename: string;
+  station_id: string;
+  station_name?: string | null;
+  station_latitude?: number | null;
+  station_longitude?: number | null;
+  station_elevation_m_msl: number;
+  valid_time_utc: string;
+  source_vertical_coordinate_type: string;
+  model_bottom_elevation_m_msl: number;
+  usable_levels: number;
+  lowest_model_z_m: number | null;
+  highest_model_z_m: number | null;
+  wind_handling: string;
+  validation_status: string;
+  validation_errors: string[];
+  caveats: string[];
+  provenance: Record<string, string>;
 };
 
 type RunStatusResponse = {
@@ -534,6 +614,7 @@ async function requestDryRunPackage(
   scenarioId: string,
   controls: Record<string, string | number | boolean>,
   runSizePreset: string,
+  observedSounding?: ObservedSoundingRecord | null,
 ): Promise<DryRunResponse> {
   const response = await fetch("/api/dry-run-package", {
     method: "POST",
@@ -542,12 +623,52 @@ async function requestDryRunPackage(
       scenario_id: scenarioId,
       controls,
       run_size_preset: runSizePreset,
+      observed_sounding: observedSounding ?? null,
     }),
   });
   if (!response.ok) {
     throw new Error("Unable to create dry-run package.");
   }
   return response.json() as Promise<DryRunResponse>;
+}
+
+async function parseObservedSoundingUpload(
+  uploadedFilename: string,
+  text: string,
+  selectedTimeUtc?: string | null,
+): Promise<ObservedSoundingParseResponse> {
+  const response = await fetch("/api/observed-soundings/parse", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      uploaded_filename: uploadedFilename,
+      text,
+      selected_time_utc: selectedTimeUtc ?? null,
+    }),
+  });
+  if (!response.ok) {
+    throw new Error(await responseError(response, "Unable to parse observed sounding."));
+  }
+  return response.json() as Promise<ObservedSoundingParseResponse>;
+}
+
+async function readUploadedTextFile(file: File): Promise<string> {
+  const textMethod = (file as Blob & { text?: () => Promise<string> }).text;
+  if (typeof textMethod === "function") {
+    return textMethod.call(file);
+  }
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (typeof reader.result === "string") {
+        resolve(reader.result);
+        return;
+      }
+      reject(new Error("Unable to read uploaded sounding as text."));
+    };
+    reader.onerror = () => reject(reader.error ?? new Error("Unable to read uploaded sounding."));
+    reader.readAsText(file);
+  });
 }
 
 async function launchLocalRun(manifestPath: string): Promise<RunStatusResponse> {
@@ -835,6 +956,13 @@ export function App() {
   const [selectedScenarioId, setSelectedScenarioId] = useState("baseline-shallow-cumulus");
   const [controls, setControls] = useState<Record<string, string | number | boolean>>({});
   const [runSizePreset, setRunSizePreset] = useState("quick_look");
+  const [observedSoundingMode, setObservedSoundingMode] = useState(false);
+  const [observedSoundingFilename, setObservedSoundingFilename] = useState<string | null>(null);
+  const [observedSoundingText, setObservedSoundingText] = useState<string | null>(null);
+  const [observedSoundingParse, setObservedSoundingParse] =
+    useState<ObservedSoundingParseResponse | null>(null);
+  const [observedSoundingStatus, setObservedSoundingStatus] = useState<string | null>(null);
+  const [observedSoundingError, setObservedSoundingError] = useState<string | null>(null);
   const [dryRun, setDryRun] = useState<DryRunResponse | null>(null);
   const [runStatus, setRunStatus] = useState<RunStatusResponse | null>(null);
   const [runWorkflowError, setRunWorkflowError] = useState<string | null>(null);
@@ -998,6 +1126,12 @@ export function App() {
     );
     setControls(defaults);
     setRunSizePreset(selectedScenario.run_size_presets[0]?.id ?? "quick_look");
+    setObservedSoundingMode(false);
+    setObservedSoundingFilename(null);
+    setObservedSoundingText(null);
+    setObservedSoundingParse(null);
+    setObservedSoundingStatus(null);
+    setObservedSoundingError(null);
     setDryRun(null);
     setRunStatus(null);
     setRunWorkflowError(null);
@@ -1062,6 +1196,10 @@ export function App() {
   async function handleDryRun(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!selectedScenario || validationMessages.length > 0) return;
+    if (observedSoundingMode && !observedSoundingParse?.selected_sounding) {
+      setObservedSoundingError("Upload and validate an IGRA sounding before creating a package.");
+      return;
+    }
     setStatus("Creating dry-run package");
     setError(null);
     setDryRun(null);
@@ -1072,13 +1210,65 @@ export function App() {
     setLanWorkerActionStatus(null);
     setIngestedResultId(null);
     try {
-      const result = await requestDryRunPackage(selectedScenario.id, controls, runSizePreset);
+      const result = await requestDryRunPackage(
+        selectedScenario.id,
+        controls,
+        runSizePreset,
+        observedSoundingMode ? observedSoundingParse?.selected_sounding : null,
+      );
       setDryRun(result);
       setStatus("Packaged dry-run output");
       await refreshStorageAfterWorkflow("Package added to local pipeline");
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Unable to create dry-run package.");
       setStatus("Scenario setup");
+    }
+  }
+
+  async function handleObservedSoundingFile(file: File) {
+    setObservedSoundingFilename(file.name);
+    setObservedSoundingStatus("Reading observed sounding file...");
+    setObservedSoundingError(null);
+    setObservedSoundingParse(null);
+    setDryRun(null);
+    setRunStatus(null);
+    setLanWorkerStatus(null);
+    try {
+      const text = await readUploadedTextFile(file);
+      setObservedSoundingText(text);
+      setObservedSoundingStatus("Parsing observed sounding...");
+      const parsed = await parseObservedSoundingUpload(file.name, text);
+      setObservedSoundingParse(parsed);
+      setObservedSoundingStatus("Observed sounding validated for package review");
+    } catch (caught) {
+      setObservedSoundingText(null);
+      setObservedSoundingError(
+        caught instanceof Error ? caught.message : "Unable to parse observed sounding.",
+      );
+      setObservedSoundingStatus("Observed sounding blocked");
+    }
+  }
+
+  async function handleObservedSoundingTimeChange(validTimeUtc: string) {
+    if (!observedSoundingFilename || observedSoundingText === null) return;
+    setObservedSoundingStatus("Validating selected sounding time...");
+    setObservedSoundingError(null);
+    setDryRun(null);
+    setRunStatus(null);
+    setLanWorkerStatus(null);
+    try {
+      const parsed = await parseObservedSoundingUpload(
+        observedSoundingFilename,
+        observedSoundingText,
+        validTimeUtc,
+      );
+      setObservedSoundingParse(parsed);
+      setObservedSoundingStatus("Observed sounding validated for package review");
+    } catch (caught) {
+      setObservedSoundingError(
+        caught instanceof Error ? caught.message : "Unable to validate selected sounding.",
+      );
+      setObservedSoundingStatus("Observed sounding blocked");
     }
   }
 
@@ -1469,6 +1659,10 @@ export function App() {
           selectedScenarioId={selectedScenarioId}
           controls={controls}
           runSizePreset={runSizePreset}
+          observedSoundingMode={observedSoundingMode}
+          observedSoundingParse={observedSoundingParse}
+          observedSoundingStatus={observedSoundingStatus}
+          observedSoundingError={observedSoundingError}
           validationMessages={validationMessages}
           dryRun={dryRun}
           runStatus={runStatus}
@@ -1492,6 +1686,9 @@ export function App() {
             }))
           }
           onRunSizeChange={setRunSizePreset}
+          onObservedSoundingModeChange={setObservedSoundingMode}
+          onObservedSoundingFile={handleObservedSoundingFile}
+          onObservedSoundingTimeChange={handleObservedSoundingTimeChange}
           onDryRun={handleDryRun}
           onLaunchRun={handleLaunchRun}
           onRefreshRunStatus={handleRefreshRunStatus}
@@ -1599,6 +1796,10 @@ function BuildWorkspace({
   selectedScenarioId,
   controls,
   runSizePreset,
+  observedSoundingMode,
+  observedSoundingParse,
+  observedSoundingStatus,
+  observedSoundingError,
   validationMessages,
   dryRun,
   runStatus,
@@ -1617,6 +1818,9 @@ function BuildWorkspace({
   onSelectScenario,
   onControlChange,
   onRunSizeChange,
+  onObservedSoundingModeChange,
+  onObservedSoundingFile,
+  onObservedSoundingTimeChange,
   onDryRun,
   onLaunchRun,
   onRefreshRunStatus,
@@ -1646,6 +1850,10 @@ function BuildWorkspace({
   selectedScenarioId: string;
   controls: Record<string, string | number | boolean>;
   runSizePreset: string;
+  observedSoundingMode: boolean;
+  observedSoundingParse: ObservedSoundingParseResponse | null;
+  observedSoundingStatus: string | null;
+  observedSoundingError: string | null;
   validationMessages: string[];
   dryRun: DryRunResponse | null;
   runStatus: RunStatusResponse | null;
@@ -1664,6 +1872,9 @@ function BuildWorkspace({
   onSelectScenario: (scenarioId: string) => void;
   onControlChange: (controlId: string, value: string) => void;
   onRunSizeChange: (presetId: string) => void;
+  onObservedSoundingModeChange: (enabled: boolean) => void;
+  onObservedSoundingFile: (file: File) => void;
+  onObservedSoundingTimeChange: (validTimeUtc: string) => void;
   onDryRun: (event: FormEvent<HTMLFormElement>) => void;
   onLaunchRun: () => void;
   onRefreshRunStatus: () => void;
@@ -1810,6 +2021,16 @@ function BuildWorkspace({
                 ))}
               </section>
 
+              <ObservedSoundingInputPanel
+                enabled={observedSoundingMode}
+                parsed={observedSoundingParse}
+                status={observedSoundingStatus}
+                error={observedSoundingError}
+                onModeChange={onObservedSoundingModeChange}
+                onFile={onObservedSoundingFile}
+                onTimeChange={onObservedSoundingTimeChange}
+              />
+
               <label className="field-label" htmlFor="run-size">
                 Run-size preset
               </label>
@@ -1867,7 +2088,10 @@ function BuildWorkspace({
             lanWorkerActionStatus={lanWorkerActionStatus}
             ingestedResultId={ingestedResultId}
             showCreatePackageAction={scenarioControlsReady}
-            canCreatePackage={validationMessages.length === 0}
+            canCreatePackage={
+              validationMessages.length === 0 &&
+              (!observedSoundingMode || Boolean(observedSoundingParse?.selected_sounding))
+            }
             onLaunchRun={onLaunchRun}
             onRefreshRunStatus={onRefreshRunStatus}
             onLaunchLanWorkerRun={onLaunchLanWorkerRun}
@@ -1918,6 +2142,147 @@ function ScenarioStatePanel({
         <button type="button" onClick={onAction}>
           {actionLabel}
         </button>
+      )}
+    </section>
+  );
+}
+
+function ObservedSoundingInputPanel({
+  enabled,
+  parsed,
+  status,
+  error,
+  onModeChange,
+  onFile,
+  onTimeChange,
+}: {
+  enabled: boolean;
+  parsed: ObservedSoundingParseResponse | null;
+  status: string | null;
+  error: string | null;
+  onModeChange: (enabled: boolean) => void;
+  onFile: (file: File) => void;
+  onTimeChange: (validTimeUtc: string) => void;
+}) {
+  const selected = parsed?.selected_sounding;
+
+  return (
+    <section className="experiment-summary observed-sounding-panel" aria-labelledby="observed-sounding-title">
+      <div className="panel-heading-row">
+        <div>
+          <p className="eyebrow">Observed sounding</p>
+          <h3 id="observed-sounding-title">Use NOAA/NCEI IGRA station text</h3>
+        </div>
+        <label className="toggle-row">
+          <input
+            type="checkbox"
+            checked={enabled}
+            onChange={(event) => onModeChange(event.target.checked)}
+          />
+          Use uploaded sounding
+        </label>
+      </div>
+
+      <p className="field-help">
+        Upload an extracted IGRA station sounding-data .txt file. Cloud Chamber anchors CM1 z=0 to
+        the station surface and keeps place/time/source metadata as provenance.
+      </p>
+
+      {enabled && (
+        <>
+          <label className="field-label" htmlFor="observed-sounding-file">
+            IGRA station sounding-data file
+          </label>
+          <input
+            id="observed-sounding-file"
+            type="file"
+            accept=".txt,text/plain"
+            onChange={(event) => {
+              const file = event.currentTarget.files?.[0];
+              if (file) onFile(file);
+            }}
+          />
+
+          {status && <p className="inline-status">{status}</p>}
+          {error && (
+            <div className="validation" role="alert">
+              <p>{error}</p>
+            </div>
+          )}
+
+          {parsed && selected && (
+            <section className="observed-sounding-review" aria-label="Observed sounding review">
+              <div className="control-row">
+                <span>
+                  <label htmlFor="observed-sounding-time">
+                    <strong>Selected sounding time</strong>
+                  </label>
+                  <small>
+                    Latest available is selected by default. Choose another time from the uploaded
+                    station file if needed.
+                  </small>
+                </span>
+                <select
+                  id="observed-sounding-time"
+                  value={selected.valid_time_utc}
+                  onChange={(event) => onTimeChange(event.target.value)}
+                >
+                  {parsed.available_soundings.map((sounding) => (
+                    <option key={sounding.valid_time_utc} value={sounding.valid_time_utc}>
+                      {formatDate(sounding.valid_time_utc)} · {sounding.num_levels} source levels
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <dl className="compact-metrics">
+                <Metric label="Source" value={`${parsed.source_provider} · ${parsed.source_format}`} />
+                <Metric label="Uploaded file" value={parsed.uploaded_filename} />
+                <Metric
+                  label="Station"
+                  value={`${selected.station_id}${selected.station_name ? ` · ${selected.station_name}` : ""}`}
+                />
+                <Metric
+                  label="Location"
+                  value={
+                    selected.station_latitude !== null &&
+                    selected.station_latitude !== undefined &&
+                    selected.station_longitude !== null &&
+                    selected.station_longitude !== undefined
+                      ? `${formatNumber(selected.station_latitude, "deg")}, ${formatNumber(selected.station_longitude, "deg")}`
+                      : "Not available"
+                  }
+                />
+                <Metric
+                  label="Model bottom / vertical datum"
+                  value={`CM1 z=0 is station surface at ${formatNumber(selected.model_bottom_elevation_m_msl, "m MSL")}`}
+                />
+                <Metric
+                  label="Source heights"
+                  value={`${humanize(selected.source_vertical_coordinate_type)} converted to height above station surface`}
+                />
+                <Metric
+                  label="Converted model z range"
+                  value={`${formatNumber(selected.levels[0]?.model_z_m ?? null, "m")} to ${formatNumber(selected.levels.at(-1)?.model_z_m ?? null, "m")}`}
+                />
+                <Metric label="Usable levels" value={selected.levels.length.toString()} />
+                <Metric label="Wind handling" value={humanize(selected.wind_handling)} />
+                <Metric label="Validation" value={humanize(selected.validation.status)} />
+              </dl>
+
+              {selected.validation.caveats.length > 0 && (
+                <details>
+                  <summary>Observed-sounding caveats</summary>
+                  <ul className="compact-list">
+                    {selected.validation.caveats.map((caveat) => (
+                      <li key={caveat}>{humanize(caveat)}</li>
+                    ))}
+                  </ul>
+                </details>
+              )}
+            </section>
+          )}
+        </>
       )}
     </section>
   );

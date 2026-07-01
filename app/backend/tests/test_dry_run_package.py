@@ -2,8 +2,10 @@ import json
 from pathlib import Path
 
 import pytest
+from igra_fixtures import IGRA_FIXTURE
 
 from cloud_chamber.dry_run_package import DryRunPackageError, generate_dry_run_package
+from cloud_chamber.observed_sounding import parse_igra_station_text
 from cloud_chamber.run_manifest import load_run_manifest
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -73,6 +75,40 @@ def test_dry_run_manifest_and_report_include_golden_path_metadata(tmp_path: Path
     assert report["run_size_details"]["runtime_seconds"] == 21600
     assert report["run_size_details"]["output_cadence_seconds"] == 3600
     assert report["run_size_details"]["expected_output_frames"] == 7
+
+
+def test_dry_run_package_can_use_observed_igra_sounding(tmp_path: Path) -> None:
+    observed = parse_igra_station_text(
+        IGRA_FIXTURE,
+        uploaded_filename="USM00072558-data-beg2025.txt",
+    ).selected_sounding
+
+    result = generate_dry_run_package(
+        scenario_data=load_baseline_template(),
+        runtime_home=tmp_path,
+        run_id="run-observed-sounding",
+        run_size_preset="quick_look",
+        observed_sounding=observed,
+    )
+
+    manifest = load_run_manifest(result.manifest_path)
+    report = json.loads(result.report_path.read_text())
+    case_manifest = json.loads((result.package_dir / "case_manifest.json").read_text())
+    sounding = (result.package_dir / "input_sounding").read_text()
+    namelist = (result.package_dir / "namelist.input").read_text()
+
+    assert manifest.observed_sounding is not None
+    assert manifest.observed_sounding["station_id"] == "USM00072558"
+    assert manifest.observed_sounding["model_bottom_elevation_m_msl"] == pytest.approx(351.5)
+    assert report["variant_metadata"]["sounding_source"] == "observed_igra_station_text"
+    assert report["observed_sounding"]["station_name"] == "Valley, Nebraska"
+    assert report["observed_sounding"]["usable_levels"] >= 5
+    assert case_manifest["contract"]["observed_sounding"]["station_id"] == "USM00072558"
+    assert "isnd      = 17," in namelist
+    assert "iwnd      =  9," in namelist
+    assert "USM00072558" not in sounding
+    assert float(sounding.splitlines()[1].split()[0]) == pytest.approx(0.0)
+    assert float(sounding.splitlines()[-1].split()[0]) > 18000
 
 
 def test_dry_run_package_refuses_to_overwrite_existing_run_dir(tmp_path: Path) -> None:

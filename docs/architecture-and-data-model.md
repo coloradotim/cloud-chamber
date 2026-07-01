@@ -64,6 +64,13 @@ package-generation changes should preserve observed sounding metadata,
 place/time/source provenance, conversion choices, and caveats before exposing
 new product controls.
 
+The v1 observed-sounding implementation is a local upload path for extracted
+NOAA/NCEI IGRA station sounding-data text files. The backend owns parsing,
+validation, unit conversion, vertical-datum handling, and CM1 `input_sounding`
+rendering. The frontend sends uploaded text to the backend, receives a bounded
+review payload, and passes the selected sounding record into dry-run package
+generation; it does not parse sounding files into CM1-ready data itself.
+
 ## Suggested Stack
 
 This is not final, but a reasonable starting point:
@@ -150,6 +157,19 @@ model-output time steps over 10800 seconds, and retained cloud formation,
 vertical motion, and rain. The architecture can now treat external-sounding
 Baseline Shallow Cumulus as the accepted profile path for one-factor moisture
 experiments.
+
+Observed IGRA packages reuse that accepted external-sounding route. The
+observed record is stored with package metadata and includes station id/name,
+latitude/longitude/elevation when known, selected valid time, uploaded
+filename, source provider/format, source units, converted CM1 units,
+model-bottom elevation above mean sea level, levels relative to the station
+surface, validation status, and caveats. For v1, only the thermodynamic and
+moisture profile is generated into `input_sounding`; observed wind direction
+and speed remain metadata/provenance while the namelist preserves the validated
+external-sounding wind path (`isnd = 17`, `iwnd = 9`). Missing station elevation
+or profiles that do not cover the model depth must block package generation or
+surface an explicit `needs_review` caveat instead of silently normalizing to sea
+level.
 
 Dry Failed Cumulus should branch from this validated reference-derived family,
 not from the invalid compact quick-look derivative. Architecturally, it is a

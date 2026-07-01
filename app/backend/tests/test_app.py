@@ -4,6 +4,7 @@ from pathlib import Path
 import pytest
 import xarray as xr
 from fastapi.testclient import TestClient
+from igra_fixtures import IGRA_FIXTURE
 
 from cloud_chamber.app import app
 from cloud_chamber.dry_run_package import generate_dry_run_package
@@ -104,6 +105,39 @@ def test_create_dry_run_package_api_uses_runtime_home_override(
     assert payload["report"]["not_a_completed_cm1_result"] is True
     assert payload["report"]["cm1_was_launched"] is False
     assert not list(tmp_path.glob("**/*.nc"))
+
+
+def test_parse_observed_sounding_api_returns_igra_review_payload() -> None:
+    response = TestClient(app).post(
+        "/api/observed-soundings/parse",
+        json={
+            "uploaded_filename": "USM00072558-data-beg2025.txt",
+            "text": IGRA_FIXTURE,
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["source_provider"] == "NOAA/NCEI IGRA"
+    assert len(payload["available_soundings"]) == 2
+    selected = payload["selected_sounding"]
+    assert selected["station_id"] == "USM00072558"
+    assert selected["station_name"] == "Valley, Nebraska"
+    assert selected["model_bottom_elevation_m_msl"] == pytest.approx(351.5)
+    assert selected["source_vertical_coordinate_type"] == "geopotential_height_msl"
+    assert selected["levels"][0]["model_z_m"] == pytest.approx(0.5)
+    assert selected["levels"][-1]["model_z_m"] > 18000
+    assert "metadata_only" in selected["wind_handling"]
+
+
+def test_parse_observed_sounding_api_blocks_malformed_upload() -> None:
+    response = TestClient(app).post(
+        "/api/observed-soundings/parse",
+        json={"uploaded_filename": "not-igra.txt", "text": "not a sounding"},
+    )
+
+    assert response.status_code == 400
+    assert "No IGRA sounding headers" in response.json()["detail"]
 
 
 def test_launch_run_api_returns_status(monkeypatch: pytest.MonkeyPatch) -> None:
