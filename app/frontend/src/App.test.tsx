@@ -1724,6 +1724,7 @@ describe("App", () => {
     expect(screen.getByRole("heading", { name: "Packages and runs needing action" })).toBeInTheDocument();
     expect(screen.getAllByText("Not packaged yet").length).toBeGreaterThan(0);
     expect(screen.getByText("No package has been created from the current setup in this browser session.")).toBeInTheDocument();
+    expect(screen.getByLabelText("Experiment")).toHaveTextContent("Upload a Sounding");
     expect(screen.getByText("Build pipeline")).toBeInTheDocument();
     expect(screen.queryByText("Local experiment loop")).not.toBeInTheDocument();
     expect(screen.queryByText("namelist.input")).not.toBeInTheDocument();
@@ -1762,7 +1763,18 @@ describe("App", () => {
     expect(
       await screen.findByRole("heading", { name: "Experiment setup summary" }),
     ).toBeInTheDocument();
-    fireEvent.click(screen.getByLabelText("Use uploaded sounding"));
+    fireEvent.change(screen.getByLabelText("Experiment"), {
+      target: { value: "__observed_sounding_upload__" },
+    });
+
+    expect(await screen.findByRole("heading", { name: "Upload a Sounding" })).toBeInTheDocument();
+    expect(screen.getByText("Observed sounding profile, Surface heating")).toBeInTheDocument();
+    expect(screen.getByLabelText("Low-level humidity")).toBeDisabled();
+    expect(screen.getByLabelText("Surface heating")).not.toBeDisabled();
+    expect(
+      screen.queryByLabelText("Use uploaded sounding"),
+    ).not.toBeInTheDocument();
+
     const file = new File(["#USM00072558 2025 01 02 00"], "USM00072558-data-beg2025.txt", {
       type: "text/plain",
     });

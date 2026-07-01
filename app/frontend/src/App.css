@@ -276,6 +276,24 @@ small {
   font-weight: 500;
 }
 
+.control-row-disabled {
+  color: var(--color-text-muted);
+  background: rgba(247, 250, 252, 0.7);
+  border-radius: 8px;
+  padding: 0.9rem;
+}
+
+.control-row-disabled select {
+  color: var(--color-text-muted);
+  background: var(--color-surface-muted);
+  cursor: not-allowed;
+}
+
+.control-lock-note {
+  grid-column: 1 / -1;
+  color: var(--color-text-muted);
+}
+
 .experiment-summary {
   border: 1px solid var(--color-border);
   border-radius: 8px;

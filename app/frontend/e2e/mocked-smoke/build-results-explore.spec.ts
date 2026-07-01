@@ -58,7 +58,13 @@ test.describe("mocked smoke: Build, Results, Explore path", () => {
   }) => {
     await gotoBuild(page);
 
-    await page.getByLabel("Use uploaded sounding").check();
+    await page.getByLabel("Experiment", { exact: true }).selectOption("__observed_sounding_upload__");
+    await expect(page.getByRole("heading", { name: "Upload a Sounding" })).toBeVisible();
+    await expect(page.getByText("Observed sounding profile, Surface heating")).toBeVisible();
+    await expect(page.getByLabel("Low-level humidity")).toBeDisabled();
+    await expect(page.getByLabel("Surface heating")).toBeEnabled();
+    await expect(page.getByLabel("Use uploaded sounding")).not.toBeVisible();
+
     await page.getByLabel("IGRA station sounding-data file").setInputFiles({
       name: "USM00072558-data.txt",
       mimeType: "text/plain",

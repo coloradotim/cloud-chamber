@@ -601,6 +601,9 @@ type ProcessMode =
 type SceneSlicePlane = "horizontal" | "vertical_x" | "vertical_y";
 
 const FIELD_LOAD_TIMEOUT_MS = 30000;
+const OBSERVED_SOUNDING_EXPERIMENT_ID = "__observed_sounding_upload__";
+const OBSERVED_SOUNDING_BASE_SCENARIO_ID = "baseline-shallow-cumulus";
+const OBSERVED_SOUNDING_EDITABLE_CONTROLS = new Set(["surface_heating"]);
 
 async function fetchScenarioCatalog(): Promise<ScenarioResponse> {
   const response = await fetch("/api/scenarios");
@@ -956,7 +959,6 @@ export function App() {
   const [selectedScenarioId, setSelectedScenarioId] = useState("baseline-shallow-cumulus");
   const [controls, setControls] = useState<Record<string, string | number | boolean>>({});
   const [runSizePreset, setRunSizePreset] = useState("quick_look");
-  const [observedSoundingMode, setObservedSoundingMode] = useState(false);
   const [observedSoundingFilename, setObservedSoundingFilename] = useState<string | null>(null);
   const [observedSoundingText, setObservedSoundingText] = useState<string | null>(null);
   const [observedSoundingParse, setObservedSoundingParse] =
@@ -1101,9 +1103,16 @@ export function App() {
   }, []);
 
   const selectedScenario = useMemo(
-    () => scenarios.find((scenario) => scenario.id === selectedScenarioId) ?? scenarios[0],
+    () =>
+      scenarios.find((scenario) =>
+        selectedScenarioId === OBSERVED_SOUNDING_EXPERIMENT_ID
+          ? scenario.id === OBSERVED_SOUNDING_BASE_SCENARIO_ID
+          : scenario.id === selectedScenarioId,
+      ) ?? scenarios[0],
     [scenarios, selectedScenarioId],
   );
+  const observedSoundingExperimentSelected =
+    selectedScenarioId === OBSERVED_SOUNDING_EXPERIMENT_ID;
 
   const selectedResult = useMemo(
     () => results.find((result) => result.result_id === selectedResultId) ?? results[0],
@@ -1126,7 +1135,6 @@ export function App() {
     );
     setControls(defaults);
     setRunSizePreset(selectedScenario.run_size_presets[0]?.id ?? "quick_look");
-    setObservedSoundingMode(false);
     setObservedSoundingFilename(null);
     setObservedSoundingText(null);
     setObservedSoundingParse(null);
@@ -1139,7 +1147,7 @@ export function App() {
     setLanWorkerError(null);
     setLanWorkerActionStatus(null);
     setIngestedResultId(null);
-  }, [selectedScenario]);
+  }, [observedSoundingExperimentSelected, selectedScenario]);
 
   useEffect(() => {
     if (!selectedResult) return;
@@ -1196,7 +1204,7 @@ export function App() {
   async function handleDryRun(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!selectedScenario || validationMessages.length > 0) return;
-    if (observedSoundingMode && !observedSoundingParse?.selected_sounding) {
+    if (observedSoundingExperimentSelected && !observedSoundingParse?.selected_sounding) {
       setObservedSoundingError("Upload and validate an IGRA sounding before creating a package.");
       return;
     }
@@ -1214,7 +1222,7 @@ export function App() {
         selectedScenario.id,
         controls,
         runSizePreset,
-        observedSoundingMode ? observedSoundingParse?.selected_sounding : null,
+        observedSoundingExperimentSelected ? observedSoundingParse?.selected_sounding : null,
       );
       setDryRun(result);
       setStatus("Packaged dry-run output");
@@ -1657,9 +1665,9 @@ export function App() {
           scenarios={scenarios}
           selectedScenario={selectedScenario}
           selectedScenarioId={selectedScenarioId}
+          observedSoundingExperimentSelected={observedSoundingExperimentSelected}
           controls={controls}
           runSizePreset={runSizePreset}
-          observedSoundingMode={observedSoundingMode}
           observedSoundingParse={observedSoundingParse}
           observedSoundingStatus={observedSoundingStatus}
           observedSoundingError={observedSoundingError}
@@ -1686,7 +1694,6 @@ export function App() {
             }))
           }
           onRunSizeChange={setRunSizePreset}
-          onObservedSoundingModeChange={setObservedSoundingMode}
           onObservedSoundingFile={handleObservedSoundingFile}
           onObservedSoundingTimeChange={handleObservedSoundingTimeChange}
           onDryRun={handleDryRun}
@@ -1794,9 +1801,9 @@ function BuildWorkspace({
   scenarios,
   selectedScenario,
   selectedScenarioId,
+  observedSoundingExperimentSelected,
   controls,
   runSizePreset,
-  observedSoundingMode,
   observedSoundingParse,
   observedSoundingStatus,
   observedSoundingError,
@@ -1818,7 +1825,6 @@ function BuildWorkspace({
   onSelectScenario,
   onControlChange,
   onRunSizeChange,
-  onObservedSoundingModeChange,
   onObservedSoundingFile,
   onObservedSoundingTimeChange,
   onDryRun,
@@ -1848,9 +1854,9 @@ function BuildWorkspace({
   scenarios: Scenario[];
   selectedScenario: Scenario | undefined;
   selectedScenarioId: string;
+  observedSoundingExperimentSelected: boolean;
   controls: Record<string, string | number | boolean>;
   runSizePreset: string;
-  observedSoundingMode: boolean;
   observedSoundingParse: ObservedSoundingParseResponse | null;
   observedSoundingStatus: string | null;
   observedSoundingError: string | null;
@@ -1872,7 +1878,6 @@ function BuildWorkspace({
   onSelectScenario: (scenarioId: string) => void;
   onControlChange: (controlId: string, value: string) => void;
   onRunSizeChange: (presetId: string) => void;
-  onObservedSoundingModeChange: (enabled: boolean) => void;
   onObservedSoundingFile: (file: File) => void;
   onObservedSoundingTimeChange: (validTimeUtc: string) => void;
   onDryRun: (event: FormEvent<HTMLFormElement>) => void;
@@ -1927,6 +1932,9 @@ function BuildWorkspace({
                 {scenario.display_name}
               </option>
             ))}
+            {scenarios.some((scenario) => scenario.id === OBSERVED_SOUNDING_BASE_SCENARIO_ID) && (
+              <option value={OBSERVED_SOUNDING_EXPERIMENT_ID}>Upload a Sounding</option>
+            )}
           </select>
 
           {scenarioLoadState === "loading" && (
@@ -1960,13 +1968,25 @@ function BuildWorkspace({
             <>
               <div className="hero-case">
                 <p className="eyebrow">Guided local CM1 experiment</p>
-                <h2>{selectedScenario.display_name}</h2>
-                <p>{selectedScenario.description}</p>
+                <h2>
+                  {observedSoundingExperimentSelected
+                    ? "Upload a Sounding"
+                    : selectedScenario.display_name}
+                </h2>
+                <p>
+                  {observedSoundingExperimentSelected
+                    ? "Use an observed IGRA sounding as the atmosphere profile while keeping Cloud Chamber's local CM1 package path and surface-heating control."
+                    : selectedScenario.description}
+                </p>
               </div>
 
               <section aria-labelledby="physical-question-title">
                 <h3 id="physical-question-title">Physical Question</h3>
-                <p>{selectedScenario.physical_question}</p>
+                <p>
+                  {observedSoundingExperimentSelected
+                    ? "What does CM1 do when initialized from this observed atmosphere, with surface heating as the controlled experiment lever?"
+                    : selectedScenario.physical_question}
+                </p>
               </section>
 
               <section className="experiment-summary" aria-labelledby="experiment-summary-title">
@@ -1979,57 +1999,57 @@ function BuildWorkspace({
                   />
                   <Metric
                     label="What changes"
-                    value={selectedScenario.controls.map((control) => control.label).join(", ")}
+                    value={
+                      observedSoundingExperimentSelected
+                        ? "Observed sounding profile, Surface heating"
+                        : selectedScenario.controls.map((control) => control.label).join(", ")
+                    }
                   />
                   <Metric
                     label="What stays controlled"
-                    value="CM1 remains the source of truth; raw namelist details stay in technical review."
+                    value={
+                      observedSoundingExperimentSelected
+                        ? "CM1 remains the source of truth; non-heating atmospheric controls are supplied by the uploaded sounding."
+                        : "CM1 remains the source of truth; raw namelist details stay in technical review."
+                    }
                   />
                 </dl>
               </section>
 
               <section aria-labelledby="controls-title">
                 <h3 id="controls-title">Curated Atmospheric Controls</h3>
-                {selectedScenario.controls.map((control) => (
-                  <div className="control-row" key={control.id}>
-                    <span>
-                      <label htmlFor={`control-${control.id}`}>
-                        <strong>{control.label}</strong>
-                      </label>
-                      <small>{control.description}</small>
-                      <small>
-                        Selected:{" "}
-                        {selectedControlOption(control, controls)?.label ??
-                          String(controls[control.id] ?? control.default)}
-                        .{" "}
-                        {selectedControlOption(control, controls)?.description ??
-                          "Supported scenario option; raw CM1 settings remain in technical review."}
-                      </small>
-                    </span>
-                    <select
-                      id={`control-${control.id}`}
-                      value={String(controls[control.id] ?? control.default)}
-                      onChange={(event) => onControlChange(control.id, event.target.value)}
-                    >
-                      {control.options.map((option) => (
-                        <option key={option.value} value={option.value}>
-                          {option.label}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                ))}
+                {observedSoundingExperimentSelected && (
+                  <p className="field-help">
+                    The uploaded sounding supplies the temperature, moisture, cap, and wind profile.
+                    Surface heating remains editable so you can test how the observed atmosphere
+                    responds to boundary-layer forcing.
+                  </p>
+                )}
+                {selectedScenario.controls.map((control) => {
+                  const lockedBySounding =
+                    observedSoundingExperimentSelected &&
+                    !OBSERVED_SOUNDING_EDITABLE_CONTROLS.has(control.id);
+                  return (
+                    <BuildControlRow
+                      key={control.id}
+                      control={control}
+                      value={controls[control.id] ?? control.default}
+                      locked={lockedBySounding}
+                      onChange={(value) => onControlChange(control.id, value)}
+                    />
+                  );
+                })}
               </section>
 
-              <ObservedSoundingInputPanel
-                enabled={observedSoundingMode}
-                parsed={observedSoundingParse}
-                status={observedSoundingStatus}
-                error={observedSoundingError}
-                onModeChange={onObservedSoundingModeChange}
-                onFile={onObservedSoundingFile}
-                onTimeChange={onObservedSoundingTimeChange}
-              />
+              {observedSoundingExperimentSelected && (
+                <ObservedSoundingInputPanel
+                  parsed={observedSoundingParse}
+                  status={observedSoundingStatus}
+                  error={observedSoundingError}
+                  onFile={onObservedSoundingFile}
+                  onTimeChange={onObservedSoundingTimeChange}
+                />
+              )}
 
               <label className="field-label" htmlFor="run-size">
                 Run-size preset
@@ -2087,11 +2107,12 @@ function BuildWorkspace({
             lanWorkerError={lanWorkerError}
             lanWorkerActionStatus={lanWorkerActionStatus}
             ingestedResultId={ingestedResultId}
-            showCreatePackageAction={scenarioControlsReady}
-            canCreatePackage={
-              validationMessages.length === 0 &&
-              (!observedSoundingMode || Boolean(observedSoundingParse?.selected_sounding))
-            }
+          showCreatePackageAction={scenarioControlsReady}
+          canCreatePackage={
+            validationMessages.length === 0 &&
+              (!observedSoundingExperimentSelected ||
+                Boolean(observedSoundingParse?.selected_sounding))
+          }
             onLaunchRun={onLaunchRun}
             onRefreshRunStatus={onRefreshRunStatus}
             onLaunchLanWorkerRun={onLaunchLanWorkerRun}
@@ -2123,6 +2144,55 @@ function BuildWorkspace({
   );
 }
 
+function BuildControlRow({
+  control,
+  value,
+  locked,
+  onChange,
+}: {
+  control: ScenarioControl;
+  value: string | number | boolean;
+  locked: boolean;
+  onChange: (value: string) => void;
+}) {
+  const selectedOption = selectedControlOption(control, { [control.id]: value });
+  return (
+    <div className={`control-row${locked ? " control-row-disabled" : ""}`}>
+      <span>
+        <label htmlFor={`control-${control.id}`}>
+          <strong>{control.label}</strong>
+        </label>
+        <small>{control.description}</small>
+        <small>
+          Selected: {selectedOption?.label ?? String(value ?? control.default)}.{" "}
+          {locked
+            ? "Locked because the uploaded sounding supplies this atmospheric profile."
+            : selectedOption?.description ??
+              "Supported scenario option; raw CM1 settings remain in technical review."}
+        </small>
+      </span>
+      <select
+        id={`control-${control.id}`}
+        value={String(value ?? control.default)}
+        disabled={locked}
+        aria-describedby={locked ? `control-${control.id}-lock-note` : undefined}
+        onChange={(event) => onChange(event.target.value)}
+      >
+        {control.options.map((option) => (
+          <option key={option.value} value={option.value}>
+            {option.label}
+          </option>
+        ))}
+      </select>
+      {locked && (
+        <small id={`control-${control.id}-lock-note`} className="control-lock-note">
+          Upload a different sounding to change this part of the atmosphere.
+        </small>
+      )}
+    </div>
+  );
+}
+
 function ScenarioStatePanel({
   title,
   body,
@@ -2148,19 +2218,15 @@ function ScenarioStatePanel({
 }
 
 function ObservedSoundingInputPanel({
-  enabled,
   parsed,
   status,
   error,
-  onModeChange,
   onFile,
   onTimeChange,
 }: {
-  enabled: boolean;
   parsed: ObservedSoundingParseResponse | null;
   status: string | null;
   error: string | null;
-  onModeChange: (enabled: boolean) => void;
   onFile: (file: File) => void;
   onTimeChange: (validTimeUtc: string) => void;
 }) {
@@ -2173,14 +2239,6 @@ function ObservedSoundingInputPanel({
           <p className="eyebrow">Observed sounding</p>
           <h3 id="observed-sounding-title">Use NOAA/NCEI IGRA station text</h3>
         </div>
-        <label className="toggle-row">
-          <input
-            type="checkbox"
-            checked={enabled}
-            onChange={(event) => onModeChange(event.target.checked)}
-          />
-          Use uploaded sounding
-        </label>
       </div>
 
       <p className="field-help">
@@ -2188,30 +2246,28 @@ function ObservedSoundingInputPanel({
         the station surface and keeps place/time/source metadata as provenance.
       </p>
 
-      {enabled && (
-        <>
-          <label className="field-label" htmlFor="observed-sounding-file">
-            IGRA station sounding-data file
-          </label>
-          <input
-            id="observed-sounding-file"
-            type="file"
-            accept=".txt,text/plain"
-            onChange={(event) => {
-              const file = event.currentTarget.files?.[0];
-              if (file) onFile(file);
-            }}
-          />
+      <label className="field-label" htmlFor="observed-sounding-file">
+        IGRA station sounding-data file
+      </label>
+      <input
+        id="observed-sounding-file"
+        type="file"
+        accept=".txt,text/plain"
+        onChange={(event) => {
+          const file = event.currentTarget.files?.[0];
+          if (file) onFile(file);
+        }}
+      />
 
-          {status && <p className="inline-status">{status}</p>}
-          {error && (
-            <div className="validation" role="alert">
-              <p>{error}</p>
-            </div>
-          )}
+      {status && <p className="inline-status">{status}</p>}
+      {error && (
+        <div className="validation" role="alert">
+          <p>{error}</p>
+        </div>
+      )}
 
-          {parsed && selected && (
-            <section className="observed-sounding-review" aria-label="Observed sounding review">
+      {parsed && selected && (
+        <section className="observed-sounding-review" aria-label="Observed sounding review">
               <div className="control-row">
                 <span>
                   <label htmlFor="observed-sounding-time">
@@ -2280,9 +2336,7 @@ function ObservedSoundingInputPanel({
                   </ul>
                 </details>
               )}
-            </section>
-          )}
-        </>
+        </section>
       )}
     </section>
   );
