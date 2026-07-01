@@ -65,6 +65,9 @@ class ResultMetadata(BaseModel):
     source_lifecycle_state: str
     source_product_state: str
     source_model: str
+    input_source: str = "generated_reference"
+    input_source_label: str = "Generated reference"
+    observed_sounding: dict[str, Any] | None = None
     result_state: str = "ingested_result_metadata"
     raw_cm1_artifacts: list[str] = Field(default_factory=list)
     netcdf_paths: list[str] = Field(default_factory=list)
@@ -251,6 +254,9 @@ def _result_from_model_output_files(
         source_lifecycle_state=manifest.lifecycle_state.value,
         source_product_state=manifest.provenance.product_state.value,
         source_model=manifest.provenance.source_model,
+        input_source=_input_source(manifest),
+        input_source_label=_input_source_label(manifest),
+        observed_sounding=manifest.observed_sounding,
         raw_cm1_artifacts=manifest.outputs.raw_cm1_artifacts,
         netcdf_paths=[str(path) for path in netcdf_paths],
         model_output_paths=[str(path) for path in contributing_paths],
@@ -682,6 +688,9 @@ def _result_from_dataset(
         source_lifecycle_state=manifest.lifecycle_state.value,
         source_product_state=manifest.provenance.product_state.value,
         source_model=manifest.provenance.source_model,
+        input_source=_input_source(manifest),
+        input_source_label=_input_source_label(manifest),
+        observed_sounding=manifest.observed_sounding,
         raw_cm1_artifacts=manifest.outputs.raw_cm1_artifacts,
         netcdf_paths=[str(path) for path in netcdf_paths],
         model_output_paths=[str(path) for path in contributing_paths],
@@ -758,6 +767,23 @@ def _to_float_or_none(value: object) -> float | None:
         return float(cast(Any, value))
     except (TypeError, ValueError):
         return None
+
+
+def _input_source(manifest: RunManifest) -> str:
+    return "observed_sounding" if manifest.observed_sounding else "generated_reference"
+
+
+def _input_source_label(manifest: RunManifest) -> str:
+    observed = manifest.observed_sounding
+    if not observed:
+        return "Generated reference"
+    station_id = observed.get("station_id")
+    station_name = observed.get("station_name")
+    if station_id and station_name:
+        return f"Observed sounding: {station_id} · {station_name}"
+    if station_id:
+        return f"Observed sounding: {station_id}"
+    return "Observed sounding"
 
 
 def _diagnostics_summary(diagnostics: ResultDiagnostics) -> str:

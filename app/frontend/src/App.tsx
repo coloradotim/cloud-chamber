@@ -258,6 +258,57 @@ type OutputFileSummary = {
   last_output_time_seconds: number | null;
 };
 
+type InterestingTimeSupportState =
+  | "supported"
+  | "fallback"
+  | "unavailable"
+  | "unsupported_missing_fields"
+  | "unsupported_missing_diagnostic";
+
+type InterestingTimeRecord = {
+  key: string;
+  label: string;
+  time_index?: number | null;
+  time_seconds?: number | null;
+  source_time_value?: number | string | null;
+  source_field?: string | null;
+  source_diagnostic?: string | null;
+  value?: number | boolean | null;
+  units?: string | null;
+  support_state: InterestingTimeSupportState;
+  caveats: string[];
+  fallback_reason?: string | null;
+};
+
+type FieldDefaultTime = {
+  field: string;
+  time_index?: number | null;
+  time_seconds?: number | null;
+  source_interesting_time_key: string;
+  support_state: InterestingTimeSupportState;
+  fallback_reason?: string | null;
+  caveats: string[];
+};
+
+type ScienceSummary = {
+  first_cloud_time_seconds?: number | null;
+  first_cloud_time_label?: string | null;
+  max_qc_kg_kg?: number | null;
+  max_qc_time_seconds?: number | null;
+  max_updraft_w_m_s?: number | null;
+  max_updraft_time_seconds?: number | null;
+  min_downdraft_w_m_s?: number | null;
+  min_downdraft_time_seconds?: number | null;
+  highest_cloud_top_m?: number | null;
+  rain_onset_time_seconds?: number | null;
+  max_qr_kg_kg?: number | null;
+  latest_output_time_seconds?: number | null;
+  default_explore_time_index?: number | null;
+  default_explore_time_seconds?: number | null;
+  interesting_time_caveats: string[];
+  interesting_time_support_state: string;
+};
+
 type ResultCard = {
   result_id: string;
   run_id: string;
@@ -275,6 +326,9 @@ type ResultCard = {
   source_lifecycle_state: string;
   source_product_state: string;
   source_model: string;
+  input_source?: "generated_reference" | "observed_sounding" | string;
+  input_source_label?: string;
+  observed_sounding?: ObservedSoundingSummary | null;
   provenance_labels: string[];
   diagnostics_summary: string | null;
   thermal_fate_label?: string | null;
@@ -289,6 +343,10 @@ type ResultCard = {
   time_of_min_w_seconds?: number | null;
   rain_present: boolean | null;
   first_rain_time_seconds?: number | null;
+  interesting_times?: InterestingTimeRecord[];
+  default_time_by_field?: Record<string, FieldDefaultTime>;
+  science_summary?: ScienceSummary | null;
+  interesting_time_caveats?: string[];
   caveats: string[];
   output_file_summary: OutputFileSummary;
   created_at: string;
@@ -299,6 +357,27 @@ type ResultCard = {
 
 type ResultsResponse = {
   results: ResultCard[];
+};
+
+type ResultsBooleanFilter = "all" | "yes" | "no" | "unknown";
+type ResultsSortKey =
+  | "newest"
+  | "oldest"
+  | "name"
+  | "scenario"
+  | "first_cloud"
+  | "max_qc"
+  | "max_updraft"
+  | "rain_onset"
+  | "latest_output";
+
+type ResultsFilterState = {
+  search: string;
+  scenario: string;
+  preset: string;
+  cloud: ResultsBooleanFilter;
+  rain: ResultsBooleanFilter;
+  sort: ResultsSortKey;
 };
 
 type RunStorageEntry = {
@@ -2499,6 +2578,12 @@ function NotebookWorkspace({
   onCompare: () => void;
   onOpenResultInExplore: (resultId: string) => void;
 }) {
+  const [filters, setFilters] = useState<ResultsFilterState>(DEFAULT_RESULTS_FILTERS);
+  const scenarioOptions = useMemo(() => resultScenarioOptions(results), [results]);
+  const presetOptions = useMemo(() => resultPresetOptions(results), [results]);
+  const filteredResults = useMemo(() => filterAndSortResults(results, filters), [results, filters]);
+  const filtersActive = resultsFiltersActive(filters);
+
   return (
     <section
       className="workspace-section"
@@ -2508,19 +2593,31 @@ function NotebookWorkspace({
     >
       <div className="section-heading">
         <div>
-              <p className="eyebrow">Notebook</p>
-              <h3 id="notebook-title">Notebook entries</h3>
+          <p className="eyebrow">Notebook</p>
+          <h3 id="notebook-title">Notebook entries</h3>
         </div>
         <button type="button" onClick={onRefreshResults}>
           Refresh results
         </button>
       </div>
+      <ResultsFilterBar
+        filters={filters}
+        scenarioOptions={scenarioOptions}
+        presetOptions={presetOptions}
+        totalCount={results.length}
+        visibleCount={filteredResults.length}
+        onChange={setFilters}
+        onReset={() => setFilters(DEFAULT_RESULTS_FILTERS)}
+      />
       <div className="results-layout">
         <ExperimentNotebookList
-          results={results}
+          results={filteredResults}
+          totalResults={results.length}
+          filtersActive={filtersActive}
           selectedResultId={selectedResultId}
           onSelect={onSelectResult}
           onOpenExplore={onOpenResultInExplore}
+          onResetFilters={() => setFilters(DEFAULT_RESULTS_FILTERS)}
         />
         <ResultNotebookCard
           result={selectedResult}
@@ -2570,6 +2667,8 @@ function ExploreResultSummary({ result }: { result: ResultCard }) {
       <div className="badge-row">
         <OutcomeBadge result={result} />
         <StatusBadge label={rainOutcome(result.rain_present)} tone="neutral" />
+        <StatusBadge label={resultInputSourceLabel(result)} tone="neutral" />
+        <StatusBadge label={scienceSupportLabel(result)} tone="neutral" />
       </div>
     </section>
   );
@@ -4358,18 +4457,150 @@ function selectedControlOption(
   return control.options.find((option) => option.value === value);
 }
 
+function ResultsFilterBar({
+  filters,
+  scenarioOptions,
+  presetOptions,
+  totalCount,
+  visibleCount,
+  onChange,
+  onReset,
+}: {
+  filters: ResultsFilterState;
+  scenarioOptions: Array<{ value: string; label: string }>;
+  presetOptions: Array<{ value: string; label: string }>;
+  totalCount: number;
+  visibleCount: number;
+  onChange: (filters: ResultsFilterState) => void;
+  onReset: () => void;
+}) {
+  const update = (patch: Partial<ResultsFilterState>) => onChange({ ...filters, ...patch });
+
+  return (
+    <section className="results-filter-bar" aria-label="Filter and sort results">
+      <div className="results-filter-summary">
+        <p>
+          Showing <strong>{visibleCount}</strong> of <strong>{totalCount}</strong> notebook entries
+        </p>
+        <button
+          type="button"
+          className="secondary-button"
+          onClick={onReset}
+          disabled={!resultsFiltersActive(filters)}
+        >
+          Clear filters
+        </button>
+      </div>
+      <div className="results-filter-grid">
+        <label>
+          Search
+          <input
+            value={filters.search}
+            onChange={(event) => update({ search: event.target.value })}
+            placeholder="name, run, scenario, tag, station"
+          />
+        </label>
+        <label>
+          Scenario
+          <select value={filters.scenario} onChange={(event) => update({ scenario: event.target.value })}>
+            <option value="all">All scenarios</option>
+            {scenarioOptions.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label>
+          Run size
+          <select value={filters.preset} onChange={(event) => update({ preset: event.target.value })}>
+            <option value="all">All presets</option>
+            {presetOptions.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label>
+          Cloud
+          <select
+            aria-label="Cloud outcome"
+            value={filters.cloud}
+            onChange={(event) => update({ cloud: event.target.value as ResultsBooleanFilter })}
+          >
+            <option value="all">All</option>
+            <option value="yes">Cloud formed</option>
+            <option value="no">No cloud</option>
+            <option value="unknown">Unknown</option>
+          </select>
+        </label>
+        <label>
+          Rain
+          <select
+            aria-label="Rain outcome"
+            value={filters.rain}
+            onChange={(event) => update({ rain: event.target.value as ResultsBooleanFilter })}
+          >
+            <option value="all">All</option>
+            <option value="yes">Rain detected</option>
+            <option value="no">No rain</option>
+            <option value="unknown">Unknown</option>
+          </select>
+        </label>
+        <label>
+          Sort
+          <select
+            aria-label="Sort results"
+            value={filters.sort}
+            onChange={(event) => update({ sort: event.target.value as ResultsSortKey })}
+          >
+            <option value="newest">Newest first</option>
+            <option value="oldest">Oldest first</option>
+            <option value="name">Name A-Z</option>
+            <option value="scenario">Scenario</option>
+            <option value="first_cloud">First cloud time</option>
+            <option value="max_qc">Max qc</option>
+            <option value="max_updraft">Max updraft</option>
+            <option value="rain_onset">Rain onset</option>
+            <option value="latest_output">Latest output time</option>
+          </select>
+        </label>
+      </div>
+    </section>
+  );
+}
+
 function ExperimentNotebookList({
   results,
+  totalResults,
+  filtersActive,
   selectedResultId,
   onSelect,
   onOpenExplore,
+  onResetFilters,
 }: {
   results: ResultCard[];
+  totalResults: number;
+  filtersActive: boolean;
   selectedResultId: string | null;
   onSelect: (resultId: string) => void;
   onOpenExplore: (resultId: string) => void;
+  onResetFilters: () => void;
 }) {
   if (results.length === 0) {
+    if (filtersActive && totalResults > 0) {
+      return (
+        <section className="notebook-list-panel empty-results" aria-label="Results list">
+          <p className="eyebrow">No matches</p>
+          <h3>No results match the current filters.</h3>
+          <p>Try clearing filters or widening the search to see the full experiment notebook.</p>
+          <button type="button" onClick={onResetFilters}>
+            Clear filters
+          </button>
+        </section>
+      );
+    }
     return (
       <section className="notebook-list-panel empty-results" aria-label="Results list">
         <p className="eyebrow">Notebook empty</p>
@@ -4408,7 +4639,10 @@ function ExperimentNotebookList({
                 </p>
                 <div className="badge-row">
                   <OutcomeBadge result={result} />
+                  <StatusBadge label={rainOutcome(result.rain_present)} tone="neutral" />
+                  <StatusBadge label={resultInputSourceLabel(result)} tone="neutral" />
                 </div>
+                <p className="science-card-summary">{compactScienceSummary(result)}</p>
                 <p className="result-story">{resultStory(result)}</p>
               </div>
               <div className="experiment-card-actions">
@@ -4492,10 +4726,12 @@ function ResultNotebookCard({
       <dl className="metric-grid key-result-values">
         <Metric label="Cloud" value={cloudOutcome(result)} />
         <Metric label="Rain" value={rainOutcome(result.rain_present)} />
-        <Metric label="First cloud time" value={formatSeconds(result.first_cloud_time_seconds)} />
-        <Metric label="Max qc" value={formatScientific(result.max_qc_kg_kg, "kg/kg")} />
-        <Metric label="Max w" value={formatNumber(result.max_w_m_s, "m/s")} />
-        <Metric label="Min w" value={formatNumber(result.min_w_m_s, "m/s")} />
+        <Metric label="First cloud time" value={formatSeconds(resultFirstCloudTime(result))} />
+        <Metric label="Max qc" value={formatScientific(resultMaxQc(result), "kg/kg")} />
+        <Metric label="Max updraft" value={formatNumber(resultMaxUpdraft(result), "m/s")} />
+        <Metric label="Min downdraft" value={formatNumber(resultMinDowndraft(result), "m/s")} />
+        <Metric label="Cloud top" value={formatNumber(result.science_summary?.highest_cloud_top_m ?? null, "m")} />
+        <Metric label="Latest output" value={formatSeconds(resultLatestOutputTime(result))} />
       </dl>
 
       <details className="technical-details">
@@ -4507,6 +4743,7 @@ function ResultNotebookCard({
           <Metric label="Product state" value={result.source_product_state} />
           <Metric label="Result state" value={result.status} />
           <Metric label="Source model" value={result.source_model} />
+          <Metric label="Input source" value={result.input_source_label ?? resultInputSourceLabel(result)} />
           <Metric label="Output" value={outputSummary(result.output_file_summary)} />
           <Metric
             label="Raw diagnostics"
@@ -7135,9 +7372,111 @@ function resultsTabLabel(tab: ResultsTab): string {
   return labels[tab];
 }
 
+const DEFAULT_RESULTS_FILTERS: ResultsFilterState = {
+  search: "",
+  scenario: "all",
+  preset: "all",
+  cloud: "all",
+  rain: "all",
+  sort: "newest",
+};
+
 
 function prioritizeResults(results: ResultCard[]): ResultCard[] {
   return [...results].sort((left, right) => resultPriority(right) - resultPriority(left));
+}
+
+function filterAndSortResults(results: ResultCard[], filters: ResultsFilterState): ResultCard[] {
+  const query = filters.search.trim().toLowerCase();
+  return [...results]
+    .filter((result) => resultMatchesSearch(result, query))
+    .filter((result) => filters.scenario === "all" || result.scenario_id === filters.scenario)
+    .filter((result) => filters.preset === "all" || result.run_size_preset === filters.preset)
+    .filter((result) => matchesBooleanFilter(cloudOutcome(result), filters.cloud, "Cloud formed", "No cloud formed"))
+    .filter((result) => matchesBooleanFilter(rainOutcome(result.rain_present), filters.rain, "Rain detected", "No rain detected"))
+    .sort((left, right) => compareResults(left, right, filters.sort));
+}
+
+function resultsFiltersActive(filters: ResultsFilterState): boolean {
+  return JSON.stringify(filters) !== JSON.stringify(DEFAULT_RESULTS_FILTERS);
+}
+
+function resultScenarioOptions(results: ResultCard[]): Array<{ value: string; label: string }> {
+  const seen = new Map<string, string>();
+  for (const result of results) {
+    seen.set(result.scenario_id, result.scenario_name ?? humanize(result.scenario_id));
+  }
+  return [...seen.entries()]
+    .map(([value, label]) => ({ value, label }))
+    .sort((left, right) => left.label.localeCompare(right.label));
+}
+
+function resultPresetOptions(results: ResultCard[]): Array<{ value: string; label: string }> {
+  const seen = new Set(results.map((result) => result.run_size_preset));
+  return [...seen]
+    .map((value) => ({ value, label: humanize(value) }))
+    .sort((left, right) => left.label.localeCompare(right.label));
+}
+
+function resultMatchesSearch(result: ResultCard, query: string): boolean {
+  if (!query) return true;
+  return resultSearchText(result).includes(query);
+}
+
+function resultSearchText(result: ResultCard): string {
+  return [
+    result.name,
+    result.run_id,
+    result.result_id,
+    result.scenario_id,
+    result.scenario_name,
+    result.run_size_preset,
+    result.tags.join(" "),
+    result.notes,
+    result.input_source_label,
+    result.observed_sounding?.station_id,
+    result.observed_sounding?.station_name,
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+}
+
+function matchesBooleanFilter(
+  value: string,
+  filter: ResultsBooleanFilter,
+  yesValue: string,
+  noValue: string,
+): boolean {
+  if (filter === "all") return true;
+  if (filter === "yes") return value === yesValue;
+  if (filter === "no") return value === noValue;
+  return value === "Unknown";
+}
+
+function compareResults(left: ResultCard, right: ResultCard, sort: ResultsSortKey): number {
+  if (sort === "oldest") return dateSortValue(left) - dateSortValue(right);
+  if (sort === "name") return left.name.localeCompare(right.name);
+  if (sort === "scenario") {
+    return (left.scenario_name ?? left.scenario_id).localeCompare(right.scenario_name ?? right.scenario_id);
+  }
+  if (sort === "first_cloud") return nullableNumberSort(resultFirstCloudTime(left), resultFirstCloudTime(right), "asc");
+  if (sort === "max_qc") return nullableNumberSort(resultMaxQc(left), resultMaxQc(right), "desc");
+  if (sort === "max_updraft") return nullableNumberSort(resultMaxUpdraft(left), resultMaxUpdraft(right), "desc");
+  if (sort === "rain_onset") return nullableNumberSort(resultRainOnsetTime(left), resultRainOnsetTime(right), "asc");
+  if (sort === "latest_output") return nullableNumberSort(resultLatestOutputTime(left), resultLatestOutputTime(right), "desc");
+  return dateSortValue(right) - dateSortValue(left);
+}
+
+function nullableNumberSort(left: number | null, right: number | null, direction: "asc" | "desc"): number {
+  if (left === null && right === null) return 0;
+  if (left === null) return 1;
+  if (right === null) return -1;
+  return direction === "asc" ? left - right : right - left;
+}
+
+function dateSortValue(result: ResultCard): number {
+  return new Date(result.completed_at ?? result.created_at).getTime();
 }
 
 function resultPriority(result: ResultCard): number {
@@ -7228,6 +7567,58 @@ function resultStory(result: ResultCard): string {
     return "No cloud formed by the current diagnostic threshold. The vertical velocity field may still explain the thermal behavior.";
   }
   return result.diagnostics_summary ?? "Diagnostics are not available yet.";
+}
+
+function compactScienceSummary(result: ResultCard): string {
+  const parts = [
+    resultFirstCloudTime(result) !== null ? `first cloud ${formatSeconds(resultFirstCloudTime(result))}` : null,
+    resultMaxQc(result) !== null ? `max qc ${formatScientific(resultMaxQc(result), "kg/kg")}` : null,
+    resultMaxUpdraft(result) !== null ? `max updraft ${formatNumber(resultMaxUpdraft(result), "m/s")}` : null,
+    resultRainOnsetTime(result) !== null ? `rain onset ${formatSeconds(resultRainOnsetTime(result))}` : null,
+  ].filter(Boolean);
+  return parts.length > 0 ? parts.join(" · ") : "Science summary unavailable";
+}
+
+function resultFirstCloudTime(result: ResultCard): number | null {
+  return result.science_summary?.first_cloud_time_seconds ?? result.first_cloud_time_seconds;
+}
+
+function resultMaxQc(result: ResultCard): number | null {
+  return result.science_summary?.max_qc_kg_kg ?? result.max_qc_kg_kg;
+}
+
+function resultMaxUpdraft(result: ResultCard): number | null {
+  return result.science_summary?.max_updraft_w_m_s ?? result.max_w_m_s;
+}
+
+function resultMinDowndraft(result: ResultCard): number | null {
+  return result.science_summary?.min_downdraft_w_m_s ?? result.min_w_m_s;
+}
+
+function resultRainOnsetTime(result: ResultCard): number | null {
+  return result.science_summary?.rain_onset_time_seconds ?? result.first_rain_time_seconds ?? null;
+}
+
+function resultLatestOutputTime(result: ResultCard): number | null {
+  return result.science_summary?.latest_output_time_seconds ?? result.output_file_summary.last_output_time_seconds;
+}
+
+function resultInputSource(result: ResultCard): "generated_reference" | "observed_sounding" {
+  if (result.input_source === "observed_sounding") return "observed_sounding";
+  return "generated_reference";
+}
+
+function resultInputSourceLabel(result: ResultCard): string {
+  if (result.input_source_label) return result.input_source_label;
+  return resultInputSource(result) === "observed_sounding" ? "Observed sounding" : "Generated reference";
+}
+
+function scienceSupportLabel(result: ResultCard): string {
+  const state = result.science_summary?.interesting_time_support_state;
+  if (!state) return "Legacy summary";
+  if (state === "supported") return "Interesting times supported";
+  if (state === "fallback") return "Interesting-time fallback";
+  return "Interesting times limited";
 }
 
 function userFacingStatus(result: ResultCard): string {

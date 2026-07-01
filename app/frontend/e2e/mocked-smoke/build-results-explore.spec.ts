@@ -97,8 +97,8 @@ test.describe("mocked smoke: Build, Results, Explore path", () => {
     await expect(
       resultsList.getByText(/Cloud water formed in the validated quick-look baseline/i),
     ).toBeVisible();
-    await expect(page.getByText("Cloud formed").first()).toBeVisible();
-    await expect(page.getByText("Rain detected").first()).toBeVisible();
+    await expect(resultsList.getByText("Cloud formed").first()).toBeVisible();
+    await expect(resultsList.getByText("Rain detected").first()).toBeVisible();
     await expect(page.getByRole("button", { name: "Open in Explore" }).first()).toBeVisible();
     const resultDetail = page.getByLabel("Result detail");
     await resultDetail.getByText("Technical details").click();
@@ -118,6 +118,32 @@ test.describe("mocked smoke: Build, Results, Explore path", () => {
     await expect(page.getByText("Ready to ingest")).toBeVisible();
     await expect(page.getByRole("button", { name: "Ingest completed output" })).toBeVisible();
     await expect(page.getByText("Running CM1 process")).toBeVisible();
+  });
+
+  test("Results filters and sorts by science metadata", async ({ page }) => {
+    await gotoResults(page);
+
+    const filterBar = page.getByLabel("Filter and sort results");
+    const resultsList = page.getByLabel("Results list");
+
+    await expect(filterBar).toBeVisible();
+    await expect(resultsList.getByText(/first cloud 1,800 s/i).first()).toBeVisible();
+
+    await filterBar.getByLabel("Search").fill("Valley");
+    await expect(resultsList.getByText("Valley Observed Sounding — Quick Look")).toBeVisible();
+    await expect(resultsList.getByText("Observed sounding: USM00072558 · Valley, Nebraska")).toBeVisible();
+    await expect(resultsList.getByText("Baseline Shallow Cumulus — Quick Look")).toHaveCount(0);
+
+    await filterBar.getByLabel("Search").fill("");
+    await filterBar.getByLabel("Cloud outcome").selectOption("no");
+    await expect(resultsList.getByText("Dry Failed Cumulus — Quick Look")).toBeVisible();
+    await expect(resultsList.getByText("Valley Observed Sounding — Quick Look")).toHaveCount(0);
+
+    await filterBar.getByLabel("Cloud outcome").selectOption("all");
+    await filterBar.getByLabel("Sort results").selectOption("max_updraft");
+    await expect(resultsList.locator(".experiment-card").first()).toContainText(
+      "Valley Observed Sounding — Quick Look",
+    );
   });
 
   test("Results and Storage share lifecycle-aware local file actions", async ({ page }) => {
@@ -343,7 +369,7 @@ test.describe("mocked smoke: Build, Results, Explore path", () => {
   test("Explore field loading failure shows an error and retry instead of a stuck spinner", async ({
     page,
   }) => {
-    await page.route("**/api/results/result-baseline/visualization/fields", (route) =>
+    await page.route("**/api/results/*/visualization/fields", (route) =>
       route.fulfill({
         status: 503,
         contentType: "application/json",

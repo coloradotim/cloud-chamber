@@ -298,6 +298,9 @@ const resultCard = {
   source_lifecycle_state: "completed",
   source_product_state: "completed_cm1_result",
   source_model: "CM1",
+  input_source: "generated_reference",
+  input_source_label: "Generated reference",
+  observed_sounding: null,
   provenance_labels: [
     "source_model:CM1",
     "source_product_state:completed_cm1_result",
@@ -316,6 +319,61 @@ const resultCard = {
   time_of_min_w_seconds: 4500,
   rain_present: true,
   first_rain_time_seconds: 5400,
+  science_summary: {
+    first_cloud_time_seconds: 1800,
+    first_cloud_time_label: "1,800 s",
+    max_qc_kg_kg: 0.002192789688706398,
+    max_qc_time_seconds: 2700,
+    max_updraft_w_m_s: 6.866957187652588,
+    max_updraft_time_seconds: 3600,
+    min_downdraft_w_m_s: -4.21529483795166,
+    min_downdraft_time_seconds: 4500,
+    highest_cloud_top_m: 1940,
+    rain_onset_time_seconds: 5400,
+    max_qr_kg_kg: 2e-7,
+    latest_output_time_seconds: 10800,
+    default_explore_time_index: 3,
+    default_explore_time_seconds: 2700,
+    interesting_time_caveats: [],
+    interesting_time_support_state: "supported",
+  },
+  interesting_times: [
+    {
+      key: "first_cloud",
+      label: "First cloud",
+      time_index: 2,
+      time_seconds: 1800,
+      source_field: "qc",
+      source_diagnostic: "diagnostics.cloud.first_cloud_time_seconds",
+      value: true,
+      units: null,
+      support_state: "supported",
+      caveats: [],
+    },
+    {
+      key: "max_qc",
+      label: "Max cloud water",
+      time_index: 3,
+      time_seconds: 2700,
+      source_field: "qc",
+      source_diagnostic: "diagnostics.cloud.max_qc_kg_kg",
+      value: 0.002192789688706398,
+      units: "kg/kg",
+      support_state: "supported",
+      caveats: [],
+    },
+  ],
+  default_time_by_field: {
+    qc: {
+      field: "qc",
+      time_index: 3,
+      time_seconds: 2700,
+      source_interesting_time_key: "max_qc",
+      support_state: "supported",
+      caveats: [],
+    },
+  },
+  interesting_time_caveats: [],
   caveats: ["CM1 stderr reported floating-point exception flags: IEEE_INVALID_FLAG"],
   output_file_summary: {
     netcdf_count: 14,
@@ -363,6 +421,21 @@ const dryFailedCard = {
   time_of_min_w_seconds: 4500,
   rain_present: false,
   first_rain_time_seconds: null,
+  science_summary: {
+    ...resultCard.science_summary,
+    first_cloud_time_seconds: null,
+    first_cloud_time_label: null,
+    max_qc_kg_kg: 0,
+    max_qc_time_seconds: null,
+    max_updraft_w_m_s: 1.949130654335022,
+    max_updraft_time_seconds: 3600,
+    min_downdraft_w_m_s: -1.0865488052368164,
+    min_downdraft_time_seconds: 4500,
+    rain_onset_time_seconds: null,
+    max_qr_kg_kg: 0,
+    interesting_time_support_state: "fallback",
+    interesting_time_caveats: ["no_cloud_formed"],
+  },
   caveats: ["cloud_base_top_unavailable:no_cloud_cells"],
   created_at: "2026-05-22T19:20:00Z",
   completed_at: "2026-05-22T19:50:00Z",
@@ -399,6 +472,18 @@ const cappedCard = {
   time_of_min_w_seconds: 4500,
   rain_present: true,
   first_rain_time_seconds: 7200,
+  science_summary: {
+    ...resultCard.science_summary,
+    first_cloud_time_seconds: 2700,
+    max_qc_kg_kg: 0.0004778,
+    max_qc_time_seconds: 3600,
+    max_updraft_w_m_s: 3.1,
+    max_updraft_time_seconds: 3600,
+    min_downdraft_w_m_s: -1.8,
+    min_downdraft_time_seconds: 4500,
+    rain_onset_time_seconds: 7200,
+    max_qr_kg_kg: 1e-7,
+  },
   caveats: ["cap_layer_annotation_is_proxy_without_full_cap_diagnostics"],
   created_at: "2026-05-26T01:56:34Z",
   completed_at: "2026-05-26T02:15:00Z",
@@ -438,8 +523,54 @@ const emptyVisualizerCard = {
   caveats: ["missing_visualization_fields"],
 };
 
+const observedSoundingResultCard = {
+  ...resultCard,
+  result_id: "result-observed-sounding",
+  run_id: "dry-run-observed-sounding",
+  name: "Valley observed sounding quick-look",
+  tags: ["observed-sounding", "valley"],
+  scenario_id: "observed-sounding",
+  scenario_name: "Observed Sounding",
+  input_source: "observed_sounding",
+  input_source_label: "Observed sounding: USM00072558 · Valley, Nebraska",
+  science_summary: {
+    ...resultCard.science_summary,
+    max_updraft_w_m_s: 9.25,
+    max_updraft_time_seconds: 3600,
+    max_qc_kg_kg: 0.0014,
+  },
+  observed_sounding: {
+    source_provider: "NOAA/NCEI IGRA",
+    source_format: "igra_station_text",
+    uploaded_filename: "USM00072558-data.txt",
+    station_id: "USM00072558",
+    station_name: "Valley, Nebraska",
+    station_latitude: 41.32,
+    station_longitude: -96.3669,
+    station_elevation_m_msl: 351.5,
+    valid_time_utc: "2026-06-30T00:00:00Z",
+    source_vertical_coordinate_type: "geopotential_height",
+    model_bottom_elevation_m_msl: 351.5,
+    usable_levels: 48,
+    lowest_model_z_m: 0,
+    highest_model_z_m: 18000,
+    wind_handling: "observed_winds_metadata_only",
+    validation_status: "valid",
+    validation_errors: [],
+    caveats: [],
+    provenance: {},
+  },
+};
+
 const resultsResponse = {
-  results: [resultCard, dryFailedCard, cappedCard, missingDiagnosticsCard, emptyVisualizerCard],
+  results: [
+    resultCard,
+    dryFailedCard,
+    cappedCard,
+    observedSoundingResultCard,
+    missingDiagnosticsCard,
+    emptyVisualizerCard,
+  ],
 };
 
 const storageRuns = [
@@ -1695,6 +1826,11 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+async function openSelectedResultInExplore() {
+  const resultDetail = await screen.findByLabelText("Result detail");
+  fireEvent.click(within(resultDetail).getByRole("button", { name: "Open in Explore" }));
+}
+
 describe("App", () => {
   it("renders guided Build setup with extensible experiment metadata", async () => {
     render(<App />);
@@ -2335,6 +2471,74 @@ describe("App", () => {
     expect(within(resultDetail).getByRole("button", { name: "Open in Explore" })).toBeEnabled();
   });
 
+  it("renders science summary and observed-sounding source metadata in Results", async () => {
+    render(<App />);
+
+    expect(await screen.findByRole("heading", { name: "Experiment Notebook" })).toBeInTheDocument();
+    expect(screen.getAllByText(/first cloud 1,800 s/).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/max qc 2.193e-3 kg\/kg/).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/max updraft 6.867 m\/s/).length).toBeGreaterThan(0);
+    expect(
+      screen.getAllByText("Observed sounding: USM00072558 · Valley, Nebraska").length,
+    ).toBeGreaterThan(0);
+
+    fireEvent.click(screen.getByRole("button", { name: "Valley observed sounding quick-look" }));
+    const resultDetail = screen.getByLabelText("Result detail");
+    expect(resultDetail).toHaveTextContent("Observed sounding: USM00072558 · Valley, Nebraska");
+    expect(resultDetail).toHaveTextContent("Input source");
+  });
+
+  it("filters Results by search text and cloud/rain outcomes", async () => {
+    render(<App />);
+
+    expect(await screen.findByRole("heading", { name: "Experiment Notebook" })).toBeInTheDocument();
+    const filterBar = screen.getByLabelText("Filter and sort results");
+    const resultsList = screen.getByLabelText("Results list");
+
+    fireEvent.change(within(filterBar).getByLabelText("Search"), { target: { value: "Valley" } });
+    expect(within(resultsList).getByText("Valley observed sounding quick-look")).toBeInTheDocument();
+    expect(within(resultsList).queryByText("Quick-look shallow cumulus")).not.toBeInTheDocument();
+
+    fireEvent.change(within(filterBar).getByLabelText("Search"), { target: { value: "dry failed" } });
+    expect(within(resultsList).getByText("Dry Failed Cumulus quick-look")).toBeInTheDocument();
+    expect(within(resultsList).queryByText("Valley observed sounding quick-look")).not.toBeInTheDocument();
+
+    fireEvent.change(within(filterBar).getByLabelText("Search"), { target: { value: "" } });
+    fireEvent.change(within(filterBar).getByLabelText("Cloud"), { target: { value: "no" } });
+    expect(within(resultsList).getByText("Dry Failed Cumulus quick-look")).toBeInTheDocument();
+    expect(within(resultsList).getAllByText("No cloud formed").length).toBeGreaterThan(0);
+
+    fireEvent.change(within(filterBar).getByLabelText("Cloud"), { target: { value: "all" } });
+    fireEvent.change(within(filterBar).getByLabelText("Rain"), { target: { value: "yes" } });
+    expect(within(resultsList).getAllByText("Rain detected").length).toBeGreaterThan(0);
+    expect(within(resultsList).queryByText("Dry Failed Cumulus quick-look")).not.toBeInTheDocument();
+  });
+
+  it("sorts Results by science metrics and resets empty filters", async () => {
+    render(<App />);
+
+    expect(await screen.findByRole("heading", { name: "Experiment Notebook" })).toBeInTheDocument();
+    const filterBar = screen.getByLabelText("Filter and sort results");
+    const resultsList = screen.getByLabelText("Results list");
+
+    fireEvent.change(within(filterBar).getByLabelText("Sort"), { target: { value: "max_updraft" } });
+    const sortedCards = resultsList.querySelectorAll(".experiment-card");
+    expect(sortedCards[0]).toHaveTextContent("Valley observed sounding quick-look");
+    expect(sortedCards[0]).toHaveTextContent("max updraft 9.25 m/s");
+
+    fireEvent.change(within(filterBar).getByLabelText("Search"), {
+      target: { value: "no result has this phrase" },
+    });
+    expect(screen.getByText("No results match the current filters.")).toBeInTheDocument();
+    expect(
+      within(filterBar).getByText((_, node) => node?.textContent === "Showing 0 of 6 notebook entries"),
+    ).toBeInTheDocument();
+
+    fireEvent.click(within(filterBar).getByRole("button", { name: "Clear filters" }));
+    expect(within(resultsList).getByText("Quick-look shallow cumulus")).toBeInTheDocument();
+    expect(within(resultsList).getByText("Valley observed sounding quick-look")).toBeInTheDocument();
+  });
+
   it("accepts legacy array results responses without crashing", async () => {
     vi.mocked(fetch).mockImplementation((input: RequestInfo | URL) => {
       const url = String(input);
@@ -2559,7 +2763,6 @@ describe("App", () => {
     expect(screen.getAllByText("Diagnostics unavailable").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Unknown").length).toBeGreaterThan(0);
     expect(screen.getAllByText("No rain detected").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("Unavailable").length).toBeGreaterThan(0);
     expect(screen.getByText("missing_qc_field")).toBeInTheDocument();
     expect(screen.getByText("missing_w_field")).toBeInTheDocument();
     expect(screen.queryByText(/horizontal slice/i)).not.toBeInTheDocument();
@@ -3300,7 +3503,7 @@ describe("App", () => {
 
     render(<App />);
 
-    fireEvent.click((await screen.findAllByRole("button", { name: "Open in Explore" }))[0]);
+    await openSelectedResultInExplore();
 
     expect(await screen.findByRole("alert")).toHaveTextContent(
       "Visualization fields temporarily failed.",
@@ -3318,7 +3521,7 @@ describe("App", () => {
   it("renders cloud-water context in unified Explore", async () => {
     render(<App />);
 
-    fireEvent.click((await screen.findAllByRole("button", { name: "Open in Explore" }))[0]);
+    await openSelectedResultInExplore();
 
     expect(await screen.findByRole("heading", { name: "What happened in this result?" })).toBeInTheDocument();
     await screen.findAllByText("Cloud-water point layer loaded");
@@ -3391,7 +3594,7 @@ describe("App", () => {
   it("supports qc and w slice planes synced to Explore time", async () => {
     render(<App />);
 
-    fireEvent.click((await screen.findAllByRole("button", { name: "Open in Explore" }))[0]);
+    await openSelectedResultInExplore();
     await screen.findAllByText("Cloud-water point layer loaded");
 
     const viewer = screen.getByLabelText("True 3-D scalar field viewer");
@@ -3445,7 +3648,7 @@ describe("App", () => {
   it("uses shared controls to switch field and slice context", async () => {
     render(<App />);
 
-    fireEvent.click((await screen.findAllByRole("button", { name: "Open in Explore" }))[0]);
+    await openSelectedResultInExplore();
     await screen.findAllByText("Cloud-water point layer loaded");
 
     fireEvent.click(screen.getByRole("button", { name: "Vertical x-z slice" }));
@@ -3472,7 +3675,7 @@ describe("App", () => {
   it("updates and resets true 3-D camera controls", async () => {
     render(<App />);
 
-    fireEvent.click((await screen.findAllByRole("button", { name: "Open in Explore" }))[0]);
+    await openSelectedResultInExplore();
     await screen.findAllByText("Cloud-water point layer loaded");
 
     const cameraControls = screen.getByLabelText("3-D camera controls");
@@ -3500,7 +3703,7 @@ describe("App", () => {
   it("updates cloud-water threshold opacity point size and time requests", async () => {
     render(<App />);
 
-    fireEvent.click((await screen.findAllByRole("button", { name: "Open in Explore" }))[0]);
+    await openSelectedResultInExplore();
     await screen.findAllByText("Cloud-water point layer loaded");
 
     fireEvent.change(screen.getByLabelText("Cloud-water threshold"), { target: { value: "1" } });

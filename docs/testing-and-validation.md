@@ -303,6 +303,15 @@ lifecycle/product states, controls, provenance labels, and detailed warnings
 remain available under technical-details disclosure instead of dominating the
 primary notebook view.
 
+Results science-filtering tests should use mocked Result Card payloads with
+`science_summary`, `interesting_times`, `default_time_by_field`, input-source
+metadata, and observed-sounding provenance. Component tests should cover search,
+scenario/run-size filters, cloud/rain filters, observed-sounding discovery via
+scenario/search, science-metric sorting, and empty-filter states. Playwright
+mocked-smoke tests should cover at least one browser path that narrows to an
+observed-sounding result and sorts by a science-derived metric without requiring
+real CM1 output.
+
 Guided local run workflow tests should mock the backend API sequence rather
 than launching CM1: package generation, launch request, running status, completed
 status with output-artifact counts, ingest request, and post-ingest actions into
