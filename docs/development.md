@@ -2,7 +2,7 @@
 
 Cloud Chamber is a local-first, personal-use CM1 experiment builder, run manager, and visualizer. CM1 is the high-fidelity simulation engine; Cloud Chamber should make CM1 easier to configure, run, inspect, visualize, and learn from.
 
-The first Golden Path is Baseline Shallow Cumulus. Saved results are meant to be replayed and inspected as experiment notebook entries. Optional remote compute is future research only, not a development dependency for the MVP.
+The first Golden Path is Baseline Shallow Cumulus. Saved results are meant to be replayed and inspected as experiment notebook entries. Optional remote/cloud compute is not a development dependency for the MVP. The near-term heavier-run path is a trusted LAN worker documented in [Trusted LAN Worker CM1 Setup](research/lan-worker-cm1-setup.md), with the MacBook still acting as Cloud Chamber's system of record.
 
 Replay / inspect / save is core MVP. Duplicate / tweak / rerun is later. Warm rain remains early, but it does not block the Baseline Shallow Cumulus Golden Path.
 
