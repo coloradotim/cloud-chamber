@@ -400,6 +400,13 @@ CM1 may write a completed run as a sequence of NetCDF model-output files such as
 
 Result metadata records model-output paths separately from stats NetCDF paths, skipped/corrupt files, contributing model-output file count, total time steps, first/last output time, and whether time came directly from a NetCDF coordinate or an inferred fallback.
 
+Ingest also writes the first output-product summary fields into result
+metadata: interesting-time records, per-field default time choices, a compact
+science summary for Results filtering/sorting, and caveats from interesting-time
+resolution. These fields are derived from CM1 diagnostics and the output-product
+manifest time index. They do not replace raw NetCDF output, and they do not give
+the browser permission to infer file/time mapping or parse NetCDF directly.
+
 ### Result Cards / Experiment Notebook Entries
 
 The backend result-card layer is the product-facing view over ingested metadata.
@@ -810,6 +817,14 @@ from result diagnostics: first cloud time when present, otherwise time of max
 cloud water when available, otherwise the latest output time. This prevents the
 validated Baseline Shallow Cumulus quick-look result from opening at an empty
 `t=0` frame when clouds form later.
+
+When present, `science_summary` and `default_time_by_field` provide the
+metadata-backed version of that startup choice. Cloud-forming fields can open at
+their supported diagnostic landmark, while no-cloud or missing-field cases
+declare an explicit fallback or unavailable state. Explore can still request
+bounded field/slice/point-cloud payloads for rendering, but it should not reopen
+or concatenate the full raw NetCDF sequence just to decide which timestep is
+interesting.
 
 The 3-D viewer keeps the same data-source contract while improving first-look
 readability: cloud-water points should be visible at the default time, slice

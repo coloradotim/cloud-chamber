@@ -6,12 +6,20 @@ import xarray as xr
 from cloud_chamber.output_products import (
     OutputProductManifest,
     OutputProductManifestError,
+    build_interesting_time_product,
     build_output_product_manifest,
     classify_output_paths,
     default_output_product_manifest_path,
     output_product_manifest_from_json,
     resolve_time_index,
     write_output_product_manifest,
+)
+from cloud_chamber.result_diagnostics import (
+    CloudDiagnostics,
+    RainDiagnostics,
+    ResultDiagnostics,
+    TimeDiagnostics,
+    VerticalVelocityDiagnostics,
 )
 
 
@@ -222,3 +230,42 @@ def test_resolve_time_index_rejects_unavailable_index(tmp_path: Path) -> None:
 
     with pytest.raises(OutputProductManifestError, match="time_index is not available"):
         resolve_time_index(manifest, 2)
+
+
+def test_interesting_times_preserve_inferred_time_caveats(tmp_path: Path) -> None:
+    model = tmp_path / "cm1out_000001.nc"
+    write_model_netcdf(model, times=None, values=[0.0, 2e-6])
+    manifest = build_manifest(tmp_path, [model])
+    diagnostics = ResultDiagnostics(
+        cloud=CloudDiagnostics(
+            formed=True,
+            first_cloud_time_seconds=1.0,
+            max_qc_kg_kg=2e-6,
+            time_of_max_qc_seconds=1.0,
+        ),
+        vertical_velocity=VerticalVelocityDiagnostics(
+            max_w_m_s=1.5,
+            time_of_max_w_seconds=1.0,
+            min_w_m_s=-0.5,
+            time_of_min_w_seconds=0.0,
+            units="m/s",
+        ),
+        rain=RainDiagnostics(available=False, field_absent=True),
+        time=TimeDiagnostics(source="inferred_output_index", fallback_used=True),
+        caveats=["diagnostics_used_inferred_time"],
+    )
+
+    product = build_interesting_time_product(
+        result_id="result-run-output-products",
+        diagnostics=diagnostics,
+        output_manifest=manifest,
+        variables=["qc", "w"],
+    )
+
+    records = {record.key: record for record in product.available_interesting_times}
+    assert records["first_cloud"].time_index == 1
+    assert records["first_cloud"].support_state == "supported"
+    assert "time_coordinate_missing" in records["first_cloud"].caveats
+    assert "diagnostics_used_inferred_time" in product.caveats
+    assert product.default_time_by_field["qc"].time_index == 1
+    assert product.science_summary.default_explore_time_index == 1

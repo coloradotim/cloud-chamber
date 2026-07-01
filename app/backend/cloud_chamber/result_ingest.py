@@ -12,6 +12,10 @@ from typing import Any, cast
 from pydantic import BaseModel, ConfigDict, Field
 
 from cloud_chamber.output_products import (
+    FieldDefaultTime,
+    InterestingTimeRecord,
+    ScienceSummary,
+    build_interesting_time_product,
     build_output_product_manifest_for_result,
     default_output_product_manifest_path,
     write_output_product_manifest,
@@ -85,6 +89,10 @@ class ResultMetadata(BaseModel):
     diagnostics_summary: str | None = None
     diagnostics: ResultDiagnostics | None = None
     process_diagnostics: ProcessDiagnostics | None = None
+    interesting_times: list[InterestingTimeRecord] = Field(default_factory=list)
+    default_time_by_field: dict[str, FieldDefaultTime] = Field(default_factory=dict)
+    science_summary: ScienceSummary | None = None
+    interesting_time_caveats: list[str] = Field(default_factory=list)
     created_at: datetime
     updated_at: datetime
 
@@ -131,6 +139,23 @@ def ingest_completed_run(manifest_path: Path) -> ResultMetadata:
         result_metadata_path=result_path,
         run_manifest_path=manifest_path.expanduser(),
         product_root=product_manifest_path.parent,
+    )
+    interesting_time_product = build_interesting_time_product(
+        result_id=result.result_id,
+        diagnostics=result.diagnostics,
+        output_manifest=product_manifest,
+        variables=result.variables,
+    )
+    product_manifest = product_manifest.model_copy(
+        update={"interesting_time_product": interesting_time_product}
+    )
+    result = result.model_copy(
+        update={
+            "interesting_times": interesting_time_product.available_interesting_times,
+            "default_time_by_field": interesting_time_product.default_time_by_field,
+            "science_summary": interesting_time_product.science_summary,
+            "interesting_time_caveats": interesting_time_product.caveats,
+        }
     )
     result_path.write_text(result.to_json_text())
     write_output_product_manifest(product_manifest_path, product_manifest)

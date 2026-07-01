@@ -135,6 +135,22 @@ def test_result_card_created_from_ingested_metadata(tmp_path: Path) -> None:
     assert card.time_of_min_w_seconds == 1800.0
     assert card.rain_present is True
     assert card.first_rain_time_seconds == 1800.0
+    assert card.science_summary is not None
+    assert card.science_summary.first_cloud_time_seconds == 1800.0
+    assert card.science_summary.max_qc_kg_kg == 2e-6
+    assert card.science_summary.max_updraft_w_m_s == 4.0
+    assert card.science_summary.rain_onset_time_seconds == 1800.0
+    assert card.science_summary.default_explore_time_index == 0
+    assert card.interesting_times
+    assert {record.key for record in card.interesting_times} >= {
+        "first_cloud",
+        "max_qc",
+        "max_updraft_w",
+        "rain_onset",
+        "latest_output",
+        "field_default_time",
+    }
+    assert card.default_time_by_field["qc"].time_index == 0
     assert card.output_file_summary.netcdf_count == 1
     assert card.output_file_summary.model_output_count == 1
     assert card.output_file_summary.time_steps == 1
@@ -210,5 +226,12 @@ def test_result_card_handles_missing_diagnostics_gracefully(tmp_path: Path) -> N
     assert card.time_of_min_w_seconds is None
     assert card.rain_present is False
     assert card.first_rain_time_seconds is None
+    assert card.science_summary is not None
+    assert card.science_summary.interesting_time_support_state == "fallback"
+    assert card.default_time_by_field["qc"].support_state == "fallback"
+    assert any(
+        record.key == "first_cloud" and record.support_state == "unsupported_missing_fields"
+        for record in card.interesting_times
+    )
     assert "missing_qc_field" in card.caveats
     assert "missing_w_field" in card.caveats
