@@ -603,7 +603,7 @@ type SceneSlicePlane = "horizontal" | "vertical_x" | "vertical_y";
 const FIELD_LOAD_TIMEOUT_MS = 30000;
 const OBSERVED_SOUNDING_EXPERIMENT_ID = "__observed_sounding_upload__";
 const OBSERVED_SOUNDING_BASE_SCENARIO_ID = "baseline-shallow-cumulus";
-const OBSERVED_SOUNDING_EDITABLE_CONTROLS = new Set(["surface_heating"]);
+const OBSERVED_SOUNDING_VISIBLE_CONTROLS = new Set(["surface_heating"]);
 
 async function fetchScenarioCatalog(): Promise<ScenarioResponse> {
   const response = await fetch("/api/scenarios");
@@ -2025,20 +2025,20 @@ function BuildWorkspace({
                     responds to boundary-layer forcing.
                   </p>
                 )}
-                {selectedScenario.controls.map((control) => {
-                  const lockedBySounding =
-                    observedSoundingExperimentSelected &&
-                    !OBSERVED_SOUNDING_EDITABLE_CONTROLS.has(control.id);
-                  return (
+                {selectedScenario.controls
+                  .filter(
+                    (control) =>
+                      !observedSoundingExperimentSelected ||
+                      OBSERVED_SOUNDING_VISIBLE_CONTROLS.has(control.id),
+                  )
+                  .map((control) => (
                     <BuildControlRow
                       key={control.id}
                       control={control}
                       value={controls[control.id] ?? control.default}
-                      locked={lockedBySounding}
                       onChange={(value) => onControlChange(control.id, value)}
                     />
-                  );
-                })}
+                  ))}
               </section>
 
               {observedSoundingExperimentSelected && (
@@ -2147,17 +2147,15 @@ function BuildWorkspace({
 function BuildControlRow({
   control,
   value,
-  locked,
   onChange,
 }: {
   control: ScenarioControl;
   value: string | number | boolean;
-  locked: boolean;
   onChange: (value: string) => void;
 }) {
   const selectedOption = selectedControlOption(control, { [control.id]: value });
   return (
-    <div className={`control-row${locked ? " control-row-disabled" : ""}`}>
+    <div className="control-row">
       <span>
         <label htmlFor={`control-${control.id}`}>
           <strong>{control.label}</strong>
@@ -2165,17 +2163,13 @@ function BuildControlRow({
         <small>{control.description}</small>
         <small>
           Selected: {selectedOption?.label ?? String(value ?? control.default)}.{" "}
-          {locked
-            ? "Locked because the uploaded sounding supplies this atmospheric profile."
-            : selectedOption?.description ??
-              "Supported scenario option; raw CM1 settings remain in technical review."}
+          {selectedOption?.description ??
+            "Supported scenario option; raw CM1 settings remain in technical review."}
         </small>
       </span>
       <select
         id={`control-${control.id}`}
         value={String(value ?? control.default)}
-        disabled={locked}
-        aria-describedby={locked ? `control-${control.id}-lock-note` : undefined}
         onChange={(event) => onChange(event.target.value)}
       >
         {control.options.map((option) => (
@@ -2184,11 +2178,6 @@ function BuildControlRow({
           </option>
         ))}
       </select>
-      {locked && (
-        <small id={`control-${control.id}-lock-note`} className="control-lock-note">
-          Upload a different sounding to change this part of the atmosphere.
-        </small>
-      )}
     </div>
   );
 }

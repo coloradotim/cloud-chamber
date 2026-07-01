@@ -61,7 +61,7 @@ test.describe("mocked smoke: Build, Results, Explore path", () => {
     await page.getByLabel("Experiment", { exact: true }).selectOption("__observed_sounding_upload__");
     await expect(page.getByRole("heading", { name: "Upload a Sounding" })).toBeVisible();
     await expect(page.getByText("Observed sounding profile, Surface heating")).toBeVisible();
-    await expect(page.getByLabel("Low-level humidity")).toBeDisabled();
+    await expect(page.getByLabel("Low-level humidity")).not.toBeVisible();
     await expect(page.getByLabel("Surface heating")).toBeEnabled();
     await expect(page.getByLabel("Use uploaded sounding")).not.toBeVisible();
 

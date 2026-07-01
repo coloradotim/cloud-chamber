@@ -1769,7 +1769,7 @@ describe("App", () => {
 
     expect(await screen.findByRole("heading", { name: "Upload a Sounding" })).toBeInTheDocument();
     expect(screen.getByText("Observed sounding profile, Surface heating")).toBeInTheDocument();
-    expect(screen.getByLabelText("Low-level humidity")).toBeDisabled();
+    expect(screen.queryByLabelText("Low-level humidity")).not.toBeInTheDocument();
     expect(screen.getByLabelText("Surface heating")).not.toBeDisabled();
     expect(
       screen.queryByLabelText("Use uploaded sounding"),
