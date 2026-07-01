@@ -1374,6 +1374,21 @@ beforeEach(() => {
       if (url === "/api/runs/launch") {
         return Promise.resolve(new Response(JSON.stringify(runningRunStatus), { status: 200 }));
       }
+      if (url === "/api/lan-worker/config") {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              configured: false,
+              available: false,
+              message: "LAN worker is not configured.",
+              cm1_env_keys: [],
+              cm1_env_settings: [],
+              custom_launch_command: false,
+            }),
+            { status: 200 },
+          ),
+        );
+      }
       if (url.startsWith("/api/runs/status")) {
         return Promise.resolve(new Response(JSON.stringify(completedRunStatus), { status: 200 }));
       }
@@ -1795,7 +1810,8 @@ describe("App", () => {
     expect(screen.queryByText("Ready to review")).not.toBeInTheDocument();
     expect(screen.queryByText("Quick-look shallow cumulus")).not.toBeInTheDocument();
     expect(screen.queryByText("Ingested result")).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Run with local CM1" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Run with local CM1" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Run on LAN worker" })).not.toBeInTheDocument();
     expect(screen.getByTestId("create-package-btn")).toBeEnabled();
     expect(screen.getAllByRole("button", { name: "Create run package" })).toHaveLength(1);
     expect(screen.getByRole("button", { name: "Open Storage cleanup" })).toBeInTheDocument();
@@ -1821,6 +1837,154 @@ describe("App", () => {
       );
     });
     expect(await screen.findByText(/Result metadata created/)).toBeInTheDocument();
+  });
+
+  it("automatically copies back, ingests, and cleans LAN worker output after completion", async () => {
+    let ingested = false;
+    const workerRun = {
+      ...storageRuns[0],
+      run_id: "dry-run-worker-completed",
+      scenario_id: "humid-vigorous-cumulus",
+      scenario_name: "Humid Vigorous Cumulus",
+      run_size_preset: "quick_look",
+      category: "running",
+      manifest_path: "/tmp/CloudChamber/runs/dry-run-worker-completed/run_manifest.json",
+      path: "/tmp/CloudChamber/runs/dry-run-worker-completed",
+      worker_state: "completed",
+      worker_message: "CM1 completed with output artifacts.",
+      worker_netcdf_count: 14,
+      worker_raw_artifact_count: 0,
+      worker_remote_dir: "/worker/runs/dry-run-worker-completed",
+      worker_started_at: "2026-07-01T04:30:07Z",
+      worker_finished_at: "2026-07-01T04:39:23Z",
+    };
+    const workerResult = {
+      ...resultCard,
+      result_id: "result-dry-run-worker-completed",
+      run_id: "dry-run-worker-completed",
+      name: "Humid Vigorous Cumulus quick-look",
+      scenario_id: "humid-vigorous-cumulus",
+      scenario_name: "Humid Vigorous Cumulus",
+    };
+
+    vi.mocked(fetch).mockImplementation((input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url === "/api/scenarios") {
+        return Promise.resolve(new Response(JSON.stringify(scenarioResponse), { status: 200 }));
+      }
+      if (url === "/api/lan-worker/config") {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              configured: true,
+              available: true,
+              message: "LAN worker configured.",
+              cm1_env_keys: ["OMP_NUM_THREADS"],
+              cm1_env_settings: ["OMP_NUM_THREADS=16"],
+              custom_launch_command: false,
+            }),
+            { status: 200 },
+          ),
+        );
+      }
+      if (url === "/api/storage/inventory") {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              ...storageInventoryResponse,
+              runs: [workerRun],
+              largest_runs: [workerRun],
+            }),
+            { status: 200 },
+          ),
+        );
+      }
+      if (url === "/api/results") {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({ results: ingested ? [workerResult] : [] }),
+            { status: 200 },
+          ),
+        );
+      }
+      if (url === "/api/lan-worker/collect") {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              run_id: "dry-run-worker-completed",
+              state: "ready_for_local_ingest",
+              message: "LAN worker output copied back to this MacBook.",
+              netcdf_count: 14,
+              raw_artifact_count: 0,
+              ready_for_ingest: true,
+            }),
+            { status: 200 },
+          ),
+        );
+      }
+      if (url === "/api/results/ingest") {
+        ingested = true;
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              result_id: "result-dry-run-worker-completed",
+              run_id: "dry-run-worker-completed",
+              diagnostics_summary: "cloud formed; rain detected",
+            }),
+            { status: 200 },
+          ),
+        );
+      }
+      if (url === "/api/lan-worker/cleanup") {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              run_id: "dry-run-worker-completed",
+              state: "worker_cleanup_complete",
+              message: "LAN worker run directory was removed.",
+              netcdf_count: 0,
+              raw_artifact_count: 0,
+            }),
+            { status: 200 },
+          ),
+        );
+      }
+      return Promise.resolve(new Response("not found", { status: 404 }));
+    });
+
+    render(<App />);
+    fireEvent.click(await screen.findByRole("button", { name: "Build" }));
+
+    await waitFor(() => {
+      expect(fetch).toHaveBeenCalledWith(
+        "/api/lan-worker/collect",
+        expect.objectContaining({
+          method: "POST",
+          body: JSON.stringify({
+            manifest_path: "/tmp/CloudChamber/runs/dry-run-worker-completed/run_manifest.json",
+          }),
+        }),
+      );
+      expect(fetch).toHaveBeenCalledWith(
+        "/api/results/ingest",
+        expect.objectContaining({
+          method: "POST",
+          body: JSON.stringify({
+            manifest_path: "/tmp/CloudChamber/runs/dry-run-worker-completed/run_manifest.json",
+          }),
+        }),
+      );
+      expect(fetch).toHaveBeenCalledWith(
+        "/api/lan-worker/cleanup",
+        expect.objectContaining({
+          method: "POST",
+          body: JSON.stringify({
+            manifest_path: "/tmp/CloudChamber/runs/dry-run-worker-completed/run_manifest.json",
+          }),
+        }),
+      );
+    });
+    expect(screen.queryByRole("button", { name: "Copy back and ingest" })).not.toBeInTheDocument();
   });
 
   it("requests a dry-run package and displays generated files without claiming CM1 ran", async () => {

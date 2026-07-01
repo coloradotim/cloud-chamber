@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import shutil
 from pathlib import Path
 
@@ -44,6 +45,14 @@ class RunStorageEntry(BaseModel):
     category: str
     manifest_path: str | None = None
     manifest_error: str | None = None
+    worker_state: str | None = None
+    worker_message: str | None = None
+    worker_started_at: str | None = None
+    worker_finished_at: str | None = None
+    worker_status_updated_at: str | None = None
+    worker_remote_dir: str | None = None
+    worker_netcdf_count: int | None = None
+    worker_raw_artifact_count: int | None = None
 
 
 class RuntimeStorageInventory(BaseModel):
@@ -191,6 +200,7 @@ def _entry_from_manifest(
         "netcdf_paths": len(manifest.outputs.netcdf_paths),
         "processed_artifacts": len(manifest.outputs.processed_artifacts),
     }
+    worker_status = _read_worker_status(run_dir / "worker_status.json")
     return RunStorageEntry(
         run_id=manifest.run_id,
         scenario_id=manifest.scenario.id,
@@ -206,12 +216,22 @@ def _entry_from_manifest(
         output_summary=output_summary,
         size_bytes=size_bytes,
         path=str(run_dir),
-        category=_classify_run(manifest),
+        category=_classify_run(manifest, worker_status),
         manifest_path=str(manifest_path),
+        worker_state=_string_or_none(worker_status.get("state")),
+        worker_message=_string_or_none(worker_status.get("message")),
+        worker_started_at=_string_or_none(worker_status.get("started_at")),
+        worker_finished_at=_string_or_none(worker_status.get("finished_at")),
+        worker_status_updated_at=_string_or_none(worker_status.get("local_status_updated_at")),
+        worker_remote_dir=_string_or_none(worker_status.get("remote_dir")),
+        worker_netcdf_count=_int_or_none(worker_status.get("netcdf_count")),
+        worker_raw_artifact_count=_int_or_none(worker_status.get("raw_artifact_count")),
     )
 
 
-def _classify_run(manifest: RunManifest) -> str:
+def _classify_run(manifest: RunManifest, worker_status: dict[str, object] | None = None) -> str:
+    if worker_status and worker_status.get("state") == "running":
+        return "running"
     if manifest.user.saved:
         return "saved_or_protected"
     if manifest.lifecycle_state in {LifecycleState.QUEUED, LifecycleState.RUNNING}:
@@ -232,6 +252,24 @@ def _classify_run(manifest: RunManifest) -> str:
     if manifest.lifecycle_state == LifecycleState.CANCELED:
         return "canceled"
     return "unknown"
+
+
+def _read_worker_status(path: Path) -> dict[str, object]:
+    if not path.exists():
+        return {}
+    try:
+        loaded = json.loads(path.read_text())
+    except (OSError, ValueError):
+        return {}
+    return loaded if isinstance(loaded, dict) else {}
+
+
+def _string_or_none(value: object) -> str | None:
+    return value if isinstance(value, str) else None
+
+
+def _int_or_none(value: object) -> int | None:
+    return value if isinstance(value, int) else None
 
 
 def _safe_run_directory(runtime_home: Path, run_id: str) -> Path:

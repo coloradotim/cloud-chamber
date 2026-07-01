@@ -122,6 +122,28 @@ type RunStatusResponse = {
   runtime_warnings: string[];
 };
 
+type LanWorkerConfigResponse = {
+  configured: boolean;
+  available: boolean;
+  message: string;
+  cm1_env_keys: string[];
+  cm1_env_settings: string[];
+  custom_launch_command: boolean;
+};
+
+type LanWorkerRunResponse = {
+  run_id: string;
+  state: string;
+  message?: string | null;
+  exit_code?: number | null;
+  netcdf_count?: number;
+  raw_artifact_count?: number;
+  started_at?: string | null;
+  finished_at?: string | null;
+  local_package_dir?: string | null;
+  ready_for_ingest?: boolean;
+};
+
 type IngestResponse = {
   result_id: string;
   run_id: string;
@@ -131,10 +153,16 @@ type IngestResponse = {
 type BuildRunStage =
   | "not_packaged"
   | "package_ready"
+  | "lan_worker_running"
+  | "lan_worker_completed"
+  | "ready_for_local_ingest"
   | "running"
   | "completed"
   | "failed"
-  | "ingested";
+  | "ingested"
+  | "worker_cleanup_pending"
+  | "worker_cleanup_complete"
+  | "worker_cleanup_failed";
 
 type OutputFileSummary = {
   netcdf_count: number;
@@ -216,6 +244,14 @@ type RunStorageEntry = {
   category: string;
   manifest_path: string | null;
   manifest_error: string | null;
+  worker_state: string | null;
+  worker_message: string | null;
+  worker_started_at: string | null;
+  worker_finished_at: string | null;
+  worker_status_updated_at: string | null;
+  worker_remote_dir: string | null;
+  worker_netcdf_count: number | null;
+  worker_raw_artifact_count: number | null;
 };
 
 type StorageInventoryResponse = {
@@ -535,6 +571,59 @@ async function fetchRunStatus(manifestPath: string): Promise<RunStatusResponse> 
   return response.json() as Promise<RunStatusResponse>;
 }
 
+async function fetchLanWorkerConfig(): Promise<LanWorkerConfigResponse> {
+  const response = await fetch("/api/lan-worker/config");
+  if (!response.ok) {
+    throw new Error(await responseError(response, "Unable to load LAN worker configuration."));
+  }
+  return response.json() as Promise<LanWorkerConfigResponse>;
+}
+
+async function startLanWorkerRun(manifestPath: string): Promise<LanWorkerRunResponse> {
+  const response = await fetch("/api/lan-worker/start", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ manifest_path: manifestPath }),
+  });
+  if (!response.ok) {
+    throw new Error(await responseError(response, "Unable to start LAN worker run."));
+  }
+  return response.json() as Promise<LanWorkerRunResponse>;
+}
+
+async function fetchLanWorkerStatus(manifestPath: string): Promise<LanWorkerRunResponse> {
+  const search = new URLSearchParams({ manifest_path: manifestPath });
+  const response = await fetch(`/api/lan-worker/status?${search}`);
+  if (!response.ok) {
+    throw new Error(await responseError(response, "Unable to refresh LAN worker status."));
+  }
+  return response.json() as Promise<LanWorkerRunResponse>;
+}
+
+async function collectLanWorkerRun(manifestPath: string): Promise<LanWorkerRunResponse> {
+  const response = await fetch("/api/lan-worker/collect", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ manifest_path: manifestPath }),
+  });
+  if (!response.ok) {
+    throw new Error(await responseError(response, "Unable to copy LAN worker output back."));
+  }
+  return response.json() as Promise<LanWorkerRunResponse>;
+}
+
+async function cleanupLanWorkerRun(manifestPath: string): Promise<LanWorkerRunResponse> {
+  const response = await fetch("/api/lan-worker/cleanup", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ manifest_path: manifestPath }),
+  });
+  if (!response.ok) {
+    throw new Error(await responseError(response, "Unable to clean up LAN worker copy."));
+  }
+  return response.json() as Promise<LanWorkerRunResponse>;
+}
+
 async function ingestCompletedRun(manifestPath: string): Promise<IngestResponse> {
   const response = await fetch("/api/results/ingest", {
     method: "POST",
@@ -749,6 +838,14 @@ export function App() {
   const [dryRun, setDryRun] = useState<DryRunResponse | null>(null);
   const [runStatus, setRunStatus] = useState<RunStatusResponse | null>(null);
   const [runWorkflowError, setRunWorkflowError] = useState<string | null>(null);
+  const [lanWorkerConfig, setLanWorkerConfig] = useState<LanWorkerConfigResponse | null>(null);
+  const [lanWorkerStatus, setLanWorkerStatus] = useState<LanWorkerRunResponse | null>(null);
+  const [lanWorkerError, setLanWorkerError] = useState<string | null>(null);
+  const [lanWorkerActionStatus, setLanWorkerActionStatus] = useState<string | null>(null);
+  const [autoFinalizingWorkerRunIds, setAutoFinalizingWorkerRunIds] = useState<string[]>([]);
+  const [failedAutoFinalizingWorkerRunIds, setFailedAutoFinalizingWorkerRunIds] = useState<
+    string[]
+  >([]);
   const [ingestedResultId, setIngestedResultId] = useState<string | null>(null);
   const [results, setResults] = useState<ResultCard[]>([]);
   const [selectedResultId, setSelectedResultId] = useState<string | null>(null);
@@ -775,6 +872,9 @@ export function App() {
     setDryRun(null);
     setRunStatus(null);
     setRunWorkflowError(null);
+    setLanWorkerStatus(null);
+    setLanWorkerError(null);
+    setLanWorkerActionStatus(null);
     setIngestedResultId(null);
     try {
       const catalog = await fetchScenarioCatalog();
@@ -828,6 +928,29 @@ export function App() {
 
   useEffect(() => {
     let active = true;
+    fetchLanWorkerConfig()
+      .then((payload) => {
+        if (!active) return;
+        setLanWorkerConfig(payload);
+      })
+      .catch((caught: unknown) => {
+        if (!active) return;
+        setLanWorkerConfig({
+          configured: false,
+          available: false,
+          message: caught instanceof Error ? caught.message : "Unable to load LAN worker setup.",
+          cm1_env_keys: [],
+          cm1_env_settings: [],
+          custom_launch_command: false,
+        });
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    let active = true;
     refreshStorageInventory().catch(() => undefined);
     return () => {
       active = false;
@@ -859,6 +982,14 @@ export function App() {
     [results, selectedResultId],
   );
   const comparisonPair = useMemo(() => defaultComparisonPair(results), [results]);
+  const autoFinalizingWorkerRunIdSet = useMemo(
+    () => new Set(autoFinalizingWorkerRunIds),
+    [autoFinalizingWorkerRunIds],
+  );
+  const failedAutoFinalizingWorkerRunIdSet = useMemo(
+    () => new Set(failedAutoFinalizingWorkerRunIds),
+    [failedAutoFinalizingWorkerRunIds],
+  );
 
   useEffect(() => {
     if (!selectedScenario) return;
@@ -870,6 +1001,9 @@ export function App() {
     setDryRun(null);
     setRunStatus(null);
     setRunWorkflowError(null);
+    setLanWorkerStatus(null);
+    setLanWorkerError(null);
+    setLanWorkerActionStatus(null);
     setIngestedResultId(null);
   }, [selectedScenario]);
 
@@ -881,6 +1015,23 @@ export function App() {
       notes: selectedResult.notes ?? "",
     });
   }, [selectedResult]);
+
+  useEffect(() => {
+    if (!storageInventory) return;
+    const nextRun = storageInventory.runs.find(
+      (run) =>
+        run.worker_state === "completed" &&
+        run.manifest_path &&
+        !resultForRun(results, run.run_id) &&
+        !autoFinalizingWorkerRunIdSet.has(run.run_id) &&
+        !failedAutoFinalizingWorkerRunIdSet.has(run.run_id),
+    );
+    if (!nextRun?.manifest_path) return;
+    void autoFinalizeStoredLanWorkerRun(nextRun.manifest_path, nextRun.run_id);
+    // autoFinalizeStoredLanWorkerRun is intentionally omitted because it mutates the
+    // same worker-finalization state that gates this effect.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoFinalizingWorkerRunIdSet, failedAutoFinalizingWorkerRunIdSet, results, storageInventory]);
 
   const validationMessages = useMemo(() => {
     if (!selectedScenario) return [];
@@ -916,6 +1067,9 @@ export function App() {
     setDryRun(null);
     setRunStatus(null);
     setRunWorkflowError(null);
+    setLanWorkerStatus(null);
+    setLanWorkerError(null);
+    setLanWorkerActionStatus(null);
     setIngestedResultId(null);
     try {
       const result = await requestDryRunPackage(selectedScenario.id, controls, runSizePreset);
@@ -958,6 +1112,128 @@ export function App() {
     }
   }
 
+  async function handleLaunchLanWorkerRun(manifestPath?: string) {
+    const targetManifestPath = manifestPath ?? dryRun?.manifest_path;
+    if (!targetManifestPath) return;
+    setRunWorkflowError(null);
+    setLanWorkerError(null);
+    setLanWorkerActionStatus("Copying package to LAN worker");
+    setStatus("Copying package to LAN worker");
+    try {
+      const launched = await startLanWorkerRun(targetManifestPath);
+      setLanWorkerStatus(launched);
+      setLanWorkerActionStatus("Running CM1 on LAN worker");
+      setStatus("Running CM1 on LAN worker");
+      await refreshStorageAfterWorkflow("Local pipeline updated");
+    } catch (caught) {
+      const message =
+        caught instanceof Error ? caught.message : "Unable to start LAN worker run.";
+      setLanWorkerError(message);
+      setRunWorkflowError(message);
+      setLanWorkerActionStatus("LAN worker launch blocked");
+      setStatus("LAN worker launch blocked");
+    }
+  }
+
+  async function handleRefreshLanWorkerStatus() {
+    if (!dryRun) return;
+    setLanWorkerError(null);
+    setLanWorkerActionStatus("Refreshing LAN worker status");
+    try {
+      const refreshed = await fetchLanWorkerStatus(dryRun.manifest_path);
+      setLanWorkerStatus(refreshed);
+      setLanWorkerActionStatus(lanWorkerStatusLabel(refreshed));
+      await refreshStorageAfterWorkflow("Local pipeline updated");
+      if (refreshed.state === "completed" && !ingestedResultId) {
+        await collectAndIngestLanWorkerRun(dryRun.manifest_path);
+      }
+    } catch (caught) {
+      const message =
+        caught instanceof Error ? caught.message : "Unable to refresh LAN worker status.";
+      setLanWorkerError(message);
+      setLanWorkerActionStatus("LAN worker status unavailable");
+    }
+  }
+
+  async function handleCollectLanWorkerRun() {
+    if (!dryRun) return;
+    await collectAndIngestLanWorkerRun(dryRun.manifest_path);
+  }
+
+  async function collectAndIngestLanWorkerRun(manifestPath: string): Promise<boolean> {
+    setLanWorkerError(null);
+    setLanWorkerActionStatus("Copying completed output back");
+    setStatus("Copying completed output back");
+    try {
+      const collected = await collectLanWorkerRun(manifestPath);
+      setLanWorkerStatus(collected);
+      setLanWorkerActionStatus(lanWorkerStatusLabel(collected));
+      await refreshStorageAfterWorkflow("Completed LAN worker output returned");
+      if (collected.ready_for_ingest || collected.state === "ready_for_local_ingest") {
+        setLanWorkerActionStatus("Ingesting copied LAN worker output");
+        setStatus("Ingesting copied LAN worker output");
+        const ingested = await ingestCompletedRun(manifestPath);
+        setIngestedResultId(ingested.result_id);
+        await refreshResults(ingested.result_id);
+        await refreshStorageAfterWorkflow("LAN worker output ingested locally");
+        setLanWorkerActionStatus("Cleaning LAN worker copy");
+        setStatus("Cleaning LAN worker copy");
+        try {
+          const cleaned = await cleanupLanWorkerRun(manifestPath);
+          setLanWorkerStatus(cleaned);
+          setLanWorkerActionStatus(lanWorkerStatusLabel(cleaned));
+          await refreshStorageAfterWorkflow("LAN worker cleanup complete");
+          setStatus("Ingested result metadata and cleaned worker copy");
+        } catch (cleanupError) {
+          const cleanupMessage =
+            cleanupError instanceof Error
+              ? cleanupError.message
+              : "Unable to clean up LAN worker copy.";
+          setLanWorkerError(cleanupMessage);
+          setLanWorkerActionStatus("LAN worker cleanup failed");
+          setStatus("Ingested result metadata; worker cleanup needs retry");
+        }
+        return true;
+      } else {
+        setStatus("Copied output needs review before ingest");
+        return false;
+      }
+    } catch (caught) {
+      const message =
+        caught instanceof Error ? caught.message : "Unable to copy and ingest LAN worker output.";
+      setLanWorkerError(message);
+      setLanWorkerActionStatus("LAN worker copy-back or ingest failed");
+      setStatus("LAN worker copy-back or ingest failed");
+      return false;
+    }
+  }
+
+  async function handleCleanupLanWorkerRun() {
+    if (!dryRun) return;
+    setLanWorkerError(null);
+    setLanWorkerActionStatus("Cleaning LAN worker copy");
+    try {
+      const cleaned = await cleanupLanWorkerRun(dryRun.manifest_path);
+      setLanWorkerStatus(cleaned);
+      setLanWorkerActionStatus(lanWorkerStatusLabel(cleaned));
+      await refreshStorageAfterWorkflow("LAN worker cleanup complete");
+    } catch (caught) {
+      const message =
+        caught instanceof Error ? caught.message : "Unable to clean up LAN worker copy.";
+      setLanWorkerError(message);
+      setLanWorkerStatus((current) =>
+        current
+          ? {
+              ...current,
+              state: "worker_cleanup_failed",
+              message,
+            }
+          : current,
+      );
+      setLanWorkerActionStatus("LAN worker cleanup failed");
+    }
+  }
+
   async function refreshResults(selectResultId?: string) {
     const payload = await fetchResults();
     const prioritized = prioritizeResults(payload.results);
@@ -993,6 +1269,9 @@ export function App() {
       setIngestedResultId(ingested.result_id);
       await refreshResults(ingested.result_id);
       await refreshStorageAfterWorkflow("Local pipeline updated");
+      if (lanWorkerStatus && lanWorkerStatus.state !== "worker_cleanup_complete") {
+        setLanWorkerActionStatus("Worker cleanup pending");
+      }
       setStatus("Ingested result metadata");
     } catch (caught) {
       setRunWorkflowError(
@@ -1013,6 +1292,49 @@ export function App() {
     } catch (caught) {
       setRunWorkflowError(caught instanceof Error ? caught.message : "Unable to launch local CM1.");
       setStatus("Launch blocked");
+    }
+  }
+
+  async function handleFinalizeStoredLanWorkerRun(manifestPath: string) {
+    await collectAndIngestLanWorkerRun(manifestPath);
+  }
+
+  async function autoFinalizeStoredLanWorkerRun(manifestPath: string, runId: string) {
+    setAutoFinalizingWorkerRunIds((current) =>
+      current.includes(runId) ? current : [...current, runId],
+    );
+    setFailedAutoFinalizingWorkerRunIds((current) => current.filter((id) => id !== runId));
+    const succeeded = await collectAndIngestLanWorkerRun(manifestPath);
+    setAutoFinalizingWorkerRunIds((current) => current.filter((id) => id !== runId));
+    if (!succeeded) {
+      setFailedAutoFinalizingWorkerRunIds((current) =>
+        current.includes(runId) ? current : [...current, runId],
+      );
+    }
+  }
+
+  async function handleRefreshStoredLanWorkerStatus(manifestPath: string) {
+    setRunWorkflowError(null);
+    setLanWorkerError(null);
+    setLanWorkerActionStatus("Refreshing LAN worker status");
+    setStatus("Refreshing LAN worker status");
+    try {
+      const refreshed = await fetchLanWorkerStatus(manifestPath);
+      if (dryRun?.manifest_path === manifestPath) {
+        setLanWorkerStatus(refreshed);
+      }
+      setLanWorkerActionStatus(lanWorkerStatusLabel(refreshed));
+      await refreshStorageAfterWorkflow(`LAN worker status refreshed at ${new Date().toLocaleTimeString()}`);
+      if (refreshed.state === "completed") {
+        await collectAndIngestLanWorkerRun(manifestPath);
+      }
+    } catch (caught) {
+      const message =
+        caught instanceof Error ? caught.message : "Unable to refresh LAN worker status.";
+      setLanWorkerError(message);
+      setRunWorkflowError(message);
+      setLanWorkerActionStatus("LAN worker status unavailable");
+      setStatus("LAN worker status unavailable");
     }
   }
 
@@ -1151,11 +1473,17 @@ export function App() {
           dryRun={dryRun}
           runStatus={runStatus}
           runWorkflowError={runWorkflowError}
+          lanWorkerConfig={lanWorkerConfig}
+          lanWorkerStatus={lanWorkerStatus}
+          lanWorkerError={lanWorkerError}
+          lanWorkerActionStatus={lanWorkerActionStatus}
           ingestedResultId={ingestedResultId}
           storageInventory={storageInventory}
           storageStatus={storageStatus}
           storageError={storageError}
           results={results}
+          autoFinalizingWorkerRunIds={autoFinalizingWorkerRunIdSet}
+          failedAutoFinalizingWorkerRunIds={failedAutoFinalizingWorkerRunIdSet}
           onSelectScenario={setSelectedScenarioId}
           onControlChange={(id, value) =>
             setControls((current) => ({
@@ -1167,8 +1495,15 @@ export function App() {
           onDryRun={handleDryRun}
           onLaunchRun={handleLaunchRun}
           onRefreshRunStatus={handleRefreshRunStatus}
+          onLaunchLanWorkerRun={() => void handleLaunchLanWorkerRun()}
+          onRefreshLanWorkerStatus={handleRefreshLanWorkerStatus}
+          onCollectLanWorkerRun={handleCollectLanWorkerRun}
+          onCleanupLanWorkerRun={handleCleanupLanWorkerRun}
           onIngestRun={handleIngestRun}
           onLaunchStoredRun={handleLaunchStoredRun}
+          onLaunchStoredLanWorkerRun={(manifestPath) => void handleLaunchLanWorkerRun(manifestPath)}
+          onRefreshStoredLanWorkerStatus={handleRefreshStoredLanWorkerStatus}
+          onFinalizeStoredLanWorkerRun={handleFinalizeStoredLanWorkerRun}
           onIngestStoredRun={handleIngestStoredRun}
           onOpenInResults={() => {
             if (ingestedResultId) setSelectedResultId(ingestedResultId);
@@ -1268,19 +1603,32 @@ function BuildWorkspace({
   dryRun,
   runStatus,
   runWorkflowError,
+  lanWorkerConfig,
+  lanWorkerStatus,
+  lanWorkerError,
+  lanWorkerActionStatus,
   ingestedResultId,
   storageInventory,
   storageStatus,
   storageError,
   results,
+  autoFinalizingWorkerRunIds,
+  failedAutoFinalizingWorkerRunIds,
   onSelectScenario,
   onControlChange,
   onRunSizeChange,
   onDryRun,
   onLaunchRun,
   onRefreshRunStatus,
+  onLaunchLanWorkerRun,
+  onRefreshLanWorkerStatus,
+  onCollectLanWorkerRun,
+  onCleanupLanWorkerRun,
   onIngestRun,
   onLaunchStoredRun,
+  onLaunchStoredLanWorkerRun,
+  onRefreshStoredLanWorkerStatus,
+  onFinalizeStoredLanWorkerRun,
   onIngestStoredRun,
   onOpenInResults,
   onInspectIngested,
@@ -1302,19 +1650,32 @@ function BuildWorkspace({
   dryRun: DryRunResponse | null;
   runStatus: RunStatusResponse | null;
   runWorkflowError: string | null;
+  lanWorkerConfig: LanWorkerConfigResponse | null;
+  lanWorkerStatus: LanWorkerRunResponse | null;
+  lanWorkerError: string | null;
+  lanWorkerActionStatus: string | null;
   ingestedResultId: string | null;
   storageInventory: StorageInventoryResponse | null;
   storageStatus: string;
   storageError: string | null;
   results: ResultCard[];
+  autoFinalizingWorkerRunIds: Set<string>;
+  failedAutoFinalizingWorkerRunIds: Set<string>;
   onSelectScenario: (scenarioId: string) => void;
   onControlChange: (controlId: string, value: string) => void;
   onRunSizeChange: (presetId: string) => void;
   onDryRun: (event: FormEvent<HTMLFormElement>) => void;
   onLaunchRun: () => void;
   onRefreshRunStatus: () => void;
+  onLaunchLanWorkerRun: () => void;
+  onRefreshLanWorkerStatus: () => void;
+  onCollectLanWorkerRun: () => void;
+  onCleanupLanWorkerRun: () => void;
   onIngestRun: () => void;
   onLaunchStoredRun: (manifestPath: string) => void;
+  onLaunchStoredLanWorkerRun: (manifestPath: string) => void;
+  onRefreshStoredLanWorkerStatus: (manifestPath: string) => void;
+  onFinalizeStoredLanWorkerRun: (manifestPath: string) => void;
   onIngestStoredRun: (manifestPath: string) => void;
   onOpenInResults: () => void;
   onInspectIngested: () => void;
@@ -1500,17 +1861,30 @@ function BuildWorkspace({
             dryRun={dryRun}
             runStatus={runStatus}
             error={runWorkflowError}
+            lanWorkerConfig={lanWorkerConfig}
+            lanWorkerStatus={lanWorkerStatus}
+            lanWorkerError={lanWorkerError}
+            lanWorkerActionStatus={lanWorkerActionStatus}
             ingestedResultId={ingestedResultId}
             showCreatePackageAction={scenarioControlsReady}
             canCreatePackage={validationMessages.length === 0}
             onLaunchRun={onLaunchRun}
             onRefreshRunStatus={onRefreshRunStatus}
+            onLaunchLanWorkerRun={onLaunchLanWorkerRun}
+            onRefreshLanWorkerStatus={onRefreshLanWorkerStatus}
+            onCollectLanWorkerRun={onCollectLanWorkerRun}
+            onCleanupLanWorkerRun={onCleanupLanWorkerRun}
             onIngestRun={onIngestRun}
             storageInventory={storageInventory}
             storageStatus={storageStatus}
             storageError={storageError}
             results={results}
+            autoFinalizingWorkerRunIds={autoFinalizingWorkerRunIds}
+            failedAutoFinalizingWorkerRunIds={failedAutoFinalizingWorkerRunIds}
             onLaunchStoredRun={onLaunchStoredRun}
+            onLaunchStoredLanWorkerRun={onLaunchStoredLanWorkerRun}
+            onRefreshStoredLanWorkerStatus={onRefreshStoredLanWorkerStatus}
+            onFinalizeStoredLanWorkerRun={onFinalizeStoredLanWorkerRun}
             onIngestStoredRun={onIngestStoredRun}
             onOpenInResults={onOpenInResults}
             onInspectIngested={onInspectIngested}
@@ -2549,17 +2923,30 @@ function LocalRunWorkflowPanel({
   dryRun,
   runStatus,
   error,
+  lanWorkerConfig,
+  lanWorkerStatus,
+  lanWorkerError,
+  lanWorkerActionStatus,
   ingestedResultId,
   storageInventory,
   storageStatus,
   storageError,
   results,
+  autoFinalizingWorkerRunIds,
+  failedAutoFinalizingWorkerRunIds,
   showCreatePackageAction,
   canCreatePackage,
   onLaunchRun,
   onRefreshRunStatus,
+  onLaunchLanWorkerRun,
+  onRefreshLanWorkerStatus,
+  onCollectLanWorkerRun,
+  onCleanupLanWorkerRun,
   onIngestRun,
   onLaunchStoredRun,
+  onLaunchStoredLanWorkerRun,
+  onRefreshStoredLanWorkerStatus,
+  onFinalizeStoredLanWorkerRun,
   onIngestStoredRun,
   onOpenInResults,
   onInspectIngested,
@@ -2571,17 +2958,30 @@ function LocalRunWorkflowPanel({
   dryRun: DryRunResponse | null;
   runStatus: RunStatusResponse | null;
   error: string | null;
+  lanWorkerConfig: LanWorkerConfigResponse | null;
+  lanWorkerStatus: LanWorkerRunResponse | null;
+  lanWorkerError: string | null;
+  lanWorkerActionStatus: string | null;
   ingestedResultId: string | null;
   storageInventory: StorageInventoryResponse | null;
   storageStatus: string;
   storageError: string | null;
   results: ResultCard[];
+  autoFinalizingWorkerRunIds: Set<string>;
+  failedAutoFinalizingWorkerRunIds: Set<string>;
   showCreatePackageAction: boolean;
   canCreatePackage: boolean;
   onLaunchRun: () => void;
   onRefreshRunStatus: () => void;
+  onLaunchLanWorkerRun: () => void;
+  onRefreshLanWorkerStatus: () => void;
+  onCollectLanWorkerRun: () => void;
+  onCleanupLanWorkerRun: () => void;
   onIngestRun: () => void;
   onLaunchStoredRun: (manifestPath: string) => void;
+  onLaunchStoredLanWorkerRun: (manifestPath: string) => void;
+  onRefreshStoredLanWorkerStatus: (manifestPath: string) => void;
+  onFinalizeStoredLanWorkerRun: (manifestPath: string) => void;
   onIngestStoredRun: (manifestPath: string) => void;
   onOpenInResults: () => void;
   onInspectIngested: () => void;
@@ -2590,18 +2990,21 @@ function LocalRunWorkflowPanel({
   onOpenStorage: (runId?: string | null) => void;
   onRefreshStorage: () => void;
 }) {
-  const stage = buildRunStage(dryRun, runStatus, ingestedResultId);
-  const canIngest =
+  const stage = buildRunStage(dryRun, runStatus, ingestedResultId, lanWorkerStatus);
+  const canIngestLocal =
     runStatus?.lifecycle_state === "completed" &&
     runStatus.product_state === "completed_cm1_result" &&
     !ingestedResultId;
+  const canIngestLanWorker =
+    lanWorkerStatus?.state === "ready_for_local_ingest" && !ingestedResultId;
+  const canIngest = canIngestLocal || canIngestLanWorker;
   const outputCount = runStatus
     ? Object.values(runStatus.output_summary).reduce((total, value) => total + value, 0)
     : 0;
   const generatedInputNames = dryRun ? generatedInputSummary(dryRun) : [];
   const currentRunId = dryRun ? runIdFromPackage(dryRun) : null;
   const showCreatePackageButton = showCreatePackageAction;
-  const showLaunchButton = Boolean(dryRun && stage === "package_ready");
+  const showLaunchButton = Boolean(dryRun && !runStatus && !lanWorkerStatus);
   const showRefreshButton = Boolean(dryRun && runStatus);
   const showIngestButton = Boolean(dryRun && canIngest);
   const showActionRow =
@@ -2738,6 +3141,24 @@ function LocalRunWorkflowPanel({
           </div>
         )}
 
+        {dryRun && (
+          <LanWorkerRunPanel
+            configured={lanWorkerConfig?.configured ?? false}
+            configMessage={lanWorkerConfig?.message ?? "Checking LAN worker setup."}
+            cm1EnvKeys={lanWorkerConfig?.cm1_env_keys ?? []}
+            cm1EnvSettings={lanWorkerConfig?.cm1_env_settings ?? []}
+            status={lanWorkerStatus}
+            actionStatus={lanWorkerActionStatus}
+            error={lanWorkerError}
+            ingestedResultId={ingestedResultId}
+            canStart={showLaunchButton}
+            onLaunch={onLaunchLanWorkerRun}
+            onRefresh={onRefreshLanWorkerStatus}
+            onCollect={onCollectLanWorkerRun}
+            onCleanup={onCleanupLanWorkerRun}
+          />
+        )}
+
         {runStatus ? (
           <div className="run-status-panel" aria-label="Local run status">
             <dl>
@@ -2862,7 +3283,13 @@ function LocalRunWorkflowPanel({
         error={storageError}
         results={results}
         currentRunId={currentRunId}
+        lanWorkerConfigured={lanWorkerConfig?.configured ?? false}
+        autoFinalizingWorkerRunIds={autoFinalizingWorkerRunIds}
+        failedAutoFinalizingWorkerRunIds={failedAutoFinalizingWorkerRunIds}
         onLaunchStoredRun={onLaunchStoredRun}
+        onLaunchStoredLanWorkerRun={onLaunchStoredLanWorkerRun}
+        onRefreshStoredLanWorkerStatus={onRefreshStoredLanWorkerStatus}
+        onFinalizeStoredLanWorkerRun={onFinalizeStoredLanWorkerRun}
         onIngestStoredRun={onIngestStoredRun}
         onOpenStoredResult={onOpenStoredResult}
         onExploreStoredResult={onExploreStoredResult}
@@ -2874,13 +3301,141 @@ function LocalRunWorkflowPanel({
   );
 }
 
+function LanWorkerRunPanel({
+  configured,
+  configMessage,
+  cm1EnvKeys,
+  cm1EnvSettings,
+  status,
+  actionStatus,
+  error,
+  ingestedResultId,
+  canStart,
+  onLaunch,
+  onRefresh,
+  onCollect,
+  onCleanup,
+}: {
+  configured: boolean;
+  configMessage: string;
+  cm1EnvKeys: string[];
+  cm1EnvSettings: string[];
+  status: LanWorkerRunResponse | null;
+  actionStatus: string | null;
+  error: string | null;
+  ingestedResultId: string | null;
+  canStart: boolean;
+  onLaunch: () => void;
+  onRefresh: () => void;
+  onCollect: () => void;
+  onCleanup: () => void;
+}) {
+  const canCollect = status?.state === "completed" && Boolean(error);
+  const cleanupComplete = status?.state === "worker_cleanup_complete";
+  const cleanupFailed = status?.state === "worker_cleanup_failed";
+  const cleanupAvailable =
+    Boolean(ingestedResultId) &&
+    Boolean(status) &&
+    !cleanupComplete &&
+    status?.state !== "running" &&
+    status?.state !== "completed";
+
+  return (
+    <section className="run-status-panel lan-worker-panel" aria-label="LAN worker run status">
+      <div className="panel-heading-row">
+        <div>
+          <p className="eyebrow">Trusted LAN worker</p>
+          <h5>Run CM1 on LAN worker</h5>
+        </div>
+        <StatusBadge
+          label={status ? lanWorkerStatusLabel(status) : configured ? "Configured" : "Not configured"}
+          tone={lanWorkerTone(status, configured)}
+        />
+      </div>
+
+      <p className="state-note">
+        {configured
+          ? "Use the LAN worker as a compute appliance. Copy completed output back, ingest locally, then clean up the worker copy."
+          : "LAN worker execution is unavailable until an ignored local worker config is present."}
+      </p>
+      {!configured && <p className="state-note">{configMessage}</p>}
+      {error && <p role="alert">{error}</p>}
+      {actionStatus && <p role="status">{actionStatus}</p>}
+
+      {configured && (
+        <>
+          <dl className="compact-metrics">
+            <Metric label="Worker state" value={status ? lanWorkerStatusLabel(status) : "Ready"} />
+            <Metric
+              label="Worker output"
+              value={
+                status
+                  ? `${status.netcdf_count ?? 0} NetCDF, ${status.raw_artifact_count ?? 0} raw CM1`
+                  : "Not started"
+              }
+            />
+            <Metric
+              label="Worker runtime settings"
+              value={
+                cm1EnvSettings.length > 0
+                  ? cm1EnvSettings.join(", ")
+                  : cm1EnvKeys.length > 0
+                    ? cm1EnvKeys.join(", ")
+                    : "Default worker environment"
+              }
+            />
+            {status?.message && <Metric label="Worker message" value={status.message} />}
+          </dl>
+          <div className="button-row">
+            {!status && canStart && (
+              <button type="button" className="secondary-button" onClick={onLaunch}>
+                Run on LAN worker
+              </button>
+            )}
+            {status && status.state !== "worker_cleanup_complete" && (
+              <button type="button" className="secondary-button" onClick={onRefresh}>
+                Refresh LAN worker status
+              </button>
+            )}
+            {canCollect && (
+              <button type="button" onClick={onCollect}>
+                Retry copy-back and ingest
+              </button>
+            )}
+            {cleanupAvailable && (
+              <button type="button" onClick={onCleanup}>
+                {cleanupFailed ? "Retry LAN worker cleanup" : "Clean up LAN worker copy"}
+              </button>
+            )}
+          </div>
+          {status?.state === "ready_for_local_ingest" && !ingestedResultId && (
+            <p className="state-note">
+              Worker output is now on this MacBook. Cloud Chamber will ingest it locally and clean up
+              the worker copy after ingest succeeds.
+            </p>
+          )}
+          {cleanupComplete && (
+            <p className="state-note">LAN worker cleanup complete. Results and Explore use the MacBook-local copy.</p>
+          )}
+        </>
+      )}
+    </section>
+  );
+}
+
 function LocalPipelinePanel({
   inventory,
   status,
   error,
   results,
   currentRunId,
+  lanWorkerConfigured,
+  autoFinalizingWorkerRunIds,
+  failedAutoFinalizingWorkerRunIds,
   onLaunchStoredRun,
+  onLaunchStoredLanWorkerRun,
+  onRefreshStoredLanWorkerStatus,
+  onFinalizeStoredLanWorkerRun,
   onIngestStoredRun,
   onOpenStoredResult,
   onExploreStoredResult,
@@ -2892,7 +3447,13 @@ function LocalPipelinePanel({
   error: string | null;
   results: ResultCard[];
   currentRunId: string | null;
+  lanWorkerConfigured: boolean;
+  autoFinalizingWorkerRunIds: Set<string>;
+  failedAutoFinalizingWorkerRunIds: Set<string>;
   onLaunchStoredRun: (manifestPath: string) => void;
+  onLaunchStoredLanWorkerRun: (manifestPath: string) => void;
+  onRefreshStoredLanWorkerStatus: (manifestPath: string) => void;
+  onFinalizeStoredLanWorkerRun: (manifestPath: string) => void;
   onIngestStoredRun: (manifestPath: string) => void;
   onOpenStoredResult: (resultId: string) => void;
   onExploreStoredResult: (resultId: string) => void;
@@ -2934,7 +3495,13 @@ function LocalPipelinePanel({
               run={run}
               result={resultForRun(results, run.run_id)}
               current={run.run_id === currentRunId}
+              lanWorkerConfigured={lanWorkerConfigured}
+              autoFinalizing={autoFinalizingWorkerRunIds.has(run.run_id)}
+              autoFinalizeFailed={failedAutoFinalizingWorkerRunIds.has(run.run_id)}
               onLaunchStoredRun={onLaunchStoredRun}
+              onLaunchStoredLanWorkerRun={onLaunchStoredLanWorkerRun}
+              onRefreshStoredLanWorkerStatus={onRefreshStoredLanWorkerStatus}
+              onFinalizeStoredLanWorkerRun={onFinalizeStoredLanWorkerRun}
               onIngestStoredRun={onIngestStoredRun}
               onOpenStoredResult={onOpenStoredResult}
               onExploreStoredResult={onExploreStoredResult}
@@ -2951,7 +3518,13 @@ function PipelineRunCard({
   run,
   result,
   current,
+  lanWorkerConfigured,
+  autoFinalizing,
+  autoFinalizeFailed,
   onLaunchStoredRun,
+  onLaunchStoredLanWorkerRun,
+  onRefreshStoredLanWorkerStatus,
+  onFinalizeStoredLanWorkerRun,
   onIngestStoredRun,
   onOpenStoredResult,
   onExploreStoredResult,
@@ -2960,16 +3533,33 @@ function PipelineRunCard({
   run: RunStorageEntry;
   result: ResultCard | undefined;
   current: boolean;
+  lanWorkerConfigured: boolean;
+  autoFinalizing: boolean;
+  autoFinalizeFailed: boolean;
   onLaunchStoredRun: (manifestPath: string) => void;
+  onLaunchStoredLanWorkerRun: (manifestPath: string) => void;
+  onRefreshStoredLanWorkerStatus: (manifestPath: string) => void;
+  onFinalizeStoredLanWorkerRun: (manifestPath: string) => void;
   onIngestStoredRun: (manifestPath: string) => void;
   onOpenStoredResult: (resultId: string) => void;
   onExploreStoredResult: (resultId: string) => void;
   onOpenStorage: (runId?: string | null) => void;
 }) {
   const displayName = result?.name ?? run.scenario_name ?? run.scenario_id ?? run.run_id;
-  const canLaunch = Boolean(run.manifest_path && run.category === "dry_run_only");
-  const canIngest = Boolean(run.manifest_path && run.category === "completed_with_output" && !result);
+  const canLaunch = Boolean(run.manifest_path && run.category === "dry_run_only" && !run.worker_state);
+  const canRefreshWorker = Boolean(run.manifest_path && run.worker_state === "running");
+  const canFinalizeWorker = Boolean(
+    run.manifest_path && run.worker_state === "completed" && !result && autoFinalizeFailed,
+  );
+  const canIngest = Boolean(
+    run.manifest_path &&
+      !result &&
+      (run.category === "completed_with_output" || run.worker_state === "ready_for_local_ingest"),
+  );
   const stateLabel = pipelineRunStateLabel(run, result);
+  const nextStep = pipelineRunNextStep(run, result);
+  const showWorkerMessage = Boolean(run.worker_message && !run.worker_state);
+  const workerProgress = workerProgressSummary(run);
 
   return (
     <article className={current ? "pipeline-run-card current" : "pipeline-run-card"}>
@@ -2989,17 +3579,56 @@ function PipelineRunCard({
         {humanize(result?.run_size_preset ?? run.run_size_preset ?? "preset unknown")}
       </p>
       <p className="state-note">
-        {storageResultOutputSummary(run, result)} · {formatBytes(run.size_bytes)}
+        {pipelineRunOutputSummary(run, result)} · Local package {formatBytes(run.size_bytes)}
       </p>
-      <p className="state-note">{pipelineRunNextStep(run, result)}</p>
+      {workerProgress && <p className="state-note">{workerProgress}</p>}
+      {showWorkerMessage && <p className="state-note">{run.worker_message}</p>}
+      {autoFinalizing && (
+        <p className="state-note" role="status">
+          Copying worker output back and ingesting locally.
+        </p>
+      )}
+      {autoFinalizeFailed && (
+        <p className="state-note" role="alert">
+          Automatic copy-back or ingest failed. Retry when the backend and worker are reachable.
+        </p>
+      )}
+      <p className="state-note">{nextStep}</p>
       <div className="button-row">
-        {canLaunch && run.manifest_path && (
+        {canLaunch && current && run.manifest_path && (
           <button
             type="button"
             className="secondary-button"
             onClick={() => onLaunchStoredRun(run.manifest_path!)}
           >
             Run with local CM1
+          </button>
+        )}
+        {canLaunch && lanWorkerConfigured && run.manifest_path && (
+          <button
+            type="button"
+            className="secondary-button"
+            onClick={() => onLaunchStoredLanWorkerRun(run.manifest_path!)}
+          >
+            Run on LAN worker
+          </button>
+        )}
+        {canRefreshWorker && run.manifest_path && (
+          <button
+            type="button"
+            className="secondary-button"
+            onClick={() => onRefreshStoredLanWorkerStatus(run.manifest_path!)}
+          >
+            Refresh LAN worker status
+          </button>
+        )}
+        {canFinalizeWorker && run.manifest_path && (
+          <button
+            type="button"
+            className="secondary-button"
+            onClick={() => onFinalizeStoredLanWorkerRun(run.manifest_path!)}
+          >
+            Retry copy-back and ingest
           </button>
         )}
         {canIngest && run.manifest_path && (
@@ -3045,9 +3674,23 @@ function buildRunStage(
   dryRun: DryRunResponse | null,
   runStatus: RunStatusResponse | null,
   ingestedResultId: string | null,
+  lanWorkerStatus: LanWorkerRunResponse | null,
 ): BuildRunStage {
+  if (ingestedResultId && lanWorkerStatus?.state === "worker_cleanup_complete") {
+    return "worker_cleanup_complete";
+  }
+  if (ingestedResultId && lanWorkerStatus?.state === "worker_cleanup_failed") {
+    return "worker_cleanup_failed";
+  }
+  if (ingestedResultId && lanWorkerStatus) return "worker_cleanup_pending";
   if (ingestedResultId) return "ingested";
   if (!dryRun) return "not_packaged";
+  if (lanWorkerStatus?.state === "running") return "lan_worker_running";
+  if (lanWorkerStatus?.state === "completed") return "lan_worker_completed";
+  if (lanWorkerStatus?.state === "ready_for_local_ingest") return "ready_for_local_ingest";
+  if (lanWorkerStatus?.state === "failed" || lanWorkerStatus?.state === "completed_no_output") {
+    return "failed";
+  }
   if (!runStatus) return "package_ready";
   if (runStatus.lifecycle_state === "queued" || runStatus.lifecycle_state === "running") {
     return "running";
@@ -3063,17 +3706,62 @@ function buildStageLabel(stage: BuildRunStage): string {
   const labels: Record<BuildRunStage, string> = {
     not_packaged: "Not packaged yet",
     package_ready: "Package ready",
+    lan_worker_running: "Running on LAN worker",
+    lan_worker_completed: "Ready to copy back",
+    ready_for_local_ingest: "Ready to ingest",
     running: "Running",
     completed: "Completed",
     failed: "Failed",
     ingested: "Ingested",
+    worker_cleanup_pending: "Cleanup pending",
+    worker_cleanup_complete: "Worker cleanup complete",
+    worker_cleanup_failed: "Cleanup retry needed",
   };
   return labels[stage];
 }
 
 function buildStageTone(stage: BuildRunStage): "good" | "warning" | "neutral" {
   if (stage === "completed" || stage === "ingested") return "good";
-  if (stage === "failed") return "warning";
+  if (stage === "ready_for_local_ingest" || stage === "worker_cleanup_complete") return "good";
+  if (stage === "failed" || stage === "worker_cleanup_failed") return "warning";
+  return "neutral";
+}
+
+function lanWorkerStatusLabel(status: LanWorkerRunResponse): string {
+  const labels: Record<string, string> = {
+    running: "Running CM1 on LAN worker",
+    completed: "Worker completed with output",
+    completed_no_output: "Worker completed with no output",
+    failed: "LAN worker failed",
+    copied_back_to_mac: "Copied back to MacBook",
+    ready_for_local_ingest: "Completed output ready to ingest",
+    worker_cleanup_pending: "Worker cleanup pending",
+    worker_cleanup_complete: "LAN worker cleanup complete",
+    worker_cleanup_failed: "LAN worker cleanup failed",
+  };
+  return labels[status.state] ?? humanize(status.state);
+}
+
+function lanWorkerTone(
+  status: LanWorkerRunResponse | null,
+  configured: boolean,
+): "good" | "warning" | "neutral" {
+  if (!configured) return "neutral";
+  if (!status) return "neutral";
+  if (
+    status.state === "completed" ||
+    status.state === "ready_for_local_ingest" ||
+    status.state === "worker_cleanup_complete"
+  ) {
+    return "good";
+  }
+  if (
+    status.state === "failed" ||
+    status.state === "completed_no_output" ||
+    status.state === "worker_cleanup_failed"
+  ) {
+    return "warning";
+  }
   return "neutral";
 }
 
@@ -3117,6 +3805,17 @@ function selectPipelineRuns(
 
 function pipelineRunStateLabel(run: RunStorageEntry, result: ResultCard | undefined): string {
   if (result) return "Ready to review";
+  if (run.worker_state) {
+    return lanWorkerStatusLabel({
+      run_id: run.run_id,
+      state: run.worker_state,
+      message: run.worker_message,
+      started_at: run.worker_started_at,
+      finished_at: run.worker_finished_at,
+      netcdf_count: run.worker_netcdf_count ?? 0,
+      raw_artifact_count: run.worker_raw_artifact_count ?? 0,
+    });
+  }
   const labels: Record<string, string> = {
     dry_run_only: "Ready to run",
     running: "Running",
@@ -3137,6 +3836,20 @@ function pipelineRunTone(
   result: ResultCard | undefined,
 ): "good" | "warning" | "neutral" {
   if (result?.saved || result?.protected || result) return "good";
+  if (run.worker_state) {
+    return lanWorkerTone(
+      {
+        run_id: run.run_id,
+        state: run.worker_state,
+        message: run.worker_message,
+        started_at: run.worker_started_at,
+        finished_at: run.worker_finished_at,
+        netcdf_count: run.worker_netcdf_count ?? 0,
+        raw_artifact_count: run.worker_raw_artifact_count ?? 0,
+      },
+      true,
+    );
+  }
   if (run.category === "completed_with_output") return "good";
   if (
     run.category === "failed" ||
@@ -3152,6 +3865,14 @@ function pipelineRunTone(
 
 function pipelineRunNextStep(run: RunStorageEntry, result: ResultCard | undefined): string {
   if (result) return "Review in Results or Explore fields; cleanup remains available in Storage.";
+  if (run.worker_state === "running") return "CM1 is running on the LAN worker; refresh runs for status.";
+  if (run.worker_state === "completed") {
+    return "LAN worker output is complete; Cloud Chamber will copy it back, ingest locally, and clean up the worker copy.";
+  }
+  if (run.worker_state === "ready_for_local_ingest") {
+    return "Worker output is on this MacBook; ingest it locally before worker cleanup.";
+  }
+  if (run.worker_message) return run.worker_message;
   if (run.category === "dry_run_only") return "Ready to run after CM1 checks.";
   if (run.category === "running") return "CM1 is active or queued; refresh runs for status.";
   if (run.category === "completed_with_output") {
@@ -3167,6 +3888,58 @@ function pipelineRunNextStep(run: RunStorageEntry, result: ResultCard | undefine
     return "Run directory needs cleanup review before trusting it.";
   }
   return "Review in Storage for the safest next action.";
+}
+
+function workerProgressSummary(run: RunStorageEntry): string | null {
+  if (!run.worker_state) return null;
+  const parts: string[] = [];
+  if (run.worker_status_updated_at) {
+    parts.push(`Last checked ${formatShortTime(run.worker_status_updated_at)}`);
+  }
+  if (run.worker_state === "running") {
+    const estimate = workerEstimatedFinish(run);
+    if (estimate) parts.push(estimate);
+  }
+  return parts.length > 0 ? parts.join(" · ") : null;
+}
+
+function workerEstimatedFinish(run: RunStorageEntry): string | null {
+  if (!run.worker_started_at) return null;
+  const expectedFrames = expectedOutputFramesForPreset(run.run_size_preset);
+  if (!expectedFrames) return null;
+  const netcdfCount = run.worker_netcdf_count ?? 0;
+  const observedModelFrames = Math.max(0, netcdfCount - 1);
+  if (observedModelFrames < 2 || observedModelFrames >= expectedFrames) return null;
+  const startedAt = Date.parse(run.worker_started_at);
+  if (!Number.isFinite(startedAt)) return null;
+  const elapsedMs = Date.now() - startedAt;
+  if (elapsedMs <= 0) return null;
+  const totalMs = (elapsedMs / observedModelFrames) * expectedFrames;
+  const remainingMs = totalMs - elapsedMs;
+  if (!Number.isFinite(remainingMs) || remainingMs <= 0) return null;
+  return `Approx finish ${formatDurationFromNow(remainingMs)} (${observedModelFrames}/${expectedFrames} output frames)`;
+}
+
+function expectedOutputFramesForPreset(preset: string | null): number | null {
+  if (preset === "quick_look") return 13;
+  if (preset === "standard") return 7;
+  if (preset === "deep_overnight") return 73;
+  return null;
+}
+
+function formatShortTime(value: string): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleTimeString([], { hour: "numeric", minute: "2-digit", second: "2-digit" });
+}
+
+function formatDurationFromNow(durationMs: number): string {
+  const totalMinutes = Math.max(1, Math.round(durationMs / 60000));
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  if (hours <= 0) return `in about ${minutes} min`;
+  if (minutes === 0) return `in about ${hours} hr`;
+  return `in about ${hours} hr ${minutes} min`;
 }
 
 function selectedControlOption(
@@ -6191,6 +6964,18 @@ function storageOutputSummary(run: RunStorageEntry): string {
 function storageResultOutputSummary(run: RunStorageEntry, result: ResultCard | undefined): string {
   if (result) return outputSummary(result.output_file_summary);
   return storageOutputSummary(run);
+}
+
+function pipelineRunOutputSummary(run: RunStorageEntry, result: ResultCard | undefined): string {
+  if (result) return outputSummary(result.output_file_summary);
+  if (!run.worker_state) return storageOutputSummary(run);
+  const netcdf = run.worker_netcdf_count ?? 0;
+  const raw = run.worker_raw_artifact_count ?? 0;
+  if (netcdf === 0 && raw === 0) return "Worker output not detected yet";
+  const parts = [];
+  if (netcdf > 0) parts.push(`${netcdf} remote NetCDF files`);
+  if (raw > 0) parts.push(`${raw} remote raw CM1 files`);
+  return parts.join(", ");
 }
 
 function resultForRun(results: ResultCard[], runId: string): ResultCard | undefined {

@@ -11,6 +11,14 @@ from pydantic import BaseModel, Field
 
 from cloud_chamber.cli import ENGINE_NOTE
 from cloud_chamber.dry_run_package import generate_dry_run_package, read_dry_run_report
+from cloud_chamber.lan_worker import (
+    LanWorkerApiError,
+    cleanup_lan_worker_run,
+    collect_lan_worker_run,
+    lan_worker_config_status,
+    lan_worker_run_status,
+    start_lan_worker_run,
+)
 from cloud_chamber.local_run_manager import LocalRunManager, LocalRunManagerError, RunStatus
 from cloud_chamber.result_cards import (
     ResultCardUpdate,
@@ -90,6 +98,10 @@ class IngestResultRequest(BaseModel):
     manifest_path: str
 
 
+class LanWorkerRunRequest(BaseModel):
+    manifest_path: str
+
+
 @app.get("/api/scenarios")
 def list_scenarios() -> dict[str, object]:
     scenarios = [scenario_summary(scenario) for scenario in load_scenario_templates()]
@@ -145,6 +157,43 @@ def cancel_run() -> dict[str, object]:
     except LocalRunManagerError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return _run_status_payload(status)
+
+
+@app.get("/api/lan-worker/config")
+def get_lan_worker_config() -> dict[str, object]:
+    return lan_worker_config_status()
+
+
+@app.post("/api/lan-worker/start")
+def start_lan_worker(request: LanWorkerRunRequest) -> dict[str, object]:
+    try:
+        return start_lan_worker_run(load_settings(), Path(request.manifest_path).expanduser())
+    except LanWorkerApiError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.get("/api/lan-worker/status")
+def get_lan_worker_status(manifest_path: str) -> dict[str, object]:
+    try:
+        return lan_worker_run_status(load_settings(), Path(manifest_path).expanduser())
+    except LanWorkerApiError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/api/lan-worker/collect")
+def collect_lan_worker(request: LanWorkerRunRequest) -> dict[str, object]:
+    try:
+        return collect_lan_worker_run(load_settings(), Path(request.manifest_path).expanduser())
+    except LanWorkerApiError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/api/lan-worker/cleanup")
+def cleanup_lan_worker(request: LanWorkerRunRequest) -> dict[str, object]:
+    try:
+        return cleanup_lan_worker_run(load_settings(), Path(request.manifest_path).expanduser())
+    except LanWorkerApiError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @app.get("/api/storage/inventory")
