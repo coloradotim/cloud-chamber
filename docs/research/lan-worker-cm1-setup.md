@@ -7,10 +7,10 @@ app server, browser UI, runtime inventory, result notebook, ingest, diagnostics,
 and Explore. A trusted LAN worker is only a CM1 compute appliance for heavier
 solver execution.
 
-This note documents the one-time setup and manual validation expected before
-Cloud Chamber automates package transfer, remote launch, or return-copy flows.
-It intentionally avoids hostnames, usernames, IP addresses, SSH keys, and
-personal paths.
+This note documents the one-time setup, manual validation, and current
+script-assisted package transfer workflow for a trusted LAN worker. It
+intentionally avoids hostnames, usernames, IP addresses, SSH keys, and personal
+paths.
 
 ## Architecture Boundary
 
@@ -54,16 +54,57 @@ committing it.
 
 ## Local-Only Configuration Shape
 
-Future automation should read worker settings from local environment variables
-or ignored local config, not committed repo files.
+Worker settings should live in an ignored local config file or environment
+overrides, not committed repo files.
 
-Recommended local-only values:
+The preferred local file is:
+
+```text
+~/CloudChamber/lan-worker.json
+```
+
+Alternative repo-local development path:
+
+```text
+local-data/lan-worker.json
+```
+
+`local-data/` is gitignored. The home-runtime config path is outside the repo
+entirely and is the least surprising day-to-day option.
+
+Config file shape:
+
+```json
+{
+  "host": "<worker-ssh-alias>",
+  "worker_root": "<worker-scratch-root>",
+  "cm1_exe": "<worker-cm1-run-dir>/cm1.exe"
+}
+```
+
+Optional command overrides:
+
+```json
+{
+  "host": "<worker-ssh-alias>",
+  "worker_root": "<worker-scratch-root>",
+  "cm1_exe": "<worker-cm1-run-dir>/cm1.exe",
+  "cm1_env": {
+    "OMP_NUM_THREADS": "16"
+  },
+  "cm1_command": "<optional launch command, defaults to cm1_exe>",
+  "ssh": "ssh",
+  "rsync": "rsync"
+}
+```
+
+Environment overrides are still supported for temporary testing:
 
 ```text
 CLOUD_CHAMBER_LAN_WORKER_HOST=<worker-ssh-alias>
 CLOUD_CHAMBER_LAN_WORKER_ROOT=<worker-scratch-root>
 CLOUD_CHAMBER_LAN_WORKER_CM1_EXE=<worker-cm1-run-dir>/cm1.exe
-CLOUD_CHAMBER_LAN_WORKER_CM1_RUN_DIR=<worker-cm1-run-dir>
+CLOUD_CHAMBER_LAN_WORKER_CM1_COMMAND=<optional launch command>
 ```
 
 Optional future values:
@@ -74,8 +115,62 @@ CLOUD_CHAMBER_LAN_WORKER_SSH=ssh
 CLOUD_CHAMBER_LAN_WORKER_MAX_ACTIVE_RUNS=1
 ```
 
-These are examples of the expected shape, not implemented settings in this
-setup note.
+`scripts/lan-worker-run.sh` reads the first three required values. `cm1_env`
+is exported before CM1 starts and is the preferred way to set CPU-threading
+variables such as `OMP_NUM_THREADS`. `cm1_command` can be used for trusted
+local launch forms such as `mpirun -np 4 <worker-cm1-run-dir>/cm1.exe`; it
+defaults to `cm1_exe`. The `cm1_exe` value is still required because the script
+uses its parent directory to stage CM1 runtime support files such as
+`LANDUSE.TBL`.
+
+The optional `ssh` and `rsync` config values can override command names or add
+local-only flags. Environment variables override the JSON file when both are
+present.
+
+## Worker Performance Modes
+
+The worker should not use a serial proof binary for normal Cloud Chamber runs.
+Treat worker CM1 builds as explicit performance modes:
+
+```text
+serial proof:
+  build target: gfortran without OpenMP
+  use only for installation smoke tests
+
+OpenMP CPU:
+  build target: gfortran with -fopenmp and -DOPENMP
+  config: cm1_env.OMP_NUM_THREADS set to the intended worker core count
+  current recommended default for the trusted LAN worker
+
+MPI / hybrid:
+  build target: mpif90 and/or MPI plus OpenMP
+  config: cm1_command such as "mpirun -np <n> <cm1.exe>"
+  future validation path if OpenMP alone is not enough
+
+OpenACC / GPU:
+  requires a CM1 source tree and compiler path that actually support OpenACC,
+  typically NVIDIA HPC SDK / nvfortran
+  must be validated against CPU output before becoming a default
+```
+
+The CM1 r21.1 tree originally installed for Cloud Chamber includes NVIDIA
+compiler stanzas in its Makefile but no OpenACC source/directive support. The
+current upstream CM1 compile guide documents `USE_OPENACC=true` for PGI/NVHPC,
+so GPU execution should be treated as a separate validated install/build path,
+not as a flag that can be applied to the existing r21.1 serial binary.
+
+Current worker-local recommended config shape:
+
+```json
+{
+  "host": "<worker-ssh-alias>",
+  "worker_root": "<worker-scratch-root>",
+  "cm1_exe": "<worker-openmp-cm1-run-dir>/cm1.exe",
+  "cm1_env": {
+    "OMP_NUM_THREADS": "16"
+  }
+}
+```
 
 ## Worker Filesystem Expectations
 
@@ -93,6 +188,98 @@ The worker needs:
 The worker scratch root should be disposable. It should not be the source CM1
 install, the user's home directory root, the MacBook runtime home, or a repo
 checkout.
+
+## Script-Assisted Package / Run / Return Workflow
+
+Cloud Chamber currently provides a script-assisted workflow for trusted LAN
+worker execution:
+
+```bash
+scripts/lan-worker-run.sh start --package-dir <runtime-home>/runs/<run-id>
+scripts/lan-worker-run.sh status --package-dir <runtime-home>/runs/<run-id>
+scripts/lan-worker-run.sh collect --package-dir <runtime-home>/runs/<run-id>
+```
+
+The script expects the package to have been generated locally under
+`<runtime-home>/runs/<run-id>/`. It validates that the package is inside the
+local runtime home and contains:
+
+```text
+run_manifest.json
+case_manifest.json
+namelist.input
+input_sounding
+runtime_file_checklist.json
+dry_run_report.json
+```
+
+`start` copies that package to:
+
+```text
+<worker-scratch-root>/runs/<run-id>/
+```
+
+It then launches CM1 on the worker in that copied package directory and writes:
+
+```text
+logs/stdout.log
+logs/stderr.log
+worker_status.json
+worker_complete.marker or worker_failed.marker
+```
+
+`status` reads the worker-side `worker_status.json`.
+
+`collect` copies the worker directory back to a local staging directory:
+
+```text
+<runtime-home>/runs/<run-id>.incoming/
+```
+
+After required returned files and worker status are verified, it promotes the
+returned output/logs into the original local package directory and updates the
+local `run_manifest.json` to the same completed/failed states used by local CM1
+runs. Local ingest still happens on the MacBook; Results and Explore continue
+to read MacBook-local files.
+
+Generated `.incoming` staging folders are removed after successful promotion.
+Failed collect attempts leave staging evidence for inspection.
+
+## Worker Cleanup After Local Ingest
+
+Worker output can be large. The worker copy should be cleaned up after:
+
+1. copy-back to the MacBook succeeds;
+2. the returned files are verified and promoted into the local runtime home;
+3. local MacBook ingest succeeds, or the user explicitly decides the worker copy
+   is no longer needed.
+
+Cleanup is explicit and separate:
+
+```bash
+scripts/lan-worker-run.sh cleanup --package-dir <runtime-home>/runs/<run-id>
+```
+
+or:
+
+```bash
+scripts/lan-worker-run.sh cleanup --run-id <run-id>
+```
+
+Cleanup only targets:
+
+```text
+<worker-scratch-root>/runs/<run-id>/
+```
+
+It refuses empty run IDs, path traversal, path separators, the worker root
+itself, the worker runs root itself, and paths inside the configured CM1 install
+directory. If the worker run directory has already been removed, cleanup reports
+that it is already clean instead of invalidating the local result.
+
+Cleanup failure after successful copy-back does not change the local completed
+result or ingest record. The local `worker_status.json` records
+`worker_cleanup_failed` so cleanup can be retried later.
 
 ## Bootstrap A Fresh Ubuntu Worker
 
