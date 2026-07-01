@@ -79,6 +79,7 @@ def test_worker_config_loads_from_local_json_file(tmp_path: Path) -> None:
                 "host": "worker.example",
                 "worker_root": "/srv/cloud-chamber-worker",
                 "cm1_exe": "/opt/cm1/run/cm1.exe",
+                "cm1_env": {"OMP_NUM_THREADS": "16"},
             }
         )
     )
@@ -88,8 +89,29 @@ def test_worker_config_loads_from_local_json_file(tmp_path: Path) -> None:
     assert config.host == "worker.example"
     assert config.worker_root == "/srv/cloud-chamber-worker"
     assert config.cm1_exe == "/opt/cm1/run/cm1.exe"
+    assert config.cm1_env == {"OMP_NUM_THREADS": "16"}
     assert config.ssh_command == ("ssh",)
     assert config.rsync_command == ("rsync",)
+
+
+def test_worker_config_supports_custom_launch_command(tmp_path: Path) -> None:
+    module = load_script()
+    config_path = tmp_path / "lan-worker.json"
+    config_path.write_text(
+        json.dumps(
+            {
+                "host": "worker.example",
+                "worker_root": "/srv/cloud-chamber-worker",
+                "cm1_exe": "/opt/cm1/run/cm1.exe",
+                "cm1_command": "mpirun -np 4 /opt/cm1/run/cm1.exe",
+            }
+        )
+    )
+
+    config = module.load_worker_config(env={}, config_path=str(config_path))
+
+    assert config.cm1_exe == "/opt/cm1/run/cm1.exe"
+    assert config.cm1_command == "mpirun -np 4 /opt/cm1/run/cm1.exe"
 
 
 def test_worker_config_env_overrides_local_json_file(tmp_path: Path) -> None:
@@ -148,6 +170,39 @@ def test_cleanup_remote_command_is_idempotent() -> None:
     assert "already_removed" in command
     assert "rm -rf --" in command
     assert "worker_cleanup_complete" in command
+
+
+def test_worker_runner_exports_and_records_cm1_environment() -> None:
+    module = load_script()
+
+    runner = module.render_worker_runner(
+        "dry-run-test",
+        "/opt/cm1/run/cm1.exe",
+        "/opt/cm1/run/cm1.exe",
+        {"OMP_NUM_THREADS": "16"},
+    )
+
+    assert "CM1_ENV_JSON=" in runner
+    assert "export {key}=" in runner
+    assert '"cm1_env": json.loads(cm1_env_json or "{}")' in runner
+    assert 'bash -lc "$CM1_COMMAND"' in runner
+
+
+def test_worker_status_parses_cm1_command_and_environment() -> None:
+    module = load_script()
+
+    status = module.worker_status_from_mapping(
+        {
+            "run_id": "dry-run-test",
+            "state": "completed",
+            "cm1_exe": "/opt/cm1/run/cm1.exe",
+            "cm1_command": "mpirun -np 4 /opt/cm1/run/cm1.exe",
+            "cm1_env": {"OMP_NUM_THREADS": "4"},
+        }
+    )
+
+    assert status.cm1_command == "mpirun -np 4 /opt/cm1/run/cm1.exe"
+    assert status.cm1_env == {"OMP_NUM_THREADS": "4"}
 
 
 def test_cleanup_already_removed_updates_local_worker_status(

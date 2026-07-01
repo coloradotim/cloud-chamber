@@ -89,6 +89,10 @@ Optional command overrides:
   "host": "<worker-ssh-alias>",
   "worker_root": "<worker-scratch-root>",
   "cm1_exe": "<worker-cm1-run-dir>/cm1.exe",
+  "cm1_env": {
+    "OMP_NUM_THREADS": "16"
+  },
+  "cm1_command": "<optional launch command, defaults to cm1_exe>",
   "ssh": "ssh",
   "rsync": "rsync"
 }
@@ -100,7 +104,7 @@ Environment overrides are still supported for temporary testing:
 CLOUD_CHAMBER_LAN_WORKER_HOST=<worker-ssh-alias>
 CLOUD_CHAMBER_LAN_WORKER_ROOT=<worker-scratch-root>
 CLOUD_CHAMBER_LAN_WORKER_CM1_EXE=<worker-cm1-run-dir>/cm1.exe
-CLOUD_CHAMBER_LAN_WORKER_CM1_RUN_DIR=<worker-cm1-run-dir>
+CLOUD_CHAMBER_LAN_WORKER_CM1_COMMAND=<optional launch command>
 ```
 
 Optional future values:
@@ -111,9 +115,62 @@ CLOUD_CHAMBER_LAN_WORKER_SSH=ssh
 CLOUD_CHAMBER_LAN_WORKER_MAX_ACTIVE_RUNS=1
 ```
 
-`scripts/lan-worker-run.sh` reads the first three required values. The optional
-`ssh` and `rsync` config values can override command names or add local-only
-flags. Environment variables override the JSON file when both are present.
+`scripts/lan-worker-run.sh` reads the first three required values. `cm1_env`
+is exported before CM1 starts and is the preferred way to set CPU-threading
+variables such as `OMP_NUM_THREADS`. `cm1_command` can be used for trusted
+local launch forms such as `mpirun -np 4 <worker-cm1-run-dir>/cm1.exe`; it
+defaults to `cm1_exe`. The `cm1_exe` value is still required because the script
+uses its parent directory to stage CM1 runtime support files such as
+`LANDUSE.TBL`.
+
+The optional `ssh` and `rsync` config values can override command names or add
+local-only flags. Environment variables override the JSON file when both are
+present.
+
+## Worker Performance Modes
+
+The worker should not use a serial proof binary for normal Cloud Chamber runs.
+Treat worker CM1 builds as explicit performance modes:
+
+```text
+serial proof:
+  build target: gfortran without OpenMP
+  use only for installation smoke tests
+
+OpenMP CPU:
+  build target: gfortran with -fopenmp and -DOPENMP
+  config: cm1_env.OMP_NUM_THREADS set to the intended worker core count
+  current recommended default for the trusted LAN worker
+
+MPI / hybrid:
+  build target: mpif90 and/or MPI plus OpenMP
+  config: cm1_command such as "mpirun -np <n> <cm1.exe>"
+  future validation path if OpenMP alone is not enough
+
+OpenACC / GPU:
+  requires a CM1 source tree and compiler path that actually support OpenACC,
+  typically NVIDIA HPC SDK / nvfortran
+  must be validated against CPU output before becoming a default
+```
+
+The CM1 r21.1 tree originally installed for Cloud Chamber includes NVIDIA
+compiler stanzas in its Makefile but no OpenACC source/directive support. The
+current upstream CM1 compile guide documents `USE_OPENACC=true` for PGI/NVHPC,
+so GPU execution should be treated as a separate validated install/build path,
+not as a flag that can be applied to the existing r21.1 serial binary.
+
+Current worker-local recommended config shape:
+
+```json
+{
+  "host": "<worker-ssh-alias>",
+  "worker_root": "<worker-scratch-root>",
+  "cm1_exe": "<worker-openmp-cm1-run-dir>/cm1.exe",
+  "cm1_env": {
+    "OMP_NUM_THREADS": "16"
+  }
+}
+```
 
 ## Worker Filesystem Expectations
 

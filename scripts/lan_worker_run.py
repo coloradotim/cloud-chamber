@@ -58,6 +58,8 @@ class WorkerConfig:
     host: str
     worker_root: str
     cm1_exe: str
+    cm1_command: str | None = None
+    cm1_env: dict[str, str] | None = None
     ssh_command: tuple[str, ...] = ("ssh",)
     rsync_command: tuple[str, ...] = ("rsync",)
 
@@ -79,6 +81,8 @@ class WorkerStatus:
     run_id: str
     state: str
     cm1_exe: str
+    cm1_command: str | None = None
+    cm1_env: dict[str, str] | None = None
     started_at: str | None = None
     finished_at: str | None = None
     exit_code: int | None = None
@@ -166,6 +170,8 @@ def load_worker_config(
         "host": file_values.get("host"),
         "worker_root": file_values.get("worker_root"),
         "cm1_exe": file_values.get("cm1_exe"),
+        "cm1_command": file_values.get("cm1_command"),
+        "cm1_env": file_values.get("cm1_env"),
         "ssh": file_values.get("ssh"),
         "rsync": file_values.get("rsync"),
     }
@@ -175,6 +181,8 @@ def load_worker_config(
         values["worker_root"] = source["CLOUD_CHAMBER_LAN_WORKER_ROOT"]
     if source.get("CLOUD_CHAMBER_LAN_WORKER_CM1_EXE"):
         values["cm1_exe"] = source["CLOUD_CHAMBER_LAN_WORKER_CM1_EXE"]
+    if source.get("CLOUD_CHAMBER_LAN_WORKER_CM1_COMMAND"):
+        values["cm1_command"] = source["CLOUD_CHAMBER_LAN_WORKER_CM1_COMMAND"]
     if source.get("CLOUD_CHAMBER_LAN_WORKER_SSH"):
         values["ssh"] = source["CLOUD_CHAMBER_LAN_WORKER_SSH"]
     if source.get("CLOUD_CHAMBER_LAN_WORKER_RSYNC"):
@@ -195,12 +203,16 @@ def load_worker_config(
         host=str(values["host"]),
         worker_root=str(values["worker_root"]),
         cm1_exe=str(values["cm1_exe"]),
+        cm1_command=(
+            str(values["cm1_command"]) if isinstance(values.get("cm1_command"), str) else None
+        ),
+        cm1_env=(dict(values["cm1_env"]) if isinstance(values.get("cm1_env"), dict) else {}),
         ssh_command=tuple(shlex.split(str(values.get("ssh") or "ssh"))),
         rsync_command=tuple(shlex.split(str(values.get("rsync") or "rsync"))),
     )
 
 
-def load_worker_config_file(config_path: str | None) -> tuple[dict[str, str], Path | None]:
+def load_worker_config_file(config_path: str | None) -> tuple[dict[str, Any], Path | None]:
     paths = (
         (Path(config_path).expanduser(),)
         if config_path
@@ -210,7 +222,7 @@ def load_worker_config_file(config_path: str | None) -> tuple[dict[str, str], Pa
         if not path.exists():
             continue
         data = _read_json(path)
-        values: dict[str, str] = {}
+        values: dict[str, Any] = {}
         aliases = {
             "host": ("host", "worker_host", "CLOUD_CHAMBER_LAN_WORKER_HOST"),
             "worker_root": (
@@ -224,6 +236,11 @@ def load_worker_config_file(config_path: str | None) -> tuple[dict[str, str], Pa
                 "cm1_executable",
                 "CLOUD_CHAMBER_LAN_WORKER_CM1_EXE",
             ),
+            "cm1_command": (
+                "cm1_command",
+                "launch_command",
+                "CLOUD_CHAMBER_LAN_WORKER_CM1_COMMAND",
+            ),
             "ssh": ("ssh", "ssh_command", "CLOUD_CHAMBER_LAN_WORKER_SSH"),
             "rsync": ("rsync", "rsync_command", "CLOUD_CHAMBER_LAN_WORKER_RSYNC"),
         }
@@ -233,6 +250,13 @@ def load_worker_config_file(config_path: str | None) -> tuple[dict[str, str], Pa
                 if isinstance(value, str) and value:
                     values[canonical] = value
                     break
+        cm1_env = data.get("cm1_env")
+        if isinstance(cm1_env, dict):
+            values["cm1_env"] = {
+                str(key): str(value)
+                for key, value in cm1_env.items()
+                if isinstance(key, str) and key and isinstance(value, str)
+            }
         return values, path
     return {}, None
 
@@ -283,7 +307,12 @@ def start_worker_run(args: argparse.Namespace) -> None:
             f"{config.host}:{remote_dir}/",
         )
     )
-    runner_text = render_worker_runner(package.run_id, config.cm1_exe)
+    runner_text = render_worker_runner(
+        package.run_id,
+        config.cm1_exe,
+        config.cm1_command or config.cm1_exe,
+        config.cm1_env or {},
+    )
     with tempfile.TemporaryDirectory(prefix="cloud-chamber-worker-runner-") as tempdir:
         local_runner = Path(tempdir) / ".cloud_chamber_worker_runner.sh"
         local_runner.write_text(runner_text)
@@ -465,14 +494,23 @@ def build_cleanup_remote_command(remote_dir: str) -> str:
     )
 
 
-def render_worker_runner(run_id: str, cm1_exe: str) -> str:
+def render_worker_runner(
+    run_id: str,
+    cm1_exe: str,
+    cm1_command: str,
+    cm1_env: dict[str, str],
+) -> str:
     run_id_q = shlex.quote(run_id)
     cm1_exe_q = shlex.quote(cm1_exe)
+    cm1_command_q = shlex.quote(cm1_command)
+    cm1_env_q = shlex.quote(json.dumps(cm1_env, sort_keys=True))
     return f"""#!/usr/bin/env bash
 set -u
 
 RUN_ID={run_id_q}
 CM1_EXE={cm1_exe_q}
+CM1_COMMAND={cm1_command_q}
+CM1_ENV_JSON={cm1_env_q}
 
 write_status() {{
   local state="$1"
@@ -482,12 +520,12 @@ write_status() {{
   local netcdf_count="${{5:-0}}"
   local raw_count="${{6:-0}}"
   local message="${{7:-}}"
-  python3 - "$RUN_ID" "$state" "$CM1_EXE" "$started_at" "$finished_at" "$exit_code" "$netcdf_count" "$raw_count" "$message" <<'PY'
+  python3 - "$RUN_ID" "$state" "$CM1_EXE" "$CM1_COMMAND" "$CM1_ENV_JSON" "$started_at" "$finished_at" "$exit_code" "$netcdf_count" "$raw_count" "$message" <<'PY'
 import json
 import sys
 from pathlib import Path
 
-run_id, state, cm1_exe, started_at, finished_at, exit_code, netcdf_count, raw_count, message = sys.argv[1:]
+run_id, state, cm1_exe, cm1_command, cm1_env_json, started_at, finished_at, exit_code, netcdf_count, raw_count, message = sys.argv[1:]
 
 def maybe_none(value):
     return None if value == "" else value
@@ -497,6 +535,8 @@ payload = {{
     "run_id": run_id,
     "state": state,
     "cm1_exe": cm1_exe,
+    "cm1_command": cm1_command,
+    "cm1_env": json.loads(cm1_env_json or "{{}}"),
     "started_at": maybe_none(started_at),
     "finished_at": maybe_none(finished_at),
     "exit_code": None if exit_code == "" else int(exit_code),
@@ -518,6 +558,26 @@ if [[ ! -x "$CM1_EXE" ]]; then
   touch worker_failed.marker
   exit 127
 fi
+
+python3 - "$CM1_ENV_JSON" <<'PY' > .cloud_chamber_cm1_env.sh
+import json
+import shlex
+import sys
+
+env = json.loads(sys.argv[1] or "{{}}")
+for key, value in sorted(env.items()):
+    if not key.replace("_", "").isalnum() or key[0].isdigit():
+        raise SystemExit(f"Unsafe environment variable name: {{key}}")
+    print(f"export {{key}}={{shlex.quote(str(value))}}")
+PY
+env_status=$?
+if [[ "$env_status" -ne 0 ]]; then
+  finished_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  write_status "failed" "$started_at" "$finished_at" "$env_status" 0 0 "CM1 worker environment setup failed."
+  touch worker_failed.marker
+  exit "$env_status"
+fi
+source ./.cloud_chamber_cm1_env.sh
 
 python3 - "$CM1_EXE" <<'PY'
 import json
@@ -560,7 +620,7 @@ if [[ "$runtime_stage_status" -ne 0 ]]; then
   exit "$runtime_stage_status"
 fi
 
-"$CM1_EXE" > logs/stdout.log 2> logs/stderr.log
+bash -lc "$CM1_COMMAND" > logs/stdout.log 2> logs/stderr.log
 exit_code=$?
 finished_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 shopt -s nullglob
@@ -603,10 +663,17 @@ def worker_status_from_mapping(data: dict[str, Any]) -> WorkerStatus:
     cm1_exe = data.get("cm1_exe")
     if not isinstance(run_id, str) or not isinstance(state, str) or not isinstance(cm1_exe, str):
         raise LanWorkerError("Worker status is missing run_id, state, or cm1_exe.")
+    cm1_env = data.get("cm1_env")
     return WorkerStatus(
         run_id=run_id,
         state=state,
         cm1_exe=cm1_exe,
+        cm1_command=_optional_str(data.get("cm1_command")),
+        cm1_env=(
+            {str(key): str(value) for key, value in cm1_env.items()}
+            if isinstance(cm1_env, dict)
+            else {}
+        ),
         started_at=_optional_str(data.get("started_at")),
         finished_at=_optional_str(data.get("finished_at")),
         exit_code=_optional_int(data.get("exit_code")),
@@ -675,9 +742,14 @@ def update_local_manifest_after_return(package: PackageInfo, status: WorkerStatu
         validation_status = "failed"
 
     execution = dict(data.get("execution") or {})
+    command = [status.cm1_exe]
+    if status.cm1_command:
+        command = ["bash", "-lc", status.cm1_command]
     execution.update(
         {
-            "command": [status.cm1_exe],
+            "command": command,
+            "lan_worker_cm1_exe": status.cm1_exe,
+            "lan_worker_cm1_env": status.cm1_env or {},
             "started_at": _normalize_datetime(status.started_at),
             "finished_at": _normalize_datetime(status.finished_at) or now,
             "exit_code": exit_code,
