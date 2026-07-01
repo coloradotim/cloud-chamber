@@ -263,6 +263,34 @@ def test_ingests_multifile_model_output_sequence_and_excludes_stats(tmp_path: Pa
     assert result.diagnostics.vertical_velocity.max_w_m_s == 7.0
 
 
+def test_multifile_ingest_does_not_concatenate_full_sequence(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    manifest_path = create_manifest(tmp_path, run_id="run-no-concat")
+    run_dir = manifest_path.parent
+    first = run_dir / "cm1out_000001.nc"
+    second = run_dir / "cm1out_000002.nc"
+    write_model_netcdf(first, times=[300.0], qc_values=[0.0], w_values=[1.0])
+    write_model_netcdf(second, times=[600.0], qc_values=[2e-6], w_values=[7.0])
+    complete_manifest(
+        manifest_path,
+        OutputMetadata(netcdf_paths=[str(first), str(second)]),
+    )
+
+    def fail_concat(*_args: object, **_kwargs: object) -> None:
+        raise AssertionError("multi-file ingest should not concatenate full NetCDF sequence")
+
+    monkeypatch.setattr(xr, "concat", fail_concat)
+
+    result = ingest_completed_run(manifest_path)
+
+    assert result.time_steps == 2
+    assert result.diagnostics is not None
+    assert result.diagnostics.cloud.formed is True
+    assert result.diagnostics.cloud.time_of_max_qc_seconds == 600.0
+
+
 def test_ingests_multifile_with_multiple_timesteps_per_file(tmp_path: Path) -> None:
     manifest_path = create_manifest(tmp_path, run_id="run-multistep")
     run_dir = manifest_path.parent

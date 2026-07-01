@@ -7,7 +7,7 @@ import json
 import re
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -17,8 +17,13 @@ from cloud_chamber.output_products import (
     write_output_product_manifest,
 )
 from cloud_chamber.result_diagnostics import (
+    CloudDiagnostics,
     ProcessDiagnostics,
+    RainDiagnostics,
     ResultDiagnostics,
+    TimeDiagnostics,
+    TimeValue,
+    VerticalVelocityDiagnostics,
     compute_baseline_diagnostics,
     compute_process_diagnostics,
 )
@@ -114,23 +119,7 @@ def ingest_completed_run(manifest_path: Path) -> ResultMetadata:
             "No CM1 model-field NetCDF output files found for ingest. "
             "Stats NetCDF files are not enough for field diagnostics."
         )
-    dataset, skipped_paths, contributing_paths, close_datasets = _open_model_output_sequence(
-        classified.model_output_paths
-    )
-    try:
-        result = _result_from_dataset(
-            manifest,
-            netcdf_paths,
-            classified,
-            skipped_paths,
-            contributing_paths,
-            dataset,
-        )
-    finally:
-        for close_dataset in close_datasets:
-            close = getattr(close_dataset, "close", None)
-            if callable(close):
-                close()
+    result = _result_from_model_output_files(manifest, netcdf_paths, classified)
 
     result_path = run_dir / RESULT_METADATA_FILENAME
     product_manifest_path = default_output_product_manifest_path(run_dir)
@@ -146,6 +135,122 @@ def ingest_completed_run(manifest_path: Path) -> ResultMetadata:
     result_path.write_text(result.to_json_text())
     write_output_product_manifest(product_manifest_path, product_manifest)
     return result
+
+
+def _result_from_model_output_files(
+    manifest: RunManifest,
+    netcdf_paths: list[Path],
+    classified: _ClassifiedNetcdfPaths,
+) -> ResultMetadata:
+    if len(classified.model_output_paths) == 1:
+        dataset, skipped_single, contributing_single, close_datasets = _open_model_output_sequence(
+            classified.model_output_paths
+        )
+        try:
+            return _result_from_dataset(
+                manifest,
+                netcdf_paths,
+                classified,
+                skipped_single,
+                contributing_single,
+                dataset,
+            )
+        finally:
+            for close_dataset in close_datasets:
+                close = getattr(close_dataset, "close", None)
+                if callable(close):
+                    close()
+
+    skipped_paths: list[str] = []
+    contributing_paths: list[Path] = []
+    diagnostics_parts: list[ResultDiagnostics] = []
+    sequence_time_values: list[float | None] = []
+    metadata_snapshot: _DatasetMetadataSnapshot | None = None
+
+    for file_index, path in enumerate(classified.model_output_paths):
+        try:
+            dataset = _open_dataset(path)
+        except ResultIngestError as exc:
+            skipped_paths.append(f"{path}: {exc}")
+            continue
+
+        try:
+            normalized = _normalize_time_dimension(dataset, file_index)
+            if metadata_snapshot is None:
+                metadata_snapshot = _metadata_snapshot(normalized)
+            contributing_paths.append(path)
+            diagnostics_parts.append(compute_baseline_diagnostics(normalized, []))
+            sequence_time_values.extend(_time_values(normalized))
+        finally:
+            close = getattr(dataset, "close", None)
+            if callable(close):
+                close()
+
+    if metadata_snapshot is None or not contributing_paths:
+        skipped_detail = "; ".join(skipped_paths) if skipped_paths else "no files could be opened"
+        raise ResultIngestError(
+            f"No CM1 model-field NetCDF output files could be opened: {skipped_detail}"
+        )
+
+    warnings = list(manifest.outputs.runtime_warnings)
+    warnings.extend(f"skipped_netcdf_output:{path}" for path in skipped_paths)
+    missing_expected = [
+        field
+        for field in ("qc", "w")
+        if field not in metadata_snapshot.variables and field not in metadata_snapshot.coordinates
+    ]
+    if missing_expected:
+        warnings.append(
+            "Expected fields missing from NetCDF metadata: " + ", ".join(missing_expected)
+        )
+
+    diagnostics = _merge_diagnostics(diagnostics_parts, warnings)
+    process_diagnostics = compute_process_diagnostics(
+        diagnostics,
+        scenario_id=manifest.scenario.id,
+        controls=manifest.controls,
+        variables=metadata_snapshot.variables,
+    )
+    dimensions = dict(metadata_snapshot.dimensions)
+    if metadata_snapshot.time_coordinate is not None:
+        dimensions[metadata_snapshot.time_coordinate] = len(sequence_time_values)
+    now = datetime.now(UTC)
+    return ResultMetadata(
+        result_id=f"result-{manifest.run_id}",
+        run_id=manifest.run_id,
+        scenario_id=manifest.scenario.id,
+        scenario_name=None,
+        physical_question=manifest.physical_question,
+        controls=manifest.controls,
+        run_size_preset=manifest.run_size_preset,
+        source_lifecycle_state=manifest.lifecycle_state.value,
+        source_product_state=manifest.provenance.product_state.value,
+        source_model=manifest.provenance.source_model,
+        raw_cm1_artifacts=manifest.outputs.raw_cm1_artifacts,
+        netcdf_paths=[str(path) for path in netcdf_paths],
+        model_output_paths=[str(path) for path in contributing_paths],
+        stats_netcdf_paths=[str(path) for path in classified.stats_netcdf_paths],
+        skipped_netcdf_paths=skipped_paths,
+        model_output_file_count=len(contributing_paths),
+        processed_artifacts=manifest.outputs.processed_artifacts,
+        dimensions=dimensions,
+        coordinates=metadata_snapshot.coordinates,
+        variables=metadata_snapshot.variables,
+        fields_detected=metadata_snapshot.fields,
+        time_coordinate=metadata_snapshot.time_coordinate,
+        time_steps=len(sequence_time_values) or None,
+        first_output_time_seconds=_first_time_value(sequence_time_values),
+        last_output_time_seconds=_last_time_value(sequence_time_values),
+        time_coordinate_source=diagnostics.time.source,
+        time_coordinate_fallback_used=diagnostics.time.fallback_used,
+        grid_shape=_grid_shape(dimensions),
+        warnings=warnings,
+        diagnostics_summary=_diagnostics_summary(diagnostics),
+        diagnostics=diagnostics,
+        process_diagnostics=process_diagnostics,
+        created_at=now,
+        updated_at=now,
+    )
 
 
 def list_result_metadata(settings: CloudChamberSettings) -> list[ResultMetadata]:
@@ -191,6 +296,16 @@ class _ClassifiedNetcdfPaths(BaseModel):
     model_output_paths: list[Path]
     stats_netcdf_paths: list[Path]
     other_netcdf_paths: list[Path]
+
+
+class _DatasetMetadataSnapshot(BaseModel):
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
+    dimensions: dict[str, int]
+    coordinates: list[str]
+    variables: list[str]
+    fields: list[FieldMetadata]
+    time_coordinate: str | None
 
 
 def _classify_netcdf_paths(paths: list[Path]) -> _ClassifiedNetcdfPaths:
@@ -264,6 +379,230 @@ def _normalize_time_dimension(dataset: Any, file_index: int) -> Any:
         size = int(dataset.sizes["time"])
         return dataset.assign_coords(time=[float(file_index + offset) for offset in range(size)])
     return dataset
+
+
+def _metadata_snapshot(dataset: Any) -> _DatasetMetadataSnapshot:
+    dimensions = {str(name): int(size) for name, size in dataset.sizes.items()}
+    coordinates = _ordered_coordinate_names([str(name) for name in dataset.coords])
+    variables = [str(name) for name in dataset.data_vars]
+    fields = [
+        FieldMetadata(
+            name=str(name),
+            dimensions=[str(dimension) for dimension in data_array.dims],
+            shape=[int(size) for size in data_array.shape],
+            units=_attribute_as_string(data_array.attrs.get("units")),
+        )
+        for name, data_array in dataset.data_vars.items()
+    ]
+    return _DatasetMetadataSnapshot(
+        dimensions=dimensions,
+        coordinates=coordinates,
+        variables=variables,
+        fields=fields,
+        time_coordinate=_first_present(("time", "mtime", "t"), coordinates),
+    )
+
+
+def _time_values(dataset: Any) -> list[float | None]:
+    time_coordinate = _first_present(("time", "mtime", "t"), list(dataset.sizes))
+    if time_coordinate is None:
+        return [None]
+    if time_coordinate not in dataset.coords:
+        return [float(index) for index in range(int(dataset.sizes[time_coordinate]))]
+    return [
+        _to_float_or_none(value)
+        for value in dataset.coords[time_coordinate].values.reshape(-1).tolist()
+    ]
+
+
+def _first_time_value(values: list[float | None]) -> float | None:
+    return values[0] if values else None
+
+
+def _last_time_value(values: list[float | None]) -> float | None:
+    return values[-1] if values else None
+
+
+def _merge_diagnostics(
+    diagnostics_parts: list[ResultDiagnostics],
+    inherited_caveats: list[str],
+) -> ResultDiagnostics:
+    time = _merge_time_diagnostics(diagnostics_parts)
+    cloud = _merge_cloud_diagnostics([diagnostics.cloud for diagnostics in diagnostics_parts])
+    vertical = _merge_vertical_velocity_diagnostics(
+        [diagnostics.vertical_velocity for diagnostics in diagnostics_parts]
+    )
+    rain = _merge_rain_diagnostics([diagnostics.rain for diagnostics in diagnostics_parts])
+    caveats = _dedupe_strings(
+        [
+            *inherited_caveats,
+            *(caveat for diagnostics in diagnostics_parts for caveat in diagnostics.caveats),
+        ]
+    )
+    return ResultDiagnostics(
+        cloud=cloud,
+        vertical_velocity=vertical,
+        rain=rain,
+        time=time,
+        caveats=caveats,
+    )
+
+
+def _merge_time_diagnostics(diagnostics_parts: list[ResultDiagnostics]) -> TimeDiagnostics:
+    if not diagnostics_parts:
+        return TimeDiagnostics(source="unavailable", fallback_used=True)
+    sources = {diagnostics.time.source for diagnostics in diagnostics_parts}
+    coordinate_names = {
+        diagnostics.time.coordinate_name
+        for diagnostics in diagnostics_parts
+        if diagnostics.time.coordinate_name is not None
+    }
+    fallback_used = any(diagnostics.time.fallback_used for diagnostics in diagnostics_parts)
+    return TimeDiagnostics(
+        source=next(iter(sources)) if len(sources) == 1 else "mixed_time_sources",
+        fallback_used=fallback_used or len(sources) > 1,
+        coordinate_name=next(iter(coordinate_names)) if len(coordinate_names) == 1 else None,
+    )
+
+
+def _merge_cloud_diagnostics(parts: list[CloudDiagnostics]) -> CloudDiagnostics:
+    available_parts = [part for part in parts if part.available]
+    if not available_parts:
+        return CloudDiagnostics(available=False)
+    first_cloud_time = _first_non_none([part.first_cloud_time_seconds for part in available_parts])
+    max_qc_time = _max_time_value(
+        [
+            TimeValue(time_seconds=part.time_of_max_qc_seconds, value=part.max_qc_kg_kg)
+            for part in available_parts
+        ]
+    )
+    return CloudDiagnostics(
+        formed=any(part.formed for part in available_parts),
+        first_cloud_time_seconds=first_cloud_time,
+        cloud_base_m=_min_optional([part.cloud_base_m for part in available_parts]),
+        cloud_top_m=_max_optional([part.cloud_top_m for part in available_parts]),
+        cloud_base_time_series=[
+            point for part in available_parts for point in part.cloud_base_time_series
+        ],
+        cloud_top_time_series=[
+            point for part in available_parts for point in part.cloud_top_time_series
+        ],
+        max_qc_kg_kg=max_qc_time.value,
+        time_of_max_qc_seconds=max_qc_time.time_seconds,
+        max_qc_height_time_series=[
+            point for part in available_parts for point in part.max_qc_height_time_series
+        ],
+        qc_max_time_series=[point for part in available_parts for point in part.qc_max_time_series],
+        cloud_fraction_time_series=[
+            point for part in available_parts for point in part.cloud_fraction_time_series
+        ],
+        cloud_present_time_steps=[
+            time for part in available_parts for time in part.cloud_present_time_steps
+        ],
+        available=all(part.available for part in parts),
+    )
+
+
+def _merge_vertical_velocity_diagnostics(
+    parts: list[VerticalVelocityDiagnostics],
+) -> VerticalVelocityDiagnostics:
+    available_parts = [part for part in parts if part.available]
+    if not available_parts:
+        units = next((part.units for part in parts if part.units is not None), None)
+        return VerticalVelocityDiagnostics(available=False, units=units)
+    max_w_time = _max_time_value(
+        [
+            TimeValue(time_seconds=part.time_of_max_w_seconds, value=part.max_w_m_s)
+            for part in available_parts
+        ]
+    )
+    min_w_time = _min_time_value(
+        [
+            TimeValue(time_seconds=part.time_of_min_w_seconds, value=part.min_w_m_s)
+            for part in available_parts
+        ]
+    )
+    return VerticalVelocityDiagnostics(
+        max_w_m_s=max_w_time.value,
+        time_of_max_w_seconds=max_w_time.time_seconds,
+        min_w_m_s=min_w_time.value,
+        time_of_min_w_seconds=min_w_time.time_seconds,
+        max_w_height_time_series=[
+            point for part in available_parts for point in part.max_w_height_time_series
+        ],
+        w_max_time_series=[point for part in available_parts for point in part.w_max_time_series],
+        w_min_time_series=[point for part in available_parts for point in part.w_min_time_series],
+        units=next((part.units for part in available_parts if part.units is not None), None),
+        available=all(part.available for part in parts),
+    )
+
+
+def _merge_rain_diagnostics(parts: list[RainDiagnostics]) -> RainDiagnostics:
+    present_parts = [part for part in parts if part.available]
+    if not present_parts:
+        return RainDiagnostics(
+            available=False, field_absent=all(part.field_absent for part in parts)
+        )
+    first_rain_time = _first_non_none([part.first_rain_time_seconds for part in present_parts])
+    max_qr_time = _max_time_value(
+        [
+            TimeValue(time_seconds=part.time_of_max_qr_seconds, value=part.max_qr_kg_kg)
+            for part in present_parts
+        ]
+    )
+    present = any(part.present for part in present_parts)
+    return RainDiagnostics(
+        present=present,
+        first_rain_time_seconds=first_rain_time,
+        max_qr_kg_kg=max_qr_time.value,
+        time_of_max_qr_seconds=max_qr_time.time_seconds,
+        qr_max_time_series=[point for part in present_parts for point in part.qr_max_time_series],
+        user_message="Rain detected." if present else "No rain detected.",
+        available=all(part.available for part in parts),
+        field_absent=all(part.field_absent for part in parts),
+    )
+
+
+def _first_non_none(values: list[float | None]) -> float | None:
+    return next((value for value in values if value is not None), None)
+
+
+def _min_optional(values: list[float | None]) -> float | None:
+    finite_values = [value for value in values if value is not None]
+    return min(finite_values) if finite_values else None
+
+
+def _max_optional(values: list[float | None]) -> float | None:
+    finite_values = [value for value in values if value is not None]
+    return max(finite_values) if finite_values else None
+
+
+def _max_time_value(values: list[TimeValue]) -> TimeValue:
+    candidates = [value for value in values if value.value is not None]
+    if not candidates:
+        return TimeValue(time_seconds=None, value=None)
+    return max(
+        candidates, key=lambda value: value.value if value.value is not None else float("-inf")
+    )
+
+
+def _min_time_value(values: list[TimeValue]) -> TimeValue:
+    candidates = [value for value in values if value.value is not None]
+    if not candidates:
+        return TimeValue(time_seconds=None, value=None)
+    return min(
+        candidates, key=lambda value: value.value if value.value is not None else float("inf")
+    )
+
+
+def _dedupe_strings(values: list[str]) -> list[str]:
+    seen: set[str] = set()
+    deduped: list[str] = []
+    for value in values:
+        if value not in seen:
+            seen.add(value)
+            deduped.append(value)
+    return deduped
 
 
 def _result_from_dataset(
@@ -385,6 +724,13 @@ def _time_bound(dataset: Any, time_coordinate: str | None, *, first: bool) -> fl
     value = values[0] if first else values[-1]
     try:
         return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _to_float_or_none(value: object) -> float | None:
+    try:
+        return float(cast(Any, value))
     except (TypeError, ValueError):
         return None
 
