@@ -73,7 +73,7 @@ Cloud Chamber should not pretend to be CM1. Lightweight previews may support exp
 
 Saved results should behave like experiment notebook entries: named, tagged, replayable, inspectable, and explainable. Rerunning or duplicating a saved setup is useful later, but replay/inspect/save is the core MVP result behavior.
 
-Optional remote compute is future research only. Cloud Chamber remains local-first for the MVP.
+Optional remote/cloud compute is not part of the MVP. The near-term heavier-run direction is a trusted LAN worker used as a CM1 compute appliance while Cloud Chamber remains local-first and MacBook-centered.
 
 Do not commit CM1 source, CM1 binaries, NetCDF output, generated run directories, `LANDUSE.TBL`, local data, or large processed visualization artifacts.
 

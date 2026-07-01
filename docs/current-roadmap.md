@@ -226,8 +226,9 @@ contracts, output products, validation, or local bench maturity.
   are defined.
 - **#201 timelapse UI before time products**: parked until interesting-time and
   time-index products exist.
-- **#43 remote/HPC compute**: deferred unless local compute becomes the
-  bottleneck for the active LES bench.
+- **#43 remote/HPC compute**: deferred. The near-term compute extension is a
+  trusted LAN worker used as a CM1 compute appliance while the MacBook remains
+  the Cloud Chamber system of record.
 
 ## Planning Rule
 
