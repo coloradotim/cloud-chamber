@@ -1008,6 +1008,14 @@ select one result, and shows a detail/notebook card with scenario, run-size
 preset, cloud/rain outcome, diagnostics summary, first cloud time, max `qc`,
 max/min `w`, caveats, output summary, and editable name/tags/notes. Notebook
 edits use `Save changes`; ingested results already appear in Results.
+The notebook also exposes backend-derived science summary fields such as
+first-cloud time, max `qc`, max updraft, rain onset, latest output time, and
+interesting-time support state so the user can search, filter, and sort the
+experiment list by meaningful scientific evidence rather than raw file order.
+Result Cards must also distinguish generated-reference packages from runs
+created from an uploaded observed sounding, preserving station/time/source
+metadata as provenance and making observed-sounding results filterable in
+Results through the scenario and search surfaces.
 Technical metadata such as raw lifecycle/product states, run IDs, provenance
 labels, controls, and detailed caveats remain available under disclosure rather
 than dominating the first read. The layout should be mobile-first: cards stack

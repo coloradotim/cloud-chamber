@@ -46,6 +46,7 @@ def create_completed_result(
     *,
     run_id: str = "run-card",
     include_diagnostics_fields: bool = True,
+    observed_sounding: dict[str, object] | None = None,
 ) -> tuple[CloudChamberSettings, str, Path]:
     settings = fake_settings(tmp_path)
     package = generate_dry_run_package(
@@ -69,6 +70,7 @@ def create_completed_result(
                     netcdf_paths=[str(netcdf_path)],
                     runtime_warnings=["CM1 stderr reported floating-point exception flags: TEST"],
                 ),
+                "observed_sounding": observed_sounding,
             }
         ),
     )
@@ -151,6 +153,9 @@ def test_result_card_created_from_ingested_metadata(tmp_path: Path) -> None:
         "field_default_time",
     }
     assert card.default_time_by_field["qc"].time_index == 0
+    assert card.input_source == "generated_reference"
+    assert card.input_source_label == "Generated reference"
+    assert card.observed_sounding is None
     assert card.output_file_summary.netcdf_count == 1
     assert card.output_file_summary.model_output_count == 1
     assert card.output_file_summary.time_steps == 1
@@ -160,6 +165,27 @@ def test_result_card_created_from_ingested_metadata(tmp_path: Path) -> None:
     assert "CM1 stderr reported floating-point exception flags: TEST" in card.caveats
     assert "cloud_base_top_vertical_units_missing_assumed_meters" in card.caveats
     assert card.completed_at == datetime(2026, 5, 22, 15, 32, 21, tzinfo=UTC)
+
+
+def test_result_card_exposes_observed_sounding_source(tmp_path: Path) -> None:
+    settings, result_id, _run_dir = create_completed_result(
+        tmp_path,
+        observed_sounding={
+            "source_type": "observed_sounding",
+            "source_format": "igra_station_text",
+            "station_id": "USM00072558",
+            "station_name": "Valley, Nebraska",
+            "station_elevation_m_msl": 351.5,
+            "valid_time_utc": "2026-06-30T00:00:00Z",
+        },
+    )
+
+    card = get_result_card(settings, result_id)
+
+    assert card.input_source == "observed_sounding"
+    assert card.input_source_label == "Observed sounding: USM00072558 · Valley, Nebraska"
+    assert card.observed_sounding is not None
+    assert card.observed_sounding["station_id"] == "USM00072558"
 
 
 def test_list_get_and_result_card_serialization_round_trip(tmp_path: Path) -> None:

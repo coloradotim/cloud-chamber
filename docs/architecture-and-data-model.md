@@ -406,6 +406,12 @@ science summary for Results filtering/sorting, and caveats from interesting-time
 resolution. These fields are derived from CM1 diagnostics and the output-product
 manifest time index. They do not replace raw NetCDF output, and they do not give
 the browser permission to infer file/time mapping or parse NetCDF directly.
+Result metadata also records the input source that created the run. Generated
+reference scenarios use `input_source = generated_reference`; uploaded IGRA
+packages use `input_source = observed_sounding` and preserve the selected
+observed-sounding metadata, including station ID/name, elevation, valid time,
+source format, and current caveats such as wind metadata that is not yet used by
+CM1.
 
 ### Result Cards / Experiment Notebook Entries
 
@@ -415,6 +421,8 @@ It does not rerun CM1 and does not parse raw output directly. It summarizes:
 - run ID, scenario, run-size preset, and physical question;
 - diagnostics summary, first cloud time, max `qc`, max/min `w`, rain yes/no, and caveats;
 - output file summary, including NetCDF/model-output/stat/raw/processed counts and time-step range;
+- input source and observed-sounding metadata when the run came from an uploaded sounding;
+- compact `science_summary`, `interesting_times`, and `default_time_by_field` values for Results filtering, sorting, and sensible Explore defaults;
 - provenance labels that distinguish completed CM1 result, ingested metadata, and notebook entry;
 - editable notebook fields: name, tags, and notes.
 

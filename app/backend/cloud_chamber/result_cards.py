@@ -84,6 +84,9 @@ class ResultCard(BaseModel):
     source_lifecycle_state: str
     source_product_state: str
     source_model: str
+    input_source: str = "generated_reference"
+    input_source_label: str = "Generated reference"
+    observed_sounding: dict[str, object] | None = None
     provenance_labels: list[str] = Field(default_factory=list)
     diagnostics_summary: str | None = None
     thermal_fate_label: str | None = None
@@ -206,6 +209,9 @@ def _card_from_metadata(
         source_lifecycle_state=metadata.source_lifecycle_state,
         source_product_state=metadata.source_product_state,
         source_model=metadata.source_model,
+        input_source=metadata.input_source,
+        input_source_label=metadata.input_source_label,
+        observed_sounding=metadata.observed_sounding,
         provenance_labels=[
             f"source_model:{metadata.source_model}",
             f"source_product_state:{metadata.source_product_state}",
