@@ -375,6 +375,13 @@ provenance/rendering labels, and the guarantee that the browser does not parse
 raw NetCDF. These tests must not add ray marching, isosurfaces, shadows,
 fly-through, export, or generated CM1 output.
 
+Output-product tests should cover interesting-time metadata without using real
+CM1 output. Tiny synthetic NetCDF fixtures and fake diagnostics should verify
+supported landmarks such as first cloud, max `qc`, max/min `w`, rain onset, and
+latest output; honest no-event behavior for no-cloud results; missing-field and
+missing-diagnostic support states; inferred-time caveats; per-field default
+time choices; and Result Card propagation of the compact `science_summary`.
+
 Viewport-stability tests should verify that the domain box, floor/grid, active
 slice plane, and cloud-water point cloud live inside the same zoomable data
 layer, that axes/scale markers remain outside that zoomed layer and readable,

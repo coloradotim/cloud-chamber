@@ -261,6 +261,69 @@ def test_ingests_multifile_model_output_sequence_and_excludes_stats(tmp_path: Pa
     assert result.diagnostics.cloud.time_of_max_qc_seconds == 600.0
     assert result.diagnostics.vertical_velocity.min_w_m_s == -5.0
     assert result.diagnostics.vertical_velocity.max_w_m_s == 7.0
+    interesting = {record.key: record for record in result.interesting_times}
+    assert interesting["first_cloud"].support_state == "supported"
+    assert interesting["first_cloud"].time_index == 1
+    assert interesting["first_cloud"].time_seconds == 600.0
+    assert interesting["max_qc"].support_state == "supported"
+    assert interesting["max_qc"].time_index == 1
+    assert interesting["max_updraft_w"].time_index == 1
+    assert interesting["min_downdraft_w"].time_index == 0
+    assert interesting["rain_onset"].support_state == "unsupported_missing_fields"
+    assert interesting["max_dbz"].support_state == "unsupported_missing_fields"
+    assert interesting["latest_output"].time_index == 1
+    assert interesting["field_default_time"].time_index == 1
+    assert result.default_time_by_field["qc"].time_index == 1
+    assert result.default_time_by_field["w"].time_index == 1
+    assert result.default_time_by_field["qr"].support_state == "fallback"
+    assert result.science_summary is not None
+    assert result.science_summary.first_cloud_time_seconds == 600.0
+    assert result.science_summary.max_qc_kg_kg == 2e-6
+    assert result.science_summary.max_qc_time_seconds == 600.0
+    assert result.science_summary.max_updraft_w_m_s == 7.0
+    assert result.science_summary.min_downdraft_w_m_s == -5.0
+    assert result.science_summary.latest_output_time_seconds == 600.0
+    assert result.science_summary.default_explore_time_index == 1
+    assert result.science_summary.interesting_time_support_state == "supported"
+    product_manifest = output_product_manifest_from_json(
+        default_output_product_manifest_path(run_dir).read_text()
+    )
+    assert product_manifest.interesting_time_product is not None
+    assert product_manifest.interesting_time_product.science_summary == result.science_summary
+
+
+def test_no_cloud_result_keeps_interesting_times_honest(tmp_path: Path) -> None:
+    manifest_path = create_manifest(tmp_path, run_id="run-no-cloud-interesting-times")
+    run_dir = manifest_path.parent
+    first = run_dir / "cm1out_000001.nc"
+    second = run_dir / "cm1out_000002.nc"
+    write_model_netcdf(first, times=[0.0], qc_values=[0.0], w_values=[1.0])
+    write_model_netcdf(second, times=[900.0], qc_values=[0.0], w_values=[2.0])
+    complete_manifest(manifest_path, OutputMetadata(netcdf_paths=[str(first), str(second)]))
+
+    result = ingest_completed_run(manifest_path)
+
+    interesting = {record.key: record for record in result.interesting_times}
+    assert result.diagnostics is not None
+    assert result.diagnostics.cloud.formed is False
+    assert interesting["first_cloud"].support_state == "unavailable"
+    assert interesting["first_cloud"].time_index is None
+    assert interesting["first_cloud"].caveats == ["no_cloud_formed"]
+    assert interesting["max_qc"].support_state == "unavailable"
+    assert interesting["max_qc"].time_index is None
+    assert interesting["max_qc"].caveats == ["no_positive_cloud_water_detected"]
+    assert interesting["max_updraft_w"].support_state == "supported"
+    assert interesting["max_updraft_w"].time_index == 1
+    assert interesting["latest_output"].time_index == 1
+    assert result.default_time_by_field["qc"].support_state == "fallback"
+    assert result.default_time_by_field["qc"].source_interesting_time_key == "latest_output"
+    assert result.default_time_by_field["w"].support_state == "supported"
+    assert result.science_summary is not None
+    assert result.science_summary.first_cloud_time_seconds is None
+    assert result.science_summary.max_qc_kg_kg == 0.0
+    assert result.science_summary.max_qc_time_seconds is None
+    assert result.science_summary.default_explore_time_index == 1
+    assert "no_cloud_formed" in result.interesting_time_caveats
 
 
 def test_multifile_ingest_does_not_concatenate_full_sequence(

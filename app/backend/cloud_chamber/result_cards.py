@@ -15,6 +15,7 @@ from pathlib import Path
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from cloud_chamber.output_products import FieldDefaultTime, InterestingTimeRecord, ScienceSummary
 from cloud_chamber.result_ingest import (
     RESULT_METADATA_FILENAME,
     ResultIngestError,
@@ -97,6 +98,10 @@ class ResultCard(BaseModel):
     time_of_min_w_seconds: float | None = None
     rain_present: bool | None = None
     first_rain_time_seconds: float | None = None
+    interesting_times: list[InterestingTimeRecord] = Field(default_factory=list)
+    default_time_by_field: dict[str, FieldDefaultTime] = Field(default_factory=dict)
+    science_summary: ScienceSummary | None = None
+    interesting_time_caveats: list[str] = Field(default_factory=list)
     caveats: list[str] = Field(default_factory=list)
     output_file_summary: OutputFileSummary
     created_at: datetime
@@ -223,6 +228,10 @@ def _card_from_metadata(
         else None,
         rain_present=rain.present if rain else None,
         first_rain_time_seconds=rain.first_rain_time_seconds if rain else None,
+        interesting_times=metadata.interesting_times,
+        default_time_by_field=metadata.default_time_by_field,
+        science_summary=metadata.science_summary,
+        interesting_time_caveats=metadata.interesting_time_caveats,
         caveats=_dedupe(caveats),
         output_file_summary=_output_file_summary(metadata),
         created_at=metadata.created_at,
