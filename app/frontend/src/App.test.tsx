@@ -157,6 +157,88 @@ const deepDryRunResponse = {
   },
 };
 
+const observedSoundingParseResponse = {
+  source_provider: "NOAA/NCEI IGRA",
+  source_format: "igra_station_text",
+  uploaded_filename: "USM00072558-data-beg2025.txt",
+  available_soundings: [
+    {
+      station_id: "USM00072558",
+      valid_time_utc: "2025-01-01T00:00:00Z",
+      source_time_text: "2025-01-01 00 UTC; release 2318",
+      num_levels: 8,
+      pressure_source: "ncdc-nws",
+      non_pressure_source: "ncdc-gts",
+    },
+    {
+      station_id: "USM00072558",
+      valid_time_utc: "2025-01-02T00:00:00Z",
+      source_time_text: "2025-01-02 00 UTC; release 2318",
+      num_levels: 8,
+      pressure_source: "ncdc-nws",
+      non_pressure_source: "ncdc-gts",
+    },
+  ],
+  selected_sounding: {
+    source_type: "observed_sounding",
+    source_provider: "NOAA/NCEI IGRA",
+    source_format: "igra_station_text",
+    uploaded_filename: "USM00072558-data-beg2025.txt",
+    station_id: "USM00072558",
+    station_name: "Valley, Nebraska",
+    station_latitude: 41.32,
+    station_longitude: -96.3669,
+    station_elevation_m_msl: 351.5,
+    valid_time_utc: "2025-01-02T00:00:00Z",
+    source_time_text: "2025-01-02 00 UTC; release 2318",
+    source_units: { pressure: "Pa", source_height: "m MSL" },
+    converted_cm1_units: {
+      height: "m above sounding/site surface",
+      potential_temperature: "K",
+      water_vapor_mixing_ratio: "g/kg",
+    },
+    source_vertical_coordinate_type: "geopotential_height_msl",
+    model_bottom_elevation_m_msl: 351.5,
+    levels: [
+      {
+        pressure_pa: 98052,
+        source_height_m_msl: 352,
+        model_z_m: 0.5,
+        temperature_c: -0.5,
+        potential_temperature_k: 298.1,
+        qv_g_kg: 4.7,
+        wind_direction_degrees: 324,
+        wind_speed_m_s: 4.1,
+      },
+      {
+        pressure_pa: 6122,
+        source_height_m_msl: 19168,
+        model_z_m: 18816.5,
+        temperature_c: -56.1,
+        potential_temperature_k: 481.1,
+        qv_g_kg: 0.02,
+        wind_direction_degrees: 253,
+        wind_speed_m_s: 6.3,
+      },
+    ],
+    wind_handling: "observed_winds_metadata_only; generated CM1 namelist keeps isnd=17/iwnd=9",
+    conversion_choices: {
+      height: "IGRA GPH meters MSL converted to model_z_m relative to station elevation",
+    },
+    validation: {
+      status: "needs_review",
+      errors: [],
+      caveats: [
+        "station elevation joined from IGRA station metadata fixture",
+        "Observed IGRA sounding winds preserved as metadata; current CM1 package uses reference/generated wind handling.",
+      ],
+    },
+    provenance: {
+      format_reference: "NOAA/NCEI IGRA v2.2 sounding data format",
+    },
+  },
+};
+
 const runningRunStatus = {
   run_id: "dry-run-001",
   lifecycle_state: "running",
@@ -1642,9 +1724,76 @@ describe("App", () => {
     expect(screen.getByRole("heading", { name: "Packages and runs needing action" })).toBeInTheDocument();
     expect(screen.getAllByText("Not packaged yet").length).toBeGreaterThan(0);
     expect(screen.getByText("No package has been created from the current setup in this browser session.")).toBeInTheDocument();
+    expect(screen.getByLabelText("Experiment")).toHaveTextContent("Upload a Sounding");
     expect(screen.getByText("Build pipeline")).toBeInTheDocument();
     expect(screen.queryByText("Local experiment loop")).not.toBeInTheDocument();
     expect(screen.queryByText("namelist.input")).not.toBeInTheDocument();
+  });
+
+  it("uploads and reviews an observed IGRA sounding before package creation", async () => {
+    let dryRunBody = "";
+    vi.mocked(fetch).mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url === "/api/scenarios") {
+        return Promise.resolve(new Response(JSON.stringify(scenarioResponse), { status: 200 }));
+      }
+      if (url === "/api/observed-soundings/parse") {
+        return Promise.resolve(
+          new Response(JSON.stringify(observedSoundingParseResponse), { status: 200 }),
+        );
+      }
+      if (url === "/api/dry-run-package") {
+        dryRunBody = String(init?.body ?? "");
+        return Promise.resolve(new Response(JSON.stringify(dryRunResponse), { status: 200 }));
+      }
+      if (url === "/api/results") {
+        return Promise.resolve(new Response(JSON.stringify(resultsResponse), { status: 200 }));
+      }
+      if (url === "/api/storage/inventory") {
+        return Promise.resolve(
+          new Response(JSON.stringify(storageInventoryResponse), { status: 200 }),
+        );
+      }
+      return Promise.resolve(new Response("not found", { status: 404 }));
+    });
+
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Build" }));
+    expect(
+      await screen.findByRole("heading", { name: "Experiment setup summary" }),
+    ).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("Experiment"), {
+      target: { value: "__observed_sounding_upload__" },
+    });
+
+    expect(await screen.findByRole("heading", { name: "Upload a Sounding" })).toBeInTheDocument();
+    expect(screen.getByText("Observed sounding profile, Surface heating")).toBeInTheDocument();
+    expect(screen.queryByLabelText("Low-level humidity")).not.toBeInTheDocument();
+    expect(screen.getByLabelText("Surface heating")).not.toBeDisabled();
+    expect(
+      screen.queryByLabelText("Use uploaded sounding"),
+    ).not.toBeInTheDocument();
+
+    const file = new File(["#USM00072558 2025 01 02 00"], "USM00072558-data-beg2025.txt", {
+      type: "text/plain",
+    });
+    fireEvent.change(screen.getByLabelText("IGRA station sounding-data file"), {
+      target: { files: [file] },
+    });
+
+    expect(await screen.findByText("Observed sounding validated for package review")).toBeInTheDocument();
+    expect(screen.getByText("USM00072558 · Valley, Nebraska")).toBeInTheDocument();
+    expect(screen.getByText(/CM1 z=0 is station surface at 351.5 m MSL/)).toBeInTheDocument();
+    expect(screen.getByText(/observed winds metadata only/)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId("create-package-btn"));
+
+    await waitFor(() => {
+      expect(dryRunBody).toContain('"observed_sounding"');
+      expect(dryRunBody).toContain('"station_id":"USM00072558"');
+      expect(dryRunBody).toContain('"model_bottom_elevation_m_msl":351.5');
+    });
   });
 
   it("shows Deep Overnight as an expensive distinct generated package", async () => {

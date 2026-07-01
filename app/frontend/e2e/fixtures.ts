@@ -75,6 +75,106 @@ const outputSummary = {
   last_output_time_seconds: 10800,
 };
 
+const observedSoundingParseResponse = {
+  source_provider: "NOAA/NCEI IGRA",
+  source_format: "igra_station_text",
+  uploaded_filename: "USM00072558-data.txt",
+  available_soundings: [
+    {
+      station_id: "USM00072558",
+      valid_time_utc: "2025-01-01T00:00:00Z",
+      source_time_text: "2025 01 01 00",
+      num_levels: 8,
+      pressure_source: "observed",
+      non_pressure_source: "observed",
+    },
+    {
+      station_id: "USM00072558",
+      valid_time_utc: "2025-01-02T00:00:00Z",
+      source_time_text: "2025 01 02 00",
+      num_levels: 8,
+      pressure_source: "observed",
+      non_pressure_source: "observed",
+    },
+  ],
+  selected_sounding: {
+    source_type: "observed_sounding",
+    source_provider: "NOAA/NCEI IGRA",
+    source_format: "igra_station_text",
+    uploaded_filename: "USM00072558-data.txt",
+    station_id: "USM00072558",
+    station_name: "Valley, Nebraska",
+    station_latitude: 41.32,
+    station_longitude: -96.3669,
+    station_elevation_m_msl: 351.5,
+    valid_time_utc: "2025-01-02T00:00:00Z",
+    source_time_text: "2025 01 02 00",
+    source_units: {
+      pressure: "Pa",
+      height: "m MSL",
+      temperature: "degC",
+      wind_speed: "m/s",
+    },
+    converted_cm1_units: {
+      pressure: "Pa",
+      theta: "K",
+      qv: "g/kg",
+      height: "m above station surface",
+    },
+    source_vertical_coordinate_type: "geopotential_height_msl",
+    model_bottom_elevation_m_msl: 351.5,
+    wind_handling: "observed winds metadata only; CM1 wind profile remains baseline",
+    levels: [
+      {
+        pressure_pa: 96500,
+        source_height_m_msl: 352,
+        model_z_m: 0,
+        temperature_c: 22,
+        potential_temperature_k: 299.15,
+        qv_g_kg: 10.1,
+        wind_direction_degrees: 180,
+        wind_speed_m_s: 4,
+      },
+      {
+        pressure_pa: 90000,
+        source_height_m_msl: 1200,
+        model_z_m: 848.5,
+        temperature_c: 18,
+        potential_temperature_k: 302.1,
+        qv_g_kg: 8.2,
+        wind_direction_degrees: 190,
+        wind_speed_m_s: 7,
+      },
+      {
+        pressure_pa: 7500,
+        source_height_m_msl: 18820,
+        model_z_m: 18468.5,
+        temperature_c: -58,
+        potential_temperature_k: 850,
+        qv_g_kg: 0.01,
+        wind_direction_degrees: 260,
+        wind_speed_m_s: 24,
+      },
+    ],
+    conversion_choices: {
+      vertical_anchor: "station_surface",
+      wind_application: "metadata_only",
+    },
+    validation: {
+      status: "needs_review",
+      errors: [],
+      caveats: [
+        "station_elevation_joined_from_igra_station_fixture",
+        "observed_winds_preserved_as_metadata_only",
+      ],
+    },
+    provenance: {
+      parser: "cloud_chamber_igra_station_text",
+      station_metadata: "tiny_fixture",
+    },
+  },
+};
+
 export const results = [
   {
     result_id: "result-baseline",
@@ -677,6 +777,10 @@ function mockPointCloudPoints(fieldName: string, dryFailed: boolean, threshold: 
 export async function mockCloudChamberApis(page: Page) {
   await page.route("**/api/scenarios", (route) =>
     json(route, { golden_path_scenario_id: "baseline-shallow-cumulus", scenarios: [scenario] }),
+  );
+
+  await page.route("**/api/observed-soundings/parse", (route) =>
+    json(route, observedSoundingParseResponse),
   );
 
   await page.route("**/api/dry-run-package", (route) =>

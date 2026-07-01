@@ -132,6 +132,16 @@ The local run manager assumes one active CM1 run at a time for the MVP. It captu
 
 Launch preflight also refuses placeholder-only CM1-facing files. Older packages containing `&cloud_chamber_domain` or notes-only `input_sounding` files must be regenerated before launch. For Baseline Shallow Cumulus, generated packages now preserve the validated `les_ShallowCu` reference-derived settings while using CM1's external `input_sounding` route for the thermodynamic profile, quick-look runtime/cadence when selected, and NetCDF output for ingest.
 
+Observed-sounding package generation is local-upload only in v1. Build posts
+uploaded NOAA/NCEI IGRA station sounding-data text to the backend parse endpoint,
+reviews the selected sounding and caveats, then includes the selected sounding
+record in the dry-run package request. The backend converts source
+geopotential-height/elevation metadata into CM1 height above station surface and
+renders numeric `input_sounding`; observed winds remain metadata-only until a
+separate validation changes wind forcing. Use tiny synthetic IGRA fixtures in
+tests. Large local station files, for example files in `~/Downloads`, are manual
+validation inputs and must not be copied into the repo.
+
 Baseline Shallow Cumulus currently uses `zd = 4500.0` for Rayleigh damping in the 6 km quick-look domain. Preflight rejects namelists where Rayleigh damping would begin at or below half the configured domain top. A CM1 process that exits `0` without NetCDF or raw CM1 `.dat/.ctl` artifacts is recorded as `validation_status: needs_review` and `product_state: process_completed_no_output`, not as a completed usable CM1 result.
 
 Generated Baseline Shallow Cumulus packages prefer CM1 NetCDF output with `output_format = 2` and `output_filetype = 2`. CM1 documents `output_format = 1` as GrADS/direct-access output and `output_format = 2` as NetCDF. The first successful smoke run produced `.dat/.ctl` files, so those are cataloged as raw CM1 artifacts while the next manual run should verify the NetCDF path.
