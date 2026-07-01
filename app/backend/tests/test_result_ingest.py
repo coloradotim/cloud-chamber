@@ -5,6 +5,10 @@ import pytest
 import xarray as xr
 
 from cloud_chamber.dry_run_package import generate_dry_run_package
+from cloud_chamber.output_products import (
+    default_output_product_manifest_path,
+    output_product_manifest_from_json,
+)
 from cloud_chamber.result_ingest import (
     RESULT_METADATA_FILENAME,
     ResultIngestError,
@@ -169,7 +173,8 @@ def test_ingests_valid_tiny_netcdf_metadata(tmp_path: Path) -> None:
     assert result.source_model == "CM1"
     assert result.netcdf_paths == [str(netcdf_path)]
     assert result.raw_cm1_artifacts == [str(raw_path)]
-    assert result.processed_artifacts == []
+    product_manifest_path = default_output_product_manifest_path(run_dir)
+    assert result.processed_artifacts == [str(product_manifest_path)]
     assert result.visualization_ready_artifacts == []
     assert result.dimensions == {"time": 1, "z": 2, "y": 2, "x": 2}
     assert result.coordinates == ["time", "z", "y", "x"]
@@ -196,6 +201,15 @@ def test_ingests_valid_tiny_netcdf_metadata(tmp_path: Path) -> None:
         "CM1 stderr reported floating-point exception flags: IEEE_INVALID_FLAG"
     ]
     assert (run_dir / RESULT_METADATA_FILENAME).exists()
+    assert product_manifest_path.exists()
+    product_manifest = output_product_manifest_from_json(product_manifest_path.read_text())
+    assert product_manifest.result_id == result.result_id
+    assert product_manifest.run_id == result.run_id
+    assert product_manifest.source_result_metadata_path == str(run_dir / RESULT_METADATA_FILENAME)
+    assert product_manifest.source_run_manifest_path == str(manifest_path)
+    assert [entry.time_index for entry in product_manifest.time_index] == [0]
+    assert product_manifest.time_index[0].source_file == str(netcdf_path)
+    assert product_manifest.time_index[0].local_time_index == 0
 
 
 def test_result_metadata_serializes_and_lists_from_runtime_home(tmp_path: Path) -> None:

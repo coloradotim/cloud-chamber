@@ -57,7 +57,10 @@ Output product tests should follow the
 raw CM1 NetCDF remains backend-only source data, product manifests and derived
 payloads use tiny fixtures, field catalogs/defaults should be metadata-backed
 when possible, selected timestep requests should resolve through explicit
-file/time mapping, and browser/UI tests should never parse raw NetCDF.
+file/time mapping, and browser/UI tests should never parse raw NetCDF. The
+output product manifest tests should cover single-file, multi-time,
+multi-file, stats-exclusion, inferred-time, duplicate/non-monotonic-time, and
+missing/corrupt-file cases using temp runtime homes only.
 
 Local launcher tests must inject fake subprocess handles. They should assert command construction, stdout/stderr log capture, one-active-run refusal, queued/running/completed/failed/canceled state transitions, missing-settings failure, and protection against pre-existing output-like files. They must not launch real CM1 or require local runtime files in CI.
 They should also assert placeholder-only packages are rejected before launch, Rayleigh damping/domain checks catch damping over more than half the domain, required runtime files such as `LANDUSE.TBL` are staged from temp CM1 run directories, `.dat/.ctl` and NetCDF output artifacts are cataloged separately in the manifest, stderr floating-point flags are surfaced as runtime warnings, and exit code 0 without output becomes `needs_review` rather than `completed_cm1_result`.

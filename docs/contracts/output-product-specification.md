@@ -190,6 +190,13 @@ files they depend on, and how to invalidate or delete them. It should not copy
 large raw NetCDF files into the repository or make derived products appear more
 authoritative than CM1 output.
 
+Implementation note: the first backend foundation for this contract lives in
+`cloud_chamber.output_products`. Ingested results now write a runtime-local
+`derived-products/output_product_manifest.json` beside the run directory's
+result metadata. That manifest currently focuses on source output references
+and global file/time index mapping; later product records should build on it
+rather than inventing separate time addressing.
+
 ## Product Type Decisions
 
 | Product type | When computed | Format now | Future format | Size class | API owner | Frontend consumer |
