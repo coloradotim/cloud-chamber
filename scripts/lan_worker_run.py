@@ -332,6 +332,20 @@ def start_worker_run(args: argparse.Namespace) -> None:
         "printf '%s\\n' worker_run_started"
     )
     run_command((*config.ssh_command, config.host, remote_start))
+    mark_local_worker_status(
+        package.package_dir,
+        "running",
+        "Package copied to the LAN worker and CM1 launch was requested.",
+        {
+            "run_id": package.run_id,
+            "remote_dir": remote_dir,
+            "cm1_exe": config.cm1_exe,
+            "cm1_command": config.cm1_command or config.cm1_exe,
+            "cm1_env": config.cm1_env or {},
+            "netcdf_count": 0,
+            "raw_artifact_count": 0,
+        },
+    )
     print(json.dumps({"run_id": package.run_id, "remote_dir": remote_dir, "state": "started"}))
 
 
@@ -339,7 +353,36 @@ def print_worker_status(args: argparse.Namespace) -> None:
     config = load_worker_config(config_path=args.worker_config)
     package = validate_package(args.package_dir, args.runtime_home)
     status = fetch_worker_status(config, package.run_id)
+    status_path = package.package_dir / "worker_status.json"
+    local_status = _read_json(status_path) if status_path.exists() else {}
+    local_state = str(local_status.get("state") or "")
+    if _preserve_local_worker_state(local_state, status.state):
+        print(json.dumps(local_status, indent=2, sort_keys=True))
+        return
+
+    mark_local_worker_status(
+        package.package_dir,
+        status.state,
+        status.message or "LAN worker status refreshed.",
+        status.__dict__,
+    )
     print(json.dumps(status.__dict__, indent=2, sort_keys=True))
+
+
+def _preserve_local_worker_state(local_state: str, remote_state: str) -> bool:
+    local_states_after_copy_back = {
+        "copied_back_to_mac",
+        "ready_for_local_ingest",
+        "local_ingest_confirmed",
+        "worker_cleanup_pending",
+        "worker_cleanup_complete",
+        "worker_cleanup_failed",
+    }
+    return local_state in local_states_after_copy_back and remote_state in {
+        "completed",
+        "completed_no_output",
+        "failed",
+    }
 
 
 def collect_worker_run(args: argparse.Namespace) -> None:
@@ -645,8 +688,34 @@ exit "$exit_code"
 
 def fetch_worker_status(config: WorkerConfig, run_id: str) -> WorkerStatus:
     remote_dir = remote_run_dir(config, run_id)
+    remote_dir_q = shlex.quote(remote_dir)
+    command = f"""python3 - {remote_dir_q} <<'PY'
+import glob
+import json
+import sys
+from pathlib import Path
+
+run_dir = Path(sys.argv[1])
+status_path = run_dir / "worker_status.json"
+data = json.loads(status_path.read_text())
+data["netcdf_count"] = len(
+    set(
+        str(path)
+        for pattern in ("*.nc", "*.nc4", "*.cdf", "*.netcdf")
+        for path in run_dir.glob(pattern)
+    )
+)
+data["raw_artifact_count"] = len(
+    set(
+        str(path)
+        for pattern in ("cm1out_*.dat", "cm1out_*.ctl")
+        for path in run_dir.glob(pattern)
+    )
+)
+print(json.dumps(data, sort_keys=True))
+PY"""
     result = run_command(
-        (*config.ssh_command, config.host, f"cat {shlex.quote(remote_dir)}/worker_status.json"),
+        (*config.ssh_command, config.host, command),
         capture=True,
     )
     data = json.loads(result.stdout)
@@ -699,12 +768,19 @@ def verify_returned_run(returned_dir: Path, expected_run_id: str) -> None:
         )
 
 
-def mark_local_worker_status(package_dir: Path, state: str, message: str) -> None:
+def mark_local_worker_status(
+    package_dir: Path,
+    state: str,
+    message: str,
+    extra: dict[str, Any] | None = None,
+) -> None:
     status_path = package_dir / "worker_status.json"
     data = _read_json(status_path) if status_path.exists() else {}
     previous_state = data.get("state")
     if previous_state and previous_state != state:
         data["previous_state"] = previous_state
+    if extra:
+        data.update(extra)
     data.update(
         {
             "state": state,
@@ -748,8 +824,6 @@ def update_local_manifest_after_return(package: PackageInfo, status: WorkerStatu
     execution.update(
         {
             "command": command,
-            "lan_worker_cm1_exe": status.cm1_exe,
-            "lan_worker_cm1_env": status.cm1_env or {},
             "started_at": _normalize_datetime(status.started_at),
             "finished_at": _normalize_datetime(status.finished_at) or now,
             "exit_code": exit_code,

@@ -138,6 +138,128 @@ def test_launch_run_api_reports_clear_failure(monkeypatch: pytest.MonkeyPatch) -
     assert response.json()["detail"] == "CM1 is not ready"
 
 
+def test_lan_worker_config_endpoint_returns_sanitized_status(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "cloud_chamber.app.lan_worker_config_status",
+        lambda: {
+            "configured": True,
+            "available": True,
+            "message": "Trusted LAN worker is configured.",
+            "cm1_env_keys": ["OMP_NUM_THREADS"],
+            "cm1_env_settings": ["OMP_NUM_THREADS=16"],
+            "custom_launch_command": False,
+        },
+    )
+
+    response = TestClient(app).get("/api/lan-worker/config")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "configured": True,
+        "available": True,
+        "message": "Trusted LAN worker is configured.",
+        "cm1_env_keys": ["OMP_NUM_THREADS"],
+        "cm1_env_settings": ["OMP_NUM_THREADS=16"],
+        "custom_launch_command": False,
+    }
+
+
+def test_lan_worker_run_endpoints_surface_worker_states(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[tuple[str, Path]] = []
+
+    def fake_start(_settings: object, manifest_path: Path) -> dict[str, object]:
+        calls.append(("start", manifest_path))
+        return {
+            "run_id": "dry-run-worker",
+            "state": "running",
+            "message": "Package copied to the LAN worker and CM1 launch was requested.",
+        }
+
+    def fake_status(_settings: object, manifest_path: Path) -> dict[str, object]:
+        calls.append(("status", manifest_path))
+        return {
+            "run_id": "dry-run-worker",
+            "state": "completed",
+            "exit_code": 0,
+            "netcdf_count": 13,
+            "raw_artifact_count": 0,
+            "message": "CM1 completed with output artifacts.",
+        }
+
+    def fake_collect(_settings: object, manifest_path: Path) -> dict[str, object]:
+        calls.append(("collect", manifest_path))
+        return {
+            "run_id": "dry-run-worker",
+            "state": "ready_for_local_ingest",
+            "ready_for_ingest": True,
+            "local_package_dir": "/tmp/CloudChamber/runs/dry-run-worker",
+            "message": "Completed LAN worker output was copied back.",
+        }
+
+    def fake_cleanup(_settings: object, manifest_path: Path) -> dict[str, object]:
+        calls.append(("cleanup", manifest_path))
+        return {
+            "run_id": "dry-run-worker",
+            "state": "worker_cleanup_complete",
+            "message": "LAN worker run directory was removed.",
+        }
+
+    monkeypatch.setattr("cloud_chamber.app.start_lan_worker_run", fake_start)
+    monkeypatch.setattr("cloud_chamber.app.lan_worker_run_status", fake_status)
+    monkeypatch.setattr("cloud_chamber.app.collect_lan_worker_run", fake_collect)
+    monkeypatch.setattr("cloud_chamber.app.cleanup_lan_worker_run", fake_cleanup)
+    client = TestClient(app)
+
+    start = client.post(
+        "/api/lan-worker/start",
+        json={"manifest_path": "/tmp/CloudChamber/runs/dry-run-worker/run_manifest.json"},
+    )
+    status = client.get(
+        "/api/lan-worker/status",
+        params={"manifest_path": "/tmp/CloudChamber/runs/dry-run-worker/run_manifest.json"},
+    )
+    collect = client.post(
+        "/api/lan-worker/collect",
+        json={"manifest_path": "/tmp/CloudChamber/runs/dry-run-worker/run_manifest.json"},
+    )
+    cleanup = client.post(
+        "/api/lan-worker/cleanup",
+        json={"manifest_path": "/tmp/CloudChamber/runs/dry-run-worker/run_manifest.json"},
+    )
+
+    assert start.status_code == 200
+    assert start.json()["state"] == "running"
+    assert status.status_code == 200
+    assert status.json()["state"] == "completed"
+    assert status.json()["netcdf_count"] == 13
+    assert collect.status_code == 200
+    assert collect.json()["state"] == "ready_for_local_ingest"
+    assert cleanup.status_code == 200
+    assert cleanup.json()["state"] == "worker_cleanup_complete"
+    assert [call[0] for call in calls] == ["start", "status", "collect", "cleanup"]
+
+
+def test_lan_worker_endpoint_reports_clear_failure(monkeypatch: pytest.MonkeyPatch) -> None:
+    from cloud_chamber.lan_worker import LanWorkerApiError
+
+    def fake_start(_settings: object, _manifest_path: Path) -> dict[str, object]:
+        raise LanWorkerApiError("LAN worker SSH failed")
+
+    monkeypatch.setattr("cloud_chamber.app.start_lan_worker_run", fake_start)
+
+    response = TestClient(app).post(
+        "/api/lan-worker/start",
+        json={"manifest_path": "/tmp/CloudChamber/runs/dry-run-worker/run_manifest.json"},
+    )
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "LAN worker SSH failed"
+
+
 def test_storage_inventory_api_uses_runtime_home_override(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
