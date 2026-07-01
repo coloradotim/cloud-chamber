@@ -7,8 +7,10 @@ from igra_fixtures import IGRA_FIXTURE
 
 from cloud_chamber.observed_sounding import (
     ObservedSoundingError,
+    StationMetadata,
     parse_igra_station_text,
     render_observed_input_sounding,
+    summarize_igra_station_text,
 )
 
 
@@ -34,6 +36,38 @@ def test_parse_igra_station_text_defaults_to_latest_sounding() -> None:
     assert record.validation.status == "needs_review"
     assert "station elevation joined" in " ".join(record.validation.caveats)
     assert "metadata_only" in record.wind_handling
+
+
+def test_summarize_igra_station_text_lists_times_without_package_validation() -> None:
+    summaries = summarize_igra_station_text(IGRA_FIXTURE)
+
+    assert len(summaries) == 2
+    assert summaries[0].station_id == "USM00072558"
+    assert summaries[0].valid_time_utc == datetime(2025, 1, 1, tzinfo=UTC)
+    assert summaries[0].num_levels > 0
+
+
+def test_parse_igra_station_text_accepts_supplied_station_metadata() -> None:
+    alternate_station_text = IGRA_FIXTURE.replace("USM00072558", "USM00072357")
+    parsed = parse_igra_station_text(
+        alternate_station_text,
+        uploaded_filename="USM00072357-data-beg2025.txt",
+        station_metadata=StationMetadata(
+            station_id="USM00072357",
+            station_name="Norman, Oklahoma",
+            latitude=35.2456,
+            longitude=-97.4721,
+            elevation_m_msl=357.0,
+            source="IGRA recent cache station metadata",
+        ),
+    )
+
+    record = parsed.selected_sounding
+    assert record.station_id == "USM00072357"
+    assert record.station_name == "Norman, Oklahoma"
+    assert record.station_elevation_m_msl == pytest.approx(357.0)
+    assert record.model_bottom_elevation_m_msl == pytest.approx(357.0)
+    assert "station elevation joined from IGRA recent cache" in " ".join(record.validation.caveats)
 
 
 def test_parse_igra_station_text_selects_requested_sounding_time() -> None:

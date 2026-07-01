@@ -81,8 +81,10 @@ observed-wind forcing.
 Cloud Chamber also owns a backend-only local cache foundation for recent IGRA
 station-period source files. V1 can refresh the NOAA/NCEI IGRA recent catalog,
 join station metadata, filter to a broad Great Plains / Midwest bounding box
-(`30.0` to `50.0` latitude, `-106.0` to `-80.0` longitude), and cache selected
-station ZIP/text files under `<runtime-home>/cache/igra/recent/`. This is source
+(`35.0` to `50.0` latitude, `-106.0` to `-82.0` longitude), and cache selected
+or batched station ZIP/text files under `<runtime-home>/cache/igra/recent/`.
+The local script surface can list cached sounding times so Tim can inspect a
+batch of recent soundings without hand-written HTTP requests. This is source
 data for future “Find Interesting Soundings” work only: it does not score
 soundings, choose LES stories, generate packages, or run CM1. The browser never
 parses remote directory listings, ZIP files, or station text files.

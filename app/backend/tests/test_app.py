@@ -156,10 +156,10 @@ def test_igra_recent_catalog_endpoint_returns_cached_catalog(
         region=IGRARegionDefinition(
             tag="great_plains_midwest",
             label="Great Plains / Midwest",
-            min_latitude=30,
+            min_latitude=35,
             max_latitude=50,
             min_longitude=-106,
-            max_longitude=-80,
+            max_longitude=-82,
         ),
         refreshed_at=datetime(2026, 7, 1, tzinfo=UTC),
         stations=[],
