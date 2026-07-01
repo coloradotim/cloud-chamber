@@ -77,7 +77,7 @@ const outputSummary = {
 
 const observedSoundingParseResponse = {
   source_provider: "NOAA/NCEI IGRA",
-  source_format: "igra_station_data_text",
+  source_format: "igra_station_text",
   uploaded_filename: "USM00072558-data.txt",
   available_soundings: [
     {
@@ -100,7 +100,7 @@ const observedSoundingParseResponse = {
   selected_sounding: {
     source_type: "observed_sounding",
     source_provider: "NOAA/NCEI IGRA",
-    source_format: "igra_station_data_text",
+    source_format: "igra_station_text",
     uploaded_filename: "USM00072558-data.txt",
     station_id: "USM00072558",
     station_name: "Valley, Nebraska",
@@ -169,7 +169,7 @@ const observedSoundingParseResponse = {
       ],
     },
     provenance: {
-      parser: "cloud_chamber_igra_station_data_text",
+      parser: "cloud_chamber_igra_station_text",
       station_metadata: "tiny_fixture",
     },
   },
