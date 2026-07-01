@@ -142,6 +142,15 @@ separate validation changes wind forcing. Use tiny synthetic IGRA fixtures in
 tests. Large local station files, for example files in `~/Downloads`, are manual
 validation inputs and must not be copied into the repo.
 
+Recent IGRA source-file discovery is backend-owned. The backend endpoints under
+`/api/igra/recent/*` can refresh a bounded NOAA/NCEI recent catalog, join station
+metadata, filter to the v1 Great Plains / Midwest bounds, and cache selected
+station ZIP/text files under `<runtime-home>/cache/igra/recent/`. The cache
+contains `catalog.json`, `cache_manifest.json`, and per-station cached ZIP/text
+files. These are runtime-local generated/source-data artifacts; do not commit
+them. Automated tests use tiny fixture HTML, station-list text, and ZIP payloads
+only. No CI test should fetch live NOAA/NCEI data.
+
 Baseline Shallow Cumulus currently uses `zd = 4500.0` for Rayleigh damping in the 6 km quick-look domain. Preflight rejects namelists where Rayleigh damping would begin at or below half the configured domain top. A CM1 process that exits `0` without NetCDF or raw CM1 `.dat/.ctl` artifacts is recorded as `validation_status: needs_review` and `product_state: process_completed_no_output`, not as a completed usable CM1 result.
 
 Generated Baseline Shallow Cumulus packages prefer CM1 NetCDF output with `output_format = 2` and `output_filetype = 2`. CM1 documents `output_format = 1` as GrADS/direct-access output and `output_format = 2` as NetCDF. The first successful smoke run produced `.dat/.ctl` files, so those are cataloged as raw CM1 artifacts while the next manual run should verify the NetCDF path.
@@ -238,6 +247,8 @@ Runtime data belongs outside the repo by default:
   settings.json
   runs/
   cache/
+    igra/
+      recent/
   logs/
 ```
 

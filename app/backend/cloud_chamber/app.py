@@ -12,6 +12,13 @@ from pydantic import BaseModel, Field
 
 from cloud_chamber.cli import ENGINE_NOTE
 from cloud_chamber.dry_run_package import generate_dry_run_package, read_dry_run_report
+from cloud_chamber.igra_catalog import (
+    IGRACatalogError,
+    cache_station_zip_from_catalog,
+    read_igra_cache_manifest,
+    read_igra_recent_catalog,
+    refresh_recent_catalog,
+)
 from cloud_chamber.lan_worker import (
     LanWorkerApiError,
     cleanup_lan_worker_run,
@@ -111,6 +118,11 @@ class LanWorkerRunRequest(BaseModel):
     manifest_path: str
 
 
+class IGRACacheRequest(BaseModel):
+    station_id: str
+    filename: str | None = None
+
+
 @app.get("/api/scenarios")
 def list_scenarios() -> dict[str, object]:
     scenarios = [scenario_summary(scenario) for scenario in load_scenario_templates()]
@@ -158,6 +170,40 @@ def parse_observed_sounding(request: ObservedSoundingParseRequest) -> dict[str, 
     except ObservedSoundingError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return result.model_dump(mode="json")
+
+
+@app.get("/api/igra/recent/catalog")
+def get_igra_recent_catalog() -> dict[str, object]:
+    catalog = read_igra_recent_catalog(load_settings())
+    return {"catalog": catalog.model_dump(mode="json") if catalog else None}
+
+
+@app.post("/api/igra/recent/refresh-catalog")
+def refresh_igra_recent_catalog() -> dict[str, object]:
+    try:
+        catalog = refresh_recent_catalog(load_settings())
+    except IGRACatalogError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return catalog.model_dump(mode="json")
+
+
+@app.get("/api/igra/recent/cache")
+def get_igra_recent_cache() -> dict[str, object]:
+    manifest = read_igra_cache_manifest(load_settings())
+    return manifest.model_dump(mode="json")
+
+
+@app.post("/api/igra/recent/cache")
+def cache_igra_recent_file(request: IGRACacheRequest) -> dict[str, object]:
+    try:
+        entry = cache_station_zip_from_catalog(
+            load_settings(),
+            station_id=request.station_id,
+            filename=request.filename,
+        )
+    except IGRACatalogError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return entry.model_dump(mode="json")
 
 
 @app.post("/api/runs/launch")

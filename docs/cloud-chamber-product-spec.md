@@ -78,6 +78,15 @@ preserved as metadata only; the generated CM1 namelist keeps the validated
 external-sounding wind-handling path until a separate validation accepts
 observed-wind forcing.
 
+Cloud Chamber also owns a backend-only local cache foundation for recent IGRA
+station-period source files. V1 can refresh the NOAA/NCEI IGRA recent catalog,
+join station metadata, filter to a broad Great Plains / Midwest bounding box
+(`30.0` to `50.0` latitude, `-106.0` to `-80.0` longitude), and cache selected
+station ZIP/text files under `<runtime-home>/cache/igra/recent/`. This is source
+data for future “Find Interesting Soundings” work only: it does not score
+soundings, choose LES stories, generate packages, or run CM1. The browser never
+parses remote directory listings, ZIP files, or station text files.
+
 Explore should be a focused visualization plus explanation screen for one
 selected result. Its core interaction is `What happened here?`: select a cloud,
 updraft, clear-air thermal, or no-cloud region and receive a CM1-backed

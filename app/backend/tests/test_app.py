@@ -1,4 +1,5 @@
 import json
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
@@ -8,6 +9,12 @@ from igra_fixtures import IGRA_FIXTURE
 
 from cloud_chamber.app import app
 from cloud_chamber.dry_run_package import generate_dry_run_package
+from cloud_chamber.igra_catalog import (
+    IGRACatalogError,
+    IGRARecentCatalog,
+    IGRARegionDefinition,
+    IGRAStationZipReference,
+)
 from cloud_chamber.local_run_manager import LocalRunManagerError, RunStatus
 from cloud_chamber.run_manifest import (
     LifecycleState,
@@ -138,6 +145,60 @@ def test_parse_observed_sounding_api_blocks_malformed_upload() -> None:
 
     assert response.status_code == 400
     assert "No IGRA sounding headers" in response.json()["detail"]
+
+
+def test_igra_recent_catalog_endpoint_returns_cached_catalog(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    catalog = IGRARecentCatalog(
+        source_url="https://example.test/igra/",
+        station_metadata_source="https://example.test/stations.txt",
+        region=IGRARegionDefinition(
+            tag="great_plains_midwest",
+            label="Great Plains / Midwest",
+            min_latitude=30,
+            max_latitude=50,
+            min_longitude=-106,
+            max_longitude=-80,
+        ),
+        refreshed_at=datetime(2026, 7, 1, tzinfo=UTC),
+        stations=[],
+        zip_references=[
+            IGRAStationZipReference(
+                station_id="USM00072558",
+                filename="USM00072558-data-beg2025.txt.zip",
+                begin_year=2025,
+                source_url="https://example.test/USM00072558-data-beg2025.txt.zip",
+                region_tags=["great_plains_midwest"],
+            )
+        ],
+        cache_manifest_path="/tmp/cache/igra/recent/cache_manifest.json",
+    )
+    monkeypatch.setattr("cloud_chamber.app.read_igra_recent_catalog", lambda _settings: catalog)
+
+    response = TestClient(app).get("/api/igra/recent/catalog")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["catalog"]["zip_references"][0]["station_id"] == "USM00072558"
+    assert payload["catalog"]["zip_references"][0]["cached_status"] == "not_cached"
+
+
+def test_igra_recent_cache_endpoint_reports_clear_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def blocked_cache(_settings: object, *, station_id: str, filename: str | None) -> object:
+        raise IGRACatalogError(f"Requested file is not cached: {station_id} {filename}")
+
+    monkeypatch.setattr("cloud_chamber.app.cache_station_zip_from_catalog", blocked_cache)
+
+    response = TestClient(app).post(
+        "/api/igra/recent/cache",
+        json={"station_id": "USM00072558", "filename": "USM00072558-data-beg2025.txt.zip"},
+    )
+
+    assert response.status_code == 400
+    assert "Requested file is not cached" in response.json()["detail"]
 
 
 def test_launch_run_api_returns_status(monkeypatch: pytest.MonkeyPatch) -> None:
