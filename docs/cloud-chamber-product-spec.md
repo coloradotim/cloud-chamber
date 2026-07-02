@@ -94,6 +94,18 @@ the runtime cache and may be handed into package metadata as provenance for why
 a sounding was tried. The browser never parses remote directory listings, ZIP
 files, or station text files.
 
+In Build, `Upload a Sounding` is the product-facing entry point for this
+candidate workflow. It should show a `Find interesting soundings` workbench
+beside the observed-sounding upload path. The workbench can refresh the bounded
+IGRA cache, screen cached soundings by experiment story, show package-ready and
+blocked candidates with evidence and caveats, save candidates for later review,
+and load a selected package-ready candidate into the observed-sounding package
+review. It must keep the language pre-run and provisional: a candidate is an
+observed atmosphere worth trying, not a prediction that clouds, rain, or
+suppression will occur. When a candidate is used, its screening story, score,
+evidence, feature summary, and caveats should be copied into package metadata as
+provenance.
+
 Explore should be a focused visualization plus explanation screen for one
 selected result. Its core interaction is `What happened here?`: select a cloud,
 updraft, clear-air thermal, or no-cloud region and receive a CM1-backed
