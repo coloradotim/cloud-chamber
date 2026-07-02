@@ -58,6 +58,7 @@ def generate_dry_run_package(
     allow_overwrite: bool = False,
     app_commit: str | None = None,
     observed_sounding: dict[str, object] | ObservedSoundingRecord | None = None,
+    candidate_screening: dict[str, object] | None = None,
 ) -> DryRunPackageResult:
     scenario = validate_scenario_template(scenario_data)
     selected_controls = controls or {}
@@ -117,9 +118,14 @@ def generate_dry_run_package(
         observed_sounding=(
             observed_record.model_dump(mode="json") if observed_record is not None else None
         ),
+        candidate_screening=candidate_screening,
     )
 
-    case_manifest = _case_manifest_payload(scenario, contract)
+    case_manifest = _case_manifest_payload(
+        scenario,
+        contract,
+        candidate_screening=candidate_screening,
+    )
     report = _dry_run_report_payload(
         scenario=scenario,
         manifest=manifest,
@@ -201,6 +207,8 @@ def read_dry_run_report(path: Path) -> dict[str, object]:
 def _case_manifest_payload(
     scenario: ScenarioTemplate,
     contract: CM1InputContract,
+    *,
+    candidate_screening: dict[str, object] | None = None,
 ) -> dict[str, object]:
     return {
         "scenario_id": scenario.id,
@@ -215,6 +223,7 @@ def _case_manifest_payload(
             "scientific validation"
         ),
         "contract": _contract_payload(contract),
+        "candidate_screening": candidate_screening,
     }
 
 
@@ -261,6 +270,7 @@ def _dry_run_report_payload(
             if contract.observed_sounding is not None
             else None
         ),
+        "candidate_screening": manifest.candidate_screening,
         "run_size_preset": manifest.run_size_preset,
         "run_size_details": run_size_details,
         "estimated_cost_or_size": run_size_details["cost_warning"],

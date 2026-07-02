@@ -6,6 +6,7 @@ import argparse
 import shutil
 from collections.abc import Sequence
 from pathlib import Path
+from typing import cast
 
 from cloud_chamber.igra_catalog import (
     IGRACacheEntry,
@@ -24,6 +25,21 @@ from cloud_chamber.igra_catalog import (
 )
 from cloud_chamber.observed_sounding import ObservedSoundingError, summarize_igra_station_text
 from cloud_chamber.settings import CloudChamberSettings, load_settings
+from cloud_chamber.sounding_candidates import (
+    STORY_LABELS,
+    SoundingCandidate,
+    TargetStoryId,
+    screen_cached_soundings,
+)
+
+STORY_OPTION_TO_ID: dict[str, TargetStoryId] = {
+    "shallow-cumulus": "shallow_cumulus_candidate",
+    "dry-failed": "dry_failed_candidate",
+    "capped-suppressed": "capped_suppressed_candidate",
+    "humid-rainy": "humid_rainy_candidate",
+    "needs-review": "needs_review",
+    "poor-or-incomplete": "poor_or_incomplete_candidate",
+}
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -118,6 +134,37 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     soundings.set_defaults(func=_cmd_soundings)
 
+    candidates = subparsers.add_parser(
+        "candidates",
+        help="Screen cached sounding times into story-specific pre-run LES candidates.",
+    )
+    candidates.add_argument("--station", help="Screen only one station id.")
+    candidates.add_argument(
+        "--story",
+        choices=["all", *STORY_OPTION_TO_ID.keys()],
+        default="all",
+        help=(
+            "Candidate story to search for. Use all to show separate short lists "
+            "for each story. Default: all."
+        ),
+    )
+    candidates.add_argument(
+        "--limit",
+        type=int,
+        default=5,
+        help=(
+            "Maximum candidates to print for the selected story. With --story all, "
+            "this applies per story. Default: 5."
+        ),
+    )
+    candidates.add_argument(
+        "--latest-per-station",
+        type=int,
+        default=5,
+        help="Screen only the latest N sounding times per station. Default: 5.",
+    )
+    candidates.set_defaults(func=_cmd_candidates)
+
     return parser
 
 
@@ -129,6 +176,7 @@ def _cmd_refresh(_args: argparse.Namespace, settings: CloudChamberSettings) -> i
     print("  scripts/igra-recent.sh list --limit 20")
     print("  scripts/igra-recent.sh cache-all --limit 10")
     print("  scripts/igra-recent.sh soundings")
+    print("  scripts/igra-recent.sh candidates")
     return 0
 
 
@@ -253,6 +301,7 @@ def _cmd_cache_all(args: argparse.Namespace, settings: CloudChamberSettings) -> 
     print(f"Cached {len(entries)} station-period file(s).")
     print("Next:")
     print("  scripts/igra-recent.sh soundings")
+    print("  scripts/igra-recent.sh candidates")
     return 0
 
 
@@ -308,6 +357,59 @@ def _cmd_soundings(args: argparse.Namespace, settings: CloudChamberSettings) -> 
         print("Caveats:")
         for caveat in caveats[:8]:
             print(f"  - {caveat}")
+    return 0
+
+
+def _cmd_candidates(args: argparse.Namespace, settings: CloudChamberSettings) -> int:
+    if args.limit < 1:
+        raise IGRACatalogError("--limit must be at least 1.")
+    if args.latest_per_station < 1:
+        raise IGRACatalogError("--latest-per-station must be at least 1.")
+    story_option = cast(str, args.story)
+    stories: list[TargetStoryId]
+    if story_option == "all":
+        stories = [
+            "shallow_cumulus_candidate",
+            "dry_failed_candidate",
+            "capped_suppressed_candidate",
+            "humid_rainy_candidate",
+        ]
+    else:
+        stories = [STORY_OPTION_TO_ID[story_option]]
+
+    all_caveats: list[str] = []
+    any_candidates = False
+    for index, story in enumerate(stories):
+        result = screen_cached_soundings(
+            settings,
+            station_id=args.station,
+            latest_per_station=args.latest_per_station,
+            limit=args.limit,
+            target_story=story,
+        )
+        all_caveats.extend(result.caveats)
+        if story_option == "all":
+            print(STORY_LABELS[story])
+        _print_candidates(result.candidates, target_story=story)
+        any_candidates = any_candidates or bool(result.candidates)
+        if story_option == "all" and index < len(stories) - 1:
+            print("")
+    if all_caveats:
+        print("")
+        print("Caveats:")
+        for caveat in all_caveats[:8]:
+            print(f"  - {caveat}")
+    if any_candidates:
+        print("")
+        print("Next:")
+        print("  Pick the story you want to test; candidates are pre-run hypotheses.")
+        print("  Review candidate_id, match score, evidence level, and package_ready.")
+        print(
+            "  Use the saved-candidate API or future UI to hand a candidate "
+            "into package generation."
+        )
+    else:
+        print("Run: scripts/igra-recent.sh cache-all --limit 10")
     return 0
 
 
@@ -391,6 +493,57 @@ def _print_soundings(rows: list[tuple[str, str, str, int, str]]) -> None:
             f"{station_name.strip()[:30]:<30}  "
             f"{filename}"
         )
+
+
+def _print_candidates(
+    candidates: list[SoundingCandidate], *, target_story: TargetStoryId | None = None
+) -> None:
+    if not candidates:
+        print("No cached sounding candidates could be screened.")
+        return
+    print("Rank  Story                  Match  Evidence  Ready  Valid time UTC        Station")
+    print("-" * 104)
+    for index, candidate in enumerate(candidates, start=1):
+        story = (
+            (target_story or candidate.primary_story).replace("_candidate", "").replace("_", "-")
+        )
+        ready = "yes" if candidate.package_ready else "no"
+        station = candidate.station_name or candidate.station_id
+        match_score = _candidate_story_match(candidate, target_story)
+        print(
+            f"{index:<4}  "
+            f"{story[:22]:<22} "
+            f"{match_score:>5.1f}  "
+            f"{candidate.confidence:<10}  "
+            f"{ready:<5}  "
+            f"{candidate.valid_time_utc.isoformat().replace('+00:00', 'Z'):<20}  "
+            f"{candidate.station_id} {station[:24]}"
+        )
+        print(f"      candidate_id: {candidate.candidate_id}")
+        top_evidence = [
+            evidence
+            for evidence in candidate.evidence
+            if evidence.value is not None and evidence.value != ""
+        ][:3]
+        if top_evidence:
+            summary = "; ".join(
+                f"{item.label}: {item.value}{' ' + item.units if item.units else ''}"
+                for item in top_evidence
+            )
+            print(f"      {summary}")
+        if candidate.caveats:
+            print(f"      caveat: {candidate.caveats[0]}")
+
+
+def _candidate_story_match(
+    candidate: SoundingCandidate, target_story: TargetStoryId | None
+) -> float:
+    if target_story is None:
+        return candidate.rank_score
+    for score in candidate.story_scores:
+        if score.story == target_story:
+            return score.score_0_to_100 if candidate.package_ready else 0.0
+    return 0.0
 
 
 def _reference_with_cache_entry_for_cli(

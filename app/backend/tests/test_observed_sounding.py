@@ -7,7 +7,9 @@ from igra_fixtures import IGRA_FIXTURE
 
 from cloud_chamber.observed_sounding import (
     ObservedSoundingError,
+    ObservedSoundingLevel,
     StationMetadata,
+    _validate_levels,
     parse_igra_station_text,
     render_observed_input_sounding,
     summarize_igra_station_text,
@@ -90,6 +92,56 @@ def test_parse_igra_station_text_blocks_too_shallow_profile() -> None:
 
     with pytest.raises(ObservedSoundingError, match="too_few|profile_top"):
         parse_igra_station_text(shallow, uploaded_filename="USM00072558-data-beg2025.txt")
+
+
+def test_validate_levels_allows_plausible_upper_level_theta_above_500k() -> None:
+    levels = [
+        ObservedSoundingLevel(
+            pressure_pa=100000.0,
+            source_height_m_msl=0.0,
+            model_z_m=0.0,
+            temperature_c=20.0,
+            potential_temperature_k=293.0,
+            qv_g_kg=10.0,
+        ),
+        ObservedSoundingLevel(
+            pressure_pa=85000.0,
+            source_height_m_msl=1500.0,
+            model_z_m=1500.0,
+            temperature_c=10.0,
+            potential_temperature_k=296.0,
+            qv_g_kg=8.0,
+        ),
+        ObservedSoundingLevel(
+            pressure_pa=50000.0,
+            source_height_m_msl=5500.0,
+            model_z_m=5500.0,
+            temperature_c=-15.0,
+            potential_temperature_k=320.0,
+            qv_g_kg=2.0,
+        ),
+        ObservedSoundingLevel(
+            pressure_pa=20000.0,
+            source_height_m_msl=12000.0,
+            model_z_m=12000.0,
+            temperature_c=-55.0,
+            potential_temperature_k=430.0,
+            qv_g_kg=0.1,
+        ),
+        ObservedSoundingLevel(
+            pressure_pa=5000.0,
+            source_height_m_msl=19000.0,
+            model_z_m=19000.0,
+            temperature_c=-60.0,
+            potential_temperature_k=520.0,
+            qv_g_kg=0.01,
+        ),
+    ]
+    errors: list[str] = []
+
+    _validate_levels(levels, errors, [])
+
+    assert "implausible_potential_temperature_value" not in errors
 
 
 def test_render_observed_input_sounding_is_numeric_cm1_facing() -> None:

@@ -146,6 +146,7 @@ class RunManifest(BaseModel):
     outputs: OutputMetadata = Field(default_factory=OutputMetadata)
     user: UserMetadata
     observed_sounding: dict[str, Any] | None = None
+    candidate_screening: dict[str, Any] | None = None
 
     @model_validator(mode="after")
     def validate_state_contract(self) -> RunManifest:

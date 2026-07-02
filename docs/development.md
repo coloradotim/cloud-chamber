@@ -160,15 +160,17 @@ scripts/igra-recent.sh refresh
 scripts/igra-recent.sh list --limit 20
 scripts/igra-recent.sh cache-all --limit 10
 scripts/igra-recent.sh soundings
+scripts/igra-recent.sh candidates
 scripts/igra-recent.sh cache USM00072558
 ```
 
 `refresh` contacts NOAA/NCEI catalog sources and writes local catalog metadata.
 `cache-all` downloads a batch of station-period ZIP/text files from the
 already-refreshed local catalog. `soundings` inspects cached station text files
-and lists available sounding times. `cache` remains available when a single
-known station is desired. These commands write only under the configured runtime
-cache.
+and lists available sounding times. `candidates` screens cached sounding times
+into story-specific pre-run matches so a large cache becomes reviewable without
+manually scanning every sounding. `cache` remains available when a single known
+station is desired. These commands write only under the configured runtime cache.
 
 By default, `soundings` shows only the latest few times for each cached station.
 Use `--all` only when you intentionally want every cached sounding time:
@@ -177,6 +179,22 @@ Use `--all` only when you intentionally want every cached sounding time:
 scripts/igra-recent.sh soundings --latest-per-station 3
 scripts/igra-recent.sh soundings --all --limit 200
 ```
+
+For the first "find interesting soundings" review loop, use:
+
+```bash
+scripts/igra-recent.sh cleanup
+scripts/igra-recent.sh refresh
+scripts/igra-recent.sh cache-all --limit 10
+scripts/igra-recent.sh candidates
+scripts/igra-recent.sh candidates --story shallow-cumulus --limit 10
+scripts/igra-recent.sh candidates --story capped-suppressed --limit 10
+```
+
+Candidate match scores are pre-run hypotheses only. There is no single best
+sounding independent of the experiment story: use `--story shallow-cumulus`,
+`--story dry-failed`, `--story capped-suppressed`, or `--story humid-rainy`
+depending on what you want to test. CM1 output remains the source of truth.
 
 To reset the recent IGRA cache and test from a clean state, use the script
 cleanup command, then rerun `status` / `refresh`:
