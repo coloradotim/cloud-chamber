@@ -360,6 +360,71 @@ def test_soundings_lists_multiple_cached_stations(
     assert "NORMAN/MAX WESTHEIMER A; OK." in output
 
 
+def test_candidates_screens_cached_sounding_times(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    tmp_path: Path,
+) -> None:
+    text_path = tmp_path / "USM00072558-data-beg2025.txt"
+    text_path.write_text(IGRA_FIXTURE)
+    entry = cache_entry(tmp_path).model_copy(update={"cached_text_path": str(text_path)})
+    manifest = cache_manifest().model_copy(update={"entries": [entry]})
+    monkeypatch.setattr(
+        "cloud_chamber.igra_recent_cli.read_igra_cache_manifest",
+        lambda _s: manifest,
+    )
+    monkeypatch.setattr(
+        "cloud_chamber.sounding_candidates.read_igra_cache_manifest",
+        lambda _s: manifest,
+    )
+
+    assert (
+        main(
+            [
+                "candidates",
+                "--story",
+                "shallow-cumulus",
+                "--limit",
+                "2",
+                "--latest-per-station",
+                "2",
+            ]
+        )
+        == 0
+    )
+
+    output = capsys.readouterr().out
+    assert "Match" in output
+    assert "Evidence" in output
+    assert "shallow-cumulus" in output
+    assert "USM00072558" in output
+    assert "candidate_id:" in output
+    assert "package_ready" in output
+
+
+def test_candidates_all_prints_story_specific_sections(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    tmp_path: Path,
+) -> None:
+    text_path = tmp_path / "USM00072558-data-beg2025.txt"
+    text_path.write_text(IGRA_FIXTURE)
+    entry = cache_entry(tmp_path).model_copy(update={"cached_text_path": str(text_path)})
+    manifest = cache_manifest().model_copy(update={"entries": [entry]})
+    monkeypatch.setattr(
+        "cloud_chamber.sounding_candidates.read_igra_cache_manifest",
+        lambda _s: manifest,
+    )
+
+    assert main(["candidates", "--limit", "1", "--latest-per-station", "1"]) == 0
+
+    output = capsys.readouterr().out
+    assert "Cloud-forming shallow cumulus candidate" in output
+    assert "Dry failed cumulus candidate" in output
+    assert "Capped / suppressed cumulus candidate" in output
+    assert "Humid / rainy candidate" in output
+
+
 def test_refresh_prints_next_commands(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
@@ -375,3 +440,4 @@ def test_refresh_prints_next_commands(
     assert "scripts/igra-recent.sh list" in output
     assert "scripts/igra-recent.sh cache-all --limit 10" in output
     assert "scripts/igra-recent.sh soundings" in output
+    assert "scripts/igra-recent.sh candidates" in output

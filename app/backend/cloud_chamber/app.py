@@ -58,6 +58,15 @@ from cloud_chamber.selected_region_diagnostics import (
     selected_region_diagnostics,
 )
 from cloud_chamber.settings import load_settings
+from cloud_chamber.sounding_candidates import (
+    SaveCandidateRequest,
+    TargetStoryId,
+    delete_saved_candidate,
+    list_saved_candidates,
+    list_screening_inputs,
+    save_candidate,
+    screen_cached_soundings,
+)
 from cloud_chamber.visualization_data import (
     VisualizationDataError,
     VisualizationOrientation,
@@ -91,6 +100,7 @@ class DryRunRequest(BaseModel):
     controls: dict[str, str | float | bool] = Field(default_factory=dict)
     run_size_preset: str = "quick_look"
     observed_sounding: dict[str, object] | None = None
+    candidate_screening: dict[str, object] | None = None
 
 
 class ObservedSoundingParseRequest(BaseModel):
@@ -123,6 +133,13 @@ class IGRACacheRequest(BaseModel):
     filename: str | None = None
 
 
+class SoundingCandidateScreenRequest(BaseModel):
+    station_id: str | None = None
+    latest_per_station: int = 5
+    limit: int = 50
+    target_story: TargetStoryId | None = None
+
+
 @app.get("/api/scenarios")
 def list_scenarios() -> dict[str, object]:
     scenarios = [scenario_summary(scenario) for scenario in load_scenario_templates()]
@@ -143,6 +160,7 @@ def create_dry_run_package(request: DryRunRequest) -> dict[str, Any]:
         controls=request.controls,
         run_size_preset=request.run_size_preset,
         observed_sounding=request.observed_sounding,
+        candidate_screening=request.candidate_screening,
     )
     report = read_dry_run_report(result.report_path)
     return {
@@ -204,6 +222,54 @@ def cache_igra_recent_file(request: IGRACacheRequest) -> dict[str, object]:
     except IGRACatalogError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return entry.model_dump(mode="json")
+
+
+@app.get("/api/sounding-candidates/screening-inputs")
+def get_sounding_candidate_screening_inputs() -> dict[str, object]:
+    inputs = list_screening_inputs(load_settings())
+    return {"inputs": [item.model_dump(mode="json") for item in inputs]}
+
+
+@app.post("/api/sounding-candidates/screen")
+def screen_sounding_candidates(request: SoundingCandidateScreenRequest) -> dict[str, object]:
+    try:
+        result = screen_cached_soundings(
+            load_settings(),
+            station_id=request.station_id,
+            latest_per_station=request.latest_per_station,
+            limit=request.limit,
+            target_story=request.target_story,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return result.model_dump(mode="json")
+
+
+@app.get("/api/sounding-candidates/saved")
+def get_saved_sounding_candidates() -> dict[str, object]:
+    try:
+        saved = list_saved_candidates(load_settings())
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"saved_candidates": [candidate.model_dump(mode="json") for candidate in saved]}
+
+
+@app.post("/api/sounding-candidates/saved")
+def create_saved_sounding_candidate(request: SaveCandidateRequest) -> dict[str, object]:
+    try:
+        saved = save_candidate(load_settings(), request)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return saved.model_dump(mode="json")
+
+
+@app.delete("/api/sounding-candidates/saved/{saved_candidate_id}")
+def remove_saved_sounding_candidate(saved_candidate_id: str) -> dict[str, object]:
+    try:
+        deleted = delete_saved_candidate(load_settings(), saved_candidate_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"saved_candidate_id": saved_candidate_id, "deleted": deleted}
 
 
 @app.post("/api/runs/launch")

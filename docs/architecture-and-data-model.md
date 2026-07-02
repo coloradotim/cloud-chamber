@@ -85,6 +85,23 @@ When cached station metadata is available, the observed-sounding parser can use
 it for station name, location, and elevation instead of relying only on built-in
 fixture metadata.
 
+The sounding-candidate screening layer consumes only cached station text plus
+cache metadata. It reuses the canonical observed-sounding parser, computes
+transparent low-order features such as low-level moisture, estimated LCL,
+low-level lapse-rate, inversion/cap proxy, moisture depth, and profile
+coverage, and emits pre-run story-specific candidate matches. Stable story
+identifiers are `shallow_cumulus_candidate`, `dry_failed_candidate`,
+`capped_suppressed_candidate`, `humid_rainy_candidate`, `needs_review`, and
+`poor_or_incomplete_candidate`. Screening can target one story at a time because
+the useful sounding depends on the experiment question; a shallow-cumulus search
+and a humid/rainy search should not imply the same ranked list. Saved candidates
+are runtime-local cache state under `<runtime-home>/cache/sounding-candidates/`;
+they are not Result Cards and are not committed. When a saved candidate is used
+to generate a package, its screening summary may be copied into
+`run_manifest.json`, `case_manifest.json`, and `dry_run_report.json` as
+provenance. The screening score remains a candidate-selection aid; CM1 output
+remains the source of truth.
+
 ## Suggested Stack
 
 This is not final, but a reasonable starting point:

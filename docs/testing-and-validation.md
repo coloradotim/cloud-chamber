@@ -67,6 +67,16 @@ zip-slip/absolute-path rejection, and deterministic refresh/update behavior.
 CI must not fetch live NOAA/NCEI data, parse remote archives in the browser, or
 write downloaded ZIP/text/cache manifests outside temp runtime homes.
 
+Sounding-candidate screening tests must use tiny cached IGRA fixtures and temp
+runtime cache directories only. They should verify that screening inputs come
+from cached station text, candidate match scores are deterministic for the
+stable story identifiers, story-specific screening can target one experiment
+question at a time, poor/incomplete inputs are caveated instead of silently
+treated as package-ready, saved candidates round-trip through runtime-local JSON,
+and candidate-screening metadata is copied into generated package manifests
+when provided. These tests validate pre-run hypothesis plumbing only; they must
+not claim a scored candidate will produce a specific CM1 outcome.
+
 Dry-run package tests should use temporary runtime homes and assert overwrite protection, manifest/report content, CM1-facing input readiness, and absence of NetCDF output. A dry-run package is packaged configuration and metadata only; it is not a launched process or completed CM1 result.
 
 Output product tests should follow the

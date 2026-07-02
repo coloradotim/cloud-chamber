@@ -115,6 +115,7 @@ class _IgraHeader(TypedDict):
 _MISSING_VALUES = {-8888, -9999}
 _CM1_MODEL_TOP_M = 18000.0
 _OBSERVED_SOUNDING_TOP_BUFFER_M = 2000.0
+_MAX_PLAUSIBLE_POTENTIAL_TEMPERATURE_K = 650.0
 
 _STATION_METADATA: dict[str, StationMetadata] = {
     "USM00072558": StationMetadata(
@@ -493,7 +494,7 @@ def _validate_levels(
         if not (-100.0 <= level.temperature_c <= 60.0):
             errors.append("implausible_temperature_value")
             break
-        if not (150.0 <= level.potential_temperature_k <= 500.0):
+        if not (150.0 <= level.potential_temperature_k <= _MAX_PLAUSIBLE_POTENTIAL_TEMPERATURE_K):
             errors.append("implausible_potential_temperature_value")
             break
         if level.qv_g_kg > 40.0:
