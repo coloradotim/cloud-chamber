@@ -77,6 +77,15 @@ and candidate-screening metadata is copied into generated package manifests
 when provided. These tests validate pre-run hypothesis plumbing only; they must
 not claim a scored candidate will produce a specific CM1 outcome.
 
+Frontend tests for the `Upload a Sounding` Build workflow should cover the same
+boundary. Component tests and mocked Playwright smoke tests should verify that
+the candidate workbench can refresh IGRA cache state, screen cached soundings by
+story, show blocked candidates as unusable, save candidates, load a
+package-ready candidate into the observed-sounding package review, and include
+candidate-screening provenance in the generated package request. Browser tests
+must mock the backend APIs and must not fetch NOAA/NCEI, parse raw station text,
+or imply that a candidate score predicts the CM1 outcome.
+
 Dry-run package tests should use temporary runtime homes and assert overwrite protection, manifest/report content, CM1-facing input readiness, and absence of NetCDF output. A dry-run package is packaged configuration and metadata only; it is not a launched process or completed CM1 result.
 
 Output product tests should follow the

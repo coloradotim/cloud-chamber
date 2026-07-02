@@ -102,6 +102,15 @@ to generate a package, its screening summary may be copied into
 provenance. The screening score remains a candidate-selection aid; CM1 output
 remains the source of truth.
 
+The Build UI consumes this layer through bounded JSON only. `Upload a Sounding`
+can call the recent-catalog/cache and candidate-screening endpoints, display the
+candidate list and saved candidates, and pass a selected candidate's
+`selected_sounding_payload` into the existing observed-sounding package review.
+The frontend does not read cached station text directly and does not compute the
+story scores. Candidate status is separate from run/result status: saved
+candidates are pre-run hypotheses, while generated packages, launched runs, and
+ingested results remain separate lifecycle objects.
+
 ## Suggested Stack
 
 This is not final, but a reasonable starting point:
