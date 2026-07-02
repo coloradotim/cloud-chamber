@@ -10,6 +10,7 @@ from igra_fixtures import IGRA_FIXTURE
 from cloud_chamber.app import app
 from cloud_chamber.dry_run_package import generate_dry_run_package
 from cloud_chamber.igra_catalog import (
+    IGRACacheEntry,
     IGRACatalogError,
     IGRARecentCatalog,
     IGRARegionDefinition,
@@ -199,6 +200,82 @@ def test_igra_recent_cache_endpoint_reports_clear_failure(
 
     assert response.status_code == 400
     assert "Requested file is not cached" in response.json()["detail"]
+
+
+def test_igra_recent_batch_cache_endpoint_caches_bounded_files(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    catalog = IGRARecentCatalog(
+        source_url="https://example.test/igra/",
+        station_metadata_source="https://example.test/stations.txt",
+        region=IGRARegionDefinition(
+            tag="great_plains_midwest",
+            label="Great Plains / Midwest",
+            min_latitude=35,
+            max_latitude=50,
+            min_longitude=-106,
+            max_longitude=-82,
+        ),
+        refreshed_at=datetime(2026, 7, 1, tzinfo=UTC),
+        stations=[],
+        zip_references=[
+            IGRAStationZipReference(
+                station_id="USM00072558",
+                filename="USM00072558-data-beg2025.txt.zip",
+                begin_year=2025,
+                source_url="https://example.test/USM00072558-data-beg2025.txt.zip",
+                region_tags=["great_plains_midwest"],
+            ),
+            IGRAStationZipReference(
+                station_id="USM00072426",
+                filename="USM00072426-data-beg2025.txt.zip",
+                begin_year=2025,
+                source_url="https://example.test/USM00072426-data-beg2025.txt.zip",
+                region_tags=["great_plains_midwest"],
+            ),
+        ],
+        cache_manifest_path=str(tmp_path / "cache_manifest.json"),
+    )
+    calls: list[tuple[str, str | None]] = []
+
+    def fake_cache(
+        _settings: object,
+        *,
+        station_id: str,
+        filename: str | None,
+    ) -> IGRACacheEntry:
+        calls.append((station_id, filename))
+        return IGRACacheEntry(
+            station_id=station_id,
+            filename=filename or f"{station_id}-data-beg2025.txt.zip",
+            source_url=f"https://example.test/{filename}",
+            region_tags=["great_plains_midwest"],
+            cached_status="cached_extracted",
+            cached_zip_path=str(tmp_path / (filename or f"{station_id}.zip")),
+            cached_text_path=str(tmp_path / station_id / f"{station_id}-data.txt"),
+            downloaded_at=datetime(2026, 7, 1, tzinfo=UTC),
+            extracted_at=datetime(2026, 7, 1, tzinfo=UTC),
+        )
+
+    monkeypatch.setattr("cloud_chamber.app.read_igra_recent_catalog", lambda _settings: catalog)
+    monkeypatch.setattr("cloud_chamber.app.cache_station_zip_from_catalog", fake_cache)
+
+    response = TestClient(app).post("/api/igra/recent/cache-batch", json={"limit": 1})
+
+    assert response.status_code == 200
+    assert calls == [("USM00072558", "USM00072558-data-beg2025.txt.zip")]
+    payload = response.json()
+    assert payload["selected_count"] == 1
+    assert payload["cached_entries"][0]["station_id"] == "USM00072558"
+    assert payload["remaining_uncached_count"] == 1
+
+
+def test_igra_recent_batch_cache_endpoint_rejects_invalid_limit() -> None:
+    response = TestClient(app).post("/api/igra/recent/cache-batch", json={"limit": 0})
+
+    assert response.status_code == 400
+    assert "limit" in response.json()["detail"]
 
 
 def test_launch_run_api_returns_status(monkeypatch: pytest.MonkeyPatch) -> None:

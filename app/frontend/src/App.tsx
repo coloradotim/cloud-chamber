@@ -233,6 +233,9 @@ type ScreeningInput = {
   cached_text_path: string;
   source_file_name: string;
   cached_status: string;
+  sounding_count?: number | null;
+  latest_valid_time_utc?: string | null;
+  caveats?: string[];
 };
 
 type ScreeningInputsResponse = {
@@ -284,6 +287,14 @@ type IGRACacheResponse = {
     cached_text_path?: string | null;
   }[];
   updated_at: string;
+};
+
+type IGRABatchCacheResponse = {
+  requested_limit: number;
+  selected_count: number;
+  cached_entries: unknown[];
+  failed: Array<{ station_id: string; filename: string; error: string }>;
+  remaining_uncached_count: number;
 };
 
 type ObservedSoundingSummary = {
@@ -888,6 +899,18 @@ async function fetchIGRARecentCache(): Promise<IGRACacheResponse> {
   return response.json() as Promise<IGRACacheResponse>;
 }
 
+async function cacheIGRARecentBatch(limit: number): Promise<IGRABatchCacheResponse> {
+  const response = await fetch("/api/igra/recent/cache-batch", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ limit }),
+  });
+  if (!response.ok) {
+    throw new Error(await responseError(response, "Unable to cache IGRA station files."));
+  }
+  return response.json() as Promise<IGRABatchCacheResponse>;
+}
+
 async function fetchScreeningInputs(): Promise<ScreeningInputsResponse> {
   const response = await fetch("/api/sounding-candidates/screening-inputs");
   if (!response.ok) {
@@ -898,13 +921,14 @@ async function fetchScreeningInputs(): Promise<ScreeningInputsResponse> {
 
 async function screenSoundingCandidates(
   story: CandidateStoryFilter,
+  options: { latestPerStation: number; limit: number },
 ): Promise<ScreeningResult> {
   const response = await fetch("/api/sounding-candidates/screen", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      latest_per_station: 5,
-      limit: 50,
+      latest_per_station: options.latestPerStation,
+      limit: options.limit,
       target_story: story === "all" ? null : story,
     }),
   });
@@ -1261,6 +1285,12 @@ export function App() {
   const [candidateStoryFilter, setCandidateStoryFilter] =
     useState<CandidateStoryFilter>("all");
   const [candidateSort, setCandidateSort] = useState<CandidateSort>("best");
+  const [candidateStationSearch, setCandidateStationSearch] = useState("");
+  const [candidateReadinessFilter, setCandidateReadinessFilter] =
+    useState<"all" | "package_ready" | "blocked">("all");
+  const [candidateCacheLimit, setCandidateCacheLimit] = useState("10");
+  const [candidateLatestPerStation, setCandidateLatestPerStation] = useState("5");
+  const [candidateResultLimit, setCandidateResultLimit] = useState("50");
   const [candidateStatus, setCandidateStatus] = useState("IGRA cache not checked yet");
   const [candidateError, setCandidateError] = useState<string | null>(null);
   const [candidateScreening, setCandidateScreening] = useState<ScreeningResult | null>(null);
@@ -1549,16 +1579,44 @@ export function App() {
 
   async function handleRefreshIGRAData() {
     setCandidateError(null);
-    setCandidateStatus("Refreshing recent IGRA catalog");
+    setCandidateStatus("Refreshing IGRA station catalog");
     try {
       const catalog = await refreshIGRARecentCatalog();
       setIgraCatalog(catalog);
-      await refreshSoundingCandidateState("Recent IGRA catalog refreshed");
+      await refreshSoundingCandidateState("IGRA station catalog refreshed");
     } catch (caught) {
       setCandidateError(
-        caught instanceof Error ? caught.message : "Unable to refresh recent IGRA data.",
+        caught instanceof Error ? caught.message : "Unable to refresh IGRA station catalog.",
       );
-      setCandidateStatus("IGRA refresh blocked");
+      setCandidateStatus("IGRA catalog refresh blocked");
+    }
+  }
+
+  async function handleCacheIGRAStationFiles() {
+    const limit = boundedInteger(candidateCacheLimit, 1, 100, 10);
+    setCandidateError(null);
+    setCandidateStatus(`Caching up to ${limit} IGRA station file${limit === 1 ? "" : "s"}`);
+    try {
+      const result = await cacheIGRARecentBatch(limit);
+      await refreshSoundingCandidateState(
+        result.cached_entries.length > 0
+          ? `Cached ${result.cached_entries.length} station file${
+              result.cached_entries.length === 1 ? "" : "s"
+            }`
+          : result.failed.length > 0
+            ? "Station-file caching had errors"
+            : "No uncached station files found",
+      );
+      if (result.failed.length > 0) {
+        setCandidateError(
+          `${result.failed.length} station file${result.failed.length === 1 ? "" : "s"} could not be cached. Check the IGRA cache details or try a smaller batch.`,
+        );
+      }
+    } catch (caught) {
+      setCandidateError(
+        caught instanceof Error ? caught.message : "Unable to cache IGRA station files.",
+      );
+      setCandidateStatus("Station-file caching blocked");
     }
   }
 
@@ -1566,7 +1624,10 @@ export function App() {
     setCandidateError(null);
     setCandidateStatus("Screening cached soundings");
     try {
-      const result = await screenSoundingCandidates(candidateStoryFilter);
+      const result = await screenSoundingCandidates(candidateStoryFilter, {
+        latestPerStation: boundedInteger(candidateLatestPerStation, 1, 50, 5),
+        limit: boundedInteger(candidateResultLimit, 1, 200, 50),
+      });
       setCandidateScreening(result);
       setCandidateDetailId(result.candidates[0]?.candidate_id ?? null);
       setCandidateStatus(
@@ -2127,6 +2188,11 @@ export function App() {
           screeningInputs={screeningInputs}
           candidateStoryFilter={candidateStoryFilter}
           candidateSort={candidateSort}
+          candidateStationSearch={candidateStationSearch}
+          candidateReadinessFilter={candidateReadinessFilter}
+          candidateCacheLimit={candidateCacheLimit}
+          candidateLatestPerStation={candidateLatestPerStation}
+          candidateResultLimit={candidateResultLimit}
           candidateStatus={candidateStatus}
           candidateError={candidateError}
           candidateScreening={candidateScreening}
@@ -2159,8 +2225,14 @@ export function App() {
           onObservedSoundingTimeChange={handleObservedSoundingTimeChange}
           onCandidateStoryFilterChange={setCandidateStoryFilter}
           onCandidateSortChange={setCandidateSort}
+          onCandidateStationSearchChange={setCandidateStationSearch}
+          onCandidateReadinessFilterChange={setCandidateReadinessFilter}
+          onCandidateCacheLimitChange={setCandidateCacheLimit}
+          onCandidateLatestPerStationChange={setCandidateLatestPerStation}
+          onCandidateResultLimitChange={setCandidateResultLimit}
           onCandidateDetailChange={setCandidateDetailId}
           onRefreshIGRAData={handleRefreshIGRAData}
+          onCacheIGRAStationFiles={handleCacheIGRAStationFiles}
           onScreenSoundingCandidates={handleScreenSoundingCandidates}
           onSaveSoundingCandidate={handleSaveSoundingCandidate}
           onRemoveSavedSoundingCandidate={handleRemoveSavedSoundingCandidate}
@@ -2282,6 +2354,11 @@ function BuildWorkspace({
   screeningInputs,
   candidateStoryFilter,
   candidateSort,
+  candidateStationSearch,
+  candidateReadinessFilter,
+  candidateCacheLimit,
+  candidateLatestPerStation,
+  candidateResultLimit,
   candidateStatus,
   candidateError,
   candidateScreening,
@@ -2309,8 +2386,14 @@ function BuildWorkspace({
   onObservedSoundingTimeChange,
   onCandidateStoryFilterChange,
   onCandidateSortChange,
+  onCandidateStationSearchChange,
+  onCandidateReadinessFilterChange,
+  onCandidateCacheLimitChange,
+  onCandidateLatestPerStationChange,
+  onCandidateResultLimitChange,
   onCandidateDetailChange,
   onRefreshIGRAData,
+  onCacheIGRAStationFiles,
   onScreenSoundingCandidates,
   onSaveSoundingCandidate,
   onRemoveSavedSoundingCandidate,
@@ -2354,6 +2437,11 @@ function BuildWorkspace({
   screeningInputs: ScreeningInput[];
   candidateStoryFilter: CandidateStoryFilter;
   candidateSort: CandidateSort;
+  candidateStationSearch: string;
+  candidateReadinessFilter: "all" | "package_ready" | "blocked";
+  candidateCacheLimit: string;
+  candidateLatestPerStation: string;
+  candidateResultLimit: string;
   candidateStatus: string;
   candidateError: string | null;
   candidateScreening: ScreeningResult | null;
@@ -2381,8 +2469,14 @@ function BuildWorkspace({
   onObservedSoundingTimeChange: (validTimeUtc: string) => void;
   onCandidateStoryFilterChange: (filter: CandidateStoryFilter) => void;
   onCandidateSortChange: (sort: CandidateSort) => void;
+  onCandidateStationSearchChange: (value: string) => void;
+  onCandidateReadinessFilterChange: (filter: "all" | "package_ready" | "blocked") => void;
+  onCandidateCacheLimitChange: (value: string) => void;
+  onCandidateLatestPerStationChange: (value: string) => void;
+  onCandidateResultLimitChange: (value: string) => void;
   onCandidateDetailChange: (candidateId: string) => void;
   onRefreshIGRAData: () => void;
+  onCacheIGRAStationFiles: () => void;
   onScreenSoundingCandidates: () => void;
   onSaveSoundingCandidate: (candidate: SoundingCandidate) => void;
   onRemoveSavedSoundingCandidate: (savedCandidateId: string) => void;
@@ -2559,6 +2653,11 @@ function BuildWorkspace({
                     screeningInputs={screeningInputs}
                     storyFilter={candidateStoryFilter}
                     sort={candidateSort}
+                    stationSearch={candidateStationSearch}
+                    readinessFilter={candidateReadinessFilter}
+                    cacheLimit={candidateCacheLimit}
+                    latestPerStation={candidateLatestPerStation}
+                    resultLimit={candidateResultLimit}
                     status={candidateStatus}
                     error={candidateError}
                     screening={candidateScreening}
@@ -2566,8 +2665,14 @@ function BuildWorkspace({
                     selectedCandidateId={candidateDetailId}
                     onStoryFilterChange={onCandidateStoryFilterChange}
                     onSortChange={onCandidateSortChange}
+                    onStationSearchChange={onCandidateStationSearchChange}
+                    onReadinessFilterChange={onCandidateReadinessFilterChange}
+                    onCacheLimitChange={onCandidateCacheLimitChange}
+                    onLatestPerStationChange={onCandidateLatestPerStationChange}
+                    onResultLimitChange={onCandidateResultLimitChange}
                     onCandidateDetailChange={onCandidateDetailChange}
                     onRefreshIGRAData={onRefreshIGRAData}
+                    onCacheStationFiles={onCacheIGRAStationFiles}
                     onScreen={onScreenSoundingCandidates}
                     onSave={onSaveSoundingCandidate}
                     onRemoveSaved={onRemoveSavedSoundingCandidate}
@@ -2745,6 +2850,11 @@ function ObservedAtmosphereCandidatesPanel({
   screeningInputs,
   storyFilter,
   sort,
+  stationSearch,
+  readinessFilter,
+  cacheLimit,
+  latestPerStation,
+  resultLimit,
   status,
   error,
   screening,
@@ -2752,8 +2862,14 @@ function ObservedAtmosphereCandidatesPanel({
   selectedCandidateId,
   onStoryFilterChange,
   onSortChange,
+  onStationSearchChange,
+  onReadinessFilterChange,
+  onCacheLimitChange,
+  onLatestPerStationChange,
+  onResultLimitChange,
   onCandidateDetailChange,
   onRefreshIGRAData,
+  onCacheStationFiles,
   onScreen,
   onSave,
   onRemoveSaved,
@@ -2764,6 +2880,11 @@ function ObservedAtmosphereCandidatesPanel({
   screeningInputs: ScreeningInput[];
   storyFilter: CandidateStoryFilter;
   sort: CandidateSort;
+  stationSearch: string;
+  readinessFilter: "all" | "package_ready" | "blocked";
+  cacheLimit: string;
+  latestPerStation: string;
+  resultLimit: string;
   status: string;
   error: string | null;
   screening: ScreeningResult | null;
@@ -2771,16 +2892,28 @@ function ObservedAtmosphereCandidatesPanel({
   selectedCandidateId: string | null;
   onStoryFilterChange: (filter: CandidateStoryFilter) => void;
   onSortChange: (sort: CandidateSort) => void;
+  onStationSearchChange: (value: string) => void;
+  onReadinessFilterChange: (filter: "all" | "package_ready" | "blocked") => void;
+  onCacheLimitChange: (value: string) => void;
+  onLatestPerStationChange: (value: string) => void;
+  onResultLimitChange: (value: string) => void;
   onCandidateDetailChange: (candidateId: string) => void;
   onRefreshIGRAData: () => void;
+  onCacheStationFiles: () => void;
   onScreen: () => void;
   onSave: (candidate: SoundingCandidate) => void;
   onRemoveSaved: (savedCandidateId: string) => void;
   onUse: (candidate: SoundingCandidate, savedCandidate?: SavedSoundingCandidate) => void;
 }) {
   const visibleCandidates = useMemo(
-    () => sortSoundingCandidates(screening?.candidates ?? [], storyFilter, sort),
-    [screening?.candidates, sort, storyFilter],
+    () =>
+      sortSoundingCandidates(screening?.candidates ?? [], {
+        story: storyFilter,
+        sort,
+        stationSearch,
+        readiness: readinessFilter,
+      }),
+    [readinessFilter, screening?.candidates, sort, stationSearch, storyFilter],
   );
   const selectedCandidate =
     visibleCandidates.find((candidate) => candidate.candidate_id === selectedCandidateId) ??
@@ -2797,6 +2930,14 @@ function ObservedAtmosphereCandidatesPanel({
   const cachedCatalogFiles =
     catalog?.zip_references.filter((reference) => reference.cached_status !== "not_cached")
       .length ?? cachedStationFiles;
+  const screenableSoundingCount = screeningInputs.reduce(
+    (total, input) => total + (input.sounding_count ?? 0),
+    0,
+  );
+  const screenableSummary =
+    screenableSoundingCount > 0
+      ? `${screenableSoundingCount.toLocaleString()} soundings`
+      : `${screeningInputs.length.toLocaleString()} cached files`;
 
   return (
     <section
@@ -2825,7 +2966,7 @@ function ObservedAtmosphereCandidatesPanel({
         />
         <Metric label="Cached stations" value={cachedStations.toString()} />
         <Metric label="Cached station files" value={cachedCatalogFiles.toString()} />
-        <Metric label="Screenable soundings" value={screeningInputs.length.toString()} />
+        <Metric label="Screenable soundings" value={screenableSummary} />
       </dl>
 
       {error && (
@@ -2860,9 +3001,64 @@ function ObservedAtmosphereCandidatesPanel({
             <option value="strongest_cap">Strongest cap</option>
           </select>
         </label>
+        <label>
+          Station search
+          <input
+            type="search"
+            value={stationSearch}
+            placeholder="Station name, ID, or state"
+            onChange={(event) => onStationSearchChange(event.target.value)}
+          />
+        </label>
+        <label>
+          Readiness
+          <select
+            value={readinessFilter}
+            onChange={(event) =>
+              onReadinessFilterChange(event.target.value as "all" | "package_ready" | "blocked")
+            }
+          >
+            <option value="all">All readiness states</option>
+            <option value="package_ready">Package-ready only</option>
+            <option value="blocked">Blocked / needs review</option>
+          </select>
+        </label>
+        <label>
+          Cache up to
+          <input
+            type="number"
+            min="1"
+            max="100"
+            value={cacheLimit}
+            onChange={(event) => onCacheLimitChange(event.target.value)}
+          />
+        </label>
+        <label>
+          Latest per station
+          <input
+            type="number"
+            min="1"
+            max="50"
+            value={latestPerStation}
+            onChange={(event) => onLatestPerStationChange(event.target.value)}
+          />
+        </label>
+        <label>
+          Candidate limit
+          <input
+            type="number"
+            min="1"
+            max="200"
+            value={resultLimit}
+            onChange={(event) => onResultLimitChange(event.target.value)}
+          />
+        </label>
         <div className="button-row candidate-toolbar-actions">
           <button type="button" onClick={onRefreshIGRAData}>
-            Refresh recent IGRA data
+            Refresh IGRA catalog
+          </button>
+          <button type="button" className="secondary-button" onClick={onCacheStationFiles}>
+            Cache station files
           </button>
           <button type="button" onClick={onScreen}>
             Screen cached soundings
@@ -2872,13 +3068,18 @@ function ObservedAtmosphereCandidatesPanel({
 
       <div className="candidate-workspace">
         <section aria-label="Screened sounding candidates">
+          {screening && (
+            <p className="field-help">
+              Showing {visibleCandidates.length.toLocaleString()} of{" "}
+              {screening.candidates.length.toLocaleString()} screened candidates.
+            </p>
+          )}
           {visibleCandidates.length === 0 ? (
             <div className="scenario-state-panel">
               <h4>No screened candidates loaded</h4>
               <p>
-                Refresh recent IGRA data to check cached stations, then screen cached soundings by
-                atmospheric story. If nothing is ready, cache station files with the IGRA recent
-                script first.
+                Refresh the IGRA catalog to check available stations, cache a bounded batch of
+                station files, then screen cached soundings by atmospheric story.
               </p>
             </div>
           ) : (
@@ -7496,31 +7697,74 @@ function candidateMatchScore(
   );
 }
 
+function candidateStoryScore(
+  candidate: SoundingCandidate,
+  story: CandidateStoryId | CandidateStoryFilter,
+): StoryScore | null {
+  if (story === "all") return null;
+  return candidate.story_scores.find((score) => score.story === story) ?? null;
+}
+
+function candidateSupportsStory(
+  candidate: SoundingCandidate,
+  story: CandidateStoryFilter,
+): boolean {
+  if (story === "all") return true;
+  const score = candidateStoryScore(candidate, story);
+  if (!score) return false;
+  if (score.score_0_to_100 <= 0) return false;
+  return !["unavailable", "unsupported", "insufficient_evidence"].includes(score.support);
+}
+
 function sortSoundingCandidates(
   candidates: SoundingCandidate[],
-  story: CandidateStoryFilter,
-  sort: CandidateSort,
+  options: {
+    story: CandidateStoryFilter;
+    sort: CandidateSort;
+    stationSearch: string;
+    readiness: "all" | "package_ready" | "blocked";
+  },
 ): SoundingCandidate[] {
+  const { story, sort, stationSearch, readiness } = options;
   const valueForSort = (candidate: SoundingCandidate): number => {
     switch (sort) {
       case "latest":
         return new Date(candidate.valid_time_utc).getTime();
       case "data_quality":
-        return numberFeature(candidate, "data_completeness_score");
+        return numberFeature(candidate, "data_completeness_score", Number.NEGATIVE_INFINITY);
       case "lowest_lcl":
-        return -numberFeature(candidate, "estimated_lcl_height_m_agl");
+        return -numberFeature(candidate, "estimated_lcl_height_m_agl", Number.POSITIVE_INFINITY);
       case "highest_moisture":
-        return numberFeature(candidate, "mean_qv_0_1000m_g_kg");
+        return numberFeature(candidate, "mean_qv_0_1000m_g_kg", Number.NEGATIVE_INFINITY);
       case "strongest_cap":
-        return numberFeature(candidate, "cap_strength_proxy");
+        return numberFeature(candidate, "cap_strength_proxy", Number.NEGATIVE_INFINITY);
       case "best":
         return candidateMatchScore(candidate, story);
     }
   };
-  const filtered =
-    story === "all"
-      ? candidates
-      : candidates.filter((candidate) => candidate.primary_story === story);
+  const normalizedSearch = stationSearch.trim().toLowerCase();
+  const filtered = candidates
+    .filter((candidate) => candidateSupportsStory(candidate, story))
+    .filter((candidate) =>
+      readiness === "all"
+        ? true
+        : readiness === "package_ready"
+          ? candidate.package_ready
+          : !candidate.package_ready,
+    )
+    .filter((candidate) => {
+      if (!normalizedSearch) return true;
+      return [
+        candidate.station_id,
+        candidate.station_name,
+        candidate.source_file_name,
+        candidate.primary_story_label,
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase()
+        .includes(normalizedSearch);
+    });
   return [...filtered].sort((a, b) => {
     const readiness = Number(b.package_ready) - Number(a.package_ready);
     if (readiness !== 0) return readiness;
@@ -7530,9 +7774,19 @@ function sortSoundingCandidates(
   });
 }
 
-function numberFeature(candidate: SoundingCandidate, key: string): number {
+function numberFeature(
+  candidate: SoundingCandidate,
+  key: string,
+  missingValue = Number.NEGATIVE_INFINITY,
+): number {
   const value = candidate.features[key];
-  return typeof value === "number" && Number.isFinite(value) ? value : Number.NEGATIVE_INFINITY;
+  return typeof value === "number" && Number.isFinite(value) ? value : missingValue;
+}
+
+function boundedInteger(value: string, min: number, max: number, fallback: number): number {
+  const parsed = Number.parseInt(value, 10);
+  if (!Number.isFinite(parsed)) return fallback;
+  return Math.min(max, Math.max(min, parsed));
 }
 
 function candidateEvidenceValue(item: EvidenceItem): string {

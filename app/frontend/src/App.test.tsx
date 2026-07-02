@@ -263,13 +263,13 @@ const shallowCandidate = {
       story: "shallow_cumulus_candidate",
       label: "Cloud-forming shallow cumulus",
       score_0_to_100: 82,
-      support: "candidate",
+      support: "supported",
     },
     {
       story: "dry_failed_candidate",
       label: "Dry failed cumulus",
       score_0_to_100: 24,
-      support: "insufficient_evidence",
+      support: "unavailable",
     },
   ],
   evidence: [
@@ -329,10 +329,54 @@ const blockedCandidate = {
       story: "needs_review",
       label: "Needs review",
       score_0_to_100: 40,
-      support: "insufficient_evidence",
+      support: "weak",
     },
   ],
   caveats: ["missing_surface_level"],
+};
+
+const secondaryShallowCandidate = {
+  ...shallowCandidate,
+  candidate_id: "USM00072426-2025010300-humid-secondary-shallow",
+  station_id: "USM00072426",
+  station_name: "Wilmington, Ohio",
+  valid_time_utc: "2025-01-03T00:00:00Z",
+  primary_story: "humid_rainy_candidate",
+  primary_story_label: "Humid / rainy",
+  rank_score: 86,
+  story_scores: [
+    {
+      story: "humid_rainy_candidate",
+      label: "Humid / rainy",
+      score_0_to_100: 86,
+      support: "supported",
+    },
+    {
+      story: "shallow_cumulus_candidate",
+      label: "Cloud-forming shallow cumulus",
+      score_0_to_100: 61,
+      support: "weak",
+    },
+  ],
+  features: {
+    ...shallowCandidate.features,
+    mean_qv_0_1000m_g_kg: 13.6,
+    estimated_lcl_height_m_agl: 640,
+  },
+};
+
+const missingLclCandidate = {
+  ...shallowCandidate,
+  candidate_id: "USM00072440-2025010400-missing-lcl",
+  station_id: "USM00072440",
+  station_name: "Springfield, Missouri",
+  valid_time_utc: "2025-01-04T00:00:00Z",
+  rank_score: 78,
+  features: {
+    ...shallowCandidate.features,
+    estimated_lcl_height_m_agl: null,
+  },
+  evidence: shallowCandidate.evidence.filter((item) => item.label !== "Estimated LCL"),
 };
 
 const screeningInputsResponse = {
@@ -352,7 +396,12 @@ const screeningInputsResponse = {
 const screeningResponse = {
   story: "all",
   generated_at: "2026-07-01T12:00:00Z",
-  candidates: [shallowCandidate, blockedCandidate],
+  candidates: [
+    shallowCandidate,
+    blockedCandidate,
+    secondaryShallowCandidate,
+    missingLclCandidate,
+  ],
   caveats: ["screening_guidance_only"],
 };
 
@@ -1761,6 +1810,20 @@ beforeEach(() => {
       if (url === "/api/igra/recent/cache") {
         return Promise.resolve(new Response(JSON.stringify(igraCacheResponse), { status: 200 }));
       }
+      if (url === "/api/igra/recent/cache-batch" && init?.method === "POST") {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              requested_limit: 10,
+              selected_count: 1,
+              cached_entries: [igraCacheResponse.entries[0]],
+              failed: [],
+              remaining_uncached_count: 0,
+            }),
+            { status: 200 },
+          ),
+        );
+      }
       if (url === "/api/sounding-candidates/screening-inputs") {
         return Promise.resolve(
           new Response(JSON.stringify(screeningInputsResponse), { status: 200 }),
@@ -2163,10 +2226,15 @@ describe("App", () => {
     expect(screen.getByText(/Screening guidance only/)).toBeInTheDocument();
     expect(screen.getByText("IGRA cache not checked yet")).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: "Refresh recent IGRA data" }));
+    fireEvent.click(screen.getByRole("button", { name: "Refresh IGRA catalog" }));
 
-    expect(await screen.findByText("Recent IGRA catalog refreshed")).toBeInTheDocument();
-    expect(screen.getByText("Screenable soundings").nextElementSibling).toHaveTextContent("1");
+    expect(await screen.findByText("IGRA station catalog refreshed")).toBeInTheDocument();
+    expect(screen.getByText("Screenable soundings").nextElementSibling).toHaveTextContent(
+      "2 soundings",
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Cache station files" }));
+    expect(await screen.findByText("Cached 1 station file")).toBeInTheDocument();
 
     fireEvent.change(screen.getByLabelText("Story filter"), {
       target: { value: "shallow_cumulus_candidate" },
@@ -2179,6 +2247,9 @@ describe("App", () => {
     expect(valleyCard).toHaveTextContent("Cloud-forming shallow cumulus");
     expect(valleyCard).toHaveTextContent("Package-ready");
     expect(valleyCard).toHaveTextContent("Low-level moisture: 10.2 g/kg");
+    expect(
+      screen.getByLabelText("Sounding candidate Wilmington, Ohio (USM00072426)"),
+    ).toHaveTextContent("Cloud-forming shallow cumulus");
     expect(
       screen.queryByLabelText("Sounding candidate Norman, Oklahoma (USM00072357)"),
     ).not.toBeInTheDocument();
@@ -2230,6 +2301,37 @@ describe("App", () => {
       expect(dryRunBody).toContain('"primary_story":"shallow_cumulus_candidate"');
       expect(dryRunBody).toContain('"candidate_id":"USM00072558-2025010200-shallow"');
     });
+  });
+
+  it("keeps secondary story matches visible and sorts missing LCL last", async () => {
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Build" }));
+    fireEvent.change(await screen.findByLabelText("Experiment"), {
+      target: { value: "__observed_sounding_upload__" },
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Screen cached soundings" }));
+    expect(await screen.findByText("Screening guidance loaded")).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText("Story filter"), {
+      target: { value: "shallow_cumulus_candidate" },
+    });
+    expect(
+      screen.getByLabelText("Sounding candidate Wilmington, Ohio (USM00072426)"),
+    ).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText("Sort"), {
+      target: { value: "lowest_lcl" },
+    });
+    const candidateCards = screen.getAllByLabelText(/^Sounding candidate /);
+    const visibleOrder = candidateCards.map((card) => card.textContent ?? "");
+    const validLclIndex = visibleOrder.findIndex((text) => text.includes("Wilmington, Ohio"));
+    const missingLclIndex = visibleOrder.findIndex((text) =>
+      text.includes("Springfield, Missouri"),
+    );
+    expect(validLclIndex).toBeGreaterThanOrEqual(0);
+    expect(missingLclIndex).toBeGreaterThan(validLclIndex);
   });
 
   it("shows Deep Overnight as an expensive distinct generated package", async () => {

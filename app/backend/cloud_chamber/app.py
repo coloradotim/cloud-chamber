@@ -133,6 +133,11 @@ class IGRACacheRequest(BaseModel):
     filename: str | None = None
 
 
+class IGRABatchCacheRequest(BaseModel):
+    station_id: str | None = None
+    limit: int = 10
+
+
 class SoundingCandidateScreenRequest(BaseModel):
     station_id: str | None = None
     latest_per_station: int = 5
@@ -222,6 +227,51 @@ def cache_igra_recent_file(request: IGRACacheRequest) -> dict[str, object]:
     except IGRACatalogError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return entry.model_dump(mode="json")
+
+
+@app.post("/api/igra/recent/cache-batch")
+def cache_igra_recent_files(request: IGRABatchCacheRequest) -> dict[str, object]:
+    if request.limit < 1:
+        raise HTTPException(status_code=400, detail="limit must be at least 1")
+    settings = load_settings()
+    catalog = read_igra_recent_catalog(settings)
+    if catalog is None:
+        raise HTTPException(
+            status_code=400,
+            detail="Refresh IGRA recent catalog before caching station files.",
+        )
+    uncached = [
+        reference
+        for reference in catalog.zip_references
+        if reference.cached_status == "not_cached"
+        and (request.station_id is None or reference.station_id == request.station_id)
+    ]
+    selected = uncached[: request.limit]
+    cached_entries: list[dict[str, object]] = []
+    failed: list[dict[str, str]] = []
+    for reference in selected:
+        try:
+            entry = cache_station_zip_from_catalog(
+                settings,
+                station_id=reference.station_id,
+                filename=reference.filename,
+            )
+            cached_entries.append(entry.model_dump(mode="json"))
+        except IGRACatalogError as exc:
+            failed.append(
+                {
+                    "station_id": reference.station_id,
+                    "filename": reference.filename,
+                    "error": str(exc),
+                }
+            )
+    return {
+        "requested_limit": request.limit,
+        "selected_count": len(selected),
+        "cached_entries": cached_entries,
+        "failed": failed,
+        "remaining_uncached_count": max(0, len(uncached) - len(cached_entries)),
+    }
 
 
 @app.get("/api/sounding-candidates/screening-inputs")

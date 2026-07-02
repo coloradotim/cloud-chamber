@@ -199,7 +199,7 @@ const shallowSoundingCandidate = {
       story: "shallow_cumulus_candidate",
       label: "Cloud-forming shallow cumulus",
       score_0_to_100: 82,
-      support: "candidate",
+      support: "supported",
       reasons: ["moist boundary layer", "reasonable LCL"],
       caveats: [],
     },
@@ -207,7 +207,7 @@ const shallowSoundingCandidate = {
       story: "dry_failed_candidate",
       label: "Dry failed cumulus",
       score_0_to_100: 24,
-      support: "insufficient_evidence",
+      support: "unavailable",
       reasons: [],
       caveats: [],
     },
@@ -269,7 +269,7 @@ const blockedSoundingCandidate = {
       story: "needs_review",
       label: "Needs review",
       score_0_to_100: 40,
-      support: "insufficient_evidence",
+      support: "weak",
       reasons: ["missing surface level"],
       caveats: ["missing_surface_level"],
     },
@@ -1160,6 +1160,22 @@ export async function mockCloudChamberApis(page: Page) {
     }),
   );
 
+  await page.route("**/api/igra/recent/cache-batch", (route) =>
+    json(route, {
+      requested_limit: 10,
+      selected_count: 1,
+      cached_entries: [
+        {
+          station_id: "USM00072558",
+          station_name: "VALLEY",
+          cached_text_path: "/tmp/cloud-chamber-e2e/cache/USM00072558-data.txt",
+        },
+      ],
+      failed: [],
+      remaining_uncached_count: 0,
+    }),
+  );
+
   await page.route("**/api/sounding-candidates/screening-inputs", (route) =>
     json(route, {
       inputs: [
@@ -1169,6 +1185,9 @@ export async function mockCloudChamberApis(page: Page) {
           cached_text_path: "/tmp/cloud-chamber-e2e/cache/USM00072558-data.txt",
           source_file_name: "USM00072558-data.txt",
           cached_status: "cached",
+          sounding_count: 2,
+          latest_valid_time_utc: "2025-01-02T00:00:00Z",
+          caveats: [],
         },
       ],
     }),

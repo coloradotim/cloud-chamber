@@ -197,8 +197,9 @@ sounding independent of the experiment story: use `--story shallow-cumulus`,
 depending on what you want to test. CM1 output remains the source of truth.
 
 The same workflow is available in the app from Build -> `Upload a Sounding` ->
-`Find interesting soundings`. Use `Refresh recent IGRA data` to update the
-bounded recent cache, choose a story filter, then `Screen cached soundings`.
+`Find interesting soundings`. Use `Refresh IGRA catalog` to update station
+metadata, `Cache station files` to download a bounded batch of station-period
+files, choose a story filter, then `Screen cached soundings`.
 `Use this sounding` loads a package-ready candidate into the observed-sounding
 package review; it does not launch CM1 and it does not claim the candidate will
 produce the screened outcome. Blocked candidates remain reviewable but cannot be

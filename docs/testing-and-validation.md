@@ -79,9 +79,11 @@ not claim a scored candidate will produce a specific CM1 outcome.
 
 Frontend tests for the `Upload a Sounding` Build workflow should cover the same
 boundary. Component tests and mocked Playwright smoke tests should verify that
-the candidate workbench can refresh IGRA cache state, screen cached soundings by
-story, show blocked candidates as unusable, save candidates, load a
-package-ready candidate into the observed-sounding package review, and include
+the candidate workbench can refresh IGRA catalog metadata, cache a bounded batch
+of station files through mocked APIs, screen cached soundings by story, include
+secondary story-score matches in filtered results, sort missing metrics last,
+show blocked candidates as unusable, save candidates, load a package-ready
+candidate into the observed-sounding package review, and include
 candidate-screening provenance in the generated package request. Browser tests
 must mock the backend APIs and must not fetch NOAA/NCEI, parse raw station text,
 or imply that a candidate score predicts the CM1 outcome.
