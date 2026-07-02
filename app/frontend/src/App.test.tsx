@@ -239,6 +239,219 @@ const observedSoundingParseResponse = {
   },
 };
 
+const shallowCandidate = {
+  candidate_id: "USM00072558-2025010200-shallow",
+  station_id: "USM00072558",
+  station_name: "Valley, Nebraska",
+  station_latitude: 41.32,
+  station_longitude: -96.3669,
+  valid_time_utc: "2025-01-02T00:00:00Z",
+  source_time_text: "2025-01-02 00 UTC",
+  source_file_name: "USM00072558-data.txt",
+  source_file_path: "/tmp/CloudChamber/cache/igra/recent/stations/USM00072558-data.txt",
+  source_file_hash: "mock-hash",
+  source_format: "igra_station_text",
+  source_provider: "NOAA/NCEI IGRA",
+  primary_story: "shallow_cumulus_candidate",
+  primary_story_label: "Cloud-forming shallow cumulus",
+  rank_score: 82,
+  confidence: "medium",
+  package_ready: true,
+  selected_sounding_payload: observedSoundingParseResponse.selected_sounding,
+  story_scores: [
+    {
+      story: "shallow_cumulus_candidate",
+      label: "Cloud-forming shallow cumulus",
+      score_0_to_100: 82,
+      support: "supported",
+    },
+    {
+      story: "dry_failed_candidate",
+      label: "Dry failed cumulus",
+      score_0_to_100: 24,
+      support: "unavailable",
+    },
+  ],
+  evidence: [
+    {
+      label: "Low-level moisture",
+      value: 10.2,
+      units: "g/kg",
+      interpretation: "Enough low-level water vapor for a cloud-forming trial.",
+      supports_story: ["shallow_cumulus_candidate"],
+      caveats: [],
+    },
+    {
+      label: "Estimated LCL",
+      value: 820,
+      units: "m AGL",
+      interpretation: "Cloud base is plausible inside the lower domain.",
+      supports_story: ["shallow_cumulus_candidate"],
+      caveats: [],
+    },
+    {
+      label: "Cap proxy",
+      value: 0.6,
+      units: "",
+      interpretation: "The cap proxy is not extreme for a shallow-cumulus screen.",
+      supports_story: ["shallow_cumulus_candidate"],
+      caveats: [],
+    },
+  ],
+  features: {
+    mean_qv_0_1000m_g_kg: 10.2,
+    estimated_lcl_height_m_agl: 820,
+    lapse_rate_0_1000m_c_per_km: 7.1,
+    cap_strength_proxy: 0.6,
+    moisture_depth_m: 2100,
+    profile_top_m_agl: 18816.5,
+    data_completeness_score: 94,
+  },
+  caveats: ["screening_is_not_cm1_outcome_prediction"],
+  screening_version: "test-screening-v1",
+  created_at: "2026-07-01T12:00:00Z",
+};
+
+const blockedCandidate = {
+  ...shallowCandidate,
+  candidate_id: "USM00072357-2025010100-blocked",
+  station_id: "USM00072357",
+  station_name: "Norman, Oklahoma",
+  valid_time_utc: "2025-01-01T00:00:00Z",
+  primary_story: "needs_review",
+  primary_story_label: "Needs review",
+  rank_score: 40,
+  confidence: "low",
+  package_ready: false,
+  selected_sounding_payload: null,
+  story_scores: [
+    {
+      story: "needs_review",
+      label: "Needs review",
+      score_0_to_100: 40,
+      support: "weak",
+    },
+  ],
+  caveats: ["missing_surface_level"],
+};
+
+const secondaryShallowCandidate = {
+  ...shallowCandidate,
+  candidate_id: "USM00072426-2025010300-humid-secondary-shallow",
+  station_id: "USM00072426",
+  station_name: "Wilmington, Ohio",
+  valid_time_utc: "2025-01-03T00:00:00Z",
+  primary_story: "humid_rainy_candidate",
+  primary_story_label: "Humid / rainy",
+  rank_score: 86,
+  story_scores: [
+    {
+      story: "humid_rainy_candidate",
+      label: "Humid / rainy",
+      score_0_to_100: 86,
+      support: "supported",
+    },
+    {
+      story: "shallow_cumulus_candidate",
+      label: "Cloud-forming shallow cumulus",
+      score_0_to_100: 61,
+      support: "weak",
+    },
+  ],
+  features: {
+    ...shallowCandidate.features,
+    mean_qv_0_1000m_g_kg: 13.6,
+    estimated_lcl_height_m_agl: 640,
+  },
+};
+
+const missingLclCandidate = {
+  ...shallowCandidate,
+  candidate_id: "USM00072440-2025010400-missing-lcl",
+  station_id: "USM00072440",
+  station_name: "Springfield, Missouri",
+  valid_time_utc: "2025-01-04T00:00:00Z",
+  rank_score: 78,
+  features: {
+    ...shallowCandidate.features,
+    estimated_lcl_height_m_agl: null,
+  },
+  evidence: shallowCandidate.evidence.filter((item) => item.label !== "Estimated LCL"),
+};
+
+const screeningInputsResponse = {
+  inputs: [
+    {
+      station_id: "USM00072558",
+      source_file_path: "/tmp/CloudChamber/cache/igra/recent/stations/USM00072558-data.txt",
+      source_file_name: "USM00072558-data.txt",
+      sounding_count: 2,
+      package_ready_count: 1,
+      blocked_count: 1,
+      latest_valid_time_utc: "2025-01-02T00:00:00Z",
+    },
+  ],
+};
+
+const screeningResponse = {
+  story: "all",
+  generated_at: "2026-07-01T12:00:00Z",
+  candidates: [
+    shallowCandidate,
+    blockedCandidate,
+    secondaryShallowCandidate,
+    missingLclCandidate,
+  ],
+  caveats: ["screening_guidance_only"],
+};
+
+const savedCandidatesResponse = {
+  saved_candidates: [
+    {
+      saved_candidate_id: "saved-USM00072558-2025010200",
+      candidate: shallowCandidate,
+      primary_story: "shallow_cumulus_candidate",
+      tags: ["interesting-sounding"],
+      notes: "",
+      linked_run_ids: [],
+      created_at: "2026-07-01T12:05:00Z",
+      updated_at: "2026-07-01T12:05:00Z",
+    },
+  ],
+};
+
+const emptySavedCandidatesResponse = { saved_candidates: [] };
+
+const igraCatalogResponse = {
+  catalog: {
+    generated_at: "2026-07-01T12:00:00Z",
+    refreshed_at: "2026-07-01T12:00:00Z",
+    region: { id: "great_plains_midwest", label: "Great Plains / Midwest" },
+    zip_references: [
+      {
+        station_id: "USM00072558",
+        station_name: "VALLEY",
+        cached_status: "cached",
+        url: "https://example.test/USM00072558-data-beg2025.txt.zip",
+      },
+    ],
+  },
+};
+
+const igraCacheResponse = {
+  entries: [
+    {
+      station_id: "USM00072558",
+      station_name: "VALLEY",
+      data_txt_path: "/tmp/CloudChamber/cache/igra/recent/stations/USM00072558-data.txt",
+      zip_path: "/tmp/CloudChamber/cache/igra/recent/stations/USM00072558-data-beg2025.txt.zip",
+      sounding_count: 2,
+      latest_valid_time_utc: "2025-01-02T00:00:00Z",
+      size_bytes: 1234,
+    },
+  ],
+};
+
 const runningRunStatus = {
   run_id: "dry-run-001",
   lifecycle_state: "running",
@@ -1581,6 +1794,59 @@ beforeEach(() => {
       if (url === "/api/scenarios") {
         return Promise.resolve(new Response(JSON.stringify(scenarioResponse), { status: 200 }));
       }
+      if (url === "/api/observed-soundings/parse") {
+        return Promise.resolve(
+          new Response(JSON.stringify(observedSoundingParseResponse), { status: 200 }),
+        );
+      }
+      if (url === "/api/igra/recent/catalog") {
+        return Promise.resolve(new Response(JSON.stringify(igraCatalogResponse), { status: 200 }));
+      }
+      if (url === "/api/igra/recent/refresh-catalog" && init?.method === "POST") {
+        return Promise.resolve(
+          new Response(JSON.stringify(igraCatalogResponse.catalog), { status: 200 }),
+        );
+      }
+      if (url === "/api/igra/recent/cache") {
+        return Promise.resolve(new Response(JSON.stringify(igraCacheResponse), { status: 200 }));
+      }
+      if (url === "/api/igra/recent/cache-batch" && init?.method === "POST") {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              requested_limit: 10,
+              selected_count: 1,
+              cached_entries: [igraCacheResponse.entries[0]],
+              failed: [],
+              remaining_uncached_count: 0,
+            }),
+            { status: 200 },
+          ),
+        );
+      }
+      if (url === "/api/sounding-candidates/screening-inputs") {
+        return Promise.resolve(
+          new Response(JSON.stringify(screeningInputsResponse), { status: 200 }),
+        );
+      }
+      if (url === "/api/sounding-candidates/screen") {
+        return Promise.resolve(new Response(JSON.stringify(screeningResponse), { status: 200 }));
+      }
+      if (url === "/api/sounding-candidates/saved" && init?.method === "POST") {
+        return Promise.resolve(
+          new Response(JSON.stringify(savedCandidatesResponse.saved_candidates[0]), {
+            status: 200,
+          }),
+        );
+      }
+      if (url === "/api/sounding-candidates/saved") {
+        return Promise.resolve(
+          new Response(JSON.stringify(emptySavedCandidatesResponse), { status: 200 }),
+        );
+      }
+      if (url.startsWith("/api/sounding-candidates/saved/") && init?.method === "DELETE") {
+        return Promise.resolve(new Response(JSON.stringify({ removed: true }), { status: 200 }));
+      }
       if (url === "/api/dry-run-package") {
         return Promise.resolve(new Response(JSON.stringify(dryRunResponse), { status: 200 }));
       }
@@ -1930,6 +2196,142 @@ describe("App", () => {
       expect(dryRunBody).toContain('"station_id":"USM00072558"');
       expect(dryRunBody).toContain('"model_bottom_elevation_m_msl":351.5');
     });
+  });
+
+  it("screens, saves, and uses observed-atmosphere candidates as package-review guidance", async () => {
+    const defaultFetch = vi.mocked(fetch).getMockImplementation();
+    let dryRunBody = "";
+    let screenBody = "";
+    vi.mocked(fetch).mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url === "/api/sounding-candidates/screen") {
+        screenBody = String(init?.body ?? "");
+      }
+      if (url === "/api/dry-run-package") {
+        dryRunBody = String(init?.body ?? "");
+      }
+      return (
+        defaultFetch?.(input, init) ?? Promise.resolve(new Response("not found", { status: 404 }))
+      );
+    });
+
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Build" }));
+    fireEvent.change(await screen.findByLabelText("Experiment"), {
+      target: { value: "__observed_sounding_upload__" },
+    });
+
+    expect(await screen.findByRole("heading", { name: "Find interesting soundings" })).toBeInTheDocument();
+    expect(screen.getByText(/Screening guidance only/)).toBeInTheDocument();
+    expect(screen.getByText("IGRA cache not checked yet")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Refresh IGRA catalog" }));
+
+    expect(await screen.findByText("IGRA station catalog refreshed")).toBeInTheDocument();
+    expect(screen.getByText("Screenable soundings").nextElementSibling).toHaveTextContent(
+      "2 soundings",
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Cache station files" }));
+    expect(await screen.findByText("Cached 1 station file")).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText("Story filter"), {
+      target: { value: "shallow_cumulus_candidate" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Screen cached soundings" }));
+
+    expect(await screen.findByText("Screening guidance loaded")).toBeInTheDocument();
+    expect(screenBody).toContain('"target_story":"shallow_cumulus_candidate"');
+    const valleyCard = screen.getByLabelText("Sounding candidate Valley, Nebraska (USM00072558)");
+    expect(valleyCard).toHaveTextContent("Cloud-forming shallow cumulus");
+    expect(valleyCard).toHaveTextContent("Package-ready");
+    expect(valleyCard).toHaveTextContent("Low-level moisture: 10.2 g/kg");
+    expect(
+      screen.getByLabelText("Sounding candidate Wilmington, Ohio (USM00072426)"),
+    ).toHaveTextContent("Cloud-forming shallow cumulus");
+    expect(
+      screen.queryByLabelText("Sounding candidate Norman, Oklahoma (USM00072357)"),
+    ).not.toBeInTheDocument();
+    expect(screen.getByLabelText("Candidate details")).toHaveTextContent(
+      "Candidate match score is screening guidance only",
+    );
+
+    fireEvent.change(screen.getByLabelText("Story filter"), {
+      target: { value: "needs_review" },
+    });
+    const normanCard = await screen.findByLabelText(
+      "Sounding candidate Norman, Oklahoma (USM00072357)",
+    );
+    expect(normanCard).toHaveTextContent("Blocked");
+    expect(within(normanCard).getByRole("button", { name: "Use this sounding" })).toBeDisabled();
+
+    fireEvent.change(screen.getByLabelText("Story filter"), {
+      target: { value: "all" },
+    });
+    const selectedValleyCard = await screen.findByLabelText(
+      "Sounding candidate Valley, Nebraska (USM00072558)",
+    );
+    fireEvent.click(within(selectedValleyCard).getByRole("button", { name: "Save candidate" }));
+
+    expect(await screen.findByText("Sounding candidate saved")).toBeInTheDocument();
+    const savedCard = screen.getByLabelText(
+      "Saved sounding candidate Valley, Nebraska (USM00072558)",
+    );
+    expect(savedCard).toHaveTextContent("Cloud-forming shallow cumulus");
+
+    fireEvent.click(within(savedCard).getByRole("button", { name: "Remove saved" }));
+    expect(await screen.findByText("Saved sounding candidate removed")).toBeInTheDocument();
+    expect(
+      screen.queryByLabelText("Saved sounding candidate Valley, Nebraska (USM00072558)"),
+    ).not.toBeInTheDocument();
+
+    fireEvent.click(within(selectedValleyCard).getByRole("button", { name: "Use this sounding" }));
+
+    expect(await screen.findByText("Candidate selected for package review")).toBeInTheDocument();
+    expect(screen.getByText("Candidate loaded into observed-sounding package review")).toBeInTheDocument();
+    expect(screen.getByText("USM00072558 · Valley, Nebraska")).toBeInTheDocument();
+    expect(screen.getByText(/Screened as Cloud-forming shallow cumulus/)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId("create-package-btn"));
+
+    await waitFor(() => {
+      expect(dryRunBody).toContain('"observed_sounding"');
+      expect(dryRunBody).toContain('"candidate_screening"');
+      expect(dryRunBody).toContain('"primary_story":"shallow_cumulus_candidate"');
+      expect(dryRunBody).toContain('"candidate_id":"USM00072558-2025010200-shallow"');
+    });
+  });
+
+  it("keeps secondary story matches visible and sorts missing LCL last", async () => {
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Build" }));
+    fireEvent.change(await screen.findByLabelText("Experiment"), {
+      target: { value: "__observed_sounding_upload__" },
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Screen cached soundings" }));
+    expect(await screen.findByText("Screening guidance loaded")).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText("Story filter"), {
+      target: { value: "shallow_cumulus_candidate" },
+    });
+    expect(
+      screen.getByLabelText("Sounding candidate Wilmington, Ohio (USM00072426)"),
+    ).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText("Sort"), {
+      target: { value: "lowest_lcl" },
+    });
+    const candidateCards = screen.getAllByLabelText(/^Sounding candidate /);
+    const visibleOrder = candidateCards.map((card) => card.textContent ?? "");
+    const validLclIndex = visibleOrder.findIndex((text) => text.includes("Wilmington, Ohio"));
+    const missingLclIndex = visibleOrder.findIndex((text) =>
+      text.includes("Springfield, Missouri"),
+    );
+    expect(validLclIndex).toBeGreaterThanOrEqual(0);
+    expect(missingLclIndex).toBeGreaterThan(validLclIndex);
   });
 
   it("shows Deep Overnight as an expensive distinct generated package", async () => {

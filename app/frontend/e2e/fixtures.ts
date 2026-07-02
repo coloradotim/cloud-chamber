@@ -175,6 +175,108 @@ const observedSoundingParseResponse = {
   },
 };
 
+const shallowSoundingCandidate = {
+  candidate_id: "USM00072558-2025010200-shallow",
+  station_id: "USM00072558",
+  station_name: "Valley, Nebraska",
+  station_latitude: 41.32,
+  station_longitude: -96.3669,
+  station_elevation_m_msl: 351.5,
+  valid_time_utc: "2025-01-02T00:00:00Z",
+  source_time_text: "2025 01 02 00",
+  source_file_name: "USM00072558-data.txt",
+  source_file_hash: "mock-hash",
+  source_format: "igra_station_text",
+  source_provider: "NOAA/NCEI IGRA",
+  primary_story: "shallow_cumulus_candidate",
+  primary_story_label: "Cloud-forming shallow cumulus",
+  rank_score: 82,
+  confidence: "medium",
+  package_ready: true,
+  selected_sounding_payload: observedSoundingParseResponse.selected_sounding,
+  story_scores: [
+    {
+      story: "shallow_cumulus_candidate",
+      label: "Cloud-forming shallow cumulus",
+      score_0_to_100: 82,
+      support: "supported",
+      reasons: ["moist boundary layer", "reasonable LCL"],
+      caveats: [],
+    },
+    {
+      story: "dry_failed_candidate",
+      label: "Dry failed cumulus",
+      score_0_to_100: 24,
+      support: "unavailable",
+      reasons: [],
+      caveats: [],
+    },
+  ],
+  features: {
+    mean_qv_0_1000m_g_kg: 10.2,
+    estimated_lcl_height_m_agl: 820,
+    lapse_rate_0_1000m_c_per_km: 7.1,
+    cap_strength_proxy: 0.6,
+    moisture_depth_m: 2100,
+    profile_top_m_agl: 18468.5,
+    data_completeness_score: 94,
+  },
+  evidence: [
+    {
+      label: "Low-level moisture",
+      value: 10.2,
+      units: "g/kg",
+      interpretation: "Enough low-level water vapor for a cloud-forming trial.",
+      supports_story: ["shallow_cumulus_candidate"],
+      caveats: [],
+    },
+    {
+      label: "Estimated LCL",
+      value: 820,
+      units: "m AGL",
+      interpretation: "Cloud base is plausible inside the lower domain.",
+      supports_story: ["shallow_cumulus_candidate"],
+      caveats: [],
+    },
+    {
+      label: "Cap proxy",
+      value: 0.6,
+      units: "",
+      interpretation: "The cap proxy is not extreme for a shallow-cumulus screen.",
+      supports_story: ["shallow_cumulus_candidate"],
+      caveats: [],
+    },
+  ],
+  caveats: ["screening_is_not_cm1_outcome_prediction"],
+  screening_version: "test-screening-v1",
+  created_at: "2026-07-01T12:00:00Z",
+};
+
+const blockedSoundingCandidate = {
+  ...shallowSoundingCandidate,
+  candidate_id: "USM00072357-2025010100-blocked",
+  station_id: "USM00072357",
+  station_name: "Norman, Oklahoma",
+  valid_time_utc: "2025-01-01T00:00:00Z",
+  primary_story: "needs_review",
+  primary_story_label: "Needs review",
+  rank_score: 40,
+  confidence: "low",
+  package_ready: false,
+  selected_sounding_payload: null,
+  story_scores: [
+    {
+      story: "needs_review",
+      label: "Needs review",
+      score_0_to_100: 40,
+      support: "weak",
+      reasons: ["missing surface level"],
+      caveats: ["missing_surface_level"],
+    },
+  ],
+  caveats: ["missing_surface_level"],
+};
+
 export const results = [
   {
     result_id: "result-baseline",
@@ -989,6 +1091,17 @@ function mockPointCloudPoints(fieldName: string, dryFailed: boolean, threshold: 
 }
 
 export async function mockCloudChamberApis(page: Page) {
+  let savedSoundingCandidates: Array<{
+    saved_candidate_id: string;
+    candidate: typeof shallowSoundingCandidate;
+    primary_story: string;
+    tags: string[];
+    notes: string;
+    linked_run_ids: string[];
+    created_at: string;
+    updated_at: string;
+  }> = [];
+
   await page.route("**/api/scenarios", (route) =>
     json(route, { golden_path_scenario_id: "baseline-shallow-cumulus", scenarios: [scenario] }),
   );
@@ -996,6 +1109,121 @@ export async function mockCloudChamberApis(page: Page) {
   await page.route("**/api/observed-soundings/parse", (route) =>
     json(route, observedSoundingParseResponse),
   );
+
+  await page.route("**/api/igra/recent/catalog", (route) =>
+    json(route, {
+      catalog: {
+        generated_at: "2026-07-01T12:00:00Z",
+        refreshed_at: "2026-07-01T12:00:00Z",
+        region: { id: "great_plains_midwest", label: "Great Plains / Midwest" },
+        zip_references: [
+          {
+            station_id: "USM00072558",
+            station_name: "VALLEY",
+            cached_status: "cached",
+            url: "https://example.test/USM00072558-data-beg2025.txt.zip",
+          },
+        ],
+      },
+    }),
+  );
+
+  await page.route("**/api/igra/recent/refresh-catalog", (route) =>
+    json(route, {
+      generated_at: "2026-07-01T12:00:00Z",
+      refreshed_at: "2026-07-01T12:00:00Z",
+      region: { id: "great_plains_midwest", label: "Great Plains / Midwest" },
+      zip_references: [
+        {
+          station_id: "USM00072558",
+          station_name: "VALLEY",
+          cached_status: "cached",
+          url: "https://example.test/USM00072558-data-beg2025.txt.zip",
+        },
+      ],
+    }),
+  );
+
+  await page.route("**/api/igra/recent/cache", (route) =>
+    json(route, {
+      entries: [
+        {
+          station_id: "USM00072558",
+          station_name: "VALLEY",
+          data_txt_path: "/tmp/cloud-chamber-e2e/cache/USM00072558-data.txt",
+          zip_path: "/tmp/cloud-chamber-e2e/cache/USM00072558-data-beg2025.txt.zip",
+          sounding_count: 2,
+          latest_valid_time_utc: "2025-01-02T00:00:00Z",
+          size_bytes: 1234,
+        },
+      ],
+    }),
+  );
+
+  await page.route("**/api/igra/recent/cache-batch", (route) =>
+    json(route, {
+      requested_limit: 10,
+      selected_count: 1,
+      cached_entries: [
+        {
+          station_id: "USM00072558",
+          station_name: "VALLEY",
+          cached_text_path: "/tmp/cloud-chamber-e2e/cache/USM00072558-data.txt",
+        },
+      ],
+      failed: [],
+      remaining_uncached_count: 0,
+    }),
+  );
+
+  await page.route("**/api/sounding-candidates/screening-inputs", (route) =>
+    json(route, {
+      inputs: [
+        {
+          station_id: "USM00072558",
+          station_name: "VALLEY",
+          cached_text_path: "/tmp/cloud-chamber-e2e/cache/USM00072558-data.txt",
+          source_file_name: "USM00072558-data.txt",
+          cached_status: "cached",
+          sounding_count: 2,
+          latest_valid_time_utc: "2025-01-02T00:00:00Z",
+          caveats: [],
+        },
+      ],
+    }),
+  );
+
+  await page.route("**/api/sounding-candidates/screen", (route) =>
+    json(route, {
+      screening_version: "test-screening-v1",
+      generated_at: "2026-07-01T12:00:00Z",
+      candidates: [shallowSoundingCandidate, blockedSoundingCandidate],
+      caveats: ["screening_guidance_only"],
+    }),
+  );
+
+  await page.route("**/api/sounding-candidates/saved", (route) => {
+    if (route.request().method() === "POST") {
+      const saved = {
+        saved_candidate_id: "saved-USM00072558-2025010200",
+        candidate: shallowSoundingCandidate,
+        primary_story: "shallow_cumulus_candidate",
+        tags: ["interesting-sounding"],
+        notes: "",
+        linked_run_ids: [],
+        created_at: "2026-07-01T12:05:00Z",
+        updated_at: "2026-07-01T12:05:00Z",
+      };
+      savedSoundingCandidates = [saved];
+      return json(route, saved);
+    }
+    return json(route, { saved_candidates: savedSoundingCandidates });
+  });
+
+  await page.route("**/api/sounding-candidates/saved/*", (route) => {
+    savedSoundingCandidates = [];
+    return json(route, { removed: true });
+  });
 
   await page.route("**/api/dry-run-package", (route) =>
     json(route, {

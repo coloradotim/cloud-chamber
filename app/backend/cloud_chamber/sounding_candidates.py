@@ -116,6 +116,9 @@ class ScreeningInput(BaseModel):
     cached_text_path: str
     source_file_name: str
     cached_status: str
+    sounding_count: int | None = None
+    latest_valid_time_utc: datetime | None = None
+    caveats: list[str] = Field(default_factory=list)
 
 
 class ScreeningResult(BaseModel):
@@ -158,17 +161,34 @@ class SaveCandidateRequest(BaseModel):
 def list_screening_inputs(settings: CloudChamberSettings) -> list[ScreeningInput]:
     """List cached station text files available for screening."""
 
-    return [
-        ScreeningInput(
-            station_id=entry.station_id,
-            station_name=entry.station_name,
-            cached_text_path=entry.cached_text_path,
-            source_file_name=Path(entry.cached_text_path).name,
-            cached_status=entry.cached_status,
+    inputs: list[ScreeningInput] = []
+    for entry in _cached_text_entries(settings):
+        if entry.cached_text_path is None:
+            continue
+        text_path = Path(entry.cached_text_path)
+        sounding_count: int | None = None
+        latest_valid_time_utc: datetime | None = None
+        caveats: list[str] = []
+        try:
+            summaries = summarize_igra_station_text(text_path.read_text())
+            sounding_count = len(summaries)
+            if summaries:
+                latest_valid_time_utc = max(summary.valid_time_utc for summary in summaries)
+        except (OSError, ObservedSoundingError) as exc:
+            caveats.append(str(exc))
+        inputs.append(
+            ScreeningInput(
+                station_id=entry.station_id,
+                station_name=entry.station_name,
+                cached_text_path=entry.cached_text_path,
+                source_file_name=text_path.name,
+                cached_status=entry.cached_status,
+                sounding_count=sounding_count,
+                latest_valid_time_utc=latest_valid_time_utc,
+                caveats=caveats,
+            )
         )
-        for entry in _cached_text_entries(settings)
-        if entry.cached_text_path is not None
-    ]
+    return inputs
 
 
 def screen_cached_soundings(
