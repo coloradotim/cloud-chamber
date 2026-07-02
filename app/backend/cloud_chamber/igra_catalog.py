@@ -147,10 +147,10 @@ class IGRARecentCatalog(BaseModel):
 GREAT_PLAINS_MIDWEST_REGION = IGRARegionDefinition(
     tag="great_plains_midwest",
     label="Great Plains / Midwest",
-    min_latitude=30.0,
+    min_latitude=35.0,
     max_latitude=50.0,
     min_longitude=-106.0,
-    max_longitude=-80.0,
+    max_longitude=-82.0,
     caveats=[
         "Broad v1 lat/lon bounding box; not a GIS boundary.",
         "Bounds are intentionally conservative for recent IGRA sounding discovery.",
@@ -257,7 +257,7 @@ def build_recent_catalog(
     cache_by_filename = {
         entry.filename: entry for entry in (cache_manifest.entries if cache_manifest else [])
     }
-    caveats: list[str] = []
+    missing_station_metadata_count = 0
     stations_in_region = [
         station for station in station_by_id.values() if region.tag in station.region_tags
     ]
@@ -265,7 +265,7 @@ def build_recent_catalog(
     for reference in parse_recent_directory_listing(directory_html, base_url=source_url):
         station = station_by_id.get(reference.station_id)
         if station is None:
-            caveats.append(f"station_metadata_missing:{reference.station_id}")
+            missing_station_metadata_count += 1
             continue
         if region.tag not in station.region_tags:
             continue
@@ -286,6 +286,11 @@ def build_recent_catalog(
                     ),
                 }
             )
+        )
+    caveats: list[str] = []
+    if missing_station_metadata_count:
+        caveats.append(
+            f"station_metadata_missing_for_recent_links:{missing_station_metadata_count}"
         )
     return IGRARecentCatalog(
         source_url=source_url,
@@ -423,7 +428,37 @@ def cache_station_zip_from_catalog(
     ]
     if not matches:
         raise IGRACatalogError("Requested IGRA station-period file is not in the recent catalog.")
-    return cache_station_zip(settings, matches[0])
+    entry = cache_station_zip(settings, matches[0])
+    updated_references = [
+        _reference_with_cache_entry(reference, entry)
+        if reference.filename == entry.filename
+        else reference
+        for reference in catalog.zip_references
+    ]
+    write_igra_recent_catalog(
+        settings,
+        catalog.model_copy(
+            update={
+                "zip_references": updated_references,
+                "cache_manifest_path": str(igra_cache_manifest_path(settings)),
+            }
+        ),
+    )
+    return entry
+
+
+def _reference_with_cache_entry(
+    reference: IGRAStationZipReference,
+    entry: IGRACacheEntry,
+) -> IGRAStationZipReference:
+    return reference.model_copy(
+        update={
+            "cached_status": entry.cached_status,
+            "cached_zip_path": entry.cached_zip_path,
+            "cached_text_path": entry.cached_text_path,
+            "source_etag_or_last_modified": entry.source_etag_or_last_modified,
+        }
+    )
 
 
 def _region_tags_for_station(station: IGRAStationMetadata) -> list[RegionTag]:

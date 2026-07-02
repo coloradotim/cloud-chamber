@@ -133,6 +133,7 @@ def parse_igra_station_text(
     *,
     uploaded_filename: str,
     selected_time_utc: datetime | None = None,
+    station_metadata: StationMetadata | None = None,
 ) -> ObservedSoundingUploadResponse:
     """Parse NOAA/NCEI IGRA station sounding-data text.
 
@@ -164,6 +165,7 @@ def parse_igra_station_text(
         header=selected,
         raw_levels=raw_levels,
         uploaded_filename=uploaded_filename,
+        station_metadata=station_metadata,
     )
     return ObservedSoundingUploadResponse(
         source_provider="NOAA/NCEI IGRA",
@@ -172,6 +174,26 @@ def parse_igra_station_text(
         available_soundings=available,
         selected_sounding=record,
     )
+
+
+def summarize_igra_station_text(text: str) -> list[SoundingTimeSummary]:
+    """Return available IGRA sounding times without package-readiness validation."""
+
+    lines = text.splitlines()
+    headers = _scan_headers(lines)
+    if not headers:
+        raise ObservedSoundingError("No IGRA sounding headers were found in the station file.")
+    return [
+        SoundingTimeSummary(
+            station_id=header["station_id"],
+            valid_time_utc=header["valid_time_utc"],
+            source_time_text=header["source_time_text"],
+            num_levels=header["num_levels"],
+            pressure_source=header["pressure_source"],
+            non_pressure_source=header["non_pressure_source"],
+        )
+        for header in headers
+    ]
 
 
 def observed_sounding_from_payload(payload: object) -> ObservedSoundingRecord:
@@ -258,9 +280,14 @@ def _normalize_sounding(
     header: _IgraHeader,
     raw_levels: list[str],
     uploaded_filename: str,
+    station_metadata: StationMetadata | None = None,
 ) -> ObservedSoundingRecord:
     station_id = str(header["station_id"])
-    station = _STATION_METADATA.get(station_id)
+    station = (
+        station_metadata
+        if station_metadata is not None and station_metadata.station_id == station_id
+        else _STATION_METADATA.get(station_id)
+    )
     errors: list[str] = []
     caveats: list[str] = [
         "Observed IGRA sounding winds preserved as metadata; current CM1 "
@@ -273,7 +300,7 @@ def _normalize_sounding(
         errors.append("station_site_elevation_missing")
         station = StationMetadata(station_id=station_id)
     else:
-        caveats.append("station elevation joined from IGRA station metadata fixture")
+        caveats.append(f"station elevation joined from {station.source}")
 
     source_latitude = _coalesce_float(header.get("latitude"), station.latitude)
     source_longitude = _coalesce_float(header.get("longitude"), station.longitude)

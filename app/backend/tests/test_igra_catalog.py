@@ -114,7 +114,7 @@ def test_station_metadata_join_and_great_plains_midwest_filter() -> None:
     assert valley.longitude == pytest.approx(-96.3669)
     assert valley.region_tags == ["great_plains_midwest"]
     assert valley.cached_status == "not_cached"
-    assert "station_metadata_missing:USM00099999" in catalog.caveats
+    assert "station_metadata_missing_for_recent_links:1" in catalog.caveats
 
 
 def test_parse_station_metadata_handles_fixed_width_station_list() -> None:
@@ -234,7 +234,15 @@ def test_cache_station_zip_from_catalog_uses_cached_catalog(
 
     assert entry.station_id == "USM00072558"
     assert entry.cached_status == "cached_extracted"
-    assert read_igra_recent_catalog(settings) == catalog
+    updated_catalog = read_igra_recent_catalog(settings)
+    assert updated_catalog is not None
+    cached_reference = next(
+        reference
+        for reference in updated_catalog.zip_references
+        if reference.station_id == "USM00072558"
+    )
+    assert cached_reference.cached_status == "cached_extracted"
+    assert cached_reference.cached_text_path == entry.cached_text_path
 
 
 def test_cache_station_zip_rejects_unsafe_station_id_and_filename(tmp_path: Path) -> None:

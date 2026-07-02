@@ -151,6 +151,42 @@ files. These are runtime-local generated/source-data artifacts; do not commit
 them. Automated tests use tiny fixture HTML, station-list text, and ZIP payloads
 only. No CI test should fetch live NOAA/NCEI data.
 
+Use the script surface for manual/local IGRA cache work; do not hand-write curl
+commands for normal use:
+
+```bash
+scripts/igra-recent.sh status
+scripts/igra-recent.sh refresh
+scripts/igra-recent.sh list --limit 20
+scripts/igra-recent.sh cache-all --limit 10
+scripts/igra-recent.sh soundings
+scripts/igra-recent.sh cache USM00072558
+```
+
+`refresh` contacts NOAA/NCEI catalog sources and writes local catalog metadata.
+`cache-all` downloads a batch of station-period ZIP/text files from the
+already-refreshed local catalog. `soundings` inspects cached station text files
+and lists available sounding times. `cache` remains available when a single
+known station is desired. These commands write only under the configured runtime
+cache.
+
+By default, `soundings` shows only the latest few times for each cached station.
+Use `--all` only when you intentionally want every cached sounding time:
+
+```bash
+scripts/igra-recent.sh soundings --latest-per-station 3
+scripts/igra-recent.sh soundings --all --limit 200
+```
+
+To reset the recent IGRA cache and test from a clean state, use the script
+cleanup command, then rerun `status` / `refresh`:
+
+```bash
+scripts/igra-recent.sh cleanup
+scripts/igra-recent.sh status
+scripts/igra-recent.sh refresh
+```
+
 Baseline Shallow Cumulus currently uses `zd = 4500.0` for Rayleigh damping in the 6 km quick-look domain. Preflight rejects namelists where Rayleigh damping would begin at or below half the configured domain top. A CM1 process that exits `0` without NetCDF or raw CM1 `.dat/.ctl` artifacts is recorded as `validation_status: needs_review` and `product_state: process_completed_no_output`, not as a completed usable CM1 result.
 
 Generated Baseline Shallow Cumulus packages prefer CM1 NetCDF output with `output_format = 2` and `output_filetype = 2`. CM1 documents `output_format = 1` as GrADS/direct-access output and `output_format = 2` as NetCDF. The first successful smoke run produced `.dat/.ctl` files, so those are cataloged as raw CM1 artifacts while the next manual run should verify the NetCDF path.

@@ -74,12 +74,16 @@ generation; it does not parse sounding files into CM1-ready data itself.
 The IGRA recent catalog/cache layer is separate from package generation. The
 backend can refresh the NOAA/NCEI IGRA recent station-period directory, parse
 station metadata, filter to the v1 Great Plains / Midwest region bounds
-(`30.0` to `50.0` latitude, `-106.0` to `-80.0` longitude), and cache selected
-station-period ZIP/text files under `<runtime-home>/cache/igra/recent/`.
-Runtime cache metadata is stored in `catalog.json` and `cache_manifest.json`;
-downloaded ZIPs and extracted station text stay under per-station cache
-directories. The browser does not parse remote HTML, station archives, or
-station text files.
+(`35.0` to `50.0` latitude, `-106.0` to `-82.0` longitude), and cache selected
+or batched station-period ZIP/text files under
+`<runtime-home>/cache/igra/recent/`. Runtime cache metadata is stored in
+`catalog.json` and `cache_manifest.json`; downloaded ZIPs and extracted station
+text stay under per-station cache directories. The command-line cache surface
+can also summarize available sounding times from cached station text. The browser
+does not parse remote HTML, station archives, or station text files.
+When cached station metadata is available, the observed-sounding parser can use
+it for station name, location, and elevation instead of relying only on built-in
+fixture metadata.
 
 ## Suggested Stack
 
