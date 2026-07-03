@@ -135,7 +135,7 @@ def test_parse_observed_sounding_api_returns_igra_review_payload() -> None:
     assert selected["source_vertical_coordinate_type"] == "geopotential_height_msl"
     assert selected["levels"][0]["model_z_m"] == pytest.approx(0.5)
     assert selected["levels"][-1]["model_z_m"] > 18000
-    assert "metadata_only" in selected["wind_handling"]
+    assert "observed_sounding_winds" in selected["wind_handling"]
 
 
 def test_parse_observed_sounding_api_blocks_malformed_upload() -> None:

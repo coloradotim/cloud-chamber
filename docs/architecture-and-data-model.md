@@ -205,13 +205,14 @@ observed record is stored with package metadata and includes station id/name,
 latitude/longitude/elevation when known, selected valid time, uploaded
 filename, source provider/format, source units, converted CM1 units,
 model-bottom elevation above mean sea level, levels relative to the station
-surface, validation status, and caveats. For v1, only the thermodynamic and
-moisture profile is generated into `input_sounding`; observed wind direction
-and speed remain metadata/provenance while the namelist preserves the validated
-external-sounding wind path (`isnd = 17`, `iwnd = 9`). Missing station elevation
-or profiles that do not cover the model depth must block package generation or
-surface an explicit `needs_review` caveat instead of silently normalizing to sea
-level.
+surface, validation status, and caveats. For v1, the thermodynamic, moisture,
+and wind profile is generated into `input_sounding`: observed wind
+direction/speed is converted to CM1 `u`/`v`, and observed-sounding packages use
+CM1's `isnd = 7` mode so those wind columns initialize the run. Missing station
+elevation, profiles that do not cover the model depth, or incomplete observed
+wind profiles must block package generation or surface an explicit
+`needs_review` caveat instead of silently normalizing to sea level or falling
+back to reference winds.
 
 Dry Failed Cumulus should branch from this validated reference-derived family,
 not from the invalid compact quick-look derivative. Architecturally, it is a

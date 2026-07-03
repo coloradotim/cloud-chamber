@@ -75,7 +75,7 @@ test.describe("mocked smoke: Build, Results, Explore path", () => {
     await expect(page.getByText("USM00072558 · Valley, Nebraska")).toBeVisible();
     await expect(page.locator("#observed-sounding-time")).toHaveValue("2025-01-02T00:00:00Z");
     await expect(page.getByText(/CM1 z=0 is station surface at 351.5 m MSL/i)).toBeVisible();
-    await expect(page.getByText(/observed winds metadata only/i)).toBeVisible();
+    await expect(page.getByText(/generated CM1 namelist uses isnd=7/i)).toBeVisible();
 
     await page.getByText("Observed-sounding caveats").click();
     await expect(page.getByText("Station elevation joined from igra station fixture")).toBeVisible();

@@ -118,8 +118,9 @@ Goal: prove the first realistic-input path using observed or detailed sounding
 fixtures while preserving source metadata and conversion caveats.
 
 Scope: tiny fixture import, station/location/elevation, valid time/date, source,
-units, wind handling, conversion metadata, package-review provenance, and a
-local Build upload path for extracted IGRA station sounding-data files.
+units, observed wind conversion to CM1 `u`/`v`, conversion metadata,
+package-review provenance, and a local Build upload path for extracted IGRA
+station sounding-data files.
 
 Non-goals: Bench Mode UI, arbitrary GIS/map inputs, surface heterogeneity, or
 unvalidated scenario families.

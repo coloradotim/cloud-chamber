@@ -123,7 +123,8 @@ const observedSoundingParseResponse = {
     },
     source_vertical_coordinate_type: "geopotential_height_msl",
     model_bottom_elevation_m_msl: 351.5,
-    wind_handling: "observed winds metadata only; CM1 wind profile remains baseline",
+    wind_handling:
+      "observed sounding winds; generated CM1 namelist uses isnd=7 so input_sounding u/v columns initialize the wind profile",
     levels: [
       {
         pressure_pa: 96500,
@@ -158,14 +159,14 @@ const observedSoundingParseResponse = {
     ],
     conversion_choices: {
       vertical_anchor: "station_surface",
-      wind_application: "metadata_only",
+      wind_application: "input_sounding_u_v",
     },
     validation: {
       status: "needs_review",
       errors: [],
       caveats: [
         "station_elevation_joined_from_igra_station_fixture",
-        "observed_winds_preserved_as_metadata_only",
+        "observed_sounding_winds_written_to_input_sounding",
       ],
     },
     provenance: {
@@ -408,7 +409,7 @@ export const results = [
     time_of_min_w_seconds: 2700,
     rain_present: false,
     first_rain_time_seconds: null,
-    caveats: ["observed_winds_preserved_as_metadata_only"],
+    caveats: ["observed_sounding_winds_written_to_input_sounding"],
     input_source: "observed_sounding",
     input_source_label: "Observed sounding: USM00072558 · Valley, Nebraska",
     observed_sounding: {

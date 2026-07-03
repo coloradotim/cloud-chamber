@@ -54,8 +54,9 @@ Observed IGRA sounding tests must use tiny synthetic station-data fixtures in
 the repo. They should cover multiple available sounding times, latest-time
 default selection, explicit time selection, malformed uploads, too-shallow
 profiles, station-elevation/model-bottom anchoring, numeric CM1
-`input_sounding` rendering, run-manifest/report provenance, and the current
-metadata-only observed-wind limitation. Large real station downloads, such as a
+`input_sounding` rendering, run-manifest/report provenance, observed wind
+direction/speed conversion to CM1 `u`/`v`, `isnd = 7` observed-wind package
+handling, and missing-wind blocking. Large real station downloads, such as a
 full local IGRA file from `~/Downloads`, are manual validation inputs only and
 must not be committed.
 
@@ -572,12 +573,14 @@ NetCDF, ingests the full sequence, forms cloud, and preserves meaningful
 vertical motion before Dry Failed Cumulus dries the profile.
 
 Observed-sounding package tests should additionally assert that uploading an
-IGRA station sounding changes only the generated external thermodynamic/moisture
-profile and package metadata unless a later validated issue explicitly changes
-wind, radiation, surface, or location/date behavior. The package review should
-show station, valid time, uploaded filename, vertical datum, model-bottom
-elevation, usable level count, caveats, and wind-handling metadata before the
-package is created.
+IGRA station sounding changes the generated external thermodynamic/moisture/wind
+profile and package metadata while preserving the non-sounding baseline package
+settings. Observed-sounding packages should use CM1 `isnd = 7` so `input_sounding`
+`u`/`v` columns initialize the wind profile. Radiation, surface, and
+location/date behavior remain unchanged unless separately validated. The package
+review should show station, valid time, uploaded filename, vertical datum,
+model-bottom elevation, usable level count, caveats, and wind-handling metadata
+before the package is created.
 
 The external-sounding reproduction run, `dry-run-external-sounding-baseline-20260522185000`,
 completed with `exit_code = 0`, ingested 13 model-output time steps from 0 to

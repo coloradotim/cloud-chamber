@@ -254,9 +254,9 @@ def _dry_run_report_payload(
             "cap_strength": manifest.controls.get("cap_strength"),
             "cap_height": manifest.controls.get("cap_height"),
             "mapping": (
-                "observed IGRA external input_sounding profile; namelist settings remain "
-                "inherited from the validated baseline; observed winds are preserved as metadata "
-                "while isnd=17/iwnd=9 keeps reference wind handling"
+                "observed IGRA external input_sounding profile; non-wind namelist settings "
+                "remain inherited from the validated baseline; observed wind direction/speed is "
+                "converted to u/v and applied through CM1 isnd=7 input_sounding handling"
                 if contract.observed_sounding is not None
                 else (
                     "external input_sounding profile; namelist settings remain inherited from "
@@ -310,6 +310,9 @@ def _observed_sounding_summary(record: ObservedSoundingRecord) -> dict[str, obje
         "lowest_model_z_m": record.levels[0].model_z_m if record.levels else None,
         "highest_model_z_m": record.levels[-1].model_z_m if record.levels else None,
         "wind_handling": record.wind_handling,
+        "wind_source": record.provenance.get("wind_source"),
+        "wind_units": record.converted_cm1_units.get("wind_components"),
+        "wind_conversion": record.conversion_choices.get("wind"),
         "validation_status": record.validation.status,
         "validation_errors": record.validation.errors,
         "caveats": record.validation.caveats,

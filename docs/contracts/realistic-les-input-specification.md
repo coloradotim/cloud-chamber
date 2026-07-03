@@ -209,7 +209,7 @@ Draft shape:
     "moisture": ["qv_or_mixing_ratio"],
     "wind": ["u", "v"]
   },
-  "wind_handling": "reference_wind",
+  "wind_handling": "observed_sounding_winds",
   "conversion_choices": {
     "smoothing": "none_or_documented_method",
     "interpolation": "native_to_cm1_required_levels",
@@ -229,9 +229,9 @@ Capability distinctions:
 | --- | --- |
 | Generated reference sounding through `input_sounding` | Currently supported by Cloud Chamber for the accepted external-sounding baseline path. |
 | CM1 external sounding input | Confirmed CM1 capability through external `input_sounding` paths such as `isnd = 7` and `isnd = 17`. |
-| Observed/detailed sounding conversion | Likely CM1 capability needing validation. |
+| Observed/detailed sounding conversion | Supported for local uploaded IGRA station text after package-review validation. |
 | `input_sounding` | Generated input file required. |
-| Observed winds from sounding | Likely capability needing validation; current Cloud Chamber path preserves reference/generated wind handling. |
+| Observed winds from sounding | Supported for uploaded observed-sounding packages: direction/speed converts to CM1 `u`/`v` and packages use `isnd = 7`. |
 | Smoothing/interpolation/truncation | Product/backend metadata required; implementation must be explicit. |
 | Arbitrary online sounding fetch | Future / unsupported until source, provenance, and failure behavior are designed. |
 
@@ -242,8 +242,8 @@ Rules:
   from the first implementation.
 - If radiation remains disabled, place/time metadata still travels as sounding
   provenance.
-- Do not silently replace missing observed winds with reference winds; record
-  `wind_handling`.
+- Do not silently replace missing observed winds with reference winds; block or
+  caveat clearly and record `wind_handling`.
 - If pressure-to-height or temperature-to-potential-temperature conversion is
   inferred, record the method and caveat.
 - Validation should fail clearly before package generation for obviously bad
@@ -694,8 +694,6 @@ Before implementation, PM/human review should decide:
 
 - Which observed sounding source format is first: pasted text, local file,
   tiny fixture, or a specific provider export.
-- Whether first observed-sounding support uses `isnd = 17` with reference wind
-  or validates `isnd = 7` with observed winds.
 - Which profile sanity checks are launch blockers versus caveats.
 - Where realistic input metadata lives before and after package generation:
   scenario controls, case manifest, run manifest, or a dedicated sidecar.
