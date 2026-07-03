@@ -82,6 +82,17 @@ produce a specific CM1 outcome. The expected feature inputs, story thresholds,
 evidence items, caveat behavior, and package-readiness boundary are documented
 in [contracts/sounding-candidate-screening.md](contracts/sounding-candidate-screening.md).
 
+Sounding-diagnostics tests should use tiny observed-sounding fixtures and temp
+runtime data only. They should verify the bounded backend `SoundingDiagnostics`
+payload, profile quality, moisture/LCL proxies, lapse-rate proxies, inversion
+and cap proxies, observed-wind bulk-shear diagnostics, missing-wind caveats,
+missing-moisture caveats, and explicit unavailable states for unimplemented
+parcel, storm-relative, wet-bulb, and winter-phase diagnostics. Missing `qv`
+must not become dry-air evidence; missing LCL must not become high-LCL
+evidence; missing wind must not produce fake shear, storm-motion, or SRH
+values. Browser/UI tests must not parse sounding text or compute these
+diagnostics client-side.
+
 Frontend tests for the `Upload a Sounding` Build workflow should cover the same
 boundary. Component tests and mocked Playwright smoke tests should verify that
 saved candidates load immediately when `Upload a Sounding` is selected; the

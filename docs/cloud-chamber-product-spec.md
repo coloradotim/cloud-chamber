@@ -102,6 +102,12 @@ planning taxonomy in
 [research/expanded-sounding-candidate-taxonomy.md](research/expanded-sounding-candidate-taxonomy.md).
 Those labels must remain disabled, caveated, or absent from product UI until
 backend scoring, evidence, caveats, and package-readiness states support them.
+The backend may compute richer sounding diagnostics such as profile quality,
+moisture/LCL proxies, lapse-rate and cap proxies, wind shear, dry-layer
+signals, and freezing-level context to support future screening. These are
+pre-run evidence and context only. Parcel, storm-relative, wet-bulb, and
+winter-phase diagnostics must remain explicitly unavailable until their methods
+are implemented and tested.
 
 In Build, `Upload a Sounding` is the product-facing entry point for this
 candidate workflow. It should show a `Find interesting soundings` workbench
