@@ -221,7 +221,9 @@ def render_observed_input_sounding(record: ObservedSoundingRecord) -> str:
     ]
     lines.extend(
         f"{level.model_z_m:10.1f} {level.potential_temperature_k:12.4f} "
-        f"{level.qv_g_kg:12.5f} {0.0:8.2f} {0.0:7.2f}"
+        f"{level.qv_g_kg:12.5f} "
+        f"{_required_wind_component(level.u_wind_m_s, 'u'):8.2f} "
+        f"{_required_wind_component(level.v_wind_m_s, 'v'):7.2f}"
         for level in body
     )
     return "\n".join(lines) + "\n"
@@ -291,8 +293,6 @@ def _normalize_sounding(
     )
     errors: list[str] = []
     caveats: list[str] = [
-        "Observed IGRA sounding winds preserved as metadata; current CM1 "
-        "package uses reference/generated wind handling.",
         "IGRA quality/source flags are preserved only as source-format provenance in v1.",
         "Place/time are preserved as metadata; radiation remains disabled in "
         "the generated package.",
@@ -342,13 +342,19 @@ def _normalize_sounding(
         source_vertical_coordinate_type="geopotential_height_msl",
         model_bottom_elevation_m_msl=station.elevation_m_msl or 0.0,
         levels=levels,
-        wind_handling=("observed_winds_metadata_only; generated CM1 namelist keeps isnd=17/iwnd=9"),
+        wind_handling=(
+            "observed_sounding_winds; generated CM1 namelist uses isnd=7 so "
+            "input_sounding u/v columns initialize the wind profile"
+        ),
         conversion_choices={
             "height": "IGRA GPH meters MSL converted to model_z_m relative to station elevation",
             "theta": "temperature and pressure converted to potential temperature",
             "moisture": "dewpoint depression preferred; relative humidity used if needed",
             "surface": "lowest usable level is copied to z=0 when above station surface",
-            "wind": "observed winds retained in metadata; CM1 run uses reference wind handling",
+            "wind": (
+                "IGRA wind direction/speed converted to CM1 u/v components and written "
+                "to input_sounding"
+            ),
         },
         validation=validation,
         provenance={
@@ -358,6 +364,7 @@ def _normalize_sounding(
                 "Observed IGRA sounding used as the initial vertical profile for an "
                 "idealized CM1 LES domain anchored to the sounding/site elevation."
             ),
+            "wind_source": "observed_igra_wind_profile",
         },
     )
 
@@ -488,6 +495,12 @@ def _validate_levels(
         ):
             errors.append("non_finite_required_profile_values")
             break
+        if level.u_wind_m_s is None or level.v_wind_m_s is None:
+            errors.append("observed_wind_profile_missing_or_incomplete")
+            break
+        if not math.isfinite(level.u_wind_m_s) or not math.isfinite(level.v_wind_m_s):
+            errors.append("non_finite_observed_wind_profile_values")
+            break
         if level.qv_g_kg < 0:
             errors.append("negative_moisture_value")
             break
@@ -568,3 +581,9 @@ def _wind_components(
         return None, None
     radians = math.radians(wind_direction_degrees)
     return -wind_speed_m_s * math.sin(radians), -wind_speed_m_s * math.cos(radians)
+
+
+def _required_wind_component(value: float | None, component: str) -> float:
+    if value is None or not math.isfinite(value):
+        raise ObservedSoundingError(f"Observed sounding is missing usable {component} wind values.")
+    return value

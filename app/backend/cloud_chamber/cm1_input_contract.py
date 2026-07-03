@@ -216,19 +216,18 @@ def render_cm1_namelist(contract: CM1InputContract) -> str:
     """Render a runnable CM1 namelist for the baseline shallow-cumulus package.
 
     The recovery baseline follows CM1's local ``les_ShallowCu`` reference case.
-    The external-sounding reproduction keeps ``testcase = 3``, 40 m nominal
-    vertical spacing, 18 km model top, reference Rayleigh damping, reference
-    wind profile, and reference surface stress/roughness settings, but switches
-    the thermodynamic source from built-in ``isnd = 19`` to CM1's external
-    ``input_sounding`` path via ``isnd = 17``. Run-size presets adjust runtime,
+    Generated reference packages keep ``isnd = 17`` with the reference wind path.
+    Observed-sounding packages use ``isnd = 7`` so CM1 reads the thermodynamic
+    and wind profile from ``input_sounding``. Run-size presets adjust runtime,
     saved-output cadence, and, for Deep Overnight, horizontal grid spacing while
     preserving the physical domain and Standard solver timestep. The intentional
-    product-path change outside the sounding source is
-    ``output_format = 2`` so Cloud Chamber can ingest NetCDF output when the local
-    CM1 build supports it.
+    product-path change outside the sounding source is ``output_format = 2`` so
+    Cloud Chamber can ingest NetCDF output when the local CM1 build supports it.
     """
 
     defaults = contract.cloud_scale_defaults
+    sounding_source_id = 7 if contract.observed_sounding is not None else 17
+    wind_profile_id = 0 if contract.observed_sounding is not None else 9
     return f"""
  &param0
  nx           =      {defaults.nx},
@@ -300,8 +299,8 @@ def render_cm1_namelist(contract: CM1InputContract) -> str:
  irbc      =  4,
  roflux    =  0,
  nudgeobc  =  0,
- isnd      = 17,
- iwnd      =  9,
+ isnd      = {sounding_source_id:2d},
+ iwnd      = {wind_profile_id:2d},
  itern     =  0,
  iinit     =  0,
  irandp    =  1,

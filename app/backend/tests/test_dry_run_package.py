@@ -103,11 +103,22 @@ def test_dry_run_package_can_use_observed_igra_sounding(tmp_path: Path) -> None:
     assert report["variant_metadata"]["sounding_source"] == "observed_igra_station_text"
     assert report["observed_sounding"]["station_name"] == "Valley, Nebraska"
     assert report["observed_sounding"]["usable_levels"] >= 5
+    assert report["observed_sounding"]["wind_source"] == "observed_igra_wind_profile"
+    assert report["observed_sounding"]["wind_units"] == "m/s"
+    assert "input_sounding" in report["observed_sounding"]["wind_conversion"]
     assert case_manifest["contract"]["observed_sounding"]["station_id"] == "USM00072558"
-    assert "isnd      = 17," in namelist
-    assert "iwnd      =  9," in namelist
+    assert "isnd      =  7," in namelist
+    assert "iwnd      =  0," in namelist
     assert "USM00072558" not in sounding
     assert float(sounding.splitlines()[1].split()[0]) == pytest.approx(0.0)
+    assert float(sounding.splitlines()[1].split()[3]) == pytest.approx(
+        observed.levels[0].u_wind_m_s,
+        abs=0.01,
+    )
+    assert float(sounding.splitlines()[1].split()[4]) == pytest.approx(
+        observed.levels[0].v_wind_m_s,
+        abs=0.01,
+    )
     assert float(sounding.splitlines()[-1].split()[0]) > 18000
 
 

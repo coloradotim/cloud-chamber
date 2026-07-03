@@ -221,7 +221,8 @@ const observedSoundingParseResponse = {
         wind_speed_m_s: 6.3,
       },
     ],
-    wind_handling: "observed_winds_metadata_only; generated CM1 namelist keeps isnd=17/iwnd=9",
+    wind_handling:
+      "observed_sounding_winds; generated CM1 namelist uses isnd=7 so input_sounding u/v columns initialize the wind profile",
     conversion_choices: {
       height: "IGRA GPH meters MSL converted to model_z_m relative to station elevation",
     },
@@ -230,7 +231,7 @@ const observedSoundingParseResponse = {
       errors: [],
       caveats: [
         "station elevation joined from IGRA station metadata fixture",
-        "Observed IGRA sounding winds preserved as metadata; current CM1 package uses reference/generated wind handling.",
+        "Place/time are preserved as metadata; radiation remains disabled in the generated package.",
       ],
     },
     provenance: {
@@ -839,7 +840,8 @@ const observedSoundingResultCard = {
     usable_levels: 48,
     lowest_model_z_m: 0,
     highest_model_z_m: 18000,
-    wind_handling: "observed_winds_metadata_only",
+    wind_handling:
+      "observed_sounding_winds; generated CM1 namelist uses isnd=7 so input_sounding u/v columns initialize the wind profile",
     validation_status: "valid",
     validation_errors: [],
     caveats: [],
@@ -2259,7 +2261,7 @@ describe("App", () => {
     expect(await screen.findByText("Observed sounding validated for package review")).toBeInTheDocument();
     expect(screen.getByText("USM00072558 · Valley, Nebraska")).toBeInTheDocument();
     expect(screen.getByText(/CM1 z=0 is station surface at 351.5 m MSL/)).toBeInTheDocument();
-    expect(screen.getByText(/observed winds metadata only/)).toBeInTheDocument();
+    expect(screen.getByText(/observed sounding winds/)).toBeInTheDocument();
 
     fireEvent.click(screen.getByTestId("create-package-btn"));
 

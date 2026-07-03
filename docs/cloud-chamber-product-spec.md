@@ -73,10 +73,11 @@ remote sounding archives in v1. The converted package anchors CM1 `z = 0` to
 the station surface elevation, converts geopotential height above mean sea
 level into model height above the station, preserves station/location/elevation,
 valid time, source format, units, wind metadata, and caveats, and renders a
-numeric CM1-readable `input_sounding`. Current observed wind values are
-preserved as metadata only; the generated CM1 namelist keeps the validated
-external-sounding wind-handling path until a separate validation accepts
-observed-wind forcing.
+numeric CM1-readable `input_sounding`. Observed wind direction/speed is
+converted to CM1 `u`/`v` wind components, written into the `input_sounding`
+profile, and applied through CM1's `isnd = 7` external-sounding path. Packages
+with missing or unusable observed winds should block rather than silently fall
+back to a reference wind profile.
 
 Cloud Chamber also owns a backend-only local cache foundation for recent IGRA
 station-period source files. V1 can refresh the NOAA/NCEI IGRA recent catalog,
@@ -534,13 +535,15 @@ The current Baseline Shallow Cumulus recovery contract renders CM1-facing `namel
 
 Observed IGRA sounding import uses the same external `input_sounding` route.
 The generated thermodynamic/moisture profile comes from the selected observed
-sounding after unit conversion and vertical-datum handling. The generated
+sounding after unit conversion and vertical-datum handling. Observed wind
+direction/speed is converted to CM1 `u`/`v`, written into `input_sounding`, and
+used by CM1 through `isnd = 7`. The generated
 package records the selected station, valid time, uploaded filename,
 provider/format, model-bottom elevation, conversion choices, wind-handling
-limitation, validation status, and caveats in the run manifest, case manifest,
-and dry-run report. It must not imply location/date/radiation behavior beyond
-the observed-profile provenance; radiation remains whatever the scenario
-package currently configures.
+method, validation status, and caveats in the run manifest, case manifest, and
+dry-run report. It must not imply location/date/radiation behavior beyond the
+observed-profile provenance; radiation remains whatever the scenario package
+currently configures.
 
 The first full-sequence NetCDF ingest of `dry-run-157b09a178e1` found 25 model-output files and 25 time steps, but no usable cloud or vertical velocity: `max_qc_kg_kg = 0.0`, `max_w_m_s = 0.0`, and multiple NaN/Infinity caveats in surface and thermodynamic fields. The generated quick-look package therefore now uses a fixed small ocean roughness length (`set_znt = 1`, `cnst_znt = 0.0002`) instead of the reference dynamic roughness / fixed friction-velocity path that produced invalid local output.
 

@@ -137,10 +137,11 @@ uploaded NOAA/NCEI IGRA station sounding-data text to the backend parse endpoint
 reviews the selected sounding and caveats, then includes the selected sounding
 record in the dry-run package request. The backend converts source
 geopotential-height/elevation metadata into CM1 height above station surface and
-renders numeric `input_sounding`; observed winds remain metadata-only until a
-separate validation changes wind forcing. Use tiny synthetic IGRA fixtures in
-tests. Large local station files, for example files in `~/Downloads`, are manual
-validation inputs and must not be copied into the repo.
+renders numeric `input_sounding`; observed winds are converted to CM1 `u`/`v`
+and applied through the observed-sounding `isnd = 7` package path. Use tiny
+synthetic IGRA fixtures in tests. Large local station files, for example files
+in `~/Downloads`, are manual validation inputs and must not be copied into the
+repo.
 
 Recent IGRA source-file discovery is backend-owned. The backend endpoints under
 `/api/igra/recent/*` can refresh a bounded NOAA/NCEI recent catalog, join station
