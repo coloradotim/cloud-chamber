@@ -575,6 +575,78 @@ const resultCard = {
       support_state: "supported",
       caveats: [],
     },
+    {
+      key: "highest_cloud_top",
+      label: "Highest cloud top",
+      time_index: 3,
+      time_seconds: 2700,
+      source_field: "qc",
+      source_diagnostic: "diagnostics.cloud.cloud_top_time_series",
+      value: 1940,
+      units: "m",
+      support_state: "supported",
+      caveats: [],
+    },
+    {
+      key: "max_updraft_w",
+      label: "Max updraft",
+      time_index: 4,
+      time_seconds: 3600,
+      source_field: "w",
+      source_diagnostic: "diagnostics.vertical_velocity.max_w_m_s",
+      value: 6.866957187652588,
+      units: "m/s",
+      support_state: "supported",
+      caveats: [],
+    },
+    {
+      key: "min_downdraft_w",
+      label: "Min downdraft",
+      time_index: 5,
+      time_seconds: 4500,
+      source_field: "w",
+      source_diagnostic: "diagnostics.vertical_velocity.min_w_m_s",
+      value: -4.21529483795166,
+      units: "m/s",
+      support_state: "supported",
+      caveats: [],
+    },
+    {
+      key: "rain_onset",
+      label: "Rain onset",
+      time_index: 6,
+      time_seconds: 5400,
+      source_field: "qr",
+      source_diagnostic: "diagnostics.rain.first_rain_time_seconds",
+      value: true,
+      units: null,
+      support_state: "supported",
+      caveats: [],
+    },
+    {
+      key: "latest_output",
+      label: "Latest output",
+      time_index: 12,
+      time_seconds: 10800,
+      source_field: null,
+      source_diagnostic: "output_manifest.time_index",
+      value: null,
+      units: null,
+      support_state: "supported",
+      caveats: [],
+    },
+    {
+      key: "field_default_time",
+      label: "Default Explore time",
+      time_index: 3,
+      time_seconds: 2700,
+      source_field: null,
+      source_diagnostic: "interesting_times.default_time_by_field",
+      value: null,
+      units: null,
+      support_state: "supported",
+      caveats: [],
+    },
   ],
   default_time_by_field: {
     qc: {
@@ -1018,10 +1090,10 @@ const fieldCatalogResponse = {
       display_name: "Cloud water",
       units: "kg/kg",
       dimensions: ["time", "zh", "yh", "xh"],
-      shape: [3, 2, 2, 3],
+      shape: [4, 2, 2, 3],
       native_grid: "zh/yh/xh",
       coordinate_names: { time: "time", vertical: "zh", y: "yh", x: "xh" },
-      time_coordinate_values: [0, 900, 1800],
+      time_coordinate_values: [0, 900, 1800, 2700],
       provenance,
       caveats: ["native_grid_view_no_interpolation"],
     },
@@ -1031,10 +1103,10 @@ const fieldCatalogResponse = {
       display_name: "Vertical velocity",
       units: "m/s",
       dimensions: ["time", "zf", "yh", "xh"],
-      shape: [3, 3, 2, 3],
+      shape: [4, 3, 2, 3],
       native_grid: "zf/yh/xh",
       coordinate_names: { time: "time", vertical: "zf", y: "yh", x: "xh" },
-      time_coordinate_values: [0, 900, 1800],
+      time_coordinate_values: [0, 900, 1800, 2700],
       provenance,
       caveats: ["native_grid_view_no_interpolation"],
     },
@@ -1044,10 +1116,10 @@ const fieldCatalogResponse = {
       display_name: "Rain water",
       units: "kg/kg",
       dimensions: ["time", "zh", "yh", "xh"],
-      shape: [3, 2, 2, 3],
+      shape: [4, 2, 2, 3],
       native_grid: "zh/yh/xh",
       coordinate_names: { time: "time", vertical: "zh", y: "yh", x: "xh" },
-      time_coordinate_values: [0, 900, 1800],
+      time_coordinate_values: [0, 900, 1800, 2700],
       provenance,
       caveats: ["native_grid_view_no_interpolation"],
     },
@@ -1057,10 +1129,10 @@ const fieldCatalogResponse = {
       display_name: "Potential temperature",
       units: "K",
       dimensions: ["time", "zh", "yh", "xh"],
-      shape: [3, 2, 2, 3],
+      shape: [4, 2, 2, 3],
       native_grid: "zh/yh/xh",
       coordinate_names: { time: "time", vertical: "zh", y: "yh", x: "xh" },
-      time_coordinate_values: [0, 900, 1800],
+      time_coordinate_values: [0, 900, 1800, 2700],
       provenance,
       caveats: ["native_grid_view_no_interpolation"],
     },
@@ -1070,10 +1142,10 @@ const fieldCatalogResponse = {
       display_name: "Temperature",
       units: "K",
       dimensions: ["time", "zh", "yh", "xh"],
-      shape: [3, 2, 2, 3],
+      shape: [4, 2, 2, 3],
       native_grid: "zh/yh/xh",
       coordinate_names: { time: "time", vertical: "zh", y: "yh", x: "xh" },
-      time_coordinate_values: [0, 900, 1800],
+      time_coordinate_values: [0, 900, 1800, 2700],
       provenance,
       caveats: ["native_grid_view_no_interpolation"],
     },
@@ -1083,10 +1155,10 @@ const fieldCatalogResponse = {
       display_name: "Water vapor",
       units: "kg/kg",
       dimensions: ["time", "zh", "yh", "xh"],
-      shape: [3, 2, 2, 3],
+      shape: [4, 2, 2, 3],
       native_grid: "zh/yh/xh",
       coordinate_names: { time: "time", vertical: "zh", y: "yh", x: "xh" },
-      time_coordinate_values: [0, 900, 1800],
+      time_coordinate_values: [0, 900, 1800, 2700],
       provenance,
       caveats: ["native_grid_view_no_interpolation"],
     },
@@ -1096,10 +1168,10 @@ const fieldCatalogResponse = {
       display_name: "Reflectivity",
       units: "dBZ",
       dimensions: ["time", "zh", "yh", "xh"],
-      shape: [3, 2, 2, 3],
+      shape: [4, 2, 2, 3],
       native_grid: "zh/yh/xh",
       coordinate_names: { time: "time", vertical: "zh", y: "yh", x: "xh" },
-      time_coordinate_values: [0, 900, 1800],
+      time_coordinate_values: [0, 900, 1800, 2700],
       provenance,
       caveats: ["native_grid_view_no_interpolation"],
     },
@@ -1109,10 +1181,10 @@ const fieldCatalogResponse = {
       display_name: "Accumulated surface rain",
       units: "mm",
       dimensions: ["time", "yh", "xh"],
-      shape: [3, 2, 3],
+      shape: [4, 2, 3],
       native_grid: "surface/yh/xh",
       coordinate_names: { time: "time", vertical: null, y: "yh", x: "xh" },
-      time_coordinate_values: [0, 900, 1800],
+      time_coordinate_values: [0, 900, 1800, 2700],
       provenance,
       caveats: ["native_grid_view_no_interpolation", "surface_field_no_vertical_dimension"],
     },
@@ -1412,7 +1484,7 @@ function sliceResponse({
     field: fieldMetadata,
     selection: {
       time_index: timeIndex,
-      time_seconds: [0, 900, 1800][timeIndex] ?? 1800,
+      time_seconds: [0, 900, 1800, 2700][timeIndex] ?? 1800,
       orientation,
       selected_dimension: isSurface
         ? "surface"
@@ -1565,7 +1637,7 @@ function pointCloudResponse({
     selection: {
       field,
       time_index: timeIndex,
-      time_seconds: [0, 900, 1800][timeIndex] ?? 1800,
+      time_seconds: [0, 900, 1800, 2700][timeIndex] ?? 1800,
       threshold,
       max_points: 50000,
     },
@@ -2888,9 +2960,16 @@ describe("App", () => {
     expect(screen.getAllByText("Cloud formed").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Rain detected").length).toBeGreaterThan(0);
     expect(screen.getByText("1,800 s")).toBeInTheDocument();
-    expect(screen.getByText("2.193e-3 kg/kg")).toBeInTheDocument();
-    expect(screen.getByText("6.867 m/s")).toBeInTheDocument();
-    expect(screen.getByText("-4.215 m/s")).toBeInTheDocument();
+    expect(screen.getAllByText("2.193e-3 kg/kg").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("6.867 m/s").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("-4.215 m/s").length).toBeGreaterThan(0);
+    expect(resultDetail).toHaveTextContent("Science landmarks");
+    expect(resultDetail).toHaveTextContent("Interesting times");
+    expect(resultDetail).toHaveTextContent("Highest cloud top");
+    expect(resultDetail).toHaveTextContent("1,940 m");
+    expect(resultDetail).toHaveTextContent("Rain onset");
+    expect(resultDetail).toHaveTextContent("Default Explore time");
+    expect(resultDetail).toHaveTextContent("2,700 s");
     fireEvent.click(within(resultDetail).getByText("Technical details"));
     expect(
       screen.getAllByText("13 model files, 13 time steps, 1 stats files").length,
@@ -3063,7 +3142,7 @@ describe("App", () => {
     ).toBeInTheDocument();
     await screen.findByText("Comparison slices loaded");
     expect(screen.getByLabelText("Comparison field")).toHaveValue("qc");
-    expect(screen.getByLabelText("Comparison time")).toHaveValue("2");
+    expect(screen.getByLabelText("Comparison time")).toHaveValue("3");
     expect(screen.getByLabelText("Baseline comparison slice")).toHaveTextContent(
       "Baseline Shallow Cumulus",
     );
@@ -3463,6 +3542,28 @@ describe("App", () => {
       "active-control",
     );
     expect(screen.getByRole("img", { name: /Vertical x-z slice at y = .* heatmap/ })).toBeInTheDocument();
+  });
+
+  it("opens Explore at the result-card science default time", async () => {
+    render(<App />);
+
+    const resultDetail = await screen.findByLabelText("Result detail");
+    fireEvent.click(within(resultDetail).getByRole("button", { name: "Open in Explore" }));
+
+    await screen.findByText("Slice synced");
+
+    expect(screen.getByLabelText("Time")).toHaveValue("3");
+    expect(screen.getAllByText("2,700 s").length).toBeGreaterThan(0);
+    expect(fetch).toHaveBeenCalledWith(
+      expect.stringContaining(
+        "/api/results/result-dry-run-quicklook/visualization/point-cloud?field=qc&time_index=3",
+      ),
+    );
+    expect(fetch).toHaveBeenCalledWith(
+      expect.stringContaining(
+        "/api/results/result-dry-run-quicklook/visualization/slice?field=qc&time_index=3",
+      ),
+    );
   });
 
   it("selects a slice region and renders backend Thermal Fate Inspector diagnostics", async () => {
@@ -4015,7 +4116,7 @@ describe("App", () => {
       screen.getByText("Slice planes: native-grid JSON slices from the backend"),
     ).toBeInTheDocument();
     expect(screen.getByText("3 of 3")).toBeInTheDocument();
-    expect(screen.getAllByText("1,800 s").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("2,700 s").length).toBeGreaterThan(0);
     expect(screen.getByText("2.000e-6 kg/kg to 8.000e-6 kg/kg")).toBeInTheDocument();
     expect(screen.getByText("Visualizer interpretation of CM1-derived output")).toBeInTheDocument();
     expect(
@@ -4026,9 +4127,9 @@ describe("App", () => {
     expect(screen.getByText("Rendering method: direct Three.js scalar point cloud"))
       .toBeInTheDocument();
     expect(screen.getByText("No raw NetCDF parsing in the browser")).toBeInTheDocument();
-    expect(fetch).toHaveBeenCalledWith(expect.stringContaining("time_index=2"));
+    expect(fetch).toHaveBeenCalledWith(expect.stringContaining("time_index=3"));
     expect(fetch).toHaveBeenCalledWith(
-      "/api/results/result-dry-run-quicklook/visualization/defaults?time_index=2",
+      "/api/results/result-dry-run-quicklook/visualization/defaults?time_index=3",
     );
   });
 

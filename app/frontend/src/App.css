@@ -1014,6 +1014,51 @@ td small {
   background: var(--color-subtle-background);
 }
 
+.science-landmarks {
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  padding: 0.85rem;
+  background: var(--color-surface);
+}
+
+.section-heading-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.section-heading-row h4 {
+  margin: 0.1rem 0 0;
+}
+
+.science-landmark-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.75rem;
+  margin: 0.8rem 0 0;
+}
+
+.science-landmark-item {
+  min-width: 0;
+}
+
+.science-landmark-item dt {
+  color: var(--color-text-primary);
+  font-weight: 800;
+}
+
+.science-landmark-item dd {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin: 0.2rem 0 0;
+}
+
+.muted-inline {
+  color: var(--color-text-muted);
+}
+
 .saved-badge,
 .plain-badge,
 .status-badge {

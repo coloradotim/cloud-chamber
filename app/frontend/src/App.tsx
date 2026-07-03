@@ -5801,9 +5801,11 @@ function ResultNotebookCard({
         <Metric label="Max qc" value={formatScientific(resultMaxQc(result), "kg/kg")} />
         <Metric label="Max updraft" value={formatNumber(resultMaxUpdraft(result), "m/s")} />
         <Metric label="Min downdraft" value={formatNumber(resultMinDowndraft(result), "m/s")} />
-        <Metric label="Cloud top" value={formatNumber(result.science_summary?.highest_cloud_top_m ?? null, "m")} />
+        <Metric label="Cloud top" value={formatNumber(resultCloudTopMeters(result), "m")} />
         <Metric label="Latest output" value={formatSeconds(resultLatestOutputTime(result))} />
       </dl>
+
+      <InterestingTimesSummary result={result} />
 
       <details className="technical-details">
         <summary>Technical details</summary>
@@ -5907,6 +5909,37 @@ function ResultNotebookCard({
           </button>
         </div>
       </form>
+    </section>
+  );
+}
+
+function InterestingTimesSummary({ result }: { result: ResultCard }) {
+  const records = visibleInterestingTimes(result);
+  if (records.length === 0) return null;
+  return (
+    <section className="science-landmarks" aria-labelledby="science-landmarks-title">
+      <div className="section-heading-row">
+        <div>
+          <p className="eyebrow">Science landmarks</p>
+          <h4 id="science-landmarks-title">Interesting times</h4>
+        </div>
+        <StatusBadge label={scienceSupportLabel(result)} tone="neutral" />
+      </div>
+      <dl className="science-landmark-list">
+        {records.map((record) => (
+          <div key={record.key} className="science-landmark-item">
+            <dt>{record.label}</dt>
+            <dd>
+              <span>{interestingTimePrimaryValue(record, result)}</span>
+              {interestingTimeShowsTimeSuffix(record) &&
+              record.time_seconds !== null &&
+              record.time_seconds !== undefined ? (
+                <span className="muted-inline">at {formatSeconds(record.time_seconds)}</span>
+              ) : null}
+            </dd>
+          </div>
+        ))}
+      </dl>
     </section>
   );
 }
@@ -8864,6 +8897,67 @@ function resultLatestOutputTime(result: ResultCard): number | null {
   return result.science_summary?.latest_output_time_seconds ?? result.output_file_summary.last_output_time_seconds;
 }
 
+function resultCloudTopMeters(result: ResultCard): number | null {
+  const value = result.science_summary?.highest_cloud_top_m ?? null;
+  if (value === null || value === undefined) return null;
+  if (legacyCloudTopWasStoredInKilometers(result)) return value * 1000;
+  return value;
+}
+
+function legacyCloudTopWasStoredInKilometers(result: ResultCard): boolean {
+  const caveats = [
+    ...result.caveats,
+    ...(result.science_summary?.interesting_time_caveats ?? []),
+    ...(result.interesting_time_caveats ?? []),
+  ];
+  return caveats.some((caveat) => caveat === "cloud_base_top_vertical_units_not_meters:km");
+}
+
+function visibleInterestingTimes(result: ResultCard): InterestingTimeRecord[] {
+  const priority = [
+    "first_cloud",
+    "max_qc",
+    "highest_cloud_top",
+    "max_updraft_w",
+    "min_downdraft_w",
+    "rain_onset",
+    "max_qr",
+    "latest_output",
+    "field_default_time",
+  ];
+  const byKey = new Map((result.interesting_times ?? []).map((record) => [record.key, record]));
+  return priority
+    .map((key) => byKey.get(key))
+    .filter((record): record is InterestingTimeRecord => Boolean(record))
+    .filter((record) => record.support_state === "supported" || record.support_state === "fallback");
+}
+
+function interestingTimePrimaryValue(record: InterestingTimeRecord, result: ResultCard): string {
+  if (record.key === "highest_cloud_top") {
+    const cloudTop = resultCloudTopMeters(result);
+    return cloudTop === null ? "Unavailable" : formatNumber(cloudTop, "m");
+  }
+  if (record.key === "latest_output" || record.key === "field_default_time") {
+    return record.time_seconds !== null && record.time_seconds !== undefined
+      ? formatSeconds(record.time_seconds)
+      : "Unavailable";
+  }
+  if (typeof record.value === "number") {
+    if (record.units === "kg/kg") return formatScientific(record.value, record.units);
+    return formatNumber(record.value, record.units ?? "");
+  }
+  if (typeof record.value === "boolean") {
+    return record.value ? "Detected" : "Not detected";
+  }
+  return record.time_seconds !== null && record.time_seconds !== undefined
+    ? formatSeconds(record.time_seconds)
+    : "Unavailable";
+}
+
+function interestingTimeShowsTimeSuffix(record: InterestingTimeRecord): boolean {
+  return record.key !== "latest_output" && record.key !== "field_default_time";
+}
+
 function resultInputSource(result: ResultCard): "generated_reference" | "observed_sounding" {
   if (result.input_source === "observed_sounding") return "observed_sounding";
   return "generated_reference";
@@ -9116,8 +9210,17 @@ function defaultTimeIndex(
   result: ResultCard,
   defaults: FieldViewDefaults | undefined,
 ): number {
-  if (defaults) return defaults.time_index;
-  return interestingTimeIndex(field?.time_coordinate_values ?? [], result);
+  const timeOptions = field?.time_coordinate_values ?? [];
+  const fieldDefault =
+    field?.raw_field_name !== undefined
+      ? result.default_time_by_field?.[field.raw_field_name]?.time_index
+      : undefined;
+  const resultDefault = fieldDefault ?? result.science_summary?.default_explore_time_index;
+  if (resultDefault !== null && resultDefault !== undefined) {
+    return clampIndex(resultDefault, timeOptions.length || 1);
+  }
+  if (defaults) return clampIndex(defaults.time_index, timeOptions.length || 1);
+  return interestingTimeIndex(timeOptions, result);
 }
 
 function interestingTimeIndex(
@@ -9125,7 +9228,9 @@ function interestingTimeIndex(
   result: ResultCard,
 ): number {
   const target =
-    result.first_cloud_time_seconds ?? result.output_file_summary.last_output_time_seconds;
+    result.science_summary?.default_explore_time_seconds ??
+    result.first_cloud_time_seconds ??
+    result.output_file_summary.last_output_time_seconds;
   return closestTimeIndex(timeOptions, target);
 }
 

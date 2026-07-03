@@ -507,11 +507,14 @@ def _cloud_base_top(qc: Any, caveats: list[str]) -> tuple[float | None, float | 
         vertical_values = [float(index) for index in range(int(qc.sizes[vertical_name]))]
     else:
         vertical_coord = qc.coords[vertical_name]
-        vertical_values = [_to_float_or_none(value) for value in vertical_coord.values.tolist()]
+        vertical_values = [
+            _height_in_meters(_to_float_or_none(value), _attr_string(vertical_coord, "units"))
+            for value in vertical_coord.values.tolist()
+        ]
         units = _attr_string(vertical_coord, "units")
         if units is None:
             caveats.append("cloud_base_top_vertical_units_missing_assumed_meters")
-        elif units not in {"m", "meter", "meters"}:
+        elif _normalized_height_units(units) is None:
             caveats.append(f"cloud_base_top_vertical_units_not_meters:{units}")
     cloudy_by_vertical = (qc >= QC_CLOUD_THRESHOLD_KG_KG).any(
         dim=[dimension for dimension in qc.dims if dimension != vertical_name],
@@ -547,13 +550,36 @@ def _vertical_values(data_array: Any, vertical_name: str, caveats: list[str]) ->
         caveats.append("vertical_coordinate_inferred_from_index")
         return [float(index) for index in range(int(data_array.sizes[vertical_name]))]
     vertical_coord = data_array.coords[vertical_name]
-    vertical_values = [_to_float_or_none(value) for value in vertical_coord.values.tolist()]
+    vertical_values = [
+        _height_in_meters(_to_float_or_none(value), _attr_string(vertical_coord, "units"))
+        for value in vertical_coord.values.tolist()
+    ]
     units = _attr_string(vertical_coord, "units")
     if units is None:
         caveats.append("vertical_units_missing_assumed_meters")
-    elif units not in {"m", "meter", "meters"}:
+    elif _normalized_height_units(units) is None:
         caveats.append(f"vertical_units_not_meters:{units}")
     return vertical_values
+
+
+def _height_in_meters(value: float | None, units: str | None) -> float | None:
+    if value is None:
+        return None
+    normalized = _normalized_height_units(units)
+    if normalized == "km":
+        return value * 1000.0
+    return value
+
+
+def _normalized_height_units(units: str | None) -> str | None:
+    if units is None:
+        return "m"
+    normalized = units.strip().lower()
+    if normalized in {"m", "meter", "meters"}:
+        return "m"
+    if normalized in {"km", "kilometer", "kilometers"}:
+        return "km"
+    return None
 
 
 def _time_context(dataset: Any, time_dimension: str | None) -> _TimeContext:
