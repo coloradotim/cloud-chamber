@@ -220,7 +220,7 @@ def compute_sounding_diagnostics(record: ObservedSoundingRecord) -> SoundingDiag
             "Estimated LCL",
             _round(125.0 * surface_ttd, 1) if surface_ttd is not None else None,
             "m AGL",
-            "Bolton-style rule-of-thumb proxy: 125 m per C of T-Td spread",
+            "simple LCL proxy: 125 m per C of T-Td spread",
             assumptions=["Uses a rough LCL proxy; not a full parcel calculation."],
         )
     )
