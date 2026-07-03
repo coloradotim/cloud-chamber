@@ -104,6 +104,15 @@ to generate a package, its screening summary may be copied into
 provenance. The screening score remains a candidate-selection aid; CM1 output
 remains the source of truth.
 
+Future sounding story families are architecture planning input, not current
+backend behavior. The expanded taxonomy in
+[research/expanded-sounding-candidate-taxonomy.md](research/expanded-sounding-candidate-taxonomy.md)
+defines readiness states for severe/deep-convection, boundary-layer, low-cloud,
+and winter/cold-season stories so future APIs can distinguish screenable
+environments from runnable package families. Until those stories have backend
+features, scoring tests, evidence, caveats, and package-readiness support, they
+must not be emitted as enabled package-ready labels.
+
 The Build UI consumes this layer through bounded JSON only. `Upload a Sounding`
 loads saved candidates immediately when that experiment is selected, before any
 catalog refresh or screening action. It can also call the
