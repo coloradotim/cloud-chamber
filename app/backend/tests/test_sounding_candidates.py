@@ -155,83 +155,213 @@ def test_screen_cached_soundings_caveats_unreadable_files(tmp_path: Path) -> Non
 
 
 @pytest.mark.parametrize(
-    ("features", "expected_story"),
+    ("features", "package_ready", "expected_story"),
     [
         (
             {
                 "data_completeness_score": 95.0,
+                "low_level_qv_g_kg": 8.0,
+                "mean_qv_0_500m_g_kg": 8.0,
                 "mean_qv_0_1000m_g_kg": 8.0,
                 "surface_t_td_spread_c": 4.0,
                 "estimated_lcl_height_m_agl": 500.0,
                 "lapse_rate_0_1000m_c_per_km": 7.0,
+                "lapse_rate_0_3000m_c_per_km": 5.5,
                 "cap_strength_proxy": 0.5,
+                "cap_height_m_agl": 1100.0,
                 "moisture_depth_m": 1800.0,
                 "midlevel_dry_layer_proxy": 1.0,
+                "observed_wind_available": True,
+                "profile_top_m_agl": 18000.0,
+                "lowest_level_m_agl": 0.0,
             },
+            True,
             "shallow_cumulus_candidate",
         ),
         (
             {
                 "data_completeness_score": 95.0,
+                "low_level_qv_g_kg": 2.0,
+                "mean_qv_0_500m_g_kg": 2.0,
                 "mean_qv_0_1000m_g_kg": 2.0,
                 "surface_t_td_spread_c": 18.0,
                 "estimated_lcl_height_m_agl": 2300.0,
                 "lapse_rate_0_1000m_c_per_km": 7.5,
+                "lapse_rate_0_3000m_c_per_km": 6.0,
                 "cap_strength_proxy": 0.5,
+                "cap_height_m_agl": 1100.0,
                 "moisture_depth_m": 400.0,
                 "midlevel_dry_layer_proxy": 9.0,
+                "observed_wind_available": True,
+                "profile_top_m_agl": 18000.0,
+                "lowest_level_m_agl": 0.0,
             },
+            True,
             "dry_failed_candidate",
         ),
         (
             {
                 "data_completeness_score": 95.0,
+                "low_level_qv_g_kg": 8.0,
+                "mean_qv_0_500m_g_kg": 8.0,
                 "mean_qv_0_1000m_g_kg": 8.0,
                 "surface_t_td_spread_c": 4.0,
                 "estimated_lcl_height_m_agl": 500.0,
                 "lapse_rate_0_1000m_c_per_km": 7.0,
+                "lapse_rate_0_3000m_c_per_km": 3.0,
                 "cap_strength_proxy": 5.0,
+                "cap_height_m_agl": 1200.0,
                 "moisture_depth_m": 1300.0,
                 "midlevel_dry_layer_proxy": 2.0,
+                "observed_wind_available": True,
+                "profile_top_m_agl": 18000.0,
+                "lowest_level_m_agl": 0.0,
             },
+            True,
             "capped_suppressed_candidate",
         ),
         (
             {
                 "data_completeness_score": 95.0,
+                "low_level_qv_g_kg": 11.0,
+                "mean_qv_0_500m_g_kg": 11.0,
                 "mean_qv_0_1000m_g_kg": 11.0,
                 "surface_t_td_spread_c": 2.0,
                 "estimated_lcl_height_m_agl": 250.0,
                 "lapse_rate_0_1000m_c_per_km": 5.0,
+                "lapse_rate_0_3000m_c_per_km": 4.5,
                 "cap_strength_proxy": 0.0,
+                "cap_height_m_agl": None,
                 "moisture_depth_m": 3000.0,
                 "midlevel_dry_layer_proxy": 0.5,
+                "observed_wind_available": True,
+                "profile_top_m_agl": 18000.0,
+                "lowest_level_m_agl": 0.0,
             },
+            True,
             "humid_rainy_candidate",
         ),
         (
             {
                 "data_completeness_score": 15.0,
+                "low_level_qv_g_kg": 8.0,
+                "mean_qv_0_500m_g_kg": 8.0,
                 "mean_qv_0_1000m_g_kg": 8.0,
                 "surface_t_td_spread_c": 4.0,
                 "estimated_lcl_height_m_agl": 500.0,
                 "lapse_rate_0_1000m_c_per_km": 7.0,
+                "lapse_rate_0_3000m_c_per_km": 5.5,
                 "cap_strength_proxy": 0.5,
+                "cap_height_m_agl": 1100.0,
                 "moisture_depth_m": 1800.0,
                 "midlevel_dry_layer_proxy": 1.0,
+                "observed_wind_available": True,
+                "profile_top_m_agl": 18000.0,
+                "lowest_level_m_agl": 0.0,
             },
+            True,
+            "needs_review",
+        ),
+        (
+            {
+                "data_completeness_score": 15.0,
+                "mean_qv_0_1000m_g_kg": None,
+                "estimated_lcl_height_m_agl": None,
+                "lapse_rate_0_1000m_c_per_km": None,
+                "cap_strength_proxy": None,
+                "moisture_depth_m": None,
+                "midlevel_dry_layer_proxy": None,
+                "observed_wind_available": False,
+                "profile_top_m_agl": 800.0,
+                "lowest_level_m_agl": 700.0,
+            },
+            False,
             "poor_or_incomplete_candidate",
         ),
     ],
 )
 def test_story_scoring_selects_expected_hypothesis(
     features: dict[str, float | int | str | bool | None],
+    package_ready: bool,
     expected_story: str,
 ) -> None:
-    scores, evidence = _score_features(features, package_ready=True)
+    scores, evidence = _score_features(features, package_ready=package_ready)
 
     assert scores[0].story == expected_story
     assert evidence
+
+
+def test_story_scoring_missing_moisture_is_not_confident_dry() -> None:
+    scores, evidence = _score_features(
+        {
+            "data_completeness_score": 90.0,
+            "mean_qv_0_1000m_g_kg": None,
+            "estimated_lcl_height_m_agl": None,
+            "lapse_rate_0_1000m_c_per_km": 7.0,
+            "cap_strength_proxy": 0.5,
+            "moisture_depth_m": None,
+            "midlevel_dry_layer_proxy": None,
+        },
+        package_ready=True,
+    )
+
+    dry_score = next(score for score in scores if score.story == "dry_failed_candidate")
+    needs_review = next(score for score in scores if score.story == "needs_review")
+    assert dry_score.support == "unavailable"
+    assert dry_score.score_0_to_100 < needs_review.score_0_to_100
+    assert "missing_or_unavailable_feature:mean_qv_0_1000m_g_kg" in dry_score.caveats
+    assert any(item.label == "Mean qv 0-1 km" and item.caveats for item in evidence)
+
+
+def test_story_scores_and_evidence_are_traceable_to_soundings() -> None:
+    scores, evidence = _score_features(
+        {
+            "data_completeness_score": 95.0,
+            "low_level_qv_g_kg": 11.0,
+            "mean_qv_0_500m_g_kg": 11.0,
+            "mean_qv_0_1000m_g_kg": 11.0,
+            "surface_t_td_spread_c": 2.0,
+            "estimated_lcl_height_m_agl": 250.0,
+            "lapse_rate_0_1000m_c_per_km": 5.0,
+            "lapse_rate_0_3000m_c_per_km": 4.5,
+            "cap_strength_proxy": 0.0,
+            "cap_height_m_agl": None,
+            "moisture_depth_m": 3000.0,
+            "midlevel_dry_layer_proxy": 0.5,
+            "observed_wind_available": True,
+            "profile_top_m_agl": 18000.0,
+            "lowest_level_m_agl": 0.0,
+        },
+        package_ready=True,
+    )
+
+    assert {score.story for score in scores} == {
+        "shallow_cumulus_candidate",
+        "dry_failed_candidate",
+        "capped_suppressed_candidate",
+        "humid_rainy_candidate",
+        "needs_review",
+        "poor_or_incomplete_candidate",
+    }
+    assert all(score.reasons for score in scores)
+    assert {item.label for item in evidence} >= {
+        "Low-level qv",
+        "Mean qv 0-500 m",
+        "Mean qv 0-1 km",
+        "Surface T-Td spread",
+        "Estimated LCL",
+        "Low-level lapse rate",
+        "Lapse rate 0-3 km",
+        "Cap strength proxy",
+        "Cap height proxy",
+        "Moisture depth",
+        "Midlevel dry-layer proxy",
+        "Observed wind availability",
+        "Profile top",
+        "Lowest usable level",
+        "Profile completeness",
+        "Package readiness",
+    }
 
 
 def test_saved_candidates_round_trip_runtime_local(tmp_path: Path) -> None:

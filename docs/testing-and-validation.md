@@ -73,10 +73,14 @@ runtime cache directories only. They should verify that screening inputs come
 from cached station text, candidate match scores are deterministic for the
 stable story identifiers, story-specific screening can target one experiment
 question at a time, poor/incomplete inputs are caveated instead of silently
-treated as package-ready, saved candidates round-trip through runtime-local JSON,
-and candidate-screening metadata is copied into generated package manifests
-when provided. These tests validate pre-run hypothesis plumbing only; they must
-not claim a scored candidate will produce a specific CM1 outcome.
+treated as package-ready, missing moisture/LCL/cap inputs weaken or caveat
+support instead of becoming confident physical evidence, saved candidates
+round-trip through runtime-local JSON, and candidate-screening metadata is
+copied into generated package manifests when provided. These tests validate
+pre-run hypothesis plumbing only; they must not claim a scored candidate will
+produce a specific CM1 outcome. The expected feature inputs, story thresholds,
+evidence items, caveat behavior, and package-readiness boundary are documented
+in [contracts/sounding-candidate-screening.md](contracts/sounding-candidate-screening.md).
 
 Frontend tests for the `Upload a Sounding` Build workflow should cover the same
 boundary. Component tests and mocked Playwright smoke tests should verify that

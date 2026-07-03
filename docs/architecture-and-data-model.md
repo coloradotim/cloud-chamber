@@ -92,7 +92,9 @@ low-level lapse-rate, inversion/cap proxy, moisture depth, and profile
 coverage, and emits pre-run story-specific candidate matches. Stable story
 identifiers are `shallow_cumulus_candidate`, `dry_failed_candidate`,
 `capped_suppressed_candidate`, `humid_rainy_candidate`, `needs_review`, and
-`poor_or_incomplete_candidate`. Screening can target one story at a time because
+`poor_or_incomplete_candidate`; the auditable scoring contract lives in
+[contracts/sounding-candidate-screening.md](contracts/sounding-candidate-screening.md).
+Screening can target one story at a time because
 the useful sounding depends on the experiment question; a shallow-cumulus search
 and a humid/rainy search should not imply the same ranked list. Saved candidates
 are runtime-local cache state under `<runtime-home>/cache/sounding-candidates/`;

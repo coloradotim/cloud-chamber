@@ -395,6 +395,9 @@ def _features_from_record(
     inversion_strength, inversion_base, inversion_top = _inversion_proxy(levels)
     moisture_depth = _moisture_depth(levels, min_qv_g_kg=6.0)
     usable_below_3km = sum(1 for level in levels if 0.0 <= level.model_z_m <= 3000.0)
+    observed_wind_available = all(
+        level.u_wind_m_s is not None and level.v_wind_m_s is not None for level in levels
+    )
     completeness = min(
         100.0,
         25.0
@@ -442,19 +445,32 @@ def _features_from_record(
         "profile_top_m_agl": round(top, 1),
         "lowest_level_m_agl": round(lowest, 1),
         "usable_levels_below_3km": usable_below_3km,
+        "observed_wind_available": observed_wind_available,
     }
 
 
 def _score_features(
     features: dict[str, float | int | str | bool | None], *, package_ready: bool
 ) -> tuple[list[StoryScore], list[EvidenceItem]]:
-    qv = _feature(features, "mean_qv_0_1000m_g_kg")
-    lcl = _feature(features, "estimated_lcl_height_m_agl")
-    lapse = _feature(features, "lapse_rate_0_1000m_c_per_km")
-    cap = _feature(features, "cap_strength_proxy")
-    moisture_depth = _feature(features, "moisture_depth_m")
-    completeness = _feature(features, "data_completeness_score")
-    midlevel_dry = _feature(features, "midlevel_dry_layer_proxy")
+    qv = _numeric_feature(features, "mean_qv_0_1000m_g_kg")
+    lcl = _numeric_feature(features, "estimated_lcl_height_m_agl")
+    lapse = _numeric_feature(features, "lapse_rate_0_1000m_c_per_km")
+    cap = _numeric_feature(features, "cap_strength_proxy")
+    moisture_depth = _numeric_feature(features, "moisture_depth_m")
+    completeness = _numeric_feature(features, "data_completeness_score")
+    midlevel_dry = _numeric_feature(features, "midlevel_dry_layer_proxy")
+    story_feature_names = [
+        "mean_qv_0_1000m_g_kg",
+        "estimated_lcl_height_m_agl",
+        "lapse_rate_0_1000m_c_per_km",
+        "cap_strength_proxy",
+        "moisture_depth_m",
+        "midlevel_dry_layer_proxy",
+    ]
+    missing_story_features = [
+        name for name in story_feature_names if _numeric_feature(features, name) is None
+    ]
+    missing_caveats = [f"missing_or_unavailable_feature:{name}" for name in missing_story_features]
 
     moist = _score_high(qv, low=4.0, high=10.0)
     dry = _score_low(qv, low=3.0, high=8.0)
@@ -467,6 +483,11 @@ def _score_features(
     shallow_moisture = _score_low(moisture_depth, low=500.0, high=1800.0)
     data_quality = _score_high(completeness, low=40.0, high=90.0)
     dry_layer = _score_high(midlevel_dry, low=2.0, high=8.0)
+    feature_coverage = (
+        (len(story_feature_names) - len(missing_story_features)) / len(story_feature_names)
+        if story_feature_names
+        else 1.0
+    )
 
     shallow = _weighted_score(
         [(moist, 0.28), (low_lcl, 0.22), (deep_moisture, 0.18), (weak_cap, 0.14), (thermal, 0.18)]
@@ -484,63 +505,135 @@ def _score_features(
     humid_rainy = _weighted_score(
         [(moist, 0.32), (low_lcl, 0.22), (deep_moisture, 0.26), (weak_cap, 0.20)]
     )
-    poor = max(0.0, 100.0 - data_quality)
+    poor = 100.0 if not package_ready else min(34.0, max(0.0, 100.0 - data_quality))
     if not package_ready:
         poor = 100.0
+    needs_review = min(
+        100.0,
+        max(
+            15.0,
+            60.0 - data_quality / 2.0,
+            len(missing_story_features) * 18.0,
+            70.0 - data_quality if data_quality < 70.0 else 0.0,
+        ),
+    )
+    if not package_ready:
+        needs_review = min(needs_review, 80.0)
     scores = [
         _story_score(
             "shallow_cumulus_candidate",
-            shallow * data_quality / 100.0,
+            shallow * data_quality / 100.0 * feature_coverage,
             reasons=["moderate moisture, plausible LCL, thermal lapse-rate and cap proxies"],
+            caveats=missing_caveats,
         ),
         _story_score(
             "dry_failed_candidate",
-            dry_failed * data_quality / 100.0,
+            dry_failed * data_quality / 100.0 * feature_coverage,
             reasons=["dryness/high LCL proxies with possible thermal lapse-rate support"],
+            caveats=missing_caveats,
         ),
         _story_score(
             "capped_suppressed_candidate",
-            capped * data_quality / 100.0,
+            capped * data_quality / 100.0 * feature_coverage,
             reasons=["moisture/LCL support with an inversion or cap proxy"],
+            caveats=missing_caveats,
         ),
         _story_score(
             "humid_rainy_candidate",
-            humid_rainy * data_quality / 100.0,
+            humid_rainy * data_quality / 100.0 * feature_coverage,
             reasons=["high low-level moisture, low LCL, deep moisture, weak-cap proxies"],
-            caveats=["Humid/rainy is heavily caveated because forcing remains idealized."],
+            caveats=[
+                "Humid/rainy is heavily caveated because forcing remains idealized.",
+                *missing_caveats,
+            ],
         ),
         _story_score(
             "needs_review",
-            min(100.0, max(15.0, 60.0 - data_quality / 2.0)),
+            needs_review,
             reasons=["heuristic screening is uncertain; CM1 run is required"],
+            caveats=missing_caveats,
         ),
         _story_score(
             "poor_or_incomplete_candidate",
             poor,
             reasons=["profile completeness or package-readiness issues"],
+            caveats=(["package_generation_blocked"] if not package_ready else missing_caveats),
         ),
     ]
     evidence = [
+        EvidenceItem(
+            label="Low-level qv",
+            value=features.get("low_level_qv_g_kg"),
+            units="g/kg",
+            interpretation=(
+                "Near-surface moisture helps distinguish moist, dry, and humid candidates."
+            ),
+            supports_story=[
+                "shallow_cumulus_candidate",
+                "dry_failed_candidate",
+                "humid_rainy_candidate",
+            ],
+            caveats=_feature_caveats(features, "low_level_qv_g_kg"),
+        ),
+        EvidenceItem(
+            label="Mean qv 0-500 m",
+            value=features.get("mean_qv_0_500m_g_kg"),
+            units="g/kg",
+            interpretation="Moisture close to cloud base supports cloud-forming hypotheses.",
+            supports_story=["shallow_cumulus_candidate", "humid_rainy_candidate"],
+            caveats=_feature_caveats(features, "mean_qv_0_500m_g_kg"),
+        ),
         EvidenceItem(
             label="Mean qv 0-1 km",
             value=features.get("mean_qv_0_1000m_g_kg"),
             units="g/kg",
             interpretation="Higher low-level moisture supports cloud-forming and humid candidates.",
             supports_story=["shallow_cumulus_candidate", "humid_rainy_candidate"],
+            caveats=_feature_caveats(features, "mean_qv_0_1000m_g_kg"),
+        ),
+        EvidenceItem(
+            label="Surface T-Td spread",
+            value=features.get("surface_t_td_spread_c"),
+            units="C",
+            interpretation=(
+                "Larger temperature-dewpoint spread raises LCL and supports dry-failed hypotheses."
+            ),
+            supports_story=["dry_failed_candidate"],
+            caveats=_feature_caveats(features, "surface_t_td_spread_c"),
         ),
         EvidenceItem(
             label="Estimated LCL",
             value=features.get("estimated_lcl_height_m_agl"),
             units="m AGL",
             interpretation="Lower LCL makes shallow cloud formation more plausible.",
-            supports_story=["shallow_cumulus_candidate", "humid_rainy_candidate"],
+            supports_story=[
+                "shallow_cumulus_candidate",
+                "dry_failed_candidate",
+                "humid_rainy_candidate",
+            ],
+            caveats=_feature_caveats(features, "estimated_lcl_height_m_agl"),
         ),
         EvidenceItem(
             label="Low-level lapse rate",
             value=features.get("lapse_rate_0_1000m_c_per_km"),
             units="C/km",
             interpretation="Steeper low-level lapse rate suggests thermals may develop.",
-            supports_story=["shallow_cumulus_candidate", "dry_failed_candidate"],
+            supports_story=[
+                "shallow_cumulus_candidate",
+                "dry_failed_candidate",
+                "capped_suppressed_candidate",
+            ],
+            caveats=_feature_caveats(features, "lapse_rate_0_1000m_c_per_km"),
+        ),
+        EvidenceItem(
+            label="Lapse rate 0-3 km",
+            value=features.get("lapse_rate_0_3000m_c_per_km"),
+            units="C/km",
+            interpretation=(
+                "Lower-atmosphere stability gives context for thermal growth and cap effects."
+            ),
+            supports_story=["capped_suppressed_candidate", "needs_review"],
+            caveats=_feature_caveats(features, "lapse_rate_0_3000m_c_per_km"),
         ),
         EvidenceItem(
             label="Cap strength proxy",
@@ -548,6 +641,73 @@ def _score_features(
             units="C",
             interpretation="A stronger inversion proxy supports capped/suppressed hypotheses.",
             supports_story=["capped_suppressed_candidate"],
+            caveats=_feature_caveats(features, "cap_strength_proxy"),
+        ),
+        EvidenceItem(
+            label="Cap height proxy",
+            value=features.get("cap_height_m_agl"),
+            units="m AGL",
+            interpretation=(
+                "Cap height helps judge whether inhibition sits in a useful lower-atmosphere range."
+            ),
+            supports_story=["capped_suppressed_candidate"],
+            caveats=_feature_caveats(features, "cap_height_m_agl"),
+        ),
+        EvidenceItem(
+            label="Moisture depth",
+            value=features.get("moisture_depth_m"),
+            units="m",
+            interpretation=(
+                "Deeper moisture supports humid/cloud-forming hypotheses; shallow moisture "
+                "supports dry-failed hypotheses."
+            ),
+            supports_story=[
+                "shallow_cumulus_candidate",
+                "dry_failed_candidate",
+                "humid_rainy_candidate",
+            ],
+            caveats=_feature_caveats(features, "moisture_depth_m"),
+        ),
+        EvidenceItem(
+            label="Midlevel dry-layer proxy",
+            value=features.get("midlevel_dry_layer_proxy"),
+            units="g/kg",
+            interpretation=(
+                "A stronger near-surface to midlevel moisture drop supports dry-failed hypotheses."
+            ),
+            supports_story=["dry_failed_candidate"],
+            caveats=_feature_caveats(features, "midlevel_dry_layer_proxy"),
+        ),
+        EvidenceItem(
+            label="Observed wind availability",
+            value=features.get("observed_wind_available"),
+            interpretation=(
+                "Observed winds are required for the current external-sounding package path."
+            ),
+            supports_story=["poor_or_incomplete_candidate", "needs_review"],
+            caveats=[]
+            if features.get("observed_wind_available") is True
+            else ["observed_wind_unavailable"],
+        ),
+        EvidenceItem(
+            label="Profile top",
+            value=features.get("profile_top_m_agl"),
+            units="m AGL",
+            interpretation=(
+                "Sufficient profile depth is required before a sounding is package-ready."
+            ),
+            supports_story=["poor_or_incomplete_candidate", "needs_review"],
+            caveats=_feature_caveats(features, "profile_top_m_agl"),
+        ),
+        EvidenceItem(
+            label="Lowest usable level",
+            value=features.get("lowest_level_m_agl"),
+            units="m AGL",
+            interpretation=(
+                "Profiles that begin too far above the station surface are blocked or caveated."
+            ),
+            supports_story=["poor_or_incomplete_candidate", "needs_review"],
+            caveats=_feature_caveats(features, "lowest_level_m_agl"),
         ),
         EvidenceItem(
             label="Profile completeness",
@@ -555,6 +715,17 @@ def _score_features(
             units="0-100",
             interpretation="Lower completeness weakens screening confidence.",
             supports_story=["poor_or_incomplete_candidate", "needs_review"],
+            caveats=_feature_caveats(features, "data_completeness_score"),
+        ),
+        EvidenceItem(
+            label="Package readiness",
+            value="ready" if package_ready else "blocked",
+            interpretation=(
+                "Package-ready candidates can enter the current observed-sounding package path; "
+                "blocked candidates need parser, metadata, or profile fixes first."
+            ),
+            supports_story=["poor_or_incomplete_candidate", "needs_review"],
+            caveats=[] if package_ready else ["package_generation_blocked"],
         ),
     ]
     return sorted(scores, key=lambda score: score.score_0_to_100, reverse=True), evidence
@@ -674,6 +845,19 @@ def _feature(features: dict[str, float | int | str | bool | None], name: str) ->
     if isinstance(value, bool) or value is None or isinstance(value, str):
         return 0.0
     return float(value)
+
+
+def _numeric_feature(
+    features: dict[str, float | int | str | bool | None], name: str
+) -> float | None:
+    value = features.get(name)
+    if isinstance(value, bool) or value is None or isinstance(value, str):
+        return None
+    return float(value)
+
+
+def _feature_caveats(features: dict[str, float | int | str | bool | None], name: str) -> list[str]:
+    return [] if _numeric_feature(features, name) is not None else [f"{name}_unavailable"]
 
 
 def _score_high(value: float | None, *, low: float, high: float) -> float:
