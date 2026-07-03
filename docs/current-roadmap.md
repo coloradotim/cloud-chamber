@@ -226,8 +226,11 @@ contracts, output products, validation, or local bench maturity.
   products and inspection workflow are stable.
 - **#198 cloud + field overlay**: parked until scalar/signed overlay contracts
   are defined.
-- **#201 timelapse UI before time products**: parked until interesting-time and
-  time-index products exist.
+- **Renderer-style timelapse ambition**: parked until output products mature.
+  The near-term #201 scope is limited to saved-output play/pause and scrubbing
+  across explicit backend time indices without interpolation, with the main 3-D
+  scalar layer animating while synchronized slice/evidence payloads are deferred
+  until pause and no default looping.
 - **#43 remote/HPC compute**: deferred. The near-term compute extension is a
   trusted LAN worker used as a CM1 compute appliance while the MacBook remains
   the Cloud Chamber system of record.

@@ -74,6 +74,7 @@ type True3DViewerProps = {
   selectedRegion: SelectedRegionRequest | null;
   coordinateSizes: { x: number; y: number; z: number };
   selectedTimeLabel: string;
+  sceneTimeLabel: string;
   thresholdLabel: string;
   opacity: number;
   pointSize: number;
@@ -130,6 +131,7 @@ export function True3DViewer({
   selectedRegion,
   coordinateSizes,
   selectedTimeLabel,
+  sceneTimeLabel,
   thresholdLabel,
   opacity,
   pointSize,
@@ -299,7 +301,7 @@ export function True3DViewer({
         />
         <div className="true3d-scene-label true3d-scene-label-context">
           <strong>{fieldLabel}</strong>
-          <span>{selectedTimeLabel}</span>
+          <span>{sceneTimeLabel || selectedTimeLabel}</span>
           <span>Threshold {thresholdLabel}</span>
         </div>
         {pointCloud && (
