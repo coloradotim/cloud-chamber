@@ -104,6 +104,20 @@ to generate a package, its screening summary may be copied into
 provenance. The screening score remains a candidate-selection aid; CM1 output
 remains the source of truth.
 
+The sounding-diagnostics layer is a backend-only feature extractor for observed
+soundings. It produces bounded `SoundingDiagnostics` payloads with
+`diagnostic_version`, station/time provenance, `feature_values`,
+`unavailable_features`, data-quality summaries, assumptions, and caveats. Each
+feature records its key, label, value, units, support state, method,
+assumptions, and caveats so missing data weakens or blocks evidence instead of
+being treated as physically meaningful. V1 supports profile quality,
+cloud-base/moisture proxies, low-level and midlevel lapse-rate proxies,
+inversion/cap proxies, bulk-shear and mean-wind diagnostics when observed winds
+exist, dry-layer/microburst/freezing-level proxies, and explicit unavailable
+states for unimplemented parcel, storm-relative, wet-bulb, and winter-phase
+diagnostics. The browser should consume these diagnostics only through bounded
+backend JSON; it must not parse station text or compute CAPE/CIN/SRH locally.
+
 Future sounding story families are architecture planning input, not current
 backend behavior. The expanded taxonomy in
 [research/expanded-sounding-candidate-taxonomy.md](research/expanded-sounding-candidate-taxonomy.md)
