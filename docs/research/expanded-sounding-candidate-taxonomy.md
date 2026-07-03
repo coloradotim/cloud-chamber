@@ -207,12 +207,12 @@ or forcing/cold-pool architecture.
 
 | Story ID | Visible Label | Family | screenable_from_sounding_now | runnable_with_current_observed_sounding_package | specialized_package_recommended | future_package_required | candidate_can_be_saved | candidate_can_generate_current_package | Implementation Priority |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| `severe_thunderstorm_environment` | Severe thunderstorm environment | Deep-convection environments | later | caveated | yes | yes | yes | caveated | high future |
+| `severe_thunderstorm_environment` | Severe thunderstorm environment | Deep-convection environments | later | caveated | yes | no | yes | caveated | high future |
 | `supercell_environment` | Supercell environment | Deep-convection environments | later | no | yes | yes | yes | no | high future |
-| `high_cape_pulse_storm` | High-CAPE pulse storm | Deep-convection environments | later | caveated | yes | yes | yes | caveated | medium future |
+| `high_cape_pulse_storm` | High-CAPE pulse storm | Deep-convection environments | later | caveated | yes | no | yes | caveated | medium future |
 | `squall_line_cold_pool_candidate` | Squall line / cold-pool candidate | Deep-convection environments | later | no | yes | yes | yes | no | medium future |
 | `elevated_convection` | Elevated convection | Deep-convection environments | later | no | yes | yes | yes | no | medium future |
-| `dry_microburst_inverted_v` | Dry microburst / inverted-V | Deep-convection environments | later | caveated | yes | yes | yes | caveated | medium future |
+| `dry_microburst_inverted_v` | Dry microburst / inverted-V | Deep-convection environments | later | caveated | yes | no | yes | caveated | medium future |
 
 ### Severe Thunderstorm Environment
 
@@ -239,7 +239,8 @@ mode, tornado potential, hail, or precipitation outcome.
 
 Package readiness: current observed-sounding package can only provide a
 caveated exploratory run from the profile. A specialized deep-convection
-package is required before this becomes a package-ready story.
+package is recommended before this becomes a validated severe-environment
+story.
 
 Result/outcome comparison target: deep updraft, cloud depth, precipitation,
 gust-front or cold-pool evidence if a future package supports it, and whether
@@ -299,8 +300,8 @@ candidate may run but should not be represented as a validated deep-convection
 experiment.
 
 Package readiness: caveated current-package generation may be useful for
-profile exploration, but a future deep-convection package is required for the
-story.
+profile exploration, but a future deep-convection package is recommended
+before this becomes a validated high-CAPE pulse-storm story.
 
 Result/outcome comparison target: future deep cloud depth, updraft strength,
 precipitation, and whether convection remains pulse-like.
@@ -387,7 +388,8 @@ Candidate caveats: microbursts require precipitation and evaporative cooling;
 the current package does not validate that pathway.
 
 Package readiness: current observed-sounding generation is caveated for profile
-exploration; future precipitation/downdraft package recommended.
+exploration only; a future precipitation/downdraft package is recommended
+before this becomes a validated dry-microburst story.
 
 Result/outcome comparison target: future precipitation aloft, downdraft
 strength, evaporative cooling, near-surface outflow, and caveats.
