@@ -19,9 +19,11 @@ def base_dataset(
     w_values: list[list[list[list[float]]]] | None = None,
     qr_values: list[list[list[list[float]]]] | None = None,
     include_time_coord: bool = True,
+    z_values: list[float] | None = None,
+    z_units: str | None = None,
 ) -> xr.Dataset:
     coords: dict[str, list[float]] = {
-        "z": [500.0, 1500.0],
+        "z": z_values or [500.0, 1500.0],
         "y": [0.0, 200.0, 400.0],
         "x": [0.0, 200.0, 400.0, 600.0],
     }
@@ -49,11 +51,15 @@ def base_dataset(
             {"units": "kg/kg"},
         )
     if include_time_coord:
-        return xr.Dataset(data_vars=data_vars, coords=coords)
-    return xr.Dataset(
-        data_vars=data_vars,
-        coords={key: value for key, value in coords.items() if key != "time"},
-    )
+        dataset = xr.Dataset(data_vars=data_vars, coords=coords)
+    else:
+        dataset = xr.Dataset(
+            data_vars=data_vars,
+            coords={key: value for key, value in coords.items() if key != "time"},
+        )
+    if z_units is not None:
+        dataset["z"].attrs["units"] = z_units
+    return dataset
 
 
 def zeros() -> list[list[list[list[float]]]]:
@@ -119,6 +125,32 @@ def test_cloud_formed_requires_ten_grid_cells_and_reports_base_top(tmp_path: Pat
         1500.0,
     ]
     assert diagnostics.cloud.cloud_present_time_steps == [300.0]
+
+
+def test_cloud_base_top_converts_km_vertical_coordinate_to_meters(tmp_path: Path) -> None:
+    dataset = write_dataset(
+        tmp_path / "cloud_km.nc",
+        base_dataset(
+            qc_values=with_cloud(12),
+            w_values=w_field(),
+            z_values=[0.5, 1.5],
+            z_units="km",
+        ),
+    )
+    caveats: list[str] = []
+
+    diagnostics = compute_baseline_diagnostics(dataset, caveats)
+
+    assert diagnostics.cloud.cloud_base_m == 500.0
+    assert diagnostics.cloud.cloud_top_m == 1500.0
+    assert [point.value for point in diagnostics.cloud.cloud_base_time_series] == [None, 500.0]
+    assert [point.value for point in diagnostics.cloud.cloud_top_time_series] == [None, 1500.0]
+    assert [point.value for point in diagnostics.cloud.max_qc_height_time_series] == [
+        500.0,
+        1500.0,
+    ]
+    assert "cloud_base_top_vertical_units_not_meters:km" not in caveats
+    assert "vertical_units_not_meters:km" not in caveats
 
 
 def test_fewer_than_ten_cloudy_grid_cells_does_not_count_as_cloud_formed(tmp_path: Path) -> None:
