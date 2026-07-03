@@ -160,6 +160,58 @@ def test_exit_zero_with_netcdf_output_marks_completed_result(tmp_path: Path) -> 
     assert manifest.outputs.raw_cm1_artifacts == []
 
 
+def test_status_reconciles_stale_running_manifest_with_completed_output(tmp_path: Path) -> None:
+    manifest_path = dry_run_manifest_path(tmp_path)
+    run_dir = tmp_path / "CloudChamber" / "runs" / "run-001"
+    settings = fake_settings(tmp_path)
+    manager = LocalRunManager(
+        settings=settings,
+        process_factory=FakeProcessFactory(FakeProcess()),
+    )
+    status = manager.launch(manifest_path)
+    with status.stdout_log.open("a") as stdout:
+        stdout.write("Program terminated normally\n")
+    (run_dir / "cm1out_000001.nc").write_text("fake output")
+
+    restarted_manager = LocalRunManager(
+        settings=settings,
+        process_factory=FakeProcessFactory(FakeProcess()),
+    )
+    reconciled = restarted_manager.status(manifest_path)
+
+    assert reconciled.lifecycle_state == LifecycleState.COMPLETED
+    assert reconciled.exit_code == 0
+    manifest = load_run_manifest(manifest_path)
+    assert manifest.lifecycle_state == LifecycleState.COMPLETED
+    assert manifest.provenance.product_state == ProductState.COMPLETED_CM1_RESULT
+    assert manifest.outputs.netcdf_paths == [str(run_dir / "cm1out_000001.nc")]
+
+
+def test_status_does_not_reconcile_stale_running_manifest_without_normal_stdout(
+    tmp_path: Path,
+) -> None:
+    manifest_path = dry_run_manifest_path(tmp_path)
+    run_dir = tmp_path / "CloudChamber" / "runs" / "run-001"
+    settings = fake_settings(tmp_path)
+    manager = LocalRunManager(
+        settings=settings,
+        process_factory=FakeProcessFactory(FakeProcess()),
+    )
+    manager.launch(manifest_path)
+    (run_dir / "cm1out_000001.nc").write_text("fake output")
+
+    restarted_manager = LocalRunManager(
+        settings=settings,
+        process_factory=FakeProcessFactory(FakeProcess()),
+    )
+    status = restarted_manager.status(manifest_path)
+
+    assert status.lifecycle_state == LifecycleState.RUNNING
+    manifest = load_run_manifest(manifest_path)
+    assert manifest.lifecycle_state == LifecycleState.RUNNING
+    assert manifest.provenance.product_state == ProductState.QUEUED_RUNNING_CM1_PROCESS
+
+
 def test_exit_zero_with_dat_ctl_outputs_marks_completed_result(tmp_path: Path) -> None:
     manifest_path = dry_run_manifest_path(tmp_path)
     run_dir = tmp_path / "CloudChamber" / "runs" / "run-001"

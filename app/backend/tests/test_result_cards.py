@@ -182,6 +182,9 @@ def test_result_card_exposes_observed_sounding_source(tmp_path: Path) -> None:
 
     card = get_result_card(settings, result_id)
 
+    assert card.name == "Uploaded Sounding — Valley, Nebraska"
+    assert card.scenario_id == "baseline-shallow-cumulus"
+    assert card.scenario_name == "Uploaded Sounding"
     assert card.input_source == "observed_sounding"
     assert card.input_source_label == "Observed sounding: USM00072558 · Valley, Nebraska"
     assert card.observed_sounding is not None

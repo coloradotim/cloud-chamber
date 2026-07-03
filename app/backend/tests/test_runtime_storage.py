@@ -5,6 +5,7 @@ import pytest
 
 from cloud_chamber.dry_run_package import generate_dry_run_package
 from cloud_chamber.run_manifest import (
+    ExecutionMetadata,
     LifecycleState,
     OutputMetadata,
     ProductState,
@@ -120,6 +121,50 @@ def test_inventory_classifies_valid_manifest_with_output_artifacts(tmp_path: Pat
     assert entry.run_size_preset == "quick_look"
     assert entry.output_artifact_count == 2
     assert entry.output_summary["raw_cm1_artifacts"] == 2
+
+
+def test_inventory_reconciles_stale_running_manifest_with_completed_output(
+    tmp_path: Path,
+) -> None:
+    settings = fake_settings(tmp_path)
+    manifest_path = create_run(tmp_path, "run-stale-completed")
+    run_dir = manifest_path.parent
+    log_dir = run_dir / "logs"
+    log_dir.mkdir()
+    stdout_log = log_dir / "stdout.log"
+    stderr_log = log_dir / "stderr.log"
+    stdout_log.write_text("Program terminated normally\n")
+    stderr_log.write_text("IEEE_UNDERFLOW_FLAG\n")
+    netcdf_path = run_dir / "cm1out_000001.nc"
+    netcdf_path.write_text("fake output")
+    manifest = load_run_manifest(manifest_path)
+    write_run_manifest(
+        manifest_path,
+        manifest.model_copy(
+            update={
+                "lifecycle_state": LifecycleState.RUNNING,
+                "provenance": ProvenanceMetadata(
+                    product_state=ProductState.QUEUED_RUNNING_CM1_PROCESS
+                ),
+                "execution": ExecutionMetadata(
+                    command=["cm1.exe"],
+                    stdout_log=str(stdout_log),
+                    stderr_log=str(stderr_log),
+                ),
+            }
+        ),
+    )
+
+    inventory = runtime_storage_inventory(settings)
+    entry = next(item for item in inventory.runs if item.run_id == "run-stale-completed")
+
+    assert entry.category == "completed_with_output"
+    assert entry.lifecycle_state == "completed"
+    assert entry.product_state == "completed_cm1_result"
+    assert entry.output_artifact_count == 1
+    manifest = load_run_manifest(manifest_path)
+    assert manifest.outputs.netcdf_paths == [str(netcdf_path)]
+    assert manifest.execution.exit_code == 0
 
 
 def test_inventory_classifies_missing_and_malformed_manifests(tmp_path: Path) -> None:

@@ -79,6 +79,7 @@ FLOATING_POINT_WARNING_FLAGS = (
     "IEEE_OVERFLOW_FLAG",
     "IEEE_UNDERFLOW_FLAG",
 )
+NORMAL_TERMINATION_MARKER = "Program terminated normally"
 
 
 def default_process_factory(
@@ -184,7 +185,10 @@ class LocalRunManager:
 
     def status(self, manifest_path: Path) -> RunStatus:
         self._refresh_active()
-        return _status_from_manifest(load_run_manifest(manifest_path), manifest_path)
+        manifest = load_run_manifest(manifest_path)
+        if self._active is None or self._active.manifest_path != manifest_path:
+            manifest = reconcile_completed_run_manifest(manifest_path, manifest)
+        return _status_from_manifest(manifest, manifest_path)
 
     def cancel(self) -> RunStatus:
         if self._active is None:
@@ -319,6 +323,63 @@ def _status_from_manifest(manifest: RunManifest, manifest_path: Path) -> RunStat
         stderr_log=stderr_log,
         exit_code=manifest.execution.exit_code,
     )
+
+
+def reconcile_completed_run_manifest(
+    manifest_path: Path,
+    manifest: RunManifest | None = None,
+) -> RunManifest:
+    """Promote stale running manifests when completed CM1 output is evident.
+
+    This covers app/backend restarts where the process watcher is gone but CM1
+    finished normally and wrote output. It deliberately requires both stdout
+    termination evidence and output artifacts before changing run state.
+    """
+    manifest = manifest or load_run_manifest(manifest_path)
+    if manifest.lifecycle_state not in {LifecycleState.QUEUED, LifecycleState.RUNNING}:
+        return manifest
+    stdout_log = _log_path(manifest.execution.stdout_log)
+    if not _stdout_indicates_normal_completion(stdout_log):
+        return manifest
+    run_dir = Path(manifest.generated_inputs.run_directory).expanduser()
+    output_metadata = _detect_output_metadata(run_dir, manifest.execution.stderr_log)
+    if not (output_metadata.netcdf_paths or output_metadata.raw_cm1_artifacts):
+        return manifest
+
+    now = datetime.now(UTC)
+    execution = manifest.execution.model_copy(
+        update={
+            "finished_at": manifest.execution.finished_at or now,
+            "exit_code": 0
+            if manifest.execution.exit_code is None
+            else manifest.execution.exit_code,
+        }
+    )
+    updated = manifest.model_copy(
+        update={
+            "lifecycle_state": LifecycleState.COMPLETED,
+            "validation_status": manifest.validation_status,
+            "execution": ExecutionMetadata.model_validate(execution.model_dump()),
+            "outputs": output_metadata,
+            "provenance": ProvenanceMetadata(product_state=ProductState.COMPLETED_CM1_RESULT),
+            "updated_at": now,
+        }
+    )
+    write_run_manifest(manifest_path, updated)
+    return updated
+
+
+def _log_path(configured_path: str | None) -> Path | None:
+    if not configured_path:
+        return None
+    return Path(configured_path).expanduser()
+
+
+def _stdout_indicates_normal_completion(stdout_log: Path | None) -> bool:
+    if stdout_log is None or not stdout_log.exists():
+        return False
+    text = stdout_log.read_text(errors="replace")
+    return NORMAL_TERMINATION_MARKER in text
 
 
 def _existing_output_paths(run_dir: Path) -> tuple[Path, ...]:
