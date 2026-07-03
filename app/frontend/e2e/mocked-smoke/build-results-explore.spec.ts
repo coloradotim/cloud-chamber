@@ -182,19 +182,24 @@ test.describe("mocked smoke: Build, Results, Explore path", () => {
     await expect(resultsList.getByText(/first cloud 1,800 s/i).first()).toBeVisible();
 
     await filterBar.getByLabel("Search").fill("Valley");
-    await expect(resultsList.getByText("Valley Observed Sounding — Quick Look")).toBeVisible();
+    await expect(resultsList.getByText("Uploaded Sounding — Valley, Nebraska")).toBeVisible();
     await expect(resultsList.getByText("Observed sounding: USM00072558 · Valley, Nebraska")).toBeVisible();
     await expect(resultsList.getByText("Baseline Shallow Cumulus — Quick Look")).toHaveCount(0);
 
     await filterBar.getByLabel("Search").fill("");
+    await filterBar.getByLabel("Scenario").selectOption("input_source:observed_sounding");
+    await expect(resultsList.getByText("Uploaded Sounding — Valley, Nebraska")).toBeVisible();
+    await expect(resultsList.getByText("Baseline Shallow Cumulus — Quick Look")).toHaveCount(0);
+
+    await filterBar.getByLabel("Scenario").selectOption("all");
     await filterBar.getByLabel("Cloud outcome").selectOption("no");
     await expect(resultsList.getByText("Dry Failed Cumulus — Quick Look")).toBeVisible();
-    await expect(resultsList.getByText("Valley Observed Sounding — Quick Look")).toHaveCount(0);
+    await expect(resultsList.getByText("Uploaded Sounding — Valley, Nebraska")).toHaveCount(0);
 
     await filterBar.getByLabel("Cloud outcome").selectOption("all");
     await filterBar.getByLabel("Sort results").selectOption("max_updraft");
     await expect(resultsList.locator(".experiment-card").first()).toContainText(
-      "Valley Observed Sounding — Quick Look",
+      "Uploaded Sounding — Valley, Nebraska",
     );
   });
 

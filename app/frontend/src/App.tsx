@@ -1481,6 +1481,25 @@ export function App() {
   }, [selectedScenario]);
 
   useEffect(() => {
+    if (!observedSoundingExperimentSelected) return;
+    let active = true;
+    fetchSavedSoundingCandidates()
+      .then((payload) => {
+        if (!active) return;
+        setSavedCandidates(payload.saved_candidates);
+      })
+      .catch((caught: unknown) => {
+        if (!active) return;
+        setCandidateError(
+          caught instanceof Error ? caught.message : "Unable to load saved sounding candidates.",
+        );
+      });
+    return () => {
+      active = false;
+    };
+  }, [observedSoundingExperimentSelected]);
+
+  useEffect(() => {
     if (!selectedResult) return;
     setResultDraft({
       name: selectedResult.name,
@@ -8624,7 +8643,9 @@ function filterAndSortResults(results: ResultCard[], filters: ResultsFilterState
   const query = filters.search.trim().toLowerCase();
   return [...results]
     .filter((result) => resultMatchesSearch(result, query))
-    .filter((result) => filters.scenario === "all" || result.scenario_id === filters.scenario)
+    .filter(
+      (result) => filters.scenario === "all" || resultScenarioFilterValue(result) === filters.scenario,
+    )
     .filter((result) => filters.preset === "all" || result.run_size_preset === filters.preset)
     .filter((result) => matchesBooleanFilter(cloudOutcome(result), filters.cloud, "Cloud formed", "No cloud formed"))
     .filter((result) => matchesBooleanFilter(rainOutcome(result.rain_present), filters.rain, "Rain detected", "No rain detected"))
@@ -8638,11 +8659,16 @@ function resultsFiltersActive(filters: ResultsFilterState): boolean {
 function resultScenarioOptions(results: ResultCard[]): Array<{ value: string; label: string }> {
   const seen = new Map<string, string>();
   for (const result of results) {
-    seen.set(result.scenario_id, result.scenario_name ?? humanize(result.scenario_id));
+    seen.set(resultScenarioFilterValue(result), result.scenario_name ?? humanize(result.scenario_id));
   }
   return [...seen.entries()]
     .map(([value, label]) => ({ value, label }))
     .sort((left, right) => left.label.localeCompare(right.label));
+}
+
+function resultScenarioFilterValue(result: ResultCard): string {
+  if (result.input_source === "observed_sounding") return "input_source:observed_sounding";
+  return `scenario:${result.scenario_id}`;
 }
 
 function resultPresetOptions(results: ResultCard[]): Array<{ value: string; label: string }> {
@@ -8726,6 +8752,7 @@ function resultPriority(result: ResultCard): number {
 
 function isValidatedQuickLookBaseline(result: ResultCard): boolean {
   return (
+    resultInputSource(result) === "generated_reference" &&
     result.scenario_id === "baseline-shallow-cumulus" &&
     result.run_size_preset === "quick_look" &&
     result.source_lifecycle_state === "completed" &&

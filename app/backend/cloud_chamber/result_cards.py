@@ -188,7 +188,8 @@ def _card_from_metadata(
     cloud = diagnostics.cloud if diagnostics else None
     vertical_velocity = diagnostics.vertical_velocity if diagnostics else None
     rain = diagnostics.rain if diagnostics else None
-    name = state.name or metadata.scenario_name or metadata.scenario_id
+    name = state.name or _default_result_card_name(metadata)
+    scenario_name = _display_scenario_name(metadata)
     caveats = list(metadata.warnings)
     if diagnostics:
         caveats.extend(diagnostics.caveats)
@@ -201,7 +202,7 @@ def _card_from_metadata(
         saved=state.saved,
         protected=state.protected or state.saved,
         scenario_id=metadata.scenario_id,
-        scenario_name=metadata.scenario_name,
+        scenario_name=scenario_name,
         run_size_preset=metadata.run_size_preset,
         physical_question=metadata.physical_question,
         controls=metadata.controls,
@@ -245,6 +246,31 @@ def _card_from_metadata(
         ingested_at=metadata.created_at,
         updated_at=state.updated_at or metadata.updated_at,
     )
+
+
+def _default_result_card_name(metadata: ResultMetadata) -> str:
+    if metadata.input_source == "observed_sounding":
+        station_name = _observed_sounding_value(metadata.observed_sounding, "station_name")
+        station_id = _observed_sounding_value(metadata.observed_sounding, "station_id")
+        if station_name:
+            return f"Uploaded Sounding — {station_name}"
+        if station_id:
+            return f"Uploaded Sounding — {station_id}"
+        return "Uploaded Sounding"
+    return metadata.scenario_name or metadata.scenario_id
+
+
+def _display_scenario_name(metadata: ResultMetadata) -> str | None:
+    if metadata.input_source == "observed_sounding":
+        return "Uploaded Sounding"
+    return metadata.scenario_name
+
+
+def _observed_sounding_value(observed_sounding: dict[str, object] | None, key: str) -> str | None:
+    if not observed_sounding:
+        return None
+    value = observed_sounding.get(key)
+    return value if isinstance(value, str) and value else None
 
 
 def _output_file_summary(metadata: ResultMetadata) -> OutputFileSummary:

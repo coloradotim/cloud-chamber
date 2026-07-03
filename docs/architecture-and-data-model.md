@@ -103,13 +103,15 @@ provenance. The screening score remains a candidate-selection aid; CM1 output
 remains the source of truth.
 
 The Build UI consumes this layer through bounded JSON only. `Upload a Sounding`
-can call the recent-catalog/cache and candidate-screening endpoints, display the
-candidate list and saved candidates, and pass a selected candidate's
-`selected_sounding_payload` into the existing observed-sounding package review.
-The frontend does not read cached station text directly and does not compute the
-story scores. Candidate status is separate from run/result status: saved
-candidates are pre-run hypotheses, while generated packages, launched runs, and
-ingested results remain separate lifecycle objects.
+loads saved candidates immediately when that experiment is selected, before any
+catalog refresh or screening action. It can also call the
+recent-catalog/cache and candidate-screening endpoints, display the candidate
+list, and pass a selected candidate's `selected_sounding_payload` into the
+existing observed-sounding package review. The frontend does not read cached
+station text directly and does not compute the story scores. Candidate status is
+separate from run/result status: saved candidates are pre-run hypotheses, while
+generated packages, launched runs, and ingested results remain separate
+lifecycle objects.
 
 ## Suggested Stack
 
@@ -329,6 +331,12 @@ eligible states and offers only safe state-appropriate transitions:
 - open associated results in Results or Explore;
 - route cleanup decisions to Results / Storage.
 
+Runtime status refresh may reconcile a stale local manifest only when stdout
+contains normal CM1 termination evidence and output artifacts exist under the
+run directory. This repairs backend-restart cases where a completed local run
+was still labeled running, while avoiding silent completion claims for unknown
+or still-active runs.
+
 Storage remains the owner of deletion policy and cleanup actions. Build may link
 to Storage for cleanup, but it should not duplicate the delete workflow.
 
@@ -465,6 +473,13 @@ It does not rerun CM1 and does not parse raw output directly. It summarizes:
 - compact `science_summary`, `interesting_times`, and `default_time_by_field` values for Results filtering, sorting, and sensible Explore defaults;
 - provenance labels that distinguish completed CM1 result, ingested metadata, and notebook entry;
 - editable notebook fields: name, tags, and notes.
+
+When a result came from an uploaded observed sounding, Result Cards use
+`Uploaded Sounding` as the product-facing experiment identity and default
+notebook name while preserving the underlying generated scenario ID as technical
+lineage. Results filters treat uploaded-sounding results as their own
+scenario-like product category so they do not collapse into the baseline
+scenario bucket.
 
 Editable notebook state is stored as `result_card.json` beside `result_metadata.json`.
 Legacy `saved` and `protected` fields may remain in older `result_card.json`

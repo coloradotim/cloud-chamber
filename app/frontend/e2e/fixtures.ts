@@ -379,13 +379,13 @@ export const results = [
   {
     result_id: "result-observed-sounding",
     run_id: "dry-run-observed-sounding",
-    name: "Valley Observed Sounding — Quick Look",
+    name: "Uploaded Sounding — Valley, Nebraska",
     tags: ["observed-sounding", "quick-look"],
     notes: "Mocked observed IGRA sounding result for browser smoke tests.",
     saved: false,
     protected: false,
-    scenario_id: "observed-sounding",
-    scenario_name: "Observed Sounding",
+    scenario_id: "baseline-shallow-cumulus",
+    scenario_name: "Uploaded Sounding",
     run_size_preset: "quick_look",
     physical_question:
       "What cloud behavior emerges from the uploaded observed sounding profile?",
@@ -579,7 +579,7 @@ function resultMeta(resultId: string) {
     return {
       result_id: resultId,
       run_id: "dry-run-observed-sounding",
-      scenario_id: "observed-sounding",
+      scenario_id: "baseline-shallow-cumulus",
     };
   }
   if (resultId === "result-dry-failed") {

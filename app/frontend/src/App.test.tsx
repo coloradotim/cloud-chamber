@@ -740,10 +740,10 @@ const observedSoundingResultCard = {
   ...resultCard,
   result_id: "result-observed-sounding",
   run_id: "dry-run-observed-sounding",
-  name: "Valley observed sounding quick-look",
+  name: "Uploaded Sounding — Valley, Nebraska",
   tags: ["observed-sounding", "valley"],
-  scenario_id: "observed-sounding",
-  scenario_name: "Observed Sounding",
+  scenario_id: "baseline-shallow-cumulus",
+  scenario_name: "Uploaded Sounding",
   input_source: "observed_sounding",
   input_source_label: "Observed sounding: USM00072558 · Valley, Nebraska",
   science_summary: {
@@ -2303,6 +2303,35 @@ describe("App", () => {
     });
   });
 
+  it("loads saved sounding candidates as soon as Upload a Sounding is selected", async () => {
+    const defaultFetch = vi.mocked(fetch).getMockImplementation();
+    vi.mocked(fetch).mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url === "/api/sounding-candidates/saved" && !init?.method) {
+        return Promise.resolve(
+          new Response(JSON.stringify(savedCandidatesResponse), { status: 200 }),
+        );
+      }
+      return (
+        defaultFetch?.(input, init) ?? Promise.resolve(new Response("not found", { status: 404 }))
+      );
+    });
+
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Build" }));
+    fireEvent.change(await screen.findByLabelText("Experiment"), {
+      target: { value: "__observed_sounding_upload__" },
+    });
+
+    expect(
+      await screen.findByLabelText("Saved sounding candidate Valley, Nebraska (USM00072558)"),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("No saved candidates yet.")).not.toBeInTheDocument();
+    expect(fetch).not.toHaveBeenCalledWith("/api/igra/recent/refresh-catalog", expect.anything());
+    expect(fetch).not.toHaveBeenCalledWith("/api/sounding-candidates/screen", expect.anything());
+  });
+
   it("keeps secondary story matches visible and sorts missing LCL last", async () => {
     render(<App />);
 
@@ -2884,8 +2913,9 @@ describe("App", () => {
       screen.getAllByText("Observed sounding: USM00072558 · Valley, Nebraska").length,
     ).toBeGreaterThan(0);
 
-    fireEvent.click(screen.getByRole("button", { name: "Valley observed sounding quick-look" }));
+    fireEvent.click(screen.getByRole("button", { name: "Uploaded Sounding — Valley, Nebraska" }));
     const resultDetail = screen.getByLabelText("Result detail");
+    expect(resultDetail).toHaveTextContent("Uploaded Sounding");
     expect(resultDetail).toHaveTextContent("Observed sounding: USM00072558 · Valley, Nebraska");
     expect(resultDetail).toHaveTextContent("Input source");
   });
@@ -2898,14 +2928,23 @@ describe("App", () => {
     const resultsList = screen.getByLabelText("Results list");
 
     fireEvent.change(within(filterBar).getByLabelText("Search"), { target: { value: "Valley" } });
-    expect(within(resultsList).getByText("Valley observed sounding quick-look")).toBeInTheDocument();
+    expect(within(resultsList).getByText("Uploaded Sounding — Valley, Nebraska")).toBeInTheDocument();
     expect(within(resultsList).queryByText("Quick-look shallow cumulus")).not.toBeInTheDocument();
 
     fireEvent.change(within(filterBar).getByLabelText("Search"), { target: { value: "dry failed" } });
     expect(within(resultsList).getByText("Dry Failed Cumulus quick-look")).toBeInTheDocument();
-    expect(within(resultsList).queryByText("Valley observed sounding quick-look")).not.toBeInTheDocument();
+    expect(
+      within(resultsList).queryByText("Uploaded Sounding — Valley, Nebraska"),
+    ).not.toBeInTheDocument();
 
     fireEvent.change(within(filterBar).getByLabelText("Search"), { target: { value: "" } });
+    fireEvent.change(within(filterBar).getByLabelText("Scenario"), {
+      target: { value: "input_source:observed_sounding" },
+    });
+    expect(within(resultsList).getByText("Uploaded Sounding — Valley, Nebraska")).toBeInTheDocument();
+    expect(within(resultsList).queryByText("Quick-look shallow cumulus")).not.toBeInTheDocument();
+
+    fireEvent.change(within(filterBar).getByLabelText("Scenario"), { target: { value: "all" } });
     fireEvent.change(within(filterBar).getByLabelText("Cloud"), { target: { value: "no" } });
     expect(within(resultsList).getByText("Dry Failed Cumulus quick-look")).toBeInTheDocument();
     expect(within(resultsList).getAllByText("No cloud formed").length).toBeGreaterThan(0);
@@ -2925,7 +2964,7 @@ describe("App", () => {
 
     fireEvent.change(within(filterBar).getByLabelText("Sort"), { target: { value: "max_updraft" } });
     const sortedCards = resultsList.querySelectorAll(".experiment-card");
-    expect(sortedCards[0]).toHaveTextContent("Valley observed sounding quick-look");
+    expect(sortedCards[0]).toHaveTextContent("Uploaded Sounding — Valley, Nebraska");
     expect(sortedCards[0]).toHaveTextContent("max updraft 9.25 m/s");
 
     fireEvent.change(within(filterBar).getByLabelText("Search"), {
@@ -2938,7 +2977,7 @@ describe("App", () => {
 
     fireEvent.click(within(filterBar).getByRole("button", { name: "Clear filters" }));
     expect(within(resultsList).getByText("Quick-look shallow cumulus")).toBeInTheDocument();
-    expect(within(resultsList).getByText("Valley observed sounding quick-look")).toBeInTheDocument();
+    expect(within(resultsList).getByText("Uploaded Sounding — Valley, Nebraska")).toBeInTheDocument();
   });
 
   it("accepts legacy array results responses without crashing", async () => {

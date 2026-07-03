@@ -79,14 +79,21 @@ not claim a scored candidate will produce a specific CM1 outcome.
 
 Frontend tests for the `Upload a Sounding` Build workflow should cover the same
 boundary. Component tests and mocked Playwright smoke tests should verify that
-the candidate workbench can refresh IGRA catalog metadata, cache a bounded batch
-of station files through mocked APIs, screen cached soundings by story, include
+saved candidates load immediately when `Upload a Sounding` is selected; the
+candidate workbench can refresh IGRA catalog metadata, cache a bounded batch of
+station files through mocked APIs, screen cached soundings by story, include
 secondary story-score matches in filtered results, sort missing metrics last,
 show blocked candidates as unusable, save candidates, load a package-ready
 candidate into the observed-sounding package review, and include
 candidate-screening provenance in the generated package request. Browser tests
 must mock the backend APIs and must not fetch NOAA/NCEI, parse raw station text,
 or imply that a candidate score predicts the CM1 outcome.
+
+Local run manager tests should cover stale-manifest reconciliation: if stdout
+contains normal CM1 termination evidence and output artifacts exist, status and
+runtime inventory refresh may promote a stale running manifest to completed
+with output. Tests should also prove that output files alone are not enough to
+claim completion.
 
 Dry-run package tests should use temporary runtime homes and assert overwrite protection, manifest/report content, CM1-facing input readiness, and absence of NetCDF output. A dry-run package is packaged configuration and metadata only; it is not a launched process or completed CM1 result.
 
@@ -336,7 +343,8 @@ Results science-filtering tests should use mocked Result Card payloads with
 `science_summary`, `interesting_times`, `default_time_by_field`, input-source
 metadata, and observed-sounding provenance. Component tests should cover search,
 scenario/run-size filters, cloud/rain filters, observed-sounding discovery via
-scenario/search, science-metric sorting, and empty-filter states. Playwright
+the `Uploaded Sounding` product identity rather than only the underlying base
+scenario ID, science-metric sorting, and empty-filter states. Playwright
 mocked-smoke tests should cover at least one browser path that narrows to an
 observed-sounding result and sorts by a science-derived metric without requiring
 real CM1 output.

@@ -8,12 +8,12 @@ from pathlib import Path
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from cloud_chamber.local_run_manager import reconcile_completed_run_manifest
 from cloud_chamber.run_manifest import (
     LifecycleState,
     ProductState,
     RunManifest,
     RunManifestError,
-    load_run_manifest,
 )
 from cloud_chamber.settings import CloudChamberSettings
 
@@ -175,7 +175,7 @@ def _run_storage_entry(run_dir: Path) -> RunStorageEntry:
         )
 
     try:
-        manifest = load_run_manifest(manifest_path)
+        manifest = reconcile_completed_run_manifest(manifest_path)
     except (RunManifestError, OSError, ValueError) as exc:
         return RunStorageEntry(
             run_id=run_dir.name,

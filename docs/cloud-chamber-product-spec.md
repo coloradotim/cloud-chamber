@@ -100,7 +100,9 @@ beside the observed-sounding upload path. The workbench can refresh the bounded
 IGRA cache, screen cached soundings by experiment story, show package-ready and
 blocked candidates with evidence and caveats, save candidates for later review,
 and load a selected package-ready candidate into the observed-sounding package
-review. It must keep the language pre-run and provisional: a candidate is an
+review. Saved candidates should appear as soon as the user selects `Upload a
+Sounding`, without requiring a catalog refresh, cache action, or new screening
+run. It must keep the language pre-run and provisional: a candidate is an
 observed atmosphere worth trying, not a prediction that clouds, rain, or
 suppression will occur. When a candidate is used, its screening story, score,
 evidence, feature summary, and caveats should be copied into package metadata as
@@ -201,6 +203,11 @@ run launchpad for active and incomplete package/run work only: create packages,
 launch eligible packages, refresh running/failed/completed status, troubleshoot
 failed or no-output runs, and ingest completed output. Fully ingested results
 belong in Results and Storage.
+
+When a local backend restart leaves a completed CM1 run's manifest marked
+running, Build/Storage refresh may reconcile the state only if stdout contains
+normal CM1 termination evidence and output artifacts are present. The UI should
+then offer ingest rather than leaving the run stranded as running.
 
 The UI must continue to avoid raw CM1 namelist fields in the primary flow. Raw generated files can be listed in dry-run review because they are outputs of the package step, not user-facing controls.
 
@@ -1042,8 +1049,10 @@ interesting-time support state so the user can search, filter, and sort the
 experiment list by meaningful scientific evidence rather than raw file order.
 Result Cards must also distinguish generated-reference packages from runs
 created from an uploaded observed sounding, preserving station/time/source
-metadata as provenance and making observed-sounding results filterable in
-Results through the scenario and search surfaces.
+metadata as provenance. Observed-sounding results should read as `Uploaded
+Sounding` in notebook names, scenario labels, and scenario filtering while the
+underlying generated scenario ID remains available in technical details as
+lineage.
 Technical metadata such as raw lifecycle/product states, run IDs, provenance
 labels, controls, and detailed caveats remain available under disclosure rather
 than dominating the first read. The layout should be mobile-first: cards stack
