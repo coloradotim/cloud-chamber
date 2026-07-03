@@ -469,6 +469,15 @@ lighting, export, fly-through, or generated CM1 output. The 3-D point context is
 limited to explicitly supported scalar/floor layers; `w`, potential
 temperature, and direct temperature should be tested through synchronized slices
 unless a future issue adds a scientifically honest 3-D representation for them.
+Saved-output timelapse tests should verify that play/pause advances only
+through backend-provided saved output time indices, that playback updates the
+main 3-D scalar layer while deferring synchronized 2-D slice/default/evidence
+payloads until pause or manual time selection, that pausing or manually choosing
+a time commits the 3-D context and 2-D slice to the same model time, that
+camera/view/field/slice position are preserved across time changes, that
+selected-cell explanation state is cleared while playback tells the user to
+pause before asking `What happened here?`, and that playback stops and resets to
+the first saved output when it reaches the end rather than looping.
 Visual first-impression tests should also keep the validated quick-look baseline
 on a cloud-bearing time, show a visible point-cloud state, keep slice planes
 optional and secondary, and keep technical provenance reachable without making

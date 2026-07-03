@@ -300,6 +300,7 @@ It should keep the current product loop focused on:
 selected-result trust
 -> 3-D scalar-field context
 -> shared time / field / slice controls
+-> saved-output timelapse playback without interpolation
 -> visible native-grid slice plane
 -> matching 2-D slice inspector
 -> click-cell "What happened here?" explanation
@@ -1127,6 +1128,22 @@ selected-point explanation panel. Selecting a result in Notebook or opening a
 comparison/storage row in Explore should preserve that context. If no selected
 result is available, Explore should tell the user to select an ingested result
 from Results.
+
+Shared time controls should operate on actual saved CM1 output times. Explore
+may provide play/pause timelapse playback and a scrubber across those saved
+time indices, but it must not interpolate between model outputs or imply a
+continuous movie. Manual time changes and pausing playback update the 3-D
+scalar context and 2-D slice inspector together, preserve the current camera,
+field, slice orientation, and slice position, and clear selected-cell
+explanation state because the old point evidence belongs to a different model
+time. While playback is running, Explore should update the main 3-D scalar
+layer for the visible saved output time, but it should not refetch or recompute
+all synchronized field products every frame. The 2-D slice, selected-point
+diagnostics, defaults, and evidence panels may remain on the last committed time
+until playback is paused. At the end of the saved-output sequence, playback
+should stop and reset to the first output time rather than looping indefinitely.
+The selected-point panel should invite the user to pause before asking `What
+happened here?`.
 
 The first-read Explore screen should be an explanation workspace, not a
 process-mode cockpit. The 3-D context renders only backend-supported scalar

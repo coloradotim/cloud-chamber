@@ -6070,6 +6070,9 @@ function VisualizerSceneShell({ result }: { result: ResultCard }) {
   );
   const [selectedFieldName, setSelectedFieldName] = useState("");
   const [timeIndex, setTimeIndex] = useState(0);
+  const [playbackTimeIndex, setPlaybackTimeIndex] = useState(0);
+  const [isPlaybackRunning, setIsPlaybackRunning] = useState(false);
+  const [playbackSpeed, setPlaybackSpeed] = useState(1);
   const [threshold, setThreshold] = useState(1e-6);
   const [opacity, setOpacity] = useState(0.68);
   const [pointSize, setPointSize] = useState(11);
@@ -6105,6 +6108,9 @@ function VisualizerSceneShell({ result }: { result: ResultCard }) {
     setSceneError(null);
     setSelectedFieldName("");
     setTimeIndex(0);
+    setPlaybackTimeIndex(0);
+    setIsPlaybackRunning(false);
+    setPlaybackSpeed(1);
     setThreshold(1e-6);
     setOpacity(0.68);
     setPointSize(11);
@@ -6159,6 +6165,7 @@ function VisualizerSceneShell({ result }: { result: ResultCard }) {
         setSelectedFieldName(firstRenderable?.field.raw_field_name ?? "");
         setSliceFieldName(initialSliceField?.raw_field_name ?? "");
         setTimeIndex(initialTimeIndex);
+        setPlaybackTimeIndex(initialTimeIndex);
         setThreshold(firstRenderable?.defaultThreshold ?? 1e-6);
         setHorizontalSliceLevel(defaultHorizontalLevel(initialSliceField, initialDefaults));
         setVerticalSliceIndex(defaultVerticalIndex(initialSliceField, "vertical_x", initialDefaults));
@@ -6207,6 +6214,9 @@ function VisualizerSceneShell({ result }: { result: ResultCard }) {
   const timeOptions = controlField?.time_coordinate_values ?? [];
   const timeMax = Math.max(0, timeOptions.length - 1);
   const resolvedTimeIndex = Math.min(timeIndex, timeMax);
+  const resolvedPlaybackTimeIndex = Math.min(playbackTimeIndex, timeMax);
+  const displayTimeIndex = isPlaybackRunning ? resolvedPlaybackTimeIndex : resolvedTimeIndex;
+  const sceneTimeIndex = displayTimeIndex;
   const wField = catalog?.available_fields.find((field) => field.raw_field_name === "w");
   const isNoCloudWithUpdraft =
     cloudOutcome(result) === "No cloud formed" && Boolean(wField) && (result.max_w_m_s ?? 0) > 0;
@@ -6243,6 +6253,13 @@ function VisualizerSceneShell({ result }: { result: ResultCard }) {
   const selectedTimeSliceDefaults = defaultsForField(selectedTimeDefaults, sliceFieldName);
   const selectedTimeValue = timeOptions[resolvedTimeIndex] ?? null;
   const selectedTimeLabel = formatTimeValue(selectedTimeValue);
+  const displayTimeValue = timeOptions[displayTimeIndex] ?? null;
+  const displayTimeLabel = formatTimeValue(displayTimeValue);
+  const sceneTimeValue = timeOptions[sceneTimeIndex] ?? null;
+  const sceneTimeLabel = formatTimeValue(sceneTimeValue);
+  const playbackSpeedOptions = [0.5, 1, 2, 4];
+  const playbackIntervalMs = Math.max(150, Math.round(900 / playbackSpeed));
+  const canPlayTimelapse = timeOptions.length > 1;
   const activeSlice = activeSlicePlane === "horizontal" ? sceneHorizontalSlice : sceneVerticalSlice;
   const activeSliceLabel = slicePlainLabel(activeSlice, activeSlicePlane, activeSliceIndex);
   const selectedSliceValue = selectedSliceCellValue(activeSlice, selectedRegion);
@@ -6273,11 +6290,76 @@ function VisualizerSceneShell({ result }: { result: ResultCard }) {
       : null,
   ].filter((preset): preset is { label: string; seconds: number } => preset !== null);
 
+  const clearSelectedRegionForTimeChange = useCallback(
+    (nextStatus = "Click a slice cell to inspect that point.") => {
+      setSelectedRegion(null);
+      setRegionDiagnostics(null);
+      setRegionError(null);
+      setRegionStatus(nextStatus);
+    },
+    [],
+  );
+
+  const handleTimeIndexChange = useCallback(
+    (nextIndex: number) => {
+      const clampedIndex = clampIndex(nextIndex, timeOptions.length || 1);
+      setIsPlaybackRunning(false);
+      setTimeIndex(clampedIndex);
+      setPlaybackTimeIndex(clampedIndex);
+      clearSelectedRegionForTimeChange();
+    },
+    [clearSelectedRegionForTimeChange, timeOptions.length],
+  );
+
+  const handlePlaybackToggle = useCallback(() => {
+    if (isPlaybackRunning) {
+      const clampedIndex = clampIndex(playbackTimeIndex, timeOptions.length || 1);
+      setIsPlaybackRunning(false);
+      setTimeIndex(clampedIndex);
+      setPlaybackTimeIndex(clampedIndex);
+      clearSelectedRegionForTimeChange();
+      return;
+    }
+    setPlaybackTimeIndex(resolvedTimeIndex);
+    setIsPlaybackRunning(true);
+    clearSelectedRegionForTimeChange("Pause playback to select a cell and explain this time step.");
+  }, [
+    clearSelectedRegionForTimeChange,
+    isPlaybackRunning,
+    playbackTimeIndex,
+    resolvedTimeIndex,
+    timeOptions.length,
+  ]);
+
   useEffect(() => {
     if (processMode !== activeProcessMode) {
       setProcessMode(activeProcessMode);
     }
   }, [activeProcessMode, processMode]);
+
+  useEffect(() => {
+    if (!canPlayTimelapse && isPlaybackRunning) {
+      setIsPlaybackRunning(false);
+      setPlaybackTimeIndex(resolvedTimeIndex);
+    }
+  }, [canPlayTimelapse, isPlaybackRunning, resolvedTimeIndex]);
+
+  useEffect(() => {
+    if (!isPlaybackRunning || !canPlayTimelapse) return undefined;
+    clearSelectedRegionForTimeChange("Pause playback to select a cell and explain this time step.");
+    const intervalId = window.setInterval(() => {
+      clearSelectedRegionForTimeChange("Pause playback to select a cell and explain this time step.");
+      setPlaybackTimeIndex((current) => {
+        if (current >= timeMax) {
+          setIsPlaybackRunning(false);
+          setTimeIndex(0);
+          return 0;
+        }
+        return current + 1;
+      });
+    }, playbackIntervalMs);
+    return () => window.clearInterval(intervalId);
+  }, [canPlayTimelapse, clearSelectedRegionForTimeChange, isPlaybackRunning, playbackIntervalMs, timeMax]);
 
   useEffect(() => {
     if (!sliceSupportsVertical && activeSlicePlane !== "horizontal") {
@@ -6296,7 +6378,7 @@ function VisualizerSceneShell({ result }: { result: ResultCard }) {
     setSceneStatus(`Loading ${selectedEncoding.field.display_name.toLowerCase()} points...`);
     fetchVisualizationPointCloud(result.result_id, {
       field: selectedEncoding.field.raw_field_name,
-      timeIndex: resolvedTimeIndex,
+      timeIndex: sceneTimeIndex,
       threshold,
       maxPoints,
     })
@@ -6308,25 +6390,6 @@ function VisualizerSceneShell({ result }: { result: ResultCard }) {
             ? selectedEncoding.statusLabel
             : emptyPointCloudStatus(payload, selectedEncoding),
         );
-        return fetchVisualizationDefaults(result.result_id, resolvedTimeIndex)
-          .then((defaults) => {
-            if (!active) return;
-            setSelectedTimeDefaults(defaults);
-            const fieldDefaults =
-              defaultsForField(defaults, sliceFieldName) ??
-              defaultsForField(defaults, selectedEncoding.field.raw_field_name);
-            if (fieldDefaults) {
-              setHorizontalSliceLevel(fieldDefaults.horizontal_level_index);
-              setVerticalSliceIndex(
-                sliceOrientation === "vertical_y"
-                  ? fieldDefaults.vertical_y_index
-                  : fieldDefaults.vertical_x_index,
-              );
-            }
-          })
-          .catch(() => {
-            if (active) setSelectedTimeDefaults(null);
-          });
       })
       .catch((caught: unknown) => {
         if (!active) return;
@@ -6342,12 +6405,29 @@ function VisualizerSceneShell({ result }: { result: ResultCard }) {
   }, [
     maxPoints,
     result.result_id,
-    resolvedTimeIndex,
+    sceneTimeIndex,
     selectedEncoding,
-    sliceFieldName,
-    sliceOrientation,
     threshold,
   ]);
+
+  useEffect(() => {
+    if (!catalog) {
+      setSelectedTimeDefaults(null);
+      return;
+    }
+    let active = true;
+    fetchVisualizationDefaults(result.result_id, resolvedTimeIndex)
+      .then((defaults) => {
+        if (!active) return;
+        setSelectedTimeDefaults(defaults);
+      })
+      .catch(() => {
+        if (active) setSelectedTimeDefaults(null);
+      });
+    return () => {
+      active = false;
+    };
+  }, [catalog, result.result_id, resolvedTimeIndex]);
 
   useEffect(() => {
     if (!sliceField) {
@@ -6431,6 +6511,10 @@ function VisualizerSceneShell({ result }: { result: ResultCard }) {
   }, [result.result_id, selectedRegion]);
 
   function selectPointFromSlice(slice: SliceResponse, rowIndex: number, columnIndex: number) {
+    if (isPlaybackRunning) {
+      clearSelectedRegionForTimeChange("Pause playback to select a cell and explain this time step.");
+      return;
+    }
     setSelectedRegion(selectionFromSlice(slice, rowIndex, columnIndex, "point"));
   }
 
@@ -6476,6 +6560,7 @@ function VisualizerSceneShell({ result }: { result: ResultCard }) {
             selectedRegion={selectedRegion}
             coordinateSizes={{ x: sliceXSize, y: sliceYSize, z: sliceVerticalSize }}
             selectedTimeLabel={selectedTimeLabel}
+            sceneTimeLabel={sceneTimeLabel}
             thresholdLabel={formatScientific(threshold, selectedEncoding?.field.units ?? "")}
             opacity={opacity}
             pointSize={pointSize}
@@ -6493,13 +6578,57 @@ function VisualizerSceneShell({ result }: { result: ResultCard }) {
             <section className="explore-control-deck" aria-label="Explore viewer controls">
               <fieldset className="explore-control-card explore-control-card-time">
                 <legend>Time</legend>
+                <div className="timelapse-controls" aria-label="Timelapse playback controls">
+                  <button
+                    type="button"
+                    disabled={!canPlayTimelapse}
+                    aria-pressed={isPlaybackRunning}
+                    onClick={handlePlaybackToggle}
+                  >
+                    {isPlaybackRunning ? "Pause time" : "Play time"}
+                  </button>
+                  <label htmlFor="explore-playback-speed">
+                    Speed
+                    <select
+                      id="explore-playback-speed"
+                      aria-label="Playback speed"
+                      value={playbackSpeed}
+                      onChange={(event) => setPlaybackSpeed(Number(event.target.value))}
+                    >
+                      {playbackSpeedOptions.map((speed) => (
+                        <option key={speed} value={speed}>
+                          {speed}x
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                </div>
+                <label htmlFor="explore-time-scrubber">
+                  Saved output time
+                  <input
+                    id="explore-time-scrubber"
+                    aria-label="Saved output time"
+                    type="range"
+                    min={0}
+                    max={timeMax}
+                    value={displayTimeIndex}
+                    disabled={timeMax === 0}
+                    onChange={(event) => handleTimeIndexChange(Number(event.target.value))}
+                  />
+                  <span className="slice-position-label">
+                    <span>{displayTimeLabel}</span>
+                    <small>
+                      frame {displayTimeIndex + 1} of {Math.max(1, timeOptions.length)}
+                    </small>
+                  </span>
+                </label>
                 <label htmlFor="explore-time">
                   Output time
                   <select
                     id="explore-time"
                     aria-label="Time"
-                    value={resolvedTimeIndex}
-                    onChange={(event) => setTimeIndex(Number(event.target.value))}
+                    value={displayTimeIndex}
+                    onChange={(event) => handleTimeIndexChange(Number(event.target.value))}
                   >
                     {timeOptions.map((value, index) => (
                       <option key={`${value}-${index}`} value={index}>
@@ -6514,13 +6643,19 @@ function VisualizerSceneShell({ result }: { result: ResultCard }) {
                     <button
                       key={preset.label}
                       type="button"
-                      onClick={() => setTimeIndex(closestTimeIndex(timeOptions, preset.seconds))}
+                      onClick={() => handleTimeIndexChange(closestTimeIndex(timeOptions, preset.seconds))}
                     >
                       {preset.label}
                     </button>
                   ))}
-                  <button type="button" onClick={() => setTimeIndex(timeMax)}>Last frame</button>
+                  <button type="button" onClick={() => handleTimeIndexChange(timeMax)}>Last frame</button>
                 </div>
+                {isPlaybackRunning && (
+                  <p className="control-help">
+                    Animating 3-D scene at {sceneTimeLabel}; slice and evidence remain at{" "}
+                    {selectedTimeLabel} until playback is paused.
+                  </p>
+                )}
               </fieldset>
 
               <fieldset className="explore-control-card explore-control-card-slice">
@@ -6804,7 +6939,8 @@ function VisualizerSceneShell({ result }: { result: ResultCard }) {
                     : "Unavailable"
                 }
               />
-              <Metric label="Selected time" value={selectedTimeLabel} />
+              <Metric label="3-D scene time" value={sceneTimeLabel} />
+              <Metric label="Slice/evidence time" value={selectedTimeLabel} />
               <Metric label="Slice plane" value={activeSliceLabel} />
               <Metric label="Slice plane visible" value={showSlicePlanes ? "Yes" : "No"} />
               <Metric
@@ -6963,6 +7099,7 @@ function VisualizerSceneShell({ result }: { result: ResultCard }) {
             diagnostics={regionDiagnostics}
             status={regionStatus}
             error={regionError}
+            playbackRunning={isPlaybackRunning}
           />
         </section>
       )}
@@ -7384,6 +7521,7 @@ function SelectedRegionInspector({
   diagnostics,
   status,
   error,
+  playbackRunning,
 }: {
   selectedRegion: SelectedRegionRequest | null;
   slice: SliceResponse | null;
@@ -7391,8 +7529,9 @@ function SelectedRegionInspector({
   diagnostics: SelectedRegionDiagnosticsResponse | null;
   status: string;
   error: string | null;
+  playbackRunning?: boolean;
 }) {
-  if (!selectedRegion && !error) {
+  if (!selectedRegion && !error && !playbackRunning) {
     return null;
   }
 
@@ -7403,10 +7542,16 @@ function SelectedRegionInspector({
           <p className="eyebrow">Explanation</p>
           <h3>What happened here?</h3>
         </div>
-        <p className="state-chip">{status}</p>
+        <p className="state-chip">
+          {playbackRunning && !selectedRegion && !error ? "Playback running" : status}
+        </p>
       </div>
 
       {error && <p role="alert">{error}</p>}
+
+      {playbackRunning && !selectedRegion && !error && (
+        <p>Pause playback to select a cell and explain this time step.</p>
+      )}
 
       {selectedRegion && (
         <SelectedPointContext

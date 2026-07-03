@@ -1,4 +1,5 @@
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { App } from "./App";
@@ -2168,7 +2169,7 @@ afterEach(() => {
 
 async function openSelectedResultInExplore() {
   const resultDetail = await screen.findByLabelText("Result detail");
-  fireEvent.click(within(resultDetail).getByRole("button", { name: "Open in Explore" }));
+  fireEvent.click(await within(resultDetail).findByRole("button", { name: "Open in Explore" }));
 }
 
 describe("App", () => {
@@ -3501,8 +3502,7 @@ describe("App", () => {
   it("opens the 2-D field inspector from a result and shows qc slices", async () => {
     render(<App />);
 
-    const resultDetail = await screen.findByLabelText("Result detail");
-    fireEvent.click(within(resultDetail).getByRole("button", { name: "Open in Explore" }));
+    await openSelectedResultInExplore();
 
     expect(await screen.findByRole("heading", { name: "What happened in this result?" })).toBeInTheDocument();
     expect(await screen.findByLabelText("Explore viewer controls")).toBeInTheDocument();
@@ -3549,8 +3549,7 @@ describe("App", () => {
   it("opens Explore at the result-card science default time", async () => {
     render(<App />);
 
-    const resultDetail = await screen.findByLabelText("Result detail");
-    fireEvent.click(within(resultDetail).getByRole("button", { name: "Open in Explore" }));
+    await openSelectedResultInExplore();
 
     await screen.findByText("Slice synced");
 
@@ -3568,11 +3567,128 @@ describe("App", () => {
     );
   });
 
+  it("plays saved output times without refetching fields until pause and resets at the end", async () => {
+    render(<App />);
+
+    await openSelectedResultInExplore();
+    await screen.findByText("Slice synced");
+
+    const fetchMock = vi.mocked(fetch);
+
+    fireEvent.change(screen.getByLabelText("Time"), { target: { value: "1" } });
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith(expect.stringContaining("time_index=1")),
+    );
+    fetchMock.mockClear();
+
+    fireEvent.click(screen.getByRole("button", { name: "Move down" }));
+    expect(screen.getByLabelText("Slice position")).toHaveValue("0");
+
+    const heatmap = screen.getAllByRole("img", { name: /heatmap/i })[0];
+    fireEvent.click(within(heatmap).getByRole("button", { name: /row 1, column 2/i }));
+    expect(await screen.findByText("Selected-point diagnostics loaded")).toBeInTheDocument();
+
+    vi.useFakeTimers();
+    fireEvent.click(screen.getByRole("button", { name: "Play time" }));
+
+    expect(screen.getByRole("button", { name: "Pause time" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    expect(
+      screen.getByText("Pause playback to select a cell and explain this time step."),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("Selected point")).not.toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "Animating 3-D scene at 900 s; slice and evidence remain at 900 s until playback is paused.",
+      ),
+    ).toBeInTheDocument();
+
+    await act(async () => {
+      vi.advanceTimersByTime(900);
+    });
+
+    expect(screen.getByLabelText("Time")).toHaveValue("2");
+    expect(screen.getByLabelText("Saved output time")).toHaveValue("2");
+    expect(
+      screen.getByText(
+        "Animating 3-D scene at 1,800 s; slice and evidence remain at 900 s until playback is paused.",
+      ),
+    ).toBeInTheDocument();
+    expect(screen.getByLabelText("Slice position")).toHaveValue("0");
+    expect(
+      fetchMock.mock.calls.some(
+        ([url]) =>
+          String(url).includes("/visualization/point-cloud") &&
+          String(url).includes("time_index=2"),
+      ),
+    ).toBe(true);
+    expect(
+      fetchMock.mock.calls.some(
+        ([url]) =>
+          String(url).includes("/visualization/slice") && String(url).includes("time_index=2"),
+      ),
+    ).toBe(false);
+    expect(
+      fetchMock.mock.calls.some(
+        ([url]) =>
+          String(url).includes("/visualization/defaults") && String(url).includes("time_index=2"),
+      ),
+    ).toBe(false);
+    expect(
+      screen.getByText("Pause playback to select a cell and explain this time step."),
+    ).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Pause time" }));
+    expect(screen.getByRole("button", { name: "Play time" })).toHaveAttribute(
+      "aria-pressed",
+      "false",
+    );
+    vi.useRealTimers();
+    await waitFor(() =>
+      expect(
+        fetchMock.mock.calls.some(
+          ([url]) =>
+            String(url).includes("/visualization/slice") && String(url).includes("time_index=2"),
+        ),
+      ).toBe(true),
+    );
+    expect(
+      fetchMock.mock.calls.some(
+        ([url]) =>
+          String(url).includes("/visualization/defaults") && String(url).includes("time_index=2"),
+      ),
+    ).toBe(true);
+    expect(screen.getByLabelText("Slice position")).toHaveValue("0");
+
+    fireEvent.click(screen.getByRole("button", { name: "Last frame" }));
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith(expect.stringContaining("time_index=3")),
+    );
+    fetchMock.mockClear();
+
+    vi.useFakeTimers();
+    fireEvent.click(screen.getByRole("button", { name: "Play time" }));
+    await act(async () => {
+      vi.advanceTimersByTime(900);
+    });
+    expect(screen.getByRole("button", { name: "Play time" })).toHaveAttribute(
+      "aria-pressed",
+      "false",
+    );
+    expect(screen.getByLabelText("Time")).toHaveValue("0");
+    expect(screen.getByLabelText("Saved output time")).toHaveValue("0");
+    vi.useRealTimers();
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith(expect.stringContaining("time_index=0")),
+    );
+  });
+
   it("selects a slice region and renders backend Thermal Fate Inspector diagnostics", async () => {
     render(<App />);
 
-    const resultDetail = await screen.findByLabelText("Result detail");
-    fireEvent.click(within(resultDetail).getByRole("button", { name: "Open in Explore" }));
+    await openSelectedResultInExplore();
     await screen.findByText("Slice synced");
 
     const heatmap = screen.getAllByRole("img", { name: /heatmap/i })[0];
@@ -3622,8 +3738,7 @@ describe("App", () => {
 
     render(<App />);
 
-    const resultDetail = await screen.findByLabelText("Result detail");
-    fireEvent.click(within(resultDetail).getByRole("button", { name: "Open in Explore" }));
+    await openSelectedResultInExplore();
     await screen.findByText("Slice synced");
 
     const heatmap = screen.getAllByRole("img", { name: /heatmap/i })[0];

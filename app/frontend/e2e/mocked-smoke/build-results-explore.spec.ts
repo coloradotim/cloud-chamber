@@ -304,6 +304,48 @@ test.describe("mocked smoke: Build, Results, Explore path", () => {
     await expect(page.getByText(/selected point: x/i)).toBeVisible();
   });
 
+  test("Unified Explore plays through saved output times", async ({ page }) => {
+    await gotoResults(page);
+    await page.getByRole("button", { name: "Open in Explore" }).first().click();
+
+    await expect(page.getByLabel("Explore viewer controls")).toBeVisible();
+    await expect(page.getByLabel("Timelapse playback controls")).toBeVisible();
+    await expect(page.getByRole("button", { name: "Play time" })).toBeVisible();
+    await expect(page.getByLabel("Playback speed")).toHaveValue("1");
+    await expect(page.getByRole("slider", { name: "Saved output time" })).toBeVisible();
+
+    await page.locator("#explore-time").selectOption("1");
+    await page.getByLabel("Playback speed").selectOption("2");
+    await page.getByRole("button", { name: "Play time" }).click();
+
+    await expect(page.getByRole("button", { name: "Pause time" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    await expect(
+      page.getByText("Pause playback to select a cell and explain this time step."),
+    ).toBeVisible();
+    await expect(
+      page.getByText(/Animating 3-D scene at .*; slice and evidence remain at .* until playback is paused\./),
+    ).toBeVisible();
+    await expect(page.locator("#explore-time")).toHaveValue("2", { timeout: 2_000 });
+
+    await page.getByRole("button", { name: "Pause time" }).click();
+    await expect(page.getByRole("button", { name: "Play time" })).toHaveAttribute(
+      "aria-pressed",
+      "false",
+    );
+
+    await page.getByRole("button", { name: "Last frame" }).click();
+    await expect(page.locator("#explore-time")).toHaveValue("2");
+    await page.getByRole("button", { name: "Play time" }).click();
+    await expect(page.locator("#explore-time")).toHaveValue("0", { timeout: 2_000 });
+    await expect(page.getByRole("button", { name: "Play time" })).toHaveAttribute(
+      "aria-pressed",
+      "false",
+    );
+  });
+
   test("Explore process evidence offers useful modes and moves unsupported modes secondary", async ({
     page,
   }) => {
