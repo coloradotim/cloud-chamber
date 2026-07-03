@@ -163,6 +163,12 @@ type CandidateStoryId =
   | "dry_failed_candidate"
   | "capped_suppressed_candidate"
   | "humid_rainy_candidate"
+  | "severe_thunderstorm_environment"
+  | "supercell_environment"
+  | "elevated_convection"
+  | "dry_microburst_inverted_v"
+  | "high_cape_pulse_storm"
+  | "squall_line_cold_pool_candidate"
   | "needs_review"
   | "poor_or_incomplete_candidate";
 
@@ -172,6 +178,12 @@ type CandidateStoryFilter =
   | "dry_failed_candidate"
   | "capped_suppressed_candidate"
   | "humid_rainy_candidate"
+  | "severe_thunderstorm_environment"
+  | "supercell_environment"
+  | "elevated_convection"
+  | "dry_microburst_inverted_v"
+  | "high_cape_pulse_storm"
+  | "squall_line_cold_pool_candidate"
   | "needs_review";
 
 type CandidateSort =
@@ -187,6 +199,17 @@ type StoryScore = {
   label: string;
   score_0_to_100: number;
   support: string;
+  story_family?: "current_les" | "deep_convection" | "winter_future" | "review";
+  readiness_state?: string;
+  package_readiness_label?: string;
+  screenable_from_sounding_now?: boolean;
+  runnable_with_current_observed_sounding_package?: "yes" | "caveated" | "no";
+  specialized_package_recommended?: boolean;
+  future_package_required?: boolean;
+  package_readiness_caveats?: string[];
+  required_diagnostics_used?: string[];
+  unavailable_diagnostics?: string[];
+  assumptions?: string[];
   reasons: string[];
   caveats: string[];
 };
@@ -215,6 +238,14 @@ type SoundingCandidate = {
   source_provider: string;
   primary_story: CandidateStoryId;
   primary_story_label: string;
+  story_family?: "current_les" | "deep_convection" | "winter_future" | "review";
+  readiness_state?: string;
+  package_readiness_label?: string;
+  specialized_package_recommended?: boolean;
+  future_package_required?: boolean;
+  required_diagnostics_used?: string[];
+  unavailable_diagnostics?: string[];
+  assumptions?: string[];
   story_scores: StoryScore[];
   rank_score: number;
   confidence: "low" | "medium" | "high";
@@ -3002,11 +3033,27 @@ function ObservedAtmosphereCandidatesPanel({
             onChange={(event) => onStoryFilterChange(event.target.value as CandidateStoryFilter)}
           >
             <option value="all">All screening stories</option>
-            <option value="shallow_cumulus_candidate">Cloud-forming shallow cumulus</option>
-            <option value="dry_failed_candidate">Dry failed cumulus</option>
-            <option value="capped_suppressed_candidate">Capped / suppressed</option>
-            <option value="humid_rainy_candidate">Humid / rainy</option>
-            <option value="needs_review">Needs review</option>
+            <optgroup label="Current observed-sounding LES stories">
+              <option value="shallow_cumulus_candidate">Cloud-forming shallow cumulus</option>
+              <option value="dry_failed_candidate">Dry failed cumulus</option>
+              <option value="capped_suppressed_candidate">Capped / suppressed</option>
+              <option value="humid_rainy_candidate">Humid / rainy</option>
+            </optgroup>
+            <optgroup label="Deep-convection environments">
+              <option value="severe_thunderstorm_environment">
+                Severe thunderstorm environment
+              </option>
+              <option value="supercell_environment">Supercell environment</option>
+              <option value="elevated_convection">Elevated convection</option>
+              <option value="dry_microburst_inverted_v">Dry microburst inverted-V</option>
+              <option value="high_cape_pulse_storm">High-CAPE pulse storm</option>
+              <option value="squall_line_cold_pool_candidate">
+                Squall-line / cold-pool candidate
+              </option>
+            </optgroup>
+            <optgroup label="Review / data quality">
+              <option value="needs_review">Needs review</option>
+            </optgroup>
           </select>
         </label>
         <label>
@@ -3192,6 +3239,7 @@ function SoundingCandidateCard({
 }) {
   const story = storyFilter === "all" ? candidate.primary_story : storyFilter;
   const matchScore = candidateMatchScore(candidate, story);
+  const canUseCurrentPackage = candidateCanUseCurrentPackage(candidate, story);
   return (
     <article
       className={`candidate-card${selected ? " selected-candidate-card" : ""}`}
@@ -3206,8 +3254,8 @@ function SoundingCandidateCard({
           <StatusBadge label={candidateStoryLabel(story)} tone="neutral" />
           <StatusBadge label={`${formatNumber(matchScore, "%")} match`} tone="neutral" />
           <StatusBadge
-            label={candidate.package_ready ? "Package-ready" : "Blocked"}
-            tone={candidate.package_ready ? "good" : "warning"}
+            label={candidatePackageReadinessLabel(candidate, story)}
+            tone={candidatePackageReadinessTone(candidate, story)}
           />
         </span>
       </button>
@@ -3224,7 +3272,7 @@ function SoundingCandidateCard({
         </p>
       )}
       <div className="button-row">
-        <button type="button" disabled={!candidate.package_ready} onClick={onUse}>
+        <button type="button" disabled={!canUseCurrentPackage} onClick={onUse}>
           Use this sounding
         </button>
         <button type="button" className="secondary-button" disabled={saved} onClick={onSave}>
@@ -3270,18 +3318,26 @@ function SoundingCandidateDetail({
           </p>
         </div>
         <StatusBadge
-          label={candidate.package_ready ? "Ready for review" : "Blocked"}
-          tone={candidate.package_ready ? "good" : "warning"}
+          label={candidatePackageReadinessLabel(candidate, story)}
+          tone={candidatePackageReadinessTone(candidate, story)}
         />
       </div>
       <p>
-        Candidate match score is screening guidance only. CM1 decides whether clouds, rain, or
-        suppression actually happen.
+        Candidate match score is screening guidance only. It screens the observed environment; CM1
+        decides what actually happens.
       </p>
       <dl className="compact-metrics">
         <Metric label="Match score" value={formatNumber(candidateMatchScore(candidate, story), "%")} />
         <Metric label="Evidence level" value={humanize(candidate.confidence)} />
         <Metric label="Station ID" value={candidate.station_id} />
+        <Metric
+          label="Readiness"
+          value={candidatePackageReadinessLabel(candidate, story)}
+        />
+        <Metric
+          label="Story family"
+          value={humanize(candidateStoryScore(candidate, story)?.story_family ?? candidate.story_family ?? "current_les")}
+        />
         <Metric
           label="Location"
           value={
@@ -3304,6 +3360,16 @@ function SoundingCandidateDetail({
           ))}
         </ul>
       </section>
+      {candidatePackageReadinessCaveats(candidate, story).length > 0 && (
+        <section>
+          <h5>Package readiness</h5>
+          <ul className="compact-list">
+            {candidatePackageReadinessCaveats(candidate, story).map((caveat) => (
+              <li key={caveat}>{humanize(caveat)}</li>
+            ))}
+          </ul>
+        </section>
+      )}
       <details>
         <summary>All story scores</summary>
         <dl className="compact-metrics">
@@ -7870,6 +7936,18 @@ function candidateStoryLabel(story: CandidateStoryId | CandidateStoryFilter): st
       return "Capped / suppressed";
     case "humid_rainy_candidate":
       return "Humid / rainy";
+    case "severe_thunderstorm_environment":
+      return "Severe thunderstorm environment";
+    case "supercell_environment":
+      return "Supercell environment";
+    case "elevated_convection":
+      return "Elevated convection";
+    case "dry_microburst_inverted_v":
+      return "Dry microburst inverted-V";
+    case "high_cape_pulse_storm":
+      return "High-CAPE pulse storm";
+    case "squall_line_cold_pool_candidate":
+      return "Squall-line / cold-pool";
     case "poor_or_incomplete_candidate":
       return "Poor or incomplete";
     case "needs_review":
@@ -7877,6 +7955,51 @@ function candidateStoryLabel(story: CandidateStoryId | CandidateStoryFilter): st
     case "all":
       return "All screening stories";
   }
+}
+
+function candidatePackageReadinessLabel(
+  candidate: SoundingCandidate,
+  story: CandidateStoryId | CandidateStoryFilter,
+): string {
+  const score = candidateStoryScore(candidate, story);
+  if (score?.package_readiness_label) return score.package_readiness_label;
+  if (candidate.package_readiness_label) return candidate.package_readiness_label;
+  return candidate.package_ready ? "Package-ready" : "Blocked";
+}
+
+function candidatePackageReadinessTone(
+  candidate: SoundingCandidate,
+  story: CandidateStoryId | CandidateStoryFilter,
+): "good" | "warning" | "neutral" {
+  const score = candidateStoryScore(candidate, story);
+  if (!candidate.package_ready) return "warning";
+  if (score?.future_package_required || candidate.future_package_required) return "warning";
+  if (score?.specialized_package_recommended || candidate.specialized_package_recommended) {
+    return "neutral";
+  }
+  return "good";
+}
+
+function candidatePackageReadinessCaveats(
+  candidate: SoundingCandidate,
+  story: CandidateStoryId | CandidateStoryFilter,
+): string[] {
+  const score = candidateStoryScore(candidate, story);
+  return [
+    ...(score?.package_readiness_caveats ?? []),
+    ...(score?.assumptions ?? []),
+  ];
+}
+
+function candidateCanUseCurrentPackage(
+  candidate: SoundingCandidate,
+  story: CandidateStoryId | CandidateStoryFilter,
+): boolean {
+  const score = candidateStoryScore(candidate, story);
+  if (!candidate.package_ready) return false;
+  if (score?.future_package_required || candidate.future_package_required) return false;
+  if (score?.runnable_with_current_observed_sounding_package === "no") return false;
+  return true;
 }
 
 function candidateStationLabel(candidate: SoundingCandidate): string {
@@ -8030,6 +8153,14 @@ function candidateScreeningMetadata(
     saved_candidate_id: savedCandidate?.saved_candidate_id ?? null,
     screening_version: candidate.screening_version,
     primary_story: candidate.primary_story,
+    story_family: candidate.story_family ?? null,
+    readiness_state: candidate.readiness_state ?? null,
+    package_readiness_label: candidate.package_readiness_label ?? null,
+    specialized_package_recommended: candidate.specialized_package_recommended ?? false,
+    future_package_required: candidate.future_package_required ?? false,
+    required_diagnostics_used: candidate.required_diagnostics_used ?? [],
+    unavailable_diagnostics: candidate.unavailable_diagnostics ?? [],
+    assumptions: candidate.assumptions ?? [],
     story_scores: candidate.story_scores,
     rank_score: candidate.rank_score,
     confidence: candidate.confidence,

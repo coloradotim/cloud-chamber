@@ -19,11 +19,19 @@ The v1 candidate stories are:
 - `dry_failed_candidate`
 - `capped_suppressed_candidate`
 - `humid_rainy_candidate`
+- `severe_thunderstorm_environment`
+- `supercell_environment`
+- `elevated_convection`
+- `dry_microburst_inverted_v`
+- `high_cape_pulse_storm`
+- `squall_line_cold_pool_candidate`
 - `needs_review`
 - `poor_or_incomplete_candidate`
 
 Visible labels may be friendlier, but every visible story must be backed by
 `story_scores`, feature values, evidence items, caveats, and package readiness.
+Story filters should group these as current observed-sounding LES stories,
+deep-convection environments, and review/data-quality stories.
 
 ## Feature Inputs
 
@@ -46,6 +54,13 @@ The current story scores primarily use:
 Missing scoring inputs weaken/caveat story support instead of being interpreted
 as meaningful physical zero values.
 
+Deep-convection environment scores additionally use available sounding
+diagnostics such as 0-3 km lapse rate, 700-500 hPa lapse-rate proxy, 0-1/0-3/0-6
+km bulk shear, inversion/cap proxies, dry-microburst inverted-V proxy, qv drop,
+and freezing-level proxy. CAPE, CIN, LFC, EL, storm motion, SRH, and cold-pool
+diagnostics remain unavailable and must be caveated rather than silently
+inferred.
+
 ### Evidence / Context Fields
 
 The candidate UI may also display these fields as evidence or context:
@@ -59,6 +74,7 @@ The candidate UI may also display these fields as evidence or context:
 - cap height proxy
 - observed wind availability
 - package readiness
+- deep-convection readiness labels and caveats
 
 These fields help explain the sounding and package path. They do not directly
 drive story scores unless the implementation and tests are updated to say so.
@@ -180,6 +196,46 @@ This story is deliberately caveated because current packages still use
 idealized local forcing. It should be read as “humid atmosphere worth trying,”
 not as a rain forecast.
 
+### Severe / Deep-Convection Environment Candidates
+
+The deep-convection story family includes:
+
+- `severe_thunderstorm_environment`
+- `supercell_environment`
+- `elevated_convection`
+- `dry_microburst_inverted_v`
+- `high_cape_pulse_storm`
+- `squall_line_cold_pool_candidate`
+
+Scoring primarily uses the sounding diagnostics available today:
+
+- low-level and lower-tropospheric moisture proxies
+- estimated LCL
+- 0-1 km and 0-3 km lapse rates
+- 700-500 hPa lapse-rate proxy when available
+- cap/inversion strength and height proxies
+- 0-1 km, 0-3 km, and 0-6 km bulk shear
+- dry-layer, qv-drop, and inverted-V proxies
+- freezing-level proxy for precipitation/cold-pool context
+- profile completeness
+
+Evidence also shows the same moisture, cap, lapse-rate, wind, profile-depth,
+and package-readiness values used elsewhere in the candidate UI.
+
+Package readiness is separate from story support:
+
+- `severe_thunderstorm_environment`, `high_cape_pulse_storm`, and
+  `dry_microburst_inverted_v` may enter the current observed-sounding package
+  only as caveated profile exploration.
+- `supercell_environment`, `elevated_convection`, and
+  `squall_line_cold_pool_candidate` require future specialized packages before
+  package generation should be presented as a useful current path.
+
+These labels are environment screens, not severe-weather forecasts and not
+validated CM1 scenario families. They must carry caveats that CAPE/CIN/LFC/EL,
+storm motion, SRH, forcing, cold-pool diagnostics, and storm-object behavior are
+not currently computed. CM1 output remains the source of truth.
+
 ### Needs Review
 
 Scoring primarily uses:
@@ -265,10 +321,13 @@ station text in the browser, or commit cached station files.
 Tests should prove:
 
 - every current story can be produced deterministically;
+- deep-convection stories have deterministic score and readiness metadata;
 - every story has reasons and evidence;
 - missing features caveat or weaken support instead of producing confident
   labels;
 - poor/incomplete candidates are blocked from package generation;
 - package-ready but weak profiles become `needs_review`;
+- future-package-required stories are not represented as current validated
+  package paths;
 - candidate-screening provenance is copied into generated package metadata
   when provided.

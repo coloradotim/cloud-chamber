@@ -278,6 +278,61 @@ const blockedSoundingCandidate = {
   caveats: ["missing_surface_level"],
 };
 
+const severeSoundingCandidate = {
+  ...shallowSoundingCandidate,
+  candidate_id: "USM00072451-2025010500-severe",
+  station_id: "USM00072451",
+  station_name: "Dodge City, Kansas",
+  valid_time_utc: "2025-01-05T00:00:00Z",
+  primary_story: "severe_thunderstorm_environment",
+  primary_story_label: "Severe thunderstorm environment",
+  story_family: "deep_convection",
+  readiness_state: "runnable_caveated",
+  package_readiness_label: "Caveated profile exploration",
+  specialized_package_recommended: true,
+  future_package_required: false,
+  rank_score: 84,
+  story_scores: [
+    {
+      story: "severe_thunderstorm_environment",
+      label: "Severe thunderstorm environment",
+      score_0_to_100: 84,
+      support: "supported",
+      story_family: "deep_convection",
+      readiness_state: "runnable_caveated",
+      package_readiness_label: "Caveated profile exploration",
+      specialized_package_recommended: true,
+      future_package_required: false,
+      package_readiness_caveats: ["This is an environment screen, not a storm forecast."],
+      required_diagnostics_used: [
+        "mean_qv_0_1000m_g_kg",
+        "lapse_rate_0_3000m_c_per_km",
+        "bulk_shear_0_6km_m_s",
+      ],
+      unavailable_diagnostics: [],
+      assumptions: ["CM1 output decides what actually happens."],
+      reasons: ["Moisture, lapse-rate, and shear proxies support this environment screen."],
+      caveats: ["screening_guidance_only_not_storm_forecast"],
+    },
+  ],
+  features: {
+    ...shallowSoundingCandidate.features,
+    bulk_shear_0_6km_m_s: 28,
+    lapse_rate_0_3000m_c_per_km: 7.4,
+  },
+  evidence: [
+    {
+      label: "Bulk shear 0-6 km",
+      value: 28,
+      units: "m/s",
+      interpretation: "Deep-layer shear supports organized deep-convection screens.",
+      supports_story: ["severe_thunderstorm_environment"],
+      caveats: [],
+    },
+    ...shallowSoundingCandidate.evidence,
+  ],
+};
+
 export const results = [
   {
     result_id: "result-baseline",
@@ -1198,7 +1253,7 @@ export async function mockCloudChamberApis(page: Page) {
     json(route, {
       screening_version: "test-screening-v1",
       generated_at: "2026-07-01T12:00:00Z",
-      candidates: [shallowSoundingCandidate, blockedSoundingCandidate],
+      candidates: [shallowSoundingCandidate, blockedSoundingCandidate, severeSoundingCandidate],
       caveats: ["screening_guidance_only"],
     }),
   );

@@ -121,6 +121,15 @@ test.describe("mocked smoke: Build, Results, Explore path", () => {
     await expect(blockedCard).toContainText("Blocked");
     await expect(blockedCard.getByRole("button", { name: "Use this sounding" })).toBeDisabled();
 
+    await page.getByLabel("Story filter").selectOption("severe_thunderstorm_environment");
+    const severeCard = page.getByLabel("Sounding candidate Dodge City, Kansas (USM00072451)");
+    await expect(severeCard).toBeVisible();
+    await expect(severeCard).toContainText("Severe thunderstorm environment");
+    await expect(severeCard).toContainText("Caveated profile exploration");
+    await expect(page.getByLabel("Candidate details")).toContainText(
+      "This is an environment screen, not a storm forecast",
+    );
+
     await page.getByLabel("Story filter").selectOption("all");
     await valleyCard.getByRole("button", { name: "Save candidate" }).click();
     await expect(page.getByText("Sounding candidate saved")).toBeVisible();

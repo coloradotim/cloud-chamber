@@ -323,6 +323,10 @@ small {
   font-weight: 800;
 }
 
+.candidate-toolbar label:first-child {
+  grid-column: span 2;
+}
+
 .candidate-toolbar-actions {
   grid-column: 1 / -1;
   justify-content: start;
@@ -2495,6 +2499,10 @@ details[open] > summary {
 
 	  .candidate-detail-panel {
 	    position: static;
+	  }
+
+	  .candidate-toolbar label:first-child {
+	    grid-column: auto;
 	  }
 
 	  .candidate-card-main,

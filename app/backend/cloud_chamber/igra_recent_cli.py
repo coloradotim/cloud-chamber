@@ -37,6 +37,12 @@ STORY_OPTION_TO_ID: dict[str, TargetStoryId] = {
     "dry-failed": "dry_failed_candidate",
     "capped-suppressed": "capped_suppressed_candidate",
     "humid-rainy": "humid_rainy_candidate",
+    "severe-thunderstorm": "severe_thunderstorm_environment",
+    "supercell": "supercell_environment",
+    "elevated-convection": "elevated_convection",
+    "dry-microburst": "dry_microburst_inverted_v",
+    "high-cape-pulse-storm": "high_cape_pulse_storm",
+    "squall-line-cold-pool": "squall_line_cold_pool_candidate",
     "needs-review": "needs_review",
     "poor-or-incomplete": "poor_or_incomplete_candidate",
 }

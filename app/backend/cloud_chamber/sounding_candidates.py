@@ -25,6 +25,7 @@ from cloud_chamber.observed_sounding import (
     summarize_igra_station_text,
 )
 from cloud_chamber.settings import CloudChamberSettings
+from cloud_chamber.sounding_diagnostics import compute_sounding_diagnostics
 
 SCREENING_VERSION = "sounding-screening-v1"
 
@@ -33,6 +34,12 @@ StoryId = Literal[
     "dry_failed_candidate",
     "capped_suppressed_candidate",
     "humid_rainy_candidate",
+    "severe_thunderstorm_environment",
+    "supercell_environment",
+    "elevated_convection",
+    "dry_microburst_inverted_v",
+    "high_cape_pulse_storm",
+    "squall_line_cold_pool_candidate",
     "needs_review",
     "poor_or_incomplete_candidate",
 ]
@@ -41,19 +48,172 @@ TargetStoryId = Literal[
     "dry_failed_candidate",
     "capped_suppressed_candidate",
     "humid_rainy_candidate",
+    "severe_thunderstorm_environment",
+    "supercell_environment",
+    "elevated_convection",
+    "dry_microburst_inverted_v",
+    "high_cape_pulse_storm",
+    "squall_line_cold_pool_candidate",
     "needs_review",
     "poor_or_incomplete_candidate",
 ]
 Confidence = Literal["low", "medium", "high"]
 Support = Literal["supported", "weak", "unavailable"]
+StoryFamily = Literal["current_les", "deep_convection", "winter_future", "review"]
+ReadinessState = Literal[
+    "package_ready_now",
+    "runnable_caveated",
+    "future_package_needed",
+    "blocked_or_review",
+]
+CurrentPackageReadiness = Literal["yes", "caveated", "no"]
 
 STORY_LABELS: dict[StoryId, str] = {
     "shallow_cumulus_candidate": "Cloud-forming shallow cumulus candidate",
     "dry_failed_candidate": "Dry failed cumulus candidate",
     "capped_suppressed_candidate": "Capped / suppressed cumulus candidate",
     "humid_rainy_candidate": "Humid / rainy candidate",
+    "severe_thunderstorm_environment": "Severe thunderstorm environment",
+    "supercell_environment": "Supercell environment",
+    "elevated_convection": "Elevated convection environment",
+    "dry_microburst_inverted_v": "Dry microburst inverted-V environment",
+    "high_cape_pulse_storm": "High-CAPE pulse-storm environment",
+    "squall_line_cold_pool_candidate": "Squall-line / cold-pool candidate",
     "needs_review": "Needs review",
     "poor_or_incomplete_candidate": "Poor or incomplete data",
+}
+
+
+class StoryReadiness(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    story_family: StoryFamily
+    readiness_state: ReadinessState
+    package_readiness_label: str
+    screenable_from_sounding_now: bool = True
+    runnable_with_current_observed_sounding_package: CurrentPackageReadiness
+    specialized_package_recommended: bool = False
+    future_package_required: bool = False
+    package_readiness_caveats: list[str] = Field(default_factory=list)
+
+
+STORY_READINESS: dict[StoryId, StoryReadiness] = {
+    "shallow_cumulus_candidate": StoryReadiness(
+        story_family="current_les",
+        readiness_state="package_ready_now",
+        package_readiness_label="Current observed-sounding LES package",
+        runnable_with_current_observed_sounding_package="yes",
+    ),
+    "dry_failed_candidate": StoryReadiness(
+        story_family="current_les",
+        readiness_state="package_ready_now",
+        package_readiness_label="Current observed-sounding LES package",
+        runnable_with_current_observed_sounding_package="yes",
+    ),
+    "capped_suppressed_candidate": StoryReadiness(
+        story_family="current_les",
+        readiness_state="runnable_caveated",
+        package_readiness_label="Caveated current LES package",
+        runnable_with_current_observed_sounding_package="caveated",
+        specialized_package_recommended=True,
+        package_readiness_caveats=[
+            "Current package can explore the profile, but cap/stability validation "
+            "remains caveated."
+        ],
+    ),
+    "humid_rainy_candidate": StoryReadiness(
+        story_family="current_les",
+        readiness_state="runnable_caveated",
+        package_readiness_label="Caveated current LES package",
+        runnable_with_current_observed_sounding_package="caveated",
+        specialized_package_recommended=True,
+        package_readiness_caveats=[
+            "Current package can explore moist profiles, but rain production remains a CM1 outcome."
+        ],
+    ),
+    "severe_thunderstorm_environment": StoryReadiness(
+        story_family="deep_convection",
+        readiness_state="runnable_caveated",
+        package_readiness_label="Caveated profile exploration",
+        runnable_with_current_observed_sounding_package="caveated",
+        specialized_package_recommended=True,
+        package_readiness_caveats=[
+            "This is an environment screen, not a storm forecast.",
+            "A specialized deep-convection package is recommended before interpreting outcomes.",
+        ],
+    ),
+    "supercell_environment": StoryReadiness(
+        story_family="deep_convection",
+        readiness_state="future_package_needed",
+        package_readiness_label="Future deep-convection package required",
+        runnable_with_current_observed_sounding_package="no",
+        specialized_package_recommended=True,
+        future_package_required=True,
+        package_readiness_caveats=[
+            "Supercell exploration needs storm-mode controls and diagnostics not in "
+            "the current package."
+        ],
+    ),
+    "elevated_convection": StoryReadiness(
+        story_family="deep_convection",
+        readiness_state="future_package_needed",
+        package_readiness_label="Future elevated-convection package required",
+        runnable_with_current_observed_sounding_package="no",
+        specialized_package_recommended=True,
+        future_package_required=True,
+        package_readiness_caveats=[
+            "Elevated convection needs forcing and parcel diagnostics not in the current package."
+        ],
+    ),
+    "dry_microburst_inverted_v": StoryReadiness(
+        story_family="deep_convection",
+        readiness_state="runnable_caveated",
+        package_readiness_label="Caveated profile exploration",
+        runnable_with_current_observed_sounding_package="caveated",
+        specialized_package_recommended=True,
+        package_readiness_caveats=[
+            "Current package can inspect the profile, but it is not a validated microburst package."
+        ],
+    ),
+    "high_cape_pulse_storm": StoryReadiness(
+        story_family="deep_convection",
+        readiness_state="runnable_caveated",
+        package_readiness_label="Caveated profile exploration",
+        runnable_with_current_observed_sounding_package="caveated",
+        specialized_package_recommended=True,
+        package_readiness_caveats=[
+            "Current package can inspect the profile, but it cannot confirm "
+            "CAPE-driven pulse storms."
+        ],
+    ),
+    "squall_line_cold_pool_candidate": StoryReadiness(
+        story_family="deep_convection",
+        readiness_state="future_package_needed",
+        package_readiness_label="Future cold-pool package required",
+        runnable_with_current_observed_sounding_package="no",
+        specialized_package_recommended=True,
+        future_package_required=True,
+        package_readiness_caveats=[
+            "Squall-line and cold-pool exploration needs a specialized package and diagnostics."
+        ],
+    ),
+    "needs_review": StoryReadiness(
+        story_family="review",
+        readiness_state="blocked_or_review",
+        package_readiness_label="Review before package generation",
+        runnable_with_current_observed_sounding_package="caveated",
+        package_readiness_caveats=["Review the profile and caveats before package generation."],
+    ),
+    "poor_or_incomplete_candidate": StoryReadiness(
+        story_family="review",
+        readiness_state="blocked_or_review",
+        package_readiness_label="Blocked until data improves",
+        screenable_from_sounding_now=False,
+        runnable_with_current_observed_sounding_package="no",
+        package_readiness_caveats=[
+            "Package generation is blocked until parser/profile issues are fixed."
+        ],
+    ),
 }
 
 
@@ -64,6 +224,17 @@ class StoryScore(BaseModel):
     label: str
     score_0_to_100: float
     support: Support
+    story_family: StoryFamily = "current_les"
+    readiness_state: ReadinessState = "package_ready_now"
+    package_readiness_label: str = "Current observed-sounding LES package"
+    screenable_from_sounding_now: bool = True
+    runnable_with_current_observed_sounding_package: CurrentPackageReadiness = "yes"
+    specialized_package_recommended: bool = False
+    future_package_required: bool = False
+    package_readiness_caveats: list[str] = Field(default_factory=list)
+    required_diagnostics_used: list[str] = Field(default_factory=list)
+    unavailable_diagnostics: list[str] = Field(default_factory=list)
+    assumptions: list[str] = Field(default_factory=list)
     reasons: list[str] = Field(default_factory=list)
     caveats: list[str] = Field(default_factory=list)
 
@@ -96,6 +267,14 @@ class SoundingCandidate(BaseModel):
     source_provider: str = "NOAA/NCEI IGRA"
     primary_story: StoryId
     primary_story_label: str
+    story_family: StoryFamily = "current_les"
+    readiness_state: ReadinessState = "package_ready_now"
+    package_readiness_label: str = "Current observed-sounding LES package"
+    specialized_package_recommended: bool = False
+    future_package_required: bool = False
+    required_diagnostics_used: list[str] = Field(default_factory=list)
+    unavailable_diagnostics: list[str] = Field(default_factory=list)
+    assumptions: list[str] = Field(default_factory=list)
     story_scores: list[StoryScore]
     rank_score: float
     confidence: Confidence
@@ -138,6 +317,14 @@ class SavedSoundingCandidate(BaseModel):
     selected_sounding_payload: dict[str, Any] | None
     screening_version: str = SCREENING_VERSION
     primary_story: StoryId
+    story_family: StoryFamily = "current_les"
+    readiness_state: ReadinessState = "package_ready_now"
+    package_readiness_label: str = "Current observed-sounding LES package"
+    specialized_package_recommended: bool = False
+    future_package_required: bool = False
+    required_diagnostics_used: list[str] = Field(default_factory=list)
+    unavailable_diagnostics: list[str] = Field(default_factory=list)
+    assumptions: list[str] = Field(default_factory=list)
     story_scores: list[StoryScore]
     features: dict[str, float | int | str | bool | None]
     evidence: list[EvidenceItem]
@@ -268,6 +455,14 @@ def save_candidate(
         candidate=request.candidate,
         selected_sounding_payload=request.candidate.selected_sounding_payload,
         primary_story=request.candidate.primary_story,
+        story_family=request.candidate.story_family,
+        readiness_state=request.candidate.readiness_state,
+        package_readiness_label=request.candidate.package_readiness_label,
+        specialized_package_recommended=request.candidate.specialized_package_recommended,
+        future_package_required=request.candidate.future_package_required,
+        required_diagnostics_used=request.candidate.required_diagnostics_used,
+        unavailable_diagnostics=request.candidate.unavailable_diagnostics,
+        assumptions=request.candidate.assumptions,
         story_scores=request.candidate.story_scores,
         features=request.candidate.features,
         evidence=request.candidate.evidence,
@@ -364,6 +559,14 @@ def _candidate_from_cached_sounding(
         source_file_hash=source_hash,
         primary_story=primary.story,
         primary_story_label=primary.label,
+        story_family=primary.story_family,
+        readiness_state=primary.readiness_state,
+        package_readiness_label=primary.package_readiness_label,
+        specialized_package_recommended=primary.specialized_package_recommended,
+        future_package_required=primary.future_package_required,
+        required_diagnostics_used=primary.required_diagnostics_used,
+        unavailable_diagnostics=primary.unavailable_diagnostics,
+        assumptions=primary.assumptions,
         story_scores=story_scores,
         rank_score=rank_score,
         confidence=_confidence(rank_score, package_ready, features),
@@ -379,86 +582,40 @@ def _candidate_from_cached_sounding(
 def _features_from_record(
     record: ObservedSoundingRecord,
 ) -> dict[str, float | int | str | bool | None]:
-    levels = record.levels
-    surface = levels[0]
-    lowest = surface.model_z_m
-    top = levels[-1].model_z_m
-    surface_dewpoint = _dewpoint_c_from_qv(surface.pressure_pa, surface.qv_g_kg)
-    ttd = surface.temperature_c - surface_dewpoint if surface_dewpoint is not None else None
-    lcl = 125.0 * ttd if ttd is not None else None
-    qv_0_500 = _mean_qv(levels, 0.0, 500.0)
-    qv_0_1000 = _mean_qv(levels, 0.0, 1000.0)
-    qv_0_3000 = _mean_qv(levels, 0.0, 3000.0)
-    qv_near_surface = _mean_qv(levels, 0.0, 100.0) or surface.qv_g_kg
-    lapse_0_1000 = _lapse_rate(levels, 0.0, 1000.0)
-    lapse_0_3000 = _lapse_rate(levels, 0.0, 3000.0)
-    inversion_strength, inversion_base, inversion_top = _inversion_proxy(levels)
-    moisture_depth = _moisture_depth(levels, min_qv_g_kg=6.0)
-    usable_below_3km = sum(1 for level in levels if 0.0 <= level.model_z_m <= 3000.0)
-    observed_wind_available = all(
-        level.u_wind_m_s is not None and level.v_wind_m_s is not None for level in levels
-    )
-    completeness = min(
-        100.0,
-        25.0
-        + min(25.0, usable_below_3km * 2.5)
-        + (25.0 if top >= 18000.0 else max(0.0, top / 18000.0 * 25.0))
-        + (25.0 if lowest <= 50.0 else max(0.0, 25.0 - lowest / 20.0)),
-    )
-    qv_drop = (
-        round(qv_near_surface - qv_0_3000, 3)
-        if qv_0_3000 is not None and qv_near_surface is not None
-        else None
-    )
-    midlevel_qv = _mean_qv(levels, 2000.0, 5000.0)
-    midlevel_dry_layer = (
-        round(max(0.0, qv_near_surface - midlevel_qv), 3)
-        if midlevel_qv is not None and qv_near_surface is not None
-        else None
-    )
-    return {
-        "data_completeness_score": round(completeness, 1),
-        "surface_or_lowest_pressure_hpa": round(surface.pressure_pa / 100.0, 1),
-        "surface_or_lowest_temperature_c": round(surface.temperature_c, 2),
-        "surface_or_lowest_dewpoint_c": (
-            round(surface_dewpoint, 2) if surface_dewpoint is not None else None
-        ),
-        "surface_t_td_spread_c": round(ttd, 2) if ttd is not None else None,
-        "estimated_lcl_height_m_agl": round(lcl, 1) if lcl is not None else None,
-        "low_level_qv_g_kg": round(qv_near_surface, 3),
-        "mean_qv_0_500m_g_kg": round(qv_0_500, 3) if qv_0_500 is not None else None,
-        "mean_qv_0_1000m_g_kg": round(qv_0_1000, 3) if qv_0_1000 is not None else None,
-        "moisture_depth_m": round(moisture_depth, 1) if moisture_depth is not None else None,
-        "qv_drop_0_3000m_g_kg": qv_drop,
-        "lapse_rate_0_1000m_c_per_km": (
-            round(lapse_0_1000, 2) if lapse_0_1000 is not None else None
-        ),
-        "lapse_rate_0_3000m_c_per_km": (
-            round(lapse_0_3000, 2) if lapse_0_3000 is not None else None
-        ),
-        "inversion_strength_c": round(inversion_strength, 2),
-        "inversion_base_m_agl": round(inversion_base, 1) if inversion_base is not None else None,
-        "inversion_top_m_agl": round(inversion_top, 1) if inversion_top is not None else None,
-        "cap_strength_proxy": round(inversion_strength, 2),
-        "cap_height_m_agl": round(inversion_base, 1) if inversion_base is not None else None,
-        "midlevel_dry_layer_proxy": midlevel_dry_layer,
-        "profile_top_m_agl": round(top, 1),
-        "lowest_level_m_agl": round(lowest, 1),
-        "usable_levels_below_3km": usable_below_3km,
-        "observed_wind_available": observed_wind_available,
+    diagnostics = compute_sounding_diagnostics(record)
+    features: dict[str, float | int | str | bool | None] = {
+        key: feature.value for key, feature in diagnostics.feature_values.items()
     }
+    features["observed_wind_available"] = bool(
+        features.get("has_observed_wind_profile") or features.get("wind_available")
+    )
+    features["sounding_diagnostic_version"] = diagnostics.diagnostic_version
+    return features
 
 
 def _score_features(
     features: dict[str, float | int | str | bool | None], *, package_ready: bool
 ) -> tuple[list[StoryScore], list[EvidenceItem]]:
     qv = _numeric_feature(features, "mean_qv_0_1000m_g_kg")
+    qv_3km = _numeric_feature(features, "mean_qv_0_3000m_g_kg")
     lcl = _numeric_feature(features, "estimated_lcl_height_m_agl")
     lapse = _numeric_feature(features, "lapse_rate_0_1000m_c_per_km")
+    lapse_3km = _numeric_feature(features, "lapse_rate_0_3000m_c_per_km")
+    midlevel_lapse = _numeric_feature(features, "midlevel_lapse_rate_700_500_hpa_c_per_km")
     cap = _numeric_feature(features, "cap_strength_proxy")
+    cap_height = _numeric_feature(features, "cap_height_m_agl")
+    inversion_strength = _numeric_feature(features, "inversion_strength_c")
     moisture_depth = _numeric_feature(features, "moisture_depth_m")
     completeness = _numeric_feature(features, "data_completeness_score")
     midlevel_dry = _numeric_feature(features, "midlevel_dry_layer_proxy")
+    surface_ttd = _numeric_feature(features, "surface_t_td_spread_c")
+    qv_drop = _numeric_feature(features, "qv_drop_0_3000m_g_kg")
+    dry_microburst_proxy = _numeric_feature(features, "dry_microburst_inverted_v_proxy")
+    shear_0_1 = _numeric_feature(features, "bulk_shear_0_1km_m_s")
+    shear_0_3 = _numeric_feature(features, "bulk_shear_0_3km_m_s")
+    shear_0_6 = _numeric_feature(features, "bulk_shear_0_6km_m_s")
+    freezing_level = _numeric_feature(features, "freezing_level_m_agl")
+    wind_available = features.get("observed_wind_available") is True
     story_feature_names = [
         "mean_qv_0_1000m_g_kg",
         "estimated_lcl_height_m_agl",
@@ -483,6 +640,20 @@ def _score_features(
     shallow_moisture = _score_low(moisture_depth, low=500.0, high=1800.0)
     data_quality = _score_high(completeness, low=40.0, high=90.0)
     dry_layer = _score_high(midlevel_dry, low=2.0, high=8.0)
+    deep_layer_moisture = _score_high(qv_3km, low=4.0, high=10.0)
+    steep_lower_troposphere = _score_high(lapse_3km, low=5.0, high=8.0)
+    steep_midlevel = _score_high(midlevel_lapse, low=5.5, high=8.5)
+    strong_deep_shear = _score_high(shear_0_6, low=12.0, high=30.0)
+    strong_low_shear = _score_high(shear_0_1, low=5.0, high=15.0)
+    strong_three_km_shear = _score_high(shear_0_3, low=10.0, high=25.0)
+    moderate_cap = _score_peak(cap, low=0.5, peak=2.0, high=5.0)
+    elevated_cap = _score_high(inversion_strength, low=2.0, high=7.0)
+    elevated_cap_height = _score_peak(cap_height, low=700.0, peak=1500.0, high=3000.0)
+    dry_surface = _score_high(surface_ttd, low=10.0, high=25.0)
+    strong_qv_drop = _score_high(qv_drop, low=2.0, high=8.0)
+    dry_microburst = _score_high(dry_microburst_proxy, low=35.0, high=85.0)
+    pulse_storm_shear = _score_low(shear_0_6, low=8.0, high=22.0)
+    warm_cloud_layer = _score_high(freezing_level, low=2500.0, high=4500.0)
     feature_coverage = (
         (len(story_feature_names) - len(missing_story_features)) / len(story_feature_names)
         if story_feature_names
@@ -505,6 +676,77 @@ def _score_features(
     humid_rainy = _weighted_score(
         [(moist, 0.32), (low_lcl, 0.22), (deep_moisture, 0.26), (weak_cap, 0.20)]
     )
+    severe = _weighted_score(
+        [
+            (moist, 0.16),
+            (low_lcl, 0.12),
+            (deep_layer_moisture, 0.12),
+            (steep_lower_troposphere, 0.18),
+            (steep_midlevel, 0.12),
+            (strong_deep_shear, 0.18),
+            (moderate_cap, 0.06),
+            (data_quality, 0.06),
+        ]
+    )
+    supercell = _weighted_score(
+        [
+            (moist, 0.12),
+            (low_lcl, 0.10),
+            (steep_midlevel, 0.14),
+            (strong_deep_shear, 0.26),
+            (strong_three_km_shear, 0.16),
+            (strong_low_shear, 0.12),
+            (moderate_cap, 0.05),
+            (data_quality, 0.05),
+        ]
+    )
+    elevated = _weighted_score(
+        [
+            (elevated_cap, 0.28),
+            (elevated_cap_height, 0.22),
+            (deep_layer_moisture, 0.18),
+            (steep_midlevel, 0.17),
+            (strong_three_km_shear, 0.10),
+            (data_quality, 0.05),
+        ]
+    )
+    dry_microburst_score = _weighted_score(
+        [
+            (dry_microburst, 0.30),
+            (dry_surface, 0.18),
+            (dry_layer, 0.18),
+            (strong_qv_drop, 0.16),
+            (thermal, 0.12),
+            (data_quality, 0.06),
+        ]
+    )
+    pulse = _weighted_score(
+        [
+            (moist, 0.20),
+            (low_lcl, 0.16),
+            (deep_layer_moisture, 0.16),
+            (steep_lower_troposphere, 0.22),
+            (pulse_storm_shear, 0.14),
+            (weak_cap, 0.06),
+            (data_quality, 0.06),
+        ]
+    )
+    squall_line = _weighted_score(
+        [
+            (moist, 0.12),
+            (deep_layer_moisture, 0.10),
+            (steep_lower_troposphere, 0.14),
+            (strong_deep_shear, 0.20),
+            (strong_three_km_shear, 0.14),
+            (dry_layer, 0.10),
+            (warm_cloud_layer, 0.08),
+            (data_quality, 0.12),
+        ]
+    )
+    if not wind_available:
+        severe *= 0.72
+        supercell *= 0.55
+        squall_line *= 0.65
     poor = 100.0 if not package_ready else min(34.0, max(0.0, 100.0 - data_quality))
     if not package_ready:
         poor = 100.0
@@ -545,6 +787,171 @@ def _score_features(
             caveats=[
                 "Humid/rainy is heavily caveated because forcing remains idealized.",
                 *missing_caveats,
+            ],
+        ),
+        _story_score(
+            "severe_thunderstorm_environment",
+            severe,
+            reasons=[
+                "moisture, lapse-rate, cap, and deep-shear proxies resemble a "
+                "severe-thunderstorm environment"
+            ],
+            caveats=_deep_convection_caveats(
+                features,
+                [
+                    "mean_qv_0_1000m_g_kg",
+                    "estimated_lcl_height_m_agl",
+                    "lapse_rate_0_3000m_c_per_km",
+                    "bulk_shear_0_6km_m_s",
+                ],
+            ),
+            required_diagnostics=[
+                "mean_qv_0_1000m_g_kg",
+                "estimated_lcl_height_m_agl",
+                "lapse_rate_0_3000m_c_per_km",
+                "bulk_shear_0_6km_m_s",
+            ],
+            assumptions=[
+                "Severe screening uses sounding proxies because CAPE, CIN, LFC, "
+                "EL, and SRH are unavailable.",
+                "This is an environment screen, not a storm forecast.",
+            ],
+        ),
+        _story_score(
+            "supercell_environment",
+            supercell,
+            reasons=[
+                "strong deep-layer and low-level shear proxies with moisture/instability context"
+            ],
+            caveats=_deep_convection_caveats(
+                features,
+                [
+                    "mean_qv_0_1000m_g_kg",
+                    "estimated_lcl_height_m_agl",
+                    "midlevel_lapse_rate_700_500_hpa_c_per_km",
+                    "bulk_shear_0_1km_m_s",
+                    "bulk_shear_0_3km_m_s",
+                    "bulk_shear_0_6km_m_s",
+                ],
+                extra=["storm_relative_helicity_unavailable"],
+            ),
+            required_diagnostics=[
+                "mean_qv_0_1000m_g_kg",
+                "midlevel_lapse_rate_700_500_hpa_c_per_km",
+                "bulk_shear_0_1km_m_s",
+                "bulk_shear_0_3km_m_s",
+                "bulk_shear_0_6km_m_s",
+            ],
+            assumptions=[
+                "Supercell screening is caveated because SRH and storm-motion "
+                "diagnostics are unavailable.",
+                "Current package generation is not a validated supercell scenario.",
+            ],
+        ),
+        _story_score(
+            "elevated_convection",
+            elevated,
+            reasons=["inversion/cap, elevated moisture, midlevel lapse-rate, and shear proxies"],
+            caveats=_deep_convection_caveats(
+                features,
+                [
+                    "inversion_strength_c",
+                    "cap_height_m_agl",
+                    "mean_qv_0_3000m_g_kg",
+                    "midlevel_lapse_rate_700_500_hpa_c_per_km",
+                ],
+                extra=["elevated_parcel_diagnostics_unavailable"],
+            ),
+            required_diagnostics=[
+                "inversion_strength_c",
+                "cap_height_m_agl",
+                "mean_qv_0_3000m_g_kg",
+                "midlevel_lapse_rate_700_500_hpa_c_per_km",
+            ],
+            assumptions=[
+                "Elevated-convection screening uses crude cap/moisture proxies "
+                "without parcel diagnostics.",
+                "Current package generation is not a validated elevated-convection scenario.",
+            ],
+        ),
+        _story_score(
+            "dry_microburst_inverted_v",
+            dry_microburst_score,
+            reasons=["large low-level T-Td spread, dry-layer, qv-drop, and lapse-rate proxies"],
+            caveats=_deep_convection_caveats(
+                features,
+                [
+                    "dry_microburst_inverted_v_proxy",
+                    "surface_t_td_spread_c",
+                    "midlevel_dry_layer_proxy",
+                    "qv_drop_0_3000m_g_kg",
+                    "lapse_rate_0_1000m_c_per_km",
+                ],
+            ),
+            required_diagnostics=[
+                "dry_microburst_inverted_v_proxy",
+                "surface_t_td_spread_c",
+                "midlevel_dry_layer_proxy",
+                "qv_drop_0_3000m_g_kg",
+                "lapse_rate_0_1000m_c_per_km",
+            ],
+            assumptions=[
+                "Dry-microburst screening is a sounding-shape hypothesis, not a "
+                "microburst forecast.",
+                "Current package generation is not a validated microburst scenario.",
+            ],
+        ),
+        _story_score(
+            "high_cape_pulse_storm",
+            pulse,
+            reasons=["moist, low-LCL, steep-lapse, weak-shear proxies resemble pulse-storm setups"],
+            caveats=_deep_convection_caveats(
+                features,
+                [
+                    "mean_qv_0_1000m_g_kg",
+                    "estimated_lcl_height_m_agl",
+                    "lapse_rate_0_3000m_c_per_km",
+                    "bulk_shear_0_6km_m_s",
+                ],
+                extra=["cape_unavailable"],
+            ),
+            required_diagnostics=[
+                "mean_qv_0_1000m_g_kg",
+                "estimated_lcl_height_m_agl",
+                "lapse_rate_0_3000m_c_per_km",
+                "bulk_shear_0_6km_m_s",
+            ],
+            assumptions=[
+                "High-CAPE pulse-storm screening uses moisture and lapse-rate "
+                "proxies because CAPE is unavailable.",
+                "Current package generation is not a validated pulse-storm scenario.",
+            ],
+        ),
+        _story_score(
+            "squall_line_cold_pool_candidate",
+            squall_line,
+            reasons=["moisture, shear, lapse-rate, dry-layer, and freezing-level proxies"],
+            caveats=_deep_convection_caveats(
+                features,
+                [
+                    "mean_qv_0_1000m_g_kg",
+                    "lapse_rate_0_3000m_c_per_km",
+                    "bulk_shear_0_3km_m_s",
+                    "bulk_shear_0_6km_m_s",
+                    "freezing_level_m_agl",
+                ],
+                extra=["cold_pool_diagnostics_unavailable"],
+            ),
+            required_diagnostics=[
+                "mean_qv_0_1000m_g_kg",
+                "lapse_rate_0_3000m_c_per_km",
+                "bulk_shear_0_3km_m_s",
+                "bulk_shear_0_6km_m_s",
+                "freezing_level_m_agl",
+            ],
+            assumptions=[
+                "Squall-line screening cannot validate cold-pool behavior before a CM1 run.",
+                "Current package generation is not a validated squall-line or cold-pool scenario.",
             ],
         ),
         _story_score(
@@ -632,8 +1039,26 @@ def _score_features(
             interpretation=(
                 "Lower-atmosphere stability gives context for thermal growth and cap effects."
             ),
-            supports_story=["capped_suppressed_candidate", "needs_review"],
+            supports_story=[
+                "capped_suppressed_candidate",
+                "severe_thunderstorm_environment",
+                "high_cape_pulse_storm",
+                "squall_line_cold_pool_candidate",
+                "needs_review",
+            ],
             caveats=_feature_caveats(features, "lapse_rate_0_3000m_c_per_km"),
+        ),
+        EvidenceItem(
+            label="Midlevel lapse rate",
+            value=features.get("midlevel_lapse_rate_700_500_hpa_c_per_km"),
+            units="C/km",
+            interpretation="Midlevel lapse-rate context helps screen deep-convection environments.",
+            supports_story=[
+                "severe_thunderstorm_environment",
+                "supercell_environment",
+                "elevated_convection",
+            ],
+            caveats=_feature_caveats(features, "midlevel_lapse_rate_700_500_hpa_c_per_km"),
         ),
         EvidenceItem(
             label="Cap strength proxy",
@@ -675,8 +1100,50 @@ def _score_features(
             interpretation=(
                 "A stronger near-surface to midlevel moisture drop supports dry-failed hypotheses."
             ),
-            supports_story=["dry_failed_candidate"],
+            supports_story=[
+                "dry_failed_candidate",
+                "dry_microburst_inverted_v",
+                "squall_line_cold_pool_candidate",
+            ],
             caveats=_feature_caveats(features, "midlevel_dry_layer_proxy"),
+        ),
+        EvidenceItem(
+            label="Bulk shear 0-6 km",
+            value=features.get("bulk_shear_0_6km_m_s"),
+            units="m/s",
+            interpretation="Deep-layer shear is pre-run evidence for organized-convection screens.",
+            supports_story=[
+                "severe_thunderstorm_environment",
+                "supercell_environment",
+                "squall_line_cold_pool_candidate",
+            ],
+            caveats=_feature_caveats(features, "bulk_shear_0_6km_m_s"),
+        ),
+        EvidenceItem(
+            label="Bulk shear 0-3 km",
+            value=features.get("bulk_shear_0_3km_m_s"),
+            units="m/s",
+            interpretation="Lower-tropospheric shear adds context for organized-storm screens.",
+            supports_story=["supercell_environment", "squall_line_cold_pool_candidate"],
+            caveats=_feature_caveats(features, "bulk_shear_0_3km_m_s"),
+        ),
+        EvidenceItem(
+            label="Dry microburst proxy",
+            value=features.get("dry_microburst_inverted_v_proxy"),
+            units="0-100",
+            interpretation=(
+                "High values indicate an inverted-V-like dry subcloud profile hypothesis."
+            ),
+            supports_story=["dry_microburst_inverted_v"],
+            caveats=_feature_caveats(features, "dry_microburst_inverted_v_proxy"),
+        ),
+        EvidenceItem(
+            label="Freezing level",
+            value=features.get("freezing_level_m_agl"),
+            units="m AGL",
+            interpretation="Freezing-level context helps precipitation and cold-pool screens.",
+            supports_story=["severe_thunderstorm_environment", "squall_line_cold_pool_candidate"],
+            caveats=_feature_caveats(features, "freezing_level_m_agl"),
         ),
         EvidenceItem(
             label="Observed wind availability",
@@ -749,6 +1216,12 @@ def _poor_candidate_scores(reason: str) -> tuple[list[StoryScore], list[Evidence
         _story_score("dry_failed_candidate", 0.0),
         _story_score("capped_suppressed_candidate", 0.0),
         _story_score("humid_rainy_candidate", 0.0),
+        _story_score("severe_thunderstorm_environment", 0.0),
+        _story_score("supercell_environment", 0.0),
+        _story_score("elevated_convection", 0.0),
+        _story_score("dry_microburst_inverted_v", 0.0),
+        _story_score("high_cape_pulse_storm", 0.0),
+        _story_score("squall_line_cold_pool_candidate", 0.0),
     ]
     evidence = [
         EvidenceItem(
@@ -767,6 +1240,8 @@ def _story_score(
     *,
     reasons: list[str] | None = None,
     caveats: list[str] | None = None,
+    required_diagnostics: list[str] | None = None,
+    assumptions: list[str] | None = None,
 ) -> StoryScore:
     rounded = round(max(0.0, min(100.0, score)), 1)
     support: Support
@@ -776,13 +1251,37 @@ def _story_score(
         support = "weak"
     else:
         support = "unavailable"
+    readiness = STORY_READINESS[story]
+    normalized_caveats = caveats or []
+    unavailable_diagnostics = [
+        caveat.removeprefix("missing_or_unavailable_feature:")
+        for caveat in normalized_caveats
+        if caveat.startswith("missing_or_unavailable_feature:")
+    ]
     return StoryScore(
         story=story,
         label=STORY_LABELS[story],
         score_0_to_100=rounded,
         support=support,
+        story_family=readiness.story_family,
+        readiness_state=readiness.readiness_state,
+        package_readiness_label=readiness.package_readiness_label,
+        screenable_from_sounding_now=readiness.screenable_from_sounding_now,
+        runnable_with_current_observed_sounding_package=(
+            readiness.runnable_with_current_observed_sounding_package
+        ),
+        specialized_package_recommended=readiness.specialized_package_recommended,
+        future_package_required=readiness.future_package_required,
+        package_readiness_caveats=readiness.package_readiness_caveats,
+        required_diagnostics_used=[
+            name
+            for name in (required_diagnostics or [])
+            if not _diagnostic_missing_from_caveats(normalized_caveats, name)
+        ],
+        unavailable_diagnostics=unavailable_diagnostics,
+        assumptions=assumptions or [],
         reasons=reasons or [],
-        caveats=caveats or [],
+        caveats=[*normalized_caveats, *readiness.package_readiness_caveats],
     )
 
 
@@ -860,6 +1359,30 @@ def _feature_caveats(features: dict[str, float | int | str | bool | None], name:
     return [] if _numeric_feature(features, name) is not None else [f"{name}_unavailable"]
 
 
+def _deep_convection_caveats(
+    features: dict[str, float | int | str | bool | None],
+    required_features: list[str],
+    *,
+    extra: list[str] | None = None,
+) -> list[str]:
+    missing = [
+        f"missing_or_unavailable_feature:{name}"
+        for name in required_features
+        if _numeric_feature(features, name) is None
+    ]
+    caveats = [
+        "screening_guidance_only_not_storm_forecast",
+        "cm1_output_remains_source_of_truth",
+        *missing,
+        *(extra or []),
+    ]
+    return caveats
+
+
+def _diagnostic_missing_from_caveats(caveats: list[str], name: str) -> bool:
+    return f"missing_or_unavailable_feature:{name}" in caveats
+
+
 def _score_high(value: float | None, *, low: float, high: float) -> float:
     if value is None:
         return 0.0
@@ -870,6 +1393,18 @@ def _score_low(value: float | None, *, low: float, high: float) -> float:
     if value is None:
         return 0.0
     return max(0.0, min(100.0, (high - value) / (high - low) * 100.0))
+
+
+def _score_peak(value: float | None, *, low: float, peak: float, high: float) -> float:
+    if value is None:
+        return 0.0
+    if value <= low or value >= high:
+        return 0.0
+    if math.isclose(value, peak):
+        return 100.0
+    if value < peak:
+        return max(0.0, min(100.0, (value - low) / (peak - low) * 100.0))
+    return max(0.0, min(100.0, (high - value) / (high - peak) * 100.0))
 
 
 def _weighted_score(parts: list[tuple[float, float]]) -> float:

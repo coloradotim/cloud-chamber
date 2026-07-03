@@ -340,6 +340,12 @@ def test_story_scores_and_evidence_are_traceable_to_soundings() -> None:
         "dry_failed_candidate",
         "capped_suppressed_candidate",
         "humid_rainy_candidate",
+        "severe_thunderstorm_environment",
+        "supercell_environment",
+        "elevated_convection",
+        "dry_microburst_inverted_v",
+        "high_cape_pulse_storm",
+        "squall_line_cold_pool_candidate",
         "needs_review",
         "poor_or_incomplete_candidate",
     }
@@ -354,14 +360,177 @@ def test_story_scores_and_evidence_are_traceable_to_soundings() -> None:
         "Lapse rate 0-3 km",
         "Cap strength proxy",
         "Cap height proxy",
+        "Midlevel lapse rate",
         "Moisture depth",
         "Midlevel dry-layer proxy",
+        "Bulk shear 0-6 km",
+        "Bulk shear 0-3 km",
+        "Dry microburst proxy",
+        "Freezing level",
         "Observed wind availability",
         "Profile top",
         "Lowest usable level",
         "Profile completeness",
         "Package readiness",
     }
+
+
+def _deep_convection_feature_set(
+    **overrides: float | int | str | bool | None,
+) -> dict[str, float | int | str | bool | None]:
+    features: dict[str, float | int | str | bool | None] = {
+        "data_completeness_score": 95.0,
+        "low_level_qv_g_kg": 12.0,
+        "mean_qv_0_500m_g_kg": 12.0,
+        "mean_qv_0_1000m_g_kg": 12.0,
+        "mean_qv_0_3000m_g_kg": 8.0,
+        "surface_t_td_spread_c": 5.0,
+        "estimated_lcl_height_m_agl": 625.0,
+        "lapse_rate_0_1000m_c_per_km": 7.5,
+        "lapse_rate_0_3000m_c_per_km": 7.5,
+        "midlevel_lapse_rate_700_500_hpa_c_per_km": 7.0,
+        "cap_strength_proxy": 2.0,
+        "cap_height_m_agl": 1200.0,
+        "inversion_strength_c": 2.0,
+        "moisture_depth_m": 3500.0,
+        "midlevel_dry_layer_proxy": 3.0,
+        "qv_drop_0_3000m_g_kg": 4.0,
+        "dry_microburst_inverted_v_proxy": 30.0,
+        "bulk_shear_0_1km_m_s": 8.0,
+        "bulk_shear_0_3km_m_s": 15.0,
+        "bulk_shear_0_6km_m_s": 25.0,
+        "freezing_level_m_agl": 3500.0,
+        "observed_wind_available": True,
+        "profile_top_m_agl": 18000.0,
+        "lowest_level_m_agl": 0.0,
+    }
+    features.update(overrides)
+    return features
+
+
+@pytest.mark.parametrize(
+    ("story", "overrides", "future_required", "readiness"),
+    [
+        ("severe_thunderstorm_environment", {}, False, "runnable_caveated"),
+        (
+            "supercell_environment",
+            {
+                "bulk_shear_0_1km_m_s": 16.0,
+                "bulk_shear_0_3km_m_s": 26.0,
+                "bulk_shear_0_6km_m_s": 35.0,
+            },
+            True,
+            "future_package_needed",
+        ),
+        (
+            "elevated_convection",
+            {
+                "inversion_strength_c": 7.0,
+                "cap_strength_proxy": 6.0,
+                "cap_height_m_agl": 1500.0,
+                "bulk_shear_0_3km_m_s": 20.0,
+            },
+            True,
+            "future_package_needed",
+        ),
+        (
+            "dry_microburst_inverted_v",
+            {
+                "mean_qv_0_1000m_g_kg": 5.0,
+                "surface_t_td_spread_c": 25.0,
+                "estimated_lcl_height_m_agl": 2500.0,
+                "midlevel_dry_layer_proxy": 9.0,
+                "qv_drop_0_3000m_g_kg": 8.0,
+                "dry_microburst_inverted_v_proxy": 90.0,
+            },
+            False,
+            "runnable_caveated",
+        ),
+        (
+            "high_cape_pulse_storm",
+            {"bulk_shear_0_6km_m_s": 8.0, "cap_strength_proxy": 0.2},
+            False,
+            "runnable_caveated",
+        ),
+        (
+            "squall_line_cold_pool_candidate",
+            {
+                "bulk_shear_0_3km_m_s": 24.0,
+                "bulk_shear_0_6km_m_s": 30.0,
+                "midlevel_dry_layer_proxy": 6.0,
+                "freezing_level_m_agl": 4200.0,
+            },
+            True,
+            "future_package_needed",
+        ),
+    ],
+)
+def test_deep_convection_story_scores_have_readiness_metadata(
+    story: str,
+    overrides: dict[str, float | int | str | bool | None],
+    future_required: bool,
+    readiness: str,
+) -> None:
+    scores, evidence = _score_features(
+        _deep_convection_feature_set(**overrides),
+        package_ready=True,
+    )
+
+    score = next(candidate for candidate in scores if candidate.story == story)
+    assert score.story_family == "deep_convection"
+    assert score.score_0_to_100 >= 65.0
+    assert score.support == "supported"
+    assert score.readiness_state == readiness
+    assert score.future_package_required is future_required
+    assert score.specialized_package_recommended is True
+    assert score.required_diagnostics_used
+    assert score.assumptions
+    assert "cm1_output_remains_source_of_truth" in score.caveats
+    assert evidence
+
+
+def test_deep_convection_missing_shear_is_caveated_not_confident() -> None:
+    scores, _evidence = _score_features(
+        _deep_convection_feature_set(
+            bulk_shear_0_1km_m_s=None,
+            bulk_shear_0_3km_m_s=None,
+            bulk_shear_0_6km_m_s=None,
+            observed_wind_available=False,
+        ),
+        package_ready=True,
+    )
+
+    severe = next(score for score in scores if score.story == "severe_thunderstorm_environment")
+    supercell = next(score for score in scores if score.story == "supercell_environment")
+    assert severe.support == "weak"
+    assert "bulk_shear_0_6km_m_s" in severe.unavailable_diagnostics
+    assert supercell.support == "unavailable"
+    assert "bulk_shear_0_1km_m_s" in supercell.unavailable_diagnostics
+    assert "storm_relative_helicity_unavailable" in supercell.caveats
+
+
+def test_saved_candidates_preserve_deep_convection_readiness_metadata(tmp_path: Path) -> None:
+    settings = _settings(tmp_path)
+    _write_cached_igra_station(settings)
+    candidate = screen_cached_soundings(
+        settings,
+        latest_per_station=1,
+        target_story="severe_thunderstorm_environment",
+    ).candidates[0]
+    severe_score = next(
+        score
+        for score in candidate.story_scores
+        if score.story == "severe_thunderstorm_environment"
+    )
+
+    saved = save_candidate(settings, SaveCandidateRequest(candidate=candidate))
+
+    assert saved.story_scores == candidate.story_scores
+    assert severe_score.story_family == "deep_convection"
+    assert any(
+        score.story == "severe_thunderstorm_environment" and score.specialized_package_recommended
+        for score in list_saved_candidates(settings)[0].story_scores
+    )
 
 
 def test_saved_candidates_round_trip_runtime_local(tmp_path: Path) -> None:

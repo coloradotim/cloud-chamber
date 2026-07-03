@@ -381,6 +381,89 @@ const missingLclCandidate = {
   evidence: shallowCandidate.evidence.filter((item) => item.label !== "Estimated LCL"),
 };
 
+const severeCandidate = {
+  ...shallowCandidate,
+  candidate_id: "USM00072451-2025010500-severe",
+  station_id: "USM00072451",
+  station_name: "Dodge City, Kansas",
+  valid_time_utc: "2025-01-05T00:00:00Z",
+  primary_story: "severe_thunderstorm_environment",
+  primary_story_label: "Severe thunderstorm environment",
+  story_family: "deep_convection",
+  readiness_state: "runnable_caveated",
+  package_readiness_label: "Caveated profile exploration",
+  specialized_package_recommended: true,
+  future_package_required: false,
+  rank_score: 84,
+  story_scores: [
+    {
+      story: "severe_thunderstorm_environment",
+      label: "Severe thunderstorm environment",
+      score_0_to_100: 84,
+      support: "supported",
+      story_family: "deep_convection",
+      readiness_state: "runnable_caveated",
+      package_readiness_label: "Caveated profile exploration",
+      specialized_package_recommended: true,
+      future_package_required: false,
+      package_readiness_caveats: ["This is an environment screen, not a storm forecast."],
+      required_diagnostics_used: [
+        "mean_qv_0_1000m_g_kg",
+        "lapse_rate_0_3000m_c_per_km",
+        "bulk_shear_0_6km_m_s",
+      ],
+      unavailable_diagnostics: [],
+      assumptions: ["CM1 output decides what actually happens."],
+      reasons: ["Moisture, lapse-rate, and shear proxies support this environment screen."],
+      caveats: ["screening_guidance_only_not_storm_forecast"],
+    },
+    {
+      story: "shallow_cumulus_candidate",
+      label: "Cloud-forming shallow cumulus",
+      score_0_to_100: 55,
+      support: "weak",
+      reasons: [],
+      caveats: [],
+    },
+    {
+      story: "supercell_environment",
+      label: "Supercell environment",
+      score_0_to_100: 72,
+      support: "supported",
+      story_family: "deep_convection",
+      readiness_state: "future_package_needed",
+      package_readiness_label: "Future deep-convection package required",
+      runnable_with_current_observed_sounding_package: "no",
+      specialized_package_recommended: true,
+      future_package_required: true,
+      package_readiness_caveats: [
+        "Supercell exploration needs storm-mode controls and diagnostics not in the current package.",
+      ],
+      required_diagnostics_used: ["bulk_shear_0_6km_m_s"],
+      unavailable_diagnostics: ["srh"],
+      assumptions: ["SRH is unavailable, so support remains caveated."],
+      reasons: ["Deep-layer shear supports an organized-convection screen."],
+      caveats: ["future_specialized_package_required"],
+    },
+  ],
+  features: {
+    ...shallowCandidate.features,
+    bulk_shear_0_6km_m_s: 28,
+    lapse_rate_0_3000m_c_per_km: 7.4,
+  },
+  evidence: [
+    {
+      label: "Bulk shear 0-6 km",
+      value: 28,
+      units: "m/s",
+      interpretation: "Deep-layer shear supports organized deep-convection screens.",
+      supports_story: ["severe_thunderstorm_environment"],
+      caveats: [],
+    },
+    ...shallowCandidate.evidence,
+  ],
+};
+
 const screeningInputsResponse = {
   inputs: [
     {
@@ -403,6 +486,7 @@ const screeningResponse = {
     blockedCandidate,
     secondaryShallowCandidate,
     missingLclCandidate,
+    severeCandidate,
   ],
   caveats: ["screening_guidance_only"],
 };
@@ -2436,6 +2520,43 @@ describe("App", () => {
     );
     expect(validLclIndex).toBeGreaterThanOrEqual(0);
     expect(missingLclIndex).toBeGreaterThan(validLclIndex);
+  });
+
+  it("shows deep-convection candidate filters with readiness caveats", async () => {
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Build" }));
+    fireEvent.change(await screen.findByLabelText("Experiment"), {
+      target: { value: "__observed_sounding_upload__" },
+    });
+
+    const storyFilter = screen.getByLabelText("Story filter");
+    expect(
+      within(storyFilter).getByRole("option", { name: "Severe thunderstorm environment" }),
+    ).toBeInTheDocument();
+
+    fireEvent.change(storyFilter, {
+      target: { value: "severe_thunderstorm_environment" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Screen cached soundings" }));
+
+    expect(await screen.findByText("Screening guidance loaded")).toBeInTheDocument();
+    const severeCard = screen.getByLabelText("Sounding candidate Dodge City, Kansas (USM00072451)");
+    expect(severeCard).toHaveTextContent("Severe thunderstorm environment");
+    expect(severeCard).toHaveTextContent("Caveated profile exploration");
+    expect(screen.getByLabelText("Candidate details")).toHaveTextContent(
+      "This is an environment screen, not a storm forecast.",
+    );
+    expect(screen.getByLabelText("Candidate details")).toHaveTextContent(
+      "CM1 output decides what actually happens.",
+    );
+
+    fireEvent.change(storyFilter, {
+      target: { value: "supercell_environment" },
+    });
+    expect(severeCard).toHaveTextContent("Future deep-convection package required");
+    expect(severeCard).toHaveTextContent("Supercell environment");
+    expect(within(severeCard).getByRole("button", { name: "Use this sounding" })).toBeDisabled();
   });
 
   it("shows Deep Overnight as an expensive distinct generated package", async () => {
