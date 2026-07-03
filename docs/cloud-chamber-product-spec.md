@@ -93,7 +93,9 @@ depends on the atmospheric question being tested. Match scores are transparent
 candidate-selection aids, not CM1 outcome predictions. Saved candidates live in
 the runtime cache and may be handed into package metadata as provenance for why
 a sounding was tried. The browser never parses remote directory listings, ZIP
-files, or station text files.
+files, or station text files. The current story identifiers, feature inputs,
+score support states, evidence requirements, and caveat rules are defined in
+[contracts/sounding-candidate-screening.md](contracts/sounding-candidate-screening.md).
 
 In Build, `Upload a Sounding` is the product-facing entry point for this
 candidate workflow. It should show a `Find interesting soundings` workbench

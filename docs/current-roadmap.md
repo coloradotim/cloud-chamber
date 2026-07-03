@@ -46,6 +46,7 @@ Use these docs as the current strategic and contract sources:
 - [Output And Visualization Architecture Research](research/output-and-visualization-architecture.md)
 - [Realistic LES Input Specification](contracts/realistic-les-input-specification.md)
 - [Output Product Specification](contracts/output-product-specification.md)
+- [Sounding Candidate Screening Contract](contracts/sounding-candidate-screening.md)
 
 The research memos are PM input and evidence. The contract docs define the
 implementation boundary that future issues should build from.
