@@ -96,6 +96,12 @@ a sounding was tried. The browser never parses remote directory listings, ZIP
 files, or station text files. The current story identifiers, feature inputs,
 score support states, evidence requirements, and caveat rules are defined in
 [contracts/sounding-candidate-screening.md](contracts/sounding-candidate-screening.md).
+Future real-sounding story families, including severe/deep-convection,
+boundary-layer, low-cloud, and winter/cold-season candidates, are defined as
+planning taxonomy in
+[research/expanded-sounding-candidate-taxonomy.md](research/expanded-sounding-candidate-taxonomy.md).
+Those labels must remain disabled, caveated, or absent from product UI until
+backend scoring, evidence, caveats, and package-readiness states support them.
 
 In Build, `Upload a Sounding` is the product-facing entry point for this
 candidate workflow. It should show a `Find interesting soundings` workbench

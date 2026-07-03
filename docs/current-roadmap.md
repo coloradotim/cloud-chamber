@@ -47,9 +47,15 @@ Use these docs as the current strategic and contract sources:
 - [Realistic LES Input Specification](contracts/realistic-les-input-specification.md)
 - [Output Product Specification](contracts/output-product-specification.md)
 - [Sounding Candidate Screening Contract](contracts/sounding-candidate-screening.md)
+- [Expanded Sounding Candidate Taxonomy](research/expanded-sounding-candidate-taxonomy.md)
 
 The research memos are PM input and evidence. The contract docs define the
 implementation boundary that future issues should build from.
+
+The expanded sounding taxonomy is product/science planning input for future
+story families. It does not make severe, winter, cold-pool, or specialized
+boundary-layer stories package-ready until their scoring, evidence, and package
+readiness are implemented and tested.
 
 ## Active Execution Sequence
 
@@ -153,6 +159,30 @@ and which fields are merely present versus scientifically supported.
 
 Dependencies: output product manifest, time-index mapping, and the
 [Output Product Specification](contracts/output-product-specification.md).
+
+### Implement Expanded Sounding Story Readiness
+
+Goal: turn selected portions of the expanded sounding taxonomy into backend
+story-readiness metadata without making unsupported stories look package-ready.
+
+Scope: choose one future story family, add backend feature prerequisites,
+story-readiness states, evidence/caveat payloads, disabled or caveated UI
+grouping if appropriate, and tiny fixture tests. Start with the taxonomy in
+[Expanded Sounding Candidate Taxonomy](research/expanded-sounding-candidate-taxonomy.md)
+and keep current shallow-LES stories governed by the existing screening
+contract.
+
+Non-goals: new CM1 package families, severe-weather forecasts, CAPE/CIN/SRH
+implementation unless the selected story explicitly requires and tests it,
+browser-side station parsing, or enabled labels without backend evidence.
+
+Why later: the taxonomy prevents product drift now, but implementation should
+wait until the output-product foundation and realistic-field catalog can support
+the evidence users need.
+
+Dependencies: sounding candidate screening contract, realistic LES input
+contract, expanded field catalog, and explicit PM choice of the first future
+story family.
 
 ### Define Profile And Time-Height Output Products
 

@@ -94,6 +94,13 @@ candidate-screening provenance in the generated package request. Browser tests
 must mock the backend APIs and must not fetch NOAA/NCEI, parse raw station text,
 or imply that a candidate score predicts the CM1 outcome.
 
+Expanded real-sounding story families are currently spec-only. Tests must not
+expect severe/deep-convection, winter/cold-season, cold-pool, fog/stratus, or
+other future taxonomy labels to appear as enabled Build filters until backend
+feature extraction, scoring, evidence, caveats, and package-readiness behavior
+are implemented. The readiness taxonomy is documented in
+[research/expanded-sounding-candidate-taxonomy.md](research/expanded-sounding-candidate-taxonomy.md).
+
 Local run manager tests should cover stale-manifest reconciliation: if stdout
 contains normal CM1 termination evidence and output artifacts exist, status and
 runtime inventory refresh may promote a stale running manifest to completed
