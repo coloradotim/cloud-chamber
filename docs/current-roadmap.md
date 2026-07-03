@@ -48,6 +48,7 @@ Use these docs as the current strategic and contract sources:
 - [Output Product Specification](contracts/output-product-specification.md)
 - [Sounding Candidate Screening Contract](contracts/sounding-candidate-screening.md)
 - [Expanded Sounding Candidate Taxonomy](research/expanded-sounding-candidate-taxonomy.md)
+- [Deep Convection Package Design](research/deep-convection-package-design.md)
 
 The research memos are PM input and evidence. The contract docs define the
 implementation boundary that future issues should build from.
@@ -56,6 +57,11 @@ The expanded sounding taxonomy is product/science planning input for future
 story families. It does not make severe, winter, cold-pool, or specialized
 boundary-layer stories package-ready until their scoring, evidence, and package
 readiness are implemented and tested.
+
+The deep-convection package design is a research decision memo for a future
+observed-sounding package family. It recommends a first package direction but
+does not make deep-convection generation available until implementation,
+fixtures, and manual CM1 validation exist.
 
 ## Active Execution Sequence
 
