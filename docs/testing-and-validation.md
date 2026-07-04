@@ -105,12 +105,50 @@ candidate-screening provenance in the generated package request. Browser tests
 must mock the backend APIs and must not fetch NOAA/NCEI, parse raw station text,
 or imply that a candidate score predicts the CM1 outcome.
 
-Expanded real-sounding story families are currently spec-only. Tests must not
-expect severe/deep-convection, winter/cold-season, cold-pool, fog/stratus, or
-other future taxonomy labels to appear as enabled Build filters until backend
-feature extraction, scoring, evidence, caveats, and package-readiness behavior
-are implemented. The readiness taxonomy is documented in
+Most expanded real-sounding story families are spec-only until backend feature
+extraction, scoring, evidence, caveats, and package-readiness behavior are
+implemented. Tests must not expect winter/cold-season, cold-pool, fog/stratus,
+or other future taxonomy labels to appear as enabled Build filters before that
+support exists. The readiness taxonomy is documented in
 [research/expanded-sounding-candidate-taxonomy.md](research/expanded-sounding-candidate-taxonomy.md).
+The implemented severe/deep-convection exception is `Deep Convection Trial`.
+Unit/component tests should prove that deep-convection candidates can default to
+that package family, that package requests include `package_family =
+deep_convection_trial` and candidate-screening provenance, and that ordinary
+observed-sounding quick looks remain available.
+
+### Deep Convection Trial Package Validation
+
+Automated tests for Deep Convection Trial must use tiny or mocked fixtures. They
+should verify that package generation:
+
+- requires an observed sounding and observed u/v wind components;
+- preserves candidate-screening metadata;
+- records package family, display name, trigger type, trigger metadata,
+  expected outputs, caveats, and manual-validation status on generated
+  manifests and reports;
+- writes CM1-facing `namelist.input` settings for the observed-sounding route,
+  warm line-thermal trigger, wider domain, rain output, reflectivity output,
+  vorticity output, and updraft-helicity output;
+- writes a numeric `input_sounding` with observed wind components; and
+- preserves package identity through ingest into Result Cards.
+
+Manual/local QA is required before treating the package as scientifically
+accepted. The manual smoke loop should:
+
+1. choose or upload a real observed sounding with usable winds;
+2. select `Deep Convection Trial`;
+3. generate a Quick Look package;
+4. inspect `run_manifest.json`, `dry_run_report.json`, `namelist.input`, and
+   `input_sounding`;
+5. confirm `isnd = 7`, `iinit = 8`, `testcase = 0`, rain/reflectivity/vorticity/
+   updraft-helicity output, observed u/v winds, and the wider model box;
+6. run CM1 locally or on the LAN worker outside CI;
+7. ingest completed output;
+8. open Results and Explore to confirm the notebook keeps the Deep Convection
+   Trial identity and the result is interpretable; and
+9. confirm no generated run folders, logs, NetCDF output, copied runtime files,
+   screenshots, or videos are committed.
 
 Local run manager tests should cover stale-manifest reconciliation: if stdout
 contains normal CM1 termination evidence and output artifacts exist, status and

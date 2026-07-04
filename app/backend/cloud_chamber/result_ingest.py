@@ -68,6 +68,13 @@ class ResultMetadata(BaseModel):
     input_source: str = "generated_reference"
     input_source_label: str = "Generated reference"
     observed_sounding: dict[str, Any] | None = None
+    package_family: str | None = None
+    package_display_name: str | None = None
+    trigger_type: str | None = None
+    trigger_parameters: dict[str, Any] | None = None
+    expected_outputs: list[str] = Field(default_factory=list)
+    package_caveats: list[str] = Field(default_factory=list)
+    manual_validation_status: str | None = None
     result_state: str = "ingested_result_metadata"
     raw_cm1_artifacts: list[str] = Field(default_factory=list)
     netcdf_paths: list[str] = Field(default_factory=list)
@@ -257,6 +264,13 @@ def _result_from_model_output_files(
         input_source=_input_source(manifest),
         input_source_label=_input_source_label(manifest),
         observed_sounding=manifest.observed_sounding,
+        package_family=manifest.package_family,
+        package_display_name=manifest.package_display_name,
+        trigger_type=manifest.trigger_type,
+        trigger_parameters=manifest.trigger_parameters,
+        expected_outputs=manifest.expected_outputs,
+        package_caveats=manifest.package_caveats,
+        manual_validation_status=manifest.manual_validation_status,
         raw_cm1_artifacts=manifest.outputs.raw_cm1_artifacts,
         netcdf_paths=[str(path) for path in netcdf_paths],
         model_output_paths=[str(path) for path in contributing_paths],
@@ -691,6 +705,13 @@ def _result_from_dataset(
         input_source=_input_source(manifest),
         input_source_label=_input_source_label(manifest),
         observed_sounding=manifest.observed_sounding,
+        package_family=manifest.package_family,
+        package_display_name=manifest.package_display_name,
+        trigger_type=manifest.trigger_type,
+        trigger_parameters=manifest.trigger_parameters,
+        expected_outputs=manifest.expected_outputs,
+        package_caveats=manifest.package_caveats,
+        manual_validation_status=manifest.manual_validation_status,
         raw_cm1_artifacts=manifest.outputs.raw_cm1_artifacts,
         netcdf_paths=[str(path) for path in netcdf_paths],
         model_output_paths=[str(path) for path in contributing_paths],

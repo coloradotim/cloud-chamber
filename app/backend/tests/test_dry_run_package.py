@@ -122,6 +122,119 @@ def test_dry_run_package_can_use_observed_igra_sounding(tmp_path: Path) -> None:
     assert float(sounding.splitlines()[-1].split()[0]) > 18000
 
 
+def test_deep_convection_trial_package_uses_observed_sounding_and_warm_line_thermal(
+    tmp_path: Path,
+) -> None:
+    observed = parse_igra_station_text(
+        IGRA_FIXTURE,
+        uploaded_filename="USM00072558-data-beg2025.txt",
+    ).selected_sounding
+    candidate_screening = {
+        "candidate_id": "USM00072558-deep-test",
+        "primary_story": "supercell_environment",
+        "rank_score": 91.0,
+    }
+
+    result = generate_dry_run_package(
+        scenario_data=load_baseline_template(),
+        runtime_home=tmp_path,
+        run_id="run-deep-convection-trial",
+        run_size_preset="quick_look",
+        package_family="deep_convection_trial",
+        observed_sounding=observed,
+        candidate_screening=candidate_screening,
+    )
+
+    manifest = load_run_manifest(result.manifest_path)
+    report = json.loads(result.report_path.read_text())
+    case_manifest = json.loads((result.package_dir / "case_manifest.json").read_text())
+    namelist = (result.package_dir / "namelist.input").read_text()
+    sounding = (result.package_dir / "input_sounding").read_text()
+
+    assert manifest.package_family == "deep_convection_trial"
+    assert manifest.package_display_name == "Deep Convection Trial"
+    assert manifest.input_source == "observed_sounding"
+    assert manifest.trigger_type == "warm_thermal_line"
+    assert manifest.trigger_parameters == {
+        "cm1_iinit": 8,
+        "cm1_trigger": (
+            "CM1 built-in line thermal with small random perturbations; 2 K maximum "
+            "potential-temperature perturbation centered near 1.5 km AGL"
+        ),
+        "raw_controls_exposed": False,
+    }
+    assert "dbz" in manifest.expected_outputs
+    assert "updraft_helicity" in manifest.expected_outputs
+    assert manifest.manual_validation_status == "needs_manual_cm1_smoke_run"
+    assert manifest.candidate_screening == candidate_screening
+    assert report["package_family"] == "deep_convection_trial"
+    assert report["package_display_name"] == "Deep Convection Trial"
+    assert report["trigger_type"] == "warm_thermal_line"
+    assert report["candidate_screening"] == candidate_screening
+    assert "testcase=0" in report["variant_metadata"]["mapping"]
+    assert "iinit=8 warm line-thermal" in report["variant_metadata"]["mapping"]
+    assert "reflectivity output" in report["variant_metadata"]["mapping"]
+    assert case_manifest["package_family"] == "deep_convection_trial"
+    assert case_manifest["contract"]["package_family"] == "deep_convection_trial"
+
+    assert "testcase  =  0," in namelist
+    assert "isnd      =  7," in namelist
+    assert "iwnd      =  0," in namelist
+    assert "iinit     =  8," in namelist
+    assert "irandp    =  0," in namelist
+    assert "ptype     =  5," in namelist
+    assert "ihail     =  1," in namelist
+    assert "iautoc    =  1," in namelist
+    assert "output_rain      = 1," in namelist
+    assert "output_dbz       = 1," in namelist
+    assert "output_vort      = 1," in namelist
+    assert "output_uh        = 1," in namelist
+    assert "nx           =      96," in namelist
+    assert "ny           =      96," in namelist
+    assert "dx     =   250.0," in namelist
+    assert "dy     =   250.0," in namelist
+    assert "tapfrq =  600.0," in namelist
+    assert "zd      =  15000.0," in namelist
+    assert float(sounding.splitlines()[1].split()[3]) == pytest.approx(
+        observed.levels[0].u_wind_m_s,
+        abs=0.01,
+    )
+
+
+def test_deep_convection_trial_requires_observed_sounding(tmp_path: Path) -> None:
+    with pytest.raises(DryRunPackageError, match="requires a validated observed sounding"):
+        generate_dry_run_package(
+            scenario_data=load_baseline_template(),
+            runtime_home=tmp_path,
+            run_id="run-deep-no-sounding",
+            package_family="deep_convection_trial",
+        )
+
+
+def test_deep_convection_trial_requires_observed_wind_components(tmp_path: Path) -> None:
+    observed = parse_igra_station_text(
+        IGRA_FIXTURE,
+        uploaded_filename="USM00072558-data-beg2025.txt",
+    ).selected_sounding
+    no_wind = observed.model_copy(
+        update={
+            "levels": [
+                level.model_copy(update={"u_wind_m_s": None, "v_wind_m_s": None})
+                for level in observed.levels
+            ]
+        }
+    )
+
+    with pytest.raises(DryRunPackageError, match="requires observed wind components"):
+        generate_dry_run_package(
+            scenario_data=load_baseline_template(),
+            runtime_home=tmp_path,
+            run_id="run-deep-no-wind",
+            package_family="deep_convection_trial",
+            observed_sounding=no_wind,
+        )
+
+
 def test_dry_run_package_refuses_to_overwrite_existing_run_dir(tmp_path: Path) -> None:
     generate_dry_run_package(
         scenario_data=load_baseline_template(),

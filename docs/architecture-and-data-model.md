@@ -118,14 +118,16 @@ states for unimplemented parcel, storm-relative, wet-bulb, and winter-phase
 diagnostics. The browser should consume these diagnostics only through bounded
 backend JSON; it must not parse station text or compute CAPE/CIN/SRH locally.
 
-Future sounding story families are architecture planning input, not current
-backend behavior. The expanded taxonomy in
+Sounding story families are architecture planning input until a backend
+screening and package-readiness path supports them. The expanded taxonomy in
 [research/expanded-sounding-candidate-taxonomy.md](research/expanded-sounding-candidate-taxonomy.md)
 defines readiness states for severe/deep-convection, boundary-layer, low-cloud,
-and winter/cold-season stories so future APIs can distinguish screenable
-environments from runnable package families. Until those stories have backend
-features, scoring tests, evidence, caveats, and package-readiness support, they
-must not be emitted as enabled package-ready labels.
+and winter/cold-season stories so APIs can distinguish screenable environments
+from runnable package families. Until a story has backend features, scoring
+tests, evidence, caveats, and package-readiness support, it must not be emitted
+as an enabled package-ready label. The first implemented severe/deep-convection
+path is `Deep Convection Trial`, which treats selected observed soundings as
+pre-run hypotheses for an idealized triggered CM1 experiment.
 
 The Build UI consumes this layer through bounded JSON only. `Upload a Sounding`
 loads saved candidates immediately when that experiment is selected, before any
@@ -137,6 +139,23 @@ station text directly and does not compute the story scores. Candidate status is
 separate from run/result status: saved candidates are pre-run hypotheses, while
 generated packages, launched runs, and ingested results remain separate
 lifecycle objects.
+
+Deep Convection Trial packages extend the same dry-run package contract rather
+than creating a separate workflow. The package records
+`package_family = deep_convection_trial`, `package_display_name = Deep
+Convection Trial`, `input_source = observed_sounding`, `trigger_type =
+warm_thermal_line`, trigger metadata, expected output fields, manual-validation
+status, package caveats, and any candidate-screening payload on the run
+manifest, case manifest, and dry-run report. The generated namelist uses the
+observed `input_sounding` route (`isnd = 7`), requires observed u/v winds,
+selects CM1's built-in warm line-thermal initialization (`iinit = 8`) with
+`testcase = 0`, uses an intentionally wider idealized domain for storm growth,
+and enables rain, reflectivity, vorticity, and updraft-helicity output. The
+trigger is described as fixed v1 package metadata rather than primary product
+controls because stock CM1 does not expose its warm line-thermal geometry as
+namelist-tunable fields. Ingest copies the package-family and trigger metadata
+into result metadata and Result Cards so Results and Explore do not lose the
+distinction between an observed-sounding quick look and a Deep Convection Trial.
 
 ## Suggested Stack
 

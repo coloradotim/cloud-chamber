@@ -74,12 +74,20 @@ type RunSizeDetails = {
 
 type DryRunReport = {
   scenario_id: string;
+  package_family?: PackageFamily;
+  package_display_name?: string;
+  input_source?: string;
+  trigger_type?: string | null;
+  trigger_parameters?: Record<string, string | number | boolean> | null;
   physical_question: string;
   controls: Record<string, string | number | boolean>;
   run_size_preset: string;
   estimated_cost_or_size: string;
   run_size_details?: RunSizeDetails;
   expected_diagnostics: string[];
+  expected_outputs?: string[];
+  package_caveats?: string[];
+  manual_validation_status?: string | null;
   visualization_defaults: Record<string, unknown>;
   generated_files: Record<string, string>;
   not_a_completed_cm1_result: boolean;
@@ -163,6 +171,12 @@ type CandidateStoryId =
   | "dry_failed_candidate"
   | "capped_suppressed_candidate"
   | "humid_rainy_candidate"
+  | "severe_thunderstorm_environment"
+  | "supercell_environment"
+  | "high_cape_pulse_storm"
+  | "dry_microburst_inverted_v"
+  | "squall_line_cold_pool_candidate"
+  | "elevated_convection"
   | "needs_review"
   | "poor_or_incomplete_candidate";
 
@@ -172,6 +186,12 @@ type CandidateStoryFilter =
   | "dry_failed_candidate"
   | "capped_suppressed_candidate"
   | "humid_rainy_candidate"
+  | "severe_thunderstorm_environment"
+  | "supercell_environment"
+  | "high_cape_pulse_storm"
+  | "dry_microburst_inverted_v"
+  | "squall_line_cold_pool_candidate"
+  | "elevated_convection"
   | "needs_review";
 
 type CandidateSort =
@@ -181,6 +201,13 @@ type CandidateSort =
   | "lowest_lcl"
   | "highest_moisture"
   | "strongest_cap";
+
+type PackageFamily =
+  | "shallow_cumulus"
+  | "observed_sounding_quicklook"
+  | "deep_convection_trial";
+
+type ObservedPackageFamily = "observed_sounding_quicklook" | "deep_convection_trial";
 
 type StoryScore = {
   story: CandidateStoryId;
@@ -468,6 +495,13 @@ type ResultCard = {
   input_source?: "generated_reference" | "observed_sounding" | string;
   input_source_label?: string;
   observed_sounding?: ObservedSoundingSummary | null;
+  package_family?: string | null;
+  package_display_name?: string | null;
+  trigger_type?: string | null;
+  trigger_parameters?: Record<string, unknown> | null;
+  expected_outputs?: string[];
+  package_caveats?: string[];
+  manual_validation_status?: string | null;
   provenance_labels: string[];
   diagnostics_summary: string | null;
   thermal_fate_label?: string | null;
@@ -822,6 +856,14 @@ const FIELD_LOAD_TIMEOUT_MS = 30000;
 const OBSERVED_SOUNDING_EXPERIMENT_ID = "__observed_sounding_upload__";
 const OBSERVED_SOUNDING_BASE_SCENARIO_ID = "baseline-shallow-cumulus";
 const OBSERVED_SOUNDING_VISIBLE_CONTROLS = new Set(["surface_heating"]);
+const deepConvectionStoryIds = new Set<string>([
+  "severe_thunderstorm_environment",
+  "supercell_environment",
+  "high_cape_pulse_storm",
+  "dry_microburst_inverted_v",
+  "squall_line_cold_pool_candidate",
+  "elevated_convection",
+]);
 
 async function fetchScenarioCatalog(): Promise<ScenarioResponse> {
   const response = await fetch("/api/scenarios");
@@ -835,6 +877,7 @@ async function requestDryRunPackage(
   scenarioId: string,
   controls: Record<string, string | number | boolean>,
   runSizePreset: string,
+  packageFamily?: PackageFamily | null,
   observedSounding?: ObservedSoundingRecord | null,
   candidateScreening?: Record<string, unknown> | null,
 ): Promise<DryRunResponse> {
@@ -845,6 +888,7 @@ async function requestDryRunPackage(
       scenario_id: scenarioId,
       controls,
       run_size_preset: runSizePreset,
+      package_family: packageFamily ?? null,
       observed_sounding: observedSounding ?? null,
       candidate_screening: candidateScreening ?? null,
     }),
@@ -1271,6 +1315,8 @@ export function App() {
   const [selectedScenarioId, setSelectedScenarioId] = useState("baseline-shallow-cumulus");
   const [controls, setControls] = useState<Record<string, string | number | boolean>>({});
   const [runSizePreset, setRunSizePreset] = useState("quick_look");
+  const [observedPackageFamily, setObservedPackageFamily] =
+    useState<ObservedPackageFamily>("observed_sounding_quicklook");
   const [observedSoundingFilename, setObservedSoundingFilename] = useState<string | null>(null);
   const [observedSoundingText, setObservedSoundingText] = useState<string | null>(null);
   const [observedSoundingParse, setObservedSoundingParse] =
@@ -1471,6 +1517,7 @@ export function App() {
     setObservedSoundingParse(null);
     setObservedSoundingStatus(null);
     setObservedSoundingError(null);
+    setObservedPackageFamily("observed_sounding_quicklook");
     setDryRun(null);
     setRunStatus(null);
     setRunWorkflowError(null);
@@ -1559,6 +1606,7 @@ export function App() {
     setObservedSoundingStatus(null);
     setObservedSoundingError(null);
     setSelectedCandidateScreening(null);
+    setObservedPackageFamily("observed_sounding_quicklook");
     setDryRun(null);
     setRunStatus(null);
     setRunWorkflowError(null);
@@ -1717,6 +1765,7 @@ export function App() {
     setObservedSoundingStatus("Candidate loaded into observed-sounding package review");
     setObservedSoundingError(null);
     setSelectedCandidateScreening(candidateScreeningMetadata(candidate, savedCandidate));
+    setObservedPackageFamily(defaultPackageFamilyForCandidate(candidate));
     setDryRun(null);
     setRunStatus(null);
     setRunWorkflowError(null);
@@ -1748,6 +1797,7 @@ export function App() {
         selectedScenario.id,
         controls,
         runSizePreset,
+        observedSoundingExperimentSelected ? observedPackageFamily : null,
         observedSoundingExperimentSelected ? observedSoundingParse?.selected_sounding : null,
         observedSoundingExperimentSelected ? selectedCandidateScreening : null,
       );
@@ -1766,6 +1816,7 @@ export function App() {
     setObservedSoundingError(null);
     setObservedSoundingParse(null);
     setSelectedCandidateScreening(null);
+    setObservedPackageFamily("observed_sounding_quicklook");
     setDryRun(null);
     setRunStatus(null);
     setLanWorkerStatus(null);
@@ -1776,6 +1827,7 @@ export function App() {
       const parsed = await parseObservedSoundingUpload(file.name, text);
       setObservedSoundingParse(parsed);
       setSelectedCandidateScreening(null);
+      setObservedPackageFamily("observed_sounding_quicklook");
       setObservedSoundingStatus("Observed sounding validated for package review");
     } catch (caught) {
       setObservedSoundingText(null);
@@ -1801,6 +1853,7 @@ export function App() {
       );
       setObservedSoundingParse(parsed);
       setSelectedCandidateScreening(null);
+      setObservedPackageFamily("observed_sounding_quicklook");
       setObservedSoundingStatus("Observed sounding validated for package review");
     } catch (caught) {
       setObservedSoundingError(
@@ -2198,6 +2251,7 @@ export function App() {
           observedSoundingExperimentSelected={observedSoundingExperimentSelected}
           controls={controls}
           runSizePreset={runSizePreset}
+          observedPackageFamily={observedPackageFamily}
           observedSoundingParse={observedSoundingParse}
           observedSoundingStatus={observedSoundingStatus}
           observedSoundingError={observedSoundingError}
@@ -2240,6 +2294,7 @@ export function App() {
             }))
           }
           onRunSizeChange={setRunSizePreset}
+          onObservedPackageFamilyChange={setObservedPackageFamily}
           onObservedSoundingFile={handleObservedSoundingFile}
           onObservedSoundingTimeChange={handleObservedSoundingTimeChange}
           onCandidateStoryFilterChange={setCandidateStoryFilter}
@@ -2364,6 +2419,7 @@ function BuildWorkspace({
   observedSoundingExperimentSelected,
   controls,
   runSizePreset,
+  observedPackageFamily,
   observedSoundingParse,
   observedSoundingStatus,
   observedSoundingError,
@@ -2401,6 +2457,7 @@ function BuildWorkspace({
   onSelectScenario,
   onControlChange,
   onRunSizeChange,
+  onObservedPackageFamilyChange,
   onObservedSoundingFile,
   onObservedSoundingTimeChange,
   onCandidateStoryFilterChange,
@@ -2447,6 +2504,7 @@ function BuildWorkspace({
   observedSoundingExperimentSelected: boolean;
   controls: Record<string, string | number | boolean>;
   runSizePreset: string;
+  observedPackageFamily: ObservedPackageFamily;
   observedSoundingParse: ObservedSoundingParseResponse | null;
   observedSoundingStatus: string | null;
   observedSoundingError: string | null;
@@ -2484,6 +2542,7 @@ function BuildWorkspace({
   onSelectScenario: (scenarioId: string) => void;
   onControlChange: (controlId: string, value: string) => void;
   onRunSizeChange: (presetId: string) => void;
+  onObservedPackageFamilyChange: (packageFamily: ObservedPackageFamily) => void;
   onObservedSoundingFile: (file: File) => void;
   onObservedSoundingTimeChange: (validTimeUtc: string) => void;
   onCandidateStoryFilterChange: (filter: CandidateStoryFilter) => void;
@@ -2528,6 +2587,8 @@ function BuildWorkspace({
   const selectedRunSize = selectedScenario?.run_size_presets.find(
     (preset) => preset.id === runSizePreset,
   );
+  const selectedDeepConvectionTrial =
+    observedSoundingExperimentSelected && observedPackageFamily === "deep_convection_trial";
 
   return (
     <section className="workspace-section" aria-labelledby="build-title">
@@ -2705,6 +2766,12 @@ function BuildWorkspace({
                     onFile={onObservedSoundingFile}
                     onTimeChange={onObservedSoundingTimeChange}
                   />
+                  <ObservedPackageFamilyPanel
+                    packageFamily={observedPackageFamily}
+                    runSizePreset={runSizePreset}
+                    selectedCandidateScreening={selectedCandidateScreening}
+                    onChange={onObservedPackageFamilyChange}
+                  />
                 </>
               )}
 
@@ -2724,8 +2791,7 @@ function BuildWorkspace({
               </select>
               {selectedRunSize && (
                 <p className="field-help">
-                  {selectedRunSize.purpose}. Expected runtime: {selectedRunSize.expected_runtime}.
-                  Confidence: {selectedRunSize.confidence}. Output: {selectedRunSize.output_notes}.
+                  {runSizeHelpText(selectedRunSize, selectedDeepConvectionTrial)}
                 </p>
               )}
               {runSizePreset === "deep_overnight" && (
@@ -3006,6 +3072,12 @@ function ObservedAtmosphereCandidatesPanel({
             <option value="dry_failed_candidate">Dry failed cumulus</option>
             <option value="capped_suppressed_candidate">Capped / suppressed</option>
             <option value="humid_rainy_candidate">Humid / rainy</option>
+            <option value="severe_thunderstorm_environment">Severe thunderstorm environment</option>
+            <option value="supercell_environment">Supercell-like environment</option>
+            <option value="high_cape_pulse_storm">High-CAPE pulse storm</option>
+            <option value="dry_microburst_inverted_v">Dry microburst / inverted-V</option>
+            <option value="squall_line_cold_pool_candidate">Squall-line / cold-pool candidate</option>
+            <option value="elevated_convection">Elevated convection</option>
             <option value="needs_review">Needs review</option>
           </select>
         </label>
@@ -3476,6 +3548,84 @@ function ObservedSoundingInputPanel({
                 </details>
               )}
         </section>
+      )}
+    </section>
+  );
+}
+
+function ObservedPackageFamilyPanel({
+  packageFamily,
+  runSizePreset,
+  selectedCandidateScreening,
+  onChange,
+}: {
+  packageFamily: ObservedPackageFamily;
+  runSizePreset: string;
+  selectedCandidateScreening: Record<string, unknown> | null;
+  onChange: (packageFamily: ObservedPackageFamily) => void;
+}) {
+  const selectedDeep = packageFamily === "deep_convection_trial";
+  const selectedStory = String(selectedCandidateScreening?.primary_story ?? "");
+  const candidateGuidance = selectedCandidateScreening
+    ? deepConvectionStoryIds.has(selectedStory)
+      ? "This saved/screened candidate is a strong fit for Deep Convection Trial."
+      : "This candidate can still use the observed-sounding quick look, or you can try the deep-convection package deliberately."
+    : "Upload or choose an observed sounding, then choose the CM1 package family to generate.";
+  const workerGuidance =
+    selectedDeep && runSizePreset !== "quick_look"
+      ? "Standard and Deep tiers should usually run on the LAN worker."
+      : selectedDeep
+        ? "Quick Look is the smallest Deep Convection Trial and may be reasonable locally."
+        : "Quick Look keeps the current observed-sounding package path.";
+
+  return (
+    <section className="experiment-summary" aria-labelledby="observed-package-family-title">
+      <div className="panel-heading-row">
+        <div>
+          <p className="eyebrow">CM1 package family</p>
+          <h3 id="observed-package-family-title">Choose how to try this sounding</h3>
+          <p className="field-help">{candidateGuidance}</p>
+        </div>
+        <StatusBadge
+          label={selectedDeep ? "Warm thermal trigger" : "Observed quick look"}
+          tone={selectedDeep ? "warning" : "neutral"}
+        />
+      </div>
+      <div className="control-row">
+        <span>
+          <label htmlFor="observed-package-family">
+            <strong>Package type</strong>
+          </label>
+          <small>
+            Deep Convection Trial uses the observed temperature, moisture, and wind profile with an
+            idealized CM1 warm line-thermal trigger.
+          </small>
+        </span>
+        <select
+          id="observed-package-family"
+          value={packageFamily}
+          onChange={(event) => onChange(event.target.value as ObservedPackageFamily)}
+        >
+          <option value="observed_sounding_quicklook">Observed Sounding Quick Look</option>
+          <option value="deep_convection_trial">Deep Convection Trial</option>
+        </select>
+      </div>
+      <dl className="compact-metrics">
+        <Metric
+          label="Initiation method"
+          value={selectedDeep ? "Idealized warm line thermal" : "No deep-convection trigger"}
+        />
+        <Metric
+          label="Domain intent"
+          value={selectedDeep ? "Wider box for storm growth and precipitation" : "Current quick-look observed atmosphere path"}
+        />
+        <Metric label="Runtime guidance" value={workerGuidance} />
+      </dl>
+      {selectedDeep && (
+        <p className="field-help">
+          This is an idealized CM1 experiment for learning and exploration: try the sounding,
+          inspect the outcome, and learn from the mismatch between the pre-run hypothesis and CM1.
+        </p>
       )}
     </section>
   );
@@ -7870,6 +8020,18 @@ function candidateStoryLabel(story: CandidateStoryId | CandidateStoryFilter): st
       return "Capped / suppressed";
     case "humid_rainy_candidate":
       return "Humid / rainy";
+    case "severe_thunderstorm_environment":
+      return "Severe thunderstorm environment";
+    case "supercell_environment":
+      return "Supercell-like environment";
+    case "high_cape_pulse_storm":
+      return "High-CAPE pulse storm";
+    case "dry_microburst_inverted_v":
+      return "Dry microburst / inverted-V";
+    case "squall_line_cold_pool_candidate":
+      return "Squall-line / cold-pool candidate";
+    case "elevated_convection":
+      return "Elevated convection";
     case "poor_or_incomplete_candidate":
       return "Poor or incomplete";
     case "needs_review":
@@ -7877,6 +8039,21 @@ function candidateStoryLabel(story: CandidateStoryId | CandidateStoryFilter): st
     case "all":
       return "All screening stories";
   }
+}
+
+function defaultPackageFamilyForCandidate(candidate: SoundingCandidate): ObservedPackageFamily {
+  if (deepConvectionStoryIds.has(candidate.primary_story)) return "deep_convection_trial";
+  if (
+    candidate.story_scores.some(
+      (score) =>
+        deepConvectionStoryIds.has(score.story) &&
+        score.score_0_to_100 > 0 &&
+        !["unavailable", "unsupported", "insufficient_evidence"].includes(score.support),
+    )
+  ) {
+    return "deep_convection_trial";
+  }
+  return "observed_sounding_quicklook";
 }
 
 function candidateStationLabel(candidate: SoundingCandidate): string {
@@ -8485,6 +8662,18 @@ function parseTags(value: string): string[] {
 function formatSeconds(value: number | null): string {
   if (value === null) return "Unavailable";
   return `${value.toLocaleString()} s`;
+}
+
+function runSizeHelpText(preset: RunSizePreset, deepConvectionTrial: boolean): string {
+  const purpose = preset.purpose.replace(/[.?!]+$/, "");
+  if (!deepConvectionTrial) {
+    return `${purpose}. Expected runtime: ${preset.expected_runtime}. Confidence: ${preset.confidence}. Output: ${preset.output_notes}.`;
+  }
+  const tierGuidance =
+    preset.id === "quick_look"
+      ? "This is the smallest triggered deep-convection package, but it uses a wider storm-growth domain than the shallow-cumulus quick look; local runtime can be longer."
+      : "This triggered deep-convection tier is intended for the LAN worker because it uses a wider domain and longer run/output targets.";
+  return `${purpose}. ${tierGuidance} Confidence: ${preset.confidence}. Output: ${preset.output_notes}.`;
 }
 
 function runSizeGridSummary(details: RunSizeDetails): string {

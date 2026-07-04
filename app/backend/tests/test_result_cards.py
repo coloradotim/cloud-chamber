@@ -47,6 +47,7 @@ def create_completed_result(
     run_id: str = "run-card",
     include_diagnostics_fields: bool = True,
     observed_sounding: dict[str, object] | None = None,
+    package_updates: dict[str, object] | None = None,
 ) -> tuple[CloudChamberSettings, str, Path]:
     settings = fake_settings(tmp_path)
     package = generate_dry_run_package(
@@ -59,20 +60,20 @@ def create_completed_result(
     write_result_netcdf(netcdf_path, include_diagnostics_fields=include_diagnostics_fields)
     manifest = load_run_manifest(package.manifest_path)
     finished_at = datetime(2026, 5, 22, 15, 32, 21, tzinfo=UTC)
+    update_payload = {
+        "lifecycle_state": LifecycleState.COMPLETED,
+        "provenance": ProvenanceMetadata(product_state=ProductState.COMPLETED_CM1_RESULT),
+        "execution": ExecutionMetadata(finished_at=finished_at, exit_code=0),
+        "outputs": OutputMetadata(
+            netcdf_paths=[str(netcdf_path)],
+            runtime_warnings=["CM1 stderr reported floating-point exception flags: TEST"],
+        ),
+        "observed_sounding": observed_sounding,
+    }
+    update_payload.update(package_updates or {})
     write_run_manifest(
         package.manifest_path,
-        manifest.model_copy(
-            update={
-                "lifecycle_state": LifecycleState.COMPLETED,
-                "provenance": ProvenanceMetadata(product_state=ProductState.COMPLETED_CM1_RESULT),
-                "execution": ExecutionMetadata(finished_at=finished_at, exit_code=0),
-                "outputs": OutputMetadata(
-                    netcdf_paths=[str(netcdf_path)],
-                    runtime_warnings=["CM1 stderr reported floating-point exception flags: TEST"],
-                ),
-                "observed_sounding": observed_sounding,
-            }
-        ),
+        manifest.model_copy(update=update_payload),
     )
     result = ingest_completed_run(package.manifest_path)
     return settings, result.result_id, package.package_dir
@@ -189,6 +190,53 @@ def test_result_card_exposes_observed_sounding_source(tmp_path: Path) -> None:
     assert card.input_source_label == "Observed sounding: USM00072558 · Valley, Nebraska"
     assert card.observed_sounding is not None
     assert card.observed_sounding["station_id"] == "USM00072558"
+
+
+def test_result_card_preserves_deep_convection_trial_package_identity(tmp_path: Path) -> None:
+    settings, result_id, _run_dir = create_completed_result(
+        tmp_path,
+        run_id="run-deep-card",
+        observed_sounding={
+            "source_type": "observed_sounding",
+            "source_format": "igra_station_text",
+            "station_id": "USM00072357",
+            "station_name": "Norman, Oklahoma",
+            "station_elevation_m_msl": 357.0,
+            "valid_time_utc": "2026-06-30T00:00:00Z",
+        },
+        package_updates={
+            "package_family": "deep_convection_trial",
+            "package_display_name": "Deep Convection Trial",
+            "input_source": "observed_sounding",
+            "trigger_type": "warm_thermal_line",
+            "trigger_parameters": {
+                "cm1_iinit": 8,
+                "cm1_trigger": "CM1 built-in line thermal with small random perturbations",
+                "raw_controls_exposed": False,
+            },
+            "expected_outputs": ["qc", "qr", "w", "dbz", "updraft_helicity"],
+            "package_caveats": [
+                "Deep Convection Trial uses an idealized CM1 warm line-thermal trigger."
+            ],
+            "manual_validation_status": "needs_manual_cm1_smoke_run",
+        },
+    )
+
+    card = get_result_card(settings, result_id)
+
+    assert card.name == "Deep Convection Trial — Norman, Oklahoma"
+    assert card.scenario_name == "Deep Convection Trial"
+    assert card.package_family == "deep_convection_trial"
+    assert card.package_display_name == "Deep Convection Trial"
+    assert card.trigger_type == "warm_thermal_line"
+    assert card.trigger_parameters is not None
+    assert card.trigger_parameters["cm1_iinit"] == 8
+    assert "dbz" in card.expected_outputs
+    assert card.package_caveats == [
+        "Deep Convection Trial uses an idealized CM1 warm line-thermal trigger."
+    ]
+    assert card.manual_validation_status == "needs_manual_cm1_smoke_run"
+    assert "package_family:deep_convection_trial" in card.provenance_labels
 
 
 def test_list_get_and_result_card_serialization_round_trip(tmp_path: Path) -> None:

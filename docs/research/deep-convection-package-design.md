@@ -36,7 +36,7 @@ package_family = deep_convection_trial
 Recommended v1 design:
 
 ```text
-Observed sounding + observed winds + warm bubble trigger
+Observed sounding + observed winds + warm thermal trigger
 ```
 
 This is an idealized CM1 experiment for learning and exploration. It tests what
@@ -52,14 +52,20 @@ Find an interesting real sounding
 
 Why this path first:
 
-- CM1 already has a warm-bubble initialization option (`iinit = 1`).
+- CM1 already has warm thermal initialization options (`iinit = 1` warm bubble
+  and `iinit = 8` warm line thermal with small random perturbations).
 - CM1 already has examples that combine idealized deep convection with
   Morrison microphysics, surface rain, and reflectivity output.
 - Cloud Chamber already has an observed-sounding path that writes
   `input_sounding` and uses `isnd = 7`.
 - `isnd = 7` reads wind from `input_sounding`; `iwnd` is ignored.
-- A warm bubble is easier to explain and validate than convergence forcing,
+- A warm thermal trigger is easier to explain and validate than convergence forcing,
   cold-pool insertion, or radiation-driven diurnal initiation.
+
+Implementation note from #261: stock CM1 r21.1 does not expose the `iinit = 1`
+warm-bubble geometry/amplitude as namelist-tunable fields. The first Cloud
+Chamber implementation uses CM1's built-in `iinit = 8` warm line thermal because
+it is a stronger supported trigger without requiring Fortran edits.
 
 ## PM Decisions For V1 Implementation
 
@@ -78,11 +84,12 @@ These are the product/science decisions for the implementation issue:
 - **Standard and Deep tiers should clearly recommend the LAN worker.** Those
   tiers are where wider domains, longer runtime, and denser output become more
   useful.
-- **The warm-bubble trigger should be visible to the user** as the initiation
+- **The warm thermal trigger should be visible to the user** as the initiation
   method. Users should know they are asking CM1 to try an idealized triggered
   experiment.
-- **Exact numeric warm-bubble parameters can remain package metadata in v1.**
-  Do not expose raw bubble controls until useful ranges are validated.
+- **Exact numeric trigger parameters can remain package metadata in v1.**
+  Do not expose raw trigger controls until useful ranges are validated and
+  namelist/source-code support is explicit.
 - **Manual QA is for package health, tuning, domain/runtime calibration, and
   result interpretability.** It is not a gate on whether severe/deep-convection
   soundings are allowed to use this package.
@@ -127,7 +134,7 @@ Recommended stable metadata:
   "package_family": "deep_convection_trial",
   "input_source": "observed_sounding",
   "specialized_package_for": "severe/deep_convection",
-  "trigger_type": "warm_bubble",
+  "trigger_type": "warm_thermal_line",
   "candidate_screening_hypothesis": {},
   "limitations": [],
   "expected_outputs": [],
@@ -139,13 +146,13 @@ Recommended Build copy:
 
 ```text
 Deep Convection Trial
-Try this observed sounding with an idealized warm-bubble trigger and see
+Try this observed sounding with an idealized warm thermal trigger and see
 whether deep convection develops.
 ```
 
 Recommended limitations:
 
-- The warm bubble is an idealized trigger, not an observed storm initiation
+- The warm thermal is an idealized trigger, not an observed storm initiation
   mechanism.
 - It can over-trigger marginal environments.
 - V1 does not represent surface heating/radiation, boundaries, terrain,
@@ -158,7 +165,7 @@ Recommended limitations:
 
 ## Initiation Options Compared
 
-### Warm Bubble Trigger
+### Warm Line-Thermal Trigger
 
 Decision for v1: use this.
 
@@ -168,18 +175,19 @@ Likely CM1 settings:
 testcase = 0
 isnd = 7
 iwnd = 0 or ignored by CM1 because isnd = 7
-iinit = 1
+iinit = 8
 irandp = 0 initially
 ```
 
 Pros:
 
-- Common idealized deep-convection trigger.
+- Strong idealized deep-convection trigger available in stock CM1.
 - Confirmed CM1 option.
 - Easy to explain to users.
 - Easy to verify in generated namelist tests.
 - Minimal new generated files beyond `input_sounding`.
 - Fits current observed-sounding package architecture.
+- Does not require Cloud Chamber to edit CM1 Fortran source.
 
 Cons:
 
@@ -187,27 +195,24 @@ Cons:
 - May initiate storms in marginal environments that would need a real boundary
   or stronger forcing.
 - Does not represent a front, dryline, outflow boundary, or terrain effect.
-- Bubble strength, radius, height, and location need careful manual validation.
+- Stock CM1 line-thermal geometry/strength are source-code behavior rather
+  than Cloud Chamber product controls in v1.
 
 V1 trigger metadata should include:
 
 ```json
 {
-  "trigger_type": "warm_bubble",
+  "trigger_type": "warm_thermal_line",
   "trigger_parameters": {
-    "temperature_perturbation_k": "implementation_tbd",
-    "horizontal_radius_m": "implementation_tbd",
-    "vertical_radius_m": "implementation_tbd",
-    "center_x_m": 0,
-    "center_y_m": 0,
-    "center_z_m": "implementation_tbd"
+    "cm1_iinit": 8,
+    "cm1_trigger": "CM1 built-in line thermal with small random perturbations",
+    "raw_controls_exposed": false
   }
 }
 ```
 
-The exact bubble parameters should be selected in implementation after reading
-CM1 `init3d.F` defaults and running a manual smoke validation. This design
-should not invent validated values.
+Future work can add a custom warm-bubble or point-thermal package if Cloud
+Chamber intentionally owns the required CM1 Fortran/configuration changes.
 
 ### Forced Convergence / Momentum Forcing
 
@@ -338,7 +343,7 @@ Recommended starting point:
 ```text
 testcase = 0
 isnd = 7
-iinit = 1
+iinit = 8
 ptype = 5
 radopt = 0
 output_rain = 1
@@ -350,11 +355,9 @@ the analytic Weisman-Klemp sounding/wind with an observed `input_sounding`.
 
 Implementation must validate:
 
-- warm-bubble parameter names and defaults used by CM1;
-- whether additional namelist fields must be surfaced for bubble size,
-  strength, center, or pressure balance;
-- whether `ibalance` should remain `0` or use hydrostatic balance for the
-  selected bubble shape;
+- whether the built-in warm line thermal initiates interpretable convection for
+  selected real soundings;
+- whether `ibalance` should remain `0` for this package family;
 - whether `iorigin = 2` remains the right domain origin;
 - whether storm motion (`imove`, `umove`, `vmove`) should be off initially or
   configured from mean wind.
@@ -588,7 +591,7 @@ calibration, and whether Results/Explore make the outcome interpretable:
 4. Inspect `namelist.input`:
    - `testcase = 0`;
    - `isnd = 7`;
-   - `iinit = 1`;
+   - `iinit = 8`;
    - microphysics, output rain, and reflectivity fields enabled;
    - trigger parameters recorded in the package report.
 5. Run quick-look locally or on the LAN worker.
@@ -600,7 +603,7 @@ calibration, and whether Results/Explore make the outcome interpretable:
      velocity, reflectivity, and surface rain when present;
    - interesting times include initiation/updraft/rain/reflectivity events when
      supported;
-   - caveats disclose the idealized warm-bubble trigger.
+   - caveats disclose the idealized warm thermal trigger.
 9. Compare against at least one weak or capped sounding to see how the same
    package behaves in a less favorable environment.
 10. Do not commit generated output.
@@ -626,7 +629,7 @@ Scope:
 
 - Add `deep_convection_trial` package family metadata.
 - Add package generation path using observed `input_sounding`, observed winds,
-  warm bubble trigger, Morrison microphysics, rain/reflectivity outputs, and
+  warm thermal trigger, Morrison microphysics, rain/reflectivity outputs, and
   clear experiment limitations.
 - Add tiny fixture tests for namelist/package metadata.
 - Add manual QA instructions for one real sounding smoke run.
@@ -643,7 +646,7 @@ Non-goals for #261:
 
 - What is the first acceptable runtime target for quick-look: local MacBook,
   LAN worker, or both?
-- How much warm-bubble parameter control should be exposed to users versus kept
+- How much trigger parameter control should be exposed to users versus kept
   as package metadata?
 
 ## Source References
@@ -654,8 +657,9 @@ Source breadcrumbs for future implementation:
   `input_sounding`; wind profile is also read from `input_sounding`; `iwnd` is
   ignored.
 - `/Users/timpeterson/cm1r21.1/README.namelist`: `iinit = 1` warm bubble,
-  `iinit = 2` cold pool, `iinit = 9` forced convergence, and `iinit = 10`
-  momentum forcing.
+  `iinit = 2` cold pool, `iinit = 8` warm line thermal with random
+  perturbations, `iinit = 9` forced convergence, and `iinit = 10` momentum
+  forcing.
 - `/Users/timpeterson/cm1r21.1/run/config_files/supercell/namelist.input`:
   stock CM1 supercell example uses `testcase = 0`, `iinit = 1`, `ptype = 5`,
   `output_rain = 1`, and `output_dbz = 1`.
@@ -664,8 +668,9 @@ Source breadcrumbs for future implementation:
   definitions; `output_dbz` is available for Morrison microphysics
   (`ptype = 5`).
 - `app/backend/cloud_chamber/cm1_input_contract.py`: current Cloud Chamber
-  observed-sounding package path renders `isnd = 7` and writes observed
-  sounding metadata into package configuration.
+  observed-sounding package path renders `isnd = 7`; the Deep Convection Trial
+  implementation selects `iinit = 8`, writes observed sounding metadata into
+  package configuration, and treats trigger details as package metadata.
 - `app/backend/cloud_chamber/dry_run_package.py`: current package generation
   writes `input_sounding`, `namelist.input`, package reports, and run/case
   manifests.
