@@ -3587,7 +3587,7 @@ function ObservedPackageFamilyPanel({
           <p className="field-help">{candidateGuidance}</p>
         </div>
         <StatusBadge
-          label={selectedDeep ? "Warm thermal trigger" : "Observed quick look"}
+          label={selectedDeep ? "Three-bubble trigger" : "Observed quick look"}
           tone={selectedDeep ? "warning" : "neutral"}
         />
       </div>
@@ -3598,7 +3598,7 @@ function ObservedPackageFamilyPanel({
           </label>
           <small>
             Deep Convection Trial uses the observed temperature, moisture, and wind profile with an
-            idealized CM1 warm line-thermal trigger.
+            idealized CM1 three-warm-bubble trigger.
           </small>
         </span>
         <select
@@ -3613,7 +3613,7 @@ function ObservedPackageFamilyPanel({
       <dl className="compact-metrics">
         <Metric
           label="Initiation method"
-          value={selectedDeep ? "Idealized warm line thermal" : "No deep-convection trigger"}
+          value={selectedDeep ? "Idealized three warm bubbles" : "No deep-convection trigger"}
         />
         <Metric
           label="Domain intent"
@@ -4571,12 +4571,15 @@ function RuntimeRunsTable({
           </tr>
         </thead>
         <tbody>
-          {runs.map((run) => {
+          {runs.map((run, index) => {
             const associatedResult = resultForRun(results, run.run_id);
             const displayName = storageDisplayName(run, associatedResult);
             const canIngest = canIngestStorageRun(run, associatedResult);
             return (
-              <tr key={run.run_id} className={focusedRunId === run.run_id ? "selected-row" : ""}>
+              <tr
+                key={`${run.run_id}-${run.path ?? run.manifest_path ?? index}`}
+                className={focusedRunId === run.run_id ? "selected-row" : ""}
+              >
                 <td>
                   <strong>{displayName}</strong>
                   <small>{storageScenarioSummary(run, associatedResult)}</small>
@@ -5217,9 +5220,9 @@ function LocalPipelinePanel({
         <p>No active or incomplete packages/runs need Build action. Ingested results are in Results, and cleanup is in Storage.</p>
       ) : (
         <div className="pipeline-run-list" aria-label="Local packages and runs">
-          {runs.map((run) => (
+          {runs.map((run, index) => (
             <PipelineRunCard
-              key={run.run_id}
+              key={`${run.run_id}-${run.path ?? run.manifest_path ?? index}`}
               run={run}
               result={resultForRun(results, run.run_id)}
               current={run.run_id === currentRunId}

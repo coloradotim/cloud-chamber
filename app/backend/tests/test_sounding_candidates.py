@@ -9,10 +9,12 @@ from igra_fixtures import IGRA_FIXTURE
 from cloud_chamber.app import app
 from cloud_chamber.dry_run_package import generate_dry_run_package, read_dry_run_report
 from cloud_chamber.igra_catalog import IGRACacheEntry, IGRACacheManifest, igra_cache_manifest_path
+from cloud_chamber.observed_sounding import parse_igra_station_text
 from cloud_chamber.run_manifest import load_run_manifest
 from cloud_chamber.settings import CloudChamberSettings
 from cloud_chamber.sounding_candidates import (
     SaveCandidateRequest,
+    _features_from_record,
     _score_features,
     list_saved_candidates,
     list_screening_inputs,
@@ -105,6 +107,12 @@ def test_screen_cached_soundings_returns_ranked_package_ready_candidates(
         "dry_failed_candidate",
         "capped_suppressed_candidate",
         "humid_rainy_candidate",
+        "severe_thunderstorm_environment",
+        "supercell_environment",
+        "high_cape_pulse_storm",
+        "dry_microburst_inverted_v",
+        "squall_line_cold_pool_candidate",
+        "elevated_convection",
         "needs_review",
         "poor_or_incomplete_candidate",
     }
@@ -113,10 +121,40 @@ def test_screen_cached_soundings_returns_ranked_package_ready_candidates(
         "estimated_lcl_height_m_agl",
         "lapse_rate_0_1000m_c_per_km",
         "cap_strength_proxy",
+        "bulk_shear_0_6km_m_s",
+        "midlevel_lapse_rate_700_500_hpa_c_per_km",
         "profile_top_m_agl",
     }
     assert candidate.evidence
     assert candidate.story_scores[0].score_0_to_100 >= candidate.story_scores[-1].score_0_to_100
+
+
+def test_near_surface_discontinuity_is_caveated_and_downgrades_data_quality() -> None:
+    record = parse_igra_station_text(
+        IGRA_FIXTURE,
+        uploaded_filename="USM00072558-data-beg2025.txt",
+    ).selected_sounding
+    levels = list(record.levels)
+    levels[0] = levels[0].model_copy(
+        update={"model_z_m": 0.0, "temperature_c": 30.5, "qv_g_kg": 28.0}
+    )
+    levels[1] = levels[1].model_copy(
+        update={"model_z_m": 80.0, "temperature_c": 22.2, "qv_g_kg": 16.8}
+    )
+    discontinuous = record.model_copy(update={"levels": levels})
+
+    features = _features_from_record(discontinuous)
+    _scores, evidence = _score_features(features, package_ready=True)
+
+    assert features["near_surface_discontinuity_flag"] is True
+    assert features["near_surface_temperature_jump_c"] == pytest.approx(8.3)
+    assert features["near_surface_qv_jump_g_kg"] == pytest.approx(11.2)
+    data_completeness = features["data_completeness_score"]
+    assert isinstance(data_completeness, int | float)
+    assert data_completeness <= 70.0
+    continuity = next(item for item in evidence if item.label == "Near-surface continuity")
+    assert continuity.value == "large jump"
+    assert "near_surface_discontinuity_caveat" in continuity.caveats
 
 
 def test_screen_cached_soundings_can_target_one_story(tmp_path: Path) -> None:
@@ -313,6 +351,235 @@ def test_story_scoring_missing_moisture_is_not_confident_dry() -> None:
     assert any(item.label == "Mean qv 0-1 km" and item.caveats for item in evidence)
 
 
+def test_deep_convection_scoring_finds_moist_sheared_profiles() -> None:
+    scores, evidence = _score_features(
+        {
+            "data_completeness_score": 98.0,
+            "low_level_qv_g_kg": 15.0,
+            "mean_qv_0_500m_g_kg": 15.0,
+            "mean_qv_0_1000m_g_kg": 14.5,
+            "mean_qv_0_3000m_g_kg": 10.0,
+            "precipitable_water_proxy_or_unavailable": 42.0,
+            "surface_t_td_spread_c": 4.5,
+            "estimated_lcl_height_m_agl": 562.5,
+            "lapse_rate_0_1000m_c_per_km": 8.0,
+            "lapse_rate_0_3000m_c_per_km": 7.5,
+            "midlevel_lapse_rate_700_500_hpa_c_per_km": 7.2,
+            "cap_strength_proxy": 0.5,
+            "cap_height_m_agl": 1400.0,
+            "moisture_depth_m": 4200.0,
+            "midlevel_dry_layer_proxy": 3.0,
+            "qv_drop_0_3000m_g_kg": 5.0,
+            "observed_wind_available": True,
+            "bulk_shear_0_1km_m_s": 9.0,
+            "bulk_shear_0_3km_m_s": 18.0,
+            "bulk_shear_0_6km_m_s": 31.0,
+            "dry_microburst_inverted_v_proxy": 20.0,
+            "freezing_level_m_agl": 4200.0,
+            "surface_based_cape_j_kg": 2800.0,
+            "mixed_layer_cape_j_kg": 2400.0,
+            "surface_based_cin_j_kg": -35.0,
+            "mixed_layer_cin_j_kg": -45.0,
+            "lfc_height_m_agl": 1100.0,
+            "el_height_m_agl": 12500.0,
+            "profile_top_m_agl": 18000.0,
+            "lowest_level_m_agl": 0.0,
+        },
+        package_ready=True,
+    )
+
+    score_by_story = {score.story: score for score in scores}
+    assert scores[0].story in {
+        "severe_thunderstorm_environment",
+        "supercell_environment",
+        "squall_line_cold_pool_candidate",
+    }
+    assert score_by_story["supercell_environment"].support == "supported"
+    assert score_by_story["severe_thunderstorm_environment"].support == "supported"
+    assert any(item.label == "Bulk shear 0-6 km" for item in evidence)
+    assert any(item.label == "Midlevel lapse rate 700-500 hPa" for item in evidence)
+
+
+def test_deep_convection_scoring_prioritizes_high_cape_story_over_shallow() -> None:
+    scores, _evidence = _score_features(
+        {
+            "data_completeness_score": 100.0,
+            "low_level_qv_g_kg": 20.0,
+            "mean_qv_0_500m_g_kg": 19.0,
+            "mean_qv_0_1000m_g_kg": 18.4,
+            "mean_qv_0_3000m_g_kg": 10.0,
+            "precipitable_water_proxy_or_unavailable": 45.0,
+            "surface_t_td_spread_c": 8.0,
+            "estimated_lcl_height_m_agl": 1000.0,
+            "lapse_rate_0_1000m_c_per_km": 8.0,
+            "lapse_rate_0_3000m_c_per_km": 7.5,
+            "midlevel_lapse_rate_700_500_hpa_c_per_km": 7.3,
+            "cap_strength_proxy": 0.0,
+            "cap_height_m_agl": None,
+            "moisture_depth_m": 2800.0,
+            "midlevel_dry_layer_proxy": 4.0,
+            "qv_drop_0_3000m_g_kg": 8.0,
+            "observed_wind_available": True,
+            "bulk_shear_0_1km_m_s": 5.0,
+            "bulk_shear_0_3km_m_s": 12.0,
+            "bulk_shear_0_6km_m_s": 21.0,
+            "dry_microburst_inverted_v_proxy": 30.0,
+            "freezing_level_m_agl": 4200.0,
+            "surface_based_cape_j_kg": 2100.0,
+            "mixed_layer_cape_j_kg": 1900.0,
+            "surface_based_cin_j_kg": 0.0,
+            "mixed_layer_cin_j_kg": -1.0,
+            "lfc_height_m_agl": 0.0,
+            "el_height_m_agl": 12500.0,
+            "profile_top_m_agl": 18000.0,
+            "lowest_level_m_agl": 0.0,
+        },
+        package_ready=True,
+    )
+
+    score_by_story = {score.story: score for score in scores}
+    assert scores[0].story == "severe_thunderstorm_environment"
+    assert score_by_story["severe_thunderstorm_environment"].support == "supported"
+    assert score_by_story["shallow_cumulus_candidate"].score_0_to_100 < (
+        score_by_story["severe_thunderstorm_environment"].score_0_to_100
+    )
+
+
+def test_deep_convection_scoring_does_not_require_el_when_cape_and_shear_are_supported() -> None:
+    scores, _evidence = _score_features(
+        {
+            "data_completeness_score": 100.0,
+            "low_level_qv_g_kg": 14.5,
+            "mean_qv_0_500m_g_kg": 14.5,
+            "mean_qv_0_1000m_g_kg": 14.4,
+            "mean_qv_0_3000m_g_kg": 9.5,
+            "precipitable_water_proxy_or_unavailable": 35.0,
+            "surface_t_td_spread_c": 4.6,
+            "estimated_lcl_height_m_agl": 575.0,
+            "lapse_rate_0_1000m_c_per_km": 6.0,
+            "lapse_rate_0_3000m_c_per_km": 6.4,
+            "midlevel_lapse_rate_700_500_hpa_c_per_km": 7.25,
+            "cap_strength_proxy": 0.7,
+            "cap_height_m_agl": 1400.0,
+            "moisture_depth_m": 1680.0,
+            "midlevel_dry_layer_proxy": 3.0,
+            "qv_drop_0_3000m_g_kg": 5.0,
+            "observed_wind_available": True,
+            "bulk_shear_0_1km_m_s": 9.0,
+            "bulk_shear_0_3km_m_s": 18.0,
+            "bulk_shear_0_6km_m_s": 36.0,
+            "dry_microburst_inverted_v_proxy": 20.0,
+            "freezing_level_m_agl": 4200.0,
+            "surface_based_cape_j_kg": 1050.0,
+            "mixed_layer_cape_j_kg": 870.0,
+            "surface_based_cin_j_kg": 0.0,
+            "mixed_layer_cin_j_kg": -0.5,
+            "lfc_height_m_agl": 0.0,
+            "el_height_m_agl": None,
+            "profile_top_m_agl": 18000.0,
+            "lowest_level_m_agl": 0.1,
+        },
+        package_ready=True,
+    )
+
+    score_by_story = {score.story: score for score in scores}
+    assert scores[0].story in {
+        "severe_thunderstorm_environment",
+        "supercell_environment",
+        "squall_line_cold_pool_candidate",
+    }
+    assert score_by_story["severe_thunderstorm_environment"].support == "supported"
+    assert score_by_story["shallow_cumulus_candidate"].score_0_to_100 < (
+        score_by_story["severe_thunderstorm_environment"].score_0_to_100
+    )
+
+
+def test_deep_convection_scoring_penalizes_profiles_that_start_well_above_surface() -> None:
+    scores, _evidence = _score_features(
+        {
+            "data_completeness_score": 100.0,
+            "low_level_qv_g_kg": 18.0,
+            "mean_qv_0_500m_g_kg": 18.0,
+            "mean_qv_0_1000m_g_kg": 18.0,
+            "mean_qv_0_3000m_g_kg": 11.0,
+            "precipitable_water_proxy_or_unavailable": 45.0,
+            "surface_t_td_spread_c": 8.0,
+            "estimated_lcl_height_m_agl": 1000.0,
+            "lapse_rate_0_1000m_c_per_km": 8.0,
+            "lapse_rate_0_3000m_c_per_km": 7.5,
+            "midlevel_lapse_rate_700_500_hpa_c_per_km": 7.3,
+            "cap_strength_proxy": 0.0,
+            "cap_height_m_agl": None,
+            "moisture_depth_m": 2800.0,
+            "midlevel_dry_layer_proxy": 4.0,
+            "qv_drop_0_3000m_g_kg": 8.0,
+            "observed_wind_available": True,
+            "bulk_shear_0_1km_m_s": 5.0,
+            "bulk_shear_0_3km_m_s": 12.0,
+            "bulk_shear_0_6km_m_s": 21.0,
+            "dry_microburst_inverted_v_proxy": 30.0,
+            "freezing_level_m_agl": 4200.0,
+            "surface_based_cape_j_kg": 2100.0,
+            "mixed_layer_cape_j_kg": 1900.0,
+            "surface_based_cin_j_kg": 0.0,
+            "mixed_layer_cin_j_kg": -1.0,
+            "lfc_height_m_agl": 0.0,
+            "el_height_m_agl": 12500.0,
+            "profile_top_m_agl": 18000.0,
+            "lowest_level_m_agl": 452.0,
+        },
+        package_ready=True,
+    )
+
+    severe = next(score for score in scores if score.story == "severe_thunderstorm_environment")
+    assert severe.support == "unavailable"
+    assert "lowest_usable_level_too_high_for_deep_convection_trial" in severe.caveats
+
+
+def test_deep_convection_scoring_requires_observed_wind_support() -> None:
+    scores, _evidence = _score_features(
+        {
+            "data_completeness_score": 98.0,
+            "low_level_qv_g_kg": 15.0,
+            "mean_qv_0_500m_g_kg": 15.0,
+            "mean_qv_0_1000m_g_kg": 14.5,
+            "mean_qv_0_3000m_g_kg": 10.0,
+            "precipitable_water_proxy_or_unavailable": 42.0,
+            "surface_t_td_spread_c": 4.5,
+            "estimated_lcl_height_m_agl": 562.5,
+            "lapse_rate_0_1000m_c_per_km": 8.0,
+            "lapse_rate_0_3000m_c_per_km": 7.5,
+            "midlevel_lapse_rate_700_500_hpa_c_per_km": 7.2,
+            "cap_strength_proxy": 0.5,
+            "cap_height_m_agl": 1400.0,
+            "moisture_depth_m": 4200.0,
+            "midlevel_dry_layer_proxy": 3.0,
+            "qv_drop_0_3000m_g_kg": 5.0,
+            "observed_wind_available": False,
+            "bulk_shear_0_1km_m_s": 9.0,
+            "bulk_shear_0_3km_m_s": 18.0,
+            "bulk_shear_0_6km_m_s": 31.0,
+            "dry_microburst_inverted_v_proxy": 20.0,
+            "freezing_level_m_agl": 4200.0,
+            "surface_based_cape_j_kg": 2800.0,
+            "mixed_layer_cape_j_kg": 2400.0,
+            "surface_based_cin_j_kg": -35.0,
+            "mixed_layer_cin_j_kg": -45.0,
+            "lfc_height_m_agl": 1100.0,
+            "el_height_m_agl": 12500.0,
+            "profile_top_m_agl": 18000.0,
+            "lowest_level_m_agl": 0.0,
+        },
+        package_ready=True,
+    )
+
+    supercell = next(score for score in scores if score.story == "supercell_environment")
+    severe = next(score for score in scores if score.story == "severe_thunderstorm_environment")
+    assert supercell.support == "unavailable"
+    assert severe.support == "unavailable"
+    assert "observed_wind_required_for_deep_convection_trial" in supercell.caveats
+
+
 def test_story_scores_and_evidence_are_traceable_to_soundings() -> None:
     scores, evidence = _score_features(
         {
@@ -340,6 +607,12 @@ def test_story_scores_and_evidence_are_traceable_to_soundings() -> None:
         "dry_failed_candidate",
         "capped_suppressed_candidate",
         "humid_rainy_candidate",
+        "severe_thunderstorm_environment",
+        "supercell_environment",
+        "high_cape_pulse_storm",
+        "dry_microburst_inverted_v",
+        "squall_line_cold_pool_candidate",
+        "elevated_convection",
         "needs_review",
         "poor_or_incomplete_candidate",
     }
@@ -356,6 +629,12 @@ def test_story_scores_and_evidence_are_traceable_to_soundings() -> None:
         "Cap height proxy",
         "Moisture depth",
         "Midlevel dry-layer proxy",
+        "Midlevel lapse rate 700-500 hPa",
+        "Bulk shear 0-1 km",
+        "Bulk shear 0-3 km",
+        "Bulk shear 0-6 km",
+        "Dry microburst / inverted-V proxy",
+        "Freezing level",
         "Observed wind availability",
         "Profile top",
         "Lowest usable level",

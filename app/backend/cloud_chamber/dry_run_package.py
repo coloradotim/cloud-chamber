@@ -421,9 +421,9 @@ def _package_mapping_summary(contract: CM1InputContract) -> str:
     if contract.package_family.value == "deep_convection_trial":
         return (
             "observed IGRA external input_sounding profile with observed u/v winds; "
-            "Deep Convection Trial uses CM1 isnd=7, testcase=0, iinit=8 warm line-thermal "
-            "initiation, a wider idealized domain, NetCDF output, rain output, reflectivity "
-            "output, vorticity output, and updraft-helicity output"
+            "Deep Convection Trial uses CM1 isnd=7, testcase=0, iinit=3 three-warm-bubble "
+            "line initiation, a storm-scale idealized domain, NetCDF output, rain output, "
+            "reflectivity output, vorticity output, and updraft-helicity output"
         )
     if contract.observed_sounding is not None:
         return (
@@ -441,8 +441,8 @@ def _package_mapping_summary(contract: CM1InputContract) -> str:
 def _cm1_mapping_status(contract: CM1InputContract) -> str:
     if contract.package_family.value == "deep_convection_trial":
         return (
-            "CM1-ready provisional Deep Convection Trial package; pending manual CM1 "
-            "smoke-run validation for package health, runtime, and interpretability"
+            "CM1-ready Deep Convection Trial package with manual CM1 smoke evidence "
+            "for deep-convection initiation; each observed sounding remains an experiment"
         )
     if contract.observed_sounding is not None:
         return (
@@ -458,17 +458,17 @@ def _cm1_mapping_status(contract: CM1InputContract) -> str:
 def _deep_convection_cost_warning(run_size_preset: str) -> str:
     if run_size_preset == "quick_look":
         return (
-            "Deep Convection Trial Quick Look uses a wider 24 km idealized domain with "
-            "a CM1 warm line-thermal trigger. It is the smallest local trial; CM1 still decides "
-            "whether deep convection develops."
+            "Deep Convection Trial Quick Look uses a 120 km storm-scale idealized domain with "
+            "CM1's built-in three-warm-bubble trigger. It is the smallest local trial; CM1 "
+            "still decides whether deep convection develops."
         )
     if run_size_preset == "standard":
         return (
-            "Deep Convection Trial Standard uses a 40 km idealized domain and should "
+            "Deep Convection Trial Standard uses a 160 km storm-scale idealized domain and should "
             "generally run on the LAN worker."
         )
     return (
-        "Deep Convection Trial Deep Overnight uses a 48 km idealized domain with "
+        "Deep Convection Trial Deep Overnight uses a 240 km storm-scale idealized domain with "
         "frequent saved output and should run on the LAN worker."
     )
 

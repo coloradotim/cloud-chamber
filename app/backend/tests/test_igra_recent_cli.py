@@ -423,6 +423,9 @@ def test_candidates_all_prints_story_specific_sections(
     assert "Dry failed cumulus candidate" in output
     assert "Capped / suppressed cumulus candidate" in output
     assert "Humid / rainy candidate" in output
+    assert "Severe thunderstorm environment" in output
+    assert "Supercell-like environment" in output
+    assert "High-CAPE pulse-storm candidate" in output
 
 
 def test_refresh_prints_next_commands(

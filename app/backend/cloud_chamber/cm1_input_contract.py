@@ -202,7 +202,7 @@ def build_cm1_input_contract(
         if observed_sounding is not None
         else "generated_reference",
         trigger_type=(
-            "warm_thermal_line"
+            "warm_bubble"
             if resolved_package_family == PackageFamily.DEEP_CONVECTION_TRIAL
             else None
         ),
@@ -258,9 +258,12 @@ def _deep_convection_defaults_for_preset(run_size_preset: str) -> CloudScaleDefa
         return CloudScaleDefaults(
             nx=240,
             ny=240,
-            horizontal_extent_km=48.0,
-            y_extent_km=48.0,
-            horizontal_spacing_m=200.0,
+            nz=40,
+            horizontal_extent_km=240.0,
+            y_extent_km=240.0,
+            horizontal_spacing_m=1000.0,
+            vertical_spacing_m=500,
+            time_step_seconds=6.0,
             runtime_seconds=21600,
             output_cadence_seconds=300,
             restart_cadence_seconds=10800,
@@ -270,23 +273,29 @@ def _deep_convection_defaults_for_preset(run_size_preset: str) -> CloudScaleDefa
         return CloudScaleDefaults(
             nx=160,
             ny=160,
-            horizontal_extent_km=40.0,
-            y_extent_km=40.0,
-            horizontal_spacing_m=250.0,
+            nz=40,
+            horizontal_extent_km=160.0,
+            y_extent_km=160.0,
+            horizontal_spacing_m=1000.0,
+            vertical_spacing_m=500,
+            time_step_seconds=6.0,
             runtime_seconds=21600,
             output_cadence_seconds=600,
             restart_cadence_seconds=10800,
             rayleigh_damping_start_m=15000,
         )
     return CloudScaleDefaults(
-        nx=96,
-        ny=96,
-        horizontal_extent_km=24.0,
-        y_extent_km=24.0,
-        horizontal_spacing_m=250.0,
-        runtime_seconds=10800,
+        nx=120,
+        ny=120,
+        nz=40,
+        horizontal_extent_km=120.0,
+        y_extent_km=120.0,
+        horizontal_spacing_m=1000.0,
+        vertical_spacing_m=500,
+        time_step_seconds=6.0,
+        runtime_seconds=7200,
         output_cadence_seconds=600,
-        restart_cadence_seconds=5400,
+        restart_cadence_seconds=3600,
         rayleigh_damping_start_m=15000,
     )
 
@@ -323,10 +332,10 @@ def _trigger_parameters(
     if package_family != PackageFamily.DEEP_CONVECTION_TRIAL:
         return {}
     return {
-        "cm1_iinit": 8,
+        "cm1_iinit": 3,
         "cm1_trigger": (
-            "CM1 built-in line thermal with small random perturbations; 2 K maximum "
-            "potential-temperature perturbation centered near 1.5 km AGL"
+            "CM1 built-in three warm bubbles with 2 K maximum potential-temperature "
+            "perturbations in a line near 1.4 km AGL"
         ),
         "raw_controls_exposed": False,
     }
@@ -343,7 +352,7 @@ def _package_caveats(package_family: PackageFamily, run_size_preset: str) -> tup
     if package_family != PackageFamily.DEEP_CONVECTION_TRIAL:
         return ()
     caveats = [
-        "Deep Convection Trial uses an idealized CM1 warm line-thermal trigger.",
+        "Deep Convection Trial uses an idealized CM1 three-warm-bubble trigger.",
         (
             "Storm mode, rotation, rain, downdraft, and cold-pool behavior are outcomes "
             "to inspect after the run."
@@ -359,7 +368,7 @@ def _package_caveats(package_family: PackageFamily, run_size_preset: str) -> tup
 
 def _manual_validation_status(package_family: PackageFamily) -> str:
     if package_family == PackageFamily.DEEP_CONVECTION_TRIAL:
-        return "needs_manual_cm1_smoke_run"
+        return "manual_cm1_smoke_run_observed_deep_convection"
     return "existing_package_path"
 
 
@@ -400,13 +409,18 @@ def render_cm1_namelist(contract: CM1InputContract) -> str:
     idiss = 1 if deep_convection else 0
     wbc = ebc = sbc = nbc = 2 if deep_convection else 1
     bbc = 1 if deep_convection else 3
-    iinit = 8 if deep_convection else 0
+    iinit = 3 if deep_convection else 0
     irandp = 0 if deep_convection else 1
+    imove = 1 if deep_convection else 0
     isfcflx = 0 if deep_convection else 1
     sfcmodel = 0 if deep_convection else 1
     oceanmodel = 0 if deep_convection else 1
     set_flx = 0 if deep_convection else 1
     set_ust = 0 if deep_convection else 1
+    l_h = 100.0 if deep_convection else 0.0
+    lhref1 = 100.0 if deep_convection else 0.0
+    lhref2 = 1000.0 if deep_convection else 0.0
+    ndcnst = 250.0 if deep_convection else 100.0
     return f"""
  &param0
  nx           =      {defaults.nx},
@@ -486,7 +500,7 @@ def render_cm1_namelist(contract: CM1InputContract) -> str:
  ibalance  =  0,
  iorigin   =  2,
  axisymm   =  0,
- imove     =  0,
+ imove     =  {imove},
  iptra     =  0,
  npt       =  1,
  pdtra     =  1,
@@ -507,11 +521,11 @@ def render_cm1_namelist(contract: CM1InputContract) -> str:
  umove   = 12.5,
  vmove   =  3.0,
  v_t     =      7.0,
- l_h     =      0.0,
- lhref1  =      0.0,
- lhref2  =      0.0,
+ l_h     =  {l_h:7.1f},
+ lhref1  =  {lhref1:7.1f},
+ lhref2  =  {lhref2:7.1f},
  l_inf   =     75.0,
- ndcnst  =    100.0,
+ ndcnst  =  {ndcnst:7.1f},
  nt_c    =    250.0,
  csound  =    300.0,
  cstar   =     30.0,
@@ -742,15 +756,17 @@ def render_input_sounding_notes(contract: CM1InputContract) -> str:
 def render_cm1_input_sounding(contract: CM1InputContract) -> str:
     """Render a CM1-readable external sounding profile.
 
-    CM1 documents ``isnd = 17`` as the external ``input_sounding`` route that
-    reads thermodynamics from this file while preserving the namelist wind
-    profile. The profile is derived from the BOMEX/Siebesma shallow-cumulus
-    breakpoints used by CM1's ``isnd = 19`` reference case and extends above the
-    18 km model top as required by CM1's input_sounding reader.
+    CM1 observed-sounding packages use ``isnd = 7`` so CM1 reads
+    thermodynamics and wind from this file. Generated reference packages use
+    the external-sounding profile derived from the BOMEX/Siebesma
+    shallow-cumulus breakpoints used by CM1's ``isnd = 19`` reference case.
     """
 
     if contract.observed_sounding is not None:
-        return render_observed_input_sounding(contract.observed_sounding)
+        return render_observed_input_sounding(
+            contract.observed_sounding,
+            required_model_top_m=_required_sounding_top_m(contract.cloud_scale_defaults),
+        )
 
     header, body = _baseline_shallow_cumulus_sounding_profile(
         moisture_profile=contract.moisture_profile,
@@ -764,6 +780,13 @@ def render_cm1_input_sounding(contract: CM1InputContract) -> str:
         for z, theta, qv_gkg, u_ms, v_ms in body
     )
     return "\n".join(lines) + "\n"
+
+
+def _required_sounding_top_m(defaults: CloudScaleDefaults) -> float:
+    return max(
+        float(defaults.vertical_extent_km * 1000.0),
+        float(defaults.nz * defaults.vertical_spacing_m),
+    )
 
 
 def _baseline_shallow_cumulus_sounding_profile(

@@ -128,21 +128,25 @@ should verify that package generation:
   expected outputs, caveats, and manual-validation status on generated
   manifests and reports;
 - writes CM1-facing `namelist.input` settings for the observed-sounding route,
-  warm line-thermal trigger, wider domain, rain output, reflectivity output,
+  three-warm-bubble trigger, storm-scale domain, rain output, reflectivity output,
   vorticity output, and updraft-helicity output;
 - writes a numeric `input_sounding` with observed wind components; and
 - preserves package identity through ingest into Result Cards.
 
 Manual/local QA is required before treating the package as scientifically
-accepted. The manual smoke loop should:
+accepted for a selected real sounding. #261 established package-health evidence
+for the v1 three-warm-bubble trigger using a Fort Worth severe candidate that
+produced strong updraft, reflectivity, rain water, ice, graupel, surface rain,
+and updraft helicity; new soundings remain experiments whose outcomes must be
+inspected after CM1 runs. The manual smoke loop should:
 
 1. choose or upload a real observed sounding with usable winds;
 2. select `Deep Convection Trial`;
 3. generate a Quick Look package;
 4. inspect `run_manifest.json`, `dry_run_report.json`, `namelist.input`, and
    `input_sounding`;
-5. confirm `isnd = 7`, `iinit = 8`, `testcase = 0`, rain/reflectivity/vorticity/
-   updraft-helicity output, observed u/v winds, and the wider model box;
+5. confirm `isnd = 7`, `iinit = 3`, `testcase = 0`, rain/reflectivity/vorticity/
+   updraft-helicity output, observed u/v winds, and the storm-scale model box;
 6. run CM1 locally or on the LAN worker outside CI;
 7. ingest completed output;
 8. open Results and Explore to confirm the notebook keeps the Deep Convection

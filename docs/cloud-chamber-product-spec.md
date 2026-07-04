@@ -131,7 +131,7 @@ the user choose between `Observed Sounding Quick Look` and `Deep Convection
 Trial`. `Deep Convection Trial` is the first-class package family for
 severe/deep-convection observed-sounding experiments: it uses the observed
 temperature, moisture, and wind profile through CM1 `isnd = 7`, runs an
-idealized warm line-thermal trigger (`iinit = 8`), uses a wider model box
+idealized three-warm-bubble trigger (`iinit = 3`), uses a storm-scale model box
 suitable for storm growth and precipitation inspection, requests rain,
 reflectivity, vorticity, and updraft-helicity output, and records
 `package_family = deep_convection_trial` plus trigger,
@@ -139,8 +139,7 @@ expected-output, caveat, and candidate-screening provenance in generated
 manifests. Quick Look may be tried locally when practical; Standard and Deep
 tiers should recommend the LAN worker. Raw trigger parameters remain
 metadata-only in v1 and should not become user controls until useful ranges are
-validated. The stock CM1 trigger is built into CM1 source, so Cloud Chamber does
-not pretend the namelist can tune it without a future Fortran/config change.
+validated.
 
 Explore should be a focused visualization plus explanation screen for one
 selected result. Its core interaction is `What happened here?`: select a cloud,
@@ -1092,8 +1091,8 @@ underlying generated scenario ID remains available in technical details as
 lineage.
 Deep Convection Trial results should retain their package-family identity after
 ingest: notebook names and scenario labels may say `Deep Convection Trial`,
-while the original observed station/time, generated scenario ID, warm thermal
-trigger, expected outputs, caveats, and candidate-screening hypothesis remain
+while the original observed station/time, generated scenario ID, trigger
+metadata, expected outputs, caveats, and candidate-screening hypothesis remain
 available as provenance.
 Technical metadata such as raw lifecycle/product states, run IDs, provenance
 labels, controls, and detailed caveats remain available under disclosure rather

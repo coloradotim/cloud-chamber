@@ -7,6 +7,7 @@ are not forecasts and they are not CM1 outcomes.
 from __future__ import annotations
 
 import math
+from bisect import bisect_left
 from datetime import datetime
 from typing import Literal
 
@@ -379,32 +380,95 @@ def compute_sounding_diagnostics(record: ObservedSoundingRecord) -> SoundingDiag
         )
     )
 
-    for key, label, units in (
-        ("surface_based_cape_j_kg", "Surface-based CAPE", "J/kg"),
-        ("surface_based_cin_j_kg", "Surface-based CIN", "J/kg"),
-        ("mixed_layer_cape_j_kg", "Mixed-layer CAPE", "J/kg"),
-        ("mixed_layer_cin_j_kg", "Mixed-layer CIN", "J/kg"),
-        ("lfc_height_m_agl", "LFC height", "m AGL"),
-        ("el_height_m_agl", "EL height", "m AGL"),
-    ):
-        add(
-            _unavailable(
-                key,
-                label,
-                "Parcel diagnostics require a tested parcel model and "
-                "virtual-temperature assumptions.",
-                units=units,
-            )
+    surface_parcel = _simple_parcel_diagnostics(levels, source="surface")
+    mixed_layer_parcel = _simple_parcel_diagnostics(levels, source="mixed_layer_0_500m")
+    parcel_assumptions = [
+        "Uses a simple lifted-parcel approximation for screening only.",
+        "Uses the sounding vertical grid and approximate moist-adiabatic ascent above LCL.",
+        "Does not replace CM1 output or a full severe-weather parcel-analysis package.",
+    ]
+    add(
+        _feature(
+            "surface_based_cape_j_kg",
+            "Surface-based CAPE",
+            surface_parcel.cape_j_kg,
+            "J/kg",
+            "simple parcel estimate from the lowest sounding level",
+            assumptions=parcel_assumptions,
+            caveats=surface_parcel.caveats,
+            support_state="weak",
         )
+    )
+    add(
+        _feature(
+            "surface_based_cin_j_kg",
+            "Surface-based CIN",
+            surface_parcel.cin_j_kg,
+            "J/kg",
+            "simple parcel estimate from the lowest sounding level",
+            assumptions=parcel_assumptions,
+            caveats=surface_parcel.caveats,
+            support_state="weak",
+        )
+    )
+    add(
+        _feature(
+            "mixed_layer_cape_j_kg",
+            "Mixed-layer CAPE",
+            mixed_layer_parcel.cape_j_kg,
+            "J/kg",
+            "simple parcel estimate from mean 0-500 m temperature, moisture, and pressure",
+            assumptions=parcel_assumptions,
+            caveats=mixed_layer_parcel.caveats,
+            support_state="weak",
+        )
+    )
+    add(
+        _feature(
+            "mixed_layer_cin_j_kg",
+            "Mixed-layer CIN",
+            mixed_layer_parcel.cin_j_kg,
+            "J/kg",
+            "simple parcel estimate from mean 0-500 m temperature, moisture, and pressure",
+            assumptions=parcel_assumptions,
+            caveats=mixed_layer_parcel.caveats,
+            support_state="weak",
+        )
+    )
+    add(
+        _feature(
+            "lfc_height_m_agl",
+            "LFC height",
+            surface_parcel.lfc_height_m_agl,
+            "m AGL",
+            "first positive-buoyancy crossing in the simple surface-based parcel estimate",
+            assumptions=parcel_assumptions,
+            caveats=surface_parcel.caveats,
+            support_state="weak",
+        )
+    )
+    add(
+        _feature(
+            "el_height_m_agl",
+            "EL height",
+            surface_parcel.el_height_m_agl,
+            "m AGL",
+            "first negative-buoyancy crossing after LFC in the simple "
+            "surface-based parcel estimate",
+            assumptions=parcel_assumptions,
+            caveats=surface_parcel.caveats,
+            support_state="weak",
+        )
+    )
     add(
         _feature(
             "parcel_assumptions",
             "Parcel assumptions",
-            "not_implemented",
+            "simple_screening_parcel",
             None,
             "records parcel-diagnostic status",
-            support_state="unavailable",
-            caveats=["parcel_diagnostics_not_implemented"],
+            support_state="weak",
+            caveats=["parcel_diagnostics_are_screening_estimates"],
         )
     )
 
@@ -857,6 +921,195 @@ def _freezing_level(levels: list[ObservedSoundingLevel]) -> float | None:
             fraction = (0.0 - lower.temperature_c) / (upper.temperature_c - lower.temperature_c)
             return _round(lower.model_z_m + fraction * (upper.model_z_m - lower.model_z_m), 1)
     return None
+
+
+class _ParcelDiagnostics(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    cape_j_kg: float | None = None
+    cin_j_kg: float | None = None
+    lfc_height_m_agl: float | None = None
+    el_height_m_agl: float | None = None
+    caveats: list[str] = Field(default_factory=list)
+
+
+def _simple_parcel_diagnostics(
+    levels: list[ObservedSoundingLevel], *, source: Literal["surface", "mixed_layer_0_500m"]
+) -> _ParcelDiagnostics:
+    finite = [
+        level
+        for level in sorted(levels, key=lambda item: item.model_z_m)
+        if _finite(level.model_z_m, level.pressure_pa, level.temperature_c, level.qv_g_kg)
+        and level.pressure_pa > 0.0
+    ]
+    if len(finite) < 3:
+        return _ParcelDiagnostics(caveats=["parcel_profile_too_sparse"])
+
+    if source == "surface":
+        source_z = finite[0].model_z_m
+        source_pressure = finite[0].pressure_pa
+        source_temperature_c = finite[0].temperature_c
+        source_qv_g_kg = finite[0].qv_g_kg
+    else:
+        mixed = [level for level in finite if 0.0 <= level.model_z_m <= 500.0]
+        if len(mixed) < 2:
+            return _ParcelDiagnostics(caveats=["mixed_layer_profile_too_sparse"])
+        source_z = 0.0
+        mean_pressure = _mean([level.pressure_pa for level in mixed])
+        mean_temperature_c = _mean([level.temperature_c for level in mixed])
+        mean_qv_g_kg = _mean([level.qv_g_kg for level in mixed])
+        if mean_pressure is None or mean_temperature_c is None or mean_qv_g_kg is None:
+            return _ParcelDiagnostics(caveats=["mixed_layer_source_unavailable"])
+        source_pressure = mean_pressure
+        source_temperature_c = mean_temperature_c
+        source_qv_g_kg = mean_qv_g_kg
+
+    dewpoint_c = _dewpoint_c_from_qv(source_pressure, source_qv_g_kg)
+    if dewpoint_c is None:
+        return _ParcelDiagnostics(caveats=["parcel_dewpoint_unavailable"])
+    lcl_height = max(0.0, 125.0 * (source_temperature_c - dewpoint_c))
+    lcl_z = source_z + lcl_height
+
+    sample_heights = sorted(
+        {
+            source_z,
+            lcl_z,
+            *(
+                level.model_z_m
+                for level in finite
+                if level.model_z_m >= source_z and level.model_z_m <= finite[-1].model_z_m
+            ),
+        }
+    )
+    height_values = [level.model_z_m for level in finite]
+    pressure_values = [level.pressure_pa for level in finite]
+    temperature_values = [level.temperature_c for level in finite]
+    qv_values = [level.qv_g_kg for level in finite]
+
+    def interpolate(height: float, values: list[float]) -> float | None:
+        if not height_values or height < height_values[0] or height > height_values[-1]:
+            return None
+        index = bisect_left(height_values, height)
+        if index < len(height_values) and math.isclose(height_values[index], height):
+            return values[index]
+        if index == 0 or index >= len(height_values):
+            return None
+        h0 = height_values[index - 1]
+        h1 = height_values[index]
+        v0 = values[index - 1]
+        v1 = values[index]
+        if h1 == h0:
+            return v0
+        fraction = (height - h0) / (h1 - h0)
+        return v0 + fraction * (v1 - v0)
+
+    samples: list[tuple[float, float, float, float]] = []
+    for height in sample_heights:
+        pressure = interpolate(height, pressure_values)
+        env_temperature = interpolate(height, temperature_values)
+        env_qv = interpolate(height, qv_values)
+        if pressure is None or env_temperature is None or env_qv is None:
+            continue
+        samples.append((height, pressure, env_temperature + 273.15, env_qv / 1000.0))
+    if len(samples) < 3:
+        return _ParcelDiagnostics(caveats=["parcel_interpolation_failed"])
+
+    rd = 287.05
+    cp = 1004.0
+    kappa = rd / cp
+    g = 9.80665
+    theta0 = (source_temperature_c + 273.15) * (100000.0 / source_pressure) ** kappa
+    source_qv = source_qv_g_kg / 1000.0
+    parcel_temperatures: list[float] = []
+    previous_temperature: float | None = None
+    previous_height: float | None = None
+    previous_pressure: float | None = None
+    for height, pressure, _env_temperature_k, _env_qv in samples:
+        if height <= lcl_z:
+            parcel_temperature = theta0 * (pressure / 100000.0) ** kappa
+        else:
+            if previous_temperature is None or previous_height is None or previous_pressure is None:
+                lcl_pressure = interpolate(lcl_z, pressure_values) or pressure
+                previous_temperature = theta0 * (lcl_pressure / 100000.0) ** kappa
+                previous_height = lcl_z
+                previous_pressure = lcl_pressure
+            dz = max(0.0, height - previous_height)
+            gamma_m = _moist_lapse_rate_k_per_m(previous_temperature, previous_pressure)
+            parcel_temperature = previous_temperature - gamma_m * dz
+        parcel_temperatures.append(parcel_temperature)
+        previous_temperature = parcel_temperature
+        previous_height = height
+        previous_pressure = pressure
+
+    buoyancy: list[tuple[float, float]] = []
+    for (height, pressure, env_temperature_k, env_qv), parcel_temperature in zip(
+        samples, parcel_temperatures, strict=True
+    ):
+        if height <= lcl_z:
+            parcel_qv = source_qv
+        else:
+            parcel_qv = _saturation_mixing_ratio_kg_kg(pressure, parcel_temperature)
+        tv_parcel = parcel_temperature * (1.0 + 0.61 * parcel_qv)
+        tv_env = env_temperature_k * (1.0 + 0.61 * env_qv)
+        buoyancy.append((height, g * (tv_parcel - tv_env) / tv_env))
+
+    cape = 0.0
+    cin = 0.0
+    had_positive = False
+    lfc: float | None = None
+    el: float | None = None
+    for (z0, b0), (z1, b1) in zip(buoyancy, buoyancy[1:], strict=False):
+        dz = z1 - z0
+        if dz <= 0.0:
+            continue
+        avg = 0.5 * (b0 + b1)
+        if avg > 0.0:
+            cape += avg * dz
+            if not had_positive:
+                had_positive = True
+                lfc = _zero_crossing_height(z0, b0, z1, b1) or z0
+        elif not had_positive:
+            cin += avg * dz
+        elif el is None and b0 > 0.0 >= b1:
+            el = _zero_crossing_height(z0, b0, z1, b1) or z1
+    if cape <= 0.0:
+        lfc = None
+        el = None
+    return _ParcelDiagnostics(
+        cape_j_kg=_round(max(0.0, cape), 1),
+        cin_j_kg=_round(cin, 1),
+        lfc_height_m_agl=_round(lfc, 1),
+        el_height_m_agl=_round(el, 1),
+        caveats=["simple_parcel_estimate"],
+    )
+
+
+def _moist_lapse_rate_k_per_m(temperature_k: float, pressure_pa: float) -> float:
+    g = 9.80665
+    rd = 287.05
+    rv = 461.5
+    cp = 1004.0
+    lv = 2.5e6
+    rs = _saturation_mixing_ratio_kg_kg(pressure_pa, temperature_k)
+    numerator = g * (1.0 + (lv * rs) / (rd * temperature_k))
+    denominator = cp + (lv * lv * rs * 0.622) / (rv * temperature_k * temperature_k)
+    return numerator / denominator
+
+
+def _saturation_mixing_ratio_kg_kg(pressure_pa: float, temperature_k: float) -> float:
+    temperature_c = temperature_k - 273.15
+    es_hpa = 6.112 * math.exp((17.67 * temperature_c) / (temperature_c + 243.5))
+    es_pa = min(es_hpa * 100.0, pressure_pa * 0.95)
+    return 0.622 * es_pa / max(1.0, pressure_pa - es_pa)
+
+
+def _zero_crossing_height(z0: float, b0: float, z1: float, b1: float) -> float | None:
+    if math.isclose(b0, b1):
+        return None
+    fraction = (0.0 - b0) / (b1 - b0)
+    if not 0.0 <= fraction <= 1.0:
+        return None
+    return z0 + fraction * (z1 - z0)
 
 
 def _interpolate_by_height(

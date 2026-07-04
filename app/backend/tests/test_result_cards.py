@@ -208,17 +208,17 @@ def test_result_card_preserves_deep_convection_trial_package_identity(tmp_path: 
             "package_family": "deep_convection_trial",
             "package_display_name": "Deep Convection Trial",
             "input_source": "observed_sounding",
-            "trigger_type": "warm_thermal_line",
+            "trigger_type": "warm_bubble",
             "trigger_parameters": {
-                "cm1_iinit": 8,
-                "cm1_trigger": "CM1 built-in line thermal with small random perturbations",
+                "cm1_iinit": 3,
+                "cm1_trigger": "CM1 built-in three warm bubbles",
                 "raw_controls_exposed": False,
             },
             "expected_outputs": ["qc", "qr", "w", "dbz", "updraft_helicity"],
             "package_caveats": [
-                "Deep Convection Trial uses an idealized CM1 warm line-thermal trigger."
+                "Deep Convection Trial uses an idealized CM1 three-warm-bubble trigger."
             ],
-            "manual_validation_status": "needs_manual_cm1_smoke_run",
+            "manual_validation_status": "manual_cm1_smoke_run_observed_deep_convection",
         },
     )
 
@@ -228,14 +228,14 @@ def test_result_card_preserves_deep_convection_trial_package_identity(tmp_path: 
     assert card.scenario_name == "Deep Convection Trial"
     assert card.package_family == "deep_convection_trial"
     assert card.package_display_name == "Deep Convection Trial"
-    assert card.trigger_type == "warm_thermal_line"
+    assert card.trigger_type == "warm_bubble"
     assert card.trigger_parameters is not None
-    assert card.trigger_parameters["cm1_iinit"] == 8
+    assert card.trigger_parameters["cm1_iinit"] == 3
     assert "dbz" in card.expected_outputs
     assert card.package_caveats == [
-        "Deep Convection Trial uses an idealized CM1 warm line-thermal trigger."
+        "Deep Convection Trial uses an idealized CM1 three-warm-bubble trigger."
     ]
-    assert card.manual_validation_status == "needs_manual_cm1_smoke_run"
+    assert card.manual_validation_status == "manual_cm1_smoke_run_observed_deep_convection"
     assert "package_family:deep_convection_trial" in card.provenance_labels
 
 

@@ -5,7 +5,7 @@ import pytest
 from igra_fixtures import IGRA_FIXTURE
 
 from cloud_chamber.dry_run_package import DryRunPackageError, generate_dry_run_package
-from cloud_chamber.observed_sounding import parse_igra_station_text
+from cloud_chamber.observed_sounding import ObservedSoundingLevel, parse_igra_station_text
 from cloud_chamber.run_manifest import load_run_manifest
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -24,6 +24,12 @@ def load_dry_failed_template() -> object:
 
 def load_capped_template() -> object:
     return json.loads(CAPPED_TEMPLATE.read_text())
+
+
+def _level_at_rendered_z(
+    levels: list[ObservedSoundingLevel], rendered_z: float
+) -> ObservedSoundingLevel:
+    return next(level for level in levels if level.model_z_m == pytest.approx(rendered_z))
 
 
 def test_generate_dry_run_package_writes_expected_files_to_temp_runtime_home(
@@ -110,19 +116,21 @@ def test_dry_run_package_can_use_observed_igra_sounding(tmp_path: Path) -> None:
     assert "isnd      =  7," in namelist
     assert "iwnd      =  0," in namelist
     assert "USM00072558" not in sounding
-    assert float(sounding.splitlines()[1].split()[0]) == pytest.approx(0.0)
+    assert float(sounding.splitlines()[1].split()[0]) == pytest.approx(observed.levels[0].model_z_m)
+    first_body_z = float(sounding.splitlines()[1].split()[0])
+    first_body_level = _level_at_rendered_z(observed.levels, first_body_z)
     assert float(sounding.splitlines()[1].split()[3]) == pytest.approx(
-        observed.levels[0].u_wind_m_s,
+        first_body_level.u_wind_m_s,
         abs=0.01,
     )
     assert float(sounding.splitlines()[1].split()[4]) == pytest.approx(
-        observed.levels[0].v_wind_m_s,
+        first_body_level.v_wind_m_s,
         abs=0.01,
     )
     assert float(sounding.splitlines()[-1].split()[0]) > 18000
 
 
-def test_deep_convection_trial_package_uses_observed_sounding_and_warm_line_thermal(
+def test_deep_convection_trial_package_uses_observed_sounding_and_warm_bubble(
     tmp_path: Path,
 ) -> None:
     observed = parse_igra_station_text(
@@ -154,25 +162,25 @@ def test_deep_convection_trial_package_uses_observed_sounding_and_warm_line_ther
     assert manifest.package_family == "deep_convection_trial"
     assert manifest.package_display_name == "Deep Convection Trial"
     assert manifest.input_source == "observed_sounding"
-    assert manifest.trigger_type == "warm_thermal_line"
+    assert manifest.trigger_type == "warm_bubble"
     assert manifest.trigger_parameters == {
-        "cm1_iinit": 8,
+        "cm1_iinit": 3,
         "cm1_trigger": (
-            "CM1 built-in line thermal with small random perturbations; 2 K maximum "
-            "potential-temperature perturbation centered near 1.5 km AGL"
+            "CM1 built-in three warm bubbles with 2 K maximum potential-temperature "
+            "perturbations in a line near 1.4 km AGL"
         ),
         "raw_controls_exposed": False,
     }
     assert "dbz" in manifest.expected_outputs
     assert "updraft_helicity" in manifest.expected_outputs
-    assert manifest.manual_validation_status == "needs_manual_cm1_smoke_run"
+    assert manifest.manual_validation_status == "manual_cm1_smoke_run_observed_deep_convection"
     assert manifest.candidate_screening == candidate_screening
     assert report["package_family"] == "deep_convection_trial"
     assert report["package_display_name"] == "Deep Convection Trial"
-    assert report["trigger_type"] == "warm_thermal_line"
+    assert report["trigger_type"] == "warm_bubble"
     assert report["candidate_screening"] == candidate_screening
     assert "testcase=0" in report["variant_metadata"]["mapping"]
-    assert "iinit=8 warm line-thermal" in report["variant_metadata"]["mapping"]
+    assert "iinit=3 three-warm-bubble" in report["variant_metadata"]["mapping"]
     assert "reflectivity output" in report["variant_metadata"]["mapping"]
     assert case_manifest["package_family"] == "deep_convection_trial"
     assert case_manifest["contract"]["package_family"] == "deep_convection_trial"
@@ -180,8 +188,9 @@ def test_deep_convection_trial_package_uses_observed_sounding_and_warm_line_ther
     assert "testcase  =  0," in namelist
     assert "isnd      =  7," in namelist
     assert "iwnd      =  0," in namelist
-    assert "iinit     =  8," in namelist
+    assert "iinit     =  3," in namelist
     assert "irandp    =  0," in namelist
+    assert "imove     =  1," in namelist
     assert "ptype     =  5," in namelist
     assert "ihail     =  1," in namelist
     assert "iautoc    =  1," in namelist
@@ -189,14 +198,25 @@ def test_deep_convection_trial_package_uses_observed_sounding_and_warm_line_ther
     assert "output_dbz       = 1," in namelist
     assert "output_vort      = 1," in namelist
     assert "output_uh        = 1," in namelist
-    assert "nx           =      96," in namelist
-    assert "ny           =      96," in namelist
-    assert "dx     =   250.0," in namelist
-    assert "dy     =   250.0," in namelist
+    assert "nx           =      120," in namelist
+    assert "ny           =      120," in namelist
+    assert "nz           =      40," in namelist
+    assert "dx     =   1000.0," in namelist
+    assert "dy     =   1000.0," in namelist
+    assert "dz     =   500.0," in namelist
+    assert "dtl    =   6.000," in namelist
+    assert "timax  = 7200.0," in namelist
     assert "tapfrq =  600.0," in namelist
     assert "zd      =  15000.0," in namelist
+    assert float(sounding.splitlines()[-1].split()[0]) >= 20000.0
+    first_body_z = float(sounding.splitlines()[1].split()[0])
+    first_body_level = _level_at_rendered_z(observed.levels, first_body_z)
     assert float(sounding.splitlines()[1].split()[3]) == pytest.approx(
-        observed.levels[0].u_wind_m_s,
+        first_body_level.u_wind_m_s,
+        abs=0.01,
+    )
+    assert float(sounding.splitlines()[1].split()[4]) == pytest.approx(
+        first_body_level.v_wind_m_s,
         abs=0.01,
     )
 

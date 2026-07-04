@@ -37,6 +37,12 @@ STORY_OPTION_TO_ID: dict[str, TargetStoryId] = {
     "dry-failed": "dry_failed_candidate",
     "capped-suppressed": "capped_suppressed_candidate",
     "humid-rainy": "humid_rainy_candidate",
+    "severe-thunderstorm": "severe_thunderstorm_environment",
+    "supercell": "supercell_environment",
+    "high-cape-pulse": "high_cape_pulse_storm",
+    "dry-microburst": "dry_microburst_inverted_v",
+    "squall-line": "squall_line_cold_pool_candidate",
+    "elevated-convection": "elevated_convection",
     "needs-review": "needs_review",
     "poor-or-incomplete": "poor_or_incomplete_candidate",
 }
@@ -373,6 +379,12 @@ def _cmd_candidates(args: argparse.Namespace, settings: CloudChamberSettings) ->
             "dry_failed_candidate",
             "capped_suppressed_candidate",
             "humid_rainy_candidate",
+            "severe_thunderstorm_environment",
+            "supercell_environment",
+            "high_cape_pulse_storm",
+            "dry_microburst_inverted_v",
+            "squall_line_cold_pool_candidate",
+            "elevated_convection",
         ]
     else:
         stories = [STORY_OPTION_TO_ID[story_option]]

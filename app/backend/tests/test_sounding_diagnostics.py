@@ -38,18 +38,27 @@ def _qv_g_kg_from_dewpoint(pressure_pa: float, dewpoint_c: float) -> float:
 
 
 def _synthetic_record() -> ObservedSoundingRecord:
-    pressure_pa = [100000.0, 90000.0, 80000.0, 70000.0, 60000.0, 50000.0]
-    heights_m = [0.0, 1000.0, 2000.0, 3000.0, 4000.0, 6000.0]
-    temperatures_c = [20.0, 14.0, 8.0, 5.0, 7.0, -10.0]
+    pressure_pa = [100000.0, 95000.0, 90000.0, 80000.0, 70000.0, 60000.0, 50000.0]
+    heights_m = [0.0, 500.0, 1000.0, 2000.0, 3000.0, 4000.0, 6000.0]
+    temperatures_c = [20.0, 17.0, 14.0, 8.0, 5.0, 7.0, -10.0]
     qv_g_kg = [
         _qv_g_kg_from_dewpoint(100000.0, 16.0),
+        12.0,
         10.0,
         8.0,
         6.0,
         4.0,
         2.0,
     ]
-    winds = [(0.0, 0.0), (3.0, 4.0), (4.5, 6.0), (6.0, 8.0), (4.0, 9.0), (0.0, 12.0)]
+    winds = [
+        (0.0, 0.0),
+        (1.5, 2.0),
+        (3.0, 4.0),
+        (4.5, 6.0),
+        (6.0, 8.0),
+        (4.0, 9.0),
+        (0.0, 12.0),
+    ]
     levels = [
         ObservedSoundingLevel(
             pressure_pa=pressure,
@@ -111,6 +120,18 @@ def test_synthetic_profile_has_known_numeric_diagnostics() -> None:
     assert features["bulk_shear_0_3km_m_s"].value == pytest.approx(10.0)
     assert features["bulk_shear_0_6km_m_s"].value == pytest.approx(12.0)
     assert features["freezing_level_m_agl"].value == pytest.approx(4823.5)
+    assert features["surface_based_cape_j_kg"].support_state == "weak"
+    assert features["surface_based_cape_j_kg"].value == pytest.approx(0.0)
+    assert features["surface_based_cin_j_kg"].support_state == "weak"
+    assert features["surface_based_cin_j_kg"].value == pytest.approx(-1519.4)
+    assert features["mixed_layer_cape_j_kg"].support_state == "weak"
+    assert features["mixed_layer_cape_j_kg"].value == pytest.approx(2.9)
+    assert features["mixed_layer_cin_j_kg"].support_state == "weak"
+    assert features["mixed_layer_cin_j_kg"].value == pytest.approx(0.0)
+    assert features["lfc_height_m_agl"].support_state == "unavailable"
+    assert features["lfc_height_m_agl"].value is None
+    assert features["el_height_m_agl"].support_state == "unavailable"
+    assert features["el_height_m_agl"].value is None
 
 
 def test_sounding_diagnostics_payload_has_quality_provenance_and_required_features() -> None:
@@ -218,12 +239,6 @@ def test_missing_moisture_caveats_moisture_diagnostics_without_calling_it_dry() 
 @pytest.mark.parametrize(
     "key",
     [
-        "surface_based_cape_j_kg",
-        "surface_based_cin_j_kg",
-        "mixed_layer_cape_j_kg",
-        "mixed_layer_cin_j_kg",
-        "lfc_height_m_agl",
-        "el_height_m_agl",
         "srh_0_1km_m2_s2",
         "srh_0_3km_m2_s2",
         "wet_bulb_zero_m_agl_or_unavailable",

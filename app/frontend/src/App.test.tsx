@@ -2308,8 +2308,12 @@ describe("App", () => {
     fireEvent.change(screen.getByLabelText("Package type"), {
       target: { value: "deep_convection_trial" },
     });
-    expect(screen.getByText("Warm thermal trigger")).toBeInTheDocument();
-    expect(screen.getByText(/warm line-thermal trigger/i)).toBeInTheDocument();
+    expect(screen.getByText("Three-bubble trigger")).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        /observed temperature, moisture, and wind profile with an idealized CM1 three-warm-bubble trigger/i,
+      ),
+    ).toBeInTheDocument();
     expect(screen.getByText(/wider box for storm growth and precipitation/i)).toBeInTheDocument();
     expect(screen.getByText(/wider storm-growth domain than the shallow-cumulus quick look/i)).toBeInTheDocument();
 
@@ -2360,7 +2364,7 @@ describe("App", () => {
 
     expect(await screen.findByText("Candidate selected for package review")).toBeInTheDocument();
     expect(screen.getByLabelText("Package type")).toHaveValue("deep_convection_trial");
-    expect(screen.getByText("Warm thermal trigger")).toBeInTheDocument();
+    expect(screen.getByText("Three-bubble trigger")).toBeInTheDocument();
     expect(screen.getByText(/strong fit for Deep Convection Trial/)).toBeInTheDocument();
 
     fireEvent.click(screen.getByTestId("create-package-btn"));
