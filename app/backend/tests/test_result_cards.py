@@ -205,6 +205,11 @@ def test_result_card_preserves_deep_convection_trial_package_identity(tmp_path: 
             "valid_time_utc": "2026-06-30T00:00:00Z",
         },
         package_updates={
+            "candidate_screening": {
+                "candidate_id": "USM00072357-2025052000-supercell",
+                "primary_story": "supercell_environment",
+                "rank_score": 93.0,
+            },
             "package_family": "deep_convection_trial",
             "package_display_name": "Deep Convection Trial",
             "input_source": "observed_sounding",
@@ -237,6 +242,12 @@ def test_result_card_preserves_deep_convection_trial_package_identity(tmp_path: 
     ]
     assert card.manual_validation_status == "deep_convection_trial_package_smoke_validated"
     assert "package_family:deep_convection_trial" in card.provenance_labels
+    assert card.candidate_screening is not None
+    assert card.candidate_screening["primary_story"] == "supercell_environment"
+    assert card.candidate_hypothesis_comparison is not None
+    assert card.candidate_hypothesis_comparison.screened_as == "Supercell-like environment"
+    assert card.candidate_hypothesis_comparison.ran_as == "Deep Convection Trial"
+    assert card.candidate_hypothesis_comparison.match_status == "did_not_match"
 
 
 def test_list_get_and_result_card_serialization_round_trip(tmp_path: Path) -> None:

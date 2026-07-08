@@ -19,6 +19,7 @@ from cloud_chamber.result_diagnostics import (
     RainDiagnostics,
     ResultDiagnostics,
     TimeDiagnostics,
+    TimeValue,
     VerticalVelocityDiagnostics,
 )
 
@@ -269,3 +270,98 @@ def test_interesting_times_preserve_inferred_time_caveats(tmp_path: Path) -> Non
     assert "diagnostics_used_inferred_time" in product.caveats
     assert product.default_time_by_field["qc"].time_index == 1
     assert product.science_summary.default_explore_time_index == 1
+
+
+def test_deep_convection_interesting_times_and_unavailable_diagnostics(
+    tmp_path: Path,
+) -> None:
+    model = tmp_path / "cm1out_000001.nc"
+    write_model_netcdf(model, times=[0.0, 600.0, 1200.0], values=[0.0, 1.0, 2.0])
+    manifest = build_manifest(tmp_path, [model])
+    diagnostics = ResultDiagnostics(
+        cloud=CloudDiagnostics(
+            formed=True,
+            first_cloud_time_seconds=600.0,
+            cloud_top_time_series=[
+                TimeValue(time_seconds=0.0, value=None),
+                TimeValue(time_seconds=600.0, value=3500.0),
+                TimeValue(time_seconds=1200.0, value=10200.0),
+            ],
+            max_qc_kg_kg=2e-5,
+            time_of_max_qc_seconds=1200.0,
+        ),
+        vertical_velocity=VerticalVelocityDiagnostics(
+            max_w_m_s=14.0,
+            time_of_max_w_seconds=600.0,
+            min_w_m_s=-6.0,
+            time_of_min_w_seconds=1200.0,
+            units="m/s",
+        ),
+        rain=RainDiagnostics(
+            present=True,
+            first_rain_time_seconds=1200.0,
+            max_qr_kg_kg=3e-7,
+            time_of_max_qr_seconds=1200.0,
+        ),
+        time=TimeDiagnostics(source="netcdf_time_coordinate", fallback_used=False),
+    )
+
+    product = build_interesting_time_product(
+        result_id="result-deep",
+        diagnostics=diagnostics,
+        output_manifest=manifest,
+        variables=["qc", "w", "qr"],
+        package_family="deep_convection_trial",
+    )
+
+    records = {record.key: record for record in product.available_interesting_times}
+    assert records["first_deep_convection"].support_state == "supported"
+    assert records["first_deep_convection"].time_index == 2
+    assert records["max_updraft_w"].time_index == 1
+    assert product.science_summary.cloud_formed is True
+    assert product.science_summary.deep_cloud_formed is True
+    assert product.science_summary.strong_updraft_formed is True
+    assert product.science_summary.time_of_first_deep_convection_seconds == 1200.0
+    assert product.science_summary.highest_cloud_top_m == 10200.0
+    assert product.science_summary.default_explore_time_index == 2
+    assert (
+        product.science_summary.cm1_outcome
+        == "Deep convection formed with strong updraft and rain."
+    )
+    availability = {item.key: item for item in product.science_summary.diagnostic_availability}
+    assert availability["max_dbz_or_reflectivity_proxy"].support_state == (
+        "unsupported_missing_fields"
+    )
+    assert availability["cold_pool_proxy"].support_state == "unsupported_missing_fields"
+    assert "missing_dbz_field" in availability["max_dbz_or_reflectivity_proxy"].caveats
+
+
+def test_deep_convection_present_but_unsupported_fields_are_caveated(
+    tmp_path: Path,
+) -> None:
+    model = tmp_path / "cm1out_000001.nc"
+    write_model_netcdf(model, times=[0.0], values=[0.0])
+    manifest = build_manifest(tmp_path, [model])
+    diagnostics = ResultDiagnostics(
+        cloud=CloudDiagnostics(formed=False),
+        vertical_velocity=VerticalVelocityDiagnostics(max_w_m_s=0.0, units="m/s"),
+        rain=RainDiagnostics(available=False, field_absent=True),
+        time=TimeDiagnostics(source="netcdf_time_coordinate", fallback_used=False),
+    )
+
+    product = build_interesting_time_product(
+        result_id="result-deep",
+        diagnostics=diagnostics,
+        output_manifest=manifest,
+        variables=["qc", "w", "dbz", "th"],
+        package_family="deep_convection_trial",
+    )
+
+    availability = {item.key: item for item in product.science_summary.diagnostic_availability}
+    assert availability["max_dbz_or_reflectivity_proxy"].support_state == (
+        "unsupported_missing_diagnostic"
+    )
+    assert availability["cold_pool_proxy"].support_state == "unsupported_missing_diagnostic"
+    assert "max_dbz_or_reflectivity_proxy_diagnostic_not_implemented" in (
+        availability["max_dbz_or_reflectivity_proxy"].caveats
+    )

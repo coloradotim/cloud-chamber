@@ -18,6 +18,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from cloud_chamber.output_products import FieldDefaultTime, InterestingTimeRecord, ScienceSummary
 from cloud_chamber.result_ingest import (
     RESULT_METADATA_FILENAME,
+    CandidateHypothesisComparison,
     ResultIngestError,
     ResultMetadata,
     result_metadata_from_json,
@@ -94,6 +95,8 @@ class ResultCard(BaseModel):
     expected_outputs: list[str] = Field(default_factory=list)
     package_caveats: list[str] = Field(default_factory=list)
     manual_validation_status: str | None = None
+    candidate_screening: dict[str, object] | None = None
+    candidate_hypothesis_comparison: CandidateHypothesisComparison | None = None
     provenance_labels: list[str] = Field(default_factory=list)
     diagnostics_summary: str | None = None
     thermal_fate_label: str | None = None
@@ -227,6 +230,8 @@ def _card_from_metadata(
         expected_outputs=metadata.expected_outputs,
         package_caveats=metadata.package_caveats,
         manual_validation_status=metadata.manual_validation_status,
+        candidate_screening=metadata.candidate_screening,
+        candidate_hypothesis_comparison=metadata.candidate_hypothesis_comparison,
         provenance_labels=[
             f"source_model:{metadata.source_model}",
             f"source_product_state:{metadata.source_product_state}",

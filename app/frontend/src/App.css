@@ -1015,6 +1015,13 @@ td small {
   background: var(--color-surface);
 }
 
+.candidate-outcome-summary {
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  padding: 0.85rem;
+  background: var(--color-surface);
+}
+
 .section-heading-row {
   display: flex;
   align-items: flex-start;
@@ -1925,7 +1932,9 @@ details[open] > summary {
   border: 2px solid #b7791f;
   border-radius: 999px;
   background: rgba(255, 244, 216, 0.86);
-  box-shadow: 0 0 0 3px rgba(183, 121, 31, 0.24), 0 0 18px rgba(183, 121, 31, 0.42);
+  box-shadow:
+    0 0 0 3px rgba(183, 121, 31, 0.24),
+    0 0 18px rgba(183, 121, 31, 0.42);
   transform: translate(-50%, 50%);
 }
 
@@ -2076,7 +2085,10 @@ details[open] > summary {
 }
 
 .inspector-controls-primary {
-  grid-template-columns: minmax(26rem, 1.25fr) minmax(9rem, 0.55fr) minmax(8rem, 0.45fr) minmax(15rem, 0.9fr) auto;
+  grid-template-columns: minmax(26rem, 1.25fr) minmax(9rem, 0.55fr) minmax(8rem, 0.45fr) minmax(
+      15rem,
+      0.9fr
+    ) auto;
   gap: 0.4rem;
   align-items: end;
   border: 1px solid rgba(47, 116, 168, 0.18);
@@ -2431,12 +2443,12 @@ details[open] > summary {
   .workbench-status-strip,
   .visualizer-bottom-controls,
   .slice-grid,
-	  .control-row,
-	  .candidate-toolbar,
-	  .candidate-workspace,
-	  .explore-result-summary {
-	    grid-template-columns: 1fr;
-	  }
+  .control-row,
+  .candidate-toolbar,
+  .candidate-workspace,
+  .explore-result-summary {
+    grid-template-columns: 1fr;
+  }
 
   .visualizer-workbench {
     grid-template-areas:
@@ -2474,27 +2486,27 @@ details[open] > summary {
     display: grid;
   }
 
-	  .metric-grid {
-	    grid-template-columns: 1fr;
-	  }
+  .metric-grid {
+    grid-template-columns: 1fr;
+  }
 
-	  .candidate-cache-summary {
-	    grid-template-columns: repeat(2, minmax(0, 1fr));
-	  }
+  .candidate-cache-summary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 
-	  .candidate-toolbar-actions,
-	  .saved-candidate-card {
-	    justify-content: start;
-	  }
+  .candidate-toolbar-actions,
+  .saved-candidate-card {
+    justify-content: start;
+  }
 
-	  .candidate-detail-panel {
-	    position: static;
-	  }
+  .candidate-detail-panel {
+    position: static;
+  }
 
-	  .candidate-card-main,
-	  .saved-candidate-card {
-	    grid-template-columns: 1fr;
-	  }
+  .candidate-card-main,
+  .saved-candidate-card {
+    grid-template-columns: 1fr;
+  }
 
   .experiment-card {
     grid-template-columns: 1fr;

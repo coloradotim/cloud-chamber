@@ -37,6 +37,9 @@ InterestingTimeSupportState = Literal[
     "unsupported_missing_diagnostic",
 ]
 
+DEEP_CLOUD_TOP_THRESHOLD_M = 8000.0
+STRONG_UPDRAFT_THRESHOLD_M_S = 10.0
+
 
 class OutputProductManifestError(RuntimeError):
     """Raised when an output product manifest cannot be built or resolved."""
@@ -123,11 +126,29 @@ class FieldDefaultTime(BaseModel):
     caveats: list[str] = Field(default_factory=list)
 
 
+class ScienceDiagnosticAvailability(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    key: str
+    label: str
+    support_state: InterestingTimeSupportState
+    source_field: str | None = None
+    value: float | bool | None = None
+    units: str | None = None
+    caveats: list[str] = Field(default_factory=list)
+
+
 class ScienceSummary(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
+    cloud_formed: bool | None = None
+    deep_cloud_formed: bool | None = None
+    deep_cloud_threshold_m: float = DEEP_CLOUD_TOP_THRESHOLD_M
+    strong_updraft_formed: bool | None = None
+    strong_updraft_threshold_m_s: float = STRONG_UPDRAFT_THRESHOLD_M_S
     first_cloud_time_seconds: float | None = None
     first_cloud_time_label: str | None = None
+    time_of_first_deep_convection_seconds: float | None = None
     max_qc_kg_kg: float | None = None
     max_qc_time_seconds: float | None = None
     max_updraft_w_m_s: float | None = None
@@ -137,9 +158,16 @@ class ScienceSummary(BaseModel):
     highest_cloud_top_m: float | None = None
     rain_onset_time_seconds: float | None = None
     max_qr_kg_kg: float | None = None
+    max_rain_or_surface_precip: float | None = None
+    max_dbz_or_reflectivity_proxy: float | None = None
+    cold_pool_proxy: float | None = None
+    near_surface_theta_perturbation_proxy: float | None = None
+    updraft_depth_proxy_m: float | None = None
     latest_output_time_seconds: float | None = None
     default_explore_time_index: int | None = None
     default_explore_time_seconds: float | None = None
+    cm1_outcome: str | None = None
+    diagnostic_availability: list[ScienceDiagnosticAvailability] = Field(default_factory=list)
     interesting_time_caveats: list[str] = Field(default_factory=list)
     interesting_time_support_state: str = "unavailable"
 
@@ -414,15 +442,24 @@ def build_interesting_time_product(
     diagnostics: ResultDiagnostics | None,
     output_manifest: OutputProductManifest,
     variables: list[str],
+    package_family: str | None = None,
 ) -> InterestingTimeProduct:
     """Build small science time landmarks from diagnostics and manifest time mapping."""
     records = _interesting_time_records(
         diagnostics=diagnostics,
         output_manifest=output_manifest,
         variables=set(variables),
+        package_family=package_family,
     )
     defaults = _field_defaults(records)
-    summary = _science_summary(diagnostics, output_manifest, records, defaults)
+    summary = _science_summary(
+        diagnostics,
+        output_manifest,
+        records,
+        defaults,
+        variables=set(variables),
+        package_family=package_family,
+    )
     caveats = _dedupe(
         [
             *(output_manifest.caveats or []),
@@ -445,6 +482,7 @@ def _interesting_time_records(
     diagnostics: ResultDiagnostics | None,
     output_manifest: OutputProductManifest,
     variables: set[str],
+    package_family: str | None,
 ) -> list[InterestingTimeRecord]:
     latest = _latest_time_record(output_manifest)
     if diagnostics is None:
@@ -506,6 +544,20 @@ def _interesting_time_records(
             unavailable_caveat="no_cloud_top_detected" if cloud.available else "missing_qc_field",
             support_state="unavailable" if cloud.available else "unsupported_missing_fields",
         ),
+        _event_record(
+            key="first_deep_convection",
+            label="First deep convection",
+            time_seconds=_first_deep_convection_time(diagnostics) if cloud.available else None,
+            source_field="qc+qr+qi+qs+qg when available",
+            source_diagnostic="diagnostics.cloud.cloud_top_time_series",
+            value=_deep_cloud_formed(diagnostics) if cloud.available else None,
+            units=None,
+            output_manifest=output_manifest,
+            unavailable_caveat="no_deep_cloud_detected" if cloud.available else "missing_qc_field",
+            support_state="unavailable" if cloud.available else "unsupported_missing_fields",
+        )
+        if package_family == "deep_convection_trial"
+        else None,
         _event_record(
             key="max_updraft_w",
             label="Max updraft",
@@ -576,8 +628,14 @@ def _interesting_time_records(
         ),
         latest,
     ]
-    records.append(_field_default_record(_default_source_record(records), fallback_reason=None))
-    return records
+    compact_records = [record for record in records if record is not None]
+    compact_records.append(
+        _field_default_record(
+            _default_source_record(compact_records, package_family=package_family),
+            fallback_reason=None,
+        )
+    )
+    return compact_records
 
 
 def _event_record(
@@ -808,17 +866,22 @@ def _science_summary(
     output_manifest: OutputProductManifest,
     records: list[InterestingTimeRecord],
     defaults: dict[str, FieldDefaultTime],
+    *,
+    variables: set[str],
+    package_family: str | None,
 ) -> ScienceSummary:
     record_by_key = {record.key: record for record in records}
     default_record = record_by_key.get("field_default_time")
     latest = record_by_key.get("latest_output")
     qc_default = defaults.get("qc")
+    is_deep_convection = package_family == "deep_convection_trial"
     if diagnostics is None:
         return ScienceSummary(
             latest_output_time_seconds=latest.time_seconds if latest else None,
             default_explore_time_index=default_record.time_index if default_record else None,
             default_explore_time_seconds=default_record.time_seconds if default_record else None,
             interesting_time_support_state="fallback",
+            diagnostic_availability=_diagnostic_availability(variables),
         )
     supported_science_keys = {
         "first_cloud",
@@ -837,9 +900,18 @@ def _science_summary(
         if record.key in supported_science_keys and record.support_state == "supported"
     )
     support_state = "supported" if supported_count > 0 else "fallback"
+    highest_cloud_top = _record_value(record_by_key.get("highest_cloud_top"))
+    first_deep_convection = _record_time(record_by_key.get("first_deep_convection"))
+    deep_cloud_formed = _deep_cloud_formed(diagnostics)
+    strong_updraft_formed = _strong_updraft_formed(diagnostics)
+    default_source = default_record if is_deep_convection else qc_default or default_record
     return ScienceSummary(
+        cloud_formed=diagnostics.cloud.formed if diagnostics.cloud.available else None,
+        deep_cloud_formed=deep_cloud_formed,
+        strong_updraft_formed=strong_updraft_formed,
         first_cloud_time_seconds=diagnostics.cloud.first_cloud_time_seconds,
         first_cloud_time_label=_format_time_label(diagnostics.cloud.first_cloud_time_seconds),
+        time_of_first_deep_convection_seconds=first_deep_convection,
         max_qc_kg_kg=diagnostics.cloud.max_qc_kg_kg if diagnostics.cloud.available else None,
         max_qc_time_seconds=diagnostics.cloud.time_of_max_qc_seconds
         if record_by_key.get("max_qc", None)
@@ -853,25 +925,32 @@ def _science_summary(
         if diagnostics.vertical_velocity.available
         else None,
         min_downdraft_time_seconds=diagnostics.vertical_velocity.time_of_min_w_seconds,
-        highest_cloud_top_m=_record_value(record_by_key.get("highest_cloud_top")),
+        highest_cloud_top_m=highest_cloud_top,
         rain_onset_time_seconds=diagnostics.rain.first_rain_time_seconds,
         max_qr_kg_kg=diagnostics.rain.max_qr_kg_kg if diagnostics.rain.available else None,
         latest_output_time_seconds=latest.time_seconds
         if latest
         else _latest_manifest_time(output_manifest),
-        default_explore_time_index=qc_default.time_index
-        if qc_default is not None
-        else (default_record.time_index if default_record else None),
-        default_explore_time_seconds=qc_default.time_seconds
-        if qc_default is not None
-        else (default_record.time_seconds if default_record else None),
+        default_explore_time_index=default_source.time_index if default_source else None,
+        default_explore_time_seconds=default_source.time_seconds if default_source else None,
+        cm1_outcome=_cm1_outcome(diagnostics),
+        diagnostic_availability=_diagnostic_availability(variables),
         interesting_time_support_state=support_state,
     )
 
 
-def _default_source_record(records: list[InterestingTimeRecord]) -> InterestingTimeRecord:
+def _default_source_record(
+    records: list[InterestingTimeRecord],
+    *,
+    package_family: str | None,
+) -> InterestingTimeRecord:
     by_key = {record.key: record for record in records}
-    for key in ("first_cloud", "max_qc", "max_updraft_w"):
+    preferred_keys = (
+        ("first_deep_convection", "max_updraft_w", "rain_onset", "max_qc")
+        if package_family == "deep_convection_trial"
+        else ("first_cloud", "max_qc", "max_updraft_w")
+    )
+    for key in preferred_keys:
         record = by_key.get(key)
         if record and record.support_state == "supported":
             return record
@@ -911,6 +990,125 @@ def _record_value(record: InterestingTimeRecord | None) -> float | None:
     if record is None or record.support_state != "supported":
         return None
     return float(record.value) if isinstance(record.value, (int, float)) else None
+
+
+def _record_time(record: InterestingTimeRecord | None) -> float | None:
+    if record is None or record.support_state != "supported":
+        return None
+    return record.time_seconds
+
+
+def _first_deep_convection_time(diagnostics: ResultDiagnostics) -> float | None:
+    for point in diagnostics.cloud.cloud_top_time_series:
+        if point.value is not None and point.value >= DEEP_CLOUD_TOP_THRESHOLD_M:
+            return point.time_seconds
+    return None
+
+
+def _deep_cloud_formed(diagnostics: ResultDiagnostics) -> bool | None:
+    if not diagnostics.cloud.available:
+        return None
+    return any(
+        point.value is not None and point.value >= DEEP_CLOUD_TOP_THRESHOLD_M
+        for point in diagnostics.cloud.cloud_top_time_series
+    )
+
+
+def _strong_updraft_formed(diagnostics: ResultDiagnostics) -> bool | None:
+    if not diagnostics.vertical_velocity.available:
+        return None
+    return (
+        diagnostics.vertical_velocity.max_w_m_s is not None
+        and diagnostics.vertical_velocity.max_w_m_s >= STRONG_UPDRAFT_THRESHOLD_M_S
+    )
+
+
+def _cm1_outcome(diagnostics: ResultDiagnostics) -> str:
+    deep_cloud = _deep_cloud_formed(diagnostics)
+    strong_updraft = _strong_updraft_formed(diagnostics)
+    if deep_cloud is None or strong_updraft is None:
+        return (
+            "Unable to evaluate deep convection because required cloud or updraft fields "
+            "are missing."
+        )
+    if deep_cloud and strong_updraft and diagnostics.rain.available and diagnostics.rain.present:
+        return "Deep convection formed with strong updraft and rain."
+    if deep_cloud and strong_updraft:
+        return "Deep convection formed with strong updraft; rain evidence is absent or unavailable."
+    if deep_cloud:
+        return "Deep cloud formed, but the updraft-strength threshold was not met."
+    if strong_updraft:
+        return "Strong updraft formed, but deep cloud did not reach the threshold."
+    return "Trigger failed to produce deep convection by current cloud-top and updraft thresholds."
+
+
+def _diagnostic_availability(variables: set[str]) -> list[ScienceDiagnosticAvailability]:
+    return [
+        _availability_record(
+            key="max_dbz_or_reflectivity_proxy",
+            label="Max reflectivity",
+            source_field="dbz",
+            field_present="dbz" in variables,
+            implemented=False,
+        ),
+        _availability_record(
+            key="max_rain_or_surface_precip",
+            label="Max surface rain",
+            source_field="rain",
+            field_present="rain" in variables,
+            implemented=False,
+        ),
+        _availability_record(
+            key="updraft_depth_proxy",
+            label="Updraft depth proxy",
+            source_field="w",
+            field_present="w" in variables,
+            implemented=False,
+        ),
+        _availability_record(
+            key="cold_pool_proxy",
+            label="Cold-pool proxy",
+            source_field="th",
+            field_present=bool({"th", "theta", "theta_v"} & variables),
+            implemented=False,
+        ),
+        _availability_record(
+            key="near_surface_theta_perturbation_proxy",
+            label="Near-surface theta perturbation",
+            source_field="th",
+            field_present=bool({"th", "theta", "theta_v"} & variables),
+            implemented=False,
+        ),
+    ]
+
+
+def _availability_record(
+    *,
+    key: str,
+    label: str,
+    source_field: str,
+    field_present: bool,
+    implemented: bool,
+) -> ScienceDiagnosticAvailability:
+    if implemented:
+        return ScienceDiagnosticAvailability(
+            key=key,
+            label=label,
+            source_field=source_field,
+            support_state="supported",
+        )
+    caveat = (
+        f"{key}_diagnostic_not_implemented" if field_present else f"missing_{source_field}_field"
+    )
+    return ScienceDiagnosticAvailability(
+        key=key,
+        label=label,
+        source_field=source_field,
+        support_state="unsupported_missing_diagnostic"
+        if field_present
+        else "unsupported_missing_fields",
+        caveats=[caveat],
+    )
 
 
 def _positive(value: float | None) -> bool:

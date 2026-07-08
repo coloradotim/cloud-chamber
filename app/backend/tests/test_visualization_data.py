@@ -51,6 +51,7 @@ def create_visualization_result(
     include_qv: bool = True,
     include_dbz: bool = True,
     run_id: str = "run-visualization",
+    package_updates: dict[str, object] | None = None,
 ) -> tuple[CloudChamberSettings, str, Path]:
     settings = fake_settings(tmp_path)
     package = generate_dry_run_package(
@@ -69,16 +70,13 @@ def create_visualization_result(
         include_dbz=include_dbz,
     )
     manifest = load_run_manifest(package.manifest_path)
-    write_run_manifest(
-        package.manifest_path,
-        manifest.model_copy(
-            update={
-                "lifecycle_state": LifecycleState.COMPLETED,
-                "provenance": ProvenanceMetadata(product_state=ProductState.COMPLETED_CM1_RESULT),
-                "outputs": OutputMetadata(netcdf_paths=[str(netcdf_path)]),
-            }
-        ),
-    )
+    update_payload = {
+        "lifecycle_state": LifecycleState.COMPLETED,
+        "provenance": ProvenanceMetadata(product_state=ProductState.COMPLETED_CM1_RESULT),
+        "outputs": OutputMetadata(netcdf_paths=[str(netcdf_path)]),
+    }
+    update_payload.update(package_updates or {})
+    write_run_manifest(package.manifest_path, manifest.model_copy(update=update_payload))
     result = ingest_completed_run(package.manifest_path)
     return settings, result.result_id, package.package_dir
 
@@ -615,6 +613,23 @@ def test_view_defaults_choose_native_grid_max_locations(tmp_path: Path) -> None:
     assert defaults.fields["rain"].source == "domain_center_missing_required_dimensions"
     assert "default_locations_are_native_grid_indices" in defaults.caveats
     assert defaults.provenance.processing_method == "backend_xarray_interesting_view_defaults"
+
+
+def test_deep_convection_view_defaults_prefer_updraft_field(tmp_path: Path) -> None:
+    settings, result_id, _run_dir = create_visualization_result(
+        tmp_path,
+        run_id="run-deep-visualization",
+        package_updates={
+            "package_family": "deep_convection_trial",
+            "package_display_name": "Deep Convection Trial",
+        },
+    )
+
+    defaults = view_defaults(settings, result_id)
+
+    assert defaults.preferred_field == "w"
+    assert defaults.fields["w"].source == "max_w_native_grid_location"
+    assert defaults.fields["qc"].source == "max_qc_native_grid_location"
 
 
 def test_view_defaults_can_choose_selected_time_max_locations(tmp_path: Path) -> None:
