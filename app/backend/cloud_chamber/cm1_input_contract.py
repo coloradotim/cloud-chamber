@@ -6,10 +6,15 @@ It does not launch CM1 and does not write generated files.
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 from enum import StrEnum
 
-from cloud_chamber.observed_sounding import ObservedSoundingRecord, render_observed_input_sounding
+from cloud_chamber.observed_sounding import (
+    ObservedSoundingLevel,
+    ObservedSoundingRecord,
+    render_observed_input_sounding,
+)
 from cloud_chamber.scenario_schema import ControlAudience, ScenarioTemplate
 
 
@@ -20,6 +25,12 @@ class GeneratedFileRole(StrEnum):
     INPUT_SOUNDING = "input_sounding"
     DRY_RUN_REPORT = "dry_run_report"
     RUNTIME_FILE_CHECKLIST = "runtime_file_checklist"
+
+
+class PackageFamily(StrEnum):
+    SHALLOW_CUMULUS = "shallow_cumulus"
+    OBSERVED_SOUNDING_QUICKLOOK = "observed_sounding_quicklook"
+    DEEP_CONVECTION_TRIAL = "deep_convection_trial"
 
 
 @dataclass(frozen=True)
@@ -82,6 +93,11 @@ class ControlMappingFragment:
 
 @dataclass(frozen=True)
 class CM1InputContract:
+    package_family: PackageFamily
+    package_display_name: str
+    input_source: str
+    trigger_type: str | None
+    trigger_parameters: dict[str, str | int | float | bool]
     scenario_id: str
     physical_question: str
     run_size_preset: str
@@ -91,8 +107,11 @@ class CM1InputContract:
     generated_files: tuple[GeneratedFileSpec, ...]
     control_fragments: tuple[ControlMappingFragment, ...]
     expected_diagnostics: tuple[str, ...]
+    expected_outputs: tuple[str, ...]
     visualization_defaults: dict[str, str | list[str]]
     limitations: tuple[str, ...]
+    package_caveats: tuple[str, ...]
+    manual_validation_status: str
     observed_sounding: ObservedSoundingRecord | None = None
 
 
@@ -153,8 +172,25 @@ def build_cm1_input_contract(
     selected_controls: dict[str, str | float | bool] | None = None,
     run_size_preset: str = "quick_look",
     observed_sounding: ObservedSoundingRecord | None = None,
+    package_family: str | PackageFamily | None = None,
 ) -> CM1InputContract:
     selected = selected_controls or {}
+    resolved_package_family = _resolve_package_family(package_family, observed_sounding)
+    defaults = cloud_scale_defaults_for_preset(
+        run_size_preset,
+        package_family=resolved_package_family,
+    )
+    if resolved_package_family == PackageFamily.DEEP_CONVECTION_TRIAL:
+        if observed_sounding is None:
+            raise ValueError("Deep Convection Trial requires a validated observed sounding.")
+        if not _has_observed_wind_profile(
+            observed_sounding,
+            required_model_top_m=_required_sounding_top_m(defaults),
+        ):
+            raise ValueError(
+                "Deep Convection Trial requires a complete finite observed u/v wind "
+                "profile for every input_sounding level."
+            )
     control_fragments = tuple(
         ControlMappingFragment(
             control_id=control.id,
@@ -175,15 +211,27 @@ def build_cm1_input_contract(
     stability_profile = _stability_profile_from_controls(scenario.id, control_fragments)
 
     return CM1InputContract(
+        package_family=resolved_package_family,
+        package_display_name=_package_display_name(resolved_package_family),
+        input_source="observed_sounding"
+        if observed_sounding is not None
+        else "generated_reference",
+        trigger_type=(
+            "warm_bubble"
+            if resolved_package_family == PackageFamily.DEEP_CONVECTION_TRIAL
+            else None
+        ),
+        trigger_parameters=_trigger_parameters(resolved_package_family),
         scenario_id=scenario.id,
         physical_question=scenario.physical_question,
         run_size_preset=run_size_preset,
         moisture_profile=moisture_profile,
         stability_profile=stability_profile,
-        cloud_scale_defaults=cloud_scale_defaults_for_preset(run_size_preset),
+        cloud_scale_defaults=defaults,
         generated_files=GENERATED_FILE_SPECS,
         control_fragments=control_fragments,
         expected_diagnostics=_diagnostic_names(scenario),
+        expected_outputs=_expected_outputs(resolved_package_family),
         visualization_defaults={
             "primary_field": scenario.visualization_defaults.primary_field,
             "secondary_fields": scenario.visualization_defaults.secondary_fields,
@@ -192,11 +240,20 @@ def build_cm1_input_contract(
             "provenance_label": scenario.visualization_defaults.provenance_label,
         },
         limitations=tuple(scenario.limitations),
+        package_caveats=_package_caveats(resolved_package_family, run_size_preset),
+        manual_validation_status=_manual_validation_status(resolved_package_family),
         observed_sounding=observed_sounding,
     )
 
 
-def cloud_scale_defaults_for_preset(run_size_preset: str) -> CloudScaleDefaults:
+def cloud_scale_defaults_for_preset(
+    run_size_preset: str,
+    *,
+    package_family: str | PackageFamily | None = None,
+) -> CloudScaleDefaults:
+    resolved = _resolve_package_family(package_family, None)
+    if resolved == PackageFamily.DEEP_CONVECTION_TRIAL:
+        return _deep_convection_defaults_for_preset(run_size_preset)
     preset = RUNTIME_PRESETS.get(run_size_preset, RUNTIME_PRESETS["standard"])
     return CloudScaleDefaults(
         nx=preset.nx,
@@ -206,6 +263,170 @@ def cloud_scale_defaults_for_preset(run_size_preset: str) -> CloudScaleDefaults:
         runtime_seconds=preset.runtime_seconds,
         output_cadence_seconds=preset.output_cadence_seconds,
     )
+
+
+def _deep_convection_defaults_for_preset(run_size_preset: str) -> CloudScaleDefaults:
+    if run_size_preset == "deep_overnight":
+        return CloudScaleDefaults(
+            nx=240,
+            ny=240,
+            nz=40,
+            horizontal_extent_km=240.0,
+            y_extent_km=240.0,
+            horizontal_spacing_m=1000.0,
+            vertical_spacing_m=500,
+            time_step_seconds=6.0,
+            runtime_seconds=21600,
+            output_cadence_seconds=300,
+            restart_cadence_seconds=10800,
+            rayleigh_damping_start_m=15000,
+        )
+    if run_size_preset == "standard":
+        return CloudScaleDefaults(
+            nx=160,
+            ny=160,
+            nz=40,
+            horizontal_extent_km=160.0,
+            y_extent_km=160.0,
+            horizontal_spacing_m=1000.0,
+            vertical_spacing_m=500,
+            time_step_seconds=6.0,
+            runtime_seconds=21600,
+            output_cadence_seconds=600,
+            restart_cadence_seconds=10800,
+            rayleigh_damping_start_m=15000,
+        )
+    return CloudScaleDefaults(
+        nx=120,
+        ny=120,
+        nz=40,
+        horizontal_extent_km=120.0,
+        y_extent_km=120.0,
+        horizontal_spacing_m=1000.0,
+        vertical_spacing_m=500,
+        time_step_seconds=6.0,
+        runtime_seconds=7200,
+        output_cadence_seconds=600,
+        restart_cadence_seconds=3600,
+        rayleigh_damping_start_m=15000,
+    )
+
+
+def _resolve_package_family(
+    package_family: str | PackageFamily | None,
+    observed_sounding: ObservedSoundingRecord | None,
+) -> PackageFamily:
+    if isinstance(package_family, PackageFamily):
+        return package_family
+    if package_family:
+        try:
+            return PackageFamily(package_family)
+        except ValueError as exc:
+            raise ValueError(f"Unknown package family: {package_family}") from exc
+    if observed_sounding is not None:
+        return PackageFamily.OBSERVED_SOUNDING_QUICKLOOK
+    return PackageFamily.SHALLOW_CUMULUS
+
+
+def _package_display_name(package_family: PackageFamily) -> str:
+    match package_family:
+        case PackageFamily.DEEP_CONVECTION_TRIAL:
+            return "Deep Convection Trial"
+        case PackageFamily.OBSERVED_SOUNDING_QUICKLOOK:
+            return "Observed Sounding Quick Look"
+        case PackageFamily.SHALLOW_CUMULUS:
+            return "Shallow Cumulus Package"
+
+
+def _trigger_parameters(
+    package_family: PackageFamily,
+) -> dict[str, str | int | float | bool]:
+    if package_family != PackageFamily.DEEP_CONVECTION_TRIAL:
+        return {}
+    return {
+        "cm1_iinit": 3,
+        "cm1_trigger": (
+            "CM1 built-in three warm bubbles with 2 K maximum potential-temperature "
+            "perturbations in a line near 1.4 km AGL"
+        ),
+        "raw_controls_exposed": False,
+    }
+
+
+def _expected_outputs(package_family: PackageFamily) -> tuple[str, ...]:
+    base = ("qc", "qr", "qv", "th", "prs", "u", "v", "w", "rain", "dbz")
+    if package_family == PackageFamily.DEEP_CONVECTION_TRIAL:
+        return (*base, "tke", "km", "kh", "vorticity", "updraft_helicity")
+    return base
+
+
+def _package_caveats(package_family: PackageFamily, run_size_preset: str) -> tuple[str, ...]:
+    if package_family != PackageFamily.DEEP_CONVECTION_TRIAL:
+        return ()
+    caveats = [
+        "Deep Convection Trial uses an idealized CM1 three-warm-bubble trigger.",
+        (
+            "Manual smoke evidence applies to the Deep Convection Trial package family; "
+            "each observed sounding remains an experiment to evaluate after CM1 completes."
+        ),
+        (
+            "Storm mode, rotation, rain, downdraft, and cold-pool behavior are outcomes "
+            "to inspect after the run."
+        ),
+        "Terrain, mesoscale lift, radiation, and map/GIS forcing are not part of v1.",
+    ]
+    if run_size_preset in {"standard", "deep_overnight"}:
+        caveats.append(
+            "This preset is intended for the LAN worker unless local performance is acceptable."
+        )
+    return tuple(caveats)
+
+
+def _manual_validation_status(package_family: PackageFamily) -> str:
+    if package_family == PackageFamily.DEEP_CONVECTION_TRIAL:
+        return "deep_convection_trial_package_smoke_validated"
+    return "existing_package_path"
+
+
+def _has_observed_wind_profile(
+    record: ObservedSoundingRecord,
+    *,
+    required_model_top_m: float,
+) -> bool:
+    levels = _rendered_observed_wind_levels(
+        record,
+        required_model_top_m=required_model_top_m,
+    )
+    return bool(levels) and all(
+        _finite_number(level.u_wind_m_s) and _finite_number(level.v_wind_m_s) for level in levels
+    )
+
+
+def _rendered_observed_wind_levels(
+    record: ObservedSoundingRecord,
+    *,
+    required_model_top_m: float,
+) -> list[ObservedSoundingLevel]:
+    levels = list(record.levels)
+    if not levels:
+        return []
+    body = list(levels)
+    if levels[0].model_z_m <= 0.01:
+        body = [level for level in levels if level.model_z_m > 0.01]
+        if not body:
+            body = list(levels)
+    if (
+        body
+        and math.isfinite(required_model_top_m)
+        and required_model_top_m > 0
+        and body[-1].model_z_m < required_model_top_m
+    ):
+        body = [*body, body[-1]]
+    return body
+
+
+def _finite_number(value: float | None) -> bool:
+    return value is not None and math.isfinite(value)
 
 
 def render_namelist_fragment(contract: CM1InputContract) -> str:
@@ -228,6 +449,29 @@ def render_cm1_namelist(contract: CM1InputContract) -> str:
     defaults = contract.cloud_scale_defaults
     sounding_source_id = 7 if contract.observed_sounding is not None else 17
     wind_profile_id = 0 if contract.observed_sounding is not None else 9
+    deep_convection = contract.package_family == PackageFamily.DEEP_CONVECTION_TRIAL
+    testcase = 0 if deep_convection else 3
+    adapt_dt = 0 if deep_convection else 1
+    ptype = 5
+    ihail = 1 if deep_convection else 0
+    iautoc = 1 if deep_convection else 0
+    icor = 0 if deep_convection else 1
+    lspgrad = 0 if deep_convection else 2
+    idiss = 1 if deep_convection else 0
+    wbc = ebc = sbc = nbc = 2 if deep_convection else 1
+    bbc = 1 if deep_convection else 3
+    iinit = 3 if deep_convection else 0
+    irandp = 0 if deep_convection else 1
+    imove = 1 if deep_convection else 0
+    isfcflx = 0 if deep_convection else 1
+    sfcmodel = 0 if deep_convection else 1
+    oceanmodel = 0 if deep_convection else 1
+    set_flx = 0 if deep_convection else 1
+    set_ust = 0 if deep_convection else 1
+    l_h = 100.0 if deep_convection else 0.0
+    lhref1 = 100.0 if deep_convection else 0.0
+    lhref2 = 1000.0 if deep_convection else 0.0
+    ndcnst = 250.0 if deep_convection else 100.0
     return f"""
  &param0
  nx           =      {defaults.nx},
@@ -255,8 +499,8 @@ def render_cm1_namelist(contract: CM1InputContract) -> str:
 
  &param2
  cm1setup  =  1,
- testcase  =  3,
- adapt_dt  =  1,
+ testcase  =  {testcase},
+ adapt_dt  =  {adapt_dt},
  irst      =  0,
  rstnum    =  1,
  iconly    =  0,
@@ -281,20 +525,20 @@ def render_cm1_namelist(contract: CM1InputContract) -> str:
  irdamp    =  1,
  hrdamp    =  0,
  psolver   =  3,
- ptype     =  5,
- ihail     =  0,
- iautoc    =  0,
- icor      =  1,
- lspgrad   =  2,
+ ptype     =  {ptype},
+ ihail     =  {ihail},
+ iautoc    =  {iautoc},
+ icor      =  {icor},
+ lspgrad   =  {lspgrad},
  eqtset    =  2,
- idiss     =  0,
+ idiss     =  {idiss},
  efall     =  0,
  rterm     =  0,
- wbc       =  1,
- ebc       =  1,
- sbc       =  1,
- nbc       =  1,
- bbc       =  3,
+ wbc       =  {wbc},
+ ebc       =  {ebc},
+ sbc       =  {sbc},
+ nbc       =  {nbc},
+ bbc       =  {bbc},
  tbc       =  1,
  irbc      =  4,
  roflux    =  0,
@@ -302,12 +546,12 @@ def render_cm1_namelist(contract: CM1InputContract) -> str:
  isnd      = {sounding_source_id:2d},
  iwnd      = {wind_profile_id:2d},
  itern     =  0,
- iinit     =  0,
- irandp    =  1,
+ iinit     =  {iinit},
+ irandp    =  {irandp},
  ibalance  =  0,
  iorigin   =  2,
  axisymm   =  0,
- imove     =  0,
+ imove     =  {imove},
  iptra     =  0,
  npt       =  1,
  pdtra     =  1,
@@ -328,11 +572,11 @@ def render_cm1_namelist(contract: CM1InputContract) -> str:
  umove   = 12.5,
  vmove   =  3.0,
  v_t     =      7.0,
- l_h     =      0.0,
- lhref1  =      0.0,
- lhref2  =      0.0,
+ l_h     =  {l_h:7.1f},
+ lhref1  =  {lhref1:7.1f},
+ lhref2  =  {lhref2:7.1f},
  l_inf   =     75.0,
- ndcnst  =    100.0,
+ ndcnst  =  {ndcnst:7.1f},
  nt_c    =    250.0,
  csound  =    300.0,
  cstar   =     30.0,
@@ -352,9 +596,9 @@ def render_cm1_namelist(contract: CM1InputContract) -> str:
  /
 
  &param12
- isfcflx    =      1,
- sfcmodel   =      1,
- oceanmodel =      1,
+ isfcflx    =      {isfcflx},
+ sfcmodel   =      {sfcmodel},
+ oceanmodel =      {oceanmodel},
  initsfc    =      1,
  tsk0       = 299.28,
  tmn0       = 297.28,
@@ -369,12 +613,12 @@ def render_cm1_namelist(contract: CM1InputContract) -> str:
  iz0tlnd    =      0,
  oml_hml0   =   50.0,
  oml_gamma  =   0.14,
- set_flx    =      1,
+ set_flx    =      {set_flx},
  cnst_shflx = 8.0e-3,
  cnst_lhflx = 5.2e-5,
  set_znt    =      0,
  cnst_znt   =   0.00,
- set_ust    =      1,
+ set_ust    =      {set_ust},
  cnst_ust   =   0.28,
  ramp_sgs   =      1,
  ramp_time  = 1800.0,
@@ -460,6 +704,8 @@ def render_cm1_namelist(contract: CM1InputContract) -> str:
  output_vinterp   = 1,
  output_w         = 1,
  output_winterp   = 1,
+ output_vort      = 1,
+ output_uh        = 1,
  output_nm        = 1,
  output_def       = 1,
  output_lwp       = 1,
@@ -561,15 +807,17 @@ def render_input_sounding_notes(contract: CM1InputContract) -> str:
 def render_cm1_input_sounding(contract: CM1InputContract) -> str:
     """Render a CM1-readable external sounding profile.
 
-    CM1 documents ``isnd = 17`` as the external ``input_sounding`` route that
-    reads thermodynamics from this file while preserving the namelist wind
-    profile. The profile is derived from the BOMEX/Siebesma shallow-cumulus
-    breakpoints used by CM1's ``isnd = 19`` reference case and extends above the
-    18 km model top as required by CM1's input_sounding reader.
+    CM1 observed-sounding packages use ``isnd = 7`` so CM1 reads
+    thermodynamics and wind from this file. Generated reference packages use
+    the external-sounding profile derived from the BOMEX/Siebesma
+    shallow-cumulus breakpoints used by CM1's ``isnd = 19`` reference case.
     """
 
     if contract.observed_sounding is not None:
-        return render_observed_input_sounding(contract.observed_sounding)
+        return render_observed_input_sounding(
+            contract.observed_sounding,
+            required_model_top_m=_required_sounding_top_m(contract.cloud_scale_defaults),
+        )
 
     header, body = _baseline_shallow_cumulus_sounding_profile(
         moisture_profile=contract.moisture_profile,
@@ -583,6 +831,13 @@ def render_cm1_input_sounding(contract: CM1InputContract) -> str:
         for z, theta, qv_gkg, u_ms, v_ms in body
     )
     return "\n".join(lines) + "\n"
+
+
+def _required_sounding_top_m(defaults: CloudScaleDefaults) -> float:
+    return max(
+        float(defaults.vertical_extent_km * 1000.0),
+        float(defaults.nz * defaults.vertical_spacing_m),
+    )
 
 
 def _baseline_shallow_cumulus_sounding_profile(

@@ -204,17 +204,29 @@ def observed_sounding_from_payload(payload: object) -> ObservedSoundingRecord:
         raise ObservedSoundingError(str(exc)) from exc
 
 
-def render_observed_input_sounding(record: ObservedSoundingRecord) -> str:
+def render_observed_input_sounding(
+    record: ObservedSoundingRecord,
+    *,
+    required_model_top_m: float = _CM1_MODEL_TOP_M,
+) -> str:
     """Render a CM1-readable input_sounding file from a validated observed record."""
 
     levels = record.levels
     if not levels:
         raise ObservedSoundingError("Observed sounding record has no usable levels.")
     surface = levels[0]
-    body: list[ObservedSoundingLevel] = levels
+    body: list[ObservedSoundingLevel] = list(levels)
     if surface.model_z_m > 0:
         surface = surface.model_copy(update={"model_z_m": 0.0})
-        body = [surface, *levels]
+    else:
+        # The CM1 isnd=7 reader builds its surface level from the header line.
+        # Repeating the same z=0 thermodynamic level in the body can create a
+        # duplicate-height interval during interpolation, so body rows start
+        # with the first level above the model surface.
+        body = [level for level in levels if level.model_z_m > 0.01]
+        if not body:
+            body = list(levels)
+    body = _extend_levels_to_model_top(body, required_model_top_m)
     lines = [
         f"{surface.pressure_pa / 100.0:10.2f} "
         f"{surface.potential_temperature_k:12.4f} {surface.qv_g_kg:12.5f}",
@@ -227,6 +239,29 @@ def render_observed_input_sounding(record: ObservedSoundingRecord) -> str:
         for level in body
     )
     return "\n".join(lines) + "\n"
+
+
+def _extend_levels_to_model_top(
+    levels: list[ObservedSoundingLevel],
+    required_model_top_m: float,
+) -> list[ObservedSoundingLevel]:
+    if not levels:
+        return levels
+    if not math.isfinite(required_model_top_m) or required_model_top_m <= 0:
+        return levels
+    last = levels[-1]
+    if last.model_z_m >= required_model_top_m:
+        return levels
+    return [
+        *levels,
+        last.model_copy(
+            update={
+                "model_z_m": required_model_top_m,
+                "source_height_m_msl": last.source_height_m_msl
+                + (required_model_top_m - last.model_z_m),
+            }
+        ),
+    ]
 
 
 def _scan_headers(lines: list[str]) -> list[_IgraHeader]:
@@ -248,8 +283,11 @@ def _scan_headers(lines: list[str]) -> list[_IgraHeader]:
         latitude = _parse_scaled_int(line[55:62], 10000.0)
         longitude = _parse_scaled_int(line[63:71], 10000.0)
         if hour == 99:
-            raise ObservedSoundingError("Selected IGRA sounding has missing nominal hour.")
-        valid_time = datetime(year, month, day, hour, tzinfo=UTC)
+            continue
+        try:
+            valid_time = datetime(year, month, day, hour, tzinfo=UTC)
+        except ValueError:
+            continue
         headers.append(
             {
                 "line_index": index,
@@ -429,6 +467,9 @@ def _parse_levels(
         if deduped and math.isclose(level.model_z_m, deduped[-1].model_z_m, abs_tol=0.01):
             continue
         deduped.append(level)
+    if deduped and -50.0 <= deduped[0].model_z_m < 0.0:
+        caveats.append(f"lowest usable level at {deduped[0].model_z_m:.1f} m was anchored to z=0")
+        deduped[0] = deduped[0].model_copy(update={"model_z_m": 0.0})
     if used_relative_humidity:
         caveats.append(
             "relative humidity used for moisture conversion where dewpoint depression was missing"

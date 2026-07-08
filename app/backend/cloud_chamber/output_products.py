@@ -499,7 +499,7 @@ def _interesting_time_records(
             key="highest_cloud_top",
             label="Highest cloud top",
             series=cloud.cloud_top_time_series if cloud.available else [],
-            source_field="qc",
+            source_field="qc+qr+qi+qs+qg when available",
             source_diagnostic="diagnostics.cloud.cloud_top_time_series",
             units="m",
             output_manifest=output_manifest,

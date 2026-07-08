@@ -18,6 +18,9 @@ def base_dataset(
     qc_values: list[list[list[list[float]]]] | None = None,
     w_values: list[list[list[list[float]]]] | None = None,
     qr_values: list[list[list[list[float]]]] | None = None,
+    qi_values: list[list[list[list[float]]]] | None = None,
+    qs_values: list[list[list[list[float]]]] | None = None,
+    qg_values: list[list[list[list[float]]]] | None = None,
     include_time_coord: bool = True,
     z_values: list[float] | None = None,
     z_units: str | None = None,
@@ -50,6 +53,24 @@ def base_dataset(
             qr_values,
             {"units": "kg/kg"},
         )
+    if qi_values is not None:
+        data_vars["qi"] = (
+            ("time", "z", "y", "x"),
+            qi_values,
+            {"units": "kg/kg"},
+        )
+    if qs_values is not None:
+        data_vars["qs"] = (
+            ("time", "z", "y", "x"),
+            qs_values,
+            {"units": "kg/kg"},
+        )
+    if qg_values is not None:
+        data_vars["qg"] = (
+            ("time", "z", "y", "x"),
+            qg_values,
+            {"units": "kg/kg"},
+        )
     if include_time_coord:
         dataset = xr.Dataset(data_vars=data_vars, coords=coords)
     else:
@@ -62,9 +83,10 @@ def base_dataset(
     return dataset
 
 
-def zeros() -> list[list[list[list[float]]]]:
+def zeros(z_count: int = 2) -> list[list[list[list[float]]]]:
     return [
-        [[[0.0 for _x in range(4)] for _y in range(3)] for _z in range(2)] for _time in range(2)
+        [[[0.0 for _x in range(4)] for _y in range(3)] for _z in range(z_count)]
+        for _time in range(2)
     ]
 
 
@@ -87,6 +109,39 @@ def w_field() -> list[list[list[list[float]]]]:
     values[1][0][0][0] = -3.0
     values[1][1][2][3] = 4.0
     return values
+
+
+def test_cloud_top_uses_ice_and_snow_hydrometeor_envelope(tmp_path: Path) -> None:
+    qc_values = zeros(z_count=4)
+    qi_values = zeros(z_count=4)
+    qs_values = zeros(z_count=4)
+    for y_index in range(3):
+        for x_index in range(4):
+            qc_values[1][1][y_index][x_index] = 2e-6
+            qi_values[1][2][y_index][x_index] = 3e-6
+            qs_values[1][3][y_index][x_index] = 4e-6
+    dataset = write_dataset(
+        tmp_path / "deep_cloud.nc",
+        base_dataset(
+            qc_values=qc_values,
+            qi_values=qi_values,
+            qs_values=qs_values,
+            z_values=[500.0, 1500.0, 7500.0, 10500.0],
+        ),
+    )
+    caveats: list[str] = []
+
+    diagnostics = compute_baseline_diagnostics(dataset, caveats)
+
+    assert diagnostics.cloud.formed is True
+    assert diagnostics.cloud.cloud_base_m == 1500.0
+    assert diagnostics.cloud.cloud_top_m == 10500.0
+    assert [point.value for point in diagnostics.cloud.cloud_top_time_series] == [
+        None,
+        10500.0,
+    ]
+    assert diagnostics.cloud.max_qc_kg_kg == 2e-6
+    assert "cloud_top_uses_total_hydrometeor_fields:qc,qi,qs" in diagnostics.caveats
 
 
 def test_no_cloud_case(tmp_path: Path) -> None:

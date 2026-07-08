@@ -188,19 +188,22 @@ scripts/igra-recent.sh cleanup
 scripts/igra-recent.sh refresh
 scripts/igra-recent.sh cache-all --limit 10
 scripts/igra-recent.sh candidates
+scripts/igra-recent.sh candidates --story deep-convection --limit 10
 scripts/igra-recent.sh candidates --story shallow-cumulus --limit 10
 scripts/igra-recent.sh candidates --story capped-suppressed --limit 10
 ```
 
 Candidate match scores are pre-run hypotheses only. There is no single best
-sounding independent of the experiment story: use `--story shallow-cumulus`,
-`--story dry-failed`, `--story capped-suppressed`, or `--story humid-rainy`
-depending on what you want to test. CM1 output remains the source of truth.
+sounding independent of the experiment story: use `--story deep-convection`,
+`--story shallow-cumulus`, `--story dry-failed`, `--story capped-suppressed`,
+or `--story humid-rainy` depending on what you want to test. CM1 output remains
+the source of truth.
 
 The same workflow is available in the app from Build -> `Upload a Sounding` ->
 `Find interesting soundings`. Use `Refresh IGRA catalog` to update station
 metadata, `Cache station files` to download a bounded batch of station-period
-files, choose a story filter, then `Screen cached soundings`.
+files, choose a story filter such as `Deep Convection Trial stories`, then
+`Screen cached soundings`.
 `Use this sounding` loads a package-ready candidate into the observed-sounding
 package review; it does not launch CM1 and it does not claim the candidate will
 produce the screened outcome. Blocked candidates remain reviewable but cannot be

@@ -11,6 +11,7 @@ QC_CLOUD_THRESHOLD_KG_KG = 1e-6
 QR_RAIN_THRESHOLD_KG_KG = 1e-7
 MINIMUM_CLOUD_GRID_CELLS = 10
 MEANINGFUL_UPDRAFT_THRESHOLD_M_S = 0.5
+HYDROMETEOR_CLOUD_TOP_FIELDS = ("qr", "qi", "qs", "qg")
 
 TIME_DIMENSION_CANDIDATES = ("time", "mtime", "t")
 VERTICAL_COORDINATE_CANDIDATES = ("z", "zh", "height", "height_m")
@@ -353,7 +354,9 @@ def _cloud_diagnostics(dataset: Any, time: _TimeContext, caveats: list[str]) -> 
         caveats.append("qc_field_entirely_non_finite")
         return CloudDiagnostics(available=False)
 
+    cloud_extent = _cloud_extent_array(dataset, qc, caveats)
     series_arrays = _time_slices(qc, time.dimension)
+    cloud_extent_series_arrays = _time_slices(cloud_extent, time.dimension)
     qc_max_series: list[TimeValue] = []
     cloud_fraction_series: list[TimeValue] = []
     cloud_base_series: list[TimeValue] = []
@@ -370,7 +373,10 @@ def _cloud_diagnostics(dataset: Any, time: _TimeContext, caveats: list[str]) -> 
         cloudy_count = _threshold_count(array, QC_CLOUD_THRESHOLD_KG_KG)
         finite_count = _finite_count(array)
         cloud_fraction = (cloudy_count / finite_count) if finite_count else None
-        cloud_base, cloud_top = _cloud_base_top(array, caveats)
+        extent_array = (
+            cloud_extent_series_arrays[index] if index < len(cloud_extent_series_arrays) else array
+        )
+        cloud_base, cloud_top = _cloud_base_top(extent_array, caveats)
         qc_max_series.append(TimeValue(time_seconds=time_seconds, value=slice_max))
         cloud_fraction_series.append(TimeValue(time_seconds=time_seconds, value=cloud_fraction))
         cloud_base_series.append(TimeValue(time_seconds=time_seconds, value=cloud_base))
@@ -386,7 +392,7 @@ def _cloud_diagnostics(dataset: Any, time: _TimeContext, caveats: list[str]) -> 
             max_qc = slice_max
             time_of_max_qc = time_seconds
 
-    cloud_base, cloud_top = _cloud_base_top(qc, caveats)
+    cloud_base, cloud_top = _cloud_base_top(cloud_extent, caveats)
     return CloudDiagnostics(
         formed=first_cloud_time is not None,
         first_cloud_time_seconds=first_cloud_time,
@@ -494,6 +500,33 @@ def _rain_diagnostics(dataset: Any, time: _TimeContext, caveats: list[str]) -> R
         qr_max_time_series=max_series,
         user_message="Rain detected." if present else "No rain detected.",
     )
+
+
+def _cloud_extent_array(dataset: Any, qc: Any, caveats: list[str]) -> Any:
+    """Return the field used for cloud base/top diagnostics.
+
+    Liquid cloud water remains the source of truth for cloud formation and max-qc
+    diagnostics. For cloud top, deep-convection output can put the upper cloud in
+    ice/snow/graupel fields, so the vertical envelope should include compatible
+    hydrometeor mixing-ratio fields when they are present.
+    """
+
+    extent = qc
+    included_fields: list[str] = []
+    for field_name in HYDROMETEOR_CLOUD_TOP_FIELDS:
+        if field_name not in dataset.data_vars:
+            continue
+        field = dataset[field_name]
+        if field.dims != qc.dims:
+            caveats.append(f"cloud_top_skipped_{field_name}_dimension_mismatch")
+            continue
+        extent = extent + field
+        included_fields.append(field_name)
+    if included_fields:
+        caveat = "cloud_top_uses_total_hydrometeor_fields:qc," + ",".join(included_fields)
+        if caveat not in caveats:
+            caveats.append(caveat)
+    return extent
 
 
 def _cloud_base_top(qc: Any, caveats: list[str]) -> tuple[float | None, float | None]:

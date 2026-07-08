@@ -11,7 +11,11 @@ from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
 
 from cloud_chamber.cli import ENGINE_NOTE
-from cloud_chamber.dry_run_package import generate_dry_run_package, read_dry_run_report
+from cloud_chamber.dry_run_package import (
+    DryRunPackageError,
+    generate_dry_run_package,
+    read_dry_run_report,
+)
 from cloud_chamber.igra_catalog import (
     IGRACatalogError,
     cache_station_zip_from_catalog,
@@ -99,6 +103,7 @@ class DryRunRequest(BaseModel):
     scenario_id: str = "baseline-shallow-cumulus"
     controls: dict[str, str | float | bool] = Field(default_factory=dict)
     run_size_preset: str = "quick_look"
+    package_family: str | None = None
     observed_sounding: dict[str, object] | None = None
     candidate_screening: dict[str, object] | None = None
 
@@ -158,15 +163,19 @@ def list_scenarios() -> dict[str, object]:
 def create_dry_run_package(request: DryRunRequest) -> dict[str, Any]:
     scenario = load_scenario_template(request.scenario_id)
     settings = load_settings()
-    result = generate_dry_run_package(
-        scenario_data=scenario.model_dump(mode="json"),
-        runtime_home=settings.runtime_home,
-        run_id=f"dry-run-{uuid4().hex[:12]}",
-        controls=request.controls,
-        run_size_preset=request.run_size_preset,
-        observed_sounding=request.observed_sounding,
-        candidate_screening=request.candidate_screening,
-    )
+    try:
+        result = generate_dry_run_package(
+            scenario_data=scenario.model_dump(mode="json"),
+            runtime_home=settings.runtime_home,
+            run_id=f"dry-run-{uuid4().hex[:12]}",
+            controls=request.controls,
+            run_size_preset=request.run_size_preset,
+            package_family=request.package_family,
+            observed_sounding=request.observed_sounding,
+            candidate_screening=request.candidate_screening,
+        )
+    except DryRunPackageError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     report = read_dry_run_report(result.report_path)
     return {
         "package_dir": str(result.package_dir),

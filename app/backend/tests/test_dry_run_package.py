@@ -5,7 +5,7 @@ import pytest
 from igra_fixtures import IGRA_FIXTURE
 
 from cloud_chamber.dry_run_package import DryRunPackageError, generate_dry_run_package
-from cloud_chamber.observed_sounding import parse_igra_station_text
+from cloud_chamber.observed_sounding import ObservedSoundingLevel, parse_igra_station_text
 from cloud_chamber.run_manifest import load_run_manifest
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -24,6 +24,12 @@ def load_dry_failed_template() -> object:
 
 def load_capped_template() -> object:
     return json.loads(CAPPED_TEMPLATE.read_text())
+
+
+def _level_at_rendered_z(
+    levels: list[ObservedSoundingLevel], rendered_z: float
+) -> ObservedSoundingLevel:
+    return next(level for level in levels if level.model_z_m == pytest.approx(rendered_z))
 
 
 def test_generate_dry_run_package_writes_expected_files_to_temp_runtime_home(
@@ -110,16 +116,185 @@ def test_dry_run_package_can_use_observed_igra_sounding(tmp_path: Path) -> None:
     assert "isnd      =  7," in namelist
     assert "iwnd      =  0," in namelist
     assert "USM00072558" not in sounding
-    assert float(sounding.splitlines()[1].split()[0]) == pytest.approx(0.0)
+    assert float(sounding.splitlines()[1].split()[0]) == pytest.approx(observed.levels[0].model_z_m)
+    first_body_z = float(sounding.splitlines()[1].split()[0])
+    first_body_level = _level_at_rendered_z(observed.levels, first_body_z)
     assert float(sounding.splitlines()[1].split()[3]) == pytest.approx(
-        observed.levels[0].u_wind_m_s,
+        first_body_level.u_wind_m_s,
         abs=0.01,
     )
     assert float(sounding.splitlines()[1].split()[4]) == pytest.approx(
-        observed.levels[0].v_wind_m_s,
+        first_body_level.v_wind_m_s,
         abs=0.01,
     )
     assert float(sounding.splitlines()[-1].split()[0]) > 18000
+
+
+def test_deep_convection_trial_package_uses_observed_sounding_and_warm_bubble(
+    tmp_path: Path,
+) -> None:
+    observed = parse_igra_station_text(
+        IGRA_FIXTURE,
+        uploaded_filename="USM00072558-data-beg2025.txt",
+    ).selected_sounding
+    candidate_screening = {
+        "candidate_id": "USM00072558-deep-test",
+        "primary_story": "supercell_environment",
+        "rank_score": 91.0,
+    }
+
+    result = generate_dry_run_package(
+        scenario_data=load_baseline_template(),
+        runtime_home=tmp_path,
+        run_id="run-deep-convection-trial",
+        run_size_preset="quick_look",
+        package_family="deep_convection_trial",
+        observed_sounding=observed,
+        candidate_screening=candidate_screening,
+    )
+
+    manifest = load_run_manifest(result.manifest_path)
+    report = json.loads(result.report_path.read_text())
+    case_manifest = json.loads((result.package_dir / "case_manifest.json").read_text())
+    namelist = (result.package_dir / "namelist.input").read_text()
+    sounding = (result.package_dir / "input_sounding").read_text()
+
+    assert manifest.package_family == "deep_convection_trial"
+    assert manifest.package_display_name == "Deep Convection Trial"
+    assert manifest.input_source == "observed_sounding"
+    assert manifest.trigger_type == "warm_bubble"
+    assert manifest.trigger_parameters == {
+        "cm1_iinit": 3,
+        "cm1_trigger": (
+            "CM1 built-in three warm bubbles with 2 K maximum potential-temperature "
+            "perturbations in a line near 1.4 km AGL"
+        ),
+        "raw_controls_exposed": False,
+    }
+    assert "dbz" in manifest.expected_outputs
+    assert "updraft_helicity" in manifest.expected_outputs
+    assert manifest.manual_validation_status == "deep_convection_trial_package_smoke_validated"
+    assert any(
+        "Manual smoke evidence applies to the Deep Convection Trial package family" in caveat
+        and "each observed sounding remains an experiment" in caveat
+        for caveat in manifest.package_caveats
+    )
+    assert manifest.candidate_screening == candidate_screening
+    assert report["package_family"] == "deep_convection_trial"
+    assert report["package_display_name"] == "Deep Convection Trial"
+    assert report["trigger_type"] == "warm_bubble"
+    assert report["candidate_screening"] == candidate_screening
+    assert "testcase=0" in report["variant_metadata"]["mapping"]
+    assert "iinit=3 three-warm-bubble" in report["variant_metadata"]["mapping"]
+    assert "reflectivity output" in report["variant_metadata"]["mapping"]
+    assert report["manual_validation_status"] == "deep_convection_trial_package_smoke_validated"
+    assert "manual CM1 smoke evidence" in report["cm1_mapping_status"]
+    assert "each observed sounding remains an experiment" in report["cm1_mapping_status"]
+    assert case_manifest["package_family"] == "deep_convection_trial"
+    assert case_manifest["contract"]["package_family"] == "deep_convection_trial"
+    assert (
+        case_manifest["contract"]["manual_validation_status"]
+        == "deep_convection_trial_package_smoke_validated"
+    )
+
+    assert "testcase  =  0," in namelist
+    assert "isnd      =  7," in namelist
+    assert "iwnd      =  0," in namelist
+    assert "iinit     =  3," in namelist
+    assert "irandp    =  0," in namelist
+    assert "imove     =  1," in namelist
+    assert "ptype     =  5," in namelist
+    assert "ihail     =  1," in namelist
+    assert "iautoc    =  1," in namelist
+    assert "output_rain      = 1," in namelist
+    assert "output_dbz       = 1," in namelist
+    assert "output_vort      = 1," in namelist
+    assert "output_uh        = 1," in namelist
+    assert "nx           =      120," in namelist
+    assert "ny           =      120," in namelist
+    assert "nz           =      40," in namelist
+    assert "dx     =   1000.0," in namelist
+    assert "dy     =   1000.0," in namelist
+    assert "dz     =   500.0," in namelist
+    assert "dtl    =   6.000," in namelist
+    assert "timax  = 7200.0," in namelist
+    assert "tapfrq =  600.0," in namelist
+    assert "zd      =  15000.0," in namelist
+    assert float(sounding.splitlines()[-1].split()[0]) >= 20000.0
+    first_body_z = float(sounding.splitlines()[1].split()[0])
+    first_body_level = _level_at_rendered_z(observed.levels, first_body_z)
+    assert float(sounding.splitlines()[1].split()[3]) == pytest.approx(
+        first_body_level.u_wind_m_s,
+        abs=0.01,
+    )
+    assert float(sounding.splitlines()[1].split()[4]) == pytest.approx(
+        first_body_level.v_wind_m_s,
+        abs=0.01,
+    )
+
+
+def test_deep_convection_trial_requires_observed_sounding(tmp_path: Path) -> None:
+    with pytest.raises(DryRunPackageError, match="requires a validated observed sounding"):
+        generate_dry_run_package(
+            scenario_data=load_baseline_template(),
+            runtime_home=tmp_path,
+            run_id="run-deep-no-sounding",
+            package_family="deep_convection_trial",
+        )
+
+
+def test_deep_convection_trial_requires_observed_wind_components(tmp_path: Path) -> None:
+    observed = parse_igra_station_text(
+        IGRA_FIXTURE,
+        uploaded_filename="USM00072558-data-beg2025.txt",
+    ).selected_sounding
+    no_wind = observed.model_copy(
+        update={
+            "levels": [
+                level.model_copy(update={"u_wind_m_s": None, "v_wind_m_s": None})
+                for level in observed.levels
+            ]
+        }
+    )
+
+    with pytest.raises(DryRunPackageError, match="complete finite observed u/v wind profile"):
+        generate_dry_run_package(
+            scenario_data=load_baseline_template(),
+            runtime_home=tmp_path,
+            run_id="run-deep-no-wind",
+            package_family="deep_convection_trial",
+            observed_sounding=no_wind,
+        )
+
+
+def test_deep_convection_trial_requires_complete_rendered_wind_profile(
+    tmp_path: Path,
+) -> None:
+    observed = parse_igra_station_text(
+        IGRA_FIXTURE,
+        uploaded_filename="USM00072558-data-beg2025.txt",
+    ).selected_sounding
+    missing_mid_profile_wind = observed.model_copy(
+        update={
+            "levels": [
+                level.model_copy(update={"u_wind_m_s": None})
+                if index == len(observed.levels) // 2
+                else level
+                for index, level in enumerate(observed.levels)
+            ]
+        }
+    )
+
+    with pytest.raises(DryRunPackageError, match="complete finite observed u/v wind profile"):
+        generate_dry_run_package(
+            scenario_data=load_baseline_template(),
+            runtime_home=tmp_path,
+            run_id="run-deep-partial-wind",
+            package_family="deep_convection_trial",
+            observed_sounding=missing_mid_profile_wind,
+        )
+
+    assert not (tmp_path / "runs" / "run-deep-partial-wind").exists()
 
 
 def test_dry_run_package_refuses_to_overwrite_existing_run_dir(tmp_path: Path) -> None:

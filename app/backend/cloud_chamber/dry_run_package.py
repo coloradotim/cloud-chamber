@@ -59,6 +59,7 @@ def generate_dry_run_package(
     app_commit: str | None = None,
     observed_sounding: dict[str, object] | ObservedSoundingRecord | None = None,
     candidate_screening: dict[str, object] | None = None,
+    package_family: str | None = None,
 ) -> DryRunPackageResult:
     scenario = validate_scenario_template(scenario_data)
     selected_controls = controls or {}
@@ -67,17 +68,22 @@ def generate_dry_run_package(
     package_dir = runtime_home.expanduser() / "runs" / run_id
     if package_dir.exists() and not allow_overwrite:
         raise DryRunPackageError(f"Run package already exists: {package_dir}")
-    package_dir.mkdir(parents=True, exist_ok=allow_overwrite)
 
     observed_record = _observed_sounding_record(observed_sounding)
 
-    contract = build_cm1_input_contract(
-        scenario,
-        selected_controls=selected_controls,
-        run_size_preset=run_size_preset,
-        observed_sounding=observed_record,
-    )
+    try:
+        contract = build_cm1_input_contract(
+            scenario,
+            selected_controls=selected_controls,
+            run_size_preset=run_size_preset,
+            observed_sounding=observed_record,
+            package_family=package_family,
+        )
+    except ValueError as exc:
+        raise DryRunPackageError(str(exc)) from exc
     now = datetime.now(UTC)
+
+    package_dir.mkdir(parents=True, exist_ok=allow_overwrite)
 
     paths = {
         "manifest": package_dir / "run_manifest.json",
@@ -119,6 +125,15 @@ def generate_dry_run_package(
             observed_record.model_dump(mode="json") if observed_record is not None else None
         ),
         candidate_screening=candidate_screening,
+        package_family=contract.package_family.value,
+        package_display_name=contract.package_display_name,
+        input_source=contract.input_source,
+        trigger_type=contract.trigger_type,
+        trigger_parameters=contract.trigger_parameters,
+        expected_outputs=list(contract.expected_outputs),
+        package_limitations=list(contract.limitations),
+        package_caveats=list(contract.package_caveats),
+        manual_validation_status=contract.manual_validation_status,
     )
 
     case_manifest = _case_manifest_payload(
@@ -213,15 +228,19 @@ def _case_manifest_payload(
     return {
         "scenario_id": scenario.id,
         "display_name": scenario.display_name,
+        "package_family": contract.package_family.value,
+        "package_display_name": contract.package_display_name,
+        "input_source": contract.input_source,
+        "trigger_type": contract.trigger_type,
+        "trigger_parameters": contract.trigger_parameters,
         "physical_question": scenario.physical_question,
         "learning_goals": scenario.learning_goals,
         "expected_behavior": scenario.expected_behavior,
         "warnings": scenario.warnings,
         "limitations": scenario.limitations,
-        "cm1_mapping_status": (
-            "CM1-ready provisional baseline package; still pending local/manual smoke-run "
-            "scientific validation"
-        ),
+        "package_caveats": contract.package_caveats,
+        "manual_validation_status": contract.manual_validation_status,
+        "cm1_mapping_status": _cm1_mapping_status(contract),
         "contract": _contract_payload(contract),
         "candidate_screening": candidate_screening,
     }
@@ -240,6 +259,11 @@ def _dry_run_report_payload(
         "not_a_completed_cm1_result": True,
         "cm1_was_launched": False,
         "scenario_id": scenario.id,
+        "package_family": contract.package_family.value,
+        "package_display_name": contract.package_display_name,
+        "input_source": contract.input_source,
+        "trigger_type": contract.trigger_type,
+        "trigger_parameters": contract.trigger_parameters,
         "physical_question": scenario.physical_question,
         "controls": manifest.controls,
         "variant_metadata": {
@@ -253,17 +277,7 @@ def _dry_run_report_payload(
             "low_level_humidity": manifest.controls.get("low_level_humidity"),
             "cap_strength": manifest.controls.get("cap_strength"),
             "cap_height": manifest.controls.get("cap_height"),
-            "mapping": (
-                "observed IGRA external input_sounding profile; non-wind namelist settings "
-                "remain inherited from the validated baseline; observed wind direction/speed is "
-                "converted to u/v and applied through CM1 isnd=7 input_sounding handling"
-                if contract.observed_sounding is not None
-                else (
-                    "external input_sounding profile; namelist settings remain inherited from "
-                    "the validated baseline; capped/suppressed variants change only stability "
-                    "near the cap when cap_strength is stronger"
-                )
-            ),
+            "mapping": _package_mapping_summary(contract),
         },
         "observed_sounding": (
             _observed_sounding_summary(contract.observed_sounding)
@@ -275,6 +289,10 @@ def _dry_run_report_payload(
         "run_size_details": run_size_details,
         "estimated_cost_or_size": run_size_details["cost_warning"],
         "expected_diagnostics": manifest.expected_diagnostics,
+        "expected_outputs": list(contract.expected_outputs),
+        "package_caveats": list(contract.package_caveats),
+        "manual_validation_status": contract.manual_validation_status,
+        "cm1_mapping_status": _cm1_mapping_status(contract),
         "visualization_defaults": contract.visualization_defaults,
         "generated_files": {name: str(path) for name, path in generated_files.items()},
         "provenance": {
@@ -322,7 +340,10 @@ def _observed_sounding_summary(record: ObservedSoundingRecord) -> dict[str, obje
 
 def _run_size_details(contract: CM1InputContract) -> dict[str, object]:
     defaults = contract.cloud_scale_defaults
-    standard = cloud_scale_defaults_for_preset("standard")
+    standard = cloud_scale_defaults_for_preset(
+        "standard",
+        package_family=contract.package_family,
+    )
     grid_cells = defaults.nx * defaults.ny * defaults.nz
     standard_grid_cells = standard.nx * standard.ny * standard.nz
     output_frames = _expected_output_frames(
@@ -338,6 +359,22 @@ def _run_size_details(contract: CM1InputContract) -> dict[str, object]:
     estimated_compute_multiplier = grid_multiplier * timestep_multiplier * runtime_multiplier
     estimated_output_volume_multiplier = grid_multiplier * output_frame_multiplier
     is_deep = contract.run_size_preset == "deep_overnight"
+    is_deep_convection = contract.package_family.value == "deep_convection_trial"
+    cost_warning = (
+        _deep_convection_cost_warning(contract.run_size_preset)
+        if is_deep_convection
+        else (
+            "Deep Overnight is an expensive local run intended to take roughly "
+            "10-12x Standard wall-clock after manual validation. It increases "
+            "horizontal resolution to about 33.333 m, saves output every 300 s, "
+            "and may produce much larger output for better Explore, cloud "
+            "appearance, field-view, and timelapse data."
+            if is_deep
+            else (
+                "Normal local run-size preset; estimates remain approximate until local validation."
+            )
+        )
+    )
     return {
         "preset": contract.run_size_preset,
         "runtime_seconds": defaults.runtime_seconds,
@@ -366,25 +403,77 @@ def _run_size_details(contract: CM1InputContract) -> dict[str, object]:
             estimated_output_volume_multiplier, 2
         ),
         "target_wall_clock_multiplier_vs_standard": "10-12x" if is_deep else "1x",
-        "cost_warning": (
-            "Deep Overnight is an expensive local run intended to take roughly "
-            "10-12x Standard wall-clock after manual validation. It increases "
-            "horizontal resolution to about 33.333 m, saves output every 300 s, "
-            "and may produce much larger output for better Explore, cloud "
-            "appearance, field-view, and timelapse data."
-            if is_deep
+        "cost_warning": cost_warning,
+        "validation_note": (
+            "Deep Convection Trial uses a wider idealized domain and observed winds. "
+            "Manual CM1 smoke evidence applies to the package family; each observed "
+            "sounding remains an experiment until CM1 output is inspected."
+            if is_deep_convection
             else (
-                "Normal local run-size preset; estimates remain approximate until local validation."
+                "Deep Overnight preserves the physical domain and scenario controls while "
+                "changing horizontal resolution and saved-output cadence. Wall-clock "
+                "and storage estimates require manual local validation before launch."
+                if is_deep
+                else "Preset preserves the validated reference-derived spatial grid."
             )
         ),
-        "validation_note": (
-            "Deep Overnight preserves the physical domain and scenario controls while "
-            "changing horizontal resolution and saved-output cadence. Wall-clock "
-            "and storage estimates require manual local validation before launch."
-            if is_deep
-            else "Preset preserves the validated reference-derived spatial grid."
-        ),
     }
+
+
+def _package_mapping_summary(contract: CM1InputContract) -> str:
+    if contract.package_family.value == "deep_convection_trial":
+        return (
+            "observed IGRA external input_sounding profile with observed u/v winds; "
+            "Deep Convection Trial uses CM1 isnd=7, testcase=0, iinit=3 three-warm-bubble "
+            "line initiation, a storm-scale idealized domain, NetCDF output, rain output, "
+            "reflectivity output, vorticity output, and updraft-helicity output"
+        )
+    if contract.observed_sounding is not None:
+        return (
+            "observed IGRA external input_sounding profile; non-wind namelist settings "
+            "remain inherited from the validated baseline; observed wind direction/speed is "
+            "converted to u/v and applied through CM1 isnd=7 input_sounding handling"
+        )
+    return (
+        "external input_sounding profile; namelist settings remain inherited from "
+        "the validated baseline; capped/suppressed variants change only stability "
+        "near the cap when cap_strength is stronger"
+    )
+
+
+def _cm1_mapping_status(contract: CM1InputContract) -> str:
+    if contract.package_family.value == "deep_convection_trial":
+        return (
+            "CM1-ready Deep Convection Trial package with manual CM1 smoke evidence "
+            "for deep-convection initiation; each observed sounding remains an experiment"
+        )
+    if contract.observed_sounding is not None:
+        return (
+            "CM1-ready observed-sounding quick-look package; still pending "
+            "case-specific local/manual scientific interpretation"
+        )
+    return (
+        "CM1-ready provisional baseline package; still pending local/manual smoke-run "
+        "scientific validation"
+    )
+
+
+def _deep_convection_cost_warning(run_size_preset: str) -> str:
+    if run_size_preset == "quick_look":
+        return (
+            "Deep Convection Trial Quick Look uses a 120 km storm-scale idealized domain with "
+            "CM1's built-in three-warm-bubble trigger. It is the smallest local trial; CM1 "
+            "still decides whether deep convection develops."
+        )
+    if run_size_preset == "standard":
+        return (
+            "Deep Convection Trial Standard uses a 160 km storm-scale idealized domain and should "
+            "generally run on the LAN worker."
+        )
+    return (
+        "Deep Convection Trial Deep Overnight uses a 240 km storm-scale idealized domain with "
+        "frequent saved output and should run on the LAN worker."
+    )
 
 
 def _expected_output_frames(runtime_seconds: int, output_cadence_seconds: int) -> int:

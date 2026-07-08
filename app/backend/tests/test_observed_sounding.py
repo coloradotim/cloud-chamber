@@ -52,6 +52,19 @@ def test_summarize_igra_station_text_lists_times_without_package_validation() ->
     assert summaries[0].num_levels > 0
 
 
+def test_igra_missing_hour_headers_do_not_block_entire_file() -> None:
+    lines = IGRA_FIXTURE.splitlines()
+    missing_hour_lines = [
+        f"{line[:24]}99{line[26:]}" if line.startswith("#") and "2025 01 02" in line else line
+        for line in lines
+    ]
+
+    summaries = summarize_igra_station_text("\n".join(missing_hour_lines))
+
+    assert len(summaries) == 1
+    assert summaries[0].valid_time_utc == datetime(2025, 1, 1, tzinfo=UTC)
+
+
 def test_parse_igra_station_text_accepts_supplied_station_metadata() -> None:
     alternate_station_text = IGRA_FIXTURE.replace("USM00072558", "USM00072357")
     parsed = parse_igra_station_text(
@@ -72,7 +85,14 @@ def test_parse_igra_station_text_accepts_supplied_station_metadata() -> None:
     assert record.station_name == "Norman, Oklahoma"
     assert record.station_elevation_m_msl == pytest.approx(357.0)
     assert record.model_bottom_elevation_m_msl == pytest.approx(357.0)
+    assert record.levels[0].model_z_m == pytest.approx(0.0)
+    assert all(level.model_z_m >= 0.0 for level in record.levels)
     assert "station elevation joined from IGRA recent cache" in " ".join(record.validation.caveats)
+    assert "anchored to z=0" in " ".join(record.validation.caveats)
+    rendered = render_observed_input_sounding(record)
+    body_z_values = [float(line.split()[0]) for line in rendered.splitlines()[1:]]
+    assert body_z_values[0] > 0.0
+    assert body_z_values == sorted(body_z_values)
 
 
 def test_parse_igra_station_text_selects_requested_sounding_time() -> None:
@@ -179,7 +199,7 @@ def test_render_observed_input_sounding_is_numeric_cm1_facing() -> None:
     assert len(lines[0].split()) == 3
     assert len(lines[1].split()) == 5
     assert float(lines[0].split()[0]) == pytest.approx(record.levels[0].pressure_pa / 100.0)
-    assert float(lines[1].split()[0]) == pytest.approx(0.0)
+    assert float(lines[1].split()[0]) == pytest.approx(record.levels[0].model_z_m)
     assert float(lines[1].split()[3]) == pytest.approx(record.levels[0].u_wind_m_s, abs=0.01)
     assert float(lines[1].split()[4]) == pytest.approx(record.levels[0].v_wind_m_s, abs=0.01)
     assert float(lines[1].split()[3]) != pytest.approx(0.0)

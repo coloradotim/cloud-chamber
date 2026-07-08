@@ -96,12 +96,15 @@ a sounding was tried. The browser never parses remote directory listings, ZIP
 files, or station text files. The current story identifiers, feature inputs,
 score support states, evidence requirements, and caveat rules are defined in
 [contracts/sounding-candidate-screening.md](contracts/sounding-candidate-screening.md).
-Future real-sounding story families, including severe/deep-convection,
-boundary-layer, low-cloud, and winter/cold-season candidates, are defined as
-planning taxonomy in
+Real-sounding story families, including severe/deep-convection, boundary-layer,
+low-cloud, and winter/cold-season candidates, are defined in
 [research/expanded-sounding-candidate-taxonomy.md](research/expanded-sounding-candidate-taxonomy.md).
 Those labels must remain disabled, caveated, or absent from product UI until
 backend scoring, evidence, caveats, and package-readiness states support them.
+The first exception is the deep-convection family backed by the `Deep
+Convection Trial` package: severe/deep-convection candidates may be presented as
+pre-run hypotheses for an idealized triggered CM1 experiment, not as forecasts
+or guaranteed storm outcomes.
 The backend may compute richer sounding diagnostics such as profile quality,
 moisture/LCL proxies, lapse-rate and cap proxies, wind shear, dry-layer
 signals, and freezing-level context to support future screening. These are
@@ -122,6 +125,21 @@ observed atmosphere worth trying, not a prediction that clouds, rain, or
 suppression will occur. When a candidate is used, its screening story, score,
 evidence, feature summary, and caveats should be copied into package metadata as
 provenance.
+
+When an uploaded or saved observed sounding is package-ready, Build should let
+the user choose between `Observed Sounding Quick Look` and `Deep Convection
+Trial`. `Deep Convection Trial` is the first-class package family for
+severe/deep-convection observed-sounding experiments: it uses the observed
+temperature, moisture, and wind profile through CM1 `isnd = 7`, runs an
+idealized three-warm-bubble trigger (`iinit = 3`), uses a storm-scale model box
+suitable for storm growth and precipitation inspection, requests rain,
+reflectivity, vorticity, and updraft-helicity output, and records
+`package_family = deep_convection_trial` plus trigger,
+expected-output, caveat, and candidate-screening provenance in generated
+manifests. Quick Look may be tried locally when practical; Standard and Deep
+tiers should recommend the LAN worker. Raw trigger parameters remain
+metadata-only in v1 and should not become user controls until useful ranges are
+validated.
 
 Explore should be a focused visualization plus explanation screen for one
 selected result. Its core interaction is `What happened here?`: select a cloud,
@@ -1071,6 +1089,11 @@ metadata as provenance. Observed-sounding results should read as `Uploaded
 Sounding` in notebook names, scenario labels, and scenario filtering while the
 underlying generated scenario ID remains available in technical details as
 lineage.
+Deep Convection Trial results should retain their package-family identity after
+ingest: notebook names and scenario labels may say `Deep Convection Trial`,
+while the original observed station/time, generated scenario ID, trigger
+metadata, expected outputs, caveats, and candidate-screening hypothesis remain
+available as provenance.
 Technical metadata such as raw lifecycle/product states, run IDs, provenance
 labels, controls, and detailed caveats remain available under disclosure rather
 than dominating the first read. The layout should be mobile-first: cards stack

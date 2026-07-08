@@ -381,6 +381,44 @@ const missingLclCandidate = {
   evidence: shallowCandidate.evidence.filter((item) => item.label !== "Estimated LCL"),
 };
 
+const deepConvectionCandidate = {
+  ...shallowCandidate,
+  candidate_id: "USM00072357-2025052000-supercell",
+  station_id: "USM00072357",
+  station_name: "Norman, Oklahoma",
+  valid_time_utc: "2025-05-20T00:00:00Z",
+  primary_story: "supercell_environment",
+  primary_story_label: "Supercell-like environment",
+  rank_score: 93,
+  confidence: "high",
+  package_ready: true,
+  story_scores: [
+    {
+      story: "supercell_environment",
+      label: "Supercell-like environment",
+      score_0_to_100: 93,
+      support: "supported",
+    },
+    {
+      story: "severe_thunderstorm_environment",
+      label: "Severe thunderstorm environment",
+      score_0_to_100: 88,
+      support: "supported",
+    },
+  ],
+  evidence: [
+    {
+      label: "Deep-convection ingredients",
+      value: "strong",
+      units: null,
+      interpretation: "Instability and wind structure are worth trying in a triggered run.",
+      supports_story: ["supercell_environment", "severe_thunderstorm_environment"],
+      caveats: [],
+    },
+    ...shallowCandidate.evidence.slice(0, 2),
+  ],
+};
+
 const screeningInputsResponse = {
   inputs: [
     {
@@ -400,6 +438,7 @@ const screeningResponse = {
   generated_at: "2026-07-01T12:00:00Z",
   candidates: [
     shallowCandidate,
+    deepConvectionCandidate,
     blockedCandidate,
     secondaryShallowCandidate,
     missingLclCandidate,
@@ -2263,13 +2302,80 @@ describe("App", () => {
     expect(screen.getByText("USM00072558 · Valley, Nebraska")).toBeInTheDocument();
     expect(screen.getByText(/CM1 z=0 is station surface at 351.5 m MSL/)).toBeInTheDocument();
     expect(screen.getByText(/observed sounding winds/)).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Choose how to try this sounding" })).toBeInTheDocument();
+    expect(screen.getByLabelText("Package type")).toHaveValue("observed_sounding_quicklook");
+
+    fireEvent.change(screen.getByLabelText("Package type"), {
+      target: { value: "deep_convection_trial" },
+    });
+    expect(screen.getByText("Three-bubble trigger")).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        /observed temperature, moisture, and wind profile with an idealized CM1 three-warm-bubble trigger/i,
+      ),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/wider box for storm growth and precipitation/i)).toBeInTheDocument();
+    expect(screen.getByText(/wider storm-growth domain than the shallow-cumulus quick look/i)).toBeInTheDocument();
 
     fireEvent.click(screen.getByTestId("create-package-btn"));
 
     await waitFor(() => {
+      expect(dryRunBody).toContain('"package_family":"deep_convection_trial"');
       expect(dryRunBody).toContain('"observed_sounding"');
       expect(dryRunBody).toContain('"station_id":"USM00072558"');
       expect(dryRunBody).toContain('"model_bottom_elevation_m_msl":351.5');
+    });
+  });
+
+  it("defaults deep-convection candidates to the Deep Convection Trial package", async () => {
+    const defaultFetch = vi.mocked(fetch).getMockImplementation();
+    let dryRunBody = "";
+    let screenBody = "";
+    vi.mocked(fetch).mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url === "/api/sounding-candidates/screen") {
+        screenBody = String(init?.body ?? "");
+      }
+      if (url === "/api/dry-run-package") {
+        dryRunBody = String(init?.body ?? "");
+      }
+      return (
+        defaultFetch?.(input, init) ?? Promise.resolve(new Response("not found", { status: 404 }))
+      );
+    });
+
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Build" }));
+    fireEvent.change(await screen.findByLabelText("Experiment"), {
+      target: { value: "__observed_sounding_upload__" },
+    });
+    const storyFilter = await screen.findByLabelText("Story filter");
+    expect(storyFilter).toHaveTextContent("Deep Convection Trial stories");
+    fireEvent.change(storyFilter, {
+      target: { value: "deep_convection_trial" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Screen cached soundings" }));
+
+    expect(await screen.findByText("Screening guidance loaded")).toBeInTheDocument();
+    expect(screenBody).toContain('"target_story":"deep_convection_trial"');
+    const deepCard = screen.getByLabelText("Sounding candidate Norman, Oklahoma (USM00072357)");
+    expect(deepCard).toHaveTextContent("Supercell-like environment");
+
+    fireEvent.click(within(deepCard).getByRole("button", { name: "Use this sounding" }));
+
+    expect(await screen.findByText("Candidate selected for package review")).toBeInTheDocument();
+    expect(screen.getByLabelText("Package type")).toHaveValue("deep_convection_trial");
+    expect(screen.getByText("Three-bubble trigger")).toBeInTheDocument();
+    expect(screen.getByText(/strong fit for Deep Convection Trial/)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId("create-package-btn"));
+
+    await waitFor(() => {
+      expect(dryRunBody).toContain('"package_family":"deep_convection_trial"');
+      expect(dryRunBody).toContain('"candidate_screening"');
+      expect(dryRunBody).toContain('"primary_story":"supercell_environment"');
+      expect(dryRunBody).toContain('"candidate_id":"USM00072357-2025052000-supercell"');
     });
   });
 

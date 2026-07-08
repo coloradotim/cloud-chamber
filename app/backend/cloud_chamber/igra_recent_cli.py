@@ -26,17 +26,26 @@ from cloud_chamber.igra_catalog import (
 from cloud_chamber.observed_sounding import ObservedSoundingError, summarize_igra_station_text
 from cloud_chamber.settings import CloudChamberSettings, load_settings
 from cloud_chamber.sounding_candidates import (
+    DEEP_CONVECTION_STORY_IDS,
     STORY_LABELS,
     SoundingCandidate,
+    StoryId,
     TargetStoryId,
     screen_cached_soundings,
 )
 
 STORY_OPTION_TO_ID: dict[str, TargetStoryId] = {
+    "deep-convection": "deep_convection_trial",
     "shallow-cumulus": "shallow_cumulus_candidate",
     "dry-failed": "dry_failed_candidate",
     "capped-suppressed": "capped_suppressed_candidate",
     "humid-rainy": "humid_rainy_candidate",
+    "severe-thunderstorm": "severe_thunderstorm_environment",
+    "supercell": "supercell_environment",
+    "high-cape-pulse": "high_cape_pulse_storm",
+    "dry-microburst": "dry_microburst_inverted_v",
+    "squall-line": "squall_line_cold_pool_candidate",
+    "elevated-convection": "elevated_convection",
     "needs-review": "needs_review",
     "poor-or-incomplete": "poor_or_incomplete_candidate",
 }
@@ -373,6 +382,12 @@ def _cmd_candidates(args: argparse.Namespace, settings: CloudChamberSettings) ->
             "dry_failed_candidate",
             "capped_suppressed_candidate",
             "humid_rainy_candidate",
+            "severe_thunderstorm_environment",
+            "supercell_environment",
+            "high_cape_pulse_storm",
+            "dry_microburst_inverted_v",
+            "squall_line_cold_pool_candidate",
+            "elevated_convection",
         ]
     else:
         stories = [STORY_OPTION_TO_ID[story_option]]
@@ -389,7 +404,7 @@ def _cmd_candidates(args: argparse.Namespace, settings: CloudChamberSettings) ->
         )
         all_caveats.extend(result.caveats)
         if story_option == "all":
-            print(STORY_LABELS[story])
+            print(STORY_LABELS[cast(StoryId, story)])
         _print_candidates(result.candidates, target_story=story)
         any_candidates = any_candidates or bool(result.candidates)
         if story_option == "all" and index < len(stories) - 1:
@@ -540,6 +555,19 @@ def _candidate_story_match(
 ) -> float:
     if target_story is None:
         return candidate.rank_score
+    if target_story == "deep_convection_trial":
+        return (
+            max(
+                (
+                    score.score_0_to_100
+                    for score in candidate.story_scores
+                    if score.story in DEEP_CONVECTION_STORY_IDS
+                ),
+                default=0.0,
+            )
+            if candidate.package_ready
+            else 0.0
+        )
     for score in candidate.story_scores:
         if score.story == target_story:
             return score.score_0_to_100 if candidate.package_ready else 0.0

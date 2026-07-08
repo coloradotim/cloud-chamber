@@ -25,6 +25,7 @@ from cloud_chamber.observed_sounding import (
     summarize_igra_station_text,
 )
 from cloud_chamber.settings import CloudChamberSettings
+from cloud_chamber.sounding_diagnostics import compute_sounding_diagnostics
 
 SCREENING_VERSION = "sounding-screening-v1"
 
@@ -33,14 +34,27 @@ StoryId = Literal[
     "dry_failed_candidate",
     "capped_suppressed_candidate",
     "humid_rainy_candidate",
+    "severe_thunderstorm_environment",
+    "supercell_environment",
+    "high_cape_pulse_storm",
+    "dry_microburst_inverted_v",
+    "squall_line_cold_pool_candidate",
+    "elevated_convection",
     "needs_review",
     "poor_or_incomplete_candidate",
 ]
 TargetStoryId = Literal[
+    "deep_convection_trial",
     "shallow_cumulus_candidate",
     "dry_failed_candidate",
     "capped_suppressed_candidate",
     "humid_rainy_candidate",
+    "severe_thunderstorm_environment",
+    "supercell_environment",
+    "high_cape_pulse_storm",
+    "dry_microburst_inverted_v",
+    "squall_line_cold_pool_candidate",
+    "elevated_convection",
     "needs_review",
     "poor_or_incomplete_candidate",
 ]
@@ -52,9 +66,24 @@ STORY_LABELS: dict[StoryId, str] = {
     "dry_failed_candidate": "Dry failed cumulus candidate",
     "capped_suppressed_candidate": "Capped / suppressed cumulus candidate",
     "humid_rainy_candidate": "Humid / rainy candidate",
+    "severe_thunderstorm_environment": "Severe thunderstorm environment",
+    "supercell_environment": "Supercell-like environment",
+    "high_cape_pulse_storm": "High-CAPE pulse-storm candidate",
+    "dry_microburst_inverted_v": "Dry microburst / inverted-V candidate",
+    "squall_line_cold_pool_candidate": "Squall-line / cold-pool candidate",
+    "elevated_convection": "Elevated convection candidate",
     "needs_review": "Needs review",
     "poor_or_incomplete_candidate": "Poor or incomplete data",
 }
+
+DEEP_CONVECTION_STORY_IDS: tuple[StoryId, ...] = (
+    "severe_thunderstorm_environment",
+    "supercell_environment",
+    "high_cape_pulse_storm",
+    "dry_microburst_inverted_v",
+    "squall_line_cold_pool_candidate",
+    "elevated_convection",
+)
 
 
 class StoryScore(BaseModel):
@@ -253,6 +282,19 @@ def screen_cached_soundings(
 def _candidate_story_score(candidate: SoundingCandidate, story: TargetStoryId | None) -> float:
     if story is None:
         return candidate.rank_score
+    if story == "deep_convection_trial":
+        return (
+            max(
+                (
+                    score.score_0_to_100
+                    for score in candidate.story_scores
+                    if score.story in DEEP_CONVECTION_STORY_IDS
+                ),
+                default=0.0,
+            )
+            if candidate.package_ready
+            else 0.0
+        )
     for score in candidate.story_scores:
         if score.story == story:
             return score.score_0_to_100 if candidate.package_ready else 0.0
@@ -330,6 +372,8 @@ def _candidate_from_cached_sounding(
         features = _features_from_record(record)
         story_scores, evidence = _score_features(features, package_ready=True)
         caveats = list(record.validation.caveats)
+        if features.get("near_surface_discontinuity_flag") is True:
+            caveats.append("near_surface_discontinuity_caveat")
         selected_payload = record.model_dump(mode="json")
         source_time_text = record.source_time_text
         station_latitude = record.station_latitude
@@ -394,6 +438,7 @@ def _features_from_record(
     lapse_0_3000 = _lapse_rate(levels, 0.0, 3000.0)
     inversion_strength, inversion_base, inversion_top = _inversion_proxy(levels)
     moisture_depth = _moisture_depth(levels, min_qv_g_kg=6.0)
+    near_surface_jump = _near_surface_jump(levels)
     usable_below_3km = sum(1 for level in levels if 0.0 <= level.model_z_m <= 3000.0)
     observed_wind_available = all(
         level.u_wind_m_s is not None and level.v_wind_m_s is not None for level in levels
@@ -405,6 +450,8 @@ def _features_from_record(
         + (25.0 if top >= 18000.0 else max(0.0, top / 18000.0 * 25.0))
         + (25.0 if lowest <= 50.0 else max(0.0, 25.0 - lowest / 20.0)),
     )
+    if near_surface_jump["flag"]:
+        completeness = min(completeness, 70.0)
     qv_drop = (
         round(qv_near_surface - qv_0_3000, 3)
         if qv_0_3000 is not None and qv_near_surface is not None
@@ -416,7 +463,7 @@ def _features_from_record(
         if midlevel_qv is not None and qv_near_surface is not None
         else None
     )
-    return {
+    features: dict[str, float | int | str | bool | None] = {
         "data_completeness_score": round(completeness, 1),
         "surface_or_lowest_pressure_hpa": round(surface.pressure_pa / 100.0, 1),
         "surface_or_lowest_temperature_c": round(surface.temperature_c, 2),
@@ -446,19 +493,69 @@ def _features_from_record(
         "lowest_level_m_agl": round(lowest, 1),
         "usable_levels_below_3km": usable_below_3km,
         "observed_wind_available": observed_wind_available,
+        "near_surface_jump_depth_m": near_surface_jump["depth_m"],
+        "near_surface_temperature_jump_c": near_surface_jump["temperature_jump_c"],
+        "near_surface_qv_jump_g_kg": near_surface_jump["qv_jump_g_kg"],
+        "near_surface_discontinuity_flag": near_surface_jump["flag"],
     }
+    diagnostics = compute_sounding_diagnostics(record)
+    for key in (
+        "mean_qv_0_3000m_g_kg",
+        "precipitable_water_proxy_or_unavailable",
+        "midlevel_lapse_rate_700_500_hpa_c_per_km",
+        "has_observed_wind_profile",
+        "wind_profile_depth_m",
+        "bulk_shear_0_1km_m_s",
+        "bulk_shear_0_3km_m_s",
+        "bulk_shear_0_6km_m_s",
+        "mean_wind_0_6km_m_s",
+        "dry_microburst_inverted_v_proxy",
+        "freezing_level_m_agl",
+        "surface_based_cape_j_kg",
+        "mixed_layer_cape_j_kg",
+        "surface_based_cin_j_kg",
+        "mixed_layer_cin_j_kg",
+        "lfc_height_m_agl",
+        "el_height_m_agl",
+        "srh_0_1km_m2_s2",
+        "srh_0_3km_m2_s2",
+    ):
+        diagnostic = diagnostics.feature_values.get(key)
+        features[key] = diagnostic.value if diagnostic is not None else None
+    features["observed_wind_available"] = bool(
+        features.get("observed_wind_available") or features.get("has_observed_wind_profile")
+    )
+    return features
 
 
 def _score_features(
     features: dict[str, float | int | str | bool | None], *, package_ready: bool
 ) -> tuple[list[StoryScore], list[EvidenceItem]]:
     qv = _numeric_feature(features, "mean_qv_0_1000m_g_kg")
+    qv_500 = _numeric_feature(features, "mean_qv_0_500m_g_kg")
     lcl = _numeric_feature(features, "estimated_lcl_height_m_agl")
     lapse = _numeric_feature(features, "lapse_rate_0_1000m_c_per_km")
+    lapse_0_3km = _numeric_feature(features, "lapse_rate_0_3000m_c_per_km")
+    midlevel_lapse = _numeric_feature(features, "midlevel_lapse_rate_700_500_hpa_c_per_km")
     cap = _numeric_feature(features, "cap_strength_proxy")
     moisture_depth = _numeric_feature(features, "moisture_depth_m")
     completeness = _numeric_feature(features, "data_completeness_score")
     midlevel_dry = _numeric_feature(features, "midlevel_dry_layer_proxy")
+    qv_drop = _numeric_feature(features, "qv_drop_0_3000m_g_kg")
+    precipitable_water = _numeric_feature(features, "precipitable_water_proxy_or_unavailable")
+    shear_0_1km = _numeric_feature(features, "bulk_shear_0_1km_m_s")
+    shear_0_3km = _numeric_feature(features, "bulk_shear_0_3km_m_s")
+    shear_0_6km = _numeric_feature(features, "bulk_shear_0_6km_m_s")
+    freezing_level = _numeric_feature(features, "freezing_level_m_agl")
+    dry_microburst_proxy = _numeric_feature(features, "dry_microburst_inverted_v_proxy")
+    sbcape = _numeric_feature(features, "surface_based_cape_j_kg")
+    mlcape = _numeric_feature(features, "mixed_layer_cape_j_kg")
+    sbcin = _numeric_feature(features, "surface_based_cin_j_kg")
+    mlcin = _numeric_feature(features, "mixed_layer_cin_j_kg")
+    lfc = _numeric_feature(features, "lfc_height_m_agl")
+    el = _numeric_feature(features, "el_height_m_agl")
+    surface_ttd = _numeric_feature(features, "surface_t_td_spread_c")
+    observed_wind_available = features.get("observed_wind_available") is True
     story_feature_names = [
         "mean_qv_0_1000m_g_kg",
         "estimated_lcl_height_m_agl",
@@ -471,23 +568,109 @@ def _score_features(
         name for name in story_feature_names if _numeric_feature(features, name) is None
     ]
     missing_caveats = [f"missing_or_unavailable_feature:{name}" for name in missing_story_features]
+    deep_feature_names = [
+        "mean_qv_0_1000m_g_kg",
+        "estimated_lcl_height_m_agl",
+        "lapse_rate_0_3000m_c_per_km",
+        "midlevel_lapse_rate_700_500_hpa_c_per_km",
+        "surface_based_cape_j_kg",
+        "mixed_layer_cape_j_kg",
+        "surface_based_cin_j_kg",
+        "bulk_shear_0_6km_m_s",
+        "moisture_depth_m",
+    ]
+    missing_deep_features = [
+        name for name in deep_feature_names if _numeric_feature(features, name) is None
+    ]
+    deep_caveats = [f"missing_or_unavailable_feature:{name}" for name in missing_deep_features]
+    if not observed_wind_available:
+        deep_caveats.append("observed_wind_required_for_deep_convection_trial")
 
     moist = _score_high(qv, low=4.0, high=10.0)
     dry = _score_low(qv, low=3.0, high=8.0)
+    storm_moisture = _weighted_score(
+        [
+            (_score_high(qv, low=8.0, high=14.0), 0.55),
+            (_score_high(qv_500, low=8.0, high=14.0), 0.25),
+            (_score_high(precipitable_water, low=18.0, high=38.0), 0.20),
+        ]
+    )
     low_lcl = _score_low(lcl, low=400.0, high=1800.0)
     high_lcl = _score_high(lcl, low=900.0, high=2500.0)
     thermal = _score_high(lapse, low=4.0, high=8.0)
+    deep_lapse = _weighted_score(
+        [
+            (_score_high(lapse_0_3km, low=5.5, high=8.0), 0.55),
+            (_score_high(midlevel_lapse, low=5.5, high=7.5), 0.45),
+        ]
+    )
     weak_cap = _score_low(cap, low=0.5, high=4.0)
     strong_cap = _score_high(cap, low=1.5, high=5.0)
+    not_strong_cap = _score_low(cap, low=2.0, high=6.0)
     deep_moisture = _score_high(moisture_depth, low=800.0, high=2500.0)
     shallow_moisture = _score_low(moisture_depth, low=500.0, high=1800.0)
     data_quality = _score_high(completeness, low=40.0, high=90.0)
     dry_layer = _score_high(midlevel_dry, low=2.0, high=8.0)
+    qv_drop_score = _score_high(qv_drop, low=3.0, high=8.0)
+    deep_shear = _score_high(shear_0_6km, low=10.0, high=24.0)
+    supercell_deep_shear = _score_high(shear_0_6km, low=16.0, high=30.0)
+    low_level_shear = _score_high(shear_0_1km, low=4.0, high=14.0)
+    three_km_shear = _score_high(shear_0_3km, low=8.0, high=20.0)
+    pulse_shear = _score_low(shear_0_6km, low=8.0, high=22.0)
+    effective_cape = max(value for value in (sbcape or 0.0, mlcape or 0.0))
+    effective_cin = min(value for value in (sbcin or 0.0, mlcin or 0.0))
+    cape_score = _score_high(effective_cape, low=750.0, high=2500.0)
+    high_cape_score = _score_high(effective_cape, low=1500.0, high=3500.0)
+    cin_score = _score_low(abs(effective_cin), low=25.0, high=250.0)
+    low_lfc = _score_low(lfc, low=750.0, high=3000.0)
+    deep_el = _score_high(el, low=7000.0, high=12000.0)
+    instability = _weighted_score(
+        [
+            (cape_score, 0.55),
+            (cin_score, 0.25),
+            (low_lfc, 0.10),
+            (deep_el, 0.10),
+        ]
+    )
+    deep_environment = _weighted_score(
+        [
+            (instability, 0.45),
+            (deep_lapse, 0.25),
+            (deep_shear, 0.20),
+            (deep_moisture, 0.10),
+        ]
+    )
+    dry_microburst = _weighted_score(
+        [
+            (_score_high(dry_microburst_proxy, low=35.0, high=80.0), 0.35),
+            (_score_high(surface_ttd, low=10.0, high=28.0), 0.20),
+            (qv_drop_score, 0.20),
+            (deep_lapse, 0.15),
+            (_score_high(freezing_level, low=2500.0, high=4500.0), 0.10),
+        ]
+    )
     feature_coverage = (
         (len(story_feature_names) - len(missing_story_features)) / len(story_feature_names)
         if story_feature_names
         else 1.0
     )
+    deep_feature_coverage = (
+        (len(deep_feature_names) - len(missing_deep_features)) / len(deep_feature_names)
+        if deep_feature_names
+        else 1.0
+    )
+    wind_factor = 1.0 if observed_wind_available else 0.25
+    lowest_level = _numeric_feature(features, "lowest_level_m_agl")
+    surface_coverage_factor = 1.0
+    if lowest_level is None:
+        surface_coverage_factor = 0.5
+        deep_caveats.append("surface_level_unavailable_for_deep_convection_trial")
+    elif lowest_level > 250.0:
+        surface_coverage_factor = 0.25
+        deep_caveats.append("lowest_usable_level_too_high_for_deep_convection_trial")
+    elif lowest_level > 100.0:
+        surface_coverage_factor = 0.65
+        deep_caveats.append("lowest_usable_level_caveat_for_deep_convection_trial")
 
     shallow = _weighted_score(
         [(moist, 0.28), (low_lcl, 0.22), (deep_moisture, 0.18), (weak_cap, 0.14), (thermal, 0.18)]
@@ -505,6 +688,82 @@ def _score_features(
     humid_rainy = _weighted_score(
         [(moist, 0.32), (low_lcl, 0.22), (deep_moisture, 0.26), (weak_cap, 0.20)]
     )
+    severe = _weighted_score(
+        [
+            (instability, 0.32),
+            (storm_moisture, 0.16),
+            (low_lcl, 0.08),
+            (deep_lapse, 0.16),
+            (deep_shear, 0.18),
+            (not_strong_cap, 0.04),
+            (deep_moisture, 0.06),
+        ]
+    )
+    supercell = _weighted_score(
+        [
+            (instability, 0.24),
+            (storm_moisture, 0.12),
+            (deep_lapse, 0.12),
+            (supercell_deep_shear, 0.28),
+            (three_km_shear, 0.12),
+            (low_level_shear, 0.08),
+            (not_strong_cap, 0.04),
+        ]
+    )
+    high_cape_pulse = _weighted_score(
+        [
+            (high_cape_score, 0.35),
+            (cin_score, 0.16),
+            (storm_moisture, 0.18),
+            (low_lcl, 0.08),
+            (deep_lapse, 0.15),
+            (pulse_shear, 0.05),
+            (not_strong_cap, 0.03),
+        ]
+    )
+    squall_line = _weighted_score(
+        [
+            (instability, 0.24),
+            (storm_moisture, 0.12),
+            (deep_lapse, 0.14),
+            (deep_shear, 0.24),
+            (three_km_shear, 0.12),
+            (deep_moisture, 0.08),
+            (dry_layer, 0.06),
+        ]
+    )
+    elevated = _weighted_score(
+        [
+            (cape_score, 0.22),
+            (strong_cap, 0.20),
+            (storm_moisture, 0.16),
+            (deep_lapse, 0.14),
+            (deep_shear, 0.16),
+            (deep_moisture, 0.12),
+        ]
+    )
+    # Deep-convection stories already score buoyancy explicitly through the
+    # instability terms above. Do not use EL/deep-buoyancy as a second hard
+    # multiplier: many observed soundings provide useful CAPE/shear evidence
+    # while EL remains unavailable from the simple screening diagnostics.
+    deep_factor = (
+        data_quality / 100.0 * deep_feature_coverage * wind_factor * surface_coverage_factor
+    )
+    shallow_score = shallow * data_quality / 100.0 * feature_coverage
+    humid_score = humid_rainy * data_quality / 100.0 * feature_coverage
+    if observed_wind_available and effective_cape >= 1000.0 and deep_environment >= 55.0:
+        # The broad shallow/humid stories are easy to satisfy in moist warm-season
+        # profiles. When the same sounding has meaningful CAPE, shear, and deep
+        # lapse-rate support, keep those broad labels available but let the
+        # Deep Convection Trial story become the useful product recommendation.
+        shallow_score = min(shallow_score, 62.0)
+        humid_score = min(humid_score, 62.0)
+    elif observed_wind_available and effective_cape >= 250.0 and deep_environment >= 55.0:
+        # Moist profiles can still be shallow-cloud-capable, but when the same
+        # sounding has supported deep-convection evidence we should not let the
+        # broad shallow/humid labels hide the more useful package story.
+        shallow_score = min(shallow_score, 82.0)
+        humid_score = min(humid_score, 82.0)
     poor = 100.0 if not package_ready else min(34.0, max(0.0, 100.0 - data_quality))
     if not package_ready:
         poor = 100.0
@@ -522,7 +781,7 @@ def _score_features(
     scores = [
         _story_score(
             "shallow_cumulus_candidate",
-            shallow * data_quality / 100.0 * feature_coverage,
+            shallow_score,
             reasons=["moderate moisture, plausible LCL, thermal lapse-rate and cap proxies"],
             caveats=missing_caveats,
         ),
@@ -540,11 +799,98 @@ def _score_features(
         ),
         _story_score(
             "humid_rainy_candidate",
-            humid_rainy * data_quality / 100.0 * feature_coverage,
+            humid_score,
             reasons=["high low-level moisture, low LCL, deep moisture, weak-cap proxies"],
             caveats=[
                 "Humid/rainy is heavily caveated because forcing remains idealized.",
                 *missing_caveats,
+            ],
+        ),
+        _story_score(
+            "severe_thunderstorm_environment",
+            _deep_story_score(
+                severe * deep_factor, observed_wind_available=observed_wind_available
+            ),
+            reasons=[
+                "deep-convection proxy from simple CAPE/CIN, moisture, "
+                "LCL, lapse-rate, and shear evidence"
+            ],
+            caveats=[
+                "deep-convection candidate scores are pre-run hypotheses; "
+                "simple CAPE/CIN estimates are screening evidence only",
+                *deep_caveats,
+            ],
+        ),
+        _story_score(
+            "supercell_environment",
+            _deep_story_score(
+                supercell * deep_factor, observed_wind_available=observed_wind_available
+            ),
+            reasons=[
+                "supercell-like proxy from simple CAPE/CIN, moisture, and 0-6 km/low-level shear"
+            ],
+            caveats=[
+                "storm rotation and organization are CM1 outcomes to inspect after the run",
+                "SRH is unavailable because storm-motion assumptions are not implemented yet",
+                *deep_caveats,
+            ],
+        ),
+        _story_score(
+            "high_cape_pulse_storm",
+            _deep_story_score(
+                high_cape_pulse * deep_factor, observed_wind_available=observed_wind_available
+            ),
+            reasons=[
+                "pulse-storm proxy from high simple CAPE, rich moisture, "
+                "steep lapse rates, low LCL, and weaker deep shear"
+            ],
+            caveats=[
+                "CAPE is a simple screening estimate; CM1 output remains the outcome",
+                *deep_caveats,
+            ],
+        ),
+        _story_score(
+            "dry_microburst_inverted_v",
+            _deep_story_score(
+                dry_microburst * deep_factor, observed_wind_available=observed_wind_available
+            ),
+            reasons=[
+                "dry-microburst proxy from surface spread, qv drop, "
+                "midlevel dryness, and lapse-rate evidence"
+            ],
+            caveats=[
+                "microburst behavior requires precipitation and evaporative "
+                "cooling to develop in CM1",
+                *deep_caveats,
+            ],
+        ),
+        _story_score(
+            "squall_line_cold_pool_candidate",
+            _deep_story_score(
+                squall_line * deep_factor, observed_wind_available=observed_wind_available
+            ),
+            reasons=[
+                "squall-line proxy from simple CAPE/CIN, moisture, "
+                "lapse-rate, deep shear, and dry-layer context"
+            ],
+            caveats=[
+                "line/cold-pool-specific package support may come later; "
+                "v1 runs as Deep Convection Trial",
+                *deep_caveats,
+            ],
+        ),
+        _story_score(
+            "elevated_convection",
+            _deep_story_score(
+                elevated * deep_factor, observed_wind_available=observed_wind_available
+            ),
+            reasons=[
+                "elevated-convection proxy from simple CAPE, cap, moisture, "
+                "lapse-rate, and shear evidence"
+            ],
+            caveats=[
+                "elevated inflow/source-layer behavior may need a specialized package later",
+                *deep_caveats,
             ],
         ),
         _story_score(
@@ -588,8 +934,27 @@ def _score_features(
             value=features.get("mean_qv_0_1000m_g_kg"),
             units="g/kg",
             interpretation="Higher low-level moisture supports cloud-forming and humid candidates.",
-            supports_story=["shallow_cumulus_candidate", "humid_rainy_candidate"],
+            supports_story=[
+                "shallow_cumulus_candidate",
+                "humid_rainy_candidate",
+                "severe_thunderstorm_environment",
+                "supercell_environment",
+                "high_cape_pulse_storm",
+                "squall_line_cold_pool_candidate",
+            ],
             caveats=_feature_caveats(features, "mean_qv_0_1000m_g_kg"),
+        ),
+        EvidenceItem(
+            label="Near-surface continuity",
+            value="large jump" if features.get("near_surface_discontinuity_flag") else "ok",
+            interpretation=(
+                "Large temperature or moisture jumps in the first shallow layer can make "
+                "pre-run scores overconfident."
+            ),
+            supports_story=["needs_review", "poor_or_incomplete_candidate"],
+            caveats=["near_surface_discontinuity_caveat"]
+            if features.get("near_surface_discontinuity_flag") is True
+            else [],
         ),
         EvidenceItem(
             label="Surface T-Td spread",
@@ -632,8 +997,30 @@ def _score_features(
             interpretation=(
                 "Lower-atmosphere stability gives context for thermal growth and cap effects."
             ),
-            supports_story=["capped_suppressed_candidate", "needs_review"],
+            supports_story=[
+                "capped_suppressed_candidate",
+                "severe_thunderstorm_environment",
+                "supercell_environment",
+                "high_cape_pulse_storm",
+                "squall_line_cold_pool_candidate",
+                "elevated_convection",
+                "needs_review",
+            ],
             caveats=_feature_caveats(features, "lapse_rate_0_3000m_c_per_km"),
+        ),
+        EvidenceItem(
+            label="Midlevel lapse rate 700-500 hPa",
+            value=features.get("midlevel_lapse_rate_700_500_hpa_c_per_km"),
+            units="C/km",
+            interpretation="Steeper midlevel lapse rates support deep-convection trial hypotheses.",
+            supports_story=[
+                "severe_thunderstorm_environment",
+                "supercell_environment",
+                "high_cape_pulse_storm",
+                "squall_line_cold_pool_candidate",
+                "elevated_convection",
+            ],
+            caveats=_feature_caveats(features, "midlevel_lapse_rate_700_500_hpa_c_per_km"),
         ),
         EvidenceItem(
             label="Cap strength proxy",
@@ -675,16 +1062,119 @@ def _score_features(
             interpretation=(
                 "A stronger near-surface to midlevel moisture drop supports dry-failed hypotheses."
             ),
-            supports_story=["dry_failed_candidate"],
+            supports_story=[
+                "dry_failed_candidate",
+                "dry_microburst_inverted_v",
+                "squall_line_cold_pool_candidate",
+            ],
             caveats=_feature_caveats(features, "midlevel_dry_layer_proxy"),
+        ),
+        EvidenceItem(
+            label="Surface-based CAPE",
+            value=features.get("surface_based_cape_j_kg"),
+            units="J/kg",
+            interpretation=(
+                "Simple pre-run parcel estimate; higher values support deep-convection trials."
+            ),
+            supports_story=[
+                "severe_thunderstorm_environment",
+                "supercell_environment",
+                "high_cape_pulse_storm",
+                "squall_line_cold_pool_candidate",
+            ],
+            caveats=_feature_caveats(features, "surface_based_cape_j_kg"),
+        ),
+        EvidenceItem(
+            label="Surface-based CIN",
+            value=features.get("surface_based_cin_j_kg"),
+            units="J/kg",
+            interpretation=(
+                "Simple pre-run parcel estimate; strong inhibition lowers trial confidence."
+            ),
+            supports_story=[
+                "severe_thunderstorm_environment",
+                "supercell_environment",
+                "high_cape_pulse_storm",
+                "elevated_convection",
+            ],
+            caveats=_feature_caveats(features, "surface_based_cin_j_kg"),
+        ),
+        EvidenceItem(
+            label="Bulk shear 0-1 km",
+            value=features.get("bulk_shear_0_1km_m_s"),
+            units="m/s",
+            interpretation=(
+                "Low-level shear gives context for organized or rotating deep-convection trials."
+            ),
+            supports_story=["supercell_environment"],
+            caveats=_feature_caveats(features, "bulk_shear_0_1km_m_s"),
+        ),
+        EvidenceItem(
+            label="Bulk shear 0-3 km",
+            value=features.get("bulk_shear_0_3km_m_s"),
+            units="m/s",
+            interpretation="0-3 km shear helps screen organized deep-convection candidates.",
+            supports_story=[
+                "supercell_environment",
+                "squall_line_cold_pool_candidate",
+                "elevated_convection",
+            ],
+            caveats=_feature_caveats(features, "bulk_shear_0_3km_m_s"),
+        ),
+        EvidenceItem(
+            label="Bulk shear 0-6 km",
+            value=features.get("bulk_shear_0_6km_m_s"),
+            units="m/s",
+            interpretation=(
+                "Deep-layer shear is a key pre-run clue for organized storm experiments."
+            ),
+            supports_story=[
+                "severe_thunderstorm_environment",
+                "supercell_environment",
+                "squall_line_cold_pool_candidate",
+                "elevated_convection",
+            ],
+            caveats=_feature_caveats(features, "bulk_shear_0_6km_m_s"),
+        ),
+        EvidenceItem(
+            label="Dry microburst / inverted-V proxy",
+            value=features.get("dry_microburst_inverted_v_proxy"),
+            units="0-100",
+            interpretation=(
+                "High values mark dry low levels and moisture drop that may matter if "
+                "precipitation develops."
+            ),
+            supports_story=["dry_microburst_inverted_v"],
+            caveats=_feature_caveats(features, "dry_microburst_inverted_v_proxy"),
+        ),
+        EvidenceItem(
+            label="Freezing level",
+            value=features.get("freezing_level_m_agl"),
+            units="m AGL",
+            interpretation=(
+                "Freezing-level height gives context for precipitation and downdraft potential."
+            ),
+            supports_story=[
+                "severe_thunderstorm_environment",
+                "dry_microburst_inverted_v",
+                "squall_line_cold_pool_candidate",
+            ],
+            caveats=_feature_caveats(features, "freezing_level_m_agl"),
         ),
         EvidenceItem(
             label="Observed wind availability",
             value=features.get("observed_wind_available"),
             interpretation=(
-                "Observed winds are required for the current external-sounding package path."
+                "Observed winds are required for trustworthy Deep Convection Trial packages."
             ),
-            supports_story=["poor_or_incomplete_candidate", "needs_review"],
+            supports_story=[
+                "severe_thunderstorm_environment",
+                "supercell_environment",
+                "squall_line_cold_pool_candidate",
+                "elevated_convection",
+                "poor_or_incomplete_candidate",
+                "needs_review",
+            ],
             caveats=[]
             if features.get("observed_wind_available") is True
             else ["observed_wind_unavailable"],
@@ -749,6 +1239,12 @@ def _poor_candidate_scores(reason: str) -> tuple[list[StoryScore], list[Evidence
         _story_score("dry_failed_candidate", 0.0),
         _story_score("capped_suppressed_candidate", 0.0),
         _story_score("humid_rainy_candidate", 0.0),
+        _story_score("severe_thunderstorm_environment", 0.0),
+        _story_score("supercell_environment", 0.0),
+        _story_score("high_cape_pulse_storm", 0.0),
+        _story_score("dry_microburst_inverted_v", 0.0),
+        _story_score("squall_line_cold_pool_candidate", 0.0),
+        _story_score("elevated_convection", 0.0),
     ]
     evidence = [
         EvidenceItem(
@@ -784,6 +1280,14 @@ def _story_score(
         reasons=reasons or [],
         caveats=caveats or [],
     )
+
+
+def _deep_story_score(score: float, *, observed_wind_available: bool) -> float:
+    """Let strong deep-convection evidence win over broad moist/shallow labels."""
+
+    if observed_wind_available and score >= 65.0:
+        return min(100.0, score + 5.0)
+    return score
 
 
 def _confidence(
@@ -858,6 +1362,38 @@ def _numeric_feature(
 
 def _feature_caveats(features: dict[str, float | int | str | bool | None], name: str) -> list[str]:
     return [] if _numeric_feature(features, name) is not None else [f"{name}_unavailable"]
+
+
+def _near_surface_jump(levels: list[Any]) -> dict[str, float | bool | None]:
+    usable = sorted(
+        [level for level in levels if math.isfinite(float(level.model_z_m))],
+        key=lambda level: float(level.model_z_m),
+    )
+    if len(usable) < 2:
+        return {
+            "depth_m": None,
+            "temperature_jump_c": None,
+            "qv_jump_g_kg": None,
+            "flag": False,
+        }
+    lower, upper = usable[0], usable[1]
+    depth = float(upper.model_z_m) - float(lower.model_z_m)
+    if depth <= 0.0:
+        return {
+            "depth_m": round(depth, 1),
+            "temperature_jump_c": None,
+            "qv_jump_g_kg": None,
+            "flag": True,
+        }
+    temperature_jump = abs(float(upper.temperature_c) - float(lower.temperature_c))
+    qv_jump = abs(float(upper.qv_g_kg) - float(lower.qv_g_kg))
+    flag = depth <= 150.0 and (temperature_jump >= 5.0 or qv_jump >= 5.0)
+    return {
+        "depth_m": round(depth, 1),
+        "temperature_jump_c": round(temperature_jump, 2),
+        "qv_jump_g_kg": round(qv_jump, 3),
+        "flag": flag,
+    }
 
 
 def _score_high(value: float | None, *, low: float, high: float) -> float:

@@ -147,6 +147,15 @@ class RunManifest(BaseModel):
     user: UserMetadata
     observed_sounding: dict[str, Any] | None = None
     candidate_screening: dict[str, Any] | None = None
+    package_family: str | None = None
+    package_display_name: str | None = None
+    input_source: str | None = None
+    trigger_type: str | None = None
+    trigger_parameters: dict[str, Any] | None = None
+    expected_outputs: list[str] = Field(default_factory=list)
+    package_limitations: list[str] = Field(default_factory=list)
+    package_caveats: list[str] = Field(default_factory=list)
+    manual_validation_status: str | None = None
 
     @model_validator(mode="after")
     def validate_state_contract(self) -> RunManifest:

@@ -87,6 +87,13 @@ class ResultCard(BaseModel):
     input_source: str = "generated_reference"
     input_source_label: str = "Generated reference"
     observed_sounding: dict[str, object] | None = None
+    package_family: str | None = None
+    package_display_name: str | None = None
+    trigger_type: str | None = None
+    trigger_parameters: dict[str, object] | None = None
+    expected_outputs: list[str] = Field(default_factory=list)
+    package_caveats: list[str] = Field(default_factory=list)
+    manual_validation_status: str | None = None
     provenance_labels: list[str] = Field(default_factory=list)
     diagnostics_summary: str | None = None
     thermal_fate_label: str | None = None
@@ -213,10 +220,18 @@ def _card_from_metadata(
         input_source=metadata.input_source,
         input_source_label=metadata.input_source_label,
         observed_sounding=metadata.observed_sounding,
+        package_family=metadata.package_family,
+        package_display_name=metadata.package_display_name,
+        trigger_type=metadata.trigger_type,
+        trigger_parameters=metadata.trigger_parameters,
+        expected_outputs=metadata.expected_outputs,
+        package_caveats=metadata.package_caveats,
+        manual_validation_status=metadata.manual_validation_status,
         provenance_labels=[
             f"source_model:{metadata.source_model}",
             f"source_product_state:{metadata.source_product_state}",
             f"result_state:{metadata.result_state}",
+            *([f"package_family:{metadata.package_family}"] if metadata.package_family else []),
         ],
         diagnostics_summary=metadata.diagnostics_summary,
         thermal_fate_label=interpretation.thermal_fate_label if interpretation else None,
@@ -249,6 +264,14 @@ def _card_from_metadata(
 
 
 def _default_result_card_name(metadata: ResultMetadata) -> str:
+    if metadata.package_family == "deep_convection_trial":
+        station_name = _observed_sounding_value(metadata.observed_sounding, "station_name")
+        station_id = _observed_sounding_value(metadata.observed_sounding, "station_id")
+        if station_name:
+            return f"Deep Convection Trial — {station_name}"
+        if station_id:
+            return f"Deep Convection Trial — {station_id}"
+        return "Deep Convection Trial"
     if metadata.input_source == "observed_sounding":
         station_name = _observed_sounding_value(metadata.observed_sounding, "station_name")
         station_id = _observed_sounding_value(metadata.observed_sounding, "station_id")
@@ -261,6 +284,8 @@ def _default_result_card_name(metadata: ResultMetadata) -> str:
 
 
 def _display_scenario_name(metadata: ResultMetadata) -> str | None:
+    if metadata.package_family == "deep_convection_trial" and metadata.package_display_name:
+        return metadata.package_display_name
     if metadata.input_source == "observed_sounding":
         return "Uploaded Sounding"
     return metadata.scenario_name
