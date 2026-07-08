@@ -182,6 +182,7 @@ type CandidateStoryId =
 
 type CandidateStoryFilter =
   | "all"
+  | "deep_convection_trial"
   | "shallow_cumulus_candidate"
   | "dry_failed_candidate"
   | "capped_suppressed_candidate"
@@ -1652,10 +1653,10 @@ export function App() {
       setIgraCatalog(catalog);
       await refreshSoundingCandidateState("IGRA station catalog refreshed");
     } catch (caught) {
-      setCandidateError(
-        caught instanceof Error ? caught.message : "Unable to refresh IGRA station catalog.",
-      );
-      setCandidateStatus("IGRA catalog refresh blocked");
+      const message =
+        caught instanceof Error ? caught.message : "Unable to refresh IGRA station catalog.";
+      setCandidateError(message);
+      setCandidateStatus(`IGRA catalog refresh blocked: ${message}`);
     }
   }
 
@@ -3068,6 +3069,7 @@ function ObservedAtmosphereCandidatesPanel({
             onChange={(event) => onStoryFilterChange(event.target.value as CandidateStoryFilter)}
           >
             <option value="all">All screening stories</option>
+            <option value="deep_convection_trial">Deep Convection Trial stories</option>
             <option value="shallow_cumulus_candidate">Cloud-forming shallow cumulus</option>
             <option value="dry_failed_candidate">Dry failed cumulus</option>
             <option value="capped_suppressed_candidate">Capped / suppressed</option>
@@ -3276,6 +3278,9 @@ function SoundingCandidateCard({
         </span>
         <span className="badge-row">
           <StatusBadge label={candidateStoryLabel(story)} tone="neutral" />
+          {storyFilter === "deep_convection_trial" && (
+            <StatusBadge label={candidate.primary_story_label} tone="neutral" />
+          )}
           <StatusBadge label={`${formatNumber(matchScore, "%")} match`} tone="neutral" />
           <StatusBadge
             label={candidate.package_ready ? "Package-ready" : "Blocked"}
@@ -8039,6 +8044,8 @@ function candidateStoryLabel(story: CandidateStoryId | CandidateStoryFilter): st
       return "Poor or incomplete";
     case "needs_review":
       return "Needs review";
+    case "deep_convection_trial":
+      return "Deep Convection Trial stories";
     case "all":
       return "All screening stories";
   }
@@ -8068,6 +8075,14 @@ function candidateMatchScore(
   story: CandidateStoryId | CandidateStoryFilter,
 ): number {
   if (story === "all") return candidate.rank_score;
+  if (story === "deep_convection_trial") {
+    return Math.max(
+      0,
+      ...candidate.story_scores
+        .filter((score) => deepConvectionStoryIds.has(score.story))
+        .map((score) => score.score_0_to_100),
+    );
+  }
   return (
     candidate.story_scores.find((score) => score.story === story)?.score_0_to_100 ??
     candidate.rank_score
@@ -8079,6 +8094,13 @@ function candidateStoryScore(
   story: CandidateStoryId | CandidateStoryFilter,
 ): StoryScore | null {
   if (story === "all") return null;
+  if (story === "deep_convection_trial") {
+    return (
+      candidate.story_scores
+        .filter((score) => deepConvectionStoryIds.has(score.story))
+        .sort((left, right) => right.score_0_to_100 - left.score_0_to_100)[0] ?? null
+    );
+  }
   return candidate.story_scores.find((score) => score.story === story) ?? null;
 }
 

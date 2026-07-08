@@ -687,6 +687,17 @@ def test_sounding_candidate_api_screen_save_and_delete(
     candidate = screened.json()["candidates"][0]
     assert candidate["selected_sounding_payload"]["station_id"] == "USM00072558"
 
+    deep_screened = client.post(
+        "/api/sounding-candidates/screen",
+        json={
+            "station_id": "USM00072558",
+            "latest_per_station": 1,
+            "limit": 5,
+            "target_story": "deep_convection_trial",
+        },
+    )
+    assert deep_screened.status_code == 200
+
     saved = client.post(
         "/api/sounding-candidates/saved",
         json={"candidate": candidate, "tags": ["manual-review"]},

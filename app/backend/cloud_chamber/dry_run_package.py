@@ -68,7 +68,6 @@ def generate_dry_run_package(
     package_dir = runtime_home.expanduser() / "runs" / run_id
     if package_dir.exists() and not allow_overwrite:
         raise DryRunPackageError(f"Run package already exists: {package_dir}")
-    package_dir.mkdir(parents=True, exist_ok=allow_overwrite)
 
     observed_record = _observed_sounding_record(observed_sounding)
 
@@ -83,6 +82,8 @@ def generate_dry_run_package(
     except ValueError as exc:
         raise DryRunPackageError(str(exc)) from exc
     now = datetime.now(UTC)
+
+    package_dir.mkdir(parents=True, exist_ok=allow_overwrite)
 
     paths = {
         "manifest": package_dir / "run_manifest.json",
@@ -291,6 +292,7 @@ def _dry_run_report_payload(
         "expected_outputs": list(contract.expected_outputs),
         "package_caveats": list(contract.package_caveats),
         "manual_validation_status": contract.manual_validation_status,
+        "cm1_mapping_status": _cm1_mapping_status(contract),
         "visualization_defaults": contract.visualization_defaults,
         "generated_files": {name: str(path) for name, path in generated_files.items()},
         "provenance": {
@@ -404,7 +406,8 @@ def _run_size_details(contract: CM1InputContract) -> dict[str, object]:
         "cost_warning": cost_warning,
         "validation_note": (
             "Deep Convection Trial uses a wider idealized domain and observed winds. "
-            "Manual CM1 smoke runs calibrate package health, runtime, and interpretability."
+            "Manual CM1 smoke evidence applies to the package family; each observed "
+            "sounding remains an experiment until CM1 output is inspected."
             if is_deep_convection
             else (
                 "Deep Overnight preserves the physical domain and scenario controls while "

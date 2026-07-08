@@ -125,7 +125,7 @@ should verify that package generation:
 - requires an observed sounding and observed u/v wind components;
 - preserves candidate-screening metadata;
 - records package family, display name, trigger type, trigger metadata,
-  expected outputs, caveats, and manual-validation status on generated
+  expected outputs, caveats, and package-family smoke-validation status on generated
   manifests and reports;
 - writes CM1-facing `namelist.input` settings for the observed-sounding route,
   three-warm-bubble trigger, storm-scale domain, rain output, reflectivity output,

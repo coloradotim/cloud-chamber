@@ -144,13 +144,15 @@ Deep Convection Trial packages extend the same dry-run package contract rather
 than creating a separate workflow. The package records
 `package_family = deep_convection_trial`, `package_display_name = Deep
 Convection Trial`, `input_source = observed_sounding`, `trigger_type =
-warm_bubble`, trigger metadata, expected output fields, manual-validation
-status, package caveats, and any candidate-screening payload on the run
-manifest, case manifest, and dry-run report. The generated namelist uses the
+warm_bubble`, trigger metadata, expected output fields, package-family smoke
+validation status, package caveats, and any candidate-screening payload on the
+run manifest, case manifest, and dry-run report. The generated namelist uses the
 observed `input_sounding` route (`isnd = 7`), requires observed u/v winds,
 selects CM1's built-in three-warm-bubble initialization (`iinit = 3`) with
 `testcase = 0`, uses a storm-scale idealized domain for storm growth,
-and enables rain, reflectivity, vorticity, and updraft-helicity output. The
+and enables rain, reflectivity, vorticity, and updraft-helicity output. Manual
+smoke evidence applies to the package family; each observed sounding remains an
+experiment whose outcome must be inspected after CM1 completes. The
 trigger is described as fixed v1 package metadata rather than primary product
 controls. Ingest copies the package-family and trigger metadata
 into result metadata and Result Cards so Results and Explore do not lose the

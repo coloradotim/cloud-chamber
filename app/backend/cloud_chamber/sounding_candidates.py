@@ -44,6 +44,7 @@ StoryId = Literal[
     "poor_or_incomplete_candidate",
 ]
 TargetStoryId = Literal[
+    "deep_convection_trial",
     "shallow_cumulus_candidate",
     "dry_failed_candidate",
     "capped_suppressed_candidate",
@@ -74,6 +75,15 @@ STORY_LABELS: dict[StoryId, str] = {
     "needs_review": "Needs review",
     "poor_or_incomplete_candidate": "Poor or incomplete data",
 }
+
+DEEP_CONVECTION_STORY_IDS: tuple[StoryId, ...] = (
+    "severe_thunderstorm_environment",
+    "supercell_environment",
+    "high_cape_pulse_storm",
+    "dry_microburst_inverted_v",
+    "squall_line_cold_pool_candidate",
+    "elevated_convection",
+)
 
 
 class StoryScore(BaseModel):
@@ -272,6 +282,19 @@ def screen_cached_soundings(
 def _candidate_story_score(candidate: SoundingCandidate, story: TargetStoryId | None) -> float:
     if story is None:
         return candidate.rank_score
+    if story == "deep_convection_trial":
+        return (
+            max(
+                (
+                    score.score_0_to_100
+                    for score in candidate.story_scores
+                    if score.story in DEEP_CONVECTION_STORY_IDS
+                ),
+                default=0.0,
+            )
+            if candidate.package_ready
+            else 0.0
+        )
     for score in candidate.story_scores:
         if score.story == story:
             return score.score_0_to_100 if candidate.package_ready else 0.0

@@ -2350,13 +2350,15 @@ describe("App", () => {
     fireEvent.change(await screen.findByLabelText("Experiment"), {
       target: { value: "__observed_sounding_upload__" },
     });
-    fireEvent.change(await screen.findByLabelText("Story filter"), {
-      target: { value: "supercell_environment" },
+    const storyFilter = await screen.findByLabelText("Story filter");
+    expect(storyFilter).toHaveTextContent("Deep Convection Trial stories");
+    fireEvent.change(storyFilter, {
+      target: { value: "deep_convection_trial" },
     });
     fireEvent.click(screen.getByRole("button", { name: "Screen cached soundings" }));
 
     expect(await screen.findByText("Screening guidance loaded")).toBeInTheDocument();
-    expect(screenBody).toContain('"target_story":"supercell_environment"');
+    expect(screenBody).toContain('"target_story":"deep_convection_trial"');
     const deepCard = screen.getByLabelText("Sounding candidate Norman, Oklahoma (USM00072357)");
     expect(deepCard).toHaveTextContent("Supercell-like environment");
 

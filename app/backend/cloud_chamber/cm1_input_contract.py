@@ -6,10 +6,15 @@ It does not launch CM1 and does not write generated files.
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 from enum import StrEnum
 
-from cloud_chamber.observed_sounding import ObservedSoundingRecord, render_observed_input_sounding
+from cloud_chamber.observed_sounding import (
+    ObservedSoundingLevel,
+    ObservedSoundingRecord,
+    render_observed_input_sounding,
+)
 from cloud_chamber.scenario_schema import ControlAudience, ScenarioTemplate
 
 
@@ -171,11 +176,21 @@ def build_cm1_input_contract(
 ) -> CM1InputContract:
     selected = selected_controls or {}
     resolved_package_family = _resolve_package_family(package_family, observed_sounding)
+    defaults = cloud_scale_defaults_for_preset(
+        run_size_preset,
+        package_family=resolved_package_family,
+    )
     if resolved_package_family == PackageFamily.DEEP_CONVECTION_TRIAL:
         if observed_sounding is None:
             raise ValueError("Deep Convection Trial requires a validated observed sounding.")
-        if not _has_observed_wind_profile(observed_sounding):
-            raise ValueError("Deep Convection Trial requires observed wind components.")
+        if not _has_observed_wind_profile(
+            observed_sounding,
+            required_model_top_m=_required_sounding_top_m(defaults),
+        ):
+            raise ValueError(
+                "Deep Convection Trial requires a complete finite observed u/v wind "
+                "profile for every input_sounding level."
+            )
     control_fragments = tuple(
         ControlMappingFragment(
             control_id=control.id,
@@ -212,10 +227,7 @@ def build_cm1_input_contract(
         run_size_preset=run_size_preset,
         moisture_profile=moisture_profile,
         stability_profile=stability_profile,
-        cloud_scale_defaults=cloud_scale_defaults_for_preset(
-            run_size_preset,
-            package_family=resolved_package_family,
-        ),
+        cloud_scale_defaults=defaults,
         generated_files=GENERATED_FILE_SPECS,
         control_fragments=control_fragments,
         expected_diagnostics=_diagnostic_names(scenario),
@@ -354,6 +366,10 @@ def _package_caveats(package_family: PackageFamily, run_size_preset: str) -> tup
     caveats = [
         "Deep Convection Trial uses an idealized CM1 three-warm-bubble trigger.",
         (
+            "Manual smoke evidence applies to the Deep Convection Trial package family; "
+            "each observed sounding remains an experiment to evaluate after CM1 completes."
+        ),
+        (
             "Storm mode, rotation, rain, downdraft, and cold-pool behavior are outcomes "
             "to inspect after the run."
         ),
@@ -368,14 +384,49 @@ def _package_caveats(package_family: PackageFamily, run_size_preset: str) -> tup
 
 def _manual_validation_status(package_family: PackageFamily) -> str:
     if package_family == PackageFamily.DEEP_CONVECTION_TRIAL:
-        return "manual_cm1_smoke_run_observed_deep_convection"
+        return "deep_convection_trial_package_smoke_validated"
     return "existing_package_path"
 
 
-def _has_observed_wind_profile(record: ObservedSoundingRecord) -> bool:
-    return any(
-        level.u_wind_m_s is not None and level.v_wind_m_s is not None for level in record.levels
+def _has_observed_wind_profile(
+    record: ObservedSoundingRecord,
+    *,
+    required_model_top_m: float,
+) -> bool:
+    levels = _rendered_observed_wind_levels(
+        record,
+        required_model_top_m=required_model_top_m,
     )
+    return bool(levels) and all(
+        _finite_number(level.u_wind_m_s) and _finite_number(level.v_wind_m_s) for level in levels
+    )
+
+
+def _rendered_observed_wind_levels(
+    record: ObservedSoundingRecord,
+    *,
+    required_model_top_m: float,
+) -> list[ObservedSoundingLevel]:
+    levels = list(record.levels)
+    if not levels:
+        return []
+    body = list(levels)
+    if levels[0].model_z_m <= 0.01:
+        body = [level for level in levels if level.model_z_m > 0.01]
+        if not body:
+            body = list(levels)
+    if (
+        body
+        and math.isfinite(required_model_top_m)
+        and required_model_top_m > 0
+        and body[-1].model_z_m < required_model_top_m
+    ):
+        body = [*body, body[-1]]
+    return body
+
+
+def _finite_number(value: float | None) -> bool:
+    return value is not None and math.isfinite(value)
 
 
 def render_namelist_fragment(contract: CM1InputContract) -> str:

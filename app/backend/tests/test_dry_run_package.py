@@ -173,7 +173,12 @@ def test_deep_convection_trial_package_uses_observed_sounding_and_warm_bubble(
     }
     assert "dbz" in manifest.expected_outputs
     assert "updraft_helicity" in manifest.expected_outputs
-    assert manifest.manual_validation_status == "manual_cm1_smoke_run_observed_deep_convection"
+    assert manifest.manual_validation_status == "deep_convection_trial_package_smoke_validated"
+    assert any(
+        "Manual smoke evidence applies to the Deep Convection Trial package family" in caveat
+        and "each observed sounding remains an experiment" in caveat
+        for caveat in manifest.package_caveats
+    )
     assert manifest.candidate_screening == candidate_screening
     assert report["package_family"] == "deep_convection_trial"
     assert report["package_display_name"] == "Deep Convection Trial"
@@ -182,8 +187,15 @@ def test_deep_convection_trial_package_uses_observed_sounding_and_warm_bubble(
     assert "testcase=0" in report["variant_metadata"]["mapping"]
     assert "iinit=3 three-warm-bubble" in report["variant_metadata"]["mapping"]
     assert "reflectivity output" in report["variant_metadata"]["mapping"]
+    assert report["manual_validation_status"] == "deep_convection_trial_package_smoke_validated"
+    assert "manual CM1 smoke evidence" in report["cm1_mapping_status"]
+    assert "each observed sounding remains an experiment" in report["cm1_mapping_status"]
     assert case_manifest["package_family"] == "deep_convection_trial"
     assert case_manifest["contract"]["package_family"] == "deep_convection_trial"
+    assert (
+        case_manifest["contract"]["manual_validation_status"]
+        == "deep_convection_trial_package_smoke_validated"
+    )
 
     assert "testcase  =  0," in namelist
     assert "isnd      =  7," in namelist
@@ -245,7 +257,7 @@ def test_deep_convection_trial_requires_observed_wind_components(tmp_path: Path)
         }
     )
 
-    with pytest.raises(DryRunPackageError, match="requires observed wind components"):
+    with pytest.raises(DryRunPackageError, match="complete finite observed u/v wind profile"):
         generate_dry_run_package(
             scenario_data=load_baseline_template(),
             runtime_home=tmp_path,
@@ -253,6 +265,36 @@ def test_deep_convection_trial_requires_observed_wind_components(tmp_path: Path)
             package_family="deep_convection_trial",
             observed_sounding=no_wind,
         )
+
+
+def test_deep_convection_trial_requires_complete_rendered_wind_profile(
+    tmp_path: Path,
+) -> None:
+    observed = parse_igra_station_text(
+        IGRA_FIXTURE,
+        uploaded_filename="USM00072558-data-beg2025.txt",
+    ).selected_sounding
+    missing_mid_profile_wind = observed.model_copy(
+        update={
+            "levels": [
+                level.model_copy(update={"u_wind_m_s": None})
+                if index == len(observed.levels) // 2
+                else level
+                for index, level in enumerate(observed.levels)
+            ]
+        }
+    )
+
+    with pytest.raises(DryRunPackageError, match="complete finite observed u/v wind profile"):
+        generate_dry_run_package(
+            scenario_data=load_baseline_template(),
+            runtime_home=tmp_path,
+            run_id="run-deep-partial-wind",
+            package_family="deep_convection_trial",
+            observed_sounding=missing_mid_profile_wind,
+        )
+
+    assert not (tmp_path / "runs" / "run-deep-partial-wind").exists()
 
 
 def test_dry_run_package_refuses_to_overwrite_existing_run_dir(tmp_path: Path) -> None:

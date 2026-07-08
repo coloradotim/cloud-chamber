@@ -218,7 +218,7 @@ def test_result_card_preserves_deep_convection_trial_package_identity(tmp_path: 
             "package_caveats": [
                 "Deep Convection Trial uses an idealized CM1 three-warm-bubble trigger."
             ],
-            "manual_validation_status": "manual_cm1_smoke_run_observed_deep_convection",
+            "manual_validation_status": "deep_convection_trial_package_smoke_validated",
         },
     )
 
@@ -235,7 +235,7 @@ def test_result_card_preserves_deep_convection_trial_package_identity(tmp_path: 
     assert card.package_caveats == [
         "Deep Convection Trial uses an idealized CM1 three-warm-bubble trigger."
     ]
-    assert card.manual_validation_status == "manual_cm1_smoke_run_observed_deep_convection"
+    assert card.manual_validation_status == "deep_convection_trial_package_smoke_validated"
     assert "package_family:deep_convection_trial" in card.provenance_labels
 
 
