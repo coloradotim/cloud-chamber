@@ -341,12 +341,6 @@ small {
   gap: 0.75rem;
 }
 
-.candidate-list {
-  max-height: min(44rem, 72vh);
-  overflow: auto;
-  padding-right: 0.25rem;
-}
-
 .candidate-card {
   display: grid;
   gap: 0.65rem;
