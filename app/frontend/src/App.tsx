@@ -203,10 +203,7 @@ type CandidateSort =
   | "highest_moisture"
   | "strongest_cap";
 
-type PackageFamily =
-  | "shallow_cumulus"
-  | "observed_sounding_quicklook"
-  | "deep_convection_trial";
+type PackageFamily = "shallow_cumulus" | "observed_sounding_quicklook" | "deep_convection_trial";
 
 type ObservedPackageFamily = "observed_sounding_quicklook" | "deep_convection_trial";
 
@@ -458,8 +455,14 @@ type FieldDefaultTime = {
 };
 
 type ScienceSummary = {
+  cloud_formed?: boolean | null;
+  deep_cloud_formed?: boolean | null;
+  deep_cloud_threshold_m?: number;
+  strong_updraft_formed?: boolean | null;
+  strong_updraft_threshold_m_s?: number;
   first_cloud_time_seconds?: number | null;
   first_cloud_time_label?: string | null;
+  time_of_first_deep_convection_seconds?: number | null;
   max_qc_kg_kg?: number | null;
   max_qc_time_seconds?: number | null;
   max_updraft_w_m_s?: number | null;
@@ -469,11 +472,38 @@ type ScienceSummary = {
   highest_cloud_top_m?: number | null;
   rain_onset_time_seconds?: number | null;
   max_qr_kg_kg?: number | null;
+  max_rain_or_surface_precip?: number | null;
+  max_dbz_or_reflectivity_proxy?: number | null;
+  cold_pool_proxy?: number | null;
+  near_surface_theta_perturbation_proxy?: number | null;
+  updraft_depth_proxy_m?: number | null;
   latest_output_time_seconds?: number | null;
   default_explore_time_index?: number | null;
   default_explore_time_seconds?: number | null;
+  cm1_outcome?: string | null;
+  diagnostic_availability?: ScienceDiagnosticAvailability[];
   interesting_time_caveats: string[];
   interesting_time_support_state: string;
+};
+
+type ScienceDiagnosticAvailability = {
+  key: string;
+  label: string;
+  support_state: string;
+  source_field?: string | null;
+  value?: number | boolean | null;
+  units?: string | null;
+  caveats: string[];
+};
+
+type CandidateHypothesisComparison = {
+  screened_as?: string | null;
+  ran_as: string;
+  cm1_outcome: string;
+  match_status: string;
+  match_status_label: string;
+  evidence: string[];
+  caveats: string[];
 };
 
 type ResultCard = {
@@ -503,6 +533,8 @@ type ResultCard = {
   expected_outputs?: string[];
   package_caveats?: string[];
   manual_validation_status?: string | null;
+  candidate_screening?: Record<string, unknown> | null;
+  candidate_hypothesis_comparison?: CandidateHypothesisComparison | null;
   provenance_labels: string[];
   diagnostics_summary: string | null;
   thermal_fate_label?: string | null;
@@ -991,7 +1023,9 @@ async function fetchSavedSoundingCandidates(): Promise<SavedCandidatesResponse> 
   return response.json() as Promise<SavedCandidatesResponse>;
 }
 
-async function saveSoundingCandidate(candidate: SoundingCandidate): Promise<SavedSoundingCandidate> {
+async function saveSoundingCandidate(
+  candidate: SoundingCandidate,
+): Promise<SavedSoundingCandidate> {
   const response = await fetch("/api/sounding-candidates/saved", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -1316,25 +1350,28 @@ export function App() {
   const [selectedScenarioId, setSelectedScenarioId] = useState("baseline-shallow-cumulus");
   const [controls, setControls] = useState<Record<string, string | number | boolean>>({});
   const [runSizePreset, setRunSizePreset] = useState("quick_look");
-  const [observedPackageFamily, setObservedPackageFamily] =
-    useState<ObservedPackageFamily>("observed_sounding_quicklook");
+  const [observedPackageFamily, setObservedPackageFamily] = useState<ObservedPackageFamily>(
+    "observed_sounding_quicklook",
+  );
   const [observedSoundingFilename, setObservedSoundingFilename] = useState<string | null>(null);
   const [observedSoundingText, setObservedSoundingText] = useState<string | null>(null);
   const [observedSoundingParse, setObservedSoundingParse] =
     useState<ObservedSoundingParseResponse | null>(null);
   const [observedSoundingStatus, setObservedSoundingStatus] = useState<string | null>(null);
   const [observedSoundingError, setObservedSoundingError] = useState<string | null>(null);
-  const [selectedCandidateScreening, setSelectedCandidateScreening] =
-    useState<Record<string, unknown> | null>(null);
+  const [selectedCandidateScreening, setSelectedCandidateScreening] = useState<Record<
+    string,
+    unknown
+  > | null>(null);
   const [igraCatalog, setIgraCatalog] = useState<IGRACatalogResponse["catalog"] | null>(null);
   const [igraCache, setIgraCache] = useState<IGRACacheResponse | null>(null);
   const [screeningInputs, setScreeningInputs] = useState<ScreeningInput[]>([]);
-  const [candidateStoryFilter, setCandidateStoryFilter] =
-    useState<CandidateStoryFilter>("all");
+  const [candidateStoryFilter, setCandidateStoryFilter] = useState<CandidateStoryFilter>("all");
   const [candidateSort, setCandidateSort] = useState<CandidateSort>("best");
   const [candidateStationSearch, setCandidateStationSearch] = useState("");
-  const [candidateReadinessFilter, setCandidateReadinessFilter] =
-    useState<"all" | "package_ready" | "blocked">("all");
+  const [candidateReadinessFilter, setCandidateReadinessFilter] = useState<
+    "all" | "package_ready" | "blocked"
+  >("all");
   const [candidateCacheLimit, setCandidateCacheLimit] = useState("10");
   const [candidateLatestPerStation, setCandidateLatestPerStation] = useState("5");
   const [candidateResultLimit, setCandidateResultLimit] = useState("50");
@@ -1489,8 +1526,7 @@ export function App() {
       ) ?? scenarios[0],
     [scenarios, selectedScenarioId],
   );
-  const observedSoundingExperimentSelected =
-    selectedScenarioId === OBSERVED_SOUNDING_EXPERIMENT_ID;
+  const observedSoundingExperimentSelected = selectedScenarioId === OBSERVED_SOUNDING_EXPERIMENT_ID;
 
   const selectedResult = useMemo(
     () => results.find((result) => result.result_id === selectedResultId) ?? results[0],
@@ -1908,8 +1944,7 @@ export function App() {
       setStatus("Running CM1 on LAN worker");
       await refreshStorageAfterWorkflow("Local pipeline updated");
     } catch (caught) {
-      const message =
-        caught instanceof Error ? caught.message : "Unable to start LAN worker run.";
+      const message = caught instanceof Error ? caught.message : "Unable to start LAN worker run.";
       setLanWorkerError(message);
       setRunWorkflowError(message);
       setLanWorkerActionStatus("LAN worker launch blocked");
@@ -2106,7 +2141,9 @@ export function App() {
         setLanWorkerStatus(refreshed);
       }
       setLanWorkerActionStatus(lanWorkerStatusLabel(refreshed));
-      await refreshStorageAfterWorkflow(`LAN worker status refreshed at ${new Date().toLocaleTimeString()}`);
+      await refreshStorageAfterWorkflow(
+        `LAN worker status refreshed at ${new Date().toLocaleTimeString()}`,
+      );
       if (refreshed.state === "completed") {
         await collectAndIngestLanWorkerRun(manifestPath);
       }
@@ -2135,9 +2172,7 @@ export function App() {
     } catch (caught) {
       const message =
         caught instanceof Error ? caught.message : "Unable to ingest completed CM1 output.";
-      setRunWorkflowError(
-        message,
-      );
+      setRunWorkflowError(message);
       setStorageError(message);
       setStatus("Ingest blocked");
       setStorageStatus("Ingest blocked");
@@ -2167,7 +2202,9 @@ export function App() {
       updateResultInList(updated);
       setResultsStatus("Notebook changes saved");
     } catch (caught) {
-      setResultsError(caught instanceof Error ? caught.message : "Unable to save notebook changes.");
+      setResultsError(
+        caught instanceof Error ? caught.message : "Unable to save notebook changes.",
+      );
       setResultsStatus("Results loaded");
     }
   }
@@ -2403,9 +2440,7 @@ export function App() {
         />
       )}
 
-      {activeSection === "explore" && (
-        <ExploreWorkspace selectedResult={selectedResult} />
-      )}
+      {activeSection === "explore" && <ExploreWorkspace selectedResult={selectedResult} />}
     </main>
   );
 }
@@ -2797,9 +2832,9 @@ function BuildWorkspace({
               )}
               {runSizePreset === "deep_overnight" && (
                 <p className="field-help">
-                  Deep Overnight is the expensive opt-in preset. It targets roughly 10-12x
-                  Standard wall-clock for higher-resolution Explore/timelapse data; validate
-                  runtime and storage locally before treating it as calibrated.
+                  Deep Overnight is the expensive opt-in preset. It targets roughly 10-12x Standard
+                  wall-clock for higher-resolution Explore/timelapse data; validate runtime and
+                  storage locally before treating it as calibrated.
                 </p>
               )}
 
@@ -2816,7 +2851,6 @@ function BuildWorkspace({
                   <p>{packageError}</p>
                 </div>
               )}
-
             </>
           )}
         </form>
@@ -2831,12 +2865,12 @@ function BuildWorkspace({
             lanWorkerError={lanWorkerError}
             lanWorkerActionStatus={lanWorkerActionStatus}
             ingestedResultId={ingestedResultId}
-          showCreatePackageAction={scenarioControlsReady}
-          canCreatePackage={
-            validationMessages.length === 0 &&
+            showCreatePackageAction={scenarioControlsReady}
+            canCreatePackage={
+              validationMessages.length === 0 &&
               (!observedSoundingExperimentSelected ||
                 Boolean(observedSoundingParse?.selected_sounding))
-          }
+            }
             onLaunchRun={onLaunchRun}
             onRefreshRunStatus={onRefreshRunStatus}
             onLaunchLanWorkerRun={onLaunchLanWorkerRun}
@@ -3009,9 +3043,7 @@ function ObservedAtmosphereCandidatesPanel({
     () => new Set(savedCandidates.map((saved) => saved.candidate.candidate_id)),
     [savedCandidates],
   );
-  const cachedStations = new Set(
-    (cache?.entries ?? []).map((entry) => entry.station_id),
-  ).size;
+  const cachedStations = new Set((cache?.entries ?? []).map((entry) => entry.station_id)).size;
   const cachedStationFiles = cache?.entries.length ?? 0;
   const cachedCatalogFiles =
     catalog?.zip_references.filter((reference) => reference.cached_status !== "not_cached")
@@ -3035,8 +3067,8 @@ function ObservedAtmosphereCandidatesPanel({
           <p className="eyebrow">Observed atmosphere</p>
           <h3 id="sounding-candidates-title">Find interesting soundings</h3>
           <p className="field-help">
-            Screening guidance only. Use this to choose an observed atmosphere to try; CM1
-            decides what actually happens.
+            Screening guidance only. Use this to choose an observed atmosphere to try; CM1 decides
+            what actually happens.
           </p>
         </div>
         <p className="state-chip" role="status">
@@ -3078,14 +3110,19 @@ function ObservedAtmosphereCandidatesPanel({
             <option value="supercell_environment">Supercell-like environment</option>
             <option value="high_cape_pulse_storm">High-CAPE pulse storm</option>
             <option value="dry_microburst_inverted_v">Dry microburst / inverted-V</option>
-            <option value="squall_line_cold_pool_candidate">Squall-line / cold-pool candidate</option>
+            <option value="squall_line_cold_pool_candidate">
+              Squall-line / cold-pool candidate
+            </option>
             <option value="elevated_convection">Elevated convection</option>
             <option value="needs_review">Needs review</option>
           </select>
         </label>
         <label>
           Sort
-          <select value={sort} onChange={(event) => onSortChange(event.target.value as CandidateSort)}>
+          <select
+            value={sort}
+            onChange={(event) => onSortChange(event.target.value as CandidateSort)}
+          >
             <option value="best">Best match for story</option>
             <option value="latest">Latest</option>
             <option value="data_quality">Best data quality</option>
@@ -3201,8 +3238,8 @@ function ObservedAtmosphereCandidatesPanel({
           <div>
             <h4 id="saved-candidates-title">Saved sounding candidates</h4>
             <p>
-              Saved candidates are pre-run hypotheses. They are not Results and they do not prove
-              an atmospheric outcome.
+              Saved candidates are pre-run hypotheses. They are not Results and they do not prove an
+              atmospheric outcome.
             </p>
           </div>
         </div>
@@ -3271,7 +3308,11 @@ function SoundingCandidateCard({
       className={`candidate-card${selected ? " selected-candidate-card" : ""}`}
       aria-label={`Sounding candidate ${candidateStationLabel(candidate)}`}
     >
-      <button type="button" className="candidate-card-main candidate-card-select" onClick={onSelect}>
+      <button
+        type="button"
+        className="candidate-card-main candidate-card-select"
+        onClick={onSelect}
+      >
         <span>
           <strong>{candidateStationLabel(candidate)}</strong>
           <small>{formatDate(candidate.valid_time_utc)}</small>
@@ -3356,7 +3397,10 @@ function SoundingCandidateDetail({
         suppression actually happen.
       </p>
       <dl className="compact-metrics">
-        <Metric label="Match score" value={formatNumber(candidateMatchScore(candidate, story), "%")} />
+        <Metric
+          label="Match score"
+          value={formatNumber(candidateMatchScore(candidate, story), "%")}
+        />
         <Metric label="Evidence level" value={humanize(candidate.confidence)} />
         <Metric label="Station ID" value={candidate.station_id} />
         <Metric
@@ -3397,11 +3441,7 @@ function SoundingCandidateDetail({
         <summary>Feature values</summary>
         <dl className="compact-metrics">
           {featureRows.map(([label, key, units]) => (
-            <Metric
-              key={key}
-              label={label}
-              value={candidateFeatureValue(candidate, key, units)}
-            />
+            <Metric key={key} label={label} value={candidateFeatureValue(candidate, key, units)} />
           ))}
         </dl>
       </details>
@@ -3437,7 +3477,10 @@ function ObservedSoundingInputPanel({
   const selected = parsed?.selected_sounding;
 
   return (
-    <section className="experiment-summary observed-sounding-panel" aria-labelledby="observed-sounding-title">
+    <section
+      className="experiment-summary observed-sounding-panel"
+      aria-labelledby="observed-sounding-title"
+    >
       <div className="panel-heading-row">
         <div>
           <p className="eyebrow">Observed sounding</p>
@@ -3472,86 +3515,88 @@ function ObservedSoundingInputPanel({
 
       {parsed && selected && (
         <section className="observed-sounding-review" aria-label="Observed sounding review">
-              {selectedCandidateScreening && (
-                <div className="screening-guidance-note">
-                  <strong>Screening guidance only</strong>
-                  <span>
-                    Screened as{" "}
-                    {candidateStoryLabel(
-                      String(selectedCandidateScreening.primary_story ?? "needs_review") as CandidateStoryId,
-                    )}
-                    . CM1 decides what actually happens.
-                  </span>
-                </div>
-              )}
-              <div className="control-row">
-                <span>
-                  <label htmlFor="observed-sounding-time">
-                    <strong>Selected sounding time</strong>
-                  </label>
-                  <small>
-                    Latest available is selected by default. Choose another time from the uploaded
-                    station file if needed.
-                  </small>
-                </span>
-                <select
-                  id="observed-sounding-time"
-                  value={selected.valid_time_utc}
-                  onChange={(event) => onTimeChange(event.target.value)}
-                >
-                  {parsed.available_soundings.map((sounding) => (
-                    <option key={sounding.valid_time_utc} value={sounding.valid_time_utc}>
-                      {formatDate(sounding.valid_time_utc)} · {sounding.num_levels} source levels
-                    </option>
-                  ))}
-                </select>
-              </div>
+          {selectedCandidateScreening && (
+            <div className="screening-guidance-note">
+              <strong>Screening guidance only</strong>
+              <span>
+                Screened as{" "}
+                {candidateStoryLabel(
+                  String(
+                    selectedCandidateScreening.primary_story ?? "needs_review",
+                  ) as CandidateStoryId,
+                )}
+                . CM1 decides what actually happens.
+              </span>
+            </div>
+          )}
+          <div className="control-row">
+            <span>
+              <label htmlFor="observed-sounding-time">
+                <strong>Selected sounding time</strong>
+              </label>
+              <small>
+                Latest available is selected by default. Choose another time from the uploaded
+                station file if needed.
+              </small>
+            </span>
+            <select
+              id="observed-sounding-time"
+              value={selected.valid_time_utc}
+              onChange={(event) => onTimeChange(event.target.value)}
+            >
+              {parsed.available_soundings.map((sounding) => (
+                <option key={sounding.valid_time_utc} value={sounding.valid_time_utc}>
+                  {formatDate(sounding.valid_time_utc)} · {sounding.num_levels} source levels
+                </option>
+              ))}
+            </select>
+          </div>
 
-              <dl className="compact-metrics">
-                <Metric label="Source" value={`${parsed.source_provider} · ${parsed.source_format}`} />
-                <Metric label="Uploaded file" value={parsed.uploaded_filename} />
-                <Metric
-                  label="Station"
-                  value={`${selected.station_id}${selected.station_name ? ` · ${selected.station_name}` : ""}`}
-                />
-                <Metric
-                  label="Location"
-                  value={
-                    selected.station_latitude !== null &&
-                    selected.station_latitude !== undefined &&
-                    selected.station_longitude !== null &&
-                    selected.station_longitude !== undefined
-                      ? `${formatNumber(selected.station_latitude, "deg")}, ${formatNumber(selected.station_longitude, "deg")}`
-                      : "Not available"
-                  }
-                />
-                <Metric
-                  label="Model bottom / vertical datum"
-                  value={`CM1 z=0 is station surface at ${formatNumber(selected.model_bottom_elevation_m_msl, "m MSL")}`}
-                />
-                <Metric
-                  label="Source heights"
-                  value={`${humanize(selected.source_vertical_coordinate_type)} converted to height above station surface`}
-                />
-                <Metric
-                  label="Converted model z range"
-                  value={`${formatNumber(selected.levels[0]?.model_z_m ?? null, "m")} to ${formatNumber(selected.levels.at(-1)?.model_z_m ?? null, "m")}`}
-                />
-                <Metric label="Usable levels" value={selected.levels.length.toString()} />
-                <Metric label="Wind handling" value={humanize(selected.wind_handling)} />
-                <Metric label="Validation" value={humanize(selected.validation.status)} />
-              </dl>
+          <dl className="compact-metrics">
+            <Metric label="Source" value={`${parsed.source_provider} · ${parsed.source_format}`} />
+            <Metric label="Uploaded file" value={parsed.uploaded_filename} />
+            <Metric
+              label="Station"
+              value={`${selected.station_id}${selected.station_name ? ` · ${selected.station_name}` : ""}`}
+            />
+            <Metric
+              label="Location"
+              value={
+                selected.station_latitude !== null &&
+                selected.station_latitude !== undefined &&
+                selected.station_longitude !== null &&
+                selected.station_longitude !== undefined
+                  ? `${formatNumber(selected.station_latitude, "deg")}, ${formatNumber(selected.station_longitude, "deg")}`
+                  : "Not available"
+              }
+            />
+            <Metric
+              label="Model bottom / vertical datum"
+              value={`CM1 z=0 is station surface at ${formatNumber(selected.model_bottom_elevation_m_msl, "m MSL")}`}
+            />
+            <Metric
+              label="Source heights"
+              value={`${humanize(selected.source_vertical_coordinate_type)} converted to height above station surface`}
+            />
+            <Metric
+              label="Converted model z range"
+              value={`${formatNumber(selected.levels[0]?.model_z_m ?? null, "m")} to ${formatNumber(selected.levels.at(-1)?.model_z_m ?? null, "m")}`}
+            />
+            <Metric label="Usable levels" value={selected.levels.length.toString()} />
+            <Metric label="Wind handling" value={humanize(selected.wind_handling)} />
+            <Metric label="Validation" value={humanize(selected.validation.status)} />
+          </dl>
 
-              {selected.validation.caveats.length > 0 && (
-                <details>
-                  <summary>Observed-sounding caveats</summary>
-                  <ul className="compact-list">
-                    {selected.validation.caveats.map((caveat) => (
-                      <li key={caveat}>{humanize(caveat)}</li>
-                    ))}
-                  </ul>
-                </details>
-              )}
+          {selected.validation.caveats.length > 0 && (
+            <details>
+              <summary>Observed-sounding caveats</summary>
+              <ul className="compact-list">
+                {selected.validation.caveats.map((caveat) => (
+                  <li key={caveat}>{humanize(caveat)}</li>
+                ))}
+              </ul>
+            </details>
+          )}
         </section>
       )}
     </section>
@@ -3622,7 +3667,11 @@ function ObservedPackageFamilyPanel({
         />
         <Metric
           label="Domain intent"
-          value={selectedDeep ? "Wider box for storm growth and precipitation" : "Current quick-look observed atmosphere path"}
+          value={
+            selectedDeep
+              ? "Wider box for storm growth and precipitation"
+              : "Current quick-look observed atmosphere path"
+          }
         />
         <Metric label="Runtime guidance" value={workerGuidance} />
       </dl>
@@ -3700,7 +3749,9 @@ function ResultsWorkspace({
       <div className="section-heading">
         <div>
           <h2 id="results-title">Experiment Notebook</h2>
-          <p>Review ingested cloud experiments, compare variants, and open results for explanation.</p>
+          <p>
+            Review ingested cloud experiments, compare variants, and open results for explanation.
+          </p>
         </div>
       </div>
       {resultsStatus !== "Results loaded" && resultsStatus !== "Loading results..." && (
@@ -3889,6 +3940,13 @@ function ExploreResultSummary({ result }: { result: ResultCard }) {
           {result.completed_at ? ` · ${formatDate(result.completed_at)}` : ""}
         </p>
         <p>{resultStory(result)}</p>
+        {result.candidate_hypothesis_comparison && (
+          <p className="secondary-result-note">
+            {result.candidate_hypothesis_comparison.screened_as ?? "Screened candidate"} ·{" "}
+            {result.candidate_hypothesis_comparison.match_status_label}:{" "}
+            {result.candidate_hypothesis_comparison.cm1_outcome}
+          </p>
+        )}
       </div>
       <div className="badge-row">
         <OutcomeBadge result={result} />
@@ -4419,7 +4477,9 @@ function StorageWorkspace({
   onIngestRun: (manifestPath: string) => void;
 }) {
   const displayedRuns =
-    inventory && inventory.largest_runs.length > 0 ? inventory.largest_runs : inventory?.runs ?? [];
+    inventory && inventory.largest_runs.length > 0
+      ? inventory.largest_runs
+      : (inventory?.runs ?? []);
   const deletePreviewResult = deletePreview
     ? resultForRun(results, deletePreview.run_id)
     : undefined;
@@ -4626,10 +4686,7 @@ function RuntimeRunsTable({
                       </button>
                     )}
                     {canIngest && run.manifest_path && (
-                      <button
-                        type="button"
-                        onClick={() => onIngestRun(run.manifest_path!)}
-                      >
+                      <button type="button" onClick={() => onIngestRun(run.manifest_path!)}>
                         Ingest completed output
                       </button>
                     )}
@@ -4642,9 +4699,7 @@ function RuntimeRunsTable({
                       Preview delete
                     </button>
                   </div>
-                  {!canPreviewDelete(run) && (
-                    <small>{deleteDisabledReason(run)}</small>
-                  )}
+                  {!canPreviewDelete(run) && <small>{deleteDisabledReason(run)}</small>}
                 </td>
               </tr>
             );
@@ -4861,7 +4916,9 @@ function LocalRunWorkflowPanel({
             )}
             {showRefreshButton && (
               <button type="button" data-testid="refresh-status-btn" onClick={onRefreshRunStatus}>
-                {stage === "running" || stage === "failed" ? "View status / logs" : "Refresh status"}
+                {stage === "running" || stage === "failed"
+                  ? "View status / logs"
+                  : "Refresh status"}
               </button>
             )}
             {showIngestButton && (
@@ -4975,10 +5032,7 @@ function LocalRunWorkflowPanel({
                   />
                 </>
               )}
-              <Metric
-                label="CM1 launched"
-                value={dryRun.report.cm1_was_launched ? "Yes" : "No"}
-              />
+              <Metric label="CM1 launched" value={dryRun.report.cm1_was_launched ? "Yes" : "No"} />
               <Metric
                 label="Product state"
                 value={humanize(dryRun.report.provenance.product_state)}
@@ -5032,7 +5086,6 @@ function LocalRunWorkflowPanel({
         onOpenStorage={onOpenStorage}
         onRefreshStorage={onRefreshStorage}
       />
-
     </section>
   );
 }
@@ -5084,7 +5137,9 @@ function LanWorkerRunPanel({
           <h5>Run CM1 on LAN worker</h5>
         </div>
         <StatusBadge
-          label={status ? lanWorkerStatusLabel(status) : configured ? "Configured" : "Not configured"}
+          label={
+            status ? lanWorkerStatusLabel(status) : configured ? "Configured" : "Not configured"
+          }
           tone={lanWorkerTone(status, configured)}
         />
       </div>
@@ -5146,12 +5201,14 @@ function LanWorkerRunPanel({
           </div>
           {status?.state === "ready_for_local_ingest" && !ingestedResultId && (
             <p className="state-note">
-              Worker output is now on this MacBook. Cloud Chamber will ingest it locally and clean up
-              the worker copy after ingest succeeds.
+              Worker output is now on this MacBook. Cloud Chamber will ingest it locally and clean
+              up the worker copy after ingest succeeds.
             </p>
           )}
           {cleanupComplete && (
-            <p className="state-note">LAN worker cleanup complete. Results and Explore use the MacBook-local copy.</p>
+            <p className="state-note">
+              LAN worker cleanup complete. Results and Explore use the MacBook-local copy.
+            </p>
           )}
         </>
       )}
@@ -5222,7 +5279,10 @@ function LocalPipelinePanel({
       </div>
 
       {runs.length === 0 ? (
-        <p>No active or incomplete packages/runs need Build action. Ingested results are in Results, and cleanup is in Storage.</p>
+        <p>
+          No active or incomplete packages/runs need Build action. Ingested results are in Results,
+          and cleanup is in Storage.
+        </p>
       ) : (
         <div className="pipeline-run-list" aria-label="Local packages and runs">
           {runs.map((run, index) => (
@@ -5282,15 +5342,17 @@ function PipelineRunCard({
   onOpenStorage: (runId?: string | null) => void;
 }) {
   const displayName = result?.name ?? run.scenario_name ?? run.scenario_id ?? run.run_id;
-  const canLaunch = Boolean(run.manifest_path && run.category === "dry_run_only" && !run.worker_state);
+  const canLaunch = Boolean(
+    run.manifest_path && run.category === "dry_run_only" && !run.worker_state,
+  );
   const canRefreshWorker = Boolean(run.manifest_path && run.worker_state === "running");
   const canFinalizeWorker = Boolean(
     run.manifest_path && run.worker_state === "completed" && !result && autoFinalizeFailed,
   );
   const canIngest = Boolean(
     run.manifest_path &&
-      !result &&
-      (run.category === "completed_with_output" || run.worker_state === "ready_for_local_ingest"),
+    !result &&
+    (run.category === "completed_with_output" || run.worker_state === "ready_for_local_ingest"),
   );
   const stateLabel = pipelineRunStateLabel(run, result);
   const nextStep = pipelineRunNextStep(run, result);
@@ -5534,7 +5596,9 @@ function selectPipelineRuns(
     }
     const leftTime = Date.parse(left.updated_at ?? left.created_at ?? "");
     const rightTime = Date.parse(right.updated_at ?? right.created_at ?? "");
-    return (Number.isFinite(rightTime) ? rightTime : 0) - (Number.isFinite(leftTime) ? leftTime : 0);
+    return (
+      (Number.isFinite(rightTime) ? rightTime : 0) - (Number.isFinite(leftTime) ? leftTime : 0)
+    );
   });
   return sorted.slice(0, 6);
 }
@@ -5601,7 +5665,8 @@ function pipelineRunTone(
 
 function pipelineRunNextStep(run: RunStorageEntry, result: ResultCard | undefined): string {
   if (result) return "Review in Results or Explore fields; cleanup remains available in Storage.";
-  if (run.worker_state === "running") return "CM1 is running on the LAN worker; refresh runs for status.";
+  if (run.worker_state === "running")
+    return "CM1 is running on the LAN worker; refresh runs for status.";
   if (run.worker_state === "completed") {
     return "LAN worker output is complete; Cloud Chamber will copy it back, ingest locally, and clean up the worker copy.";
   }
@@ -5731,7 +5796,10 @@ function ResultsFilterBar({
         </label>
         <label>
           Scenario
-          <select value={filters.scenario} onChange={(event) => update({ scenario: event.target.value })}>
+          <select
+            value={filters.scenario}
+            onChange={(event) => update({ scenario: event.target.value })}
+          >
             <option value="all">All scenarios</option>
             {scenarioOptions.map((option) => (
               <option key={option.value} value={option.value}>
@@ -5742,7 +5810,10 @@ function ResultsFilterBar({
         </label>
         <label>
           Run size
-          <select value={filters.preset} onChange={(event) => update({ preset: event.target.value })}>
+          <select
+            value={filters.preset}
+            onChange={(event) => update({ preset: event.target.value })}
+          >
             <option value="all">All presets</option>
             {presetOptions.map((option) => (
               <option key={option.value} value={option.value}>
@@ -5834,9 +5905,7 @@ function ExperimentNotebookList({
       <section className="notebook-list-panel empty-results" aria-label="Results list">
         <p className="eyebrow">Notebook empty</p>
         <h3>No ingested CM1 results yet.</h3>
-        <p>
-          Completed and ingested CM1 runs will appear here as experiment notebook entries.
-        </p>
+        <p>Completed and ingested CM1 runs will appear here as experiment notebook entries.</p>
       </section>
     );
   }
@@ -5864,7 +5933,8 @@ function ExperimentNotebookList({
                 </button>
                 <p className="experiment-subtitle">
                   {result.scenario_name ?? humanize(result.scenario_id)} ·{" "}
-                  {humanize(result.run_size_preset)} · {formatDate(result.completed_at ?? result.created_at)}
+                  {humanize(result.run_size_preset)} ·{" "}
+                  {formatDate(result.completed_at ?? result.created_at)}
                 </p>
                 <div className="badge-row">
                   <OutcomeBadge result={result} />
@@ -5940,6 +6010,7 @@ function ResultNotebookCard({
       </div>
 
       <p className="result-story">{resultStory(result)}</p>
+      <CandidateHypothesisSummary result={result} />
 
       {(isValidatedQuickLookBaseline(result) || result.caveats.length > 0) && (
         <p className="secondary-result-note">
@@ -5960,6 +6031,9 @@ function ResultNotebookCard({
         <Metric label="Max updraft" value={formatNumber(resultMaxUpdraft(result), "m/s")} />
         <Metric label="Min downdraft" value={formatNumber(resultMinDowndraft(result), "m/s")} />
         <Metric label="Cloud top" value={formatNumber(resultCloudTopMeters(result), "m")} />
+        {isDeepConvectionTrial(result) && (
+          <Metric label="Deep convection" value={deepConvectionOutcome(result)} />
+        )}
         <Metric label="Latest output" value={formatSeconds(resultLatestOutputTime(result))} />
       </dl>
 
@@ -5974,7 +6048,10 @@ function ResultNotebookCard({
           <Metric label="Product state" value={result.source_product_state} />
           <Metric label="Result state" value={result.status} />
           <Metric label="Source model" value={result.source_model} />
-          <Metric label="Input source" value={result.input_source_label ?? resultInputSourceLabel(result)} />
+          <Metric
+            label="Input source"
+            value={result.input_source_label ?? resultInputSourceLabel(result)}
+          />
           <Metric label="Output" value={outputSummary(result.output_file_summary)} />
           <Metric
             label="Raw diagnostics"
@@ -6102,8 +6179,43 @@ function InterestingTimesSummary({ result }: { result: ResultCard }) {
   );
 }
 
+function CandidateHypothesisSummary({ result }: { result: ResultCard }) {
+  const comparison = result.candidate_hypothesis_comparison;
+  if (!comparison) return null;
+  return (
+    <section className="candidate-outcome-summary" aria-label="Candidate hypothesis comparison">
+      <div className="section-heading-row">
+        <div>
+          <p className="eyebrow">Candidate hypothesis</p>
+          <h4>Screening vs CM1</h4>
+        </div>
+        <StatusBadge
+          label={comparison.match_status_label}
+          tone={candidateMatchTone(comparison.match_status)}
+        />
+      </div>
+      <dl className="metric-grid">
+        <Metric label="Screened as" value={comparison.screened_as ?? "Not recorded"} />
+        <Metric label="Ran as" value={comparison.ran_as} />
+        <Metric label="CM1 outcome" value={comparison.cm1_outcome} />
+      </dl>
+      {comparison.evidence.length > 0 && (
+        <p className="secondary-result-note">Evidence: {comparison.evidence.join(" · ")}</p>
+      )}
+      {comparison.caveats.length > 0 && (
+        <p className="secondary-result-note">Caveats: {comparison.caveats.join(" · ")}</p>
+      )}
+    </section>
+  );
+}
+
 function threeDScalarEncoding(field: VisualizableField | undefined): ThreeDScalarEncoding | null {
-  if (!field || !field.coordinate_names.time || !field.coordinate_names.y || !field.coordinate_names.x) {
+  if (
+    !field ||
+    !field.coordinate_names.time ||
+    !field.coordinate_names.y ||
+    !field.coordinate_names.x
+  ) {
     return null;
   }
   if (field.raw_field_name === "w" || field.canonical_field_name === "vertical_velocity") {
@@ -6197,8 +6309,7 @@ function threeDScalarEncoding(field: VisualizableField | undefined): ThreeDScala
 function isSurfaceRainField(field: VisualizableField | undefined): boolean {
   if (!field) return false;
   return (
-    field.raw_field_name === "rain" ||
-    field.canonical_field_name === "accumulated_surface_rain"
+    field.raw_field_name === "rain" || field.canonical_field_name === "accumulated_surface_rain"
   );
 }
 
@@ -6317,7 +6428,8 @@ function VisualizerSceneShell({ result }: { result: ResultCard }) {
           renderableEncodings.find((encoding) => encoding.field.raw_field_name === "qc") ??
           renderableEncodings[0] ??
           null;
-        const initialSliceField = firstPreferred ?? firstRenderable?.field ?? payload.available_fields[0];
+        const initialSliceField =
+          firstPreferred ?? firstRenderable?.field ?? payload.available_fields[0];
         const initialDefaults = defaultsForField(defaults, initialSliceField?.raw_field_name);
         const initialTimeIndex = defaultTimeIndex(initialSliceField, result, initialDefaults);
         setSelectedFieldName(firstRenderable?.field.raw_field_name ?? "");
@@ -6326,7 +6438,9 @@ function VisualizerSceneShell({ result }: { result: ResultCard }) {
         setPlaybackTimeIndex(initialTimeIndex);
         setThreshold(firstRenderable?.defaultThreshold ?? 1e-6);
         setHorizontalSliceLevel(defaultHorizontalLevel(initialSliceField, initialDefaults));
-        setVerticalSliceIndex(defaultVerticalIndex(initialSliceField, "vertical_x", initialDefaults));
+        setVerticalSliceIndex(
+          defaultVerticalIndex(initialSliceField, "vertical_x", initialDefaults),
+        );
         setSceneStatus(
           payload.available_fields.length === 0
             ? "No fields available"
@@ -6506,7 +6620,9 @@ function VisualizerSceneShell({ result }: { result: ResultCard }) {
     if (!isPlaybackRunning || !canPlayTimelapse) return undefined;
     clearSelectedRegionForTimeChange("Pause playback to select a cell and explain this time step.");
     const intervalId = window.setInterval(() => {
-      clearSelectedRegionForTimeChange("Pause playback to select a cell and explain this time step.");
+      clearSelectedRegionForTimeChange(
+        "Pause playback to select a cell and explain this time step.",
+      );
       setPlaybackTimeIndex((current) => {
         if (current >= timeMax) {
           setIsPlaybackRunning(false);
@@ -6517,7 +6633,13 @@ function VisualizerSceneShell({ result }: { result: ResultCard }) {
       });
     }, playbackIntervalMs);
     return () => window.clearInterval(intervalId);
-  }, [canPlayTimelapse, clearSelectedRegionForTimeChange, isPlaybackRunning, playbackIntervalMs, timeMax]);
+  }, [
+    canPlayTimelapse,
+    clearSelectedRegionForTimeChange,
+    isPlaybackRunning,
+    playbackIntervalMs,
+    timeMax,
+  ]);
 
   useEffect(() => {
     if (!sliceSupportsVertical && activeSlicePlane !== "horizontal") {
@@ -6560,13 +6682,7 @@ function VisualizerSceneShell({ result }: { result: ResultCard }) {
     return () => {
       active = false;
     };
-  }, [
-    maxPoints,
-    result.result_id,
-    sceneTimeIndex,
-    selectedEncoding,
-    threshold,
-  ]);
+  }, [maxPoints, result.result_id, sceneTimeIndex, selectedEncoding, threshold]);
 
   useEffect(() => {
     if (!catalog) {
@@ -6670,7 +6786,9 @@ function VisualizerSceneShell({ result }: { result: ResultCard }) {
 
   function selectPointFromSlice(slice: SliceResponse, rowIndex: number, columnIndex: number) {
     if (isPlaybackRunning) {
-      clearSelectedRegionForTimeChange("Pause playback to select a cell and explain this time step.");
+      clearSelectedRegionForTimeChange(
+        "Pause playback to select a cell and explain this time step.",
+      );
       return;
     }
     setSelectedRegion(selectionFromSlice(slice, rowIndex, columnIndex, "point"));
@@ -6709,7 +6827,9 @@ function VisualizerSceneShell({ result }: { result: ResultCard }) {
                 ? `${selectedEncoding.field.raw_field_name} — ${selectedEncoding.field.display_name}`
                 : "No supported 3-D scalar field"
             }
-            valueChannelLabel={selectedEncoding?.valueChannel ?? "3-D scalar rendering unavailable."}
+            valueChannelLabel={
+              selectedEncoding?.valueChannel ?? "3-D scalar rendering unavailable."
+            }
             activeSlice={
               activeSlicePlane === "horizontal" ? sceneHorizontalSlice : sceneVerticalSlice
             }
@@ -6801,12 +6921,16 @@ function VisualizerSceneShell({ result }: { result: ResultCard }) {
                     <button
                       key={preset.label}
                       type="button"
-                      onClick={() => handleTimeIndexChange(closestTimeIndex(timeOptions, preset.seconds))}
+                      onClick={() =>
+                        handleTimeIndexChange(closestTimeIndex(timeOptions, preset.seconds))
+                      }
                     >
                       {preset.label}
                     </button>
                   ))}
-                  <button type="button" onClick={() => handleTimeIndexChange(timeMax)}>Last frame</button>
+                  <button type="button" onClick={() => handleTimeIndexChange(timeMax)}>
+                    Last frame
+                  </button>
                 </div>
                 {isPlaybackRunning && (
                   <p className="control-help">
@@ -6831,7 +6955,9 @@ function VisualizerSceneShell({ result }: { result: ResultCard }) {
                       setSliceFieldName(event.target.value);
                       const nextDefaults = defaultsForField(viewDefaults, event.target.value);
                       setHorizontalSliceLevel(defaultHorizontalLevel(nextField, nextDefaults));
-                      setVerticalSliceIndex(defaultVerticalIndex(nextField, sliceOrientation, nextDefaults));
+                      setVerticalSliceIndex(
+                        defaultVerticalIndex(nextField, sliceOrientation, nextDefaults),
+                      );
                       if (!nextField?.coordinate_names.vertical) {
                         setActiveSlicePlane("horizontal");
                       }
@@ -6975,8 +7101,10 @@ function VisualizerSceneShell({ result }: { result: ResultCard }) {
                           setActiveSlicePlane("horizontal");
                         }
                         const nextDefaults =
-                          defaultsForField(selectedTimeDefaults, nextEncoding.field.raw_field_name) ??
-                          defaultsForField(viewDefaults, nextEncoding.field.raw_field_name);
+                          defaultsForField(
+                            selectedTimeDefaults,
+                            nextEncoding.field.raw_field_name,
+                          ) ?? defaultsForField(viewDefaults, nextEncoding.field.raw_field_name);
                         setHorizontalSliceLevel(
                           defaultHorizontalLevel(nextEncoding.field, nextDefaults),
                         );
@@ -7085,10 +7213,7 @@ function VisualizerSceneShell({ result }: { result: ResultCard }) {
             <summary>Technical visualization details</summary>
             <dl className="metric-grid">
               <Metric label="Run ID" value={result.run_id} />
-              <Metric
-                label="Renderer"
-                value="Direct Three.js point cloud"
-              />
+              <Metric label="Renderer" value="Direct Three.js point cloud" />
               <Metric
                 label="3-D field"
                 value={
@@ -7171,7 +7296,7 @@ function VisualizerSceneShell({ result }: { result: ResultCard }) {
                     ? `${sceneHorizontalSlice.selection.orientation} at ${sceneHorizontalSlice.selection.selected_dimension}[${sceneHorizontalSlice.selection.selected_index}]`
                     : sceneVerticalSlice
                       ? `${sceneVerticalSlice.selection.orientation} at ${sceneVerticalSlice.selection.selected_dimension}[${sceneVerticalSlice.selection.selected_index}]`
-                  : "Unavailable"
+                      : "Unavailable"
                 }
               />
               <Metric label="Domain x extent" value={extentLabel(pointCloud, "xh")} />
@@ -7227,8 +7352,7 @@ function VisualizerSceneShell({ result }: { result: ResultCard }) {
               <p className="eyebrow">Slice inspector</p>
               <h2 id="unified-slice-title">Inspect the current slice</h2>
               <p>
-                {activeSliceLabel} · {sliceField.raw_field_name} ·{" "}
-                {selectedTimeLabel}
+                {activeSliceLabel} · {sliceField.raw_field_name} · {selectedTimeLabel}
               </p>
             </div>
             <p className="state-chip">
@@ -7345,7 +7469,8 @@ function slicePlainLabel(
     };
     return fallbackLabels[activeSlicePlane];
   }
-  const coordinate = slice.selection.selected_coordinate_value ?? slice.selection.level_coordinate_value;
+  const coordinate =
+    slice.selection.selected_coordinate_value ?? slice.selection.level_coordinate_value;
   const units =
     slice.selection.level_units ?? slice.coordinate_units[slice.selection.selected_dimension];
   const coordinateText = coordinateTextWithUnits(coordinate, units, slice.selection.selected_index);
@@ -7359,7 +7484,9 @@ function slicePlainLabel(
 }
 
 function sliceAxisSummary(slice: SliceResponse | null, activeSlicePlane: SceneSlicePlane): string {
-  const fixed = slice ? slicePlainLabel(slice, activeSlicePlane, slice.selection.selected_index) : "";
+  const fixed = slice
+    ? slicePlainLabel(slice, activeSlicePlane, slice.selection.selected_index)
+    : "";
   if (activeSlicePlane === "horizontal") {
     return `x-axis = x; y-axis = y${fixed ? `; ${fixed}` : ""}`;
   }
@@ -7388,7 +7515,11 @@ function selectedSliceCellValue(
 ): number | null {
   if (!slice || !selectedRegion) return null;
   for (let rowIndex = 0; rowIndex < slice.values.length; rowIndex += 1) {
-    for (let columnIndex = 0; columnIndex < (slice.values[rowIndex]?.length ?? 0); columnIndex += 1) {
+    for (
+      let columnIndex = 0;
+      columnIndex < (slice.values[rowIndex]?.length ?? 0);
+      columnIndex += 1
+    ) {
       if (isSelectedSliceCell(slice, selectedRegion, rowIndex, columnIndex)) {
         return slice.values[rowIndex]?.[columnIndex] ?? null;
       }
@@ -7641,7 +7772,13 @@ function ProcessOverlayPanel({
         </div>
         <StatusBadge
           label={processSupportLabel(summary.support)}
-          tone={summary.support === "supported" ? "good" : summary.support === "candidate" ? "neutral" : "warning"}
+          tone={
+            summary.support === "supported"
+              ? "good"
+              : summary.support === "candidate"
+                ? "neutral"
+                : "warning"
+          }
         />
       </div>
       <p>{summary.description}</p>
@@ -7763,7 +7900,9 @@ function SelectedRegionInspector({
             />
             <Metric
               label="Local rain"
-              value={diagnostics.diagnostics.local_rain_present ? "Rain detected" : "No rain detected"}
+              value={
+                diagnostics.diagnostics.local_rain_present ? "Rain detected" : "No rain detected"
+              }
             />
           </dl>
 
@@ -7772,7 +7911,10 @@ function SelectedRegionInspector({
             <dl className="metric-grid">
               <Metric label="Region type" value={humanize(diagnostics.region.region_type)} />
               <Metric label="Native grid" value={diagnostics.region.native_grid ?? "Unavailable"} />
-              <Metric label="Cell count" value={String(diagnostics.region.cell_count ?? "unknown")} />
+              <Metric
+                label="Cell count"
+                value={String(diagnostics.region.cell_count ?? "unknown")}
+              />
               <Metric label="x" value={axisSelectionLabel(diagnostics.region.x)} />
               <Metric label="y" value={axisSelectionLabel(diagnostics.region.y)} />
               <Metric label="vertical" value={axisSelectionLabel(diagnostics.region.vertical)} />
@@ -7782,7 +7924,9 @@ function SelectedRegionInspector({
               />
               <Metric
                 label="Max qc fraction"
-                value={formatRatio(diagnostics.comparison_to_domain.local_max_qc_fraction_of_domain)}
+                value={formatRatio(
+                  diagnostics.comparison_to_domain.local_max_qc_fraction_of_domain,
+                )}
               />
               <Metric
                 label="First cloud delta"
@@ -7792,7 +7936,9 @@ function SelectedRegionInspector({
               />
               <Metric
                 label="Cloud-top fraction"
-                value={formatRatio(diagnostics.comparison_to_domain.local_cloud_top_fraction_of_domain)}
+                value={formatRatio(
+                  diagnostics.comparison_to_domain.local_cloud_top_fraction_of_domain,
+                )}
               />
             </dl>
             <p>{diagnostics.provenance.provenance_label}</p>
@@ -7825,8 +7971,12 @@ function SelectedPointContext({
   selectedValue: number | null;
   diagnostics: SelectedRegionDiagnosticsResponse | null;
 }) {
-  const x = diagnostics?.region.x ? axisSelectionLabel(diagnostics.region.x) : indexOrUnavailable(selectedRegion.xIndex);
-  const y = diagnostics?.region.y ? axisSelectionLabel(diagnostics.region.y) : indexOrUnavailable(selectedRegion.yIndex);
+  const x = diagnostics?.region.x
+    ? axisSelectionLabel(diagnostics.region.x)
+    : indexOrUnavailable(selectedRegion.xIndex);
+  const y = diagnostics?.region.y
+    ? axisSelectionLabel(diagnostics.region.y)
+    : indexOrUnavailable(selectedRegion.yIndex);
   const z = diagnostics?.region.vertical
     ? axisSelectionLabel(diagnostics.region.vertical)
     : indexOrUnavailable(selectedRegion.zIndex);
@@ -7836,12 +7986,18 @@ function SelectedPointContext({
       <dl className="metric-grid">
         <Metric
           label="Slice"
-          value={slice ? slicePlainLabel(slice, slice.selection.orientation, slice.selection.selected_index) : "Unavailable"}
+          value={
+            slice
+              ? slicePlainLabel(slice, slice.selection.orientation, slice.selection.selected_index)
+              : "Unavailable"
+          }
         />
         <Metric label="Time" value={formatSeconds(slice?.selection.time_seconds ?? null)} />
         <Metric
           label="Field"
-          value={slice ? `${slice.field.raw_field_name} (${slice.field.display_name})` : "Unavailable"}
+          value={
+            slice ? `${slice.field.raw_field_name} (${slice.field.display_name})` : "Unavailable"
+          }
         />
         <Metric
           label="Selected field value"
@@ -7878,7 +8034,9 @@ function SliceHeatmap({
                 type="button"
                 className={`heatmap-cell${selected ? " heatmap-cell-selected" : ""}`}
                 key={`${title}-heatmap-${displayRowIndex}-${displayColumnIndex}`}
-                title={cell.value === null ? "missing" : formatMaybeNumber(cell.value, slice.field.units)}
+                title={
+                  cell.value === null ? "missing" : formatMaybeNumber(cell.value, slice.field.units)
+                }
                 aria-label={`Inspect ${title} row ${displayRowIndex + 1}, column ${displayColumnIndex + 1}`}
                 style={sliceCellStyle(cell.value, slice)}
                 onClick={() => onSelectRegion?.(slice, cell.sourceRowIndex, cell.sourceColumnIndex)}
@@ -8010,10 +8168,12 @@ function sliceAggregationMode(field: VisualizableField): "max" | "largest_magnit
 
 function OutcomeBadge({ result }: { result: ResultCard }) {
   const label = cloudOutcome(result);
+  const goodOutcome = label === "Cloud formed" || label === "Deep convection formed";
+  const warningOutcome = label === "No cloud formed" || label === "Deep convection not detected";
   return (
     <StatusBadge
       label={label}
-      tone={label === "Cloud formed" ? "good" : label === "No cloud formed" ? "warning" : "neutral"}
+      tone={goodOutcome ? "good" : warningOutcome ? "warning" : "neutral"}
     />
   );
 }
@@ -8385,7 +8545,8 @@ function processModeSummary(
   }
 
   if (mode === "cap") {
-    const capped = result.scenario_id.includes("capped") || result.controls.cap_strength === "stronger";
+    const capped =
+      result.scenario_id.includes("capped") || result.controls.cap_strength === "stronger";
     return {
       support: capped ? "candidate" : "insufficient_evidence",
       evidenceType: "scenario/control proxy plus cloud-top diagnostics",
@@ -8453,12 +8614,14 @@ function processModeSummary(
     cap: "",
     moisture: "Moisture / saturation diagnostics need qv/RH or saturation-deficit fields.",
     buoyancy: "Buoyancy diagnostics need thermodynamic fields and a documented buoyancy method.",
-    deep_breakthrough: "Deep-breakthrough diagnostics need CAPE/CIN/LFC/EL and sustained-updraft context.",
+    deep_breakthrough:
+      "Deep-breakthrough diagnostics need CAPE/CIN/LFC/EL and sustained-updraft context.",
     precipitation_feedback:
       "Precipitation-feedback diagnostics need rain, downdraft, cold-pool, and outflow evidence.",
   };
   return {
-    support: mode === "buoyancy" || mode === "deep_breakthrough" ? "future" : "unsupported_missing_fields",
+    support:
+      mode === "buoyancy" || mode === "deep_breakthrough" ? "future" : "unsupported_missing_fields",
     evidenceType: "unavailable diagnostic group",
     source: "Required source fields were not ingested",
     description: unavailableLabels[mode],
@@ -8873,7 +9036,10 @@ function sliceCellStyle(value: number | null, slice: SliceResponse): CSSProperti
     return { background: "rgba(255, 255, 255, 0.36)" };
   }
 
-  if (slice.field.raw_field_name === "w" || slice.field.canonical_field_name === "vertical_velocity") {
+  if (
+    slice.field.raw_field_name === "w" ||
+    slice.field.canonical_field_name === "vertical_velocity"
+  ) {
     const maxMagnitude = Math.max(
       Math.abs(slice.stats.min ?? value),
       Math.abs(slice.stats.max ?? value),
@@ -9026,7 +9192,6 @@ const DEFAULT_RESULTS_FILTERS: ResultsFilterState = {
   sort: "newest",
 };
 
-
 function prioritizeResults(results: ResultCard[]): ResultCard[] {
   return [...results].sort((left, right) => resultPriority(right) - resultPriority(left));
 }
@@ -9036,11 +9201,21 @@ function filterAndSortResults(results: ResultCard[], filters: ResultsFilterState
   return [...results]
     .filter((result) => resultMatchesSearch(result, query))
     .filter(
-      (result) => filters.scenario === "all" || resultScenarioFilterValue(result) === filters.scenario,
+      (result) =>
+        filters.scenario === "all" || resultScenarioFilterValue(result) === filters.scenario,
     )
     .filter((result) => filters.preset === "all" || result.run_size_preset === filters.preset)
-    .filter((result) => matchesBooleanFilter(cloudOutcome(result), filters.cloud, "Cloud formed", "No cloud formed"))
-    .filter((result) => matchesBooleanFilter(rainOutcome(result.rain_present), filters.rain, "Rain detected", "No rain detected"))
+    .filter((result) =>
+      matchesBooleanFilter(cloudOutcome(result), filters.cloud, "Cloud formed", "No cloud formed"),
+    )
+    .filter((result) =>
+      matchesBooleanFilter(
+        rainOutcome(result.rain_present),
+        filters.rain,
+        "Rain detected",
+        "No rain detected",
+      ),
+    )
     .sort((left, right) => compareResults(left, right, filters.sort));
 }
 
@@ -9051,7 +9226,10 @@ function resultsFiltersActive(filters: ResultsFilterState): boolean {
 function resultScenarioOptions(results: ResultCard[]): Array<{ value: string; label: string }> {
   const seen = new Map<string, string>();
   for (const result of results) {
-    seen.set(resultScenarioFilterValue(result), result.scenario_name ?? humanize(result.scenario_id));
+    seen.set(
+      resultScenarioFilterValue(result),
+      result.scenario_name ?? humanize(result.scenario_id),
+    );
   }
   return [...seen.entries()]
     .map(([value, label]) => ({ value, label }))
@@ -9110,17 +9288,27 @@ function compareResults(left: ResultCard, right: ResultCard, sort: ResultsSortKe
   if (sort === "oldest") return dateSortValue(left) - dateSortValue(right);
   if (sort === "name") return left.name.localeCompare(right.name);
   if (sort === "scenario") {
-    return (left.scenario_name ?? left.scenario_id).localeCompare(right.scenario_name ?? right.scenario_id);
+    return (left.scenario_name ?? left.scenario_id).localeCompare(
+      right.scenario_name ?? right.scenario_id,
+    );
   }
-  if (sort === "first_cloud") return nullableNumberSort(resultFirstCloudTime(left), resultFirstCloudTime(right), "asc");
+  if (sort === "first_cloud")
+    return nullableNumberSort(resultFirstCloudTime(left), resultFirstCloudTime(right), "asc");
   if (sort === "max_qc") return nullableNumberSort(resultMaxQc(left), resultMaxQc(right), "desc");
-  if (sort === "max_updraft") return nullableNumberSort(resultMaxUpdraft(left), resultMaxUpdraft(right), "desc");
-  if (sort === "rain_onset") return nullableNumberSort(resultRainOnsetTime(left), resultRainOnsetTime(right), "asc");
-  if (sort === "latest_output") return nullableNumberSort(resultLatestOutputTime(left), resultLatestOutputTime(right), "desc");
+  if (sort === "max_updraft")
+    return nullableNumberSort(resultMaxUpdraft(left), resultMaxUpdraft(right), "desc");
+  if (sort === "rain_onset")
+    return nullableNumberSort(resultRainOnsetTime(left), resultRainOnsetTime(right), "asc");
+  if (sort === "latest_output")
+    return nullableNumberSort(resultLatestOutputTime(left), resultLatestOutputTime(right), "desc");
   return dateSortValue(right) - dateSortValue(left);
 }
 
-function nullableNumberSort(left: number | null, right: number | null, direction: "asc" | "desc"): number {
+function nullableNumberSort(
+  left: number | null,
+  right: number | null,
+  direction: "asc" | "desc",
+): number {
   if (left === null && right === null) return 0;
   if (left === null) return 1;
   if (right === null) return -1;
@@ -9207,6 +9395,16 @@ function comparisonMeaning(result: ResultCard | undefined): string {
 }
 
 function resultStory(result: ResultCard): string {
+  if (isDeepConvectionTrial(result)) {
+    const comparison = result.candidate_hypothesis_comparison;
+    if (comparison) {
+      return `${comparison.cm1_outcome} Candidate hypothesis ${comparison.match_status_label.toLowerCase()}.`;
+    }
+    return (
+      result.science_summary?.cm1_outcome ??
+      "Deep Convection Trial result is ready for field inspection."
+    );
+  }
   if (isDryFailedContrast(result)) {
     return "Thermals rose, but low-level moisture stayed too dry for meaningful cloud water or rain.";
   }
@@ -9223,11 +9421,34 @@ function resultStory(result: ResultCard): string {
 }
 
 function compactScienceSummary(result: ResultCard): string {
+  if (isDeepConvectionTrial(result)) {
+    const parts = [
+      deepConvectionOutcome(result),
+      resultMaxUpdraft(result) !== null
+        ? `max updraft ${formatNumber(resultMaxUpdraft(result), "m/s")}`
+        : null,
+      resultRainOnsetTime(result) !== null
+        ? `rain onset ${formatSeconds(resultRainOnsetTime(result))}`
+        : null,
+      resultCloudTopMeters(result) !== null
+        ? `cloud top ${formatNumber(resultCloudTopMeters(result), "m")}`
+        : null,
+    ].filter(Boolean);
+    return parts.join(" · ");
+  }
   const parts = [
-    resultFirstCloudTime(result) !== null ? `first cloud ${formatSeconds(resultFirstCloudTime(result))}` : null,
-    resultMaxQc(result) !== null ? `max qc ${formatScientific(resultMaxQc(result), "kg/kg")}` : null,
-    resultMaxUpdraft(result) !== null ? `max updraft ${formatNumber(resultMaxUpdraft(result), "m/s")}` : null,
-    resultRainOnsetTime(result) !== null ? `rain onset ${formatSeconds(resultRainOnsetTime(result))}` : null,
+    resultFirstCloudTime(result) !== null
+      ? `first cloud ${formatSeconds(resultFirstCloudTime(result))}`
+      : null,
+    resultMaxQc(result) !== null
+      ? `max qc ${formatScientific(resultMaxQc(result), "kg/kg")}`
+      : null,
+    resultMaxUpdraft(result) !== null
+      ? `max updraft ${formatNumber(resultMaxUpdraft(result), "m/s")}`
+      : null,
+    resultRainOnsetTime(result) !== null
+      ? `rain onset ${formatSeconds(resultRainOnsetTime(result))}`
+      : null,
   ].filter(Boolean);
   return parts.length > 0 ? parts.join(" · ") : "Science summary unavailable";
 }
@@ -9253,7 +9474,10 @@ function resultRainOnsetTime(result: ResultCard): number | null {
 }
 
 function resultLatestOutputTime(result: ResultCard): number | null {
-  return result.science_summary?.latest_output_time_seconds ?? result.output_file_summary.last_output_time_seconds;
+  return (
+    result.science_summary?.latest_output_time_seconds ??
+    result.output_file_summary.last_output_time_seconds
+  );
 }
 
 function resultCloudTopMeters(result: ResultCard): number | null {
@@ -9274,6 +9498,7 @@ function legacyCloudTopWasStoredInKilometers(result: ResultCard): boolean {
 
 function visibleInterestingTimes(result: ResultCard): InterestingTimeRecord[] {
   const priority = [
+    "first_deep_convection",
     "first_cloud",
     "max_qc",
     "highest_cloud_top",
@@ -9288,7 +9513,9 @@ function visibleInterestingTimes(result: ResultCard): InterestingTimeRecord[] {
   return priority
     .map((key) => byKey.get(key))
     .filter((record): record is InterestingTimeRecord => Boolean(record))
-    .filter((record) => record.support_state === "supported" || record.support_state === "fallback");
+    .filter(
+      (record) => record.support_state === "supported" || record.support_state === "fallback",
+    );
 }
 
 function interestingTimePrimaryValue(record: InterestingTimeRecord, result: ResultCard): string {
@@ -9324,7 +9551,9 @@ function resultInputSource(result: ResultCard): "generated_reference" | "observe
 
 function resultInputSourceLabel(result: ResultCard): string {
   if (result.input_source_label) return result.input_source_label;
-  return resultInputSource(result) === "observed_sounding" ? "Observed sounding" : "Generated reference";
+  return resultInputSource(result) === "observed_sounding"
+    ? "Observed sounding"
+    : "Generated reference";
 }
 
 function scienceSupportLabel(result: ResultCard): string {
@@ -9333,6 +9562,23 @@ function scienceSupportLabel(result: ResultCard): string {
   if (state === "supported") return "Interesting times supported";
   if (state === "fallback") return "Interesting-time fallback";
   return "Interesting times limited";
+}
+
+function isDeepConvectionTrial(result: ResultCard): boolean {
+  return result.package_family === "deep_convection_trial";
+}
+
+function deepConvectionOutcome(result: ResultCard): string {
+  const formed = result.science_summary?.deep_cloud_formed;
+  if (formed === true) return "Deep convection formed";
+  if (formed === false) return "Deep convection not detected";
+  return "Deep convection unknown";
+}
+
+function candidateMatchTone(matchStatus: string): "good" | "warning" | "neutral" {
+  if (matchStatus === "matched") return "good";
+  if (matchStatus === "did_not_match" || matchStatus === "unable_to_evaluate") return "warning";
+  return "neutral";
 }
 
 function userFacingStatus(result: ResultCard): string {
@@ -9357,6 +9603,7 @@ function caveatTone(result: ResultCard): "good" | "warning" | "neutral" {
 }
 
 function cloudOutcome(result: ResultCard): string {
+  if (isDeepConvectionTrial(result)) return deepConvectionOutcome(result);
   if (!result.diagnostics_summary) return "Unknown";
   return result.diagnostics_summary.includes("cloud formed") &&
     !result.diagnostics_summary.includes("no cloud formed")
@@ -9378,10 +9625,7 @@ function outputSummary(summary: OutputFileSummary): string {
       : safeSummary.netcdf_count !== undefined
         ? `${safeSummary.netcdf_count} NetCDF files`
         : "unknown output files";
-  const parts = [
-    outputFileLabel,
-    `${safeSummary.time_steps ?? "unknown"} time steps`,
-  ];
+  const parts = [outputFileLabel, `${safeSummary.time_steps ?? "unknown"} time steps`];
   if ((safeSummary.stats_netcdf_count ?? 0) > 0) {
     parts.push(`${safeSummary.stats_netcdf_count} stats files`);
   }
@@ -9392,11 +9636,15 @@ function outputSummary(summary: OutputFileSummary): string {
 }
 
 function storageDisplayName(run: RunStorageEntry, result: ResultCard | undefined): string {
-  return result?.name ?? run.scenario_name ?? (run.scenario_id ? humanize(run.scenario_id) : run.run_id);
+  return (
+    result?.name ?? run.scenario_name ?? (run.scenario_id ? humanize(run.scenario_id) : run.run_id)
+  );
 }
 
 function storageScenarioName(run: RunStorageEntry, result: ResultCard | undefined): string {
-  return result?.scenario_name ?? run.scenario_name ?? humanize(run.scenario_id ?? "unknown scenario");
+  return (
+    result?.scenario_name ?? run.scenario_name ?? humanize(run.scenario_id ?? "unknown scenario")
+  );
 }
 
 function storageScenarioSummary(run: RunStorageEntry, result: ResultCard | undefined): string {
@@ -9420,9 +9668,7 @@ function storageStateBadges(
   result: ResultCard | undefined,
 ): Array<{ label: string; tone: "good" | "warning" | "neutral" }> {
   if (result) {
-    return [
-      { label: "Ingested / ready to review", tone: "good" },
-    ];
+    return [{ label: "Ingested / ready to review", tone: "good" }];
   }
   const primary: Record<string, { label: string; tone: "good" | "warning" | "neutral" }> = {
     dry_run_only: { label: "Ready-to-run package", tone: "neutral" },
@@ -9445,8 +9691,10 @@ function storageNextStep(run: RunStorageEntry, result: ResultCard | undefined): 
   if (result) {
     return "Review in Results or Explore, or preview deletion here if you want to remove the result and local run data.";
   }
-  if (run.category === "dry_run_only") return "Package is generated and can be launched from Build.";
-  if (run.category === "running") return "CM1 is active or queued; cleanup is blocked until it stops.";
+  if (run.category === "dry_run_only")
+    return "Package is generated and can be launched from Build.";
+  if (run.category === "running")
+    return "CM1 is active or queued; cleanup is blocked until it stops.";
   if (run.category === "completed_with_output") {
     return "Output exists; ingest to create a notebook result before deciding cleanup.";
   }

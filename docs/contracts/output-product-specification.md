@@ -261,6 +261,18 @@ support states such as `unavailable`, `unsupported_missing_fields`, and
 `unsupported_missing_diagnostic` rather than silently falling back to a
 misleading cloud/rain landmark.
 
+Deep Convection Trial results extend the same product with backend-owned
+summary fields for deep-cloud formation, first deep-convection time, strong
+updraft detection, cloud top, rain onset, max `qr`, and the default Explore
+time. Unsupported severe-storm diagnostics such as reflectivity maxima,
+surface-rain maxima, updraft-depth proxy, cold-pool proxy, and near-surface
+theta perturbation proxy must be recorded as unavailable or caveated until a
+supported backend diagnostic exists. When candidate-screening metadata is
+present, result metadata may include a compact `candidate_hypothesis_comparison`
+with `Screened as`, `Ran as`, `CM1 outcome`, match state, evidence, and caveats.
+The comparison uses simple v1 rules and remains a post-run interpretation of
+CM1 output, not proof that the observed sounding was validated in advance.
+
 ## Field Catalog Products
 
 The field catalog answers:

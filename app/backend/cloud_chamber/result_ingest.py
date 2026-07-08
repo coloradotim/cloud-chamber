@@ -37,6 +37,22 @@ from cloud_chamber.settings import CloudChamberSettings
 RESULT_METADATA_FILENAME = "result_metadata.json"
 MODEL_OUTPUT_PATTERN = re.compile(r"^cm1out_\d+\.nc(?:4)?$")
 STATS_OUTPUT_NAMES = {"cm1out_stats.nc", "cm1out_stats.nc4"}
+DEEP_CONVECTION_STORY_IDS = {
+    "severe_thunderstorm_environment",
+    "supercell_environment",
+    "high_cape_pulse_storm",
+    "dry_microburst_inverted_v",
+    "squall_line_cold_pool_candidate",
+    "elevated_convection",
+}
+DEEP_CONVECTION_STORY_LABELS = {
+    "severe_thunderstorm_environment": "Severe thunderstorm environment",
+    "supercell_environment": "Supercell-like environment",
+    "high_cape_pulse_storm": "High-CAPE pulse storm",
+    "dry_microburst_inverted_v": "Dry microburst / inverted-V",
+    "squall_line_cold_pool_candidate": "Squall-line / cold-pool candidate",
+    "elevated_convection": "Elevated convection",
+}
 
 
 class ResultIngestError(RuntimeError):
@@ -50,6 +66,18 @@ class FieldMetadata(BaseModel):
     dimensions: list[str]
     shape: list[int]
     units: str | None = None
+
+
+class CandidateHypothesisComparison(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    screened_as: str | None = None
+    ran_as: str
+    cm1_outcome: str
+    match_status: str
+    match_status_label: str
+    evidence: list[str] = Field(default_factory=list)
+    caveats: list[str] = Field(default_factory=list)
 
 
 class ResultMetadata(BaseModel):
@@ -75,6 +103,8 @@ class ResultMetadata(BaseModel):
     expected_outputs: list[str] = Field(default_factory=list)
     package_caveats: list[str] = Field(default_factory=list)
     manual_validation_status: str | None = None
+    candidate_screening: dict[str, Any] | None = None
+    candidate_hypothesis_comparison: CandidateHypothesisComparison | None = None
     result_state: str = "ingested_result_metadata"
     raw_cm1_artifacts: list[str] = Field(default_factory=list)
     netcdf_paths: list[str] = Field(default_factory=list)
@@ -155,6 +185,7 @@ def ingest_completed_run(manifest_path: Path) -> ResultMetadata:
         diagnostics=result.diagnostics,
         output_manifest=product_manifest,
         variables=result.variables,
+        package_family=result.package_family,
     )
     product_manifest = product_manifest.model_copy(
         update={"interesting_time_product": interesting_time_product}
@@ -166,6 +197,9 @@ def ingest_completed_run(manifest_path: Path) -> ResultMetadata:
             "science_summary": interesting_time_product.science_summary,
             "interesting_time_caveats": interesting_time_product.caveats,
         }
+    )
+    result = result.model_copy(
+        update={"candidate_hypothesis_comparison": _candidate_hypothesis_comparison(result)}
     )
     result_path.write_text(result.to_json_text())
     write_output_product_manifest(product_manifest_path, product_manifest)
@@ -271,6 +305,7 @@ def _result_from_model_output_files(
         expected_outputs=manifest.expected_outputs,
         package_caveats=manifest.package_caveats,
         manual_validation_status=manifest.manual_validation_status,
+        candidate_screening=manifest.candidate_screening,
         raw_cm1_artifacts=manifest.outputs.raw_cm1_artifacts,
         netcdf_paths=[str(path) for path in netcdf_paths],
         model_output_paths=[str(path) for path in contributing_paths],
@@ -712,6 +747,7 @@ def _result_from_dataset(
         expected_outputs=manifest.expected_outputs,
         package_caveats=manifest.package_caveats,
         manual_validation_status=manifest.manual_validation_status,
+        candidate_screening=manifest.candidate_screening,
         raw_cm1_artifacts=manifest.outputs.raw_cm1_artifacts,
         netcdf_paths=[str(path) for path in netcdf_paths],
         model_output_paths=[str(path) for path in contributing_paths],
@@ -788,6 +824,164 @@ def _to_float_or_none(value: object) -> float | None:
         return float(cast(Any, value))
     except (TypeError, ValueError):
         return None
+
+
+def _candidate_hypothesis_comparison(
+    result: ResultMetadata,
+) -> CandidateHypothesisComparison | None:
+    screening = result.candidate_screening
+    if not screening:
+        return None
+
+    primary_story = _screening_string(screening.get("primary_story"))
+    screened_as = _candidate_story_label(primary_story)
+    ran_as = result.package_display_name or _display_package_family(result.package_family)
+    if result.scenario_name and ran_as == "CM1 package":
+        ran_as = result.scenario_name
+
+    science_summary = result.science_summary
+    diagnostics = result.diagnostics
+    if science_summary is None or diagnostics is None:
+        return CandidateHypothesisComparison(
+            screened_as=screened_as,
+            ran_as=ran_as,
+            cm1_outcome="Unable to evaluate because result diagnostics are unavailable.",
+            match_status="unable_to_evaluate",
+            match_status_label="Unable to evaluate",
+            caveats=[
+                "candidate_screening_is_a_pre_run_hypothesis",
+                "result_diagnostics_unavailable",
+            ],
+        )
+
+    evidence = _candidate_outcome_evidence(science_summary)
+    caveats = [
+        "candidate_screening_is_a_pre_run_hypothesis",
+        "candidate_match_uses_simple_v1_deep_convection_rules",
+    ]
+    if primary_story not in DEEP_CONVECTION_STORY_IDS:
+        return CandidateHypothesisComparison(
+            screened_as=screened_as,
+            ran_as=ran_as,
+            cm1_outcome=science_summary.cm1_outcome
+            or "CM1 outcome was ingested, but no deep-convection comparison is available.",
+            match_status="unable_to_evaluate",
+            match_status_label="Unable to evaluate",
+            evidence=evidence,
+            caveats=_dedupe_strings(
+                [*caveats, "candidate_story_not_in_deep_convection_v1_rule_set"]
+            ),
+        )
+    if result.package_family != "deep_convection_trial":
+        return CandidateHypothesisComparison(
+            screened_as=screened_as,
+            ran_as=ran_as,
+            cm1_outcome=(
+                "Unable to evaluate candidate match because this was not a "
+                "Deep Convection Trial package."
+            ),
+            match_status="unable_to_evaluate",
+            match_status_label="Unable to evaluate",
+            evidence=evidence,
+            caveats=_dedupe_strings(
+                [*caveats, "comparison_requires_deep_convection_trial_package"]
+            ),
+        )
+    if not diagnostics.cloud.available or not diagnostics.vertical_velocity.available:
+        return CandidateHypothesisComparison(
+            screened_as=screened_as,
+            ran_as=ran_as,
+            cm1_outcome=science_summary.cm1_outcome
+            or "Unable to evaluate because required cloud or updraft fields are missing.",
+            match_status="unable_to_evaluate",
+            match_status_label="Unable to evaluate",
+            evidence=evidence,
+            caveats=_dedupe_strings([*caveats, "missing_qc_or_w_fields"]),
+        )
+
+    deep_cloud = science_summary.deep_cloud_formed is True
+    strong_updraft = science_summary.strong_updraft_formed is True
+    rain_detected = diagnostics.rain.available and diagnostics.rain.present
+    if not deep_cloud and not strong_updraft:
+        match_status = "did_not_match"
+    elif deep_cloud and strong_updraft and rain_detected:
+        match_status = "matched"
+    elif deep_cloud or strong_updraft or rain_detected:
+        match_status = "partially_matched"
+    else:
+        match_status = "did_not_match"
+
+    if not diagnostics.rain.available:
+        caveats.append("rain_field_missing_or_unavailable")
+
+    return CandidateHypothesisComparison(
+        screened_as=screened_as,
+        ran_as=ran_as,
+        cm1_outcome=science_summary.cm1_outcome or "CM1 outcome unavailable.",
+        match_status=match_status,
+        match_status_label=_match_status_label(match_status),
+        evidence=evidence,
+        caveats=_dedupe_strings(caveats),
+    )
+
+
+def _candidate_outcome_evidence(science_summary: ScienceSummary) -> list[str]:
+    evidence: list[str] = []
+    if science_summary.deep_cloud_formed is not None:
+        evidence.append(
+            "deep cloud formed" if science_summary.deep_cloud_formed else "no deep cloud detected"
+        )
+    if science_summary.highest_cloud_top_m is not None:
+        evidence.append(f"cloud top {_format_metric(science_summary.highest_cloud_top_m, 'm')}")
+    if science_summary.max_updraft_w_m_s is not None:
+        evidence.append(f"max updraft {_format_metric(science_summary.max_updraft_w_m_s, 'm/s')}")
+    if science_summary.rain_onset_time_seconds is not None:
+        evidence.append(f"rain onset {_format_seconds(science_summary.rain_onset_time_seconds)}")
+    elif science_summary.max_qr_kg_kg is not None:
+        evidence.append(f"max rain water {_format_scientific(science_summary.max_qr_kg_kg)} kg/kg")
+    if science_summary.time_of_first_deep_convection_seconds is not None:
+        evidence.append(
+            "first deep convection "
+            f"{_format_seconds(science_summary.time_of_first_deep_convection_seconds)}"
+        )
+    return evidence
+
+
+def _screening_string(value: object) -> str | None:
+    return value if isinstance(value, str) and value else None
+
+
+def _candidate_story_label(story: str | None) -> str | None:
+    if story is None:
+        return None
+    return DEEP_CONVECTION_STORY_LABELS.get(story, story.replace("_", " ").title())
+
+
+def _display_package_family(package_family: str | None) -> str:
+    if package_family == "deep_convection_trial":
+        return "Deep Convection Trial"
+    return "CM1 package"
+
+
+def _match_status_label(match_status: str) -> str:
+    return {
+        "matched": "Matched",
+        "partially_matched": "Partially matched",
+        "did_not_match": "Did not match",
+        "unable_to_evaluate": "Unable to evaluate",
+    }.get(match_status, match_status.replace("_", " ").title())
+
+
+def _format_metric(value: float, units: str) -> str:
+    return f"{value:g} {units}"
+
+
+def _format_seconds(value: float) -> str:
+    return f"{value:g} s"
+
+
+def _format_scientific(value: float) -> str:
+    return f"{value:.3e}"
 
 
 def _input_source(manifest: RunManifest) -> str:

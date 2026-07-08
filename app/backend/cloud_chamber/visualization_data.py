@@ -10,6 +10,7 @@ from __future__ import annotations
 import importlib
 import itertools
 import math
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Any, Literal
 
@@ -321,7 +322,7 @@ def _metadata_view_defaults(
             visual_field,
             selected_time_index=time_index,
         )
-    preferred = "qc" if "qc" in fields else next(iter(fields), None)
+    preferred = _preferred_field(metadata, fields)
     return ViewDefaultsResponse(
         result_id=metadata.result_id,
         run_id=metadata.run_id,
@@ -524,7 +525,7 @@ def view_defaults(
                     field_name,
                     time_index=time_index,
                 )
-        preferred = "qc" if "qc" in fields else next(iter(fields), None)
+        preferred = _preferred_field(metadata, fields)
         return ViewDefaultsResponse(
             result_id=metadata.result_id,
             run_id=metadata.run_id,
@@ -822,6 +823,12 @@ def _fallback_view_defaults(
         else None,
         caveats=_dedupe([*caveats, "default_location_fell_back_to_domain_center"]),
     )
+
+
+def _preferred_field(metadata: ResultMetadata, fields: Mapping[str, object]) -> str | None:
+    if metadata.package_family == "deep_convection_trial" and "w" in fields:
+        return "w"
+    return "qc" if "qc" in fields else next(iter(fields), None)
 
 
 def field_slice(

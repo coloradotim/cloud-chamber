@@ -103,15 +103,18 @@ def write_model_netcdf(
     times: list[float],
     qc_values: list[float],
     w_values: list[float],
+    qr_values: list[float] | None = None,
+    z_values: list[float] | None = None,
     include_qc: bool = True,
     include_w: bool = True,
 ) -> None:
+    z_values = z_values or [500.0, 1500.0]
     data_vars = {}
     if include_qc:
         data_vars["qc"] = (
             ("time", "z", "y", "x"),
             [
-                [[[qc_value for _x in range(4)] for _y in range(3)] for _z in range(2)]
+                [[[qc_value for _x in range(4)] for _y in range(3)] for _z in z_values]
                 for qc_value in qc_values
             ],
             {"units": "kg/kg"},
@@ -120,16 +123,25 @@ def write_model_netcdf(
         data_vars["w"] = (
             ("time", "z", "y", "x"),
             [
-                [[[w_value for _x in range(4)] for _y in range(3)] for _z in range(2)]
+                [[[w_value for _x in range(4)] for _y in range(3)] for _z in z_values]
                 for w_value in w_values
             ],
             {"units": "m/s"},
+        )
+    if qr_values is not None:
+        data_vars["qr"] = (
+            ("time", "z", "y", "x"),
+            [
+                [[[qr_value for _x in range(4)] for _y in range(3)] for _z in z_values]
+                for qr_value in qr_values
+            ],
+            {"units": "kg/kg"},
         )
     xr.Dataset(
         data_vars=data_vars,
         coords={
             "time": times,
-            "z": [500.0, 1500.0],
+            "z": z_values,
             "y": [0.0, 200.0, 400.0],
             "x": [0.0, 200.0, 400.0, 600.0],
         },
@@ -290,6 +302,122 @@ def test_ingests_multifile_model_output_sequence_and_excludes_stats(tmp_path: Pa
     )
     assert product_manifest.interesting_time_product is not None
     assert product_manifest.interesting_time_product.science_summary == result.science_summary
+
+
+def test_ingests_deep_convection_candidate_outcome_comparison(tmp_path: Path) -> None:
+    manifest_path = create_manifest(tmp_path, run_id="run-deep-convection-result")
+    run_dir = manifest_path.parent
+    first = run_dir / "cm1out_000001.nc"
+    second = run_dir / "cm1out_000002.nc"
+    candidate_screening = {
+        "candidate_id": "USM00072357-2025052000-supercell",
+        "primary_story": "supercell_environment",
+        "rank_score": 93.0,
+        "confidence": "supported",
+    }
+    write_model_netcdf(
+        first,
+        times=[300.0],
+        qc_values=[0.0],
+        w_values=[2.0],
+        qr_values=[0.0],
+        z_values=[500.0, 1500.0, 9500.0],
+    )
+    write_model_netcdf(
+        second,
+        times=[900.0],
+        qc_values=[2e-6],
+        w_values=[15.0],
+        qr_values=[4e-7],
+        z_values=[500.0, 1500.0, 9500.0],
+    )
+    complete_manifest(
+        manifest_path,
+        OutputMetadata(netcdf_paths=[str(first), str(second)]),
+    )
+    manifest = load_run_manifest(manifest_path)
+    write_run_manifest(
+        manifest_path,
+        manifest.model_copy(
+            update={
+                "candidate_screening": candidate_screening,
+                "package_family": "deep_convection_trial",
+                "package_display_name": "Deep Convection Trial",
+                "input_source": "observed_sounding",
+                "trigger_type": "warm_bubble",
+                "expected_outputs": ["qc", "qr", "w", "dbz", "updraft_helicity"],
+                "manual_validation_status": "deep_convection_trial_package_smoke_validated",
+            }
+        ),
+    )
+
+    result = ingest_completed_run(manifest_path)
+
+    assert result.candidate_screening == candidate_screening
+    assert result.science_summary is not None
+    assert result.science_summary.deep_cloud_formed is True
+    assert result.science_summary.strong_updraft_formed is True
+    assert result.science_summary.time_of_first_deep_convection_seconds == 900.0
+    assert result.science_summary.default_explore_time_seconds == 900.0
+    assert result.candidate_hypothesis_comparison is not None
+    assert result.candidate_hypothesis_comparison.screened_as == "Supercell-like environment"
+    assert result.candidate_hypothesis_comparison.ran_as == "Deep Convection Trial"
+    assert result.candidate_hypothesis_comparison.match_status == "matched"
+    assert result.candidate_hypothesis_comparison.cm1_outcome == (
+        "Deep convection formed with strong updraft and rain."
+    )
+    assert "max updraft 15 m/s" in result.candidate_hypothesis_comparison.evidence
+    availability = {item.key: item for item in result.science_summary.diagnostic_availability}
+    assert availability["max_dbz_or_reflectivity_proxy"].support_state == (
+        "unsupported_missing_fields"
+    )
+
+
+def test_non_deep_candidate_comparison_does_not_use_deep_outcome_language(
+    tmp_path: Path,
+) -> None:
+    manifest_path = create_manifest(tmp_path, run_id="run-observed-quicklook-candidate")
+    run_dir = manifest_path.parent
+    netcdf_path = run_dir / "cm1out_000001.nc"
+    candidate_screening = {
+        "candidate_id": "USM00072357-2025052000-supercell",
+        "primary_story": "supercell_environment",
+        "rank_score": 93.0,
+    }
+    write_model_netcdf(
+        netcdf_path,
+        times=[300.0],
+        qc_values=[0.0],
+        w_values=[1.0],
+        qr_values=[0.0],
+    )
+    complete_manifest(manifest_path, OutputMetadata(netcdf_paths=[str(netcdf_path)]))
+    manifest = load_run_manifest(manifest_path)
+    write_run_manifest(
+        manifest_path,
+        manifest.model_copy(
+            update={
+                "candidate_screening": candidate_screening,
+                "package_family": "observed_sounding_quicklook",
+                "package_display_name": "Observed Sounding Quick Look",
+                "input_source": "observed_sounding",
+            }
+        ),
+    )
+
+    result = ingest_completed_run(manifest_path)
+
+    assert result.science_summary is not None
+    assert result.science_summary.cm1_outcome is None
+    assert result.candidate_hypothesis_comparison is not None
+    assert result.candidate_hypothesis_comparison.match_status == "unable_to_evaluate"
+    assert result.candidate_hypothesis_comparison.cm1_outcome == (
+        "Unable to evaluate candidate match because this was not a Deep Convection Trial package."
+    )
+    assert "Trigger failed" not in result.candidate_hypothesis_comparison.cm1_outcome
+    assert "comparison_requires_deep_convection_trial_package" in (
+        result.candidate_hypothesis_comparison.caveats
+    )
 
 
 def test_no_cloud_result_keeps_interesting_times_honest(tmp_path: Path) -> None:
