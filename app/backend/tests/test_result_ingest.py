@@ -373,6 +373,53 @@ def test_ingests_deep_convection_candidate_outcome_comparison(tmp_path: Path) ->
     )
 
 
+def test_non_deep_candidate_comparison_does_not_use_deep_outcome_language(
+    tmp_path: Path,
+) -> None:
+    manifest_path = create_manifest(tmp_path, run_id="run-observed-quicklook-candidate")
+    run_dir = manifest_path.parent
+    netcdf_path = run_dir / "cm1out_000001.nc"
+    candidate_screening = {
+        "candidate_id": "USM00072357-2025052000-supercell",
+        "primary_story": "supercell_environment",
+        "rank_score": 93.0,
+    }
+    write_model_netcdf(
+        netcdf_path,
+        times=[300.0],
+        qc_values=[0.0],
+        w_values=[1.0],
+        qr_values=[0.0],
+    )
+    complete_manifest(manifest_path, OutputMetadata(netcdf_paths=[str(netcdf_path)]))
+    manifest = load_run_manifest(manifest_path)
+    write_run_manifest(
+        manifest_path,
+        manifest.model_copy(
+            update={
+                "candidate_screening": candidate_screening,
+                "package_family": "observed_sounding_quicklook",
+                "package_display_name": "Observed Sounding Quick Look",
+                "input_source": "observed_sounding",
+            }
+        ),
+    )
+
+    result = ingest_completed_run(manifest_path)
+
+    assert result.science_summary is not None
+    assert result.science_summary.cm1_outcome is None
+    assert result.candidate_hypothesis_comparison is not None
+    assert result.candidate_hypothesis_comparison.match_status == "unable_to_evaluate"
+    assert result.candidate_hypothesis_comparison.cm1_outcome == (
+        "Unable to evaluate candidate match because this was not a Deep Convection Trial package."
+    )
+    assert "Trigger failed" not in result.candidate_hypothesis_comparison.cm1_outcome
+    assert "comparison_requires_deep_convection_trial_package" in (
+        result.candidate_hypothesis_comparison.caveats
+    )
+
+
 def test_no_cloud_result_keeps_interesting_times_honest(tmp_path: Path) -> None:
     manifest_path = create_manifest(tmp_path, run_id="run-no-cloud-interesting-times")
     run_dir = manifest_path.parent

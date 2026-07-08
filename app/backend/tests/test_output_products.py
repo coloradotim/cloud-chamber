@@ -336,6 +336,47 @@ def test_deep_convection_interesting_times_and_unavailable_diagnostics(
     assert "missing_dbz_field" in availability["max_dbz_or_reflectivity_proxy"].caveats
 
 
+def test_non_deep_summary_does_not_emit_deep_convection_outcome(
+    tmp_path: Path,
+) -> None:
+    model = tmp_path / "cm1out_000001.nc"
+    write_model_netcdf(model, times=[0.0, 600.0], values=[0.0, 1.0])
+    manifest = build_manifest(tmp_path, [model])
+    diagnostics = ResultDiagnostics(
+        cloud=CloudDiagnostics(
+            formed=False,
+            max_qc_kg_kg=0.0,
+            time_of_max_qc_seconds=0.0,
+            cloud_top_time_series=[
+                TimeValue(time_seconds=0.0, value=None),
+                TimeValue(time_seconds=600.0, value=None),
+            ],
+        ),
+        vertical_velocity=VerticalVelocityDiagnostics(
+            max_w_m_s=1.5,
+            time_of_max_w_seconds=600.0,
+            min_w_m_s=-0.5,
+            time_of_min_w_seconds=0.0,
+            units="m/s",
+        ),
+        rain=RainDiagnostics(available=False, field_absent=True),
+        time=TimeDiagnostics(source="netcdf_time_coordinate", fallback_used=False),
+    )
+
+    product = build_interesting_time_product(
+        result_id="result-shallow",
+        diagnostics=diagnostics,
+        output_manifest=manifest,
+        variables=["qc", "w"],
+        package_family="observed_sounding_quicklook",
+    )
+
+    records = {record.key: record for record in product.available_interesting_times}
+    assert "first_deep_convection" not in records
+    assert product.science_summary.cm1_outcome is None
+    assert product.science_summary.time_of_first_deep_convection_seconds is None
+
+
 def test_deep_convection_present_but_unsupported_fields_are_caveated(
     tmp_path: Path,
 ) -> None:

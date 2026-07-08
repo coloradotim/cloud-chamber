@@ -876,8 +876,10 @@ def _candidate_hypothesis_comparison(
         return CandidateHypothesisComparison(
             screened_as=screened_as,
             ran_as=ran_as,
-            cm1_outcome=science_summary.cm1_outcome
-            or "CM1 outcome was ingested, but this was not a Deep Convection Trial package.",
+            cm1_outcome=(
+                "Unable to evaluate candidate match because this was not a "
+                "Deep Convection Trial package."
+            ),
             match_status="unable_to_evaluate",
             match_status_label="Unable to evaluate",
             evidence=evidence,

@@ -933,7 +933,7 @@ def _science_summary(
         else _latest_manifest_time(output_manifest),
         default_explore_time_index=default_source.time_index if default_source else None,
         default_explore_time_seconds=default_source.time_seconds if default_source else None,
-        cm1_outcome=_cm1_outcome(diagnostics),
+        cm1_outcome=_cm1_outcome(diagnostics) if is_deep_convection else None,
         diagnostic_availability=_diagnostic_availability(variables),
         interesting_time_support_state=support_state,
     )
