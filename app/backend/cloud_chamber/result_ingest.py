@@ -976,18 +976,18 @@ def _candidate_hypothesis_comparison(
 
     deep_cloud = science_summary.deep_cloud_formed is True
     strong_updraft = science_summary.strong_updraft_formed is True
-    rain_detected = diagnostics.rain.available and diagnostics.rain.present
+    rain_water_aloft_detected = diagnostics.rain.available and diagnostics.rain.present
     if not deep_cloud and not strong_updraft:
         match_status = "did_not_match"
-    elif deep_cloud and strong_updraft and rain_detected:
+    elif deep_cloud and strong_updraft and rain_water_aloft_detected:
         match_status = "matched"
-    elif deep_cloud or strong_updraft or rain_detected:
+    elif deep_cloud or strong_updraft or rain_water_aloft_detected:
         match_status = "partially_matched"
     else:
         match_status = "did_not_match"
 
     if not diagnostics.rain.available:
-        caveats.append("rain_field_missing_or_unavailable")
+        caveats.append("rain_water_aloft_field_missing_or_unavailable")
 
     return CandidateHypothesisComparison(
         screened_as=screened_as,
@@ -1011,9 +1011,13 @@ def _candidate_outcome_evidence(science_summary: ScienceSummary) -> list[str]:
     if science_summary.max_updraft_w_m_s is not None:
         evidence.append(f"max updraft {_format_metric(science_summary.max_updraft_w_m_s, 'm/s')}")
     if science_summary.rain_onset_time_seconds is not None:
-        evidence.append(f"rain onset {_format_seconds(science_summary.rain_onset_time_seconds)}")
+        evidence.append(
+            f"rain-water-aloft onset {_format_seconds(science_summary.rain_onset_time_seconds)}"
+        )
     elif science_summary.max_qr_kg_kg is not None:
-        evidence.append(f"max rain water {_format_scientific(science_summary.max_qr_kg_kg)} kg/kg")
+        evidence.append(
+            f"max rain water aloft {_format_scientific(science_summary.max_qr_kg_kg)} kg/kg"
+        )
     if science_summary.time_of_first_deep_convection_seconds is not None:
         evidence.append(
             "first deep convection "

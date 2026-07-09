@@ -328,7 +328,7 @@ def test_deep_convection_interesting_times_and_unavailable_diagnostics(
     assert product.science_summary.default_explore_time_index == 2
     assert (
         product.science_summary.cm1_outcome
-        == "Deep convection formed with strong updraft and rain."
+        == "Deep convection formed with strong updraft and rain water aloft."
     )
     availability = {item.key: item for item in product.science_summary.diagnostic_availability}
     assert availability["max_dbz_or_reflectivity_proxy"].support_state == (
@@ -386,6 +386,8 @@ def test_precipitation_and_reflectivity_outputs_are_supported_when_diagnosed(
     )
 
     records = {record.key: record for record in product.available_interesting_times}
+    assert records["rain_onset"].label == "Rain-water onset"
+    assert records["max_qr"].label == "Max rain water aloft"
     assert records["max_surface_rain"].support_state == "supported"
     assert records["max_surface_rain"].value == 3.5
     assert records["max_surface_rain"].units == "mm"

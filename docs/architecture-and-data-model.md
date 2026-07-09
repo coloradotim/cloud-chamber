@@ -624,7 +624,7 @@ accepts a bounded native-grid point, column, or box request and returns:
 - local max/min `w` time series and summary;
 - local max `qc`, first local cloud time, cloud fraction, cloud base/top, and
   max-height time series;
-- local `qr` rain onset and max summary when `qr` exists;
+- local `qr` rain-water onset and max rain-water-aloft summary when `qr` exists;
 - comparison-to-domain ratios or time deltas where global diagnostics are
   available;
 - a conservative local Thermal Fate label with confidence and caveats.

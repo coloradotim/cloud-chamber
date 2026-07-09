@@ -584,21 +584,25 @@ def _interesting_time_records(
         ),
         _event_record(
             key="rain_onset",
-            label="Rain onset",
+            label="Rain-water onset",
             time_seconds=rain.first_rain_time_seconds if rain.available and rain.present else None,
             source_field="qr",
             source_diagnostic="diagnostics.rain.first_rain_time_seconds",
             value=rain.present if rain.available else None,
             units=None,
             output_manifest=output_manifest,
-            unavailable_caveat="no_rain_detected"
+            unavailable_caveat="no_rain_water_aloft_detected"
             if rain.available
-            else ("missing_qr_field" if rain.field_absent else "rain_diagnostics_unavailable"),
+            else (
+                "missing_qr_field"
+                if rain.field_absent
+                else "rain_water_aloft_diagnostics_unavailable"
+            ),
             support_state="unavailable" if rain.available else "unsupported_missing_fields",
         ),
         _event_record(
             key="max_qr",
-            label="Max rain water",
+            label="Max rain water aloft",
             time_seconds=rain.time_of_max_qr_seconds
             if rain.available and _positive(rain.max_qr_kg_kg)
             else None,
@@ -607,9 +611,13 @@ def _interesting_time_records(
             value=rain.max_qr_kg_kg if rain.available else None,
             units="kg/kg",
             output_manifest=output_manifest,
-            unavailable_caveat="no_rain_water_detected"
+            unavailable_caveat="no_rain_water_aloft_detected"
             if rain.available
-            else ("missing_qr_field" if rain.field_absent else "rain_diagnostics_unavailable"),
+            else (
+                "missing_qr_field"
+                if rain.field_absent
+                else "rain_water_aloft_diagnostics_unavailable"
+            ),
             support_state="unavailable" if rain.available else "unsupported_missing_fields",
         ),
         _series_max_record(
@@ -1066,10 +1074,25 @@ def _cm1_outcome(diagnostics: ResultDiagnostics) -> str:
             "Unable to evaluate deep convection because required cloud or updraft fields "
             "are missing."
         )
-    if deep_cloud and strong_updraft and diagnostics.rain.available and diagnostics.rain.present:
-        return "Deep convection formed with strong updraft and rain."
     if deep_cloud and strong_updraft:
-        return "Deep convection formed with strong updraft; rain evidence is absent or unavailable."
+        rain_water_aloft = diagnostics.rain.available and diagnostics.rain.present
+        surface_rain = diagnostics.surface_rain.available and diagnostics.surface_rain.present
+        if rain_water_aloft and surface_rain:
+            return (
+                "Deep convection formed with strong updraft, rain water aloft, "
+                "and surface rain reached the ground."
+            )
+        if rain_water_aloft:
+            return "Deep convection formed with strong updraft and rain water aloft."
+        if surface_rain:
+            return (
+                "Deep convection formed with strong updraft and surface rain reached the ground; "
+                "rain-water-aloft evidence is absent or unavailable."
+            )
+        return (
+            "Deep convection formed with strong updraft; "
+            "rain-water-aloft evidence is absent or unavailable."
+        )
     if deep_cloud:
         return "Deep cloud formed, but the updraft-strength threshold was not met."
     if strong_updraft:

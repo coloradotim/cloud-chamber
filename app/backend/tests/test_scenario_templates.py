@@ -53,7 +53,7 @@ def test_warm_rain_is_early_but_non_blocking() -> None:
     template = validate_scenario_template(load_json(SCENARIO_DIR / "warm-rain.json"))
 
     assert "does not block the baseline Golden Path" in template.expected_behavior
-    assert template.expected_diagnostics.rain_onset == "record rain onset if present"
+    assert template.expected_diagnostics.rain_onset == "record rain-water-aloft onset if present"
 
 
 def test_malformed_committed_template_fails_validation() -> None:

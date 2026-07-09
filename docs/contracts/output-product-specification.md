@@ -223,8 +223,8 @@ Near-term interesting times:
 - max updraft `w`;
 - min downdraft `w`;
 - highest cloud top;
-- rain onset;
-- max `qr`;
+- rain-water onset from `qr`;
+- max rain water aloft from `qr`;
 - max `dbz`;
 - max surface rain;
 - selected-time fallback such as latest output.
@@ -259,11 +259,11 @@ does not ask the browser to parse NetCDF. Missing fields, no-event outcomes,
 and diagnostics that are not implemented yet are represented explicitly with
 support states such as `unavailable`, `unsupported_missing_fields`, and
 `unsupported_missing_diagnostic` rather than silently falling back to a
-misleading cloud/rain landmark.
+misleading cloud/rain-water landmark.
 
 Deep Convection Trial results extend the same product with backend-owned
 summary fields for deep-cloud formation, first deep-convection time, strong
-updraft detection, cloud top, rain onset, max `qr`, and the default Explore
+updraft detection, cloud top, rain-water onset, max `qr`, and the default Explore
 time. Unsupported severe-storm diagnostics such as reflectivity maxima,
 surface-rain maxima, updraft-depth proxy, cold-pool proxy, and near-surface
 theta perturbation proxy must be recorded as unavailable or caveated until a
@@ -442,7 +442,7 @@ Selected-column product requirements:
 - first local cloud time;
 - local max `qc`;
 - local max/min `w`;
-- local rain onset when `qr` exists;
+- local rain-water onset when `qr` exists;
 - cloud-base/cloud-top evidence where supported.
 
 These products should not become cloud-object tracking unless a future issue

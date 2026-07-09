@@ -113,6 +113,7 @@ class ResultCard(BaseModel):
     first_rain_time_seconds: float | None = None
     surface_rain_present: bool | None = None
     max_surface_rain: float | None = None
+    surface_rain_units: str | None = None
     max_dbz: float | None = None
     reflectivity_available: bool | None = None
     interesting_times: list[InterestingTimeRecord] = Field(default_factory=list)
@@ -263,6 +264,7 @@ def _card_from_metadata(
         first_rain_time_seconds=rain.first_rain_time_seconds if rain else None,
         surface_rain_present=surface_rain.present if surface_rain else None,
         max_surface_rain=surface_rain.max_surface_rain if surface_rain else None,
+        surface_rain_units=surface_rain.units if surface_rain else None,
         max_dbz=reflectivity.max_dbz if reflectivity else None,
         reflectivity_available=reflectivity.available if reflectivity else None,
         interesting_times=metadata.interesting_times,

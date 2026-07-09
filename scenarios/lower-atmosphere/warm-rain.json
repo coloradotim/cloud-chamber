@@ -4,8 +4,8 @@
   "display_name": "Warm Rain / Precipitating Shallow Cloud",
   "category": "lower-atmosphere",
   "description": "An early but non-blocking precipitating shallow-cloud scenario for later Golden Path extension.",
-  "physical_question": "When does a shallow warm cloud produce rain, and how do moisture and depth affect rain onset?",
-  "learning_goals": ["Track rain onset if present.", "Compare precipitating shallow cloud with the non-precipitating baseline."],
+  "physical_question": "When does a shallow warm cloud produce surface rain, and how do moisture and depth affect rain-water onset?",
+  "learning_goals": ["Track rain water aloft and surface rain if present.", "Compare precipitating shallow cloud with the non-precipitating baseline."],
   "intended_behavior": "A wetter/deeper shallow-cloud case where warm rain may occur after local CM1 validation.",
   "expected_behavior": "Rain may form if the cloud becomes deep and moist enough; this remains early but does not block the baseline Golden Path.",
   "controls": [
@@ -37,9 +37,9 @@
     }
   ],
   "run_size_presets": [
-    {"id": "quick_look", "label": "Quick look", "purpose": "Check whether rain behavior is plausible enough for further exploration.", "expected_runtime": "roughly 10-20 minutes when feasible", "confidence": "lower confidence until locally validated", "output_notes": "rain onset may require longer output"},
+    {"id": "quick_look", "label": "Quick look", "purpose": "Check whether rain behavior is plausible enough for further exploration.", "expected_runtime": "roughly 10-20 minutes when feasible", "confidence": "lower confidence until locally validated", "output_notes": "surface rain and rain-water onset may require longer output"},
     {"id": "standard", "label": "Standard", "purpose": "Useful precipitating shallow-cloud result.", "expected_runtime": "normal local run", "confidence": "balanced confidence and runtime", "output_notes": "record cloud-water and rain-water diagnostics"},
-    {"id": "deep_overnight", "label": "Deep / overnight", "purpose": "Expensive opt-in run for higher-resolution rain-onset structure and smoother timelapse.", "expected_runtime": "target roughly 10-12x Standard wall-clock; may take hours locally", "confidence": "higher-detail package settings require local/manual validation", "output_notes": "192 x 192 horizontal grid at about 33.333 m, 300 s saved-output cadence, and larger output should be explicit before launch"}
+    {"id": "deep_overnight", "label": "Deep / overnight", "purpose": "Expensive opt-in run for higher-resolution rain-water-onset structure and smoother timelapse.", "expected_runtime": "target roughly 10-12x Standard wall-clock; may take hours locally", "confidence": "higher-detail package settings require local/manual validation", "output_notes": "192 x 192 horizontal grid at about 33.333 m, 300 s saved-output cadence, and larger output should be explicit before launch"}
   ],
   "expected_diagnostics": {
     "cloud_formed": true,
@@ -47,7 +47,7 @@
     "cloud_base_top": "record cloud depth",
     "max_updraft": "record maximum vertical velocity",
     "cloud_water_summary": "summarize cloud-water evolution",
-    "rain_onset": "record rain onset if present",
+    "rain_onset": "record rain-water-aloft onset if present",
     "notes": ["Warm rain remains early but does not block the baseline Golden Path."]
   },
   "cm1_template": {

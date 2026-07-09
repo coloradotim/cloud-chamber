@@ -583,6 +583,7 @@ const resultCard = {
   first_rain_time_seconds: 5400,
   surface_rain_present: true,
   max_surface_rain: 4.2,
+  surface_rain_units: "mm",
   reflectivity_available: true,
   max_dbz: 30,
   science_summary: {
@@ -668,7 +669,7 @@ const resultCard = {
     },
     {
       key: "rain_onset",
-      label: "Rain onset",
+      label: "Rain-water onset",
       time_index: 6,
       time_seconds: 5400,
       source_field: "qr",
@@ -764,6 +765,7 @@ const dryFailedCard = {
   first_rain_time_seconds: null,
   surface_rain_present: null,
   max_surface_rain: null,
+  surface_rain_units: null,
   reflectivity_available: false,
   max_dbz: null,
   science_summary: {
@@ -856,6 +858,7 @@ const missingDiagnosticsCard = {
   first_rain_time_seconds: null,
   surface_rain_present: null,
   max_surface_rain: null,
+  surface_rain_units: null,
   reflectivity_available: null,
   max_dbz: null,
   caveats: ["missing_qc_field", "missing_w_field"],
@@ -958,7 +961,7 @@ const deepConvectionResultCard = {
     latest_output_time_seconds: 2700,
     default_explore_time_index: 2,
     default_explore_time_seconds: 1800,
-    cm1_outcome: "Deep convection formed with strong updraft and rain.",
+    cm1_outcome: "Deep convection formed with strong updraft and rain water aloft.",
     diagnostic_availability: [
       {
         key: "cold_pool_proxy",
@@ -1000,7 +1003,7 @@ const deepConvectionResultCard = {
   candidate_hypothesis_comparison: {
     screened_as: "Supercell-like environment",
     ran_as: "Deep Convection Trial",
-    cm1_outcome: "Deep convection formed with strong updraft and rain.",
+    cm1_outcome: "Deep convection formed with strong updraft and rain water aloft.",
     match_status: "matched",
     match_status_label: "Matched",
     evidence: ["deep cloud formed", "cloud top 10200 m", "max updraft 15 m/s"],
@@ -3352,6 +3355,7 @@ describe("App", () => {
     ).toBeGreaterThan(0);
     expect(screen.getAllByText("Cloud formed").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Rain water aloft detected").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Reached ground; max 4.2 mm").length).toBeGreaterThan(0);
     expect(screen.getByText("1,800 s")).toBeInTheDocument();
     expect(screen.getAllByText("2.193e-3 kg/kg").length).toBeGreaterThan(0);
     expect(screen.getAllByText("6.867 m/s").length).toBeGreaterThan(0);
@@ -3360,7 +3364,7 @@ describe("App", () => {
     expect(resultDetail).toHaveTextContent("Interesting times");
     expect(resultDetail).toHaveTextContent("Highest cloud top");
     expect(resultDetail).toHaveTextContent("1,940 m");
-    expect(resultDetail).toHaveTextContent("Rain onset");
+    expect(resultDetail).toHaveTextContent("Rain-water onset");
     expect(resultDetail).toHaveTextContent("Default Explore time");
     expect(resultDetail).toHaveTextContent("2,700 s");
     fireEvent.click(within(resultDetail).getByText("Technical details"));
@@ -3438,7 +3442,9 @@ describe("App", () => {
     expect(resultDetail).toHaveTextContent("Screening vs CM1");
     expect(resultDetail).toHaveTextContent("Supercell-like environment");
     expect(resultDetail).toHaveTextContent("Matched");
-    expect(resultDetail).toHaveTextContent("Deep convection formed with strong updraft and rain.");
+    expect(resultDetail).toHaveTextContent(
+      "Deep convection formed with strong updraft and rain water aloft.",
+    );
     expect(resultDetail).toHaveTextContent("max updraft 15 m/s");
     expect(resultDetail).toHaveTextContent("First deep convection");
 

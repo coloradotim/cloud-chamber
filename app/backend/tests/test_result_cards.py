@@ -1,6 +1,7 @@
 import json
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 
 import xarray as xr
 
@@ -80,7 +81,7 @@ def create_completed_result(
 
 
 def write_result_netcdf(path: Path, *, include_diagnostics_fields: bool) -> None:
-    data_vars = {}
+    data_vars: dict[str, Any] = {}
     if include_diagnostics_fields:
         data_vars["qc"] = (
             ("time", "z", "y", "x"),
@@ -96,6 +97,11 @@ def write_result_netcdf(path: Path, *, include_diagnostics_fields: bool) -> None
             ("time", "z", "y", "x"),
             [[[[2e-7 for _x in range(4)] for _y in range(3)] for _z in range(2)]],
             {"units": "kg/kg"},
+        )
+        data_vars["rain"] = (
+            ("time", "y", "x"),
+            [[[3.5 for _x in range(4)] for _y in range(3)]],
+            {"units": "mm"},
         )
     else:
         data_vars["temperature"] = (
@@ -126,7 +132,7 @@ def test_result_card_created_from_ingested_metadata(tmp_path: Path) -> None:
     assert card.run_size_preset == "quick_look"
     assert card.physical_question
     assert card.diagnostics_summary == (
-        "cloud formed; rain water aloft detected; surface rain unavailable; "
+        "cloud formed; rain water aloft detected; surface rain reached ground; "
         "reflectivity unavailable"
     )
     assert card.thermal_fate_label == "Fair-weather cumulus"
@@ -141,8 +147,9 @@ def test_result_card_created_from_ingested_metadata(tmp_path: Path) -> None:
     assert card.time_of_min_w_seconds == 1800.0
     assert card.rain_present is True
     assert card.first_rain_time_seconds == 1800.0
-    assert card.surface_rain_present is False
-    assert card.max_surface_rain is None
+    assert card.surface_rain_present is True
+    assert card.max_surface_rain == 3.5
+    assert card.surface_rain_units == "mm"
     assert card.reflectivity_available is False
     assert card.max_dbz is None
     assert card.science_summary is not None

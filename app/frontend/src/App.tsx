@@ -551,6 +551,7 @@ type ResultCard = {
   first_rain_time_seconds?: number | null;
   surface_rain_present?: boolean | null;
   max_surface_rain?: number | null;
+  surface_rain_units?: string | null;
   max_dbz?: number | null;
   reflectivity_available?: boolean | null;
   interesting_times?: InterestingTimeRecord[];
@@ -5724,7 +5725,7 @@ function ResultsFilterBar({
             <option value="first_cloud">First cloud time</option>
             <option value="max_qc">Max qc</option>
             <option value="max_updraft">Max updraft</option>
-            <option value="rain_onset">Rain onset</option>
+            <option value="rain_onset">Rain-water onset</option>
             <option value="latest_output">Latest output time</option>
           </select>
         </label>
@@ -6479,7 +6480,7 @@ function VisualizerSceneShell({ result }: { result: ResultCard }) {
       ? { label: "Max updraft", seconds: result.time_of_max_w_seconds }
       : null,
     result.first_rain_time_seconds !== null && result.first_rain_time_seconds !== undefined
-      ? { label: "Rain onset", seconds: result.first_rain_time_seconds }
+      ? { label: "Rain-water onset", seconds: result.first_rain_time_seconds }
       : null,
   ].filter((preset): preset is { label: string; seconds: number } => preset !== null);
 
@@ -9349,7 +9350,7 @@ function compactScienceSummary(result: ResultCard): string {
         ? `max updraft ${formatNumber(resultMaxUpdraft(result), "m/s")}`
         : null,
       resultRainOnsetTime(result) !== null
-        ? `rain onset ${formatSeconds(resultRainOnsetTime(result))}`
+        ? `rain-water onset ${formatSeconds(resultRainOnsetTime(result))}`
         : null,
       resultCloudTopMeters(result) !== null
         ? `cloud top ${formatNumber(resultCloudTopMeters(result), "m")}`
@@ -9368,7 +9369,7 @@ function compactScienceSummary(result: ResultCard): string {
       ? `max updraft ${formatNumber(resultMaxUpdraft(result), "m/s")}`
       : null,
     resultRainOnsetTime(result) !== null
-      ? `rain onset ${formatSeconds(resultRainOnsetTime(result))}`
+      ? `rain-water onset ${formatSeconds(resultRainOnsetTime(result))}`
       : null,
   ].filter(Boolean);
   return parts.length > 0 ? parts.join(" · ") : "Science summary unavailable";
@@ -9540,7 +9541,7 @@ function rainOutcome(value: boolean | null): string {
 function surfaceRainOutcome(result: ResultCard): string {
   if (result.surface_rain_present === true) {
     return result.max_surface_rain !== null && result.max_surface_rain !== undefined
-      ? `Reached ground; max ${formatNumber(result.max_surface_rain, "")}`
+      ? `Reached ground; max ${formatNumber(result.max_surface_rain, result.surface_rain_units ?? "")}`
       : "Reached ground";
   }
   if (result.surface_rain_present === false) return "Did not reach ground";

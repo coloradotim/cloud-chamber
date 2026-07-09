@@ -421,9 +421,10 @@ def test_ingests_deep_convection_candidate_outcome_comparison(tmp_path: Path) ->
     assert result.candidate_hypothesis_comparison.ran_as == "Deep Convection Trial"
     assert result.candidate_hypothesis_comparison.match_status == "matched"
     assert result.candidate_hypothesis_comparison.cm1_outcome == (
-        "Deep convection formed with strong updraft and rain."
+        "Deep convection formed with strong updraft and rain water aloft."
     )
     assert "max updraft 15 m/s" in result.candidate_hypothesis_comparison.evidence
+    assert "rain-water-aloft onset 900 s" in result.candidate_hypothesis_comparison.evidence
     availability = {item.key: item for item in result.science_summary.diagnostic_availability}
     assert availability["max_dbz_or_reflectivity_proxy"].support_state == (
         "unsupported_missing_fields"
