@@ -549,6 +549,10 @@ type ResultCard = {
   time_of_min_w_seconds?: number | null;
   rain_present: boolean | null;
   first_rain_time_seconds?: number | null;
+  surface_rain_present?: boolean | null;
+  max_surface_rain?: number | null;
+  max_dbz?: number | null;
+  reflectivity_available?: boolean | null;
   interesting_times?: InterestingTimeRecord[];
   default_time_by_field?: Record<string, FieldDefaultTime>;
   science_summary?: ScienceSummary | null;
@@ -4178,7 +4182,9 @@ function ComparisonResultCard({
         />
         <Metric label="Cloud" value={cloudOutcome(result)} />
         <Metric label="First cloud time" value={formatSeconds(result.first_cloud_time_seconds)} />
-        <Metric label="Rain" value={rainOutcome(result.rain_present)} />
+        <Metric label="Rain water aloft" value={rainOutcome(result.rain_present)} />
+        <Metric label="Surface rain" value={surfaceRainOutcome(result)} />
+        <Metric label="Reflectivity" value={reflectivityOutcome(result)} />
         <Metric label="Max qc" value={formatScientific(result.max_qc_kg_kg, "kg/kg")} />
         <Metric label="Max w" value={formatNumber(result.max_w_m_s, "m/s")} />
         <Metric label="Min w" value={formatNumber(result.min_w_m_s, "m/s")} />
@@ -5692,15 +5698,15 @@ function ResultsFilterBar({
           </select>
         </label>
         <label>
-          Rain
+          Rain water aloft
           <select
-            aria-label="Rain outcome"
+            aria-label="Rain-water outcome"
             value={filters.rain}
             onChange={(event) => update({ rain: event.target.value as ResultsBooleanFilter })}
           >
             <option value="all">All</option>
-            <option value="yes">Rain detected</option>
-            <option value="no">No rain</option>
+            <option value="yes">Rain water aloft detected</option>
+            <option value="no">No rain water aloft</option>
             <option value="unknown">Unknown</option>
           </select>
         </label>
@@ -5892,7 +5898,9 @@ function ResultNotebookCard({
 
       <dl className="metric-grid key-result-values">
         <Metric label="Cloud" value={cloudOutcome(result)} />
-        <Metric label="Rain" value={rainOutcome(result.rain_present)} />
+        <Metric label="Rain water aloft" value={rainOutcome(result.rain_present)} />
+        <Metric label="Surface rain" value={surfaceRainOutcome(result)} />
+        <Metric label="Reflectivity" value={reflectivityOutcome(result)} />
         <Metric label="First cloud time" value={formatSeconds(resultFirstCloudTime(result))} />
         <Metric label="Max qc" value={formatScientific(resultMaxQc(result), "kg/kg")} />
         <Metric label="Max updraft" value={formatNumber(resultMaxUpdraft(result), "m/s")} />
@@ -7332,7 +7340,9 @@ function ResultExplanationPanel({
           <Metric label="First cloud time" value={formatSeconds(result.first_cloud_time_seconds)} />
           <Metric label="Max qc" value={formatScientific(result.max_qc_kg_kg, "kg/kg")} />
           <Metric label="Max w" value={formatNumber(result.max_w_m_s, "m/s")} />
-          <Metric label="Rain" value={rainOutcome(result.rain_present)} />
+          <Metric label="Rain water aloft" value={rainOutcome(result.rain_present)} />
+          <Metric label="Surface rain" value={surfaceRainOutcome(result)} />
+          <Metric label="Reflectivity" value={reflectivityOutcome(result)} />
         </dl>
       </section>
       {isNoCloudWithUpdraft && (
@@ -7814,7 +7824,9 @@ function SelectedRegionInspector({
             <Metric
               label="Local rain"
               value={
-                diagnostics.diagnostics.local_rain_present ? "Rain detected" : "No rain detected"
+                diagnostics.diagnostics.local_rain_present
+                  ? "Rain water aloft detected"
+                  : "No rain water aloft detected"
               }
             />
           </dl>
@@ -8396,7 +8408,7 @@ function processModeSummary(
       }`,
       annotations: [
         `Diagnostics summary: ${result.diagnostics_summary ?? "Unavailable"}`,
-        `Cloud: ${cloudOutcome(result)}; rain: ${rainOutcome(result.rain_present)}`,
+        `Cloud: ${cloudOutcome(result)}; rain water aloft: ${rainOutcome(result.rain_present)}`,
       ],
       caveats,
     };
@@ -8503,13 +8515,13 @@ function processModeSummary(
       support: "future",
       evidenceType: "qr/rain and downdraft proxy diagnostics",
       source: result.rain_present
-        ? "Rain summary exists, but cold-pool/outflow evidence is not available"
+        ? "Rain-water aloft summary exists, but cold-pool/outflow evidence is not available"
         : "Required rain, downdraft, cold-pool, and outflow evidence is not available",
       description: result.rain_present
-        ? "Rain is present, but precipitation-feedback needs downdraft/cold-pool evidence before it can be selected as a normal focus."
-        : "Precipitation feedback is future work for this result because rain/cold-pool/outflow diagnostics are not available.",
+        ? "Rain water aloft is present, but precipitation-feedback needs downdraft/cold-pool evidence before it can be selected as a normal focus."
+        : "Precipitation feedback is future work for this result because rain-water, cold-pool, and outflow diagnostics are not available.",
       annotations: [
-        `Rain: ${rainOutcome(result.rain_present)}`,
+        `Rain water aloft: ${rainOutcome(result.rain_present)}`,
         `Min w: ${formatNumber(result.min_w_m_s, "m/s")}`,
       ],
       caveats: [...caveats, "precipitation_feedback_requires_downdraft_and_cold_pool_diagnostics"],
@@ -9121,8 +9133,8 @@ function filterAndSortResults(results: ResultCard[], filters: ResultsFilterState
       matchesBooleanFilter(
         rainOutcome(result.rain_present),
         filters.rain,
-        "Rain detected",
-        "No rain detected",
+        "Rain water aloft detected",
+        "No rain water aloft detected",
       ),
     )
     .sort((left, right) => compareResults(left, right, filters.sort));
@@ -9522,7 +9534,24 @@ function cloudOutcome(result: ResultCard): string {
 
 function rainOutcome(value: boolean | null): string {
   if (value === null) return "Unknown";
-  return value ? "Rain detected" : "No rain detected";
+  return value ? "Rain water aloft detected" : "No rain water aloft detected";
+}
+
+function surfaceRainOutcome(result: ResultCard): string {
+  if (result.surface_rain_present === true) {
+    return result.max_surface_rain !== null && result.max_surface_rain !== undefined
+      ? `Reached ground; max ${formatNumber(result.max_surface_rain, "")}`
+      : "Reached ground";
+  }
+  if (result.surface_rain_present === false) return "Did not reach ground";
+  return "Unavailable";
+}
+
+function reflectivityOutcome(result: ResultCard): string {
+  if (!result.reflectivity_available) return "Unavailable";
+  return result.max_dbz !== null && result.max_dbz !== undefined
+    ? `Max ${formatNumber(result.max_dbz, "dBZ")}`
+    : "Available";
 }
 
 function outputSummary(summary: OutputFileSummary): string {

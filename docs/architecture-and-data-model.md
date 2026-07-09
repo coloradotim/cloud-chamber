@@ -482,9 +482,19 @@ Responsibilities:
 
 The first implemented ingest step creates `result_metadata.json` in the completed run directory. It reads NetCDF with xarray and records result ID, run ID, scenario, physical question, controls, run-size preset, source lifecycle/product/provenance state, raw CM1 artifacts, NetCDF paths, processed artifact placeholders, dimensions, coordinates, variables, units, time coordinate, grid shape, warnings, and timestamps.
 
-The next implemented step attaches first-pass Baseline Shallow Cumulus diagnostics to that result metadata. Diagnostics read NetCDF fields through the backend and summarize `qc`, `w`, and optional `qr` without parsing raw `.dat/.ctl` artifacts. Raw `.dat/.ctl` artifacts remain cataloged on the run metadata but are not parsed as ingest input.
+The next implemented step attaches first-pass diagnostics to that result metadata.
+Diagnostics read NetCDF fields through the backend and summarize `qc`, `w`,
+optional `qr` rain water aloft, optional surface `rain`, and optional `dbz`
+reflectivity without parsing raw `.dat/.ctl` artifacts. Raw `.dat/.ctl`
+artifacts remain cataloged on the run metadata but are not parsed as ingest
+input.
 
-CM1 may write a completed run as a sequence of NetCDF model-output files such as `cm1out_000001.nc` through `cm1out_000025.nc`. Cloud Chamber must ingest the model-field sequence, not just the first NetCDF file, before making cloud/no-cloud statements. Stats files such as `cm1out_stats.nc` are NetCDF artifacts but are not model-field time-series inputs for `qc`, `w`, and `qr` diagnostics.
+CM1 may write a completed run as a sequence of NetCDF model-output files such
+as `cm1out_000001.nc` through `cm1out_000025.nc`. Cloud Chamber must ingest the
+model-field sequence, not just the first NetCDF file, before making cloud,
+rain-water, surface-rain, or reflectivity statements. Stats files such as
+`cm1out_stats.nc` are NetCDF artifacts but are not model-field time-series
+inputs for `qc`, `w`, `qr`, surface `rain`, or `dbz` diagnostics.
 
 Result metadata records model-output paths separately from stats NetCDF paths, skipped/corrupt files, contributing model-output file count, total time steps, first/last output time, and whether time came directly from a NetCDF coordinate or an inferred fallback.
 
@@ -507,7 +517,8 @@ The backend result-card layer is the product-facing view over ingested metadata.
 It does not rerun CM1 and does not parse raw output directly. It summarizes:
 
 - run ID, scenario, run-size preset, and physical question;
-- diagnostics summary, first cloud time, max `qc`, max/min `w`, rain yes/no, and caveats;
+- diagnostics summary, first cloud time, max `qc`, max/min `w`, rain water
+  aloft, surface rain, reflectivity, and caveats;
 - output file summary, including NetCDF/model-output/stat/raw/processed counts and time-step range;
 - input source and observed-sounding metadata when the run came from an uploaded sounding;
 - compact `science_summary`, `interesting_times`, and `default_time_by_field` values for Results filtering, sorting, and sensible Explore defaults;
@@ -535,9 +546,11 @@ Current diagnostics compute:
 - first-pass cloud base/top from available vertical coordinates;
 - max `qc`, time of max `qc`, `qc` max time series, cloud fraction time series, and cloud-present time steps;
 - max/min `w`, time of max/min `w`, and `w` max/min time series;
-- optional rain summary from `qr >= 1e-7 kg/kg`.
+- optional rain-water-aloft summary from `qr >= 1e-7 kg/kg`;
+- optional surface-rain summary from the CM1 `rain` field;
+- optional reflectivity summary from the CM1 `dbz` field.
 
-Diagnostics preserve runtime warnings from the run manifest/result metadata. CM1 floating-point exception flags are caveats, not automatic failure. The diagnostics also count non-finite values in target fields where practical, ignore NaN/infinity for finite summaries, and record field-specific caveats if `qc`, `w`, or `qr` are missing or entirely non-finite.
+Diagnostics preserve runtime warnings from the run manifest/result metadata. CM1 floating-point exception flags are caveats, not automatic failure. The diagnostics also count non-finite values in target fields where practical, ignore NaN/infinity for finite summaries, and record field-specific caveats if `qc`, `w`, `qr`, surface `rain`, or `dbz` are missing or entirely non-finite.
 
 This result metadata is not a Result Card UI and not visualization-ready data. It is the backend bridge that later result cards and inspectors can consume.
 
@@ -601,7 +614,7 @@ support:
 
 Result cards expose the conservative `thermal_fate_label`,
 `thermal_fate_confidence`, and `main_limiting_factor` fields without replacing
-the existing cloud/rain/updraft summary.
+the existing cloud, rain-water, surface-rain, reflectivity, and updraft summary.
 
 The selected-region diagnostics API builds on that global metadata for the
 Thermal Fate Inspector. `GET /api/results/{result_id}/diagnostics/selected-region`

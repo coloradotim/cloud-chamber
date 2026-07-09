@@ -150,7 +150,7 @@ test.describe("mocked smoke: Build, Results, Explore path", () => {
       resultsList.getByText(/Cloud water formed in the validated quick-look baseline/i),
     ).toBeVisible();
     await expect(resultsList.getByText("Cloud formed").first()).toBeVisible();
-    await expect(resultsList.getByText("Rain detected").first()).toBeVisible();
+    await expect(resultsList.getByText("Rain water aloft detected").first()).toBeVisible();
     await expect(page.getByRole("button", { name: "Open in Explore" }).first()).toBeVisible();
     const resultDetail = page.getByLabel("Result detail");
     await resultDetail.getByText("Technical details").click();

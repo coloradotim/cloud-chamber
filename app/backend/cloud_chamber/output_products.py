@@ -612,19 +612,47 @@ def _interesting_time_records(
             else ("missing_qr_field" if rain.field_absent else "rain_diagnostics_unavailable"),
             support_state="unavailable" if rain.available else "unsupported_missing_fields",
         ),
-        _unsupported_field_record(
+        _series_max_record(
             key="max_dbz",
             label="Max reflectivity",
+            series=diagnostics.reflectivity.dbz_max_time_series
+            if diagnostics.reflectivity.available
+            else [],
             source_field="dbz",
             source_diagnostic="diagnostics.reflectivity.max_dbz",
-            field_present="dbz" in variables,
+            units=diagnostics.reflectivity.units or "dBZ",
+            output_manifest=output_manifest,
+            unavailable_caveat="no_reflectivity_values_detected"
+            if diagnostics.reflectivity.available
+            else (
+                "missing_dbz_field"
+                if diagnostics.reflectivity.field_absent
+                else "reflectivity_diagnostics_unavailable"
+            ),
+            support_state="unavailable"
+            if diagnostics.reflectivity.available
+            else "unsupported_missing_fields",
         ),
-        _unsupported_field_record(
+        _series_max_record(
             key="max_surface_rain",
             label="Max surface rain",
+            series=diagnostics.surface_rain.surface_rain_max_time_series
+            if diagnostics.surface_rain.available and diagnostics.surface_rain.present
+            else [],
             source_field="rain",
             source_diagnostic="diagnostics.surface_rain.max_surface_rain",
-            field_present="rain" in variables,
+            units=diagnostics.surface_rain.units or "unknown",
+            output_manifest=output_manifest,
+            unavailable_caveat="no_surface_rain_detected"
+            if diagnostics.surface_rain.available
+            else (
+                "missing_rain_field"
+                if diagnostics.surface_rain.field_absent
+                else "surface_rain_diagnostics_unavailable"
+            ),
+            support_state="unavailable"
+            if diagnostics.surface_rain.available
+            else "unsupported_missing_fields",
         ),
         latest,
     ]
@@ -833,6 +861,7 @@ def _field_defaults(
         "w": ("max_updraft_w",),
         "qr": ("rain_onset", "max_qr"),
         "dbz": ("max_dbz",),
+        "rain": ("max_surface_rain",),
     }
     for field, keys in choices.items():
         source = next(
@@ -928,13 +957,19 @@ def _science_summary(
         highest_cloud_top_m=highest_cloud_top,
         rain_onset_time_seconds=diagnostics.rain.first_rain_time_seconds,
         max_qr_kg_kg=diagnostics.rain.max_qr_kg_kg if diagnostics.rain.available else None,
+        max_rain_or_surface_precip=diagnostics.surface_rain.max_surface_rain
+        if diagnostics.surface_rain.available
+        else None,
+        max_dbz_or_reflectivity_proxy=diagnostics.reflectivity.max_dbz
+        if diagnostics.reflectivity.available
+        else None,
         latest_output_time_seconds=latest.time_seconds
         if latest
         else _latest_manifest_time(output_manifest),
         default_explore_time_index=default_source.time_index if default_source else None,
         default_explore_time_seconds=default_source.time_seconds if default_source else None,
         cm1_outcome=_cm1_outcome(diagnostics) if is_deep_convection else None,
-        diagnostic_availability=_diagnostic_availability(variables),
+        diagnostic_availability=_diagnostic_availability(variables, diagnostics),
         interesting_time_support_state=support_state,
     )
 
@@ -1042,21 +1077,25 @@ def _cm1_outcome(diagnostics: ResultDiagnostics) -> str:
     return "Trigger failed to produce deep convection by current cloud-top and updraft thresholds."
 
 
-def _diagnostic_availability(variables: set[str]) -> list[ScienceDiagnosticAvailability]:
+def _diagnostic_availability(
+    variables: set[str], diagnostics: ResultDiagnostics | None = None
+) -> list[ScienceDiagnosticAvailability]:
+    reflectivity_supported = bool(diagnostics and diagnostics.reflectivity.available)
+    surface_rain_supported = bool(diagnostics and diagnostics.surface_rain.available)
     return [
         _availability_record(
             key="max_dbz_or_reflectivity_proxy",
             label="Max reflectivity",
             source_field="dbz",
             field_present="dbz" in variables,
-            implemented=False,
+            implemented=reflectivity_supported,
         ),
         _availability_record(
             key="max_rain_or_surface_precip",
             label="Max surface rain",
             source_field="rain",
             field_present="rain" in variables,
-            implemented=False,
+            implemented=surface_rain_supported,
         ),
         _availability_record(
             key="updraft_depth_proxy",

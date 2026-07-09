@@ -111,6 +111,10 @@ class ResultCard(BaseModel):
     time_of_min_w_seconds: float | None = None
     rain_present: bool | None = None
     first_rain_time_seconds: float | None = None
+    surface_rain_present: bool | None = None
+    max_surface_rain: float | None = None
+    max_dbz: float | None = None
+    reflectivity_available: bool | None = None
     interesting_times: list[InterestingTimeRecord] = Field(default_factory=list)
     default_time_by_field: dict[str, FieldDefaultTime] = Field(default_factory=dict)
     science_summary: ScienceSummary | None = None
@@ -198,6 +202,8 @@ def _card_from_metadata(
     cloud = diagnostics.cloud if diagnostics else None
     vertical_velocity = diagnostics.vertical_velocity if diagnostics else None
     rain = diagnostics.rain if diagnostics else None
+    surface_rain = diagnostics.surface_rain if diagnostics else None
+    reflectivity = diagnostics.reflectivity if diagnostics else None
     name = state.name or _default_result_card_name(metadata)
     scenario_name = _display_scenario_name(metadata)
     caveats = list(metadata.warnings)
@@ -255,6 +261,10 @@ def _card_from_metadata(
         else None,
         rain_present=rain.present if rain else None,
         first_rain_time_seconds=rain.first_rain_time_seconds if rain else None,
+        surface_rain_present=surface_rain.present if surface_rain else None,
+        max_surface_rain=surface_rain.max_surface_rain if surface_rain else None,
+        max_dbz=reflectivity.max_dbz if reflectivity else None,
+        reflectivity_available=reflectivity.available if reflectivity else None,
         interesting_times=metadata.interesting_times,
         default_time_by_field=metadata.default_time_by_field,
         science_summary=metadata.science_summary,

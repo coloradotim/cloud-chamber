@@ -1,5 +1,6 @@
 import json
 from pathlib import Path
+from typing import Any
 
 import pytest
 import xarray as xr
@@ -72,7 +73,7 @@ def write_tiny_netcdf(
     include_qc: bool = True,
     include_w: bool = True,
 ) -> None:
-    data_vars = {}
+    data_vars: dict[str, Any] = {}
     if include_qc:
         data_vars["qc"] = (
             ("time", "z", "y", "x"),
@@ -104,12 +105,14 @@ def write_model_netcdf(
     qc_values: list[float],
     w_values: list[float],
     qr_values: list[float] | None = None,
+    rain_values: list[float] | None = None,
+    dbz_values: list[float] | None = None,
     z_values: list[float] | None = None,
     include_qc: bool = True,
     include_w: bool = True,
 ) -> None:
     z_values = z_values or [500.0, 1500.0]
-    data_vars = {}
+    data_vars: dict[str, Any] = {}
     if include_qc:
         data_vars["qc"] = (
             ("time", "z", "y", "x"),
@@ -136,6 +139,21 @@ def write_model_netcdf(
                 for qr_value in qr_values
             ],
             {"units": "kg/kg"},
+        )
+    if rain_values is not None:
+        data_vars["rain"] = (
+            ("time", "y", "x"),
+            [[[rain_value for _x in range(4)] for _y in range(3)] for rain_value in rain_values],
+            {"units": "mm"},
+        )
+    if dbz_values is not None:
+        data_vars["dbz"] = (
+            ("time", "z", "y", "x"),
+            [
+                [[[dbz_value for _x in range(4)] for _y in range(3)] for _z in z_values]
+                for dbz_value in dbz_values
+            ],
+            {"units": "dBZ"},
         )
     xr.Dataset(
         data_vars=data_vars,
@@ -198,7 +216,10 @@ def test_ingests_valid_tiny_netcdf_metadata(tmp_path: Path) -> None:
         ("qc", "kg/kg"),
         ("w", "m/s"),
     ]
-    assert result.diagnostics_summary == "no cloud formed; no rain detected"
+    assert result.diagnostics_summary == (
+        "no cloud formed; no rain water aloft detected; surface rain unavailable; "
+        "reflectivity unavailable"
+    )
     assert result.diagnostics is not None
     assert result.diagnostics.cloud.formed is False
     assert result.diagnostics.rain.field_absent is True
@@ -295,6 +316,42 @@ def test_ingests_multifile_model_output_sequence_and_excludes_stats(tmp_path: Pa
     assert result.science_summary.max_updraft_w_m_s == 7.0
     assert result.science_summary.min_downdraft_w_m_s == -5.0
     assert result.science_summary.latest_output_time_seconds == 600.0
+
+
+def test_ingest_keeps_rain_water_surface_rain_and_reflectivity_distinct(
+    tmp_path: Path,
+) -> None:
+    manifest_path = create_manifest(tmp_path, run_id="run-precip-fields")
+    run_dir = manifest_path.parent
+    netcdf_path = run_dir / "cm1out_000001.nc"
+    write_model_netcdf(
+        netcdf_path,
+        times=[0.0, 600.0],
+        qc_values=[0.0, 2e-6],
+        w_values=[1.0, 4.0],
+        qr_values=[2e-7, 4e-7],
+        rain_values=[0.0, 3.5],
+        dbz_values=[-5.0, 28.0],
+    )
+    complete_manifest(manifest_path, OutputMetadata(netcdf_paths=[str(netcdf_path)]))
+
+    result = ingest_completed_run(manifest_path)
+
+    assert result.diagnostics is not None
+    assert result.diagnostics.rain.present is True
+    assert result.diagnostics.rain.max_qr_kg_kg == 4e-7
+    assert result.diagnostics.surface_rain.present is True
+    assert result.diagnostics.surface_rain.max_surface_rain == 3.5
+    assert result.diagnostics.surface_rain.units == "mm"
+    assert result.diagnostics.reflectivity.available is True
+    assert result.diagnostics.reflectivity.max_dbz == 28.0
+    assert result.diagnostics.reflectivity.units == "dBZ"
+    assert result.science_summary is not None
+    assert result.science_summary.max_qr_kg_kg == 4e-7
+    assert result.science_summary.max_rain_or_surface_precip == 3.5
+    assert result.science_summary.max_dbz_or_reflectivity_proxy == 28.0
+    assert result.default_time_by_field["rain"].source_interesting_time_key == "max_surface_rain"
+    assert result.default_time_by_field["dbz"].source_interesting_time_key == "max_dbz"
     assert result.science_summary.default_explore_time_index == 1
     assert result.science_summary.interesting_time_support_state == "supported"
     product_manifest = output_product_manifest_from_json(
@@ -586,7 +643,10 @@ def test_missing_expected_fields_are_warnings_not_claimed_diagnostics(tmp_path: 
     result = ingest_completed_run(manifest_path)
 
     assert result.variables == ["w"]
-    assert result.diagnostics_summary == "no cloud formed; no rain detected"
+    assert result.diagnostics_summary == (
+        "no cloud formed; no rain water aloft detected; surface rain unavailable; "
+        "reflectivity unavailable"
+    )
     assert result.diagnostics is not None
     assert result.diagnostics.cloud.available is False
     assert result.warnings == ["Expected fields missing from NetCDF metadata: qc"]

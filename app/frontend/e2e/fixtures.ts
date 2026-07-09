@@ -301,7 +301,8 @@ export const results = [
     source_product_state: "completed_cm1_result",
     source_model: "CM1",
     provenance_labels: ["CM1 result", "ingested metadata", "visualizer interpretation"],
-    diagnostics_summary: "cloud formed; rain detected",
+    diagnostics_summary:
+      "cloud formed; rain water aloft detected; surface rain reached ground; reflectivity available",
     thermal_fate_label: "Growing cumulus",
     thermal_fate_confidence: "candidate",
     main_limiting_factor: "unknown",
@@ -396,7 +397,8 @@ export const results = [
     source_product_state: "completed_cm1_result",
     source_model: "CM1",
     provenance_labels: ["CM1 result", "observed sounding", "ingested metadata"],
-    diagnostics_summary: "cloud formed; no rain detected",
+    diagnostics_summary:
+      "cloud formed; no rain water aloft detected; surface rain unavailable; reflectivity unavailable",
     thermal_fate_label: "Observed-sounding cumulus",
     thermal_fate_confidence: "candidate",
     main_limiting_factor: "unknown",
@@ -498,7 +500,8 @@ export const results = [
     source_product_state: "completed_cm1_result",
     source_model: "CM1",
     provenance_labels: ["CM1 result", "ingested metadata"],
-    diagnostics_summary: "no cloud formed; no rain detected",
+    diagnostics_summary:
+      "no cloud formed; no rain water aloft detected; surface rain unavailable; reflectivity unavailable",
     thermal_fate_label: "Thermal without cloud",
     thermal_fate_confidence: "supported",
     main_limiting_factor: "moisture",
@@ -1307,7 +1310,8 @@ export async function mockCloudChamberApis(page: Page) {
     json(route, {
       result_id: "result-baseline",
       run_id: "dry-run-baseline",
-      diagnostics_summary: "cloud formed; rain detected",
+      diagnostics_summary:
+        "cloud formed; rain water aloft detected; surface rain reached ground; reflectivity available",
     }),
   );
 

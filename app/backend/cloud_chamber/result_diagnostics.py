@@ -81,9 +81,34 @@ class RainDiagnostics(BaseModel):
     max_qr_kg_kg: float | None = None
     time_of_max_qr_seconds: float | None = None
     qr_max_time_series: list[TimeValue] = Field(default_factory=list)
-    user_message: str = "No rain detected."
+    user_message: str = "Rain-water field unavailable."
     available: bool = True
     field_absent: bool = False
+
+
+class SurfaceRainDiagnostics(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    present: bool = False
+    max_surface_rain: float | None = None
+    time_of_max_surface_rain_seconds: float | None = None
+    surface_rain_max_time_series: list[TimeValue] = Field(default_factory=list)
+    units: str | None = None
+    user_message: str = "Surface rain unavailable."
+    available: bool = False
+    field_absent: bool = True
+
+
+class ReflectivityDiagnostics(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    max_dbz: float | None = None
+    time_of_max_dbz_seconds: float | None = None
+    dbz_max_time_series: list[TimeValue] = Field(default_factory=list)
+    units: str | None = None
+    user_message: str = "Reflectivity unavailable."
+    available: bool = False
+    field_absent: bool = True
 
 
 class ResultDiagnostics(BaseModel):
@@ -92,6 +117,8 @@ class ResultDiagnostics(BaseModel):
     cloud: CloudDiagnostics
     vertical_velocity: VerticalVelocityDiagnostics
     rain: RainDiagnostics
+    surface_rain: SurfaceRainDiagnostics = Field(default_factory=SurfaceRainDiagnostics)
+    reflectivity: ReflectivityDiagnostics = Field(default_factory=ReflectivityDiagnostics)
     time: TimeDiagnostics
     caveats: list[str] = Field(default_factory=list)
 
@@ -319,10 +346,14 @@ def compute_baseline_diagnostics(dataset: Any, inherited_caveats: list[str]) -> 
     cloud = _cloud_diagnostics(dataset, time_context, caveats)
     vertical_velocity = _vertical_velocity_diagnostics(dataset, time_context, caveats)
     rain = _rain_diagnostics(dataset, time_context, caveats)
+    surface_rain = _surface_rain_diagnostics(dataset, time_context, caveats)
+    reflectivity = _reflectivity_diagnostics(dataset, time_context, caveats)
     return ResultDiagnostics(
         cloud=cloud,
         vertical_velocity=vertical_velocity,
         rain=rain,
+        surface_rain=surface_rain,
+        reflectivity=reflectivity,
         time=time_context.diagnostics,
         caveats=_dedupe(caveats),
     )
@@ -498,7 +529,89 @@ def _rain_diagnostics(dataset: Any, time: _TimeContext, caveats: list[str]) -> R
         max_qr_kg_kg=max_qr,
         time_of_max_qr_seconds=time_of_max_qr,
         qr_max_time_series=max_series,
-        user_message="Rain detected." if present else "No rain detected.",
+        user_message=("Rain water aloft detected." if present else "No rain water aloft detected."),
+    )
+
+
+def _surface_rain_diagnostics(
+    dataset: Any, time: _TimeContext, caveats: list[str]
+) -> SurfaceRainDiagnostics:
+    if "rain" not in dataset.data_vars:
+        caveats.append("surface_rain_field_absent")
+        return SurfaceRainDiagnostics()
+
+    surface_rain = dataset["rain"]
+    units = _attr_string(surface_rain, "units")
+    if _non_finite_count(surface_rain) > 0:
+        caveats.append("non_finite_values_detected_in_surface_rain")
+    if not _has_finite_values(surface_rain):
+        caveats.append("surface_rain_field_entirely_non_finite")
+        return SurfaceRainDiagnostics(available=False, field_absent=False, units=units)
+
+    max_series: list[TimeValue] = []
+    max_surface_rain: float | None = None
+    time_of_max_surface_rain: float | None = None
+
+    for index, array in enumerate(_time_slices(surface_rain, time.dimension)):
+        time_seconds = time.at(index)
+        slice_max = _finite_max(array)
+        max_series.append(TimeValue(time_seconds=time_seconds, value=slice_max))
+        if slice_max is not None and (max_surface_rain is None or slice_max > max_surface_rain):
+            max_surface_rain = slice_max
+            time_of_max_surface_rain = time_seconds
+
+    present = max_surface_rain is not None and max_surface_rain > 0.0
+    return SurfaceRainDiagnostics(
+        present=present,
+        max_surface_rain=max_surface_rain,
+        time_of_max_surface_rain_seconds=time_of_max_surface_rain,
+        surface_rain_max_time_series=max_series,
+        units=units,
+        user_message=(
+            "Surface rain reached the ground." if present else "No surface rain reached the ground."
+        ),
+        available=True,
+        field_absent=False,
+    )
+
+
+def _reflectivity_diagnostics(
+    dataset: Any, time: _TimeContext, caveats: list[str]
+) -> ReflectivityDiagnostics:
+    if "dbz" not in dataset.data_vars:
+        caveats.append("dbz_field_absent")
+        return ReflectivityDiagnostics()
+
+    dbz = dataset["dbz"]
+    units = _attr_string(dbz, "units")
+    if _non_finite_count(dbz) > 0:
+        caveats.append("non_finite_values_detected_in_dbz")
+    if not _has_finite_values(dbz):
+        caveats.append("dbz_field_entirely_non_finite")
+        return ReflectivityDiagnostics(available=False, field_absent=False, units=units)
+
+    max_series: list[TimeValue] = []
+    max_dbz: float | None = None
+    time_of_max_dbz: float | None = None
+
+    for index, array in enumerate(_time_slices(dbz, time.dimension)):
+        time_seconds = time.at(index)
+        slice_max = _finite_max(array)
+        max_series.append(TimeValue(time_seconds=time_seconds, value=slice_max))
+        if slice_max is not None and (max_dbz is None or slice_max > max_dbz):
+            max_dbz = slice_max
+            time_of_max_dbz = time_seconds
+
+    return ReflectivityDiagnostics(
+        max_dbz=max_dbz,
+        time_of_max_dbz_seconds=time_of_max_dbz,
+        dbz_max_time_series=max_series,
+        units=units,
+        user_message=(
+            "Reflectivity field available." if max_dbz is not None else "Reflectivity unavailable."
+        ),
+        available=True,
+        field_absent=False,
     )
 
 
