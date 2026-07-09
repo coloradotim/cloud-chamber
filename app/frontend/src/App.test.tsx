@@ -3772,6 +3772,18 @@ describe("App", () => {
       expect.objectContaining({ method: "POST" }),
     );
 
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(screen.queryByLabelText("Result delete preview")).not.toBeInTheDocument();
+
+    fireEvent.click(
+      within(resultDetail).getByRole("button", {
+        name: "Preview delete result and local run data",
+      }),
+    );
+    expect(
+      await screen.findByRole("heading", { name: "Delete result and local run data preview" }),
+    ).toBeInTheDocument();
+
     fireEvent.click(screen.getByRole("button", { name: "Delete result and local run data" }));
 
     expect(await screen.findByText(/Result and local run data deleted/)).toBeInTheDocument();
@@ -3784,6 +3796,35 @@ describe("App", () => {
     );
     expect(
       screen.queryByRole("button", { name: "Quick-look shallow cumulus" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("clears result delete preview when a different result is selected", async () => {
+    render(<App />);
+
+    const resultDetail = await screen.findByLabelText("Result detail");
+    expect(resultDetail).toHaveTextContent("Quick-look shallow cumulus");
+
+    fireEvent.click(
+      within(resultDetail).getByRole("button", {
+        name: "Preview delete result and local run data",
+      }),
+    );
+
+    expect(await screen.findByLabelText("Result delete preview")).toBeInTheDocument();
+    expect(screen.getByText("/tmp/CloudChamber/runs/dry-run-quicklook")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Dry Failed Cumulus quick-look" }));
+
+    await waitFor(() => {
+      expect(screen.getByLabelText("Result detail")).toHaveTextContent(
+        "Dry Failed Cumulus quick-look",
+      );
+    });
+    expect(screen.queryByLabelText("Result delete preview")).not.toBeInTheDocument();
+    expect(screen.queryByText("/tmp/CloudChamber/runs/dry-run-quicklook")).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Delete result and local run data" }),
     ).not.toBeInTheDocument();
   });
 

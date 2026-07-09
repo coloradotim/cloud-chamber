@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, FormEvent } from "react";
 
 import "./App.css";
@@ -1435,6 +1435,7 @@ export function App() {
   const [ingestedResultId, setIngestedResultId] = useState<string | null>(null);
   const [results, setResults] = useState<ResultCard[]>([]);
   const [selectedResultId, setSelectedResultId] = useState<string | null>(null);
+  const selectedResultIdRef = useRef<string | null>(null);
   const [resultDraft, setResultDraft] = useState({ name: "", tags: "", notes: "" });
   const [resultsStatus, setResultsStatus] = useState("Loading results...");
   const [storageInventory, setStorageInventory] = useState<StorageInventoryResponse | null>(null);
@@ -1579,6 +1580,12 @@ export function App() {
         : results[0],
     [results, selectedResultId],
   );
+
+  useEffect(() => {
+    selectedResultIdRef.current = selectedResultId;
+    setResultDeletePreview(null);
+    setResultDeleteMessage(null);
+  }, [selectedResultId]);
   const comparisonPair = useMemo(() => defaultComparisonPair(results), [results]);
   const autoFinalizingWorkerRunIdSet = useMemo(
     () => new Set(autoFinalizingWorkerRunIds),
@@ -2309,6 +2316,7 @@ export function App() {
     setResultsStatus("Preparing result delete preview");
     try {
       const preview = await requestResultDeletePreview(resultId);
+      if (selectedResultIdRef.current !== resultId) return;
       setResultDeletePreview(preview);
       setResultsStatus("Result delete preview ready");
     } catch (caught) {
@@ -2320,20 +2328,28 @@ export function App() {
   }
 
   async function handleConfirmResultDelete(resultId: string) {
+    if (resultDeletePreview?.result_id !== resultId) {
+      setResultDeletePreview(null);
+      setResultDeleteMessage(null);
+      setResultsError("Delete preview is stale. Preview deletion again before confirming.");
+      setResultsStatus("Delete preview expired");
+      return;
+    }
     setResultsError(null);
     setResultsStatus("Deleting selected result");
     try {
       const deleted = await confirmResultDelete(resultId);
       const remaining = results.filter((result) => result.result_id !== resultId);
+      const deleteMessage = `${deleted.message} Reclaimed ${formatBytes(
+        deleted.size_bytes,
+      )} from local storage.`;
       setResults(remaining);
       setSelectedResultId((current) =>
         current === resultId ? (remaining[0]?.result_id ?? null) : current,
       );
       setResultDeletePreview(null);
-      setResultDeleteMessage(
-        `${deleted.message} Reclaimed ${formatBytes(deleted.size_bytes)} from local storage.`,
-      );
-      setResultsStatus(remaining.length > 0 ? "Results loaded" : "No ingested results");
+      setResultDeleteMessage(deleteMessage);
+      setResultsStatus(deleteMessage);
       await refreshStorageAfterWorkflow("Local pipeline updated");
     } catch (caught) {
       setResultsError(caught instanceof Error ? caught.message : "Unable to delete selected result.");
@@ -2502,6 +2518,11 @@ export function App() {
           }}
           onPreviewResultDelete={handlePreviewResultDelete}
           onConfirmResultDelete={handleConfirmResultDelete}
+          onCancelResultDelete={() => {
+            setResultDeletePreview(null);
+            setResultDeleteMessage(null);
+            setResultsStatus("Results loaded");
+          }}
         />
       )}
 
@@ -3779,6 +3800,7 @@ function ResultsWorkspace({
   onCompareInspect,
   onPreviewResultDelete,
   onConfirmResultDelete,
+  onCancelResultDelete,
 }: {
   activeTab: ResultsTab;
   results: ResultCard[];
@@ -3799,6 +3821,7 @@ function ResultsWorkspace({
   onCompareInspect: (resultId: string) => void;
   onPreviewResultDelete: (resultId: string) => void;
   onConfirmResultDelete: (resultId: string) => void;
+  onCancelResultDelete: () => void;
 }) {
   return (
     <section className="results-library" aria-labelledby="results-title">
@@ -3852,6 +3875,7 @@ function ResultsWorkspace({
           deleteMessage={resultDeleteMessage}
           onPreviewDelete={onPreviewResultDelete}
           onConfirmDelete={onConfirmResultDelete}
+          onCancelDelete={onCancelResultDelete}
         />
       )}
 
@@ -3885,6 +3909,7 @@ function NotebookWorkspace({
   deleteMessage,
   onPreviewDelete,
   onConfirmDelete,
+  onCancelDelete,
 }: {
   results: ResultCard[];
   selectedResult: ResultCard | undefined;
@@ -3901,6 +3926,7 @@ function NotebookWorkspace({
   deleteMessage: string | null;
   onPreviewDelete: (resultId: string) => void;
   onConfirmDelete: (resultId: string) => void;
+  onCancelDelete: () => void;
 }) {
   const [filters, setFilters] = useState<ResultsFilterState>(DEFAULT_RESULTS_FILTERS);
   const scenarioOptions = useMemo(() => resultScenarioOptions(results), [results]);
@@ -3954,6 +3980,7 @@ function NotebookWorkspace({
           deleteMessage={deleteMessage}
           onPreviewDelete={onPreviewDelete}
           onConfirmDelete={onConfirmDelete}
+          onCancelDelete={onCancelDelete}
         />
       </div>
     </section>
@@ -5806,6 +5833,7 @@ function ResultNotebookCard({
   deleteMessage,
   onPreviewDelete,
   onConfirmDelete,
+  onCancelDelete,
 }: {
   result: ResultCard | undefined;
   draft: { name: string; tags: string; notes: string };
@@ -5817,6 +5845,7 @@ function ResultNotebookCard({
   deleteMessage: string | null;
   onPreviewDelete: (resultId: string) => void;
   onConfirmDelete: (resultId: string) => void;
+  onCancelDelete: () => void;
 }) {
   if (!result) {
     return (
@@ -5825,6 +5854,9 @@ function ResultNotebookCard({
       </section>
     );
   }
+
+  const visibleDeletePreview =
+    deletePreview?.result_id === result.result_id ? deletePreview : null;
 
   return (
     <section className="notebook-card" aria-label="Result detail">
@@ -5878,7 +5910,7 @@ function ResultNotebookCard({
 
       <InterestingTimesSummary result={result} />
       {deleteMessage && <p role="status">{deleteMessage}</p>}
-      {deletePreview?.result_id === result.result_id && (
+      {visibleDeletePreview && (
         <section className="delete-preview result-delete-preview" aria-label="Result delete preview">
           <h4>Delete result and local run data preview</h4>
           <p>
@@ -5889,26 +5921,34 @@ function ResultNotebookCard({
             have been deleted yet.
           </p>
           <dl className="metric-grid">
-            <Metric label="Run ID" value={deletePreview.run_id} />
-            <Metric label="Selected path" value={deletePreview.run_directory} />
-            <Metric label="Estimated reclaimed" value={formatBytes(deletePreview.size_bytes)} />
-            <Metric label="Preview status" value={deletePreview.message} />
+            <Metric label="Run ID" value={visibleDeletePreview.run_id} />
+            <Metric label="Selected path" value={visibleDeletePreview.run_directory} />
+            <Metric
+              label="Estimated reclaimed"
+              value={formatBytes(visibleDeletePreview.size_bytes)}
+            />
+            <Metric label="Preview status" value={visibleDeletePreview.message} />
           </dl>
           <ul className="compact-list">
-            {deletePreview.categories.map((category) => (
+            {visibleDeletePreview.categories.map((category) => (
               <li key={category.label}>
                 <strong>{category.label}</strong>: {category.description}{" "}
                 {category.present ? `(${category.item_count} local item(s))` : "(none found)"}
               </li>
             ))}
           </ul>
-          <button
-            type="button"
-            className="danger-button"
-            onClick={() => onConfirmDelete(deletePreview.result_id)}
-          >
-            Delete result and local run data
-          </button>
+          <div className="button-row">
+            <button type="button" onClick={onCancelDelete}>
+              Cancel
+            </button>
+            <button
+              type="button"
+              className="danger-button"
+              onClick={() => onConfirmDelete(visibleDeletePreview.result_id)}
+            >
+              Delete result and local run data
+            </button>
+          </div>
         </section>
       )}
 
