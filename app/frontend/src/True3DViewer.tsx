@@ -2,6 +2,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 
+import { cameraDistanceLimits, scalarPointPixelSize } from "./True3DViewer.utils";
+
 type CoordinateExtent = { min: number; max: number; units: string | null };
 
 type ProvenancePayload = {
@@ -158,10 +160,13 @@ export function True3DViewer({
     setCameraStatus("Camera reset to shallow-cumulus overview");
   }, [bounds]);
 
-  const setCameraPreset = useCallback((preset: CameraPreset) => {
-    applyCameraPreset(preset, refs.current, bounds);
-    setCameraStatus(cameraPresetStatus(preset));
-  }, [bounds]);
+  const setCameraPreset = useCallback(
+    (preset: CameraPreset) => {
+      applyCameraPreset(preset, refs.current, bounds);
+      setCameraStatus(cameraPresetStatus(preset));
+    },
+    [bounds],
+  );
 
   const zoomCamera = useCallback((direction: "in" | "out") => {
     setCameraStatus(direction === "in" ? "Camera zoomed in" : "Camera zoomed out");
@@ -195,8 +200,9 @@ export function True3DViewer({
       controls.enableDamping = true;
       controls.dampingFactor = 0.08;
       controls.screenSpacePanning = true;
-      controls.minDistance = 1.5;
-      controls.maxDistance = 40;
+      const distanceLimits = cameraDistanceLimits(bounds.maxRange);
+      controls.minDistance = distanceLimits.minDistance;
+      controls.maxDistance = distanceLimits.maxDistance;
       controls.mouseButtons = {
         LEFT: THREE.MOUSE.ROTATE,
         MIDDLE: THREE.MOUSE.DOLLY,
@@ -481,7 +487,11 @@ function sceneBoundsFromSignature(signature: string): SceneBounds {
 function domainBox(bounds: SceneBounds): THREE.Object3D {
   const geometry = new THREE.BoxGeometry(bounds.xRange, bounds.zRange, bounds.yRange);
   const edges = new THREE.EdgesGeometry(geometry);
-  const material = new THREE.LineBasicMaterial({ color: 0x3f6f85, transparent: true, opacity: 0.75 });
+  const material = new THREE.LineBasicMaterial({
+    color: 0x3f6f85,
+    transparent: true,
+    opacity: 0.75,
+  });
   return new THREE.LineSegments(edges, material);
 }
 
@@ -514,7 +524,9 @@ function domainFloorGrid(bounds: SceneBounds): THREE.Group {
       new THREE.Vector3(x, floor, yMin),
       new THREE.Vector3(x, floor, yMax),
     ]);
-    group.add(new THREE.Line(geometry, gridLineMaterial(value, minorMaterial, majorMaterial, zeroMaterial)));
+    group.add(
+      new THREE.Line(geometry, gridLineMaterial(value, minorMaterial, majorMaterial, zeroMaterial)),
+    );
   }
 
   for (const value of gridTickValues(bounds.y, 0.5)) {
@@ -523,7 +535,9 @@ function domainFloorGrid(bounds: SceneBounds): THREE.Group {
       new THREE.Vector3(xMin, floor, y),
       new THREE.Vector3(xMax, floor, y),
     ]);
-    group.add(new THREE.Line(geometry, gridLineMaterial(value, minorMaterial, majorMaterial, zeroMaterial)));
+    group.add(
+      new THREE.Line(geometry, gridLineMaterial(value, minorMaterial, majorMaterial, zeroMaterial)),
+    );
   }
 
   return group;
@@ -556,15 +570,33 @@ function axisTickMarks(bounds: SceneBounds): THREE.Group {
 
   for (const value of majorTickValues(bounds.x)) {
     const x = centeredCoordinate(value, bounds.x);
-    group.add(axisLine(new THREE.Vector3(x, floor, yMin), new THREE.Vector3(x, floor, yMin - tickLength), 0x2f7fb5));
+    group.add(
+      axisLine(
+        new THREE.Vector3(x, floor, yMin),
+        new THREE.Vector3(x, floor, yMin - tickLength),
+        0x2f7fb5,
+      ),
+    );
   }
   for (const value of majorTickValues(bounds.y)) {
     const y = centeredCoordinate(value, bounds.y);
-    group.add(axisLine(new THREE.Vector3(xMin, floor, y), new THREE.Vector3(xMin - tickLength, floor, y), 0x4f8f7a));
+    group.add(
+      axisLine(
+        new THREE.Vector3(xMin, floor, y),
+        new THREE.Vector3(xMin - tickLength, floor, y),
+        0x4f8f7a,
+      ),
+    );
   }
   for (const value of majorTickValues(bounds.z)) {
     const z = centeredCoordinate(value, bounds.z);
-    group.add(axisLine(new THREE.Vector3(xMin, z, yMin), new THREE.Vector3(xMin - tickLength, z, yMin), 0xa76f24));
+    group.add(
+      axisLine(
+        new THREE.Vector3(xMin, z, yMin),
+        new THREE.Vector3(xMin - tickLength, z, yMin),
+        0xa76f24,
+      ),
+    );
   }
   return group;
 }
@@ -659,14 +691,17 @@ function cloudPointLayer(
   geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
   geometry.setAttribute("color", new THREE.BufferAttribute(colors, 3));
   const material = new THREE.PointsMaterial({
-    size: Math.max(0.035, pointSize * 0.008),
+    size: scalarPointPixelSize(pointSize),
     vertexColors: true,
     transparent: true,
     opacity,
     depthWrite: false,
-    sizeAttenuation: true,
+    sizeAttenuation: false,
   });
-  return new THREE.Points(geometry, material);
+  const layer = new THREE.Points(geometry, material);
+  layer.name = "CM1 scalar point cloud";
+  layer.renderOrder = 20;
+  return layer;
 }
 
 function scalarPointColor(
@@ -923,7 +958,8 @@ function centeredCoordinate(value: number, extent: CoordinateExtent): number {
 }
 
 function sliceCoordinate(slice: SliceResponse): number {
-  const coordinate = slice.selection.selected_coordinate_value ?? slice.selection.level_coordinate_value;
+  const coordinate =
+    slice.selection.selected_coordinate_value ?? slice.selection.level_coordinate_value;
   const numeric = typeof coordinate === "number" ? coordinate : Number(coordinate);
   return Number.isFinite(numeric) ? numeric : 0;
 }
@@ -969,7 +1005,9 @@ function roundTick(value: number): number {
 
 function labeledTickValues(extent: CoordinateExtent): number[] {
   const ticks = majorTickValues(extent);
-  return ticks.filter((value) => value === 0 || Math.abs(value) === Math.max(...ticks.map(Math.abs)));
+  return ticks.filter(
+    (value) => value === 0 || Math.abs(value) === Math.max(...ticks.map(Math.abs)),
+  );
 }
 
 function normalize(value: number, min: number, max: number): number {

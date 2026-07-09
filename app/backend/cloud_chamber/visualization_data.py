@@ -361,7 +361,7 @@ def _metadata_field_view_defaults(
     *,
     selected_time_index: int | None,
 ) -> FieldViewDefaults:
-    time_size = _dimension_size(field, field.coordinate_names.time, fallback=1)
+    time_size = _metadata_time_size(metadata, field)
     vertical_size = _dimension_size(field, field.coordinate_names.vertical, fallback=1)
     y_size = _dimension_size(field, field.coordinate_names.y, fallback=1)
     x_size = _dimension_size(field, field.coordinate_names.x, fallback=1)
@@ -374,7 +374,7 @@ def _metadata_field_view_defaults(
         field=field.raw_field_name,
         time_index=resolved_time,
         time_seconds=_metadata_time_seconds(metadata, resolved_time),
-        horizontal_level_index=max(0, vertical_size // 2),
+        horizontal_level_index=_metadata_horizontal_level_index(metadata, field, vertical_size),
         vertical_x_index=max(0, y_size // 2),
         vertical_y_index=max(0, x_size // 2),
         source=(
@@ -391,9 +391,19 @@ def _metadata_field_view_defaults(
             [
                 *_field_caveats(field.raw_field_name, field.coordinate_names),
                 "default_location_uses_ingested_metadata_not_full_field_scan",
-                "default_location_fell_back_to_domain_center",
+                *_metadata_default_location_caveats(metadata, field.raw_field_name),
             ]
         ),
+    )
+
+
+def _metadata_time_size(metadata: ResultMetadata, field: VisualizableField) -> int:
+    return max(
+        1,
+        _dimension_size(field, field.coordinate_names.time, fallback=1),
+        len(field.time_coordinate_values),
+        metadata.time_steps or 0,
+        len(metadata.model_output_paths),
     )
 
 
@@ -404,6 +414,72 @@ def _dimension_size(field: VisualizableField, dimension: str | None, *, fallback
         if field_dimension == dimension and index < len(field.shape):
             return int(field.shape[index])
     return fallback
+
+
+def _metadata_horizontal_level_index(
+    metadata: ResultMetadata,
+    field: VisualizableField,
+    vertical_size: int,
+) -> int:
+    if vertical_size <= 1:
+        return 0
+    if field.raw_field_name not in {"qc", "qr", "dbz"} or metadata.diagnostics is None:
+        return max(0, vertical_size // 2)
+
+    target_height_m = _metadata_cloud_focus_height_m(metadata, field.raw_field_name)
+    if target_height_m is None:
+        return max(0, vertical_size // 2)
+
+    # Metadata-only defaults intentionally avoid opening large output sequences.
+    # CM1 deep-trial files currently expose 500 m-ish scalar levels; this maps
+    # shallow cloud-water metadata away from the domain midpoint without
+    # pretending we know the exact native coordinate.
+    estimated_index = math.ceil(max(0.0, target_height_m) / 500.0) - 1
+    return max(0, min(vertical_size - 1, estimated_index))
+
+
+def _metadata_cloud_focus_height_m(metadata: ResultMetadata, field_name: str) -> float | None:
+    diagnostics = metadata.diagnostics
+    if diagnostics is None or field_name not in {"qc", "qr", "dbz"}:
+        return None
+    if field_name == "qc" and diagnostics.cloud.time_of_max_qc_seconds is not None:
+        height = _time_value_at(
+            diagnostics.cloud.max_qc_height_time_series,
+            diagnostics.cloud.time_of_max_qc_seconds,
+        )
+        if height is not None:
+            return height
+    return diagnostics.cloud.cloud_top_m
+
+
+def _time_value_at(series: list[Any], target_seconds: float) -> float | None:
+    closest: tuple[float, float] | None = None
+    for point in series:
+        value = getattr(point, "value", None)
+        seconds = getattr(point, "time_seconds", None)
+        if value is None or seconds is None:
+            continue
+        try:
+            numeric_value = float(value)
+            numeric_seconds = float(seconds)
+        except (TypeError, ValueError):
+            continue
+        if not math.isfinite(numeric_value) or not math.isfinite(numeric_seconds):
+            continue
+        distance = abs(numeric_seconds - target_seconds)
+        if closest is None or distance < closest[0]:
+            closest = (distance, numeric_value)
+    return closest[1] if closest is not None else None
+
+
+def _metadata_default_location_caveats(
+    metadata: ResultMetadata,
+    field_name: str,
+) -> list[str]:
+    caveats = ["default_location_fell_back_to_domain_center"]
+    if field_name in {"qc", "qr", "dbz"} and _metadata_cloud_focus_height_m(metadata, field_name):
+        caveats.append("default_vertical_level_uses_ingested_cloud_height_estimate")
+    return caveats
 
 
 def _metadata_interesting_time_index(

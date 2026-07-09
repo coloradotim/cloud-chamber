@@ -327,6 +327,22 @@ def test_multifile_point_cloud_reads_requested_output_time_without_combining_all
     assert cloud.stats.max_value == pytest.approx(3e-5)
 
 
+def test_metadata_defaults_use_multifile_interesting_time_for_large_results(
+    tmp_path: Path,
+) -> None:
+    settings, result_id, _run_dir = create_multifile_visualization_result(
+        tmp_path,
+        file_count=10,
+    )
+
+    defaults = view_defaults(settings, result_id)
+
+    assert defaults.provenance.processing_method == "ingested_result_metadata_view_defaults"
+    assert defaults.fields["qc"].time_index == 9
+    assert defaults.fields["qc"].time_seconds == 5400.0
+    assert defaults.fields["qc"].horizontal_level_index == 0
+
+
 def test_horizontal_qc_slice_uses_json_values_and_counts_non_finite(
     tmp_path: Path,
 ) -> None:
