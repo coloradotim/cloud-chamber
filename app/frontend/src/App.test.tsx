@@ -567,6 +567,54 @@ const completedRunStatus = {
   },
 };
 
+const emptyRunQueue = {
+  schema_version: "1",
+  entries: [],
+  active_run_id: null,
+  queued_count: 0,
+  updated_at: new Date().toISOString(),
+};
+
+const runningRunQueue = {
+  schema_version: "1",
+  entries: [
+    {
+      run_id: "dry-run-001",
+      manifest_path: "/tmp/CloudChamber/runs/dry-run-001/run_manifest.json",
+      state: "running",
+      queued_at: "2026-05-22T15:15:35Z",
+      started_at: "2026-05-22T15:15:36Z",
+      updated_at: new Date().toISOString(),
+      message: "Running local CM1 process for dry-run-001.",
+    },
+  ],
+  active_run_id: "dry-run-001",
+  queued_count: 0,
+  updated_at: new Date().toISOString(),
+};
+
+const autoIngestedRunQueue = {
+  schema_version: "1",
+  entries: [
+    {
+      run_id: "dry-run-001",
+      manifest_path: "/tmp/CloudChamber/runs/dry-run-001/run_manifest.json",
+      state: "ingested",
+      queued_at: "2026-05-22T15:15:35Z",
+      started_at: "2026-05-22T15:15:36Z",
+      finished_at: "2026-05-22T15:45:36Z",
+      updated_at: new Date().toISOString(),
+      result_id: "result-dry-run-quicklook",
+      cleanup_status: "queue_finalized_result_backing_run_retained",
+      message:
+        "Result auto-ingested. The queue entry is finalized; the local run directory is retained because it backs Results and Explore.",
+    },
+  ],
+  active_run_id: null,
+  queued_count: 0,
+  updated_at: new Date().toISOString(),
+};
+
 const resultCard = {
   result_id: "result-dry-run-quicklook",
   run_id: "dry-run-quicklook",
@@ -2138,6 +2186,7 @@ function downsampledCloudSliceResponse() {
 }
 
 beforeEach(() => {
+  let runStatusRefreshCount = 0;
   vi.stubGlobal(
     "fetch",
     vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
@@ -2204,6 +2253,12 @@ beforeEach(() => {
       if (url === "/api/runs/launch") {
         return Promise.resolve(new Response(JSON.stringify(runningRunStatus), { status: 200 }));
       }
+      if (url === "/api/runs/queue" && init?.method === "POST") {
+        return Promise.resolve(new Response(JSON.stringify(runningRunQueue), { status: 200 }));
+      }
+      if (url === "/api/runs/queue") {
+        return Promise.resolve(new Response(JSON.stringify(emptyRunQueue), { status: 200 }));
+      }
       if (url === "/api/lan-worker/config") {
         return Promise.resolve(
           new Response(
@@ -2220,7 +2275,13 @@ beforeEach(() => {
         );
       }
       if (url.startsWith("/api/runs/status")) {
-        return Promise.resolve(new Response(JSON.stringify(completedRunStatus), { status: 200 }));
+        runStatusRefreshCount += 1;
+        return Promise.resolve(
+          new Response(
+            JSON.stringify(runStatusRefreshCount === 1 ? runningRunStatus : completedRunStatus),
+            { status: 200 },
+          ),
+        );
       }
       if (url === "/api/results/ingest") {
         return Promise.resolve(
@@ -3049,6 +3110,120 @@ describe("App", () => {
     expect(await screen.findByText(/Result metadata created/)).toBeInTheDocument();
   });
 
+  it("queues a stored package for serial local CM1 execution", async () => {
+    const queuedPackage = {
+      ...runningRunQueue,
+      entries: [
+        {
+          ...runningRunQueue.entries[0],
+          run_id: "dry-run-packaged",
+          manifest_path: "/tmp/CloudChamber/runs/dry-run-packaged/run_manifest.json",
+          message: "Running local CM1 process for dry-run-packaged.",
+        },
+      ],
+      active_run_id: "dry-run-packaged",
+    };
+    vi.mocked(fetch).mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url === "/api/scenarios") {
+        return Promise.resolve(new Response(JSON.stringify(scenarioResponse), { status: 200 }));
+      }
+      if (url === "/api/results") {
+        return Promise.resolve(new Response(JSON.stringify(resultsResponse), { status: 200 }));
+      }
+      if (url === "/api/storage/inventory") {
+        return Promise.resolve(
+          new Response(JSON.stringify(storageInventoryResponse), { status: 200 }),
+        );
+      }
+      if (url === "/api/runs/queue" && init?.method === "POST") {
+        return Promise.resolve(new Response(JSON.stringify(queuedPackage), { status: 200 }));
+      }
+      if (url === "/api/runs/queue") {
+        return Promise.resolve(new Response(JSON.stringify(emptyRunQueue), { status: 200 }));
+      }
+      if (url.startsWith("/api/runs/status")) {
+        return Promise.resolve(new Response(JSON.stringify(runningRunStatus), { status: 200 }));
+      }
+      if (url === "/api/lan-worker/config") {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              configured: false,
+              available: false,
+              message: "LAN worker is not configured.",
+              cm1_env_keys: [],
+              cm1_env_settings: [],
+              custom_launch_command: false,
+            }),
+            { status: 200 },
+          ),
+        );
+      }
+      return Promise.resolve(new Response("not found", { status: 404 }));
+    });
+
+    render(<App />);
+    fireEvent.click(await screen.findByRole("button", { name: "Build" }));
+    const queueButtons = await screen.findAllByRole("button", { name: "Queue local CM1 run" });
+    fireEvent.click(queueButtons[0]);
+
+    await waitFor(() => {
+      expect(fetch).toHaveBeenCalledWith(
+        "/api/runs/queue",
+        expect.objectContaining({
+          method: "POST",
+          body: JSON.stringify({
+            manifest_path: "/tmp/CloudChamber/runs/dry-run-packaged/run_manifest.json",
+          }),
+        }),
+      );
+    });
+    expect(await screen.findByText(/Running dry-run-packaged/)).toBeInTheDocument();
+  });
+
+  it("shows auto-ingested queue entries without implying result-backed data was deleted", async () => {
+    vi.mocked(fetch).mockImplementation((input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url === "/api/scenarios") {
+        return Promise.resolve(new Response(JSON.stringify(scenarioResponse), { status: 200 }));
+      }
+      if (url === "/api/results") {
+        return Promise.resolve(new Response(JSON.stringify(resultsResponse), { status: 200 }));
+      }
+      if (url === "/api/storage/inventory") {
+        return Promise.resolve(
+          new Response(JSON.stringify(storageInventoryResponse), { status: 200 }),
+        );
+      }
+      if (url === "/api/runs/queue") {
+        return Promise.resolve(new Response(JSON.stringify(autoIngestedRunQueue), { status: 200 }));
+      }
+      if (url === "/api/lan-worker/config") {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              configured: false,
+              available: false,
+              message: "LAN worker is not configured.",
+              cm1_env_keys: [],
+              cm1_env_settings: [],
+              custom_launch_command: false,
+            }),
+            { status: 200 },
+          ),
+        );
+      }
+      return Promise.resolve(new Response("not found", { status: 404 }));
+    });
+
+    render(<App />);
+    fireEvent.click(await screen.findByRole("button", { name: "Build" }));
+
+    expect(await screen.findByText("Auto-ingested")).toBeInTheDocument();
+    expect(screen.getByText(/package retained for Results\/Explore/)).toBeInTheDocument();
+  });
+
   it("automatically copies back, ingests, and cleans LAN worker output after completion", async () => {
     let ingested = false;
     const workerRun = {
@@ -3458,7 +3633,7 @@ describe("App", () => {
     expect(screen.getAllByRole("button", { name: "Open in Explore" }).length).toBeGreaterThan(0);
     expect(screen.getAllByText("Ingested").length).toBeGreaterThan(0);
     expect(fetch).toHaveBeenCalledWith(
-      "/api/runs/launch",
+      "/api/runs/queue",
       expect.objectContaining({ method: "POST" }),
     );
     expect(fetch).toHaveBeenCalledWith(
@@ -3489,12 +3664,15 @@ describe("App", () => {
           new Response(JSON.stringify(storageInventoryResponse), { status: 200 }),
         );
       }
-      if (url === "/api/runs/launch" && init?.method === "POST") {
+      if (url === "/api/runs/queue" && init?.method === "POST") {
         return Promise.resolve(
           new Response(JSON.stringify({ detail: "CM1 executable is missing. Missing: cm1.exe" }), {
             status: 400,
           }),
         );
+      }
+      if (url === "/api/runs/queue") {
+        return Promise.resolve(new Response(JSON.stringify(emptyRunQueue), { status: 200 }));
       }
       return Promise.resolve(new Response("not found", { status: 404 }));
     });

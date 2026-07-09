@@ -382,6 +382,28 @@ type RunStatusResponse = {
   progress: RunProgressResponse | null;
 };
 
+type RunQueueEntry = {
+  run_id: string;
+  manifest_path: string;
+  state: string;
+  queued_at: string;
+  updated_at: string;
+  started_at?: string | null;
+  finished_at?: string | null;
+  result_id?: string | null;
+  message?: string | null;
+  error?: string | null;
+  cleanup_status?: string | null;
+};
+
+type RunQueueResponse = {
+  schema_version: string;
+  entries: RunQueueEntry[];
+  active_run_id: string | null;
+  queued_count: number;
+  updated_at: string;
+};
+
 type LanWorkerConfigResponse = {
   configured: boolean;
   available: boolean;
@@ -1108,16 +1130,24 @@ async function readUploadedTextFile(file: File): Promise<string> {
   });
 }
 
-async function launchLocalRun(manifestPath: string): Promise<RunStatusResponse> {
-  const response = await fetch("/api/runs/launch", {
+async function enqueueLocalRun(manifestPath: string): Promise<RunQueueResponse> {
+  const response = await fetch("/api/runs/queue", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ manifest_path: manifestPath }),
   });
   if (!response.ok) {
-    throw new Error(await responseError(response, "Unable to launch local CM1."));
+    throw new Error(await responseError(response, "Unable to queue local CM1 run."));
   }
-  return response.json() as Promise<RunStatusResponse>;
+  return response.json() as Promise<RunQueueResponse>;
+}
+
+async function fetchRunQueue(): Promise<RunQueueResponse> {
+  const response = await fetch("/api/runs/queue");
+  if (!response.ok) {
+    throw new Error(await responseError(response, "Unable to refresh local run queue."));
+  }
+  return response.json() as Promise<RunQueueResponse>;
 }
 
 async function fetchRunStatus(manifestPath: string): Promise<RunStatusResponse> {
@@ -1447,6 +1477,8 @@ export function App() {
   const [candidateDetailId, setCandidateDetailId] = useState<string | null>(null);
   const [dryRun, setDryRun] = useState<DryRunResponse | null>(null);
   const [runStatus, setRunStatus] = useState<RunStatusResponse | null>(null);
+  const [runQueue, setRunQueue] = useState<RunQueueResponse | null>(null);
+  const [runQueueStatus, setRunQueueStatus] = useState("Local run queue not checked yet");
   const [runWorkflowError, setRunWorkflowError] = useState<string | null>(null);
   const [lanWorkerConfig, setLanWorkerConfig] = useState<LanWorkerConfigResponse | null>(null);
   const [lanWorkerStatus, setLanWorkerStatus] = useState<LanWorkerRunResponse | null>(null);
@@ -1619,6 +1651,7 @@ export function App() {
     () => new Set(failedAutoFinalizingWorkerRunIds),
     [failedAutoFinalizingWorkerRunIds],
   );
+  const runQueuePollKey = useMemo(() => runQueuePollingKey(runQueue), [runQueue]);
 
   useEffect(() => {
     if (!selectedScenario) return;
@@ -1687,6 +1720,22 @@ export function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [autoFinalizingWorkerRunIdSet, failedAutoFinalizingWorkerRunIdSet, results, storageInventory]);
 
+  useEffect(() => {
+    void refreshLocalRunQueue("Local run queue refreshed");
+    // refreshLocalRunQueue intentionally mutates several workflow surfaces after auto-ingest.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    if (!runQueueHasOpenEntries(runQueue)) return;
+    const intervalId = window.setInterval(() => {
+      void refreshLocalRunQueue();
+    }, 10000);
+    return () => window.clearInterval(intervalId);
+    // refreshLocalRunQueue intentionally reads current dryRun/results/storage state.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [runQueuePollKey]);
+
   const validationMessages = useMemo(() => {
     if (!selectedScenario) return [];
     return selectedScenario.controls.flatMap((control) => {
@@ -1711,6 +1760,47 @@ export function App() {
       );
       setStorageStatus("Run inventory unavailable");
     }
+  }
+
+  async function refreshLocalRunQueue(statusWhenLoaded?: string): Promise<RunQueueResponse | null> {
+    try {
+      const payload = await fetchRunQueue();
+      setRunQueue(payload);
+      setRunQueueStatus(statusWhenLoaded ?? runQueueSummary(payload));
+      await syncCurrentRunStatusFromQueue(payload);
+      await processAutoIngestedQueue(payload);
+      return payload;
+    } catch (caught) {
+      setRunQueueStatus("Local run queue unavailable");
+      setRunWorkflowError(
+        caught instanceof Error ? caught.message : "Unable to refresh local run queue.",
+      );
+      return null;
+    }
+  }
+
+  async function syncCurrentRunStatusFromQueue(queue: RunQueueResponse): Promise<void> {
+    if (!dryRun) return;
+    const currentRunId = runIdFromPackage(dryRun);
+    const currentEntry = queue.entries.find((entry) => entry.run_id === currentRunId);
+    if (!currentEntry || !queueEntryIsOpen(currentEntry)) return;
+    try {
+      const refreshed = await fetchRunStatus(dryRun.manifest_path);
+      setRunStatus(refreshed);
+      setStatus(userFacingRunWorkflowStatus(refreshed));
+    } catch {
+      // The queue panel still shows serial state; status refresh can be retried manually.
+    }
+  }
+
+  async function processAutoIngestedQueue(queue: RunQueueResponse): Promise<void> {
+    const latestIngestedEntry = latestAutoIngestedQueueEntry(queue);
+    if (!latestIngestedEntry?.result_id) return;
+    if (dryRun && latestIngestedEntry.run_id === runIdFromPackage(dryRun)) {
+      setIngestedResultId(latestIngestedEntry.result_id);
+    }
+    await refreshResults(latestIngestedEntry.result_id);
+    await refreshStorageAfterWorkflow("Auto-ingested completed local run");
   }
 
   function handleSelectScenario(scenarioId: string) {
@@ -1981,15 +2071,18 @@ export function App() {
   async function handleLaunchRun() {
     if (!dryRun) return;
     setRunWorkflowError(null);
-    setStatus("Launching local CM1");
+    setStatus("Queueing local CM1 run");
     try {
-      const launched = await launchLocalRun(dryRun.manifest_path);
-      setRunStatus(launched);
-      setStatus(userFacingRunWorkflowStatus(launched));
+      const queued = await enqueueLocalRun(dryRun.manifest_path);
+      setRunQueue(queued);
+      setRunQueueStatus(runQueueSummary(queued));
+      setStatus(runQueueSummary(queued));
+      await syncCurrentRunStatusFromQueue(queued);
+      await processAutoIngestedQueue(queued);
       await refreshStorageAfterWorkflow("Local pipeline updated");
     } catch (caught) {
-      setRunWorkflowError(caught instanceof Error ? caught.message : "Unable to launch local CM1.");
-      setStatus("Launch blocked");
+      setRunWorkflowError(caught instanceof Error ? caught.message : "Unable to queue local CM1.");
+      setStatus("Queue blocked");
     }
   }
 
@@ -2000,6 +2093,7 @@ export function App() {
       const refreshed = await fetchRunStatus(dryRun.manifest_path);
       setRunStatus(refreshed);
       setStatus(userFacingRunWorkflowStatus(refreshed));
+      await refreshLocalRunQueue();
       await refreshStorageAfterWorkflow("Local pipeline updated");
     } catch (caught) {
       setRunWorkflowError(
@@ -2178,15 +2272,18 @@ export function App() {
 
   async function handleLaunchStoredRun(manifestPath: string) {
     setRunWorkflowError(null);
-    setStatus("Launching selected local package");
+    setStatus("Queueing selected local package");
     try {
-      const launched = await launchLocalRun(manifestPath);
-      setRunStatus(launched);
-      setStatus(userFacingRunWorkflowStatus(launched));
+      const queued = await enqueueLocalRun(manifestPath);
+      setRunQueue(queued);
+      setRunQueueStatus(runQueueSummary(queued));
+      setStatus(runQueueSummary(queued));
+      await syncCurrentRunStatusFromQueue(queued);
+      await processAutoIngestedQueue(queued);
       await refreshStorageAfterWorkflow("Local pipeline updated");
     } catch (caught) {
-      setRunWorkflowError(caught instanceof Error ? caught.message : "Unable to launch local CM1.");
-      setStatus("Launch blocked");
+      setRunWorkflowError(caught instanceof Error ? caught.message : "Unable to queue local CM1.");
+      setStatus("Queue blocked");
     }
   }
 
@@ -2437,6 +2534,8 @@ export function App() {
           validationMessages={validationMessages}
           dryRun={dryRun}
           runStatus={runStatus}
+          runQueue={runQueue}
+          runQueueStatus={runQueueStatus}
           runWorkflowError={runWorkflowError}
           lanWorkerConfig={lanWorkerConfig}
           lanWorkerStatus={lanWorkerStatus}
@@ -2588,6 +2687,8 @@ function BuildWorkspace({
   validationMessages,
   dryRun,
   runStatus,
+  runQueue,
+  runQueueStatus,
   runWorkflowError,
   lanWorkerConfig,
   lanWorkerStatus,
@@ -2676,6 +2777,8 @@ function BuildWorkspace({
   validationMessages: string[];
   dryRun: DryRunResponse | null;
   runStatus: RunStatusResponse | null;
+  runQueue: RunQueueResponse | null;
+  runQueueStatus: string;
   runWorkflowError: string | null;
   lanWorkerConfig: LanWorkerConfigResponse | null;
   lanWorkerStatus: LanWorkerRunResponse | null;
@@ -2975,6 +3078,8 @@ function BuildWorkspace({
           <LocalRunWorkflowPanel
             dryRun={dryRun}
             runStatus={runStatus}
+            runQueue={runQueue}
+            runQueueStatus={runQueueStatus}
             error={runWorkflowError}
             lanWorkerConfig={lanWorkerConfig}
             lanWorkerStatus={lanWorkerStatus}
@@ -4553,6 +4658,8 @@ function ComparisonTechnicalDetails({
 function LocalRunWorkflowPanel({
   dryRun,
   runStatus,
+  runQueue,
+  runQueueStatus,
   error,
   lanWorkerConfig,
   lanWorkerStatus,
@@ -4591,6 +4698,8 @@ function LocalRunWorkflowPanel({
 }: {
   dryRun: DryRunResponse | null;
   runStatus: RunStatusResponse | null;
+  runQueue: RunQueueResponse | null;
+  runQueueStatus: string;
   error: string | null;
   lanWorkerConfig: LanWorkerConfigResponse | null;
   lanWorkerStatus: LanWorkerRunResponse | null;
@@ -4757,7 +4866,7 @@ function LocalRunWorkflowPanel({
           <div className="button-row">
             {showLaunchButton && (
               <button type="button" data-testid="launch-cm1-btn" onClick={onLaunchRun}>
-                Run with local CM1
+                Queue local CM1 run
               </button>
             )}
             {showRefreshButton && (
@@ -4797,6 +4906,8 @@ function LocalRunWorkflowPanel({
             onCleanup={onCleanupLanWorkerRun}
           />
         )}
+
+        <LocalRunQueuePanel queue={runQueue} status={runQueueStatus} />
 
         {runStatus ? (
           <div className="run-status-panel" aria-label="Local run status">
@@ -4939,6 +5050,7 @@ function LocalRunWorkflowPanel({
         deleteMessage={runDeleteMessage}
         results={results}
         currentRunId={currentRunId}
+        runQueue={runQueue}
         lanWorkerConfigured={lanWorkerConfig?.configured ?? false}
         autoFinalizingWorkerRunIds={autoFinalizingWorkerRunIds}
         failedAutoFinalizingWorkerRunIds={failedAutoFinalizingWorkerRunIds}
@@ -4953,6 +5065,59 @@ function LocalRunWorkflowPanel({
         onPreviewDelete={onPreviewRunDelete}
         onConfirmDelete={onConfirmRunDelete}
       />
+    </section>
+  );
+}
+
+function LocalRunQueuePanel({
+  queue,
+  status,
+}: {
+  queue: RunQueueResponse | null;
+  status: string;
+}) {
+  const visibleEntries = queue ? queue.entries.slice(-5).reverse() : [];
+  return (
+    <section className="run-status-panel" aria-label="Local serial run queue">
+      <div className="panel-heading-row">
+        <div>
+          <p className="eyebrow">Local serial queue</p>
+          <h5>Queued CM1 packages</h5>
+        </div>
+        <StatusBadge
+          label={queue?.active_run_id ? "Running one package" : "Queue idle"}
+          tone={queue?.active_run_id ? "neutral" : "good"}
+        />
+      </div>
+      <p className="state-note">{status}</p>
+      {queue && (
+        <dl className="compact-metrics">
+          <Metric label="Active run" value={queue.active_run_id ?? "None"} />
+          <Metric label="Waiting" value={queue.queued_count.toLocaleString()} />
+          <Metric label="Last queue refresh" value={formatShortTime(queue.updated_at)} />
+        </dl>
+      )}
+      {visibleEntries.length > 0 ? (
+        <ol className="queue-list">
+          {visibleEntries.map((entry) => (
+            <li key={`${entry.run_id}-${entry.queued_at}`}>
+              <strong>{entry.run_id}</strong>{" "}
+              <span className="muted-inline">{runQueueEntryLabel(entry)}</span>
+              {entry.result_id && (
+                <span className="muted-inline"> result {entry.result_id}</span>
+              )}
+              {entry.cleanup_status && (
+                <span className="muted-inline"> package retained for Results/Explore</span>
+              )}
+            </li>
+          ))}
+        </ol>
+      ) : (
+        <p className="state-note">
+          Queue local CM1 runs from package cards. Cloud Chamber starts the next package only after
+          the active run reaches terminal status.
+        </p>
+      )}
     </section>
   );
 }
@@ -5104,6 +5269,7 @@ function LocalPipelinePanel({
   deleteMessage,
   results,
   currentRunId,
+  runQueue,
   lanWorkerConfigured,
   autoFinalizingWorkerRunIds,
   failedAutoFinalizingWorkerRunIds,
@@ -5125,6 +5291,7 @@ function LocalPipelinePanel({
   deleteMessage: string | null;
   results: ResultCard[];
   currentRunId: string | null;
+  runQueue: RunQueueResponse | null;
   lanWorkerConfigured: boolean;
   autoFinalizingWorkerRunIds: Set<string>;
   failedAutoFinalizingWorkerRunIds: Set<string>;
@@ -5200,6 +5367,7 @@ function LocalPipelinePanel({
               run={run}
               result={resultForRun(results, run.run_id)}
               current={run.run_id === currentRunId}
+              queueEntry={queueEntryForRun(runQueue, run.run_id)}
               lanWorkerConfigured={lanWorkerConfigured}
               autoFinalizing={autoFinalizingWorkerRunIds.has(run.run_id)}
               autoFinalizeFailed={failedAutoFinalizingWorkerRunIds.has(run.run_id)}
@@ -5223,6 +5391,7 @@ function PipelineRunCard({
   run,
   result,
   current,
+  queueEntry,
   lanWorkerConfigured,
   autoFinalizing,
   autoFinalizeFailed,
@@ -5238,6 +5407,7 @@ function PipelineRunCard({
   run: RunStorageEntry;
   result: ResultCard | undefined;
   current: boolean;
+  queueEntry: RunQueueEntry | undefined;
   lanWorkerConfigured: boolean;
   autoFinalizing: boolean;
   autoFinalizeFailed: boolean;
@@ -5252,7 +5422,10 @@ function PipelineRunCard({
 }) {
   const displayName = result?.name ?? run.scenario_name ?? run.scenario_id ?? run.run_id;
   const canLaunch = Boolean(
-    run.manifest_path && run.category === "dry_run_only" && !run.worker_state,
+    run.manifest_path &&
+      run.category === "dry_run_only" &&
+      !run.worker_state &&
+      !queueEntryIsOpen(queueEntry),
   );
   const canRefreshWorker = Boolean(run.manifest_path && run.worker_state === "running");
   const canFinalizeWorker = Boolean(
@@ -5280,6 +5453,12 @@ function PipelineRunCard({
       </div>
       <div className="badge-row">
         <StatusBadge label={stateLabel} tone={pipelineRunTone(run, result)} />
+        {queueEntry && (
+          <StatusBadge
+            label={runQueueEntryLabel(queueEntry)}
+            tone={runQueueEntryTone(queueEntry)}
+          />
+        )}
         {!result && <StatusBadge label="Not ingested" tone="neutral" />}
       </div>
       <p>
@@ -5292,6 +5471,12 @@ function PipelineRunCard({
       {runProgress && <p className="state-note">{runProgress}</p>}
       {workerProgress && <p className="state-note">{workerProgress}</p>}
       {showWorkerMessage && <p className="state-note">{run.worker_message}</p>}
+      {queueEntry?.message && <p className="state-note">{queueEntry.message}</p>}
+      {queueEntry?.error && (
+        <p className="state-note" role="alert">
+          {queueEntry.error}
+        </p>
+      )}
       {autoFinalizing && (
         <p className="state-note" role="status">
           Copying worker output back and ingesting locally.
@@ -5304,13 +5489,13 @@ function PipelineRunCard({
       )}
       <p className="state-note">{nextStep}</p>
       <div className="button-row">
-        {canLaunch && current && run.manifest_path && (
+        {canLaunch && run.manifest_path && (
           <button
             type="button"
             className="secondary-button"
             onClick={() => onLaunchStoredRun(run.manifest_path!)}
           >
-            Run with local CM1
+            Queue local CM1 run
           </button>
         )}
         {canLaunch && lanWorkerConfigured && run.manifest_path && (
@@ -5472,6 +5657,75 @@ function lanWorkerTone(
     status.state === "failed" ||
     status.state === "completed_no_output" ||
     status.state === "worker_cleanup_failed"
+  ) {
+    return "warning";
+  }
+  return "neutral";
+}
+
+function runQueueSummary(queue: RunQueueResponse): string {
+  if (queue.active_run_id && queue.queued_count > 0) {
+    return `Running ${queue.active_run_id}; ${queue.queued_count.toLocaleString()} queued.`;
+  }
+  if (queue.active_run_id) return `Running ${queue.active_run_id}.`;
+  if (queue.queued_count > 0) return `${queue.queued_count.toLocaleString()} local runs queued.`;
+  const latest = queue.entries.at(-1);
+  if (latest?.state === "ingested" && latest.result_id) {
+    return `Auto-ingested ${latest.result_id}; queue idle.`;
+  }
+  if (latest?.state === "ingest_failed") return "Auto-ingest needs manual retry.";
+  if (latest?.state === "launch_failed") return "Local queue launch blocked.";
+  return "Local run queue idle.";
+}
+
+function runQueuePollingKey(queue: RunQueueResponse | null): string {
+  if (!queue) return "none";
+  return queue.entries
+    .map((entry) => `${entry.run_id}:${entry.state}:${entry.updated_at}`)
+    .join("|");
+}
+
+function runQueueHasOpenEntries(queue: RunQueueResponse | null): boolean {
+  return Boolean(queue?.entries.some((entry) => queueEntryIsOpen(entry)));
+}
+
+function queueEntryIsOpen(entry: RunQueueEntry | undefined): boolean {
+  return Boolean(entry && (entry.state === "queued" || entry.state === "running"));
+}
+
+function latestAutoIngestedQueueEntry(queue: RunQueueResponse): RunQueueEntry | undefined {
+  return [...queue.entries].reverse().find((entry) => entry.state === "ingested" && entry.result_id);
+}
+
+function queueEntryForRun(
+  queue: RunQueueResponse | null,
+  runId: string,
+): RunQueueEntry | undefined {
+  return queue?.entries.find((entry) => entry.run_id === runId);
+}
+
+function runQueueEntryLabel(entry: RunQueueEntry): string {
+  const labels: Record<string, string> = {
+    queued: "Queued",
+    running: "Running in serial queue",
+    ingested: "Auto-ingested",
+    ingest_failed: "Auto-ingest failed",
+    completed_no_output: "Completed with no ingestable output",
+    failed: "Run failed",
+    canceled: "Canceled",
+    launch_failed: "Launch failed",
+  };
+  return labels[entry.state] ?? humanize(entry.state);
+}
+
+function runQueueEntryTone(entry: RunQueueEntry): "good" | "warning" | "neutral" {
+  if (entry.state === "ingested") return "good";
+  if (
+    entry.state === "ingest_failed" ||
+    entry.state === "completed_no_output" ||
+    entry.state === "failed" ||
+    entry.state === "canceled" ||
+    entry.state === "launch_failed"
   ) {
     return "warning";
   }

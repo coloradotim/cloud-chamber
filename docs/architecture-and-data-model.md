@@ -348,7 +348,8 @@ backend contracts:
 
 ```text
 POST /api/dry-run-package
--> POST /api/runs/launch
+-> POST /api/runs/queue
+-> GET /api/runs/queue
 -> GET /api/runs/status?manifest_path=...
 -> POST /api/results/ingest
 -> GET /api/results
@@ -376,11 +377,22 @@ Results. The launchpad uses the runtime storage inventory to show
 eligible states and offers only safe state-appropriate transitions:
 
 - create a new package through `POST /api/dry-run-package`;
-- launch an eligible packaged run through `POST /api/runs/launch`;
+- queue an eligible packaged run through `POST /api/runs/queue`;
+- refresh and advance the serial local queue through `GET /api/runs/queue`;
 - refresh current status through `GET /api/runs/status`;
 - ingest completed output through `POST /api/results/ingest`;
 - open associated results in Results or Explore;
 - preview and confirm cleanup for non-ingested package/run directories.
+
+The local serial queue is persisted under the configured runtime home, outside
+the repo. It may contain several packaged runs, but it must launch only one
+local CM1 process at a time. Queue refresh is intentionally stateful: it checks
+the active run, records terminal status, auto-ingests completed NetCDF-producing
+runs when ingest succeeds, and then starts the next queued package. If ingest
+fails, output is left in place and manual retry remains available. After
+successful auto-ingest, the queue entry is finalized, but the Mac-local run
+directory is retained because it backs Results and Explore; destructive cleanup
+still belongs to the explicit Results cleanup flow.
 
 Runtime status refresh may reconcile a stale local manifest only when stdout
 contains normal CM1 termination evidence and output artifacts exist under the

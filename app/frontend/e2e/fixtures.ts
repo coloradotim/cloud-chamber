@@ -1111,6 +1111,17 @@ export async function mockCloudChamberApis(page: Page) {
     updated_at: string;
   }> = [];
   let currentResults = [...results];
+  let localRunQueue: {
+    entries: Array<Record<string, unknown>>;
+    active_run_id: string | null;
+    queued_count: number;
+    updated_at: string;
+  } = {
+    entries: [],
+    active_run_id: null,
+    queued_count: 0,
+    updated_at: "2026-05-22T15:15:00Z",
+  };
 
   await page.route("**/api/scenarios", (route) =>
     json(route, { golden_path_scenario_id: "baseline-shallow-cumulus", scenarios: [scenario] }),
@@ -1290,6 +1301,33 @@ export async function mockCloudChamberApis(page: Page) {
       runtime_warnings: [],
     }),
   );
+
+  await page.route("**/api/runs/queue", (route) => {
+    if (route.request().method() === "POST") {
+      localRunQueue = {
+        entries: [
+          {
+            run_id: "run",
+            manifest_path: "/tmp/cloud-chamber-e2e/run/run_manifest.json",
+            package_dir: "/tmp/cloud-chamber-e2e/run",
+            state: "ingested",
+            queued_at: "2026-05-22T15:15:00Z",
+            started_at: "2026-05-22T15:15:36Z",
+            finished_at: "2026-05-22T15:32:21Z",
+            updated_at: "2026-05-22T15:32:21Z",
+            result_id: "result-baseline",
+            cleanup_status: "queue_finalized_result_backing_run_retained",
+            message:
+              "Completed local CM1 output was ingested automatically; local run directory retained for Results/Explore.",
+          },
+        ],
+        active_run_id: null,
+        queued_count: 0,
+        updated_at: "2026-05-22T15:32:21Z",
+      };
+    }
+    return json(route, localRunQueue);
+  });
 
   await page.route("**/api/runs/status**", (route) =>
     json(route, {
