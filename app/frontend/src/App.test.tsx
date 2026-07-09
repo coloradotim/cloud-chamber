@@ -360,6 +360,12 @@ const secondaryShallowCandidate = {
       score_0_to_100: 61,
       support: "weak",
     },
+    {
+      story: "high_cape_pulse_storm",
+      label: "High-CAPE pulse storm",
+      score_0_to_100: 48.9,
+      support: "weak",
+    },
   ],
   features: {
     ...shallowCandidate.features,
@@ -2521,6 +2527,50 @@ describe("App", () => {
       expect(dryRunBody).toContain('"candidate_screening"');
       expect(dryRunBody).toContain('"primary_story":"supercell_environment"');
       expect(dryRunBody).toContain('"candidate_id":"USM00072357-2025052000-supercell"');
+    });
+  });
+
+  it("keeps humid/rainy candidates with weak deep scores on observed quick-look", async () => {
+    const defaultFetch = vi.mocked(fetch).getMockImplementation();
+    let dryRunBody = "";
+    vi.mocked(fetch).mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url === "/api/dry-run-package") {
+        dryRunBody = String(init?.body ?? "");
+      }
+      return (
+        defaultFetch?.(input, init) ?? Promise.resolve(new Response("not found", { status: 404 }))
+      );
+    });
+
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Build" }));
+    fireEvent.change(await screen.findByLabelText("Experiment"), {
+      target: { value: "__observed_sounding_upload__" },
+    });
+    fireEvent.change(await screen.findByLabelText("Story filter"), {
+      target: { value: "humid_rainy_candidate" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Screen cached soundings" }));
+
+    expect(await screen.findByText("Screening guidance loaded")).toBeInTheDocument();
+    const humidCard = screen.getByLabelText("Sounding candidate Wilmington, Ohio (USM00072426)");
+    expect(humidCard).toHaveTextContent("Humid / rainy");
+
+    fireEvent.click(within(humidCard).getByRole("button", { name: "Use this sounding" }));
+
+    expect(await screen.findByText("Candidate selected for package review")).toBeInTheDocument();
+    expect(screen.getByLabelText("Package type")).toHaveValue("observed_sounding_quicklook");
+
+    fireEvent.click(screen.getByTestId("create-package-btn"));
+
+    await waitFor(() => {
+      expect(dryRunBody).toContain('"package_family":"observed_sounding_quicklook"');
+      expect(dryRunBody).toContain('"primary_story":"humid_rainy_candidate"');
+      expect(dryRunBody).toContain(
+        '"candidate_id":"USM00072426-2025010300-humid-secondary-shallow"',
+      );
     });
   });
 

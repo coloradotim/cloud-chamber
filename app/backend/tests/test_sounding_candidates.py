@@ -494,6 +494,50 @@ def test_deep_convection_scoring_does_not_require_el_when_cape_and_shear_are_sup
     )
 
 
+def test_deep_convection_scoring_does_not_overpromote_low_cape_humid_profiles() -> None:
+    scores, _evidence = _score_features(
+        {
+            "data_completeness_score": 98.0,
+            "low_level_qv_g_kg": 18.0,
+            "mean_qv_0_500m_g_kg": 18.0,
+            "mean_qv_0_1000m_g_kg": 17.0,
+            "mean_qv_0_3000m_g_kg": 16.0,
+            "precipitable_water_proxy_or_unavailable": 45.0,
+            "surface_t_td_spread_c": 2.0,
+            "estimated_lcl_height_m_agl": 300.0,
+            "lapse_rate_0_1000m_c_per_km": 6.5,
+            "lapse_rate_0_3000m_c_per_km": 7.0,
+            "midlevel_lapse_rate_700_500_hpa_c_per_km": 7.0,
+            "cap_strength_proxy": 0.0,
+            "cap_height_m_agl": None,
+            "moisture_depth_m": 4000.0,
+            "midlevel_dry_layer_proxy": 3.0,
+            "qv_drop_0_3000m_g_kg": 3.0,
+            "observed_wind_available": True,
+            "bulk_shear_0_1km_m_s": 7.0,
+            "bulk_shear_0_3km_m_s": 15.0,
+            "bulk_shear_0_6km_m_s": 28.0,
+            "dry_microburst_inverted_v_proxy": 15.0,
+            "freezing_level_m_agl": 4200.0,
+            "surface_based_cape_j_kg": 120.0,
+            "mixed_layer_cape_j_kg": 80.0,
+            "surface_based_cin_j_kg": 0.0,
+            "mixed_layer_cin_j_kg": 0.0,
+            "lfc_height_m_agl": 0.0,
+            "el_height_m_agl": 12500.0,
+            "profile_top_m_agl": 18000.0,
+            "lowest_level_m_agl": 0.0,
+        },
+        package_ready=True,
+    )
+
+    score_by_story = {score.story: score for score in scores}
+    assert scores[0].story == "humid_rainy_candidate"
+    assert score_by_story["humid_rainy_candidate"].support == "supported"
+    assert score_by_story["severe_thunderstorm_environment"].support == "weak"
+    assert score_by_story["high_cape_pulse_storm"].support == "weak"
+
+
 def test_deep_convection_scoring_penalizes_profiles_that_start_well_above_surface() -> None:
     scores, _evidence = _score_features(
         {

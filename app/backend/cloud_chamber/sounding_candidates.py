@@ -624,6 +624,17 @@ def _score_features(
     cin_score = _score_low(abs(effective_cin), low=25.0, high=250.0)
     low_lfc = _score_low(lfc, low=750.0, high=3000.0)
     deep_el = _score_high(el, low=7000.0, high=12000.0)
+    initiation_support = _weighted_score(
+        [
+            (_score_high(effective_cape, low=250.0, high=1000.0), 0.50),
+            (low_lcl, 0.25),
+            (storm_moisture, 0.15),
+            (deep_moisture, 0.05),
+            (not_strong_cap, 0.05),
+        ]
+    )
+    if initiation_support < 45.0:
+        deep_caveats.append("weak_deep_initiation_screen_for_deep_convection_trial")
     instability = _weighted_score(
         [
             (cape_score, 0.55),
@@ -747,7 +758,12 @@ def _score_features(
     # multiplier: many observed soundings provide useful CAPE/shear evidence
     # while EL remains unavailable from the simple screening diagnostics.
     deep_factor = (
-        data_quality / 100.0 * deep_feature_coverage * wind_factor * surface_coverage_factor
+        data_quality
+        / 100.0
+        * deep_feature_coverage
+        * wind_factor
+        * surface_coverage_factor
+        * (0.30 + 0.70 * initiation_support / 100.0)
     )
     shallow_score = shallow * data_quality / 100.0 * feature_coverage
     humid_score = humid_rainy * data_quality / 100.0 * feature_coverage

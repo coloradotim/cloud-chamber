@@ -8215,10 +8215,7 @@ function defaultPackageFamilyForCandidate(candidate: SoundingCandidate): Observe
   if (deepConvectionStoryIds.has(candidate.primary_story)) return "deep_convection_trial";
   if (
     candidate.story_scores.some(
-      (score) =>
-        deepConvectionStoryIds.has(score.story) &&
-        score.score_0_to_100 > 0 &&
-        !["unavailable", "unsupported", "insufficient_evidence"].includes(score.support),
+      (score) => deepConvectionStoryIds.has(score.story) && score.support === "supported",
     )
   ) {
     return "deep_convection_trial";
