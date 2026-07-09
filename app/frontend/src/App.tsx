@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, FormEvent } from "react";
 
 import "./App.css";
@@ -639,8 +639,27 @@ type DeleteRunResponse = {
   message: string;
 };
 
+type ResultCleanupCategory = {
+  label: string;
+  description: string;
+  present: boolean;
+  item_count: number;
+};
+
+type DeleteResultResponse = {
+  result_id: string;
+  run_id: string;
+  run_directory: string;
+  dry_run: boolean;
+  deleted: boolean;
+  size_bytes: number;
+  message: string;
+  affected_surfaces: string[];
+  categories: ResultCleanupCategory[];
+};
+
 type WorkspaceSection = "build" | "results" | "explore";
-type ResultsTab = "notebook" | "compare" | "storage";
+type ResultsTab = "notebook" | "compare";
 type ScenarioLoadState = "loading" | "loaded" | "failed" | "empty";
 
 type ProvenancePayload = {
@@ -1191,7 +1210,7 @@ async function patchResultCard(
 async function fetchStorageInventory(): Promise<StorageInventoryResponse> {
   const response = await fetch("/api/storage/inventory");
   if (!response.ok) {
-    throw new Error(await responseError(response, "Unable to load runtime storage inventory."));
+    throw new Error(await responseError(response, "Unable to load runtime run inventory."));
   }
   return response.json() as Promise<StorageInventoryResponse>;
 }
@@ -1228,6 +1247,28 @@ async function confirmRunDelete(runId: string): Promise<DeleteRunResponse> {
     throw new Error(await responseError(response, "Unable to delete selected run."));
   }
   return response.json() as Promise<DeleteRunResponse>;
+}
+
+async function requestResultDeletePreview(resultId: string): Promise<DeleteResultResponse> {
+  const response = await fetch(`/api/results/${resultId}/delete-preview`, {
+    method: "POST",
+  });
+  if (!response.ok) {
+    throw new Error(await responseError(response, "Unable to preview result deletion."));
+  }
+  return response.json() as Promise<DeleteResultResponse>;
+}
+
+async function confirmResultDelete(resultId: string): Promise<DeleteResultResponse> {
+  const response = await fetch(`/api/results/${resultId}/delete`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ confirm: true }),
+  });
+  if (!response.ok) {
+    throw new Error(await responseError(response, "Unable to delete selected result."));
+  }
+  return response.json() as Promise<DeleteResultResponse>;
 }
 
 async function fetchVisualizationFields(resultId: string): Promise<FieldCatalogResponse> {
@@ -1394,14 +1435,18 @@ export function App() {
   const [ingestedResultId, setIngestedResultId] = useState<string | null>(null);
   const [results, setResults] = useState<ResultCard[]>([]);
   const [selectedResultId, setSelectedResultId] = useState<string | null>(null);
+  const selectedResultIdRef = useRef<string | null>(null);
   const [resultDraft, setResultDraft] = useState({ name: "", tags: "", notes: "" });
   const [resultsStatus, setResultsStatus] = useState("Loading results...");
   const [storageInventory, setStorageInventory] = useState<StorageInventoryResponse | null>(null);
-  const [storageStatus, setStorageStatus] = useState("Loading storage inventory...");
+  const [storageStatus, setStorageStatus] = useState("Loading run inventory...");
   const [storageError, setStorageError] = useState<string | null>(null);
-  const [focusedStorageRunId, setFocusedStorageRunId] = useState<string | null>(null);
-  const [deletePreview, setDeletePreview] = useState<DeleteRunResponse | null>(null);
-  const [deleteMessage, setDeleteMessage] = useState<string | null>(null);
+  const [runDeletePreview, setRunDeletePreview] = useState<DeleteRunResponse | null>(null);
+  const [runDeleteMessage, setRunDeleteMessage] = useState<string | null>(null);
+  const [resultDeletePreview, setResultDeletePreview] = useState<DeleteResultResponse | null>(
+    null,
+  );
+  const [resultDeleteMessage, setResultDeleteMessage] = useState<string | null>(null);
   const [, setStatus] = useState("Loading scenarios...");
   const [scenarioLoadState, setScenarioLoadState] = useState<ScenarioLoadState>("loading");
   const [scenarioError, setScenarioError] = useState<string | null>(null);
@@ -1506,13 +1551,13 @@ export function App() {
         const payload = await fetchStorageInventory();
         if (!active) return;
         setStorageInventory(payload);
-        setStorageStatus(payload.runs.length > 0 ? "Storage inventory loaded" : "No runtime runs");
+        setStorageStatus(payload.runs.length > 0 ? "Run inventory loaded" : "No runtime runs");
       } catch (caught) {
         if (!active) return;
         setStorageError(
-          caught instanceof Error ? caught.message : "Unable to load runtime storage inventory.",
+          caught instanceof Error ? caught.message : "Unable to load runtime run inventory.",
         );
-        setStorageStatus("Storage unavailable");
+        setStorageStatus("Run inventory unavailable");
       }
     }
   }, []);
@@ -1529,9 +1574,18 @@ export function App() {
   const observedSoundingExperimentSelected = selectedScenarioId === OBSERVED_SOUNDING_EXPERIMENT_ID;
 
   const selectedResult = useMemo(
-    () => results.find((result) => result.result_id === selectedResultId) ?? results[0],
+    () =>
+      selectedResultId
+        ? results.find((result) => result.result_id === selectedResultId)
+        : results[0],
     [results, selectedResultId],
   );
+
+  useEffect(() => {
+    selectedResultIdRef.current = selectedResultId;
+    setResultDeletePreview(null);
+    setResultDeleteMessage(null);
+  }, [selectedResultId]);
   const comparisonPair = useMemo(() => defaultComparisonPair(results), [results]);
   const autoFinalizingWorkerRunIdSet = useMemo(
     () => new Set(autoFinalizingWorkerRunIds),
@@ -1625,13 +1679,13 @@ export function App() {
       setStorageInventory(payload);
       setStorageStatus(
         statusWhenLoaded ??
-          (payload.runs.length > 0 ? "Storage inventory loaded" : "No runtime runs"),
+          (payload.runs.length > 0 ? "Run inventory loaded" : "No runtime runs"),
       );
     } catch (caught) {
       setStorageError(
-        caught instanceof Error ? caught.message : "Unable to load runtime storage inventory.",
+        caught instanceof Error ? caught.message : "Unable to load runtime run inventory.",
       );
-      setStorageStatus("Storage unavailable");
+      setStorageStatus("Run inventory unavailable");
     }
   }
 
@@ -2211,32 +2265,32 @@ export function App() {
 
   async function handleRefreshStorage() {
     setStorageError(null);
-    setStorageStatus("Refreshing storage inventory");
-    setDeletePreview(null);
-    setDeleteMessage(null);
+    setStorageStatus("Refreshing run inventory");
+    setRunDeletePreview(null);
+    setRunDeleteMessage(null);
     try {
       const payload = await fetchStorageInventory();
       setStorageInventory(payload);
-      setStorageStatus(payload.runs.length > 0 ? "Storage inventory loaded" : "No runtime runs");
+      setStorageStatus(payload.runs.length > 0 ? "Run inventory loaded" : "No runtime runs");
     } catch (caught) {
       setStorageError(
-        caught instanceof Error ? caught.message : "Unable to load runtime storage inventory.",
+        caught instanceof Error ? caught.message : "Unable to load runtime run inventory.",
       );
-      setStorageStatus("Storage unavailable");
+      setStorageStatus("Run inventory unavailable");
     }
   }
 
   async function handlePreviewRunDelete(runId: string) {
     setStorageError(null);
-    setDeleteMessage(null);
+    setRunDeleteMessage(null);
     setStorageStatus("Preparing delete preview");
     try {
       const preview = await requestRunDeletePreview(runId);
-      setDeletePreview(preview);
+      setRunDeletePreview(preview);
       setStorageStatus("Delete preview ready");
     } catch (caught) {
       setStorageError(caught instanceof Error ? caught.message : "Unable to preview run deletion.");
-      setStorageStatus("Storage inventory loaded");
+      setStorageStatus("Run inventory loaded");
     }
   }
 
@@ -2245,14 +2299,61 @@ export function App() {
     setStorageStatus("Deleting selected run");
     try {
       const deleted = await confirmRunDelete(runId);
-      setDeleteMessage(`${deleted.message} Reclaimed ${formatBytes(deleted.size_bytes)}.`);
-      setDeletePreview(null);
+      setRunDeleteMessage(`${deleted.message} Reclaimed ${formatBytes(deleted.size_bytes)}.`);
+      setRunDeletePreview(null);
       const payload = await fetchStorageInventory();
       setStorageInventory(payload);
       setStorageStatus("Run deleted");
     } catch (caught) {
       setStorageError(caught instanceof Error ? caught.message : "Unable to delete selected run.");
       setStorageStatus("Delete failed");
+    }
+  }
+
+  async function handlePreviewResultDelete(resultId: string) {
+    setResultsError(null);
+    setResultDeleteMessage(null);
+    setResultsStatus("Preparing result delete preview");
+    try {
+      const preview = await requestResultDeletePreview(resultId);
+      if (selectedResultIdRef.current !== resultId) return;
+      setResultDeletePreview(preview);
+      setResultsStatus("Result delete preview ready");
+    } catch (caught) {
+      setResultsError(
+        caught instanceof Error ? caught.message : "Unable to preview result deletion.",
+      );
+      setResultsStatus("Results loaded");
+    }
+  }
+
+  async function handleConfirmResultDelete(resultId: string) {
+    if (resultDeletePreview?.result_id !== resultId) {
+      setResultDeletePreview(null);
+      setResultDeleteMessage(null);
+      setResultsError("Delete preview is stale. Preview deletion again before confirming.");
+      setResultsStatus("Delete preview expired");
+      return;
+    }
+    setResultsError(null);
+    setResultsStatus("Deleting selected result");
+    try {
+      const deleted = await confirmResultDelete(resultId);
+      const remaining = results.filter((result) => result.result_id !== resultId);
+      const deleteMessage = `${deleted.message} Reclaimed ${formatBytes(
+        deleted.size_bytes,
+      )} from local storage.`;
+      setResults(remaining);
+      setSelectedResultId((current) =>
+        current === resultId ? (remaining[0]?.result_id ?? null) : current,
+      );
+      setResultDeletePreview(null);
+      setResultDeleteMessage(deleteMessage);
+      setResultsStatus(deleteMessage);
+      await refreshStorageAfterWorkflow("Local pipeline updated");
+    } catch (caught) {
+      setResultsError(caught instanceof Error ? caught.message : "Unable to delete selected result.");
+      setResultsStatus("Delete failed");
     }
   }
 
@@ -2321,6 +2422,8 @@ export function App() {
           storageInventory={storageInventory}
           storageStatus={storageStatus}
           storageError={storageError}
+          runDeletePreview={runDeletePreview}
+          runDeleteMessage={runDeleteMessage}
           results={results}
           autoFinalizingWorkerRunIds={autoFinalizingWorkerRunIdSet}
           failedAutoFinalizingWorkerRunIds={failedAutoFinalizingWorkerRunIdSet}
@@ -2380,12 +2483,9 @@ export function App() {
             setSelectedResultId(resultId);
             setActiveSection("explore");
           }}
-          onOpenStorage={(runId) => {
-            setFocusedStorageRunId(runId ?? null);
-            setActiveSection("results");
-            setActiveResultsTab("storage");
-          }}
           onRefreshStorage={handleRefreshStorage}
+          onPreviewRunDelete={handlePreviewRunDelete}
+          onConfirmRunDelete={handleConfirmRunDelete}
           onRetryScenarios={() => {
             void loadScenarios();
           }}
@@ -2397,16 +2497,12 @@ export function App() {
           activeTab={activeResultsTab}
           results={results}
           selectedResult={selectedResult}
-          selectedResultId={selectedResult?.result_id ?? null}
+          selectedResultId={selectedResultId}
           resultsStatus={resultsStatus}
           resultsError={resultsError}
           comparisonPair={comparisonPair}
-          storageInventory={storageInventory}
-          storageStatus={storageStatus}
-          storageError={storageError}
-          focusedRunId={focusedStorageRunId}
-          deletePreview={deletePreview}
-          deleteMessage={deleteMessage}
+          resultDeletePreview={resultDeletePreview}
+          resultDeleteMessage={resultDeleteMessage}
           onTabChange={setActiveResultsTab}
           draft={resultDraft}
           onSelectResult={setSelectedResultId}
@@ -2416,27 +2512,17 @@ export function App() {
           onInspect={() => {
             setActiveSection("explore");
           }}
-          onManageLocalFiles={(result) => {
-            setSelectedResultId(result.result_id);
-            setFocusedStorageRunId(result.run_id);
-            setActiveResultsTab("storage");
-          }}
           onCompareInspect={(resultId) => {
             setSelectedResultId(resultId);
             setActiveSection("explore");
           }}
-          onStorageOpenResult={(resultId) => {
-            setSelectedResultId(resultId);
-            setActiveResultsTab("notebook");
+          onPreviewResultDelete={handlePreviewResultDelete}
+          onConfirmResultDelete={handleConfirmResultDelete}
+          onCancelResultDelete={() => {
+            setResultDeletePreview(null);
+            setResultDeleteMessage(null);
+            setResultsStatus("Results loaded");
           }}
-          onStorageExploreResult={(resultId) => {
-            setSelectedResultId(resultId);
-            setActiveSection("explore");
-          }}
-          onStorageIngestRun={handleIngestStoredRun}
-          onRefreshStorage={handleRefreshStorage}
-          onPreviewDelete={handlePreviewRunDelete}
-          onConfirmDelete={handleConfirmRunDelete}
         />
       )}
 
@@ -2487,6 +2573,8 @@ function BuildWorkspace({
   storageInventory,
   storageStatus,
   storageError,
+  runDeletePreview,
+  runDeleteMessage,
   results,
   autoFinalizingWorkerRunIds,
   failedAutoFinalizingWorkerRunIds,
@@ -2527,8 +2615,9 @@ function BuildWorkspace({
   onInspectIngested,
   onOpenStoredResult,
   onExploreStoredResult,
-  onOpenStorage,
   onRefreshStorage,
+  onPreviewRunDelete,
+  onConfirmRunDelete,
   onRetryScenarios,
 }: {
   scenarioLoadState: ScenarioLoadState;
@@ -2572,6 +2661,8 @@ function BuildWorkspace({
   storageInventory: StorageInventoryResponse | null;
   storageStatus: string;
   storageError: string | null;
+  runDeletePreview: DeleteRunResponse | null;
+  runDeleteMessage: string | null;
   results: ResultCard[];
   autoFinalizingWorkerRunIds: Set<string>;
   failedAutoFinalizingWorkerRunIds: Set<string>;
@@ -2615,8 +2706,9 @@ function BuildWorkspace({
   onInspectIngested: () => void;
   onOpenStoredResult: (resultId: string) => void;
   onExploreStoredResult: (resultId: string) => void;
-  onOpenStorage: (runId?: string | null) => void;
   onRefreshStorage: () => void;
+  onPreviewRunDelete: (runId: string) => void;
+  onConfirmRunDelete: (runId: string) => void;
   onRetryScenarios: () => void;
 }) {
   const scenarioControlsReady = scenarioLoadState === "loaded" && selectedScenario !== undefined;
@@ -2881,6 +2973,8 @@ function BuildWorkspace({
             storageInventory={storageInventory}
             storageStatus={storageStatus}
             storageError={storageError}
+            runDeletePreview={runDeletePreview}
+            runDeleteMessage={runDeleteMessage}
             results={results}
             autoFinalizingWorkerRunIds={autoFinalizingWorkerRunIds}
             failedAutoFinalizingWorkerRunIds={failedAutoFinalizingWorkerRunIds}
@@ -2893,8 +2987,9 @@ function BuildWorkspace({
             onInspectIngested={onInspectIngested}
             onOpenStoredResult={onOpenStoredResult}
             onExploreStoredResult={onExploreStoredResult}
-            onOpenStorage={onOpenStorage}
             onRefreshStorage={onRefreshStorage}
+            onPreviewRunDelete={onPreviewRunDelete}
+            onConfirmRunDelete={onConfirmRunDelete}
           />
         </aside>
       </section>
@@ -3693,12 +3788,8 @@ function ResultsWorkspace({
   resultsStatus,
   resultsError,
   comparisonPair,
-  storageInventory,
-  storageStatus,
-  storageError,
-  focusedRunId,
-  deletePreview,
-  deleteMessage,
+  resultDeletePreview,
+  resultDeleteMessage,
   onTabChange,
   draft,
   onSelectResult,
@@ -3706,14 +3797,10 @@ function ResultsWorkspace({
   onSubmit,
   onRefreshResults,
   onInspect,
-  onManageLocalFiles,
   onCompareInspect,
-  onStorageOpenResult,
-  onStorageExploreResult,
-  onStorageIngestRun,
-  onRefreshStorage,
-  onPreviewDelete,
-  onConfirmDelete,
+  onPreviewResultDelete,
+  onConfirmResultDelete,
+  onCancelResultDelete,
 }: {
   activeTab: ResultsTab;
   results: ResultCard[];
@@ -3722,12 +3809,8 @@ function ResultsWorkspace({
   resultsStatus: string;
   resultsError: string | null;
   comparisonPair: { baseline: ResultCard | undefined; dryFailed: ResultCard | undefined };
-  storageInventory: StorageInventoryResponse | null;
-  storageStatus: string;
-  storageError: string | null;
-  focusedRunId: string | null;
-  deletePreview: DeleteRunResponse | null;
-  deleteMessage: string | null;
+  resultDeletePreview: DeleteResultResponse | null;
+  resultDeleteMessage: string | null;
   onTabChange: (tab: ResultsTab) => void;
   draft: { name: string; tags: string; notes: string };
   onSelectResult: (resultId: string) => void;
@@ -3735,14 +3818,10 @@ function ResultsWorkspace({
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
   onRefreshResults: () => void;
   onInspect: () => void;
-  onManageLocalFiles: (result: ResultCard) => void;
   onCompareInspect: (resultId: string) => void;
-  onStorageOpenResult: (resultId: string) => void;
-  onStorageExploreResult: (resultId: string) => void;
-  onStorageIngestRun: (manifestPath: string) => void;
-  onRefreshStorage: () => void;
-  onPreviewDelete: (runId: string) => void;
-  onConfirmDelete: (runId: string) => void;
+  onPreviewResultDelete: (resultId: string) => void;
+  onConfirmResultDelete: (resultId: string) => void;
+  onCancelResultDelete: () => void;
 }) {
   return (
     <section className="results-library" aria-labelledby="results-title">
@@ -3761,7 +3840,7 @@ function ResultsWorkspace({
       )}
 
       <nav className="subtab-nav" role="tablist" aria-label="Results views">
-        {(["notebook", "compare", "storage"] as ResultsTab[]).map((tab) => (
+        {(["notebook", "compare"] as ResultsTab[]).map((tab) => (
           <button
             key={tab}
             type="button"
@@ -3790,9 +3869,13 @@ function ResultsWorkspace({
           onSubmit={onSubmit}
           onRefreshResults={onRefreshResults}
           onInspect={onInspect}
-          onManageLocalFiles={onManageLocalFiles}
           onCompare={() => onTabChange("compare")}
           onOpenResultInExplore={onCompareInspect}
+          deletePreview={resultDeletePreview}
+          deleteMessage={resultDeleteMessage}
+          onPreviewDelete={onPreviewResultDelete}
+          onConfirmDelete={onConfirmResultDelete}
+          onCancelDelete={onCancelResultDelete}
         />
       )}
 
@@ -3804,24 +3887,6 @@ function ResultsWorkspace({
             onSelectResult(resultId);
             onTabChange("notebook");
           }}
-        />
-      )}
-
-      {activeTab === "storage" && (
-        <StorageWorkspace
-          inventory={storageInventory}
-          results={results}
-          status={storageStatus}
-          error={storageError}
-          focusedRunId={focusedRunId}
-          deletePreview={deletePreview}
-          deleteMessage={deleteMessage}
-          onRefresh={onRefreshStorage}
-          onPreviewDelete={onPreviewDelete}
-          onConfirmDelete={onConfirmDelete}
-          onOpenResult={onStorageOpenResult}
-          onExploreResult={onStorageExploreResult}
-          onIngestRun={onStorageIngestRun}
         />
       )}
     </section>
@@ -3838,9 +3903,13 @@ function NotebookWorkspace({
   onSubmit,
   onRefreshResults,
   onInspect,
-  onManageLocalFiles,
   onCompare,
   onOpenResultInExplore,
+  deletePreview,
+  deleteMessage,
+  onPreviewDelete,
+  onConfirmDelete,
+  onCancelDelete,
 }: {
   results: ResultCard[];
   selectedResult: ResultCard | undefined;
@@ -3851,9 +3920,13 @@ function NotebookWorkspace({
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
   onRefreshResults: () => void;
   onInspect: () => void;
-  onManageLocalFiles: (result: ResultCard) => void;
   onCompare: () => void;
   onOpenResultInExplore: (resultId: string) => void;
+  deletePreview: DeleteResultResponse | null;
+  deleteMessage: string | null;
+  onPreviewDelete: (resultId: string) => void;
+  onConfirmDelete: (resultId: string) => void;
+  onCancelDelete: () => void;
 }) {
   const [filters, setFilters] = useState<ResultsFilterState>(DEFAULT_RESULTS_FILTERS);
   const scenarioOptions = useMemo(() => resultScenarioOptions(results), [results]);
@@ -3902,8 +3975,12 @@ function NotebookWorkspace({
           onDraftChange={onDraftChange}
           onSubmit={onSubmit}
           onInspect={onInspect}
-          onManageLocalFiles={onManageLocalFiles}
           onCompare={onCompare}
+          deletePreview={deletePreview}
+          deleteMessage={deleteMessage}
+          onPreviewDelete={onPreviewDelete}
+          onConfirmDelete={onConfirmDelete}
+          onCancelDelete={onCancelDelete}
         />
       </div>
     </section>
@@ -4447,269 +4524,6 @@ function ComparisonTechnicalDetails({
   );
 }
 
-function StorageWorkspace({
-  inventory,
-  results,
-  status,
-  error,
-  focusedRunId,
-  deletePreview,
-  deleteMessage,
-  onRefresh,
-  onPreviewDelete,
-  onConfirmDelete,
-  onOpenResult,
-  onExploreResult,
-  onIngestRun,
-}: {
-  inventory: StorageInventoryResponse | null;
-  results: ResultCard[];
-  status: string;
-  error: string | null;
-  focusedRunId: string | null;
-  deletePreview: DeleteRunResponse | null;
-  deleteMessage: string | null;
-  onRefresh: () => void;
-  onPreviewDelete: (runId: string) => void;
-  onConfirmDelete: (runId: string) => void;
-  onOpenResult: (resultId: string) => void;
-  onExploreResult: (resultId: string) => void;
-  onIngestRun: (manifestPath: string) => void;
-}) {
-  const displayedRuns =
-    inventory && inventory.largest_runs.length > 0
-      ? inventory.largest_runs
-      : (inventory?.runs ?? []);
-  const deletePreviewResult = deletePreview
-    ? resultForRun(results, deletePreview.run_id)
-    : undefined;
-  const deletePreviewHasResult = Boolean(deletePreviewResult);
-
-  return (
-    <section
-      className="storage-workspace"
-      role="tabpanel"
-      id="storage-panel"
-      aria-labelledby="storage-tab storage-title"
-    >
-      <div className="section-heading">
-        <div>
-          <p className="eyebrow">Storage</p>
-          <h2 id="storage-title">Runtime inventory and cleanup</h2>
-          <p>
-            Review generated packages, running CM1 jobs, completed output, ingested results, and
-            cleanup candidates under the local runtime home.
-          </p>
-        </div>
-        <p className="state-chip">{status}</p>
-      </div>
-
-      {error && <p role="alert">{error}</p>}
-      {deleteMessage && <p role="status">{deleteMessage}</p>}
-
-      <section className="storage-summary" aria-label="Runtime storage summary">
-        <dl className="metric-grid">
-          <Metric label="Runtime home" value={inventory?.runtime_home ?? "Unavailable"} />
-          <Metric label="Runs directory" value={inventory?.runs_directory ?? "Unavailable"} />
-          <Metric
-            label="Total runtime-home size"
-            value={inventory ? formatBytes(inventory.total_size_bytes) : "Unavailable"}
-          />
-          <Metric
-            label="Warning threshold"
-            value={inventory ? formatBytes(inventory.warning_threshold_bytes) : "Unavailable"}
-          />
-          <Metric
-            label="Threshold status"
-            value={
-              inventory
-                ? inventory.above_warning_threshold
-                  ? "At or above 50 GB warning threshold"
-                  : "Below 50 GB warning threshold"
-                : "Unavailable"
-            }
-          />
-          <Metric label="Run directories" value={String(inventory?.runs.length ?? 0)} />
-        </dl>
-        {inventory?.warning_message && (
-          <p className="validation" role="status">
-            {inventory.warning_message}
-          </p>
-        )}
-        <div className="button-row">
-          <button type="button" onClick={onRefresh}>
-            Refresh storage
-          </button>
-        </div>
-      </section>
-
-      {deletePreview && (
-        <section className="delete-preview" aria-label="Delete preview">
-          <h3>
-            {deletePreviewHasResult
-              ? "Delete result and local run data preview"
-              : "Delete local run data preview"}
-          </h3>
-          {deletePreviewHasResult ? (
-            <p>
-              Cleanup removes local generated package files, copied runtime files, CM1 output, logs,
-              result metadata, notebook edits, diagnostics, and Explore backing references stored
-              under the selected run directory. The result will disappear from Results, Explore,
-              Compare, and Storage inventory after confirmation. It does not touch the source repo,
-              the runtime home itself, or the external CM1 install. No files have been deleted yet.
-            </p>
-          ) : (
-            <p>
-              Cleanup removes local generated package files, copied runtime files, CM1 output/logs
-              if present, and any metadata stored under the selected run directory. It does not
-              touch the source repo, the runtime home itself, or the external CM1 install. No files
-              have been deleted yet.
-            </p>
-          )}
-          <dl className="metric-grid">
-            <Metric label="Run ID" value={deletePreview.run_id} />
-            <Metric label="Selected path" value={deletePreview.run_directory} />
-            <Metric label="Estimated reclaimed" value={formatBytes(deletePreview.size_bytes)} />
-            <Metric label="Preview status" value={deletePreview.message} />
-          </dl>
-          <button
-            type="button"
-            className="danger-button"
-            onClick={() => onConfirmDelete(deletePreview.run_id)}
-          >
-            {deletePreviewHasResult
-              ? "Confirm delete result and local run data"
-              : "Confirm delete local run data"}
-          </button>
-        </section>
-      )}
-
-      <RuntimeRunsTable
-        runs={displayedRuns}
-        results={results}
-        focusedRunId={focusedRunId}
-        onPreviewDelete={onPreviewDelete}
-        onOpenResult={onOpenResult}
-        onExploreResult={onExploreResult}
-        onIngestRun={onIngestRun}
-      />
-    </section>
-  );
-}
-
-function RuntimeRunsTable({
-  runs,
-  results,
-  focusedRunId,
-  onPreviewDelete,
-  onOpenResult,
-  onExploreResult,
-  onIngestRun,
-}: {
-  runs: RunStorageEntry[];
-  results: ResultCard[];
-  focusedRunId: string | null;
-  onPreviewDelete: (runId: string) => void;
-  onOpenResult: (resultId: string) => void;
-  onExploreResult: (resultId: string) => void;
-  onIngestRun: (manifestPath: string) => void;
-}) {
-  if (runs.length === 0) {
-    return (
-      <section className="status-panel" aria-label="Runtime runs">
-        <p>No local Cloud Chamber run directories were found.</p>
-      </section>
-    );
-  }
-
-  return (
-    <section className="table-panel" aria-label="Runtime runs">
-      <table>
-        <thead>
-          <tr>
-            <th scope="col">Run</th>
-            <th scope="col">Scenario</th>
-            <th scope="col">State</th>
-            <th scope="col">Output</th>
-            <th scope="col">Size</th>
-            <th scope="col">Actions</th>
-          </tr>
-        </thead>
-        <tbody>
-          {runs.map((run, index) => {
-            const associatedResult = resultForRun(results, run.run_id);
-            const displayName = storageDisplayName(run, associatedResult);
-            const canIngest = canIngestStorageRun(run, associatedResult);
-            return (
-              <tr
-                key={`${run.run_id}-${run.path ?? run.manifest_path ?? index}`}
-                className={focusedRunId === run.run_id ? "selected-row" : ""}
-              >
-                <td>
-                  <strong>{displayName}</strong>
-                  <small>{storageScenarioSummary(run, associatedResult)}</small>
-                  <small>Run ID: {run.run_id}</small>
-                  <small>{run.path}</small>
-                  {run.manifest_error && <small>{run.manifest_error}</small>}
-                </td>
-                <td>
-                  {storageScenarioName(run, associatedResult)}
-                  <small>{storagePresetAndControls(run, associatedResult)}</small>
-                </td>
-                <td>
-                  <div className="badge-row">
-                    {storageStateBadges(run, associatedResult).map((badge) => (
-                      <StatusBadge key={badge.label} label={badge.label} tone={badge.tone} />
-                    ))}
-                  </div>
-                  <small>{storageNextStep(run, associatedResult)}</small>
-                </td>
-                <td>{storageResultOutputSummary(run, associatedResult)}</td>
-                <td>{formatBytes(run.size_bytes)}</td>
-                <td>
-                  <div className="button-row">
-                    {associatedResult && (
-                      <button
-                        type="button"
-                        onClick={() => onOpenResult(associatedResult.result_id)}
-                      >
-                        Open result
-                      </button>
-                    )}
-                    {associatedResult && (
-                      <button
-                        type="button"
-                        className="secondary-button"
-                        onClick={() => onExploreResult(associatedResult.result_id)}
-                      >
-                        Open in Explore
-                      </button>
-                    )}
-                    {canIngest && run.manifest_path && (
-                      <button type="button" onClick={() => onIngestRun(run.manifest_path!)}>
-                        Ingest completed output
-                      </button>
-                    )}
-                    <button
-                      type="button"
-                      className="secondary-button"
-                      disabled={!canPreviewDelete(run)}
-                      onClick={() => onPreviewDelete(run.run_id)}
-                    >
-                      Preview delete
-                    </button>
-                  </div>
-                  {!canPreviewDelete(run) && <small>{deleteDisabledReason(run)}</small>}
-                </td>
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
-    </section>
-  );
-}
-
 function LocalRunWorkflowPanel({
   dryRun,
   runStatus,
@@ -4722,6 +4536,8 @@ function LocalRunWorkflowPanel({
   storageInventory,
   storageStatus,
   storageError,
+  runDeletePreview,
+  runDeleteMessage,
   results,
   autoFinalizingWorkerRunIds,
   failedAutoFinalizingWorkerRunIds,
@@ -4743,8 +4559,9 @@ function LocalRunWorkflowPanel({
   onInspectIngested,
   onOpenStoredResult,
   onExploreStoredResult,
-  onOpenStorage,
   onRefreshStorage,
+  onPreviewRunDelete,
+  onConfirmRunDelete,
 }: {
   dryRun: DryRunResponse | null;
   runStatus: RunStatusResponse | null;
@@ -4757,6 +4574,8 @@ function LocalRunWorkflowPanel({
   storageInventory: StorageInventoryResponse | null;
   storageStatus: string;
   storageError: string | null;
+  runDeletePreview: DeleteRunResponse | null;
+  runDeleteMessage: string | null;
   results: ResultCard[];
   autoFinalizingWorkerRunIds: Set<string>;
   failedAutoFinalizingWorkerRunIds: Set<string>;
@@ -4778,8 +4597,9 @@ function LocalRunWorkflowPanel({
   onInspectIngested: () => void;
   onOpenStoredResult: (resultId: string) => void;
   onExploreStoredResult: (resultId: string) => void;
-  onOpenStorage: (runId?: string | null) => void;
   onRefreshStorage: () => void;
+  onPreviewRunDelete: (runId: string) => void;
+  onConfirmRunDelete: (runId: string) => void;
 }) {
   const stage = buildRunStage(dryRun, runStatus, ingestedResultId, lanWorkerStatus);
   const canIngestLocal =
@@ -5071,6 +4891,8 @@ function LocalRunWorkflowPanel({
         inventory={storageInventory}
         status={storageStatus}
         error={storageError}
+        deletePreview={runDeletePreview}
+        deleteMessage={runDeleteMessage}
         results={results}
         currentRunId={currentRunId}
         lanWorkerConfigured={lanWorkerConfig?.configured ?? false}
@@ -5083,8 +4905,9 @@ function LocalRunWorkflowPanel({
         onIngestStoredRun={onIngestStoredRun}
         onOpenStoredResult={onOpenStoredResult}
         onExploreStoredResult={onExploreStoredResult}
-        onOpenStorage={onOpenStorage}
         onRefreshStorage={onRefreshStorage}
+        onPreviewDelete={onPreviewRunDelete}
+        onConfirmDelete={onConfirmRunDelete}
       />
     </section>
   );
@@ -5220,6 +5043,8 @@ function LocalPipelinePanel({
   inventory,
   status,
   error,
+  deletePreview,
+  deleteMessage,
   results,
   currentRunId,
   lanWorkerConfigured,
@@ -5232,12 +5057,15 @@ function LocalPipelinePanel({
   onIngestStoredRun,
   onOpenStoredResult,
   onExploreStoredResult,
-  onOpenStorage,
   onRefreshStorage,
+  onPreviewDelete,
+  onConfirmDelete,
 }: {
   inventory: StorageInventoryResponse | null;
   status: string;
   error: string | null;
+  deletePreview: DeleteRunResponse | null;
+  deleteMessage: string | null;
   results: ResultCard[];
   currentRunId: string | null;
   lanWorkerConfigured: boolean;
@@ -5250,8 +5078,9 @@ function LocalPipelinePanel({
   onIngestStoredRun: (manifestPath: string) => void;
   onOpenStoredResult: (resultId: string) => void;
   onExploreStoredResult: (resultId: string) => void;
-  onOpenStorage: (runId?: string | null) => void;
   onRefreshStorage: () => void;
+  onPreviewDelete: (runId: string) => void;
+  onConfirmDelete: (runId: string) => void;
 }) {
   const runs = selectPipelineRuns(inventory?.runs ?? [], results, currentRunId);
 
@@ -5266,22 +5095,45 @@ function LocalPipelinePanel({
       </div>
       <p className="state-note">
         Active packages and runs that still need launch, status review, troubleshooting, or ingest.
-        Ingested results live in Results and Storage.
+        Ingested results live in Results; non-ingested package and run cleanup stays here.
       </p>
       {error && <p role="alert">{error}</p>}
+      {deleteMessage && <p role="status">{deleteMessage}</p>}
       <div className="button-row">
         <button type="button" className="secondary-button" onClick={onRefreshStorage}>
           Refresh runs
         </button>
-        <button type="button" className="secondary-button" onClick={() => onOpenStorage()}>
-          Open Storage cleanup
-        </button>
       </div>
+
+      {deletePreview && (
+        <section className="delete-preview" aria-label="Local run delete preview">
+          <h5>Delete local package/run data preview</h5>
+          <p>
+            Cleanup removes local generated package files, copied runtime files, CM1 output/logs if
+            present, and local sidecars stored under this run directory. It does not touch Results
+            entries, the source repo, the runtime home itself, or the external CM1 install. No files
+            have been deleted yet.
+          </p>
+          <dl className="metric-grid">
+            <Metric label="Run ID" value={deletePreview.run_id} />
+            <Metric label="Selected path" value={deletePreview.run_directory} />
+            <Metric label="Estimated reclaimed" value={formatBytes(deletePreview.size_bytes)} />
+            <Metric label="Preview status" value={deletePreview.message} />
+          </dl>
+          <button
+            type="button"
+            className="danger-button"
+            onClick={() => onConfirmDelete(deletePreview.run_id)}
+          >
+            Confirm delete local run data
+          </button>
+        </section>
+      )}
 
       {runs.length === 0 ? (
         <p>
-          No active or incomplete packages/runs need Build action. Ingested results are in Results,
-          and cleanup is in Storage.
+          No active or incomplete packages/runs need Build action. Ingested experiments are managed
+          in Results.
         </p>
       ) : (
         <div className="pipeline-run-list" aria-label="Local packages and runs">
@@ -5301,7 +5153,7 @@ function LocalPipelinePanel({
               onIngestStoredRun={onIngestStoredRun}
               onOpenStoredResult={onOpenStoredResult}
               onExploreStoredResult={onExploreStoredResult}
-              onOpenStorage={onOpenStorage}
+              onPreviewDelete={onPreviewDelete}
             />
           ))}
         </div>
@@ -5324,7 +5176,7 @@ function PipelineRunCard({
   onIngestStoredRun,
   onOpenStoredResult,
   onExploreStoredResult,
-  onOpenStorage,
+  onPreviewDelete,
 }: {
   run: RunStorageEntry;
   result: ResultCard | undefined;
@@ -5339,7 +5191,7 @@ function PipelineRunCard({
   onIngestStoredRun: (manifestPath: string) => void;
   onOpenStoredResult: (resultId: string) => void;
   onExploreStoredResult: (resultId: string) => void;
-  onOpenStorage: (runId?: string | null) => void;
+  onPreviewDelete: (runId: string) => void;
 }) {
   const displayName = result?.name ?? run.scenario_name ?? run.scenario_id ?? run.run_id;
   const canLaunch = Boolean(
@@ -5456,14 +5308,18 @@ function PipelineRunCard({
             Open in Explore
           </button>
         )}
-        <button
-          type="button"
-          className="secondary-button"
-          onClick={() => onOpenStorage(run.run_id)}
-        >
-          Manage cleanup
-        </button>
+        {!result && (
+          <button
+            type="button"
+            className="secondary-button"
+            disabled={!canPreviewDelete(run)}
+            onClick={() => onPreviewDelete(run.run_id)}
+          >
+            Preview cleanup
+          </button>
+        )}
       </div>
+      {!result && !canPreviewDelete(run) && <small>{deleteDisabledReason(run)}</small>}
     </article>
   );
 }
@@ -5664,7 +5520,7 @@ function pipelineRunTone(
 }
 
 function pipelineRunNextStep(run: RunStorageEntry, result: ResultCard | undefined): string {
-  if (result) return "Review in Results or Explore fields; cleanup remains available in Storage.";
+  if (result) return "Review and local result cleanup are available in Results.";
   if (run.worker_state === "running")
     return "CM1 is running on the LAN worker; refresh runs for status.";
   if (run.worker_state === "completed") {
@@ -5688,7 +5544,7 @@ function pipelineRunNextStep(run: RunStorageEntry, result: ResultCard | undefine
   if (run.category === "missing_manifest" || run.category === "malformed_manifest") {
     return "Run directory needs cleanup review before trusting it.";
   }
-  return "Review in Storage for the safest next action.";
+  return "Review the local run state before cleanup.";
 }
 
 function workerProgressSummary(run: RunStorageEntry): string | null {
@@ -5972,16 +5828,24 @@ function ResultNotebookCard({
   onDraftChange,
   onSubmit,
   onInspect,
-  onManageLocalFiles,
   onCompare,
+  deletePreview,
+  deleteMessage,
+  onPreviewDelete,
+  onConfirmDelete,
+  onCancelDelete,
 }: {
   result: ResultCard | undefined;
   draft: { name: string; tags: string; notes: string };
   onDraftChange: (draft: { name: string; tags: string; notes: string }) => void;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
   onInspect: () => void;
-  onManageLocalFiles: (result: ResultCard) => void;
   onCompare: () => void;
+  deletePreview: DeleteResultResponse | null;
+  deleteMessage: string | null;
+  onPreviewDelete: (resultId: string) => void;
+  onConfirmDelete: (resultId: string) => void;
+  onCancelDelete: () => void;
 }) {
   if (!result) {
     return (
@@ -5990,6 +5854,9 @@ function ResultNotebookCard({
       </section>
     );
   }
+
+  const visibleDeletePreview =
+    deletePreview?.result_id === result.result_id ? deletePreview : null;
 
   return (
     <section className="notebook-card" aria-label="Result detail">
@@ -6035,9 +5902,55 @@ function ResultNotebookCard({
           <Metric label="Deep convection" value={deepConvectionOutcome(result)} />
         )}
         <Metric label="Latest output" value={formatSeconds(resultLatestOutputTime(result))} />
+        <Metric
+          label="Local data"
+          value="Run-directory backed; delete removes the result and local run files"
+        />
       </dl>
 
       <InterestingTimesSummary result={result} />
+      {deleteMessage && <p role="status">{deleteMessage}</p>}
+      {visibleDeletePreview && (
+        <section className="delete-preview result-delete-preview" aria-label="Result delete preview">
+          <h4>Delete result and local run data preview</h4>
+          <p>
+            This removes the ingested result, notebook edits, diagnostics, derived products, CM1
+            output, logs, and local run files stored under this run directory. The result will
+            disappear from Results, Explore, Compare, and local inventory after confirmation. It
+            does not touch the source repo, runtime home itself, or external CM1 install. No files
+            have been deleted yet.
+          </p>
+          <dl className="metric-grid">
+            <Metric label="Run ID" value={visibleDeletePreview.run_id} />
+            <Metric label="Selected path" value={visibleDeletePreview.run_directory} />
+            <Metric
+              label="Estimated reclaimed"
+              value={formatBytes(visibleDeletePreview.size_bytes)}
+            />
+            <Metric label="Preview status" value={visibleDeletePreview.message} />
+          </dl>
+          <ul className="compact-list">
+            {visibleDeletePreview.categories.map((category) => (
+              <li key={category.label}>
+                <strong>{category.label}</strong>: {category.description}{" "}
+                {category.present ? `(${category.item_count} local item(s))` : "(none found)"}
+              </li>
+            ))}
+          </ul>
+          <div className="button-row">
+            <button type="button" onClick={onCancelDelete}>
+              Cancel
+            </button>
+            <button
+              type="button"
+              className="danger-button"
+              onClick={() => onConfirmDelete(visibleDeletePreview.result_id)}
+            >
+              Delete result and local run data
+            </button>
+          </div>
+        </section>
+      )}
 
       <details className="technical-details">
         <summary>Technical details</summary>
@@ -6134,10 +6047,10 @@ function ResultNotebookCard({
           </button>
           <button
             type="button"
-            className="secondary-button"
-            onClick={() => onManageLocalFiles(result)}
+            className="danger-button"
+            onClick={() => onPreviewDelete(result.result_id)}
           >
-            Manage local files
+            Preview delete result and local run data
           </button>
           <button type="submit" className="secondary-button">
             Save changes
@@ -9175,7 +9088,6 @@ function resultsTabLabel(tab: ResultsTab): string {
   const labels: Record<ResultsTab, string> = {
     notebook: "Notebook",
     compare: "Compare",
-    storage: "Storage",
   };
   return labels[tab];
 }
@@ -9632,81 +9544,6 @@ function outputSummary(summary: OutputFileSummary): string {
   return parts.join(", ");
 }
 
-function storageDisplayName(run: RunStorageEntry, result: ResultCard | undefined): string {
-  return (
-    result?.name ?? run.scenario_name ?? (run.scenario_id ? humanize(run.scenario_id) : run.run_id)
-  );
-}
-
-function storageScenarioName(run: RunStorageEntry, result: ResultCard | undefined): string {
-  return (
-    result?.scenario_name ?? run.scenario_name ?? humanize(run.scenario_id ?? "unknown scenario")
-  );
-}
-
-function storageScenarioSummary(run: RunStorageEntry, result: ResultCard | undefined): string {
-  const scenario = storageScenarioName(run, result);
-  const preset = humanize(result?.run_size_preset ?? run.run_size_preset ?? "preset unknown");
-  return `${scenario} · ${preset}`;
-}
-
-function storagePresetAndControls(run: RunStorageEntry, result: ResultCard | undefined): string {
-  const preset = humanize(result?.run_size_preset ?? run.run_size_preset ?? "preset unknown");
-  if (!result) return preset;
-  return `${preset} · ${storageControlSummary(result.controls)}`;
-}
-
-function canIngestStorageRun(run: RunStorageEntry, result: ResultCard | undefined): boolean {
-  return Boolean(!result && run.manifest_path && run.category === "completed_with_output");
-}
-
-function storageStateBadges(
-  run: RunStorageEntry,
-  result: ResultCard | undefined,
-): Array<{ label: string; tone: "good" | "warning" | "neutral" }> {
-  if (result) {
-    return [{ label: "Ingested / ready to review", tone: "good" }];
-  }
-  const primary: Record<string, { label: string; tone: "good" | "warning" | "neutral" }> = {
-    dry_run_only: { label: "Ready-to-run package", tone: "neutral" },
-    running: { label: "Running CM1 process", tone: "neutral" },
-    completed_with_output: { label: "Ready to ingest", tone: "good" },
-    completed_no_output: { label: "Completed with no usable output", tone: "warning" },
-    failed: { label: "Failed run", tone: "warning" },
-    canceled: { label: "Canceled run", tone: "warning" },
-    missing_manifest: { label: "Needs cleanup review", tone: "warning" },
-    malformed_manifest: { label: "Needs cleanup review", tone: "warning" },
-    saved_or_protected: { label: "Cleanup review", tone: "neutral" },
-    unknown: { label: "Needs cleanup review", tone: "warning" },
-  };
-  const badge = primary[run.category] ?? { label: humanize(run.category), tone: "neutral" };
-  const badges = [badge];
-  return badges;
-}
-
-function storageNextStep(run: RunStorageEntry, result: ResultCard | undefined): string {
-  if (result) {
-    return "Review in Results or Explore, or preview deletion here if you want to remove the result and local run data.";
-  }
-  if (run.category === "dry_run_only")
-    return "Package is generated and can be launched from Build.";
-  if (run.category === "running")
-    return "CM1 is active or queued; cleanup is blocked until it stops.";
-  if (run.category === "completed_with_output") {
-    return "Output exists; ingest to create a notebook result before deciding cleanup.";
-  }
-  if (run.category === "completed_no_output") {
-    return "No usable output was detected; inspect logs or preview cleanup.";
-  }
-  if (run.category === "failed" || run.category === "canceled") {
-    return "Run did not complete; inspect logs or preview cleanup.";
-  }
-  if (run.category === "missing_manifest" || run.category === "malformed_manifest") {
-    return "Manifest is missing or unreadable; review carefully before cleanup.";
-  }
-  return "Review the local directory state before cleanup.";
-}
-
 function storageOutputSummary(run: RunStorageEntry): string {
   const netcdf = run.output_summary.netcdf_paths ?? 0;
   const raw = run.output_summary.raw_cm1_artifacts ?? 0;
@@ -9717,11 +9554,6 @@ function storageOutputSummary(run: RunStorageEntry): string {
   if (raw > 0) parts.push(`${raw} raw CM1 files`);
   if (processed > 0) parts.push(`${processed} processed files`);
   return parts.length > 0 ? parts.join(", ") : `${run.output_artifact_count} output artifacts`;
-}
-
-function storageResultOutputSummary(run: RunStorageEntry, result: ResultCard | undefined): string {
-  if (result) return outputSummary(result.output_file_summary);
-  return storageOutputSummary(run);
 }
 
 function pipelineRunOutputSummary(run: RunStorageEntry, result: ResultCard | undefined): string {
@@ -9738,15 +9570,6 @@ function pipelineRunOutputSummary(run: RunStorageEntry, result: ResultCard | und
 
 function resultForRun(results: ResultCard[], runId: string): ResultCard | undefined {
   return results.find((result) => result.run_id === runId);
-}
-
-function storageControlSummary(controls: ResultCard["controls"]): string {
-  const keys = ["low_level_humidity", "surface_heating", "cap_strength"];
-  const parts = keys.flatMap((key) => {
-    const value = controls[key];
-    return value === undefined ? [] : `${humanize(key)} ${humanize(String(value))}`;
-  });
-  return parts.length > 0 ? parts.join(" · ") : "controls recorded";
 }
 
 function canPreviewDelete(run: RunStorageEntry): boolean {

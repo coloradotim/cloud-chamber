@@ -1102,6 +1102,7 @@ export async function mockCloudChamberApis(page: Page) {
     created_at: string;
     updated_at: string;
   }> = [];
+  let currentResults = [...results];
 
   await page.route("**/api/scenarios", (route) =>
     json(route, { golden_path_scenario_id: "baseline-shallow-cumulus", scenarios: [scenario] }),
@@ -1310,7 +1311,74 @@ export async function mockCloudChamberApis(page: Page) {
     }),
   );
 
-  await page.route("**/api/results", (route) => json(route, { results }));
+  await page.route("**/api/results", (route) => json(route, { results: currentResults }));
+
+  await page.route("**/api/results/*/delete-preview", (route) => {
+    const resultId = resultIdFromUrl(route.request().url());
+    const result = currentResults.find((item) => item.result_id === resultId) ?? results[0];
+    return json(route, {
+      result_id: result.result_id,
+      run_id: result.run_id,
+      run_directory: `/tmp/cloud-chamber-e2e/runs/${result.run_id}`,
+      dry_run: true,
+      deleted: false,
+      size_bytes: 4096,
+      message: "Dry run only; no files were deleted.",
+      affected_surfaces: ["Results", "Explore", "Compare", "local inventory"],
+      categories: [
+        {
+          label: "Result metadata and notebook edits",
+          description: "Ingested result metadata plus editable notebook sidecar state.",
+          present: true,
+          item_count: 2,
+        },
+        {
+          label: "Run manifests, package inputs, and reports",
+          description:
+            "Run manifests, case setup, generated CM1 inputs, dry-run reports, and file checklists.",
+          present: true,
+          item_count: 6,
+        },
+        {
+          label: "CM1 output and stats",
+          description:
+            "Model-output NetCDF, stats files, and raw CM1 artifacts copied into this run.",
+          present: true,
+          item_count: 14,
+        },
+        {
+          label: "Logs and runtime sidecars",
+          description: "Local stdout/stderr logs, backend logs, and LAN-worker status sidecars.",
+          present: true,
+          item_count: 3,
+        },
+        {
+          label: "Derived diagnostics and Explore data",
+          description:
+            "Derived product manifests, cached diagnostics, and visualization backing data.",
+          present: true,
+          item_count: 1,
+        },
+      ],
+    });
+  });
+
+  await page.route("**/api/results/*/delete", (route) => {
+    const resultId = resultIdFromUrl(route.request().url());
+    const result = currentResults.find((item) => item.result_id === resultId) ?? results[0];
+    currentResults = currentResults.filter((item) => item.result_id !== resultId);
+    return json(route, {
+      result_id: result.result_id,
+      run_id: result.run_id,
+      run_directory: `/tmp/cloud-chamber-e2e/runs/${result.run_id}`,
+      dry_run: false,
+      deleted: true,
+      size_bytes: 4096,
+      message: "Result and local run data deleted.",
+      affected_surfaces: ["Results", "Explore", "Compare", "local inventory"],
+      categories: [],
+    });
+  });
 
   await page.route("**/api/results/*/visualization/fields", (route) =>
     json(route, fieldCatalog(resultIdFromUrl(route.request().url()))),

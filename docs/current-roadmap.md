@@ -81,11 +81,13 @@ renderer technology, or new scenario families.
 
 ## Recently Completed
 
-#204/#205/#218 cleaned up the Build/Results/Storage lifecycle model.
+#204/#205/#218/#236 cleaned up the Build/Results/runtime-cleanup lifecycle
+model.
 
 - **Build** shows active and incomplete package/run/ingest pipeline work.
-- **Results** owns ingested notebook review.
-- **Storage** owns explicit destructive cleanup.
+- **Build** owns cleanup for non-ingested local packages and runs.
+- **Results** owns ingested notebook review plus explicit ingested-result
+  cleanup.
 
 ## Recommended Issue Candidates
 

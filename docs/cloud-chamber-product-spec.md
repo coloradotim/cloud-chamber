@@ -54,7 +54,7 @@ See [Cloud Chamber output product specification](contracts/output-product-specif
 for the contract that separates raw CM1 NetCDF output, result metadata,
 derived scientific products, visualization-ready payloads, future render-ready
 products, and external export bundles. Future Explore, Diagnostics Lab, Render
-Studio, Storage, and export work should preserve that browser/backend boundary:
+Studio, runtime cleanup, and export work should preserve that browser/backend boundary:
 the browser receives bounded backend-prepared products and does not parse raw
 NetCDF.
 
@@ -235,10 +235,10 @@ cleanup at the same time. The Build workspace should include a compact local
 run launchpad for active and incomplete package/run work only: create packages,
 launch eligible packages, refresh running/failed/completed status, troubleshoot
 failed or no-output runs, and ingest completed output. Fully ingested results
-belong in Results and Storage.
+belong in Results.
 
 When a local backend restart leaves a completed CM1 run's manifest marked
-running, Build/Storage refresh may reconcile the state only if stdout contains
+running, Build refresh may reconcile the state only if stdout contains
 normal CM1 termination evidence and output artifacts are present. The UI should
 then offer ingest rather than leaving the run stranded as running.
 
@@ -264,7 +264,7 @@ Current behavior is a placeholder only. It must explicitly say preview is not im
    runtime inventory when they still need Build action: packaged-only, running,
    completed with output and not yet ingested, completed without usable output,
    failed/canceled, or malformed/missing manifest. Fully ingested results are
-   reviewed in Results and managed in Storage.
+   reviewed and managed in Results.
 
 ### Workflow 3 — Launch CM1 Run
 
@@ -299,21 +299,38 @@ created Result Cards in Results or Explore. It is a pipeline view over local
 runtime state, not a single active wizard. This is local-first orchestration
 only; CI still uses fake fixtures and never runs CM1.
 
-### Workflow 4.5 — Manage Runtime Storage
+### Workflow 4.5 — Manage Runtime Cleanup
 
-Results / Storage exposes the runtime-home inventory from the backend. It shows total runtime-home size, the 50 GB warning-threshold status, run directories sorted by size, and lifecycle-aware identities for each run directory. When a run has an associated Result Card / notebook entry, the notebook name is primary and the raw run ID/path are secondary. If no result exists yet, Storage falls back to scenario name, scenario ID, and then run ID.
+Build exposes runtime-home inventory for active, incomplete, and non-ingested
+package/run work. It shows lifecycle-aware identities for run directories that
+still need launch, status review, troubleshooting, ingest, or cleanup. Fully
+ingested results are omitted from Build cleanup and managed from Results.
 
-Storage should describe each local run directory as part of the experiment lifecycle: ready-to-run package, running/queued CM1 process, completed with usable output, completed with no usable output, failed/canceled, ready to ingest, ingested/ready to review, legacy saved/protected metadata, or missing/malformed manifest that needs cleanup review. It should avoid duplicate or contradictory badges.
+Build should describe each non-ingested local run directory as part of the
+experiment lifecycle: ready-to-run package, running/queued CM1 process,
+completed with usable output, completed with no usable output, failed/canceled,
+ready to ingest, or missing/malformed manifest that needs cleanup review. It
+should avoid duplicate or contradictory badges.
 
-Storage offers non-destructive state transitions where they belong: open associated results in Results or Explore, and ingest completed output when a completed-with-output run has a manifest but no associated result. Destructive cleanup remains only in Storage behind preview and confirmation.
+Build offers non-destructive state transitions where they belong: launch
+packaged runs, refresh status, and ingest completed output when a
+completed-with-output run has a manifest but no associated result. Cleanup for
+non-ingested run directories remains behind preview and confirmation.
 
-Deletion is always explicit. The UI first requests a dry-run delete preview for one selected run, then requires a separate confirm action before deleting. Running runs cannot be deleted from the UI. Legacy saved/protected metadata does not make a non-running run undeletable; instead Storage states plainly that deleting the selected run directory removes local generated package/runtime/output/log files plus result metadata, notebook edits, diagnostics, and Explore backing references stored there. The warning threshold never auto-deletes anything.
+Results owns destructive cleanup for ingested results. The selected notebook
+entry offers a secondary/danger action to preview deletion by result ID. The
+preview states that deleting removes the ingested result, notebook edits,
+diagnostics, derived products, CM1 output, logs, and local run files stored
+under the run directory, and that the result will disappear from Results,
+Explore, Compare, and local inventory after confirmation.
 
-Build may link to Storage for cleanup, but it should not duplicate deletion
-logic. Results may link a selected notebook entry to its local files in Storage,
-but Results is not a deletion surface. The relationship should be clear:
-Build moves local runs forward, Results reviews and edits experiment notebook
-entries, and Storage manages local generated files safely.
+Deletion is always explicit. The UI first requests a dry-run delete preview for
+one selected run/result, then requires a separate confirm action before
+deleting. Running runs cannot be deleted. Legacy saved/protected metadata does
+not make a non-running run/result undeletable. The warning threshold never
+auto-deletes anything. The relationship should be clear: Build moves local runs
+forward and cleans up non-ingested runs; Results reviews, compares, edits, and
+deletes ingested experiment notebook entries plus their backing local data.
 
 ### Workflow 5 — Open Result
 
@@ -999,7 +1016,7 @@ Completed CM1 result
 Failed/canceled CM1 run
 Ingested result metadata
 Visualizer interpretation
-Saved result/notebook entry
+Editable result/notebook entry
 ```
 
 A preview or dry-run package is not a completed CM1 result. A visualization is an interpretation of CM1 output, not a new physical source of truth.
@@ -1012,7 +1029,7 @@ Product copy and state names should prefer nouns that reveal provenance:
 - `Completed CM1 result`
 - `Ingested result metadata`
 - `Visualizer interpretation`
-- `Saved experiment notebook entry`
+- `Editable experiment notebook entry`
 
 ## Result Card / Experiment Notebook
 
@@ -1146,14 +1163,12 @@ motion, and keeps cloud water below threshold. Its primary badges should read
 like an accepted moisture-limited outcome: `No cloud formed`, `No rain
 detected`, and `Moisture-limited`, with caveats secondary.
 
-`Results` contains `Notebook`, `Compare`, and `Storage` sub-tabs. Notebook is
-the Result Card / Experiment Notebook: a scan-friendly list of experiment cards
-plus a selected notebook detail, with technical run metadata kept secondary.
-Compare is result-pair oriented and belongs with Results because it compares
-experiment outcomes. Storage is also part of Results because it manages local
-run directories and their relationship to named result cards. Storage should
-read as local runtime inventory for the experiment lifecycle, not a raw folder
-table keyed by run ID.
+`Results` contains `Notebook` and `Compare` sub-tabs. Notebook is the Result
+Card / Experiment Notebook: a scan-friendly list of experiment cards plus a
+selected notebook detail, with technical run metadata kept secondary. Compare is
+result-pair oriented and belongs with Results because it compares experiment
+outcomes. Ingested-result cleanup lives on the selected notebook detail as a
+secondary/danger preview action, not as a separate Storage workspace.
 
 `Explore` is one desktop cloud-context and slice-inspection workflow for a
 single selected result. The old `2-D Slices` / `3-D View` split was useful
@@ -1162,7 +1177,7 @@ is now a unified instrument: compact selected-result context, shared
 field/time/slice controls, a 3-D scalar-field context, a visible native-grid
 slice plane, the matching 2-D slice inspector, and a `What happened here?`
 selected-point explanation panel. Selecting a result in Notebook or opening a
-comparison/storage row in Explore should preserve that context. If no selected
+comparison row in Explore should preserve that context. If no selected
 result is available, Explore should tell the user to select an ingested result
 from Results.
 

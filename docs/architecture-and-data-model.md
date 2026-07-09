@@ -53,7 +53,7 @@ The [Cloud Chamber output product specification](contracts/output-product-specif
 defines the next data-contract layer between raw CM1 NetCDF output, result
 metadata, derived scientific products, visualization-ready payloads, future
 render-ready products, and external export bundles. Future backend ingest,
-Results, Explore, Storage, Diagnostics Lab, and Render Studio work should use
+Results, Explore, runtime cleanup, Diagnostics Lab, and Render Studio work should use
 that contract instead of inventing ad hoc output discovery or browser-side
 NetCDF parsing.
 
@@ -367,7 +367,7 @@ packaged-only, running, completed with output, completed without usable output,
 failed, ingested, legacy saved/protected metadata, or missing/malformed manifest.
 Build shows only active or incomplete package/run work that still needs launch,
 status review, troubleshooting, or ingest. Fully ingested results belong in
-Results and Storage. The launchpad uses the runtime storage inventory to show
+Results. The launchpad uses the runtime storage inventory to show
 eligible states and offers only safe state-appropriate transitions:
 
 - create a new package through `POST /api/dry-run-package`;
@@ -375,7 +375,7 @@ eligible states and offers only safe state-appropriate transitions:
 - refresh current status through `GET /api/runs/status`;
 - ingest completed output through `POST /api/results/ingest`;
 - open associated results in Results or Explore;
-- route cleanup decisions to Results / Storage.
+- preview and confirm cleanup for non-ingested package/run directories.
 
 Runtime status refresh may reconcile a stale local manifest only when stdout
 contains normal CM1 termination evidence and output artifacts exist under the
@@ -383,17 +383,11 @@ run directory. This repairs backend-restart cases where a completed local run
 was still labeled running, while avoiding silent completion claims for unknown
 or still-active runs.
 
-Storage remains the owner of deletion policy and cleanup actions. Build may link
-to Storage for cleanup, but it should not duplicate the delete workflow.
-
-Results / Storage is the canonical local runtime inventory for these same
-states. It joins storage entries to Result Cards when possible so the notebook
-name becomes the primary identity and run ID/path stay secondary technical
-metadata. Rows expose only state-appropriate non-destructive actions: open the
-associated result, open it in Explore, or ingest completed output when a
-completed-with-output run has a manifest and no associated result. Delete
-preview/confirmation remains scoped to Storage and is blocked for running or
-otherwise unsafe runs.
+Results owns cleanup for ingested results. It resolves the selected result to
+its managed run directory, previews user-facing cleanup categories, and requires
+explicit confirmation before deleting the result and local run data. Non-ingested
+run-directory cleanup stays in Build. Running or otherwise unsafe runs remain
+blocked by backend storage safety checks.
 
 ### Preview Engine
 
@@ -467,12 +461,12 @@ Deletion is explicit and scoped to one selected run directory. The cleanup servi
 Deleting a run removes local generated CM1 inputs, copied runtime files, logs, raw CM1 output, NetCDF output, processed artifacts, and any local metadata stored inside that run directory. It does not delete repo files or the external CM1 installation.
 
 The current code-backed lifecycle contract is documented in [Ingest, Results,
-And Storage Lifecycle Audit](ingest-results-storage-lifecycle.md). As of that
-audit, `result_metadata.json` and `result_card.json` live inside the selected
-run directory, so deleting the whole directory also removes the implemented
-Result/Explore record. The frontend Storage workspace makes that consequence
-explicit before confirmation instead of treating legacy saved/protected flags as
-the primary product model.
+And Runtime Cleanup Lifecycle Audit](ingest-results-storage-lifecycle.md). As of
+that audit, `result_metadata.json` and `result_card.json` live inside the
+selected run directory, so deleting the whole directory also removes the
+implemented Result/Explore record. Results makes that consequence explicit
+before confirmation instead of treating legacy saved/protected flags as the
+primary product model.
 
 ### Output Ingester
 
@@ -837,15 +831,11 @@ Explore
 ```
 
 `Results` is the default landing section so the selected result context is
-obvious before field inspection or 3-D visualization. It contains `Notebook`,
-`Compare`, and `Storage` sub-tabs. `Compare` remains result-pair oriented, while
-`Storage` joins runtime folders to result cards when possible so the user sees a
-result display name first and raw run IDs/paths second. Storage also surfaces
-ready-to-run packages, running/queued processes, completed output that is ready
-to ingest, completed runs with no usable output, failed/canceled runs, ingested
-results, legacy saved/protected metadata, and missing/malformed manifests as
-distinct cleanup/review states. Running runs block cleanup; non-running run
-directories require explicit preview and confirmation.
+obvious before field inspection or 3-D visualization. It contains `Notebook` and
+`Compare` sub-tabs. `Compare` remains result-pair oriented. Ingested-result
+cleanup lives on the selected notebook entry as a secondary/danger preview
+action, and deleting a result removes the result plus the local managed run data
+after explicit confirmation.
 
 `Notebook` renders result-card metadata as mobile-first experiment notebook
 entries rather than an admin table. The primary view should surface the result
@@ -856,11 +846,11 @@ provenance labels, and detailed caveats remains in disclosure so it is available
 without overwhelming the first read.
 
 `Explore` is one desktop workflow for one selected result, not separate
-implementation destinations. The selected result ID flows from Results /
-Notebook, Results / Compare, and Results / Storage into Explore; that workspace
-then requests backend-prepared field catalogs, defaults, point-cloud payloads,
-slices, and selected-point diagnostics for the same result. The browser does not
-open NetCDF files or classify the physics itself.
+implementation destinations. The selected result ID flows from Results Notebook
+and Results Compare into Explore; that workspace then requests backend-prepared
+field catalogs, defaults, point-cloud payloads, slices, and selected-point
+diagnostics for the same result. The browser does not open NetCDF files or
+classify the physics itself.
 
 Explore's UI contract is explanation-first. The selected result summary,
 cloud/no-cloud state, field-loading state, shared field/time/slice controls,

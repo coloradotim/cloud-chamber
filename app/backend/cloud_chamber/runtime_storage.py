@@ -9,6 +9,11 @@ from pathlib import Path
 from pydantic import BaseModel, ConfigDict, Field
 
 from cloud_chamber.local_run_manager import reconcile_completed_run_manifest
+from cloud_chamber.result_ingest import (
+    RESULT_METADATA_FILENAME,
+    ResultIngestError,
+    result_metadata_from_json,
+)
 from cloud_chamber.run_manifest import (
     LifecycleState,
     ProductState,
@@ -79,6 +84,29 @@ class DeleteRunResult(BaseModel):
     message: str
 
 
+class ResultCleanupCategory(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    label: str
+    description: str
+    present: bool
+    item_count: int
+
+
+class DeleteResultResult(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    result_id: str
+    run_id: str
+    run_directory: str
+    dry_run: bool
+    deleted: bool
+    size_bytes: int
+    message: str
+    affected_surfaces: list[str]
+    categories: list[ResultCleanupCategory]
+
+
 def runtime_storage_inventory(settings: CloudChamberSettings) -> RuntimeStorageInventory:
     """Return a conservative inventory of the configured runtime home."""
     runtime_home = settings.runtime_home.expanduser()
@@ -116,6 +144,93 @@ def delete_runtime_run(
     # Backward-compatible request shape: saved/protected is no longer a normal
     # product mode or deletion blocker, but older callers may still send this.
     _ = force_saved
+    plan = _runtime_delete_plan(settings, run_id)
+    if not dry_run and not confirm:
+        raise RuntimeStorageError("Real delete requires confirm=true.")
+
+    if dry_run:
+        return DeleteRunResult(
+            run_id=run_id,
+            run_directory=str(plan.run_dir),
+            dry_run=True,
+            deleted=False,
+            size_bytes=plan.entry.size_bytes,
+            message="Dry run only; no files were deleted.",
+        )
+
+    shutil.rmtree(plan.run_dir)
+    return DeleteRunResult(
+        run_id=run_id,
+        run_directory=str(plan.run_dir),
+        dry_run=False,
+        deleted=True,
+        size_bytes=plan.entry.size_bytes,
+        message="Run directory deleted.",
+    )
+
+
+def delete_ingested_result(
+    settings: CloudChamberSettings,
+    *,
+    result_id: str,
+    dry_run: bool,
+    confirm: bool,
+) -> DeleteResultResult:
+    """Delete an ingested result and its managed local run directory."""
+    metadata_path = _metadata_path_for_result(settings, result_id)
+    try:
+        metadata = result_metadata_from_json(metadata_path.read_text())
+    except (OSError, ValueError) as exc:
+        raise ResultIngestError(f"Result metadata is unreadable: {result_id}") from exc
+
+    run_dir = metadata_path.parent
+    if metadata.run_id != run_dir.name:
+        raise RuntimeStorageError(
+            "Result metadata run_id does not match its local run directory: "
+            f"{metadata.run_id} != {run_dir.name}"
+        )
+
+    plan = _runtime_delete_plan(settings, metadata.run_id)
+    categories = _result_cleanup_categories(run_dir)
+    if not dry_run and not confirm:
+        raise RuntimeStorageError("Real delete requires confirm=true.")
+
+    deleted = False
+    message = "Dry run only; no files were deleted."
+    if not dry_run:
+        shutil.rmtree(plan.run_dir)
+        deleted = True
+        message = "Result and local run data deleted."
+
+    return DeleteResultResult(
+        result_id=result_id,
+        run_id=metadata.run_id,
+        run_directory=str(plan.run_dir),
+        dry_run=dry_run,
+        deleted=deleted,
+        size_bytes=plan.entry.size_bytes,
+        message=message,
+        affected_surfaces=[
+            "Results",
+            "Explore",
+            "Compare",
+            "local inventory",
+        ],
+        categories=categories,
+    )
+
+
+class _RuntimeDeletePlan(BaseModel):
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
+    run_dir: Path
+    entry: RunStorageEntry
+
+
+def _runtime_delete_plan(
+    settings: CloudChamberSettings,
+    run_id: str,
+) -> _RuntimeDeletePlan:
     runtime_home = settings.runtime_home.expanduser()
     runs_dir = runtime_home / "runs"
     run_dir = _safe_run_directory(runtime_home, run_id)
@@ -133,28 +248,7 @@ def delete_runtime_run(
     entry = _run_storage_entry(run_dir)
     if entry.category == "running":
         raise RuntimeStorageError(f"Refusing to delete running run: {run_id}")
-    if not dry_run and not confirm:
-        raise RuntimeStorageError("Real delete requires confirm=true.")
-
-    if dry_run:
-        return DeleteRunResult(
-            run_id=run_id,
-            run_directory=str(run_dir),
-            dry_run=True,
-            deleted=False,
-            size_bytes=entry.size_bytes,
-            message="Dry run only; no files were deleted.",
-        )
-
-    shutil.rmtree(run_dir)
-    return DeleteRunResult(
-        run_id=run_id,
-        run_directory=str(run_dir),
-        dry_run=False,
-        deleted=True,
-        size_bytes=entry.size_bytes,
-        message="Run directory deleted.",
-    )
+    return _RuntimeDeletePlan(run_dir=run_dir, entry=entry)
 
 
 def _run_directories(runs_dir: Path) -> list[Path]:
@@ -262,6 +356,81 @@ def _read_worker_status(path: Path) -> dict[str, object]:
     except (OSError, ValueError):
         return {}
     return loaded if isinstance(loaded, dict) else {}
+
+
+def _metadata_path_for_result(settings: CloudChamberSettings, result_id: str) -> Path:
+    runs_dir = settings.runtime_home.expanduser() / "runs"
+    if not runs_dir.exists():
+        raise ResultIngestError(f"Result not found: {result_id}")
+
+    for metadata_path in sorted(runs_dir.glob(f"*/{RESULT_METADATA_FILENAME}")):
+        try:
+            metadata = result_metadata_from_json(metadata_path.read_text())
+        except (OSError, ValueError):
+            continue
+        if metadata.result_id == result_id:
+            return metadata_path
+    raise ResultIngestError(f"Result not found: {result_id}")
+
+
+def _result_cleanup_categories(run_dir: Path) -> list[ResultCleanupCategory]:
+    specs = [
+        (
+            "Result metadata and notebook edits",
+            "Ingested result metadata plus editable notebook sidecar state.",
+            ["result_metadata.json", "result_card.json"],
+        ),
+        (
+            "Run manifests, package inputs, and reports",
+            "Run manifests, case setup, generated CM1 inputs, dry-run reports, "
+            "and file checklists.",
+            [
+                "run_manifest.json",
+                "case_manifest.json",
+                "namelist.input",
+                "input_sounding",
+                "dry_run_report.json",
+                "runtime_file_checklist.json",
+            ],
+        ),
+        (
+            "CM1 output and stats",
+            "Model-output NetCDF, stats files, and raw CM1 artifacts copied into this run.",
+            ["cm1out*.nc", "cm1out*.nc4", "cm1out*.dat", "cm1out*.ctl", "*.ctl"],
+        ),
+        (
+            "Logs and runtime sidecars",
+            "Local stdout/stderr logs, backend logs, and LAN-worker status sidecars.",
+            ["logs/**", "*.log", "stdout.log", "stderr.log", "worker_status.json"],
+        ),
+        (
+            "Derived diagnostics and Explore data",
+            "Derived product manifests, cached diagnostics, and visualization backing data.",
+            ["derived-products/**", "processed/**", "visualization/**"],
+        ),
+    ]
+    categories: list[ResultCleanupCategory] = []
+    for label, description, patterns in specs:
+        count = _matching_item_count(run_dir, patterns)
+        categories.append(
+            ResultCleanupCategory(
+                label=label,
+                description=description,
+                present=count > 0,
+                item_count=count,
+            )
+        )
+    return categories
+
+
+def _matching_item_count(run_dir: Path, patterns: list[str]) -> int:
+    matched: set[Path] = set()
+    for pattern in patterns:
+        for path in run_dir.glob(pattern):
+            if path == run_dir:
+                continue
+            matched.add(path)
+    return len(matched)
 
 
 def _string_or_none(value: object) -> str | None:

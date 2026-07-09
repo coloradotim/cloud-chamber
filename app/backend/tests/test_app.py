@@ -544,6 +544,83 @@ def test_results_ingest_and_lookup_api(
     assert get_response.json()["saved"] is False
 
 
+def test_result_delete_preview_and_confirm_api(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("CLOUD_CHAMBER_RUNTIME_HOME", str(tmp_path / "CloudChamber"))
+    package = generate_dry_run_package(
+        scenario_data=json.loads(BASELINE_TEMPLATE.read_text()),
+        runtime_home=tmp_path / "CloudChamber",
+        run_id="run-api-delete-result",
+    )
+    run_dir = package.package_dir
+    netcdf_path = run_dir / "cm1out_000001.nc"
+    (run_dir / "logs").mkdir()
+    (run_dir / "logs" / "stdout.log").write_text("Program terminated normally\n")
+    xr.Dataset(
+        data_vars={
+            "qc": (
+                ("time", "z", "y", "x"),
+                [[[[2e-6]]]],
+                {"units": "kg/kg"},
+            ),
+            "w": (
+                ("time", "z", "y", "x"),
+                [[[[1.0]]]],
+                {"units": "m/s"},
+            ),
+        },
+        coords={"time": [0.0], "z": [125.0], "y": [0.0], "x": [0.0]},
+    ).to_netcdf(netcdf_path, engine="scipy")
+    manifest = load_run_manifest(package.manifest_path)
+    write_run_manifest(
+        package.manifest_path,
+        manifest.model_copy(
+            update={
+                "lifecycle_state": LifecycleState.COMPLETED,
+                "provenance": ProvenanceMetadata(product_state=ProductState.COMPLETED_CM1_RESULT),
+                "outputs": OutputMetadata(netcdf_paths=[str(netcdf_path)]),
+            }
+        ),
+    )
+    client = TestClient(app)
+    ingest_response = client.post(
+        "/api/results/ingest",
+        json={"manifest_path": str(package.manifest_path)},
+    )
+    result_id = ingest_response.json()["result_id"]
+
+    preview = client.post(f"/api/results/{result_id}/delete-preview")
+    blocked = client.post(f"/api/results/{result_id}/delete", json={"confirm": False})
+    deleted = client.post(f"/api/results/{result_id}/delete", json={"confirm": True})
+    list_after_delete = client.get("/api/results")
+    get_after_delete = client.get(f"/api/results/{result_id}")
+
+    assert preview.status_code == 200
+    assert preview.json()["result_id"] == result_id
+    assert preview.json()["run_id"] == "run-api-delete-result"
+    assert preview.json()["deleted"] is False
+    assert "Results" in preview.json()["affected_surfaces"]
+    assert {
+        category["label"] for category in preview.json()["categories"] if category["present"]
+    } >= {
+        "Result metadata and notebook edits",
+        "Run manifests, package inputs, and reports",
+        "CM1 output and stats",
+        "Logs and runtime sidecars",
+        "Derived diagnostics and Explore data",
+    }
+    assert blocked.status_code == 400
+    assert blocked.json()["detail"] == "Real delete requires confirm=true."
+    assert deleted.status_code == 200
+    assert deleted.json()["deleted"] is True
+    assert not run_dir.exists()
+    assert list_after_delete.status_code == 200
+    assert list_after_delete.json()["results"] == []
+    assert get_after_delete.status_code == 404
+
+
 def test_result_card_update_and_save_api(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

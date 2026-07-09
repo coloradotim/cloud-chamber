@@ -2,8 +2,21 @@ import json
 from pathlib import Path
 
 import pytest
+import xarray as xr
 
 from cloud_chamber.dry_run_package import generate_dry_run_package
+from cloud_chamber.result_cards import (
+    RESULT_CARD_FILENAME,
+    ResultCardUpdate,
+    get_result_card,
+    list_result_cards,
+    update_result_card,
+)
+from cloud_chamber.result_ingest import (
+    RESULT_METADATA_FILENAME,
+    ResultIngestError,
+    ingest_completed_run,
+)
 from cloud_chamber.run_manifest import (
     ExecutionMetadata,
     LifecycleState,
@@ -17,6 +30,7 @@ from cloud_chamber.run_manifest import (
 from cloud_chamber.runtime_storage import (
     DEFAULT_STORAGE_WARNING_THRESHOLD_BYTES,
     RuntimeStorageError,
+    delete_ingested_result,
     delete_runtime_run,
     runtime_storage_inventory,
 )
@@ -47,6 +61,76 @@ def create_run(tmp_path: Path, run_id: str) -> Path:
         run_id=run_id,
     )
     return result.manifest_path
+
+
+def create_ingested_result(
+    tmp_path: Path,
+    *,
+    run_id: str = "run-result-delete",
+    saved: bool = False,
+) -> tuple[CloudChamberSettings, str, Path, Path]:
+    settings = fake_settings(tmp_path)
+    manifest_path = create_run(tmp_path, run_id)
+    run_dir = manifest_path.parent
+    netcdf_path = run_dir / "cm1out_000001.nc"
+    stats_path = run_dir / "cm1out_stats.nc"
+    raw_path = run_dir / "cm1out_000001_s.dat"
+    ctl_path = run_dir / "cm1out_s.ctl"
+    log_dir = run_dir / "logs"
+    log_dir.mkdir()
+    (log_dir / "stdout.log").write_text("Program terminated normally\n")
+    (log_dir / "stderr.log").write_text("IEEE_UNDERFLOW_FLAG\n")
+    (run_dir / "worker_status.json").write_text('{"state": "worker_cleanup_complete"}\n')
+    raw_path.write_text("fake raw CM1 artifact")
+    ctl_path.write_text("fake CM1 descriptor")
+    write_model_netcdf(netcdf_path)
+    write_stats_netcdf(stats_path)
+    mark_manifest(
+        manifest_path,
+        lifecycle_state=LifecycleState.COMPLETED,
+        product_state=ProductState.COMPLETED_CM1_RESULT,
+        saved=saved,
+        outputs=OutputMetadata(
+            raw_cm1_artifacts=[str(raw_path), str(ctl_path)],
+            netcdf_paths=[str(netcdf_path), str(stats_path)],
+        ),
+    )
+    result = ingest_completed_run(manifest_path)
+    update_result_card(
+        settings,
+        result.result_id,
+        ResultCardUpdate(
+            name="Delete me",
+            tags=["cleanup"],
+            notes="Notebook state should be removed with the run directory.",
+        ),
+    )
+    return settings, result.result_id, run_dir, manifest_path
+
+
+def write_model_netcdf(path: Path) -> None:
+    xr.Dataset(
+        data_vars={
+            "qc": (
+                ("time", "z", "y", "x"),
+                [[[[2e-6 for _x in range(2)] for _y in range(2)] for _z in range(2)]],
+                {"units": "kg/kg"},
+            ),
+            "w": (
+                ("time", "z", "y", "x"),
+                [[[[1.0, 2.0], [3.0, 4.0]], [[1.5, 2.5], [3.5, 4.5]]]],
+                {"units": "m/s"},
+            ),
+        },
+        coords={"time": [1800.0], "z": [500.0, 1500.0], "y": [0.0, 200.0], "x": [0.0, 200.0]},
+    ).to_netcdf(path, engine="scipy")
+
+
+def write_stats_netcdf(path: Path) -> None:
+    xr.Dataset(
+        data_vars={"mass": (("time",), [1.0], {"units": "kg"})},
+        coords={"time": [0.0]},
+    ).to_netcdf(path, engine="scipy")
 
 
 def mark_manifest(
@@ -272,6 +356,122 @@ def test_delete_allows_legacy_saved_run_after_explicit_preview(tmp_path: Path) -
     result = delete_runtime_run(settings, run_id="run-saved", dry_run=False, confirm=True)
     assert result.deleted is True
     assert not manifest_path.parent.exists()
+
+
+def test_ingested_result_delete_preview_resolves_result_run_and_categories(
+    tmp_path: Path,
+) -> None:
+    settings, result_id, run_dir, _manifest_path = create_ingested_result(tmp_path)
+
+    preview = delete_ingested_result(
+        settings,
+        result_id=result_id,
+        dry_run=True,
+        confirm=False,
+    )
+
+    assert preview.result_id == result_id
+    assert preview.run_id == "run-result-delete"
+    assert preview.run_directory == str(run_dir)
+    assert preview.deleted is False
+    assert preview.size_bytes > 0
+    assert run_dir.exists()
+    assert preview.affected_surfaces == ["Results", "Explore", "Compare", "local inventory"]
+    categories = {category.label: category for category in preview.categories}
+    assert categories["Result metadata and notebook edits"].present is True
+    assert categories["Run manifests, package inputs, and reports"].present is True
+    assert categories["CM1 output and stats"].item_count >= 3
+    assert categories["Logs and runtime sidecars"].present is True
+    assert categories["Derived diagnostics and Explore data"].present is True
+
+
+def test_delete_ingested_result_removes_result_and_managed_local_run_data(
+    tmp_path: Path,
+) -> None:
+    settings, result_id, run_dir, _manifest_path = create_ingested_result(tmp_path)
+
+    result = delete_ingested_result(
+        settings,
+        result_id=result_id,
+        dry_run=False,
+        confirm=True,
+    )
+
+    assert result.deleted is True
+    assert not run_dir.exists()
+    assert list_result_cards(settings) == []
+    with pytest.raises(ResultIngestError, match="Result card not found"):
+        get_result_card(settings, result_id)
+    assert not (run_dir / RESULT_METADATA_FILENAME).exists()
+    assert not (run_dir / RESULT_CARD_FILENAME).exists()
+    assert not (run_dir / "cm1out_000001.nc").exists()
+    assert not (run_dir / "logs" / "stdout.log").exists()
+    assert not (run_dir / "derived-products" / "output_product_manifest.json").exists()
+
+
+def test_delete_ingested_result_blocks_running_result_run(tmp_path: Path) -> None:
+    settings, result_id, run_dir, manifest_path = create_ingested_result(
+        tmp_path,
+        run_id="run-result-running",
+    )
+    manifest = load_run_manifest(manifest_path)
+    write_run_manifest(
+        manifest_path,
+        manifest.model_copy(
+            update={
+                "lifecycle_state": LifecycleState.RUNNING,
+                "provenance": ProvenanceMetadata(
+                    product_state=ProductState.QUEUED_RUNNING_CM1_PROCESS
+                ),
+            }
+        ),
+    )
+
+    with pytest.raises(RuntimeStorageError, match="running run"):
+        delete_ingested_result(settings, result_id=result_id, dry_run=False, confirm=True)
+
+    assert run_dir.exists()
+    assert get_result_card(settings, result_id).run_id == "run-result-running"
+
+
+def test_delete_ingested_result_allows_legacy_saved_metadata(tmp_path: Path) -> None:
+    settings, result_id, run_dir, _manifest_path = create_ingested_result(
+        tmp_path,
+        run_id="run-result-saved",
+        saved=True,
+    )
+
+    preview = delete_ingested_result(
+        settings,
+        result_id=result_id,
+        dry_run=True,
+        confirm=False,
+    )
+    deleted = delete_ingested_result(
+        settings,
+        result_id=result_id,
+        dry_run=False,
+        confirm=True,
+    )
+
+    assert preview.deleted is False
+    assert deleted.deleted is True
+    assert not run_dir.exists()
+
+
+def test_delete_ingested_result_requires_ingested_metadata(tmp_path: Path) -> None:
+    settings = fake_settings(tmp_path)
+    manifest_path = create_run(tmp_path, "run-not-ingested")
+
+    with pytest.raises(ResultIngestError, match="Result not found"):
+        delete_ingested_result(
+            settings,
+            result_id="result-run-not-ingested",
+            dry_run=True,
+            confirm=False,
+        )
+
+    assert manifest_path.parent.exists()
 
 
 def test_delete_refuses_path_traversal_and_runtime_home_itself(tmp_path: Path) -> None:
