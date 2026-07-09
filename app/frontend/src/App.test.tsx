@@ -1205,6 +1205,50 @@ const storageInventoryResponse = {
   largest_runs: storageRuns,
 };
 
+const resultDeletePreviewResponse = {
+  result_id: "result-dry-run-quicklook",
+  run_id: "dry-run-quicklook",
+  run_directory: "/tmp/CloudChamber/runs/dry-run-quicklook",
+  dry_run: true,
+  deleted: false,
+  size_bytes: 852 * 1024 ** 2,
+  message: "Dry run only; no files were deleted.",
+  affected_surfaces: ["Results", "Explore", "Compare", "local inventory"],
+  categories: [
+    {
+      label: "Result metadata and notebook edits",
+      description: "Ingested result metadata plus editable notebook sidecar state.",
+      present: true,
+      item_count: 2,
+    },
+    {
+      label: "Run manifests, package inputs, and reports",
+      description:
+        "Run manifests, case setup, generated CM1 inputs, dry-run reports, and file checklists.",
+      present: true,
+      item_count: 6,
+    },
+    {
+      label: "CM1 output and stats",
+      description: "Model-output NetCDF, stats files, and raw CM1 artifacts copied into this run.",
+      present: true,
+      item_count: 14,
+    },
+    {
+      label: "Logs and runtime sidecars",
+      description: "Local stdout/stderr logs, backend logs, and LAN-worker status sidecars.",
+      present: true,
+      item_count: 3,
+    },
+    {
+      label: "Derived diagnostics and Explore data",
+      description: "Derived product manifests, cached diagnostics, and visualization backing data.",
+      present: true,
+      item_count: 1,
+    },
+  ],
+};
+
 const provenance = {
   source_model: "CM1",
   result_id: "result-dry-run-quicklook",
@@ -2140,6 +2184,24 @@ beforeEach(() => {
       if (url === "/api/results") {
         return Promise.resolve(new Response(JSON.stringify(resultsResponse), { status: 200 }));
       }
+      if (url === "/api/results/result-dry-run-quicklook/delete-preview") {
+        return Promise.resolve(
+          new Response(JSON.stringify(resultDeletePreviewResponse), { status: 200 }),
+        );
+      }
+      if (url === "/api/results/result-dry-run-quicklook/delete") {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              ...resultDeletePreviewResponse,
+              dry_run: false,
+              deleted: true,
+              message: "Result and local run data deleted.",
+            }),
+            { status: 200 },
+          ),
+        );
+      }
       if (url === "/api/storage/inventory") {
         return Promise.resolve(
           new Response(JSON.stringify(storageInventoryResponse), { status: 200 }),
@@ -2908,7 +2970,7 @@ describe("App", () => {
     expect(screen.queryByRole("button", { name: "Run on LAN worker" })).not.toBeInTheDocument();
     expect(screen.getByTestId("create-package-btn")).toBeEnabled();
     expect(screen.getAllByRole("button", { name: "Create run package" })).toHaveLength(1);
-    expect(screen.getByRole("button", { name: "Open Storage cleanup" })).toBeInTheDocument();
+    expect(screen.getAllByRole("button", { name: "Preview cleanup" }).length).toBeGreaterThan(0);
     expect(screen.queryByTestId("create-package-next-btn")).not.toBeInTheDocument();
     expect(screen.queryByText(/Preview estimate not implemented/)).not.toBeInTheDocument();
   });
@@ -3245,7 +3307,7 @@ describe("App", () => {
     expect(within(topNav).queryByRole("button", { name: "Visualize" })).not.toBeInTheDocument();
     expect(screen.getByRole("tab", { name: "Notebook" })).toHaveClass("active-control");
     expect(screen.getByRole("tab", { name: "Compare" })).toBeInTheDocument();
-    expect(screen.getByRole("tab", { name: "Storage" })).toBeInTheDocument();
+    expect(screen.queryByRole("tab", { name: "Storage" })).not.toBeInTheDocument();
     expect(await screen.findByRole("heading", { name: "Experiment Notebook" })).toBeInTheDocument();
     expect(
       screen.getByText(
@@ -3677,80 +3739,93 @@ describe("App", () => {
     expect(screen.queryByText(/vertical slice/i)).not.toBeInTheDocument();
   });
 
-  it("shows runtime storage inventory and safe cleanup affordances", async () => {
+  it("shows result delete preview and confirm inside Results", async () => {
     render(<App />);
 
-    fireEvent.click(await screen.findByRole("tab", { name: "Storage" }));
+    expect(await screen.findByLabelText("Result detail")).toBeInTheDocument();
+    expect(screen.queryByRole("tab", { name: "Storage" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Runtime inventory and cleanup" })).not.toBeInTheDocument();
+    const resultDetail = screen.getByLabelText("Result detail");
+    expect(resultDetail).toHaveTextContent("Local data");
+    expect(resultDetail).toHaveTextContent("Run-directory backed");
 
-    expect(
-      await screen.findByRole("heading", { name: "Runtime inventory and cleanup" }),
-    ).toBeInTheDocument();
-    expect(screen.getByText(/Review generated packages, running CM1 jobs/)).toBeInTheDocument();
-    expect(screen.getByText("/tmp/CloudChamber")).toBeInTheDocument();
-    expect(screen.getByText("60 GB")).toBeInTheDocument();
-    expect(screen.getByText("50 GB")).toBeInTheDocument();
-    expect(screen.getByText("At or above 50 GB warning threshold")).toBeInTheDocument();
-    expect(screen.getByText(/dry-run cleanup/)).toBeInTheDocument();
-    expect(screen.getAllByText("Quick-look shallow cumulus").length).toBeGreaterThan(0);
-    expect(screen.getAllByText(/dry-run-quicklook/).length).toBeGreaterThan(0);
-    expect(screen.getByText("852 MB")).toBeInTheDocument();
-    expect(
-      screen.getAllByText("13 model files, 13 time steps, 1 stats files").length,
-    ).toBeGreaterThan(0);
-    expect(screen.queryByText("Saved/protected")).not.toBeInTheDocument();
-    expect(screen.getByText("Ready-to-run package")).toBeInTheDocument();
-    expect(screen.getAllByText("Ready to ingest").length).toBeGreaterThan(0);
-    expect(screen.getByText("Completed with no usable output")).toBeInTheDocument();
-    expect(screen.getByText("Failed run")).toBeInTheDocument();
-    expect(screen.getByText("Needs cleanup review")).toBeInTheDocument();
-
-    const runtimeRuns = screen.getByLabelText("Runtime runs");
-    const packageRow = within(runtimeRuns)
-      .getAllByText(/dry-run-packaged/)[0]
-      .closest("tr");
-    const ingestReadyRow = within(runtimeRuns)
-      .getAllByText(/dry-run-uningested/)[0]
-      .closest("tr");
-    const resultRow = within(runtimeRuns)
-      .getAllByText(/dry-run-quicklook/)[0]
-      .closest("tr");
-    const savedRow = within(runtimeRuns)
-      .getAllByText(/dry-run-saved/)[0]
-      .closest("tr");
-    const runningRow = within(runtimeRuns)
-      .getAllByText(/dry-run-running/)[0]
-      .closest("tr");
-    expect(packageRow).not.toBeNull();
-    expect(ingestReadyRow).not.toBeNull();
-    expect(resultRow).not.toBeNull();
-    expect(savedRow).not.toBeNull();
-    expect(runningRow).not.toBeNull();
-    expect(
-      within(packageRow as HTMLElement).getByRole("button", { name: "Preview delete" }),
-    ).toBeEnabled();
-    expect(
-      within(ingestReadyRow as HTMLElement).getByRole("button", {
-        name: "Ingest completed output",
+    fireEvent.click(
+      within(resultDetail).getByRole("button", {
+        name: "Preview delete result and local run data",
       }),
+    );
+
+    expect(
+      await screen.findByRole("heading", { name: "Delete result and local run data preview" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(/result will disappear from Results, Explore, Compare, and local inventory/),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/Storage inventory/)).not.toBeInTheDocument();
+    expect(screen.getByText("Result metadata and notebook edits")).toBeInTheDocument();
+    expect(screen.getByText("CM1 output and stats")).toBeInTheDocument();
+    expect(screen.getByText("Derived diagnostics and Explore data")).toBeInTheDocument();
+    expect(screen.getByText("Dry run only; no files were deleted.")).toBeInTheDocument();
+    expect(screen.getByText("/tmp/CloudChamber/runs/dry-run-quicklook")).toBeInTheDocument();
+    expect(fetch).toHaveBeenCalledWith(
+      "/api/results/result-dry-run-quicklook/delete-preview",
+      expect.objectContaining({ method: "POST" }),
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Delete result and local run data" }));
+
+    expect(await screen.findByText(/Result and local run data deleted/)).toBeInTheDocument();
+    expect(fetch).toHaveBeenCalledWith(
+      "/api/results/result-dry-run-quicklook/delete",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({ confirm: true }),
+      }),
+    );
+    expect(
+      screen.queryByRole("button", { name: "Quick-look shallow cumulus" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("keeps non-ingested cleanup preview in Build", async () => {
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Build" }));
+    expect(
+      await screen.findByRole("heading", { name: "Packages and runs needing action" }),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Runtime inventory and cleanup" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("tab", { name: "Storage" })).not.toBeInTheDocument();
+
+    const pipelineRuns = screen.getByLabelText("Local packages and runs");
+    const packageRun = within(pipelineRuns)
+      .getAllByText(/dry-run-packaged/)[0]
+      .closest("article");
+    const ingestReadyRun = within(pipelineRuns)
+      .getAllByText(/dry-run-uningested/)[0]
+      .closest("article");
+    const runningRun = within(pipelineRuns)
+      .getAllByText(/dry-run-running/)[0]
+      .closest("article");
+    expect(packageRun).not.toBeNull();
+    expect(ingestReadyRun).not.toBeNull();
+    expect(runningRun).not.toBeNull();
+    expect(
+      within(packageRun as HTMLElement).getByRole("button", { name: "Preview cleanup" }),
     ).toBeEnabled();
     expect(
-      within(ingestReadyRow as HTMLElement).queryByRole("button", { name: "Open result" }),
+      within(ingestReadyRun as HTMLElement).getByRole("button", { name: "Ingest output" }),
+    ).toBeEnabled();
+    expect(
+      within(ingestReadyRun as HTMLElement).queryByRole("button", { name: "Open result" }),
     ).not.toBeInTheDocument();
     expect(
-      within(savedRow as HTMLElement).getByRole("button", { name: "Preview delete" }),
-    ).toBeEnabled();
-    expect(
-      within(runningRow as HTMLElement).getByRole("button", { name: "Preview delete" }),
+      within(runningRun as HTMLElement).getByRole("button", { name: "Preview cleanup" }),
     ).toBeDisabled();
-    expect(
-      screen.queryByText("Saved/protected runs are not deleted from this UI."),
-    ).not.toBeInTheDocument();
     expect(screen.getByText("Running runs cannot be deleted.")).toBeInTheDocument();
 
     fireEvent.click(
-      within(ingestReadyRow as HTMLElement).getByRole("button", {
-        name: "Ingest completed output",
-      }),
+      within(ingestReadyRun as HTMLElement).getByRole("button", { name: "Ingest output" }),
     );
     await waitFor(() =>
       expect(fetch).toHaveBeenCalledWith(
@@ -3765,39 +3840,15 @@ describe("App", () => {
     );
 
     fireEvent.click(
-      within(resultRow as HTMLElement).getByRole("button", { name: "Preview delete" }),
+      within(packageRun as HTMLElement).getByRole("button", { name: "Preview cleanup" }),
     );
 
     expect(
-      await screen.findByRole("heading", { name: "Delete result and local run data preview" }),
+      await screen.findByRole("heading", { name: "Delete local package/run data preview" }),
     ).toBeInTheDocument();
-    expect(
-      screen.getByText(
-        /result will disappear from Results, Explore, Compare, and Storage inventory/,
-      ),
-    ).toBeInTheDocument();
-    expect(screen.getByText(/does not touch the source repo/)).toBeInTheDocument();
+    expect(screen.getByText(/does not touch Results entries/)).toBeInTheDocument();
+    expect(screen.getByText(/the source repo/)).toBeInTheDocument();
     expect(screen.getByText("Dry run only; no files were deleted.")).toBeInTheDocument();
-    expect(screen.getAllByText("/tmp/CloudChamber/runs/dry-run-quicklook").length).toBeGreaterThan(
-      0,
-    );
-    expect(
-      screen.getByRole("button", { name: "Confirm delete result and local run data" }),
-    ).toBeInTheDocument();
-
-    fireEvent.click(
-      within(packageRow as HTMLElement).getByRole("button", { name: "Preview delete" }),
-    );
-
-    expect(
-      await screen.findByRole("heading", { name: "Delete local run data preview" }),
-    ).toBeInTheDocument();
-    expect(screen.getByText(/CM1 output\/logs if present/)).toBeInTheDocument();
-    expect(
-      screen.queryByText(
-        /result will disappear from Results, Explore, Compare, and Storage inventory/,
-      ),
-    ).not.toBeInTheDocument();
     expect(screen.getAllByText("/tmp/CloudChamber/runs/dry-run-packaged").length).toBeGreaterThan(
       0,
     );
@@ -3834,57 +3885,6 @@ describe("App", () => {
     );
   });
 
-  it("routes Results notebook entries to their local Storage row", async () => {
-    render(<App />);
-
-    const resultDetail = await screen.findByLabelText("Result detail");
-    fireEvent.click(within(resultDetail).getByRole("button", { name: "Manage local files" }));
-
-    expect(
-      await screen.findByRole("heading", { name: "Runtime inventory and cleanup" }),
-    ).toBeInTheDocument();
-    const runtimeRuns = screen.getByLabelText("Runtime runs");
-    const focusedRow = within(runtimeRuns)
-      .getAllByText(/dry-run-quicklook/)[0]
-      .closest("tr");
-    expect(focusedRow).not.toBeNull();
-    expect(focusedRow).toHaveClass("selected-row");
-    expect(
-      within(focusedRow as HTMLElement).getByRole("button", { name: "Open result" }),
-    ).toBeEnabled();
-    expect(
-      within(focusedRow as HTMLElement).getByRole("button", { name: "Open in Explore" }),
-    ).toBeEnabled();
-  });
-
-  it("routes Build pipeline cleanup to Storage without adding delete controls to Build", async () => {
-    render(<App />);
-
-    fireEvent.click(await screen.findByRole("button", { name: "Build" }));
-    expect(
-      await screen.findByRole("heading", { name: "Packages and runs needing action" }),
-    ).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Preview delete" })).not.toBeInTheDocument();
-
-    const pipelineRuns = screen.getByLabelText("Local packages and runs");
-    const pipelineRun = within(pipelineRuns)
-      .getAllByText(/dry-run-uningested/)[0]
-      .closest("article");
-    expect(pipelineRun).not.toBeNull();
-    fireEvent.click(
-      within(pipelineRun as HTMLElement).getByRole("button", { name: "Manage cleanup" }),
-    );
-
-    expect(
-      await screen.findByRole("heading", { name: "Runtime inventory and cleanup" }),
-    ).toBeInTheDocument();
-    const runtimeRuns = screen.getByLabelText("Runtime runs");
-    const focusedRow = within(runtimeRuns)
-      .getAllByText(/dry-run-uningested/)[0]
-      .closest("tr");
-    expect(focusedRow).toHaveClass("selected-row");
-  });
-
   it("shows cleanup failure details without deleting from unsafe UI paths", async () => {
     vi.mocked(fetch).mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
@@ -3911,8 +3911,8 @@ describe("App", () => {
 
     render(<App />);
 
-    fireEvent.click(await screen.findByRole("tab", { name: "Storage" }));
-    fireEvent.click((await screen.findAllByRole("button", { name: "Preview delete" }))[0]);
+    fireEvent.click(await screen.findByRole("button", { name: "Build" }));
+    fireEvent.click((await screen.findAllByRole("button", { name: "Preview cleanup" }))[0]);
 
     expect(await screen.findByRole("alert")).toHaveTextContent(
       "Refusing to delete outside runtime home",

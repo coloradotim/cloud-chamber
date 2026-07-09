@@ -61,7 +61,7 @@ test.describe("mocked smoke: app shell", () => {
     await gotoResults(page);
     await expect(page.getByRole("tab", { name: "Notebook" })).toBeVisible();
     await expect(page.getByRole("tab", { name: "Compare" })).toBeVisible();
-    await expect(page.getByRole("tab", { name: "Storage" })).toBeVisible();
+    await expect(page.getByRole("tab", { name: "Storage" })).toHaveCount(0);
 
     await gotoExplore(page);
     await expect(page.getByLabel("Explore this result")).toBeVisible();

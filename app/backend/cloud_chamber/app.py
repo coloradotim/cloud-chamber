@@ -47,6 +47,7 @@ from cloud_chamber.result_ingest import (
 from cloud_chamber.run_manifest import RunManifestError, load_run_manifest
 from cloud_chamber.runtime_storage import (
     RuntimeStorageError,
+    delete_ingested_result,
     delete_runtime_run,
     runtime_storage_inventory,
 )
@@ -123,6 +124,10 @@ class DeleteRunRequest(BaseModel):
     dry_run: bool = True
     confirm: bool = False
     force_saved: bool = False
+
+
+class DeleteResultRequest(BaseModel):
+    confirm: bool = False
 
 
 class IngestResultRequest(BaseModel):
@@ -438,6 +443,38 @@ def get_result(result_id: str) -> dict[str, object]:
         result = get_result_card(load_settings(), result_id)
     except ResultIngestError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return result.model_dump(mode="json")
+
+
+@app.post("/api/results/{result_id}/delete-preview")
+def preview_result_delete(result_id: str) -> dict[str, object]:
+    try:
+        result = delete_ingested_result(
+            load_settings(),
+            result_id=result_id,
+            dry_run=True,
+            confirm=False,
+        )
+    except ResultIngestError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except RuntimeStorageError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return result.model_dump(mode="json")
+
+
+@app.post("/api/results/{result_id}/delete")
+def delete_result(result_id: str, request: DeleteResultRequest) -> dict[str, object]:
+    try:
+        result = delete_ingested_result(
+            load_settings(),
+            result_id=result_id,
+            dry_run=False,
+            confirm=request.confirm,
+        )
+    except ResultIngestError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except RuntimeStorageError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     return result.model_dump(mode="json")
 
 

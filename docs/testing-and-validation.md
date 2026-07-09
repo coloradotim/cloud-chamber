@@ -429,21 +429,22 @@ Build can be tested without real local packages in every state:
 - legacy saved/protected metadata;
 - missing or malformed manifest.
 
-These tests should assert that Build presents only active and incomplete package/run work that still needs launch, troubleshooting, status review, or ingest, and routes cleanup to Results / Storage instead of duplicating deletion behavior. Fully ingested results belong in Results/Storage, not the Build action list.
+These tests should assert that Build presents only active and incomplete
+package/run work that still needs launch, troubleshooting, status review,
+ingest, or non-ingested cleanup. Fully ingested results belong in Results, not
+the Build action list.
 They should also cover missing local CM1 settings or preflight failures as
 actionable UI errors. Automated tests must not execute `cm1.exe`, parse real
 local NetCDF output in the browser, or write generated run directories into the
 repo.
 
-Storage lifecycle UI tests should use mocked inventory/results joins. They
-should verify notebook names are primary when a result card exists, raw run IDs
-and paths remain secondary, completed-with-output runs without results expose
-`Ingest completed output`, associated results expose `Open result` and `Open in
-Explore`, running runs block normal delete preview, and explicit delete preview
-copy explains that deleting the run directory also removes result metadata,
-notebook edits, diagnostics, and Explore backing references stored there.
-Results notebook tests should verify `Manage local files` routes the selected
-experiment to Results / Storage without adding delete controls to Results.
+Runtime cleanup UI tests should use mocked inventory/results data. They should
+verify completed-with-output runs without results expose `Ingest output`, Build
+shows preview cleanup only for non-ingested runs, running runs block cleanup
+preview, and Results exposes `Preview delete result and local run data` for
+ingested results. Result delete preview copy should explain that deleting the
+run directory also removes result metadata, notebook edits, diagnostics, derived
+products, CM1 output, logs, and Explore backing references stored there.
 
 Comparison tests should use mocked Result Card data for the accepted Baseline
 Shallow Cumulus quick-look and Dry Failed Cumulus quick-look pair. They should

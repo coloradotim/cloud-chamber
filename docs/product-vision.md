@@ -281,7 +281,7 @@ Completed CM1 result
 Failed/canceled CM1 run
 Ingested result metadata
 Visualizer interpretation
-Saved result/notebook entry
+Editable result/notebook entry
 ```
 
 Never imply:
