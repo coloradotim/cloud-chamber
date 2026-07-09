@@ -520,6 +520,20 @@ const runningRunStatus = {
     processed_artifacts: 0,
   },
   runtime_warnings: [],
+  progress: {
+    elapsed_wall_seconds: 300,
+    model_time_seconds: 2922,
+    total_model_time_seconds: 10800,
+    percent_complete: 27.1,
+    estimated_remaining_wall_seconds: 808.6,
+    estimated_finish_at: "2026-05-22T15:34:04Z",
+    last_refreshed_at: new Date().toISOString(),
+    stale: false,
+    model_time_source: "stdout model-minute progress",
+    total_model_time_source: "namelist.input timax",
+    unavailable_reason: null,
+    caveats: [],
+  },
 };
 
 const completedRunStatus = {
@@ -537,6 +551,20 @@ const completedRunStatus = {
     processed_artifacts: 0,
   },
   runtime_warnings: ["CM1 stderr reported floating-point exception flags: IEEE_INVALID_FLAG"],
+  progress: {
+    elapsed_wall_seconds: 1800,
+    model_time_seconds: 10800,
+    total_model_time_seconds: 10800,
+    percent_complete: 100,
+    estimated_remaining_wall_seconds: null,
+    estimated_finish_at: null,
+    last_refreshed_at: new Date().toISOString(),
+    stale: false,
+    model_time_source: "completed_run_state",
+    total_model_time_source: "namelist.input timax",
+    unavailable_reason: null,
+    caveats: [],
+  },
 };
 
 const resultCard = {
@@ -1097,6 +1125,7 @@ const storageRuns = [
     category: "completed_with_output",
     manifest_path: "/tmp/CloudChamber/runs/dry-run-uningested/run_manifest.json",
     manifest_error: null,
+    progress: completedRunStatus.progress,
   },
   {
     run_id: "dry-run-saved",
@@ -1145,6 +1174,7 @@ const storageRuns = [
     category: "running",
     manifest_path: "/tmp/CloudChamber/runs/dry-run-running/run_manifest.json",
     manifest_error: null,
+    progress: runningRunStatus.progress,
   },
   {
     run_id: "dry-run-no-output",
@@ -3037,6 +3067,20 @@ describe("App", () => {
       worker_remote_dir: "/worker/runs/dry-run-worker-completed",
       worker_started_at: "2026-07-01T04:30:07Z",
       worker_finished_at: "2026-07-01T04:39:23Z",
+      worker_progress: {
+        elapsed_wall_seconds: 556,
+        model_time_seconds: 10800,
+        total_model_time_seconds: 10800,
+        percent_complete: 100,
+        estimated_remaining_wall_seconds: null,
+        estimated_finish_at: null,
+        last_refreshed_at: new Date().toISOString(),
+        stale: false,
+        model_time_source: "completed_worker_state",
+        total_model_time_source: "namelist.input timax",
+        unavailable_reason: null,
+        caveats: [],
+      },
     };
     const workerResult = {
       ...resultCard,
@@ -3167,6 +3211,149 @@ describe("App", () => {
     expect(screen.queryByRole("button", { name: "Copy back and ingest" })).not.toBeInTheDocument();
   });
 
+  it("shows parsed LAN worker model-time progress when worker status includes it", async () => {
+    vi.mocked(fetch).mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url === "/api/scenarios") {
+        return Promise.resolve(new Response(JSON.stringify(scenarioResponse), { status: 200 }));
+      }
+      if (url === "/api/results") {
+        return Promise.resolve(new Response(JSON.stringify({ results: [] }), { status: 200 }));
+      }
+      if (url === "/api/storage/inventory") {
+        return Promise.resolve(
+          new Response(JSON.stringify(storageInventoryResponse), { status: 200 }),
+        );
+      }
+      if (url === "/api/dry-run-package") {
+        return Promise.resolve(new Response(JSON.stringify(dryRunResponse), { status: 200 }));
+      }
+      if (url === "/api/lan-worker/config") {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              configured: true,
+              available: true,
+              message: "LAN worker configured.",
+              cm1_env_keys: [],
+              cm1_env_settings: [],
+              custom_launch_command: false,
+            }),
+            { status: 200 },
+          ),
+        );
+      }
+      if (url === "/api/lan-worker/start" && init?.method === "POST") {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              run_id: "dry-run-001",
+              state: "running",
+              message: "CM1 is running on the LAN worker.",
+              netcdf_count: 0,
+              raw_artifact_count: 0,
+              started_at: "2026-05-22T15:15:36Z",
+              progress: {
+                elapsed_wall_seconds: 600,
+                model_time_seconds: 3600,
+                total_model_time_seconds: 10800,
+                percent_complete: 33.3,
+                estimated_remaining_wall_seconds: 1200,
+                estimated_finish_at: "2026-05-22T15:45:36Z",
+                last_refreshed_at: new Date().toISOString(),
+                stale: false,
+                model_time_source: "stdout model-minute progress",
+                total_model_time_source: "namelist.input timax",
+                unavailable_reason: null,
+                caveats: [],
+              },
+            }),
+            { status: 200 },
+          ),
+        );
+      }
+      return Promise.resolve(new Response("not found", { status: 404 }));
+    });
+
+    render(<App />);
+    fireEvent.click(await screen.findByRole("button", { name: "Build" }));
+    fireEvent.click(await screen.findByTestId("create-package-btn"));
+
+    fireEvent.click(await screen.findByRole("button", { name: "Run on LAN worker" }));
+
+    await waitFor(() => {
+      expect(screen.getByText("Worker model-time progress").nextElementSibling).toHaveTextContent(
+        "60 min / 180 min (33.3%)",
+      );
+      expect(screen.getByText("Worker ETA").nextElementSibling).toHaveTextContent(
+        "20 min remaining",
+      );
+    });
+  });
+
+  it("shows LAN worker model-time progress as unavailable when status has no parsed progress", async () => {
+    vi.mocked(fetch).mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url === "/api/scenarios") {
+        return Promise.resolve(new Response(JSON.stringify(scenarioResponse), { status: 200 }));
+      }
+      if (url === "/api/results") {
+        return Promise.resolve(new Response(JSON.stringify({ results: [] }), { status: 200 }));
+      }
+      if (url === "/api/storage/inventory") {
+        return Promise.resolve(
+          new Response(JSON.stringify(storageInventoryResponse), { status: 200 }),
+        );
+      }
+      if (url === "/api/dry-run-package") {
+        return Promise.resolve(new Response(JSON.stringify(dryRunResponse), { status: 200 }));
+      }
+      if (url === "/api/lan-worker/config") {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              configured: true,
+              available: true,
+              message: "LAN worker configured.",
+              cm1_env_keys: [],
+              cm1_env_settings: [],
+              custom_launch_command: false,
+            }),
+            { status: 200 },
+          ),
+        );
+      }
+      if (url === "/api/lan-worker/start" && init?.method === "POST") {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              run_id: "dry-run-001",
+              state: "running",
+              message: "CM1 is running on the LAN worker.",
+              netcdf_count: 0,
+              raw_artifact_count: 0,
+              started_at: "2026-05-22T15:15:36Z",
+            }),
+            { status: 200 },
+          ),
+        );
+      }
+      return Promise.resolve(new Response("not found", { status: 404 }));
+    });
+
+    render(<App />);
+    fireEvent.click(await screen.findByRole("button", { name: "Build" }));
+    fireEvent.click(await screen.findByTestId("create-package-btn"));
+
+    fireEvent.click(await screen.findByRole("button", { name: "Run on LAN worker" }));
+
+    await waitFor(() => {
+      expect(screen.getByText("Worker model-time progress").nextElementSibling).toHaveTextContent(
+        "Model-time progress unavailable from current status.",
+      );
+    });
+  });
+
   it("requests a dry-run package and displays generated files without claiming CM1 ran", async () => {
     render(<App />);
 
@@ -3239,6 +3426,14 @@ describe("App", () => {
       expect(screen.getAllByText("Running").length).toBeGreaterThan(0);
     });
     expect(screen.getByText("stdout log").nextElementSibling).toHaveTextContent("stdout.log");
+    expect(screen.getByText("Elapsed runtime").nextElementSibling).toHaveTextContent("5 min");
+    expect(screen.getByText("Model-time progress").nextElementSibling).toHaveTextContent(
+      "48.7 min / 180 min (27.1%)",
+    );
+    expect(screen.getByText("ETA").nextElementSibling).toHaveTextContent("13 min 29 s remaining");
+    expect(screen.getByText("Progress source").nextElementSibling).toHaveTextContent(
+      "stdout model-minute progress",
+    );
     expect(screen.getByText("CM1 started")).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "View status / logs" }));
@@ -3247,6 +3442,12 @@ describe("App", () => {
       expect(screen.getAllByText("Completed CM1 result").length).toBeGreaterThan(0);
     });
     expect(screen.getByText("Output summary").nextElementSibling).toHaveTextContent("14 NetCDF");
+    expect(screen.getByText("Final elapsed runtime").nextElementSibling).toHaveTextContent(
+      "30 min",
+    );
+    expect(screen.getByText("Model-time progress").nextElementSibling).toHaveTextContent(
+      "180 min / 180 min (100.0%)",
+    );
     expect(screen.getAllByText(/IEEE_INVALID_FLAG/).length).toBeGreaterThan(0);
     expect(screen.getByTestId("ingest-results-btn")).toBeEnabled();
 

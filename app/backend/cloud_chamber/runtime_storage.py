@@ -20,6 +20,7 @@ from cloud_chamber.run_manifest import (
     RunManifest,
     RunManifestError,
 )
+from cloud_chamber.run_progress import run_progress_from_manifest
 from cloud_chamber.settings import CloudChamberSettings
 
 DEFAULT_STORAGE_WARNING_THRESHOLD_BYTES = 50 * 1024**3
@@ -50,6 +51,7 @@ class RunStorageEntry(BaseModel):
     category: str
     manifest_path: str | None = None
     manifest_error: str | None = None
+    progress: dict[str, object] | None = None
     worker_state: str | None = None
     worker_message: str | None = None
     worker_started_at: str | None = None
@@ -58,6 +60,7 @@ class RunStorageEntry(BaseModel):
     worker_remote_dir: str | None = None
     worker_netcdf_count: int | None = None
     worker_raw_artifact_count: int | None = None
+    worker_progress: dict[str, object] | None = None
 
 
 class RuntimeStorageInventory(BaseModel):
@@ -312,6 +315,7 @@ def _entry_from_manifest(
         path=str(run_dir),
         category=_classify_run(manifest, worker_status),
         manifest_path=str(manifest_path),
+        progress=run_progress_from_manifest(manifest),
         worker_state=_string_or_none(worker_status.get("state")),
         worker_message=_string_or_none(worker_status.get("message")),
         worker_started_at=_string_or_none(worker_status.get("started_at")),
@@ -320,6 +324,7 @@ def _entry_from_manifest(
         worker_remote_dir=_string_or_none(worker_status.get("remote_dir")),
         worker_netcdf_count=_int_or_none(worker_status.get("netcdf_count")),
         worker_raw_artifact_count=_int_or_none(worker_status.get("raw_artifact_count")),
+        worker_progress=_dict_or_none(worker_status.get("progress")),
     )
 
 
@@ -356,6 +361,10 @@ def _read_worker_status(path: Path) -> dict[str, object]:
     except (OSError, ValueError):
         return {}
     return loaded if isinstance(loaded, dict) else {}
+
+
+def _dict_or_none(value: object) -> dict[str, object] | None:
+    return value if isinstance(value, dict) else None
 
 
 def _metadata_path_for_result(settings: CloudChamberSettings, result_id: str) -> Path:

@@ -45,6 +45,7 @@ from cloud_chamber.result_ingest import (
     ingest_completed_run,
 )
 from cloud_chamber.run_manifest import RunManifestError, load_run_manifest
+from cloud_chamber.run_progress import run_progress_from_manifest
 from cloud_chamber.runtime_storage import (
     RuntimeStorageError,
     delete_ingested_result,
@@ -650,6 +651,7 @@ def _run_status_payload(status: RunStatus) -> dict[str, object]:
                 "processed_artifacts": 0,
             },
             "runtime_warnings": [],
+            "progress": None,
         }
     return {
         "run_id": status.run_id,
@@ -675,6 +677,7 @@ def _run_status_payload(status: RunStatus) -> dict[str, object]:
             "processed_artifacts": len(manifest.outputs.processed_artifacts),
         },
         "runtime_warnings": manifest.outputs.runtime_warnings,
+        "progress": run_progress_from_manifest(manifest),
     }
 
 

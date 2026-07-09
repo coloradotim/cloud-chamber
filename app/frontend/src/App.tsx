@@ -344,6 +344,21 @@ type ObservedSoundingSummary = {
   provenance: Record<string, string>;
 };
 
+type RunProgressResponse = {
+  elapsed_wall_seconds?: number | null;
+  model_time_seconds?: number | null;
+  total_model_time_seconds?: number | null;
+  percent_complete?: number | null;
+  estimated_remaining_wall_seconds?: number | null;
+  estimated_finish_at?: string | null;
+  last_refreshed_at?: string | null;
+  stale?: boolean;
+  model_time_source?: string | null;
+  total_model_time_source?: string | null;
+  unavailable_reason?: string | null;
+  caveats?: string[];
+};
+
 type RunStatusResponse = {
   run_id: string;
   lifecycle_state: string;
@@ -364,6 +379,7 @@ type RunStatusResponse = {
     processed_artifacts: number;
   };
   runtime_warnings: string[];
+  progress: RunProgressResponse | null;
 };
 
 type LanWorkerConfigResponse = {
@@ -386,6 +402,7 @@ type LanWorkerRunResponse = {
   finished_at?: string | null;
   local_package_dir?: string | null;
   ready_for_ingest?: boolean;
+  progress?: RunProgressResponse | null;
 };
 
 type IngestResponse = {
@@ -614,6 +631,7 @@ type RunStorageEntry = {
   category: string;
   manifest_path: string | null;
   manifest_error: string | null;
+  progress?: RunProgressResponse | null;
   worker_state: string | null;
   worker_message: string | null;
   worker_started_at: string | null;
@@ -622,6 +640,7 @@ type RunStorageEntry = {
   worker_remote_dir: string | null;
   worker_netcdf_count: number | null;
   worker_raw_artifact_count: number | null;
+  worker_progress?: RunProgressResponse | null;
 };
 
 type StorageInventoryResponse = {
@@ -4788,6 +4807,24 @@ function LocalRunWorkflowPanel({
               <Metric label="Exit code" value={runStatus.exit_code?.toString() ?? "Running"} />
               <Metric label="Started" value={runStatus.started_at ?? "Not recorded"} />
               <Metric label="Finished" value={runStatus.finished_at ?? "Not finished"} />
+              <Metric
+                label={
+                  runStatus.lifecycle_state === "completed"
+                    ? "Final elapsed runtime"
+                    : "Elapsed runtime"
+                }
+                value={elapsedRuntimeLabel(runStatus.progress)}
+              />
+              <Metric
+                label="Model-time progress"
+                value={modelTimeProgressLabel(runStatus.progress)}
+              />
+              <Metric label="ETA" value={runProgressEtaLabel(runStatus.progress)} />
+              <Metric
+                label="Last status refresh"
+                value={runProgressRefreshLabel(runStatus.progress)}
+              />
+              <Metric label="Progress source" value={runProgressSourceLabel(runStatus.progress)} />
               <Metric label="stdout log" value={runStatus.stdout_log || "Unavailable"} />
               <Metric label="stderr log" value={runStatus.stderr_log || "Unavailable"} />
               <Metric
@@ -5005,6 +5042,19 @@ function LanWorkerRunPanel({
                     : "Default worker environment"
               }
             />
+            {status && (
+              <Metric
+                label="Worker model-time progress"
+                value={modelTimeProgressLabel(status.progress ?? null)}
+              />
+            )}
+            {status && <Metric label="Worker ETA" value={runProgressEtaLabel(status.progress)} />}
+            {status && (
+              <Metric
+                label="Worker status refresh"
+                value={runProgressRefreshLabel(status.progress)}
+              />
+            )}
             {status?.message && <Metric label="Worker message" value={status.message} />}
           </dl>
           <div className="button-row">
@@ -5216,6 +5266,7 @@ function PipelineRunCard({
   const stateLabel = pipelineRunStateLabel(run, result);
   const nextStep = pipelineRunNextStep(run, result);
   const showWorkerMessage = Boolean(run.worker_message && !run.worker_state);
+  const runProgress = pipelineRunProgressSummary(run);
   const workerProgress = workerProgressSummary(run);
 
   return (
@@ -5238,6 +5289,7 @@ function PipelineRunCard({
       <p className="state-note">
         {pipelineRunOutputSummary(run, result)} · Local package {formatBytes(run.size_bytes)}
       </p>
+      {runProgress && <p className="state-note">{runProgress}</p>}
       {workerProgress && <p className="state-note">{workerProgress}</p>}
       {showWorkerMessage && <p className="state-note">{run.worker_message}</p>}
       {autoFinalizing && (
@@ -5554,8 +5606,21 @@ function pipelineRunNextStep(run: RunStorageEntry, result: ResultCard | undefine
   return "Review the local run state before cleanup.";
 }
 
+function pipelineRunProgressSummary(run: RunStorageEntry): string | null {
+  if (!run.worker_state && run.category === "dry_run_only") return null;
+  const progress = run.worker_state ? run.worker_progress : run.progress;
+  if (!progress) return null;
+  const parts = [modelTimeProgressLabel(progress)];
+  const eta = runProgressEtaLabel(progress);
+  if (eta !== "Unavailable") parts.push(eta);
+  const refresh = runProgressRefreshLabel(progress);
+  if (refresh !== "Unavailable") parts.push(`Last refreshed ${refresh}`);
+  return parts.join(" · ");
+}
+
 function workerProgressSummary(run: RunStorageEntry): string | null {
   if (!run.worker_state) return null;
+  if (run.worker_progress) return null;
   const parts: string[] = [];
   if (run.worker_status_updated_at) {
     parts.push(`Last checked ${formatShortTime(run.worker_status_updated_at)}`);
@@ -5589,6 +5654,85 @@ function expectedOutputFramesForPreset(preset: string | null): number | null {
   if (preset === "standard") return 7;
   if (preset === "deep_overnight") return 73;
   return null;
+}
+
+function elapsedRuntimeLabel(progress: RunProgressResponse | null | undefined): string {
+  return formatRunDuration(progress?.elapsed_wall_seconds);
+}
+
+function modelTimeProgressLabel(progress: RunProgressResponse | null | undefined): string {
+  if (!progress) return "Model-time progress unavailable from current status.";
+  const modelTime = progress.model_time_seconds;
+  const totalTime = progress.total_model_time_seconds;
+  const percent = progress.percent_complete;
+  if (isFiniteNumber(modelTime) && isFiniteNumber(totalTime)) {
+    const percentText = isFiniteNumber(percent) ? ` (${percent.toFixed(1)}%)` : "";
+    return `${formatModelTime(modelTime)} / ${formatModelTime(totalTime)}${percentText}`;
+  }
+  if (isFiniteNumber(modelTime)) return `${formatModelTime(modelTime)} reached`;
+  if (isFiniteNumber(totalTime)) {
+    return `${progress.unavailable_reason ?? "Latest model time unavailable."} Total ${formatModelTime(totalTime)}.`;
+  }
+  return progress.unavailable_reason ?? "Model-time progress unavailable from current status.";
+}
+
+function runProgressEtaLabel(progress: RunProgressResponse | null | undefined): string {
+  if (!progress || !isFiniteNumber(progress.estimated_remaining_wall_seconds)) {
+    return "Unavailable";
+  }
+  const finish = progress.estimated_finish_at
+    ? `; finish about ${formatShortTime(progress.estimated_finish_at)}`
+    : "";
+  return `${formatRunDuration(progress.estimated_remaining_wall_seconds)} remaining${finish}`;
+}
+
+function runProgressRefreshLabel(progress: RunProgressResponse | null | undefined): string {
+  if (!progress?.last_refreshed_at) return "Unavailable";
+  const stale = progress.stale || isProgressRefreshStale(progress);
+  return `${formatShortTime(progress.last_refreshed_at)}${stale ? " (stale)" : ""}`;
+}
+
+function runProgressSourceLabel(progress: RunProgressResponse | null | undefined): string {
+  if (!progress) return "Unavailable";
+  const sources = [progress.model_time_source, progress.total_model_time_source].filter(Boolean);
+  const caveats = progress.caveats ?? [];
+  if (sources.length === 0 && caveats.length === 0) return "Unavailable";
+  return [...sources, ...caveats].join("; ");
+}
+
+function formatRunDuration(seconds: number | null | undefined): string {
+  if (!isFiniteNumber(seconds)) return "Unavailable";
+  const roundedSeconds = Math.max(0, Math.round(seconds));
+  const hours = Math.floor(roundedSeconds / 3600);
+  const minutes = Math.floor((roundedSeconds % 3600) / 60);
+  const remainingSeconds = roundedSeconds % 60;
+  if (hours > 0) {
+    return `${hours} hr ${minutes} min`;
+  }
+  if (minutes > 0) {
+    return remainingSeconds > 0 ? `${minutes} min ${remainingSeconds} s` : `${minutes} min`;
+  }
+  return `${remainingSeconds} s`;
+}
+
+function formatModelTime(seconds: number): string {
+  const minutes = seconds / 60;
+  if (minutes >= 1) {
+    const rounded = Math.abs(minutes - Math.round(minutes)) < 0.05 ? Math.round(minutes) : minutes;
+    return `${rounded.toLocaleString(undefined, { maximumFractionDigits: 1 })} min`;
+  }
+  return `${Math.round(seconds)} s`;
+}
+
+function isProgressRefreshStale(progress: RunProgressResponse): boolean {
+  if (!progress.last_refreshed_at || progress.percent_complete === 100) return false;
+  const refreshedAt = Date.parse(progress.last_refreshed_at);
+  if (!Number.isFinite(refreshedAt)) return false;
+  return Date.now() - refreshedAt > 15 * 60 * 1000;
+}
+
+function isFiniteNumber(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value);
 }
 
 function formatShortTime(value: string): string {

@@ -89,6 +89,7 @@ class WorkerStatus:
     netcdf_count: int = 0
     raw_artifact_count: int = 0
     message: str | None = None
+    progress: dict[str, Any] | None = None
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -425,6 +426,7 @@ def collect_worker_run(args: argparse.Namespace) -> None:
             else "Worker run was copied back and promoted locally, but it is not a "
             "successful output-producing run ready for ingest."
         ),
+        status.__dict__,
     )
     if not args.keep_incoming:
         shutil.rmtree(incoming_dir)
@@ -692,7 +694,10 @@ def fetch_worker_status(config: WorkerConfig, run_id: str) -> WorkerStatus:
     command = f"""python3 - {remote_dir_q} <<'PY'
 import glob
 import json
+import math
+import re
 import sys
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 run_dir = Path(sys.argv[1])
@@ -712,6 +717,111 @@ data["raw_artifact_count"] = len(
         for path in run_dir.glob(pattern)
     )
 )
+MODEL_MINUTE_RE = re.compile(r"(?m)^\\s*\\d+\\s+([+-]?(?:\\d+(?:\\.\\d*)?|\\.\\d+)(?:[Ee][+-]?\\d+)?)\\s+min\\s*$")
+TAIL_BYTES = 2000000
+
+def iso_z(value):
+    return value.astimezone(UTC).isoformat().replace("+00:00", "Z")
+
+def parse_time(value):
+    if not isinstance(value, str) or not value:
+        return None
+    try:
+        return datetime.fromisoformat(value.replace("Z", "+00:00")).astimezone(UTC)
+    except ValueError:
+        return None
+
+def read_tail(path):
+    if not path.exists():
+        return ""
+    size = path.stat().st_size
+    with path.open("rb") as handle:
+        if size > TAIL_BYTES:
+            handle.seek(-TAIL_BYTES, 2)
+        return handle.read().decode("utf-8", errors="replace")
+
+def namelist_float(path, name):
+    if not path.exists():
+        return None
+    prefix = name.lower()
+    for line in path.read_text(errors="replace").splitlines():
+        stripped = line.split("!", 1)[0].strip()
+        if not stripped.lower().startswith(prefix) or "=" not in stripped:
+            continue
+        try:
+            parsed = float(stripped.split("=", 1)[1].split(",", 1)[0].strip())
+        except ValueError:
+            return None
+        return parsed if math.isfinite(parsed) else None
+    return None
+
+def latest_model_seconds(stdout_path):
+    text = read_tail(stdout_path)
+    matches = MODEL_MINUTE_RE.findall(text)
+    if not matches:
+        return None
+    try:
+        latest_minutes = float(matches[-1])
+    except ValueError:
+        return None
+    if not math.isfinite(latest_minutes) or latest_minutes < 0:
+        return None
+    return latest_minutes * 60.0
+
+def percent_complete(model_time, total_time):
+    if model_time is None or total_time is None or total_time <= 0:
+        return None
+    return round(max(0.0, min(100.0, model_time / total_time * 100.0)), 1)
+
+def worker_progress(payload, directory):
+    now = datetime.now(UTC)
+    total_time = namelist_float(directory / "namelist.input", "timax")
+    total_source = "namelist.input timax" if total_time and total_time > 0 else None
+    model_time = latest_model_seconds(directory / "logs" / "stdout.log")
+    model_source = "stdout model-minute progress" if model_time is not None else None
+    state = str(payload.get("state") or "")
+    if state in ("completed", "copied_back_to_mac", "ready_for_local_ingest") and payload.get("exit_code") == 0 and total_time:
+        model_time = total_time
+        model_source = "completed_worker_state"
+    started_at = parse_time(payload.get("started_at"))
+    finished_at = parse_time(payload.get("finished_at"))
+    end_at = finished_at if state != "running" and finished_at else now
+    elapsed = (end_at - started_at).total_seconds() if started_at else None
+    if elapsed is not None and (not math.isfinite(elapsed) or elapsed < 0):
+        elapsed = None
+    percent = percent_complete(model_time, total_time)
+    remaining = None
+    finish_at = None
+    if state == "running" and elapsed is not None and model_time and total_time and elapsed >= 60 and model_time >= 60:
+        remaining_model = total_time - model_time
+        if remaining_model > 0:
+            candidate = remaining_model * (elapsed / model_time)
+            if math.isfinite(candidate) and candidate > 0:
+                remaining = round(candidate, 3)
+                finish_at = now + timedelta(seconds=remaining)
+    unavailable_reason = None
+    if not started_at:
+        unavailable_reason = "Run has not started."
+    elif total_time is None:
+        unavailable_reason = "Configured model time is unavailable because timax could not be read."
+    elif model_time is None:
+        unavailable_reason = "CM1 model-time progress is unavailable until stdout contains model-minute progress lines."
+    return dict(
+        elapsed_wall_seconds=round(elapsed, 3) if elapsed is not None else None,
+        model_time_seconds=model_time,
+        total_model_time_seconds=total_time,
+        percent_complete=percent,
+        estimated_remaining_wall_seconds=remaining,
+        estimated_finish_at=iso_z(finish_at) if finish_at else None,
+        last_refreshed_at=iso_z(now),
+        stale=False,
+        model_time_source=model_source,
+        total_model_time_source=total_source,
+        unavailable_reason=unavailable_reason,
+        caveats=[],
+    )
+
+data["progress"] = worker_progress(data, run_dir)
 print(json.dumps(data, sort_keys=True))
 PY"""
     result = run_command(
@@ -749,6 +859,7 @@ def worker_status_from_mapping(data: dict[str, Any]) -> WorkerStatus:
         netcdf_count=int(data.get("netcdf_count") or 0),
         raw_artifact_count=int(data.get("raw_artifact_count") or 0),
         message=_optional_str(data.get("message")),
+        progress=data.get("progress") if isinstance(data.get("progress"), dict) else None,
     )
 
 

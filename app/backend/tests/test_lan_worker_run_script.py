@@ -198,11 +198,21 @@ def test_worker_status_parses_cm1_command_and_environment() -> None:
             "cm1_exe": "/opt/cm1/run/cm1.exe",
             "cm1_command": "mpirun -np 4 /opt/cm1/run/cm1.exe",
             "cm1_env": {"OMP_NUM_THREADS": "4"},
+            "progress": {
+                "model_time_seconds": 7200,
+                "total_model_time_seconds": 10800,
+                "percent_complete": 66.7,
+            },
         }
     )
 
     assert status.cm1_command == "mpirun -np 4 /opt/cm1/run/cm1.exe"
     assert status.cm1_env == {"OMP_NUM_THREADS": "4"}
+    assert status.progress == {
+        "model_time_seconds": 7200,
+        "total_model_time_seconds": 10800,
+        "percent_complete": 66.7,
+    }
 
 
 def test_cleanup_already_removed_updates_local_worker_status(
