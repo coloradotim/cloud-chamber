@@ -356,10 +356,15 @@ POST /api/dry-run-package
 
 The browser receives only API summaries: run/package paths, lifecycle/product
 states, stdout/stderr log paths and short tails, output artifact counts, runtime
-warnings, storage inventory entries, associated result-card identities when
-available, and the ingested result ID. It does not read local files directly,
-does not parse NetCDF, and does not imply that a dry-run package is already a
-completed or ingested result.
+warnings, storage inventory entries, progress metadata, associated result-card
+identities when available, and the ingested result ID. Progress metadata is a
+bounded status summary: elapsed wall time from manifest execution timestamps,
+total configured model time from `namelist.input` `timax` with package-preset
+fallback, latest model time from CM1 stdout model-minute progress lines when
+available, percent/ETA only when those inputs are present, and clear unavailable
+copy otherwise. It does not read local files directly, does not parse NetCDF in
+the browser, and does not imply that a dry-run package is already a completed or
+ingested result.
 
 Build is intentionally not modeled as one single active package. Local runtime
 state can contain multiple package/run folders in different lifecycle stages:
@@ -382,6 +387,11 @@ contains normal CM1 termination evidence and output artifacts exist under the
 run directory. This repairs backend-restart cases where a completed local run
 was still labeled running, while avoiding silent completion claims for unknown
 or still-active runs.
+
+LAN worker status follows the same bounded progress contract when the worker
+status refresh can inspect remote `namelist.input` and `logs/stdout.log`. Older
+or just-started worker sidecars may have no progress payload; Build should show
+model-time progress as unavailable rather than infer it from raw counts.
 
 Results owns cleanup for ingested results. It resolves the selected result to
 its managed run directory, previews user-facing cleanup categories, and requires

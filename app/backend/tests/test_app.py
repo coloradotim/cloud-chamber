@@ -18,6 +18,7 @@ from cloud_chamber.igra_catalog import (
 )
 from cloud_chamber.local_run_manager import LocalRunManagerError, RunStatus
 from cloud_chamber.run_manifest import (
+    ExecutionMetadata,
     LifecycleState,
     OutputMetadata,
     ProductState,
@@ -293,6 +294,130 @@ def test_launch_run_api_returns_status(monkeypatch: pytest.MonkeyPatch) -> None:
     assert payload["lifecycle_state"] == "running"
     assert payload["command"] == ["/tmp/cm1/run/cm1.exe"]
     assert fake_manager.launched_manifest_path == Path("/tmp/run_manifest.json")
+
+
+def test_run_status_api_reports_stdout_model_time_progress(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    package = generate_dry_run_package(
+        scenario_data=json.loads(BASELINE_TEMPLATE.read_text()),
+        runtime_home=tmp_path / "CloudChamber",
+        run_id="run-progress",
+    )
+    stdout_log = package.package_dir / "logs" / "stdout.log"
+    stderr_log = package.package_dir / "logs" / "stderr.log"
+    stdout_log.parent.mkdir()
+    stdout_log.write_text("          592             48.700000 min \n")
+    stderr_log.write_text("")
+    manifest = load_run_manifest(package.manifest_path)
+    started_at = datetime(2026, 5, 22, 15, 15, 36, tzinfo=UTC)
+    write_run_manifest(
+        package.manifest_path,
+        manifest.model_copy(
+            update={
+                "lifecycle_state": LifecycleState.RUNNING,
+                "provenance": ProvenanceMetadata(
+                    product_state=ProductState.QUEUED_RUNNING_CM1_PROCESS
+                ),
+                "execution": ExecutionMetadata(
+                    command=["/tmp/cm1/run/cm1.exe"],
+                    started_at=started_at,
+                    stdout_log=str(stdout_log),
+                    stderr_log=str(stderr_log),
+                ),
+            }
+        ),
+    )
+    fake_manager = FakeRunManager(
+        RunStatus(
+            run_id="run-progress",
+            lifecycle_state=LifecycleState.RUNNING,
+            manifest_path=package.manifest_path,
+            command=("/tmp/cm1/run/cm1.exe",),
+            stdout_log=stdout_log,
+            stderr_log=stderr_log,
+            exit_code=None,
+        )
+    )
+    monkeypatch.setattr("cloud_chamber.app._local_run_manager", fake_manager)
+
+    response = TestClient(app).get(
+        "/api/runs/status",
+        params={"manifest_path": str(package.manifest_path)},
+    )
+
+    assert response.status_code == 200
+    progress = response.json()["progress"]
+    assert progress["model_time_seconds"] == pytest.approx(2922.0)
+    assert progress["total_model_time_seconds"] == pytest.approx(10800.0)
+    assert progress["percent_complete"] == pytest.approx(27.1)
+    assert progress["estimated_remaining_wall_seconds"] is not None
+    assert progress["model_time_source"] == "stdout model-minute progress"
+    assert progress["total_model_time_source"] == "namelist.input timax"
+
+
+def test_run_status_api_reports_completed_elapsed_and_full_model_time(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    package = generate_dry_run_package(
+        scenario_data=json.loads(BASELINE_TEMPLATE.read_text()),
+        runtime_home=tmp_path / "CloudChamber",
+        run_id="run-completed-progress",
+    )
+    manifest = load_run_manifest(package.manifest_path)
+    started_at = datetime(2026, 5, 22, 15, 15, 36, tzinfo=UTC)
+    finished_at = datetime(2026, 5, 22, 15, 45, 36, tzinfo=UTC)
+    stdout_log = package.package_dir / "logs" / "stdout.log"
+    stderr_log = package.package_dir / "logs" / "stderr.log"
+    stdout_log.parent.mkdir()
+    stdout_log.write_text("Program terminated normally\n")
+    stderr_log.write_text("")
+    write_run_manifest(
+        package.manifest_path,
+        manifest.model_copy(
+            update={
+                "lifecycle_state": LifecycleState.COMPLETED,
+                "provenance": ProvenanceMetadata(product_state=ProductState.COMPLETED_CM1_RESULT),
+                "execution": ExecutionMetadata(
+                    command=["/tmp/cm1/run/cm1.exe"],
+                    started_at=started_at,
+                    finished_at=finished_at,
+                    exit_code=0,
+                    stdout_log=str(stdout_log),
+                    stderr_log=str(stderr_log),
+                ),
+                "outputs": OutputMetadata(netcdf_paths=[str(package.package_dir / "cm1out.nc")]),
+            }
+        ),
+    )
+    fake_manager = FakeRunManager(
+        RunStatus(
+            run_id="run-completed-progress",
+            lifecycle_state=LifecycleState.COMPLETED,
+            manifest_path=package.manifest_path,
+            command=("/tmp/cm1/run/cm1.exe",),
+            stdout_log=stdout_log,
+            stderr_log=stderr_log,
+            exit_code=0,
+        )
+    )
+    monkeypatch.setattr("cloud_chamber.app._local_run_manager", fake_manager)
+
+    response = TestClient(app).get(
+        "/api/runs/status",
+        params={"manifest_path": str(package.manifest_path)},
+    )
+
+    assert response.status_code == 200
+    progress = response.json()["progress"]
+    assert progress["elapsed_wall_seconds"] == pytest.approx(1800.0)
+    assert progress["model_time_seconds"] == pytest.approx(10800.0)
+    assert progress["total_model_time_seconds"] == pytest.approx(10800.0)
+    assert progress["percent_complete"] == pytest.approx(100.0)
+    assert progress["estimated_remaining_wall_seconds"] is None
+    assert progress["model_time_source"] == "completed_run_state"
 
 
 def test_launch_run_api_reports_clear_failure(monkeypatch: pytest.MonkeyPatch) -> None:

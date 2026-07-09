@@ -438,6 +438,12 @@ actionable UI errors. Automated tests must not execute `cm1.exe`, parse real
 local NetCDF output in the browser, or write generated run directories into the
 repo.
 
+Build status tests should also cover timing/progress display without real CM1:
+active local runs with parsed stdout model-minute progress, completed local runs
+with final elapsed runtime and complete model time, LAN worker progress when the
+worker status sidecar includes log-derived progress, unavailable model-time copy
+when progress is absent, and stale refresh labeling from old status timestamps.
+
 Runtime cleanup UI tests should use mocked inventory/results data. They should
 verify completed-with-output runs without results expose `Ingest output`, Build
 shows preview cleanup only for non-ingested runs, running runs block cleanup

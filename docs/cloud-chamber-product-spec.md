@@ -294,10 +294,12 @@ For each run:
 
 The Build workspace provides the first guided local launchpad without curl
 commands: create package, launch eligible local CM1 packages, refresh status/log
-summaries, see output-artifact counts, ingest completed NetCDF output, and open
-created Result Cards in Results or Explore. It is a pipeline view over local
-runtime state, not a single active wizard. This is local-first orchestration
-only; CI still uses fake fixtures and never runs CM1.
+summaries, see output-artifact counts, inspect elapsed wall-clock and model-time
+progress when CM1 logs expose it, ingest completed NetCDF output, and open
+created Result Cards in Results or Explore. Percent complete and ETA should only
+appear when configured model time and latest model time are both known. It is a
+pipeline view over local runtime state, not a single active wizard. This is
+local-first orchestration only; CI still uses fake fixtures and never runs CM1.
 
 ### Workflow 4.5 — Manage Runtime Cleanup
 

@@ -109,7 +109,7 @@ Implemented backend API endpoints:
 - `GET /api/scenarios` lists validated scenario templates for the Scenario Builder and marks Baseline Shallow Cumulus as the Golden Path scenario.
 - `POST /api/dry-run-package` validates selected controls and writes a reviewable dry-run package under the configured runtime home. It does not launch CM1, create NetCDF output, or write generated packages into the repo during tests.
 - `POST /api/runs/launch` starts one local CM1 run from a generated manifest when local CM1 settings validate.
-- `GET /api/runs/status?manifest_path=...` refreshes and returns lifecycle status, product/validation state, command/log paths, short stdout/stderr tails, output-artifact counts, runtime warnings, and timestamps for a run manifest.
+- `GET /api/runs/status?manifest_path=...` refreshes and returns lifecycle status, product/validation state, command/log paths, short stdout/stderr tails, output-artifact counts, runtime warnings, timestamps, and bounded progress metadata for a run manifest. Progress uses configured `timax` plus parsed CM1 stdout model-minute lines when available; if model time is not available, the payload says so rather than inventing a percent complete.
 - `POST /api/runs/cancel` cancels the active local run when technically practical.
 - `GET /api/storage/inventory` reports configured runtime-home disk usage and per-run metadata under `~/CloudChamber/runs/`.
 - `POST /api/storage/delete-run` previews or deletes one selected run directory under the configured runtime home.
