@@ -301,7 +301,8 @@ export const results = [
     source_product_state: "completed_cm1_result",
     source_model: "CM1",
     provenance_labels: ["CM1 result", "ingested metadata", "visualizer interpretation"],
-    diagnostics_summary: "cloud formed; rain detected",
+    diagnostics_summary:
+      "cloud formed; rain water aloft detected; surface rain reached ground; reflectivity available",
     thermal_fate_label: "Growing cumulus",
     thermal_fate_confidence: "candidate",
     main_limiting_factor: "unknown",
@@ -314,6 +315,11 @@ export const results = [
     time_of_min_w_seconds: 3600,
     rain_present: true,
     first_rain_time_seconds: 3600,
+    surface_rain_present: true,
+    max_surface_rain: 3.5,
+    surface_rain_units: "mm",
+    reflectivity_available: true,
+    max_dbz: 30,
     caveats: ["minor vertical-coordinate caveat"],
     input_source: "generated_reference",
     input_source_label: "Generated reference",
@@ -396,7 +402,8 @@ export const results = [
     source_product_state: "completed_cm1_result",
     source_model: "CM1",
     provenance_labels: ["CM1 result", "observed sounding", "ingested metadata"],
-    diagnostics_summary: "cloud formed; no rain detected",
+    diagnostics_summary:
+      "cloud formed; no rain water aloft detected; surface rain unavailable; reflectivity unavailable",
     thermal_fate_label: "Observed-sounding cumulus",
     thermal_fate_confidence: "candidate",
     main_limiting_factor: "unknown",
@@ -498,7 +505,8 @@ export const results = [
     source_product_state: "completed_cm1_result",
     source_model: "CM1",
     provenance_labels: ["CM1 result", "ingested metadata"],
-    diagnostics_summary: "no cloud formed; no rain detected",
+    diagnostics_summary:
+      "no cloud formed; no rain water aloft detected; surface rain unavailable; reflectivity unavailable",
     thermal_fate_label: "Thermal without cloud",
     thermal_fate_confidence: "supported",
     main_limiting_factor: "moisture",
@@ -1307,7 +1315,8 @@ export async function mockCloudChamberApis(page: Page) {
     json(route, {
       result_id: "result-baseline",
       run_id: "dry-run-baseline",
-      diagnostics_summary: "cloud formed; rain detected",
+      diagnostics_summary:
+        "cloud formed; rain water aloft detected; surface rain reached ground; reflectivity available",
     }),
   );
 

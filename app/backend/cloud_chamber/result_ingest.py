@@ -24,7 +24,9 @@ from cloud_chamber.result_diagnostics import (
     CloudDiagnostics,
     ProcessDiagnostics,
     RainDiagnostics,
+    ReflectivityDiagnostics,
     ResultDiagnostics,
+    SurfaceRainDiagnostics,
     TimeDiagnostics,
     TimeValue,
     VerticalVelocityDiagnostics,
@@ -513,6 +515,12 @@ def _merge_diagnostics(
         [diagnostics.vertical_velocity for diagnostics in diagnostics_parts]
     )
     rain = _merge_rain_diagnostics([diagnostics.rain for diagnostics in diagnostics_parts])
+    surface_rain = _merge_surface_rain_diagnostics(
+        [diagnostics.surface_rain for diagnostics in diagnostics_parts]
+    )
+    reflectivity = _merge_reflectivity_diagnostics(
+        [diagnostics.reflectivity for diagnostics in diagnostics_parts]
+    )
     caveats = _dedupe_strings(
         [
             *inherited_caveats,
@@ -523,6 +531,8 @@ def _merge_diagnostics(
         cloud=cloud,
         vertical_velocity=vertical,
         rain=rain,
+        surface_rain=surface_rain,
+        reflectivity=reflectivity,
         time=time,
         caveats=caveats,
     )
@@ -637,7 +647,72 @@ def _merge_rain_diagnostics(parts: list[RainDiagnostics]) -> RainDiagnostics:
         max_qr_kg_kg=max_qr_time.value,
         time_of_max_qr_seconds=max_qr_time.time_seconds,
         qr_max_time_series=[point for part in present_parts for point in part.qr_max_time_series],
-        user_message="Rain detected." if present else "No rain detected.",
+        user_message=("Rain water aloft detected." if present else "No rain water aloft detected."),
+        available=all(part.available for part in parts),
+        field_absent=all(part.field_absent for part in parts),
+    )
+
+
+def _merge_surface_rain_diagnostics(parts: list[SurfaceRainDiagnostics]) -> SurfaceRainDiagnostics:
+    present_parts = [part for part in parts if part.available]
+    if not present_parts:
+        return SurfaceRainDiagnostics(
+            available=False,
+            field_absent=all(part.field_absent for part in parts),
+            units=next((part.units for part in parts if part.units is not None), None),
+        )
+    max_surface_rain_time = _max_time_value(
+        [
+            TimeValue(
+                time_seconds=part.time_of_max_surface_rain_seconds,
+                value=part.max_surface_rain,
+            )
+            for part in present_parts
+        ]
+    )
+    present = any(part.present for part in present_parts)
+    return SurfaceRainDiagnostics(
+        present=present,
+        max_surface_rain=max_surface_rain_time.value,
+        time_of_max_surface_rain_seconds=max_surface_rain_time.time_seconds,
+        surface_rain_max_time_series=[
+            point for part in present_parts for point in part.surface_rain_max_time_series
+        ],
+        units=next((part.units for part in present_parts if part.units is not None), None),
+        user_message=(
+            "Surface rain reached the ground." if present else "No surface rain reached the ground."
+        ),
+        available=all(part.available for part in parts),
+        field_absent=all(part.field_absent for part in parts),
+    )
+
+
+def _merge_reflectivity_diagnostics(
+    parts: list[ReflectivityDiagnostics],
+) -> ReflectivityDiagnostics:
+    present_parts = [part for part in parts if part.available]
+    if not present_parts:
+        return ReflectivityDiagnostics(
+            available=False,
+            field_absent=all(part.field_absent for part in parts),
+            units=next((part.units for part in parts if part.units is not None), None),
+        )
+    max_dbz_time = _max_time_value(
+        [
+            TimeValue(time_seconds=part.time_of_max_dbz_seconds, value=part.max_dbz)
+            for part in present_parts
+        ]
+    )
+    return ReflectivityDiagnostics(
+        max_dbz=max_dbz_time.value,
+        time_of_max_dbz_seconds=max_dbz_time.time_seconds,
+        dbz_max_time_series=[point for part in present_parts for point in part.dbz_max_time_series],
+        units=next((part.units for part in present_parts if part.units is not None), None),
+        user_message=(
+            "Reflectivity field available."
+            if max_dbz_time.value is not None
+            else "Reflectivity unavailable."
+        ),
         available=all(part.available for part in parts),
         field_absent=all(part.field_absent for part in parts),
     )
@@ -901,18 +976,18 @@ def _candidate_hypothesis_comparison(
 
     deep_cloud = science_summary.deep_cloud_formed is True
     strong_updraft = science_summary.strong_updraft_formed is True
-    rain_detected = diagnostics.rain.available and diagnostics.rain.present
+    rain_water_aloft_detected = diagnostics.rain.available and diagnostics.rain.present
     if not deep_cloud and not strong_updraft:
         match_status = "did_not_match"
-    elif deep_cloud and strong_updraft and rain_detected:
+    elif deep_cloud and strong_updraft and rain_water_aloft_detected:
         match_status = "matched"
-    elif deep_cloud or strong_updraft or rain_detected:
+    elif deep_cloud or strong_updraft or rain_water_aloft_detected:
         match_status = "partially_matched"
     else:
         match_status = "did_not_match"
 
     if not diagnostics.rain.available:
-        caveats.append("rain_field_missing_or_unavailable")
+        caveats.append("rain_water_aloft_field_missing_or_unavailable")
 
     return CandidateHypothesisComparison(
         screened_as=screened_as,
@@ -936,9 +1011,13 @@ def _candidate_outcome_evidence(science_summary: ScienceSummary) -> list[str]:
     if science_summary.max_updraft_w_m_s is not None:
         evidence.append(f"max updraft {_format_metric(science_summary.max_updraft_w_m_s, 'm/s')}")
     if science_summary.rain_onset_time_seconds is not None:
-        evidence.append(f"rain onset {_format_seconds(science_summary.rain_onset_time_seconds)}")
+        evidence.append(
+            f"rain-water-aloft onset {_format_seconds(science_summary.rain_onset_time_seconds)}"
+        )
     elif science_summary.max_qr_kg_kg is not None:
-        evidence.append(f"max rain water {_format_scientific(science_summary.max_qr_kg_kg)} kg/kg")
+        evidence.append(
+            f"max rain water aloft {_format_scientific(science_summary.max_qr_kg_kg)} kg/kg"
+        )
     if science_summary.time_of_first_deep_convection_seconds is not None:
         evidence.append(
             "first deep convection "
@@ -1003,5 +1082,19 @@ def _input_source_label(manifest: RunManifest) -> str:
 
 def _diagnostics_summary(diagnostics: ResultDiagnostics) -> str:
     cloud_status = "cloud formed" if diagnostics.cloud.formed else "no cloud formed"
-    rain_status = "rain detected" if diagnostics.rain.present else "no rain detected"
-    return f"{cloud_status}; {rain_status}"
+    rain_water_status = (
+        "rain water aloft detected" if diagnostics.rain.present else "no rain water aloft detected"
+    )
+    if diagnostics.surface_rain.available:
+        surface_status = (
+            "surface rain reached ground"
+            if diagnostics.surface_rain.present
+            else "no surface rain reached ground"
+        )
+    else:
+        surface_status = "surface rain unavailable"
+    if diagnostics.reflectivity.available:
+        reflectivity_status = "reflectivity available"
+    else:
+        reflectivity_status = "reflectivity unavailable"
+    return f"{cloud_status}; {rain_water_status}; {surface_status}; {reflectivity_status}"

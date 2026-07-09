@@ -1,6 +1,7 @@
 import json
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 
 import xarray as xr
 
@@ -80,7 +81,7 @@ def create_completed_result(
 
 
 def write_result_netcdf(path: Path, *, include_diagnostics_fields: bool) -> None:
-    data_vars = {}
+    data_vars: dict[str, Any] = {}
     if include_diagnostics_fields:
         data_vars["qc"] = (
             ("time", "z", "y", "x"),
@@ -96,6 +97,11 @@ def write_result_netcdf(path: Path, *, include_diagnostics_fields: bool) -> None
             ("time", "z", "y", "x"),
             [[[[2e-7 for _x in range(4)] for _y in range(3)] for _z in range(2)]],
             {"units": "kg/kg"},
+        )
+        data_vars["rain"] = (
+            ("time", "y", "x"),
+            [[[3.5 for _x in range(4)] for _y in range(3)]],
+            {"units": "mm"},
         )
     else:
         data_vars["temperature"] = (
@@ -125,7 +131,10 @@ def test_result_card_created_from_ingested_metadata(tmp_path: Path) -> None:
     assert card.scenario_id == "baseline-shallow-cumulus"
     assert card.run_size_preset == "quick_look"
     assert card.physical_question
-    assert card.diagnostics_summary == "cloud formed; rain detected"
+    assert card.diagnostics_summary == (
+        "cloud formed; rain water aloft detected; surface rain reached ground; "
+        "reflectivity unavailable"
+    )
     assert card.thermal_fate_label == "Fair-weather cumulus"
     assert card.thermal_fate_confidence == "candidate"
     assert card.main_limiting_factor == "unknown"
@@ -138,6 +147,11 @@ def test_result_card_created_from_ingested_metadata(tmp_path: Path) -> None:
     assert card.time_of_min_w_seconds == 1800.0
     assert card.rain_present is True
     assert card.first_rain_time_seconds == 1800.0
+    assert card.surface_rain_present is True
+    assert card.max_surface_rain == 3.5
+    assert card.surface_rain_units == "mm"
+    assert card.reflectivity_available is False
+    assert card.max_dbz is None
     assert card.science_summary is not None
     assert card.science_summary.first_cloud_time_seconds == 1800.0
     assert card.science_summary.max_qc_kg_kg == 2e-6
@@ -304,7 +318,10 @@ def test_result_card_handles_missing_diagnostics_gracefully(tmp_path: Path) -> N
 
     card = get_result_card(settings, result_id)
 
-    assert card.diagnostics_summary == "no cloud formed; no rain detected"
+    assert card.diagnostics_summary == (
+        "no cloud formed; no rain water aloft detected; surface rain unavailable; "
+        "reflectivity unavailable"
+    )
     assert card.first_cloud_time_seconds is None
     assert card.max_qc_kg_kg is None
     assert card.time_of_max_qc_seconds is None

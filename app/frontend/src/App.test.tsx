@@ -567,7 +567,8 @@ const resultCard = {
     "source_product_state:completed_cm1_result",
     "result_state:ingested_result_metadata",
   ],
-  diagnostics_summary: "cloud formed; rain detected",
+  diagnostics_summary:
+    "cloud formed; rain water aloft detected; surface rain reached ground; reflectivity available",
   thermal_fate_label: "Growing cumulus",
   thermal_fate_confidence: "candidate",
   main_limiting_factor: "unknown",
@@ -580,6 +581,11 @@ const resultCard = {
   time_of_min_w_seconds: 4500,
   rain_present: true,
   first_rain_time_seconds: 5400,
+  surface_rain_present: true,
+  max_surface_rain: 4.2,
+  surface_rain_units: "mm",
+  reflectivity_available: true,
+  max_dbz: 30,
   science_summary: {
     first_cloud_time_seconds: 1800,
     first_cloud_time_label: "1,800 s",
@@ -592,6 +598,8 @@ const resultCard = {
     highest_cloud_top_m: 1940,
     rain_onset_time_seconds: 5400,
     max_qr_kg_kg: 2e-7,
+    max_rain_or_surface_precip: 4.2,
+    max_dbz_or_reflectivity_proxy: 30,
     latest_output_time_seconds: 10800,
     default_explore_time_index: 3,
     default_explore_time_seconds: 2700,
@@ -661,7 +669,7 @@ const resultCard = {
     },
     {
       key: "rain_onset",
-      label: "Rain onset",
+      label: "Rain-water onset",
       time_index: 6,
       time_seconds: 5400,
       source_field: "qr",
@@ -741,7 +749,8 @@ const dryFailedCard = {
     low_level_humidity: "drier",
     surface_heating: "baseline",
   },
-  diagnostics_summary: "no cloud formed; no rain detected",
+  diagnostics_summary:
+    "no cloud formed; no rain water aloft detected; surface rain unavailable; reflectivity unavailable",
   thermal_fate_label: "Thermal without cloud",
   thermal_fate_confidence: "supported",
   main_limiting_factor: "moisture",
@@ -754,6 +763,11 @@ const dryFailedCard = {
   time_of_min_w_seconds: 4500,
   rain_present: false,
   first_rain_time_seconds: null,
+  surface_rain_present: null,
+  max_surface_rain: null,
+  surface_rain_units: null,
+  reflectivity_available: false,
+  max_dbz: null,
   science_summary: {
     ...resultCard.science_summary,
     first_cloud_time_seconds: null,
@@ -766,6 +780,8 @@ const dryFailedCard = {
     min_downdraft_time_seconds: 4500,
     rain_onset_time_seconds: null,
     max_qr_kg_kg: 0,
+    max_rain_or_surface_precip: null,
+    max_dbz_or_reflectivity_proxy: null,
     interesting_time_support_state: "fallback",
     interesting_time_caveats: ["no_cloud_formed"],
   },
@@ -792,7 +808,8 @@ const cappedCard = {
     surface_heating: "baseline",
     cap_strength: "stronger",
   },
-  diagnostics_summary: "cloud formed; rain detected",
+  diagnostics_summary:
+    "cloud formed; rain water aloft detected; surface rain reached ground; reflectivity available",
   thermal_fate_label: "Capped / suppressed cumulus candidate",
   thermal_fate_confidence: "candidate",
   main_limiting_factor: "cap/stability",
@@ -839,6 +856,11 @@ const missingDiagnosticsCard = {
   time_of_min_w_seconds: null,
   rain_present: false,
   first_rain_time_seconds: null,
+  surface_rain_present: null,
+  max_surface_rain: null,
+  surface_rain_units: null,
+  reflectivity_available: null,
+  max_dbz: null,
   caveats: ["missing_qc_field", "missing_w_field"],
   output_file_summary: {
     ...resultCard.output_file_summary,
@@ -912,7 +934,8 @@ const deepConvectionResultCard = {
     primary_story: "supercell_environment",
     rank_score: 93,
   },
-  diagnostics_summary: "cloud formed; rain detected",
+  diagnostics_summary:
+    "cloud formed; rain water aloft detected; surface rain reached ground; reflectivity available",
   thermal_fate_label: "Growing cumulus",
   max_w_m_s: 15,
   time_of_max_w_seconds: 1800,
@@ -938,7 +961,7 @@ const deepConvectionResultCard = {
     latest_output_time_seconds: 2700,
     default_explore_time_index: 2,
     default_explore_time_seconds: 1800,
-    cm1_outcome: "Deep convection formed with strong updraft and rain.",
+    cm1_outcome: "Deep convection formed with strong updraft and rain water aloft.",
     diagnostic_availability: [
       {
         key: "cold_pool_proxy",
@@ -980,7 +1003,7 @@ const deepConvectionResultCard = {
   candidate_hypothesis_comparison: {
     screened_as: "Supercell-like environment",
     ran_as: "Deep Convection Trial",
-    cm1_outcome: "Deep convection formed with strong updraft and rain.",
+    cm1_outcome: "Deep convection formed with strong updraft and rain water aloft.",
     match_status: "matched",
     match_status_label: "Matched",
     evidence: ["deep cloud formed", "cloud top 10200 m", "max updraft 15 m/s"],
@@ -2175,7 +2198,8 @@ beforeEach(() => {
             JSON.stringify({
               result_id: "result-dry-run-quicklook",
               run_id: "dry-run-001",
-              diagnostics_summary: "cloud formed; rain detected",
+              diagnostics_summary:
+                "cloud formed; rain water aloft detected; surface rain reached ground; reflectivity available",
             }),
             { status: 200 },
           ),
@@ -3084,7 +3108,8 @@ describe("App", () => {
             JSON.stringify({
               result_id: "result-dry-run-worker-completed",
               run_id: "dry-run-worker-completed",
-              diagnostics_summary: "cloud formed; rain detected",
+              diagnostics_summary:
+                "cloud formed; rain water aloft detected; surface rain reached ground; reflectivity available",
             }),
             { status: 200 },
           ),
@@ -3323,9 +3348,14 @@ describe("App", () => {
     expect(screen.getByRole("button", { name: "Quick-look shallow cumulus" })).toBeInTheDocument();
     expect(screen.getAllByText(/Baseline Shallow Cumulus/).length).toBeGreaterThan(0);
     expect(resultDetail).toHaveTextContent("quick look");
-    expect(screen.getAllByText("cloud formed; rain detected").length).toBeGreaterThan(0);
+    expect(
+      screen.getAllByText(
+        "cloud formed; rain water aloft detected; surface rain reached ground; reflectivity available",
+      ).length,
+    ).toBeGreaterThan(0);
     expect(screen.getAllByText("Cloud formed").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("Rain detected").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Rain water aloft detected").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Reached ground; max 4.2 mm").length).toBeGreaterThan(0);
     expect(screen.getByText("1,800 s")).toBeInTheDocument();
     expect(screen.getAllByText("2.193e-3 kg/kg").length).toBeGreaterThan(0);
     expect(screen.getAllByText("6.867 m/s").length).toBeGreaterThan(0);
@@ -3334,7 +3364,7 @@ describe("App", () => {
     expect(resultDetail).toHaveTextContent("Interesting times");
     expect(resultDetail).toHaveTextContent("Highest cloud top");
     expect(resultDetail).toHaveTextContent("1,940 m");
-    expect(resultDetail).toHaveTextContent("Rain onset");
+    expect(resultDetail).toHaveTextContent("Rain-water onset");
     expect(resultDetail).toHaveTextContent("Default Explore time");
     expect(resultDetail).toHaveTextContent("2,700 s");
     fireEvent.click(within(resultDetail).getByText("Technical details"));
@@ -3412,7 +3442,9 @@ describe("App", () => {
     expect(resultDetail).toHaveTextContent("Screening vs CM1");
     expect(resultDetail).toHaveTextContent("Supercell-like environment");
     expect(resultDetail).toHaveTextContent("Matched");
-    expect(resultDetail).toHaveTextContent("Deep convection formed with strong updraft and rain.");
+    expect(resultDetail).toHaveTextContent(
+      "Deep convection formed with strong updraft and rain water aloft.",
+    );
     expect(resultDetail).toHaveTextContent("max updraft 15 m/s");
     expect(resultDetail).toHaveTextContent("First deep convection");
 
@@ -3465,8 +3497,12 @@ describe("App", () => {
     expect(within(resultsList).getAllByText("No cloud formed").length).toBeGreaterThan(0);
 
     fireEvent.change(within(filterBar).getByLabelText("Cloud"), { target: { value: "all" } });
-    fireEvent.change(within(filterBar).getByLabelText("Rain"), { target: { value: "yes" } });
-    expect(within(resultsList).getAllByText("Rain detected").length).toBeGreaterThan(0);
+    fireEvent.change(within(filterBar).getByLabelText("Rain-water outcome"), {
+      target: { value: "yes" },
+    });
+    expect(within(resultsList).getAllByText("Rain water aloft detected").length).toBeGreaterThan(
+      0,
+    );
     expect(
       within(resultsList).queryByText("Dry Failed Cumulus quick-look"),
     ).not.toBeInTheDocument();
@@ -3567,8 +3603,8 @@ describe("App", () => {
     expect(screen.getByLabelText("Dry Failed result")).toHaveTextContent("Dry Failed Cumulus");
     expect(screen.getAllByText("Cloud formed").length).toBeGreaterThan(0);
     expect(screen.getAllByText("No cloud formed").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("Rain detected").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("No rain detected").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Rain water aloft detected").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("No rain water aloft detected").length).toBeGreaterThan(0);
     expect(screen.getByText("Moisture-limited")).toBeInTheDocument();
     expect(screen.getAllByText("Minor caveat").length).toBeGreaterThan(0);
     expect(screen.getAllByText("2.193e-3 kg/kg").length).toBeGreaterThan(0);
@@ -3732,7 +3768,7 @@ describe("App", () => {
 
     expect(screen.getAllByText("Diagnostics unavailable").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Unknown").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("No rain detected").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("No rain water aloft detected").length).toBeGreaterThan(0);
     expect(screen.getByText("missing_qc_field")).toBeInTheDocument();
     expect(screen.getByText("missing_w_field")).toBeInTheDocument();
     expect(screen.queryByText(/horizontal slice/i)).not.toBeInTheDocument();
@@ -4182,7 +4218,7 @@ describe("App", () => {
     expect(screen.getByText("Local max w")).toBeInTheDocument();
     expect(screen.getByText("4.5 m/s")).toBeInTheDocument();
     expect(screen.getByText("Local rain")).toBeInTheDocument();
-    expect(screen.getAllByText("Rain detected").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Rain water aloft detected").length).toBeGreaterThan(0);
     expect(screen.getAllByText("xh[32]; 0.05 km").length).toBeGreaterThan(0);
     expect(screen.getAllByText("yh[16]; -1.55 km").length).toBeGreaterThan(0);
     expect(screen.getAllByText("zh[15]; 0.62 km").length).toBeGreaterThan(0);

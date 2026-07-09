@@ -1,4 +1,5 @@
 from pathlib import Path
+from typing import Any
 
 import xarray as xr
 
@@ -18,6 +19,8 @@ def base_dataset(
     qc_values: list[list[list[list[float]]]] | None = None,
     w_values: list[list[list[list[float]]]] | None = None,
     qr_values: list[list[list[list[float]]]] | None = None,
+    rain_values: list[list[list[float]]] | None = None,
+    dbz_values: list[list[list[list[float]]]] | None = None,
     qi_values: list[list[list[list[float]]]] | None = None,
     qs_values: list[list[list[list[float]]]] | None = None,
     qg_values: list[list[list[list[float]]]] | None = None,
@@ -34,7 +37,7 @@ def base_dataset(
         coords["time"] = [0.0, 300.0]
     else:
         coords["time"] = []
-    data_vars = {}
+    data_vars: dict[str, Any] = {}
     if qc_values is not None:
         data_vars["qc"] = (
             ("time", "z", "y", "x"),
@@ -52,6 +55,18 @@ def base_dataset(
             ("time", "z", "y", "x"),
             qr_values,
             {"units": "kg/kg"},
+        )
+    if rain_values is not None:
+        data_vars["rain"] = (
+            ("time", "y", "x"),
+            rain_values,
+            {"units": "mm"},
+        )
+    if dbz_values is not None:
+        data_vars["dbz"] = (
+            ("time", "z", "y", "x"),
+            dbz_values,
+            {"units": "dBZ"},
         )
     if qi_values is not None:
         data_vars["qi"] = (
@@ -269,7 +284,11 @@ def test_qr_rain_present_and_threshold(tmp_path: Path) -> None:
     assert diagnostics.rain.first_rain_time_seconds == 300.0
     assert diagnostics.rain.max_qr_kg_kg == 2e-7
     assert diagnostics.rain.time_of_max_qr_seconds == 300.0
-    assert diagnostics.rain.user_message == "Rain detected."
+    assert diagnostics.rain.user_message == "Rain water aloft detected."
+    assert diagnostics.surface_rain.available is False
+    assert diagnostics.surface_rain.field_absent is True
+    assert diagnostics.reflectivity.available is False
+    assert diagnostics.reflectivity.field_absent is True
 
 
 def test_qr_present_but_no_rain(tmp_path: Path) -> None:
@@ -284,7 +303,7 @@ def test_qr_present_but_no_rain(tmp_path: Path) -> None:
 
     assert diagnostics.rain.present is False
     assert diagnostics.rain.max_qr_kg_kg == 5e-8
-    assert diagnostics.rain.user_message == "No rain detected."
+    assert diagnostics.rain.user_message == "No rain water aloft detected."
 
 
 def test_qr_missing_is_no_rain_without_failure(tmp_path: Path) -> None:
@@ -297,8 +316,40 @@ def test_qr_missing_is_no_rain_without_failure(tmp_path: Path) -> None:
 
     assert diagnostics.rain.present is False
     assert diagnostics.rain.field_absent is True
-    assert diagnostics.rain.user_message == "No rain detected."
+    assert diagnostics.rain.user_message == "Rain-water field unavailable."
     assert "qr_field_absent" in diagnostics.caveats
+
+
+def test_surface_rain_and_reflectivity_are_distinct_outputs(tmp_path: Path) -> None:
+    rain = [[[0.0 for _x in range(4)] for _y in range(3)] for _time in range(2)]
+    rain[1][1][2] = 4.2
+    dbz = zeros()
+    dbz[0][0][0][0] = -8.0
+    dbz[1][1][2][3] = 32.0
+    dataset = write_dataset(
+        tmp_path / "surface_rain_and_dbz.nc",
+        base_dataset(
+            qc_values=zeros(),
+            w_values=w_field(),
+            rain_values=rain,
+            dbz_values=dbz,
+        ),
+    )
+
+    diagnostics = compute_baseline_diagnostics(dataset, [])
+
+    assert diagnostics.rain.available is False
+    assert diagnostics.rain.field_absent is True
+    assert diagnostics.surface_rain.available is True
+    assert diagnostics.surface_rain.present is True
+    assert diagnostics.surface_rain.max_surface_rain == 4.2
+    assert diagnostics.surface_rain.time_of_max_surface_rain_seconds == 300.0
+    assert diagnostics.surface_rain.units == "mm"
+    assert diagnostics.surface_rain.user_message == "Surface rain reached the ground."
+    assert diagnostics.reflectivity.available is True
+    assert diagnostics.reflectivity.max_dbz == 32.0
+    assert diagnostics.reflectivity.time_of_max_dbz_seconds == 300.0
+    assert diagnostics.reflectivity.units == "dBZ"
 
 
 def test_missing_qc_and_missing_w_are_graceful(tmp_path: Path) -> None:

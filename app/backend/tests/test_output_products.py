@@ -17,7 +17,9 @@ from cloud_chamber.output_products import (
 from cloud_chamber.result_diagnostics import (
     CloudDiagnostics,
     RainDiagnostics,
+    ReflectivityDiagnostics,
     ResultDiagnostics,
+    SurfaceRainDiagnostics,
     TimeDiagnostics,
     TimeValue,
     VerticalVelocityDiagnostics,
@@ -326,14 +328,79 @@ def test_deep_convection_interesting_times_and_unavailable_diagnostics(
     assert product.science_summary.default_explore_time_index == 2
     assert (
         product.science_summary.cm1_outcome
-        == "Deep convection formed with strong updraft and rain."
+        == "Deep convection formed with strong updraft and rain water aloft."
     )
     availability = {item.key: item for item in product.science_summary.diagnostic_availability}
     assert availability["max_dbz_or_reflectivity_proxy"].support_state == (
         "unsupported_missing_fields"
     )
     assert availability["cold_pool_proxy"].support_state == "unsupported_missing_fields"
-    assert "missing_dbz_field" in availability["max_dbz_or_reflectivity_proxy"].caveats
+
+
+def test_precipitation_and_reflectivity_outputs_are_supported_when_diagnosed(
+    tmp_path: Path,
+) -> None:
+    model = tmp_path / "cm1out_000001.nc"
+    write_model_netcdf(model, times=[0.0, 600.0], values=[0.0, 1.0])
+    manifest = build_manifest(tmp_path, [model])
+    diagnostics = ResultDiagnostics(
+        cloud=CloudDiagnostics(formed=True),
+        vertical_velocity=VerticalVelocityDiagnostics(max_w_m_s=4.0, units="m/s"),
+        rain=RainDiagnostics(
+            present=True,
+            first_rain_time_seconds=600.0,
+            max_qr_kg_kg=4e-7,
+            time_of_max_qr_seconds=600.0,
+        ),
+        surface_rain=SurfaceRainDiagnostics(
+            present=True,
+            max_surface_rain=3.5,
+            time_of_max_surface_rain_seconds=600.0,
+            surface_rain_max_time_series=[
+                TimeValue(time_seconds=0.0, value=0.0),
+                TimeValue(time_seconds=600.0, value=3.5),
+            ],
+            units="mm",
+            available=True,
+            field_absent=False,
+        ),
+        reflectivity=ReflectivityDiagnostics(
+            max_dbz=28.0,
+            time_of_max_dbz_seconds=600.0,
+            dbz_max_time_series=[
+                TimeValue(time_seconds=0.0, value=-5.0),
+                TimeValue(time_seconds=600.0, value=28.0),
+            ],
+            units="dBZ",
+            available=True,
+            field_absent=False,
+        ),
+        time=TimeDiagnostics(source="netcdf_time_coordinate", fallback_used=False),
+    )
+
+    product = build_interesting_time_product(
+        result_id="result-precip-fields",
+        diagnostics=diagnostics,
+        output_manifest=manifest,
+        variables=["qc", "w", "qr", "rain", "dbz"],
+    )
+
+    records = {record.key: record for record in product.available_interesting_times}
+    assert records["rain_onset"].label == "Rain-water onset"
+    assert records["max_qr"].label == "Max rain water aloft"
+    assert records["max_surface_rain"].support_state == "supported"
+    assert records["max_surface_rain"].value == 3.5
+    assert records["max_surface_rain"].units == "mm"
+    assert records["max_dbz"].support_state == "supported"
+    assert records["max_dbz"].value == 28.0
+    assert records["max_dbz"].units == "dBZ"
+    assert product.default_time_by_field["rain"].source_interesting_time_key == "max_surface_rain"
+    assert product.default_time_by_field["dbz"].source_interesting_time_key == "max_dbz"
+    assert product.science_summary.max_rain_or_surface_precip == 3.5
+    assert product.science_summary.max_dbz_or_reflectivity_proxy == 28.0
+    availability = {item.key: item for item in product.science_summary.diagnostic_availability}
+    assert availability["max_rain_or_surface_precip"].support_state == "supported"
+    assert availability["max_dbz_or_reflectivity_proxy"].support_state == "supported"
 
 
 def test_non_deep_summary_does_not_emit_deep_convection_outcome(

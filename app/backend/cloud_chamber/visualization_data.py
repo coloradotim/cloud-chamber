@@ -553,6 +553,10 @@ def _metadata_field_max_value(metadata: ResultMetadata, field_name: str) -> floa
         return metadata.diagnostics.vertical_velocity.max_w_m_s
     if field_name == "qr":
         return metadata.diagnostics.rain.max_qr_kg_kg
+    if field_name == "dbz":
+        return metadata.diagnostics.reflectivity.max_dbz
+    if field_name == "rain":
+        return metadata.diagnostics.surface_rain.max_surface_rain
     return None
 
 
