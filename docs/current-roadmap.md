@@ -61,6 +61,7 @@ Use these docs as the current strategic and contract sources:
 - [Realistic LES Input Specification](contracts/realistic-les-input-specification.md)
 - [Output Product Specification](contracts/output-product-specification.md)
 - [Sounding Candidate Screening Contract](contracts/sounding-candidate-screening.md)
+- [Analyzer Hypothesis And Output-Signature Contract](contracts/analyzer-hypothesis-output-signature.md)
 - [Expanded Sounding Candidate Taxonomy](research/expanded-sounding-candidate-taxonomy.md)
 - [Deep Convection Package Design](research/deep-convection-package-design.md)
 

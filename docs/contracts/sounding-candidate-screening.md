@@ -192,6 +192,11 @@ This story is deliberately caveated because current packages still use
 idealized local forcing. It should be read as “humid atmosphere worth trying,”
 not as a rain forecast.
 
+Future predicted-output language belongs in
+[Analyzer Hypothesis And Output-Signature Contract](analyzer-hypothesis-output-signature.md).
+Until that contract is implemented, this screen emits ingredient/screening
+scores and recipe-fit caveats, not output predictions.
+
 ### Needs Review
 
 Scoring primarily uses:

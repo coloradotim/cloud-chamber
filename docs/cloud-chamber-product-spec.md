@@ -111,6 +111,10 @@ The browser never parses remote directory listings, ZIP files, or station text
 files. The current story identifiers, feature inputs, score support states,
 evidence requirements, and caveat rules are defined in
 [contracts/sounding-candidate-screening.md](contracts/sounding-candidate-screening.md).
+The forward analyzer contract for testable hypotheses, explicit run
+assumptions, predicted CM1-observable signatures, and predicted-vs-actual
+comparison is defined in
+[contracts/analyzer-hypothesis-output-signature.md](contracts/analyzer-hypothesis-output-signature.md).
 Real-sounding story families, including severe/deep-convection, boundary-layer,
 low-cloud, and winter/cold-season candidates, are defined in
 [research/expanded-sounding-candidate-taxonomy.md](research/expanded-sounding-candidate-taxonomy.md).
