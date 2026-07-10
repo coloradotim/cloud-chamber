@@ -32,6 +32,7 @@ from cloud_chamber.lan_worker import (
     start_lan_worker_run,
 )
 from cloud_chamber.local_run_manager import LocalRunManager, LocalRunManagerError, RunStatus
+from cloud_chamber.local_run_queue import LocalRunQueueError, LocalRunQueueManager
 from cloud_chamber.observed_sounding import ObservedSoundingError, parse_igra_station_text
 from cloud_chamber.result_cards import (
     ResultCardUpdate,
@@ -89,6 +90,7 @@ app = FastAPI(
 )
 
 _local_run_manager: LocalRunManager | None = None
+_local_run_queue: LocalRunQueueManager | None = None
 
 
 @app.get("/health")
@@ -344,6 +346,24 @@ def launch_run(request: LaunchRunRequest) -> dict[str, object]:
     except LocalRunManagerError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return _run_status_payload(status)
+
+
+@app.post("/api/runs/queue")
+def enqueue_run(request: LaunchRunRequest) -> dict[str, object]:
+    try:
+        state = _get_local_run_queue().enqueue(Path(request.manifest_path).expanduser())
+    except LocalRunQueueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return state.model_dump(mode="json")
+
+
+@app.get("/api/runs/queue")
+def run_queue_status() -> dict[str, object]:
+    try:
+        state = _get_local_run_queue().refresh()
+    except LocalRunQueueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return state.model_dump(mode="json")
 
 
 @app.get("/api/runs/status")
@@ -625,6 +645,16 @@ def _get_local_run_manager() -> LocalRunManager:
     if _local_run_manager is None:
         _local_run_manager = LocalRunManager(settings=load_settings())
     return _local_run_manager
+
+
+def _get_local_run_queue() -> LocalRunQueueManager:
+    global _local_run_queue
+    if _local_run_queue is None:
+        _local_run_queue = LocalRunQueueManager(
+            settings=load_settings(),
+            run_manager=_get_local_run_manager(),
+        )
+    return _local_run_queue
 
 
 def _run_status_payload(status: RunStatus) -> dict[str, object]:

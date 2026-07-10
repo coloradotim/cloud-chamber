@@ -44,12 +44,15 @@ test.describe("mocked smoke: Build, Results, Explore path", () => {
     await expect(page.getByTestId("launch-cm1-btn")).toBeEnabled();
 
     await page.getByTestId("launch-cm1-btn").click();
-    await expect(page.getByText("Completed").first()).toBeVisible();
-    await expect(page.getByTestId("ingest-results-btn")).toBeEnabled();
+    await expect(
+      page.getByLabel("Local serial run queue").getByText("Auto-ingested", { exact: true }),
+    ).toBeVisible();
+    await expect(page.getByTestId("ingest-results-btn")).toHaveCount(0);
 
-    await page.getByTestId("ingest-results-btn").click();
-    await expect(page.getByText("Ingested").first()).toBeVisible();
-    await page.getByRole("button", { name: "Open in Results" }).click();
+    await page
+      .getByLabel("Ingested result actions")
+      .getByRole("button", { name: "Open in Results" })
+      .click();
     await expect(page.getByRole("heading", { name: "Experiment Notebook" })).toBeVisible();
   });
 
@@ -212,7 +215,9 @@ test.describe("mocked smoke: Build, Results, Explore path", () => {
       page.getByRole("button", { name: "Delete result and local run data", exact: true }),
     ).toBeVisible();
     await page.getByRole("button", { name: "Delete result and local run data", exact: true }).click();
-    await expect(page.getByText(/Result and local run data deleted/)).toBeVisible();
+    await expect(
+      page.getByRole("status").filter({ hasText: /Result and local run data deleted/ }),
+    ).toBeVisible();
     await expect(page.getByLabel("Results list").getByText("Baseline Shallow Cumulus — Quick Look")).toHaveCount(0);
 
     await gotoBuild(page);

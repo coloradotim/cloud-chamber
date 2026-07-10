@@ -301,6 +301,13 @@ appear when configured model time and latest model time are both known. It is a
 pipeline view over local runtime state, not a single active wizard. This is
 local-first orchestration only; CI still uses fake fixtures and never runs CM1.
 
+Local package launch should go through a serial queue. Users can queue multiple
+ready packages, but Cloud Chamber must run only one local CM1 process at a time.
+When a queued run completes with usable NetCDF output, Build should auto-ingest
+the result and show the generated Result ID. Failed, no-output, or ingest-failed
+runs stay visible with manual fallback actions. Auto-ingest should finalize
+queue state, not silently delete result-backed local run data.
+
 ### Workflow 4.5 — Manage Runtime Cleanup
 
 Build exposes runtime-home inventory for active, incomplete, and non-ingested

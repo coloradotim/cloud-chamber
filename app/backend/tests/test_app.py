@@ -17,6 +17,7 @@ from cloud_chamber.igra_catalog import (
     IGRAStationZipReference,
 )
 from cloud_chamber.local_run_manager import LocalRunManagerError, RunStatus
+from cloud_chamber.local_run_queue import RunQueueEntry, RunQueueState
 from cloud_chamber.run_manifest import (
     ExecutionMetadata,
     LifecycleState,
@@ -61,6 +62,37 @@ class FakeRunManager:
         if self.error:
             raise self.error
         return self.fake_status
+
+
+class FakeRunQueue:
+    def __init__(self) -> None:
+        self.enqueued_manifest_path: Path | None = None
+
+    def enqueue(self, manifest_path: Path) -> RunQueueState:
+        self.enqueued_manifest_path = manifest_path
+        return fake_queue_state("run-queued", "running")
+
+    def refresh(self) -> RunQueueState:
+        return fake_queue_state("run-queued", "running")
+
+
+def fake_queue_state(run_id: str, state: str) -> RunQueueState:
+    return RunQueueState(
+        entries=[
+            RunQueueEntry(
+                run_id=run_id,
+                manifest_path="/tmp/run_manifest.json",
+                state=state,
+                queued_at="2026-05-22T15:15:36Z",
+                started_at="2026-05-22T15:15:37Z",
+                updated_at="2026-05-22T15:15:37Z",
+                message="Running local CM1 process.",
+            )
+        ],
+        active_run_id=run_id if state == "running" else None,
+        queued_count=0,
+        updated_at="2026-05-22T15:15:37Z",
+    )
 
 
 def test_health_endpoint_identifies_scaffold_without_cm1() -> None:
@@ -433,6 +465,22 @@ def test_launch_run_api_reports_clear_failure(monkeypatch: pytest.MonkeyPatch) -
 
     assert response.status_code == 400
     assert response.json()["detail"] == "CM1 is not ready"
+
+
+def test_run_queue_endpoints_surface_serial_queue_state(monkeypatch: pytest.MonkeyPatch) -> None:
+    fake_queue = FakeRunQueue()
+    monkeypatch.setattr("cloud_chamber.app._local_run_queue", fake_queue)
+    client = TestClient(app)
+
+    queued = client.post("/api/runs/queue", json={"manifest_path": "/tmp/run_manifest.json"})
+    refreshed = client.get("/api/runs/queue")
+
+    assert queued.status_code == 200
+    assert queued.json()["active_run_id"] == "run-queued"
+    assert queued.json()["entries"][0]["state"] == "running"
+    assert refreshed.status_code == 200
+    assert refreshed.json()["entries"][0]["message"] == "Running local CM1 process."
+    assert fake_queue.enqueued_manifest_path == Path("/tmp/run_manifest.json")
 
 
 def test_lan_worker_config_endpoint_returns_sanitized_status(

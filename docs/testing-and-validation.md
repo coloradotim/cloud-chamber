@@ -444,6 +444,12 @@ with final elapsed runtime and complete model time, LAN worker progress when the
 worker status sidecar includes log-derived progress, unavailable model-time copy
 when progress is absent, and stale refresh labeling from old status timestamps.
 
+Local run queue tests should use fake CM1 process/status fixtures. They should
+cover enqueueing multiple packaged runs, one-at-a-time launch, active-run
+terminal refresh, successful auto-ingest, ingest-failure fallback that leaves
+manual retry possible, launch failure, and the rule that auto-ingest retains the
+result-backed local run directory for Results and Explore.
+
 Runtime cleanup UI tests should use mocked inventory/results data. They should
 verify completed-with-output runs without results expose `Ingest output`, Build
 shows preview cleanup only for non-ingested runs, running runs block cleanup
