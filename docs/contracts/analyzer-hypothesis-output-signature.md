@@ -254,10 +254,12 @@ Results should compare only after CM1 output exists:
 - preserve the active hypothesis and run recipe used;
 - compare predicted output signature against ingested diagnostics only when the
   required output fields and duration/cadence were present;
-- use `matched`, `did_not_match`, `unable_to_evaluate`, or similarly explicit
-  states;
-- explain missing fields or incompatible recipes as “unable to evaluate,” not
-  as scientific failure.
+- use comparison states aligned with #275: `supported`, `partially_supported`,
+  `contradicted`, `inconclusive`, or `not_comparable`;
+- use field-level states such as `matched`, `partial`, `missed`, `unavailable`,
+  or `not_requested` where useful;
+- explain missing fields, inadequate cadence/duration, or incompatible recipes
+  as `inconclusive` or `not_comparable`, not as scientific failure.
 
 Explore should inspect the CM1-derived evidence:
 
@@ -290,8 +292,8 @@ signature.
 Tests for the future implementation should prove:
 
 - hypotheses cannot include predicted signatures without assumption sets;
-- missing required output fields produce `unable_to_evaluate`, not a failed
-  prediction;
+- missing required output fields produce `inconclusive` or field-level
+  `unavailable`, not a failed prediction;
 - normal-evolution and triggered-potential hypotheses remain separate;
 - `qr`, surface `rain`, and `dbz` are labeled and evaluated separately;
 - the browser receives bounded backend JSON and does not parse raw IGRA, ZIP, or
