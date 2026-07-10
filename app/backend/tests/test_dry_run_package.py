@@ -95,6 +95,8 @@ def test_dry_run_package_can_use_observed_igra_sounding(tmp_path: Path) -> None:
         run_id="run-observed-sounding",
         run_size_preset="quick_look",
         observed_sounding=observed,
+        user_tags=["compare", "candidate", "compare"],
+        user_notes="  Compare against humid/rainy candidates.  ",
     )
 
     manifest = load_run_manifest(result.manifest_path)
@@ -106,8 +108,12 @@ def test_dry_run_package_can_use_observed_igra_sounding(tmp_path: Path) -> None:
     assert manifest.observed_sounding is not None
     assert manifest.observed_sounding["station_id"] == "USM00072558"
     assert manifest.observed_sounding["model_bottom_elevation_m_msl"] == pytest.approx(351.5)
+    assert manifest.user.tags == ["compare", "candidate"]
+    assert manifest.user.notes == "Compare against humid/rainy candidates."
     assert report["variant_metadata"]["sounding_source"] == "observed_igra_station_text"
     assert report["observed_sounding"]["station_name"] == "Valley, Nebraska"
+    assert report["user"]["tags"] == ["compare", "candidate"]
+    assert report["user"]["notes"] == "Compare against humid/rainy candidates."
     assert report["observed_sounding"]["usable_levels"] >= 5
     assert report["observed_sounding"]["wind_source"] == "observed_igra_wind_profile"
     assert report["observed_sounding"]["wind_units"] == "m/s"

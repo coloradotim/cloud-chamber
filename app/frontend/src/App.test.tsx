@@ -104,6 +104,14 @@ const dryRunResponse = {
       validation_note: "Preset preserves the validated reference-derived spatial grid.",
     },
     expected_diagnostics: ["first_cloud_time", "cloud_water_summary"],
+    observed_sounding: null,
+    candidate_screening: null,
+    user: {
+      name: "Baseline Shallow Cumulus",
+      tags: [],
+      notes: null,
+      saved: false,
+    },
     visualization_defaults: { primary_field: "qc" },
     generated_files: {
       manifest: "/tmp/CloudChamber/runs/dry-run-001/run_manifest.json",
@@ -241,6 +249,32 @@ const observedSoundingParseResponse = {
     },
   },
 };
+
+function dryRunResponseForRequest(init?: RequestInit) {
+  const body = JSON.parse(String(init?.body ?? "{}")) as {
+    package_family?: string | null;
+    observed_sounding?: Record<string, unknown> | null;
+    candidate_screening?: Record<string, unknown> | null;
+    user_name?: string | null;
+    user_tags?: string[];
+    user_notes?: string | null;
+  };
+  return {
+    ...dryRunResponse,
+    report: {
+      ...dryRunResponse.report,
+      package_family: body.package_family ?? undefined,
+      observed_sounding: body.observed_sounding ?? null,
+      candidate_screening: body.candidate_screening ?? null,
+      user: {
+        name: body.user_name ?? "Baseline Shallow Cumulus",
+        tags: body.user_tags ?? [],
+        notes: body.user_notes ?? null,
+        saved: false,
+      },
+    },
+  };
+}
 
 const shallowCandidate = {
   candidate_id: "USM00072558-2025010200-shallow",
@@ -2432,7 +2466,9 @@ beforeEach(() => {
         );
       }
       if (url === "/api/dry-run-package") {
-        return Promise.resolve(new Response(JSON.stringify(dryRunResponse), { status: 200 }));
+        return Promise.resolve(
+          new Response(JSON.stringify(dryRunResponseForRequest(init)), { status: 200 }),
+        );
       }
       if (url === "/api/runs/launch") {
         return Promise.resolve(new Response(JSON.stringify(runningRunStatus), { status: 200 }));
@@ -2975,8 +3011,11 @@ describe("App", () => {
     fireEvent.click(screen.getByRole("button", { name: "Refresh IGRA catalog" }));
 
     expect(await screen.findByText("IGRA station catalog refreshed")).toBeInTheDocument();
-    expect(screen.getByText("Screenable soundings").nextElementSibling).toHaveTextContent(
-      "2 soundings",
+    expect(screen.getByText("Cached sounding inventory").nextElementSibling).toHaveTextContent(
+      "2 cached soundings",
+    );
+    expect(screen.getByText("Planned analysis slice").nextElementSibling).toHaveTextContent(
+      "Up to 2 soundings (5 per cached file)",
     );
 
     fireEvent.click(screen.getByRole("button", { name: "Cache station files" }));
@@ -3026,6 +3065,26 @@ describe("App", () => {
     expect(savedCard).toHaveTextContent("Tags: compare, rerun");
     expect(savedCard).toHaveTextContent("Notes: Compare this against the humid case.");
 
+    fireEvent.click(within(savedCard).getByRole("button", { name: "Use to create package" }));
+
+    expect(await screen.findByText("Candidate selected for package review")).toBeInTheDocument();
+    expect(
+      screen.getByText("Candidate loaded into observed-sounding package review"),
+    ).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId("create-package-btn"));
+
+    await waitFor(() => {
+      expect(dryRunBody).toContain('"user_tags":["compare","rerun"]');
+      expect(dryRunBody).toContain('"user_notes":"Compare this against the humid case."');
+      expect(dryRunBody).toContain('"saved_notes":"Compare this against the humid case."');
+    });
+    expect(screen.getByText("Package notes").nextElementSibling).toHaveTextContent(
+      "Compare this against the humid case.",
+    );
+    expect(screen.getByText("Sounding").nextElementSibling).toHaveTextContent(
+      "Valley, Nebraska (USM00072558)",
+    );
+
     fireEvent.click(within(savedCard).getByRole("button", { name: "Remove saved" }));
     expect(await screen.findByText("Saved sounding candidate removed")).toBeInTheDocument();
     expect(
@@ -3049,7 +3108,9 @@ describe("App", () => {
     const selectedValleyCard = await screen.findByLabelText(
       "Sounding candidate Valley, Nebraska (USM00072558)",
     );
-    expect(screen.getByRole("heading", { name: "Recommended cached soundings" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { name: "Recommended cached soundings" }),
+    ).toBeInTheDocument();
 
     fireEvent.click(within(selectedValleyCard).getByRole("button", { name: "Use this sounding" }));
 
@@ -4094,9 +4155,7 @@ describe("App", () => {
     fireEvent.change(within(filterBar).getByLabelText("Rain-water outcome"), {
       target: { value: "yes" },
     });
-    expect(within(resultsList).getAllByText("Rain water aloft detected").length).toBeGreaterThan(
-      0,
-    );
+    expect(within(resultsList).getAllByText("Rain water aloft detected").length).toBeGreaterThan(0);
     expect(
       within(resultsList).queryByText("Dry Failed Cumulus quick-look"),
     ).not.toBeInTheDocument();
@@ -4236,7 +4295,9 @@ describe("App", () => {
 
     expect(await screen.findByLabelText("Result detail")).toBeInTheDocument();
     expect(screen.queryByRole("tab", { name: "Storage" })).not.toBeInTheDocument();
-    expect(screen.queryByRole("heading", { name: "Runtime inventory and cleanup" })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("heading", { name: "Runtime inventory and cleanup" }),
+    ).not.toBeInTheDocument();
     const resultDetail = screen.getByLabelText("Result detail");
     expect(resultDetail).toHaveTextContent("Local data");
     expect(resultDetail).toHaveTextContent("Run-directory backed");
@@ -4327,7 +4388,9 @@ describe("App", () => {
     expect(
       await screen.findByRole("heading", { name: "Packages and runs needing action" }),
     ).toBeInTheDocument();
-    expect(screen.queryByRole("heading", { name: "Runtime inventory and cleanup" })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("heading", { name: "Runtime inventory and cleanup" }),
+    ).not.toBeInTheDocument();
     expect(screen.queryByRole("tab", { name: "Storage" })).not.toBeInTheDocument();
 
     const pipelineRuns = screen.getByLabelText("Local packages and runs");

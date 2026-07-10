@@ -99,6 +99,7 @@ type DryRunReport = {
     visualizer_is_interpretation: boolean;
   };
   observed_sounding?: ObservedSoundingSummary | null;
+  user?: UserRunMetadata | null;
 };
 
 type DryRunResponse = {
@@ -318,6 +319,13 @@ type ScreeningResult = {
   };
 };
 
+type UserRunMetadata = {
+  name: string;
+  tags: string[];
+  notes?: string | null;
+  saved?: boolean;
+};
+
 type SavedSoundingCandidate = {
   saved_candidate_id: string;
   candidate: SoundingCandidate;
@@ -424,6 +432,12 @@ type RunStatusResponse = {
   };
   runtime_warnings: string[];
   progress: RunProgressResponse | null;
+  user?: UserRunMetadata | null;
+  observed_sounding?: ObservedSoundingSummary | null;
+  candidate_screening?: Record<string, unknown> | null;
+  package_family?: PackageFamily | string | null;
+  package_display_name?: string | null;
+  input_source?: string | null;
 };
 
 type RunQueueEntry = {
@@ -1029,6 +1043,11 @@ async function requestDryRunPackage(
   packageFamily?: PackageFamily | null,
   observedSounding?: ObservedSoundingRecord | null,
   candidateScreening?: Record<string, unknown> | null,
+  userMetadata?: {
+    name?: string | null;
+    tags?: string[];
+    notes?: string | null;
+  } | null,
 ): Promise<DryRunResponse> {
   const response = await fetch("/api/dry-run-package", {
     method: "POST",
@@ -1040,6 +1059,9 @@ async function requestDryRunPackage(
       package_family: packageFamily ?? null,
       observed_sounding: observedSounding ?? null,
       candidate_screening: candidateScreening ?? null,
+      user_name: userMetadata?.name ?? null,
+      user_tags: userMetadata?.tags ?? [],
+      user_notes: userMetadata?.notes ?? null,
     }),
   });
   if (!response.ok) {
@@ -1112,18 +1134,16 @@ async function fetchScreeningInputs(): Promise<ScreeningInputsResponse> {
   return response.json() as Promise<ScreeningInputsResponse>;
 }
 
-async function screenSoundingCandidates(
-  options: {
-    story: CandidateStoryFilter;
-    storyFamily: CandidateStoryFamilyFilter;
-    support: CandidateSupportFilter;
-    readiness: CandidateReadinessFilter;
-    stationSearch: string;
-    sort: CandidateSort;
-    latestPerStation: number;
-    limit: number;
-  },
-): Promise<ScreeningResult> {
+async function screenSoundingCandidates(options: {
+  story: CandidateStoryFilter;
+  storyFamily: CandidateStoryFamilyFilter;
+  support: CandidateSupportFilter;
+  readiness: CandidateReadinessFilter;
+  stationSearch: string;
+  sort: CandidateSort;
+  latestPerStation: number;
+  limit: number;
+}): Promise<ScreeningResult> {
   const response = await fetch("/api/sounding-candidates/analyze", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -1179,9 +1199,7 @@ async function updateSavedSoundingCandidate(
     body: JSON.stringify({ tags, notes }),
   });
   if (!response.ok) {
-    throw new Error(
-      await responseError(response, "Unable to update saved sounding candidate."),
-    );
+    throw new Error(await responseError(response, "Unable to update saved sounding candidate."));
   }
   return response.json() as Promise<SavedSoundingCandidate>;
 }
@@ -1585,9 +1603,7 @@ export function App() {
   const [storageError, setStorageError] = useState<string | null>(null);
   const [runDeletePreview, setRunDeletePreview] = useState<DeleteRunResponse | null>(null);
   const [runDeleteMessage, setRunDeleteMessage] = useState<string | null>(null);
-  const [resultDeletePreview, setResultDeletePreview] = useState<DeleteResultResponse | null>(
-    null,
-  );
+  const [resultDeletePreview, setResultDeletePreview] = useState<DeleteResultResponse | null>(null);
   const [resultDeleteMessage, setResultDeleteMessage] = useState<string | null>(null);
   const [, setStatus] = useState("Loading scenarios...");
   const [scenarioLoadState, setScenarioLoadState] = useState<ScenarioLoadState>("loading");
@@ -1836,8 +1852,7 @@ export function App() {
       const payload = await fetchStorageInventory();
       setStorageInventory(payload);
       setStorageStatus(
-        statusWhenLoaded ??
-          (payload.runs.length > 0 ? "Run inventory loaded" : "No runtime runs"),
+        statusWhenLoaded ?? (payload.runs.length > 0 ? "Run inventory loaded" : "No runtime runs"),
       );
     } catch (caught) {
       setStorageError(
@@ -2027,7 +2042,9 @@ export function App() {
     const existing = savedCandidates.find(
       (saved) => saved.candidate.candidate_id === candidate.candidate_id,
     );
-    setCandidateStatus(existing ? "Updating saved sounding candidate" : "Saving sounding candidate");
+    setCandidateStatus(
+      existing ? "Updating saved sounding candidate" : "Saving sounding candidate",
+    );
     try {
       if (existing) {
         const saved = await updateSavedSoundingCandidate(existing.saved_candidate_id, tags, notes);
@@ -2115,6 +2132,9 @@ export function App() {
     setLanWorkerError(null);
     setLanWorkerActionStatus(null);
     setIngestedResultId(null);
+    const packageUserMetadata = observedSoundingExperimentSelected
+      ? runUserMetadataFromCandidateScreening(selectedCandidateScreening)
+      : null;
     try {
       const result = await requestDryRunPackage(
         selectedScenario.id,
@@ -2123,6 +2143,7 @@ export function App() {
         observedSoundingExperimentSelected ? observedPackageFamily : null,
         observedSoundingExperimentSelected ? observedSoundingParse?.selected_sounding : null,
         observedSoundingExperimentSelected ? selectedCandidateScreening : null,
+        packageUserMetadata,
       );
       setDryRun(result);
       setStatus("Packaged dry-run output");
@@ -2591,7 +2612,9 @@ export function App() {
       setResultsStatus(deleteMessage);
       await refreshStorageAfterWorkflow("Local pipeline updated");
     } catch (caught) {
-      setResultsError(caught instanceof Error ? caught.message : "Unable to delete selected result.");
+      setResultsError(
+        caught instanceof Error ? caught.message : "Unable to delete selected result.",
+      );
       setResultsStatus("Delete failed");
     }
   }
@@ -3400,9 +3423,9 @@ function ObservedAtmosphereCandidatesPanel({
   const selectedSavedCandidate =
     selectedCandidate === null
       ? null
-      : savedCandidates.find(
+      : (savedCandidates.find(
           (saved) => saved.candidate.candidate_id === selectedCandidate.candidate_id,
-        ) ?? null;
+        ) ?? null);
   const cachedStations = new Set((cache?.entries ?? []).map((entry) => entry.station_id)).size;
   const cachedStationFiles = cache?.entries.length ?? 0;
   const cachedCatalogFiles =
@@ -3412,10 +3435,27 @@ function ObservedAtmosphereCandidatesPanel({
     (total, input) => total + (input.sounding_count ?? 0),
     0,
   );
-  const screenableSummary =
+  const cachedInventorySummary =
     screenableSoundingCount > 0
-      ? `${screenableSoundingCount.toLocaleString()} soundings`
+      ? `${screenableSoundingCount.toLocaleString()} cached soundings`
       : `${screeningInputs.length.toLocaleString()} cached files`;
+  const latestPerCachedFile = boundedInteger(latestPerStation, 1, 50, 5);
+  const plannedAnalysisCount = screeningInputs.reduce((total, input) => {
+    const count = input.sounding_count;
+    if (typeof count === "number" && Number.isFinite(count)) {
+      return total + Math.min(count, latestPerCachedFile);
+    }
+    return total + latestPerCachedFile;
+  }, 0);
+  const plannedAnalysisSummary =
+    screeningInputs.length > 0
+      ? `Up to ${plannedAnalysisCount.toLocaleString()} soundings (${latestPerCachedFile.toLocaleString()} per cached file)`
+      : "No cached files";
+  const lastAnalysisSummary = screening
+    ? `${visibleCandidates.length.toLocaleString()} shown from ${(
+        screening.filtered_candidate_count ?? visibleCandidates.length
+      ).toLocaleString()} matching / ${(screening.total_candidate_count ?? visibleCandidates.length).toLocaleString()} analyzed`
+    : "Not run yet";
   const activeRefinements = [
     storyFilter !== "all" ? `Story: ${candidateStoryLabel(storyFilter)}` : null,
     storyFamilyFilter !== "all" ? `Family: ${candidateStoryFamilyLabel(storyFamilyFilter)}` : null,
@@ -3435,8 +3475,8 @@ function ObservedAtmosphereCandidatesPanel({
           <p className="eyebrow">Observed atmosphere</p>
           <h3 id="sounding-candidates-title">Find interesting soundings</h3>
           <p className="field-help">
-            Screening guidance only. Use this to choose an observed atmosphere to try; CM1 decides
-            what actually happens.
+            Screening guidance only. The cache inventory is local data; recommendations analyze the
+            latest bounded slice from those cached files.
           </p>
         </div>
         <p className="state-chip" role="status">
@@ -3452,7 +3492,9 @@ function ObservedAtmosphereCandidatesPanel({
         />
         <Metric label="Cached stations" value={cachedStations.toString()} />
         <Metric label="Cached station files" value={cachedCatalogFiles.toString()} />
-        <Metric label="Screenable soundings" value={screenableSummary} />
+        <Metric label="Cached sounding inventory" value={cachedInventorySummary} />
+        <Metric label="Planned analysis slice" value={plannedAnalysisSummary} />
+        <Metric label="Last analysis" value={lastAnalysisSummary} />
       </dl>
 
       {error && (
@@ -3498,7 +3540,9 @@ function ObservedAtmosphereCandidatesPanel({
               <option value="dry_failed_candidate">Dry failed cumulus</option>
               <option value="capped_suppressed_candidate">Capped / suppressed</option>
               <option value="humid_rainy_candidate">Humid / rainy</option>
-              <option value="severe_thunderstorm_environment">Severe thunderstorm environment</option>
+              <option value="severe_thunderstorm_environment">
+                Severe thunderstorm environment
+              </option>
               <option value="supercell_environment">Supercell-like environment</option>
               <option value="high_cape_pulse_storm">High-CAPE pulse storm</option>
               <option value="dry_microburst_inverted_v">Dry microburst / inverted-V</option>
@@ -3540,7 +3584,10 @@ function ObservedAtmosphereCandidatesPanel({
           </label>
           <label>
             Sort
-            <select value={sort} onChange={(event) => onSortChange(event.target.value as CandidateSort)}>
+            <select
+              value={sort}
+              onChange={(event) => onSortChange(event.target.value as CandidateSort)}
+            >
               <option value="best_match">Recommended</option>
               <option value="valid_time">Valid time</option>
               <option value="station_id">Station ID</option>
@@ -3561,9 +3608,7 @@ function ObservedAtmosphereCandidatesPanel({
               <option value="surface_t_td_spread_c">Surface T-Td spread</option>
               <option value="estimated_lcl_height_m_agl">Estimated LCL</option>
               <option value="lapse_rate_0_1000m_c_per_km">Low-level lapse rate</option>
-              <option value="midlevel_lapse_rate_700_500_hpa_c_per_km">
-                Midlevel lapse rate
-              </option>
+              <option value="midlevel_lapse_rate_700_500_hpa_c_per_km">Midlevel lapse rate</option>
               <option value="cap_strength_proxy">Cap/inversion strength</option>
               <option value="cap_height_m_agl">Cap/inversion height</option>
               <option value="bulk_shear_0_1km_m_s">Bulk shear 0-1 km</option>
@@ -3597,7 +3642,7 @@ function ObservedAtmosphereCandidatesPanel({
             </select>
           </label>
           <label>
-            Cache up to
+            Cache station files up to
             <input
               type="number"
               min="1"
@@ -3607,7 +3652,7 @@ function ObservedAtmosphereCandidatesPanel({
             />
           </label>
           <label>
-            Latest per station
+            Latest per cached file
             <input
               type="number"
               min="1"
@@ -3617,7 +3662,7 @@ function ObservedAtmosphereCandidatesPanel({
             />
           </label>
           <label>
-            Candidate limit
+            Returned candidate limit
             <input
               type="number"
               min="1"
@@ -3633,12 +3678,17 @@ function ObservedAtmosphereCandidatesPanel({
         <section aria-label="Screened sounding candidates">
           {screening && (
             <div className="candidate-list-heading">
-              <h4>{activeRefinements.length > 0 ? "Refined candidates" : "Recommended cached soundings"}</h4>
+              <h4>
+                {activeRefinements.length > 0
+                  ? "Refined candidates"
+                  : "Recommended cached soundings"}
+              </h4>
               <p className="field-help">
                 Showing {visibleCandidates.length.toLocaleString()} candidates
                 {screening.total_candidate_count !== undefined
-                  ? ` from ${screening.total_candidate_count.toLocaleString()} cached sounding hypotheses`
-                  : ""}. Each score is screening guidance; CM1 still decides what happens.
+                  ? ` from ${screening.total_candidate_count.toLocaleString()} analyzed cached soundings`
+                  : ""}
+                . Each score is screening guidance; CM1 still decides what happens.
               </p>
             </div>
           )}
@@ -3661,7 +3711,14 @@ function ObservedAtmosphereCandidatesPanel({
                   saved={savedCandidateIds.has(candidate.candidate_id)}
                   onSelect={() => onCandidateDetailChange(candidate.candidate_id)}
                   onSave={() => onSave(candidate)}
-                  onUse={() => onUse(candidate)}
+                  onUse={() =>
+                    onUse(
+                      candidate,
+                      savedCandidates.find(
+                        (saved) => saved.candidate.candidate_id === candidate.candidate_id,
+                      ),
+                    )
+                  }
                 />
               ))}
             </div>
@@ -3771,10 +3828,7 @@ function SoundingCandidateCard({
           {storyFilter === "deep_convection_trial" && (
             <StatusBadge label={candidate.primary_story_label} tone="neutral" />
           )}
-          <StatusBadge
-            label={candidateStoryFamilyLabel(candidate.story_family)}
-            tone="neutral"
-          />
+          <StatusBadge label={candidateStoryFamilyLabel(candidate.story_family)} tone="neutral" />
           <StatusBadge label={`${formatNumber(matchScore, "%")} match`} tone="neutral" />
           <StatusBadge
             label={candidate.package_ready ? "Package-ready" : "Blocked"}
@@ -4344,10 +4398,7 @@ function NotebookWorkspace({
   const filtersActive = resultsFiltersActive(filters);
 
   return (
-    <section
-      className="workspace-section"
-      aria-label="Notebook entries"
-    >
+    <section className="workspace-section" aria-label="Notebook entries">
       <ResultsFilterBar
         filters={filters}
         scenarioOptions={scenarioOptions}
@@ -4532,6 +4583,8 @@ function LocalRunWorkflowPanel({
   const showIngestButton = Boolean(dryRun && canIngest);
   const showActionRow =
     showCreatePackageButton || showLaunchButton || showRefreshButton || showIngestButton;
+  const packageObservedSounding = dryRun?.report.observed_sounding ?? null;
+  const packageUserMetadata = dryRun?.report.user ?? null;
 
   return (
     <section
@@ -4582,6 +4635,21 @@ function LocalRunWorkflowPanel({
           <>
             <dl className="compact-metrics">
               <Metric label="Run ID" value={runIdFromPackage(dryRun)} />
+              {packageObservedSounding && (
+                <>
+                  <Metric label="Sounding" value={observedSoundingLabel(packageObservedSounding)} />
+                  <Metric
+                    label="Sounding location"
+                    value={observedSoundingLocationLabel(packageObservedSounding)}
+                  />
+                </>
+              )}
+              {packageUserMetadata?.tags.length ? (
+                <Metric label="Package tags" value={packageUserMetadata.tags.join(", ")} />
+              ) : null}
+              {packageUserMetadata?.notes ? (
+                <Metric label="Package notes" value={packageUserMetadata.notes} />
+              ) : null}
               <Metric label="Package path" value={dryRun.package_dir} />
               <Metric label="Manifest path" value={dryRun.manifest_path} />
               <Metric label="Expected output directory" value={dryRun.package_dir} />
@@ -4690,6 +4758,24 @@ function LocalRunWorkflowPanel({
           <div className="run-status-panel" aria-label="Local run status">
             <dl>
               <Metric label="Lifecycle state" value={humanize(runStatus.lifecycle_state)} />
+              {runStatus.observed_sounding && (
+                <>
+                  <Metric
+                    label="Sounding"
+                    value={observedSoundingLabel(runStatus.observed_sounding)}
+                  />
+                  <Metric
+                    label="Sounding location"
+                    value={observedSoundingLocationLabel(runStatus.observed_sounding)}
+                  />
+                </>
+              )}
+              {runStatus.user?.tags.length ? (
+                <Metric label="Run tags" value={runStatus.user.tags.join(", ")} />
+              ) : null}
+              {runStatus.user?.notes ? (
+                <Metric label="Run notes" value={runStatus.user.notes} />
+              ) : null}
               <Metric label="Product state" value={humanize(runStatus.product_state)} />
               <Metric label="Validation" value={humanize(runStatus.validation_status)} />
               <Metric label="Exit code" value={runStatus.exit_code?.toString() ?? "Running"} />
@@ -4846,13 +4932,7 @@ function LocalRunWorkflowPanel({
   );
 }
 
-function LocalRunQueuePanel({
-  queue,
-  status,
-}: {
-  queue: RunQueueResponse | null;
-  status: string;
-}) {
+function LocalRunQueuePanel({ queue, status }: { queue: RunQueueResponse | null; status: string }) {
   const visibleEntries = queue ? queue.entries.slice(-5).reverse() : [];
   return (
     <section className="run-status-panel" aria-label="Local serial run queue">
@@ -4880,9 +4960,7 @@ function LocalRunQueuePanel({
             <li key={`${entry.run_id}-${entry.queued_at}`}>
               <strong>{entry.run_id}</strong>{" "}
               <span className="muted-inline">{runQueueEntryLabel(entry)}</span>
-              {entry.result_id && (
-                <span className="muted-inline"> result {entry.result_id}</span>
-              )}
+              {entry.result_id && <span className="muted-inline"> result {entry.result_id}</span>}
               {entry.cleanup_status && (
                 <span className="muted-inline"> package retained for Results/Explore</span>
               )}
@@ -5200,9 +5278,9 @@ function PipelineRunCard({
   const displayName = result?.name ?? run.scenario_name ?? run.scenario_id ?? run.run_id;
   const canLaunch = Boolean(
     run.manifest_path &&
-      run.category === "dry_run_only" &&
-      !run.worker_state &&
-      !queueEntryIsOpen(queueEntry),
+    run.category === "dry_run_only" &&
+    !run.worker_state &&
+    !queueEntryIsOpen(queueEntry),
   );
   const canRefreshWorker = Boolean(run.manifest_path && run.worker_state === "running");
   const canFinalizeWorker = Boolean(
@@ -5471,7 +5549,9 @@ function queueEntryIsOpen(entry: RunQueueEntry | undefined): boolean {
 }
 
 function latestAutoIngestedQueueEntry(queue: RunQueueResponse): RunQueueEntry | undefined {
-  return [...queue.entries].reverse().find((entry) => entry.state === "ingested" && entry.result_id);
+  return [...queue.entries]
+    .reverse()
+    .find((entry) => entry.state === "ingested" && entry.result_id);
 }
 
 function queueEntryForRun(
@@ -6035,8 +6115,7 @@ function ResultNotebookCard({
     );
   }
 
-  const visibleDeletePreview =
-    deletePreview?.result_id === result.result_id ? deletePreview : null;
+  const visibleDeletePreview = deletePreview?.result_id === result.result_id ? deletePreview : null;
 
   return (
     <section className="notebook-card" aria-label="Result detail">
@@ -6093,14 +6172,17 @@ function ResultNotebookCard({
       <InterestingTimesSummary result={result} />
       {deleteMessage && <p role="status">{deleteMessage}</p>}
       {visibleDeletePreview && (
-        <section className="delete-preview result-delete-preview" aria-label="Result delete preview">
+        <section
+          className="delete-preview result-delete-preview"
+          aria-label="Result delete preview"
+        >
           <h4>Delete result and local run data preview</h4>
           <p>
             This removes the ingested result, notebook edits, diagnostics, derived products, CM1
             output, logs, and local run files stored under this run directory. The result will
-            disappear from Results, Explore, and local inventory after confirmation. It
-            does not touch the source repo, runtime home itself, or external CM1 install. No files
-            have been deleted yet.
+            disappear from Results, Explore, and local inventory after confirmation. It does not
+            touch the source repo, runtime home itself, or external CM1 install. No files have been
+            deleted yet.
           </p>
           <dl className="metric-grid">
             <Metric label="Run ID" value={visibleDeletePreview.run_id} />
@@ -8372,6 +8454,28 @@ function candidateStationLabel(candidate: SoundingCandidate): string {
   return `${candidate.station_name ?? "Observed sounding"} (${candidate.station_id})`;
 }
 
+function observedSoundingLabel(observed: ObservedSoundingSummary): string {
+  const station = observed.station_name
+    ? `${observed.station_name} (${observed.station_id})`
+    : observed.station_id;
+  return `${station} - ${formatDate(observed.valid_time_utc)}`;
+}
+
+function observedSoundingLocationLabel(observed: ObservedSoundingSummary): string {
+  if (
+    observed.station_latitude !== null &&
+    observed.station_latitude !== undefined &&
+    observed.station_longitude !== null &&
+    observed.station_longitude !== undefined
+  ) {
+    return `${formatNumber(observed.station_latitude, "deg")}, ${formatNumber(
+      observed.station_longitude,
+      "deg",
+    )}`;
+  }
+  return "Not available";
+}
+
 function candidateMatchScore(
   candidate: SoundingCandidate,
   story: CandidateStoryId | CandidateStoryFilter,
@@ -8463,7 +8567,24 @@ function candidateScreeningMetadata(
     discovery_bucket: candidate.discovery_bucket ?? null,
     source_file_name: candidate.source_file_name,
     source_file_hash: candidate.source_file_hash,
+    saved_tags: savedCandidate?.tags ?? [],
+    saved_notes: savedCandidate?.notes ?? null,
   };
+}
+
+function runUserMetadataFromCandidateScreening(
+  candidateScreening: Record<string, unknown> | null,
+): { tags: string[]; notes: string | null } | null {
+  if (!candidateScreening) return null;
+  const tags = Array.isArray(candidateScreening.saved_tags)
+    ? candidateScreening.saved_tags.filter((tag): tag is string => typeof tag === "string")
+    : [];
+  const notes =
+    typeof candidateScreening.saved_notes === "string" && candidateScreening.saved_notes.trim()
+      ? candidateScreening.saved_notes.trim()
+      : null;
+  if (tags.length === 0 && !notes) return null;
+  return { tags, notes };
 }
 
 function StatusBadge({ label, tone }: { label: string; tone: "good" | "warning" | "neutral" }) {

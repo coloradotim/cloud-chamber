@@ -295,7 +295,7 @@ small {
 
 .candidate-cache-summary {
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
   gap: 0.6rem;
   margin: 0;
 }
@@ -2073,10 +2073,9 @@ details[open] > summary {
 }
 
 .inspector-controls-primary {
-  grid-template-columns: minmax(26rem, 1.25fr) minmax(9rem, 0.55fr) minmax(8rem, 0.45fr) minmax(
-      15rem,
-      0.9fr
-    ) auto;
+  grid-template-columns:
+    minmax(26rem, 1.25fr) minmax(9rem, 0.55fr) minmax(8rem, 0.45fr) minmax(15rem, 0.9fr)
+    auto;
   gap: 0.4rem;
   align-items: end;
   border: 1px solid rgba(47, 116, 168, 0.18);

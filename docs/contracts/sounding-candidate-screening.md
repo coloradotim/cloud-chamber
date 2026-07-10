@@ -253,7 +253,9 @@ components.
 
 Candidate screening metadata may be copied into `run_manifest.json`,
 `case_manifest.json`, and `dry_run_report.json` as provenance when a candidate
-is used to create a package.
+is used to create a package. If the candidate was saved with tags or notes,
+those annotations may also be copied into package user metadata and run-status
+payloads so the generated package remains tied to the reason it was selected.
 
 ## UI Contract
 
@@ -297,6 +299,7 @@ Tests should prove:
 - default recommendations and interest reasons are backend-owned;
 - story, support, and readiness refinements are backend-owned;
 - saved tags and notes round-trip through runtime-local JSON;
+- saved tags and notes follow a used candidate into package metadata;
 - poor/incomplete candidates are blocked from package generation;
 - package-ready but weak profiles become `needs_review`;
 - candidate-screening provenance is copied into generated package metadata

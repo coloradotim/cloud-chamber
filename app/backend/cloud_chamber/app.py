@@ -119,6 +119,9 @@ class DryRunRequest(BaseModel):
     package_family: str | None = None
     observed_sounding: dict[str, object] | None = None
     candidate_screening: dict[str, object] | None = None
+    user_name: str | None = None
+    user_tags: list[str] = Field(default_factory=list)
+    user_notes: str | None = None
 
 
 class ObservedSoundingParseRequest(BaseModel):
@@ -203,6 +206,9 @@ def create_dry_run_package(request: DryRunRequest) -> dict[str, Any]:
             package_family=request.package_family,
             observed_sounding=request.observed_sounding,
             candidate_screening=request.candidate_screening,
+            user_name=request.user_name,
+            user_tags=request.user_tags,
+            user_notes=request.user_notes,
         )
     except DryRunPackageError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -738,6 +744,12 @@ def _run_status_payload(status: RunStatus) -> dict[str, object]:
             },
             "runtime_warnings": [],
             "progress": None,
+            "user": None,
+            "observed_sounding": None,
+            "candidate_screening": None,
+            "package_family": None,
+            "package_display_name": None,
+            "input_source": None,
         }
     return {
         "run_id": status.run_id,
@@ -764,6 +776,12 @@ def _run_status_payload(status: RunStatus) -> dict[str, object]:
         },
         "runtime_warnings": manifest.outputs.runtime_warnings,
         "progress": run_progress_from_manifest(manifest),
+        "user": manifest.user.model_dump(mode="json"),
+        "observed_sounding": manifest.observed_sounding,
+        "candidate_screening": manifest.candidate_screening,
+        "package_family": manifest.package_family,
+        "package_display_name": manifest.package_display_name,
+        "input_source": manifest.input_source,
     }
 
 

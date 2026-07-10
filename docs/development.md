@@ -107,11 +107,11 @@ Normal backend checks must not require a local CM1 runtime. Real CM1 paths belon
 Implemented backend API endpoints:
 
 - `GET /api/scenarios` lists validated scenario templates for the Scenario Builder and marks Baseline Shallow Cumulus as the Golden Path scenario.
-- `POST /api/dry-run-package` validates selected controls and writes a reviewable dry-run package under the configured runtime home. It does not launch CM1, create NetCDF output, or write generated packages into the repo during tests.
+- `POST /api/dry-run-package` validates selected controls and writes a reviewable dry-run package under the configured runtime home. Observed-sounding packages may include selected sounding metadata, candidate-screening provenance, and user-facing tags/notes from saved candidate annotations. It does not launch CM1, create NetCDF output, or write generated packages into the repo during tests.
 - `POST /api/runs/launch` starts one local CM1 run from a generated manifest when local CM1 settings validate.
 - `POST /api/runs/queue` adds a packaged run to the local serial CM1 queue. The queue starts at most one local CM1 process at a time, advances on queue refresh, and auto-ingests completed output-producing runs.
 - `GET /api/runs/queue` refreshes the local serial queue, updates active run status, starts the next queued package when safe, and reports auto-ingest or fallback errors.
-- `GET /api/runs/status?manifest_path=...` refreshes and returns lifecycle status, product/validation state, command/log paths, short stdout/stderr tails, output-artifact counts, runtime warnings, timestamps, and bounded progress metadata for a run manifest. Progress uses configured `timax` plus parsed CM1 stdout model-minute lines when available; if model time is not available, the payload says so rather than inventing a percent complete.
+- `GET /api/runs/status?manifest_path=...` refreshes and returns lifecycle status, product/validation state, observed-sounding context, package/user tags and notes, command/log paths, short stdout/stderr tails, output-artifact counts, runtime warnings, timestamps, and bounded progress metadata for a run manifest. Progress uses configured `timax` plus parsed CM1 stdout model-minute lines when available; if model time is not available, the payload says so rather than inventing a percent complete.
 - `POST /api/runs/cancel` cancels the active local run when technically practical.
 - `GET /api/storage/inventory` reports configured runtime-home disk usage and per-run metadata under `~/CloudChamber/runs/`.
 - `POST /api/storage/delete-run` previews or deletes one selected run directory under the configured runtime home.
@@ -214,7 +214,9 @@ package review; it does not launch CM1 and it does not claim the candidate will
 produce the screened outcome. Blocked candidates remain reviewable but cannot be
 used for package generation until their caveats are resolved. Saved candidates
 can carry freeform tags and notes such as `Deep convection candidates`,
-`Needs longer run`, or `Needs review`.
+`Needs longer run`, or `Needs review`; when a saved candidate is used to create a
+package, those annotations are copied into package provenance and run-status
+payloads.
 
 To reset the recent IGRA cache and test from a clean state, use the script
 cleanup command, then rerun `status` / `refresh`:

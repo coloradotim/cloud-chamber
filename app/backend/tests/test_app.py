@@ -18,6 +18,7 @@ from cloud_chamber.igra_catalog import (
 )
 from cloud_chamber.local_run_manager import LocalRunManagerError, RunStatus
 from cloud_chamber.local_run_queue import RunQueueEntry, RunQueueState
+from cloud_chamber.observed_sounding import parse_igra_station_text
 from cloud_chamber.run_manifest import (
     ExecutionMetadata,
     LifecycleState,
@@ -387,6 +388,74 @@ def test_run_status_api_reports_stdout_model_time_progress(
     assert progress["estimated_remaining_wall_seconds"] is not None
     assert progress["model_time_source"] == "stdout model-minute progress"
     assert progress["total_model_time_source"] == "namelist.input timax"
+
+
+def test_run_status_api_includes_observed_sounding_and_notes(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    observed = parse_igra_station_text(
+        IGRA_FIXTURE,
+        uploaded_filename="USM00072558-data-beg2025.txt",
+    ).selected_sounding
+    package = generate_dry_run_package(
+        scenario_data=json.loads(BASELINE_TEMPLATE.read_text()),
+        runtime_home=tmp_path / "CloudChamber",
+        run_id="run-observed-notes",
+        observed_sounding=observed,
+        user_tags=["compare", "saved"],
+        user_notes="Compare this sounding against the humid case.",
+    )
+    manifest = load_run_manifest(package.manifest_path)
+    stdout_log = package.package_dir / "logs" / "stdout.log"
+    stderr_log = package.package_dir / "logs" / "stderr.log"
+    stdout_log.parent.mkdir()
+    stdout_log.write_text("")
+    stderr_log.write_text("")
+    write_run_manifest(
+        package.manifest_path,
+        manifest.model_copy(
+            update={
+                "lifecycle_state": LifecycleState.RUNNING,
+                "provenance": ProvenanceMetadata(
+                    product_state=ProductState.QUEUED_RUNNING_CM1_PROCESS
+                ),
+                "execution": ExecutionMetadata(
+                    command=["/tmp/cm1/run/cm1.exe"],
+                    started_at=datetime(2026, 5, 22, 15, 15, 36, tzinfo=UTC),
+                    stdout_log=str(stdout_log),
+                    stderr_log=str(stderr_log),
+                ),
+            }
+        ),
+    )
+    monkeypatch.setattr(
+        "cloud_chamber.app._local_run_manager",
+        FakeRunManager(
+            RunStatus(
+                run_id="run-observed-notes",
+                lifecycle_state=LifecycleState.RUNNING,
+                manifest_path=package.manifest_path,
+                command=("/tmp/cm1/run/cm1.exe",),
+                stdout_log=stdout_log,
+                stderr_log=stderr_log,
+                exit_code=None,
+            )
+        ),
+    )
+
+    response = TestClient(app).get(
+        "/api/runs/status",
+        params={"manifest_path": str(package.manifest_path)},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["observed_sounding"]["station_id"] == "USM00072558"
+    assert payload["observed_sounding"]["station_name"] == "Valley, Nebraska"
+    assert payload["observed_sounding"]["valid_time_utc"] == "2025-01-02T00:00:00Z"
+    assert payload["user"]["tags"] == ["compare", "saved"]
+    assert payload["user"]["notes"] == "Compare this sounding against the humid case."
 
 
 def test_run_status_api_reports_completed_elapsed_and_full_model_time(

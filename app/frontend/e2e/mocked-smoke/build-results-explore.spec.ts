@@ -100,7 +100,12 @@ test.describe("mocked smoke: Build, Results, Explore path", () => {
 
     await page.getByRole("button", { name: "Refresh IGRA catalog" }).click();
     await expect(page.getByText("IGRA station catalog refreshed")).toBeVisible();
-    await expect(page.getByText("Screenable soundings").locator("..")).toContainText("2 soundings");
+    await expect(page.getByText("Cached sounding inventory").locator("..")).toContainText(
+      "2 cached soundings",
+    );
+    await expect(page.getByText("Planned analysis slice").locator("..")).toContainText(
+      "Up to 2 soundings",
+    );
 
     await page.getByRole("button", { name: "Cache station files" }).click();
     await expect(page.getByText("Cached 1 station file")).toBeVisible();

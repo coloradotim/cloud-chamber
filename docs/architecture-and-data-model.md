@@ -127,7 +127,7 @@ as zero. Saved candidates, freeform tags, and notes are runtime-local cache stat
 under
 `<runtime-home>/cache/sounding-candidates/`; they are not Result Cards and are
 not committed. When a saved candidate is used to generate a package, its
-screening summary may be copied into
+screening summary and saved tags/notes may be copied into
 `run_manifest.json`, `case_manifest.json`, and `dry_run_report.json` as
 provenance. The screening score remains a candidate-selection aid; CM1 output
 remains the source of truth.
@@ -402,11 +402,12 @@ scenario template, generated report, or pre-run validation report.
 Dry-run package generation uses the validated scenario template and CM1 input contract to create a reviewable package under the configured runtime home, normally `~/CloudChamber/runs/<run-id>/`. The package writer should refuse to overwrite existing run directories, validate controls before writing, and produce only package inputs/reports, not CM1 output.
 
 The implemented dry-run API is `POST /api/dry-run-package`. It currently accepts
-scenario ID, selected product controls, and a legacy run-size preset, then
-returns the package paths and dry-run report summary for UI review. The forward
-API should accept a selected run configuration with optional preset provenance.
-It must not launch CM1, write NetCDF, or place generated packages inside the
-source tree during tests.
+scenario ID, selected product controls, a legacy run-size preset, optional
+observed-sounding/candidate-screening provenance, and optional user-facing
+tags/notes, then returns the package paths and dry-run report summary for UI
+review. The forward API should accept a selected run configuration with optional
+preset provenance. It must not launch CM1, write NetCDF, or place generated
+packages inside the source tree during tests.
 
 The Build workspace is the first guided app-side launchpad over the existing
 backend contracts:
@@ -444,7 +445,8 @@ eligible states and offers only safe state-appropriate transitions:
 - create a new package through `POST /api/dry-run-package`;
 - queue an eligible packaged run through `POST /api/runs/queue`;
 - refresh and advance the serial local queue through `GET /api/runs/queue`;
-- refresh current status through `GET /api/runs/status`;
+- refresh current status, observed-sounding context, and package notes through
+  `GET /api/runs/status`;
 - ingest completed output through `POST /api/results/ingest`;
 - open associated results in Results or Explore;
 - preview and confirm cleanup for non-ingested package/run directories.
@@ -1204,7 +1206,7 @@ legacy run-size preset, physical question, expected diagnostics, and
 visualization defaults when those concepts are available from the scenario
 template.
 
-The backend run-manifest schema records run ID, scenario reference/version, adjusted controls, generated CM1 input paths, CM1 root/run paths, app metadata, timestamps, lifecycle state, validation status, output paths, user notes/tags, and provenance labels. It serializes/deserializes as JSON and does not require NetCDF output.
+The backend run-manifest schema records run ID, scenario reference/version, adjusted controls, generated CM1 input paths, CM1 root/run paths, app metadata, timestamps, lifecycle state, validation status, output paths, observed-sounding context when present, user notes/tags, and provenance labels. It serializes/deserializes as JSON and does not require NetCDF output.
 
 Output metadata distinguishes:
 
