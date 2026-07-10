@@ -202,9 +202,9 @@ rather than inventing separate time addressing.
 | Product type | When computed | Format now | Future format | Size class | API owner | Frontend consumer |
 | --- | --- | --- | --- | --- | --- | --- |
 | File/time index | At ingest or first product-build pass | JSON | JSON | small | backend ingest/product layer | Results, Explore, Storage, tests |
-| Interesting times | At ingest or first product-build pass | JSON | JSON | small | diagnostics/product layer | Results, Explore, Compare |
-| Field catalog | At ingest or metadata-backed request | JSON | JSON | small | visualization/product layer | Explore, Compare, future Render Studio |
-| Slice products | Lazy request, optionally cached | JSON numeric arrays | binary or chunked arrays for large slices | small to medium | visualization API | Explore, Compare |
+| Interesting times | At ingest or first product-build pass | JSON | JSON | small | diagnostics/product layer | Results, Explore, future Compare |
+| Field catalog | At ingest or metadata-backed request | JSON | JSON | small | visualization/product layer | Explore, future Compare, future Render Studio |
+| Slice products | Lazy request, optionally cached | JSON numeric arrays | binary or chunked arrays for large slices | small to medium | visualization API | Explore, future Compare |
 | Vertical profiles | Lazy or cached from selected fields | JSON arrays | binary/chunked for long sequences | small to medium | diagnostics/product API | future Diagnostics Lab, Explore evidence |
 | Time-height products | Cached derived product | JSON for tiny fixtures | binary/chunked arrays | medium | diagnostics/product API | future Diagnostics Lab |
 | Selected-point/column products | Lazy bounded request, optionally cached | JSON summaries/arrays | JSON plus binary arrays if needed | small to medium | selected-region diagnostics API | Explore `What happened here?` |

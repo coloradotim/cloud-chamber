@@ -1371,7 +1371,7 @@ export async function mockCloudChamberApis(page: Page) {
       deleted: false,
       size_bytes: 4096,
       message: "Dry run only; no files were deleted.",
-      affected_surfaces: ["Results", "Explore", "Compare", "local inventory"],
+      affected_surfaces: ["Results", "Explore", "local inventory"],
       categories: [
         {
           label: "Result metadata and notebook edits",
@@ -1422,7 +1422,7 @@ export async function mockCloudChamberApis(page: Page) {
       deleted: true,
       size_bytes: 4096,
       message: "Result and local run data deleted.",
-      affected_surfaces: ["Results", "Explore", "Compare", "local inventory"],
+      affected_surfaces: ["Results", "Explore", "local inventory"],
       categories: [],
     });
   });

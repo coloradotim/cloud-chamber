@@ -19,10 +19,6 @@ export async function gotoExplore(page: Page) {
   await page.getByRole("button", { name: /^Explore$/ }).click();
 }
 
-export async function openResultsTab(page: Page, tabName: RegExp) {
-  await page.getByRole("tab", { name: tabName }).click();
-}
-
 export function collectConsoleProblems(page: Page): string[] {
   const problems: string[] = [];
   page.on("console", (message) => {

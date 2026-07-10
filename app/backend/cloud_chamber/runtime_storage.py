@@ -216,7 +216,6 @@ def delete_ingested_result(
         affected_surfaces=[
             "Results",
             "Explore",
-            "Compare",
             "local inventory",
         ],
         categories=categories,

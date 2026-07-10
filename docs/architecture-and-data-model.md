@@ -859,33 +859,33 @@ Build
   Create and run experiments.
 
 Results
-  Review, compare, save, and manage experiment results.
+  Review, save, and manage experiment results.
 
 Explore
   Inspect and visualize the selected result's CM1 fields.
 ```
 
 `Results` is the default landing section so the selected result context is
-obvious before field inspection or 3-D visualization. It contains `Notebook` and
-`Compare` sub-tabs. `Compare` remains result-pair oriented. Ingested-result
-cleanup lives on the selected notebook entry as a secondary/danger preview
-action, and deleting a result removes the result plus the local managed run data
-after explicit confirmation.
+obvious before field inspection or 3-D visualization. It is the Experiment
+Notebook: a scan-friendly list of result cards plus selected notebook detail and
+actions. Ingested-result cleanup lives on the selected notebook entry as a
+secondary/danger preview action, and deleting a result removes the result plus
+the local managed run data after explicit confirmation.
 
-`Notebook` renders result-card metadata as mobile-first experiment notebook
+The notebook renders result-card metadata as mobile-first experiment notebook
 entries rather than an admin table. The primary view should surface the result
 story, cloud/rain outcomes, first cloud time, `qc` and `w` summaries,
-caveats/warnings, notebook edit state, and open/compare actions. Technical
-metadata such as raw run IDs, lifecycle/product states, controls used,
-provenance labels, and detailed caveats remains in disclosure so it is available
-without overwhelming the first read.
+caveats/warnings, notebook edit state, and actions to open the selected result
+in Explore. Technical metadata such as raw run IDs, lifecycle/product states,
+controls used, provenance labels, and detailed caveats remains in disclosure so
+it is available without overwhelming the first read.
 
 `Explore` is one desktop workflow for one selected result, not separate
 implementation destinations. The selected result ID flows from Results Notebook
-and Results Compare into Explore; that workspace then requests backend-prepared
-field catalogs, defaults, point-cloud payloads, slices, and selected-point
-diagnostics for the same result. The browser does not open NetCDF files or
-classify the physics itself.
+into Explore; that workspace then requests backend-prepared field catalogs,
+defaults, point-cloud payloads, slices, and selected-point diagnostics for the
+same result. The browser does not open NetCDF files or classify the physics
+itself.
 
 Explore's UI contract is explanation-first. The selected result summary,
 cloud/no-cloud state, field-loading state, shared field/time/slice controls,
@@ -914,18 +914,10 @@ as a validated learning case.
 
 Dry Failed Cumulus is the exception to the naive "no cloud means review" rule:
 when the run is accepted, ingested, and has meaningful vertical motion without
-meaningful `qc`, it is a valid moisture-limited contrast. The Results / Compare workspace
-derives the default lab pair from Result Card metadata: a cloud-forming
-Baseline Shallow Cumulus quick-look result and an accepted Dry Failed Cumulus
-quick-look result. It does not need a new backend comparison model for the first
-MVP; it reads the same result-card fields as the table and detail card, keeps
-run IDs/provenance in technical details, and routes quick actions into Explore.
-
-The side-by-side slice comparison reuses the same visualization-ready fields
-and slice endpoints as Explore. The frontend requests one slice payload per
-result, field, output index, and orientation, then renders the two JSON slice
-arrays side by side with their own stats and provenance. There is no new backend
-comparison model, no browser-side NetCDF parsing, and no interpolation step.
+meaningful `qc`, it is a valid moisture-limited contrast. Results should show
+that result honestly as a no-cloud notebook entry; it should not expose a fixed
+Baseline-vs-Dry-Failed comparison workspace until a real user-driven comparison
+workflow exists.
 
 The first field inspector is a frontend consumer of the visualization-ready
 fields/slice API. It opens from a Result Card / Experiment Notebook entry and

@@ -655,11 +655,6 @@ button:disabled {
   gap: 1rem;
 }
 
-.comparison-workspace {
-  display: grid;
-  gap: 1rem;
-}
-
 .storage-workspace {
   display: grid;
   gap: 1rem;
@@ -679,82 +674,6 @@ button:disabled {
 .delete-preview {
   border-color: rgba(183, 121, 31, 0.32);
   background: var(--color-warning-soft);
-}
-
-.comparison-intro,
-.comparison-interpretation {
-  border: 1px solid rgba(76, 127, 164, 0.24);
-  border-radius: 8px;
-  padding: 1rem;
-  background: var(--color-info-soft);
-}
-
-.slice-comparison-panel {
-  display: grid;
-  gap: 1rem;
-  border: 1px solid var(--color-border);
-  border-radius: 8px;
-  padding: 1rem;
-  background: rgba(255, 255, 255, 0.72);
-}
-
-.comparison-controls {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 0.75rem;
-  align-items: end;
-}
-
-.comparison-controls label {
-  display: grid;
-  gap: 0.4rem;
-  color: var(--color-text-primary);
-  font-weight: 800;
-}
-
-.comparison-controls fieldset {
-  display: grid;
-  gap: 0.5rem;
-  min-width: 0;
-  margin: 0;
-  border: 1px solid var(--color-border);
-  border-radius: 8px;
-  padding: 0.75rem;
-}
-
-.comparison-controls legend {
-  color: var(--color-text-primary);
-  font-weight: 850;
-}
-
-.slice-comparison-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 1rem;
-}
-
-.comparison-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 1rem;
-  align-items: start;
-}
-
-.comparison-card {
-  display: grid;
-  gap: 1rem;
-  border: 1px solid var(--color-border);
-  border-radius: 8px;
-  padding: 1rem;
-  background: rgba(255, 255, 255, 0.82);
-  box-shadow: var(--shadow-soft);
-}
-
-.comparison-card-header {
-  display: flex;
-  justify-content: space-between;
-  gap: 1rem;
-  align-items: start;
 }
 
 .results-library > .section-heading {
@@ -2438,7 +2357,6 @@ details[open] > summary {
   .topbar,
   .builder-layout,
   .results-layout,
-  .comparison-grid,
   .visualizer-workbench,
   .workbench-status-strip,
   .visualizer-bottom-controls,
@@ -2481,8 +2399,7 @@ details[open] > summary {
   }
 
   .section-heading,
-  .notebook-title,
-  .comparison-card-header {
+  .notebook-title {
     display: grid;
   }
 

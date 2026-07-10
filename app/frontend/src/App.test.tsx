@@ -1314,7 +1314,7 @@ const resultDeletePreviewResponse = {
   deleted: false,
   size_bytes: 852 * 1024 ** 2,
   message: "Dry run only; no files were deleted.",
-  affected_surfaces: ["Results", "Explore", "Compare", "local inventory"],
+  affected_surfaces: ["Results", "Explore", "local inventory"],
   categories: [
     {
       label: "Result metadata and notebook edits",
@@ -3709,13 +3709,13 @@ describe("App", () => {
     expect(within(topNav).queryByRole("button", { name: "Storage" })).not.toBeInTheDocument();
     expect(within(topNav).queryByRole("button", { name: "Inspect" })).not.toBeInTheDocument();
     expect(within(topNav).queryByRole("button", { name: "Visualize" })).not.toBeInTheDocument();
-    expect(screen.getByRole("tab", { name: "Notebook" })).toHaveClass("active-control");
-    expect(screen.getByRole("tab", { name: "Compare" })).toBeInTheDocument();
+    expect(screen.queryByRole("tab", { name: "Notebook" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("tab", { name: "Compare" })).not.toBeInTheDocument();
     expect(screen.queryByRole("tab", { name: "Storage" })).not.toBeInTheDocument();
     expect(await screen.findByRole("heading", { name: "Experiment Notebook" })).toBeInTheDocument();
     expect(
       screen.getByText(
-        "Review ingested cloud experiments, compare variants, and open results for explanation.",
+        "Review ingested cloud experiments, scan result cards, and open results for explanation.",
       ),
     ).toBeInTheDocument();
     expect(screen.getByLabelText("Results list")).toBeInTheDocument();
@@ -3969,144 +3969,6 @@ describe("App", () => {
     expect(screen.queryByText(/results is not iterable/i)).not.toBeInTheDocument();
   });
 
-  it("compares baseline and dry failed results side by side", async () => {
-    render(<App />);
-
-    fireEvent.click(await screen.findByRole("tab", { name: "Compare" }));
-
-    expect(
-      await screen.findByRole("heading", { name: "Baseline vs Dry Failed Cumulus" }),
-    ).toBeInTheDocument();
-    expect(screen.getByText("Lab pair ready")).toBeInTheDocument();
-    expect(screen.getByLabelText("Baseline result")).toHaveTextContent("Baseline Shallow Cumulus");
-    expect(screen.getByLabelText("Dry Failed result")).toHaveTextContent("Dry Failed Cumulus");
-    expect(screen.getAllByText("Cloud formed").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("No cloud formed").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("Rain water aloft detected").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("No rain water aloft detected").length).toBeGreaterThan(0);
-    expect(screen.getByText("Moisture-limited")).toBeInTheDocument();
-    expect(screen.getAllByText("Minor caveat").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("2.193e-3 kg/kg").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("0.000e+0 kg/kg").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("6.867 m/s").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("1.949 m/s").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("-4.215 m/s").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("-1.087 m/s").length).toBeGreaterThan(0);
-    expect(screen.getByText(/Dry Failed Cumulus is not a failed model run/)).toBeInTheDocument();
-    expect(screen.getByText(/Compare qc against w/)).toBeInTheDocument();
-    expect(screen.getByText("Technical comparison details")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Open Dry Failed in Explore" })).toBeInTheDocument();
-    expect(
-      await screen.findByRole("heading", { name: "Baseline vs Dry Failed slices" }),
-    ).toBeInTheDocument();
-    await screen.findByText("Comparison slices loaded");
-    expect(screen.getByLabelText("Comparison field")).toHaveValue("qc");
-    expect(screen.getByLabelText("Comparison time")).toHaveValue("3");
-    expect(screen.getByLabelText("Baseline comparison slice")).toHaveTextContent(
-      "Baseline Shallow Cumulus",
-    );
-    expect(screen.getByLabelText("Dry Failed comparison slice")).toHaveTextContent(
-      "Dry Failed Cumulus",
-    );
-    expect(screen.getAllByText("qc (Cloud water)").length).toBeGreaterThan(0);
-    expect(screen.getAllByLabelText(/qc comparison heatmap/).length).toBe(2);
-    expect(screen.getAllByText("Finite cells").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("Non-finite cells").length).toBeGreaterThan(0);
-    expect(screen.getAllByText(/CM1-derived visualization-ready data/).length).toBeGreaterThan(0);
-    expect(screen.getAllByText(/CM1-derived visualization-ready data/).length).toBeGreaterThan(0);
-  });
-
-  it("switches side-by-side field comparison from qc to w", async () => {
-    render(<App />);
-
-    fireEvent.click(await screen.findByRole("tab", { name: "Compare" }));
-    await screen.findByText("Comparison slices loaded");
-
-    fireEvent.change(screen.getByLabelText("Comparison field"), { target: { value: "w" } });
-    fireEvent.click(screen.getByRole("button", { name: "Horizontal" }));
-    fireEvent.change(screen.getByLabelText("Comparison time"), { target: { value: "1" } });
-
-    await waitFor(() => {
-      expect(screen.getAllByText("w (Vertical velocity)").length).toBeGreaterThan(0);
-    });
-    expect(screen.getByRole("button", { name: "Horizontal" })).toHaveClass("active-control");
-    expect(screen.getAllByText("m/s").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("900 s").length).toBeGreaterThan(0);
-    expect(fetch).toHaveBeenCalledWith(
-      expect.stringContaining("/api/results/result-dry-run-quicklook/visualization/slice?field=w"),
-    );
-    expect(fetch).toHaveBeenCalledWith(
-      expect.stringContaining("/api/results/result-dry-failed-cumulus/visualization/slice?field=w"),
-    );
-  });
-
-  it("opens inspect and visualize from comparison quick actions", async () => {
-    render(<App />);
-
-    fireEvent.click(await screen.findByRole("tab", { name: "Compare" }));
-    fireEvent.click(await screen.findByRole("button", { name: "Open Dry Failed in Explore" }));
-
-    expect(
-      await screen.findByRole("heading", { name: "What happened in this result?" }),
-    ).toBeInTheDocument();
-    expect(await screen.findByLabelText("Explore viewer controls")).toBeInTheDocument();
-    expect(
-      await screen.findByRole("heading", { name: "Inspect the current slice" }),
-    ).toBeInTheDocument();
-    expect(fetch).toHaveBeenCalledWith(
-      "/api/results/result-dry-failed-cumulus/visualization/fields",
-    );
-
-    fireEvent.click(
-      within(screen.getByRole("navigation", { name: "Cloud Chamber workspace" })).getByRole(
-        "button",
-        { name: "Results" },
-      ),
-    );
-    fireEvent.click(screen.getByRole("tab", { name: "Compare" }));
-    fireEvent.click(screen.getByRole("button", { name: "Open Dry Failed in Explore" }));
-
-    expect(screen.getAllByText("Dry Failed Cumulus quick-look").length).toBeGreaterThan(0);
-    expect(
-      await screen.findByRole("heading", { name: "What happened in this result?" }),
-    ).toBeInTheDocument();
-    expect(screen.getByLabelText("True 3-D scalar field viewer")).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Inspect the current slice" })).toBeInTheDocument();
-    expect(fetch).toHaveBeenCalledWith(
-      "/api/results/result-dry-failed-cumulus/visualization/defaults",
-    );
-  });
-
-  it("handles a missing dry failed comparison result", async () => {
-    vi.mocked(fetch).mockImplementationOnce((input: RequestInfo | URL) => {
-      const url = String(input);
-      if (url === "/api/scenarios") {
-        return Promise.resolve(new Response(JSON.stringify(scenarioResponse), { status: 200 }));
-      }
-      return Promise.resolve(new Response("not found", { status: 404 }));
-    });
-    vi.mocked(fetch).mockImplementationOnce((input: RequestInfo | URL) => {
-      const url = String(input);
-      if (url === "/api/results") {
-        return Promise.resolve(
-          new Response(JSON.stringify({ results: [resultCard] }), { status: 200 }),
-        );
-      }
-      return Promise.resolve(new Response("not found", { status: 404 }));
-    });
-
-    render(<App />);
-
-    fireEvent.click(await screen.findByRole("tab", { name: "Compare" }));
-
-    expect(
-      await screen.findByRole("heading", {
-        name: "Comparison needs Baseline and Dry Failed results",
-      }),
-    ).toBeInTheDocument();
-    expect(screen.getByText("Dry Failed Cumulus quick-look")).toBeInTheDocument();
-  });
-
   it("supports name tag notes editing through the backend API", async () => {
     render(<App />);
 
@@ -4174,7 +4036,7 @@ describe("App", () => {
       await screen.findByRole("heading", { name: "Delete result and local run data preview" }),
     ).toBeInTheDocument();
     expect(
-      screen.getByText(/result will disappear from Results, Explore, Compare, and local inventory/),
+      screen.getByText(/result will disappear from Results, Explore, and local inventory/),
     ).toBeInTheDocument();
     expect(screen.queryByText(/Storage inventory/)).not.toBeInTheDocument();
     expect(screen.getByText("Result metadata and notebook edits")).toBeInTheDocument();
@@ -4971,8 +4833,12 @@ describe("App", () => {
   it("opens Dry Failed as a no-cloud result with a useful w/updraft path", async () => {
     render(<App />);
 
-    fireEvent.click(await screen.findByRole("tab", { name: "Compare" }));
-    fireEvent.click(await screen.findByRole("button", { name: "Open Dry Failed in Explore" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Dry Failed Cumulus quick-look" }));
+    fireEvent.click(
+      within(screen.getByLabelText("Result detail")).getByRole("button", {
+        name: "Open in Explore",
+      }),
+    );
 
     expect(
       await screen.findByRole("heading", { name: "What happened in this result?" }),
