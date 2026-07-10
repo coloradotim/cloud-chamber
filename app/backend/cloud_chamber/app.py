@@ -66,13 +66,22 @@ from cloud_chamber.selected_region_diagnostics import (
 )
 from cloud_chamber.settings import load_settings
 from cloud_chamber.sounding_candidates import (
+    CandidateReadinessFilter,
+    CandidateSortDirection,
+    CandidateSortKey,
+    CandidateStoryFamilyFilter,
+    CandidateStoryFilter,
+    CandidateSupportFilter,
     SaveCandidateRequest,
     TargetStoryId,
+    UpdateSavedCandidateRequest,
+    analyze_cached_soundings,
     delete_saved_candidate,
     list_saved_candidates,
     list_screening_inputs,
     save_candidate,
     screen_cached_soundings,
+    update_saved_candidate,
 )
 from cloud_chamber.visualization_data import (
     VisualizationDataError,
@@ -110,6 +119,9 @@ class DryRunRequest(BaseModel):
     package_family: str | None = None
     observed_sounding: dict[str, object] | None = None
     candidate_screening: dict[str, object] | None = None
+    user_name: str | None = None
+    user_tags: list[str] = Field(default_factory=list)
+    user_notes: str | None = None
 
 
 class ObservedSoundingParseRequest(BaseModel):
@@ -158,6 +170,19 @@ class SoundingCandidateScreenRequest(BaseModel):
     target_story: TargetStoryId | None = None
 
 
+class SoundingCandidateAnalysisRequest(BaseModel):
+    station_id: str | None = None
+    latest_per_station: int = 5
+    limit: int = 50
+    story_filter: CandidateStoryFilter = "all"
+    story_family: CandidateStoryFamilyFilter = "all"
+    support: CandidateSupportFilter = "all"
+    readiness: CandidateReadinessFilter = "all"
+    station_search: str = ""
+    sort_by: CandidateSortKey = "best_match"
+    sort_direction: CandidateSortDirection | None = None
+
+
 @app.get("/api/scenarios")
 def list_scenarios() -> dict[str, object]:
     scenarios = [scenario_summary(scenario) for scenario in load_scenario_templates()]
@@ -181,6 +206,9 @@ def create_dry_run_package(request: DryRunRequest) -> dict[str, Any]:
             package_family=request.package_family,
             observed_sounding=request.observed_sounding,
             candidate_screening=request.candidate_screening,
+            user_name=request.user_name,
+            user_tags=request.user_tags,
+            user_notes=request.user_notes,
         )
     except DryRunPackageError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -312,6 +340,27 @@ def screen_sounding_candidates(request: SoundingCandidateScreenRequest) -> dict[
     return result.model_dump(mode="json")
 
 
+@app.post("/api/sounding-candidates/analyze")
+def analyze_sounding_candidates(request: SoundingCandidateAnalysisRequest) -> dict[str, object]:
+    try:
+        result = analyze_cached_soundings(
+            load_settings(),
+            station_id=request.station_id,
+            latest_per_station=request.latest_per_station,
+            limit=request.limit,
+            story_filter=request.story_filter,
+            story_family=request.story_family,
+            support=request.support,
+            readiness=request.readiness,
+            station_search=request.station_search,
+            sort_by=request.sort_by,
+            sort_direction=request.sort_direction,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return result.model_dump(mode="json")
+
+
 @app.get("/api/sounding-candidates/saved")
 def get_saved_sounding_candidates() -> dict[str, object]:
     try:
@@ -327,6 +376,19 @@ def create_saved_sounding_candidate(request: SaveCandidateRequest) -> dict[str, 
         saved = save_candidate(load_settings(), request)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return saved.model_dump(mode="json")
+
+
+@app.patch("/api/sounding-candidates/saved/{saved_candidate_id}")
+def update_saved_sounding_candidate(
+    saved_candidate_id: str, request: UpdateSavedCandidateRequest
+) -> dict[str, object]:
+    try:
+        saved = update_saved_candidate(load_settings(), saved_candidate_id, request)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if saved is None:
+        raise HTTPException(status_code=404, detail="Saved sounding candidate not found")
     return saved.model_dump(mode="json")
 
 
@@ -682,6 +744,12 @@ def _run_status_payload(status: RunStatus) -> dict[str, object]:
             },
             "runtime_warnings": [],
             "progress": None,
+            "user": None,
+            "observed_sounding": None,
+            "candidate_screening": None,
+            "package_family": None,
+            "package_display_name": None,
+            "input_source": None,
         }
     return {
         "run_id": status.run_id,
@@ -708,6 +776,12 @@ def _run_status_payload(status: RunStatus) -> dict[str, object]:
         },
         "runtime_warnings": manifest.outputs.runtime_warnings,
         "progress": run_progress_from_manifest(manifest),
+        "user": manifest.user.model_dump(mode="json"),
+        "observed_sounding": manifest.observed_sounding,
+        "candidate_screening": manifest.candidate_screening,
+        "package_family": manifest.package_family,
+        "package_display_name": manifest.package_display_name,
+        "input_source": manifest.input_source,
     }
 
 

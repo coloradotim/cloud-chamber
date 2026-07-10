@@ -191,6 +191,7 @@ const shallowSoundingCandidate = {
   source_provider: "NOAA/NCEI IGRA",
   primary_story: "shallow_cumulus_candidate",
   primary_story_label: "Cloud-forming shallow cumulus",
+  story_family: "lower_atmosphere",
   rank_score: 82,
   confidence: "medium",
   package_ready: true,
@@ -261,6 +262,7 @@ const blockedSoundingCandidate = {
   valid_time_utc: "2025-01-01T00:00:00Z",
   primary_story: "needs_review",
   primary_story_label: "Needs review",
+  story_family: "review",
   rank_score: 40,
   confidence: "low",
   package_ready: false,
@@ -1214,14 +1216,37 @@ export async function mockCloudChamberApis(page: Page) {
     }),
   );
 
-  await page.route("**/api/sounding-candidates/screen", (route) =>
-    json(route, {
+  await page.route("**/api/sounding-candidates/analyze", (route) => {
+    const request = JSON.parse(route.request().postData() ?? "{}") as {
+      story_filter?: string;
+      sort_by?: string;
+    };
+    const storyFilter = request.story_filter ?? "all";
+    const candidates = [shallowSoundingCandidate, blockedSoundingCandidate].filter((candidate) => {
+      if (storyFilter === "all") return true;
+      return candidate.story_scores.some(
+        (score) => score.story === storyFilter && score.support !== "unavailable",
+      );
+    });
+    return json(route, {
       screening_version: "test-screening-v1",
       generated_at: "2026-07-01T12:00:00Z",
-      candidates: [shallowSoundingCandidate, blockedSoundingCandidate],
+      candidates,
+      total_candidate_count: 2,
+      filtered_candidate_count: candidates.length,
+      sort_by: request.sort_by ?? "best_match",
+      sort_direction: "desc",
+      filters: {
+        station_id: null,
+        story_filter: storyFilter,
+        story_family: "all",
+        support: "all",
+        readiness: "all",
+        station_search: "",
+      },
       caveats: ["screening_guidance_only"],
-    }),
-  );
+    });
+  });
 
   await page.route("**/api/sounding-candidates/saved", (route) => {
     if (route.request().method() === "POST") {

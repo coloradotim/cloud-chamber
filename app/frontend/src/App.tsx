@@ -99,6 +99,7 @@ type DryRunReport = {
     visualizer_is_interpretation: boolean;
   };
   observed_sounding?: ObservedSoundingSummary | null;
+  user?: UserRunMetadata | null;
 };
 
 type DryRunResponse = {
@@ -193,15 +194,56 @@ type CandidateStoryFilter =
   | "dry_microburst_inverted_v"
   | "squall_line_cold_pool_candidate"
   | "elevated_convection"
-  | "needs_review";
+  | "needs_review"
+  | "poor_or_incomplete_candidate";
 
 type CandidateSort =
-  | "best"
-  | "latest"
-  | "data_quality"
-  | "lowest_lcl"
-  | "highest_moisture"
-  | "strongest_cap";
+  | "best_match"
+  | "valid_time"
+  | "station_id"
+  | "station_name"
+  | "primary_story"
+  | "story_family"
+  | "rank_score"
+  | "confidence"
+  | "support"
+  | "package_readiness"
+  | "observed_wind_available"
+  | "profile_top_m_agl"
+  | "lowest_level_m_agl"
+  | "data_completeness_score"
+  | "low_level_qv_g_kg"
+  | "mean_qv_0_500m_g_kg"
+  | "mean_qv_0_1000m_g_kg"
+  | "surface_t_td_spread_c"
+  | "estimated_lcl_height_m_agl"
+  | "lapse_rate_0_1000m_c_per_km"
+  | "midlevel_lapse_rate_700_500_hpa_c_per_km"
+  | "cap_strength_proxy"
+  | "cap_height_m_agl"
+  | "bulk_shear_0_1km_m_s"
+  | "bulk_shear_0_3km_m_s"
+  | "bulk_shear_0_6km_m_s"
+  | "midlevel_dry_layer_proxy"
+  | "dry_microburst_inverted_v_proxy"
+  | "freezing_level_m_agl";
+
+type CandidateStoryFamilyFilter = "all" | "lower_atmosphere" | "deep_convection" | "review";
+type CandidateSupportFilter = "all" | "supported" | "weak" | "unavailable";
+type CandidateReadinessFilter = "all" | "package_ready" | "blocked";
+type CandidateRecipeFitStatus =
+  | "testable_now"
+  | "partially_testable"
+  | "requires_triggered_deep_potential"
+  | "requires_surface_forcing_recipe"
+  | "not_testable_with_current_recipes"
+  | "blocked_profile";
+type CandidateRecipeFitDisplay = {
+  status: CandidateRecipeFitStatus;
+  label: string;
+  summary: string;
+  caveats: string[];
+};
 
 type PackageFamily = "shallow_cumulus" | "observed_sounding_quicklook" | "deep_convection_trial";
 
@@ -240,6 +282,7 @@ type SoundingCandidate = {
   source_provider: string;
   primary_story: CandidateStoryId;
   primary_story_label: string;
+  story_family?: CandidateStoryFamilyFilter;
   story_scores: StoryScore[];
   rank_score: number;
   confidence: "low" | "medium" | "high";
@@ -248,6 +291,13 @@ type SoundingCandidate = {
   evidence: EvidenceItem[];
   caveats: string[];
   selected_sounding_payload?: ObservedSoundingRecord | null;
+  interest_summary?: string | null;
+  interest_reasons?: string[];
+  discovery_bucket?: string | null;
+  recipe_fit_status?: CandidateRecipeFitStatus;
+  recipe_fit_label?: string;
+  recipe_fit_summary?: string;
+  recipe_fit_caveats?: string[];
   screening_version: string;
   created_at: string;
 };
@@ -272,6 +322,25 @@ type ScreeningResult = {
   generated_at: string;
   candidates: SoundingCandidate[];
   caveats: string[];
+  total_candidate_count?: number;
+  filtered_candidate_count?: number;
+  sort_by?: CandidateSort;
+  sort_direction?: "asc" | "desc";
+  filters?: {
+    station_id?: string | null;
+    story_filter: CandidateStoryFilter;
+    story_family: CandidateStoryFamilyFilter;
+    support: CandidateSupportFilter;
+    readiness: CandidateReadinessFilter;
+    station_search: string;
+  };
+};
+
+type UserRunMetadata = {
+  name: string;
+  tags: string[];
+  notes?: string | null;
+  saved?: boolean;
 };
 
 type SavedSoundingCandidate = {
@@ -380,6 +449,12 @@ type RunStatusResponse = {
   };
   runtime_warnings: string[];
   progress: RunProgressResponse | null;
+  user?: UserRunMetadata | null;
+  observed_sounding?: ObservedSoundingSummary | null;
+  candidate_screening?: Record<string, unknown> | null;
+  package_family?: PackageFamily | string | null;
+  package_display_name?: string | null;
+  input_source?: string | null;
 };
 
 type RunQueueEntry = {
@@ -961,6 +1036,14 @@ const deepConvectionStoryIds = new Set<string>([
   "squall_line_cold_pool_candidate",
   "elevated_convection",
 ]);
+const candidateSuggestedTags = [
+  "Deep convection candidates",
+  "Surface-forced candidates",
+  "Needs longer run",
+  "Needs finer output cadence",
+  "Maybe rerun",
+  "Needs review",
+] as const;
 
 async function fetchScenarioCatalog(): Promise<ScenarioResponse> {
   const response = await fetch("/api/scenarios");
@@ -977,6 +1060,11 @@ async function requestDryRunPackage(
   packageFamily?: PackageFamily | null,
   observedSounding?: ObservedSoundingRecord | null,
   candidateScreening?: Record<string, unknown> | null,
+  userMetadata?: {
+    name?: string | null;
+    tags?: string[];
+    notes?: string | null;
+  } | null,
 ): Promise<DryRunResponse> {
   const response = await fetch("/api/dry-run-package", {
     method: "POST",
@@ -988,6 +1076,9 @@ async function requestDryRunPackage(
       package_family: packageFamily ?? null,
       observed_sounding: observedSounding ?? null,
       candidate_screening: candidateScreening ?? null,
+      user_name: userMetadata?.name ?? null,
+      user_tags: userMetadata?.tags ?? [],
+      user_notes: userMetadata?.notes ?? null,
     }),
   });
   if (!response.ok) {
@@ -1060,21 +1151,32 @@ async function fetchScreeningInputs(): Promise<ScreeningInputsResponse> {
   return response.json() as Promise<ScreeningInputsResponse>;
 }
 
-async function screenSoundingCandidates(
-  story: CandidateStoryFilter,
-  options: { latestPerStation: number; limit: number },
-): Promise<ScreeningResult> {
-  const response = await fetch("/api/sounding-candidates/screen", {
+async function screenSoundingCandidates(options: {
+  story: CandidateStoryFilter;
+  storyFamily: CandidateStoryFamilyFilter;
+  support: CandidateSupportFilter;
+  readiness: CandidateReadinessFilter;
+  stationSearch: string;
+  sort: CandidateSort;
+  latestPerStation: number;
+  limit: number;
+}): Promise<ScreeningResult> {
+  const response = await fetch("/api/sounding-candidates/analyze", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       latest_per_station: options.latestPerStation,
       limit: options.limit,
-      target_story: story === "all" ? null : story,
+      story_filter: options.story,
+      story_family: options.storyFamily,
+      support: options.support,
+      readiness: options.readiness,
+      station_search: options.stationSearch,
+      sort_by: options.sort,
     }),
   });
   if (!response.ok) {
-    throw new Error(await responseError(response, "Unable to screen cached soundings."));
+    throw new Error(await responseError(response, "Unable to analyze cached soundings."));
   }
   return response.json() as Promise<ScreeningResult>;
 }
@@ -1089,14 +1191,32 @@ async function fetchSavedSoundingCandidates(): Promise<SavedCandidatesResponse> 
 
 async function saveSoundingCandidate(
   candidate: SoundingCandidate,
+  tags: string[],
+  notes: string | null,
 ): Promise<SavedSoundingCandidate> {
   const response = await fetch("/api/sounding-candidates/saved", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ candidate, tags: ["build-candidate"] }),
+    body: JSON.stringify({ candidate, tags, notes }),
   });
   if (!response.ok) {
     throw new Error(await responseError(response, "Unable to save sounding candidate."));
+  }
+  return response.json() as Promise<SavedSoundingCandidate>;
+}
+
+async function updateSavedSoundingCandidate(
+  savedCandidateId: string,
+  tags: string[],
+  notes: string | null,
+): Promise<SavedSoundingCandidate> {
+  const response = await fetch(`/api/sounding-candidates/saved/${savedCandidateId}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ tags, notes }),
+  });
+  if (!response.ok) {
+    throw new Error(await responseError(response, "Unable to update saved sounding candidate."));
   }
   return response.json() as Promise<SavedSoundingCandidate>;
 }
@@ -1460,11 +1580,14 @@ export function App() {
   const [igraCache, setIgraCache] = useState<IGRACacheResponse | null>(null);
   const [screeningInputs, setScreeningInputs] = useState<ScreeningInput[]>([]);
   const [candidateStoryFilter, setCandidateStoryFilter] = useState<CandidateStoryFilter>("all");
-  const [candidateSort, setCandidateSort] = useState<CandidateSort>("best");
+  const [candidateStoryFamilyFilter, setCandidateStoryFamilyFilter] =
+    useState<CandidateStoryFamilyFilter>("all");
+  const [candidateSupportFilter, setCandidateSupportFilter] =
+    useState<CandidateSupportFilter>("all");
+  const [candidateSort, setCandidateSort] = useState<CandidateSort>("best_match");
   const [candidateStationSearch, setCandidateStationSearch] = useState("");
-  const [candidateReadinessFilter, setCandidateReadinessFilter] = useState<
-    "all" | "package_ready" | "blocked"
-  >("all");
+  const [candidateReadinessFilter, setCandidateReadinessFilter] =
+    useState<CandidateReadinessFilter>("all");
   const [candidateCacheLimit, setCandidateCacheLimit] = useState("10");
   const [candidateLatestPerStation, setCandidateLatestPerStation] = useState("5");
   const [candidateResultLimit, setCandidateResultLimit] = useState("50");
@@ -1497,9 +1620,7 @@ export function App() {
   const [storageError, setStorageError] = useState<string | null>(null);
   const [runDeletePreview, setRunDeletePreview] = useState<DeleteRunResponse | null>(null);
   const [runDeleteMessage, setRunDeleteMessage] = useState<string | null>(null);
-  const [resultDeletePreview, setResultDeletePreview] = useState<DeleteResultResponse | null>(
-    null,
-  );
+  const [resultDeletePreview, setResultDeletePreview] = useState<DeleteResultResponse | null>(null);
   const [resultDeleteMessage, setResultDeleteMessage] = useState<string | null>(null);
   const [, setStatus] = useState("Loading scenarios...");
   const [scenarioLoadState, setScenarioLoadState] = useState<ScenarioLoadState>("loading");
@@ -1748,8 +1869,7 @@ export function App() {
       const payload = await fetchStorageInventory();
       setStorageInventory(payload);
       setStorageStatus(
-        statusWhenLoaded ??
-          (payload.runs.length > 0 ? "Run inventory loaded" : "No runtime runs"),
+        statusWhenLoaded ?? (payload.runs.length > 0 ? "Run inventory loaded" : "No runtime runs"),
       );
     } catch (caught) {
       setStorageError(
@@ -1891,9 +2011,15 @@ export function App() {
 
   async function handleScreenSoundingCandidates() {
     setCandidateError(null);
-    setCandidateStatus("Screening cached soundings");
+    setCandidateStatus("Analyzing cached soundings");
     try {
-      const result = await screenSoundingCandidates(candidateStoryFilter, {
+      const result = await screenSoundingCandidates({
+        story: candidateStoryFilter,
+        storyFamily: candidateStoryFamilyFilter,
+        support: candidateSupportFilter,
+        readiness: candidateReadinessFilter,
+        stationSearch: candidateStationSearch,
+        sort: candidateSort,
         latestPerStation: boundedInteger(candidateLatestPerStation, 1, 50, 5),
         limit: boundedInteger(candidateResultLimit, 1, 200, 50),
       });
@@ -1901,29 +2027,58 @@ export function App() {
       setCandidateDetailId(result.candidates[0]?.candidate_id ?? null);
       setCandidateStatus(
         result.candidates.length > 0
-          ? "Screening guidance loaded"
-          : "No candidate matches found in cached soundings",
+          ? "Cached sounding analysis loaded"
+          : "No candidates found in cached soundings",
       );
       const savedPayload = await fetchSavedSoundingCandidates();
       setSavedCandidates(savedPayload.saved_candidates);
     } catch (caught) {
       setCandidateError(
-        caught instanceof Error ? caught.message : "Unable to screen cached soundings.",
+        caught instanceof Error ? caught.message : "Unable to analyze cached soundings.",
       );
-      setCandidateStatus("Candidate screening failed");
+      setCandidateStatus("Candidate analysis failed");
     }
   }
 
-  async function handleSaveSoundingCandidate(candidate: SoundingCandidate) {
+  function handleClearCandidateAnalysisFilters() {
+    setCandidateStoryFilter("all");
+    setCandidateStoryFamilyFilter("all");
+    setCandidateSupportFilter("all");
+    setCandidateStationSearch("");
+    setCandidateReadinessFilter("all");
+    setCandidateSort("best_match");
+    setCandidateStatus("Showing default discovery settings; run Analyze recommendations");
+  }
+
+  async function handleSaveSoundingCandidate(
+    candidate: SoundingCandidate,
+    tags: string[] = [],
+    notes: string | null = null,
+  ) {
     setCandidateError(null);
-    setCandidateStatus("Saving sounding candidate");
+    const existing = savedCandidates.find(
+      (saved) => saved.candidate.candidate_id === candidate.candidate_id,
+    );
+    setCandidateStatus(
+      existing ? "Updating saved sounding candidate" : "Saving sounding candidate",
+    );
     try {
-      const saved = await saveSoundingCandidate(candidate);
-      setSavedCandidates((current) => [
-        saved,
-        ...current.filter((item) => item.saved_candidate_id !== saved.saved_candidate_id),
-      ]);
-      setCandidateStatus("Sounding candidate saved");
+      if (existing) {
+        const saved = await updateSavedSoundingCandidate(existing.saved_candidate_id, tags, notes);
+        setSavedCandidates((current) =>
+          current.map((item) =>
+            item.saved_candidate_id === saved.saved_candidate_id ? saved : item,
+          ),
+        );
+        setCandidateStatus("Saved sounding candidate updated");
+      } else {
+        const saved = await saveSoundingCandidate(candidate, tags, notes);
+        setSavedCandidates((current) => [
+          saved,
+          ...current.filter((item) => item.saved_candidate_id !== saved.saved_candidate_id),
+        ]);
+        setCandidateStatus("Sounding candidate saved");
+      }
     } catch (caught) {
       setCandidateError(
         caught instanceof Error ? caught.message : "Unable to save sounding candidate.",
@@ -1952,6 +2107,7 @@ export function App() {
   function handleUseSoundingCandidate(
     candidate: SoundingCandidate,
     savedCandidate?: SavedSoundingCandidate,
+    activeStory?: CandidateStoryId,
   ) {
     if (!candidate.package_ready || !candidate.selected_sounding_payload) {
       setCandidateError(
@@ -1966,8 +2122,8 @@ export function App() {
     setObservedSoundingParse(observedSoundingParseFromCandidate(candidate, selectedSounding));
     setObservedSoundingStatus("Candidate loaded into observed-sounding package review");
     setObservedSoundingError(null);
-    setSelectedCandidateScreening(candidateScreeningMetadata(candidate, savedCandidate));
-    setObservedPackageFamily(defaultPackageFamilyForCandidate(candidate));
+    setSelectedCandidateScreening(candidateScreeningMetadata(candidate, savedCandidate, activeStory));
+    setObservedPackageFamily(defaultPackageFamilyForCandidate(candidate, activeStory));
     setDryRun(null);
     setRunStatus(null);
     setRunWorkflowError(null);
@@ -1994,6 +2150,9 @@ export function App() {
     setLanWorkerError(null);
     setLanWorkerActionStatus(null);
     setIngestedResultId(null);
+    const packageUserMetadata = observedSoundingExperimentSelected
+      ? runUserMetadataFromCandidateScreening(selectedCandidateScreening)
+      : null;
     try {
       const result = await requestDryRunPackage(
         selectedScenario.id,
@@ -2002,6 +2161,7 @@ export function App() {
         observedSoundingExperimentSelected ? observedPackageFamily : null,
         observedSoundingExperimentSelected ? observedSoundingParse?.selected_sounding : null,
         observedSoundingExperimentSelected ? selectedCandidateScreening : null,
+        packageUserMetadata,
       );
       setDryRun(result);
       setStatus("Packaged dry-run output");
@@ -2470,7 +2630,9 @@ export function App() {
       setResultsStatus(deleteMessage);
       await refreshStorageAfterWorkflow("Local pipeline updated");
     } catch (caught) {
-      setResultsError(caught instanceof Error ? caught.message : "Unable to delete selected result.");
+      setResultsError(
+        caught instanceof Error ? caught.message : "Unable to delete selected result.",
+      );
       setResultsStatus("Delete failed");
     }
   }
@@ -2517,6 +2679,8 @@ export function App() {
           igraCache={igraCache}
           screeningInputs={screeningInputs}
           candidateStoryFilter={candidateStoryFilter}
+          candidateStoryFamilyFilter={candidateStoryFamilyFilter}
+          candidateSupportFilter={candidateSupportFilter}
           candidateSort={candidateSort}
           candidateStationSearch={candidateStationSearch}
           candidateReadinessFilter={candidateReadinessFilter}
@@ -2559,9 +2723,12 @@ export function App() {
           onObservedSoundingFile={handleObservedSoundingFile}
           onObservedSoundingTimeChange={handleObservedSoundingTimeChange}
           onCandidateStoryFilterChange={setCandidateStoryFilter}
+          onCandidateStoryFamilyFilterChange={setCandidateStoryFamilyFilter}
+          onCandidateSupportFilterChange={setCandidateSupportFilter}
           onCandidateSortChange={setCandidateSort}
           onCandidateStationSearchChange={setCandidateStationSearch}
           onCandidateReadinessFilterChange={setCandidateReadinessFilter}
+          onClearCandidateAnalysisFilters={handleClearCandidateAnalysisFilters}
           onCandidateCacheLimitChange={setCandidateCacheLimit}
           onCandidateLatestPerStationChange={setCandidateLatestPerStation}
           onCandidateResultLimitChange={setCandidateResultLimit}
@@ -2661,6 +2828,8 @@ function BuildWorkspace({
   igraCache,
   screeningInputs,
   candidateStoryFilter,
+  candidateStoryFamilyFilter,
+  candidateSupportFilter,
   candidateSort,
   candidateStationSearch,
   candidateReadinessFilter,
@@ -2698,9 +2867,12 @@ function BuildWorkspace({
   onObservedSoundingFile,
   onObservedSoundingTimeChange,
   onCandidateStoryFilterChange,
+  onCandidateStoryFamilyFilterChange,
+  onCandidateSupportFilterChange,
   onCandidateSortChange,
   onCandidateStationSearchChange,
   onCandidateReadinessFilterChange,
+  onClearCandidateAnalysisFilters,
   onCandidateCacheLimitChange,
   onCandidateLatestPerStationChange,
   onCandidateResultLimitChange,
@@ -2751,9 +2923,11 @@ function BuildWorkspace({
   igraCache: IGRACacheResponse | null;
   screeningInputs: ScreeningInput[];
   candidateStoryFilter: CandidateStoryFilter;
+  candidateStoryFamilyFilter: CandidateStoryFamilyFilter;
+  candidateSupportFilter: CandidateSupportFilter;
   candidateSort: CandidateSort;
   candidateStationSearch: string;
-  candidateReadinessFilter: "all" | "package_ready" | "blocked";
+  candidateReadinessFilter: CandidateReadinessFilter;
   candidateCacheLimit: string;
   candidateLatestPerStation: string;
   candidateResultLimit: string;
@@ -2788,9 +2962,12 @@ function BuildWorkspace({
   onObservedSoundingFile: (file: File) => void;
   onObservedSoundingTimeChange: (validTimeUtc: string) => void;
   onCandidateStoryFilterChange: (filter: CandidateStoryFilter) => void;
+  onCandidateStoryFamilyFilterChange: (filter: CandidateStoryFamilyFilter) => void;
+  onCandidateSupportFilterChange: (filter: CandidateSupportFilter) => void;
   onCandidateSortChange: (sort: CandidateSort) => void;
   onCandidateStationSearchChange: (value: string) => void;
-  onCandidateReadinessFilterChange: (filter: "all" | "package_ready" | "blocked") => void;
+  onCandidateReadinessFilterChange: (filter: CandidateReadinessFilter) => void;
+  onClearCandidateAnalysisFilters: () => void;
   onCandidateCacheLimitChange: (value: string) => void;
   onCandidateLatestPerStationChange: (value: string) => void;
   onCandidateResultLimitChange: (value: string) => void;
@@ -2975,6 +3152,8 @@ function BuildWorkspace({
                     cache={igraCache}
                     screeningInputs={screeningInputs}
                     storyFilter={candidateStoryFilter}
+                    storyFamilyFilter={candidateStoryFamilyFilter}
+                    supportFilter={candidateSupportFilter}
                     sort={candidateSort}
                     stationSearch={candidateStationSearch}
                     readinessFilter={candidateReadinessFilter}
@@ -2987,9 +3166,12 @@ function BuildWorkspace({
                     savedCandidates={savedCandidates}
                     selectedCandidateId={candidateDetailId}
                     onStoryFilterChange={onCandidateStoryFilterChange}
+                    onStoryFamilyFilterChange={onCandidateStoryFamilyFilterChange}
+                    onSupportFilterChange={onCandidateSupportFilterChange}
                     onSortChange={onCandidateSortChange}
                     onStationSearchChange={onCandidateStationSearchChange}
                     onReadinessFilterChange={onCandidateReadinessFilterChange}
+                    onClearFilters={onClearCandidateAnalysisFilters}
                     onCacheLimitChange={onCandidateCacheLimitChange}
                     onLatestPerStationChange={onCandidateLatestPerStationChange}
                     onResultLimitChange={onCandidateResultLimitChange}
@@ -3181,6 +3363,8 @@ function ObservedAtmosphereCandidatesPanel({
   cache,
   screeningInputs,
   storyFilter,
+  storyFamilyFilter,
+  supportFilter,
   sort,
   stationSearch,
   readinessFilter,
@@ -3193,9 +3377,12 @@ function ObservedAtmosphereCandidatesPanel({
   savedCandidates,
   selectedCandidateId,
   onStoryFilterChange,
+  onStoryFamilyFilterChange,
+  onSupportFilterChange,
   onSortChange,
   onStationSearchChange,
   onReadinessFilterChange,
+  onClearFilters,
   onCacheLimitChange,
   onLatestPerStationChange,
   onResultLimitChange,
@@ -3211,9 +3398,11 @@ function ObservedAtmosphereCandidatesPanel({
   cache: IGRACacheResponse | null;
   screeningInputs: ScreeningInput[];
   storyFilter: CandidateStoryFilter;
+  storyFamilyFilter: CandidateStoryFamilyFilter;
+  supportFilter: CandidateSupportFilter;
   sort: CandidateSort;
   stationSearch: string;
-  readinessFilter: "all" | "package_ready" | "blocked";
+  readinessFilter: CandidateReadinessFilter;
   cacheLimit: string;
   latestPerStation: string;
   resultLimit: string;
@@ -3223,9 +3412,12 @@ function ObservedAtmosphereCandidatesPanel({
   savedCandidates: SavedSoundingCandidate[];
   selectedCandidateId: string | null;
   onStoryFilterChange: (filter: CandidateStoryFilter) => void;
+  onStoryFamilyFilterChange: (filter: CandidateStoryFamilyFilter) => void;
+  onSupportFilterChange: (filter: CandidateSupportFilter) => void;
   onSortChange: (sort: CandidateSort) => void;
   onStationSearchChange: (value: string) => void;
-  onReadinessFilterChange: (filter: "all" | "package_ready" | "blocked") => void;
+  onReadinessFilterChange: (filter: CandidateReadinessFilter) => void;
+  onClearFilters: () => void;
   onCacheLimitChange: (value: string) => void;
   onLatestPerStationChange: (value: string) => void;
   onResultLimitChange: (value: string) => void;
@@ -3233,20 +3425,15 @@ function ObservedAtmosphereCandidatesPanel({
   onRefreshIGRAData: () => void;
   onCacheStationFiles: () => void;
   onScreen: () => void;
-  onSave: (candidate: SoundingCandidate) => void;
+  onSave: (candidate: SoundingCandidate, tags?: string[], notes?: string | null) => void;
   onRemoveSaved: (savedCandidateId: string) => void;
-  onUse: (candidate: SoundingCandidate, savedCandidate?: SavedSoundingCandidate) => void;
+  onUse: (
+    candidate: SoundingCandidate,
+    savedCandidate?: SavedSoundingCandidate,
+    activeStory?: CandidateStoryId,
+  ) => void;
 }) {
-  const visibleCandidates = useMemo(
-    () =>
-      sortSoundingCandidates(screening?.candidates ?? [], {
-        story: storyFilter,
-        sort,
-        stationSearch,
-        readiness: readinessFilter,
-      }),
-    [readinessFilter, screening?.candidates, sort, stationSearch, storyFilter],
-  );
+  const visibleCandidates = screening?.candidates ?? [];
   const selectedCandidate =
     visibleCandidates.find((candidate) => candidate.candidate_id === selectedCandidateId) ??
     visibleCandidates[0] ??
@@ -3255,6 +3442,12 @@ function ObservedAtmosphereCandidatesPanel({
     () => new Set(savedCandidates.map((saved) => saved.candidate.candidate_id)),
     [savedCandidates],
   );
+  const selectedSavedCandidate =
+    selectedCandidate === null
+      ? null
+      : (savedCandidates.find(
+          (saved) => saved.candidate.candidate_id === selectedCandidate.candidate_id,
+        ) ?? null);
   const cachedStations = new Set((cache?.entries ?? []).map((entry) => entry.station_id)).size;
   const cachedStationFiles = cache?.entries.length ?? 0;
   const cachedCatalogFiles =
@@ -3264,10 +3457,35 @@ function ObservedAtmosphereCandidatesPanel({
     (total, input) => total + (input.sounding_count ?? 0),
     0,
   );
-  const screenableSummary =
+  const cachedInventorySummary =
     screenableSoundingCount > 0
-      ? `${screenableSoundingCount.toLocaleString()} soundings`
+      ? `${screenableSoundingCount.toLocaleString()} cached soundings`
       : `${screeningInputs.length.toLocaleString()} cached files`;
+  const latestPerCachedFile = boundedInteger(latestPerStation, 1, 50, 5);
+  const plannedAnalysisCount = screeningInputs.reduce((total, input) => {
+    const count = input.sounding_count;
+    if (typeof count === "number" && Number.isFinite(count)) {
+      return total + Math.min(count, latestPerCachedFile);
+    }
+    return total + latestPerCachedFile;
+  }, 0);
+  const plannedAnalysisSummary =
+    screeningInputs.length > 0
+      ? `Up to ${plannedAnalysisCount.toLocaleString()} soundings (${latestPerCachedFile.toLocaleString()} per cached file)`
+      : "No cached files";
+  const lastAnalysisSummary = screening
+    ? `${visibleCandidates.length.toLocaleString()} shown from ${(
+        screening.filtered_candidate_count ?? visibleCandidates.length
+      ).toLocaleString()} selected / ${(screening.total_candidate_count ?? visibleCandidates.length).toLocaleString()} analyzed`
+    : "Not run yet";
+  const activeRefinements = [
+    storyFilter !== "all" ? `Story: ${candidateStoryLabel(storyFilter)}` : null,
+    storyFamilyFilter !== "all" ? `Family: ${candidateStoryFamilyLabel(storyFamilyFilter)}` : null,
+    supportFilter !== "all" ? `Support: ${humanize(supportFilter)}` : null,
+    readinessFilter !== "all" ? `Readiness: ${humanize(readinessFilter)}` : null,
+    stationSearch.trim() ? `Station search: ${stationSearch.trim()}` : null,
+    sort !== "best_match" ? `Sort: ${candidateSortLabel(sort)}` : null,
+  ].filter((item): item is string => item !== null);
 
   return (
     <section
@@ -3279,8 +3497,8 @@ function ObservedAtmosphereCandidatesPanel({
           <p className="eyebrow">Observed atmosphere</p>
           <h3 id="sounding-candidates-title">Find interesting soundings</h3>
           <p className="field-help">
-            Screening guidance only. Use this to choose an observed atmosphere to try; CM1 decides
-            what actually happens.
+            Screening guidance only. The cache inventory is local data; recommendations analyze the
+            latest bounded slice from those cached files.
           </p>
         </div>
         <p className="state-chip" role="status">
@@ -3296,7 +3514,9 @@ function ObservedAtmosphereCandidatesPanel({
         />
         <Metric label="Cached stations" value={cachedStations.toString()} />
         <Metric label="Cached station files" value={cachedCatalogFiles.toString()} />
-        <Metric label="Screenable soundings" value={screenableSummary} />
+        <Metric label="Cached sounding inventory" value={cachedInventorySummary} />
+        <Metric label="Planned analysis slice" value={plannedAnalysisSummary} />
+        <Metric label="Last analysis" value={lastAnalysisSummary} />
       </dl>
 
       {error && (
@@ -3305,123 +3525,202 @@ function ObservedAtmosphereCandidatesPanel({
         </div>
       )}
 
-      <div className="candidate-toolbar" aria-label="Sounding candidate controls">
-        <label>
-          Story filter
-          <select
-            value={storyFilter}
-            onChange={(event) => onStoryFilterChange(event.target.value as CandidateStoryFilter)}
-          >
-            <option value="all">All screening stories</option>
-            <option value="deep_convection_trial">Deep Convection Trial stories</option>
-            <option value="shallow_cumulus_candidate">Cloud-forming shallow cumulus</option>
-            <option value="dry_failed_candidate">Dry failed cumulus</option>
-            <option value="capped_suppressed_candidate">Capped / suppressed</option>
-            <option value="humid_rainy_candidate">Humid / rainy</option>
-            <option value="severe_thunderstorm_environment">Severe thunderstorm environment</option>
-            <option value="supercell_environment">Supercell-like environment</option>
-            <option value="high_cape_pulse_storm">High-CAPE pulse storm</option>
-            <option value="dry_microburst_inverted_v">Dry microburst / inverted-V</option>
-            <option value="squall_line_cold_pool_candidate">
-              Squall-line / cold-pool candidate
-            </option>
-            <option value="elevated_convection">Elevated convection</option>
-            <option value="needs_review">Needs review</option>
-          </select>
-        </label>
-        <label>
-          Sort
-          <select
-            value={sort}
-            onChange={(event) => onSortChange(event.target.value as CandidateSort)}
-          >
-            <option value="best">Best match for story</option>
-            <option value="latest">Latest</option>
-            <option value="data_quality">Best data quality</option>
-            <option value="lowest_lcl">Lowest LCL</option>
-            <option value="highest_moisture">Highest low-level moisture</option>
-            <option value="strongest_cap">Strongest cap</option>
-          </select>
-        </label>
-        <label>
-          Station search
-          <input
-            type="search"
-            value={stationSearch}
-            placeholder="Station name, ID, or state"
-            onChange={(event) => onStationSearchChange(event.target.value)}
-          />
-        </label>
-        <label>
-          Readiness
-          <select
-            value={readinessFilter}
-            onChange={(event) =>
-              onReadinessFilterChange(event.target.value as "all" | "package_ready" | "blocked")
-            }
-          >
-            <option value="all">All readiness states</option>
-            <option value="package_ready">Package-ready only</option>
-            <option value="blocked">Blocked / needs review</option>
-          </select>
-        </label>
-        <label>
-          Cache up to
-          <input
-            type="number"
-            min="1"
-            max="100"
-            value={cacheLimit}
-            onChange={(event) => onCacheLimitChange(event.target.value)}
-          />
-        </label>
-        <label>
-          Latest per station
-          <input
-            type="number"
-            min="1"
-            max="50"
-            value={latestPerStation}
-            onChange={(event) => onLatestPerStationChange(event.target.value)}
-          />
-        </label>
-        <label>
-          Candidate limit
-          <input
-            type="number"
-            min="1"
-            max="200"
-            value={resultLimit}
-            onChange={(event) => onResultLimitChange(event.target.value)}
-          />
-        </label>
-        <div className="button-row candidate-toolbar-actions">
-          <button type="button" onClick={onRefreshIGRAData}>
-            Refresh IGRA catalog
-          </button>
-          <button type="button" className="secondary-button" onClick={onCacheStationFiles}>
-            Cache station files
-          </button>
-          <button type="button" onClick={onScreen}>
-            Screen cached soundings
+      <div className="candidate-discovery-actions" aria-label="Sounding candidate actions">
+        <button type="button" onClick={onScreen}>
+          Analyze recommendations
+        </button>
+        <button type="button" className="secondary-button" onClick={onRefreshIGRAData}>
+          Refresh IGRA catalog
+        </button>
+        <button type="button" className="secondary-button" onClick={onCacheStationFiles}>
+          Cache station files
+        </button>
+      </div>
+
+      {activeRefinements.length > 0 && (
+        <div className="screening-guidance-note">
+          <strong>Refined view</strong>
+          <span>{activeRefinements.join(" · ")}</span>
+          <button type="button" className="link-button" onClick={onClearFilters}>
+            Clear refinements
           </button>
         </div>
-      </div>
+      )}
+
+      <details className="candidate-advanced-filters" open={activeRefinements.length > 0}>
+        <summary>Advanced filters</summary>
+        <div className="candidate-toolbar" aria-label="Advanced sounding candidate controls">
+          <label>
+            Story
+            <select
+              value={storyFilter}
+              onChange={(event) => onStoryFilterChange(event.target.value as CandidateStoryFilter)}
+            >
+              <option value="all">All screening stories</option>
+              <option value="deep_convection_trial">Deep Convection Trial stories</option>
+              <option value="shallow_cumulus_candidate">Cloud-forming shallow cumulus</option>
+              <option value="dry_failed_candidate">Dry failed cumulus</option>
+              <option value="capped_suppressed_candidate">Capped / suppressed</option>
+              <option value="humid_rainy_candidate">Humid / rainy</option>
+              <option value="severe_thunderstorm_environment">
+                Severe thunderstorm environment
+              </option>
+              <option value="supercell_environment">Supercell-like environment</option>
+              <option value="high_cape_pulse_storm">High-CAPE pulse storm</option>
+              <option value="dry_microburst_inverted_v">Dry microburst / inverted-V</option>
+              <option value="squall_line_cold_pool_candidate">
+                Squall-line / cold-pool candidate
+              </option>
+              <option value="elevated_convection">Elevated convection</option>
+              <option value="needs_review">Needs review</option>
+              <option value="poor_or_incomplete_candidate">Poor or incomplete</option>
+            </select>
+          </label>
+          <label>
+            Story family
+            <select
+              value={storyFamilyFilter}
+              onChange={(event) =>
+                onStoryFamilyFilterChange(event.target.value as CandidateStoryFamilyFilter)
+              }
+            >
+              <option value="all">All families</option>
+              <option value="lower_atmosphere">Lower-atmosphere stories</option>
+              <option value="deep_convection">Deep-convection stories</option>
+              <option value="review">Needs review / incomplete</option>
+            </select>
+          </label>
+          <label>
+            Support
+            <select
+              value={supportFilter}
+              onChange={(event) =>
+                onSupportFilterChange(event.target.value as CandidateSupportFilter)
+              }
+            >
+              <option value="all">All support states</option>
+              <option value="supported">Supported</option>
+              <option value="weak">Weak support</option>
+              <option value="unavailable">Unavailable</option>
+            </select>
+          </label>
+          <label>
+            Sort
+            <select
+              value={sort}
+              onChange={(event) => onSortChange(event.target.value as CandidateSort)}
+            >
+              <option value="best_match">Recommended</option>
+              <option value="valid_time">Valid time</option>
+              <option value="station_id">Station ID</option>
+              <option value="station_name">Station name</option>
+              <option value="primary_story">Primary story</option>
+              <option value="story_family">Story family</option>
+              <option value="rank_score">Rank score</option>
+              <option value="confidence">Confidence</option>
+              <option value="support">Support state</option>
+              <option value="package_readiness">Package readiness</option>
+              <option value="observed_wind_available">Observed wind availability</option>
+              <option value="profile_top_m_agl">Profile top</option>
+              <option value="lowest_level_m_agl">Lowest usable level</option>
+              <option value="data_completeness_score">Data completeness</option>
+              <option value="low_level_qv_g_kg">Low-level qv</option>
+              <option value="mean_qv_0_500m_g_kg">Mean qv 0-500 m</option>
+              <option value="mean_qv_0_1000m_g_kg">Mean qv 0-1 km</option>
+              <option value="surface_t_td_spread_c">Surface T-Td spread</option>
+              <option value="estimated_lcl_height_m_agl">Estimated LCL</option>
+              <option value="lapse_rate_0_1000m_c_per_km">Low-level lapse rate</option>
+              <option value="midlevel_lapse_rate_700_500_hpa_c_per_km">Midlevel lapse rate</option>
+              <option value="cap_strength_proxy">Cap/inversion strength</option>
+              <option value="cap_height_m_agl">Cap/inversion height</option>
+              <option value="bulk_shear_0_1km_m_s">Bulk shear 0-1 km</option>
+              <option value="bulk_shear_0_3km_m_s">Bulk shear 0-3 km</option>
+              <option value="bulk_shear_0_6km_m_s">Bulk shear 0-6 km</option>
+              <option value="midlevel_dry_layer_proxy">Dry-layer proxy</option>
+              <option value="dry_microburst_inverted_v_proxy">Inverted-V proxy</option>
+              <option value="freezing_level_m_agl">Freezing level</option>
+            </select>
+          </label>
+          <label>
+            Station search
+            <input
+              type="search"
+              value={stationSearch}
+              placeholder="Station name, ID, or state"
+              onChange={(event) => onStationSearchChange(event.target.value)}
+            />
+          </label>
+          <label>
+            Readiness
+            <select
+              value={readinessFilter}
+              onChange={(event) =>
+                onReadinessFilterChange(event.target.value as CandidateReadinessFilter)
+              }
+            >
+              <option value="all">All readiness states</option>
+              <option value="package_ready">Package-ready only</option>
+              <option value="blocked">Blocked / needs review</option>
+            </select>
+          </label>
+          <label>
+            Cache station files up to
+            <input
+              type="number"
+              min="1"
+              max="100"
+              value={cacheLimit}
+              onChange={(event) => onCacheLimitChange(event.target.value)}
+            />
+          </label>
+          <label>
+            Latest per cached file
+            <input
+              type="number"
+              min="1"
+              max="50"
+              value={latestPerStation}
+              onChange={(event) => onLatestPerStationChange(event.target.value)}
+            />
+          </label>
+          <label>
+            Returned candidate limit
+            <input
+              type="number"
+              min="1"
+              max="200"
+              value={resultLimit}
+              onChange={(event) => onResultLimitChange(event.target.value)}
+            />
+          </label>
+        </div>
+      </details>
 
       <div className="candidate-workspace">
         <section aria-label="Screened sounding candidates">
           {screening && (
-            <p className="field-help">
-              Showing {visibleCandidates.length.toLocaleString()} of{" "}
-              {screening.candidates.length.toLocaleString()} screened candidates.
-            </p>
+            <div className="candidate-list-heading">
+              <h4>
+                {activeRefinements.length > 0
+                  ? "Refined candidates"
+                  : "Recommended cached soundings"}
+              </h4>
+              <p className="field-help">
+                Showing {visibleCandidates.length.toLocaleString()} candidates
+                {screening.total_candidate_count !== undefined
+                  ? ` from ${screening.total_candidate_count.toLocaleString()} analyzed cached soundings`
+                  : ""}
+                . Scores rank sounding ingredients only. They do not predict what the current CM1
+                package will produce.
+              </p>
+            </div>
           )}
           {visibleCandidates.length === 0 ? (
             <div className="scenario-state-panel">
               <h4>No screened candidates loaded</h4>
               <p>
-                Refresh the IGRA catalog to check available stations, cache a bounded batch of
-                station files, then screen cached soundings by atmospheric story.
+                Refresh the IGRA catalog if needed, cache station files, then analyze
+                recommendations from the soundings already cached locally.
               </p>
             </div>
           ) : (
@@ -3431,18 +3730,33 @@ function ObservedAtmosphereCandidatesPanel({
                   key={candidate.candidate_id}
                   candidate={candidate}
                   storyFilter={storyFilter}
+                  storyFamilyFilter={storyFamilyFilter}
                   selected={selectedCandidate?.candidate_id === candidate.candidate_id}
                   saved={savedCandidateIds.has(candidate.candidate_id)}
                   onSelect={() => onCandidateDetailChange(candidate.candidate_id)}
                   onSave={() => onSave(candidate)}
-                  onUse={() => onUse(candidate)}
+                  onUse={(activeStory) =>
+                    onUse(
+                      candidate,
+                      savedCandidates.find(
+                        (saved) => saved.candidate.candidate_id === candidate.candidate_id,
+                      ),
+                      activeStory,
+                    )
+                  }
                 />
               ))}
             </div>
           )}
         </section>
 
-        <SoundingCandidateDetail candidate={selectedCandidate} storyFilter={storyFilter} />
+        <SoundingCandidateDetail
+          candidate={selectedCandidate}
+          storyFilter={storyFilter}
+          storyFamilyFilter={storyFamilyFilter}
+          savedCandidate={selectedSavedCandidate}
+          onSave={onSave}
+        />
       </div>
 
       <section className="saved-candidates-panel" aria-labelledby="saved-candidates-title">
@@ -3460,34 +3774,13 @@ function ObservedAtmosphereCandidatesPanel({
         ) : (
           <div className="saved-candidate-list">
             {savedCandidates.map((saved) => (
-              <article
-                className="saved-candidate-card"
+              <SavedSoundingCandidateCard
                 key={saved.saved_candidate_id}
-                aria-label={`Saved sounding candidate ${candidateStationLabel(saved.candidate)}`}
-              >
-                <div>
-                  <strong>{candidateStationLabel(saved.candidate)}</strong>
-                  <small>
-                    {formatDate(saved.candidate.valid_time_utc)} ·{" "}
-                    {candidateStoryLabel(saved.primary_story)}
-                  </small>
-                  {saved.linked_run_ids.length > 0 && (
-                    <small>Used in {saved.linked_run_ids.join(", ")}</small>
-                  )}
-                </div>
-                <div className="button-row">
-                  <button type="button" onClick={() => onUse(saved.candidate, saved)}>
-                    Use to create package
-                  </button>
-                  <button
-                    type="button"
-                    className="secondary-button"
-                    onClick={() => onRemoveSaved(saved.saved_candidate_id)}
-                  >
-                    Remove saved
-                  </button>
-                </div>
-              </article>
+                saved={saved}
+                onUpdateWorkingSet={(tags) => onSave(saved.candidate, tags, saved.notes ?? null)}
+                onUse={() => onUse(saved.candidate, saved)}
+                onRemove={() => onRemoveSaved(saved.saved_candidate_id)}
+              />
             ))}
           </div>
         )}
@@ -3496,9 +3789,79 @@ function ObservedAtmosphereCandidatesPanel({
   );
 }
 
+function SavedSoundingCandidateCard({
+  saved,
+  onUpdateWorkingSet,
+  onUse,
+  onRemove,
+}: {
+  saved: SavedSoundingCandidate;
+  onUpdateWorkingSet: (tags: string[]) => void;
+  onUse: () => void;
+  onRemove: () => void;
+}) {
+  const currentWorkingSet = saved.tags.find(isCandidateSuggestedTag) ?? "";
+  const [workingSetDraft, setWorkingSetDraft] = useState(currentWorkingSet);
+  useEffect(() => {
+    setWorkingSetDraft(currentWorkingSet);
+  }, [saved.saved_candidate_id, currentWorkingSet]);
+  const freeformTags = saved.tags.filter((tag) => !isCandidateSuggestedTag(tag));
+  const nextTags = _dedupeStrings(
+    [workingSetDraft, ...freeformTags].filter((tag): tag is string => Boolean(tag)),
+  );
+  return (
+    <article
+      className="saved-candidate-card"
+      aria-label={`Saved sounding candidate ${candidateStationLabel(saved.candidate)}`}
+    >
+      <div>
+        <strong>{candidateStationLabel(saved.candidate)}</strong>
+        <small>
+          {formatDate(saved.candidate.valid_time_utc)} · {candidateStoryLabel(saved.primary_story)}
+        </small>
+        {saved.tags.length > 0 && <small>Tags: {saved.tags.join(", ")}</small>}
+        {saved.notes && <small>Notes: {saved.notes}</small>}
+        {saved.linked_run_ids.length > 0 && (
+          <small>Used in {saved.linked_run_ids.join(", ")}</small>
+        )}
+      </div>
+      <div className="saved-candidate-controls">
+        <label htmlFor={`saved-working-set-${saved.saved_candidate_id}`}>
+          Working set
+          <select
+            id={`saved-working-set-${saved.saved_candidate_id}`}
+            aria-label={`Working set for ${candidateStationLabel(saved.candidate)}`}
+            value={workingSetDraft}
+            onChange={(event) => setWorkingSetDraft(event.target.value)}
+          >
+            <option value="">No working set</option>
+            {candidateSuggestedTags.map((tag) => (
+              <option key={tag} value={tag}>
+                {tag}
+              </option>
+            ))}
+          </select>
+        </label>
+        <button type="button" className="secondary-button" onClick={() => onUpdateWorkingSet(nextTags)}>
+          Update working set
+        </button>
+      </div>
+      <div className="button-row">
+        <button type="button" onClick={onUse}>
+          Use to create package
+        </button>
+        <button type="button" className="secondary-button" onClick={onRemove}>
+          Remove saved
+        </button>
+      </div>
+    </article>
+  );
+}
+
 function SoundingCandidateCard({
   candidate,
   storyFilter,
+  storyFamilyFilter,
   selected,
   saved,
   onSelect,
@@ -3507,14 +3870,20 @@ function SoundingCandidateCard({
 }: {
   candidate: SoundingCandidate;
   storyFilter: CandidateStoryFilter;
+  storyFamilyFilter: CandidateStoryFamilyFilter;
   selected: boolean;
   saved: boolean;
   onSelect: () => void;
   onSave: () => void;
-  onUse: () => void;
+  onUse: (activeStory: CandidateStoryId) => void;
 }) {
-  const story = storyFilter === "all" ? candidate.primary_story : storyFilter;
-  const matchScore = candidateMatchScore(candidate, story);
+  const activeScore = candidateActiveStoryScore(candidate, storyFilter, storyFamilyFilter);
+  const story = activeScore?.story ?? candidate.primary_story;
+  const activeFamily = activeScore ? candidateStoryFamilyForStory(activeScore.story) : candidate.story_family;
+  const ingredientScore =
+    activeScore?.score_0_to_100 ?? candidateIngredientScore(candidate, storyFilter, storyFamilyFilter);
+  const recipeFit = candidateRecipeFitForStory(candidate, story);
+  const reasons = candidateInterestReasons(candidate);
   return (
     <article
       className={`candidate-card${selected ? " selected-candidate-card" : ""}`}
@@ -3530,17 +3899,33 @@ function SoundingCandidateCard({
           <small>{formatDate(candidate.valid_time_utc)}</small>
         </span>
         <span className="badge-row">
-          <StatusBadge label={candidateStoryLabel(story)} tone="neutral" />
-          {storyFilter === "deep_convection_trial" && (
-            <StatusBadge label={candidate.primary_story_label} tone="neutral" />
+          {candidate.discovery_bucket && (
+            <StatusBadge label={candidate.discovery_bucket} tone="neutral" />
           )}
-          <StatusBadge label={`${formatNumber(matchScore, "%")} match`} tone="neutral" />
+          <StatusBadge label={candidateStoryLabel(story)} tone="neutral" />
+          {activeScore && activeScore.story !== candidate.primary_story && (
+            <StatusBadge label={`Primary: ${candidate.primary_story_label}`} tone="neutral" />
+          )}
+          <StatusBadge label={candidateStoryFamilyLabel(activeFamily)} tone="neutral" />
+          <StatusBadge label={`${formatNumber(ingredientScore, "%")} ingredient score`} tone="neutral" />
+          <StatusBadge
+            label={`Recipe fit: ${recipeFit.label}`}
+            tone={candidateRecipeFitTone(recipeFit.status)}
+          />
           <StatusBadge
             label={candidate.package_ready ? "Package-ready" : "Blocked"}
             tone={candidate.package_ready ? "good" : "warning"}
           />
         </span>
       </button>
+      <p className="candidate-interest-summary">{reasons[0]}</p>
+      {reasons.length > 1 && (
+        <ul className="compact-list candidate-reason-list">
+          {reasons.slice(1, 3).map((reason) => (
+            <li key={`${candidate.candidate_id}-${reason}`}>{reason}</li>
+          ))}
+        </ul>
+      )}
       <ul className="compact-list">
         {candidate.evidence.slice(0, 3).map((item) => (
           <li key={`${candidate.candidate_id}-${item.label}`}>
@@ -3554,7 +3939,7 @@ function SoundingCandidateCard({
         </p>
       )}
       <div className="button-row">
-        <button type="button" disabled={!candidate.package_ready} onClick={onUse}>
+        <button type="button" disabled={!candidate.package_ready} onClick={() => onUse(story)}>
           Use this sounding
         </button>
         <button type="button" className="secondary-button" disabled={saved} onClick={onSave}>
@@ -3568,10 +3953,26 @@ function SoundingCandidateCard({
 function SoundingCandidateDetail({
   candidate,
   storyFilter,
+  storyFamilyFilter,
+  savedCandidate,
+  onSave,
 }: {
   candidate: SoundingCandidate | null;
   storyFilter: CandidateStoryFilter;
+  storyFamilyFilter: CandidateStoryFamilyFilter;
+  savedCandidate: SavedSoundingCandidate | null;
+  onSave: (candidate: SoundingCandidate, tags?: string[], notes?: string | null) => void;
 }) {
+  const [tagDraft, setTagDraft] = useState("");
+  const [notesDraft, setNotesDraft] = useState("");
+  const candidateId = candidate?.candidate_id ?? "";
+  const savedTagsText = savedCandidate?.tags.join(", ") ?? "";
+  const savedNotesText = savedCandidate?.notes ?? "";
+  useEffect(() => {
+    setTagDraft(savedTagsText);
+    setNotesDraft(savedNotesText);
+  }, [candidateId, savedCandidate?.saved_candidate_id, savedTagsText, savedNotesText]);
+
   if (!candidate) {
     return (
       <aside className="candidate-detail-panel">
@@ -3580,15 +3981,45 @@ function SoundingCandidateDetail({
       </aside>
     );
   }
-  const story = storyFilter === "all" ? candidate.primary_story : storyFilter;
+  const activeCandidate = candidate;
+  const activeScore = candidateActiveStoryScore(activeCandidate, storyFilter, storyFamilyFilter);
+  const story = activeScore?.story ?? activeCandidate.primary_story;
+  const activeFamily = activeScore
+    ? candidateStoryFamilyForStory(activeScore.story)
+    : activeCandidate.story_family;
+  const ingredientScore =
+    activeScore?.score_0_to_100 ??
+    candidateIngredientScore(activeCandidate, storyFilter, storyFamilyFilter);
+  const recipeFit = candidateRecipeFitForStory(activeCandidate, story);
+  const reasons = candidateInterestReasons(activeCandidate);
+  const savedTagValues = parseTags(tagDraft);
+  function handleTagSuggestion(tag: string) {
+    setTagDraft(_dedupeStrings([...savedTagValues, tag]).join(", "));
+  }
+  function handleAnnotationSubmit() {
+    onSave(activeCandidate, parseTags(tagDraft), notesDraft.trim() || null);
+  }
   const featureRows = [
+    ["Observed wind profile", "observed_wind_available", ""],
+    ["Profile top", "profile_top_m_agl", "m AGL"],
+    ["Lowest usable level", "lowest_level_m_agl", "m AGL"],
+    ["Data completeness", "data_completeness_score", "%"],
+    ["Low-level qv", "low_level_qv_g_kg", "g/kg"],
+    ["Mean qv 0-500 m", "mean_qv_0_500m_g_kg", "g/kg"],
     ["Low-level moisture", "mean_qv_0_1000m_g_kg", "g/kg"],
+    ["Surface T-Td spread", "surface_t_td_spread_c", "C"],
     ["Estimated LCL", "estimated_lcl_height_m_agl", "m AGL"],
     ["Low-level lapse rate", "lapse_rate_0_1000m_c_per_km", "C/km"],
-    ["Cap proxy", "cap_strength_proxy", ""],
+    ["Midlevel lapse rate", "midlevel_lapse_rate_700_500_hpa_c_per_km", "C/km"],
+    ["Cap / inversion strength", "cap_strength_proxy", "C"],
+    ["Cap / inversion height", "cap_height_m_agl", "m AGL"],
+    ["Bulk shear 0-1 km", "bulk_shear_0_1km_m_s", "m/s"],
+    ["Bulk shear 0-3 km", "bulk_shear_0_3km_m_s", "m/s"],
+    ["Bulk shear 0-6 km", "bulk_shear_0_6km_m_s", "m/s"],
+    ["Dry-layer proxy", "midlevel_dry_layer_proxy", "g/kg"],
+    ["Inverted-V proxy", "dry_microburst_inverted_v_proxy", "0-100"],
+    ["Freezing level", "freezing_level_m_agl", "m AGL"],
     ["Moisture depth", "moisture_depth_m", "m"],
-    ["Profile top", "profile_top_m_agl", "m AGL"],
-    ["Data completeness", "data_completeness_score", "%"],
   ] as const;
   return (
     <aside className="candidate-detail-panel" aria-label="Candidate details">
@@ -3605,15 +4036,26 @@ function SoundingCandidateDetail({
         />
       </div>
       <p>
-        Candidate match score is screening guidance only. CM1 decides whether clouds, rain, or
-        suppression actually happen.
+        Scores rank sounding ingredients only. They do not predict what the current CM1 package
+        will produce. CM1 decides whether clouds, rain, or suppression actually happen.
       </p>
+      <p className="field-help">Recipe fit: {recipeFit.summary}</p>
+      <section>
+        <h5>Why this is interesting</h5>
+        <ul className="compact-list candidate-reason-list">
+          {reasons.map((reason) => (
+            <li key={`${candidate.candidate_id}-detail-${reason}`}>{reason}</li>
+          ))}
+        </ul>
+      </section>
       <dl className="compact-metrics">
-        <Metric
-          label="Match score"
-          value={formatNumber(candidateMatchScore(candidate, story), "%")}
-        />
+        <Metric label="Ingredient score" value={formatNumber(ingredientScore, "%")} />
         <Metric label="Evidence level" value={humanize(candidate.confidence)} />
+        <Metric label="Screened story family" value={candidateStoryFamilyLabel(activeFamily)} />
+        <Metric label="Recipe fit" value={recipeFit.label} />
+        {activeScore && activeScore.story !== candidate.primary_story && (
+          <Metric label="Primary story" value={candidate.primary_story_label} />
+        )}
         <Metric label="Station ID" value={candidate.station_id} />
         <Metric
           label="Location"
@@ -3638,7 +4080,7 @@ function SoundingCandidateDetail({
         </ul>
       </section>
       <details>
-        <summary>All story scores</summary>
+        <summary>All ingredient scores</summary>
         <dl className="compact-metrics">
           {candidate.story_scores.map((score) => (
             <Metric
@@ -3667,6 +4109,42 @@ function SoundingCandidateDetail({
           </ul>
         </details>
       )}
+      <div className="candidate-notes-form">
+        <h5>{savedCandidate ? "Candidate notes" : "Save candidate notes"}</h5>
+        <label htmlFor={`candidate-tags-${candidate.candidate_id}`}>
+          Tags
+          <input
+            id={`candidate-tags-${candidate.candidate_id}`}
+            value={tagDraft}
+            placeholder="deep convection, rerun, compare"
+            onChange={(event) => setTagDraft(event.target.value)}
+          />
+        </label>
+        <div className="candidate-tag-suggestions" aria-label="Suggested tags">
+          {candidateSuggestedTags.map((tag) => (
+            <button
+              type="button"
+              className="secondary-button"
+              key={tag}
+              onClick={() => handleTagSuggestion(tag)}
+            >
+              {tag}
+            </button>
+          ))}
+        </div>
+        <label htmlFor={`candidate-notes-${candidate.candidate_id}`}>
+          Notes
+          <textarea
+            id={`candidate-notes-${candidate.candidate_id}`}
+            value={notesDraft}
+            placeholder="What makes this worth running or comparing?"
+            onChange={(event) => setNotesDraft(event.target.value)}
+          />
+        </label>
+        <button type="button" onClick={handleAnnotationSubmit}>
+          {savedCandidate ? "Update saved candidate" : "Save candidate"}
+        </button>
+      </div>
     </aside>
   );
 }
@@ -3827,11 +4305,12 @@ function ObservedPackageFamilyPanel({
   onChange: (packageFamily: ObservedPackageFamily) => void;
 }) {
   const selectedDeep = packageFamily === "deep_convection_trial";
-  const selectedStory = String(selectedCandidateScreening?.primary_story ?? "");
+  const packageMismatchWarning = candidatePackageMismatchWarning(
+    selectedCandidateScreening,
+    packageFamily,
+  );
   const candidateGuidance = selectedCandidateScreening
-    ? deepConvectionStoryIds.has(selectedStory)
-      ? "This saved/screened candidate is a strong fit for Deep Convection Trial."
-      : "This candidate can still use the observed-sounding quick look, or you can try the deep-convection package deliberately."
+    ? "Candidate screening is ingredient guidance. Choose the package based on what the run can actually test."
     : "Upload or choose an observed sounding, then choose the CM1 package family to generate.";
   const workerGuidance =
     selectedDeep && runSizePreset !== "quick_look"
@@ -3872,6 +4351,11 @@ function ObservedPackageFamilyPanel({
           <option value="deep_convection_trial">Deep Convection Trial</option>
         </select>
       </div>
+      {packageMismatchWarning && (
+        <div className="validation" role="alert">
+          {packageMismatchWarning}
+        </div>
+      )}
       <dl className="compact-metrics">
         <Metric
           label="Initiation method"
@@ -4014,10 +4498,7 @@ function NotebookWorkspace({
   const filtersActive = resultsFiltersActive(filters);
 
   return (
-    <section
-      className="workspace-section"
-      aria-label="Notebook entries"
-    >
+    <section className="workspace-section" aria-label="Notebook entries">
       <ResultsFilterBar
         filters={filters}
         scenarioOptions={scenarioOptions}
@@ -4202,6 +4683,8 @@ function LocalRunWorkflowPanel({
   const showIngestButton = Boolean(dryRun && canIngest);
   const showActionRow =
     showCreatePackageButton || showLaunchButton || showRefreshButton || showIngestButton;
+  const packageObservedSounding = dryRun?.report.observed_sounding ?? null;
+  const packageUserMetadata = dryRun?.report.user ?? null;
 
   return (
     <section
@@ -4252,6 +4735,21 @@ function LocalRunWorkflowPanel({
           <>
             <dl className="compact-metrics">
               <Metric label="Run ID" value={runIdFromPackage(dryRun)} />
+              {packageObservedSounding && (
+                <>
+                  <Metric label="Sounding" value={observedSoundingLabel(packageObservedSounding)} />
+                  <Metric
+                    label="Sounding location"
+                    value={observedSoundingLocationLabel(packageObservedSounding)}
+                  />
+                </>
+              )}
+              {packageUserMetadata?.tags.length ? (
+                <Metric label="Package tags" value={packageUserMetadata.tags.join(", ")} />
+              ) : null}
+              {packageUserMetadata?.notes ? (
+                <Metric label="Package notes" value={packageUserMetadata.notes} />
+              ) : null}
               <Metric label="Package path" value={dryRun.package_dir} />
               <Metric label="Manifest path" value={dryRun.manifest_path} />
               <Metric label="Expected output directory" value={dryRun.package_dir} />
@@ -4360,6 +4858,24 @@ function LocalRunWorkflowPanel({
           <div className="run-status-panel" aria-label="Local run status">
             <dl>
               <Metric label="Lifecycle state" value={humanize(runStatus.lifecycle_state)} />
+              {runStatus.observed_sounding && (
+                <>
+                  <Metric
+                    label="Sounding"
+                    value={observedSoundingLabel(runStatus.observed_sounding)}
+                  />
+                  <Metric
+                    label="Sounding location"
+                    value={observedSoundingLocationLabel(runStatus.observed_sounding)}
+                  />
+                </>
+              )}
+              {runStatus.user?.tags.length ? (
+                <Metric label="Run tags" value={runStatus.user.tags.join(", ")} />
+              ) : null}
+              {runStatus.user?.notes ? (
+                <Metric label="Run notes" value={runStatus.user.notes} />
+              ) : null}
               <Metric label="Product state" value={humanize(runStatus.product_state)} />
               <Metric label="Validation" value={humanize(runStatus.validation_status)} />
               <Metric label="Exit code" value={runStatus.exit_code?.toString() ?? "Running"} />
@@ -4516,13 +5032,7 @@ function LocalRunWorkflowPanel({
   );
 }
 
-function LocalRunQueuePanel({
-  queue,
-  status,
-}: {
-  queue: RunQueueResponse | null;
-  status: string;
-}) {
+function LocalRunQueuePanel({ queue, status }: { queue: RunQueueResponse | null; status: string }) {
   const visibleEntries = queue ? queue.entries.slice(-5).reverse() : [];
   return (
     <section className="run-status-panel" aria-label="Local serial run queue">
@@ -4550,9 +5060,7 @@ function LocalRunQueuePanel({
             <li key={`${entry.run_id}-${entry.queued_at}`}>
               <strong>{entry.run_id}</strong>{" "}
               <span className="muted-inline">{runQueueEntryLabel(entry)}</span>
-              {entry.result_id && (
-                <span className="muted-inline"> result {entry.result_id}</span>
-              )}
+              {entry.result_id && <span className="muted-inline"> result {entry.result_id}</span>}
               {entry.cleanup_status && (
                 <span className="muted-inline"> package retained for Results/Explore</span>
               )}
@@ -4870,9 +5378,9 @@ function PipelineRunCard({
   const displayName = result?.name ?? run.scenario_name ?? run.scenario_id ?? run.run_id;
   const canLaunch = Boolean(
     run.manifest_path &&
-      run.category === "dry_run_only" &&
-      !run.worker_state &&
-      !queueEntryIsOpen(queueEntry),
+    run.category === "dry_run_only" &&
+    !run.worker_state &&
+    !queueEntryIsOpen(queueEntry),
   );
   const canRefreshWorker = Boolean(run.manifest_path && run.worker_state === "running");
   const canFinalizeWorker = Boolean(
@@ -5141,7 +5649,9 @@ function queueEntryIsOpen(entry: RunQueueEntry | undefined): boolean {
 }
 
 function latestAutoIngestedQueueEntry(queue: RunQueueResponse): RunQueueEntry | undefined {
-  return [...queue.entries].reverse().find((entry) => entry.state === "ingested" && entry.result_id);
+  return [...queue.entries]
+    .reverse()
+    .find((entry) => entry.state === "ingested" && entry.result_id);
 }
 
 function queueEntryForRun(
@@ -5705,8 +6215,7 @@ function ResultNotebookCard({
     );
   }
 
-  const visibleDeletePreview =
-    deletePreview?.result_id === result.result_id ? deletePreview : null;
+  const visibleDeletePreview = deletePreview?.result_id === result.result_id ? deletePreview : null;
 
   return (
     <section className="notebook-card" aria-label="Result detail">
@@ -5763,14 +6272,17 @@ function ResultNotebookCard({
       <InterestingTimesSummary result={result} />
       {deleteMessage && <p role="status">{deleteMessage}</p>}
       {visibleDeletePreview && (
-        <section className="delete-preview result-delete-preview" aria-label="Result delete preview">
+        <section
+          className="delete-preview result-delete-preview"
+          aria-label="Result delete preview"
+        >
           <h4>Delete result and local run data preview</h4>
           <p>
             This removes the ingested result, notebook edits, diagnostics, derived products, CM1
             output, logs, and local run files stored under this run directory. The result will
-            disappear from Results, Explore, and local inventory after confirmation. It
-            does not touch the source repo, runtime home itself, or external CM1 install. No files
-            have been deleted yet.
+            disappear from Results, Explore, and local inventory after confirmation. It does not
+            touch the source repo, runtime home itself, or external CM1 install. No files have been
+            deleted yet.
           </p>
           <dl className="metric-grid">
             <Metric label="Run ID" value={visibleDeletePreview.run_id} />
@@ -7977,7 +8489,66 @@ function candidateStoryLabel(story: CandidateStoryId | CandidateStoryFilter): st
   }
 }
 
-function defaultPackageFamilyForCandidate(candidate: SoundingCandidate): ObservedPackageFamily {
+function candidateStoryFamilyLabel(family: CandidateStoryFamilyFilter | undefined): string {
+  switch (family) {
+    case "deep_convection":
+      return "Deep convection stories";
+    case "review":
+      return "Review / incomplete";
+    case "lower_atmosphere":
+      return "Lower-atmosphere stories";
+    case "all":
+    case undefined:
+      return "Story family unavailable";
+  }
+}
+
+function candidateStoryFamilyForStory(story: CandidateStoryId): CandidateStoryFamilyFilter {
+  if (deepConvectionStoryIds.has(story)) return "deep_convection";
+  if (story === "needs_review" || story === "poor_or_incomplete_candidate") return "review";
+  return "lower_atmosphere";
+}
+
+function candidateSortLabel(sort: CandidateSort): string {
+  const labels: Record<CandidateSort, string> = {
+    best_match: "Recommended",
+    valid_time: "Valid time",
+    station_id: "Station ID",
+    station_name: "Station name",
+    primary_story: "Primary story",
+    story_family: "Story family",
+    rank_score: "Rank score",
+    confidence: "Confidence",
+    support: "Support state",
+    package_readiness: "Package readiness",
+    observed_wind_available: "Observed wind availability",
+    profile_top_m_agl: "Profile top",
+    lowest_level_m_agl: "Lowest usable level",
+    data_completeness_score: "Data completeness",
+    low_level_qv_g_kg: "Low-level qv",
+    mean_qv_0_500m_g_kg: "Mean qv 0-500 m",
+    mean_qv_0_1000m_g_kg: "Mean qv 0-1 km",
+    surface_t_td_spread_c: "Surface T-Td spread",
+    estimated_lcl_height_m_agl: "Estimated LCL",
+    lapse_rate_0_1000m_c_per_km: "Low-level lapse rate",
+    midlevel_lapse_rate_700_500_hpa_c_per_km: "Midlevel lapse rate",
+    cap_strength_proxy: "Cap/inversion strength",
+    cap_height_m_agl: "Cap/inversion height",
+    bulk_shear_0_1km_m_s: "Bulk shear 0-1 km",
+    bulk_shear_0_3km_m_s: "Bulk shear 0-3 km",
+    bulk_shear_0_6km_m_s: "Bulk shear 0-6 km",
+    midlevel_dry_layer_proxy: "Dry-layer proxy",
+    dry_microburst_inverted_v_proxy: "Inverted-V proxy",
+    freezing_level_m_agl: "Freezing level",
+  };
+  return labels[sort];
+}
+
+function defaultPackageFamilyForCandidate(
+  candidate: SoundingCandidate,
+  activeStory?: CandidateStoryId,
+): ObservedPackageFamily {
+  if (activeStory && deepConvectionStoryIds.has(activeStory)) return "deep_convection_trial";
   if (deepConvectionStoryIds.has(candidate.primary_story)) return "deep_convection_trial";
   if (
     candidate.story_scores.some(
@@ -7989,120 +8560,240 @@ function defaultPackageFamilyForCandidate(candidate: SoundingCandidate): Observe
   return "observed_sounding_quicklook";
 }
 
+function candidateRecipeFitForStory(
+  candidate: SoundingCandidate,
+  story: CandidateStoryId,
+): CandidateRecipeFitDisplay {
+  if (
+    story === candidate.primary_story &&
+    candidate.recipe_fit_status &&
+    candidate.recipe_fit_label &&
+    candidate.recipe_fit_summary
+  ) {
+    return {
+      status: candidate.recipe_fit_status,
+      label: candidate.recipe_fit_label,
+      summary: candidate.recipe_fit_summary,
+      caveats: candidate.recipe_fit_caveats ?? [],
+    };
+  }
+  if (!candidate.package_ready || story === "poor_or_incomplete_candidate") {
+    return {
+      status: "blocked_profile",
+      label: "blocked profile",
+      summary: "This cached sounding cannot be packaged until profile caveats are resolved.",
+      caveats: ["profile_or_package_generation_blocked"],
+    };
+  }
+  if (story === "needs_review") {
+    return {
+      status: "not_testable_with_current_recipes",
+      label: "not testable with current package path",
+      summary: "This candidate needs manual screening before it maps to a current run path.",
+      caveats: ["candidate_requires_manual_screening_review"],
+    };
+  }
+  if (deepConvectionStoryIds.has(story)) {
+    const caveats = ["observed_sounding_quicklook_does_not_test_deep_potential"];
+    if (candidate.features.observed_wind_available !== true) {
+      caveats.push("complete_observed_wind_profile_required_for_deep_potential");
+    }
+    return {
+      status: "requires_triggered_deep_potential",
+      label: "requires triggered deep-potential run",
+      summary:
+        "This story screens deep-convection ingredients. Observed Sounding Quick Look does not test that hypothesis without the triggered deep-potential package.",
+      caveats,
+    };
+  }
+  if (story === "humid_rainy_candidate") {
+    return {
+      status: "partially_testable",
+      label: "partially testable with current observed-sounding run",
+      summary:
+        "The current observed-sounding path can inspect moist evolution, but later comparison needs rain-water, surface-rain, and/or reflectivity outputs.",
+      caveats: ["rain_water_surface_rain_or_reflectivity_outputs_required"],
+    };
+  }
+  if (story === "capped_suppressed_candidate") {
+    return {
+      status: "partially_testable",
+      label: "partially testable with current observed-sounding run",
+      summary:
+        "The current observed-sounding path can inspect capped or suppressed evolution when cap evidence, duration, and output fields are adequate.",
+      caveats: ["run_duration_and_output_fields_must_be_checked_for_cap_story"],
+    };
+  }
+  return {
+    status: "partially_testable",
+    label: "partially testable with current observed-sounding run",
+    summary:
+      "The current observed-sounding path can inspect untriggered shallow/evolution behavior, but the recipe still shapes what CM1 can test.",
+    caveats: ["observed_sounding_quicklook_is_recipe_dependent"],
+  };
+}
+
+function candidateRecipeFitTone(status: CandidateRecipeFitStatus): "good" | "warning" | "neutral" {
+  if (status === "testable_now") return "good";
+  if (status === "partially_testable") return "neutral";
+  return "warning";
+}
+
+function isCandidateSuggestedTag(tag: string): tag is (typeof candidateSuggestedTags)[number] {
+  return (candidateSuggestedTags as readonly string[]).includes(tag);
+}
+
+function candidatePackageMismatchWarning(
+  selectedCandidateScreening: Record<string, unknown> | null,
+  packageFamily: ObservedPackageFamily,
+): string | null {
+  if (!selectedCandidateScreening) return null;
+  const activeStory =
+    typeof selectedCandidateScreening.active_story === "string"
+      ? selectedCandidateScreening.active_story
+      : "";
+  const primaryStory =
+    typeof selectedCandidateScreening.primary_story === "string"
+      ? selectedCandidateScreening.primary_story
+      : "";
+  const storyScores = candidateScreeningStoryScores(selectedCandidateScreening);
+  const hasMeaningfulDeepStory =
+    deepConvectionStoryIds.has(activeStory) ||
+    (!activeStory &&
+      (deepConvectionStoryIds.has(primaryStory) ||
+        storyScores.some(
+          (score) =>
+            deepConvectionStoryIds.has(score.story) &&
+            score.score_0_to_100 > 0 &&
+            score.support !== "unavailable",
+        )));
+  if (packageFamily === "observed_sounding_quicklook" && hasMeaningfulDeepStory) {
+    return "This candidate was screened for deep-convection potential. Observed Sounding Quick Look does not test that hypothesis. Choose the triggered deep-potential run, or treat this as an untriggered shallow/evolution experiment.";
+  }
+  const hasHumidRainyStory =
+    activeStory === "humid_rainy_candidate" ||
+    (!activeStory &&
+      (primaryStory === "humid_rainy_candidate" ||
+        storyScores.some(
+          (score) =>
+            score.story === "humid_rainy_candidate" &&
+            score.score_0_to_100 > 0 &&
+            score.support !== "unavailable",
+        )));
+  if (hasHumidRainyStory) {
+    return "This candidate was screened as humid/rainy. Predicted rain behavior needs rain-water, surface-rain, and/or reflectivity outputs to compare later.";
+  }
+  return null;
+}
+
+function candidateScreeningStoryScores(
+  selectedCandidateScreening: Record<string, unknown>,
+): Array<Pick<StoryScore, "story" | "score_0_to_100" | "support">> {
+  if (!Array.isArray(selectedCandidateScreening.story_scores)) return [];
+  return selectedCandidateScreening.story_scores.flatMap((score) => {
+    if (
+      score &&
+      typeof score === "object" &&
+      "story" in score &&
+      "score_0_to_100" in score &&
+      "support" in score &&
+      typeof score.story === "string" &&
+      typeof score.score_0_to_100 === "number" &&
+      typeof score.support === "string"
+    ) {
+      return [
+        {
+          story: score.story as CandidateStoryId,
+          score_0_to_100: score.score_0_to_100,
+          support: score.support,
+        },
+      ];
+    }
+    return [];
+  });
+}
+
 function candidateStationLabel(candidate: SoundingCandidate): string {
   return `${candidate.station_name ?? "Observed sounding"} (${candidate.station_id})`;
 }
 
-function candidateMatchScore(
-  candidate: SoundingCandidate,
-  story: CandidateStoryId | CandidateStoryFilter,
-): number {
-  if (story === "all") return candidate.rank_score;
-  if (story === "deep_convection_trial") {
-    return Math.max(
-      0,
-      ...candidate.story_scores
-        .filter((score) => deepConvectionStoryIds.has(score.story))
-        .map((score) => score.score_0_to_100),
-    );
+function observedSoundingLabel(observed: ObservedSoundingSummary): string {
+  const station = observed.station_name
+    ? `${observed.station_name} (${observed.station_id})`
+    : observed.station_id;
+  return `${station} - ${formatDate(observed.valid_time_utc)}`;
+}
+
+function observedSoundingLocationLabel(observed: ObservedSoundingSummary): string {
+  if (
+    observed.station_latitude !== null &&
+    observed.station_latitude !== undefined &&
+    observed.station_longitude !== null &&
+    observed.station_longitude !== undefined
+  ) {
+    return `${formatNumber(observed.station_latitude, "deg")}, ${formatNumber(
+      observed.station_longitude,
+      "deg",
+    )}`;
   }
+  return "Not available";
+}
+
+function candidateIngredientScore(
+  candidate: SoundingCandidate,
+  storyFilter: CandidateStoryFilter,
+  storyFamilyFilter: CandidateStoryFamilyFilter = "all",
+): number {
   return (
-    candidate.story_scores.find((score) => score.story === story)?.score_0_to_100 ??
+    candidateActiveStoryScore(candidate, storyFilter, storyFamilyFilter)?.score_0_to_100 ??
     candidate.rank_score
   );
 }
 
-function candidateStoryScore(
+function candidateActiveStoryScore(
   candidate: SoundingCandidate,
-  story: CandidateStoryId | CandidateStoryFilter,
+  storyFilter: CandidateStoryFilter,
+  storyFamilyFilter: CandidateStoryFamilyFilter,
 ): StoryScore | null {
-  if (story === "all") return null;
-  if (story === "deep_convection_trial") {
-    return (
-      candidate.story_scores
-        .filter((score) => deepConvectionStoryIds.has(score.story))
-        .sort((left, right) => right.score_0_to_100 - left.score_0_to_100)[0] ?? null
+  return (
+    [...candidateStoryScoresForScope(candidate, storyFilter, storyFamilyFilter)].sort(
+      (left, right) => right.score_0_to_100 - left.score_0_to_100,
+    )[0] ?? null
+  );
+}
+
+function candidateStoryScoresForScope(
+  candidate: SoundingCandidate,
+  storyFilter: CandidateStoryFilter,
+  storyFamilyFilter: CandidateStoryFamilyFilter,
+): StoryScore[] {
+  let scores = candidate.story_scores;
+  if (storyFilter === "deep_convection_trial") {
+    scores = scores.filter((score) => deepConvectionStoryIds.has(score.story));
+  } else if (storyFilter !== "all") {
+    scores = scores.filter((score) => score.story === storyFilter);
+  }
+  if (storyFamilyFilter !== "all") {
+    scores = scores.filter(
+      (score) => candidateStoryFamilyForStory(score.story) === storyFamilyFilter,
     );
   }
-  return candidate.story_scores.find((score) => score.story === story) ?? null;
+  if (storyFilter === "all" && storyFamilyFilter === "all") {
+    const readyScores = scores.filter((score) => score.story !== "poor_or_incomplete_candidate");
+    return readyScores.length > 0 ? readyScores : scores;
+  }
+  return scores;
 }
 
-function candidateSupportsStory(
-  candidate: SoundingCandidate,
-  story: CandidateStoryFilter,
-): boolean {
-  if (story === "all") return true;
-  const score = candidateStoryScore(candidate, story);
-  if (!score) return false;
-  if (score.score_0_to_100 <= 0) return false;
-  return !["unavailable", "unsupported", "insufficient_evidence"].includes(score.support);
-}
-
-function sortSoundingCandidates(
-  candidates: SoundingCandidate[],
-  options: {
-    story: CandidateStoryFilter;
-    sort: CandidateSort;
-    stationSearch: string;
-    readiness: "all" | "package_ready" | "blocked";
-  },
-): SoundingCandidate[] {
-  const { story, sort, stationSearch, readiness } = options;
-  const valueForSort = (candidate: SoundingCandidate): number => {
-    switch (sort) {
-      case "latest":
-        return new Date(candidate.valid_time_utc).getTime();
-      case "data_quality":
-        return numberFeature(candidate, "data_completeness_score", Number.NEGATIVE_INFINITY);
-      case "lowest_lcl":
-        return -numberFeature(candidate, "estimated_lcl_height_m_agl", Number.POSITIVE_INFINITY);
-      case "highest_moisture":
-        return numberFeature(candidate, "mean_qv_0_1000m_g_kg", Number.NEGATIVE_INFINITY);
-      case "strongest_cap":
-        return numberFeature(candidate, "cap_strength_proxy", Number.NEGATIVE_INFINITY);
-      case "best":
-        return candidateMatchScore(candidate, story);
-    }
-  };
-  const normalizedSearch = stationSearch.trim().toLowerCase();
-  const filtered = candidates
-    .filter((candidate) => candidateSupportsStory(candidate, story))
-    .filter((candidate) =>
-      readiness === "all"
-        ? true
-        : readiness === "package_ready"
-          ? candidate.package_ready
-          : !candidate.package_ready,
-    )
-    .filter((candidate) => {
-      if (!normalizedSearch) return true;
-      return [
-        candidate.station_id,
-        candidate.station_name,
-        candidate.source_file_name,
-        candidate.primary_story_label,
-      ]
-        .filter(Boolean)
-        .join(" ")
-        .toLowerCase()
-        .includes(normalizedSearch);
-    });
-  return [...filtered].sort((a, b) => {
-    const readiness = Number(b.package_ready) - Number(a.package_ready);
-    if (readiness !== 0) return readiness;
-    const score = valueForSort(b) - valueForSort(a);
-    if (score !== 0) return score;
-    return new Date(b.valid_time_utc).getTime() - new Date(a.valid_time_utc).getTime();
-  });
-}
-
-function numberFeature(
-  candidate: SoundingCandidate,
-  key: string,
-  missingValue = Number.NEGATIVE_INFINITY,
-): number {
-  const value = candidate.features[key];
-  return typeof value === "number" && Number.isFinite(value) ? value : missingValue;
+function candidateInterestReasons(candidate: SoundingCandidate): string[] {
+  const explicitReasons = candidate.interest_reasons?.filter(Boolean) ?? [];
+  if (explicitReasons.length > 0) return explicitReasons;
+  if (candidate.interest_summary) return [candidate.interest_summary];
+  const evidenceReasons = candidate.evidence
+    .map((item) => item.interpretation)
+    .filter((reason): reason is string => Boolean(reason));
+  if (evidenceReasons.length > 0) return evidenceReasons.slice(0, 3);
+  return [candidate.primary_story_label];
 }
 
 function boundedInteger(value: string, min: number, max: number, fallback: number): number {
@@ -8149,21 +8840,51 @@ function observedSoundingParseFromCandidate(
 function candidateScreeningMetadata(
   candidate: SoundingCandidate,
   savedCandidate?: SavedSoundingCandidate,
+  activeStory?: CandidateStoryId,
 ): Record<string, unknown> {
+  const activeScore = activeStory
+    ? candidate.story_scores.find((score) => score.story === activeStory)
+    : null;
   return {
     candidate_id: candidate.candidate_id,
     saved_candidate_id: savedCandidate?.saved_candidate_id ?? null,
     screening_version: candidate.screening_version,
     primary_story: candidate.primary_story,
+    active_story: activeStory ?? candidate.primary_story,
+    active_story_label: activeScore?.label ?? candidate.primary_story_label,
     story_scores: candidate.story_scores,
     rank_score: candidate.rank_score,
     confidence: candidate.confidence,
     features: candidate.features,
     evidence: candidate.evidence,
     caveats: candidate.caveats,
+    interest_summary: candidate.interest_summary ?? null,
+    interest_reasons: candidate.interest_reasons ?? [],
+    discovery_bucket: candidate.discovery_bucket ?? null,
+    recipe_fit_status: candidate.recipe_fit_status ?? null,
+    recipe_fit_label: candidate.recipe_fit_label ?? null,
+    recipe_fit_summary: candidate.recipe_fit_summary ?? null,
+    recipe_fit_caveats: candidate.recipe_fit_caveats ?? [],
     source_file_name: candidate.source_file_name,
     source_file_hash: candidate.source_file_hash,
+    saved_tags: savedCandidate?.tags ?? [],
+    saved_notes: savedCandidate?.notes ?? null,
   };
+}
+
+function runUserMetadataFromCandidateScreening(
+  candidateScreening: Record<string, unknown> | null,
+): { tags: string[]; notes: string | null } | null {
+  if (!candidateScreening) return null;
+  const tags = Array.isArray(candidateScreening.saved_tags)
+    ? candidateScreening.saved_tags.filter((tag): tag is string => typeof tag === "string")
+    : [];
+  const notes =
+    typeof candidateScreening.saved_notes === "string" && candidateScreening.saved_notes.trim()
+      ? candidateScreening.saved_notes.trim()
+      : null;
+  if (tags.length === 0 && !notes) return null;
+  return { tags, notes };
 }
 
 function StatusBadge({ label, tone }: { label: string; tone: "good" | "warning" | "neutral" }) {
@@ -8604,10 +9325,12 @@ function _dedupeStrings(values: string[]): string[] {
 }
 
 function parseTags(value: string): string[] {
-  return value
-    .split(",")
-    .map((tag) => tag.trim())
-    .filter(Boolean);
+  return _dedupeStrings(
+    value
+      .split(",")
+      .map((tag) => tag.trim())
+      .filter(Boolean),
+  );
 }
 
 function formatSeconds(value: number | null): string {

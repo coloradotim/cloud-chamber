@@ -100,31 +100,41 @@ test.describe("mocked smoke: Build, Results, Explore path", () => {
 
     await page.getByRole("button", { name: "Refresh IGRA catalog" }).click();
     await expect(page.getByText("IGRA station catalog refreshed")).toBeVisible();
-    await expect(page.getByText("Screenable soundings").locator("..")).toContainText("2 soundings");
+    await expect(page.getByText("Cached sounding inventory").locator("..")).toContainText(
+      "2 cached soundings",
+    );
+    await expect(page.getByText("Planned analysis slice").locator("..")).toContainText(
+      "Up to 2 soundings",
+    );
 
     await page.getByRole("button", { name: "Cache station files" }).click();
     await expect(page.getByText("Cached 1 station file")).toBeVisible();
 
-    await page.getByLabel("Story filter").selectOption("shallow_cumulus_candidate");
-    await page.getByRole("button", { name: "Screen cached soundings" }).click();
+    await page.getByText("Advanced filters").click();
+    const candidateControls = page.getByLabel("Advanced sounding candidate controls");
+    const storySelect = candidateControls.getByRole("combobox").first();
+    await storySelect.selectOption("shallow_cumulus_candidate");
+    await page.getByRole("button", { name: "Analyze recommendations" }).click();
 
-    await expect(page.getByText("Screening guidance loaded")).toBeVisible();
+    await expect(page.getByText("Cached sounding analysis loaded")).toBeVisible();
     const valleyCard = page.getByLabel("Sounding candidate Valley, Nebraska (USM00072558)");
     await expect(valleyCard).toBeVisible();
     await expect(valleyCard).toContainText("Cloud-forming shallow cumulus");
     await expect(valleyCard).toContainText("Package-ready");
     await expect(valleyCard).toContainText("Low-level moisture: 10.2 g/kg");
     await expect(page.getByLabel("Candidate details")).toContainText(
-      "Candidate match score is screening guidance only",
+      "Scores rank sounding ingredients only",
     );
 
-    await page.getByLabel("Story filter").selectOption("needs_review");
+    await storySelect.selectOption("needs_review");
+    await page.getByRole("button", { name: "Analyze recommendations" }).click();
     const blockedCard = page.getByLabel("Sounding candidate Norman, Oklahoma (USM00072357)");
     await expect(blockedCard).toBeVisible();
     await expect(blockedCard).toContainText("Blocked");
     await expect(blockedCard.getByRole("button", { name: "Use this sounding" })).toBeDisabled();
 
-    await page.getByLabel("Story filter").selectOption("all");
+    await storySelect.selectOption("all");
+    await page.getByRole("button", { name: "Analyze recommendations" }).click();
     await valleyCard.getByRole("button", { name: "Save candidate" }).click();
     await expect(page.getByText("Sounding candidate saved")).toBeVisible();
     await expect(

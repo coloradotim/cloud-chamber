@@ -59,6 +59,8 @@ def generate_dry_run_package(
     app_commit: str | None = None,
     observed_sounding: dict[str, object] | ObservedSoundingRecord | None = None,
     candidate_screening: dict[str, object] | None = None,
+    user_tags: list[str] | None = None,
+    user_notes: str | None = None,
     package_family: str | None = None,
 ) -> DryRunPackageResult:
     scenario = validate_scenario_template(scenario_data)
@@ -120,7 +122,11 @@ def generate_dry_run_package(
         provenance=ProvenanceMetadata(product_state=ProductState.PACKAGED_DRY_RUN_OUTPUT),
         created_at=now,
         updated_at=now,
-        user=UserMetadata(name=user_name or scenario.display_name),
+        user=UserMetadata(
+            name=user_name or scenario.display_name,
+            tags=_normalize_user_tags(user_tags),
+            notes=_normalize_user_notes(user_notes),
+        ),
         observed_sounding=(
             observed_record.model_dump(mode="json") if observed_record is not None else None
         ),
@@ -285,6 +291,7 @@ def _dry_run_report_payload(
             else None
         ),
         "candidate_screening": manifest.candidate_screening,
+        "user": manifest.user.model_dump(mode="json"),
         "run_size_preset": manifest.run_size_preset,
         "run_size_details": run_size_details,
         "estimated_cost_or_size": run_size_details["cost_warning"],
@@ -336,6 +343,28 @@ def _observed_sounding_summary(record: ObservedSoundingRecord) -> dict[str, obje
         "caveats": record.validation.caveats,
         "provenance": record.provenance,
     }
+
+
+def _normalize_user_tags(tags: list[str] | None) -> list[str]:
+    normalized: list[str] = []
+    seen: set[str] = set()
+    for tag in tags or []:
+        cleaned = tag.strip()
+        if not cleaned:
+            continue
+        key = cleaned.casefold()
+        if key in seen:
+            continue
+        seen.add(key)
+        normalized.append(cleaned)
+    return normalized
+
+
+def _normalize_user_notes(notes: str | None) -> str | None:
+    if notes is None:
+        return None
+    cleaned = notes.strip()
+    return cleaned or None
 
 
 def _run_size_details(contract: CM1InputContract) -> dict[str, object]:

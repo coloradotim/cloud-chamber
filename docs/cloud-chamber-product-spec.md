@@ -103,12 +103,13 @@ batch of recent soundings without hand-written HTTP requests. A backend
 screening layer can match cached sounding times against explicit pre-run
 experiment stories such as shallow cumulus, dry failed, capped/suppressed, or
 humid/rainy. There is no universal "best sounding" ranking: the useful candidate
-depends on the atmospheric question being tested. Match scores are transparent
-candidate-selection aids, not CM1 outcome predictions. Saved candidates live in
-the runtime cache and may be handed into package metadata as provenance for why
-a sounding was tried. The browser never parses remote directory listings, ZIP
-files, or station text files. The current story identifiers, feature inputs,
-score support states, evidence requirements, and caveat rules are defined in
+depends on the atmospheric question being tested. Ingredient scores are
+transparent candidate-selection aids that rank sounding ingredients only; they
+are not CM1 outcome predictions. Saved candidates live in the runtime cache and
+may be handed into package metadata as provenance for why a sounding was tried.
+The browser never parses remote directory listings, ZIP files, or station text
+files. The current story identifiers, feature inputs, score support states,
+evidence requirements, and caveat rules are defined in
 [contracts/sounding-candidate-screening.md](contracts/sounding-candidate-screening.md).
 Real-sounding story families, including severe/deep-convection, boundary-layer,
 low-cloud, and winter/cold-season candidates, are defined in
@@ -131,15 +132,20 @@ are implemented and tested.
 In Build, `Upload a Sounding` is the product-facing entry point for this
 candidate workflow. It should show a `Find interesting soundings` workbench
 beside the observed-sounding upload path. The workbench can refresh the bounded
-IGRA cache, screen cached soundings by experiment story, show package-ready and
-blocked candidates with evidence and caveats, save candidates for later review,
-and load a selected package-ready candidate into the observed-sounding package
-review. Saved candidates should appear as soon as the user selects `Upload a
-Sounding`, without requiring a catalog refresh, cache action, or new screening
-run. It must keep the language pre-run and provisional: a candidate is an
-observed atmosphere worth trying, not a prediction that clouds, rain, or
-suppression will occur. When a candidate is used, its screening story, score,
-evidence, feature summary, and caveats should be copied into package metadata as
+IGRA cache, analyze cached soundings into station-diverse recommendations, show
+why each candidate is interesting, expose story, story-family, support,
+readiness, station-search, and sort controls as advanced refinements, show
+package-ready and blocked candidates with evidence and caveats, save candidates
+with freeform tags and notes for later review, and load a selected package-ready
+candidate into the observed-sounding package review. Missing sounding-derived
+features must remain unavailable/caveated and must not sort as zero-valued
+evidence.
+Saved candidates should appear as soon as the user selects `Upload a Sounding`,
+without requiring a catalog refresh, cache action, or new analysis run. It must
+keep the language pre-run and provisional: a candidate is an observed atmosphere
+worth trying, not a prediction that clouds, rain, or suppression will occur.
+When a candidate is used, its screening story, score, evidence, feature summary,
+and caveats should be copied into package metadata as
 provenance.
 
 When an uploaded or saved observed sounding is package-ready, Build should let

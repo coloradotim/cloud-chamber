@@ -295,7 +295,7 @@ small {
 
 .candidate-cache-summary {
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
   gap: 0.6rem;
   margin: 0;
 }
@@ -307,6 +307,29 @@ small {
   border-radius: 8px;
   padding: 0.75rem;
   background: rgba(255, 255, 255, 0.76);
+}
+
+.candidate-discovery-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.55rem;
+  align-items: center;
+}
+
+.candidate-advanced-filters {
+  border-top: 1px solid rgba(215, 226, 232, 0.72);
+  padding-top: 0.25rem;
+}
+
+.candidate-advanced-filters summary {
+  width: fit-content;
+  color: var(--color-accent-primary);
+  cursor: pointer;
+  font-weight: 850;
+}
+
+.candidate-advanced-filters[open] summary {
+  margin-bottom: 0.7rem;
 }
 
 .candidate-toolbar {
@@ -339,6 +362,17 @@ small {
 .saved-candidate-list {
   display: grid;
   gap: 0.75rem;
+}
+
+.candidate-list-heading {
+  display: grid;
+  gap: 0.2rem;
+  margin-bottom: 0.75rem;
+}
+
+.candidate-list-heading h4,
+.candidate-list-heading p {
+  margin-bottom: 0;
 }
 
 .candidate-card {
@@ -389,6 +423,16 @@ small {
   display: block;
 }
 
+.candidate-interest-summary {
+  margin: 0;
+  color: var(--color-text-primary);
+  font-weight: 800;
+}
+
+.candidate-reason-list {
+  margin-top: -0.1rem;
+}
+
 .candidate-detail-panel {
   display: grid;
   gap: 0.75rem;
@@ -400,6 +444,31 @@ small {
   margin: 0 0 0.3rem;
 }
 
+.candidate-notes-form {
+  display: grid;
+  gap: 0.65rem;
+  border-top: 1px solid var(--color-border);
+  padding-top: 0.8rem;
+}
+
+.candidate-notes-form label {
+  display: grid;
+  gap: 0.35rem;
+  color: var(--color-text-primary);
+  font-weight: 800;
+}
+
+.candidate-tag-suggestions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.candidate-tag-suggestions button {
+  padding: 0.42rem 0.56rem;
+  font-size: 0.82rem;
+}
+
 .saved-candidates-panel {
   display: grid;
   gap: 0.7rem;
@@ -409,9 +478,24 @@ small {
 
 .saved-candidate-card {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) minmax(13rem, 18rem) auto;
   gap: 0.75rem;
   align-items: center;
+}
+
+.saved-candidate-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: end;
+}
+
+.saved-candidate-controls label {
+  display: grid;
+  gap: 0.25rem;
+  min-width: 12rem;
+  color: var(--color-text-primary);
+  font-weight: 800;
 }
 
 .screening-guidance-note {
@@ -2004,10 +2088,9 @@ details[open] > summary {
 }
 
 .inspector-controls-primary {
-  grid-template-columns: minmax(26rem, 1.25fr) minmax(9rem, 0.55fr) minmax(8rem, 0.45fr) minmax(
-      15rem,
-      0.9fr
-    ) auto;
+  grid-template-columns:
+    minmax(26rem, 1.25fr) minmax(9rem, 0.55fr) minmax(8rem, 0.45fr) minmax(15rem, 0.9fr)
+    auto;
   gap: 0.4rem;
   align-items: end;
   border: 1px solid rgba(47, 116, 168, 0.18);

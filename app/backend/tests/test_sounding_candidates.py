@@ -6,6 +6,7 @@ import pytest
 from fastapi.testclient import TestClient
 from igra_fixtures import IGRA_FIXTURE
 
+import cloud_chamber.sounding_candidates as sounding_candidates
 from cloud_chamber.app import app
 from cloud_chamber.dry_run_package import generate_dry_run_package, read_dry_run_report
 from cloud_chamber.igra_catalog import IGRACacheEntry, IGRACacheManifest, igra_cache_manifest_path
@@ -14,12 +15,22 @@ from cloud_chamber.run_manifest import load_run_manifest
 from cloud_chamber.settings import CloudChamberSettings
 from cloud_chamber.sounding_candidates import (
     SaveCandidateRequest,
+    ScreeningResult,
+    SoundingCandidate,
+    StoryId,
+    StoryScore,
+    Support,
+    TargetStoryId,
+    UpdateSavedCandidateRequest,
     _features_from_record,
     _score_features,
+    _sort_analysis_candidates,
+    analyze_cached_soundings,
     list_saved_candidates,
     list_screening_inputs,
     save_candidate,
     screen_cached_soundings,
+    update_saved_candidate,
 )
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -65,15 +76,90 @@ def _write_cached_igra_station(
         downloaded_at=datetime(2026, 7, 1, tzinfo=UTC),
         extracted_at=datetime(2026, 7, 1, tzinfo=UTC),
     )
+    path = igra_cache_manifest_path(settings)
+    existing_entries: list[IGRACacheEntry] = []
+    if path.exists():
+        existing = IGRACacheManifest.model_validate_json(path.read_text())
+        existing_entries = [
+            existing_entry
+            for existing_entry in existing.entries
+            if existing_entry.station_id != station_id
+        ]
     manifest = IGRACacheManifest(
         cache_root=str(settings.cache_dir / "igra" / "recent"),
-        entries=[entry],
+        entries=[*existing_entries, entry],
         updated_at=datetime(2026, 7, 1, tzinfo=UTC),
     )
-    path = igra_cache_manifest_path(settings)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(manifest.model_dump_json(indent=2) + "\n")
     return text_path
+
+
+def _analysis_candidate(
+    candidate_id: str,
+    *,
+    primary_score: float = 90.0,
+    primary_support: Support = "supported",
+    deep_score: float = 70.0,
+    deep_support: Support = "supported",
+    deep_story: StoryId = "supercell_environment",
+) -> SoundingCandidate:
+    story_scores = [
+        StoryScore(
+            story="humid_rainy_candidate",
+            label="Humid / rainy candidate",
+            score_0_to_100=primary_score,
+            support=primary_support,
+        ),
+        StoryScore(
+            story=deep_story,
+            label="Supercell-like environment",
+            score_0_to_100=deep_score,
+            support=deep_support,
+        ),
+    ]
+    return SoundingCandidate(
+        candidate_id=candidate_id,
+        station_id=f"USM0000{len(candidate_id):04d}",
+        station_name=candidate_id,
+        valid_time_utc=datetime(2026, 7, 1, tzinfo=UTC),
+        source_time_text="2026-07-01 00 UTC",
+        source_file_name=f"{candidate_id}.txt",
+        source_file_hash=f"hash-{candidate_id}",
+        primary_story="humid_rainy_candidate",
+        primary_story_label="Humid / rainy candidate",
+        story_family="lower_atmosphere",
+        story_scores=story_scores,
+        rank_score=primary_score,
+        confidence="high",
+        package_ready=True,
+        features={},
+        evidence=[],
+        created_at=datetime(2026, 7, 1, tzinfo=UTC),
+    )
+
+
+def _patch_screened_candidates(
+    monkeypatch: pytest.MonkeyPatch,
+    candidates: list[SoundingCandidate],
+) -> None:
+    def fake_screen_cached_soundings(
+        settings: CloudChamberSettings,
+        *,
+        station_id: str | None = None,
+        latest_per_station: int = 5,
+        limit: int = 50,
+        target_story: TargetStoryId | None = None,
+    ) -> ScreeningResult:
+        return ScreeningResult(
+            generated_at=datetime(2026, 7, 1, tzinfo=UTC),
+            candidates=candidates[:limit],
+            caveats=[],
+        )
+
+    monkeypatch.setattr(
+        sounding_candidates, "screen_cached_soundings", fake_screen_cached_soundings
+    )
 
 
 def test_screening_inputs_list_cached_station_text(tmp_path: Path) -> None:
@@ -157,6 +243,29 @@ def test_near_surface_discontinuity_is_caveated_and_downgrades_data_quality() ->
     assert "near_surface_discontinuity_caveat" in continuity.caveats
 
 
+def test_observed_wind_available_requires_complete_finite_profile() -> None:
+    record = parse_igra_station_text(
+        IGRA_FIXTURE,
+        uploaded_filename="USM00072558-data-beg2025.txt",
+    ).selected_sounding
+    levels = list(record.levels)
+    missing_wind_index = next(
+        index for index, level in enumerate(levels) if level.model_z_m >= 3000.0
+    )
+    levels[missing_wind_index] = levels[missing_wind_index].model_copy(update={"u_wind_m_s": None})
+    partial_wind_record = record.model_copy(update={"levels": levels})
+
+    features = _features_from_record(partial_wind_record)
+    scores, _evidence = _score_features(features, package_ready=True)
+
+    assert features["has_partial_observed_wind_profile"] is True
+    assert features["has_observed_wind_profile"] is False
+    assert features["observed_wind_available"] is False
+    supercell = next(score for score in scores if score.story == "supercell_environment")
+    assert supercell.support == "unavailable"
+    assert "observed_wind_required_for_deep_convection_trial" in supercell.caveats
+
+
 def test_screen_cached_soundings_can_target_one_story(tmp_path: Path) -> None:
     settings = _settings(tmp_path)
     _write_cached_igra_station(settings)
@@ -178,6 +287,206 @@ def test_screen_cached_soundings_can_target_one_story(tmp_path: Path) -> None:
         for candidate in result.candidates
     ]
     assert target_scores == sorted(target_scores, reverse=True)
+
+
+def test_analyze_cached_soundings_filters_and_sorts_multiple_cached_blocks(
+    tmp_path: Path,
+) -> None:
+    settings = _settings(tmp_path)
+    _write_cached_igra_station(
+        settings,
+        station_id="USM00072558",
+        station_name="Valley, Nebraska",
+    )
+    _write_cached_igra_station(
+        settings,
+        station_id="USM00072426",
+        station_name="Wilmington, Ohio",
+    )
+    seed = analyze_cached_soundings(settings, latest_per_station=1, limit=10)
+    target_story = seed.candidates[0].primary_story
+    target_support = next(
+        score.support for score in seed.candidates[0].story_scores if score.story == target_story
+    )
+
+    result = analyze_cached_soundings(
+        settings,
+        latest_per_station=1,
+        limit=10,
+        story_filter=target_story,
+        support=target_support,
+        readiness="package_ready",
+        sort_by="station_name",
+    )
+
+    assert result.total_candidate_count == 2
+    assert result.filtered_candidate_count == 2
+    assert result.filters.story_filter == target_story
+    assert result.filters.support == target_support
+    assert result.sort_by == "station_name"
+    assert [candidate.station_name for candidate in result.candidates] == [
+        "Valley, Nebraska",
+        "Wilmington, Ohio",
+    ]
+    assert all(candidate.package_ready for candidate in result.candidates)
+    for candidate in result.candidates:
+        story_score = next(score for score in candidate.story_scores if score.story == target_story)
+        assert story_score.support == target_support
+
+
+def test_analyze_cached_soundings_default_recommendations_are_explained_and_diverse(
+    tmp_path: Path,
+) -> None:
+    settings = _settings(tmp_path)
+    _write_cached_igra_station(
+        settings,
+        station_id="USM00072558",
+        station_name="Valley, Nebraska",
+    )
+    _write_cached_igra_station(
+        settings,
+        station_id="USM00072426",
+        station_name="Wilmington, Ohio",
+    )
+
+    result = analyze_cached_soundings(settings, latest_per_station=2, limit=4)
+
+    assert len(result.candidates) == 4
+    assert {candidate.station_id for candidate in result.candidates[:2]} == {
+        "USM00072426",
+        "USM00072558",
+    }
+    assert all(candidate.interest_summary for candidate in result.candidates)
+    assert all(candidate.interest_reasons for candidate in result.candidates)
+    assert all(candidate.discovery_bucket for candidate in result.candidates)
+
+
+def test_analysis_sorts_physical_fields_with_missing_values_last(tmp_path: Path) -> None:
+    settings = _settings(tmp_path)
+    _write_cached_igra_station(settings)
+    parsed_candidate = analyze_cached_soundings(settings, latest_per_station=1).candidates[0]
+    low_lcl = parsed_candidate.model_copy(
+        update={
+            "candidate_id": "low-lcl",
+            "station_id": "LOW00000000",
+            "features": {
+                **parsed_candidate.features,
+                "estimated_lcl_height_m_agl": 600.0,
+            },
+        }
+    )
+    high_lcl = parsed_candidate.model_copy(
+        update={
+            "candidate_id": "high-lcl",
+            "station_id": "HIGH0000000",
+            "features": {
+                **parsed_candidate.features,
+                "estimated_lcl_height_m_agl": 1800.0,
+            },
+        }
+    )
+    missing_lcl = parsed_candidate.model_copy(
+        update={
+            "candidate_id": "missing-lcl",
+            "station_id": "MISS0000000",
+            "features": {
+                **parsed_candidate.features,
+                "estimated_lcl_height_m_agl": None,
+            },
+        }
+    )
+
+    sorted_candidates = _sort_analysis_candidates(
+        [missing_lcl, high_lcl, low_lcl],
+        sort_by="estimated_lcl_height_m_agl",
+        sort_direction="asc",
+        story_filter="all",
+    )
+
+    assert [candidate.candidate_id for candidate in sorted_candidates] == [
+        "low-lcl",
+        "high-lcl",
+        "missing-lcl",
+    ]
+
+
+def test_analysis_family_filter_includes_supported_secondary_deep_story(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    candidate = _analysis_candidate(
+        "primary-humid-supported-secondary-supercell",
+        primary_score=92.0,
+        deep_score=74.0,
+        deep_support="supported",
+    )
+    _patch_screened_candidates(monkeypatch, [candidate])
+
+    result = analyze_cached_soundings(
+        _settings(tmp_path),
+        story_family="deep_convection",
+        support="all",
+    )
+
+    assert [item.candidate_id for item in result.candidates] == [
+        "primary-humid-supported-secondary-supercell"
+    ]
+    assert result.filtered_candidate_count == 1
+
+
+def test_analysis_family_support_filter_uses_deep_family_scores(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    supported = _analysis_candidate(
+        "secondary-deep-supported",
+        primary_score=92.0,
+        deep_score=74.0,
+        deep_support="supported",
+    )
+    weak = _analysis_candidate(
+        "secondary-deep-weak",
+        primary_score=96.0,
+        deep_score=48.0,
+        deep_support="weak",
+    )
+    _patch_screened_candidates(monkeypatch, [weak, supported])
+
+    result = analyze_cached_soundings(
+        _settings(tmp_path),
+        story_family="deep_convection",
+        support="supported",
+    )
+
+    assert [item.candidate_id for item in result.candidates] == ["secondary-deep-supported"]
+    assert result.filtered_candidate_count == 1
+
+
+def test_analysis_deep_family_best_match_sort_uses_best_deep_score(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    humid_but_weaker_deep = _analysis_candidate(
+        "humid-high-weaker-deep",
+        primary_score=99.0,
+        deep_score=67.0,
+        deep_support="supported",
+    )
+    lower_primary_better_deep = _analysis_candidate(
+        "humid-lower-better-deep",
+        primary_score=76.0,
+        deep_score=91.0,
+        deep_support="supported",
+    )
+    _patch_screened_candidates(monkeypatch, [humid_but_weaker_deep, lower_primary_better_deep])
+
+    result = analyze_cached_soundings(
+        _settings(tmp_path),
+        story_family="deep_convection",
+        sort_by="best_match",
+    )
+
+    assert [item.candidate_id for item in result.candidates] == [
+        "humid-lower-better-deep",
+        "humid-high-weaker-deep",
+    ]
 
 
 def test_screen_cached_soundings_caveats_unreadable_files(tmp_path: Path) -> None:
@@ -704,6 +1013,19 @@ def test_saved_candidates_round_trip_runtime_local(tmp_path: Path) -> None:
     assert json.loads(saved_path.read_text())[0]["tags"] == ["candidate"]
     assert list_saved_candidates(settings)[0].notes == "try this"
 
+    updated = update_saved_candidate(
+        settings,
+        saved.saved_candidate_id,
+        UpdateSavedCandidateRequest(
+            tags=["Deep convection candidates", "Needs review", "Needs review"],
+            notes="tagged for follow-up",
+        ),
+    )
+
+    assert updated is not None
+    assert updated.tags == ["Deep convection candidates", "Needs review"]
+    assert list_saved_candidates(settings)[0].notes == "tagged for follow-up"
+
 
 def test_sounding_candidate_api_screen_save_and_delete(
     tmp_path: Path,
@@ -742,6 +1064,24 @@ def test_sounding_candidate_api_screen_save_and_delete(
     )
     assert deep_screened.status_code == 200
 
+    analyzed = client.post(
+        "/api/sounding-candidates/analyze",
+        json={
+            "station_id": "USM00072558",
+            "latest_per_station": 1,
+            "limit": 5,
+            "story_filter": "shallow_cumulus_candidate",
+            "support": "weak",
+            "readiness": "package_ready",
+            "sort_by": "mean_qv_0_1000m_g_kg",
+        },
+    )
+    assert analyzed.status_code == 200
+    analyzed_payload = analyzed.json()
+    assert analyzed_payload["filters"]["story_filter"] == "shallow_cumulus_candidate"
+    assert analyzed_payload["sort_by"] == "mean_qv_0_1000m_g_kg"
+    assert analyzed_payload["sort_options"]
+
     saved = client.post(
         "/api/sounding-candidates/saved",
         json={"candidate": candidate, "tags": ["manual-review"]},
@@ -749,9 +1089,21 @@ def test_sounding_candidate_api_screen_save_and_delete(
     assert saved.status_code == 200
     saved_id = saved.json()["saved_candidate_id"]
 
+    patched = client.patch(
+        f"/api/sounding-candidates/saved/{saved_id}",
+        json={"tags": ["Surface-forced candidates", "Needs review"], "notes": "try longer"},
+    )
+    assert patched.status_code == 200
+    assert patched.json()["tags"] == ["Surface-forced candidates", "Needs review"]
+    assert patched.json()["notes"] == "try longer"
+
     listed = client.get("/api/sounding-candidates/saved")
     assert listed.status_code == 200
     assert listed.json()["saved_candidates"][0]["saved_candidate_id"] == saved_id
+    assert listed.json()["saved_candidates"][0]["tags"] == [
+        "Surface-forced candidates",
+        "Needs review",
+    ]
 
     deleted = client.delete(f"/api/sounding-candidates/saved/{saved_id}")
     assert deleted.status_code == 200

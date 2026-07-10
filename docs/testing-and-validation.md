@@ -70,8 +70,8 @@ write downloaded ZIP/text/cache manifests outside temp runtime homes.
 
 Sounding-candidate screening tests must use tiny cached IGRA fixtures and temp
 runtime cache directories only. They should verify that screening inputs come
-from cached station text, candidate match scores are deterministic for the
-stable story identifiers, story-specific screening can target one experiment
+from cached station text, candidate ingredient scores are deterministic for
+the stable story identifiers, story-specific screening can target one experiment
 question at a time, poor/incomplete inputs are caveated instead of silently
 treated as package-ready, missing moisture/LCL/cap inputs weaken or caveat
 support instead of becoming confident physical evidence, saved candidates
@@ -97,13 +97,15 @@ Frontend tests for the `Upload a Sounding` Build workflow should cover the same
 boundary. Component tests and mocked Playwright smoke tests should verify that
 saved candidates load immediately when `Upload a Sounding` is selected; the
 candidate workbench can refresh IGRA catalog metadata, cache a bounded batch of
-station files through mocked APIs, screen cached soundings by story, include
-secondary story-score matches in filtered results, sort missing metrics last,
-show blocked candidates as unusable, save candidates, load a package-ready
-candidate into the observed-sounding package review, and include
+station files through mocked APIs, show station-diverse backend recommendations
+with why-interesting reasons, refine by story, story family, support, readiness,
+station search, and backend-owned sort keys when requested, include secondary
+story-score matches in refined results, sort missing metrics last, show blocked
+candidates as unusable, save candidates with freeform tags and notes, load a
+package-ready candidate into the observed-sounding package review, and include
 candidate-screening provenance in the generated package request. Browser tests
 must mock the backend APIs and must not fetch NOAA/NCEI, parse raw station text,
-or imply that a candidate score predicts the CM1 outcome.
+compute story scores, or imply that a candidate score predicts the CM1 outcome.
 
 Most expanded real-sounding story families are spec-only until backend feature
 extraction, scoring, evidence, caveats, and package-readiness behavior are
