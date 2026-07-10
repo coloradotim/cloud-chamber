@@ -8,8 +8,8 @@ proof that a run will form cloud, rain, or suppression. CM1 output remains the
 source of truth.
 
 The browser does not parse IGRA station text, ZIP archives, or raw NetCDF.
-Candidate screening is backend-owned and uses cached IGRA station text plus
-runtime-local cache metadata.
+Candidate screening and analysis are backend-owned and use cached IGRA station
+text plus runtime-local cache metadata.
 
 ## Current Story Set
 
@@ -19,11 +19,19 @@ The v1 candidate stories are:
 - `dry_failed_candidate`
 - `capped_suppressed_candidate`
 - `humid_rainy_candidate`
+- `severe_thunderstorm_environment`
+- `supercell_environment`
+- `high_cape_pulse_storm`
+- `dry_microburst_inverted_v`
+- `squall_line_cold_pool_candidate`
+- `elevated_convection`
 - `needs_review`
 - `poor_or_incomplete_candidate`
 
 Visible labels may be friendlier, but every visible story must be backed by
 `story_scores`, feature values, evidence items, caveats, and package readiness.
+Deep-convection-oriented stories are pre-run hypotheses for Deep Convection
+Trial routing, not outcome claims.
 
 ## Feature Inputs
 
@@ -58,6 +66,10 @@ The candidate UI may also display these fields as evidence or context:
 - lapse rate from 0-3 km
 - cap height proxy
 - observed wind availability
+- midlevel lapse rate when available
+- bulk shear from 0-1, 0-3, and 0-6 km when observed winds exist
+- dry microburst / inverted-V proxy
+- freezing-level proxy
 - package readiness
 
 These fields help explain the sounding and package path. They do not directly
@@ -251,10 +263,19 @@ Candidate cards and details must keep this language:
 - Candidate scores are pre-run hypotheses.
 - CM1 decides what actually happens.
 
-The UI may filter by a target story, but it must include secondary story
-matches when `story_scores` contain meaningful support for the selected story.
-It must not show a confident story label without evidence, caveats, and package
-readiness.
+The backend analysis API owns story, story-family, support-state, readiness,
+station-search, and sort-key filtering. The UI may expose these controls, but
+it must display the backend-returned candidate list rather than parsing raw
+sounding files or recomputing story scores in the browser. Analysis must include
+secondary story matches when `story_scores` contain meaningful support for the
+selected story. Missing feature values must remain unavailable/caveated and sort
+last instead of becoming zero-valued evidence. The UI must not show a confident
+story label without evidence, caveats, and package readiness.
+
+Saved candidates may carry working-set tags such as `Deep convection
+candidates`, `Surface-forced candidates`, `Needs longer run`, `Needs finer
+output cadence`, `Maybe rerun`, and `Needs review`. These tags are runtime-local
+pre-run organization metadata; they are not Results and are not committed.
 
 ## Testing Contract
 
@@ -268,6 +289,10 @@ Tests should prove:
 - every story has reasons and evidence;
 - missing features caveat or weaken support instead of producing confident
   labels;
+- backend analysis works across multiple cached sounding blocks;
+- physical-field sorting keeps missing values last;
+- story, support, and readiness filters are backend-owned;
+- saved working-set tags round-trip through runtime-local JSON;
 - poor/incomplete candidates are blocked from package generation;
 - package-ready but weak profiles become `needs_review`;
 - candidate-screening provenance is copied into generated package metadata

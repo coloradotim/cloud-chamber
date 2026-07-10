@@ -257,6 +257,7 @@ const shallowCandidate = {
   source_provider: "NOAA/NCEI IGRA",
   primary_story: "shallow_cumulus_candidate",
   primary_story_label: "Cloud-forming shallow cumulus",
+  story_family: "lower_atmosphere",
   rank_score: 82,
   confidence: "medium",
   package_ready: true,
@@ -323,6 +324,7 @@ const blockedCandidate = {
   valid_time_utc: "2025-01-01T00:00:00Z",
   primary_story: "needs_review",
   primary_story_label: "Needs review",
+  story_family: "review",
   rank_score: 40,
   confidence: "low",
   package_ready: false,
@@ -346,6 +348,7 @@ const secondaryShallowCandidate = {
   valid_time_utc: "2025-01-03T00:00:00Z",
   primary_story: "humid_rainy_candidate",
   primary_story_label: "Humid / rainy",
+  story_family: "lower_atmosphere",
   rank_score: 86,
   story_scores: [
     {
@@ -396,6 +399,7 @@ const deepConvectionCandidate = {
   valid_time_utc: "2025-05-20T00:00:00Z",
   primary_story: "supercell_environment",
   primary_story_label: "Supercell-like environment",
+  story_family: "deep_convection",
   rank_score: 93,
   confidence: "high",
   package_ready: true,
@@ -442,6 +446,7 @@ const screeningInputsResponse = {
 
 const screeningResponse = {
   story: "all",
+  screening_version: "test-screening-v1",
   generated_at: "2026-07-01T12:00:00Z",
   candidates: [
     shallowCandidate,
@@ -450,8 +455,131 @@ const screeningResponse = {
     secondaryShallowCandidate,
     missingLclCandidate,
   ],
+  total_candidate_count: 5,
+  filtered_candidate_count: 5,
+  sort_by: "best_match",
+  sort_direction: "desc",
+  filters: {
+    station_id: null,
+    story_filter: "all",
+    story_family: "all",
+    support: "all",
+    readiness: "all",
+    station_search: "",
+  },
   caveats: ["screening_guidance_only"],
 };
+
+const testDeepConvectionStoryIds = new Set([
+  "severe_thunderstorm_environment",
+  "supercell_environment",
+  "high_cape_pulse_storm",
+  "dry_microburst_inverted_v",
+  "squall_line_cold_pool_candidate",
+  "elevated_convection",
+]);
+
+function screeningResponseForRequest(init?: RequestInit) {
+  const request = JSON.parse(String(init?.body ?? "{}")) as {
+    story_filter?: string;
+    story_family?: string;
+    support?: string;
+    readiness?: string;
+    station_search?: string;
+    sort_by?: string;
+  };
+  const storyFilter = request.story_filter ?? "all";
+  const storyFamily = request.story_family ?? "all";
+  const support = request.support ?? "all";
+  const readiness = request.readiness ?? "all";
+  const stationSearch = (request.station_search ?? "").trim().toLowerCase();
+  const sortBy = request.sort_by ?? "best_match";
+  const candidates = [...screeningResponse.candidates]
+    .filter((candidate) => {
+      if (readiness === "package_ready" && !candidate.package_ready) return false;
+      if (readiness === "blocked" && candidate.package_ready) return false;
+      if (storyFamily !== "all" && candidate.story_family !== storyFamily) return false;
+      const score = storyScoreForTest(candidate, storyFilter);
+      if (storyFilter !== "all" && (!score || score.support === "unavailable")) return false;
+      if (support !== "all" && score?.support !== support) return false;
+      if (!stationSearch) return true;
+      return [candidate.station_id, candidate.station_name, candidate.primary_story_label]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase()
+        .includes(stationSearch);
+    })
+    .sort((left, right) => compareCandidateFixtures(left, right, storyFilter, sortBy));
+  return {
+    ...screeningResponse,
+    candidates,
+    total_candidate_count: screeningResponse.candidates.length,
+    filtered_candidate_count: candidates.length,
+    sort_by: sortBy,
+    filters: {
+      station_id: null,
+      story_filter: storyFilter,
+      story_family: storyFamily,
+      support,
+      readiness,
+      station_search: request.station_search ?? "",
+    },
+  };
+}
+
+function storyScoreForTest(
+  candidate: (typeof screeningResponse.candidates)[number],
+  storyFilter: string,
+) {
+  if (storyFilter === "all") {
+    return candidate.story_scores[0] ?? null;
+  }
+  if (storyFilter === "deep_convection_trial") {
+    return (
+      candidate.story_scores
+        .filter((score) => testDeepConvectionStoryIds.has(score.story))
+        .sort((left, right) => right.score_0_to_100 - left.score_0_to_100)[0] ?? null
+    );
+  }
+  return candidate.story_scores.find((score) => score.story === storyFilter) ?? null;
+}
+
+function compareCandidateFixtures(
+  left: (typeof screeningResponse.candidates)[number],
+  right: (typeof screeningResponse.candidates)[number],
+  storyFilter: string,
+  sortBy: string,
+) {
+  const leftValue = candidateSortValueForTest(left, storyFilter, sortBy);
+  const rightValue = candidateSortValueForTest(right, storyFilter, sortBy);
+  if (leftValue === null && rightValue !== null) return 1;
+  if (rightValue === null && leftValue !== null) return -1;
+  if (leftValue !== null && rightValue !== null && leftValue !== rightValue) {
+    const direction = sortBy === "estimated_lcl_height_m_agl" ? "asc" : "desc";
+    return (leftValue < rightValue ? -1 : 1) * (direction === "asc" ? 1 : -1);
+  }
+  return (
+    Number(right.package_ready) - Number(left.package_ready) ||
+    (storyScoreForTest(right, storyFilter)?.score_0_to_100 ?? right.rank_score) -
+      (storyScoreForTest(left, storyFilter)?.score_0_to_100 ?? left.rank_score) ||
+    new Date(right.valid_time_utc).getTime() - new Date(left.valid_time_utc).getTime()
+  );
+}
+
+function candidateSortValueForTest(
+  candidate: (typeof screeningResponse.candidates)[number],
+  storyFilter: string,
+  sortBy: string,
+) {
+  if (sortBy === "best_match") {
+    return storyScoreForTest(candidate, storyFilter)?.score_0_to_100 ?? candidate.rank_score;
+  }
+  if (sortBy === "valid_time") return new Date(candidate.valid_time_utc).getTime();
+  if (sortBy === "station_name") return candidate.station_name ?? candidate.station_id;
+  if (sortBy === "package_readiness") return Number(candidate.package_ready);
+  const value = (candidate.features as Record<string, unknown>)[sortBy];
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
 
 const savedCandidatesResponse = {
   saved_candidates: [
@@ -2229,8 +2357,10 @@ beforeEach(() => {
           new Response(JSON.stringify(screeningInputsResponse), { status: 200 }),
         );
       }
-      if (url === "/api/sounding-candidates/screen") {
-        return Promise.resolve(new Response(JSON.stringify(screeningResponse), { status: 200 }));
+      if (url === "/api/sounding-candidates/analyze") {
+        return Promise.resolve(
+          new Response(JSON.stringify(screeningResponseForRequest(init)), { status: 200 }),
+        );
       }
       if (url === "/api/sounding-candidates/saved" && init?.method === "POST") {
         return Promise.resolve(
@@ -2661,7 +2791,7 @@ describe("App", () => {
     let screenBody = "";
     vi.mocked(fetch).mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
-      if (url === "/api/sounding-candidates/screen") {
+      if (url === "/api/sounding-candidates/analyze") {
         screenBody = String(init?.body ?? "");
       }
       if (url === "/api/dry-run-package") {
@@ -2683,10 +2813,10 @@ describe("App", () => {
     fireEvent.change(storyFilter, {
       target: { value: "deep_convection_trial" },
     });
-    fireEvent.click(screen.getByRole("button", { name: "Screen cached soundings" }));
+    fireEvent.click(screen.getByRole("button", { name: "Analyze cached soundings" }));
 
-    expect(await screen.findByText("Screening guidance loaded")).toBeInTheDocument();
-    expect(screenBody).toContain('"target_story":"deep_convection_trial"');
+    expect(await screen.findByText("Cached sounding analysis loaded")).toBeInTheDocument();
+    expect(screenBody).toContain('"story_filter":"deep_convection_trial"');
     const deepCard = screen.getByLabelText("Sounding candidate Norman, Oklahoma (USM00072357)");
     expect(deepCard).toHaveTextContent("Supercell-like environment");
 
@@ -2729,9 +2859,9 @@ describe("App", () => {
     fireEvent.change(await screen.findByLabelText("Story filter"), {
       target: { value: "humid_rainy_candidate" },
     });
-    fireEvent.click(screen.getByRole("button", { name: "Screen cached soundings" }));
+    fireEvent.click(screen.getByRole("button", { name: "Analyze cached soundings" }));
 
-    expect(await screen.findByText("Screening guidance loaded")).toBeInTheDocument();
+    expect(await screen.findByText("Cached sounding analysis loaded")).toBeInTheDocument();
     const humidCard = screen.getByLabelText("Sounding candidate Wilmington, Ohio (USM00072426)");
     expect(humidCard).toHaveTextContent("Humid / rainy");
 
@@ -2757,7 +2887,7 @@ describe("App", () => {
     let screenBody = "";
     vi.mocked(fetch).mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
-      if (url === "/api/sounding-candidates/screen") {
+      if (url === "/api/sounding-candidates/analyze") {
         screenBody = String(init?.body ?? "");
       }
       if (url === "/api/dry-run-package") {
@@ -2794,10 +2924,10 @@ describe("App", () => {
     fireEvent.change(screen.getByLabelText("Story filter"), {
       target: { value: "shallow_cumulus_candidate" },
     });
-    fireEvent.click(screen.getByRole("button", { name: "Screen cached soundings" }));
+    fireEvent.click(screen.getByRole("button", { name: "Analyze cached soundings" }));
 
-    expect(await screen.findByText("Screening guidance loaded")).toBeInTheDocument();
-    expect(screenBody).toContain('"target_story":"shallow_cumulus_candidate"');
+    expect(await screen.findByText("Cached sounding analysis loaded")).toBeInTheDocument();
+    expect(screenBody).toContain('"story_filter":"shallow_cumulus_candidate"');
     const valleyCard = screen.getByLabelText("Sounding candidate Valley, Nebraska (USM00072558)");
     expect(valleyCard).toHaveTextContent("Cloud-forming shallow cumulus");
     expect(valleyCard).toHaveTextContent("Package-ready");
@@ -2815,6 +2945,7 @@ describe("App", () => {
     fireEvent.change(screen.getByLabelText("Story filter"), {
       target: { value: "needs_review" },
     });
+    fireEvent.click(screen.getByRole("button", { name: "Analyze cached soundings" }));
     const normanCard = await screen.findByLabelText(
       "Sounding candidate Norman, Oklahoma (USM00072357)",
     );
@@ -2824,6 +2955,7 @@ describe("App", () => {
     fireEvent.change(screen.getByLabelText("Story filter"), {
       target: { value: "all" },
     });
+    fireEvent.click(screen.getByRole("button", { name: "Analyze cached soundings" }));
     const selectedValleyCard = await screen.findByLabelText(
       "Sounding candidate Valley, Nebraska (USM00072558)",
     );
@@ -2886,7 +3018,7 @@ describe("App", () => {
     ).toBeInTheDocument();
     expect(screen.queryByText("No saved candidates yet.")).not.toBeInTheDocument();
     expect(fetch).not.toHaveBeenCalledWith("/api/igra/recent/refresh-catalog", expect.anything());
-    expect(fetch).not.toHaveBeenCalledWith("/api/sounding-candidates/screen", expect.anything());
+    expect(fetch).not.toHaveBeenCalledWith("/api/sounding-candidates/analyze", expect.anything());
   });
 
   it("keeps secondary story matches visible and sorts missing LCL last", async () => {
@@ -2897,27 +3029,31 @@ describe("App", () => {
       target: { value: "__observed_sounding_upload__" },
     });
 
-    fireEvent.click(screen.getByRole("button", { name: "Screen cached soundings" }));
-    expect(await screen.findByText("Screening guidance loaded")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Analyze cached soundings" }));
+    expect(await screen.findByText("Cached sounding analysis loaded")).toBeInTheDocument();
 
     fireEvent.change(screen.getByLabelText("Story filter"), {
       target: { value: "shallow_cumulus_candidate" },
     });
+    fireEvent.click(screen.getByRole("button", { name: "Analyze cached soundings" }));
     expect(
       screen.getByLabelText("Sounding candidate Wilmington, Ohio (USM00072426)"),
     ).toBeInTheDocument();
 
     fireEvent.change(screen.getByLabelText("Sort"), {
-      target: { value: "lowest_lcl" },
+      target: { value: "estimated_lcl_height_m_agl" },
     });
-    const candidateCards = screen.getAllByLabelText(/^Sounding candidate /);
-    const visibleOrder = candidateCards.map((card) => card.textContent ?? "");
-    const validLclIndex = visibleOrder.findIndex((text) => text.includes("Wilmington, Ohio"));
-    const missingLclIndex = visibleOrder.findIndex((text) =>
-      text.includes("Springfield, Missouri"),
-    );
-    expect(validLclIndex).toBeGreaterThanOrEqual(0);
-    expect(missingLclIndex).toBeGreaterThan(validLclIndex);
+    fireEvent.click(screen.getByRole("button", { name: "Analyze cached soundings" }));
+    await waitFor(() => {
+      const candidateCards = screen.getAllByLabelText(/^Sounding candidate /);
+      const visibleOrder = candidateCards.map((card) => card.textContent ?? "");
+      const validLclIndex = visibleOrder.findIndex((text) => text.includes("Wilmington, Ohio"));
+      const missingLclIndex = visibleOrder.findIndex((text) =>
+        text.includes("Springfield, Missouri"),
+      );
+      expect(validLclIndex).toBeGreaterThanOrEqual(0);
+      expect(missingLclIndex).toBeGreaterThan(validLclIndex);
+    });
   });
 
   it("shows Deep Overnight as an expensive distinct generated package", async () => {

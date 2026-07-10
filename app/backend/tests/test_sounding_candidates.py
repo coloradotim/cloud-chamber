@@ -14,12 +14,16 @@ from cloud_chamber.run_manifest import load_run_manifest
 from cloud_chamber.settings import CloudChamberSettings
 from cloud_chamber.sounding_candidates import (
     SaveCandidateRequest,
+    UpdateSavedCandidateRequest,
     _features_from_record,
     _score_features,
+    _sort_analysis_candidates,
+    analyze_cached_soundings,
     list_saved_candidates,
     list_screening_inputs,
     save_candidate,
     screen_cached_soundings,
+    update_saved_candidate,
 )
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -65,12 +69,20 @@ def _write_cached_igra_station(
         downloaded_at=datetime(2026, 7, 1, tzinfo=UTC),
         extracted_at=datetime(2026, 7, 1, tzinfo=UTC),
     )
+    path = igra_cache_manifest_path(settings)
+    existing_entries: list[IGRACacheEntry] = []
+    if path.exists():
+        existing = IGRACacheManifest.model_validate_json(path.read_text())
+        existing_entries = [
+            existing_entry
+            for existing_entry in existing.entries
+            if existing_entry.station_id != station_id
+        ]
     manifest = IGRACacheManifest(
         cache_root=str(settings.cache_dir / "igra" / "recent"),
-        entries=[entry],
+        entries=[*existing_entries, entry],
         updated_at=datetime(2026, 7, 1, tzinfo=UTC),
     )
-    path = igra_cache_manifest_path(settings)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(manifest.model_dump_json(indent=2) + "\n")
     return text_path
@@ -178,6 +190,100 @@ def test_screen_cached_soundings_can_target_one_story(tmp_path: Path) -> None:
         for candidate in result.candidates
     ]
     assert target_scores == sorted(target_scores, reverse=True)
+
+
+def test_analyze_cached_soundings_filters_and_sorts_multiple_cached_blocks(
+    tmp_path: Path,
+) -> None:
+    settings = _settings(tmp_path)
+    _write_cached_igra_station(
+        settings,
+        station_id="USM00072558",
+        station_name="Valley, Nebraska",
+    )
+    _write_cached_igra_station(
+        settings,
+        station_id="USM00072426",
+        station_name="Wilmington, Ohio",
+    )
+    seed = analyze_cached_soundings(settings, latest_per_station=1, limit=10)
+    target_story = seed.candidates[0].primary_story
+    target_support = next(
+        score.support for score in seed.candidates[0].story_scores if score.story == target_story
+    )
+
+    result = analyze_cached_soundings(
+        settings,
+        latest_per_station=1,
+        limit=10,
+        story_filter=target_story,
+        support=target_support,
+        readiness="package_ready",
+        sort_by="station_name",
+    )
+
+    assert result.total_candidate_count == 2
+    assert result.filtered_candidate_count == 2
+    assert result.filters.story_filter == target_story
+    assert result.filters.support == target_support
+    assert result.sort_by == "station_name"
+    assert [candidate.station_name for candidate in result.candidates] == [
+        "Valley, Nebraska",
+        "Wilmington, Ohio",
+    ]
+    assert all(candidate.package_ready for candidate in result.candidates)
+    for candidate in result.candidates:
+        story_score = next(score for score in candidate.story_scores if score.story == target_story)
+        assert story_score.support == target_support
+
+
+def test_analysis_sorts_physical_fields_with_missing_values_last(tmp_path: Path) -> None:
+    settings = _settings(tmp_path)
+    _write_cached_igra_station(settings)
+    parsed_candidate = analyze_cached_soundings(settings, latest_per_station=1).candidates[0]
+    low_lcl = parsed_candidate.model_copy(
+        update={
+            "candidate_id": "low-lcl",
+            "station_id": "LOW00000000",
+            "features": {
+                **parsed_candidate.features,
+                "estimated_lcl_height_m_agl": 600.0,
+            },
+        }
+    )
+    high_lcl = parsed_candidate.model_copy(
+        update={
+            "candidate_id": "high-lcl",
+            "station_id": "HIGH0000000",
+            "features": {
+                **parsed_candidate.features,
+                "estimated_lcl_height_m_agl": 1800.0,
+            },
+        }
+    )
+    missing_lcl = parsed_candidate.model_copy(
+        update={
+            "candidate_id": "missing-lcl",
+            "station_id": "MISS0000000",
+            "features": {
+                **parsed_candidate.features,
+                "estimated_lcl_height_m_agl": None,
+            },
+        }
+    )
+
+    sorted_candidates = _sort_analysis_candidates(
+        [missing_lcl, high_lcl, low_lcl],
+        sort_by="estimated_lcl_height_m_agl",
+        sort_direction="asc",
+        story_filter="all",
+    )
+
+    assert [candidate.candidate_id for candidate in sorted_candidates] == [
+        "low-lcl",
+        "high-lcl",
+        "missing-lcl",
+    ]
 
 
 def test_screen_cached_soundings_caveats_unreadable_files(tmp_path: Path) -> None:
@@ -704,6 +810,19 @@ def test_saved_candidates_round_trip_runtime_local(tmp_path: Path) -> None:
     assert json.loads(saved_path.read_text())[0]["tags"] == ["candidate"]
     assert list_saved_candidates(settings)[0].notes == "try this"
 
+    updated = update_saved_candidate(
+        settings,
+        saved.saved_candidate_id,
+        UpdateSavedCandidateRequest(
+            tags=["Deep convection candidates", "Needs review", "Needs review"],
+            notes="tagged for follow-up",
+        ),
+    )
+
+    assert updated is not None
+    assert updated.tags == ["Deep convection candidates", "Needs review"]
+    assert list_saved_candidates(settings)[0].notes == "tagged for follow-up"
+
 
 def test_sounding_candidate_api_screen_save_and_delete(
     tmp_path: Path,
@@ -742,6 +861,24 @@ def test_sounding_candidate_api_screen_save_and_delete(
     )
     assert deep_screened.status_code == 200
 
+    analyzed = client.post(
+        "/api/sounding-candidates/analyze",
+        json={
+            "station_id": "USM00072558",
+            "latest_per_station": 1,
+            "limit": 5,
+            "story_filter": "shallow_cumulus_candidate",
+            "support": "weak",
+            "readiness": "package_ready",
+            "sort_by": "mean_qv_0_1000m_g_kg",
+        },
+    )
+    assert analyzed.status_code == 200
+    analyzed_payload = analyzed.json()
+    assert analyzed_payload["filters"]["story_filter"] == "shallow_cumulus_candidate"
+    assert analyzed_payload["sort_by"] == "mean_qv_0_1000m_g_kg"
+    assert analyzed_payload["sort_options"]
+
     saved = client.post(
         "/api/sounding-candidates/saved",
         json={"candidate": candidate, "tags": ["manual-review"]},
@@ -749,9 +886,21 @@ def test_sounding_candidate_api_screen_save_and_delete(
     assert saved.status_code == 200
     saved_id = saved.json()["saved_candidate_id"]
 
+    patched = client.patch(
+        f"/api/sounding-candidates/saved/{saved_id}",
+        json={"tags": ["Surface-forced candidates", "Needs review"], "notes": "try longer"},
+    )
+    assert patched.status_code == 200
+    assert patched.json()["tags"] == ["Surface-forced candidates", "Needs review"]
+    assert patched.json()["notes"] == "try longer"
+
     listed = client.get("/api/sounding-candidates/saved")
     assert listed.status_code == 200
     assert listed.json()["saved_candidates"][0]["saved_candidate_id"] == saved_id
+    assert listed.json()["saved_candidates"][0]["tags"] == [
+        "Surface-forced candidates",
+        "Needs review",
+    ]
 
     deleted = client.delete(f"/api/sounding-candidates/saved/{saved_id}")
     assert deleted.status_code == 200

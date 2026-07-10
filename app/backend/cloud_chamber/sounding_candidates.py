@@ -11,6 +11,7 @@ import hashlib
 import json
 import math
 from datetime import UTC, datetime
+from functools import cmp_to_key
 from pathlib import Path
 from typing import Any, Literal
 
@@ -60,6 +61,113 @@ TargetStoryId = Literal[
 ]
 Confidence = Literal["low", "medium", "high"]
 Support = Literal["supported", "weak", "unavailable"]
+CandidateStoryFamily = Literal["lower_atmosphere", "deep_convection", "review"]
+CandidateStoryFamilyFilter = Literal["all", "lower_atmosphere", "deep_convection", "review"]
+CandidateStoryFilter = Literal[
+    "all",
+    "deep_convection_trial",
+    "shallow_cumulus_candidate",
+    "dry_failed_candidate",
+    "capped_suppressed_candidate",
+    "humid_rainy_candidate",
+    "severe_thunderstorm_environment",
+    "supercell_environment",
+    "high_cape_pulse_storm",
+    "dry_microburst_inverted_v",
+    "squall_line_cold_pool_candidate",
+    "elevated_convection",
+    "needs_review",
+    "poor_or_incomplete_candidate",
+]
+CandidateSupportFilter = Literal["all", "supported", "weak", "unavailable"]
+CandidateReadinessFilter = Literal["all", "package_ready", "blocked"]
+CandidateSortDirection = Literal["asc", "desc"]
+CandidateSortKey = Literal[
+    "best_match",
+    "valid_time",
+    "station_id",
+    "station_name",
+    "primary_story",
+    "story_family",
+    "rank_score",
+    "confidence",
+    "support",
+    "package_readiness",
+    "observed_wind_available",
+    "profile_top_m_agl",
+    "lowest_level_m_agl",
+    "data_completeness_score",
+    "low_level_qv_g_kg",
+    "mean_qv_0_500m_g_kg",
+    "mean_qv_0_1000m_g_kg",
+    "surface_t_td_spread_c",
+    "estimated_lcl_height_m_agl",
+    "lapse_rate_0_1000m_c_per_km",
+    "midlevel_lapse_rate_700_500_hpa_c_per_km",
+    "cap_strength_proxy",
+    "cap_height_m_agl",
+    "bulk_shear_0_1km_m_s",
+    "bulk_shear_0_3km_m_s",
+    "bulk_shear_0_6km_m_s",
+    "midlevel_dry_layer_proxy",
+    "dry_microburst_inverted_v_proxy",
+    "freezing_level_m_agl",
+]
+SortValue = bool | float | str | datetime
+
+_FEATURE_SORT_KEYS: dict[CandidateSortKey, str] = {
+    "observed_wind_available": "observed_wind_available",
+    "profile_top_m_agl": "profile_top_m_agl",
+    "lowest_level_m_agl": "lowest_level_m_agl",
+    "data_completeness_score": "data_completeness_score",
+    "low_level_qv_g_kg": "low_level_qv_g_kg",
+    "mean_qv_0_500m_g_kg": "mean_qv_0_500m_g_kg",
+    "mean_qv_0_1000m_g_kg": "mean_qv_0_1000m_g_kg",
+    "surface_t_td_spread_c": "surface_t_td_spread_c",
+    "estimated_lcl_height_m_agl": "estimated_lcl_height_m_agl",
+    "lapse_rate_0_1000m_c_per_km": "lapse_rate_0_1000m_c_per_km",
+    "midlevel_lapse_rate_700_500_hpa_c_per_km": ("midlevel_lapse_rate_700_500_hpa_c_per_km"),
+    "cap_strength_proxy": "cap_strength_proxy",
+    "cap_height_m_agl": "cap_height_m_agl",
+    "bulk_shear_0_1km_m_s": "bulk_shear_0_1km_m_s",
+    "bulk_shear_0_3km_m_s": "bulk_shear_0_3km_m_s",
+    "bulk_shear_0_6km_m_s": "bulk_shear_0_6km_m_s",
+    "midlevel_dry_layer_proxy": "midlevel_dry_layer_proxy",
+    "dry_microburst_inverted_v_proxy": "dry_microburst_inverted_v_proxy",
+    "freezing_level_m_agl": "freezing_level_m_agl",
+}
+
+_DEFAULT_SORT_DIRECTIONS: dict[CandidateSortKey, CandidateSortDirection] = {
+    "best_match": "desc",
+    "valid_time": "desc",
+    "station_id": "asc",
+    "station_name": "asc",
+    "primary_story": "asc",
+    "story_family": "asc",
+    "rank_score": "desc",
+    "confidence": "desc",
+    "support": "desc",
+    "package_readiness": "desc",
+    "observed_wind_available": "desc",
+    "profile_top_m_agl": "desc",
+    "lowest_level_m_agl": "asc",
+    "data_completeness_score": "desc",
+    "low_level_qv_g_kg": "desc",
+    "mean_qv_0_500m_g_kg": "desc",
+    "mean_qv_0_1000m_g_kg": "desc",
+    "surface_t_td_spread_c": "asc",
+    "estimated_lcl_height_m_agl": "asc",
+    "lapse_rate_0_1000m_c_per_km": "desc",
+    "midlevel_lapse_rate_700_500_hpa_c_per_km": "desc",
+    "cap_strength_proxy": "desc",
+    "cap_height_m_agl": "asc",
+    "bulk_shear_0_1km_m_s": "desc",
+    "bulk_shear_0_3km_m_s": "desc",
+    "bulk_shear_0_6km_m_s": "desc",
+    "midlevel_dry_layer_proxy": "desc",
+    "dry_microburst_inverted_v_proxy": "desc",
+    "freezing_level_m_agl": "desc",
+}
 
 STORY_LABELS: dict[StoryId, str] = {
     "shallow_cumulus_candidate": "Cloud-forming shallow cumulus candidate",
@@ -125,6 +233,7 @@ class SoundingCandidate(BaseModel):
     source_provider: str = "NOAA/NCEI IGRA"
     primary_story: StoryId
     primary_story_label: str
+    story_family: CandidateStoryFamily = "lower_atmosphere"
     story_scores: list[StoryScore]
     rank_score: float
     confidence: Confidence
@@ -159,6 +268,42 @@ class ScreeningResult(BaseModel):
     caveats: list[str] = Field(default_factory=list)
 
 
+class CandidateSortOption(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    key: CandidateSortKey
+    label: str
+    units: str | None = None
+    default_direction: CandidateSortDirection
+    missing_behavior: str = "Unavailable values sort last and are not treated as zero."
+
+
+class CandidateAnalysisFilterSummary(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    station_id: str | None = None
+    story_filter: CandidateStoryFilter = "all"
+    story_family: CandidateStoryFamilyFilter = "all"
+    support: CandidateSupportFilter = "all"
+    readiness: CandidateReadinessFilter = "all"
+    station_search: str = ""
+
+
+class CandidateAnalysisResult(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    screening_version: str = SCREENING_VERSION
+    generated_at: datetime
+    candidates: list[SoundingCandidate]
+    total_candidate_count: int
+    filtered_candidate_count: int
+    sort_by: CandidateSortKey
+    sort_direction: CandidateSortDirection
+    filters: CandidateAnalysisFilterSummary
+    sort_options: list[CandidateSortOption]
+    caveats: list[str] = Field(default_factory=list)
+
+
 class SavedSoundingCandidate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -167,6 +312,7 @@ class SavedSoundingCandidate(BaseModel):
     selected_sounding_payload: dict[str, Any] | None
     screening_version: str = SCREENING_VERSION
     primary_story: StoryId
+    story_family: CandidateStoryFamily = "lower_atmosphere"
     story_scores: list[StoryScore]
     features: dict[str, float | int | str | bool | None]
     evidence: list[EvidenceItem]
@@ -185,6 +331,125 @@ class SaveCandidateRequest(BaseModel):
     candidate: SoundingCandidate
     tags: list[str] = Field(default_factory=list)
     notes: str | None = None
+
+
+class UpdateSavedCandidateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    tags: list[str] | None = None
+    notes: str | None = None
+
+
+SORT_OPTIONS: tuple[CandidateSortOption, ...] = (
+    CandidateSortOption(
+        key="best_match", label="Best match for selected story", default_direction="desc"
+    ),
+    CandidateSortOption(key="valid_time", label="Valid time", default_direction="desc"),
+    CandidateSortOption(key="station_id", label="Station ID", default_direction="asc"),
+    CandidateSortOption(key="station_name", label="Station name", default_direction="asc"),
+    CandidateSortOption(key="primary_story", label="Primary story", default_direction="asc"),
+    CandidateSortOption(key="story_family", label="Story family", default_direction="asc"),
+    CandidateSortOption(
+        key="rank_score", label="Rank score", units="0-100", default_direction="desc"
+    ),
+    CandidateSortOption(key="confidence", label="Confidence", default_direction="desc"),
+    CandidateSortOption(key="support", label="Support state", default_direction="desc"),
+    CandidateSortOption(
+        key="package_readiness", label="Package readiness", default_direction="desc"
+    ),
+    CandidateSortOption(
+        key="observed_wind_available",
+        label="Observed wind availability",
+        default_direction="desc",
+    ),
+    CandidateSortOption(
+        key="profile_top_m_agl", label="Profile top", units="m AGL", default_direction="desc"
+    ),
+    CandidateSortOption(
+        key="lowest_level_m_agl",
+        label="Lowest usable level",
+        units="m AGL",
+        default_direction="asc",
+    ),
+    CandidateSortOption(
+        key="data_completeness_score",
+        label="Data completeness",
+        units="0-100",
+        default_direction="desc",
+    ),
+    CandidateSortOption(
+        key="low_level_qv_g_kg", label="Low-level qv", units="g/kg", default_direction="desc"
+    ),
+    CandidateSortOption(
+        key="mean_qv_0_500m_g_kg",
+        label="Mean qv 0-500 m",
+        units="g/kg",
+        default_direction="desc",
+    ),
+    CandidateSortOption(
+        key="mean_qv_0_1000m_g_kg",
+        label="Mean qv 0-1 km",
+        units="g/kg",
+        default_direction="desc",
+    ),
+    CandidateSortOption(
+        key="surface_t_td_spread_c",
+        label="Surface T-Td spread",
+        units="C",
+        default_direction="asc",
+    ),
+    CandidateSortOption(
+        key="estimated_lcl_height_m_agl",
+        label="Estimated LCL",
+        units="m AGL",
+        default_direction="asc",
+    ),
+    CandidateSortOption(
+        key="lapse_rate_0_1000m_c_per_km",
+        label="Low-level lapse rate",
+        units="C/km",
+        default_direction="desc",
+    ),
+    CandidateSortOption(
+        key="midlevel_lapse_rate_700_500_hpa_c_per_km",
+        label="Midlevel lapse rate",
+        units="C/km",
+        default_direction="desc",
+    ),
+    CandidateSortOption(
+        key="cap_strength_proxy",
+        label="Cap/inversion strength",
+        units="C",
+        default_direction="desc",
+    ),
+    CandidateSortOption(
+        key="cap_height_m_agl", label="Cap/inversion height", units="m AGL", default_direction="asc"
+    ),
+    CandidateSortOption(
+        key="bulk_shear_0_1km_m_s", label="Bulk shear 0-1 km", units="m/s", default_direction="desc"
+    ),
+    CandidateSortOption(
+        key="bulk_shear_0_3km_m_s", label="Bulk shear 0-3 km", units="m/s", default_direction="desc"
+    ),
+    CandidateSortOption(
+        key="bulk_shear_0_6km_m_s", label="Bulk shear 0-6 km", units="m/s", default_direction="desc"
+    ),
+    CandidateSortOption(
+        key="midlevel_dry_layer_proxy",
+        label="Dry-layer proxy",
+        units="g/kg",
+        default_direction="desc",
+    ),
+    CandidateSortOption(
+        key="dry_microburst_inverted_v_proxy",
+        label="Inverted-V proxy",
+        units="0-100",
+        default_direction="desc",
+    ),
+    CandidateSortOption(
+        key="freezing_level_m_agl", label="Freezing level", units="m AGL", default_direction="desc"
+    ),
+)
 
 
 def list_screening_inputs(settings: CloudChamberSettings) -> list[ScreeningInput]:
@@ -279,6 +544,75 @@ def screen_cached_soundings(
     )
 
 
+def analyze_cached_soundings(
+    settings: CloudChamberSettings,
+    *,
+    station_id: str | None = None,
+    latest_per_station: int = 5,
+    limit: int = 50,
+    story_filter: CandidateStoryFilter = "all",
+    story_family: CandidateStoryFamilyFilter = "all",
+    support: CandidateSupportFilter = "all",
+    readiness: CandidateReadinessFilter = "all",
+    station_search: str = "",
+    sort_by: CandidateSortKey = "best_match",
+    sort_direction: CandidateSortDirection | None = None,
+) -> CandidateAnalysisResult:
+    """Analyze cached sounding candidates with backend-owned filters and sorts."""
+
+    if latest_per_station < 1:
+        raise ValueError("latest_per_station must be at least 1")
+    if limit < 1:
+        raise ValueError("limit must be at least 1")
+    selected_direction = sort_direction or _DEFAULT_SORT_DIRECTIONS[sort_by]
+    target_story = _target_story_for_filter(story_filter, story_family)
+    pool_limit = max(limit, 10_000)
+    screened = screen_cached_soundings(
+        settings,
+        station_id=station_id,
+        latest_per_station=latest_per_station,
+        limit=pool_limit,
+        target_story=target_story,
+    )
+    normalized_search = station_search.strip()
+    filtered = [
+        candidate
+        for candidate in screened.candidates
+        if _candidate_matches_analysis_filters(
+            candidate,
+            story_filter=story_filter,
+            story_family=story_family,
+            support=support,
+            readiness=readiness,
+            station_search=normalized_search,
+        )
+    ]
+    sorted_candidates = _sort_analysis_candidates(
+        filtered,
+        sort_by=sort_by,
+        sort_direction=selected_direction,
+        story_filter=story_filter,
+    )
+    return CandidateAnalysisResult(
+        generated_at=datetime.now(UTC),
+        candidates=sorted_candidates[:limit],
+        total_candidate_count=len(screened.candidates),
+        filtered_candidate_count=len(filtered),
+        sort_by=sort_by,
+        sort_direction=selected_direction,
+        filters=CandidateAnalysisFilterSummary(
+            station_id=station_id,
+            story_filter=story_filter,
+            story_family=story_family,
+            support=support,
+            readiness=readiness,
+            station_search=normalized_search,
+        ),
+        sort_options=list(SORT_OPTIONS),
+        caveats=screened.caveats,
+    )
+
+
 def _candidate_story_score(candidate: SoundingCandidate, story: TargetStoryId | None) -> float:
     if story is None:
         return candidate.rank_score
@@ -301,6 +635,195 @@ def _candidate_story_score(candidate: SoundingCandidate, story: TargetStoryId | 
     return 0.0
 
 
+def _candidate_story_score_model(
+    candidate: SoundingCandidate, story: CandidateStoryFilter
+) -> StoryScore | None:
+    if story == "all":
+        return max(candidate.story_scores, key=lambda score: score.score_0_to_100, default=None)
+    if story == "deep_convection_trial":
+        return max(
+            (score for score in candidate.story_scores if score.story in DEEP_CONVECTION_STORY_IDS),
+            key=lambda score: score.score_0_to_100,
+            default=None,
+        )
+    return next((score for score in candidate.story_scores if score.story == story), None)
+
+
+def _target_story_for_filter(
+    story_filter: CandidateStoryFilter, story_family: CandidateStoryFamilyFilter
+) -> TargetStoryId | None:
+    if story_filter != "all":
+        return story_filter
+    if story_family == "deep_convection":
+        return "deep_convection_trial"
+    return None
+
+
+def _candidate_matches_analysis_filters(
+    candidate: SoundingCandidate,
+    *,
+    story_filter: CandidateStoryFilter,
+    story_family: CandidateStoryFamilyFilter,
+    support: CandidateSupportFilter,
+    readiness: CandidateReadinessFilter,
+    station_search: str,
+) -> bool:
+    if readiness == "package_ready" and not candidate.package_ready:
+        return False
+    if readiness == "blocked" and candidate.package_ready:
+        return False
+    if story_family != "all" and _candidate_story_family(candidate) != story_family:
+        return False
+    score = _candidate_story_score_model(candidate, story_filter)
+    if story_filter != "all":
+        if score is None or score.score_0_to_100 <= 0 or score.support == "unavailable":
+            return False
+    if support != "all" and (score is None or score.support != support):
+        return False
+    if station_search:
+        normalized = station_search.lower()
+        searchable = " ".join(
+            str(value)
+            for value in (
+                candidate.station_id,
+                candidate.station_name,
+                candidate.source_file_name,
+                candidate.primary_story_label,
+                candidate.story_family,
+            )
+            if value
+        ).lower()
+        if normalized not in searchable:
+            return False
+    return True
+
+
+def _sort_analysis_candidates(
+    candidates: list[SoundingCandidate],
+    *,
+    sort_by: CandidateSortKey,
+    sort_direction: CandidateSortDirection,
+    story_filter: CandidateStoryFilter,
+) -> list[SoundingCandidate]:
+    def compare(left: SoundingCandidate, right: SoundingCandidate) -> int:
+        return _compare_candidates(
+            left,
+            right,
+            sort_by=sort_by,
+            sort_direction=sort_direction,
+            story_filter=story_filter,
+        )
+
+    return sorted(candidates, key=cmp_to_key(compare))
+
+
+def _compare_candidates(
+    left: SoundingCandidate,
+    right: SoundingCandidate,
+    *,
+    sort_by: CandidateSortKey,
+    sort_direction: CandidateSortDirection,
+    story_filter: CandidateStoryFilter,
+) -> int:
+    left_value = _candidate_sort_value(left, sort_by, story_filter)
+    right_value = _candidate_sort_value(right, sort_by, story_filter)
+    if left_value is None and right_value is not None:
+        return 1
+    if right_value is None and left_value is not None:
+        return -1
+    if left_value is not None and right_value is not None:
+        comparison = _compare_sort_values(left_value, right_value)
+        if comparison != 0:
+            return comparison if sort_direction == "asc" else -comparison
+    return _compare_candidate_tie_breakers(left, right, story_filter)
+
+
+def _candidate_sort_value(
+    candidate: SoundingCandidate,
+    sort_by: CandidateSortKey,
+    story_filter: CandidateStoryFilter,
+) -> SortValue | None:
+    if sort_by == "best_match":
+        score = _candidate_story_score_model(candidate, story_filter)
+        return score.score_0_to_100 if score else candidate.rank_score
+    if sort_by == "valid_time":
+        return candidate.valid_time_utc
+    if sort_by == "station_id":
+        return candidate.station_id
+    if sort_by == "station_name":
+        return candidate.station_name or candidate.station_id
+    if sort_by == "primary_story":
+        return candidate.primary_story_label
+    if sort_by == "story_family":
+        return _candidate_story_family(candidate)
+    if sort_by == "rank_score":
+        return candidate.rank_score
+    if sort_by == "confidence":
+        return {"low": 0.0, "medium": 1.0, "high": 2.0}[candidate.confidence]
+    if sort_by == "support":
+        score = _candidate_story_score_model(candidate, story_filter)
+        return {"unavailable": 0.0, "weak": 1.0, "supported": 2.0}[score.support] if score else None
+    if sort_by == "package_readiness":
+        return candidate.package_ready
+    feature_key = _FEATURE_SORT_KEYS.get(sort_by)
+    if feature_key is None:
+        return None
+    value = candidate.features.get(feature_key)
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, int | float) and math.isfinite(float(value)):
+        return float(value)
+    if isinstance(value, str) and value:
+        return value
+    return None
+
+
+def _compare_sort_values(
+    left: SortValue,
+    right: SortValue,
+) -> int:
+    if left == right:
+        return 0
+    if isinstance(left, bool) and isinstance(right, bool):
+        return _compare_floats(float(left), float(right))
+    if isinstance(left, float) and isinstance(right, float):
+        return _compare_floats(left, right)
+    if isinstance(left, str) and isinstance(right, str):
+        return -1 if left < right else 1
+    if isinstance(left, datetime) and isinstance(right, datetime):
+        return -1 if left < right else 1
+    return -1 if str(left) < str(right) else 1
+
+
+def _compare_floats(left: float, right: float) -> int:
+    if left == right:
+        return 0
+    return -1 if left < right else 1
+
+
+def _compare_candidate_tie_breakers(
+    left: SoundingCandidate,
+    right: SoundingCandidate,
+    story_filter: CandidateStoryFilter,
+) -> int:
+    left_score = _candidate_story_score_model(left, story_filter)
+    right_score = _candidate_story_score_model(right, story_filter)
+    for left_value, right_value, direction in (
+        (left.package_ready, right.package_ready, "desc"),
+        (
+            left_score.score_0_to_100 if left_score else left.rank_score,
+            right_score.score_0_to_100 if right_score else right.rank_score,
+            "desc",
+        ),
+        (left.valid_time_utc, right.valid_time_utc, "desc"),
+        (left.station_id, right.station_id, "asc"),
+    ):
+        comparison = _compare_sort_values(left_value, right_value)
+        if comparison != 0:
+            return comparison if direction == "asc" else -comparison
+    return 0
+
+
 def save_candidate(
     settings: CloudChamberSettings,
     request: SaveCandidateRequest,
@@ -310,11 +833,12 @@ def save_candidate(
         candidate=request.candidate,
         selected_sounding_payload=request.candidate.selected_sounding_payload,
         primary_story=request.candidate.primary_story,
+        story_family=_candidate_story_family(request.candidate),
         story_scores=request.candidate.story_scores,
         features=request.candidate.features,
         evidence=request.candidate.evidence,
         caveats=request.candidate.caveats,
-        tags=request.tags,
+        tags=_normalize_tags(request.tags),
         notes=request.notes,
         created_at=datetime.now(UTC),
     )
@@ -335,6 +859,31 @@ def list_saved_candidates(settings: CloudChamberSettings) -> list[SavedSoundingC
     if not isinstance(loaded, list):
         raise ValueError(f"Saved candidates file must contain a JSON list: {path}")
     return [SavedSoundingCandidate.model_validate(item) for item in loaded]
+
+
+def update_saved_candidate(
+    settings: CloudChamberSettings,
+    saved_candidate_id: str,
+    request: UpdateSavedCandidateRequest,
+) -> SavedSoundingCandidate | None:
+    existing = list_saved_candidates(settings)
+    updated: list[SavedSoundingCandidate] = []
+    selected: SavedSoundingCandidate | None = None
+    for candidate in existing:
+        if candidate.saved_candidate_id != saved_candidate_id:
+            updated.append(candidate)
+            continue
+        updates: dict[str, object] = {}
+        if "tags" in request.model_fields_set:
+            updates["tags"] = _normalize_tags(request.tags or [])
+        if "notes" in request.model_fields_set:
+            updates["notes"] = request.notes
+        selected = candidate.model_copy(update=updates)
+        updated.append(selected)
+    if selected is None:
+        return None
+    _write_saved_candidates(settings, updated)
+    return selected
 
 
 def delete_saved_candidate(settings: CloudChamberSettings, saved_candidate_id: str) -> bool:
@@ -395,6 +944,7 @@ def _candidate_from_cached_sounding(
         package_ready = False
     primary = max(story_scores, key=lambda score: score.score_0_to_100)
     rank_score = _rank_score(primary, package_ready)
+    story_family = _story_family_for_story(primary.story)
     return SoundingCandidate(
         candidate_id=_candidate_id(entry.station_id, selected_time, source_path.name, source_hash),
         station_id=entry.station_id,
@@ -408,6 +958,7 @@ def _candidate_from_cached_sounding(
         source_file_hash=source_hash,
         primary_story=primary.story,
         primary_story_label=primary.label,
+        story_family=story_family,
         story_scores=story_scores,
         rank_score=rank_score,
         confidence=_confidence(rank_score, package_ready, features),
@@ -1337,6 +1888,30 @@ def _station_metadata_from_cache_entry(entry: IGRACacheEntry) -> StationMetadata
 def _candidate_id(station_id: str, valid_time: datetime, filename: str, source_hash: str) -> str:
     raw = f"{station_id}|{valid_time.isoformat()}|{filename}|{source_hash}"
     return "sounding-candidate-" + hashlib.sha256(raw.encode("utf-8")).hexdigest()[:16]
+
+
+def _candidate_story_family(candidate: SoundingCandidate) -> CandidateStoryFamily:
+    return _story_family_for_story(candidate.primary_story)
+
+
+def _story_family_for_story(story: StoryId) -> CandidateStoryFamily:
+    if story in DEEP_CONVECTION_STORY_IDS:
+        return "deep_convection"
+    if story in {"needs_review", "poor_or_incomplete_candidate"}:
+        return "review"
+    return "lower_atmosphere"
+
+
+def _normalize_tags(tags: list[str]) -> list[str]:
+    normalized: list[str] = []
+    seen: set[str] = set()
+    for tag in tags:
+        cleaned = tag.strip()
+        if not cleaned or cleaned in seen:
+            continue
+        seen.add(cleaned)
+        normalized.append(cleaned)
+    return normalized
 
 
 def _cached_text_entries(settings: CloudChamberSettings) -> list[IGRACacheEntry]:

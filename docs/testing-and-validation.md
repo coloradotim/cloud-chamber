@@ -97,13 +97,14 @@ Frontend tests for the `Upload a Sounding` Build workflow should cover the same
 boundary. Component tests and mocked Playwright smoke tests should verify that
 saved candidates load immediately when `Upload a Sounding` is selected; the
 candidate workbench can refresh IGRA catalog metadata, cache a bounded batch of
-station files through mocked APIs, screen cached soundings by story, include
+station files through mocked APIs, analyze cached soundings by story, story
+family, support, readiness, station search, and backend-owned sort keys, include
 secondary story-score matches in filtered results, sort missing metrics last,
-show blocked candidates as unusable, save candidates, load a package-ready
-candidate into the observed-sounding package review, and include
+show blocked candidates as unusable, save candidates with working-set tags, load
+a package-ready candidate into the observed-sounding package review, and include
 candidate-screening provenance in the generated package request. Browser tests
 must mock the backend APIs and must not fetch NOAA/NCEI, parse raw station text,
-or imply that a candidate score predicts the CM1 outcome.
+compute story scores, or imply that a candidate score predicts the CM1 outcome.
 
 Most expanded real-sounding story families are spec-only until backend feature
 extraction, scoring, evidence, caveats, and package-readiness behavior are

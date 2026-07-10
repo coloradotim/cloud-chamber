@@ -66,13 +66,22 @@ from cloud_chamber.selected_region_diagnostics import (
 )
 from cloud_chamber.settings import load_settings
 from cloud_chamber.sounding_candidates import (
+    CandidateReadinessFilter,
+    CandidateSortDirection,
+    CandidateSortKey,
+    CandidateStoryFamilyFilter,
+    CandidateStoryFilter,
+    CandidateSupportFilter,
     SaveCandidateRequest,
     TargetStoryId,
+    UpdateSavedCandidateRequest,
+    analyze_cached_soundings,
     delete_saved_candidate,
     list_saved_candidates,
     list_screening_inputs,
     save_candidate,
     screen_cached_soundings,
+    update_saved_candidate,
 )
 from cloud_chamber.visualization_data import (
     VisualizationDataError,
@@ -156,6 +165,19 @@ class SoundingCandidateScreenRequest(BaseModel):
     latest_per_station: int = 5
     limit: int = 50
     target_story: TargetStoryId | None = None
+
+
+class SoundingCandidateAnalysisRequest(BaseModel):
+    station_id: str | None = None
+    latest_per_station: int = 5
+    limit: int = 50
+    story_filter: CandidateStoryFilter = "all"
+    story_family: CandidateStoryFamilyFilter = "all"
+    support: CandidateSupportFilter = "all"
+    readiness: CandidateReadinessFilter = "all"
+    station_search: str = ""
+    sort_by: CandidateSortKey = "best_match"
+    sort_direction: CandidateSortDirection | None = None
 
 
 @app.get("/api/scenarios")
@@ -312,6 +334,27 @@ def screen_sounding_candidates(request: SoundingCandidateScreenRequest) -> dict[
     return result.model_dump(mode="json")
 
 
+@app.post("/api/sounding-candidates/analyze")
+def analyze_sounding_candidates(request: SoundingCandidateAnalysisRequest) -> dict[str, object]:
+    try:
+        result = analyze_cached_soundings(
+            load_settings(),
+            station_id=request.station_id,
+            latest_per_station=request.latest_per_station,
+            limit=request.limit,
+            story_filter=request.story_filter,
+            story_family=request.story_family,
+            support=request.support,
+            readiness=request.readiness,
+            station_search=request.station_search,
+            sort_by=request.sort_by,
+            sort_direction=request.sort_direction,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return result.model_dump(mode="json")
+
+
 @app.get("/api/sounding-candidates/saved")
 def get_saved_sounding_candidates() -> dict[str, object]:
     try:
@@ -327,6 +370,19 @@ def create_saved_sounding_candidate(request: SaveCandidateRequest) -> dict[str, 
         saved = save_candidate(load_settings(), request)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return saved.model_dump(mode="json")
+
+
+@app.patch("/api/sounding-candidates/saved/{saved_candidate_id}")
+def update_saved_sounding_candidate(
+    saved_candidate_id: str, request: UpdateSavedCandidateRequest
+) -> dict[str, object]:
+    try:
+        saved = update_saved_candidate(load_settings(), saved_candidate_id, request)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if saved is None:
+        raise HTTPException(status_code=404, detail="Saved sounding candidate not found")
     return saved.model_dump(mode="json")
 
 

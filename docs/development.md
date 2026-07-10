@@ -205,11 +205,16 @@ The same workflow is available in the app from Build -> `Upload a Sounding` ->
 `Find interesting soundings`. Use `Refresh IGRA catalog` to update station
 metadata, `Cache station files` to download a bounded batch of station-period
 files, choose a story filter such as `Deep Convection Trial stories`, then
-`Screen cached soundings`.
+`Analyze cached soundings`. The workbench asks the backend to sort and filter
+cached candidates by story, story family, support, readiness, station search,
+and sounding-derived fields; missing feature values remain unavailable rather
+than becoming zero-valued evidence.
 `Use this sounding` loads a package-ready candidate into the observed-sounding
 package review; it does not launch CM1 and it does not claim the candidate will
 produce the screened outcome. Blocked candidates remain reviewable but cannot be
-used for package generation until their caveats are resolved.
+used for package generation until their caveats are resolved. Saved candidates
+can be placed into working-set tags such as `Deep convection candidates`,
+`Needs longer run`, or `Needs review`.
 
 To reset the recent IGRA cache and test from a clean state, use the script
 cleanup command, then rerun `status` / `refresh`:
