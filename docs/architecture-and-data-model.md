@@ -138,6 +138,13 @@ The forward analyzer contract is
 It defines how a future analyzer may turn ingredient scores into testable
 hypotheses only when explicit run assumptions, predicted CM1-observable output
 signatures, required output fields, and compatible run recipes are present.
+The compatible recipe layer is governed by
+[Run Recipe And Story-Mapping Contract](contracts/run-recipe-and-story-mapping.md),
+which maps current story IDs to untriggered normal-evolution, surface-forced,
+triggered deep-potential, blocked, or future run recipes. Build should use that
+mapping to warn when a package can run but cannot test the selected hypothesis;
+Results should use the same recipe ID and required fields before comparing
+predicted and actual CM1 output.
 
 The sounding-diagnostics layer is a backend-only feature extractor for observed
 soundings. It produces bounded `SoundingDiagnostics` payloads with

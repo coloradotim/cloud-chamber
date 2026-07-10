@@ -196,6 +196,8 @@ Future predicted-output language belongs in
 [Analyzer Hypothesis And Output-Signature Contract](analyzer-hypothesis-output-signature.md).
 Until that contract is implemented, this screen emits ingredient/screening
 scores and recipe-fit caveats, not output predictions.
+The bridge from story IDs to explicit CM1 run recipes is defined in
+[Run Recipe And Story-Mapping Contract](run-recipe-and-story-mapping.md).
 
 ### Needs Review
 
