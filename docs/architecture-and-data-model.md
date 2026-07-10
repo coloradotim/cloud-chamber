@@ -8,6 +8,24 @@ CM1 is the high-fidelity simulation engine; Cloud Chamber is the local
 experiment builder, run manager, result notebook, diagnostics layer, and
 visualizer.
 
+The current user-facing architecture is:
+
+```text
+Build = configure and launch one CM1 run
+Results = notebook for completed/ingested runs
+Explore = inspect one result with CM1-derived evidence
+```
+
+Runtime inventory and cleanup are not a separate top-level workspace. Build owns
+active, incomplete, and non-ingested package/run work; Results owns ingested
+notebook entries and explicit ingested-result cleanup.
+
+Observed-sounding presets seed a CM1-facing configuration, but they should not
+be modeled as rigid product cages. The data model may keep internal
+`package_family` values where they preserve compatibility, while the product
+model treats those values as implementation/provenance metadata beneath a
+configurable run builder.
+
 The first MVP target is a 2024 MacBook Air with 8GB RAM. Design for one local CM1 run at a time, conservative output handling, and backend-side processing/downsampling. Optional cloud compute can be researched later, but it is not part of the core architecture.
 
 Replay / inspect / save is core MVP. Duplicate / tweak / rerun is later and should not drive the first result storage model.
@@ -123,11 +141,12 @@ screening and package-readiness path supports them. The expanded taxonomy in
 [research/expanded-sounding-candidate-taxonomy.md](research/expanded-sounding-candidate-taxonomy.md)
 defines readiness states for severe/deep-convection, boundary-layer, low-cloud,
 and winter/cold-season stories so APIs can distinguish screenable environments
-from runnable package families. Until a story has backend features, scoring
+from runnable configuration paths. Until a story has backend features, scoring
 tests, evidence, caveats, and package-readiness support, it must not be emitted
 as an enabled package-ready label. The first implemented severe/deep-convection
-path is `Deep Convection Trial`, which treats selected observed soundings as
-pre-run hypotheses for an idealized triggered CM1 experiment.
+path is the deep-convection observed-sounding preset, backed internally by
+`package_family = deep_convection_trial`, which treats selected observed
+soundings as pre-run hypotheses for an idealized triggered CM1 experiment.
 
 The Build UI consumes this layer through bounded JSON only. `Upload a Sounding`
 loads saved candidates immediately when that experiment is selected, before any
@@ -140,23 +159,24 @@ separate from run/result status: saved candidates are pre-run hypotheses, while
 generated packages, launched runs, and ingested results remain separate
 lifecycle objects.
 
-Deep Convection Trial packages extend the same dry-run package contract rather
-than creating a separate workflow. The package records
-`package_family = deep_convection_trial`, `package_display_name = Deep
-Convection Trial`, `input_source = observed_sounding`, `trigger_type =
-warm_bubble`, trigger metadata, expected output fields, package-family smoke
-validation status, package caveats, and any candidate-screening payload on the
-run manifest, case manifest, and dry-run report. The generated namelist uses the
-observed `input_sounding` route (`isnd = 7`), requires observed u/v winds,
+Deep-convection observed-sounding packages extend the same dry-run package
+contract rather than creating a separate workflow. The package records
+`package_family = deep_convection_trial`, a deep-convection display label,
+`input_source = observed_sounding`, `trigger_type = warm_bubble`, trigger
+metadata, expected output fields, package-family smoke validation status,
+package caveats, and any candidate-screening payload on the run manifest, case
+manifest, and dry-run report. The generated namelist uses the observed
+`input_sounding` route (`isnd = 7`), requires complete usable observed u/v winds,
 selects CM1's built-in three-warm-bubble initialization (`iinit = 3`) with
-`testcase = 0`, uses a storm-scale idealized domain for storm growth,
-and enables rain, reflectivity, vorticity, and updraft-helicity output. Manual
-smoke evidence applies to the package family; each observed sounding remains an
-experiment whose outcome must be inspected after CM1 completes. The
-trigger is described as fixed v1 package metadata rather than primary product
-controls. Ingest copies the package-family and trigger metadata
-into result metadata and Result Cards so Results and Explore do not lose the
-distinction between an observed-sounding quick look and a Deep Convection Trial.
+`testcase = 0`, uses a storm-scale idealized domain for storm growth, and
+enables rain-water-aloft, surface-rain, reflectivity, vorticity, and
+updraft-helicity output. Manual smoke evidence applies to the package path and
+basic run/ingest health; each observed sounding remains an experiment whose
+outcome must be inspected after CM1 completes. The trigger is described as
+fixed v1 package metadata rather than a primary product control. Ingest copies
+the package-family and trigger metadata into result metadata and Result Cards so
+Results and Explore do not lose the distinction between an observed-sounding
+quick look and a deep-convection configured run.
 
 ## Suggested Stack
 
@@ -234,6 +254,13 @@ The earlier Cloud Chamber quick-look derivative is not scientifically accepted: 
 The first reference-derived validation run, `dry-run-les-shallowcu-20260522140642`, completed locally with NetCDF output and ingested 7 model-output time steps over 21600 seconds. It produced cloud water and vertical velocity diagnostics, so the architecture should treat the reference-derived package as the recovery baseline and the earlier compact derivative as invalid evidence rather than a tuning base.
 
 Run-size presets are generated package promises, not labels. The standard/reference package preserves `timax = 21600.0`, `tapfrq = 3600.0`, and the 64 x 64 x 75 / 100 m horizontal grid. The first quick-look variant preserves every reference-derived science/numerics setting and changes only `timax = 10800.0` and `tapfrq = 900.0`. The Deep Overnight variant is the expensive opt-in preset: it preserves the physical 6.4 km x 6.4 km domain and the accepted scenario controls, but increases horizontal resolution to 192 x 192 at about 33.333 m, saves output every 300 s, and keeps the Standard solver timestep. Vertical spacing, domain top, surface stress/roughness path, moisture/sounding, surface fluxes, turbulence/SGS settings, damping settings, boundary conditions, NetCDF output, and reference `LANDUSE.TBL` staging should remain unchanged.
+
+Future observed-sounding run controls should evolve from this preset contract:
+duration, grid/detail, output cadence, forcing, and requested output fields are
+normal guarded configuration levers. Raw numerical timestep is not a normal v1
+control. Presets should expose their derived CM1-facing values in advanced
+metadata so dry-run reports and Build UI can show exactly what will be written
+without requiring raw namelist editing.
 
 The first quick-look validation run, `dry-run-quicklook-les-shallowcu-20260522151536`, preserved those settings, completed locally, and ingested 13 model-output time steps over 10800 seconds. Diagnostics still reported cloud formation, vertical motion, and rain, so the architecture can treat this runtime-only quick-look preset as the first validated shorter Baseline Shallow Cumulus variant.
 

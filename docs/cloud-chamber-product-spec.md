@@ -22,6 +22,20 @@ The current UX reset direction is:
 Cloud Chamber is a guided experiment notebook for understanding why clouds formed, failed, stayed shallow, or grew stronger.
 ```
 
+The current product model is:
+
+```text
+Build = configure and launch one CM1 run
+Results = notebook for completed/ingested runs
+Explore = inspect one result with CM1-derived evidence
+```
+
+Build should be organized around configurable observed-sounding runs. Presets
+are useful starting points, not separate product cages: a user should be able to
+start from a sane preset, inspect the actual CM1-facing settings, and adjust
+duration, grid/detail, output cadence, forcing, and output fields within guarded
+bounds.
+
 See [UX Reset: Guided Experiment Notebook](ux-reset-guided-experiment-notebook.md)
 for the PM/design source of truth for future UX work.
 
@@ -101,10 +115,12 @@ low-cloud, and winter/cold-season candidates, are defined in
 [research/expanded-sounding-candidate-taxonomy.md](research/expanded-sounding-candidate-taxonomy.md).
 Those labels must remain disabled, caveated, or absent from product UI until
 backend scoring, evidence, caveats, and package-readiness states support them.
-The first exception is the deep-convection family backed by the `Deep
-Convection Trial` package: severe/deep-convection candidates may be presented as
-pre-run hypotheses for an idealized triggered CM1 experiment, not as forecasts
-or guaranteed storm outcomes.
+The first exception is the deep-convection observed-sounding preset backed by
+the internal `deep_convection_trial` package path: severe/deep-convection
+candidates may be presented as pre-run hypotheses for an idealized triggered
+CM1 experiment, not as forecasts or guaranteed storm outcomes. User-facing copy
+should emphasize a configurable deep-convection run starting point instead of a
+half-state "Trial" product when that distinction matters.
 The backend may compute richer sounding diagnostics such as profile quality,
 moisture/LCL proxies, lapse-rate and cap proxies, wind shear, dry-layer
 signals, and freezing-level context to support future screening. These are
@@ -127,17 +143,21 @@ evidence, feature summary, and caveats should be copied into package metadata as
 provenance.
 
 When an uploaded or saved observed sounding is package-ready, Build should let
-the user choose between `Observed Sounding Quick Look` and `Deep Convection
-Trial`. `Deep Convection Trial` is the first-class package family for
-severe/deep-convection observed-sounding experiments: it uses the observed
-temperature, moisture, and wind profile through CM1 `isnd = 7`, runs an
-idealized three-warm-bubble trigger (`iinit = 3`), uses a storm-scale model box
-suitable for storm growth and precipitation inspection, requests rain,
-reflectivity, vorticity, and updraft-helicity output, and records
-`package_family = deep_convection_trial` plus trigger,
-expected-output, caveat, and candidate-screening provenance in generated
-manifests. Quick Look may be tried locally when practical; Standard and Deep
-tiers should recommend the LAN worker. Raw trigger parameters remain
+the user start from observed-sounding quick-look or deep-convection presets and
+then review the CM1-facing configuration those presets imply. The
+deep-convection preset is first-class for severe/deep-convection
+observed-sounding experiments: it uses the observed temperature, moisture, and
+complete wind profile through CM1 `isnd = 7`, runs an idealized
+three-warm-bubble trigger (`iinit = 3`), uses a storm-scale model box suitable
+for storm growth and precipitation inspection, requests rain water aloft,
+surface rain, reflectivity, vorticity, and updraft-helicity output, and records
+`package_family = deep_convection_trial` plus trigger, expected-output, caveat,
+and candidate-screening provenance in generated manifests. That internal
+`package_family` value may remain until renaming it is worth the migration
+cost, but product copy should describe the run as a deep-convection
+observed-sounding configuration rather than a separate "Trial" status. Quick
+tiers must still run long enough to be meteorologically useful; Standard and
+Deep tiers should recommend the LAN worker. Raw trigger parameters remain
 metadata-only in v1 and should not become user controls until useful ranges are
 validated.
 
@@ -457,7 +477,7 @@ Product diagnostics should be framed at three levels:
   surface-heating/deep-breakthrough cases.
 
 Deep-convection breakthrough and precipitation-feedback/cold-pool diagnostics
-are first-class product families, but they should remain unavailable,
+are first-class science directions, but they should remain unavailable,
 candidate, or insufficient-evidence states until the required CM1 fields and
 derived diagnostics exist.
 
@@ -469,12 +489,34 @@ is selected, and expose growing/fair-weather cumulus candidate labels from
 available cloud-top and cloud-water diagnostics. It does not compute buoyancy,
 entrainment, CAPE/CIN/LFC/EL, cold pools, or selected-region explanations yet.
 
+## Run Configuration Rules
+
+Build should present presets as starting points for a CM1-facing configuration,
+not as rigid experiment families. The user should be able to inspect the actual
+duration, grid/detail, output cadence, forcing, requested output fields, and
+important namelist-derived values implied by a preset in an advanced drawer.
+
+Quick means quick to execute on the available compute target; it must not mean
+meteorologically too short to produce useful evolution. Smoke checks prove that
+package generation, CM1 launch, output production, ingest, and basic
+visualization wiring are healthy. They are not evidence that a specific observed
+sounding validates a science hypothesis. Science runs should use enough model
+time, domain, and output cadence for the atmospheric question being asked.
+
+Grid/detail and output cadence are the main user-facing cost levers. Raw
+numerical timestep is not a normal v1 user control. Cloud Chamber should warn or
+caveat unvalidated control combinations when they can be safely generated,
+block configurations that cannot be rendered or launched honestly, and avoid
+silently replacing bad observed-sounding input with reference defaults.
+
 ## Run Size Presets
 
 ### Quick look
 
-- Target: roughly 10-20 minutes when feasible on the local Mac.
-- Purpose: sanity checks, setup inspection, and rough cloud behavior.
+- Target: quick to execute when feasible on the selected local or LAN-worker
+  compute path, while preserving enough model time for useful evolution.
+- Purpose: setup inspection, package/run/ingest health, and rough cloud
+  behavior. Treat short smoke runs as plumbing evidence, not science results.
 - For Baseline Shallow Cumulus, this is the first runtime-only variant derived from the validated `les_ShallowCu` baseline: `timax = 10800.0` and `tapfrq = 900.0`.
 - It preserves the reference grid, vertical spacing, domain top, surface stress/roughness path, moisture/sounding, surface fluxes, turbulence/SGS settings, damping settings, boundary conditions, NetCDF output, and reference `LANDUSE.TBL` staging behavior.
 - Lower confidence is acceptable if clearly labeled; do not use the old compact quick-look derivative as evidence or as a tuning base.
@@ -1115,11 +1157,11 @@ metadata as provenance. Observed-sounding results should read as `Uploaded
 Sounding` in notebook names, scenario labels, and scenario filtering while the
 underlying generated scenario ID remains available in technical details as
 lineage.
-Deep Convection Trial results should retain their package-family identity after
-ingest: notebook names and scenario labels may say `Deep Convection Trial`,
-while the original observed station/time, generated scenario ID, trigger
-metadata, expected outputs, caveats, and candidate-screening hypothesis remain
-available as provenance.
+Deep-convection observed-sounding results should retain their package-family
+provenance after ingest: notebook names and scenario labels may identify the
+run as deep convection, while the original observed station/time, generated
+scenario ID, internal `package_family`, trigger metadata, expected outputs,
+caveats, and candidate-screening hypothesis remain available as provenance.
 Technical metadata such as raw lifecycle/product states, run IDs, provenance
 labels, controls, and detailed caveats remain available under disclosure rather
 than dominating the first read. The layout should be mobile-first: cards stack
