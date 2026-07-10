@@ -88,10 +88,13 @@ more churn than clarity.
   candidate screening, saved candidates, and package-ready/blocked candidate
   states exist. Candidate scores are pre-run selection aids, not CM1 outcome
   predictions.
-- The deep-convection observed-sounding preset can generate storm-scale CM1
-  packages with fixed v1 warm-bubble trigger metadata, expected deep-output
-  fields, and package-family smoke evidence. Each observed sounding remains its
-  own experiment whose result must be evaluated after CM1 runs.
+- The deep-convection observed-sounding package path exists and has
+  package/run/ingest smoke evidence. It can generate storm-scale CM1 packages
+  with fixed v1 warm-bubble trigger metadata and expected deep-output fields,
+  but it has not yet been characterized across a broad selected candidate set.
+  #285 is needed before treating its defaults as broadly validated. Each
+  observed sounding remains its own experiment whose result must be evaluated
+  after CM1 runs.
 - Build owns active package/run work, including generated packages, queued or
   running local CM1 work, failed or incomplete runs, completed-but-not-ingested
   output, serial local queue state, auto-ingest for completed usable output, and
@@ -164,7 +167,8 @@ measuring where its current configuration is package-ready, caveated, or
 misleading.
 
 Scope: validate complete observed-wind requirements, storm-scale box choices,
-duration tiers, output cadence, expected fields, LAN-worker guidance, and
+duration, grid/detail, domain size, output cadence, expected fields, expected
+cost/runtime/output volume, larger-compute suitability notes, and
 candidate-provenance copy across selected observed soundings. Separate
 package/run/ingest smoke checks from science outcomes.
 
@@ -175,20 +179,38 @@ observed sounding should produce deep convection.
 Why now: deep-convection packaging exists and is useful, but the trust language
 must stay honest while configuration coverage expands.
 
-### Surface-Flux And Radiation Control Validation
+### Surface Sensible/Latent Heat Flux Control Validation
 
-Goal: determine which surface-flux, radiation, date/time, and location-derived
-settings can be safely exposed for observed-sounding runs.
+Goal: determine which surface sensible and latent heat flux controls can be
+safely exposed for observed-sounding runs.
 
 Scope: audit CM1 reference paths and runtime-file requirements, define supported
-and caveated control combinations, document manual smoke-run expectations, and
-connect findings to pre-run validation.
+and caveated sensible/latent heat flux combinations, document manual smoke-run
+expectations, connect findings to pre-run validation, and decide how flux
+settings are represented in advanced CM1-facing values.
 
-Non-goals: GIS/map realism, arbitrary real-world terrain/surface initialization,
+Non-goals: atmospheric radiation validation, GIS/map realism, arbitrary
+real-world terrain/surface initialization, or product promises that the current
+CM1 configuration cannot support.
+
+Why now: surface forcing is a direct run-builder control and should be validated
+before the UI implies it can be varied safely across observed soundings.
+
+### Atmospheric Radiation And Place-Time Control Validation
+
+Goal: determine which radiation, date/time, and location-derived settings can be
+safely exposed for observed-sounding runs.
+
+Scope: audit CM1 radiation/place-time reference paths and runtime-file
+requirements, define supported and caveated combinations, document manual
+smoke-run expectations, and connect findings to pre-run validation.
+
+Non-goals: arbitrary real-world terrain/surface initialization, GIS/map realism,
 or product promises that the current CM1 configuration cannot support.
 
-Why now: observed soundings preserve place/time provenance, but location and
-radiation behavior must be validated before the UI implies real-world forcing.
+Why later: observed soundings preserve place/time provenance, but radiation and
+place-time behavior should follow surface-flux validation unless a later PM
+decision changes that order.
 
 ### Evolved-Sounding Output Products
 

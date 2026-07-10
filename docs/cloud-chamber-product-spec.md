@@ -156,8 +156,10 @@ and candidate-screening provenance in generated manifests. That internal
 `package_family` value may remain until renaming it is worth the migration
 cost, but product copy should describe the run as a deep-convection
 observed-sounding configuration rather than a separate "Trial" status. Quick
-tiers must still run long enough to be meteorologically useful; Standard and
-Deep tiers should recommend the LAN worker. Raw trigger parameters remain
+tiers must still run long enough to be meteorologically useful. Build should
+show expected cost, runtime, and output volume, and note when a configuration is
+better suited to larger compute instead of making machine choice the primary
+product axis. Raw trigger parameters remain
 metadata-only in v1 and should not become user controls until useful ranges are
 validated.
 
@@ -192,7 +194,7 @@ The first complete product loop is:
 ```text
 Pick Baseline Shallow Cumulus
 -> adjust curated controls
--> choose run-size preset
+-> choose or adjust run configuration
 -> validate setup
 -> generate CM1 run package
 -> launch local CM1
@@ -246,7 +248,12 @@ Exact morphology is not pass/fail. The acceptance question is whether the produc
 4. See expected behavior, controls, run cost, and output fields.
 5. Optionally adjust controls.
 
-The first implemented Scenario Builder flow is intentionally narrow: it loads validated scenario templates from the local backend, defaults to Baseline Shallow Cumulus, displays the scenario description and physical question, exposes only product-facing curated controls, lets the user choose a run-size preset, and requests a dry-run package for review.
+The first implemented Scenario Builder flow is intentionally narrow: it loads
+validated scenario templates from the local backend, defaults to Baseline
+Shallow Cumulus, displays the scenario description and physical question,
+exposes only product-facing curated controls, lets the user choose from current
+run-size presets, and requests a dry-run package for review. The forward Build
+flow should generalize that choice into the run-configuration model above.
 
 Build should not assume the user is working one perfectly linear package at a
 time. Local experiments can be packaged, running, failed, completed-but-not-
@@ -278,7 +285,7 @@ Current behavior is a placeholder only. It must explicitly say preview is not im
 1. Request a dry-run package from the Scenario Builder.
 2. Backend validates the scenario template and selected controls.
 3. Backend writes package files under the configured runtime home, not the repo.
-4. UI displays run ID, package path, manifest path, scenario, validation/product state, generated files, physical question, selected run-size preset, expected diagnostics, and cost/size notes.
+4. UI displays run ID, package path, manifest path, scenario, validation/product state, generated files, physical question, selected run configuration, expected diagnostics, and cost/size notes.
 5. UI states that CM1 was not launched and the package is not a completed CM1 result.
 6. The launchpad also surfaces other local package/run directories from the
    runtime inventory when they still need Build action: packaged-only, running,
@@ -489,14 +496,15 @@ is selected, and expose growing/fair-weather cumulus candidate labels from
 available cloud-top and cloud-water diagnostics. It does not compute buoyancy,
 entrainment, CAPE/CIN/LFC/EL, cold pools, or selected-region explanations yet.
 
-## Run Configuration Rules
+## Run Configuration Model
 
-Build should present presets as starting points for a CM1-facing configuration,
-not as rigid experiment families. The user should be able to inspect the actual
-duration, grid/detail, output cadence, forcing, requested output fields, and
-important namelist-derived values implied by a preset in an advanced drawer.
+Build should present presets as starting points for a CM1-facing run
+configuration, not as rigid experiment families or mandatory
+quick/standard/deep schema slots. The user should be able to start from a
+trusted preset, inspect what it means, adjust guarded settings, and receive a
+pre-run validation report before package generation or launch.
 
-Quick means quick to execute on the available compute target; it must not mean
+Quick means quick to execute for the selected configuration; it must not mean
 meteorologically too short to produce useful evolution. Smoke checks prove that
 package generation, CM1 launch, output production, ingest, and basic
 visualization wiring are healthy. They are not evidence that a specific observed
@@ -509,12 +517,65 @@ caveat unvalidated control combinations when they can be safely generated,
 block configurations that cannot be rendered or launched honestly, and avoid
 silently replacing bad observed-sounding input with reference defaults.
 
-## Run Size Presets
+Forward run configuration should include:
+
+```yaml
+run_configuration:
+  preset_id:
+    optional starting point, not a required product family
+  duration:
+    model_time_seconds
+    purpose: smoke_check | quick_science | standard_science | extended_science
+  grid_detail:
+    label
+    nx
+    ny
+    nz
+    dx_m
+    dy_m
+    vertical_grid_summary
+  domain:
+    width_m
+    depth_m
+    model_top_m
+  output_cadence:
+    model_seconds_between_outputs
+    expected_saved_frames
+  output_field_density:
+    minimal | standard | expanded
+    requested_fields
+  forcing:
+    surface_sensible_heat_flux
+    surface_latent_heat_flux
+    radiation_mode
+    place_time_context
+  advanced_cm1_values:
+    namelist_summary
+    input_sounding_summary
+    runtime_files_needed
+  pre_run_validation_report:
+    status
+    blocking_errors
+    caveats
+    estimated_runtime
+    estimated_output_volume
+```
+
+Presets may populate these fields, and existing package metadata may keep
+legacy names such as `quick_look`, `standard`, or `deep_overnight` for
+compatibility. Future docs and UI should treat those names as implementation
+details unless a specific historical validation note requires them.
+
+## Current Legacy Run-Size Presets
+
+The current lower-atmosphere scaffold still uses quick/standard/deep run-size
+presets. These are implementation details for existing Baseline Shallow Cumulus
+and related scaffold behavior, not the forward product contract.
 
 ### Quick look
 
-- Target: quick to execute when feasible on the selected local or LAN-worker
-  compute path, while preserving enough model time for useful evolution.
+- Target: quick to execute within its expected cost/runtime/output-volume
+  envelope while preserving enough model time for useful evolution.
 - Purpose: setup inspection, package/run/ingest health, and rough cloud
   behavior. Treat short smoke runs as plumbing evidence, not science results.
 - For Baseline Shallow Cumulus, this is the first runtime-only variant derived from the validated `les_ShallowCu` baseline: `timax = 10800.0` and `tapfrq = 900.0`.
@@ -549,11 +610,17 @@ silently replacing bad observed-sounding input with reference defaults.
 
 Runtime estimates are approximate until locally validated for a specific CM1 build, scenario, and machine. The first local hardware target is a 2024 MacBook Air with 8GB RAM, so the MVP should assume one local CM1 run at a time and conservative output handling.
 
-Runtime tier metadata should be carried through scenario templates, generated run packages, dry-run reports, run manifests, result metadata, and result cards. If estimate data is not locally validated yet, the UI/report should say `unknown until validated` instead of inventing precision.
+Run-configuration estimate metadata should be carried through scenario
+templates, generated run packages, dry-run reports, run manifests, result
+metadata, and result cards. If estimate data is not locally validated yet, the
+UI/report should say `unknown until validated` instead of inventing precision.
 
-## Preset Scenario Schema
+## Run Configuration And Preset Schema
 
-Backend scenario templates are validated by the `ScenarioTemplate` contract. Each scenario should define:
+Backend scenario templates are validated by the `ScenarioTemplate` contract.
+The current implementation can keep legacy fields for compatibility, but the
+forward-compatible schema should define presets as optional seeds for a
+`run_configuration` object:
 
 ```yaml
 id:
@@ -573,6 +640,46 @@ cm1_template:
   namelist_template
   input_sounding_template
   runtime_files_needed
+presets:
+  - id
+  - label
+  - description
+  - run_configuration_defaults
+run_configuration:
+  duration:
+    model_time_seconds
+  grid_detail:
+    nx
+    ny
+    nz
+    dx_m
+    dy_m
+    vertical_grid_summary
+  domain:
+    width_m
+    depth_m
+    model_top_m
+  output_cadence:
+    model_seconds_between_outputs
+    expected_saved_frames
+  output_field_density:
+    level
+    requested_fields
+  forcing:
+    surface_sensible_heat_flux
+    surface_latent_heat_flux
+    radiation_mode
+    place_time_context
+  advanced_cm1_values:
+    namelist_summary
+    input_sounding_summary
+    runtime_files_needed
+pre_run_validation_report:
+  status:
+  blocking_errors:
+  caveats:
+  estimated_runtime:
+  estimated_output_volume:
 outputs_expected:
   fields
   diagnostics
@@ -580,14 +687,11 @@ visualization_defaults:
   camera
   fields
   color/opacity
-run_size_presets:
-  quick_look
-  standard
-  deep_overnight
 physical_question:
 learning_goals:
 variation_policy:
-  one_control_at_a_time_from_baseline: true
+  recommended_story_thread:
+  recommended_comparison_pattern:
 validation_status:
   unrun | generated | accepted | needs_calibration
 notes:
@@ -596,15 +700,19 @@ notes:
 Validation rules should reject templates that:
 
 - omit product-facing controls
+- omit a valid run-configuration default for package generation
 - define a choice control whose default is not one of its options
 - define a number control without a valid range
-- omit one of the quick / standard / deep run-size presets
-- reference unknown controls from the one-control variation policy
+- reference unknown controls from presets or validation policy
 - include undeclared fields
 
-The schema is intentionally product-first. Raw CM1/developer controls can exist as advanced metadata, but product-facing controls remain the primary path.
+The schema is intentionally product-first. Raw CM1/developer controls can exist
+as advanced metadata, but product-facing controls and the pre-run validation
+report remain the primary path. Legacy `run_size_presets` can remain on current
+templates while the run-builder model is implemented; they should not be treated
+as a required future shape.
 
-Thermal Fate scenario families should include:
+Thermal Fate diagnostic directions should include:
 
 1. Moisture-limited thermal fate: Baseline, Dry Failed, and humidity ladder.
 2. Surface-heating-driven thermal fate: weaker/baseline/stronger heating,
@@ -926,7 +1034,11 @@ Dry-run package generation creates these files for review without launching CM1:
 - `dry_run_report.json`
 - `runtime_file_checklist.json`
 
-The dry-run report must state that it is not a completed CM1 result, record that CM1 was not launched, include selected run-size preset, include physical question and controls, include expected diagnostics and visualization defaults, and use `unknown until validated` for unvalidated cost/size estimates.
+The dry-run report must state that it is not a completed CM1 result, record
+that CM1 was not launched, include the selected run configuration or legacy
+preset, include physical question and controls, include expected diagnostics and
+visualization defaults, show expected runtime/cost/output-volume information
+when available, and use `unknown until validated` for unvalidated estimates.
 
 Launch preflight must reject placeholder-only CM1-facing files, including old `&cloud_chamber_domain` fragments or notes-only `input_sounding` artifacts. Required external runtime files such as `LANDUSE.TBL` are copied from the configured local CM1 run directory into the generated runtime package at launch time. These staged files are local/generated artifacts and must not be committed.
 
@@ -1009,6 +1121,16 @@ cm1_run_dir:
 output_dir:
 configuration:
   controls:
+  run_configuration:
+    duration:
+    grid_detail:
+    domain:
+    output_cadence:
+    output_field_density:
+    forcing:
+    advanced_cm1_values:
+    pre_run_validation_report:
+  legacy_run_size_preset:
   namelist_parameters:
   input_sounding:
 preview:
@@ -1099,7 +1221,8 @@ physical question
 created_at
 completed_at
 controls used
-run-size preset
+run configuration
+legacy run-size preset when present
 CM1 version/path metadata
 status
 generated config paths
@@ -1124,7 +1247,7 @@ card over ingested result metadata:
 ```text
 run id
 scenario
-run-size preset
+run configuration or legacy preset
 physical question
 diagnostics summary
 first cloud time
@@ -1143,9 +1266,9 @@ but the current product does not expose a separate save/protect mode.
 
 The Results Library UI is an experiment notebook, not an admin table. It lists
 result cards from the backend as scan-friendly experiment entries, lets the user
-select one result, and shows a detail/notebook card with scenario, run-size
-preset, cloud/rain outcome, diagnostics summary, first cloud time, max `qc`,
-max/min `w`, caveats, output summary, and editable name/tags/notes. Notebook
+select one result, and shows a detail/notebook card with scenario, run
+configuration or legacy preset, cloud/rain outcome, diagnostics summary, first
+cloud time, max `qc`, max/min `w`, caveats, output summary, and editable name/tags/notes. Notebook
 edits use `Save changes`; ingested results already appear in Results.
 The notebook also exposes backend-derived science summary fields such as
 first-cloud time, max `qc`, max updraft, rain onset, latest output time, and

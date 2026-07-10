@@ -214,7 +214,7 @@ Later, package with Tauri/Electron if needed.
 
 ### Scenario Catalog
 
-Stores preset scenario definitions.
+Stores scenario definitions, starting presets, and run-configuration defaults.
 
 Responsibilities:
 
@@ -223,12 +223,19 @@ Responsibilities:
 - map friendly controls to CM1 configuration
 - define expected outputs
 - define visualization defaults
-- define run-size presets and one-control variation metadata around a baseline
+- define run-configuration presets as editable starting points
+- define recommended story threads or comparison patterns around a baseline
 - define the physical question and learning goals
 
 Baseline Shallow Cumulus is the first hero case. Warm rain remains early but does not block the Golden Path.
 
-Scenario templates are validated before package generation. The schema supports stable IDs, display names, descriptions, physical questions, learning goals, friendly controls, advanced/developer-only settings, run-size presets, expected diagnostics, CM1 mapping notes, visualization defaults, warnings, limitations, and one-control variation metadata. Invalid templates should fail with actionable validation messages before any CM1-facing files are generated.
+Scenario templates are validated before package generation. The schema supports
+stable IDs, display names, descriptions, physical questions, learning goals,
+friendly controls, advanced/developer-only settings, run-configuration defaults,
+optional starting presets, expected diagnostics, CM1 mapping notes,
+visualization defaults, warnings, limitations, and validation policy. Invalid
+templates should fail with actionable validation messages before any CM1-facing
+files are generated.
 
 The local FastAPI backend exposes the implemented catalog through `GET /api/scenarios`. The response should include the Golden Path scenario ID and product-facing scenario summaries only; advanced/developer controls can remain in the template but should not appear in the primary Scenario Builder flow.
 
@@ -243,24 +250,37 @@ Turns a scenario + user controls into:
 - dry-run report
 - visualization defaults
 
-For the Baseline Shallow Cumulus Golden Path, the generated package should preserve the physical question, curated controls, run-size preset, expected diagnostics, expected output fields, and provenance labels before CM1 starts.
+For the Baseline Shallow Cumulus Golden Path, the generated package should preserve the physical question, curated controls, selected run configuration or legacy preset, expected diagnostics, expected output fields, and provenance labels before CM1 starts.
 
 The CM1 input generation contract is deterministic and testable before full package generation. It documents the expected generated files and preserves product-facing controls separately from raw namelist/developer settings.
 
-For Baseline Shallow Cumulus, the recovery package is derived from CM1's local `les_ShallowCu` reference case. It preserves `testcase = 3`, the reference grid, runtime, domain top, Rayleigh damping, surface/ocean/flux settings, surface stress path, and wind profile as much as possible. The external-sounding reproduction changes the thermodynamic source from the built-in BOMEX analytic sounding (`isnd = 19`) to CM1's `input_sounding` route (`isnd = 17`) so future one-control moisture experiments have a validated profile path. The intentional Cloud Chamber output-path change remains NetCDF output (`output_format = 2`) so the completed run can flow into ingest and diagnostics.
+For Baseline Shallow Cumulus, the recovery package is derived from CM1's local `les_ShallowCu` reference case. It preserves `testcase = 3`, the reference grid, runtime, domain top, Rayleigh damping, surface/ocean/flux settings, surface stress path, and wind profile as much as possible. The external-sounding reproduction changes the thermodynamic source from the built-in BOMEX analytic sounding (`isnd = 19`) to CM1's `input_sounding` route (`isnd = 17`) so the current moisture-contrast scaffold has a validated profile path. The intentional Cloud Chamber output-path change remains NetCDF output (`output_format = 2`) so the completed run can flow into ingest and diagnostics.
 
 The earlier Cloud Chamber quick-look derivative is not scientifically accepted: full-sequence ingest evaluated all 25 model-output files, but the run produced no cloud, no vertical motion, and NaN/Infinity caveats; a fixed-roughness follow-up still failed in the same way. Quick-look scaling should happen only after the reference-derived package works, and future changes should be introduced one at a time with manual CM1 validation.
 
 The first reference-derived validation run, `dry-run-les-shallowcu-20260522140642`, completed locally with NetCDF output and ingested 7 model-output time steps over 21600 seconds. It produced cloud water and vertical velocity diagnostics, so the architecture should treat the reference-derived package as the recovery baseline and the earlier compact derivative as invalid evidence rather than a tuning base.
 
-Run-size presets are generated package promises, not labels. The standard/reference package preserves `timax = 21600.0`, `tapfrq = 3600.0`, and the 64 x 64 x 75 / 100 m horizontal grid. The first quick-look variant preserves every reference-derived science/numerics setting and changes only `timax = 10800.0` and `tapfrq = 900.0`. The Deep Overnight variant is the expensive opt-in preset: it preserves the physical 6.4 km x 6.4 km domain and the accepted scenario controls, but increases horizontal resolution to 192 x 192 at about 33.333 m, saves output every 300 s, and keeps the Standard solver timestep. Vertical spacing, domain top, surface stress/roughness path, moisture/sounding, surface fluxes, turbulence/SGS settings, damping settings, boundary conditions, NetCDF output, and reference `LANDUSE.TBL` staging should remain unchanged.
+Current legacy run-size presets are generated package promises for the existing
+baseline/scaffold implementation, not the future architecture. The
+standard/reference package preserves `timax = 21600.0`, `tapfrq = 3600.0`, and
+the 64 x 64 x 75 / 100 m horizontal grid. The first quick-look variant
+preserves every reference-derived science/numerics setting and changes only
+`timax = 10800.0` and `tapfrq = 900.0`. The Deep Overnight variant is the
+expensive opt-in preset: it preserves the physical 6.4 km x 6.4 km domain and
+the accepted scenario controls, but increases horizontal resolution to 192 x
+192 at about 33.333 m, saves output every 300 s, and keeps the Standard solver
+timestep. Vertical spacing, domain top, surface stress/roughness path,
+moisture/sounding, surface fluxes, turbulence/SGS settings, damping settings,
+boundary conditions, NetCDF output, and reference `LANDUSE.TBL` staging should
+remain unchanged for that historical/current implementation path.
 
-Future observed-sounding run controls should evolve from this preset contract:
-duration, grid/detail, output cadence, forcing, and requested output fields are
-normal guarded configuration levers. Raw numerical timestep is not a normal v1
-control. Presets should expose their derived CM1-facing values in advanced
-metadata so dry-run reports and Build UI can show exactly what will be written
-without requiring raw namelist editing.
+Forward observed-sounding run configuration should use guarded fields for
+duration, grid/detail, domain size, output cadence, output field density,
+forcing, requested fields, advanced CM1-facing values, and a pre-run validation
+report. Raw numerical timestep is not a normal v1 control. Presets should seed
+those fields and expose their derived CM1-facing values in advanced metadata so
+dry-run reports and Build UI can show exactly what will be written without
+requiring raw namelist editing.
 
 The first quick-look validation run, `dry-run-quicklook-les-shallowcu-20260522151536`, preserved those settings, completed locally, and ingested 13 model-output time steps over 10800 seconds. Diagnostics still reported cloud formation, vertical motion, and rain, so the architecture can treat this runtime-only quick-look preset as the first validated shorter Baseline Shallow Cumulus variant.
 
@@ -345,7 +365,8 @@ still producing rain. That is enough to treat it as an accepted-with-notes
 cap/stability contrast candidate, not enough to claim rain suppression or a
 fully diagnosed cap-limitation mechanism.
 
-Cloud-scale defaults for the first lower-atmosphere contract are:
+Current lower-atmosphere scaffold defaults are historical/current
+implementation evidence:
 
 ```text
 domain/grid: 64 x 64 x 75
@@ -364,11 +385,17 @@ output cadence: 900 s
 unchanged: reference-derived grid/domain/surface/damping/boundary settings
 ```
 
-Scenario-specific deviations from these defaults must be explicit in the scenario template or generated report.
+Configuration-specific deviations from these defaults must be explicit in the
+scenario template, generated report, or pre-run validation report.
 
 Dry-run package generation uses the validated scenario template and CM1 input contract to create a reviewable package under the configured runtime home, normally `~/CloudChamber/runs/<run-id>/`. The package writer should refuse to overwrite existing run directories, validate controls before writing, and produce only package inputs/reports, not CM1 output.
 
-The implemented dry-run API is `POST /api/dry-run-package`. It accepts scenario ID, selected product controls, and run-size preset, then returns the package paths and dry-run report summary for UI review. It must not launch CM1, write NetCDF, or place generated packages inside the source tree during tests.
+The implemented dry-run API is `POST /api/dry-run-package`. It currently accepts
+scenario ID, selected product controls, and a legacy run-size preset, then
+returns the package paths and dry-run report summary for UI review. The forward
+API should accept a selected run configuration with optional preset provenance.
+It must not launch CM1, write NetCDF, or place generated packages inside the
+source tree during tests.
 
 The Build workspace is the first guided app-side launchpad over the existing
 backend contracts:
@@ -529,7 +556,7 @@ Responsibilities:
 - create thumbnails/previews
 - record provenance
 
-The first implemented ingest step creates `result_metadata.json` in the completed run directory. It reads NetCDF with xarray and records result ID, run ID, scenario, physical question, controls, run-size preset, source lifecycle/product/provenance state, raw CM1 artifacts, NetCDF paths, processed artifact placeholders, dimensions, coordinates, variables, units, time coordinate, grid shape, warnings, and timestamps.
+The first implemented ingest step creates `result_metadata.json` in the completed run directory. It reads NetCDF with xarray and records result ID, run ID, scenario, physical question, controls, selected run configuration or legacy run-size preset, source lifecycle/product/provenance state, raw CM1 artifacts, NetCDF paths, processed artifact placeholders, dimensions, coordinates, variables, units, time coordinate, grid shape, warnings, and timestamps.
 
 The next implemented step attaches first-pass diagnostics to that result metadata.
 Diagnostics read NetCDF fields through the backend and summarize `qc`, `w`,
@@ -565,7 +592,7 @@ CM1.
 The backend result-card layer is the product-facing view over ingested metadata.
 It does not rerun CM1 and does not parse raw output directly. It summarizes:
 
-- run ID, scenario, run-size preset, and physical question;
+- run ID, scenario, selected run configuration or legacy preset, and physical question;
 - diagnostics summary, first cloud time, max `qc`, max/min `w`, rain water
   aloft, surface rain, reflectivity, and caveats;
 - output file summary, including NetCDF/model-output/stat/raw/processed counts and time-step range;
@@ -1016,7 +1043,13 @@ scenario + controls
 → run manifest
 ```
 
-Runtime tier metadata should flow through this path: scenario templates define available run-size presets, generated run packages record the selected preset, run manifests preserve it during execution, and result metadata keeps it available for later inspection.
+Run-configuration metadata should flow through this path: scenario templates
+define editable configuration defaults and optional starting presets, generated
+run packages record the selected duration, grid/detail, domain, output cadence,
+output field density, forcing, requested fields, advanced CM1-facing values,
+and validation report, run manifests preserve them during execution, and result
+metadata keeps them available for later inspection. Legacy run-size preset names
+may remain as compatibility provenance.
 
 If size/runtime estimates are not validated yet, manifests and reports should record that explicitly rather than presenting guessed precision.
 
@@ -1070,7 +1103,7 @@ The result manifest should be able to answer:
 What scenario was this?
 What physical question was tested?
 What controls were used?
-What run-size preset was selected?
+What run configuration was selected?
 What did CM1 do?
 What diagnostics summarize the cloud evolution?
 Can I replay it?
@@ -1155,7 +1188,10 @@ scenarios/
 
 Run manifests should record the scenario template, adjusted controls, generated CM1-facing files, runtime paths, lifecycle state, validation status, timestamps, and later output paths. A manifest should not require NetCDF output to exist.
 
-Run manifests should also record the selected run-size preset, physical question, expected diagnostics, and visualization defaults when those concepts are available from the scenario template.
+Run manifests should also record the selected run configuration, optional
+legacy run-size preset, physical question, expected diagnostics, and
+visualization defaults when those concepts are available from the scenario
+template.
 
 The backend run-manifest schema records run ID, scenario reference/version, adjusted controls, generated CM1 input paths, CM1 root/run paths, app metadata, timestamps, lifecycle state, validation status, output paths, user notes/tags, and provenance labels. It serializes/deserializes as JSON and does not require NetCDF output.
 
