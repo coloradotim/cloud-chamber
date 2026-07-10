@@ -1,6 +1,6 @@
 # Current Roadmap
 
-Status: active roadmap after input/output contracts
+Status: active roadmap for configurable observed-sounding CM1 runs
 
 This is the active planning source for Cloud Chamber. The previous long
 issue-by-issue roadmap is archived at
@@ -21,21 +21,35 @@ interpretations around that source data.
 
 ## Current Product Model
 
-- **Build** = construct and run one credible LES experiment.
-- **Results** = experiment notebook for ingested and completed runs.
+- **Build** = configure and launch one CM1 run from a selected atmosphere,
+  starting preset, and guarded run settings. Build owns active, incomplete, and
+  non-ingested package/run work.
+- **Results** = experiment notebook for completed and ingested runs. Results owns
+  ingested-result review, notes, and explicit ingested-result cleanup.
 - **Explore** = scientific inspection of one result using CM1-derived evidence.
-- **Storage** = lifecycle-aware runtime inventory and destructive cleanup.
+
+Runtime inventory and cleanup are contextual actions inside Build and Results,
+not a separate top-level Storage workspace.
 
 ## Hard Product Rules
 
 - LES only for the current planning horizon.
 - Local-first: local CM1, local runtime home, local result evidence.
+- CM1 output is the source of truth for cloud evolution.
+- Always distinguish preview estimate, CM1 run configuration, CM1
+  running/completed result, and visualization interpretation.
 - The browser must not parse raw NetCDF.
 - Generated artifacts do not go in git.
-- Contracts before UI.
-- Output products before renderer ambition.
-- Observed or detailed sounding before GIS/map realism.
-- Storage owns destructive cleanup.
+- Quick means quick to execute, not meteorologically too short to be useful.
+- A smoke check proves package/run/ingest health; it is not a science result.
+- Science runs need enough model time to produce meaningful evolution.
+- Grid/detail and output cadence are the primary user-facing cost levers.
+- Raw numerical timestep is not a normal v1 user control.
+- Presets are starting points. They should expose actual CM1-facing values in an
+  advanced drawer instead of becoming rigid product families.
+- Warn or caveat unvalidated control combinations instead of hiding every
+  control.
+- Build owns non-ingested cleanup; Results owns ingested-result cleanup.
 - Explore remains scientific inspection, not Render Studio.
 
 ## Active Source Documents
@@ -53,196 +67,166 @@ Use these docs as the current strategic and contract sources:
 The research memos are PM input and evidence. The contract docs define the
 implementation boundary that future issues should build from.
 
-The expanded sounding taxonomy is product/science planning input for future
-story families. It does not make severe, winter, cold-pool, or specialized
-boundary-layer stories package-ready until their scoring, evidence, and package
-readiness are implemented and tested.
+The expanded sounding taxonomy is product/science planning input for pre-run
+candidate stories. It does not make severe, winter, cold-pool, or specialized
+boundary-layer stories scientifically validated until their scoring, evidence,
+caveats, and package-readiness states are implemented and tested.
 
-The deep-convection package design is a research decision memo for a future
-observed-sounding package family. It recommends a first package direction but
-does not make deep-convection generation available until implementation,
-fixtures, and manual CM1 validation exist.
+The deep-convection package design backs the current deep-convection
+observed-sounding preset and package path. User-facing docs should describe this
+as a configurable deep-convection run starting point, not as a separate
+half-state "Trial" product. Internal metadata such as
+`package_family = deep_convection_trial` may remain where renaming would create
+more churn than clarity.
 
-## Active Execution Sequence
+## Current State
 
-1. Implement output product manifest plus robust file/time index mapping.
-2. Add interesting-time output products.
-3. Prototype observed/detailed sounding import with metadata and provenance
-   using tiny fixtures.
-4. Add profile/time-height derived product skeletons.
-5. Expand the field catalog for realistic LES outputs.
-6. Audit and validate land/radiation reference paths.
-7. Prototype external visualization/diagnostics exports.
-8. Only then decide Render Studio or Diagnostics Lab product surfaces.
+- Observed-sounding upload and package generation now work through the backend
+  parser and CM1 `input_sounding` route. Observed temperature, moisture, and
+  complete usable u/v wind profiles are package inputs, not decorative metadata.
+- Cached IGRA recent sounding refresh, local cached-sounding inspection,
+  candidate screening, saved candidates, and package-ready/blocked candidate
+  states exist. Candidate scores are pre-run selection aids, not CM1 outcome
+  predictions.
+- The deep-convection observed-sounding package path exists and has
+  package/run/ingest smoke evidence. It can generate storm-scale CM1 packages
+  with fixed v1 warm-bubble trigger metadata and expected deep-output fields,
+  but it has not yet been characterized across a broad selected candidate set.
+  #285 is needed before treating its defaults as broadly validated. Each
+  observed sounding remains its own experiment whose result must be evaluated
+  after CM1 runs.
+- Build owns active package/run work, including generated packages, queued or
+  running local CM1 work, failed or incomplete runs, completed-but-not-ingested
+  output, serial local queue state, auto-ingest for completed usable output, and
+  LAN-worker status/progress summaries.
+- Results owns ingested notebook entries, result-card review, notes/tags, and
+  explicit cleanup for ingested results plus their backing local data.
+- Explore consumes bounded backend output products, interesting times,
+  diagnostics summaries, native-grid slices, and visualization-ready point
+  layers. The browser still does not parse raw NetCDF.
 
-This order is intentional. It keeps the product grounded in trustworthy local
-LES inputs and bounded output products before adding broader UI surfaces,
-renderer technology, or new scenario families.
+## Next Roadmap Lanes
 
-## Recently Completed
-
-#204/#205/#218/#236 cleaned up the Build/Results/runtime-cleanup lifecycle
-model.
-
-- **Build** shows active and incomplete package/run/ingest pipeline work.
-- **Build** owns cleanup for non-ingested local packages and runs.
-- **Results** owns ingested notebook review plus explicit ingested-result
-  cleanup.
-
-## Recommended Issue Candidates
-
-These are candidate implementation issues for PM review. Do not create them
+These are candidate implementation lanes for PM review. Do not create them
 automatically from this roadmap.
 
-### Implement Output Product Manifest And Time Index
+### Cached-Sounding Analysis And Sorting
 
-Goal: create the first local output product manifest with robust global
-time-index to source-file mapping.
+Goal: make the cached IGRA workbench useful for choosing observed atmospheres
+without pretending the score predicts CM1 success.
 
-Scope: product manifest skeleton, source file fingerprints, model-output versus
-stats-file distinction, global/local time index mapping, provenance, caveats,
-and tests with tiny fixtures.
+Scope: richer cached-sounding analysis, transparent sorting/filtering by story,
+quality and support-state explanations, saved-candidate ergonomics, and clearer
+blocked/package-ready evidence. Keep shallow, humid/rainy, and
+deep-convection-oriented candidate stories as pre-run hypotheses.
 
-Non-goals: new renderer UI, external exports, CM1 package generation changes,
-or real CM1 execution in CI.
+Non-goals: universal "best sounding" ranking, forecast language, browser-side
+station parsing, or unsupported story labels that look package-ready.
 
-Why now: this is the backend foundation for deep-output Explore performance,
-interesting times, profiles, time-height products, and future render-ready
-artifacts.
+Why now: configurable observed-sounding runs need a better way to find and
+compare input atmospheres before packaging.
 
-Dependencies: [Output Product Specification](contracts/output-product-specification.md).
+### Configurable Observed-Sounding Run Controls
 
-### Add Interesting-Time Output Products
+Goal: let Build start from a sane preset and then adjust run settings that map
+to real CM1 configuration.
 
-Goal: make first cloud, max cloud water, max updraft, rain onset, and related
-time landmarks reusable by Results, Explore, comparison, and future time-based
-views.
+Scope: controls for model duration, grid/detail, output cadence, forcing, and
+requested output fields within guarded bounds. Presets should remain available
+as starting points, and an advanced drawer should expose the actual CM1-facing
+values those presets imply.
 
-Scope: metadata-backed or bounded-product-backed interesting-time records,
-tests using tiny synthetic outputs, and documentation of fallback/caveat rules.
+Non-goals: raw numerical timestep as a normal v1 control, raw trigger controls,
+new trigger types, or a full Build redesign in one issue.
 
-Non-goals: timelapse UI, renderer animation, or new diagnostics lab surfaces.
+Why now: the product direction is configurable runs, not rigid scenario or
+package-family cages. Grid/detail and output cadence are the main cost levers;
+duration controls must preserve enough model time for meaningful evolution.
 
-Why now: users need meaningful time defaults before time-heavy UI work.
+### Pre-Run Configuration Validation
 
-Dependencies: output product manifest and time-index mapping.
+Goal: validate the selected atmosphere, preset, and adjusted CM1-facing settings
+before package generation or launch.
 
-### Prototype Observed Sounding Import With Metadata
+Scope: backend validation for missing required observed fields, incomplete wind
+profiles, suspicious duration/cadence combinations, unsupported output-field
+requests, runtime-file requirements, cost/storage caveats, and clear dry-run
+messages. Unvalidated combinations should warn or caveat when safe rather than
+being hidden by default.
 
-Goal: prove the first realistic-input path using observed or detailed sounding
-fixtures while preserving source metadata and conversion caveats.
+Non-goals: running CM1 in CI, declaring scientific success before CM1 output,
+or silently patching bad input into something packageable.
 
-Scope: tiny fixture import, station/location/elevation, valid time/date, source,
-units, observed wind conversion to CM1 `u`/`v`, conversion metadata,
-package-review provenance, and a local Build upload path for extracted IGRA
-station sounding-data files.
+Why now: configurable controls need trust boundaries before they become normal
+Build workflow.
 
-Non-goals: Bench Mode UI, arbitrary GIS/map inputs, surface heterogeneity, or
-unvalidated scenario families.
+### Deep-Convection Configuration Validation Across Soundings
 
-Why now: observed soundings are the closest realistic input layer to the
-existing external `input_sounding` path.
+Goal: keep the deep-convection observed-sounding preset first-class while
+measuring where its current configuration is package-ready, caveated, or
+misleading.
 
-Dependencies:
-[Realistic LES Input Specification](contracts/realistic-les-input-specification.md).
+Scope: validate complete observed-wind requirements, storm-scale box choices,
+duration, grid/detail, domain size, output cadence, expected fields, expected
+cost/runtime/output volume, larger-compute suitability notes, and
+candidate-provenance copy across selected observed soundings. Separate
+package/run/ingest smoke checks from science outcomes.
 
-### Expand Field Catalog For Realistic LES Outputs
+Non-goals: removing the deep-convection path, exposing raw trigger controls,
+adding trigger types, or treating a smoke run as evidence that a specific
+observed sounding should produce deep convection.
 
-Goal: make realistic LES output fields discoverable and honestly classified
-before Explore, diagnostics, or future render/export tools expose them.
+Why now: deep-convection packaging exists and is useful, but the trust language
+must stay honest while configuration coverage expands.
 
-Scope: field catalog expansion for realistic-output fields such as `qv`,
-theta/temperature/pressure, surface sensible and latent fluxes, surface
-diagnostics, radiation terms when present, `lwp`, `CAPE`, `CIN`, `LCL`, and
-`LFC` when present. Include capability classification, units, coordinates,
-native-grid metadata, supported product types, provenance, caveats, and tiny
-fixture or metadata-backed tests.
+### Surface Sensible/Latent Heat Flux Control Validation
 
-Non-goals: package-generation changes, browser NetCDF parsing, arbitrary raw
-field dump UI, renderer work, or new scenario families.
+Goal: determine which surface sensible and latent heat flux controls can be
+safely exposed for observed-sounding runs.
 
-Why now: realistic inputs will only be useful if Results and Explore can
-explain which model fields exist, what Cloud Chamber can safely do with them,
-and which fields are merely present versus scientifically supported.
+Scope: audit CM1 reference paths and runtime-file requirements, define supported
+and caveated sensible/latent heat flux combinations, document manual smoke-run
+expectations, connect findings to pre-run validation, and decide how flux
+settings are represented in advanced CM1-facing values.
 
-Dependencies: output product manifest, time-index mapping, and the
-[Output Product Specification](contracts/output-product-specification.md).
+Non-goals: atmospheric radiation validation, GIS/map realism, arbitrary
+real-world terrain/surface initialization, or product promises that the current
+CM1 configuration cannot support.
 
-### Implement Expanded Sounding Story Readiness
+Why now: surface forcing is a direct run-builder control and should be validated
+before the UI implies it can be varied safely across observed soundings.
 
-Goal: turn selected portions of the expanded sounding taxonomy into backend
-story-readiness metadata without making unsupported stories look package-ready.
+### Atmospheric Radiation And Place-Time Control Validation
 
-Scope: choose one future story family, add backend feature prerequisites,
-story-readiness states, evidence/caveat payloads, disabled or caveated UI
-grouping if appropriate, and tiny fixture tests. Start with the taxonomy in
-[Expanded Sounding Candidate Taxonomy](research/expanded-sounding-candidate-taxonomy.md)
-and keep current shallow-LES stories governed by the existing screening
-contract.
+Goal: determine which radiation, date/time, and location-derived settings can be
+safely exposed for observed-sounding runs.
 
-Non-goals: new CM1 package families, severe-weather forecasts, CAPE/CIN/SRH
-implementation unless the selected story explicitly requires and tests it,
-browser-side station parsing, or enabled labels without backend evidence.
+Scope: audit CM1 radiation/place-time reference paths and runtime-file
+requirements, define supported and caveated combinations, document manual
+smoke-run expectations, and connect findings to pre-run validation.
 
-Why later: the taxonomy prevents product drift now, but implementation should
-wait until the output-product foundation and realistic-field catalog can support
-the evidence users need.
+Non-goals: arbitrary real-world terrain/surface initialization, GIS/map realism,
+or product promises that the current CM1 configuration cannot support.
 
-Dependencies: sounding candidate screening contract, realistic LES input
-contract, expanded field catalog, and explicit PM choice of the first future
-story family.
+Why later: observed soundings preserve place/time provenance, but radiation and
+place-time behavior should follow surface-flux validation unless a later PM
+decision changes that order.
 
-### Define Profile And Time-Height Output Products
+### Evolved-Sounding Output Products
 
-Goal: specify and add skeleton derived products that make realistic-input runs
-explainable beyond point clouds and slices.
+Goal: make completed observed-sounding runs explain how the simulated atmosphere
+changed, not only whether cloud water or vertical velocity appeared.
 
-Scope: profile/time-height product shapes, bounded APIs, provenance, caveats,
-and tiny fixture tests.
+Scope: profile and time-height products, evolved thermodynamic/moisture/wind
+summaries, bounded field catalog expansion, provenance, caveats, and tiny
+fixture tests. Results and Explore should consume these as backend-prepared
+products.
 
-Non-goals: Diagnostics Lab UI, Panel/hvPlot integration, or broad scientific
-diagnostic expansion.
+Non-goals: browser-side NetCDF parsing, broad diagnostics-lab UI, or external
+export bundles before core result explanation is stable.
 
-Why now: profiles and time-height products are the bridge between raw fields
-and scientific explanations for realistic LES inputs.
-
-Dependencies: output product manifest, time-index mapping, and field catalog.
-
-### Audit Land/Radiation Reference Paths
-
-Goal: determine what Cloud Chamber can safely borrow from CM1 land/diurnal LES
-reference cases before exposing location/date/radiation controls.
-
-Scope: package audit, runtime-file requirements, namelist differences,
-validation checklist, and a manual smoke-run plan.
-
-Non-goals: GIS/map realism, arbitrary real-world locations, or UI controls.
-
-Why now: location/date/radiation should come after observed sounding metadata
-and before any map-like product promise.
-
-Dependencies: realistic LES input contract and observed sounding prototype.
-
-### Prototype External Visualization / Diagnostics Exports
-
-Goal: test whether Cloud Chamber should hand selected output products to
-external visualization or diagnostics tools after the internal product
-contracts exist.
-
-Scope: prototype export manifests or small bundles for tools such as VAPOR,
-ParaView/VTK, xarray-style notebooks, or future local diagnostics sidecars.
-Use bounded output products rather than raw browser-side NetCDF parsing, and
-document provenance, caveats, file sizes, and cleanup expectations.
-
-Non-goals: immediate product UI, renderer dependencies, Render Studio,
-Diagnostics Lab, or committing generated export artifacts.
-
-Why later: exports are valuable only after output product manifests,
-time-index mapping, field catalogs, interesting times, and profile/time-height
-products define what Cloud Chamber can safely hand off.
-
-Dependencies: output product manifest, expanded field catalog, profile/time-
-height products, and explicit PM review of external-tool direction.
+Why now: observed-sounding experiments become much more useful when users can
+compare the initial profile to CM1-evolved structure.
 
 ## Not Now / Parked
 
@@ -255,8 +239,14 @@ contracts, output products, validation, or local bench maturity.
   initialization, and surface-data architecture evidence.
 - **#153 surface heterogeneity**: blocked by realistic surface contract and
   validation; do not treat it as the next scenario step.
-- **#154 deep convection**: parked until the shallow-LES bench and output
-  products are mature.
+- **Additional severe-weather or deep-convection products**: the current
+  deep-convection observed-sounding preset stays first-class, but additional
+  severe-weather promises should wait for validation, evidence, and clear
+  caveats.
+- **Raw trigger controls and new trigger types**: keep trigger settings as
+  fixed package metadata until useful ranges are validated.
+- **Rigid experiment-family expansion**: prefer configurable observed-sounding
+  runs with presets as starting points over more separate user-facing families.
 - **#155 precipitation/cold-pool scenarios**: parked until output products can
   support precipitation, downdraft, and surface-response evidence.
 - **#183 3-D vertical velocity layer**: useful later, but blocked by signed-flow
