@@ -133,6 +133,12 @@ provenance. The screening score remains a candidate-selection aid that ranks
 sounding ingredients only; it does not predict what the selected CM1 package
 will produce. CM1 output remains the source of truth.
 
+The forward analyzer contract is
+[Analyzer Hypothesis And Output-Signature Contract](contracts/analyzer-hypothesis-output-signature.md).
+It defines how a future analyzer may turn ingredient scores into testable
+hypotheses only when explicit run assumptions, predicted CM1-observable output
+signatures, required output fields, and compatible run recipes are present.
+
 The sounding-diagnostics layer is a backend-only feature extractor for observed
 soundings. It produces bounded `SoundingDiagnostics` payloads with
 `diagnostic_version`, station/time provenance, `feature_values`,
