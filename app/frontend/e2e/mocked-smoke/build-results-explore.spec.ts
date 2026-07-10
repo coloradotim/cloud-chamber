@@ -105,8 +105,11 @@ test.describe("mocked smoke: Build, Results, Explore path", () => {
     await page.getByRole("button", { name: "Cache station files" }).click();
     await expect(page.getByText("Cached 1 station file")).toBeVisible();
 
-    await page.getByLabel("Story filter").selectOption("shallow_cumulus_candidate");
-    await page.getByRole("button", { name: "Analyze cached soundings" }).click();
+    await page.getByText("Advanced filters").click();
+    const candidateControls = page.getByLabel("Advanced sounding candidate controls");
+    const storySelect = candidateControls.getByRole("combobox").first();
+    await storySelect.selectOption("shallow_cumulus_candidate");
+    await page.getByRole("button", { name: "Analyze recommendations" }).click();
 
     await expect(page.getByText("Cached sounding analysis loaded")).toBeVisible();
     const valleyCard = page.getByLabel("Sounding candidate Valley, Nebraska (USM00072558)");
@@ -118,15 +121,15 @@ test.describe("mocked smoke: Build, Results, Explore path", () => {
       "Candidate match score is screening guidance only",
     );
 
-    await page.getByLabel("Story filter").selectOption("needs_review");
-    await page.getByRole("button", { name: "Analyze cached soundings" }).click();
+    await storySelect.selectOption("needs_review");
+    await page.getByRole("button", { name: "Analyze recommendations" }).click();
     const blockedCard = page.getByLabel("Sounding candidate Norman, Oklahoma (USM00072357)");
     await expect(blockedCard).toBeVisible();
     await expect(blockedCard).toContainText("Blocked");
     await expect(blockedCard.getByRole("button", { name: "Use this sounding" })).toBeDisabled();
 
-    await page.getByLabel("Story filter").selectOption("all");
-    await page.getByRole("button", { name: "Analyze cached soundings" }).click();
+    await storySelect.selectOption("all");
+    await page.getByRole("button", { name: "Analyze recommendations" }).click();
     await valleyCard.getByRole("button", { name: "Save candidate" }).click();
     await expect(page.getByText("Sounding candidate saved")).toBeVisible();
     await expect(

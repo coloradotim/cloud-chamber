@@ -277,6 +277,9 @@ type SoundingCandidate = {
   evidence: EvidenceItem[];
   caveats: string[];
   selected_sounding_payload?: ObservedSoundingRecord | null;
+  interest_summary?: string | null;
+  interest_reasons?: string[];
+  discovery_bucket?: string | null;
   screening_version: string;
   created_at: string;
 };
@@ -1002,7 +1005,7 @@ const deepConvectionStoryIds = new Set<string>([
   "squall_line_cold_pool_candidate",
   "elevated_convection",
 ]);
-const candidateWorkingSetTags = [
+const candidateSuggestedTags = [
   "Deep convection candidates",
   "Surface-forced candidates",
   "Needs longer run",
@@ -1151,15 +1154,34 @@ async function fetchSavedSoundingCandidates(): Promise<SavedCandidatesResponse> 
 
 async function saveSoundingCandidate(
   candidate: SoundingCandidate,
-  workingSetTag: string,
+  tags: string[],
+  notes: string | null,
 ): Promise<SavedSoundingCandidate> {
   const response = await fetch("/api/sounding-candidates/saved", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ candidate, tags: [workingSetTag] }),
+    body: JSON.stringify({ candidate, tags, notes }),
   });
   if (!response.ok) {
     throw new Error(await responseError(response, "Unable to save sounding candidate."));
+  }
+  return response.json() as Promise<SavedSoundingCandidate>;
+}
+
+async function updateSavedSoundingCandidate(
+  savedCandidateId: string,
+  tags: string[],
+  notes: string | null,
+): Promise<SavedSoundingCandidate> {
+  const response = await fetch(`/api/sounding-candidates/saved/${savedCandidateId}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ tags, notes }),
+  });
+  if (!response.ok) {
+    throw new Error(
+      await responseError(response, "Unable to update saved sounding candidate."),
+    );
   }
   return response.json() as Promise<SavedSoundingCandidate>;
 }
@@ -1531,8 +1553,6 @@ export function App() {
   const [candidateStationSearch, setCandidateStationSearch] = useState("");
   const [candidateReadinessFilter, setCandidateReadinessFilter] =
     useState<CandidateReadinessFilter>("all");
-  const [candidateWorkingSetTag, setCandidateWorkingSetTag] =
-    useState<(typeof candidateWorkingSetTags)[number]>("Maybe rerun");
   const [candidateCacheLimit, setCandidateCacheLimit] = useState("10");
   const [candidateLatestPerStation, setCandidateLatestPerStation] = useState("5");
   const [candidateResultLimit, setCandidateResultLimit] = useState("50");
@@ -1988,16 +2008,43 @@ export function App() {
     }
   }
 
-  async function handleSaveSoundingCandidate(candidate: SoundingCandidate) {
+  function handleClearCandidateAnalysisFilters() {
+    setCandidateStoryFilter("all");
+    setCandidateStoryFamilyFilter("all");
+    setCandidateSupportFilter("all");
+    setCandidateStationSearch("");
+    setCandidateReadinessFilter("all");
+    setCandidateSort("best_match");
+    setCandidateStatus("Showing default discovery settings; run Analyze recommendations");
+  }
+
+  async function handleSaveSoundingCandidate(
+    candidate: SoundingCandidate,
+    tags: string[] = [],
+    notes: string | null = null,
+  ) {
     setCandidateError(null);
-    setCandidateStatus("Saving sounding candidate");
+    const existing = savedCandidates.find(
+      (saved) => saved.candidate.candidate_id === candidate.candidate_id,
+    );
+    setCandidateStatus(existing ? "Updating saved sounding candidate" : "Saving sounding candidate");
     try {
-      const saved = await saveSoundingCandidate(candidate, candidateWorkingSetTag);
-      setSavedCandidates((current) => [
-        saved,
-        ...current.filter((item) => item.saved_candidate_id !== saved.saved_candidate_id),
-      ]);
-      setCandidateStatus("Sounding candidate saved");
+      if (existing) {
+        const saved = await updateSavedSoundingCandidate(existing.saved_candidate_id, tags, notes);
+        setSavedCandidates((current) =>
+          current.map((item) =>
+            item.saved_candidate_id === saved.saved_candidate_id ? saved : item,
+          ),
+        );
+        setCandidateStatus("Saved sounding candidate notes updated");
+      } else {
+        const saved = await saveSoundingCandidate(candidate, tags, notes);
+        setSavedCandidates((current) => [
+          saved,
+          ...current.filter((item) => item.saved_candidate_id !== saved.saved_candidate_id),
+        ]);
+        setCandidateStatus("Sounding candidate saved");
+      }
     } catch (caught) {
       setCandidateError(
         caught instanceof Error ? caught.message : "Unable to save sounding candidate.",
@@ -2596,7 +2643,6 @@ export function App() {
           candidateSort={candidateSort}
           candidateStationSearch={candidateStationSearch}
           candidateReadinessFilter={candidateReadinessFilter}
-          candidateWorkingSetTag={candidateWorkingSetTag}
           candidateCacheLimit={candidateCacheLimit}
           candidateLatestPerStation={candidateLatestPerStation}
           candidateResultLimit={candidateResultLimit}
@@ -2641,7 +2687,7 @@ export function App() {
           onCandidateSortChange={setCandidateSort}
           onCandidateStationSearchChange={setCandidateStationSearch}
           onCandidateReadinessFilterChange={setCandidateReadinessFilter}
-          onCandidateWorkingSetTagChange={setCandidateWorkingSetTag}
+          onClearCandidateAnalysisFilters={handleClearCandidateAnalysisFilters}
           onCandidateCacheLimitChange={setCandidateCacheLimit}
           onCandidateLatestPerStationChange={setCandidateLatestPerStation}
           onCandidateResultLimitChange={setCandidateResultLimit}
@@ -2746,7 +2792,6 @@ function BuildWorkspace({
   candidateSort,
   candidateStationSearch,
   candidateReadinessFilter,
-  candidateWorkingSetTag,
   candidateCacheLimit,
   candidateLatestPerStation,
   candidateResultLimit,
@@ -2786,7 +2831,7 @@ function BuildWorkspace({
   onCandidateSortChange,
   onCandidateStationSearchChange,
   onCandidateReadinessFilterChange,
-  onCandidateWorkingSetTagChange,
+  onClearCandidateAnalysisFilters,
   onCandidateCacheLimitChange,
   onCandidateLatestPerStationChange,
   onCandidateResultLimitChange,
@@ -2842,7 +2887,6 @@ function BuildWorkspace({
   candidateSort: CandidateSort;
   candidateStationSearch: string;
   candidateReadinessFilter: CandidateReadinessFilter;
-  candidateWorkingSetTag: (typeof candidateWorkingSetTags)[number];
   candidateCacheLimit: string;
   candidateLatestPerStation: string;
   candidateResultLimit: string;
@@ -2882,7 +2926,7 @@ function BuildWorkspace({
   onCandidateSortChange: (sort: CandidateSort) => void;
   onCandidateStationSearchChange: (value: string) => void;
   onCandidateReadinessFilterChange: (filter: CandidateReadinessFilter) => void;
-  onCandidateWorkingSetTagChange: (tag: (typeof candidateWorkingSetTags)[number]) => void;
+  onClearCandidateAnalysisFilters: () => void;
   onCandidateCacheLimitChange: (value: string) => void;
   onCandidateLatestPerStationChange: (value: string) => void;
   onCandidateResultLimitChange: (value: string) => void;
@@ -3072,7 +3116,6 @@ function BuildWorkspace({
                     sort={candidateSort}
                     stationSearch={candidateStationSearch}
                     readinessFilter={candidateReadinessFilter}
-                    workingSetTag={candidateWorkingSetTag}
                     cacheLimit={candidateCacheLimit}
                     latestPerStation={candidateLatestPerStation}
                     resultLimit={candidateResultLimit}
@@ -3087,7 +3130,7 @@ function BuildWorkspace({
                     onSortChange={onCandidateSortChange}
                     onStationSearchChange={onCandidateStationSearchChange}
                     onReadinessFilterChange={onCandidateReadinessFilterChange}
-                    onWorkingSetTagChange={onCandidateWorkingSetTagChange}
+                    onClearFilters={onClearCandidateAnalysisFilters}
                     onCacheLimitChange={onCandidateCacheLimitChange}
                     onLatestPerStationChange={onCandidateLatestPerStationChange}
                     onResultLimitChange={onCandidateResultLimitChange}
@@ -3284,7 +3327,6 @@ function ObservedAtmosphereCandidatesPanel({
   sort,
   stationSearch,
   readinessFilter,
-  workingSetTag,
   cacheLimit,
   latestPerStation,
   resultLimit,
@@ -3299,7 +3341,7 @@ function ObservedAtmosphereCandidatesPanel({
   onSortChange,
   onStationSearchChange,
   onReadinessFilterChange,
-  onWorkingSetTagChange,
+  onClearFilters,
   onCacheLimitChange,
   onLatestPerStationChange,
   onResultLimitChange,
@@ -3320,7 +3362,6 @@ function ObservedAtmosphereCandidatesPanel({
   sort: CandidateSort;
   stationSearch: string;
   readinessFilter: CandidateReadinessFilter;
-  workingSetTag: (typeof candidateWorkingSetTags)[number];
   cacheLimit: string;
   latestPerStation: string;
   resultLimit: string;
@@ -3335,7 +3376,7 @@ function ObservedAtmosphereCandidatesPanel({
   onSortChange: (sort: CandidateSort) => void;
   onStationSearchChange: (value: string) => void;
   onReadinessFilterChange: (filter: CandidateReadinessFilter) => void;
-  onWorkingSetTagChange: (tag: (typeof candidateWorkingSetTags)[number]) => void;
+  onClearFilters: () => void;
   onCacheLimitChange: (value: string) => void;
   onLatestPerStationChange: (value: string) => void;
   onResultLimitChange: (value: string) => void;
@@ -3343,7 +3384,7 @@ function ObservedAtmosphereCandidatesPanel({
   onRefreshIGRAData: () => void;
   onCacheStationFiles: () => void;
   onScreen: () => void;
-  onSave: (candidate: SoundingCandidate) => void;
+  onSave: (candidate: SoundingCandidate, tags?: string[], notes?: string | null) => void;
   onRemoveSaved: (savedCandidateId: string) => void;
   onUse: (candidate: SoundingCandidate, savedCandidate?: SavedSoundingCandidate) => void;
 }) {
@@ -3356,6 +3397,12 @@ function ObservedAtmosphereCandidatesPanel({
     () => new Set(savedCandidates.map((saved) => saved.candidate.candidate_id)),
     [savedCandidates],
   );
+  const selectedSavedCandidate =
+    selectedCandidate === null
+      ? null
+      : savedCandidates.find(
+          (saved) => saved.candidate.candidate_id === selectedCandidate.candidate_id,
+        ) ?? null;
   const cachedStations = new Set((cache?.entries ?? []).map((entry) => entry.station_id)).size;
   const cachedStationFiles = cache?.entries.length ?? 0;
   const cachedCatalogFiles =
@@ -3369,6 +3416,14 @@ function ObservedAtmosphereCandidatesPanel({
     screenableSoundingCount > 0
       ? `${screenableSoundingCount.toLocaleString()} soundings`
       : `${screeningInputs.length.toLocaleString()} cached files`;
+  const activeRefinements = [
+    storyFilter !== "all" ? `Story: ${candidateStoryLabel(storyFilter)}` : null,
+    storyFamilyFilter !== "all" ? `Family: ${candidateStoryFamilyLabel(storyFamilyFilter)}` : null,
+    supportFilter !== "all" ? `Support: ${humanize(supportFilter)}` : null,
+    readinessFilter !== "all" ? `Readiness: ${humanize(readinessFilter)}` : null,
+    stationSearch.trim() ? `Station search: ${stationSearch.trim()}` : null,
+    sort !== "best_match" ? `Sort: ${candidateSortLabel(sort)}` : null,
+  ].filter((item): item is string => item !== null);
 
   return (
     <section
@@ -3406,194 +3461,193 @@ function ObservedAtmosphereCandidatesPanel({
         </div>
       )}
 
-      <div className="candidate-toolbar" aria-label="Sounding candidate controls">
-        <label>
-          Story filter
-          <select
-            value={storyFilter}
-            onChange={(event) => onStoryFilterChange(event.target.value as CandidateStoryFilter)}
-          >
-            <option value="all">All screening stories</option>
-            <option value="deep_convection_trial">Deep Convection Trial stories</option>
-            <option value="shallow_cumulus_candidate">Cloud-forming shallow cumulus</option>
-            <option value="dry_failed_candidate">Dry failed cumulus</option>
-            <option value="capped_suppressed_candidate">Capped / suppressed</option>
-            <option value="humid_rainy_candidate">Humid / rainy</option>
-            <option value="severe_thunderstorm_environment">Severe thunderstorm environment</option>
-            <option value="supercell_environment">Supercell-like environment</option>
-            <option value="high_cape_pulse_storm">High-CAPE pulse storm</option>
-            <option value="dry_microburst_inverted_v">Dry microburst / inverted-V</option>
-            <option value="squall_line_cold_pool_candidate">
-              Squall-line / cold-pool candidate
-            </option>
-            <option value="elevated_convection">Elevated convection</option>
-            <option value="needs_review">Needs review</option>
-            <option value="poor_or_incomplete_candidate">Poor or incomplete</option>
-          </select>
-        </label>
-        <label>
-          Story family
-          <select
-            value={storyFamilyFilter}
-            onChange={(event) =>
-              onStoryFamilyFilterChange(event.target.value as CandidateStoryFamilyFilter)
-            }
-          >
-            <option value="all">All families</option>
-            <option value="lower_atmosphere">Lower-atmosphere stories</option>
-            <option value="deep_convection">Deep-convection stories</option>
-            <option value="review">Needs review / incomplete</option>
-          </select>
-        </label>
-        <label>
-          Support
-          <select
-            value={supportFilter}
-            onChange={(event) =>
-              onSupportFilterChange(event.target.value as CandidateSupportFilter)
-            }
-          >
-            <option value="all">All support states</option>
-            <option value="supported">Supported</option>
-            <option value="weak">Weak support</option>
-            <option value="unavailable">Unavailable</option>
-          </select>
-        </label>
-        <label>
-          Sort
-          <select
-            value={sort}
-            onChange={(event) => onSortChange(event.target.value as CandidateSort)}
-          >
-            <option value="best_match">Best match for story</option>
-            <option value="valid_time">Valid time</option>
-            <option value="station_id">Station ID</option>
-            <option value="station_name">Station name</option>
-            <option value="primary_story">Primary story</option>
-            <option value="story_family">Story family</option>
-            <option value="rank_score">Rank score</option>
-            <option value="confidence">Confidence</option>
-            <option value="support">Support state</option>
-            <option value="package_readiness">Package readiness</option>
-            <option value="observed_wind_available">Observed wind availability</option>
-            <option value="profile_top_m_agl">Profile top</option>
-            <option value="lowest_level_m_agl">Lowest usable level</option>
-            <option value="data_completeness_score">Data completeness</option>
-            <option value="low_level_qv_g_kg">Low-level qv</option>
-            <option value="mean_qv_0_500m_g_kg">Mean qv 0-500 m</option>
-            <option value="mean_qv_0_1000m_g_kg">Mean qv 0-1 km</option>
-            <option value="surface_t_td_spread_c">Surface T-Td spread</option>
-            <option value="estimated_lcl_height_m_agl">Estimated LCL</option>
-            <option value="lapse_rate_0_1000m_c_per_km">Low-level lapse rate</option>
-            <option value="midlevel_lapse_rate_700_500_hpa_c_per_km">
-              Midlevel lapse rate
-            </option>
-            <option value="cap_strength_proxy">Cap/inversion strength</option>
-            <option value="cap_height_m_agl">Cap/inversion height</option>
-            <option value="bulk_shear_0_1km_m_s">Bulk shear 0-1 km</option>
-            <option value="bulk_shear_0_3km_m_s">Bulk shear 0-3 km</option>
-            <option value="bulk_shear_0_6km_m_s">Bulk shear 0-6 km</option>
-            <option value="midlevel_dry_layer_proxy">Dry-layer proxy</option>
-            <option value="dry_microburst_inverted_v_proxy">Inverted-V proxy</option>
-            <option value="freezing_level_m_agl">Freezing level</option>
-          </select>
-        </label>
-        <label>
-          Station search
-          <input
-            type="search"
-            value={stationSearch}
-            placeholder="Station name, ID, or state"
-            onChange={(event) => onStationSearchChange(event.target.value)}
-          />
-        </label>
-        <label>
-          Readiness
-          <select
-            value={readinessFilter}
-            onChange={(event) =>
-              onReadinessFilterChange(event.target.value as CandidateReadinessFilter)
-            }
-          >
-            <option value="all">All readiness states</option>
-            <option value="package_ready">Package-ready only</option>
-            <option value="blocked">Blocked / needs review</option>
-          </select>
-        </label>
-        <label>
-          Save into
-          <select
-            value={workingSetTag}
-            onChange={(event) =>
-              onWorkingSetTagChange(event.target.value as (typeof candidateWorkingSetTags)[number])
-            }
-          >
-            {candidateWorkingSetTags.map((tag) => (
-              <option key={tag} value={tag}>
-                {tag}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label>
-          Cache up to
-          <input
-            type="number"
-            min="1"
-            max="100"
-            value={cacheLimit}
-            onChange={(event) => onCacheLimitChange(event.target.value)}
-          />
-        </label>
-        <label>
-          Latest per station
-          <input
-            type="number"
-            min="1"
-            max="50"
-            value={latestPerStation}
-            onChange={(event) => onLatestPerStationChange(event.target.value)}
-          />
-        </label>
-        <label>
-          Candidate limit
-          <input
-            type="number"
-            min="1"
-            max="200"
-            value={resultLimit}
-            onChange={(event) => onResultLimitChange(event.target.value)}
-          />
-        </label>
-        <div className="button-row candidate-toolbar-actions">
-          <button type="button" onClick={onRefreshIGRAData}>
-            Refresh IGRA catalog
-          </button>
-          <button type="button" className="secondary-button" onClick={onCacheStationFiles}>
-            Cache station files
-          </button>
-          <button type="button" onClick={onScreen}>
-            Analyze cached soundings
+      <div className="candidate-discovery-actions" aria-label="Sounding candidate actions">
+        <button type="button" onClick={onScreen}>
+          Analyze recommendations
+        </button>
+        <button type="button" className="secondary-button" onClick={onRefreshIGRAData}>
+          Refresh IGRA catalog
+        </button>
+        <button type="button" className="secondary-button" onClick={onCacheStationFiles}>
+          Cache station files
+        </button>
+      </div>
+
+      {activeRefinements.length > 0 && (
+        <div className="screening-guidance-note">
+          <strong>Refined view</strong>
+          <span>{activeRefinements.join(" · ")}</span>
+          <button type="button" className="link-button" onClick={onClearFilters}>
+            Clear refinements
           </button>
         </div>
-      </div>
+      )}
+
+      <details className="candidate-advanced-filters" open={activeRefinements.length > 0}>
+        <summary>Advanced filters</summary>
+        <div className="candidate-toolbar" aria-label="Advanced sounding candidate controls">
+          <label>
+            Story
+            <select
+              value={storyFilter}
+              onChange={(event) => onStoryFilterChange(event.target.value as CandidateStoryFilter)}
+            >
+              <option value="all">All screening stories</option>
+              <option value="deep_convection_trial">Deep Convection Trial stories</option>
+              <option value="shallow_cumulus_candidate">Cloud-forming shallow cumulus</option>
+              <option value="dry_failed_candidate">Dry failed cumulus</option>
+              <option value="capped_suppressed_candidate">Capped / suppressed</option>
+              <option value="humid_rainy_candidate">Humid / rainy</option>
+              <option value="severe_thunderstorm_environment">Severe thunderstorm environment</option>
+              <option value="supercell_environment">Supercell-like environment</option>
+              <option value="high_cape_pulse_storm">High-CAPE pulse storm</option>
+              <option value="dry_microburst_inverted_v">Dry microburst / inverted-V</option>
+              <option value="squall_line_cold_pool_candidate">
+                Squall-line / cold-pool candidate
+              </option>
+              <option value="elevated_convection">Elevated convection</option>
+              <option value="needs_review">Needs review</option>
+              <option value="poor_or_incomplete_candidate">Poor or incomplete</option>
+            </select>
+          </label>
+          <label>
+            Story family
+            <select
+              value={storyFamilyFilter}
+              onChange={(event) =>
+                onStoryFamilyFilterChange(event.target.value as CandidateStoryFamilyFilter)
+              }
+            >
+              <option value="all">All families</option>
+              <option value="lower_atmosphere">Lower-atmosphere stories</option>
+              <option value="deep_convection">Deep-convection stories</option>
+              <option value="review">Needs review / incomplete</option>
+            </select>
+          </label>
+          <label>
+            Support
+            <select
+              value={supportFilter}
+              onChange={(event) =>
+                onSupportFilterChange(event.target.value as CandidateSupportFilter)
+              }
+            >
+              <option value="all">All support states</option>
+              <option value="supported">Supported</option>
+              <option value="weak">Weak support</option>
+              <option value="unavailable">Unavailable</option>
+            </select>
+          </label>
+          <label>
+            Sort
+            <select value={sort} onChange={(event) => onSortChange(event.target.value as CandidateSort)}>
+              <option value="best_match">Recommended</option>
+              <option value="valid_time">Valid time</option>
+              <option value="station_id">Station ID</option>
+              <option value="station_name">Station name</option>
+              <option value="primary_story">Primary story</option>
+              <option value="story_family">Story family</option>
+              <option value="rank_score">Rank score</option>
+              <option value="confidence">Confidence</option>
+              <option value="support">Support state</option>
+              <option value="package_readiness">Package readiness</option>
+              <option value="observed_wind_available">Observed wind availability</option>
+              <option value="profile_top_m_agl">Profile top</option>
+              <option value="lowest_level_m_agl">Lowest usable level</option>
+              <option value="data_completeness_score">Data completeness</option>
+              <option value="low_level_qv_g_kg">Low-level qv</option>
+              <option value="mean_qv_0_500m_g_kg">Mean qv 0-500 m</option>
+              <option value="mean_qv_0_1000m_g_kg">Mean qv 0-1 km</option>
+              <option value="surface_t_td_spread_c">Surface T-Td spread</option>
+              <option value="estimated_lcl_height_m_agl">Estimated LCL</option>
+              <option value="lapse_rate_0_1000m_c_per_km">Low-level lapse rate</option>
+              <option value="midlevel_lapse_rate_700_500_hpa_c_per_km">
+                Midlevel lapse rate
+              </option>
+              <option value="cap_strength_proxy">Cap/inversion strength</option>
+              <option value="cap_height_m_agl">Cap/inversion height</option>
+              <option value="bulk_shear_0_1km_m_s">Bulk shear 0-1 km</option>
+              <option value="bulk_shear_0_3km_m_s">Bulk shear 0-3 km</option>
+              <option value="bulk_shear_0_6km_m_s">Bulk shear 0-6 km</option>
+              <option value="midlevel_dry_layer_proxy">Dry-layer proxy</option>
+              <option value="dry_microburst_inverted_v_proxy">Inverted-V proxy</option>
+              <option value="freezing_level_m_agl">Freezing level</option>
+            </select>
+          </label>
+          <label>
+            Station search
+            <input
+              type="search"
+              value={stationSearch}
+              placeholder="Station name, ID, or state"
+              onChange={(event) => onStationSearchChange(event.target.value)}
+            />
+          </label>
+          <label>
+            Readiness
+            <select
+              value={readinessFilter}
+              onChange={(event) =>
+                onReadinessFilterChange(event.target.value as CandidateReadinessFilter)
+              }
+            >
+              <option value="all">All readiness states</option>
+              <option value="package_ready">Package-ready only</option>
+              <option value="blocked">Blocked / needs review</option>
+            </select>
+          </label>
+          <label>
+            Cache up to
+            <input
+              type="number"
+              min="1"
+              max="100"
+              value={cacheLimit}
+              onChange={(event) => onCacheLimitChange(event.target.value)}
+            />
+          </label>
+          <label>
+            Latest per station
+            <input
+              type="number"
+              min="1"
+              max="50"
+              value={latestPerStation}
+              onChange={(event) => onLatestPerStationChange(event.target.value)}
+            />
+          </label>
+          <label>
+            Candidate limit
+            <input
+              type="number"
+              min="1"
+              max="200"
+              value={resultLimit}
+              onChange={(event) => onResultLimitChange(event.target.value)}
+            />
+          </label>
+        </div>
+      </details>
 
       <div className="candidate-workspace">
         <section aria-label="Screened sounding candidates">
           {screening && (
-            <p className="field-help">
-              Showing {visibleCandidates.length.toLocaleString()} backend-filtered candidates
-              {screening.total_candidate_count !== undefined
-                ? ` from ${screening.total_candidate_count.toLocaleString()} cached-sounding hypotheses`
-                : ""}. Unavailable feature values are caveated and sorted last by the backend.
-            </p>
+            <div className="candidate-list-heading">
+              <h4>{activeRefinements.length > 0 ? "Refined candidates" : "Recommended cached soundings"}</h4>
+              <p className="field-help">
+                Showing {visibleCandidates.length.toLocaleString()} candidates
+                {screening.total_candidate_count !== undefined
+                  ? ` from ${screening.total_candidate_count.toLocaleString()} cached sounding hypotheses`
+                  : ""}. Each score is screening guidance; CM1 still decides what happens.
+              </p>
+            </div>
           )}
           {visibleCandidates.length === 0 ? (
             <div className="scenario-state-panel">
               <h4>No screened candidates loaded</h4>
               <p>
-                Refresh the IGRA catalog to check available stations, cache a bounded batch of
-                station files, then analyze cached soundings by atmospheric story.
+                Refresh the IGRA catalog if needed, cache station files, then analyze
+                recommendations from the soundings already cached locally.
               </p>
             </div>
           ) : (
@@ -3614,7 +3668,12 @@ function ObservedAtmosphereCandidatesPanel({
           )}
         </section>
 
-        <SoundingCandidateDetail candidate={selectedCandidate} storyFilter={storyFilter} />
+        <SoundingCandidateDetail
+          candidate={selectedCandidate}
+          storyFilter={storyFilter}
+          savedCandidate={selectedSavedCandidate}
+          onSave={onSave}
+        />
       </div>
 
       <section className="saved-candidates-panel" aria-labelledby="saved-candidates-title">
@@ -3643,7 +3702,8 @@ function ObservedAtmosphereCandidatesPanel({
                     {formatDate(saved.candidate.valid_time_utc)} ·{" "}
                     {candidateStoryLabel(saved.primary_story)}
                   </small>
-                  {saved.tags.length > 0 && <small>Working set: {saved.tags.join(", ")}</small>}
+                  {saved.tags.length > 0 && <small>Tags: {saved.tags.join(", ")}</small>}
+                  {saved.notes && <small>Notes: {saved.notes}</small>}
                   {saved.linked_run_ids.length > 0 && (
                     <small>Used in {saved.linked_run_ids.join(", ")}</small>
                   )}
@@ -3688,6 +3748,7 @@ function SoundingCandidateCard({
 }) {
   const story = storyFilter === "all" ? candidate.primary_story : storyFilter;
   const matchScore = candidateMatchScore(candidate, story);
+  const reasons = candidateInterestReasons(candidate);
   return (
     <article
       className={`candidate-card${selected ? " selected-candidate-card" : ""}`}
@@ -3703,6 +3764,9 @@ function SoundingCandidateCard({
           <small>{formatDate(candidate.valid_time_utc)}</small>
         </span>
         <span className="badge-row">
+          {candidate.discovery_bucket && (
+            <StatusBadge label={candidate.discovery_bucket} tone="neutral" />
+          )}
           <StatusBadge label={candidateStoryLabel(story)} tone="neutral" />
           {storyFilter === "deep_convection_trial" && (
             <StatusBadge label={candidate.primary_story_label} tone="neutral" />
@@ -3718,6 +3782,14 @@ function SoundingCandidateCard({
           />
         </span>
       </button>
+      <p className="candidate-interest-summary">{reasons[0]}</p>
+      {reasons.length > 1 && (
+        <ul className="compact-list candidate-reason-list">
+          {reasons.slice(1, 3).map((reason) => (
+            <li key={`${candidate.candidate_id}-${reason}`}>{reason}</li>
+          ))}
+        </ul>
+      )}
       <ul className="compact-list">
         {candidate.evidence.slice(0, 3).map((item) => (
           <li key={`${candidate.candidate_id}-${item.label}`}>
@@ -3745,10 +3817,24 @@ function SoundingCandidateCard({
 function SoundingCandidateDetail({
   candidate,
   storyFilter,
+  savedCandidate,
+  onSave,
 }: {
   candidate: SoundingCandidate | null;
   storyFilter: CandidateStoryFilter;
+  savedCandidate: SavedSoundingCandidate | null;
+  onSave: (candidate: SoundingCandidate, tags?: string[], notes?: string | null) => void;
 }) {
+  const [tagDraft, setTagDraft] = useState("");
+  const [notesDraft, setNotesDraft] = useState("");
+  const candidateId = candidate?.candidate_id ?? "";
+  const savedTagsText = savedCandidate?.tags.join(", ") ?? "";
+  const savedNotesText = savedCandidate?.notes ?? "";
+  useEffect(() => {
+    setTagDraft(savedTagsText);
+    setNotesDraft(savedNotesText);
+  }, [candidateId, savedCandidate?.saved_candidate_id, savedTagsText, savedNotesText]);
+
   if (!candidate) {
     return (
       <aside className="candidate-detail-panel">
@@ -3757,7 +3843,16 @@ function SoundingCandidateDetail({
       </aside>
     );
   }
-  const story = storyFilter === "all" ? candidate.primary_story : storyFilter;
+  const activeCandidate = candidate;
+  const story = storyFilter === "all" ? activeCandidate.primary_story : storyFilter;
+  const reasons = candidateInterestReasons(activeCandidate);
+  const savedTagValues = parseTags(tagDraft);
+  function handleTagSuggestion(tag: string) {
+    setTagDraft(_dedupeStrings([...savedTagValues, tag]).join(", "));
+  }
+  function handleAnnotationSubmit() {
+    onSave(activeCandidate, parseTags(tagDraft), notesDraft.trim() || null);
+  }
   const featureRows = [
     ["Observed wind profile", "observed_wind_available", ""],
     ["Profile top", "profile_top_m_agl", "m AGL"],
@@ -3798,6 +3893,14 @@ function SoundingCandidateDetail({
         Candidate match score is screening guidance only. CM1 decides whether clouds, rain, or
         suppression actually happen.
       </p>
+      <section>
+        <h5>Why this is interesting</h5>
+        <ul className="compact-list candidate-reason-list">
+          {reasons.map((reason) => (
+            <li key={`${candidate.candidate_id}-detail-${reason}`}>{reason}</li>
+          ))}
+        </ul>
+      </section>
       <dl className="compact-metrics">
         <Metric
           label="Match score"
@@ -3858,6 +3961,42 @@ function SoundingCandidateDetail({
           </ul>
         </details>
       )}
+      <div className="candidate-notes-form">
+        <h5>{savedCandidate ? "Candidate notes" : "Save candidate notes"}</h5>
+        <label htmlFor={`candidate-tags-${candidate.candidate_id}`}>
+          Tags
+          <input
+            id={`candidate-tags-${candidate.candidate_id}`}
+            value={tagDraft}
+            placeholder="deep convection, rerun, compare"
+            onChange={(event) => setTagDraft(event.target.value)}
+          />
+        </label>
+        <div className="candidate-tag-suggestions" aria-label="Suggested tags">
+          {candidateSuggestedTags.map((tag) => (
+            <button
+              type="button"
+              className="secondary-button"
+              key={tag}
+              onClick={() => handleTagSuggestion(tag)}
+            >
+              {tag}
+            </button>
+          ))}
+        </div>
+        <label htmlFor={`candidate-notes-${candidate.candidate_id}`}>
+          Notes
+          <textarea
+            id={`candidate-notes-${candidate.candidate_id}`}
+            value={notesDraft}
+            placeholder="What makes this worth running or comparing?"
+            onChange={(event) => setNotesDraft(event.target.value)}
+          />
+        </label>
+        <button type="button" onClick={handleAnnotationSubmit}>
+          {savedCandidate ? "Update saved candidate" : "Save candidate"}
+        </button>
+      </div>
     </aside>
   );
 }
@@ -8182,6 +8321,41 @@ function candidateStoryFamilyLabel(family: CandidateStoryFamilyFilter | undefine
   }
 }
 
+function candidateSortLabel(sort: CandidateSort): string {
+  const labels: Record<CandidateSort, string> = {
+    best_match: "Recommended",
+    valid_time: "Valid time",
+    station_id: "Station ID",
+    station_name: "Station name",
+    primary_story: "Primary story",
+    story_family: "Story family",
+    rank_score: "Rank score",
+    confidence: "Confidence",
+    support: "Support state",
+    package_readiness: "Package readiness",
+    observed_wind_available: "Observed wind availability",
+    profile_top_m_agl: "Profile top",
+    lowest_level_m_agl: "Lowest usable level",
+    data_completeness_score: "Data completeness",
+    low_level_qv_g_kg: "Low-level qv",
+    mean_qv_0_500m_g_kg: "Mean qv 0-500 m",
+    mean_qv_0_1000m_g_kg: "Mean qv 0-1 km",
+    surface_t_td_spread_c: "Surface T-Td spread",
+    estimated_lcl_height_m_agl: "Estimated LCL",
+    lapse_rate_0_1000m_c_per_km: "Low-level lapse rate",
+    midlevel_lapse_rate_700_500_hpa_c_per_km: "Midlevel lapse rate",
+    cap_strength_proxy: "Cap/inversion strength",
+    cap_height_m_agl: "Cap/inversion height",
+    bulk_shear_0_1km_m_s: "Bulk shear 0-1 km",
+    bulk_shear_0_3km_m_s: "Bulk shear 0-3 km",
+    bulk_shear_0_6km_m_s: "Bulk shear 0-6 km",
+    midlevel_dry_layer_proxy: "Dry-layer proxy",
+    dry_microburst_inverted_v_proxy: "Inverted-V proxy",
+    freezing_level_m_agl: "Freezing level",
+  };
+  return labels[sort];
+}
+
 function defaultPackageFamilyForCandidate(candidate: SoundingCandidate): ObservedPackageFamily {
   if (deepConvectionStoryIds.has(candidate.primary_story)) return "deep_convection_trial";
   if (
@@ -8215,6 +8389,17 @@ function candidateMatchScore(
     candidate.story_scores.find((score) => score.story === story)?.score_0_to_100 ??
     candidate.rank_score
   );
+}
+
+function candidateInterestReasons(candidate: SoundingCandidate): string[] {
+  const explicitReasons = candidate.interest_reasons?.filter(Boolean) ?? [];
+  if (explicitReasons.length > 0) return explicitReasons;
+  if (candidate.interest_summary) return [candidate.interest_summary];
+  const evidenceReasons = candidate.evidence
+    .map((item) => item.interpretation)
+    .filter((reason): reason is string => Boolean(reason));
+  if (evidenceReasons.length > 0) return evidenceReasons.slice(0, 3);
+  return [candidate.primary_story_label];
 }
 
 function boundedInteger(value: string, min: number, max: number, fallback: number): number {
@@ -8273,6 +8458,9 @@ function candidateScreeningMetadata(
     features: candidate.features,
     evidence: candidate.evidence,
     caveats: candidate.caveats,
+    interest_summary: candidate.interest_summary ?? null,
+    interest_reasons: candidate.interest_reasons ?? [],
+    discovery_bucket: candidate.discovery_bucket ?? null,
     source_file_name: candidate.source_file_name,
     source_file_hash: candidate.source_file_hash,
   };
@@ -8716,10 +8904,12 @@ function _dedupeStrings(values: string[]): string[] {
 }
 
 function parseTags(value: string): string[] {
-  return value
-    .split(",")
-    .map((tag) => tag.trim())
-    .filter(Boolean);
+  return _dedupeStrings(
+    value
+      .split(",")
+      .map((tag) => tag.trim())
+      .filter(Boolean),
+  );
 }
 
 function formatSeconds(value: number | null): string {

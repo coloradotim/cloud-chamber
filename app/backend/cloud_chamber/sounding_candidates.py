@@ -242,6 +242,9 @@ class SoundingCandidate(BaseModel):
     evidence: list[EvidenceItem]
     caveats: list[str] = Field(default_factory=list)
     selected_sounding_payload: dict[str, Any] | None = None
+    interest_summary: str | None = None
+    interest_reasons: list[str] = Field(default_factory=list)
+    discovery_bucket: str | None = None
     screening_version: str = SCREENING_VERSION
     created_at: datetime
 
@@ -587,12 +590,22 @@ def analyze_cached_soundings(
             station_search=normalized_search,
         )
     ]
-    sorted_candidates = _sort_analysis_candidates(
-        filtered,
-        sort_by=sort_by,
-        sort_direction=selected_direction,
+    if _uses_default_discovery_view(
         story_filter=story_filter,
-    )
+        story_family=story_family,
+        support=support,
+        readiness=readiness,
+        station_search=normalized_search,
+        sort_by=sort_by,
+    ):
+        sorted_candidates = _diverse_recommendations(filtered)
+    else:
+        sorted_candidates = _sort_analysis_candidates(
+            filtered,
+            sort_by=sort_by,
+            sort_direction=selected_direction,
+            story_filter=story_filter,
+        )
     return CandidateAnalysisResult(
         generated_at=datetime.now(UTC),
         candidates=sorted_candidates[:limit],
@@ -639,7 +652,16 @@ def _candidate_story_score_model(
     candidate: SoundingCandidate, story: CandidateStoryFilter
 ) -> StoryScore | None:
     if story == "all":
-        return max(candidate.story_scores, key=lambda score: score.score_0_to_100, default=None)
+        package_ready_scores = [
+            score
+            for score in candidate.story_scores
+            if score.story != "poor_or_incomplete_candidate"
+        ]
+        return max(
+            package_ready_scores or candidate.story_scores,
+            key=lambda score: score.score_0_to_100,
+            default=None,
+        )
     if story == "deep_convection_trial":
         return max(
             (score for score in candidate.story_scores if score.story in DEEP_CONVECTION_STORY_IDS),
@@ -647,6 +669,72 @@ def _candidate_story_score_model(
             default=None,
         )
     return next((score for score in candidate.story_scores if score.story == story), None)
+
+
+def _uses_default_discovery_view(
+    *,
+    story_filter: CandidateStoryFilter,
+    story_family: CandidateStoryFamilyFilter,
+    support: CandidateSupportFilter,
+    readiness: CandidateReadinessFilter,
+    station_search: str,
+    sort_by: CandidateSortKey,
+) -> bool:
+    return (
+        story_filter == "all"
+        and story_family == "all"
+        and support == "all"
+        and readiness == "all"
+        and station_search == ""
+        and sort_by == "best_match"
+    )
+
+
+def _diverse_recommendations(candidates: list[SoundingCandidate]) -> list[SoundingCandidate]:
+    ranked = sorted(candidates, key=_discovery_sort_key)
+    selected: list[SoundingCandidate] = []
+    selected_ids: set[str] = set()
+    station_counts: dict[str, int] = {}
+    for per_station_limit in (1, 2, 3, 10_000):
+        for candidate in ranked:
+            if candidate.candidate_id in selected_ids:
+                continue
+            station_count = station_counts.get(candidate.station_id, 0)
+            if station_count >= per_station_limit:
+                continue
+            selected.append(candidate)
+            selected_ids.add(candidate.candidate_id)
+            station_counts[candidate.station_id] = station_count + 1
+        if len(selected) == len(ranked):
+            break
+    return selected
+
+
+def _discovery_sort_key(candidate: SoundingCandidate) -> tuple[float, float, str]:
+    return (
+        -_discovery_score(candidate),
+        -candidate.valid_time_utc.timestamp(),
+        candidate.station_id,
+    )
+
+
+def _discovery_score(candidate: SoundingCandidate) -> float:
+    if not candidate.package_ready:
+        return max(0.0, _candidate_story_score(candidate, "needs_review")) * 0.25
+    best_score = max(
+        (
+            score.score_0_to_100
+            for score in candidate.story_scores
+            if score.story != "poor_or_incomplete_candidate"
+        ),
+        default=candidate.rank_score,
+    )
+    deep_score = _candidate_story_score(candidate, "deep_convection_trial")
+    completeness = _numeric_feature(candidate.features, "data_completeness_score") or 0.0
+    wind_bonus = 6.0 if candidate.features.get("observed_wind_available") is True else 0.0
+    deep_bonus = min(10.0, deep_score * 0.10) if deep_score >= 35.0 else 0.0
+    caveat_penalty = min(10.0, len(candidate.caveats) * 1.5)
+    return best_score + completeness * 0.10 + wind_bonus + deep_bonus - caveat_penalty
 
 
 def _target_story_for_filter(
@@ -945,6 +1033,12 @@ def _candidate_from_cached_sounding(
     primary = max(story_scores, key=lambda score: score.score_0_to_100)
     rank_score = _rank_score(primary, package_ready)
     story_family = _story_family_for_story(primary.story)
+    interest_reasons = _candidate_interest_reasons(
+        primary=primary,
+        story_scores=story_scores,
+        features=features,
+        package_ready=package_ready,
+    )
     return SoundingCandidate(
         candidate_id=_candidate_id(entry.station_id, selected_time, source_path.name, source_hash),
         station_id=entry.station_id,
@@ -967,6 +1061,9 @@ def _candidate_from_cached_sounding(
         evidence=evidence,
         caveats=caveats,
         selected_sounding_payload=selected_payload,
+        interest_summary=interest_reasons[0] if interest_reasons else None,
+        interest_reasons=interest_reasons,
+        discovery_bucket=_candidate_discovery_bucket(primary, story_scores, package_ready),
         created_at=created_at,
     )
 
@@ -1872,6 +1969,87 @@ def _rank_score(primary: StoryScore, package_ready: bool) -> float:
     if not package_ready or primary.story == "poor_or_incomplete_candidate":
         return 0.0
     return round(primary.score_0_to_100, 2)
+
+
+def _candidate_interest_reasons(
+    *,
+    primary: StoryScore,
+    story_scores: list[StoryScore],
+    features: dict[str, float | int | str | bool | None],
+    package_ready: bool,
+) -> list[str]:
+    if not package_ready:
+        return [
+            "Worth reviewing because package generation is blocked or caveated.",
+            "Use the caveats to decide whether this cached sounding needs parser or metadata work.",
+        ]
+
+    reasons: list[str] = []
+    deep_score = max(
+        (
+            score.score_0_to_100
+            for score in story_scores
+            if score.story in DEEP_CONVECTION_STORY_IDS
+        ),
+        default=0.0,
+    )
+    if deep_score >= 65.0:
+        reasons.append("Strong deep-convection ingredients with observed wind support.")
+    elif deep_score >= 35.0:
+        reasons.append(
+            "Some deep-convection ingredients are present, but the evidence is caveated."
+        )
+
+    qv = _numeric_feature(features, "mean_qv_0_1000m_g_kg")
+    qv_500 = _numeric_feature(features, "mean_qv_0_500m_g_kg")
+    lcl = _numeric_feature(features, "estimated_lcl_height_m_agl")
+    cap = _numeric_feature(features, "cap_strength_proxy")
+    shear_0_6km = _numeric_feature(features, "bulk_shear_0_6km_m_s")
+    midlevel_dry = _numeric_feature(features, "midlevel_dry_layer_proxy")
+    completeness = _numeric_feature(features, "data_completeness_score")
+
+    if qv is not None and qv >= 14.0:
+        reasons.append("Very moist lower atmosphere.")
+    elif qv_500 is not None and qv_500 >= 12.0:
+        reasons.append("Rich moisture near likely cloud base.")
+    if lcl is not None and lcl <= 900.0:
+        reasons.append("Low estimated LCL makes cloud formation easier to test.")
+    if cap is not None and cap >= 2.0:
+        reasons.append("Cap or inversion signal makes suppression worth inspecting.")
+    if shear_0_6km is not None and shear_0_6km >= 12.0:
+        reasons.append("Observed 0-6 km shear gives storm-organization context.")
+    if midlevel_dry is not None and midlevel_dry >= 4.0:
+        reasons.append("Dry-layer signal could matter for entrainment or downdraft behavior.")
+    if completeness is not None and completeness >= 85.0:
+        reasons.append("Profile coverage is strong enough for package review.")
+
+    if not reasons:
+        reasons.append(primary.reasons[0] if primary.reasons else primary.label)
+    return reasons[:4]
+
+
+def _candidate_discovery_bucket(
+    primary: StoryScore, story_scores: list[StoryScore], package_ready: bool
+) -> str:
+    if not package_ready:
+        return "Needs review"
+    deep_score = max(
+        (
+            score.score_0_to_100
+            for score in story_scores
+            if score.story in DEEP_CONVECTION_STORY_IDS
+        ),
+        default=0.0,
+    )
+    if deep_score >= 35.0:
+        return "Deep convection"
+    if primary.story == "humid_rainy_candidate":
+        return "Humid / rainy"
+    if primary.story == "capped_suppressed_candidate":
+        return "Capped / suppressed"
+    if primary.story == "dry_failed_candidate":
+        return "Dry / failed"
+    return "Cloud-forming"
 
 
 def _station_metadata_from_cache_entry(entry: IGRACacheEntry) -> StationMetadata:

@@ -263,19 +263,22 @@ Candidate cards and details must keep this language:
 - Candidate scores are pre-run hypotheses.
 - CM1 decides what actually happens.
 
-The backend analysis API owns story, story-family, support-state, readiness,
-station-search, and sort-key filtering. The UI may expose these controls, but
-it must display the backend-returned candidate list rather than parsing raw
-sounding files or recomputing story scores in the browser. Analysis must include
+The backend analysis API owns default recommendations, interest reasons,
+discovery buckets, story/story-family/support/readiness/station-search
+refinements, and sort-key ordering. The default UI should answer which cached
+soundings are interesting and why before exposing advanced refinements. It must
+display the backend-returned candidate list rather than parsing raw sounding
+files or recomputing story scores in the browser. Analysis must include
 secondary story matches when `story_scores` contain meaningful support for the
 selected story. Missing feature values must remain unavailable/caveated and sort
 last instead of becoming zero-valued evidence. The UI must not show a confident
 story label without evidence, caveats, and package readiness.
 
-Saved candidates may carry working-set tags such as `Deep convection
+Saved candidates may carry freeform tags and notes such as `Deep convection
 candidates`, `Surface-forced candidates`, `Needs longer run`, `Needs finer
-output cadence`, `Maybe rerun`, and `Needs review`. These tags are runtime-local
-pre-run organization metadata; they are not Results and are not committed.
+output cadence`, `Maybe rerun`, and `Needs review`. These annotations are
+runtime-local pre-run organization metadata; they are not Results and are not
+committed.
 
 ## Testing Contract
 
@@ -291,8 +294,9 @@ Tests should prove:
   labels;
 - backend analysis works across multiple cached sounding blocks;
 - physical-field sorting keeps missing values last;
-- story, support, and readiness filters are backend-owned;
-- saved working-set tags round-trip through runtime-local JSON;
+- default recommendations and interest reasons are backend-owned;
+- story, support, and readiness refinements are backend-owned;
+- saved tags and notes round-trip through runtime-local JSON;
 - poor/incomplete candidates are blocked from package generation;
 - package-ready but weak profiles become `needs_review`;
 - candidate-screening provenance is copied into generated package metadata

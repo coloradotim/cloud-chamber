@@ -116,12 +116,15 @@ story-specific candidate matches. Stable story identifiers are
 pre-run hypotheses for Deep Convection Trial routing. The auditable scoring
 contract lives in
 [contracts/sounding-candidate-screening.md](contracts/sounding-candidate-screening.md).
-Analysis can target story, story family, support state, package readiness,
-station search, and backend-owned sort keys because the useful sounding depends
-on the experiment question; a shallow-cumulus search and a humid/rainy search
-should not imply the same ranked list. Missing feature values stay unavailable
-and sort last instead of being treated as zero. Saved candidates and working-set
-tags are runtime-local cache state under
+Analysis has a default recommendation mode that answers which cached soundings
+look interesting and why, using backend-owned interest reasons and station
+diversity before exposing refinements. It can also target story, story family,
+support state, package readiness, station search, and backend-owned sort keys
+because the useful sounding depends on the experiment question; shallow-cumulus
+and humid/rainy searches should not imply the same ranked list.
+Missing feature values stay unavailable and sort last instead of being treated
+as zero. Saved candidates, freeform tags, and notes are runtime-local cache state
+under
 `<runtime-home>/cache/sounding-candidates/`; they are not Result Cards and are
 not committed. When a saved candidate is used to generate a package, its
 screening summary may be copied into
@@ -158,9 +161,10 @@ soundings as pre-run hypotheses for an idealized triggered CM1 experiment.
 The Build UI consumes this layer through bounded JSON only. `Upload a Sounding`
 loads saved candidates immediately when that experiment is selected, before any
 catalog refresh or analysis action. It can also call the recent-catalog/cache
-and candidate-analysis endpoints, display the backend-filtered candidate list,
-save candidates into working-set tags, and pass a selected candidate's
-`selected_sounding_payload` into the existing observed-sounding package review.
+and candidate-analysis endpoints, display backend recommendations and advanced
+refinements, save candidates with freeform tags/notes, and pass a selected
+candidate's `selected_sounding_payload` into the existing observed-sounding
+package review.
 The frontend does not read cached station text directly, compute the story
 scores, or sort raw feature values itself. Candidate status is separate from
 run/result status: saved candidates are pre-run hypotheses, while generated

@@ -237,6 +237,33 @@ def test_analyze_cached_soundings_filters_and_sorts_multiple_cached_blocks(
         assert story_score.support == target_support
 
 
+def test_analyze_cached_soundings_default_recommendations_are_explained_and_diverse(
+    tmp_path: Path,
+) -> None:
+    settings = _settings(tmp_path)
+    _write_cached_igra_station(
+        settings,
+        station_id="USM00072558",
+        station_name="Valley, Nebraska",
+    )
+    _write_cached_igra_station(
+        settings,
+        station_id="USM00072426",
+        station_name="Wilmington, Ohio",
+    )
+
+    result = analyze_cached_soundings(settings, latest_per_station=2, limit=4)
+
+    assert len(result.candidates) == 4
+    assert {candidate.station_id for candidate in result.candidates[:2]} == {
+        "USM00072426",
+        "USM00072558",
+    }
+    assert all(candidate.interest_summary for candidate in result.candidates)
+    assert all(candidate.interest_reasons for candidate in result.candidates)
+    assert all(candidate.discovery_bucket for candidate in result.candidates)
+
+
 def test_analysis_sorts_physical_fields_with_missing_values_last(tmp_path: Path) -> None:
     settings = _settings(tmp_path)
     _write_cached_igra_station(settings)

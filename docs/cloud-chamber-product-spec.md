@@ -131,12 +131,14 @@ are implemented and tested.
 In Build, `Upload a Sounding` is the product-facing entry point for this
 candidate workflow. It should show a `Find interesting soundings` workbench
 beside the observed-sounding upload path. The workbench can refresh the bounded
-IGRA cache, analyze cached soundings by experiment story, story family, support,
-package readiness, station search, and sounding-derived backend sort keys, show
+IGRA cache, analyze cached soundings into station-diverse recommendations, show
+why each candidate is interesting, expose story, story-family, support,
+readiness, station-search, and sort controls as advanced refinements, show
 package-ready and blocked candidates with evidence and caveats, save candidates
-into working sets for later review, and load a selected package-ready candidate
-into the observed-sounding package review. Missing sounding-derived features
-must remain unavailable/caveated and must not sort as zero-valued evidence.
+with freeform tags and notes for later review, and load a selected package-ready
+candidate into the observed-sounding package review. Missing sounding-derived
+features must remain unavailable/caveated and must not sort as zero-valued
+evidence.
 Saved candidates should appear as soon as the user selects `Upload a Sounding`,
 without requiring a catalog refresh, cache action, or new analysis run. It must
 keep the language pre-run and provisional: a candidate is an observed atmosphere
