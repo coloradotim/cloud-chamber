@@ -109,7 +109,7 @@ computes transparent low-order features such as low-level moisture, estimated
 LCL, low-level lapse-rate, inversion/cap proxy, moisture depth, profile
 coverage, observed-wind availability, bulk-shear proxies when winds exist,
 dry-layer/inverted-V proxies, and freezing-level context, and emits pre-run
-story-specific candidate matches. Stable story identifiers are
+story-specific candidate scores. Stable story identifiers are
 `shallow_cumulus_candidate`, `dry_failed_candidate`,
 `capped_suppressed_candidate`, `humid_rainy_candidate`, `needs_review`, and
 `poor_or_incomplete_candidate`; severe/deep-convection story identifiers remain
@@ -129,8 +129,9 @@ under
 not committed. When a saved candidate is used to generate a package, its
 screening summary and saved tags/notes may be copied into
 `run_manifest.json`, `case_manifest.json`, and `dry_run_report.json` as
-provenance. The screening score remains a candidate-selection aid; CM1 output
-remains the source of truth.
+provenance. The screening score remains a candidate-selection aid that ranks
+sounding ingredients only; it does not predict what the selected CM1 package
+will produce. CM1 output remains the source of truth.
 
 The sounding-diagnostics layer is a backend-only feature extractor for observed
 soundings. It produces bounded `SoundingDiagnostics` payloads with

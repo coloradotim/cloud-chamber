@@ -2964,7 +2964,16 @@ describe("App", () => {
     expect(await screen.findByText("Candidate selected for package review")).toBeInTheDocument();
     expect(screen.getByLabelText("Package type")).toHaveValue("deep_convection_trial");
     expect(screen.getByText("Three-bubble trigger")).toBeInTheDocument();
-    expect(screen.getByText(/strong fit for Deep Convection Trial/)).toBeInTheDocument();
+    expect(screen.getByText(/Candidate screening is ingredient guidance/)).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("Package type"), {
+      target: { value: "observed_sounding_quicklook" },
+    });
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "Observed Sounding Quick Look does not test that hypothesis",
+    );
+    fireEvent.change(screen.getByLabelText("Package type"), {
+      target: { value: "deep_convection_trial" },
+    });
 
     fireEvent.click(screen.getByTestId("create-package-btn"));
 
@@ -3009,6 +3018,9 @@ describe("App", () => {
 
     expect(await screen.findByText("Candidate selected for package review")).toBeInTheDocument();
     expect(screen.getByLabelText("Package type")).toHaveValue("observed_sounding_quicklook");
+    expect(
+      screen.getByText(/Predicted rain behavior needs rain-water, surface-rain, and\/or reflectivity outputs/),
+    ).toBeInTheDocument();
 
     fireEvent.click(screen.getByTestId("create-package-btn"));
 
@@ -3092,7 +3104,7 @@ describe("App", () => {
       screen.queryByLabelText("Sounding candidate Norman, Oklahoma (USM00072357)"),
     ).not.toBeInTheDocument();
     expect(screen.getByLabelText("Candidate details")).toHaveTextContent(
-      "Candidate match score is screening guidance only",
+      "Scores rank sounding ingredients only",
     );
 
     const candidateDetails = screen.getByLabelText("Candidate details");
@@ -3208,7 +3220,117 @@ describe("App", () => {
     expect(fetch).not.toHaveBeenCalledWith("/api/sounding-candidates/analyze", expect.anything());
   });
 
-  it("shows secondary family matches with the scoped story score", async () => {
+  it("updates saved candidate working sets and preserves tags through reload", async () => {
+    const defaultFetch = vi.mocked(fetch).getMockImplementation();
+    let savedStore: Array<(typeof savedCandidatesResponse.saved_candidates)[number]> = [];
+    vi.mocked(fetch).mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url === "/api/sounding-candidates/saved" && init?.method === "POST") {
+        const body = JSON.parse(String(init.body ?? "{}")) as {
+          candidate?: typeof shallowCandidate;
+          tags?: string[];
+          notes?: string | null;
+        };
+        const candidate = body.candidate ?? shallowCandidate;
+        const saved = {
+          ...savedCandidatesResponse.saved_candidates[0],
+          saved_candidate_id: candidate.candidate_id,
+          candidate,
+          primary_story: candidate.primary_story,
+          story_scores: candidate.story_scores,
+          features: candidate.features,
+          evidence: candidate.evidence,
+          caveats: candidate.caveats,
+          tags: body.tags ?? [],
+          notes: body.notes ?? "",
+        };
+        savedStore = [saved];
+        return Promise.resolve(new Response(JSON.stringify(saved), { status: 200 }));
+      }
+      if (url.startsWith("/api/sounding-candidates/saved/") && init?.method === "PATCH") {
+        const savedCandidateId = url.split("/").at(-1);
+        const body = JSON.parse(String(init.body ?? "{}")) as {
+          tags?: string[];
+          notes?: string | null;
+        };
+        const updated = savedStore.map((saved) =>
+          saved.saved_candidate_id === savedCandidateId
+            ? {
+                ...saved,
+                tags: body.tags ?? saved.tags,
+                notes: body.notes ?? saved.notes,
+              }
+            : saved,
+        );
+        savedStore = updated;
+        return Promise.resolve(
+          new Response(JSON.stringify(savedStore[0]), { status: 200 }),
+        );
+      }
+      if (url === "/api/sounding-candidates/saved") {
+        return Promise.resolve(
+          new Response(JSON.stringify({ saved_candidates: savedStore }), { status: 200 }),
+        );
+      }
+      return (
+        defaultFetch?.(input, init) ?? Promise.resolve(new Response("not found", { status: 404 }))
+      );
+    });
+
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Build" }));
+    fireEvent.change(await screen.findByLabelText("Experiment"), {
+      target: { value: "__observed_sounding_upload__" },
+    });
+    fireEvent.click(screen.getByText("Advanced filters"));
+    fireEvent.change(screen.getByLabelText("Story"), {
+      target: { value: "shallow_cumulus_candidate" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Analyze recommendations" }));
+
+    const valleyCard = await screen.findByLabelText(
+      "Sounding candidate Valley, Nebraska (USM00072558)",
+    );
+    fireEvent.click(within(valleyCard).getByRole("button", { name: /Valley, Nebraska/ }));
+    const candidateDetails = screen.getByLabelText("Candidate details");
+    fireEvent.change(within(candidateDetails).getByLabelText("Tags"), {
+      target: { value: "Maybe rerun" },
+    });
+    fireEvent.change(within(candidateDetails).getByLabelText("Notes"), {
+      target: { value: "Keep this one in the candidate notebook." },
+    });
+    fireEvent.click(within(candidateDetails).getByRole("button", { name: "Save candidate" }));
+
+    const savedCard = await screen.findByLabelText(
+      "Saved sounding candidate Valley, Nebraska (USM00072558)",
+    );
+    expect(savedCard).toHaveTextContent("Tags: Maybe rerun");
+    fireEvent.change(
+      within(savedCard).getByLabelText("Working set for Valley, Nebraska (USM00072558)"),
+      { target: { value: "Deep convection candidates" } },
+    );
+    fireEvent.click(within(savedCard).getByRole("button", { name: "Update working set" }));
+
+    expect(await screen.findByText("Saved sounding candidate updated")).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText("Experiment"), {
+      target: { value: "baseline-shallow-cumulus" },
+    });
+    fireEvent.change(screen.getByLabelText("Experiment"), {
+      target: { value: "__observed_sounding_upload__" },
+    });
+
+    const reloadedSavedCard = await screen.findByLabelText(
+      "Saved sounding candidate Valley, Nebraska (USM00072558)",
+    );
+    expect(reloadedSavedCard).toHaveTextContent("Tags: Deep convection candidates");
+    expect(reloadedSavedCard).toHaveTextContent(
+      "Notes: Keep this one in the candidate notebook.",
+    );
+  });
+
+  it("shows secondary family candidates with the scoped story ingredient score", async () => {
     render(<App />);
 
     fireEvent.click(await screen.findByRole("button", { name: "Build" }));
@@ -3230,7 +3352,8 @@ describe("App", () => {
     );
     expect(wilmingtonCard).toHaveTextContent("High-CAPE pulse storm");
     expect(wilmingtonCard).toHaveTextContent("Primary: Humid / rainy");
-    expect(wilmingtonCard).toHaveTextContent("48.9 % match");
+    expect(wilmingtonCard).toHaveTextContent("48.9 % ingredient score");
+    expect(wilmingtonCard).toHaveTextContent("Recipe fit: requires triggered deep-potential run");
     expect(
       screen.queryByLabelText("Sounding candidate Norman, Oklahoma (USM00072357)"),
     ).not.toBeInTheDocument();
@@ -3238,7 +3361,7 @@ describe("App", () => {
     fireEvent.click(within(wilmingtonCard).getByRole("button", { name: /Wilmington, Ohio/ }));
     const candidateDetails = screen.getByLabelText("Candidate details");
     expect(candidateDetails).toHaveTextContent("High-CAPE pulse storm");
-    expect(candidateDetails).toHaveTextContent("Matched story family");
+    expect(candidateDetails).toHaveTextContent("Screened story family");
     expect(candidateDetails).toHaveTextContent("Deep convection stories");
     expect(candidateDetails).toHaveTextContent("Primary story");
     expect(candidateDetails).toHaveTextContent("Humid / rainy");

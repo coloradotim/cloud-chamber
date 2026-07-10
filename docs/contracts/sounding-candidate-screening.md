@@ -262,7 +262,8 @@ payloads so the generated package remains tied to the reason it was selected.
 Candidate cards and details must keep this language:
 
 - Screening guidance only.
-- Candidate scores are pre-run hypotheses.
+- Candidate ingredient/screening scores rank sounding ingredients only.
+- Scores do not predict what the current CM1 package will produce.
 - CM1 decides what actually happens.
 
 The backend analysis API owns default recommendations, interest reasons,
@@ -271,14 +272,18 @@ refinements, and sort-key ordering. The default UI should answer which cached
 soundings are interesting and why before exposing advanced refinements. It must
 display the backend-returned candidate list rather than parsing raw sounding
 files or recomputing story scores in the browser. Analysis must include
-secondary story matches when `story_scores` contain meaningful support for the
+secondary story scores when `story_scores` contain meaningful support for the
 selected story or selected story family. Story-family filtering, support
-filtering, and best-match sorting must use the same family-scoped `story_scores`
+filtering, and highest-ingredient-score sorting must use the same family-scoped `story_scores`
 set, so a sounding with a lower-atmosphere primary story can still appear as a
 deep-convection recommendation when a secondary deep-convection score has
 meaningful support. Missing feature values must remain unavailable/caveated and
 sort last instead of becoming zero-valued evidence. The UI must not show a
 confident story label without evidence, caveats, and package readiness.
+The workbench should also show a minimal recipe-fit status, such as
+`partially_testable`, `requires_triggered_deep_potential`, or `blocked_profile`,
+so candidate interest remains separate from what the current package path can
+actually test.
 
 Saved candidates may carry freeform tags and notes such as `Deep convection
 candidates`, `Surface-forced candidates`, `Needs longer run`, `Needs finer

@@ -195,11 +195,12 @@ scripts/igra-recent.sh candidates --story shallow-cumulus --limit 10
 scripts/igra-recent.sh candidates --story capped-suppressed --limit 10
 ```
 
-Candidate match scores are pre-run hypotheses only. There is no single best
-sounding independent of the experiment story: use `--story deep-convection`,
-`--story shallow-cumulus`, `--story dry-failed`, `--story capped-suppressed`,
-or `--story humid-rainy` depending on what you want to test. CM1 output remains
-the source of truth.
+Candidate ingredient scores are pre-run screening guidance only. They rank
+sounding ingredients; they do not predict what the current CM1 package will
+produce. There is no single best sounding independent of the experiment story:
+use `--story deep-convection`, `--story shallow-cumulus`, `--story dry-failed`,
+`--story capped-suppressed`, or `--story humid-rainy` depending on what you want
+to test. CM1 output remains the source of truth.
 
 The same workflow is available in the app from Build -> `Upload a Sounding` ->
 `Find interesting soundings`. Use `Refresh IGRA catalog` to update station

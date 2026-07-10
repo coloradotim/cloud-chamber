@@ -13,13 +13,14 @@ import math
 from datetime import UTC, datetime
 from functools import cmp_to_key
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, Literal, TypedDict
 
 from pydantic import BaseModel, ConfigDict, Field
 
 from cloud_chamber.igra_catalog import IGRACacheEntry, read_igra_cache_manifest
 from cloud_chamber.observed_sounding import (
     ObservedSoundingError,
+    ObservedSoundingLevel,
     ObservedSoundingRecord,
     StationMetadata,
     parse_igra_station_text,
@@ -63,6 +64,14 @@ Confidence = Literal["low", "medium", "high"]
 Support = Literal["supported", "weak", "unavailable"]
 CandidateStoryFamily = Literal["lower_atmosphere", "deep_convection", "review"]
 CandidateStoryFamilyFilter = Literal["all", "lower_atmosphere", "deep_convection", "review"]
+CandidateRecipeFitStatus = Literal[
+    "testable_now",
+    "partially_testable",
+    "requires_triggered_deep_potential",
+    "requires_surface_forcing_recipe",
+    "not_testable_with_current_recipes",
+    "blocked_profile",
+]
 CandidateStoryFilter = Literal[
     "all",
     "deep_convection_trial",
@@ -216,6 +225,13 @@ class EvidenceItem(BaseModel):
     caveats: list[str] = Field(default_factory=list)
 
 
+class _RecipeFit(TypedDict):
+    status: CandidateRecipeFitStatus
+    label: str
+    summary: str
+    caveats: list[str]
+
+
 class SoundingCandidate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -245,6 +261,13 @@ class SoundingCandidate(BaseModel):
     interest_summary: str | None = None
     interest_reasons: list[str] = Field(default_factory=list)
     discovery_bucket: str | None = None
+    recipe_fit_status: CandidateRecipeFitStatus = "partially_testable"
+    recipe_fit_label: str = "Partially testable with current observed-sounding run"
+    recipe_fit_summary: str = (
+        "Scores rank sounding ingredients only. They do not predict what the current "
+        "CM1 package will produce."
+    )
+    recipe_fit_caveats: list[str] = Field(default_factory=list)
     screening_version: str = SCREENING_VERSION
     created_at: datetime
 
@@ -345,7 +368,7 @@ class UpdateSavedCandidateRequest(BaseModel):
 
 SORT_OPTIONS: tuple[CandidateSortOption, ...] = (
     CandidateSortOption(
-        key="best_match", label="Best match for selected story", default_direction="desc"
+        key="best_match", label="Highest ingredient score", default_direction="desc"
     ),
     CandidateSortOption(key="valid_time", label="Valid time", default_direction="desc"),
     CandidateSortOption(key="station_id", label="Station ID", default_direction="asc"),
@@ -1069,6 +1092,9 @@ def _candidate_from_cached_sounding(
     primary = max(story_scores, key=lambda score: score.score_0_to_100)
     rank_score = _rank_score(primary, package_ready)
     story_family = _story_family_for_story(primary.story)
+    recipe_fit = _candidate_recipe_fit(
+        primary.story, features=features, package_ready=package_ready
+    )
     interest_reasons = _candidate_interest_reasons(
         primary=primary,
         story_scores=story_scores,
@@ -1100,8 +1126,88 @@ def _candidate_from_cached_sounding(
         interest_summary=interest_reasons[0] if interest_reasons else None,
         interest_reasons=interest_reasons,
         discovery_bucket=_candidate_discovery_bucket(primary, story_scores, package_ready),
+        recipe_fit_status=recipe_fit["status"],
+        recipe_fit_label=recipe_fit["label"],
+        recipe_fit_summary=recipe_fit["summary"],
+        recipe_fit_caveats=recipe_fit["caveats"],
         created_at=created_at,
     )
+
+
+def _candidate_recipe_fit(
+    story: StoryId,
+    *,
+    features: dict[str, float | int | str | bool | None],
+    package_ready: bool,
+) -> _RecipeFit:
+    if not package_ready or story == "poor_or_incomplete_candidate":
+        return {
+            "status": "blocked_profile",
+            "label": "blocked profile",
+            "summary": (
+                "This cached sounding cannot be packaged until the profile or parser caveats "
+                "are resolved."
+            ),
+            "caveats": ["profile_or_package_generation_blocked"],
+        }
+    if story == "needs_review":
+        return {
+            "status": "not_testable_with_current_recipes",
+            "label": "not testable with current package path",
+            "summary": (
+                "The analyzer could not identify a trustworthy story to test with the current "
+                "observed-sounding package path."
+            ),
+            "caveats": ["candidate_requires_manual_screening_review"],
+        }
+    if story in DEEP_CONVECTION_STORY_IDS:
+        caveats = ["observed_sounding_quicklook_does_not_test_deep_potential"]
+        if features.get("observed_wind_available") is not True:
+            caveats.append("complete_observed_wind_profile_required_for_deep_potential")
+        return {
+            "status": "requires_triggered_deep_potential",
+            "label": "requires triggered deep-potential run",
+            "summary": (
+                "This story screens deep-convection ingredients. Observed Sounding Quick Look "
+                "does not test that hypothesis without the triggered deep-potential package."
+            ),
+            "caveats": caveats,
+        }
+    if story == "humid_rainy_candidate":
+        return {
+            "status": "partially_testable",
+            "label": "partially testable with current observed-sounding run",
+            "summary": (
+                "The current observed-sounding path can inspect moist evolution, but later "
+                "comparison needs rain-water, surface-rain, and/or reflectivity outputs."
+            ),
+            "caveats": ["rain_water_surface_rain_or_reflectivity_outputs_required"],
+        }
+    if story == "capped_suppressed_candidate":
+        caveats = ["run_duration_and_output_fields_must_be_checked_for_cap_story"]
+        if (
+            _numeric_feature(features, "cap_strength_proxy") is None
+            and _numeric_feature(features, "cap_height_m_agl") is None
+        ):
+            caveats.append("cap_or_inversion_evidence_unavailable")
+        return {
+            "status": "partially_testable",
+            "label": "partially testable with current observed-sounding run",
+            "summary": (
+                "The current observed-sounding path can inspect capped or suppressed evolution "
+                "when cap evidence, duration, and output fields are adequate."
+            ),
+            "caveats": caveats,
+        }
+    return {
+        "status": "partially_testable",
+        "label": "partially testable with current observed-sounding run",
+        "summary": (
+            "The current observed-sounding path can inspect untriggered shallow/evolution "
+            "behavior, but the recipe still shapes what CM1 can test."
+        ),
+        "caveats": ["observed_sounding_quicklook_is_recipe_dependent"],
+    }
 
 
 def _features_from_record(
@@ -1124,8 +1230,8 @@ def _features_from_record(
     moisture_depth = _moisture_depth(levels, min_qv_g_kg=6.0)
     near_surface_jump = _near_surface_jump(levels)
     usable_below_3km = sum(1 for level in levels if 0.0 <= level.model_z_m <= 3000.0)
-    observed_wind_available = all(
-        level.u_wind_m_s is not None and level.v_wind_m_s is not None for level in levels
+    partial_observed_wind_available = any(
+        _level_has_finite_observed_wind(level) for level in levels
     )
     completeness = min(
         100.0,
@@ -1176,7 +1282,8 @@ def _features_from_record(
         "profile_top_m_agl": round(top, 1),
         "lowest_level_m_agl": round(lowest, 1),
         "usable_levels_below_3km": usable_below_3km,
-        "observed_wind_available": observed_wind_available,
+        "observed_wind_available": False,
+        "has_partial_observed_wind_profile": partial_observed_wind_available,
         "near_surface_jump_depth_m": near_surface_jump["depth_m"],
         "near_surface_temperature_jump_c": near_surface_jump["temperature_jump_c"],
         "near_surface_qv_jump_g_kg": near_surface_jump["qv_jump_g_kg"],
@@ -1206,10 +1313,17 @@ def _features_from_record(
     ):
         diagnostic = diagnostics.feature_values.get(key)
         features[key] = diagnostic.value if diagnostic is not None else None
-    features["observed_wind_available"] = bool(
-        features.get("observed_wind_available") or features.get("has_observed_wind_profile")
-    )
+    features["observed_wind_available"] = features.get("has_observed_wind_profile") is True
     return features
+
+
+def _level_has_finite_observed_wind(level: ObservedSoundingLevel) -> bool:
+    return (
+        level.u_wind_m_s is not None
+        and level.v_wind_m_s is not None
+        and math.isfinite(float(level.u_wind_m_s))
+        and math.isfinite(float(level.v_wind_m_s))
+    )
 
 
 def _score_features(

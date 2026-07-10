@@ -123,7 +123,7 @@ test.describe("mocked smoke: Build, Results, Explore path", () => {
     await expect(valleyCard).toContainText("Package-ready");
     await expect(valleyCard).toContainText("Low-level moisture: 10.2 g/kg");
     await expect(page.getByLabel("Candidate details")).toContainText(
-      "Candidate match score is screening guidance only",
+      "Scores rank sounding ingredients only",
     );
 
     await storySelect.selectOption("needs_review");

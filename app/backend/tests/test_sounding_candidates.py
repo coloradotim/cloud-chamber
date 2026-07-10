@@ -243,6 +243,29 @@ def test_near_surface_discontinuity_is_caveated_and_downgrades_data_quality() ->
     assert "near_surface_discontinuity_caveat" in continuity.caveats
 
 
+def test_observed_wind_available_requires_complete_finite_profile() -> None:
+    record = parse_igra_station_text(
+        IGRA_FIXTURE,
+        uploaded_filename="USM00072558-data-beg2025.txt",
+    ).selected_sounding
+    levels = list(record.levels)
+    missing_wind_index = next(
+        index for index, level in enumerate(levels) if level.model_z_m >= 3000.0
+    )
+    levels[missing_wind_index] = levels[missing_wind_index].model_copy(update={"u_wind_m_s": None})
+    partial_wind_record = record.model_copy(update={"levels": levels})
+
+    features = _features_from_record(partial_wind_record)
+    scores, _evidence = _score_features(features, package_ready=True)
+
+    assert features["has_partial_observed_wind_profile"] is True
+    assert features["has_observed_wind_profile"] is False
+    assert features["observed_wind_available"] is False
+    supercell = next(score for score in scores if score.story == "supercell_environment")
+    assert supercell.support == "unavailable"
+    assert "observed_wind_required_for_deep_convection_trial" in supercell.caveats
+
+
 def test_screen_cached_soundings_can_target_one_story(tmp_path: Path) -> None:
     settings = _settings(tmp_path)
     _write_cached_igra_station(settings)

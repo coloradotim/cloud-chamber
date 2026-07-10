@@ -103,12 +103,13 @@ batch of recent soundings without hand-written HTTP requests. A backend
 screening layer can match cached sounding times against explicit pre-run
 experiment stories such as shallow cumulus, dry failed, capped/suppressed, or
 humid/rainy. There is no universal "best sounding" ranking: the useful candidate
-depends on the atmospheric question being tested. Match scores are transparent
-candidate-selection aids, not CM1 outcome predictions. Saved candidates live in
-the runtime cache and may be handed into package metadata as provenance for why
-a sounding was tried. The browser never parses remote directory listings, ZIP
-files, or station text files. The current story identifiers, feature inputs,
-score support states, evidence requirements, and caveat rules are defined in
+depends on the atmospheric question being tested. Ingredient scores are
+transparent candidate-selection aids that rank sounding ingredients only; they
+are not CM1 outcome predictions. Saved candidates live in the runtime cache and
+may be handed into package metadata as provenance for why a sounding was tried.
+The browser never parses remote directory listings, ZIP files, or station text
+files. The current story identifiers, feature inputs, score support states,
+evidence requirements, and caveat rules are defined in
 [contracts/sounding-candidate-screening.md](contracts/sounding-candidate-screening.md).
 Real-sounding story families, including severe/deep-convection, boundary-layer,
 low-cloud, and winter/cold-season candidates, are defined in

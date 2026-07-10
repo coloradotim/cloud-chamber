@@ -231,6 +231,19 @@ type CandidateSort =
 type CandidateStoryFamilyFilter = "all" | "lower_atmosphere" | "deep_convection" | "review";
 type CandidateSupportFilter = "all" | "supported" | "weak" | "unavailable";
 type CandidateReadinessFilter = "all" | "package_ready" | "blocked";
+type CandidateRecipeFitStatus =
+  | "testable_now"
+  | "partially_testable"
+  | "requires_triggered_deep_potential"
+  | "requires_surface_forcing_recipe"
+  | "not_testable_with_current_recipes"
+  | "blocked_profile";
+type CandidateRecipeFitDisplay = {
+  status: CandidateRecipeFitStatus;
+  label: string;
+  summary: string;
+  caveats: string[];
+};
 
 type PackageFamily = "shallow_cumulus" | "observed_sounding_quicklook" | "deep_convection_trial";
 
@@ -281,6 +294,10 @@ type SoundingCandidate = {
   interest_summary?: string | null;
   interest_reasons?: string[];
   discovery_bucket?: string | null;
+  recipe_fit_status?: CandidateRecipeFitStatus;
+  recipe_fit_label?: string;
+  recipe_fit_summary?: string;
+  recipe_fit_caveats?: string[];
   screening_version: string;
   created_at: string;
 };
@@ -2011,7 +2028,7 @@ export function App() {
       setCandidateStatus(
         result.candidates.length > 0
           ? "Cached sounding analysis loaded"
-          : "No candidate matches found in cached soundings",
+          : "No candidates found in cached soundings",
       );
       const savedPayload = await fetchSavedSoundingCandidates();
       setSavedCandidates(savedPayload.saved_candidates);
@@ -2053,7 +2070,7 @@ export function App() {
             item.saved_candidate_id === saved.saved_candidate_id ? saved : item,
           ),
         );
-        setCandidateStatus("Saved sounding candidate notes updated");
+        setCandidateStatus("Saved sounding candidate updated");
       } else {
         const saved = await saveSoundingCandidate(candidate, tags, notes);
         setSavedCandidates((current) => [
@@ -2090,6 +2107,7 @@ export function App() {
   function handleUseSoundingCandidate(
     candidate: SoundingCandidate,
     savedCandidate?: SavedSoundingCandidate,
+    activeStory?: CandidateStoryId,
   ) {
     if (!candidate.package_ready || !candidate.selected_sounding_payload) {
       setCandidateError(
@@ -2104,8 +2122,8 @@ export function App() {
     setObservedSoundingParse(observedSoundingParseFromCandidate(candidate, selectedSounding));
     setObservedSoundingStatus("Candidate loaded into observed-sounding package review");
     setObservedSoundingError(null);
-    setSelectedCandidateScreening(candidateScreeningMetadata(candidate, savedCandidate));
-    setObservedPackageFamily(defaultPackageFamilyForCandidate(candidate));
+    setSelectedCandidateScreening(candidateScreeningMetadata(candidate, savedCandidate, activeStory));
+    setObservedPackageFamily(defaultPackageFamilyForCandidate(candidate, activeStory));
     setDryRun(null);
     setRunStatus(null);
     setRunWorkflowError(null);
@@ -3409,7 +3427,11 @@ function ObservedAtmosphereCandidatesPanel({
   onScreen: () => void;
   onSave: (candidate: SoundingCandidate, tags?: string[], notes?: string | null) => void;
   onRemoveSaved: (savedCandidateId: string) => void;
-  onUse: (candidate: SoundingCandidate, savedCandidate?: SavedSoundingCandidate) => void;
+  onUse: (
+    candidate: SoundingCandidate,
+    savedCandidate?: SavedSoundingCandidate,
+    activeStory?: CandidateStoryId,
+  ) => void;
 }) {
   const visibleCandidates = screening?.candidates ?? [];
   const selectedCandidate =
@@ -3454,7 +3476,7 @@ function ObservedAtmosphereCandidatesPanel({
   const lastAnalysisSummary = screening
     ? `${visibleCandidates.length.toLocaleString()} shown from ${(
         screening.filtered_candidate_count ?? visibleCandidates.length
-      ).toLocaleString()} matching / ${(screening.total_candidate_count ?? visibleCandidates.length).toLocaleString()} analyzed`
+      ).toLocaleString()} selected / ${(screening.total_candidate_count ?? visibleCandidates.length).toLocaleString()} analyzed`
     : "Not run yet";
   const activeRefinements = [
     storyFilter !== "all" ? `Story: ${candidateStoryLabel(storyFilter)}` : null,
@@ -3688,7 +3710,8 @@ function ObservedAtmosphereCandidatesPanel({
                 {screening.total_candidate_count !== undefined
                   ? ` from ${screening.total_candidate_count.toLocaleString()} analyzed cached soundings`
                   : ""}
-                . Each score is screening guidance; CM1 still decides what happens.
+                . Scores rank sounding ingredients only. They do not predict what the current CM1
+                package will produce.
               </p>
             </div>
           )}
@@ -3712,12 +3735,13 @@ function ObservedAtmosphereCandidatesPanel({
                   saved={savedCandidateIds.has(candidate.candidate_id)}
                   onSelect={() => onCandidateDetailChange(candidate.candidate_id)}
                   onSave={() => onSave(candidate)}
-                  onUse={() =>
+                  onUse={(activeStory) =>
                     onUse(
                       candidate,
                       savedCandidates.find(
                         (saved) => saved.candidate.candidate_id === candidate.candidate_id,
                       ),
+                      activeStory,
                     )
                   }
                 />
@@ -3750,41 +3774,87 @@ function ObservedAtmosphereCandidatesPanel({
         ) : (
           <div className="saved-candidate-list">
             {savedCandidates.map((saved) => (
-              <article
-                className="saved-candidate-card"
+              <SavedSoundingCandidateCard
                 key={saved.saved_candidate_id}
-                aria-label={`Saved sounding candidate ${candidateStationLabel(saved.candidate)}`}
-              >
-                <div>
-                  <strong>{candidateStationLabel(saved.candidate)}</strong>
-                  <small>
-                    {formatDate(saved.candidate.valid_time_utc)} ·{" "}
-                    {candidateStoryLabel(saved.primary_story)}
-                  </small>
-                  {saved.tags.length > 0 && <small>Tags: {saved.tags.join(", ")}</small>}
-                  {saved.notes && <small>Notes: {saved.notes}</small>}
-                  {saved.linked_run_ids.length > 0 && (
-                    <small>Used in {saved.linked_run_ids.join(", ")}</small>
-                  )}
-                </div>
-                <div className="button-row">
-                  <button type="button" onClick={() => onUse(saved.candidate, saved)}>
-                    Use to create package
-                  </button>
-                  <button
-                    type="button"
-                    className="secondary-button"
-                    onClick={() => onRemoveSaved(saved.saved_candidate_id)}
-                  >
-                    Remove saved
-                  </button>
-                </div>
-              </article>
+                saved={saved}
+                onUpdateWorkingSet={(tags) => onSave(saved.candidate, tags, saved.notes ?? null)}
+                onUse={() => onUse(saved.candidate, saved)}
+                onRemove={() => onRemoveSaved(saved.saved_candidate_id)}
+              />
             ))}
           </div>
         )}
       </section>
     </section>
+  );
+}
+
+function SavedSoundingCandidateCard({
+  saved,
+  onUpdateWorkingSet,
+  onUse,
+  onRemove,
+}: {
+  saved: SavedSoundingCandidate;
+  onUpdateWorkingSet: (tags: string[]) => void;
+  onUse: () => void;
+  onRemove: () => void;
+}) {
+  const currentWorkingSet = saved.tags.find(isCandidateSuggestedTag) ?? "";
+  const [workingSetDraft, setWorkingSetDraft] = useState(currentWorkingSet);
+  useEffect(() => {
+    setWorkingSetDraft(currentWorkingSet);
+  }, [saved.saved_candidate_id, currentWorkingSet]);
+  const freeformTags = saved.tags.filter((tag) => !isCandidateSuggestedTag(tag));
+  const nextTags = _dedupeStrings(
+    [workingSetDraft, ...freeformTags].filter((tag): tag is string => Boolean(tag)),
+  );
+  return (
+    <article
+      className="saved-candidate-card"
+      aria-label={`Saved sounding candidate ${candidateStationLabel(saved.candidate)}`}
+    >
+      <div>
+        <strong>{candidateStationLabel(saved.candidate)}</strong>
+        <small>
+          {formatDate(saved.candidate.valid_time_utc)} · {candidateStoryLabel(saved.primary_story)}
+        </small>
+        {saved.tags.length > 0 && <small>Tags: {saved.tags.join(", ")}</small>}
+        {saved.notes && <small>Notes: {saved.notes}</small>}
+        {saved.linked_run_ids.length > 0 && (
+          <small>Used in {saved.linked_run_ids.join(", ")}</small>
+        )}
+      </div>
+      <div className="saved-candidate-controls">
+        <label htmlFor={`saved-working-set-${saved.saved_candidate_id}`}>
+          Working set
+          <select
+            id={`saved-working-set-${saved.saved_candidate_id}`}
+            aria-label={`Working set for ${candidateStationLabel(saved.candidate)}`}
+            value={workingSetDraft}
+            onChange={(event) => setWorkingSetDraft(event.target.value)}
+          >
+            <option value="">No working set</option>
+            {candidateSuggestedTags.map((tag) => (
+              <option key={tag} value={tag}>
+                {tag}
+              </option>
+            ))}
+          </select>
+        </label>
+        <button type="button" className="secondary-button" onClick={() => onUpdateWorkingSet(nextTags)}>
+          Update working set
+        </button>
+      </div>
+      <div className="button-row">
+        <button type="button" onClick={onUse}>
+          Use to create package
+        </button>
+        <button type="button" className="secondary-button" onClick={onRemove}>
+          Remove saved
+        </button>
+      </div>
+    </article>
   );
 }
 
@@ -3805,13 +3875,14 @@ function SoundingCandidateCard({
   saved: boolean;
   onSelect: () => void;
   onSave: () => void;
-  onUse: () => void;
+  onUse: (activeStory: CandidateStoryId) => void;
 }) {
   const activeScore = candidateActiveStoryScore(candidate, storyFilter, storyFamilyFilter);
-  const story = activeScore?.story ?? (storyFilter === "all" ? candidate.primary_story : storyFilter);
+  const story = activeScore?.story ?? candidate.primary_story;
   const activeFamily = activeScore ? candidateStoryFamilyForStory(activeScore.story) : candidate.story_family;
-  const matchScore =
-    activeScore?.score_0_to_100 ?? candidateMatchScore(candidate, storyFilter, storyFamilyFilter);
+  const ingredientScore =
+    activeScore?.score_0_to_100 ?? candidateIngredientScore(candidate, storyFilter, storyFamilyFilter);
+  const recipeFit = candidateRecipeFitForStory(candidate, story);
   const reasons = candidateInterestReasons(candidate);
   return (
     <article
@@ -3836,7 +3907,11 @@ function SoundingCandidateCard({
             <StatusBadge label={`Primary: ${candidate.primary_story_label}`} tone="neutral" />
           )}
           <StatusBadge label={candidateStoryFamilyLabel(activeFamily)} tone="neutral" />
-          <StatusBadge label={`${formatNumber(matchScore, "%")} match`} tone="neutral" />
+          <StatusBadge label={`${formatNumber(ingredientScore, "%")} ingredient score`} tone="neutral" />
+          <StatusBadge
+            label={`Recipe fit: ${recipeFit.label}`}
+            tone={candidateRecipeFitTone(recipeFit.status)}
+          />
           <StatusBadge
             label={candidate.package_ready ? "Package-ready" : "Blocked"}
             tone={candidate.package_ready ? "good" : "warning"}
@@ -3864,7 +3939,7 @@ function SoundingCandidateCard({
         </p>
       )}
       <div className="button-row">
-        <button type="button" disabled={!candidate.package_ready} onClick={onUse}>
+        <button type="button" disabled={!candidate.package_ready} onClick={() => onUse(story)}>
           Use this sounding
         </button>
         <button type="button" className="secondary-button" disabled={saved} onClick={onSave}>
@@ -3908,13 +3983,14 @@ function SoundingCandidateDetail({
   }
   const activeCandidate = candidate;
   const activeScore = candidateActiveStoryScore(activeCandidate, storyFilter, storyFamilyFilter);
-  const story = activeScore?.story ?? (storyFilter === "all" ? activeCandidate.primary_story : storyFilter);
+  const story = activeScore?.story ?? activeCandidate.primary_story;
   const activeFamily = activeScore
     ? candidateStoryFamilyForStory(activeScore.story)
     : activeCandidate.story_family;
-  const matchScore =
+  const ingredientScore =
     activeScore?.score_0_to_100 ??
-    candidateMatchScore(activeCandidate, storyFilter, storyFamilyFilter);
+    candidateIngredientScore(activeCandidate, storyFilter, storyFamilyFilter);
+  const recipeFit = candidateRecipeFitForStory(activeCandidate, story);
   const reasons = candidateInterestReasons(activeCandidate);
   const savedTagValues = parseTags(tagDraft);
   function handleTagSuggestion(tag: string) {
@@ -3960,9 +4036,10 @@ function SoundingCandidateDetail({
         />
       </div>
       <p>
-        Candidate match score is screening guidance only. CM1 decides whether clouds, rain, or
-        suppression actually happen.
+        Scores rank sounding ingredients only. They do not predict what the current CM1 package
+        will produce. CM1 decides whether clouds, rain, or suppression actually happen.
       </p>
+      <p className="field-help">Recipe fit: {recipeFit.summary}</p>
       <section>
         <h5>Why this is interesting</h5>
         <ul className="compact-list candidate-reason-list">
@@ -3972,9 +4049,10 @@ function SoundingCandidateDetail({
         </ul>
       </section>
       <dl className="compact-metrics">
-        <Metric label="Match score" value={formatNumber(matchScore, "%")} />
+        <Metric label="Ingredient score" value={formatNumber(ingredientScore, "%")} />
         <Metric label="Evidence level" value={humanize(candidate.confidence)} />
-        <Metric label="Matched story family" value={candidateStoryFamilyLabel(activeFamily)} />
+        <Metric label="Screened story family" value={candidateStoryFamilyLabel(activeFamily)} />
+        <Metric label="Recipe fit" value={recipeFit.label} />
         {activeScore && activeScore.story !== candidate.primary_story && (
           <Metric label="Primary story" value={candidate.primary_story_label} />
         )}
@@ -4002,7 +4080,7 @@ function SoundingCandidateDetail({
         </ul>
       </section>
       <details>
-        <summary>All story scores</summary>
+        <summary>All ingredient scores</summary>
         <dl className="compact-metrics">
           {candidate.story_scores.map((score) => (
             <Metric
@@ -4227,11 +4305,12 @@ function ObservedPackageFamilyPanel({
   onChange: (packageFamily: ObservedPackageFamily) => void;
 }) {
   const selectedDeep = packageFamily === "deep_convection_trial";
-  const selectedStory = String(selectedCandidateScreening?.primary_story ?? "");
+  const packageMismatchWarning = candidatePackageMismatchWarning(
+    selectedCandidateScreening,
+    packageFamily,
+  );
   const candidateGuidance = selectedCandidateScreening
-    ? deepConvectionStoryIds.has(selectedStory)
-      ? "This saved/screened candidate is a strong fit for Deep Convection Trial."
-      : "This candidate can still use the observed-sounding quick look, or you can try the deep-convection package deliberately."
+    ? "Candidate screening is ingredient guidance. Choose the package based on what the run can actually test."
     : "Upload or choose an observed sounding, then choose the CM1 package family to generate.";
   const workerGuidance =
     selectedDeep && runSizePreset !== "quick_look"
@@ -4272,6 +4351,11 @@ function ObservedPackageFamilyPanel({
           <option value="deep_convection_trial">Deep Convection Trial</option>
         </select>
       </div>
+      {packageMismatchWarning && (
+        <div className="validation" role="alert">
+          {packageMismatchWarning}
+        </div>
+      )}
       <dl className="compact-metrics">
         <Metric
           label="Initiation method"
@@ -8460,7 +8544,11 @@ function candidateSortLabel(sort: CandidateSort): string {
   return labels[sort];
 }
 
-function defaultPackageFamilyForCandidate(candidate: SoundingCandidate): ObservedPackageFamily {
+function defaultPackageFamilyForCandidate(
+  candidate: SoundingCandidate,
+  activeStory?: CandidateStoryId,
+): ObservedPackageFamily {
+  if (activeStory && deepConvectionStoryIds.has(activeStory)) return "deep_convection_trial";
   if (deepConvectionStoryIds.has(candidate.primary_story)) return "deep_convection_trial";
   if (
     candidate.story_scores.some(
@@ -8470,6 +8558,159 @@ function defaultPackageFamilyForCandidate(candidate: SoundingCandidate): Observe
     return "deep_convection_trial";
   }
   return "observed_sounding_quicklook";
+}
+
+function candidateRecipeFitForStory(
+  candidate: SoundingCandidate,
+  story: CandidateStoryId,
+): CandidateRecipeFitDisplay {
+  if (
+    story === candidate.primary_story &&
+    candidate.recipe_fit_status &&
+    candidate.recipe_fit_label &&
+    candidate.recipe_fit_summary
+  ) {
+    return {
+      status: candidate.recipe_fit_status,
+      label: candidate.recipe_fit_label,
+      summary: candidate.recipe_fit_summary,
+      caveats: candidate.recipe_fit_caveats ?? [],
+    };
+  }
+  if (!candidate.package_ready || story === "poor_or_incomplete_candidate") {
+    return {
+      status: "blocked_profile",
+      label: "blocked profile",
+      summary: "This cached sounding cannot be packaged until profile caveats are resolved.",
+      caveats: ["profile_or_package_generation_blocked"],
+    };
+  }
+  if (story === "needs_review") {
+    return {
+      status: "not_testable_with_current_recipes",
+      label: "not testable with current package path",
+      summary: "This candidate needs manual screening before it maps to a current run path.",
+      caveats: ["candidate_requires_manual_screening_review"],
+    };
+  }
+  if (deepConvectionStoryIds.has(story)) {
+    const caveats = ["observed_sounding_quicklook_does_not_test_deep_potential"];
+    if (candidate.features.observed_wind_available !== true) {
+      caveats.push("complete_observed_wind_profile_required_for_deep_potential");
+    }
+    return {
+      status: "requires_triggered_deep_potential",
+      label: "requires triggered deep-potential run",
+      summary:
+        "This story screens deep-convection ingredients. Observed Sounding Quick Look does not test that hypothesis without the triggered deep-potential package.",
+      caveats,
+    };
+  }
+  if (story === "humid_rainy_candidate") {
+    return {
+      status: "partially_testable",
+      label: "partially testable with current observed-sounding run",
+      summary:
+        "The current observed-sounding path can inspect moist evolution, but later comparison needs rain-water, surface-rain, and/or reflectivity outputs.",
+      caveats: ["rain_water_surface_rain_or_reflectivity_outputs_required"],
+    };
+  }
+  if (story === "capped_suppressed_candidate") {
+    return {
+      status: "partially_testable",
+      label: "partially testable with current observed-sounding run",
+      summary:
+        "The current observed-sounding path can inspect capped or suppressed evolution when cap evidence, duration, and output fields are adequate.",
+      caveats: ["run_duration_and_output_fields_must_be_checked_for_cap_story"],
+    };
+  }
+  return {
+    status: "partially_testable",
+    label: "partially testable with current observed-sounding run",
+    summary:
+      "The current observed-sounding path can inspect untriggered shallow/evolution behavior, but the recipe still shapes what CM1 can test.",
+    caveats: ["observed_sounding_quicklook_is_recipe_dependent"],
+  };
+}
+
+function candidateRecipeFitTone(status: CandidateRecipeFitStatus): "good" | "warning" | "neutral" {
+  if (status === "testable_now") return "good";
+  if (status === "partially_testable") return "neutral";
+  return "warning";
+}
+
+function isCandidateSuggestedTag(tag: string): tag is (typeof candidateSuggestedTags)[number] {
+  return (candidateSuggestedTags as readonly string[]).includes(tag);
+}
+
+function candidatePackageMismatchWarning(
+  selectedCandidateScreening: Record<string, unknown> | null,
+  packageFamily: ObservedPackageFamily,
+): string | null {
+  if (!selectedCandidateScreening) return null;
+  const activeStory =
+    typeof selectedCandidateScreening.active_story === "string"
+      ? selectedCandidateScreening.active_story
+      : "";
+  const primaryStory =
+    typeof selectedCandidateScreening.primary_story === "string"
+      ? selectedCandidateScreening.primary_story
+      : "";
+  const storyScores = candidateScreeningStoryScores(selectedCandidateScreening);
+  const hasMeaningfulDeepStory =
+    deepConvectionStoryIds.has(activeStory) ||
+    (!activeStory &&
+      (deepConvectionStoryIds.has(primaryStory) ||
+        storyScores.some(
+          (score) =>
+            deepConvectionStoryIds.has(score.story) &&
+            score.score_0_to_100 > 0 &&
+            score.support !== "unavailable",
+        )));
+  if (packageFamily === "observed_sounding_quicklook" && hasMeaningfulDeepStory) {
+    return "This candidate was screened for deep-convection potential. Observed Sounding Quick Look does not test that hypothesis. Choose the triggered deep-potential run, or treat this as an untriggered shallow/evolution experiment.";
+  }
+  const hasHumidRainyStory =
+    activeStory === "humid_rainy_candidate" ||
+    (!activeStory &&
+      (primaryStory === "humid_rainy_candidate" ||
+        storyScores.some(
+          (score) =>
+            score.story === "humid_rainy_candidate" &&
+            score.score_0_to_100 > 0 &&
+            score.support !== "unavailable",
+        )));
+  if (hasHumidRainyStory) {
+    return "This candidate was screened as humid/rainy. Predicted rain behavior needs rain-water, surface-rain, and/or reflectivity outputs to compare later.";
+  }
+  return null;
+}
+
+function candidateScreeningStoryScores(
+  selectedCandidateScreening: Record<string, unknown>,
+): Array<Pick<StoryScore, "story" | "score_0_to_100" | "support">> {
+  if (!Array.isArray(selectedCandidateScreening.story_scores)) return [];
+  return selectedCandidateScreening.story_scores.flatMap((score) => {
+    if (
+      score &&
+      typeof score === "object" &&
+      "story" in score &&
+      "score_0_to_100" in score &&
+      "support" in score &&
+      typeof score.story === "string" &&
+      typeof score.score_0_to_100 === "number" &&
+      typeof score.support === "string"
+    ) {
+      return [
+        {
+          story: score.story as CandidateStoryId,
+          score_0_to_100: score.score_0_to_100,
+          support: score.support,
+        },
+      ];
+    }
+    return [];
+  });
 }
 
 function candidateStationLabel(candidate: SoundingCandidate): string {
@@ -8498,7 +8739,7 @@ function observedSoundingLocationLabel(observed: ObservedSoundingSummary): strin
   return "Not available";
 }
 
-function candidateMatchScore(
+function candidateIngredientScore(
   candidate: SoundingCandidate,
   storyFilter: CandidateStoryFilter,
   storyFamilyFilter: CandidateStoryFamilyFilter = "all",
@@ -8599,12 +8840,18 @@ function observedSoundingParseFromCandidate(
 function candidateScreeningMetadata(
   candidate: SoundingCandidate,
   savedCandidate?: SavedSoundingCandidate,
+  activeStory?: CandidateStoryId,
 ): Record<string, unknown> {
+  const activeScore = activeStory
+    ? candidate.story_scores.find((score) => score.story === activeStory)
+    : null;
   return {
     candidate_id: candidate.candidate_id,
     saved_candidate_id: savedCandidate?.saved_candidate_id ?? null,
     screening_version: candidate.screening_version,
     primary_story: candidate.primary_story,
+    active_story: activeStory ?? candidate.primary_story,
+    active_story_label: activeScore?.label ?? candidate.primary_story_label,
     story_scores: candidate.story_scores,
     rank_score: candidate.rank_score,
     confidence: candidate.confidence,
@@ -8614,6 +8861,10 @@ function candidateScreeningMetadata(
     interest_summary: candidate.interest_summary ?? null,
     interest_reasons: candidate.interest_reasons ?? [],
     discovery_bucket: candidate.discovery_bucket ?? null,
+    recipe_fit_status: candidate.recipe_fit_status ?? null,
+    recipe_fit_label: candidate.recipe_fit_label ?? null,
+    recipe_fit_summary: candidate.recipe_fit_summary ?? null,
+    recipe_fit_caveats: candidate.recipe_fit_caveats ?? [],
     source_file_name: candidate.source_file_name,
     source_file_hash: candidate.source_file_hash,
     saved_tags: savedCandidate?.tags ?? [],

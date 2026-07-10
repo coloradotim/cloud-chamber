@@ -70,8 +70,8 @@ write downloaded ZIP/text/cache manifests outside temp runtime homes.
 
 Sounding-candidate screening tests must use tiny cached IGRA fixtures and temp
 runtime cache directories only. They should verify that screening inputs come
-from cached station text, candidate match scores are deterministic for the
-stable story identifiers, story-specific screening can target one experiment
+from cached station text, candidate ingredient scores are deterministic for
+the stable story identifiers, story-specific screening can target one experiment
 question at a time, poor/incomplete inputs are caveated instead of silently
 treated as package-ready, missing moisture/LCL/cap inputs weaken or caveat
 support instead of becoming confident physical evidence, saved candidates
