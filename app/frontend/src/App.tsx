@@ -3707,6 +3707,7 @@ function ObservedAtmosphereCandidatesPanel({
                   key={candidate.candidate_id}
                   candidate={candidate}
                   storyFilter={storyFilter}
+                  storyFamilyFilter={storyFamilyFilter}
                   selected={selectedCandidate?.candidate_id === candidate.candidate_id}
                   saved={savedCandidateIds.has(candidate.candidate_id)}
                   onSelect={() => onCandidateDetailChange(candidate.candidate_id)}
@@ -3728,6 +3729,7 @@ function ObservedAtmosphereCandidatesPanel({
         <SoundingCandidateDetail
           candidate={selectedCandidate}
           storyFilter={storyFilter}
+          storyFamilyFilter={storyFamilyFilter}
           savedCandidate={selectedSavedCandidate}
           onSave={onSave}
         />
@@ -3789,6 +3791,7 @@ function ObservedAtmosphereCandidatesPanel({
 function SoundingCandidateCard({
   candidate,
   storyFilter,
+  storyFamilyFilter,
   selected,
   saved,
   onSelect,
@@ -3797,14 +3800,18 @@ function SoundingCandidateCard({
 }: {
   candidate: SoundingCandidate;
   storyFilter: CandidateStoryFilter;
+  storyFamilyFilter: CandidateStoryFamilyFilter;
   selected: boolean;
   saved: boolean;
   onSelect: () => void;
   onSave: () => void;
   onUse: () => void;
 }) {
-  const story = storyFilter === "all" ? candidate.primary_story : storyFilter;
-  const matchScore = candidateMatchScore(candidate, story);
+  const activeScore = candidateActiveStoryScore(candidate, storyFilter, storyFamilyFilter);
+  const story = activeScore?.story ?? (storyFilter === "all" ? candidate.primary_story : storyFilter);
+  const activeFamily = activeScore ? candidateStoryFamilyForStory(activeScore.story) : candidate.story_family;
+  const matchScore =
+    activeScore?.score_0_to_100 ?? candidateMatchScore(candidate, storyFilter, storyFamilyFilter);
   const reasons = candidateInterestReasons(candidate);
   return (
     <article
@@ -3825,10 +3832,10 @@ function SoundingCandidateCard({
             <StatusBadge label={candidate.discovery_bucket} tone="neutral" />
           )}
           <StatusBadge label={candidateStoryLabel(story)} tone="neutral" />
-          {storyFilter === "deep_convection_trial" && (
-            <StatusBadge label={candidate.primary_story_label} tone="neutral" />
+          {activeScore && activeScore.story !== candidate.primary_story && (
+            <StatusBadge label={`Primary: ${candidate.primary_story_label}`} tone="neutral" />
           )}
-          <StatusBadge label={candidateStoryFamilyLabel(candidate.story_family)} tone="neutral" />
+          <StatusBadge label={candidateStoryFamilyLabel(activeFamily)} tone="neutral" />
           <StatusBadge label={`${formatNumber(matchScore, "%")} match`} tone="neutral" />
           <StatusBadge
             label={candidate.package_ready ? "Package-ready" : "Blocked"}
@@ -3871,11 +3878,13 @@ function SoundingCandidateCard({
 function SoundingCandidateDetail({
   candidate,
   storyFilter,
+  storyFamilyFilter,
   savedCandidate,
   onSave,
 }: {
   candidate: SoundingCandidate | null;
   storyFilter: CandidateStoryFilter;
+  storyFamilyFilter: CandidateStoryFamilyFilter;
   savedCandidate: SavedSoundingCandidate | null;
   onSave: (candidate: SoundingCandidate, tags?: string[], notes?: string | null) => void;
 }) {
@@ -3898,7 +3907,14 @@ function SoundingCandidateDetail({
     );
   }
   const activeCandidate = candidate;
-  const story = storyFilter === "all" ? activeCandidate.primary_story : storyFilter;
+  const activeScore = candidateActiveStoryScore(activeCandidate, storyFilter, storyFamilyFilter);
+  const story = activeScore?.story ?? (storyFilter === "all" ? activeCandidate.primary_story : storyFilter);
+  const activeFamily = activeScore
+    ? candidateStoryFamilyForStory(activeScore.story)
+    : activeCandidate.story_family;
+  const matchScore =
+    activeScore?.score_0_to_100 ??
+    candidateMatchScore(activeCandidate, storyFilter, storyFamilyFilter);
   const reasons = candidateInterestReasons(activeCandidate);
   const savedTagValues = parseTags(tagDraft);
   function handleTagSuggestion(tag: string) {
@@ -3956,12 +3972,12 @@ function SoundingCandidateDetail({
         </ul>
       </section>
       <dl className="compact-metrics">
-        <Metric
-          label="Match score"
-          value={formatNumber(candidateMatchScore(candidate, story), "%")}
-        />
+        <Metric label="Match score" value={formatNumber(matchScore, "%")} />
         <Metric label="Evidence level" value={humanize(candidate.confidence)} />
-        <Metric label="Story family" value={candidateStoryFamilyLabel(candidate.story_family)} />
+        <Metric label="Matched story family" value={candidateStoryFamilyLabel(activeFamily)} />
+        {activeScore && activeScore.story !== candidate.primary_story && (
+          <Metric label="Primary story" value={candidate.primary_story_label} />
+        )}
         <Metric label="Station ID" value={candidate.station_id} />
         <Metric
           label="Location"
@@ -8403,6 +8419,12 @@ function candidateStoryFamilyLabel(family: CandidateStoryFamilyFilter | undefine
   }
 }
 
+function candidateStoryFamilyForStory(story: CandidateStoryId): CandidateStoryFamilyFilter {
+  if (deepConvectionStoryIds.has(story)) return "deep_convection";
+  if (story === "needs_review" || story === "poor_or_incomplete_candidate") return "review";
+  return "lower_atmosphere";
+}
+
 function candidateSortLabel(sort: CandidateSort): string {
   const labels: Record<CandidateSort, string> = {
     best_match: "Recommended",
@@ -8478,21 +8500,48 @@ function observedSoundingLocationLabel(observed: ObservedSoundingSummary): strin
 
 function candidateMatchScore(
   candidate: SoundingCandidate,
-  story: CandidateStoryId | CandidateStoryFilter,
+  storyFilter: CandidateStoryFilter,
+  storyFamilyFilter: CandidateStoryFamilyFilter = "all",
 ): number {
-  if (story === "all") return candidate.rank_score;
-  if (story === "deep_convection_trial") {
-    return Math.max(
-      0,
-      ...candidate.story_scores
-        .filter((score) => deepConvectionStoryIds.has(score.story))
-        .map((score) => score.score_0_to_100),
-    );
-  }
   return (
-    candidate.story_scores.find((score) => score.story === story)?.score_0_to_100 ??
+    candidateActiveStoryScore(candidate, storyFilter, storyFamilyFilter)?.score_0_to_100 ??
     candidate.rank_score
   );
+}
+
+function candidateActiveStoryScore(
+  candidate: SoundingCandidate,
+  storyFilter: CandidateStoryFilter,
+  storyFamilyFilter: CandidateStoryFamilyFilter,
+): StoryScore | null {
+  return (
+    [...candidateStoryScoresForScope(candidate, storyFilter, storyFamilyFilter)].sort(
+      (left, right) => right.score_0_to_100 - left.score_0_to_100,
+    )[0] ?? null
+  );
+}
+
+function candidateStoryScoresForScope(
+  candidate: SoundingCandidate,
+  storyFilter: CandidateStoryFilter,
+  storyFamilyFilter: CandidateStoryFamilyFilter,
+): StoryScore[] {
+  let scores = candidate.story_scores;
+  if (storyFilter === "deep_convection_trial") {
+    scores = scores.filter((score) => deepConvectionStoryIds.has(score.story));
+  } else if (storyFilter !== "all") {
+    scores = scores.filter((score) => score.story === storyFilter);
+  }
+  if (storyFamilyFilter !== "all") {
+    scores = scores.filter(
+      (score) => candidateStoryFamilyForStory(score.story) === storyFamilyFilter,
+    );
+  }
+  if (storyFilter === "all" && storyFamilyFilter === "all") {
+    const readyScores = scores.filter((score) => score.story !== "poor_or_incomplete_candidate");
+    return readyScores.length > 0 ? readyScores : scores;
+  }
+  return scores;
 }
 
 function candidateInterestReasons(candidate: SoundingCandidate): string[] {

@@ -272,9 +272,13 @@ soundings are interesting and why before exposing advanced refinements. It must
 display the backend-returned candidate list rather than parsing raw sounding
 files or recomputing story scores in the browser. Analysis must include
 secondary story matches when `story_scores` contain meaningful support for the
-selected story. Missing feature values must remain unavailable/caveated and sort
-last instead of becoming zero-valued evidence. The UI must not show a confident
-story label without evidence, caveats, and package readiness.
+selected story or selected story family. Story-family filtering, support
+filtering, and best-match sorting must use the same family-scoped `story_scores`
+set, so a sounding with a lower-atmosphere primary story can still appear as a
+deep-convection recommendation when a secondary deep-convection score has
+meaningful support. Missing feature values must remain unavailable/caveated and
+sort last instead of becoming zero-valued evidence. The UI must not show a
+confident story label without evidence, caveats, and package readiness.
 
 Saved candidates may carry freeform tags and notes such as `Deep convection
 candidates`, `Surface-forced candidates`, `Needs longer run`, `Needs finer

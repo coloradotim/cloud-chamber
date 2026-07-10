@@ -6,6 +6,7 @@ import pytest
 from fastapi.testclient import TestClient
 from igra_fixtures import IGRA_FIXTURE
 
+import cloud_chamber.sounding_candidates as sounding_candidates
 from cloud_chamber.app import app
 from cloud_chamber.dry_run_package import generate_dry_run_package, read_dry_run_report
 from cloud_chamber.igra_catalog import IGRACacheEntry, IGRACacheManifest, igra_cache_manifest_path
@@ -14,6 +15,12 @@ from cloud_chamber.run_manifest import load_run_manifest
 from cloud_chamber.settings import CloudChamberSettings
 from cloud_chamber.sounding_candidates import (
     SaveCandidateRequest,
+    ScreeningResult,
+    SoundingCandidate,
+    StoryId,
+    StoryScore,
+    Support,
+    TargetStoryId,
     UpdateSavedCandidateRequest,
     _features_from_record,
     _score_features,
@@ -86,6 +93,73 @@ def _write_cached_igra_station(
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(manifest.model_dump_json(indent=2) + "\n")
     return text_path
+
+
+def _analysis_candidate(
+    candidate_id: str,
+    *,
+    primary_score: float = 90.0,
+    primary_support: Support = "supported",
+    deep_score: float = 70.0,
+    deep_support: Support = "supported",
+    deep_story: StoryId = "supercell_environment",
+) -> SoundingCandidate:
+    story_scores = [
+        StoryScore(
+            story="humid_rainy_candidate",
+            label="Humid / rainy candidate",
+            score_0_to_100=primary_score,
+            support=primary_support,
+        ),
+        StoryScore(
+            story=deep_story,
+            label="Supercell-like environment",
+            score_0_to_100=deep_score,
+            support=deep_support,
+        ),
+    ]
+    return SoundingCandidate(
+        candidate_id=candidate_id,
+        station_id=f"USM0000{len(candidate_id):04d}",
+        station_name=candidate_id,
+        valid_time_utc=datetime(2026, 7, 1, tzinfo=UTC),
+        source_time_text="2026-07-01 00 UTC",
+        source_file_name=f"{candidate_id}.txt",
+        source_file_hash=f"hash-{candidate_id}",
+        primary_story="humid_rainy_candidate",
+        primary_story_label="Humid / rainy candidate",
+        story_family="lower_atmosphere",
+        story_scores=story_scores,
+        rank_score=primary_score,
+        confidence="high",
+        package_ready=True,
+        features={},
+        evidence=[],
+        created_at=datetime(2026, 7, 1, tzinfo=UTC),
+    )
+
+
+def _patch_screened_candidates(
+    monkeypatch: pytest.MonkeyPatch,
+    candidates: list[SoundingCandidate],
+) -> None:
+    def fake_screen_cached_soundings(
+        settings: CloudChamberSettings,
+        *,
+        station_id: str | None = None,
+        latest_per_station: int = 5,
+        limit: int = 50,
+        target_story: TargetStoryId | None = None,
+    ) -> ScreeningResult:
+        return ScreeningResult(
+            generated_at=datetime(2026, 7, 1, tzinfo=UTC),
+            candidates=candidates[:limit],
+            caveats=[],
+        )
+
+    monkeypatch.setattr(
+        sounding_candidates, "screen_cached_soundings", fake_screen_cached_soundings
+    )
 
 
 def test_screening_inputs_list_cached_station_text(tmp_path: Path) -> None:
@@ -310,6 +384,85 @@ def test_analysis_sorts_physical_fields_with_missing_values_last(tmp_path: Path)
         "low-lcl",
         "high-lcl",
         "missing-lcl",
+    ]
+
+
+def test_analysis_family_filter_includes_supported_secondary_deep_story(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    candidate = _analysis_candidate(
+        "primary-humid-supported-secondary-supercell",
+        primary_score=92.0,
+        deep_score=74.0,
+        deep_support="supported",
+    )
+    _patch_screened_candidates(monkeypatch, [candidate])
+
+    result = analyze_cached_soundings(
+        _settings(tmp_path),
+        story_family="deep_convection",
+        support="all",
+    )
+
+    assert [item.candidate_id for item in result.candidates] == [
+        "primary-humid-supported-secondary-supercell"
+    ]
+    assert result.filtered_candidate_count == 1
+
+
+def test_analysis_family_support_filter_uses_deep_family_scores(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    supported = _analysis_candidate(
+        "secondary-deep-supported",
+        primary_score=92.0,
+        deep_score=74.0,
+        deep_support="supported",
+    )
+    weak = _analysis_candidate(
+        "secondary-deep-weak",
+        primary_score=96.0,
+        deep_score=48.0,
+        deep_support="weak",
+    )
+    _patch_screened_candidates(monkeypatch, [weak, supported])
+
+    result = analyze_cached_soundings(
+        _settings(tmp_path),
+        story_family="deep_convection",
+        support="supported",
+    )
+
+    assert [item.candidate_id for item in result.candidates] == ["secondary-deep-supported"]
+    assert result.filtered_candidate_count == 1
+
+
+def test_analysis_deep_family_best_match_sort_uses_best_deep_score(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    humid_but_weaker_deep = _analysis_candidate(
+        "humid-high-weaker-deep",
+        primary_score=99.0,
+        deep_score=67.0,
+        deep_support="supported",
+    )
+    lower_primary_better_deep = _analysis_candidate(
+        "humid-lower-better-deep",
+        primary_score=76.0,
+        deep_score=91.0,
+        deep_support="supported",
+    )
+    _patch_screened_candidates(monkeypatch, [humid_but_weaker_deep, lower_primary_better_deep])
+
+    result = analyze_cached_soundings(
+        _settings(tmp_path),
+        story_family="deep_convection",
+        sort_by="best_match",
+    )
+
+    assert [item.candidate_id for item in result.candidates] == [
+        "humid-lower-better-deep",
+        "humid-high-weaker-deep",
     ]
 
 

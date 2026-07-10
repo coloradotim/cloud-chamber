@@ -556,10 +556,27 @@ function screeningResponseForRequest(init?: RequestInit) {
     .filter((candidate) => {
       if (readiness === "package_ready" && !candidate.package_ready) return false;
       if (readiness === "blocked" && candidate.package_ready) return false;
-      if (storyFamily !== "all" && candidate.story_family !== storyFamily) return false;
-      const score = storyScoreForTest(candidate, storyFilter);
-      if (storyFilter !== "all" && (!score || score.support === "unavailable")) return false;
-      if (support !== "all" && score?.support !== support) return false;
+      const scopedScores = storyScoresForTest(candidate, storyFilter, storyFamily);
+      if (
+        storyFamily !== "all" &&
+        !scopedScores.some((score) => meaningfulStoryScoreForTest(score))
+      ) {
+        return false;
+      }
+      const score = storyScoreForTest(candidate, storyFilter, storyFamily);
+      if (
+        storyFilter !== "all" &&
+        (!score || !meaningfulStoryScoreForTest(score))
+      ) {
+        return false;
+      }
+      if (support !== "all") {
+        if (storyFilter === "all" && storyFamily === "all") {
+          if (!score || score.support !== support) return false;
+        } else if (!scopedScores.some((scopeScore) => scopeScore.support === support)) {
+          return false;
+        }
+      }
       if (!stationSearch) return true;
       return [candidate.station_id, candidate.station_name, candidate.primary_story_label]
         .filter(Boolean)
@@ -567,7 +584,7 @@ function screeningResponseForRequest(init?: RequestInit) {
         .toLowerCase()
         .includes(stationSearch);
     })
-    .sort((left, right) => compareCandidateFixtures(left, right, storyFilter, sortBy));
+    .sort((left, right) => compareCandidateFixtures(left, right, storyFilter, storyFamily, sortBy));
   return {
     ...screeningResponse,
     candidates,
@@ -588,28 +605,55 @@ function screeningResponseForRequest(init?: RequestInit) {
 function storyScoreForTest(
   candidate: (typeof screeningResponse.candidates)[number],
   storyFilter: string,
+  storyFamily: string = "all",
 ) {
-  if (storyFilter === "all") {
-    return candidate.story_scores[0] ?? null;
-  }
+  return (
+    [...storyScoresForTest(candidate, storyFilter, storyFamily)].sort(
+      (left, right) => right.score_0_to_100 - left.score_0_to_100,
+    )[0] ?? null
+  );
+}
+
+function storyScoresForTest(
+  candidate: (typeof screeningResponse.candidates)[number],
+  storyFilter: string,
+  storyFamily: string = "all",
+) {
+  let scores = candidate.story_scores;
   if (storyFilter === "deep_convection_trial") {
-    return (
-      candidate.story_scores
-        .filter((score) => testDeepConvectionStoryIds.has(score.story))
-        .sort((left, right) => right.score_0_to_100 - left.score_0_to_100)[0] ?? null
-    );
+    scores = scores.filter((score) => testDeepConvectionStoryIds.has(score.story));
+  } else if (storyFilter !== "all") {
+    scores = scores.filter((score) => score.story === storyFilter);
   }
-  return candidate.story_scores.find((score) => score.story === storyFilter) ?? null;
+  if (storyFamily !== "all") {
+    scores = scores.filter((score) => storyFamilyForTest(score.story) === storyFamily);
+  }
+  if (storyFilter === "all" && storyFamily === "all") {
+    const readyScores = scores.filter((score) => score.story !== "poor_or_incomplete_candidate");
+    return readyScores.length > 0 ? readyScores : scores;
+  }
+  return scores;
+}
+
+function storyFamilyForTest(story: string) {
+  if (testDeepConvectionStoryIds.has(story)) return "deep_convection";
+  if (story === "needs_review" || story === "poor_or_incomplete_candidate") return "review";
+  return "lower_atmosphere";
+}
+
+function meaningfulStoryScoreForTest(score: { score_0_to_100: number; support: string }) {
+  return score.score_0_to_100 > 0 && score.support !== "unavailable";
 }
 
 function compareCandidateFixtures(
   left: (typeof screeningResponse.candidates)[number],
   right: (typeof screeningResponse.candidates)[number],
   storyFilter: string,
+  storyFamily: string,
   sortBy: string,
 ) {
-  const leftValue = candidateSortValueForTest(left, storyFilter, sortBy);
-  const rightValue = candidateSortValueForTest(right, storyFilter, sortBy);
+  const leftValue = candidateSortValueForTest(left, storyFilter, storyFamily, sortBy);
+  const rightValue = candidateSortValueForTest(right, storyFilter, storyFamily, sortBy);
   if (leftValue === null && rightValue !== null) return 1;
   if (rightValue === null && leftValue !== null) return -1;
   if (leftValue !== null && rightValue !== null && leftValue !== rightValue) {
@@ -618,8 +662,8 @@ function compareCandidateFixtures(
   }
   return (
     Number(right.package_ready) - Number(left.package_ready) ||
-    (storyScoreForTest(right, storyFilter)?.score_0_to_100 ?? right.rank_score) -
-      (storyScoreForTest(left, storyFilter)?.score_0_to_100 ?? left.rank_score) ||
+    (storyScoreForTest(right, storyFilter, storyFamily)?.score_0_to_100 ?? right.rank_score) -
+      (storyScoreForTest(left, storyFilter, storyFamily)?.score_0_to_100 ?? left.rank_score) ||
     new Date(right.valid_time_utc).getTime() - new Date(left.valid_time_utc).getTime()
   );
 }
@@ -627,10 +671,14 @@ function compareCandidateFixtures(
 function candidateSortValueForTest(
   candidate: (typeof screeningResponse.candidates)[number],
   storyFilter: string,
+  storyFamily: string,
   sortBy: string,
 ) {
   if (sortBy === "best_match") {
-    return storyScoreForTest(candidate, storyFilter)?.score_0_to_100 ?? candidate.rank_score;
+    return (
+      storyScoreForTest(candidate, storyFilter, storyFamily)?.score_0_to_100 ??
+      candidate.rank_score
+    );
   }
   if (sortBy === "valid_time") return new Date(candidate.valid_time_utc).getTime();
   if (sortBy === "station_name") return candidate.station_name ?? candidate.station_id;
@@ -3158,6 +3206,43 @@ describe("App", () => {
     expect(screen.queryByText("No saved candidates yet.")).not.toBeInTheDocument();
     expect(fetch).not.toHaveBeenCalledWith("/api/igra/recent/refresh-catalog", expect.anything());
     expect(fetch).not.toHaveBeenCalledWith("/api/sounding-candidates/analyze", expect.anything());
+  });
+
+  it("shows secondary family matches with the scoped story score", async () => {
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Build" }));
+    fireEvent.change(await screen.findByLabelText("Experiment"), {
+      target: { value: "__observed_sounding_upload__" },
+    });
+
+    fireEvent.click(screen.getByText("Advanced filters"));
+    fireEvent.change(screen.getByLabelText("Story family"), {
+      target: { value: "deep_convection" },
+    });
+    fireEvent.change(screen.getByLabelText("Support"), {
+      target: { value: "weak" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Analyze recommendations" }));
+
+    const wilmingtonCard = await screen.findByLabelText(
+      "Sounding candidate Wilmington, Ohio (USM00072426)",
+    );
+    expect(wilmingtonCard).toHaveTextContent("High-CAPE pulse storm");
+    expect(wilmingtonCard).toHaveTextContent("Primary: Humid / rainy");
+    expect(wilmingtonCard).toHaveTextContent("48.9 % match");
+    expect(
+      screen.queryByLabelText("Sounding candidate Norman, Oklahoma (USM00072357)"),
+    ).not.toBeInTheDocument();
+
+    fireEvent.click(within(wilmingtonCard).getByRole("button", { name: /Wilmington, Ohio/ }));
+    const candidateDetails = screen.getByLabelText("Candidate details");
+    expect(candidateDetails).toHaveTextContent("High-CAPE pulse storm");
+    expect(candidateDetails).toHaveTextContent("Matched story family");
+    expect(candidateDetails).toHaveTextContent("Deep convection stories");
+    expect(candidateDetails).toHaveTextContent("Primary story");
+    expect(candidateDetails).toHaveTextContent("Humid / rainy");
+    expect(candidateDetails).toHaveTextContent("48.9 %");
   });
 
   it("keeps secondary story matches visible and sorts missing LCL last", async () => {

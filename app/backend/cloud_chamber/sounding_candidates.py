@@ -605,6 +605,7 @@ def analyze_cached_soundings(
             sort_by=sort_by,
             sort_direction=selected_direction,
             story_filter=story_filter,
+            story_family=story_family,
         )
     return CandidateAnalysisResult(
         generated_at=datetime.now(UTC),
@@ -648,27 +649,47 @@ def _candidate_story_score(candidate: SoundingCandidate, story: TargetStoryId | 
     return 0.0
 
 
-def _candidate_story_score_model(
-    candidate: SoundingCandidate, story: CandidateStoryFilter
-) -> StoryScore | None:
-    if story == "all":
+def _candidate_story_scores_for_scope(
+    candidate: SoundingCandidate,
+    *,
+    story_filter: CandidateStoryFilter,
+    story_family: CandidateStoryFamilyFilter = "all",
+) -> list[StoryScore]:
+    scores = candidate.story_scores
+    if story_filter == "deep_convection_trial":
+        scores = [score for score in scores if score.story in DEEP_CONVECTION_STORY_IDS]
+    elif story_filter != "all":
+        scores = [score for score in scores if score.story == story_filter]
+
+    if story_family != "all":
+        scores = [score for score in scores if _story_family_for_story(score.story) == story_family]
+
+    if story_filter == "all" and story_family == "all":
         package_ready_scores = [
-            score
-            for score in candidate.story_scores
-            if score.story != "poor_or_incomplete_candidate"
+            score for score in scores if score.story != "poor_or_incomplete_candidate"
         ]
-        return max(
-            package_ready_scores or candidate.story_scores,
-            key=lambda score: score.score_0_to_100,
-            default=None,
-        )
-    if story == "deep_convection_trial":
-        return max(
-            (score for score in candidate.story_scores if score.story in DEEP_CONVECTION_STORY_IDS),
-            key=lambda score: score.score_0_to_100,
-            default=None,
-        )
-    return next((score for score in candidate.story_scores if score.story == story), None)
+        return package_ready_scores or scores
+    return scores
+
+
+def _candidate_story_score_model(
+    candidate: SoundingCandidate,
+    story: CandidateStoryFilter,
+    story_family: CandidateStoryFamilyFilter = "all",
+) -> StoryScore | None:
+    return max(
+        _candidate_story_scores_for_scope(
+            candidate,
+            story_filter=story,
+            story_family=story_family,
+        ),
+        key=lambda score: score.score_0_to_100,
+        default=None,
+    )
+
+
+def _meaningful_story_score(score: StoryScore) -> bool:
+    return score.score_0_to_100 > 0 and score.support != "unavailable"
 
 
 def _uses_default_discovery_view(
@@ -760,14 +781,23 @@ def _candidate_matches_analysis_filters(
         return False
     if readiness == "blocked" and candidate.package_ready:
         return False
-    if story_family != "all" and _candidate_story_family(candidate) != story_family:
+    scoped_scores = _candidate_story_scores_for_scope(
+        candidate,
+        story_filter=story_filter,
+        story_family=story_family,
+    )
+    if story_family != "all" and not any(_meaningful_story_score(score) for score in scoped_scores):
         return False
-    score = _candidate_story_score_model(candidate, story_filter)
+    score = max(scoped_scores, key=lambda item: item.score_0_to_100, default=None)
     if story_filter != "all":
-        if score is None or score.score_0_to_100 <= 0 or score.support == "unavailable":
+        if score is None or not _meaningful_story_score(score):
             return False
-    if support != "all" and (score is None or score.support != support):
-        return False
+    if support != "all":
+        if story_filter == "all" and story_family == "all":
+            if score is None or score.support != support:
+                return False
+        elif not any(score.support == support for score in scoped_scores):
+            return False
     if station_search:
         normalized = station_search.lower()
         searchable = " ".join(
@@ -792,6 +822,7 @@ def _sort_analysis_candidates(
     sort_by: CandidateSortKey,
     sort_direction: CandidateSortDirection,
     story_filter: CandidateStoryFilter,
+    story_family: CandidateStoryFamilyFilter = "all",
 ) -> list[SoundingCandidate]:
     def compare(left: SoundingCandidate, right: SoundingCandidate) -> int:
         return _compare_candidates(
@@ -800,6 +831,7 @@ def _sort_analysis_candidates(
             sort_by=sort_by,
             sort_direction=sort_direction,
             story_filter=story_filter,
+            story_family=story_family,
         )
 
     return sorted(candidates, key=cmp_to_key(compare))
@@ -812,9 +844,10 @@ def _compare_candidates(
     sort_by: CandidateSortKey,
     sort_direction: CandidateSortDirection,
     story_filter: CandidateStoryFilter,
+    story_family: CandidateStoryFamilyFilter,
 ) -> int:
-    left_value = _candidate_sort_value(left, sort_by, story_filter)
-    right_value = _candidate_sort_value(right, sort_by, story_filter)
+    left_value = _candidate_sort_value(left, sort_by, story_filter, story_family)
+    right_value = _candidate_sort_value(right, sort_by, story_filter, story_family)
     if left_value is None and right_value is not None:
         return 1
     if right_value is None and left_value is not None:
@@ -823,16 +856,17 @@ def _compare_candidates(
         comparison = _compare_sort_values(left_value, right_value)
         if comparison != 0:
             return comparison if sort_direction == "asc" else -comparison
-    return _compare_candidate_tie_breakers(left, right, story_filter)
+    return _compare_candidate_tie_breakers(left, right, story_filter, story_family)
 
 
 def _candidate_sort_value(
     candidate: SoundingCandidate,
     sort_by: CandidateSortKey,
     story_filter: CandidateStoryFilter,
+    story_family: CandidateStoryFamilyFilter,
 ) -> SortValue | None:
     if sort_by == "best_match":
-        score = _candidate_story_score_model(candidate, story_filter)
+        score = _candidate_story_score_model(candidate, story_filter, story_family)
         return score.score_0_to_100 if score else candidate.rank_score
     if sort_by == "valid_time":
         return candidate.valid_time_utc
@@ -843,13 +877,14 @@ def _candidate_sort_value(
     if sort_by == "primary_story":
         return candidate.primary_story_label
     if sort_by == "story_family":
-        return _candidate_story_family(candidate)
+        score = _candidate_story_score_model(candidate, story_filter, story_family)
+        return _story_family_for_story(score.story) if score else _candidate_story_family(candidate)
     if sort_by == "rank_score":
         return candidate.rank_score
     if sort_by == "confidence":
         return {"low": 0.0, "medium": 1.0, "high": 2.0}[candidate.confidence]
     if sort_by == "support":
-        score = _candidate_story_score_model(candidate, story_filter)
+        score = _candidate_story_score_model(candidate, story_filter, story_family)
         return {"unavailable": 0.0, "weak": 1.0, "supported": 2.0}[score.support] if score else None
     if sort_by == "package_readiness":
         return candidate.package_ready
@@ -893,9 +928,10 @@ def _compare_candidate_tie_breakers(
     left: SoundingCandidate,
     right: SoundingCandidate,
     story_filter: CandidateStoryFilter,
+    story_family: CandidateStoryFamilyFilter,
 ) -> int:
-    left_score = _candidate_story_score_model(left, story_filter)
-    right_score = _candidate_story_score_model(right, story_filter)
+    left_score = _candidate_story_score_model(left, story_filter, story_family)
+    right_score = _candidate_story_score_model(right, story_filter, story_family)
     for left_value, right_value, direction in (
         (left.package_ready, right.package_ready, "desc"),
         (
