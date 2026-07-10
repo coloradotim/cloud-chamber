@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 
-import { gotoApp, gotoBuild, gotoResults, openResultsTab } from "../helpers";
+import { gotoApp, gotoBuild, gotoResults } from "../helpers";
 import { mockCloudChamberApis } from "../fixtures";
 
 test.describe("mocked smoke: Build, Results, Explore path", () => {
@@ -142,7 +142,7 @@ test.describe("mocked smoke: Build, Results, Explore path", () => {
     await expect(page.getByText("Package ready").first()).toBeVisible();
   });
 
-  test("Results notebook and Compare render with mocked data", async ({ page }) => {
+  test("Results notebook renders with mocked data", async ({ page }) => {
     await gotoResults(page);
 
     await expect(page.getByRole("heading", { name: "Experiment Notebook" })).toBeVisible();
@@ -163,12 +163,7 @@ test.describe("mocked smoke: Build, Results, Explore path", () => {
       resultDetail.getByRole("button", { name: "Preview delete result and local run data" }),
     ).toBeVisible();
     await expect(resultDetail.getByText("Local data")).toBeVisible();
-
-    await openResultsTab(page, /^Compare$/);
-    await expect(
-      page.getByRole("heading", { name: "Baseline vs Dry Failed Cumulus" }),
-    ).toBeVisible();
-    await expect(page.getByText("Moisture-limited", { exact: true })).toBeVisible();
+    await expect(page.getByRole("tab", { name: "Compare" })).toHaveCount(0);
     await expect(page.getByRole("tab", { name: "Storage" })).toHaveCount(0);
   });
 
@@ -209,7 +204,7 @@ test.describe("mocked smoke: Build, Results, Explore path", () => {
     const resultDetail = page.getByLabel("Result detail");
     await resultDetail.getByRole("button", { name: "Preview delete result and local run data" }).click();
     await expect(page.getByRole("heading", { name: "Delete result and local run data preview" })).toBeVisible();
-    await expect(page.getByText(/result will disappear from Results, Explore, Compare, and local inventory/)).toBeVisible();
+    await expect(page.getByText(/result will disappear from Results, Explore, and local inventory/)).toBeVisible();
     await expect(page.getByText("Result metadata and notebook edits")).toBeVisible();
     await expect(
       page.getByRole("button", { name: "Delete result and local run data", exact: true }),
@@ -447,8 +442,10 @@ test.describe("mocked smoke: Build, Results, Explore path", () => {
     page,
   }) => {
     await gotoResults(page);
-    await openResultsTab(page, /^Compare$/);
-    await page.getByRole("button", { name: "Open Dry Failed in Explore" }).click();
+    await page
+      .getByRole("article", { name: "Dry Failed Cumulus — Quick Look experiment" })
+      .getByRole("button", { name: "Open in Explore" })
+      .click();
 
     await expect(page.getByText("Dry Failed Cumulus — Quick Look").first()).toBeVisible();
     await expect(page.getByText(/No cloud water formed in this result/i).first()).toBeVisible({

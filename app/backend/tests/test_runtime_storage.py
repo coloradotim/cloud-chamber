@@ -376,7 +376,7 @@ def test_ingested_result_delete_preview_resolves_result_run_and_categories(
     assert preview.deleted is False
     assert preview.size_bytes > 0
     assert run_dir.exists()
-    assert preview.affected_surfaces == ["Results", "Explore", "Compare", "local inventory"]
+    assert preview.affected_surfaces == ["Results", "Explore", "local inventory"]
     categories = {category.label: category for category in preview.categories}
     assert categories["Result metadata and notebook edits"].present is True
     assert categories["Run manifests, package inputs, and reports"].present is True

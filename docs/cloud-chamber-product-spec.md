@@ -331,15 +331,15 @@ entry offers a secondary/danger action to preview deletion by result ID. The
 preview states that deleting removes the ingested result, notebook edits,
 diagnostics, derived products, CM1 output, logs, and local run files stored
 under the run directory, and that the result will disappear from Results,
-Explore, Compare, and local inventory after confirmation.
+Explore, and local inventory after confirmation.
 
 Deletion is always explicit. The UI first requests a dry-run delete preview for
 one selected run/result, then requires a separate confirm action before
 deleting. Running runs cannot be deleted. Legacy saved/protected metadata does
 not make a non-running run/result undeletable. The warning threshold never
 auto-deletes anything. The relationship should be clear: Build moves local runs
-forward and cleans up non-ingested runs; Results reviews, compares, edits, and
-deletes ingested experiment notebook entries plus their backing local data.
+forward and cleans up non-ingested runs; Results reviews, edits, and deletes
+ingested experiment notebook entries plus their backing local data.
 
 ### Workflow 5 — Open Result
 
@@ -347,7 +347,7 @@ deletes ingested experiment notebook entries plus their backing local data.
 2. App ingests or loads processed data.
 3. App shows diagnostics and a unified Explore workspace.
 4. User can name, tag, and annotate the result.
-5. User can reopen, inspect, explain, and compare the saved result later.
+5. User can reopen, inspect, and explain the saved result later.
 
 ### Workflow 6 — Unified Explore
 
@@ -438,7 +438,7 @@ must not invent unsupported scientific classifications.
 2. Change one or more controls.
 3. Preview likely difference.
 4. Launch a new CM1 run.
-5. Compare results later.
+5. Inspect result differences later when a real comparison workflow exists.
 
 This workflow is useful, but it is not the core first-MVP result behavior. Replay, inspect, save, name, and tag completed CM1 results first; duplicate/tweak/rerun can mature after the Result Card / Experiment Notebook model is reliable.
 
@@ -1137,7 +1137,7 @@ Results
 Explore
 ```
 
-`Build` creates and runs experiments. `Results` reviews, compares, edits, and
+`Build` creates and runs experiments. `Results` reviews, edits, and
 manages experiment results. `Explore` inspects and visualizes one selected
 result's CM1 fields. The app should open on `Results`, because the most useful
 first click path is to choose the validated quick-look Baseline Shallow Cumulus
@@ -1172,12 +1172,12 @@ motion, and keeps cloud water below threshold. Its primary badges should read
 like an accepted moisture-limited outcome: `No cloud formed`, `No rain
 detected`, and `Moisture-limited`, with caveats secondary.
 
-`Results` contains `Notebook` and `Compare` sub-tabs. Notebook is the Result
-Card / Experiment Notebook: a scan-friendly list of experiment cards plus a
-selected notebook detail, with technical run metadata kept secondary. Compare is
-result-pair oriented and belongs with Results because it compares experiment
-outcomes. Ingested-result cleanup lives on the selected notebook detail as a
-secondary/danger preview action, not as a separate Storage workspace.
+`Results` is the Result Card / Experiment Notebook: a scan-friendly list of
+experiment cards plus a selected notebook detail, with technical run metadata
+kept secondary. It does not expose a Compare tab until Cloud Chamber has a real
+user-driven comparison workflow. Ingested-result cleanup lives on the selected
+notebook detail as a secondary/danger preview action, not as a separate Storage
+workspace.
 
 `Explore` is one desktop cloud-context and slice-inspection workflow for a
 single selected result. The old `2-D Slices` / `3-D View` split was useful
@@ -1185,10 +1185,9 @@ scaffolding while capabilities were built separately, but the product workflow
 is now a unified instrument: compact selected-result context, shared
 field/time/slice controls, a 3-D scalar-field context, a visible native-grid
 slice plane, the matching 2-D slice inspector, and a `What happened here?`
-selected-point explanation panel. Selecting a result in Notebook or opening a
-comparison row in Explore should preserve that context. If no selected
-result is available, Explore should tell the user to select an ingested result
-from Results.
+selected-point explanation panel. Selecting a result in Results should preserve
+that context. If no selected result is available, Explore should tell the user
+to select an ingested result from Results.
 
 Shared time controls should operate on actual saved CM1 output times. Explore
 may provide play/pause timelapse playback and a scrubber across those saved
@@ -1227,24 +1226,20 @@ to domain-center slices and clearly keep the native-grid/provenance caveats
 available. Explore should not open at `t=0` when diagnostics show clouds appear
 later.
 
-The first comparison workflow is Baseline Shallow Cumulus vs Dry Failed
-Cumulus. It should start as a side-by-side result-card comparison, not a new
-renderer. The view should show scenario names, run-size presets, cloud formed
-yes/no, first cloud time, rain yes/no, max `qc`, max/min `w`, caveats/warnings,
-output/time-step summary, notebook edit state, and quick actions to open each
-result in Explore. It should explain that Dry Failed Cumulus is not a
-failed model run when vertical motion is present and cloud water stays below
-threshold. Technical run IDs, lifecycle strings, and provenance labels remain
-available in details rather than primary comparison copy.
+Future comparison work should be user-driven rather than a fixed lab pair. It
+should let the user choose results, explain the comparison target, and preserve
+the current scientific honesty boundary: no browser-side NetCDF parsing, no
+invented unsupported diagnostics, and clear provenance for every compared
+metric.
 
-The next comparison step adds side-by-side 2-D slices for the same accepted lab
+The next comparison step may add side-by-side 2-D slices for an accepted lab
 pair. It consumes the existing backend visualization-ready fields/slice API for
 `qc` and `w`, supports shared output-index selection with mismatch labels when
 times differ, and shows units, min/max, finite/non-finite counts, and provenance
 for each result. The browser still does not parse raw NetCDF or implement new
 3-D rendering for this comparison.
 
-Completed results should be replayable and inspectable without rerunning CM1. Duplicate/tweak/rerun is useful later, but replay, inspect, compare, and edit notebook fields are the core MVP result-library behavior.
+Completed results should be replayable and inspectable without rerunning CM1. Duplicate/tweak/rerun is useful later, but replay, inspect, explain, and edit notebook fields are the core MVP result-library behavior.
 
 ## MVP Scope
 
@@ -1441,8 +1436,8 @@ MVP behavior:
 - default to a physically interesting time and slice location using backend
   defaults when available;
 - request horizontal and vertical slice payloads from the backend;
-- show one primary heatmap by default, with `Horizontal`, `Vertical X`,
-  `Vertical Y`, and `Compare` modes;
+- show one primary heatmap by default, with `Horizontal`, `Vertical X`, and
+  `Vertical Y` modes;
 - show heatmaps with field units, native
   grid, selected time, slice shape/dimensions, min/max, finite and non-finite
   counts, and provenance labels;

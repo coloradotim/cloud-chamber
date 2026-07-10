@@ -52,15 +52,16 @@ test.describe("mocked smoke: app shell", () => {
     expect(consoleProblems).toEqual([]);
   });
 
-  test("navigates across primary workspaces and subtabs", async ({ page }) => {
+  test("navigates across primary workspaces", async ({ page }) => {
     await gotoApp(page);
 
     await gotoBuild(page);
     await expect(page.getByRole("heading", { name: "Local run launchpad" })).toBeVisible();
 
     await gotoResults(page);
-    await expect(page.getByRole("tab", { name: "Notebook" })).toBeVisible();
-    await expect(page.getByRole("tab", { name: "Compare" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Experiment Notebook" })).toBeVisible();
+    await expect(page.getByRole("tab", { name: "Notebook" })).toHaveCount(0);
+    await expect(page.getByRole("tab", { name: "Compare" })).toHaveCount(0);
     await expect(page.getByRole("tab", { name: "Storage" })).toHaveCount(0);
 
     await gotoExplore(page);

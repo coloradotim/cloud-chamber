@@ -244,7 +244,7 @@ Do not turn the reset into a broad manual checklist of objective behaviors.
 If a requested acceptance criterion is objective and repeatable, convert it
 into a unit/component or Playwright test.
 
-For any issue that changes navigation, Results, Storage, Compare, Explore,
+For any issue that changes navigation, Results, Storage, Explore,
 Build workflow, or visualizer layout:
 
 - add or update unit/component tests for logic;
@@ -374,20 +374,20 @@ raw NetCDF, and CI must not run real CM1.
 2-D field inspector component tests should mock the visualization-ready API
 payloads rather than reading NetCDF in the browser. They should cover opening
 from a Result Card, field selection, time selection, backend-provided
-interesting defaults, a single-primary-slice layout, compare mode, horizontal
-and vertical slice heatmaps, units, min/max, finite/non-finite counts,
+interesting defaults, a single-primary-slice layout, horizontal and vertical
+slice heatmaps, units, min/max, finite/non-finite counts,
 provenance labels, raw numeric values under technical details, missing fields,
 and bad slice requests. They must not add rendering dependencies or test a 3-D
 scene.
 
 Guided workspace tests should cover task navigation across the top-level
 `Build`, `Results`, and `Explore` sections. They should verify that Results
-contains `Notebook`, `Compare`, and `Storage` sub-tabs; Explore is one desktop
-cloud-context and slice-inspection workflow rather than separate `2-D Slices`
-and `3-D View` destinations; the app still defaults to Results; selected-result
-context flows from Results into Explore; and the old implementation pages
-(`Compare`, `Storage`, `Inspect`, `Visualize`) are no longer top-level
-workspaces. They should also cover prioritizing a validated cloud-forming
+is the Experiment Notebook without `Compare` or `Storage` sub-tabs; Explore is
+one desktop cloud-context and slice-inspection workflow rather than separate
+`2-D Slices` and `3-D View` destinations; the app still defaults to Results;
+selected-result context flows from Results into Explore; and the old
+implementation pages (`Compare`, `Storage`, `Inspect`, `Visualize`) are no
+longer top-level workspaces. They should also cover prioritizing a validated cloud-forming
 quick-look baseline over historical attempts, user-facing status labels
 replacing raw internal lifecycle strings, and technical details keeping raw
 provenance available without dominating the main view. They should distinguish
@@ -396,7 +396,7 @@ review.
 
 Results notebook redesign tests should cover the mobile-first experiment-card
 contract rather than table mechanics. Component and Playwright tests should
-verify that Results / Notebook presents scan-friendly experiment entries,
+verify that Results presents scan-friendly experiment entries,
 selected result details, cloud/rain outcomes, first cloud time, max `qc`,
 max/min `w`, caveats, editable name/tags/notes, and actions into the unified
 Explore workflow. They should also verify that raw run IDs,
@@ -458,18 +458,11 @@ ingested results. Result delete preview copy should explain that deleting the
 run directory also removes result metadata, notebook edits, diagnostics, derived
 products, CM1 output, logs, and Explore backing references stored there.
 
-Comparison tests should use mocked Result Card data for the accepted Baseline
-Shallow Cumulus quick-look and Dry Failed Cumulus quick-look pair. They should
-verify side-by-side scenario names, run-size presets, cloud/rain outcomes, first
-cloud time, max `qc`, max/min `w`, caveats, output summaries, notebook edit
-metadata, moisture-limited interpretation, missing-pair handling, and quick actions
-that route either compared result into the unified Explore workflow.
-
-Side-by-side slice comparison tests should mock the #72 visualization-ready
-fields/slice API for both accepted results. They should cover default Baseline
-vs Dry Failed selection, `qc` comparison, `w` comparison, missing shared fields,
-time-index mismatch labeling where practical, units, min/max, finite/non-finite
-counts, provenance labels, and the guarantee that raw NetCDF is not parsed in
+Future comparison tests should wait for a real user-driven comparison workflow.
+The removed fixed Baseline-vs-Dry-Failed Results tab should not be tested as a
+current surface. When Compare returns, tests should verify explicit result
+selection, clear comparison targets, provenance for compared metrics, and the
+guarantee that raw NetCDF is not parsed in
 the browser.
 
 Unified Explore cloud-context component tests should mock the visualization-ready

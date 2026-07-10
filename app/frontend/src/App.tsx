@@ -705,7 +705,6 @@ type DeleteResultResponse = {
 };
 
 type WorkspaceSection = "build" | "results" | "explore";
-type ResultsTab = "notebook" | "compare";
 type ScenarioLoadState = "loading" | "loaded" | "failed" | "empty";
 
 type ProvenancePayload = {
@@ -1440,7 +1439,6 @@ async function responseError(response: Response, fallback: string): Promise<stri
 
 export function App() {
   const [activeSection, setActiveSection] = useState<WorkspaceSection>("results");
-  const [activeResultsTab, setActiveResultsTab] = useState<ResultsTab>("notebook");
   const [scenarios, setScenarios] = useState<Scenario[]>([]);
   const [selectedScenarioId, setSelectedScenarioId] = useState("baseline-shallow-cumulus");
   const [controls, setControls] = useState<Record<string, string | number | boolean>>({});
@@ -1642,7 +1640,6 @@ export function App() {
     setResultDeletePreview(null);
     setResultDeleteMessage(null);
   }, [selectedResultId]);
-  const comparisonPair = useMemo(() => defaultComparisonPair(results), [results]);
   const autoFinalizingWorkerRunIdSet = useMemo(
     () => new Set(autoFinalizingWorkerRunIds),
     [autoFinalizingWorkerRunIds],
@@ -2591,7 +2588,6 @@ export function App() {
           onOpenInResults={() => {
             if (ingestedResultId) setSelectedResultId(ingestedResultId);
             setActiveSection("results");
-            setActiveResultsTab("notebook");
           }}
           onInspectIngested={() => {
             if (ingestedResultId) setSelectedResultId(ingestedResultId);
@@ -2600,7 +2596,6 @@ export function App() {
           onOpenStoredResult={(resultId) => {
             setSelectedResultId(resultId);
             setActiveSection("results");
-            setActiveResultsTab("notebook");
           }}
           onExploreStoredResult={(resultId) => {
             setSelectedResultId(resultId);
@@ -2617,26 +2612,19 @@ export function App() {
 
       {activeSection === "results" && (
         <ResultsWorkspace
-          activeTab={activeResultsTab}
           results={results}
           selectedResult={selectedResult}
           selectedResultId={selectedResultId}
           resultsStatus={resultsStatus}
           resultsError={resultsError}
-          comparisonPair={comparisonPair}
           resultDeletePreview={resultDeletePreview}
           resultDeleteMessage={resultDeleteMessage}
-          onTabChange={setActiveResultsTab}
           draft={resultDraft}
           onSelectResult={setSelectedResultId}
           onDraftChange={setResultDraft}
           onSubmit={handleResultUpdate}
           onRefreshResults={handleRefreshResults}
           onInspect={() => {
-            setActiveSection("explore");
-          }}
-          onCompareInspect={(resultId) => {
-            setSelectedResultId(resultId);
             setActiveSection("explore");
           }}
           onPreviewResultDelete={handlePreviewResultDelete}
@@ -3910,44 +3898,36 @@ function ObservedPackageFamilyPanel({
 }
 
 function ResultsWorkspace({
-  activeTab,
   results,
   selectedResult,
   selectedResultId,
   resultsStatus,
   resultsError,
-  comparisonPair,
   resultDeletePreview,
   resultDeleteMessage,
-  onTabChange,
   draft,
   onSelectResult,
   onDraftChange,
   onSubmit,
   onRefreshResults,
   onInspect,
-  onCompareInspect,
   onPreviewResultDelete,
   onConfirmResultDelete,
   onCancelResultDelete,
 }: {
-  activeTab: ResultsTab;
   results: ResultCard[];
   selectedResult: ResultCard | undefined;
   selectedResultId: string | null;
   resultsStatus: string;
   resultsError: string | null;
-  comparisonPair: { baseline: ResultCard | undefined; dryFailed: ResultCard | undefined };
   resultDeletePreview: DeleteResultResponse | null;
   resultDeleteMessage: string | null;
-  onTabChange: (tab: ResultsTab) => void;
   draft: { name: string; tags: string; notes: string };
   onSelectResult: (resultId: string) => void;
   onDraftChange: (draft: { name: string; tags: string; notes: string }) => void;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
   onRefreshResults: () => void;
   onInspect: () => void;
-  onCompareInspect: (resultId: string) => void;
   onPreviewResultDelete: (resultId: string) => void;
   onConfirmResultDelete: (resultId: string) => void;
   onCancelResultDelete: () => void;
@@ -3958,9 +3938,12 @@ function ResultsWorkspace({
         <div>
           <h2 id="results-title">Experiment Notebook</h2>
           <p>
-            Review ingested cloud experiments, compare variants, and open results for explanation.
+            Review ingested cloud experiments, scan result cards, and open results for explanation.
           </p>
         </div>
+        <button type="button" onClick={onRefreshResults}>
+          Refresh results
+        </button>
       </div>
       {resultsStatus !== "Results loaded" && resultsStatus !== "Loading results..." && (
         <p className="inline-status" role="status">
@@ -3968,56 +3951,27 @@ function ResultsWorkspace({
         </p>
       )}
 
-      <nav className="subtab-nav" role="tablist" aria-label="Results views">
-        {(["notebook", "compare"] as ResultsTab[]).map((tab) => (
-          <button
-            key={tab}
-            type="button"
-            id={`${tab}-tab`}
-            role="tab"
-            aria-selected={activeTab === tab}
-            aria-controls={`${tab}-panel`}
-            className={activeTab === tab ? "active-control" : ""}
-            onClick={() => onTabChange(tab)}
-          >
-            {resultsTabLabel(tab)}
-          </button>
-        ))}
-      </nav>
-
       {resultsError && <p role="alert">{resultsError}</p>}
 
-      {activeTab === "notebook" && (
-        <NotebookWorkspace
-          results={results}
-          selectedResult={selectedResult}
-          selectedResultId={selectedResultId}
-          draft={draft}
-          onSelectResult={onSelectResult}
-          onDraftChange={onDraftChange}
-          onSubmit={onSubmit}
-          onRefreshResults={onRefreshResults}
-          onInspect={onInspect}
-          onCompare={() => onTabChange("compare")}
-          onOpenResultInExplore={onCompareInspect}
-          deletePreview={resultDeletePreview}
-          deleteMessage={resultDeleteMessage}
-          onPreviewDelete={onPreviewResultDelete}
-          onConfirmDelete={onConfirmResultDelete}
-          onCancelDelete={onCancelResultDelete}
-        />
-      )}
-
-      {activeTab === "compare" && (
-        <ComparisonWorkspace
-          pair={comparisonPair}
-          onInspect={onCompareInspect}
-          onSelectInNotebook={(resultId) => {
-            onSelectResult(resultId);
-            onTabChange("notebook");
-          }}
-        />
-      )}
+      <NotebookWorkspace
+        results={results}
+        selectedResult={selectedResult}
+        selectedResultId={selectedResultId}
+        draft={draft}
+        onSelectResult={onSelectResult}
+        onDraftChange={onDraftChange}
+        onSubmit={onSubmit}
+        onInspect={onInspect}
+        onOpenResultInExplore={(resultId) => {
+          onSelectResult(resultId);
+          onInspect();
+        }}
+        deletePreview={resultDeletePreview}
+        deleteMessage={resultDeleteMessage}
+        onPreviewDelete={onPreviewResultDelete}
+        onConfirmDelete={onConfirmResultDelete}
+        onCancelDelete={onCancelResultDelete}
+      />
     </section>
   );
 }
@@ -4030,9 +3984,7 @@ function NotebookWorkspace({
   onSelectResult,
   onDraftChange,
   onSubmit,
-  onRefreshResults,
   onInspect,
-  onCompare,
   onOpenResultInExplore,
   deletePreview,
   deleteMessage,
@@ -4047,9 +3999,7 @@ function NotebookWorkspace({
   onSelectResult: (resultId: string) => void;
   onDraftChange: (draft: { name: string; tags: string; notes: string }) => void;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
-  onRefreshResults: () => void;
   onInspect: () => void;
-  onCompare: () => void;
   onOpenResultInExplore: (resultId: string) => void;
   deletePreview: DeleteResultResponse | null;
   deleteMessage: string | null;
@@ -4066,19 +4016,8 @@ function NotebookWorkspace({
   return (
     <section
       className="workspace-section"
-      role="tabpanel"
-      id="notebook-panel"
-      aria-labelledby="notebook-tab notebook-title"
+      aria-label="Notebook entries"
     >
-      <div className="section-heading">
-        <div>
-          <p className="eyebrow">Notebook</p>
-          <h3 id="notebook-title">Notebook entries</h3>
-        </div>
-        <button type="button" onClick={onRefreshResults}>
-          Refresh results
-        </button>
-      </div>
       <ResultsFilterBar
         filters={filters}
         scenarioOptions={scenarioOptions}
@@ -4104,7 +4043,6 @@ function NotebookWorkspace({
           onDraftChange={onDraftChange}
           onSubmit={onSubmit}
           onInspect={onInspect}
-          onCompare={onCompare}
           deletePreview={deletePreview}
           deleteMessage={deleteMessage}
           onPreviewDelete={onPreviewDelete}
@@ -4160,497 +4098,6 @@ function ExploreResultSummary({ result }: { result: ResultCard }) {
         <StatusBadge label={resultInputSourceLabel(result)} tone="neutral" />
         <StatusBadge label={scienceSupportLabel(result)} tone="neutral" />
       </div>
-    </section>
-  );
-}
-
-function ComparisonWorkspace({
-  pair,
-  onInspect,
-  onSelectInNotebook,
-}: {
-  pair: { baseline: ResultCard | undefined; dryFailed: ResultCard | undefined };
-  onInspect: (resultId: string) => void;
-  onSelectInNotebook: (resultId: string) => void;
-}) {
-  const missing = comparisonMissingItems(pair);
-
-  return (
-    <section
-      className="comparison-workspace"
-      role="tabpanel"
-      id="compare-panel"
-      aria-labelledby="compare-tab comparison-title"
-    >
-      <div className="section-heading">
-        <div>
-          <p className="eyebrow">Compare</p>
-          <h2 id="comparison-title">Baseline vs Dry Failed Cumulus</h2>
-        </div>
-        <p className="state-chip">
-          {missing.length === 0 ? "Lab pair ready" : "Waiting for lab pair"}
-        </p>
-      </div>
-
-      {missing.length > 0 ? (
-        <section className="status-panel" aria-label="Comparison requirements">
-          <h3>Comparison needs Baseline and Dry Failed results</h3>
-          <p>
-            Ingested quick-look results are needed before Cloud Chamber can compare cloud-forming
-            and moisture-limited outcomes.
-          </p>
-          <ul className="compact-list">
-            {missing.map((item) => (
-              <li key={item}>{item}</li>
-            ))}
-          </ul>
-        </section>
-      ) : (
-        <>
-          <section className="comparison-intro">
-            <p>
-              This comparison shows the first useful Cloud Chamber lab pair: Baseline Shallow
-              Cumulus forms cloud, while Dry Failed Cumulus is an intentional moisture-limited
-              contrast with vertical motion but little or no cloud water.
-            </p>
-            <p>
-              Dry Failed Cumulus is not a failed model run when thermals are present and cloud water
-              stays below threshold. It teaches how low-level moisture changes the outcome.
-            </p>
-          </section>
-
-          <div className="comparison-grid">
-            <ComparisonResultCard
-              roleLabel="Baseline"
-              result={pair.baseline}
-              onInspect={onInspect}
-              onSelectInNotebook={onSelectInNotebook}
-            />
-            <ComparisonResultCard
-              roleLabel="Dry Failed"
-              result={pair.dryFailed}
-              onInspect={onInspect}
-              onSelectInNotebook={onSelectInNotebook}
-            />
-          </div>
-
-          <section className="comparison-interpretation" aria-labelledby="comparison-meaning-title">
-            <h3 id="comparison-meaning-title">What changed?</h3>
-            <dl className="metric-grid">
-              <Metric label="Baseline" value={comparisonMeaning(pair.baseline)} />
-              <Metric label="Dry Failed" value={comparisonMeaning(pair.dryFailed)} />
-              <Metric
-                label="Learning target"
-                value="Compare qc against w to see moisture limitation separate from vertical motion."
-              />
-              <Metric
-                label="Slice comparison"
-                value="Use the field comparison below for side-by-side CM1-derived qc and w slices."
-              />
-            </dl>
-          </section>
-
-          <SliceComparisonPanel baseline={pair.baseline} dryFailed={pair.dryFailed} />
-
-          <details>
-            <summary>Technical comparison details</summary>
-            <div className="comparison-grid">
-              <ComparisonTechnicalDetails title="Baseline provenance" result={pair.baseline} />
-              <ComparisonTechnicalDetails title="Dry Failed provenance" result={pair.dryFailed} />
-            </div>
-          </details>
-        </>
-      )}
-    </section>
-  );
-}
-
-function ComparisonResultCard({
-  roleLabel,
-  result,
-  onInspect,
-  onSelectInNotebook,
-}: {
-  roleLabel: "Baseline" | "Dry Failed";
-  result: ResultCard | undefined;
-  onInspect: (resultId: string) => void;
-  onSelectInNotebook: (resultId: string) => void;
-}) {
-  if (!result) return null;
-  const moistureLimited = isDryFailedContrast(result);
-
-  return (
-    <section className="comparison-card" aria-label={`${roleLabel} result`}>
-      <div className="comparison-card-header">
-        <div>
-          <p className="eyebrow">{roleLabel}</p>
-          <h3>{result.scenario_name ?? result.scenario_id}</h3>
-          <p>{humanize(result.run_size_preset)} result card</p>
-        </div>
-      </div>
-
-      <div className="badge-row">
-        <OutcomeBadge result={result} />
-        <StatusBadge label={rainOutcome(result.rain_present)} tone="neutral" />
-        {moistureLimited && <StatusBadge label="Moisture-limited" tone="warning" />}
-        {result.caveats.length > 0 && (
-          <StatusBadge label={caveatLabel(result)} tone={caveatTone(result)} />
-        )}
-      </div>
-
-      <dl className="metric-grid">
-        <Metric label="Scenario" value={result.scenario_name ?? result.scenario_id} />
-        <Metric label="Run-size preset" value={humanize(result.run_size_preset)} />
-        <Metric
-          label="Diagnostics"
-          value={result.diagnostics_summary ?? "Diagnostics unavailable"}
-        />
-        <Metric label="Cloud" value={cloudOutcome(result)} />
-        <Metric label="First cloud time" value={formatSeconds(result.first_cloud_time_seconds)} />
-        <Metric label="Rain water aloft" value={rainOutcome(result.rain_present)} />
-        <Metric label="Surface rain" value={surfaceRainOutcome(result)} />
-        <Metric label="Reflectivity" value={reflectivityOutcome(result)} />
-        <Metric label="Max qc" value={formatScientific(result.max_qc_kg_kg, "kg/kg")} />
-        <Metric label="Max w" value={formatNumber(result.max_w_m_s, "m/s")} />
-        <Metric label="Min w" value={formatNumber(result.min_w_m_s, "m/s")} />
-        <Metric label="Output" value={outputSummary(result.output_file_summary)} />
-      </dl>
-
-      <section aria-labelledby={`${result.result_id}-caveats`}>
-        <h4 id={`${result.result_id}-caveats`}>Caveats / warnings</h4>
-        {result.caveats.length > 0 ? (
-          <ul className="compact-list">
-            {result.caveats.map((caveat) => (
-              <li key={caveat}>{caveat}</li>
-            ))}
-          </ul>
-        ) : (
-          <p>No caveats recorded.</p>
-        )}
-      </section>
-
-      <div className="button-row">
-        <button type="button" onClick={() => onInspect(result.result_id)}>
-          Open {roleLabel} in Explore
-        </button>
-        <button type="button" onClick={() => onSelectInNotebook(result.result_id)}>
-          Select {roleLabel} in Notebook
-        </button>
-      </div>
-    </section>
-  );
-}
-
-function SliceComparisonPanel({
-  baseline,
-  dryFailed,
-}: {
-  baseline: ResultCard | undefined;
-  dryFailed: ResultCard | undefined;
-}) {
-  const [fieldName, setFieldName] = useState("qc");
-  const [orientation, setOrientation] = useState<"horizontal" | "vertical_x">("vertical_x");
-  const [timeIndex, setTimeIndex] = useState(0);
-  const [catalogs, setCatalogs] = useState<{
-    baseline: FieldCatalogResponse;
-    dryFailed: FieldCatalogResponse;
-  } | null>(null);
-  const [slices, setSlices] = useState<{
-    baseline: SliceResponse;
-    dryFailed: SliceResponse;
-  } | null>(null);
-  const [status, setStatus] = useState("Loading field catalogs...");
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (!baseline || !dryFailed) return;
-    let active = true;
-    setCatalogs(null);
-    setSlices(null);
-    setError(null);
-    setStatus("Loading field catalogs...");
-    Promise.all([
-      fetchVisualizationFields(baseline.result_id),
-      fetchVisualizationFields(dryFailed.result_id),
-    ])
-      .then(([baselineCatalog, dryFailedCatalog]) => {
-        if (!active) return;
-        setCatalogs({ baseline: baselineCatalog, dryFailed: dryFailedCatalog });
-        const preferred = ["qc", "w"].find((candidate) =>
-          bothCatalogsContainField(baselineCatalog, dryFailedCatalog, candidate),
-        );
-        setFieldName(preferred ?? baselineCatalog.available_fields[0]?.raw_field_name ?? "");
-        setTimeIndex(
-          interestingTimeIndexForComparison(baselineCatalog, dryFailedCatalog, preferred),
-        );
-        setStatus("Field catalogs loaded");
-      })
-      .catch((caught: unknown) => {
-        if (!active) return;
-        setError(caught instanceof Error ? caught.message : "Unable to load comparison fields.");
-        setStatus("Comparison unavailable");
-      });
-    return () => {
-      active = false;
-    };
-  }, [baseline, dryFailed]);
-
-  const baselineField = useMemo(
-    () => catalogs?.baseline.available_fields.find((field) => field.raw_field_name === fieldName),
-    [catalogs, fieldName],
-  );
-  const dryFailedField = useMemo(
-    () => catalogs?.dryFailed.available_fields.find((field) => field.raw_field_name === fieldName),
-    [catalogs, fieldName],
-  );
-  const comparableFields = useMemo(() => {
-    if (!catalogs) return [];
-    return ["qc", "w"].filter((candidate) =>
-      bothCatalogsContainField(catalogs.baseline, catalogs.dryFailed, candidate),
-    );
-  }, [catalogs]);
-  const timeOptions =
-    baselineField?.time_coordinate_values ?? dryFailedField?.time_coordinate_values ?? [];
-  const clampedTimeIndex = clampIndex(timeIndex, timeOptions.length || 1);
-  const levelIndex = comparisonLevelIndex(baselineField, orientation);
-  const timeMismatch = Boolean(
-    baselineField &&
-    dryFailedField &&
-    JSON.stringify(baselineField.time_coordinate_values) !==
-      JSON.stringify(dryFailedField.time_coordinate_values),
-  );
-
-  useEffect(() => {
-    if (!baseline || !dryFailed || !baselineField || !dryFailedField || !fieldName) return;
-    let active = true;
-    setSlices(null);
-    setError(null);
-    setStatus("Loading comparison slices...");
-    Promise.all([
-      fetchVisualizationSlice(baseline.result_id, {
-        field: fieldName,
-        timeIndex: clampedTimeIndex,
-        orientation,
-        levelIndex,
-      }),
-      fetchVisualizationSlice(dryFailed.result_id, {
-        field: fieldName,
-        timeIndex: clampedTimeIndex,
-        orientation,
-        levelIndex,
-      }),
-    ])
-      .then(([baselineSlice, dryFailedSlice]) => {
-        if (!active) return;
-        setSlices({ baseline: baselineSlice, dryFailed: dryFailedSlice });
-        setStatus("Comparison slices loaded");
-      })
-      .catch((caught: unknown) => {
-        if (!active) return;
-        setError(caught instanceof Error ? caught.message : "Unable to load comparison slices.");
-        setStatus("Comparison slice unavailable");
-      });
-    return () => {
-      active = false;
-    };
-  }, [
-    baseline,
-    dryFailed,
-    baselineField,
-    dryFailedField,
-    fieldName,
-    clampedTimeIndex,
-    orientation,
-    levelIndex,
-  ]);
-
-  if (!baseline || !dryFailed) return null;
-
-  return (
-    <section className="slice-comparison-panel" aria-labelledby="slice-comparison-title">
-      <div className="section-heading">
-        <div>
-          <p className="eyebrow">2-D field comparison</p>
-          <h3 id="slice-comparison-title">Baseline vs Dry Failed slices</h3>
-        </div>
-        <p className="state-chip">{status}</p>
-      </div>
-
-      <p>
-        Dry Failed Cumulus is an intentional moisture-limited contrast when vertical motion is
-        present and cloud water remains below threshold. These slices are CM1-derived backend
-        payloads; the browser is not parsing raw NetCDF.
-      </p>
-
-      {error && <p role="alert">{error}</p>}
-
-      <div className="comparison-controls">
-        <label>
-          Field
-          <select
-            aria-label="Comparison field"
-            value={fieldName}
-            onChange={(event) => setFieldName(event.target.value)}
-          >
-            {comparableFields.length > 0 ? (
-              comparableFields.map((candidate) => (
-                <option key={candidate} value={candidate}>
-                  {candidate} ({candidate === "qc" ? "Cloud water" : "Vertical velocity"})
-                </option>
-              ))
-            ) : (
-              <option value="">No shared qc/w fields</option>
-            )}
-          </select>
-        </label>
-
-        <label>
-          Time
-          <input
-            aria-label="Comparison time"
-            type="range"
-            min="0"
-            max={Math.max(0, timeOptions.length - 1)}
-            value={clampedTimeIndex}
-            onChange={(event) => setTimeIndex(Number(event.target.value))}
-            disabled={timeOptions.length === 0}
-          />
-          <span>{formatTimeValue(timeOptions[clampedTimeIndex] ?? null)}</span>
-        </label>
-
-        <fieldset>
-          <legend>Slice orientation</legend>
-          <div className="segmented-buttons">
-            <button
-              type="button"
-              className={orientation === "horizontal" ? "active-control" : ""}
-              onClick={() => setOrientation("horizontal")}
-            >
-              Horizontal
-            </button>
-            <button
-              type="button"
-              className={orientation === "vertical_x" ? "active-control" : ""}
-              onClick={() => setOrientation("vertical_x")}
-            >
-              Vertical x-z
-            </button>
-          </div>
-        </fieldset>
-      </div>
-
-      {timeMismatch && (
-        <p className="validation" role="status">
-          Output times differ between these results. The comparison uses the selected output index
-          and labels each slice with its own time metadata.
-        </p>
-      )}
-
-      {comparableFields.length === 0 && (
-        <section className="status-panel">
-          <p>These results do not share qc or w visualization-ready fields.</p>
-        </section>
-      )}
-
-      {slices && (
-        <div className="slice-comparison-grid">
-          <ComparedSliceCard roleLabel="Baseline" result={baseline} slice={slices.baseline} />
-          <ComparedSliceCard roleLabel="Dry Failed" result={dryFailed} slice={slices.dryFailed} />
-        </div>
-      )}
-    </section>
-  );
-}
-
-function ComparedSliceCard({
-  roleLabel,
-  result,
-  slice,
-}: {
-  roleLabel: string;
-  result: ResultCard;
-  slice: SliceResponse;
-}) {
-  return (
-    <section className="slice-panel" aria-label={`${roleLabel} comparison slice`}>
-      <div className="notebook-title">
-        <div>
-          <p className="eyebrow">{roleLabel}</p>
-          <h4>{result.scenario_name ?? result.scenario_id}</h4>
-        </div>
-        <StatusBadge
-          label={cloudOutcome(result)}
-          tone={cloudOutcome(result) === "Cloud formed" ? "good" : "warning"}
-        />
-      </div>
-      <SliceHeatmap title={`${roleLabel} ${slice.field.raw_field_name} comparison`} slice={slice} />
-      <dl className="metric-grid">
-        <Metric
-          label="Field"
-          value={`${slice.field.raw_field_name} (${slice.field.display_name})`}
-        />
-        <Metric label="Units" value={slice.field.units ?? "Units unavailable"} />
-        <Metric label="Time" value={formatSeconds(slice.selection.time_seconds)} />
-        <Metric label="Orientation" value={humanize(slice.selection.orientation)} />
-        <Metric label="Min" value={formatMaybeNumber(slice.stats.min, slice.field.units)} />
-        <Metric label="Max" value={formatMaybeNumber(slice.stats.max, slice.field.units)} />
-        <Metric label="Finite cells" value={slice.stats.finite_count.toLocaleString()} />
-        <Metric label="Non-finite cells" value={slice.stats.non_finite_count.toLocaleString()} />
-      </dl>
-      <details>
-        <summary>Provenance labels</summary>
-        <ul className="compact-list">
-          <li>{slice.provenance.provenance_label}</li>
-          <li>Processing method: {slice.provenance.processing_method}</li>
-          <li>Rendering method: {slice.provenance.rendering_method}</li>
-          {slice.caveats.map((caveat) => (
-            <li key={caveat}>{caveat}</li>
-          ))}
-        </ul>
-      </details>
-    </section>
-  );
-}
-
-function ComparisonTechnicalDetails({
-  title,
-  result,
-}: {
-  title: string;
-  result: ResultCard | undefined;
-}) {
-  if (!result) return null;
-  return (
-    <section className="status-panel" aria-label={title}>
-      <h3>{title}</h3>
-      <dl className="metric-grid">
-        <Metric label="Run ID" value={result.run_id} />
-        <Metric label="Result ID" value={result.result_id} />
-        <Metric label="Source model" value={result.source_model} />
-        <Metric label="Lifecycle" value={result.source_lifecycle_state} />
-        <Metric label="Product state" value={result.source_product_state} />
-        <Metric label="Result state" value={result.status} />
-      </dl>
-      <h4>Physical question</h4>
-      <p>{result.physical_question}</p>
-      <h4>Controls used</h4>
-      {Object.keys(result.controls).length > 0 ? (
-        <ul className="compact-list">
-          {Object.entries(result.controls).map(([key, value]) => (
-            <li key={key}>
-              {humanize(key)}: {String(value)}
-            </li>
-          ))}
-        </ul>
-      ) : (
-        <p>No controls recorded.</p>
-      )}
-      <h4>Provenance labels</h4>
-      <ul className="tag-list">
-        {result.provenance_labels.map((label) => (
-          <li key={label}>{label}</li>
-        ))}
-      </ul>
     </section>
   );
 }
@@ -6233,7 +5680,6 @@ function ResultNotebookCard({
   onDraftChange,
   onSubmit,
   onInspect,
-  onCompare,
   deletePreview,
   deleteMessage,
   onPreviewDelete,
@@ -6245,7 +5691,6 @@ function ResultNotebookCard({
   onDraftChange: (draft: { name: string; tags: string; notes: string }) => void;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
   onInspect: () => void;
-  onCompare: () => void;
   deletePreview: DeleteResultResponse | null;
   deleteMessage: string | null;
   onPreviewDelete: (resultId: string) => void;
@@ -6323,7 +5768,7 @@ function ResultNotebookCard({
           <p>
             This removes the ingested result, notebook edits, diagnostics, derived products, CM1
             output, logs, and local run files stored under this run directory. The result will
-            disappear from Results, Explore, Compare, and local inventory after confirmation. It
+            disappear from Results, Explore, and local inventory after confirmation. It
             does not touch the source repo, runtime home itself, or external CM1 install. No files
             have been deleted yet.
           </p>
@@ -6448,9 +5893,6 @@ function ResultNotebookCard({
         <div className="button-row">
           <button type="button" onClick={onInspect}>
             Open in Explore
-          </button>
-          <button type="button" className="secondary-button" onClick={onCompare}>
-            Compare
           </button>
           <button
             type="button"
@@ -9495,14 +8937,6 @@ function sectionLabel(section: WorkspaceSection): string {
   return labels[section];
 }
 
-function resultsTabLabel(tab: ResultsTab): string {
-  const labels: Record<ResultsTab, string> = {
-    notebook: "Notebook",
-    compare: "Compare",
-  };
-  return labels[tab];
-}
-
 const DEFAULT_RESULTS_FILTERS: ResultsFilterState = {
   search: "",
   scenario: "all",
@@ -9669,49 +9103,6 @@ function isDryFailedContrast(result: ResultCard): boolean {
     result.rain_present === false &&
     (result.max_w_m_s ?? 0) > 0
   );
-}
-
-function defaultComparisonPair(results: ResultCard[]): {
-  baseline: ResultCard | undefined;
-  dryFailed: ResultCard | undefined;
-} {
-  const baseline =
-    results.find(isValidatedQuickLookBaseline) ??
-    results.find(
-      (result) =>
-        result.scenario_id === "baseline-shallow-cumulus" &&
-        result.run_size_preset === "quick_look",
-    ) ??
-    results.find((result) => result.scenario_id === "baseline-shallow-cumulus");
-  const dryFailed =
-    results.find(isDryFailedContrast) ??
-    results.find(
-      (result) =>
-        result.scenario_id === "dry-failed-cumulus" && result.run_size_preset === "quick_look",
-    ) ??
-    results.find((result) => result.scenario_id === "dry-failed-cumulus");
-  return { baseline, dryFailed };
-}
-
-function comparisonMissingItems(pair: {
-  baseline: ResultCard | undefined;
-  dryFailed: ResultCard | undefined;
-}): string[] {
-  const missing = [];
-  if (!pair.baseline) missing.push("Baseline Shallow Cumulus quick-look");
-  if (!pair.dryFailed) missing.push("Dry Failed Cumulus quick-look");
-  return missing;
-}
-
-function comparisonMeaning(result: ResultCard | undefined): string {
-  if (!result) return "Unavailable";
-  if (isDryFailedContrast(result)) {
-    return "Moisture-limited failed cumulus: vertical motion is present, but qc stays below the cloud threshold and rain is absent.";
-  }
-  if (isValidatedQuickLookBaseline(result)) {
-    return "Cloud-forming baseline: qc crosses the cloud threshold, rain is detected, and vertical motion is strong.";
-  }
-  return result.diagnostics_summary ?? "Diagnostics unavailable";
 }
 
 function resultStory(result: ResultCard): string {
@@ -9916,12 +9307,6 @@ function caveatLabel(result: ResultCard): string {
     : "Needs review";
 }
 
-function caveatTone(result: ResultCard): "good" | "warning" | "neutral" {
-  return cloudOutcome(result) === "Cloud formed" || isDryFailedContrast(result)
-    ? "neutral"
-    : "warning";
-}
-
 function cloudOutcome(result: ResultCard): string {
   if (isDeepConvectionTrial(result)) return deepConvectionOutcome(result);
   if (!result.diagnostics_summary) return "Unknown";
@@ -10009,47 +9394,8 @@ function deleteDisabledReason(run: RunStorageEntry): string {
   return "Cleanup unavailable.";
 }
 
-function bothCatalogsContainField(
-  left: FieldCatalogResponse,
-  right: FieldCatalogResponse,
-  fieldName: string | undefined,
-): boolean {
-  if (!fieldName) return false;
-  return (
-    left.available_fields.some((field) => field.raw_field_name === fieldName) &&
-    right.available_fields.some((field) => field.raw_field_name === fieldName)
-  );
-}
-
-function interestingTimeIndexForComparison(
-  baselineCatalog: FieldCatalogResponse,
-  dryFailedCatalog: FieldCatalogResponse,
-  fieldName: string | undefined,
-): number {
-  const baselineField = baselineCatalog.available_fields.find(
-    (field) => field.raw_field_name === fieldName,
-  );
-  const dryField = dryFailedCatalog.available_fields.find(
-    (field) => field.raw_field_name === fieldName,
-  );
-  const length = Math.min(
-    baselineField?.time_coordinate_values.length ?? 0,
-    dryField?.time_coordinate_values.length ?? 0,
-  );
-  return Math.max(0, length - 1);
-}
-
 function clampIndex(index: number, length: number): number {
   return Math.min(Math.max(0, index), Math.max(0, length - 1));
-}
-
-function comparisonLevelIndex(
-  field: VisualizableField | undefined,
-  orientation: "horizontal" | "vertical_x",
-): number {
-  if (!field) return 0;
-  if (orientation === "horizontal") return defaultHorizontalLevel(field);
-  return defaultVerticalIndex(field, "vertical_x");
 }
 
 function defaultsForField(
