@@ -11,6 +11,7 @@ import importlib
 import itertools
 import math
 from collections.abc import Mapping
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal
 
@@ -25,23 +26,254 @@ from cloud_chamber.settings import CloudChamberSettings
 VisualizationOrientation = Literal["horizontal", "vertical_x", "vertical_y"]
 VisualizationEncoding = Literal["json"]
 
-FIELD_DEFINITIONS: dict[str, tuple[str, str]] = {
-    "qc": ("cloud_water", "Cloud water"),
-    "w": ("vertical_velocity", "Vertical velocity"),
-    "qr": ("rain_water", "Rain water"),
-    "qv": ("water_vapor", "Water vapor"),
-    "t": ("temperature", "Temperature"),
-    "temp": ("temperature", "Temperature"),
-    "temperature": ("temperature", "Temperature"),
-    "th": ("potential_temperature", "Potential temperature"),
-    "theta": ("potential_temperature", "Potential temperature"),
-    "rain": ("accumulated_surface_rain", "Accumulated surface rain"),
-    "dbz": ("reflectivity", "Reflectivity"),
+
+@dataclass(frozen=True)
+class FieldDefinition:
+    canonical_field_name: str
+    display_name: str
+    field_family: str
+    frontend_consumer_guidance: str
+    point_cloud_allowed: bool = False
+    profile_candidate: bool = True
+    time_height_candidate: bool = True
+    render_ready_candidate: bool = False
+    external_export_candidate: bool = True
+    caveats: tuple[str, ...] = ()
+
+
+FIELD_DEFINITIONS: dict[str, FieldDefinition] = {
+    "qc": FieldDefinition(
+        "cloud_water",
+        "Cloud water",
+        "cloud_hydrometeor",
+        "Supported for native slices, selected-place diagnostics, and 3-D scalar points.",
+        point_cloud_allowed=True,
+        render_ready_candidate=True,
+    ),
+    "w": FieldDefinition(
+        "vertical_velocity",
+        "Vertical velocity",
+        "motion",
+        "Slice/profile-first field; signed-flow 3-D rendering is not supported yet.",
+        caveats=("signed_flow_field_slice_only",),
+    ),
+    "qr": FieldDefinition(
+        "rain_water",
+        "Rain water aloft",
+        "precipitation_aloft",
+        "Rain water aloft; supported for native slices and 3-D scalar points.",
+        point_cloud_allowed=True,
+        render_ready_candidate=True,
+        caveats=("rain_water_aloft_not_surface_rain",),
+    ),
+    "qv": FieldDefinition(
+        "water_vapor",
+        "Water vapor",
+        "thermodynamic",
+        "Thermodynamic scalar; supported for native slices and caveated 3-D scalar points.",
+        point_cloud_allowed=True,
+        render_ready_candidate=True,
+        caveats=("water_vapor_is_context_not_cloud_or_precipitation",),
+    ),
+    "t": FieldDefinition(
+        "temperature",
+        "Temperature",
+        "thermodynamic",
+        "Slice/profile-first thermodynamic field; not a 3-D scalar render field.",
+        caveats=("thermodynamic_field_slice_profile_first",),
+    ),
+    "temp": FieldDefinition(
+        "temperature",
+        "Temperature",
+        "thermodynamic",
+        "Slice/profile-first thermodynamic field; not a 3-D scalar render field.",
+        caveats=("thermodynamic_field_slice_profile_first",),
+    ),
+    "temperature": FieldDefinition(
+        "temperature",
+        "Temperature",
+        "thermodynamic",
+        "Slice/profile-first thermodynamic field; not a 3-D scalar render field.",
+        caveats=("thermodynamic_field_slice_profile_first",),
+    ),
+    "th": FieldDefinition(
+        "potential_temperature",
+        "Potential temperature",
+        "thermodynamic",
+        "Slice/profile-first thermodynamic field; not a 3-D scalar render field.",
+        caveats=("thermodynamic_field_slice_profile_first",),
+    ),
+    "theta": FieldDefinition(
+        "potential_temperature",
+        "Potential temperature",
+        "thermodynamic",
+        "Slice/profile-first thermodynamic field; not a 3-D scalar render field.",
+        caveats=("thermodynamic_field_slice_profile_first",),
+    ),
+    "prs": FieldDefinition(
+        "pressure",
+        "Pressure",
+        "thermodynamic",
+        "Slice/profile-first pressure field; useful for profiles and diagnostics.",
+        caveats=("pressure_field_slice_profile_first",),
+    ),
+    "p": FieldDefinition(
+        "pressure",
+        "Pressure",
+        "thermodynamic",
+        "Slice/profile-first pressure field; useful for profiles and diagnostics.",
+        caveats=("pressure_field_slice_profile_first",),
+    ),
+    "pressure": FieldDefinition(
+        "pressure",
+        "Pressure",
+        "thermodynamic",
+        "Slice/profile-first pressure field; useful for profiles and diagnostics.",
+        caveats=("pressure_field_slice_profile_first",),
+    ),
+    "rain": FieldDefinition(
+        "accumulated_surface_rain",
+        "Accumulated surface rain",
+        "surface_precipitation",
+        "Surface-native accumulated precipitation; horizontal slices and floor-layer points only.",
+        point_cloud_allowed=True,
+        render_ready_candidate=True,
+        profile_candidate=False,
+        time_height_candidate=False,
+        caveats=("surface_rain_not_rain_water_aloft",),
+    ),
+    "dbz": FieldDefinition(
+        "reflectivity",
+        "Reflectivity",
+        "reflectivity",
+        "Reflectivity scalar; supported for native slices and caveated 3-D scalar points.",
+        point_cloud_allowed=True,
+        render_ready_candidate=True,
+    ),
+    "hfx": FieldDefinition(
+        "surface_sensible_heat_flux",
+        "Surface sensible heat flux",
+        "surface_flux",
+        "Surface-native flux field; horizontal slices and selected-place context only.",
+        profile_candidate=False,
+        time_height_candidate=False,
+        caveats=("surface_flux_field_not_cloud_outcome",),
+    ),
+    "sensible_heat_flux": FieldDefinition(
+        "surface_sensible_heat_flux",
+        "Surface sensible heat flux",
+        "surface_flux",
+        "Surface-native flux field; horizontal slices and selected-place context only.",
+        profile_candidate=False,
+        time_height_candidate=False,
+        caveats=("surface_flux_field_not_cloud_outcome",),
+    ),
+    "lhfx": FieldDefinition(
+        "surface_latent_heat_flux",
+        "Surface latent heat flux",
+        "surface_flux",
+        "Surface-native flux field; horizontal slices and selected-place context only.",
+        profile_candidate=False,
+        time_height_candidate=False,
+        caveats=("surface_flux_field_not_cloud_outcome",),
+    ),
+    "latent_heat_flux": FieldDefinition(
+        "surface_latent_heat_flux",
+        "Surface latent heat flux",
+        "surface_flux",
+        "Surface-native flux field; horizontal slices and selected-place context only.",
+        profile_candidate=False,
+        time_height_candidate=False,
+        caveats=("surface_flux_field_not_cloud_outcome",),
+    ),
+    "lwp": FieldDefinition(
+        "liquid_water_path",
+        "Liquid water path",
+        "column_integrated_water",
+        "Column-integrated water field; horizontal slices and selected-place context only.",
+        profile_candidate=False,
+        time_height_candidate=False,
+        caveats=("column_integrated_field_no_vertical_profile",),
+    ),
+    "cape": FieldDefinition(
+        "cape",
+        "CAPE",
+        "parcel_diagnostic",
+        "Surface-native or column diagnostic; cataloged only when CM1 output includes it.",
+        profile_candidate=False,
+        time_height_candidate=False,
+        caveats=("parcel_diagnostic_field_catalog_only",),
+    ),
+    "cin": FieldDefinition(
+        "cin",
+        "CIN",
+        "parcel_diagnostic",
+        "Surface-native or column diagnostic; cataloged only when CM1 output includes it.",
+        profile_candidate=False,
+        time_height_candidate=False,
+        caveats=("parcel_diagnostic_field_catalog_only",),
+    ),
+    "lcl": FieldDefinition(
+        "lcl",
+        "LCL",
+        "parcel_diagnostic",
+        "Surface-native or column diagnostic; cataloged only when CM1 output includes it.",
+        profile_candidate=False,
+        time_height_candidate=False,
+        caveats=("parcel_diagnostic_field_catalog_only",),
+    ),
+    "lfc": FieldDefinition(
+        "lfc",
+        "LFC",
+        "parcel_diagnostic",
+        "Surface-native or column diagnostic; cataloged only when CM1 output includes it.",
+        profile_candidate=False,
+        time_height_candidate=False,
+        caveats=("parcel_diagnostic_field_catalog_only",),
+    ),
+    "swten": FieldDefinition(
+        "shortwave_radiative_tendency",
+        "Shortwave radiative tendency",
+        "radiation",
+        "Radiation tendency field; slice/profile candidate only when present and labeled.",
+        caveats=("radiation_field_cataloged_when_present",),
+    ),
+    "lwten": FieldDefinition(
+        "longwave_radiative_tendency",
+        "Longwave radiative tendency",
+        "radiation",
+        "Radiation tendency field; slice/profile candidate only when present and labeled.",
+        caveats=("radiation_field_cataloged_when_present",),
+    ),
+    "rthraten": FieldDefinition(
+        "radiative_heating_tendency",
+        "Radiative heating tendency",
+        "radiation",
+        "Radiation tendency field; slice/profile candidate only when present and labeled.",
+        caveats=("radiation_field_cataloged_when_present",),
+    ),
+    "psfc": FieldDefinition(
+        "surface_pressure",
+        "Surface pressure",
+        "surface_diagnostic",
+        "Surface-native diagnostic; horizontal slices and selected-place context only.",
+        profile_candidate=False,
+        time_height_candidate=False,
+        caveats=("surface_diagnostic_field_not_3d_model_field",),
+    ),
+    "tsk": FieldDefinition(
+        "surface_temperature",
+        "Surface temperature",
+        "surface_diagnostic",
+        "Surface-native diagnostic; horizontal slices and selected-place context only.",
+        profile_candidate=False,
+        time_height_candidate=False,
+        caveats=("surface_diagnostic_field_not_3d_model_field",),
+    ),
 }
 
 SIGNED_FLOW_FIELDS = {"w"}
 SURFACE_POINT_FIELDS = {"rain"}
-POINT_CLOUD_FIELDS = {"qc", "qr", "qv", "dbz", *SURFACE_POINT_FIELDS}
 
 TIME_DIMENSION_CANDIDATES = ("time", "mtime", "t")
 VERTICAL_DIMENSION_CANDIDATES = ("zh", "zf", "z", "height", "height_m", "height_km")
@@ -77,6 +309,19 @@ class FieldCoordinateMetadata(BaseModel):
     x: str | None = None
 
 
+class FieldCapabilityMetadata(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    slice: bool
+    point_cloud: bool
+    selected_point: bool
+    selected_column: bool
+    profile_candidate: bool
+    time_height_candidate: bool
+    render_ready_candidate: bool
+    external_export_candidate: bool
+
+
 class VisualizableField(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -87,9 +332,25 @@ class VisualizableField(BaseModel):
     dimensions: list[str]
     shape: list[int]
     native_grid: str
+    native_grid_class: str
     coordinate_names: FieldCoordinateMetadata
     time_coordinate_values: list[float | str | None] = Field(default_factory=list)
+    time_available: bool = False
+    field_family: str
+    capabilities: FieldCapabilityMetadata
+    frontend_consumer_guidance: str
     provenance: ProvenancePayload
+    caveats: list[str] = Field(default_factory=list)
+
+
+class UnavailableField(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    raw_field_name: str
+    canonical_field_name: str
+    display_name: str
+    expected_by_run: bool
+    reason: str
     caveats: list[str] = Field(default_factory=list)
 
 
@@ -101,6 +362,7 @@ class FieldCatalogResponse(BaseModel):
     scenario_id: str
     source_model: str
     available_fields: list[VisualizableField]
+    unavailable_fields: list[UnavailableField] = Field(default_factory=list)
     provenance: ProvenancePayload
     caveats: list[str] = Field(default_factory=list)
 
@@ -230,11 +492,9 @@ class ViewDefaultsResponse(BaseModel):
 
 
 def _metadata_visualizable_fields(metadata: ResultMetadata) -> list[VisualizableField]:
-    field_by_name = {field.name: field for field in metadata.fields_detected}
     fields: list[VisualizableField] = []
-    for field_name in FIELD_DEFINITIONS:
-        field = field_by_name.get(field_name)
-        if field is None:
+    for field in metadata.fields_detected:
+        if _field_definition(field.name) is None:
             continue
         fields.append(_visualizable_field_from_metadata(metadata, field))
     return fields
@@ -244,18 +504,24 @@ def _visualizable_field_from_metadata(
     metadata: ResultMetadata,
     field: Any,
 ) -> VisualizableField:
-    canonical, display = FIELD_DEFINITIONS[field.name]
+    definition = _require_field_definition(field.name)
     coordinates = _field_coordinates_from_dimensions(field.dimensions)
+    capabilities = _field_capabilities(field.name, coordinates)
     return VisualizableField(
         raw_field_name=field.name,
-        canonical_field_name=canonical,
-        display_name=display,
+        canonical_field_name=definition.canonical_field_name,
+        display_name=definition.display_name,
         units=field.units,
         dimensions=[str(dimension) for dimension in field.dimensions],
         shape=[int(size) for size in field.shape],
         native_grid=_native_grid_label(coordinates),
+        native_grid_class=_native_grid_class(coordinates),
         coordinate_names=coordinates,
         time_coordinate_values=_metadata_time_values(metadata, coordinates.time),
+        time_available=coordinates.time is not None,
+        field_family=definition.field_family,
+        capabilities=capabilities,
+        frontend_consumer_guidance=definition.frontend_consumer_guidance,
         provenance=_provenance(
             metadata,
             processing_method="ingested_result_metadata_field_catalog",
@@ -560,16 +826,22 @@ def _metadata_field_max_value(metadata: ResultMetadata, field_name: str) -> floa
     return None
 
 
+def _known_dataset_field_names(dataset: Any) -> list[str]:
+    return [str(name) for name in dataset.data_vars if _field_definition(str(name)) is not None]
+
+
 def field_catalog(settings: CloudChamberSettings, result_id: str) -> FieldCatalogResponse:
     """Return visualizable field metadata for an ingested result."""
     metadata = get_result_metadata(settings, result_id)
     fields = _metadata_visualizable_fields(metadata)
+    unavailable_fields = _catalog_unavailable_fields(metadata, fields)
     return FieldCatalogResponse(
         result_id=metadata.result_id,
         run_id=metadata.run_id,
         scenario_id=metadata.scenario_id,
         source_model=metadata.source_model,
         available_fields=fields,
+        unavailable_fields=unavailable_fields,
         provenance=_provenance(
             metadata,
             processing_method="ingested_result_metadata_field_catalog",
@@ -579,7 +851,7 @@ def field_catalog(settings: CloudChamberSettings, result_id: str) -> FieldCatalo
                 "opened only for selected native-grid view data payloads"
             ),
         ),
-        caveats=_dedupe(_catalog_caveats(metadata, fields)),
+        caveats=_dedupe(_catalog_caveats(metadata, fields, unavailable_fields)),
     )
 
 
@@ -597,14 +869,13 @@ def view_defaults(
     dataset, close_datasets = _open_dataset_sequence(metadata)
     try:
         fields: dict[str, FieldViewDefaults] = {}
-        for field_name in FIELD_DEFINITIONS:
-            if field_name in dataset.data_vars:
-                fields[field_name] = _field_view_defaults(
-                    metadata,
-                    dataset,
-                    field_name,
-                    time_index=time_index,
-                )
+        for field_name in _known_dataset_field_names(dataset):
+            fields[field_name] = _field_view_defaults(
+                metadata,
+                dataset,
+                field_name,
+                time_index=time_index,
+            )
         preferred = _preferred_field(metadata, fields)
         return ViewDefaultsResponse(
             result_id=metadata.result_id,
@@ -652,15 +923,11 @@ def point_cloud(
     """Return thresholded native-grid points for supported 3-D scalar visualization."""
     if encoding != "json":
         raise VisualizationDataError("Only encoding=json is supported for MVP point clouds.")
-    if field not in FIELD_DEFINITIONS:
+    if _field_definition(field) is None:
         raise VisualizationDataError(f"Unsupported visualization field: {field}")
     if field in SIGNED_FLOW_FIELDS:
         raise VisualizationDataError(
             f"Field {field} requires signed-flow 3-D rendering and is slice-only for now."
-        )
-    if field not in POINT_CLOUD_FIELDS:
-        raise VisualizationDataError(
-            f"Field {field} is available for 2-D slices but not 3-D point-cloud rendering."
         )
     if not math.isfinite(threshold) or threshold < 0:
         raise VisualizationDataError("threshold must be a finite non-negative number.")
@@ -674,6 +941,10 @@ def point_cloud(
             raise VisualizationDataError(f"Field is not available for this result: {field}")
         data_array = dataset[field]
         dims = _field_dimensions(data_array)
+        if not _field_capabilities(field, dims.coordinates).point_cloud:
+            raise VisualizationDataError(
+                f"Field {field} is available for 2-D slices but not 3-D point-cloud rendering."
+            )
         if not dims.time:
             raise VisualizationDataError(f"Field {field} has no time dimension.")
         is_surface_field = field in SURFACE_POINT_FIELDS and not dims.vertical and dims.y and dims.x
@@ -928,7 +1199,7 @@ def field_slice(
     metadata = get_result_metadata(settings, result_id)
     dataset, close_datasets, local_time_index = _open_dataset_for_time(metadata, time_index)
     try:
-        if field not in FIELD_DEFINITIONS:
+        if _field_definition(field) is None:
             raise VisualizationDataError(f"Unsupported visualization field: {field}")
         if field not in dataset.data_vars:
             raise VisualizationDataError(f"Field is not available for this result: {field}")
@@ -1139,18 +1410,24 @@ def _visualizable_field(
     field_name: str,
 ) -> VisualizableField:
     data_array = dataset[field_name]
-    canonical, display = FIELD_DEFINITIONS[field_name]
+    definition = _require_field_definition(field_name)
     coordinates = _field_dimensions(data_array).coordinates
+    capabilities = _field_capabilities(field_name, coordinates)
     return VisualizableField(
         raw_field_name=field_name,
-        canonical_field_name=canonical,
-        display_name=display,
+        canonical_field_name=definition.canonical_field_name,
+        display_name=definition.display_name,
         units=_attr_string(data_array.attrs.get("units")),
         dimensions=[str(dimension) for dimension in data_array.dims],
         shape=[int(size) for size in data_array.shape],
         native_grid=_native_grid_label(coordinates),
+        native_grid_class=_native_grid_class(coordinates),
         coordinate_names=coordinates,
         time_coordinate_values=_coordinate_values(dataset, coordinates.time),
+        time_available=coordinates.time is not None,
+        field_family=definition.field_family,
+        capabilities=capabilities,
+        frontend_consumer_guidance=definition.frontend_consumer_guidance,
         provenance=_provenance(metadata),
         caveats=_field_caveats(field_name, coordinates),
     )
@@ -1343,26 +1620,122 @@ def _native_grid_label(coordinates: FieldCoordinateMetadata) -> str:
     return "unknown_native_grid"
 
 
+def _native_grid_class(coordinates: FieldCoordinateMetadata) -> str:
+    if coordinates.time and coordinates.vertical and coordinates.y and coordinates.x:
+        return "volume_3d"
+    if coordinates.time and not coordinates.vertical and coordinates.y and coordinates.x:
+        return "surface_2d"
+    if coordinates.time and coordinates.vertical and not coordinates.y and not coordinates.x:
+        return "vertical_profile"
+    if coordinates.time and not coordinates.vertical and not coordinates.y and not coordinates.x:
+        return "time_series"
+    return "unknown"
+
+
+def _field_capabilities(
+    field_name: str,
+    coordinates: FieldCoordinateMetadata,
+) -> FieldCapabilityMetadata:
+    definition = _require_field_definition(field_name)
+    grid_class = _native_grid_class(coordinates)
+    slice_supported = grid_class in {"volume_3d", "surface_2d"}
+    point_cloud_supported = (
+        definition.point_cloud_allowed
+        and slice_supported
+        and field_name.lower() not in SIGNED_FLOW_FIELDS
+    )
+    selected_point_supported = (
+        slice_supported and coordinates.y is not None and coordinates.x is not None
+    )
+    selected_column_supported = (
+        selected_point_supported and coordinates.vertical is not None and grid_class == "volume_3d"
+    )
+    profile_candidate = (
+        definition.profile_candidate
+        and coordinates.time is not None
+        and coordinates.vertical is not None
+    )
+    time_height_candidate = (
+        definition.time_height_candidate
+        and coordinates.time is not None
+        and coordinates.vertical is not None
+    )
+    return FieldCapabilityMetadata(
+        slice=slice_supported,
+        point_cloud=point_cloud_supported,
+        selected_point=selected_point_supported,
+        selected_column=selected_column_supported,
+        profile_candidate=profile_candidate,
+        time_height_candidate=time_height_candidate,
+        render_ready_candidate=definition.render_ready_candidate and point_cloud_supported,
+        external_export_candidate=(
+            definition.external_export_candidate and coordinates.time is not None
+        ),
+    )
+
+
 def _catalog_caveats(
     metadata: ResultMetadata,
     fields: list[VisualizableField],
+    unavailable_fields: list[UnavailableField],
 ) -> list[str]:
     available = {field.raw_field_name for field in fields}
     caveats = list(metadata.warnings)
     for required in ("qc", "w"):
         if required not in available:
             caveats.append(f"missing_visualization_field:{required}")
+    caveats.extend(
+        f"expected_field_unavailable:{field.raw_field_name}" for field in unavailable_fields
+    )
     return caveats
 
 
+def _catalog_unavailable_fields(
+    metadata: ResultMetadata,
+    fields: list[VisualizableField],
+) -> list[UnavailableField]:
+    available_raw = {field.raw_field_name.lower() for field in fields}
+    available_canonical = {field.canonical_field_name for field in fields}
+    unavailable: list[UnavailableField] = []
+    for expected in _dedupe([*metadata.expected_outputs, "qc", "w"]):
+        definition = _field_definition(expected)
+        if definition is None:
+            continue
+        if (
+            expected.lower() in available_raw
+            or definition.canonical_field_name in available_canonical
+        ):
+            continue
+        unavailable.append(
+            UnavailableField(
+                raw_field_name=expected,
+                canonical_field_name=definition.canonical_field_name,
+                display_name=definition.display_name,
+                expected_by_run=expected in metadata.expected_outputs,
+                reason="expected_known_field_missing_from_result_metadata",
+                caveats=[
+                    "field_not_present_in_ingested_netcdf_metadata",
+                    "not_available_for_slice_point_cloud_profile_or_export_products",
+                ],
+            )
+        )
+    return unavailable
+
+
 def _field_caveats(field_name: str, coordinates: FieldCoordinateMetadata) -> list[str]:
-    caveats = ["native_grid_view_no_interpolation"]
-    if field_name == "qc" and coordinates.vertical != "zh":
+    definition = _require_field_definition(field_name)
+    normalized = field_name.lower()
+    caveats = ["native_grid_view_no_interpolation", *definition.caveats]
+    if normalized == "qc" and coordinates.vertical != "zh":
         caveats.append("qc_native_vertical_grid_not_zh")
-    if field_name == "w" and coordinates.vertical != "zf":
+    if normalized == "w" and coordinates.vertical != "zf":
         caveats.append("w_native_vertical_grid_not_zf")
-    if field_name in SURFACE_POINT_FIELDS and not coordinates.vertical:
+    if normalized in SURFACE_POINT_FIELDS and not coordinates.vertical:
         caveats.append("surface_field_no_vertical_dimension")
+    if _native_grid_class(coordinates) == "surface_2d":
+        caveats.append("surface_or_column_2d_field")
+    if not _field_capabilities(field_name, coordinates).point_cloud:
+        caveats.append("not_supported_for_3d_point_cloud_rendering")
     return caveats
 
 
@@ -1484,6 +1857,17 @@ def _attr_string(value: object) -> str | None:
     if value is None:
         return None
     return str(value)
+
+
+def _field_definition(field_name: str) -> FieldDefinition | None:
+    return FIELD_DEFINITIONS.get(field_name) or FIELD_DEFINITIONS.get(field_name.lower())
+
+
+def _require_field_definition(field_name: str) -> FieldDefinition:
+    definition = _field_definition(field_name)
+    if definition is None:
+        raise VisualizationDataError(f"Unsupported visualization field: {field_name}")
+    return definition
 
 
 def _first_present(candidates: tuple[str, ...], names: list[str]) -> str | None:

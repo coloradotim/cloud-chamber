@@ -119,6 +119,48 @@ def create_multifile_visualization_result(
     return settings, result.result_id, package.package_dir
 
 
+def create_realistic_field_catalog_result(
+    tmp_path: Path,
+) -> tuple[CloudChamberSettings, str, Path]:
+    settings = fake_settings(tmp_path)
+    package = generate_dry_run_package(
+        scenario_data=json.loads(BASELINE_TEMPLATE.read_text()),
+        runtime_home=settings.runtime_home,
+        run_id="run-realistic-field-catalog",
+        run_size_preset="quick_look",
+    )
+    netcdf_path = package.package_dir / "cm1out_000001.nc"
+    write_realistic_field_catalog_netcdf(netcdf_path)
+    manifest = load_run_manifest(package.manifest_path)
+    write_run_manifest(
+        package.manifest_path,
+        manifest.model_copy(
+            update={
+                "lifecycle_state": LifecycleState.COMPLETED,
+                "provenance": ProvenanceMetadata(product_state=ProductState.COMPLETED_CM1_RESULT),
+                "outputs": OutputMetadata(netcdf_paths=[str(netcdf_path)]),
+                "expected_outputs": [
+                    "qc",
+                    "w",
+                    "qv",
+                    "prs",
+                    "hfx",
+                    "lhfx",
+                    "swten",
+                    "lwp",
+                    "CAPE",
+                    "CIN",
+                    "LCL",
+                    "LFC",
+                    "dbz",
+                ],
+            }
+        ),
+    )
+    result = ingest_completed_run(package.manifest_path)
+    return settings, result.result_id, package.package_dir
+
+
 def write_visualization_netcdf(
     path: Path,
     *,
@@ -184,6 +226,89 @@ def write_visualization_netcdf(
     )
     xr.Dataset(
         data_vars=data_vars,
+        coords={
+            "time": ("time", [0.0, 900.0], {"units": "s"}),
+            "zh": ("zh", [0.4, 0.8], {"units": "km"}),
+            "zf": ("zf", [0.0, 0.4, 0.8], {"units": "km"}),
+            "yh": ("yh", [0.0, 1.0, 2.0], {"units": "km"}),
+            "xh": ("xh", [0.0, 1.0, 2.0, 3.0], {"units": "km"}),
+        },
+    ).to_netcdf(path, engine="scipy")
+
+
+def write_realistic_field_catalog_netcdf(path: Path) -> None:
+    volume_shape = (2, 2, 3, 4)
+    surface_shape = (2, 3, 4)
+    volume = np.arange(np.prod(volume_shape), dtype=float).reshape(volume_shape)
+    surface = np.arange(np.prod(surface_shape), dtype=float).reshape(surface_shape)
+    xr.Dataset(
+        data_vars={
+            "qc": (
+                ("time", "zh", "yh", "xh"),
+                volume * 1e-6,
+                {"units": "kg/kg"},
+            ),
+            "w": (
+                ("time", "zf", "yh", "xh"),
+                np.arange(2 * 3 * 3 * 4, dtype=float).reshape(2, 3, 3, 4),
+                {"units": "m/s"},
+            ),
+            "qv": (
+                ("time", "zh", "yh", "xh"),
+                0.010 + volume * 1e-5,
+                {"units": "kg/kg"},
+            ),
+            "prs": (
+                ("time", "zh", "yh", "xh"),
+                90000.0 - volume * 10.0,
+                {"units": "Pa"},
+            ),
+            "hfx": (
+                ("time", "yh", "xh"),
+                surface,
+                {"units": "W m-2"},
+            ),
+            "lhfx": (
+                ("time", "yh", "xh"),
+                surface + 100.0,
+                {"units": "W m-2"},
+            ),
+            "psfc": (
+                ("time", "yh", "xh"),
+                95000.0 + surface,
+                {"units": "Pa"},
+            ),
+            "swten": (
+                ("time", "zh", "yh", "xh"),
+                volume * 1e-4,
+                {"units": "K/s"},
+            ),
+            "lwp": (
+                ("time", "yh", "xh"),
+                surface * 1e-3,
+                {"units": "kg m-2"},
+            ),
+            "CAPE": (
+                ("time", "yh", "xh"),
+                surface * 10.0,
+                {"units": "J/kg"},
+            ),
+            "CIN": (
+                ("time", "yh", "xh"),
+                -surface,
+                {"units": "J/kg"},
+            ),
+            "LCL": (
+                ("time", "yh", "xh"),
+                800.0 + surface,
+                {"units": "m"},
+            ),
+            "LFC": (
+                ("time", "yh", "xh"),
+                1500.0 + surface,
+                {"units": "m"},
+            ),
+        },
         coords={
             "time": ("time", [0.0, 900.0], {"units": "s"}),
             "zh": ("zh", [0.4, 0.8], {"units": "km"}),
@@ -285,6 +410,117 @@ def test_field_catalog_handles_missing_qc_and_missing_w(tmp_path: Path) -> None:
     assert "missing_visualization_field:qc" in qc_missing.caveats
     assert "w" not in {field.raw_field_name for field in w_missing.available_fields}
     assert "missing_visualization_field:w" in w_missing.caveats
+
+
+def test_field_catalog_classifies_realistic_output_fields_conservatively(
+    tmp_path: Path,
+) -> None:
+    settings, result_id, _run_dir = create_realistic_field_catalog_result(tmp_path)
+
+    catalog = field_catalog(settings, result_id)
+
+    fields = {field.raw_field_name: field for field in catalog.available_fields}
+    assert set(fields) >= {
+        "qv",
+        "prs",
+        "hfx",
+        "lhfx",
+        "psfc",
+        "swten",
+        "lwp",
+        "CAPE",
+        "CIN",
+        "LCL",
+        "LFC",
+    }
+
+    assert fields["qv"].field_family == "thermodynamic"
+    assert fields["qv"].native_grid_class == "volume_3d"
+    assert fields["qv"].capabilities.slice is True
+    assert fields["qv"].capabilities.point_cloud is True
+    assert fields["qv"].capabilities.selected_column is True
+    assert fields["qv"].capabilities.profile_candidate is True
+    assert fields["qv"].capabilities.time_height_candidate is True
+    assert fields["qv"].capabilities.render_ready_candidate is True
+
+    assert fields["prs"].canonical_field_name == "pressure"
+    assert fields["prs"].capabilities.slice is True
+    assert fields["prs"].capabilities.point_cloud is False
+    assert fields["prs"].capabilities.profile_candidate is True
+    assert fields["prs"].capabilities.time_height_candidate is True
+    assert "pressure_field_slice_profile_first" in fields["prs"].caveats
+
+    assert fields["hfx"].field_family == "surface_flux"
+    assert fields["hfx"].native_grid_class == "surface_2d"
+    assert fields["hfx"].native_grid == "surface/yh/xh"
+    assert fields["hfx"].capabilities.slice is True
+    assert fields["hfx"].capabilities.point_cloud is False
+    assert fields["hfx"].capabilities.selected_point is True
+    assert fields["hfx"].capabilities.selected_column is False
+    assert fields["hfx"].capabilities.profile_candidate is False
+    assert fields["hfx"].capabilities.time_height_candidate is False
+    assert "surface_flux_field_not_cloud_outcome" in fields["hfx"].caveats
+
+    assert fields["swten"].field_family == "radiation"
+    assert fields["swten"].capabilities.slice is True
+    assert fields["swten"].capabilities.point_cloud is False
+    assert "radiation_field_cataloged_when_present" in fields["swten"].caveats
+
+    assert fields["lwp"].field_family == "column_integrated_water"
+    assert fields["lwp"].native_grid_class == "surface_2d"
+    assert fields["lwp"].capabilities.profile_candidate is False
+    assert "column_integrated_field_no_vertical_profile" in fields["lwp"].caveats
+
+    assert fields["CAPE"].canonical_field_name == "cape"
+    assert fields["CAPE"].display_name == "CAPE"
+    assert fields["CAPE"].native_grid_class == "surface_2d"
+    assert fields["CAPE"].capabilities.point_cloud is False
+    assert "parcel_diagnostic_field_catalog_only" in fields["CAPE"].caveats
+    assert fields["CAPE"].frontend_consumer_guidance
+
+
+def test_field_catalog_reports_expected_known_fields_unavailable(tmp_path: Path) -> None:
+    settings, result_id, _run_dir = create_realistic_field_catalog_result(tmp_path)
+
+    catalog = field_catalog(settings, result_id)
+
+    unavailable = {field.raw_field_name: field for field in catalog.unavailable_fields}
+    assert "dbz" in unavailable
+    assert unavailable["dbz"].canonical_field_name == "reflectivity"
+    assert unavailable["dbz"].expected_by_run is True
+    assert unavailable["dbz"].reason == "expected_known_field_missing_from_result_metadata"
+    assert "field_not_present_in_ingested_netcdf_metadata" in unavailable["dbz"].caveats
+    assert "expected_field_unavailable:dbz" in catalog.caveats
+
+
+def test_pressure_slice_is_available_but_pressure_point_cloud_is_blocked(
+    tmp_path: Path,
+) -> None:
+    settings, result_id, _run_dir = create_realistic_field_catalog_result(tmp_path)
+
+    sliced = field_slice(
+        settings,
+        result_id,
+        field="prs",
+        time_index=0,
+        orientation="horizontal",
+        level_index=0,
+    )
+
+    assert sliced.field.raw_field_name == "prs"
+    assert sliced.field.canonical_field_name == "pressure"
+    assert sliced.field.capabilities.slice is True
+    assert sliced.field.capabilities.point_cloud is False
+    assert sliced.stats.max == pytest.approx(90000.0)
+    with pytest.raises(VisualizationDataError, match="not 3-D point-cloud"):
+        point_cloud(
+            settings,
+            result_id,
+            field="prs",
+            time_index=0,
+            threshold=0,
+            max_points=50_000,
+        )
 
 
 def test_multifile_slice_reads_requested_output_time_without_combining_all_files(
@@ -543,7 +779,7 @@ def test_point_cloud_returns_qr_points_when_rain_water_is_available(tmp_path: Pa
     assert rain.stats.returned_count == 19
     assert rain.stats.min_value == 5e-7
     assert rain.stats.max_value == 2.3e-06
-    assert rain.provenance.provenance_label.startswith("CM1-derived rain water point cloud")
+    assert rain.provenance.provenance_label.startswith("CM1-derived rain water aloft point cloud")
     assert "visualizer_interpretation_of_cm1_qr" in rain.caveats
 
 

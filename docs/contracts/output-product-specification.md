@@ -306,6 +306,14 @@ The field catalog should include:
 - frontend consumer guidance;
 - provenance.
 
+The current implementation exposes these as backend-owned field metadata on the
+visualization field-catalog API. Each available field includes conservative
+capability flags for slice, point-cloud, selected-point, selected-column,
+profile, time-height, render-ready-candidate, and external-export-candidate
+use. Known fields that were expected by the run but absent from ingested NetCDF
+metadata are returned as unavailable fields with caveats; arbitrary unknown raw
+fields are not exposed as supported catalog entries.
+
 Example:
 
 ```json
