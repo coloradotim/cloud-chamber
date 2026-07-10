@@ -87,6 +87,12 @@ no predicted signature without an explicit assumption set, missing output fields
 produce `inconclusive` or field-level `unavailable` states rather than failed
 predictions, normal evolution remains distinct from triggered deep potential,
 and `qr`, surface `rain`, and `dbz` are evaluated separately.
+Future run-recipe mapping tests should follow
+[contracts/run-recipe-and-story-mapping.md](contracts/run-recipe-and-story-mapping.md):
+story IDs must resolve to compatible, partially testable, blocked, or future
+recipes; recipe validation must require the declared inputs, assumptions,
+duration/cadence, and output fields; incompatible recipes must become
+`not_comparable` rather than failed predictions.
 
 Sounding-diagnostics tests should use tiny observed-sounding fixtures and temp
 runtime data only. They should verify the bounded backend `SoundingDiagnostics`

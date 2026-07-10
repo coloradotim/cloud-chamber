@@ -20,6 +20,10 @@ and this run recipe is the right way to test it.
 No assumption set means no predicted output signature. No compatible run recipe
 means no testable label.
 
+The run-recipe catalog and initial story-to-recipe mapping are defined in
+[Run Recipe And Story-Mapping Contract](run-recipe-and-story-mapping.md). This
+contract consumes those recipe IDs rather than redefining the package path.
+
 ## Scope Boundary
 
 This is a contract for future analyzer payloads and product copy. It is not a
@@ -183,7 +187,9 @@ testable and must not be compared as a miss.
 ## Run Recipe Reference
 
 Recommended recipes connect hypotheses to Build without making compute target
-the product axis.
+the product axis. The canonical recipe fields and current story mapping live in
+[Run Recipe And Story-Mapping Contract](run-recipe-and-story-mapping.md); the
+shape below is the analyzer payload reference to that contract.
 
 ```yaml
 recommended_run_recipes:

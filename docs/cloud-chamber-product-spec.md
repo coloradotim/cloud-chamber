@@ -115,6 +115,11 @@ The forward analyzer contract for testable hypotheses, explicit run
 assumptions, predicted CM1-observable signatures, and predicted-vs-actual
 comparison is defined in
 [contracts/analyzer-hypothesis-output-signature.md](contracts/analyzer-hypothesis-output-signature.md).
+The bridge from those hypotheses to CM1 run recipes is defined in
+[contracts/run-recipe-and-story-mapping.md](contracts/run-recipe-and-story-mapping.md):
+it maps current story IDs to normal-evolution, surface-forced, triggered
+deep-potential, blocked, or future recipes and names the assumptions and output
+fields required before Results can compare predicted signatures.
 Real-sounding story families, including severe/deep-convection, boundary-layer,
 low-cloud, and winter/cold-season candidates, are defined in
 [research/expanded-sounding-candidate-taxonomy.md](research/expanded-sounding-candidate-taxonomy.md).

@@ -62,6 +62,7 @@ Use these docs as the current strategic and contract sources:
 - [Output Product Specification](contracts/output-product-specification.md)
 - [Sounding Candidate Screening Contract](contracts/sounding-candidate-screening.md)
 - [Analyzer Hypothesis And Output-Signature Contract](contracts/analyzer-hypothesis-output-signature.md)
+- [Run Recipe And Story-Mapping Contract](contracts/run-recipe-and-story-mapping.md)
 - [Expanded Sounding Candidate Taxonomy](research/expanded-sounding-candidate-taxonomy.md)
 - [Deep Convection Package Design](research/deep-convection-package-design.md)
 
@@ -89,6 +90,10 @@ more churn than clarity.
   candidate screening, saved candidates, and package-ready/blocked candidate
   states exist. Candidate scores are pre-run selection aids, not CM1 outcome
   predictions.
+- The run-recipe contract now defines how current story IDs map to compatible,
+  caveated, blocked, or future CM1 run recipes. That mapping is the handoff from
+  cached-sounding analysis to pre-run validation and predicted-vs-actual Results
+  comparison.
 - The deep-convection observed-sounding package path exists and has
   package/run/ingest smoke evidence. It can generate storm-scale CM1 packages
   with fixed v1 warm-bubble trigger metadata and expected deep-output fields,
