@@ -84,11 +84,18 @@ from cloud_chamber.sounding_candidates import (
     update_saved_candidate,
 )
 from cloud_chamber.visualization_data import (
+    ProfileAggregationMethod,
+    TimeHeightAggregationMethod,
+    TimeSeriesAggregationMethod,
     VisualizationDataError,
     VisualizationOrientation,
     field_catalog,
     field_slice,
+    output_product_catalog,
     point_cloud,
+    time_height_product,
+    time_series_product,
+    vertical_profile,
     view_defaults,
 )
 
@@ -652,6 +659,102 @@ def get_visualization_point_cloud(
             threshold=threshold,
             max_points=max_points,
             encoding="json",
+        )
+    except ResultIngestError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except VisualizationDataError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return result.model_dump(mode="json")
+
+
+@app.get("/api/results/{result_id}/output-products")
+def get_output_product_catalog(result_id: str) -> dict[str, object]:
+    try:
+        result = output_product_catalog(load_settings(), result_id)
+    except ResultIngestError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except VisualizationDataError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return result.model_dump(mode="json")
+
+
+@app.get("/api/results/{result_id}/output-products/profile")
+def get_output_product_profile(
+    result_id: str,
+    field: str,
+    time_index: int = 0,
+    aggregation_method: str = "domain_mean",
+    x_index: int | None = None,
+    y_index: int | None = None,
+) -> dict[str, object]:
+    if aggregation_method not in {"domain_mean", "domain_min", "domain_max", "selected_column"}:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unsupported profile aggregation_method: {aggregation_method}",
+        )
+    try:
+        result = vertical_profile(
+            load_settings(),
+            result_id,
+            field=field,
+            time_index=time_index,
+            aggregation_method=cast(ProfileAggregationMethod, aggregation_method),
+            x_index=x_index,
+            y_index=y_index,
+        )
+    except ResultIngestError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except VisualizationDataError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return result.model_dump(mode="json")
+
+
+@app.get("/api/results/{result_id}/output-products/time-height")
+def get_output_product_time_height(
+    result_id: str,
+    field: str,
+    aggregation_method: str = "domain_mean",
+    threshold: float | None = None,
+) -> dict[str, object]:
+    if aggregation_method not in {"cloud_fraction", "domain_mean", "domain_min", "domain_max"}:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unsupported time-height aggregation_method: {aggregation_method}",
+        )
+    try:
+        result = time_height_product(
+            load_settings(),
+            result_id,
+            field=field,
+            aggregation_method=cast(TimeHeightAggregationMethod, aggregation_method),
+            threshold=threshold,
+        )
+    except ResultIngestError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except VisualizationDataError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return result.model_dump(mode="json")
+
+
+@app.get("/api/results/{result_id}/output-products/time-series")
+def get_output_product_time_series(
+    result_id: str,
+    field: str,
+    aggregation_method: str = "domain_max",
+    threshold: float | None = None,
+) -> dict[str, object]:
+    if aggregation_method not in {"cloud_fraction", "domain_mean", "domain_min", "domain_max"}:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unsupported time-series aggregation_method: {aggregation_method}",
+        )
+    try:
+        result = time_series_product(
+            load_settings(),
+            result_id,
+            field=field,
+            aggregation_method=cast(TimeSeriesAggregationMethod, aggregation_method),
+            threshold=threshold,
         )
     except ResultIngestError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
