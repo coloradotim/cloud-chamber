@@ -442,14 +442,14 @@ def build_interesting_time_product(
     diagnostics: ResultDiagnostics | None,
     output_manifest: OutputProductManifest,
     variables: list[str],
-    package_family: str | None = None,
+    run_recipe: str | None = None,
 ) -> InterestingTimeProduct:
     """Build small science time landmarks from diagnostics and manifest time mapping."""
     records = _interesting_time_records(
         diagnostics=diagnostics,
         output_manifest=output_manifest,
         variables=set(variables),
-        package_family=package_family,
+        run_recipe=run_recipe,
     )
     defaults = _field_defaults(records)
     summary = _science_summary(
@@ -458,7 +458,7 @@ def build_interesting_time_product(
         records,
         defaults,
         variables=set(variables),
-        package_family=package_family,
+        run_recipe=run_recipe,
     )
     caveats = _dedupe(
         [
@@ -482,7 +482,7 @@ def _interesting_time_records(
     diagnostics: ResultDiagnostics | None,
     output_manifest: OutputProductManifest,
     variables: set[str],
-    package_family: str | None,
+    run_recipe: str | None,
 ) -> list[InterestingTimeRecord]:
     latest = _latest_time_record(output_manifest)
     if diagnostics is None:
@@ -556,7 +556,7 @@ def _interesting_time_records(
             unavailable_caveat="no_deep_cloud_detected" if cloud.available else "missing_qc_field",
             support_state="unavailable" if cloud.available else "unsupported_missing_fields",
         )
-        if package_family == "deep_convection_trial"
+        if run_recipe == "triggered_deep_potential"
         else None,
         _event_record(
             key="max_updraft_w",
@@ -667,7 +667,7 @@ def _interesting_time_records(
     compact_records = [record for record in records if record is not None]
     compact_records.append(
         _field_default_record(
-            _default_source_record(compact_records, package_family=package_family),
+            _default_source_record(compact_records, run_recipe=run_recipe),
             fallback_reason=None,
         )
     )
@@ -905,13 +905,13 @@ def _science_summary(
     defaults: dict[str, FieldDefaultTime],
     *,
     variables: set[str],
-    package_family: str | None,
+    run_recipe: str | None,
 ) -> ScienceSummary:
     record_by_key = {record.key: record for record in records}
     default_record = record_by_key.get("field_default_time")
     latest = record_by_key.get("latest_output")
     qc_default = defaults.get("qc")
-    is_deep_convection = package_family == "deep_convection_trial"
+    is_deep_convection = run_recipe == "triggered_deep_potential"
     if diagnostics is None:
         return ScienceSummary(
             latest_output_time_seconds=latest.time_seconds if latest else None,
@@ -985,12 +985,12 @@ def _science_summary(
 def _default_source_record(
     records: list[InterestingTimeRecord],
     *,
-    package_family: str | None,
+    run_recipe: str | None,
 ) -> InterestingTimeRecord:
     by_key = {record.key: record for record in records}
     preferred_keys = (
         ("first_deep_convection", "max_updraft_w", "rain_onset", "max_qc")
-        if package_family == "deep_convection_trial"
+        if run_recipe == "triggered_deep_potential"
         else ("first_cloud", "max_qc", "max_updraft_w")
     )
     for key in preferred_keys:

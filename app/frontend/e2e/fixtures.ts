@@ -1,18 +1,18 @@
 import type { Page, Route } from "@playwright/test";
 
 const defaultRunConfiguration = {
-  configuration_id: "quick_6h__standard__local_6km__standard_15min__analysis",
+  configuration_id: "short_6h__cells_64__local_6km__standard_15min__process",
   mode: "science",
-  label: "Quick science; Local 6 km; Standard; Standard 15 min",
-  duration_preset: "quick_6h",
+  label: "Short evolution; Local 6 km; Scout 64 x 64; 100 m dx/dy; Standard 15 min",
+  duration: "short_6h",
   duration_seconds: 21600,
-  grid_detail_preset: "standard",
-  domain_size_preset: "local_6km",
-  output_cadence_preset: "standard_15min",
+  horizontal_cell_count: 64,
+  domain_size: "local_6km",
+  output_cadence: "standard_15min",
   output_cadence_seconds: 900,
-  output_field_density_preset: "analysis",
+  diagnostic_set: "process",
   cost_runtime_summary: "6 h model time, 307,200 cells, 15 min saved-output cadence",
-  output_volume_summary: "25 saved frames, analysis output fields, 307,200 cells per frame",
+  output_volume_summary: "25 saved frames, process diagnostics, 307,200 cells per frame",
   cm1_values: {
     nx: 64,
     ny: 64,
@@ -38,11 +38,11 @@ const defaultRunConfigurationSummary = {
   configuration_id: defaultRunConfiguration.configuration_id,
   mode: defaultRunConfiguration.mode,
   label: defaultRunConfiguration.label,
-  duration_preset: defaultRunConfiguration.duration_preset,
-  grid_detail_preset: defaultRunConfiguration.grid_detail_preset,
-  domain_size_preset: defaultRunConfiguration.domain_size_preset,
-  output_cadence_preset: defaultRunConfiguration.output_cadence_preset,
-  output_field_density_preset: defaultRunConfiguration.output_field_density_preset,
+  duration: defaultRunConfiguration.duration,
+  horizontal_cell_count: defaultRunConfiguration.horizontal_cell_count,
+  domain_size: defaultRunConfiguration.domain_size,
+  output_cadence: defaultRunConfiguration.output_cadence,
+  diagnostic_set: defaultRunConfiguration.diagnostic_set,
   runtime_seconds: 21600,
   output_cadence_seconds: 900,
   expected_output_frames: 25,
@@ -62,9 +62,9 @@ const defaultRunConfigurationSummary = {
   estimated_compute_multiplier_vs_default: 1,
   estimated_output_volume_multiplier_vs_default: 1,
   cost_warning:
-    "Configuration cost depends on duration, grid/detail, domain, cadence, and output-field density. Review the CM1-facing values before launch.",
+    "Configuration cost depends on duration, horizontal cell count, domain, cadence, and diagnostic set. Review the CM1-facing values before launch.",
   validation_note:
-    "Run configuration preserves explicit duration, grid/detail, domain, cadence, and output-density choices.",
+    "Run configuration preserves explicit duration, horizontal cell count, domain, cadence, and diagnostic-set choices.",
 };
 
 const defaultPreRunValidationReport = {
@@ -82,8 +82,8 @@ const defaultPreRunValidationReport = {
     predicted_output_signature: [],
   },
   selected_run_recipe: {
-    recipe_id: "shallow_cumulus",
-    display_name: "Baseline Shallow Cumulus",
+    recipe_id: "generated_reference_lower_atmosphere",
+    display_name: "Generated Lower-Atmosphere Reference",
     assumption_set_id: "generated_reference_lower_atmosphere_v1",
   },
   hypothesis_recipe_alignment: {
@@ -93,13 +93,14 @@ const defaultPreRunValidationReport = {
     missing_outputs: [],
   },
   run_shape_validation: {
-    duration: "quick_6h",
+    duration: "short_6h",
     duration_seconds: 21600,
     domain: "local_6km",
-    grid_detail: "standard",
+    horizontal_cell_count: 64,
     output_cadence: "standard_15min",
+    diagnostic_set: "process",
     estimated_frames: 25,
-    estimated_output_volume: "25 saved frames, analysis output fields, 307,200 cells per frame",
+    estimated_output_volume: "25 saved frames, process diagnostics, 307,200 cells per frame",
   },
   output_validation: {
     required_fields: ["qc", "w"],

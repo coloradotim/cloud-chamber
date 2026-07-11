@@ -38,11 +38,11 @@ type ScenarioResponse = {
 };
 
 type RunConfigurationInput = {
-  duration_preset: string;
-  grid_detail_preset: string;
-  domain_size_preset: string;
-  output_cadence_preset: string;
-  output_field_density_preset: string;
+  duration: string;
+  horizontal_cell_count: string;
+  domain_size: string;
+  output_cadence: string;
+  diagnostic_set: string;
 };
 
 type RunConfigurationCM1Values = {
@@ -64,10 +64,11 @@ type RunConfigurationCM1Values = {
   grid_cell_count: number;
 };
 
-type RunConfiguration = RunConfigurationInput & {
+type RunConfiguration = Omit<RunConfigurationInput, "horizontal_cell_count"> & {
   configuration_id: string;
   mode: "smoke" | "science";
   label: string;
+  horizontal_cell_count: string | number;
   duration_seconds: number;
   output_cadence_seconds: number;
   cost_runtime_summary: string;
@@ -80,11 +81,11 @@ type RunConfigurationSummary = {
   configuration_id: string;
   mode: "smoke" | "science";
   label: string;
-  duration_preset: string;
-  grid_detail_preset: string;
-  domain_size_preset: string;
-  output_cadence_preset: string;
-  output_field_density_preset: string;
+  duration: string;
+  horizontal_cell_count: string | number;
+  domain_size: string;
+  output_cadence: string;
+  diagnostic_set: string;
   runtime_seconds: number;
   output_cadence_seconds: number;
   expected_output_frames: number;
@@ -137,8 +138,9 @@ type PreRunValidationReport = {
     estimated_output_volume?: string | null;
     duration?: string | null;
     domain?: string | null;
-    grid_detail?: string | null;
+    horizontal_cell_count?: number | string | null;
     output_cadence?: string | null;
+    diagnostic_set?: string | null;
   } | null;
   output_validation?: {
     required_fields?: string[];
@@ -151,8 +153,8 @@ type PreRunValidationReport = {
 
 type DryRunReport = {
   scenario_id: string;
-  package_family?: PackageFamily;
-  package_display_name?: string;
+  run_recipe?: RunRecipe;
+  run_recipe_display_name?: string;
   input_source?: string;
   trigger_type?: string | null;
   trigger_parameters?: Record<string, string | number | boolean> | null;
@@ -164,7 +166,7 @@ type DryRunReport = {
   estimated_cost_or_size: string;
   expected_diagnostics: string[];
   expected_outputs?: string[];
-  package_caveats?: string[];
+  run_caveats?: string[];
   manual_validation_status?: string | null;
   visualization_defaults: Record<string, unknown>;
   generated_files: Record<string, string>;
@@ -323,9 +325,12 @@ type CandidateRecipeFitDisplay = {
   caveats: string[];
 };
 
-type PackageFamily = "shallow_cumulus" | "observed_sounding_quicklook" | "deep_convection_trial";
+type RunRecipe =
+  | "generated_reference_lower_atmosphere"
+  | "untriggered_observed_evolution"
+  | "triggered_deep_potential";
 
-type ObservedPackageFamily = "observed_sounding_quicklook" | "deep_convection_trial";
+type ObservedRunRecipe = "untriggered_observed_evolution" | "triggered_deep_potential";
 
 type StoryScore = {
   story: CandidateStoryId;
@@ -530,8 +535,8 @@ type RunStatusResponse = {
   user?: UserRunMetadata | null;
   observed_sounding?: ObservedSoundingSummary | null;
   candidate_screening?: Record<string, unknown> | null;
-  package_family?: PackageFamily | string | null;
-  package_display_name?: string | null;
+  run_recipe?: RunRecipe | string | null;
+  run_recipe_display_name?: string | null;
   input_source?: string | null;
   run_configuration?: RunConfiguration | null;
   pre_run_validation_report?: PreRunValidationReport | null;
@@ -721,12 +726,12 @@ type ResultCard = {
   input_source?: "generated_reference" | "observed_sounding" | string;
   input_source_label?: string;
   observed_sounding?: ObservedSoundingSummary | null;
-  package_family?: string | null;
-  package_display_name?: string | null;
+  run_recipe?: string | null;
+  run_recipe_display_name?: string | null;
   trigger_type?: string | null;
   trigger_parameters?: Record<string, unknown> | null;
   expected_outputs?: string[];
-  package_caveats?: string[];
+  run_caveats?: string[];
   manual_validation_status?: string | null;
   candidate_screening?: Record<string, unknown> | null;
   candidate_hypothesis_comparison?: CandidateHypothesisComparison | null;
@@ -1127,27 +1132,27 @@ const candidateSuggestedTags = [
 ] as const;
 
 const DEFAULT_SHALLOW_RUN_CONFIGURATION: RunConfigurationInput = {
-  duration_preset: "quick_6h",
-  grid_detail_preset: "standard",
-  domain_size_preset: "local_6km",
-  output_cadence_preset: "standard_15min",
-  output_field_density_preset: "analysis",
+  duration: "short_6h",
+  horizontal_cell_count: "cells_64",
+  domain_size: "local_6km",
+  output_cadence: "standard_15min",
+  diagnostic_set: "process",
 };
 
 const DEFAULT_OBSERVED_RUN_CONFIGURATION: RunConfigurationInput = {
-  duration_preset: "quick_6h",
-  grid_detail_preset: "standard",
-  domain_size_preset: "wide_12km",
-  output_cadence_preset: "standard_15min",
-  output_field_density_preset: "analysis",
+  duration: "short_6h",
+  horizontal_cell_count: "cells_128",
+  domain_size: "wide_12km",
+  output_cadence: "standard_15min",
+  diagnostic_set: "process",
 };
 
-const DEFAULT_DEEP_CONVECTION_RUN_CONFIGURATION: RunConfigurationInput = {
-  duration_preset: "quick_6h",
-  grid_detail_preset: "standard",
-  domain_size_preset: "storm_120km",
-  output_cadence_preset: "standard_15min",
-  output_field_density_preset: "rich",
+const DEFAULT_TRIGGERED_DEEP_POTENTIAL_RUN_CONFIGURATION: RunConfigurationInput = {
+  duration: "short_6h",
+  horizontal_cell_count: "cells_128",
+  domain_size: "storm_120km",
+  output_cadence: "standard_15min",
+  diagnostic_set: "full",
 };
 
 class DryRunRequestError extends Error {
@@ -1172,7 +1177,7 @@ async function requestDryRunPackage(
   scenarioId: string,
   controls: Record<string, string | number | boolean>,
   runConfiguration: RunConfigurationInput,
-  packageFamily?: PackageFamily | null,
+  runRecipe?: RunRecipe | null,
   observedSounding?: ObservedSoundingRecord | null,
   candidateScreening?: Record<string, unknown> | null,
   userMetadata?: {
@@ -1188,7 +1193,7 @@ async function requestDryRunPackage(
       scenario_id: scenarioId,
       controls,
       run_configuration: runConfiguration,
-      package_family: packageFamily ?? null,
+      run_recipe: runRecipe ?? null,
       observed_sounding: observedSounding ?? null,
       candidate_screening: candidateScreening ?? null,
       user_name: userMetadata?.name ?? null,
@@ -1714,8 +1719,8 @@ export function App() {
   const [runConfiguration, setRunConfiguration] = useState<RunConfigurationInput>(
     DEFAULT_SHALLOW_RUN_CONFIGURATION,
   );
-  const [observedPackageFamily, setObservedPackageFamily] = useState<ObservedPackageFamily>(
-    "observed_sounding_quicklook",
+  const [observedRunRecipe, setObservedRunRecipe] = useState<ObservedRunRecipe>(
+    "untriggered_observed_evolution",
   );
   const [observedSoundingFilename, setObservedSoundingFilename] = useState<string | null>(null);
   const [observedSoundingText, setObservedSoundingText] = useState<string | null>(null);
@@ -1932,14 +1937,14 @@ export function App() {
     );
     setControls(defaults);
     setRunConfiguration(
-      defaultRunConfigurationForSelection(selectedScenarioId, "observed_sounding_quicklook"),
+      defaultRunConfigurationForSelection(selectedScenarioId, "untriggered_observed_evolution"),
     );
     setObservedSoundingFilename(null);
     setObservedSoundingText(null);
     setObservedSoundingParse(null);
     setObservedSoundingStatus(null);
     setObservedSoundingError(null);
-    setObservedPackageFamily("observed_sounding_quicklook");
+    setObservedRunRecipe("untriggered_observed_evolution");
     setDryRun(null);
     setBlockedPreRunValidationReport(null);
     setRunStatus(null);
@@ -2078,7 +2083,7 @@ export function App() {
   }
 
   function handleSelectScenario(scenarioId: string) {
-    const nextPackageFamily: ObservedPackageFamily = "observed_sounding_quicklook";
+    const nextRunRecipe: ObservedRunRecipe = "untriggered_observed_evolution";
     setSelectedScenarioId(scenarioId);
     setObservedSoundingFilename(null);
     setObservedSoundingText(null);
@@ -2086,8 +2091,8 @@ export function App() {
     setObservedSoundingStatus(null);
     setObservedSoundingError(null);
     setSelectedCandidateScreening(null);
-    setObservedPackageFamily(nextPackageFamily);
-    setRunConfiguration(defaultRunConfigurationForSelection(scenarioId, nextPackageFamily));
+    setObservedRunRecipe(nextRunRecipe);
+    setRunConfiguration(defaultRunConfigurationForSelection(scenarioId, nextRunRecipe));
     setDryRun(null);
     setBlockedPreRunValidationReport(null);
     setRunStatus(null);
@@ -2098,9 +2103,9 @@ export function App() {
     setIngestedResultId(null);
   }
 
-  function handleObservedPackageFamilyChange(packageFamily: ObservedPackageFamily) {
-    setObservedPackageFamily(packageFamily);
-    setRunConfiguration(defaultRunConfigurationForSelection(OBSERVED_SOUNDING_EXPERIMENT_ID, packageFamily));
+  function handleObservedRunRecipeChange(runRecipe: ObservedRunRecipe) {
+    setObservedRunRecipe(runRecipe);
+    setRunConfiguration(defaultRunConfigurationForSelection(OBSERVED_SOUNDING_EXPERIMENT_ID, runRecipe));
     setDryRun(null);
     setBlockedPreRunValidationReport(null);
     setRunStatus(null);
@@ -2296,10 +2301,10 @@ export function App() {
     setObservedSoundingStatus("Candidate loaded into observed-sounding package review");
     setObservedSoundingError(null);
     setSelectedCandidateScreening(candidateScreeningMetadata(candidate, savedCandidate, activeStory));
-    const nextPackageFamily = defaultPackageFamilyForCandidate(candidate, activeStory);
-    setObservedPackageFamily(nextPackageFamily);
+    const nextRunRecipe = defaultRunRecipeForCandidate(candidate, activeStory);
+    setObservedRunRecipe(nextRunRecipe);
     setRunConfiguration(
-      defaultRunConfigurationForSelection(OBSERVED_SOUNDING_EXPERIMENT_ID, nextPackageFamily),
+      defaultRunConfigurationForSelection(OBSERVED_SOUNDING_EXPERIMENT_ID, nextRunRecipe),
     );
     setDryRun(null);
     setBlockedPreRunValidationReport(null);
@@ -2337,7 +2342,7 @@ export function App() {
         selectedScenario.id,
         controls,
         runConfiguration,
-        observedSoundingExperimentSelected ? observedPackageFamily : null,
+        observedSoundingExperimentSelected ? observedRunRecipe : null,
         observedSoundingExperimentSelected ? observedSoundingParse?.selected_sounding : null,
         observedSoundingExperimentSelected ? selectedCandidateScreening : null,
         packageUserMetadata,
@@ -2361,7 +2366,7 @@ export function App() {
     setObservedSoundingError(null);
     setObservedSoundingParse(null);
     setSelectedCandidateScreening(null);
-    setObservedPackageFamily("observed_sounding_quicklook");
+    setObservedRunRecipe("untriggered_observed_evolution");
     setDryRun(null);
     setBlockedPreRunValidationReport(null);
     setRunStatus(null);
@@ -2373,7 +2378,7 @@ export function App() {
       const parsed = await parseObservedSoundingUpload(file.name, text);
       setObservedSoundingParse(parsed);
       setSelectedCandidateScreening(null);
-      setObservedPackageFamily("observed_sounding_quicklook");
+      setObservedRunRecipe("untriggered_observed_evolution");
       setObservedSoundingStatus("Observed sounding validated for package review");
     } catch (caught) {
       setObservedSoundingText(null);
@@ -2399,7 +2404,7 @@ export function App() {
       );
       setObservedSoundingParse(parsed);
       setSelectedCandidateScreening(null);
-      setObservedPackageFamily("observed_sounding_quicklook");
+      setObservedRunRecipe("untriggered_observed_evolution");
       setObservedSoundingStatus("Observed sounding validated for package review");
     } catch (caught) {
       setObservedSoundingError(
@@ -2854,7 +2859,7 @@ export function App() {
           observedSoundingExperimentSelected={observedSoundingExperimentSelected}
           controls={controls}
           runConfiguration={runConfiguration}
-          observedPackageFamily={observedPackageFamily}
+          observedRunRecipe={observedRunRecipe}
           observedSoundingParse={observedSoundingParse}
           observedSoundingStatus={observedSoundingStatus}
           observedSoundingError={observedSoundingError}
@@ -2904,7 +2909,7 @@ export function App() {
             }))
           }
           onRunConfigurationChange={setRunConfiguration}
-          onObservedPackageFamilyChange={handleObservedPackageFamilyChange}
+          onObservedRunRecipeChange={handleObservedRunRecipeChange}
           onObservedSoundingFile={handleObservedSoundingFile}
           onObservedSoundingTimeChange={handleObservedSoundingTimeChange}
           onCandidateStoryFilterChange={setCandidateStoryFilter}
@@ -3004,7 +3009,7 @@ function BuildWorkspace({
   observedSoundingExperimentSelected,
   controls,
   runConfiguration,
-  observedPackageFamily,
+  observedRunRecipe,
   observedSoundingParse,
   observedSoundingStatus,
   observedSoundingError,
@@ -3049,7 +3054,7 @@ function BuildWorkspace({
   onSelectScenario,
   onControlChange,
   onRunConfigurationChange,
-  onObservedPackageFamilyChange,
+  onObservedRunRecipeChange,
   onObservedSoundingFile,
   onObservedSoundingTimeChange,
   onCandidateStoryFilterChange,
@@ -3100,7 +3105,7 @@ function BuildWorkspace({
   observedSoundingExperimentSelected: boolean;
   controls: Record<string, string | number | boolean>;
   runConfiguration: RunConfigurationInput;
-  observedPackageFamily: ObservedPackageFamily;
+  observedRunRecipe: ObservedRunRecipe;
   observedSoundingParse: ObservedSoundingParseResponse | null;
   observedSoundingStatus: string | null;
   observedSoundingError: string | null;
@@ -3145,7 +3150,7 @@ function BuildWorkspace({
   onSelectScenario: (scenarioId: string) => void;
   onControlChange: (controlId: string, value: string) => void;
   onRunConfigurationChange: (configuration: RunConfigurationInput) => void;
-  onObservedPackageFamilyChange: (packageFamily: ObservedPackageFamily) => void;
+  onObservedRunRecipeChange: (runRecipe: ObservedRunRecipe) => void;
   onObservedSoundingFile: (file: File) => void;
   onObservedSoundingTimeChange: (validTimeUtc: string) => void;
   onCandidateStoryFilterChange: (filter: CandidateStoryFilter) => void;
@@ -3191,11 +3196,13 @@ function BuildWorkspace({
   onRetryScenarios: () => void;
 }) {
   const scenarioControlsReady = scenarioLoadState === "loaded" && selectedScenario !== undefined;
-  const selectedDeepConvectionTrial =
-    observedSoundingExperimentSelected && observedPackageFamily === "deep_convection_trial";
+  const selectedTriggeredDeepPotential =
+    observedSoundingExperimentSelected && observedRunRecipe === "triggered_deep_potential";
   const runConfigurationPreview = previewRunConfiguration(
     runConfiguration,
-    observedSoundingExperimentSelected ? observedPackageFamily : "shallow_cumulus",
+    observedSoundingExperimentSelected
+      ? observedRunRecipe
+      : "generated_reference_lower_atmosphere",
   );
 
   return (
@@ -3379,10 +3386,10 @@ function BuildWorkspace({
                     onFile={onObservedSoundingFile}
                     onTimeChange={onObservedSoundingTimeChange}
                   />
-                  <ObservedPackageFamilyPanel
-                    packageFamily={observedPackageFamily}
+                  <ObservedRunRecipePanel
+                    runRecipe={observedRunRecipe}
                     selectedCandidateScreening={selectedCandidateScreening}
-                    onChange={onObservedPackageFamilyChange}
+                    onChange={onObservedRunRecipeChange}
                   />
                 </>
               )}
@@ -3390,7 +3397,7 @@ function BuildWorkspace({
               <RunConfigurationPanel
                 configuration={runConfiguration}
                 preview={runConfigurationPreview}
-                deepConvectionTrial={selectedDeepConvectionTrial}
+                triggeredDeepPotential={selectedTriggeredDeepPotential}
                 onChange={onRunConfigurationChange}
               />
 
@@ -3663,15 +3670,15 @@ function BuildRunActionPanel({
 function RunConfigurationPanel({
   configuration,
   preview,
-  deepConvectionTrial,
+  triggeredDeepPotential,
   onChange,
 }: {
   configuration: RunConfigurationInput;
   preview: RunConfiguration;
-  deepConvectionTrial: boolean;
+  triggeredDeepPotential: boolean;
   onChange: (configuration: RunConfigurationInput) => void;
 }) {
-  const domainOptions = deepConvectionTrial ? DEEP_DOMAIN_OPTIONS : SHALLOW_DOMAIN_OPTIONS;
+  const domainOptions = triggeredDeepPotential ? DEEP_DOMAIN_OPTIONS : SHALLOW_DOMAIN_OPTIONS;
   const update = (key: keyof RunConfigurationInput, value: string) => {
     onChange({ ...configuration, [key]: value });
   };
@@ -3683,7 +3690,7 @@ function RunConfigurationPanel({
           <h3 id="run-configuration-title">Choose what CM1 will actually run</h3>
           <p className="field-help">
             Smoke checks package health. Science configurations are long enough to inspect
-            evolution; cost is controlled by grid/detail, domain, cadence, and fields.
+            evolution; cost is controlled by horizontal cells, domain, cadence, and diagnostics.
           </p>
         </div>
         <StatusBadge
@@ -3696,50 +3703,50 @@ function RunConfigurationPanel({
         <RunConfigurationSelect
           id="run-duration"
           label="Duration"
-          description="Model-time length. Quick science is the shortest normal evolution run."
-          value={configuration.duration_preset}
+          description="Model-time length. Short evolution is the shortest normal science run."
+          value={configuration.duration}
           options={DURATION_OPTIONS}
-          onChange={(value) => update("duration_preset", value)}
+          onChange={(value) => update("duration", value)}
         />
         <RunConfigurationSelect
           id="run-grid"
-          label="Grid / detail"
+          label="Horizontal cells"
           description={
-            deepConvectionTrial
-              ? "Storm-scale spacing; Standard resolves the 120 km domain at 1 km."
-              : "Lower-atmosphere spacing; Standard resolves the local domain at 100 m."
+            triggeredDeepPotential
+              ? "Storm-scale cell budget. CM1 spacing is derived from domain width divided by cells."
+              : "Observed-evolution cell budget. More cells reduce dx/dy and increase compute and output volume."
           }
-          value={configuration.grid_detail_preset}
-          options={GRID_DETAIL_OPTIONS}
-          onChange={(value) => update("grid_detail_preset", value)}
+          value={configuration.horizontal_cell_count}
+          options={HORIZONTAL_CELL_OPTIONS}
+          onChange={(value) => update("horizontal_cell_count", value)}
         />
         <RunConfigurationSelect
           id="run-domain"
           label="Domain size"
           description={
-            deepConvectionTrial
+            triggeredDeepPotential
               ? "Storm-growth domain for triggered-potential experiments."
               : "Observed soundings default wider so winds do not make the setup misleading."
           }
-          value={configuration.domain_size_preset}
+          value={configuration.domain_size}
           options={domainOptions}
-          onChange={(value) => update("domain_size_preset", value)}
+          onChange={(value) => update("domain_size", value)}
         />
         <RunConfigurationSelect
           id="run-cadence"
           label="Output cadence"
           description="Saved-output interval for Results and Explore."
-          value={configuration.output_cadence_preset}
+          value={configuration.output_cadence}
           options={OUTPUT_CADENCE_OPTIONS}
-          onChange={(value) => update("output_cadence_preset", value)}
+          onChange={(value) => update("output_cadence", value)}
         />
         <RunConfigurationSelect
           id="run-fields"
-          label="Output fields"
-          description="Field density controls later diagnostics and storage volume."
-          value={configuration.output_field_density_preset}
-          options={FIELD_DENSITY_OPTIONS}
-          onChange={(value) => update("output_field_density_preset", value)}
+          label="Diagnostic set"
+          description="Controls which CM1 variables are written for Results and Explore. More diagnostics mainly increase disk use and I/O, while enabling better explanations."
+          value={configuration.diagnostic_set}
+          options={DIAGNOSTIC_SET_OPTIONS}
+          onChange={(value) => update("diagnostic_set", value)}
         />
       </div>
 
@@ -4047,7 +4054,7 @@ function ObservedAtmosphereCandidatesPanel({
               onChange={(event) => onStoryFilterChange(event.target.value as CandidateStoryFilter)}
             >
               <option value="all">All screening stories</option>
-              <option value="deep_convection_trial">Deep Convection Trial stories</option>
+              <option value="deep_convection_trial">Deep-convection stories</option>
               <option value="shallow_cumulus_candidate">Cloud-forming shallow cumulus</option>
               <option value="dry_failed_candidate">Dry failed cumulus</option>
               <option value="capped_suppressed_candidate">Capped / suppressed</option>
@@ -4791,82 +4798,83 @@ function ObservedSoundingInputPanel({
   );
 }
 
-function ObservedPackageFamilyPanel({
-  packageFamily,
+function ObservedRunRecipePanel({
+  runRecipe,
   selectedCandidateScreening,
   onChange,
 }: {
-  packageFamily: ObservedPackageFamily;
+  runRecipe: ObservedRunRecipe;
   selectedCandidateScreening: Record<string, unknown> | null;
-  onChange: (packageFamily: ObservedPackageFamily) => void;
+  onChange: (runRecipe: ObservedRunRecipe) => void;
 }) {
-  const selectedDeep = packageFamily === "deep_convection_trial";
-  const packageMismatchWarning = candidatePackageMismatchWarning(
+  const selectedDeep = runRecipe === "triggered_deep_potential";
+  const packageMismatchWarning = candidateRecipeMismatchWarning(
     selectedCandidateScreening,
-    packageFamily,
+    runRecipe,
   );
+  const activeStoryLabel = observedRecipeStoryLabel(selectedCandidateScreening);
   const candidateGuidance = selectedCandidateScreening
-    ? "Candidate screening is ingredient guidance. Choose the package based on what the run can actually test."
-    : "Upload or choose an observed sounding, then choose the CM1 package family to generate.";
-  const workerGuidance =
-    "Run configuration controls duration, grid/detail, domain size, output cadence, and fields separately after the package family is selected.";
+    ? "Candidate screening is ingredient guidance. Pick the run recipe by what CM1 can honestly test."
+    : "Uploaded soundings start as an untriggered observed-atmosphere run. Use a triggered deep-potential recipe only when that is the experiment.";
 
   return (
-    <section className="experiment-summary" aria-labelledby="observed-package-family-title">
+    <section className="experiment-summary" aria-labelledby="observed-run-recipe-title">
       <div className="panel-heading-row">
         <div>
-          <p className="eyebrow">CM1 package family</p>
-          <h3 id="observed-package-family-title">Choose how to try this sounding</h3>
+          <p className="eyebrow">Hypothesis run recipe</p>
+          <h3 id="observed-run-recipe-title">What is this run testing?</h3>
           <p className="field-help">{candidateGuidance}</p>
         </div>
         <StatusBadge
-          label={selectedDeep ? "Three-bubble trigger" : "Observed quick look"}
+          label={selectedDeep ? "Triggered deep potential" : "Untriggered observed evolution"}
           tone={selectedDeep ? "warning" : "neutral"}
         />
       </div>
-      <div className="control-row">
-        <span>
-          <label htmlFor="observed-package-family">
-            <strong>Package type</strong>
-          </label>
-          <small>
-            Deep Convection Trial uses the observed temperature, moisture, and wind profile with an
-            idealized CM1 three-warm-bubble trigger.
-          </small>
-        </span>
-        <select
-          id="observed-package-family"
-          value={packageFamily}
-          onChange={(event) => onChange(event.target.value as ObservedPackageFamily)}
+
+      <div className="button-row" role="group" aria-label="Run recipe">
+        <button
+          type="button"
+          className={!selectedDeep ? "active-control" : "secondary-button"}
+          aria-pressed={!selectedDeep}
+          onClick={() => onChange("untriggered_observed_evolution")}
         >
-          <option value="observed_sounding_quicklook">Observed Sounding Quick Look</option>
-          <option value="deep_convection_trial">Deep Convection Trial</option>
-        </select>
+          Untriggered observed evolution
+        </button>
+        <button
+          type="button"
+          className={selectedDeep ? "active-control" : "secondary-button"}
+          aria-pressed={selectedDeep}
+          onClick={() => onChange("triggered_deep_potential")}
+        >
+          Triggered deep potential
+        </button>
       </div>
+
       {packageMismatchWarning && (
         <div className="validation" role="alert">
           {packageMismatchWarning}
         </div>
       )}
       <dl className="compact-metrics">
+        <Metric label="Screened hypothesis" value={activeStoryLabel} />
         <Metric
-          label="Initiation method"
-          value={selectedDeep ? "Idealized three warm bubbles" : "No deep-convection trigger"}
+          label="Initiation"
+          value={selectedDeep ? "Idealized three warm bubbles" : "No added deep trigger"}
         />
         <Metric
-          label="Domain intent"
+          label="What CM1 can test"
           value={
             selectedDeep
-              ? "Wider box for storm growth and precipitation"
-              : "Current quick-look observed atmosphere path"
+              ? "Triggered deep-convection potential from this observed profile"
+              : "Untriggered cloud, updraft, moisture, and precipitation evolution"
           }
         />
-        <Metric label="Runtime guidance" value={workerGuidance} />
       </dl>
       {selectedDeep && (
         <p className="field-help">
-          This is an idealized CM1 experiment for learning and exploration: try the sounding,
-          inspect the outcome, and learn from the mismatch between the pre-run hypothesis and CM1.
+          This is not normal atmospheric evolution. It adds an idealized trigger so you can inspect
+          whether this observed profile can support deeper convection under a deliberately forced
+          experiment.
         </p>
       )}
     </section>
@@ -6686,7 +6694,7 @@ function ResultNotebookCard({
       {(isValidatedQuickLookBaseline(result) || result.caveats.length > 0) && (
         <p className="secondary-result-note">
           {[
-            isValidatedQuickLookBaseline(result) ? "Validated quick-look baseline" : null,
+            isValidatedQuickLookBaseline(result) ? "Validated reference baseline" : null,
             result.caveats.length > 0 ? caveatLabel(result) : null,
           ]
             .filter(Boolean)
@@ -6704,7 +6712,7 @@ function ResultNotebookCard({
         <Metric label="Max updraft" value={formatNumber(resultMaxUpdraft(result), "m/s")} />
         <Metric label="Min downdraft" value={formatNumber(resultMinDowndraft(result), "m/s")} />
         <Metric label="Cloud top" value={formatNumber(resultCloudTopMeters(result), "m")} />
-        {isDeepConvectionTrial(result) && (
+        {isTriggeredDeepPotentialRun(result) && (
           <Metric label="Deep convection" value={deepConvectionOutcome(result)} />
         )}
         <Metric label="Latest output" value={formatSeconds(resultLatestOutputTime(result))} />
@@ -6837,7 +6845,7 @@ function ResultNotebookCard({
           id="result-tags"
           value={draft.tags}
           onChange={(event) => onDraftChange({ ...draft, tags: event.target.value })}
-          placeholder="baseline, quick-look"
+          placeholder="baseline, reference"
         />
 
         <label htmlFor="result-notes">Notes</label>
@@ -8928,7 +8936,7 @@ function candidateStoryLabel(story: CandidateStoryId | CandidateStoryFilter): st
     case "needs_review":
       return "Needs review";
     case "deep_convection_trial":
-      return "Deep Convection Trial stories";
+      return "Deep-convection stories";
     case "all":
       return "All screening stories";
   }
@@ -8989,20 +8997,20 @@ function candidateSortLabel(sort: CandidateSort): string {
   return labels[sort];
 }
 
-function defaultPackageFamilyForCandidate(
+function defaultRunRecipeForCandidate(
   candidate: SoundingCandidate,
   activeStory?: CandidateStoryId,
-): ObservedPackageFamily {
-  if (activeStory && deepConvectionStoryIds.has(activeStory)) return "deep_convection_trial";
-  if (deepConvectionStoryIds.has(candidate.primary_story)) return "deep_convection_trial";
+): ObservedRunRecipe {
+  if (activeStory && deepConvectionStoryIds.has(activeStory)) return "triggered_deep_potential";
+  if (deepConvectionStoryIds.has(candidate.primary_story)) return "triggered_deep_potential";
   if (
     candidate.story_scores.some(
       (score) => deepConvectionStoryIds.has(score.story) && score.support === "supported",
     )
   ) {
-    return "deep_convection_trial";
+    return "triggered_deep_potential";
   }
-  return "observed_sounding_quicklook";
+  return "untriggered_observed_evolution";
 }
 
 function candidateRecipeFitForStory(
@@ -9039,7 +9047,7 @@ function candidateRecipeFitForStory(
     };
   }
   if (deepConvectionStoryIds.has(story)) {
-    const caveats = ["observed_sounding_quicklook_does_not_test_deep_potential"];
+    const caveats = ["untriggered_observed_evolution_does_not_test_deep_potential"];
     if (candidate.features.observed_wind_available !== true) {
       caveats.push("complete_observed_wind_profile_required_for_deep_potential");
     }
@@ -9047,7 +9055,7 @@ function candidateRecipeFitForStory(
       status: "requires_triggered_deep_potential",
       label: "requires triggered deep-potential run",
       summary:
-        "This story screens deep-convection ingredients. Observed Sounding Quick Look does not test that hypothesis without the triggered deep-potential package.",
+        "This story screens deep-convection ingredients. An untriggered observed-evolution run does not test that hypothesis without the triggered deep-potential recipe.",
       caveats,
     };
   }
@@ -9065,8 +9073,8 @@ function candidateRecipeFitForStory(
       status: "partially_testable",
       label: "partially testable with current observed-sounding run",
       summary:
-        "The current observed-sounding path can inspect capped or suppressed evolution when cap evidence, duration, and output fields are adequate.",
-      caveats: ["run_duration_and_output_fields_must_be_checked_for_cap_story"],
+        "The current observed-sounding path can inspect capped or suppressed evolution when cap evidence, duration, and diagnostics are adequate.",
+      caveats: ["run_duration_and_diagnostics_must_be_checked_for_cap_story"],
     };
   }
   return {
@@ -9074,7 +9082,7 @@ function candidateRecipeFitForStory(
     label: "partially testable with current observed-sounding run",
     summary:
       "The current observed-sounding path can inspect untriggered shallow/evolution behavior, but the recipe still shapes what CM1 can test.",
-    caveats: ["observed_sounding_quicklook_is_recipe_dependent"],
+    caveats: ["untriggered_observed_evolution_is_recipe_dependent"],
   };
 }
 
@@ -9088,9 +9096,9 @@ function isCandidateSuggestedTag(tag: string): tag is (typeof candidateSuggested
   return (candidateSuggestedTags as readonly string[]).includes(tag);
 }
 
-function candidatePackageMismatchWarning(
+function candidateRecipeMismatchWarning(
   selectedCandidateScreening: Record<string, unknown> | null,
-  packageFamily: ObservedPackageFamily,
+  runRecipe: ObservedRunRecipe,
 ): string | null {
   if (!selectedCandidateScreening) return null;
   const activeStory =
@@ -9112,8 +9120,8 @@ function candidatePackageMismatchWarning(
             score.score_0_to_100 > 0 &&
             score.support !== "unavailable",
         )));
-  if (packageFamily === "observed_sounding_quicklook" && hasMeaningfulDeepStory) {
-    return "This candidate was screened for deep-convection potential. Observed Sounding Quick Look does not test that hypothesis. Choose the triggered deep-potential run, or treat this as an untriggered shallow/evolution experiment.";
+  if (runRecipe === "untriggered_observed_evolution" && hasMeaningfulDeepStory) {
+    return "This candidate was screened for deep-convection potential. Untriggered observed evolution does not test that hypothesis. Choose the triggered deep-potential recipe, or treat this as an untriggered evolution experiment.";
   }
   const hasHumidRainyStory =
     activeStory === "humid_rainy_candidate" ||
@@ -9129,6 +9137,25 @@ function candidatePackageMismatchWarning(
     return "This candidate was screened as humid/rainy. Predicted rain behavior needs rain-water, surface-rain, and/or reflectivity outputs to compare later.";
   }
   return null;
+}
+
+function observedRecipeStoryLabel(
+  selectedCandidateScreening: Record<string, unknown> | null,
+): string {
+  if (!selectedCandidateScreening) return "Uploaded observed sounding";
+  if (typeof selectedCandidateScreening.active_story_label === "string") {
+    return selectedCandidateScreening.active_story_label;
+  }
+  if (typeof selectedCandidateScreening.primary_story_label === "string") {
+    return selectedCandidateScreening.primary_story_label;
+  }
+  if (typeof selectedCandidateScreening.active_story === "string") {
+    return candidateStoryLabel(selectedCandidateScreening.active_story as CandidateStoryId);
+  }
+  if (typeof selectedCandidateScreening.primary_story === "string") {
+    return candidateStoryLabel(selectedCandidateScreening.primary_story as CandidateStoryId);
+  }
+  return "Selected candidate hypothesis";
 }
 
 function candidateScreeningStoryScores(
@@ -9351,8 +9378,11 @@ function preRunValidationRunShapeLabel(
   const parts = [
     runShape.duration ? humanize(runShape.duration) : null,
     runShape.domain ? humanize(runShape.domain) : null,
-    runShape.grid_detail ? humanize(runShape.grid_detail) : null,
+    runShape.horizontal_cell_count
+      ? `${runShape.horizontal_cell_count.toLocaleString()} x ${runShape.horizontal_cell_count.toLocaleString()} horizontal cells`
+      : null,
     runShape.output_cadence ? `${humanize(runShape.output_cadence)} output` : null,
+    runShape.diagnostic_set ? `${humanize(runShape.diagnostic_set)} diagnostics` : null,
     typeof runShape.estimated_frames === "number"
       ? `${runShape.estimated_frames.toLocaleString()} saved frames`
       : null,
@@ -9812,20 +9842,25 @@ function parseTags(value: string): string[] {
 
 const DURATION_OPTIONS = [
   { value: "smoke_1h", label: "Smoke check (1 h)" },
-  { value: "quick_6h", label: "Quick science (6 h)" },
-  { value: "standard_12h", label: "Standard science (12 h)" },
+  { value: "short_6h", label: "Short evolution (6 h)" },
+  { value: "standard_12h", label: "Standard evolution (12 h)" },
   { value: "long_24h", label: "Long evolution (24 h)" },
 ];
 
-const GRID_DETAIL_OPTIONS = [
-  { value: "coarse", label: "Coarse" },
-  { value: "standard", label: "Standard" },
-  { value: "fine", label: "Fine" },
+const HORIZONTAL_CELL_OPTIONS = [
+  { value: "cells_64", label: "Scout (64 x 64)" },
+  { value: "cells_96", label: "Light (96 x 96)" },
+  { value: "cells_128", label: "Standard (128 x 128)" },
+  { value: "cells_192", label: "Detailed (192 x 192)" },
+  { value: "cells_256", label: "High detail (256 x 256)" },
+  { value: "cells_384", label: "Very high detail (384 x 384)" },
 ];
 
 const SHALLOW_DOMAIN_OPTIONS = [
   { value: "local_6km", label: "Local 6 km" },
   { value: "wide_12km", label: "Wide 12 km" },
+  { value: "regional_60km", label: "Regional 60 km" },
+  { value: "regional_120km", label: "Regional 120 km" },
 ];
 
 const DEEP_DOMAIN_OPTIONS = [
@@ -9840,18 +9875,18 @@ const OUTPUT_CADENCE_OPTIONS = [
   { value: "detailed_5min", label: "Detailed (5 min)" },
 ];
 
-const FIELD_DENSITY_OPTIONS = [
-  { value: "core", label: "Core" },
-  { value: "analysis", label: "Analysis" },
-  { value: "rich", label: "Rich" },
+const DIAGNOSTIC_SET_OPTIONS = [
+  { value: "essential", label: "Essential" },
+  { value: "process", label: "Process" },
+  { value: "full", label: "Full" },
 ];
 
 function defaultRunConfigurationForSelection(
   scenarioId: string,
-  packageFamily: PackageFamily,
+  runRecipe: RunRecipe,
 ): RunConfigurationInput {
-  if (packageFamily === "deep_convection_trial") {
-    return { ...DEFAULT_DEEP_CONVECTION_RUN_CONFIGURATION };
+  if (runRecipe === "triggered_deep_potential") {
+    return { ...DEFAULT_TRIGGERED_DEEP_POTENTIAL_RUN_CONFIGURATION };
   }
   if (scenarioId === OBSERVED_SOUNDING_EXPERIMENT_ID) {
     return { ...DEFAULT_OBSERVED_RUN_CONFIGURATION };
@@ -9861,16 +9896,18 @@ function defaultRunConfigurationForSelection(
 
 function previewRunConfiguration(
   configuration: RunConfigurationInput,
-  packageFamily: PackageFamily,
+  runRecipe: RunRecipe,
 ): RunConfiguration {
-  const deep = packageFamily === "deep_convection_trial";
-  const duration = durationValue(configuration.duration_preset);
-  const grid = gridValue(configuration.grid_detail_preset, deep);
-  const domain = domainValue(configuration.domain_size_preset, deep);
-  const cadence = cadenceValue(configuration.output_cadence_preset);
-  const fieldDensity = fieldDensityValue(configuration.output_field_density_preset);
-  const nx = Math.max(1, Math.round((domain.xKm * 1000) / grid.dxM));
-  const ny = Math.max(1, Math.round((domain.yKm * 1000) / grid.dxM));
+  const deep = runRecipe === "triggered_deep_potential";
+  const duration = durationValue(configuration.duration);
+  const horizontalCells = horizontalCellValue(configuration.horizontal_cell_count);
+  const domain = domainValue(configuration.domain_size, deep);
+  const cadence = cadenceValue(configuration.output_cadence);
+  const diagnosticSet = diagnosticSetValue(configuration.diagnostic_set);
+  const nx = horizontalCells.cells;
+  const ny = horizontalCells.cells;
+  const dxM = (domain.xKm * 1000) / nx;
+  const dyM = (domain.yKm * 1000) / ny;
   const gridCellCount = nx * ny * domain.nz;
   const expectedFrames = Math.floor(duration.seconds / cadence.seconds) + 1;
   const caveats: string[] = [];
@@ -9881,14 +9918,16 @@ function previewRunConfiguration(
     caveats.push("science_run_configuration_minimum_duration_6h");
   }
   if (deep) {
-    caveats.push("deep_convection_trial_uses_triggered_potential_not_normal_evolution");
+    caveats.push("triggered_deep_potential_is_not_normal_evolution");
   }
-  if (fieldDensity.value === "core") {
-    caveats.push("core_output_density_limits_later_diagnostics");
+  if (diagnosticSet.value === "essential") {
+    caveats.push("essential_diagnostic_set_limits_later_diagnostics");
   }
   if (
-    configuration.grid_detail_preset === "fine" ||
+    horizontalCells.cells >= 256 ||
     domain.value === "wide_12km" ||
+    domain.value === "regional_60km" ||
+    domain.value === "regional_120km" ||
     domain.value === "storm_240km"
   ) {
     caveats.push("configuration_better_suited_to_larger_compute");
@@ -9897,8 +9936,8 @@ function previewRunConfiguration(
     nx,
     ny,
     nz: domain.nz,
-    dx_m: grid.dxM,
-    dy_m: grid.dxM,
+    dx_m: dxM,
+    dy_m: dyM,
     dz_m: domain.dzM,
     model_top_m: domain.modelTopM,
     domain_x_km: domain.xKm,
@@ -9916,19 +9955,19 @@ function previewRunConfiguration(
   return {
     ...configuration,
     configuration_id: [
-      configuration.duration_preset,
-      configuration.grid_detail_preset,
-      configuration.domain_size_preset,
-      configuration.output_cadence_preset,
-      fieldDensity.value,
+      configuration.duration,
+      configuration.horizontal_cell_count,
+      configuration.domain_size,
+      configuration.output_cadence,
+      diagnosticSet.value,
     ].join("__"),
     mode: duration.mode,
-    label: `${duration.label}; ${domain.label}; ${grid.label}; ${cadence.label}`,
+    label: `${duration.label}; ${domain.label}; ${horizontalCells.label}; ${formatMeters(dxM)} dx/dy; ${cadence.label}`,
     duration_seconds: duration.seconds,
     output_cadence_seconds: cadence.seconds,
-    output_field_density_preset: fieldDensity.value,
+    diagnostic_set: diagnosticSet.value,
     cost_runtime_summary: `${hours.toLocaleString()} h model time, ${gridCellCount.toLocaleString()} cells, ${cadenceMinutes.toLocaleString()} min saved-output cadence`,
-    output_volume_summary: `${expectedFrames.toLocaleString()} saved frames, ${fieldDensity.value} output fields, ${gridCellCount.toLocaleString()} cells per frame`,
+    output_volume_summary: `${expectedFrames.toLocaleString()} saved frames, ${diagnosticSet.value} diagnostics, ${gridCellCount.toLocaleString()} cells per frame`,
     cm1_values: cm1Values,
     caveats,
   };
@@ -9937,21 +9976,19 @@ function previewRunConfiguration(
 function durationValue(value: string): { seconds: number; mode: "smoke" | "science"; label: string } {
   if (value === "smoke_1h") return { seconds: 3600, mode: "smoke", label: "Smoke check" };
   if (value === "standard_12h") {
-    return { seconds: 43200, mode: "science", label: "Standard science" };
+    return { seconds: 43200, mode: "science", label: "Standard evolution" };
   }
   if (value === "long_24h") return { seconds: 86400, mode: "science", label: "Long evolution" };
-  return { seconds: 21600, mode: "science", label: "Quick science" };
+  return { seconds: 21600, mode: "science", label: "Short evolution" };
 }
 
-function gridValue(value: string, deep: boolean): { dxM: number; label: string } {
-  if (deep) {
-    if (value === "coarse") return { dxM: 2000, label: "Coarse" };
-    if (value === "fine") return { dxM: 500, label: "Fine" };
-    return { dxM: 1000, label: "Standard" };
-  }
-  if (value === "coarse") return { dxM: 200, label: "Coarse" };
-  if (value === "fine") return { dxM: 50, label: "Fine" };
-  return { dxM: 100, label: "Standard" };
+function horizontalCellValue(value: string): { cells: number; label: string } {
+  if (value === "cells_64") return { cells: 64, label: "Scout 64 x 64" };
+  if (value === "cells_96") return { cells: 96, label: "Light 96 x 96" };
+  if (value === "cells_192") return { cells: 192, label: "Detailed 192 x 192" };
+  if (value === "cells_256") return { cells: 256, label: "High detail 256 x 256" };
+  if (value === "cells_384") return { cells: 384, label: "Very high detail 384 x 384" };
+  return { cells: 128, label: "Standard 128 x 128" };
 }
 
 function domainValue(
@@ -10002,6 +10039,28 @@ function domainValue(
       label: "Wide 12 km",
     };
   }
+  if (value === "regional_60km") {
+    return {
+      value,
+      xKm: 60,
+      yKm: 60,
+      nz: 75,
+      dzM: 40,
+      modelTopM: 18000,
+      label: "Regional 60 km",
+    };
+  }
+  if (value === "regional_120km") {
+    return {
+      value,
+      xKm: 120,
+      yKm: 120,
+      nz: 75,
+      dzM: 40,
+      modelTopM: 18000,
+      label: "Regional 120 km",
+    };
+  }
   return {
     value: "local_6km",
     xKm: 6.4,
@@ -10019,9 +10078,9 @@ function cadenceValue(value: string): { seconds: number; label: string } {
   return { seconds: 900, label: "Standard 15 min" };
 }
 
-function fieldDensityValue(value: string): { value: string } {
-  if (value === "core" || value === "rich") return { value };
-  return { value: "analysis" };
+function diagnosticSetValue(value: string): { value: string } {
+  if (value === "essential" || value === "full") return { value };
+  return { value: "process" };
 }
 
 function runConfigurationGridSummary(configuration: RunConfiguration): string {
@@ -10515,21 +10574,21 @@ function isDryFailedContrast(result: ResultCard): boolean {
 }
 
 function resultStory(result: ResultCard): string {
-  if (isDeepConvectionTrial(result)) {
+  if (isTriggeredDeepPotentialRun(result)) {
     const comparison = result.candidate_hypothesis_comparison;
     if (comparison) {
       return `${comparison.cm1_outcome} Candidate hypothesis ${comparison.match_status_label.toLowerCase()}.`;
     }
     return (
       result.science_summary?.cm1_outcome ??
-      "Deep Convection Trial result is ready for field inspection."
+      "Triggered deep-potential result is ready for field inspection."
     );
   }
   if (isDryFailedContrast(result)) {
     return "Thermals rose, but low-level moisture stayed too dry for meaningful cloud water or rain.";
   }
   if (isValidatedQuickLookBaseline(result)) {
-    return "Cloud water formed in the validated quick-look baseline; vertical motion and rain were both detected.";
+    return "Cloud water formed in the validated reference baseline; vertical motion and rain were both detected.";
   }
   if (cloudOutcome(result) === "Cloud formed") {
     return "Cloud water formed during this run. Open it in Explore to inspect the cloud and updraft structure.";
@@ -10541,7 +10600,7 @@ function resultStory(result: ResultCard): string {
 }
 
 function compactScienceSummary(result: ResultCard): string {
-  if (isDeepConvectionTrial(result)) {
+  if (isTriggeredDeepPotentialRun(result)) {
     const parts = [
       deepConvectionOutcome(result),
       resultMaxUpdraft(result) !== null
@@ -10684,8 +10743,8 @@ function scienceSupportLabel(result: ResultCard): string {
   return "Interesting times limited";
 }
 
-function isDeepConvectionTrial(result: ResultCard): boolean {
-  return result.package_family === "deep_convection_trial";
+function isTriggeredDeepPotentialRun(result: ResultCard): boolean {
+  return result.run_recipe === "triggered_deep_potential";
 }
 
 function deepConvectionOutcome(result: ResultCard): string {
@@ -10717,7 +10776,7 @@ function caveatLabel(result: ResultCard): string {
 }
 
 function cloudOutcome(result: ResultCard): string {
-  if (isDeepConvectionTrial(result)) return deepConvectionOutcome(result);
+  if (isTriggeredDeepPotentialRun(result)) return deepConvectionOutcome(result);
   if (!result.diagnostics_summary) return "Unknown";
   return result.diagnostics_summary.includes("cloud formed") &&
     !result.diagnostics_summary.includes("no cloud formed")

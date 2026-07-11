@@ -33,8 +33,8 @@ Explore = inspect one result with CM1-derived evidence
 Build should be organized around configurable observed-sounding runs. Presets
 are useful starting points, not separate product cages: a user should be able to
 start from a sane preset, inspect the actual CM1-facing settings, and adjust
-duration, grid/detail, output cadence, forcing, and output fields within guarded
-bounds.
+duration, horizontal cell budget, domain size, output cadence, forcing, and
+diagnostic set within guarded bounds.
 
 See [UX Reset: Guided Experiment Notebook](ux-reset-guided-experiment-notebook.md)
 for the PM/design source of truth for future UX work.
@@ -157,21 +157,19 @@ When a candidate is used, its screening story, score, evidence, feature summary,
 and caveats should be copied into package metadata as
 provenance.
 
-When an uploaded or saved observed sounding is package-ready, Build should let
-the user choose an observed-sounding run direction and adjust the explicit
-CM1-facing run configuration. The deep-convection configuration is first-class
-for severe/deep-convection
-observed-sounding experiments: it uses the observed temperature, moisture, and
-complete wind profile through CM1 `isnd = 7`, runs an idealized
-three-warm-bubble trigger (`iinit = 3`), uses a storm-scale model box suitable
-for storm growth and precipitation inspection, requests rain water aloft,
-surface rain, reflectivity, vorticity, and updraft-helicity output, and records
-`package_family = deep_convection_trial` plus trigger, expected-output, caveat,
-and candidate-screening provenance in generated manifests. That internal
-`package_family` value is provenance metadata, not the run-shape default.
-Product copy should describe the run as a deep-convection observed-sounding
-configuration rather than a separate "Trial" status. Quick science
-configurations must still run long enough to be meteorologically useful. Build
+When an uploaded or saved observed sounding is run-ready, Build should let the
+user choose an observed-sounding run recipe and adjust the explicit CM1-facing
+run configuration. The triggered deep-potential recipe is first-class for
+severe/deep-convection observed-sounding experiments: it uses the observed
+temperature, moisture, and complete wind profile through CM1 `isnd = 7`, runs an
+idealized three-warm-bubble trigger (`iinit = 3`), uses a storm-scale model box
+suitable for storm growth and precipitation inspection, requests rain water
+aloft, surface rain, reflectivity, vorticity, and updraft-helicity output, and
+records `run_recipe = triggered_deep_potential` plus trigger, expected-output,
+caveat, and candidate-screening provenance in generated manifests. Product copy
+should describe the run as a triggered deep-potential experiment with explicit
+assumptions and output requirements. Short science configurations must still run
+long enough to be meteorologically useful. Build
 should show expected cost, runtime, and output volume, and note when a configuration is
 better suited to larger compute instead of making machine choice the primary
 product axis. Raw trigger parameters remain
@@ -261,7 +259,7 @@ Exact morphology is not pass/fail. The acceptance question is whether the produc
 2. Choose scenario category.
 3. Select a starting scenario or observed-sounding run direction.
 4. See expected behavior, controls, run cost, and output fields.
-5. Adjust duration, grid/detail, domain, output cadence, and output fields
+5. Adjust duration, horizontal cells, domain, output cadence, and diagnostic set
    before package review.
 
 The Scenario Builder flow is intentionally bounded: it loads
@@ -601,15 +599,15 @@ of truth.
 
 Current defaults are product choices, not compatibility holdovers:
 
-- Baseline lower-atmosphere scenarios default to `quick_6h`, `standard`
-  grid/detail, `local_6km`, `standard_15min`, and `analysis` fields. This keeps
-  the first run cheap enough to iterate while still giving six hours of model
+- Baseline lower-atmosphere scenarios default to `short_6h`, `cells_64`,
+  `local_6km`, `standard_15min`, and `process` diagnostics. This keeps the
+  first run cheap enough to iterate while still giving six hours of model
   evolution and enough fields for Results/Explore diagnostics.
 - Uploaded observed-sounding normal-evolution runs default to the same duration,
-  detail, cadence, and field density, but use `wide_12km` so observed winds do
-  not make the package misleadingly small by default.
-- Deep-convection observed-sounding runs default to `quick_6h`, `standard`
-  storm-scale detail, `storm_120km`, `standard_15min`, and `rich` fields. That
+  cadence, and diagnostic set, but use `cells_128` and `wide_12km` so observed
+  winds do not make the package misleadingly small by default.
+- Triggered deep-potential observed-sounding runs default to `short_6h`,
+  `cells_128`, `storm_120km`, `standard_15min`, and `full` diagnostics. That
   setup is deliberately wider and better instrumented because it is asking a
   storm-scale triggered-potential question.
 - `smoke_1h` is an explicit smoke-check mode for package health, CM1 startup,
@@ -1273,17 +1271,17 @@ The notebook also exposes backend-derived science summary fields such as
 first-cloud time, max `qc`, max updraft, rain onset, latest output time, and
 interesting-time support state so the user can search, filter, and sort the
 experiment list by meaningful scientific evidence rather than raw file order.
-Result Cards must also distinguish generated-reference packages from runs
+Result Cards must also distinguish generated-reference runs from runs
 created from an uploaded observed sounding, preserving station/time/source
 metadata as provenance. Observed-sounding results should read as `Uploaded
-Sounding` in notebook names, scenario labels, and scenario filtering while the
-underlying generated scenario ID remains available in technical details as
-lineage.
-Deep-convection observed-sounding results should retain their package-family
-provenance after ingest: notebook names and scenario labels may identify the
-run as deep convection, while the original observed station/time, generated
-scenario ID, internal `package_family`, trigger metadata, expected outputs,
-caveats, and candidate-screening hypothesis remain available as provenance.
+Sounding` or the active observed run recipe in notebook names, scenario labels,
+and scenario filtering while the underlying generated scenario ID remains
+available in technical details as lineage.
+Triggered deep-potential observed-sounding results should retain their run-recipe
+provenance after ingest: notebook names and scenario labels may identify the run
+as triggered deep potential, while the original observed station/time, generated
+scenario ID, `run_recipe`, trigger metadata, expected outputs, caveats, and
+candidate-screening hypothesis remain available as provenance.
 Technical metadata such as raw lifecycle/product states, run IDs, provenance
 labels, controls, and detailed caveats remain available under disclosure rather
 than dominating the first read. The layout should be mobile-first: cards stack
@@ -1304,9 +1302,9 @@ Explore
 `Build` creates and runs experiments. `Results` reviews, edits, and
 manages experiment results. `Explore` inspects and visualizes one selected
 result's CM1 fields. The app should open on `Results`, because the most useful
-first click path is to choose the validated quick-look Baseline Shallow Cumulus
+first click path is to choose the validated reference Baseline Shallow Cumulus
 result and open it in Explore or 3-D. Results should prioritize completed, ingested, cloud-forming
-quick-look baseline entries ahead of failed/no-cloud or historical
+reference baseline entries ahead of failed/no-cloud or historical
 attempts. User-facing labels should say `Completed CM1 result`, `Ingested`,
 `Needs review`, `Cloud formed`, `No cloud`, and `Rain detected` rather
 than leading with raw lifecycle strings. Raw lifecycle/product/provenance labels
@@ -1550,7 +1548,7 @@ interpolation caveats and rendering provenance must stay available, but long
 technical labels belong under `About this visualization` rather than dominating
 the primary view.
 
-The first 3-D impression should make the validated quick-look baseline obvious:
+The first 3-D impression should make the validated reference baseline obvious:
 opening from Results should land on the first-cloud or max-cloud-water time when
 available, show a visible cloud-water point cloud, show the domain box, axes,
 ground/base plane, current time, and threshold, keep slice planes optional and

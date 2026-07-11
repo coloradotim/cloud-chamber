@@ -89,12 +89,12 @@ class ResultCard(BaseModel):
     input_source: str = "generated_reference"
     input_source_label: str = "Generated reference"
     observed_sounding: dict[str, object] | None = None
-    package_family: str | None = None
-    package_display_name: str | None = None
+    run_recipe: str | None = None
+    run_recipe_display_name: str | None = None
     trigger_type: str | None = None
     trigger_parameters: dict[str, object] | None = None
     expected_outputs: list[str] = Field(default_factory=list)
-    package_caveats: list[str] = Field(default_factory=list)
+    run_caveats: list[str] = Field(default_factory=list)
     manual_validation_status: str | None = None
     candidate_screening: dict[str, object] | None = None
     pre_run_validation_report: dict[str, Any] | None = None
@@ -232,12 +232,12 @@ def _card_from_metadata(
         input_source=metadata.input_source,
         input_source_label=metadata.input_source_label,
         observed_sounding=metadata.observed_sounding,
-        package_family=metadata.package_family,
-        package_display_name=metadata.package_display_name,
+        run_recipe=metadata.run_recipe,
+        run_recipe_display_name=metadata.run_recipe_display_name,
         trigger_type=metadata.trigger_type,
         trigger_parameters=metadata.trigger_parameters,
         expected_outputs=metadata.expected_outputs,
-        package_caveats=metadata.package_caveats,
+        run_caveats=metadata.run_caveats,
         manual_validation_status=metadata.manual_validation_status,
         candidate_screening=metadata.candidate_screening,
         pre_run_validation_report=metadata.pre_run_validation_report,
@@ -246,7 +246,7 @@ def _card_from_metadata(
             f"source_model:{metadata.source_model}",
             f"source_product_state:{metadata.source_product_state}",
             f"result_state:{metadata.result_state}",
-            *([f"package_family:{metadata.package_family}"] if metadata.package_family else []),
+            *([f"run_recipe:{metadata.run_recipe}"] if metadata.run_recipe else []),
         ],
         diagnostics_summary=metadata.diagnostics_summary,
         thermal_fate_label=interpretation.thermal_fate_label if interpretation else None,
@@ -284,30 +284,30 @@ def _card_from_metadata(
 
 
 def _default_result_card_name(metadata: ResultMetadata) -> str:
-    if metadata.package_family == "deep_convection_trial":
+    if metadata.run_recipe == "triggered_deep_potential":
         station_name = _observed_sounding_value(metadata.observed_sounding, "station_name")
         station_id = _observed_sounding_value(metadata.observed_sounding, "station_id")
         if station_name:
-            return f"Deep Convection Trial — {station_name}"
+            return f"Triggered Deep-Potential Experiment — {station_name}"
         if station_id:
-            return f"Deep Convection Trial — {station_id}"
-        return "Deep Convection Trial"
+            return f"Triggered Deep-Potential Experiment — {station_id}"
+        return "Triggered Deep-Potential Experiment"
     if metadata.input_source == "observed_sounding":
         station_name = _observed_sounding_value(metadata.observed_sounding, "station_name")
         station_id = _observed_sounding_value(metadata.observed_sounding, "station_id")
         if station_name:
-            return f"Uploaded Sounding — {station_name}"
+            return f"Untriggered Observed Evolution — {station_name}"
         if station_id:
-            return f"Uploaded Sounding — {station_id}"
-        return "Uploaded Sounding"
+            return f"Untriggered Observed Evolution — {station_id}"
+        return "Untriggered Observed Evolution"
     return metadata.scenario_name or metadata.scenario_id
 
 
 def _display_scenario_name(metadata: ResultMetadata) -> str | None:
-    if metadata.package_family == "deep_convection_trial" and metadata.package_display_name:
-        return metadata.package_display_name
+    if metadata.run_recipe == "triggered_deep_potential" and metadata.run_recipe_display_name:
+        return metadata.run_recipe_display_name
     if metadata.input_source == "observed_sounding":
-        return "Uploaded Sounding"
+        return "Untriggered Observed Evolution"
     return metadata.scenario_name
 
 

@@ -25,10 +25,10 @@ This is a docs and data-contract issue. It does not implement package
 generation, add raw namelist editing, run CM1 in CI, add a generic Compare tab,
 or commit generated artifacts.
 
-The current implementation may keep internal `package_family` metadata such as
-`observed_sounding_quicklook` and `deep_convection_trial` for compatibility.
-Product surfaces should describe the user-facing recipe and question rather
-than turning package-family metadata into rigid product cages.
+The current implementation uses `run_recipe` plus explicit run-configuration
+fields. Product surfaces should describe the user-facing recipe and question;
+there is no separate package-family compatibility layer in the forward
+contract.
 
 ## Core Terms
 
@@ -51,8 +51,7 @@ than turning package-family metadata into rigid product cages.
 
 ## Run Recipe Object
 
-Run recipes should be represented as structured backend-owned data, even while
-the first implementation is static docs plus existing package metadata.
+Run recipes should be represented as structured backend-owned data.
 
 ```yaml
 run_recipe:
@@ -69,12 +68,14 @@ run_recipe:
     | future
   run_shape:
     duration_seconds: number | null
-    grid_detail_preset: string | null
-    domain_width_m: number | null
-    domain_depth_m: number | null
+    horizontal_cell_count: number | null
+    domain_x_m: number | null
+    domain_y_m: number | null
+    dx_m: number | null
+    dy_m: number | null
     model_top_m: number | null
     output_cadence_seconds: number | null
-    output_field_density: minimal | standard | dense | null
+    diagnostic_set: essential | process | full | null
   forcing:
     trigger:
       mode: none | warm_bubble | future_explicit_trigger | unavailable
@@ -112,13 +113,17 @@ run_recipe:
     status: supported | caveated | blocked | future
     caveats: [string]
   cm1_mapping:
-    package_family: observed_sounding_quicklook | deep_convection_trial | future
+    run_recipe:
+      generated_reference_lower_atmosphere
+      | untriggered_observed_evolution
+      | triggered_deep_potential
+      | future
     run_configuration_defaults:
-      duration_preset: string | null
-      grid_detail_preset: string | null
-      domain_size_preset: string | null
-      output_cadence_preset: string | null
-      output_field_density_preset: string | null
+      duration: string | null
+      horizontal_cell_count: string | null
+      domain_size: string | null
+      output_cadence: string | null
+      diagnostic_set: string | null
     namelist_summary: [string]
     runtime_files_needed: [string]
   comparison_contract:
@@ -173,11 +178,11 @@ assumption_set_id: normal_evolution_current_observed_sounding_v1
 assumption_mode: normal_evolution
 run_shape:
   duration_seconds: 21600 | configured
-  grid_detail_preset: coarse | standard | fine
-  domain_width_m: 6400 | 12800 | configured
+  horizontal_cell_count: 64 | 96 | 128 | 192 | 256 | 384 | configured
+  domain_width_m: 6400 | 12800 | 60000 | 120000 | configured
   model_top_m: current observed-sounding LES model top
   output_cadence_seconds: 3600 | 900 | 300 | configured
-  output_field_density: core | analysis | rich
+  diagnostic_set: essential | process | full
 forcing:
   trigger: {mode: none}
   surface_sensible_heat_flux: {mode: current_recipe_default}
@@ -198,7 +203,13 @@ current_support:
     - Current recipe defaults are not a real place/time surface-energy budget.
     - Scores remain ingredient guidance until a predicted signature exists.
 cm1_mapping:
-  package_family: observed_sounding_quicklook
+  run_recipe: untriggered_observed_evolution
+  run_configuration_defaults:
+    duration: short_6h
+    horizontal_cell_count: cells_128
+    domain_size: wide_12km
+    output_cadence: standard_15min
+    diagnostic_set: process
 ```
 
 This recipe can test shallow cloud and dry-failed signatures when the predicted
@@ -227,7 +238,7 @@ current_support:
     - Comparison needs enough model time and cadence to distinguish delayed
       growth from missing output.
 cm1_mapping:
-  package_family: observed_sounding_quicklook
+  run_recipe: untriggered_observed_evolution
 ```
 
 This recipe is a specialized view of the current untriggered observed-sounding
@@ -261,7 +272,7 @@ current_support:
     - `qr` is rain water aloft, `rain` is surface rain, and `dbz` is
       reflectivity; they must be evaluated separately.
 cm1_mapping:
-  package_family: observed_sounding_quicklook
+  run_recipe: untriggered_observed_evolution
 ```
 
 This is the honest bridge for `humid_rainy_candidate`: Cloud Chamber may run a
@@ -279,11 +290,11 @@ assumption_set_id: triggered_deep_potential_warm_bubble_v1
 assumption_mode: triggered_deep_potential
 run_shape:
   duration_seconds: 21600 | configured
-  grid_detail_preset: coarse | standard | fine
+  horizontal_cell_count: 128 | configured
   domain_width_m: 120000 | 160000 | 240000
   model_top_m: 20000
   output_cadence_seconds: 3600 | 900 | 300 | configured
-  output_field_density: rich
+  diagnostic_set: full
 forcing:
   trigger:
     mode: warm_bubble
@@ -316,7 +327,13 @@ current_support:
     - Storm mode, rotation, downdraft, cold pool, and surface rain are outcomes
       to inspect after CM1 completes.
 cm1_mapping:
-  package_family: deep_convection_trial
+  run_recipe: triggered_deep_potential
+  run_configuration_defaults:
+    duration: short_6h
+    horizontal_cell_count: cells_128
+    domain_size: storm_120km
+    output_cadence: standard_15min
+    diagnostic_set: full
 ```
 
 This recipe is first-class. Its caveats are scientific trust boundaries, not a
@@ -338,7 +355,7 @@ required_outputs:
 current_support:
   status: future
 cm1_mapping:
-  package_family: future
+  run_recipe: future
 ```
 
 The current triggered-deep recipe may be a caveated first experiment, but it
@@ -359,7 +376,7 @@ required_outputs:
 current_support:
   status: future
 cm1_mapping:
-  package_family: future
+  run_recipe: future
 ```
 
 Elevated convection is not comparable unless the recipe can represent the
@@ -373,7 +390,7 @@ source layer and forcing assumptions being tested.
 | `dry_failed_candidate` | `observed_normal_evolution_v1` | `testable_now` when duration/cadence can support a no-cloud conclusion | no explicit trigger; current observed-sounding LES defaults; complete observed profile | `qc`, `w`, time coordinate | weak/no cloud with meaningful vertical motion; moisture limitation remains caveated |
 | `capped_suppressed_candidate` | `observed_capped_evolution_v1` | `partially_testable` | no explicit trigger; cap comes from observed profile; enough run time to observe delayed growth | `qc`, `w`, `th`, time and vertical coordinates | reduced cloud depth, delayed cloud, or capped vertical motion |
 | `humid_rainy_candidate` | `surface_forced_moist_evolution_v1` | `partially_testable` until surface flux controls are validated | explicit current or future surface-flux assumptions; no deep trigger; precipitation fields requested | `qc`, `w`, `qr`, `rain`, `dbz` when precipitation is predicted | cloud, rain water aloft, surface rain, and reflectivity evaluated separately |
-| `severe_thunderstorm_environment` | `triggered_deep_potential_v1` | `partially_testable` with current Deep Convection Trial caveats | explicit warm-bubble trigger; complete observed wind profile; storm-scale domain | `qc`, `w`, `qr`, `rain`, `dbz`, updraft diagnostics | whether triggered initiation supports deep convection and precipitation signatures |
+| `severe_thunderstorm_environment` | `triggered_deep_potential_v1` | `partially_testable` with current triggered deep-potential caveats | explicit warm-bubble trigger; complete observed wind profile; storm-scale domain | `qc`, `w`, `qr`, `rain`, `dbz`, updraft diagnostics | whether triggered initiation supports deep convection and precipitation signatures |
 | `supercell_environment` | `triggered_deep_potential_v1` | `partially_testable` | explicit warm-bubble trigger; complete observed wind profile; storm-scale domain; rotation diagnostics caveated | `qc`, `w`, `qr`, `rain`, `dbz`, `u`, `v`, updraft-helicity when available | deep convection and organization evidence; not a tornado or forecast product |
 | `high_cape_pulse_storm` | `triggered_deep_potential_v1` | `partially_testable` | explicit warm-bubble trigger; high-CAPE interpretation caveated until parcel diagnostics are implemented | `qc`, `w`, `qr`, `rain`, `dbz` | strong buoyant updraft and deep cloud under triggered initiation |
 | `dry_microburst_inverted_v` | `triggered_deep_potential_v1` | `partially_testable` only if precipitation/downdraft pathway develops | explicit trigger; precipitation aloft; subcloud dry-layer evidence; downdraft diagnostics caveated | `qr`, `rain`, `w`, `th`, near-surface wind fields when implemented | rain water aloft, downdraft/cooling/outflow evidence; not a wind-gust forecast |
@@ -447,8 +464,8 @@ Comparison rules:
 - Keep `qr` as rain water aloft, `rain` as surface rain or accumulated
   precipitation at ground, and `dbz` as reflectivity.
 
-Do not use Deep Convection Trial trigger-failed language for non-deep recipes
-or for deliberate normal-evolution runs.
+Do not use triggered deep-potential trigger-failed language for non-deep recipes
+or for deliberate untriggered observed-evolution runs.
 
 ## Product Copy Rules
 

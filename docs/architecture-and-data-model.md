@@ -21,10 +21,10 @@ active, incomplete, and non-ingested package/run work; Results owns ingested
 notebook entries and explicit ingested-result cleanup.
 
 Observed-sounding run directions seed a CM1-facing configuration, but they
-should not be modeled as rigid product cages. The data model may keep internal
-`package_family` values as provenance metadata, while the product model treats
-duration, grid/detail, domain, cadence, and output fields as explicit run-builder
-choices.
+should not be modeled as rigid product cages. The data model uses explicit
+`run_recipe` and `run_configuration` values: duration, horizontal cell budget,
+domain, cadence, diagnostic set, forcing assumptions, requested fields, and
+pre-run validation are the run-builder contract.
 
 The first MVP target is a 2024 MacBook Air with 8GB RAM. Design for one local CM1 run at a time, conservative output handling, and backend-side processing/downsampling. Optional cloud compute can be researched later, but it is not part of the core architecture.
 
@@ -113,13 +113,13 @@ story-specific candidate scores. Stable story identifiers are
 `shallow_cumulus_candidate`, `dry_failed_candidate`,
 `capped_suppressed_candidate`, `humid_rainy_candidate`, `needs_review`, and
 `poor_or_incomplete_candidate`; severe/deep-convection story identifiers remain
-pre-run hypotheses for Deep Convection Trial routing. The auditable scoring
+pre-run hypotheses for triggered deep-potential recipe routing. The auditable scoring
 contract lives in
 [contracts/sounding-candidate-screening.md](contracts/sounding-candidate-screening.md).
 Analysis has a default recommendation mode that answers which cached soundings
 look interesting and why, using backend-owned interest reasons and station
 diversity before exposing refinements. It can also target story, story family,
-support state, package readiness, station search, and backend-owned sort keys
+support state, recipe readiness, station search, and backend-owned sort keys
 because the useful sounding depends on the experiment question; shallow-cumulus
 and humid/rainy searches should not imply the same ranked list.
 Missing feature values stay unavailable and sort last instead of being treated
@@ -161,16 +161,15 @@ diagnostics. The browser should consume these diagnostics only through bounded
 backend JSON; it must not parse station text or compute CAPE/CIN/SRH locally.
 
 Sounding story families are architecture planning input until a backend
-screening and package-readiness path supports them. The expanded taxonomy in
+screening and recipe-fit path supports them. The expanded taxonomy in
 [research/expanded-sounding-candidate-taxonomy.md](research/expanded-sounding-candidate-taxonomy.md)
 defines readiness states for severe/deep-convection, boundary-layer, low-cloud,
 and winter/cold-season stories so APIs can distinguish screenable environments
 from runnable configuration paths. Until a story has backend features, scoring
-tests, evidence, caveats, and package-readiness support, it must not be emitted
-as an enabled package-ready label. The first implemented severe/deep-convection
-path is the deep-convection observed-sounding preset, backed internally by
-`package_family = deep_convection_trial`, which treats selected observed
-soundings as pre-run hypotheses for an idealized triggered CM1 experiment.
+tests, evidence, caveats, and recipe-fit support, it must not be emitted as an
+enabled runnable label. The first implemented severe/deep-convection path is the
+triggered deep-potential run recipe, which treats selected observed soundings as
+pre-run hypotheses for an idealized triggered CM1 experiment.
 
 The Build UI consumes this layer through bounded JSON only. `Upload a Sounding`
 loads saved candidates immediately when that experiment is selected, before any
@@ -184,24 +183,23 @@ scores, or sort raw feature values itself. Candidate status is separate from
 run/result status: saved candidates are pre-run hypotheses, while generated
 packages, launched runs, and ingested results remain separate lifecycle objects.
 
-Deep-convection observed-sounding packages extend the same dry-run package
+Triggered deep-potential observed-sounding runs extend the same dry-run package
 contract rather than creating a separate workflow. The package records
-`package_family = deep_convection_trial`, a deep-convection display label,
-`input_source = observed_sounding`, `trigger_type = warm_bubble`, trigger
-metadata, expected output fields, package-family smoke validation status,
-package caveats, and any candidate-screening payload on the run manifest, case
-manifest, and dry-run report. The generated namelist uses the observed
-`input_sounding` route (`isnd = 7`), requires complete usable observed u/v winds,
-selects CM1's built-in three-warm-bubble initialization (`iinit = 3`) with
-`testcase = 0`, uses a storm-scale idealized domain for storm growth, and
-enables rain-water-aloft, surface-rain, reflectivity, vorticity, and
-updraft-helicity output. Manual smoke evidence applies to the package path and
+`run_recipe = triggered_deep_potential`, `input_source = observed_sounding`,
+`trigger_type = warm_bubble`, trigger metadata, expected output fields,
+recipe smoke-validation status, run caveats, and any candidate-screening payload
+on the run manifest, case manifest, and dry-run report. The generated namelist
+uses the observed `input_sounding` route (`isnd = 7`), requires complete usable
+observed u/v winds, selects CM1's built-in three-warm-bubble initialization
+(`iinit = 3`) with `testcase = 0`, uses a storm-scale idealized domain for storm
+growth, and enables rain-water-aloft, surface-rain, reflectivity, vorticity, and
+updraft-helicity output. Manual smoke evidence applies to the recipe path and
 basic run/ingest health; each observed sounding remains an experiment whose
-outcome must be inspected after CM1 completes. The trigger is described as
-fixed v1 package metadata rather than a primary product control. Ingest copies
-the package-family and trigger metadata into result metadata and Result Cards so
-Results and Explore do not lose the distinction between an observed-sounding
-quick look and a deep-convection configured run.
+outcome must be inspected after CM1 completes. The trigger is described as fixed
+v1 recipe metadata rather than a primary product control. Ingest copies the run
+recipe and trigger metadata into result metadata and Result Cards so Results and
+Explore do not lose the distinction between untriggered observed evolution and a
+triggered deep-potential run.
 
 ## Suggested Stack
 
@@ -286,8 +284,8 @@ The earlier Cloud Chamber quick-look derivative is not scientifically accepted: 
 
 The first reference-derived validation run, `dry-run-les-shallowcu-20260522140642`, completed locally with NetCDF output and ingested 7 model-output time steps over 21600 seconds. It produced cloud water and vertical velocity diagnostics, so the architecture should treat the reference-derived package as the recovery baseline and the earlier compact derivative as invalid evidence rather than a tuning base.
 
-Run configuration uses guarded fields for duration, grid/detail, domain size,
-output cadence, output field density, forcing, requested fields, advanced
+Run configuration uses guarded fields for duration, horizontal cell budget,
+domain size, output cadence, diagnostic set, forcing, requested fields, advanced
 CM1-facing values, and a pre-run validation report. Raw numerical timestep is
 not a normal v1 control. Defaults must expose their derived CM1-facing values in
 advanced metadata so dry-run reports and Build UI can show exactly what will be
@@ -1074,10 +1072,10 @@ scenario + controls
 
 Run-configuration metadata should flow through this path: scenario templates
 define editable configuration defaults, generated run packages record the
-selected duration, grid/detail, domain, output cadence, output field density,
-forcing, requested fields, advanced CM1-facing values, and validation report,
-run manifests preserve them during execution, and result metadata keeps them
-available for later inspection.
+selected duration, horizontal cell budget, domain, output cadence, diagnostic
+set, forcing, requested fields, advanced CM1-facing values, and validation
+report, run manifests preserve them during execution, and result metadata keeps
+them available for later inspection.
 
 If size/runtime estimates are not validated yet, manifests and reports should record that explicitly rather than presenting guessed precision.
 

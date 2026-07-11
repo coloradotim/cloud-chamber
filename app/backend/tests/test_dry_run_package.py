@@ -66,8 +66,8 @@ def test_dry_run_manifest_and_report_include_golden_path_metadata(tmp_path: Path
     report = json.loads(result.report_path.read_text())
 
     assert manifest.lifecycle_state.value == "packaged"
-    assert manifest.run_configuration["duration_preset"] == "quick_6h"
-    assert manifest.run_configuration["domain_size_preset"] == "local_6km"
+    assert manifest.run_configuration["duration"] == "short_6h"
+    assert manifest.run_configuration["domain_size"] == "local_6km"
     assert manifest.pre_run_validation_report is not None
     assert manifest.pre_run_validation_report["hypothesis_recipe_alignment"]["status"] == "aligned"
     assert manifest.scenario.id == "baseline-shallow-cumulus"
@@ -75,8 +75,8 @@ def test_dry_run_manifest_and_report_include_golden_path_metadata(tmp_path: Path
     assert report["not_a_completed_cm1_result"] is True
     assert report["cm1_was_launched"] is False
     assert report["estimated_cost_or_size"] == (
-        "Configuration cost depends on duration, grid/detail, domain, cadence, "
-        "and output-field density. Review the CM1-facing values before launch."
+        "Configuration cost depends on duration, horizontal cells, domain, cadence, "
+        "and diagnostic set. Review the CM1-facing values before launch."
     )
     assert report["physical_question"] == manifest.physical_question
     assert report["visualization_defaults"]["primary_field"] == "qc"
@@ -116,7 +116,7 @@ def test_dry_run_package_can_use_observed_igra_sounding(tmp_path: Path) -> None:
     assert manifest.observed_sounding is not None
     assert manifest.observed_sounding["station_id"] == "USM00072558"
     assert manifest.observed_sounding["model_bottom_elevation_m_msl"] == pytest.approx(351.5)
-    assert manifest.run_configuration["domain_size_preset"] == "wide_12km"
+    assert manifest.run_configuration["domain_size"] == "wide_12km"
     assert manifest.run_configuration["cm1_values"]["nx"] == 128
     assert manifest.run_configuration["cm1_values"]["runtime_seconds"] == 21600
     assert manifest.pre_run_validation_report is not None
@@ -166,7 +166,7 @@ def test_deep_convection_trial_package_uses_observed_sounding_and_warm_bubble(
         scenario_data=load_baseline_template(),
         runtime_home=tmp_path,
         run_id="run-deep-convection-trial",
-        package_family="deep_convection_trial",
+        run_recipe="triggered_deep_potential",
         observed_sounding=observed,
         candidate_screening=candidate_screening,
     )
@@ -177,8 +177,8 @@ def test_deep_convection_trial_package_uses_observed_sounding_and_warm_bubble(
     namelist = (result.package_dir / "namelist.input").read_text()
     sounding = (result.package_dir / "input_sounding").read_text()
 
-    assert manifest.package_family == "deep_convection_trial"
-    assert manifest.package_display_name == "Deep Convection Trial"
+    assert manifest.run_recipe == "triggered_deep_potential"
+    assert manifest.run_recipe_display_name == "Triggered Deep-Potential Experiment"
     assert manifest.input_source == "observed_sounding"
     assert manifest.trigger_type == "warm_bubble"
     assert manifest.trigger_parameters == {
@@ -191,11 +191,11 @@ def test_deep_convection_trial_package_uses_observed_sounding_and_warm_bubble(
     }
     assert "dbz" in manifest.expected_outputs
     assert "updraft_helicity" in manifest.expected_outputs
-    assert manifest.manual_validation_status == "deep_convection_trial_package_smoke_validated"
+    assert manifest.manual_validation_status == "triggered_deep_potential_recipe_smoke_validated"
     assert any(
-        "Manual smoke evidence applies to the Deep Convection Trial package family" in caveat
+        "Manual smoke evidence applies to the triggered deep-potential recipe" in caveat
         and "each observed sounding remains an experiment" in caveat
-        for caveat in manifest.package_caveats
+        for caveat in manifest.run_caveats
     )
     assert manifest.candidate_screening == candidate_screening
     assert manifest.pre_run_validation_report is not None
@@ -208,26 +208,26 @@ def test_deep_convection_trial_package_uses_observed_sounding_and_warm_bubble(
     assert manifest.pre_run_validation_report["hypothesis_recipe_alignment"]["status"] == (
         "aligned"
     )
-    assert manifest.run_configuration["duration_preset"] == "quick_6h"
-    assert manifest.run_configuration["domain_size_preset"] == "storm_120km"
-    assert manifest.run_configuration["grid_detail_preset"] == "standard"
-    assert manifest.run_configuration["output_field_density_preset"] == "rich"
-    assert report["package_family"] == "deep_convection_trial"
-    assert report["package_display_name"] == "Deep Convection Trial"
+    assert manifest.run_configuration["duration"] == "short_6h"
+    assert manifest.run_configuration["domain_size"] == "storm_120km"
+    assert manifest.run_configuration["horizontal_cell_count"] == 128
+    assert manifest.run_configuration["diagnostic_set"] == "full"
+    assert report["run_recipe"] == "triggered_deep_potential"
+    assert report["run_recipe_display_name"] == "Triggered Deep-Potential Experiment"
     assert report["trigger_type"] == "warm_bubble"
     assert report["candidate_screening"] == candidate_screening
     assert report["pre_run_validation_report"] == manifest.pre_run_validation_report
     assert "testcase=0" in report["variant_metadata"]["mapping"]
     assert "iinit=3 three-warm-bubble" in report["variant_metadata"]["mapping"]
     assert "reflectivity output" in report["variant_metadata"]["mapping"]
-    assert report["manual_validation_status"] == "deep_convection_trial_package_smoke_validated"
+    assert report["manual_validation_status"] == "triggered_deep_potential_recipe_smoke_validated"
     assert "manual CM1 smoke evidence" in report["cm1_mapping_status"]
     assert "each observed sounding remains an experiment" in report["cm1_mapping_status"]
-    assert case_manifest["package_family"] == "deep_convection_trial"
-    assert case_manifest["contract"]["package_family"] == "deep_convection_trial"
+    assert case_manifest["run_recipe"] == "triggered_deep_potential"
+    assert case_manifest["contract"]["run_recipe"] == "triggered_deep_potential"
     assert (
         case_manifest["contract"]["manual_validation_status"]
-        == "deep_convection_trial_package_smoke_validated"
+        == "triggered_deep_potential_recipe_smoke_validated"
     )
 
     assert "testcase  =  0," in namelist
@@ -243,11 +243,11 @@ def test_deep_convection_trial_package_uses_observed_sounding_and_warm_bubble(
     assert "output_dbz       = 1," in namelist
     assert "output_vort      = 1," in namelist
     assert "output_uh        = 1," in namelist
-    assert "nx           =      120," in namelist
-    assert "ny           =      120," in namelist
+    assert "nx           =      128," in namelist
+    assert "ny           =      128," in namelist
     assert "nz           =      40," in namelist
-    assert "dx     =   1000.0," in namelist
-    assert "dy     =   1000.0," in namelist
+    assert "dx     =   937.5," in namelist
+    assert "dy     =   937.5," in namelist
     assert "dz     =   500.0," in namelist
     assert "dtl    =   6.000," in namelist
     assert "timax  = 21600.0," in namelist
@@ -272,7 +272,7 @@ def test_deep_convection_trial_requires_observed_sounding(tmp_path: Path) -> Non
             scenario_data=load_baseline_template(),
             runtime_home=tmp_path,
             run_id="run-deep-no-sounding",
-            package_family="deep_convection_trial",
+            run_recipe="triggered_deep_potential",
         )
 
 
@@ -296,7 +296,7 @@ def test_pre_run_validation_blocks_deep_hypothesis_on_observed_quicklook(
             scenario_data=load_baseline_template(),
             runtime_home=tmp_path,
             run_id="run-deep-hypothesis-quicklook",
-            package_family="observed_sounding_quicklook",
+            run_recipe="untriggered_observed_evolution",
             observed_sounding=observed,
             candidate_screening=candidate_screening,
         )
@@ -305,7 +305,7 @@ def test_pre_run_validation_blocks_deep_hypothesis_on_observed_quicklook(
     assert report is not None
     assert report["status"] == "blocked"
     assert report["selected_hypothesis"]["story_id"] == "supercell_environment"
-    assert report["selected_run_recipe"]["recipe_id"] == "observed_sounding_quicklook"
+    assert report["selected_run_recipe"]["recipe_id"] == "untriggered_observed_evolution"
     assert report["hypothesis_recipe_alignment"]["status"] == "blocked"
     assert (
         "triggered_deep_potential_warm_bubble_v1"
@@ -315,17 +315,17 @@ def test_pre_run_validation_blocks_deep_hypothesis_on_observed_quicklook(
 
 
 def test_pre_run_validation_blocks_invalid_run_configuration(tmp_path: Path) -> None:
-    with pytest.raises(DryRunPackageError, match="Unknown domain size preset") as excinfo:
+    with pytest.raises(DryRunPackageError, match="Unknown domain size") as excinfo:
         generate_dry_run_package(
             scenario_data=load_baseline_template(),
             runtime_home=tmp_path,
             run_id="run-invalid-domain",
             run_configuration={
-                "duration_preset": "quick_6h",
-                "grid_detail_preset": "standard",
-                "domain_size_preset": "planetary_9000km",
-                "output_cadence_preset": "standard_15min",
-                "output_field_density_preset": "analysis",
+                "duration": "short_6h",
+                "horizontal_cell_count": "cells_128",
+                "domain_size": "planetary_9000km",
+                "output_cadence": "standard_15min",
+                "diagnostic_set": "process",
             },
         )
 
@@ -333,7 +333,7 @@ def test_pre_run_validation_blocks_invalid_run_configuration(tmp_path: Path) -> 
     assert report is not None
     assert report["status"] == "blocked"
     assert report["run_shape_validation"]["domain"] == "planetary_9000km"
-    assert "Unknown domain size preset" in report["blocking_errors"][0]
+    assert "Unknown domain size" in report["blocking_errors"][0]
     assert not (tmp_path / "runs" / "run-invalid-domain").exists()
 
 
@@ -349,7 +349,7 @@ def test_pre_run_validation_caveats_missing_deep_comparison_outputs(
         scenario_data=load_baseline_template(),
         runtime_home=tmp_path,
         run_id="run-deep-core-output",
-        package_family="deep_convection_trial",
+        run_recipe="triggered_deep_potential",
         observed_sounding=observed,
         candidate_screening={
             "candidate_id": "USM00072558-supercell",
@@ -357,11 +357,11 @@ def test_pre_run_validation_caveats_missing_deep_comparison_outputs(
             "active_story": "supercell_environment",
         },
         run_configuration={
-            "duration_preset": "quick_6h",
-            "grid_detail_preset": "standard",
-            "domain_size_preset": "storm_120km",
-            "output_cadence_preset": "standard_15min",
-            "output_field_density_preset": "core",
+            "duration": "short_6h",
+            "horizontal_cell_count": "cells_64",
+            "domain_size": "storm_120km",
+            "output_cadence": "standard_15min",
+            "diagnostic_set": "essential",
         },
     )
 
@@ -392,7 +392,7 @@ def test_deep_convection_trial_requires_observed_wind_components(tmp_path: Path)
             scenario_data=load_baseline_template(),
             runtime_home=tmp_path,
             run_id="run-deep-no-wind",
-            package_family="deep_convection_trial",
+            run_recipe="triggered_deep_potential",
             observed_sounding=no_wind,
         )
 
@@ -420,7 +420,7 @@ def test_deep_convection_trial_requires_complete_rendered_wind_profile(
             scenario_data=load_baseline_template(),
             runtime_home=tmp_path,
             run_id="run-deep-partial-wind",
-            package_family="deep_convection_trial",
+            run_recipe="triggered_deep_potential",
             observed_sounding=missing_mid_profile_wind,
         )
 
@@ -499,11 +499,11 @@ def test_dry_run_package_smoke_mode_is_short_package_health_run(tmp_path: Path) 
         runtime_home=tmp_path,
         run_id="run-006",
         run_configuration={
-            "duration_preset": "smoke_1h",
-            "grid_detail_preset": "standard",
-            "domain_size_preset": "local_6km",
-            "output_cadence_preset": "standard_15min",
-            "output_field_density_preset": "core",
+            "duration": "smoke_1h",
+            "horizontal_cell_count": "cells_128",
+            "domain_size": "local_6km",
+            "output_cadence": "standard_15min",
+            "diagnostic_set": "essential",
         },
     )
     namelist = (result.package_dir / "namelist.input").read_text()
@@ -512,11 +512,11 @@ def test_dry_run_package_smoke_mode_is_short_package_health_run(tmp_path: Path) 
     assert report["run_configuration"]["mode"] == "smoke"
     assert "timax  = 3600.0," in namelist
     assert "tapfrq =  900.0," in namelist
-    assert "nx           =      64," in namelist
-    assert "ny           =      64," in namelist
+    assert "nx           =      128," in namelist
+    assert "ny           =      128," in namelist
     assert "nz           =      75," in namelist
-    assert "dx     =   100.0," in namelist
-    assert "dy     =   100.0," in namelist
+    assert "dx     =   50.0," in namelist
+    assert "dy     =   50.0," in namelist
     assert "dz     =   40.0," in namelist
     assert "ztop      = 18000.0," in namelist
     assert "set_znt    =      0," in namelist
@@ -536,19 +536,19 @@ def test_dry_run_package_explicit_high_detail_configuration_reports_cost(
         runtime_home=tmp_path,
         run_id="run-deep-001",
         run_configuration={
-            "duration_preset": "standard_12h",
-            "grid_detail_preset": "fine",
-            "domain_size_preset": "wide_12km",
-            "output_cadence_preset": "detailed_5min",
-            "output_field_density_preset": "rich",
+            "duration": "standard_12h",
+            "horizontal_cell_count": "cells_256",
+            "domain_size": "wide_12km",
+            "output_cadence": "detailed_5min",
+            "diagnostic_set": "full",
         },
     )
     namelist = (result.package_dir / "namelist.input").read_text()
     report = json.loads(result.report_path.read_text())
     details = report["run_configuration_summary"]
 
-    assert report["run_configuration"]["duration_preset"] == "standard_12h"
-    assert "duration, grid/detail, domain, cadence" in report["estimated_cost_or_size"]
+    assert report["run_configuration"]["duration"] == "standard_12h"
+    assert "duration, horizontal cells, domain, cadence" in report["estimated_cost_or_size"]
     assert details["nx"] == 256
     assert details["ny"] == 256
     assert details["nz"] == 75

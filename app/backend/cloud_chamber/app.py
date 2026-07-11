@@ -123,7 +123,7 @@ class DryRunRequest(BaseModel):
     scenario_id: str = "baseline-shallow-cumulus"
     controls: dict[str, str | float | bool] = Field(default_factory=dict)
     run_configuration: dict[str, object] | None = None
-    package_family: str | None = None
+    run_recipe: str | None = None
     observed_sounding: dict[str, object] | None = None
     candidate_screening: dict[str, object] | None = None
     user_name: str | None = None
@@ -210,7 +210,7 @@ def create_dry_run_package(request: DryRunRequest) -> dict[str, Any]:
             run_id=f"dry-run-{uuid4().hex[:12]}",
             controls=request.controls,
             run_configuration=request.run_configuration,
-            package_family=request.package_family,
+            run_recipe=request.run_recipe,
             observed_sounding=request.observed_sounding,
             candidate_screening=request.candidate_screening,
             user_name=request.user_name,
@@ -858,8 +858,8 @@ def _run_status_payload(status: RunStatus) -> dict[str, object]:
             "user": None,
             "observed_sounding": None,
             "candidate_screening": None,
-            "package_family": None,
-            "package_display_name": None,
+            "run_recipe": None,
+            "run_recipe_display_name": None,
             "input_source": None,
             "run_configuration": None,
             "pre_run_validation_report": None,
@@ -892,8 +892,8 @@ def _run_status_payload(status: RunStatus) -> dict[str, object]:
         "user": manifest.user.model_dump(mode="json"),
         "observed_sounding": manifest.observed_sounding,
         "candidate_screening": manifest.candidate_screening,
-        "package_family": manifest.package_family,
-        "package_display_name": manifest.package_display_name,
+        "run_recipe": manifest.run_recipe,
+        "run_recipe_display_name": manifest.run_recipe_display_name,
         "input_source": manifest.input_source,
         "run_configuration": manifest.run_configuration,
         "pre_run_validation_report": manifest.pre_run_validation_report,

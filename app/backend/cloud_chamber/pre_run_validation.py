@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from cloud_chamber.cm1_input_contract import CM1InputContract, PackageFamily
+from cloud_chamber.cm1_input_contract import CM1InputContract, RunRecipe
 from cloud_chamber.observed_sounding import ObservedSoundingRecord
 from cloud_chamber.run_configuration import resolve_run_configuration
 from cloud_chamber.scenario_schema import ScenarioTemplate
@@ -35,16 +35,16 @@ def build_pre_run_validation_report(
     candidate_screening: dict[str, Any] | None,
 ) -> dict[str, Any]:
     story = _selected_story(candidate_screening)
-    required_outputs = _required_outputs_for_story(story, contract.package_family)
+    required_outputs = _required_outputs_for_story(story, contract.run_recipe)
     missing_outputs = [
         field for field in required_outputs if field not in set(contract.expected_outputs)
     ]
-    alignment = _hypothesis_recipe_alignment(story, contract.package_family)
+    alignment = _hypothesis_recipe_alignment(story, contract.run_recipe)
     blocking_errors = list(alignment["blocking_errors"])
     caveats = _dedupe(
         [
             *contract.run_configuration.caveats,
-            *contract.package_caveats,
+            *contract.run_caveats,
             *alignment["caveats"],
             *[f"missing_required_output_field:{field}" for field in missing_outputs],
         ]
@@ -89,23 +89,23 @@ def blocked_pre_run_validation_report(
     *,
     scenario: ScenarioTemplate,
     controls: dict[str, str | float | bool],
-    package_family: str | None,
+    run_recipe: str | None,
     run_configuration: dict[str, object] | None,
     observed_sounding: dict[str, object] | ObservedSoundingRecord | None,
     candidate_screening: dict[str, Any] | None,
     error_message: str,
 ) -> dict[str, Any]:
-    resolved_family = _family_value(package_family, observed_sounding)
-    run_shape = _run_shape_from_payload(run_configuration, resolved_family)
+    resolved_recipe = _run_recipe_value(run_recipe, observed_sounding)
+    run_shape = _run_shape_from_payload(run_configuration, resolved_recipe)
     story = _selected_story(candidate_screening)
     return {
         "status": "blocked",
         "selected_candidate": _selected_candidate_payload(candidate_screening, observed_sounding),
         "selected_hypothesis": _selected_hypothesis_payload(candidate_screening, story),
         "selected_run_recipe": {
-            "recipe_id": resolved_family,
-            "display_name": _package_display_name(resolved_family),
-            "assumption_set_id": _assumption_set_id(resolved_family),
+            "recipe_id": resolved_recipe,
+            "display_name": _run_recipe_display_name(resolved_recipe),
+            "assumption_set_id": _assumption_set_id(resolved_recipe),
         },
         "hypothesis_recipe_alignment": {
             "status": "blocked",
@@ -121,16 +121,16 @@ def blocked_pre_run_validation_report(
             "caveats": [],
         },
         "run_shape_validation": run_shape,
-        "forcing_validation": _forcing_validation_for_family(resolved_family),
+        "forcing_validation": _forcing_validation_for_recipe(resolved_recipe),
         "output_validation": {
-            "required_fields": _required_outputs_for_story(story, _package_family(resolved_family)),
+            "required_fields": _required_outputs_for_story(story, _run_recipe(resolved_recipe)),
             "enabled_fields": [],
             "missing_fields": [],
         },
         "runtime_file_validation": {
             "required_files": list(scenario.cm1_template.runtime_files_needed),
             "staging_status": "not_reached",
-            "caveats": ["package_generation_blocked_before_runtime_file_staging"],
+            "caveats": ["run_generation_blocked_before_runtime_file_staging"],
         },
         "blocking_errors": [error_message],
         "caveats": [],
@@ -144,7 +144,7 @@ def report_blocks_execution(report: dict[str, Any] | None) -> bool:
 
 def _hypothesis_recipe_alignment(
     story: str | None,
-    package_family: PackageFamily,
+    run_recipe: RunRecipe,
 ) -> dict[str, list[str] | str]:
     if story is None:
         return {
@@ -157,15 +157,15 @@ def _hypothesis_recipe_alignment(
     if story in REVIEW_OR_BLOCKED_STORIES:
         return {
             "status": "blocked",
-            "reasons": ["Selected sounding story is not package-ready."],
-            "missing_assumptions": ["package_ready_candidate_hypothesis"],
+            "reasons": ["Selected sounding story is not ready to run."],
+            "missing_assumptions": ["run_ready_candidate_hypothesis"],
             "blocking_errors": [
-                "Selected candidate story is not package-ready and cannot be packaged honestly."
+                "Selected candidate story is not ready to run and cannot be generated honestly."
             ],
             "caveats": [],
         }
     if story in DEEP_CONVECTION_STORIES:
-        if package_family == PackageFamily.DEEP_CONVECTION_TRIAL:
+        if run_recipe == RunRecipe.TRIGGERED_DEEP_POTENTIAL:
             return {
                 "status": "aligned",
                 "reasons": [
@@ -184,7 +184,7 @@ def _hypothesis_recipe_alignment(
             ],
             "caveats": [],
         }
-    if story in NORMAL_EVOLUTION_STORIES and package_family == PackageFamily.DEEP_CONVECTION_TRIAL:
+    if story in NORMAL_EVOLUTION_STORIES and run_recipe == RunRecipe.TRIGGERED_DEEP_POTENTIAL:
         return {
             "status": "blocked",
             "reasons": [
@@ -253,9 +253,9 @@ def _selected_hypothesis_payload(
 
 def _selected_run_recipe_payload(contract: CM1InputContract) -> dict[str, str]:
     return {
-        "recipe_id": contract.package_family.value,
-        "display_name": contract.package_display_name,
-        "assumption_set_id": _assumption_set_id(contract.package_family.value),
+        "recipe_id": contract.run_recipe.value,
+        "display_name": contract.run_recipe_display_name,
+        "assumption_set_id": _assumption_set_id(contract.run_recipe.value),
     }
 
 
@@ -271,7 +271,7 @@ def _input_validation_payload(
             "model_bottom_elevation": "generated_reference",
             "caveats": [],
         }
-    wind_required = contract.package_family == PackageFamily.DEEP_CONVECTION_TRIAL
+    wind_required = contract.run_recipe == RunRecipe.TRIGGERED_DEEP_POTENTIAL
     wind_status = (
         ("present_required" if wind_required else "present_optional")
         if observed_sounding.wind_handling
@@ -291,17 +291,18 @@ def _input_validation_payload(
 def _run_shape_validation_payload(contract: CM1InputContract) -> dict[str, Any]:
     values = contract.run_configuration.cm1_values
     return {
-        "duration": contract.run_configuration.duration_preset,
+        "duration": contract.run_configuration.duration,
         "duration_seconds": values.runtime_seconds,
-        "domain": contract.run_configuration.domain_size_preset,
+        "domain": contract.run_configuration.domain_size,
         "domain_x_km": values.domain_x_km,
         "domain_y_km": values.domain_y_km,
         "model_top": values.model_top_m,
-        "grid_detail": contract.run_configuration.grid_detail_preset,
+        "horizontal_cell_count": contract.run_configuration.horizontal_cell_count,
         "dx_m": values.dx_m,
         "dy_m": values.dy_m,
-        "output_cadence": contract.run_configuration.output_cadence_preset,
+        "output_cadence": contract.run_configuration.output_cadence,
         "output_cadence_seconds": values.output_cadence_seconds,
+        "diagnostic_set": contract.run_configuration.diagnostic_set,
         "estimated_frames": values.expected_output_frames,
         "estimated_output_volume": contract.run_configuration.output_volume_summary,
     }
@@ -309,25 +310,28 @@ def _run_shape_validation_payload(contract: CM1InputContract) -> dict[str, Any]:
 
 def _run_shape_from_payload(
     run_configuration: dict[str, object] | None,
-    package_family: str,
+    run_recipe: str,
 ) -> dict[str, Any]:
     try:
         resolved = resolve_run_configuration(
             run_configuration=run_configuration,
-            package_family=package_family,
+            run_recipe=run_recipe,
         )
     except ValueError:
         return {
-            "duration": run_configuration.get("duration_preset")
+            "duration": run_configuration.get("duration")
             if isinstance(run_configuration, dict)
             else None,
-            "domain": run_configuration.get("domain_size_preset")
+            "domain": run_configuration.get("domain_size")
             if isinstance(run_configuration, dict)
             else None,
-            "grid_detail": run_configuration.get("grid_detail_preset")
+            "horizontal_cell_count": run_configuration.get("horizontal_cell_count")
             if isinstance(run_configuration, dict)
             else None,
-            "output_cadence": run_configuration.get("output_cadence_preset")
+            "output_cadence": run_configuration.get("output_cadence")
+            if isinstance(run_configuration, dict)
+            else None,
+            "diagnostic_set": run_configuration.get("diagnostic_set")
             if isinstance(run_configuration, dict)
             else None,
             "estimated_frames": None,
@@ -335,30 +339,31 @@ def _run_shape_from_payload(
         }
     values = resolved.cm1_values
     return {
-        "duration": resolved.duration_preset,
+        "duration": resolved.duration,
         "duration_seconds": values.runtime_seconds,
-        "domain": resolved.domain_size_preset,
+        "domain": resolved.domain_size,
         "domain_x_km": values.domain_x_km,
         "domain_y_km": values.domain_y_km,
         "model_top": values.model_top_m,
-        "grid_detail": resolved.grid_detail_preset,
+        "horizontal_cell_count": resolved.horizontal_cell_count,
         "dx_m": values.dx_m,
         "dy_m": values.dy_m,
-        "output_cadence": resolved.output_cadence_preset,
+        "output_cadence": resolved.output_cadence,
         "output_cadence_seconds": values.output_cadence_seconds,
+        "diagnostic_set": resolved.diagnostic_set,
         "estimated_frames": values.expected_output_frames,
         "estimated_output_volume": resolved.output_volume_summary,
     }
 
 
 def _forcing_validation_payload(contract: CM1InputContract) -> dict[str, str]:
-    return _forcing_validation_for_family(contract.package_family.value)
+    return _forcing_validation_for_recipe(contract.run_recipe.value)
 
 
-def _forcing_validation_for_family(package_family: str) -> dict[str, str]:
+def _forcing_validation_for_recipe(run_recipe: str) -> dict[str, str]:
     trigger = (
         "warm_bubble_required_for_triggered_deep_potential"
-        if package_family == PackageFamily.DEEP_CONVECTION_TRIAL.value
+        if run_recipe == RunRecipe.TRIGGERED_DEEP_POTENTIAL.value
         else "none"
     )
     return {
@@ -371,9 +376,9 @@ def _forcing_validation_for_family(package_family: str) -> dict[str, str]:
 
 def _required_outputs_for_story(
     story: str | None,
-    package_family: PackageFamily,
+    run_recipe: RunRecipe,
 ) -> list[str]:
-    if story in DEEP_CONVECTION_STORIES or package_family == PackageFamily.DEEP_CONVECTION_TRIAL:
+    if story in DEEP_CONVECTION_STORIES or run_recipe == RunRecipe.TRIGGERED_DEEP_POTENTIAL:
         return ["qc", "w", "qr", "rain", "dbz", "updraft_helicity"]
     if story == "humid_rainy_candidate":
         return ["qc", "qr", "rain", "dbz"]
@@ -430,36 +435,36 @@ def _number_or_none(payload: dict[str, Any] | None, key: str) -> float | None:
     return float(value) if isinstance(value, int | float) else None
 
 
-def _family_value(
-    package_family: str | None,
+def _run_recipe_value(
+    run_recipe: str | None,
     observed_sounding: dict[str, object] | ObservedSoundingRecord | None,
 ) -> str:
-    if package_family:
-        return package_family
+    if run_recipe:
+        return run_recipe
     if observed_sounding is not None:
-        return PackageFamily.OBSERVED_SOUNDING_QUICKLOOK.value
-    return PackageFamily.SHALLOW_CUMULUS.value
+        return RunRecipe.UNTRIGGERED_OBSERVED_EVOLUTION.value
+    return RunRecipe.GENERATED_REFERENCE_LOWER_ATMOSPHERE.value
 
 
-def _package_family(value: str) -> PackageFamily:
+def _run_recipe(value: str) -> RunRecipe:
     try:
-        return PackageFamily(value)
+        return RunRecipe(value)
     except ValueError:
-        return PackageFamily.SHALLOW_CUMULUS
+        return RunRecipe.GENERATED_REFERENCE_LOWER_ATMOSPHERE
 
 
-def _package_display_name(package_family: str) -> str:
-    if package_family == PackageFamily.DEEP_CONVECTION_TRIAL.value:
-        return "Deep Convection Trial"
-    if package_family == PackageFamily.OBSERVED_SOUNDING_QUICKLOOK.value:
-        return "Observed Sounding Quick Look"
-    return "Baseline Shallow Cumulus"
+def _run_recipe_display_name(run_recipe: str) -> str:
+    if run_recipe == RunRecipe.TRIGGERED_DEEP_POTENTIAL.value:
+        return "Triggered Deep-Potential Experiment"
+    if run_recipe == RunRecipe.UNTRIGGERED_OBSERVED_EVOLUTION.value:
+        return "Untriggered Observed Evolution"
+    return "Generated Lower-Atmosphere Reference"
 
 
-def _assumption_set_id(package_family: str) -> str:
-    if package_family == PackageFamily.DEEP_CONVECTION_TRIAL.value:
+def _assumption_set_id(run_recipe: str) -> str:
+    if run_recipe == RunRecipe.TRIGGERED_DEEP_POTENTIAL.value:
         return "triggered_deep_potential_warm_bubble_v1"
-    if package_family == PackageFamily.OBSERVED_SOUNDING_QUICKLOOK.value:
+    if run_recipe == RunRecipe.UNTRIGGERED_OBSERVED_EVOLUTION.value:
         return "normal_evolution_current_observed_sounding_v1"
     return "generated_reference_lower_atmosphere_v1"
 

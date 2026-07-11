@@ -313,7 +313,7 @@ def test_deep_convection_interesting_times_and_unavailable_diagnostics(
         diagnostics=diagnostics,
         output_manifest=manifest,
         variables=["qc", "w", "qr"],
-        package_family="deep_convection_trial",
+        run_recipe="triggered_deep_potential",
     )
 
     records = {record.key: record for record in product.available_interesting_times}
@@ -435,7 +435,7 @@ def test_non_deep_summary_does_not_emit_deep_convection_outcome(
         diagnostics=diagnostics,
         output_manifest=manifest,
         variables=["qc", "w"],
-        package_family="observed_sounding_quicklook",
+        run_recipe="untriggered_observed_evolution",
     )
 
     records = {record.key: record for record in product.available_interesting_times}
@@ -462,7 +462,7 @@ def test_deep_convection_present_but_unsupported_fields_are_caveated(
         diagnostics=diagnostics,
         output_manifest=manifest,
         variables=["qc", "w", "dbz", "th"],
-        package_family="deep_convection_trial",
+        run_recipe="triggered_deep_potential",
     )
 
     availability = {item.key: item for item in product.science_summary.diagnostic_availability}

@@ -174,7 +174,7 @@ output or a clearly labeled supported diagnostic, not from cloud water alone.
 | Cloud depth/top | `qc`, vertical coordinate, time coordinate | Must report threshold and cloud-top method. |
 | Shallow cloud persistence | `qc`, time coordinate | Needs enough duration and cadence to distinguish transient noise from evolution. |
 | Updraft strength | `w`, time coordinate | May include height/region caveats when available. |
-| Deep breakthrough | `qc`, `w`, vertical coordinate, time coordinate | Deep Convection Trial only until normal-evolution deep signatures are separately validated. |
+| Deep breakthrough | `qc`, `w`, vertical coordinate, time coordinate | Triggered deep-potential recipe only until normal-evolution deep signatures are separately validated. |
 | Rain water aloft | `qr`, time coordinate | User-facing label should say rain water aloft. |
 | Surface rain | `rain` or supported surface precipitation field | Must preserve units and must not be inferred from `qr`. |
 | Reflectivity | `dbz` or supported reflectivity diagnostic | Unsupported reflectivity stays unavailable. |
@@ -195,13 +195,19 @@ shape below is the analyzer payload reference to that contract.
 recommended_run_recipes:
   - recipe_id: string
     label: string
-    package_family: observed_sounding_quicklook | deep_convection_trial | future
+    run_recipe:
+      generated_reference_lower_atmosphere
+      | untriggered_observed_evolution
+      | triggered_deep_potential
+      | future
     run_configuration:
       duration_seconds: number | null
-      grid_detail_preset: string | null
+      horizontal_cell_count: number | null
       domain_width_m: number | null
+      dx_m: number | null
       model_top_m: number | null
       output_cadence_seconds: number | null
+      diagnostic_set: essential | process | full | null
       requested_fields: [string]
       forcing: string
     suitability:
@@ -221,7 +227,7 @@ Examples:
   surface `rain`, and/or `dbz` outputs are enabled according to the predicted
   signature.
 - A supercell or severe-thunderstorm hypothesis requires a triggered
-  deep-potential recipe; Observed Sounding Quick Look can still be run
+  deep-potential recipe; untriggered observed evolution can still be run
   deliberately, but it tests untriggered evolution, not the deep-potential
   hypothesis.
 - A surface-flux or radiation/place-time hypothesis requires the matching

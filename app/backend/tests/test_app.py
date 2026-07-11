@@ -136,11 +136,11 @@ def test_create_dry_run_package_api_uses_runtime_home_override(
             "scenario_id": "baseline-shallow-cumulus",
             "controls": {"low_level_humidity": "more_humid"},
             "run_configuration": {
-                "duration_preset": "quick_6h",
-                "grid_detail_preset": "standard",
-                "domain_size_preset": "local_6km",
-                "output_cadence_preset": "standard_15min",
-                "output_field_density_preset": "analysis",
+                "duration": "short_6h",
+                "horizontal_cell_count": "cells_128",
+                "domain_size": "local_6km",
+                "output_cadence": "standard_15min",
+                "diagnostic_set": "process",
             },
         },
     )
@@ -170,18 +170,18 @@ def test_create_dry_run_package_api_returns_blocked_pre_run_validation_report(
         json={
             "scenario_id": "baseline-shallow-cumulus",
             "run_configuration": {
-                "duration_preset": "quick_6h",
-                "grid_detail_preset": "standard",
-                "domain_size_preset": "not_a_real_domain",
-                "output_cadence_preset": "standard_15min",
-                "output_field_density_preset": "analysis",
+                "duration": "short_6h",
+                "horizontal_cell_count": "cells_128",
+                "domain_size": "not_a_real_domain",
+                "output_cadence": "standard_15min",
+                "diagnostic_set": "process",
             },
         },
     )
 
     assert response.status_code == 400
     detail = response.json()["detail"]
-    assert detail["message"] == "Unknown domain size preset: not_a_real_domain"
+    assert detail["message"] == "Unknown domain size: not_a_real_domain"
     report = detail["pre_run_validation_report"]
     assert report["status"] == "blocked"
     assert report["run_shape_validation"]["domain"] == "not_a_real_domain"
