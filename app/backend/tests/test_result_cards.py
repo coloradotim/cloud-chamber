@@ -55,7 +55,6 @@ def create_completed_result(
         scenario_data=json.loads(BASELINE_TEMPLATE.read_text()),
         runtime_home=settings.runtime_home,
         run_id=run_id,
-        run_size_preset="quick_look",
     )
     netcdf_path = package.package_dir / "cm1out_000001.nc"
     write_result_netcdf(netcdf_path, include_diagnostics_fields=include_diagnostics_fields)
@@ -129,7 +128,8 @@ def test_result_card_created_from_ingested_metadata(tmp_path: Path) -> None:
     assert card.run_id == "run-card"
     assert card.name == "baseline-shallow-cumulus"
     assert card.scenario_id == "baseline-shallow-cumulus"
-    assert card.run_size_preset == "quick_look"
+    assert card.run_configuration["duration_preset"] == "quick_6h"
+    assert card.run_configuration["domain_size_preset"] == "local_6km"
     assert card.physical_question
     assert card.diagnostics_summary == (
         "cloud formed; rain water aloft detected; surface rain reached ground; "

@@ -78,7 +78,7 @@ class ResultCard(BaseModel):
     protected: bool = False
     scenario_id: str
     scenario_name: str | None = None
-    run_size_preset: str
+    run_configuration: dict[str, object]
     physical_question: str
     controls: dict[str, str | float | bool] = Field(default_factory=dict)
     status: str
@@ -220,7 +220,7 @@ def _card_from_metadata(
         protected=state.protected or state.saved,
         scenario_id=metadata.scenario_id,
         scenario_name=scenario_name,
-        run_size_preset=metadata.run_size_preset,
+        run_configuration=metadata.run_configuration,
         physical_question=metadata.physical_question,
         controls=metadata.controls,
         status=metadata.result_state if not state.saved else "saved_result_notebook_entry",

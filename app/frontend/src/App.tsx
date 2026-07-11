@@ -19,15 +19,6 @@ type ScenarioControl = {
   options: ControlOption[];
 };
 
-type RunSizePreset = {
-  id: string;
-  label: string;
-  purpose: string;
-  expected_runtime: string;
-  confidence: string;
-  output_notes: string;
-};
-
 type Scenario = {
   id: string;
   display_name: string;
@@ -39,7 +30,6 @@ type Scenario = {
   warnings: string[];
   limitations: string[];
   controls: ScenarioControl[];
-  run_size_presets: RunSizePreset[];
 };
 
 type ScenarioResponse = {
@@ -47,8 +37,54 @@ type ScenarioResponse = {
   scenarios: Scenario[];
 };
 
-type RunSizeDetails = {
-  preset: string;
+type RunConfigurationInput = {
+  duration_preset: string;
+  grid_detail_preset: string;
+  domain_size_preset: string;
+  output_cadence_preset: string;
+  output_field_density_preset: string;
+};
+
+type RunConfigurationCM1Values = {
+  nx: number;
+  ny: number;
+  nz: number;
+  dx_m: number;
+  dy_m: number;
+  dz_m: number;
+  model_top_m: number;
+  domain_x_km: number;
+  domain_y_km: number;
+  time_step_seconds: number;
+  runtime_seconds: number;
+  output_cadence_seconds: number;
+  restart_cadence_seconds: number;
+  rayleigh_damping_start_m: number;
+  expected_output_frames: number;
+  grid_cell_count: number;
+};
+
+type RunConfiguration = RunConfigurationInput & {
+  configuration_id: string;
+  mode: "smoke" | "science";
+  label: string;
+  duration_seconds: number;
+  output_cadence_seconds: number;
+  cost_runtime_summary: string;
+  output_volume_summary: string;
+  cm1_values: RunConfigurationCM1Values;
+  caveats: string[];
+};
+
+type RunConfigurationSummary = {
+  configuration_id: string;
+  mode: "smoke" | "science";
+  label: string;
+  duration_preset: string;
+  grid_detail_preset: string;
+  domain_size_preset: string;
+  output_cadence_preset: string;
+  output_field_density_preset: string;
   runtime_seconds: number;
   output_cadence_seconds: number;
   expected_output_frames: number;
@@ -62,12 +98,11 @@ type RunSizeDetails = {
   time_step_seconds: number;
   time_step_note?: string;
   grid_cell_count: number;
-  grid_cell_multiplier_vs_standard: number;
-  time_step_multiplier_vs_standard: number;
-  output_frame_multiplier_vs_standard: number;
-  estimated_compute_multiplier_vs_standard: number;
-  estimated_output_volume_multiplier_vs_standard: number;
-  target_wall_clock_multiplier_vs_standard: string;
+  grid_cell_multiplier_vs_default: number;
+  time_step_multiplier_vs_default: number;
+  output_frame_multiplier_vs_default: number;
+  estimated_compute_multiplier_vs_default: number;
+  estimated_output_volume_multiplier_vs_default: number;
   cost_warning: string;
   validation_note: string;
 };
@@ -81,9 +116,9 @@ type DryRunReport = {
   trigger_parameters?: Record<string, string | number | boolean> | null;
   physical_question: string;
   controls: Record<string, string | number | boolean>;
-  run_size_preset: string;
+  run_configuration: RunConfiguration;
+  run_configuration_summary?: RunConfigurationSummary;
   estimated_cost_or_size: string;
-  run_size_details?: RunSizeDetails;
   expected_diagnostics: string[];
   expected_outputs?: string[];
   package_caveats?: string[];
@@ -455,6 +490,7 @@ type RunStatusResponse = {
   package_family?: PackageFamily | string | null;
   package_display_name?: string | null;
   input_source?: string | null;
+  run_configuration?: RunConfiguration | null;
 };
 
 type RunQueueEntry = {
@@ -630,7 +666,7 @@ type ResultCard = {
   protected: boolean;
   scenario_id: string;
   scenario_name: string | null;
-  run_size_preset: string;
+  run_configuration: RunConfiguration;
   physical_question: string;
   controls: Record<string, string | number | boolean>;
   status: string;
@@ -699,7 +735,6 @@ type ResultsSortKey =
 type ResultsFilterState = {
   search: string;
   scenario: string;
-  preset: string;
   cloud: ResultsBooleanFilter;
   rain: ResultsBooleanFilter;
   sort: ResultsSortKey;
@@ -712,7 +747,7 @@ type RunStorageEntry = {
   lifecycle_state: string | null;
   validation_status: string | null;
   product_state: string | null;
-  run_size_preset: string | null;
+  run_configuration: RunConfiguration | null;
   created_at: string | null;
   updated_at: string | null;
   saved: boolean;
@@ -1045,6 +1080,30 @@ const candidateSuggestedTags = [
   "Needs review",
 ] as const;
 
+const DEFAULT_SHALLOW_RUN_CONFIGURATION: RunConfigurationInput = {
+  duration_preset: "quick_6h",
+  grid_detail_preset: "standard",
+  domain_size_preset: "local_6km",
+  output_cadence_preset: "standard_15min",
+  output_field_density_preset: "analysis",
+};
+
+const DEFAULT_OBSERVED_RUN_CONFIGURATION: RunConfigurationInput = {
+  duration_preset: "quick_6h",
+  grid_detail_preset: "standard",
+  domain_size_preset: "wide_12km",
+  output_cadence_preset: "standard_15min",
+  output_field_density_preset: "analysis",
+};
+
+const DEFAULT_DEEP_CONVECTION_RUN_CONFIGURATION: RunConfigurationInput = {
+  duration_preset: "quick_6h",
+  grid_detail_preset: "standard",
+  domain_size_preset: "storm_120km",
+  output_cadence_preset: "standard_15min",
+  output_field_density_preset: "rich",
+};
+
 async function fetchScenarioCatalog(): Promise<ScenarioResponse> {
   const response = await fetch("/api/scenarios");
   if (!response.ok) {
@@ -1056,7 +1115,7 @@ async function fetchScenarioCatalog(): Promise<ScenarioResponse> {
 async function requestDryRunPackage(
   scenarioId: string,
   controls: Record<string, string | number | boolean>,
-  runSizePreset: string,
+  runConfiguration: RunConfigurationInput,
   packageFamily?: PackageFamily | null,
   observedSounding?: ObservedSoundingRecord | null,
   candidateScreening?: Record<string, unknown> | null,
@@ -1072,7 +1131,7 @@ async function requestDryRunPackage(
     body: JSON.stringify({
       scenario_id: scenarioId,
       controls,
-      run_size_preset: runSizePreset,
+      run_configuration: runConfiguration,
       package_family: packageFamily ?? null,
       observed_sounding: observedSounding ?? null,
       candidate_screening: candidateScreening ?? null,
@@ -1562,7 +1621,9 @@ export function App() {
   const [scenarios, setScenarios] = useState<Scenario[]>([]);
   const [selectedScenarioId, setSelectedScenarioId] = useState("baseline-shallow-cumulus");
   const [controls, setControls] = useState<Record<string, string | number | boolean>>({});
-  const [runSizePreset, setRunSizePreset] = useState("quick_look");
+  const [runConfiguration, setRunConfiguration] = useState<RunConfigurationInput>(
+    DEFAULT_SHALLOW_RUN_CONFIGURATION,
+  );
   const [observedPackageFamily, setObservedPackageFamily] = useState<ObservedPackageFamily>(
     "observed_sounding_quicklook",
   );
@@ -1777,7 +1838,9 @@ export function App() {
       selectedScenario.controls.map((control) => [control.id, control.default]),
     );
     setControls(defaults);
-    setRunSizePreset(selectedScenario.run_size_presets[0]?.id ?? "quick_look");
+    setRunConfiguration(
+      defaultRunConfigurationForSelection(selectedScenarioId, "observed_sounding_quicklook"),
+    );
     setObservedSoundingFilename(null);
     setObservedSoundingText(null);
     setObservedSoundingParse(null);
@@ -1791,7 +1854,7 @@ export function App() {
     setLanWorkerError(null);
     setLanWorkerActionStatus(null);
     setIngestedResultId(null);
-  }, [selectedScenario]);
+  }, [selectedScenario, selectedScenarioId]);
 
   useEffect(() => {
     if (!observedSoundingExperimentSelected) return;
@@ -1921,6 +1984,7 @@ export function App() {
   }
 
   function handleSelectScenario(scenarioId: string) {
+    const nextPackageFamily: ObservedPackageFamily = "observed_sounding_quicklook";
     setSelectedScenarioId(scenarioId);
     setObservedSoundingFilename(null);
     setObservedSoundingText(null);
@@ -1928,7 +1992,20 @@ export function App() {
     setObservedSoundingStatus(null);
     setObservedSoundingError(null);
     setSelectedCandidateScreening(null);
-    setObservedPackageFamily("observed_sounding_quicklook");
+    setObservedPackageFamily(nextPackageFamily);
+    setRunConfiguration(defaultRunConfigurationForSelection(scenarioId, nextPackageFamily));
+    setDryRun(null);
+    setRunStatus(null);
+    setRunWorkflowError(null);
+    setLanWorkerStatus(null);
+    setLanWorkerError(null);
+    setLanWorkerActionStatus(null);
+    setIngestedResultId(null);
+  }
+
+  function handleObservedPackageFamilyChange(packageFamily: ObservedPackageFamily) {
+    setObservedPackageFamily(packageFamily);
+    setRunConfiguration(defaultRunConfigurationForSelection(OBSERVED_SOUNDING_EXPERIMENT_ID, packageFamily));
     setDryRun(null);
     setRunStatus(null);
     setRunWorkflowError(null);
@@ -2123,7 +2200,11 @@ export function App() {
     setObservedSoundingStatus("Candidate loaded into observed-sounding package review");
     setObservedSoundingError(null);
     setSelectedCandidateScreening(candidateScreeningMetadata(candidate, savedCandidate, activeStory));
-    setObservedPackageFamily(defaultPackageFamilyForCandidate(candidate, activeStory));
+    const nextPackageFamily = defaultPackageFamilyForCandidate(candidate, activeStory);
+    setObservedPackageFamily(nextPackageFamily);
+    setRunConfiguration(
+      defaultRunConfigurationForSelection(OBSERVED_SOUNDING_EXPERIMENT_ID, nextPackageFamily),
+    );
     setDryRun(null);
     setRunStatus(null);
     setRunWorkflowError(null);
@@ -2157,7 +2238,7 @@ export function App() {
       const result = await requestDryRunPackage(
         selectedScenario.id,
         controls,
-        runSizePreset,
+        runConfiguration,
         observedSoundingExperimentSelected ? observedPackageFamily : null,
         observedSoundingExperimentSelected ? observedSoundingParse?.selected_sounding : null,
         observedSoundingExperimentSelected ? selectedCandidateScreening : null,
@@ -2669,7 +2750,7 @@ export function App() {
           selectedScenarioId={selectedScenarioId}
           observedSoundingExperimentSelected={observedSoundingExperimentSelected}
           controls={controls}
-          runSizePreset={runSizePreset}
+          runConfiguration={runConfiguration}
           observedPackageFamily={observedPackageFamily}
           observedSoundingParse={observedSoundingParse}
           observedSoundingStatus={observedSoundingStatus}
@@ -2718,8 +2799,8 @@ export function App() {
               [id]: value,
             }))
           }
-          onRunSizeChange={setRunSizePreset}
-          onObservedPackageFamilyChange={setObservedPackageFamily}
+          onRunConfigurationChange={setRunConfiguration}
+          onObservedPackageFamilyChange={handleObservedPackageFamilyChange}
           onObservedSoundingFile={handleObservedSoundingFile}
           onObservedSoundingTimeChange={handleObservedSoundingTimeChange}
           onCandidateStoryFilterChange={setCandidateStoryFilter}
@@ -2818,7 +2899,7 @@ function BuildWorkspace({
   selectedScenarioId,
   observedSoundingExperimentSelected,
   controls,
-  runSizePreset,
+  runConfiguration,
   observedPackageFamily,
   observedSoundingParse,
   observedSoundingStatus,
@@ -2862,7 +2943,7 @@ function BuildWorkspace({
   failedAutoFinalizingWorkerRunIds,
   onSelectScenario,
   onControlChange,
-  onRunSizeChange,
+  onRunConfigurationChange,
   onObservedPackageFamilyChange,
   onObservedSoundingFile,
   onObservedSoundingTimeChange,
@@ -2913,7 +2994,7 @@ function BuildWorkspace({
   selectedScenarioId: string;
   observedSoundingExperimentSelected: boolean;
   controls: Record<string, string | number | boolean>;
-  runSizePreset: string;
+  runConfiguration: RunConfigurationInput;
   observedPackageFamily: ObservedPackageFamily;
   observedSoundingParse: ObservedSoundingParseResponse | null;
   observedSoundingStatus: string | null;
@@ -2957,7 +3038,7 @@ function BuildWorkspace({
   failedAutoFinalizingWorkerRunIds: Set<string>;
   onSelectScenario: (scenarioId: string) => void;
   onControlChange: (controlId: string, value: string) => void;
-  onRunSizeChange: (presetId: string) => void;
+  onRunConfigurationChange: (configuration: RunConfigurationInput) => void;
   onObservedPackageFamilyChange: (packageFamily: ObservedPackageFamily) => void;
   onObservedSoundingFile: (file: File) => void;
   onObservedSoundingTimeChange: (validTimeUtc: string) => void;
@@ -3004,11 +3085,12 @@ function BuildWorkspace({
   onRetryScenarios: () => void;
 }) {
   const scenarioControlsReady = scenarioLoadState === "loaded" && selectedScenario !== undefined;
-  const selectedRunSize = selectedScenario?.run_size_presets.find(
-    (preset) => preset.id === runSizePreset,
-  );
   const selectedDeepConvectionTrial =
     observedSoundingExperimentSelected && observedPackageFamily === "deep_convection_trial";
+  const runConfigurationPreview = previewRunConfiguration(
+    runConfiguration,
+    observedSoundingExperimentSelected ? observedPackageFamily : "shallow_cumulus",
+  );
 
   return (
     <section className="workspace-section" aria-labelledby="build-title">
@@ -3193,39 +3275,18 @@ function BuildWorkspace({
                   />
                   <ObservedPackageFamilyPanel
                     packageFamily={observedPackageFamily}
-                    runSizePreset={runSizePreset}
                     selectedCandidateScreening={selectedCandidateScreening}
                     onChange={onObservedPackageFamilyChange}
                   />
                 </>
               )}
 
-              <label className="field-label" htmlFor="run-size">
-                Run-size preset
-              </label>
-              <select
-                id="run-size"
-                value={runSizePreset}
-                onChange={(event) => onRunSizeChange(event.target.value)}
-              >
-                {selectedScenario.run_size_presets.map((preset) => (
-                  <option key={preset.id} value={preset.id}>
-                    {preset.label}
-                  </option>
-                ))}
-              </select>
-              {selectedRunSize && (
-                <p className="field-help">
-                  {runSizeHelpText(selectedRunSize, selectedDeepConvectionTrial)}
-                </p>
-              )}
-              {runSizePreset === "deep_overnight" && (
-                <p className="field-help">
-                  Deep Overnight is the expensive opt-in preset. It targets roughly 10-12x Standard
-                  wall-clock for higher-resolution Explore/timelapse data; validate runtime and
-                  storage locally before treating it as calibrated.
-                </p>
-              )}
+              <RunConfigurationPanel
+                configuration={runConfiguration}
+                preview={runConfigurationPreview}
+                deepConvectionTrial={selectedDeepConvectionTrial}
+                onChange={onRunConfigurationChange}
+              />
 
               {validationMessages.length > 0 && (
                 <div className="validation" role="alert">
@@ -3325,6 +3386,170 @@ function BuildControlRow({
         onChange={(event) => onChange(event.target.value)}
       >
         {control.options.map((option) => (
+          <option key={option.value} value={option.value}>
+            {option.label}
+          </option>
+        ))}
+      </select>
+    </div>
+  );
+}
+
+function RunConfigurationPanel({
+  configuration,
+  preview,
+  deepConvectionTrial,
+  onChange,
+}: {
+  configuration: RunConfigurationInput;
+  preview: RunConfiguration;
+  deepConvectionTrial: boolean;
+  onChange: (configuration: RunConfigurationInput) => void;
+}) {
+  const domainOptions = deepConvectionTrial ? DEEP_DOMAIN_OPTIONS : SHALLOW_DOMAIN_OPTIONS;
+  const update = (key: keyof RunConfigurationInput, value: string) => {
+    onChange({ ...configuration, [key]: value });
+  };
+  return (
+    <section className="experiment-summary" aria-labelledby="run-configuration-title">
+      <div className="panel-heading-row">
+        <div>
+          <p className="eyebrow">Run configuration</p>
+          <h3 id="run-configuration-title">Choose what CM1 will actually run</h3>
+          <p className="field-help">
+            Smoke checks package health. Science configurations are long enough to inspect
+            evolution; cost is controlled by grid/detail, domain, cadence, and fields.
+          </p>
+        </div>
+        <StatusBadge
+          label={preview.mode === "smoke" ? "Smoke check" : "Science run"}
+          tone={preview.mode === "smoke" ? "warning" : "good"}
+        />
+      </div>
+
+      <div className="run-configuration-grid">
+        <RunConfigurationSelect
+          id="run-duration"
+          label="Duration"
+          description="Model-time length. Quick science is the shortest normal evolution run."
+          value={configuration.duration_preset}
+          options={DURATION_OPTIONS}
+          onChange={(value) => update("duration_preset", value)}
+        />
+        <RunConfigurationSelect
+          id="run-grid"
+          label="Grid / detail"
+          description={
+            deepConvectionTrial
+              ? "Storm-scale spacing; Standard resolves the 120 km domain at 1 km."
+              : "Lower-atmosphere spacing; Standard resolves the local domain at 100 m."
+          }
+          value={configuration.grid_detail_preset}
+          options={GRID_DETAIL_OPTIONS}
+          onChange={(value) => update("grid_detail_preset", value)}
+        />
+        <RunConfigurationSelect
+          id="run-domain"
+          label="Domain size"
+          description={
+            deepConvectionTrial
+              ? "Storm-growth domain for triggered-potential experiments."
+              : "Observed soundings default wider so winds do not make the setup misleading."
+          }
+          value={configuration.domain_size_preset}
+          options={domainOptions}
+          onChange={(value) => update("domain_size_preset", value)}
+        />
+        <RunConfigurationSelect
+          id="run-cadence"
+          label="Output cadence"
+          description="Saved-output interval for Results and Explore."
+          value={configuration.output_cadence_preset}
+          options={OUTPUT_CADENCE_OPTIONS}
+          onChange={(value) => update("output_cadence_preset", value)}
+        />
+        <RunConfigurationSelect
+          id="run-fields"
+          label="Output fields"
+          description="Field density controls later diagnostics and storage volume."
+          value={configuration.output_field_density_preset}
+          options={FIELD_DENSITY_OPTIONS}
+          onChange={(value) => update("output_field_density_preset", value)}
+        />
+      </div>
+
+      <dl className="compact-metrics">
+        <Metric label="Selected setup" value={preview.label} />
+        <Metric label="Runtime / saved frames" value={runConfigurationTimingSummary(preview)} />
+        <Metric label="Grid" value={runConfigurationGridSummary(preview)} />
+        <Metric label="Output volume" value={preview.output_volume_summary} />
+      </dl>
+
+      {preview.mode === "smoke" && (
+        <p className="field-help">
+          Smoke mode is only for package health and CM1 startup behavior; it should not be used to
+          judge normal atmospheric evolution.
+        </p>
+      )}
+      {preview.caveats.includes("configuration_better_suited_to_larger_compute") && (
+        <p className="field-help">
+          This configuration may be better suited to larger compute. Cloud Chamber will still show
+          the CM1-facing values before launch.
+        </p>
+      )}
+
+      <details className="technical-details">
+        <summary>CM1-facing values</summary>
+        <dl className="compact-metrics">
+          <Metric label="nx / ny / nz" value={`${preview.cm1_values.nx} / ${preview.cm1_values.ny} / ${preview.cm1_values.nz}`} />
+          <Metric label="dx / dy / dz" value={`${formatMeters(preview.cm1_values.dx_m)} / ${formatMeters(preview.cm1_values.dy_m)} / ${formatMeters(preview.cm1_values.dz_m)}`} />
+          <Metric label="Model top" value={formatMeters(preview.cm1_values.model_top_m)} />
+          <Metric label="Timestep" value={formatSeconds(preview.cm1_values.time_step_seconds)} />
+          <Metric
+            label="Saved output cadence"
+            value={formatSeconds(preview.cm1_values.output_cadence_seconds)}
+          />
+          <Metric
+            label="Rayleigh damping start"
+            value={formatMeters(preview.cm1_values.rayleigh_damping_start_m)}
+          />
+        </dl>
+      </details>
+    </section>
+  );
+}
+
+function RunConfigurationSelect({
+  id,
+  label,
+  description,
+  value,
+  options,
+  onChange,
+}: {
+  id: string;
+  label: string;
+  description: string;
+  value: string;
+  options: { value: string; label: string }[];
+  onChange: (value: string) => void;
+}) {
+  const descriptionId = `${id}-description`;
+  return (
+    <div className="run-configuration-control">
+      <span>
+        <label htmlFor={id}>
+          <strong>{label}</strong>
+        </label>
+        <small id={descriptionId}>{description}</small>
+      </span>
+      <select
+        id={id}
+        value={value}
+        aria-describedby={descriptionId}
+        onChange={(event) => onChange(event.target.value)}
+      >
+        {options.map((option) => (
           <option key={option.value} value={option.value}>
             {option.label}
           </option>
@@ -4295,12 +4520,10 @@ function ObservedSoundingInputPanel({
 
 function ObservedPackageFamilyPanel({
   packageFamily,
-  runSizePreset,
   selectedCandidateScreening,
   onChange,
 }: {
   packageFamily: ObservedPackageFamily;
-  runSizePreset: string;
   selectedCandidateScreening: Record<string, unknown> | null;
   onChange: (packageFamily: ObservedPackageFamily) => void;
 }) {
@@ -4313,11 +4536,7 @@ function ObservedPackageFamilyPanel({
     ? "Candidate screening is ingredient guidance. Choose the package based on what the run can actually test."
     : "Upload or choose an observed sounding, then choose the CM1 package family to generate.";
   const workerGuidance =
-    selectedDeep && runSizePreset !== "quick_look"
-      ? "Standard and Deep tiers should usually run on the LAN worker."
-      : selectedDeep
-        ? "Quick Look is the smallest Deep Convection Trial and may be reasonable locally."
-        : "Quick Look keeps the current observed-sounding package path.";
+    "Run configuration controls duration, grid/detail, domain size, output cadence, and fields separately after the package family is selected.";
 
   return (
     <section className="experiment-summary" aria-labelledby="observed-package-family-title">
@@ -4493,7 +4712,6 @@ function NotebookWorkspace({
 }) {
   const [filters, setFilters] = useState<ResultsFilterState>(DEFAULT_RESULTS_FILTERS);
   const scenarioOptions = useMemo(() => resultScenarioOptions(results), [results]);
-  const presetOptions = useMemo(() => resultPresetOptions(results), [results]);
   const filteredResults = useMemo(() => filterAndSortResults(results, filters), [results, filters]);
   const filtersActive = resultsFiltersActive(filters);
 
@@ -4502,7 +4720,6 @@ function NotebookWorkspace({
       <ResultsFilterBar
         filters={filters}
         scenarioOptions={scenarioOptions}
-        presetOptions={presetOptions}
         totalCount={results.length}
         visibleCount={filteredResults.length}
         onChange={setFilters}
@@ -4561,7 +4778,7 @@ function ExploreResultSummary({ result }: { result: ResultCard }) {
         <h3>{result.name}</h3>
         <p>
           {result.scenario_name ?? humanize(result.scenario_id)} ·{" "}
-          {humanize(result.run_size_preset)}
+          {resultRunConfigurationLabel(result.run_configuration)}
           {result.completed_at ? ` · ${formatDate(result.completed_at)}` : ""}
         </p>
         <p>{resultStory(result)}</p>
@@ -4761,19 +4978,19 @@ function LocalRunWorkflowPanel({
                     : "No generated inputs reported"
                 }
               />
-              {dryRun.report.run_size_details && (
+              {dryRun.report.run_configuration_summary && (
                 <>
                   <Metric
                     label="Generated grid"
-                    value={runSizeGridSummary(dryRun.report.run_size_details)}
+                    value={runConfigurationSummaryGrid(dryRun.report.run_configuration_summary)}
                   />
                   <Metric
                     label="Runtime / saved frames"
-                    value={runSizeTimingSummary(dryRun.report.run_size_details)}
+                    value={runConfigurationSummaryTiming(dryRun.report.run_configuration_summary)}
                   />
                   <Metric
-                    label="Estimated multipliers"
-                    value={runSizeMultiplierSummary(dryRun.report.run_size_details)}
+                    label="Estimated output volume"
+                    value={runConfigurationSummaryMultiplier(dryRun.report.run_configuration_summary)}
                   />
                 </>
               )}
@@ -4794,13 +5011,11 @@ function LocalRunWorkflowPanel({
               A generated package is not a completed CM1 result. Launch, output detection, ingest,
               and saved result review are separate states.
             </p>
-            {dryRun.report.run_size_preset === "deep_overnight" && (
-              <>
-                <p className="state-note">{dryRun.report.estimated_cost_or_size}</p>
-                {dryRun.report.run_size_details?.time_step_note && (
-                  <p className="state-note">{dryRun.report.run_size_details.time_step_note}</p>
-                )}
-              </>
+            {dryRun.report.run_configuration_summary && (
+              <p className="state-note">
+                {dryRun.report.estimated_cost_or_size}{" "}
+                {dryRun.report.run_configuration_summary.time_step_note}
+              </p>
             )}
           </>
         ) : (
@@ -4952,21 +5167,24 @@ function LocalRunWorkflowPanel({
             <summary>Technical package details</summary>
             <dl className="compact-metrics">
               <Metric label="Scenario ID" value={dryRun.report.scenario_id} />
-              <Metric label="Run-size preset" value={humanize(dryRun.report.run_size_preset)} />
+              <Metric
+                label="Run configuration"
+                value={dryRun.report.run_configuration.label}
+              />
               <Metric label="Cost / size" value={dryRun.report.estimated_cost_or_size} />
-              {dryRun.report.run_size_details && (
+              {dryRun.report.run_configuration_summary && (
                 <>
                   <Metric
                     label="Output cadence"
-                    value={`${dryRun.report.run_size_details.output_cadence_seconds.toLocaleString()} s`}
+                    value={`${dryRun.report.run_configuration_summary.output_cadence_seconds.toLocaleString()} s`}
                   />
                   <Metric
                     label="Model top"
-                    value={`${(dryRun.report.run_size_details.model_top_m / 1000).toLocaleString()} km`}
+                    value={`${(dryRun.report.run_configuration_summary.model_top_m / 1000).toLocaleString()} km`}
                   />
                   <Metric
                     label="Grid cells"
-                    value={dryRun.report.run_size_details.grid_cell_count.toLocaleString()}
+                    value={dryRun.report.run_configuration_summary.grid_cell_count.toLocaleString()}
                   />
                 </>
               )}
@@ -5418,7 +5636,9 @@ function PipelineRunCard({
       </div>
       <p>
         {humanize(result?.scenario_id ?? run.scenario_id ?? "unknown scenario")} ·{" "}
-        {humanize(result?.run_size_preset ?? run.run_size_preset ?? "preset unknown")}
+        {result
+          ? resultRunConfigurationLabel(result.run_configuration)
+          : runConfigurationLabel(run.run_configuration)}
       </p>
       <p className="state-note">
         {pipelineRunOutputSummary(run, result)} · Local package {formatBytes(run.size_bytes)}
@@ -5845,7 +6065,7 @@ function workerProgressSummary(run: RunStorageEntry): string | null {
 
 function workerEstimatedFinish(run: RunStorageEntry): string | null {
   if (!run.worker_started_at) return null;
-  const expectedFrames = expectedOutputFramesForPreset(run.run_size_preset);
+  const expectedFrames = run.run_configuration?.cm1_values.expected_output_frames ?? null;
   if (!expectedFrames) return null;
   const netcdfCount = run.worker_netcdf_count ?? 0;
   const observedModelFrames = Math.max(0, netcdfCount - 1);
@@ -5858,13 +6078,6 @@ function workerEstimatedFinish(run: RunStorageEntry): string | null {
   const remainingMs = totalMs - elapsedMs;
   if (!Number.isFinite(remainingMs) || remainingMs <= 0) return null;
   return `Approx finish ${formatDurationFromNow(remainingMs)} (${observedModelFrames}/${expectedFrames} output frames)`;
-}
-
-function expectedOutputFramesForPreset(preset: string | null): number | null {
-  if (preset === "quick_look") return 13;
-  if (preset === "standard") return 7;
-  if (preset === "deep_overnight") return 73;
-  return null;
 }
 
 function elapsedRuntimeLabel(progress: RunProgressResponse | null | undefined): string {
@@ -5972,7 +6185,6 @@ function selectedControlOption(
 function ResultsFilterBar({
   filters,
   scenarioOptions,
-  presetOptions,
   totalCount,
   visibleCount,
   onChange,
@@ -5980,7 +6192,6 @@ function ResultsFilterBar({
 }: {
   filters: ResultsFilterState;
   scenarioOptions: Array<{ value: string; label: string }>;
-  presetOptions: Array<{ value: string; label: string }>;
   totalCount: number;
   visibleCount: number;
   onChange: (filters: ResultsFilterState) => void;
@@ -6020,20 +6231,6 @@ function ResultsFilterBar({
           >
             <option value="all">All scenarios</option>
             {scenarioOptions.map((option) => (
-              <option key={option.value} value={option.value}>
-                {option.label}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label>
-          Run size
-          <select
-            value={filters.preset}
-            onChange={(event) => update({ preset: event.target.value })}
-          >
-            <option value="all">All presets</option>
-            {presetOptions.map((option) => (
               <option key={option.value} value={option.value}>
                 {option.label}
               </option>
@@ -6151,7 +6348,7 @@ function ExperimentNotebookList({
                 </button>
                 <p className="experiment-subtitle">
                   {result.scenario_name ?? humanize(result.scenario_id)} ·{" "}
-                  {humanize(result.run_size_preset)} ·{" "}
+                  {resultRunConfigurationLabel(result.run_configuration)} ·{" "}
                   {formatDate(result.completed_at ?? result.created_at)}
                 </p>
                 <div className="badge-row">
@@ -6225,7 +6422,7 @@ function ResultNotebookCard({
           <h3>{result.name}</h3>
           <p>
             {result.scenario_name ?? humanize(result.scenario_id)} ·{" "}
-            {humanize(result.run_size_preset)}
+            {resultRunConfigurationLabel(result.run_configuration)}
           </p>
         </div>
       </div>
@@ -9333,33 +9530,254 @@ function parseTags(value: string): string[] {
   );
 }
 
+const DURATION_OPTIONS = [
+  { value: "smoke_1h", label: "Smoke check (1 h)" },
+  { value: "quick_6h", label: "Quick science (6 h)" },
+  { value: "standard_12h", label: "Standard science (12 h)" },
+  { value: "long_24h", label: "Long evolution (24 h)" },
+];
+
+const GRID_DETAIL_OPTIONS = [
+  { value: "coarse", label: "Coarse" },
+  { value: "standard", label: "Standard" },
+  { value: "fine", label: "Fine" },
+];
+
+const SHALLOW_DOMAIN_OPTIONS = [
+  { value: "local_6km", label: "Local 6 km" },
+  { value: "wide_12km", label: "Wide 12 km" },
+];
+
+const DEEP_DOMAIN_OPTIONS = [
+  { value: "storm_120km", label: "Storm 120 km" },
+  { value: "storm_160km", label: "Storm 160 km" },
+  { value: "storm_240km", label: "Storm 240 km" },
+];
+
+const OUTPUT_CADENCE_OPTIONS = [
+  { value: "sparse_60min", label: "Sparse (60 min)" },
+  { value: "standard_15min", label: "Standard (15 min)" },
+  { value: "detailed_5min", label: "Detailed (5 min)" },
+];
+
+const FIELD_DENSITY_OPTIONS = [
+  { value: "core", label: "Core" },
+  { value: "analysis", label: "Analysis" },
+  { value: "rich", label: "Rich" },
+];
+
+function defaultRunConfigurationForSelection(
+  scenarioId: string,
+  packageFamily: PackageFamily,
+): RunConfigurationInput {
+  if (packageFamily === "deep_convection_trial") {
+    return { ...DEFAULT_DEEP_CONVECTION_RUN_CONFIGURATION };
+  }
+  if (scenarioId === OBSERVED_SOUNDING_EXPERIMENT_ID) {
+    return { ...DEFAULT_OBSERVED_RUN_CONFIGURATION };
+  }
+  return { ...DEFAULT_SHALLOW_RUN_CONFIGURATION };
+}
+
+function previewRunConfiguration(
+  configuration: RunConfigurationInput,
+  packageFamily: PackageFamily,
+): RunConfiguration {
+  const deep = packageFamily === "deep_convection_trial";
+  const duration = durationValue(configuration.duration_preset);
+  const grid = gridValue(configuration.grid_detail_preset, deep);
+  const domain = domainValue(configuration.domain_size_preset, deep);
+  const cadence = cadenceValue(configuration.output_cadence_preset);
+  const fieldDensity = fieldDensityValue(configuration.output_field_density_preset);
+  const nx = Math.max(1, Math.round((domain.xKm * 1000) / grid.dxM));
+  const ny = Math.max(1, Math.round((domain.yKm * 1000) / grid.dxM));
+  const gridCellCount = nx * ny * domain.nz;
+  const expectedFrames = Math.floor(duration.seconds / cadence.seconds) + 1;
+  const caveats: string[] = [];
+  if (duration.mode === "smoke") {
+    caveats.push("short_smoke_mode_is_for_package_health_not_science_evolution");
+  }
+  if (duration.mode === "science") {
+    caveats.push("science_run_configuration_minimum_duration_6h");
+  }
+  if (deep) {
+    caveats.push("deep_convection_trial_uses_triggered_potential_not_normal_evolution");
+  }
+  if (fieldDensity.value === "core") {
+    caveats.push("core_output_density_limits_later_diagnostics");
+  }
+  if (
+    configuration.grid_detail_preset === "fine" ||
+    domain.value === "wide_12km" ||
+    domain.value === "storm_240km"
+  ) {
+    caveats.push("configuration_better_suited_to_larger_compute");
+  }
+  const cm1Values: RunConfigurationCM1Values = {
+    nx,
+    ny,
+    nz: domain.nz,
+    dx_m: grid.dxM,
+    dy_m: grid.dxM,
+    dz_m: domain.dzM,
+    model_top_m: domain.modelTopM,
+    domain_x_km: domain.xKm,
+    domain_y_km: domain.yKm,
+    time_step_seconds: deep ? 6 : 3,
+    runtime_seconds: duration.seconds,
+    output_cadence_seconds: cadence.seconds,
+    restart_cadence_seconds: Math.max(cadence.seconds, Math.min(duration.seconds, 10800)),
+    rayleigh_damping_start_m: deep ? 15000 : 2500,
+    expected_output_frames: expectedFrames,
+    grid_cell_count: gridCellCount,
+  };
+  const hours = Number((duration.seconds / 3600).toFixed(1));
+  const cadenceMinutes = Number((cadence.seconds / 60).toFixed(1));
+  return {
+    ...configuration,
+    configuration_id: [
+      configuration.duration_preset,
+      configuration.grid_detail_preset,
+      configuration.domain_size_preset,
+      configuration.output_cadence_preset,
+      fieldDensity.value,
+    ].join("__"),
+    mode: duration.mode,
+    label: `${duration.label}; ${domain.label}; ${grid.label}; ${cadence.label}`,
+    duration_seconds: duration.seconds,
+    output_cadence_seconds: cadence.seconds,
+    output_field_density_preset: fieldDensity.value,
+    cost_runtime_summary: `${hours.toLocaleString()} h model time, ${gridCellCount.toLocaleString()} cells, ${cadenceMinutes.toLocaleString()} min saved-output cadence`,
+    output_volume_summary: `${expectedFrames.toLocaleString()} saved frames, ${fieldDensity.value} output fields, ${gridCellCount.toLocaleString()} cells per frame`,
+    cm1_values: cm1Values,
+    caveats,
+  };
+}
+
+function durationValue(value: string): { seconds: number; mode: "smoke" | "science"; label: string } {
+  if (value === "smoke_1h") return { seconds: 3600, mode: "smoke", label: "Smoke check" };
+  if (value === "standard_12h") {
+    return { seconds: 43200, mode: "science", label: "Standard science" };
+  }
+  if (value === "long_24h") return { seconds: 86400, mode: "science", label: "Long evolution" };
+  return { seconds: 21600, mode: "science", label: "Quick science" };
+}
+
+function gridValue(value: string, deep: boolean): { dxM: number; label: string } {
+  if (deep) {
+    if (value === "coarse") return { dxM: 2000, label: "Coarse" };
+    if (value === "fine") return { dxM: 500, label: "Fine" };
+    return { dxM: 1000, label: "Standard" };
+  }
+  if (value === "coarse") return { dxM: 200, label: "Coarse" };
+  if (value === "fine") return { dxM: 50, label: "Fine" };
+  return { dxM: 100, label: "Standard" };
+}
+
+function domainValue(
+  value: string,
+  deep: boolean,
+): { value: string; xKm: number; yKm: number; nz: number; dzM: number; modelTopM: number; label: string } {
+  if (deep) {
+    if (value === "storm_160km") {
+      return {
+        value,
+        xKm: 160,
+        yKm: 160,
+        nz: 40,
+        dzM: 500,
+        modelTopM: 20000,
+        label: "Storm 160 km",
+      };
+    }
+    if (value === "storm_240km") {
+      return {
+        value,
+        xKm: 240,
+        yKm: 240,
+        nz: 40,
+        dzM: 500,
+        modelTopM: 20000,
+        label: "Storm 240 km",
+      };
+    }
+    return {
+      value: "storm_120km",
+      xKm: 120,
+      yKm: 120,
+      nz: 40,
+      dzM: 500,
+      modelTopM: 20000,
+      label: "Storm 120 km",
+    };
+  }
+  if (value === "wide_12km") {
+    return {
+      value,
+      xKm: 12.8,
+      yKm: 12.8,
+      nz: 75,
+      dzM: 40,
+      modelTopM: 18000,
+      label: "Wide 12 km",
+    };
+  }
+  return {
+    value: "local_6km",
+    xKm: 6.4,
+    yKm: 6.4,
+    nz: 75,
+    dzM: 40,
+    modelTopM: 18000,
+    label: "Local 6 km",
+  };
+}
+
+function cadenceValue(value: string): { seconds: number; label: string } {
+  if (value === "sparse_60min") return { seconds: 3600, label: "Sparse 60 min" };
+  if (value === "detailed_5min") return { seconds: 300, label: "Detailed 5 min" };
+  return { seconds: 900, label: "Standard 15 min" };
+}
+
+function fieldDensityValue(value: string): { value: string } {
+  if (value === "core" || value === "rich") return { value };
+  return { value: "analysis" };
+}
+
+function runConfigurationGridSummary(configuration: RunConfiguration): string {
+  const values = configuration.cm1_values;
+  return `${values.nx} x ${values.ny} x ${values.nz}; dx/dy ${formatMeters(values.dx_m)}, dz ${formatMeters(values.dz_m)}`;
+}
+
+function runConfigurationTimingSummary(configuration: RunConfiguration): string {
+  const values = configuration.cm1_values;
+  return `${formatModelTime(values.runtime_seconds)} runtime; ${formatSeconds(values.output_cadence_seconds)} output; ${values.expected_output_frames.toLocaleString()} saved frames; ${formatSeconds(values.time_step_seconds)} timestep`;
+}
+
 function formatSeconds(value: number | null): string {
   if (value === null) return "Unavailable";
   return `${value.toLocaleString()} s`;
 }
 
-function runSizeHelpText(preset: RunSizePreset, deepConvectionTrial: boolean): string {
-  const purpose = preset.purpose.replace(/[.?!]+$/, "");
-  if (!deepConvectionTrial) {
-    return `${purpose}. Expected runtime: ${preset.expected_runtime}. Confidence: ${preset.confidence}. Output: ${preset.output_notes}.`;
-  }
-  const tierGuidance =
-    preset.id === "quick_look"
-      ? "This is the smallest triggered deep-convection package, but it uses a wider storm-growth domain than the shallow-cumulus quick look; local runtime can be longer."
-      : "This triggered deep-convection tier is intended for the LAN worker because it uses a wider domain and longer run/output targets.";
-  return `${purpose}. ${tierGuidance} Confidence: ${preset.confidence}. Output: ${preset.output_notes}.`;
+function runConfigurationLabel(configuration: RunConfiguration | null | undefined): string {
+  if (!configuration) return "Run configuration unavailable";
+  return configuration.label || humanize(configuration.configuration_id);
 }
 
-function runSizeGridSummary(details: RunSizeDetails): string {
+function resultRunConfigurationLabel(configuration: RunConfiguration): string {
+  return runConfigurationLabel(configuration);
+}
+
+function runConfigurationSummaryGrid(details: RunConfigurationSummary): string {
   return `${details.nx} x ${details.ny} x ${details.nz}; dx/dy ${formatMeters(details.dx_m)}, dz ${formatMeters(details.dz_m)}`;
 }
 
-function runSizeTimingSummary(details: RunSizeDetails): string {
+function runConfigurationSummaryTiming(details: RunConfigurationSummary): string {
   return `${formatSeconds(details.runtime_seconds)} runtime; ${details.output_cadence_seconds.toLocaleString()} s output; ${details.expected_output_frames.toLocaleString()} saved frames; ${details.time_step_seconds.toLocaleString()} s timestep`;
 }
 
-function runSizeMultiplierSummary(details: RunSizeDetails): string {
-  return `${details.grid_cell_multiplier_vs_standard.toLocaleString()}x grid, ${details.time_step_multiplier_vs_standard.toLocaleString()}x timestep, ${details.output_frame_multiplier_vs_standard.toLocaleString()}x saved frames, ${details.estimated_output_volume_multiplier_vs_standard.toLocaleString()}x output volume vs Standard; target ${details.target_wall_clock_multiplier_vs_standard} wall-clock`;
+function runConfigurationSummaryMultiplier(details: RunConfigurationSummary): string {
+  return `${details.grid_cell_multiplier_vs_default.toLocaleString()}x grid, ${details.output_frame_multiplier_vs_default.toLocaleString()}x saved frames, ${details.estimated_output_volume_multiplier_vs_default.toLocaleString()}x output volume vs default`;
 }
 
 function formatMeters(value: number): string {
@@ -9663,7 +10081,6 @@ function sectionLabel(section: WorkspaceSection): string {
 const DEFAULT_RESULTS_FILTERS: ResultsFilterState = {
   search: "",
   scenario: "all",
-  preset: "all",
   cloud: "all",
   rain: "all",
   sort: "newest",
@@ -9681,7 +10098,6 @@ function filterAndSortResults(results: ResultCard[], filters: ResultsFilterState
       (result) =>
         filters.scenario === "all" || resultScenarioFilterValue(result) === filters.scenario,
     )
-    .filter((result) => filters.preset === "all" || result.run_size_preset === filters.preset)
     .filter((result) =>
       matchesBooleanFilter(cloudOutcome(result), filters.cloud, "Cloud formed", "No cloud formed"),
     )
@@ -9718,13 +10134,6 @@ function resultScenarioFilterValue(result: ResultCard): string {
   return `scenario:${result.scenario_id}`;
 }
 
-function resultPresetOptions(results: ResultCard[]): Array<{ value: string; label: string }> {
-  const seen = new Set(results.map((result) => result.run_size_preset));
-  return [...seen]
-    .map((value) => ({ value, label: humanize(value) }))
-    .sort((left, right) => left.label.localeCompare(right.label));
-}
-
 function resultMatchesSearch(result: ResultCard, query: string): boolean {
   if (!query) return true;
   return resultSearchText(result).includes(query);
@@ -9737,7 +10146,7 @@ function resultSearchText(result: ResultCard): string {
     result.result_id,
     result.scenario_id,
     result.scenario_name,
-    result.run_size_preset,
+    resultRunConfigurationLabel(result.run_configuration),
     result.tags.join(" "),
     result.notes,
     result.input_source_label,
@@ -9799,7 +10208,6 @@ function dateSortValue(result: ResultCard): number {
 function resultPriority(result: ResultCard): number {
   let score = 0;
   if (result.scenario_id === "baseline-shallow-cumulus") score += 30;
-  if (result.run_size_preset === "quick_look") score += 20;
   if (result.source_lifecycle_state === "completed") score += 20;
   if (cloudOutcome(result) === "Cloud formed") score += 20;
   if (result.saved || result.protected) score += 10;
@@ -9811,7 +10219,6 @@ function isValidatedQuickLookBaseline(result: ResultCard): boolean {
   return (
     resultInputSource(result) === "generated_reference" &&
     result.scenario_id === "baseline-shallow-cumulus" &&
-    result.run_size_preset === "quick_look" &&
     result.source_lifecycle_state === "completed" &&
     cloudOutcome(result) === "Cloud formed"
   );
@@ -9820,7 +10227,6 @@ function isValidatedQuickLookBaseline(result: ResultCard): boolean {
 function isDryFailedContrast(result: ResultCard): boolean {
   return (
     result.scenario_id === "dry-failed-cumulus" &&
-    result.run_size_preset === "quick_look" &&
     result.source_lifecycle_state === "completed" &&
     cloudOutcome(result) === "No cloud formed" &&
     result.rain_present === false &&

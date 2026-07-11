@@ -56,11 +56,6 @@
       "cm1_mapping_notes": "Future mapping should adjust sounding stability near the cap."
     }
   ],
-  "run_size_presets": [
-    {"id": "quick_look", "label": "Quick look", "purpose": "Sanity-check setup and rough cloud behavior.", "expected_runtime": "roughly 10-20 minutes when feasible on the local Mac", "confidence": "lower confidence until locally validated", "output_notes": "coarser output cadence is acceptable if clearly labeled"},
-    {"id": "standard", "label": "Standard", "purpose": "Normal personal exploration and useful saved diagnostics.", "expected_runtime": "normal local personal exploration run", "confidence": "balanced runtime and diagnostic value", "output_notes": "intended result-card/notebook source"},
-    {"id": "deep_overnight", "label": "Deep / overnight", "purpose": "Expensive opt-in run for better 3-D cloud structure, smoother timelapse, and higher-detail field inspection.", "expected_runtime": "target roughly 10-12x Standard wall-clock; may take hours locally", "confidence": "higher-detail package settings require local/manual validation", "output_notes": "192 x 192 horizontal grid at about 33.333 m, 300 s saved-output cadence, and larger output should be explicit before launch"}
-  ],
   "expected_diagnostics": {
     "cloud_formed": true,
     "first_cloud_time": "record if and when shallow cumulus first appears",

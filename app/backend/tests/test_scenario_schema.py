@@ -41,32 +41,6 @@ def valid_template() -> dict[str, Any]:
                 "cm1_mapping_notes": "Documents future raw namelist mapping, not primary UI.",
             },
         ],
-        "run_size_presets": [
-            {
-                "id": "quick_look",
-                "label": "Quick look",
-                "purpose": "Sanity-check setup.",
-                "expected_runtime": "roughly 10-20 minutes when feasible",
-                "confidence": "lower confidence until locally validated",
-                "output_notes": "coarser output cadence is acceptable if labeled",
-            },
-            {
-                "id": "standard",
-                "label": "Standard",
-                "purpose": "Normal personal exploration.",
-                "expected_runtime": "normal local run",
-                "confidence": "balanced confidence and runtime",
-                "output_notes": "useful saved diagnostics",
-            },
-            {
-                "id": "deep_overnight",
-                "label": "Deep / overnight",
-                "purpose": "Richer result exploration.",
-                "expected_runtime": "may take hours or overnight",
-                "confidence": "higher confidence or detail",
-                "output_notes": "larger output should be explicit before launch",
-            },
-        ],
         "expected_diagnostics": {
             "cloud_formed": True,
             "first_cloud_time": "expected after spin-up if clouds form",
@@ -105,11 +79,6 @@ def test_valid_scenario_template_supports_golden_path_contract() -> None:
     assert template.id == "baseline-shallow-cumulus"
     assert template.physical_question
     assert len(template.learning_goals) == 2
-    assert {preset.id.value for preset in template.run_size_presets} == {
-        "quick_look",
-        "standard",
-        "deep_overnight",
-    }
     assert template.expected_diagnostics.cloud_water_summary is not None
     assert template.variation_policy is not None
     assert template.variation_policy.one_control_at_a_time
@@ -122,16 +91,6 @@ def test_invalid_template_requires_product_facing_control() -> None:
     controls[0]["audience"] = "advanced"
 
     with pytest.raises(ScenarioValidationError, match="product-facing control"):
-        validate_scenario_template(data)
-
-
-def test_invalid_template_requires_all_runtime_profiles() -> None:
-    data = valid_template()
-    presets = data["run_size_presets"]
-    assert isinstance(presets, list)
-    data["run_size_presets"] = presets[:2]
-
-    with pytest.raises(ScenarioValidationError, match="quick/standard/deep"):
         validate_scenario_template(data)
 
 

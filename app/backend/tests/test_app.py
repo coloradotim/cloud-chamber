@@ -135,7 +135,13 @@ def test_create_dry_run_package_api_uses_runtime_home_override(
         json={
             "scenario_id": "baseline-shallow-cumulus",
             "controls": {"low_level_humidity": "more_humid"},
-            "run_size_preset": "quick_look",
+            "run_configuration": {
+                "duration_preset": "quick_6h",
+                "grid_detail_preset": "standard",
+                "domain_size_preset": "local_6km",
+                "output_cadence_preset": "standard_15min",
+                "output_field_density_preset": "analysis",
+            },
         },
     )
 
@@ -383,8 +389,8 @@ def test_run_status_api_reports_stdout_model_time_progress(
     assert response.status_code == 200
     progress = response.json()["progress"]
     assert progress["model_time_seconds"] == pytest.approx(2922.0)
-    assert progress["total_model_time_seconds"] == pytest.approx(10800.0)
-    assert progress["percent_complete"] == pytest.approx(27.1)
+    assert progress["total_model_time_seconds"] == pytest.approx(21600.0)
+    assert progress["percent_complete"] == pytest.approx(13.5)
     assert progress["estimated_remaining_wall_seconds"] is not None
     assert progress["model_time_source"] == "stdout model-minute progress"
     assert progress["total_model_time_source"] == "namelist.input timax"
@@ -514,8 +520,8 @@ def test_run_status_api_reports_completed_elapsed_and_full_model_time(
     assert response.status_code == 200
     progress = response.json()["progress"]
     assert progress["elapsed_wall_seconds"] == pytest.approx(1800.0)
-    assert progress["model_time_seconds"] == pytest.approx(10800.0)
-    assert progress["total_model_time_seconds"] == pytest.approx(10800.0)
+    assert progress["model_time_seconds"] == pytest.approx(21600.0)
+    assert progress["total_model_time_seconds"] == pytest.approx(21600.0)
     assert progress["percent_complete"] == pytest.approx(100.0)
     assert progress["estimated_remaining_wall_seconds"] is None
     assert progress["model_time_source"] == "completed_run_state"

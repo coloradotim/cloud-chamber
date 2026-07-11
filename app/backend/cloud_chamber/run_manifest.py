@@ -131,7 +131,7 @@ class RunManifest(BaseModel):
     run_id: str
     scenario: ScenarioReference
     controls: dict[str, str | float | bool]
-    run_size_preset: str
+    run_configuration: dict[str, Any]
     physical_question: str
     expected_diagnostics: list[str]
     generated_inputs: GeneratedInputs

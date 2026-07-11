@@ -533,7 +533,7 @@ Capability distinctions:
 
 | Item | Status |
 | --- | --- |
-| Quick-look, standard, and deep run-size presets | Currently supported by Cloud Chamber scenario templates/package generation. |
+| Explicit run-configuration choices | Supported by Cloud Chamber package generation through duration, grid/detail, domain, cadence, and output-field density. |
 | Local Mac deep runs with larger grids and more output | Supported but expensive; estimates need validation per scenario. |
 | Additional output fields for realistic cases | Likely CM1 capability needing output/product validation. |
 | Workstation/remote/HPC tiers | Future / unsupported as local product flow. |

@@ -15,6 +15,10 @@ from cloud_chamber.observed_sounding import (
     ObservedSoundingRecord,
     render_observed_input_sounding,
 )
+from cloud_chamber.run_configuration import (
+    RunConfiguration,
+    resolve_run_configuration,
+)
 from cloud_chamber.scenario_schema import ControlAudience, ScenarioTemplate
 
 
@@ -51,29 +55,6 @@ class CloudScaleDefaults:
 
 
 @dataclass(frozen=True)
-class RuntimePreset:
-    runtime_seconds: int
-    output_cadence_seconds: int
-    nx: int = 64
-    ny: int = 64
-    horizontal_spacing_m: float = 100.0
-    time_step_seconds: float = 3.0
-
-
-RUNTIME_PRESETS: dict[str, RuntimePreset] = {
-    "quick_look": RuntimePreset(runtime_seconds=10800, output_cadence_seconds=900),
-    "standard": RuntimePreset(runtime_seconds=21600, output_cadence_seconds=3600),
-    "deep_overnight": RuntimePreset(
-        runtime_seconds=21600,
-        output_cadence_seconds=300,
-        nx=192,
-        ny=192,
-        horizontal_spacing_m=100.0 * 64.0 / 192.0,
-    ),
-}
-
-
-@dataclass(frozen=True)
 class GeneratedFileSpec:
     role: GeneratedFileRole
     relative_path: str
@@ -100,7 +81,7 @@ class CM1InputContract:
     trigger_parameters: dict[str, str | int | float | bool]
     scenario_id: str
     physical_question: str
-    run_size_preset: str
+    run_configuration: RunConfiguration
     moisture_profile: str
     stability_profile: str
     cloud_scale_defaults: CloudScaleDefaults
@@ -170,16 +151,17 @@ GENERATED_FILE_SPECS = (
 def build_cm1_input_contract(
     scenario: ScenarioTemplate,
     selected_controls: dict[str, str | float | bool] | None = None,
-    run_size_preset: str = "quick_look",
+    run_configuration: dict[str, object] | RunConfiguration | None = None,
     observed_sounding: ObservedSoundingRecord | None = None,
     package_family: str | PackageFamily | None = None,
 ) -> CM1InputContract:
     selected = selected_controls or {}
     resolved_package_family = _resolve_package_family(package_family, observed_sounding)
-    defaults = cloud_scale_defaults_for_preset(
-        run_size_preset,
-        package_family=resolved_package_family,
+    resolved_run_configuration = resolve_run_configuration(
+        run_configuration=run_configuration,
+        package_family=resolved_package_family.value,
     )
+    defaults = cloud_scale_defaults_for_configuration(resolved_run_configuration)
     if resolved_package_family == PackageFamily.DEEP_CONVECTION_TRIAL:
         if observed_sounding is None:
             raise ValueError("Deep Convection Trial requires a validated observed sounding.")
@@ -224,14 +206,17 @@ def build_cm1_input_contract(
         trigger_parameters=_trigger_parameters(resolved_package_family),
         scenario_id=scenario.id,
         physical_question=scenario.physical_question,
-        run_size_preset=run_size_preset,
+        run_configuration=resolved_run_configuration,
         moisture_profile=moisture_profile,
         stability_profile=stability_profile,
         cloud_scale_defaults=defaults,
         generated_files=GENERATED_FILE_SPECS,
         control_fragments=control_fragments,
         expected_diagnostics=_diagnostic_names(scenario),
-        expected_outputs=_expected_outputs(resolved_package_family),
+        expected_outputs=_expected_outputs(
+            resolved_package_family,
+            resolved_run_configuration.output_field_density_preset,
+        ),
         visualization_defaults={
             "primary_field": scenario.visualization_defaults.primary_field,
             "secondary_fields": scenario.visualization_defaults.secondary_fields,
@@ -240,75 +225,28 @@ def build_cm1_input_contract(
             "provenance_label": scenario.visualization_defaults.provenance_label,
         },
         limitations=tuple(scenario.limitations),
-        package_caveats=_package_caveats(resolved_package_family, run_size_preset),
+        package_caveats=_package_caveats(resolved_package_family, resolved_run_configuration),
         manual_validation_status=_manual_validation_status(resolved_package_family),
         observed_sounding=observed_sounding,
     )
 
 
-def cloud_scale_defaults_for_preset(
-    run_size_preset: str,
-    *,
-    package_family: str | PackageFamily | None = None,
-) -> CloudScaleDefaults:
-    resolved = _resolve_package_family(package_family, None)
-    if resolved == PackageFamily.DEEP_CONVECTION_TRIAL:
-        return _deep_convection_defaults_for_preset(run_size_preset)
-    preset = RUNTIME_PRESETS.get(run_size_preset, RUNTIME_PRESETS["standard"])
+def cloud_scale_defaults_for_configuration(configuration: RunConfiguration) -> CloudScaleDefaults:
+    values = configuration.cm1_values
     return CloudScaleDefaults(
-        nx=preset.nx,
-        ny=preset.ny,
-        horizontal_spacing_m=preset.horizontal_spacing_m,
-        time_step_seconds=preset.time_step_seconds,
-        runtime_seconds=preset.runtime_seconds,
-        output_cadence_seconds=preset.output_cadence_seconds,
-    )
-
-
-def _deep_convection_defaults_for_preset(run_size_preset: str) -> CloudScaleDefaults:
-    if run_size_preset == "deep_overnight":
-        return CloudScaleDefaults(
-            nx=240,
-            ny=240,
-            nz=40,
-            horizontal_extent_km=240.0,
-            y_extent_km=240.0,
-            horizontal_spacing_m=1000.0,
-            vertical_spacing_m=500,
-            time_step_seconds=6.0,
-            runtime_seconds=21600,
-            output_cadence_seconds=300,
-            restart_cadence_seconds=10800,
-            rayleigh_damping_start_m=15000,
-        )
-    if run_size_preset == "standard":
-        return CloudScaleDefaults(
-            nx=160,
-            ny=160,
-            nz=40,
-            horizontal_extent_km=160.0,
-            y_extent_km=160.0,
-            horizontal_spacing_m=1000.0,
-            vertical_spacing_m=500,
-            time_step_seconds=6.0,
-            runtime_seconds=21600,
-            output_cadence_seconds=600,
-            restart_cadence_seconds=10800,
-            rayleigh_damping_start_m=15000,
-        )
-    return CloudScaleDefaults(
-        nx=120,
-        ny=120,
-        nz=40,
-        horizontal_extent_km=120.0,
-        y_extent_km=120.0,
-        horizontal_spacing_m=1000.0,
-        vertical_spacing_m=500,
-        time_step_seconds=6.0,
-        runtime_seconds=7200,
-        output_cadence_seconds=600,
-        restart_cadence_seconds=3600,
-        rayleigh_damping_start_m=15000,
+        nx=values.nx,
+        ny=values.ny,
+        nz=values.nz,
+        horizontal_extent_km=values.domain_x_km,
+        y_extent_km=values.domain_y_km,
+        vertical_extent_km=values.model_top_m / 1000.0,
+        horizontal_spacing_m=values.dx_m,
+        vertical_spacing_m=int(values.dz_m),
+        time_step_seconds=values.time_step_seconds,
+        runtime_seconds=values.runtime_seconds,
+        output_cadence_seconds=values.output_cadence_seconds,
+        restart_cadence_seconds=values.restart_cadence_seconds,
+        rayleigh_damping_start_m=values.rayleigh_damping_start_m,
     )
 
 
@@ -353,31 +291,47 @@ def _trigger_parameters(
     }
 
 
-def _expected_outputs(package_family: PackageFamily) -> tuple[str, ...]:
+def _expected_outputs(
+    package_family: PackageFamily,
+    output_field_density_preset: str,
+) -> tuple[str, ...]:
     base = ("qc", "qr", "qv", "th", "prs", "u", "v", "w", "rain", "dbz")
+    analysis = (*base, "psfc", "hfx", "lhfx", "lwp")
+    rich = (*analysis, "tke", "km", "kh", "vorticity", "updraft_helicity")
+    if output_field_density_preset == "core":
+        return base
+    if output_field_density_preset == "analysis":
+        return analysis
     if package_family == PackageFamily.DEEP_CONVECTION_TRIAL:
-        return (*base, "tke", "km", "kh", "vorticity", "updraft_helicity")
-    return base
+        return rich
+    return rich
 
 
-def _package_caveats(package_family: PackageFamily, run_size_preset: str) -> tuple[str, ...]:
+def _package_caveats(
+    package_family: PackageFamily,
+    run_configuration: RunConfiguration,
+) -> tuple[str, ...]:
+    caveats = list(run_configuration.caveats)
     if package_family != PackageFamily.DEEP_CONVECTION_TRIAL:
-        return ()
-    caveats = [
-        "Deep Convection Trial uses an idealized CM1 three-warm-bubble trigger.",
-        (
-            "Manual smoke evidence applies to the Deep Convection Trial package family; "
-            "each observed sounding remains an experiment to evaluate after CM1 completes."
-        ),
-        (
-            "Storm mode, rotation, rain, downdraft, and cold-pool behavior are outcomes "
-            "to inspect after the run."
-        ),
-        "Terrain, mesoscale lift, radiation, and map/GIS forcing are not part of v1.",
-    ]
-    if run_size_preset in {"standard", "deep_overnight"}:
+        return tuple(caveats)
+    caveats.extend(
+        [
+            "Deep Convection Trial uses an idealized CM1 three-warm-bubble trigger.",
+            (
+                "Manual smoke evidence applies to the Deep Convection Trial package family; "
+                "each observed sounding remains an experiment to evaluate after CM1 completes."
+            ),
+            (
+                "Storm mode, rotation, rain, downdraft, and cold-pool behavior are outcomes "
+                "to inspect after the run."
+            ),
+            "Terrain, mesoscale lift, radiation, and map/GIS forcing are not part of v1.",
+        ]
+    )
+    if "configuration_better_suited_to_larger_compute" in run_configuration.caveats:
         caveats.append(
-            "This preset is intended for the LAN worker unless local performance is acceptable."
+            "This configuration may be better suited to larger compute; cost/runtime/output "
+            "volume should be reviewed before launch."
         )
     return tuple(caveats)
 
@@ -386,6 +340,46 @@ def _manual_validation_status(package_family: PackageFamily) -> str:
     if package_family == PackageFamily.DEEP_CONVECTION_TRIAL:
         return "deep_convection_trial_package_smoke_validated"
     return "existing_package_path"
+
+
+def _output_switches(
+    output_field_density_preset: str,
+    *,
+    deep_convection: bool,
+) -> dict[str, int]:
+    switches = {
+        "sfcflx": 0,
+        "sfcparams": 0,
+        "sfcdiags": 0,
+        "psfc": 0,
+        "tke": 0,
+        "km": 0,
+        "kh": 0,
+        "vort": 0,
+        "uh": 0,
+        "lwp": 0,
+    }
+    if output_field_density_preset in {"analysis", "rich"}:
+        switches.update(
+            {
+                "sfcflx": 1,
+                "sfcparams": 1,
+                "sfcdiags": 1,
+                "psfc": 1,
+                "lwp": 1,
+            }
+        )
+    if output_field_density_preset == "rich" or deep_convection:
+        switches.update(
+            {
+                "tke": 1,
+                "km": 1,
+                "kh": 1,
+                "vort": 1,
+                "uh": 1,
+            }
+        )
+    return switches
 
 
 def _has_observed_wind_profile(
@@ -439,9 +433,9 @@ def render_cm1_namelist(contract: CM1InputContract) -> str:
     The recovery baseline follows CM1's local ``les_ShallowCu`` reference case.
     Generated reference packages keep ``isnd = 17`` with the reference wind path.
     Observed-sounding packages use ``isnd = 7`` so CM1 reads the thermodynamic
-    and wind profile from ``input_sounding``. Run-size presets adjust runtime,
-    saved-output cadence, and, for Deep Overnight, horizontal grid spacing while
-    preserving the physical domain and Standard solver timestep. The intentional
+    and wind profile from ``input_sounding``. The resolved run configuration
+    controls runtime, grid/detail, domain size, saved-output cadence, and
+    output-field density before CM1 is launched. The intentional
     product-path change outside the sounding source is ``output_format = 2`` so
     Cloud Chamber can ingest NetCDF output when the local CM1 build supports it.
     """
@@ -463,6 +457,10 @@ def render_cm1_namelist(contract: CM1InputContract) -> str:
     iinit = 3 if deep_convection else 0
     irandp = 0 if deep_convection else 1
     imove = 1 if deep_convection else 0
+    output = _output_switches(
+        contract.run_configuration.output_field_density_preset,
+        deep_convection=deep_convection,
+    )
     isfcflx = 0 if deep_convection else 1
     sfcmodel = 0 if deep_convection else 1
     oceanmodel = 0 if deep_convection else 1
@@ -686,15 +684,15 @@ def render_cm1_namelist(contract: CM1InputContract) -> str:
  output_filetype  = 2,
  output_interp    = 0,
  output_rain      = 1,
- output_sfcflx    = 1,
- output_sfcparams = 1,
- output_sfcdiags  = 1,
- output_psfc      = 1,
+ output_sfcflx    = {output["sfcflx"]},
+ output_sfcparams = {output["sfcparams"]},
+ output_sfcdiags  = {output["sfcdiags"]},
+ output_psfc      = {output["psfc"]},
  output_th        = 1,
  output_prs       = 1,
- output_tke       = 1,
- output_km        = 1,
- output_kh        = 1,
+ output_tke       = {output["tke"]},
+ output_km        = {output["km"]},
+ output_kh        = {output["kh"]},
  output_qv        = 1,
  output_q         = 1,
  output_dbz       = 1,
@@ -704,11 +702,11 @@ def render_cm1_namelist(contract: CM1InputContract) -> str:
  output_vinterp   = 1,
  output_w         = 1,
  output_winterp   = 1,
- output_vort      = 1,
- output_uh        = 1,
+ output_vort      = {output["vort"]},
+ output_uh        = {output["uh"]},
  output_nm        = 1,
  output_def       = 1,
- output_lwp       = 1,
+ output_lwp       = {output["lwp"]},
  /
 
  &param16

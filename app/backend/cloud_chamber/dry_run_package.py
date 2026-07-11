@@ -14,11 +14,12 @@ from cloud_chamber import __version__
 from cloud_chamber.cm1_input_contract import (
     CM1InputContract,
     build_cm1_input_contract,
-    cloud_scale_defaults_for_preset,
+    cloud_scale_defaults_for_configuration,
     render_input_sounding_notes,
     render_namelist_fragment,
 )
 from cloud_chamber.observed_sounding import ObservedSoundingRecord, observed_sounding_from_payload
+from cloud_chamber.run_configuration import resolve_run_configuration
 from cloud_chamber.run_manifest import (
     AppMetadata,
     GeneratedInputs,
@@ -53,7 +54,6 @@ def generate_dry_run_package(
     runtime_home: Path,
     run_id: str,
     controls: dict[str, str | float | bool] | None = None,
-    run_size_preset: str = "quick_look",
     user_name: str | None = None,
     allow_overwrite: bool = False,
     app_commit: str | None = None,
@@ -62,6 +62,7 @@ def generate_dry_run_package(
     user_tags: list[str] | None = None,
     user_notes: str | None = None,
     package_family: str | None = None,
+    run_configuration: dict[str, object] | None = None,
 ) -> DryRunPackageResult:
     scenario = validate_scenario_template(scenario_data)
     selected_controls = controls or {}
@@ -77,7 +78,7 @@ def generate_dry_run_package(
         contract = build_cm1_input_contract(
             scenario,
             selected_controls=selected_controls,
-            run_size_preset=run_size_preset,
+            run_configuration=run_configuration,
             observed_sounding=observed_record,
             package_family=package_family,
         )
@@ -104,7 +105,7 @@ def generate_dry_run_package(
             template_path=scenario.cm1_template.namelist_template,
         ),
         controls=_effective_controls(scenario, selected_controls),
-        run_size_preset=run_size_preset,
+        run_configuration=contract.run_configuration.model_dump(mode="json"),
         physical_question=scenario.physical_question,
         expected_diagnostics=list(contract.expected_diagnostics),
         generated_inputs=GeneratedInputs(
@@ -246,6 +247,7 @@ def _case_manifest_payload(
         "limitations": scenario.limitations,
         "package_caveats": contract.package_caveats,
         "manual_validation_status": contract.manual_validation_status,
+        "run_configuration": contract.run_configuration.model_dump(mode="json"),
         "cm1_mapping_status": _cm1_mapping_status(contract),
         "contract": _contract_payload(contract),
         "candidate_screening": candidate_screening,
@@ -259,7 +261,7 @@ def _dry_run_report_payload(
     contract: CM1InputContract,
     generated_files: dict[str, Path],
 ) -> dict[str, object]:
-    run_size_details = _run_size_details(contract)
+    run_configuration_summary = _run_configuration_summary(contract)
     return {
         "status": "dry_run_package_only",
         "not_a_completed_cm1_result": True,
@@ -292,9 +294,9 @@ def _dry_run_report_payload(
         ),
         "candidate_screening": manifest.candidate_screening,
         "user": manifest.user.model_dump(mode="json"),
-        "run_size_preset": manifest.run_size_preset,
-        "run_size_details": run_size_details,
-        "estimated_cost_or_size": run_size_details["cost_warning"],
+        "run_configuration": contract.run_configuration.model_dump(mode="json"),
+        "run_configuration_summary": run_configuration_summary,
+        "estimated_cost_or_size": run_configuration_summary["cost_warning"],
         "expected_diagnostics": manifest.expected_diagnostics,
         "expected_outputs": list(contract.expected_outputs),
         "package_caveats": list(contract.package_caveats),
@@ -313,6 +315,7 @@ def _dry_run_report_payload(
 
 def _contract_payload(contract: CM1InputContract) -> dict[str, object]:
     payload = asdict(contract)
+    payload["run_configuration"] = contract.run_configuration.model_dump(mode="json")
     if contract.observed_sounding is not None:
         payload["observed_sounding"] = contract.observed_sounding.model_dump(mode="json")
     return payload
@@ -367,12 +370,12 @@ def _normalize_user_notes(notes: str | None) -> str | None:
     return cleaned or None
 
 
-def _run_size_details(contract: CM1InputContract) -> dict[str, object]:
+def _run_configuration_summary(contract: CM1InputContract) -> dict[str, object]:
     defaults = contract.cloud_scale_defaults
-    standard = cloud_scale_defaults_for_preset(
-        "standard",
-        package_family=contract.package_family,
+    reference_configuration = resolve_run_configuration(
+        package_family=contract.package_family.value,
     )
+    standard = cloud_scale_defaults_for_configuration(reference_configuration)
     grid_cells = defaults.nx * defaults.ny * defaults.nz
     standard_grid_cells = standard.nx * standard.ny * standard.nz
     output_frames = _expected_output_frames(
@@ -387,25 +390,32 @@ def _run_size_details(contract: CM1InputContract) -> dict[str, object]:
     runtime_multiplier = defaults.runtime_seconds / standard.runtime_seconds
     estimated_compute_multiplier = grid_multiplier * timestep_multiplier * runtime_multiplier
     estimated_output_volume_multiplier = grid_multiplier * output_frame_multiplier
-    is_deep = contract.run_size_preset == "deep_overnight"
+    is_smoke = contract.run_configuration.mode == "smoke"
     is_deep_convection = contract.package_family.value == "deep_convection_trial"
     cost_warning = (
-        _deep_convection_cost_warning(contract.run_size_preset)
+        _deep_convection_cost_warning(contract.run_configuration)
         if is_deep_convection
         else (
-            "Deep Overnight is an expensive local run intended to take roughly "
-            "10-12x Standard wall-clock after manual validation. It increases "
-            "horizontal resolution to about 33.333 m, saves output every 300 s, "
-            "and may produce much larger output for better Explore, cloud "
-            "appearance, field-view, and timelapse data."
-            if is_deep
+            (
+                "Short smoke mode checks package health and CM1 startup behavior; "
+                "it is not long enough to evaluate normal atmospheric evolution."
+            )
+            if is_smoke
             else (
-                "Normal local run-size preset; estimates remain approximate until local validation."
+                "Configuration cost depends on duration, grid/detail, domain, cadence, "
+                "and output-field density. Review the CM1-facing values before launch."
             )
         )
     )
     return {
-        "preset": contract.run_size_preset,
+        "configuration_id": contract.run_configuration.configuration_id,
+        "mode": contract.run_configuration.mode,
+        "label": contract.run_configuration.label,
+        "duration_preset": contract.run_configuration.duration_preset,
+        "grid_detail_preset": contract.run_configuration.grid_detail_preset,
+        "domain_size_preset": contract.run_configuration.domain_size_preset,
+        "output_cadence_preset": contract.run_configuration.output_cadence_preset,
+        "output_field_density_preset": contract.run_configuration.output_field_density_preset,
         "runtime_seconds": defaults.runtime_seconds,
         "output_cadence_seconds": defaults.output_cadence_seconds,
         "expected_output_frames": output_frames,
@@ -418,20 +428,19 @@ def _run_size_details(contract: CM1InputContract) -> dict[str, object]:
         "model_top_m": defaults.vertical_extent_km * 1000.0,
         "time_step_seconds": defaults.time_step_seconds,
         "time_step_note": (
-            "Deep Overnight keeps the Standard CM1 solver timestep; cost comes from "
-            "higher spatial resolution and much higher saved-output cadence."
-            if is_deep
-            else "Preset uses the Standard CM1 solver timestep."
+            "Deep Convection Trial uses a larger solver timestep for the storm-scale "
+            "triggered-potential setup."
+            if is_deep_convection
+            else "CM1 solver timestep is resolved from the selected run configuration."
         ),
         "grid_cell_count": grid_cells,
-        "grid_cell_multiplier_vs_standard": round(grid_multiplier, 2),
-        "time_step_multiplier_vs_standard": round(timestep_multiplier, 2),
-        "output_frame_multiplier_vs_standard": round(output_frame_multiplier, 2),
-        "estimated_compute_multiplier_vs_standard": round(estimated_compute_multiplier, 2),
-        "estimated_output_volume_multiplier_vs_standard": round(
+        "grid_cell_multiplier_vs_default": round(grid_multiplier, 2),
+        "time_step_multiplier_vs_default": round(timestep_multiplier, 2),
+        "output_frame_multiplier_vs_default": round(output_frame_multiplier, 2),
+        "estimated_compute_multiplier_vs_default": round(estimated_compute_multiplier, 2),
+        "estimated_output_volume_multiplier_vs_default": round(
             estimated_output_volume_multiplier, 2
         ),
-        "target_wall_clock_multiplier_vs_standard": "10-12x" if is_deep else "1x",
         "cost_warning": cost_warning,
         "validation_note": (
             "Deep Convection Trial uses a wider idealized domain and observed winds. "
@@ -439,11 +448,13 @@ def _run_size_details(contract: CM1InputContract) -> dict[str, object]:
             "sounding remains an experiment until CM1 output is inspected."
             if is_deep_convection
             else (
-                "Deep Overnight preserves the physical domain and scenario controls while "
-                "changing horizontal resolution and saved-output cadence. Wall-clock "
-                "and storage estimates require manual local validation before launch."
-                if is_deep
-                else "Preset preserves the validated reference-derived spatial grid."
+                "Short smoke mode is separated from science runs; use Quick science or longer "
+                "configurations for meteorological evolution."
+                if is_smoke
+                else (
+                    "Run configuration preserves explicit duration, grid/detail, domain, "
+                    "cadence, and output-density choices."
+                )
             )
         ),
     }
@@ -487,21 +498,19 @@ def _cm1_mapping_status(contract: CM1InputContract) -> str:
     )
 
 
-def _deep_convection_cost_warning(run_size_preset: str) -> str:
-    if run_size_preset == "quick_look":
+def _deep_convection_cost_warning(run_configuration: object) -> str:
+    mode = getattr(run_configuration, "mode", "")
+    domain = getattr(run_configuration, "domain_size_preset", "storm_120km")
+    cadence = getattr(run_configuration, "output_cadence_preset", "standard_15min")
+    if mode == "smoke":
         return (
-            "Deep Convection Trial Quick Look uses a 120 km storm-scale idealized domain with "
-            "CM1's built-in three-warm-bubble trigger. It is the smallest local trial; CM1 "
-            "still decides whether deep convection develops."
-        )
-    if run_size_preset == "standard":
-        return (
-            "Deep Convection Trial Standard uses a 160 km storm-scale idealized domain and should "
-            "generally run on the LAN worker."
+            "Deep Convection Trial smoke mode checks package health with the triggered "
+            "storm-scale setup; it is not a science-duration result."
         )
     return (
-        "Deep Convection Trial Deep Overnight uses a 240 km storm-scale idealized domain with "
-        "frequent saved output and should run on the LAN worker."
+        "Deep Convection Trial uses a triggered storm-scale domain. Review expected "
+        f"cost/runtime/output volume for {domain} and {cadence}; larger configurations "
+        "may be better suited to larger compute."
     )
 
 

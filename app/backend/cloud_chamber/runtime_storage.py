@@ -39,7 +39,7 @@ class RunStorageEntry(BaseModel):
     lifecycle_state: str | None = None
     validation_status: str | None = None
     product_state: str | None = None
-    run_size_preset: str | None = None
+    run_configuration: dict[str, object] | None = None
     created_at: str | None = None
     updated_at: str | None = None
     saved: bool = False
@@ -303,7 +303,7 @@ def _entry_from_manifest(
         lifecycle_state=manifest.lifecycle_state.value,
         validation_status=manifest.validation_status.value,
         product_state=manifest.provenance.product_state.value,
-        run_size_preset=manifest.run_size_preset,
+        run_configuration=manifest.run_configuration,
         created_at=manifest.created_at.isoformat(),
         updated_at=manifest.updated_at.isoformat(),
         saved=manifest.user.saved,

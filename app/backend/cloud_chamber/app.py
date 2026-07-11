@@ -122,7 +122,7 @@ def health() -> dict[str, str]:
 class DryRunRequest(BaseModel):
     scenario_id: str = "baseline-shallow-cumulus"
     controls: dict[str, str | float | bool] = Field(default_factory=dict)
-    run_size_preset: str = "quick_look"
+    run_configuration: dict[str, object] | None = None
     package_family: str | None = None
     observed_sounding: dict[str, object] | None = None
     candidate_screening: dict[str, object] | None = None
@@ -209,7 +209,7 @@ def create_dry_run_package(request: DryRunRequest) -> dict[str, Any]:
             runtime_home=settings.runtime_home,
             run_id=f"dry-run-{uuid4().hex[:12]}",
             controls=request.controls,
-            run_size_preset=request.run_size_preset,
+            run_configuration=request.run_configuration,
             package_family=request.package_family,
             observed_sounding=request.observed_sounding,
             candidate_screening=request.candidate_screening,
@@ -853,6 +853,7 @@ def _run_status_payload(status: RunStatus) -> dict[str, object]:
             "package_family": None,
             "package_display_name": None,
             "input_source": None,
+            "run_configuration": None,
         }
     return {
         "run_id": status.run_id,
@@ -885,6 +886,7 @@ def _run_status_payload(status: RunStatus) -> dict[str, object]:
         "package_family": manifest.package_family,
         "package_display_name": manifest.package_display_name,
         "input_source": manifest.input_source,
+        "run_configuration": manifest.run_configuration,
     }
 
 

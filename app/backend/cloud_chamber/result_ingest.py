@@ -91,7 +91,7 @@ class ResultMetadata(BaseModel):
     scenario_name: str | None = None
     physical_question: str
     controls: dict[str, str | float | bool]
-    run_size_preset: str
+    run_configuration: dict[str, Any]
     source_lifecycle_state: str
     source_product_state: str
     source_model: str
@@ -293,7 +293,7 @@ def _result_from_model_output_files(
         scenario_name=None,
         physical_question=manifest.physical_question,
         controls=manifest.controls,
-        run_size_preset=manifest.run_size_preset,
+        run_configuration=manifest.run_configuration,
         source_lifecycle_state=manifest.lifecycle_state.value,
         source_product_state=manifest.provenance.product_state.value,
         source_model=manifest.provenance.source_model,
@@ -808,7 +808,7 @@ def _result_from_dataset(
         scenario_name=None,
         physical_question=manifest.physical_question,
         controls=manifest.controls,
-        run_size_preset=manifest.run_size_preset,
+        run_configuration=manifest.run_configuration,
         source_lifecycle_state=manifest.lifecycle_state.value,
         source_product_state=manifest.provenance.product_state.value,
         source_model=manifest.provenance.source_model,
