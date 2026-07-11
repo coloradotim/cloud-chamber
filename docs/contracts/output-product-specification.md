@@ -437,13 +437,21 @@ Simple time-series products summarize scalar evolution across saved output
 times. Initial supported aggregations are domain max, domain mean, domain min,
 and cloud fraction where the field supports it. These products cover current
 MVP fields such as surface rain, rain water aloft, reflectivity, cloud water,
-surface sensible/latent heat flux, and other known field-catalog entries when
-present.
+`u` / `v` / `w` wind components, surface sensible/latent heat flux, and other
+known field-catalog entries when present.
 
 Missing fields must return an unavailable/caveated catalog state or a clear
 product error, not a guessed scientific result. Boundary-layer-depth and
 mixed-layer-depth style products remain future diagnostics until a defensible
 method is documented and tested.
+
+Wind-component products are scalar summaries of native-grid CM1 `u` and `v`
+components. They may support vertical profiles and time-height products when
+the fields and coordinates are present, but they must carry native staggered-grid
+and no-vector-interpolation caveats. They are not wind gust, outflow, rotation,
+or storm-organization diagnostics. Near-surface wind time-series products remain
+explicitly unavailable until the lowest-level selection method is defined and
+tested.
 
 ## Selected-Point And Selected-Column Products
 

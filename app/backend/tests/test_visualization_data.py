@@ -51,6 +51,8 @@ def create_visualization_result(
     *,
     include_qc: bool = True,
     include_w: bool = True,
+    include_u: bool = True,
+    include_v: bool = True,
     include_qr: bool = False,
     include_qv: bool = True,
     include_dbz: bool = True,
@@ -69,6 +71,8 @@ def create_visualization_result(
         netcdf_path,
         include_qc=include_qc,
         include_w=include_w,
+        include_u=include_u,
+        include_v=include_v,
         include_qr=include_qr,
         include_qv=include_qv,
         include_dbz=include_dbz,
@@ -146,6 +150,8 @@ def create_realistic_field_catalog_result(
                 "expected_outputs": [
                     "qc",
                     "w",
+                    "u",
+                    "v",
                     "qv",
                     "prs",
                     "hfx",
@@ -170,6 +176,8 @@ def write_visualization_netcdf(
     *,
     include_qc: bool,
     include_w: bool,
+    include_u: bool,
+    include_v: bool,
     include_qr: bool,
     include_qv: bool,
     include_dbz: bool,
@@ -189,6 +197,20 @@ def write_visualization_netcdf(
         data_vars["w"] = (
             ("time", "zf", "yh", "xh"),
             w,
+            {"units": "m/s"},
+        )
+    if include_u:
+        u = 5.0 + np.arange(2 * 2 * 3 * 5, dtype=float).reshape(2, 2, 3, 5) * 0.1
+        data_vars["u"] = (
+            ("time", "zh", "yh", "xf"),
+            u,
+            {"units": "m/s"},
+        )
+    if include_v:
+        v = -2.0 + np.arange(2 * 2 * 4 * 4, dtype=float).reshape(2, 2, 4, 4) * 0.2
+        data_vars["v"] = (
+            ("time", "zh", "yf", "xh"),
+            v,
             {"units": "m/s"},
         )
     if include_qr:
@@ -235,7 +257,9 @@ def write_visualization_netcdf(
             "zh": ("zh", [0.4, 0.8], {"units": "km"}),
             "zf": ("zf", [0.0, 0.4, 0.8], {"units": "km"}),
             "yh": ("yh", [0.0, 1.0, 2.0], {"units": "km"}),
+            "yf": ("yf", [-0.5, 0.5, 1.5, 2.5], {"units": "km"}),
             "xh": ("xh", [0.0, 1.0, 2.0, 3.0], {"units": "km"}),
+            "xf": ("xf", [-0.5, 0.5, 1.5, 2.5, 3.5], {"units": "km"}),
         },
     ).to_netcdf(path, engine="scipy")
 
@@ -255,6 +279,16 @@ def write_realistic_field_catalog_netcdf(path: Path) -> None:
             "w": (
                 ("time", "zf", "yh", "xh"),
                 np.arange(2 * 3 * 3 * 4, dtype=float).reshape(2, 3, 3, 4),
+                {"units": "m/s"},
+            ),
+            "u": (
+                ("time", "zh", "yh", "xf"),
+                5.0 + np.arange(2 * 2 * 3 * 5, dtype=float).reshape(2, 2, 3, 5) * 0.1,
+                {"units": "m/s"},
+            ),
+            "v": (
+                ("time", "zh", "yf", "xh"),
+                -2.0 + np.arange(2 * 2 * 4 * 4, dtype=float).reshape(2, 2, 4, 4) * 0.2,
                 {"units": "m/s"},
             ),
             "qv": (
@@ -318,7 +352,9 @@ def write_realistic_field_catalog_netcdf(path: Path) -> None:
             "zh": ("zh", [0.4, 0.8], {"units": "km"}),
             "zf": ("zf", [0.0, 0.4, 0.8], {"units": "km"}),
             "yh": ("yh", [0.0, 1.0, 2.0], {"units": "km"}),
+            "yf": ("yf", [-0.5, 0.5, 1.5, 2.5], {"units": "km"}),
             "xh": ("xh", [0.0, 1.0, 2.0, 3.0], {"units": "km"}),
+            "xf": ("xf", [-0.5, 0.5, 1.5, 2.5, 3.5], {"units": "km"}),
         },
     ).to_netcdf(path, engine="scipy")
 
@@ -367,6 +403,14 @@ def test_field_catalog_includes_qc_and_w_with_provenance(tmp_path: Path) -> None
     assert fields["w"].canonical_field_name == "vertical_velocity"
     assert fields["w"].native_grid == "zf/yh/xh"
     assert fields["w"].coordinate_names.vertical == "zf"
+    assert fields["u"].canonical_field_name == "east_west_wind"
+    assert fields["u"].native_grid == "zh/yh/xf"
+    assert fields["u"].coordinate_names.x == "xf"
+    assert "native_staggered_wind_component" in fields["u"].caveats
+    assert fields["v"].canonical_field_name == "north_south_wind"
+    assert fields["v"].native_grid == "zh/yf/xh"
+    assert fields["v"].coordinate_names.y == "yf"
+    assert "native_staggered_wind_component" in fields["v"].caveats
     assert fields["theta"].canonical_field_name == "potential_temperature"
     assert fields["theta"].units == "K"
     assert fields["temperature"].canonical_field_name == "temperature"
@@ -541,16 +585,29 @@ def test_output_product_catalog_advertises_bounded_products_and_unavailable_diag
 
     assert "profile:qv" in profile_keys
     assert "profile:prs" in profile_keys
+    assert "profile:u" in profile_keys
+    assert "profile:v" in profile_keys
     assert "time_height:qv" in time_height_keys
     assert "time_height:swten" in time_height_keys
+    assert "time_height:u" in time_height_keys
+    assert "time_height:v" in time_height_keys
     assert "time_series:hfx" in time_series_keys
     assert "time_series:lhfx" in time_series_keys
+    assert "time_series:u" in time_series_keys
+    assert "time_series:v" in time_series_keys
     assert unavailable["boundary_layer_depth_time_series"].status == "unavailable"
     assert unavailable["boundary_layer_depth_time_series"].reason == (
         "future_diagnostic_method_not_validated"
     )
     assert unavailable["unavailable:dbz"].reason == (
         "expected_known_field_missing_from_result_metadata"
+    )
+    assert unavailable["near_surface_wind_time_series:u"].reason == (
+        "near_surface_wind_diagnostic_not_implemented"
+    )
+    assert (
+        "wind_component_not_wind_gust_outflow_or_rotation_diagnostic"
+        in unavailable["near_surface_wind_time_series:v"].caveats
     )
     assert "browser_does_not_parse_raw_netcdf" in catalog.caveats
 
@@ -606,6 +663,47 @@ def test_selected_column_profile_preserves_xy_selection_and_values(tmp_path: Pat
     assert "selected_column_requires_native_x_y_indices" in profile.caveats
 
 
+def test_wind_component_profiles_preserve_native_staggered_grid_and_caveats(
+    tmp_path: Path,
+) -> None:
+    settings, result_id, _run_dir = create_visualization_result(tmp_path)
+
+    u_profile = vertical_profile(
+        settings,
+        result_id,
+        field="u",
+        time_index=0,
+        aggregation_method="domain_mean",
+    )
+    v_profile = vertical_profile(
+        settings,
+        result_id,
+        field="v",
+        time_index=0,
+        aggregation_method="selected_column",
+        x_index=3,
+        y_index=3,
+    )
+
+    assert u_profile.field.canonical_field_name == "east_west_wind"
+    assert u_profile.field.field_family == "wind"
+    assert u_profile.field.units == "m/s"
+    assert u_profile.field.native_grid == "zh/yh/xf"
+    assert u_profile.values == pytest.approx([5.7, 7.2])
+    assert u_profile.finite_counts == [15, 15]
+    assert "native_staggered_wind_component" in u_profile.caveats
+    assert "no_vector_interpolation" in u_profile.caveats
+    assert "wind_component_not_wind_gust_outflow_or_rotation_diagnostic" in u_profile.caveats
+
+    assert v_profile.field.canonical_field_name == "north_south_wind"
+    assert v_profile.field.native_grid == "zh/yf/xh"
+    assert v_profile.selection.x_coordinate_value == 3.0
+    assert v_profile.selection.y_coordinate_value == 2.5
+    assert v_profile.values == pytest.approx([1.0, 4.2])
+    assert "v_native_y_staggered_grid" in v_profile.caveats
+    assert "wind_component_not_wind_gust_outflow_or_rotation_diagnostic" in v_profile.caveats
+
+
 def test_time_height_products_compute_cloud_fraction_and_w_extrema(
     tmp_path: Path,
 ) -> None:
@@ -642,6 +740,40 @@ def test_time_height_products_compute_cloud_fraction_and_w_extrema(
     assert max_w.values[1] == pytest.approx([47.0, 59.0, 71.0])
     assert max_w.finite_counts == [[12, 12, 12], [12, 12, 12]]
     assert "native_grid_time_height_no_interpolation" in max_w.caveats
+
+
+def test_wind_component_time_height_products_work_without_vector_claims(
+    tmp_path: Path,
+) -> None:
+    settings, result_id, _run_dir = create_visualization_result(tmp_path)
+
+    u = time_height_product(
+        settings,
+        result_id,
+        field="u",
+        aggregation_method="domain_mean",
+    )
+    v = time_height_product(
+        settings,
+        result_id,
+        field="v",
+        aggregation_method="domain_max",
+    )
+
+    assert u.field.canonical_field_name == "east_west_wind"
+    assert u.vertical_dimension == "zh"
+    assert u.values[0] == pytest.approx([5.7, 7.2])
+    assert u.values[1] == pytest.approx([8.7, 10.2])
+    assert u.finite_counts == [[15, 15], [15, 15]]
+    assert "u_native_x_staggered_grid" in u.caveats
+    assert "wind_component_not_wind_gust_outflow_or_rotation_diagnostic" in u.caveats
+
+    assert v.field.canonical_field_name == "north_south_wind"
+    assert v.values[0] == pytest.approx([1.0, 4.2])
+    assert v.values[1] == pytest.approx([7.4, 10.600000000000001])
+    assert v.finite_counts == [[16, 16], [16, 16]]
+    assert "v_native_y_staggered_grid" in v.caveats
+    assert "no_vector_interpolation" in v.caveats
 
 
 def test_time_height_supports_qv_and_temperature_domain_mean(tmp_path: Path) -> None:

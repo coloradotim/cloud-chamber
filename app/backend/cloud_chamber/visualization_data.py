@@ -70,6 +70,38 @@ FIELD_DEFINITIONS: dict[str, FieldDefinition] = {
         "Slice/profile-first field; signed-flow 3-D rendering is not supported yet.",
         caveats=("signed_flow_field_slice_only",),
     ),
+    "u": FieldDefinition(
+        "east_west_wind",
+        "East-west wind",
+        "wind",
+        (
+            "Native-grid wind component; supported for slices, profiles, and time-height "
+            "summaries without vector interpolation."
+        ),
+        caveats=(
+            "native_staggered_wind_component",
+            "u_native_x_staggered_grid",
+            "signed_flow_field_slice_only",
+            "no_vector_interpolation",
+            "wind_component_not_wind_gust_outflow_or_rotation_diagnostic",
+        ),
+    ),
+    "v": FieldDefinition(
+        "north_south_wind",
+        "North-south wind",
+        "wind",
+        (
+            "Native-grid wind component; supported for slices, profiles, and time-height "
+            "summaries without vector interpolation."
+        ),
+        caveats=(
+            "native_staggered_wind_component",
+            "v_native_y_staggered_grid",
+            "signed_flow_field_slice_only",
+            "no_vector_interpolation",
+            "wind_component_not_wind_gust_outflow_or_rotation_diagnostic",
+        ),
+    ),
     "qr": FieldDefinition(
         "rain_water",
         "Rain water aloft",
@@ -285,14 +317,14 @@ FIELD_DEFINITIONS: dict[str, FieldDefinition] = {
     ),
 }
 
-SIGNED_FLOW_FIELDS = {"w"}
+SIGNED_FLOW_FIELDS = {"u", "v", "w"}
 SURFACE_POINT_FIELDS = {"rain"}
 
 TIME_DIMENSION_CANDIDATES = ("time", "mtime", "t")
 VERTICAL_DIMENSION_CANDIDATES = ("zh", "zf", "z", "height", "height_m", "height_km")
 SURFACE_VERTICAL_CANDIDATES = ("zf", "zh", "z", "height", "height_m", "height_km")
-Y_DIMENSION_CANDIDATES = ("yh", "y")
-X_DIMENSION_CANDIDATES = ("xh", "x")
+Y_DIMENSION_CANDIDATES = ("yh", "yf", "y")
+X_DIMENSION_CANDIDATES = ("xh", "xf", "x")
 
 
 class VisualizationDataError(RuntimeError):
@@ -1033,6 +1065,7 @@ def output_product_catalog(
             ],
         )
     ]
+    unavailable.extend(_near_surface_wind_unavailable_descriptors(catalog.available_fields))
     unavailable.extend(
         _unavailable_product_descriptor(field) for field in catalog.unavailable_fields
     )
@@ -2222,6 +2255,34 @@ def _unavailable_product_descriptor(field: UnavailableField) -> OutputProductDes
         reason=field.reason,
         caveats=field.caveats,
     )
+
+
+def _near_surface_wind_unavailable_descriptors(
+    fields: list[VisualizableField],
+) -> list[OutputProductDescriptor]:
+    descriptors: list[OutputProductDescriptor] = []
+    for field in fields:
+        if field.canonical_field_name not in {"east_west_wind", "north_south_wind"}:
+            continue
+        descriptors.append(
+            OutputProductDescriptor(
+                product_key=f"near_surface_wind_time_series:{field.raw_field_name}",
+                product_kind="future_diagnostic",
+                status="unavailable",
+                raw_field_name=field.raw_field_name,
+                canonical_field_name=field.canonical_field_name,
+                display_name=f"Near-surface {field.display_name.lower()} time series",
+                required_fields=[field.raw_field_name],
+                reason="near_surface_wind_diagnostic_not_implemented",
+                caveats=[
+                    "lowest_level_wind_selection_method_not_finalized",
+                    "native_staggered_wind_component",
+                    "no_vector_interpolation",
+                    "wind_component_not_wind_gust_outflow_or_rotation_diagnostic",
+                ],
+            )
+        )
+    return descriptors
 
 
 def _time_series_methods_for_field(
