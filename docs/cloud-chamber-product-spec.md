@@ -25,7 +25,7 @@ Cloud Chamber is a guided experiment notebook for understanding why clouds forme
 The current product model is:
 
 ```text
-Build = configure and launch one CM1 run
+Build = configure and launch one or more planned CM1 runs
 Results = notebook for completed/ingested runs
 Explore = inspect one result with CM1-derived evidence
 ```
@@ -138,28 +138,39 @@ pre-run evidence and context only. Parcel, storm-relative, wet-bulb, and
 winter-phase diagnostics must remain explicitly unavailable until their methods
 are implemented and tested.
 
-In Build, `Upload a Sounding` is the product-facing entry point for this
-candidate workflow. It should show a `Find interesting soundings` workbench
-beside the observed-sounding upload path. The workbench can refresh the bounded
-IGRA cache, analyze cached soundings into station-diverse recommendations, show
-why each candidate is interesting, expose story, story-family, support,
-readiness, station-search, and sort controls as advanced refinements, show
-package-ready and blocked candidates with evidence and caveats, save candidates
-with freeform tags and notes for later review, and load a selected package-ready
-candidate into the observed-sounding package review. Missing sounding-derived
-features must remain unavailable/caveated and must not sort as zero-valued
-evidence.
-Saved candidates should appear as soon as the user selects `Upload a Sounding`,
-without requiring a catalog refresh, cache action, or new analysis run. It must
-keep the language pre-run and provisional: a candidate is an observed atmosphere
-worth trying, not a prediction that clouds, rain, or suppression will occur.
-When a candidate is used, its screening story, score, evidence, feature summary,
-and caveats should be copied into package metadata as
-provenance.
+In Build, `Upload a Sounding` is the product-facing entry point for observed
+atmosphere work. It should offer one source path at a time: cached local
+recommendations, saved candidates, or manual IGRA station text upload. The
+cached-recommendation path should lead with product-level search controls such
+as source region, search intent, search depth, and time scope, with raw cache
+limits and backend filters kept in advanced refinements. The workbench can
+refresh the bounded IGRA cache, analyze cached soundings into station-diverse
+recommendations, show why each candidate is interesting, expose story,
+story-family, support, readiness, station-search, and sort controls as advanced
+refinements, show package-ready and blocked candidates with evidence and
+caveats, and save candidates with freeform tags and notes for later review.
+Manual upload should stay hidden while cached recommendations or saved
+candidates are the active source path.
 
-When an uploaded or saved observed sounding is run-ready, Build should let the
-user choose an observed-sounding run recipe and adjust the explicit CM1-facing
-run configuration. The triggered deep-potential recipe is first-class for
+Saved candidates are a source path and shortlist, not an always-visible side
+panel. Selecting the saved source should load saved candidates without requiring
+a catalog refresh, cache action, or new analysis run. All candidate language
+must remain pre-run and provisional: a candidate is an observed atmosphere worth
+trying, not a prediction that clouds, rain, or suppression will occur. When a
+candidate is selected for run setup, Build should use the same recipe and run
+configuration flow used for uploads. When that configured sounding is added to
+the run plan, its screening story, score, evidence, feature summary, saved
+tags/notes, and caveats should be copied into package metadata as provenance.
+
+When an uploaded, cached, or saved observed sounding is selected, Build should
+show one shared selected-sounding setup flow above the run plan. The source path
+should determine where the selected atmosphere came from, not create a separate
+configuration workflow. The run plan should sit below the source/setup flow and
+support multiple candidate atmospheres, duplicate variants, per-item run recipe
+and run configuration edits, local or LAN queue target selection, remove/clear
+actions, and a batch action to create packages and queue selected runs. Per-item
+packaging or queue failures should remain visible instead of clearing the failed
+item from the plan. The triggered deep-potential recipe is first-class for
 severe/deep-convection observed-sounding experiments: it uses the observed
 temperature, moisture, and complete wind profile through CM1 `isnd = 7`, runs an
 idealized three-warm-bubble trigger (`iinit = 3`), uses a storm-scale model box
@@ -175,6 +186,12 @@ better suited to larger compute instead of making machine choice the primary
 product axis. Raw trigger parameters remain
 metadata-only in v1 and should not become user controls until useful ranges are
 validated.
+
+The run monitor should be compact by default. It should summarize active,
+queued, and completed runtime work while keeping detailed package, queue, LAN,
+ingest, and cleanup actions reachable on demand. The package/run status rail is
+supporting context for the run plan, not the primary place to continue after
+choosing a sounding.
 
 Explore should be a focused visualization plus explanation screen for one
 selected result. Its core interaction is `What happened here?`: select a cloud,

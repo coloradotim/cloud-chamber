@@ -11,7 +11,7 @@ visualizer.
 The current user-facing architecture is:
 
 ```text
-Build = configure and launch one CM1 run
+Build = configure and launch one or more planned CM1 runs
 Results = notebook for completed/ingested runs
 Explore = inspect one result with CM1-derived evidence
 ```
@@ -28,7 +28,9 @@ pre-run validation are the run-builder contract.
 
 The first MVP target is a 2024 MacBook Air with 8GB RAM. Design for one local CM1 run at a time, conservative output handling, and backend-side processing/downsampling. Optional cloud compute can be researched later, but it is not part of the core architecture.
 
-Replay / inspect / save is core MVP. Duplicate / tweak / rerun is later and should not drive the first result storage model.
+Replay / inspect / save is core MVP. Duplicate / tweak / rerun begins in the
+Build run plan as source-level package variants; it should not force Results
+storage to model a single active package or hide completed-result provenance.
 
 Active sequencing lives in [Current Roadmap](current-roadmap.md). Historical
 issue sequencing in the archived roadmap should not drive new architecture
@@ -172,16 +174,30 @@ triggered deep-potential run recipe, which treats selected observed soundings as
 pre-run hypotheses for an idealized triggered CM1 experiment.
 
 The Build UI consumes this layer through bounded JSON only. `Upload a Sounding`
-loads saved candidates immediately when that experiment is selected, before any
-catalog refresh or analysis action. It can also call the recent-catalog/cache
-and candidate-analysis endpoints, display backend recommendations and advanced
-refinements, save candidates with freeform tags/notes, and pass a selected
-candidate's `selected_sounding_payload` into the existing observed-sounding
-package review.
+is the observed-atmosphere entry point, but the user chooses exactly one source
+path at a time: cached recommendations, saved candidates, or manual IGRA station
+text upload. Cached recommendations call recent-catalog/cache and
+candidate-analysis endpoints, display backend recommendations and advanced
+refinements, and save candidates with freeform tags/notes. Saved candidates are
+loaded as a shortlist source without requiring a catalog refresh, cache action,
+or analysis run. Manual upload remains hidden unless that source path is active.
+Package-ready candidates, saved candidates, and uploaded soundings all flow into
+one selected-sounding setup surface for recipe and run-configuration choices.
+The configured selection is then added to the bottom Build run plan rather than
+immediately becoming a single package-review state.
 The frontend does not read cached station text directly, compute the story
 scores, or sort raw feature values itself. Candidate status is separate from
 run/result status: saved candidates are pre-run hypotheses, while generated
 packages, launched runs, and ingested results remain separate lifecycle objects.
+
+The observed-atmosphere run plan owns batch package creation. Each item stores
+its source payload, selected story/hypothesis metadata, selected run recipe,
+recipe metadata (`recipe_id`, display name, assumption set/mode, assumptions,
+required output fields, caveats, and missing required fields when known), run
+configuration, local/LAN queue target, current packaging/queue status, and any
+blocked pre-run validation report. The frontend may duplicate items to compare
+recipe or configuration variants, but package generation and pre-run validation
+remain backend-owned.
 
 Triggered deep-potential observed-sounding runs extend the same dry-run package
 contract rather than creating a separate workflow. The package records

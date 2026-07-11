@@ -21,9 +21,9 @@ interpretations around that source data.
 
 ## Current Product Model
 
-- **Build** = configure and launch one CM1 run from a selected atmosphere,
-  starting preset, and guarded run settings. Build owns active, incomplete, and
-  non-ingested package/run work.
+- **Build** = choose observed or generated atmospheres, configure one or more
+  planned CM1 runs, and launch or queue selected variants. Build owns active,
+  incomplete, and non-ingested package/run work.
 - **Results** = experiment notebook for completed and ingested runs. Results owns
   ingested-result review, notes, and explicit ingested-result cleanup.
 - **Explore** = scientific inspection of one result using CM1-derived evidence.
