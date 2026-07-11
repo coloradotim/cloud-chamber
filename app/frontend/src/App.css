@@ -278,7 +278,7 @@ small {
 
 .run-configuration-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
   gap: 0.65rem;
   margin: 0.75rem 0;
 }
@@ -319,20 +319,60 @@ small {
 .atmosphere-source-panel,
 .candidate-search-controls,
 .upload-source-stack,
-.selected-sounding-setup,
 .run-plan-panel {
   display: grid;
   gap: 0.85rem;
 }
 
 .selected-sounding-setup {
-  border-top: 1px solid rgba(188, 211, 224, 0.86);
-  padding-top: 1rem;
+  display: grid;
+  gap: 0;
 }
 
-.selected-sounding-summary,
+.selected-run-builder {
+  background: rgba(255, 255, 255, 0.86);
+}
+
+.selected-run-builder > * + * {
+  border-top: 1px solid rgba(188, 211, 224, 0.72);
+  padding-top: 0.85rem;
+  margin-top: 0.85rem;
+}
+
+.selected-sounding-strip {
+  display: grid;
+  gap: 0.45rem;
+}
+
+.selected-sounding-context {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-weight: 650;
+}
+
+.selected-sounding-metrics {
+  grid-template-columns: repeat(auto-fit, minmax(9.5rem, 1fr));
+}
+
+.run-configuration-panel {
+  display: grid;
+  gap: 0.85rem;
+}
+
 .selected-sounding-add-panel {
-  background: rgba(255, 255, 255, 0.78);
+  display: grid;
+  gap: 0.75rem;
+}
+
+.selected-sounding-add-panel button {
+  justify-self: start;
+}
+
+.summary-note {
+  display: inline-block;
+  margin-left: 0.45rem;
+  color: var(--color-text-muted);
+  font-weight: 600;
 }
 
 .source-path-tabs {

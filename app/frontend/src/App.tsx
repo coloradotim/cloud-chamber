@@ -4251,26 +4251,47 @@ function RunConfigurationPanel({
   configuration,
   preview,
   triggeredDeepPotential,
+  runRecipe,
+  controls,
+  selectedCandidateScreening,
   onChange,
+  onRunRecipeChange,
+  embedded = false,
 }: {
   configuration: RunConfigurationInput;
   preview: RunConfiguration;
   triggeredDeepPotential: boolean;
+  runRecipe?: ObservedRunRecipe;
+  controls?: Record<string, string | number | boolean>;
+  selectedCandidateScreening?: Record<string, unknown> | null;
   onChange: (configuration: RunConfigurationInput) => void;
+  onRunRecipeChange?: (runRecipe: ObservedRunRecipe) => void;
+  embedded?: boolean;
 }) {
-  const domainOptions = triggeredDeepPotential ? DEEP_DOMAIN_OPTIONS : SHALLOW_DOMAIN_OPTIONS;
+  const observedRecipeSelected = runRecipe !== undefined && onRunRecipeChange !== undefined;
+  const selectedDeep = runRecipe ? runRecipe === "triggered_deep_potential" : triggeredDeepPotential;
+  const domainOptions = selectedDeep ? DEEP_DOMAIN_OPTIONS : SHALLOW_DOMAIN_OPTIONS;
+  const recipeMismatchWarning =
+    runRecipe && selectedCandidateScreening
+      ? candidateRecipeMismatchWarning(selectedCandidateScreening, runRecipe)
+      : null;
+  const appliedForcing =
+    runRecipe && controls ? observedRecipeAppliedForcing(controls, selectedDeep) : null;
   const update = (key: keyof RunConfigurationInput, value: string) => {
     onChange({ ...configuration, [key]: value });
   };
   return (
-    <section className="experiment-summary" aria-labelledby="run-configuration-title">
+    <section
+      className={embedded ? "run-configuration-panel" : "experiment-summary run-configuration-panel"}
+      aria-labelledby="run-configuration-title"
+    >
       <div className="panel-heading-row">
         <div>
           <p className="eyebrow">Run configuration</p>
-          <h3 id="run-configuration-title">Choose what CM1 will actually run</h3>
+          <h3 id="run-configuration-title">Configure this CM1 run</h3>
           <p className="field-help">
-            Smoke checks package health. Science configurations are long enough to inspect
-            evolution; cost is controlled by horizontal cells, domain, cadence, and diagnostics.
+            Set the experiment recipe, duration, grid, domain, cadence, and diagnostics before
+            staging this sounding into the run plan.
           </p>
         </div>
         <StatusBadge
@@ -4280,6 +4301,25 @@ function RunConfigurationPanel({
       </div>
 
       <div className="run-configuration-grid">
+        {observedRecipeSelected && (
+          <RunConfigurationSelect
+            id="run-recipe"
+            label="Experiment recipe"
+            description="Initiation and comparison context for this observed sounding."
+            value={runRecipe}
+            options={[
+              {
+                value: "untriggered_observed_evolution",
+                label: "Observed evolution",
+              },
+              {
+                value: "triggered_deep_potential",
+                label: "Triggered deep potential",
+              },
+            ]}
+            onChange={(value) => onRunRecipeChange(value as ObservedRunRecipe)}
+          />
+        )}
         <RunConfigurationSelect
           id="run-duration"
           label="Duration"
@@ -4292,7 +4332,7 @@ function RunConfigurationPanel({
           id="run-grid"
           label="Horizontal cells"
           description={
-            triggeredDeepPotential
+            selectedDeep
               ? "Storm-scale cell budget. CM1 spacing is derived from domain width divided by cells."
               : "Observed-evolution cell budget. More cells reduce dx/dy and increase compute and output volume."
           }
@@ -4304,7 +4344,7 @@ function RunConfigurationPanel({
           id="run-domain"
           label="Domain size"
           description={
-            triggeredDeepPotential
+            selectedDeep
               ? "Storm-growth domain for triggered-potential experiments."
               : "Observed soundings default wider so winds do not make the setup misleading."
           }
@@ -4330,7 +4370,20 @@ function RunConfigurationPanel({
         />
       </div>
 
+      {recipeMismatchWarning && (
+        <div className="validation" role="alert">
+          {recipeMismatchWarning}
+        </div>
+      )}
+
       <dl className="compact-metrics">
+        {runRecipe && (
+          <Metric
+            label="Initiation"
+            value={selectedDeep ? "Idealized warm-bubble trigger" : "No added deep trigger"}
+          />
+        )}
+        {appliedForcing && <Metric label="Forcing" value={appliedForcing} />}
         <Metric label="Selected setup" value={preview.label} />
         <Metric label="Runtime / saved frames" value={runConfigurationTimingSummary(preview)} />
         <Metric label="Grid" value={runConfigurationGridSummary(preview)} />
@@ -4347,6 +4400,12 @@ function RunConfigurationPanel({
         <p className="field-help">
           This configuration may be better suited to larger compute. Cloud Chamber will still show
           the CM1-facing values before launch.
+        </p>
+      )}
+      {selectedDeep && (
+        <p className="field-help">
+          Triggered deep potential is not normal atmospheric evolution; it adds an idealized trigger
+          to inspect whether this profile can support deeper convection.
         </p>
       )}
 
@@ -5513,61 +5572,70 @@ function SelectedSoundingRunSetupPanel({
   );
   const activeStoryLabel = observedRecipeStoryLabel(selectedCandidateScreening);
   return (
-    <section className="selected-sounding-setup" aria-label="Selected sounding run setup">
-      <section className="experiment-summary selected-sounding-summary">
+    <section
+      className="experiment-summary selected-sounding-setup selected-run-builder"
+      aria-label="Selected sounding run setup"
+    >
+      <div className="selected-sounding-strip">
         <div className="panel-heading-row">
           <div>
             <p className="eyebrow">Selected sounding</p>
             <h3>{stationLabel}</h3>
-            <p className="field-help">
-              Configure this sounding here, then add it to the run plan at the bottom.
-            </p>
           </div>
           <StatusBadge label="Ready to configure" tone="good" />
         </div>
-        <dl className="compact-metrics">
-          <Metric label="Source" value={sourceLabel} />
-          <Metric label="Selected time" value={formatDate(observedSounding.valid_time_utc)} />
-          <Metric label="Screened hypothesis" value={activeStoryLabel} />
-          <Metric label="Usable levels" value={observedSounding.levels.length.toString()} />
-          <Metric label="Wind handling" value={humanize(observedSounding.wind_handling)} />
-          <Metric label="Validation" value={humanize(observedSounding.validation.status)} />
-        </dl>
-      </section>
-
-      <ObservedRunRecipePanel
-        runRecipe={observedRunRecipe}
-        controls={controls}
-        selectedCandidateScreening={selectedCandidateScreening}
-        onChange={onObservedRunRecipeChange}
-      />
+        <p className="selected-sounding-context">
+          {formatDate(observedSounding.valid_time_utc)} · {sourceLabel} · {activeStoryLabel} ·{" "}
+          {humanize(observedSounding.validation.status)}
+        </p>
+        <details className="technical-details selected-sounding-details">
+          <summary>Source, validation, and sounding details</summary>
+          <dl className="compact-metrics selected-sounding-metrics">
+            <Metric label="Source" value={sourceLabel} />
+            <Metric label="Selected time" value={formatDate(observedSounding.valid_time_utc)} />
+            <Metric label="Screened hypothesis" value={activeStoryLabel} />
+            <Metric label="Validation" value={humanize(observedSounding.validation.status)} />
+            <Metric label="Usable levels" value={observedSounding.levels.length.toString()} />
+            <Metric label="Wind handling" value={humanize(observedSounding.wind_handling)} />
+            <Metric
+              label="Model bottom"
+              value={formatNumber(observedSounding.model_bottom_elevation_m_msl, "m MSL")}
+            />
+          </dl>
+        </details>
+      </div>
 
       <RunConfigurationPanel
         configuration={runConfiguration}
         preview={runConfigurationPreview}
         triggeredDeepPotential={selectedTriggeredDeepPotential}
+        runRecipe={observedRunRecipe}
+        controls={controls}
+        selectedCandidateScreening={selectedCandidateScreening}
         onChange={onRunConfigurationChange}
+        onRunRecipeChange={onObservedRunRecipeChange}
+        embedded
       />
 
-      <section className="experiment-summary selected-sounding-add-panel">
+      <ObservedRunRecipePanel
+        runRecipe={observedRunRecipe}
+        selectedCandidateScreening={selectedCandidateScreening}
+      />
+
+      <div className="selected-sounding-add-panel">
         <div className="panel-heading-row">
           <div>
             <p className="eyebrow">Add to run plan</p>
-            <h3>Stage this configured run</h3>
+            <h3>Add to plan</h3>
             <p className="field-help">
-              Adding creates an editable planned run. Queue target, recipe, and run configuration
-              can still be changed on the run-plan item.
+              Stage this setup as an editable row below; duplicate it there to compare variants.
             </p>
           </div>
-          <StatusBadge
-            label={runConfigurationTimingSummary(runConfigurationPreview)}
-            tone="neutral"
-          />
         </div>
         <button type="button" onClick={onAddSelectedSoundingToRunPlan}>
-          Add selected sounding to run plan
+          Add to run plan
         </button>
-      </section>
+      </div>
     </section>
   );
 }
@@ -5665,51 +5733,54 @@ function ObservedSoundingInputPanel({
             </select>
           </div>
 
-          <dl className="compact-metrics">
-            <Metric label="Source" value={`${parsed.source_provider} · ${parsed.source_format}`} />
-            <Metric label="Uploaded file" value={parsed.uploaded_filename} />
-            <Metric
-              label="Station"
-              value={`${selected.station_id}${selected.station_name ? ` · ${selected.station_name}` : ""}`}
-            />
-            <Metric
-              label="Location"
-              value={
-                selected.station_latitude !== null &&
-                selected.station_latitude !== undefined &&
-                selected.station_longitude !== null &&
-                selected.station_longitude !== undefined
-                  ? `${formatNumber(selected.station_latitude, "deg")}, ${formatNumber(selected.station_longitude, "deg")}`
-                  : "Not available"
-              }
-            />
-            <Metric
-              label="Model bottom / vertical datum"
-              value={`CM1 z=0 is station surface at ${formatNumber(selected.model_bottom_elevation_m_msl, "m MSL")}`}
-            />
-            <Metric
-              label="Source heights"
-              value={`${humanize(selected.source_vertical_coordinate_type)} converted to height above station surface`}
-            />
-            <Metric
-              label="Converted model z range"
-              value={`${formatNumber(selected.levels[0]?.model_z_m ?? null, "m")} to ${formatNumber(selected.levels.at(-1)?.model_z_m ?? null, "m")}`}
-            />
-            <Metric label="Usable levels" value={selected.levels.length.toString()} />
-            <Metric label="Wind handling" value={humanize(selected.wind_handling)} />
-            <Metric label="Validation" value={humanize(selected.validation.status)} />
-          </dl>
+          <details className="technical-details source-review-details">
+            <summary>Uploaded-sounding review</summary>
+            <dl className="compact-metrics">
+              <Metric label="Source" value={`${parsed.source_provider} · ${parsed.source_format}`} />
+              <Metric label="Uploaded file" value={parsed.uploaded_filename} />
+              <Metric
+                label="Station"
+                value={`${selected.station_id}${selected.station_name ? ` · ${selected.station_name}` : ""}`}
+              />
+              <Metric
+                label="Location"
+                value={
+                  selected.station_latitude !== null &&
+                  selected.station_latitude !== undefined &&
+                  selected.station_longitude !== null &&
+                  selected.station_longitude !== undefined
+                    ? `${formatNumber(selected.station_latitude, "deg")}, ${formatNumber(selected.station_longitude, "deg")}`
+                    : "Not available"
+                }
+              />
+              <Metric
+                label="Model bottom / vertical datum"
+                value={`CM1 z=0 is station surface at ${formatNumber(selected.model_bottom_elevation_m_msl, "m MSL")}`}
+              />
+              <Metric
+                label="Source heights"
+                value={`${humanize(selected.source_vertical_coordinate_type)} converted to height above station surface`}
+              />
+              <Metric
+                label="Converted model z range"
+                value={`${formatNumber(selected.levels[0]?.model_z_m ?? null, "m")} to ${formatNumber(selected.levels.at(-1)?.model_z_m ?? null, "m")}`}
+              />
+              <Metric label="Usable levels" value={selected.levels.length.toString()} />
+              <Metric label="Wind handling" value={humanize(selected.wind_handling)} />
+              <Metric label="Validation" value={humanize(selected.validation.status)} />
+            </dl>
 
-          {selected.validation.caveats.length > 0 && (
-            <details>
-              <summary>Observed-sounding caveats</summary>
-              <ul className="compact-list">
-                {selected.validation.caveats.map((caveat) => (
-                  <li key={caveat}>{humanize(caveat)}</li>
-                ))}
-              </ul>
-            </details>
-          )}
+            {selected.validation.caveats.length > 0 && (
+              <details>
+                <summary>Observed-sounding caveats</summary>
+                <ul className="compact-list">
+                  {selected.validation.caveats.map((caveat) => (
+                    <li key={caveat}>{humanize(caveat)}</li>
+                  ))}
+                </ul>
+              </details>
+            )}
+          </details>
         </section>
       )}
     </section>
@@ -5718,53 +5789,32 @@ function ObservedSoundingInputPanel({
 
 function ObservedRunRecipePanel({
   runRecipe,
-  controls,
   selectedCandidateScreening,
-  onChange,
 }: {
   runRecipe: ObservedRunRecipe;
-  controls: Record<string, string | number | boolean>;
   selectedCandidateScreening: Record<string, unknown> | null;
-  onChange: (runRecipe: ObservedRunRecipe) => void;
 }) {
   const selectedDeep = runRecipe === "triggered_deep_potential";
   const activeStory = observedRecipeStoryId(selectedCandidateScreening);
-  const recipeMismatchWarning = candidateRecipeMismatchWarning(
-    selectedCandidateScreening,
-    runRecipe,
-  );
   const activeStoryLabel = observedRecipeStoryLabel(selectedCandidateScreening);
   const expectedSignatures = observedRecipeSignatureLabels(activeStory);
   const hypothesisSummary = observedRecipeHypothesisSummary(activeStory);
   const evidenceSummary = observedRecipeEvidenceSummary(selectedCandidateScreening);
   const recipeFitSummary = observedRecipeFitSummary(selectedCandidateScreening, activeStory);
-  const appliedForcing = observedRecipeAppliedForcing(controls, selectedDeep);
-  const candidateGuidance = selectedCandidateScreening
-    ? "The candidate story is the atmospheric hypothesis. Surface heating and initiation choices are the forcing used to test it."
-    : "No screened candidate is selected yet. This run can still inspect the observed profile, but there is no saved atmospheric hypothesis to compare.";
   const methodScope = selectedDeep
     ? "Forced-initiation test of deep-convection potential; not normal atmospheric evolution."
     : "No added deep trigger; CM1 evolves the observed profile with the selected surface-heating forcing.";
 
   return (
-    <section className="experiment-summary" aria-labelledby="observed-run-recipe-title">
-      <div className="panel-heading-row">
-        <div>
-          <p className="eyebrow">Candidate hypothesis</p>
-          <h3 id="observed-run-recipe-title">What atmospheric outcome are we checking?</h3>
-          <p className="field-help">{candidateGuidance}</p>
-        </div>
-        <StatusBadge
-          label={activeStoryLabel}
-          tone={selectedCandidateScreening ? "neutral" : "warning"}
-        />
-      </div>
-
+    <details className="technical-details hypothesis-details-panel">
+      <summary>
+        Hypothesis, evidence, and expected outputs
+        <span className="summary-note">{activeStoryLabel}</span>
+      </summary>
       <dl className="compact-metrics">
         <Metric label="Atmospheric hypothesis" value={activeStoryLabel} />
         <Metric label="Expected evolution to check" value={hypothesisSummary} />
         <Metric label="Why this sounding looked interesting" value={evidenceSummary} />
-        <Metric label="Applied forcing" value={appliedForcing} />
         <Metric label="Can this run test it?" value={recipeFitSummary} />
       </dl>
 
@@ -5779,42 +5829,10 @@ function ObservedRunRecipePanel({
         </div>
       )}
 
-      <div>
-        <p className="eyebrow">Run method</p>
-        <p className="field-help">
-          Choose the CM1 assumption set. This changes initiation and comparison context; surface
-          heating remains its own forcing control.
-        </p>
-      </div>
-
-      <div className="button-row" role="group" aria-label="Run method">
-        <button
-          type="button"
-          className={!selectedDeep ? "active-control" : "secondary-button"}
-          aria-pressed={!selectedDeep}
-          onClick={() => onChange("untriggered_observed_evolution")}
-        >
-          Untriggered observed evolution
-        </button>
-        <button
-          type="button"
-          className={selectedDeep ? "active-control" : "secondary-button"}
-          aria-pressed={selectedDeep}
-          onClick={() => onChange("triggered_deep_potential")}
-        >
-          Triggered deep potential
-        </button>
-      </div>
-
-      {recipeMismatchWarning && (
-        <div className="validation" role="alert">
-          {recipeMismatchWarning}
-        </div>
-      )}
       <dl className="compact-metrics">
         <Metric
-          label="Selected run method"
-          value={selectedDeep ? "Triggered deep potential" : "Untriggered observed evolution"}
+          label="Experiment recipe"
+          value={selectedDeep ? "Triggered deep potential" : "Observed evolution"}
         />
         <Metric
           label="Initiation"
@@ -5822,14 +5840,7 @@ function ObservedRunRecipePanel({
         />
         <Metric label="Method scope" value={methodScope} />
       </dl>
-      {selectedDeep && (
-        <p className="field-help">
-          This is not normal atmospheric evolution. It adds an idealized trigger so you can inspect
-          whether this observed profile can support deeper convection under a deliberately forced
-          experiment.
-        </p>
-      )}
-    </section>
+    </details>
   );
 }
 

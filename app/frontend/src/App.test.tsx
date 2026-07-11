@@ -3016,7 +3016,7 @@ describe("App", () => {
     expect(screen.getByLabelText("Surface heating")).toBeInTheDocument();
     expect(screen.getAllByText(/Selected: Baseline/).length).toBeGreaterThan(0);
     expect(
-      screen.getByRole("heading", { name: "Choose what CM1 will actually run" }),
+      screen.getByRole("heading", { name: "Configure this CM1 run" }),
     ).toBeInTheDocument();
     expect(
       screen.getByText("Short evolution; Local 6 km; Scout 64 x 64; 100 m dx/dy; Standard 15 min"),
@@ -3105,24 +3105,27 @@ describe("App", () => {
     expect(screen.getByText(/CM1 z=0 is station surface at 351.5 m MSL/)).toBeInTheDocument();
     expect(screen.getAllByText(/observed sounding winds/).length).toBeGreaterThan(0);
     expect(
-      screen.getByRole("heading", { name: "What atmospheric outcome are we checking?" }),
+      screen.getByRole("heading", { name: "Configure this CM1 run" }),
     ).toBeInTheDocument();
     expect(
       screen.getByText(/Surface heating: Baseline; no added deep-initiation trigger/i),
     ).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Untriggered observed evolution" })).toHaveAttribute(
-      "aria-pressed",
-      "true",
+    expect(screen.getByLabelText("Experiment recipe")).toHaveValue(
+      "untriggered_observed_evolution",
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "Triggered deep potential" }));
-    expect(screen.getByText("Idealized three warm bubbles")).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("Experiment recipe"), {
+      target: { value: "triggered_deep_potential" },
+    });
+    expect(screen.getByText("Idealized warm-bubble trigger")).toBeInTheDocument();
     expect(
       screen.getByText(/Surface heating: Baseline; plus idealized warm-bubble initiation/i),
     ).toBeInTheDocument();
-    expect(screen.getByText(/This is not normal atmospheric evolution/i)).toBeInTheDocument();
+    expect(
+      screen.getByText(/Triggered deep potential is not normal atmospheric evolution/i),
+    ).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: "Add selected sounding to run plan" }));
+    fireEvent.click(screen.getByRole("button", { name: "Add to run plan" }));
     expect(screen.getByRole("heading", { name: "Plan multiple CM1 runs" })).toBeInTheDocument();
     expect(within(screen.getByLabelText("Run plan")).getByLabelText("Recipe")).toHaveValue(
       "triggered_deep_potential",
@@ -3178,7 +3181,7 @@ describe("App", () => {
     expect(deepCard).toHaveTextContent("Supercell-like environment");
 
     fireEvent.click(within(deepCard).getByRole("button", { name: "Select for run setup" }));
-    fireEvent.click(screen.getByRole("button", { name: "Add selected sounding to run plan" }));
+    fireEvent.click(screen.getByRole("button", { name: "Add to run plan" }));
 
     expect(
       await screen.findByText("Norman, Oklahoma (USM00072357) added to the run plan"),
@@ -3240,7 +3243,7 @@ describe("App", () => {
     expect(humidCard).toHaveTextContent("Humid / rainy");
 
     fireEvent.click(within(humidCard).getByRole("button", { name: "Select for run setup" }));
-    fireEvent.click(screen.getByRole("button", { name: "Add selected sounding to run plan" }));
+    fireEvent.click(screen.getByRole("button", { name: "Add to run plan" }));
 
     expect(
       await screen.findByText("Wilmington, Ohio (USM00072426) added to the run plan"),
@@ -3344,7 +3347,7 @@ describe("App", () => {
     expect(savedCard).toHaveTextContent("Notes: Compare this against the humid case.");
 
     fireEvent.click(within(savedCard).getByRole("button", { name: "Select for run setup" }));
-    fireEvent.click(screen.getByRole("button", { name: "Add selected sounding to run plan" }));
+    fireEvent.click(screen.getByRole("button", { name: "Add to run plan" }));
 
     expect(
       await screen.findByText("Valley, Nebraska (USM00072558) added to the run plan"),
@@ -3388,7 +3391,7 @@ describe("App", () => {
     fireEvent.click(
       within(selectedValleyCard).getByRole("button", { name: "Select for run setup" }),
     );
-    fireEvent.click(screen.getByRole("button", { name: "Add selected sounding to run plan" }));
+    fireEvent.click(screen.getByRole("button", { name: "Add to run plan" }));
     expect(
       await screen.findByText("Valley, Nebraska (USM00072558) added to the run plan"),
     ).toBeInTheDocument();

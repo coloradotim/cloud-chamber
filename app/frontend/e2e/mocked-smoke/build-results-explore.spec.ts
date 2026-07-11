@@ -83,15 +83,17 @@ test.describe("mocked smoke: Build, Results, Explore path", () => {
     });
 
     await expect(page.getByText("Observed sounding validated for package review")).toBeVisible();
-    await expect(page.getByText("USM00072558 · Valley, Nebraska")).toBeVisible();
+    await expect(page.getByText("Valley, Nebraska (USM00072558)").first()).toBeVisible();
     await expect(page.locator("#observed-sounding-time")).toHaveValue("2025-01-02T00:00:00Z");
+    await page.getByText("Uploaded-sounding review").click();
+    await expect(page.getByText("USM00072558 · Valley, Nebraska")).toBeVisible();
     await expect(page.getByText(/CM1 z=0 is station surface at 351.5 m MSL/i)).toBeVisible();
     await expect(page.getByText(/generated CM1 namelist uses isnd=7/i).first()).toBeVisible();
 
     await page.getByText("Observed-sounding caveats").click();
     await expect(page.getByText("Station elevation joined from igra station fixture")).toBeVisible();
 
-    await page.getByRole("button", { name: "Add selected sounding to run plan" }).click();
+    await page.getByRole("button", { name: "Add to run plan" }).click();
     await expect(
       page.getByText("Valley, Nebraska (USM00072558) added to the run plan"),
     ).toBeVisible();
@@ -155,7 +157,7 @@ test.describe("mocked smoke: Build, Results, Explore path", () => {
     await expect(savedCard).toBeVisible();
 
     await savedCard.getByRole("button", { name: "Select for run setup" }).click();
-    await page.getByRole("button", { name: "Add selected sounding to run plan" }).click();
+    await page.getByRole("button", { name: "Add to run plan" }).click();
     await expect(
       page.getByText("Valley, Nebraska (USM00072558) added to the run plan"),
     ).toBeVisible();
