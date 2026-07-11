@@ -125,21 +125,21 @@ implemented. Tests must not expect winter/cold-season, cold-pool, fog/stratus,
 or other future taxonomy labels to appear as enabled Build filters before that
 support exists. The readiness taxonomy is documented in
 [research/expanded-sounding-candidate-taxonomy.md](research/expanded-sounding-candidate-taxonomy.md).
-The implemented severe/deep-convection exception is `Deep Convection Trial`.
-Unit/component tests should prove that deep-convection candidates can default to
-that package family, that package requests include `package_family =
-deep_convection_trial` and candidate-screening provenance, and that ordinary
-observed-sounding quick looks remain available.
+The implemented severe/deep-convection exception is the triggered
+deep-potential run recipe. Unit/component tests should prove that
+deep-convection candidates can default to that recipe, that package requests
+include `run_recipe = triggered_deep_potential` and candidate-screening
+provenance, and that untriggered observed-evolution runs remain available.
 
-### Deep Convection Trial Package Validation
+### Triggered Deep-Potential Recipe Validation
 
-Automated tests for Deep Convection Trial must use tiny or mocked fixtures. They
+Automated tests for triggered deep-potential runs must use tiny or mocked fixtures. They
 should verify that package generation:
 
 - requires an observed sounding and observed u/v wind components;
 - preserves candidate-screening metadata;
-- records package family, display name, trigger type, trigger metadata,
-  expected outputs, caveats, and package-family smoke-validation status on generated
+- records run recipe, display name, trigger type, trigger metadata,
+  expected outputs, caveats, and recipe smoke-validation status on generated
   manifests and reports;
 - writes CM1-facing `namelist.input` settings for the observed-sounding route,
   three-warm-bubble trigger, storm-scale domain, rain output, reflectivity output,
@@ -155,8 +155,8 @@ and updraft helicity; new soundings remain experiments whose outcomes must be
 inspected after CM1 runs. The manual smoke loop should:
 
 1. choose or upload a real observed sounding with usable winds;
-2. select `Deep Convection Trial`;
-3. generate a Quick Look package;
+2. select `Triggered deep potential`;
+3. generate a short-evolution package;
 4. inspect `run_manifest.json`, `dry_run_report.json`, `namelist.input`, and
    `input_sounding`;
 5. confirm `isnd = 7`, `iinit = 3`, `testcase = 0`, rain/reflectivity/vorticity/
@@ -402,7 +402,7 @@ one desktop cloud-context and slice-inspection workflow rather than separate
 selected-result context flows from Results into Explore; and the old
 implementation pages (`Compare`, `Storage`, `Inspect`, `Visualize`) are no
 longer top-level workspaces. They should also cover prioritizing a validated cloud-forming
-quick-look baseline over historical attempts, user-facing status labels
+reference baseline over historical attempts, user-facing status labels
 replacing raw internal lifecycle strings, and technical details keeping raw
 provenance available without dominating the main view. They should distinguish
 successful cloud-forming results with minor caveats from results that truly need
@@ -531,7 +531,7 @@ than expecting shallow-cumulus runs to contain strong radar echoes.
 
 The consolidated Results/Explore shell and fixed Explore workbench should also
 get a real browser smoke check after layout changes, not only component tests.
-Open the app, navigate to Results, open the validated quick-look baseline in
+Open the app, navigate to Results, open the validated reference baseline in
 Explore, and confirm by screenshot or direct browser inspection that the 3-D
 scalar-field context, visible slice plane, shared controls, matching slice
 inspector, and selected-point explanation are all reachable without the render
@@ -562,7 +562,7 @@ camera/view/field/slice position are preserved across time changes, that
 selected-cell explanation state is cleared while playback tells the user to
 pause before asking `What happened here?`, and that playback stops and resets to
 the first saved output when it reaches the end rather than looping.
-Visual first-impression tests should also keep the validated quick-look baseline
+Visual first-impression tests should also keep the validated reference baseline
 on a cloud-bearing time, show a visible point-cloud state, keep slice planes
 optional and secondary, and keep technical provenance reachable without making
 it the primary reading path.
@@ -605,7 +605,7 @@ Manual validation should record:
 - the CM1 version and local runtime path
 - the Cloud Chamber commit
 - the selected run configuration
-- the grid/domain, runtime, output cadence, and output field density
+- the horizontal cell budget, domain, runtime, output cadence, and diagnostic set
 - diagnostics such as cloud base, cloud top, first cloud time, rain onset, and updraft strength
 - cloud-water max or summary
 - log warnings/errors

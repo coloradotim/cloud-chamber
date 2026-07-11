@@ -261,7 +261,7 @@ support states such as `unavailable`, `unsupported_missing_fields`, and
 `unsupported_missing_diagnostic` rather than silently falling back to a
 misleading cloud/rain-water landmark.
 
-Deep Convection Trial results extend the same product with backend-owned
+Triggered deep-potential results extend the same product with backend-owned
 summary fields for deep-cloud formation, first deep-convection time, strong
 updraft detection, cloud top, rain-water onset, max `qr`, and the default Explore
 time. Unsupported severe-storm diagnostics such as reflectivity maxima,

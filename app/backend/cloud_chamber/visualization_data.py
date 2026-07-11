@@ -1694,7 +1694,7 @@ def _fallback_view_defaults(
 
 
 def _preferred_field(metadata: ResultMetadata, fields: Mapping[str, object]) -> str | None:
-    if metadata.package_family == "deep_convection_trial" and "w" in fields:
+    if metadata.run_recipe == "triggered_deep_potential" and "w" in fields:
         return "w"
     return "qc" if "qc" in fields else next(iter(fields), None)
 

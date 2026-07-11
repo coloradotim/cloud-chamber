@@ -74,12 +74,10 @@ candidate stories. It does not make severe, winter, cold-pool, or specialized
 boundary-layer stories scientifically validated until their scoring, evidence,
 caveats, and package-readiness states are implemented and tested.
 
-The deep-convection package design backs the current deep-convection
-observed-sounding preset and package path. User-facing docs should describe this
-as a configurable deep-convection run starting point, not as a separate
-half-state "Trial" product. Internal metadata such as
-`package_family = deep_convection_trial` may remain where renaming would create
-more churn than clarity.
+The deep-convection package design now maps to the triggered deep-potential run
+recipe. User-facing docs should describe this as a configurable
+triggered-potential experiment, not as a separate half-state "Trial" product or
+package-family compatibility layer.
 
 ## Current State
 
@@ -137,17 +135,18 @@ compare input atmospheres before packaging.
 Goal: let Build start from a sane preset and then adjust run settings that map
 to real CM1 configuration.
 
-Scope: controls for model duration, grid/detail, output cadence, forcing, and
-requested output fields within guarded bounds. Presets should remain available
-as starting points, and an advanced drawer should expose the actual CM1-facing
-values those presets imply.
+Scope: controls for model duration, horizontal cell budget, domain size, output
+cadence, forcing, and diagnostic set within guarded bounds. Starting points
+should remain available, and an advanced drawer should expose the actual
+CM1-facing values those choices imply.
 
 Non-goals: raw numerical timestep as a normal v1 control, raw trigger controls,
 new trigger types, or a full Build redesign in one issue.
 
 Why now: the product direction is configurable runs, not rigid scenario or
-package-family cages. Grid/detail and output cadence are the main cost levers;
-duration controls must preserve enough model time for meaningful evolution.
+package-family cages. Horizontal cell budget, domain, diagnostic set, and
+output cadence are the main cost levers; duration controls must preserve enough
+model time for meaningful evolution.
 
 ### Pre-Run Configuration Validation
 
@@ -168,13 +167,13 @@ Build workflow.
 
 ### Deep-Convection Configuration Validation Across Soundings
 
-Goal: keep the deep-convection observed-sounding preset first-class while
-measuring where its current configuration is package-ready, caveated, or
+Goal: keep the triggered deep-potential observed-sounding recipe first-class
+while measuring where its current configuration is run-ready, caveated, or
 misleading.
 
 Scope: validate complete observed-wind requirements, storm-scale box choices,
-duration, grid/detail, domain size, output cadence, expected fields, expected
-cost/runtime/output volume, larger-compute suitability notes, and
+duration, horizontal cell budget, domain size, output cadence, diagnostic set,
+expected fields, expected cost/runtime/output volume, larger-compute suitability notes, and
 candidate-provenance copy across selected observed soundings. Separate
 package/run/ingest smoke checks from science outcomes.
 

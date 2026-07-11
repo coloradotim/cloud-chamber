@@ -197,8 +197,10 @@ def test_ingests_valid_tiny_netcdf_metadata(tmp_path: Path) -> None:
     assert result.run_id == "run-ingest"
     assert result.scenario_id == "baseline-shallow-cumulus"
     assert result.physical_question
-    assert result.run_configuration["duration_preset"] == "quick_6h"
+    assert result.run_configuration["duration"] == "short_6h"
     assert result.run_configuration["cm1_values"]["expected_output_frames"] == 25
+    assert result.pre_run_validation_report is not None
+    assert result.pre_run_validation_report["run_shape_validation"]["estimated_frames"] == 25
     assert result.source_lifecycle_state == "completed"
     assert result.source_product_state == "completed_cm1_result"
     assert result.source_model == "CM1"
@@ -399,12 +401,12 @@ def test_ingests_deep_convection_candidate_outcome_comparison(tmp_path: Path) ->
         manifest.model_copy(
             update={
                 "candidate_screening": candidate_screening,
-                "package_family": "deep_convection_trial",
-                "package_display_name": "Deep Convection Trial",
+                "run_recipe": "triggered_deep_potential",
+                "run_recipe_display_name": "Triggered Deep-Potential Experiment",
                 "input_source": "observed_sounding",
                 "trigger_type": "warm_bubble",
                 "expected_outputs": ["qc", "qr", "w", "dbz", "updraft_helicity"],
-                "manual_validation_status": "deep_convection_trial_package_smoke_validated",
+                "manual_validation_status": "triggered_deep_potential_recipe_smoke_validated",
             }
         ),
     )
@@ -419,7 +421,7 @@ def test_ingests_deep_convection_candidate_outcome_comparison(tmp_path: Path) ->
     assert result.science_summary.default_explore_time_seconds == 900.0
     assert result.candidate_hypothesis_comparison is not None
     assert result.candidate_hypothesis_comparison.screened_as == "Supercell-like environment"
-    assert result.candidate_hypothesis_comparison.ran_as == "Deep Convection Trial"
+    assert result.candidate_hypothesis_comparison.ran_as == "Triggered Deep-Potential Experiment"
     assert result.candidate_hypothesis_comparison.match_status == "matched"
     assert result.candidate_hypothesis_comparison.cm1_outcome == (
         "Deep convection formed with strong updraft and rain water aloft."
@@ -457,8 +459,8 @@ def test_non_deep_candidate_comparison_does_not_use_deep_outcome_language(
         manifest.model_copy(
             update={
                 "candidate_screening": candidate_screening,
-                "package_family": "observed_sounding_quicklook",
-                "package_display_name": "Observed Sounding Quick Look",
+                "run_recipe": "untriggered_observed_evolution",
+                "run_recipe_display_name": "Untriggered Observed Evolution",
                 "input_source": "observed_sounding",
             }
         ),
@@ -471,10 +473,10 @@ def test_non_deep_candidate_comparison_does_not_use_deep_outcome_language(
     assert result.candidate_hypothesis_comparison is not None
     assert result.candidate_hypothesis_comparison.match_status == "unable_to_evaluate"
     assert result.candidate_hypothesis_comparison.cm1_outcome == (
-        "Unable to evaluate candidate match because this was not a Deep Convection Trial package."
+        "Unable to evaluate candidate match because this was not a triggered deep-potential run."
     )
     assert "Trigger failed" not in result.candidate_hypothesis_comparison.cm1_outcome
-    assert "comparison_requires_deep_convection_trial_package" in (
+    assert "comparison_requires_triggered_deep_potential_run" in (
         result.candidate_hypothesis_comparison.caveats
     )
 

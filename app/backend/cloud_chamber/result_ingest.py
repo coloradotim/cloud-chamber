@@ -98,14 +98,15 @@ class ResultMetadata(BaseModel):
     input_source: str = "generated_reference"
     input_source_label: str = "Generated reference"
     observed_sounding: dict[str, Any] | None = None
-    package_family: str | None = None
-    package_display_name: str | None = None
+    run_recipe: str | None = None
+    run_recipe_display_name: str | None = None
     trigger_type: str | None = None
     trigger_parameters: dict[str, Any] | None = None
     expected_outputs: list[str] = Field(default_factory=list)
-    package_caveats: list[str] = Field(default_factory=list)
+    run_caveats: list[str] = Field(default_factory=list)
     manual_validation_status: str | None = None
     candidate_screening: dict[str, Any] | None = None
+    pre_run_validation_report: dict[str, Any] | None = None
     candidate_hypothesis_comparison: CandidateHypothesisComparison | None = None
     result_state: str = "ingested_result_metadata"
     raw_cm1_artifacts: list[str] = Field(default_factory=list)
@@ -187,7 +188,7 @@ def ingest_completed_run(manifest_path: Path) -> ResultMetadata:
         diagnostics=result.diagnostics,
         output_manifest=product_manifest,
         variables=result.variables,
-        package_family=result.package_family,
+        run_recipe=result.run_recipe,
     )
     product_manifest = product_manifest.model_copy(
         update={"interesting_time_product": interesting_time_product}
@@ -300,14 +301,15 @@ def _result_from_model_output_files(
         input_source=_input_source(manifest),
         input_source_label=_input_source_label(manifest),
         observed_sounding=manifest.observed_sounding,
-        package_family=manifest.package_family,
-        package_display_name=manifest.package_display_name,
+        run_recipe=manifest.run_recipe,
+        run_recipe_display_name=manifest.run_recipe_display_name,
         trigger_type=manifest.trigger_type,
         trigger_parameters=manifest.trigger_parameters,
         expected_outputs=manifest.expected_outputs,
-        package_caveats=manifest.package_caveats,
+        run_caveats=manifest.run_caveats,
         manual_validation_status=manifest.manual_validation_status,
         candidate_screening=manifest.candidate_screening,
+        pre_run_validation_report=manifest.pre_run_validation_report,
         raw_cm1_artifacts=manifest.outputs.raw_cm1_artifacts,
         netcdf_paths=[str(path) for path in netcdf_paths],
         model_output_paths=[str(path) for path in contributing_paths],
@@ -815,14 +817,15 @@ def _result_from_dataset(
         input_source=_input_source(manifest),
         input_source_label=_input_source_label(manifest),
         observed_sounding=manifest.observed_sounding,
-        package_family=manifest.package_family,
-        package_display_name=manifest.package_display_name,
+        run_recipe=manifest.run_recipe,
+        run_recipe_display_name=manifest.run_recipe_display_name,
         trigger_type=manifest.trigger_type,
         trigger_parameters=manifest.trigger_parameters,
         expected_outputs=manifest.expected_outputs,
-        package_caveats=manifest.package_caveats,
+        run_caveats=manifest.run_caveats,
         manual_validation_status=manifest.manual_validation_status,
         candidate_screening=manifest.candidate_screening,
+        pre_run_validation_report=manifest.pre_run_validation_report,
         raw_cm1_artifacts=manifest.outputs.raw_cm1_artifacts,
         netcdf_paths=[str(path) for path in netcdf_paths],
         model_output_paths=[str(path) for path in contributing_paths],
@@ -910,8 +913,8 @@ def _candidate_hypothesis_comparison(
 
     primary_story = _screening_string(screening.get("primary_story"))
     screened_as = _candidate_story_label(primary_story)
-    ran_as = result.package_display_name or _display_package_family(result.package_family)
-    if result.scenario_name and ran_as == "CM1 package":
+    ran_as = result.run_recipe_display_name or _display_run_recipe(result.run_recipe)
+    if result.scenario_name and ran_as == "CM1 run":
         ran_as = result.scenario_name
 
     science_summary = result.science_summary
@@ -947,20 +950,18 @@ def _candidate_hypothesis_comparison(
                 [*caveats, "candidate_story_not_in_deep_convection_v1_rule_set"]
             ),
         )
-    if result.package_family != "deep_convection_trial":
+    if result.run_recipe != "triggered_deep_potential":
         return CandidateHypothesisComparison(
             screened_as=screened_as,
             ran_as=ran_as,
             cm1_outcome=(
                 "Unable to evaluate candidate match because this was not a "
-                "Deep Convection Trial package."
+                "triggered deep-potential run."
             ),
             match_status="unable_to_evaluate",
             match_status_label="Unable to evaluate",
             evidence=evidence,
-            caveats=_dedupe_strings(
-                [*caveats, "comparison_requires_deep_convection_trial_package"]
-            ),
+            caveats=_dedupe_strings([*caveats, "comparison_requires_triggered_deep_potential_run"]),
         )
     if not diagnostics.cloud.available or not diagnostics.vertical_velocity.available:
         return CandidateHypothesisComparison(
@@ -1036,10 +1037,12 @@ def _candidate_story_label(story: str | None) -> str | None:
     return DEEP_CONVECTION_STORY_LABELS.get(story, story.replace("_", " ").title())
 
 
-def _display_package_family(package_family: str | None) -> str:
-    if package_family == "deep_convection_trial":
-        return "Deep Convection Trial"
-    return "CM1 package"
+def _display_run_recipe(run_recipe: str | None) -> str:
+    if run_recipe == "triggered_deep_potential":
+        return "Triggered Deep-Potential Experiment"
+    if run_recipe == "untriggered_observed_evolution":
+        return "Untriggered Observed Evolution"
+    return "CM1 run"
 
 
 def _match_status_label(match_status: str) -> str:

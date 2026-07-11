@@ -35,9 +35,9 @@ def test_cm1_contract_documents_expected_generated_files_and_default_run_configu
     contract = build_cm1_input_contract(baseline_scenario())
 
     assert contract.scenario_id == "baseline-shallow-cumulus"
-    assert contract.run_configuration.duration_preset == "quick_6h"
-    assert contract.run_configuration.domain_size_preset == "local_6km"
-    assert contract.run_configuration.output_field_density_preset == "analysis"
+    assert contract.run_configuration.duration == "short_6h"
+    assert contract.run_configuration.domain_size == "local_6km"
+    assert contract.run_configuration.diagnostic_set == "process"
     assert {file.role for file in contract.generated_files} == set(GeneratedFileRole)
     assert contract.cloud_scale_defaults.nx == 64
     assert contract.cloud_scale_defaults.ny == 64
@@ -104,11 +104,11 @@ def test_rendered_namelist_smoke_mode_is_short_package_health_run() -> None:
     contract = build_cm1_input_contract(
         baseline_scenario(),
         run_configuration={
-            "duration_preset": "smoke_1h",
-            "grid_detail_preset": "standard",
-            "domain_size_preset": "local_6km",
-            "output_cadence_preset": "standard_15min",
-            "output_field_density_preset": "core",
+            "duration": "smoke_1h",
+            "horizontal_cell_count": "cells_128",
+            "domain_size": "local_6km",
+            "output_cadence": "standard_15min",
+            "diagnostic_set": "essential",
         },
     )
     namelist = render_namelist_fragment(contract)
@@ -119,11 +119,11 @@ def test_rendered_namelist_smoke_mode_is_short_package_health_run() -> None:
     )
     assert "timax  = 3600.0," in namelist
     assert "tapfrq =  900.0," in namelist
-    assert "nx           =      64," in namelist
-    assert "ny           =      64," in namelist
+    assert "nx           =      128," in namelist
+    assert "ny           =      128," in namelist
     assert "nz           =      75," in namelist
-    assert "dx     =   100.0," in namelist
-    assert "dy     =   100.0," in namelist
+    assert "dx     =   50.0," in namelist
+    assert "dy     =   50.0," in namelist
     assert "dz     =   40.0," in namelist
     assert "ztop      = 18000.0," in namelist
     assert "zd      =  2500.0," in namelist
@@ -141,11 +141,11 @@ def test_rendered_namelist_explicit_configuration_changes_domain_detail_and_cade
     contract = build_cm1_input_contract(
         baseline_scenario(),
         run_configuration={
-            "duration_preset": "standard_12h",
-            "grid_detail_preset": "fine",
-            "domain_size_preset": "wide_12km",
-            "output_cadence_preset": "detailed_5min",
-            "output_field_density_preset": "rich",
+            "duration": "standard_12h",
+            "horizontal_cell_count": "cells_256",
+            "domain_size": "wide_12km",
+            "output_cadence": "detailed_5min",
+            "diagnostic_set": "full",
         },
     )
     namelist = render_namelist_fragment(contract)

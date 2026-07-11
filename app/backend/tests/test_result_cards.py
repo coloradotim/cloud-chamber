@@ -128,8 +128,12 @@ def test_result_card_created_from_ingested_metadata(tmp_path: Path) -> None:
     assert card.run_id == "run-card"
     assert card.name == "baseline-shallow-cumulus"
     assert card.scenario_id == "baseline-shallow-cumulus"
-    assert card.run_configuration["duration_preset"] == "quick_6h"
-    assert card.run_configuration["domain_size_preset"] == "local_6km"
+    assert card.run_configuration["duration"] == "short_6h"
+    assert card.run_configuration["domain_size"] == "local_6km"
+    assert card.pre_run_validation_report is not None
+    assert card.pre_run_validation_report["selected_run_recipe"]["recipe_id"] == (
+        "generated_reference_lower_atmosphere"
+    )
     assert card.physical_question
     assert card.diagnostics_summary == (
         "cloud formed; rain water aloft detected; surface rain reached ground; "
@@ -197,9 +201,9 @@ def test_result_card_exposes_observed_sounding_source(tmp_path: Path) -> None:
 
     card = get_result_card(settings, result_id)
 
-    assert card.name == "Uploaded Sounding — Valley, Nebraska"
+    assert card.name == "Untriggered Observed Evolution — Valley, Nebraska"
     assert card.scenario_id == "baseline-shallow-cumulus"
-    assert card.scenario_name == "Uploaded Sounding"
+    assert card.scenario_name == "Untriggered Observed Evolution"
     assert card.input_source == "observed_sounding"
     assert card.input_source_label == "Observed sounding: USM00072558 · Valley, Nebraska"
     assert card.observed_sounding is not None
@@ -224,8 +228,8 @@ def test_result_card_preserves_deep_convection_trial_package_identity(tmp_path: 
                 "primary_story": "supercell_environment",
                 "rank_score": 93.0,
             },
-            "package_family": "deep_convection_trial",
-            "package_display_name": "Deep Convection Trial",
+            "run_recipe": "triggered_deep_potential",
+            "run_recipe_display_name": "Triggered Deep-Potential Experiment",
             "input_source": "observed_sounding",
             "trigger_type": "warm_bubble",
             "trigger_parameters": {
@@ -234,33 +238,36 @@ def test_result_card_preserves_deep_convection_trial_package_identity(tmp_path: 
                 "raw_controls_exposed": False,
             },
             "expected_outputs": ["qc", "qr", "w", "dbz", "updraft_helicity"],
-            "package_caveats": [
-                "Deep Convection Trial uses an idealized CM1 three-warm-bubble trigger."
+            "run_caveats": [
+                (
+                    "Triggered Deep-Potential Experiment uses an idealized CM1 "
+                    "three-warm-bubble trigger."
+                )
             ],
-            "manual_validation_status": "deep_convection_trial_package_smoke_validated",
+            "manual_validation_status": "triggered_deep_potential_recipe_smoke_validated",
         },
     )
 
     card = get_result_card(settings, result_id)
 
-    assert card.name == "Deep Convection Trial — Norman, Oklahoma"
-    assert card.scenario_name == "Deep Convection Trial"
-    assert card.package_family == "deep_convection_trial"
-    assert card.package_display_name == "Deep Convection Trial"
+    assert card.name == "Triggered Deep-Potential Experiment — Norman, Oklahoma"
+    assert card.scenario_name == "Triggered Deep-Potential Experiment"
+    assert card.run_recipe == "triggered_deep_potential"
+    assert card.run_recipe_display_name == "Triggered Deep-Potential Experiment"
     assert card.trigger_type == "warm_bubble"
     assert card.trigger_parameters is not None
     assert card.trigger_parameters["cm1_iinit"] == 3
     assert "dbz" in card.expected_outputs
-    assert card.package_caveats == [
-        "Deep Convection Trial uses an idealized CM1 three-warm-bubble trigger."
+    assert card.run_caveats == [
+        "Triggered Deep-Potential Experiment uses an idealized CM1 three-warm-bubble trigger."
     ]
-    assert card.manual_validation_status == "deep_convection_trial_package_smoke_validated"
-    assert "package_family:deep_convection_trial" in card.provenance_labels
+    assert card.manual_validation_status == "triggered_deep_potential_recipe_smoke_validated"
+    assert "run_recipe:triggered_deep_potential" in card.provenance_labels
     assert card.candidate_screening is not None
     assert card.candidate_screening["primary_story"] == "supercell_environment"
     assert card.candidate_hypothesis_comparison is not None
     assert card.candidate_hypothesis_comparison.screened_as == "Supercell-like environment"
-    assert card.candidate_hypothesis_comparison.ran_as == "Deep Convection Trial"
+    assert card.candidate_hypothesis_comparison.ran_as == "Triggered Deep-Potential Experiment"
     assert card.candidate_hypothesis_comparison.match_status == "did_not_match"
 
 

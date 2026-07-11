@@ -1,6 +1,6 @@
 """CM1-facing input generation contract.
 
-This module defines deterministic metadata and CM1-facing text for package generation.
+This module defines deterministic metadata and CM1-facing text for run generation.
 It does not launch CM1 and does not write generated files.
 """
 
@@ -31,10 +31,10 @@ class GeneratedFileRole(StrEnum):
     RUNTIME_FILE_CHECKLIST = "runtime_file_checklist"
 
 
-class PackageFamily(StrEnum):
-    SHALLOW_CUMULUS = "shallow_cumulus"
-    OBSERVED_SOUNDING_QUICKLOOK = "observed_sounding_quicklook"
-    DEEP_CONVECTION_TRIAL = "deep_convection_trial"
+class RunRecipe(StrEnum):
+    GENERATED_REFERENCE_LOWER_ATMOSPHERE = "generated_reference_lower_atmosphere"
+    UNTRIGGERED_OBSERVED_EVOLUTION = "untriggered_observed_evolution"
+    TRIGGERED_DEEP_POTENTIAL = "triggered_deep_potential"
 
 
 @dataclass(frozen=True)
@@ -74,8 +74,8 @@ class ControlMappingFragment:
 
 @dataclass(frozen=True)
 class CM1InputContract:
-    package_family: PackageFamily
-    package_display_name: str
+    run_recipe: RunRecipe
+    run_recipe_display_name: str
     input_source: str
     trigger_type: str | None
     trigger_parameters: dict[str, str | int | float | bool]
@@ -91,7 +91,7 @@ class CM1InputContract:
     expected_outputs: tuple[str, ...]
     visualization_defaults: dict[str, str | list[str]]
     limitations: tuple[str, ...]
-    package_caveats: tuple[str, ...]
+    run_caveats: tuple[str, ...]
     manual_validation_status: str
     observed_sounding: ObservedSoundingRecord | None = None
 
@@ -109,7 +109,7 @@ GENERATED_FILE_SPECS = (
     GeneratedFileSpec(
         role=GeneratedFileRole.CASE_MANIFEST,
         relative_path="case_manifest.json",
-        description="Scenario-facing case metadata used to review the generated package.",
+        description="Scenario-facing case metadata used to review the generated run inputs.",
         scientific_status="metadata contract",
     ),
     GeneratedFileSpec(
@@ -153,24 +153,24 @@ def build_cm1_input_contract(
     selected_controls: dict[str, str | float | bool] | None = None,
     run_configuration: dict[str, object] | RunConfiguration | None = None,
     observed_sounding: ObservedSoundingRecord | None = None,
-    package_family: str | PackageFamily | None = None,
+    run_recipe: str | RunRecipe | None = None,
 ) -> CM1InputContract:
     selected = selected_controls or {}
-    resolved_package_family = _resolve_package_family(package_family, observed_sounding)
+    resolved_run_recipe = _resolve_run_recipe(run_recipe, observed_sounding)
     resolved_run_configuration = resolve_run_configuration(
         run_configuration=run_configuration,
-        package_family=resolved_package_family.value,
+        run_recipe=resolved_run_recipe.value,
     )
     defaults = cloud_scale_defaults_for_configuration(resolved_run_configuration)
-    if resolved_package_family == PackageFamily.DEEP_CONVECTION_TRIAL:
+    if resolved_run_recipe == RunRecipe.TRIGGERED_DEEP_POTENTIAL:
         if observed_sounding is None:
-            raise ValueError("Deep Convection Trial requires a validated observed sounding.")
+            raise ValueError("Triggered deep-potential run requires a validated observed sounding.")
         if not _has_observed_wind_profile(
             observed_sounding,
             required_model_top_m=_required_sounding_top_m(defaults),
         ):
             raise ValueError(
-                "Deep Convection Trial requires a complete finite observed u/v wind "
+                "Triggered deep-potential runs require a complete finite observed u/v wind "
                 "profile for every input_sounding level."
             )
     control_fragments = tuple(
@@ -193,17 +193,15 @@ def build_cm1_input_contract(
     stability_profile = _stability_profile_from_controls(scenario.id, control_fragments)
 
     return CM1InputContract(
-        package_family=resolved_package_family,
-        package_display_name=_package_display_name(resolved_package_family),
+        run_recipe=resolved_run_recipe,
+        run_recipe_display_name=_run_recipe_display_name(resolved_run_recipe),
         input_source="observed_sounding"
         if observed_sounding is not None
         else "generated_reference",
         trigger_type=(
-            "warm_bubble"
-            if resolved_package_family == PackageFamily.DEEP_CONVECTION_TRIAL
-            else None
+            "warm_bubble" if resolved_run_recipe == RunRecipe.TRIGGERED_DEEP_POTENTIAL else None
         ),
-        trigger_parameters=_trigger_parameters(resolved_package_family),
+        trigger_parameters=_trigger_parameters(resolved_run_recipe),
         scenario_id=scenario.id,
         physical_question=scenario.physical_question,
         run_configuration=resolved_run_configuration,
@@ -214,8 +212,8 @@ def build_cm1_input_contract(
         control_fragments=control_fragments,
         expected_diagnostics=_diagnostic_names(scenario),
         expected_outputs=_expected_outputs(
-            resolved_package_family,
-            resolved_run_configuration.output_field_density_preset,
+            resolved_run_recipe,
+            resolved_run_configuration.diagnostic_set,
         ),
         visualization_defaults={
             "primary_field": scenario.visualization_defaults.primary_field,
@@ -225,8 +223,8 @@ def build_cm1_input_contract(
             "provenance_label": scenario.visualization_defaults.provenance_label,
         },
         limitations=tuple(scenario.limitations),
-        package_caveats=_package_caveats(resolved_package_family, resolved_run_configuration),
-        manual_validation_status=_manual_validation_status(resolved_package_family),
+        run_caveats=_run_caveats(resolved_run_recipe, resolved_run_configuration),
+        manual_validation_status=_manual_validation_status(resolved_run_recipe),
         observed_sounding=observed_sounding,
     )
 
@@ -250,36 +248,36 @@ def cloud_scale_defaults_for_configuration(configuration: RunConfiguration) -> C
     )
 
 
-def _resolve_package_family(
-    package_family: str | PackageFamily | None,
+def _resolve_run_recipe(
+    run_recipe: str | RunRecipe | None,
     observed_sounding: ObservedSoundingRecord | None,
-) -> PackageFamily:
-    if isinstance(package_family, PackageFamily):
-        return package_family
-    if package_family:
+) -> RunRecipe:
+    if isinstance(run_recipe, RunRecipe):
+        return run_recipe
+    if run_recipe:
         try:
-            return PackageFamily(package_family)
+            return RunRecipe(run_recipe)
         except ValueError as exc:
-            raise ValueError(f"Unknown package family: {package_family}") from exc
+            raise ValueError(f"Unknown run recipe: {run_recipe}") from exc
     if observed_sounding is not None:
-        return PackageFamily.OBSERVED_SOUNDING_QUICKLOOK
-    return PackageFamily.SHALLOW_CUMULUS
+        return RunRecipe.UNTRIGGERED_OBSERVED_EVOLUTION
+    return RunRecipe.GENERATED_REFERENCE_LOWER_ATMOSPHERE
 
 
-def _package_display_name(package_family: PackageFamily) -> str:
-    match package_family:
-        case PackageFamily.DEEP_CONVECTION_TRIAL:
-            return "Deep Convection Trial"
-        case PackageFamily.OBSERVED_SOUNDING_QUICKLOOK:
-            return "Observed Sounding Quick Look"
-        case PackageFamily.SHALLOW_CUMULUS:
-            return "Shallow Cumulus Package"
+def _run_recipe_display_name(run_recipe: RunRecipe) -> str:
+    match run_recipe:
+        case RunRecipe.TRIGGERED_DEEP_POTENTIAL:
+            return "Triggered Deep-Potential Experiment"
+        case RunRecipe.UNTRIGGERED_OBSERVED_EVOLUTION:
+            return "Untriggered Observed Evolution"
+        case RunRecipe.GENERATED_REFERENCE_LOWER_ATMOSPHERE:
+            return "Generated Lower-Atmosphere Reference"
 
 
 def _trigger_parameters(
-    package_family: PackageFamily,
+    run_recipe: RunRecipe,
 ) -> dict[str, str | int | float | bool]:
-    if package_family != PackageFamily.DEEP_CONVECTION_TRIAL:
+    if run_recipe != RunRecipe.TRIGGERED_DEEP_POTENTIAL:
         return {}
     return {
         "cm1_iinit": 3,
@@ -292,33 +290,33 @@ def _trigger_parameters(
 
 
 def _expected_outputs(
-    package_family: PackageFamily,
-    output_field_density_preset: str,
+    run_recipe: RunRecipe,
+    diagnostic_set: str,
 ) -> tuple[str, ...]:
     base = ("qc", "qr", "qv", "th", "prs", "u", "v", "w", "rain", "dbz")
     analysis = (*base, "psfc", "hfx", "lhfx", "lwp")
     rich = (*analysis, "tke", "km", "kh", "vorticity", "updraft_helicity")
-    if output_field_density_preset == "core":
+    if diagnostic_set == "essential":
         return base
-    if output_field_density_preset == "analysis":
+    if diagnostic_set == "process":
         return analysis
-    if package_family == PackageFamily.DEEP_CONVECTION_TRIAL:
+    if run_recipe == RunRecipe.TRIGGERED_DEEP_POTENTIAL:
         return rich
     return rich
 
 
-def _package_caveats(
-    package_family: PackageFamily,
+def _run_caveats(
+    run_recipe: RunRecipe,
     run_configuration: RunConfiguration,
 ) -> tuple[str, ...]:
     caveats = list(run_configuration.caveats)
-    if package_family != PackageFamily.DEEP_CONVECTION_TRIAL:
+    if run_recipe != RunRecipe.TRIGGERED_DEEP_POTENTIAL:
         return tuple(caveats)
     caveats.extend(
         [
-            "Deep Convection Trial uses an idealized CM1 three-warm-bubble trigger.",
+            "Triggered deep-potential runs use an idealized CM1 three-warm-bubble trigger.",
             (
-                "Manual smoke evidence applies to the Deep Convection Trial package family; "
+                "Manual smoke evidence applies to the triggered deep-potential recipe; "
                 "each observed sounding remains an experiment to evaluate after CM1 completes."
             ),
             (
@@ -336,14 +334,14 @@ def _package_caveats(
     return tuple(caveats)
 
 
-def _manual_validation_status(package_family: PackageFamily) -> str:
-    if package_family == PackageFamily.DEEP_CONVECTION_TRIAL:
-        return "deep_convection_trial_package_smoke_validated"
-    return "existing_package_path"
+def _manual_validation_status(run_recipe: RunRecipe) -> str:
+    if run_recipe == RunRecipe.TRIGGERED_DEEP_POTENTIAL:
+        return "triggered_deep_potential_recipe_smoke_validated"
+    return "current_run_recipe_path"
 
 
 def _output_switches(
-    output_field_density_preset: str,
+    diagnostic_set: str,
     *,
     deep_convection: bool,
 ) -> dict[str, int]:
@@ -359,7 +357,7 @@ def _output_switches(
         "uh": 0,
         "lwp": 0,
     }
-    if output_field_density_preset in {"analysis", "rich"}:
+    if diagnostic_set in {"process", "full"}:
         switches.update(
             {
                 "sfcflx": 1,
@@ -369,7 +367,7 @@ def _output_switches(
                 "lwp": 1,
             }
         )
-    if output_field_density_preset == "rich" or deep_convection:
+    if diagnostic_set == "full" or deep_convection:
         switches.update(
             {
                 "tke": 1,
@@ -428,14 +426,14 @@ def render_namelist_fragment(contract: CM1InputContract) -> str:
 
 
 def render_cm1_namelist(contract: CM1InputContract) -> str:
-    """Render a runnable CM1 namelist for the baseline shallow-cumulus package.
+    """Render a runnable CM1 namelist for the baseline shallow-cumulus run.
 
     The recovery baseline follows CM1's local ``les_ShallowCu`` reference case.
-    Generated reference packages keep ``isnd = 17`` with the reference wind path.
-    Observed-sounding packages use ``isnd = 7`` so CM1 reads the thermodynamic
+    Generated reference runs keep ``isnd = 17`` with the reference wind path.
+    Observed-sounding runs use ``isnd = 7`` so CM1 reads the thermodynamic
     and wind profile from ``input_sounding``. The resolved run configuration
-    controls runtime, grid/detail, domain size, saved-output cadence, and
-    output-field density before CM1 is launched. The intentional
+    controls runtime, horizontal cells, domain size, saved-output cadence, and
+    diagnostic set before CM1 is launched. The intentional
     product-path change outside the sounding source is ``output_format = 2`` so
     Cloud Chamber can ingest NetCDF output when the local CM1 build supports it.
     """
@@ -443,7 +441,7 @@ def render_cm1_namelist(contract: CM1InputContract) -> str:
     defaults = contract.cloud_scale_defaults
     sounding_source_id = 7 if contract.observed_sounding is not None else 17
     wind_profile_id = 0 if contract.observed_sounding is not None else 9
-    deep_convection = contract.package_family == PackageFamily.DEEP_CONVECTION_TRIAL
+    deep_convection = contract.run_recipe == RunRecipe.TRIGGERED_DEEP_POTENTIAL
     testcase = 0 if deep_convection else 3
     adapt_dt = 0 if deep_convection else 1
     ptype = 5
@@ -458,7 +456,7 @@ def render_cm1_namelist(contract: CM1InputContract) -> str:
     irandp = 0 if deep_convection else 1
     imove = 1 if deep_convection else 0
     output = _output_switches(
-        contract.run_configuration.output_field_density_preset,
+        contract.run_configuration.diagnostic_set,
         deep_convection=deep_convection,
     )
     isfcflx = 0 if deep_convection else 1
@@ -805,8 +803,8 @@ def render_input_sounding_notes(contract: CM1InputContract) -> str:
 def render_cm1_input_sounding(contract: CM1InputContract) -> str:
     """Render a CM1-readable external sounding profile.
 
-    CM1 observed-sounding packages use ``isnd = 7`` so CM1 reads
-    thermodynamics and wind from this file. Generated reference packages use
+    CM1 observed-sounding runs use ``isnd = 7`` so CM1 reads
+    thermodynamics and wind from this file. Generated reference runs use
     the external-sounding profile derived from the BOMEX/Siebesma
     shallow-cumulus breakpoints used by CM1's ``isnd = 19`` reference case.
     """

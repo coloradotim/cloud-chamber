@@ -263,7 +263,7 @@ def test_observed_wind_available_requires_complete_finite_profile() -> None:
     assert features["observed_wind_available"] is False
     supercell = next(score for score in scores if score.story == "supercell_environment")
     assert supercell.support == "unavailable"
-    assert "observed_wind_required_for_deep_convection_trial" in supercell.caveats
+    assert "observed_wind_required_for_triggered_deep_potential" in supercell.caveats
 
 
 def test_screen_cached_soundings_can_target_one_story(tmp_path: Path) -> None:
@@ -886,7 +886,7 @@ def test_deep_convection_scoring_penalizes_profiles_that_start_well_above_surfac
 
     severe = next(score for score in scores if score.story == "severe_thunderstorm_environment")
     assert severe.support == "unavailable"
-    assert "lowest_usable_level_too_high_for_deep_convection_trial" in severe.caveats
+    assert "lowest_usable_level_too_high_for_triggered_deep_potential" in severe.caveats
 
 
 def test_deep_convection_scoring_requires_observed_wind_support() -> None:
@@ -930,7 +930,7 @@ def test_deep_convection_scoring_requires_observed_wind_support() -> None:
     severe = next(score for score in scores if score.story == "severe_thunderstorm_environment")
     assert supercell.support == "unavailable"
     assert severe.support == "unavailable"
-    assert "observed_wind_required_for_deep_convection_trial" in supercell.caveats
+    assert "observed_wind_required_for_triggered_deep_potential" in supercell.caveats
 
 
 def test_story_scores_and_evidence_are_traceable_to_soundings() -> None:

@@ -14,6 +14,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Protocol, TextIO
 
+from cloud_chamber.pre_run_validation import report_blocks_execution
 from cloud_chamber.run_manifest import (
     ExecutionMetadata,
     LifecycleState,
@@ -124,6 +125,8 @@ class LocalRunManager:
                 f"Run {manifest.run_id} must be packaged before launch; "
                 f"found {manifest.lifecycle_state.value}."
             )
+        if report_blocks_execution(manifest.pre_run_validation_report):
+            raise LocalRunManagerError("Pre-run validation blocked CM1 launch for this package.")
 
         run_dir = Path(manifest.generated_inputs.run_directory).expanduser()
         if not run_dir.exists():

@@ -40,6 +40,7 @@ class RunStorageEntry(BaseModel):
     validation_status: str | None = None
     product_state: str | None = None
     run_configuration: dict[str, object] | None = None
+    pre_run_validation_report: dict[str, object] | None = None
     created_at: str | None = None
     updated_at: str | None = None
     saved: bool = False
@@ -304,6 +305,7 @@ def _entry_from_manifest(
         validation_status=manifest.validation_status.value,
         product_state=manifest.provenance.product_state.value,
         run_configuration=manifest.run_configuration,
+        pre_run_validation_report=manifest.pre_run_validation_report,
         created_at=manifest.created_at.isoformat(),
         updated_at=manifest.updated_at.isoformat(),
         saved=manifest.user.saved,

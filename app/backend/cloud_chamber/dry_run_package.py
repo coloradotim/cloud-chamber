@@ -9,6 +9,7 @@ import json
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 
 from cloud_chamber import __version__
 from cloud_chamber.cm1_input_contract import (
@@ -19,6 +20,10 @@ from cloud_chamber.cm1_input_contract import (
     render_namelist_fragment,
 )
 from cloud_chamber.observed_sounding import ObservedSoundingRecord, observed_sounding_from_payload
+from cloud_chamber.pre_run_validation import (
+    blocked_pre_run_validation_report,
+    build_pre_run_validation_report,
+)
 from cloud_chamber.run_configuration import resolve_run_configuration
 from cloud_chamber.run_manifest import (
     AppMetadata,
@@ -37,6 +42,15 @@ from cloud_chamber.scenario_schema import ScenarioTemplate, validate_scenario_te
 
 class DryRunPackageError(RuntimeError):
     """Raised when a dry-run package cannot be generated."""
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        pre_run_validation_report: dict[str, Any] | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.pre_run_validation_report = pre_run_validation_report
 
 
 @dataclass(frozen=True)
@@ -61,7 +75,7 @@ def generate_dry_run_package(
     candidate_screening: dict[str, object] | None = None,
     user_tags: list[str] | None = None,
     user_notes: str | None = None,
-    package_family: str | None = None,
+    run_recipe: str | None = None,
     run_configuration: dict[str, object] | None = None,
 ) -> DryRunPackageResult:
     scenario = validate_scenario_template(scenario_data)
@@ -80,11 +94,35 @@ def generate_dry_run_package(
             selected_controls=selected_controls,
             run_configuration=run_configuration,
             observed_sounding=observed_record,
-            package_family=package_family,
+            run_recipe=run_recipe,
         )
     except ValueError as exc:
-        raise DryRunPackageError(str(exc)) from exc
+        error_message = _user_facing_validation_error(str(exc))
+        report = blocked_pre_run_validation_report(
+            scenario=scenario,
+            controls=selected_controls,
+            run_recipe=run_recipe,
+            run_configuration=run_configuration,
+            observed_sounding=observed_sounding,
+            candidate_screening=candidate_screening,
+            error_message=error_message,
+        )
+        raise DryRunPackageError(error_message, pre_run_validation_report=report) from exc
     now = datetime.now(UTC)
+
+    pre_run_validation_report = build_pre_run_validation_report(
+        scenario=scenario,
+        contract=contract,
+        candidate_screening=candidate_screening,
+    )
+    if pre_run_validation_report["status"] == "blocked":
+        message = "; ".join(
+            str(error) for error in pre_run_validation_report.get("blocking_errors", [])
+        )
+        raise DryRunPackageError(
+            f"Pre-run validation blocked package creation: {message}",
+            pre_run_validation_report=pre_run_validation_report,
+        )
 
     package_dir.mkdir(parents=True, exist_ok=allow_overwrite)
 
@@ -132,14 +170,15 @@ def generate_dry_run_package(
             observed_record.model_dump(mode="json") if observed_record is not None else None
         ),
         candidate_screening=candidate_screening,
-        package_family=contract.package_family.value,
-        package_display_name=contract.package_display_name,
+        pre_run_validation_report=pre_run_validation_report,
+        run_recipe=contract.run_recipe.value,
+        run_recipe_display_name=contract.run_recipe_display_name,
         input_source=contract.input_source,
         trigger_type=contract.trigger_type,
         trigger_parameters=contract.trigger_parameters,
         expected_outputs=list(contract.expected_outputs),
-        package_limitations=list(contract.limitations),
-        package_caveats=list(contract.package_caveats),
+        run_limitations=list(contract.limitations),
+        run_caveats=list(contract.run_caveats),
         manual_validation_status=contract.manual_validation_status,
     )
 
@@ -147,12 +186,14 @@ def generate_dry_run_package(
         scenario,
         contract,
         candidate_screening=candidate_screening,
+        pre_run_validation_report=pre_run_validation_report,
     )
     report = _dry_run_report_payload(
         scenario=scenario,
         manifest=manifest,
         contract=contract,
         generated_files=paths,
+        pre_run_validation_report=pre_run_validation_report,
     )
     runtime_checklist = {
         "status": "external_runtime_files_not_committed",
@@ -209,6 +250,19 @@ def _observed_sounding_record(
         raise DryRunPackageError(f"Invalid observed sounding: {exc}") from exc
 
 
+def _user_facing_validation_error(message: str) -> str:
+    replacements = {
+        "duration": "duration",
+        "horizontal_cell_count": "horizontal cell count",
+        "domain_size": "domain size",
+        "output_cadence": "output cadence",
+        "diagnostic_set": "diagnostic set",
+    }
+    for internal, label in replacements.items():
+        message = message.replace(internal, label)
+    return message
+
+
 def _effective_controls(
     scenario: ScenarioTemplate,
     selected_controls: dict[str, str | float | bool],
@@ -231,12 +285,13 @@ def _case_manifest_payload(
     contract: CM1InputContract,
     *,
     candidate_screening: dict[str, object] | None = None,
+    pre_run_validation_report: dict[str, object] | None = None,
 ) -> dict[str, object]:
     return {
         "scenario_id": scenario.id,
         "display_name": scenario.display_name,
-        "package_family": contract.package_family.value,
-        "package_display_name": contract.package_display_name,
+        "run_recipe": contract.run_recipe.value,
+        "run_recipe_display_name": contract.run_recipe_display_name,
         "input_source": contract.input_source,
         "trigger_type": contract.trigger_type,
         "trigger_parameters": contract.trigger_parameters,
@@ -245,9 +300,10 @@ def _case_manifest_payload(
         "expected_behavior": scenario.expected_behavior,
         "warnings": scenario.warnings,
         "limitations": scenario.limitations,
-        "package_caveats": contract.package_caveats,
+        "run_caveats": contract.run_caveats,
         "manual_validation_status": contract.manual_validation_status,
         "run_configuration": contract.run_configuration.model_dump(mode="json"),
+        "pre_run_validation_report": pre_run_validation_report,
         "cm1_mapping_status": _cm1_mapping_status(contract),
         "contract": _contract_payload(contract),
         "candidate_screening": candidate_screening,
@@ -260,6 +316,7 @@ def _dry_run_report_payload(
     manifest: RunManifest,
     contract: CM1InputContract,
     generated_files: dict[str, Path],
+    pre_run_validation_report: dict[str, object],
 ) -> dict[str, object]:
     run_configuration_summary = _run_configuration_summary(contract)
     return {
@@ -267,8 +324,8 @@ def _dry_run_report_payload(
         "not_a_completed_cm1_result": True,
         "cm1_was_launched": False,
         "scenario_id": scenario.id,
-        "package_family": contract.package_family.value,
-        "package_display_name": contract.package_display_name,
+        "run_recipe": contract.run_recipe.value,
+        "run_recipe_display_name": contract.run_recipe_display_name,
         "input_source": contract.input_source,
         "trigger_type": contract.trigger_type,
         "trigger_parameters": contract.trigger_parameters,
@@ -285,7 +342,7 @@ def _dry_run_report_payload(
             "low_level_humidity": manifest.controls.get("low_level_humidity"),
             "cap_strength": manifest.controls.get("cap_strength"),
             "cap_height": manifest.controls.get("cap_height"),
-            "mapping": _package_mapping_summary(contract),
+            "mapping": _run_recipe_mapping_summary(contract),
         },
         "observed_sounding": (
             _observed_sounding_summary(contract.observed_sounding)
@@ -296,10 +353,11 @@ def _dry_run_report_payload(
         "user": manifest.user.model_dump(mode="json"),
         "run_configuration": contract.run_configuration.model_dump(mode="json"),
         "run_configuration_summary": run_configuration_summary,
+        "pre_run_validation_report": pre_run_validation_report,
         "estimated_cost_or_size": run_configuration_summary["cost_warning"],
         "expected_diagnostics": manifest.expected_diagnostics,
         "expected_outputs": list(contract.expected_outputs),
-        "package_caveats": list(contract.package_caveats),
+        "run_caveats": list(contract.run_caveats),
         "manual_validation_status": contract.manual_validation_status,
         "cm1_mapping_status": _cm1_mapping_status(contract),
         "visualization_defaults": contract.visualization_defaults,
@@ -373,7 +431,7 @@ def _normalize_user_notes(notes: str | None) -> str | None:
 def _run_configuration_summary(contract: CM1InputContract) -> dict[str, object]:
     defaults = contract.cloud_scale_defaults
     reference_configuration = resolve_run_configuration(
-        package_family=contract.package_family.value,
+        run_recipe=contract.run_recipe.value,
     )
     standard = cloud_scale_defaults_for_configuration(reference_configuration)
     grid_cells = defaults.nx * defaults.ny * defaults.nz
@@ -391,10 +449,10 @@ def _run_configuration_summary(contract: CM1InputContract) -> dict[str, object]:
     estimated_compute_multiplier = grid_multiplier * timestep_multiplier * runtime_multiplier
     estimated_output_volume_multiplier = grid_multiplier * output_frame_multiplier
     is_smoke = contract.run_configuration.mode == "smoke"
-    is_deep_convection = contract.package_family.value == "deep_convection_trial"
+    is_triggered_deep_potential = contract.run_recipe.value == "triggered_deep_potential"
     cost_warning = (
-        _deep_convection_cost_warning(contract.run_configuration)
-        if is_deep_convection
+        _triggered_deep_potential_cost_warning(contract.run_configuration)
+        if is_triggered_deep_potential
         else (
             (
                 "Short smoke mode checks package health and CM1 startup behavior; "
@@ -402,8 +460,8 @@ def _run_configuration_summary(contract: CM1InputContract) -> dict[str, object]:
             )
             if is_smoke
             else (
-                "Configuration cost depends on duration, grid/detail, domain, cadence, "
-                "and output-field density. Review the CM1-facing values before launch."
+                "Configuration cost depends on duration, horizontal cells, domain, cadence, "
+                "and diagnostic set. Review the CM1-facing values before launch."
             )
         )
     )
@@ -411,11 +469,11 @@ def _run_configuration_summary(contract: CM1InputContract) -> dict[str, object]:
         "configuration_id": contract.run_configuration.configuration_id,
         "mode": contract.run_configuration.mode,
         "label": contract.run_configuration.label,
-        "duration_preset": contract.run_configuration.duration_preset,
-        "grid_detail_preset": contract.run_configuration.grid_detail_preset,
-        "domain_size_preset": contract.run_configuration.domain_size_preset,
-        "output_cadence_preset": contract.run_configuration.output_cadence_preset,
-        "output_field_density_preset": contract.run_configuration.output_field_density_preset,
+        "duration": contract.run_configuration.duration,
+        "horizontal_cell_count": contract.run_configuration.horizontal_cell_count,
+        "domain_size": contract.run_configuration.domain_size,
+        "output_cadence": contract.run_configuration.output_cadence,
+        "diagnostic_set": contract.run_configuration.diagnostic_set,
         "runtime_seconds": defaults.runtime_seconds,
         "output_cadence_seconds": defaults.output_cadence_seconds,
         "expected_output_frames": output_frames,
@@ -428,9 +486,9 @@ def _run_configuration_summary(contract: CM1InputContract) -> dict[str, object]:
         "model_top_m": defaults.vertical_extent_km * 1000.0,
         "time_step_seconds": defaults.time_step_seconds,
         "time_step_note": (
-            "Deep Convection Trial uses a larger solver timestep for the storm-scale "
-            "triggered-potential setup."
-            if is_deep_convection
+            "Triggered deep-potential runs use a larger solver timestep for the storm-scale "
+            "idealized-trigger setup."
+            if is_triggered_deep_potential
             else "CM1 solver timestep is resolved from the selected run configuration."
         ),
         "grid_cell_count": grid_cells,
@@ -443,30 +501,31 @@ def _run_configuration_summary(contract: CM1InputContract) -> dict[str, object]:
         ),
         "cost_warning": cost_warning,
         "validation_note": (
-            "Deep Convection Trial uses a wider idealized domain and observed winds. "
-            "Manual CM1 smoke evidence applies to the package family; each observed "
-            "sounding remains an experiment until CM1 output is inspected."
-            if is_deep_convection
+            "Triggered deep-potential runs use a wider idealized domain, observed winds, "
+            "and a warm-bubble trigger. Manual CM1 smoke evidence applies to the recipe; "
+            "each observed sounding remains an experiment until CM1 output is inspected."
+            if is_triggered_deep_potential
             else (
-                "Short smoke mode is separated from science runs; use Quick science or longer "
+                "Short smoke mode is separated from science runs; use short evolution or longer "
                 "configurations for meteorological evolution."
                 if is_smoke
                 else (
-                    "Run configuration preserves explicit duration, grid/detail, domain, "
-                    "cadence, and output-density choices."
+                    "Run configuration preserves explicit duration, horizontal cell count, "
+                    "domain, cadence, and diagnostic-set choices."
                 )
             )
         ),
     }
 
 
-def _package_mapping_summary(contract: CM1InputContract) -> str:
-    if contract.package_family.value == "deep_convection_trial":
+def _run_recipe_mapping_summary(contract: CM1InputContract) -> str:
+    if contract.run_recipe.value == "triggered_deep_potential":
         return (
             "observed IGRA external input_sounding profile with observed u/v winds; "
-            "Deep Convection Trial uses CM1 isnd=7, testcase=0, iinit=3 three-warm-bubble "
-            "line initiation, a storm-scale idealized domain, NetCDF output, rain output, "
-            "reflectivity output, vorticity output, and updraft-helicity output"
+            "triggered deep-potential recipe uses CM1 isnd=7, testcase=0, iinit=3 "
+            "three-warm-bubble line initiation, a storm-scale idealized domain, NetCDF "
+            "output, rain output, reflectivity output, vorticity output, and "
+            "updraft-helicity output"
         )
     if contract.observed_sounding is not None:
         return (
@@ -482,33 +541,33 @@ def _package_mapping_summary(contract: CM1InputContract) -> str:
 
 
 def _cm1_mapping_status(contract: CM1InputContract) -> str:
-    if contract.package_family.value == "deep_convection_trial":
+    if contract.run_recipe.value == "triggered_deep_potential":
         return (
-            "CM1-ready Deep Convection Trial package with manual CM1 smoke evidence "
-            "for deep-convection initiation; each observed sounding remains an experiment"
+            "CM1-ready triggered deep-potential run with manual CM1 smoke evidence "
+            "for the recipe; each observed sounding remains an experiment"
         )
     if contract.observed_sounding is not None:
         return (
-            "CM1-ready observed-sounding quick-look package; still pending "
+            "CM1-ready untriggered observed-evolution run; still pending "
             "case-specific local/manual scientific interpretation"
         )
     return (
-        "CM1-ready provisional baseline package; still pending local/manual smoke-run "
+        "CM1-ready generated-reference run; still pending local/manual smoke-run "
         "scientific validation"
     )
 
 
-def _deep_convection_cost_warning(run_configuration: object) -> str:
+def _triggered_deep_potential_cost_warning(run_configuration: object) -> str:
     mode = getattr(run_configuration, "mode", "")
-    domain = getattr(run_configuration, "domain_size_preset", "storm_120km")
-    cadence = getattr(run_configuration, "output_cadence_preset", "standard_15min")
+    domain = getattr(run_configuration, "domain_size", "storm_120km")
+    cadence = getattr(run_configuration, "output_cadence", "standard_15min")
     if mode == "smoke":
         return (
-            "Deep Convection Trial smoke mode checks package health with the triggered "
+            "Smoke mode checks run-input health with the triggered "
             "storm-scale setup; it is not a science-duration result."
         )
     return (
-        "Deep Convection Trial uses a triggered storm-scale domain. Review expected "
+        "Triggered deep-potential runs use a storm-scale domain. Review expected "
         f"cost/runtime/output volume for {domain} and {cadence}; larger configurations "
         "may be better suited to larger compute."
     )

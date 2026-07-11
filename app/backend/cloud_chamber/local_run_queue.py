@@ -9,6 +9,7 @@ from typing import Protocol
 from pydantic import BaseModel, ConfigDict, Field
 
 from cloud_chamber.local_run_manager import LocalRunManagerError, RunStatus
+from cloud_chamber.pre_run_validation import report_blocks_execution
 from cloud_chamber.result_ingest import ResultIngestError, ingest_completed_run
 from cloud_chamber.run_manifest import (
     LifecycleState,
@@ -95,6 +96,10 @@ class LocalRunQueueManager:
             raise LocalRunQueueError(
                 "Only packaged runs can be queued for local CM1 execution; "
                 f"found {manifest.lifecycle_state.value}."
+            )
+        if report_blocks_execution(manifest.pre_run_validation_report):
+            raise LocalRunQueueError(
+                "Pre-run validation blocked queueing this package for CM1 execution."
             )
 
         entries = self._load_entries()

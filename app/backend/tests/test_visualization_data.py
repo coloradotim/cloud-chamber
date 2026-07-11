@@ -1201,8 +1201,8 @@ def test_deep_convection_view_defaults_prefer_updraft_field(tmp_path: Path) -> N
         tmp_path,
         run_id="run-deep-visualization",
         package_updates={
-            "package_family": "deep_convection_trial",
-            "package_display_name": "Deep Convection Trial",
+            "run_recipe": "triggered_deep_potential",
+            "run_recipe_display_name": "Triggered Deep-Potential Experiment",
         },
     )
 

@@ -160,7 +160,7 @@ test.describe("mocked smoke: Build, Results, Explore path", () => {
     await expect(resultsList).toBeVisible();
     await expect(page.getByText("Baseline Shallow Cumulus — Quick Look").first()).toBeVisible();
     await expect(
-      resultsList.getByText(/Cloud water formed in the validated quick-look baseline/i),
+      resultsList.getByText(/Cloud water formed in the validated reference baseline/i),
     ).toBeVisible();
     await expect(resultsList.getByText("Cloud formed").first()).toBeVisible();
     await expect(resultsList.getByText("Rain water aloft detected").first()).toBeVisible();
@@ -221,7 +221,7 @@ test.describe("mocked smoke: Build, Results, Explore path", () => {
     ).toBeVisible();
     await page.getByRole("button", { name: "Delete result and local run data", exact: true }).click();
     await expect(
-      resultDetail.getByRole("status").filter({ hasText: /Result and local run data deleted/ }),
+      page.getByRole("status").filter({ hasText: /Result and local run data deleted/ }),
     ).toBeVisible();
     await expect(page.getByLabel("Results list").getByText("Baseline Shallow Cumulus — Quick Look")).toHaveCount(0);
 
@@ -256,7 +256,7 @@ test.describe("mocked smoke: Build, Results, Explore path", () => {
     await expect(resultsList).toBeVisible();
     await expect(page.getByText("Baseline Shallow Cumulus — Quick Look").first()).toBeVisible();
     await expect(
-      resultsList.getByText(/Cloud water formed in the validated quick-look baseline/i),
+      resultsList.getByText(/Cloud water formed in the validated reference baseline/i),
     ).toBeVisible();
     await expect(page.getByLabel("Result detail")).toBeVisible();
     await expect(page.getByRole("button", { name: "Open in Explore" }).first()).toBeVisible();
