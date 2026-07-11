@@ -4661,11 +4661,13 @@ describe("App", () => {
     expect(screen.getByLabelText("Slice field")).toHaveValue("w");
     expect(screen.getByLabelText("Time")).toHaveValue("2");
     expect(screen.getByText(/Supercell-like environment · Matched/)).toBeInTheDocument();
-    expect(fetch).toHaveBeenCalledWith(
-      expect.stringContaining(
-        "/api/results/result-deep-convection/visualization/slice?field=w&time_index=2",
-      ),
-    );
+    await waitFor(() => {
+      expect(fetch).toHaveBeenCalledWith(
+        expect.stringContaining(
+          "/api/results/result-deep-convection/visualization/slice?field=w&time_index=2",
+        ),
+      );
+    });
   });
 
   it("filters Results by search text and cloud/rain outcomes", async () => {
