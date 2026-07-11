@@ -199,6 +199,8 @@ def test_ingests_valid_tiny_netcdf_metadata(tmp_path: Path) -> None:
     assert result.physical_question
     assert result.run_configuration["duration_preset"] == "quick_6h"
     assert result.run_configuration["cm1_values"]["expected_output_frames"] == 25
+    assert result.pre_run_validation_report is not None
+    assert result.pre_run_validation_report["run_shape_validation"]["estimated_frames"] == 25
     assert result.source_lifecycle_state == "completed"
     assert result.source_product_state == "completed_cm1_result"
     assert result.source_model == "CM1"

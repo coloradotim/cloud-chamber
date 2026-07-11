@@ -67,6 +67,49 @@ const defaultRunConfigurationSummary = {
     "Run configuration preserves explicit duration, grid/detail, domain, cadence, and output-density choices.",
 };
 
+const defaultPreRunValidationReport = {
+  status: "caveated",
+  selected_candidate: {
+    candidate_id: null,
+    station_id: null,
+    valid_time_utc: null,
+  },
+  selected_hypothesis: {
+    hypothesis_id: null,
+    story_id: null,
+    story_label: null,
+    ingredient_score: null,
+    predicted_output_signature: [],
+  },
+  selected_run_recipe: {
+    recipe_id: "shallow_cumulus",
+    display_name: "Baseline Shallow Cumulus",
+    assumption_set_id: "generated_reference_lower_atmosphere_v1",
+  },
+  hypothesis_recipe_alignment: {
+    status: "aligned",
+    reasons: ["No selected candidate hypothesis; validating the run configuration only."],
+    missing_assumptions: [],
+    missing_outputs: [],
+  },
+  run_shape_validation: {
+    duration: "quick_6h",
+    duration_seconds: 21600,
+    domain: "local_6km",
+    grid_detail: "standard",
+    output_cadence: "standard_15min",
+    estimated_frames: 25,
+    estimated_output_volume: "25 saved frames, analysis output fields, 307,200 cells per frame",
+  },
+  output_validation: {
+    required_fields: ["qc", "w"],
+    enabled_fields: ["qc", "qr", "qv", "th", "prs", "u", "v", "w", "rain", "dbz"],
+    missing_fields: [],
+  },
+  blocking_errors: [],
+  caveats: ["science_run_configuration_minimum_duration_6h"],
+};
+
 const scenario = {
   id: "baseline-shallow-cumulus",
   display_name: "Baseline Shallow Cumulus",
@@ -1349,6 +1392,7 @@ export async function mockCloudChamberApis(page: Page) {
         },
         run_configuration: defaultRunConfiguration,
         run_configuration_summary: defaultRunConfigurationSummary,
+        pre_run_validation_report: defaultPreRunValidationReport,
         estimated_cost_or_size: "unknown until validated",
         expected_diagnostics: ["first cloud time", "max qc", "max w"],
         visualization_defaults: {},

@@ -415,6 +415,16 @@ tags/notes, then returns the package paths and dry-run report summary for UI
 review. It must not launch CM1, write NetCDF, or place generated
 packages inside the source tree during tests.
 
+Before writing a package directory, the backend builds a pre-run validation
+report from the CM1 input contract, selected candidate/hypothesis, and selected
+run configuration. The report records candidate and recipe selection,
+hypothesis/recipe alignment, observed-input checks, run-shape estimates,
+forcing support, required/enabled outputs, runtime-file staging status,
+blocking errors, and caveats. Blocked reports are returned in the dry-run API
+error response and must prevent local launch, queueing, and run-directory
+creation; valid or caveated reports persist through run manifests, run status,
+storage inventory, ingest metadata, and result cards.
+
 The Build workspace is the first guided app-side launchpad over the existing
 backend contracts:
 

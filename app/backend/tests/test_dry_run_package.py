@@ -68,6 +68,8 @@ def test_dry_run_manifest_and_report_include_golden_path_metadata(tmp_path: Path
     assert manifest.lifecycle_state.value == "packaged"
     assert manifest.run_configuration["duration_preset"] == "quick_6h"
     assert manifest.run_configuration["domain_size_preset"] == "local_6km"
+    assert manifest.pre_run_validation_report is not None
+    assert manifest.pre_run_validation_report["hypothesis_recipe_alignment"]["status"] == "aligned"
     assert manifest.scenario.id == "baseline-shallow-cumulus"
     assert "first_cloud_time" in manifest.expected_diagnostics
     assert report["not_a_completed_cm1_result"] is True
@@ -82,6 +84,8 @@ def test_dry_run_manifest_and_report_include_golden_path_metadata(tmp_path: Path
         report["run_configuration"]["configuration_id"]
         == (manifest.run_configuration["configuration_id"])
     )
+    assert report["pre_run_validation_report"] == manifest.pre_run_validation_report
+    assert report["pre_run_validation_report"]["run_shape_validation"]["estimated_frames"] == 25
     summary = report["run_configuration_summary"]
     assert summary["runtime_seconds"] == 21600
     assert summary["output_cadence_seconds"] == 900
@@ -115,6 +119,8 @@ def test_dry_run_package_can_use_observed_igra_sounding(tmp_path: Path) -> None:
     assert manifest.run_configuration["domain_size_preset"] == "wide_12km"
     assert manifest.run_configuration["cm1_values"]["nx"] == 128
     assert manifest.run_configuration["cm1_values"]["runtime_seconds"] == 21600
+    assert manifest.pre_run_validation_report is not None
+    assert manifest.pre_run_validation_report["run_shape_validation"]["domain"] == "wide_12km"
     assert manifest.user.tags == ["compare", "candidate"]
     assert manifest.user.notes == "Compare against humid/rainy candidates."
     assert report["variant_metadata"]["sounding_source"] == "observed_igra_station_text"
@@ -192,6 +198,16 @@ def test_deep_convection_trial_package_uses_observed_sounding_and_warm_bubble(
         for caveat in manifest.package_caveats
     )
     assert manifest.candidate_screening == candidate_screening
+    assert manifest.pre_run_validation_report is not None
+    assert manifest.pre_run_validation_report["selected_hypothesis"]["story_id"] == (
+        "supercell_environment"
+    )
+    assert manifest.pre_run_validation_report["selected_run_recipe"]["assumption_set_id"] == (
+        "triggered_deep_potential_warm_bubble_v1"
+    )
+    assert manifest.pre_run_validation_report["hypothesis_recipe_alignment"]["status"] == (
+        "aligned"
+    )
     assert manifest.run_configuration["duration_preset"] == "quick_6h"
     assert manifest.run_configuration["domain_size_preset"] == "storm_120km"
     assert manifest.run_configuration["grid_detail_preset"] == "standard"
@@ -200,6 +216,7 @@ def test_deep_convection_trial_package_uses_observed_sounding_and_warm_bubble(
     assert report["package_display_name"] == "Deep Convection Trial"
     assert report["trigger_type"] == "warm_bubble"
     assert report["candidate_screening"] == candidate_screening
+    assert report["pre_run_validation_report"] == manifest.pre_run_validation_report
     assert "testcase=0" in report["variant_metadata"]["mapping"]
     assert "iinit=3 three-warm-bubble" in report["variant_metadata"]["mapping"]
     assert "reflectivity output" in report["variant_metadata"]["mapping"]
@@ -257,6 +274,103 @@ def test_deep_convection_trial_requires_observed_sounding(tmp_path: Path) -> Non
             run_id="run-deep-no-sounding",
             package_family="deep_convection_trial",
         )
+
+
+def test_pre_run_validation_blocks_deep_hypothesis_on_observed_quicklook(
+    tmp_path: Path,
+) -> None:
+    observed = parse_igra_station_text(
+        IGRA_FIXTURE,
+        uploaded_filename="USM00072558-data-beg2025.txt",
+    ).selected_sounding
+    candidate_screening = {
+        "candidate_id": "USM00072558-supercell",
+        "primary_story": "supercell_environment",
+        "active_story": "supercell_environment",
+        "active_story_label": "Supercell-like environment",
+        "rank_score": 93.0,
+    }
+
+    with pytest.raises(DryRunPackageError, match="does not test this deep-convection") as excinfo:
+        generate_dry_run_package(
+            scenario_data=load_baseline_template(),
+            runtime_home=tmp_path,
+            run_id="run-deep-hypothesis-quicklook",
+            package_family="observed_sounding_quicklook",
+            observed_sounding=observed,
+            candidate_screening=candidate_screening,
+        )
+
+    report = excinfo.value.pre_run_validation_report
+    assert report is not None
+    assert report["status"] == "blocked"
+    assert report["selected_hypothesis"]["story_id"] == "supercell_environment"
+    assert report["selected_run_recipe"]["recipe_id"] == "observed_sounding_quicklook"
+    assert report["hypothesis_recipe_alignment"]["status"] == "blocked"
+    assert (
+        "triggered_deep_potential_warm_bubble_v1"
+        in report["hypothesis_recipe_alignment"]["missing_assumptions"]
+    )
+    assert not (tmp_path / "runs" / "run-deep-hypothesis-quicklook").exists()
+
+
+def test_pre_run_validation_blocks_invalid_run_configuration(tmp_path: Path) -> None:
+    with pytest.raises(DryRunPackageError, match="Unknown domain size preset") as excinfo:
+        generate_dry_run_package(
+            scenario_data=load_baseline_template(),
+            runtime_home=tmp_path,
+            run_id="run-invalid-domain",
+            run_configuration={
+                "duration_preset": "quick_6h",
+                "grid_detail_preset": "standard",
+                "domain_size_preset": "planetary_9000km",
+                "output_cadence_preset": "standard_15min",
+                "output_field_density_preset": "analysis",
+            },
+        )
+
+    report = excinfo.value.pre_run_validation_report
+    assert report is not None
+    assert report["status"] == "blocked"
+    assert report["run_shape_validation"]["domain"] == "planetary_9000km"
+    assert "Unknown domain size preset" in report["blocking_errors"][0]
+    assert not (tmp_path / "runs" / "run-invalid-domain").exists()
+
+
+def test_pre_run_validation_caveats_missing_deep_comparison_outputs(
+    tmp_path: Path,
+) -> None:
+    observed = parse_igra_station_text(
+        IGRA_FIXTURE,
+        uploaded_filename="USM00072558-data-beg2025.txt",
+    ).selected_sounding
+
+    result = generate_dry_run_package(
+        scenario_data=load_baseline_template(),
+        runtime_home=tmp_path,
+        run_id="run-deep-core-output",
+        package_family="deep_convection_trial",
+        observed_sounding=observed,
+        candidate_screening={
+            "candidate_id": "USM00072558-supercell",
+            "primary_story": "supercell_environment",
+            "active_story": "supercell_environment",
+        },
+        run_configuration={
+            "duration_preset": "quick_6h",
+            "grid_detail_preset": "standard",
+            "domain_size_preset": "storm_120km",
+            "output_cadence_preset": "standard_15min",
+            "output_field_density_preset": "core",
+        },
+    )
+
+    manifest = load_run_manifest(result.manifest_path)
+    report = manifest.pre_run_validation_report
+    assert report is not None
+    assert report["status"] == "caveated"
+    assert "updraft_helicity" in report["output_validation"]["missing_fields"]
+    assert "missing_required_output_field:updraft_helicity" in report["caveats"]
 
 
 def test_deep_convection_trial_requires_observed_wind_components(tmp_path: Path) -> None:

@@ -221,7 +221,7 @@ test.describe("mocked smoke: Build, Results, Explore path", () => {
     ).toBeVisible();
     await page.getByRole("button", { name: "Delete result and local run data", exact: true }).click();
     await expect(
-      resultDetail.getByRole("status").filter({ hasText: /Result and local run data deleted/ }),
+      page.getByRole("status").filter({ hasText: /Result and local run data deleted/ }),
     ).toBeVisible();
     await expect(page.getByLabel("Results list").getByText("Baseline Shallow Cumulus — Quick Look")).toHaveCount(0);
 

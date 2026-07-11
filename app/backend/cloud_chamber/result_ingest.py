@@ -106,6 +106,7 @@ class ResultMetadata(BaseModel):
     package_caveats: list[str] = Field(default_factory=list)
     manual_validation_status: str | None = None
     candidate_screening: dict[str, Any] | None = None
+    pre_run_validation_report: dict[str, Any] | None = None
     candidate_hypothesis_comparison: CandidateHypothesisComparison | None = None
     result_state: str = "ingested_result_metadata"
     raw_cm1_artifacts: list[str] = Field(default_factory=list)
@@ -308,6 +309,7 @@ def _result_from_model_output_files(
         package_caveats=manifest.package_caveats,
         manual_validation_status=manifest.manual_validation_status,
         candidate_screening=manifest.candidate_screening,
+        pre_run_validation_report=manifest.pre_run_validation_report,
         raw_cm1_artifacts=manifest.outputs.raw_cm1_artifacts,
         netcdf_paths=[str(path) for path in netcdf_paths],
         model_output_paths=[str(path) for path in contributing_paths],
@@ -823,6 +825,7 @@ def _result_from_dataset(
         package_caveats=manifest.package_caveats,
         manual_validation_status=manifest.manual_validation_status,
         candidate_screening=manifest.candidate_screening,
+        pre_run_validation_report=manifest.pre_run_validation_report,
         raw_cm1_artifacts=manifest.outputs.raw_cm1_artifacts,
         netcdf_paths=[str(path) for path in netcdf_paths],
         model_output_paths=[str(path) for path in contributing_paths],

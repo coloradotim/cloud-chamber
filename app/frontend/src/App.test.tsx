@@ -71,6 +71,66 @@ const defaultRunConfigurationSummary = {
     "Run configuration preserves explicit duration, grid/detail, domain, cadence, and output-density choices.",
 };
 
+const defaultPreRunValidationReport = {
+  status: "caveated",
+  selected_candidate: {
+    candidate_id: null,
+    station_id: null,
+    valid_time_utc: null,
+  },
+  selected_hypothesis: {
+    hypothesis_id: null,
+    story_id: null,
+    story_label: null,
+    ingredient_score: null,
+    predicted_output_signature: [],
+  },
+  selected_run_recipe: {
+    recipe_id: "shallow_cumulus",
+    display_name: "Baseline Shallow Cumulus",
+    assumption_set_id: "generated_reference_lower_atmosphere_v1",
+  },
+  hypothesis_recipe_alignment: {
+    status: "aligned",
+    reasons: ["No selected candidate hypothesis; validating the run configuration only."],
+    missing_assumptions: [],
+    missing_outputs: [],
+  },
+  run_shape_validation: {
+    duration: "quick_6h",
+    duration_seconds: 21600,
+    domain: "local_6km",
+    domain_x_km: 6.4,
+    domain_y_km: 6.4,
+    model_top: 18000,
+    grid_detail: "standard",
+    dx_m: 100,
+    dy_m: 100,
+    output_cadence: "standard_15min",
+    output_cadence_seconds: 900,
+    estimated_frames: 25,
+    estimated_output_volume: "25 saved frames, analysis output fields, 307,200 cells per frame",
+  },
+  forcing_validation: {
+    trigger: "none",
+    surface_fluxes: "current_recipe_default",
+    radiation: "disabled_or_future",
+    large_scale_forcing: "not_supported_v1",
+  },
+  output_validation: {
+    required_fields: ["qc", "w"],
+    enabled_fields: ["qc", "qr", "qv", "th", "prs", "u", "v", "w", "rain", "dbz"],
+    missing_fields: [],
+  },
+  runtime_file_validation: {
+    required_files: ["LANDUSE.TBL"],
+    staging_status: "checked_at_launch",
+    caveats: ["external_runtime_files_are_not_committed"],
+  },
+  blocking_errors: [],
+  caveats: ["science_run_configuration_minimum_duration_6h"],
+};
+
 const highDetailRunConfiguration = {
   ...defaultRunConfiguration,
   configuration_id: "standard_12h__fine__wide_12km__detailed_5min__rich",
@@ -161,6 +221,7 @@ const dryRunResponse = {
     estimated_cost_or_size: "unknown until validated",
     run_configuration: defaultRunConfiguration,
     run_configuration_summary: defaultRunConfigurationSummary,
+    pre_run_validation_report: defaultPreRunValidationReport,
     expected_diagnostics: ["first_cloud_time", "cloud_water_summary"],
     observed_sounding: null,
     candidate_screening: null,
@@ -319,12 +380,75 @@ function dryRunResponseForRequest(init?: RequestInit) {
       package_family: body.package_family ?? undefined,
       observed_sounding: body.observed_sounding ?? null,
       candidate_screening: body.candidate_screening ?? null,
+      pre_run_validation_report: preRunValidationReportForRequest(body),
       user: {
         name: body.user_name ?? "Baseline Shallow Cumulus",
         tags: body.user_tags ?? [],
         notes: body.user_notes ?? null,
         saved: false,
       },
+    },
+  };
+}
+
+function preRunValidationReportForRequest(body: {
+  package_family?: string | null;
+  observed_sounding?: Record<string, unknown> | null;
+  candidate_screening?: Record<string, unknown> | null;
+}) {
+  const packageFamily =
+    body.package_family ?? (body.observed_sounding ? "observed_sounding_quicklook" : "shallow_cumulus");
+  const deep = packageFamily === "deep_convection_trial";
+  const activeStory =
+    typeof body.candidate_screening?.active_story === "string"
+      ? body.candidate_screening.active_story
+      : typeof body.candidate_screening?.primary_story === "string"
+        ? body.candidate_screening.primary_story
+        : null;
+  const activeLabel =
+    typeof body.candidate_screening?.active_story_label === "string"
+      ? body.candidate_screening.active_story_label
+      : typeof body.candidate_screening?.primary_story_label === "string"
+        ? body.candidate_screening.primary_story_label
+        : null;
+  return {
+    ...defaultPreRunValidationReport,
+    selected_candidate: {
+      candidate_id:
+        typeof body.candidate_screening?.candidate_id === "string"
+          ? body.candidate_screening.candidate_id
+          : null,
+      station_id:
+        typeof body.observed_sounding?.station_id === "string"
+          ? body.observed_sounding.station_id
+          : null,
+      valid_time_utc:
+        typeof body.observed_sounding?.valid_time_utc === "string"
+          ? body.observed_sounding.valid_time_utc
+          : null,
+    },
+    selected_hypothesis: {
+      hypothesis_id: activeStory,
+      story_id: activeStory,
+      story_label: activeLabel,
+      ingredient_score:
+        typeof body.candidate_screening?.rank_score === "number"
+          ? body.candidate_screening.rank_score
+          : null,
+      predicted_output_signature: deep ? ["deep_cloud", "strong_updraft"] : [],
+    },
+    selected_run_recipe: {
+      recipe_id: packageFamily,
+      display_name: deep
+        ? "Deep Convection Trial"
+        : packageFamily === "observed_sounding_quicklook"
+          ? "Observed Sounding Quick Look"
+          : "Baseline Shallow Cumulus",
+      assumption_set_id: deep
+        ? "triggered_deep_potential_warm_bubble_v1"
+        : packageFamily === "observed_sounding_quicklook"
+          ? "normal_evolution_current_observed_sounding_v1"
+          : "generated_reference_lower_atmosphere_v1",
     },
   };
 }
@@ -3507,11 +3631,87 @@ describe("App", () => {
     fireEvent.click(screen.getByTestId("create-package-btn"));
 
     const packageReview = await screen.findByTestId("package-review-panel");
+    expect(packageReview).toHaveTextContent("Pre-run validation");
+    expect(packageReview).toHaveTextContent("Valid with caveats");
+    expect(packageReview).toHaveTextContent("generated_reference_lower_atmosphere_v1");
     expect(packageReview).toHaveTextContent("256 x 256 x 75");
     expect(packageReview).toHaveTextContent("dx/dy 50 m");
     expect(packageReview).toHaveTextContent("300 s output");
     expect(packageReview).toHaveTextContent("145 saved frames");
     expect(packageReview).toHaveTextContent("92.8x output volume");
+  });
+
+  it("shows blocked pre-run validation details when package creation is refused", async () => {
+    const blockedReport = {
+      ...defaultPreRunValidationReport,
+      status: "blocked",
+      selected_hypothesis: {
+        hypothesis_id: "supercell_environment",
+        story_id: "supercell_environment",
+        story_label: "Supercell-like environment",
+        ingredient_score: 93,
+        predicted_output_signature: ["deep_cloud", "strong_updraft"],
+      },
+      selected_run_recipe: {
+        recipe_id: "observed_sounding_quicklook",
+        display_name: "Observed Sounding Quick Look",
+        assumption_set_id: "normal_evolution_current_observed_sounding_v1",
+      },
+      hypothesis_recipe_alignment: {
+        status: "blocked",
+        reasons: ["Deep-convection hypothesis is paired with an untriggered/shallow recipe."],
+        missing_assumptions: ["triggered_deep_potential_warm_bubble_v1"],
+        missing_outputs: [],
+      },
+      blocking_errors: [
+        "Selected run recipe does not test this deep-convection hypothesis.",
+      ],
+      caveats: [],
+    };
+    vi.mocked(fetch).mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url === "/api/scenarios") {
+        return Promise.resolve(new Response(JSON.stringify(scenarioResponse), { status: 200 }));
+      }
+      if (url === "/api/dry-run-package") {
+        expect(init?.body).toEqual(expect.stringContaining("baseline-shallow-cumulus"));
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              detail: {
+                message:
+                  "Pre-run validation blocked package creation: Selected run recipe does not test this deep-convection hypothesis.",
+                pre_run_validation_report: blockedReport,
+              },
+            }),
+            { status: 400 },
+          ),
+        );
+      }
+      if (url === "/api/results") {
+        return Promise.resolve(new Response(JSON.stringify(resultsResponse), { status: 200 }));
+      }
+      if (url === "/api/storage/inventory") {
+        return Promise.resolve(
+          new Response(JSON.stringify(storageInventoryResponse), { status: 200 }),
+        );
+      }
+      return Promise.resolve(new Response("not found", { status: 404 }));
+    });
+
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Build" }));
+    fireEvent.click(await screen.findByTestId("create-package-btn"));
+
+    expect(await screen.findByText(/Pre-run validation blocked package creation/)).toBeInTheDocument();
+    expect(screen.getByLabelText("Pre-run validation report")).toHaveTextContent("Blocked");
+    expect(screen.getByLabelText("Pre-run validation report")).toHaveTextContent(
+      "Selected run recipe does not test this deep-convection hypothesis.",
+    );
+    expect(screen.getByLabelText("Pre-run validation report")).toHaveTextContent(
+      "triggered_deep_potential_warm_bubble_v1",
+    );
   });
 
   it("shows an explicit loading state before scenario package controls are available", async () => {

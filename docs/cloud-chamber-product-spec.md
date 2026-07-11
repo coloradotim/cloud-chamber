@@ -270,14 +270,21 @@ Shallow Cumulus, displays the scenario description and physical question,
 exposes only product-facing curated controls, lets the user adjust explicit
 run-configuration choices, and requests a dry-run package for review.
 
+The primary current-run path should stay in one vertical flow: choose the
+atmosphere, choose or confirm the hypothesis, configure the CM1 run, review
+pre-run validation, then create the package and queue that package. The
+right-side launchpad is a status rail for generated packages, queue state,
+ingest, worker status, and cleanup; it should not force the user to hunt there
+for the next action after choosing a sounding or run configuration.
+
 Build should not assume the user is working one perfectly linear package at a
 time. Local experiments can be packaged, running, failed, completed-but-not-
 ingested, ingested, carrying legacy saved/protected metadata, or ready for
 cleanup at the same time. The Build workspace should include a compact local
-run launchpad for active and incomplete package/run work only: create packages,
-launch eligible packages, refresh running/failed/completed status, troubleshoot
-failed or no-output runs, and ingest completed output. Fully ingested results
-belong in Results.
+run launchpad for active and incomplete package/run work only: show generated
+package details, launch eligible stored packages, refresh running/failed/
+completed status, troubleshoot failed or no-output runs, and ingest completed
+output. Fully ingested results belong in Results.
 
 When a local backend restart leaves a completed CM1 run's manifest marked
 running, Build refresh may reconcile the state only if stdout contains
@@ -310,7 +317,8 @@ Current behavior is a placeholder only. It must explicitly say preview is not im
 
 ### Workflow 3 — Launch CM1 Run
 
-1. Click `Run with local CM1` from an eligible packaged run in the launchpad.
+1. Click `Queue local CM1 run` from the end of the current setup flow, or from
+   an eligible stored-package card in the launchpad.
 2. Backend launches local CM1 from the generated run package only after preflight passes.
 3. UI shows the running state, command/log paths, stdout/stderr tail when available, and one-local-run-at-a-time policy.
 4. If local CM1 settings are missing, the UI shows the backend failure reason and no run is implied.
@@ -531,6 +539,14 @@ numerical timestep is not a normal v1 user control. Cloud Chamber should warn or
 caveat unvalidated control combinations when they can be safely generated,
 block configurations that cannot be rendered or launched honestly, and avoid
 silently replacing bad observed-sounding input with reference defaults.
+
+Generated packages include a backend-owned pre-run validation report. The
+report records the selected candidate/hypothesis, selected run recipe and
+assumption set, hypothesis/recipe alignment, observed-input validation,
+run-shape estimates, forcing support, required/enabled output fields, runtime
+file staging status, blocking errors, and caveats. Blocked reports stop package
+creation before a run directory is written; caveated reports may be packaged but
+must remain visibly caveated before launch and after ingest.
 
 Forward run configuration should include:
 

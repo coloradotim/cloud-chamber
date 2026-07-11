@@ -130,6 +130,8 @@ def test_result_card_created_from_ingested_metadata(tmp_path: Path) -> None:
     assert card.scenario_id == "baseline-shallow-cumulus"
     assert card.run_configuration["duration_preset"] == "quick_6h"
     assert card.run_configuration["domain_size_preset"] == "local_6km"
+    assert card.pre_run_validation_report is not None
+    assert card.pre_run_validation_report["selected_run_recipe"]["recipe_id"] == "shallow_cumulus"
     assert card.physical_question
     assert card.diagnostics_summary == (
         "cloud formed; rain water aloft detected; surface rain reached ground; "

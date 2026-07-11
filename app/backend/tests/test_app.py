@@ -152,7 +152,40 @@ def test_create_dry_run_package_api_uses_runtime_home_override(
     assert payload["report"]["controls"]["low_level_humidity"] == "more_humid"
     assert payload["report"]["not_a_completed_cm1_result"] is True
     assert payload["report"]["cm1_was_launched"] is False
+    assert (
+        payload["report"]["pre_run_validation_report"]["run_shape_validation"]["estimated_frames"]
+        == 25
+    )
     assert not list(tmp_path.glob("**/*.nc"))
+
+
+def test_create_dry_run_package_api_returns_blocked_pre_run_validation_report(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("CLOUD_CHAMBER_RUNTIME_HOME", str(tmp_path))
+
+    response = TestClient(app).post(
+        "/api/dry-run-package",
+        json={
+            "scenario_id": "baseline-shallow-cumulus",
+            "run_configuration": {
+                "duration_preset": "quick_6h",
+                "grid_detail_preset": "standard",
+                "domain_size_preset": "not_a_real_domain",
+                "output_cadence_preset": "standard_15min",
+                "output_field_density_preset": "analysis",
+            },
+        },
+    )
+
+    assert response.status_code == 400
+    detail = response.json()["detail"]
+    assert detail["message"] == "Unknown domain size preset: not_a_real_domain"
+    report = detail["pre_run_validation_report"]
+    assert report["status"] == "blocked"
+    assert report["run_shape_validation"]["domain"] == "not_a_real_domain"
+    assert not list(tmp_path.glob("runs/*"))
 
 
 def test_parse_observed_sounding_api_returns_igra_review_payload() -> None:

@@ -218,6 +218,14 @@ def create_dry_run_package(request: DryRunRequest) -> dict[str, Any]:
             user_notes=request.user_notes,
         )
     except DryRunPackageError as exc:
+        if exc.pre_run_validation_report is not None:
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "message": str(exc),
+                    "pre_run_validation_report": exc.pre_run_validation_report,
+                },
+            ) from exc
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     report = read_dry_run_report(result.report_path)
     return {
@@ -854,6 +862,7 @@ def _run_status_payload(status: RunStatus) -> dict[str, object]:
             "package_display_name": None,
             "input_source": None,
             "run_configuration": None,
+            "pre_run_validation_report": None,
         }
     return {
         "run_id": status.run_id,
@@ -887,6 +896,7 @@ def _run_status_payload(status: RunStatus) -> dict[str, object]:
         "package_display_name": manifest.package_display_name,
         "input_source": manifest.input_source,
         "run_configuration": manifest.run_configuration,
+        "pre_run_validation_report": manifest.pre_run_validation_report,
     }
 
 

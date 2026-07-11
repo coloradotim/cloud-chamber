@@ -204,6 +204,8 @@ def test_inventory_classifies_valid_manifest_with_output_artifacts(tmp_path: Pat
     assert entry.product_state == "completed_cm1_result"
     assert entry.run_configuration is not None
     assert entry.run_configuration["duration_preset"] == "quick_6h"
+    assert entry.pre_run_validation_report is not None
+    assert entry.pre_run_validation_report["status"] in {"valid", "caveated"}
     assert entry.output_artifact_count == 2
     assert entry.output_summary["raw_cm1_artifacts"] == 2
 

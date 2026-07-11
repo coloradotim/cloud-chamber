@@ -107,6 +107,48 @@ type RunConfigurationSummary = {
   validation_note: string;
 };
 
+type PreRunValidationReport = {
+  status: "valid" | "caveated" | "blocked" | string;
+  selected_candidate?: {
+    candidate_id?: string | null;
+    station_id?: string | null;
+    valid_time_utc?: string | null;
+  } | null;
+  selected_hypothesis?: {
+    hypothesis_id?: string | null;
+    story_id?: string | null;
+    story_label?: string | null;
+    ingredient_score?: number | null;
+    predicted_output_signature?: string[];
+  } | null;
+  selected_run_recipe?: {
+    recipe_id?: string | null;
+    display_name?: string | null;
+    assumption_set_id?: string | null;
+  } | null;
+  hypothesis_recipe_alignment?: {
+    status?: string;
+    reasons?: string[];
+    missing_assumptions?: string[];
+    missing_outputs?: string[];
+  } | null;
+  run_shape_validation?: {
+    estimated_frames?: number | null;
+    estimated_output_volume?: string | null;
+    duration?: string | null;
+    domain?: string | null;
+    grid_detail?: string | null;
+    output_cadence?: string | null;
+  } | null;
+  output_validation?: {
+    required_fields?: string[];
+    enabled_fields?: string[];
+    missing_fields?: string[];
+  } | null;
+  blocking_errors?: string[];
+  caveats?: string[];
+};
+
 type DryRunReport = {
   scenario_id: string;
   package_family?: PackageFamily;
@@ -118,6 +160,7 @@ type DryRunReport = {
   controls: Record<string, string | number | boolean>;
   run_configuration: RunConfiguration;
   run_configuration_summary?: RunConfigurationSummary;
+  pre_run_validation_report?: PreRunValidationReport | null;
   estimated_cost_or_size: string;
   expected_diagnostics: string[];
   expected_outputs?: string[];
@@ -491,6 +534,7 @@ type RunStatusResponse = {
   package_display_name?: string | null;
   input_source?: string | null;
   run_configuration?: RunConfiguration | null;
+  pre_run_validation_report?: PreRunValidationReport | null;
 };
 
 type RunQueueEntry = {
@@ -667,6 +711,7 @@ type ResultCard = {
   scenario_id: string;
   scenario_name: string | null;
   run_configuration: RunConfiguration;
+  pre_run_validation_report?: PreRunValidationReport | null;
   physical_question: string;
   controls: Record<string, string | number | boolean>;
   status: string;
@@ -748,6 +793,7 @@ type RunStorageEntry = {
   validation_status: string | null;
   product_state: string | null;
   run_configuration: RunConfiguration | null;
+  pre_run_validation_report?: PreRunValidationReport | null;
   created_at: string | null;
   updated_at: string | null;
   saved: boolean;
@@ -1104,6 +1150,16 @@ const DEFAULT_DEEP_CONVECTION_RUN_CONFIGURATION: RunConfigurationInput = {
   output_field_density_preset: "rich",
 };
 
+class DryRunRequestError extends Error {
+  preRunValidationReport: PreRunValidationReport | null;
+
+  constructor(message: string, preRunValidationReport: PreRunValidationReport | null = null) {
+    super(message);
+    this.name = "DryRunRequestError";
+    this.preRunValidationReport = preRunValidationReport;
+  }
+}
+
 async function fetchScenarioCatalog(): Promise<ScenarioResponse> {
   const response = await fetch("/api/scenarios");
   if (!response.ok) {
@@ -1141,9 +1197,43 @@ async function requestDryRunPackage(
     }),
   });
   if (!response.ok) {
-    throw new Error("Unable to create dry-run package.");
+    const detail = await dryRunErrorDetail(response);
+    throw new DryRunRequestError(detail.message, detail.preRunValidationReport);
   }
   return response.json() as Promise<DryRunResponse>;
+}
+
+async function dryRunErrorDetail(
+  response: Response,
+): Promise<{ message: string; preRunValidationReport: PreRunValidationReport | null }> {
+  try {
+    const payload = (await response.json()) as {
+      detail?: string | {
+        message?: string;
+        pre_run_validation_report?: unknown;
+      };
+    };
+    if (typeof payload.detail === "string") {
+      return { message: payload.detail, preRunValidationReport: null };
+    }
+    if (payload.detail && typeof payload.detail === "object") {
+      return {
+        message: payload.detail.message ?? "Unable to create dry-run package.",
+        preRunValidationReport: isPreRunValidationReport(
+          payload.detail.pre_run_validation_report,
+        )
+          ? payload.detail.pre_run_validation_report
+          : null,
+      };
+    }
+  } catch {
+    return { message: "Unable to create dry-run package.", preRunValidationReport: null };
+  }
+  return { message: "Unable to create dry-run package.", preRunValidationReport: null };
+}
+
+function isPreRunValidationReport(value: unknown): value is PreRunValidationReport {
+  return Boolean(value && typeof value === "object" && "status" in value);
 }
 
 async function parseObservedSoundingUpload(
@@ -1658,6 +1748,8 @@ export function App() {
   const [savedCandidates, setSavedCandidates] = useState<SavedSoundingCandidate[]>([]);
   const [candidateDetailId, setCandidateDetailId] = useState<string | null>(null);
   const [dryRun, setDryRun] = useState<DryRunResponse | null>(null);
+  const [blockedPreRunValidationReport, setBlockedPreRunValidationReport] =
+    useState<PreRunValidationReport | null>(null);
   const [runStatus, setRunStatus] = useState<RunStatusResponse | null>(null);
   const [runQueue, setRunQueue] = useState<RunQueueResponse | null>(null);
   const [runQueueStatus, setRunQueueStatus] = useState("Local run queue not checked yet");
@@ -1696,6 +1788,7 @@ export function App() {
     setStatus("Loading scenarios...");
     setScenarios([]);
     setDryRun(null);
+    setBlockedPreRunValidationReport(null);
     setRunStatus(null);
     setRunWorkflowError(null);
     setLanWorkerStatus(null);
@@ -1848,6 +1941,7 @@ export function App() {
     setObservedSoundingError(null);
     setObservedPackageFamily("observed_sounding_quicklook");
     setDryRun(null);
+    setBlockedPreRunValidationReport(null);
     setRunStatus(null);
     setRunWorkflowError(null);
     setLanWorkerStatus(null);
@@ -1995,6 +2089,7 @@ export function App() {
     setObservedPackageFamily(nextPackageFamily);
     setRunConfiguration(defaultRunConfigurationForSelection(scenarioId, nextPackageFamily));
     setDryRun(null);
+    setBlockedPreRunValidationReport(null);
     setRunStatus(null);
     setRunWorkflowError(null);
     setLanWorkerStatus(null);
@@ -2007,6 +2102,7 @@ export function App() {
     setObservedPackageFamily(packageFamily);
     setRunConfiguration(defaultRunConfigurationForSelection(OBSERVED_SOUNDING_EXPERIMENT_ID, packageFamily));
     setDryRun(null);
+    setBlockedPreRunValidationReport(null);
     setRunStatus(null);
     setRunWorkflowError(null);
     setLanWorkerStatus(null);
@@ -2206,6 +2302,7 @@ export function App() {
       defaultRunConfigurationForSelection(OBSERVED_SOUNDING_EXPERIMENT_ID, nextPackageFamily),
     );
     setDryRun(null);
+    setBlockedPreRunValidationReport(null);
     setRunStatus(null);
     setRunWorkflowError(null);
     setLanWorkerStatus(null);
@@ -2225,6 +2322,7 @@ export function App() {
     setStatus("Creating dry-run package");
     setError(null);
     setDryRun(null);
+    setBlockedPreRunValidationReport(null);
     setRunStatus(null);
     setRunWorkflowError(null);
     setLanWorkerStatus(null);
@@ -2245,9 +2343,13 @@ export function App() {
         packageUserMetadata,
       );
       setDryRun(result);
+      setBlockedPreRunValidationReport(null);
       setStatus("Packaged dry-run output");
       await refreshStorageAfterWorkflow("Package added to local pipeline");
     } catch (caught) {
+      if (caught instanceof DryRunRequestError) {
+        setBlockedPreRunValidationReport(caught.preRunValidationReport);
+      }
       setError(caught instanceof Error ? caught.message : "Unable to create dry-run package.");
       setStatus("Scenario setup");
     }
@@ -2261,6 +2363,7 @@ export function App() {
     setSelectedCandidateScreening(null);
     setObservedPackageFamily("observed_sounding_quicklook");
     setDryRun(null);
+    setBlockedPreRunValidationReport(null);
     setRunStatus(null);
     setLanWorkerStatus(null);
     try {
@@ -2775,6 +2878,7 @@ export function App() {
           candidateDetailId={candidateDetailId}
           validationMessages={validationMessages}
           dryRun={dryRun}
+          blockedPreRunValidationReport={blockedPreRunValidationReport}
           runStatus={runStatus}
           runQueue={runQueue}
           runQueueStatus={runQueueStatus}
@@ -2924,6 +3028,7 @@ function BuildWorkspace({
   candidateDetailId,
   validationMessages,
   dryRun,
+  blockedPreRunValidationReport,
   runStatus,
   runQueue,
   runQueueStatus,
@@ -3019,6 +3124,7 @@ function BuildWorkspace({
   candidateDetailId: string | null;
   validationMessages: string[];
   dryRun: DryRunResponse | null;
+  blockedPreRunValidationReport: PreRunValidationReport | null;
   runStatus: RunStatusResponse | null;
   runQueue: RunQueueResponse | null;
   runQueueStatus: string;
@@ -3301,6 +3407,22 @@ function BuildWorkspace({
                   <p>{packageError}</p>
                 </div>
               )}
+
+              {blockedPreRunValidationReport && (
+                <PreRunValidationReportPanel report={blockedPreRunValidationReport} />
+              )}
+
+              <BuildRunActionPanel
+                dryRun={dryRun}
+                runStatus={runStatus}
+                lanWorkerStatus={lanWorkerStatus}
+                canCreatePackage={
+                  validationMessages.length === 0 &&
+                  (!observedSoundingExperimentSelected ||
+                    Boolean(observedSoundingParse?.selected_sounding))
+                }
+                onLaunchRun={onLaunchRun}
+              />
             </>
           )}
         </form>
@@ -3317,13 +3439,6 @@ function BuildWorkspace({
             lanWorkerError={lanWorkerError}
             lanWorkerActionStatus={lanWorkerActionStatus}
             ingestedResultId={ingestedResultId}
-            showCreatePackageAction={scenarioControlsReady}
-            canCreatePackage={
-              validationMessages.length === 0 &&
-              (!observedSoundingExperimentSelected ||
-                Boolean(observedSoundingParse?.selected_sounding))
-            }
-            onLaunchRun={onLaunchRun}
             onRefreshRunStatus={onRefreshRunStatus}
             onLaunchLanWorkerRun={onLaunchLanWorkerRun}
             onRefreshLanWorkerStatus={onRefreshLanWorkerStatus}
@@ -3392,6 +3507,156 @@ function BuildControlRow({
         ))}
       </select>
     </div>
+  );
+}
+
+function PreRunValidationReportPanel({ report }: { report: PreRunValidationReport }) {
+  const hypothesis = report.selected_hypothesis ?? null;
+  const recipe = report.selected_run_recipe ?? null;
+  const alignment = report.hypothesis_recipe_alignment ?? null;
+  const runShape = report.run_shape_validation ?? null;
+  const outputValidation = report.output_validation ?? null;
+  const blockingErrors = report.blocking_errors ?? [];
+  const caveats = report.caveats ?? [];
+
+  return (
+    <section
+      className="experiment-summary pre-run-validation-panel"
+      aria-label="Pre-run validation report"
+    >
+      <div className="panel-heading-row">
+        <div>
+          <p className="eyebrow">Pre-run validation</p>
+          <h3>Hypothesis and run recipe check</h3>
+          <p className="field-help">
+            Cloud Chamber checks whether the selected hypothesis, recipe, fields, and run shape can
+            be compared honestly before CM1 is launched.
+          </p>
+        </div>
+        <StatusBadge
+          label={preRunValidationStatusLabel(report.status)}
+          tone={preRunValidationTone(report.status)}
+        />
+      </div>
+
+      <dl className="compact-metrics">
+        <Metric
+          label="Hypothesis"
+          value={
+            hypothesis?.story_label ??
+            humanize(hypothesis?.story_id ?? hypothesis?.hypothesis_id ?? "none")
+          }
+        />
+        {typeof hypothesis?.ingredient_score === "number" && (
+          <Metric label="Ingredient score" value={`${Math.round(hypothesis.ingredient_score)} %`} />
+        )}
+        <Metric
+          label="Run recipe"
+          value={recipe?.display_name ?? humanize(recipe?.recipe_id ?? "unknown")}
+        />
+        <Metric label="Assumption set" value={recipe?.assumption_set_id ?? "Not declared"} />
+        <Metric
+          label="Run shape"
+          value={
+            runShape
+              ? preRunValidationRunShapeLabel(runShape)
+              : "Run shape unavailable before package generation"
+          }
+        />
+        <Metric
+          label="Required outputs"
+          value={compactList(outputValidation?.required_fields, "No specific fields required")}
+        />
+        <Metric
+          label="Missing assumptions"
+          value={compactList(alignment?.missing_assumptions, "None")}
+        />
+        <Metric
+          label="Missing outputs"
+          value={compactList(outputValidation?.missing_fields, "None")}
+        />
+      </dl>
+
+      {alignment?.reasons?.length ? (
+        <ul>
+          {alignment.reasons.map((reason) => (
+            <li key={reason}>{reason}</li>
+          ))}
+        </ul>
+      ) : null}
+
+      {blockingErrors.length > 0 && (
+        <div className="validation">
+          <h4>Blocking issues</h4>
+          <ul>
+            {blockingErrors.map((error) => (
+              <li key={error}>{error}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {caveats.length > 0 && (
+        <details className="technical-details">
+          <summary>Validation caveats</summary>
+          <ul>
+            {caveats.map((caveat) => (
+              <li key={caveat}>{humanize(caveat)}</li>
+            ))}
+          </ul>
+        </details>
+      )}
+    </section>
+  );
+}
+
+function BuildRunActionPanel({
+  dryRun,
+  runStatus,
+  lanWorkerStatus,
+  canCreatePackage,
+  onLaunchRun,
+}: {
+  dryRun: DryRunResponse | null;
+  runStatus: RunStatusResponse | null;
+  lanWorkerStatus: LanWorkerRunResponse | null;
+  canCreatePackage: boolean;
+  onLaunchRun: () => void;
+}) {
+  const packageReadyForQueue = Boolean(dryRun && !runStatus && !lanWorkerStatus);
+  return (
+    <section className="experiment-summary build-run-action-panel" aria-label="Package and queue">
+      <div className="panel-heading-row">
+        <div>
+          <p className="eyebrow">Package and queue</p>
+          <h3>{dryRun ? "Package ready for CM1" : "Ready to package this setup"}</h3>
+          <p className="field-help">
+            Create the run package from the selected sounding, hypothesis, and CM1 run settings.
+            Then queue that package for local CM1 execution when you are ready.
+          </p>
+        </div>
+        <StatusBadge
+          label={dryRun ? "Package ready" : canCreatePackage ? "Ready" : "Needs setup"}
+          tone={dryRun ? "good" : canCreatePackage ? "good" : "warning"}
+        />
+      </div>
+
+      <div className="button-row">
+        <button
+          type="submit"
+          data-testid="create-package-btn"
+          className={dryRun ? "secondary-button" : undefined}
+          disabled={!canCreatePackage}
+        >
+          {dryRun ? "Create another package" : "Create run package"}
+        </button>
+        {packageReadyForQueue && (
+          <button type="button" data-testid="launch-cm1-btn" onClick={onLaunchRun}>
+            Queue local CM1 run
+          </button>
+        )}
+      </div>
+    </section>
   );
 }
 
@@ -4027,13 +4292,14 @@ function SavedSoundingCandidateCard({
 }) {
   const currentWorkingSet = saved.tags.find(isCandidateSuggestedTag) ?? "";
   const [workingSetDraft, setWorkingSetDraft] = useState(currentWorkingSet);
+  const workingSetDraftRef = useRef(currentWorkingSet);
   useEffect(() => {
+    workingSetDraftRef.current = currentWorkingSet;
     setWorkingSetDraft(currentWorkingSet);
   }, [saved.saved_candidate_id, currentWorkingSet]);
   const freeformTags = saved.tags.filter((tag) => !isCandidateSuggestedTag(tag));
-  const nextTags = _dedupeStrings(
-    [workingSetDraft, ...freeformTags].filter((tag): tag is string => Boolean(tag)),
-  );
+  const workingSetTags = (draft: string) =>
+    _dedupeStrings([draft, ...freeformTags].filter((tag): tag is string => Boolean(tag)));
   return (
     <article
       className="saved-candidate-card"
@@ -4057,7 +4323,10 @@ function SavedSoundingCandidateCard({
             id={`saved-working-set-${saved.saved_candidate_id}`}
             aria-label={`Working set for ${candidateStationLabel(saved.candidate)}`}
             value={workingSetDraft}
-            onChange={(event) => setWorkingSetDraft(event.target.value)}
+            onChange={(event) => {
+              workingSetDraftRef.current = event.target.value;
+              setWorkingSetDraft(event.target.value);
+            }}
           >
             <option value="">No working set</option>
             {candidateSuggestedTags.map((tag) => (
@@ -4067,7 +4336,11 @@ function SavedSoundingCandidateCard({
             ))}
           </select>
         </label>
-        <button type="button" className="secondary-button" onClick={() => onUpdateWorkingSet(nextTags)}>
+        <button
+          type="button"
+          className="secondary-button"
+          onClick={() => onUpdateWorkingSet(workingSetTags(workingSetDraftRef.current))}
+        >
           Update working set
         </button>
       </div>
@@ -4819,9 +5092,6 @@ function LocalRunWorkflowPanel({
   results,
   autoFinalizingWorkerRunIds,
   failedAutoFinalizingWorkerRunIds,
-  showCreatePackageAction,
-  canCreatePackage,
-  onLaunchRun,
   onRefreshRunStatus,
   onLaunchLanWorkerRun,
   onRefreshLanWorkerStatus,
@@ -4859,9 +5129,6 @@ function LocalRunWorkflowPanel({
   results: ResultCard[];
   autoFinalizingWorkerRunIds: Set<string>;
   failedAutoFinalizingWorkerRunIds: Set<string>;
-  showCreatePackageAction: boolean;
-  canCreatePackage: boolean;
-  onLaunchRun: () => void;
   onRefreshRunStatus: () => void;
   onLaunchLanWorkerRun: () => void;
   onRefreshLanWorkerStatus: () => void;
@@ -4894,12 +5161,10 @@ function LocalRunWorkflowPanel({
     : 0;
   const generatedInputNames = dryRun ? generatedInputSummary(dryRun) : [];
   const currentRunId = dryRun ? runIdFromPackage(dryRun) : null;
-  const showCreatePackageButton = showCreatePackageAction;
-  const showLaunchButton = Boolean(dryRun && !runStatus && !lanWorkerStatus);
+  const packageReadyForLaunch = Boolean(dryRun && !runStatus && !lanWorkerStatus);
   const showRefreshButton = Boolean(dryRun && runStatus);
   const showIngestButton = Boolean(dryRun && canIngest);
-  const showActionRow =
-    showCreatePackageButton || showLaunchButton || showRefreshButton || showIngestButton;
+  const showActionRow = showRefreshButton || showIngestButton;
   const packageObservedSounding = dryRun?.report.observed_sounding ?? null;
   const packageUserMetadata = dryRun?.report.user ?? null;
 
@@ -4920,33 +5185,18 @@ function LocalRunWorkflowPanel({
       <div className="run-state-card package-setup-card">
         <div className="panel-heading-row">
           <div>
-            <p className="eyebrow">Package this setup</p>
-            <h4>{dryRun ? "Latest generated package" : "Create a local run package"}</h4>
+            <p className="eyebrow">Package status</p>
+            <h4>{dryRun ? "Latest generated package" : "No generated package yet"}</h4>
           </div>
           <strong className="next-action">{buildStageLabel(stage)}</strong>
         </div>
 
         <p className="state-note">
-          Packages are repeatable local run directories. Create a new package for this setup, then
-          use the package list below to run CM1, ingest completed output, or route old runs to
-          cleanup.
+          Package creation and queueing live at the end of the setup flow. This rail keeps the
+          generated package, queue, ingest, worker, and cleanup state visible while you work.
         </p>
 
         {error && <p role="alert">{error}</p>}
-
-        {showCreatePackageButton && (
-          <div className="button-row">
-            <button
-              type="submit"
-              form="build-run-package-form"
-              data-testid="create-package-btn"
-              className={dryRun ? "secondary-button" : undefined}
-              disabled={!canCreatePackage}
-            >
-              {dryRun ? "Create another package" : "Create run package"}
-            </button>
-          </div>
-        )}
 
         {dryRun ? (
           <>
@@ -5007,6 +5257,9 @@ function LocalRunWorkflowPanel({
                 value={runStatus ? userFacingRunWorkflowStatus(runStatus) : "Package ready"}
               />
             </dl>
+            {dryRun.report.pre_run_validation_report && (
+              <PreRunValidationReportPanel report={dryRun.report.pre_run_validation_report} />
+            )}
             <p className="state-note">
               A generated package is not a completed CM1 result. Launch, output detection, ingest,
               and saved result review are separate states.
@@ -5024,11 +5277,6 @@ function LocalRunWorkflowPanel({
 
         {showActionRow && dryRun && (
           <div className="button-row">
-            {showLaunchButton && (
-              <button type="button" data-testid="launch-cm1-btn" onClick={onLaunchRun}>
-                Queue local CM1 run
-              </button>
-            )}
             {showRefreshButton && (
               <button type="button" data-testid="refresh-status-btn" onClick={onRefreshRunStatus}>
                 {stage === "running" || stage === "failed"
@@ -5059,7 +5307,7 @@ function LocalRunWorkflowPanel({
             actionStatus={lanWorkerActionStatus}
             error={lanWorkerError}
             ingestedResultId={ingestedResultId}
-            canStart={showLaunchButton}
+            canStart={packageReadyForLaunch}
             onLaunch={onLaunchLanWorkerRun}
             onRefresh={onRefreshLanWorkerStatus}
             onCollect={onCollectLanWorkerRun}
@@ -9082,6 +9330,38 @@ function runUserMetadataFromCandidateScreening(
       : null;
   if (tags.length === 0 && !notes) return null;
   return { tags, notes };
+}
+
+function preRunValidationStatusLabel(status: string): string {
+  if (status === "valid") return "Valid";
+  if (status === "caveated") return "Valid with caveats";
+  if (status === "blocked") return "Blocked";
+  return humanize(status);
+}
+
+function preRunValidationTone(status: string): "good" | "warning" | "neutral" {
+  if (status === "valid") return "good";
+  if (status === "caveated" || status === "blocked") return "warning";
+  return "neutral";
+}
+
+function preRunValidationRunShapeLabel(
+  runShape: NonNullable<PreRunValidationReport["run_shape_validation"]>,
+): string {
+  const parts = [
+    runShape.duration ? humanize(runShape.duration) : null,
+    runShape.domain ? humanize(runShape.domain) : null,
+    runShape.grid_detail ? humanize(runShape.grid_detail) : null,
+    runShape.output_cadence ? `${humanize(runShape.output_cadence)} output` : null,
+    typeof runShape.estimated_frames === "number"
+      ? `${runShape.estimated_frames.toLocaleString()} saved frames`
+      : null,
+  ].filter((part): part is string => Boolean(part));
+  return parts.length > 0 ? parts.join(" · ") : "Not resolved";
+}
+
+function compactList(values: string[] | undefined | null, fallback: string): string {
+  return values?.length ? values.join(", ") : fallback;
 }
 
 function StatusBadge({ label, tone }: { label: string; tone: "good" | "warning" | "neutral" }) {

@@ -147,6 +147,7 @@ class RunManifest(BaseModel):
     user: UserMetadata
     observed_sounding: dict[str, Any] | None = None
     candidate_screening: dict[str, Any] | None = None
+    pre_run_validation_report: dict[str, Any] | None = None
     package_family: str | None = None
     package_display_name: str | None = None
     input_source: str | None = None

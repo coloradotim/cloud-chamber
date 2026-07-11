@@ -9,6 +9,7 @@ import json
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 
 from cloud_chamber import __version__
 from cloud_chamber.cm1_input_contract import (
@@ -19,6 +20,10 @@ from cloud_chamber.cm1_input_contract import (
     render_namelist_fragment,
 )
 from cloud_chamber.observed_sounding import ObservedSoundingRecord, observed_sounding_from_payload
+from cloud_chamber.pre_run_validation import (
+    blocked_pre_run_validation_report,
+    build_pre_run_validation_report,
+)
 from cloud_chamber.run_configuration import resolve_run_configuration
 from cloud_chamber.run_manifest import (
     AppMetadata,
@@ -37,6 +42,15 @@ from cloud_chamber.scenario_schema import ScenarioTemplate, validate_scenario_te
 
 class DryRunPackageError(RuntimeError):
     """Raised when a dry-run package cannot be generated."""
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        pre_run_validation_report: dict[str, Any] | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.pre_run_validation_report = pre_run_validation_report
 
 
 @dataclass(frozen=True)
@@ -83,8 +97,32 @@ def generate_dry_run_package(
             package_family=package_family,
         )
     except ValueError as exc:
-        raise DryRunPackageError(str(exc)) from exc
+        error_message = _user_facing_validation_error(str(exc))
+        report = blocked_pre_run_validation_report(
+            scenario=scenario,
+            controls=selected_controls,
+            package_family=package_family,
+            run_configuration=run_configuration,
+            observed_sounding=observed_sounding,
+            candidate_screening=candidate_screening,
+            error_message=error_message,
+        )
+        raise DryRunPackageError(error_message, pre_run_validation_report=report) from exc
     now = datetime.now(UTC)
+
+    pre_run_validation_report = build_pre_run_validation_report(
+        scenario=scenario,
+        contract=contract,
+        candidate_screening=candidate_screening,
+    )
+    if pre_run_validation_report["status"] == "blocked":
+        message = "; ".join(
+            str(error) for error in pre_run_validation_report.get("blocking_errors", [])
+        )
+        raise DryRunPackageError(
+            f"Pre-run validation blocked package creation: {message}",
+            pre_run_validation_report=pre_run_validation_report,
+        )
 
     package_dir.mkdir(parents=True, exist_ok=allow_overwrite)
 
@@ -132,6 +170,7 @@ def generate_dry_run_package(
             observed_record.model_dump(mode="json") if observed_record is not None else None
         ),
         candidate_screening=candidate_screening,
+        pre_run_validation_report=pre_run_validation_report,
         package_family=contract.package_family.value,
         package_display_name=contract.package_display_name,
         input_source=contract.input_source,
@@ -147,12 +186,14 @@ def generate_dry_run_package(
         scenario,
         contract,
         candidate_screening=candidate_screening,
+        pre_run_validation_report=pre_run_validation_report,
     )
     report = _dry_run_report_payload(
         scenario=scenario,
         manifest=manifest,
         contract=contract,
         generated_files=paths,
+        pre_run_validation_report=pre_run_validation_report,
     )
     runtime_checklist = {
         "status": "external_runtime_files_not_committed",
@@ -209,6 +250,19 @@ def _observed_sounding_record(
         raise DryRunPackageError(f"Invalid observed sounding: {exc}") from exc
 
 
+def _user_facing_validation_error(message: str) -> str:
+    replacements = {
+        "duration_preset": "duration preset",
+        "grid_detail_preset": "grid detail preset",
+        "domain_size_preset": "domain size preset",
+        "output_cadence_preset": "output cadence preset",
+        "output_field_density_preset": "output field density preset",
+    }
+    for internal, label in replacements.items():
+        message = message.replace(internal, label)
+    return message
+
+
 def _effective_controls(
     scenario: ScenarioTemplate,
     selected_controls: dict[str, str | float | bool],
@@ -231,6 +285,7 @@ def _case_manifest_payload(
     contract: CM1InputContract,
     *,
     candidate_screening: dict[str, object] | None = None,
+    pre_run_validation_report: dict[str, object] | None = None,
 ) -> dict[str, object]:
     return {
         "scenario_id": scenario.id,
@@ -248,6 +303,7 @@ def _case_manifest_payload(
         "package_caveats": contract.package_caveats,
         "manual_validation_status": contract.manual_validation_status,
         "run_configuration": contract.run_configuration.model_dump(mode="json"),
+        "pre_run_validation_report": pre_run_validation_report,
         "cm1_mapping_status": _cm1_mapping_status(contract),
         "contract": _contract_payload(contract),
         "candidate_screening": candidate_screening,
@@ -260,6 +316,7 @@ def _dry_run_report_payload(
     manifest: RunManifest,
     contract: CM1InputContract,
     generated_files: dict[str, Path],
+    pre_run_validation_report: dict[str, object],
 ) -> dict[str, object]:
     run_configuration_summary = _run_configuration_summary(contract)
     return {
@@ -296,6 +353,7 @@ def _dry_run_report_payload(
         "user": manifest.user.model_dump(mode="json"),
         "run_configuration": contract.run_configuration.model_dump(mode="json"),
         "run_configuration_summary": run_configuration_summary,
+        "pre_run_validation_report": pre_run_validation_report,
         "estimated_cost_or_size": run_configuration_summary["cost_warning"],
         "expected_diagnostics": manifest.expected_diagnostics,
         "expected_outputs": list(contract.expected_outputs),
