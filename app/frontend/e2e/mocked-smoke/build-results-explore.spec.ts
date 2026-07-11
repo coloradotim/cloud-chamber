@@ -15,12 +15,16 @@ test.describe("mocked smoke: Build, Results, Explore path", () => {
     await gotoBuild(page);
 
     await expect(page.locator("select").first()).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Upload a Sounding" })).toBeVisible();
+    await page.getByLabel("Experiment", { exact: true }).selectOption("baseline-shallow-cumulus");
     await expect(page.getByText(/physical question/i).first()).toBeVisible();
     await expect(page.getByText(/how do low-level moisture/i).first()).toBeVisible();
     await expect(page.getByText("Run monitor")).toBeVisible();
     await page.getByText("Run monitor").click();
     await expect(page.getByRole("heading", { name: "Local run launchpad" })).toBeVisible();
-    await expect(page.getByRole("heading", { name: "Packages and runs needing action" })).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: "Packages and runs needing action" }),
+    ).toBeVisible();
     await expect(
       page.getByTestId("package-review-panel").getByText("Not packaged yet").first(),
     ).toBeVisible();
@@ -58,12 +62,12 @@ test.describe("mocked smoke: Build, Results, Explore path", () => {
     await expect(page.getByRole("heading", { name: "Experiment Notebook" })).toBeVisible();
   });
 
-  test("Build can review an observed IGRA sounding before package creation", async ({
-    page,
-  }) => {
+  test("Build can review an observed IGRA sounding before package creation", async ({ page }) => {
     await gotoBuild(page);
 
-    await page.getByLabel("Experiment", { exact: true }).selectOption("__observed_sounding_upload__");
+    await page
+      .getByLabel("Experiment", { exact: true })
+      .selectOption("__observed_sounding_upload__");
     await expect(page.getByRole("heading", { name: "Upload a Sounding" })).toBeVisible();
     await expect(page.getByRole("heading", { name: "Find interesting soundings" })).toBeVisible();
     await expect(page.getByRole("tab", { name: "Cached recommendations" })).toHaveAttribute(
@@ -85,13 +89,18 @@ test.describe("mocked smoke: Build, Results, Explore path", () => {
     await expect(page.getByText("Observed sounding validated for package review")).toBeVisible();
     await expect(page.getByText("Valley, Nebraska (USM00072558)").first()).toBeVisible();
     await expect(page.locator("#observed-sounding-time")).toHaveValue("2025-01-02T00:00:00Z");
-    await page.getByText("Uploaded-sounding review").click();
-    await expect(page.getByText("USM00072558 · Valley, Nebraska")).toBeVisible();
-    await expect(page.getByText(/CM1 z=0 is station surface at 351.5 m MSL/i)).toBeVisible();
-    await expect(page.getByText(/generated CM1 namelist uses isnd=7/i).first()).toBeVisible();
+    const observedReview = page.getByLabel("Observed sounding review");
+    await observedReview.getByText("Uploaded-sounding review").click();
+    await expect(observedReview.getByText("USM00072558 · Valley, Nebraska")).toBeVisible();
+    await expect(
+      observedReview.getByText(/CM1 z=0 is station surface at 351.5 m MSL/i),
+    ).toBeVisible();
+    await expect(observedReview.getByText(/generated CM1 namelist uses isnd=7/i)).toBeVisible();
 
-    await page.getByText("Observed-sounding caveats").click();
-    await expect(page.getByText("Station elevation joined from igra station fixture")).toBeVisible();
+    await observedReview.getByText("Observed-sounding caveats").click();
+    await expect(
+      observedReview.getByText("Station elevation joined from igra station fixture"),
+    ).toBeVisible();
 
     await page.getByRole("button", { name: "Add to run plan" }).click();
     await expect(
@@ -109,7 +118,9 @@ test.describe("mocked smoke: Build, Results, Explore path", () => {
   test("Build can screen, save, and use observed sounding candidates", async ({ page }) => {
     await gotoBuild(page);
 
-    await page.getByLabel("Experiment", { exact: true }).selectOption("__observed_sounding_upload__");
+    await page
+      .getByLabel("Experiment", { exact: true })
+      .selectOption("__observed_sounding_upload__");
     await expect(page.getByRole("heading", { name: "Find interesting soundings" })).toBeVisible();
     await expect(page.getByText(/Screening guidance only/i).first()).toBeVisible();
     await expect(page.getByText("IGRA cache not checked yet")).toBeVisible();
@@ -149,7 +160,9 @@ test.describe("mocked smoke: Build, Results, Explore path", () => {
     await storySelect.selectOption("all");
     await page.getByText("Advanced filters").click();
     await page.getByRole("button", { name: "Run analyzer only" }).click();
-    const refreshedValleyCard = page.getByLabel("Sounding candidate Valley, Nebraska (USM00072558)");
+    const refreshedValleyCard = page.getByLabel(
+      "Sounding candidate Valley, Nebraska (USM00072558)",
+    );
     await refreshedValleyCard.getByRole("button", { name: "Save candidate" }).click();
     await expect(page.getByText("Sounding candidate saved")).toBeVisible();
     await page.getByRole("tab", { name: /Saved candidates/ }).click();
@@ -208,7 +221,9 @@ test.describe("mocked smoke: Build, Results, Explore path", () => {
 
     await filterBar.getByLabel("Search").fill("Valley");
     await expect(resultsList.getByText("Uploaded Sounding — Valley, Nebraska")).toBeVisible();
-    await expect(resultsList.getByText("Observed sounding: USM00072558 · Valley, Nebraska")).toBeVisible();
+    await expect(
+      resultsList.getByText("Observed sounding: USM00072558 · Valley, Nebraska"),
+    ).toBeVisible();
     await expect(resultsList.getByText("Baseline Shallow Cumulus — Quick Look")).toHaveCount(0);
 
     await filterBar.getByLabel("Search").fill("");
@@ -228,22 +243,34 @@ test.describe("mocked smoke: Build, Results, Explore path", () => {
     );
   });
 
-  test("Results deletes ingested results and Build keeps non-ingested cleanup", async ({ page }) => {
+  test("Results deletes ingested results and Build keeps non-ingested cleanup", async ({
+    page,
+  }) => {
     await gotoResults(page);
 
     const resultDetail = page.getByLabel("Result detail");
-    await resultDetail.getByRole("button", { name: "Preview delete result and local run data" }).click();
-    await expect(page.getByRole("heading", { name: "Delete result and local run data preview" })).toBeVisible();
-    await expect(page.getByText(/result will disappear from Results, Explore, and local inventory/)).toBeVisible();
+    await resultDetail
+      .getByRole("button", { name: "Preview delete result and local run data" })
+      .click();
+    await expect(
+      page.getByRole("heading", { name: "Delete result and local run data preview" }),
+    ).toBeVisible();
+    await expect(
+      page.getByText(/result will disappear from Results, Explore, and local inventory/),
+    ).toBeVisible();
     await expect(page.getByText("Result metadata and notebook edits")).toBeVisible();
     await expect(
       page.getByRole("button", { name: "Delete result and local run data", exact: true }),
     ).toBeVisible();
-    await page.getByRole("button", { name: "Delete result and local run data", exact: true }).click();
+    await page
+      .getByRole("button", { name: "Delete result and local run data", exact: true })
+      .click();
     await expect(
       page.getByRole("status").filter({ hasText: /Result and local run data deleted/ }),
     ).toBeVisible();
-    await expect(page.getByLabel("Results list").getByText("Baseline Shallow Cumulus — Quick Look")).toHaveCount(0);
+    await expect(
+      page.getByLabel("Results list").getByText("Baseline Shallow Cumulus — Quick Look"),
+    ).toHaveCount(0);
 
     await gotoBuild(page);
     await page.getByText("Run monitor").click();
@@ -252,7 +279,9 @@ test.describe("mocked smoke: Build, Results, Explore path", () => {
     await expect(ingestReadyRun.getByText("Ready to ingest")).toBeVisible();
     await expect(ingestReadyRun.getByRole("button", { name: "Preview cleanup" })).toBeEnabled();
     await ingestReadyRun.getByRole("button", { name: "Preview cleanup" }).click();
-    await expect(page.getByRole("heading", { name: "Delete local package/run data preview" })).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: "Delete local package/run data preview" }),
+    ).toBeVisible();
     await expect(page.getByText(/does not touch Results entries/)).toBeVisible();
     await expect(page.getByRole("button", { name: "Confirm delete local run data" })).toBeVisible();
 
@@ -283,7 +312,9 @@ test.describe("mocked smoke: Build, Results, Explore path", () => {
     await expect(page.getByRole("button", { name: "Open in Explore" }).first()).toBeVisible();
   });
 
-  test("Unified Explore renders cloud context, slice inspector, and explanation", async ({ page }) => {
+  test("Unified Explore renders cloud context, slice inspector, and explanation", async ({
+    page,
+  }) => {
     await gotoResults(page);
     await page.getByRole("button", { name: "Open in Explore" }).first().click();
 
@@ -311,7 +342,7 @@ test.describe("mocked smoke: Build, Results, Explore path", () => {
       const fieldControl = document.querySelector("#explore-slice-field");
       return Boolean(
         fieldControl &&
-          (fieldControl.compareDocumentPosition(element) & Node.DOCUMENT_POSITION_FOLLOWING),
+        fieldControl.compareDocumentPosition(element) & Node.DOCUMENT_POSITION_FOLLOWING,
       );
     });
     expect(fieldControlsPrecedeHeatmap).toBe(true);
@@ -355,7 +386,9 @@ test.describe("mocked smoke: Build, Results, Explore path", () => {
       page.getByText("Pause playback to select a cell and explain this time step."),
     ).toBeVisible();
     await expect(
-      page.getByText(/Animating 3-D scene at .*; slice and evidence remain at .* until playback is paused\./),
+      page.getByText(
+        /Animating 3-D scene at .*; slice and evidence remain at .* until playback is paused\./,
+      ),
     ).toBeVisible();
     await expect(page.locator("#explore-time")).toHaveValue("2", { timeout: 2_000 });
 
@@ -388,9 +421,7 @@ test.describe("mocked smoke: Build, Results, Explore path", () => {
 
     const processMode = page.getByLabel("Process mode");
     await expect(processMode).toBeVisible();
-    await expect(processMode.locator("option", { hasText: "Thermal Fate summary" })).toHaveCount(
-      1,
-    );
+    await expect(processMode.locator("option", { hasText: "Thermal Fate summary" })).toHaveCount(1);
     await expect(processMode.locator("option", { hasText: "Cloud Water" })).toHaveCount(1);
     await expect(processMode.locator("option", { hasText: "Updrafts" })).toHaveCount(1);
     await expect(processMode.locator("option", { hasText: "Moisture" })).toHaveCount(0);
@@ -412,11 +443,13 @@ test.describe("mocked smoke: Build, Results, Explore path", () => {
 
     await expect(page.getByText(/slice synced/i).first()).toBeVisible({ timeout: 10_000 });
     await expect(page.locator("#explore-slice-field")).toHaveValue("qc");
-    await expect(page.locator("#explore-slice-field option", { hasText: "qc - Cloud water" })).toHaveCount(
-      1,
-    );
     await expect(
-      page.locator("#explore-slice-field option", { hasText: "w - Vertical velocity (slice only)" }),
+      page.locator("#explore-slice-field option", { hasText: "qc - Cloud water" }),
+    ).toHaveCount(1);
+    await expect(
+      page.locator("#explore-slice-field option", {
+        hasText: "w - Vertical velocity (slice only)",
+      }),
     ).toHaveCount(1);
     await expect(page.getByText(/loading fields/i)).not.toBeVisible();
 
@@ -492,7 +525,9 @@ test.describe("mocked smoke: Build, Results, Explore path", () => {
     await expect(page.getByText(/slice synced/i).first()).toBeVisible({ timeout: 10_000 });
     await expect(page.locator("#explore-slice-field")).toHaveValue("w");
     await expect(
-      page.locator("#explore-slice-field option", { hasText: "w - Vertical velocity (slice only)" }),
+      page.locator("#explore-slice-field option", {
+        hasText: "w - Vertical velocity (slice only)",
+      }),
     ).toHaveCount(1);
   });
 
@@ -510,9 +545,7 @@ test.describe("mocked smoke: Build, Results, Explore path", () => {
     await gotoResults(page);
     await page.getByRole("button", { name: "Open in Explore" }).first().click();
 
-    await expect(page.getByRole("alert")).toContainText(
-      "Visualization fields temporarily failed.",
-    );
+    await expect(page.getByRole("alert")).toContainText("Visualization fields temporarily failed.");
     await expect(page.getByRole("button", { name: "Retry loading fields" })).toBeVisible();
     await expect(page.getByText("Loading fields...", { exact: true })).not.toBeVisible();
   });
@@ -537,7 +570,7 @@ test.describe("mocked smoke: Build, Results, Explore path", () => {
       );
       return Boolean(
         technicalSummary &&
-          (element.compareDocumentPosition(technicalSummary) & Node.DOCUMENT_POSITION_FOLLOWING),
+        element.compareDocumentPosition(technicalSummary) & Node.DOCUMENT_POSITION_FOLLOWING,
       );
     });
     expect(heatmapPrecedesTechnicalDetails).toBe(true);

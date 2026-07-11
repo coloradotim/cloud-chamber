@@ -1827,7 +1827,7 @@ async function responseError(response: Response, fallback: string): Promise<stri
 export function App() {
   const [activeSection, setActiveSection] = useState<WorkspaceSection>("results");
   const [scenarios, setScenarios] = useState<Scenario[]>([]);
-  const [selectedScenarioId, setSelectedScenarioId] = useState("baseline-shallow-cumulus");
+  const [selectedScenarioId, setSelectedScenarioId] = useState(OBSERVED_SOUNDING_EXPERIMENT_ID);
   const [controls, setControls] = useState<Record<string, string | number | boolean>>({});
   const [runConfiguration, setRunConfiguration] = useState<RunConfigurationInput>(
     DEFAULT_SHALLOW_RUN_CONFIGURATION,
@@ -1923,7 +1923,11 @@ export function App() {
       const catalog = await fetchScenarioCatalog();
       if (!active()) return;
       setScenarios(catalog.scenarios);
-      setSelectedScenarioId(catalog.golden_path_scenario_id);
+      setSelectedScenarioId(
+        catalog.scenarios.some((scenario) => scenario.id === OBSERVED_SOUNDING_BASE_SCENARIO_ID)
+          ? OBSERVED_SOUNDING_EXPERIMENT_ID
+          : catalog.golden_path_scenario_id,
+      );
       if (catalog.scenarios.length === 0) {
         setScenarioLoadState("empty");
         setStatus("No scenarios available");
@@ -3856,6 +3860,21 @@ function BuildWorkspace({
 
               {observedSoundingExperimentSelected && (
                 <>
+                  {observedSoundingParse?.selected_sounding && (
+                    <SelectedSoundingRunSetupPanel
+                      observedSounding={observedSoundingParse.selected_sounding}
+                      selectedCandidateScreening={selectedCandidateScreening}
+                      observedRunRecipe={observedRunRecipe}
+                      controls={controls}
+                      runConfiguration={runConfiguration}
+                      runConfigurationPreview={runConfigurationPreview}
+                      selectedTriggeredDeepPotential={selectedTriggeredDeepPotential}
+                      onObservedRunRecipeChange={onObservedRunRecipeChange}
+                      onRunConfigurationChange={onRunConfigurationChange}
+                      onAddSelectedSoundingToRunPlan={onAddSelectedSoundingToRunPlan}
+                    />
+                  )}
+
                   <AtmosphereSourcePicker
                     sourcePath={atmosphereSourcePath}
                     savedCandidateCount={savedCandidates.length}
@@ -3926,21 +3945,6 @@ function BuildWorkspace({
                       selectedCandidateScreening={selectedCandidateScreening}
                       onObservedSoundingFile={onObservedSoundingFile}
                       onObservedSoundingTimeChange={onObservedSoundingTimeChange}
-                    />
-                  )}
-
-                  {observedSoundingParse?.selected_sounding && (
-                    <SelectedSoundingRunSetupPanel
-                      observedSounding={observedSoundingParse.selected_sounding}
-                      selectedCandidateScreening={selectedCandidateScreening}
-                      observedRunRecipe={observedRunRecipe}
-                      controls={controls}
-                      runConfiguration={runConfiguration}
-                      runConfigurationPreview={runConfigurationPreview}
-                      selectedTriggeredDeepPotential={selectedTriggeredDeepPotential}
-                      onObservedRunRecipeChange={onObservedRunRecipeChange}
-                      onRunConfigurationChange={onRunConfigurationChange}
-                      onAddSelectedSoundingToRunPlan={onAddSelectedSoundingToRunPlan}
                     />
                   )}
 
@@ -4254,6 +4258,7 @@ function RunConfigurationPanel({
   runRecipe,
   controls,
   selectedCandidateScreening,
+  onAddToRunPlan,
   onChange,
   onRunRecipeChange,
   embedded = false,
@@ -4264,12 +4269,15 @@ function RunConfigurationPanel({
   runRecipe?: ObservedRunRecipe;
   controls?: Record<string, string | number | boolean>;
   selectedCandidateScreening?: Record<string, unknown> | null;
+  onAddToRunPlan?: () => void;
   onChange: (configuration: RunConfigurationInput) => void;
   onRunRecipeChange?: (runRecipe: ObservedRunRecipe) => void;
   embedded?: boolean;
 }) {
   const observedRecipeSelected = runRecipe !== undefined && onRunRecipeChange !== undefined;
-  const selectedDeep = runRecipe ? runRecipe === "triggered_deep_potential" : triggeredDeepPotential;
+  const selectedDeep = runRecipe
+    ? runRecipe === "triggered_deep_potential"
+    : triggeredDeepPotential;
   const domainOptions = selectedDeep ? DEEP_DOMAIN_OPTIONS : SHALLOW_DOMAIN_OPTIONS;
   const recipeMismatchWarning =
     runRecipe && selectedCandidateScreening
@@ -4277,22 +4285,38 @@ function RunConfigurationPanel({
       : null;
   const appliedForcing =
     runRecipe && controls ? observedRecipeAppliedForcing(controls, selectedDeep) : null;
+  const configurationHelp = observedRecipeSelected
+    ? "Choose the recipe, model time, grid, domain, cadence, and diagnostics for this observed atmosphere."
+    : "Choose duration, grid, domain, cadence, and diagnostics before creating the CM1 package.";
+  const configurationNotes: string[] = [];
+  if (preview.mode === "smoke") {
+    configurationNotes.push(
+      "Smoke mode is only for package health and CM1 startup behavior; it should not be used to judge atmospheric evolution.",
+    );
+  }
+  if (preview.caveats.includes("configuration_better_suited_to_larger_compute")) {
+    configurationNotes.push(
+      "This configuration may be better suited to larger compute. Cloud Chamber still shows the CM1-facing values before launch.",
+    );
+  }
+  if (selectedDeep) {
+    configurationNotes.push(
+      "Triggered deep potential adds a warm-bubble trigger. Treat it as a forced-potential experiment, not normal atmospheric evolution.",
+    );
+  }
   const update = (key: keyof RunConfigurationInput, value: string) => {
     onChange({ ...configuration, [key]: value });
   };
+  const panelClassName = embedded
+    ? "run-configuration-panel embedded-run-configuration-panel"
+    : "experiment-summary run-configuration-panel";
   return (
-    <section
-      className={embedded ? "run-configuration-panel" : "experiment-summary run-configuration-panel"}
-      aria-labelledby="run-configuration-title"
-    >
+    <section className={panelClassName} aria-labelledby="run-configuration-title">
       <div className="panel-heading-row">
         <div>
           <p className="eyebrow">Run configuration</p>
           <h3 id="run-configuration-title">Configure this CM1 run</h3>
-          <p className="field-help">
-            Set the experiment recipe, duration, grid, domain, cadence, and diagnostics before
-            staging this sounding into the run plan.
-          </p>
+          <p className="field-help">{configurationHelp}</p>
         </div>
         <StatusBadge
           label={preview.mode === "smoke" ? "Smoke check" : "Science run"}
@@ -4305,7 +4329,7 @@ function RunConfigurationPanel({
           <RunConfigurationSelect
             id="run-recipe"
             label="Experiment recipe"
-            description="Initiation and comparison context for this observed sounding."
+            description="Initiation and comparison context."
             value={runRecipe}
             options={[
               {
@@ -4323,7 +4347,7 @@ function RunConfigurationPanel({
         <RunConfigurationSelect
           id="run-duration"
           label="Duration"
-          description="Model-time length. Short evolution is the shortest normal science run."
+          description="Model-time length."
           value={configuration.duration}
           options={DURATION_OPTIONS}
           onChange={(value) => update("duration", value)}
@@ -4333,8 +4357,8 @@ function RunConfigurationPanel({
           label="Horizontal cells"
           description={
             selectedDeep
-              ? "Storm-scale cell budget. CM1 spacing is derived from domain width divided by cells."
-              : "Observed-evolution cell budget. More cells reduce dx/dy and increase compute and output volume."
+              ? "Storm-scale cell budget; spacing derives from domain width."
+              : "Cell budget; more cells reduce dx/dy and increase cost."
           }
           value={configuration.horizontal_cell_count}
           options={HORIZONTAL_CELL_OPTIONS}
@@ -4343,11 +4367,7 @@ function RunConfigurationPanel({
         <RunConfigurationSelect
           id="run-domain"
           label="Domain size"
-          description={
-            selectedDeep
-              ? "Storm-growth domain for triggered-potential experiments."
-              : "Observed soundings default wider so winds do not make the setup misleading."
-          }
+          description={selectedDeep ? "Storm-growth domain." : "Domain width and model top."}
           value={configuration.domain_size}
           options={domainOptions}
           onChange={(value) => update("domain_size", value)}
@@ -4363,7 +4383,7 @@ function RunConfigurationPanel({
         <RunConfigurationSelect
           id="run-fields"
           label="Diagnostic set"
-          description="Controls which CM1 variables are written for Results and Explore. More diagnostics mainly increase disk use and I/O, while enabling better explanations."
+          description="CM1 fields written for Results and Explore."
           value={configuration.diagnostic_set}
           options={DIAGNOSTIC_SET_OPTIONS}
           onChange={(value) => update("diagnostic_set", value)}
@@ -4376,37 +4396,29 @@ function RunConfigurationPanel({
         </div>
       )}
 
-      <dl className="compact-metrics">
-        {runRecipe && (
-          <Metric
-            label="Initiation"
-            value={selectedDeep ? "Idealized warm-bubble trigger" : "No added deep trigger"}
-          />
-        )}
+      <dl className="compact-metrics run-configuration-summary">
         {appliedForcing && <Metric label="Forcing" value={appliedForcing} />}
-        <Metric label="Selected setup" value={preview.label} />
-        <Metric label="Runtime / saved frames" value={runConfigurationTimingSummary(preview)} />
+        <Metric label="Runtime" value={runConfigurationTimingSummary(preview)} />
         <Metric label="Grid" value={runConfigurationGridSummary(preview)} />
-        <Metric label="Output volume" value={preview.output_volume_summary} />
+        <Metric label="Output" value={preview.output_volume_summary} />
       </dl>
 
-      {preview.mode === "smoke" && (
-        <p className="field-help">
-          Smoke mode is only for package health and CM1 startup behavior; it should not be used to
-          judge normal atmospheric evolution.
-        </p>
+      {configurationNotes.length > 0 && (
+        <details className="technical-details run-configuration-notes">
+          <summary>Configuration notes</summary>
+          <ul className="compact-list">
+            {configurationNotes.map((note) => (
+              <li key={note}>{note}</li>
+            ))}
+          </ul>
+        </details>
       )}
-      {preview.caveats.includes("configuration_better_suited_to_larger_compute") && (
-        <p className="field-help">
-          This configuration may be better suited to larger compute. Cloud Chamber will still show
-          the CM1-facing values before launch.
-        </p>
-      )}
-      {selectedDeep && (
-        <p className="field-help">
-          Triggered deep potential is not normal atmospheric evolution; it adds an idealized trigger
-          to inspect whether this profile can support deeper convection.
-        </p>
+
+      {observedRecipeSelected && selectedCandidateScreening && (
+        <ObservedRunRecipePanel
+          runRecipe={runRecipe}
+          selectedCandidateScreening={selectedCandidateScreening}
+        />
       )}
 
       <details className="technical-details">
@@ -4432,6 +4444,21 @@ function RunConfigurationPanel({
           />
         </dl>
       </details>
+
+      {onAddToRunPlan && (
+        <div className="run-configuration-action-row">
+          <div>
+            <p className="eyebrow">Add to run plan</p>
+            <h4>Stage this configured run</h4>
+            <p className="field-help">
+              Adds an editable planned run below; duplicate it there to compare variants.
+            </p>
+          </div>
+          <button type="button" onClick={onAddToRunPlan}>
+            Add to run plan
+          </button>
+        </div>
+      )}
     </section>
   );
 }
@@ -5121,7 +5148,7 @@ function SavedCandidatesSourcePanel({
             <SavedSoundingCandidateCard
               key={saved.saved_candidate_id}
               saved={saved}
-              onUpdateWorkingSet={(tags) => onSave(saved.candidate, tags, saved.notes ?? null)}
+              onUpdateAnnotations={(tags, notes) => onSave(saved.candidate, tags, notes)}
               onUse={() => onSelectForRunSetup(saved.candidate, saved, saved.primary_story)}
               onRemove={() => onRemoveSaved(saved.saved_candidate_id)}
             />
@@ -5134,25 +5161,27 @@ function SavedCandidatesSourcePanel({
 
 function SavedSoundingCandidateCard({
   saved,
-  onUpdateWorkingSet,
+  onUpdateAnnotations,
   onUse,
   onRemove,
 }: {
   saved: SavedSoundingCandidate;
-  onUpdateWorkingSet: (tags: string[]) => void;
+  onUpdateAnnotations: (tags: string[], notes: string | null) => void;
   onUse: () => void;
   onRemove: () => void;
 }) {
-  const currentWorkingSet = saved.tags.find(isCandidateSuggestedTag) ?? "";
-  const [workingSetDraft, setWorkingSetDraft] = useState(currentWorkingSet);
-  const workingSetDraftRef = useRef(currentWorkingSet);
+  const [tagDraft, setTagDraft] = useState(saved.tags.join(", "));
+  const [notesDraft, setNotesDraft] = useState(saved.notes ?? "");
   useEffect(() => {
-    workingSetDraftRef.current = currentWorkingSet;
-    setWorkingSetDraft(currentWorkingSet);
-  }, [saved.saved_candidate_id, currentWorkingSet]);
-  const freeformTags = saved.tags.filter((tag) => !isCandidateSuggestedTag(tag));
-  const workingSetTags = (draft: string) =>
-    _dedupeStrings([draft, ...freeformTags].filter((tag): tag is string => Boolean(tag)));
+    setTagDraft(saved.tags.join(", "));
+    setNotesDraft(saved.notes ?? "");
+  }, [saved.saved_candidate_id, saved.tags, saved.notes]);
+  const handleTagSuggestion = (tag: string) => {
+    setTagDraft(_dedupeStrings([...parseTags(tagDraft), tag]).join(", "));
+  };
+  const handleSaveAnnotations = () => {
+    onUpdateAnnotations(parseTags(tagDraft), notesDraft.trim() || null);
+  };
   return (
     <article
       className="saved-candidate-card"
@@ -5163,40 +5192,56 @@ function SavedSoundingCandidateCard({
         <small>
           {formatDate(saved.candidate.valid_time_utc)} · {candidateStoryLabel(saved.primary_story)}
         </small>
-        {saved.tags.length > 0 && <small>Tags: {saved.tags.join(", ")}</small>}
-        {saved.notes && <small>Notes: {saved.notes}</small>}
+        {(saved.tags.length > 0 || saved.notes) && (
+          <small>
+            {saved.tags.length > 0
+              ? `${saved.tags.length} tag${saved.tags.length === 1 ? "" : "s"}`
+              : "No tags"}
+            {saved.notes ? " · notes saved" : ""}
+          </small>
+        )}
         {saved.linked_run_ids.length > 0 && (
           <small>Used in {saved.linked_run_ids.join(", ")}</small>
         )}
       </div>
-      <div className="saved-candidate-controls">
-        <label htmlFor={`saved-working-set-${saved.saved_candidate_id}`}>
-          Working set
-          <select
-            id={`saved-working-set-${saved.saved_candidate_id}`}
-            aria-label={`Working set for ${candidateStationLabel(saved.candidate)}`}
-            value={workingSetDraft}
-            onChange={(event) => {
-              workingSetDraftRef.current = event.target.value;
-              setWorkingSetDraft(event.target.value);
-            }}
-          >
-            <option value="">No working set</option>
+      <details className="saved-candidate-notes-drawer">
+        <summary>Tags and notes</summary>
+        <div className="candidate-notes-form">
+          <label htmlFor={`saved-tags-${saved.saved_candidate_id}`}>
+            Tags
+            <input
+              id={`saved-tags-${saved.saved_candidate_id}`}
+              value={tagDraft}
+              placeholder="deep convection, rerun, compare"
+              onChange={(event) => setTagDraft(event.target.value)}
+            />
+          </label>
+          <div className="candidate-tag-suggestions" aria-label="Suggested tags">
             {candidateSuggestedTags.map((tag) => (
-              <option key={tag} value={tag}>
+              <button
+                type="button"
+                className="secondary-button"
+                key={tag}
+                onClick={() => handleTagSuggestion(tag)}
+              >
                 {tag}
-              </option>
+              </button>
             ))}
-          </select>
-        </label>
-        <button
-          type="button"
-          className="secondary-button"
-          onClick={() => onUpdateWorkingSet(workingSetTags(workingSetDraftRef.current))}
-        >
-          Update working set
-        </button>
-      </div>
+          </div>
+          <label htmlFor={`saved-notes-${saved.saved_candidate_id}`}>
+            Notes
+            <textarea
+              id={`saved-notes-${saved.saved_candidate_id}`}
+              value={notesDraft}
+              placeholder="What makes this worth running or comparing?"
+              onChange={(event) => setNotesDraft(event.target.value)}
+            />
+          </label>
+          <button type="button" className="secondary-button" onClick={handleSaveAnnotations}>
+            Save tags and notes
+          </button>
+        </div>
+      </details>
       <div className="button-row">
         <button type="button" onClick={onUse}>
           Select for run setup
@@ -5571,8 +5616,13 @@ function SelectedSoundingRunSetupPanel({
     selectedCandidateScreening,
   );
   const activeStoryLabel = observedRecipeStoryLabel(selectedCandidateScreening);
+  const setupRef = useRef<HTMLElement | null>(null);
+  useEffect(() => {
+    setupRef.current?.scrollIntoView?.({ block: "start", behavior: "auto" });
+  }, [observedSounding.station_id, observedSounding.valid_time_utc]);
   return (
     <section
+      ref={setupRef}
       className="experiment-summary selected-sounding-setup selected-run-builder"
       aria-label="Selected sounding run setup"
     >
@@ -5612,30 +5662,11 @@ function SelectedSoundingRunSetupPanel({
         runRecipe={observedRunRecipe}
         controls={controls}
         selectedCandidateScreening={selectedCandidateScreening}
+        onAddToRunPlan={onAddSelectedSoundingToRunPlan}
         onChange={onRunConfigurationChange}
         onRunRecipeChange={onObservedRunRecipeChange}
         embedded
       />
-
-      <ObservedRunRecipePanel
-        runRecipe={observedRunRecipe}
-        selectedCandidateScreening={selectedCandidateScreening}
-      />
-
-      <div className="selected-sounding-add-panel">
-        <div className="panel-heading-row">
-          <div>
-            <p className="eyebrow">Add to run plan</p>
-            <h3>Add to plan</h3>
-            <p className="field-help">
-              Stage this setup as an editable row below; duplicate it there to compare variants.
-            </p>
-          </div>
-        </div>
-        <button type="button" onClick={onAddSelectedSoundingToRunPlan}>
-          Add to run plan
-        </button>
-      </div>
     </section>
   );
 }
@@ -5736,7 +5767,10 @@ function ObservedSoundingInputPanel({
           <details className="technical-details source-review-details">
             <summary>Uploaded-sounding review</summary>
             <dl className="compact-metrics">
-              <Metric label="Source" value={`${parsed.source_provider} · ${parsed.source_format}`} />
+              <Metric
+                label="Source"
+                value={`${parsed.source_provider} · ${parsed.source_format}`}
+              />
               <Metric label="Uploaded file" value={parsed.uploaded_filename} />
               <Metric
                 label="Station"
@@ -6027,14 +6061,14 @@ function RunPlanItemCard({
           <RunConfigurationSelect
             id={`run-plan-recipe-${item.id}`}
             label="Recipe"
-            description="Choose the CM1 assumption set for this run-plan item."
+            description="Initiation and comparison context."
             value={item.runRecipe}
             options={[
               {
                 value: "untriggered_observed_evolution",
-                label: "Untriggered observed-sounding evolution v0",
+                label: "Observed evolution",
               },
-              { value: "triggered_deep_potential", label: "Triggered deep-potential experiment" },
+              { value: "triggered_deep_potential", label: "Triggered deep potential" },
             ]}
             onChange={(value) => onRecipeChange(item.id, value as ObservedRunRecipe)}
           />
@@ -6116,7 +6150,7 @@ function RunPlanConfigurationFields({
       <RunConfigurationSelect
         id={`run-plan-duration-${item.id}`}
         label="Duration"
-        description="Model-time length for this variant."
+        description="Model-time length."
         value={item.runConfiguration.duration}
         options={DURATION_OPTIONS}
         onChange={(value) => update("duration", value)}
@@ -6124,7 +6158,7 @@ function RunPlanConfigurationFields({
       <RunConfigurationSelect
         id={`run-plan-grid-${item.id}`}
         label="Horizontal cells"
-        description="Cell count controls dx/dy and compute complexity."
+        description="Controls dx/dy and compute."
         value={item.runConfiguration.horizontal_cell_count}
         options={HORIZONTAL_CELL_OPTIONS}
         onChange={(value) => update("horizontal_cell_count", value)}
@@ -6132,7 +6166,7 @@ function RunPlanConfigurationFields({
       <RunConfigurationSelect
         id={`run-plan-domain-${item.id}`}
         label="Domain size"
-        description="Domain width and model top for this recipe."
+        description="Width and model top."
         value={item.runConfiguration.domain_size}
         options={domainOptions}
         onChange={(value) => update("domain_size", value)}
@@ -6140,7 +6174,7 @@ function RunPlanConfigurationFields({
       <RunConfigurationSelect
         id={`run-plan-cadence-${item.id}`}
         label="Output cadence"
-        description="Saved output interval for Results and Explore."
+        description="Saved-output interval."
         value={item.runConfiguration.output_cadence}
         options={OUTPUT_CADENCE_OPTIONS}
         onChange={(value) => update("output_cadence", value)}
@@ -6148,7 +6182,7 @@ function RunPlanConfigurationFields({
       <RunConfigurationSelect
         id={`run-plan-fields-${item.id}`}
         label="Diagnostic set"
-        description="Requested output field density."
+        description="Output field density."
         value={item.runConfiguration.diagnostic_set}
         options={DIAGNOSTIC_SET_OPTIONS}
         onChange={(value) => update("diagnostic_set", value)}
@@ -10399,10 +10433,6 @@ function candidateRecipeFitTone(status: CandidateRecipeFitStatus): "good" | "war
   return "warning";
 }
 
-function isCandidateSuggestedTag(tag: string): tag is (typeof candidateSuggestedTags)[number] {
-  return (candidateSuggestedTags as readonly string[]).includes(tag);
-}
-
 function observedRecipeStoryId(
   selectedCandidateScreening: Record<string, unknown> | null,
 ): CandidateStoryId | null {
@@ -10518,10 +10548,8 @@ function observedRecipeAppliedForcing(
     typeof surfaceHeating === "string" && surfaceHeating.length > 0
       ? humanize(surfaceHeating)
       : "Baseline";
-  const initiation = selectedDeep
-    ? "plus idealized warm-bubble initiation"
-    : "no added deep-initiation trigger";
-  return `Surface heating: ${surfaceHeatingLabel}; ${initiation}.`;
+  const initiation = selectedDeep ? "warm-bubble trigger" : "no deep trigger";
+  return `${surfaceHeatingLabel} surface heating; ${initiation}.`;
 }
 
 function candidateRecipeMismatchWarning(

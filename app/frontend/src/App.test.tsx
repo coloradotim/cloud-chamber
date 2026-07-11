@@ -469,7 +469,11 @@ function preRunValidationReportForRequest(body: {
         : observed
           ? "untriggered_observed_sounding_evolution_v0_assumptions"
           : "generated_reference_lower_atmosphere_v1",
-      assumption_mode: deep ? "triggered_deep_potential" : observed ? "normal_evolution" : "generated_reference",
+      assumption_mode: deep
+        ? "triggered_deep_potential"
+        : observed
+          ? "normal_evolution"
+          : "generated_reference",
     },
   };
 }
@@ -2999,6 +3003,13 @@ describe("App", () => {
     expect(
       await screen.findByRole("heading", { name: "Build and run a CM1 experiment" }),
     ).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Upload a Sounding" })).toBeInTheDocument();
+    expect(screen.getByLabelText("Experiment")).toHaveValue("__observed_sounding_upload__");
+    expect(screen.queryByLabelText("Low-level humidity")).not.toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText("Experiment"), {
+      target: { value: "baseline-shallow-cumulus" },
+    });
     expect(
       (await screen.findAllByRole("heading", { name: "Baseline Shallow Cumulus" })).length,
     ).toBeGreaterThan(0);
@@ -3015,12 +3026,11 @@ describe("App", () => {
     expect(screen.getByLabelText("Low-level humidity")).toBeInTheDocument();
     expect(screen.getByLabelText("Surface heating")).toBeInTheDocument();
     expect(screen.getAllByText(/Selected: Baseline/).length).toBeGreaterThan(0);
+    expect(screen.getByRole("heading", { name: "Configure this CM1 run" })).toBeInTheDocument();
     expect(
-      screen.getByRole("heading", { name: "Configure this CM1 run" }),
+      screen.getByText("360 min runtime; 900 s output; 25 saved frames; 3 s timestep"),
     ).toBeInTheDocument();
-    expect(
-      screen.getByText("Short evolution; Local 6 km; Scout 64 x 64; 100 m dx/dy; Standard 15 min"),
-    ).toBeInTheDocument();
+    expect(screen.getByText("64 x 64 x 75; dx/dy 100 m, dz 40 m")).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Local run launchpad" })).toBeInTheDocument();
     expect(
       screen.getByRole("heading", { name: "Packages and runs needing action" }),
@@ -3031,7 +3041,6 @@ describe("App", () => {
         "No package has been created from the current setup in this browser session.",
       ),
     ).toBeInTheDocument();
-    expect(screen.getByLabelText("Experiment")).toHaveTextContent("Upload a Sounding");
     expect(screen.getByText("Build pipeline")).toBeInTheDocument();
     expect(screen.queryByText("Local experiment loop")).not.toBeInTheDocument();
     expect(screen.queryByText("namelist.input")).not.toBeInTheDocument();
@@ -3073,12 +3082,6 @@ describe("App", () => {
     render(<App />);
 
     fireEvent.click(await screen.findByRole("button", { name: "Build" }));
-    expect(
-      await screen.findByRole("heading", { name: "Experiment setup summary" }),
-    ).toBeInTheDocument();
-    fireEvent.change(screen.getByLabelText("Experiment"), {
-      target: { value: "__observed_sounding_upload__" },
-    });
 
     expect(await screen.findByRole("heading", { name: "Upload a Sounding" })).toBeInTheDocument();
     expect(screen.getByRole("tab", { name: "Cached recommendations" })).toHaveAttribute(
@@ -3101,15 +3104,13 @@ describe("App", () => {
     expect(
       await screen.findByText("Observed sounding validated for package review"),
     ).toBeInTheDocument();
+    expect(screen.getByText("Valley, Nebraska (USM00072558)")).toBeInTheDocument();
+    fireEvent.click(screen.getByText("Uploaded-sounding review"));
     expect(screen.getByText("USM00072558 · Valley, Nebraska")).toBeInTheDocument();
     expect(screen.getByText(/CM1 z=0 is station surface at 351.5 m MSL/)).toBeInTheDocument();
     expect(screen.getAllByText(/observed sounding winds/).length).toBeGreaterThan(0);
-    expect(
-      screen.getByRole("heading", { name: "Configure this CM1 run" }),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByText(/Surface heating: Baseline; no added deep-initiation trigger/i),
-    ).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Configure this CM1 run" })).toBeInTheDocument();
+    expect(screen.getByText(/Baseline surface heating; no deep trigger/i)).toBeInTheDocument();
     expect(screen.getByLabelText("Experiment recipe")).toHaveValue(
       "untriggered_observed_evolution",
     );
@@ -3117,12 +3118,9 @@ describe("App", () => {
     fireEvent.change(screen.getByLabelText("Experiment recipe"), {
       target: { value: "triggered_deep_potential" },
     });
-    expect(screen.getByText("Idealized warm-bubble trigger")).toBeInTheDocument();
+    expect(screen.getByText(/Baseline surface heating; warm-bubble trigger/i)).toBeInTheDocument();
     expect(
-      screen.getByText(/Surface heating: Baseline; plus idealized warm-bubble initiation/i),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByText(/Triggered deep potential is not normal atmospheric evolution/i),
+      screen.getByText(/Triggered deep potential adds a warm-bubble trigger/i),
     ).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Add to run plan" }));
@@ -3131,7 +3129,9 @@ describe("App", () => {
       "triggered_deep_potential",
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "Create packages and queue selected runs" }));
+    fireEvent.click(
+      screen.getByRole("button", { name: "Create packages and queue selected runs" }),
+    );
 
     await waitFor(() => {
       expect(dryRunBody).toContain('"run_recipe":"triggered_deep_potential"');
@@ -3200,7 +3200,9 @@ describe("App", () => {
     expect(await screen.findByText("Run-plan variant duplicated")).toBeInTheDocument();
     expect(screen.getAllByLabelText(/^Run plan item /)).toHaveLength(2);
 
-    fireEvent.click(screen.getByRole("button", { name: "Create packages and queue selected runs" }));
+    fireEvent.click(
+      screen.getByRole("button", { name: "Create packages and queue selected runs" }),
+    );
 
     await waitFor(() => {
       expect(dryRunBody).toContain('"run_recipe":"triggered_deep_potential"');
@@ -3253,7 +3255,9 @@ describe("App", () => {
     );
     expect(screen.getByText("untriggered_observed_sounding_evolution_v0")).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: "Create packages and queue selected runs" }));
+    fireEvent.click(
+      screen.getByRole("button", { name: "Create packages and queue selected runs" }),
+    );
 
     await waitFor(() => {
       expect(dryRunBody).toContain('"run_recipe":"untriggered_observed_evolution"');
@@ -3301,7 +3305,9 @@ describe("App", () => {
     expect(screen.getByText(/Screening guidance only/)).toBeInTheDocument();
     expect(screen.getByText("IGRA cache not checked yet")).toBeInTheDocument();
     expect(screen.queryByLabelText("Save into")).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Prepare & search local soundings" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Prepare & search local soundings" }),
+    ).toBeInTheDocument();
 
     fireEvent.click(screen.getByText("Advanced filters"));
     fireEvent.change(screen.getByLabelText("Story"), {
@@ -3343,8 +3349,13 @@ describe("App", () => {
     const savedCard = await screen.findByLabelText(
       "Saved sounding candidate Valley, Nebraska (USM00072558)",
     );
-    expect(savedCard).toHaveTextContent("Tags: compare, rerun");
-    expect(savedCard).toHaveTextContent("Notes: Compare this against the humid case.");
+    expect(savedCard).toHaveTextContent("2 tags");
+    expect(savedCard).toHaveTextContent("notes saved");
+    fireEvent.click(within(savedCard).getByText("Tags and notes"));
+    expect(within(savedCard).getByLabelText("Tags")).toHaveValue("compare, rerun");
+    expect(within(savedCard).getByLabelText("Notes")).toHaveValue(
+      "Compare this against the humid case.",
+    );
 
     fireEvent.click(within(savedCard).getByRole("button", { name: "Select for run setup" }));
     fireEvent.click(screen.getByRole("button", { name: "Add to run plan" }));
@@ -3352,7 +3363,9 @@ describe("App", () => {
     expect(
       await screen.findByText("Valley, Nebraska (USM00072558) added to the run plan"),
     ).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Create packages and queue selected runs" }));
+    fireEvent.click(
+      screen.getByRole("button", { name: "Create packages and queue selected runs" }),
+    );
 
     await waitFor(() => {
       expect(dryRunBody).toContain('"user_tags":["compare","rerun"]');
@@ -3396,7 +3409,9 @@ describe("App", () => {
       await screen.findByText("Valley, Nebraska (USM00072558) added to the run plan"),
     ).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: "Create packages and queue selected runs" }));
+    fireEvent.click(
+      screen.getByRole("button", { name: "Create packages and queue selected runs" }),
+    );
 
     await waitFor(() => {
       expect(dryRunBody).toContain('"observed_sounding"');
@@ -3443,7 +3458,7 @@ describe("App", () => {
     expect(fetch).not.toHaveBeenCalledWith("/api/sounding-candidates/analyze", expect.anything());
   });
 
-  it("updates saved candidate working sets and preserves tags through reload", async () => {
+  it("updates saved candidate tags and notes through the metadata drawer", async () => {
     const defaultFetch = vi.mocked(fetch).getMockImplementation();
     let savedStore: Array<(typeof savedCandidatesResponse.saved_candidates)[number]> = [];
     vi.mocked(fetch).mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
@@ -3527,12 +3542,16 @@ describe("App", () => {
     const savedCard = await screen.findByLabelText(
       "Saved sounding candidate Valley, Nebraska (USM00072558)",
     );
-    expect(savedCard).toHaveTextContent("Tags: Maybe rerun");
-    fireEvent.change(
-      within(savedCard).getByLabelText("Working set for Valley, Nebraska (USM00072558)"),
-      { target: { value: "Deep convection candidates" } },
+    expect(savedCard).toHaveTextContent("1 tag");
+    expect(savedCard).toHaveTextContent("notes saved");
+    expect(within(savedCard).queryByText("Working set")).not.toBeInTheDocument();
+    fireEvent.click(within(savedCard).getByText("Tags and notes"));
+    expect(within(savedCard).getByLabelText("Tags")).toHaveValue("Maybe rerun");
+    expect(within(savedCard).getByLabelText("Notes")).toHaveValue(
+      "Keep this one in the candidate notebook.",
     );
-    fireEvent.click(within(savedCard).getByRole("button", { name: "Update working set" }));
+    fireEvent.click(within(savedCard).getByRole("button", { name: "Deep convection candidates" }));
+    fireEvent.click(within(savedCard).getByRole("button", { name: "Save tags and notes" }));
 
     expect(await screen.findByText("Saved sounding candidate updated")).toBeInTheDocument();
 
@@ -3547,8 +3566,13 @@ describe("App", () => {
     const reloadedSavedCard = await screen.findByLabelText(
       "Saved sounding candidate Valley, Nebraska (USM00072558)",
     );
-    expect(reloadedSavedCard).toHaveTextContent("Tags: Deep convection candidates");
-    expect(reloadedSavedCard).toHaveTextContent("Notes: Keep this one in the candidate notebook.");
+    fireEvent.click(within(reloadedSavedCard).getByText("Tags and notes"));
+    expect(within(reloadedSavedCard).getByLabelText("Tags")).toHaveValue(
+      "Maybe rerun, Deep convection candidates",
+    );
+    expect(within(reloadedSavedCard).getByLabelText("Notes")).toHaveValue(
+      "Keep this one in the candidate notebook.",
+    );
   });
 
   it("shows secondary family candidates with the scoped story ingredient score", async () => {
@@ -3653,6 +3677,9 @@ describe("App", () => {
     render(<App />);
 
     fireEvent.click(await screen.findByRole("button", { name: "Build" }));
+    fireEvent.change(screen.getByLabelText("Experiment"), {
+      target: { value: "baseline-shallow-cumulus" },
+    });
     fireEvent.change(await screen.findByLabelText("Domain size"), {
       target: { value: "wide_12km" },
     });
@@ -3744,6 +3771,9 @@ describe("App", () => {
     render(<App />);
 
     fireEvent.click(await screen.findByRole("button", { name: "Build" }));
+    fireEvent.change(screen.getByLabelText("Experiment"), {
+      target: { value: "baseline-shallow-cumulus" },
+    });
     fireEvent.click(await screen.findByTestId("create-package-btn"));
 
     expect(
@@ -3815,6 +3845,10 @@ describe("App", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Retry scenarios" }));
 
+    expect(await screen.findByRole("heading", { name: "Upload a Sounding" })).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("Experiment"), {
+      target: { value: "baseline-shallow-cumulus" },
+    });
     expect(
       (await screen.findAllByRole("heading", { name: "Baseline Shallow Cumulus" })).length,
     ).toBeGreaterThan(0);
@@ -3863,6 +3897,9 @@ describe("App", () => {
     render(<App />);
 
     fireEvent.click(await screen.findByRole("button", { name: "Build" }));
+    fireEvent.change(screen.getByLabelText("Experiment"), {
+      target: { value: "baseline-shallow-cumulus" },
+    });
     const runMonitor = screen.getByText("Run monitor").closest("details");
     expect(runMonitor).not.toHaveAttribute("open");
     fireEvent.click(screen.getByText("Run monitor"));
@@ -4248,6 +4285,9 @@ describe("App", () => {
 
     render(<App />);
     fireEvent.click(await screen.findByRole("button", { name: "Build" }));
+    fireEvent.change(screen.getByLabelText("Experiment"), {
+      target: { value: "baseline-shallow-cumulus" },
+    });
     fireEvent.click(await screen.findByTestId("create-package-btn"));
 
     await screen.findByRole("heading", { name: "Package ready for CM1" });
@@ -4325,6 +4365,9 @@ describe("App", () => {
 
     render(<App />);
     fireEvent.click(await screen.findByRole("button", { name: "Build" }));
+    fireEvent.change(screen.getByLabelText("Experiment"), {
+      target: { value: "baseline-shallow-cumulus" },
+    });
     fireEvent.click(await screen.findByTestId("create-package-btn"));
 
     await screen.findByRole("heading", { name: "Package ready for CM1" });
@@ -4345,6 +4388,9 @@ describe("App", () => {
     render(<App />);
 
     fireEvent.click(await screen.findByRole("button", { name: "Build" }));
+    fireEvent.change(screen.getByLabelText("Experiment"), {
+      target: { value: "baseline-shallow-cumulus" },
+    });
     const humidityControl = await screen.findByLabelText("Low-level humidity");
     await waitFor(() => {
       expect(humidityControl).toHaveValue("baseline");
@@ -4408,6 +4454,9 @@ describe("App", () => {
     render(<App />);
 
     fireEvent.click(await screen.findByRole("button", { name: "Build" }));
+    fireEvent.change(screen.getByLabelText("Experiment"), {
+      target: { value: "baseline-shallow-cumulus" },
+    });
     fireEvent.click(await screen.findByTestId("create-package-btn"));
 
     expect(await screen.findByText("dry-run-001")).toBeInTheDocument();
@@ -4507,6 +4556,9 @@ describe("App", () => {
     render(<App />);
 
     fireEvent.click(await screen.findByRole("button", { name: "Build" }));
+    fireEvent.change(screen.getByLabelText("Experiment"), {
+      target: { value: "baseline-shallow-cumulus" },
+    });
     fireEvent.click(await screen.findByTestId("create-package-btn"));
     fireEvent.click(await screen.findByTestId("launch-cm1-btn"));
 
@@ -5065,6 +5117,9 @@ describe("App", () => {
     render(<App />);
 
     fireEvent.click(await screen.findByRole("button", { name: "Build" }));
+    fireEvent.change(screen.getByLabelText("Experiment"), {
+      target: { value: "baseline-shallow-cumulus" },
+    });
     fireEvent.click((await screen.findAllByRole("button", { name: "Preview cleanup" }))[0]);
 
     expect(await screen.findByRole("alert")).toHaveTextContent(
