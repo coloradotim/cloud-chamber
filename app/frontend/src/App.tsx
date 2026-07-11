@@ -1114,6 +1114,20 @@ const FIELD_LOAD_TIMEOUT_MS = 30000;
 const OBSERVED_SOUNDING_EXPERIMENT_ID = "__observed_sounding_upload__";
 const OBSERVED_SOUNDING_BASE_SCENARIO_ID = "baseline-shallow-cumulus";
 const OBSERVED_SOUNDING_VISIBLE_CONTROLS = new Set(["surface_heating"]);
+const candidateStoryIdValues = new Set<string>([
+  "shallow_cumulus_candidate",
+  "dry_failed_candidate",
+  "capped_suppressed_candidate",
+  "humid_rainy_candidate",
+  "severe_thunderstorm_environment",
+  "supercell_environment",
+  "high_cape_pulse_storm",
+  "dry_microburst_inverted_v",
+  "squall_line_cold_pool_candidate",
+  "elevated_convection",
+  "needs_review",
+  "poor_or_incomplete_candidate",
+]);
 const deepConvectionStoryIds = new Set<string>([
   "severe_thunderstorm_environment",
   "supercell_environment",
@@ -1213,10 +1227,12 @@ async function dryRunErrorDetail(
 ): Promise<{ message: string; preRunValidationReport: PreRunValidationReport | null }> {
   try {
     const payload = (await response.json()) as {
-      detail?: string | {
-        message?: string;
-        pre_run_validation_report?: unknown;
-      };
+      detail?:
+        | string
+        | {
+            message?: string;
+            pre_run_validation_report?: unknown;
+          };
     };
     if (typeof payload.detail === "string") {
       return { message: payload.detail, preRunValidationReport: null };
@@ -1224,9 +1240,7 @@ async function dryRunErrorDetail(
     if (payload.detail && typeof payload.detail === "object") {
       return {
         message: payload.detail.message ?? "Unable to create dry-run package.",
-        preRunValidationReport: isPreRunValidationReport(
-          payload.detail.pre_run_validation_report,
-        )
+        preRunValidationReport: isPreRunValidationReport(payload.detail.pre_run_validation_report)
           ? payload.detail.pre_run_validation_report
           : null,
       };
@@ -2105,7 +2119,9 @@ export function App() {
 
   function handleObservedRunRecipeChange(runRecipe: ObservedRunRecipe) {
     setObservedRunRecipe(runRecipe);
-    setRunConfiguration(defaultRunConfigurationForSelection(OBSERVED_SOUNDING_EXPERIMENT_ID, runRecipe));
+    setRunConfiguration(
+      defaultRunConfigurationForSelection(OBSERVED_SOUNDING_EXPERIMENT_ID, runRecipe),
+    );
     setDryRun(null);
     setBlockedPreRunValidationReport(null);
     setRunStatus(null);
@@ -2300,7 +2316,9 @@ export function App() {
     setObservedSoundingParse(observedSoundingParseFromCandidate(candidate, selectedSounding));
     setObservedSoundingStatus("Candidate loaded into observed-sounding package review");
     setObservedSoundingError(null);
-    setSelectedCandidateScreening(candidateScreeningMetadata(candidate, savedCandidate, activeStory));
+    setSelectedCandidateScreening(
+      candidateScreeningMetadata(candidate, savedCandidate, activeStory),
+    );
     const nextRunRecipe = defaultRunRecipeForCandidate(candidate, activeStory);
     setObservedRunRecipe(nextRunRecipe);
     setRunConfiguration(
@@ -3200,9 +3218,7 @@ function BuildWorkspace({
     observedSoundingExperimentSelected && observedRunRecipe === "triggered_deep_potential";
   const runConfigurationPreview = previewRunConfiguration(
     runConfiguration,
-    observedSoundingExperimentSelected
-      ? observedRunRecipe
-      : "generated_reference_lower_atmosphere",
+    observedSoundingExperimentSelected ? observedRunRecipe : "generated_reference_lower_atmosphere",
   );
 
   return (
@@ -3388,6 +3404,7 @@ function BuildWorkspace({
                   />
                   <ObservedRunRecipePanel
                     runRecipe={observedRunRecipe}
+                    controls={controls}
                     selectedCandidateScreening={selectedCandidateScreening}
                     onChange={onObservedRunRecipeChange}
                   />
@@ -3423,12 +3440,14 @@ function BuildWorkspace({
                 dryRun={dryRun}
                 runStatus={runStatus}
                 lanWorkerStatus={lanWorkerStatus}
+                lanWorkerConfigured={lanWorkerConfig?.configured ?? false}
                 canCreatePackage={
                   validationMessages.length === 0 &&
                   (!observedSoundingExperimentSelected ||
                     Boolean(observedSoundingParse?.selected_sounding))
                 }
                 onLaunchRun={onLaunchRun}
+                onLaunchLanWorkerRun={onLaunchLanWorkerRun}
               />
             </>
           )}
@@ -3621,14 +3640,18 @@ function BuildRunActionPanel({
   dryRun,
   runStatus,
   lanWorkerStatus,
+  lanWorkerConfigured,
   canCreatePackage,
   onLaunchRun,
+  onLaunchLanWorkerRun,
 }: {
   dryRun: DryRunResponse | null;
   runStatus: RunStatusResponse | null;
   lanWorkerStatus: LanWorkerRunResponse | null;
+  lanWorkerConfigured: boolean;
   canCreatePackage: boolean;
   onLaunchRun: () => void;
+  onLaunchLanWorkerRun: () => void;
 }) {
   const packageReadyForQueue = Boolean(dryRun && !runStatus && !lanWorkerStatus);
   return (
@@ -3639,7 +3662,7 @@ function BuildRunActionPanel({
           <h3>{dryRun ? "Package ready for CM1" : "Ready to package this setup"}</h3>
           <p className="field-help">
             Create the run package from the selected sounding, hypothesis, and CM1 run settings.
-            Then queue that package for local CM1 execution when you are ready.
+            Then choose whether this package should run locally or on the trusted LAN worker.
           </p>
         </div>
         <StatusBadge
@@ -3658,11 +3681,27 @@ function BuildRunActionPanel({
           {dryRun ? "Create another package" : "Create run package"}
         </button>
         {packageReadyForQueue && (
-          <button type="button" data-testid="launch-cm1-btn" onClick={onLaunchRun}>
-            Queue local CM1 run
-          </button>
+          <>
+            <button type="button" data-testid="launch-cm1-btn" onClick={onLaunchRun}>
+              Queue local CM1 run
+            </button>
+            <button
+              type="button"
+              className="secondary-button"
+              data-testid="launch-lan-worker-btn"
+              onClick={onLaunchLanWorkerRun}
+              disabled={!lanWorkerConfigured}
+            >
+              Run on LAN worker
+            </button>
+          </>
         )}
       </div>
+      {packageReadyForQueue && !lanWorkerConfigured && (
+        <p className="state-note">
+          LAN worker execution is unavailable until an ignored local worker config is present.
+        </p>
+      )}
     </section>
   );
 }
@@ -3773,8 +3812,14 @@ function RunConfigurationPanel({
       <details className="technical-details">
         <summary>CM1-facing values</summary>
         <dl className="compact-metrics">
-          <Metric label="nx / ny / nz" value={`${preview.cm1_values.nx} / ${preview.cm1_values.ny} / ${preview.cm1_values.nz}`} />
-          <Metric label="dx / dy / dz" value={`${formatMeters(preview.cm1_values.dx_m)} / ${formatMeters(preview.cm1_values.dy_m)} / ${formatMeters(preview.cm1_values.dz_m)}`} />
+          <Metric
+            label="nx / ny / nz"
+            value={`${preview.cm1_values.nx} / ${preview.cm1_values.ny} / ${preview.cm1_values.nz}`}
+          />
+          <Metric
+            label="dx / dy / dz"
+            value={`${formatMeters(preview.cm1_values.dx_m)} / ${formatMeters(preview.cm1_values.dy_m)} / ${formatMeters(preview.cm1_values.dz_m)}`}
+          />
           <Metric label="Model top" value={formatMeters(preview.cm1_values.model_top_m)} />
           <Metric label="Timestep" value={formatSeconds(preview.cm1_values.time_step_seconds)} />
           <Metric
@@ -4384,9 +4429,12 @@ function SoundingCandidateCard({
 }) {
   const activeScore = candidateActiveStoryScore(candidate, storyFilter, storyFamilyFilter);
   const story = activeScore?.story ?? candidate.primary_story;
-  const activeFamily = activeScore ? candidateStoryFamilyForStory(activeScore.story) : candidate.story_family;
+  const activeFamily = activeScore
+    ? candidateStoryFamilyForStory(activeScore.story)
+    : candidate.story_family;
   const ingredientScore =
-    activeScore?.score_0_to_100 ?? candidateIngredientScore(candidate, storyFilter, storyFamilyFilter);
+    activeScore?.score_0_to_100 ??
+    candidateIngredientScore(candidate, storyFilter, storyFamilyFilter);
   const recipeFit = candidateRecipeFitForStory(candidate, story);
   const reasons = candidateInterestReasons(candidate);
   return (
@@ -4412,7 +4460,10 @@ function SoundingCandidateCard({
             <StatusBadge label={`Primary: ${candidate.primary_story_label}`} tone="neutral" />
           )}
           <StatusBadge label={candidateStoryFamilyLabel(activeFamily)} tone="neutral" />
-          <StatusBadge label={`${formatNumber(ingredientScore, "%")} ingredient score`} tone="neutral" />
+          <StatusBadge
+            label={`${formatNumber(ingredientScore, "%")} ingredient score`}
+            tone="neutral"
+          />
           <StatusBadge
             label={`Recipe fit: ${recipeFit.label}`}
             tone={candidateRecipeFitTone(recipeFit.status)}
@@ -4541,8 +4592,8 @@ function SoundingCandidateDetail({
         />
       </div>
       <p>
-        Scores rank sounding ingredients only. They do not predict what the current CM1 package
-        will produce. CM1 decides whether clouds, rain, or suppression actually happen.
+        Scores rank sounding ingredients only. They do not predict what the current CM1 package will
+        produce. CM1 decides whether clouds, rain, or suppression actually happen.
       </p>
       <p className="field-help">Recipe fit: {recipeFit.summary}</p>
       <section>
@@ -4800,38 +4851,76 @@ function ObservedSoundingInputPanel({
 
 function ObservedRunRecipePanel({
   runRecipe,
+  controls,
   selectedCandidateScreening,
   onChange,
 }: {
   runRecipe: ObservedRunRecipe;
+  controls: Record<string, string | number | boolean>;
   selectedCandidateScreening: Record<string, unknown> | null;
   onChange: (runRecipe: ObservedRunRecipe) => void;
 }) {
   const selectedDeep = runRecipe === "triggered_deep_potential";
-  const packageMismatchWarning = candidateRecipeMismatchWarning(
+  const activeStory = observedRecipeStoryId(selectedCandidateScreening);
+  const recipeMismatchWarning = candidateRecipeMismatchWarning(
     selectedCandidateScreening,
     runRecipe,
   );
   const activeStoryLabel = observedRecipeStoryLabel(selectedCandidateScreening);
+  const expectedSignatures = observedRecipeSignatureLabels(activeStory);
+  const hypothesisSummary = observedRecipeHypothesisSummary(activeStory);
+  const evidenceSummary = observedRecipeEvidenceSummary(selectedCandidateScreening);
+  const recipeFitSummary = observedRecipeFitSummary(selectedCandidateScreening, activeStory);
+  const appliedForcing = observedRecipeAppliedForcing(controls, selectedDeep);
   const candidateGuidance = selectedCandidateScreening
-    ? "Candidate screening is ingredient guidance. Pick the run recipe by what CM1 can honestly test."
-    : "Uploaded soundings start as an untriggered observed-atmosphere run. Use a triggered deep-potential recipe only when that is the experiment.";
+    ? "The candidate story is the atmospheric hypothesis. Surface heating and initiation choices are the forcing used to test it."
+    : "No screened candidate is selected yet. This run can still inspect the observed profile, but there is no saved atmospheric hypothesis to compare.";
+  const methodScope = selectedDeep
+    ? "Forced-initiation test of deep-convection potential; not normal atmospheric evolution."
+    : "No added deep trigger; CM1 evolves the observed profile with the selected surface-heating forcing.";
 
   return (
     <section className="experiment-summary" aria-labelledby="observed-run-recipe-title">
       <div className="panel-heading-row">
         <div>
-          <p className="eyebrow">Hypothesis run recipe</p>
-          <h3 id="observed-run-recipe-title">What is this run testing?</h3>
+          <p className="eyebrow">Candidate hypothesis</p>
+          <h3 id="observed-run-recipe-title">What atmospheric outcome are we checking?</h3>
           <p className="field-help">{candidateGuidance}</p>
         </div>
         <StatusBadge
-          label={selectedDeep ? "Triggered deep potential" : "Untriggered observed evolution"}
-          tone={selectedDeep ? "warning" : "neutral"}
+          label={activeStoryLabel}
+          tone={selectedCandidateScreening ? "neutral" : "warning"}
         />
       </div>
 
-      <div className="button-row" role="group" aria-label="Run recipe">
+      <dl className="compact-metrics">
+        <Metric label="Atmospheric hypothesis" value={activeStoryLabel} />
+        <Metric label="Expected evolution to check" value={hypothesisSummary} />
+        <Metric label="Why this sounding looked interesting" value={evidenceSummary} />
+        <Metric label="Applied forcing" value={appliedForcing} />
+        <Metric label="Can this run test it?" value={recipeFitSummary} />
+      </dl>
+
+      {expectedSignatures.length > 0 && (
+        <div>
+          <p className="eyebrow">CM1-observable signatures</p>
+          <ul className="compact-list">
+            {expectedSignatures.map((signature) => (
+              <li key={signature}>{signature}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      <div>
+        <p className="eyebrow">Run method</p>
+        <p className="field-help">
+          Choose the CM1 assumption set. This changes initiation and comparison context; surface
+          heating remains its own forcing control.
+        </p>
+      </div>
+
+      <div className="button-row" role="group" aria-label="Run method">
         <button
           type="button"
           className={!selectedDeep ? "active-control" : "secondary-button"}
@@ -4850,25 +4939,21 @@ function ObservedRunRecipePanel({
         </button>
       </div>
 
-      {packageMismatchWarning && (
+      {recipeMismatchWarning && (
         <div className="validation" role="alert">
-          {packageMismatchWarning}
+          {recipeMismatchWarning}
         </div>
       )}
       <dl className="compact-metrics">
-        <Metric label="Screened hypothesis" value={activeStoryLabel} />
+        <Metric
+          label="Selected run method"
+          value={selectedDeep ? "Triggered deep potential" : "Untriggered observed evolution"}
+        />
         <Metric
           label="Initiation"
           value={selectedDeep ? "Idealized three warm bubbles" : "No added deep trigger"}
         />
-        <Metric
-          label="What CM1 can test"
-          value={
-            selectedDeep
-              ? "Triggered deep-convection potential from this observed profile"
-              : "Untriggered cloud, updraft, moisture, and precipitation evolution"
-          }
-        />
+        <Metric label="Method scope" value={methodScope} />
       </dl>
       {selectedDeep && (
         <p className="field-help">
@@ -5169,7 +5254,6 @@ function LocalRunWorkflowPanel({
     : 0;
   const generatedInputNames = dryRun ? generatedInputSummary(dryRun) : [];
   const currentRunId = dryRun ? runIdFromPackage(dryRun) : null;
-  const packageReadyForLaunch = Boolean(dryRun && !runStatus && !lanWorkerStatus);
   const showRefreshButton = Boolean(dryRun && runStatus);
   const showIngestButton = Boolean(dryRun && canIngest);
   const showActionRow = showRefreshButton || showIngestButton;
@@ -5248,7 +5332,9 @@ function LocalRunWorkflowPanel({
                   />
                   <Metric
                     label="Estimated output volume"
-                    value={runConfigurationSummaryMultiplier(dryRun.report.run_configuration_summary)}
+                    value={runConfigurationSummaryMultiplier(
+                      dryRun.report.run_configuration_summary,
+                    )}
                   />
                 </>
               )}
@@ -5315,7 +5401,7 @@ function LocalRunWorkflowPanel({
             actionStatus={lanWorkerActionStatus}
             error={lanWorkerError}
             ingestedResultId={ingestedResultId}
-            canStart={packageReadyForLaunch}
+            canStart={false}
             onLaunch={onLaunchLanWorkerRun}
             onRefresh={onRefreshLanWorkerStatus}
             onCollect={onCollectLanWorkerRun}
@@ -5423,10 +5509,7 @@ function LocalRunWorkflowPanel({
             <summary>Technical package details</summary>
             <dl className="compact-metrics">
               <Metric label="Scenario ID" value={dryRun.report.scenario_id} />
-              <Metric
-                label="Run configuration"
-                value={dryRun.report.run_configuration.label}
-              />
+              <Metric label="Run configuration" value={dryRun.report.run_configuration.label} />
               <Metric label="Cost / size" value={dryRun.report.estimated_cost_or_size} />
               {dryRun.report.run_configuration_summary && (
                 <>
@@ -5595,7 +5678,7 @@ function LanWorkerRunPanel({
       <div className="panel-heading-row">
         <div>
           <p className="eyebrow">Trusted LAN worker</p>
-          <h5>Run CM1 on LAN worker</h5>
+          <h5>LAN worker status</h5>
         </div>
         <StatusBadge
           label={
@@ -5607,7 +5690,9 @@ function LanWorkerRunPanel({
 
       <p className="state-note">
         {configured
-          ? "Use the LAN worker as a compute appliance. Copy completed output back, ingest locally, then clean up the worker copy."
+          ? status
+            ? "Use the LAN worker as a compute appliance. Copy completed output back, ingest locally, then clean up the worker copy."
+            : "Use Package and queue to start this package on the LAN worker. This panel tracks worker progress, copy-back, ingest, and cleanup after launch."
           : "LAN worker execution is unavailable until an ignored local worker config is present."}
       </p>
       {!configured && <p className="state-note">{configMessage}</p>}
@@ -9034,14 +9119,14 @@ function candidateRecipeFitForStory(
     return {
       status: "blocked_profile",
       label: "blocked profile",
-      summary: "This cached sounding cannot be packaged until profile caveats are resolved.",
-      caveats: ["profile_or_package_generation_blocked"],
+      summary: "This cached sounding cannot be used for a run until profile caveats are resolved.",
+      caveats: ["profile_or_run_generation_blocked"],
     };
   }
   if (story === "needs_review") {
     return {
       status: "not_testable_with_current_recipes",
-      label: "not testable with current package path",
+      label: "not testable with current run recipe",
       summary: "This candidate needs manual screening before it maps to a current run path.",
       caveats: ["candidate_requires_manual_screening_review"],
     };
@@ -9094,6 +9179,127 @@ function candidateRecipeFitTone(status: CandidateRecipeFitStatus): "good" | "war
 
 function isCandidateSuggestedTag(tag: string): tag is (typeof candidateSuggestedTags)[number] {
   return (candidateSuggestedTags as readonly string[]).includes(tag);
+}
+
+function observedRecipeStoryId(
+  selectedCandidateScreening: Record<string, unknown> | null,
+): CandidateStoryId | null {
+  if (!selectedCandidateScreening) return null;
+  const activeStory = selectedCandidateScreening.active_story;
+  if (typeof activeStory === "string" && candidateStoryIdValues.has(activeStory)) {
+    return activeStory as CandidateStoryId;
+  }
+  const primaryStory = selectedCandidateScreening.primary_story;
+  if (typeof primaryStory === "string" && candidateStoryIdValues.has(primaryStory)) {
+    return primaryStory as CandidateStoryId;
+  }
+  return null;
+}
+
+function observedRecipeHypothesisSummary(story: CandidateStoryId | null): string {
+  if (!story) {
+    return "Inspect cloud, updraft, moisture, and precipitation evolution without a saved pre-run story.";
+  }
+  if (deepConvectionStoryIds.has(story)) {
+    return "Deep-convection ingredients are present; check whether supplied initiation can produce deep cloud, strong updraft, and precipitation signatures.";
+  }
+  switch (story) {
+    case "shallow_cumulus_candidate":
+      return "Shallow cloud formation is plausible; check whether cloud water appears with modest vertical motion.";
+    case "dry_failed_candidate":
+      return "Cloud failure is plausible; check whether vertical motion occurs without meaningful cloud water.";
+    case "capped_suppressed_candidate":
+      return "Suppressed or delayed growth is plausible; check whether cloud stays shallow or capped.";
+    case "humid_rainy_candidate":
+      return "Moist cloud and precipitation processes are plausible; check cloud water, rain water aloft, surface rain, and reflectivity separately.";
+    case "needs_review":
+      return "The analyzer could not identify a trustworthy story; inspect manually before treating this as a comparison case.";
+    case "poor_or_incomplete_candidate":
+      return "The profile is incomplete or unsafe for comparison until blocking caveats are resolved.";
+  }
+  return "Inspect the CM1-observable output signatures that match this candidate story.";
+}
+
+function observedRecipeSignatureLabels(story: CandidateStoryId | null): string[] {
+  if (!story) return [];
+  if (deepConvectionStoryIds.has(story)) {
+    return ["Deep cloud", "Strong updraft", "Rain water aloft", "Reflectivity if requested"];
+  }
+  switch (story) {
+    case "shallow_cumulus_candidate":
+      return ["Shallow cloud water", "Modest vertical velocity"];
+    case "dry_failed_candidate":
+      return ["Vertical motion without meaningful cloud water"];
+    case "capped_suppressed_candidate":
+      return ["Suppressed or shallow cloud", "Limited cloud top"];
+    case "humid_rainy_candidate":
+      return [
+        "Cloud water",
+        "Rain water aloft",
+        "Surface rain or accumulated precipitation",
+        "Reflectivity if requested",
+      ];
+    case "needs_review":
+    case "poor_or_incomplete_candidate":
+      return [];
+  }
+  return ["Cloud water", "Vertical velocity", "Moisture evolution"];
+}
+
+function observedRecipeEvidenceSummary(
+  selectedCandidateScreening: Record<string, unknown> | null,
+): string {
+  if (!selectedCandidateScreening) {
+    return "No cached-sounding recommendation is attached.";
+  }
+  const interestReasons = selectedCandidateScreening.interest_reasons;
+  if (Array.isArray(interestReasons)) {
+    const reasons = interestReasons.filter(
+      (reason): reason is string => typeof reason === "string" && reason.length > 0,
+    );
+    if (reasons.length > 0) return reasons.slice(0, 2).join(" ");
+  }
+  const interestSummary = selectedCandidateScreening.interest_summary;
+  if (typeof interestSummary === "string" && interestSummary.length > 0) {
+    return interestSummary;
+  }
+  const rankScore = selectedCandidateScreening.rank_score;
+  if (typeof rankScore === "number") {
+    return `${Math.round(rankScore)}% ingredient match from cached-sounding screening.`;
+  }
+  return "Screening evidence is attached in the candidate details.";
+}
+
+function observedRecipeFitSummary(
+  selectedCandidateScreening: Record<string, unknown> | null,
+  story: CandidateStoryId | null,
+): string {
+  if (!selectedCandidateScreening) {
+    return "Inspectable, but not comparable to a saved candidate hypothesis.";
+  }
+  const fitSummary = selectedCandidateScreening.recipe_fit_summary;
+  if (typeof fitSummary === "string" && fitSummary.length > 0) {
+    return fitSummary;
+  }
+  if (story && deepConvectionStoryIds.has(story)) {
+    return "Needs the triggered deep-potential method to test the deep-convection hypothesis.";
+  }
+  return "The selected observed-sounding method can inspect this story when duration, cadence, and requested fields are adequate.";
+}
+
+function observedRecipeAppliedForcing(
+  controls: Record<string, string | number | boolean>,
+  selectedDeep: boolean,
+): string {
+  const surfaceHeating = controls.surface_heating;
+  const surfaceHeatingLabel =
+    typeof surfaceHeating === "string" && surfaceHeating.length > 0
+      ? humanize(surfaceHeating)
+      : "Baseline";
+  const initiation = selectedDeep
+    ? "plus idealized warm-bubble initiation"
+    : "no added deep-initiation trigger";
+  return `Surface heating: ${surfaceHeatingLabel}; ${initiation}.`;
 }
 
 function candidateRecipeMismatchWarning(
@@ -9973,7 +10179,11 @@ function previewRunConfiguration(
   };
 }
 
-function durationValue(value: string): { seconds: number; mode: "smoke" | "science"; label: string } {
+function durationValue(value: string): {
+  seconds: number;
+  mode: "smoke" | "science";
+  label: string;
+} {
   if (value === "smoke_1h") return { seconds: 3600, mode: "smoke", label: "Smoke check" };
   if (value === "standard_12h") {
     return { seconds: 43200, mode: "science", label: "Standard evolution" };
@@ -9994,7 +10204,15 @@ function horizontalCellValue(value: string): { cells: number; label: string } {
 function domainValue(
   value: string,
   deep: boolean,
-): { value: string; xKm: number; yKm: number; nz: number; dzM: number; modelTopM: number; label: string } {
+): {
+  value: string;
+  xKm: number;
+  yKm: number;
+  nz: number;
+  dzM: number;
+  modelTopM: number;
+  label: string;
+} {
   if (deep) {
     if (value === "storm_160km") {
       return {

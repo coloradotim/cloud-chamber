@@ -745,10 +745,7 @@ function screeningResponseForRequest(init?: RequestInit) {
         return false;
       }
       const score = storyScoreForTest(candidate, storyFilter, storyFamily);
-      if (
-        storyFilter !== "all" &&
-        (!score || !meaningfulStoryScoreForTest(score))
-      ) {
+      if (storyFilter !== "all" && (!score || !meaningfulStoryScoreForTest(score))) {
         return false;
       }
       if (support !== "all") {
@@ -857,8 +854,7 @@ function candidateSortValueForTest(
 ) {
   if (sortBy === "best_match") {
     return (
-      storyScoreForTest(candidate, storyFilter, storyFamily)?.score_0_to_100 ??
-      candidate.rank_score
+      storyScoreForTest(candidate, storyFilter, storyFamily)?.score_0_to_100 ?? candidate.rank_score
     );
   }
   if (sortBy === "valid_time") return new Date(candidate.valid_time_utc).getTime();
@@ -3002,7 +2998,9 @@ describe("App", () => {
     expect(screen.getByLabelText("Low-level humidity")).toBeInTheDocument();
     expect(screen.getByLabelText("Surface heating")).toBeInTheDocument();
     expect(screen.getAllByText(/Selected: Baseline/).length).toBeGreaterThan(0);
-    expect(screen.getByRole("heading", { name: "Choose what CM1 will actually run" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { name: "Choose what CM1 will actually run" }),
+    ).toBeInTheDocument();
     expect(
       screen.getByText("Short evolution; Local 6 km; Scout 64 x 64; 100 m dx/dy; Standard 15 min"),
     ).toBeInTheDocument();
@@ -3079,7 +3077,10 @@ describe("App", () => {
     expect(screen.getByText(/CM1 z=0 is station surface at 351.5 m MSL/)).toBeInTheDocument();
     expect(screen.getByText(/observed sounding winds/)).toBeInTheDocument();
     expect(
-      screen.getByRole("heading", { name: "What is this run testing?" }),
+      screen.getByRole("heading", { name: "What atmospheric outcome are we checking?" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(/Surface heating: Baseline; no added deep-initiation trigger/i),
     ).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Untriggered observed evolution" })).toHaveAttribute(
       "aria-pressed",
@@ -3089,15 +3090,9 @@ describe("App", () => {
     fireEvent.click(screen.getByRole("button", { name: "Triggered deep potential" }));
     expect(screen.getByText("Idealized three warm bubbles")).toBeInTheDocument();
     expect(
-      screen.getByText(
-        /triggered deep-convection potential from this observed profile/i,
-      ),
+      screen.getByText(/Surface heating: Baseline; plus idealized warm-bubble initiation/i),
     ).toBeInTheDocument();
-    expect(
-      screen.getByText(
-        /This is not normal atmospheric evolution/i,
-      ),
-    ).toBeInTheDocument();
+    expect(screen.getByText(/This is not normal atmospheric evolution/i)).toBeInTheDocument();
 
     fireEvent.click(screen.getByTestId("create-package-btn"));
 
@@ -3153,7 +3148,14 @@ describe("App", () => {
       "true",
     );
     expect(screen.getByText("Idealized three warm bubbles")).toBeInTheDocument();
-    expect(screen.getByText(/Candidate screening is ingredient guidance/)).toBeInTheDocument();
+    expect(
+      screen.getByText(/The candidate story is the atmospheric hypothesis/),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Deep cloud")).toBeInTheDocument();
+    expect(screen.getByText("Strong updraft")).toBeInTheDocument();
+    expect(
+      screen.getByText(/Surface heating: Baseline; plus idealized warm-bubble initiation/i),
+    ).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Untriggered observed evolution" }));
     expect(screen.getByRole("alert")).toHaveTextContent(
       "Untriggered observed evolution does not test that hypothesis",
@@ -3207,7 +3209,9 @@ describe("App", () => {
       "true",
     );
     expect(
-      screen.getByText(/Predicted rain behavior needs rain-water, surface-rain, and\/or reflectivity outputs/),
+      screen.getByText(
+        /Predicted rain behavior needs rain-water, surface-rain, and\/or reflectivity outputs/,
+      ),
     ).toBeInTheDocument();
 
     fireEvent.click(screen.getByTestId("create-package-btn"));
@@ -3451,9 +3455,7 @@ describe("App", () => {
             : saved,
         );
         savedStore = updated;
-        return Promise.resolve(
-          new Response(JSON.stringify(savedStore[0]), { status: 200 }),
-        );
+        return Promise.resolve(new Response(JSON.stringify(savedStore[0]), { status: 200 }));
       }
       if (url === "/api/sounding-candidates/saved") {
         return Promise.resolve(
@@ -3513,9 +3515,7 @@ describe("App", () => {
       "Saved sounding candidate Valley, Nebraska (USM00072558)",
     );
     expect(reloadedSavedCard).toHaveTextContent("Tags: Deep convection candidates");
-    expect(reloadedSavedCard).toHaveTextContent(
-      "Notes: Keep this one in the candidate notebook.",
-    );
+    expect(reloadedSavedCard).toHaveTextContent("Notes: Keep this one in the candidate notebook.");
   });
 
   it("shows secondary family candidates with the scoped story ingredient score", async () => {
@@ -3602,9 +3602,7 @@ describe("App", () => {
         expect(init?.body).toEqual(expect.stringContaining('"duration":"standard_12h"'));
         expect(init?.body).toEqual(expect.stringContaining('"horizontal_cell_count":"cells_256"'));
         expect(init?.body).toEqual(expect.stringContaining('"domain_size":"wide_12km"'));
-        expect(init?.body).toEqual(
-          expect.stringContaining('"output_cadence":"detailed_5min"'),
-        );
+        expect(init?.body).toEqual(expect.stringContaining('"output_cadence":"detailed_5min"'));
         expect(init?.body).toEqual(expect.stringContaining('"diagnostic_set":"full"'));
         return Promise.resolve(new Response(JSON.stringify(deepDryRunResponse), { status: 200 }));
       }
@@ -3673,9 +3671,7 @@ describe("App", () => {
         missing_assumptions: ["triggered_deep_potential_warm_bubble_v1"],
         missing_outputs: [],
       },
-      blocking_errors: [
-        "Selected run recipe does not test this deep-convection hypothesis.",
-      ],
+      blocking_errors: ["Selected run recipe does not test this deep-convection hypothesis."],
       caveats: [],
     };
     vi.mocked(fetch).mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
@@ -3714,7 +3710,9 @@ describe("App", () => {
     fireEvent.click(await screen.findByRole("button", { name: "Build" }));
     fireEvent.click(await screen.findByTestId("create-package-btn"));
 
-    expect(await screen.findByText(/Pre-run validation blocked package creation/)).toBeInTheDocument();
+    expect(
+      await screen.findByText(/Pre-run validation blocked package creation/),
+    ).toBeInTheDocument();
     expect(screen.getByLabelText("Pre-run validation report")).toHaveTextContent("Blocked");
     expect(screen.getByLabelText("Pre-run validation report")).toHaveTextContent(
       "Selected run recipe does not test this deep-convection hypothesis.",
@@ -4212,7 +4210,18 @@ describe("App", () => {
     fireEvent.click(await screen.findByRole("button", { name: "Build" }));
     fireEvent.click(await screen.findByTestId("create-package-btn"));
 
-    fireEvent.click(await screen.findByRole("button", { name: "Run on LAN worker" }));
+    await screen.findByRole("heading", { name: "Package ready for CM1" });
+    const packageQueuePanel = screen.getByLabelText("Package and queue");
+    const lanLaunchButton = within(packageQueuePanel).getByRole("button", {
+      name: "Run on LAN worker",
+    });
+    expect(lanLaunchButton).toBeEnabled();
+    expect(
+      within(screen.getByLabelText("LAN worker run status")).queryByRole("button", {
+        name: "Run on LAN worker",
+      }),
+    ).not.toBeInTheDocument();
+    fireEvent.click(lanLaunchButton);
 
     await waitFor(() => {
       expect(screen.getByText("Worker model-time progress").nextElementSibling).toHaveTextContent(
@@ -4278,7 +4287,12 @@ describe("App", () => {
     fireEvent.click(await screen.findByRole("button", { name: "Build" }));
     fireEvent.click(await screen.findByTestId("create-package-btn"));
 
-    fireEvent.click(await screen.findByRole("button", { name: "Run on LAN worker" }));
+    await screen.findByRole("heading", { name: "Package ready for CM1" });
+    fireEvent.click(
+      within(screen.getByLabelText("Package and queue")).getByRole("button", {
+        name: "Run on LAN worker",
+      }),
+    );
 
     await waitFor(() => {
       expect(screen.getByText("Worker model-time progress").nextElementSibling).toHaveTextContent(
@@ -4309,6 +4323,21 @@ describe("App", () => {
     expect(screen.getByRole("button", { name: "Create another package" })).toHaveClass(
       "secondary-button",
     );
+    const packageQueuePanel = screen.getByLabelText("Package and queue");
+    expect(
+      within(packageQueuePanel).getByRole("button", { name: "Queue local CM1 run" }),
+    ).toBeEnabled();
+    expect(
+      within(packageQueuePanel).getByRole("button", { name: "Run on LAN worker" }),
+    ).toBeDisabled();
+    expect(
+      within(packageQueuePanel).getByText(/LAN worker execution is unavailable/i),
+    ).toBeInTheDocument();
+    expect(
+      within(screen.getByLabelText("LAN worker run status")).queryByRole("button", {
+        name: "Run on LAN worker",
+      }),
+    ).not.toBeInTheDocument();
     expect(screen.getByText("Expected output directory").nextElementSibling).toHaveTextContent(
       "/tmp/CloudChamber/runs/dry-run-001",
     );
@@ -4576,7 +4605,9 @@ describe("App", () => {
     render(<App />);
 
     const resultDetail = await screen.findByLabelText("Result detail");
-    expect(resultDetail).toHaveTextContent("Triggered Deep-Potential Experiment — Norman, Oklahoma");
+    expect(resultDetail).toHaveTextContent(
+      "Triggered Deep-Potential Experiment — Norman, Oklahoma",
+    );
     expect(resultDetail).toHaveTextContent("Deep convection formed");
     expect(resultDetail).toHaveTextContent("Screening vs CM1");
     expect(resultDetail).toHaveTextContent("Supercell-like environment");
