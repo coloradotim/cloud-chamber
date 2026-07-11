@@ -2,7 +2,7 @@ import { fireEvent, render, screen, waitFor, within } from "@testing-library/rea
 import { act } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { App } from "./App";
+import { App, VisualizerSceneShell } from "./App";
 
 const defaultRunConfiguration = {
   configuration_id: "short_6h__cells_64__local_6km__standard_15min__process",
@@ -5111,6 +5111,49 @@ describe("App", () => {
         "/api/results/result-dry-run-quicklook/visualization/slice?field=qc&time_index=3",
       ),
     );
+  });
+
+  it("keeps Explore controls stable when the selected result refreshes", async () => {
+    const visualizerResult = resultCard as unknown as Parameters<
+      typeof VisualizerSceneShell
+    >[0]["result"];
+    const { rerender } = render(<VisualizerSceneShell result={visualizerResult} />);
+
+    await screen.findByText("Slice synced");
+    fireEvent.change(screen.getByLabelText("Time"), { target: { value: "1" } });
+    await waitFor(() => expect(screen.getByLabelText("Time")).toHaveValue("1"));
+    await waitFor(() =>
+      expect(fetch).toHaveBeenCalledWith(
+        expect.stringContaining(
+          "/api/results/result-dry-run-quicklook/visualization/slice?field=qc&time_index=1",
+        ),
+      ),
+    );
+    await waitFor(() =>
+      expect(fetch).toHaveBeenCalledWith(
+        expect.stringContaining(
+          "/api/results/result-dry-run-quicklook/visualization/defaults?time_index=1",
+        ),
+      ),
+    );
+    vi.mocked(fetch).mockClear();
+
+    rerender(
+      <VisualizerSceneShell
+        result={{
+          ...visualizerResult,
+          name: "Quick-look shallow cumulus refreshed",
+          notes: "Refreshed in the notebook while Explore was open.",
+        }}
+      />,
+    );
+    await act(async () => undefined);
+
+    expect(screen.getByLabelText("Time")).toHaveValue("1");
+    expect(screen.getByLabelText("Saved output time")).toHaveValue("1");
+    expect(
+      vi.mocked(fetch).mock.calls.some(([url]) => String(url).includes("/visualization/fields")),
+    ).toBe(false);
   });
 
   it("plays saved output times without refetching fields until pause and resets at the end", async () => {

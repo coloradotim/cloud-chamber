@@ -1793,7 +1793,6 @@ export function App() {
   const [runDeletePreview, setRunDeletePreview] = useState<DeleteRunResponse | null>(null);
   const [runDeleteMessage, setRunDeleteMessage] = useState<string | null>(null);
   const [resultDeletePreview, setResultDeletePreview] = useState<DeleteResultResponse | null>(null);
-  const [resultDeleteMessage, setResultDeleteMessage] = useState<string | null>(null);
   const [, setStatus] = useState("Loading scenarios...");
   const [scenarioLoadState, setScenarioLoadState] = useState<ScenarioLoadState>("loading");
   const [scenarioError, setScenarioError] = useState<string | null>(null);
@@ -1932,7 +1931,6 @@ export function App() {
   useEffect(() => {
     selectedResultIdRef.current = selectedResultId;
     setResultDeletePreview(null);
-    setResultDeleteMessage(null);
   }, [selectedResultId]);
   const autoFinalizingWorkerRunIdSet = useMemo(
     () => new Set(autoFinalizingWorkerRunIds),
@@ -2797,7 +2795,6 @@ export function App() {
 
   async function handlePreviewResultDelete(resultId: string) {
     setResultsError(null);
-    setResultDeleteMessage(null);
     setResultsStatus("Preparing result delete preview");
     try {
       const preview = await requestResultDeletePreview(resultId);
@@ -2815,7 +2812,6 @@ export function App() {
   async function handleConfirmResultDelete(resultId: string) {
     if (resultDeletePreview?.result_id !== resultId) {
       setResultDeletePreview(null);
-      setResultDeleteMessage(null);
       setResultsError("Delete preview is stale. Preview deletion again before confirming.");
       setResultsStatus("Delete preview expired");
       return;
@@ -2833,7 +2829,6 @@ export function App() {
         current === resultId ? (remaining[0]?.result_id ?? null) : current,
       );
       setResultDeletePreview(null);
-      setResultDeleteMessage(deleteMessage);
       setResultsStatus(deleteMessage);
       await refreshStorageAfterWorkflow("Local pipeline updated");
     } catch (caught) {
@@ -2993,7 +2988,6 @@ export function App() {
           resultsStatus={resultsStatus}
           resultsError={resultsError}
           resultDeletePreview={resultDeletePreview}
-          resultDeleteMessage={resultDeleteMessage}
           draft={resultDraft}
           onSelectResult={setSelectedResultId}
           onDraftChange={setResultDraft}
@@ -3006,7 +3000,6 @@ export function App() {
           onConfirmResultDelete={handleConfirmResultDelete}
           onCancelResultDelete={() => {
             setResultDeletePreview(null);
-            setResultDeleteMessage(null);
             setResultsStatus("Results loaded");
           }}
         />
@@ -4973,7 +4966,6 @@ function ResultsWorkspace({
   resultsStatus,
   resultsError,
   resultDeletePreview,
-  resultDeleteMessage,
   draft,
   onSelectResult,
   onDraftChange,
@@ -4990,7 +4982,6 @@ function ResultsWorkspace({
   resultsStatus: string;
   resultsError: string | null;
   resultDeletePreview: DeleteResultResponse | null;
-  resultDeleteMessage: string | null;
   draft: { name: string; tags: string; notes: string };
   onSelectResult: (resultId: string) => void;
   onDraftChange: (draft: { name: string; tags: string; notes: string }) => void;
@@ -5036,7 +5027,6 @@ function ResultsWorkspace({
           onInspect();
         }}
         deletePreview={resultDeletePreview}
-        deleteMessage={resultDeleteMessage}
         onPreviewDelete={onPreviewResultDelete}
         onConfirmDelete={onConfirmResultDelete}
         onCancelDelete={onCancelResultDelete}
@@ -5056,7 +5046,6 @@ function NotebookWorkspace({
   onInspect,
   onOpenResultInExplore,
   deletePreview,
-  deleteMessage,
   onPreviewDelete,
   onConfirmDelete,
   onCancelDelete,
@@ -5071,7 +5060,6 @@ function NotebookWorkspace({
   onInspect: () => void;
   onOpenResultInExplore: (resultId: string) => void;
   deletePreview: DeleteResultResponse | null;
-  deleteMessage: string | null;
   onPreviewDelete: (resultId: string) => void;
   onConfirmDelete: (resultId: string) => void;
   onCancelDelete: () => void;
@@ -5108,7 +5096,6 @@ function NotebookWorkspace({
           onSubmit={onSubmit}
           onInspect={onInspect}
           deletePreview={deletePreview}
-          deleteMessage={deleteMessage}
           onPreviewDelete={onPreviewDelete}
           onConfirmDelete={onConfirmDelete}
           onCancelDelete={onCancelDelete}
@@ -6729,7 +6716,6 @@ function ResultNotebookCard({
   onSubmit,
   onInspect,
   deletePreview,
-  deleteMessage,
   onPreviewDelete,
   onConfirmDelete,
   onCancelDelete,
@@ -6740,7 +6726,6 @@ function ResultNotebookCard({
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
   onInspect: () => void;
   deletePreview: DeleteResultResponse | null;
-  deleteMessage: string | null;
   onPreviewDelete: (resultId: string) => void;
   onConfirmDelete: (resultId: string) => void;
   onCancelDelete: () => void;
@@ -6808,7 +6793,6 @@ function ResultNotebookCard({
       </dl>
 
       <InterestingTimesSummary result={result} />
-      {deleteMessage && <p role="status">{deleteMessage}</p>}
       {visibleDeletePreview && (
         <section
           className="delete-preview result-delete-preview"
@@ -7143,7 +7127,12 @@ function sliceFieldOptionLabel(field: VisualizableField): string {
   return `${field.raw_field_name} - ${field.display_name}${suffix}`;
 }
 
-function VisualizerSceneShell({ result }: { result: ResultCard }) {
+export function VisualizerSceneShell({ result }: { result: ResultCard }) {
+  const resultId = result.result_id;
+  const initialResultRef = useRef(result);
+  if (initialResultRef.current.result_id !== resultId) {
+    initialResultRef.current = result;
+  }
   const [catalog, setCatalog] = useState<FieldCatalogResponse | null>(null);
   const [viewDefaults, setViewDefaults] = useState<ViewDefaultsResponse | null>(null);
   const [selectedTimeDefaults, setSelectedTimeDefaults] = useState<ViewDefaultsResponse | null>(
@@ -7214,8 +7203,8 @@ function VisualizerSceneShell({ result }: { result: ResultCard }) {
     setSceneStatus("Loading scene data...");
     withTimeout(
       Promise.all([
-        fetchVisualizationFields(result.result_id),
-        fetchVisualizationDefaults(result.result_id).catch(() => null),
+        fetchVisualizationFields(resultId),
+        fetchVisualizationDefaults(resultId).catch(() => null),
       ]),
       "Timed out loading visualization fields. Check the backend and retry.",
     )
@@ -7243,7 +7232,11 @@ function VisualizerSceneShell({ result }: { result: ResultCard }) {
         const initialSliceField =
           firstPreferred ?? firstRenderable?.field ?? payload.available_fields[0];
         const initialDefaults = defaultsForField(defaults, initialSliceField?.raw_field_name);
-        const initialTimeIndex = defaultTimeIndex(initialSliceField, result, initialDefaults);
+        const initialTimeIndex = defaultTimeIndex(
+          initialSliceField,
+          initialResultRef.current,
+          initialDefaults,
+        );
         setSelectedFieldName(firstRenderable?.field.raw_field_name ?? "");
         setSliceFieldName(initialSliceField?.raw_field_name ?? "");
         setTimeIndex(initialTimeIndex);
@@ -7269,7 +7262,7 @@ function VisualizerSceneShell({ result }: { result: ResultCard }) {
     return () => {
       active = false;
     };
-  }, [fieldLoadAttempt, result]);
+  }, [fieldLoadAttempt, resultId]);
 
   const selectedField = useMemo(
     () => catalog?.available_fields.find((field) => field.raw_field_name === selectedFieldName),
