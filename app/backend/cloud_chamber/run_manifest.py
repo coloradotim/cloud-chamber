@@ -150,6 +150,14 @@ class RunManifest(BaseModel):
     pre_run_validation_report: dict[str, Any] | None = None
     run_recipe: str | None = None
     run_recipe_display_name: str | None = None
+    recipe_id: str | None = None
+    recipe_display_name: str | None = None
+    assumption_set_id: str | None = None
+    assumption_mode: str | None = None
+    recipe_assumptions: dict[str, Any] = Field(default_factory=dict)
+    required_output_fields: list[str] = Field(default_factory=list)
+    missing_required_output_fields: list[str] = Field(default_factory=list)
+    recipe_caveats: list[str] = Field(default_factory=list)
     input_source: str | None = None
     trigger_type: str | None = None
     trigger_parameters: dict[str, Any] | None = None

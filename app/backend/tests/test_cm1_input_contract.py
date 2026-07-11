@@ -1,5 +1,6 @@
 import json
 from pathlib import Path
+from typing import Any, cast
 
 from cloud_chamber.cm1_input_contract import (
     GeneratedFileRole,
@@ -47,6 +48,8 @@ def test_cm1_contract_documents_expected_generated_files_and_default_run_configu
     assert contract.cloud_scale_defaults.vertical_extent_km == 18.0
     assert contract.cloud_scale_defaults.runtime_seconds == 21600
     assert contract.cloud_scale_defaults.output_cadence_seconds == 900
+    assert contract.recipe_id == "generated_reference_lower_atmosphere_v1"
+    assert contract.assumption_set_id == "generated_reference_lower_atmosphere_v1"
 
 
 def test_cm1_contract_keeps_product_controls_separate_from_mapping_notes() -> None:
@@ -182,6 +185,40 @@ def test_rendered_input_sounding_is_external_baseline_profile() -> None:
     assert "-4.61" in lines[-1]
     assert "Cloud Chamber input_sounding notes" not in sounding
     assert "placeholder until local/manual CM1 validation" not in sounding
+
+
+def test_observed_contract_declares_untriggered_v0_recipe_assumptions() -> None:
+    from igra_fixtures import IGRA_FIXTURE
+
+    from cloud_chamber.observed_sounding import parse_igra_station_text
+
+    observed = parse_igra_station_text(
+        IGRA_FIXTURE,
+        uploaded_filename="USM00072558-data-beg2025.txt",
+    ).selected_sounding
+
+    contract = build_cm1_input_contract(
+        baseline_scenario(),
+        observed_sounding=observed,
+    )
+
+    assert contract.run_recipe.value == "untriggered_observed_evolution"
+    assert contract.recipe_id == "untriggered_observed_sounding_evolution_v0"
+    assert contract.recipe_display_name == "Untriggered Observed-Sounding Evolution v0"
+    assert contract.assumption_set_id == "untriggered_observed_sounding_evolution_v0_assumptions"
+    assert contract.assumption_mode == "normal_evolution"
+    assert contract.required_output_fields == ("qv", "qc", "w", "qr", "rain", "dbz")
+    trigger = cast(dict[str, Any], contract.recipe_assumptions["trigger"])
+    radiation = cast(dict[str, Any], contract.recipe_assumptions["radiation"])
+    forcing = cast(dict[str, Any], contract.recipe_assumptions["large_scale_forcing"])
+    surface_fluxes = cast(dict[str, Any], contract.recipe_assumptions["surface_fluxes"])
+    assert trigger["mode"] == "none"
+    assert radiation["mode"] == "disabled"
+    assert forcing["mode"] == "none"
+    assert surface_fluxes["mode"] == "current_recipe_default"
+    assert "No warm-bubble or artificial deep-convection trigger is applied." in (
+        contract.recipe_caveats
+    )
 
 
 def test_baseline_humidity_ladder_only_changes_low_level_moisture_profile() -> None:

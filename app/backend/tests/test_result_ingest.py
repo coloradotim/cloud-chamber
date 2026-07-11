@@ -212,6 +212,9 @@ def test_ingests_valid_tiny_netcdf_metadata(tmp_path: Path) -> None:
     assert result.dimensions == {"time": 1, "z": 2, "y": 2, "x": 2}
     assert result.coordinates == ["time", "z", "y", "x"]
     assert result.variables == ["qc", "w"]
+    assert result.recipe_id == "generated_reference_lower_atmosphere_v1"
+    assert result.required_output_fields == ["qc", "w"]
+    assert result.missing_required_output_fields == []
     assert result.time_coordinate == "time"
     assert result.time_steps == 1
     assert result.grid_shape == [2, 2, 2]
@@ -403,6 +406,15 @@ def test_ingests_deep_convection_candidate_outcome_comparison(tmp_path: Path) ->
                 "candidate_screening": candidate_screening,
                 "run_recipe": "triggered_deep_potential",
                 "run_recipe_display_name": "Triggered Deep-Potential Experiment",
+                "recipe_id": "triggered_deep_potential_v1",
+                "recipe_display_name": "Triggered Deep-Potential Experiment",
+                "assumption_set_id": "triggered_deep_potential_warm_bubble_v1",
+                "assumption_mode": "triggered_deep_potential",
+                "recipe_assumptions": {
+                    "trigger": {"mode": "prescribed", "type": "warm_bubble"},
+                    "radiation": {"mode": "disabled"},
+                },
+                "required_output_fields": ["qc", "w", "qr", "rain", "dbz", "updraft_helicity"],
                 "input_source": "observed_sounding",
                 "trigger_type": "warm_bubble",
                 "expected_outputs": ["qc", "qr", "w", "dbz", "updraft_helicity"],
@@ -461,6 +473,19 @@ def test_non_deep_candidate_comparison_does_not_use_deep_outcome_language(
                 "candidate_screening": candidate_screening,
                 "run_recipe": "untriggered_observed_evolution",
                 "run_recipe_display_name": "Untriggered Observed Evolution",
+                "recipe_id": "untriggered_observed_sounding_evolution_v0",
+                "recipe_display_name": "Untriggered Observed-Sounding Evolution v0",
+                "assumption_set_id": "untriggered_observed_sounding_evolution_v0_assumptions",
+                "assumption_mode": "normal_evolution",
+                "recipe_assumptions": {
+                    "trigger": {"mode": "none"},
+                    "radiation": {"mode": "disabled"},
+                    "large_scale_forcing": {"mode": "none"},
+                },
+                "required_output_fields": ["qv", "qc", "w", "qr", "rain", "dbz"],
+                "recipe_caveats": [
+                    "No warm-bubble or artificial deep-convection trigger is applied."
+                ],
                 "input_source": "observed_sounding",
             }
         ),
@@ -470,6 +495,16 @@ def test_non_deep_candidate_comparison_does_not_use_deep_outcome_language(
 
     assert result.science_summary is not None
     assert result.science_summary.cm1_outcome is None
+    assert result.recipe_id == "untriggered_observed_sounding_evolution_v0"
+    assert result.recipe_display_name == "Untriggered Observed-Sounding Evolution v0"
+    assert result.assumption_set_id == "untriggered_observed_sounding_evolution_v0_assumptions"
+    assert result.assumption_mode == "normal_evolution"
+    assert result.recipe_assumptions["trigger"]["mode"] == "none"
+    assert result.required_output_fields == ["qv", "qc", "w", "qr", "rain", "dbz"]
+    assert result.missing_required_output_fields == ["qv", "rain", "dbz"]
+    assert "Recipe required output fields missing from NetCDF metadata: qv, rain, dbz" in (
+        result.warnings
+    )
     assert result.candidate_hypothesis_comparison is not None
     assert result.candidate_hypothesis_comparison.match_status == "unable_to_evaluate"
     assert result.candidate_hypothesis_comparison.cm1_outcome == (
@@ -653,4 +688,7 @@ def test_missing_expected_fields_are_warnings_not_claimed_diagnostics(tmp_path: 
     )
     assert result.diagnostics is not None
     assert result.diagnostics.cloud.available is False
-    assert result.warnings == ["Expected fields missing from NetCDF metadata: qc"]
+    assert result.warnings == [
+        "Expected fields missing from NetCDF metadata: qc",
+        "Recipe required output fields missing from NetCDF metadata: qc",
+    ]

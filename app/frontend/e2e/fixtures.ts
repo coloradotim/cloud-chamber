@@ -82,9 +82,12 @@ const defaultPreRunValidationReport = {
     predicted_output_signature: [],
   },
   selected_run_recipe: {
-    recipe_id: "generated_reference_lower_atmosphere",
+    run_recipe: "generated_reference_lower_atmosphere",
+    recipe_id: "generated_reference_lower_atmosphere_v1",
     display_name: "Generated Lower-Atmosphere Reference",
+    recipe_display_name: "Generated Lower-Atmosphere Reference",
     assumption_set_id: "generated_reference_lower_atmosphere_v1",
+    assumption_mode: "generated_reference",
   },
   hypothesis_recipe_alignment: {
     status: "aligned",

@@ -173,6 +173,13 @@ def generate_dry_run_package(
         pre_run_validation_report=pre_run_validation_report,
         run_recipe=contract.run_recipe.value,
         run_recipe_display_name=contract.run_recipe_display_name,
+        recipe_id=contract.recipe_id,
+        recipe_display_name=contract.recipe_display_name,
+        assumption_set_id=contract.assumption_set_id,
+        assumption_mode=contract.assumption_mode,
+        recipe_assumptions=contract.recipe_assumptions,
+        required_output_fields=list(contract.required_output_fields),
+        recipe_caveats=list(contract.recipe_caveats),
         input_source=contract.input_source,
         trigger_type=contract.trigger_type,
         trigger_parameters=contract.trigger_parameters,
@@ -292,6 +299,13 @@ def _case_manifest_payload(
         "display_name": scenario.display_name,
         "run_recipe": contract.run_recipe.value,
         "run_recipe_display_name": contract.run_recipe_display_name,
+        "recipe_id": contract.recipe_id,
+        "recipe_display_name": contract.recipe_display_name,
+        "assumption_set_id": contract.assumption_set_id,
+        "assumption_mode": contract.assumption_mode,
+        "recipe_assumptions": contract.recipe_assumptions,
+        "required_output_fields": list(contract.required_output_fields),
+        "recipe_caveats": list(contract.recipe_caveats),
         "input_source": contract.input_source,
         "trigger_type": contract.trigger_type,
         "trigger_parameters": contract.trigger_parameters,
@@ -326,6 +340,13 @@ def _dry_run_report_payload(
         "scenario_id": scenario.id,
         "run_recipe": contract.run_recipe.value,
         "run_recipe_display_name": contract.run_recipe_display_name,
+        "recipe_id": contract.recipe_id,
+        "recipe_display_name": contract.recipe_display_name,
+        "assumption_set_id": contract.assumption_set_id,
+        "assumption_mode": contract.assumption_mode,
+        "recipe_assumptions": contract.recipe_assumptions,
+        "required_output_fields": list(contract.required_output_fields),
+        "recipe_caveats": list(contract.recipe_caveats),
         "input_source": contract.input_source,
         "trigger_type": contract.trigger_type,
         "trigger_parameters": contract.trigger_parameters,
@@ -529,9 +550,13 @@ def _run_recipe_mapping_summary(contract: CM1InputContract) -> str:
         )
     if contract.observed_sounding is not None:
         return (
-            "observed IGRA external input_sounding profile; non-wind namelist settings "
-            "remain inherited from the validated baseline; observed wind direction/speed is "
-            "converted to u/v and applied through CM1 isnd=7 input_sounding handling"
+            "observed IGRA external input_sounding profile; untriggered observed-sounding "
+            "evolution v0 uses CM1 isnd=7, no warm-bubble trigger, configured duration, "
+            "configured domain and output cadence, current surface-flux defaults, disabled "
+            "radiation, no large-scale forcing, NetCDF output, cloud water, water vapor, "
+            "vertical velocity, rain-water-aloft, surface-rain, and reflectivity output "
+            "where available; observed wind direction/speed is converted to u/v and "
+            "applied through CM1 input_sounding handling"
         )
     return (
         "external input_sounding profile; namelist settings remain inherited from "
@@ -548,8 +573,9 @@ def _cm1_mapping_status(contract: CM1InputContract) -> str:
         )
     if contract.observed_sounding is not None:
         return (
-            "CM1-ready untriggered observed-evolution run; still pending "
-            "case-specific local/manual scientific interpretation"
+            "CM1-ready untriggered observed-sounding evolution v0 run with explicit "
+            "normal-evolution assumptions; still pending case-specific local/manual "
+            "scientific interpretation"
         )
     return (
         "CM1-ready generated-reference run; still pending local/manual smoke-run "

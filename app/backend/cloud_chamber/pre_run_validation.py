@@ -4,7 +4,16 @@ from __future__ import annotations
 
 from typing import Any
 
-from cloud_chamber.cm1_input_contract import CM1InputContract, RunRecipe
+from cloud_chamber.cm1_input_contract import (
+    CM1InputContract,
+    RunRecipe,
+    assumption_mode_for_run_recipe,
+    assumption_set_id_for_run_recipe,
+    recipe_caveats_for_run_recipe,
+    recipe_display_name_for_run_recipe,
+    recipe_id_for_run_recipe,
+    required_output_fields_for_run_recipe,
+)
 from cloud_chamber.observed_sounding import ObservedSoundingRecord
 from cloud_chamber.run_configuration import resolve_run_configuration
 from cloud_chamber.scenario_schema import ScenarioTemplate
@@ -103,9 +112,14 @@ def blocked_pre_run_validation_report(
         "selected_candidate": _selected_candidate_payload(candidate_screening, observed_sounding),
         "selected_hypothesis": _selected_hypothesis_payload(candidate_screening, story),
         "selected_run_recipe": {
-            "recipe_id": resolved_recipe,
+            "run_recipe": resolved_recipe,
+            "recipe_id": recipe_id_for_run_recipe(resolved_recipe),
             "display_name": _run_recipe_display_name(resolved_recipe),
-            "assumption_set_id": _assumption_set_id(resolved_recipe),
+            "recipe_display_name": recipe_display_name_for_run_recipe(resolved_recipe),
+            "assumption_set_id": assumption_set_id_for_run_recipe(resolved_recipe),
+            "assumption_mode": assumption_mode_for_run_recipe(resolved_recipe),
+            "required_fields": list(required_output_fields_for_run_recipe(resolved_recipe)),
+            "caveats": list(recipe_caveats_for_run_recipe(resolved_recipe)),
         },
         "hypothesis_recipe_alignment": {
             "status": "blocked",
@@ -251,11 +265,17 @@ def _selected_hypothesis_payload(
     }
 
 
-def _selected_run_recipe_payload(contract: CM1InputContract) -> dict[str, str]:
+def _selected_run_recipe_payload(contract: CM1InputContract) -> dict[str, Any]:
     return {
-        "recipe_id": contract.run_recipe.value,
+        "run_recipe": contract.run_recipe.value,
+        "recipe_id": contract.recipe_id,
         "display_name": contract.run_recipe_display_name,
-        "assumption_set_id": _assumption_set_id(contract.run_recipe.value),
+        "recipe_display_name": contract.recipe_display_name,
+        "assumption_set_id": contract.assumption_set_id,
+        "assumption_mode": contract.assumption_mode,
+        "required_fields": list(contract.required_output_fields),
+        "assumptions": contract.recipe_assumptions,
+        "caveats": list(contract.recipe_caveats),
     }
 
 
@@ -361,15 +381,24 @@ def _forcing_validation_payload(contract: CM1InputContract) -> dict[str, str]:
 
 
 def _forcing_validation_for_recipe(run_recipe: str) -> dict[str, str]:
-    trigger = (
-        "warm_bubble_required_for_triggered_deep_potential"
-        if run_recipe == RunRecipe.TRIGGERED_DEEP_POTENTIAL.value
-        else "none"
-    )
+    if run_recipe == RunRecipe.TRIGGERED_DEEP_POTENTIAL.value:
+        return {
+            "trigger": "warm_bubble_required_for_triggered_deep_potential",
+            "surface_fluxes": "disabled",
+            "radiation": "disabled",
+            "large_scale_forcing": "none",
+        }
+    if run_recipe == RunRecipe.UNTRIGGERED_OBSERVED_EVOLUTION.value:
+        return {
+            "trigger": "none",
+            "surface_fluxes": "current_recipe_default_caveated",
+            "radiation": "disabled",
+            "large_scale_forcing": "none",
+        }
     return {
-        "trigger": trigger,
+        "trigger": "none",
         "surface_fluxes": "current_recipe_default",
-        "radiation": "disabled_or_future",
+        "radiation": "disabled",
         "large_scale_forcing": "not_supported_v1",
     }
 
@@ -381,7 +410,9 @@ def _required_outputs_for_story(
     if story in DEEP_CONVECTION_STORIES or run_recipe == RunRecipe.TRIGGERED_DEEP_POTENTIAL:
         return ["qc", "w", "qr", "rain", "dbz", "updraft_helicity"]
     if story == "humid_rainy_candidate":
-        return ["qc", "qr", "rain", "dbz"]
+        return ["qv", "qc", "w", "qr", "rain", "dbz"]
+    if run_recipe == RunRecipe.UNTRIGGERED_OBSERVED_EVOLUTION:
+        return ["qv", "qc", "w"]
     return ["qc", "w"]
 
 
@@ -462,11 +493,7 @@ def _run_recipe_display_name(run_recipe: str) -> str:
 
 
 def _assumption_set_id(run_recipe: str) -> str:
-    if run_recipe == RunRecipe.TRIGGERED_DEEP_POTENTIAL.value:
-        return "triggered_deep_potential_warm_bubble_v1"
-    if run_recipe == RunRecipe.UNTRIGGERED_OBSERVED_EVOLUTION.value:
-        return "normal_evolution_current_observed_sounding_v1"
-    return "generated_reference_lower_atmosphere_v1"
+    return assumption_set_id_for_run_recipe(run_recipe)
 
 
 def _dedupe(values: list[str]) -> list[str]:
