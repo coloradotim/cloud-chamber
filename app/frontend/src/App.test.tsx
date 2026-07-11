@@ -4,6 +4,105 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { App } from "./App";
 
+const defaultRunConfiguration = {
+  configuration_id: "quick_6h__standard__local_6km__standard_15min__analysis",
+  mode: "science",
+  label: "Quick science; Local 6 km; Standard; Standard 15 min",
+  duration_preset: "quick_6h",
+  duration_seconds: 21600,
+  grid_detail_preset: "standard",
+  domain_size_preset: "local_6km",
+  output_cadence_preset: "standard_15min",
+  output_cadence_seconds: 900,
+  output_field_density_preset: "analysis",
+  cost_runtime_summary: "6 h model time, 307,200 cells, 15 min saved-output cadence",
+  output_volume_summary: "25 saved frames, analysis output fields, 307,200 cells per frame",
+  cm1_values: {
+    nx: 64,
+    ny: 64,
+    nz: 75,
+    dx_m: 100,
+    dy_m: 100,
+    dz_m: 40,
+    model_top_m: 18000,
+    domain_x_km: 6.4,
+    domain_y_km: 6.4,
+    time_step_seconds: 3,
+    runtime_seconds: 21600,
+    output_cadence_seconds: 900,
+    restart_cadence_seconds: 10800,
+    rayleigh_damping_start_m: 2500,
+    expected_output_frames: 25,
+    grid_cell_count: 307200,
+  },
+  caveats: ["science_run_configuration_minimum_duration_6h"],
+};
+
+const defaultRunConfigurationSummary = {
+  configuration_id: defaultRunConfiguration.configuration_id,
+  mode: defaultRunConfiguration.mode,
+  label: defaultRunConfiguration.label,
+  duration_preset: defaultRunConfiguration.duration_preset,
+  grid_detail_preset: defaultRunConfiguration.grid_detail_preset,
+  domain_size_preset: defaultRunConfiguration.domain_size_preset,
+  output_cadence_preset: defaultRunConfiguration.output_cadence_preset,
+  output_field_density_preset: defaultRunConfiguration.output_field_density_preset,
+  runtime_seconds: 21600,
+  output_cadence_seconds: 900,
+  expected_output_frames: 25,
+  nx: 64,
+  ny: 64,
+  nz: 75,
+  dx_m: 100,
+  dy_m: 100,
+  dz_m: 40,
+  model_top_m: 18000,
+  time_step_seconds: 3,
+  time_step_note: "CM1 solver timestep is resolved from the selected run configuration.",
+  grid_cell_count: 307200,
+  grid_cell_multiplier_vs_default: 1,
+  time_step_multiplier_vs_default: 1,
+  output_frame_multiplier_vs_default: 1,
+  estimated_compute_multiplier_vs_default: 1,
+  estimated_output_volume_multiplier_vs_default: 1,
+  cost_warning:
+    "Configuration cost depends on duration, grid/detail, domain, cadence, and output-field density. Review the CM1-facing values before launch.",
+  validation_note:
+    "Run configuration preserves explicit duration, grid/detail, domain, cadence, and output-density choices.",
+};
+
+const highDetailRunConfiguration = {
+  ...defaultRunConfiguration,
+  configuration_id: "standard_12h__fine__wide_12km__detailed_5min__rich",
+  label: "Standard science; Wide 12 km; Fine; Detailed 5 min",
+  duration_preset: "standard_12h",
+  duration_seconds: 43200,
+  grid_detail_preset: "fine",
+  domain_size_preset: "wide_12km",
+  output_cadence_preset: "detailed_5min",
+  output_cadence_seconds: 300,
+  output_field_density_preset: "rich",
+  cost_runtime_summary: "12 h model time, 4,915,200 cells, 5 min saved-output cadence",
+  output_volume_summary: "145 saved frames, rich output fields, 4,915,200 cells per frame",
+  cm1_values: {
+    ...defaultRunConfiguration.cm1_values,
+    nx: 256,
+    ny: 256,
+    dx_m: 50,
+    dy_m: 50,
+    domain_x_km: 12.8,
+    domain_y_km: 12.8,
+    runtime_seconds: 43200,
+    output_cadence_seconds: 300,
+    expected_output_frames: 145,
+    grid_cell_count: 4915200,
+  },
+  caveats: [
+    "science_run_configuration_minimum_duration_6h",
+    "configuration_better_suited_to_larger_compute",
+  ],
+};
+
 const scenarioResponse = {
   golden_path_scenario_id: "baseline-shallow-cumulus",
   scenarios: [
@@ -43,24 +142,6 @@ const scenarioResponse = {
           ],
         },
       ],
-      run_size_presets: [
-        {
-          id: "quick_look",
-          label: "Quick look",
-          purpose: "Sanity check",
-          expected_runtime: "roughly 10-20 minutes",
-          confidence: "lower confidence",
-          output_notes: "coarser output",
-        },
-        {
-          id: "deep_overnight",
-          label: "Deep / overnight",
-          purpose: "Expensive opt-in run for high spatial and saved-output resolution",
-          expected_runtime: "target roughly 10-12x Standard wall-clock",
-          confidence: "requires local/manual validation",
-          output_notes: "192 x 192 grid at about 33.333 m and 300 s saved-output cadence",
-        },
-      ],
     },
   ],
 };
@@ -77,32 +158,9 @@ const dryRunResponse = {
       low_level_humidity: "more_humid",
       surface_heating: "baseline",
     },
-    run_size_preset: "quick_look",
     estimated_cost_or_size: "unknown until validated",
-    run_size_details: {
-      preset: "quick_look",
-      runtime_seconds: 10800,
-      output_cadence_seconds: 900,
-      expected_output_frames: 13,
-      nx: 64,
-      ny: 64,
-      nz: 75,
-      dx_m: 100,
-      dy_m: 100,
-      dz_m: 40,
-      model_top_m: 18000,
-      time_step_seconds: 3,
-      grid_cell_count: 307200,
-      grid_cell_multiplier_vs_standard: 1,
-      time_step_multiplier_vs_standard: 1,
-      output_frame_multiplier_vs_standard: 1.86,
-      estimated_compute_multiplier_vs_standard: 0.5,
-      estimated_output_volume_multiplier_vs_standard: 1.86,
-      target_wall_clock_multiplier_vs_standard: "1x",
-      cost_warning:
-        "Normal local run-size preset; estimates remain approximate until local validation.",
-      validation_note: "Preset preserves the validated reference-derived spatial grid.",
-    },
+    run_configuration: defaultRunConfiguration,
+    run_configuration_summary: defaultRunConfigurationSummary,
     expected_diagnostics: ["first_cloud_time", "cloud_water_summary"],
     observed_sounding: null,
     candidate_screening: null,
@@ -134,35 +192,30 @@ const deepDryRunResponse = {
   ...dryRunResponse,
   report: {
     ...dryRunResponse.report,
-    run_size_preset: "deep_overnight",
+    run_configuration: highDetailRunConfiguration,
     estimated_cost_or_size:
-      "Deep Overnight is an expensive local run intended to take roughly 10-12x Standard wall-clock after manual validation.",
-    run_size_details: {
-      preset: "deep_overnight",
-      runtime_seconds: 21600,
+      "Configuration cost depends on duration, grid/detail, domain, cadence, and output-field density. Review the CM1-facing values before launch.",
+    run_configuration_summary: {
+      ...defaultRunConfigurationSummary,
+      configuration_id: highDetailRunConfiguration.configuration_id,
+      label: highDetailRunConfiguration.label,
+      duration_preset: "standard_12h",
+      grid_detail_preset: "fine",
+      domain_size_preset: "wide_12km",
+      output_cadence_preset: "detailed_5min",
+      output_field_density_preset: "rich",
+      runtime_seconds: 43200,
       output_cadence_seconds: 300,
-      expected_output_frames: 73,
-      nx: 192,
-      ny: 192,
-      nz: 75,
-      dx_m: 33.3333333333,
-      dy_m: 33.3333333333,
-      dz_m: 40,
-      model_top_m: 18000,
-      time_step_seconds: 3,
-      time_step_note:
-        "Deep Overnight keeps the Standard CM1 solver timestep; cost comes from higher spatial resolution and much higher saved-output cadence.",
-      grid_cell_count: 2764800,
-      grid_cell_multiplier_vs_standard: 9,
-      time_step_multiplier_vs_standard: 1,
-      output_frame_multiplier_vs_standard: 10.43,
-      estimated_compute_multiplier_vs_standard: 9,
-      estimated_output_volume_multiplier_vs_standard: 93.86,
-      target_wall_clock_multiplier_vs_standard: "10-12x",
-      cost_warning:
-        "Deep Overnight is an expensive local run intended to take roughly 10-12x Standard wall-clock after manual validation.",
-      validation_note:
-        "Deep Overnight preserves the physical domain and scenario controls while changing horizontal resolution and saved-output cadence.",
+      expected_output_frames: 145,
+      nx: 256,
+      ny: 256,
+      dx_m: 50,
+      dy_m: 50,
+      grid_cell_count: 4915200,
+      grid_cell_multiplier_vs_default: 16,
+      output_frame_multiplier_vs_default: 5.8,
+      estimated_compute_multiplier_vs_default: 32,
+      estimated_output_volume_multiplier_vs_default: 92.8,
     },
   },
 };
@@ -859,7 +912,7 @@ const resultCard = {
   protected: false,
   scenario_id: "baseline-shallow-cumulus",
   scenario_name: "Baseline Shallow Cumulus",
-  run_size_preset: "quick_look",
+  run_configuration: defaultRunConfiguration,
   physical_question: "How do low-level moisture and surface heating shape shallow cumulus?",
   controls: {
     low_level_humidity: "baseline",
@@ -1343,7 +1396,7 @@ const storageRuns = [
     lifecycle_state: "packaged",
     validation_status: "valid",
     product_state: "packaged_dry_run_output",
-    run_size_preset: "quick_look",
+    run_configuration: defaultRunConfiguration,
     created_at: "2026-05-22T15:55:36Z",
     updated_at: "2026-05-22T16:05:36Z",
     saved: false,
@@ -1367,7 +1420,7 @@ const storageRuns = [
     lifecycle_state: "completed",
     validation_status: "valid",
     product_state: "completed_cm1_result",
-    run_size_preset: "quick_look",
+    run_configuration: defaultRunConfiguration,
     created_at: "2026-05-22T15:15:36Z",
     updated_at: "2026-05-22T15:45:36Z",
     saved: false,
@@ -1391,7 +1444,7 @@ const storageRuns = [
     lifecycle_state: "completed",
     validation_status: "valid",
     product_state: "completed_cm1_result",
-    run_size_preset: "quick_look",
+    run_configuration: defaultRunConfiguration,
     created_at: "2026-05-22T15:20:36Z",
     updated_at: "2026-05-22T15:50:36Z",
     saved: false,
@@ -1416,7 +1469,7 @@ const storageRuns = [
     lifecycle_state: "completed",
     validation_status: "valid",
     product_state: "completed_cm1_result",
-    run_size_preset: "quick_look",
+    run_configuration: defaultRunConfiguration,
     created_at: "2026-05-22T15:15:36Z",
     updated_at: "2026-05-22T15:45:36Z",
     saved: true,
@@ -1440,7 +1493,7 @@ const storageRuns = [
     lifecycle_state: "running",
     validation_status: "unvalidated",
     product_state: "queued_running_cm1_process",
-    run_size_preset: "quick_look",
+    run_configuration: defaultRunConfiguration,
     created_at: "2026-05-22T15:15:36Z",
     updated_at: "2026-05-22T15:45:36Z",
     saved: false,
@@ -1465,7 +1518,7 @@ const storageRuns = [
     lifecycle_state: "completed",
     validation_status: "valid",
     product_state: "process_completed_no_output",
-    run_size_preset: "quick_look",
+    run_configuration: defaultRunConfiguration,
     created_at: "2026-05-22T15:14:36Z",
     updated_at: "2026-05-22T15:20:36Z",
     saved: false,
@@ -1489,7 +1542,7 @@ const storageRuns = [
     lifecycle_state: "failed",
     validation_status: "invalid",
     product_state: "failed_canceled_cm1_run",
-    run_size_preset: "quick_look",
+    run_configuration: defaultRunConfiguration,
     created_at: "2026-05-22T15:10:36Z",
     updated_at: "2026-05-22T15:12:36Z",
     saved: false,
@@ -1513,7 +1566,7 @@ const storageRuns = [
     lifecycle_state: null,
     validation_status: null,
     product_state: null,
-    run_size_preset: null,
+    run_configuration: null,
     created_at: null,
     updated_at: null,
     saved: false,
@@ -2821,7 +2874,8 @@ describe("App", () => {
     expect(screen.getByLabelText("Low-level humidity")).toBeInTheDocument();
     expect(screen.getByLabelText("Surface heating")).toBeInTheDocument();
     expect(screen.getAllByText(/Selected: Baseline/).length).toBeGreaterThan(0);
-    expect(screen.getByText(/Expected runtime: roughly 10-20 minutes/)).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Choose what CM1 will actually run" })).toBeInTheDocument();
+    expect(screen.getByText("Quick science; Local 6 km; Standard; Standard 15 min")).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Local run launchpad" })).toBeInTheDocument();
     expect(
       screen.getByRole("heading", { name: "Packages and runs needing action" }),
@@ -2910,7 +2964,9 @@ describe("App", () => {
     ).toBeInTheDocument();
     expect(screen.getByText(/wider box for storm growth and precipitation/i)).toBeInTheDocument();
     expect(
-      screen.getByText(/wider storm-growth domain than the shallow-cumulus quick look/i),
+      screen.getByText(
+        /Run configuration controls duration, grid\/detail, domain size, output cadence, and fields separately/i,
+      ),
     ).toBeInTheDocument();
 
     fireEvent.click(screen.getByTestId("create-package-btn"));
@@ -3404,14 +3460,20 @@ describe("App", () => {
     });
   });
 
-  it("shows Deep Overnight as an expensive distinct generated package", async () => {
+  it("sends explicit high-detail run configuration and shows package cost", async () => {
     vi.mocked(fetch).mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
       if (url === "/api/scenarios") {
         return Promise.resolve(new Response(JSON.stringify(scenarioResponse), { status: 200 }));
       }
       if (url === "/api/dry-run-package") {
-        expect(init?.body).toEqual(expect.stringContaining("deep_overnight"));
+        expect(init?.body).toEqual(expect.stringContaining('"duration_preset":"standard_12h"'));
+        expect(init?.body).toEqual(expect.stringContaining('"grid_detail_preset":"fine"'));
+        expect(init?.body).toEqual(expect.stringContaining('"domain_size_preset":"wide_12km"'));
+        expect(init?.body).toEqual(
+          expect.stringContaining('"output_cadence_preset":"detailed_5min"'),
+        );
+        expect(init?.body).toEqual(expect.stringContaining('"output_field_density_preset":"rich"'));
         return Promise.resolve(new Response(JSON.stringify(deepDryRunResponse), { status: 200 }));
       }
       if (url === "/api/results") {
@@ -3428,26 +3490,28 @@ describe("App", () => {
     render(<App />);
 
     fireEvent.click(await screen.findByRole("button", { name: "Build" }));
-    fireEvent.change(await screen.findByLabelText("Run-size preset"), {
-      target: { value: "deep_overnight" },
+    fireEvent.change(await screen.findByLabelText("Domain size"), {
+      target: { value: "wide_12km" },
     });
+    expect(screen.getAllByText(/better suited to larger compute/i).length).toBeGreaterThan(0);
 
-    expect(screen.getAllByText(/10-12x Standard wall-clock/).length).toBeGreaterThan(0);
-    expect(screen.getAllByText(/expensive opt-in preset/i).length).toBeGreaterThan(0);
+    fireEvent.change(await screen.findByLabelText("Duration"), {
+      target: { value: "standard_12h" },
+    });
+    fireEvent.change(screen.getByLabelText("Grid / detail"), { target: { value: "fine" } });
+    fireEvent.change(screen.getByLabelText("Output cadence"), {
+      target: { value: "detailed_5min" },
+    });
+    fireEvent.change(screen.getByLabelText("Output fields"), { target: { value: "rich" } });
 
     fireEvent.click(screen.getByTestId("create-package-btn"));
 
     const packageReview = await screen.findByTestId("package-review-panel");
-    expect(packageReview).toHaveTextContent("192 x 192 x 75");
-    expect(packageReview).toHaveTextContent("dx/dy 33.333 m");
+    expect(packageReview).toHaveTextContent("256 x 256 x 75");
+    expect(packageReview).toHaveTextContent("dx/dy 50 m");
     expect(packageReview).toHaveTextContent("300 s output");
-    expect(packageReview).toHaveTextContent("73 saved frames");
-    expect(packageReview).toHaveTextContent("9x grid");
-    expect(packageReview).toHaveTextContent("1x timestep");
-    expect(packageReview).toHaveTextContent("10.43x saved frames");
-    expect(packageReview).toHaveTextContent("93.86x output volume");
-    expect(packageReview).toHaveTextContent("Deep Overnight is an expensive local run");
-    expect(packageReview).toHaveTextContent("keeps the Standard CM1 solver timestep");
+    expect(packageReview).toHaveTextContent("145 saved frames");
+    expect(packageReview).toHaveTextContent("92.8x output volume");
   });
 
   it("shows an explicit loading state before scenario package controls are available", async () => {
@@ -3715,7 +3779,7 @@ describe("App", () => {
       run_id: "dry-run-worker-completed",
       scenario_id: "humid-vigorous-cumulus",
       scenario_name: "Humid Vigorous Cumulus",
-      run_size_preset: "quick_look",
+      run_configuration: defaultRunConfiguration,
       category: "running",
       manifest_path: "/tmp/CloudChamber/runs/dry-run-worker-completed/run_manifest.json",
       path: "/tmp/CloudChamber/runs/dry-run-worker-completed",
@@ -4210,7 +4274,7 @@ describe("App", () => {
     expect(screen.getAllByRole("button", { name: "Open in Explore" }).length).toBeGreaterThan(0);
     expect(screen.getByRole("button", { name: "Quick-look shallow cumulus" })).toBeInTheDocument();
     expect(screen.getAllByText(/Baseline Shallow Cumulus/).length).toBeGreaterThan(0);
-    expect(resultDetail).toHaveTextContent("quick look");
+    expect(resultDetail).toHaveTextContent("Quick science; Local 6 km; Standard; Standard 15 min");
     expect(
       screen.getAllByText(
         "cloud formed; rain water aloft detected; surface rain reached ground; reflectivity available",

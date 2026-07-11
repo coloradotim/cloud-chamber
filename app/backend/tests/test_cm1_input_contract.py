@@ -1,8 +1,6 @@
 import json
 from pathlib import Path
 
-import pytest
-
 from cloud_chamber.cm1_input_contract import (
     GeneratedFileRole,
     build_cm1_input_contract,
@@ -33,11 +31,13 @@ def capped_scenario() -> ScenarioTemplate:
     return validate_scenario_template(json.loads(CAPPED_TEMPLATE.read_text()))
 
 
-def test_cm1_contract_documents_expected_generated_files_and_defaults() -> None:
-    contract = build_cm1_input_contract(baseline_scenario(), run_size_preset="standard")
+def test_cm1_contract_documents_expected_generated_files_and_default_run_configuration() -> None:
+    contract = build_cm1_input_contract(baseline_scenario())
 
     assert contract.scenario_id == "baseline-shallow-cumulus"
-    assert contract.run_size_preset == "standard"
+    assert contract.run_configuration.duration_preset == "quick_6h"
+    assert contract.run_configuration.domain_size_preset == "local_6km"
+    assert contract.run_configuration.output_field_density_preset == "analysis"
     assert {file.role for file in contract.generated_files} == set(GeneratedFileRole)
     assert contract.cloud_scale_defaults.nx == 64
     assert contract.cloud_scale_defaults.ny == 64
@@ -46,7 +46,7 @@ def test_cm1_contract_documents_expected_generated_files_and_defaults() -> None:
     assert contract.cloud_scale_defaults.vertical_spacing_m == 40
     assert contract.cloud_scale_defaults.vertical_extent_km == 18.0
     assert contract.cloud_scale_defaults.runtime_seconds == 21600
-    assert contract.cloud_scale_defaults.output_cadence_seconds == 3600
+    assert contract.cloud_scale_defaults.output_cadence_seconds == 900
 
 
 def test_cm1_contract_keeps_product_controls_separate_from_mapping_notes() -> None:
@@ -71,8 +71,8 @@ def test_cm1_contract_keeps_product_controls_separate_from_mapping_notes() -> No
     assert contract.moisture_profile == "more_humid"
 
 
-def test_rendered_namelist_standard_preset_preserves_reference_timing() -> None:
-    contract = build_cm1_input_contract(baseline_scenario(), run_size_preset="standard")
+def test_rendered_namelist_default_quick_science_preserves_reference_domain() -> None:
+    contract = build_cm1_input_contract(baseline_scenario())
     namelist = render_namelist_fragment(contract)
 
     assert "&param0" in namelist
@@ -83,7 +83,7 @@ def test_rendered_namelist_standard_preset_preserves_reference_timing() -> None:
     assert "dy     =   100.0," in namelist
     assert "dz     =   40.0," in namelist
     assert "timax  = 21600.0," in namelist
-    assert "tapfrq =  3600.0," in namelist
+    assert "tapfrq =  900.0," in namelist
     assert "rstfrq = 10800.0," in namelist
     assert "zd      =  2500.0," in namelist
     assert "ztop      = 18000.0," in namelist
@@ -100,12 +100,24 @@ def test_rendered_namelist_standard_preset_preserves_reference_timing() -> None:
     assert "placeholder until local/manual CM1 validation" not in namelist
 
 
-def test_rendered_namelist_quick_look_only_changes_runtime_and_cadence() -> None:
-    contract = build_cm1_input_contract(baseline_scenario(), run_size_preset="quick_look")
+def test_rendered_namelist_smoke_mode_is_short_package_health_run() -> None:
+    contract = build_cm1_input_contract(
+        baseline_scenario(),
+        run_configuration={
+            "duration_preset": "smoke_1h",
+            "grid_detail_preset": "standard",
+            "domain_size_preset": "local_6km",
+            "output_cadence_preset": "standard_15min",
+            "output_field_density_preset": "core",
+        },
+    )
     namelist = render_namelist_fragment(contract)
 
-    assert contract.run_size_preset == "quick_look"
-    assert "timax  = 10800.0," in namelist
+    assert contract.run_configuration.mode == "smoke"
+    assert "short_smoke_mode_is_for_package_health_not_science_evolution" in (
+        contract.run_configuration.caveats
+    )
+    assert "timax  = 3600.0," in namelist
     assert "tapfrq =  900.0," in namelist
     assert "nx           =      64," in namelist
     assert "ny           =      64," in namelist
@@ -125,34 +137,30 @@ def test_rendered_namelist_quick_look_only_changes_runtime_and_cadence() -> None
     assert "output_format    = 2," in namelist
 
 
-def test_rendered_namelist_deep_overnight_increases_resolution_and_cadence() -> None:
-    standard = build_cm1_input_contract(baseline_scenario(), run_size_preset="standard")
-    deep = build_cm1_input_contract(baseline_scenario(), run_size_preset="deep_overnight")
-    namelist = render_namelist_fragment(deep)
-
-    assert deep.run_size_preset == "deep_overnight"
-    assert deep.cloud_scale_defaults.nx == 192
-    assert deep.cloud_scale_defaults.ny == 192
-    assert deep.cloud_scale_defaults.nz == standard.cloud_scale_defaults.nz
-    assert deep.cloud_scale_defaults.horizontal_spacing_m == pytest.approx(33.3333333333)
-    assert deep.cloud_scale_defaults.vertical_spacing_m == 40
-    assert deep.cloud_scale_defaults.vertical_extent_km == 18.0
-    assert deep.cloud_scale_defaults.output_cadence_seconds == 300
-    assert (
-        deep.cloud_scale_defaults.time_step_seconds
-        == standard.cloud_scale_defaults.time_step_seconds
+def test_rendered_namelist_explicit_configuration_changes_domain_detail_and_cadence() -> None:
+    contract = build_cm1_input_contract(
+        baseline_scenario(),
+        run_configuration={
+            "duration_preset": "standard_12h",
+            "grid_detail_preset": "fine",
+            "domain_size_preset": "wide_12km",
+            "output_cadence_preset": "detailed_5min",
+            "output_field_density_preset": "rich",
+        },
     )
-    assert standard.cloud_scale_defaults.nx == 64
-    assert standard.cloud_scale_defaults.output_cadence_seconds == 3600
+    namelist = render_namelist_fragment(contract)
 
-    assert "nx           =      192," in namelist
-    assert "ny           =      192," in namelist
+    assert contract.run_configuration.duration_seconds == 43200
+    assert contract.run_configuration.cm1_values.expected_output_frames == 145
+    assert "configuration_better_suited_to_larger_compute" in (contract.run_configuration.caveats)
+    assert "nx           =      256," in namelist
+    assert "ny           =      256," in namelist
     assert "nz           =      75," in namelist
-    assert "dx     =   33.333," in namelist
-    assert "dy     =   33.333," in namelist
+    assert "dx     =   50.0," in namelist
+    assert "dy     =   50.0," in namelist
     assert "dz     =   40.0," in namelist
     assert "dtl    =   3.000," in namelist
-    assert "timax  = 21600.0," in namelist
+    assert "timax  = 43200.0," in namelist
     assert "tapfrq =  300.0," in namelist
     assert "ztop      = 18000.0," in namelist
     assert "testcase  =  3," in namelist
@@ -272,8 +280,8 @@ def test_capped_suppressed_sounding_changes_only_cap_stability() -> None:
 
 
 def test_capped_suppressed_keeps_baseline_namelist_family() -> None:
-    baseline_contract = build_cm1_input_contract(baseline_scenario(), run_size_preset="quick_look")
-    capped_contract = build_cm1_input_contract(capped_scenario(), run_size_preset="quick_look")
+    baseline_contract = build_cm1_input_contract(baseline_scenario())
+    capped_contract = build_cm1_input_contract(capped_scenario())
 
     assert capped_contract.moisture_profile == "baseline"
     assert capped_contract.stability_profile == "stronger_cap"

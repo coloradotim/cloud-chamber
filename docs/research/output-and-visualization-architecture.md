@@ -125,7 +125,7 @@ writes `result_metadata.json` next to the run manifest. See
 Result metadata currently records:
 
 - run/result/scenario identifiers;
-- controls and run-size preset;
+- controls and selected run configuration;
 - raw CM1 artifact paths;
 - NetCDF model-output paths;
 - stats NetCDF paths;

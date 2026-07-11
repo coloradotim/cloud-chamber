@@ -8,7 +8,6 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
-from cloud_chamber.cm1_input_contract import cloud_scale_defaults_for_preset
 from cloud_chamber.run_manifest import LifecycleState, RunManifest
 
 CM1_MODEL_MINUTE_RE = re.compile(
@@ -80,14 +79,28 @@ def _configured_model_time_seconds(
         if value is not None and math.isfinite(value) and value > 0:
             return value, "namelist.input timax", []
 
-    defaults = cloud_scale_defaults_for_preset(
-        manifest.run_size_preset,
-        package_family=manifest.package_family,
-    )
+    values = manifest.run_configuration.get("cm1_values", {})
+    if not isinstance(values, dict):
+        values = {}
+    runtime_seconds = values.get("runtime_seconds")
+    if runtime_seconds is None:
+        runtime_seconds = manifest.run_configuration.get("duration_seconds")
+    try:
+        configured_seconds = (
+            float(runtime_seconds) if isinstance(runtime_seconds, str | int | float) else math.nan
+        )
+    except (TypeError, ValueError):
+        configured_seconds = math.nan
+    if not math.isfinite(configured_seconds) or configured_seconds <= 0:
+        return (
+            None,
+            None,
+            ["configured_model_time_missing_from_run_configuration"],
+        )
     return (
-        float(defaults.runtime_seconds),
-        "package preset fallback",
-        ["configured_model_time_fell_back_to_package_preset"],
+        configured_seconds,
+        "run_configuration",
+        [],
     )
 
 

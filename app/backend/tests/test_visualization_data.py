@@ -64,7 +64,6 @@ def create_visualization_result(
         scenario_data=json.loads(BASELINE_TEMPLATE.read_text()),
         runtime_home=settings.runtime_home,
         run_id=run_id,
-        run_size_preset="quick_look",
     )
     netcdf_path = package.package_dir / "cm1out_000001.nc"
     write_visualization_netcdf(
@@ -100,7 +99,6 @@ def create_multifile_visualization_result(
         scenario_data=json.loads(BASELINE_TEMPLATE.read_text()),
         runtime_home=settings.runtime_home,
         run_id=run_id,
-        run_size_preset="quick_look",
     )
     paths: list[Path] = []
     for index in range(file_count):
@@ -135,7 +133,6 @@ def create_realistic_field_catalog_result(
         scenario_data=json.loads(BASELINE_TEMPLATE.read_text()),
         runtime_home=settings.runtime_home,
         run_id="run-realistic-field-catalog",
-        run_size_preset="quick_look",
     )
     netcdf_path = package.package_dir / "cm1out_000001.nc"
     write_realistic_field_catalog_netcdf(netcdf_path)

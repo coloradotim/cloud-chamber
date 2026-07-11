@@ -276,6 +276,29 @@ small {
   font-weight: 500;
 }
 
+.run-configuration-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
+  gap: 0.65rem;
+  margin: 0.75rem 0;
+}
+
+.run-configuration-control {
+  display: grid;
+  gap: 0.35rem;
+  min-width: 0;
+  color: var(--color-text-primary);
+  font-weight: 800;
+}
+
+.run-configuration-control small {
+  display: block;
+  margin-top: 0.2rem;
+  color: var(--color-text-muted);
+  font-weight: 500;
+  line-height: 1.35;
+}
+
 .experiment-summary {
   border: 1px solid var(--color-border);
   border-radius: 8px;

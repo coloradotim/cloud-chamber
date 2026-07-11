@@ -52,7 +52,6 @@ def create_region_result(
         scenario_data=json.loads(BASELINE_TEMPLATE.read_text()),
         runtime_home=settings.runtime_home,
         run_id=run_id,
-        run_size_preset="quick_look",
     )
     netcdf_path = package.package_dir / "cm1out_000001.nc"
     write_region_netcdf(

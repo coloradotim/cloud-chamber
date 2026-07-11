@@ -102,13 +102,14 @@ Confirmed from code and docs:
 - Current product-facing controls are atmospheric controls such as
   low-level humidity, surface heating, cap strength, and cap height. Raw
   namelist settings remain technical/developer details.
-- Current runtime presets are `quick_look`, `standard`, and
-  `deep_overnight`; scenario templates require those three profiles.
+- Current run configuration is explicit: duration, grid/detail, domain, output
+  cadence, and output-field density are resolved into CM1-facing values during
+  package generation.
 
 Relevant source anchors:
 
-- `app/backend/cloud_chamber/cm1_input_contract.py` defines current defaults and
-  runtime presets at lines 24-61.
+- `app/backend/cloud_chamber/run_configuration.py` defines current run
+  configuration defaults and CM1-facing derived values.
 - `app/backend/cloud_chamber/cm1_input_contract.py` documents the generated
   external-sounding reproduction path at lines 211-224.
 - `app/backend/cloud_chamber/cm1_input_contract.py` renders `isnd = 17`,
@@ -117,7 +118,7 @@ Relevant source anchors:
 - `app/backend/cloud_chamber/dry_run_package.py` writes the package files and
   runtime checklist at lines 76-142.
 - `app/backend/cloud_chamber/scenario_schema.py` requires product-facing
-  controls and the three run-size presets at lines 142-187.
+  controls; run-shape requirements live in the run-configuration contract.
 
 ## CM1 Capability Summary
 

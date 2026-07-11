@@ -21,7 +21,7 @@ Fast CI tests run on every pull request and push to `main`.
 Implemented fast tests cover:
 
 - scenario schema validation
-- quick/standard/deep runtime preset metadata validation
+- explicit run-configuration metadata validation
 - physical question and learning-goal metadata validation
 - one-control-at-a-time variation metadata validation
 - generated manifests and dry-run packages
@@ -592,7 +592,7 @@ If a tiny synthetic NetCDF fixture is needed later, create it with a determinist
 
 Real CM1 runs are local/manual/offline validation. They are useful for scientific confidence but should not be required in CI.
 
-The Baseline Shallow Cumulus Golden Path is the first manual/local acceptance target. Quick/standard/deep runtime tiers should be validated in CI through schema/config tests, not by running CM1.
+The Baseline Shallow Cumulus Golden Path is the first manual/local acceptance target. Run-configuration defaults and explicit user-selected duration/grid/domain/cadence/field combinations should be validated in CI through schema/config tests, not by running CM1.
 
 Replay / inspect / save is core MVP and should be covered by future metadata, serialization, and UI tests. Duplicate / tweak / rerun is later and should not be required by first result-library tests.
 
@@ -604,8 +604,8 @@ Manual validation should record:
 - the scenario controls used
 - the CM1 version and local runtime path
 - the Cloud Chamber commit
-- the run-size preset
-- the grid/domain, runtime, and output cadence
+- the selected run configuration
+- the grid/domain, runtime, output cadence, and output field density
 - diagnostics such as cloud base, cloud top, first cloud time, rain onset, and updraft strength
 - cloud-water max or summary
 - log warnings/errors
@@ -618,7 +618,7 @@ Manual baseline shallow-cumulus acceptance should capture:
 
 ```text
 physical question
-run-size preset
+selected run configuration
 CM1 version/path
 grid/domain
 runtime
@@ -643,22 +643,19 @@ The first quick-look variant should be validated as a runtime-only change from t
 
 The first quick-look validation run, `dry-run-quicklook-les-shallowcu-20260522151536`, completed with `exit_code = 0`, ingested 13 model-output time steps from 0 to 10800 seconds, and produced `cloud formed; rain detected`. Recorded diagnostics included first cloud time at 1800 seconds, `max_qc_kg_kg = 0.002192789688706398`, `max_w_m_s = 6.866957187652588`, `min_w_m_s = -4.21529483795166`, rain present, package size 206 MB, stderr `IEEE_UNDERFLOW_FLAG`, and the existing vertical-coordinate caveat because cloud base/top units were reported as kilometers.
 
-Deep Overnight package tests must assert that the preset is no longer identical
-to Standard. The first implementation target preserves the physical domain and
-validated scenario controls, but changes generated run-size settings to
-`nx = 192`, `ny = 192`, `dx = 33.333 m`, `dy = 33.333 m`, `dtl = 3.0 s`, and
-`tapfrq = 300 s`. Manual validation should record Standard wall-clock, Deep
-Overnight wall-clock, actual multiplier, output file count, package size,
-whether Explore/timelapse benefit is visible, and whether the run remains
-numerically stable and scientifically comparable. The target is roughly 10-12x
-Standard wall-clock, with follow-up calibration if local I/O, memory,
-or machine variability lands far outside that range.
+High-detail run-configuration tests must assert that explicit user selections
+change the generated CM1-facing values. Manual validation should record the
+baseline wall-clock, high-detail wall-clock, actual multiplier, output file
+count, package size, whether Explore/timelapse benefit is visible, and whether
+the run remains numerically stable and scientifically comparable. Follow-up
+calibration is required if local I/O, memory, or machine variability lands far
+outside the expected cost envelope.
 
 External-sounding Baseline Shallow Cumulus reproduction should preserve the
 validated reference-derived settings and change only the thermodynamic sounding
 source from built-in `isnd = 19` to CM1's external `input_sounding` route
 (`isnd = 17`). Automated tests should assert that generated packages still
-preserve the reference grid/domain, runtime presets, wind profile, surface
+preserve the reference grid/domain, selected run configuration, wind profile, surface
 flux/stress path, damping, turbulence/SGS settings, boundary conditions,
 NetCDF output, and reference `LANDUSE.TBL` staging. Manual validation should
 record whether the external-sounding reproduction still completes, produces
@@ -748,8 +745,8 @@ NetCDF files, logs, runtime files, local reports, or copied `LANDUSE.TBL`.
 Capped / Suppressed Cumulus package tests use temporary runtime homes and assert
 that `cap_strength = stronger` changes only the generated external
 `input_sounding` stability structure near the cap while preserving the accepted
-external-sounding baseline's grid/domain, runtime preset, surface/ocean/flux
-settings, surface stress/roughness path, Rayleigh damping, turbulence/SGS
+external-sounding baseline's grid/domain, selected run configuration,
+surface/ocean/flux settings, surface stress/roughness path, Rayleigh damping, turbulence/SGS
 settings, boundary conditions, NetCDF output, `LANDUSE.TBL` staging behavior,
 low-level humidity, and surface heating.
 
@@ -820,7 +817,7 @@ Use this loop after a dry-run package has been generated and before broader CM1 
 1. Generate or identify a Baseline Shallow Cumulus dry-run package under the local runtime home, normally `~/CloudChamber/runs/<run-id>/`.
 2. Inspect the package before launch:
    - confirm `run_manifest.json`, `case_manifest.json`, `namelist.input`, `input_sounding`, `dry_run_report.json`, and `runtime_file_checklist.json` exist;
-   - confirm the selected run-size preset, physical question, controls, expected diagnostics, and visualization defaults match the intended scenario;
+   - confirm the selected run configuration, physical question, controls, expected diagnostics, and visualization defaults match the intended scenario;
    - confirm `dry_run_report.json` says CM1 was not launched and is not a completed result;
    - confirm `namelist.input` is not the old `&cloud_chamber_domain` placeholder fragment;
    - confirm `input_sounding` is not notes-only;
@@ -831,7 +828,7 @@ Use this loop after a dry-run package has been generated and before broader CM1 
    - confirm the CM1 run directory contains the local executable, normally `cm1.exe`;
    - confirm required runtime files such as `LANDUSE.TBL` are available locally, but not copied into git.
 4. Manually stage the package for CM1 according to the local CM1 build's expected run-directory behavior. Record whether files were copied, symlinked, or run in place.
-5. Launch CM1 manually outside CI. Capture the exact command, CM1 version/path, start time, run-size preset, and Cloud Chamber commit.
+5. Launch CM1 manually outside CI. Capture the exact command, CM1 version/path, start time, selected run configuration, and Cloud Chamber commit.
 6. Watch status and logs:
    - record queued/running/completed/failed/canceled observations;
    - preserve stdout/stderr or CM1 log paths for the future result notebook entry;
@@ -848,7 +845,7 @@ Use this loop after a dry-run package has been generated and before broader CM1 
 9. Record result-card/notebook acceptance notes:
    - scenario name and physical question;
    - controls used;
-   - run-size preset;
+   - selected run configuration;
    - CM1 version/path metadata;
    - output/log paths;
    - first cloud time, cloud base/top, max vertical velocity, cloud-water summary, and rain onset if present;

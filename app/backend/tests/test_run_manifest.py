@@ -22,7 +22,19 @@ def valid_manifest_data() -> dict[str, object]:
             "template_path": "scenarios/lower-atmosphere/baseline-shallow-cumulus.json",
         },
         "controls": {"low_level_humidity": "baseline", "surface_heating": "baseline"},
-        "run_size_preset": "quick_look",
+        "run_configuration": {
+            "configuration_id": "quick_6h__standard__local_6km__standard_15min__analysis",
+            "duration_preset": "quick_6h",
+            "domain_size_preset": "local_6km",
+            "grid_detail_preset": "standard",
+            "output_cadence_preset": "standard_15min",
+            "output_field_density_preset": "analysis",
+            "cm1_values": {
+                "runtime_seconds": 21600,
+                "output_cadence_seconds": 900,
+                "expected_output_frames": 25,
+            },
+        },
         "physical_question": "How do moisture and heating shape shallow cumulus?",
         "expected_diagnostics": ["first_cloud_time", "cloud_base_top", "cloud_water_summary"],
         "generated_inputs": {

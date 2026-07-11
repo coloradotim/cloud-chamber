@@ -1145,7 +1145,6 @@ def test_candidate_screening_metadata_is_written_to_package_manifests(
         runtime_home=settings.runtime_home,
         run_id="dry-run-candidate-test",
         controls={},
-        run_size_preset="quick_look",
         observed_sounding=candidate.selected_sounding_payload,
         candidate_screening=candidate_screening,
     )

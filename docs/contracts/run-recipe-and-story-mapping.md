@@ -113,7 +113,12 @@ run_recipe:
     caveats: [string]
   cm1_mapping:
     package_family: observed_sounding_quicklook | deep_convection_trial | future
-    run_size_preset: quick_look | standard | deep_overnight | null
+    run_configuration_defaults:
+      duration_preset: string | null
+      grid_detail_preset: string | null
+      domain_size_preset: string | null
+      output_cadence_preset: string | null
+      output_field_density_preset: string | null
     namelist_summary: [string]
     runtime_files_needed: [string]
   comparison_contract:
@@ -167,12 +172,12 @@ product_question: What does this observed atmosphere do without an explicit
 assumption_set_id: normal_evolution_current_observed_sounding_v1
 assumption_mode: normal_evolution
 run_shape:
-  duration_seconds: 10800 | 21600 | preset-adjusted
-  grid_detail_preset: quick_look | standard | deep_overnight
-  domain_width_m: current observed-sounding LES domain
+  duration_seconds: 21600 | configured
+  grid_detail_preset: coarse | standard | fine
+  domain_width_m: 6400 | 12800 | configured
   model_top_m: current observed-sounding LES model top
-  output_cadence_seconds: 900 | 3600 | preset-adjusted
-  output_field_density: standard
+  output_cadence_seconds: 3600 | 900 | 300 | configured
+  output_field_density: core | analysis | rich
 forcing:
   trigger: {mode: none}
   surface_sensible_heat_flux: {mode: current_recipe_default}
@@ -273,12 +278,12 @@ product_question: If initiation is supplied, does this sounding support deep
 assumption_set_id: triggered_deep_potential_warm_bubble_v1
 assumption_mode: triggered_deep_potential
 run_shape:
-  duration_seconds: 7200 | 21600 | preset-adjusted
-  grid_detail_preset: quick_look | standard | deep_overnight
+  duration_seconds: 21600 | configured
+  grid_detail_preset: coarse | standard | fine
   domain_width_m: 120000 | 160000 | 240000
   model_top_m: 20000
-  output_cadence_seconds: 600 | 300
-  output_field_density: dense
+  output_cadence_seconds: 3600 | 900 | 300 | configured
+  output_field_density: rich
 forcing:
   trigger:
     mode: warm_bubble
@@ -457,4 +462,3 @@ or for deliberate normal-evolution runs.
 - Say "triggered deep-convection potential" for warm-bubble deep recipes.
 - Say "normal evolution" only for untriggered recipes, and disclose any current
   surface/radiation/forcing defaults.
-

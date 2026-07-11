@@ -19,12 +19,6 @@ class ControlType(StrEnum):
     BOOLEAN = "boolean"
 
 
-class RuntimeProfile(StrEnum):
-    QUICK_LOOK = "quick_look"
-    STANDARD = "standard"
-    DEEP_OVERNIGHT = "deep_overnight"
-
-
 class ScenarioValidationError(ValueError):
     """Raised when a scenario template fails validation."""
 
@@ -88,17 +82,6 @@ class ScenarioControl(BaseModel):
         return self
 
 
-class RunSizePreset(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    id: RuntimeProfile
-    label: str
-    purpose: str
-    expected_runtime: str
-    confidence: str
-    output_notes: str
-
-
 class ExpectedDiagnostics(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -152,7 +135,6 @@ class ScenarioTemplate(BaseModel):
     intended_behavior: str
     expected_behavior: str
     controls: list[ScenarioControl]
-    run_size_presets: list[RunSizePreset]
     expected_diagnostics: ExpectedDiagnostics
     cm1_template: CM1TemplateReference
     visualization_defaults: VisualizationDefaults
@@ -168,23 +150,6 @@ class ScenarioTemplate(BaseModel):
         ]
         if not product_controls:
             raise ValueError("scenario must define at least one product-facing control")
-
-        preset_ids = {preset.id for preset in self.run_size_presets}
-        required_presets = set(RuntimeProfile)
-        if preset_ids != required_presets:
-            missing = ", ".join(sorted(profile.value for profile in required_presets - preset_ids))
-            extra = ", ".join(sorted(profile.value for profile in preset_ids - required_presets))
-            details = "; ".join(
-                part
-                for part in [
-                    f"missing {missing}" if missing else "",
-                    f"extra {extra}" if extra else "",
-                ]
-                if part
-            )
-            raise ValueError(
-                f"scenario run_size_presets must define quick/standard/deep profiles: {details}"
-            )
 
         control_ids = {control.id for control in self.controls}
         if self.variation_policy is not None:

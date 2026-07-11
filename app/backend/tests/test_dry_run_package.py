@@ -40,7 +40,6 @@ def test_generate_dry_run_package_writes_expected_files_to_temp_runtime_home(
         runtime_home=tmp_path,
         run_id="run-001",
         controls={"low_level_humidity": "more_humid"},
-        run_size_preset="quick_look",
     )
 
     assert result.package_dir == tmp_path / "runs" / "run-001"
@@ -61,26 +60,32 @@ def test_dry_run_manifest_and_report_include_golden_path_metadata(tmp_path: Path
         scenario_data=load_baseline_template(),
         runtime_home=tmp_path,
         run_id="run-002",
-        run_size_preset="standard",
     )
 
     manifest = load_run_manifest(result.manifest_path)
     report = json.loads(result.report_path.read_text())
 
     assert manifest.lifecycle_state.value == "packaged"
-    assert manifest.run_size_preset == "standard"
+    assert manifest.run_configuration["duration_preset"] == "quick_6h"
+    assert manifest.run_configuration["domain_size_preset"] == "local_6km"
     assert manifest.scenario.id == "baseline-shallow-cumulus"
     assert "first_cloud_time" in manifest.expected_diagnostics
     assert report["not_a_completed_cm1_result"] is True
     assert report["cm1_was_launched"] is False
     assert report["estimated_cost_or_size"] == (
-        "Normal local run-size preset; estimates remain approximate until local validation."
+        "Configuration cost depends on duration, grid/detail, domain, cadence, "
+        "and output-field density. Review the CM1-facing values before launch."
     )
     assert report["physical_question"] == manifest.physical_question
     assert report["visualization_defaults"]["primary_field"] == "qc"
-    assert report["run_size_details"]["runtime_seconds"] == 21600
-    assert report["run_size_details"]["output_cadence_seconds"] == 3600
-    assert report["run_size_details"]["expected_output_frames"] == 7
+    assert (
+        report["run_configuration"]["configuration_id"]
+        == (manifest.run_configuration["configuration_id"])
+    )
+    summary = report["run_configuration_summary"]
+    assert summary["runtime_seconds"] == 21600
+    assert summary["output_cadence_seconds"] == 900
+    assert summary["expected_output_frames"] == 25
 
 
 def test_dry_run_package_can_use_observed_igra_sounding(tmp_path: Path) -> None:
@@ -93,7 +98,6 @@ def test_dry_run_package_can_use_observed_igra_sounding(tmp_path: Path) -> None:
         scenario_data=load_baseline_template(),
         runtime_home=tmp_path,
         run_id="run-observed-sounding",
-        run_size_preset="quick_look",
         observed_sounding=observed,
         user_tags=["compare", "candidate", "compare"],
         user_notes="  Compare against humid/rainy candidates.  ",
@@ -108,6 +112,9 @@ def test_dry_run_package_can_use_observed_igra_sounding(tmp_path: Path) -> None:
     assert manifest.observed_sounding is not None
     assert manifest.observed_sounding["station_id"] == "USM00072558"
     assert manifest.observed_sounding["model_bottom_elevation_m_msl"] == pytest.approx(351.5)
+    assert manifest.run_configuration["domain_size_preset"] == "wide_12km"
+    assert manifest.run_configuration["cm1_values"]["nx"] == 128
+    assert manifest.run_configuration["cm1_values"]["runtime_seconds"] == 21600
     assert manifest.user.tags == ["compare", "candidate"]
     assert manifest.user.notes == "Compare against humid/rainy candidates."
     assert report["variant_metadata"]["sounding_source"] == "observed_igra_station_text"
@@ -153,7 +160,6 @@ def test_deep_convection_trial_package_uses_observed_sounding_and_warm_bubble(
         scenario_data=load_baseline_template(),
         runtime_home=tmp_path,
         run_id="run-deep-convection-trial",
-        run_size_preset="quick_look",
         package_family="deep_convection_trial",
         observed_sounding=observed,
         candidate_screening=candidate_screening,
@@ -186,6 +192,10 @@ def test_deep_convection_trial_package_uses_observed_sounding_and_warm_bubble(
         for caveat in manifest.package_caveats
     )
     assert manifest.candidate_screening == candidate_screening
+    assert manifest.run_configuration["duration_preset"] == "quick_6h"
+    assert manifest.run_configuration["domain_size_preset"] == "storm_120km"
+    assert manifest.run_configuration["grid_detail_preset"] == "standard"
+    assert manifest.run_configuration["output_field_density_preset"] == "rich"
     assert report["package_family"] == "deep_convection_trial"
     assert report["package_display_name"] == "Deep Convection Trial"
     assert report["trigger_type"] == "warm_bubble"
@@ -223,8 +233,8 @@ def test_deep_convection_trial_package_uses_observed_sounding_and_warm_bubble(
     assert "dy     =   1000.0," in namelist
     assert "dz     =   500.0," in namelist
     assert "dtl    =   6.000," in namelist
-    assert "timax  = 7200.0," in namelist
-    assert "tapfrq =  600.0," in namelist
+    assert "timax  = 21600.0," in namelist
+    assert "tapfrq =  900.0," in namelist
     assert "zd      =  15000.0," in namelist
     assert float(sounding.splitlines()[-1].split()[0]) >= 20000.0
     first_body_z = float(sounding.splitlines()[1].split()[0])
@@ -335,7 +345,6 @@ def test_dry_run_package_writes_cm1_ready_inputs_not_outputs(tmp_path: Path) -> 
         scenario_data=load_baseline_template(),
         runtime_home=tmp_path,
         run_id="run-005",
-        run_size_preset="standard",
     )
     namelist = (result.package_dir / "namelist.input").read_text()
     sounding = (result.package_dir / "input_sounding").read_text()
@@ -349,7 +358,7 @@ def test_dry_run_package_writes_cm1_ready_inputs_not_outputs(tmp_path: Path) -> 
     assert "dy     =   100.0," in namelist
     assert "dz     =   40.0," in namelist
     assert "timax  = 21600.0," in namelist
-    assert "tapfrq =  3600.0," in namelist
+    assert "tapfrq =  900.0," in namelist
     assert "ztop      = 18000.0," in namelist
     assert "set_znt    =      0," in namelist
     assert "cnst_znt   =   0.00," in namelist
@@ -370,18 +379,24 @@ def test_dry_run_package_writes_cm1_ready_inputs_not_outputs(tmp_path: Path) -> 
     )
 
 
-def test_dry_run_package_quick_look_changes_only_runtime_timing(tmp_path: Path) -> None:
+def test_dry_run_package_smoke_mode_is_short_package_health_run(tmp_path: Path) -> None:
     result = generate_dry_run_package(
         scenario_data=load_baseline_template(),
         runtime_home=tmp_path,
         run_id="run-006",
-        run_size_preset="quick_look",
+        run_configuration={
+            "duration_preset": "smoke_1h",
+            "grid_detail_preset": "standard",
+            "domain_size_preset": "local_6km",
+            "output_cadence_preset": "standard_15min",
+            "output_field_density_preset": "core",
+        },
     )
     namelist = (result.package_dir / "namelist.input").read_text()
     report = json.loads(result.report_path.read_text())
 
-    assert report["run_size_preset"] == "quick_look"
-    assert "timax  = 10800.0," in namelist
+    assert report["run_configuration"]["mode"] == "smoke"
+    assert "timax  = 3600.0," in namelist
     assert "tapfrq =  900.0," in namelist
     assert "nx           =      64," in namelist
     assert "ny           =      64," in namelist
@@ -399,41 +414,48 @@ def test_dry_run_package_quick_look_changes_only_runtime_timing(tmp_path: Path) 
     assert "output_format    = 2," in namelist
 
 
-def test_dry_run_package_deep_overnight_reports_resolution_and_cost(tmp_path: Path) -> None:
+def test_dry_run_package_explicit_high_detail_configuration_reports_cost(
+    tmp_path: Path,
+) -> None:
     result = generate_dry_run_package(
         scenario_data=load_baseline_template(),
         runtime_home=tmp_path,
         run_id="run-deep-001",
-        run_size_preset="deep_overnight",
+        run_configuration={
+            "duration_preset": "standard_12h",
+            "grid_detail_preset": "fine",
+            "domain_size_preset": "wide_12km",
+            "output_cadence_preset": "detailed_5min",
+            "output_field_density_preset": "rich",
+        },
     )
     namelist = (result.package_dir / "namelist.input").read_text()
     report = json.loads(result.report_path.read_text())
-    details = report["run_size_details"]
+    details = report["run_configuration_summary"]
 
-    assert report["run_size_preset"] == "deep_overnight"
-    assert "Deep Overnight is an expensive local run" in report["estimated_cost_or_size"]
-    assert details["nx"] == 192
-    assert details["ny"] == 192
+    assert report["run_configuration"]["duration_preset"] == "standard_12h"
+    assert "duration, grid/detail, domain, cadence" in report["estimated_cost_or_size"]
+    assert details["nx"] == 256
+    assert details["ny"] == 256
     assert details["nz"] == 75
-    assert details["dx_m"] == pytest.approx(33.3333333333)
-    assert details["dy_m"] == pytest.approx(33.3333333333)
+    assert details["dx_m"] == 50
+    assert details["dy_m"] == 50
     assert details["dz_m"] == 40
-    assert details["runtime_seconds"] == 21600
+    assert details["runtime_seconds"] == 43200
     assert details["output_cadence_seconds"] == 300
-    assert details["expected_output_frames"] == 73
-    assert details["grid_cell_multiplier_vs_standard"] == 9.0
+    assert details["expected_output_frames"] == 145
+    assert details["grid_cell_multiplier_vs_default"] == 16.0
     assert details["time_step_seconds"] == 3.0
-    assert details["time_step_multiplier_vs_standard"] == 1.0
-    assert details["output_frame_multiplier_vs_standard"] == 10.43
-    assert details["estimated_compute_multiplier_vs_standard"] == 9.0
-    assert details["estimated_output_volume_multiplier_vs_standard"] == 93.86
-    assert details["target_wall_clock_multiplier_vs_standard"] == "10-12x"
-    assert "keeps the Standard CM1 solver timestep" in details["time_step_note"]
+    assert details["time_step_multiplier_vs_default"] == 1.0
+    assert details["output_frame_multiplier_vs_default"] == 5.8
+    assert details["estimated_compute_multiplier_vs_default"] == 32.0
+    assert details["estimated_output_volume_multiplier_vs_default"] == 92.8
+    assert "resolved from the selected run configuration" in details["time_step_note"]
 
-    assert "nx           =      192," in namelist
-    assert "ny           =      192," in namelist
-    assert "dx     =   33.333," in namelist
-    assert "dy     =   33.333," in namelist
+    assert "nx           =      256," in namelist
+    assert "ny           =      256," in namelist
+    assert "dx     =   50.0," in namelist
+    assert "dy     =   50.0," in namelist
     assert "dtl    =   3.000," in namelist
     assert "tapfrq =  300.0," in namelist
 
@@ -446,21 +468,18 @@ def test_baseline_humidity_ladder_packages_change_only_sounding_moisture(
         runtime_home=tmp_path,
         run_id="run-baseline-drier",
         controls={"low_level_humidity": "drier"},
-        run_size_preset="quick_look",
     )
     baseline = generate_dry_run_package(
         scenario_data=load_baseline_template(),
         runtime_home=tmp_path,
         run_id="run-baseline",
         controls={"low_level_humidity": "baseline"},
-        run_size_preset="quick_look",
     )
     more_humid = generate_dry_run_package(
         scenario_data=load_baseline_template(),
         runtime_home=tmp_path,
         run_id="run-baseline-more-humid",
         controls={"low_level_humidity": "more_humid"},
-        run_size_preset="quick_look",
     )
 
     baseline_namelist = (baseline.package_dir / "namelist.input").read_text()
@@ -474,7 +493,7 @@ def test_baseline_humidity_ladder_packages_change_only_sounding_moisture(
     drier_manifest = load_run_manifest(drier.manifest_path)
 
     assert drier_namelist == baseline_namelist == humid_namelist
-    assert "timax  = 10800.0," in baseline_namelist
+    assert "timax  = 21600.0," in baseline_namelist
     assert "tapfrq =  900.0," in baseline_namelist
     assert "testcase  =  3," in baseline_namelist
     assert "isnd      = 17," in baseline_namelist
@@ -509,13 +528,11 @@ def test_dry_failed_package_preserves_baseline_namelist_and_drives_sounding_drie
         scenario_data=load_baseline_template(),
         runtime_home=tmp_path,
         run_id="run-baseline",
-        run_size_preset="quick_look",
     )
     dry_failed = generate_dry_run_package(
         scenario_data=load_dry_failed_template(),
         runtime_home=tmp_path,
         run_id="run-dry-failed",
-        run_size_preset="quick_look",
     )
 
     baseline_namelist = (baseline.package_dir / "namelist.input").read_text()
@@ -526,7 +543,7 @@ def test_dry_failed_package_preserves_baseline_namelist_and_drives_sounding_drie
 
     assert dry_report["scenario_id"] == "dry-failed-cumulus"
     assert dry_report["controls"]["low_level_humidity"] == "drier"
-    assert "timax  = 10800.0," in dry_namelist
+    assert "timax  = 21600.0," in dry_namelist
     assert "tapfrq =  900.0," in dry_namelist
     assert "isnd      = 17," in dry_namelist
     assert "iwnd      =  9," in dry_namelist
@@ -547,13 +564,11 @@ def test_capped_suppressed_package_preserves_baseline_namelist_and_strengthens_c
         scenario_data=load_baseline_template(),
         runtime_home=tmp_path,
         run_id="run-baseline",
-        run_size_preset="quick_look",
     )
     capped = generate_dry_run_package(
         scenario_data=load_capped_template(),
         runtime_home=tmp_path,
         run_id="run-capped",
-        run_size_preset="quick_look",
     )
 
     baseline_namelist = (baseline.package_dir / "namelist.input").read_text()
@@ -570,7 +585,7 @@ def test_capped_suppressed_package_preserves_baseline_namelist_and_strengthens_c
     assert capped_report["variant_metadata"]["stability_profile"] == "stronger_cap"
     assert capped_manifest.controls["cap_strength"] == "stronger"
     assert capped_namelist == baseline_namelist
-    assert "timax  = 10800.0," in capped_namelist
+    assert "timax  = 21600.0," in capped_namelist
     assert "tapfrq =  900.0," in capped_namelist
     assert "isnd      = 17," in capped_namelist
     assert "output_format    = 2," in capped_namelist

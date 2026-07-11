@@ -158,9 +158,9 @@ and caveats should be copied into package metadata as
 provenance.
 
 When an uploaded or saved observed sounding is package-ready, Build should let
-the user start from observed-sounding quick-look or deep-convection presets and
-then review the CM1-facing configuration those presets imply. The
-deep-convection preset is first-class for severe/deep-convection
+the user choose an observed-sounding run direction and adjust the explicit
+CM1-facing run configuration. The deep-convection configuration is first-class
+for severe/deep-convection
 observed-sounding experiments: it uses the observed temperature, moisture, and
 complete wind profile through CM1 `isnd = 7`, runs an idealized
 three-warm-bubble trigger (`iinit = 3`), uses a storm-scale model box suitable
@@ -168,11 +168,11 @@ for storm growth and precipitation inspection, requests rain water aloft,
 surface rain, reflectivity, vorticity, and updraft-helicity output, and records
 `package_family = deep_convection_trial` plus trigger, expected-output, caveat,
 and candidate-screening provenance in generated manifests. That internal
-`package_family` value may remain until renaming it is worth the migration
-cost, but product copy should describe the run as a deep-convection
-observed-sounding configuration rather than a separate "Trial" status. Quick
-tiers must still run long enough to be meteorologically useful. Build should
-show expected cost, runtime, and output volume, and note when a configuration is
+`package_family` value is provenance metadata, not the run-shape default.
+Product copy should describe the run as a deep-convection observed-sounding
+configuration rather than a separate "Trial" status. Quick science
+configurations must still run long enough to be meteorologically useful. Build
+should show expected cost, runtime, and output volume, and note when a configuration is
 better suited to larger compute instead of making machine choice the primary
 product axis. Raw trigger parameters remain
 metadata-only in v1 and should not become user controls until useful ranges are
@@ -255,20 +255,20 @@ main limiting factor or interpretation note
 
 Exact morphology is not pass/fail. The acceptance question is whether the product honestly configures, runs, records, ingests, replays, inspects, and visualizes a credible idealized CM1 result.
 
-### Workflow 1 — Choose Preset Experiment
+### Workflow 1 — Configure A CM1 Experiment
 
 1. Open app.
 2. Choose scenario category.
-3. Select preset.
+3. Select a starting scenario or observed-sounding run direction.
 4. See expected behavior, controls, run cost, and output fields.
-5. Optionally adjust controls.
+5. Adjust duration, grid/detail, domain, output cadence, and output fields
+   before package review.
 
-The first implemented Scenario Builder flow is intentionally narrow: it loads
+The Scenario Builder flow is intentionally bounded: it loads
 validated scenario templates from the local backend, defaults to Baseline
 Shallow Cumulus, displays the scenario description and physical question,
-exposes only product-facing curated controls, lets the user choose from current
-run-size presets, and requests a dry-run package for review. The forward Build
-flow should generalize that choice into the run-configuration model above.
+exposes only product-facing curated controls, lets the user adjust explicit
+run-configuration choices, and requests a dry-run package for review.
 
 Build should not assume the user is working one perfectly linear package at a
 time. Local experiments can be packaged, running, failed, completed-but-not-
@@ -513,11 +513,11 @@ entrainment, CAPE/CIN/LFC/EL, cold pools, or selected-region explanations yet.
 
 ## Run Configuration Model
 
-Build should present presets as starting points for a CM1-facing run
-configuration, not as rigid experiment families or mandatory
-quick/standard/deep schema slots. The user should be able to start from a
-trusted preset, inspect what it means, adjust guarded settings, and receive a
-pre-run validation report before package generation or launch.
+Build should present starting configuration choices for a CM1-facing run, not
+rigid experiment families or mandatory run-size schema slots. The
+user should be able to start from a trusted default, inspect what it means,
+adjust guarded settings, and receive a pre-run validation report before package
+generation or launch.
 
 Quick means quick to execute for the selected configuration; it must not mean
 meteorologically too short to produce useful evolution. Smoke checks prove that
@@ -576,52 +576,34 @@ run_configuration:
     estimated_output_volume
 ```
 
-Presets may populate these fields, and existing package metadata may keep
-legacy names such as `quick_look`, `standard`, or `deep_overnight` for
-compatibility. Future docs and UI should treat those names as implementation
-details unless a specific historical validation note requires them.
+Starting choices may populate these fields, but former run-size tier names are
+not active product schema. Generated packages, manifests, reports, and result
+cards should use the resolved `run_configuration` object as the run-shape source
+of truth.
 
-## Current Legacy Run-Size Presets
+## Current Run-Configuration Defaults
 
-The current lower-atmosphere scaffold still uses quick/standard/deep run-size
-presets. These are implementation details for existing Baseline Shallow Cumulus
-and related scaffold behavior, not the forward product contract.
+Current defaults are product choices, not compatibility holdovers:
 
-### Quick look
+- Baseline lower-atmosphere scenarios default to `quick_6h`, `standard`
+  grid/detail, `local_6km`, `standard_15min`, and `analysis` fields. This keeps
+  the first run cheap enough to iterate while still giving six hours of model
+  evolution and enough fields for Results/Explore diagnostics.
+- Uploaded observed-sounding normal-evolution runs default to the same duration,
+  detail, cadence, and field density, but use `wide_12km` so observed winds do
+  not make the package misleadingly small by default.
+- Deep-convection observed-sounding runs default to `quick_6h`, `standard`
+  storm-scale detail, `storm_120km`, `standard_15min`, and `rich` fields. That
+  setup is deliberately wider and better instrumented because it is asking a
+  storm-scale triggered-potential question.
+- `smoke_1h` is an explicit smoke-check mode for package health, CM1 startup,
+  ingest, and basic visualization wiring. It is not evidence for normal
+  atmospheric evolution.
 
-- Target: quick to execute within its expected cost/runtime/output-volume
-  envelope while preserving enough model time for useful evolution.
-- Purpose: setup inspection, package/run/ingest health, and rough cloud
-  behavior. Treat short smoke runs as plumbing evidence, not science results.
-- For Baseline Shallow Cumulus, this is the first runtime-only variant derived from the validated `les_ShallowCu` baseline: `timax = 10800.0` and `tapfrq = 900.0`.
-- It preserves the reference grid, vertical spacing, domain top, surface stress/roughness path, moisture/sounding, surface fluxes, turbulence/SGS settings, damping settings, boundary conditions, NetCDF output, and reference `LANDUSE.TBL` staging behavior.
-- Lower confidence is acceptable if clearly labeled; do not use the old compact quick-look derivative as evidence or as a tuning base.
-
-### Standard
-
-- Target: normal personal exploration run and the current Baseline Shallow Cumulus reference-derived baseline.
-- Purpose: useful saved result and diagnostics.
-- For Baseline Shallow Cumulus, this preserves the validated `les_ShallowCu` timing: `timax = 21600.0` and `tapfrq = 3600.0`.
-- Expected to balance runtime, output size, and confidence for repeated local use after manual validation.
-
-### Deep / overnight
-
-- Target: expensive opt-in local run, roughly 10-12x Standard wall-clock after
-  local validation.
-- Purpose: meaningfully higher spatial resolution, much higher saved-output time
-  resolution, better cloud appearance, smoother timelapse, and more useful
-  scalar-field inspection in Explore.
-- For Baseline Shallow Cumulus, this preserves the physical domain and
-  scenario controls while changing generated run-size settings to `nx = 192`,
-  `ny = 192`, `dx = 33.333 m`, `dy = 33.333 m`, and
-  `tapfrq = 300 s`, while keeping the Standard solver timestep. Vertical grid,
-  model top, surface/ocean/flux settings,
-  damping, boundary conditions, NetCDF output, and external-sounding science
-  path remain inherited from the validated baseline.
-- The dry-run report must show runtime, output cadence, expected saved frames,
-  grid dimensions, spacing, model top, grid-cell multiplier, output-frame
-  multiplier, compute multiplier, output-volume multiplier, and a clear warning
-  that wall-clock and storage estimates need local/manual validation.
+The dry-run report must show runtime, output cadence, expected saved frames,
+grid dimensions, spacing, model top, grid-cell multiplier, output-frame
+multiplier, compute multiplier, output-volume multiplier, and a clear warning
+when wall-clock or storage estimates need local/manual validation.
 
 Runtime estimates are approximate until locally validated for a specific CM1 build, scenario, and machine. The first local hardware target is a 2024 MacBook Air with 8GB RAM, so the MVP should assume one local CM1 run at a time and conservative output handling.
 
@@ -630,12 +612,11 @@ templates, generated run packages, dry-run reports, run manifests, result
 metadata, and result cards. If estimate data is not locally validated yet, the
 UI/report should say `unknown until validated` instead of inventing precision.
 
-## Run Configuration And Preset Schema
+## Run Configuration Schema
 
 Backend scenario templates are validated by the `ScenarioTemplate` contract.
-The current implementation can keep legacy fields for compatibility, but the
-forward-compatible schema should define presets as optional seeds for a
-`run_configuration` object:
+Scenario templates define product controls and science story metadata; run shape
+is carried by the resolved `run_configuration` object:
 
 ```yaml
 id:
@@ -651,15 +632,6 @@ controls:
   - default
   - allowed range/options
   - maps_to
-cm1_template:
-  namelist_template
-  input_sounding_template
-  runtime_files_needed
-presets:
-  - id
-  - label
-  - description
-  - run_configuration_defaults
 run_configuration:
   duration:
     model_time_seconds
@@ -718,14 +690,12 @@ Validation rules should reject templates that:
 - omit a valid run-configuration default for package generation
 - define a choice control whose default is not one of its options
 - define a number control without a valid range
-- reference unknown controls from presets or validation policy
+- reference unknown controls from validation policy
 - include undeclared fields
 
 The schema is intentionally product-first. Raw CM1/developer controls can exist
 as advanced metadata, but product-facing controls and the pre-run validation
-report remain the primary path. Legacy `run_size_presets` can remain on current
-templates while the run-builder model is implemented; they should not be treated
-as a required future shape.
+report remain the primary path.
 
 Thermal Fate diagnostic directions should include:
 
@@ -790,9 +760,9 @@ baseline reproduction path for the next one-factor moisture experiment.
 
 The Baseline Shallow Cumulus low-level humidity ladder now uses that accepted
 external-sounding path. `drier`, `baseline`, and `more humid` preserve the same
-grid/domain, runtime preset, surface/ocean/flux settings, stress/roughness
-path, damping, turbulence/SGS settings, boundary conditions, NetCDF output, and
-runtime-file staging. The only intended generated-input difference is the
+grid/domain, selected run configuration, surface/ocean/flux settings,
+stress/roughness path, damping, turbulence/SGS settings, boundary conditions,
+NetCDF output, and runtime-file staging. The only intended generated-input difference is the
 low-level moisture profile in `input_sounding`. These variants are disciplined
 one-control-at-a-time experiments, not arbitrary parameter sweeps.
 
@@ -1050,8 +1020,8 @@ Dry-run package generation creates these files for review without launching CM1:
 - `runtime_file_checklist.json`
 
 The dry-run report must state that it is not a completed CM1 result, record
-that CM1 was not launched, include the selected run configuration or legacy
-preset, include physical question and controls, include expected diagnostics and
+that CM1 was not launched, include the selected run configuration, include
+physical question and controls, include expected diagnostics and
 visualization defaults, show expected runtime/cost/output-volume information
 when available, and use `unknown until validated` for unvalidated estimates.
 
@@ -1145,7 +1115,6 @@ configuration:
     forcing:
     advanced_cm1_values:
     pre_run_validation_report:
-  legacy_run_size_preset:
   namelist_parameters:
   input_sounding:
 preview:
@@ -1237,7 +1206,6 @@ created_at
 completed_at
 controls used
 run configuration
-legacy run-size preset when present
 CM1 version/path metadata
 status
 generated config paths
@@ -1262,7 +1230,7 @@ card over ingested result metadata:
 ```text
 run id
 scenario
-run configuration or legacy preset
+run configuration
 physical question
 diagnostics summary
 first cloud time
@@ -1282,7 +1250,7 @@ but the current product does not expose a separate save/protect mode.
 The Results Library UI is an experiment notebook, not an admin table. It lists
 result cards from the backend as scan-friendly experiment entries, lets the user
 select one result, and shows a detail/notebook card with scenario, run
-configuration or legacy preset, cloud/rain outcome, diagnostics summary, first
+configuration, cloud/rain outcome, diagnostics summary, first
 cloud time, max `qc`, max/min `w`, caveats, output summary, and editable name/tags/notes. Notebook
 edits use `Save changes`; ingested results already appear in Results.
 The notebook also exposes backend-derived science summary fields such as

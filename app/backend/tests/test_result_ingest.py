@@ -197,7 +197,8 @@ def test_ingests_valid_tiny_netcdf_metadata(tmp_path: Path) -> None:
     assert result.run_id == "run-ingest"
     assert result.scenario_id == "baseline-shallow-cumulus"
     assert result.physical_question
-    assert result.run_size_preset == "quick_look"
+    assert result.run_configuration["duration_preset"] == "quick_6h"
+    assert result.run_configuration["cm1_values"]["expected_output_frames"] == 25
     assert result.source_lifecycle_state == "completed"
     assert result.source_product_state == "completed_cm1_result"
     assert result.source_model == "CM1"

@@ -56,15 +56,4 @@ def scenario_summary(scenario: ScenarioTemplate) -> dict[str, object]:
             for control in scenario.controls
             if control.audience.value == "product"
         ],
-        "run_size_presets": [
-            {
-                "id": preset.id.value,
-                "label": preset.label,
-                "purpose": preset.purpose,
-                "expected_runtime": preset.expected_runtime,
-                "confidence": preset.confidence,
-                "output_notes": preset.output_notes,
-            }
-            for preset in scenario.run_size_presets
-        ],
     }

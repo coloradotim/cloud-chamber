@@ -117,7 +117,7 @@ Implemented backend API endpoints:
 - `POST /api/storage/delete-run` previews or deletes one selected run directory under the configured runtime home.
 - `POST /api/results/ingest` creates result metadata from a completed run manifest with NetCDF output.
 - `GET /api/results` lists Result Card / Experiment Notebook entries under the configured runtime home.
-- `GET /api/results/{result_id}` returns one Result Card with run ID, scenario, run-size preset, physical question, diagnostics summary, first cloud time, max `qc`, max/min `w`, rain yes/no, caveats, output file summary, and editable name/tags/notes.
+- `GET /api/results/{result_id}` returns one Result Card with run ID, scenario, run configuration, physical question, diagnostics summary, first cloud time, max `qc`, max/min `w`, rain yes/no, caveats, output file summary, and editable name/tags/notes.
 - `PATCH /api/results/{result_id}` updates notebook fields: `name`, `tags`, and `notes`.
 - `POST /api/results/{result_id}/save` remains as a compatibility endpoint for older clients. The current UI does not expose a separate save/protect mode; ingested results already appear in Results, and notebook edits use `PATCH`.
 
@@ -358,7 +358,7 @@ Before automated launch is trusted, use the Baseline Shallow Cumulus dry-run pac
    - default probes such as `/Users/timpeterson/cm1r21.1` and `/Users/timpeterson/cm1r21.1/run`.
 6. Compare the package against local CM1 runtime needs, including `cm1.exe` and local-only runtime files such as `LANDUSE.TBL`.
 7. Regenerate any package that still contains placeholder-only `namelist.input` or notes-only `input_sounding` files.
-8. Run CM1 manually from the local runtime path when ready. Record the exact command, CM1 version/path, Cloud Chamber commit, run-size preset, controls, runtime, output cadence, log paths, output paths, and any warnings/errors.
+8. Run CM1 manually from the local runtime path when ready. Record the exact command, CM1 version/path, Cloud Chamber commit, selected run configuration, controls, runtime, output cadence, log paths, output paths, and any warnings/errors.
 9. Confirm whether the generated `output_format = 2` package produces NetCDF on the local CM1 build. If it does not, keep `.dat/.ctl` output cataloged as raw artifacts and document the blocker before changing ingest strategy.
 10. Keep generated packages, copied runtime files, logs, NetCDF output, `.dat/.ctl` output, and validation reports out of git unless a future policy explicitly creates a tiny synthetic fixture.
 
