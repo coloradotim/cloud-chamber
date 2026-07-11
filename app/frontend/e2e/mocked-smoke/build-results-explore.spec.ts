@@ -86,13 +86,15 @@ test.describe("mocked smoke: Build, Results, Explore path", () => {
     await expect(page.getByText("USM00072558 · Valley, Nebraska")).toBeVisible();
     await expect(page.locator("#observed-sounding-time")).toHaveValue("2025-01-02T00:00:00Z");
     await expect(page.getByText(/CM1 z=0 is station surface at 351.5 m MSL/i)).toBeVisible();
-    await expect(page.getByText(/generated CM1 namelist uses isnd=7/i)).toBeVisible();
+    await expect(page.getByText(/generated CM1 namelist uses isnd=7/i).first()).toBeVisible();
 
     await page.getByText("Observed-sounding caveats").click();
     await expect(page.getByText("Station elevation joined from igra station fixture")).toBeVisible();
 
-    await page.getByRole("button", { name: "Add uploaded sounding to run plan" }).click();
-    await expect(page.getByText("Uploaded sounding added to the run plan")).toBeVisible();
+    await page.getByRole("button", { name: "Add selected sounding to run plan" }).click();
+    await expect(
+      page.getByText("Valley, Nebraska (USM00072558) added to the run plan"),
+    ).toBeVisible();
     await expect(
       page.getByLabel("Run plan").getByLabel("Recipe", { exact: true }).first(),
     ).toHaveValue("untriggered_observed_evolution");
@@ -140,7 +142,7 @@ test.describe("mocked smoke: Build, Results, Explore path", () => {
     const blockedCard = page.getByLabel("Sounding candidate Norman, Oklahoma (USM00072357)");
     await expect(blockedCard).toBeVisible();
     await expect(blockedCard).toContainText("Blocked");
-    await expect(blockedCard.getByRole("button", { name: "Add to run plan" })).toBeDisabled();
+    await expect(blockedCard.getByRole("button", { name: "Select for run setup" })).toBeDisabled();
 
     await storySelect.selectOption("all");
     await page.getByText("Advanced filters").click();
@@ -150,12 +152,13 @@ test.describe("mocked smoke: Build, Results, Explore path", () => {
     await expect(page.getByText("Sounding candidate saved")).toBeVisible();
     await page.getByRole("tab", { name: /Saved candidates/ }).click();
     const savedCard = page.getByLabel("Saved sounding candidate Valley, Nebraska (USM00072558)");
-    await expect(
-      savedCard,
-    ).toBeVisible();
+    await expect(savedCard).toBeVisible();
 
-    await savedCard.getByRole("button", { name: "Add to run plan" }).click();
-    await expect(page.getByText("Valley, Nebraska (USM00072558) added to the run plan")).toBeVisible();
+    await savedCard.getByRole("button", { name: "Select for run setup" }).click();
+    await page.getByRole("button", { name: "Add selected sounding to run plan" }).click();
+    await expect(
+      page.getByText("Valley, Nebraska (USM00072558) added to the run plan"),
+    ).toBeVisible();
     await expect(
       page.getByLabel("Run plan").getByLabel("Recipe", { exact: true }).first(),
     ).toHaveValue("untriggered_observed_evolution");

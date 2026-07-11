@@ -181,8 +181,10 @@ candidate-analysis endpoints, display backend recommendations and advanced
 refinements, and save candidates with freeform tags/notes. Saved candidates are
 loaded as a shortlist source without requiring a catalog refresh, cache action,
 or analysis run. Manual upload remains hidden unless that source path is active.
-Package-ready candidates and uploaded soundings are added to a Build run plan
-rather than immediately becoming a single package-review state.
+Package-ready candidates, saved candidates, and uploaded soundings all flow into
+one selected-sounding setup surface for recipe and run-configuration choices.
+The configured selection is then added to the bottom Build run plan rather than
+immediately becoming a single package-review state.
 The frontend does not read cached station text directly, compute the story
 scores, or sort raw feature values itself. Candidate status is separate from
 run/result status: saved candidates are pre-run hypotheses, while generated

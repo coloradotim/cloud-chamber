@@ -2312,7 +2312,9 @@ export function App() {
         fetchSavedSoundingCandidates(),
       ]);
       if (inputsPayload.inputs.length === 0) {
-        setCandidateStatus(`Caching up to ${cacheLimit} local station file${cacheLimit === 1 ? "" : "s"}`);
+        setCandidateStatus(
+          `Caching up to ${cacheLimit} local station file${cacheLimit === 1 ? "" : "s"}`,
+        );
         await cacheIGRARecentBatch(cacheLimit);
         [catalogPayload, cachePayload, inputsPayload, savedPayload] = await Promise.all([
           fetchIGRARecentCatalog(),
@@ -2523,40 +2525,41 @@ export function App() {
     setLanWorkerError(null);
     setLanWorkerActionStatus(null);
     setIngestedResultId(null);
-    setCandidateStatus("Candidate ready in run plan");
+    setCandidateStatus("Candidate selected for run setup");
   }
 
-  function handleAddCandidateToRunPlan(
+  function handleSelectCandidateForRunSetup(
     candidate: SoundingCandidate,
     savedCandidate?: SavedSoundingCandidate,
     activeStory?: CandidateStoryId,
   ) {
-    const item = runPlanItemFromCandidate(candidate, savedCandidate, activeStory, controls);
-    if (!item) {
+    if (!candidate.package_ready || !candidate.selected_sounding_payload) {
       setCandidateError(
-        "This candidate is not package-ready. Review its caveats before adding another sounding.",
+        "This candidate is not package-ready. Review its caveats before selecting it for setup.",
       );
       return;
     }
     handleUseSoundingCandidate(candidate, savedCandidate, activeStory);
-    setRunPlanItems((current) => [...current, item]);
-    setBatchQueueStatus(`${candidateStationLabel(candidate)} added to the run plan`);
+    setBatchQueueStatus(`${candidateStationLabel(candidate)} selected for run setup`);
   }
 
-  function handleAddUploadedSoundingToRunPlan() {
+  function handleAddSelectedSoundingToRunPlan() {
     if (!observedSoundingParse?.selected_sounding) {
       setObservedSoundingError("Upload and validate an IGRA sounding before adding it.");
       return;
     }
     const item = runPlanItemFromUploadedSounding({
       observedSounding: observedSoundingParse.selected_sounding,
+      source: runPlanSourceFromCandidateScreening(selectedCandidateScreening),
       observedRunRecipe,
       runConfiguration,
       controls,
       selectedCandidateScreening,
     });
     setRunPlanItems((current) => [...current, item]);
-    setBatchQueueStatus("Uploaded sounding added to the run plan");
+    const selected = observedSoundingParse.selected_sounding;
+    const label = selectedObservedSoundingStationLabel(selected, selectedCandidateScreening);
+    setBatchQueueStatus(`${label} added to the run plan`);
   }
 
   function handleDuplicateRunPlanItem(itemId: string) {
@@ -2645,7 +2648,9 @@ export function App() {
       setBatchQueueStatus("Select at least one run-plan item before queueing.");
       return;
     }
-    setBatchQueueStatus(`Creating and queueing ${selectedItems.length} selected run${selectedItems.length === 1 ? "" : "s"}`);
+    setBatchQueueStatus(
+      `Creating and queueing ${selectedItems.length} selected run${selectedItems.length === 1 ? "" : "s"}`,
+    );
     setRunWorkflowError(null);
     let queued = 0;
     let lanStarted = 0;
@@ -2796,6 +2801,12 @@ export function App() {
     setObservedSoundingParse(null);
     setSelectedCandidateScreening(null);
     setObservedRunRecipe("untriggered_observed_evolution");
+    setRunConfiguration(
+      defaultRunConfigurationForSelection(
+        OBSERVED_SOUNDING_EXPERIMENT_ID,
+        "untriggered_observed_evolution",
+      ),
+    );
     setDryRun(null);
     setBlockedPreRunValidationReport(null);
     setRunStatus(null);
@@ -2808,6 +2819,12 @@ export function App() {
       setObservedSoundingParse(parsed);
       setSelectedCandidateScreening(null);
       setObservedRunRecipe("untriggered_observed_evolution");
+      setRunConfiguration(
+        defaultRunConfigurationForSelection(
+          OBSERVED_SOUNDING_EXPERIMENT_ID,
+          "untriggered_observed_evolution",
+        ),
+      );
       setObservedSoundingStatus("Observed sounding validated for package review");
     } catch (caught) {
       setObservedSoundingText(null);
@@ -2834,6 +2851,12 @@ export function App() {
       setObservedSoundingParse(parsed);
       setSelectedCandidateScreening(null);
       setObservedRunRecipe("untriggered_observed_evolution");
+      setRunConfiguration(
+        defaultRunConfigurationForSelection(
+          OBSERVED_SOUNDING_EXPERIMENT_ID,
+          "untriggered_observed_evolution",
+        ),
+      );
       setObservedSoundingStatus("Observed sounding validated for package review");
     } catch (caught) {
       setObservedSoundingError(
@@ -3365,8 +3388,8 @@ export function App() {
           onScreenSoundingCandidates={handleScreenSoundingCandidates}
           onSaveSoundingCandidate={handleSaveSoundingCandidate}
           onRemoveSavedSoundingCandidate={handleRemoveSavedSoundingCandidate}
-          onAddCandidateToRunPlan={handleAddCandidateToRunPlan}
-          onAddUploadedSoundingToRunPlan={handleAddUploadedSoundingToRunPlan}
+          onSelectCandidateForRunSetup={handleSelectCandidateForRunSetup}
+          onAddSelectedSoundingToRunPlan={handleAddSelectedSoundingToRunPlan}
           onDuplicateRunPlanItem={handleDuplicateRunPlanItem}
           onRemoveRunPlanItem={handleRemoveRunPlanItem}
           onClearSelectedRunPlanItems={handleClearSelectedRunPlanItems}
@@ -3529,8 +3552,8 @@ function BuildWorkspace({
   onScreenSoundingCandidates,
   onSaveSoundingCandidate,
   onRemoveSavedSoundingCandidate,
-  onAddCandidateToRunPlan,
-  onAddUploadedSoundingToRunPlan,
+  onSelectCandidateForRunSetup,
+  onAddSelectedSoundingToRunPlan,
   onDuplicateRunPlanItem,
   onRemoveRunPlanItem,
   onClearSelectedRunPlanItems,
@@ -3646,12 +3669,12 @@ function BuildWorkspace({
   onScreenSoundingCandidates: () => void;
   onSaveSoundingCandidate: (candidate: SoundingCandidate) => void;
   onRemoveSavedSoundingCandidate: (savedCandidateId: string) => void;
-  onAddCandidateToRunPlan: (
+  onSelectCandidateForRunSetup: (
     candidate: SoundingCandidate,
     savedCandidate?: SavedSoundingCandidate,
     activeStory?: CandidateStoryId,
   ) => void;
-  onAddUploadedSoundingToRunPlan: () => void;
+  onAddSelectedSoundingToRunPlan: () => void;
   onDuplicateRunPlanItem: (itemId: string) => void;
   onRemoveRunPlanItem: (itemId: string) => void;
   onClearSelectedRunPlanItems: () => void;
@@ -3808,9 +3831,7 @@ function BuildWorkspace({
                       />
                       <Metric
                         label="What changes"
-                        value={selectedScenario.controls
-                          .map((control) => control.label)
-                          .join(", ")}
+                        value={selectedScenario.controls.map((control) => control.label).join(", ")}
                       />
                       <Metric
                         label="What stays controlled"
@@ -3840,8 +3861,6 @@ function BuildWorkspace({
                     savedCandidateCount={savedCandidates.length}
                     onChange={onAtmosphereSourcePathChange}
                   />
-
-                  {runPlanItems.length > 0 && runPlanPanel}
 
                   {atmosphereSourcePath === "cached_recommendations" && (
                     <ObservedAtmosphereCandidatesPanel
@@ -3884,7 +3903,7 @@ function BuildWorkspace({
                       onPrepareAndSearch={onPrepareAndSearchLocalSoundings}
                       onScreen={onScreenSoundingCandidates}
                       onSave={onSaveSoundingCandidate}
-                      onAddToRunPlan={onAddCandidateToRunPlan}
+                      onSelectForRunSetup={onSelectCandidateForRunSetup}
                     />
                   )}
 
@@ -3895,7 +3914,7 @@ function BuildWorkspace({
                       error={candidateError}
                       onSave={onSaveSoundingCandidate}
                       onRemoveSaved={onRemoveSavedSoundingCandidate}
-                      onAddToRunPlan={onAddCandidateToRunPlan}
+                      onSelectForRunSetup={onSelectCandidateForRunSetup}
                     />
                   )}
 
@@ -3905,20 +3924,27 @@ function BuildWorkspace({
                       observedSoundingStatus={observedSoundingStatus}
                       observedSoundingError={observedSoundingError}
                       selectedCandidateScreening={selectedCandidateScreening}
+                      onObservedSoundingFile={onObservedSoundingFile}
+                      onObservedSoundingTimeChange={onObservedSoundingTimeChange}
+                    />
+                  )}
+
+                  {observedSoundingParse?.selected_sounding && (
+                    <SelectedSoundingRunSetupPanel
+                      observedSounding={observedSoundingParse.selected_sounding}
+                      selectedCandidateScreening={selectedCandidateScreening}
                       observedRunRecipe={observedRunRecipe}
                       controls={controls}
                       runConfiguration={runConfiguration}
                       runConfigurationPreview={runConfigurationPreview}
                       selectedTriggeredDeepPotential={selectedTriggeredDeepPotential}
-                      onObservedSoundingFile={onObservedSoundingFile}
-                      onObservedSoundingTimeChange={onObservedSoundingTimeChange}
                       onObservedRunRecipeChange={onObservedRunRecipeChange}
                       onRunConfigurationChange={onRunConfigurationChange}
-                      onAddUploadedSoundingToRunPlan={onAddUploadedSoundingToRunPlan}
+                      onAddSelectedSoundingToRunPlan={onAddSelectedSoundingToRunPlan}
                     />
                   )}
 
-                  {runPlanItems.length === 0 && runPlanPanel}
+                  {runPlanPanel}
                 </>
               )}
 
@@ -4510,7 +4536,7 @@ function ObservedAtmosphereCandidatesPanel({
   onPrepareAndSearch,
   onScreen,
   onSave,
-  onAddToRunPlan,
+  onSelectForRunSetup,
 }: {
   catalog: IGRACatalogResponse["catalog"] | null;
   cache: IGRACacheResponse | null;
@@ -4551,7 +4577,7 @@ function ObservedAtmosphereCandidatesPanel({
   onPrepareAndSearch: () => void;
   onScreen: () => void;
   onSave: (candidate: SoundingCandidate, tags?: string[], notes?: string | null) => void;
-  onAddToRunPlan: (
+  onSelectForRunSetup: (
     candidate: SoundingCandidate,
     savedCandidate?: SavedSoundingCandidate,
     activeStory?: CandidateStoryId,
@@ -4630,7 +4656,10 @@ function ObservedAtmosphereCandidatesPanel({
         </p>
       </div>
 
-      <section className="candidate-search-controls" aria-label="Prepare and search local soundings">
+      <section
+        className="candidate-search-controls"
+        aria-label="Prepare and search local soundings"
+      >
         <div className="run-configuration-grid">
           <label>
             <strong>Source region</strong>
@@ -4668,7 +4697,9 @@ function ObservedAtmosphereCandidatesPanel({
                 </option>
               ))}
             </select>
-            <small>{SEARCH_DEPTH_OPTIONS.find((option) => option.value === searchDepth)?.description}</small>
+            <small>
+              {SEARCH_DEPTH_OPTIONS.find((option) => option.value === searchDepth)?.description}
+            </small>
           </label>
           <label>
             <strong>Time scope</strong>
@@ -4691,7 +4722,9 @@ function ObservedAtmosphereCandidatesPanel({
                 All cached (not supported yet)
               </option>
             </select>
-            <small>{TIME_SCOPE_OPTIONS.find((option) => option.value === timeScope)?.description}</small>
+            <small>
+              {TIME_SCOPE_OPTIONS.find((option) => option.value === timeScope)?.description}
+            </small>
           </label>
         </div>
         <div className="candidate-discovery-actions" aria-label="Sounding search action">
@@ -4707,7 +4740,11 @@ function ObservedAtmosphereCandidatesPanel({
           <Metric label="Region" value={catalog?.region.label ?? "Great Plains / Midwest"} />
           <Metric
             label="Station catalog"
-            value={catalog?.refreshed_at ? `Last refreshed ${formatDate(catalog.refreshed_at)}` : "Not refreshed here"}
+            value={
+              catalog?.refreshed_at
+                ? `Last refreshed ${formatDate(catalog.refreshed_at)}`
+                : "Not refreshed here"
+            }
           />
           <Metric label="Local station files" value={cachedCatalogFiles.toString()} />
           <Metric label="Parsed soundings" value={cachedInventorySummary} />
@@ -4940,8 +4977,8 @@ function ObservedAtmosphereCandidatesPanel({
                   saved={savedCandidateIds.has(candidate.candidate_id)}
                   onSelect={() => onCandidateDetailChange(candidate.candidate_id)}
                   onSave={() => onSave(candidate)}
-                  onAddToRunPlan={(activeStory) =>
-                    onAddToRunPlan(
+                  onSelectForRunSetup={(activeStory) =>
+                    onSelectForRunSetup(
                       candidate,
                       savedCandidates.find(
                         (saved) => saved.candidate.candidate_id === candidate.candidate_id,
@@ -4961,8 +4998,8 @@ function ObservedAtmosphereCandidatesPanel({
           storyFamilyFilter={storyFamilyFilter}
           savedCandidate={selectedSavedCandidate}
           onSave={onSave}
-          onAddToRunPlan={(candidate, activeStory) =>
-            onAddToRunPlan(candidate, selectedSavedCandidate ?? undefined, activeStory)
+          onSelectForRunSetup={(candidate, activeStory) =>
+            onSelectForRunSetup(candidate, selectedSavedCandidate ?? undefined, activeStory)
           }
         />
       </div>
@@ -4976,21 +5013,24 @@ function SavedCandidatesSourcePanel({
   error,
   onSave,
   onRemoveSaved,
-  onAddToRunPlan,
+  onSelectForRunSetup,
 }: {
   savedCandidates: SavedSoundingCandidate[];
   status: string;
   error: string | null;
   onSave: (candidate: SoundingCandidate, tags?: string[], notes?: string | null) => void;
   onRemoveSaved: (savedCandidateId: string) => void;
-  onAddToRunPlan: (
+  onSelectForRunSetup: (
     candidate: SoundingCandidate,
     savedCandidate?: SavedSoundingCandidate,
     activeStory?: CandidateStoryId,
   ) => void;
 }) {
   return (
-    <section className="experiment-summary saved-candidates-panel" aria-labelledby="saved-candidates-title">
+    <section
+      className="experiment-summary saved-candidates-panel"
+      aria-labelledby="saved-candidates-title"
+    >
       <div className="panel-heading-row">
         <div>
           <p className="eyebrow">Saved source</p>
@@ -5012,7 +5052,9 @@ function SavedCandidatesSourcePanel({
       {savedCandidates.length === 0 ? (
         <div className="scenario-state-panel">
           <h4>No saved candidates yet</h4>
-          <p>Switch to cached recommendations, select a candidate, and save it with tags or notes.</p>
+          <p>
+            Switch to cached recommendations, select a candidate, and save it with tags or notes.
+          </p>
         </div>
       ) : (
         <div className="saved-candidate-list">
@@ -5021,7 +5063,7 @@ function SavedCandidatesSourcePanel({
               key={saved.saved_candidate_id}
               saved={saved}
               onUpdateWorkingSet={(tags) => onSave(saved.candidate, tags, saved.notes ?? null)}
-              onUse={() => onAddToRunPlan(saved.candidate, saved, saved.primary_story)}
+              onUse={() => onSelectForRunSetup(saved.candidate, saved, saved.primary_story)}
               onRemove={() => onRemoveSaved(saved.saved_candidate_id)}
             />
           ))}
@@ -5098,7 +5140,7 @@ function SavedSoundingCandidateCard({
       </div>
       <div className="button-row">
         <button type="button" onClick={onUse}>
-          Add to run plan
+          Select for run setup
         </button>
         <button type="button" className="secondary-button" onClick={onRemove}>
           Remove saved
@@ -5116,7 +5158,7 @@ function SoundingCandidateCard({
   saved,
   onSelect,
   onSave,
-  onAddToRunPlan,
+  onSelectForRunSetup,
 }: {
   candidate: SoundingCandidate;
   storyFilter: CandidateStoryFilter;
@@ -5125,7 +5167,7 @@ function SoundingCandidateCard({
   saved: boolean;
   onSelect: () => void;
   onSave: () => void;
-  onAddToRunPlan: (activeStory: CandidateStoryId) => void;
+  onSelectForRunSetup: (activeStory: CandidateStoryId) => void;
 }) {
   const activeScore = candidateActiveStoryScore(candidate, storyFilter, storyFamilyFilter);
   const story = activeScore?.story ?? candidate.primary_story;
@@ -5184,9 +5226,9 @@ function SoundingCandidateCard({
         <button
           type="button"
           disabled={!candidate.package_ready}
-          onClick={() => onAddToRunPlan(story)}
+          onClick={() => onSelectForRunSetup(story)}
         >
-          Add to run plan
+          Select for run setup
         </button>
         <button type="button" className="secondary-button" disabled={saved} onClick={onSave}>
           {saved ? "Saved" : "Save candidate"}
@@ -5202,14 +5244,14 @@ function SoundingCandidateDetail({
   storyFamilyFilter,
   savedCandidate,
   onSave,
-  onAddToRunPlan,
+  onSelectForRunSetup,
 }: {
   candidate: SoundingCandidate | null;
   storyFilter: CandidateStoryFilter;
   storyFamilyFilter: CandidateStoryFamilyFilter;
   savedCandidate: SavedSoundingCandidate | null;
   onSave: (candidate: SoundingCandidate, tags?: string[], notes?: string | null) => void;
-  onAddToRunPlan: (candidate: SoundingCandidate, activeStory: CandidateStoryId) => void;
+  onSelectForRunSetup: (candidate: SoundingCandidate, activeStory: CandidateStoryId) => void;
 }) {
   const [tagDraft, setTagDraft] = useState("");
   const [notesDraft, setNotesDraft] = useState("");
@@ -5292,9 +5334,9 @@ function SoundingCandidateDetail({
         <button
           type="button"
           disabled={!candidate.package_ready}
-          onClick={() => onAddToRunPlan(candidate, story)}
+          onClick={() => onSelectForRunSetup(candidate, story)}
         >
-          Add to run plan
+          Select for run setup
         </button>
       </div>
       <section>
@@ -5411,33 +5453,16 @@ function UploadSoundingSourcePanel({
   observedSoundingStatus,
   observedSoundingError,
   selectedCandidateScreening,
-  observedRunRecipe,
-  controls,
-  runConfiguration,
-  runConfigurationPreview,
-  selectedTriggeredDeepPotential,
   onObservedSoundingFile,
   onObservedSoundingTimeChange,
-  onObservedRunRecipeChange,
-  onRunConfigurationChange,
-  onAddUploadedSoundingToRunPlan,
 }: {
   observedSoundingParse: ObservedSoundingParseResponse | null;
   observedSoundingStatus: string | null;
   observedSoundingError: string | null;
   selectedCandidateScreening: Record<string, unknown> | null;
-  observedRunRecipe: ObservedRunRecipe;
-  controls: Record<string, string | number | boolean>;
-  runConfiguration: RunConfigurationInput;
-  runConfigurationPreview: RunConfiguration;
-  selectedTriggeredDeepPotential: boolean;
   onObservedSoundingFile: (file: File) => void;
   onObservedSoundingTimeChange: (validTimeUtc: string) => void;
-  onObservedRunRecipeChange: (runRecipe: ObservedRunRecipe) => void;
-  onRunConfigurationChange: (configuration: RunConfigurationInput) => void;
-  onAddUploadedSoundingToRunPlan: () => void;
 }) {
-  const canAdd = Boolean(observedSoundingParse?.selected_sounding);
   return (
     <section className="upload-source-stack" aria-label="Upload IGRA station text source">
       <ObservedSoundingInputPanel
@@ -5448,32 +5473,99 @@ function UploadSoundingSourcePanel({
         onFile={onObservedSoundingFile}
         onTimeChange={onObservedSoundingTimeChange}
       />
+    </section>
+  );
+}
+
+function SelectedSoundingRunSetupPanel({
+  observedSounding,
+  selectedCandidateScreening,
+  observedRunRecipe,
+  controls,
+  runConfiguration,
+  runConfigurationPreview,
+  selectedTriggeredDeepPotential,
+  onObservedRunRecipeChange,
+  onRunConfigurationChange,
+  onAddSelectedSoundingToRunPlan,
+}: {
+  observedSounding: ObservedSoundingRecord;
+  selectedCandidateScreening: Record<string, unknown> | null;
+  observedRunRecipe: ObservedRunRecipe;
+  controls: Record<string, string | number | boolean>;
+  runConfiguration: RunConfigurationInput;
+  runConfigurationPreview: RunConfiguration;
+  selectedTriggeredDeepPotential: boolean;
+  onObservedRunRecipeChange: (runRecipe: ObservedRunRecipe) => void;
+  onRunConfigurationChange: (configuration: RunConfigurationInput) => void;
+  onAddSelectedSoundingToRunPlan: () => void;
+}) {
+  const source = runPlanSourceFromCandidateScreening(selectedCandidateScreening);
+  const sourceLabel =
+    source === "saved_candidates"
+      ? "Saved candidate"
+      : source === "cached_recommendations"
+        ? "Cached recommendation"
+        : "Uploaded IGRA station text";
+  const stationLabel = selectedObservedSoundingStationLabel(
+    observedSounding,
+    selectedCandidateScreening,
+  );
+  const activeStoryLabel = observedRecipeStoryLabel(selectedCandidateScreening);
+  return (
+    <section className="selected-sounding-setup" aria-label="Selected sounding run setup">
+      <section className="experiment-summary selected-sounding-summary">
+        <div className="panel-heading-row">
+          <div>
+            <p className="eyebrow">Selected sounding</p>
+            <h3>{stationLabel}</h3>
+            <p className="field-help">
+              Configure this sounding here, then add it to the run plan at the bottom.
+            </p>
+          </div>
+          <StatusBadge label="Ready to configure" tone="good" />
+        </div>
+        <dl className="compact-metrics">
+          <Metric label="Source" value={sourceLabel} />
+          <Metric label="Selected time" value={formatDate(observedSounding.valid_time_utc)} />
+          <Metric label="Screened hypothesis" value={activeStoryLabel} />
+          <Metric label="Usable levels" value={observedSounding.levels.length.toString()} />
+          <Metric label="Wind handling" value={humanize(observedSounding.wind_handling)} />
+          <Metric label="Validation" value={humanize(observedSounding.validation.status)} />
+        </dl>
+      </section>
+
       <ObservedRunRecipePanel
         runRecipe={observedRunRecipe}
         controls={controls}
         selectedCandidateScreening={selectedCandidateScreening}
         onChange={onObservedRunRecipeChange}
       />
+
       <RunConfigurationPanel
         configuration={runConfiguration}
         preview={runConfigurationPreview}
         triggeredDeepPotential={selectedTriggeredDeepPotential}
         onChange={onRunConfigurationChange}
       />
-      <section className="experiment-summary">
+
+      <section className="experiment-summary selected-sounding-add-panel">
         <div className="panel-heading-row">
           <div>
-            <p className="eyebrow">Run plan</p>
-            <h3>Add uploaded sounding</h3>
+            <p className="eyebrow">Add to run plan</p>
+            <h3>Stage this configured run</h3>
             <p className="field-help">
-              This creates a planned run from the validated upload. You can edit or duplicate it in
-              the run plan before queueing.
+              Adding creates an editable planned run. Queue target, recipe, and run configuration
+              can still be changed on the run-plan item.
             </p>
           </div>
-          <StatusBadge label={canAdd ? "Ready" : "Needs upload"} tone={canAdd ? "good" : "warning"} />
+          <StatusBadge
+            label={runConfigurationTimingSummary(runConfigurationPreview)}
+            tone="neutral"
+          />
         </div>
-        <button type="button" disabled={!canAdd} onClick={onAddUploadedSoundingToRunPlan}>
-          Add uploaded sounding to run plan
+        <button type="button" onClick={onAddSelectedSoundingToRunPlan}>
+          Add selected sounding to run plan
         </button>
       </section>
     </section>
@@ -5795,7 +5887,9 @@ function RunPlanPanel({
       {items.length === 0 ? (
         <div className="scenario-state-panel">
           <h4>No planned runs yet</h4>
-          <p>Add a cached recommendation, saved candidate, or uploaded sounding to build a batch.</p>
+          <p>
+            Add a cached recommendation, saved candidate, or uploaded sounding to build a batch.
+          </p>
         </div>
       ) : (
         <>
@@ -5878,7 +5972,7 @@ function RunPlanItemCard({
     item.candidate !== null
       ? `${candidateStationLabel(item.candidate)} · ${formatDate(item.candidate.valid_time_utc)}`
       : item.observedSounding
-        ? `${item.observedSounding.station_name ?? item.observedSounding.station_id} · ${formatDate(item.observedSounding.valid_time_utc)}`
+        ? `${selectedObservedSoundingStationLabel(item.observedSounding, item.candidateScreening)} · ${formatDate(item.observedSounding.valid_time_utc)}`
         : "Observed sounding";
   return (
     <article className="run-plan-card" aria-label={`Run plan item ${index + 1}`}>
@@ -5891,10 +5985,15 @@ function RunPlanItemCard({
           />
           <span>
             <strong>{sourceLabel}</strong>
-            <small>{activeStory ? candidateStoryLabel(activeStory) : "Uploaded observed sounding"}</small>
+            <small>
+              {activeStory ? candidateStoryLabel(activeStory) : "Uploaded observed sounding"}
+            </small>
           </span>
         </label>
-        <StatusBadge label={runPlanStatusLabel(item.status)} tone={runPlanStatusTone(item.status)} />
+        <StatusBadge
+          label={runPlanStatusLabel(item.status)}
+          tone={runPlanStatusTone(item.status)}
+        />
       </div>
 
       {item.message && <p className="state-note">{item.message}</p>}
@@ -5902,7 +6001,10 @@ function RunPlanItemCard({
         <PreRunValidationReportPanel report={item.blockedPreRunValidationReport} />
       )}
 
-      <section className="run-plan-config-primary" aria-label={`Run configuration for item ${index + 1}`}>
+      <section
+        className="run-plan-config-primary"
+        aria-label={`Run configuration for item ${index + 1}`}
+      >
         <div className="run-plan-config-heading">
           <div>
             <p className="eyebrow">Run configuration</p>
@@ -5917,7 +6019,10 @@ function RunPlanItemCard({
             description="Choose the CM1 assumption set for this run-plan item."
             value={item.runRecipe}
             options={[
-              { value: "untriggered_observed_evolution", label: "Untriggered observed-sounding evolution v0" },
+              {
+                value: "untriggered_observed_evolution",
+                label: "Untriggered observed-sounding evolution v0",
+              },
               { value: "triggered_deep_potential", label: "Triggered deep-potential experiment" },
             ]}
             onChange={(value) => onRecipeChange(item.id, value as ObservedRunRecipe)}
@@ -5929,7 +6034,10 @@ function RunPlanItemCard({
             value={item.queueTarget}
             options={[
               { value: "local", label: "Local serial queue" },
-              { value: "lan", label: lanWorkerConfigured ? "LAN worker" : "LAN worker unavailable" },
+              {
+                value: "lan",
+                label: lanWorkerConfigured ? "LAN worker" : "LAN worker unavailable",
+              },
             ]}
             onChange={(value) => onQueueTargetChange(item.id, value as RunPlanQueueTarget)}
           />
@@ -10628,6 +10736,9 @@ function candidateScreeningMetadata(
     : null;
   return {
     candidate_id: candidate.candidate_id,
+    station_id: candidate.station_id,
+    station_name: candidate.station_name ?? null,
+    valid_time_utc: candidate.valid_time_utc,
     saved_candidate_id: savedCandidate?.saved_candidate_id ?? null,
     screening_version: candidate.screening_version,
     primary_story: candidate.primary_story,
@@ -10676,45 +10787,16 @@ function createRunPlanItemId(): string {
   return `run-plan-${random}`;
 }
 
-function runPlanItemFromCandidate(
-  candidate: SoundingCandidate,
-  savedCandidate: SavedSoundingCandidate | undefined,
-  activeStory: CandidateStoryId | undefined,
-  controls: Record<string, string | number | boolean>,
-): RunPlanItem | null {
-  if (!candidate.package_ready || !candidate.selected_sounding_payload) return null;
-  const runRecipe = defaultRunRecipeForCandidate(candidate, activeStory);
-  return {
-    id: createRunPlanItemId(),
-    selected: true,
-    source: savedCandidate ? "saved_candidates" : "cached_recommendations",
-    candidate,
-    savedCandidate: savedCandidate ?? null,
-    observedSounding: candidate.selected_sounding_payload,
-    candidateScreening: candidateScreeningMetadata(candidate, savedCandidate, activeStory),
-    activeStory: activeStory ?? candidate.primary_story,
-    runRecipe,
-    runConfiguration: defaultRunConfigurationForSelection(
-      OBSERVED_SOUNDING_EXPERIMENT_ID,
-      runRecipe,
-    ),
-    controls,
-    queueTarget: "local",
-    status: "planned",
-    message: null,
-    dryRun: null,
-    blockedPreRunValidationReport: null,
-  };
-}
-
 function runPlanItemFromUploadedSounding({
   observedSounding,
+  source,
   observedRunRecipe,
   runConfiguration,
   controls,
   selectedCandidateScreening,
 }: {
   observedSounding: ObservedSoundingRecord;
+  source: AtmosphereSourcePath;
   observedRunRecipe: ObservedRunRecipe;
   runConfiguration: RunConfigurationInput;
   controls: Record<string, string | number | boolean>;
@@ -10723,7 +10805,7 @@ function runPlanItemFromUploadedSounding({
   return {
     id: createRunPlanItemId(),
     selected: true,
-    source: "upload_igra_text",
+    source,
     candidate: null,
     savedCandidate: null,
     observedSounding,
@@ -10738,6 +10820,43 @@ function runPlanItemFromUploadedSounding({
     dryRun: null,
     blockedPreRunValidationReport: null,
   };
+}
+
+function runPlanSourceFromCandidateScreening(
+  selectedCandidateScreening: Record<string, unknown> | null,
+): AtmosphereSourcePath {
+  if (selectedCandidateScreening) {
+    return selectedCandidateScreening.saved_candidate_id
+      ? "saved_candidates"
+      : "cached_recommendations";
+  }
+  return "upload_igra_text";
+}
+
+function candidateScreeningStationLabel(
+  candidateScreening: Record<string, unknown> | null,
+): string | null {
+  if (!candidateScreening) return null;
+  const stationId =
+    typeof candidateScreening.station_id === "string" ? candidateScreening.station_id : null;
+  const stationName =
+    typeof candidateScreening.station_name === "string" && candidateScreening.station_name
+      ? candidateScreening.station_name
+      : null;
+  if (stationName && stationId) return `${stationName} (${stationId})`;
+  return stationName ?? stationId;
+}
+
+function selectedObservedSoundingStationLabel(
+  observedSounding: ObservedSoundingRecord,
+  candidateScreening: Record<string, unknown> | null,
+): string {
+  return (
+    candidateScreeningStationLabel(candidateScreening) ??
+    (observedSounding.station_name
+      ? `${observedSounding.station_name} (${observedSounding.station_id})`
+      : observedSounding.station_id)
+  );
 }
 
 function searchIntentFilters(intent: SearchIntent): {
@@ -10757,7 +10876,11 @@ function searchIntentFilters(intent: SearchIntent): {
     case "dry_microburst":
       return { story: "dry_microburst_inverted_v", storyFamily: "all", support: "all" };
     case "shallow_boundary_layer":
-      return { story: "shallow_cumulus_candidate", storyFamily: "lower_atmosphere", support: "all" };
+      return {
+        story: "shallow_cumulus_candidate",
+        storyFamily: "lower_atmosphere",
+        support: "all",
+      };
     case "best_overall":
       return { story: "all", storyFamily: "all", support: "all" };
   }
@@ -10888,7 +11011,10 @@ function compactRecipeAssumptions(
       ? "current surface-flux defaults"
       : "current surface-flux defaults";
   const radiationLabel =
-    radiation && typeof radiation === "object" && "mode" in radiation && radiation.mode === "disabled"
+    radiation &&
+    typeof radiation === "object" &&
+    "mode" in radiation &&
+    radiation.mode === "disabled"
       ? "radiation disabled"
       : "radiation disabled";
   const forcingLabel =

@@ -319,9 +319,20 @@ small {
 .atmosphere-source-panel,
 .candidate-search-controls,
 .upload-source-stack,
+.selected-sounding-setup,
 .run-plan-panel {
   display: grid;
   gap: 0.85rem;
+}
+
+.selected-sounding-setup {
+  border-top: 1px solid rgba(188, 211, 224, 0.86);
+  padding-top: 1rem;
+}
+
+.selected-sounding-summary,
+.selected-sounding-add-panel {
+  background: rgba(255, 255, 255, 0.78);
 }
 
 .source-path-tabs {
@@ -2653,6 +2664,7 @@ details[open] > summary {
   }
 
   .section-heading,
+  .panel-heading-row,
   .notebook-title {
     display: grid;
   }

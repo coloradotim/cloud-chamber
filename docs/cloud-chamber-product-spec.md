@@ -157,17 +157,20 @@ panel. Selecting the saved source should load saved candidates without requiring
 a catalog refresh, cache action, or new analysis run. All candidate language
 must remain pre-run and provisional: a candidate is an observed atmosphere worth
 trying, not a prediction that clouds, rain, or suppression will occur. When a
-candidate is added to the run plan, its screening story, score, evidence,
-feature summary, saved tags/notes, and caveats should be copied into package
-metadata as provenance.
+candidate is selected for run setup, Build should use the same recipe and run
+configuration flow used for uploads. When that configured sounding is added to
+the run plan, its screening story, score, evidence, feature summary, saved
+tags/notes, and caveats should be copied into package metadata as provenance.
 
-When an uploaded, cached, or saved observed sounding is run-ready, Build should
-let the user add it to a run plan. The run plan should support multiple
-candidate atmospheres, duplicate variants, per-item run recipe and run
-configuration edits, local or LAN queue target selection, remove/clear actions,
-and a batch action to create packages and queue selected runs. Per-item
-packaging or queue failures should remain visible instead of clearing the
-failed item from the plan. The triggered deep-potential recipe is first-class for
+When an uploaded, cached, or saved observed sounding is selected, Build should
+show one shared selected-sounding setup flow above the run plan. The source path
+should determine where the selected atmosphere came from, not create a separate
+configuration workflow. The run plan should sit below the source/setup flow and
+support multiple candidate atmospheres, duplicate variants, per-item run recipe
+and run configuration edits, local or LAN queue target selection, remove/clear
+actions, and a batch action to create packages and queue selected runs. Per-item
+packaging or queue failures should remain visible instead of clearing the failed
+item from the plan. The triggered deep-potential recipe is first-class for
 severe/deep-convection observed-sounding experiments: it uses the observed
 temperature, moisture, and complete wind profile through CM1 `isnd = 7`, runs an
 idealized three-warm-bubble trigger (`iinit = 3`), uses a storm-scale model box

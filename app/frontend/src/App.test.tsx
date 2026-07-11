@@ -3103,7 +3103,7 @@ describe("App", () => {
     ).toBeInTheDocument();
     expect(screen.getByText("USM00072558 · Valley, Nebraska")).toBeInTheDocument();
     expect(screen.getByText(/CM1 z=0 is station surface at 351.5 m MSL/)).toBeInTheDocument();
-    expect(screen.getByText(/observed sounding winds/)).toBeInTheDocument();
+    expect(screen.getAllByText(/observed sounding winds/).length).toBeGreaterThan(0);
     expect(
       screen.getByRole("heading", { name: "What atmospheric outcome are we checking?" }),
     ).toBeInTheDocument();
@@ -3122,7 +3122,7 @@ describe("App", () => {
     ).toBeInTheDocument();
     expect(screen.getByText(/This is not normal atmospheric evolution/i)).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: "Add uploaded sounding to run plan" }));
+    fireEvent.click(screen.getByRole("button", { name: "Add selected sounding to run plan" }));
     expect(screen.getByRole("heading", { name: "Plan multiple CM1 runs" })).toBeInTheDocument();
     expect(within(screen.getByLabelText("Run plan")).getByLabelText("Recipe")).toHaveValue(
       "triggered_deep_potential",
@@ -3177,9 +3177,12 @@ describe("App", () => {
     const deepCard = screen.getByLabelText("Sounding candidate Norman, Oklahoma (USM00072357)");
     expect(deepCard).toHaveTextContent("Supercell-like environment");
 
-    fireEvent.click(within(deepCard).getByRole("button", { name: "Add to run plan" }));
+    fireEvent.click(within(deepCard).getByRole("button", { name: "Select for run setup" }));
+    fireEvent.click(screen.getByRole("button", { name: "Add selected sounding to run plan" }));
 
-    expect(await screen.findByText("Norman, Oklahoma (USM00072357) added to the run plan")).toBeInTheDocument();
+    expect(
+      await screen.findByText("Norman, Oklahoma (USM00072357) added to the run plan"),
+    ).toBeInTheDocument();
     expect(within(screen.getByLabelText("Run plan")).getByLabelText("Recipe")).toHaveValue(
       "triggered_deep_potential",
     );
@@ -3236,7 +3239,8 @@ describe("App", () => {
     const humidCard = screen.getByLabelText("Sounding candidate Wilmington, Ohio (USM00072426)");
     expect(humidCard).toHaveTextContent("Humid / rainy");
 
-    fireEvent.click(within(humidCard).getByRole("button", { name: "Add to run plan" }));
+    fireEvent.click(within(humidCard).getByRole("button", { name: "Select for run setup" }));
+    fireEvent.click(screen.getByRole("button", { name: "Add selected sounding to run plan" }));
 
     expect(
       await screen.findByText("Wilmington, Ohio (USM00072426) added to the run plan"),
@@ -3339,9 +3343,12 @@ describe("App", () => {
     expect(savedCard).toHaveTextContent("Tags: compare, rerun");
     expect(savedCard).toHaveTextContent("Notes: Compare this against the humid case.");
 
-    fireEvent.click(within(savedCard).getByRole("button", { name: "Add to run plan" }));
+    fireEvent.click(within(savedCard).getByRole("button", { name: "Select for run setup" }));
+    fireEvent.click(screen.getByRole("button", { name: "Add selected sounding to run plan" }));
 
-    expect(await screen.findByText("Valley, Nebraska (USM00072558) added to the run plan")).toBeInTheDocument();
+    expect(
+      await screen.findByText("Valley, Nebraska (USM00072558) added to the run plan"),
+    ).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Create packages and queue selected runs" }));
 
     await waitFor(() => {
@@ -3365,7 +3372,7 @@ describe("App", () => {
       "Sounding candidate Norman, Oklahoma (USM00072357)",
     );
     expect(normanCard).toHaveTextContent("Blocked");
-    expect(within(normanCard).getByRole("button", { name: "Add to run plan" })).toBeDisabled();
+    expect(within(normanCard).getByRole("button", { name: "Select for run setup" })).toBeDisabled();
 
     fireEvent.change(screen.getByLabelText("Story"), {
       target: { value: "all" },
@@ -3378,8 +3385,13 @@ describe("App", () => {
       screen.getByRole("heading", { name: "Recommended cached soundings" }),
     ).toBeInTheDocument();
 
-    fireEvent.click(within(selectedValleyCard).getByRole("button", { name: "Add to run plan" }));
-    expect(await screen.findByText("Valley, Nebraska (USM00072558) added to the run plan")).toBeInTheDocument();
+    fireEvent.click(
+      within(selectedValleyCard).getByRole("button", { name: "Select for run setup" }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Add selected sounding to run plan" }));
+    expect(
+      await screen.findByText("Valley, Nebraska (USM00072558) added to the run plan"),
+    ).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Create packages and queue selected runs" }));
 
