@@ -15,8 +15,16 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal
 
+import numpy as np
 from pydantic import BaseModel, ConfigDict, Field
 
+from cloud_chamber.output_products import (
+    OutputProductManifestError,
+    default_output_product_manifest_path,
+    output_product_manifest_from_json,
+    resolve_time_index,
+)
+from cloud_chamber.result_diagnostics import QC_CLOUD_THRESHOLD_KG_KG
 from cloud_chamber.result_ingest import (
     ResultMetadata,
     get_result_metadata,
@@ -25,6 +33,11 @@ from cloud_chamber.settings import CloudChamberSettings
 
 VisualizationOrientation = Literal["horizontal", "vertical_x", "vertical_y"]
 VisualizationEncoding = Literal["json"]
+OutputProductKind = Literal["vertical_profile", "time_height", "time_series", "future_diagnostic"]
+OutputProductStatus = Literal["available", "unavailable"]
+ProfileAggregationMethod = Literal["domain_mean", "domain_min", "domain_max", "selected_column"]
+TimeHeightAggregationMethod = Literal["cloud_fraction", "domain_mean", "domain_min", "domain_max"]
+TimeSeriesAggregationMethod = Literal["cloud_fraction", "domain_mean", "domain_min", "domain_max"]
 
 
 @dataclass(frozen=True)
@@ -56,6 +69,38 @@ FIELD_DEFINITIONS: dict[str, FieldDefinition] = {
         "motion",
         "Slice/profile-first field; signed-flow 3-D rendering is not supported yet.",
         caveats=("signed_flow_field_slice_only",),
+    ),
+    "u": FieldDefinition(
+        "east_west_wind",
+        "East-west wind",
+        "wind",
+        (
+            "Native-grid wind component; supported for slices, profiles, and time-height "
+            "summaries without vector interpolation."
+        ),
+        caveats=(
+            "native_staggered_wind_component",
+            "u_native_x_staggered_grid",
+            "signed_flow_field_slice_only",
+            "no_vector_interpolation",
+            "wind_component_not_wind_gust_outflow_or_rotation_diagnostic",
+        ),
+    ),
+    "v": FieldDefinition(
+        "north_south_wind",
+        "North-south wind",
+        "wind",
+        (
+            "Native-grid wind component; supported for slices, profiles, and time-height "
+            "summaries without vector interpolation."
+        ),
+        caveats=(
+            "native_staggered_wind_component",
+            "v_native_y_staggered_grid",
+            "signed_flow_field_slice_only",
+            "no_vector_interpolation",
+            "wind_component_not_wind_gust_outflow_or_rotation_diagnostic",
+        ),
     ),
     "qr": FieldDefinition(
         "rain_water",
@@ -272,14 +317,14 @@ FIELD_DEFINITIONS: dict[str, FieldDefinition] = {
     ),
 }
 
-SIGNED_FLOW_FIELDS = {"w"}
+SIGNED_FLOW_FIELDS = {"u", "v", "w"}
 SURFACE_POINT_FIELDS = {"rain"}
 
 TIME_DIMENSION_CANDIDATES = ("time", "mtime", "t")
 VERTICAL_DIMENSION_CANDIDATES = ("zh", "zf", "z", "height", "height_m", "height_km")
 SURFACE_VERTICAL_CANDIDATES = ("zf", "zh", "z", "height", "height_m", "height_km")
-Y_DIMENSION_CANDIDATES = ("yh", "y")
-X_DIMENSION_CANDIDATES = ("xh", "x")
+Y_DIMENSION_CANDIDATES = ("yh", "yf", "y")
+X_DIMENSION_CANDIDATES = ("xh", "xf", "x")
 
 
 class VisualizationDataError(RuntimeError):
@@ -363,6 +408,139 @@ class FieldCatalogResponse(BaseModel):
     source_model: str
     available_fields: list[VisualizableField]
     unavailable_fields: list[UnavailableField] = Field(default_factory=list)
+    provenance: ProvenancePayload
+    caveats: list[str] = Field(default_factory=list)
+
+
+class OutputProductDescriptor(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    product_key: str
+    product_kind: OutputProductKind
+    status: OutputProductStatus
+    raw_field_name: str | None = None
+    canonical_field_name: str | None = None
+    display_name: str
+    units: str | None = None
+    aggregation_methods: list[str] = Field(default_factory=list)
+    required_fields: list[str] = Field(default_factory=list)
+    reason: str | None = None
+    caveats: list[str] = Field(default_factory=list)
+
+
+class OutputProductCatalogResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    result_id: str
+    run_id: str
+    scenario_id: str
+    source_model: str
+    available_profile_products: list[OutputProductDescriptor]
+    available_time_height_products: list[OutputProductDescriptor]
+    available_time_series_products: list[OutputProductDescriptor]
+    unavailable_products: list[OutputProductDescriptor] = Field(default_factory=list)
+    provenance: ProvenancePayload
+    caveats: list[str] = Field(default_factory=list)
+
+
+class OutputTimeAxisMetadata(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    time_indices: list[int]
+    time_seconds: list[float | None]
+    source_time_values: list[float | str | None]
+    source_files: list[str | None]
+    local_time_indices: list[int | None]
+    time_source: str | None = None
+    time_caveats: list[str] = Field(default_factory=list)
+
+
+class VerticalProfileSelectionMetadata(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    field: str
+    time_index: int
+    time_seconds: float | None = None
+    source_file: str | None = None
+    local_time_index: int | None = None
+    aggregation_method: ProfileAggregationMethod
+    x_index: int | None = None
+    y_index: int | None = None
+    x_coordinate_value: float | str | None = None
+    y_coordinate_value: float | str | None = None
+
+
+class VerticalProfileResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    result_id: str
+    run_id: str
+    scenario_id: str
+    field: VisualizableField
+    selection: VerticalProfileSelectionMetadata
+    vertical_dimension: str
+    vertical_units: str | None = None
+    vertical_coordinate_values: list[float | str | None]
+    values: list[float | None]
+    finite_counts: list[int]
+    non_finite_counts: list[int]
+    aggregation_method: ProfileAggregationMethod
+    provenance: ProvenancePayload
+    caveats: list[str] = Field(default_factory=list)
+
+
+class TimeHeightSelectionMetadata(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    field: str
+    aggregation_method: TimeHeightAggregationMethod
+    threshold: float | None = None
+
+
+class TimeHeightResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    result_id: str
+    run_id: str
+    scenario_id: str
+    field: VisualizableField
+    selection: TimeHeightSelectionMetadata
+    time_axis: OutputTimeAxisMetadata
+    vertical_dimension: str
+    vertical_units: str | None = None
+    vertical_coordinate_values: list[float | str | None]
+    shape: list[int]
+    size_class: str
+    values: list[list[float | None]]
+    finite_counts: list[list[int]]
+    non_finite_counts: list[list[int]]
+    aggregation_method: TimeHeightAggregationMethod
+    provenance: ProvenancePayload
+    caveats: list[str] = Field(default_factory=list)
+
+
+class TimeSeriesSelectionMetadata(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    field: str
+    aggregation_method: TimeSeriesAggregationMethod
+    threshold: float | None = None
+
+
+class TimeSeriesResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    result_id: str
+    run_id: str
+    scenario_id: str
+    field: VisualizableField
+    selection: TimeSeriesSelectionMetadata
+    time_axis: OutputTimeAxisMetadata
+    units: str | None = None
+    values: list[float | None]
+    finite_counts: list[int]
+    non_finite_counts: list[int]
+    aggregation_method: TimeSeriesAggregationMethod
     provenance: ProvenancePayload
     caveats: list[str] = Field(default_factory=list)
 
@@ -853,6 +1031,345 @@ def field_catalog(settings: CloudChamberSettings, result_id: str) -> FieldCatalo
         ),
         caveats=_dedupe(_catalog_caveats(metadata, fields, unavailable_fields)),
     )
+
+
+def output_product_catalog(
+    settings: CloudChamberSettings, result_id: str
+) -> OutputProductCatalogResponse:
+    """Return bounded backend output-product options for an ingested result."""
+    metadata = get_result_metadata(settings, result_id)
+    catalog = field_catalog(settings, result_id)
+    profile_products: list[OutputProductDescriptor] = []
+    time_height_products: list[OutputProductDescriptor] = []
+    time_series_products: list[OutputProductDescriptor] = []
+    for field in catalog.available_fields:
+        if field.capabilities.profile_candidate:
+            profile_products.append(_profile_product_descriptor(field))
+        if field.capabilities.time_height_candidate:
+            time_height_products.append(_time_height_product_descriptor(field))
+        if _time_series_methods_for_field(field):
+            time_series_products.append(_time_series_product_descriptor(field))
+
+    unavailable = [
+        OutputProductDescriptor(
+            product_key="boundary_layer_depth_time_series",
+            product_kind="future_diagnostic",
+            status="unavailable",
+            display_name="Boundary-layer depth time series",
+            aggregation_methods=[],
+            required_fields=["theta", "qv", "surface_fluxes"],
+            reason="future_diagnostic_method_not_validated",
+            caveats=[
+                "boundary_layer_depth_proxy_not_implemented",
+                "method_must_be_documented_and_tested_before_science_use",
+            ],
+        )
+    ]
+    unavailable.extend(_near_surface_wind_unavailable_descriptors(catalog.available_fields))
+    unavailable.extend(
+        _unavailable_product_descriptor(field) for field in catalog.unavailable_fields
+    )
+    return OutputProductCatalogResponse(
+        result_id=metadata.result_id,
+        run_id=metadata.run_id,
+        scenario_id=metadata.scenario_id,
+        source_model=metadata.source_model,
+        available_profile_products=profile_products,
+        available_time_height_products=time_height_products,
+        available_time_series_products=time_series_products,
+        unavailable_products=unavailable,
+        provenance=_provenance(
+            metadata,
+            processing_method="backend_output_product_catalog",
+            rendering_method="profile_time_height_time_series_product_options",
+            provenance_label=(
+                "CM1-derived output-product catalog; backend-owned bounded products; "
+                "raw NetCDF stays backend-owned"
+            ),
+        ),
+        caveats=_dedupe(
+            [
+                *catalog.caveats,
+                "diagnostics_lab_ui_not_added",
+                "browser_does_not_parse_raw_netcdf",
+            ]
+        ),
+    )
+
+
+def vertical_profile(
+    settings: CloudChamberSettings,
+    result_id: str,
+    *,
+    field: str,
+    time_index: int,
+    aggregation_method: ProfileAggregationMethod,
+    x_index: int | None = None,
+    y_index: int | None = None,
+) -> VerticalProfileResponse:
+    """Return a bounded vertical profile product for a supported field."""
+    metadata = get_result_metadata(settings, result_id)
+    dataset, close_datasets, local_time_index = _open_dataset_for_time(metadata, time_index)
+    try:
+        if _field_definition(field) is None:
+            raise VisualizationDataError(f"Unsupported profile field: {field}")
+        if field not in dataset.data_vars:
+            raise VisualizationDataError(
+                f"Profile product unavailable; field is missing from this result: {field}"
+            )
+        data_array = dataset[field]
+        dims = _field_dimensions(data_array)
+        visual_field = _visualizable_field(metadata, dataset, field)
+        if not visual_field.capabilities.profile_candidate:
+            raise VisualizationDataError(f"Field {field} is not profile-capable.")
+        if not dims.time or not dims.vertical:
+            raise VisualizationDataError(f"Field {field} requires time and vertical dimensions.")
+        _validate_index(local_time_index, int(data_array.sizes[dims.time]), "time_index")
+        at_time = data_array.isel({dims.time: local_time_index})
+        profile_values, finite_counts, non_finite_counts = _profile_product_values(
+            at_time,
+            dims=dims,
+            aggregation_method=aggregation_method,
+            x_index=x_index,
+            y_index=y_index,
+        )
+        resolved_time = _resolved_output_time(metadata, dataset, dims.time, time_index)
+        caveats = _dedupe(
+            [
+                *_field_caveats(field, visual_field.coordinate_names),
+                "json_profile_product_mvp",
+                "native_grid_profile_no_interpolation",
+                *resolved_time.time_caveats,
+                *(
+                    ["selected_column_requires_native_x_y_indices"]
+                    if aggregation_method == "selected_column"
+                    else []
+                ),
+            ]
+        )
+        return VerticalProfileResponse(
+            result_id=metadata.result_id,
+            run_id=metadata.run_id,
+            scenario_id=metadata.scenario_id,
+            field=visual_field,
+            selection=VerticalProfileSelectionMetadata(
+                field=field,
+                time_index=time_index,
+                time_seconds=resolved_time.time_seconds[0],
+                source_file=resolved_time.source_files[0],
+                local_time_index=resolved_time.local_time_indices[0],
+                aggregation_method=aggregation_method,
+                x_index=x_index,
+                y_index=y_index,
+                x_coordinate_value=_coordinate_value(dataset, dims.x, x_index)
+                if dims.x and x_index is not None
+                else None,
+                y_coordinate_value=_coordinate_value(dataset, dims.y, y_index)
+                if dims.y and y_index is not None
+                else None,
+            ),
+            vertical_dimension=str(dims.vertical),
+            vertical_units=_coordinate_units(dataset, dims.vertical),
+            vertical_coordinate_values=_coordinate_values(dataset, dims.vertical),
+            values=profile_values,
+            finite_counts=finite_counts,
+            non_finite_counts=non_finite_counts,
+            aggregation_method=aggregation_method,
+            provenance=_provenance(
+                metadata,
+                processing_method="backend_xarray_vertical_profile_product",
+                rendering_method="json_vertical_profile",
+                provenance_label=(
+                    "CM1-derived vertical profile product; backend aggregation; "
+                    "native vertical coordinate; no interpolation"
+                ),
+            ),
+            caveats=caveats,
+        )
+    finally:
+        _close_all(close_datasets)
+
+
+def time_height_product(
+    settings: CloudChamberSettings,
+    result_id: str,
+    *,
+    field: str,
+    aggregation_method: TimeHeightAggregationMethod,
+    threshold: float | None = None,
+) -> TimeHeightResponse:
+    """Return a bounded time-height product for a supported 3-D field."""
+    metadata = get_result_metadata(settings, result_id)
+    dataset, close_datasets = _open_dataset_sequence(metadata)
+    try:
+        if _field_definition(field) is None:
+            raise VisualizationDataError(f"Unsupported time-height field: {field}")
+        if field not in dataset.data_vars:
+            raise VisualizationDataError(
+                f"Time-height product unavailable; field is missing from this result: {field}"
+            )
+        data_array = dataset[field]
+        dims = _field_dimensions(data_array)
+        visual_field = _visualizable_field(metadata, dataset, field)
+        if not visual_field.capabilities.time_height_candidate:
+            raise VisualizationDataError(f"Field {field} is not time-height-capable.")
+        if not dims.time or not dims.vertical:
+            raise VisualizationDataError(f"Field {field} requires time and vertical dimensions.")
+        if not dims.y or not dims.x:
+            raise VisualizationDataError(
+                f"Field {field} requires horizontal dimensions for time-height aggregation."
+            )
+        resolved_threshold = (
+            QC_CLOUD_THRESHOLD_KG_KG
+            if aggregation_method == "cloud_fraction" and threshold is None
+            else threshold
+        )
+        values, finite_counts, non_finite_counts = _time_height_product_values(
+            data_array,
+            dims=dims,
+            aggregation_method=aggregation_method,
+            threshold=resolved_threshold,
+        )
+        time_axis = _resolved_output_time_axis(
+            metadata,
+            dataset,
+            dims.time,
+            time_size=int(data_array.sizes[dims.time]),
+        )
+        caveats = _dedupe(
+            [
+                *_field_caveats(field, visual_field.coordinate_names),
+                "json_time_height_product_mvp",
+                "native_grid_time_height_no_interpolation",
+                *time_axis.time_caveats,
+                *(
+                    [f"cloud_fraction_threshold_kg_kg:{resolved_threshold:g}"]
+                    if aggregation_method == "cloud_fraction" and resolved_threshold is not None
+                    else []
+                ),
+            ]
+        )
+        return TimeHeightResponse(
+            result_id=metadata.result_id,
+            run_id=metadata.run_id,
+            scenario_id=metadata.scenario_id,
+            field=visual_field,
+            selection=TimeHeightSelectionMetadata(
+                field=field,
+                aggregation_method=aggregation_method,
+                threshold=resolved_threshold,
+            ),
+            time_axis=time_axis,
+            vertical_dimension=str(dims.vertical),
+            vertical_units=_coordinate_units(dataset, dims.vertical),
+            vertical_coordinate_values=_coordinate_values(dataset, dims.vertical),
+            shape=[len(values), len(values[0]) if values else 0],
+            size_class=_array_size_class(len(values) * (len(values[0]) if values else 0)),
+            values=values,
+            finite_counts=finite_counts,
+            non_finite_counts=non_finite_counts,
+            aggregation_method=aggregation_method,
+            provenance=_provenance(
+                metadata,
+                processing_method="backend_xarray_time_height_product",
+                rendering_method="json_time_height_array",
+                provenance_label=(
+                    "CM1-derived time-height product; backend aggregation; "
+                    "global output time index; no browser NetCDF parsing"
+                ),
+            ),
+            caveats=caveats,
+        )
+    finally:
+        _close_all(close_datasets)
+
+
+def time_series_product(
+    settings: CloudChamberSettings,
+    result_id: str,
+    *,
+    field: str,
+    aggregation_method: TimeSeriesAggregationMethod,
+    threshold: float | None = None,
+) -> TimeSeriesResponse:
+    """Return a bounded field time-series product for an evolved run."""
+    metadata = get_result_metadata(settings, result_id)
+    dataset, close_datasets = _open_dataset_sequence(metadata)
+    try:
+        if _field_definition(field) is None:
+            raise VisualizationDataError(f"Unsupported time-series field: {field}")
+        if field not in dataset.data_vars:
+            raise VisualizationDataError(
+                f"Time-series product unavailable; field is missing from this result: {field}"
+            )
+        data_array = dataset[field]
+        dims = _field_dimensions(data_array)
+        visual_field = _visualizable_field(metadata, dataset, field)
+        if not dims.time:
+            raise VisualizationDataError(f"Field {field} requires a time dimension.")
+        if aggregation_method not in _time_series_methods_for_field(visual_field):
+            raise VisualizationDataError(
+                f"Field {field} does not support {aggregation_method} time-series products."
+            )
+        resolved_threshold = (
+            QC_CLOUD_THRESHOLD_KG_KG
+            if aggregation_method == "cloud_fraction" and threshold is None
+            else threshold
+        )
+        values, finite_counts, non_finite_counts = _time_series_product_values(
+            data_array,
+            dims=dims,
+            aggregation_method=aggregation_method,
+            threshold=resolved_threshold,
+        )
+        time_axis = _resolved_output_time_axis(
+            metadata,
+            dataset,
+            dims.time,
+            time_size=int(data_array.sizes[dims.time]),
+        )
+        caveats = _dedupe(
+            [
+                *_field_caveats(field, visual_field.coordinate_names),
+                "json_time_series_product_mvp",
+                "native_grid_time_series_no_interpolation",
+                *time_axis.time_caveats,
+                *(
+                    [f"cloud_fraction_threshold_kg_kg:{resolved_threshold:g}"]
+                    if aggregation_method == "cloud_fraction" and resolved_threshold is not None
+                    else []
+                ),
+            ]
+        )
+        return TimeSeriesResponse(
+            result_id=metadata.result_id,
+            run_id=metadata.run_id,
+            scenario_id=metadata.scenario_id,
+            field=visual_field,
+            selection=TimeSeriesSelectionMetadata(
+                field=field,
+                aggregation_method=aggregation_method,
+                threshold=resolved_threshold,
+            ),
+            time_axis=time_axis,
+            units=visual_field.units,
+            values=values,
+            finite_counts=finite_counts,
+            non_finite_counts=non_finite_counts,
+            aggregation_method=aggregation_method,
+            provenance=_provenance(
+                metadata,
+                processing_method="backend_xarray_time_series_product",
+                rendering_method="json_time_series",
+                provenance_label=(
+                    "CM1-derived time-series product; backend aggregation; "
+                    "global output time index; no browser NetCDF parsing"
+                ),
+            ),
+            caveats=caveats,
+        )
+    finally:
+        _close_all(close_datasets)
 
 
 def view_defaults(
@@ -1674,6 +2191,359 @@ def _field_capabilities(
     )
 
 
+def _profile_product_descriptor(field: VisualizableField) -> OutputProductDescriptor:
+    methods: list[str] = ["domain_mean", "domain_min", "domain_max"]
+    if field.capabilities.selected_column:
+        methods.append("selected_column")
+    return OutputProductDescriptor(
+        product_key=f"profile:{field.raw_field_name}",
+        product_kind="vertical_profile",
+        status="available",
+        raw_field_name=field.raw_field_name,
+        canonical_field_name=field.canonical_field_name,
+        display_name=f"{field.display_name} vertical profile",
+        units=field.units,
+        aggregation_methods=methods,
+        required_fields=[field.raw_field_name],
+        caveats=_dedupe(["bounded_json_profile", *field.caveats]),
+    )
+
+
+def _time_height_product_descriptor(field: VisualizableField) -> OutputProductDescriptor:
+    methods: list[str] = ["domain_mean", "domain_min", "domain_max"]
+    if field.canonical_field_name == "cloud_water":
+        methods.insert(0, "cloud_fraction")
+    return OutputProductDescriptor(
+        product_key=f"time_height:{field.raw_field_name}",
+        product_kind="time_height",
+        status="available",
+        raw_field_name=field.raw_field_name,
+        canonical_field_name=field.canonical_field_name,
+        display_name=f"{field.display_name} time-height",
+        units=field.units,
+        aggregation_methods=methods,
+        required_fields=[field.raw_field_name],
+        caveats=_dedupe(["bounded_json_time_height", *field.caveats]),
+    )
+
+
+def _time_series_product_descriptor(field: VisualizableField) -> OutputProductDescriptor:
+    methods = _time_series_methods_for_field(field)
+    return OutputProductDescriptor(
+        product_key=f"time_series:{field.raw_field_name}",
+        product_kind="time_series",
+        status="available",
+        raw_field_name=field.raw_field_name,
+        canonical_field_name=field.canonical_field_name,
+        display_name=f"{field.display_name} time series",
+        units=field.units,
+        aggregation_methods=list(methods),
+        required_fields=[field.raw_field_name],
+        caveats=_dedupe(["bounded_json_time_series", *field.caveats]),
+    )
+
+
+def _unavailable_product_descriptor(field: UnavailableField) -> OutputProductDescriptor:
+    return OutputProductDescriptor(
+        product_key=f"unavailable:{field.raw_field_name}",
+        product_kind="future_diagnostic",
+        status="unavailable",
+        raw_field_name=field.raw_field_name,
+        canonical_field_name=field.canonical_field_name,
+        display_name=field.display_name,
+        required_fields=[field.raw_field_name],
+        reason=field.reason,
+        caveats=field.caveats,
+    )
+
+
+def _near_surface_wind_unavailable_descriptors(
+    fields: list[VisualizableField],
+) -> list[OutputProductDescriptor]:
+    descriptors: list[OutputProductDescriptor] = []
+    for field in fields:
+        if field.canonical_field_name not in {"east_west_wind", "north_south_wind"}:
+            continue
+        descriptors.append(
+            OutputProductDescriptor(
+                product_key=f"near_surface_wind_time_series:{field.raw_field_name}",
+                product_kind="future_diagnostic",
+                status="unavailable",
+                raw_field_name=field.raw_field_name,
+                canonical_field_name=field.canonical_field_name,
+                display_name=f"Near-surface {field.display_name.lower()} time series",
+                required_fields=[field.raw_field_name],
+                reason="near_surface_wind_diagnostic_not_implemented",
+                caveats=[
+                    "lowest_level_wind_selection_method_not_finalized",
+                    "native_staggered_wind_component",
+                    "no_vector_interpolation",
+                    "wind_component_not_wind_gust_outflow_or_rotation_diagnostic",
+                ],
+            )
+        )
+    return descriptors
+
+
+def _time_series_methods_for_field(
+    field: VisualizableField,
+) -> tuple[TimeSeriesAggregationMethod, ...]:
+    if not field.time_available:
+        return ()
+    if field.canonical_field_name == "cloud_water":
+        return ("cloud_fraction", "domain_max", "domain_mean")
+    if field.native_grid_class in {"volume_3d", "surface_2d"}:
+        return ("domain_max", "domain_mean", "domain_min")
+    return ()
+
+
+def _profile_product_values(
+    at_time: Any,
+    *,
+    dims: _FieldDimensions,
+    aggregation_method: ProfileAggregationMethod,
+    x_index: int | None,
+    y_index: int | None,
+) -> tuple[list[float | None], list[int], list[int]]:
+    if dims.vertical is None:
+        raise VisualizationDataError("Profile product requires a vertical dimension.")
+    vertical_size = int(at_time.sizes[dims.vertical])
+    if aggregation_method == "selected_column":
+        if dims.y is None or dims.x is None:
+            raise VisualizationDataError("Selected-column profile requires y/x dimensions.")
+        if x_index is None or y_index is None:
+            raise VisualizationDataError("selected_column profile requires x_index and y_index.")
+        _validate_index(y_index, int(at_time.sizes[dims.y]), "y_index")
+        _validate_index(x_index, int(at_time.sizes[dims.x]), "x_index")
+        selected = at_time.isel({dims.y: y_index, dims.x: x_index}).transpose(dims.vertical)
+        values = _json_vector(selected.values)
+        finite = [1 if value is not None else 0 for value in values]
+        return values, finite, [1 - count for count in finite]
+
+    if dims.y is None or dims.x is None:
+        raise VisualizationDataError("Domain profile aggregation requires y/x dimensions.")
+    reduced = _reduce_data_array(
+        at_time,
+        reduce_dims=[dims.y, dims.x],
+        aggregation_method=aggregation_method,
+    ).transpose(dims.vertical)
+    finite_counts, non_finite_counts = _finite_counts(
+        at_time.transpose(dims.vertical, dims.y, dims.x).values,
+        reduce_axes=(1, 2),
+        total_per_cell=int(at_time.sizes[dims.y]) * int(at_time.sizes[dims.x]),
+    )
+    values = _json_vector(reduced.values)
+    if len(values) != vertical_size:
+        raise VisualizationDataError("Profile product produced an unexpected vertical shape.")
+    return values, _json_int_vector(finite_counts), _json_int_vector(non_finite_counts)
+
+
+def _time_height_product_values(
+    data_array: Any,
+    *,
+    dims: _FieldDimensions,
+    aggregation_method: TimeHeightAggregationMethod,
+    threshold: float | None,
+) -> tuple[list[list[float | None]], list[list[int]], list[list[int]]]:
+    if dims.time is None or dims.vertical is None or dims.y is None or dims.x is None:
+        raise VisualizationDataError("Time-height product requires time/z/y/x dimensions.")
+    ordered = data_array.transpose(dims.time, dims.vertical, dims.y, dims.x)
+    finite_counts, non_finite_counts = _finite_counts(
+        ordered.values,
+        reduce_axes=(2, 3),
+        total_per_cell=int(data_array.sizes[dims.y]) * int(data_array.sizes[dims.x]),
+    )
+    if aggregation_method == "cloud_fraction":
+        if threshold is None or not math.isfinite(threshold):
+            raise VisualizationDataError("cloud_fraction requires a finite threshold.")
+        values = _fraction_values(ordered.values, threshold=threshold, reduce_axes=(2, 3))
+        return (
+            _json_matrix(values),
+            _json_int_matrix(finite_counts),
+            _json_int_matrix(non_finite_counts),
+        )
+    reduced = _reduce_data_array(
+        ordered,
+        reduce_dims=[dims.y, dims.x],
+        aggregation_method=aggregation_method,
+    ).transpose(dims.time, dims.vertical)
+    return (
+        _json_matrix(reduced.values),
+        _json_int_matrix(finite_counts),
+        _json_int_matrix(non_finite_counts),
+    )
+
+
+def _time_series_product_values(
+    data_array: Any,
+    *,
+    dims: _FieldDimensions,
+    aggregation_method: TimeSeriesAggregationMethod,
+    threshold: float | None,
+) -> tuple[list[float | None], list[int], list[int]]:
+    if dims.time is None:
+        raise VisualizationDataError("Time-series product requires a time dimension.")
+    reduce_dims = [dimension for dimension in data_array.dims if dimension != dims.time]
+    ordered = data_array.transpose(dims.time, *reduce_dims)
+    reduce_axes = tuple(range(1, len(ordered.shape)))
+    total_per_time = math.prod(int(data_array.sizes[dimension]) for dimension in reduce_dims)
+    finite_counts, non_finite_counts = _finite_counts(
+        ordered.values,
+        reduce_axes=reduce_axes,
+        total_per_cell=total_per_time,
+    )
+    if aggregation_method == "cloud_fraction":
+        if threshold is None or not math.isfinite(threshold):
+            raise VisualizationDataError("cloud_fraction requires a finite threshold.")
+        values = _fraction_values(ordered.values, threshold=threshold, reduce_axes=reduce_axes)
+        return (
+            _json_vector(values),
+            _json_int_vector(finite_counts),
+            _json_int_vector(non_finite_counts),
+        )
+    reduced = _reduce_data_array(
+        ordered,
+        reduce_dims=reduce_dims,
+        aggregation_method=aggregation_method,
+    ).transpose(dims.time)
+    return (
+        _json_vector(reduced.values),
+        _json_int_vector(finite_counts),
+        _json_int_vector(non_finite_counts),
+    )
+
+
+def _reduce_data_array(
+    data_array: Any,
+    *,
+    reduce_dims: list[str],
+    aggregation_method: str,
+) -> Any:
+    finite = data_array.where(np.isfinite(data_array))
+    if aggregation_method == "domain_mean":
+        return finite.mean(dim=reduce_dims, skipna=True)
+    if aggregation_method == "domain_min":
+        return finite.min(dim=reduce_dims, skipna=True)
+    if aggregation_method == "domain_max":
+        return finite.max(dim=reduce_dims, skipna=True)
+    raise VisualizationDataError(f"Unsupported aggregation method: {aggregation_method}")
+
+
+def _finite_counts(
+    values: Any,
+    *,
+    reduce_axes: tuple[int, ...],
+    total_per_cell: int,
+) -> tuple[Any, Any]:
+    finite_mask = np.isfinite(values)
+    finite_counts = finite_mask.sum(axis=reduce_axes)
+    non_finite_counts = total_per_cell - finite_counts
+    return finite_counts, non_finite_counts
+
+
+def _fraction_values(values: Any, *, threshold: float, reduce_axes: tuple[int, ...]) -> Any:
+    finite_mask = np.isfinite(values)
+    cloudy_counts = (finite_mask & (values >= threshold)).sum(axis=reduce_axes)
+    finite_counts = finite_mask.sum(axis=reduce_axes)
+    return np.divide(
+        cloudy_counts,
+        finite_counts,
+        out=np.full_like(cloudy_counts, np.nan, dtype=float),
+        where=finite_counts > 0,
+    )
+
+
+def _resolved_output_time(
+    metadata: ResultMetadata,
+    dataset: Any,
+    time_dimension: str | None,
+    time_index: int,
+) -> OutputTimeAxisMetadata:
+    return _resolved_output_time_axis(
+        metadata,
+        dataset,
+        time_dimension,
+        time_size=1,
+        requested_indices=[time_index],
+    )
+
+
+def _resolved_output_time_axis(
+    metadata: ResultMetadata,
+    dataset: Any,
+    time_dimension: str | None,
+    *,
+    time_size: int,
+    requested_indices: list[int] | None = None,
+) -> OutputTimeAxisMetadata:
+    indices = requested_indices if requested_indices is not None else list(range(time_size))
+    manifest, manifest_caveats = _load_output_product_manifest(metadata)
+    time_seconds: list[float | None] = []
+    source_time_values: list[float | str | None] = []
+    source_files: list[str | None] = []
+    local_time_indices: list[int | None] = []
+    sources: list[str] = []
+    caveats = list(manifest_caveats)
+    for index in indices:
+        if manifest is not None:
+            try:
+                resolved = resolve_time_index(manifest, index)
+            except OutputProductManifestError as exc:
+                caveats.append(f"output_time_index_resolution_failed:{exc}")
+            else:
+                time_seconds.append(resolved.time_seconds)
+                source_time_values.append(resolved.time_seconds)
+                source_files.append(resolved.source_file)
+                local_time_indices.append(resolved.local_time_index)
+                sources.append(resolved.time_source)
+                caveats.extend(resolved.time_caveats)
+                continue
+        time_seconds.append(_time_value_seconds(dataset, time_dimension, index))
+        source_time_values.append(_coordinate_value(dataset, time_dimension, index))
+        source_files.append(None)
+        local_time_indices.append(index)
+        sources.append("dataset_sequence_index")
+    return OutputTimeAxisMetadata(
+        time_indices=indices,
+        time_seconds=time_seconds,
+        source_time_values=source_time_values,
+        source_files=source_files,
+        local_time_indices=local_time_indices,
+        time_source=sources[0]
+        if sources and all(source == sources[0] for source in sources)
+        else None,
+        time_caveats=_dedupe(caveats),
+    )
+
+
+def _load_output_product_manifest(metadata: ResultMetadata) -> tuple[Any | None, list[str]]:
+    candidate_paths = [
+        Path(path).expanduser()
+        for path in metadata.processed_artifacts
+        if Path(path).name == "output_product_manifest.json"
+    ]
+    source_paths = [Path(path).expanduser() for path in metadata.model_output_paths]
+    if source_paths:
+        candidate_paths.append(default_output_product_manifest_path(source_paths[0].parent))
+    for path in _dedupe([str(path) for path in candidate_paths]):
+        manifest_path = Path(path)
+        if not manifest_path.exists():
+            continue
+        try:
+            return output_product_manifest_from_json(manifest_path.read_text()), []
+        except Exception as exc:
+            return None, [f"output_product_manifest_unreadable:{manifest_path}:{exc}"]
+    return None, ["output_product_manifest_not_available"]
+
+
+def _array_size_class(cell_count: int) -> str:
+    if cell_count <= 10_000:
+        return "tiny_json"
+    if cell_count <= 250_000:
+        return "bounded_json"
+    return "large_future_binary_or_chunked_candidate"
+
+
 def _catalog_caveats(
     metadata: ResultMetadata,
     fields: list[VisualizableField],
@@ -1768,7 +2638,11 @@ def _coordinate_values(dataset: Any, coordinate_name: str | None) -> list[float 
     return [_json_scalar(value) for value in values]
 
 
-def _coordinate_value(dataset: Any, coordinate_name: str, index: int) -> float | str | None:
+def _coordinate_value(
+    dataset: Any, coordinate_name: str | None, index: int | None
+) -> float | str | None:
+    if coordinate_name is None or index is None:
+        return None
     values = _coordinate_values(dataset, coordinate_name)
     if index < len(values):
         return values[index]
@@ -1812,6 +2686,28 @@ def _json_values(data_array: Any) -> list[list[float | None]]:
     for row in values:
         rows.append([_finite_json_number(value) for value in row])
     return rows
+
+
+def _json_vector(values: Any) -> list[float | None]:
+    return [_finite_json_number(value) for value in np.asarray(values).reshape(-1).tolist()]
+
+
+def _json_matrix(values: Any) -> list[list[float | None]]:
+    array = np.asarray(values)
+    if array.ndim != 2:
+        raise VisualizationDataError("Expected a 2-D array for JSON matrix encoding.")
+    return [[_finite_json_number(value) for value in row] for row in array.tolist()]
+
+
+def _json_int_vector(values: Any) -> list[int]:
+    return [int(value) for value in np.asarray(values).reshape(-1).tolist()]
+
+
+def _json_int_matrix(values: Any) -> list[list[int]]:
+    array = np.asarray(values)
+    if array.ndim != 2:
+        raise VisualizationDataError("Expected a 2-D array for integer matrix encoding.")
+    return [[int(value) for value in row] for row in array.tolist()]
 
 
 def _slice_stats(data_array: Any) -> SliceStats:

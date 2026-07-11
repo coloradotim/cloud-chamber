@@ -390,6 +390,15 @@ Profile products should preserve:
 - aggregation method;
 - caveats for missing or inferred coordinates.
 
+The current backend skeleton exposes bounded vertical profile products through
+the result output-products API. Supported MVP aggregations are domain mean,
+domain min, domain max, and selected column for profile-capable 3-D fields.
+Payloads include the global output `time_index`, resolved local source-file
+index when the output product manifest is available, vertical coordinate values,
+finite/non-finite counts, provenance, and caveats. Surface-only fields such as
+surface rain and surface fluxes remain unavailable for vertical profiles rather
+than being reshaped into misleading columns.
+
 ## Time-Height Products
 
 Time-height products summarize evolution across output times and vertical
@@ -413,6 +422,36 @@ Rules:
 - They should be cacheable because they may require reading the full sequence.
 - JSON is acceptable for tiny fixtures; binary/chunked formats should be
   considered for real deep outputs.
+
+The current backend skeleton exposes time-height products for time-height-capable
+3-D fields. Supported MVP aggregations are domain mean, domain min, domain max,
+and cloud fraction for `qc` using the documented cloud-water threshold. Payloads
+include global output time indices, source-file/local-time mappings when
+available, vertical coordinates, shape and size class, finite/non-finite counts,
+provenance, and caveats. The browser consumes the bounded payload only; it does
+not parse raw NetCDF.
+
+## Evolved-Run Time-Series Products
+
+Simple time-series products summarize scalar evolution across saved output
+times. Initial supported aggregations are domain max, domain mean, domain min,
+and cloud fraction where the field supports it. These products cover current
+MVP fields such as surface rain, rain water aloft, reflectivity, cloud water,
+`u` / `v` / `w` wind components, surface sensible/latent heat flux, and other
+known field-catalog entries when present.
+
+Missing fields must return an unavailable/caveated catalog state or a clear
+product error, not a guessed scientific result. Boundary-layer-depth and
+mixed-layer-depth style products remain future diagnostics until a defensible
+method is documented and tested.
+
+Wind-component products are scalar summaries of native-grid CM1 `u` and `v`
+components. They may support vertical profiles and time-height products when
+the fields and coordinates are present, but they must carry native staggered-grid
+and no-vector-interpolation caveats. They are not wind gust, outflow, rotation,
+or storm-organization diagnostics. Near-surface wind time-series products remain
+explicitly unavailable until the lowest-level selection method is defined and
+tested.
 
 ## Selected-Point And Selected-Column Products
 
