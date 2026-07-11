@@ -100,6 +100,14 @@ class ResultMetadata(BaseModel):
     observed_sounding: dict[str, Any] | None = None
     run_recipe: str | None = None
     run_recipe_display_name: str | None = None
+    recipe_id: str | None = None
+    recipe_display_name: str | None = None
+    assumption_set_id: str | None = None
+    assumption_mode: str | None = None
+    recipe_assumptions: dict[str, Any] = Field(default_factory=dict)
+    required_output_fields: list[str] = Field(default_factory=list)
+    missing_required_output_fields: list[str] = Field(default_factory=list)
+    recipe_caveats: list[str] = Field(default_factory=list)
     trigger_type: str | None = None
     trigger_parameters: dict[str, Any] | None = None
     expected_outputs: list[str] = Field(default_factory=list)
@@ -275,6 +283,16 @@ def _result_from_model_output_files(
         warnings.append(
             "Expected fields missing from NetCDF metadata: " + ", ".join(missing_expected)
         )
+    missing_required_output_fields = _missing_required_output_fields(
+        manifest,
+        metadata_snapshot.variables,
+        metadata_snapshot.coordinates,
+    )
+    if missing_required_output_fields:
+        warnings.append(
+            "Recipe required output fields missing from NetCDF metadata: "
+            + ", ".join(missing_required_output_fields)
+        )
 
     diagnostics = _merge_diagnostics(diagnostics_parts, warnings)
     process_diagnostics = compute_process_diagnostics(
@@ -303,6 +321,14 @@ def _result_from_model_output_files(
         observed_sounding=manifest.observed_sounding,
         run_recipe=manifest.run_recipe,
         run_recipe_display_name=manifest.run_recipe_display_name,
+        recipe_id=manifest.recipe_id,
+        recipe_display_name=manifest.recipe_display_name,
+        assumption_set_id=manifest.assumption_set_id,
+        assumption_mode=manifest.assumption_mode,
+        recipe_assumptions=manifest.recipe_assumptions,
+        required_output_fields=manifest.required_output_fields,
+        missing_required_output_fields=missing_required_output_fields,
+        recipe_caveats=manifest.recipe_caveats,
         trigger_type=manifest.trigger_type,
         trigger_parameters=manifest.trigger_parameters,
         expected_outputs=manifest.expected_outputs,
@@ -795,6 +821,16 @@ def _result_from_dataset(
         warnings.append(
             "Expected fields missing from NetCDF metadata: " + ", ".join(missing_expected)
         )
+    missing_required_output_fields = _missing_required_output_fields(
+        manifest,
+        variables,
+        coordinates,
+    )
+    if missing_required_output_fields:
+        warnings.append(
+            "Recipe required output fields missing from NetCDF metadata: "
+            + ", ".join(missing_required_output_fields)
+        )
     diagnostics = compute_baseline_diagnostics(dataset, warnings)
     process_diagnostics = compute_process_diagnostics(
         diagnostics,
@@ -819,6 +855,14 @@ def _result_from_dataset(
         observed_sounding=manifest.observed_sounding,
         run_recipe=manifest.run_recipe,
         run_recipe_display_name=manifest.run_recipe_display_name,
+        recipe_id=manifest.recipe_id,
+        recipe_display_name=manifest.recipe_display_name,
+        assumption_set_id=manifest.assumption_set_id,
+        assumption_mode=manifest.assumption_mode,
+        recipe_assumptions=manifest.recipe_assumptions,
+        required_output_fields=manifest.required_output_fields,
+        missing_required_output_fields=missing_required_output_fields,
+        recipe_caveats=manifest.recipe_caveats,
         trigger_type=manifest.trigger_type,
         trigger_parameters=manifest.trigger_parameters,
         expected_outputs=manifest.expected_outputs,
@@ -904,6 +948,15 @@ def _to_float_or_none(value: object) -> float | None:
         return None
 
 
+def _missing_required_output_fields(
+    manifest: RunManifest,
+    variables: list[str],
+    coordinates: list[str],
+) -> list[str]:
+    available = set(variables) | set(coordinates)
+    return [field for field in manifest.required_output_fields if field not in available]
+
+
 def _candidate_hypothesis_comparison(
     result: ResultMetadata,
 ) -> CandidateHypothesisComparison | None:
@@ -913,7 +966,11 @@ def _candidate_hypothesis_comparison(
 
     primary_story = _screening_string(screening.get("primary_story"))
     screened_as = _candidate_story_label(primary_story)
-    ran_as = result.run_recipe_display_name or _display_run_recipe(result.run_recipe)
+    ran_as = (
+        result.recipe_display_name
+        or result.run_recipe_display_name
+        or _display_run_recipe(result.run_recipe)
+    )
     if result.scenario_name and ran_as == "CM1 run":
         ran_as = result.scenario_name
 

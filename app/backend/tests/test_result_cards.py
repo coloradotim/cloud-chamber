@@ -132,7 +132,7 @@ def test_result_card_created_from_ingested_metadata(tmp_path: Path) -> None:
     assert card.run_configuration["domain_size"] == "local_6km"
     assert card.pre_run_validation_report is not None
     assert card.pre_run_validation_report["selected_run_recipe"]["recipe_id"] == (
-        "generated_reference_lower_atmosphere"
+        "generated_reference_lower_atmosphere_v1"
     )
     assert card.physical_question
     assert card.diagnostics_summary == (
@@ -178,6 +178,47 @@ def test_result_card_created_from_ingested_metadata(tmp_path: Path) -> None:
     assert card.output_file_summary.netcdf_count == 1
     assert card.output_file_summary.model_output_count == 1
     assert card.output_file_summary.time_steps == 1
+
+
+def test_result_card_preserves_untriggered_observed_recipe_metadata(tmp_path: Path) -> None:
+    settings, result_id, _run_dir = create_completed_result(
+        tmp_path,
+        run_id="run-observed-recipe-card",
+        observed_sounding={
+            "station_id": "USM00072558",
+            "station_name": "Valley, Nebraska",
+            "valid_time_utc": "2026-06-30T00:00:00Z",
+        },
+        package_updates={
+            "run_recipe": "untriggered_observed_evolution",
+            "run_recipe_display_name": "Untriggered Observed Evolution",
+            "recipe_id": "untriggered_observed_sounding_evolution_v0",
+            "recipe_display_name": "Untriggered Observed-Sounding Evolution v0",
+            "assumption_set_id": "untriggered_observed_sounding_evolution_v0_assumptions",
+            "assumption_mode": "normal_evolution",
+            "recipe_assumptions": {
+                "trigger": {"mode": "none"},
+                "radiation": {"mode": "disabled"},
+                "large_scale_forcing": {"mode": "none"},
+            },
+            "required_output_fields": ["qv", "qc", "w", "qr", "rain", "dbz"],
+            "recipe_caveats": ["No warm-bubble or artificial deep-convection trigger is applied."],
+            "input_source": "observed_sounding",
+        },
+    )
+
+    card = get_result_card(settings, result_id)
+
+    assert card.name == "Untriggered Observed-Sounding Evolution v0 — Valley, Nebraska"
+    assert card.scenario_name == "Untriggered Observed-Sounding Evolution v0"
+    assert card.recipe_id == "untriggered_observed_sounding_evolution_v0"
+    assert card.recipe_display_name == "Untriggered Observed-Sounding Evolution v0"
+    assert card.assumption_set_id == "untriggered_observed_sounding_evolution_v0_assumptions"
+    assert card.assumption_mode == "normal_evolution"
+    assert card.recipe_assumptions["trigger"]["mode"] == "none"
+    assert card.required_output_fields == ["qv", "qc", "w", "qr", "rain", "dbz"]
+    assert card.missing_required_output_fields == ["qv", "dbz"]
+    assert "recipe_id:untriggered_observed_sounding_evolution_v0" in card.provenance_labels
     assert card.saved is False
     assert card.protected is False
     assert "source_model:CM1" in card.provenance_labels
@@ -197,13 +238,24 @@ def test_result_card_exposes_observed_sounding_source(tmp_path: Path) -> None:
             "station_elevation_m_msl": 351.5,
             "valid_time_utc": "2026-06-30T00:00:00Z",
         },
+        package_updates={
+            "run_recipe": "untriggered_observed_evolution",
+            "run_recipe_display_name": "Untriggered Observed Evolution",
+            "recipe_id": "untriggered_observed_sounding_evolution_v0",
+            "recipe_display_name": "Untriggered Observed-Sounding Evolution v0",
+            "assumption_set_id": "untriggered_observed_sounding_evolution_v0_assumptions",
+            "assumption_mode": "normal_evolution",
+            "recipe_assumptions": {"trigger": {"mode": "none"}},
+            "required_output_fields": ["qv", "qc", "w", "qr", "rain", "dbz"],
+            "input_source": "observed_sounding",
+        },
     )
 
     card = get_result_card(settings, result_id)
 
-    assert card.name == "Untriggered Observed Evolution — Valley, Nebraska"
+    assert card.name == "Untriggered Observed-Sounding Evolution v0 — Valley, Nebraska"
     assert card.scenario_id == "baseline-shallow-cumulus"
-    assert card.scenario_name == "Untriggered Observed Evolution"
+    assert card.scenario_name == "Untriggered Observed-Sounding Evolution v0"
     assert card.input_source == "observed_sounding"
     assert card.input_source_label == "Observed sounding: USM00072558 · Valley, Nebraska"
     assert card.observed_sounding is not None
@@ -230,6 +282,15 @@ def test_result_card_preserves_deep_convection_trial_package_identity(tmp_path: 
             },
             "run_recipe": "triggered_deep_potential",
             "run_recipe_display_name": "Triggered Deep-Potential Experiment",
+            "recipe_id": "triggered_deep_potential_v1",
+            "recipe_display_name": "Triggered Deep-Potential Experiment",
+            "assumption_set_id": "triggered_deep_potential_warm_bubble_v1",
+            "assumption_mode": "triggered_deep_potential",
+            "recipe_assumptions": {
+                "trigger": {"mode": "prescribed", "type": "warm_bubble"},
+                "radiation": {"mode": "disabled"},
+            },
+            "required_output_fields": ["qc", "w", "qr", "rain", "dbz", "updraft_helicity"],
             "input_source": "observed_sounding",
             "trigger_type": "warm_bubble",
             "trigger_parameters": {
@@ -254,6 +315,8 @@ def test_result_card_preserves_deep_convection_trial_package_identity(tmp_path: 
     assert card.scenario_name == "Triggered Deep-Potential Experiment"
     assert card.run_recipe == "triggered_deep_potential"
     assert card.run_recipe_display_name == "Triggered Deep-Potential Experiment"
+    assert card.recipe_id == "triggered_deep_potential_v1"
+    assert card.assumption_set_id == "triggered_deep_potential_warm_bubble_v1"
     assert card.trigger_type == "warm_bubble"
     assert card.trigger_parameters is not None
     assert card.trigger_parameters["cm1_iinit"] == 3

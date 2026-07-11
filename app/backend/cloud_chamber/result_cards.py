@@ -91,6 +91,14 @@ class ResultCard(BaseModel):
     observed_sounding: dict[str, object] | None = None
     run_recipe: str | None = None
     run_recipe_display_name: str | None = None
+    recipe_id: str | None = None
+    recipe_display_name: str | None = None
+    assumption_set_id: str | None = None
+    assumption_mode: str | None = None
+    recipe_assumptions: dict[str, Any] = Field(default_factory=dict)
+    required_output_fields: list[str] = Field(default_factory=list)
+    missing_required_output_fields: list[str] = Field(default_factory=list)
+    recipe_caveats: list[str] = Field(default_factory=list)
     trigger_type: str | None = None
     trigger_parameters: dict[str, object] | None = None
     expected_outputs: list[str] = Field(default_factory=list)
@@ -234,6 +242,14 @@ def _card_from_metadata(
         observed_sounding=metadata.observed_sounding,
         run_recipe=metadata.run_recipe,
         run_recipe_display_name=metadata.run_recipe_display_name,
+        recipe_id=metadata.recipe_id,
+        recipe_display_name=metadata.recipe_display_name,
+        assumption_set_id=metadata.assumption_set_id,
+        assumption_mode=metadata.assumption_mode,
+        recipe_assumptions=metadata.recipe_assumptions,
+        required_output_fields=metadata.required_output_fields,
+        missing_required_output_fields=metadata.missing_required_output_fields,
+        recipe_caveats=metadata.recipe_caveats,
         trigger_type=metadata.trigger_type,
         trigger_parameters=metadata.trigger_parameters,
         expected_outputs=metadata.expected_outputs,
@@ -247,6 +263,7 @@ def _card_from_metadata(
             f"source_product_state:{metadata.source_product_state}",
             f"result_state:{metadata.result_state}",
             *([f"run_recipe:{metadata.run_recipe}"] if metadata.run_recipe else []),
+            *([f"recipe_id:{metadata.recipe_id}"] if metadata.recipe_id else []),
         ],
         diagnostics_summary=metadata.diagnostics_summary,
         thermal_fate_label=interpretation.thermal_fate_label if interpretation else None,
@@ -293,13 +310,14 @@ def _default_result_card_name(metadata: ResultMetadata) -> str:
             return f"Triggered Deep-Potential Experiment — {station_id}"
         return "Triggered Deep-Potential Experiment"
     if metadata.input_source == "observed_sounding":
+        recipe_name = metadata.recipe_display_name or metadata.run_recipe_display_name
         station_name = _observed_sounding_value(metadata.observed_sounding, "station_name")
         station_id = _observed_sounding_value(metadata.observed_sounding, "station_id")
         if station_name:
-            return f"Untriggered Observed Evolution — {station_name}"
+            return f"{recipe_name or 'Untriggered Observed Evolution'} — {station_name}"
         if station_id:
-            return f"Untriggered Observed Evolution — {station_id}"
-        return "Untriggered Observed Evolution"
+            return f"{recipe_name or 'Untriggered Observed Evolution'} — {station_id}"
+        return recipe_name or "Untriggered Observed Evolution"
     return metadata.scenario_name or metadata.scenario_id
 
 
@@ -307,7 +325,7 @@ def _display_scenario_name(metadata: ResultMetadata) -> str | None:
     if metadata.run_recipe == "triggered_deep_potential" and metadata.run_recipe_display_name:
         return metadata.run_recipe_display_name
     if metadata.input_source == "observed_sounding":
-        return "Untriggered Observed Evolution"
+        return metadata.recipe_display_name or "Untriggered Observed Evolution"
     return metadata.scenario_name
 
 

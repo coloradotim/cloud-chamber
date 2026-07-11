@@ -76,6 +76,13 @@ class ControlMappingFragment:
 class CM1InputContract:
     run_recipe: RunRecipe
     run_recipe_display_name: str
+    recipe_id: str
+    recipe_display_name: str
+    assumption_set_id: str
+    assumption_mode: str
+    recipe_assumptions: dict[str, object]
+    required_output_fields: tuple[str, ...]
+    recipe_caveats: tuple[str, ...]
     input_source: str
     trigger_type: str | None
     trigger_parameters: dict[str, str | int | float | bool]
@@ -161,6 +168,10 @@ def build_cm1_input_contract(
         run_configuration=run_configuration,
         run_recipe=resolved_run_recipe.value,
     )
+    recipe_assumptions = _recipe_assumptions(
+        resolved_run_recipe,
+        resolved_run_configuration,
+    )
     defaults = cloud_scale_defaults_for_configuration(resolved_run_configuration)
     if resolved_run_recipe == RunRecipe.TRIGGERED_DEEP_POTENTIAL:
         if observed_sounding is None:
@@ -195,6 +206,13 @@ def build_cm1_input_contract(
     return CM1InputContract(
         run_recipe=resolved_run_recipe,
         run_recipe_display_name=_run_recipe_display_name(resolved_run_recipe),
+        recipe_id=recipe_id_for_run_recipe(resolved_run_recipe),
+        recipe_display_name=recipe_display_name_for_run_recipe(resolved_run_recipe),
+        assumption_set_id=assumption_set_id_for_run_recipe(resolved_run_recipe),
+        assumption_mode=assumption_mode_for_run_recipe(resolved_run_recipe),
+        recipe_assumptions=recipe_assumptions,
+        required_output_fields=required_output_fields_for_run_recipe(resolved_run_recipe),
+        recipe_caveats=recipe_caveats_for_run_recipe(resolved_run_recipe),
         input_source="observed_sounding"
         if observed_sounding is not None
         else "generated_reference",
@@ -274,6 +292,110 @@ def _run_recipe_display_name(run_recipe: RunRecipe) -> str:
             return "Generated Lower-Atmosphere Reference"
 
 
+def recipe_id_for_run_recipe(run_recipe: str | RunRecipe) -> str:
+    resolved = _coerce_run_recipe(run_recipe)
+    match resolved:
+        case RunRecipe.TRIGGERED_DEEP_POTENTIAL:
+            return "triggered_deep_potential_v1"
+        case RunRecipe.UNTRIGGERED_OBSERVED_EVOLUTION:
+            return "untriggered_observed_sounding_evolution_v0"
+        case RunRecipe.GENERATED_REFERENCE_LOWER_ATMOSPHERE:
+            return "generated_reference_lower_atmosphere_v1"
+        case None:
+            return str(run_recipe)
+
+
+def recipe_display_name_for_run_recipe(run_recipe: str | RunRecipe) -> str:
+    resolved = _coerce_run_recipe(run_recipe)
+    match resolved:
+        case RunRecipe.TRIGGERED_DEEP_POTENTIAL:
+            return "Triggered Deep-Potential Experiment"
+        case RunRecipe.UNTRIGGERED_OBSERVED_EVOLUTION:
+            return "Untriggered Observed-Sounding Evolution v0"
+        case RunRecipe.GENERATED_REFERENCE_LOWER_ATMOSPHERE:
+            return "Generated Lower-Atmosphere Reference"
+        case None:
+            return str(run_recipe)
+
+
+def assumption_set_id_for_run_recipe(run_recipe: str | RunRecipe) -> str:
+    resolved = _coerce_run_recipe(run_recipe)
+    match resolved:
+        case RunRecipe.TRIGGERED_DEEP_POTENTIAL:
+            return "triggered_deep_potential_warm_bubble_v1"
+        case RunRecipe.UNTRIGGERED_OBSERVED_EVOLUTION:
+            return "untriggered_observed_sounding_evolution_v0_assumptions"
+        case RunRecipe.GENERATED_REFERENCE_LOWER_ATMOSPHERE:
+            return "generated_reference_lower_atmosphere_v1"
+        case None:
+            return "unknown_assumption_set"
+
+
+def assumption_mode_for_run_recipe(run_recipe: str | RunRecipe) -> str:
+    resolved = _coerce_run_recipe(run_recipe)
+    match resolved:
+        case RunRecipe.TRIGGERED_DEEP_POTENTIAL:
+            return "triggered_deep_potential"
+        case RunRecipe.UNTRIGGERED_OBSERVED_EVOLUTION:
+            return "normal_evolution"
+        case RunRecipe.GENERATED_REFERENCE_LOWER_ATMOSPHERE:
+            return "generated_reference"
+        case None:
+            return "unknown"
+
+
+def required_output_fields_for_run_recipe(run_recipe: str | RunRecipe) -> tuple[str, ...]:
+    resolved = _coerce_run_recipe(run_recipe)
+    match resolved:
+        case RunRecipe.TRIGGERED_DEEP_POTENTIAL:
+            return ("qc", "w", "qr", "rain", "dbz", "updraft_helicity")
+        case RunRecipe.UNTRIGGERED_OBSERVED_EVOLUTION:
+            return ("qv", "qc", "w", "qr", "rain", "dbz")
+        case RunRecipe.GENERATED_REFERENCE_LOWER_ATMOSPHERE:
+            return ("qc", "w")
+        case None:
+            return ()
+
+
+def recipe_caveats_for_run_recipe(run_recipe: str | RunRecipe) -> tuple[str, ...]:
+    resolved = _coerce_run_recipe(run_recipe)
+    match resolved:
+        case RunRecipe.UNTRIGGERED_OBSERVED_EVOLUTION:
+            return (
+                "No warm-bubble or artificial deep-convection trigger is applied.",
+                (
+                    "Surface fluxes use current recipe defaults; they are not validated "
+                    "place/time surface-energy inputs."
+                ),
+                (
+                    "Radiation, terrain, GIS surface initialization, and large-scale forcing "
+                    "are not part of v0."
+                ),
+                (
+                    "Humid/rainy hypotheses remain partial until rain-water-aloft, "
+                    "surface-rain, and reflectivity outputs are present and inspected."
+                ),
+            )
+        case RunRecipe.TRIGGERED_DEEP_POTENTIAL:
+            return (
+                "The recipe tests triggered potential, not normal atmospheric evolution.",
+                "The warm-bubble trigger must be preserved in provenance and Results comparison.",
+            )
+        case RunRecipe.GENERATED_REFERENCE_LOWER_ATMOSPHERE:
+            return ()
+        case None:
+            return ()
+
+
+def _coerce_run_recipe(run_recipe: str | RunRecipe) -> RunRecipe | None:
+    if isinstance(run_recipe, RunRecipe):
+        return run_recipe
+    try:
+        return RunRecipe(run_recipe)
+    except ValueError:
+        return None
+
+
 def _trigger_parameters(
     run_recipe: RunRecipe,
 ) -> dict[str, str | int | float | bool]:
@@ -310,6 +432,9 @@ def _run_caveats(
     run_configuration: RunConfiguration,
 ) -> tuple[str, ...]:
     caveats = list(run_configuration.caveats)
+    if run_recipe == RunRecipe.UNTRIGGERED_OBSERVED_EVOLUTION:
+        caveats.extend(recipe_caveats_for_run_recipe(run_recipe))
+        return tuple(caveats)
     if run_recipe != RunRecipe.TRIGGERED_DEEP_POTENTIAL:
         return tuple(caveats)
     caveats.extend(
@@ -337,7 +462,88 @@ def _run_caveats(
 def _manual_validation_status(run_recipe: RunRecipe) -> str:
     if run_recipe == RunRecipe.TRIGGERED_DEEP_POTENTIAL:
         return "triggered_deep_potential_recipe_smoke_validated"
+    if run_recipe == RunRecipe.UNTRIGGERED_OBSERVED_EVOLUTION:
+        return "untriggered_observed_sounding_evolution_v0_metadata_only"
     return "current_run_recipe_path"
+
+
+def _recipe_assumptions(
+    run_recipe: RunRecipe,
+    run_configuration: RunConfiguration,
+) -> dict[str, object]:
+    values = run_configuration.cm1_values
+    configured_shape = {
+        "duration": {
+            "mode": "configured",
+            "selection": run_configuration.duration,
+            "seconds": values.runtime_seconds,
+        },
+        "domain": {
+            "mode": "configured",
+            "selection": run_configuration.domain_size,
+            "x_km": values.domain_x_km,
+            "y_km": values.domain_y_km,
+            "model_top_m": values.model_top_m,
+            "horizontal_cell_count": run_configuration.horizontal_cell_count,
+            "dx_m": values.dx_m,
+            "dy_m": values.dy_m,
+        },
+        "output_cadence": {
+            "mode": "configured",
+            "selection": run_configuration.output_cadence,
+            "seconds": values.output_cadence_seconds,
+        },
+        "diagnostic_set": {
+            "mode": "configured",
+            "selection": run_configuration.diagnostic_set,
+        },
+    }
+    if run_recipe == RunRecipe.UNTRIGGERED_OBSERVED_EVOLUTION:
+        return {
+            **configured_shape,
+            "trigger": {
+                "mode": "none",
+                "description": "No warm-bubble or artificial deep-convection trigger.",
+            },
+            "observed_sounding": {
+                "temperature_profile": "required",
+                "moisture_profile": "required",
+                "wind_profile": "used_when_available",
+            },
+            "surface_fluxes": {
+                "mode": "current_recipe_default",
+                "description": (
+                    "Uniform constant sensible/latent flux proxy inherited from the "
+                    "current observed-sounding LES path."
+                ),
+            },
+            "radiation": {"mode": "disabled", "cm1_radopt": 0},
+            "large_scale_forcing": {"mode": "none"},
+        }
+    if run_recipe == RunRecipe.TRIGGERED_DEEP_POTENTIAL:
+        return {
+            **configured_shape,
+            "trigger": {
+                "mode": "prescribed",
+                "type": "warm_bubble",
+                "description": "CM1 built-in three-warm-bubble line initiation.",
+            },
+            "observed_sounding": {
+                "temperature_profile": "required",
+                "moisture_profile": "required",
+                "wind_profile": "required_complete_finite_uv",
+            },
+            "surface_fluxes": {"mode": "disabled"},
+            "radiation": {"mode": "disabled", "cm1_radopt": 0},
+            "large_scale_forcing": {"mode": "none"},
+        }
+    return {
+        **configured_shape,
+        "trigger": {"mode": "generated_reference"},
+        "surface_fluxes": {"mode": "current_recipe_default"},
+        "radiation": {"mode": "disabled", "cm1_radopt": 0},
+        "large_scale_forcing": {"mode": "none"},
+    }
 
 
 def _output_switches(

@@ -86,9 +86,12 @@ const defaultPreRunValidationReport = {
     predicted_output_signature: [],
   },
   selected_run_recipe: {
-    recipe_id: "generated_reference_lower_atmosphere",
+    run_recipe: "generated_reference_lower_atmosphere",
+    recipe_id: "generated_reference_lower_atmosphere_v1",
     display_name: "Generated Lower-Atmosphere Reference",
+    recipe_display_name: "Generated Lower-Atmosphere Reference",
     assumption_set_id: "generated_reference_lower_atmosphere_v1",
+    assumption_mode: "generated_reference",
   },
   hypothesis_recipe_alignment: {
     status: "aligned",
@@ -403,6 +406,17 @@ function preRunValidationReportForRequest(body: {
       ? "untriggered_observed_evolution"
       : "generated_reference_lower_atmosphere");
   const deep = runRecipe === "triggered_deep_potential";
+  const observed = runRecipe === "untriggered_observed_evolution";
+  const recipeId = deep
+    ? "triggered_deep_potential_v1"
+    : observed
+      ? "untriggered_observed_sounding_evolution_v0"
+      : "generated_reference_lower_atmosphere_v1";
+  const recipeDisplayName = deep
+    ? "Triggered Deep-Potential Experiment"
+    : observed
+      ? "Untriggered Observed-Sounding Evolution v0"
+      : "Generated Lower-Atmosphere Reference";
   const activeStory =
     typeof body.candidate_screening?.active_story === "string"
       ? body.candidate_screening.active_story
@@ -442,17 +456,20 @@ function preRunValidationReportForRequest(body: {
       predicted_output_signature: deep ? ["deep_cloud", "strong_updraft"] : [],
     },
     selected_run_recipe: {
-      recipe_id: runRecipe,
+      run_recipe: runRecipe,
+      recipe_id: recipeId,
       display_name: deep
         ? "Triggered Deep-Potential Experiment"
-        : runRecipe === "untriggered_observed_evolution"
+        : observed
           ? "Untriggered Observed Evolution"
           : "Generated Lower-Atmosphere Reference",
+      recipe_display_name: recipeDisplayName,
       assumption_set_id: deep
         ? "triggered_deep_potential_warm_bubble_v1"
-        : runRecipe === "untriggered_observed_evolution"
-          ? "normal_evolution_current_observed_sounding_v1"
+        : observed
+          ? "untriggered_observed_sounding_evolution_v0_assumptions"
           : "generated_reference_lower_atmosphere_v1",
+      assumption_mode: deep ? "triggered_deep_potential" : observed ? "normal_evolution" : "generated_reference",
     },
   };
 }
@@ -3661,9 +3678,12 @@ describe("App", () => {
         predicted_output_signature: ["deep_cloud", "strong_updraft"],
       },
       selected_run_recipe: {
-        recipe_id: "untriggered_observed_evolution",
+        run_recipe: "untriggered_observed_evolution",
+        recipe_id: "untriggered_observed_sounding_evolution_v0",
         display_name: "Untriggered Observed Evolution",
-        assumption_set_id: "normal_evolution_current_observed_sounding_v1",
+        recipe_display_name: "Untriggered Observed-Sounding Evolution v0",
+        assumption_set_id: "untriggered_observed_sounding_evolution_v0_assumptions",
+        assumption_mode: "normal_evolution",
       },
       hypothesis_recipe_alignment: {
         status: "blocked",

@@ -123,9 +123,14 @@ type PreRunValidationReport = {
     predicted_output_signature?: string[];
   } | null;
   selected_run_recipe?: {
+    run_recipe?: string | null;
     recipe_id?: string | null;
     display_name?: string | null;
+    recipe_display_name?: string | null;
     assumption_set_id?: string | null;
+    assumption_mode?: string | null;
+    required_fields?: string[];
+    caveats?: string[];
   } | null;
   hypothesis_recipe_alignment?: {
     status?: string;
@@ -155,6 +160,14 @@ type DryRunReport = {
   scenario_id: string;
   run_recipe?: RunRecipe;
   run_recipe_display_name?: string;
+  recipe_id?: string | null;
+  recipe_display_name?: string | null;
+  assumption_set_id?: string | null;
+  assumption_mode?: string | null;
+  recipe_assumptions?: Record<string, unknown>;
+  required_output_fields?: string[];
+  missing_required_output_fields?: string[];
+  recipe_caveats?: string[];
   input_source?: string;
   trigger_type?: string | null;
   trigger_parameters?: Record<string, string | number | boolean> | null;
@@ -728,6 +741,14 @@ type ResultCard = {
   observed_sounding?: ObservedSoundingSummary | null;
   run_recipe?: string | null;
   run_recipe_display_name?: string | null;
+  recipe_id?: string | null;
+  recipe_display_name?: string | null;
+  assumption_set_id?: string | null;
+  assumption_mode?: string | null;
+  recipe_assumptions?: Record<string, unknown>;
+  required_output_fields?: string[];
+  missing_required_output_fields?: string[];
+  recipe_caveats?: string[];
   trigger_type?: string | null;
   trigger_parameters?: Record<string, unknown> | null;
   expected_outputs?: string[];
@@ -3571,7 +3592,11 @@ function PreRunValidationReportPanel({ report }: { report: PreRunValidationRepor
         )}
         <Metric
           label="Run recipe"
-          value={recipe?.display_name ?? humanize(recipe?.recipe_id ?? "unknown")}
+          value={
+            recipe?.recipe_display_name ??
+            recipe?.display_name ??
+            humanize(recipe?.recipe_id ?? "unknown")
+          }
         />
         <Metric label="Assumption set" value={recipe?.assumption_set_id ?? "Not declared"} />
         <Metric

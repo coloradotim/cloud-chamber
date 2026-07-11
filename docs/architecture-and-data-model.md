@@ -201,6 +201,16 @@ recipe and trigger metadata into result metadata and Result Cards so Results and
 Explore do not lose the distinction between untriggered observed evolution and a
 triggered deep-potential run.
 
+Untriggered observed-sounding evolution v0 is the first concrete normal-evolution
+recipe for lower-atmosphere observed-sounding hypotheses. Package generation keeps
+the CM1 routing value `run_recipe = untriggered_observed_evolution`, but also
+persists `recipe_id = untriggered_observed_sounding_evolution_v0`,
+`assumption_set_id`, `assumption_mode`, recipe assumptions, required output
+fields, and recipe caveats. Ingest copies the same fields into result metadata
+and computes `missing_required_output_fields` from the actual NetCDF variables
+and coordinates, so future predicted-vs-actual comparison can distinguish
+scientific disagreement from missing output support.
+
 ## Suggested Stack
 
 This is not final, but a reasonable starting point:

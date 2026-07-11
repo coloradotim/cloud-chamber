@@ -167,14 +167,14 @@ current observed-sounding quick look does not supply.
 
 ## Current Recipe Catalog
 
-### `observed_normal_evolution_v1`
+### `untriggered_observed_sounding_evolution_v0`
 
 ```yaml
-recipe_id: observed_normal_evolution_v1
-display_name: Observed-sounding normal evolution
+recipe_id: untriggered_observed_sounding_evolution_v0
+display_name: Untriggered observed-sounding evolution v0
 product_question: What does this observed atmosphere do without an explicit
   deep-convection trigger, under the current observed-sounding LES defaults?
-assumption_set_id: normal_evolution_current_observed_sounding_v1
+assumption_set_id: untriggered_observed_sounding_evolution_v0_assumptions
 assumption_mode: normal_evolution
 run_shape:
   duration_seconds: 21600 | configured
@@ -193,14 +193,17 @@ forcing:
 required_inputs:
   observed_temperature_profile: required
   observed_moisture_profile: required
-  observed_wind_profile: required
+  observed_wind_profile: used_when_available
 required_outputs:
-  fields: [qc, w, qv, th, prs, u, v]
+  fields: [qv, qc, w, qr, rain, dbz]
   diagnostics: [first_cloud, max_qc, cloud_top, max_updraft_w]
 current_support:
   status: supported
   caveats:
     - Current recipe defaults are not a real place/time surface-energy budget.
+    - Surface fluxes use current recipe defaults and are not user-controlled yet.
+    - Radiation, terrain, GIS surface initialization, and large-scale forcing
+      are not part of v0.
     - Scores remain ingredient guidance until a predicted signature exists.
 cm1_mapping:
   run_recipe: untriggered_observed_evolution
@@ -212,7 +215,7 @@ cm1_mapping:
     diagnostic_set: process
 ```
 
-This recipe can test shallow cloud and dry-failed signatures when the predicted
+This v0 recipe can test shallow cloud and dry-failed signatures when the predicted
 signature only requires cloud water, vertical velocity, and enough duration and
 cadence. It is not enough for product claims about rain reaching the ground
 unless the active predicted signature explicitly requires and receives
@@ -225,7 +228,7 @@ recipe_id: observed_capped_evolution_v1
 display_name: Observed-sounding capped evolution
 product_question: Does the observed profile limit vertical growth under the
   current untriggered LES defaults?
-assumption_set_id: normal_evolution_current_observed_sounding_v1
+assumption_set_id: untriggered_observed_sounding_evolution_v0_assumptions
 assumption_mode: normal_evolution
 required_outputs:
   fields: [qc, w, th, qv]
@@ -386,8 +389,8 @@ source layer and forcing assumptions being tested.
 
 | Story ID | Primary recipe | Recipe fit | Required assumptions | Required outputs for comparison | Result comparison intent |
 | --- | --- | --- | --- | --- | --- |
-| `shallow_cumulus_candidate` | `observed_normal_evolution_v1` | `testable_now` when the run is long enough | no explicit trigger; current observed-sounding LES defaults; complete observed temperature/moisture/wind profile | `qc`, `w`, time and vertical coordinates | cloud formation, cloud top/depth, persistence, vertical velocity |
-| `dry_failed_candidate` | `observed_normal_evolution_v1` | `testable_now` when duration/cadence can support a no-cloud conclusion | no explicit trigger; current observed-sounding LES defaults; complete observed profile | `qc`, `w`, time coordinate | weak/no cloud with meaningful vertical motion; moisture limitation remains caveated |
+| `shallow_cumulus_candidate` | `untriggered_observed_sounding_evolution_v0` | `testable_now` when the run is long enough | no explicit trigger; current observed-sounding LES defaults; complete observed temperature/moisture profile; wind used when available | `qv`, `qc`, `w`, time and vertical coordinates | cloud formation, cloud top/depth, persistence, vertical velocity |
+| `dry_failed_candidate` | `untriggered_observed_sounding_evolution_v0` | `testable_now` when duration/cadence can support a no-cloud conclusion | no explicit trigger; current observed-sounding LES defaults; complete observed profile | `qv`, `qc`, `w`, time coordinate | weak/no cloud with meaningful vertical motion; moisture limitation remains caveated |
 | `capped_suppressed_candidate` | `observed_capped_evolution_v1` | `partially_testable` | no explicit trigger; cap comes from observed profile; enough run time to observe delayed growth | `qc`, `w`, `th`, time and vertical coordinates | reduced cloud depth, delayed cloud, or capped vertical motion |
 | `humid_rainy_candidate` | `surface_forced_moist_evolution_v1` | `partially_testable` until surface flux controls are validated | explicit current or future surface-flux assumptions; no deep trigger; precipitation fields requested | `qc`, `w`, `qr`, `rain`, `dbz` when precipitation is predicted | cloud, rain water aloft, surface rain, and reflectivity evaluated separately |
 | `severe_thunderstorm_environment` | `triggered_deep_potential_v1` | `partially_testable` with current triggered deep-potential caveats | explicit warm-bubble trigger; complete observed wind profile; storm-scale domain | `qc`, `w`, `qr`, `rain`, `dbz`, updraft diagnostics | whether triggered initiation supports deep convection and precipitation signatures |
@@ -401,7 +404,7 @@ source layer and forcing assumptions being tested.
 
 Deep-convection stories should not silently route to shallow quick-look as if
 that tested the deep hypothesis. The user may still deliberately run
-`observed_normal_evolution_v1`; Results must then mark the deep hypothesis as
+`untriggered_observed_sounding_evolution_v0`; Results must then mark the deep hypothesis as
 `not_comparable` or `inconclusive` rather than as a failed deep-convection
 prediction.
 

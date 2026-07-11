@@ -119,10 +119,43 @@ def test_dry_run_package_can_use_observed_igra_sounding(tmp_path: Path) -> None:
     assert manifest.run_configuration["domain_size"] == "wide_12km"
     assert manifest.run_configuration["cm1_values"]["nx"] == 128
     assert manifest.run_configuration["cm1_values"]["runtime_seconds"] == 21600
+    assert manifest.run_recipe == "untriggered_observed_evolution"
+    assert manifest.recipe_id == "untriggered_observed_sounding_evolution_v0"
+    assert manifest.recipe_display_name == "Untriggered Observed-Sounding Evolution v0"
+    assert manifest.assumption_set_id == "untriggered_observed_sounding_evolution_v0_assumptions"
+    assert manifest.assumption_mode == "normal_evolution"
+    assert manifest.required_output_fields == ["qv", "qc", "w", "qr", "rain", "dbz"]
+    assert manifest.recipe_assumptions["trigger"]["mode"] == "none"
+    assert manifest.recipe_assumptions["radiation"]["mode"] == "disabled"
+    assert manifest.recipe_assumptions["large_scale_forcing"]["mode"] == "none"
+    assert manifest.recipe_assumptions["surface_fluxes"]["mode"] == "current_recipe_default"
+    assert "No warm-bubble or artificial deep-convection trigger is applied." in (
+        manifest.recipe_caveats
+    )
+    assert "No warm-bubble or artificial deep-convection trigger is applied." in (
+        manifest.run_caveats
+    )
     assert manifest.pre_run_validation_report is not None
     assert manifest.pre_run_validation_report["run_shape_validation"]["domain"] == "wide_12km"
+    assert manifest.pre_run_validation_report["selected_run_recipe"]["run_recipe"] == (
+        "untriggered_observed_evolution"
+    )
+    assert manifest.pre_run_validation_report["selected_run_recipe"]["recipe_id"] == (
+        "untriggered_observed_sounding_evolution_v0"
+    )
+    assert manifest.pre_run_validation_report["selected_run_recipe"]["required_fields"] == [
+        "qv",
+        "qc",
+        "w",
+        "qr",
+        "rain",
+        "dbz",
+    ]
     assert manifest.user.tags == ["compare", "candidate"]
     assert manifest.user.notes == "Compare against humid/rainy candidates."
+    assert report["recipe_id"] == "untriggered_observed_sounding_evolution_v0"
+    assert report["assumption_mode"] == "normal_evolution"
+    assert report["required_output_fields"] == ["qv", "qc", "w", "qr", "rain", "dbz"]
     assert report["variant_metadata"]["sounding_source"] == "observed_igra_station_text"
     assert report["observed_sounding"]["station_name"] == "Valley, Nebraska"
     assert report["user"]["tags"] == ["compare", "candidate"]
@@ -131,6 +164,8 @@ def test_dry_run_package_can_use_observed_igra_sounding(tmp_path: Path) -> None:
     assert report["observed_sounding"]["wind_source"] == "observed_igra_wind_profile"
     assert report["observed_sounding"]["wind_units"] == "m/s"
     assert "input_sounding" in report["observed_sounding"]["wind_conversion"]
+    assert case_manifest["recipe_id"] == "untriggered_observed_sounding_evolution_v0"
+    assert case_manifest["contract"]["recipe_id"] == "untriggered_observed_sounding_evolution_v0"
     assert case_manifest["contract"]["observed_sounding"]["station_id"] == "USM00072558"
     assert "isnd      =  7," in namelist
     assert "iwnd      =  0," in namelist
@@ -179,6 +214,17 @@ def test_deep_convection_trial_package_uses_observed_sounding_and_warm_bubble(
 
     assert manifest.run_recipe == "triggered_deep_potential"
     assert manifest.run_recipe_display_name == "Triggered Deep-Potential Experiment"
+    assert manifest.recipe_id == "triggered_deep_potential_v1"
+    assert manifest.assumption_set_id == "triggered_deep_potential_warm_bubble_v1"
+    assert manifest.assumption_mode == "triggered_deep_potential"
+    assert manifest.required_output_fields == [
+        "qc",
+        "w",
+        "qr",
+        "rain",
+        "dbz",
+        "updraft_helicity",
+    ]
     assert manifest.input_source == "observed_sounding"
     assert manifest.trigger_type == "warm_bubble"
     assert manifest.trigger_parameters == {
@@ -202,6 +248,9 @@ def test_deep_convection_trial_package_uses_observed_sounding_and_warm_bubble(
     assert manifest.pre_run_validation_report["selected_hypothesis"]["story_id"] == (
         "supercell_environment"
     )
+    assert manifest.pre_run_validation_report["selected_run_recipe"]["recipe_id"] == (
+        "triggered_deep_potential_v1"
+    )
     assert manifest.pre_run_validation_report["selected_run_recipe"]["assumption_set_id"] == (
         "triggered_deep_potential_warm_bubble_v1"
     )
@@ -214,6 +263,7 @@ def test_deep_convection_trial_package_uses_observed_sounding_and_warm_bubble(
     assert manifest.run_configuration["diagnostic_set"] == "full"
     assert report["run_recipe"] == "triggered_deep_potential"
     assert report["run_recipe_display_name"] == "Triggered Deep-Potential Experiment"
+    assert report["recipe_id"] == "triggered_deep_potential_v1"
     assert report["trigger_type"] == "warm_bubble"
     assert report["candidate_screening"] == candidate_screening
     assert report["pre_run_validation_report"] == manifest.pre_run_validation_report
@@ -224,7 +274,9 @@ def test_deep_convection_trial_package_uses_observed_sounding_and_warm_bubble(
     assert "manual CM1 smoke evidence" in report["cm1_mapping_status"]
     assert "each observed sounding remains an experiment" in report["cm1_mapping_status"]
     assert case_manifest["run_recipe"] == "triggered_deep_potential"
+    assert case_manifest["recipe_id"] == "triggered_deep_potential_v1"
     assert case_manifest["contract"]["run_recipe"] == "triggered_deep_potential"
+    assert case_manifest["contract"]["recipe_id"] == "triggered_deep_potential_v1"
     assert (
         case_manifest["contract"]["manual_validation_status"]
         == "triggered_deep_potential_recipe_smoke_validated"
@@ -305,7 +357,10 @@ def test_pre_run_validation_blocks_deep_hypothesis_on_observed_quicklook(
     assert report is not None
     assert report["status"] == "blocked"
     assert report["selected_hypothesis"]["story_id"] == "supercell_environment"
-    assert report["selected_run_recipe"]["recipe_id"] == "untriggered_observed_evolution"
+    assert report["selected_run_recipe"]["run_recipe"] == "untriggered_observed_evolution"
+    assert report["selected_run_recipe"]["recipe_id"] == (
+        "untriggered_observed_sounding_evolution_v0"
+    )
     assert report["hypothesis_recipe_alignment"]["status"] == "blocked"
     assert (
         "triggered_deep_potential_warm_bubble_v1"
