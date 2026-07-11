@@ -3053,6 +3053,12 @@ describe("App", () => {
         dryRunBody = String(init?.body ?? "");
         return Promise.resolve(new Response(JSON.stringify(dryRunResponse), { status: 200 }));
       }
+      if (url === "/api/runs/queue" && init?.method === "POST") {
+        return Promise.resolve(new Response(JSON.stringify(emptyRunQueue), { status: 200 }));
+      }
+      if (url === "/api/runs/queue") {
+        return Promise.resolve(new Response(JSON.stringify(emptyRunQueue), { status: 200 }));
+      }
       if (url === "/api/results") {
         return Promise.resolve(new Response(JSON.stringify(resultsResponse), { status: 200 }));
       }
@@ -3075,9 +3081,14 @@ describe("App", () => {
     });
 
     expect(await screen.findByRole("heading", { name: "Upload a Sounding" })).toBeInTheDocument();
-    expect(screen.getByText("Observed sounding profile, Surface heating")).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "Cached recommendations" })).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
+    expect(screen.queryByLabelText("IGRA station sounding-data file")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("tab", { name: "Upload IGRA station text" }));
+    expect(screen.getByLabelText("IGRA station sounding-data file")).toBeInTheDocument();
     expect(screen.queryByLabelText("Low-level humidity")).not.toBeInTheDocument();
-    expect(screen.getByLabelText("Surface heating")).not.toBeDisabled();
     expect(screen.queryByLabelText("Use uploaded sounding")).not.toBeInTheDocument();
 
     const file = new File(["#USM00072558 2025 01 02 00"], "USM00072558-data-beg2025.txt", {
@@ -3111,7 +3122,13 @@ describe("App", () => {
     ).toBeInTheDocument();
     expect(screen.getByText(/This is not normal atmospheric evolution/i)).toBeInTheDocument();
 
-    fireEvent.click(screen.getByTestId("create-package-btn"));
+    fireEvent.click(screen.getByRole("button", { name: "Add uploaded sounding to run plan" }));
+    expect(screen.getByRole("heading", { name: "Plan multiple CM1 runs" })).toBeInTheDocument();
+    expect(within(screen.getByLabelText("Run plan")).getByLabelText("Recipe")).toHaveValue(
+      "triggered_deep_potential",
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Create packages and queue selected runs" }));
 
     await waitFor(() => {
       expect(dryRunBody).toContain('"run_recipe":"triggered_deep_potential"');
@@ -3133,6 +3150,9 @@ describe("App", () => {
       if (url === "/api/dry-run-package") {
         dryRunBody = String(init?.body ?? "");
       }
+      if (url === "/api/runs/queue" && init?.method === "POST") {
+        return Promise.resolve(new Response(JSON.stringify(emptyRunQueue), { status: 200 }));
+      }
       return (
         defaultFetch?.(input, init) ?? Promise.resolve(new Response("not found", { status: 404 }))
       );
@@ -3150,36 +3170,31 @@ describe("App", () => {
     fireEvent.change(storyFilter, {
       target: { value: "deep_convection_trial" },
     });
-    fireEvent.click(screen.getByRole("button", { name: "Analyze recommendations" }));
+    fireEvent.click(screen.getByRole("button", { name: "Run analyzer only" }));
 
     expect(await screen.findByText("Cached sounding analysis loaded")).toBeInTheDocument();
     expect(screenBody).toContain('"story_filter":"deep_convection_trial"');
     const deepCard = screen.getByLabelText("Sounding candidate Norman, Oklahoma (USM00072357)");
     expect(deepCard).toHaveTextContent("Supercell-like environment");
 
-    fireEvent.click(within(deepCard).getByRole("button", { name: "Use this sounding" }));
+    fireEvent.click(within(deepCard).getByRole("button", { name: "Add to run plan" }));
 
-    expect(await screen.findByText("Candidate selected for package review")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Triggered deep potential" })).toHaveAttribute(
-      "aria-pressed",
-      "true",
+    expect(await screen.findByText("Norman, Oklahoma (USM00072357) added to the run plan")).toBeInTheDocument();
+    expect(within(screen.getByLabelText("Run plan")).getByLabelText("Recipe")).toHaveValue(
+      "triggered_deep_potential",
     );
-    expect(screen.getByText("Idealized three warm bubbles")).toBeInTheDocument();
+    expect(screen.getByText("triggered_deep_potential_v1")).toBeInTheDocument();
     expect(
-      screen.getByText(/The candidate story is the atmospheric hypothesis/),
+      screen.getByText("Warm-bubble trigger · triggered potential, not normal evolution"),
     ).toBeInTheDocument();
-    expect(screen.getByText("Deep cloud")).toBeInTheDocument();
-    expect(screen.getByText("Strong updraft")).toBeInTheDocument();
-    expect(
-      screen.getByText(/Surface heating: Baseline; plus idealized warm-bubble initiation/i),
-    ).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Untriggered observed evolution" }));
-    expect(screen.getByRole("alert")).toHaveTextContent(
-      "Untriggered observed evolution does not test that hypothesis",
-    );
-    fireEvent.click(screen.getByRole("button", { name: "Triggered deep potential" }));
+    expect(screen.getByText("triggered_deep_potential_warm_bubble_v1")).toBeInTheDocument();
+    expect(screen.getAllByLabelText(/^Run plan item /)).toHaveLength(1);
 
-    fireEvent.click(screen.getByTestId("create-package-btn"));
+    fireEvent.click(screen.getByRole("button", { name: "Duplicate variant" }));
+    expect(await screen.findByText("Run-plan variant duplicated")).toBeInTheDocument();
+    expect(screen.getAllByLabelText(/^Run plan item /)).toHaveLength(2);
+
+    fireEvent.click(screen.getByRole("button", { name: "Create packages and queue selected runs" }));
 
     await waitFor(() => {
       expect(dryRunBody).toContain('"run_recipe":"triggered_deep_potential"');
@@ -3197,6 +3212,9 @@ describe("App", () => {
       if (url === "/api/dry-run-package") {
         dryRunBody = String(init?.body ?? "");
       }
+      if (url === "/api/runs/queue" && init?.method === "POST") {
+        return Promise.resolve(new Response(JSON.stringify(emptyRunQueue), { status: 200 }));
+      }
       return (
         defaultFetch?.(input, init) ?? Promise.resolve(new Response("not found", { status: 404 }))
       );
@@ -3212,26 +3230,23 @@ describe("App", () => {
     fireEvent.change(await screen.findByLabelText("Story"), {
       target: { value: "humid_rainy_candidate" },
     });
-    fireEvent.click(screen.getByRole("button", { name: "Analyze recommendations" }));
+    fireEvent.click(screen.getByRole("button", { name: "Run analyzer only" }));
 
     expect(await screen.findByText("Cached sounding analysis loaded")).toBeInTheDocument();
     const humidCard = screen.getByLabelText("Sounding candidate Wilmington, Ohio (USM00072426)");
     expect(humidCard).toHaveTextContent("Humid / rainy");
 
-    fireEvent.click(within(humidCard).getByRole("button", { name: "Use this sounding" }));
+    fireEvent.click(within(humidCard).getByRole("button", { name: "Add to run plan" }));
 
-    expect(await screen.findByText("Candidate selected for package review")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Untriggered observed evolution" })).toHaveAttribute(
-      "aria-pressed",
-      "true",
-    );
     expect(
-      screen.getByText(
-        /Predicted rain behavior needs rain-water, surface-rain, and\/or reflectivity outputs/,
-      ),
+      await screen.findByText("Wilmington, Ohio (USM00072426) added to the run plan"),
     ).toBeInTheDocument();
+    expect(within(screen.getByLabelText("Run plan")).getByLabelText("Recipe")).toHaveValue(
+      "untriggered_observed_evolution",
+    );
+    expect(screen.getByText("untriggered_observed_sounding_evolution_v0")).toBeInTheDocument();
 
-    fireEvent.click(screen.getByTestId("create-package-btn"));
+    fireEvent.click(screen.getByRole("button", { name: "Create packages and queue selected runs" }));
 
     await waitFor(() => {
       expect(dryRunBody).toContain('"run_recipe":"untriggered_observed_evolution"');
@@ -3258,6 +3273,9 @@ describe("App", () => {
       if (url === "/api/dry-run-package") {
         dryRunBody = String(init?.body ?? "");
       }
+      if (url === "/api/runs/queue" && init?.method === "POST") {
+        return Promise.resolve(new Response(JSON.stringify(emptyRunQueue), { status: 200 }));
+      }
       return (
         defaultFetch?.(input, init) ?? Promise.resolve(new Response("not found", { status: 404 }))
       );
@@ -3276,25 +3294,13 @@ describe("App", () => {
     expect(screen.getByText(/Screening guidance only/)).toBeInTheDocument();
     expect(screen.getByText("IGRA cache not checked yet")).toBeInTheDocument();
     expect(screen.queryByLabelText("Save into")).not.toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole("button", { name: "Refresh IGRA catalog" }));
-
-    expect(await screen.findByText("IGRA station catalog refreshed")).toBeInTheDocument();
-    expect(screen.getByText("Cached sounding inventory").nextElementSibling).toHaveTextContent(
-      "2 cached soundings",
-    );
-    expect(screen.getByText("Planned analysis slice").nextElementSibling).toHaveTextContent(
-      "Up to 2 soundings (5 per cached file)",
-    );
-
-    fireEvent.click(screen.getByRole("button", { name: "Cache station files" }));
-    expect(await screen.findByText("Cached 1 station file")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Prepare & search local soundings" })).toBeInTheDocument();
 
     fireEvent.click(screen.getByText("Advanced filters"));
     fireEvent.change(screen.getByLabelText("Story"), {
       target: { value: "shallow_cumulus_candidate" },
     });
-    fireEvent.click(screen.getByRole("button", { name: "Analyze recommendations" }));
+    fireEvent.click(screen.getByRole("button", { name: "Run analyzer only" }));
 
     expect(await screen.findByText("Cached sounding analysis loaded")).toBeInTheDocument();
     expect(screenBody).toContain('"story_filter":"shallow_cumulus_candidate"');
@@ -3303,8 +3309,6 @@ describe("App", () => {
     const valleyCard = screen.getByLabelText("Sounding candidate Valley, Nebraska (USM00072558)");
     expect(valleyCard).toHaveTextContent("Cloud-forming shallow cumulus");
     expect(valleyCard).toHaveTextContent("Package-ready");
-    expect(valleyCard).toHaveTextContent("Low estimated LCL makes cloud formation easier to test.");
-    expect(valleyCard).toHaveTextContent("Low-level moisture: 10.2 g/kg");
     fireEvent.click(within(valleyCard).getByRole("button", { name: /Valley, Nebraska/ }));
     expect(
       screen.getByLabelText("Sounding candidate Wilmington, Ohio (USM00072426)"),
@@ -3328,31 +3332,23 @@ describe("App", () => {
     expect(await screen.findByText("Sounding candidate saved")).toBeInTheDocument();
     expect(saveBody).toContain('"tags":["compare","rerun"]');
     expect(saveBody).toContain('"notes":"Compare this against the humid case."');
+    fireEvent.click(screen.getByRole("tab", { name: /Saved candidates/ }));
     const savedCard = await screen.findByLabelText(
       "Saved sounding candidate Valley, Nebraska (USM00072558)",
     );
     expect(savedCard).toHaveTextContent("Tags: compare, rerun");
     expect(savedCard).toHaveTextContent("Notes: Compare this against the humid case.");
 
-    fireEvent.click(within(savedCard).getByRole("button", { name: "Use to create package" }));
+    fireEvent.click(within(savedCard).getByRole("button", { name: "Add to run plan" }));
 
-    expect(await screen.findByText("Candidate selected for package review")).toBeInTheDocument();
-    expect(
-      screen.getByText("Candidate loaded into observed-sounding package review"),
-    ).toBeInTheDocument();
-    fireEvent.click(screen.getByTestId("create-package-btn"));
+    expect(await screen.findByText("Valley, Nebraska (USM00072558) added to the run plan")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Create packages and queue selected runs" }));
 
     await waitFor(() => {
       expect(dryRunBody).toContain('"user_tags":["compare","rerun"]');
       expect(dryRunBody).toContain('"user_notes":"Compare this against the humid case."');
       expect(dryRunBody).toContain('"saved_notes":"Compare this against the humid case."');
     });
-    expect(screen.getByText("Package notes").nextElementSibling).toHaveTextContent(
-      "Compare this against the humid case.",
-    );
-    expect(screen.getByText("Sounding").nextElementSibling).toHaveTextContent(
-      "Valley, Nebraska (USM00072558)",
-    );
 
     fireEvent.click(within(savedCard).getByRole("button", { name: "Remove saved" }));
     expect(await screen.findByText("Saved sounding candidate removed")).toBeInTheDocument();
@@ -3360,20 +3356,21 @@ describe("App", () => {
       screen.queryByLabelText("Saved sounding candidate Valley, Nebraska (USM00072558)"),
     ).not.toBeInTheDocument();
 
+    fireEvent.click(screen.getByRole("tab", { name: "Cached recommendations" }));
     fireEvent.change(screen.getByLabelText("Story"), {
       target: { value: "needs_review" },
     });
-    fireEvent.click(screen.getByRole("button", { name: "Analyze recommendations" }));
+    fireEvent.click(screen.getByRole("button", { name: "Run analyzer only" }));
     const normanCard = await screen.findByLabelText(
       "Sounding candidate Norman, Oklahoma (USM00072357)",
     );
     expect(normanCard).toHaveTextContent("Blocked");
-    expect(within(normanCard).getByRole("button", { name: "Use this sounding" })).toBeDisabled();
+    expect(within(normanCard).getByRole("button", { name: "Add to run plan" })).toBeDisabled();
 
     fireEvent.change(screen.getByLabelText("Story"), {
       target: { value: "all" },
     });
-    fireEvent.click(screen.getByRole("button", { name: "Analyze recommendations" }));
+    fireEvent.click(screen.getByRole("button", { name: "Run analyzer only" }));
     const selectedValleyCard = await screen.findByLabelText(
       "Sounding candidate Valley, Nebraska (USM00072558)",
     );
@@ -3381,16 +3378,10 @@ describe("App", () => {
       screen.getByRole("heading", { name: "Recommended cached soundings" }),
     ).toBeInTheDocument();
 
-    fireEvent.click(within(selectedValleyCard).getByRole("button", { name: "Use this sounding" }));
+    fireEvent.click(within(selectedValleyCard).getByRole("button", { name: "Add to run plan" }));
+    expect(await screen.findByText("Valley, Nebraska (USM00072558) added to the run plan")).toBeInTheDocument();
 
-    expect(await screen.findByText("Candidate selected for package review")).toBeInTheDocument();
-    expect(
-      screen.getByText("Candidate loaded into observed-sounding package review"),
-    ).toBeInTheDocument();
-    expect(screen.getByText("USM00072558 · Valley, Nebraska")).toBeInTheDocument();
-    expect(screen.getByText(/Screened as Cloud-forming shallow cumulus/)).toBeInTheDocument();
-
-    fireEvent.click(screen.getByTestId("create-package-btn"));
+    fireEvent.click(screen.getByRole("button", { name: "Create packages and queue selected runs" }));
 
     await waitFor(() => {
       expect(dryRunBody).toContain('"observed_sounding"');
@@ -3421,6 +3412,14 @@ describe("App", () => {
       target: { value: "__observed_sounding_upload__" },
     });
 
+    expect(await screen.findByRole("tab", { name: "Cached recommendations" })).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
+    expect(
+      screen.queryByLabelText("Saved sounding candidate Valley, Nebraska (USM00072558)"),
+    ).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("tab", { name: /Saved candidates/ }));
     expect(
       await screen.findByLabelText("Saved sounding candidate Valley, Nebraska (USM00072558)"),
     ).toBeInTheDocument();
@@ -3494,7 +3493,7 @@ describe("App", () => {
     fireEvent.change(screen.getByLabelText("Story"), {
       target: { value: "shallow_cumulus_candidate" },
     });
-    fireEvent.click(screen.getByRole("button", { name: "Analyze recommendations" }));
+    fireEvent.click(screen.getByRole("button", { name: "Run analyzer only" }));
 
     const valleyCard = await screen.findByLabelText(
       "Sounding candidate Valley, Nebraska (USM00072558)",
@@ -3509,6 +3508,7 @@ describe("App", () => {
     });
     fireEvent.click(within(candidateDetails).getByRole("button", { name: "Save candidate" }));
 
+    fireEvent.click(screen.getByRole("tab", { name: /Saved candidates/ }));
     const savedCard = await screen.findByLabelText(
       "Saved sounding candidate Valley, Nebraska (USM00072558)",
     );
@@ -3527,6 +3527,7 @@ describe("App", () => {
     fireEvent.change(screen.getByLabelText("Experiment"), {
       target: { value: "__observed_sounding_upload__" },
     });
+    fireEvent.click(screen.getByRole("tab", { name: /Saved candidates/ }));
 
     const reloadedSavedCard = await screen.findByLabelText(
       "Saved sounding candidate Valley, Nebraska (USM00072558)",
@@ -3550,7 +3551,7 @@ describe("App", () => {
     fireEvent.change(screen.getByLabelText("Support"), {
       target: { value: "weak" },
     });
-    fireEvent.click(screen.getByRole("button", { name: "Analyze recommendations" }));
+    fireEvent.click(screen.getByRole("button", { name: "Run analyzer only" }));
 
     const wilmingtonCard = await screen.findByLabelText(
       "Sounding candidate Wilmington, Ohio (USM00072426)",
@@ -3581,14 +3582,14 @@ describe("App", () => {
       target: { value: "__observed_sounding_upload__" },
     });
 
-    fireEvent.click(screen.getByRole("button", { name: "Analyze recommendations" }));
-    expect(await screen.findByText("Cached sounding analysis loaded")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Prepare & search local soundings" }));
+    expect(await screen.findByText("Recommendation run complete")).toBeInTheDocument();
 
     fireEvent.click(screen.getByText("Advanced filters"));
     fireEvent.change(screen.getByLabelText("Story"), {
       target: { value: "shallow_cumulus_candidate" },
     });
-    fireEvent.click(screen.getByRole("button", { name: "Analyze recommendations" }));
+    fireEvent.click(screen.getByRole("button", { name: "Run analyzer only" }));
     expect(
       screen.getByLabelText("Sounding candidate Wilmington, Ohio (USM00072426)"),
     ).toBeInTheDocument();
@@ -3596,7 +3597,7 @@ describe("App", () => {
     fireEvent.change(screen.getByLabelText("Sort"), {
       target: { value: "estimated_lcl_height_m_agl" },
     });
-    fireEvent.click(screen.getByRole("button", { name: "Analyze recommendations" }));
+    fireEvent.click(screen.getByRole("button", { name: "Run analyzer only" }));
     await waitFor(() => {
       const candidateCards = screen.getAllByLabelText(/^Sounding candidate /);
       const visibleOrder = candidateCards.map((card) => card.textContent ?? "");
@@ -3847,6 +3848,10 @@ describe("App", () => {
     render(<App />);
 
     fireEvent.click(await screen.findByRole("button", { name: "Build" }));
+    const runMonitor = screen.getByText("Run monitor").closest("details");
+    expect(runMonitor).not.toHaveAttribute("open");
+    fireEvent.click(screen.getByText("Run monitor"));
+    expect(runMonitor).toHaveAttribute("open");
     expect(await screen.findByRole("heading", { name: "Local run launchpad" })).toBeInTheDocument();
     expect(screen.queryByText("Local experiment loop")).not.toBeInTheDocument();
     expect(screen.getByText("Build pipeline")).toBeInTheDocument();

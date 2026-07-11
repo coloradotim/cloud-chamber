@@ -56,6 +56,8 @@ test.describe("mocked smoke: app shell", () => {
     await gotoApp(page);
 
     await gotoBuild(page);
+    await expect(page.getByText("Run monitor")).toBeVisible();
+    await page.getByText("Run monitor").click();
     await expect(page.getByRole("heading", { name: "Local run launchpad" })).toBeVisible();
 
     await gotoResults(page);
@@ -117,6 +119,8 @@ test.describe("mocked smoke: app shell", () => {
       }
 
       await gotoBuild(page);
+      await expect(page.getByText("Run monitor")).toBeVisible();
+      await page.getByText("Run monitor").click();
       await expect(page.getByRole("heading", { name: "Local run launchpad" })).toBeVisible();
       await gotoResults(page);
       await expect(page.getByRole("heading", { name: "Experiment Notebook" })).toBeVisible();

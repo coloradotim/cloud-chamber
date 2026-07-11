@@ -316,16 +316,53 @@ small {
   background: linear-gradient(180deg, rgba(255, 255, 255, 0.92), rgba(247, 251, 253, 0.86));
 }
 
+.atmosphere-source-panel,
+.candidate-search-controls,
+.upload-source-stack,
+.run-plan-panel {
+  display: grid;
+  gap: 0.85rem;
+}
+
+.source-path-tabs {
+  align-items: stretch;
+}
+
+.source-path-tabs button {
+  min-height: 2.55rem;
+}
+
+.candidate-search-controls label {
+  display: grid;
+  gap: 0.35rem;
+  color: var(--color-text-primary);
+  font-weight: 800;
+}
+
+.candidate-search-controls small {
+  color: var(--color-text-muted);
+  font-weight: 500;
+  line-height: 1.35;
+}
+
 .candidate-cache-summary {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
   gap: 0.6rem;
   margin: 0;
 }
 
-.candidate-cache-summary > div,
+.candidate-cache-summary h4 {
+  margin: 0;
+}
+
+.candidate-cache-summary .compact-metrics,
+.run-plan-panel .compact-metrics {
+  margin: 0;
+}
+
 .candidate-detail-panel,
-.saved-candidate-card {
+.saved-candidate-card,
+.run-plan-card {
   border: 1px solid var(--color-border);
   border-radius: 8px;
   padding: 0.75rem;
@@ -400,10 +437,10 @@ small {
 
 .candidate-card {
   display: grid;
-  gap: 0.65rem;
+  gap: 0.5rem;
   border: 1px solid var(--color-border);
   border-radius: 8px;
-  padding: 0.75rem;
+  padding: 0.65rem 0.7rem;
   background: var(--color-surface);
 }
 
@@ -495,8 +532,6 @@ small {
 .saved-candidates-panel {
   display: grid;
   gap: 0.7rem;
-  border-top: 1px solid var(--color-border);
-  padding-top: 0.9rem;
 }
 
 .saved-candidate-card {
@@ -519,6 +554,119 @@ small {
   min-width: 12rem;
   color: var(--color-text-primary);
   font-weight: 800;
+}
+
+.run-plan-list {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.run-plan-card {
+  display: grid;
+  gap: 0.85rem;
+}
+
+.run-plan-select {
+  display: flex;
+  gap: 0.6rem;
+  align-items: flex-start;
+  color: var(--color-text-primary);
+  font-weight: 800;
+}
+
+.run-plan-select input {
+  width: 1rem;
+  height: 1rem;
+  margin-top: 0.15rem;
+}
+
+.run-plan-select small {
+  display: block;
+  color: var(--color-text-muted);
+  font-weight: 500;
+}
+
+.run-plan-config-primary {
+  display: grid;
+  gap: 0.65rem;
+  border: 1px solid rgba(46, 126, 178, 0.16);
+  border-radius: 8px;
+  padding: 0.75rem;
+  background: rgba(247, 251, 253, 0.74);
+}
+
+.run-plan-config-heading {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 1rem;
+  align-items: end;
+  justify-content: space-between;
+}
+
+.run-plan-config-heading h4 {
+  margin: 0;
+}
+
+.run-plan-config-heading span {
+  color: var(--color-text-muted);
+  font-size: 0.88rem;
+  font-weight: 800;
+}
+
+.run-plan-configuration-grid {
+  grid-template-columns: repeat(auto-fit, minmax(13.5rem, 1fr));
+  margin: 0;
+}
+
+.run-plan-config-summary {
+  grid-column: 1 / -1;
+  max-width: 62rem;
+  margin: 0;
+  padding-top: 0.15rem;
+  font-size: 0.92rem;
+}
+
+.run-plan-recipe-details {
+  padding-top: 0.1rem;
+}
+
+.run-plan-metadata-grid {
+  margin-top: 0.65rem;
+}
+
+.run-monitor-panel {
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.9);
+  box-shadow: var(--shadow-subtle);
+}
+
+.run-monitor-panel > summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.9rem;
+  cursor: pointer;
+  list-style: none;
+}
+
+.run-monitor-panel > summary::-webkit-details-marker {
+  display: none;
+}
+
+.run-monitor-panel > summary small {
+  display: block;
+  color: var(--color-text-muted);
+  font-weight: 650;
+}
+
+.run-monitor-panel[open] > summary {
+  border-bottom: 1px solid var(--color-border);
+}
+
+.run-monitor-panel .local-run-panel {
+  padding: 0.9rem;
 }
 
 .screening-guidance-note {
