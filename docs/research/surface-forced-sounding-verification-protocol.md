@@ -60,7 +60,7 @@ Current assumptions:
 - Missing fields make a question unavailable or inconclusive.
 - A shallow-only outcome is not automatically a failed sounding or failed model.
 - No generated runtime artifacts belong in git.
-- Comparisons are valid only when forcing, duration, domain, grid/resolution, cadence, model/build context, output fields, and diagnostic support are comparable enough for the stated question.
+- Comparisons are valid only when the fields intended to stay fixed are actually fixed, and when output fields and diagnostic support are comparable enough for the stated question.
 
 ## Matrix contract for campaign runners
 
@@ -76,6 +76,7 @@ selection_sets
 run_defaults
 forcing_sets
 runs
+comparison_types
 required_summary_fields
 ```
 
@@ -103,11 +104,30 @@ cached_recommendation:
   optional station_id / valid_time_utc for disambiguation
 
 uploaded_or_local_igra:
-  local_text_path or runtime_file_ref
+  runtime_file_ref
   selected_valid_time_utc
 ```
 
-Committed matrices should not contain machine-private absolute paths. If a local path is needed, keep the real path in runtime-local state and use a portable placeholder or runtime file reference in committed examples.
+Committed matrices should not contain machine-private absolute paths. If a local path is needed, keep the real path in runtime-local state and use a portable runtime file reference in committed examples.
+
+### Candidate provenance
+
+The runner and report must preserve enough provenance to identify the real sounding and why it was selected:
+
+```text
+candidate_id
+selection_source_type
+selection_source_reference
+station_id
+station_name
+valid_time_utc
+candidate_story
+candidate_score
+candidate_evidence
+candidate_caveats
+```
+
+A story label without candidate identity, source reference, evidence, and caveats is not enough for a verification report.
 
 ### Override precedence
 
@@ -154,20 +174,74 @@ skipped
 blocked
 ```
 
-The report should preserve the source manifest state when available.
+The report should preserve the source manifest state when available. The report must show package status, run status, and ingest status separately so missing result evidence cannot be mistaken for a scientific no-initiation outcome.
+
+### Comparison contract
+
+Do not use one global “all fields must match” list for every pair. Each comparison type must define:
+
+```text
+comparison_type
+control_matrix_id
+experiment_matrix_id
+varied_fields
+required_equal_fields
+required_available_fields
+required_diagnostic_support
+noncomparable_status
+```
+
+Examples:
+
+```text
+forcing_sensitivity:
+  varied_fields: surface_heat_flux_k_m_s, surface_moisture_flux_g_g_m_s
+  required_equal_fields: selection_id, duration, domain_size, horizontal_cell_count, nx, ny, nz, dx_m, dy_m, dz_m, model_top_m, output_cadence, Cloud Chamber commit, CM1 version
+
+duration_sensitivity:
+  varied_fields: duration
+  required_equal_fields: selection_id, forcing values, domain_size, horizontal_cell_count, nx, ny, nz, dx_m, dy_m, dz_m, model_top_m, output_cadence, Cloud Chamber commit, CM1 version
+
+domain_grid_bundle_sensitivity:
+  varied_fields: domain_size, nx, ny, nz, dx_m, dy_m, dz_m, model_top_m, output volume
+  required_equal_fields: selection_id, forcing values, duration, output_cadence, Cloud Chamber commit, CM1 version
+
+cross_sounding_discrimination:
+  varied_fields: selection_id, station/time/candidate identity
+  required_equal_fields: forcing values, duration, domain_size, horizontal_cell_count, nx, ny, nz, dx_m, dy_m, dz_m, model_top_m, output_cadence, Cloud Chamber commit, CM1 version
+```
+
+All comparisons must also check required output fields, missing-field availability, and diagnostic support. Unsupported comparisons should be labeled `inconclusive_noncomparable_runs` rather than summarized as evidence.
 
 ### Stage gates
 
-Phase 1 must be allowed to stop the campaign before expensive later phases. Recommended gates:
+Phase 1 must be allowed to stop the campaign before expensive later phases.
+
+Default gate policy:
 
 ```text
-phase1_requires_forcing_metadata: true
-phase1_requires_hfx_lhfx_or_declared_unavailable: true
-phase1_requires_low_level_response_or_declared_unavailable: true
-continue_after_phase1_failure: false by default
+selected_and_cm1_facing_forcing_metadata_missing:
+  result: fail
+  automatic_continuation: blocked
+
+hfx_or_lhfx_missing_when_requested:
+  result: inconclusive_missing_evidence
+  automatic_continuation: blocked
+
+low_level_response_diagnostic_missing:
+  result: inconclusive_missing_evidence
+  automatic_continuation: blocked
+
+forcing_metadata_present_and_surface_outputs_available_or_explicitly_not_supported:
+  result: partial_verification
+  automatic_continuation: blocked unless operator override is recorded
+
+forcing_metadata_present_surface_outputs_available_and_low_level_response_available:
+  result: forcing_path_verified_for_campaign
+  automatic_continuation: allowed
 ```
 
-A runner should default to planning/reporting the blocked state rather than queueing later phases when gates fail.
+An operator may explicitly override a blocked gate, but the report must preserve the override and must not label forcing path or boundary-layer response as verified. The runner should default to planning/reporting blocked later phases rather than queueing them when gates fail.
 
 ### Execution safety
 
@@ -408,9 +482,12 @@ station_id
 station_name
 valid_time_utc
 candidate_id if any
+selection_source_type
+selection_source_reference
 candidate story / active story
-candidate score and caveats
-source path: cached / saved / uploaded
+candidate score
+candidate evidence
+candidate caveats
 selected surface_heat_flux_k_m_s and units
 selected surface_moisture_flux_g_g_m_s and units
 resolved CM1 cnst_shflx and units
