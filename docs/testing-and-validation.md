@@ -106,18 +106,20 @@ evidence; missing wind must not produce fake shear, storm-motion, or SRH
 values. Browser/UI tests must not parse sounding text or compute these
 diagnostics client-side.
 
-Frontend tests for the `Upload a Sounding` Build workflow should cover the same
+Frontend tests for the `Observed Soundings` Build workflow should cover the same
 boundary. Component tests and mocked Playwright smoke tests should verify that
-saved candidates load immediately when `Upload a Sounding` is selected; the
+saved candidates load immediately when `Observed Soundings` is selected; the
 candidate workbench can refresh IGRA catalog metadata, cache a bounded batch of
 station files through mocked APIs, show station-diverse backend recommendations
-with why-interesting reasons, refine by story, story family, support, readiness,
-station search, and backend-owned sort keys when requested, include secondary
-story-score matches in refined results, sort missing metrics last, show blocked
-candidates as unusable, save candidates with freeform tags and notes, load a
-package-ready candidate into the observed-sounding package review, and include
-candidate-screening provenance in the generated package request. Browser tests
-must mock the backend APIs and must not fetch NOAA/NCEI, parse raw station text,
+with why-interesting reasons and filter-trace counts, refine by story, story
+family, support, readiness, station search, and backend-owned sort keys when
+requested, include secondary story-score matches in explicit refined results,
+exclude weak deep-convection matches from the default credible deep-convection
+intent, sort missing metrics last, show blocked candidates as unusable, save
+candidates with freeform tags and notes, load a package-ready candidate into the
+observed-sounding package review, and include candidate-screening provenance in
+the generated package request. Browser tests must mock the backend APIs and must
+not fetch NOAA/NCEI, parse raw station text,
 compute story scores, or imply that a candidate score predicts the CM1 outcome.
 
 Most expanded real-sounding story families are spec-only until backend feature

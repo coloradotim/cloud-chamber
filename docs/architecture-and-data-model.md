@@ -173,14 +173,18 @@ enabled runnable label. Severe/deep-convection candidates are currently
 inspectable only as observed-sounding experiments under selected numeric uniform
 surface forcing, with differential-forcing initiation tracked as future work.
 
-The Build UI consumes this layer through bounded JSON only. `Upload a Sounding`
+The Build UI consumes this layer through bounded JSON only. `Observed Soundings`
 is the observed-atmosphere entry point, but the user chooses exactly one source
 path at a time: cached recommendations, saved candidates, or manual IGRA station
 text upload. Cached recommendations call recent-catalog/cache and
 candidate-analysis endpoints, display backend recommendations and advanced
-refinements, and save candidates with freeform tags/notes. Saved candidates are
-loaded as a shortlist source without requiring a catalog refresh, cache action,
-or analysis run. Manual upload remains hidden unless that source path is active.
+refinements, and save candidates with freeform tags/notes. Candidate-analysis
+responses include the active story that matched the current search intent,
+matched story IDs, ingredient score, top reasons/caveats, and a filter trace
+with analyzed-sounding counts, stage counts, station distribution, and top
+exclusion reasons. Saved candidates are loaded as a shortlist source without
+requiring a catalog refresh, cache action, or analysis run. Manual upload
+remains hidden unless that source path is active.
 Package-ready candidates, saved candidates, and uploaded soundings all flow into
 one selected-sounding setup surface for recipe and run-configuration choices.
 The configured selection is then added to the bottom Build run plan rather than

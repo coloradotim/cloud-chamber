@@ -10,6 +10,7 @@ from __future__ import annotations
 import hashlib
 import json
 import math
+from collections.abc import Callable
 from datetime import UTC, datetime
 from functools import cmp_to_key
 from pathlib import Path
@@ -267,6 +268,18 @@ class SoundingCandidate(BaseModel):
         "CM1 package will produce."
     )
     recipe_fit_caveats: list[str] = Field(default_factory=list)
+    active_story: StoryId | None = None
+    active_story_label: str | None = None
+    display_story: str | None = None
+    matched_story_ids: list[StoryId] = Field(default_factory=list)
+    active_story_score: float | None = None
+    ingredient_score: float | None = None
+    active_story_support: Support | None = None
+    package_readiness: str | None = None
+    recipe_fit: str | None = None
+    top_reasons: list[str] = Field(default_factory=list)
+    top_caveats: list[str] = Field(default_factory=list)
+    evidence_summary: list[str] = Field(default_factory=list)
     screening_version: str = SCREENING_VERSION
     created_at: datetime
 
@@ -314,6 +327,42 @@ class CandidateAnalysisFilterSummary(BaseModel):
     station_search: str = ""
 
 
+class CandidateFilterStage(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    key: str
+    label: str
+    count: int
+    active: bool = False
+
+
+class CandidateStationDistribution(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    station_id: str
+    station_name: str | None = None
+    count: int
+
+
+class CandidateExcludedReason(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    reason: str
+    count: int
+
+
+class CandidateFilterTrace(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    analyzed_soundings: int
+    story_score_records: int
+    stage_counts: dict[str, int]
+    stages: list[CandidateFilterStage]
+    station_distribution: list[CandidateStationDistribution]
+    top_excluded_reasons: list[CandidateExcludedReason]
+    applied_limit: int
+
+
 class CandidateAnalysisResult(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -325,6 +374,7 @@ class CandidateAnalysisResult(BaseModel):
     sort_by: CandidateSortKey
     sort_direction: CandidateSortDirection
     filters: CandidateAnalysisFilterSummary
+    filter_trace: CandidateFilterTrace
     sort_options: list[CandidateSortOption]
     caveats: list[str] = Field(default_factory=list)
 
@@ -612,6 +662,14 @@ def analyze_cached_soundings(
             station_search=normalized_search,
         )
     ]
+    contextual_filtered = [
+        _candidate_with_analysis_context(
+            candidate,
+            story_filter=story_filter,
+            story_family=story_family,
+        )
+        for candidate in filtered
+    ]
     if _uses_default_discovery_view(
         story_filter=story_filter,
         story_family=story_family,
@@ -620,18 +678,19 @@ def analyze_cached_soundings(
         station_search=normalized_search,
         sort_by=sort_by,
     ):
-        sorted_candidates = _diverse_recommendations(filtered)
+        sorted_candidates = _diverse_recommendations(contextual_filtered)
     else:
         sorted_candidates = _sort_analysis_candidates(
-            filtered,
+            contextual_filtered,
             sort_by=sort_by,
             sort_direction=selected_direction,
             story_filter=story_filter,
             story_family=story_family,
         )
+    limited_candidates = sorted_candidates[:limit]
     return CandidateAnalysisResult(
         generated_at=datetime.now(UTC),
-        candidates=sorted_candidates[:limit],
+        candidates=limited_candidates,
         total_candidate_count=len(screened.candidates),
         filtered_candidate_count=len(filtered),
         sort_by=sort_by,
@@ -644,9 +703,113 @@ def analyze_cached_soundings(
             readiness=readiness,
             station_search=normalized_search,
         ),
+        filter_trace=_candidate_filter_trace(
+            screened.candidates,
+            sorted_candidates=sorted_candidates,
+            rendered_candidates=limited_candidates,
+            story_filter=story_filter,
+            story_family=story_family,
+            support=support,
+            readiness=readiness,
+            station_search=normalized_search,
+            limit=limit,
+        ),
         sort_options=list(SORT_OPTIONS),
         caveats=screened.caveats,
     )
+
+
+def _candidate_with_analysis_context(
+    candidate: SoundingCandidate,
+    *,
+    story_filter: CandidateStoryFilter,
+    story_family: CandidateStoryFamilyFilter,
+) -> SoundingCandidate:
+    scoped_scores = _candidate_story_scores_for_scope(
+        candidate,
+        story_filter=story_filter,
+        story_family=story_family,
+    )
+    meaningful_scores = [score for score in scoped_scores if _meaningful_story_score(score)]
+    active_score = max(
+        meaningful_scores or scoped_scores,
+        key=lambda score: score.score_0_to_100,
+        default=None,
+    )
+    if active_score is None:
+        active_score = next(
+            (score for score in candidate.story_scores if score.story == candidate.primary_story),
+            None,
+        )
+    active_story = active_score.story if active_score else candidate.primary_story
+    active_label = active_score.label if active_score else candidate.primary_story_label
+    active_support = active_score.support if active_score else None
+    active_score_value = active_score.score_0_to_100 if active_score else candidate.rank_score
+    recipe_fit = _candidate_recipe_fit(
+        active_story,
+        features=candidate.features,
+        package_ready=candidate.package_ready,
+    )
+    matched_scores = sorted(
+        meaningful_scores,
+        key=lambda score: score.score_0_to_100,
+        reverse=True,
+    )
+    evidence_summary = _candidate_evidence_summary(candidate, active_story)
+    top_reasons = _dedupe_nonempty_strings(
+        [
+            *(active_score.reasons if active_score else []),
+            *candidate.interest_reasons,
+            *(evidence_summary[:2]),
+            candidate.interest_summary or "",
+        ]
+    )[:4]
+    top_caveats = _dedupe_nonempty_strings(
+        [
+            *(active_score.caveats if active_score else []),
+            *recipe_fit["caveats"],
+            *candidate.caveats,
+        ]
+    )[:3]
+    return candidate.model_copy(
+        update={
+            "active_story": active_story,
+            "active_story_label": active_label,
+            "display_story": active_label,
+            "matched_story_ids": [score.story for score in matched_scores],
+            "active_story_score": round(active_score_value, 2),
+            "ingredient_score": round(active_score_value, 2),
+            "active_story_support": active_support,
+            "package_readiness": "package_ready" if candidate.package_ready else "blocked",
+            "recipe_fit": recipe_fit["status"],
+            "top_reasons": top_reasons,
+            "top_caveats": top_caveats,
+            "evidence_summary": evidence_summary,
+        }
+    )
+
+
+def _candidate_evidence_summary(candidate: SoundingCandidate, active_story: StoryId) -> list[str]:
+    scoped = [
+        item.interpretation
+        for item in candidate.evidence
+        if active_story in item.supports_story and item.interpretation
+    ]
+    if scoped:
+        return scoped[:3]
+    return [item.interpretation for item in candidate.evidence if item.interpretation][:3]
+
+
+def _dedupe_nonempty_strings(values: list[str]) -> list[str]:
+    deduped: list[str] = []
+    seen: set[str] = set()
+    for value in values:
+        cleaned = value.strip()
+        if not cleaned or cleaned in seen:
+            continue
+        seen.add(cleaned)
+        deduped.append(cleaned)
+    return deduped
 
 
 def _candidate_story_score(candidate: SoundingCandidate, story: TargetStoryId | None) -> float:
@@ -790,6 +953,237 @@ def _target_story_for_filter(
     return None
 
 
+def _candidate_filter_trace(
+    candidates: list[SoundingCandidate],
+    *,
+    sorted_candidates: list[SoundingCandidate],
+    rendered_candidates: list[SoundingCandidate],
+    story_filter: CandidateStoryFilter,
+    story_family: CandidateStoryFamilyFilter,
+    support: CandidateSupportFilter,
+    readiness: CandidateReadinessFilter,
+    station_search: str,
+    limit: int,
+) -> CandidateFilterTrace:
+    stages: list[CandidateFilterStage] = [
+        CandidateFilterStage(
+            key="analyzed_soundings",
+            label="Analyzed cached soundings",
+            count=len(candidates),
+            active=True,
+        )
+    ]
+    top_excluded_reasons: list[CandidateExcludedReason] = []
+    current = candidates
+
+    def apply_stage(
+        *,
+        key: str,
+        label: str,
+        active: bool,
+        keep: Callable[[SoundingCandidate], bool],
+        excluded_reason: str,
+    ) -> None:
+        nonlocal current
+        before = len(current)
+        if active:
+            current = [candidate for candidate in current if keep(candidate)]
+        stages.append(CandidateFilterStage(key=key, label=label, count=len(current), active=active))
+        excluded = before - len(current)
+        if active and excluded > 0:
+            top_excluded_reasons.append(
+                CandidateExcludedReason(reason=excluded_reason, count=excluded)
+            )
+
+    apply_stage(
+        key="story_filter",
+        label="Story filter",
+        active=story_filter != "all",
+        keep=lambda candidate: _candidate_matches_story_filter(candidate, story_filter),
+        excluded_reason=f"Story filter: {_story_filter_label(story_filter)}",
+    )
+    apply_stage(
+        key="story_family",
+        label="Story family",
+        active=story_family != "all",
+        keep=lambda candidate: _candidate_matches_story_family(
+            candidate, story_filter, story_family
+        ),
+        excluded_reason=f"Story family: {_story_family_label(story_family)}",
+    )
+    apply_stage(
+        key="support",
+        label="Support",
+        active=support != "all",
+        keep=lambda candidate: _candidate_matches_support_filter(
+            candidate,
+            story_filter=story_filter,
+            story_family=story_family,
+            support=support,
+        ),
+        excluded_reason=f"Support: {support}",
+    )
+    apply_stage(
+        key="readiness",
+        label="Package readiness",
+        active=readiness != "all",
+        keep=lambda candidate: _candidate_matches_readiness(candidate, readiness),
+        excluded_reason=f"Readiness: {readiness}",
+    )
+    apply_stage(
+        key="station_search",
+        label="Station search",
+        active=bool(station_search),
+        keep=lambda candidate: _candidate_matches_station_search(candidate, station_search),
+        excluded_reason=f"Station search: {station_search}",
+    )
+    stages.append(
+        CandidateFilterStage(
+            key="sorted_or_recommended",
+            label="Sorted recommendation set",
+            count=len(sorted_candidates),
+            active=True,
+        )
+    )
+    stages.append(
+        CandidateFilterStage(
+            key="limited",
+            label="Returned candidate limit",
+            count=len(rendered_candidates),
+            active=len(sorted_candidates) > len(rendered_candidates),
+        )
+    )
+    stage_counts = {stage.key: stage.count for stage in stages}
+    station_distribution = _station_distribution(rendered_candidates)
+    return CandidateFilterTrace(
+        analyzed_soundings=len(candidates),
+        story_score_records=sum(len(candidate.story_scores) for candidate in candidates),
+        stage_counts=stage_counts,
+        stages=stages,
+        station_distribution=station_distribution,
+        top_excluded_reasons=sorted(
+            top_excluded_reasons,
+            key=lambda reason: reason.count,
+            reverse=True,
+        )[:4],
+        applied_limit=limit,
+    )
+
+
+def _candidate_matches_story_filter(
+    candidate: SoundingCandidate,
+    story_filter: CandidateStoryFilter,
+) -> bool:
+    if story_filter == "all":
+        return True
+    scoped_scores = _candidate_story_scores_for_scope(
+        candidate,
+        story_filter=story_filter,
+        story_family="all",
+    )
+    return any(_meaningful_story_score(score) for score in scoped_scores)
+
+
+def _candidate_matches_story_family(
+    candidate: SoundingCandidate,
+    story_filter: CandidateStoryFilter,
+    story_family: CandidateStoryFamilyFilter,
+) -> bool:
+    if story_family == "all":
+        return True
+    scoped_scores = _candidate_story_scores_for_scope(
+        candidate,
+        story_filter=story_filter,
+        story_family=story_family,
+    )
+    return any(_meaningful_story_score(score) for score in scoped_scores)
+
+
+def _candidate_matches_support_filter(
+    candidate: SoundingCandidate,
+    *,
+    story_filter: CandidateStoryFilter,
+    story_family: CandidateStoryFamilyFilter,
+    support: CandidateSupportFilter,
+) -> bool:
+    if support == "all":
+        return True
+    scoped_scores = _candidate_story_scores_for_scope(
+        candidate,
+        story_filter=story_filter,
+        story_family=story_family,
+    )
+    if story_filter == "all" and story_family == "all":
+        score = max(scoped_scores, key=lambda item: item.score_0_to_100, default=None)
+        return score is not None and score.support == support
+    return any(score.support == support for score in scoped_scores)
+
+
+def _candidate_matches_readiness(
+    candidate: SoundingCandidate, readiness: CandidateReadinessFilter
+) -> bool:
+    if readiness == "package_ready":
+        return candidate.package_ready
+    if readiness == "blocked":
+        return not candidate.package_ready
+    return True
+
+
+def _candidate_matches_station_search(candidate: SoundingCandidate, station_search: str) -> bool:
+    if not station_search:
+        return True
+    normalized = station_search.lower()
+    searchable = " ".join(
+        str(value)
+        for value in (
+            candidate.station_id,
+            candidate.station_name,
+            candidate.source_file_name,
+            candidate.primary_story_label,
+            candidate.story_family,
+            *(score.label for score in candidate.story_scores),
+            *(score.story for score in candidate.story_scores),
+        )
+        if value
+    ).lower()
+    return normalized in searchable
+
+
+def _station_distribution(
+    candidates: list[SoundingCandidate],
+) -> list[CandidateStationDistribution]:
+    counts: dict[str, CandidateStationDistribution] = {}
+    for candidate in candidates:
+        current = counts.get(candidate.station_id)
+        if current is None:
+            counts[candidate.station_id] = CandidateStationDistribution(
+                station_id=candidate.station_id,
+                station_name=candidate.station_name,
+                count=1,
+            )
+        else:
+            counts[candidate.station_id] = current.model_copy(update={"count": current.count + 1})
+    return sorted(counts.values(), key=lambda item: (-item.count, item.station_id))
+
+
+def _story_filter_label(story_filter: CandidateStoryFilter) -> str:
+    if story_filter == "all":
+        return "all stories"
+    if story_filter == "deep_convection_trial":
+        return "deep-convection stories"
+    return STORY_LABELS[story_filter]
+
+
+def _story_family_label(story_family: CandidateStoryFamilyFilter) -> str:
+    if story_family == "all":
+        return "all families"
+    if story_family == "deep_convection":
+        return "deep-convection stories"
+    if story_family == "lower_atmosphere":
+        return "lower-atmosphere stories"
+    return "review / incomplete"
+
+
 def _candidate_matches_analysis_filters(
     candidate: SoundingCandidate,
     *,
@@ -799,9 +1193,7 @@ def _candidate_matches_analysis_filters(
     readiness: CandidateReadinessFilter,
     station_search: str,
 ) -> bool:
-    if readiness == "package_ready" and not candidate.package_ready:
-        return False
-    if readiness == "blocked" and candidate.package_ready:
+    if not _candidate_matches_readiness(candidate, readiness):
         return False
     scoped_scores = _candidate_story_scores_for_scope(
         candidate,
@@ -820,21 +1212,8 @@ def _candidate_matches_analysis_filters(
                 return False
         elif not any(score.support == support for score in scoped_scores):
             return False
-    if station_search:
-        normalized = station_search.lower()
-        searchable = " ".join(
-            str(value)
-            for value in (
-                candidate.station_id,
-                candidate.station_name,
-                candidate.source_file_name,
-                candidate.primary_story_label,
-                candidate.story_family,
-            )
-            if value
-        ).lower()
-        if normalized not in searchable:
-            return False
+    if not _candidate_matches_station_search(candidate, station_search):
+        return False
     return True
 
 

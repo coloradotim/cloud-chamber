@@ -542,6 +542,10 @@ small {
   margin-bottom: 0;
 }
 
+.candidate-filter-detail {
+  font-weight: 650;
+}
+
 .candidate-card {
   display: grid;
   gap: 0.5rem;

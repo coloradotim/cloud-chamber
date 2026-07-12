@@ -461,8 +461,42 @@ type SoundingCandidate = {
   recipe_fit_label?: string;
   recipe_fit_summary?: string;
   recipe_fit_caveats?: string[];
+  active_story?: CandidateStoryId | null;
+  active_story_label?: string | null;
+  display_story?: string | null;
+  matched_story_ids?: CandidateStoryId[];
+  active_story_score?: number | null;
+  ingredient_score?: number | null;
+  active_story_support?: "supported" | "weak" | "unavailable" | null;
+  package_readiness?: string | null;
+  recipe_fit?: CandidateRecipeFitStatus | string | null;
+  top_reasons?: string[];
+  top_caveats?: string[];
+  evidence_summary?: string[];
   screening_version: string;
   created_at: string;
+};
+
+type CandidateFilterTrace = {
+  analyzed_soundings: number;
+  story_score_records: number;
+  stage_counts: Record<string, number>;
+  stages: Array<{
+    key: string;
+    label: string;
+    count: number;
+    active: boolean;
+  }>;
+  station_distribution: Array<{
+    station_id: string;
+    station_name?: string | null;
+    count: number;
+  }>;
+  top_excluded_reasons: Array<{
+    reason: string;
+    count: number;
+  }>;
+  applied_limit: number;
 };
 
 type ScreeningInput = {
@@ -497,6 +531,7 @@ type ScreeningResult = {
     readiness: CandidateReadinessFilter;
     station_search: string;
   };
+  filter_trace?: CandidateFilterTrace;
 };
 
 type UserRunMetadata = {
@@ -1254,7 +1289,7 @@ const DEFAULT_OBSERVED_RUN_CONFIGURATION: RunConfigurationInput = {
 
 const SEARCH_INTENT_OPTIONS: Array<{ value: SearchIntent; label: string }> = [
   { value: "best_overall", label: "Best overall recommendations" },
-  { value: "deep_convection", label: "Deep convection potential" },
+  { value: "deep_convection", label: "Credible deep-convection potential" },
   { value: "humid_rainy", label: "Humid/rainy evolution" },
   { value: "dry_microburst", label: "Dry microburst / inverted-V" },
   { value: "shallow_boundary_layer", label: "Shallow cumulus / boundary layer" },
@@ -1263,18 +1298,18 @@ const SEARCH_INTENT_OPTIONS: Array<{ value: SearchIntent; label: string }> = [
 const SEARCH_DEPTH_OPTIONS: Array<{ value: SearchDepth; label: string; description: string }> = [
   {
     value: "quick_scan",
-    label: "Quick scan",
-    description: "Small latest-sounding slice; fastest recommendation pass.",
+    label: "Latest sample",
+    description: "Latest 2 soundings per cached station file; fastest sanity check.",
   },
   {
     value: "deeper_scan",
-    label: "Deeper scan",
-    description: "Default bounded slice for useful local recommendations.",
+    label: "Station-history sweep",
+    description: "Latest 20 soundings per cached station file; default recommendation pass.",
   },
   {
     value: "broad_historical_sweep",
-    label: "Broad historical sweep",
-    description: "Larger bounded local slice; may take longer and need more cached data.",
+    label: "Broad cached history",
+    description: "Latest 50 soundings per cached station file; larger local sweep.",
   },
 ];
 
@@ -1290,9 +1325,9 @@ const SEARCH_DEPTH_LIMITS: Record<
   SearchDepth,
   { cacheLimit: string; latestPerStation: string; resultLimit: string }
 > = {
-  quick_scan: { cacheLimit: "5", latestPerStation: "2", resultLimit: "25" },
-  deeper_scan: { cacheLimit: "10", latestPerStation: "5", resultLimit: "50" },
-  broad_historical_sweep: { cacheLimit: "25", latestPerStation: "10", resultLimit: "100" },
+  quick_scan: { cacheLimit: "10", latestPerStation: "2", resultLimit: "25" },
+  deeper_scan: { cacheLimit: "25", latestPerStation: "20", resultLimit: "75" },
+  broad_historical_sweep: { cacheLimit: "50", latestPerStation: "50", resultLimit: "150" },
 };
 
 class DryRunRequestError extends Error {
@@ -1886,9 +1921,15 @@ export function App() {
   const [candidateStationSearch, setCandidateStationSearch] = useState("");
   const [candidateReadinessFilter, setCandidateReadinessFilter] =
     useState<CandidateReadinessFilter>("all");
-  const [candidateCacheLimit, setCandidateCacheLimit] = useState("10");
-  const [candidateLatestPerStation, setCandidateLatestPerStation] = useState("5");
-  const [candidateResultLimit, setCandidateResultLimit] = useState("50");
+  const [candidateCacheLimit, setCandidateCacheLimit] = useState(
+    SEARCH_DEPTH_LIMITS.deeper_scan.cacheLimit,
+  );
+  const [candidateLatestPerStation, setCandidateLatestPerStation] = useState(
+    SEARCH_DEPTH_LIMITS.deeper_scan.latestPerStation,
+  );
+  const [candidateResultLimit, setCandidateResultLimit] = useState(
+    SEARCH_DEPTH_LIMITS.deeper_scan.resultLimit,
+  );
   const [candidateStatus, setCandidateStatus] = useState("IGRA cache not checked yet");
   const [candidateError, setCandidateError] = useState<string | null>(null);
   const [candidateScreening, setCandidateScreening] = useState<ScreeningResult | null>(null);
@@ -2258,6 +2299,13 @@ export function App() {
     }
   }
 
+  function markCandidateSearchSettingsChanged(status: string) {
+    setCandidateScreening(null);
+    setCandidateDetailId(null);
+    setCandidateError(null);
+    setCandidateStatus(status);
+  }
+
   function handleSearchIntentChange(intent: SearchIntent) {
     setSearchIntent(intent);
     const filters = searchIntentFilters(intent);
@@ -2267,6 +2315,7 @@ export function App() {
     setCandidateReadinessFilter("all");
     setCandidateSort("best_match");
     setCandidateStationSearch("");
+    markCandidateSearchSettingsChanged("Search intent changed; analyze cached soundings");
   }
 
   function handleSearchDepthChange(depth: SearchDepth) {
@@ -2275,6 +2324,52 @@ export function App() {
     setCandidateCacheLimit(limits.cacheLimit);
     setCandidateLatestPerStation(limits.latestPerStation);
     setCandidateResultLimit(limits.resultLimit);
+    markCandidateSearchSettingsChanged("Search depth changed; analyze cached soundings");
+  }
+
+  function handleCandidateStoryFilterChange(filter: CandidateStoryFilter) {
+    setCandidateStoryFilter(filter);
+    markCandidateSearchSettingsChanged("Story filter changed; apply advanced filters");
+  }
+
+  function handleCandidateStoryFamilyFilterChange(filter: CandidateStoryFamilyFilter) {
+    setCandidateStoryFamilyFilter(filter);
+    markCandidateSearchSettingsChanged("Story family changed; apply advanced filters");
+  }
+
+  function handleCandidateSupportFilterChange(filter: CandidateSupportFilter) {
+    setCandidateSupportFilter(filter);
+    markCandidateSearchSettingsChanged("Support filter changed; apply advanced filters");
+  }
+
+  function handleCandidateSortChange(sort: CandidateSort) {
+    setCandidateSort(sort);
+    markCandidateSearchSettingsChanged("Sort changed; apply advanced filters");
+  }
+
+  function handleCandidateStationSearchChange(search: string) {
+    setCandidateStationSearch(search);
+    markCandidateSearchSettingsChanged("Station search changed; apply advanced filters");
+  }
+
+  function handleCandidateReadinessFilterChange(filter: CandidateReadinessFilter) {
+    setCandidateReadinessFilter(filter);
+    markCandidateSearchSettingsChanged("Readiness filter changed; apply advanced filters");
+  }
+
+  function handleCandidateCacheLimitChange(limit: string) {
+    setCandidateCacheLimit(limit);
+    markCandidateSearchSettingsChanged("Cache limit changed; analyze cached soundings");
+  }
+
+  function handleCandidateLatestPerStationChange(limit: string) {
+    setCandidateLatestPerStation(limit);
+    markCandidateSearchSettingsChanged("Analysis slice changed; apply advanced filters");
+  }
+
+  function handleCandidateResultLimitChange(limit: string) {
+    setCandidateResultLimit(limit);
+    markCandidateSearchSettingsChanged("Returned candidate limit changed; apply advanced filters");
   }
 
   async function refreshSoundingCandidateState(statusWhenLoaded?: string) {
@@ -2308,9 +2403,11 @@ export function App() {
   async function handlePrepareAndSearchLocalSoundings() {
     const limits = SEARCH_DEPTH_LIMITS[searchDepth];
     const cacheLimit = boundedInteger(limits.cacheLimit, 1, 100, 10);
-    const latestPerStation = boundedInteger(limits.latestPerStation, 1, 50, 5);
-    const resultLimit = boundedInteger(limits.resultLimit, 1, 200, 50);
+    const latestPerStation = boundedInteger(limits.latestPerStation, 1, 50, 20);
+    const resultLimit = boundedInteger(limits.resultLimit, 1, 200, 75);
     setCandidateError(null);
+    setCandidateScreening(null);
+    setCandidateDetailId(null);
     setCandidateStatus("Preparing local sounding data");
     try {
       let [catalogPayload, cachePayload, inputsPayload, savedPayload] = await Promise.all([
@@ -2406,6 +2503,8 @@ export function App() {
 
   async function handleScreenSoundingCandidates() {
     setCandidateError(null);
+    setCandidateScreening(null);
+    setCandidateDetailId(null);
     setCandidateStatus("Analyzing cached soundings");
     try {
       const result = await screenSoundingCandidates({
@@ -2415,8 +2514,8 @@ export function App() {
         readiness: candidateReadinessFilter,
         stationSearch: candidateStationSearch,
         sort: candidateSort,
-        latestPerStation: boundedInteger(candidateLatestPerStation, 1, 50, 5),
-        limit: boundedInteger(candidateResultLimit, 1, 200, 50),
+        latestPerStation: boundedInteger(candidateLatestPerStation, 1, 50, 20),
+        limit: boundedInteger(candidateResultLimit, 1, 200, 75),
       });
       setCandidateScreening(result);
       setCandidateDetailId(result.candidates[0]?.candidate_id ?? null);
@@ -2442,7 +2541,9 @@ export function App() {
     setCandidateStationSearch("");
     setCandidateReadinessFilter("all");
     setCandidateSort("best_match");
-    setCandidateStatus("Showing default discovery settings; run Analyze recommendations");
+    markCandidateSearchSettingsChanged(
+      "Showing default recommendation settings; analyze cached soundings",
+    );
   }
 
   async function handleSaveSoundingCandidate(
@@ -3341,16 +3442,16 @@ export function App() {
           onSearchIntentChange={handleSearchIntentChange}
           onSearchDepthChange={handleSearchDepthChange}
           onTimeScopeChange={setTimeScope}
-          onCandidateStoryFilterChange={setCandidateStoryFilter}
-          onCandidateStoryFamilyFilterChange={setCandidateStoryFamilyFilter}
-          onCandidateSupportFilterChange={setCandidateSupportFilter}
-          onCandidateSortChange={setCandidateSort}
-          onCandidateStationSearchChange={setCandidateStationSearch}
-          onCandidateReadinessFilterChange={setCandidateReadinessFilter}
+          onCandidateStoryFilterChange={handleCandidateStoryFilterChange}
+          onCandidateStoryFamilyFilterChange={handleCandidateStoryFamilyFilterChange}
+          onCandidateSupportFilterChange={handleCandidateSupportFilterChange}
+          onCandidateSortChange={handleCandidateSortChange}
+          onCandidateStationSearchChange={handleCandidateStationSearchChange}
+          onCandidateReadinessFilterChange={handleCandidateReadinessFilterChange}
           onClearCandidateAnalysisFilters={handleClearCandidateAnalysisFilters}
-          onCandidateCacheLimitChange={setCandidateCacheLimit}
-          onCandidateLatestPerStationChange={setCandidateLatestPerStation}
-          onCandidateResultLimitChange={setCandidateResultLimit}
+          onCandidateCacheLimitChange={handleCandidateCacheLimitChange}
+          onCandidateLatestPerStationChange={handleCandidateLatestPerStationChange}
+          onCandidateResultLimitChange={handleCandidateResultLimitChange}
           onCandidateDetailChange={setCandidateDetailId}
           onRefreshIGRAData={handleRefreshIGRAData}
           onCacheIGRAStationFiles={handleCacheIGRAStationFiles}
@@ -3717,7 +3818,7 @@ function BuildWorkspace({
               </option>
             ))}
             {scenarios.some((scenario) => scenario.id === OBSERVED_SOUNDING_BASE_SCENARIO_ID) && (
-              <option value={OBSERVED_SOUNDING_EXPERIMENT_ID}>Upload a Sounding</option>
+              <option value={OBSERVED_SOUNDING_EXPERIMENT_ID}>Observed Soundings</option>
             )}
           </select>
 
@@ -3754,7 +3855,7 @@ function BuildWorkspace({
                 <p className="eyebrow">Guided local CM1 experiment</p>
                 <h2>
                   {observedSoundingExperimentSelected
-                    ? "Upload a Sounding"
+                    ? "Observed Soundings"
                     : selectedScenario.display_name}
                 </h2>
                 <p>
@@ -4680,8 +4781,14 @@ function ObservedAtmosphereCandidatesPanel({
   const lastAnalysisSummary = screening
     ? `${visibleCandidates.length.toLocaleString()} shown from ${(
         screening.filtered_candidate_count ?? visibleCandidates.length
-      ).toLocaleString()} selected / ${(screening.total_candidate_count ?? visibleCandidates.length).toLocaleString()} analyzed`
+      ).toLocaleString()} matching / ${(screening.total_candidate_count ?? visibleCandidates.length).toLocaleString()} analyzed`
     : "Not run yet";
+  const filterTraceSummary = candidateFilterTraceSummary(screening, {
+    storyFilter,
+    storyFamilyFilter,
+    supportFilter,
+    readinessFilter,
+  });
   const activeRefinements = [
     storyFilter !== "all" ? `Story: ${candidateStoryLabel(storyFilter)}` : null,
     storyFamilyFilter !== "all" ? `Family: ${candidateStoryFamilyLabel(storyFamilyFilter)}` : null,
@@ -4783,7 +4890,7 @@ function ObservedAtmosphereCandidatesPanel({
         </div>
         <div className="candidate-discovery-actions" aria-label="Sounding search action">
           <button type="button" onClick={onPrepareAndSearch}>
-            Prepare & search local soundings
+            Analyze cached soundings
           </button>
         </div>
       </section>
@@ -4818,7 +4925,7 @@ function ObservedAtmosphereCandidatesPanel({
 
       {activeRefinements.length > 0 && (
         <div className="screening-guidance-note">
-          <strong>Refined view</strong>
+          <strong>Search filters applied</strong>
           <span>{activeRefinements.join(" · ")}</span>
           <button type="button" className="link-button" onClick={onClearFilters}>
             Clear refinements
@@ -4826,7 +4933,7 @@ function ObservedAtmosphereCandidatesPanel({
         </div>
       )}
 
-      <details className="candidate-advanced-filters" open={activeRefinements.length > 0}>
+      <details className="candidate-advanced-filters">
         <summary>Advanced filters</summary>
         <div className="candidate-toolbar" aria-label="Advanced sounding candidate controls">
           <label>
@@ -4980,7 +5087,7 @@ function ObservedAtmosphereCandidatesPanel({
               Cache station files
             </button>
             <button type="button" className="secondary-button" onClick={onScreen}>
-              Run analyzer only
+              Apply advanced filters
             </button>
           </div>
         </div>
@@ -5002,13 +5109,13 @@ function ObservedAtmosphereCandidatesPanel({
                   : "Recommended cached soundings"}
               </h4>
               <p className="field-help">
-                Showing {visibleCandidates.length.toLocaleString()} candidates
-                {screening.total_candidate_count !== undefined
-                  ? ` from ${screening.total_candidate_count.toLocaleString()} analyzed cached soundings`
-                  : ""}
-                . Scores rank sounding ingredients only. They do not predict what the current CM1
-                package will produce.
+                {filterTraceSummary.summary}
               </p>
+              {filterTraceSummary.detail && (
+                <p className="field-help candidate-filter-detail">
+                  {filterTraceSummary.detail}
+                </p>
+              )}
             </div>
           )}
           {visibleCandidates.length === 0 ? (
@@ -5117,7 +5224,13 @@ function SavedCandidatesSourcePanel({
               key={saved.saved_candidate_id}
               saved={saved}
               onUpdateAnnotations={(tags, notes) => onSave(saved.candidate, tags, notes)}
-              onUse={() => onSelectForRunSetup(saved.candidate, saved, saved.primary_story)}
+              onUse={() =>
+                onSelectForRunSetup(
+                  saved.candidate,
+                  saved,
+                  saved.candidate.active_story ?? saved.primary_story,
+                )
+              }
               onRemove={() => onRemoveSaved(saved.saved_candidate_id)}
             />
           ))}
@@ -5212,7 +5325,7 @@ function SavedSoundingCandidateCard({
       </details>
       <div className="button-row">
         <button type="button" onClick={onUse}>
-          Select for run setup
+          Configure run
         </button>
         <button type="button" className="secondary-button" onClick={onRemove}>
           Remove saved
@@ -5242,15 +5355,13 @@ function SoundingCandidateCard({
   onSelectForRunSetup: (activeStory: CandidateStoryId) => void;
 }) {
   const activeScore = candidateActiveStoryScore(candidate, storyFilter, storyFamilyFilter);
-  const story = activeScore?.story ?? candidate.primary_story;
-  const activeFamily = activeScore
-    ? candidateStoryFamilyForStory(activeScore.story)
-    : candidate.story_family;
-  const ingredientScore =
-    activeScore?.score_0_to_100 ??
-    candidateIngredientScore(candidate, storyFilter, storyFamilyFilter);
+  const story = candidateActiveStoryId(candidate, storyFilter, storyFamilyFilter);
+  const activeFamily = story ? candidateStoryFamilyForStory(story) : candidate.story_family;
+  const ingredientScore = candidateIngredientScore(candidate, storyFilter, storyFamilyFilter);
   const recipeFit = candidateRecipeFitForStory(candidate, story);
-  const firstCaveat = candidate.caveats[0];
+  const reasons = candidateInterestReasons(candidate).slice(0, 3);
+  const caveats = candidateDisplayCaveats(candidate);
+  const firstCaveat = caveats[0];
   return (
     <article
       className={`candidate-card${selected ? " selected-candidate-card" : ""}`}
@@ -5269,7 +5380,10 @@ function SoundingCandidateCard({
           {candidate.discovery_bucket && (
             <StatusBadge label={candidate.discovery_bucket} tone="neutral" />
           )}
-          <StatusBadge label={candidateStoryLabel(story)} tone="neutral" />
+          <StatusBadge
+            label={candidateDisplayStoryLabel(candidate, storyFilter, storyFamilyFilter)}
+            tone="neutral"
+          />
           {activeScore && activeScore.story !== candidate.primary_story && (
             <StatusBadge label={`Primary: ${candidate.primary_story_label}`} tone="neutral" />
           )}
@@ -5288,10 +5402,17 @@ function SoundingCandidateCard({
           />
         </span>
       </button>
-      {candidate.caveats.length > 0 && (
+      {reasons.length > 0 && (
+        <ul className="compact-list candidate-reason-list">
+          {reasons.map((reason) => (
+            <li key={`${candidate.candidate_id}-card-${reason}`}>{reason}</li>
+          ))}
+        </ul>
+      )}
+      {firstCaveat && (
         <p className="field-help">
           Key caveat: {humanize(firstCaveat)}
-          {candidate.caveats.length > 1 ? ` + ${candidate.caveats.length - 1} more` : ""}
+          {caveats.length > 1 ? ` + ${caveats.length - 1} more` : ""}
         </p>
       )}
       <div className="button-row">
@@ -5300,10 +5421,10 @@ function SoundingCandidateCard({
           disabled={!candidate.package_ready}
           onClick={() => onSelectForRunSetup(story)}
         >
-          Select for run setup
+          Configure run
         </button>
         <button type="button" className="secondary-button" disabled={saved} onClick={onSave}>
-          {saved ? "Saved" : "Save candidate"}
+          {saved ? "Saved" : "Save"}
         </button>
       </div>
     </article>
@@ -5345,13 +5466,9 @@ function SoundingCandidateDetail({
   }
   const activeCandidate = candidate;
   const activeScore = candidateActiveStoryScore(activeCandidate, storyFilter, storyFamilyFilter);
-  const story = activeScore?.story ?? activeCandidate.primary_story;
-  const activeFamily = activeScore
-    ? candidateStoryFamilyForStory(activeScore.story)
-    : activeCandidate.story_family;
-  const ingredientScore =
-    activeScore?.score_0_to_100 ??
-    candidateIngredientScore(activeCandidate, storyFilter, storyFamilyFilter);
+  const story = candidateActiveStoryId(activeCandidate, storyFilter, storyFamilyFilter);
+  const activeFamily = story ? candidateStoryFamilyForStory(story) : activeCandidate.story_family;
+  const ingredientScore = candidateIngredientScore(activeCandidate, storyFilter, storyFamilyFilter);
   const recipeFit = candidateRecipeFitForStory(activeCandidate, story);
   const reasons = candidateInterestReasons(activeCandidate);
   const savedTagValues = parseTags(tagDraft);
@@ -5389,7 +5506,8 @@ function SoundingCandidateDetail({
         <div>
           <h4>{candidateStationLabel(candidate)}</h4>
           <p>
-            {formatDate(candidate.valid_time_utc)} · {candidateStoryLabel(story)}
+            {formatDate(candidate.valid_time_utc)} ·{" "}
+            {candidateDisplayStoryLabel(candidate, storyFilter, storyFamilyFilter)}
           </p>
         </div>
         <StatusBadge
@@ -5408,7 +5526,7 @@ function SoundingCandidateDetail({
           disabled={!candidate.package_ready}
           onClick={() => onSelectForRunSetup(candidate, story)}
         >
-          Select for run setup
+          Configure run
         </button>
       </div>
       <section>
@@ -10576,11 +10694,47 @@ function observedSoundingLocationLabel(observed: ObservedSoundingSummary): strin
   return "Not available";
 }
 
+function candidateActiveStoryId(
+  candidate: SoundingCandidate,
+  storyFilter: CandidateStoryFilter,
+  storyFamilyFilter: CandidateStoryFamilyFilter,
+): CandidateStoryId {
+  const scopedStories = new Set(
+    candidateStoryScoresForScope(candidate, storyFilter, storyFamilyFilter).map(
+      (score) => score.story,
+    ),
+  );
+  if (candidate.active_story && scopedStories.has(candidate.active_story)) {
+    return candidate.active_story;
+  }
+  return candidateActiveStoryScore(candidate, storyFilter, storyFamilyFilter)?.story ?? candidate.primary_story;
+}
+
+function candidateDisplayStoryLabel(
+  candidate: SoundingCandidate,
+  storyFilter: CandidateStoryFilter,
+  storyFamilyFilter: CandidateStoryFamilyFilter,
+): string {
+  const activeStory = candidateActiveStoryId(candidate, storyFilter, storyFamilyFilter);
+  if (candidate.active_story === activeStory) {
+    return candidate.display_story ?? candidate.active_story_label ?? candidateStoryLabel(activeStory);
+  }
+  return candidateStoryLabel(activeStory);
+}
+
 function candidateIngredientScore(
   candidate: SoundingCandidate,
   storyFilter: CandidateStoryFilter,
   storyFamilyFilter: CandidateStoryFamilyFilter = "all",
 ): number {
+  const activeStory = candidateActiveStoryId(candidate, storyFilter, storyFamilyFilter);
+  if (
+    candidate.active_story === activeStory &&
+    typeof candidate.ingredient_score === "number" &&
+    Number.isFinite(candidate.ingredient_score)
+  ) {
+    return candidate.ingredient_score;
+  }
   return (
     candidateActiveStoryScore(candidate, storyFilter, storyFamilyFilter)?.score_0_to_100 ??
     candidate.rank_score
@@ -10623,6 +10777,8 @@ function candidateStoryScoresForScope(
 }
 
 function candidateInterestReasons(candidate: SoundingCandidate): string[] {
+  const topReasons = candidate.top_reasons?.filter(Boolean) ?? [];
+  if (topReasons.length > 0) return topReasons;
   const explicitReasons = candidate.interest_reasons?.filter(Boolean) ?? [];
   if (explicitReasons.length > 0) return explicitReasons;
   if (candidate.interest_summary) return [candidate.interest_summary];
@@ -10631,6 +10787,79 @@ function candidateInterestReasons(candidate: SoundingCandidate): string[] {
     .filter((reason): reason is string => Boolean(reason));
   if (evidenceReasons.length > 0) return evidenceReasons.slice(0, 3);
   return [candidate.primary_story_label];
+}
+
+function candidateDisplayCaveats(candidate: SoundingCandidate): string[] {
+  const topCaveats = candidate.top_caveats?.filter(Boolean) ?? [];
+  return topCaveats.length > 0 ? topCaveats : candidate.caveats;
+}
+
+function candidateFilterTraceSummary(
+  screening: ScreeningResult | null,
+  filters: {
+    storyFilter: CandidateStoryFilter;
+    storyFamilyFilter: CandidateStoryFamilyFilter;
+    supportFilter: CandidateSupportFilter;
+    readinessFilter: CandidateReadinessFilter;
+  },
+): { summary: string; detail: string | null } {
+  if (!screening) {
+    return { summary: "No recommendation run loaded.", detail: null };
+  }
+  const trace = screening.filter_trace;
+  const shown = screening.candidates.length;
+  if (!trace) {
+    return {
+      summary: `${shown.toLocaleString()} shown from ${(
+        screening.filtered_candidate_count ?? shown
+      ).toLocaleString()} matching / ${(screening.total_candidate_count ?? shown).toLocaleString()} analyzed.`,
+      detail: "Scores rank sounding ingredients only; CM1 results remain the source of truth.",
+    };
+  }
+  const storyStage =
+    filters.storyFilter !== "all"
+      ? trace.stage_counts.story_filter
+      : filters.storyFamilyFilter !== "all"
+        ? trace.stage_counts.story_family
+        : undefined;
+  const supportStage =
+    filters.supportFilter !== "all" ? trace.stage_counts.support : undefined;
+  const readinessStage =
+    filters.readinessFilter !== "all" ? trace.stage_counts.readiness : undefined;
+  const parts = [
+    `${trace.analyzed_soundings.toLocaleString()} analyzed`,
+    storyStage !== undefined
+      ? `${storyStage.toLocaleString()} matched ${candidateTraceScopeLabel(
+          filters.storyFilter,
+          filters.storyFamilyFilter,
+        )}`
+      : null,
+    supportStage !== undefined
+      ? `${supportStage.toLocaleString()} ${humanize(filters.supportFilter)}`
+      : null,
+    readinessStage !== undefined
+      ? `${readinessStage.toLocaleString()} ${humanize(filters.readinessFilter)}`
+      : null,
+    `${shown.toLocaleString()} shown`,
+  ].filter((part): part is string => part !== null);
+  const mainExclusion = trace.top_excluded_reasons[0];
+  const detail =
+    shown === 1 && mainExclusion
+      ? `Only one candidate remains; the largest filter impact was ${mainExclusion.reason} (${mainExclusion.count.toLocaleString()} removed).`
+      : `Trace includes ${trace.story_score_records.toLocaleString()} story-score records across ${trace.station_distribution.length.toLocaleString()} shown station${trace.station_distribution.length === 1 ? "" : "s"}.`;
+  return {
+    summary: parts.join(" · "),
+    detail,
+  };
+}
+
+function candidateTraceScopeLabel(
+  storyFilter: CandidateStoryFilter,
+  storyFamilyFilter: CandidateStoryFamilyFilter,
+): string {
+  if (storyFilter !== "all") return candidateStoryLabel(storyFilter).toLowerCase();
+  if (storyFamilyFilter !== "all") return candidateStoryFamilyLabel(storyFamilyFilter).toLowerCase();
+  return "selected intent";
 }
 
 function boundedInteger(value: string, min: number, max: number, fallback: number): number {
@@ -10679,9 +10908,8 @@ function candidateScreeningMetadata(
   savedCandidate?: SavedSoundingCandidate,
   activeStory?: CandidateStoryId,
 ): Record<string, unknown> {
-  const activeScore = activeStory
-    ? candidate.story_scores.find((score) => score.story === activeStory)
-    : null;
+  const selectedActiveStory = activeStory ?? candidate.active_story ?? candidate.primary_story;
+  const activeScore = candidate.story_scores.find((score) => score.story === selectedActiveStory);
   return {
     candidate_id: candidate.candidate_id,
     station_id: candidate.station_id,
@@ -10690,14 +10918,27 @@ function candidateScreeningMetadata(
     saved_candidate_id: savedCandidate?.saved_candidate_id ?? null,
     screening_version: candidate.screening_version,
     primary_story: candidate.primary_story,
-    active_story: activeStory ?? candidate.primary_story,
-    active_story_label: activeScore?.label ?? candidate.primary_story_label,
+    active_story: selectedActiveStory,
+    active_story_label:
+      activeScore?.label ??
+      (candidate.active_story === selectedActiveStory
+        ? (candidate.active_story_label ?? candidate.display_story)
+        : null) ??
+      candidate.primary_story_label,
+    display_story: candidate.display_story ?? null,
+    matched_story_ids: candidate.matched_story_ids ?? [],
     story_scores: candidate.story_scores,
     rank_score: candidate.rank_score,
+    active_story_score: candidate.active_story_score ?? null,
+    ingredient_score: candidate.ingredient_score ?? null,
+    active_story_support: candidate.active_story_support ?? null,
     confidence: candidate.confidence,
     features: candidate.features,
     evidence: candidate.evidence,
     caveats: candidate.caveats,
+    top_reasons: candidate.top_reasons ?? [],
+    top_caveats: candidate.top_caveats ?? [],
+    evidence_summary: candidate.evidence_summary ?? [],
     interest_summary: candidate.interest_summary ?? null,
     interest_reasons: candidate.interest_reasons ?? [],
     discovery_bucket: candidate.discovery_bucket ?? null,

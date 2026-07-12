@@ -139,17 +139,22 @@ pre-run evidence and context only. Parcel, storm-relative, wet-bulb, and
 winter-phase diagnostics must remain explicitly unavailable until their methods
 are implemented and tested.
 
-In Build, `Upload a Sounding` is the product-facing entry point for observed
+In Build, `Observed Soundings` is the product-facing entry point for observed
 atmosphere work. It should offer one source path at a time: cached local
 recommendations, saved candidates, or manual IGRA station text upload. The
 cached-recommendation path should lead with product-level search controls such
 as source region, search intent, search depth, and time scope, with raw cache
 limits and backend filters kept in advanced refinements. The workbench can
 refresh the bounded IGRA cache, analyze cached soundings into station-diverse
-recommendations, show why each candidate is interesting, expose story,
-story-family, support, readiness, station-search, and sort controls as advanced
-refinements, show package-ready and blocked candidates with evidence and
-caveats, and save candidates with freeform tags and notes for later review.
+recommendations, show the exact analyzed slice and filter trace, show why each
+candidate is interesting, expose story, story-family, support, readiness,
+station-search, and sort controls as advanced refinements, show package-ready
+and blocked candidates with evidence and caveats, and save candidates with
+freeform tags and notes for later review. Search-depth labels must describe the
+actual slice being analyzed. The default station-history sweep analyzes the
+latest 20 soundings per cached station file; credible deep-convection intent
+defaults to supported deep-convection story scores, while weak or unavailable
+deep-adjacent matches require explicit advanced refinement.
 Manual upload should stay hidden while cached recommendations or saved
 candidates are the active source path.
 

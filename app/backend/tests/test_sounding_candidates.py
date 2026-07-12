@@ -431,6 +431,12 @@ def test_analysis_family_filter_includes_supported_secondary_deep_story(
         "primary-humid-supported-secondary-supercell"
     ]
     assert result.filtered_candidate_count == 1
+    assert result.candidates[0].primary_story == "humid_rainy_candidate"
+    assert result.candidates[0].active_story == "supercell_environment"
+    assert result.candidates[0].display_story == "Supercell-like environment"
+    assert result.candidates[0].matched_story_ids == ["supercell_environment"]
+    assert result.candidates[0].active_story_score == 74.0
+    assert result.candidates[0].active_story_support == "supported"
 
 
 def test_analysis_family_support_filter_uses_deep_family_scores(
@@ -458,6 +464,11 @@ def test_analysis_family_support_filter_uses_deep_family_scores(
 
     assert [item.candidate_id for item in result.candidates] == ["secondary-deep-supported"]
     assert result.filtered_candidate_count == 1
+    assert result.candidates[0].active_story == "supercell_environment"
+    assert result.filter_trace.stage_counts["story_family"] == 2
+    assert result.filter_trace.stage_counts["support"] == 1
+    assert result.filter_trace.top_excluded_reasons[0].reason == "Support: supported"
+    assert result.filter_trace.top_excluded_reasons[0].count == 1
 
 
 def test_analysis_deep_family_best_match_sort_uses_best_deep_score(
@@ -487,6 +498,48 @@ def test_analysis_deep_family_best_match_sort_uses_best_deep_score(
         "humid-lower-better-deep",
         "humid-high-weaker-deep",
     ]
+    assert [item.active_story_score for item in result.candidates] == [91.0, 67.0]
+
+
+def test_analysis_filter_trace_preserves_distinct_candidate_rows_after_grouping(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    station_a = _analysis_candidate(
+        "station-a-secondary-deep",
+        primary_score=91.0,
+        deep_score=75.0,
+    ).model_copy(update={"station_id": "USM00070001", "station_name": "Station A"})
+    station_b = _analysis_candidate(
+        "station-b-secondary-deep",
+        primary_score=89.0,
+        deep_score=72.0,
+    ).model_copy(update={"station_id": "USM00070002", "station_name": "Station B"})
+    no_deep_match = _analysis_candidate(
+        "station-c-no-deep-match",
+        primary_score=95.0,
+        deep_score=0.0,
+        deep_support="unavailable",
+    ).model_copy(update={"station_id": "USM00070003", "station_name": "Station C"})
+    _patch_screened_candidates(monkeypatch, [station_a, station_b, no_deep_match])
+
+    result = analyze_cached_soundings(
+        _settings(tmp_path),
+        story_family="deep_convection",
+        limit=10,
+    )
+
+    assert [item.station_id for item in result.candidates] == ["USM00070001", "USM00070002"]
+    assert result.filter_trace.analyzed_soundings == 3
+    assert result.filter_trace.story_score_records == 6
+    assert result.filter_trace.stage_counts["story_family"] == 2
+    assert result.filter_trace.stage_counts["limited"] == 2
+    assert [(item.station_id, item.count) for item in result.filter_trace.station_distribution] == [
+        ("USM00070001", 1),
+        ("USM00070002", 1),
+    ]
+    assert result.filter_trace.top_excluded_reasons[0].reason == (
+        "Story family: deep-convection stories"
+    )
 
 
 def test_screen_cached_soundings_caveats_unreadable_files(tmp_path: Path) -> None:
@@ -1081,6 +1134,11 @@ def test_sounding_candidate_api_screen_save_and_delete(
     assert analyzed_payload["filters"]["story_filter"] == "shallow_cumulus_candidate"
     assert analyzed_payload["sort_by"] == "mean_qv_0_1000m_g_kg"
     assert analyzed_payload["sort_options"]
+    assert analyzed_payload["filter_trace"]["analyzed_soundings"] >= 1
+    assert analyzed_payload["filter_trace"]["stage_counts"]["limited"] == len(
+        analyzed_payload["candidates"]
+    )
+    assert analyzed_payload["candidates"][0]["active_story"] == "shallow_cumulus_candidate"
 
     saved = client.post(
         "/api/sounding-candidates/saved",
