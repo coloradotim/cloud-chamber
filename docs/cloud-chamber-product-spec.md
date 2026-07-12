@@ -108,7 +108,7 @@ transparent candidate-selection aids that rank sounding ingredients only; they
 are not CM1 outcome predictions. Saved candidates live in the runtime cache and
 may be handed into package metadata as provenance for why a sounding was tried.
 The browser never parses remote directory listings, ZIP files, or station text
-files. The current story identifiers, feature inputs, score support states,
+files. The current story identifiers, feature inputs, evidence-tier states,
 evidence requirements, and caveat rules are defined in
 [contracts/sounding-candidate-screening.md](contracts/sounding-candidate-screening.md).
 The forward analyzer contract for testable hypotheses, explicit run
@@ -139,17 +139,25 @@ pre-run evidence and context only. Parcel, storm-relative, wet-bulb, and
 winter-phase diagnostics must remain explicitly unavailable until their methods
 are implemented and tested.
 
-In Build, `Upload a Sounding` is the product-facing entry point for observed
+In Build, `Observed Soundings` is the product-facing entry point for observed
 atmosphere work. It should offer one source path at a time: cached local
 recommendations, saved candidates, or manual IGRA station text upload. The
 cached-recommendation path should lead with product-level search controls such
-as source region, search intent, search depth, and time scope, with raw cache
-limits and backend filters kept in advanced refinements. The workbench can
-refresh the bounded IGRA cache, analyze cached soundings into station-diverse
-recommendations, show why each candidate is interesting, expose story,
-story-family, support, readiness, station-search, and sort controls as advanced
-refinements, show package-ready and blocked candidates with evidence and
-caveats, and save candidates with freeform tags and notes for later review.
+as source region, search intent, station set, history scope, and returned
+candidate limit, with secondary backend filters kept in advanced refinements.
+The workbench can refresh the IGRA catalog, cache selected station files,
+analyze the selected station/history set into station-diverse recommendations,
+show the exact analyzed set and filter trace, show why each candidate is
+interesting, expose story, story-family, evidence-tier, readiness,
+station-search, and sort controls as advanced refinements, show package-ready
+and blocked candidates with evidence and caveats, and save candidates with
+freeform tags and notes for later review. History-scope labels must describe
+the actual set being analyzed. The default recommendation pass analyzes all
+cached history for all cached stations. `Latest N per station` is an explicit
+user selection, and the returned-candidate limit is applied only after the
+selected soundings have been analyzed. A deep-convection search intent scopes
+recommendations to deep-convection ingredient stories; it must not silently
+mean "supported-only" evidence or primary-story-only membership.
 Manual upload should stay hidden while cached recommendations or saved
 candidates are the active source path.
 
@@ -1282,7 +1290,7 @@ cloud time, max `qc`, max/min `w`, caveats, output summary, and editable name/ta
 edits use `Save changes`; ingested results already appear in Results.
 The notebook also exposes backend-derived science summary fields such as
 first-cloud time, max `qc`, max updraft, rain onset, latest output time, and
-interesting-time support state so the user can search, filter, and sort the
+interesting-time evidence state so the user can search, filter, and sort the
 experiment list by meaningful scientific evidence rather than raw file order.
 Result Cards must also distinguish generated-reference runs from runs
 created from an uploaded observed sounding, preserving station/time/source

@@ -15,7 +15,7 @@ test.describe("mocked smoke: Build, Results, Explore path", () => {
     await gotoBuild(page);
 
     await expect(page.locator("select").first()).toBeVisible();
-    await expect(page.getByRole("heading", { name: "Upload a Sounding" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Observed Soundings" })).toBeVisible();
     await page.getByLabel("Experiment", { exact: true }).selectOption("baseline-shallow-cumulus");
     await expect(page.getByText(/physical question/i).first()).toBeVisible();
     await expect(page.getByText(/how do low-level moisture/i).first()).toBeVisible();
@@ -68,7 +68,7 @@ test.describe("mocked smoke: Build, Results, Explore path", () => {
     await page
       .getByLabel("Experiment", { exact: true })
       .selectOption("__observed_sounding_upload__");
-    await expect(page.getByRole("heading", { name: "Upload a Sounding" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Observed Soundings" })).toBeVisible();
     await expect(page.getByRole("heading", { name: "Find interesting soundings" })).toBeVisible();
     await expect(page.getByRole("tab", { name: "Cached recommendations" })).toHaveAttribute(
       "aria-selected",
@@ -125,23 +125,25 @@ test.describe("mocked smoke: Build, Results, Explore path", () => {
       .getByLabel("Experiment", { exact: true })
       .selectOption("__observed_sounding_upload__");
     await expect(page.getByRole("heading", { name: "Find interesting soundings" })).toBeVisible();
-    await expect(page.getByText(/Screening guidance only/i).first()).toBeVisible();
-    await expect(page.getByText("IGRA cache not checked yet")).toBeVisible();
+    await expect(page.getByText("Cached soundings ready to search")).toBeVisible();
+    await expect(page.getByLabel("Prepare and search local soundings")).toContainText(
+      "Selected soundings",
+    );
+    await expect(page.getByLabel("Station picker")).toContainText("All cached stations");
+    await expect(page.getByLabel("Local sounding data")).toContainText("2 cached soundings");
+    await expect(page.getByLabel("Advanced sounding candidate controls")).not.toBeVisible();
 
-    await page.getByText("Advanced filters").click();
-    await page.getByRole("button", { name: "Refresh IGRA catalog" }).click();
+    await page.getByText("Advanced filters", { exact: true }).click();
+    await page.getByRole("button", { name: "Refresh catalog" }).click();
     await expect(page.getByText("IGRA station catalog refreshed")).toBeVisible();
     await expect(page.getByText("Parsed soundings")).toBeVisible();
-    await expect(page.getByText("2 cached soundings")).toBeVisible();
+    await expect(page.getByLabel("Local sounding data")).toContainText("2 cached soundings");
     await expect(page.getByText("Ready to search")).toBeVisible();
-
-    await page.getByRole("button", { name: "Cache station files" }).click();
-    await expect(page.getByText("Cached 1 station file")).toBeVisible();
 
     const candidateControls = page.getByLabel("Advanced sounding candidate controls");
     const storySelect = candidateControls.getByRole("combobox").first();
     await storySelect.selectOption("shallow_cumulus_candidate");
-    await page.getByRole("button", { name: "Run analyzer only" }).click();
+    await page.getByRole("button", { name: "Apply advanced filters" }).click();
 
     await expect(page.getByText("Cached sounding analysis loaded")).toBeVisible();
     const valleyCard = page.getByLabel("Sounding candidate Valley, Nebraska (USM00072558)");
@@ -154,25 +156,24 @@ test.describe("mocked smoke: Build, Results, Explore path", () => {
     );
 
     await storySelect.selectOption("needs_review");
-    await page.getByRole("button", { name: "Run analyzer only" }).click();
+    await page.getByRole("button", { name: "Apply advanced filters" }).click();
     const blockedCard = page.getByLabel("Sounding candidate Norman, Oklahoma (USM00072357)");
     await expect(blockedCard).toBeVisible();
     await expect(blockedCard).toContainText("Blocked");
-    await expect(blockedCard.getByRole("button", { name: "Select for run setup" })).toBeDisabled();
+    await expect(blockedCard.getByRole("button", { name: "Configure run" })).toBeDisabled();
 
     await storySelect.selectOption("all");
-    await page.getByText("Advanced filters").click();
-    await page.getByRole("button", { name: "Run analyzer only" }).click();
+    await page.getByRole("button", { name: "Apply advanced filters" }).click();
     const refreshedValleyCard = page.getByLabel(
       "Sounding candidate Valley, Nebraska (USM00072558)",
     );
-    await refreshedValleyCard.getByRole("button", { name: "Save candidate" }).click();
+    await refreshedValleyCard.getByRole("button", { name: "Save" }).click();
     await expect(page.getByText("Sounding candidate saved")).toBeVisible();
     await page.getByRole("tab", { name: /Saved candidates/ }).click();
     const savedCard = page.getByLabel("Saved sounding candidate Valley, Nebraska (USM00072558)");
     await expect(savedCard).toBeVisible();
 
-    await savedCard.getByRole("button", { name: "Select for run setup" }).click();
+    await savedCard.getByRole("button", { name: "Configure run" }).click();
     await page.getByRole("button", { name: "Add to run plan" }).click();
     await expect(
       page.getByText("Valley, Nebraska (USM00072558) added to the run plan"),

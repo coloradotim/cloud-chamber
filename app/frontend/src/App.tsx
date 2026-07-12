@@ -381,8 +381,8 @@ type SearchIntent =
   | "humid_rainy"
   | "dry_microburst"
   | "shallow_boundary_layer";
-type SearchDepth = "quick_scan" | "deeper_scan" | "broad_historical_sweep";
-type TimeScope = "recent_latest";
+type StationSelectionMode = "all_cached" | "selected";
+type CandidateHistoryScope = "all_cached" | "latest_per_station";
 type RunPlanQueueTarget = "local" | "lan";
 const CURRENT_OBSERVED_RUN_RECIPE: ObservedRunRecipe = "observed_surface_forced_evolution";
 type RunPlanItemStatus =
@@ -461,8 +461,46 @@ type SoundingCandidate = {
   recipe_fit_label?: string;
   recipe_fit_summary?: string;
   recipe_fit_caveats?: string[];
+  active_story?: CandidateStoryId | null;
+  active_story_label?: string | null;
+  display_story?: string | null;
+  matched_story_ids?: CandidateStoryId[];
+  active_story_score?: number | null;
+  ingredient_score?: number | null;
+  active_story_support?: "supported" | "weak" | "unavailable" | null;
+  package_readiness?: string | null;
+  recipe_fit?: CandidateRecipeFitStatus | string | null;
+  top_reasons?: string[];
+  top_caveats?: string[];
+  evidence_summary?: string[];
   screening_version: string;
   created_at: string;
+};
+
+type CandidateFilterTrace = {
+  selected_station_count?: number;
+  selected_cached_soundings?: number;
+  history_scope?: CandidateHistoryScope;
+  latest_per_station?: number | null;
+  analyzed_soundings: number;
+  story_score_records: number;
+  stage_counts: Record<string, number>;
+  stages: Array<{
+    key: string;
+    label: string;
+    count: number;
+    active: boolean;
+  }>;
+  station_distribution: Array<{
+    station_id: string;
+    station_name?: string | null;
+    count: number;
+  }>;
+  top_excluded_reasons: Array<{
+    reason: string;
+    count: number;
+  }>;
+  applied_limit: number;
 };
 
 type ScreeningInput = {
@@ -491,12 +529,16 @@ type ScreeningResult = {
   sort_direction?: "asc" | "desc";
   filters?: {
     station_id?: string | null;
+    station_ids?: string[];
+    history_scope?: CandidateHistoryScope;
+    latest_per_station?: number | null;
     story_filter: CandidateStoryFilter;
     story_family: CandidateStoryFamilyFilter;
     support: CandidateSupportFilter;
     readiness: CandidateReadinessFilter;
     station_search: string;
   };
+  filter_trace?: CandidateFilterTrace;
 };
 
 type UserRunMetadata = {
@@ -533,7 +575,14 @@ type IGRACatalogResponse = {
     refreshed_at: string;
     region: { label: string; tag: string };
     stations: unknown[];
-    zip_references: { cached_status: string }[];
+    zip_references: Array<{
+      station_id: string;
+      station_name?: string | null;
+      latitude?: number | null;
+      longitude?: number | null;
+      filename: string;
+      cached_status: string;
+    }>;
   } | null;
 };
 
@@ -548,6 +597,7 @@ type IGRACacheResponse = {
 
 type IGRABatchCacheResponse = {
   requested_limit: number;
+  requested_station_ids?: string[];
   selected_count: number;
   cached_entries: unknown[];
   failed: Array<{ station_id: string; filename: string; error: string }>;
@@ -1254,46 +1304,31 @@ const DEFAULT_OBSERVED_RUN_CONFIGURATION: RunConfigurationInput = {
 
 const SEARCH_INTENT_OPTIONS: Array<{ value: SearchIntent; label: string }> = [
   { value: "best_overall", label: "Best overall recommendations" },
-  { value: "deep_convection", label: "Deep convection potential" },
+  { value: "deep_convection", label: "Deep-convection ingredients" },
   { value: "humid_rainy", label: "Humid/rainy evolution" },
   { value: "dry_microburst", label: "Dry microburst / inverted-V" },
   { value: "shallow_boundary_layer", label: "Shallow cumulus / boundary layer" },
 ];
 
-const SEARCH_DEPTH_OPTIONS: Array<{ value: SearchDepth; label: string; description: string }> = [
+const HISTORY_SCOPE_OPTIONS: Array<{
+  value: CandidateHistoryScope;
+  label: string;
+  description: string;
+}> = [
   {
-    value: "quick_scan",
-    label: "Quick scan",
-    description: "Small latest-sounding slice; fastest recommendation pass.",
+    value: "all_cached",
+    label: "All cached history",
+    description: "Analyze every cached sounding for the selected stations.",
   },
   {
-    value: "deeper_scan",
-    label: "Deeper scan",
-    description: "Default bounded slice for useful local recommendations.",
-  },
-  {
-    value: "broad_historical_sweep",
-    label: "Broad historical sweep",
-    description: "Larger bounded local slice; may take longer and need more cached data.",
-  },
-];
-
-const TIME_SCOPE_OPTIONS: Array<{ value: TimeScope; label: string; description: string }> = [
-  {
-    value: "recent_latest",
-    label: "Recent/latest",
-    description: "Current backend support: latest soundings from cached station files.",
+    value: "latest_per_station",
+    label: "Latest N per station",
+    description: "Analyze an explicit recent-history set for the selected stations.",
   },
 ];
 
-const SEARCH_DEPTH_LIMITS: Record<
-  SearchDepth,
-  { cacheLimit: string; latestPerStation: string; resultLimit: string }
-> = {
-  quick_scan: { cacheLimit: "5", latestPerStation: "2", resultLimit: "25" },
-  deeper_scan: { cacheLimit: "10", latestPerStation: "5", resultLimit: "50" },
-  broad_historical_sweep: { cacheLimit: "25", latestPerStation: "10", resultLimit: "100" },
-};
+const DEFAULT_LATEST_PER_STATION = "20";
+const DEFAULT_CANDIDATE_RESULT_LIMIT = "100";
 
 class DryRunRequestError extends Error {
   preRunValidationReport: PreRunValidationReport | null;
@@ -1425,11 +1460,17 @@ async function fetchIGRARecentCache(): Promise<IGRACacheResponse> {
   return response.json() as Promise<IGRACacheResponse>;
 }
 
-async function cacheIGRARecentBatch(limit: number): Promise<IGRABatchCacheResponse> {
+async function cacheIGRARecentBatch(options: {
+  limit?: number;
+  stationIds?: string[];
+}): Promise<IGRABatchCacheResponse> {
   const response = await fetch("/api/igra/recent/cache-batch", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ limit }),
+    body: JSON.stringify({
+      limit: options.limit ?? 10,
+      station_ids: options.stationIds ?? [],
+    }),
   });
   if (!response.ok) {
     throw new Error(await responseError(response, "Unable to cache IGRA station files."));
@@ -1446,19 +1487,23 @@ async function fetchScreeningInputs(): Promise<ScreeningInputsResponse> {
 }
 
 async function screenSoundingCandidates(options: {
+  stationIds: string[];
+  historyScope: CandidateHistoryScope;
   story: CandidateStoryFilter;
   storyFamily: CandidateStoryFamilyFilter;
   support: CandidateSupportFilter;
   readiness: CandidateReadinessFilter;
   stationSearch: string;
   sort: CandidateSort;
-  latestPerStation: number;
+  latestPerStation: number | null;
   limit: number;
 }): Promise<ScreeningResult> {
   const response = await fetch("/api/sounding-candidates/analyze", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
+      station_ids: options.stationIds,
+      history_scope: options.historyScope,
       latest_per_station: options.latestPerStation,
       limit: options.limit,
       story_filter: options.story,
@@ -1470,7 +1515,7 @@ async function screenSoundingCandidates(options: {
     }),
   });
   if (!response.ok) {
-    throw new Error(await responseError(response, "Unable to analyze cached soundings."));
+    throw new Error(await responseError(response, "Unable to search selected soundings."));
   }
   return response.json() as Promise<ScreeningResult>;
 }
@@ -1872,8 +1917,11 @@ export function App() {
   const [atmosphereSourcePath, setAtmosphereSourcePath] =
     useState<AtmosphereSourcePath>("cached_recommendations");
   const [searchIntent, setSearchIntent] = useState<SearchIntent>("best_overall");
-  const [searchDepth, setSearchDepth] = useState<SearchDepth>("deeper_scan");
-  const [timeScope, setTimeScope] = useState<TimeScope>("recent_latest");
+  const [stationSelectionMode, setStationSelectionMode] =
+    useState<StationSelectionMode>("all_cached");
+  const [selectedStationIds, setSelectedStationIds] = useState<string[]>([]);
+  const [candidateHistoryScope, setCandidateHistoryScope] =
+    useState<CandidateHistoryScope>("all_cached");
   const [igraCatalog, setIgraCatalog] = useState<IGRACatalogResponse["catalog"] | null>(null);
   const [igraCache, setIgraCache] = useState<IGRACacheResponse | null>(null);
   const [screeningInputs, setScreeningInputs] = useState<ScreeningInput[]>([]);
@@ -1886,9 +1934,12 @@ export function App() {
   const [candidateStationSearch, setCandidateStationSearch] = useState("");
   const [candidateReadinessFilter, setCandidateReadinessFilter] =
     useState<CandidateReadinessFilter>("all");
-  const [candidateCacheLimit, setCandidateCacheLimit] = useState("10");
-  const [candidateLatestPerStation, setCandidateLatestPerStation] = useState("5");
-  const [candidateResultLimit, setCandidateResultLimit] = useState("50");
+  const [candidateLatestPerStation, setCandidateLatestPerStation] = useState(
+    DEFAULT_LATEST_PER_STATION,
+  );
+  const [candidateResultLimit, setCandidateResultLimit] = useState(
+    DEFAULT_CANDIDATE_RESULT_LIMIT,
+  );
   const [candidateStatus, setCandidateStatus] = useState("IGRA cache not checked yet");
   const [candidateError, setCandidateError] = useState<string | null>(null);
   const [candidateScreening, setCandidateScreening] = useState<ScreeningResult | null>(null);
@@ -2101,16 +2152,35 @@ export function App() {
   useEffect(() => {
     if (!observedSoundingExperimentSelected) return;
     let active = true;
-    fetchSavedSoundingCandidates()
-      .then((payload) => {
+    setCandidateStatus("Loading local sounding data");
+    setCandidateError(null);
+    Promise.all([
+      fetchIGRARecentCatalog(),
+      fetchIGRARecentCache(),
+      fetchScreeningInputs(),
+      fetchSavedSoundingCandidates(),
+    ])
+      .then(([catalogPayload, cachePayload, inputsPayload, savedPayload]) => {
         if (!active) return;
-        setSavedCandidates(payload.saved_candidates);
+        setIgraCatalog(catalogPayload.catalog);
+        setIgraCache(cachePayload);
+        setScreeningInputs(inputsPayload.inputs);
+        setSavedCandidates(savedPayload.saved_candidates);
+        setCandidateStatus(
+          inputsPayload.inputs.length > 0
+            ? "Cached soundings ready to search"
+            : "No cached sounding files ready",
+        );
       })
       .catch((caught: unknown) => {
         if (!active) return;
+        setIgraCatalog(null);
+        setIgraCache(null);
+        setScreeningInputs([]);
         setCandidateError(
-          caught instanceof Error ? caught.message : "Unable to load saved sounding candidates.",
+          caught instanceof Error ? caught.message : "Unable to load local sounding data.",
         );
+        setCandidateStatus("Local sounding data unavailable");
       });
     return () => {
       active = false;
@@ -2258,6 +2328,13 @@ export function App() {
     }
   }
 
+  function markCandidateSearchSettingsChanged(status: string) {
+    setCandidateScreening(null);
+    setCandidateDetailId(null);
+    setCandidateError(null);
+    setCandidateStatus(status);
+  }
+
   function handleSearchIntentChange(intent: SearchIntent) {
     setSearchIntent(intent);
     const filters = searchIntentFilters(intent);
@@ -2267,14 +2344,117 @@ export function App() {
     setCandidateReadinessFilter("all");
     setCandidateSort("best_match");
     setCandidateStationSearch("");
+    markCandidateSearchSettingsChanged("Search intent changed; search selected soundings");
   }
 
-  function handleSearchDepthChange(depth: SearchDepth) {
-    setSearchDepth(depth);
-    const limits = SEARCH_DEPTH_LIMITS[depth];
-    setCandidateCacheLimit(limits.cacheLimit);
-    setCandidateLatestPerStation(limits.latestPerStation);
-    setCandidateResultLimit(limits.resultLimit);
+  function handleStationSelectionModeChange(mode: StationSelectionMode) {
+    setStationSelectionMode(mode);
+    markCandidateSearchSettingsChanged("Station set changed; search selected soundings");
+  }
+
+  function handleSelectedStationToggle(stationId: string) {
+    setSelectedStationIds((current) =>
+      current.includes(stationId)
+        ? current.filter((selected) => selected !== stationId)
+        : [...current, stationId],
+    );
+    setStationSelectionMode("selected");
+    markCandidateSearchSettingsChanged("Station selection changed; search selected soundings");
+  }
+
+  function handleSelectAllCachedStations() {
+    setSelectedStationIds([]);
+    setStationSelectionMode("all_cached");
+    markCandidateSearchSettingsChanged("All cached stations selected; search selected soundings");
+  }
+
+  function handleClearSelectedStations() {
+    setSelectedStationIds([]);
+    setStationSelectionMode("selected");
+    markCandidateSearchSettingsChanged("Station selection cleared");
+  }
+
+  function handleCandidateHistoryScopeChange(scope: CandidateHistoryScope) {
+    setCandidateHistoryScope(scope);
+    markCandidateSearchSettingsChanged("History scope changed; search selected soundings");
+  }
+
+  function handleCandidateStoryFilterChange(filter: CandidateStoryFilter) {
+    setCandidateStoryFilter(filter);
+    markCandidateSearchSettingsChanged("Story filter changed; apply advanced filters");
+  }
+
+  function handleCandidateStoryFamilyFilterChange(filter: CandidateStoryFamilyFilter) {
+    setCandidateStoryFamilyFilter(filter);
+    markCandidateSearchSettingsChanged("Story family changed; apply advanced filters");
+  }
+
+  function handleCandidateSupportFilterChange(filter: CandidateSupportFilter) {
+    setCandidateSupportFilter(filter);
+    markCandidateSearchSettingsChanged("Support filter changed; apply advanced filters");
+  }
+
+  function handleCandidateSortChange(sort: CandidateSort) {
+    setCandidateSort(sort);
+    markCandidateSearchSettingsChanged("Sort changed; apply advanced filters");
+  }
+
+  function handleCandidateStationSearchChange(search: string) {
+    setCandidateStationSearch(search);
+    markCandidateSearchSettingsChanged("Station search changed; apply advanced filters");
+  }
+
+  function handleCandidateReadinessFilterChange(filter: CandidateReadinessFilter) {
+    setCandidateReadinessFilter(filter);
+    markCandidateSearchSettingsChanged("Readiness filter changed; apply advanced filters");
+  }
+
+  function handleCandidateLatestPerStationChange(limit: string) {
+    setCandidateLatestPerStation(limit);
+    markCandidateSearchSettingsChanged("History scope changed; search selected soundings");
+  }
+
+  function handleCandidateResultLimitChange(limit: string) {
+    setCandidateResultLimit(limit);
+    markCandidateSearchSettingsChanged("Returned candidate limit changed; apply advanced filters");
+  }
+
+  function selectedStationIdsForCandidateRequest(): string[] {
+    return stationSelectionMode === "selected" ? selectedStationIds : [];
+  }
+
+  function selectedHistoryLatestPerStation(): number | null {
+    return candidateHistoryScope === "latest_per_station"
+      ? boundedInteger(candidateLatestPerStation, 1, 2000, 20)
+      : null;
+  }
+
+  function candidateSearchStatus(
+    action: "Searching" | "Analyzing",
+    inputs: ScreeningInput[] = screeningInputs,
+  ): string {
+    const stationIds = selectedStationIdsForCandidateRequest();
+    const selectedStationSet = new Set(stationIds);
+    const selectedInputs =
+      stationSelectionMode === "selected"
+        ? inputs.filter((input) => selectedStationSet.has(input.station_id))
+        : inputs;
+    const latestPerStation = selectedHistoryLatestPerStation();
+    const soundingCount =
+      candidateHistoryScope === "all_cached"
+        ? selectedInputs.reduce((total, input) => total + (input.sounding_count ?? 0), 0)
+        : selectedInputs.reduce(
+            (total, input) => total + Math.min(input.sounding_count ?? 0, latestPerStation ?? 0),
+            0,
+          );
+    const stationCount = selectedInputs.length;
+    if (soundingCount >= 1000) {
+      return `${action} ${soundingCount.toLocaleString()} cached soundings from ${stationCount.toLocaleString()} station${stationCount === 1 ? "" : "s"}; this can take a minute or two`;
+    }
+    if (soundingCount > 0) {
+      return `${action} ${soundingCount.toLocaleString()} selected sounding${soundingCount === 1 ? "" : "s"}`;
+    }
+    return `${action} selected soundings`;
   }
 
   async function refreshSoundingCandidateState(statusWhenLoaded?: string) {
@@ -2306,44 +2486,39 @@ export function App() {
   }
 
   async function handlePrepareAndSearchLocalSoundings() {
-    const limits = SEARCH_DEPTH_LIMITS[searchDepth];
-    const cacheLimit = boundedInteger(limits.cacheLimit, 1, 100, 10);
-    const latestPerStation = boundedInteger(limits.latestPerStation, 1, 50, 5);
-    const resultLimit = boundedInteger(limits.resultLimit, 1, 200, 50);
+    const stationIds = selectedStationIdsForCandidateRequest();
+    if (stationSelectionMode === "selected" && stationIds.length === 0) {
+      setCandidateError("Select at least one station, or switch to all cached stations.");
+      setCandidateStatus("Station selection required");
+      return;
+    }
+    const resultLimit = boundedInteger(candidateResultLimit, 1, 500, 100);
     setCandidateError(null);
-    setCandidateStatus("Preparing local sounding data");
+    setCandidateScreening(null);
+    setCandidateDetailId(null);
+    setCandidateStatus("Preparing selected soundings");
     try {
-      let [catalogPayload, cachePayload, inputsPayload, savedPayload] = await Promise.all([
+      const [catalogPayload, cachePayload, inputsPayload, savedPayload] = await Promise.all([
         fetchIGRARecentCatalog(),
         fetchIGRARecentCache(),
         fetchScreeningInputs(),
         fetchSavedSoundingCandidates(),
       ]);
-      if (inputsPayload.inputs.length === 0) {
-        setCandidateStatus(
-          `Caching up to ${cacheLimit} local station file${cacheLimit === 1 ? "" : "s"}`,
-        );
-        await cacheIGRARecentBatch(cacheLimit);
-        [catalogPayload, cachePayload, inputsPayload, savedPayload] = await Promise.all([
-          fetchIGRARecentCatalog(),
-          fetchIGRARecentCache(),
-          fetchScreeningInputs(),
-          fetchSavedSoundingCandidates(),
-        ]);
-      }
       setIgraCatalog(catalogPayload.catalog);
       setIgraCache(cachePayload);
       setScreeningInputs(inputsPayload.inputs);
       setSavedCandidates(savedPayload.saved_candidates);
-      setCandidateStatus("Searching cached soundings");
+      setCandidateStatus(candidateSearchStatus("Searching", inputsPayload.inputs));
       const result = await screenSoundingCandidates({
+        stationIds,
+        historyScope: candidateHistoryScope,
         story: candidateStoryFilter,
         storyFamily: candidateStoryFamilyFilter,
         support: candidateSupportFilter,
         readiness: candidateReadinessFilter,
         stationSearch: candidateStationSearch,
         sort: candidateSort,
-        latestPerStation,
+        latestPerStation: selectedHistoryLatestPerStation(),
         limit: resultLimit,
       });
       setCandidateScreening(result);
@@ -2355,9 +2530,9 @@ export function App() {
       );
     } catch (caught) {
       setCandidateError(
-        caught instanceof Error ? caught.message : "Unable to prepare and search local soundings.",
+        caught instanceof Error ? caught.message : "Unable to search selected soundings.",
       );
-      setCandidateStatus("Prepare and search failed");
+      setCandidateStatus("Selected sounding search failed");
     }
   }
 
@@ -2377,11 +2552,18 @@ export function App() {
   }
 
   async function handleCacheIGRAStationFiles() {
-    const limit = boundedInteger(candidateCacheLimit, 1, 100, 10);
+    const stationIds = selectedStationIdsForCandidateRequest();
+    if (stationIds.length === 0) {
+      setCandidateError("Select one or more catalog stations to cache.");
+      setCandidateStatus("Station selection required");
+      return;
+    }
     setCandidateError(null);
-    setCandidateStatus(`Caching up to ${limit} IGRA station file${limit === 1 ? "" : "s"}`);
+    setCandidateStatus(
+      `Caching ${stationIds.length} selected station${stationIds.length === 1 ? "" : "s"}`,
+    );
     try {
-      const result = await cacheIGRARecentBatch(limit);
+      const result = await cacheIGRARecentBatch({ stationIds });
       await refreshSoundingCandidateState(
         result.cached_entries.length > 0
           ? `Cached ${result.cached_entries.length} station file${
@@ -2405,18 +2587,28 @@ export function App() {
   }
 
   async function handleScreenSoundingCandidates() {
+    const stationIds = selectedStationIdsForCandidateRequest();
+    if (stationSelectionMode === "selected" && stationIds.length === 0) {
+      setCandidateError("Select at least one station, or switch to all cached stations.");
+      setCandidateStatus("Station selection required");
+      return;
+    }
     setCandidateError(null);
-    setCandidateStatus("Analyzing cached soundings");
+    setCandidateScreening(null);
+    setCandidateDetailId(null);
+    setCandidateStatus(candidateSearchStatus("Analyzing"));
     try {
       const result = await screenSoundingCandidates({
+        stationIds,
+        historyScope: candidateHistoryScope,
         story: candidateStoryFilter,
         storyFamily: candidateStoryFamilyFilter,
         support: candidateSupportFilter,
         readiness: candidateReadinessFilter,
         stationSearch: candidateStationSearch,
         sort: candidateSort,
-        latestPerStation: boundedInteger(candidateLatestPerStation, 1, 50, 5),
-        limit: boundedInteger(candidateResultLimit, 1, 200, 50),
+        latestPerStation: selectedHistoryLatestPerStation(),
+        limit: boundedInteger(candidateResultLimit, 1, 500, 100),
       });
       setCandidateScreening(result);
       setCandidateDetailId(result.candidates[0]?.candidate_id ?? null);
@@ -2429,9 +2621,9 @@ export function App() {
       setSavedCandidates(savedPayload.saved_candidates);
     } catch (caught) {
       setCandidateError(
-        caught instanceof Error ? caught.message : "Unable to analyze cached soundings.",
+        caught instanceof Error ? caught.message : "Unable to search selected soundings.",
       );
-      setCandidateStatus("Candidate analysis failed");
+      setCandidateStatus("Candidate search failed");
     }
   }
 
@@ -2442,7 +2634,9 @@ export function App() {
     setCandidateStationSearch("");
     setCandidateReadinessFilter("all");
     setCandidateSort("best_match");
-    setCandidateStatus("Showing default discovery settings; run Analyze recommendations");
+    markCandidateSearchSettingsChanged(
+      "Showing default recommendation settings; search selected soundings",
+    );
   }
 
   async function handleSaveSoundingCandidate(
@@ -3286,8 +3480,9 @@ export function App() {
           selectedCandidateScreening={selectedCandidateScreening}
           atmosphereSourcePath={atmosphereSourcePath}
           searchIntent={searchIntent}
-          searchDepth={searchDepth}
-          timeScope={timeScope}
+          stationSelectionMode={stationSelectionMode}
+          selectedStationIds={selectedStationIds}
+          candidateHistoryScope={candidateHistoryScope}
           igraCatalog={igraCatalog}
           igraCache={igraCache}
           screeningInputs={screeningInputs}
@@ -3297,7 +3492,6 @@ export function App() {
           candidateSort={candidateSort}
           candidateStationSearch={candidateStationSearch}
           candidateReadinessFilter={candidateReadinessFilter}
-          candidateCacheLimit={candidateCacheLimit}
           candidateLatestPerStation={candidateLatestPerStation}
           candidateResultLimit={candidateResultLimit}
           candidateStatus={candidateStatus}
@@ -3339,18 +3533,20 @@ export function App() {
           onObservedSoundingTimeChange={handleObservedSoundingTimeChange}
           onAtmosphereSourcePathChange={handleAtmosphereSourcePathChange}
           onSearchIntentChange={handleSearchIntentChange}
-          onSearchDepthChange={handleSearchDepthChange}
-          onTimeScopeChange={setTimeScope}
-          onCandidateStoryFilterChange={setCandidateStoryFilter}
-          onCandidateStoryFamilyFilterChange={setCandidateStoryFamilyFilter}
-          onCandidateSupportFilterChange={setCandidateSupportFilter}
-          onCandidateSortChange={setCandidateSort}
-          onCandidateStationSearchChange={setCandidateStationSearch}
-          onCandidateReadinessFilterChange={setCandidateReadinessFilter}
+          onStationSelectionModeChange={handleStationSelectionModeChange}
+          onSelectedStationToggle={handleSelectedStationToggle}
+          onSelectAllCachedStations={handleSelectAllCachedStations}
+          onClearSelectedStations={handleClearSelectedStations}
+          onCandidateHistoryScopeChange={handleCandidateHistoryScopeChange}
+          onCandidateStoryFilterChange={handleCandidateStoryFilterChange}
+          onCandidateStoryFamilyFilterChange={handleCandidateStoryFamilyFilterChange}
+          onCandidateSupportFilterChange={handleCandidateSupportFilterChange}
+          onCandidateSortChange={handleCandidateSortChange}
+          onCandidateStationSearchChange={handleCandidateStationSearchChange}
+          onCandidateReadinessFilterChange={handleCandidateReadinessFilterChange}
           onClearCandidateAnalysisFilters={handleClearCandidateAnalysisFilters}
-          onCandidateCacheLimitChange={setCandidateCacheLimit}
-          onCandidateLatestPerStationChange={setCandidateLatestPerStation}
-          onCandidateResultLimitChange={setCandidateResultLimit}
+          onCandidateLatestPerStationChange={handleCandidateLatestPerStationChange}
+          onCandidateResultLimitChange={handleCandidateResultLimitChange}
           onCandidateDetailChange={setCandidateDetailId}
           onRefreshIGRAData={handleRefreshIGRAData}
           onCacheIGRAStationFiles={handleCacheIGRAStationFiles}
@@ -3452,8 +3648,9 @@ function BuildWorkspace({
   selectedCandidateScreening,
   atmosphereSourcePath,
   searchIntent,
-  searchDepth,
-  timeScope,
+  stationSelectionMode,
+  selectedStationIds,
+  candidateHistoryScope,
   igraCatalog,
   igraCache,
   screeningInputs,
@@ -3463,7 +3660,6 @@ function BuildWorkspace({
   candidateSort,
   candidateStationSearch,
   candidateReadinessFilter,
-  candidateCacheLimit,
   candidateLatestPerStation,
   candidateResultLimit,
   candidateStatus,
@@ -3500,8 +3696,11 @@ function BuildWorkspace({
   onObservedSoundingTimeChange,
   onAtmosphereSourcePathChange,
   onSearchIntentChange,
-  onSearchDepthChange,
-  onTimeScopeChange,
+  onStationSelectionModeChange,
+  onSelectedStationToggle,
+  onSelectAllCachedStations,
+  onClearSelectedStations,
+  onCandidateHistoryScopeChange,
   onCandidateStoryFilterChange,
   onCandidateStoryFamilyFilterChange,
   onCandidateSupportFilterChange,
@@ -3509,7 +3708,6 @@ function BuildWorkspace({
   onCandidateStationSearchChange,
   onCandidateReadinessFilterChange,
   onClearCandidateAnalysisFilters,
-  onCandidateCacheLimitChange,
   onCandidateLatestPerStationChange,
   onCandidateResultLimitChange,
   onCandidateDetailChange,
@@ -3566,8 +3764,9 @@ function BuildWorkspace({
   selectedCandidateScreening: Record<string, unknown> | null;
   atmosphereSourcePath: AtmosphereSourcePath;
   searchIntent: SearchIntent;
-  searchDepth: SearchDepth;
-  timeScope: TimeScope;
+  stationSelectionMode: StationSelectionMode;
+  selectedStationIds: string[];
+  candidateHistoryScope: CandidateHistoryScope;
   igraCatalog: IGRACatalogResponse["catalog"] | null;
   igraCache: IGRACacheResponse | null;
   screeningInputs: ScreeningInput[];
@@ -3577,7 +3776,6 @@ function BuildWorkspace({
   candidateSort: CandidateSort;
   candidateStationSearch: string;
   candidateReadinessFilter: CandidateReadinessFilter;
-  candidateCacheLimit: string;
   candidateLatestPerStation: string;
   candidateResultLimit: string;
   candidateStatus: string;
@@ -3614,8 +3812,11 @@ function BuildWorkspace({
   onObservedSoundingTimeChange: (validTimeUtc: string) => void;
   onAtmosphereSourcePathChange: (sourcePath: AtmosphereSourcePath) => void;
   onSearchIntentChange: (intent: SearchIntent) => void;
-  onSearchDepthChange: (depth: SearchDepth) => void;
-  onTimeScopeChange: (timeScope: TimeScope) => void;
+  onStationSelectionModeChange: (mode: StationSelectionMode) => void;
+  onSelectedStationToggle: (stationId: string) => void;
+  onSelectAllCachedStations: () => void;
+  onClearSelectedStations: () => void;
+  onCandidateHistoryScopeChange: (scope: CandidateHistoryScope) => void;
   onCandidateStoryFilterChange: (filter: CandidateStoryFilter) => void;
   onCandidateStoryFamilyFilterChange: (filter: CandidateStoryFamilyFilter) => void;
   onCandidateSupportFilterChange: (filter: CandidateSupportFilter) => void;
@@ -3623,7 +3824,6 @@ function BuildWorkspace({
   onCandidateStationSearchChange: (value: string) => void;
   onCandidateReadinessFilterChange: (filter: CandidateReadinessFilter) => void;
   onClearCandidateAnalysisFilters: () => void;
-  onCandidateCacheLimitChange: (value: string) => void;
   onCandidateLatestPerStationChange: (value: string) => void;
   onCandidateResultLimitChange: (value: string) => void;
   onCandidateDetailChange: (candidateId: string) => void;
@@ -3717,7 +3917,7 @@ function BuildWorkspace({
               </option>
             ))}
             {scenarios.some((scenario) => scenario.id === OBSERVED_SOUNDING_BASE_SCENARIO_ID) && (
-              <option value={OBSERVED_SOUNDING_EXPERIMENT_ID}>Upload a Sounding</option>
+              <option value={OBSERVED_SOUNDING_EXPERIMENT_ID}>Observed Soundings</option>
             )}
           </select>
 
@@ -3754,7 +3954,7 @@ function BuildWorkspace({
                 <p className="eyebrow">Guided local CM1 experiment</p>
                 <h2>
                   {observedSoundingExperimentSelected
-                    ? "Upload a Sounding"
+                    ? "Observed Soundings"
                     : selectedScenario.display_name}
                 </h2>
                 <p>
@@ -3836,15 +4036,15 @@ function BuildWorkspace({
                       cache={igraCache}
                       screeningInputs={screeningInputs}
                       searchIntent={searchIntent}
-                      searchDepth={searchDepth}
-                      timeScope={timeScope}
+                      stationSelectionMode={stationSelectionMode}
+                      selectedStationIds={selectedStationIds}
+                      historyScope={candidateHistoryScope}
                       storyFilter={candidateStoryFilter}
                       storyFamilyFilter={candidateStoryFamilyFilter}
                       supportFilter={candidateSupportFilter}
                       sort={candidateSort}
                       stationSearch={candidateStationSearch}
                       readinessFilter={candidateReadinessFilter}
-                      cacheLimit={candidateCacheLimit}
                       latestPerStation={candidateLatestPerStation}
                       resultLimit={candidateResultLimit}
                       status={candidateStatus}
@@ -3853,8 +4053,11 @@ function BuildWorkspace({
                       savedCandidates={savedCandidates}
                       selectedCandidateId={candidateDetailId}
                       onSearchIntentChange={onSearchIntentChange}
-                      onSearchDepthChange={onSearchDepthChange}
-                      onTimeScopeChange={onTimeScopeChange}
+                      onStationSelectionModeChange={onStationSelectionModeChange}
+                      onSelectedStationToggle={onSelectedStationToggle}
+                      onSelectAllCachedStations={onSelectAllCachedStations}
+                      onClearSelectedStations={onClearSelectedStations}
+                      onHistoryScopeChange={onCandidateHistoryScopeChange}
                       onStoryFilterChange={onCandidateStoryFilterChange}
                       onStoryFamilyFilterChange={onCandidateStoryFamilyFilterChange}
                       onSupportFilterChange={onCandidateSupportFilterChange}
@@ -3862,7 +4065,6 @@ function BuildWorkspace({
                       onStationSearchChange={onCandidateStationSearchChange}
                       onReadinessFilterChange={onCandidateReadinessFilterChange}
                       onClearFilters={onClearCandidateAnalysisFilters}
-                      onCacheLimitChange={onCandidateCacheLimitChange}
                       onLatestPerStationChange={onCandidateLatestPerStationChange}
                       onResultLimitChange={onCandidateResultLimitChange}
                       onCandidateDetailChange={onCandidateDetailChange}
@@ -4555,15 +4757,15 @@ function ObservedAtmosphereCandidatesPanel({
   cache,
   screeningInputs,
   searchIntent,
-  searchDepth,
-  timeScope,
+  stationSelectionMode,
+  selectedStationIds,
+  historyScope,
   storyFilter,
   storyFamilyFilter,
   supportFilter,
   sort,
   stationSearch,
   readinessFilter,
-  cacheLimit,
   latestPerStation,
   resultLimit,
   status,
@@ -4572,8 +4774,11 @@ function ObservedAtmosphereCandidatesPanel({
   savedCandidates,
   selectedCandidateId,
   onSearchIntentChange,
-  onSearchDepthChange,
-  onTimeScopeChange,
+  onStationSelectionModeChange,
+  onSelectedStationToggle,
+  onSelectAllCachedStations,
+  onClearSelectedStations,
+  onHistoryScopeChange,
   onStoryFilterChange,
   onStoryFamilyFilterChange,
   onSupportFilterChange,
@@ -4581,7 +4786,6 @@ function ObservedAtmosphereCandidatesPanel({
   onStationSearchChange,
   onReadinessFilterChange,
   onClearFilters,
-  onCacheLimitChange,
   onLatestPerStationChange,
   onResultLimitChange,
   onCandidateDetailChange,
@@ -4596,15 +4800,15 @@ function ObservedAtmosphereCandidatesPanel({
   cache: IGRACacheResponse | null;
   screeningInputs: ScreeningInput[];
   searchIntent: SearchIntent;
-  searchDepth: SearchDepth;
-  timeScope: TimeScope;
+  stationSelectionMode: StationSelectionMode;
+  selectedStationIds: string[];
+  historyScope: CandidateHistoryScope;
   storyFilter: CandidateStoryFilter;
   storyFamilyFilter: CandidateStoryFamilyFilter;
   supportFilter: CandidateSupportFilter;
   sort: CandidateSort;
   stationSearch: string;
   readinessFilter: CandidateReadinessFilter;
-  cacheLimit: string;
   latestPerStation: string;
   resultLimit: string;
   status: string;
@@ -4613,8 +4817,11 @@ function ObservedAtmosphereCandidatesPanel({
   savedCandidates: SavedSoundingCandidate[];
   selectedCandidateId: string | null;
   onSearchIntentChange: (intent: SearchIntent) => void;
-  onSearchDepthChange: (depth: SearchDepth) => void;
-  onTimeScopeChange: (timeScope: TimeScope) => void;
+  onStationSelectionModeChange: (mode: StationSelectionMode) => void;
+  onSelectedStationToggle: (stationId: string) => void;
+  onSelectAllCachedStations: () => void;
+  onClearSelectedStations: () => void;
+  onHistoryScopeChange: (scope: CandidateHistoryScope) => void;
   onStoryFilterChange: (filter: CandidateStoryFilter) => void;
   onStoryFamilyFilterChange: (filter: CandidateStoryFamilyFilter) => void;
   onSupportFilterChange: (filter: CandidateSupportFilter) => void;
@@ -4622,7 +4829,6 @@ function ObservedAtmosphereCandidatesPanel({
   onStationSearchChange: (value: string) => void;
   onReadinessFilterChange: (filter: CandidateReadinessFilter) => void;
   onClearFilters: () => void;
-  onCacheLimitChange: (value: string) => void;
   onLatestPerStationChange: (value: string) => void;
   onResultLimitChange: (value: string) => void;
   onCandidateDetailChange: (candidateId: string) => void;
@@ -4652,11 +4858,63 @@ function ObservedAtmosphereCandidatesPanel({
       : (savedCandidates.find(
           (saved) => saved.candidate.candidate_id === selectedCandidate.candidate_id,
         ) ?? null);
-  const cachedStations = new Set((cache?.entries ?? []).map((entry) => entry.station_id)).size;
-  const cachedStationFiles = cache?.entries.length ?? 0;
-  const cachedCatalogFiles =
-    catalog?.zip_references.filter((reference) => reference.cached_status !== "not_cached")
-      .length ?? cachedStationFiles;
+  const cachedStations =
+    screeningInputs.length > 0
+      ? new Set(screeningInputs.map((input) => input.station_id)).size
+      : new Set((cache?.entries ?? []).map((entry) => entry.station_id)).size;
+  const cachedStationFiles =
+    screeningInputs.length > 0 ? screeningInputs.length : (cache?.entries.length ?? 0);
+  const stationOptions = useMemo(() => {
+    const inputByStation = new Map(screeningInputs.map((input) => [input.station_id, input]));
+    const optionByStation = new Map<
+      string,
+      {
+        station_id: string;
+        station_name?: string | null;
+        cached: boolean;
+        cached_status?: string | null;
+        sounding_count: number;
+        latest_valid_time_utc?: string | null;
+      }
+    >();
+    for (const reference of catalog?.zip_references ?? []) {
+      const input = inputByStation.get(reference.station_id);
+      optionByStation.set(reference.station_id, {
+        station_id: reference.station_id,
+        station_name: reference.station_name,
+        cached: Boolean(input) || reference.cached_status !== "not_cached",
+        cached_status: reference.cached_status,
+        sounding_count: input?.sounding_count ?? 0,
+        latest_valid_time_utc: input?.latest_valid_time_utc ?? null,
+      });
+    }
+    for (const input of screeningInputs) {
+      const current = optionByStation.get(input.station_id);
+      optionByStation.set(input.station_id, {
+        station_id: input.station_id,
+        station_name: input.station_name ?? current?.station_name ?? null,
+        cached: true,
+        cached_status: input.cached_status,
+        sounding_count: input.sounding_count ?? 0,
+        latest_valid_time_utc: input.latest_valid_time_utc ?? null,
+      });
+    }
+    return [...optionByStation.values()].sort((left, right) =>
+      (left.station_name ?? left.station_id).localeCompare(right.station_name ?? right.station_id),
+    );
+  }, [catalog?.zip_references, screeningInputs]);
+  const selectedStationIdSet = useMemo(() => new Set(selectedStationIds), [selectedStationIds]);
+  const cachedStationOptions = stationOptions.filter((option) => option.cached);
+  const activeStationOptions =
+    stationSelectionMode === "selected"
+      ? stationOptions.filter((option) => selectedStationIdSet.has(option.station_id))
+      : cachedStationOptions;
+  const selectedCachedStationOptions = activeStationOptions.filter((option) => option.cached);
+  const selectedUncachedStationOptions = activeStationOptions.filter((option) => !option.cached);
+  const selectedCachedSoundingCount = selectedCachedStationOptions.reduce(
+    (total, option) => total + option.sounding_count,
+    0,
+  );
   const screenableSoundingCount = screeningInputs.reduce(
     (total, input) => total + (input.sounding_count ?? 0),
     0,
@@ -4665,27 +4923,37 @@ function ObservedAtmosphereCandidatesPanel({
     screenableSoundingCount > 0
       ? `${screenableSoundingCount.toLocaleString()} cached soundings`
       : `${screeningInputs.length.toLocaleString()} cached files`;
-  const latestPerCachedFile = boundedInteger(latestPerStation, 1, 50, 5);
-  const plannedAnalysisCount = screeningInputs.reduce((total, input) => {
-    const count = input.sounding_count;
-    if (typeof count === "number" && Number.isFinite(count)) {
-      return total + Math.min(count, latestPerCachedFile);
-    }
-    return total + latestPerCachedFile;
-  }, 0);
+  const latestPerCachedFile = boundedInteger(latestPerStation, 1, 2000, 20);
+  const plannedAnalysisCount =
+    historyScope === "all_cached"
+      ? selectedCachedSoundingCount
+      : selectedCachedStationOptions.reduce(
+          (total, option) => total + Math.min(option.sounding_count, latestPerCachedFile),
+          0,
+        );
   const plannedAnalysisSummary =
-    screeningInputs.length > 0
-      ? `Up to ${plannedAnalysisCount.toLocaleString()} soundings (${latestPerCachedFile.toLocaleString()} per cached file)`
-      : "No cached files";
+    selectedCachedStationOptions.length > 0
+      ? `${plannedAnalysisCount.toLocaleString()} sounding${plannedAnalysisCount === 1 ? "" : "s"} from ${selectedCachedStationOptions.length.toLocaleString()} cached station${selectedCachedStationOptions.length === 1 ? "" : "s"}`
+      : "No cached stations selected";
+  const stationSelectionSummary =
+    stationSelectionMode === "all_cached"
+      ? `All ${cachedStationOptions.length.toLocaleString()} cached station${cachedStationOptions.length === 1 ? "" : "s"}`
+      : `${selectedStationIds.length.toLocaleString()} selected station${selectedStationIds.length === 1 ? "" : "s"}`;
   const lastAnalysisSummary = screening
     ? `${visibleCandidates.length.toLocaleString()} shown from ${(
         screening.filtered_candidate_count ?? visibleCandidates.length
-      ).toLocaleString()} selected / ${(screening.total_candidate_count ?? visibleCandidates.length).toLocaleString()} analyzed`
+      ).toLocaleString()} matching / ${(screening.total_candidate_count ?? visibleCandidates.length).toLocaleString()} analyzed`
     : "Not run yet";
+  const filterTraceSummary = candidateFilterTraceSummary(screening, {
+    storyFilter,
+    storyFamilyFilter,
+    supportFilter,
+    readinessFilter,
+  });
   const activeRefinements = [
     storyFilter !== "all" ? `Story: ${candidateStoryLabel(storyFilter)}` : null,
     storyFamilyFilter !== "all" ? `Family: ${candidateStoryFamilyLabel(storyFamilyFilter)}` : null,
-    supportFilter !== "all" ? `Support: ${humanize(supportFilter)}` : null,
+    supportFilter !== "all" ? `Evidence tier: ${supportTierLabel(supportFilter)}` : null,
     readinessFilter !== "all" ? `Readiness: ${humanize(readinessFilter)}` : null,
     stationSearch.trim() ? `Station search: ${stationSearch.trim()}` : null,
     sort !== "best_match" ? `Sort: ${candidateSortLabel(sort)}` : null,
@@ -4701,8 +4969,8 @@ function ObservedAtmosphereCandidatesPanel({
           <p className="eyebrow">Observed atmosphere</p>
           <h3 id="sounding-candidates-title">Find interesting soundings</h3>
           <p className="field-help">
-            Screening guidance only. The cache inventory is local data; recommendations analyze the
-            latest bounded slice from those cached files.
+            Choose the stations and history to search, then review the matching candidate
+            evidence.
           </p>
         </div>
         <p className="state-chip" role="status">
@@ -4716,15 +4984,16 @@ function ObservedAtmosphereCandidatesPanel({
       >
         <div className="run-configuration-grid">
           <label>
-            <strong>Source region</strong>
-            <select value="great_plains_midwest" disabled>
+            <span>Source region</span>
+            <select aria-label="Source region" value="great_plains_midwest" disabled>
               <option value="great_plains_midwest">Great Plains / Midwest</option>
             </select>
             <small>Current local station catalog scope.</small>
           </label>
           <label>
-            <strong>Search intent</strong>
+            <span>Search intent</span>
             <select
+              aria-label="Search intent"
               value={searchIntent}
               onChange={(event) => onSearchIntentChange(event.target.value as SearchIntent)}
             >
@@ -4737,76 +5006,171 @@ function ObservedAtmosphereCandidatesPanel({
                 Cold season / winter (not supported yet)
               </option>
             </select>
-            <small>Maps to the current backend-supported story filters.</small>
+            <small>Sets the recommendation category and explanation focus.</small>
           </label>
           <label>
-            <strong>Search depth</strong>
+            <span>History scope</span>
             <select
-              value={searchDepth}
-              onChange={(event) => onSearchDepthChange(event.target.value as SearchDepth)}
+              aria-label="History scope"
+              value={historyScope}
+              onChange={(event) =>
+                onHistoryScopeChange(event.target.value as CandidateHistoryScope)
+              }
             >
-              {SEARCH_DEPTH_OPTIONS.map((option) => (
+              {HISTORY_SCOPE_OPTIONS.map((option) => (
                 <option key={option.value} value={option.value}>
                   {option.label}
                 </option>
               ))}
             </select>
             <small>
-              {SEARCH_DEPTH_OPTIONS.find((option) => option.value === searchDepth)?.description}
+              {HISTORY_SCOPE_OPTIONS.find((option) => option.value === historyScope)?.description}
             </small>
           </label>
+          {historyScope === "latest_per_station" && (
+            <label>
+              <span>Latest soundings per station</span>
+              <input
+                aria-label="Latest soundings per station"
+                type="number"
+                min="1"
+                max="2000"
+                value={latestPerStation}
+                onChange={(event) => onLatestPerStationChange(event.target.value)}
+              />
+              <small>Applied to each selected cached station.</small>
+            </label>
+          )}
           <label>
-            <strong>Time scope</strong>
-            <select
-              value={timeScope}
-              onChange={(event) => onTimeScopeChange(event.target.value as TimeScope)}
-            >
-              {TIME_SCOPE_OPTIONS.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-              <option value="seasonal_disabled" disabled>
-                Seasonal historical (not supported yet)
-              </option>
-              <option value="date_range_disabled" disabled>
-                Specific date range (not supported yet)
-              </option>
-              <option value="all_cached_disabled" disabled>
-                All cached (not supported yet)
-              </option>
-            </select>
-            <small>
-              {TIME_SCOPE_OPTIONS.find((option) => option.value === timeScope)?.description}
-            </small>
+            <span>Returned candidate limit</span>
+            <input
+              aria-label="Returned candidate limit"
+              type="number"
+              min="1"
+              max="500"
+              value={resultLimit}
+              onChange={(event) => onResultLimitChange(event.target.value)}
+            />
+            <small>Limit is applied after the selected soundings are analyzed.</small>
           </label>
+        </div>
+        <div className="candidate-search-set-summary" aria-label="Selected soundings">
+          <Metric label="Selected soundings" value={plannedAnalysisSummary} />
+          <Metric label="Station set" value={stationSelectionSummary} />
+          <Metric label="Cached inventory" value={cachedInventorySummary} />
+          <Metric
+            label="Uncached selected"
+            value={`${selectedUncachedStationOptions.length.toLocaleString()} station${selectedUncachedStationOptions.length === 1 ? "" : "s"}`}
+          />
         </div>
         <div className="candidate-discovery-actions" aria-label="Sounding search action">
           <button type="button" onClick={onPrepareAndSearch}>
-            Prepare & search local soundings
+            Search selected soundings
+          </button>
+          <button type="button" className="secondary-button" onClick={onRefreshIGRAData}>
+            Refresh catalog
+          </button>
+          <button
+            type="button"
+            className="secondary-button"
+            disabled={selectedUncachedStationOptions.length === 0}
+            onClick={onCacheStationFiles}
+          >
+            Cache selected stations
           </button>
         </div>
       </section>
 
+      <section className="candidate-station-picker" aria-label="Station picker">
+        <div className="panel-heading-row">
+          <div>
+            <h4>Station set</h4>
+            <p className="field-help">
+              Search all cached stations, or choose specific stations to cache or analyze.
+            </p>
+          </div>
+          <div className="button-row">
+            <button
+              type="button"
+              className={
+                stationSelectionMode === "all_cached" ? "active-secondary-button" : "secondary-button"
+              }
+              onClick={onSelectAllCachedStations}
+            >
+              All cached stations
+            </button>
+            <button
+              type="button"
+              className={
+                stationSelectionMode === "selected" ? "active-secondary-button" : "secondary-button"
+              }
+              onClick={() => onStationSelectionModeChange("selected")}
+            >
+              Choose stations
+            </button>
+            <button type="button" className="secondary-button" onClick={onClearSelectedStations}>
+              Clear selected
+            </button>
+          </div>
+        </div>
+        {stationSelectionMode === "selected" ? (
+          <div className="station-picklist">
+            {stationOptions.length === 0 ? (
+              <p className="field-help">Refresh the IGRA catalog to load station choices.</p>
+            ) : (
+              stationOptions.map((station) => (
+                <label key={station.station_id} className="station-picklist-row">
+                  <input
+                    type="checkbox"
+                    checked={selectedStationIdSet.has(station.station_id)}
+                    onChange={() => onSelectedStationToggle(station.station_id)}
+                  />
+                  <span>
+                    <strong>{station.station_name ?? station.station_id}</strong>
+                    <small>
+                      {station.station_id} ·{" "}
+                      {station.cached
+                        ? `${station.sounding_count.toLocaleString()} cached sounding${station.sounding_count === 1 ? "" : "s"}`
+                        : "not cached"}
+                    </small>
+                  </span>
+                  <StatusBadge
+                    label={station.cached ? "Cached" : "Available to cache"}
+                    tone={station.cached ? "good" : "neutral"}
+                  />
+                </label>
+              ))
+            )}
+          </div>
+        ) : (
+          <p className="field-help">
+            Using all cached stations. Click Choose stations to pick specific stations or cache
+            uncached catalog stations.
+          </p>
+        )}
+      </section>
+
       <section className="candidate-cache-summary" aria-label="Local sounding data">
-        <h4>Local sounding data</h4>
-        <dl className="compact-metrics">
+        <div className="panel-heading-row">
+          <h4>Local sounding data</h4>
+          <StatusBadge
+            label={screeningInputs.length > 0 ? "Ready to search" : "No cached soundings"}
+            tone={screeningInputs.length > 0 ? "good" : "neutral"}
+          />
+        </div>
+        <dl className="compact-metrics candidate-cache-metrics">
           <Metric label="Region" value={catalog?.region.label ?? "Great Plains / Midwest"} />
           <Metric
-            label="Station catalog"
+            label="Catalog"
             value={
               catalog?.refreshed_at
-                ? `Last refreshed ${formatDate(catalog.refreshed_at)}`
+                ? formatDate(catalog.refreshed_at)
                 : "Not refreshed here"
             }
           />
-          <Metric label="Local station files" value={cachedCatalogFiles.toString()} />
+          <Metric label="Station files" value={cachedStationFiles.toLocaleString()} />
           <Metric label="Parsed soundings" value={cachedInventorySummary} />
-          <Metric
-            label="Ready to search"
-            value={screeningInputs.length > 0 ? "Yes" : "No cached sounding files ready"}
-          />
-          <Metric label="Last recommendation run" value={lastAnalysisSummary} />
+          <Metric label="Last search" value={lastAnalysisSummary} />
         </dl>
       </section>
 
@@ -4818,7 +5182,7 @@ function ObservedAtmosphereCandidatesPanel({
 
       {activeRefinements.length > 0 && (
         <div className="screening-guidance-note">
-          <strong>Refined view</strong>
+          <strong>Search filters applied</strong>
           <span>{activeRefinements.join(" · ")}</span>
           <button type="button" className="link-button" onClick={onClearFilters}>
             Clear refinements
@@ -4826,7 +5190,7 @@ function ObservedAtmosphereCandidatesPanel({
         </div>
       )}
 
-      <details className="candidate-advanced-filters" open={activeRefinements.length > 0}>
+      <details className="candidate-advanced-filters">
         <summary>Advanced filters</summary>
         <div className="candidate-toolbar" aria-label="Advanced sounding candidate controls">
           <label>
@@ -4870,17 +5234,17 @@ function ObservedAtmosphereCandidatesPanel({
             </select>
           </label>
           <label>
-            Support
+            Evidence tier
             <select
               value={supportFilter}
               onChange={(event) =>
                 onSupportFilterChange(event.target.value as CandidateSupportFilter)
               }
             >
-              <option value="all">All support states</option>
-              <option value="supported">Supported</option>
-              <option value="weak">Weak support</option>
-              <option value="unavailable">Unavailable</option>
+              <option value="all">All evidence tiers</option>
+              <option value="supported">Strong signal</option>
+              <option value="weak">Plausible / caveated</option>
+              <option value="unavailable">Little or no signal</option>
             </select>
           </label>
           <label>
@@ -4897,7 +5261,7 @@ function ObservedAtmosphereCandidatesPanel({
               <option value="story_family">Story family</option>
               <option value="rank_score">Rank score</option>
               <option value="confidence">Confidence</option>
-              <option value="support">Support state</option>
+              <option value="support">Evidence tier</option>
               <option value="package_readiness">Package readiness</option>
               <option value="observed_wind_available">Observed wind availability</option>
               <option value="profile_top_m_agl">Profile top</option>
@@ -4921,11 +5285,11 @@ function ObservedAtmosphereCandidatesPanel({
             </select>
           </label>
           <label>
-            Station search
+            Result text search
             <input
               type="search"
               value={stationSearch}
-              placeholder="Station name, ID, or state"
+              placeholder="Station name, ID, or story"
               onChange={(event) => onStationSearchChange(event.target.value)}
             />
           </label>
@@ -4942,52 +5306,16 @@ function ObservedAtmosphereCandidatesPanel({
               <option value="blocked">Blocked / needs review</option>
             </select>
           </label>
-          <label>
-            Cache station files up to
-            <input
-              type="number"
-              min="1"
-              max="100"
-              value={cacheLimit}
-              onChange={(event) => onCacheLimitChange(event.target.value)}
-            />
-          </label>
-          <label>
-            Latest per cached file
-            <input
-              type="number"
-              min="1"
-              max="50"
-              value={latestPerStation}
-              onChange={(event) => onLatestPerStationChange(event.target.value)}
-            />
-          </label>
-          <label>
-            Returned candidate limit
-            <input
-              type="number"
-              min="1"
-              max="200"
-              value={resultLimit}
-              onChange={(event) => onResultLimitChange(event.target.value)}
-            />
-          </label>
           <div className="candidate-toolbar-actions">
-            <button type="button" className="secondary-button" onClick={onRefreshIGRAData}>
-              Refresh IGRA catalog
-            </button>
-            <button type="button" className="secondary-button" onClick={onCacheStationFiles}>
-              Cache station files
-            </button>
             <button type="button" className="secondary-button" onClick={onScreen}>
-              Run analyzer only
+              Apply advanced filters
             </button>
           </div>
         </div>
         <dl className="compact-metrics">
           <Metric label="Cached stations" value={cachedStations.toString()} />
           <Metric label="Cached station files" value={cachedStationFiles.toString()} />
-          <Metric label="Planned backend slice" value={plannedAnalysisSummary} />
+          <Metric label="Selected soundings" value={plannedAnalysisSummary} />
           <Metric label="Returned candidate limit" value={resultLimit} />
         </dl>
       </details>
@@ -5002,13 +5330,13 @@ function ObservedAtmosphereCandidatesPanel({
                   : "Recommended cached soundings"}
               </h4>
               <p className="field-help">
-                Showing {visibleCandidates.length.toLocaleString()} candidates
-                {screening.total_candidate_count !== undefined
-                  ? ` from ${screening.total_candidate_count.toLocaleString()} analyzed cached soundings`
-                  : ""}
-                . Scores rank sounding ingredients only. They do not predict what the current CM1
-                package will produce.
+                {filterTraceSummary.summary}
               </p>
+              {filterTraceSummary.detail && (
+                <p className="field-help candidate-filter-detail">
+                  {filterTraceSummary.detail}
+                </p>
+              )}
             </div>
           )}
           {visibleCandidates.length === 0 ? (
@@ -5117,7 +5445,13 @@ function SavedCandidatesSourcePanel({
               key={saved.saved_candidate_id}
               saved={saved}
               onUpdateAnnotations={(tags, notes) => onSave(saved.candidate, tags, notes)}
-              onUse={() => onSelectForRunSetup(saved.candidate, saved, saved.primary_story)}
+              onUse={() =>
+                onSelectForRunSetup(
+                  saved.candidate,
+                  saved,
+                  saved.candidate.active_story ?? saved.primary_story,
+                )
+              }
               onRemove={() => onRemoveSaved(saved.saved_candidate_id)}
             />
           ))}
@@ -5212,7 +5546,7 @@ function SavedSoundingCandidateCard({
       </details>
       <div className="button-row">
         <button type="button" onClick={onUse}>
-          Select for run setup
+          Configure run
         </button>
         <button type="button" className="secondary-button" onClick={onRemove}>
           Remove saved
@@ -5241,16 +5575,13 @@ function SoundingCandidateCard({
   onSave: () => void;
   onSelectForRunSetup: (activeStory: CandidateStoryId) => void;
 }) {
-  const activeScore = candidateActiveStoryScore(candidate, storyFilter, storyFamilyFilter);
-  const story = activeScore?.story ?? candidate.primary_story;
-  const activeFamily = activeScore
-    ? candidateStoryFamilyForStory(activeScore.story)
-    : candidate.story_family;
-  const ingredientScore =
-    activeScore?.score_0_to_100 ??
-    candidateIngredientScore(candidate, storyFilter, storyFamilyFilter);
+  const story = candidateActiveStoryId(candidate, storyFilter, storyFamilyFilter);
+  const activeFamily = story ? candidateStoryFamilyForStory(story) : candidate.story_family;
+  const ingredientScore = candidateIngredientScore(candidate, storyFilter, storyFamilyFilter);
   const recipeFit = candidateRecipeFitForStory(candidate, story);
-  const firstCaveat = candidate.caveats[0];
+  const reasons = candidateInterestReasons(candidate).slice(0, 3);
+  const caveats = candidateDisplayCaveats(candidate);
+  const firstCaveat = caveats[0];
   return (
     <article
       className={`candidate-card${selected ? " selected-candidate-card" : ""}`}
@@ -5269,10 +5600,10 @@ function SoundingCandidateCard({
           {candidate.discovery_bucket && (
             <StatusBadge label={candidate.discovery_bucket} tone="neutral" />
           )}
-          <StatusBadge label={candidateStoryLabel(story)} tone="neutral" />
-          {activeScore && activeScore.story !== candidate.primary_story && (
-            <StatusBadge label={`Primary: ${candidate.primary_story_label}`} tone="neutral" />
-          )}
+          <StatusBadge
+            label={candidateDisplayStoryLabel(candidate, storyFilter, storyFamilyFilter)}
+            tone="neutral"
+          />
           <StatusBadge label={candidateStoryFamilyLabel(activeFamily)} tone="neutral" />
           <StatusBadge
             label={`${formatNumber(ingredientScore, "%")} ingredient score`}
@@ -5288,10 +5619,17 @@ function SoundingCandidateCard({
           />
         </span>
       </button>
-      {candidate.caveats.length > 0 && (
+      {reasons.length > 0 && (
+        <ul className="compact-list candidate-reason-list">
+          {reasons.map((reason) => (
+            <li key={`${candidate.candidate_id}-card-${reason}`}>{reason}</li>
+          ))}
+        </ul>
+      )}
+      {firstCaveat && (
         <p className="field-help">
           Key caveat: {humanize(firstCaveat)}
-          {candidate.caveats.length > 1 ? ` + ${candidate.caveats.length - 1} more` : ""}
+          {caveats.length > 1 ? ` + ${caveats.length - 1} more` : ""}
         </p>
       )}
       <div className="button-row">
@@ -5300,10 +5638,10 @@ function SoundingCandidateCard({
           disabled={!candidate.package_ready}
           onClick={() => onSelectForRunSetup(story)}
         >
-          Select for run setup
+          Configure run
         </button>
         <button type="button" className="secondary-button" disabled={saved} onClick={onSave}>
-          {saved ? "Saved" : "Save candidate"}
+          {saved ? "Saved" : "Save"}
         </button>
       </div>
     </article>
@@ -5345,13 +5683,9 @@ function SoundingCandidateDetail({
   }
   const activeCandidate = candidate;
   const activeScore = candidateActiveStoryScore(activeCandidate, storyFilter, storyFamilyFilter);
-  const story = activeScore?.story ?? activeCandidate.primary_story;
-  const activeFamily = activeScore
-    ? candidateStoryFamilyForStory(activeScore.story)
-    : activeCandidate.story_family;
-  const ingredientScore =
-    activeScore?.score_0_to_100 ??
-    candidateIngredientScore(activeCandidate, storyFilter, storyFamilyFilter);
+  const story = candidateActiveStoryId(activeCandidate, storyFilter, storyFamilyFilter);
+  const activeFamily = story ? candidateStoryFamilyForStory(story) : activeCandidate.story_family;
+  const ingredientScore = candidateIngredientScore(activeCandidate, storyFilter, storyFamilyFilter);
   const recipeFit = candidateRecipeFitForStory(activeCandidate, story);
   const reasons = candidateInterestReasons(activeCandidate);
   const savedTagValues = parseTags(tagDraft);
@@ -5389,7 +5723,8 @@ function SoundingCandidateDetail({
         <div>
           <h4>{candidateStationLabel(candidate)}</h4>
           <p>
-            {formatDate(candidate.valid_time_utc)} · {candidateStoryLabel(story)}
+            {formatDate(candidate.valid_time_utc)} ·{" "}
+            {candidateDisplayStoryLabel(candidate, storyFilter, storyFamilyFilter)}
           </p>
         </div>
         <StatusBadge
@@ -5408,7 +5743,7 @@ function SoundingCandidateDetail({
           disabled={!candidate.package_ready}
           onClick={() => onSelectForRunSetup(candidate, story)}
         >
-          Select for run setup
+          Configure run
         </button>
       </div>
       <section>
@@ -10245,7 +10580,7 @@ function candidateSortLabel(sort: CandidateSort): string {
     story_family: "Story family",
     rank_score: "Rank score",
     confidence: "Confidence",
-    support: "Support state",
+    support: "Evidence tier",
     package_readiness: "Package readiness",
     observed_wind_available: "Observed wind availability",
     profile_top_m_agl: "Profile top",
@@ -10268,6 +10603,16 @@ function candidateSortLabel(sort: CandidateSort): string {
     freezing_level_m_agl: "Freezing level",
   };
   return labels[sort];
+}
+
+function supportTierLabel(support: CandidateSupportFilter): string {
+  const labels: Record<CandidateSupportFilter, string> = {
+    all: "All evidence tiers",
+    supported: "Strong signal",
+    weak: "Plausible / caveated",
+    unavailable: "Little or no signal",
+  };
+  return labels[support];
 }
 
 function candidateRecipeFitForStory(
@@ -10576,11 +10921,47 @@ function observedSoundingLocationLabel(observed: ObservedSoundingSummary): strin
   return "Not available";
 }
 
+function candidateActiveStoryId(
+  candidate: SoundingCandidate,
+  storyFilter: CandidateStoryFilter,
+  storyFamilyFilter: CandidateStoryFamilyFilter,
+): CandidateStoryId {
+  const scopedStories = new Set(
+    candidateStoryScoresForScope(candidate, storyFilter, storyFamilyFilter).map(
+      (score) => score.story,
+    ),
+  );
+  if (candidate.active_story && scopedStories.has(candidate.active_story)) {
+    return candidate.active_story;
+  }
+  return candidateActiveStoryScore(candidate, storyFilter, storyFamilyFilter)?.story ?? candidate.primary_story;
+}
+
+function candidateDisplayStoryLabel(
+  candidate: SoundingCandidate,
+  storyFilter: CandidateStoryFilter,
+  storyFamilyFilter: CandidateStoryFamilyFilter,
+): string {
+  const activeStory = candidateActiveStoryId(candidate, storyFilter, storyFamilyFilter);
+  if (candidate.active_story === activeStory) {
+    return candidate.display_story ?? candidate.active_story_label ?? candidateStoryLabel(activeStory);
+  }
+  return candidateStoryLabel(activeStory);
+}
+
 function candidateIngredientScore(
   candidate: SoundingCandidate,
   storyFilter: CandidateStoryFilter,
   storyFamilyFilter: CandidateStoryFamilyFilter = "all",
 ): number {
+  const activeStory = candidateActiveStoryId(candidate, storyFilter, storyFamilyFilter);
+  if (
+    candidate.active_story === activeStory &&
+    typeof candidate.ingredient_score === "number" &&
+    Number.isFinite(candidate.ingredient_score)
+  ) {
+    return candidate.ingredient_score;
+  }
   return (
     candidateActiveStoryScore(candidate, storyFilter, storyFamilyFilter)?.score_0_to_100 ??
     candidate.rank_score
@@ -10623,6 +11004,8 @@ function candidateStoryScoresForScope(
 }
 
 function candidateInterestReasons(candidate: SoundingCandidate): string[] {
+  const topReasons = candidate.top_reasons?.filter(Boolean) ?? [];
+  if (topReasons.length > 0) return topReasons;
   const explicitReasons = candidate.interest_reasons?.filter(Boolean) ?? [];
   if (explicitReasons.length > 0) return explicitReasons;
   if (candidate.interest_summary) return [candidate.interest_summary];
@@ -10631,6 +11014,90 @@ function candidateInterestReasons(candidate: SoundingCandidate): string[] {
     .filter((reason): reason is string => Boolean(reason));
   if (evidenceReasons.length > 0) return evidenceReasons.slice(0, 3);
   return [candidate.primary_story_label];
+}
+
+function candidateDisplayCaveats(candidate: SoundingCandidate): string[] {
+  const topCaveats = candidate.top_caveats?.filter(Boolean) ?? [];
+  return topCaveats.length > 0 ? topCaveats : candidate.caveats;
+}
+
+function candidateFilterTraceSummary(
+  screening: ScreeningResult | null,
+  filters: {
+    storyFilter: CandidateStoryFilter;
+    storyFamilyFilter: CandidateStoryFamilyFilter;
+    supportFilter: CandidateSupportFilter;
+    readinessFilter: CandidateReadinessFilter;
+  },
+): { summary: string; detail: string | null } {
+  if (!screening) {
+    return { summary: "No recommendation run loaded.", detail: null };
+  }
+  const trace = screening.filter_trace;
+  const shown = screening.candidates.length;
+  if (!trace) {
+    return {
+      summary: `${shown.toLocaleString()} shown from ${(
+        screening.filtered_candidate_count ?? shown
+      ).toLocaleString()} matching / ${(screening.total_candidate_count ?? shown).toLocaleString()} analyzed.`,
+      detail: "Scores rank sounding ingredients only; CM1 results remain the source of truth.",
+    };
+  }
+  const storyStage =
+    filters.storyFilter !== "all"
+      ? trace.stage_counts.story_filter
+      : filters.storyFamilyFilter !== "all"
+        ? trace.stage_counts.story_family
+        : undefined;
+  const supportStage =
+    filters.supportFilter !== "all" ? trace.stage_counts.support : undefined;
+  const readinessStage =
+    filters.readinessFilter !== "all" ? trace.stage_counts.readiness : undefined;
+  const stationDistribution = trace.station_distribution ?? [];
+  const topExcludedReasons = trace.top_excluded_reasons ?? [];
+  const historyScope =
+    trace.history_scope === "latest_per_station" && trace.latest_per_station
+      ? `latest ${trace.latest_per_station.toLocaleString()} per station`
+      : "all cached history";
+  const selectedStations =
+    trace.selected_station_count ?? stationDistribution.length;
+  const selectedSoundings = trace.selected_cached_soundings ?? trace.analyzed_soundings;
+  const parts = [
+    `${trace.analyzed_soundings.toLocaleString()} analyzed from ${selectedSoundings.toLocaleString()} selected cached sounding${selectedSoundings === 1 ? "" : "s"}`,
+    `${selectedStations.toLocaleString()} station${selectedStations === 1 ? "" : "s"}`,
+    historyScope,
+    storyStage !== undefined
+      ? `${storyStage.toLocaleString()} matched ${candidateTraceScopeLabel(
+          filters.storyFilter,
+          filters.storyFamilyFilter,
+        )}`
+      : null,
+    supportStage !== undefined
+      ? `${supportStage.toLocaleString()} ${supportTierLabel(filters.supportFilter).toLowerCase()}`
+      : null,
+    readinessStage !== undefined
+      ? `${readinessStage.toLocaleString()} ${humanize(filters.readinessFilter)}`
+      : null,
+    `${shown.toLocaleString()} shown`,
+  ].filter((part): part is string => part !== null);
+  const mainExclusion = topExcludedReasons[0];
+  const detail =
+    shown === 1 && mainExclusion
+      ? `Only one candidate remains; the largest filter impact was ${mainExclusion.reason} (${mainExclusion.count.toLocaleString()} removed).`
+      : `Trace includes ${trace.story_score_records.toLocaleString()} story-score records across ${stationDistribution.length.toLocaleString()} shown station${stationDistribution.length === 1 ? "" : "s"}.`;
+  return {
+    summary: parts.join(" · "),
+    detail,
+  };
+}
+
+function candidateTraceScopeLabel(
+  storyFilter: CandidateStoryFilter,
+  storyFamilyFilter: CandidateStoryFamilyFilter,
+): string {
+  if (storyFilter !== "all") return candidateStoryLabel(storyFilter).toLowerCase();
+  if (storyFamilyFilter !== "all") return candidateStoryFamilyLabel(storyFamilyFilter).toLowerCase();
+  return "selected intent";
 }
 
 function boundedInteger(value: string, min: number, max: number, fallback: number): number {
@@ -10679,9 +11146,8 @@ function candidateScreeningMetadata(
   savedCandidate?: SavedSoundingCandidate,
   activeStory?: CandidateStoryId,
 ): Record<string, unknown> {
-  const activeScore = activeStory
-    ? candidate.story_scores.find((score) => score.story === activeStory)
-    : null;
+  const selectedActiveStory = activeStory ?? candidate.active_story ?? candidate.primary_story;
+  const activeScore = candidate.story_scores.find((score) => score.story === selectedActiveStory);
   return {
     candidate_id: candidate.candidate_id,
     station_id: candidate.station_id,
@@ -10690,14 +11156,27 @@ function candidateScreeningMetadata(
     saved_candidate_id: savedCandidate?.saved_candidate_id ?? null,
     screening_version: candidate.screening_version,
     primary_story: candidate.primary_story,
-    active_story: activeStory ?? candidate.primary_story,
-    active_story_label: activeScore?.label ?? candidate.primary_story_label,
+    active_story: selectedActiveStory,
+    active_story_label:
+      activeScore?.label ??
+      (candidate.active_story === selectedActiveStory
+        ? (candidate.active_story_label ?? candidate.display_story)
+        : null) ??
+      candidate.primary_story_label,
+    display_story: candidate.display_story ?? null,
+    matched_story_ids: candidate.matched_story_ids ?? [],
     story_scores: candidate.story_scores,
     rank_score: candidate.rank_score,
+    active_story_score: candidate.active_story_score ?? null,
+    ingredient_score: candidate.ingredient_score ?? null,
+    active_story_support: candidate.active_story_support ?? null,
     confidence: candidate.confidence,
     features: candidate.features,
     evidence: candidate.evidence,
     caveats: candidate.caveats,
+    top_reasons: candidate.top_reasons ?? [],
+    top_caveats: candidate.top_caveats ?? [],
+    evidence_summary: candidate.evidence_summary ?? [],
     interest_summary: candidate.interest_summary ?? null,
     interest_reasons: candidate.interest_reasons ?? [],
     discovery_bucket: candidate.discovery_bucket ?? null,
@@ -10813,9 +11292,9 @@ function searchIntentFilters(intent: SearchIntent): {
   switch (intent) {
     case "deep_convection":
       return {
-        story: "deep_convection_trial",
+        story: "all",
         storyFamily: "deep_convection",
-        support: "supported",
+        support: "all",
       };
     case "humid_rainy":
       return { story: "humid_rainy_candidate", storyFamily: "all", support: "all" };

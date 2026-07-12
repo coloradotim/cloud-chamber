@@ -120,10 +120,12 @@ contract lives in
 [contracts/sounding-candidate-screening.md](contracts/sounding-candidate-screening.md).
 Analysis has a default recommendation mode that answers which cached soundings
 look interesting and why, using backend-owned interest reasons and station
-diversity before exposing refinements. It can also target story, story family,
-support state, recipe readiness, station search, and backend-owned sort keys
-because the useful sounding depends on the experiment question; shallow-cumulus
-and humid/rainy searches should not imply the same ranked list.
+diversity before exposing refinements. It analyzes the selected station set and
+selected history scope exactly, with the returned-candidate limit applied after
+analysis. It can also target story, story family, evidence tier, recipe
+readiness, station search, and backend-owned sort keys because the useful
+sounding depends on the experiment question; shallow-cumulus and humid/rainy
+searches should not imply the same ranked list.
 Missing feature values stay unavailable and sort last instead of being treated
 as zero. Saved candidates, freeform tags, and notes are runtime-local cache state
 under
@@ -152,7 +154,7 @@ The sounding-diagnostics layer is a backend-only feature extractor for observed
 soundings. It produces bounded `SoundingDiagnostics` payloads with
 `diagnostic_version`, station/time provenance, `feature_values`,
 `unavailable_features`, data-quality summaries, assumptions, and caveats. Each
-feature records its key, label, value, units, support state, method,
+feature records its key, label, value, units, evidence state, method,
 assumptions, and caveats so missing data weakens or blocks evidence instead of
 being treated as physically meaningful. V1 supports profile quality,
 cloud-base/moisture proxies, low-level and midlevel lapse-rate proxies,
@@ -173,14 +175,18 @@ enabled runnable label. Severe/deep-convection candidates are currently
 inspectable only as observed-sounding experiments under selected numeric uniform
 surface forcing, with differential-forcing initiation tracked as future work.
 
-The Build UI consumes this layer through bounded JSON only. `Upload a Sounding`
+The Build UI consumes this layer through bounded JSON only. `Observed Soundings`
 is the observed-atmosphere entry point, but the user chooses exactly one source
 path at a time: cached recommendations, saved candidates, or manual IGRA station
 text upload. Cached recommendations call recent-catalog/cache and
 candidate-analysis endpoints, display backend recommendations and advanced
-refinements, and save candidates with freeform tags/notes. Saved candidates are
-loaded as a shortlist source without requiring a catalog refresh, cache action,
-or analysis run. Manual upload remains hidden unless that source path is active.
+refinements, and save candidates with freeform tags/notes. Candidate-analysis
+responses include the active story that matched the current search intent,
+matched story IDs, ingredient score, top reasons/caveats, and a filter trace
+with analyzed-sounding counts, stage counts, station distribution, and top
+exclusion reasons. Saved candidates are loaded as a shortlist source without
+requiring a catalog refresh, cache action, or analysis run. Manual upload
+remains hidden unless that source path is active.
 Package-ready candidates, saved candidates, and uploaded soundings all flow into
 one selected-sounding setup surface for recipe and run-configuration choices.
 The configured selection is then added to the bottom Build run plan rather than

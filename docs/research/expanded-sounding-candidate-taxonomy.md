@@ -34,7 +34,7 @@ Every story in this taxonomy declares these fields:
 | `specialized_package_recommended` | `yes`, `no` | Whether a future package should better represent the story physics. |
 | `future_package_required` | `yes`, `no` | Whether the story should be blocked from package generation until a new package family exists. |
 | `candidate_can_be_saved` | `yes`, `no` | Whether the UI may save this candidate as a pre-run hypothesis. |
-| `candidate_can_generate_current_package` | `yes`, `caveated`, `no` | Whether `Use this sounding` may generate the current observed-sounding package. |
+| `candidate_can_generate_current_package` | `yes`, `caveated`, `no` | Whether `Configure run` may use this candidate for the current observed-sounding package path. |
 
 The UI should map these fields to simple readiness states:
 

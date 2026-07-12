@@ -712,12 +712,51 @@ const screeningInputsResponse = {
   inputs: [
     {
       station_id: "USM00072558",
+      station_name: "Valley, Nebraska",
+      cached_text_path: "/tmp/CloudChamber/cache/igra/recent/stations/USM00072558-data.txt",
       source_file_path: "/tmp/CloudChamber/cache/igra/recent/stations/USM00072558-data.txt",
       source_file_name: "USM00072558-data.txt",
+      cached_status: "cached_extracted",
       sounding_count: 2,
       package_ready_count: 1,
       blocked_count: 1,
       latest_valid_time_utc: "2025-01-02T00:00:00Z",
+    },
+    {
+      station_id: "USM00072357",
+      station_name: "Norman, Oklahoma",
+      cached_text_path: "/tmp/CloudChamber/cache/igra/recent/stations/USM00072357-data.txt",
+      source_file_path: "/tmp/CloudChamber/cache/igra/recent/stations/USM00072357-data.txt",
+      source_file_name: "USM00072357-data.txt",
+      cached_status: "cached_extracted",
+      sounding_count: 2,
+      package_ready_count: 1,
+      blocked_count: 1,
+      latest_valid_time_utc: "2025-05-20T00:00:00Z",
+    },
+    {
+      station_id: "USM00072426",
+      station_name: "Wilmington, Ohio",
+      cached_text_path: "/tmp/CloudChamber/cache/igra/recent/stations/USM00072426-data.txt",
+      source_file_path: "/tmp/CloudChamber/cache/igra/recent/stations/USM00072426-data.txt",
+      source_file_name: "USM00072426-data.txt",
+      cached_status: "cached_extracted",
+      sounding_count: 1,
+      package_ready_count: 1,
+      blocked_count: 0,
+      latest_valid_time_utc: "2025-01-03T00:00:00Z",
+    },
+    {
+      station_id: "USM00072440",
+      station_name: "Springfield, Missouri",
+      cached_text_path: "/tmp/CloudChamber/cache/igra/recent/stations/USM00072440-data.txt",
+      source_file_path: "/tmp/CloudChamber/cache/igra/recent/stations/USM00072440-data.txt",
+      source_file_name: "USM00072440-data.txt",
+      cached_status: "cached_extracted",
+      sounding_count: 1,
+      package_ready_count: 1,
+      blocked_count: 0,
+      latest_valid_time_utc: "2025-01-04T00:00:00Z",
     },
   ],
 };
@@ -739,11 +778,39 @@ const screeningResponse = {
   sort_direction: "desc",
   filters: {
     station_id: null,
+    station_ids: [],
+    history_scope: "all_cached",
+    latest_per_station: null,
     story_filter: "all",
     story_family: "all",
     support: "all",
     readiness: "all",
     station_search: "",
+  },
+  filter_trace: {
+    selected_station_count: 4,
+    selected_cached_soundings: 5,
+    history_scope: "all_cached",
+    latest_per_station: null,
+    analyzed_soundings: 5,
+    story_score_records: 8,
+    stage_counts: {
+      analyzed_soundings: 5,
+      story_filter: 5,
+      story_family: 5,
+      support: 5,
+      readiness: 5,
+      station_search: 5,
+      sorted_or_recommended: 5,
+      limited: 5,
+    },
+    stages: [],
+    station_distribution: [
+      { station_id: "USM00072558", station_name: "Valley, Nebraska", count: 1 },
+      { station_id: "USM00072357", station_name: "Norman, Oklahoma", count: 1 },
+    ],
+    top_excluded_reasons: [],
+    applied_limit: 50,
   },
   caveats: ["screening_guidance_only"],
 };
@@ -759,62 +826,140 @@ const testDeepConvectionStoryIds = new Set([
 
 function screeningResponseForRequest(init?: RequestInit) {
   const request = JSON.parse(String(init?.body ?? "{}")) as {
+    station_ids?: string[];
+    history_scope?: "all_cached" | "latest_per_station";
     story_filter?: string;
     story_family?: string;
     support?: string;
     readiness?: string;
     station_search?: string;
     sort_by?: string;
+    latest_per_station?: number;
+    limit?: number;
   };
+  const stationIds = new Set(request.station_ids ?? []);
+  const historyScope = request.history_scope ?? "all_cached";
   const storyFilter = request.story_filter ?? "all";
   const storyFamily = request.story_family ?? "all";
   const support = request.support ?? "all";
   const readiness = request.readiness ?? "all";
   const stationSearch = (request.station_search ?? "").trim().toLowerCase();
   const sortBy = request.sort_by ?? "best_match";
-  const candidates = [...screeningResponse.candidates]
-    .filter((candidate) => {
-      if (readiness === "package_ready" && !candidate.package_ready) return false;
-      if (readiness === "blocked" && candidate.package_ready) return false;
-      const scopedScores = storyScoresForTest(candidate, storyFilter, storyFamily);
-      if (
-        storyFamily !== "all" &&
-        !scopedScores.some((score) => meaningfulStoryScoreForTest(score))
-      ) {
-        return false;
-      }
+  const limit = Number(request.limit ?? 100);
+  const baseCandidates =
+    stationIds.size > 0
+      ? screeningResponse.candidates.filter((candidate) => stationIds.has(candidate.station_id))
+      : [...screeningResponse.candidates];
+  const storyFiltered = baseCandidates.filter((candidate) => {
+    const score = storyScoreForTest(candidate, storyFilter, storyFamily);
+    if (storyFilter !== "all" && (!score || !meaningfulStoryScoreForTest(score))) {
+      return false;
+    }
+    if (
+      storyFamily !== "all" &&
+      !storyScoresForTest(candidate, storyFilter, storyFamily).some((scopeScore) =>
+        meaningfulStoryScoreForTest(scopeScore),
+      )
+    ) {
+      return false;
+    }
+    return true;
+  });
+  const supportFiltered = storyFiltered.filter((candidate) => {
+    if (support === "all") return true;
+    const scopedScores = storyScoresForTest(candidate, storyFilter, storyFamily);
+    if (storyFilter === "all" && storyFamily === "all") {
       const score = storyScoreForTest(candidate, storyFilter, storyFamily);
-      if (storyFilter !== "all" && (!score || !meaningfulStoryScoreForTest(score))) {
-        return false;
-      }
-      if (support !== "all") {
-        if (storyFilter === "all" && storyFamily === "all") {
-          if (!score || score.support !== support) return false;
-        } else if (!scopedScores.some((scopeScore) => scopeScore.support === support)) {
-          return false;
-        }
-      }
-      if (!stationSearch) return true;
-      return [candidate.station_id, candidate.station_name, candidate.primary_story_label]
-        .filter(Boolean)
-        .join(" ")
-        .toLowerCase()
-        .includes(stationSearch);
+      return Boolean(score && score.support === support);
+    }
+    return scopedScores.some((scopeScore) => scopeScore.support === support);
+  });
+  const readinessFiltered = supportFiltered.filter((candidate) => {
+    if (readiness === "package_ready" && !candidate.package_ready) return false;
+    if (readiness === "blocked" && candidate.package_ready) return false;
+    return true;
+  });
+  const searchFiltered = readinessFiltered.filter((candidate) => {
+    if (!stationSearch) return true;
+    return [candidate.station_id, candidate.station_name, candidate.primary_story_label]
+      .filter(Boolean)
+      .join(" ")
+      .toLowerCase()
+      .includes(stationSearch);
+  });
+  const candidates = searchFiltered
+    .map((candidate) => candidateWithActiveFieldsForTest(candidate, storyFilter, storyFamily))
+    .filter((candidate) => {
+      return Boolean(candidate);
     })
     .sort((left, right) => compareCandidateFixtures(left, right, storyFilter, storyFamily, sortBy));
+  const limitedCandidates = candidates.slice(0, limit);
+  const stationDistribution = Array.from(
+    limitedCandidates.reduce((counts, candidate) => {
+      const current = counts.get(candidate.station_id) ?? {
+        station_id: candidate.station_id,
+        station_name: candidate.station_name,
+        count: 0,
+      };
+      counts.set(candidate.station_id, { ...current, count: current.count + 1 });
+      return counts;
+    }, new Map<string, { station_id: string; station_name?: string | null; count: number }>())
+      .values(),
+  );
   return {
     ...screeningResponse,
-    candidates,
-    total_candidate_count: screeningResponse.candidates.length,
+    candidates: limitedCandidates,
+    total_candidate_count: baseCandidates.length,
     filtered_candidate_count: candidates.length,
     sort_by: sortBy,
     filters: {
       station_id: null,
+      station_ids: request.station_ids ?? [],
+      history_scope: historyScope,
+      latest_per_station:
+        historyScope === "latest_per_station" ? (request.latest_per_station ?? 20) : null,
       story_filter: storyFilter,
       story_family: storyFamily,
       support,
       readiness,
       station_search: request.station_search ?? "",
+    },
+    filter_trace: {
+      selected_station_count: new Set(baseCandidates.map((candidate) => candidate.station_id)).size,
+      selected_cached_soundings: baseCandidates.length,
+      history_scope: historyScope,
+      latest_per_station:
+        historyScope === "latest_per_station" ? (request.latest_per_station ?? 20) : null,
+      analyzed_soundings: baseCandidates.length,
+      story_score_records: baseCandidates.reduce(
+        (total, candidate) => total + candidate.story_scores.length,
+        0,
+      ),
+      stage_counts: {
+        analyzed_soundings: baseCandidates.length,
+        story_filter: storyFiltered.length,
+        story_family: storyFiltered.length,
+        support: supportFiltered.length,
+        readiness: readinessFiltered.length,
+        station_search: searchFiltered.length,
+        sorted_or_recommended: candidates.length,
+        limited: limitedCandidates.length,
+      },
+      stages: [],
+      station_distribution: stationDistribution,
+      top_excluded_reasons:
+        storyFiltered.length < baseCandidates.length
+          ? [
+              {
+                reason:
+                  storyFamily !== "all"
+                    ? `Story family: ${storyFamily}`
+                    : `Story filter: ${storyFilter}`,
+                count: baseCandidates.length - storyFiltered.length,
+              },
+            ]
+          : [],
+      applied_limit: limit,
     },
   };
 }
@@ -829,6 +974,39 @@ function storyScoreForTest(
       (left, right) => right.score_0_to_100 - left.score_0_to_100,
     )[0] ?? null
   );
+}
+
+function candidateWithActiveFieldsForTest(
+  candidate: (typeof screeningResponse.candidates)[number],
+  storyFilter: string,
+  storyFamily: string,
+) {
+  const scopedScores = storyScoresForTest(candidate, storyFilter, storyFamily);
+  const meaningfulScores = scopedScores.filter((score) => meaningfulStoryScoreForTest(score));
+  const activeScore =
+    [...(meaningfulScores.length > 0 ? meaningfulScores : scopedScores)].sort(
+      (left, right) => right.score_0_to_100 - left.score_0_to_100,
+    )[0] ?? null;
+  const activeStory = activeScore?.story ?? candidate.primary_story;
+  const activeLabel = activeScore?.label ?? candidate.primary_story_label;
+  return {
+    ...candidate,
+    active_story: activeStory,
+    active_story_label: activeLabel,
+    display_story: activeLabel,
+    matched_story_ids: meaningfulScores
+      .sort((left, right) => right.score_0_to_100 - left.score_0_to_100)
+      .map((score) => score.story),
+    active_story_score: activeScore?.score_0_to_100 ?? candidate.rank_score,
+    ingredient_score: activeScore?.score_0_to_100 ?? candidate.rank_score,
+    active_story_support: activeScore?.support ?? null,
+    package_readiness: candidate.package_ready ? "package_ready" : "blocked",
+    recipe_fit:
+      "recipe_fit_status" in candidate ? candidate.recipe_fit_status : "partially_testable",
+    top_reasons: candidate.interest_reasons ?? [],
+    top_caveats: candidate.caveats.slice(0, 2),
+    evidence_summary: candidate.evidence.map((item) => item.interpretation).slice(0, 3),
+  };
 }
 
 function storyScoresForTest(
@@ -928,9 +1106,53 @@ const igraCatalogResponse = {
     zip_references: [
       {
         station_id: "USM00072558",
-        station_name: "VALLEY",
-        cached_status: "cached",
+        station_name: "Valley, Nebraska",
+        latitude: 41.32,
+        longitude: -96.3669,
+        elevation_m_msl: 351.5,
+        filename: "USM00072558-data-beg2025.txt.zip",
+        cached_status: "cached_extracted",
         url: "https://example.test/USM00072558-data-beg2025.txt.zip",
+      },
+      {
+        station_id: "USM00072357",
+        station_name: "Norman, Oklahoma",
+        latitude: 35.22,
+        longitude: -97.44,
+        elevation_m_msl: 357,
+        filename: "USM00072357-data-beg2025.txt.zip",
+        cached_status: "cached_extracted",
+        url: "https://example.test/USM00072357-data-beg2025.txt.zip",
+      },
+      {
+        station_id: "USM00072426",
+        station_name: "Wilmington, Ohio",
+        latitude: 39.42,
+        longitude: -83.82,
+        elevation_m_msl: 317,
+        filename: "USM00072426-data-beg2025.txt.zip",
+        cached_status: "cached_extracted",
+        url: "https://example.test/USM00072426-data-beg2025.txt.zip",
+      },
+      {
+        station_id: "USM00072440",
+        station_name: "Springfield, Missouri",
+        latitude: 37.23,
+        longitude: -93.38,
+        elevation_m_msl: 387,
+        filename: "USM00072440-data-beg2025.txt.zip",
+        cached_status: "cached_extracted",
+        url: "https://example.test/USM00072440-data-beg2025.txt.zip",
+      },
+      {
+        station_id: "USM00072562",
+        station_name: "North Platte, Nebraska",
+        latitude: 41.13,
+        longitude: -100.68,
+        elevation_m_msl: 847,
+        filename: "USM00072562-data-beg2025.txt.zip",
+        cached_status: "not_cached",
+        url: "https://example.test/USM00072562-data-beg2025.txt.zip",
       },
     ],
   },
@@ -940,11 +1162,38 @@ const igraCacheResponse = {
   entries: [
     {
       station_id: "USM00072558",
-      station_name: "VALLEY",
+      station_name: "Valley, Nebraska",
       data_txt_path: "/tmp/CloudChamber/cache/igra/recent/stations/USM00072558-data.txt",
       zip_path: "/tmp/CloudChamber/cache/igra/recent/stations/USM00072558-data-beg2025.txt.zip",
       sounding_count: 2,
       latest_valid_time_utc: "2025-01-02T00:00:00Z",
+      size_bytes: 1234,
+    },
+    {
+      station_id: "USM00072357",
+      station_name: "Norman, Oklahoma",
+      data_txt_path: "/tmp/CloudChamber/cache/igra/recent/stations/USM00072357-data.txt",
+      zip_path: "/tmp/CloudChamber/cache/igra/recent/stations/USM00072357-data-beg2025.txt.zip",
+      sounding_count: 2,
+      latest_valid_time_utc: "2025-05-20T00:00:00Z",
+      size_bytes: 1234,
+    },
+    {
+      station_id: "USM00072426",
+      station_name: "Wilmington, Ohio",
+      data_txt_path: "/tmp/CloudChamber/cache/igra/recent/stations/USM00072426-data.txt",
+      zip_path: "/tmp/CloudChamber/cache/igra/recent/stations/USM00072426-data-beg2025.txt.zip",
+      sounding_count: 1,
+      latest_valid_time_utc: "2025-01-03T00:00:00Z",
+      size_bytes: 1234,
+    },
+    {
+      station_id: "USM00072440",
+      station_name: "Springfield, Missouri",
+      data_txt_path: "/tmp/CloudChamber/cache/igra/recent/stations/USM00072440-data.txt",
+      zip_path: "/tmp/CloudChamber/cache/igra/recent/stations/USM00072440-data-beg2025.txt.zip",
+      sounding_count: 1,
+      latest_valid_time_utc: "2025-01-04T00:00:00Z",
       size_bytes: 1234,
     },
   ],
@@ -2661,11 +2910,13 @@ beforeEach(() => {
         return Promise.resolve(new Response(JSON.stringify(igraCacheResponse), { status: 200 }));
       }
       if (url === "/api/igra/recent/cache-batch" && init?.method === "POST") {
+        const body = JSON.parse(String(init.body ?? "{}")) as { station_ids?: string[] };
         return Promise.resolve(
           new Response(
             JSON.stringify({
               requested_limit: 10,
-              selected_count: 1,
+              requested_station_ids: body.station_ids ?? [],
+              selected_count: body.station_ids?.length ?? 1,
               cached_entries: [igraCacheResponse.entries[0]],
               failed: [],
               remaining_uncached_count: 0,
@@ -3021,7 +3272,7 @@ describe("App", () => {
     expect(
       await screen.findByRole("heading", { name: "Build and run a CM1 experiment" }),
     ).toBeInTheDocument();
-    expect(await screen.findByRole("heading", { name: "Upload a Sounding" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Observed Soundings" })).toBeInTheDocument();
     expect(screen.getByLabelText("Experiment")).toHaveValue("__observed_sounding_upload__");
     expect(screen.queryByLabelText("Low-level humidity")).not.toBeInTheDocument();
 
@@ -3101,7 +3352,7 @@ describe("App", () => {
 
     fireEvent.click(await screen.findByRole("button", { name: "Build" }));
 
-    expect(await screen.findByRole("heading", { name: "Upload a Sounding" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Observed Soundings" })).toBeInTheDocument();
     expect(screen.getByRole("tab", { name: "Cached recommendations" })).toHaveAttribute(
       "aria-selected",
       "true",
@@ -3191,14 +3442,14 @@ describe("App", () => {
     fireEvent.change(storyFilter, {
       target: { value: "deep_convection_trial" },
     });
-    fireEvent.click(screen.getByRole("button", { name: "Run analyzer only" }));
+    fireEvent.click(screen.getByRole("button", { name: "Apply advanced filters" }));
 
     expect(await screen.findByText("Cached sounding analysis loaded")).toBeInTheDocument();
     expect(screenBody).toContain('"story_filter":"deep_convection_trial"');
     const deepCard = screen.getByLabelText("Sounding candidate Norman, Oklahoma (USM00072357)");
     expect(deepCard).toHaveTextContent("Supercell-like environment");
 
-    fireEvent.click(within(deepCard).getByRole("button", { name: "Select for run setup" }));
+    fireEvent.click(within(deepCard).getByRole("button", { name: "Configure run" }));
     fireEvent.click(screen.getByRole("button", { name: "Add to run plan" }));
 
     expect(
@@ -3257,13 +3508,13 @@ describe("App", () => {
     fireEvent.change(await screen.findByLabelText("Story"), {
       target: { value: "humid_rainy_candidate" },
     });
-    fireEvent.click(screen.getByRole("button", { name: "Run analyzer only" }));
+    fireEvent.click(screen.getByRole("button", { name: "Apply advanced filters" }));
 
     expect(await screen.findByText("Cached sounding analysis loaded")).toBeInTheDocument();
     const humidCard = screen.getByLabelText("Sounding candidate Wilmington, Ohio (USM00072426)");
     expect(humidCard).toHaveTextContent("Humid / rainy");
 
-    fireEvent.click(within(humidCard).getByRole("button", { name: "Select for run setup" }));
+    fireEvent.click(within(humidCard).getByRole("button", { name: "Configure run" }));
     fireEvent.click(screen.getByRole("button", { name: "Add to run plan" }));
 
     expect(
@@ -3319,23 +3570,23 @@ describe("App", () => {
     expect(
       await screen.findByRole("heading", { name: "Find interesting soundings" }),
     ).toBeInTheDocument();
-    expect(screen.getByText(/Screening guidance only/)).toBeInTheDocument();
-    expect(screen.getByText("IGRA cache not checked yet")).toBeInTheDocument();
+    expect(screen.getByText(/Choose the stations and history/)).toBeInTheDocument();
+    expect(screen.getByText("Cached soundings ready to search")).toBeInTheDocument();
     expect(screen.queryByLabelText("Save into")).not.toBeInTheDocument();
     expect(
-      screen.getByRole("button", { name: "Prepare & search local soundings" }),
+      screen.getByRole("button", { name: "Search selected soundings" }),
     ).toBeInTheDocument();
 
     fireEvent.click(screen.getByText("Advanced filters"));
     fireEvent.change(screen.getByLabelText("Story"), {
       target: { value: "shallow_cumulus_candidate" },
     });
-    fireEvent.click(screen.getByRole("button", { name: "Run analyzer only" }));
+    fireEvent.click(screen.getByRole("button", { name: "Apply advanced filters" }));
 
     expect(await screen.findByText("Cached sounding analysis loaded")).toBeInTheDocument();
     expect(screenBody).toContain('"story_filter":"shallow_cumulus_candidate"');
     expect(screen.getByRole("heading", { name: "Refined candidates" })).toBeInTheDocument();
-    expect(screen.getByText(/Refined view/)).toBeInTheDocument();
+    expect(screen.getByText(/Search filters applied/)).toBeInTheDocument();
     const valleyCard = screen.getByLabelText("Sounding candidate Valley, Nebraska (USM00072558)");
     expect(valleyCard).toHaveTextContent("Cloud-forming shallow cumulus");
     expect(valleyCard).toHaveTextContent("Package-ready");
@@ -3374,7 +3625,7 @@ describe("App", () => {
       "Compare this against the humid case.",
     );
 
-    fireEvent.click(within(savedCard).getByRole("button", { name: "Select for run setup" }));
+    fireEvent.click(within(savedCard).getByRole("button", { name: "Configure run" }));
     fireEvent.click(screen.getByRole("button", { name: "Add to run plan" }));
 
     expect(
@@ -3400,17 +3651,17 @@ describe("App", () => {
     fireEvent.change(screen.getByLabelText("Story"), {
       target: { value: "needs_review" },
     });
-    fireEvent.click(screen.getByRole("button", { name: "Run analyzer only" }));
+    fireEvent.click(screen.getByRole("button", { name: "Apply advanced filters" }));
     const normanCard = await screen.findByLabelText(
       "Sounding candidate Norman, Oklahoma (USM00072357)",
     );
     expect(normanCard).toHaveTextContent("Blocked");
-    expect(within(normanCard).getByRole("button", { name: "Select for run setup" })).toBeDisabled();
+    expect(within(normanCard).getByRole("button", { name: "Configure run" })).toBeDisabled();
 
     fireEvent.change(screen.getByLabelText("Story"), {
       target: { value: "all" },
     });
-    fireEvent.click(screen.getByRole("button", { name: "Run analyzer only" }));
+    fireEvent.click(screen.getByRole("button", { name: "Apply advanced filters" }));
     const selectedValleyCard = await screen.findByLabelText(
       "Sounding candidate Valley, Nebraska (USM00072558)",
     );
@@ -3419,7 +3670,7 @@ describe("App", () => {
     ).toBeInTheDocument();
 
     fireEvent.click(
-      within(selectedValleyCard).getByRole("button", { name: "Select for run setup" }),
+      within(selectedValleyCard).getByRole("button", { name: "Configure run" }),
     );
     fireEvent.click(screen.getByRole("button", { name: "Add to run plan" }));
     expect(
@@ -3438,7 +3689,7 @@ describe("App", () => {
     });
   });
 
-  it("loads saved sounding candidates as soon as Upload a Sounding is selected", async () => {
+  it("loads saved sounding candidates as soon as Observed Soundings is selected", async () => {
     const defaultFetch = vi.mocked(fetch).getMockImplementation();
     vi.mocked(fetch).mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
@@ -3540,7 +3791,7 @@ describe("App", () => {
     fireEvent.change(screen.getByLabelText("Story"), {
       target: { value: "shallow_cumulus_candidate" },
     });
-    fireEvent.click(screen.getByRole("button", { name: "Run analyzer only" }));
+    fireEvent.click(screen.getByRole("button", { name: "Apply advanced filters" }));
 
     const valleyCard = await screen.findByLabelText(
       "Sounding candidate Valley, Nebraska (USM00072558)",
@@ -3568,6 +3819,9 @@ describe("App", () => {
       "Keep this one in the candidate notebook.",
     );
     fireEvent.click(within(savedCard).getByRole("button", { name: "Deep convection candidates" }));
+    expect(within(savedCard).getByLabelText("Tags")).toHaveValue(
+      "Maybe rerun, Deep convection candidates",
+    );
     fireEvent.click(within(savedCard).getByRole("button", { name: "Save tags and notes" }));
 
     expect(await screen.findByText("Saved sounding candidate updated")).toBeInTheDocument();
@@ -3592,6 +3846,108 @@ describe("App", () => {
     );
   });
 
+  it("uses family-scoped deep-convection defaults across the selected cached soundings", async () => {
+    const defaultFetch = vi.mocked(fetch).getMockImplementation();
+    let analyzeBody = "";
+    vi.mocked(fetch).mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url === "/api/sounding-candidates/analyze") {
+        analyzeBody = String(init?.body ?? "");
+      }
+      return (
+        defaultFetch?.(input, init) ?? Promise.resolve(new Response("not found", { status: 404 }))
+      );
+    });
+
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Build" }));
+    fireEvent.change(await screen.findByLabelText("Experiment"), {
+      target: { value: "__observed_sounding_upload__" },
+    });
+    fireEvent.change(await screen.findByDisplayValue("Best overall recommendations"), {
+      target: { value: "deep_convection" },
+    });
+    expect(screen.getByText("Advanced filters").closest("details")).not.toHaveAttribute("open");
+    expect(screen.getByText("Search intent changed; search selected soundings")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Search selected soundings" }));
+
+    expect(await screen.findByText("Recommendation run complete")).toBeInTheDocument();
+    expect(analyzeBody).toContain('"story_filter":"all"');
+    expect(analyzeBody).toContain('"story_family":"deep_convection"');
+    expect(analyzeBody).toContain('"support":"all"');
+    expect(analyzeBody).toContain('"history_scope":"all_cached"');
+    expect(analyzeBody).toContain('"latest_per_station":null');
+    expect(analyzeBody).toContain('"limit":100');
+    expect(
+      screen.getByText((content) =>
+        content.includes("5 analyzed from 5 selected cached soundings") &&
+        content.includes("4 stations") &&
+        content.includes("all cached history") &&
+        content.includes("2 matched deep convection stories") &&
+        content.includes("2 shown"),
+      ),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByLabelText("Sounding candidate Norman, Oklahoma (USM00072357)"),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByLabelText("Sounding candidate Wilmington, Ohio (USM00072426)"),
+    ).toBeInTheDocument();
+  });
+
+  it("searches and caches explicitly selected stations", async () => {
+    const defaultFetch = vi.mocked(fetch).getMockImplementation();
+    let analyzeBody = "";
+    let cacheBody = "";
+    vi.mocked(fetch).mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url === "/api/sounding-candidates/analyze") {
+        analyzeBody = String(init?.body ?? "");
+      }
+      if (url === "/api/igra/recent/cache-batch" && init?.method === "POST") {
+        cacheBody = String(init.body ?? "");
+      }
+      return (
+        defaultFetch?.(input, init) ?? Promise.resolve(new Response("not found", { status: 404 }))
+      );
+    });
+
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Build" }));
+    fireEvent.change(await screen.findByLabelText("Experiment"), {
+      target: { value: "__observed_sounding_upload__" },
+    });
+
+    fireEvent.click(await screen.findByRole("button", { name: "Choose stations" }));
+    fireEvent.click(await screen.findByLabelText(/Norman, Oklahoma/));
+    fireEvent.click(await screen.findByLabelText(/North Platte, Nebraska/));
+
+    fireEvent.click(screen.getByRole("button", { name: "Cache selected stations" }));
+    await waitFor(() => {
+      expect(cacheBody).toContain('"station_ids":["USM00072357","USM00072562"]');
+    });
+
+    fireEvent.change(screen.getByLabelText("History scope"), {
+      target: { value: "latest_per_station" },
+    });
+    fireEvent.change(screen.getByLabelText("Latest soundings per station"), {
+      target: { value: "3" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Search selected soundings" }));
+
+    await waitFor(() => {
+      expect(analyzeBody).toContain('"station_ids":["USM00072357","USM00072562"]');
+      expect(analyzeBody).toContain('"history_scope":"latest_per_station"');
+      expect(analyzeBody).toContain('"latest_per_station":3');
+    });
+    expect(
+      (await screen.findAllByLabelText("Sounding candidate Norman, Oklahoma (USM00072357)"))
+        .length,
+    ).toBeGreaterThan(0);
+  });
+
   it("shows secondary family candidates with the scoped story ingredient score", async () => {
     render(<App />);
 
@@ -3604,16 +3960,16 @@ describe("App", () => {
     fireEvent.change(screen.getByLabelText("Story family"), {
       target: { value: "deep_convection" },
     });
-    fireEvent.change(screen.getByLabelText("Support"), {
+    fireEvent.change(screen.getByLabelText("Evidence tier"), {
       target: { value: "weak" },
     });
-    fireEvent.click(screen.getByRole("button", { name: "Run analyzer only" }));
+    fireEvent.click(screen.getByRole("button", { name: "Apply advanced filters" }));
 
     const wilmingtonCard = await screen.findByLabelText(
       "Sounding candidate Wilmington, Ohio (USM00072426)",
     );
     expect(wilmingtonCard).toHaveTextContent("High-CAPE pulse storm");
-    expect(wilmingtonCard).toHaveTextContent("Primary: Humid / rainy");
+    expect(wilmingtonCard).not.toHaveTextContent("Primary: Humid / rainy");
     expect(wilmingtonCard).toHaveTextContent("48.9 % ingredient score");
     expect(wilmingtonCard).toHaveTextContent("Recipe fit: testable as forced observed evolution");
     expect(
@@ -3638,22 +3994,24 @@ describe("App", () => {
       target: { value: "__observed_sounding_upload__" },
     });
 
-    fireEvent.click(screen.getByRole("button", { name: "Prepare & search local soundings" }));
+    fireEvent.click(screen.getByRole("button", { name: "Search selected soundings" }));
     expect(await screen.findByText("Recommendation run complete")).toBeInTheDocument();
 
     fireEvent.click(screen.getByText("Advanced filters"));
     fireEvent.change(screen.getByLabelText("Story"), {
       target: { value: "shallow_cumulus_candidate" },
     });
-    fireEvent.click(screen.getByRole("button", { name: "Run analyzer only" }));
+    expect(screen.getByText("Story filter changed; apply advanced filters")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Apply advanced filters" }));
     expect(
-      screen.getByLabelText("Sounding candidate Wilmington, Ohio (USM00072426)"),
+      await screen.findByLabelText("Sounding candidate Wilmington, Ohio (USM00072426)"),
     ).toBeInTheDocument();
 
     fireEvent.change(screen.getByLabelText("Sort"), {
       target: { value: "estimated_lcl_height_m_agl" },
     });
-    fireEvent.click(screen.getByRole("button", { name: "Run analyzer only" }));
+    expect(screen.getByText("Sort changed; apply advanced filters")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Apply advanced filters" }));
     await waitFor(() => {
       const candidateCards = screen.getAllByLabelText(/^Sounding candidate /);
       const visibleOrder = candidateCards.map((card) => card.textContent ?? "");
@@ -3874,7 +4232,7 @@ describe("App", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Retry scenarios" }));
 
-    expect(await screen.findByRole("heading", { name: "Upload a Sounding" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Observed Soundings" })).toBeInTheDocument();
     fireEvent.change(screen.getByLabelText("Experiment"), {
       target: { value: "baseline-shallow-cumulus" },
     });

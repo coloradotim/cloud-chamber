@@ -202,20 +202,25 @@ use `--story deep-convection`, `--story shallow-cumulus`, `--story dry-failed`,
 `--story capped-suppressed`, or `--story humid-rainy` depending on what you want
 to test. CM1 output remains the source of truth.
 
-The same workflow is available in the app from Build -> `Upload a Sounding` ->
+The same workflow is available in the app from Build -> `Observed Soundings` ->
 `Find interesting soundings`. Use `Refresh IGRA catalog` to update station
-metadata, `Cache station files` to download a bounded batch of station-period
-files, then `Analyze recommendations`. The default view asks the backend which
-cached soundings look interesting and why, with station-diverse recommendations
-and explanation fields. Advanced refinements can narrow by story, story family,
-support, readiness, station search, and sounding-derived sort keys; missing
-feature values remain unavailable rather than becoming zero-valued evidence.
-`Use this sounding` loads a package-ready candidate into the observed-sounding
-package review; it does not launch CM1 and it does not claim the candidate will
-produce the screened outcome. Blocked candidates remain reviewable but cannot be
-used for package generation until their caveats are resolved. Saved candidates
-can carry freeform tags and notes such as `Deep convection candidates`,
-`Needs longer run`, or `Needs review`; when a saved candidate is used to create a
+metadata, choose the station set, `Cache selected stations` when uncached
+station files are needed, then `Search selected soundings`. The default search
+uses all cached history for all cached stations; if `Latest N per station` is
+selected, the per-station history limit is explicit and reported before
+recommendations. The returned-candidate limit is applied after the selected
+soundings are analyzed. The default view asks the backend which selected
+soundings look interesting and why, with station-diverse recommendations,
+filter-trace counts, and explanation fields. Advanced refinements can narrow by
+story, story family, evidence tier, readiness, station search, and
+sounding-derived sort keys; missing feature values remain unavailable rather
+than becoming zero-valued evidence. `Configure run` loads a package-ready
+candidate into the observed-sounding package review; it does not launch CM1 and
+it does not claim the candidate will produce the screened outcome. Blocked
+candidates remain reviewable but cannot be used for package generation until
+their caveats are resolved. Saved candidates can carry freeform tags and notes such as
+`Deep convection candidates`, `Needs longer run`, or `Needs review`; when a saved
+candidate is used to create a
 package, those annotations are copied into package provenance and run-status
 payloads.
 
