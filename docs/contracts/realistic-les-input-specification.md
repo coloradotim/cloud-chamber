@@ -533,7 +533,7 @@ Capability distinctions:
 
 | Item | Status |
 | --- | --- |
-| Explicit run-configuration choices | Supported by Cloud Chamber package generation through duration, horizontal cell budget, domain, cadence, and diagnostic set. |
+| Explicit run-configuration choices | Supported by Cloud Chamber package generation through surface forcing, duration, horizontal cell budget, domain, cadence, and full output-field volume. |
 | Local Mac deep runs with larger grids and more output | Supported but expensive; estimates need validation per scenario. |
 | Additional output fields for realistic cases | Likely CM1 capability needing output/product validation. |
 | Workstation/remote/HPC tiers | Future / unsupported as local product flow. |

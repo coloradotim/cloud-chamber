@@ -106,9 +106,12 @@ test.describe("mocked smoke: Build, Results, Explore path", () => {
     await expect(
       page.getByText("Valley, Nebraska (USM00072558) added to the run plan"),
     ).toBeVisible();
+    await expect(page.getByLabel("Run plan").getByLabel("Surface heat flux").first()).toHaveValue(
+      "8.0e-3",
+    );
     await expect(
-      page.getByLabel("Run plan").getByLabel("Recipe", { exact: true }).first(),
-    ).toHaveValue("untriggered_observed_evolution");
+      page.getByLabel("Run plan").getByLabel("Surface moisture flux").first(),
+    ).toHaveValue("5.2e-5");
 
     await page.getByRole("button", { name: "Create packages and queue selected runs" }).click();
     await expect(page.getByText("Queued for local serial CM1 run.")).toBeVisible();
@@ -174,9 +177,12 @@ test.describe("mocked smoke: Build, Results, Explore path", () => {
     await expect(
       page.getByText("Valley, Nebraska (USM00072558) added to the run plan"),
     ).toBeVisible();
+    await expect(page.getByLabel("Run plan").getByLabel("Surface heat flux").first()).toHaveValue(
+      "8.0e-3",
+    );
     await expect(
-      page.getByLabel("Run plan").getByLabel("Recipe", { exact: true }).first(),
-    ).toHaveValue("untriggered_observed_evolution");
+      page.getByLabel("Run plan").getByLabel("Surface moisture flux").first(),
+    ).toHaveValue("5.2e-5");
     await page.getByRole("button", { name: "Duplicate variant" }).click();
     await expect(page.getByText("Run-plan variant duplicated")).toBeVisible();
 

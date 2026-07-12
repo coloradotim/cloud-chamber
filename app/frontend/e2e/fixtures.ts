@@ -62,9 +62,9 @@ const defaultRunConfigurationSummary = {
   estimated_compute_multiplier_vs_default: 1,
   estimated_output_volume_multiplier_vs_default: 1,
   cost_warning:
-    "Configuration cost depends on duration, horizontal cell count, domain, cadence, and diagnostic set. Review the CM1-facing values before launch.",
+    "Configuration cost depends on duration, horizontal cell count, domain, cadence, and full output-field volume. Review the CM1-facing values before launch.",
   validation_note:
-    "Run configuration preserves explicit duration, horizontal cell count, domain, cadence, and diagnostic-set choices.",
+    "Run configuration preserves explicit duration, horizontal cell count, domain, cadence, and full output fields.",
 };
 
 const defaultPreRunValidationReport = {

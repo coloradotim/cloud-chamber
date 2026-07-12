@@ -1,12 +1,13 @@
 """Run-configuration choices for CM1 run generation.
 
 The product model is intentionally explicit: duration, horizontal cell budget,
-domain size, output cadence, and diagnostic set are separate levers. The backend
-resolves those choices into CM1-facing values before package creation.
+domain size, output cadence, and lower-boundary forcing are separate levers. The
+backend resolves those choices into CM1-facing values before package creation.
 """
 
 from __future__ import annotations
 
+import math
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -35,6 +36,23 @@ class RunConfigurationCM1Values(BaseModel):
     grid_cell_count: int
 
 
+class RunConfigurationSurfaceFluxCM1Values(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    isfcflx: int
+    sfcmodel: int
+    oceanmodel: int
+    set_flx: int
+    cnst_shflx: float
+    cnst_shflx_units: str
+    cnst_lhflx: float
+    cnst_lhflx_units: str
+    set_znt: int
+    cnst_znt: float
+    set_ust: int
+    cnst_ust: float
+
+
 class RunConfiguration(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -51,6 +69,14 @@ class RunConfiguration(BaseModel):
     cost_runtime_summary: str
     output_volume_summary: str
     cm1_values: RunConfigurationCM1Values
+    initiation_method: str
+    initiation_summary: str
+    surface_heat_flux_k_m_s: float
+    surface_moisture_flux_g_g_m_s: float
+    surface_flux_mode: str
+    surface_flux_summary: str
+    surface_flux_cm1_values: RunConfigurationSurfaceFluxCM1Values
+    surface_flux_caveats: list[str] = Field(default_factory=list)
     caveats: list[str] = Field(default_factory=list)
 
 
@@ -171,32 +197,31 @@ CADENCE_CHOICES: dict[str, _CadenceChoice] = {
     "detailed_5min": _CadenceChoice(seconds=300, label="Detailed 5 min"),
 }
 
-DIAGNOSTIC_SET_CHOICES = {"essential", "process", "full"}
+DEFAULT_SURFACE_HEAT_FLUX_K_M_S = 8.0e-3
+DEFAULT_SURFACE_MOISTURE_FLUX_G_G_M_S = 5.2e-5
+SURFACE_HEAT_FLUX_CONTEXT_RANGE_K_M_S = (0.0, 0.2)
+SURFACE_MOISTURE_FLUX_CONTEXT_RANGE_G_G_M_S = (0.0, 2.0e-4)
 
 
-def default_run_configuration_payload(run_recipe: str | None = None) -> dict[str, str]:
-    if run_recipe == "triggered_deep_potential":
-        return {
-            "duration": "short_6h",
-            "horizontal_cell_count": "cells_128",
-            "domain_size": "storm_120km",
-            "output_cadence": "standard_15min",
-            "diagnostic_set": "full",
-        }
+def default_run_configuration_payload(run_recipe: str | None = None) -> dict[str, str | float]:
     if run_recipe == "untriggered_observed_evolution":
         return {
             "duration": "short_6h",
             "horizontal_cell_count": "cells_128",
             "domain_size": "wide_12km",
             "output_cadence": "standard_15min",
-            "diagnostic_set": "process",
+            "diagnostic_set": "full",
+            "surface_heat_flux_k_m_s": DEFAULT_SURFACE_HEAT_FLUX_K_M_S,
+            "surface_moisture_flux_g_g_m_s": DEFAULT_SURFACE_MOISTURE_FLUX_G_G_M_S,
         }
     return {
         "duration": "short_6h",
         "horizontal_cell_count": "cells_64",
         "domain_size": "local_6km",
         "output_cadence": "standard_15min",
-        "diagnostic_set": "process",
+        "diagnostic_set": "full",
+        "surface_heat_flux_k_m_s": DEFAULT_SURFACE_HEAT_FLUX_K_M_S,
+        "surface_moisture_flux_g_g_m_s": DEFAULT_SURFACE_MOISTURE_FLUX_G_G_M_S,
     }
 
 
@@ -217,29 +242,45 @@ def resolve_run_configuration(
         **payload,
     }
 
-    if run_recipe == "triggered_deep_potential":
-        if payload.get("domain_size") in SHALLOW_DOMAIN_CHOICES:
-            payload["domain_size"] = "storm_120km"
-    elif payload.get("domain_size") in DEEP_DOMAIN_CHOICES:
+    initiation_method = "none"
+    if payload.get("domain_size") in DEEP_DOMAIN_CHOICES:
         payload["domain_size"] = "local_6km"
 
-    is_triggered_deep_potential = run_recipe == "triggered_deep_potential"
     duration = _choice(DURATION_CHOICES, payload.get("duration"), "duration")
     horizontal_cells = _choice(
         HORIZONTAL_CELL_CHOICES,
         payload.get("horizontal_cell_count"),
         "horizontal_cell_count",
     )
-    domains = DEEP_DOMAIN_CHOICES if is_triggered_deep_potential else SHALLOW_DOMAIN_CHOICES
-    domain = _choice(domains, payload.get("domain_size"), "domain_size")
+    domain = _choice(SHALLOW_DOMAIN_CHOICES, payload.get("domain_size"), "domain_size")
     cadence = _choice(
         CADENCE_CHOICES,
         payload.get("output_cadence"),
         "output_cadence",
     )
-    diagnostic_set = str(payload.get("diagnostic_set", "process"))
-    if diagnostic_set not in DIAGNOSTIC_SET_CHOICES:
-        raise ValueError(f"Unknown diagnostic_set: {diagnostic_set}")
+    diagnostic_set = "full"
+    heat_flux = _float_payload(
+        payload,
+        "surface_heat_flux_k_m_s",
+        "surface heat flux",
+    )
+    moisture_flux = _float_payload(
+        payload,
+        "surface_moisture_flux_g_g_m_s",
+        "surface moisture flux",
+    )
+    surface_flux_enabled = True
+    surface_flux_mode = "constant_uniform_surface_flux_proxy"
+    surface_flux_cm1_values = _surface_flux_cm1_values(
+        enabled=surface_flux_enabled,
+        heat_flux_k_m_s=heat_flux,
+        moisture_flux_g_g_m_s=moisture_flux,
+    )
+    surface_flux_caveats = _surface_flux_caveats(
+        surface_flux_mode,
+        heat_flux_k_m_s=heat_flux,
+        moisture_flux_g_g_m_s=moisture_flux,
+    )
 
     nx = horizontal_cells.cells
     ny = horizontal_cells.cells
@@ -254,13 +295,15 @@ def resolve_run_configuration(
         domain_size=str(payload["domain_size"]),
         output_cadence=str(payload["output_cadence"]),
         diagnostic_set=diagnostic_set,
+        surface_heat_flux_k_m_s=heat_flux,
+        surface_moisture_flux_g_g_m_s=moisture_flux,
+        surface_flux_mode=surface_flux_mode,
     )
     caveats = _configuration_caveats(
         mode=duration.mode,
-        run_recipe=run_recipe,
-        diagnostic_set=diagnostic_set,
         horizontal_cell_count=horizontal_cells.cells,
         domain_size=str(payload["domain_size"]),
+        surface_flux_caveats=surface_flux_caveats,
     )
     return RunConfiguration(
         configuration_id=configuration_id,
@@ -291,14 +334,26 @@ def resolve_run_configuration(
             model_top_m=domain.model_top_m,
             domain_x_km=domain.x_km,
             domain_y_km=domain.y_km,
-            time_step_seconds=_time_step_seconds(run_recipe),
+            time_step_seconds=_time_step_seconds(),
             runtime_seconds=duration.seconds,
             output_cadence_seconds=cadence.seconds,
             restart_cadence_seconds=restart_seconds,
-            rayleigh_damping_start_m=_rayleigh_damping_start_m(run_recipe),
+            rayleigh_damping_start_m=_rayleigh_damping_start_m(),
             expected_output_frames=frames,
             grid_cell_count=grid_cells,
         ),
+        initiation_method=initiation_method,
+        initiation_summary=_initiation_summary(initiation_method),
+        surface_heat_flux_k_m_s=heat_flux,
+        surface_moisture_flux_g_g_m_s=moisture_flux,
+        surface_flux_mode=surface_flux_mode,
+        surface_flux_summary=_surface_flux_summary(
+            surface_flux_mode,
+            heat_flux,
+            moisture_flux,
+        ),
+        surface_flux_cm1_values=surface_flux_cm1_values,
+        surface_flux_caveats=surface_flux_caveats,
         caveats=caveats,
     )
 
@@ -309,6 +364,22 @@ def _choice[T](choices: dict[str, T], value: object, label: str) -> T:
     return choices[value]
 
 
+def _float_payload(payload: dict[str, Any], key: str, label: str) -> float:
+    value = payload.get(key)
+    if isinstance(value, str):
+        try:
+            parsed = float(value)
+        except ValueError as exc:
+            raise ValueError(f"Unknown {label}: {value}") from exc
+    elif isinstance(value, int | float):
+        parsed = float(value)
+    else:
+        raise ValueError(f"Unknown {label}: {value}")
+    if not math.isfinite(parsed) or parsed < 0:
+        raise ValueError(f"Invalid {label}: must be a finite non-negative number")
+    return parsed
+
+
 def _configuration_id(
     *,
     duration: str,
@@ -316,8 +387,20 @@ def _configuration_id(
     domain_size: str,
     output_cadence: str,
     diagnostic_set: str,
+    surface_heat_flux_k_m_s: float,
+    surface_moisture_flux_g_g_m_s: float,
+    surface_flux_mode: str,
 ) -> str:
-    return f"{duration}__{horizontal_cell_count}__{domain_size}__{output_cadence}__{diagnostic_set}"
+    if surface_flux_mode == "disabled":
+        return (
+            f"{duration}__{horizontal_cell_count}__{domain_size}__{output_cadence}"
+            f"__{diagnostic_set}__surface_fluxes_disabled"
+        )
+    return (
+        f"{duration}__{horizontal_cell_count}__{domain_size}__{output_cadence}"
+        f"__{diagnostic_set}__shflx_{_flux_id(surface_heat_flux_k_m_s)}"
+        f"__qflx_{_flux_id(surface_moisture_flux_g_g_m_s)}"
+    )
 
 
 def _configuration_label(
@@ -341,42 +424,109 @@ def _runtime_summary(duration_seconds: int, grid_cells: int, cadence_seconds: in
 
 
 def _output_summary(frames: int, grid_cells: int, diagnostic_set: str) -> str:
-    return f"{frames:,} saved frames, {diagnostic_set} diagnostics, {grid_cells:,} cells per frame"
+    return f"{frames:,} saved frames, full output fields, {grid_cells:,} cells per frame"
 
 
 def _configuration_caveats(
     *,
     mode: RunMode,
-    run_recipe: str | None,
-    diagnostic_set: str,
     horizontal_cell_count: int,
     domain_size: str,
+    surface_flux_caveats: list[str],
 ) -> list[str]:
-    caveats: list[str] = []
+    caveats: list[str] = list(surface_flux_caveats)
     if mode == "smoke":
         caveats.append("short_smoke_mode_is_for_package_health_not_science_evolution")
     if mode == "science":
         caveats.append("science_run_configuration_minimum_duration_6h")
-    if run_recipe == "triggered_deep_potential":
-        caveats.append("triggered_deep_potential_is_not_normal_evolution")
-    if diagnostic_set == "essential":
-        caveats.append("essential_diagnostic_set_limits_later_diagnostics")
     if horizontal_cell_count >= 256 or domain_size in {
         "wide_12km",
         "regional_60km",
         "regional_120km",
-        "storm_240km",
     }:
         caveats.append("configuration_better_suited_to_larger_compute")
     return caveats
 
 
-def _time_step_seconds(run_recipe: str | None) -> float:
-    return 6.0 if run_recipe == "triggered_deep_potential" else 3.0
+def _initiation_summary(initiation_method: str) -> str:
+    return "No artificial initiation"
 
 
-def _rayleigh_damping_start_m(run_recipe: str | None) -> int:
-    return 15000 if run_recipe == "triggered_deep_potential" else 2500
+def _surface_flux_cm1_values(
+    *,
+    enabled: bool,
+    heat_flux_k_m_s: float,
+    moisture_flux_g_g_m_s: float,
+) -> RunConfigurationSurfaceFluxCM1Values:
+    return RunConfigurationSurfaceFluxCM1Values(
+        isfcflx=1 if enabled else 0,
+        sfcmodel=1 if enabled else 0,
+        oceanmodel=1 if enabled else 0,
+        set_flx=1 if enabled else 0,
+        cnst_shflx=heat_flux_k_m_s if enabled else 0.0,
+        cnst_shflx_units="K m/s",
+        cnst_lhflx=moisture_flux_g_g_m_s if enabled else 0.0,
+        cnst_lhflx_units="g/g m/s",
+        set_znt=0,
+        cnst_znt=0.0,
+        set_ust=1 if enabled else 0,
+        cnst_ust=0.28,
+    )
+
+
+def _surface_flux_summary(
+    surface_flux_mode: str,
+    heat_flux_k_m_s: float,
+    moisture_flux_g_g_m_s: float,
+) -> str:
+    if surface_flux_mode == "disabled":
+        return "Surface heat/moisture flux forcing disabled"
+    return (
+        f"Surface heat flux {_format_scientific(heat_flux_k_m_s)} K m/s; "
+        f"surface moisture flux {_format_scientific(moisture_flux_g_g_m_s)} g/g m/s; "
+        "constant uniform proxy"
+    )
+
+
+def _surface_flux_caveats(
+    surface_flux_mode: str,
+    *,
+    heat_flux_k_m_s: float,
+    moisture_flux_g_g_m_s: float,
+) -> list[str]:
+    if surface_flux_mode == "disabled":
+        return []
+    caveats = [
+        "surface_flux_proxy_constant_uniform_not_place_time_energy_budget",
+        "surface_flux_proxy_not_real_land_surface_or_evaporation_model",
+        "surface_flux_proxy_values_need_local_smoke_validation",
+    ]
+    if not _in_range(heat_flux_k_m_s, SURFACE_HEAT_FLUX_CONTEXT_RANGE_K_M_S):
+        caveats.append("surface_heat_flux_outside_daytime_context_range")
+    if not _in_range(moisture_flux_g_g_m_s, SURFACE_MOISTURE_FLUX_CONTEXT_RANGE_G_G_M_S):
+        caveats.append("surface_moisture_flux_outside_daytime_context_range")
+    return caveats
+
+
+def _in_range(value: float, bounds: tuple[float, float]) -> bool:
+    low, high = bounds
+    return low <= value <= high
+
+
+def _format_scientific(value: float) -> str:
+    return f"{value:.3g}"
+
+
+def _flux_id(value: float) -> str:
+    return f"{value:.3e}".replace("+", "").replace("-", "m").replace(".", "p")
+
+
+def _time_step_seconds() -> float:
+    return 3.0
+
+
+def _rayleigh_damping_start_m() -> int:
+    return 2500
 
 
 def _expected_output_frames(runtime_seconds: int, output_cadence_seconds: int) -> int:

@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { App, VisualizerSceneShell } from "./App";
 
 const defaultRunConfiguration = {
-  configuration_id: "short_6h__cells_64__local_6km__standard_15min__process",
+  configuration_id: "short_6h__cells_64__local_6km__standard_15min__full",
   mode: "science",
   label: "Short evolution; Local 6 km; Scout 64 x 64; 100 m dx/dy; Standard 15 min",
   duration: "short_6h",
@@ -14,9 +14,27 @@ const defaultRunConfiguration = {
   domain_size: "local_6km",
   output_cadence: "standard_15min",
   output_cadence_seconds: 900,
-  diagnostic_set: "process",
+  diagnostic_set: "full",
+  surface_flux_mode: "constant_uniform_surface_flux_proxy",
+  surface_flux_summary:
+    "Surface heat flux 0.008 K m/s; surface moisture flux 5.2e-5 g/g m/s; constant uniform proxy",
+  surface_flux_cm1_values: {
+    isfcflx: 1,
+    sfcmodel: 1,
+    set_flx: 1,
+    set_ust: 1,
+    cnst_shflx: 0.008,
+    cnst_shflx_units: "K m/s",
+    cnst_lhflx: 5.2e-5,
+    cnst_lhflx_units: "g/g m/s",
+  },
+  surface_flux_caveats: [
+    "surface_flux_proxy_constant_uniform_not_place_time_energy_budget",
+    "surface_flux_proxy_not_real_land_surface_or_evaporation_model",
+    "surface_flux_proxy_values_need_local_smoke_validation",
+  ],
   cost_runtime_summary: "6 h model time, 307,200 cells, 15 min saved-output cadence",
-  output_volume_summary: "25 saved frames, process diagnostics, 307,200 cells per frame",
+  output_volume_summary: "25 saved frames, full output fields, 307,200 cells per frame",
   cm1_values: {
     nx: 64,
     ny: 64,
@@ -66,9 +84,13 @@ const defaultRunConfigurationSummary = {
   estimated_compute_multiplier_vs_default: 1,
   estimated_output_volume_multiplier_vs_default: 1,
   cost_warning:
-    "Configuration cost depends on duration, horizontal cell count, domain, cadence, and diagnostic set. Review the CM1-facing values before launch.",
+    "Configuration cost depends on duration, horizontal cells, domain, cadence, and full output volume. Review the CM1-facing values before launch.",
   validation_note:
-    "Run configuration preserves explicit duration, horizontal cell count, domain, cadence, and diagnostic-set choices.",
+    "Run configuration preserves explicit duration, horizontal cell count, domain, cadence, and full-output choices.",
+  surface_flux_mode: defaultRunConfiguration.surface_flux_mode,
+  surface_flux_summary: defaultRunConfiguration.surface_flux_summary,
+  surface_flux_cm1_values: defaultRunConfiguration.surface_flux_cm1_values,
+  surface_flux_caveats: defaultRunConfiguration.surface_flux_caveats,
 };
 
 const defaultPreRunValidationReport = {
@@ -111,13 +133,20 @@ const defaultPreRunValidationReport = {
     dy_m: 100,
     output_cadence: "standard_15min",
     output_cadence_seconds: 900,
-    diagnostic_set: "process",
+    diagnostic_set: "full",
     estimated_frames: 25,
-    estimated_output_volume: "25 saved frames, process diagnostics, 307,200 cells per frame",
+    estimated_output_volume: "25 saved frames, full output fields, 307,200 cells per frame",
   },
   forcing_validation: {
     trigger: "none",
-    surface_fluxes: "current_recipe_default",
+    surface_fluxes: {
+      mode: "constant_uniform_surface_flux_proxy",
+      product_selections: {
+        surface_heat_flux_k_m_s: 0.008,
+        surface_moisture_flux_g_g_m_s: 5.2e-5,
+      },
+      cm1_values: defaultRunConfiguration.surface_flux_cm1_values,
+    },
     radiation: "disabled_or_future",
     large_scale_forcing: "not_supported_v1",
   },
@@ -147,7 +176,7 @@ const highDetailRunConfiguration = {
   output_cadence_seconds: 300,
   diagnostic_set: "full",
   cost_runtime_summary: "12 h model time, 4,915,200 cells, 5 min saved-output cadence",
-  output_volume_summary: "145 saved frames, full diagnostics, 4,915,200 cells per frame",
+  output_volume_summary: "145 saved frames, full output fields, 4,915,200 cells per frame",
   cm1_values: {
     ...defaultRunConfiguration.cm1_values,
     nx: 256,
@@ -259,7 +288,7 @@ const deepDryRunResponse = {
     ...dryRunResponse.report,
     run_configuration: highDetailRunConfiguration,
     estimated_cost_or_size:
-      "Configuration cost depends on duration, horizontal cell count, domain, cadence, and diagnostic set. Review the CM1-facing values before launch.",
+      "Configuration cost depends on duration, horizontal cells, domain, cadence, and full output volume. Review the CM1-facing values before launch.",
     run_configuration_summary: {
       ...defaultRunConfigurationSummary,
       configuration_id: highDetailRunConfiguration.configuration_id,
@@ -405,17 +434,12 @@ function preRunValidationReportForRequest(body: {
     (body.observed_sounding
       ? "untriggered_observed_evolution"
       : "generated_reference_lower_atmosphere");
-  const deep = runRecipe === "triggered_deep_potential";
   const observed = runRecipe === "untriggered_observed_evolution";
-  const recipeId = deep
-    ? "triggered_deep_potential_v1"
-    : observed
-      ? "untriggered_observed_sounding_evolution_v0"
+  const recipeId = observed
+      ? "observed_surface_forced_evolution_v0"
       : "generated_reference_lower_atmosphere_v1";
-  const recipeDisplayName = deep
-    ? "Triggered Deep-Potential Experiment"
-    : observed
-      ? "Untriggered Observed-Sounding Evolution v0"
+  const recipeDisplayName = observed
+      ? "Observed Surface-Forced Evolution v0"
       : "Generated Lower-Atmosphere Reference";
   const activeStory =
     typeof body.candidate_screening?.active_story === "string"
@@ -453,26 +477,20 @@ function preRunValidationReportForRequest(body: {
         typeof body.candidate_screening?.rank_score === "number"
           ? body.candidate_screening.rank_score
           : null,
-      predicted_output_signature: deep ? ["deep_cloud", "strong_updraft"] : [],
+      predicted_output_signature: observed ? ["qv", "qc", "w", "qr", "rain", "dbz"] : [],
     },
     selected_run_recipe: {
       run_recipe: runRecipe,
       recipe_id: recipeId,
-      display_name: deep
-        ? "Triggered Deep-Potential Experiment"
-        : observed
-          ? "Untriggered Observed Evolution"
+      display_name: observed
+          ? "Observed Surface-Forced Evolution"
           : "Generated Lower-Atmosphere Reference",
       recipe_display_name: recipeDisplayName,
-      assumption_set_id: deep
-        ? "triggered_deep_potential_warm_bubble_v1"
-        : observed
-          ? "untriggered_observed_sounding_evolution_v0_assumptions"
+      assumption_set_id: observed
+          ? "observed_surface_forced_evolution_v0_assumptions"
           : "generated_reference_lower_atmosphere_v1",
-      assumption_mode: deep
-        ? "triggered_deep_potential"
-        : observed
-          ? "normal_evolution"
+      assumption_mode: observed
+          ? "surface_forced_observed_evolution"
           : "generated_reference",
     },
   };
@@ -1430,12 +1448,12 @@ const deepConvectionResultCard = {
   ...observedSoundingResultCard,
   result_id: "result-deep-convection",
   run_id: "dry-run-deep-convection",
-  name: "Triggered Deep-Potential Experiment — Norman, Oklahoma",
+  name: "Observed Surface-Forced Experiment — Norman, Oklahoma",
   tags: ["deep-convection", "candidate"],
-  scenario_name: "Triggered Deep-Potential Experiment",
-  run_recipe: "triggered_deep_potential",
-  run_recipe_display_name: "Triggered Deep-Potential Experiment",
-  trigger_type: "warm_bubble",
+  scenario_name: "Observed Surface-Forced Experiment",
+  run_recipe: "untriggered_observed_evolution",
+  run_recipe_display_name: "Observed Surface-Forced Evolution",
+  trigger_type: null,
   expected_outputs: ["qc", "qr", "w", "dbz", "updraft_helicity"],
   candidate_screening: {
     candidate_id: "USM00072357-2025052000-supercell",
@@ -1510,7 +1528,7 @@ const deepConvectionResultCard = {
   },
   candidate_hypothesis_comparison: {
     screened_as: "Supercell-like environment",
-    ran_as: "Triggered Deep-Potential Experiment",
+    ran_as: "Observed Surface-Forced Evolution",
     cm1_outcome: "Deep convection formed with strong updraft and rain water aloft.",
     match_status: "matched",
     match_status_label: "Matched",
@@ -3110,38 +3128,38 @@ describe("App", () => {
     expect(screen.getByText(/CM1 z=0 is station surface at 351.5 m MSL/)).toBeInTheDocument();
     expect(screen.getAllByText(/observed sounding winds/).length).toBeGreaterThan(0);
     expect(screen.getByRole("heading", { name: "Configure this CM1 run" })).toBeInTheDocument();
-    expect(screen.getByText(/Baseline surface heating; no deep trigger/i)).toBeInTheDocument();
-    expect(screen.getByLabelText("Experiment recipe")).toHaveValue(
-      "untriggered_observed_evolution",
-    );
-
-    fireEvent.change(screen.getByLabelText("Experiment recipe"), {
-      target: { value: "triggered_deep_potential" },
+    expect(screen.queryByLabelText("Experiment recipe")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Diagnostic set")).not.toBeInTheDocument();
+    expect(screen.getByLabelText("Surface heat flux")).toHaveValue("8.0e-3");
+    expect(screen.getByLabelText("Surface moisture flux")).toHaveValue("5.2e-5");
+    fireEvent.change(screen.getByLabelText("Surface heat flux"), {
+      target: { value: "0.037" },
     });
-    expect(screen.getByText(/Baseline surface heating; warm-bubble trigger/i)).toBeInTheDocument();
-    expect(
-      screen.getByText(/Triggered deep potential adds a warm-bubble trigger/i),
-    ).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("Surface moisture flux"), {
+      target: { value: "9.5e-5" },
+    });
+    expect(screen.getByText(/Surface heat flux 0.037 K m\/s/i)).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Add to run plan" }));
     expect(screen.getByRole("heading", { name: "Plan multiple CM1 runs" })).toBeInTheDocument();
-    expect(within(screen.getByLabelText("Run plan")).getByLabelText("Recipe")).toHaveValue(
-      "triggered_deep_potential",
-    );
+    expect(within(screen.getByLabelText("Run plan")).queryByLabelText("Recipe")).not.toBeInTheDocument();
 
     fireEvent.click(
       screen.getByRole("button", { name: "Create packages and queue selected runs" }),
     );
 
     await waitFor(() => {
-      expect(dryRunBody).toContain('"run_recipe":"triggered_deep_potential"');
+      expect(dryRunBody).toContain('"run_recipe":"untriggered_observed_evolution"');
+      expect(dryRunBody).toContain('"diagnostic_set":"full"');
+      expect(dryRunBody).toContain('"surface_heat_flux_k_m_s":"0.037"');
+      expect(dryRunBody).toContain('"surface_moisture_flux_g_g_m_s":"9.5e-5"');
       expect(dryRunBody).toContain('"observed_sounding"');
       expect(dryRunBody).toContain('"station_id":"USM00072558"');
       expect(dryRunBody).toContain('"model_bottom_elevation_m_msl":351.5');
     });
   });
 
-  it("defaults deep-convection candidates to the Triggered Deep-Potential Experiment package", async () => {
+  it("stages deep-convection candidates as observed forcing runs", async () => {
     const defaultFetch = vi.mocked(fetch).getMockImplementation();
     let dryRunBody = "";
     let screenBody = "";
@@ -3186,14 +3204,12 @@ describe("App", () => {
     expect(
       await screen.findByText("Norman, Oklahoma (USM00072357) added to the run plan"),
     ).toBeInTheDocument();
-    expect(within(screen.getByLabelText("Run plan")).getByLabelText("Recipe")).toHaveValue(
-      "triggered_deep_potential",
-    );
-    expect(screen.getByText("triggered_deep_potential_v1")).toBeInTheDocument();
-    expect(
-      screen.getByText("Warm-bubble trigger · triggered potential, not normal evolution"),
-    ).toBeInTheDocument();
-    expect(screen.getByText("triggered_deep_potential_warm_bubble_v1")).toBeInTheDocument();
+    const runPlan = within(screen.getByLabelText("Run plan"));
+    expect(runPlan.queryByLabelText("Recipe")).not.toBeInTheDocument();
+    expect(runPlan.getByLabelText("Surface heat flux")).toHaveValue("8.0e-3");
+    expect(runPlan.getByLabelText("Surface moisture flux")).toHaveValue("5.2e-5");
+    expect(screen.getByText("observed_surface_forced_evolution_v0")).toBeInTheDocument();
+    expect(screen.getByText(/No artificial trigger/i)).toBeInTheDocument();
     expect(screen.getAllByLabelText(/^Run plan item /)).toHaveLength(1);
 
     fireEvent.click(screen.getByRole("button", { name: "Duplicate variant" }));
@@ -3205,7 +3221,10 @@ describe("App", () => {
     );
 
     await waitFor(() => {
-      expect(dryRunBody).toContain('"run_recipe":"triggered_deep_potential"');
+      expect(dryRunBody).toContain('"run_recipe":"untriggered_observed_evolution"');
+      expect(dryRunBody).toContain('"diagnostic_set":"full"');
+      expect(dryRunBody).toContain('"surface_heat_flux_k_m_s":"8.0e-3"');
+      expect(dryRunBody).toContain('"surface_moisture_flux_g_g_m_s":"5.2e-5"');
       expect(dryRunBody).toContain('"candidate_screening"');
       expect(dryRunBody).toContain('"primary_story":"supercell_environment"');
       expect(dryRunBody).toContain('"candidate_id":"USM00072357-2025052000-supercell"');
@@ -3250,10 +3269,8 @@ describe("App", () => {
     expect(
       await screen.findByText("Wilmington, Ohio (USM00072426) added to the run plan"),
     ).toBeInTheDocument();
-    expect(within(screen.getByLabelText("Run plan")).getByLabelText("Recipe")).toHaveValue(
-      "untriggered_observed_evolution",
-    );
-    expect(screen.getByText("untriggered_observed_sounding_evolution_v0")).toBeInTheDocument();
+    expect(within(screen.getByLabelText("Run plan")).queryByLabelText("Recipe")).not.toBeInTheDocument();
+    expect(screen.getByText("observed_surface_forced_evolution_v0")).toBeInTheDocument();
 
     fireEvent.click(
       screen.getByRole("button", { name: "Create packages and queue selected runs" }),
@@ -3598,7 +3615,7 @@ describe("App", () => {
     expect(wilmingtonCard).toHaveTextContent("High-CAPE pulse storm");
     expect(wilmingtonCard).toHaveTextContent("Primary: Humid / rainy");
     expect(wilmingtonCard).toHaveTextContent("48.9 % ingredient score");
-    expect(wilmingtonCard).toHaveTextContent("Recipe fit: requires triggered deep-potential run");
+    expect(wilmingtonCard).toHaveTextContent("Recipe fit: testable as forced observed evolution");
     expect(
       screen.queryByLabelText("Sounding candidate Norman, Oklahoma (USM00072357)"),
     ).not.toBeInTheDocument();
@@ -3661,6 +3678,12 @@ describe("App", () => {
         expect(init?.body).toEqual(expect.stringContaining('"domain_size":"wide_12km"'));
         expect(init?.body).toEqual(expect.stringContaining('"output_cadence":"detailed_5min"'));
         expect(init?.body).toEqual(expect.stringContaining('"diagnostic_set":"full"'));
+        expect(init?.body).toEqual(
+          expect.stringContaining('"surface_heat_flux_k_m_s":"0.04"'),
+        );
+        expect(init?.body).toEqual(
+          expect.stringContaining('"surface_moisture_flux_g_g_m_s":"1.1e-4"'),
+        );
         return Promise.resolve(new Response(JSON.stringify(deepDryRunResponse), { status: 200 }));
       }
       if (url === "/api/results") {
@@ -3694,7 +3717,13 @@ describe("App", () => {
     fireEvent.change(screen.getByLabelText("Output cadence"), {
       target: { value: "detailed_5min" },
     });
-    fireEvent.change(screen.getByLabelText("Diagnostic set"), { target: { value: "full" } });
+    expect(screen.queryByLabelText("Diagnostic set")).not.toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("Surface heat flux"), {
+      target: { value: "0.04" },
+    });
+    fireEvent.change(screen.getByLabelText("Surface moisture flux"), {
+      target: { value: "1.1e-4" },
+    });
 
     fireEvent.click(screen.getByTestId("create-package-btn"));
 
@@ -3714,27 +3743,27 @@ describe("App", () => {
       ...defaultPreRunValidationReport,
       status: "blocked",
       selected_hypothesis: {
-        hypothesis_id: "supercell_environment",
-        story_id: "supercell_environment",
-        story_label: "Supercell-like environment",
-        ingredient_score: 93,
-        predicted_output_signature: ["deep_cloud", "strong_updraft"],
+        hypothesis_id: "humid_rainy_candidate",
+        story_id: "humid_rainy_candidate",
+        story_label: "Humid / rainy",
+        ingredient_score: 82,
+        predicted_output_signature: ["qc", "qr", "rain", "dbz"],
       },
       selected_run_recipe: {
         run_recipe: "untriggered_observed_evolution",
-        recipe_id: "untriggered_observed_sounding_evolution_v0",
-        display_name: "Untriggered Observed Evolution",
-        recipe_display_name: "Untriggered Observed-Sounding Evolution v0",
-        assumption_set_id: "untriggered_observed_sounding_evolution_v0_assumptions",
-        assumption_mode: "normal_evolution",
+        recipe_id: "observed_surface_forced_evolution_v0",
+        display_name: "Observed Surface-Forced Evolution",
+        recipe_display_name: "Observed Surface-Forced Evolution v0",
+        assumption_set_id: "observed_surface_forced_evolution_v0_assumptions",
+        assumption_mode: "surface_forced_observed_evolution",
       },
       hypothesis_recipe_alignment: {
         status: "blocked",
-        reasons: ["Deep-convection hypothesis is paired with an untriggered/shallow recipe."],
-        missing_assumptions: ["triggered_deep_potential_warm_bubble_v1"],
+        reasons: ["Surface-flux values must be reviewed before this package can be created."],
+        missing_assumptions: ["surface_flux_values_need_manual_review"],
         missing_outputs: [],
       },
-      blocking_errors: ["Selected run recipe does not test this deep-convection hypothesis."],
+      blocking_errors: ["Surface-flux values must be reviewed before this package can be created."],
       caveats: [],
     };
     vi.mocked(fetch).mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
@@ -3749,7 +3778,7 @@ describe("App", () => {
             JSON.stringify({
               detail: {
                 message:
-                  "Pre-run validation blocked package creation: Selected run recipe does not test this deep-convection hypothesis.",
+                  "Pre-run validation blocked package creation: Surface-flux values must be reviewed before this package can be created.",
                 pre_run_validation_report: blockedReport,
               },
             }),
@@ -3781,10 +3810,10 @@ describe("App", () => {
     ).toBeInTheDocument();
     expect(screen.getByLabelText("Pre-run validation report")).toHaveTextContent("Blocked");
     expect(screen.getByLabelText("Pre-run validation report")).toHaveTextContent(
-      "Selected run recipe does not test this deep-convection hypothesis.",
+      "Surface-flux values must be reviewed before this package can be created.",
     );
     expect(screen.getByLabelText("Pre-run validation report")).toHaveTextContent(
-      "triggered_deep_potential_warm_bubble_v1",
+      "surface_flux_values_need_manual_review",
     );
   });
 
@@ -4698,7 +4727,7 @@ describe("App", () => {
 
     const resultDetail = await screen.findByLabelText("Result detail");
     expect(resultDetail).toHaveTextContent(
-      "Triggered Deep-Potential Experiment — Norman, Oklahoma",
+      "Observed Surface-Forced Experiment — Norman, Oklahoma",
     );
     expect(resultDetail).toHaveTextContent("Deep convection formed");
     expect(resultDetail).toHaveTextContent("Screening vs CM1");

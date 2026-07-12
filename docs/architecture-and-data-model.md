@@ -23,7 +23,7 @@ notebook entries and explicit ingested-result cleanup.
 Observed-sounding run directions seed a CM1-facing configuration, but they
 should not be modeled as rigid product cages. The data model uses explicit
 `run_recipe` and `run_configuration` values: duration, horizontal cell budget,
-domain, cadence, diagnostic set, forcing assumptions, requested fields, and
+domain, cadence, forcing assumptions, full requested fields, and
 pre-run validation are the run-builder contract.
 
 The first MVP target is a 2024 MacBook Air with 8GB RAM. Design for one local CM1 run at a time, conservative output handling, and backend-side processing/downsampling. Optional cloud compute can be researched later, but it is not part of the core architecture.
@@ -115,7 +115,7 @@ story-specific candidate scores. Stable story identifiers are
 `shallow_cumulus_candidate`, `dry_failed_candidate`,
 `capped_suppressed_candidate`, `humid_rainy_candidate`, `needs_review`, and
 `poor_or_incomplete_candidate`; severe/deep-convection story identifiers remain
-pre-run hypotheses for triggered deep-potential recipe routing. The auditable scoring
+pre-run atmospheric hypotheses for observed-sounding run configuration. The auditable scoring
 contract lives in
 [contracts/sounding-candidate-screening.md](contracts/sounding-candidate-screening.md).
 Analysis has a default recommendation mode that answers which cached soundings
@@ -142,8 +142,8 @@ hypotheses only when explicit run assumptions, predicted CM1-observable output
 signatures, required output fields, and compatible run recipes are present.
 The compatible recipe layer is governed by
 [Run Recipe And Story-Mapping Contract](contracts/run-recipe-and-story-mapping.md),
-which maps current story IDs to untriggered normal-evolution, surface-forced,
-triggered deep-potential, blocked, or future run recipes. Build should use that
+which maps current story IDs to observed surface-forced, blocked, or future run
+recipes. Build should use that
 mapping to warn when a package can run but cannot test the selected hypothesis;
 Results should use the same recipe ID and required fields before comparing
 predicted and actual CM1 output.
@@ -169,9 +169,9 @@ defines readiness states for severe/deep-convection, boundary-layer, low-cloud,
 and winter/cold-season stories so APIs can distinguish screenable environments
 from runnable configuration paths. Until a story has backend features, scoring
 tests, evidence, caveats, and recipe-fit support, it must not be emitted as an
-enabled runnable label. The first implemented severe/deep-convection path is the
-triggered deep-potential run recipe, which treats selected observed soundings as
-pre-run hypotheses for an idealized triggered CM1 experiment.
+enabled runnable label. Severe/deep-convection candidates are currently
+inspectable only as observed-sounding experiments under selected numeric uniform
+surface forcing, with differential-forcing initiation tracked as future work.
 
 The Build UI consumes this layer through bounded JSON only. `Upload a Sounding`
 is the observed-atmosphere entry point, but the user chooses exactly one source
@@ -191,36 +191,30 @@ run/result status: saved candidates are pre-run hypotheses, while generated
 packages, launched runs, and ingested results remain separate lifecycle objects.
 
 The observed-atmosphere run plan owns batch package creation. Each item stores
-its source payload, selected story/hypothesis metadata, selected run recipe,
-recipe metadata (`recipe_id`, display name, assumption set/mode, assumptions,
-required output fields, caveats, and missing required fields when known), run
-configuration, local/LAN queue target, current packaging/queue status, and any
-blocked pre-run validation report. The frontend may duplicate items to compare
-recipe or configuration variants, but package generation and pre-run validation
-remain backend-owned.
+its source payload, selected story/hypothesis metadata, selected forcing values,
+run configuration, local/LAN queue target, current packaging/queue status, and
+any blocked pre-run validation report. The frontend may duplicate items to
+compare forcing or configuration variants, but package generation and pre-run
+validation remain backend-owned.
 
-Triggered deep-potential observed-sounding runs extend the same dry-run package
-contract rather than creating a separate workflow. The package records
-`run_recipe = triggered_deep_potential`, `input_source = observed_sounding`,
-`trigger_type = warm_bubble`, trigger metadata, expected output fields,
-recipe smoke-validation status, run caveats, and any candidate-screening payload
-on the run manifest, case manifest, and dry-run report. The generated namelist
-uses the observed `input_sounding` route (`isnd = 7`), requires complete usable
-observed u/v winds, selects CM1's built-in three-warm-bubble initialization
-(`iinit = 3`) with `testcase = 0`, uses a storm-scale idealized domain for storm
-growth, and enables rain-water-aloft, surface-rain, reflectivity, vorticity, and
-updraft-helicity output. Manual smoke evidence applies to the recipe path and
-basic run/ingest health; each observed sounding remains an experiment whose
-outcome must be inspected after CM1 completes. The trigger is described as fixed
-v1 recipe metadata rather than a primary product control. Ingest copies the run
-recipe and trigger metadata into result metadata and Result Cards so Results and
-Explore do not lose the distinction between untriggered observed evolution and a
-triggered deep-potential run.
+Observed-sounding packages extend the same dry-run package contract rather than
+creating separate workflows by story. The package records
+`run_recipe = untriggered_observed_evolution` as the current backend routing
+value, `input_source = observed_sounding`, numeric uniform surface heat/moisture
+flux selections, expected full output fields, run caveats, and any
+candidate-screening payload on the run manifest, case manifest, and dry-run
+report. The generated namelist uses the observed `input_sounding` route
+(`isnd = 7`), requires complete usable observed u/v winds, applies no artificial
+atmospheric trigger, and enables cloud, moisture, wind, rain-water-aloft,
+surface-rain, reflectivity, surface-flux, vorticity, and updraft-helicity output.
+Each observed sounding remains an experiment whose outcome must be inspected
+after CM1 completes. Differential surface heating/moisture or convergence-like
+initiation is future work rather than a hidden current trigger.
 
-Untriggered observed-sounding evolution v0 is the first concrete normal-evolution
-recipe for lower-atmosphere observed-sounding hypotheses. Package generation keeps
-the CM1 routing value `run_recipe = untriggered_observed_evolution`, but also
-persists `recipe_id = untriggered_observed_sounding_evolution_v0`,
+Observed surface-forced evolution v0 is the first concrete run configuration
+for lower-atmosphere observed-sounding hypotheses. Package generation keeps
+the current CM1 routing value `run_recipe = untriggered_observed_evolution`, but
+also persists `recipe_id = observed_surface_forced_evolution_v0`,
 `assumption_set_id`, `assumption_mode`, recipe assumptions, required output
 fields, and recipe caveats. Ingest copies the same fields into result metadata
 and computes `missing_required_output_fields` from the actual NetCDF variables
@@ -311,11 +305,11 @@ The earlier Cloud Chamber quick-look derivative is not scientifically accepted: 
 The first reference-derived validation run, `dry-run-les-shallowcu-20260522140642`, completed locally with NetCDF output and ingested 7 model-output time steps over 21600 seconds. It produced cloud water and vertical velocity diagnostics, so the architecture should treat the reference-derived package as the recovery baseline and the earlier compact derivative as invalid evidence rather than a tuning base.
 
 Run configuration uses guarded fields for duration, horizontal cell budget,
-domain size, output cadence, diagnostic set, forcing, requested fields, advanced
-CM1-facing values, and a pre-run validation report. Raw numerical timestep is
-not a normal v1 control. Defaults must expose their derived CM1-facing values in
-advanced metadata so dry-run reports and Build UI can show exactly what will be
-written without requiring raw namelist editing.
+domain size, output cadence, numeric surface forcing, full requested fields,
+advanced CM1-facing values, and a pre-run validation report. Raw numerical
+timestep is not a normal v1 control. Defaults must expose their derived
+CM1-facing values in advanced metadata so dry-run reports and Build UI can show
+exactly what will be written without requiring raw namelist editing.
 
 Current product defaults are deliberately different by run direction:
 lower-atmosphere scenarios use a six-hour local-domain science run, uploaded

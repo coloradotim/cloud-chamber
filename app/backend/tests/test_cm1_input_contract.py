@@ -38,7 +38,7 @@ def test_cm1_contract_documents_expected_generated_files_and_default_run_configu
     assert contract.scenario_id == "baseline-shallow-cumulus"
     assert contract.run_configuration.duration == "short_6h"
     assert contract.run_configuration.domain_size == "local_6km"
-    assert contract.run_configuration.diagnostic_set == "process"
+    assert contract.run_configuration.diagnostic_set == "full"
     assert {file.role for file in contract.generated_files} == set(GeneratedFileRole)
     assert contract.cloud_scale_defaults.nx == 64
     assert contract.cloud_scale_defaults.ny == 64
@@ -203,11 +203,11 @@ def test_observed_contract_declares_untriggered_v0_recipe_assumptions() -> None:
     )
 
     assert contract.run_recipe.value == "untriggered_observed_evolution"
-    assert contract.recipe_id == "untriggered_observed_sounding_evolution_v0"
-    assert contract.recipe_display_name == "Untriggered Observed-Sounding Evolution v0"
-    assert contract.assumption_set_id == "untriggered_observed_sounding_evolution_v0_assumptions"
-    assert contract.assumption_mode == "normal_evolution"
-    assert contract.required_output_fields == ("qv", "qc", "w", "qr", "rain", "dbz")
+    assert contract.recipe_id == "observed_surface_forced_evolution_v0"
+    assert contract.recipe_display_name == "Observed Surface-Forced Evolution v0"
+    assert contract.assumption_set_id == "observed_surface_forced_evolution_v0_assumptions"
+    assert contract.assumption_mode == "surface_forced_observed_evolution"
+    assert contract.required_output_fields == ("qv", "qc", "w", "qr", "rain", "dbz", "hfx", "lhfx")
     trigger = cast(dict[str, Any], contract.recipe_assumptions["trigger"])
     radiation = cast(dict[str, Any], contract.recipe_assumptions["radiation"])
     forcing = cast(dict[str, Any], contract.recipe_assumptions["large_scale_forcing"])
@@ -215,10 +215,70 @@ def test_observed_contract_declares_untriggered_v0_recipe_assumptions() -> None:
     assert trigger["mode"] == "none"
     assert radiation["mode"] == "disabled"
     assert forcing["mode"] == "none"
-    assert surface_fluxes["mode"] == "current_recipe_default"
-    assert "No warm-bubble or artificial deep-convection trigger is applied." in (
-        contract.recipe_caveats
+    assert surface_fluxes["mode"] == "constant_uniform_surface_flux_proxy"
+    assert surface_fluxes["product_selections"] == {
+        "surface_heat_flux_k_m_s": 8.0e-3,
+        "surface_moisture_flux_g_g_m_s": 5.2e-5,
+        "summary": (
+            "Surface heat flux 0.008 K m/s; surface moisture flux 5.2e-05 g/g m/s; "
+            "constant uniform proxy"
+        ),
+    }
+    assert surface_fluxes["cm1_values"]["cnst_shflx"] == 8.0e-3
+    assert surface_fluxes["cm1_values"]["cnst_lhflx"] == 5.2e-5
+    assert "No artificial atmospheric trigger is applied." in contract.recipe_caveats
+
+
+def test_observed_surface_flux_proxy_choices_render_namelist_and_surface_outputs() -> None:
+    from igra_fixtures import IGRA_FIXTURE
+
+    from cloud_chamber.observed_sounding import parse_igra_station_text
+
+    observed = parse_igra_station_text(
+        IGRA_FIXTURE,
+        uploaded_filename="USM00072558-data-beg2025.txt",
+    ).selected_sounding
+
+    contract = build_cm1_input_contract(
+        baseline_scenario(),
+        observed_sounding=observed,
+        run_configuration={
+            "duration": "short_6h",
+            "horizontal_cell_count": "cells_128",
+            "domain_size": "wide_12km",
+            "output_cadence": "standard_15min",
+            "diagnostic_set": "essential",
+            "surface_heat_flux_k_m_s": 4.0e-2,
+            "surface_moisture_flux_g_g_m_s": 1.0e-4,
+        },
     )
+    namelist = render_namelist_fragment(contract)
+    surface_fluxes = cast(dict[str, Any], contract.recipe_assumptions["surface_fluxes"])
+
+    assert contract.run_configuration.surface_heat_flux_k_m_s == 4.0e-2
+    assert contract.run_configuration.surface_moisture_flux_g_g_m_s == 1.0e-4
+    assert contract.run_configuration.surface_flux_mode == "constant_uniform_surface_flux_proxy"
+    assert contract.run_configuration.surface_flux_cm1_values.cnst_shflx == 4.0e-2
+    assert contract.run_configuration.surface_flux_cm1_values.cnst_lhflx == 1.0e-4
+    assert "surface_flux_proxy_values_need_local_smoke_validation" in (
+        contract.run_configuration.surface_flux_caveats
+    )
+    assert surface_fluxes["product_selections"]["surface_heat_flux_k_m_s"] == 4.0e-2
+    assert surface_fluxes["product_selections"]["surface_moisture_flux_g_g_m_s"] == 1.0e-4
+    assert surface_fluxes["cm1_values"]["isfcflx"] == 1
+    assert surface_fluxes["cm1_values"]["set_flx"] == 1
+    assert surface_fluxes["cm1_values"]["cnst_shflx"] == 4.0e-2
+    assert surface_fluxes["cm1_values"]["cnst_lhflx"] == 1.0e-4
+    for field in ("qc", "qr", "qv", "w", "rain", "dbz", "hfx", "lhfx", "updraft_helicity"):
+        assert field in contract.expected_outputs
+    assert "isfcflx    =      1," in namelist
+    assert "sfcmodel   =      1," in namelist
+    assert "set_flx    =      1," in namelist
+    assert "cnst_shflx = 4.0e-2," in namelist
+    assert "cnst_lhflx = 1.0e-4," in namelist
+    assert "output_sfcflx    = 1," in namelist
+    assert "output_sfcparams = 1," in namelist
+    assert "output_sfcdiags  = 1," in namelist
 
 
 def test_baseline_humidity_ladder_only_changes_low_level_moisture_profile() -> None:

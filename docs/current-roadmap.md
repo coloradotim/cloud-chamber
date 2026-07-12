@@ -74,10 +74,12 @@ candidate stories. It does not make severe, winter, cold-pool, or specialized
 boundary-layer stories scientifically validated until their scoring, evidence,
 caveats, and package-readiness states are implemented and tested.
 
-The deep-convection package design now maps to the triggered deep-potential run
-recipe. User-facing docs should describe this as a configurable
-triggered-potential experiment, not as a separate half-state "Trial" product or
-package-family compatibility layer.
+The historical deep-convection package design is now evidence and background,
+not the active Build contract. User-facing docs should describe current
+observed-sounding packages as configurable experiments with numeric
+lower-boundary heat/moisture forcing, full output fields, and explicit caveats.
+Differential surface forcing for initiation or boundary experiments is future
+work.
 
 ## Current State
 
@@ -89,16 +91,14 @@ package-family compatibility layer.
   states exist. Candidate scores are pre-run selection aids, not CM1 outcome
   predictions.
 - The run-recipe contract now defines how current story IDs map to compatible,
-  caveated, blocked, or future CM1 run recipes. That mapping is the handoff from
+  caveated, blocked, or future CM1 run configurations. That mapping is the handoff from
   cached-sounding analysis to pre-run validation and predicted-vs-actual Results
   comparison.
-- The deep-convection observed-sounding package path exists and has
-  package/run/ingest smoke evidence. It can generate storm-scale CM1 packages
-  with fixed v1 warm-bubble trigger metadata and expected deep-output fields,
-  but it has not yet been characterized across a broad selected candidate set.
-  #285 is needed before treating its defaults as broadly validated. Each
-  observed sounding remains its own experiment whose result must be evaluated
-  after CM1 runs.
+- Observed-sounding package generation now uses numeric uniform surface
+  heat/moisture forcing and complete observed u/v wind profiles. Deep-convection
+  candidates remain important pre-run hypotheses, but current packages do not add
+  an artificial deep trigger; each observed sounding remains its own experiment
+  whose result must be evaluated after CM1 runs.
 - Build owns active package/run work, including generated packages, queued or
   running local CM1 work, failed or incomplete runs, completed-but-not-ingested
   output, serial local queue state, auto-ingest for completed usable output, and
@@ -135,17 +135,18 @@ compare input atmospheres before packaging.
 Goal: let Build start from a sane preset and then adjust run settings that map
 to real CM1 configuration.
 
-Scope: controls for model duration, horizontal cell budget, domain size, output
-cadence, forcing, and diagnostic set within guarded bounds. Starting points
-should remain available, and an advanced drawer should expose the actual
-CM1-facing values those choices imply.
+Scope: controls for numeric surface heat/moisture forcing, model duration,
+horizontal cell budget, domain size, and output cadence within guarded bounds.
+Starting points should remain available, and an advanced drawer should expose the
+actual CM1-facing values those choices imply. Current observed-sounding runs
+request the full output field set.
 
 Non-goals: raw numerical timestep as a normal v1 control, raw trigger controls,
 new trigger types, or a full Build redesign in one issue.
 
 Why now: the product direction is configurable runs, not rigid scenario or
-package-family cages. Horizontal cell budget, domain, diagnostic set, and
-output cadence are the main cost levers; duration controls must preserve enough
+package-family cages. Horizontal cell budget, domain, output cadence, and full
+output volume are the main cost levers; duration controls must preserve enough
 model time for meaningful evolution.
 
 ### Pre-Run Configuration Validation
@@ -165,24 +166,25 @@ or silently patching bad input into something packageable.
 Why now: configurable controls need trust boundaries before they become normal
 Build workflow.
 
-### Deep-Convection Configuration Validation Across Soundings
+### Deep-Convection Candidate Validation Across Soundings
 
-Goal: keep the triggered deep-potential observed-sounding recipe first-class
-while measuring where its current configuration is run-ready, caveated, or
+Goal: keep severe/deep-convection candidate stories first-class while measuring
+where current observed-sounding configurations are run-ready, caveated, or
 misleading.
 
-Scope: validate complete observed-wind requirements, storm-scale box choices,
-duration, horizontal cell budget, domain size, output cadence, diagnostic set,
-expected fields, expected cost/runtime/output volume, larger-compute suitability notes, and
-candidate-provenance copy across selected observed soundings. Separate
-package/run/ingest smoke checks from science outcomes.
+Scope: validate complete observed-wind requirements, duration, horizontal cell
+budget, domain size, output cadence, full expected fields,
+cost/runtime/output-volume notes, larger-compute suitability notes, numeric
+surface-forcing provenance, and candidate-provenance copy across selected
+observed soundings. Separate package/run/ingest smoke checks from science
+outcomes.
 
-Non-goals: removing the deep-convection path, exposing raw trigger controls,
-adding trigger types, or treating a smoke run as evidence that a specific
-observed sounding should produce deep convection.
+Non-goals: adding artificial atmospheric triggers, exposing raw trigger controls,
+or treating a smoke run as evidence that a specific observed sounding should
+produce deep convection.
 
-Why now: deep-convection packaging exists and is useful, but the trust language
-must stay honest while configuration coverage expands.
+Why now: deep-convection screening is useful, but the trust language must stay
+honest while observed-sounding configuration coverage expands.
 
 ### Surface Sensible/Latent Heat Flux Control Validation
 

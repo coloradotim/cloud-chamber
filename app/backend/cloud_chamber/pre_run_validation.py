@@ -9,6 +9,7 @@ from cloud_chamber.cm1_input_contract import (
     RunRecipe,
     assumption_mode_for_run_recipe,
     assumption_set_id_for_run_recipe,
+    has_complete_rendered_observed_wind_profile,
     recipe_caveats_for_run_recipe,
     recipe_display_name_for_run_recipe,
     recipe_id_for_run_recipe,
@@ -49,7 +50,13 @@ def build_pre_run_validation_report(
         field for field in required_outputs if field not in set(contract.expected_outputs)
     ]
     alignment = _hypothesis_recipe_alignment(story, contract.run_recipe)
+    input_validation = _input_validation_payload(contract.observed_sounding, contract)
     blocking_errors = list(alignment["blocking_errors"])
+    if input_validation["observed_wind_profile"] == "missing_required":
+        blocking_errors.append(
+            "Observed-sounding runs require a complete finite observed u/v wind profile "
+            "for every input_sounding level."
+        )
     caveats = _dedupe(
         [
             *contract.run_configuration.caveats,
@@ -76,7 +83,7 @@ def build_pre_run_validation_report(
             "missing_assumptions": alignment["missing_assumptions"],
             "missing_outputs": missing_outputs,
         },
-        "input_validation": _input_validation_payload(contract.observed_sounding, contract),
+        "input_validation": input_validation,
         "run_shape_validation": _run_shape_validation_payload(contract),
         "forcing_validation": _forcing_validation_payload(contract),
         "output_validation": {
@@ -179,37 +186,18 @@ def _hypothesis_recipe_alignment(
             "caveats": [],
         }
     if story in DEEP_CONVECTION_STORIES:
-        if run_recipe == RunRecipe.TRIGGERED_DEEP_POTENTIAL:
-            return {
-                "status": "aligned",
-                "reasons": [
-                    "Deep-convection hypothesis is paired with the triggered deep-potential recipe."
-                ],
-                "missing_assumptions": [],
-                "blocking_errors": [],
-                "caveats": [],
-            }
         return {
-            "status": "blocked",
-            "reasons": ["Deep-convection hypothesis is paired with an untriggered/shallow recipe."],
-            "missing_assumptions": ["triggered_deep_potential_warm_bubble_v1"],
-            "blocking_errors": [
-                "Selected run recipe does not test this deep-convection hypothesis."
-            ],
-            "caveats": [],
-        }
-    if story in NORMAL_EVOLUTION_STORIES and run_recipe == RunRecipe.TRIGGERED_DEEP_POTENTIAL:
-        return {
-            "status": "blocked",
+            "status": "partial",
             "reasons": [
-                "Normal-evolution hypothesis is paired with an explicitly triggered recipe."
+                "Deep-convection ingredients can be tested only as the selected run evolves "
+                "under the configured lower-boundary forcing."
             ],
-            "missing_assumptions": ["normal_evolution_without_explicit_trigger"],
-            "blocking_errors": [
-                "Selected triggered recipe would make comparison metadata misleading "
-                "for this hypothesis."
+            "missing_assumptions": [],
+            "blocking_errors": [],
+            "caveats": [
+                "deep_convection_outcome_depends_on_surface_forcing_duration_domain_and_resolution",
+                "differential_surface_initiation_is_tracked_in_issue_307",
             ],
-            "caveats": [],
         }
     if story == "humid_rainy_candidate":
         return {
@@ -291,12 +279,18 @@ def _input_validation_payload(
             "model_bottom_elevation": "generated_reference",
             "caveats": [],
         }
-    wind_required = contract.run_recipe == RunRecipe.TRIGGERED_DEEP_POTENTIAL
-    wind_status = (
-        ("present_required" if wind_required else "present_optional")
-        if observed_sounding.wind_handling
-        else ("missing_required" if wind_required else "optional_missing")
+    wind_required = contract.run_recipe == RunRecipe.UNTRIGGERED_OBSERVED_EVOLUTION
+    complete_wind_profile = has_complete_rendered_observed_wind_profile(
+        observed_sounding,
+        defaults=contract.cloud_scale_defaults,
     )
+    if wind_required:
+        wind_status = "present_required" if complete_wind_profile else "missing_required"
+    else:
+        wind_status = "present_optional" if complete_wind_profile else "optional_missing"
+    caveats = list(observed_sounding.validation.caveats)
+    if wind_status == "missing_required":
+        caveats.append("complete_observed_wind_profile_required_for_input_sounding")
     return {
         "observed_temperature_profile": "present",
         "observed_moisture_profile": "present",
@@ -304,7 +298,7 @@ def _input_validation_payload(
         "model_bottom_elevation": (
             "present" if observed_sounding.model_bottom_elevation_m_msl is not None else "missing"
         ),
-        "caveats": list(observed_sounding.validation.caveats),
+        "caveats": _dedupe(caveats),
     }
 
 
@@ -376,28 +370,28 @@ def _run_shape_from_payload(
     }
 
 
-def _forcing_validation_payload(contract: CM1InputContract) -> dict[str, str]:
-    return _forcing_validation_for_recipe(contract.run_recipe.value)
+def _forcing_validation_payload(contract: CM1InputContract) -> dict[str, Any]:
+    payload: dict[str, Any] = dict(_forcing_validation_for_recipe(contract.run_recipe.value))
+    surface_fluxes = contract.recipe_assumptions.get("surface_fluxes")
+    if isinstance(surface_fluxes, dict):
+        payload["surface_fluxes"] = surface_fluxes
+    return payload
 
 
-def _forcing_validation_for_recipe(run_recipe: str) -> dict[str, str]:
-    if run_recipe == RunRecipe.TRIGGERED_DEEP_POTENTIAL.value:
-        return {
-            "trigger": "warm_bubble_required_for_triggered_deep_potential",
-            "surface_fluxes": "disabled",
-            "radiation": "disabled",
-            "large_scale_forcing": "none",
-        }
+def _forcing_validation_for_recipe(run_recipe: str) -> dict[str, Any]:
     if run_recipe == RunRecipe.UNTRIGGERED_OBSERVED_EVOLUTION.value:
         return {
             "trigger": "none",
-            "surface_fluxes": "current_recipe_default_caveated",
+            "surface_fluxes": {
+                "mode": "constant_uniform_surface_flux_proxy",
+                "status": "selected_values_unavailable_before_configuration_resolves",
+            },
             "radiation": "disabled",
             "large_scale_forcing": "none",
         }
     return {
         "trigger": "none",
-        "surface_fluxes": "current_recipe_default",
+        "surface_fluxes": {"mode": "current_recipe_default"},
         "radiation": "disabled",
         "large_scale_forcing": "not_supported_v1",
     }
@@ -407,12 +401,12 @@ def _required_outputs_for_story(
     story: str | None,
     run_recipe: RunRecipe,
 ) -> list[str]:
-    if story in DEEP_CONVECTION_STORIES or run_recipe == RunRecipe.TRIGGERED_DEEP_POTENTIAL:
-        return ["qc", "w", "qr", "rain", "dbz", "updraft_helicity"]
+    if story in DEEP_CONVECTION_STORIES:
+        return ["qv", "qc", "w", "qr", "rain", "dbz", "hfx", "lhfx", "updraft_helicity"]
     if story == "humid_rainy_candidate":
-        return ["qv", "qc", "w", "qr", "rain", "dbz"]
+        return ["qv", "qc", "w", "qr", "rain", "dbz", "hfx", "lhfx"]
     if run_recipe == RunRecipe.UNTRIGGERED_OBSERVED_EVOLUTION:
-        return ["qv", "qc", "w"]
+        return ["qv", "qc", "w", "hfx", "lhfx"]
     return ["qc", "w"]
 
 
@@ -485,10 +479,10 @@ def _run_recipe(value: str) -> RunRecipe:
 
 
 def _run_recipe_display_name(run_recipe: str) -> str:
-    if run_recipe == RunRecipe.TRIGGERED_DEEP_POTENTIAL.value:
-        return "Triggered Deep-Potential Experiment"
+    if run_recipe == "triggered_deep_potential":
+        return "Removed Triggered Deep-Potential Path"
     if run_recipe == RunRecipe.UNTRIGGERED_OBSERVED_EVOLUTION.value:
-        return "Untriggered Observed Evolution"
+        return "Observed Surface-Forced Evolution"
     return "Generated Lower-Atmosphere Reference"
 
 

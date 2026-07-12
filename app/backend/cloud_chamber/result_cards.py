@@ -301,31 +301,21 @@ def _card_from_metadata(
 
 
 def _default_result_card_name(metadata: ResultMetadata) -> str:
-    if metadata.run_recipe == "triggered_deep_potential":
-        station_name = _observed_sounding_value(metadata.observed_sounding, "station_name")
-        station_id = _observed_sounding_value(metadata.observed_sounding, "station_id")
-        if station_name:
-            return f"Triggered Deep-Potential Experiment — {station_name}"
-        if station_id:
-            return f"Triggered Deep-Potential Experiment — {station_id}"
-        return "Triggered Deep-Potential Experiment"
     if metadata.input_source == "observed_sounding":
         recipe_name = metadata.recipe_display_name or metadata.run_recipe_display_name
         station_name = _observed_sounding_value(metadata.observed_sounding, "station_name")
         station_id = _observed_sounding_value(metadata.observed_sounding, "station_id")
         if station_name:
-            return f"{recipe_name or 'Untriggered Observed Evolution'} — {station_name}"
+            return f"{recipe_name or 'Observed Surface-Forced Evolution'} — {station_name}"
         if station_id:
-            return f"{recipe_name or 'Untriggered Observed Evolution'} — {station_id}"
-        return recipe_name or "Untriggered Observed Evolution"
+            return f"{recipe_name or 'Observed Surface-Forced Evolution'} — {station_id}"
+        return recipe_name or "Observed Surface-Forced Evolution"
     return metadata.scenario_name or metadata.scenario_id
 
 
 def _display_scenario_name(metadata: ResultMetadata) -> str | None:
-    if metadata.run_recipe == "triggered_deep_potential" and metadata.run_recipe_display_name:
-        return metadata.run_recipe_display_name
     if metadata.input_source == "observed_sounding":
-        return metadata.recipe_display_name or "Untriggered Observed Evolution"
+        return metadata.recipe_display_name or "Observed Surface-Forced Evolution"
     return metadata.scenario_name
 
 

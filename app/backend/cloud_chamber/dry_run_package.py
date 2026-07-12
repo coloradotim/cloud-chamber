@@ -263,7 +263,7 @@ def _user_facing_validation_error(message: str) -> str:
         "horizontal_cell_count": "horizontal cell count",
         "domain_size": "domain size",
         "output_cadence": "output cadence",
-        "diagnostic_set": "diagnostic set",
+        "diagnostic_set": "output field density",
     }
     for internal, label in replacements.items():
         message = message.replace(internal, label)
@@ -355,6 +355,8 @@ def _dry_run_report_payload(
         "variant_metadata": {
             "moisture_profile": contract.moisture_profile,
             "stability_profile": contract.stability_profile,
+            "surface_flux_mode": contract.run_configuration.surface_flux_mode,
+            "surface_flux_summary": contract.run_configuration.surface_flux_summary,
             "sounding_source": (
                 "observed_igra_station_text"
                 if contract.observed_sounding is not None
@@ -470,20 +472,15 @@ def _run_configuration_summary(contract: CM1InputContract) -> dict[str, object]:
     estimated_compute_multiplier = grid_multiplier * timestep_multiplier * runtime_multiplier
     estimated_output_volume_multiplier = grid_multiplier * output_frame_multiplier
     is_smoke = contract.run_configuration.mode == "smoke"
-    is_triggered_deep_potential = contract.run_recipe.value == "triggered_deep_potential"
     cost_warning = (
-        _triggered_deep_potential_cost_warning(contract.run_configuration)
-        if is_triggered_deep_potential
+        (
+            "Short smoke mode checks package health and CM1 startup behavior; "
+            "it is not long enough to evaluate normal atmospheric evolution."
+        )
+        if is_smoke
         else (
-            (
-                "Short smoke mode checks package health and CM1 startup behavior; "
-                "it is not long enough to evaluate normal atmospheric evolution."
-            )
-            if is_smoke
-            else (
-                "Configuration cost depends on duration, horizontal cells, domain, cadence, "
-                "and diagnostic set. Review the CM1-facing values before launch."
-            )
+            "Configuration cost depends on duration, horizontal cells, domain, cadence, "
+            "and full output volume. Review the CM1-facing values before launch."
         )
     )
     return {
@@ -495,6 +492,14 @@ def _run_configuration_summary(contract: CM1InputContract) -> dict[str, object]:
         "domain_size": contract.run_configuration.domain_size,
         "output_cadence": contract.run_configuration.output_cadence,
         "diagnostic_set": contract.run_configuration.diagnostic_set,
+        "surface_heat_flux_k_m_s": contract.run_configuration.surface_heat_flux_k_m_s,
+        "surface_moisture_flux_g_g_m_s": (contract.run_configuration.surface_moisture_flux_g_g_m_s),
+        "surface_flux_mode": contract.run_configuration.surface_flux_mode,
+        "surface_flux_summary": contract.run_configuration.surface_flux_summary,
+        "surface_flux_cm1_values": contract.run_configuration.surface_flux_cm1_values.model_dump(
+            mode="json"
+        ),
+        "surface_flux_caveats": list(contract.run_configuration.surface_flux_caveats),
         "runtime_seconds": defaults.runtime_seconds,
         "output_cadence_seconds": defaults.output_cadence_seconds,
         "expected_output_frames": output_frames,
@@ -506,12 +511,7 @@ def _run_configuration_summary(contract: CM1InputContract) -> dict[str, object]:
         "dz_m": defaults.vertical_spacing_m,
         "model_top_m": defaults.vertical_extent_km * 1000.0,
         "time_step_seconds": defaults.time_step_seconds,
-        "time_step_note": (
-            "Triggered deep-potential runs use a larger solver timestep for the storm-scale "
-            "idealized-trigger setup."
-            if is_triggered_deep_potential
-            else "CM1 solver timestep is resolved from the selected run configuration."
-        ),
+        "time_step_note": "CM1 solver timestep is resolved from the selected run configuration.",
         "grid_cell_count": grid_cells,
         "grid_cell_multiplier_vs_default": round(grid_multiplier, 2),
         "time_step_multiplier_vs_default": round(timestep_multiplier, 2),
@@ -522,41 +522,28 @@ def _run_configuration_summary(contract: CM1InputContract) -> dict[str, object]:
         ),
         "cost_warning": cost_warning,
         "validation_note": (
-            "Triggered deep-potential runs use a wider idealized domain, observed winds, "
-            "and a warm-bubble trigger. Manual CM1 smoke evidence applies to the recipe; "
-            "each observed sounding remains an experiment until CM1 output is inspected."
-            if is_triggered_deep_potential
+            "Short smoke mode is separated from science runs; use short evolution or longer "
+            "configurations for meteorological evolution."
+            if is_smoke
             else (
-                "Short smoke mode is separated from science runs; use short evolution or longer "
-                "configurations for meteorological evolution."
-                if is_smoke
-                else (
-                    "Run configuration preserves explicit duration, horizontal cell count, "
-                    "domain, cadence, and diagnostic-set choices."
-                )
+                "Run configuration preserves explicit duration, horizontal cell count, "
+                "domain, cadence, full-output requests, and numeric surface-forcing values."
             )
         ),
     }
 
 
 def _run_recipe_mapping_summary(contract: CM1InputContract) -> str:
-    if contract.run_recipe.value == "triggered_deep_potential":
-        return (
-            "observed IGRA external input_sounding profile with observed u/v winds; "
-            "triggered deep-potential recipe uses CM1 isnd=7, testcase=0, iinit=3 "
-            "three-warm-bubble line initiation, a storm-scale idealized domain, NetCDF "
-            "output, rain output, reflectivity output, vorticity output, and "
-            "updraft-helicity output"
-        )
     if contract.observed_sounding is not None:
         return (
-            "observed IGRA external input_sounding profile; untriggered observed-sounding "
-            "evolution v0 uses CM1 isnd=7, no warm-bubble trigger, configured duration, "
-            "configured domain and output cadence, current surface-flux defaults, disabled "
-            "radiation, no large-scale forcing, NetCDF output, cloud water, water vapor, "
-            "vertical velocity, rain-water-aloft, surface-rain, and reflectivity output "
-            "where available; observed wind direction/speed is converted to u/v and "
-            "applied through CM1 input_sounding handling"
+            "observed IGRA external input_sounding profile; the run uses CM1 isnd=7, "
+            "configured duration, configured domain and output cadence, numeric constant "
+            "uniform lower-boundary heat/moisture flux proxy settings, disabled radiation, "
+            "no large-scale forcing, NetCDF output, cloud water, water vapor, vertical "
+            "velocity, rain-water-aloft, surface-rain, reflectivity, vorticity, "
+            "updraft-helicity, and surface-flux output where available; observed "
+            "wind direction/speed is converted to u/v and applied through CM1 input_sounding "
+            "handling"
         )
     return (
         "external input_sounding profile; namelist settings remain inherited from "
@@ -566,36 +553,15 @@ def _run_recipe_mapping_summary(contract: CM1InputContract) -> str:
 
 
 def _cm1_mapping_status(contract: CM1InputContract) -> str:
-    if contract.run_recipe.value == "triggered_deep_potential":
-        return (
-            "CM1-ready triggered deep-potential run with manual CM1 smoke evidence "
-            "for the recipe; each observed sounding remains an experiment"
-        )
     if contract.observed_sounding is not None:
         return (
-            "CM1-ready untriggered observed-sounding evolution v0 run with explicit "
-            "normal-evolution assumptions; still pending case-specific local/manual "
-            "scientific interpretation"
+            "CM1-ready observed-sounding run with explicit uniform lower-boundary "
+            "heat/moisture forcing assumptions; still pending case-specific local/manual "
+            "scientific interpretation after CM1 output is inspected"
         )
     return (
         "CM1-ready generated-reference run; still pending local/manual smoke-run "
         "scientific validation"
-    )
-
-
-def _triggered_deep_potential_cost_warning(run_configuration: object) -> str:
-    mode = getattr(run_configuration, "mode", "")
-    domain = getattr(run_configuration, "domain_size", "storm_120km")
-    cadence = getattr(run_configuration, "output_cadence", "standard_15min")
-    if mode == "smoke":
-        return (
-            "Smoke mode checks run-input health with the triggered "
-            "storm-scale setup; it is not a science-duration result."
-        )
-    return (
-        "Triggered deep-potential runs use a storm-scale domain. Review expected "
-        f"cost/runtime/output volume for {domain} and {cadence}; larger configurations "
-        "may be better suited to larger compute."
     )
 
 
