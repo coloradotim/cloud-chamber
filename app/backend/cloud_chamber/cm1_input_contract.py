@@ -33,7 +33,7 @@ class GeneratedFileRole(StrEnum):
 
 class RunRecipe(StrEnum):
     GENERATED_REFERENCE_LOWER_ATMOSPHERE = "generated_reference_lower_atmosphere"
-    UNTRIGGERED_OBSERVED_EVOLUTION = "untriggered_observed_evolution"
+    OBSERVED_SURFACE_FORCED_EVOLUTION = "observed_surface_forced_evolution"
 
 
 REMOVED_TRIGGERED_DEEP_POTENTIAL_RECIPE = "triggered_deep_potential"
@@ -281,13 +281,13 @@ def _resolve_run_recipe(
         except ValueError as exc:
             raise ValueError(f"Unknown run recipe: {run_recipe}") from exc
     if observed_sounding is not None:
-        return RunRecipe.UNTRIGGERED_OBSERVED_EVOLUTION
+        return RunRecipe.OBSERVED_SURFACE_FORCED_EVOLUTION
     return RunRecipe.GENERATED_REFERENCE_LOWER_ATMOSPHERE
 
 
 def _run_recipe_display_name(run_recipe: RunRecipe) -> str:
     match run_recipe:
-        case RunRecipe.UNTRIGGERED_OBSERVED_EVOLUTION:
+        case RunRecipe.OBSERVED_SURFACE_FORCED_EVOLUTION:
             return "Observed Surface-Forced Evolution"
         case RunRecipe.GENERATED_REFERENCE_LOWER_ATMOSPHERE:
             return "Generated Lower-Atmosphere Reference"
@@ -296,7 +296,7 @@ def _run_recipe_display_name(run_recipe: RunRecipe) -> str:
 def recipe_id_for_run_recipe(run_recipe: str | RunRecipe) -> str:
     resolved = _coerce_run_recipe(run_recipe)
     match resolved:
-        case RunRecipe.UNTRIGGERED_OBSERVED_EVOLUTION:
+        case RunRecipe.OBSERVED_SURFACE_FORCED_EVOLUTION:
             return "observed_surface_forced_evolution_v0"
         case RunRecipe.GENERATED_REFERENCE_LOWER_ATMOSPHERE:
             return "generated_reference_lower_atmosphere_v1"
@@ -307,7 +307,7 @@ def recipe_id_for_run_recipe(run_recipe: str | RunRecipe) -> str:
 def recipe_display_name_for_run_recipe(run_recipe: str | RunRecipe) -> str:
     resolved = _coerce_run_recipe(run_recipe)
     match resolved:
-        case RunRecipe.UNTRIGGERED_OBSERVED_EVOLUTION:
+        case RunRecipe.OBSERVED_SURFACE_FORCED_EVOLUTION:
             return "Observed Surface-Forced Evolution v0"
         case RunRecipe.GENERATED_REFERENCE_LOWER_ATMOSPHERE:
             return "Generated Lower-Atmosphere Reference"
@@ -318,7 +318,7 @@ def recipe_display_name_for_run_recipe(run_recipe: str | RunRecipe) -> str:
 def assumption_set_id_for_run_recipe(run_recipe: str | RunRecipe) -> str:
     resolved = _coerce_run_recipe(run_recipe)
     match resolved:
-        case RunRecipe.UNTRIGGERED_OBSERVED_EVOLUTION:
+        case RunRecipe.OBSERVED_SURFACE_FORCED_EVOLUTION:
             return "observed_surface_forced_evolution_v0_assumptions"
         case RunRecipe.GENERATED_REFERENCE_LOWER_ATMOSPHERE:
             return "generated_reference_lower_atmosphere_v1"
@@ -329,8 +329,8 @@ def assumption_set_id_for_run_recipe(run_recipe: str | RunRecipe) -> str:
 def assumption_mode_for_run_recipe(run_recipe: str | RunRecipe) -> str:
     resolved = _coerce_run_recipe(run_recipe)
     match resolved:
-        case RunRecipe.UNTRIGGERED_OBSERVED_EVOLUTION:
-            return "surface_forced_observed_evolution"
+        case RunRecipe.OBSERVED_SURFACE_FORCED_EVOLUTION:
+            return "observed_surface_forced_evolution"
         case RunRecipe.GENERATED_REFERENCE_LOWER_ATMOSPHERE:
             return "generated_reference"
         case None:
@@ -340,7 +340,7 @@ def assumption_mode_for_run_recipe(run_recipe: str | RunRecipe) -> str:
 def required_output_fields_for_run_recipe(run_recipe: str | RunRecipe) -> tuple[str, ...]:
     resolved = _coerce_run_recipe(run_recipe)
     match resolved:
-        case RunRecipe.UNTRIGGERED_OBSERVED_EVOLUTION:
+        case RunRecipe.OBSERVED_SURFACE_FORCED_EVOLUTION:
             return ("qv", "qc", "w", "qr", "rain", "dbz", "hfx", "lhfx")
         case RunRecipe.GENERATED_REFERENCE_LOWER_ATMOSPHERE:
             return ("qv", "qc", "w", "qr", "rain", "dbz", "hfx", "lhfx")
@@ -351,7 +351,7 @@ def required_output_fields_for_run_recipe(run_recipe: str | RunRecipe) -> tuple[
 def recipe_caveats_for_run_recipe(run_recipe: str | RunRecipe) -> tuple[str, ...]:
     resolved = _coerce_run_recipe(run_recipe)
     match resolved:
-        case RunRecipe.UNTRIGGERED_OBSERVED_EVOLUTION:
+        case RunRecipe.OBSERVED_SURFACE_FORCED_EVOLUTION:
             return (
                 "No artificial atmospheric trigger is applied.",
                 (
@@ -404,14 +404,14 @@ def _run_caveats(
     run_configuration: RunConfiguration,
 ) -> tuple[str, ...]:
     caveats = list(run_configuration.caveats)
-    if run_recipe == RunRecipe.UNTRIGGERED_OBSERVED_EVOLUTION:
+    if run_recipe == RunRecipe.OBSERVED_SURFACE_FORCED_EVOLUTION:
         caveats.extend(recipe_caveats_for_run_recipe(run_recipe))
         return tuple(caveats)
     return tuple(caveats)
 
 
 def _manual_validation_status(run_recipe: RunRecipe) -> str:
-    if run_recipe == RunRecipe.UNTRIGGERED_OBSERVED_EVOLUTION:
+    if run_recipe == RunRecipe.OBSERVED_SURFACE_FORCED_EVOLUTION:
         return "observed_surface_forced_evolution_v0_metadata_only"
     return "current_run_recipe_path"
 
@@ -447,7 +447,7 @@ def _recipe_assumptions(
             "selection": run_configuration.diagnostic_set,
         },
     }
-    if run_recipe == RunRecipe.UNTRIGGERED_OBSERVED_EVOLUTION:
+    if run_recipe == RunRecipe.OBSERVED_SURFACE_FORCED_EVOLUTION:
         return {
             **configured_shape,
             "trigger": {

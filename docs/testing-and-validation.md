@@ -85,8 +85,9 @@ Future analyzer hypothesis and predicted-output signature tests should follow
 [contracts/analyzer-hypothesis-output-signature.md](contracts/analyzer-hypothesis-output-signature.md):
 no predicted signature without an explicit assumption set, missing output fields
 produce `inconclusive` or field-level `unavailable` states rather than failed
-predictions, normal evolution remains distinct from triggered deep potential,
-and `qr`, surface `rain`, and `dbz` are evaluated separately.
+predictions, observed surface-forced hypotheses remain distinct from future
+differential-forcing and radiation/place-time hypotheses, and `qr`, surface
+`rain`, and `dbz` are evaluated separately.
 Future run-recipe mapping tests should follow
 [contracts/run-recipe-and-story-mapping.md](contracts/run-recipe-and-story-mapping.md):
 story IDs must resolve to compatible, partially testable, blocked, or future

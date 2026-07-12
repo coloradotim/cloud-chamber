@@ -980,9 +980,9 @@ def _candidate_hypothesis_comparison(
         return CandidateHypothesisComparison(
             screened_as=screened_as,
             ran_as=ran_as,
-            cm1_outcome="Unable to evaluate because result diagnostics are unavailable.",
-            match_status="unable_to_evaluate",
-            match_status_label="Unable to evaluate",
+            cm1_outcome="Inconclusive because result diagnostics are unavailable.",
+            match_status="inconclusive",
+            match_status_label="Inconclusive",
             caveats=[
                 "candidate_screening_is_a_pre_run_hypothesis",
                 "result_diagnostics_unavailable",
@@ -1000,8 +1000,8 @@ def _candidate_hypothesis_comparison(
             ran_as=ran_as,
             cm1_outcome=science_summary.cm1_outcome
             or "CM1 outcome was ingested, but no deep-convection comparison is available.",
-            match_status="unable_to_evaluate",
-            match_status_label="Unable to evaluate",
+            match_status="not_comparable",
+            match_status_label="Not comparable",
             evidence=evidence,
             caveats=_dedupe_strings(
                 [*caveats, "candidate_story_not_in_deep_convection_v1_rule_set"]
@@ -1012,9 +1012,9 @@ def _candidate_hypothesis_comparison(
             screened_as=screened_as,
             ran_as=ran_as,
             cm1_outcome=science_summary.cm1_outcome
-            or "Unable to evaluate because required cloud or updraft fields are missing.",
-            match_status="unable_to_evaluate",
-            match_status_label="Unable to evaluate",
+            or "Inconclusive because required cloud or updraft fields are missing.",
+            match_status="inconclusive",
+            match_status_label="Inconclusive",
             evidence=evidence,
             caveats=_dedupe_strings([*caveats, "missing_qc_or_w_fields"]),
         )
@@ -1022,17 +1022,32 @@ def _candidate_hypothesis_comparison(
     deep_cloud = science_summary.deep_cloud_formed is True
     strong_updraft = science_summary.strong_updraft_formed is True
     rain_water_aloft_detected = diagnostics.rain.available and diagnostics.rain.present
-    if not deep_cloud and not strong_updraft:
-        match_status = "did_not_match"
-    elif deep_cloud and strong_updraft and rain_water_aloft_detected:
-        match_status = "matched"
+    missing_comparison_fields = [
+        field
+        for field in result.missing_required_output_fields
+        if field in {"qc", "w", "qr", "rain", "dbz", "hfx", "lhfx"}
+    ]
+    if (
+        deep_cloud
+        and strong_updraft
+        and rain_water_aloft_detected
+        and not missing_comparison_fields
+    ):
+        match_status = "supported"
     elif deep_cloud or strong_updraft or rain_water_aloft_detected:
-        match_status = "partially_matched"
+        match_status = "partially_supported"
     else:
-        match_status = "did_not_match"
+        match_status = "inconclusive"
 
     if not diagnostics.rain.available:
         caveats.append("rain_water_aloft_field_missing_or_unavailable")
+    if missing_comparison_fields:
+        caveats.append(
+            "required_output_fields_missing_for_deep_candidate_comparison:"
+            + ",".join(missing_comparison_fields)
+        )
+    if match_status == "inconclusive":
+        caveats.append("no_storm_under_selected_surface_forcing_is_not_failed_potential")
 
     return CandidateHypothesisComparison(
         screened_as=screened_as,
@@ -1083,7 +1098,7 @@ def _candidate_story_label(story: str | None) -> str | None:
 
 
 def _display_run_recipe(run_recipe: str | None) -> str:
-    if run_recipe == "untriggered_observed_evolution":
+    if run_recipe == "observed_surface_forced_evolution":
         return "Observed Surface-Forced Evolution"
     return "CM1 run"
 
@@ -1106,15 +1121,19 @@ def _deep_candidate_cm1_outcome(
         return (
             "Some deep-candidate evidence appeared, but the full deep-convection signature did not."
         )
-    return "Deep convection was not detected by current cloud-top and updraft thresholds."
+    return (
+        "Deep convection did not occur under this run configuration by current "
+        "cloud-top and updraft thresholds; this does not disprove the sounding's "
+        "deep-convection potential."
+    )
 
 
 def _match_status_label(match_status: str) -> str:
     return {
-        "matched": "Matched",
-        "partially_matched": "Partially matched",
-        "did_not_match": "Did not match",
-        "unable_to_evaluate": "Unable to evaluate",
+        "supported": "Supported",
+        "partially_supported": "Partially supported",
+        "inconclusive": "Inconclusive",
+        "not_comparable": "Not comparable",
     }.get(match_status, match_status.replace("_", " ").title())
 
 

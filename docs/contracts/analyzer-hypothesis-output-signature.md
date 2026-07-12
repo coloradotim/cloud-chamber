@@ -121,7 +121,7 @@ future forcing modes:
 - `future_differential_surface_forcing`: spatially varying heating/moisture
   forcing for initiation, boundaries, gradients, or patch experiments. This is
   tracked separately from issue #305.
-- `place_time_radiative_evolution`: radiation/place-time assumptions; future
+- `radiation_place_time_evolution`: radiation/place-time assumptions; future
   contract for fog, nocturnal, winter, and diurnal hypotheses.
 
 ## Predicted Output Signature
@@ -198,7 +198,7 @@ recommended_run_recipes:
     label: string
     run_recipe:
       generated_reference_lower_atmosphere
-      | untriggered_observed_evolution
+      | observed_surface_forced_evolution
       | future
     run_configuration:
       duration_seconds: number | null
@@ -220,8 +220,8 @@ recommended_run_recipes:
 Examples:
 
 - A shallow-cumulus hypothesis may be partially testable with the current
-  observed-sounding normal-evolution recipe if `qc` and `w` are enabled and the
-  run is long enough.
+  observed surface-forced recipe if `qc` and `w` are available and the run is
+  long enough.
 - A humid/rainy hypothesis is only testable for rain behavior when `qr`,
   surface `rain`, and/or `dbz` outputs are enabled according to the predicted
   signature.
@@ -305,7 +305,8 @@ Tests for the future implementation should prove:
 - hypotheses cannot include predicted signatures without assumption sets;
 - missing required output fields produce `inconclusive` or field-level
   `unavailable`, not a failed prediction;
-- normal-evolution and triggered-potential hypotheses remain separate;
+- observed surface-forced hypotheses remain distinct from future differential
+  forcing and radiation/place-time hypotheses;
 - `qr`, surface `rain`, and `dbz` are labeled and evaluated separately;
 - the browser receives bounded backend JSON and does not parse raw IGRA, ZIP, or
   NetCDF data;

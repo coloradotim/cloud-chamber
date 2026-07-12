@@ -199,7 +199,7 @@ validation remain backend-owned.
 
 Observed-sounding packages extend the same dry-run package contract rather than
 creating separate workflows by story. The package records
-`run_recipe = untriggered_observed_evolution` as the current backend routing
+`run_recipe = observed_surface_forced_evolution` as the current backend routing
 value, `input_source = observed_sounding`, numeric uniform surface heat/moisture
 flux selections, expected full output fields, run caveats, and any
 candidate-screening payload on the run manifest, case manifest, and dry-run
@@ -212,13 +212,13 @@ after CM1 completes. Differential surface heating/moisture or convergence-like
 initiation is future work rather than a hidden current trigger.
 
 Observed surface-forced evolution v0 is the first concrete run configuration
-for lower-atmosphere observed-sounding hypotheses. Package generation keeps
-the current CM1 routing value `run_recipe = untriggered_observed_evolution`, but
-also persists `recipe_id = observed_surface_forced_evolution_v0`,
-`assumption_set_id`, `assumption_mode`, recipe assumptions, required output
-fields, and recipe caveats. Ingest copies the same fields into result metadata
-and computes `missing_required_output_fields` from the actual NetCDF variables
-and coordinates, so future predicted-vs-actual comparison can distinguish
+for observed-sounding hypotheses. Package generation records
+`run_recipe = observed_surface_forced_evolution`,
+`recipe_id = observed_surface_forced_evolution_v0`, `assumption_set_id`,
+`assumption_mode`, recipe assumptions, required output fields, and recipe
+caveats. Ingest copies the same fields into result metadata and computes
+`missing_required_output_fields` from the actual NetCDF variables and
+coordinates, so future predicted-vs-actual comparison can distinguish
 scientific disagreement from missing output support.
 
 ## Suggested Stack
@@ -311,12 +311,14 @@ timestep is not a normal v1 control. Defaults must expose their derived
 CM1-facing values in advanced metadata so dry-run reports and Build UI can show
 exactly what will be written without requiring raw namelist editing.
 
-Current product defaults are deliberately different by run direction:
-lower-atmosphere scenarios use a six-hour local-domain science run, uploaded
-observed-sounding normal-evolution runs use a wider shallow-domain default, and
-deep-convection observed-sounding runs use a storm-scale domain with richer
-fields. One-hour smoke mode is an explicit package-health check, not the default
-science path.
+Current product defaults are deliberately different by source path:
+generated lower-atmosphere references use a six-hour local-domain science run,
+and uploaded or cached observed soundings use observed surface-forced evolution
+with numeric uniform surface heat/moisture forcing, complete observed
+temperature/moisture/wind input, full output fields, and a wider default domain.
+Deep-convection candidates are candidate stories under that run configuration,
+not a separate hidden package family or storm-domain route. One-hour smoke mode
+is an explicit package-health check, not the default science path.
 
 The first quick-look validation run, `dry-run-quicklook-les-shallowcu-20260522151536`, preserved those settings, completed locally, and ingested 13 model-output time steps over 10800 seconds. Diagnostics still reported cloud formation, vertical motion, and rain, so the architecture can treat this runtime-only quick-look preset as the first validated shorter Baseline Shallow Cumulus variant.
 

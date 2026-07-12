@@ -180,7 +180,7 @@ def test_result_card_created_from_ingested_metadata(tmp_path: Path) -> None:
     assert card.output_file_summary.time_steps == 1
 
 
-def test_result_card_preserves_untriggered_observed_recipe_metadata(tmp_path: Path) -> None:
+def test_result_card_preserves_observed_surface_forced_recipe_metadata(tmp_path: Path) -> None:
     settings, result_id, _run_dir = create_completed_result(
         tmp_path,
         run_id="run-observed-recipe-card",
@@ -190,12 +190,12 @@ def test_result_card_preserves_untriggered_observed_recipe_metadata(tmp_path: Pa
             "valid_time_utc": "2026-06-30T00:00:00Z",
         },
         package_updates={
-            "run_recipe": "untriggered_observed_evolution",
+            "run_recipe": "observed_surface_forced_evolution",
             "run_recipe_display_name": "Observed Surface-Forced Evolution",
             "recipe_id": "observed_surface_forced_evolution_v0",
             "recipe_display_name": "Observed Surface-Forced Evolution v0",
             "assumption_set_id": "observed_surface_forced_evolution_v0_assumptions",
-            "assumption_mode": "surface_forced_observed_evolution",
+            "assumption_mode": "observed_surface_forced_evolution",
             "recipe_assumptions": {
                 "trigger": {"mode": "none"},
                 "radiation": {"mode": "disabled"},
@@ -214,7 +214,7 @@ def test_result_card_preserves_untriggered_observed_recipe_metadata(tmp_path: Pa
     assert card.recipe_id == "observed_surface_forced_evolution_v0"
     assert card.recipe_display_name == "Observed Surface-Forced Evolution v0"
     assert card.assumption_set_id == "observed_surface_forced_evolution_v0_assumptions"
-    assert card.assumption_mode == "surface_forced_observed_evolution"
+    assert card.assumption_mode == "observed_surface_forced_evolution"
     assert card.recipe_assumptions["trigger"]["mode"] == "none"
     assert card.required_output_fields == ["qv", "qc", "w", "qr", "rain", "dbz"]
     assert card.missing_required_output_fields == ["qv", "dbz"]
@@ -239,12 +239,12 @@ def test_result_card_exposes_observed_sounding_source(tmp_path: Path) -> None:
             "valid_time_utc": "2026-06-30T00:00:00Z",
         },
         package_updates={
-            "run_recipe": "untriggered_observed_evolution",
+            "run_recipe": "observed_surface_forced_evolution",
             "run_recipe_display_name": "Observed Surface-Forced Evolution",
             "recipe_id": "observed_surface_forced_evolution_v0",
             "recipe_display_name": "Observed Surface-Forced Evolution v0",
             "assumption_set_id": "observed_surface_forced_evolution_v0_assumptions",
-            "assumption_mode": "surface_forced_observed_evolution",
+            "assumption_mode": "observed_surface_forced_evolution",
             "recipe_assumptions": {"trigger": {"mode": "none"}},
             "required_output_fields": ["qv", "qc", "w", "qr", "rain", "dbz"],
             "input_source": "observed_sounding",
@@ -280,12 +280,12 @@ def test_result_card_preserves_deep_candidate_surface_forced_identity(tmp_path: 
                 "primary_story": "supercell_environment",
                 "rank_score": 93.0,
             },
-            "run_recipe": "untriggered_observed_evolution",
+            "run_recipe": "observed_surface_forced_evolution",
             "run_recipe_display_name": "Observed Surface-Forced Evolution",
             "recipe_id": "observed_surface_forced_evolution_v0",
             "recipe_display_name": "Observed Surface-Forced Evolution v0",
             "assumption_set_id": "observed_surface_forced_evolution_v0_assumptions",
-            "assumption_mode": "surface_forced_observed_evolution",
+            "assumption_mode": "observed_surface_forced_evolution",
             "recipe_assumptions": {
                 "trigger": {"mode": "none"},
                 "surface_fluxes": {
@@ -312,7 +312,7 @@ def test_result_card_preserves_deep_candidate_surface_forced_identity(tmp_path: 
 
     assert card.name == "Observed Surface-Forced Evolution v0 — Norman, Oklahoma"
     assert card.scenario_name == "Observed Surface-Forced Evolution v0"
-    assert card.run_recipe == "untriggered_observed_evolution"
+    assert card.run_recipe == "observed_surface_forced_evolution"
     assert card.run_recipe_display_name == "Observed Surface-Forced Evolution"
     assert card.recipe_id == "observed_surface_forced_evolution_v0"
     assert card.assumption_set_id == "observed_surface_forced_evolution_v0_assumptions"
@@ -325,13 +325,13 @@ def test_result_card_preserves_deep_candidate_surface_forced_identity(tmp_path: 
         "Surface heat/moisture fluxes are constant uniform lower-boundary proxy settings.",
     ]
     assert card.manual_validation_status == "observed_surface_forced_evolution_v0_metadata_only"
-    assert "run_recipe:untriggered_observed_evolution" in card.provenance_labels
+    assert "run_recipe:observed_surface_forced_evolution" in card.provenance_labels
     assert card.candidate_screening is not None
     assert card.candidate_screening["primary_story"] == "supercell_environment"
     assert card.candidate_hypothesis_comparison is not None
     assert card.candidate_hypothesis_comparison.screened_as == "Supercell-like environment"
     assert card.candidate_hypothesis_comparison.ran_as == "Observed Surface-Forced Evolution v0"
-    assert card.candidate_hypothesis_comparison.match_status == "did_not_match"
+    assert card.candidate_hypothesis_comparison.match_status == "partially_supported"
 
 
 def test_list_get_and_result_card_serialization_round_trip(tmp_path: Path) -> None:

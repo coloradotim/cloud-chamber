@@ -279,7 +279,7 @@ def _input_validation_payload(
             "model_bottom_elevation": "generated_reference",
             "caveats": [],
         }
-    wind_required = contract.run_recipe == RunRecipe.UNTRIGGERED_OBSERVED_EVOLUTION
+    wind_required = contract.run_recipe == RunRecipe.OBSERVED_SURFACE_FORCED_EVOLUTION
     complete_wind_profile = has_complete_rendered_observed_wind_profile(
         observed_sounding,
         defaults=contract.cloud_scale_defaults,
@@ -379,7 +379,7 @@ def _forcing_validation_payload(contract: CM1InputContract) -> dict[str, Any]:
 
 
 def _forcing_validation_for_recipe(run_recipe: str) -> dict[str, Any]:
-    if run_recipe == RunRecipe.UNTRIGGERED_OBSERVED_EVOLUTION.value:
+    if run_recipe == RunRecipe.OBSERVED_SURFACE_FORCED_EVOLUTION.value:
         return {
             "trigger": "none",
             "surface_fluxes": {
@@ -405,7 +405,7 @@ def _required_outputs_for_story(
         return ["qv", "qc", "w", "qr", "rain", "dbz", "hfx", "lhfx", "updraft_helicity"]
     if story == "humid_rainy_candidate":
         return ["qv", "qc", "w", "qr", "rain", "dbz", "hfx", "lhfx"]
-    if run_recipe == RunRecipe.UNTRIGGERED_OBSERVED_EVOLUTION:
+    if run_recipe == RunRecipe.OBSERVED_SURFACE_FORCED_EVOLUTION:
         return ["qv", "qc", "w", "hfx", "lhfx"]
     return ["qc", "w"]
 
@@ -467,7 +467,7 @@ def _run_recipe_value(
     if run_recipe:
         return run_recipe
     if observed_sounding is not None:
-        return RunRecipe.UNTRIGGERED_OBSERVED_EVOLUTION.value
+        return RunRecipe.OBSERVED_SURFACE_FORCED_EVOLUTION.value
     return RunRecipe.GENERATED_REFERENCE_LOWER_ATMOSPHERE.value
 
 
@@ -481,7 +481,7 @@ def _run_recipe(value: str) -> RunRecipe:
 def _run_recipe_display_name(run_recipe: str) -> str:
     if run_recipe == "triggered_deep_potential":
         return "Removed Triggered Deep-Potential Path"
-    if run_recipe == RunRecipe.UNTRIGGERED_OBSERVED_EVOLUTION.value:
+    if run_recipe == RunRecipe.OBSERVED_SURFACE_FORCED_EVOLUTION.value:
         return "Observed Surface-Forced Evolution"
     return "Generated Lower-Atmosphere Reference"
 

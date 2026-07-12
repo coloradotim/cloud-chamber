@@ -61,7 +61,7 @@ run_recipe:
   compatible_story_ids: [string]
   assumption_set_id: string
   assumption_mode:
-    surface_forced_observed_evolution
+    observed_surface_forced_evolution
     | surface_forced_evolution
     | future_differential_surface_forcing
     | elevated_forced_evolution
@@ -115,7 +115,7 @@ run_recipe:
   cm1_mapping:
     run_recipe:
       generated_reference_lower_atmosphere
-      | untriggered_observed_evolution
+      | observed_surface_forced_evolution
       | future
     run_configuration_defaults:
       duration: string | null
@@ -136,20 +136,20 @@ advanced metadata under `cm1_mapping` or a later recipe-detail API.
 
 ## Assumption Modes
 
-### `surface_forced_observed_evolution`
+### `observed_surface_forced_evolution`
 
-An untriggered observed-sounding evolution recipe asks what the initialized
-atmosphere does under the selected recipe defaults. It must not imply a weather
-forecast. If surface fluxes, radiation, or large-scale forcing are recipe
-defaults rather than place/time-derived values, predicted signatures must say
-so.
+An observed surface-forced recipe asks what the initialized atmosphere does
+under explicit run-shape and lower-boundary forcing assumptions. It must not
+imply a weather forecast. If surface fluxes, radiation, or large-scale forcing
+are recipe defaults rather than place/time-derived values, predicted signatures
+must say so.
 
 ### `surface_forced_evolution`
 
 A surface-forced recipe asks what happens when lower-boundary sensible and/or
 latent heat flux assumptions are explicit. Humid, drizzle, warm-rain, fog,
 post-frontal, and boundary-layer hypotheses need this mode before product copy
-can claim normal-evolution precipitation or low-cloud signatures.
+can claim surface-forced precipitation or low-cloud signatures.
 
 ### `future_differential_surface_forcing`
 
@@ -159,11 +159,26 @@ right shape for future boundary, patch, dryline, or differential-heating
 experiments. It is not implemented by issue #305 and should not be implied by the
 current uniform surface-flux controls.
 
+### `radiation_place_time_evolution`
+
+A future radiation/place-time recipe asks whether diurnal radiation, location,
+date/time, and surface context support fog, low cloud, suppression, or later
+boundary-layer growth. It follows surface-flux validation unless product
+direction changes.
+
 ### `elevated_forced_evolution`
 
 An elevated recipe asks whether an above-surface source layer can sustain cloud
 or convection. It needs source-layer, forcing, and output assumptions that the
 current observed-sounding run builder does not supply.
+
+### Removed Or Not Active
+
+Artificial atmospheric perturbation recipes from the earlier deep-potential
+direction are not current product paths. Current observed-sounding experiments
+use no artificial atmospheric trigger and rely on explicit surface-forcing and
+run-shape assumptions. Differential surface forcing is tracked separately as
+future work.
 
 ## Current Recipe Catalog
 
@@ -175,7 +190,7 @@ display_name: Observed-sounding surface-forced evolution v0
 product_question: What does this observed atmosphere do under the selected
   numeric uniform lower-boundary heat/moisture forcing?
 assumption_set_id: observed_surface_forced_evolution_v0_assumptions
-assumption_mode: surface_forced_evolution
+assumption_mode: observed_surface_forced_evolution
 run_shape:
   duration_seconds: 21600 | configured
   horizontal_cell_count: 64 | 96 | 128 | 192 | 256 | 384 | configured
@@ -193,7 +208,7 @@ forcing:
 required_inputs:
   observed_temperature_profile: required
   observed_moisture_profile: required
-  observed_wind_profile: used_when_available
+  observed_wind_profile: required
 required_outputs:
   fields: [qv, qc, w, qr, rain, dbz, u, v, th, prs, hfx, lhfx]
   diagnostics: [first_cloud, max_qc, cloud_top, max_updraft_w]
@@ -206,7 +221,7 @@ current_support:
       are not part of v0.
     - Scores remain ingredient guidance until a predicted signature exists.
 cm1_mapping:
-  run_recipe: untriggered_observed_evolution
+  run_recipe: observed_surface_forced_evolution
   run_configuration_defaults:
     duration: short_6h
     horizontal_cell_count: cells_128
@@ -221,15 +236,36 @@ and enough duration/cadence. Deep organization, cold-pool, and storm-mode claims
 remain caveated until comparison diagnostics and differential forcing are
 validated.
 
+## Domain And Duration Expectations
+
+Observed surface-forced experiments use the selected run configuration as a
+real assumption. Cloud Chamber must not silently coerce a selected larger domain
+into a smaller one.
+
+- `local_6km`: cheap boundary-layer experiment. Useful for smoke/scout runs and
+  local cloud/moisture response; not a storm-organization domain.
+- `wide_12km`: stronger local experiment. Useful for observed winds and local
+  cloud/updraft response; still limited for storm organization.
+- `regional_60km`: larger boundary-layer/initiation experiment. More suitable
+  for deep-candidate exploration when cost/output volume is acceptable.
+- `regional_120km`: expensive regional experiment. More suitable for organized
+  convection, cold-pool, or outflow exploration when outputs and diagnostics can
+  support those claims.
+
+Short/smoke runs check package health and early response only. Six-hour and
+longer science runs can support stronger evolution claims, but no-storm results
+remain caveated by selected forcing, domain, grid, duration, output cadence, and
+diagnostic availability.
+
 ### `observed_capped_evolution_v1`
 
 ```yaml
 recipe_id: observed_capped_evolution_v1
 display_name: Observed-sounding capped evolution
 product_question: Does the observed profile limit vertical growth under the
-  current untriggered LES defaults?
+  current no-artificial-trigger surface-forced defaults?
 assumption_set_id: observed_surface_forced_evolution_v0_assumptions
-assumption_mode: surface_forced_observed_evolution
+assumption_mode: observed_surface_forced_evolution
 required_outputs:
   fields: [qc, w, th, qv]
   diagnostics: [first_cloud, cloud_top, max_qc, max_updraft_w]
@@ -241,7 +277,7 @@ current_support:
     - Comparison needs enough model time and cadence to distinguish delayed
       growth from missing output.
 cm1_mapping:
-  run_recipe: untriggered_observed_evolution
+  run_recipe: observed_surface_forced_evolution
 ```
 
 This recipe is a specialized view of the current observed-sounding
@@ -275,7 +311,7 @@ current_support:
     - `qr` is rain water aloft, `rain` is surface rain, and `dbz` is
       reflectivity; they must be evaluated separately.
 cm1_mapping:
-  run_recipe: untriggered_observed_evolution
+  run_recipe: observed_surface_forced_evolution
 ```
 
 This is the honest bridge for `humid_rainy_candidate`: Cloud Chamber may run a
@@ -336,8 +372,8 @@ source layer and forcing assumptions being tested.
 
 | Story ID | Primary recipe | Recipe fit | Required assumptions | Required outputs for comparison | Result comparison intent |
 | --- | --- | --- | --- | --- | --- |
-| `shallow_cumulus_candidate` | `observed_surface_forced_evolution_v0` | `testable_now` when the run is long enough | no artificial trigger; numeric uniform surface heat/moisture fluxes; complete observed temperature/moisture profile; wind used when available | `qv`, `qc`, `w`, time and vertical coordinates | cloud formation, cloud top/depth, persistence, vertical velocity |
-| `dry_failed_candidate` | `observed_surface_forced_evolution_v0` | `testable_now` when duration/cadence can support a no-cloud conclusion | no artificial trigger; numeric uniform surface heat/moisture fluxes; complete observed profile | `qv`, `qc`, `w`, time coordinate | weak/no cloud with meaningful vertical motion; moisture limitation remains caveated |
+| `shallow_cumulus_candidate` | `observed_surface_forced_evolution_v0` | `testable_now` when the run is long enough | no artificial trigger; numeric uniform surface heat/moisture fluxes; complete observed temperature/moisture/wind profile | `qv`, `qc`, `w`, time and vertical coordinates | cloud formation, cloud top/depth, persistence, vertical velocity |
+| `dry_failed_candidate` | `observed_surface_forced_evolution_v0` | `testable_now` when duration/cadence can support a no-cloud conclusion | no artificial trigger; numeric uniform surface heat/moisture fluxes; complete observed temperature/moisture/wind profile | `qv`, `qc`, `w`, time coordinate | weak/no cloud with meaningful vertical motion; moisture limitation remains caveated |
 | `capped_suppressed_candidate` | `observed_capped_evolution_v1` | `partially_testable` | no explicit trigger; cap comes from observed profile; enough run time to observe delayed growth | `qc`, `w`, `th`, time and vertical coordinates | reduced cloud depth, delayed cloud, or capped vertical motion |
 | `humid_rainy_candidate` | `surface_forced_moist_evolution_v1` | `partially_testable` until surface-flux smoke evidence is broad | numeric uniform surface-flux assumptions; no artificial trigger; precipitation fields requested | `qc`, `w`, `qr`, `rain`, `dbz` when precipitation is predicted | cloud, rain water aloft, surface rain, and reflectivity evaluated separately |
 | `severe_thunderstorm_environment` | `observed_surface_forced_evolution_v0` plus future differential forcing | `partially_testable` | no artificial trigger; numeric uniform surface fluxes; complete observed wind profile; domain/duration/resolution caveats | `qc`, `w`, `qr`, `rain`, `dbz`, `u`, `v`, updraft diagnostics | whether deep cloud and strong updraft occur under the selected uniform forcing; not a storm-initiation guarantee |
@@ -416,7 +452,9 @@ Comparison rules:
 
 Do not use trigger-failed language for observed-sounding runs. If deep cloud or
 strong updraft does not occur, describe the observed CM1 outcome under the saved
-forcing and run-shape assumptions.
+forcing and run-shape assumptions. No storm under observed surface-forced v0 is
+not, by itself, a failed sounding hypothesis or disproven deep-convection
+potential.
 
 ## Product Copy Rules
 
