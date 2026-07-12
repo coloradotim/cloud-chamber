@@ -9,6 +9,7 @@ from cloud_chamber.cm1_input_contract import (
     RunRecipe,
     assumption_mode_for_run_recipe,
     assumption_set_id_for_run_recipe,
+    has_complete_rendered_observed_wind_profile,
     recipe_caveats_for_run_recipe,
     recipe_display_name_for_run_recipe,
     recipe_id_for_run_recipe,
@@ -49,7 +50,13 @@ def build_pre_run_validation_report(
         field for field in required_outputs if field not in set(contract.expected_outputs)
     ]
     alignment = _hypothesis_recipe_alignment(story, contract.run_recipe)
+    input_validation = _input_validation_payload(contract.observed_sounding, contract)
     blocking_errors = list(alignment["blocking_errors"])
+    if input_validation["observed_wind_profile"] == "missing_required":
+        blocking_errors.append(
+            "Observed-sounding runs require a complete finite observed u/v wind profile "
+            "for every input_sounding level."
+        )
     caveats = _dedupe(
         [
             *contract.run_configuration.caveats,
@@ -76,7 +83,7 @@ def build_pre_run_validation_report(
             "missing_assumptions": alignment["missing_assumptions"],
             "missing_outputs": missing_outputs,
         },
-        "input_validation": _input_validation_payload(contract.observed_sounding, contract),
+        "input_validation": input_validation,
         "run_shape_validation": _run_shape_validation_payload(contract),
         "forcing_validation": _forcing_validation_payload(contract),
         "output_validation": {
@@ -272,12 +279,18 @@ def _input_validation_payload(
             "model_bottom_elevation": "generated_reference",
             "caveats": [],
         }
-    wind_required = False
-    wind_status = (
-        ("present_required" if wind_required else "present_optional")
-        if observed_sounding.wind_handling
-        else ("missing_required" if wind_required else "optional_missing")
+    wind_required = contract.run_recipe == RunRecipe.UNTRIGGERED_OBSERVED_EVOLUTION
+    complete_wind_profile = has_complete_rendered_observed_wind_profile(
+        observed_sounding,
+        defaults=contract.cloud_scale_defaults,
     )
+    if wind_required:
+        wind_status = "present_required" if complete_wind_profile else "missing_required"
+    else:
+        wind_status = "present_optional" if complete_wind_profile else "optional_missing"
+    caveats = list(observed_sounding.validation.caveats)
+    if wind_status == "missing_required":
+        caveats.append("complete_observed_wind_profile_required_for_input_sounding")
     return {
         "observed_temperature_profile": "present",
         "observed_moisture_profile": "present",
@@ -285,7 +298,7 @@ def _input_validation_payload(
         "model_bottom_elevation": (
             "present" if observed_sounding.model_bottom_elevation_m_msl is not None else "missing"
         ),
-        "caveats": list(observed_sounding.validation.caveats),
+        "caveats": _dedupe(caveats),
     }
 
 

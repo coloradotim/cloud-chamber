@@ -136,6 +136,9 @@ def test_dry_run_package_can_use_observed_igra_sounding(tmp_path: Path) -> None:
     assert "No artificial atmospheric trigger is applied." in manifest.recipe_caveats
     assert "No artificial atmospheric trigger is applied." in manifest.run_caveats
     assert manifest.pre_run_validation_report is not None
+    assert manifest.pre_run_validation_report["input_validation"]["observed_wind_profile"] == (
+        "present_required"
+    )
     assert manifest.pre_run_validation_report["run_shape_validation"]["domain"] == "wide_12km"
     assert manifest.pre_run_validation_report["selected_run_recipe"]["run_recipe"] == (
         "untriggered_observed_evolution"
@@ -388,13 +391,20 @@ def test_observed_runs_require_wind_before_input_sounding_render(tmp_path: Path)
         }
     )
 
-    with pytest.raises(DryRunPackageError, match="complete finite observed u/v wind profile"):
+    with pytest.raises(
+        DryRunPackageError, match="complete finite observed u/v wind profile"
+    ) as excinfo:
         generate_dry_run_package(
             scenario_data=load_baseline_template(),
             runtime_home=tmp_path,
             run_id="run-observed-no-wind",
             observed_sounding=no_wind,
         )
+    report = excinfo.value.pre_run_validation_report
+    assert report is not None
+    assert report["status"] == "blocked"
+    assert report["input_validation"]["observed_wind_profile"] == "blocked"
+    assert "complete finite observed u/v wind profile" in report["blocking_errors"][0]
     assert not (tmp_path / "runs" / "run-observed-no-wind").exists()
 
 
@@ -416,13 +426,20 @@ def test_observed_runs_require_complete_rendered_wind_profile(
         }
     )
 
-    with pytest.raises(DryRunPackageError, match="complete finite observed u/v wind profile"):
+    with pytest.raises(
+        DryRunPackageError, match="complete finite observed u/v wind profile"
+    ) as excinfo:
         generate_dry_run_package(
             scenario_data=load_baseline_template(),
             runtime_home=tmp_path,
             run_id="run-observed-partial-wind",
             observed_sounding=missing_mid_profile_wind,
         )
+    report = excinfo.value.pre_run_validation_report
+    assert report is not None
+    assert report["status"] == "blocked"
+    assert report["input_validation"]["observed_wind_profile"] == "blocked"
+    assert "complete finite observed u/v wind profile" in report["blocking_errors"][0]
 
     assert not (tmp_path / "runs" / "run-observed-partial-wind").exists()
 

@@ -175,9 +175,9 @@ def build_cm1_input_contract(
         resolved_run_configuration,
     )
     defaults = cloud_scale_defaults_for_configuration(resolved_run_configuration)
-    if observed_sounding is not None and not _has_observed_wind_profile(
+    if observed_sounding is not None and not has_complete_rendered_observed_wind_profile(
         observed_sounding,
-        required_model_top_m=_required_sounding_top_m(defaults),
+        defaults=defaults,
     ):
         raise ValueError(
             "Observed-sounding runs require a complete finite observed u/v wind profile "
@@ -549,14 +549,14 @@ def _output_switches(
     return switches
 
 
-def _has_observed_wind_profile(
+def has_complete_rendered_observed_wind_profile(
     record: ObservedSoundingRecord,
     *,
-    required_model_top_m: float,
+    defaults: CloudScaleDefaults,
 ) -> bool:
     levels = _rendered_observed_wind_levels(
         record,
-        required_model_top_m=required_model_top_m,
+        required_model_top_m=_required_sounding_top_m(defaults),
     )
     return bool(levels) and all(
         _finite_number(level.u_wind_m_s) and _finite_number(level.v_wind_m_s) for level in levels

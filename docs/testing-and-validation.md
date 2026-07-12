@@ -136,7 +136,8 @@ provenance, and that stale triggered-recipe requests fail clearly.
 Automated tests for observed-sounding runs must use tiny or mocked fixtures. They
 should verify that package generation:
 
-- requires an observed sounding and observed u/v wind components;
+- requires a complete finite observed u/v wind profile for every rendered
+  `input_sounding` level;
 - preserves candidate-screening metadata;
 - records run configuration, numeric surface forcing, expected outputs, caveats,
   and validation status on generated
@@ -145,7 +146,8 @@ should verify that package generation:
   numeric constant surface fluxes, full output fields, rain output, reflectivity
   output, vorticity output, and updraft-helicity output;
 - writes a numeric `input_sounding` with observed wind components; and
-- preserves package identity through ingest into Result Cards.
+- preserves observed surface-forced package identity, candidate-screening
+  provenance, numeric forcing, and notes/tags through ingest into Result Cards.
 
 Manual/local QA is required before treating the package as scientifically
 accepted for a selected real sounding. New soundings remain experiments whose
@@ -156,12 +158,16 @@ outcomes must be inspected after CM1 runs. The manual smoke loop should:
 3. generate a science package;
 4. inspect `run_manifest.json`, `dry_run_report.json`, `namelist.input`, and
    `input_sounding`;
-5. confirm `isnd = 7`, `iinit = 3`, `testcase = 0`, rain/reflectivity/vorticity/
-   updraft-helicity output, observed u/v winds, and the storm-scale model box;
+5. confirm `isnd = 7`, no artificial deep-trigger path, the selected
+   numeric constant surface-flux values, full output-field switches including
+   rain/reflectivity/vorticity/updraft-helicity support, complete observed u/v
+   wind columns, and domain/grid/runtime values that match the chosen run
+   configuration;
 6. run CM1 locally or on the LAN worker outside CI;
 7. ingest completed output;
-8. open Results and Explore to confirm the notebook keeps the Deep Convection
-   Trial identity and the result is interpretable; and
+8. open Results and Explore to confirm observed surface-forced identity,
+   candidate-screening provenance, numeric forcing, and interpretable CM1 output
+   products; and
 9. confirm no generated run folders, logs, NetCDF output, copied runtime files,
    screenshots, or videos are committed.
 
