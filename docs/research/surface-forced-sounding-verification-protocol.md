@@ -23,7 +23,7 @@ Can a selected real sounding deepen past shallow cumulus under uniform surface f
 If a sounding-driven run only produces shallow cumulus, that result can mean very different things:
 
 1. **Implementation issue** — the selected surface-flux values did not reach CM1, CM1 ignored them, or the relevant output fields were not emitted/ingested.
-2. **Configuration issue** — forcing, duration, domain, grid, or output cadence was not suitable for the question.
+2. **Configuration issue** — forcing, duration, domain/grid bundle, or output cadence was not suitable for the question.
 3. **Uniform-forcing limitation** — the boundary layer responds, but horizontally uniform forcing does not focus enough ascent to reach the LFC.
 4. **Valid model outcome** — the sounding did not initiate or deepen under the selected assumptions.
 5. **Diagnostics issue** — CM1 produced relevant structure, but Cloud Chamber did not ingest or summarize the fields needed to see it.
@@ -60,6 +60,164 @@ Current assumptions:
 - Missing fields make a question unavailable or inconclusive.
 - A shallow-only outcome is not automatically a failed sounding or failed model.
 - No generated runtime artifacts belong in git.
+- Comparisons are valid only when forcing, duration, domain, grid/resolution, cadence, model/build context, output fields, and diagnostic support are comparable enough for the stated question.
+
+## Matrix contract for campaign runners
+
+The example YAML in `docs/research/templates/surface-forced-campaign-matrix.example.yaml` is a template, but the structure below is the contract that #311 should implement.
+
+### Required top-level fields
+
+```text
+schema_version
+campaign
+execution
+selection_sets
+run_defaults
+forcing_sets
+runs
+required_summary_fields
+```
+
+`schema_version` is required so future runner changes can reject or migrate older matrices intentionally.
+
+### Required ID rules
+
+- `campaign.campaign_id` must be unique within the runtime campaign workspace.
+- Each `selection_sets[].selection_id` must be unique.
+- Each `forcing_sets[].forcing_id` must be unique.
+- Each `runs[].matrix_id` must be unique.
+- Each run must reference an existing `selection_id` and `forcing_id`.
+- Use `matrix_id` as the canonical run-matrix identifier. Do not introduce a second name such as `run_matrix_id` in the same schema.
+
+### Source union
+
+Each selection source must be exactly one of:
+
+```text
+saved_candidate:
+  saved_candidate_id
+
+cached_recommendation:
+  candidate_id
+  optional station_id / valid_time_utc for disambiguation
+
+uploaded_or_local_igra:
+  local_text_path or runtime_file_ref
+  selected_valid_time_utc
+```
+
+Committed matrices should not contain machine-private absolute paths. If a local path is needed, keep the real path in runtime-local state and use a portable placeholder or runtime file reference in committed examples.
+
+### Override precedence
+
+When resolving a run, apply settings in this order:
+
+```text
+run_defaults
+→ referenced forcing_set
+→ run-specific overrides
+```
+
+Run-specific values win over forcing-set values. Forcing-set values win over defaults. The resolved configuration should be copied into package/run/result metadata and the campaign report.
+
+### Stable resume / idempotency identity
+
+A runner should derive a stable run identity from at least:
+
+```text
+campaign_id
+matrix_id
+resolved selection identity
+resolved forcing values
+resolved duration/domain/grid/cadence
+Cloud Chamber commit if the runner chooses to lock campaigns to a code version
+```
+
+A resumed campaign must not create duplicate packages for the same resolved identity unless the operator explicitly requests a rerun.
+
+### Lifecycle/status values
+
+A campaign runner may map to existing run-manifest states, but report status should normalize to:
+
+```text
+planned
+packaged
+queued
+running
+completed_not_ingested
+ingested
+package_failed
+run_failed
+ingest_failed
+skipped
+blocked
+```
+
+The report should preserve the source manifest state when available.
+
+### Stage gates
+
+Phase 1 must be allowed to stop the campaign before expensive later phases. Recommended gates:
+
+```text
+phase1_requires_forcing_metadata: true
+phase1_requires_hfx_lhfx_or_declared_unavailable: true
+phase1_requires_low_level_response_or_declared_unavailable: true
+continue_after_phase1_failure: false by default
+```
+
+A runner should default to planning/reporting the blocked state rather than queueing later phases when gates fail.
+
+### Execution safety
+
+Planning must be the default runner behavior. Queueing must require an explicit runner mode or flag. Do not let a committed YAML file silently launch or queue work.
+
+Suggested modes for #311:
+
+```text
+plan
+package
+queue
+status
+ingest
+report
+resume
+```
+
+### Mapping report fields to current metadata
+
+Where possible, #311 should map report fields to existing backend structures instead of inventing names:
+
+- `ResultMetadata`: result ID, run ID, scenario/recipe IDs, observed sounding, run configuration, expected/required/missing fields, warnings, caveats, candidate screening, result state.
+- `ScienceSummary`: first cloud time, cloud top/deep-cloud state, max `qc`, max `w`, rain-water timing, default interesting time, support state where available.
+- `ResultDiagnostics` and output-product payloads: field availability, units, min/max/mean when derivable, missing-field support states.
+
+If the existing backend cannot provide a field, the report must say `unavailable` and identify the missing diagnostic rather than inventing a value.
+
+## Low-level response diagnostic contract
+
+Low-level `qv` and theta/temperature response must be standardized before the campaign runner summarizes them.
+
+Preferred method for #311:
+
+```text
+vertical layer: 0-1000 m AGL, using available model vertical coordinate
+spatial statistic: domain mean unless a later issue adds selected-column context
+reference time: first output time, preferably model time 0 or earliest available output
+evaluation time: final output time for the run unless the report explicitly names another time
+per-run response: evaluation_time_mean - reference_time_mean
+forcing sensitivity: response difference against the paired control run with same sounding, duration, domain, grid, and cadence
+units: preserve source field units; convert only if the backend has a documented conversion
+```
+
+If a standardized backend diagnostic is not implemented, report these fields as:
+
+```text
+unavailable: low_level_response_diagnostic_not_implemented
+```
+
+The campaign runner must not improvise a browser-side or ad hoc calculation without documenting the layer, statistic, reference time, paired control, units, and source fields.
 
 ## Phase 1 — Forcing-path smoke check
 
@@ -79,8 +237,8 @@ Required evidence:
 - Run manifest and dry-run report preserve selected product values.
 - CM1-facing namelist values preserve `cnst_shflx` and `cnst_lhflx`.
 - Surface output switches are requested where supported.
-- Ingested metadata reports `hfx`/`lhfx` when present.
-- Low-level thermal/moisture fields respond in the expected direction if derivable.
+- Ingested metadata reports `hfx` and `lhfx` separately when present.
+- Low-level thermal/moisture fields respond in the expected direction if derivable by the standardized low-level response diagnostic.
 - Cloud timing, cloud top, `qc`, or `w` response is summarized, even if weak.
 
 Interpretation:
@@ -89,7 +247,7 @@ Interpretation:
 | --- | --- |
 | selected values missing from metadata/namelist | implementation failure |
 | surface fields missing from output/ingest | output-product or CM1 output request gap |
-| hfx/lhfx present but low-level theta/qv response absent | CM1 setup/units/surface-model issue or too-short run |
+| hfx/lhfx present but low-level theta/qv response absent | CM1 setup/units/surface-model issue, too-short run, or missing response diagnostic |
 | low-level response exists but no deepening | continue to Phase 2/3; not a failure by itself |
 
 ## Phase 2 — Easy sounding response check
@@ -109,18 +267,28 @@ Suggested starter matrix:
 
 ```text
 Wide 12 km / 6 h / default flux
+Wide 12 km / 6 h / stronger flux
 Wide 12 km / 12 h / stronger flux
 Regional 60 km / 12 h / stronger flux
 Regional 120 km / 12 h / stronger flux if feasible
 ```
 
+This matched matrix separates questions:
+
+1. **Default 6 h vs strong 6 h** tests forcing sensitivity with duration and run shape held constant.
+2. **Strong 6 h vs strong 12 h** tests duration sensitivity with forcing and 12 km run shape held constant.
+3. **Strong 12 km vs strong 60 km** tests a broader run-shape bundle.
+
+The 12 km to 60 km step is not a pure domain-size test when `horizontal_cell_count` is the same. With fixed `cells_128`, both the domain and horizontal spacing change. Treat this as a **domain/grid configuration bundle** and record resolved `nx/ny/nz`, `dx/dy/dz`, model top, cadence, and output volume. Do not conclude that “domain size caused deepening” unless a comparable grid design supports that claim.
+
 Required evidence:
 
-- Boundary-layer response compared with Phase 1.
-- Max cloud top and time of cloud top.
-- Max `w` and height/time of max `w` if available.
-- Max `qc` and cloud depth.
-- `qr`, surface `rain`, and `dbz` presence separately.
+- Boundary-layer response compared with the matched Phase 2 control and Phase 1 behavior.
+- Max cloud top and time of max cloud top.
+- Max `w`, plus time and height of max `w` if available.
+- Max `qc` and time of max `qc`.
+- Cloud depth or classification when supported.
+- `qr`, surface `rain`, and `dbz` availability and outcomes separately.
 - Whether the result appears shallow, congestus-like, or deep.
 - Whether missing outputs prevent interpretation.
 
@@ -129,14 +297,16 @@ Interpretation:
 | Finding | Diagnosis |
 | --- | --- |
 | no boundary-layer response | return to Phase 1 implementation/config diagnosis |
-| shallow cumulus only, even with stronger forcing | likely uniform-forcing limitation or too-stable sounding |
-| deeper cloud only at longer duration or larger domain | defaults likely too short/small/weak |
+| strong 6 h deepens relative to default 6 h | forcing sensitivity is supported |
+| strong 12 h deepens relative to strong 6 h | duration sensitivity is supported |
+| regional run differs from wide 12 km run | run-shape bundle matters; inspect domain, dx/dy, model top, and output cadence before assigning cause |
+| shallow cumulus only, even with stronger forcing and longer duration | possible uniform-forcing limitation, configuration gap, or valid no-initiation outcome |
 | deep cloud/updraft but no precipitation fields | output/microphysics/diagnostic gap or dry outcome |
 | deep evidence present but not summarized | Results/Explore diagnostic gap |
 
 ## Phase 3 — Cross-sounding discrimination check
 
-Goal: test whether CM1 response differs across sounding classes under the same forcing setup.
+Goal: test whether CM1 response differs across sounding classes under comparable forcing and run-shape assumptions.
 
 Suggested candidate set:
 
@@ -148,12 +318,27 @@ inverted-V / dry microburst-ish candidate
 weak or marginal control sounding
 ```
 
-Run the same forcing/domain/duration setup across the set. Do not tune each case until after the first comparison pass.
+Run the same forcing/domain/duration/grid/cadence setup across the set. Do not tune each case until after the first comparison pass.
+
+Before comparing two runs, check:
+
+- sounding identity/provenance and selected valid time;
+- selected forcing values and resolved CM1-facing values;
+- duration;
+- domain;
+- horizontal cell count and resolved `dx/dy`;
+- vertical grid and model top;
+- output cadence;
+- CM1 version/build and Cloud Chamber commit;
+- required fields and missing fields;
+- diagnostic support states.
+
+If these are not comparable enough for the stated question, label the comparison `inconclusive_noncomparable_runs` instead of summarizing it as evidence.
 
 Required evidence:
 
-- Same run matrix for each sounding.
-- Same output/diagnostic fields.
+- Same resolved run-shape bundle for each sounding or explicit non-comparable caveat.
+- Same output/diagnostic fields or explicit unavailable fields.
 - Same summary metrics.
 - Candidate story/evidence carried through metadata.
 - Which differences are model output differences vs missing-field differences.
@@ -162,10 +347,11 @@ Interpretation:
 
 | Finding | Diagnosis |
 | --- | --- |
-| every sounding behaves nearly the same | forcing/config may be too generic or diagnostics too coarse |
+| every comparable sounding behaves nearly the same | forcing/config may be too generic or diagnostics too coarse |
 | only easy deep case deepens | model path may be working; candidate selection matters |
 | capped case stays shallow while easy case deepens | useful discrimination |
-| all cases shallow despite clear BL response | likely need differential forcing or larger-scale lift/convergence |
+| all comparable cases shallow despite clear BL response | possible uniform-forcing limitation, but not proof by itself |
+| comparisons are not comparable | inconclusive; fix matrix or report non-comparability |
 
 ## Phase 4 — Next-step diagnosis
 
@@ -180,9 +366,22 @@ uniform_forcing_physics_limited
 run_duration_or_domain_limited
 candidate_selection_limited
 output_products_or_diagnostics_missing
-differential_forcing_needed
-radiation_or_place_time_needed
+valid_no_initiation_under_tested_assumptions
+inconclusive_noncomparable_runs
+inconclusive_missing_evidence
+differential_forcing_followup_candidate
+radiation_or_place_time_followup_candidate
 ```
+
+Minimum evidence rules:
+
+- `uniform_forcing_too_weak` requires a matched comparison where stronger forcing produces a stronger boundary-layer/cloud response than default forcing under the same sounding, duration, domain, grid, and cadence, but still does not reach the target depth/signature.
+- `uniform_forcing_physics_limited` requires verified low-level response plus matched stronger/longer/broader runs that remain shallow, with no missing key diagnostics that would change interpretation. This should usually be phrased as a candidate conclusion, not a final proof.
+- `run_duration_or_domain_limited` requires a matched comparison showing deeper or more organized response when duration or the domain/grid bundle changes, while forcing and sounding are held constant.
+- `valid_no_initiation_under_tested_assumptions` requires the forcing path and key diagnostics to be verified, comparable run assumptions to be documented, and no evidence of deepening under those assumptions. It does not disprove the sounding's broader deep-convection potential.
+- `inconclusive_missing_evidence` applies when required fields, low-level response diagnostics, or output products are missing.
+- `inconclusive_noncomparable_runs` applies when the matrix changes more than the stated comparison allows.
+- `differential_forcing_followup_candidate` is appropriate when uniform forcing is verified and responsive but does not focus ascent; do not call differential forcing “needed” unless supported configuration explanations have been ruled out.
 
 The campaign should end with explicit next-step recommendations, usually one of:
 
@@ -190,17 +389,19 @@ The campaign should end with explicit next-step recommendations, usually one of:
 - adjust default surface flux values;
 - adjust duration/domain/grid recommendations;
 - add missing output products/diagnostics;
-- proceed to differential surface forcing;
+- proceed to differential surface forcing as a follow-up candidate;
 - refine candidate screening;
-- defer deep-convection comparison until better evidence exists.
+- defer screening-hypothesis-vs-CM1-evidence comparison until better evidence exists.
 
 ## Required per-run metadata
 
 Each run should record, at minimum:
 
 ```text
+schema_version
 campaign_id
 matrix_id
+stable_resume_identity
 run_id
 result_id if ingested
 station_id
@@ -210,14 +411,17 @@ candidate_id if any
 candidate story / active story
 candidate score and caveats
 source path: cached / saved / uploaded
-surface_heat_flux_k_m_s
-surface_moisture_flux_g_g_m_s
-CM1 cnst_shflx
-CM1 cnst_lhflx
+selected surface_heat_flux_k_m_s and units
+selected surface_moisture_flux_g_g_m_s and units
+resolved CM1 cnst_shflx and units
+resolved CM1 cnst_lhflx and units
 duration
-domain
-grid cells
 output cadence
+horizontal_cell_count
+nx / ny / nz
+dx_m / dy_m / dz_m
+model_top_m
+domain_size and resolved domain width
 queue target
 package status
 run status
@@ -232,19 +436,29 @@ warnings / caveats
 The report should extract these from ingested metadata/output products when available:
 
 ```text
-hfx/lhfx present
-qv low-level response
-theta/temp low-level response
-first cloud time
-max cloud top
-max qc
-max w
-qr / rain water aloft present
-surface rain present
-dbz / reflectivity present
+hfx_present
+hfx_units
+hfx_min / hfx_max / hfx_mean when derivable
+lhfx_present
+lhfx_units
+lhfx_min / lhfx_max / lhfx_mean when derivable
+low_level_qv_response with method or unavailable reason
+low_level_theta_or_temperature_response with method or unavailable reason
+first_cloud_time
+max_cloud_top_m and time
+max_qc and time
+cloud_depth_or_classification when supported
+max_w_m_s, time, and height when supported
+qr / rain water aloft availability and outcome
+surface rain availability and outcome
+dbz / reflectivity availability and outcome
 first deep cloud time if available
 deep cloud flag if available
 interesting time support state
+exact result fields or diagnostics used as evidence
+missing fields
+warnings
+caveats
 ```
 
 If an item cannot be derived, the report must say `unavailable`, not zero and not failed.
@@ -264,14 +478,15 @@ control sounding:
 
 easy deep candidate:
   wide 12 km / 6 h / default flux
-  wide 12 km / 12 h / stronger flux
-  regional 60 km / 12 h / stronger flux
+  wide 12 km / 6 h / high heat + high moisture
+  wide 12 km / 12 h / high heat + high moisture
+  regional 60 km / 12 h / high heat + high moisture
 
 weak control sounding:
-  regional 60 km / 12 h / stronger flux
+  regional 60 km / 12 h / high heat + high moisture
 ```
 
-This is enough to identify whether the path is responsive before spending time on larger regional runs.
+This is enough to identify whether the path is responsive before spending time on larger regional runs. Add `regional 120 km / 12 h / high heat + high moisture` only when cost/output volume is acceptable.
 
 ## Artifact policy
 
@@ -283,7 +498,8 @@ Do not commit:
 - copied runtime tables;
 - stdout/stderr logs;
 - screenshots, traces, videos;
-- local settings or SSH configuration.
+- local settings or SSH configuration;
+- machine-private absolute paths.
 
 A committed campaign report may include:
 
@@ -293,7 +509,9 @@ A committed campaign report may include:
 - selected configuration values;
 - summarized diagnostics;
 - caveats and unavailable fields;
-- links or paths that are safe for local use if they do not expose local secrets.
+- portable provenance identifiers.
+
+Local filesystem pointers belong in runtime-local JSON/state, not committed Markdown.
 
 ## Relationship to future work
 
@@ -301,7 +519,7 @@ This protocol feeds:
 
 - campaign runner/report tooling;
 - differential surface forcing;
-- predicted-vs-actual comparison;
+- screening-hypothesis-vs-CM1-evidence comparison;
 - radiation/place-time validation;
 - candidate screening calibration.
 
