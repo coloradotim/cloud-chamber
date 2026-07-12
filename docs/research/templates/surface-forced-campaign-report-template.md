@@ -6,14 +6,13 @@ Protocol: `docs/research/surface-forced-sounding-verification-protocol.md`
 Matrix: `<campaign-matrix>`
 Date started: `<YYYY-MM-DD>`
 Date completed: `<YYYY-MM-DD or incomplete>`
-Cloud Chamber commit: `<commit-sha>`
-CM1 version / build: `<cm1-version>`
+Cloud Chamber commit: `<commit-sha or campaign-level immutable value>`
+CM1 version / build: `<cm1-version or campaign-level immutable value>`
 Execution target: `<target>`
-Operator override used: `<yes/no; if yes, describe>`
 
 ## Executive summary
 
-Summarize what was tested and what the campaign can honestly conclude. Do not claim that a sounding should have produced deep convection. The comparison is conditional on forcing, domain, duration, grid, cadence, output fields, and diagnostics.
+Summarize what was tested and what the campaign can honestly conclude. Do not claim that a sounding should have produced deep convection. The comparison is conditional on forcing, domain, duration, grid, cadence, output fields, diagnostics, and build/runtime context.
 
 ## Campaign question
 
@@ -25,29 +24,27 @@ Can an easy deep-candidate sounding deepen past shallow cumulus under uniform lo
 
 ## Matrix summary
 
-| Matrix ID | Phase | Selection | Forcing | Heat flux (K m/s) | Moisture flux (g/g m/s) | Domain | Horizontal cells | dx/dy | Duration | Cadence | Package status | Run status | Ingest status | Result ID |
-| --- | --- | --- | --- | ---: | ---: | --- | ---: | --- | --- | --- | --- | --- | --- | --- |
-| `<matrix_id>` | `<phase>` | `<selection_id>` | `<forcing_id>` | `<value>` | `<value>` | `<domain>` | `<cells>` | `<dx>/<dy>` | `<duration>` | `<cadence>` | `<status>` | `<status>` | `<status>` | `<result_id>` |
+| Matrix ID | Phase | Selection | Forcing | Heat flux | Moisture flux | Domain | Cells | dx/dy | Duration | Cadence | Queue target | Package status | Run status | Ingest status | Result ID |
+| --- | --- | --- | --- | ---: | ---: | --- | ---: | --- | --- | --- | --- | --- | --- | --- | --- |
+| `<matrix_id>` | `<phase>` | `<selection_id>` | `<forcing_id>` | `<K m/s>` | `<g/g m/s>` | `<domain>` | `<cells>` | `<dx>/<dy>` | `<duration>` | `<cadence>` | `<target>` | `<status>` | `<status>` | `<status>` | `<result_id>` |
 
 ## Candidate / sounding inventory
 
 | Selection ID | Source type | Source reference | Candidate ID | Role | Station/time | Candidate story | Score | Key evidence | Caveats |
 | --- | --- | --- | --- | --- | --- | --- | ---: | --- | --- |
-| `<selection_id>` | `<source_type>` | `<source_reference>` | `<candidate_id>` | `<role>` | `<station/time>` | `<story>` | `<score>` | `<evidence>` | `<caveats>` |
+| `<selection_id>` | `<saved/cached/uploaded>` | `<reference>` | `<candidate_id>` | `<role>` | `<station/time>` | `<story>` | `<score>` | `<evidence>` | `<caveats>` |
 
 ## Per-run configuration table
 
-| Matrix ID | Run ID | Result ID | cnst_shflx | cnst_lhflx | nx/ny/nz | dx/dy/dz | Model top | Output cadence | Required fields | Missing fields | Warnings/caveats |
-| --- | --- | --- | ---: | ---: | --- | --- | ---: | --- | --- | --- | --- |
-| `<matrix_id>` | `<run_id>` | `<result_id>` | `<value K m/s>` | `<value g/g m/s>` | `<nx>/<ny>/<nz>` | `<dx>/<dy>/<dz>` | `<m>` | `<seconds>` | `<fields>` | `<fields>` | `<warnings>` |
+| Matrix ID | Run ID | Result ID | Queue target | cnst_shflx | cnst_lhflx | nx/ny/nz | dx/dy/dz | Model top | Output cadence | Expected output volume | Commit | CM1 version | Required fields | Missing fields | Diagnostic support | Interesting-time support | Warnings/caveats |
+| --- | --- | --- | --- | ---: | ---: | --- | --- | ---: | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `<matrix_id>` | `<run_id>` | `<result_id>` | `<target>` | `<K m/s>` | `<g/g m/s>` | `<nx>/<ny>/<nz>` | `<dx>/<dy>/<dz>` | `<m>` | `<seconds>` | `<summary>` | `<sha>` | `<version>` | `<fields>` | `<fields>` | `<support>` | `<support>` | `<warnings>` |
 
 ## Per-run evidence table
 
-Use canonical field names and units where available. If a field cannot be derived, write `unavailable:<reason>` rather than zero.
-
-| Matrix ID | hfx | lhfx | Low-level qv response | Low-level theta/temp response | First cloud | Max cloud top | Max qc | Max w | qr | surface rain | dbz | Evidence fields | Initial diagnosis |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| `<matrix_id>` | `<present; units; min/max/mean>` | `<present; units; min/max/mean>` | `<value/method/unavailable>` | `<value/method/unavailable>` | `<time/unavailable>` | `<max_cloud_top_m at time>` | `<max_qc at time>` | `<max_w_m_s at time/height>` | `<present/absent/unavailable>` | `<present/absent/unavailable>` | `<present/absent/unavailable>` | `<fields/diagnostics>` | `<category>` |
+| Matrix ID | hfx | lhfx | Low-level qv response | Low-level theta/temp response | First cloud | Max cloud top | Max qc | Max w | Cloud class/depth | qr | surface rain | dbz | Evidence fields | Initial diagnosis |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `<matrix_id>` | `<present; units; min/max/mean>` | `<present; units; min/max/mean>` | `<value/method/unavailable>` | `<value/method/unavailable>` | `<time/unavailable>` | `<m at time>` | `<kg/kg at time>` | `<m/s at time/height>` | `<class/depth/unavailable>` | `<present/absent/unavailable>` | `<present/absent/unavailable>` | `<present/absent/unavailable>` | `<fields/diagnostics>` | `<category>` |
 
 ## Low-level response method
 
@@ -73,39 +70,35 @@ unavailable: low_level_response_diagnostic_not_implemented
 
 ## Phase 1 — forcing-path smoke check
 
-### Required checks
+### Wiring checks
 
 | Check | Result | Evidence | Notes |
 | --- | --- | --- | --- |
 | selected forcing values preserved in package metadata | `<pass/warn/fail/unavailable>` | `<run ids / fields>` | `<notes>` |
 | selected values appear in CM1-facing namelist fields | `<pass/warn/fail/unavailable>` | `<cnst_shflx/cnst_lhflx>` | `<notes>` |
-| `hfx` emitted/ingested | `<pass/warn/fail/unavailable>` | `<field/units/min/max/mean>` | `<notes>` |
-| `lhfx` emitted/ingested | `<pass/warn/fail/unavailable>` | `<field/units/min/max/mean>` | `<notes>` |
-| low-level qv response changes with moisture forcing | `<pass/warn/fail/unavailable>` | `<summary>` | `<notes>` |
-| low-level theta/temp response changes with heat forcing | `<pass/warn/fail/unavailable>` | `<summary>` | `<notes>` |
+| `hfx` emitted/ingested and reflects prescribed changes | `<pass/warn/fail/unavailable>` | `<field/units/min/max/mean>` | `<notes>` |
+| `lhfx` emitted/ingested and reflects prescribed changes | `<pass/warn/fail/unavailable>` | `<field/units/min/max/mean>` | `<notes>` |
+
+### Atmospheric response checks
+
+| Check | Result | Evidence | Notes |
+| --- | --- | --- | --- |
+| heat-only run shows directionally consistent theta/temp response | `<pass/warn/fail/unavailable>` | `<summary>` | `<notes>` |
+| moisture-only run shows directionally consistent qv response | `<pass/warn/fail/unavailable>` | `<summary>` | `<notes>` |
 
 ### Phase 1 gate result
 
-| Gate | Result | Automatic continuation | Evidence | Override? |
-| --- | --- | --- | --- | --- |
-| forcing metadata present | `<pass/fail>` | `<allowed/blocked>` | `<evidence>` | `<none/override reason>` |
-| hfx/lhfx available or explicitly unsupported | `<pass/inconclusive/fail>` | `<allowed/blocked>` | `<evidence>` | `<none/override reason>` |
-| low-level response diagnostic available | `<pass/inconclusive/fail>` | `<allowed/blocked>` | `<evidence>` | `<none/override reason>` |
-
-If an operator override allowed later phases after an inconclusive Phase 1 gate, preserve that fact here and do not describe the forcing path or boundary-layer response as verified.
-
-### Phase 1 diagnosis
-
-Choose one or more:
+Choose one:
 
 ```text
-forcing_path_not_verified
-surface_outputs_missing
-boundary_layer_response_verified
-surface_model_or_units_question
-run_too_short_for_response
+forcing_wiring_not_verified
+forcing_wiring_verified_but_response_not_verified
+forcing_path_verified_for_campaign
 inconclusive_missing_evidence
+operator_override_continue
 ```
+
+If an operator override continued the campaign, record why and do not label the forcing path or boundary-layer response as verified.
 
 ## Phase 2 — easy sounding response check
 
@@ -115,13 +108,13 @@ inconclusive_missing_evidence
 
 ### Matched comparisons
 
-Generate rows from each matrix entry that has `comparison.type` and `comparison.control_matrix_id`. The rows below are examples only.
+Rows below are examples generated from each run's `comparison.type` and `comparison.control_matrix_id`; do not hardcode these if the matrix changes.
 
-| Comparison | Control | Experiment | Varied fields | Required equal fields | Required available fields | Result | Interpretation |
+| Comparison type | Control | Experiment | What changed | Required equal fields | Required available fields | Result | Interpretation |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| example: forcing sensitivity | `phase2_easy_deep_default_12km_6h` | `phase2_easy_deep_strong_12km_6h` | forcing values | same sounding, duration, domain, grid, cadence, build, diagnostic support | qc,w,hfx,lhfx | `<summary>` | `<interpretation>` |
-| example: duration sensitivity | `phase2_easy_deep_strong_12km_6h` | `phase2_easy_deep_strong_12km_12h` | duration | same sounding, forcing, domain, grid, cadence, build, diagnostic support | qc,w,hfx,lhfx | `<summary>` | `<interpretation>` |
-| example: domain/grid bundle sensitivity | `phase2_easy_deep_strong_12km_12h` | `phase2_easy_deep_strong_60km_12h` | domain and resolved spacing | same sounding, forcing, duration, cadence, build, diagnostic support | qc,w,hfx,lhfx | `<summary>` | `<interpretation>` |
+| `forcing_sensitivity_same_duration` | `<control_matrix_id>` | `<current_matrix_id>` | forcing only | sounding, duration, domain/grid bundle, cadence, build, required fields | hfx, lhfx, qv/theta response, qc, w | `<summary>` | `<interpretation>` |
+| `duration_sensitivity_same_forcing` | `<control_matrix_id>` | `<current_matrix_id>` | duration only | sounding, forcing, domain/grid bundle, cadence, build, required fields | hfx, lhfx, qv/theta response, qc, w | `<summary>` | `<interpretation>` |
+| `domain_grid_bundle_sensitivity` | `<control_matrix_id>` | `<current_matrix_id>` | domain/grid bundle | sounding, forcing, duration, cadence, build, required fields | hfx, lhfx, qv/theta response, qc, w | `<summary>` | `<interpretation>` |
 
 Do not describe the 12 km to 60 km step as a pure domain test unless grid spacing and other run-shape assumptions are comparable.
 
@@ -147,24 +140,7 @@ missing_deep_diagnostics
 | --- | --- | --- | --- | --- |
 | `<selection_id>` | `<yes/no>` | `<same forcing/domain/grid/cadence/build/fields?>` | `<summary>` | `<interpretation>` |
 
-Comparison gate fields:
-
-```text
-sounding provenance: allowed to differ for cross-sounding comparisons
-forcing values and CM1-facing values: must match
-duration: must match
-domain/grid bundle: must match
-output cadence: must match
-CM1/build version and Cloud Chamber commit: must match
-required/missing fields: must be comparable
-diagnostic support: must be comparable
-```
-
-## Missing fields and diagnostics
-
-| Field / diagnostic | Missing where | Impact |
-| --- | --- | --- |
-| `<field>` | `<runs>` | `<interpretation impact>` |
+Unsupported comparisons should use `inconclusive_noncomparable_runs`.
 
 ## Preliminary diagnosis
 
@@ -173,9 +149,10 @@ diagnostic support: must be comparable
 | forcing path not verified | `<status>` | `<evidence>` |
 | surface outputs missing | `<status>` | `<evidence>` |
 | boundary-layer response verified | `<status>` | `<evidence>` |
+| forcing wiring verified but response not verified | `<status>` | `<evidence>` |
 | uniform forcing too weak | `<status>` | `<evidence>` |
 | uniform forcing physically limited | `<status>` | `<evidence>` |
-| duration/domain/grid limited | `<status>` | `<evidence>` |
+| duration/domain limited | `<status>` | `<evidence>` |
 | candidate selection limited | `<status>` | `<evidence>` |
 | output products/diagnostics missing | `<status>` | `<evidence>` |
 | valid no-initiation under tested assumptions | `<status>` | `<evidence>` |
@@ -190,19 +167,19 @@ Examples:
 
 ```text
 - Fix package/output wiring before running more cases.
+- Add standardized low-level qv/theta response diagnostics before next campaign.
 - Adjust default flux values or add stronger labeled examples.
 - Prefer Regional 60 km / 12 h for first deep-candidate checks.
-- Add low-level qv/theta response output products before next campaign.
 - Proceed to differential forcing (#307) as a follow-up candidate because uniform forcing responds but does not focus ascent.
 - Defer screening-hypothesis-vs-CM1-evidence comparison until #275 has required fields and status semantics.
 ```
 
 ## Artifact policy confirmation
 
-Confirm that the committed report includes summaries only, not generated run folders, model output files, large logs, local machine paths, or local machine settings.
+Confirm that the committed report includes summaries only, not generated run folders, model output files, large logs, absolute local paths, or local settings.
 
-## Appendix — run and result identifiers
+## Appendix — run IDs and portable references
 
-| Matrix ID | Package status | Run status | Ingest status | Run ID | Result ID | Portable notes |
-| --- | --- | --- | --- | --- | --- | --- |
-| `<matrix_id>` | `<status>` | `<status>` | `<status>` | `<run_id>` | `<result_id>` | `<portable notes>` |
+| Matrix ID | Run ID | Result ID | Portable notes |
+| --- | --- | --- | --- |
+| `<matrix_id>` | `<run_id>` | `<result_id>` | `<portable provenance only>` |
