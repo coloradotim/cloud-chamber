@@ -90,6 +90,14 @@ class ObservedSoundingRecord(BaseModel):
         return self
 
 
+class ParsedIgraSounding(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    summary: SoundingTimeSummary
+    record: ObservedSoundingRecord | None = None
+    error: str | None = None
+
+
 class ObservedSoundingUploadResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -147,17 +155,7 @@ def parse_igra_station_text(
     if not headers:
         raise ObservedSoundingError("No IGRA sounding headers were found in the uploaded file.")
 
-    available = [
-        SoundingTimeSummary(
-            station_id=header["station_id"],
-            valid_time_utc=header["valid_time_utc"],
-            source_time_text=header["source_time_text"],
-            num_levels=header["num_levels"],
-            pressure_source=header["pressure_source"],
-            non_pressure_source=header["non_pressure_source"],
-        )
-        for header in headers
-    ]
+    available = [_summary_from_header(header) for header in headers]
     selected = _select_header(headers, selected_time_utc)
     raw_levels = lines[
         selected["line_index"] + 1 : selected["line_index"] + 1 + selected["num_levels"]
@@ -184,17 +182,47 @@ def summarize_igra_station_text(text: str) -> list[SoundingTimeSummary]:
     headers = _scan_headers(lines)
     if not headers:
         raise ObservedSoundingError("No IGRA sounding headers were found in the station file.")
-    return [
-        SoundingTimeSummary(
-            station_id=header["station_id"],
-            valid_time_utc=header["valid_time_utc"],
-            source_time_text=header["source_time_text"],
-            num_levels=header["num_levels"],
-            pressure_source=header["pressure_source"],
-            non_pressure_source=header["non_pressure_source"],
-        )
-        for header in headers
-    ]
+    return [_summary_from_header(header) for header in headers]
+
+
+def parse_igra_station_soundings(
+    text: str,
+    *,
+    uploaded_filename: str,
+    selected_times_utc: set[datetime] | None = None,
+    station_metadata: StationMetadata | None = None,
+) -> list[ParsedIgraSounding]:
+    """Parse selected IGRA sounding records from one station text scan."""
+
+    lines = text.splitlines()
+    headers = _scan_headers(lines)
+    if not headers:
+        raise ObservedSoundingError("No IGRA sounding headers were found in the station file.")
+
+    normalized_times = (
+        {selected_time.astimezone(UTC) for selected_time in selected_times_utc}
+        if selected_times_utc is not None
+        else None
+    )
+    parsed: list[ParsedIgraSounding] = []
+    for header in headers:
+        summary = _summary_from_header(header)
+        if normalized_times is not None and summary.valid_time_utc not in normalized_times:
+            continue
+        raw_levels = lines[
+            header["line_index"] + 1 : header["line_index"] + 1 + header["num_levels"]
+        ]
+        try:
+            record = _normalize_sounding(
+                header=header,
+                raw_levels=raw_levels,
+                uploaded_filename=uploaded_filename,
+                station_metadata=station_metadata,
+            )
+            parsed.append(ParsedIgraSounding(summary=summary, record=record))
+        except ObservedSoundingError as exc:
+            parsed.append(ParsedIgraSounding(summary=summary, error=str(exc)))
+    return parsed
 
 
 def observed_sounding_from_payload(payload: object) -> ObservedSoundingRecord:
@@ -314,6 +342,17 @@ def _select_header(headers: list[_IgraHeader], selected_time_utc: datetime | Non
         if header["valid_time_utc"] == normalized:
             return header
     raise ObservedSoundingError("Selected sounding time was not found in the uploaded file.")
+
+
+def _summary_from_header(header: _IgraHeader) -> SoundingTimeSummary:
+    return SoundingTimeSummary(
+        station_id=header["station_id"],
+        valid_time_utc=header["valid_time_utc"],
+        source_time_text=header["source_time_text"],
+        num_levels=header["num_levels"],
+        pressure_source=header["pressure_source"],
+        non_pressure_source=header["non_pressure_source"],
+    )
 
 
 def _normalize_sounding(

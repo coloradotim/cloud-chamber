@@ -712,12 +712,51 @@ const screeningInputsResponse = {
   inputs: [
     {
       station_id: "USM00072558",
+      station_name: "Valley, Nebraska",
+      cached_text_path: "/tmp/CloudChamber/cache/igra/recent/stations/USM00072558-data.txt",
       source_file_path: "/tmp/CloudChamber/cache/igra/recent/stations/USM00072558-data.txt",
       source_file_name: "USM00072558-data.txt",
+      cached_status: "cached_extracted",
       sounding_count: 2,
       package_ready_count: 1,
       blocked_count: 1,
       latest_valid_time_utc: "2025-01-02T00:00:00Z",
+    },
+    {
+      station_id: "USM00072357",
+      station_name: "Norman, Oklahoma",
+      cached_text_path: "/tmp/CloudChamber/cache/igra/recent/stations/USM00072357-data.txt",
+      source_file_path: "/tmp/CloudChamber/cache/igra/recent/stations/USM00072357-data.txt",
+      source_file_name: "USM00072357-data.txt",
+      cached_status: "cached_extracted",
+      sounding_count: 2,
+      package_ready_count: 1,
+      blocked_count: 1,
+      latest_valid_time_utc: "2025-05-20T00:00:00Z",
+    },
+    {
+      station_id: "USM00072426",
+      station_name: "Wilmington, Ohio",
+      cached_text_path: "/tmp/CloudChamber/cache/igra/recent/stations/USM00072426-data.txt",
+      source_file_path: "/tmp/CloudChamber/cache/igra/recent/stations/USM00072426-data.txt",
+      source_file_name: "USM00072426-data.txt",
+      cached_status: "cached_extracted",
+      sounding_count: 1,
+      package_ready_count: 1,
+      blocked_count: 0,
+      latest_valid_time_utc: "2025-01-03T00:00:00Z",
+    },
+    {
+      station_id: "USM00072440",
+      station_name: "Springfield, Missouri",
+      cached_text_path: "/tmp/CloudChamber/cache/igra/recent/stations/USM00072440-data.txt",
+      source_file_path: "/tmp/CloudChamber/cache/igra/recent/stations/USM00072440-data.txt",
+      source_file_name: "USM00072440-data.txt",
+      cached_status: "cached_extracted",
+      sounding_count: 1,
+      package_ready_count: 1,
+      blocked_count: 0,
+      latest_valid_time_utc: "2025-01-04T00:00:00Z",
     },
   ],
 };
@@ -739,6 +778,9 @@ const screeningResponse = {
   sort_direction: "desc",
   filters: {
     station_id: null,
+    station_ids: [],
+    history_scope: "all_cached",
+    latest_per_station: null,
     story_filter: "all",
     story_family: "all",
     support: "all",
@@ -746,6 +788,10 @@ const screeningResponse = {
     station_search: "",
   },
   filter_trace: {
+    selected_station_count: 4,
+    selected_cached_soundings: 5,
+    history_scope: "all_cached",
+    latest_per_station: null,
     analyzed_soundings: 5,
     story_score_records: 8,
     stage_counts: {
@@ -780,6 +826,8 @@ const testDeepConvectionStoryIds = new Set([
 
 function screeningResponseForRequest(init?: RequestInit) {
   const request = JSON.parse(String(init?.body ?? "{}")) as {
+    station_ids?: string[];
+    history_scope?: "all_cached" | "latest_per_station";
     story_filter?: string;
     story_family?: string;
     support?: string;
@@ -789,13 +837,19 @@ function screeningResponseForRequest(init?: RequestInit) {
     latest_per_station?: number;
     limit?: number;
   };
+  const stationIds = new Set(request.station_ids ?? []);
+  const historyScope = request.history_scope ?? "all_cached";
   const storyFilter = request.story_filter ?? "all";
   const storyFamily = request.story_family ?? "all";
   const support = request.support ?? "all";
   const readiness = request.readiness ?? "all";
   const stationSearch = (request.station_search ?? "").trim().toLowerCase();
   const sortBy = request.sort_by ?? "best_match";
-  const baseCandidates = [...screeningResponse.candidates];
+  const limit = Number(request.limit ?? 100);
+  const baseCandidates =
+    stationIds.size > 0
+      ? screeningResponse.candidates.filter((candidate) => stationIds.has(candidate.station_id))
+      : [...screeningResponse.candidates];
   const storyFiltered = baseCandidates.filter((candidate) => {
     const score = storyScoreForTest(candidate, storyFilter, storyFamily);
     if (storyFilter !== "all" && (!score || !meaningfulStoryScoreForTest(score))) {
@@ -839,8 +893,9 @@ function screeningResponseForRequest(init?: RequestInit) {
       return Boolean(candidate);
     })
     .sort((left, right) => compareCandidateFixtures(left, right, storyFilter, storyFamily, sortBy));
+  const limitedCandidates = candidates.slice(0, limit);
   const stationDistribution = Array.from(
-    candidates.reduce((counts, candidate) => {
+    limitedCandidates.reduce((counts, candidate) => {
       const current = counts.get(candidate.station_id) ?? {
         station_id: candidate.station_id,
         station_name: candidate.station_name,
@@ -853,12 +908,16 @@ function screeningResponseForRequest(init?: RequestInit) {
   );
   return {
     ...screeningResponse,
-    candidates,
-    total_candidate_count: screeningResponse.candidates.length,
+    candidates: limitedCandidates,
+    total_candidate_count: baseCandidates.length,
     filtered_candidate_count: candidates.length,
     sort_by: sortBy,
     filters: {
       station_id: null,
+      station_ids: request.station_ids ?? [],
+      history_scope: historyScope,
+      latest_per_station:
+        historyScope === "latest_per_station" ? (request.latest_per_station ?? 20) : null,
       story_filter: storyFilter,
       story_family: storyFamily,
       support,
@@ -866,6 +925,11 @@ function screeningResponseForRequest(init?: RequestInit) {
       station_search: request.station_search ?? "",
     },
     filter_trace: {
+      selected_station_count: new Set(baseCandidates.map((candidate) => candidate.station_id)).size,
+      selected_cached_soundings: baseCandidates.length,
+      history_scope: historyScope,
+      latest_per_station:
+        historyScope === "latest_per_station" ? (request.latest_per_station ?? 20) : null,
       analyzed_soundings: baseCandidates.length,
       story_score_records: baseCandidates.reduce(
         (total, candidate) => total + candidate.story_scores.length,
@@ -879,7 +943,7 @@ function screeningResponseForRequest(init?: RequestInit) {
         readiness: readinessFiltered.length,
         station_search: searchFiltered.length,
         sorted_or_recommended: candidates.length,
-        limited: candidates.length,
+        limited: limitedCandidates.length,
       },
       stages: [],
       station_distribution: stationDistribution,
@@ -895,7 +959,7 @@ function screeningResponseForRequest(init?: RequestInit) {
               },
             ]
           : [],
-      applied_limit: Number(request.limit ?? 50),
+      applied_limit: limit,
     },
   };
 }
@@ -1042,9 +1106,53 @@ const igraCatalogResponse = {
     zip_references: [
       {
         station_id: "USM00072558",
-        station_name: "VALLEY",
-        cached_status: "cached",
+        station_name: "Valley, Nebraska",
+        latitude: 41.32,
+        longitude: -96.3669,
+        elevation_m_msl: 351.5,
+        filename: "USM00072558-data-beg2025.txt.zip",
+        cached_status: "cached_extracted",
         url: "https://example.test/USM00072558-data-beg2025.txt.zip",
+      },
+      {
+        station_id: "USM00072357",
+        station_name: "Norman, Oklahoma",
+        latitude: 35.22,
+        longitude: -97.44,
+        elevation_m_msl: 357,
+        filename: "USM00072357-data-beg2025.txt.zip",
+        cached_status: "cached_extracted",
+        url: "https://example.test/USM00072357-data-beg2025.txt.zip",
+      },
+      {
+        station_id: "USM00072426",
+        station_name: "Wilmington, Ohio",
+        latitude: 39.42,
+        longitude: -83.82,
+        elevation_m_msl: 317,
+        filename: "USM00072426-data-beg2025.txt.zip",
+        cached_status: "cached_extracted",
+        url: "https://example.test/USM00072426-data-beg2025.txt.zip",
+      },
+      {
+        station_id: "USM00072440",
+        station_name: "Springfield, Missouri",
+        latitude: 37.23,
+        longitude: -93.38,
+        elevation_m_msl: 387,
+        filename: "USM00072440-data-beg2025.txt.zip",
+        cached_status: "cached_extracted",
+        url: "https://example.test/USM00072440-data-beg2025.txt.zip",
+      },
+      {
+        station_id: "USM00072562",
+        station_name: "North Platte, Nebraska",
+        latitude: 41.13,
+        longitude: -100.68,
+        elevation_m_msl: 847,
+        filename: "USM00072562-data-beg2025.txt.zip",
+        cached_status: "not_cached",
+        url: "https://example.test/USM00072562-data-beg2025.txt.zip",
       },
     ],
   },
@@ -1054,11 +1162,38 @@ const igraCacheResponse = {
   entries: [
     {
       station_id: "USM00072558",
-      station_name: "VALLEY",
+      station_name: "Valley, Nebraska",
       data_txt_path: "/tmp/CloudChamber/cache/igra/recent/stations/USM00072558-data.txt",
       zip_path: "/tmp/CloudChamber/cache/igra/recent/stations/USM00072558-data-beg2025.txt.zip",
       sounding_count: 2,
       latest_valid_time_utc: "2025-01-02T00:00:00Z",
+      size_bytes: 1234,
+    },
+    {
+      station_id: "USM00072357",
+      station_name: "Norman, Oklahoma",
+      data_txt_path: "/tmp/CloudChamber/cache/igra/recent/stations/USM00072357-data.txt",
+      zip_path: "/tmp/CloudChamber/cache/igra/recent/stations/USM00072357-data-beg2025.txt.zip",
+      sounding_count: 2,
+      latest_valid_time_utc: "2025-05-20T00:00:00Z",
+      size_bytes: 1234,
+    },
+    {
+      station_id: "USM00072426",
+      station_name: "Wilmington, Ohio",
+      data_txt_path: "/tmp/CloudChamber/cache/igra/recent/stations/USM00072426-data.txt",
+      zip_path: "/tmp/CloudChamber/cache/igra/recent/stations/USM00072426-data-beg2025.txt.zip",
+      sounding_count: 1,
+      latest_valid_time_utc: "2025-01-03T00:00:00Z",
+      size_bytes: 1234,
+    },
+    {
+      station_id: "USM00072440",
+      station_name: "Springfield, Missouri",
+      data_txt_path: "/tmp/CloudChamber/cache/igra/recent/stations/USM00072440-data.txt",
+      zip_path: "/tmp/CloudChamber/cache/igra/recent/stations/USM00072440-data-beg2025.txt.zip",
+      sounding_count: 1,
+      latest_valid_time_utc: "2025-01-04T00:00:00Z",
       size_bytes: 1234,
     },
   ],
@@ -2775,11 +2910,13 @@ beforeEach(() => {
         return Promise.resolve(new Response(JSON.stringify(igraCacheResponse), { status: 200 }));
       }
       if (url === "/api/igra/recent/cache-batch" && init?.method === "POST") {
+        const body = JSON.parse(String(init.body ?? "{}")) as { station_ids?: string[] };
         return Promise.resolve(
           new Response(
             JSON.stringify({
               requested_limit: 10,
-              selected_count: 1,
+              requested_station_ids: body.station_ids ?? [],
+              selected_count: body.station_ids?.length ?? 1,
               cached_entries: [igraCacheResponse.entries[0]],
               failed: [],
               remaining_uncached_count: 0,
@@ -3433,11 +3570,11 @@ describe("App", () => {
     expect(
       await screen.findByRole("heading", { name: "Find interesting soundings" }),
     ).toBeInTheDocument();
-    expect(screen.getByText(/Screening guidance only/)).toBeInTheDocument();
-    expect(screen.getByText("IGRA cache not checked yet")).toBeInTheDocument();
+    expect(screen.getByText(/Choose the stations and history/)).toBeInTheDocument();
+    expect(screen.getByText("Cached soundings ready to search")).toBeInTheDocument();
     expect(screen.queryByLabelText("Save into")).not.toBeInTheDocument();
     expect(
-      screen.getByRole("button", { name: "Analyze cached soundings" }),
+      screen.getByRole("button", { name: "Search selected soundings" }),
     ).toBeInTheDocument();
 
     fireEvent.click(screen.getByText("Advanced filters"));
@@ -3682,6 +3819,9 @@ describe("App", () => {
       "Keep this one in the candidate notebook.",
     );
     fireEvent.click(within(savedCard).getByRole("button", { name: "Deep convection candidates" }));
+    expect(within(savedCard).getByLabelText("Tags")).toHaveValue(
+      "Maybe rerun, Deep convection candidates",
+    );
     fireEvent.click(within(savedCard).getByRole("button", { name: "Save tags and notes" }));
 
     expect(await screen.findByText("Saved sounding candidate updated")).toBeInTheDocument();
@@ -3706,7 +3846,7 @@ describe("App", () => {
     );
   });
 
-  it("uses credible deep-convection defaults and the station-history sweep", async () => {
+  it("uses family-scoped deep-convection defaults across the selected cached soundings", async () => {
     const defaultFetch = vi.mocked(fetch).getMockImplementation();
     let analyzeBody = "";
     vi.mocked(fetch).mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
@@ -3729,24 +3869,83 @@ describe("App", () => {
       target: { value: "deep_convection" },
     });
     expect(screen.getByText("Advanced filters").closest("details")).not.toHaveAttribute("open");
-    expect(screen.getByText("Search intent changed; analyze cached soundings")).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Analyze cached soundings" }));
+    expect(screen.getByText("Search intent changed; search selected soundings")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Search selected soundings" }));
 
     expect(await screen.findByText("Recommendation run complete")).toBeInTheDocument();
-    expect(analyzeBody).toContain('"story_filter":"deep_convection_trial"');
+    expect(analyzeBody).toContain('"story_filter":"all"');
     expect(analyzeBody).toContain('"story_family":"deep_convection"');
-    expect(analyzeBody).toContain('"support":"supported"');
-    expect(analyzeBody).toContain('"latest_per_station":20');
-    expect(analyzeBody).toContain('"limit":75');
+    expect(analyzeBody).toContain('"support":"all"');
+    expect(analyzeBody).toContain('"history_scope":"all_cached"');
+    expect(analyzeBody).toContain('"latest_per_station":null');
+    expect(analyzeBody).toContain('"limit":100');
     expect(
-      screen.getByText(/5 analyzed · 2 matched deep-convection stories · 1 supported · 1 shown/),
+      screen.getByText((content) =>
+        content.includes("5 analyzed from 5 selected cached soundings") &&
+        content.includes("4 stations") &&
+        content.includes("all cached history") &&
+        content.includes("2 matched deep convection stories") &&
+        content.includes("2 shown"),
+      ),
     ).toBeInTheDocument();
     expect(
       screen.getByLabelText("Sounding candidate Norman, Oklahoma (USM00072357)"),
     ).toBeInTheDocument();
     expect(
-      screen.queryByLabelText("Sounding candidate Wilmington, Ohio (USM00072426)"),
-    ).not.toBeInTheDocument();
+      screen.getByLabelText("Sounding candidate Wilmington, Ohio (USM00072426)"),
+    ).toBeInTheDocument();
+  });
+
+  it("searches and caches explicitly selected stations", async () => {
+    const defaultFetch = vi.mocked(fetch).getMockImplementation();
+    let analyzeBody = "";
+    let cacheBody = "";
+    vi.mocked(fetch).mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url === "/api/sounding-candidates/analyze") {
+        analyzeBody = String(init?.body ?? "");
+      }
+      if (url === "/api/igra/recent/cache-batch" && init?.method === "POST") {
+        cacheBody = String(init.body ?? "");
+      }
+      return (
+        defaultFetch?.(input, init) ?? Promise.resolve(new Response("not found", { status: 404 }))
+      );
+    });
+
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Build" }));
+    fireEvent.change(await screen.findByLabelText("Experiment"), {
+      target: { value: "__observed_sounding_upload__" },
+    });
+
+    fireEvent.click(await screen.findByRole("button", { name: "Choose stations" }));
+    fireEvent.click(await screen.findByLabelText(/Norman, Oklahoma/));
+    fireEvent.click(await screen.findByLabelText(/North Platte, Nebraska/));
+
+    fireEvent.click(screen.getByRole("button", { name: "Cache selected stations" }));
+    await waitFor(() => {
+      expect(cacheBody).toContain('"station_ids":["USM00072357","USM00072562"]');
+    });
+
+    fireEvent.change(screen.getByLabelText("History scope"), {
+      target: { value: "latest_per_station" },
+    });
+    fireEvent.change(screen.getByLabelText("Latest soundings per station"), {
+      target: { value: "3" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Search selected soundings" }));
+
+    await waitFor(() => {
+      expect(analyzeBody).toContain('"station_ids":["USM00072357","USM00072562"]');
+      expect(analyzeBody).toContain('"history_scope":"latest_per_station"');
+      expect(analyzeBody).toContain('"latest_per_station":3');
+    });
+    expect(
+      (await screen.findAllByLabelText("Sounding candidate Norman, Oklahoma (USM00072357)"))
+        .length,
+    ).toBeGreaterThan(0);
   });
 
   it("shows secondary family candidates with the scoped story ingredient score", async () => {
@@ -3761,7 +3960,7 @@ describe("App", () => {
     fireEvent.change(screen.getByLabelText("Story family"), {
       target: { value: "deep_convection" },
     });
-    fireEvent.change(screen.getByLabelText("Support"), {
+    fireEvent.change(screen.getByLabelText("Evidence tier"), {
       target: { value: "weak" },
     });
     fireEvent.click(screen.getByRole("button", { name: "Apply advanced filters" }));
@@ -3770,7 +3969,7 @@ describe("App", () => {
       "Sounding candidate Wilmington, Ohio (USM00072426)",
     );
     expect(wilmingtonCard).toHaveTextContent("High-CAPE pulse storm");
-    expect(wilmingtonCard).toHaveTextContent("Primary: Humid / rainy");
+    expect(wilmingtonCard).not.toHaveTextContent("Primary: Humid / rainy");
     expect(wilmingtonCard).toHaveTextContent("48.9 % ingredient score");
     expect(wilmingtonCard).toHaveTextContent("Recipe fit: testable as forced observed evolution");
     expect(
@@ -3795,7 +3994,7 @@ describe("App", () => {
       target: { value: "__observed_sounding_upload__" },
     });
 
-    fireEvent.click(screen.getByRole("button", { name: "Analyze cached soundings" }));
+    fireEvent.click(screen.getByRole("button", { name: "Search selected soundings" }));
     expect(await screen.findByText("Recommendation run complete")).toBeInTheDocument();
 
     fireEvent.click(screen.getByText("Advanced filters"));

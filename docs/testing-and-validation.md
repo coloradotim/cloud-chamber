@@ -111,14 +111,16 @@ boundary. Component tests and mocked Playwright smoke tests should verify that
 saved candidates load immediately when `Observed Soundings` is selected; the
 candidate workbench can refresh IGRA catalog metadata, cache a bounded batch of
 station files through mocked APIs, show station-diverse backend recommendations
-with why-interesting reasons and filter-trace counts, refine by story, story
-family, support, readiness, station search, and backend-owned sort keys when
-requested, include secondary story-score matches in explicit refined results,
-exclude weak deep-convection matches from the default credible deep-convection
-intent, sort missing metrics last, show blocked candidates as unusable, save
-candidates with freeform tags and notes, load a package-ready candidate into the
-observed-sounding package review, and include candidate-screening provenance in
-the generated package request. Browser tests must mock the backend APIs and must
+with why-interesting reasons and filter-trace counts, analyze the exact selected
+station set and history scope, apply the returned-candidate limit only after
+analysis, refine by story, story family, evidence tier, readiness, station
+search, and backend-owned sort keys when requested, include secondary
+story-score matches in explicit refined results, avoid silently converting
+deep-convection intent into a supported-only evidence filter, sort missing
+metrics last, show blocked candidates as unusable, save candidates with freeform
+tags and notes, load a package-ready candidate into the observed-sounding
+package review, and include candidate-screening provenance in the generated
+package request. Browser tests must mock the backend APIs and must
 not fetch NOAA/NCEI, parse raw station text,
 compute story scores, or imply that a candidate score predicts the CM1 outcome.
 
@@ -516,7 +518,7 @@ Output-product tests should cover interesting-time metadata without using real
 CM1 output. Tiny synthetic NetCDF fixtures and fake diagnostics should verify
 supported landmarks such as first cloud, max `qc`, max/min `w`, rain onset, and
 latest output; honest no-event behavior for no-cloud results; missing-field and
-missing-diagnostic support states; inferred-time caveats; per-field default
+missing-diagnostic evidence states; inferred-time caveats; per-field default
 time choices; and Result Card propagation of the compact `science_summary`.
 
 Viewport-stability tests should verify that the domain box, floor/grid, active

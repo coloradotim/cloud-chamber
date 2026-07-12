@@ -23,7 +23,10 @@ from cloud_chamber.observed_sounding import (
     ObservedSoundingError,
     ObservedSoundingLevel,
     ObservedSoundingRecord,
+    ParsedIgraSounding,
+    SoundingTimeSummary,
     StationMetadata,
+    parse_igra_station_soundings,
     parse_igra_station_text,
     summarize_igra_station_text,
 )
@@ -90,6 +93,7 @@ CandidateStoryFilter = Literal[
 ]
 CandidateSupportFilter = Literal["all", "supported", "weak", "unavailable"]
 CandidateReadinessFilter = Literal["all", "package_ready", "blocked"]
+CandidateHistoryScope = Literal["latest_per_station", "all_cached"]
 CandidateSortDirection = Literal["asc", "desc"]
 CandidateSortKey = Literal[
     "best_match",
@@ -320,6 +324,9 @@ class CandidateAnalysisFilterSummary(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     station_id: str | None = None
+    station_ids: list[str] = Field(default_factory=list)
+    history_scope: CandidateHistoryScope = "latest_per_station"
+    latest_per_station: int | None = 5
     story_filter: CandidateStoryFilter = "all"
     story_family: CandidateStoryFamilyFilter = "all"
     support: CandidateSupportFilter = "all"
@@ -354,6 +361,10 @@ class CandidateExcludedReason(BaseModel):
 class CandidateFilterTrace(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
+    selected_station_count: int
+    selected_cached_soundings: int
+    history_scope: CandidateHistoryScope
+    latest_per_station: int | None = None
     analyzed_soundings: int
     story_score_records: int
     stage_counts: dict[str, int]
@@ -428,7 +439,7 @@ SORT_OPTIONS: tuple[CandidateSortOption, ...] = (
         key="rank_score", label="Rank score", units="0-100", default_direction="desc"
     ),
     CandidateSortOption(key="confidence", label="Confidence", default_direction="desc"),
-    CandidateSortOption(key="support", label="Support state", default_direction="desc"),
+    CandidateSortOption(key="support", label="Evidence tier", default_direction="desc"),
     CandidateSortOption(
         key="package_readiness", label="Package readiness", default_direction="desc"
     ),
@@ -564,20 +575,26 @@ def screen_cached_soundings(
     settings: CloudChamberSettings,
     *,
     station_id: str | None = None,
-    latest_per_station: int = 5,
-    limit: int = 50,
+    station_ids: list[str] | None = None,
+    history_scope: CandidateHistoryScope = "latest_per_station",
+    latest_per_station: int | None = 5,
+    limit: int | None = 50,
     target_story: TargetStoryId | None = None,
 ) -> ScreeningResult:
     """Screen cached IGRA soundings and return story-matched hypotheses."""
 
-    if latest_per_station < 1:
-        raise ValueError("latest_per_station must be at least 1")
-    if limit < 1:
+    selected_station_ids = _normalize_station_selection(station_id, station_ids)
+    if history_scope == "latest_per_station":
+        if latest_per_station is None or latest_per_station < 1:
+            raise ValueError("latest_per_station must be at least 1 for latest-per-station history")
+    elif history_scope != "all_cached":
+        raise ValueError(f"Unsupported history_scope: {history_scope}")
+    if limit is not None and limit < 1:
         raise ValueError("limit must be at least 1")
     candidates: list[SoundingCandidate] = []
     caveats: list[str] = []
     for entry in _cached_text_entries(settings):
-        if station_id is not None and entry.station_id != station_id:
+        if selected_station_ids and entry.station_id not in selected_station_ids:
             continue
         if entry.cached_text_path is None:
             continue
@@ -589,13 +606,32 @@ def screen_cached_soundings(
             caveats.append(f"{entry.station_id}:{path.name}:{exc}")
             continue
         summaries = sorted(summaries, key=lambda summary: summary.valid_time_utc, reverse=True)
-        for summary in summaries[:latest_per_station]:
+        selected_summaries = (
+            summaries[:latest_per_station] if history_scope == "latest_per_station" else summaries
+        )
+        selected_times = {summary.valid_time_utc for summary in selected_summaries}
+        try:
+            parsed_soundings = parse_igra_station_soundings(
+                text,
+                uploaded_filename=path.name,
+                selected_times_utc=selected_times,
+                station_metadata=_station_metadata_from_cache_entry(entry),
+            )
+        except ObservedSoundingError as exc:
+            caveats.append(f"{entry.station_id}:{path.name}:{exc}")
+            continue
+        parsed_by_time = {parsed.summary.valid_time_utc: parsed for parsed in parsed_soundings}
+        for summary in selected_summaries:
+            parsed = parsed_by_time.get(summary.valid_time_utc)
+            if parsed is None:
+                caveats.append(f"{entry.station_id}:{path.name}:missing_selected_time")
+                continue
             candidates.append(
-                _candidate_from_cached_sounding(
+                _candidate_from_parsed_sounding(
                     entry=entry,
                     source_text=text,
                     source_path=path,
-                    selected_time=summary.valid_time_utc,
+                    parsed=parsed,
                 )
             )
     ranked = sorted(
@@ -614,7 +650,7 @@ def screen_cached_soundings(
     )
     return ScreeningResult(
         generated_at=datetime.now(UTC),
-        candidates=ranked[:limit],
+        candidates=ranked if limit is None else ranked[:limit],
         caveats=caveats,
     )
 
@@ -623,7 +659,9 @@ def analyze_cached_soundings(
     settings: CloudChamberSettings,
     *,
     station_id: str | None = None,
-    latest_per_station: int = 5,
+    station_ids: list[str] | None = None,
+    history_scope: CandidateHistoryScope = "all_cached",
+    latest_per_station: int | None = None,
     limit: int = 50,
     story_filter: CandidateStoryFilter = "all",
     story_family: CandidateStoryFamilyFilter = "all",
@@ -635,18 +673,23 @@ def analyze_cached_soundings(
 ) -> CandidateAnalysisResult:
     """Analyze cached sounding candidates with backend-owned filters and sorts."""
 
-    if latest_per_station < 1:
-        raise ValueError("latest_per_station must be at least 1")
+    selected_station_ids = _normalize_station_selection(station_id, station_ids)
+    if history_scope == "latest_per_station":
+        if latest_per_station is None or latest_per_station < 1:
+            raise ValueError("latest_per_station must be at least 1 for latest-per-station history")
+    elif history_scope != "all_cached":
+        raise ValueError(f"Unsupported history_scope: {history_scope}")
     if limit < 1:
         raise ValueError("limit must be at least 1")
     selected_direction = sort_direction or _DEFAULT_SORT_DIRECTIONS[sort_by]
     target_story = _target_story_for_filter(story_filter, story_family)
-    pool_limit = max(limit, 10_000)
     screened = screen_cached_soundings(
         settings,
         station_id=station_id,
+        station_ids=list(selected_station_ids),
+        history_scope=history_scope,
         latest_per_station=latest_per_station,
-        limit=pool_limit,
+        limit=None,
         target_story=target_story,
     )
     normalized_search = station_search.strip()
@@ -697,6 +740,11 @@ def analyze_cached_soundings(
         sort_direction=selected_direction,
         filters=CandidateAnalysisFilterSummary(
             station_id=station_id,
+            station_ids=list(selected_station_ids),
+            history_scope=history_scope,
+            latest_per_station=latest_per_station
+            if history_scope == "latest_per_station"
+            else None,
             story_filter=story_filter,
             story_family=story_family,
             support=support,
@@ -713,6 +761,10 @@ def analyze_cached_soundings(
             readiness=readiness,
             station_search=normalized_search,
             limit=limit,
+            history_scope=history_scope,
+            latest_per_station=latest_per_station
+            if history_scope == "latest_per_station"
+            else None,
         ),
         sort_options=list(SORT_OPTIONS),
         caveats=screened.caveats,
@@ -810,6 +862,23 @@ def _dedupe_nonempty_strings(values: list[str]) -> list[str]:
         seen.add(cleaned)
         deduped.append(cleaned)
     return deduped
+
+
+def _normalize_station_selection(
+    station_id: str | None, station_ids: list[str] | None
+) -> tuple[str, ...]:
+    selected: list[str] = []
+    if station_id:
+        selected.append(station_id.strip())
+    selected.extend(station.strip() for station in (station_ids or []) if station.strip())
+    deduped: list[str] = []
+    seen: set[str] = set()
+    for station in selected:
+        if station in seen:
+            continue
+        seen.add(station)
+        deduped.append(station)
+    return tuple(deduped)
 
 
 def _candidate_story_score(candidate: SoundingCandidate, story: TargetStoryId | None) -> float:
@@ -964,7 +1033,10 @@ def _candidate_filter_trace(
     readiness: CandidateReadinessFilter,
     station_search: str,
     limit: int,
+    history_scope: CandidateHistoryScope,
+    latest_per_station: int | None,
 ) -> CandidateFilterTrace:
+    selected_station_count = len({candidate.station_id for candidate in candidates})
     stages: list[CandidateFilterStage] = [
         CandidateFilterStage(
             key="analyzed_soundings",
@@ -1013,7 +1085,7 @@ def _candidate_filter_trace(
     )
     apply_stage(
         key="support",
-        label="Support",
+        label="Evidence tier",
         active=support != "all",
         keep=lambda candidate: _candidate_matches_support_filter(
             candidate,
@@ -1021,7 +1093,7 @@ def _candidate_filter_trace(
             story_family=story_family,
             support=support,
         ),
-        excluded_reason=f"Support: {support}",
+        excluded_reason=f"Evidence tier: {_support_label(support)}",
     )
     apply_stage(
         key="readiness",
@@ -1056,6 +1128,10 @@ def _candidate_filter_trace(
     stage_counts = {stage.key: stage.count for stage in stages}
     station_distribution = _station_distribution(rendered_candidates)
     return CandidateFilterTrace(
+        selected_station_count=selected_station_count,
+        selected_cached_soundings=len(candidates),
+        history_scope=history_scope,
+        latest_per_station=latest_per_station,
         analyzed_soundings=len(candidates),
         story_score_records=sum(len(candidate.story_scores) for candidate in candidates),
         stage_counts=stage_counts,
@@ -1182,6 +1258,16 @@ def _story_family_label(story_family: CandidateStoryFamilyFilter) -> str:
     if story_family == "lower_atmosphere":
         return "lower-atmosphere stories"
     return "review / incomplete"
+
+
+def _support_label(support: CandidateSupportFilter) -> str:
+    if support == "all":
+        return "all evidence tiers"
+    if support == "supported":
+        return "strong signal"
+    if support == "weak":
+        return "plausible / caveated"
+    return "little or no signal"
 
 
 def _candidate_matches_analysis_filters(
@@ -1429,20 +1515,57 @@ def _candidate_from_cached_sounding(
     source_path: Path,
     selected_time: datetime,
 ) -> SoundingCandidate:
-    source_hash = hashlib.sha256(source_text.encode("utf-8")).hexdigest()
-    created_at = datetime.now(UTC)
     station_metadata = _station_metadata_from_cache_entry(entry)
-    station_latitude: float | None
-    station_longitude: float | None
-    station_elevation: float | None
     try:
-        parsed = parse_igra_station_text(
+        response = parse_igra_station_text(
             source_text,
             uploaded_filename=source_path.name,
             selected_time_utc=selected_time,
             station_metadata=station_metadata,
         )
-        record = parsed.selected_sounding
+        parsed = ParsedIgraSounding(
+            summary=next(
+                summary
+                for summary in response.available_soundings
+                if summary.valid_time_utc == response.selected_sounding.valid_time_utc
+            ),
+            record=response.selected_sounding,
+        )
+    except ObservedSoundingError as exc:
+        parsed = ParsedIgraSounding(
+            summary=SoundingTimeSummary(
+                station_id=entry.station_id,
+                valid_time_utc=selected_time,
+                source_time_text=selected_time.isoformat().replace("+00:00", "Z"),
+                num_levels=0,
+                pressure_source="",
+                non_pressure_source="",
+            ),
+            error=str(exc),
+        )
+    return _candidate_from_parsed_sounding(
+        entry=entry,
+        source_text=source_text,
+        source_path=source_path,
+        parsed=parsed,
+    )
+
+
+def _candidate_from_parsed_sounding(
+    *,
+    entry: IGRACacheEntry,
+    source_text: str,
+    source_path: Path,
+    parsed: ParsedIgraSounding,
+) -> SoundingCandidate:
+    source_hash = hashlib.sha256(source_text.encode("utf-8")).hexdigest()
+    created_at = datetime.now(UTC)
+    selected_time = parsed.summary.valid_time_utc
+    station_latitude: float | None
+    station_longitude: float | None
+    station_elevation: float | None
+    if parsed.record is not None:
+        record = parsed.record
         features = _features_from_record(record)
         story_scores, evidence = _score_features(features, package_ready=True)
         caveats = list(record.validation.caveats)
@@ -1454,15 +1577,16 @@ def _candidate_from_cached_sounding(
         station_longitude = record.station_longitude
         station_elevation = record.station_elevation_m_msl
         package_ready = True
-    except ObservedSoundingError as exc:
+    else:
+        error = parsed.error or "Observed sounding could not be parsed."
         features = {
             "data_completeness_score": 0.0,
-            "package_error": str(exc),
+            "package_error": error,
         }
-        story_scores, evidence = _poor_candidate_scores(str(exc))
-        caveats = [str(exc)]
+        story_scores, evidence = _poor_candidate_scores(error)
+        caveats = [error]
         selected_payload = None
-        source_time_text = selected_time.isoformat().replace("+00:00", "Z")
+        source_time_text = parsed.summary.source_time_text
         station_latitude = entry.latitude
         station_longitude = entry.longitude
         station_elevation = entry.elevation_m_msl

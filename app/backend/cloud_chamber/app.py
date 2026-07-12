@@ -66,6 +66,7 @@ from cloud_chamber.selected_region_diagnostics import (
 )
 from cloud_chamber.settings import load_settings
 from cloud_chamber.sounding_candidates import (
+    CandidateHistoryScope,
     CandidateReadinessFilter,
     CandidateSortDirection,
     CandidateSortKey,
@@ -167,19 +168,24 @@ class IGRACacheRequest(BaseModel):
 
 class IGRABatchCacheRequest(BaseModel):
     station_id: str | None = None
+    station_ids: list[str] = Field(default_factory=list)
     limit: int = 10
 
 
 class SoundingCandidateScreenRequest(BaseModel):
     station_id: str | None = None
-    latest_per_station: int = 5
+    station_ids: list[str] = Field(default_factory=list)
+    history_scope: CandidateHistoryScope = "latest_per_station"
+    latest_per_station: int | None = 5
     limit: int = 50
     target_story: TargetStoryId | None = None
 
 
 class SoundingCandidateAnalysisRequest(BaseModel):
     station_id: str | None = None
-    latest_per_station: int = 5
+    station_ids: list[str] = Field(default_factory=list)
+    history_scope: CandidateHistoryScope = "all_cached"
+    latest_per_station: int | None = None
     limit: int = 50
     story_filter: CandidateStoryFilter = "all"
     story_family: CandidateStoryFamilyFilter = "all"
@@ -291,7 +297,7 @@ def cache_igra_recent_file(request: IGRACacheRequest) -> dict[str, object]:
 
 @app.post("/api/igra/recent/cache-batch")
 def cache_igra_recent_files(request: IGRABatchCacheRequest) -> dict[str, object]:
-    if request.limit < 1:
+    if request.limit < 1 and not request.station_ids:
         raise HTTPException(status_code=400, detail="limit must be at least 1")
     settings = load_settings()
     catalog = read_igra_recent_catalog(settings)
@@ -300,13 +306,29 @@ def cache_igra_recent_files(request: IGRABatchCacheRequest) -> dict[str, object]
             status_code=400,
             detail="Refresh IGRA recent catalog before caching station files.",
         )
+    selected_station_ids = [
+        station.strip()
+        for station in ([request.station_id] if request.station_id else []) + request.station_ids
+        if station and station.strip()
+    ]
+    selected_station_set = set(selected_station_ids)
     uncached = [
         reference
         for reference in catalog.zip_references
         if reference.cached_status == "not_cached"
-        and (request.station_id is None or reference.station_id == request.station_id)
+        and (not selected_station_set or reference.station_id in selected_station_set)
     ]
-    selected = uncached[: request.limit]
+    if selected_station_set:
+        station_order = {station: index for index, station in enumerate(selected_station_ids)}
+        selected = sorted(
+            uncached,
+            key=lambda reference: (
+                station_order.get(reference.station_id, len(station_order)),
+                reference.filename,
+            ),
+        )
+    else:
+        selected = uncached[: request.limit]
     cached_entries: list[dict[str, object]] = []
     failed: list[dict[str, str]] = []
     for reference in selected:
@@ -327,6 +349,7 @@ def cache_igra_recent_files(request: IGRABatchCacheRequest) -> dict[str, object]
             )
     return {
         "requested_limit": request.limit,
+        "requested_station_ids": selected_station_ids,
         "selected_count": len(selected),
         "cached_entries": cached_entries,
         "failed": failed,
@@ -346,6 +369,8 @@ def screen_sounding_candidates(request: SoundingCandidateScreenRequest) -> dict[
         result = screen_cached_soundings(
             load_settings(),
             station_id=request.station_id,
+            station_ids=request.station_ids,
+            history_scope=request.history_scope,
             latest_per_station=request.latest_per_station,
             limit=request.limit,
             target_story=request.target_story,
@@ -361,6 +386,8 @@ def analyze_sounding_candidates(request: SoundingCandidateAnalysisRequest) -> di
         result = analyze_cached_soundings(
             load_settings(),
             station_id=request.station_id,
+            station_ids=request.station_ids,
+            history_scope=request.history_scope,
             latest_per_station=request.latest_per_station,
             limit=request.limit,
             story_filter=request.story_filter,

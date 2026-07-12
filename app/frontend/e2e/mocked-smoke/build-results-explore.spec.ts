@@ -125,18 +125,20 @@ test.describe("mocked smoke: Build, Results, Explore path", () => {
       .getByLabel("Experiment", { exact: true })
       .selectOption("__observed_sounding_upload__");
     await expect(page.getByRole("heading", { name: "Find interesting soundings" })).toBeVisible();
-    await expect(page.getByText(/Screening guidance only/i).first()).toBeVisible();
-    await expect(page.getByText("IGRA cache not checked yet")).toBeVisible();
+    await expect(page.getByText("Cached soundings ready to search")).toBeVisible();
+    await expect(page.getByLabel("Prepare and search local soundings")).toContainText(
+      "Selected soundings",
+    );
+    await expect(page.getByLabel("Station picker")).toContainText("All cached stations");
+    await expect(page.getByLabel("Local sounding data")).toContainText("2 cached soundings");
+    await expect(page.getByLabel("Advanced sounding candidate controls")).not.toBeVisible();
 
     await page.getByText("Advanced filters", { exact: true }).click();
-    await page.getByRole("button", { name: "Refresh IGRA catalog" }).click();
+    await page.getByRole("button", { name: "Refresh catalog" }).click();
     await expect(page.getByText("IGRA station catalog refreshed")).toBeVisible();
     await expect(page.getByText("Parsed soundings")).toBeVisible();
-    await expect(page.getByText("2 cached soundings")).toBeVisible();
+    await expect(page.getByLabel("Local sounding data")).toContainText("2 cached soundings");
     await expect(page.getByText("Ready to search")).toBeVisible();
-
-    await page.getByRole("button", { name: "Cache station files" }).click();
-    await expect(page.getByText("Cached 1 station file")).toBeVisible();
 
     const candidateControls = page.getByLabel("Advanced sounding candidate controls");
     const storySelect = candidateControls.getByRole("combobox").first();
