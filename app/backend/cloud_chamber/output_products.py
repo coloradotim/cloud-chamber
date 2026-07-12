@@ -1065,8 +1065,7 @@ def _cm1_outcome(diagnostics: ResultDiagnostics) -> str:
     strong_updraft = _strong_updraft_formed(diagnostics)
     if deep_cloud is None or strong_updraft is None:
         return (
-            "Unable to evaluate deep convection because required cloud or updraft fields "
-            "are missing."
+            "Inconclusive for deep convection because required cloud or updraft fields are missing."
         )
     if deep_cloud and strong_updraft:
         rain_water_aloft = diagnostics.rain.available and diagnostics.rain.present

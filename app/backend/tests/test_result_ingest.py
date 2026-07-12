@@ -405,12 +405,12 @@ def test_ingests_deep_convection_candidate_outcome_comparison(tmp_path: Path) ->
         manifest.model_copy(
             update={
                 "candidate_screening": candidate_screening,
-                "run_recipe": "untriggered_observed_evolution",
+                "run_recipe": "observed_surface_forced_evolution",
                 "run_recipe_display_name": "Observed Surface-Forced Evolution",
                 "recipe_id": "observed_surface_forced_evolution_v0",
                 "recipe_display_name": "Observed Surface-Forced Evolution v0",
                 "assumption_set_id": "observed_surface_forced_evolution_v0_assumptions",
-                "assumption_mode": "surface_forced_observed_evolution",
+                "assumption_mode": "observed_surface_forced_evolution",
                 "recipe_assumptions": {
                     "trigger": {"mode": "none"},
                     "surface_fluxes": {
@@ -439,9 +439,13 @@ def test_ingests_deep_convection_candidate_outcome_comparison(tmp_path: Path) ->
     assert result.candidate_hypothesis_comparison is not None
     assert result.candidate_hypothesis_comparison.screened_as == "Supercell-like environment"
     assert result.candidate_hypothesis_comparison.ran_as == "Observed Surface-Forced Evolution v0"
-    assert result.candidate_hypothesis_comparison.match_status == "matched"
+    assert result.candidate_hypothesis_comparison.match_status == "partially_supported"
     assert result.candidate_hypothesis_comparison.cm1_outcome == (
         "Deep convection formed with strong updraft and rain water aloft."
+    )
+    assert any(
+        caveat.startswith("required_output_fields_missing_for_deep_candidate_comparison")
+        for caveat in result.candidate_hypothesis_comparison.caveats
     )
     assert "max updraft 15 m/s" in result.candidate_hypothesis_comparison.evidence
     assert "rain-water-aloft onset 900 s" in result.candidate_hypothesis_comparison.evidence
@@ -476,12 +480,12 @@ def test_deep_candidate_comparison_uses_observed_surface_forced_outcome(
         manifest.model_copy(
             update={
                 "candidate_screening": candidate_screening,
-                "run_recipe": "untriggered_observed_evolution",
+                "run_recipe": "observed_surface_forced_evolution",
                 "run_recipe_display_name": "Observed Surface-Forced Evolution",
                 "recipe_id": "observed_surface_forced_evolution_v0",
                 "recipe_display_name": "Observed Surface-Forced Evolution v0",
                 "assumption_set_id": "observed_surface_forced_evolution_v0_assumptions",
-                "assumption_mode": "surface_forced_observed_evolution",
+                "assumption_mode": "observed_surface_forced_evolution",
                 "recipe_assumptions": {
                     "trigger": {"mode": "none"},
                     "radiation": {"mode": "disabled"},
@@ -501,7 +505,7 @@ def test_deep_candidate_comparison_uses_observed_surface_forced_outcome(
     assert result.recipe_id == "observed_surface_forced_evolution_v0"
     assert result.recipe_display_name == "Observed Surface-Forced Evolution v0"
     assert result.assumption_set_id == "observed_surface_forced_evolution_v0_assumptions"
-    assert result.assumption_mode == "surface_forced_observed_evolution"
+    assert result.assumption_mode == "observed_surface_forced_evolution"
     assert result.recipe_assumptions["trigger"]["mode"] == "none"
     assert result.required_output_fields == ["qv", "qc", "w", "qr", "rain", "dbz"]
     assert result.missing_required_output_fields == ["qv", "rain", "dbz"]
@@ -509,12 +513,18 @@ def test_deep_candidate_comparison_uses_observed_surface_forced_outcome(
         result.warnings
     )
     assert result.candidate_hypothesis_comparison is not None
-    assert result.candidate_hypothesis_comparison.match_status == "did_not_match"
+    assert result.candidate_hypothesis_comparison.match_status == "inconclusive"
     assert result.candidate_hypothesis_comparison.cm1_outcome == (
-        "Deep convection was not detected by current cloud-top and updraft thresholds."
+        "Deep convection did not occur under this run configuration by current "
+        "cloud-top and updraft thresholds; this does not disprove the sounding's "
+        "deep-convection potential."
     )
     assert "trigger" not in result.candidate_hypothesis_comparison.cm1_outcome.lower()
+    assert "failed" not in result.candidate_hypothesis_comparison.cm1_outcome.lower()
     assert "comparison_requires_triggered_deep_potential_run" not in (
+        result.candidate_hypothesis_comparison.caveats
+    )
+    assert "no_storm_under_selected_surface_forcing_is_not_failed_potential" in (
         result.candidate_hypothesis_comparison.caveats
     )
 

@@ -129,7 +129,7 @@ HORIZONTAL_CELL_CHOICES: dict[str, _HorizontalCellChoice] = {
     "cells_384": _HorizontalCellChoice(cells=384, label="Very high detail 384 x 384"),
 }
 
-SHALLOW_DOMAIN_CHOICES: dict[str, _DomainChoice] = {
+DOMAIN_CHOICES: dict[str, _DomainChoice] = {
     "local_6km": _DomainChoice(
         x_km=6.4,
         y_km=6.4,
@@ -164,33 +164,6 @@ SHALLOW_DOMAIN_CHOICES: dict[str, _DomainChoice] = {
     ),
 }
 
-DEEP_DOMAIN_CHOICES: dict[str, _DomainChoice] = {
-    "storm_120km": _DomainChoice(
-        x_km=120.0,
-        y_km=120.0,
-        nz=40,
-        dz_m=500.0,
-        model_top_m=20000.0,
-        label="Storm 120 km",
-    ),
-    "storm_160km": _DomainChoice(
-        x_km=160.0,
-        y_km=160.0,
-        nz=40,
-        dz_m=500.0,
-        model_top_m=20000.0,
-        label="Storm 160 km",
-    ),
-    "storm_240km": _DomainChoice(
-        x_km=240.0,
-        y_km=240.0,
-        nz=40,
-        dz_m=500.0,
-        model_top_m=20000.0,
-        label="Storm 240 km",
-    ),
-}
-
 CADENCE_CHOICES: dict[str, _CadenceChoice] = {
     "sparse_60min": _CadenceChoice(seconds=3600, label="Sparse 60 min"),
     "standard_15min": _CadenceChoice(seconds=900, label="Standard 15 min"),
@@ -204,7 +177,7 @@ SURFACE_MOISTURE_FLUX_CONTEXT_RANGE_G_G_M_S = (0.0, 2.0e-4)
 
 
 def default_run_configuration_payload(run_recipe: str | None = None) -> dict[str, str | float]:
-    if run_recipe == "untriggered_observed_evolution":
+    if run_recipe == "observed_surface_forced_evolution":
         return {
             "duration": "short_6h",
             "horizontal_cell_count": "cells_128",
@@ -243,8 +216,6 @@ def resolve_run_configuration(
     }
 
     initiation_method = "none"
-    if payload.get("domain_size") in DEEP_DOMAIN_CHOICES:
-        payload["domain_size"] = "local_6km"
 
     duration = _choice(DURATION_CHOICES, payload.get("duration"), "duration")
     horizontal_cells = _choice(
@@ -252,7 +223,7 @@ def resolve_run_configuration(
         payload.get("horizontal_cell_count"),
         "horizontal_cell_count",
     )
-    domain = _choice(SHALLOW_DOMAIN_CHOICES, payload.get("domain_size"), "domain_size")
+    domain = _choice(DOMAIN_CHOICES, payload.get("domain_size"), "domain_size")
     cadence = _choice(
         CADENCE_CHOICES,
         payload.get("output_cadence"),
@@ -360,6 +331,11 @@ def resolve_run_configuration(
 
 def _choice[T](choices: dict[str, T], value: object, label: str) -> T:
     if not isinstance(value, str) or value not in choices:
+        if label == "domain_size" and isinstance(value, str) and value.startswith("storm_"):
+            raise ValueError(
+                "Removed domain_size: storm-style domains are not active run-configuration "
+                "choices. Use local_6km, wide_12km, regional_60km, or regional_120km."
+            )
         raise ValueError(f"Unknown {label}: {value}")
     return choices[value]
 

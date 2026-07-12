@@ -431,7 +431,7 @@ def test_non_deep_summary_does_not_emit_deep_convection_outcome(
         diagnostics=diagnostics,
         output_manifest=manifest,
         variables=["qc", "w"],
-        run_recipe="untriggered_observed_evolution",
+        run_recipe="observed_surface_forced_evolution",
     )
 
     records = {record.key: record for record in product.available_interesting_times}

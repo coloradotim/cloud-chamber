@@ -371,9 +371,9 @@ type CandidateRecipeFitDisplay = {
 
 type RunRecipe =
   | "generated_reference_lower_atmosphere"
-  | "untriggered_observed_evolution";
+  | "observed_surface_forced_evolution";
 
-type ObservedRunRecipe = "untriggered_observed_evolution";
+type ObservedRunRecipe = "observed_surface_forced_evolution";
 type AtmosphereSourcePath = "cached_recommendations" | "saved_candidates" | "upload_igra_text";
 type SearchIntent =
   | "best_overall"
@@ -384,7 +384,7 @@ type SearchIntent =
 type SearchDepth = "quick_scan" | "deeper_scan" | "broad_historical_sweep";
 type TimeScope = "recent_latest";
 type RunPlanQueueTarget = "local" | "lan";
-const CURRENT_OBSERVED_RUN_RECIPE: ObservedRunRecipe = "untriggered_observed_evolution";
+const CURRENT_OBSERVED_RUN_RECIPE: ObservedRunRecipe = "observed_surface_forced_evolution";
 type RunPlanItemStatus =
   | "planned"
   | "packaging"
@@ -4289,7 +4289,7 @@ function RunConfigurationPanel({
           label="Domain size"
           description="Domain width and model top."
           value={configuration.domain_size}
-          options={SHALLOW_DOMAIN_OPTIONS}
+          options={DOMAIN_OPTIONS}
           onChange={(value) => update("domain_size", value)}
         />
         <RunConfigurationSelect
@@ -6108,7 +6108,7 @@ function RunPlanConfigurationFields({
         label="Domain size"
         description="Width and model top."
         value={item.runConfiguration.domain_size}
-        options={SHALLOW_DOMAIN_OPTIONS}
+        options={DOMAIN_OPTIONS}
         onChange={(value) => update("domain_size", value)}
       />
       <RunConfigurationSelect
@@ -10341,8 +10341,8 @@ function candidateRecipeFitForStory(
     status: "partially_testable",
     label: "partially testable with current observed-sounding run",
     summary:
-      "The current observed-sounding path can inspect untriggered shallow/evolution behavior, but the recipe still shapes what CM1 can test.",
-    caveats: ["untriggered_observed_evolution_is_recipe_dependent"],
+      "The current observed-sounding path can inspect cloud and moisture evolution under selected surface forcing, but the recipe still shapes what CM1 can test.",
+    caveats: ["observed_surface_forced_evolution_is_recipe_dependent"],
   };
 }
 
@@ -10911,7 +10911,7 @@ function staticRecipeMetadata(): {
     recipeId: "observed_surface_forced_evolution_v0",
     recipeDisplayName: "Observed Surface-Forced Evolution v0",
     assumptionSetId: "observed_surface_forced_evolution_v0_assumptions",
-    assumptionMode: "surface_forced_observed_evolution",
+    assumptionMode: "observed_surface_forced_evolution",
     requiredOutputFields: ["qv", "qc", "w", "qr", "rain", "dbz", "hfx", "lhfx"],
     recipeCaveats: [
       "No artificial atmospheric trigger is applied.",
@@ -11451,7 +11451,7 @@ const HORIZONTAL_CELL_OPTIONS = [
   { value: "cells_384", label: "Very high detail (384 x 384)" },
 ];
 
-const SHALLOW_DOMAIN_OPTIONS = [
+const DOMAIN_OPTIONS = [
   { value: "local_6km", label: "Local 6 km" },
   { value: "wide_12km", label: "Wide 12 km" },
   { value: "regional_60km", label: "Regional 60 km" },
@@ -11474,7 +11474,7 @@ function defaultRunConfigurationForSelection(scenarioId: string): RunConfigurati
 function previewRunConfiguration(configuration: RunConfigurationInput): RunConfiguration {
   const duration = durationValue(configuration.duration);
   const horizontalCells = horizontalCellValue(configuration.horizontal_cell_count);
-  const domain = domainValue(configuration.domain_size, false);
+  const domain = domainValue(configuration.domain_size);
   const cadence = cadenceValue(configuration.output_cadence);
   const diagnosticSet = { value: "full" };
   const heatFlux = numericConfigurationValue(configuration.surface_heat_flux_k_m_s, 8.0e-3);
@@ -11598,10 +11598,7 @@ function horizontalCellValue(value: string): { cells: number; label: string } {
   return { cells: 128, label: "Standard 128 x 128" };
 }
 
-function domainValue(
-  value: string,
-  deep: boolean,
-): {
+function domainValue(value: string): {
   value: string;
   xKm: number;
   yKm: number;
@@ -11610,39 +11607,6 @@ function domainValue(
   modelTopM: number;
   label: string;
 } {
-  if (deep) {
-    if (value === "storm_160km") {
-      return {
-        value,
-        xKm: 160,
-        yKm: 160,
-        nz: 40,
-        dzM: 500,
-        modelTopM: 20000,
-        label: "Storm 160 km",
-      };
-    }
-    if (value === "storm_240km") {
-      return {
-        value,
-        xKm: 240,
-        yKm: 240,
-        nz: 40,
-        dzM: 500,
-        modelTopM: 20000,
-        label: "Storm 240 km",
-      };
-    }
-    return {
-      value: "storm_120km",
-      xKm: 120,
-      yKm: 120,
-      nz: 40,
-      dzM: 500,
-      modelTopM: 20000,
-      label: "Storm 120 km",
-    };
-  }
   if (value === "wide_12km") {
     return {
       value,
@@ -12371,8 +12335,8 @@ function deepConvectionOutcome(result: ResultCard): string {
 }
 
 function candidateMatchTone(matchStatus: string): "good" | "warning" | "neutral" {
-  if (matchStatus === "matched") return "good";
-  if (matchStatus === "did_not_match" || matchStatus === "unable_to_evaluate") return "warning";
+  if (matchStatus === "supported") return "good";
+  if (matchStatus === "inconclusive" || matchStatus === "not_comparable") return "warning";
   return "neutral";
 }
 
