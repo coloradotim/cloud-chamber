@@ -3590,6 +3590,8 @@ describe("App", () => {
     const valleyCard = screen.getByLabelText("Sounding candidate Valley, Nebraska (USM00072558)");
     expect(valleyCard).toHaveTextContent("Cloud-forming shallow cumulus");
     expect(valleyCard).toHaveTextContent("Package-ready");
+    expect(valleyCard).toHaveTextContent("Why it surfaced");
+    expect(valleyCard).toHaveTextContent("Good for a surface-forced run.");
     fireEvent.click(within(valleyCard).getByRole("button", { name: /Valley, Nebraska/ }));
     expect(
       screen.getByLabelText("Sounding candidate Wilmington, Ohio (USM00072426)"),
@@ -3597,18 +3599,26 @@ describe("App", () => {
     expect(
       screen.queryByLabelText("Sounding candidate Norman, Oklahoma (USM00072357)"),
     ).not.toBeInTheDocument();
-    expect(screen.getByLabelText("Candidate details")).toHaveTextContent(
-      "Scores rank sounding ingredients only",
-    );
-
     const candidateDetails = screen.getByLabelText("Candidate details");
+    expect(candidateDetails).toHaveTextContent("Recommended first run");
+    expect(candidateDetails).toHaveTextContent("Run fit");
+    expect(candidateDetails).toHaveTextContent("Top limits");
+    expect(candidateDetails).not.toHaveTextContent("Scores rank sounding ingredients only");
+    expect(within(candidateDetails).getByText("All evidence").closest("details")).not.toHaveAttribute(
+      "open",
+    );
+    expect(within(candidateDetails).getByText("Feature values").closest("details")).not.toHaveAttribute(
+      "open",
+    );
+    expect(within(candidateDetails).queryByLabelText("Tags")).not.toBeInTheDocument();
+    fireEvent.click(within(candidateDetails).getByRole("button", { name: "Save candidate" }));
     fireEvent.change(within(candidateDetails).getByLabelText("Tags"), {
       target: { value: "compare, rerun" },
     });
     fireEvent.change(within(candidateDetails).getByLabelText("Notes"), {
       target: { value: "Compare this against the humid case." },
     });
-    fireEvent.click(within(candidateDetails).getByRole("button", { name: "Save candidate" }));
+    fireEvent.click(within(candidateDetails).getByRole("button", { name: "Save" }));
 
     expect(await screen.findByText("Sounding candidate saved")).toBeInTheDocument();
     expect(saveBody).toContain('"tags":["compare","rerun"]');
@@ -3798,13 +3808,15 @@ describe("App", () => {
     );
     fireEvent.click(within(valleyCard).getByRole("button", { name: /Valley, Nebraska/ }));
     const candidateDetails = screen.getByLabelText("Candidate details");
+    expect(within(candidateDetails).queryByLabelText("Tags")).not.toBeInTheDocument();
+    fireEvent.click(within(candidateDetails).getByRole("button", { name: "Save candidate" }));
     fireEvent.change(within(candidateDetails).getByLabelText("Tags"), {
       target: { value: "Maybe rerun" },
     });
     fireEvent.change(within(candidateDetails).getByLabelText("Notes"), {
       target: { value: "Keep this one in the candidate notebook." },
     });
-    fireEvent.click(within(candidateDetails).getByRole("button", { name: "Save candidate" }));
+    fireEvent.click(within(candidateDetails).getByRole("button", { name: "Save" }));
 
     fireEvent.click(screen.getByRole("tab", { name: /Saved candidates/ }));
     const savedCard = await screen.findByLabelText(
@@ -3971,7 +3983,7 @@ describe("App", () => {
     expect(wilmingtonCard).toHaveTextContent("High-CAPE pulse storm");
     expect(wilmingtonCard).not.toHaveTextContent("Primary: Humid / rainy");
     expect(wilmingtonCard).toHaveTextContent("48.9 % ingredient score");
-    expect(wilmingtonCard).toHaveTextContent("Recipe fit: testable as forced observed evolution");
+    expect(wilmingtonCard).toHaveTextContent("testable as forced observed evolution");
     expect(
       screen.queryByLabelText("Sounding candidate Norman, Oklahoma (USM00072357)"),
     ).not.toBeInTheDocument();

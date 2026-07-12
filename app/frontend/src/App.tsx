@@ -5067,17 +5067,6 @@ function ObservedAtmosphereCandidatesPanel({
           <button type="button" onClick={onPrepareAndSearch}>
             Search selected soundings
           </button>
-          <button type="button" className="secondary-button" onClick={onRefreshIGRAData}>
-            Refresh catalog
-          </button>
-          <button
-            type="button"
-            className="secondary-button"
-            disabled={selectedUncachedStationOptions.length === 0}
-            onClick={onCacheStationFiles}
-          >
-            Cache selected stations
-          </button>
         </div>
       </section>
 
@@ -5150,14 +5139,14 @@ function ObservedAtmosphereCandidatesPanel({
         )}
       </section>
 
-      <section className="candidate-cache-summary" aria-label="Local sounding data">
-        <div className="panel-heading-row">
-          <h4>Local sounding data</h4>
-          <StatusBadge
-            label={screeningInputs.length > 0 ? "Ready to search" : "No cached soundings"}
-            tone={screeningInputs.length > 0 ? "good" : "neutral"}
-          />
-        </div>
+      <details className="candidate-cache-summary" aria-label="Local sounding data">
+        <summary>
+          {screeningInputs.length > 0
+            ? `Local data ready · ${cachedStationFiles.toLocaleString()} station file${cachedStationFiles === 1 ? "" : "s"} · ${cachedInventorySummary} · refreshed ${
+                catalog?.refreshed_at ? formatDate(catalog.refreshed_at) : "not refreshed here"
+              }`
+            : "No cached soundings ready"}
+        </summary>
         <dl className="compact-metrics candidate-cache-metrics">
           <Metric label="Region" value={catalog?.region.label ?? "Great Plains / Midwest"} />
           <Metric
@@ -5172,7 +5161,7 @@ function ObservedAtmosphereCandidatesPanel({
           <Metric label="Parsed soundings" value={cachedInventorySummary} />
           <Metric label="Last search" value={lastAnalysisSummary} />
         </dl>
-      </section>
+      </details>
 
       {error && (
         <div className="validation" role="alert">
@@ -5309,6 +5298,17 @@ function ObservedAtmosphereCandidatesPanel({
           <div className="candidate-toolbar-actions">
             <button type="button" className="secondary-button" onClick={onScreen}>
               Apply advanced filters
+            </button>
+            <button type="button" className="secondary-button" onClick={onRefreshIGRAData}>
+              Refresh catalog
+            </button>
+            <button
+              type="button"
+              className="secondary-button"
+              disabled={selectedUncachedStationOptions.length === 0}
+              onClick={onCacheStationFiles}
+            >
+              Cache selected stations
             </button>
           </div>
         </div>
@@ -5518,7 +5518,7 @@ function SavedSoundingCandidateCard({
               onChange={(event) => setTagDraft(event.target.value)}
             />
           </label>
-          <div className="candidate-tag-suggestions" aria-label="Suggested tags">
+          <div className="candidate-tag-suggestions" aria-label="Suggested label shortcuts">
             {candidateSuggestedTags.map((tag) => (
               <button
                 type="button"
@@ -5580,8 +5580,7 @@ function SoundingCandidateCard({
   const ingredientScore = candidateIngredientScore(candidate, storyFilter, storyFamilyFilter);
   const recipeFit = candidateRecipeFitForStory(candidate, story);
   const reasons = candidateInterestReasons(candidate).slice(0, 3);
-  const caveats = candidateDisplayCaveats(candidate);
-  const firstCaveat = caveats[0];
+  const keyNote = candidateKeyNote(candidate, story, recipeFit);
   return (
     <article
       className={`candidate-card${selected ? " selected-candidate-card" : ""}`}
@@ -5596,42 +5595,27 @@ function SoundingCandidateCard({
           <strong>{candidateStationLabel(candidate)}</strong>
           <small>{formatDate(candidate.valid_time_utc)}</small>
         </span>
-        <span className="badge-row">
-          {candidate.discovery_bucket && (
-            <StatusBadge label={candidate.discovery_bucket} tone="neutral" />
-          )}
-          <StatusBadge
-            label={candidateDisplayStoryLabel(candidate, storyFilter, storyFamilyFilter)}
-            tone="neutral"
-          />
-          <StatusBadge label={candidateStoryFamilyLabel(activeFamily)} tone="neutral" />
-          <StatusBadge
-            label={`${formatNumber(ingredientScore, "%")} ingredient score`}
-            tone="neutral"
-          />
-          <StatusBadge
-            label={`Recipe fit: ${recipeFit.label}`}
-            tone={candidateRecipeFitTone(recipeFit.status)}
-          />
-          <StatusBadge
-            label={candidate.package_ready ? "Package-ready" : "Blocked"}
-            tone={candidate.package_ready ? "good" : "warning"}
-          />
+        <span className="candidate-card-storyline">
+          {candidateDisplayStoryLabel(candidate, storyFilter, storyFamilyFilter)} ·{" "}
+          {formatNumber(ingredientScore, "%")} ingredient score ·{" "}
+          {candidate.package_ready ? "Package-ready" : "Blocked"}
         </span>
       </button>
+      <p className="candidate-card-context">
+        {candidate.discovery_bucket ? `${candidate.discovery_bucket} · ` : ""}
+        {candidateStoryFamilyLabel(activeFamily)} · {recipeFit.label}
+      </p>
       {reasons.length > 0 && (
-        <ul className="compact-list candidate-reason-list">
-          {reasons.map((reason) => (
-            <li key={`${candidate.candidate_id}-card-${reason}`}>{reason}</li>
-          ))}
-        </ul>
+        <div>
+          <h5>Why it surfaced</h5>
+          <ul className="compact-list candidate-reason-list">
+            {reasons.map((reason) => (
+              <li key={`${candidate.candidate_id}-card-${reason}`}>{reason}</li>
+            ))}
+          </ul>
+        </div>
       )}
-      {firstCaveat && (
-        <p className="field-help">
-          Key caveat: {humanize(firstCaveat)}
-          {caveats.length > 1 ? ` + ${caveats.length - 1} more` : ""}
-        </p>
-      )}
+      <p className="candidate-card-note">{keyNote}</p>
       <div className="button-row">
         <button
           type="button"
@@ -5665,12 +5649,14 @@ function SoundingCandidateDetail({
 }) {
   const [tagDraft, setTagDraft] = useState("");
   const [notesDraft, setNotesDraft] = useState("");
+  const [saveDrawerOpen, setSaveDrawerOpen] = useState(false);
   const candidateId = candidate?.candidate_id ?? "";
   const savedTagsText = savedCandidate?.tags.join(", ") ?? "";
   const savedNotesText = savedCandidate?.notes ?? "";
   useEffect(() => {
     setTagDraft(savedTagsText);
     setNotesDraft(savedNotesText);
+    setSaveDrawerOpen(false);
   }, [candidateId, savedCandidate?.saved_candidate_id, savedTagsText, savedNotesText]);
 
   if (!candidate) {
@@ -5687,13 +5673,16 @@ function SoundingCandidateDetail({
   const activeFamily = story ? candidateStoryFamilyForStory(story) : activeCandidate.story_family;
   const ingredientScore = candidateIngredientScore(activeCandidate, storyFilter, storyFamilyFilter);
   const recipeFit = candidateRecipeFitForStory(activeCandidate, story);
-  const reasons = candidateInterestReasons(activeCandidate);
+  const reasons = candidateInterestReasons(activeCandidate).slice(0, 5);
+  const topLimits = candidateTopLimits(activeCandidate, story, recipeFit);
+  const runRecommendation = candidateRunRecommendation(activeCandidate, story, recipeFit);
   const savedTagValues = parseTags(tagDraft);
   function handleTagSuggestion(tag: string) {
     setTagDraft(_dedupeStrings([...savedTagValues, tag]).join(", "));
   }
   function handleAnnotationSubmit() {
     onSave(activeCandidate, parseTags(tagDraft), notesDraft.trim() || null);
+    setSaveDrawerOpen(false);
   }
   const featureRows = [
     ["Observed wind profile", "observed_wind_available", ""],
@@ -5727,17 +5716,16 @@ function SoundingCandidateDetail({
             {candidateDisplayStoryLabel(candidate, storyFilter, storyFamilyFilter)}
           </p>
         </div>
-        <StatusBadge
-          label={candidate.package_ready ? "Ready for review" : "Blocked"}
-          tone={candidate.package_ready ? "good" : "warning"}
-        />
+        <span className="badge-row">
+          <StatusBadge
+            label={candidate.package_ready ? "Package-ready" : "Needs review"}
+            tone={candidate.package_ready ? "good" : "warning"}
+          />
+          <StatusBadge label={recipeFit.label} tone={candidateRecipeFitTone(recipeFit.status)} />
+          <StatusBadge label={savedCandidate ? "Saved" : "Not saved"} tone="neutral" />
+        </span>
       </div>
-      <p>
-        Scores rank sounding ingredients only. They do not predict what the current CM1 package will
-        produce. CM1 decides whether clouds, rain, or suppression actually happen.
-      </p>
-      <p className="field-help">Recipe fit: {recipeFit.summary}</p>
-      <div className="button-row">
+      <div className="candidate-detail-actions">
         <button
           type="button"
           disabled={!candidate.package_ready}
@@ -5745,12 +5733,85 @@ function SoundingCandidateDetail({
         >
           Configure run
         </button>
+        <button
+          type="button"
+          className="secondary-button"
+          onClick={() => setSaveDrawerOpen(true)}
+        >
+          {savedCandidate ? "Edit saved notes" : "Save candidate"}
+        </button>
       </div>
-      <section>
+      {saveDrawerOpen && (
+        <div className="candidate-save-drawer" aria-label="Save candidate notes">
+          <h5>Tags and notes</h5>
+          <label htmlFor={`candidate-tags-${candidate.candidate_id}`}>
+            Tags
+            <input
+              id={`candidate-tags-${candidate.candidate_id}`}
+              value={tagDraft}
+              placeholder="deep convection, rerun, compare"
+              onChange={(event) => setTagDraft(event.target.value)}
+            />
+          </label>
+          <div className="candidate-tag-suggestions" aria-label="Suggested label shortcuts">
+            {candidateSuggestedTags.map((tag) => (
+              <button
+                type="button"
+                className="secondary-button"
+                key={tag}
+                onClick={() => handleTagSuggestion(tag)}
+              >
+                {tag}
+              </button>
+            ))}
+          </div>
+          <label htmlFor={`candidate-notes-${candidate.candidate_id}`}>
+            Notes
+            <textarea
+              id={`candidate-notes-${candidate.candidate_id}`}
+              value={notesDraft}
+              placeholder="What makes this worth running or comparing?"
+              onChange={(event) => setNotesDraft(event.target.value)}
+            />
+          </label>
+          <div className="button-row">
+            <button type="button" onClick={handleAnnotationSubmit}>
+              {savedCandidate ? "Update saved candidate" : "Save"}
+            </button>
+            <button
+              type="button"
+              className="secondary-button"
+              onClick={() => setSaveDrawerOpen(false)}
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+      <section className="candidate-detail-section">
         <h5>Why this is interesting</h5>
         <ul className="compact-list candidate-reason-list">
           {reasons.map((reason) => (
             <li key={`${candidate.candidate_id}-detail-${reason}`}>{reason}</li>
+          ))}
+        </ul>
+      </section>
+      <section className="candidate-detail-section">
+        <h5>Recommended first run</h5>
+        <p className="candidate-interest-summary">{runRecommendation.title}</p>
+        <p className="field-help">{runRecommendation.detail}</p>
+        {runRecommendation.followUp && <p className="field-help">{runRecommendation.followUp}</p>}
+      </section>
+      <section className="candidate-detail-section">
+        <h5>Run fit</h5>
+        <p className="candidate-interest-summary">{candidateKeyNote(candidate, story, recipeFit)}</p>
+        <p className="field-help">{recipeFit.summary}</p>
+      </section>
+      <section className="candidate-detail-section">
+        <h5>Top limits</h5>
+        <ul className="compact-list">
+          {topLimits.map((limit) => (
+            <li key={`${candidate.candidate_id}-limit-${limit}`}>{limit}</li>
           ))}
         </ul>
       </section>
@@ -5775,8 +5836,8 @@ function SoundingCandidateDetail({
           }
         />
       </dl>
-      <section>
-        <h5>Evidence</h5>
+      <details>
+        <summary>All evidence</summary>
         <ul className="compact-list">
           {candidate.evidence.map((item) => (
             <li key={`${candidate.candidate_id}-detail-${item.label}`}>
@@ -5784,7 +5845,7 @@ function SoundingCandidateDetail({
             </li>
           ))}
         </ul>
-      </section>
+      </details>
       <details>
         <summary>All ingredient scores</summary>
         <dl className="compact-metrics">
@@ -5806,7 +5867,7 @@ function SoundingCandidateDetail({
         </dl>
       </details>
       {candidate.caveats.length > 0 && (
-        <details open={!candidate.package_ready}>
+        <details>
           <summary>Screening caveats</summary>
           <ul className="compact-list">
             {candidate.caveats.map((caveat) => (
@@ -5815,42 +5876,17 @@ function SoundingCandidateDetail({
           </ul>
         </details>
       )}
-      <div className="candidate-notes-form">
-        <h5>{savedCandidate ? "Candidate notes" : "Save candidate notes"}</h5>
-        <label htmlFor={`candidate-tags-${candidate.candidate_id}`}>
-          Tags
-          <input
-            id={`candidate-tags-${candidate.candidate_id}`}
-            value={tagDraft}
-            placeholder="deep convection, rerun, compare"
-            onChange={(event) => setTagDraft(event.target.value)}
-          />
-        </label>
-        <div className="candidate-tag-suggestions" aria-label="Suggested tags">
-          {candidateSuggestedTags.map((tag) => (
-            <button
-              type="button"
-              className="secondary-button"
-              key={tag}
-              onClick={() => handleTagSuggestion(tag)}
-            >
-              {tag}
-            </button>
-          ))}
-        </div>
-        <label htmlFor={`candidate-notes-${candidate.candidate_id}`}>
-          Notes
-          <textarea
-            id={`candidate-notes-${candidate.candidate_id}`}
-            value={notesDraft}
-            placeholder="What makes this worth running or comparing?"
-            onChange={(event) => setNotesDraft(event.target.value)}
-          />
-        </label>
-        <button type="button" onClick={handleAnnotationSubmit}>
-          {savedCandidate ? "Update saved candidate" : "Save candidate"}
-        </button>
-      </div>
+      <details>
+        <summary>Raw metadata</summary>
+        <dl className="compact-metrics">
+          <Metric label="Candidate ID" value={candidate.candidate_id} />
+          <Metric label="Screening version" value={candidate.screening_version} />
+          <Metric label="Source file" value={candidate.source_file_name} />
+          <Metric label="Source provider" value={candidate.source_provider} />
+          <Metric label="Source format" value={candidate.source_format} />
+          <Metric label="Source hash" value={candidate.source_file_hash} />
+        </dl>
+      </details>
     </aside>
   );
 }
@@ -11021,6 +11057,104 @@ function candidateDisplayCaveats(candidate: SoundingCandidate): string[] {
   return topCaveats.length > 0 ? topCaveats : candidate.caveats;
 }
 
+function candidateKeyNote(
+  candidate: SoundingCandidate,
+  story: CandidateStoryId,
+  recipeFit: CandidateRecipeFitDisplay,
+): string {
+  if (!candidate.package_ready) {
+    return candidateTopLimits(candidate, story, recipeFit)[0] ?? "Needs review before run setup.";
+  }
+  if (candidateStoryFamilyForStory(story) === "deep_convection") {
+    return "Strong signal, but initiation may need more than uniform forcing.";
+  }
+  if (
+    story === "humid_rainy_candidate" ||
+    story === "shallow_cumulus_candidate" ||
+    story === "dry_failed_candidate" ||
+    story === "capped_suppressed_candidate"
+  ) {
+    return "Good for a surface-forced run.";
+  }
+  return candidateTopLimits(candidate, story, recipeFit)[0] ?? "No major blocker found.";
+}
+
+function candidateTopLimits(
+  candidate: SoundingCandidate,
+  story: CandidateStoryId,
+  recipeFit: CandidateRecipeFitDisplay,
+): string[] {
+  const limits: string[] = [];
+  if (!candidate.package_ready) {
+    limits.push("Needs profile review before run setup.");
+  }
+  if (candidateStoryFamilyForStory(story) === "deep_convection") {
+    limits.push("Uniform forcing may not trigger organized storms.");
+  }
+  for (const caveat of [...recipeFit.caveats, ...candidateDisplayCaveats(candidate)]) {
+    const copy = candidatePracticalLimitCopy(caveat);
+    if (copy && !limits.includes(copy)) {
+      limits.push(copy);
+    }
+  }
+  return limits.length > 0 ? limits.slice(0, 3) : ["No practical limits flagged in screening."];
+}
+
+function candidatePracticalLimitCopy(caveat: string): string | null {
+  switch (caveat) {
+    case "screening_is_not_cm1_outcome_prediction":
+    case "candidate_screening_is_a_pre_run_hypothesis":
+    case "candidate_match_uses_simple_v1_deep_convection_rules":
+      return null;
+    case "observed_surface_forced_evolution_is_recipe_dependent":
+      return "Uniform forcing may not trigger organized storms.";
+    case "observed_wind_profile_missing_or_incomplete":
+      return "Needs complete wind profile.";
+    case "missing_surface_level":
+      return "Missing surface-level data needs review.";
+    case "near_surface_discontinuity_caveat":
+      return "Near-surface discontinuity can make the setup misleading.";
+    default:
+      return humanize(caveat);
+  }
+}
+
+function candidateRunRecommendation(
+  candidate: SoundingCandidate,
+  story: CandidateStoryId,
+  recipeFit: CandidateRecipeFitDisplay,
+): { title: string; detail: string; followUp?: string } {
+  if (!candidate.package_ready || recipeFit.status === "blocked_profile") {
+    return {
+      title: "No run recommendation yet.",
+      detail: "Resolve profile limits before choosing a first CM1 run.",
+    };
+  }
+  if (candidateStoryFamilyForStory(story) === "deep_convection") {
+    return {
+      title: "First run: Wide 12 km · 6 h · baseline surface forcing.",
+      detail: "Cheap scout run before trying longer regional runs.",
+      followUp: "Next if scout stays shallow: stronger heat + moisture forcing.",
+    };
+  }
+  if (story === "dry_failed_candidate" || story === "capped_suppressed_candidate") {
+    return {
+      title: "First run: Wide 12 km · 6 h · baseline surface forcing.",
+      detail: "Scout whether the boundary layer stays suppressed or mixes out.",
+    };
+  }
+  if (recipeFit.status === "testable_now" || recipeFit.status === "partially_testable") {
+    return {
+      title: "First run: Wide 12 km · 6 h · baseline surface forcing.",
+      detail: "Use it to inspect cloud, moisture, and precipitation response.",
+    };
+  }
+  return {
+    title: "No run recommendation yet.",
+    detail: "This story is useful to inspect, but it does not map cleanly to a first run.",
+  };
+}
+
 function candidateFilterTraceSummary(
   screening: ScreeningResult | null,
   filters: {
@@ -11040,7 +11174,7 @@ function candidateFilterTraceSummary(
       summary: `${shown.toLocaleString()} shown from ${(
         screening.filtered_candidate_count ?? shown
       ).toLocaleString()} matching / ${(screening.total_candidate_count ?? shown).toLocaleString()} analyzed.`,
-      detail: "Scores rank sounding ingredients only; CM1 results remain the source of truth.",
+      detail: "Open a candidate to inspect the ingredients, limits, and first-run fit.",
     };
   }
   const storyStage =
