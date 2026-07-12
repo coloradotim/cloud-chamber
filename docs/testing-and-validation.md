@@ -125,38 +125,35 @@ implemented. Tests must not expect winter/cold-season, cold-pool, fog/stratus,
 or other future taxonomy labels to appear as enabled Build filters before that
 support exists. The readiness taxonomy is documented in
 [research/expanded-sounding-candidate-taxonomy.md](research/expanded-sounding-candidate-taxonomy.md).
-The implemented severe/deep-convection exception is the triggered
-deep-potential run recipe. Unit/component tests should prove that
-deep-convection candidates can default to that recipe, that package requests
-include `run_recipe = triggered_deep_potential` and candidate-screening
-provenance, and that untriggered observed-evolution runs remain available.
+Deep-convection stories are now candidate hypotheses, not a separate artificial
+trigger recipe. Unit/component tests should prove that deep-convection candidates
+flow into the same observed-sounding run configuration surface, that package
+requests include numeric surface heat/moisture forcing and candidate-screening
+provenance, and that stale triggered-recipe requests fail clearly.
 
-### Triggered Deep-Potential Recipe Validation
+### Observed-Sounding Surface-Forced Validation
 
-Automated tests for triggered deep-potential runs must use tiny or mocked fixtures. They
+Automated tests for observed-sounding runs must use tiny or mocked fixtures. They
 should verify that package generation:
 
 - requires an observed sounding and observed u/v wind components;
 - preserves candidate-screening metadata;
-- records run recipe, display name, trigger type, trigger metadata,
-  expected outputs, caveats, and recipe smoke-validation status on generated
+- records run configuration, numeric surface forcing, expected outputs, caveats,
+  and validation status on generated
   manifests and reports;
 - writes CM1-facing `namelist.input` settings for the observed-sounding route,
-  three-warm-bubble trigger, storm-scale domain, rain output, reflectivity output,
-  vorticity output, and updraft-helicity output;
+  numeric constant surface fluxes, full output fields, rain output, reflectivity
+  output, vorticity output, and updraft-helicity output;
 - writes a numeric `input_sounding` with observed wind components; and
 - preserves package identity through ingest into Result Cards.
 
 Manual/local QA is required before treating the package as scientifically
-accepted for a selected real sounding. #261 established package-health evidence
-for the v1 three-warm-bubble trigger using a Fort Worth severe candidate that
-produced strong updraft, reflectivity, rain water, ice, graupel, surface rain,
-and updraft helicity; new soundings remain experiments whose outcomes must be
-inspected after CM1 runs. The manual smoke loop should:
+accepted for a selected real sounding. New soundings remain experiments whose
+outcomes must be inspected after CM1 runs. The manual smoke loop should:
 
 1. choose or upload a real observed sounding with usable winds;
-2. select `Triggered deep potential`;
-3. generate a short-evolution package;
+2. set numeric surface heat/moisture forcing values;
+3. generate a science package;
 4. inspect `run_manifest.json`, `dry_run_report.json`, `namelist.input`, and
    `input_sounding`;
 5. confirm `isnd = 7`, `iinit = 3`, `testcase = 0`, rain/reflectivity/vorticity/
@@ -605,7 +602,8 @@ Manual validation should record:
 - the CM1 version and local runtime path
 - the Cloud Chamber commit
 - the selected run configuration
-- the horizontal cell budget, domain, runtime, output cadence, and diagnostic set
+- the horizontal cell budget, domain, runtime, output cadence, full output-field
+  request, and numeric surface forcing
 - diagnostics such as cloud base, cloud top, first cloud time, rain onset, and updraft strength
 - cloud-water max or summary
 - log warnings/errors

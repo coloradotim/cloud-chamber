@@ -34,7 +34,9 @@ class GeneratedFileRole(StrEnum):
 class RunRecipe(StrEnum):
     GENERATED_REFERENCE_LOWER_ATMOSPHERE = "generated_reference_lower_atmosphere"
     UNTRIGGERED_OBSERVED_EVOLUTION = "untriggered_observed_evolution"
-    TRIGGERED_DEEP_POTENTIAL = "triggered_deep_potential"
+
+
+REMOVED_TRIGGERED_DEEP_POTENTIAL_RECIPE = "triggered_deep_potential"
 
 
 @dataclass(frozen=True)
@@ -173,17 +175,14 @@ def build_cm1_input_contract(
         resolved_run_configuration,
     )
     defaults = cloud_scale_defaults_for_configuration(resolved_run_configuration)
-    if resolved_run_recipe == RunRecipe.TRIGGERED_DEEP_POTENTIAL:
-        if observed_sounding is None:
-            raise ValueError("Triggered deep-potential run requires a validated observed sounding.")
-        if not _has_observed_wind_profile(
-            observed_sounding,
-            required_model_top_m=_required_sounding_top_m(defaults),
-        ):
-            raise ValueError(
-                "Triggered deep-potential runs require a complete finite observed u/v wind "
-                "profile for every input_sounding level."
-            )
+    if observed_sounding is not None and not _has_observed_wind_profile(
+        observed_sounding,
+        required_model_top_m=_required_sounding_top_m(defaults),
+    ):
+        raise ValueError(
+            "Observed-sounding runs require a complete finite observed u/v wind profile "
+            "for every input_sounding level."
+        )
     control_fragments = tuple(
         ControlMappingFragment(
             control_id=control.id,
@@ -216,9 +215,7 @@ def build_cm1_input_contract(
         input_source="observed_sounding"
         if observed_sounding is not None
         else "generated_reference",
-        trigger_type=(
-            "warm_bubble" if resolved_run_recipe == RunRecipe.TRIGGERED_DEEP_POTENTIAL else None
-        ),
+        trigger_type=None,
         trigger_parameters=_trigger_parameters(resolved_run_recipe),
         scenario_id=scenario.id,
         physical_question=scenario.physical_question,
@@ -270,6 +267,12 @@ def _resolve_run_recipe(
     run_recipe: str | RunRecipe | None,
     observed_sounding: ObservedSoundingRecord | None,
 ) -> RunRecipe:
+    if run_recipe == REMOVED_TRIGGERED_DEEP_POTENTIAL_RECIPE:
+        raise ValueError(
+            "Triggered deep-potential package generation has been removed. "
+            "Use observed-sounding run configuration with numeric surface heat/moisture "
+            "forcing, or implement differential lower-boundary forcing from issue #307."
+        )
     if isinstance(run_recipe, RunRecipe):
         return run_recipe
     if run_recipe:
@@ -284,10 +287,8 @@ def _resolve_run_recipe(
 
 def _run_recipe_display_name(run_recipe: RunRecipe) -> str:
     match run_recipe:
-        case RunRecipe.TRIGGERED_DEEP_POTENTIAL:
-            return "Triggered Deep-Potential Experiment"
         case RunRecipe.UNTRIGGERED_OBSERVED_EVOLUTION:
-            return "Untriggered Observed Evolution"
+            return "Observed Surface-Forced Evolution"
         case RunRecipe.GENERATED_REFERENCE_LOWER_ATMOSPHERE:
             return "Generated Lower-Atmosphere Reference"
 
@@ -295,10 +296,8 @@ def _run_recipe_display_name(run_recipe: RunRecipe) -> str:
 def recipe_id_for_run_recipe(run_recipe: str | RunRecipe) -> str:
     resolved = _coerce_run_recipe(run_recipe)
     match resolved:
-        case RunRecipe.TRIGGERED_DEEP_POTENTIAL:
-            return "triggered_deep_potential_v1"
         case RunRecipe.UNTRIGGERED_OBSERVED_EVOLUTION:
-            return "untriggered_observed_sounding_evolution_v0"
+            return "observed_surface_forced_evolution_v0"
         case RunRecipe.GENERATED_REFERENCE_LOWER_ATMOSPHERE:
             return "generated_reference_lower_atmosphere_v1"
         case None:
@@ -308,10 +307,8 @@ def recipe_id_for_run_recipe(run_recipe: str | RunRecipe) -> str:
 def recipe_display_name_for_run_recipe(run_recipe: str | RunRecipe) -> str:
     resolved = _coerce_run_recipe(run_recipe)
     match resolved:
-        case RunRecipe.TRIGGERED_DEEP_POTENTIAL:
-            return "Triggered Deep-Potential Experiment"
         case RunRecipe.UNTRIGGERED_OBSERVED_EVOLUTION:
-            return "Untriggered Observed-Sounding Evolution v0"
+            return "Observed Surface-Forced Evolution v0"
         case RunRecipe.GENERATED_REFERENCE_LOWER_ATMOSPHERE:
             return "Generated Lower-Atmosphere Reference"
         case None:
@@ -321,10 +318,8 @@ def recipe_display_name_for_run_recipe(run_recipe: str | RunRecipe) -> str:
 def assumption_set_id_for_run_recipe(run_recipe: str | RunRecipe) -> str:
     resolved = _coerce_run_recipe(run_recipe)
     match resolved:
-        case RunRecipe.TRIGGERED_DEEP_POTENTIAL:
-            return "triggered_deep_potential_warm_bubble_v1"
         case RunRecipe.UNTRIGGERED_OBSERVED_EVOLUTION:
-            return "untriggered_observed_sounding_evolution_v0_assumptions"
+            return "observed_surface_forced_evolution_v0_assumptions"
         case RunRecipe.GENERATED_REFERENCE_LOWER_ATMOSPHERE:
             return "generated_reference_lower_atmosphere_v1"
         case None:
@@ -334,10 +329,8 @@ def assumption_set_id_for_run_recipe(run_recipe: str | RunRecipe) -> str:
 def assumption_mode_for_run_recipe(run_recipe: str | RunRecipe) -> str:
     resolved = _coerce_run_recipe(run_recipe)
     match resolved:
-        case RunRecipe.TRIGGERED_DEEP_POTENTIAL:
-            return "triggered_deep_potential"
         case RunRecipe.UNTRIGGERED_OBSERVED_EVOLUTION:
-            return "normal_evolution"
+            return "surface_forced_observed_evolution"
         case RunRecipe.GENERATED_REFERENCE_LOWER_ATMOSPHERE:
             return "generated_reference"
         case None:
@@ -347,12 +340,10 @@ def assumption_mode_for_run_recipe(run_recipe: str | RunRecipe) -> str:
 def required_output_fields_for_run_recipe(run_recipe: str | RunRecipe) -> tuple[str, ...]:
     resolved = _coerce_run_recipe(run_recipe)
     match resolved:
-        case RunRecipe.TRIGGERED_DEEP_POTENTIAL:
-            return ("qc", "w", "qr", "rain", "dbz", "updraft_helicity")
         case RunRecipe.UNTRIGGERED_OBSERVED_EVOLUTION:
-            return ("qv", "qc", "w", "qr", "rain", "dbz")
+            return ("qv", "qc", "w", "qr", "rain", "dbz", "hfx", "lhfx")
         case RunRecipe.GENERATED_REFERENCE_LOWER_ATMOSPHERE:
-            return ("qc", "w")
+            return ("qv", "qc", "w", "qr", "rain", "dbz", "hfx", "lhfx")
         case None:
             return ()
 
@@ -362,10 +353,11 @@ def recipe_caveats_for_run_recipe(run_recipe: str | RunRecipe) -> tuple[str, ...
     match resolved:
         case RunRecipe.UNTRIGGERED_OBSERVED_EVOLUTION:
             return (
-                "No warm-bubble or artificial deep-convection trigger is applied.",
+                "No artificial atmospheric trigger is applied.",
                 (
-                    "Surface fluxes use current recipe defaults; they are not validated "
-                    "place/time surface-energy inputs."
+                    "Surface heat/moisture fluxes are constant uniform lower-boundary "
+                    "proxy settings; they are not validated place/time surface-energy "
+                    "inputs."
                 ),
                 (
                     "Radiation, terrain, GIS surface initialization, and large-scale forcing "
@@ -375,11 +367,6 @@ def recipe_caveats_for_run_recipe(run_recipe: str | RunRecipe) -> tuple[str, ...
                     "Humid/rainy hypotheses remain partial until rain-water-aloft, "
                     "surface-rain, and reflectivity outputs are present and inspected."
                 ),
-            )
-        case RunRecipe.TRIGGERED_DEEP_POTENTIAL:
-            return (
-                "The recipe tests triggered potential, not normal atmospheric evolution.",
-                "The warm-bubble trigger must be preserved in provenance and Results comparison.",
             )
         case RunRecipe.GENERATED_REFERENCE_LOWER_ATMOSPHERE:
             return ()
@@ -399,16 +386,7 @@ def _coerce_run_recipe(run_recipe: str | RunRecipe) -> RunRecipe | None:
 def _trigger_parameters(
     run_recipe: RunRecipe,
 ) -> dict[str, str | int | float | bool]:
-    if run_recipe != RunRecipe.TRIGGERED_DEEP_POTENTIAL:
-        return {}
-    return {
-        "cm1_iinit": 3,
-        "cm1_trigger": (
-            "CM1 built-in three warm bubbles with 2 K maximum potential-temperature "
-            "perturbations in a line near 1.4 km AGL"
-        ),
-        "raw_controls_exposed": False,
-    }
+    return {}
 
 
 def _expected_outputs(
@@ -418,12 +396,6 @@ def _expected_outputs(
     base = ("qc", "qr", "qv", "th", "prs", "u", "v", "w", "rain", "dbz")
     analysis = (*base, "psfc", "hfx", "lhfx", "lwp")
     rich = (*analysis, "tke", "km", "kh", "vorticity", "updraft_helicity")
-    if diagnostic_set == "essential":
-        return base
-    if diagnostic_set == "process":
-        return analysis
-    if run_recipe == RunRecipe.TRIGGERED_DEEP_POTENTIAL:
-        return rich
     return rich
 
 
@@ -435,35 +407,12 @@ def _run_caveats(
     if run_recipe == RunRecipe.UNTRIGGERED_OBSERVED_EVOLUTION:
         caveats.extend(recipe_caveats_for_run_recipe(run_recipe))
         return tuple(caveats)
-    if run_recipe != RunRecipe.TRIGGERED_DEEP_POTENTIAL:
-        return tuple(caveats)
-    caveats.extend(
-        [
-            "Triggered deep-potential runs use an idealized CM1 three-warm-bubble trigger.",
-            (
-                "Manual smoke evidence applies to the triggered deep-potential recipe; "
-                "each observed sounding remains an experiment to evaluate after CM1 completes."
-            ),
-            (
-                "Storm mode, rotation, rain, downdraft, and cold-pool behavior are outcomes "
-                "to inspect after the run."
-            ),
-            "Terrain, mesoscale lift, radiation, and map/GIS forcing are not part of v1.",
-        ]
-    )
-    if "configuration_better_suited_to_larger_compute" in run_configuration.caveats:
-        caveats.append(
-            "This configuration may be better suited to larger compute; cost/runtime/output "
-            "volume should be reviewed before launch."
-        )
     return tuple(caveats)
 
 
 def _manual_validation_status(run_recipe: RunRecipe) -> str:
-    if run_recipe == RunRecipe.TRIGGERED_DEEP_POTENTIAL:
-        return "triggered_deep_potential_recipe_smoke_validated"
     if run_recipe == RunRecipe.UNTRIGGERED_OBSERVED_EVOLUTION:
-        return "untriggered_observed_sounding_evolution_v0_metadata_only"
+        return "observed_surface_forced_evolution_v0_metadata_only"
     return "current_run_recipe_path"
 
 
@@ -494,7 +443,7 @@ def _recipe_assumptions(
             "seconds": values.output_cadence_seconds,
         },
         "diagnostic_set": {
-            "mode": "configured",
+            "mode": "full_outputs_always",
             "selection": run_configuration.diagnostic_set,
         },
     }
@@ -503,46 +452,49 @@ def _recipe_assumptions(
             **configured_shape,
             "trigger": {
                 "mode": "none",
-                "description": "No warm-bubble or artificial deep-convection trigger.",
+                "description": "No artificial atmospheric trigger.",
             },
             "observed_sounding": {
                 "temperature_profile": "required",
                 "moisture_profile": "required",
                 "wind_profile": "used_when_available",
             },
-            "surface_fluxes": {
-                "mode": "current_recipe_default",
-                "description": (
-                    "Uniform constant sensible/latent flux proxy inherited from the "
-                    "current observed-sounding LES path."
-                ),
-            },
-            "radiation": {"mode": "disabled", "cm1_radopt": 0},
-            "large_scale_forcing": {"mode": "none"},
-        }
-    if run_recipe == RunRecipe.TRIGGERED_DEEP_POTENTIAL:
-        return {
-            **configured_shape,
-            "trigger": {
-                "mode": "prescribed",
-                "type": "warm_bubble",
-                "description": "CM1 built-in three-warm-bubble line initiation.",
-            },
-            "observed_sounding": {
-                "temperature_profile": "required",
-                "moisture_profile": "required",
-                "wind_profile": "required_complete_finite_uv",
-            },
-            "surface_fluxes": {"mode": "disabled"},
+            "surface_fluxes": _surface_flux_assumption_payload(run_configuration),
             "radiation": {"mode": "disabled", "cm1_radopt": 0},
             "large_scale_forcing": {"mode": "none"},
         }
     return {
         **configured_shape,
         "trigger": {"mode": "generated_reference"},
-        "surface_fluxes": {"mode": "current_recipe_default"},
+        "surface_fluxes": _surface_flux_assumption_payload(run_configuration),
         "radiation": {"mode": "disabled", "cm1_radopt": 0},
         "large_scale_forcing": {"mode": "none"},
+    }
+
+
+def _surface_flux_assumption_payload(run_configuration: RunConfiguration) -> dict[str, object]:
+    values = run_configuration.surface_flux_cm1_values
+    if run_configuration.surface_flux_mode == "disabled":
+        return {
+            "mode": "disabled",
+            "cm1_values": values.model_dump(mode="json"),
+        }
+    return {
+        "mode": run_configuration.surface_flux_mode,
+        "description": (
+            "Uniform lower-boundary heat/moisture forcing, constant over the domain and model time."
+        ),
+        "translation_method": (
+            "Numeric product values map directly to CM1 constant-flux namelist "
+            "values. CM1 units are preserved and are not presented as W/m2."
+        ),
+        "product_selections": {
+            "surface_heat_flux_k_m_s": run_configuration.surface_heat_flux_k_m_s,
+            "surface_moisture_flux_g_g_m_s": run_configuration.surface_moisture_flux_g_g_m_s,
+            "summary": run_configuration.surface_flux_summary,
+        },
+        "cm1_values": values.model_dump(mode="json"),
+        "caveats": list(run_configuration.surface_flux_caveats),
     }
 
 
@@ -550,6 +502,7 @@ def _output_switches(
     diagnostic_set: str,
     *,
     deep_convection: bool,
+    surface_flux_outputs: bool,
 ) -> dict[str, int]:
     switches = {
         "sfcflx": 0,
@@ -564,6 +517,16 @@ def _output_switches(
         "lwp": 0,
     }
     if diagnostic_set in {"process", "full"}:
+        switches.update(
+            {
+                "sfcflx": 1,
+                "sfcparams": 1,
+                "sfcdiags": 1,
+                "psfc": 1,
+                "lwp": 1,
+            }
+        )
+    if surface_flux_outputs:
         switches.update(
             {
                 "sfcflx": 1,
@@ -639,7 +602,7 @@ def render_cm1_namelist(contract: CM1InputContract) -> str:
     Observed-sounding runs use ``isnd = 7`` so CM1 reads the thermodynamic
     and wind profile from ``input_sounding``. The resolved run configuration
     controls runtime, horizontal cells, domain size, saved-output cadence, and
-    diagnostic set before CM1 is launched. The intentional
+    full output field set before CM1 is launched. The intentional
     product-path change outside the sounding source is ``output_format = 2`` so
     Cloud Chamber can ingest NetCDF output when the local CM1 build supports it.
     """
@@ -647,33 +610,31 @@ def render_cm1_namelist(contract: CM1InputContract) -> str:
     defaults = contract.cloud_scale_defaults
     sounding_source_id = 7 if contract.observed_sounding is not None else 17
     wind_profile_id = 0 if contract.observed_sounding is not None else 9
-    deep_convection = contract.run_recipe == RunRecipe.TRIGGERED_DEEP_POTENTIAL
-    testcase = 0 if deep_convection else 3
-    adapt_dt = 0 if deep_convection else 1
+    testcase = 3
+    adapt_dt = 1
     ptype = 5
-    ihail = 1 if deep_convection else 0
-    iautoc = 1 if deep_convection else 0
-    icor = 0 if deep_convection else 1
-    lspgrad = 0 if deep_convection else 2
-    idiss = 1 if deep_convection else 0
-    wbc = ebc = sbc = nbc = 2 if deep_convection else 1
-    bbc = 1 if deep_convection else 3
-    iinit = 3 if deep_convection else 0
-    irandp = 0 if deep_convection else 1
-    imove = 1 if deep_convection else 0
+    ihail = 0
+    iautoc = 0
+    icor = 1
+    lspgrad = 2
+    idiss = 0
+    wbc = ebc = sbc = nbc = 1
+    bbc = 3
+    iinit = 0
+    irandp = 1
+    imove = 0
     output = _output_switches(
         contract.run_configuration.diagnostic_set,
-        deep_convection=deep_convection,
+        deep_convection=False,
+        surface_flux_outputs=(
+            contract.run_configuration.surface_flux_mode == "constant_uniform_surface_flux_proxy"
+        ),
     )
-    isfcflx = 0 if deep_convection else 1
-    sfcmodel = 0 if deep_convection else 1
-    oceanmodel = 0 if deep_convection else 1
-    set_flx = 0 if deep_convection else 1
-    set_ust = 0 if deep_convection else 1
-    l_h = 100.0 if deep_convection else 0.0
-    lhref1 = 100.0 if deep_convection else 0.0
-    lhref2 = 1000.0 if deep_convection else 0.0
-    ndcnst = 250.0 if deep_convection else 100.0
+    surface = contract.run_configuration.surface_flux_cm1_values
+    l_h = 0.0
+    lhref1 = 0.0
+    lhref2 = 0.0
+    ndcnst = 100.0
     return f"""
  &param0
  nx           =      {defaults.nx},
@@ -798,9 +759,9 @@ def render_cm1_namelist(contract: CM1InputContract) -> str:
  /
 
  &param12
- isfcflx    =      {isfcflx},
- sfcmodel   =      {sfcmodel},
- oceanmodel =      {oceanmodel},
+ isfcflx    =      {surface.isfcflx},
+ sfcmodel   =      {surface.sfcmodel},
+ oceanmodel =      {surface.oceanmodel},
  initsfc    =      1,
  tsk0       = 299.28,
  tmn0       = 297.28,
@@ -815,13 +776,13 @@ def render_cm1_namelist(contract: CM1InputContract) -> str:
  iz0tlnd    =      0,
  oml_hml0   =   50.0,
  oml_gamma  =   0.14,
- set_flx    =      {set_flx},
- cnst_shflx = 8.0e-3,
- cnst_lhflx = 5.2e-5,
- set_znt    =      0,
- cnst_znt   =   0.00,
- set_ust    =      {set_ust},
- cnst_ust   =   0.28,
+ set_flx    =      {surface.set_flx},
+ cnst_shflx = {_format_cm1_scientific(surface.cnst_shflx)},
+ cnst_lhflx = {_format_cm1_scientific(surface.cnst_lhflx)},
+ set_znt    =      {surface.set_znt},
+ cnst_znt   =   {surface.cnst_znt:.2f},
+ set_ust    =      {surface.set_ust},
+ cnst_ust   =   {surface.cnst_ust:.2f},
  ramp_sgs   =      1,
  ramp_time  = 1800.0,
  t2p_avg   =       1,
@@ -1000,6 +961,12 @@ def _format_cm1_float(value: float) -> str:
     if "." not in text:
         return f"{text}.0"
     return text
+
+
+def _format_cm1_scientific(value: float) -> str:
+    if value == 0:
+        return "0.0"
+    return f"{value:.1e}".replace("e-0", "e-").replace("e+0", "e+")
 
 
 def render_input_sounding_notes(contract: CM1InputContract) -> str:

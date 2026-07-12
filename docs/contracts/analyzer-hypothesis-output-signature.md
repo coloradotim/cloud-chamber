@@ -81,7 +81,7 @@ assumption_set:
   assumption_set_id: string
   label: string
   trigger:
-    mode: none | warm_bubble | future_explicit_trigger | unavailable
+    mode: none | future_differential_surface_forcing | future_explicit_trigger | unavailable
     description: string
     caveats: [string]
   surface_fluxes:
@@ -108,18 +108,19 @@ assumption_set:
     reasons: [string]
 ```
 
-Assumption sets must distinguish normal evolution from triggered potential
-experiments:
+Assumption sets must distinguish observed evolution under explicit forcing from
+future forcing modes:
 
-- `normal_evolution`: no explicit deep-convection trigger; useful for asking
-  what the initialized atmosphere does under the selected surface/forcing
-  assumptions.
-- `triggered_deep_potential`: explicit warm-bubble or future trigger; useful for
-  asking whether instability, moisture, and wind support deep convection when
-  initiation is supplied.
+- `observed_surface_forced_evolution`: no artificial atmospheric trigger; useful
+  for asking what the initialized atmosphere does under the selected numeric
+  uniform lower-boundary heat/moisture forcing, duration, domain, grid, and
+  cadence.
 - `surface_forced_evolution`: explicit surface sensible/latent heat-flux
   assumptions; useful for boundary-layer growth, shallow cloud, drizzle, or
   suppression hypotheses.
+- `future_differential_surface_forcing`: spatially varying heating/moisture
+  forcing for initiation, boundaries, gradients, or patch experiments. This is
+  tracked separately from issue #305.
 - `place_time_radiative_evolution`: radiation/place-time assumptions; future
   contract for fog, nocturnal, winter, and diurnal hypotheses.
 
@@ -174,7 +175,7 @@ output or a clearly labeled supported diagnostic, not from cloud water alone.
 | Cloud depth/top | `qc`, vertical coordinate, time coordinate | Must report threshold and cloud-top method. |
 | Shallow cloud persistence | `qc`, time coordinate | Needs enough duration and cadence to distinguish transient noise from evolution. |
 | Updraft strength | `w`, time coordinate | May include height/region caveats when available. |
-| Deep breakthrough | `qc`, `w`, vertical coordinate, time coordinate | Triggered deep-potential recipe only until normal-evolution deep signatures are separately validated. |
+| Deep breakthrough | `qc`, `w`, vertical coordinate, time coordinate | Current observed-sounding runs can inspect deep-cloud/updraft evidence under uniform forcing, but broad deep-convection prediction remains caveated until differential forcing and comparison diagnostics are validated. |
 | Rain water aloft | `qr`, time coordinate | User-facing label should say rain water aloft. |
 | Surface rain | `rain` or supported surface precipitation field | Must preserve units and must not be inferred from `qr`. |
 | Reflectivity | `dbz` or supported reflectivity diagnostic | Unsupported reflectivity stays unavailable. |
@@ -198,7 +199,6 @@ recommended_run_recipes:
     run_recipe:
       generated_reference_lower_atmosphere
       | untriggered_observed_evolution
-      | triggered_deep_potential
       | future
     run_configuration:
       duration_seconds: number | null
@@ -207,8 +207,7 @@ recommended_run_recipes:
       dx_m: number | null
       model_top_m: number | null
       output_cadence_seconds: number | null
-      diagnostic_set: essential | process | full | null
-      requested_fields: [string]
+      requested_fields: [string] # current observed runs request the full field set
       forcing: string
     suitability:
       status: testable_now | partially_testable | requires_new_recipe | blocked
@@ -226,10 +225,10 @@ Examples:
 - A humid/rainy hypothesis is only testable for rain behavior when `qr`,
   surface `rain`, and/or `dbz` outputs are enabled according to the predicted
   signature.
-- A supercell or severe-thunderstorm hypothesis requires a triggered
-  deep-potential recipe; untriggered observed evolution can still be run
-  deliberately, but it tests untriggered evolution, not the deep-potential
-  hypothesis.
+- A supercell or severe-thunderstorm hypothesis may be inspected with the
+  observed-sounding run under selected uniform surface forcing, but deep
+  organization claims remain caveated until differential forcing and comparison
+  diagnostics exist.
 - A surface-flux or radiation/place-time hypothesis requires the matching
   forcing assumptions before predicted output signatures can be emitted.
 

@@ -1201,8 +1201,15 @@ def test_deep_convection_view_defaults_prefer_updraft_field(tmp_path: Path) -> N
         tmp_path,
         run_id="run-deep-visualization",
         package_updates={
-            "run_recipe": "triggered_deep_potential",
-            "run_recipe_display_name": "Triggered Deep-Potential Experiment",
+            "run_recipe": "untriggered_observed_evolution",
+            "run_recipe_display_name": "Observed Surface-Forced Evolution",
+            "candidate_screening": {
+                "primary_story": "supercell_environment",
+                "active_story": "supercell_environment",
+                "story_scores": [
+                    {"story": "supercell_environment", "support": "supported"},
+                ],
+            },
         },
     )
 

@@ -43,6 +43,8 @@ type RunConfigurationInput = {
   domain_size: string;
   output_cadence: string;
   diagnostic_set: string;
+  surface_heat_flux_k_m_s: string;
+  surface_moisture_flux_g_g_m_s: string;
 };
 
 type RunConfigurationCM1Values = {
@@ -64,16 +66,40 @@ type RunConfigurationCM1Values = {
   grid_cell_count: number;
 };
 
-type RunConfiguration = Omit<RunConfigurationInput, "horizontal_cell_count"> & {
+type RunConfigurationSurfaceFluxCM1Values = {
+  isfcflx: number;
+  sfcmodel: number;
+  oceanmodel: number;
+  set_flx: number;
+  cnst_shflx: number;
+  cnst_shflx_units: string;
+  cnst_lhflx: number;
+  cnst_lhflx_units: string;
+  set_znt: number;
+  cnst_znt: number;
+  set_ust: number;
+  cnst_ust: number;
+};
+
+type RunConfiguration = Omit<
+  RunConfigurationInput,
+  "horizontal_cell_count" | "surface_heat_flux_k_m_s" | "surface_moisture_flux_g_g_m_s"
+> & {
   configuration_id: string;
   mode: "smoke" | "science";
   label: string;
   horizontal_cell_count: string | number;
   duration_seconds: number;
   output_cadence_seconds: number;
+  surface_heat_flux_k_m_s: number;
+  surface_moisture_flux_g_g_m_s: number;
   cost_runtime_summary: string;
   output_volume_summary: string;
   cm1_values: RunConfigurationCM1Values;
+  surface_flux_mode: string;
+  surface_flux_summary: string;
+  surface_flux_cm1_values: RunConfigurationSurfaceFluxCM1Values;
+  surface_flux_caveats: string[];
   caveats: string[];
 };
 
@@ -86,6 +112,12 @@ type RunConfigurationSummary = {
   domain_size: string;
   output_cadence: string;
   diagnostic_set: string;
+  surface_heat_flux_k_m_s?: number;
+  surface_moisture_flux_g_g_m_s?: number;
+  surface_flux_mode?: string;
+  surface_flux_summary?: string;
+  surface_flux_cm1_values?: RunConfigurationSurfaceFluxCM1Values;
+  surface_flux_caveats?: string[];
   runtime_seconds: number;
   output_cadence_seconds: number;
   expected_output_frames: number;
@@ -327,7 +359,6 @@ type CandidateReadinessFilter = "all" | "package_ready" | "blocked";
 type CandidateRecipeFitStatus =
   | "testable_now"
   | "partially_testable"
-  | "requires_triggered_deep_potential"
   | "requires_surface_forcing_recipe"
   | "not_testable_with_current_recipes"
   | "blocked_profile";
@@ -340,10 +371,9 @@ type CandidateRecipeFitDisplay = {
 
 type RunRecipe =
   | "generated_reference_lower_atmosphere"
-  | "untriggered_observed_evolution"
-  | "triggered_deep_potential";
+  | "untriggered_observed_evolution";
 
-type ObservedRunRecipe = "untriggered_observed_evolution" | "triggered_deep_potential";
+type ObservedRunRecipe = "untriggered_observed_evolution";
 type AtmosphereSourcePath = "cached_recommendations" | "saved_candidates" | "upload_igra_text";
 type SearchIntent =
   | "best_overall"
@@ -354,6 +384,7 @@ type SearchIntent =
 type SearchDepth = "quick_scan" | "deeper_scan" | "broad_historical_sweep";
 type TimeScope = "recent_latest";
 type RunPlanQueueTarget = "local" | "lan";
+const CURRENT_OBSERVED_RUN_RECIPE: ObservedRunRecipe = "untriggered_observed_evolution";
 type RunPlanItemStatus =
   | "planned"
   | "packaging"
@@ -1206,7 +1237,9 @@ const DEFAULT_SHALLOW_RUN_CONFIGURATION: RunConfigurationInput = {
   horizontal_cell_count: "cells_64",
   domain_size: "local_6km",
   output_cadence: "standard_15min",
-  diagnostic_set: "process",
+  diagnostic_set: "full",
+  surface_heat_flux_k_m_s: "8.0e-3",
+  surface_moisture_flux_g_g_m_s: "5.2e-5",
 };
 
 const DEFAULT_OBSERVED_RUN_CONFIGURATION: RunConfigurationInput = {
@@ -1214,15 +1247,9 @@ const DEFAULT_OBSERVED_RUN_CONFIGURATION: RunConfigurationInput = {
   horizontal_cell_count: "cells_128",
   domain_size: "wide_12km",
   output_cadence: "standard_15min",
-  diagnostic_set: "process",
-};
-
-const DEFAULT_TRIGGERED_DEEP_POTENTIAL_RUN_CONFIGURATION: RunConfigurationInput = {
-  duration: "short_6h",
-  horizontal_cell_count: "cells_128",
-  domain_size: "storm_120km",
-  output_cadence: "standard_15min",
   diagnostic_set: "full",
+  surface_heat_flux_k_m_s: "8.0e-3",
+  surface_moisture_flux_g_g_m_s: "5.2e-5",
 };
 
 const SEARCH_INTENT_OPTIONS: Array<{ value: SearchIntent; label: string }> = [
@@ -1832,9 +1859,6 @@ export function App() {
   const [runConfiguration, setRunConfiguration] = useState<RunConfigurationInput>(
     DEFAULT_SHALLOW_RUN_CONFIGURATION,
   );
-  const [observedRunRecipe, setObservedRunRecipe] = useState<ObservedRunRecipe>(
-    "untriggered_observed_evolution",
-  );
   const [observedSoundingFilename, setObservedSoundingFilename] = useState<string | null>(null);
   const [observedSoundingText, setObservedSoundingText] = useState<string | null>(null);
   const [observedSoundingParse, setObservedSoundingParse] =
@@ -2058,15 +2082,12 @@ export function App() {
       selectedScenario.controls.map((control) => [control.id, control.default]),
     );
     setControls(defaults);
-    setRunConfiguration(
-      defaultRunConfigurationForSelection(selectedScenarioId, "untriggered_observed_evolution"),
-    );
+    setRunConfiguration(defaultRunConfigurationForSelection(selectedScenarioId));
     setObservedSoundingFilename(null);
     setObservedSoundingText(null);
     setObservedSoundingParse(null);
     setObservedSoundingStatus(null);
     setObservedSoundingError(null);
-    setObservedRunRecipe("untriggered_observed_evolution");
     setDryRun(null);
     setBlockedPreRunValidationReport(null);
     setRunStatus(null);
@@ -2205,7 +2226,6 @@ export function App() {
   }
 
   function handleSelectScenario(scenarioId: string) {
-    const nextRunRecipe: ObservedRunRecipe = "untriggered_observed_evolution";
     setSelectedScenarioId(scenarioId);
     setObservedSoundingFilename(null);
     setObservedSoundingText(null);
@@ -2213,23 +2233,7 @@ export function App() {
     setObservedSoundingStatus(null);
     setObservedSoundingError(null);
     setSelectedCandidateScreening(null);
-    setObservedRunRecipe(nextRunRecipe);
-    setRunConfiguration(defaultRunConfigurationForSelection(scenarioId, nextRunRecipe));
-    setDryRun(null);
-    setBlockedPreRunValidationReport(null);
-    setRunStatus(null);
-    setRunWorkflowError(null);
-    setLanWorkerStatus(null);
-    setLanWorkerError(null);
-    setLanWorkerActionStatus(null);
-    setIngestedResultId(null);
-  }
-
-  function handleObservedRunRecipeChange(runRecipe: ObservedRunRecipe) {
-    setObservedRunRecipe(runRecipe);
-    setRunConfiguration(
-      defaultRunConfigurationForSelection(OBSERVED_SOUNDING_EXPERIMENT_ID, runRecipe),
-    );
+    setRunConfiguration(defaultRunConfigurationForSelection(scenarioId));
     setDryRun(null);
     setBlockedPreRunValidationReport(null);
     setRunStatus(null);
@@ -2516,10 +2520,8 @@ export function App() {
     setSelectedCandidateScreening(
       candidateScreeningMetadata(candidate, savedCandidate, activeStory),
     );
-    const nextRunRecipe = defaultRunRecipeForCandidate(candidate, activeStory);
-    setObservedRunRecipe(nextRunRecipe);
     setRunConfiguration(
-      defaultRunConfigurationForSelection(OBSERVED_SOUNDING_EXPERIMENT_ID, nextRunRecipe),
+      defaultRunConfigurationForSelection(OBSERVED_SOUNDING_EXPERIMENT_ID),
     );
     setDryRun(null);
     setBlockedPreRunValidationReport(null);
@@ -2555,7 +2557,6 @@ export function App() {
     const item = runPlanItemFromUploadedSounding({
       observedSounding: observedSoundingParse.selected_sounding,
       source: runPlanSourceFromCandidateScreening(selectedCandidateScreening),
-      observedRunRecipe,
       runConfiguration,
       controls,
       selectedCandidateScreening,
@@ -2610,21 +2611,6 @@ export function App() {
       queueTarget,
       status: "planned",
       message: null,
-    }));
-  }
-
-  function handleRunPlanItemRecipeChange(itemId: string, runRecipe: ObservedRunRecipe) {
-    updateRunPlanItem(itemId, (item) => ({
-      ...item,
-      runRecipe,
-      runConfiguration: defaultRunConfigurationForSelection(
-        OBSERVED_SOUNDING_EXPERIMENT_ID,
-        runRecipe,
-      ),
-      status: "planned",
-      message: "Recipe changed; package not created yet.",
-      dryRun: null,
-      blockedPreRunValidationReport: null,
     }));
   }
 
@@ -2780,7 +2766,7 @@ export function App() {
         selectedScenario.id,
         controls,
         runConfiguration,
-        observedSoundingExperimentSelected ? observedRunRecipe : null,
+        observedSoundingExperimentSelected ? CURRENT_OBSERVED_RUN_RECIPE : null,
         observedSoundingExperimentSelected ? observedSoundingParse?.selected_sounding : null,
         observedSoundingExperimentSelected ? selectedCandidateScreening : null,
         packageUserMetadata,
@@ -2804,13 +2790,7 @@ export function App() {
     setObservedSoundingError(null);
     setObservedSoundingParse(null);
     setSelectedCandidateScreening(null);
-    setObservedRunRecipe("untriggered_observed_evolution");
-    setRunConfiguration(
-      defaultRunConfigurationForSelection(
-        OBSERVED_SOUNDING_EXPERIMENT_ID,
-        "untriggered_observed_evolution",
-      ),
-    );
+    setRunConfiguration(defaultRunConfigurationForSelection(OBSERVED_SOUNDING_EXPERIMENT_ID));
     setDryRun(null);
     setBlockedPreRunValidationReport(null);
     setRunStatus(null);
@@ -2822,13 +2802,7 @@ export function App() {
       const parsed = await parseObservedSoundingUpload(file.name, text);
       setObservedSoundingParse(parsed);
       setSelectedCandidateScreening(null);
-      setObservedRunRecipe("untriggered_observed_evolution");
-      setRunConfiguration(
-        defaultRunConfigurationForSelection(
-          OBSERVED_SOUNDING_EXPERIMENT_ID,
-          "untriggered_observed_evolution",
-        ),
-      );
+      setRunConfiguration(defaultRunConfigurationForSelection(OBSERVED_SOUNDING_EXPERIMENT_ID));
       setObservedSoundingStatus("Observed sounding validated for package review");
     } catch (caught) {
       setObservedSoundingText(null);
@@ -2854,13 +2828,7 @@ export function App() {
       );
       setObservedSoundingParse(parsed);
       setSelectedCandidateScreening(null);
-      setObservedRunRecipe("untriggered_observed_evolution");
-      setRunConfiguration(
-        defaultRunConfigurationForSelection(
-          OBSERVED_SOUNDING_EXPERIMENT_ID,
-          "untriggered_observed_evolution",
-        ),
-      );
+      setRunConfiguration(defaultRunConfigurationForSelection(OBSERVED_SOUNDING_EXPERIMENT_ID));
       setObservedSoundingStatus("Observed sounding validated for package review");
     } catch (caught) {
       setObservedSoundingError(
@@ -3312,7 +3280,6 @@ export function App() {
           observedSoundingExperimentSelected={observedSoundingExperimentSelected}
           controls={controls}
           runConfiguration={runConfiguration}
-          observedRunRecipe={observedRunRecipe}
           observedSoundingParse={observedSoundingParse}
           observedSoundingStatus={observedSoundingStatus}
           observedSoundingError={observedSoundingError}
@@ -3368,7 +3335,6 @@ export function App() {
             }))
           }
           onRunConfigurationChange={setRunConfiguration}
-          onObservedRunRecipeChange={handleObservedRunRecipeChange}
           onObservedSoundingFile={handleObservedSoundingFile}
           onObservedSoundingTimeChange={handleObservedSoundingTimeChange}
           onAtmosphereSourcePathChange={handleAtmosphereSourcePathChange}
@@ -3400,7 +3366,6 @@ export function App() {
           onClearRunPlan={handleClearRunPlan}
           onRunPlanItemSelectedChange={handleRunPlanItemSelectedChange}
           onRunPlanItemQueueTargetChange={handleRunPlanItemQueueTargetChange}
-          onRunPlanItemRecipeChange={handleRunPlanItemRecipeChange}
           onRunPlanItemConfigurationChange={handleRunPlanItemConfigurationChange}
           onCreateAndQueueRunPlan={handleCreateAndQueueRunPlan}
           onDryRun={handleDryRun}
@@ -3481,7 +3446,6 @@ function BuildWorkspace({
   observedSoundingExperimentSelected,
   controls,
   runConfiguration,
-  observedRunRecipe,
   observedSoundingParse,
   observedSoundingStatus,
   observedSoundingError,
@@ -3532,7 +3496,6 @@ function BuildWorkspace({
   onSelectScenario,
   onControlChange,
   onRunConfigurationChange,
-  onObservedRunRecipeChange,
   onObservedSoundingFile,
   onObservedSoundingTimeChange,
   onAtmosphereSourcePathChange,
@@ -3564,7 +3527,6 @@ function BuildWorkspace({
   onClearRunPlan,
   onRunPlanItemSelectedChange,
   onRunPlanItemQueueTargetChange,
-  onRunPlanItemRecipeChange,
   onRunPlanItemConfigurationChange,
   onCreateAndQueueRunPlan,
   onDryRun,
@@ -3598,7 +3560,6 @@ function BuildWorkspace({
   observedSoundingExperimentSelected: boolean;
   controls: Record<string, string | number | boolean>;
   runConfiguration: RunConfigurationInput;
-  observedRunRecipe: ObservedRunRecipe;
   observedSoundingParse: ObservedSoundingParseResponse | null;
   observedSoundingStatus: string | null;
   observedSoundingError: string | null;
@@ -3649,7 +3610,6 @@ function BuildWorkspace({
   onSelectScenario: (scenarioId: string) => void;
   onControlChange: (controlId: string, value: string) => void;
   onRunConfigurationChange: (configuration: RunConfigurationInput) => void;
-  onObservedRunRecipeChange: (runRecipe: ObservedRunRecipe) => void;
   onObservedSoundingFile: (file: File) => void;
   onObservedSoundingTimeChange: (validTimeUtc: string) => void;
   onAtmosphereSourcePathChange: (sourcePath: AtmosphereSourcePath) => void;
@@ -3685,7 +3645,6 @@ function BuildWorkspace({
   onClearRunPlan: () => void;
   onRunPlanItemSelectedChange: (itemId: string, selected: boolean) => void;
   onRunPlanItemQueueTargetChange: (itemId: string, target: RunPlanQueueTarget) => void;
-  onRunPlanItemRecipeChange: (itemId: string, runRecipe: ObservedRunRecipe) => void;
   onRunPlanItemConfigurationChange: (
     itemId: string,
     runConfiguration: RunConfigurationInput,
@@ -3714,12 +3673,7 @@ function BuildWorkspace({
   onRetryScenarios: () => void;
 }) {
   const scenarioControlsReady = scenarioLoadState === "loaded" && selectedScenario !== undefined;
-  const selectedTriggeredDeepPotential =
-    observedSoundingExperimentSelected && observedRunRecipe === "triggered_deep_potential";
-  const runConfigurationPreview = previewRunConfiguration(
-    runConfiguration,
-    observedSoundingExperimentSelected ? observedRunRecipe : "generated_reference_lower_atmosphere",
-  );
+  const runConfigurationPreview = previewRunConfiguration(runConfiguration);
   const runPlanPanel = (
     <RunPlanPanel
       items={runPlanItems}
@@ -3727,7 +3681,6 @@ function BuildWorkspace({
       lanWorkerConfigured={lanWorkerConfig?.configured ?? false}
       onSelectedChange={onRunPlanItemSelectedChange}
       onQueueTargetChange={onRunPlanItemQueueTargetChange}
-      onRecipeChange={onRunPlanItemRecipeChange}
       onConfigurationChange={onRunPlanItemConfigurationChange}
       onDuplicate={onDuplicateRunPlanItem}
       onRemove={onRemoveRunPlanItem}
@@ -3815,7 +3768,7 @@ function BuildWorkspace({
                 <h3 id="physical-question-title">Physical Question</h3>
                 <p>
                   {observedSoundingExperimentSelected
-                    ? "Given this observed atmosphere, what can CM1 honestly test under the selected run recipe and explicit assumptions?"
+                    ? "Given this observed atmosphere, what can CM1 honestly test under the selected surface forcing, run shape, and explicit assumptions?"
                     : selectedScenario.physical_question}
                 </p>
               </section>
@@ -3864,12 +3817,8 @@ function BuildWorkspace({
                     <SelectedSoundingRunSetupPanel
                       observedSounding={observedSoundingParse.selected_sounding}
                       selectedCandidateScreening={selectedCandidateScreening}
-                      observedRunRecipe={observedRunRecipe}
-                      controls={controls}
                       runConfiguration={runConfiguration}
                       runConfigurationPreview={runConfigurationPreview}
-                      selectedTriggeredDeepPotential={selectedTriggeredDeepPotential}
-                      onObservedRunRecipeChange={onObservedRunRecipeChange}
                       onRunConfigurationChange={onRunConfigurationChange}
                       onAddSelectedSoundingToRunPlan={onAddSelectedSoundingToRunPlan}
                     />
@@ -3956,7 +3905,6 @@ function BuildWorkspace({
                 <RunConfigurationPanel
                   configuration={runConfiguration}
                   preview={runConfigurationPreview}
-                  triggeredDeepPotential={selectedTriggeredDeepPotential}
                   onChange={onRunConfigurationChange}
                 />
               )}
@@ -4094,9 +4042,9 @@ function PreRunValidationReportPanel({ report }: { report: PreRunValidationRepor
       <div className="panel-heading-row">
         <div>
           <p className="eyebrow">Pre-run validation</p>
-          <h3>Hypothesis and run recipe check</h3>
+          <h3>Hypothesis and experiment setup check</h3>
           <p className="field-help">
-            Cloud Chamber checks whether the selected hypothesis, recipe, fields, and run shape can
+            Cloud Chamber checks whether the selected hypothesis, forcing, fields, and run shape can
             be compared honestly before CM1 is launched.
           </p>
         </div>
@@ -4254,40 +4202,24 @@ function BuildRunActionPanel({
 function RunConfigurationPanel({
   configuration,
   preview,
-  triggeredDeepPotential,
-  runRecipe,
-  controls,
   selectedCandidateScreening,
   onAddToRunPlan,
   onChange,
-  onRunRecipeChange,
   embedded = false,
 }: {
-  configuration: RunConfigurationInput;
-  preview: RunConfiguration;
-  triggeredDeepPotential: boolean;
-  runRecipe?: ObservedRunRecipe;
-  controls?: Record<string, string | number | boolean>;
-  selectedCandidateScreening?: Record<string, unknown> | null;
-  onAddToRunPlan?: () => void;
-  onChange: (configuration: RunConfigurationInput) => void;
-  onRunRecipeChange?: (runRecipe: ObservedRunRecipe) => void;
-  embedded?: boolean;
-}) {
-  const observedRecipeSelected = runRecipe !== undefined && onRunRecipeChange !== undefined;
-  const selectedDeep = runRecipe
-    ? runRecipe === "triggered_deep_potential"
-    : triggeredDeepPotential;
-  const domainOptions = selectedDeep ? DEEP_DOMAIN_OPTIONS : SHALLOW_DOMAIN_OPTIONS;
-  const recipeMismatchWarning =
-    runRecipe && selectedCandidateScreening
-      ? candidateRecipeMismatchWarning(selectedCandidateScreening, runRecipe)
-      : null;
-  const appliedForcing =
-    runRecipe && controls ? observedRecipeAppliedForcing(controls, selectedDeep) : null;
-  const configurationHelp = observedRecipeSelected
-    ? "Choose the recipe, model time, grid, domain, cadence, and diagnostics for this observed atmosphere."
-    : "Choose duration, grid, domain, cadence, and diagnostics before creating the CM1 package.";
+	  configuration: RunConfigurationInput;
+	  preview: RunConfiguration;
+	  selectedCandidateScreening?: Record<string, unknown> | null;
+	  onAddToRunPlan?: () => void;
+	  onChange: (configuration: RunConfigurationInput) => void;
+	  embedded?: boolean;
+	}) {
+  const recipeMismatchWarning = selectedCandidateScreening
+    ? candidateRecipeMismatchWarning(selectedCandidateScreening)
+    : null;
+  const appliedForcing = observedRecipeAppliedForcing(preview);
+  const configurationHelp =
+    "Choose lower-boundary forcing, model time, grid, domain, and cadence for this atmosphere.";
   const configurationNotes: string[] = [];
   if (preview.mode === "smoke") {
     configurationNotes.push(
@@ -4297,11 +4229,6 @@ function RunConfigurationPanel({
   if (preview.caveats.includes("configuration_better_suited_to_larger_compute")) {
     configurationNotes.push(
       "This configuration may be better suited to larger compute. Cloud Chamber still shows the CM1-facing values before launch.",
-    );
-  }
-  if (selectedDeep) {
-    configurationNotes.push(
-      "Triggered deep potential adds a warm-bubble trigger. Treat it as a forced-potential experiment, not normal atmospheric evolution.",
     );
   }
   const update = (key: keyof RunConfigurationInput, value: string) => {
@@ -4325,25 +4252,22 @@ function RunConfigurationPanel({
       </div>
 
       <div className="run-configuration-grid">
-        {observedRecipeSelected && (
-          <RunConfigurationSelect
-            id="run-recipe"
-            label="Experiment recipe"
-            description="Initiation and comparison context."
-            value={runRecipe}
-            options={[
-              {
-                value: "untriggered_observed_evolution",
-                label: "Observed evolution",
-              },
-              {
-                value: "triggered_deep_potential",
-                label: "Triggered deep potential",
-              },
-            ]}
-            onChange={(value) => onRunRecipeChange(value as ObservedRunRecipe)}
-          />
-        )}
+        <RunConfigurationTextInput
+          id="run-surface-heat-flux"
+          label="Surface heat flux"
+          units="K m/s"
+          description="CM1 cnst_shflx. Current baseline is 8.0e-3; 0.03-0.10 is a stronger daytime-heating sensitivity; values above about 0.2 are very aggressive."
+          value={configuration.surface_heat_flux_k_m_s}
+          onChange={(value) => update("surface_heat_flux_k_m_s", value)}
+        />
+        <RunConfigurationTextInput
+          id="run-surface-moisture-flux"
+          label="Surface moisture flux"
+          units="g/g m/s"
+          description="CM1 cnst_lhflx. Current baseline is 5.2e-5; 2e-5-1e-4 is a useful moisture-supply sensitivity; values above about 2e-4 are very aggressive."
+          value={configuration.surface_moisture_flux_g_g_m_s}
+          onChange={(value) => update("surface_moisture_flux_g_g_m_s", value)}
+        />
         <RunConfigurationSelect
           id="run-duration"
           label="Duration"
@@ -4355,11 +4279,7 @@ function RunConfigurationPanel({
         <RunConfigurationSelect
           id="run-grid"
           label="Horizontal cells"
-          description={
-            selectedDeep
-              ? "Storm-scale cell budget; spacing derives from domain width."
-              : "Cell budget; more cells reduce dx/dy and increase cost."
-          }
+          description="Cell budget; more cells reduce dx/dy and increase cost."
           value={configuration.horizontal_cell_count}
           options={HORIZONTAL_CELL_OPTIONS}
           onChange={(value) => update("horizontal_cell_count", value)}
@@ -4367,9 +4287,9 @@ function RunConfigurationPanel({
         <RunConfigurationSelect
           id="run-domain"
           label="Domain size"
-          description={selectedDeep ? "Storm-growth domain." : "Domain width and model top."}
+          description="Domain width and model top."
           value={configuration.domain_size}
-          options={domainOptions}
+          options={SHALLOW_DOMAIN_OPTIONS}
           onChange={(value) => update("domain_size", value)}
         />
         <RunConfigurationSelect
@@ -4380,14 +4300,6 @@ function RunConfigurationPanel({
           options={OUTPUT_CADENCE_OPTIONS}
           onChange={(value) => update("output_cadence", value)}
         />
-        <RunConfigurationSelect
-          id="run-fields"
-          label="Diagnostic set"
-          description="CM1 fields written for Results and Explore."
-          value={configuration.diagnostic_set}
-          options={DIAGNOSTIC_SET_OPTIONS}
-          onChange={(value) => update("diagnostic_set", value)}
-        />
       </div>
 
       {recipeMismatchWarning && (
@@ -4397,10 +4309,10 @@ function RunConfigurationPanel({
       )}
 
       <dl className="compact-metrics run-configuration-summary">
-        {appliedForcing && <Metric label="Forcing" value={appliedForcing} />}
+        <Metric label="Forcing" value={appliedForcing} />
         <Metric label="Runtime" value={runConfigurationTimingSummary(preview)} />
         <Metric label="Grid" value={runConfigurationGridSummary(preview)} />
-        <Metric label="Output" value={preview.output_volume_summary} />
+        <Metric label="Saved fields" value={runConfigurationFieldSummary(preview)} />
       </dl>
 
       {configurationNotes.length > 0 && (
@@ -4414,9 +4326,8 @@ function RunConfigurationPanel({
         </details>
       )}
 
-      {observedRecipeSelected && selectedCandidateScreening && (
+      {selectedCandidateScreening && (
         <ObservedRunRecipePanel
-          runRecipe={runRecipe}
           selectedCandidateScreening={selectedCandidateScreening}
         />
       )}
@@ -4441,6 +4352,25 @@ function RunConfigurationPanel({
           <Metric
             label="Rayleigh damping start"
             value={formatMeters(preview.cm1_values.rayleigh_damping_start_m)}
+          />
+          <Metric label="Surface flux mode" value={humanize(preview.surface_flux_mode)} />
+          <Metric
+            label="cnst_shflx"
+            value={formatScientific(
+              preview.surface_flux_cm1_values.cnst_shflx,
+              preview.surface_flux_cm1_values.cnst_shflx_units,
+            )}
+          />
+          <Metric
+            label="cnst_lhflx"
+            value={formatScientific(
+              preview.surface_flux_cm1_values.cnst_lhflx,
+              preview.surface_flux_cm1_values.cnst_lhflx_units,
+            )}
+          />
+          <Metric
+            label="Surface switches"
+            value={`isfcflx ${preview.surface_flux_cm1_values.isfcflx}; sfcmodel ${preview.surface_flux_cm1_values.sfcmodel}; set_flx ${preview.surface_flux_cm1_values.set_flx}; set_ust ${preview.surface_flux_cm1_values.set_ust}`}
           />
         </dl>
       </details>
@@ -4499,6 +4429,44 @@ function RunConfigurationSelect({
           </option>
         ))}
       </select>
+    </div>
+  );
+}
+
+function RunConfigurationTextInput({
+  id,
+  label,
+  units,
+  description,
+  value,
+  onChange,
+}: {
+  id: string;
+  label: string;
+  units: string;
+  description: string;
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  const descriptionId = `${id}-description`;
+  return (
+    <div className="run-configuration-control">
+      <span>
+        <label htmlFor={id}>
+          <strong>{label}</strong>
+        </label>
+        <small id={descriptionId}>
+          {units}; {description}
+        </small>
+      </span>
+      <input
+        id={id}
+        type="text"
+        inputMode="decimal"
+        value={value}
+        aria-describedby={descriptionId}
+        onChange={(event) => onChange(event.target.value)}
+      />
     </div>
   );
 }
@@ -5584,23 +5552,15 @@ function UploadSoundingSourcePanel({
 function SelectedSoundingRunSetupPanel({
   observedSounding,
   selectedCandidateScreening,
-  observedRunRecipe,
-  controls,
   runConfiguration,
   runConfigurationPreview,
-  selectedTriggeredDeepPotential,
-  onObservedRunRecipeChange,
   onRunConfigurationChange,
   onAddSelectedSoundingToRunPlan,
 }: {
   observedSounding: ObservedSoundingRecord;
   selectedCandidateScreening: Record<string, unknown> | null;
-  observedRunRecipe: ObservedRunRecipe;
-  controls: Record<string, string | number | boolean>;
   runConfiguration: RunConfigurationInput;
   runConfigurationPreview: RunConfiguration;
-  selectedTriggeredDeepPotential: boolean;
-  onObservedRunRecipeChange: (runRecipe: ObservedRunRecipe) => void;
   onRunConfigurationChange: (configuration: RunConfigurationInput) => void;
   onAddSelectedSoundingToRunPlan: () => void;
 }) {
@@ -5658,13 +5618,9 @@ function SelectedSoundingRunSetupPanel({
       <RunConfigurationPanel
         configuration={runConfiguration}
         preview={runConfigurationPreview}
-        triggeredDeepPotential={selectedTriggeredDeepPotential}
-        runRecipe={observedRunRecipe}
-        controls={controls}
         selectedCandidateScreening={selectedCandidateScreening}
         onAddToRunPlan={onAddSelectedSoundingToRunPlan}
         onChange={onRunConfigurationChange}
-        onRunRecipeChange={onObservedRunRecipeChange}
         embedded
       />
     </section>
@@ -5822,22 +5778,16 @@ function ObservedSoundingInputPanel({
 }
 
 function ObservedRunRecipePanel({
-  runRecipe,
   selectedCandidateScreening,
 }: {
-  runRecipe: ObservedRunRecipe;
   selectedCandidateScreening: Record<string, unknown> | null;
 }) {
-  const selectedDeep = runRecipe === "triggered_deep_potential";
   const activeStory = observedRecipeStoryId(selectedCandidateScreening);
   const activeStoryLabel = observedRecipeStoryLabel(selectedCandidateScreening);
   const expectedSignatures = observedRecipeSignatureLabels(activeStory);
   const hypothesisSummary = observedRecipeHypothesisSummary(activeStory);
   const evidenceSummary = observedRecipeEvidenceSummary(selectedCandidateScreening);
   const recipeFitSummary = observedRecipeFitSummary(selectedCandidateScreening, activeStory);
-  const methodScope = selectedDeep
-    ? "Forced-initiation test of deep-convection potential; not normal atmospheric evolution."
-    : "No added deep trigger; CM1 evolves the observed profile with the selected surface-heating forcing.";
 
   return (
     <details className="technical-details hypothesis-details-panel">
@@ -5865,14 +5815,9 @@ function ObservedRunRecipePanel({
 
       <dl className="compact-metrics">
         <Metric
-          label="Experiment recipe"
-          value={selectedDeep ? "Triggered deep potential" : "Observed evolution"}
+          label="Run scope"
+          value="CM1 evolves the observed profile with the selected uniform lower-boundary heat/moisture forcing."
         />
-        <Metric
-          label="Initiation"
-          value={selectedDeep ? "Idealized three warm bubbles" : "No added deep trigger"}
-        />
-        <Metric label="Method scope" value={methodScope} />
       </dl>
     </details>
   );
@@ -5884,7 +5829,6 @@ function RunPlanPanel({
   lanWorkerConfigured,
   onSelectedChange,
   onQueueTargetChange,
-  onRecipeChange,
   onConfigurationChange,
   onDuplicate,
   onRemove,
@@ -5897,7 +5841,6 @@ function RunPlanPanel({
   lanWorkerConfigured: boolean;
   onSelectedChange: (itemId: string, selected: boolean) => void;
   onQueueTargetChange: (itemId: string, target: RunPlanQueueTarget) => void;
-  onRecipeChange: (itemId: string, runRecipe: ObservedRunRecipe) => void;
   onConfigurationChange: (itemId: string, configuration: RunConfigurationInput) => void;
   onDuplicate: (itemId: string) => void;
   onRemove: (itemId: string) => void;
@@ -5919,8 +5862,8 @@ function RunPlanPanel({
           <p className="eyebrow">Run plan</p>
           <h3>Plan multiple CM1 runs</h3>
           <p className="field-help">
-            Add candidate atmospheres, duplicate variants, edit recipe and run configuration, then
-            queue selected items as a batch.
+            Add candidate atmospheres, duplicate variants, edit forcing and run shape, then queue
+            selected items as a batch.
           </p>
         </div>
         <StatusBadge
@@ -5952,7 +5895,6 @@ function RunPlanPanel({
                 lanWorkerConfigured={lanWorkerConfigured}
                 onSelectedChange={onSelectedChange}
                 onQueueTargetChange={onQueueTargetChange}
-                onRecipeChange={onRecipeChange}
                 onConfigurationChange={onConfigurationChange}
                 onDuplicate={onDuplicate}
                 onRemove={onRemove}
@@ -5995,7 +5937,6 @@ function RunPlanItemCard({
   lanWorkerConfigured,
   onSelectedChange,
   onQueueTargetChange,
-  onRecipeChange,
   onConfigurationChange,
   onDuplicate,
   onRemove,
@@ -6005,14 +5946,13 @@ function RunPlanItemCard({
   lanWorkerConfigured: boolean;
   onSelectedChange: (itemId: string, selected: boolean) => void;
   onQueueTargetChange: (itemId: string, target: RunPlanQueueTarget) => void;
-  onRecipeChange: (itemId: string, runRecipe: ObservedRunRecipe) => void;
   onConfigurationChange: (itemId: string, configuration: RunConfigurationInput) => void;
   onDuplicate: (itemId: string) => void;
   onRemove: (itemId: string) => void;
 }) {
   const metadata = runPlanRecipeMetadata(item);
   const activeStory = item.activeStory ?? observedRecipeStoryId(item.candidateScreening);
-  const preview = previewRunConfiguration(item.runConfiguration, item.runRecipe);
+  const preview = previewRunConfiguration(item.runConfiguration);
   const sourceLabel =
     item.candidate !== null
       ? `${candidateStationLabel(item.candidate)} · ${formatDate(item.candidate.valid_time_utc)}`
@@ -6058,20 +5998,6 @@ function RunPlanItemCard({
           <span>{runConfigurationTimingSummary(preview)}</span>
         </div>
         <div className="run-configuration-grid run-plan-configuration-grid">
-          <RunConfigurationSelect
-            id={`run-plan-recipe-${item.id}`}
-            label="Recipe"
-            description="Initiation and comparison context."
-            value={item.runRecipe}
-            options={[
-              {
-                value: "untriggered_observed_evolution",
-                label: "Observed evolution",
-              },
-              { value: "triggered_deep_potential", label: "Triggered deep potential" },
-            ]}
-            onChange={(value) => onRecipeChange(item.id, value as ObservedRunRecipe)}
-          />
           <RunConfigurationSelect
             id={`run-plan-target-${item.id}`}
             label="Queue target"
@@ -6140,13 +6066,27 @@ function RunPlanConfigurationFields({
   preview: RunConfiguration;
   onConfigurationChange: (itemId: string, configuration: RunConfigurationInput) => void;
 }) {
-  const triggeredDeepPotential = item.runRecipe === "triggered_deep_potential";
-  const domainOptions = triggeredDeepPotential ? DEEP_DOMAIN_OPTIONS : SHALLOW_DOMAIN_OPTIONS;
   const update = (key: keyof RunConfigurationInput, value: string) => {
     onConfigurationChange(item.id, { ...item.runConfiguration, [key]: value });
   };
   return (
     <>
+      <RunConfigurationTextInput
+        id={`run-plan-surface-heat-flux-${item.id}`}
+        label="Surface heat flux"
+        units="K m/s"
+        description="CM1 cnst_shflx; baseline 8.0e-3, stronger sensitivity about 0.03-0.10."
+        value={item.runConfiguration.surface_heat_flux_k_m_s}
+        onChange={(value) => update("surface_heat_flux_k_m_s", value)}
+      />
+      <RunConfigurationTextInput
+        id={`run-plan-surface-moisture-flux-${item.id}`}
+        label="Surface moisture flux"
+        units="g/g m/s"
+        description="CM1 cnst_lhflx; baseline 5.2e-5, useful sensitivity about 2e-5-1e-4."
+        value={item.runConfiguration.surface_moisture_flux_g_g_m_s}
+        onChange={(value) => update("surface_moisture_flux_g_g_m_s", value)}
+      />
       <RunConfigurationSelect
         id={`run-plan-duration-${item.id}`}
         label="Duration"
@@ -6168,7 +6108,7 @@ function RunPlanConfigurationFields({
         label="Domain size"
         description="Width and model top."
         value={item.runConfiguration.domain_size}
-        options={domainOptions}
+        options={SHALLOW_DOMAIN_OPTIONS}
         onChange={(value) => update("domain_size", value)}
       />
       <RunConfigurationSelect
@@ -6178,14 +6118,6 @@ function RunPlanConfigurationFields({
         value={item.runConfiguration.output_cadence}
         options={OUTPUT_CADENCE_OPTIONS}
         onChange={(value) => update("output_cadence", value)}
-      />
-      <RunConfigurationSelect
-        id={`run-plan-fields-${item.id}`}
-        label="Diagnostic set"
-        description="Output field density."
-        value={item.runConfiguration.diagnostic_set}
-        options={DIAGNOSTIC_SET_OPTIONS}
-        onChange={(value) => update("diagnostic_set", value)}
       />
       <p className="field-help run-plan-config-summary">
         {runConfigurationGridSummary(preview)} · {preview.output_volume_summary}
@@ -8045,7 +7977,7 @@ function ResultNotebookCard({
         <Metric label="Max updraft" value={formatNumber(resultMaxUpdraft(result), "m/s")} />
         <Metric label="Min downdraft" value={formatNumber(resultMinDowndraft(result), "m/s")} />
         <Metric label="Cloud top" value={formatNumber(resultCloudTopMeters(result), "m")} />
-        {isTriggeredDeepPotentialRun(result) && (
+        {hasDeepConvectionDiagnostics(result) && (
           <Metric label="Deep convection" value={deepConvectionOutcome(result)} />
         )}
         <Metric label="Latest output" value={formatSeconds(resultLatestOutputTime(result))} />
@@ -10338,22 +10270,6 @@ function candidateSortLabel(sort: CandidateSort): string {
   return labels[sort];
 }
 
-function defaultRunRecipeForCandidate(
-  candidate: SoundingCandidate,
-  activeStory?: CandidateStoryId,
-): ObservedRunRecipe {
-  if (activeStory && deepConvectionStoryIds.has(activeStory)) return "triggered_deep_potential";
-  if (deepConvectionStoryIds.has(candidate.primary_story)) return "triggered_deep_potential";
-  if (
-    candidate.story_scores.some(
-      (score) => deepConvectionStoryIds.has(score.story) && score.support === "supported",
-    )
-  ) {
-    return "triggered_deep_potential";
-  }
-  return "untriggered_observed_evolution";
-}
-
 function candidateRecipeFitForStory(
   candidate: SoundingCandidate,
   story: CandidateStoryId,
@@ -10382,21 +10298,24 @@ function candidateRecipeFitForStory(
   if (story === "needs_review") {
     return {
       status: "not_testable_with_current_recipes",
-      label: "not testable with current run recipe",
+      label: "not testable with current experiment setup",
       summary: "This candidate needs manual screening before it maps to a current run path.",
       caveats: ["candidate_requires_manual_screening_review"],
     };
   }
   if (deepConvectionStoryIds.has(story)) {
-    const caveats = ["untriggered_observed_evolution_does_not_test_deep_potential"];
+    const caveats = [
+      "deep_convection_outcome_depends_on_surface_forcing_duration_domain_and_resolution",
+      "differential_surface_initiation_is_tracked_in_issue_307",
+    ];
     if (candidate.features.observed_wind_available !== true) {
-      caveats.push("complete_observed_wind_profile_required_for_deep_potential");
+      caveats.push("complete_observed_wind_profile_required_for_input_sounding");
     }
     return {
-      status: "requires_triggered_deep_potential",
-      label: "requires triggered deep-potential run",
+      status: "partially_testable",
+      label: "testable as forced observed evolution",
       summary:
-        "This story screens deep-convection ingredients. An untriggered observed-evolution run does not test that hypothesis without the triggered deep-potential recipe.",
+        "This story screens deep-convection ingredients. CM1 can evolve the observed atmosphere under the selected lower-boundary forcing; differential initiation is a follow-up.",
       caveats,
     };
   }
@@ -10453,7 +10372,7 @@ function observedRecipeHypothesisSummary(story: CandidateStoryId | null): string
     return "Inspect cloud, updraft, moisture, and precipitation evolution without a saved pre-run story.";
   }
   if (deepConvectionStoryIds.has(story)) {
-    return "Deep-convection ingredients are present; check whether supplied initiation can produce deep cloud, strong updraft, and precipitation signatures.";
+    return "Deep-convection ingredients are present; check whether the selected lower-boundary forcing, duration, domain, and resolution produce deep cloud, strong updraft, and precipitation signatures.";
   }
   switch (story) {
     case "shallow_cumulus_candidate":
@@ -10475,7 +10394,7 @@ function observedRecipeHypothesisSummary(story: CandidateStoryId | null): string
 function observedRecipeSignatureLabels(story: CandidateStoryId | null): string[] {
   if (!story) return [];
   if (deepConvectionStoryIds.has(story)) {
-    return ["Deep cloud", "Strong updraft", "Rain water aloft", "Reflectivity if requested"];
+    return ["Deep cloud", "Strong updraft", "Rain water aloft", "Reflectivity"];
   }
   switch (story) {
     case "shallow_cumulus_candidate":
@@ -10489,7 +10408,7 @@ function observedRecipeSignatureLabels(story: CandidateStoryId | null): string[]
         "Cloud water",
         "Rain water aloft",
         "Surface rain or accumulated precipitation",
-        "Reflectivity if requested",
+        "Reflectivity",
       ];
     case "needs_review":
     case "poor_or_incomplete_candidate":
@@ -10534,27 +10453,17 @@ function observedRecipeFitSummary(
     return fitSummary;
   }
   if (story && deepConvectionStoryIds.has(story)) {
-    return "Needs the triggered deep-potential method to test the deep-convection hypothesis.";
+    return "Inspectable under the selected surface forcing; deep outcomes depend on duration, domain, resolution, and later differential-forcing support.";
   }
   return "The selected observed-sounding method can inspect this story when duration, cadence, and requested fields are adequate.";
 }
 
-function observedRecipeAppliedForcing(
-  controls: Record<string, string | number | boolean>,
-  selectedDeep: boolean,
-): string {
-  const surfaceHeating = controls.surface_heating;
-  const surfaceHeatingLabel =
-    typeof surfaceHeating === "string" && surfaceHeating.length > 0
-      ? humanize(surfaceHeating)
-      : "Baseline";
-  const initiation = selectedDeep ? "warm-bubble trigger" : "no deep trigger";
-  return `${surfaceHeatingLabel} surface heating; ${initiation}.`;
+function observedRecipeAppliedForcing(configuration: RunConfiguration): string {
+  return configuration.surface_flux_summary;
 }
 
 function candidateRecipeMismatchWarning(
   selectedCandidateScreening: Record<string, unknown> | null,
-  runRecipe: ObservedRunRecipe,
 ): string | null {
   if (!selectedCandidateScreening) return null;
   const activeStory =
@@ -10576,8 +10485,8 @@ function candidateRecipeMismatchWarning(
             score.score_0_to_100 > 0 &&
             score.support !== "unavailable",
         )));
-  if (runRecipe === "untriggered_observed_evolution" && hasMeaningfulDeepStory) {
-    return "This candidate was screened for deep-convection potential. Untriggered observed evolution does not test that hypothesis. Choose the triggered deep-potential recipe, or treat this as an untriggered evolution experiment.";
+  if (hasMeaningfulDeepStory) {
+    return "This candidate was screened for deep-convection potential. This run will test how it evolves under the selected uniform lower-boundary forcing; differential surface initiation is tracked separately.";
   }
   const hasHumidRainyStory =
     activeStory === "humid_rainy_candidate" ||
@@ -10829,14 +10738,12 @@ function createRunPlanItemId(): string {
 function runPlanItemFromUploadedSounding({
   observedSounding,
   source,
-  observedRunRecipe,
   runConfiguration,
   controls,
   selectedCandidateScreening,
 }: {
   observedSounding: ObservedSoundingRecord;
   source: AtmosphereSourcePath;
-  observedRunRecipe: ObservedRunRecipe;
   runConfiguration: RunConfigurationInput;
   controls: Record<string, string | number | boolean>;
   selectedCandidateScreening: Record<string, unknown> | null;
@@ -10850,7 +10757,7 @@ function runPlanItemFromUploadedSounding({
     observedSounding,
     candidateScreening: selectedCandidateScreening,
     activeStory: observedRecipeStoryId(selectedCandidateScreening),
-    runRecipe: observedRunRecipe,
+    runRecipe: CURRENT_OBSERVED_RUN_RECIPE,
     runConfiguration,
     controls,
     queueTarget: "local",
@@ -10979,20 +10886,20 @@ function runPlanRecipeMetadata(item: RunPlanItem): {
   recipeCaveats: string[];
 } {
   const report = item.dryRun?.report;
-  const staticMetadata = staticRecipeMetadata(item.runRecipe);
+  const staticMetadata = staticRecipeMetadata();
   return {
     recipeId: report?.recipe_id ?? staticMetadata.recipeId,
     recipeDisplayName: report?.recipe_display_name ?? staticMetadata.recipeDisplayName,
     assumptionSetId: report?.assumption_set_id ?? staticMetadata.assumptionSetId,
     assumptionMode: report?.assumption_mode ?? staticMetadata.assumptionMode,
-    assumptionsSummary: compactRecipeAssumptions(report?.recipe_assumptions, item.runRecipe),
+    assumptionsSummary: compactRecipeAssumptions(report?.recipe_assumptions),
     requiredOutputFields: report?.required_output_fields ?? staticMetadata.requiredOutputFields,
     missingRequiredOutputFields: report?.missing_required_output_fields ?? [],
     recipeCaveats: report?.recipe_caveats ?? staticMetadata.recipeCaveats,
   };
 }
 
-function staticRecipeMetadata(runRecipe: ObservedRunRecipe): {
+function staticRecipeMetadata(): {
   recipeId: string;
   recipeDisplayName: string;
   assumptionSetId: string;
@@ -11000,55 +10907,36 @@ function staticRecipeMetadata(runRecipe: ObservedRunRecipe): {
   requiredOutputFields: string[];
   recipeCaveats: string[];
 } {
-  if (runRecipe === "triggered_deep_potential") {
-    return {
-      recipeId: "triggered_deep_potential_v1",
-      recipeDisplayName: "Triggered Deep-Potential Experiment",
-      assumptionSetId: "triggered_deep_potential_warm_bubble_v1",
-      assumptionMode: "triggered_deep_potential",
-      requiredOutputFields: ["qc", "w", "qr", "rain", "dbz", "updraft_helicity"],
-      recipeCaveats: [
-        "The recipe tests triggered potential, not normal atmospheric evolution.",
-        "The warm-bubble trigger must be preserved in provenance and Results comparison.",
-      ],
-    };
-  }
   return {
-    recipeId: "untriggered_observed_sounding_evolution_v0",
-    recipeDisplayName: "Untriggered Observed-Sounding Evolution v0",
-    assumptionSetId: "untriggered_observed_sounding_evolution_v0_assumptions",
-    assumptionMode: "normal_evolution",
-    requiredOutputFields: ["qv", "qc", "w", "qr", "rain", "dbz"],
+    recipeId: "observed_surface_forced_evolution_v0",
+    recipeDisplayName: "Observed Surface-Forced Evolution v0",
+    assumptionSetId: "observed_surface_forced_evolution_v0_assumptions",
+    assumptionMode: "surface_forced_observed_evolution",
+    requiredOutputFields: ["qv", "qc", "w", "qr", "rain", "dbz", "hfx", "lhfx"],
     recipeCaveats: [
-      "No warm-bubble or artificial deep-convection trigger is applied.",
-      "Surface fluxes use current recipe defaults; they are not validated place/time surface-energy inputs.",
+      "No artificial atmospheric trigger is applied.",
+      "Surface fluxes use numeric constant uniform lower-boundary proxy values; they are not validated place/time surface-energy inputs.",
       "Radiation, terrain, GIS surface initialization, and large-scale forcing are not part of v0.",
     ],
   };
 }
 
-function compactRecipeAssumptions(
-  assumptions: Record<string, unknown> | undefined,
-  runRecipe: ObservedRunRecipe,
-): string {
-  if (runRecipe === "triggered_deep_potential") {
-    return "Warm-bubble trigger · triggered potential, not normal evolution";
-  }
+function compactRecipeAssumptions(assumptions: Record<string, unknown> | undefined): string {
   const trigger = assumptions?.trigger;
   const surfaceFluxes = assumptions?.surface_fluxes;
   const radiation = assumptions?.radiation;
   const largeScaleForcing = assumptions?.large_scale_forcing;
   const triggerLabel =
     trigger && typeof trigger === "object" && "mode" in trigger && trigger.mode === "none"
-      ? "No warm-bubble trigger"
-      : "No warm-bubble trigger";
+      ? "No artificial trigger"
+      : "No artificial trigger";
   const fluxLabel =
     surfaceFluxes &&
     typeof surfaceFluxes === "object" &&
     "mode" in surfaceFluxes &&
-    surfaceFluxes.mode === "current_recipe_default"
-      ? "current surface-flux defaults"
-      : "current surface-flux defaults";
+    surfaceFluxes.mode === "constant_uniform_surface_flux_proxy"
+      ? "numeric uniform surface fluxes"
+      : "numeric uniform surface fluxes";
   const radiationLabel =
     radiation &&
     typeof radiation === "object" &&
@@ -11570,47 +11458,30 @@ const SHALLOW_DOMAIN_OPTIONS = [
   { value: "regional_120km", label: "Regional 120 km" },
 ];
 
-const DEEP_DOMAIN_OPTIONS = [
-  { value: "storm_120km", label: "Storm 120 km" },
-  { value: "storm_160km", label: "Storm 160 km" },
-  { value: "storm_240km", label: "Storm 240 km" },
-];
-
 const OUTPUT_CADENCE_OPTIONS = [
   { value: "sparse_60min", label: "Sparse (60 min)" },
   { value: "standard_15min", label: "Standard (15 min)" },
   { value: "detailed_5min", label: "Detailed (5 min)" },
 ];
 
-const DIAGNOSTIC_SET_OPTIONS = [
-  { value: "essential", label: "Essential" },
-  { value: "process", label: "Process" },
-  { value: "full", label: "Full" },
-];
-
-function defaultRunConfigurationForSelection(
-  scenarioId: string,
-  runRecipe: RunRecipe,
-): RunConfigurationInput {
-  if (runRecipe === "triggered_deep_potential") {
-    return { ...DEFAULT_TRIGGERED_DEEP_POTENTIAL_RUN_CONFIGURATION };
-  }
+function defaultRunConfigurationForSelection(scenarioId: string): RunConfigurationInput {
   if (scenarioId === OBSERVED_SOUNDING_EXPERIMENT_ID) {
     return { ...DEFAULT_OBSERVED_RUN_CONFIGURATION };
   }
   return { ...DEFAULT_SHALLOW_RUN_CONFIGURATION };
 }
 
-function previewRunConfiguration(
-  configuration: RunConfigurationInput,
-  runRecipe: RunRecipe,
-): RunConfiguration {
-  const deep = runRecipe === "triggered_deep_potential";
+function previewRunConfiguration(configuration: RunConfigurationInput): RunConfiguration {
   const duration = durationValue(configuration.duration);
   const horizontalCells = horizontalCellValue(configuration.horizontal_cell_count);
-  const domain = domainValue(configuration.domain_size, deep);
+  const domain = domainValue(configuration.domain_size, false);
   const cadence = cadenceValue(configuration.output_cadence);
-  const diagnosticSet = diagnosticSetValue(configuration.diagnostic_set);
+  const diagnosticSet = { value: "full" };
+  const heatFlux = numericConfigurationValue(configuration.surface_heat_flux_k_m_s, 8.0e-3);
+  const moistureFlux = numericConfigurationValue(
+    configuration.surface_moisture_flux_g_g_m_s,
+    5.2e-5,
+  );
   const nx = horizontalCells.cells;
   const ny = horizontalCells.cells;
   const dxM = (domain.xKm * 1000) / nx;
@@ -11624,21 +11495,31 @@ function previewRunConfiguration(
   if (duration.mode === "science") {
     caveats.push("science_run_configuration_minimum_duration_6h");
   }
-  if (deep) {
-    caveats.push("triggered_deep_potential_is_not_normal_evolution");
-  }
-  if (diagnosticSet.value === "essential") {
-    caveats.push("essential_diagnostic_set_limits_later_diagnostics");
-  }
   if (
     horizontalCells.cells >= 256 ||
     domain.value === "wide_12km" ||
     domain.value === "regional_60km" ||
-    domain.value === "regional_120km" ||
-    domain.value === "storm_240km"
+    domain.value === "regional_120km"
   ) {
     caveats.push("configuration_better_suited_to_larger_compute");
   }
+  if (heatFlux < 0 || moistureFlux < 0) {
+    caveats.push("surface_flux_values_must_be_non_negative");
+  }
+  const surfaceFluxCm1Values: RunConfigurationSurfaceFluxCM1Values = {
+    isfcflx: 1,
+    sfcmodel: 1,
+    oceanmodel: 1,
+    set_flx: 1,
+    cnst_shflx: heatFlux,
+    cnst_shflx_units: "K m/s",
+    cnst_lhflx: moistureFlux,
+    cnst_lhflx_units: "g/g m/s",
+    set_znt: 0,
+    cnst_znt: 0,
+    set_ust: 1,
+    cnst_ust: 0.28,
+  };
   const cm1Values: RunConfigurationCM1Values = {
     nx,
     ny,
@@ -11649,11 +11530,11 @@ function previewRunConfiguration(
     model_top_m: domain.modelTopM,
     domain_x_km: domain.xKm,
     domain_y_km: domain.yKm,
-    time_step_seconds: deep ? 6 : 3,
+    time_step_seconds: 3,
     runtime_seconds: duration.seconds,
     output_cadence_seconds: cadence.seconds,
     restart_cadence_seconds: Math.max(cadence.seconds, Math.min(duration.seconds, 10800)),
-    rayleigh_damping_start_m: deep ? 15000 : 2500,
+    rayleigh_damping_start_m: 2500,
     expected_output_frames: expectedFrames,
     grid_cell_count: gridCellCount,
   };
@@ -11674,10 +11555,25 @@ function previewRunConfiguration(
     output_cadence_seconds: cadence.seconds,
     diagnostic_set: diagnosticSet.value,
     cost_runtime_summary: `${hours.toLocaleString()} h model time, ${gridCellCount.toLocaleString()} cells, ${cadenceMinutes.toLocaleString()} min saved-output cadence`,
-    output_volume_summary: `${expectedFrames.toLocaleString()} saved frames, ${diagnosticSet.value} diagnostics, ${gridCellCount.toLocaleString()} cells per frame`,
+    output_volume_summary: `${expectedFrames.toLocaleString()} saved frames, full output fields, ${gridCellCount.toLocaleString()} cells per frame`,
     cm1_values: cm1Values,
+    surface_heat_flux_k_m_s: heatFlux,
+    surface_moisture_flux_g_g_m_s: moistureFlux,
+    surface_flux_mode: "constant_uniform_surface_flux_proxy",
+    surface_flux_summary: `Surface heat flux ${formatCompactNumber(heatFlux)} K m/s; surface moisture flux ${formatCompactNumber(moistureFlux)} g/g m/s; constant uniform proxy`,
+    surface_flux_cm1_values: surfaceFluxCm1Values,
+    surface_flux_caveats: [
+      "surface_flux_proxy_constant_uniform_not_place_time_energy_budget",
+      "surface_flux_proxy_not_real_land_surface_or_evaporation_model",
+      "surface_flux_proxy_values_need_local_smoke_validation",
+    ],
     caveats,
   };
+}
+
+function numericConfigurationValue(value: string, fallback: number): number {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
 }
 
 function durationValue(value: string): {
@@ -11797,11 +11693,6 @@ function cadenceValue(value: string): { seconds: number; label: string } {
   return { seconds: 900, label: "Standard 15 min" };
 }
 
-function diagnosticSetValue(value: string): { value: string } {
-  if (value === "essential" || value === "full") return { value };
-  return { value: "process" };
-}
-
 function runConfigurationGridSummary(configuration: RunConfiguration): string {
   const values = configuration.cm1_values;
   return `${values.nx} x ${values.ny} x ${values.nz}; dx/dy ${formatMeters(values.dx_m)}, dz ${formatMeters(values.dz_m)}`;
@@ -11810,6 +11701,10 @@ function runConfigurationGridSummary(configuration: RunConfiguration): string {
 function runConfigurationTimingSummary(configuration: RunConfiguration): string {
   const values = configuration.cm1_values;
   return `${formatModelTime(values.runtime_seconds)} runtime; ${formatSeconds(values.output_cadence_seconds)} output; ${values.expected_output_frames.toLocaleString()} saved frames; ${formatSeconds(values.time_step_seconds)} timestep`;
+}
+
+function runConfigurationFieldSummary(configuration: RunConfiguration): string {
+  return `Full output fields; ${configuration.cm1_values.expected_output_frames.toLocaleString()} saved frames`;
 }
 
 function formatSeconds(value: number | null): string {
@@ -12293,15 +12188,12 @@ function isDryFailedContrast(result: ResultCard): boolean {
 }
 
 function resultStory(result: ResultCard): string {
-  if (isTriggeredDeepPotentialRun(result)) {
-    const comparison = result.candidate_hypothesis_comparison;
-    if (comparison) {
-      return `${comparison.cm1_outcome} Candidate hypothesis ${comparison.match_status_label.toLowerCase()}.`;
-    }
-    return (
-      result.science_summary?.cm1_outcome ??
-      "Triggered deep-potential result is ready for field inspection."
-    );
+  const comparison = result.candidate_hypothesis_comparison;
+  if (comparison) {
+    return `${comparison.cm1_outcome} Candidate hypothesis ${comparison.match_status_label.toLowerCase()}.`;
+  }
+  if (hasDeepConvectionDiagnostics(result) && result.science_summary?.cm1_outcome) {
+    return result.science_summary.cm1_outcome;
   }
   if (isDryFailedContrast(result)) {
     return "Thermals rose, but low-level moisture stayed too dry for meaningful cloud water or rain.";
@@ -12319,7 +12211,7 @@ function resultStory(result: ResultCard): string {
 }
 
 function compactScienceSummary(result: ResultCard): string {
-  if (isTriggeredDeepPotentialRun(result)) {
+  if (hasDeepConvectionDiagnostics(result)) {
     const parts = [
       deepConvectionOutcome(result),
       resultMaxUpdraft(result) !== null
@@ -12462,8 +12354,13 @@ function scienceSupportLabel(result: ResultCard): string {
   return "Interesting times limited";
 }
 
-function isTriggeredDeepPotentialRun(result: ResultCard): boolean {
-  return result.run_recipe === "triggered_deep_potential";
+function hasDeepConvectionDiagnostics(result: ResultCard): boolean {
+  return (
+    result.science_summary?.deep_cloud_formed !== undefined ||
+    result.science_summary?.strong_updraft_formed !== undefined ||
+    result.science_summary?.time_of_first_deep_convection_seconds !== undefined ||
+    (result.interesting_times ?? []).some((time) => time.key === "first_deep_convection")
+  );
 }
 
 function deepConvectionOutcome(result: ResultCard): string {
@@ -12495,7 +12392,7 @@ function caveatLabel(result: ResultCard): string {
 }
 
 function cloudOutcome(result: ResultCard): string {
-  if (isTriggeredDeepPotentialRun(result)) return deepConvectionOutcome(result);
+  if (hasDeepConvectionDiagnostics(result)) return deepConvectionOutcome(result);
   if (!result.diagnostics_summary) return "Unknown";
   return result.diagnostics_summary.includes("cloud formed") &&
     !result.diagnostics_summary.includes("no cloud formed")

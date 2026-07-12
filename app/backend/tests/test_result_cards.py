@@ -191,34 +191,34 @@ def test_result_card_preserves_untriggered_observed_recipe_metadata(tmp_path: Pa
         },
         package_updates={
             "run_recipe": "untriggered_observed_evolution",
-            "run_recipe_display_name": "Untriggered Observed Evolution",
-            "recipe_id": "untriggered_observed_sounding_evolution_v0",
-            "recipe_display_name": "Untriggered Observed-Sounding Evolution v0",
-            "assumption_set_id": "untriggered_observed_sounding_evolution_v0_assumptions",
-            "assumption_mode": "normal_evolution",
+            "run_recipe_display_name": "Observed Surface-Forced Evolution",
+            "recipe_id": "observed_surface_forced_evolution_v0",
+            "recipe_display_name": "Observed Surface-Forced Evolution v0",
+            "assumption_set_id": "observed_surface_forced_evolution_v0_assumptions",
+            "assumption_mode": "surface_forced_observed_evolution",
             "recipe_assumptions": {
                 "trigger": {"mode": "none"},
                 "radiation": {"mode": "disabled"},
                 "large_scale_forcing": {"mode": "none"},
             },
             "required_output_fields": ["qv", "qc", "w", "qr", "rain", "dbz"],
-            "recipe_caveats": ["No warm-bubble or artificial deep-convection trigger is applied."],
+            "recipe_caveats": ["No artificial atmospheric trigger is applied."],
             "input_source": "observed_sounding",
         },
     )
 
     card = get_result_card(settings, result_id)
 
-    assert card.name == "Untriggered Observed-Sounding Evolution v0 — Valley, Nebraska"
-    assert card.scenario_name == "Untriggered Observed-Sounding Evolution v0"
-    assert card.recipe_id == "untriggered_observed_sounding_evolution_v0"
-    assert card.recipe_display_name == "Untriggered Observed-Sounding Evolution v0"
-    assert card.assumption_set_id == "untriggered_observed_sounding_evolution_v0_assumptions"
-    assert card.assumption_mode == "normal_evolution"
+    assert card.name == "Observed Surface-Forced Evolution v0 — Valley, Nebraska"
+    assert card.scenario_name == "Observed Surface-Forced Evolution v0"
+    assert card.recipe_id == "observed_surface_forced_evolution_v0"
+    assert card.recipe_display_name == "Observed Surface-Forced Evolution v0"
+    assert card.assumption_set_id == "observed_surface_forced_evolution_v0_assumptions"
+    assert card.assumption_mode == "surface_forced_observed_evolution"
     assert card.recipe_assumptions["trigger"]["mode"] == "none"
     assert card.required_output_fields == ["qv", "qc", "w", "qr", "rain", "dbz"]
     assert card.missing_required_output_fields == ["qv", "dbz"]
-    assert "recipe_id:untriggered_observed_sounding_evolution_v0" in card.provenance_labels
+    assert "recipe_id:observed_surface_forced_evolution_v0" in card.provenance_labels
     assert card.saved is False
     assert card.protected is False
     assert "source_model:CM1" in card.provenance_labels
@@ -240,11 +240,11 @@ def test_result_card_exposes_observed_sounding_source(tmp_path: Path) -> None:
         },
         package_updates={
             "run_recipe": "untriggered_observed_evolution",
-            "run_recipe_display_name": "Untriggered Observed Evolution",
-            "recipe_id": "untriggered_observed_sounding_evolution_v0",
-            "recipe_display_name": "Untriggered Observed-Sounding Evolution v0",
-            "assumption_set_id": "untriggered_observed_sounding_evolution_v0_assumptions",
-            "assumption_mode": "normal_evolution",
+            "run_recipe_display_name": "Observed Surface-Forced Evolution",
+            "recipe_id": "observed_surface_forced_evolution_v0",
+            "recipe_display_name": "Observed Surface-Forced Evolution v0",
+            "assumption_set_id": "observed_surface_forced_evolution_v0_assumptions",
+            "assumption_mode": "surface_forced_observed_evolution",
             "recipe_assumptions": {"trigger": {"mode": "none"}},
             "required_output_fields": ["qv", "qc", "w", "qr", "rain", "dbz"],
             "input_source": "observed_sounding",
@@ -253,16 +253,16 @@ def test_result_card_exposes_observed_sounding_source(tmp_path: Path) -> None:
 
     card = get_result_card(settings, result_id)
 
-    assert card.name == "Untriggered Observed-Sounding Evolution v0 — Valley, Nebraska"
+    assert card.name == "Observed Surface-Forced Evolution v0 — Valley, Nebraska"
     assert card.scenario_id == "baseline-shallow-cumulus"
-    assert card.scenario_name == "Untriggered Observed-Sounding Evolution v0"
+    assert card.scenario_name == "Observed Surface-Forced Evolution v0"
     assert card.input_source == "observed_sounding"
     assert card.input_source_label == "Observed sounding: USM00072558 · Valley, Nebraska"
     assert card.observed_sounding is not None
     assert card.observed_sounding["station_id"] == "USM00072558"
 
 
-def test_result_card_preserves_deep_convection_trial_package_identity(tmp_path: Path) -> None:
+def test_result_card_preserves_deep_candidate_surface_forced_identity(tmp_path: Path) -> None:
     settings, result_id, _run_dir = create_completed_result(
         tmp_path,
         run_id="run-deep-card",
@@ -280,57 +280,57 @@ def test_result_card_preserves_deep_convection_trial_package_identity(tmp_path: 
                 "primary_story": "supercell_environment",
                 "rank_score": 93.0,
             },
-            "run_recipe": "triggered_deep_potential",
-            "run_recipe_display_name": "Triggered Deep-Potential Experiment",
-            "recipe_id": "triggered_deep_potential_v1",
-            "recipe_display_name": "Triggered Deep-Potential Experiment",
-            "assumption_set_id": "triggered_deep_potential_warm_bubble_v1",
-            "assumption_mode": "triggered_deep_potential",
+            "run_recipe": "untriggered_observed_evolution",
+            "run_recipe_display_name": "Observed Surface-Forced Evolution",
+            "recipe_id": "observed_surface_forced_evolution_v0",
+            "recipe_display_name": "Observed Surface-Forced Evolution v0",
+            "assumption_set_id": "observed_surface_forced_evolution_v0_assumptions",
+            "assumption_mode": "surface_forced_observed_evolution",
             "recipe_assumptions": {
-                "trigger": {"mode": "prescribed", "type": "warm_bubble"},
+                "trigger": {"mode": "none"},
+                "surface_fluxes": {
+                    "mode": "constant_uniform",
+                    "sensible_heat_flux_k_m_s": 8.0e-3,
+                    "moisture_flux_g_g_m_s": 5.2e-5,
+                },
                 "radiation": {"mode": "disabled"},
             },
-            "required_output_fields": ["qc", "w", "qr", "rain", "dbz", "updraft_helicity"],
+            "required_output_fields": ["qc", "w", "qr", "rain", "dbz"],
             "input_source": "observed_sounding",
-            "trigger_type": "warm_bubble",
-            "trigger_parameters": {
-                "cm1_iinit": 3,
-                "cm1_trigger": "CM1 built-in three warm bubbles",
-                "raw_controls_exposed": False,
-            },
-            "expected_outputs": ["qc", "qr", "w", "dbz", "updraft_helicity"],
+            "trigger_type": None,
+            "trigger_parameters": {},
+            "expected_outputs": ["qc", "qr", "w", "rain", "dbz"],
             "run_caveats": [
-                (
-                    "Triggered Deep-Potential Experiment uses an idealized CM1 "
-                    "three-warm-bubble trigger."
-                )
+                "No artificial atmospheric trigger is applied.",
+                "Surface heat/moisture fluxes are constant uniform lower-boundary proxy settings.",
             ],
-            "manual_validation_status": "triggered_deep_potential_recipe_smoke_validated",
+            "manual_validation_status": "observed_surface_forced_evolution_v0_metadata_only",
         },
     )
 
     card = get_result_card(settings, result_id)
 
-    assert card.name == "Triggered Deep-Potential Experiment — Norman, Oklahoma"
-    assert card.scenario_name == "Triggered Deep-Potential Experiment"
-    assert card.run_recipe == "triggered_deep_potential"
-    assert card.run_recipe_display_name == "Triggered Deep-Potential Experiment"
-    assert card.recipe_id == "triggered_deep_potential_v1"
-    assert card.assumption_set_id == "triggered_deep_potential_warm_bubble_v1"
-    assert card.trigger_type == "warm_bubble"
+    assert card.name == "Observed Surface-Forced Evolution v0 — Norman, Oklahoma"
+    assert card.scenario_name == "Observed Surface-Forced Evolution v0"
+    assert card.run_recipe == "untriggered_observed_evolution"
+    assert card.run_recipe_display_name == "Observed Surface-Forced Evolution"
+    assert card.recipe_id == "observed_surface_forced_evolution_v0"
+    assert card.assumption_set_id == "observed_surface_forced_evolution_v0_assumptions"
+    assert card.trigger_type is None
     assert card.trigger_parameters is not None
-    assert card.trigger_parameters["cm1_iinit"] == 3
+    assert card.trigger_parameters == {}
     assert "dbz" in card.expected_outputs
     assert card.run_caveats == [
-        "Triggered Deep-Potential Experiment uses an idealized CM1 three-warm-bubble trigger."
+        "No artificial atmospheric trigger is applied.",
+        "Surface heat/moisture fluxes are constant uniform lower-boundary proxy settings.",
     ]
-    assert card.manual_validation_status == "triggered_deep_potential_recipe_smoke_validated"
-    assert "run_recipe:triggered_deep_potential" in card.provenance_labels
+    assert card.manual_validation_status == "observed_surface_forced_evolution_v0_metadata_only"
+    assert "run_recipe:untriggered_observed_evolution" in card.provenance_labels
     assert card.candidate_screening is not None
     assert card.candidate_screening["primary_story"] == "supercell_environment"
     assert card.candidate_hypothesis_comparison is not None
     assert card.candidate_hypothesis_comparison.screened_as == "Supercell-like environment"
-    assert card.candidate_hypothesis_comparison.ran_as == "Triggered Deep-Potential Experiment"
+    assert card.candidate_hypothesis_comparison.ran_as == "Observed Surface-Forced Evolution v0"
     assert card.candidate_hypothesis_comparison.match_status == "did_not_match"
 
 

@@ -449,7 +449,6 @@ def build_interesting_time_product(
         diagnostics=diagnostics,
         output_manifest=output_manifest,
         variables=set(variables),
-        run_recipe=run_recipe,
     )
     defaults = _field_defaults(records)
     summary = _science_summary(
@@ -458,7 +457,6 @@ def build_interesting_time_product(
         records,
         defaults,
         variables=set(variables),
-        run_recipe=run_recipe,
     )
     caveats = _dedupe(
         [
@@ -482,7 +480,6 @@ def _interesting_time_records(
     diagnostics: ResultDiagnostics | None,
     output_manifest: OutputProductManifest,
     variables: set[str],
-    run_recipe: str | None,
 ) -> list[InterestingTimeRecord]:
     latest = _latest_time_record(output_manifest)
     if diagnostics is None:
@@ -555,9 +552,7 @@ def _interesting_time_records(
             output_manifest=output_manifest,
             unavailable_caveat="no_deep_cloud_detected" if cloud.available else "missing_qc_field",
             support_state="unavailable" if cloud.available else "unsupported_missing_fields",
-        )
-        if run_recipe == "triggered_deep_potential"
-        else None,
+        ),
         _event_record(
             key="max_updraft_w",
             label="Max updraft",
@@ -667,7 +662,7 @@ def _interesting_time_records(
     compact_records = [record for record in records if record is not None]
     compact_records.append(
         _field_default_record(
-            _default_source_record(compact_records, run_recipe=run_recipe),
+            _default_source_record(compact_records),
             fallback_reason=None,
         )
     )
@@ -905,13 +900,11 @@ def _science_summary(
     defaults: dict[str, FieldDefaultTime],
     *,
     variables: set[str],
-    run_recipe: str | None,
 ) -> ScienceSummary:
     record_by_key = {record.key: record for record in records}
     default_record = record_by_key.get("field_default_time")
     latest = record_by_key.get("latest_output")
     qc_default = defaults.get("qc")
-    is_deep_convection = run_recipe == "triggered_deep_potential"
     if diagnostics is None:
         return ScienceSummary(
             latest_output_time_seconds=latest.time_seconds if latest else None,
@@ -922,6 +915,7 @@ def _science_summary(
         )
     supported_science_keys = {
         "first_cloud",
+        "first_deep_convection",
         "max_qc",
         "highest_cloud_top",
         "max_updraft_w",
@@ -941,7 +935,7 @@ def _science_summary(
     first_deep_convection = _record_time(record_by_key.get("first_deep_convection"))
     deep_cloud_formed = _deep_cloud_formed(diagnostics)
     strong_updraft_formed = _strong_updraft_formed(diagnostics)
-    default_source = default_record if is_deep_convection else qc_default or default_record
+    default_source = default_record if deep_cloud_formed else qc_default or default_record
     return ScienceSummary(
         cloud_formed=diagnostics.cloud.formed if diagnostics.cloud.available else None,
         deep_cloud_formed=deep_cloud_formed,
@@ -976,7 +970,7 @@ def _science_summary(
         else _latest_manifest_time(output_manifest),
         default_explore_time_index=default_source.time_index if default_source else None,
         default_explore_time_seconds=default_source.time_seconds if default_source else None,
-        cm1_outcome=_cm1_outcome(diagnostics) if is_deep_convection else None,
+        cm1_outcome=None,
         diagnostic_availability=_diagnostic_availability(variables, diagnostics),
         interesting_time_support_state=support_state,
     )
@@ -984,14 +978,14 @@ def _science_summary(
 
 def _default_source_record(
     records: list[InterestingTimeRecord],
-    *,
-    run_recipe: str | None,
 ) -> InterestingTimeRecord:
     by_key = {record.key: record for record in records}
     preferred_keys = (
-        ("first_deep_convection", "max_updraft_w", "rain_onset", "max_qc")
-        if run_recipe == "triggered_deep_potential"
-        else ("first_cloud", "max_qc", "max_updraft_w")
+        "first_deep_convection",
+        "first_cloud",
+        "max_qc",
+        "max_updraft_w",
+        "rain_onset",
     )
     for key in preferred_keys:
         record = by_key.get(key)

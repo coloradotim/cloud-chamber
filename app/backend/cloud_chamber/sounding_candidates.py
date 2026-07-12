@@ -67,7 +67,6 @@ CandidateStoryFamilyFilter = Literal["all", "lower_atmosphere", "deep_convection
 CandidateRecipeFitStatus = Literal[
     "testable_now",
     "partially_testable",
-    "requires_triggered_deep_potential",
     "requires_surface_forcing_recipe",
     "not_testable_with_current_recipes",
     "blocked_profile",
@@ -1161,15 +1160,19 @@ def _candidate_recipe_fit(
             "caveats": ["candidate_requires_manual_screening_review"],
         }
     if story in DEEP_CONVECTION_STORY_IDS:
-        caveats = ["untriggered_observed_evolution_does_not_test_deep_potential"]
+        caveats = [
+            "deep_convection_outcome_depends_on_surface_forcing_duration_domain_and_resolution",
+            "differential_surface_initiation_is_tracked_in_issue_307",
+        ]
         if features.get("observed_wind_available") is not True:
-            caveats.append("complete_observed_wind_profile_required_for_deep_potential")
+            caveats.append("complete_observed_wind_profile_required_for_input_sounding")
         return {
-            "status": "requires_triggered_deep_potential",
-            "label": "requires triggered deep-potential run",
+            "status": "partially_testable",
+            "label": "testable as forced observed evolution",
             "summary": (
-                "This story screens deep-convection ingredients. Untriggered observed evolution "
-                "does not test that hypothesis without the triggered deep-potential recipe."
+                "This story screens deep-convection ingredients. CM1 can evolve the observed "
+                "atmosphere under selected uniform lower-boundary forcing; differential "
+                "initiation is a follow-up."
             ),
             "caveats": caveats,
         }
@@ -1382,7 +1385,7 @@ def _score_features(
     ]
     deep_caveats = [f"missing_or_unavailable_feature:{name}" for name in missing_deep_features]
     if not observed_wind_available:
-        deep_caveats.append("observed_wind_required_for_triggered_deep_potential")
+        deep_caveats.append("complete_observed_wind_profile_required_for_input_sounding")
 
     moist = _score_high(qv, low=4.0, high=10.0)
     dry = _score_low(qv, low=3.0, high=8.0)
@@ -1432,7 +1435,7 @@ def _score_features(
         ]
     )
     if initiation_support < 45.0:
-        deep_caveats.append("weak_deep_initiation_screen_for_triggered_deep_potential")
+        deep_caveats.append("weak_deep_initiation_screen_for_uniform_surface_forcing")
     instability = _weighted_score(
         [
             (cape_score, 0.55),
@@ -1473,13 +1476,13 @@ def _score_features(
     surface_coverage_factor = 1.0
     if lowest_level is None:
         surface_coverage_factor = 0.5
-        deep_caveats.append("surface_level_unavailable_for_triggered_deep_potential")
+        deep_caveats.append("surface_level_unavailable_for_observed_surface_forcing")
     elif lowest_level > 250.0:
         surface_coverage_factor = 0.25
-        deep_caveats.append("lowest_usable_level_too_high_for_triggered_deep_potential")
+        deep_caveats.append("lowest_usable_level_too_high_for_observed_surface_forcing")
     elif lowest_level > 100.0:
         surface_coverage_factor = 0.65
-        deep_caveats.append("lowest_usable_level_caveat_for_triggered_deep_potential")
+        deep_caveats.append("lowest_usable_level_caveat_for_observed_surface_forcing")
 
     shallow = _weighted_score(
         [(moist, 0.28), (low_lcl, 0.22), (deep_moisture, 0.18), (weak_cap, 0.14), (thermal, 0.18)]
@@ -1569,7 +1572,7 @@ def _score_features(
         # The broad shallow/humid stories are easy to satisfy in moist warm-season
         # profiles. When the same sounding has meaningful CAPE, shear, and deep
         # lapse-rate support, keep those broad labels available but let the
-        # triggered deep-potential recommendation become the useful product path.
+        # deep-convection recommendation become the useful product path.
         shallow_score = min(shallow_score, 62.0)
         humid_score = min(humid_score, 62.0)
     elif observed_wind_available and effective_cape >= 250.0 and deep_environment >= 55.0:
@@ -1689,7 +1692,7 @@ def _score_features(
             ],
             caveats=[
                 "line/cold-pool-specific recipe support may come later; "
-                "v1 runs as triggered deep potential",
+                "v1 runs as observed surface-forced evolution",
                 *deep_caveats,
             ],
         ),
@@ -1979,7 +1982,7 @@ def _score_features(
             label="Observed wind availability",
             value=features.get("observed_wind_available"),
             interpretation=(
-                "Observed winds are required for trustworthy triggered deep-potential runs."
+                "Observed winds are required for trustworthy observed-sounding deep-candidate runs."
             ),
             supports_story=[
                 "severe_thunderstorm_environment",

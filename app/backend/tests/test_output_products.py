@@ -313,7 +313,6 @@ def test_deep_convection_interesting_times_and_unavailable_diagnostics(
         diagnostics=diagnostics,
         output_manifest=manifest,
         variables=["qc", "w", "qr"],
-        run_recipe="triggered_deep_potential",
     )
 
     records = {record.key: record for record in product.available_interesting_times}
@@ -326,10 +325,7 @@ def test_deep_convection_interesting_times_and_unavailable_diagnostics(
     assert product.science_summary.time_of_first_deep_convection_seconds == 1200.0
     assert product.science_summary.highest_cloud_top_m == 10200.0
     assert product.science_summary.default_explore_time_index == 2
-    assert (
-        product.science_summary.cm1_outcome
-        == "Deep convection formed with strong updraft and rain water aloft."
-    )
+    assert product.science_summary.cm1_outcome is None
     availability = {item.key: item for item in product.science_summary.diagnostic_availability}
     assert availability["max_dbz_or_reflectivity_proxy"].support_state == (
         "unsupported_missing_fields"
@@ -439,7 +435,7 @@ def test_non_deep_summary_does_not_emit_deep_convection_outcome(
     )
 
     records = {record.key: record for record in product.available_interesting_times}
-    assert "first_deep_convection" not in records
+    assert records["first_deep_convection"].support_state == "unavailable"
     assert product.science_summary.cm1_outcome is None
     assert product.science_summary.time_of_first_deep_convection_seconds is None
 
@@ -462,7 +458,6 @@ def test_deep_convection_present_but_unsupported_fields_are_caveated(
         diagnostics=diagnostics,
         output_manifest=manifest,
         variables=["qc", "w", "dbz", "th"],
-        run_recipe="triggered_deep_potential",
     )
 
     availability = {item.key: item for item in product.science_summary.diagnostic_availability}

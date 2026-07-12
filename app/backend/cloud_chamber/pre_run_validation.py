@@ -179,37 +179,18 @@ def _hypothesis_recipe_alignment(
             "caveats": [],
         }
     if story in DEEP_CONVECTION_STORIES:
-        if run_recipe == RunRecipe.TRIGGERED_DEEP_POTENTIAL:
-            return {
-                "status": "aligned",
-                "reasons": [
-                    "Deep-convection hypothesis is paired with the triggered deep-potential recipe."
-                ],
-                "missing_assumptions": [],
-                "blocking_errors": [],
-                "caveats": [],
-            }
         return {
-            "status": "blocked",
-            "reasons": ["Deep-convection hypothesis is paired with an untriggered/shallow recipe."],
-            "missing_assumptions": ["triggered_deep_potential_warm_bubble_v1"],
-            "blocking_errors": [
-                "Selected run recipe does not test this deep-convection hypothesis."
-            ],
-            "caveats": [],
-        }
-    if story in NORMAL_EVOLUTION_STORIES and run_recipe == RunRecipe.TRIGGERED_DEEP_POTENTIAL:
-        return {
-            "status": "blocked",
+            "status": "partial",
             "reasons": [
-                "Normal-evolution hypothesis is paired with an explicitly triggered recipe."
+                "Deep-convection ingredients can be tested only as the selected run evolves "
+                "under the configured lower-boundary forcing."
             ],
-            "missing_assumptions": ["normal_evolution_without_explicit_trigger"],
-            "blocking_errors": [
-                "Selected triggered recipe would make comparison metadata misleading "
-                "for this hypothesis."
+            "missing_assumptions": [],
+            "blocking_errors": [],
+            "caveats": [
+                "deep_convection_outcome_depends_on_surface_forcing_duration_domain_and_resolution",
+                "differential_surface_initiation_is_tracked_in_issue_307",
             ],
-            "caveats": [],
         }
     if story == "humid_rainy_candidate":
         return {
@@ -291,7 +272,7 @@ def _input_validation_payload(
             "model_bottom_elevation": "generated_reference",
             "caveats": [],
         }
-    wind_required = contract.run_recipe == RunRecipe.TRIGGERED_DEEP_POTENTIAL
+    wind_required = False
     wind_status = (
         ("present_required" if wind_required else "present_optional")
         if observed_sounding.wind_handling
@@ -376,28 +357,28 @@ def _run_shape_from_payload(
     }
 
 
-def _forcing_validation_payload(contract: CM1InputContract) -> dict[str, str]:
-    return _forcing_validation_for_recipe(contract.run_recipe.value)
+def _forcing_validation_payload(contract: CM1InputContract) -> dict[str, Any]:
+    payload: dict[str, Any] = dict(_forcing_validation_for_recipe(contract.run_recipe.value))
+    surface_fluxes = contract.recipe_assumptions.get("surface_fluxes")
+    if isinstance(surface_fluxes, dict):
+        payload["surface_fluxes"] = surface_fluxes
+    return payload
 
 
-def _forcing_validation_for_recipe(run_recipe: str) -> dict[str, str]:
-    if run_recipe == RunRecipe.TRIGGERED_DEEP_POTENTIAL.value:
-        return {
-            "trigger": "warm_bubble_required_for_triggered_deep_potential",
-            "surface_fluxes": "disabled",
-            "radiation": "disabled",
-            "large_scale_forcing": "none",
-        }
+def _forcing_validation_for_recipe(run_recipe: str) -> dict[str, Any]:
     if run_recipe == RunRecipe.UNTRIGGERED_OBSERVED_EVOLUTION.value:
         return {
             "trigger": "none",
-            "surface_fluxes": "current_recipe_default_caveated",
+            "surface_fluxes": {
+                "mode": "constant_uniform_surface_flux_proxy",
+                "status": "selected_values_unavailable_before_configuration_resolves",
+            },
             "radiation": "disabled",
             "large_scale_forcing": "none",
         }
     return {
         "trigger": "none",
-        "surface_fluxes": "current_recipe_default",
+        "surface_fluxes": {"mode": "current_recipe_default"},
         "radiation": "disabled",
         "large_scale_forcing": "not_supported_v1",
     }
@@ -407,12 +388,12 @@ def _required_outputs_for_story(
     story: str | None,
     run_recipe: RunRecipe,
 ) -> list[str]:
-    if story in DEEP_CONVECTION_STORIES or run_recipe == RunRecipe.TRIGGERED_DEEP_POTENTIAL:
-        return ["qc", "w", "qr", "rain", "dbz", "updraft_helicity"]
+    if story in DEEP_CONVECTION_STORIES:
+        return ["qv", "qc", "w", "qr", "rain", "dbz", "hfx", "lhfx", "updraft_helicity"]
     if story == "humid_rainy_candidate":
-        return ["qv", "qc", "w", "qr", "rain", "dbz"]
+        return ["qv", "qc", "w", "qr", "rain", "dbz", "hfx", "lhfx"]
     if run_recipe == RunRecipe.UNTRIGGERED_OBSERVED_EVOLUTION:
-        return ["qv", "qc", "w"]
+        return ["qv", "qc", "w", "hfx", "lhfx"]
     return ["qc", "w"]
 
 
@@ -485,10 +466,10 @@ def _run_recipe(value: str) -> RunRecipe:
 
 
 def _run_recipe_display_name(run_recipe: str) -> str:
-    if run_recipe == RunRecipe.TRIGGERED_DEEP_POTENTIAL.value:
-        return "Triggered Deep-Potential Experiment"
+    if run_recipe == "triggered_deep_potential":
+        return "Removed Triggered Deep-Potential Path"
     if run_recipe == RunRecipe.UNTRIGGERED_OBSERVED_EVOLUTION.value:
-        return "Untriggered Observed Evolution"
+        return "Observed Surface-Forced Evolution"
     return "Generated Lower-Atmosphere Reference"
 
 

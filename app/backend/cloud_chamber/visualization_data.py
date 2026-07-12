@@ -26,6 +26,7 @@ from cloud_chamber.output_products import (
 )
 from cloud_chamber.result_diagnostics import QC_CLOUD_THRESHOLD_KG_KG
 from cloud_chamber.result_ingest import (
+    DEEP_CONVECTION_STORY_IDS,
     ResultMetadata,
     get_result_metadata,
 )
@@ -1694,9 +1695,24 @@ def _fallback_view_defaults(
 
 
 def _preferred_field(metadata: ResultMetadata, fields: Mapping[str, object]) -> str | None:
-    if metadata.run_recipe == "triggered_deep_potential" and "w" in fields:
+    if _metadata_is_deep_candidate(metadata) and "w" in fields:
         return "w"
     return "qc" if "qc" in fields else next(iter(fields), None)
+
+
+def _metadata_is_deep_candidate(metadata: ResultMetadata) -> bool:
+    screening = metadata.candidate_screening or {}
+    story_values = [
+        screening.get("active_story"),
+        screening.get("primary_story"),
+        screening.get("story"),
+    ]
+    story_scores = screening.get("story_scores")
+    if isinstance(story_scores, list):
+        for score in story_scores:
+            if isinstance(score, dict):
+                story_values.append(score.get("story"))
+    return any(story in DEEP_CONVECTION_STORY_IDS for story in story_values)
 
 
 def field_slice(

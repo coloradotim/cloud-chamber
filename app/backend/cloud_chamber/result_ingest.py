@@ -1007,19 +1007,6 @@ def _candidate_hypothesis_comparison(
                 [*caveats, "candidate_story_not_in_deep_convection_v1_rule_set"]
             ),
         )
-    if result.run_recipe != "triggered_deep_potential":
-        return CandidateHypothesisComparison(
-            screened_as=screened_as,
-            ran_as=ran_as,
-            cm1_outcome=(
-                "Unable to evaluate candidate match because this was not a "
-                "triggered deep-potential run."
-            ),
-            match_status="unable_to_evaluate",
-            match_status_label="Unable to evaluate",
-            evidence=evidence,
-            caveats=_dedupe_strings([*caveats, "comparison_requires_triggered_deep_potential_run"]),
-        )
     if not diagnostics.cloud.available or not diagnostics.vertical_velocity.available:
         return CandidateHypothesisComparison(
             screened_as=screened_as,
@@ -1050,7 +1037,8 @@ def _candidate_hypothesis_comparison(
     return CandidateHypothesisComparison(
         screened_as=screened_as,
         ran_as=ran_as,
-        cm1_outcome=science_summary.cm1_outcome or "CM1 outcome unavailable.",
+        cm1_outcome=science_summary.cm1_outcome
+        or _deep_candidate_cm1_outcome(science_summary, diagnostics),
         match_status=match_status,
         match_status_label=_match_status_label(match_status),
         evidence=evidence,
@@ -1095,11 +1083,30 @@ def _candidate_story_label(story: str | None) -> str | None:
 
 
 def _display_run_recipe(run_recipe: str | None) -> str:
-    if run_recipe == "triggered_deep_potential":
-        return "Triggered Deep-Potential Experiment"
     if run_recipe == "untriggered_observed_evolution":
-        return "Untriggered Observed Evolution"
+        return "Observed Surface-Forced Evolution"
     return "CM1 run"
+
+
+def _deep_candidate_cm1_outcome(
+    science_summary: ScienceSummary,
+    diagnostics: ResultDiagnostics,
+) -> str:
+    deep_cloud = science_summary.deep_cloud_formed is True
+    strong_updraft = science_summary.strong_updraft_formed is True
+    rain_water_aloft = diagnostics.rain.available and diagnostics.rain.present
+    surface_rain = diagnostics.surface_rain.available and diagnostics.surface_rain.present is True
+    if deep_cloud and strong_updraft and rain_water_aloft and surface_rain:
+        return "Deep convection formed with strong updraft, rain water aloft, and surface rain."
+    if deep_cloud and strong_updraft and rain_water_aloft:
+        return "Deep convection formed with strong updraft and rain water aloft."
+    if deep_cloud and strong_updraft:
+        return "Deep convection formed with strong updraft."
+    if deep_cloud or strong_updraft or rain_water_aloft:
+        return (
+            "Some deep-candidate evidence appeared, but the full deep-convection signature did not."
+        )
+    return "Deep convection was not detected by current cloud-top and updraft thresholds."
 
 
 def _match_status_label(match_status: str) -> str:

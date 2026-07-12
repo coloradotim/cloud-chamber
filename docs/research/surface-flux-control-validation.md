@@ -1,16 +1,16 @@
 # Surface Flux Control Validation
 
-Status: research validation for issue #286
+Status: implementation contract for issue #305
 
-PM recommendation: keep metadata-only / not exposed yet.
+PM recommendation: expose numeric constant lower-boundary heat/moisture forcing
+controls with explicit CM1 units, full output fields, and caveats.
 
-Cloud Chamber should not expose surface sensible and latent heat flux as normal
-Build controls yet. CM1 has the needed constant-flux namelist knobs, and Cloud
-Chamber already has a partial generation/output path for surface-flux fields.
-The missing trust layer is end-to-end evidence: package generation, CM1 run,
-ingest, result metadata, and output-product inspection must show that changed
-surface-flux assumptions are active, unit-safe, and understandable before these
-become user-facing controls.
+Cloud Chamber exposes surface sensible and latent heat flux as numeric Build
+controls for observed-sounding runs. CM1 has the needed constant-flux namelist
+knobs, and Cloud Chamber records the selected values, translated CM1 namelist
+values, caveats, and full output-field request in package metadata. The controls
+are intentionally raw numeric sensitivities in CM1 units, not reduced/baseline/
+enhanced presets.
 
 This is not a recommendation to drop surface forcing. It is a recommendation to
 treat surface forcing as an explicit, caveated lower-boundary proxy until smoke
@@ -74,10 +74,10 @@ and that arbitrary spatially varying surface temperature, land/water flag, and
 land-use values must be coded in `init_surface.F`. That keeps this validation in
 the uniform-proxy lane, not the realistic land-surface lane.
 
-Important unit decision: product controls should not expose `cnst_shflx` and
-`cnst_lhflx` as if they are already W/m2. A future UI may show W/m2 or
-human-readable strength levels, but the conversion to CM1 namelist values must
-be explicit, documented, copied into metadata, and verified against CM1 output.
+Important unit decision: product controls expose `cnst_shflx` in `K m/s` and
+`cnst_lhflx` in `g/g m/s`. They must not be described as W/m2. The UI may show
+reasonable examples and warnings, but users may enter any finite non-negative
+numeric value; backend validation records the exact CM1-facing values.
 
 ## Current Cloud Chamber State
 
@@ -97,9 +97,10 @@ surface-flux path:
 | `set_ust` | `1` |
 | `cnst_ust` | `0.28` |
 
-Triggered deep-potential runs currently turn this surface-flux path off and use
-the idealized warm-bubble trigger instead. That is appropriate for triggered
-potential, but it does not answer the surface-forced moist-evolution question.
+The former idealized deep-trigger path is no longer a current Build recipe.
+Deep-convection candidates can still be run as observed-sounding experiments
+under the selected uniform lower-boundary forcing, with caveats that differential
+heating or convergence-style initiation is future work tracked in issue #307.
 
 The current observed path is therefore best described as:
 
@@ -154,8 +155,7 @@ units for all real runs or that changed flux values produce expected responses.
 
 ## Smoke Validation Matrix
 
-The implementation should remain metadata-only until this matrix has local CM1
-evidence:
+The implementation remains caveated until this matrix has local CM1 evidence:
 
 | Run | Change | Required evidence |
 | --- | --- | --- |
@@ -171,7 +171,7 @@ Each smoke record should capture:
 - model duration
 - domain size, cell count, dx/dy, and model top
 - saved-output cadence
-- requested diagnostic set
+- full output-field request and saved-output cadence
 - exact CM1 namelist values for `isfcflx`, `sfcmodel`, `set_flx`,
   `cnst_shflx`, `cnst_lhflx`, `set_znt`, `cnst_znt`, `set_ust`, and `cnst_ust`
 - CM1 exit status

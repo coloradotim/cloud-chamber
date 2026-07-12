@@ -287,10 +287,10 @@ deep-convection recommendation when a secondary deep-convection score has
 meaningful support. Missing feature values must remain unavailable/caveated and
 sort last instead of becoming zero-valued evidence. The UI must not show a
 confident story label without evidence, caveats, and package readiness.
-The workbench should also show a minimal recipe-fit status, such as
-`partially_testable`, `requires_triggered_deep_potential`, or `blocked_profile`,
-so candidate interest remains separate from what the current package path can
-actually test.
+The workbench should also show a minimal experiment-fit status, such as
+`testable_now`, `partially_testable`, `requires_surface_forcing_recipe`, or
+`blocked_profile`, so candidate interest remains separate from what the current
+run configuration can actually test.
 
 Saved candidates may carry freeform tags and notes such as `Deep convection
 candidates`, `Surface-forced candidates`, `Needs longer run`, `Needs finer

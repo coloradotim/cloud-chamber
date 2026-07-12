@@ -33,8 +33,8 @@ Explore = inspect one result with CM1-derived evidence
 Build should be organized around configurable observed-sounding runs. Presets
 are useful starting points, not separate product cages: a user should be able to
 start from a sane preset, inspect the actual CM1-facing settings, and adjust
-duration, horizontal cell budget, domain size, output cadence, forcing, and
-diagnostic set within guarded bounds.
+numeric surface forcing, duration, horizontal cell budget, domain size, and
+output cadence within guarded bounds while requesting the full output field set.
 
 See [UX Reset: Guided Experiment Notebook](ux-reset-guided-experiment-notebook.md)
 for the PM/design source of truth for future UX work.
@@ -160,32 +160,31 @@ trying, not a prediction that clouds, rain, or suppression will occur. When a
 candidate is selected for run setup, Build should use the same recipe and run
 configuration flow used for uploads. When that configured sounding is added to
 the run plan, its screening story, score, evidence, feature summary, saved
-tags/notes, and caveats should be copied into package metadata as provenance.
+tags/notes, selected numeric surface-forcing values, and caveats should be
+copied into package metadata as provenance.
 
 When an uploaded, cached, or saved observed sounding is selected, Build should
 show one shared selected-sounding setup flow above the run plan. The source path
 should determine where the selected atmosphere came from, not create a separate
 configuration workflow. The run plan should sit below the source/setup flow and
-support multiple candidate atmospheres, duplicate variants, per-item run recipe
-and run configuration edits, local or LAN queue target selection, remove/clear
+support multiple candidate atmospheres, duplicate variants, per-item forcing and
+run-configuration edits, local or LAN queue target selection, remove/clear
 actions, and a batch action to create packages and queue selected runs. Per-item
 packaging or queue failures should remain visible instead of clearing the failed
-item from the plan. The triggered deep-potential recipe is first-class for
-severe/deep-convection observed-sounding experiments: it uses the observed
-temperature, moisture, and complete wind profile through CM1 `isnd = 7`, runs an
-idealized three-warm-bubble trigger (`iinit = 3`), uses a storm-scale model box
-suitable for storm growth and precipitation inspection, requests rain water
-aloft, surface rain, reflectivity, vorticity, and updraft-helicity output, and
-records `run_recipe = triggered_deep_potential` plus trigger, expected-output,
-caveat, and candidate-screening provenance in generated manifests. Product copy
-should describe the run as a triggered deep-potential experiment with explicit
-assumptions and output requirements. Short science configurations must still run
-long enough to be meteorologically useful. Build
-should show expected cost, runtime, and output volume, and note when a configuration is
-better suited to larger compute instead of making machine choice the primary
-product axis. Raw trigger parameters remain
-metadata-only in v1 and should not become user controls until useful ranges are
-validated.
+item from the plan.
+
+Observed-sounding experiments use the observed temperature, moisture, and
+complete wind profile through CM1 `isnd = 7`, apply numeric uniform lower-boundary
+heat/moisture flux controls, and request the full Results/Explore output field
+set. Severe/deep-convection candidates remain first-class atmospheric hypotheses,
+but current packages do not add an artificial deep-convection trigger. Product
+copy should describe these as observed-sounding experiments under explicit
+surface-forcing, duration, grid, domain, and cadence assumptions. Differential
+surface heating/moisture forcing for initiation or boundary experiments is future
+work tracked separately. Short science configurations must still run long enough
+to be meteorologically useful. Build should show expected cost, runtime, and
+output volume, and note when a configuration is better suited to larger compute
+instead of making machine choice the primary product axis.
 
 The run monitor should be compact by default. It should summarize active,
 queued, and completed runtime work while keeping detailed package, queue, LAN,
@@ -276,8 +275,8 @@ Exact morphology is not pass/fail. The acceptance question is whether the produc
 2. Choose scenario category.
 3. Select a starting scenario or observed-sounding run direction.
 4. See expected behavior, controls, run cost, and output fields.
-5. Adjust duration, horizontal cells, domain, output cadence, and diagnostic set
-   before package review.
+5. Adjust numeric surface heat/moisture fluxes, duration, horizontal cells,
+   domain, and output cadence before package review.
 
 The Scenario Builder flow is intentionally bounded: it loads
 validated scenario templates from the local backend, defaults to Baseline
@@ -617,16 +616,12 @@ of truth.
 Current defaults are product choices, not compatibility holdovers:
 
 - Baseline lower-atmosphere scenarios default to `short_6h`, `cells_64`,
-  `local_6km`, `standard_15min`, and `process` diagnostics. This keeps the
+  `local_6km`, `standard_15min`, and full output fields. This keeps the
   first run cheap enough to iterate while still giving six hours of model
   evolution and enough fields for Results/Explore diagnostics.
 - Uploaded observed-sounding normal-evolution runs default to the same duration,
-  cadence, and diagnostic set, but use `cells_128` and `wide_12km` so observed
+  cadence, and full output field set, but use `cells_128` and `wide_12km` so observed
   winds do not make the package misleadingly small by default.
-- Triggered deep-potential observed-sounding runs default to `short_6h`,
-  `cells_128`, `storm_120km`, `standard_15min`, and `full` diagnostics. That
-  setup is deliberately wider and better instrumented because it is asking a
-  storm-scale triggered-potential question.
 - `smoke_1h` is an explicit smoke-check mode for package health, CM1 startup,
   ingest, and basic visualization wiring. It is not evidence for normal
   atmospheric evolution.
@@ -1294,11 +1289,10 @@ metadata as provenance. Observed-sounding results should read as `Uploaded
 Sounding` or the active observed run recipe in notebook names, scenario labels,
 and scenario filtering while the underlying generated scenario ID remains
 available in technical details as lineage.
-Triggered deep-potential observed-sounding results should retain their run-recipe
-provenance after ingest: notebook names and scenario labels may identify the run
-as triggered deep potential, while the original observed station/time, generated
-scenario ID, `run_recipe`, trigger metadata, expected outputs, caveats, and
-candidate-screening hypothesis remain available as provenance.
+Observed-sounding results should retain their run provenance after ingest: the
+original observed station/time, generated scenario ID, numeric surface-forcing
+values, expected outputs, caveats, and candidate-screening hypothesis remain
+available as provenance.
 Technical metadata such as raw lifecycle/product states, run IDs, provenance
 labels, controls, and detailed caveats remain available under disclosure rather
 than dominating the first read. The layout should be mobile-first: cards stack
