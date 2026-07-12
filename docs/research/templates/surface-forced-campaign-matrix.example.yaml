@@ -39,21 +39,19 @@ execution:
   max_concurrent_runs: 1
   resume_existing: true
   phase_gates:
-    phase1_selected_and_cm1_facing_forcing_metadata_missing:
-      result: fail
-      automatic_continuation: blocked
-    phase1_hfx_or_lhfx_missing_when_requested:
-      result: inconclusive_missing_evidence
-      automatic_continuation: blocked
-    phase1_low_level_response_diagnostic_missing:
-      result: inconclusive_missing_evidence
-      automatic_continuation: blocked
-    phase1_partial_verification:
-      result: partial_verification
-      automatic_continuation: blocked_without_operator_override
-    phase1_verified:
-      result: forcing_path_verified_for_campaign
-      automatic_continuation: allowed
+    continue_after_phase1_failure: false
+    allow_operator_override_after_phase1_failure: true
+    force_gate_states:
+      verified: forcing_path_verified_for_campaign
+      wiring_failed: forcing_wiring_not_verified
+      wiring_only: forcing_wiring_verified_but_response_not_verified
+      missing_evidence: inconclusive_missing_evidence
+    minimum_to_continue_automatically:
+      - selected_values_preserved
+      - cm1_facing_values_preserved
+      - emitted_hfx_lhfx_reflect_prescribed_changes
+      - heat_only_theta_or_temperature_response_directionally_consistent
+      - moisture_only_qv_response_directionally_consistent
   lifecycle_status_values:
     - planned
     - packaged
@@ -64,6 +62,7 @@ execution:
     - package_failed
     - run_failed
     - ingest_failed
+    - run_canceled
     - skipped
     - blocked
 
@@ -143,6 +142,197 @@ forcing_sets:
     surface_moisture_flux_g_g_m_s: 1.0e-4
     surface_moisture_flux_units: g/g m/s
     purpose: combined forcing sensitivity
+
+comparison_types:
+  - comparison_type: heat_flux_sensitivity
+    varied_fields:
+      - surface_heat_flux_k_m_s
+      - cm1_cnst_shflx
+    required_equal_fields:
+      - selection_id
+      - surface_moisture_flux_g_g_m_s
+      - duration
+      - domain_size
+      - horizontal_cell_count
+      - nx
+      - ny
+      - nz
+      - dx_m
+      - dy_m
+      - dz_m
+      - model_top_m
+      - output_cadence
+      - cloud_chamber_commit
+      - cm1_version
+      - required_output_fields
+    required_available_fields: [hfx, lhfx, qv, th_or_temperature, qc, w]
+    required_diagnostic_support: [surface_fluxes, low_level_response, cloud, vertical_velocity]
+    noncomparable_status: inconclusive_noncomparable_runs
+
+  - comparison_type: moisture_flux_sensitivity
+    varied_fields:
+      - surface_moisture_flux_g_g_m_s
+      - cm1_cnst_lhflx
+    required_equal_fields:
+      - selection_id
+      - surface_heat_flux_k_m_s
+      - duration
+      - domain_size
+      - horizontal_cell_count
+      - nx
+      - ny
+      - nz
+      - dx_m
+      - dy_m
+      - dz_m
+      - model_top_m
+      - output_cadence
+      - cloud_chamber_commit
+      - cm1_version
+      - required_output_fields
+    required_available_fields: [hfx, lhfx, qv, th_or_temperature, qc, w]
+    required_diagnostic_support: [surface_fluxes, low_level_response, cloud, vertical_velocity]
+    noncomparable_status: inconclusive_noncomparable_runs
+
+  - comparison_type: combined_flux_sensitivity
+    varied_fields:
+      - surface_heat_flux_k_m_s
+      - surface_moisture_flux_g_g_m_s
+      - cm1_cnst_shflx
+      - cm1_cnst_lhflx
+    required_equal_fields:
+      - selection_id
+      - duration
+      - domain_size
+      - horizontal_cell_count
+      - nx
+      - ny
+      - nz
+      - dx_m
+      - dy_m
+      - dz_m
+      - model_top_m
+      - output_cadence
+      - cloud_chamber_commit
+      - cm1_version
+      - required_output_fields
+    required_available_fields: [hfx, lhfx, qv, th_or_temperature, qc, w]
+    required_diagnostic_support: [surface_fluxes, low_level_response, cloud, vertical_velocity]
+    noncomparable_status: inconclusive_noncomparable_runs
+
+  - comparison_type: forcing_sensitivity_same_duration
+    varied_fields:
+      - surface_heat_flux_k_m_s
+      - surface_moisture_flux_g_g_m_s
+      - cm1_cnst_shflx
+      - cm1_cnst_lhflx
+    required_equal_fields:
+      - selection_id
+      - duration
+      - domain_size
+      - horizontal_cell_count
+      - nx
+      - ny
+      - nz
+      - dx_m
+      - dy_m
+      - dz_m
+      - model_top_m
+      - output_cadence
+      - cloud_chamber_commit
+      - cm1_version
+      - required_output_fields
+    required_available_fields: [hfx, lhfx, qv, th_or_temperature, qc, w]
+    required_diagnostic_support: [surface_fluxes, low_level_response, cloud, vertical_velocity]
+    noncomparable_status: inconclusive_noncomparable_runs
+
+  - comparison_type: duration_sensitivity_same_forcing
+    varied_fields:
+      - duration
+      - runtime_seconds
+      - expected_output_frames
+      - expected_output_volume
+    required_equal_fields:
+      - selection_id
+      - surface_heat_flux_k_m_s
+      - surface_moisture_flux_g_g_m_s
+      - cm1_cnst_shflx
+      - cm1_cnst_lhflx
+      - domain_size
+      - horizontal_cell_count
+      - nx
+      - ny
+      - nz
+      - dx_m
+      - dy_m
+      - dz_m
+      - model_top_m
+      - output_cadence
+      - cloud_chamber_commit
+      - cm1_version
+      - required_output_fields
+    required_available_fields: [hfx, lhfx, qv, th_or_temperature, qc, w]
+    required_diagnostic_support: [surface_fluxes, low_level_response, cloud, vertical_velocity]
+    noncomparable_status: inconclusive_noncomparable_runs
+
+  - comparison_type: domain_grid_bundle_sensitivity
+    varied_fields:
+      - domain_size
+      - nx
+      - ny
+      - nz
+      - dx_m
+      - dy_m
+      - dz_m
+      - model_top_m
+      - expected_output_volume
+    required_equal_fields:
+      - selection_id
+      - surface_heat_flux_k_m_s
+      - surface_moisture_flux_g_g_m_s
+      - cm1_cnst_shflx
+      - cm1_cnst_lhflx
+      - duration
+      - output_cadence
+      - cloud_chamber_commit
+      - cm1_version
+      - required_output_fields
+    required_available_fields: [hfx, lhfx, qv, th_or_temperature, qc, w]
+    required_diagnostic_support: [surface_fluxes, low_level_response, cloud, vertical_velocity]
+    noncomparable_status: inconclusive_noncomparable_runs
+
+  - comparison_type: cross_sounding_discrimination
+    varied_fields:
+      - selection_id
+      - station_id
+      - valid_time_utc
+      - candidate_id
+      - candidate_story
+      - candidate_score
+      - candidate_evidence
+      - candidate_caveats
+    required_equal_fields:
+      - surface_heat_flux_k_m_s
+      - surface_moisture_flux_g_g_m_s
+      - cm1_cnst_shflx
+      - cm1_cnst_lhflx
+      - duration
+      - domain_size
+      - horizontal_cell_count
+      - nx
+      - ny
+      - nz
+      - dx_m
+      - dy_m
+      - dz_m
+      - model_top_m
+      - output_cadence
+      - cloud_chamber_commit
+      - cm1_version
+      - required_output_fields
+    required_available_fields: [hfx, lhfx, qv, th_or_temperature, qc, w]
+    required_diagnostic_support: [surface_fluxes, low_level_response, cloud, vertical_velocity]
+    noncomparable_status: inconclusive_noncomparable_runs
 
 runs:
   - matrix_id: phase1_control_default_flux
@@ -235,7 +425,7 @@ runs:
     duration: standard_12h
     domain_size: regional_120km
     comparison:
-      type: expensive_regional_bundle_check
+      type: domain_grid_bundle_sensitivity
       control_matrix_id: phase2_easy_deep_strong_60km_12h
     comparison_role: expensive_regional_bundle_check
 
@@ -250,56 +440,6 @@ runs:
       control_matrix_id: phase2_easy_deep_strong_60km_12h
     comparison_role: cross_sounding_discrimination
 
-comparison_types:
-  heat_flux_sensitivity:
-    varied_fields: [surface_heat_flux_k_m_s]
-    required_equal_fields: [selection_id, surface_moisture_flux_g_g_m_s, duration, domain_size, horizontal_cell_count, nx, ny, nz, dx_m, dy_m, dz_m, model_top_m, output_cadence, cloud_chamber_commit, cm1_version]
-    required_available_fields: [hfx, qv, th_or_temperature]
-    required_diagnostic_support: [low_level_response]
-    noncomparable_status: inconclusive_noncomparable_runs
-
-  moisture_flux_sensitivity:
-    varied_fields: [surface_moisture_flux_g_g_m_s]
-    required_equal_fields: [selection_id, surface_heat_flux_k_m_s, duration, domain_size, horizontal_cell_count, nx, ny, nz, dx_m, dy_m, dz_m, model_top_m, output_cadence, cloud_chamber_commit, cm1_version]
-    required_available_fields: [lhfx, qv]
-    required_diagnostic_support: [low_level_response]
-    noncomparable_status: inconclusive_noncomparable_runs
-
-  combined_flux_sensitivity:
-    varied_fields: [surface_heat_flux_k_m_s, surface_moisture_flux_g_g_m_s]
-    required_equal_fields: [selection_id, duration, domain_size, horizontal_cell_count, nx, ny, nz, dx_m, dy_m, dz_m, model_top_m, output_cadence, cloud_chamber_commit, cm1_version]
-    required_available_fields: [hfx, lhfx, qv, th_or_temperature]
-    required_diagnostic_support: [low_level_response]
-    noncomparable_status: inconclusive_noncomparable_runs
-
-  forcing_sensitivity_same_duration:
-    varied_fields: [surface_heat_flux_k_m_s, surface_moisture_flux_g_g_m_s]
-    required_equal_fields: [selection_id, duration, domain_size, horizontal_cell_count, nx, ny, nz, dx_m, dy_m, dz_m, model_top_m, output_cadence, cloud_chamber_commit, cm1_version]
-    required_available_fields: [qc, w, hfx, lhfx]
-    required_diagnostic_support: [cloud_summary, updraft_summary]
-    noncomparable_status: inconclusive_noncomparable_runs
-
-  duration_sensitivity_same_forcing:
-    varied_fields: [duration]
-    required_equal_fields: [selection_id, surface_heat_flux_k_m_s, surface_moisture_flux_g_g_m_s, domain_size, horizontal_cell_count, nx, ny, nz, dx_m, dy_m, dz_m, model_top_m, output_cadence, cloud_chamber_commit, cm1_version]
-    required_available_fields: [qc, w, hfx, lhfx]
-    required_diagnostic_support: [cloud_summary, updraft_summary]
-    noncomparable_status: inconclusive_noncomparable_runs
-
-  domain_grid_bundle_sensitivity:
-    varied_fields: [domain_size, nx, ny, nz, dx_m, dy_m, dz_m, model_top_m, expected_output_volume]
-    required_equal_fields: [selection_id, surface_heat_flux_k_m_s, surface_moisture_flux_g_g_m_s, duration, output_cadence, cloud_chamber_commit, cm1_version]
-    required_available_fields: [qc, w, hfx, lhfx]
-    required_diagnostic_support: [cloud_summary, updraft_summary]
-    noncomparable_status: inconclusive_noncomparable_runs
-
-  cross_sounding_discrimination:
-    varied_fields: [selection_id, station_id, valid_time_utc, candidate_id]
-    required_equal_fields: [surface_heat_flux_k_m_s, surface_moisture_flux_g_g_m_s, duration, domain_size, horizontal_cell_count, nx, ny, nz, dx_m, dy_m, dz_m, model_top_m, output_cadence, cloud_chamber_commit, cm1_version]
-    required_available_fields: [qc, w, hfx, lhfx]
-    required_diagnostic_support: [cloud_summary, updraft_summary]
-    noncomparable_status: inconclusive_noncomparable_runs
-
 required_summary_fields:
   metadata:
     - schema_version
@@ -308,6 +448,10 @@ required_summary_fields:
     - stable_resume_identity
     - run_id
     - result_id
+    - package_status
+    - run_status
+    - ingest_status
+    - queue_target
     - station_id
     - station_name
     - valid_time_utc
@@ -337,12 +481,15 @@ required_summary_fields:
     - dz_m
     - model_top_m
     - output_cadence
-    - queue_target
-    - package_status
-    - run_status
-    - ingest_status
+    - expected_output_volume
+    - cloud_chamber_commit
+    - cm1_version
     - required_output_fields
     - missing_output_fields
+    - diagnostic_support
+    - interesting_time_support_state
+    - warnings
+    - caveats
   evidence:
     - hfx_present
     - hfx_units
@@ -355,12 +502,15 @@ required_summary_fields:
     - lhfx_max
     - lhfx_mean
     - low_level_qv_response
+    - low_level_qv_response_method
     - low_level_theta_or_temperature_response
+    - low_level_theta_or_temperature_response_method
     - first_cloud_time
     - max_cloud_top_m
     - max_cloud_top_time
     - max_qc
     - max_qc_time
+    - cloud_depth_or_classification
     - max_w_m_s
     - max_w_time
     - max_w_height_m
@@ -370,12 +520,11 @@ required_summary_fields:
     - first_deep_cloud_time
     - deep_cloud_flag
     - evidence_fields
-    - warnings
-    - caveats
   diagnosis_categories:
     - forcing_path_not_verified
     - surface_outputs_missing
     - boundary_layer_response_verified
+    - forcing_wiring_verified_but_response_not_verified
     - uniform_forcing_too_weak
     - uniform_forcing_physics_limited
     - run_duration_or_domain_limited
