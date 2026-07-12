@@ -1206,10 +1206,10 @@ def _candidate_recipe_fit(
         "status": "partially_testable",
         "label": "partially testable with current observed-sounding run",
         "summary": (
-            "The current observed-sounding path can inspect untriggered shallow/evolution "
-            "behavior, but the recipe still shapes what CM1 can test."
+            "The current observed-sounding path can inspect cloud and moisture evolution "
+            "under selected surface forcing, but the recipe still shapes what CM1 can test."
         ),
-        "caveats": ["untriggered_observed_evolution_is_recipe_dependent"],
+        "caveats": ["observed_surface_forced_evolution_is_recipe_dependent"],
     }
 
 

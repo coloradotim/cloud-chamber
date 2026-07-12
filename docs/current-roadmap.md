@@ -64,7 +64,6 @@ Use these docs as the current strategic and contract sources:
 - [Analyzer Hypothesis And Output-Signature Contract](contracts/analyzer-hypothesis-output-signature.md)
 - [Run Recipe And Story-Mapping Contract](contracts/run-recipe-and-story-mapping.md)
 - [Expanded Sounding Candidate Taxonomy](research/expanded-sounding-candidate-taxonomy.md)
-- [Deep Convection Package Design](research/deep-convection-package-design.md)
 
 The research memos are PM input and evidence. The contract docs define the
 implementation boundary that future issues should build from.

@@ -117,9 +117,10 @@ comparison is defined in
 [contracts/analyzer-hypothesis-output-signature.md](contracts/analyzer-hypothesis-output-signature.md).
 The bridge from those hypotheses to CM1 run recipes is defined in
 [contracts/run-recipe-and-story-mapping.md](contracts/run-recipe-and-story-mapping.md):
-it maps current story IDs to normal-evolution, surface-forced, triggered
-deep-potential, blocked, or future recipes and names the assumptions and output
-fields required before Results can compare predicted signatures.
+it maps current story IDs to observed surface-forced, blocked, or future recipes
+and names the assumptions and output fields required before Results can compare
+predicted signatures. Removed triggered deep-potential recipes are not a current
+product path.
 Real-sounding story families, including severe/deep-convection, boundary-layer,
 low-cloud, and winter/cold-season candidates, are defined in
 [research/expanded-sounding-candidate-taxonomy.md](research/expanded-sounding-candidate-taxonomy.md).
@@ -619,7 +620,7 @@ Current defaults are product choices, not compatibility holdovers:
   `local_6km`, `standard_15min`, and full output fields. This keeps the
   first run cheap enough to iterate while still giving six hours of model
   evolution and enough fields for Results/Explore diagnostics.
-- Uploaded observed-sounding normal-evolution runs default to the same duration,
+- Uploaded observed-sounding surface-forced runs default to the same duration,
   cadence, and full output field set, but use `cells_128` and `wide_12km` so observed
   winds do not make the package misleadingly small by default.
 - `smoke_1h` is an explicit smoke-check mode for package health, CM1 startup,

@@ -432,9 +432,9 @@ function preRunValidationReportForRequest(body: {
   const runRecipe =
     body.run_recipe ??
     (body.observed_sounding
-      ? "untriggered_observed_evolution"
+      ? "observed_surface_forced_evolution"
       : "generated_reference_lower_atmosphere");
-  const observed = runRecipe === "untriggered_observed_evolution";
+  const observed = runRecipe === "observed_surface_forced_evolution";
   const recipeId = observed
       ? "observed_surface_forced_evolution_v0"
       : "generated_reference_lower_atmosphere_v1";
@@ -490,7 +490,7 @@ function preRunValidationReportForRequest(body: {
           ? "observed_surface_forced_evolution_v0_assumptions"
           : "generated_reference_lower_atmosphere_v1",
       assumption_mode: observed
-          ? "surface_forced_observed_evolution"
+          ? "observed_surface_forced_evolution"
           : "generated_reference",
     },
   };
@@ -1451,7 +1451,7 @@ const deepConvectionResultCard = {
   name: "Observed Surface-Forced Experiment — Norman, Oklahoma",
   tags: ["deep-convection", "candidate"],
   scenario_name: "Observed Surface-Forced Experiment",
-  run_recipe: "untriggered_observed_evolution",
+  run_recipe: "observed_surface_forced_evolution",
   run_recipe_display_name: "Observed Surface-Forced Evolution",
   trigger_type: null,
   expected_outputs: ["qc", "qr", "w", "dbz", "updraft_helicity"],
@@ -1530,8 +1530,8 @@ const deepConvectionResultCard = {
     screened_as: "Supercell-like environment",
     ran_as: "Observed Surface-Forced Evolution",
     cm1_outcome: "Deep convection formed with strong updraft and rain water aloft.",
-    match_status: "matched",
-    match_status_label: "Matched",
+    match_status: "supported",
+    match_status_label: "Supported",
     evidence: ["deep cloud formed", "cloud top 10200 m", "max updraft 15 m/s"],
     caveats: [
       "candidate_screening_is_a_pre_run_hypothesis",
@@ -3149,7 +3149,7 @@ describe("App", () => {
     );
 
     await waitFor(() => {
-      expect(dryRunBody).toContain('"run_recipe":"untriggered_observed_evolution"');
+      expect(dryRunBody).toContain('"run_recipe":"observed_surface_forced_evolution"');
       expect(dryRunBody).toContain('"diagnostic_set":"full"');
       expect(dryRunBody).toContain('"surface_heat_flux_k_m_s":"0.037"');
       expect(dryRunBody).toContain('"surface_moisture_flux_g_g_m_s":"9.5e-5"');
@@ -3221,7 +3221,7 @@ describe("App", () => {
     );
 
     await waitFor(() => {
-      expect(dryRunBody).toContain('"run_recipe":"untriggered_observed_evolution"');
+      expect(dryRunBody).toContain('"run_recipe":"observed_surface_forced_evolution"');
       expect(dryRunBody).toContain('"diagnostic_set":"full"');
       expect(dryRunBody).toContain('"surface_heat_flux_k_m_s":"8.0e-3"');
       expect(dryRunBody).toContain('"surface_moisture_flux_g_g_m_s":"5.2e-5"');
@@ -3277,7 +3277,7 @@ describe("App", () => {
     );
 
     await waitFor(() => {
-      expect(dryRunBody).toContain('"run_recipe":"untriggered_observed_evolution"');
+      expect(dryRunBody).toContain('"run_recipe":"observed_surface_forced_evolution"');
       expect(dryRunBody).toContain('"primary_story":"humid_rainy_candidate"');
       expect(dryRunBody).toContain(
         '"candidate_id":"USM00072426-2025010300-humid-secondary-shallow"',
@@ -3750,12 +3750,12 @@ describe("App", () => {
         predicted_output_signature: ["qc", "qr", "rain", "dbz"],
       },
       selected_run_recipe: {
-        run_recipe: "untriggered_observed_evolution",
+        run_recipe: "observed_surface_forced_evolution",
         recipe_id: "observed_surface_forced_evolution_v0",
         display_name: "Observed Surface-Forced Evolution",
         recipe_display_name: "Observed Surface-Forced Evolution v0",
         assumption_set_id: "observed_surface_forced_evolution_v0_assumptions",
-        assumption_mode: "surface_forced_observed_evolution",
+        assumption_mode: "observed_surface_forced_evolution",
       },
       hypothesis_recipe_alignment: {
         status: "blocked",
@@ -4732,7 +4732,7 @@ describe("App", () => {
     expect(resultDetail).toHaveTextContent("Deep convection formed");
     expect(resultDetail).toHaveTextContent("Screening vs CM1");
     expect(resultDetail).toHaveTextContent("Supercell-like environment");
-    expect(resultDetail).toHaveTextContent("Matched");
+    expect(resultDetail).toHaveTextContent("Supported");
     expect(resultDetail).toHaveTextContent(
       "Deep convection formed with strong updraft and rain water aloft.",
     );
@@ -4744,7 +4744,7 @@ describe("App", () => {
     expect(await screen.findByLabelText("Explore viewer controls")).toBeInTheDocument();
     expect(screen.getByLabelText("Slice field")).toHaveValue("w");
     expect(screen.getByLabelText("Time")).toHaveValue("2");
-    expect(screen.getByText(/Supercell-like environment · Matched/)).toBeInTheDocument();
+    expect(screen.getByText(/Supercell-like environment · Supported/)).toBeInTheDocument();
     await waitFor(() => {
       expect(fetch).toHaveBeenCalledWith(
         expect.stringContaining(

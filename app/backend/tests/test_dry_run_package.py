@@ -119,11 +119,11 @@ def test_dry_run_package_can_use_observed_igra_sounding(tmp_path: Path) -> None:
     assert manifest.run_configuration["domain_size"] == "wide_12km"
     assert manifest.run_configuration["cm1_values"]["nx"] == 128
     assert manifest.run_configuration["cm1_values"]["runtime_seconds"] == 21600
-    assert manifest.run_recipe == "untriggered_observed_evolution"
+    assert manifest.run_recipe == "observed_surface_forced_evolution"
     assert manifest.recipe_id == "observed_surface_forced_evolution_v0"
     assert manifest.recipe_display_name == "Observed Surface-Forced Evolution v0"
     assert manifest.assumption_set_id == "observed_surface_forced_evolution_v0_assumptions"
-    assert manifest.assumption_mode == "surface_forced_observed_evolution"
+    assert manifest.assumption_mode == "observed_surface_forced_evolution"
     assert manifest.required_output_fields == ["qv", "qc", "w", "qr", "rain", "dbz", "hfx", "lhfx"]
     assert manifest.recipe_assumptions["trigger"]["mode"] == "none"
     assert manifest.recipe_assumptions["radiation"]["mode"] == "disabled"
@@ -141,7 +141,7 @@ def test_dry_run_package_can_use_observed_igra_sounding(tmp_path: Path) -> None:
     )
     assert manifest.pre_run_validation_report["run_shape_validation"]["domain"] == "wide_12km"
     assert manifest.pre_run_validation_report["selected_run_recipe"]["run_recipe"] == (
-        "untriggered_observed_evolution"
+        "observed_surface_forced_evolution"
     )
     assert manifest.pre_run_validation_report["selected_run_recipe"]["recipe_id"] == (
         "observed_surface_forced_evolution_v0"
@@ -159,7 +159,7 @@ def test_dry_run_package_can_use_observed_igra_sounding(tmp_path: Path) -> None:
     assert manifest.user.tags == ["compare", "candidate"]
     assert manifest.user.notes == "Compare against humid/rainy candidates."
     assert report["recipe_id"] == "observed_surface_forced_evolution_v0"
-    assert report["assumption_mode"] == "surface_forced_observed_evolution"
+    assert report["assumption_mode"] == "observed_surface_forced_evolution"
     assert report["required_output_fields"] == ["qv", "qc", "w", "qr", "rain", "dbz", "hfx", "lhfx"]
     assert report["variant_metadata"]["sounding_source"] == "observed_igra_station_text"
     assert report["variant_metadata"]["surface_flux_mode"] == (
@@ -297,7 +297,7 @@ def test_pre_run_validation_caveats_deep_hypothesis_under_uniform_forcing(
         scenario_data=load_baseline_template(),
         runtime_home=tmp_path,
         run_id="run-deep-hypothesis-uniform-forcing",
-        run_recipe="untriggered_observed_evolution",
+        run_recipe="observed_surface_forced_evolution",
         observed_sounding=observed,
         candidate_screening=candidate_screening,
     )
@@ -307,7 +307,7 @@ def test_pre_run_validation_caveats_deep_hypothesis_under_uniform_forcing(
     assert report is not None
     assert report["status"] == "caveated"
     assert report["selected_hypothesis"]["story_id"] == "supercell_environment"
-    assert report["selected_run_recipe"]["run_recipe"] == "untriggered_observed_evolution"
+    assert report["selected_run_recipe"]["run_recipe"] == "observed_surface_forced_evolution"
     assert report["selected_run_recipe"]["recipe_id"] == ("observed_surface_forced_evolution_v0")
     assert report["hypothesis_recipe_alignment"]["status"] == "partial"
     assert "updraft_helicity" in report["output_validation"]["required_fields"]
@@ -341,6 +341,69 @@ def test_pre_run_validation_blocks_invalid_run_configuration(tmp_path: Path) -> 
     assert not (tmp_path / "runs" / "run-invalid-domain").exists()
 
 
+def test_observed_run_configuration_preserves_selected_regional_domain(
+    tmp_path: Path,
+) -> None:
+    observed = parse_igra_station_text(
+        IGRA_FIXTURE,
+        uploaded_filename="USM00072558-data-beg2025.txt",
+    ).selected_sounding
+
+    result = generate_dry_run_package(
+        scenario_data=load_baseline_template(),
+        runtime_home=tmp_path,
+        run_id="run-regional-domain",
+        run_recipe="observed_surface_forced_evolution",
+        observed_sounding=observed,
+        run_configuration={
+            "duration": "short_6h",
+            "horizontal_cell_count": "cells_128",
+            "domain_size": "regional_60km",
+            "output_cadence": "standard_15min",
+            "diagnostic_set": "full",
+        },
+    )
+
+    manifest = load_run_manifest(result.manifest_path)
+    report = manifest.pre_run_validation_report
+    assert manifest.run_configuration["domain_size"] == "regional_60km"
+    assert manifest.run_configuration["cm1_values"]["domain_x_km"] == pytest.approx(60.0)
+    assert manifest.run_configuration["cm1_values"]["dx_m"] == pytest.approx(468.75)
+    assert report is not None
+    assert report["run_shape_validation"]["domain"] == "regional_60km"
+    assert report["run_shape_validation"]["domain_x_km"] == pytest.approx(60.0)
+
+
+def test_removed_storm_domain_is_not_silently_coerced(tmp_path: Path) -> None:
+    observed = parse_igra_station_text(
+        IGRA_FIXTURE,
+        uploaded_filename="USM00072558-data-beg2025.txt",
+    ).selected_sounding
+
+    with pytest.raises(DryRunPackageError, match="Removed domain size") as excinfo:
+        generate_dry_run_package(
+            scenario_data=load_baseline_template(),
+            runtime_home=tmp_path,
+            run_id="run-removed-domain",
+            run_recipe="observed_surface_forced_evolution",
+            observed_sounding=observed,
+            run_configuration={
+                "duration": "short_6h",
+                "horizontal_cell_count": "cells_128",
+                "domain_size": "storm_120km",
+                "output_cadence": "standard_15min",
+                "diagnostic_set": "full",
+            },
+        )
+
+    report = excinfo.value.pre_run_validation_report
+    assert report is not None
+    assert report["status"] == "blocked"
+    assert report["run_shape_validation"]["domain"] == "storm_120km"
+    assert "Removed domain size" in report["blocking_errors"][0]
+    assert not (tmp_path / "runs" / "run-removed-domain").exists()
+
+
 def test_pre_run_validation_requests_full_deep_comparison_outputs(
     tmp_path: Path,
 ) -> None:
@@ -353,7 +416,7 @@ def test_pre_run_validation_requests_full_deep_comparison_outputs(
         scenario_data=load_baseline_template(),
         runtime_home=tmp_path,
         run_id="run-deep-core-output",
-        run_recipe="untriggered_observed_evolution",
+        run_recipe="observed_surface_forced_evolution",
         observed_sounding=observed,
         candidate_screening={
             "candidate_id": "USM00072558-supercell",

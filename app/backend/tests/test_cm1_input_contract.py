@@ -187,7 +187,7 @@ def test_rendered_input_sounding_is_external_baseline_profile() -> None:
     assert "placeholder until local/manual CM1 validation" not in sounding
 
 
-def test_observed_contract_declares_untriggered_v0_recipe_assumptions() -> None:
+def test_observed_contract_declares_surface_forced_v0_recipe_assumptions() -> None:
     from igra_fixtures import IGRA_FIXTURE
 
     from cloud_chamber.observed_sounding import parse_igra_station_text
@@ -202,11 +202,11 @@ def test_observed_contract_declares_untriggered_v0_recipe_assumptions() -> None:
         observed_sounding=observed,
     )
 
-    assert contract.run_recipe.value == "untriggered_observed_evolution"
+    assert contract.run_recipe.value == "observed_surface_forced_evolution"
     assert contract.recipe_id == "observed_surface_forced_evolution_v0"
     assert contract.recipe_display_name == "Observed Surface-Forced Evolution v0"
     assert contract.assumption_set_id == "observed_surface_forced_evolution_v0_assumptions"
-    assert contract.assumption_mode == "surface_forced_observed_evolution"
+    assert contract.assumption_mode == "observed_surface_forced_evolution"
     assert contract.required_output_fields == ("qv", "qc", "w", "qr", "rain", "dbz", "hfx", "lhfx")
     trigger = cast(dict[str, Any], contract.recipe_assumptions["trigger"])
     radiation = cast(dict[str, Any], contract.recipe_assumptions["radiation"])
