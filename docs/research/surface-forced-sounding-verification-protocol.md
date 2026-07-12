@@ -170,6 +170,7 @@ missing fields.
 Supported modes:
 
 ```bash
+scripts/run_surface_forced_campaign.py --matrix <campaign.yaml>
 scripts/run_surface_forced_campaign.py --matrix <campaign.yaml> --plan
 scripts/run_surface_forced_campaign.py --matrix <campaign.yaml> --package --resume
 scripts/run_surface_forced_campaign.py --matrix <campaign.yaml> --queue
@@ -177,6 +178,26 @@ scripts/run_surface_forced_campaign.py --matrix <campaign.yaml> --status
 scripts/run_surface_forced_campaign.py --matrix <campaign.yaml> --ingest
 scripts/run_surface_forced_campaign.py --matrix <campaign.yaml> --report
 ```
+
+If no mode flag is supplied, the runner defaults to `--plan`. `--queue` is the
+first mode that can start CM1 execution and is deliberately staged:
+
+- optional matrix rows are excluded unless the operator passes `--include-optional`
+  or explicitly selects the optional row with `--matrix-id`;
+- Phase 1 rows may queue before evidence exists;
+- Phase 2 and later rows remain `blocked` until the Phase 1 gate returns
+  `forcing_path_verified_for_campaign`;
+- an operator may continue after an inconclusive gate with
+  `--override-phase-gate --override-reason <reason>`, and the override must be
+  preserved in campaign state and reports;
+- LAN queueing honors `execution.max_concurrent_runs` and leaves excess rows
+  blocked rather than launching multiple remote runs.
+
+`--status` refreshes trusted LAN worker state for LAN rows without overwriting
+the remote state with an unchanged local packaged manifest. `--ingest` collects
+LAN output only after the worker reports the result is ready, then waits for
+collection to update the local manifest with completed CM1 output before calling
+result ingest.
 
 The runner writes resumable campaign state under the configured runtime home:
 
