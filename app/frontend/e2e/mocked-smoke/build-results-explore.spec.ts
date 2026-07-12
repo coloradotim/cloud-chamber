@@ -136,9 +136,9 @@ test.describe("mocked smoke: Build, Results, Explore path", () => {
     await page.getByText("Advanced filters", { exact: true }).click();
     await page.getByRole("button", { name: "Refresh catalog" }).click();
     await expect(page.getByText("IGRA station catalog refreshed")).toBeVisible();
-    await expect(page.getByText("Parsed soundings")).toBeVisible();
     await expect(page.getByLabel("Local sounding data")).toContainText("2 cached soundings");
-    await expect(page.getByText("Ready to search")).toBeVisible();
+    await page.getByLabel("Local sounding data").locator("summary").click();
+    await expect(page.getByText("Parsed soundings")).toBeVisible();
 
     const candidateControls = page.getByLabel("Advanced sounding candidate controls");
     const storySelect = candidateControls.getByRole("combobox").first();
@@ -150,10 +150,17 @@ test.describe("mocked smoke: Build, Results, Explore path", () => {
     await expect(valleyCard).toBeVisible();
     await expect(valleyCard).toContainText("Cloud-forming shallow cumulus");
     await expect(valleyCard).toContainText("Package-ready");
-    await expect(valleyCard).toContainText("Key caveat:");
-    await expect(page.getByLabel("Candidate details")).toContainText(
-      "Scores rank sounding ingredients only",
-    );
+    await expect(valleyCard).toContainText("Why it surfaced");
+    await expect(valleyCard).toContainText("Good for a surface-forced run");
+    const candidateDetails = page.getByLabel("Candidate details");
+    await expect(candidateDetails).toContainText("Why this is interesting");
+    await expect(candidateDetails).toContainText("Recommended first run");
+    await expect(candidateDetails).toContainText("Run fit");
+    await expect(candidateDetails).toContainText("Top limits");
+    await expect(candidateDetails).not.toContainText("Scores rank sounding ingredients only");
+    await expect(
+      candidateDetails.getByText("All evidence").locator("xpath=.."),
+    ).not.toHaveAttribute("open");
 
     await storySelect.selectOption("needs_review");
     await page.getByRole("button", { name: "Apply advanced filters" }).click();
@@ -167,7 +174,17 @@ test.describe("mocked smoke: Build, Results, Explore path", () => {
     const refreshedValleyCard = page.getByLabel(
       "Sounding candidate Valley, Nebraska (USM00072558)",
     );
-    await refreshedValleyCard.getByRole("button", { name: "Save" }).click();
+    await refreshedValleyCard.click();
+    await expect(page.getByRole("textbox", { name: "Tags" })).toHaveCount(0);
+    await page
+      .getByLabel("Candidate details")
+      .getByRole("button", { name: "Save candidate" })
+      .click();
+    await page.getByRole("textbox", { name: "Tags" }).fill("smoke");
+    await page
+      .getByLabel("Save candidate notes")
+      .getByRole("button", { name: "Save" })
+      .click();
     await expect(page.getByText("Sounding candidate saved")).toBeVisible();
     await page.getByRole("tab", { name: /Saved candidates/ }).click();
     const savedCard = page.getByLabel("Saved sounding candidate Valley, Nebraska (USM00072558)");
