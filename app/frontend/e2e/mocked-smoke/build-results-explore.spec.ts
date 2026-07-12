@@ -191,6 +191,22 @@ test.describe("mocked smoke: Build, Results, Explore path", () => {
     await expect(savedCard).toBeVisible();
 
     await savedCard.getByRole("button", { name: "Configure run" }).click();
+    await expect(page.getByLabel("Selected sounding run setup")).toBeVisible();
+    const selectedSetupOrderIsCorrect = await page.evaluate(() => {
+      const saved = document.querySelector(
+        '[aria-label="Saved sounding candidate Valley, Nebraska (USM00072558)"]',
+      );
+      const setup = document.querySelector('[aria-label="Selected sounding run setup"]');
+      const runPlan = document.querySelector('[aria-label="Run plan"]');
+      return Boolean(
+        saved &&
+          setup &&
+          runPlan &&
+          (saved.compareDocumentPosition(setup) & Node.DOCUMENT_POSITION_FOLLOWING) &&
+          (setup.compareDocumentPosition(runPlan) & Node.DOCUMENT_POSITION_FOLLOWING),
+      );
+    });
+    expect(selectedSetupOrderIsCorrect).toBe(true);
     await page.getByRole("button", { name: "Add to run plan" }).click();
     await expect(
       page.getByText("Valley, Nebraska (USM00072558) added to the run plan"),

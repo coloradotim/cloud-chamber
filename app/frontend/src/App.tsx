@@ -4013,17 +4013,6 @@ function BuildWorkspace({
 
               {observedSoundingExperimentSelected && (
                 <>
-                  {observedSoundingParse?.selected_sounding && (
-                    <SelectedSoundingRunSetupPanel
-                      observedSounding={observedSoundingParse.selected_sounding}
-                      selectedCandidateScreening={selectedCandidateScreening}
-                      runConfiguration={runConfiguration}
-                      runConfigurationPreview={runConfigurationPreview}
-                      onRunConfigurationChange={onRunConfigurationChange}
-                      onAddSelectedSoundingToRunPlan={onAddSelectedSoundingToRunPlan}
-                    />
-                  )}
-
                   <AtmosphereSourcePicker
                     sourcePath={atmosphereSourcePath}
                     savedCandidateCount={savedCandidates.length}
@@ -4096,6 +4085,17 @@ function BuildWorkspace({
                       selectedCandidateScreening={selectedCandidateScreening}
                       onObservedSoundingFile={onObservedSoundingFile}
                       onObservedSoundingTimeChange={onObservedSoundingTimeChange}
+                    />
+                  )}
+
+                  {observedSoundingParse?.selected_sounding && (
+                    <SelectedSoundingRunSetupPanel
+                      observedSounding={observedSoundingParse.selected_sounding}
+                      selectedCandidateScreening={selectedCandidateScreening}
+                      runConfiguration={runConfiguration}
+                      runConfigurationPreview={runConfigurationPreview}
+                      onRunConfigurationChange={onRunConfigurationChange}
+                      onAddSelectedSoundingToRunPlan={onAddSelectedSoundingToRunPlan}
                     />
                   )}
 
