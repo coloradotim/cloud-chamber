@@ -1,0 +1,200 @@
+# Example matrix for docs/research/surface-forced-sounding-verification-protocol.md
+#
+# This file is a template only. It should be copied into a runtime/campaigns or
+# local working area before a real campaign runner packages or queues runs.
+# Do not commit generated packages, NetCDF output, logs, screenshots, traces,
+# videos, SSH config, or local settings.
+
+campaign:
+  campaign_id: surface_forced_smoke_001
+  title: Surface-forced sounding smoke and shallow-depth diagnosis
+  objective: >-
+    Verify whether numeric uniform lower-boundary heat/moisture forcing is wired
+    through package generation, CM1 output, ingest, and result summaries; then
+    test whether an easy deep-candidate sounding can deepen under uniform forcing.
+  protocol: docs/research/surface-forced-sounding-verification-protocol.md
+  artifact_policy:
+    commit_reports_only: true
+    do_not_commit:
+      - generated_cm1_packages
+      - netcdf_output
+      - runtime_folders
+      - stdout_stderr_logs
+      - screenshots
+      - traces
+      - videos
+      - ssh_config
+      - local_settings
+
+runtime:
+  queue_target: local
+  runtime_home_env: CLOUD_CHAMBER_RUNTIME_HOME
+  cm1_install_env: CM1_HOME
+  package_only_default: false
+  max_concurrent_runs: 1
+  resume_existing: true
+
+selection_sets:
+  - selection_id: control_sounding
+    role: forcing_path_smoke_check
+    source:
+      type: saved_candidate
+      saved_candidate_id: replace-with-saved-candidate-id
+    selection_notes: >-
+      Use a simple/control sounding with usable winds and enough low-level data.
+      This should not be a marginal data-quality case.
+
+  - selection_id: easy_deep_candidate
+    role: easy_deep_response_check
+    source:
+      type: cached_recommendation
+      candidate_id: replace-with-cached-candidate-id
+    selection_criteria:
+      preferred_story: severe_thunderstorm_environment
+      desired_properties:
+        - high_cape_or_instability_proxy
+        - weak_cap_or_low_cin_if_available
+        - low_lfc_or_low_lcl_if_available
+        - deep_moisture
+        - complete_wind_profile
+        - good_low_level_coverage
+
+  - selection_id: weak_control
+    role: cross_sounding_discrimination_check
+    source:
+      type: cached_recommendation
+      candidate_id: replace-with-weak-or-marginal-candidate-id
+    selection_notes: >-
+      Use a weak or marginal sounding to test whether the same forcing produces
+      a clearly different response than the easy deep candidate.
+
+run_defaults:
+  duration: short_6h
+  horizontal_cell_count: cells_128
+  domain_size: wide_12km
+  output_cadence: standard_15min
+  surface_heat_flux_k_m_s: 8.0e-3
+  surface_moisture_flux_g_g_m_s: 5.2e-5
+  tags:
+    - surface-forced-verification
+  notes: Surface-forced verification campaign run.
+
+forcing_sets:
+  - forcing_id: default_flux
+    surface_heat_flux_k_m_s: 8.0e-3
+    surface_moisture_flux_g_g_m_s: 5.2e-5
+    purpose: baseline/default configured forcing
+
+  - forcing_id: high_sensible_only
+    surface_heat_flux_k_m_s: 4.0e-2
+    surface_moisture_flux_g_g_m_s: 5.2e-5
+    purpose: isolate heat-flux sensitivity
+
+  - forcing_id: high_moisture_only
+    surface_heat_flux_k_m_s: 8.0e-3
+    surface_moisture_flux_g_g_m_s: 1.0e-4
+    purpose: isolate moisture-flux sensitivity
+
+  - forcing_id: high_heat_high_moisture
+    surface_heat_flux_k_m_s: 4.0e-2
+    surface_moisture_flux_g_g_m_s: 1.0e-4
+    purpose: combined forcing sensitivity
+
+runs:
+  - matrix_id: phase1_control_default_flux
+    phase: forcing_path_smoke_check
+    selection_id: control_sounding
+    forcing_id: default_flux
+    duration: short_6h
+    domain_size: wide_12km
+
+  - matrix_id: phase1_control_high_sensible
+    phase: forcing_path_smoke_check
+    selection_id: control_sounding
+    forcing_id: high_sensible_only
+    duration: short_6h
+    domain_size: wide_12km
+
+  - matrix_id: phase1_control_high_moisture
+    phase: forcing_path_smoke_check
+    selection_id: control_sounding
+    forcing_id: high_moisture_only
+    duration: short_6h
+    domain_size: wide_12km
+
+  - matrix_id: phase1_control_high_both
+    phase: forcing_path_smoke_check
+    selection_id: control_sounding
+    forcing_id: high_heat_high_moisture
+    duration: short_6h
+    domain_size: wide_12km
+
+  - matrix_id: phase2_easy_deep_default_12km_6h
+    phase: easy_sounding_response_check
+    selection_id: easy_deep_candidate
+    forcing_id: default_flux
+    duration: short_6h
+    domain_size: wide_12km
+
+  - matrix_id: phase2_easy_deep_strong_12km_12h
+    phase: easy_sounding_response_check
+    selection_id: easy_deep_candidate
+    forcing_id: high_heat_high_moisture
+    duration: standard_12h
+    domain_size: wide_12km
+
+  - matrix_id: phase2_easy_deep_strong_60km_12h
+    phase: easy_sounding_response_check
+    selection_id: easy_deep_candidate
+    forcing_id: high_heat_high_moisture
+    duration: standard_12h
+    domain_size: regional_60km
+
+  - matrix_id: phase3_weak_control_strong_60km_12h
+    phase: cross_sounding_discrimination_check
+    selection_id: weak_control
+    forcing_id: high_heat_high_moisture
+    duration: standard_12h
+    domain_size: regional_60km
+
+required_summary_fields:
+  metadata:
+    - campaign_id
+    - matrix_id
+    - run_id
+    - result_id
+    - station_id
+    - station_name
+    - valid_time_utc
+    - candidate_story
+    - candidate_score
+    - surface_heat_flux_k_m_s
+    - surface_moisture_flux_g_g_m_s
+    - cm1_cnst_shflx
+    - cm1_cnst_lhflx
+    - duration
+    - domain_size
+    - horizontal_cell_count
+    - output_cadence
+    - queue_target
+    - package_status
+    - run_status
+    - ingest_status
+    - required_output_fields
+    - missing_output_fields
+  evidence:
+    - hfx_present
+    - lhfx_present
+    - low_level_qv_response
+    - low_level_theta_or_temperature_response
+    - first_cloud_time
+    - max_cloud_top
+    - max_qc
+    - max_w
+    - qr_present
+    - surface_rain_present
+    - dbz_present
+    - first_deep_cloud_time
+    - deep_cloud_flag
+    - warnings
+    - caveats
