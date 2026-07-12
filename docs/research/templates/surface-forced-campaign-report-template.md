@@ -119,9 +119,9 @@ Rows below are examples derived from `comparison.type` and `comparison.control_m
 
 | Comparison | Control | Experiment | Varied fields | Required equal fields | Required available fields | Result | Interpretation |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| forcing sensitivity | `phase2_easy_deep_default_12km_6h` | `phase2_easy_deep_strong_12km_6h` | forcing values | same sounding, duration, domain, grid, cadence, build, diagnostic support | qc,w,hfx,lhfx | `<summary>` | `<interpretation>` |
-| duration sensitivity | `phase2_easy_deep_strong_12km_6h` | `phase2_easy_deep_strong_12km_12h` | duration | same sounding, forcing, domain, grid, cadence, build, diagnostic support | qc,w,hfx,lhfx | `<summary>` | `<interpretation>` |
-| domain/grid bundle sensitivity | `phase2_easy_deep_strong_12km_12h` | `phase2_easy_deep_strong_60km_12h` | domain and resolved spacing | same sounding, forcing, duration, cadence, build, diagnostic support | qc,w,hfx,lhfx | `<summary>` | `<interpretation>` |
+| example: forcing sensitivity | `phase2_easy_deep_default_12km_6h` | `phase2_easy_deep_strong_12km_6h` | forcing values | same sounding, duration, domain, grid, cadence, build, diagnostic support | qc,w,hfx,lhfx | `<summary>` | `<interpretation>` |
+| example: duration sensitivity | `phase2_easy_deep_strong_12km_6h` | `phase2_easy_deep_strong_12km_12h` | duration | same sounding, forcing, domain, grid, cadence, build, diagnostic support | qc,w,hfx,lhfx | `<summary>` | `<interpretation>` |
+| example: domain/grid bundle sensitivity | `phase2_easy_deep_strong_12km_12h` | `phase2_easy_deep_strong_60km_12h` | domain and resolved spacing | same sounding, forcing, duration, cadence, build, diagnostic support | qc,w,hfx,lhfx | `<summary>` | `<interpretation>` |
 
 Do not describe the 12 km to 60 km step as a pure domain test unless grid spacing and other run-shape assumptions are comparable.
 
