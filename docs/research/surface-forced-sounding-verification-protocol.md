@@ -159,6 +159,36 @@ blocked
 
 The report should preserve the source manifest state when available.
 
+### Runner implementation
+
+The checked-in runner is `scripts/run_surface_forced_campaign.py`. It is a thin
+orchestration layer over existing backend package generation, local serial
+queueing, trusted LAN worker execution, result ingest, and result metadata
+summaries. It does not run CM1 in tests and does not invent diagnostics from
+missing fields.
+
+Supported modes:
+
+```bash
+scripts/run_surface_forced_campaign.py --matrix <campaign.yaml> --plan
+scripts/run_surface_forced_campaign.py --matrix <campaign.yaml> --package --resume
+scripts/run_surface_forced_campaign.py --matrix <campaign.yaml> --queue
+scripts/run_surface_forced_campaign.py --matrix <campaign.yaml> --status
+scripts/run_surface_forced_campaign.py --matrix <campaign.yaml> --ingest
+scripts/run_surface_forced_campaign.py --matrix <campaign.yaml> --report
+```
+
+The runner writes resumable campaign state under the configured runtime home:
+
+```text
+<runtime-home>/campaigns/<campaign_id>/campaign-state.json
+```
+
+Generated packages, NetCDF outputs, logs, worker settings, and runtime folders
+remain runtime artifacts and must not be committed. Markdown reports may be
+written to `docs/research/surface-forced-campaigns/` when the campaign matrix
+explicitly names that committed report path.
+
 ## Comparison contract
 
 The schema distinguishes **comparison type definitions** from **comparison instances**.

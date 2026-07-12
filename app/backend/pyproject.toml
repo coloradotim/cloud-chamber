@@ -9,6 +9,7 @@ description = "Local backend tooling for Cloud Chamber CM1 experiments."
 requires-python = ">=3.12"
 dependencies = [
   "fastapi>=0.115",
+  "pyyaml>=6.0",
   "scipy>=1.14",
   "xarray>=2024.7",
 ]
@@ -18,7 +19,6 @@ dev = [
   "httpx>=0.27",
   "mypy>=1.10",
   "pytest>=8.2",
-  "pyyaml>=6.0",
   "ruff>=0.5",
   "uvicorn>=0.30",
 ]
