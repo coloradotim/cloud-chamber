@@ -6,13 +6,13 @@ Status: protocol/template for issue #310
 
 This protocol defines how Cloud Chamber should verify observed-sounding CM1 runs that use numeric uniform lower-boundary heat/moisture forcing.
 
-The immediate science/product question is not “can we make a storm happen?” The first question is:
+The immediate question is not “can we make a storm happen?” The first question is:
 
 ```text
 When surface heat/moisture forcing changes, does CM1 show the expected package, output, and boundary-layer response?
 ```
 
-Only after that question is answered should a campaign ask:
+Only after that is answered should a campaign ask:
 
 ```text
 Can a selected real sounding deepen past shallow cumulus under uniform surface forcing, or does it need a different initiation/forcing mechanism?
@@ -20,9 +20,9 @@ Can a selected real sounding deepen past shallow cumulus under uniform surface f
 
 ## Problem being diagnosed
 
-If a sounding-driven run only produces shallow cumulus, that result can mean very different things:
+A sounding-driven run that only produces shallow cumulus can mean several different things:
 
-1. **Implementation issue** — the selected surface-flux values did not reach CM1, CM1 ignored them, or the relevant output fields were not emitted/ingested.
+1. **Implementation issue** — selected surface-flux values did not reach CM1, CM1 ignored them, or relevant output fields were not emitted/ingested.
 2. **Configuration issue** — forcing, duration, domain/grid bundle, or output cadence was not suitable for the question.
 3. **Uniform-forcing limitation** — the boundary layer responds, but horizontally uniform forcing does not focus enough ascent to reach the LFC.
 4. **Valid model outcome** — the sounding did not initiate or deepen under the selected assumptions.
@@ -32,7 +32,7 @@ The campaign must separate those cases. It must not collapse every no-storm outc
 
 ## Current experiment model
 
-The current active observed-sounding run mode is surface-forced observed evolution:
+The active observed-sounding run mode is:
 
 ```text
 selected observed sounding
@@ -60,7 +60,7 @@ Current assumptions:
 - Missing fields make a question unavailable or inconclusive.
 - A shallow-only outcome is not automatically a failed sounding or failed model.
 - No generated runtime artifacts belong in git.
-- Comparisons are valid only when the fields intended to stay fixed are actually fixed, and when output fields and diagnostic support are comparable enough for the stated question.
+- Comparisons are valid only when the runs are comparable for the stated question.
 
 ## Matrix contract for campaign runners
 
@@ -75,21 +75,22 @@ execution
 selection_sets
 run_defaults
 forcing_sets
-runs
 comparison_types
+runs
 required_summary_fields
 ```
 
 `schema_version` is required so future runner changes can reject or migrate older matrices intentionally.
 
-### Required ID rules
+### ID rules
 
 - `campaign.campaign_id` must be unique within the runtime campaign workspace.
 - Each `selection_sets[].selection_id` must be unique.
 - Each `forcing_sets[].forcing_id` must be unique.
+- Each `comparison_types[].comparison_type` must be unique.
 - Each `runs[].matrix_id` must be unique.
 - Each run must reference an existing `selection_id` and `forcing_id`.
-- Use `matrix_id` as the canonical run-matrix identifier. Do not introduce a second name such as `run_matrix_id` in the same schema.
+- Use `matrix_id` as the canonical run-matrix identifier. Do not introduce `run_matrix_id` in the same schema.
 
 ### Source union
 
@@ -104,34 +105,15 @@ cached_recommendation:
   optional station_id / valid_time_utc for disambiguation
 
 uploaded_or_local_igra:
-  runtime_file_ref
+  local_text_path or runtime_file_ref
   selected_valid_time_utc
 ```
 
-Committed matrices should not contain machine-private absolute paths. If a local path is needed, keep the real path in runtime-local state and use a portable runtime file reference in committed examples.
-
-### Candidate provenance
-
-The runner and report must preserve enough provenance to identify the real sounding and why it was selected:
-
-```text
-candidate_id
-selection_source_type
-selection_source_reference
-station_id
-station_name
-valid_time_utc
-candidate_story
-candidate_score
-candidate_evidence
-candidate_caveats
-```
-
-A story label without candidate identity, source reference, evidence, and caveats is not enough for a verification report.
+Committed matrices must not contain machine-private absolute paths. If a local path is needed, keep the real path in runtime-local state and use a portable placeholder or runtime file reference in committed examples.
 
 ### Override precedence
 
-When resolving a run, apply settings in this order:
+Resolve each run in this order:
 
 ```text
 run_defaults
@@ -139,7 +121,7 @@ run_defaults
 → run-specific overrides
 ```
 
-Run-specific values win over forcing-set values. Forcing-set values win over defaults. The resolved configuration should be copied into package/run/result metadata and the campaign report.
+Run-specific values win over forcing-set values. Forcing-set values win over defaults. The resolved configuration must be copied into package/run/result metadata and the campaign report.
 
 ### Stable resume / idempotency identity
 
@@ -151,7 +133,7 @@ matrix_id
 resolved selection identity
 resolved forcing values
 resolved duration/domain/grid/cadence
-Cloud Chamber commit if the runner chooses to lock campaigns to a code version
+Cloud Chamber commit if the runner locks campaigns to a code version
 ```
 
 A resumed campaign must not create duplicate packages for the same resolved identity unless the operator explicitly requests a rerun.
@@ -170,96 +152,90 @@ ingested
 package_failed
 run_failed
 ingest_failed
+run_canceled
 skipped
 blocked
 ```
 
-The report should preserve the source manifest state when available. The report must show package status, run status, and ingest status separately so missing result evidence cannot be mistaken for a scientific no-initiation outcome.
+The report should preserve the source manifest state when available.
 
-### Comparison contract
+## Comparison contract
 
-Do not use one global “all fields must match” list for every pair. Each comparison type must define:
+The schema distinguishes **comparison type definitions** from **comparison instances**.
 
-```text
-comparison_type
-control_matrix_id
-experiment_matrix_id
-varied_fields
-required_equal_fields
-required_available_fields
-required_diagnostic_support
-noncomparable_status
+A comparison type definition describes the experiment design:
+
+```yaml
+comparison_type: forcing_sensitivity_same_duration
+varied_fields: [surface_heat_flux_k_m_s, surface_moisture_flux_g_g_m_s]
+required_equal_fields: [selection_id, duration, domain_size, horizontal_cell_count, nx, ny, nz, dx_m, dy_m, dz_m, model_top_m, output_cadence, cloud_chamber_commit, cm1_version, required_output_fields]
+required_available_fields: [qc, w, hfx, lhfx]
+required_diagnostic_support: [cloud, vertical_velocity, surface_fluxes, low_level_response]
+noncomparable_status: inconclusive_noncomparable_runs
 ```
 
-Examples:
+A comparison instance appears on a run:
 
-```text
-forcing_sensitivity:
-  varied_fields: surface_heat_flux_k_m_s, surface_moisture_flux_g_g_m_s
-  required_equal_fields: selection_id, duration, domain_size, horizontal_cell_count, nx, ny, nz, dx_m, dy_m, dz_m, model_top_m, output_cadence, Cloud Chamber commit, CM1 version
-
-duration_sensitivity:
-  varied_fields: duration
-  required_equal_fields: selection_id, forcing values, domain_size, horizontal_cell_count, nx, ny, nz, dx_m, dy_m, dz_m, model_top_m, output_cadence, Cloud Chamber commit, CM1 version
-
-domain_grid_bundle_sensitivity:
-  varied_fields: domain_size, nx, ny, nz, dx_m, dy_m, dz_m, model_top_m, output volume
-  required_equal_fields: selection_id, forcing values, duration, output_cadence, Cloud Chamber commit, CM1 version
-
-cross_sounding_discrimination:
-  varied_fields: selection_id, station/time/candidate identity
-  required_equal_fields: forcing values, duration, domain_size, horizontal_cell_count, nx, ny, nz, dx_m, dy_m, dz_m, model_top_m, output_cadence, Cloud Chamber commit, CM1 version
+```yaml
+comparison:
+  type: forcing_sensitivity_same_duration
+  control_matrix_id: phase2_easy_deep_default_12km_6h
 ```
 
-All comparisons must also check required output fields, missing-field availability, and diagnostic support. Unsupported comparisons should be labeled `inconclusive_noncomparable_runs` rather than summarized as evidence.
-
-### Stage gates
-
-Phase 1 must be allowed to stop the campaign before expensive later phases.
-
-Default gate policy:
+The experiment run is the current run's `matrix_id`. If a report needs an explicit field, use:
 
 ```text
-selected_and_cm1_facing_forcing_metadata_missing:
-  result: fail
-  automatic_continuation: blocked
-
-hfx_or_lhfx_missing_when_requested:
-  result: inconclusive_missing_evidence
-  automatic_continuation: blocked
-
-low_level_response_diagnostic_missing:
-  result: inconclusive_missing_evidence
-  automatic_continuation: blocked
-
-forcing_metadata_present_and_surface_outputs_available_or_explicitly_not_supported:
-  result: partial_verification
-  automatic_continuation: blocked unless operator override is recorded
-
-forcing_metadata_present_surface_outputs_available_and_low_level_response_available:
-  result: forcing_path_verified_for_campaign
-  automatic_continuation: allowed
+experiment_matrix_id = current run matrix_id
 ```
 
-An operator may explicitly override a blocked gate, but the report must preserve the override and must not label forcing path or boundary-layer response as verified. The runner should default to planning/reporting blocked later phases rather than queueing them when gates fail.
+Do not require globally equal fields for all comparisons. Each comparison type must state which fields are allowed to vary and which fields must match. For example:
 
-### Execution safety
+- heat-flux sensitivity varies only `surface_heat_flux_k_m_s` and CM1 `cnst_shflx`;
+- moisture-flux sensitivity varies only `surface_moisture_flux_g_g_m_s` and CM1 `cnst_lhflx`;
+- duration sensitivity varies duration/runtime only;
+- domain/grid bundle sensitivity allows domain, `nx/ny/nz`, `dx/dy/dz`, model top, expected output volume, and cost/runtime to differ;
+- cross-sounding discrimination allows selection/sounding identity and candidate metadata to differ, while forcing and run-shape assumptions should remain equal.
 
-Planning must be the default runner behavior. Queueing must require an explicit runner mode or flag. Do not let a committed YAML file silently launch or queue work.
+If a comparison violates its type contract, mark it `inconclusive_noncomparable_runs` rather than summarizing it as evidence.
 
-Suggested modes for #311:
+## Phase 1 gate contract
+
+Phase 1 must be allowed to stop the campaign before expensive later phases. The gate must distinguish wiring from atmospheric response.
+
+### Gate states
 
 ```text
-plan
-package
-queue
-status
-ingest
-report
-resume
+forcing_wiring_not_verified
+forcing_wiring_verified_but_response_not_verified
+forcing_path_verified_for_campaign
+inconclusive_missing_evidence
+operator_override_continue
 ```
 
-### Mapping report fields to current metadata
+### Required gate behavior
+
+- Missing selected/product forcing metadata: `forcing_wiring_not_verified`; block automatic continuation.
+- Missing CM1-facing `cnst_shflx` or `cnst_lhflx`: `forcing_wiring_not_verified`; block automatic continuation.
+- Missing `hfx` or `lhfx` when requested: `inconclusive_missing_evidence`; block automatic continuation.
+- Missing standardized low-level response diagnostic: `inconclusive_missing_evidence`; block automatic continuation.
+- Emitted `hfx`/`lhfx` values do not reflect the prescribed run-to-run forcing changes: `forcing_wiring_not_verified`; block automatic continuation.
+- Heat-only run does not show a directionally consistent theta/temperature response when the diagnostic is available: `forcing_wiring_verified_but_response_not_verified`; block automatic continuation by default.
+- Moisture-only run does not show a directionally consistent `qv` response when the diagnostic is available: `forcing_wiring_verified_but_response_not_verified`; block automatic continuation by default.
+
+Only use `forcing_path_verified_for_campaign` when all of the following are true:
+
+```text
+selected values preserved
+CM1-facing values preserved
+emitted hfx/lhfx evidence reflects prescribed changes
+heat-only run shows directionally consistent theta/temp response
+moisture-only run shows directionally consistent qv response
+missing required fields do not affect those checks
+```
+
+An operator override may continue the campaign, but the report must preserve the override and must not label the forcing path or boundary-layer response as verified.
+
+## Mapping report fields to current metadata
 
 Where possible, #311 should map report fields to existing backend structures instead of inventing names:
 
@@ -267,7 +243,9 @@ Where possible, #311 should map report fields to existing backend structures ins
 - `ScienceSummary`: first cloud time, cloud top/deep-cloud state, max `qc`, max `w`, rain-water timing, default interesting time, support state where available.
 - `ResultDiagnostics` and output-product payloads: field availability, units, min/max/mean when derivable, missing-field support states.
 
-If the existing backend cannot provide a field, the report must say `unavailable` and identify the missing diagnostic rather than inventing a value.
+If the backend cannot provide a field, the report must say `unavailable` and identify the missing diagnostic rather than inventing a value.
+
+Cloud Chamber commit and CM1 version/build are required per run in the summary contract unless #311 enforces them as immutable campaign-level values and validates every run against them.
 
 ## Low-level response diagnostic contract
 
@@ -312,6 +290,7 @@ Required evidence:
 - CM1-facing namelist values preserve `cnst_shflx` and `cnst_lhflx`.
 - Surface output switches are requested where supported.
 - Ingested metadata reports `hfx` and `lhfx` separately when present.
+- Heat/moisture changes produce directionally consistent `hfx`/`lhfx` changes where derivable.
 - Low-level thermal/moisture fields respond in the expected direction if derivable by the standardized low-level response diagnostic.
 - Cloud timing, cloud top, `qc`, or `w` response is summarized, even if weak.
 
@@ -321,7 +300,8 @@ Interpretation:
 | --- | --- |
 | selected values missing from metadata/namelist | implementation failure |
 | surface fields missing from output/ingest | output-product or CM1 output request gap |
-| hfx/lhfx present but low-level theta/qv response absent | CM1 setup/units/surface-model issue, too-short run, or missing response diagnostic |
+| hfx/lhfx present but not reflecting prescribed changes | surface forcing wiring not verified |
+| hfx/lhfx reflect prescribed changes but low-level theta/qv response absent | forcing wiring verified but atmospheric response not verified |
 | low-level response exists but no deepening | continue to Phase 2/3; not a failure by itself |
 
 ## Phase 2 — Easy sounding response check
@@ -353,7 +333,7 @@ This matched matrix separates questions:
 2. **Strong 6 h vs strong 12 h** tests duration sensitivity with forcing and 12 km run shape held constant.
 3. **Strong 12 km vs strong 60 km** tests a broader run-shape bundle.
 
-The 12 km to 60 km step is not a pure domain-size test when `horizontal_cell_count` is the same. With fixed `cells_128`, both the domain and horizontal spacing change. Treat this as a **domain/grid configuration bundle** and record resolved `nx/ny/nz`, `dx/dy/dz`, model top, cadence, and output volume. Do not conclude that “domain size caused deepening” unless a comparable grid design supports that claim.
+The 12 km to 60 km step is not a pure domain-size test when `horizontal_cell_count` is the same. With fixed `cells_128`, both the domain and horizontal spacing change. Treat this as a **domain/grid configuration bundle** and record resolved `nx/ny/nz`, `dx/dy/dz`, model top, cadence, expected output volume, and output volume. Do not conclude that “domain size caused deepening” unless a comparable grid design supports that claim.
 
 Required evidence:
 
@@ -373,7 +353,7 @@ Interpretation:
 | no boundary-layer response | return to Phase 1 implementation/config diagnosis |
 | strong 6 h deepens relative to default 6 h | forcing sensitivity is supported |
 | strong 12 h deepens relative to strong 6 h | duration sensitivity is supported |
-| regional run differs from wide 12 km run | run-shape bundle matters; inspect domain, dx/dy, model top, and output cadence before assigning cause |
+| regional run differs from wide 12 km run | run-shape bundle matters; inspect domain, dx/dy, model top, cadence, and output volume before assigning cause |
 | shallow cumulus only, even with stronger forcing and longer duration | possible uniform-forcing limitation, configuration gap, or valid no-initiation outcome |
 | deep cloud/updraft but no precipitation fields | output/microphysics/diagnostic gap or dry outcome |
 | deep evidence present but not summarized | Results/Explore diagnostic gap |
@@ -403,6 +383,7 @@ Before comparing two runs, check:
 - horizontal cell count and resolved `dx/dy`;
 - vertical grid and model top;
 - output cadence;
+- expected output volume;
 - CM1 version/build and Cloud Chamber commit;
 - required fields and missing fields;
 - diagnostic support states.
@@ -429,12 +410,13 @@ Interpretation:
 
 ## Phase 4 — Next-step diagnosis
 
-After the first campaign, assign the result to one or more categories:
+After the first campaign, assign one or more categories:
 
 ```text
 forcing_path_not_verified
 surface_outputs_missing
 boundary_layer_response_verified
+forcing_wiring_verified_but_response_not_verified
 uniform_forcing_too_weak
 uniform_forcing_physics_limited
 run_duration_or_domain_limited
@@ -457,7 +439,7 @@ Minimum evidence rules:
 - `inconclusive_noncomparable_runs` applies when the matrix changes more than the stated comparison allows.
 - `differential_forcing_followup_candidate` is appropriate when uniform forcing is verified and responsive but does not focus ascent; do not call differential forcing “needed” unless supported configuration explanations have been ruled out.
 
-The campaign should end with explicit next-step recommendations, usually one of:
+Recommendations usually include one of:
 
 - fix package/namelist/output wiring;
 - adjust default surface flux values;
@@ -469,7 +451,7 @@ The campaign should end with explicit next-step recommendations, usually one of:
 
 ## Required per-run metadata
 
-Each run should record, at minimum:
+Each run should record at minimum:
 
 ```text
 schema_version
@@ -478,6 +460,10 @@ matrix_id
 stable_resume_identity
 run_id
 result_id if ingested
+package_status
+run_status
+ingest_status
+queue_target
 station_id
 station_name
 valid_time_utc
@@ -499,12 +485,13 @@ nx / ny / nz
 dx_m / dy_m / dz_m
 model_top_m
 domain_size and resolved domain width
-queue target
-package status
-run status
-ingest status
+expected_output_volume
+cloud_chamber_commit
+cm1_version
 required output fields
 missing output fields
+diagnostic_support
+interesting_time_support_state
 warnings / caveats
 ```
 
@@ -520,7 +507,9 @@ lhfx_present
 lhfx_units
 lhfx_min / lhfx_max / lhfx_mean when derivable
 low_level_qv_response with method or unavailable reason
+low_level_qv_response_method
 low_level_theta_or_temperature_response with method or unavailable reason
+low_level_theta_or_temperature_response_method
 first_cloud_time
 max_cloud_top_m and time
 max_qc and time
@@ -531,7 +520,7 @@ surface rain availability and outcome
 dbz / reflectivity availability and outcome
 first deep cloud time if available
 deep cloud flag if available
-interesting time support state
+interesting_time_support_state
 exact result fields or diagnostics used as evidence
 missing fields
 warnings
