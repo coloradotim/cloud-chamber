@@ -42,7 +42,7 @@ Can an easy deep-candidate sounding deepen past shallow cumulus under uniform lo
 
 ## Per-run evidence table
 
-| Matrix ID | hfx | lhfx | Low-level qv response | Low-level theta/temp response | First cloud | Max cloud top | Max qc | Max w | Cloud class/depth | qr | surface rain | dbz | Evidence fields | Initial diagnosis |
+| Matrix ID | hfx | lhfx | low_level_qv_response | low_level_theta_or_temperature_response | first_cloud_time | max_cloud_top_m | max_qc | max_w_m_s | cloud_depth_or_classification | qr | surface rain | dbz | Evidence fields | Initial diagnosis |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | `<matrix_id>` | `<present; units; min/max/mean>` | `<present; units; min/max/mean>` | `<value/method/unavailable>` | `<value/method/unavailable>` | `<time/unavailable>` | `<m at time>` | `<kg/kg at time>` | `<m/s at time/height>` | `<class/depth/unavailable>` | `<present/absent/unavailable>` | `<present/absent/unavailable>` | `<present/absent/unavailable>` | `<fields/diagnostics>` | `<category>` |
 
@@ -102,7 +102,7 @@ If an operator override continued the campaign, record why and do not label the 
 
 ## Phase 2 — easy sounding response check
 
-| Run | Boundary-layer response | Cloud top trend | Max w | Deep cloud? | Precipitation evidence | Interpretation |
+| Run | Boundary-layer response | Cloud top trend | max_w_m_s | Deep cloud? | Precipitation evidence | Interpretation |
 | --- | --- | --- | ---: | --- | --- | --- |
 | `<matrix_id>` | `<summary>` | `<summary>` | `<m/s at time/height>` | `<yes/no/unavailable>` | `<qr/rain/dbz>` | `<interpretation>` |
 
