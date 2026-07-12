@@ -115,7 +115,7 @@ inconclusive_missing_evidence
 
 ### Matched comparisons
 
-Rows below are examples derived from `comparison.type` and `comparison.control_matrix_id` in the matrix. A real report should generate rows from the matrix rather than hardcoding these IDs.
+Generate rows from each matrix entry that has `comparison.type` and `comparison.control_matrix_id`. The rows below are examples only.
 
 | Comparison | Control | Experiment | Varied fields | Required equal fields | Required available fields | Result | Interpretation |
 | --- | --- | --- | --- | --- | --- | --- | --- |
