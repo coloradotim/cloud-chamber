@@ -3636,6 +3636,14 @@ describe("App", () => {
     );
 
     fireEvent.click(within(savedCard).getByRole("button", { name: "Configure run" }));
+    const selectedRunSetup = screen.getByLabelText("Selected sounding run setup");
+    const runPlanSection = screen.getByLabelText("Run plan");
+    expect(
+      savedCard.compareDocumentPosition(selectedRunSetup) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(
+      selectedRunSetup.compareDocumentPosition(runPlanSection) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Add to run plan" }));
 
     expect(
