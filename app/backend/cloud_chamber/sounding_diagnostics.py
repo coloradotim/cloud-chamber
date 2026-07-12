@@ -20,6 +20,47 @@ DIAGNOSTIC_VERSION = "sounding-diagnostics-v1"
 SupportState = Literal["supported", "weak", "unavailable"]
 
 
+class _HeightInterpolator:
+    def __init__(self, levels: list[ObservedSoundingLevel]) -> None:
+        self._levels = levels
+        self._cache: dict[str, tuple[list[float], list[float]]] = {}
+
+    def interpolate(self, height_m: float, field: str) -> float | None:
+        heights, values = self._values(field)
+        if not heights:
+            return None
+        if height_m < heights[0]:
+            return values[0] if height_m <= 0.0 and heights[0] <= 100.0 else None
+        if height_m > heights[-1]:
+            return None
+        index = bisect_left(heights, height_m)
+        if index < len(heights) and math.isclose(heights[index], height_m, abs_tol=1e-6):
+            return values[index]
+        if index == 0 or index >= len(heights):
+            return None
+        lower_height = heights[index - 1]
+        upper_height = heights[index]
+        if math.isclose(lower_height, upper_height):
+            return None
+        fraction = (height_m - lower_height) / (upper_height - lower_height)
+        return values[index - 1] + fraction * (values[index] - values[index - 1])
+
+    def _values(self, field: str) -> tuple[list[float], list[float]]:
+        cached = self._cache.get(field)
+        if cached is not None:
+            return cached
+        heights: list[float] = []
+        values: list[float] = []
+        for level in self._levels:
+            value = getattr(level, field)
+            if _finite(level.model_z_m, value):
+                heights.append(float(level.model_z_m))
+                values.append(float(value))
+        cached = (heights, values)
+        self._cache[field] = cached
+        return cached
+
+
 class SoundingDiagnosticFeature(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -63,6 +104,7 @@ def compute_sounding_diagnostics(record: ObservedSoundingRecord) -> SoundingDiag
     """Compute bounded, caveated diagnostics from an observed sounding record."""
 
     levels = sorted(record.levels, key=lambda level: float(level.model_z_m))
+    height_interpolator = _HeightInterpolator(levels)
     assumptions = [
         "Diagnostics are computed from the observed sounding profile before a CM1 run.",
         "Candidate diagnostics are pre-run evidence, not forecasts or CM1 outcomes.",
@@ -303,7 +345,7 @@ def compute_sounding_diagnostics(record: ObservedSoundingRecord) -> SoundingDiag
         _feature(
             "lapse_rate_0_1000m_c_per_km",
             "Lapse rate 0-1000 m",
-            _lapse_rate(levels, 0.0, 1000.0),
+            _lapse_rate(levels, 0.0, 1000.0, height_interpolator),
             "C/km",
             "linear interpolation in height between 0 and 1000 m AGL",
         )
@@ -312,7 +354,7 @@ def compute_sounding_diagnostics(record: ObservedSoundingRecord) -> SoundingDiag
         _feature(
             "lapse_rate_0_3000m_c_per_km",
             "Lapse rate 0-3000 m",
-            _lapse_rate(levels, 0.0, 3000.0),
+            _lapse_rate(levels, 0.0, 3000.0, height_interpolator),
             "C/km",
             "linear interpolation in height between 0 and 3000 m AGL",
         )
@@ -494,7 +536,7 @@ def compute_sounding_diagnostics(record: ObservedSoundingRecord) -> SoundingDiag
         _feature(
             "bulk_shear_0_1km_m_s",
             "Bulk shear 0-1 km",
-            _bulk_shear(levels, 0.0, 1000.0),
+            _bulk_shear(levels, 0.0, 1000.0, height_interpolator),
             "m/s",
             "vector wind difference between interpolated 0 and 1000 m winds",
         )
@@ -503,7 +545,7 @@ def compute_sounding_diagnostics(record: ObservedSoundingRecord) -> SoundingDiag
         _feature(
             "bulk_shear_0_3km_m_s",
             "Bulk shear 0-3 km",
-            _bulk_shear(levels, 0.0, 3000.0),
+            _bulk_shear(levels, 0.0, 3000.0, height_interpolator),
             "m/s",
             "vector wind difference between interpolated 0 and 3000 m winds",
         )
@@ -512,7 +554,7 @@ def compute_sounding_diagnostics(record: ObservedSoundingRecord) -> SoundingDiag
         _feature(
             "bulk_shear_0_6km_m_s",
             "Bulk shear 0-6 km",
-            _bulk_shear(levels, 0.0, 6000.0),
+            _bulk_shear(levels, 0.0, 6000.0, height_interpolator),
             "m/s",
             "vector wind difference between interpolated 0 and 6000 m winds",
         )
@@ -704,7 +746,8 @@ def _data_quality(levels: list[ObservedSoundingLevel]) -> SoundingDataQuality:
     below_6 = _count_levels(usable, 6000.0)
     top = _top(usable) or 0.0
     lowest = _lowest(usable) or 9999.0
-    wind_bonus = 20.0 if _has_wind(usable) else 0.0
+    has_wind = _has_wind(usable)
+    wind_bonus = 20.0 if has_wind else 0.0
     score = min(
         100.0,
         min(25.0, len(usable) * 2.5)
@@ -714,7 +757,7 @@ def _data_quality(levels: list[ObservedSoundingLevel]) -> SoundingDataQuality:
         + wind_bonus,
     )
     caveats: list[str] = []
-    if not _has_wind(usable):
+    if not has_wind:
         caveats.append("observed_wind_profile_missing_or_incomplete")
     if below_1 < 2:
         caveats.append("sparse_low_level_profile_below_1km")
@@ -794,9 +837,15 @@ def _moisture_depth(levels: list[ObservedSoundingLevel], *, min_qv_g_kg: float) 
     return _round(max(moist), 1) if moist else None
 
 
-def _lapse_rate(levels: list[ObservedSoundingLevel], bottom_m: float, top_m: float) -> float | None:
-    bottom = _interpolate_by_height(levels, bottom_m, "temperature_c")
-    top = _interpolate_by_height(levels, top_m, "temperature_c")
+def _lapse_rate(
+    levels: list[ObservedSoundingLevel],
+    bottom_m: float,
+    top_m: float,
+    height_interpolator: _HeightInterpolator | None = None,
+) -> float | None:
+    interpolator = height_interpolator or _HeightInterpolator(levels)
+    bottom = interpolator.interpolate(bottom_m, "temperature_c")
+    top = interpolator.interpolate(top_m, "temperature_c")
     if bottom is None or top is None or math.isclose(bottom_m, top_m):
         return None
     return _round((bottom - top) / ((top_m - bottom_m) / 1000.0), 2)
@@ -870,9 +919,15 @@ def _wind_profile_depth(levels: list[ObservedSoundingLevel]) -> float | None:
     return _round(max(wind_levels) - min(wind_levels), 1)
 
 
-def _bulk_shear(levels: list[ObservedSoundingLevel], bottom_m: float, top_m: float) -> float | None:
-    bottom = _interpolate_wind(levels, bottom_m)
-    top = _interpolate_wind(levels, top_m)
+def _bulk_shear(
+    levels: list[ObservedSoundingLevel],
+    bottom_m: float,
+    top_m: float,
+    height_interpolator: _HeightInterpolator | None = None,
+) -> float | None:
+    interpolator = height_interpolator or _HeightInterpolator(levels)
+    bottom = _interpolate_wind(levels, bottom_m, interpolator)
+    top = _interpolate_wind(levels, top_m, interpolator)
     if bottom is None or top is None:
         return None
     return _round(math.hypot(top[0] - bottom[0], top[1] - bottom[1]), 2)
@@ -1169,10 +1224,13 @@ def _interpolate_by_pressure(
 
 
 def _interpolate_wind(
-    levels: list[ObservedSoundingLevel], height_m: float
+    levels: list[ObservedSoundingLevel],
+    height_m: float,
+    height_interpolator: _HeightInterpolator | None = None,
 ) -> tuple[float, float] | None:
-    u = _interpolate_by_height(levels, height_m, "u_wind_m_s")
-    v = _interpolate_by_height(levels, height_m, "v_wind_m_s")
+    interpolator = height_interpolator or _HeightInterpolator(levels)
+    u = interpolator.interpolate(height_m, "u_wind_m_s")
+    v = interpolator.interpolate(height_m, "v_wind_m_s")
     if u is None or v is None:
         return None
     return u, v
@@ -1202,7 +1260,12 @@ def _numeric(value: float | int | str | bool | None) -> float | None:
 
 
 def _finite(*values: object) -> bool:
-    return all(isinstance(value, int | float) and math.isfinite(float(value)) for value in values)
+    for value in values:
+        if not isinstance(value, int | float):
+            return False
+        if not math.isfinite(float(value)):
+            return False
+    return True
 
 
 def _round(value: float | int | None, digits: int) -> float | None:

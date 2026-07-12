@@ -610,6 +610,7 @@ def screen_cached_soundings(
             summaries[:latest_per_station] if history_scope == "latest_per_station" else summaries
         )
         selected_times = {summary.valid_time_utc for summary in selected_summaries}
+        source_hash = hashlib.sha256(text.encode("utf-8")).hexdigest()
         try:
             parsed_soundings = parse_igra_station_soundings(
                 text,
@@ -629,8 +630,8 @@ def screen_cached_soundings(
             candidates.append(
                 _candidate_from_parsed_sounding(
                     entry=entry,
-                    source_text=text,
                     source_path=path,
+                    source_hash=source_hash,
                     parsed=parsed,
                 )
             )
@@ -1545,8 +1546,8 @@ def _candidate_from_cached_sounding(
         )
     return _candidate_from_parsed_sounding(
         entry=entry,
-        source_text=source_text,
         source_path=source_path,
+        source_hash=hashlib.sha256(source_text.encode("utf-8")).hexdigest(),
         parsed=parsed,
     )
 
@@ -1554,11 +1555,10 @@ def _candidate_from_cached_sounding(
 def _candidate_from_parsed_sounding(
     *,
     entry: IGRACacheEntry,
-    source_text: str,
     source_path: Path,
+    source_hash: str,
     parsed: ParsedIgraSounding,
 ) -> SoundingCandidate:
-    source_hash = hashlib.sha256(source_text.encode("utf-8")).hexdigest()
     created_at = datetime.now(UTC)
     selected_time = parsed.summary.valid_time_utc
     station_latitude: float | None

@@ -2429,6 +2429,34 @@ export function App() {
       : null;
   }
 
+  function candidateSearchStatus(
+    action: "Searching" | "Analyzing",
+    inputs: ScreeningInput[] = screeningInputs,
+  ): string {
+    const stationIds = selectedStationIdsForCandidateRequest();
+    const selectedStationSet = new Set(stationIds);
+    const selectedInputs =
+      stationSelectionMode === "selected"
+        ? inputs.filter((input) => selectedStationSet.has(input.station_id))
+        : inputs;
+    const latestPerStation = selectedHistoryLatestPerStation();
+    const soundingCount =
+      candidateHistoryScope === "all_cached"
+        ? selectedInputs.reduce((total, input) => total + (input.sounding_count ?? 0), 0)
+        : selectedInputs.reduce(
+            (total, input) => total + Math.min(input.sounding_count ?? 0, latestPerStation ?? 0),
+            0,
+          );
+    const stationCount = selectedInputs.length;
+    if (soundingCount >= 1000) {
+      return `${action} ${soundingCount.toLocaleString()} cached soundings from ${stationCount.toLocaleString()} station${stationCount === 1 ? "" : "s"}; this can take a minute or two`;
+    }
+    if (soundingCount > 0) {
+      return `${action} ${soundingCount.toLocaleString()} selected sounding${soundingCount === 1 ? "" : "s"}`;
+    }
+    return `${action} selected soundings`;
+  }
+
   async function refreshSoundingCandidateState(statusWhenLoaded?: string) {
     setCandidateError(null);
     setCandidateStatus("Checking local IGRA cache");
@@ -2480,7 +2508,7 @@ export function App() {
       setIgraCache(cachePayload);
       setScreeningInputs(inputsPayload.inputs);
       setSavedCandidates(savedPayload.saved_candidates);
-      setCandidateStatus("Searching selected soundings");
+      setCandidateStatus(candidateSearchStatus("Searching", inputsPayload.inputs));
       const result = await screenSoundingCandidates({
         stationIds,
         historyScope: candidateHistoryScope,
@@ -2568,7 +2596,7 @@ export function App() {
     setCandidateError(null);
     setCandidateScreening(null);
     setCandidateDetailId(null);
-    setCandidateStatus("Analyzing selected soundings");
+    setCandidateStatus(candidateSearchStatus("Analyzing"));
     try {
       const result = await screenSoundingCandidates({
         stationIds,
@@ -4830,11 +4858,12 @@ function ObservedAtmosphereCandidatesPanel({
       : (savedCandidates.find(
           (saved) => saved.candidate.candidate_id === selectedCandidate.candidate_id,
         ) ?? null);
-  const cachedStations = new Set((cache?.entries ?? []).map((entry) => entry.station_id)).size;
-  const cachedStationFiles = cache?.entries.length ?? 0;
-  const cachedCatalogFiles =
-    catalog?.zip_references.filter((reference) => reference.cached_status !== "not_cached")
-      .length ?? cachedStationFiles;
+  const cachedStations =
+    screeningInputs.length > 0
+      ? new Set(screeningInputs.map((input) => input.station_id)).size
+      : new Set((cache?.entries ?? []).map((entry) => entry.station_id)).size;
+  const cachedStationFiles =
+    screeningInputs.length > 0 ? screeningInputs.length : (cache?.entries.length ?? 0);
   const stationOptions = useMemo(() => {
     const inputByStation = new Map(screeningInputs.map((input) => [input.station_id, input]));
     const optionByStation = new Map<
@@ -5139,7 +5168,7 @@ function ObservedAtmosphereCandidatesPanel({
                 : "Not refreshed here"
             }
           />
-          <Metric label="Station files" value={cachedCatalogFiles.toString()} />
+          <Metric label="Station files" value={cachedStationFiles.toLocaleString()} />
           <Metric label="Parsed soundings" value={cachedInventorySummary} />
           <Metric label="Last search" value={lastAnalysisSummary} />
         </dl>
