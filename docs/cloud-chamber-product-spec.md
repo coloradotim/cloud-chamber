@@ -1118,9 +1118,9 @@ Rain diagnostics use `qr` when present:
 qr_rain_threshold_kg_kg = 1e-7
 ```
 
-If `qr` is absent, the user-facing result says `No rain detected.` and the metadata records that the `qr` field was absent. Missing `qr` does not fail the diagnostics.
+If `qr` is absent, the user-facing result must say that rain-water-aloft diagnostics are unavailable, not that rain water aloft was absent. The metadata records that the `qr` field was absent. Missing `qr` does not fail the diagnostics, but it cannot support a clean rain-water outcome.
 
-NaN and infinity values are ignored for finite min/max and fraction summaries. Field-specific caveats record non-finite values or entirely non-finite target fields. CM1 runtime floating-point exception flags are preserved as caveats and evaluated against the target diagnostic fields rather than treated as automatic run failure.
+NaN and infinity values are ignored for finite min/max and fraction summaries. Field-specific caveats record non-finite values or entirely non-finite target fields. Target fields also carry field-quality state: `trusted`, `caveated`, `untrusted`, or `unavailable`. Entirely non-finite `qc`, `w`, `qr`, surface `rain`, or `dbz` fields are untrusted and must not be summarized as clean cloud, updraft, rain-water, surface-rain, or reflectivity evidence. CM1 runtime floating-point exception flags are preserved as caveats and evaluated against the target diagnostic fields rather than treated as automatic run failure.
 
 Shared controls are controls that can be compared across multiple lower-atmosphere scenarios, such as low-level humidity, surface heating, cap strength, cap height, dry air aloft, and mixing/entrainment. Scenario-specific controls should be introduced only when a scenario needs them to answer its physical question.
 

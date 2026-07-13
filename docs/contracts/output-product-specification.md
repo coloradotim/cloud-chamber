@@ -261,6 +261,13 @@ support states such as `unavailable`, `unsupported_missing_fields`, and
 `unsupported_missing_diagnostic` rather than silently falling back to a
 misleading cloud/rain-water landmark.
 
+Interesting-time records, field defaults, diagnostic availability records, and
+science summaries may carry target-field `field_quality` metadata for `qc`, `w`,
+`qr`, surface `rain`, and `dbz`. Entirely non-finite source fields are
+`untrusted` and must not produce supported landmarks or clean comparison
+evidence. Partially non-finite fields may remain usable only with visible
+caveats and finite/non-finite counts.
+
 Triggered deep-potential results extend the same product with backend-owned
 summary fields for deep-cloud formation, first deep-convection time, strong
 updraft detection, cloud top, rain-water onset, max `qr`, and the default Explore
@@ -395,9 +402,9 @@ the result output-products API. Supported MVP aggregations are domain mean,
 domain min, domain max, and selected column for profile-capable 3-D fields.
 Payloads include the global output `time_index`, resolved local source-file
 index when the output product manifest is available, vertical coordinate values,
-finite/non-finite counts, provenance, and caveats. Surface-only fields such as
-surface rain and surface fluxes remain unavailable for vertical profiles rather
-than being reshaped into misleading columns.
+finite/non-finite counts, field-quality metadata, provenance, and caveats.
+Surface-only fields such as surface rain and surface fluxes remain unavailable
+for vertical profiles rather than being reshaped into misleading columns.
 
 ## Time-Height Products
 
@@ -428,8 +435,8 @@ The current backend skeleton exposes time-height products for time-height-capabl
 and cloud fraction for `qc` using the documented cloud-water threshold. Payloads
 include global output time indices, source-file/local-time mappings when
 available, vertical coordinates, shape and size class, finite/non-finite counts,
-provenance, and caveats. The browser consumes the bounded payload only; it does
-not parse raw NetCDF.
+field-quality metadata, provenance, and caveats. The browser consumes the
+bounded payload only; it does not parse raw NetCDF.
 
 ## Evolved-Run Time-Series Products
 
@@ -444,6 +451,18 @@ Missing fields must return an unavailable/caveated catalog state or a clear
 product error, not a guessed scientific result. Boundary-layer-depth and
 mixed-layer-depth style products remain future diagnostics until a defensible
 method is documented and tested.
+
+Field-product payloads must be self-describing. Vertical profile, time-height,
+time-series, native slice, and point-cloud payloads carry a `field_quality`
+object for the requested raw field when diagnostics can evaluate it. The object
+records whether quality was assessed, the source field, quality state, finite
+count, non-finite count, total count, reason, and quality caveats. Tracked fields
+use the current `qc`, `w`, `qr`, surface `rain`, and `dbz` diagnostic quality
+records. Untracked fields such as `qv`, `hfx`, or `qfx` must explicitly report
+that field quality is not tracked rather than implying trusted status. Older
+results or partial metadata with no assessment signal must report
+`assessed = false`; only an explicit assessed `trusted` field-quality record is
+trusted evidence.
 
 Wind-component products are scalar summaries of native-grid CM1 `u` and `v`
 components. They may support vertical profiles and time-height products when
@@ -685,6 +704,8 @@ Minimum provenance:
 - product version;
 - rendering method when visual;
 - source warnings/caveats.
+- field-quality assessment state for each field product, including explicit
+  not-assessed/not-tracked states when no trusted quality record exists.
 
 Common caveats:
 

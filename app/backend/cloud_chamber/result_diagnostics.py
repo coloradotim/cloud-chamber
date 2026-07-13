@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from math import isfinite
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -21,6 +21,21 @@ THERMAL_FATE_CONFIDENCE_VALUES = (
     "insufficient_evidence",
     "unsupported_missing_fields",
 )
+
+FieldQualityState = Literal["trusted", "caveated", "untrusted", "unavailable"]
+
+
+class FieldQuality(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    field: str
+    source_field: str
+    quality_state: FieldQualityState
+    reason: str | None = None
+    finite_count: int = 0
+    non_finite_count: int = 0
+    total_count: int = 0
+    caveats: list[str] = Field(default_factory=list)
 
 
 class TimeValue(BaseModel):
@@ -120,6 +135,8 @@ class ResultDiagnostics(BaseModel):
     surface_rain: SurfaceRainDiagnostics = Field(default_factory=SurfaceRainDiagnostics)
     reflectivity: ReflectivityDiagnostics = Field(default_factory=ReflectivityDiagnostics)
     time: TimeDiagnostics
+    field_quality_assessed: bool = False
+    field_quality: dict[str, FieldQuality] = Field(default_factory=dict)
     caveats: list[str] = Field(default_factory=list)
 
 
@@ -348,6 +365,7 @@ def compute_baseline_diagnostics(dataset: Any, inherited_caveats: list[str]) -> 
     rain = _rain_diagnostics(dataset, time_context, caveats)
     surface_rain = _surface_rain_diagnostics(dataset, time_context, caveats)
     reflectivity = _reflectivity_diagnostics(dataset, time_context, caveats)
+    field_quality = _field_quality_map(dataset)
     return ResultDiagnostics(
         cloud=cloud,
         vertical_velocity=vertical_velocity,
@@ -355,7 +373,96 @@ def compute_baseline_diagnostics(dataset: Any, inherited_caveats: list[str]) -> 
         surface_rain=surface_rain,
         reflectivity=reflectivity,
         time=time_context.diagnostics,
+        field_quality_assessed=True,
+        field_quality=field_quality,
         caveats=_dedupe(caveats),
+    )
+
+
+FIELD_QUALITY_SOURCES = {
+    "qc": {
+        "source_field": "qc",
+        "missing": "missing_qc_field",
+        "partial": "non_finite_values_detected_in_qc",
+        "entire": "qc_field_entirely_non_finite",
+    },
+    "w": {
+        "source_field": "w",
+        "missing": "missing_w_field",
+        "partial": "non_finite_values_detected_in_w",
+        "entire": "w_field_entirely_non_finite",
+    },
+    "qr": {
+        "source_field": "qr",
+        "missing": "qr_field_absent",
+        "partial": "non_finite_values_detected_in_qr",
+        "entire": "qr_field_entirely_non_finite",
+    },
+    "surface_rain": {
+        "source_field": "rain",
+        "missing": "surface_rain_field_absent",
+        "partial": "non_finite_values_detected_in_surface_rain",
+        "entire": "surface_rain_field_entirely_non_finite",
+    },
+    "dbz": {
+        "source_field": "dbz",
+        "missing": "dbz_field_absent",
+        "partial": "non_finite_values_detected_in_dbz",
+        "entire": "dbz_field_entirely_non_finite",
+    },
+}
+
+
+def _field_quality_map(dataset: Any) -> dict[str, FieldQuality]:
+    return {
+        field: _field_quality(dataset, field, config)
+        for field, config in FIELD_QUALITY_SOURCES.items()
+    }
+
+
+def _field_quality(dataset: Any, field: str, config: dict[str, str]) -> FieldQuality:
+    source_field = config["source_field"]
+    if source_field not in dataset.data_vars:
+        return FieldQuality(
+            field=field,
+            source_field=source_field,
+            quality_state="unavailable",
+            reason=config["missing"],
+            caveats=[config["missing"]],
+        )
+    data_array = dataset[source_field]
+    finite_count = _finite_count(data_array)
+    non_finite_count = _non_finite_count(data_array)
+    total_count = _total_count(data_array)
+    if finite_count == 0:
+        return FieldQuality(
+            field=field,
+            source_field=source_field,
+            quality_state="untrusted",
+            reason=config["entire"],
+            finite_count=finite_count,
+            non_finite_count=non_finite_count,
+            total_count=total_count,
+            caveats=[config["partial"], config["entire"]],
+        )
+    if non_finite_count > 0:
+        return FieldQuality(
+            field=field,
+            source_field=source_field,
+            quality_state="caveated",
+            reason=config["partial"],
+            finite_count=finite_count,
+            non_finite_count=non_finite_count,
+            total_count=total_count,
+            caveats=[config["partial"]],
+        )
+    return FieldQuality(
+        field=field,
+        source_field=source_field,
+        quality_state="trusted",
+        finite_count=finite_count,
+        non_finite_count=non_finite_count,
+        total_count=total_count,
     )
 
 
@@ -833,6 +940,10 @@ def _non_finite_count(data_array: Any) -> int:
         if parsed is None or not isfinite(parsed):
             count += 1
     return count
+
+
+def _total_count(data_array: Any) -> int:
+    return int(data_array.values.size)
 
 
 def _has_finite_values(data_array: Any) -> bool:

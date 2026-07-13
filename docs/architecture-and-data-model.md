@@ -681,7 +681,17 @@ Current diagnostics compute:
 - optional surface-rain summary from the CM1 `rain` field;
 - optional reflectivity summary from the CM1 `dbz` field.
 
-Diagnostics preserve runtime warnings from the run manifest/result metadata. CM1 floating-point exception flags are caveats, not automatic failure. The diagnostics also count non-finite values in target fields where practical, ignore NaN/infinity for finite summaries, and record field-specific caveats if `qc`, `w`, `qr`, surface `rain`, or `dbz` are missing or entirely non-finite.
+Diagnostics preserve runtime warnings from the run manifest/result metadata. CM1
+floating-point exception flags are caveats, not automatic failure. The
+diagnostics also count non-finite values in target fields where practical,
+ignore NaN/infinity for finite summaries, and record field-specific caveats if
+`qc`, `w`, `qr`, surface `rain`, or `dbz` are missing or entirely non-finite.
+Result metadata exposes `field_quality_assessed` plus a `field_quality` map for
+those fields with `trusted`, `caveated`, `untrusted`, or `unavailable` state and
+finite/non-finite counts. Missing assessment is not equivalent to trusted.
+Result cards, output products, campaign reports, and candidate comparisons must
+use explicit assessed quality state so missing, unassessed, or entirely
+non-finite fields are not presented as clean negative or positive outcomes.
 
 This result metadata is not a Result Card UI and not visualization-ready data. It is the backend bridge that later result cards and inspectors can consume.
 

@@ -16,6 +16,7 @@ from cloud_chamber.output_products import (
 )
 from cloud_chamber.result_diagnostics import (
     CloudDiagnostics,
+    FieldQuality,
     RainDiagnostics,
     ReflectivityDiagnostics,
     ResultDiagnostics,
@@ -468,3 +469,51 @@ def test_deep_convection_present_but_unsupported_fields_are_caveated(
     assert "max_dbz_or_reflectivity_proxy_diagnostic_not_implemented" in (
         availability["max_dbz_or_reflectivity_proxy"].caveats
     )
+
+
+def test_interesting_times_expose_untrusted_field_quality(tmp_path: Path) -> None:
+    model = tmp_path / "cm1out_000001.nc"
+    write_model_netcdf(model, times=[0.0], values=[2e-6])
+    manifest = build_manifest(tmp_path, [model])
+    diagnostics = ResultDiagnostics(
+        cloud=CloudDiagnostics(
+            formed=True,
+            first_cloud_time_seconds=0.0,
+            max_qc_kg_kg=2e-6,
+            time_of_max_qc_seconds=0.0,
+        ),
+        vertical_velocity=VerticalVelocityDiagnostics(max_w_m_s=1.0, units="m/s"),
+        rain=RainDiagnostics(available=False, field_absent=True),
+        time=TimeDiagnostics(source="netcdf_time_coordinate", fallback_used=False),
+        field_quality_assessed=True,
+        field_quality={
+            "qc": FieldQuality(
+                field="qc",
+                source_field="qc",
+                quality_state="untrusted",
+                reason="qc_field_entirely_non_finite",
+                finite_count=0,
+                non_finite_count=1,
+                total_count=1,
+                caveats=[
+                    "non_finite_values_detected_in_qc",
+                    "qc_field_entirely_non_finite",
+                ],
+            )
+        },
+    )
+
+    product = build_interesting_time_product(
+        result_id="result-field-quality",
+        diagnostics=diagnostics,
+        output_manifest=manifest,
+        variables=["qc", "w"],
+    )
+
+    records = {record.key: record for record in product.available_interesting_times}
+    assert records["first_cloud"].support_state == "unavailable"
+    assert records["first_cloud"].field_quality is not None
+    assert records["first_cloud"].field_quality.quality_state == "untrusted"
+    assert "interesting_time_source_field_untrusted" in records["first_cloud"].caveats
+    assert product.science_summary.field_quality_assessed is True
+    assert product.science_summary.field_quality["qc"].quality_state == "untrusted"

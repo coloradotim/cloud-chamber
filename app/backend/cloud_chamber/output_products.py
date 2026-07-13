@@ -17,7 +17,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from cloud_chamber.result_diagnostics import ResultDiagnostics, TimeValue
+from cloud_chamber.result_diagnostics import FieldQuality, ResultDiagnostics, TimeValue
 
 OUTPUT_PRODUCT_MANIFEST_VERSION = 1
 DERIVED_PRODUCTS_DIRNAME = "derived-products"
@@ -109,6 +109,7 @@ class InterestingTimeRecord(BaseModel):
     value: float | bool | None = None
     units: str | None = None
     support_state: InterestingTimeSupportState
+    field_quality: FieldQuality | None = None
     provenance: InterestingTimeProvenance = Field(default_factory=InterestingTimeProvenance)
     caveats: list[str] = Field(default_factory=list)
     fallback_reason: str | None = None
@@ -122,6 +123,7 @@ class FieldDefaultTime(BaseModel):
     time_seconds: float | None = None
     source_interesting_time_key: str
     support_state: InterestingTimeSupportState
+    field_quality: FieldQuality | None = None
     fallback_reason: str | None = None
     caveats: list[str] = Field(default_factory=list)
 
@@ -133,6 +135,7 @@ class ScienceDiagnosticAvailability(BaseModel):
     label: str
     support_state: InterestingTimeSupportState
     source_field: str | None = None
+    field_quality: FieldQuality | None = None
     value: float | bool | None = None
     units: str | None = None
     caveats: list[str] = Field(default_factory=list)
@@ -167,6 +170,8 @@ class ScienceSummary(BaseModel):
     default_explore_time_index: int | None = None
     default_explore_time_seconds: float | None = None
     cm1_outcome: str | None = None
+    field_quality_assessed: bool = False
+    field_quality: dict[str, FieldQuality] = Field(default_factory=dict)
     diagnostic_availability: list[ScienceDiagnosticAvailability] = Field(default_factory=list)
     interesting_time_caveats: list[str] = Field(default_factory=list)
     interesting_time_support_state: str = "unavailable"
@@ -450,6 +455,8 @@ def build_interesting_time_product(
         output_manifest=output_manifest,
         variables=set(variables),
     )
+    if diagnostics is not None and diagnostics.field_quality_assessed:
+        records = _records_with_field_quality(records, diagnostics.field_quality)
     defaults = _field_defaults(records)
     summary = _science_summary(
         diagnostics,
@@ -801,6 +808,7 @@ def _field_default_record(
         value=source_record.value,
         units=source_record.units,
         support_state="supported" if fallback is None else "fallback",
+        field_quality=source_record.field_quality,
         caveats=list(source_record.caveats),
         fallback_reason=fallback,
     )
@@ -887,10 +895,58 @@ def _field_defaults(
             time_seconds=source.time_seconds,
             source_interesting_time_key=source.key,
             support_state="supported" if fallback_reason is None else "fallback",
+            field_quality=source.field_quality,
             fallback_reason=fallback_reason,
             caveats=list(source.caveats),
         )
     return defaults
+
+
+def _records_with_field_quality(
+    records: list[InterestingTimeRecord],
+    field_quality: dict[str, FieldQuality],
+) -> list[InterestingTimeRecord]:
+    return [_record_with_field_quality(record, field_quality) for record in records]
+
+
+def _record_with_field_quality(
+    record: InterestingTimeRecord,
+    field_quality: dict[str, FieldQuality],
+) -> InterestingTimeRecord:
+    quality = _quality_for_source_field(record.source_field, field_quality)
+    if quality is None:
+        return record
+    caveats = _dedupe([*record.caveats, *quality.caveats])
+    support_state = record.support_state
+    if quality.quality_state == "untrusted" and support_state == "supported":
+        support_state = "unavailable"
+        caveats = _dedupe([*caveats, "interesting_time_source_field_untrusted"])
+    return record.model_copy(
+        update={
+            "field_quality": quality,
+            "support_state": support_state,
+            "caveats": caveats,
+        }
+    )
+
+
+def _quality_for_source_field(
+    source_field: str | None,
+    field_quality: dict[str, FieldQuality],
+) -> FieldQuality | None:
+    if source_field is None:
+        return None
+    if source_field in {"qc", "qc+qr+qi+qs+qg when available"}:
+        return field_quality.get("qc")
+    if source_field == "w":
+        return field_quality.get("w")
+    if source_field == "qr":
+        return field_quality.get("qr")
+    if source_field == "rain":
+        return field_quality.get("surface_rain")
+    if source_field == "dbz":
+        return field_quality.get("dbz")
+    return None
 
 
 def _science_summary(
@@ -971,6 +1027,8 @@ def _science_summary(
         default_explore_time_index=default_source.time_index if default_source else None,
         default_explore_time_seconds=default_source.time_seconds if default_source else None,
         cm1_outcome=None,
+        field_quality_assessed=diagnostics.field_quality_assessed,
+        field_quality=diagnostics.field_quality if diagnostics.field_quality_assessed else {},
         diagnostic_availability=_diagnostic_availability(variables, diagnostics),
         interesting_time_support_state=support_state,
     )
@@ -1105,6 +1163,7 @@ def _diagnostic_availability(
             source_field="dbz",
             field_present="dbz" in variables,
             implemented=reflectivity_supported,
+            field_quality=_availability_field_quality(diagnostics, "dbz"),
         ),
         _availability_record(
             key="max_rain_or_surface_precip",
@@ -1112,6 +1171,7 @@ def _diagnostic_availability(
             source_field="rain",
             field_present="rain" in variables,
             implemented=surface_rain_supported,
+            field_quality=_availability_field_quality(diagnostics, "surface_rain"),
         ),
         _availability_record(
             key="updraft_depth_proxy",
@@ -1119,6 +1179,7 @@ def _diagnostic_availability(
             source_field="w",
             field_present="w" in variables,
             implemented=False,
+            field_quality=_availability_field_quality(diagnostics, "w"),
         ),
         _availability_record(
             key="cold_pool_proxy",
@@ -1126,6 +1187,7 @@ def _diagnostic_availability(
             source_field="th",
             field_present=bool({"th", "theta", "theta_v"} & variables),
             implemented=False,
+            field_quality=None,
         ),
         _availability_record(
             key="near_surface_theta_perturbation_proxy",
@@ -1133,6 +1195,7 @@ def _diagnostic_availability(
             source_field="th",
             field_present=bool({"th", "theta", "theta_v"} & variables),
             implemented=False,
+            field_quality=None,
         ),
     ]
 
@@ -1144,13 +1207,27 @@ def _availability_record(
     source_field: str,
     field_present: bool,
     implemented: bool,
+    field_quality: FieldQuality | None = None,
 ) -> ScienceDiagnosticAvailability:
+    if field_quality is not None and field_quality.quality_state == "untrusted":
+        return ScienceDiagnosticAvailability(
+            key=key,
+            label=label,
+            source_field=source_field,
+            field_quality=field_quality,
+            support_state="unavailable",
+            caveats=_dedupe([*field_quality.caveats, "diagnostic_source_field_untrusted"]),
+        )
     if implemented:
         return ScienceDiagnosticAvailability(
             key=key,
             label=label,
             source_field=source_field,
+            field_quality=field_quality,
             support_state="supported",
+            caveats=field_quality.caveats
+            if field_quality is not None and field_quality.quality_state == "caveated"
+            else [],
         )
     caveat = (
         f"{key}_diagnostic_not_implemented" if field_present else f"missing_{source_field}_field"
@@ -1159,11 +1236,21 @@ def _availability_record(
         key=key,
         label=label,
         source_field=source_field,
+        field_quality=field_quality,
         support_state="unsupported_missing_diagnostic"
         if field_present
         else "unsupported_missing_fields",
         caveats=[caveat],
     )
+
+
+def _availability_field_quality(
+    diagnostics: ResultDiagnostics | None,
+    field: str,
+) -> FieldQuality | None:
+    if diagnostics is None or not diagnostics.field_quality_assessed:
+        return None
+    return diagnostics.field_quality.get(field)
 
 
 def _positive(value: float | None) -> bool:

@@ -17,6 +17,7 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict, Field
 
 from cloud_chamber.output_products import FieldDefaultTime, InterestingTimeRecord, ScienceSummary
+from cloud_chamber.result_diagnostics import FieldQuality
 from cloud_chamber.result_ingest import (
     RESULT_METADATA_FILENAME,
     CandidateHypothesisComparison,
@@ -126,6 +127,8 @@ class ResultCard(BaseModel):
     surface_rain_units: str | None = None
     max_dbz: float | None = None
     reflectivity_available: bool | None = None
+    field_quality_assessed: bool = False
+    field_quality: dict[str, FieldQuality] = Field(default_factory=dict)
     interesting_times: list[InterestingTimeRecord] = Field(default_factory=list)
     default_time_by_field: dict[str, FieldDefaultTime] = Field(default_factory=dict)
     science_summary: ScienceSummary | None = None
@@ -269,24 +272,44 @@ def _card_from_metadata(
         thermal_fate_label=interpretation.thermal_fate_label if interpretation else None,
         thermal_fate_confidence=interpretation.confidence if interpretation else None,
         main_limiting_factor=interpretation.main_limiting_factor if interpretation else None,
-        first_cloud_time_seconds=cloud.first_cloud_time_seconds if cloud else None,
-        max_qc_kg_kg=cloud.max_qc_kg_kg if cloud else None,
-        time_of_max_qc_seconds=cloud.time_of_max_qc_seconds if cloud else None,
-        max_w_m_s=vertical_velocity.max_w_m_s if vertical_velocity else None,
+        first_cloud_time_seconds=(
+            cloud.first_cloud_time_seconds if cloud and cloud.available else None
+        ),
+        max_qc_kg_kg=cloud.max_qc_kg_kg if cloud and cloud.available else None,
+        time_of_max_qc_seconds=(
+            cloud.time_of_max_qc_seconds if cloud and cloud.available else None
+        ),
+        max_w_m_s=(
+            vertical_velocity.max_w_m_s
+            if vertical_velocity and vertical_velocity.available
+            else None
+        ),
         time_of_max_w_seconds=vertical_velocity.time_of_max_w_seconds
-        if vertical_velocity
+        if vertical_velocity and vertical_velocity.available
         else None,
-        min_w_m_s=vertical_velocity.min_w_m_s if vertical_velocity else None,
+        min_w_m_s=(
+            vertical_velocity.min_w_m_s
+            if vertical_velocity and vertical_velocity.available
+            else None
+        ),
         time_of_min_w_seconds=vertical_velocity.time_of_min_w_seconds
-        if vertical_velocity
+        if vertical_velocity and vertical_velocity.available
         else None,
-        rain_present=rain.present if rain else None,
-        first_rain_time_seconds=rain.first_rain_time_seconds if rain else None,
-        surface_rain_present=surface_rain.present if surface_rain else None,
-        max_surface_rain=surface_rain.max_surface_rain if surface_rain else None,
+        rain_present=rain.present if rain and rain.available else None,
+        first_rain_time_seconds=rain.first_rain_time_seconds if rain and rain.available else None,
+        surface_rain_present=(
+            surface_rain.present if surface_rain and surface_rain.available else None
+        ),
+        max_surface_rain=(
+            surface_rain.max_surface_rain if surface_rain and surface_rain.available else None
+        ),
         surface_rain_units=surface_rain.units if surface_rain else None,
-        max_dbz=reflectivity.max_dbz if reflectivity else None,
+        max_dbz=reflectivity.max_dbz if reflectivity and reflectivity.available else None,
         reflectivity_available=reflectivity.available if reflectivity else None,
+        field_quality_assessed=diagnostics.field_quality_assessed if diagnostics else False,
+        field_quality=diagnostics.field_quality
+        if diagnostics is not None and diagnostics.field_quality_assessed
+        else {},
         interesting_times=metadata.interesting_times,
         default_time_by_field=metadata.default_time_by_field,
         science_summary=metadata.science_summary,

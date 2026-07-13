@@ -22,6 +22,7 @@ from cloud_chamber.output_products import (
 )
 from cloud_chamber.result_diagnostics import (
     CloudDiagnostics,
+    FieldQuality,
     ProcessDiagnostics,
     RainDiagnostics,
     ReflectivityDiagnostics,
@@ -553,6 +554,10 @@ def _merge_diagnostics(
     reflectivity = _merge_reflectivity_diagnostics(
         [diagnostics.reflectivity for diagnostics in diagnostics_parts]
     )
+    field_quality = _merge_field_quality_maps(diagnostics_parts)
+    field_quality_assessed = any(
+        diagnostics.field_quality_assessed for diagnostics in diagnostics_parts
+    )
     caveats = _dedupe_strings(
         [
             *inherited_caveats,
@@ -566,6 +571,8 @@ def _merge_diagnostics(
         surface_rain=surface_rain,
         reflectivity=reflectivity,
         time=time,
+        field_quality_assessed=field_quality_assessed,
+        field_quality=field_quality,
         caveats=caveats,
     )
 
@@ -747,6 +754,87 @@ def _merge_reflectivity_diagnostics(
         ),
         available=True,
         field_absent=all(part.field_absent for part in parts),
+    )
+
+
+FIELD_QUALITY_ORDER = ("qc", "w", "qr", "surface_rain", "dbz")
+
+
+def _merge_field_quality_maps(
+    diagnostics_parts: list[ResultDiagnostics],
+) -> dict[str, FieldQuality]:
+    field_names = [
+        field
+        for field in FIELD_QUALITY_ORDER
+        if any(field in diagnostics.field_quality for diagnostics in diagnostics_parts)
+    ]
+    return {
+        field: _merge_field_quality(
+            field,
+            [
+                diagnostics.field_quality[field]
+                for diagnostics in diagnostics_parts
+                if field in diagnostics.field_quality
+            ],
+        )
+        for field in field_names
+    }
+
+
+def _merge_field_quality(field: str, qualities: list[FieldQuality]) -> FieldQuality:
+    source_field = next((quality.source_field for quality in qualities), field)
+    finite_count = sum(quality.finite_count for quality in qualities)
+    non_finite_count = sum(quality.non_finite_count for quality in qualities)
+    total_count = sum(quality.total_count for quality in qualities)
+    caveats = _dedupe_strings([caveat for quality in qualities for caveat in quality.caveats])
+    reason = next(
+        (
+            quality.reason
+            for quality in qualities
+            if quality.quality_state != "trusted" and quality.reason is not None
+        ),
+        None,
+    )
+
+    if total_count == 0 and finite_count == 0:
+        return FieldQuality(
+            field=field,
+            source_field=source_field,
+            quality_state="unavailable",
+            reason=reason,
+            caveats=caveats,
+        )
+    if finite_count == 0:
+        return FieldQuality(
+            field=field,
+            source_field=source_field,
+            quality_state="untrusted",
+            reason=reason,
+            finite_count=finite_count,
+            non_finite_count=non_finite_count,
+            total_count=total_count,
+            caveats=caveats,
+        )
+    if non_finite_count > 0 or any(
+        quality.quality_state in {"caveated", "untrusted", "unavailable"} for quality in qualities
+    ):
+        return FieldQuality(
+            field=field,
+            source_field=source_field,
+            quality_state="caveated",
+            reason=reason,
+            finite_count=finite_count,
+            non_finite_count=non_finite_count,
+            total_count=total_count,
+            caveats=caveats,
+        )
+    return FieldQuality(
+        field=field,
+        source_field=source_field,
+        quality_state="trusted",
+        finite_count=finite_count,
+        non_finite_count=non_finite_count,
+        total_count=total_count,
     )
 
 
@@ -998,9 +1086,11 @@ def _candidate_hypothesis_comparison(
         )
 
     evidence = _candidate_outcome_evidence(science_summary)
+    field_quality_caveats = _field_quality_comparison_caveats(diagnostics)
     caveats = [
         "candidate_screening_is_a_pre_run_hypothesis",
         "candidate_match_uses_simple_v1_deep_convection_rules",
+        *field_quality_caveats,
     ]
     if primary_story not in DEEP_CONVECTION_STORY_IDS:
         return CandidateHypothesisComparison(
@@ -1095,6 +1185,26 @@ def _candidate_outcome_evidence(science_summary: ScienceSummary) -> list[str]:
     return evidence
 
 
+def _field_quality_comparison_caveats(diagnostics: ResultDiagnostics) -> list[str]:
+    if not diagnostics.field_quality_assessed:
+        return ["field_quality_not_assessed"]
+    caveats: list[str] = []
+    for field in FIELD_QUALITY_ORDER:
+        quality = diagnostics.field_quality.get(field)
+        if quality is None or quality.quality_state == "trusted":
+            continue
+        caveat = f"field_quality_{quality.quality_state}:{field}"
+        if quality.reason:
+            caveat = f"{caveat}:{quality.reason}"
+        if quality.total_count > 0:
+            caveat = (
+                f"{caveat}:finite={quality.finite_count}:"
+                f"non_finite={quality.non_finite_count}:total={quality.total_count}"
+            )
+        caveats.append(caveat)
+    return caveats
+
+
 def _screening_string(value: object) -> str | None:
     return value if isinstance(value, str) and value else None
 
@@ -1175,9 +1285,19 @@ def _input_source_label(manifest: RunManifest) -> str:
 
 
 def _diagnostics_summary(diagnostics: ResultDiagnostics) -> str:
-    cloud_status = "cloud formed" if diagnostics.cloud.formed else "no cloud formed"
+    cloud_status = (
+        "cloud formed"
+        if diagnostics.cloud.available and diagnostics.cloud.formed
+        else "no cloud formed"
+        if diagnostics.cloud.available
+        else "cloud unavailable"
+    )
     rain_water_status = (
-        "rain water aloft detected" if diagnostics.rain.present else "no rain water aloft detected"
+        "rain water aloft detected"
+        if diagnostics.rain.available and diagnostics.rain.present
+        else "no rain water aloft detected"
+        if diagnostics.rain.available
+        else "rain water aloft unavailable"
     )
     if diagnostics.surface_rain.available:
         surface_status = (

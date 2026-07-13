@@ -1324,6 +1324,59 @@ const autoIngestedRunQueue = {
   updated_at: new Date().toISOString(),
 };
 
+const trustedFieldQuality = {
+  qc: {
+    field: "qc",
+    source_field: "qc",
+    quality_state: "trusted",
+    reason: null,
+    finite_count: 100,
+    non_finite_count: 0,
+    total_count: 100,
+    caveats: [],
+  },
+  w: {
+    field: "w",
+    source_field: "w",
+    quality_state: "trusted",
+    reason: null,
+    finite_count: 100,
+    non_finite_count: 0,
+    total_count: 100,
+    caveats: [],
+  },
+  qr: {
+    field: "qr",
+    source_field: "qr",
+    quality_state: "trusted",
+    reason: null,
+    finite_count: 100,
+    non_finite_count: 0,
+    total_count: 100,
+    caveats: [],
+  },
+  surface_rain: {
+    field: "surface_rain",
+    source_field: "rain",
+    quality_state: "trusted",
+    reason: null,
+    finite_count: 100,
+    non_finite_count: 0,
+    total_count: 100,
+    caveats: [],
+  },
+  dbz: {
+    field: "dbz",
+    source_field: "dbz",
+    quality_state: "trusted",
+    reason: null,
+    finite_count: 100,
+    non_finite_count: 0,
+    total_count: 100,
+    caveats: [],
+  },
+};
+
 const resultCard = {
   result_id: "result-dry-run-quicklook",
   run_id: "dry-run-quicklook",
@@ -1371,6 +1424,8 @@ const resultCard = {
   surface_rain_units: "mm",
   reflectivity_available: true,
   max_dbz: 30,
+  field_quality_assessed: true,
+  field_quality: trustedFieldQuality,
   science_summary: {
     first_cloud_time_seconds: 1800,
     first_cloud_time_label: "1,800 s",
@@ -1388,6 +1443,8 @@ const resultCard = {
     latest_output_time_seconds: 10800,
     default_explore_time_index: 3,
     default_explore_time_seconds: 2700,
+    field_quality_assessed: true,
+    field_quality: trustedFieldQuality,
     interesting_time_caveats: [],
     interesting_time_support_state: "supported",
   },
@@ -1639,13 +1696,46 @@ const missingDiagnosticsCard = {
   time_of_max_w_seconds: null,
   min_w_m_s: null,
   time_of_min_w_seconds: null,
-  rain_present: false,
+  rain_present: null,
   first_rain_time_seconds: null,
   surface_rain_present: null,
   max_surface_rain: null,
   surface_rain_units: null,
   reflectivity_available: null,
   max_dbz: null,
+  field_quality_assessed: true,
+  field_quality: {
+    qc: {
+      field: "qc",
+      source_field: "qc",
+      quality_state: "unavailable",
+      reason: "missing_qc_field",
+      finite_count: 0,
+      non_finite_count: 0,
+      total_count: 0,
+      caveats: ["missing_qc_field"],
+    },
+    w: {
+      field: "w",
+      source_field: "w",
+      quality_state: "unavailable",
+      reason: "missing_w_field",
+      finite_count: 0,
+      non_finite_count: 0,
+      total_count: 0,
+      caveats: ["missing_w_field"],
+    },
+    qr: {
+      field: "qr",
+      source_field: "qr",
+      quality_state: "unavailable",
+      reason: "qr_field_absent",
+      finite_count: 0,
+      non_finite_count: 0,
+      total_count: 0,
+      caveats: ["qr_field_absent"],
+    },
+  },
   caveats: ["missing_qc_field", "missing_w_field"],
   output_file_summary: {
     ...resultCard.output_file_summary,
@@ -5415,14 +5505,62 @@ describe("App", () => {
     render(<App />);
 
     fireEvent.click(await screen.findByRole("button", { name: "No diagnostics yet" }));
+    const resultDetail = screen.getByLabelText("Result detail");
 
     expect(screen.getAllByText("Diagnostics unavailable").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("Unknown").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("No rain water aloft detected").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Cloud unavailable").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Rain water aloft unavailable").length).toBeGreaterThan(0);
     expect(screen.getByText("missing_qc_field")).toBeInTheDocument();
     expect(screen.getByText("missing_w_field")).toBeInTheDocument();
+    fireEvent.click(within(resultDetail).getByText("Technical details"));
+    expect(screen.getByText(/Cloud water \(qc\) is unavailable/)).toBeInTheDocument();
+    expect(screen.getByText("Surface rain was not assessed.")).toBeInTheDocument();
     expect(screen.queryByText(/horizontal slice/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/vertical slice/i)).not.toBeInTheDocument();
+  });
+
+  it("does not treat legacy missing field-quality assessment as trusted", async () => {
+    const legacyQualityCard = {
+      ...resultCard,
+      result_id: "result-legacy-quality",
+      run_id: "dry-run-legacy-quality",
+      name: "Legacy quality result",
+      field_quality_assessed: false,
+      field_quality: {},
+      science_summary: {
+        ...resultCard.science_summary,
+        field_quality_assessed: false,
+        field_quality: {},
+      },
+    };
+    vi.mocked(fetch).mockImplementation((input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url === "/api/scenarios") {
+        return Promise.resolve(new Response(JSON.stringify(scenarioResponse), { status: 200 }));
+      }
+      if (url === "/api/results") {
+        return Promise.resolve(
+          new Response(JSON.stringify({ results: [legacyQualityCard] }), { status: 200 }),
+        );
+      }
+      if (url === "/api/storage/inventory") {
+        return Promise.resolve(
+          new Response(JSON.stringify(storageInventoryResponse), { status: 200 }),
+        );
+      }
+      return Promise.resolve(new Response("not found", { status: 404 }));
+    });
+
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Legacy quality result" }));
+    const resultDetail = screen.getByLabelText("Result detail");
+    fireEvent.click(within(resultDetail).getByText("Technical details"));
+
+    expect(screen.getByText("Field quality not assessed for this result.")).toBeInTheDocument();
+    expect(
+      screen.queryByText("All tracked field-quality checks are trusted."),
+    ).not.toBeInTheDocument();
   });
 
   it("shows result delete preview and confirm inside Results", async () => {

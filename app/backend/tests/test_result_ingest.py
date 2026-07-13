@@ -223,12 +223,16 @@ def test_ingests_valid_tiny_netcdf_metadata(tmp_path: Path) -> None:
         ("w", "m/s"),
     ]
     assert result.diagnostics_summary == (
-        "no cloud formed; no rain water aloft detected; surface rain unavailable; "
+        "no cloud formed; rain water aloft unavailable; surface rain unavailable; "
         "reflectivity unavailable"
     )
     assert result.diagnostics is not None
     assert result.diagnostics.cloud.formed is False
     assert result.diagnostics.rain.field_absent is True
+    assert result.diagnostics.field_quality_assessed is True
+    assert result.diagnostics.field_quality["qc"].quality_state == "trusted"
+    assert result.diagnostics.field_quality["w"].quality_state == "trusted"
+    assert result.diagnostics.field_quality["qr"].quality_state == "unavailable"
     assert result.process_diagnostics is not None
     assert (
         result.process_diagnostics.interpretation_support.thermal_fate_label
@@ -569,6 +573,53 @@ def test_deep_candidate_comparison_uses_observed_surface_forced_outcome(
     )
 
 
+def test_deep_candidate_comparison_caveats_untrusted_rain_water_field(
+    tmp_path: Path,
+) -> None:
+    manifest_path = create_manifest(tmp_path, run_id="run-untrusted-rain-water")
+    run_dir = manifest_path.parent
+    netcdf_path = run_dir / "cm1out_000001.nc"
+    write_model_netcdf(
+        netcdf_path,
+        times=[900.0],
+        qc_values=[2e-5],
+        w_values=[15.0],
+        qr_values=[float("nan")],
+        z_values=[500.0, 10500.0],
+    )
+    complete_manifest(manifest_path, OutputMetadata(netcdf_paths=[str(netcdf_path)]))
+    manifest = load_run_manifest(manifest_path)
+    write_run_manifest(
+        manifest_path,
+        manifest.model_copy(
+            update={
+                "candidate_screening": {
+                    "candidate_id": "USM00072357-2025052000-supercell",
+                    "primary_story": "supercell_environment",
+                    "rank_score": 93.0,
+                },
+                "run_recipe": "observed_surface_forced_evolution",
+                "recipe_display_name": "Observed Surface-Forced Evolution v0",
+                "required_output_fields": ["qc", "w", "qr"],
+                "input_source": "observed_sounding",
+            }
+        ),
+    )
+
+    result = ingest_completed_run(manifest_path)
+
+    assert result.diagnostics is not None
+    assert result.diagnostics.field_quality["qr"].quality_state == "untrusted"
+    comparison = result.candidate_hypothesis_comparison
+    assert comparison is not None
+    assert comparison.match_status == "partially_supported"
+    assert not any("rain-water-aloft onset" in item for item in comparison.evidence)
+    assert any(
+        caveat.startswith("field_quality_untrusted:qr:qr_field_entirely_non_finite")
+        for caveat in comparison.caveats
+    )
+
+
 def test_no_cloud_result_keeps_interesting_times_honest(tmp_path: Path) -> None:
     manifest_path = create_manifest(tmp_path, run_id="run-no-cloud-interesting-times")
     run_dir = manifest_path.parent
@@ -736,11 +787,13 @@ def test_missing_expected_fields_are_warnings_not_claimed_diagnostics(tmp_path: 
 
     assert result.variables == ["w"]
     assert result.diagnostics_summary == (
-        "no cloud formed; no rain water aloft detected; surface rain unavailable; "
+        "cloud unavailable; rain water aloft unavailable; surface rain unavailable; "
         "reflectivity unavailable"
     )
     assert result.diagnostics is not None
     assert result.diagnostics.cloud.available is False
+    assert result.diagnostics.field_quality["qc"].quality_state == "unavailable"
+    assert result.diagnostics.field_quality["w"].quality_state == "trusted"
     assert result.warnings == [
         "Expected fields missing from NetCDF metadata: qc",
         (
