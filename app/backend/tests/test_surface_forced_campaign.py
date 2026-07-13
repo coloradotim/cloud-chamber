@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 from datetime import UTC, datetime
 from pathlib import Path
 from types import SimpleNamespace
@@ -120,7 +121,7 @@ def write_matrix(
                 "comparison_type": "forcing_sensitivity_same_duration",
                 "varied_fields": ["surface_heat_flux_k_m_s"],
                 "required_equal_fields": ["duration"],
-                "required_available_fields": ["hfx", "lhfx", "qv", "qc", "w"],
+                "required_available_fields": ["hfx", "qfx", "qv", "qc", "w"],
                 "required_diagnostic_support": ["surface_fluxes", "low_level_response"],
             }
         ],
@@ -388,6 +389,16 @@ def test_campaign_queue_is_idempotent_for_existing_lifecycle_states(
     packaged = package_campaign(matrix_path, settings=settings, resume=True)
     manifest_path = Path(packaged.runs[0].manifest_path or "")
     _set_manifest_lifecycle(manifest_path, lifecycle, product_state)
+    if lifecycle == LifecycleState.RUNNING:
+        manifest = load_run_manifest(manifest_path)
+        write_run_manifest(
+            manifest_path,
+            manifest.model_copy(
+                update={
+                    "execution": manifest.execution.model_copy(update={"process_id": os.getpid()})
+                }
+            ),
+        )
 
     class FailingQueue:
         def enqueue(self, _manifest_path: Path) -> SimpleNamespace:
@@ -401,6 +412,142 @@ def test_campaign_queue_is_idempotent_for_existing_lifecycle_states(
 
     assert result.runs[0].status == expected_status
     assert "Skipped queue" in (result.runs[0].message or "")
+
+
+def test_campaign_status_reconciles_stale_running_manifest_before_queue_state(
+    tmp_path: Path,
+) -> None:
+    settings = fake_settings(tmp_path)
+    matrix_path = write_matrix(tmp_path)
+    packaged = package_campaign(matrix_path, settings=settings, resume=True)
+    manifest_path = Path(packaged.runs[0].manifest_path or "")
+    manifest = load_run_manifest(manifest_path)
+    write_run_manifest(
+        manifest_path,
+        manifest.model_copy(
+            update={
+                "lifecycle_state": LifecycleState.RUNNING,
+                "provenance": ProvenanceMetadata(
+                    product_state=ProductState.QUEUED_RUNNING_CM1_PROCESS
+                ),
+                "execution": manifest.execution.model_copy(update={"process_id": 987654321}),
+            }
+        ),
+    )
+    queue_path = settings.runtime_home / "run-queue.json"
+    queue_path.write_text(
+        json.dumps(
+            {
+                "schema_version": "1",
+                "entries": [
+                    {
+                        "run_id": packaged.runs[0].run_id,
+                        "manifest_path": str(manifest_path),
+                        "state": "running",
+                        "queued_at": datetime.now(UTC).isoformat().replace("+00:00", "Z"),
+                        "updated_at": datetime.now(UTC).isoformat().replace("+00:00", "Z"),
+                        "started_at": datetime.now(UTC).isoformat().replace("+00:00", "Z"),
+                        "finished_at": None,
+                        "result_id": None,
+                        "message": "Stale queue entry still claims running.",
+                        "error": None,
+                        "cleanup_status": None,
+                    }
+                ],
+            }
+        )
+        + "\n"
+    )
+
+    status = status_campaign(matrix_path, settings=settings)
+
+    assert status.runs[0].status == "run_failed"
+    manifest = load_run_manifest(manifest_path)
+    assert manifest.lifecycle_state == LifecycleState.FAILED
+    assert (
+        "Tracked CM1 process 987654321 is no longer running"
+        in (manifest.outputs.runtime_warnings[0])
+    )
+
+
+def test_campaign_status_reports_queued_entry_for_packaged_manifest(
+    tmp_path: Path,
+) -> None:
+    settings = fake_settings(tmp_path)
+    matrix_path = write_matrix(tmp_path)
+    packaged = package_campaign(matrix_path, settings=settings, resume=True)
+    manifest_path = Path(packaged.runs[0].manifest_path or "")
+    queue_path = settings.runtime_home / "run-queue.json"
+    now = datetime.now(UTC).isoformat().replace("+00:00", "Z")
+    queue_path.write_text(
+        json.dumps(
+            {
+                "schema_version": "1",
+                "entries": [
+                    {
+                        "run_id": packaged.runs[0].run_id,
+                        "manifest_path": str(manifest_path),
+                        "state": "queued",
+                        "queued_at": now,
+                        "updated_at": now,
+                        "started_at": None,
+                        "finished_at": None,
+                        "result_id": None,
+                        "message": "Queued behind another local run.",
+                        "error": None,
+                        "cleanup_status": None,
+                    }
+                ],
+            }
+        )
+        + "\n"
+    )
+
+    status = status_campaign(matrix_path, settings=settings)
+
+    assert status.runs[0].status == "queued"
+    assert status.runs[0].run_status == "queued"
+    assert status.runs[0].message == "Queued behind another local run."
+
+
+def test_campaign_status_prefers_ingested_result_over_stale_queue_message(
+    tmp_path: Path,
+) -> None:
+    settings = fake_settings(tmp_path)
+    matrix_path = write_matrix(tmp_path)
+    packaged = package_campaign(matrix_path, settings=settings, resume=True)
+    manifest_path = Path(packaged.runs[0].manifest_path or "")
+    _write_fake_result_metadata(manifest_path)
+    queue_path = settings.runtime_home / "run-queue.json"
+    now = datetime.now(UTC).isoformat().replace("+00:00", "Z")
+    queue_path.write_text(
+        json.dumps(
+            {
+                "schema_version": "1",
+                "entries": [
+                    {
+                        "run_id": packaged.runs[0].run_id,
+                        "manifest_path": str(manifest_path),
+                        "state": "running",
+                        "queued_at": now,
+                        "updated_at": now,
+                        "started_at": now,
+                        "finished_at": None,
+                        "result_id": None,
+                        "message": "CM1 is running; waiting for terminal status.",
+                        "error": None,
+                        "cleanup_status": None,
+                    }
+                ],
+            }
+        )
+        + "\n"
+    )
+
+    status = status_campaign(matrix_path, settings=settings)
+
+    assert status.runs[0].status == "ingested"
+    assert status.runs[0].message == "Completed CM1 output ingested."
 
 
 def test_campaign_lan_queue_status_collect_and_ingest_flow(
@@ -528,6 +675,9 @@ def test_campaign_report_summarizes_ingested_result_without_fabricating_bl_respo
     assert summary["phase_gate_state"] == "forcing_wiring_verified_but_response_not_verified"
     run = summary["runs"][0]
     assert run["hfx_present"] is True
+    assert run["qfx_present"] is True
+    assert run["surface_moisture_flux_output_field"] == "qfx"
+    assert run["qfx_units"] == "kg/m^2/s"
     assert run["lhfx_present"] is True
     assert run["low_level_qv_response"] == (
         "unavailable:low_level_response_diagnostic_not_implemented"
@@ -535,6 +685,70 @@ def test_campaign_report_summarizes_ingested_result_without_fabricating_bl_respo
     assert run["low_level_qv_response_method"] == "low_level_response_diagnostic_not_implemented"
     assert "low_level_qv_response" in summary["unavailable_diagnostics"]
     assert "max w `2.5`" in report_path.read_text()
+
+
+def test_campaign_report_treats_stale_lhfx_requirement_as_qfx_alias(
+    tmp_path: Path,
+) -> None:
+    settings = fake_settings(tmp_path)
+    matrix_path = write_matrix(tmp_path)
+    packaged = package_campaign(matrix_path, settings=settings, resume=True)
+    manifest_path = Path(packaged.runs[0].manifest_path or "")
+    manifest = load_run_manifest(manifest_path)
+    write_run_manifest(
+        manifest_path,
+        manifest.model_copy(update={"required_output_fields": ["hfx", "lhfx", "qv", "qc", "w"]}),
+    )
+    _write_fake_result_metadata(
+        manifest_path,
+        missing_required_output_fields=["lhfx"],
+        warnings=["Recipe required output fields missing from NetCDF metadata: lhfx"],
+    )
+
+    artifacts = report_campaign(
+        matrix_path,
+        settings=settings,
+        report_path=tmp_path / "report.md",
+        summary_json_path=tmp_path / "summary.json",
+    )
+
+    run = artifacts.summary["runs"][0]
+    assert run["required_output_fields"] == ["hfx", "qfx", "qv", "qc", "w"]
+    assert run["missing_output_fields"] == []
+    assert run["warnings"] == []
+    assert "missing_output_field:qfx" not in artifacts.summary["unavailable_diagnostics"]
+    assert "missing_output_field:lhfx" not in artifacts.summary["unavailable_diagnostics"]
+    report = Path(artifacts.markdown_path).read_text()
+    assert "lhfx" not in report
+    assert "Required/missing fields: `hfx, qfx, qv, qc, w` / `none`" in report
+
+
+def test_campaign_report_normalizes_stale_lhfx_comparison_evidence(
+    tmp_path: Path,
+) -> None:
+    settings = fake_settings(tmp_path)
+    matrix_path = write_matrix(tmp_path, include_comparison=True)
+    matrix = yaml.safe_load(matrix_path.read_text())
+    matrix["comparison_types"][0]["required_available_fields"] = ["hfx", "lhfx"]
+    matrix_path.write_text(yaml.safe_dump(matrix, sort_keys=False))
+
+    artifacts = report_campaign(
+        matrix_path,
+        settings=settings,
+        report_path=tmp_path / "report.md",
+        summary_json_path=tmp_path / "summary.json",
+    )
+
+    unavailable_evidence = artifacts.summary["comparisons"][0]["unavailable_evidence"]
+    assert "control:missing_required_field:qfx" in unavailable_evidence
+    assert "control:missing_required_field:lhfx" not in unavailable_evidence
+    assert (
+        "missing_output_field:unavailable:until_result_ingested"
+        not in artifacts.summary["unavailable_diagnostics"]
+    )
+    report = Path(artifacts.markdown_path).read_text()
+    assert "missing_required_field:qfx" in report
+    assert "missing_required_field:lhfx" not in report
 
 
 def test_campaign_report_evaluates_comparison_contract(tmp_path: Path) -> None:
@@ -627,7 +841,12 @@ def _set_manifest_lifecycle(
     )
 
 
-def _write_fake_result_metadata(manifest_path: Path) -> None:
+def _write_fake_result_metadata(
+    manifest_path: Path,
+    *,
+    missing_required_output_fields: list[str] | None = None,
+    warnings: list[str] | None = None,
+) -> None:
     manifest = load_run_manifest(manifest_path)
     now = datetime.now(UTC)
     result = ResultMetadata(
@@ -651,15 +870,15 @@ def _write_fake_result_metadata(manifest_path: Path) -> None:
         assumption_mode=manifest.assumption_mode,
         recipe_assumptions=manifest.recipe_assumptions,
         required_output_fields=manifest.required_output_fields,
-        missing_required_output_fields=[],
+        missing_required_output_fields=missing_required_output_fields or [],
         candidate_screening=manifest.candidate_screening,
-        variables=["qc", "w", "qr", "rain", "dbz", "hfx", "lhfx", "qv", "th"],
+        variables=["qc", "w", "qr", "rain", "dbz", "hfx", "qfx", "qv", "th"],
         fields_detected=[
             FieldMetadata(
                 name="hfx", dimensions=["time", "y", "x"], shape=[2, 2, 2], units="K m/s"
             ),
             FieldMetadata(
-                name="lhfx", dimensions=["time", "y", "x"], shape=[2, 2, 2], units="g/g m/s"
+                name="qfx", dimensions=["time", "y", "x"], shape=[2, 2, 2], units="kg/m^2/s"
             ),
             FieldMetadata(
                 name="qv", dimensions=["time", "z", "y", "x"], shape=[2, 2, 2, 2], units="kg/kg"
@@ -730,7 +949,7 @@ def _write_fake_result_metadata(manifest_path: Path) -> None:
             default_explore_time_seconds=1800.0,
             interesting_time_support_state="supported",
         ),
-        warnings=[],
+        warnings=warnings or [],
         created_at=now,
         updated_at=now,
     )

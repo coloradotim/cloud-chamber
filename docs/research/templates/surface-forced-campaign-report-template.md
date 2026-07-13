@@ -42,7 +42,7 @@ Can an easy deep-candidate sounding deepen past shallow cumulus under uniform lo
 
 ## Per-run evidence table
 
-| Matrix ID | hfx | lhfx | low_level_qv_response | low_level_theta_or_temperature_response | first_cloud_time | max_cloud_top_m | max_qc | max_w_m_s | cloud_depth_or_classification | qr | surface rain | dbz | Evidence fields | Initial diagnosis |
+| Matrix ID | hfx | qfx | low_level_qv_response | low_level_theta_or_temperature_response | first_cloud_time | max_cloud_top_m | max_qc | max_w_m_s | cloud_depth_or_classification | qr | surface rain | dbz | Evidence fields | Initial diagnosis |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | `<matrix_id>` | `<present; units; min/max/mean>` | `<present; units; min/max/mean>` | `<value/method/unavailable>` | `<value/method/unavailable>` | `<time/unavailable>` | `<m at time>` | `<kg/kg at time>` | `<m/s at time/height>` | `<class/depth/unavailable>` | `<present/absent/unavailable>` | `<present/absent/unavailable>` | `<present/absent/unavailable>` | `<fields/diagnostics>` | `<category>` |
 
@@ -77,7 +77,7 @@ unavailable: low_level_response_diagnostic_not_implemented
 | selected forcing values preserved in package metadata | `<pass/warn/fail/unavailable>` | `<run ids / fields>` | `<notes>` |
 | selected values appear in CM1-facing namelist fields | `<pass/warn/fail/unavailable>` | `<cnst_shflx/cnst_lhflx>` | `<notes>` |
 | `hfx` emitted/ingested and reflects prescribed changes | `<pass/warn/fail/unavailable>` | `<field/units/min/max/mean>` | `<notes>` |
-| `lhfx` emitted/ingested and reflects prescribed changes | `<pass/warn/fail/unavailable>` | `<field/units/min/max/mean>` | `<notes>` |
+| `qfx` emitted/ingested and reflects prescribed changes | `<pass/warn/fail/unavailable>` | `<field/units/min/max/mean>` | `<notes>` |
 
 ### Atmospheric response checks
 
@@ -112,9 +112,9 @@ Rows below are examples generated from each run's `comparison.type` and `compari
 
 | Comparison type | Control | Experiment | What changed | Required equal fields | Required available fields | Result | Interpretation |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| `forcing_sensitivity_same_duration` | `<control_matrix_id>` | `<current_matrix_id>` | forcing only | sounding, duration, domain/grid bundle, cadence, build, required fields | hfx, lhfx, qv/theta response, qc, w | `<summary>` | `<interpretation>` |
-| `duration_sensitivity_same_forcing` | `<control_matrix_id>` | `<current_matrix_id>` | duration only | sounding, forcing, domain/grid bundle, cadence, build, required fields | hfx, lhfx, qv/theta response, qc, w | `<summary>` | `<interpretation>` |
-| `domain_grid_bundle_sensitivity` | `<control_matrix_id>` | `<current_matrix_id>` | domain/grid bundle | sounding, forcing, duration, cadence, build, required fields | hfx, lhfx, qv/theta response, qc, w | `<summary>` | `<interpretation>` |
+| `forcing_sensitivity_same_duration` | `<control_matrix_id>` | `<current_matrix_id>` | forcing only | sounding, duration, domain/grid bundle, cadence, build, required fields | hfx, qfx, qv/theta response, qc, w | `<summary>` | `<interpretation>` |
+| `duration_sensitivity_same_forcing` | `<control_matrix_id>` | `<current_matrix_id>` | duration only | sounding, forcing, domain/grid bundle, cadence, build, required fields | hfx, qfx, qv/theta response, qc, w | `<summary>` | `<interpretation>` |
+| `domain_grid_bundle_sensitivity` | `<control_matrix_id>` | `<current_matrix_id>` | domain/grid bundle | sounding, forcing, duration, cadence, build, required fields | hfx, qfx, qv/theta response, qc, w | `<summary>` | `<interpretation>` |
 
 Do not describe the 12 km to 60 km step as a pure domain test unless grid spacing and other run-shape assumptions are comparable.
 

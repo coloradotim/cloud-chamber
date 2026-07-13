@@ -1,6 +1,13 @@
 import { expect, test } from "@playwright/test";
 
-import { collectConsoleProblems, gotoApp, gotoBuild, gotoExplore, gotoResults } from "../helpers";
+import {
+  collectConsoleProblems,
+  gotoApp,
+  gotoBuild,
+  gotoExplore,
+  gotoResults,
+  openRunMonitor,
+} from "../helpers";
 import { mockCloudChamberApis } from "../fixtures";
 
 function rgbChannels(value: string) {
@@ -56,9 +63,7 @@ test.describe("mocked smoke: app shell", () => {
     await gotoApp(page);
 
     await gotoBuild(page);
-    await expect(page.getByText("Run monitor")).toBeVisible();
-    await page.getByText("Run monitor").click();
-    await expect(page.getByRole("heading", { name: "Local run launchpad" })).toBeVisible();
+    await openRunMonitor(page);
 
     await gotoResults(page);
     await expect(page.getByRole("heading", { name: "Experiment Notebook" })).toBeVisible();
@@ -119,9 +124,7 @@ test.describe("mocked smoke: app shell", () => {
       }
 
       await gotoBuild(page);
-      await expect(page.getByText("Run monitor")).toBeVisible();
-      await page.getByText("Run monitor").click();
-      await expect(page.getByRole("heading", { name: "Local run launchpad" })).toBeVisible();
+      await openRunMonitor(page);
       await gotoResults(page);
       await expect(page.getByRole("heading", { name: "Experiment Notebook" })).toBeVisible();
       await gotoExplore(page);

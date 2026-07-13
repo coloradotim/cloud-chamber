@@ -213,8 +213,8 @@ def test_ingests_valid_tiny_netcdf_metadata(tmp_path: Path) -> None:
     assert result.coordinates == ["time", "z", "y", "x"]
     assert result.variables == ["qc", "w"]
     assert result.recipe_id == "generated_reference_lower_atmosphere_v1"
-    assert result.required_output_fields == ["qv", "qc", "w", "qr", "rain", "dbz", "hfx", "lhfx"]
-    assert result.missing_required_output_fields == ["qv", "qr", "rain", "dbz", "hfx", "lhfx"]
+    assert result.required_output_fields == ["qv", "qc", "w", "qr", "rain", "dbz", "hfx", "qfx"]
+    assert result.missing_required_output_fields == ["qv", "qr", "rain", "dbz", "hfx", "qfx"]
     assert result.time_coordinate == "time"
     assert result.time_steps == 1
     assert result.grid_shape == [2, 2, 2]
@@ -238,7 +238,7 @@ def test_ingests_valid_tiny_netcdf_metadata(tmp_path: Path) -> None:
     assert result.process_diagnostics.deep_breakthrough.status == "unsupported_missing_fields"
     assert result.warnings == [
         "CM1 stderr reported floating-point exception flags: IEEE_INVALID_FLAG",
-        "Recipe required output fields missing from NetCDF metadata: qv, qr, rain, dbz, hfx, lhfx",
+        "Recipe required output fields missing from NetCDF metadata: qv, qr, rain, dbz, hfx, qfx",
     ]
     assert (run_dir / RESULT_METADATA_FILENAME).exists()
     assert product_manifest_path.exists()
@@ -366,6 +366,46 @@ def test_ingest_keeps_rain_water_surface_rain_and_reflectivity_distinct(
     )
     assert product_manifest.interesting_time_product is not None
     assert product_manifest.interesting_time_product.science_summary == result.science_summary
+
+
+def test_ingest_marks_sequence_diagnostics_available_when_later_file_has_fields(
+    tmp_path: Path,
+) -> None:
+    manifest_path = create_manifest(tmp_path, run_id="run-fields-arrive-later")
+    run_dir = manifest_path.parent
+    first = run_dir / "cm1out_000001.nc"
+    second = run_dir / "cm1out_000002.nc"
+    write_model_netcdf(
+        first,
+        times=[0.0],
+        qc_values=[0.0],
+        w_values=[0.0],
+    )
+    write_model_netcdf(
+        second,
+        times=[900.0],
+        qc_values=[2e-6],
+        w_values=[3.0],
+        qr_values=[4e-7],
+        rain_values=[1.5],
+        dbz_values=[24.0],
+    )
+    complete_manifest(manifest_path, OutputMetadata(netcdf_paths=[str(first), str(second)]))
+
+    result = ingest_completed_run(manifest_path)
+
+    assert result.diagnostics is not None
+    assert result.diagnostics.cloud.available is True
+    assert result.diagnostics.cloud.formed is True
+    assert result.diagnostics.rain.available is True
+    assert result.diagnostics.rain.present is True
+    assert result.diagnostics.rain.field_absent is False
+    assert result.diagnostics.surface_rain.available is True
+    assert result.diagnostics.surface_rain.present is True
+    assert result.diagnostics.surface_rain.field_absent is False
+    assert result.diagnostics.reflectivity.available is True
+    assert result.diagnostics.reflectivity.max_dbz == 24.0
+    assert result.diagnostics.reflectivity.field_absent is False
 
 
 def test_ingests_deep_convection_candidate_outcome_comparison(tmp_path: Path) -> None:
@@ -705,6 +745,6 @@ def test_missing_expected_fields_are_warnings_not_claimed_diagnostics(tmp_path: 
         "Expected fields missing from NetCDF metadata: qc",
         (
             "Recipe required output fields missing from NetCDF metadata: "
-            "qv, qc, qr, rain, dbz, hfx, lhfx"
+            "qv, qc, qr, rain, dbz, hfx, qfx"
         ),
     ]

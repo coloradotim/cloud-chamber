@@ -88,6 +88,7 @@ class ExecutionMetadata(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     command: list[str] = Field(default_factory=list)
+    process_id: int | None = None
     started_at: datetime | None = None
     finished_at: datetime | None = None
     exit_code: int | None = None

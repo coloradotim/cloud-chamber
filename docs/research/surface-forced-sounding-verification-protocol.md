@@ -219,8 +219,8 @@ A comparison type definition describes the experiment design:
 ```yaml
 comparison_type: forcing_sensitivity_same_duration
 varied_fields: [surface_heat_flux_k_m_s, surface_moisture_flux_g_g_m_s]
-required_equal_fields: [selection_id, duration, domain_size, horizontal_cell_count, nx, ny, nz, dx_m, dy_m, dz_m, model_top_m, output_cadence, cloud_chamber_commit, cm1_version, required_output_fields]
-required_available_fields: [qc, w, hfx, lhfx]
+required_equal_fields: [selection_id, duration, domain_size, horizontal_cell_count, nx, ny, nz, dx_m, dy_m, dz_m, stretch_z, str_bot_m, str_top_m, dz_bot_m, dz_top_m, model_top_m, output_cadence, cloud_chamber_commit, cm1_version, required_output_fields]
+required_available_fields: [qc, w, hfx, qfx]
 required_diagnostic_support: [cloud, vertical_velocity, surface_fluxes, low_level_response]
 noncomparable_status: inconclusive_noncomparable_runs
 ```
@@ -267,9 +267,9 @@ operator_override_continue
 
 - Missing selected/product forcing metadata: `forcing_wiring_not_verified`; block automatic continuation.
 - Missing CM1-facing `cnst_shflx` or `cnst_lhflx`: `forcing_wiring_not_verified`; block automatic continuation.
-- Missing `hfx` or `lhfx` when requested: `inconclusive_missing_evidence`; block automatic continuation.
+- Missing `hfx` or `qfx` when requested: `inconclusive_missing_evidence`; block automatic continuation.
 - Missing standardized low-level response diagnostic: `inconclusive_missing_evidence`; block automatic continuation.
-- Emitted `hfx`/`lhfx` values do not reflect the prescribed run-to-run forcing changes: `forcing_wiring_not_verified`; block automatic continuation.
+- Emitted `hfx`/`qfx` values do not reflect the prescribed run-to-run forcing changes: `forcing_wiring_not_verified`; block automatic continuation.
 - Heat-only run does not show a directionally consistent theta/temperature response when the diagnostic is available: `forcing_wiring_verified_but_response_not_verified`; block automatic continuation by default.
 - Moisture-only run does not show a directionally consistent `qv` response when the diagnostic is available: `forcing_wiring_verified_but_response_not_verified`; block automatic continuation by default.
 
@@ -278,7 +278,7 @@ Only use `forcing_path_verified_for_campaign` when all of the following are true
 ```text
 selected values preserved
 CM1-facing values preserved
-emitted hfx/lhfx evidence reflects prescribed changes
+emitted hfx/qfx evidence reflects prescribed changes
 heat-only run shows directionally consistent theta/temp response
 moisture-only run shows directionally consistent qv response
 missing required fields do not affect those checks
@@ -340,8 +340,8 @@ Required evidence:
 - Run manifest and dry-run report preserve selected product values.
 - CM1-facing namelist values preserve `cnst_shflx` and `cnst_lhflx`.
 - Surface output switches are requested where supported.
-- Ingested metadata reports `hfx` and `lhfx` separately when present.
-- Heat/moisture changes produce directionally consistent `hfx`/`lhfx` changes where derivable.
+- Ingested metadata reports `hfx` and `qfx` separately when present.
+- Heat/moisture changes produce directionally consistent `hfx`/`qfx` changes where derivable.
 - Low-level thermal/moisture fields respond in the expected direction if derivable by the standardized low-level response diagnostic.
 - Cloud timing, cloud top, `qc`, or `w` response is summarized, even if weak.
 
@@ -351,8 +351,8 @@ Interpretation:
 | --- | --- |
 | selected values missing from metadata/namelist | implementation failure |
 | surface fields missing from output/ingest | output-product or CM1 output request gap |
-| hfx/lhfx present but not reflecting prescribed changes | surface forcing wiring not verified |
-| hfx/lhfx reflect prescribed changes but low-level theta/qv response absent | forcing wiring verified but atmospheric response not verified |
+| hfx/qfx present but not reflecting prescribed changes | surface forcing wiring not verified |
+| hfx/qfx reflect prescribed changes but low-level theta/qv response absent | forcing wiring verified but atmospheric response not verified |
 | low-level response exists but no deepening | continue to Phase 2/3; not a failure by itself |
 
 ## Phase 2 — Easy sounding response check
@@ -534,6 +534,7 @@ output cadence
 horizontal_cell_count
 nx / ny / nz
 dx_m / dy_m / dz_m
+stretch_z / str_bot_m / str_top_m / dz_bot_m / dz_top_m
 model_top_m
 domain_size and resolved domain width
 expected_output_volume

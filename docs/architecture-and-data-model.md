@@ -413,9 +413,9 @@ Current lower-atmosphere scaffold defaults are historical/current
 implementation evidence:
 
 ```text
-domain/grid: 64 x 64 x 75
+domain/grid: 64 x 64 x 100
 horizontal spacing: 100 m
-nominal vertical spacing: 40 m
+vertical grid: stretched; 40 m low-level spacing to 600 m aloft
 domain top: 18000 m
 runtime: 21600 s
 output cadence: 3600 s

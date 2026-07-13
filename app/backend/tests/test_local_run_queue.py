@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from datetime import UTC, datetime
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -180,3 +181,44 @@ def test_queue_records_launch_failures_when_local_launch_remains_blocked(tmp_pat
     assert entries["run-launch-fails"].state == "launch_failed"
     assert entries["run-waits"].state == "launch_failed"
     assert queued_state.active_run_id is None
+
+
+def test_queue_recovers_running_entry_from_manifest_after_stale_launch_failure(
+    tmp_path: Path,
+) -> None:
+    manifest_path = create_manifest(tmp_path, "run-recovered-from-stale-queue")
+    fake_manager = FakeRunManager()
+    settings = fake_settings(tmp_path)
+    queue = LocalRunQueueManager(settings=settings, run_manager=fake_manager)
+    queue.enqueue(manifest_path)
+
+    manifest = load_run_manifest(manifest_path)
+    started_at = datetime.now(UTC)
+    write_run_manifest(
+        manifest_path,
+        manifest.model_copy(
+            update={
+                "lifecycle_state": LifecycleState.RUNNING,
+                "provenance": ProvenanceMetadata(
+                    product_state=ProductState.QUEUED_RUNNING_CM1_PROCESS
+                ),
+                "execution": manifest.execution.model_copy(update={"started_at": started_at}),
+            }
+        ),
+    )
+    queue_path = settings.runtime_home / "run-queue.json"
+    queue_store = json.loads(queue_path.read_text())
+    queue_store["entries"][0]["state"] = "launch_failed"
+    queue_store["entries"][0]["error"] = "Another local CM1 run is already active"
+    queue_store["entries"][0]["finished_at"] = datetime.now(UTC).isoformat()
+    queue_path.write_text(json.dumps(queue_store) + "\n")
+
+    refreshed = queue.refresh()
+
+    entry = refreshed.entries[0]
+    assert refreshed.active_run_id == "run-recovered-from-stale-queue"
+    assert entry.state == "running"
+    assert entry.error is None
+    assert entry.finished_at is None
+    assert entry.started_at == started_at.isoformat().replace("+00:00", "Z")
+    assert entry.message == ("CM1 is running; waiting for terminal status before auto-ingest.")

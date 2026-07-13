@@ -54,6 +54,11 @@ type RunConfigurationCM1Values = {
   dx_m: number;
   dy_m: number;
   dz_m: number;
+  stretch_z: number;
+  str_bot_m: number;
+  str_top_m: number;
+  dz_bot_m: number;
+  dz_top_m: number;
   model_top_m: number;
   domain_x_km: number;
   domain_y_km: number;
@@ -127,6 +132,11 @@ type RunConfigurationSummary = {
   dx_m: number;
   dy_m: number;
   dz_m: number;
+  stretch_z?: number;
+  str_bot_m?: number;
+  str_top_m?: number;
+  dz_bot_m?: number;
+  dz_top_m?: number;
   model_top_m: number;
   time_step_seconds: number;
   time_step_note?: string;
@@ -6731,17 +6741,25 @@ type LocalRunWorkflowPanelProps = {
 };
 
 function RunMonitorPanel(props: LocalRunWorkflowPanelProps) {
-  const activeCount =
-    (props.runQueue?.active_run_id ? 1 : 0) +
-    (props.lanWorkerStatus &&
+  const activeRunIds = new Set<string>();
+  if (props.runQueue?.active_run_id) activeRunIds.add(props.runQueue.active_run_id);
+  if (
+    props.lanWorkerStatus &&
     ["submitted", "running", "copied_to_worker"].includes(props.lanWorkerStatus.state)
-      ? 1
-      : 0);
+  ) {
+    activeRunIds.add(props.lanWorkerStatus.run_id);
+  }
+  props.storageInventory?.runs.forEach((run) => {
+    if (run.category === "running" || run.lifecycle_state === "running") {
+      activeRunIds.add(run.run_id);
+    }
+  });
+  const activeCount = activeRunIds.size;
   const queuedCount = props.runQueue?.queued_count ?? 0;
   const completedCount =
     props.storageInventory?.runs.filter((run) => run.lifecycle_state === "completed").length ?? 0;
   return (
-    <details className="run-monitor-panel">
+    <details className="run-monitor-panel" open={activeCount > 0 || queuedCount > 0}>
       <summary>
         <span>
           <strong>Run monitor</strong>
@@ -7143,13 +7161,13 @@ function LocalRunWorkflowPanel({
 }
 
 function LocalRunQueuePanel({ queue, status }: { queue: RunQueueResponse | null; status: string }) {
-  const visibleEntries = queue ? queue.entries.slice(-5).reverse() : [];
+  const visibleEntries = visibleRunQueueEntries(queue);
   return (
     <section className="run-status-panel" aria-label="Local serial run queue">
       <div className="panel-heading-row">
         <div>
           <p className="eyebrow">Local serial queue</p>
-          <h5>Queued CM1 packages</h5>
+          <h5>Local CM1 queue</h5>
         </div>
         <StatusBadge
           label={queue?.active_run_id ? "Running one package" : "Queue idle"}
@@ -7185,6 +7203,24 @@ function LocalRunQueuePanel({ queue, status }: { queue: RunQueueResponse | null;
       )}
     </section>
   );
+}
+
+function visibleRunQueueEntries(queue: RunQueueResponse | null): RunQueueEntry[] {
+  if (!queue) return [];
+  const newestFirst = [...queue.entries].reverse();
+  const activeOrQueued = newestFirst.filter((entry) => queueEntryIsOpen(entry));
+  const recentResultBacked = newestFirst.filter((entry) => queueEntryHasIngestedResult(entry));
+  if (queue.active_run_id || activeOrQueued.length > 0) {
+    const seen = new Set<string>();
+    return [...activeOrQueued, ...recentResultBacked.slice(0, 3)]
+      .filter((entry) => {
+        if (seen.has(entry.run_id)) return false;
+        seen.add(entry.run_id);
+        return true;
+      })
+      .slice(0, 5);
+  }
+  return recentResultBacked.slice(0, 5);
 }
 
 function LanWorkerRunPanel({
@@ -7373,7 +7409,8 @@ function LocalPipelinePanel({
   onPreviewDelete: (runId: string) => void;
   onConfirmDelete: (runId: string) => void;
 }) {
-  const runs = selectPipelineRuns(inventory?.runs ?? [], results, currentRunId);
+  const runs = selectPipelineRuns(inventory?.runs ?? [], results, currentRunId, runQueue);
+  const panelStatus = localPipelinePanelStatus(status, runQueue);
 
   return (
     <section className="pipeline-panel" aria-labelledby="pipeline-title">
@@ -7382,7 +7419,7 @@ function LocalPipelinePanel({
           <p className="eyebrow">Build pipeline</p>
           <h4 id="pipeline-title">Packages and runs needing action</h4>
         </div>
-        <StatusBadge label={status} tone={error ? "warning" : "neutral"} />
+        <StatusBadge label={panelStatus} tone={error ? "warning" : "neutral"} />
       </div>
       <p className="state-note">
         Active packages and runs that still need launch, status review, troubleshooting, or ingest.
@@ -7498,13 +7535,23 @@ function PipelineRunCard({
   const canFinalizeWorker = Boolean(
     run.manifest_path && run.worker_state === "completed" && !result && autoFinalizeFailed,
   );
+  const queueAutoIngested = Boolean(queueEntry?.state === "ingested" && queueEntry.result_id);
+  const queueOpen = queueEntryIsOpen(queueEntry);
+  const resultPending = queueOpen || run.category === "running" || run.worker_state === "running";
+  const resultId = result?.result_id ?? queueEntry?.result_id ?? null;
+  const resultBacked = Boolean(result || queueEntryHasIngestedResult(queueEntry));
   const canIngest = Boolean(
     run.manifest_path &&
-    !result &&
+    !resultBacked &&
     (run.category === "completed_with_output" || run.worker_state === "ready_for_local_ingest"),
   );
-  const stateLabel = pipelineRunStateLabel(run, result);
-  const nextStep = pipelineRunNextStep(run, result);
+  const stateLabel =
+    queueAutoIngested && !result ? "Auto-ingested" : pipelineRunStateLabel(run, result);
+  const stateTone = resultBacked ? "good" : pipelineRunTone(run, result);
+  const nextStep =
+    queueAutoIngested && !result
+      ? "Result auto-ingested. The run directory is retained because it backs Results and Explore."
+      : pipelineRunNextStep(run, result);
   const showWorkerMessage = Boolean(run.worker_message && !run.worker_state);
   const runProgress = pipelineRunProgressSummary(run);
   const workerProgress = workerProgressSummary(run);
@@ -7519,14 +7566,19 @@ function PipelineRunCard({
         {current && <StatusBadge label="Current package" tone="neutral" />}
       </div>
       <div className="badge-row">
-        <StatusBadge label={stateLabel} tone={pipelineRunTone(run, result)} />
-        {queueEntry && (
+        <StatusBadge label={stateLabel} tone={stateTone} />
+        {queueEntry && queueEntry.state !== "ingested" && (
           <StatusBadge
             label={runQueueEntryLabel(queueEntry)}
             tone={runQueueEntryTone(queueEntry)}
           />
         )}
-        {!result && <StatusBadge label="Not ingested" tone="neutral" />}
+        {!resultBacked && resultPending && (
+          <StatusBadge label="Result pending" tone="neutral" />
+        )}
+        {!resultBacked && !resultPending && (
+          <StatusBadge label="Not ingested" tone="neutral" />
+        )}
       </div>
       <p>
         {humanize(result?.scenario_id ?? run.scenario_id ?? "unknown scenario")} ·{" "}
@@ -7603,25 +7655,25 @@ function PipelineRunCard({
             Ingest output
           </button>
         )}
-        {result && (
+        {resultId && (
           <button
             type="button"
             className="secondary-button"
-            onClick={() => onOpenStoredResult(result.result_id)}
+            onClick={() => onOpenStoredResult(resultId)}
           >
             Open result
           </button>
         )}
-        {result && (
+        {resultId && (
           <button
             type="button"
             className="secondary-button"
-            onClick={() => onExploreStoredResult(result.result_id)}
+            onClick={() => onExploreStoredResult(resultId)}
           >
             Open in Explore
           </button>
         )}
-        {!result && (
+        {!resultBacked && (
           <button
             type="button"
             className="secondary-button"
@@ -7632,9 +7684,16 @@ function PipelineRunCard({
           </button>
         )}
       </div>
-      {!result && !canPreviewDelete(run) && <small>{deleteDisabledReason(run)}</small>}
+      {!resultBacked && !canPreviewDelete(run) && <small>{deleteDisabledReason(run)}</small>}
     </article>
   );
+}
+
+function localPipelinePanelStatus(status: string, runQueue: RunQueueResponse | null): string {
+  if (runQueue?.active_run_id && runQueue.queued_count > 0) return "CM1 running; queue waiting";
+  if (runQueue?.active_run_id) return "CM1 running";
+  if (runQueue && runQueue.queued_count > 0) return "Local runs queued";
+  return status;
 }
 
 function buildRunStage(
@@ -7762,10 +7821,14 @@ function queueEntryIsOpen(entry: RunQueueEntry | undefined): boolean {
   return Boolean(entry && (entry.state === "queued" || entry.state === "running"));
 }
 
+function queueEntryHasIngestedResult(entry: RunQueueEntry | undefined): boolean {
+  return Boolean(entry?.state === "ingested" && entry.result_id);
+}
+
 function latestAutoIngestedQueueEntry(queue: RunQueueResponse): RunQueueEntry | undefined {
   return [...queue.entries]
     .reverse()
-    .find((entry) => entry.state === "ingested" && entry.result_id);
+    .find((entry) => queueEntryHasIngestedResult(entry));
 }
 
 function queueEntryForRun(
@@ -7813,10 +7876,18 @@ function selectPipelineRuns(
   runs: RunStorageEntry[],
   results: ResultCard[],
   currentRunId: string | null,
+  runQueue: RunQueueResponse | null,
 ): RunStorageEntry[] {
+  const queueHasOpenEntries = runQueueHasOpenEntries(runQueue);
+  const queueBusy = Boolean(runQueue?.active_run_id || queueHasOpenEntries);
   const activeRuns = runs.filter((run) => {
+    const queueEntry = queueEntryForRun(runQueue, run.run_id);
     if (currentRunId && run.run_id === currentRunId) return true;
+    if (queueEntryIsOpen(queueEntry)) return true;
+    if (queueBusy) return run.category === "running";
     if (resultForRun(results, run.run_id)) return false;
+    if (queueEntryHasIngestedResult(queueEntry)) return false;
+    if (queueHasOpenEntries && queueEntry && !queueEntryIsOpen(queueEntry)) return false;
     return [
       "dry_run_only",
       "running",
@@ -11525,7 +11596,7 @@ function staticRecipeMetadata(): {
     recipeDisplayName: "Observed Surface-Forced Evolution v0",
     assumptionSetId: "observed_surface_forced_evolution_v0_assumptions",
     assumptionMode: "observed_surface_forced_evolution",
-    requiredOutputFields: ["qv", "qc", "w", "qr", "rain", "dbz", "hfx", "lhfx"],
+    requiredOutputFields: ["qv", "qc", "w", "qr", "rain", "dbz", "hfx", "qfx"],
     recipeCaveats: [
       "No artificial atmospheric trigger is applied.",
       "Surface fluxes use numeric constant uniform lower-boundary proxy values; they are not validated place/time surface-energy inputs.",
@@ -12140,6 +12211,11 @@ function previewRunConfiguration(configuration: RunConfigurationInput): RunConfi
     dx_m: dxM,
     dy_m: dyM,
     dz_m: domain.dzM,
+    stretch_z: domain.stretchZ,
+    str_bot_m: domain.strBotM,
+    str_top_m: domain.strTopM,
+    dz_bot_m: domain.dzBotM,
+    dz_top_m: domain.dzTopM,
     model_top_m: domain.modelTopM,
     domain_x_km: domain.xKm,
     domain_y_km: domain.yKm,
@@ -12147,7 +12223,7 @@ function previewRunConfiguration(configuration: RunConfigurationInput): RunConfi
     runtime_seconds: duration.seconds,
     output_cadence_seconds: cadence.seconds,
     restart_cadence_seconds: Math.max(cadence.seconds, Math.min(duration.seconds, 10800)),
-    rayleigh_damping_start_m: 2500,
+    rayleigh_damping_start_m: 12000,
     expected_output_frames: expectedFrames,
     grid_cell_count: gridCellCount,
   };
@@ -12217,6 +12293,11 @@ function domainValue(value: string): {
   yKm: number;
   nz: number;
   dzM: number;
+  stretchZ: number;
+  strBotM: number;
+  strTopM: number;
+  dzBotM: number;
+  dzTopM: number;
   modelTopM: number;
   label: string;
 } {
@@ -12225,8 +12306,13 @@ function domainValue(value: string): {
       value,
       xKm: 12.8,
       yKm: 12.8,
-      nz: 75,
+      nz: 100,
       dzM: 40,
+      stretchZ: 1,
+      strBotM: 2000,
+      strTopM: 18000,
+      dzBotM: 40,
+      dzTopM: 600,
       modelTopM: 18000,
       label: "Wide 12 km",
     };
@@ -12236,8 +12322,13 @@ function domainValue(value: string): {
       value,
       xKm: 60,
       yKm: 60,
-      nz: 75,
+      nz: 100,
       dzM: 40,
+      stretchZ: 1,
+      strBotM: 2000,
+      strTopM: 18000,
+      dzBotM: 40,
+      dzTopM: 600,
       modelTopM: 18000,
       label: "Regional 60 km",
     };
@@ -12247,8 +12338,13 @@ function domainValue(value: string): {
       value,
       xKm: 120,
       yKm: 120,
-      nz: 75,
+      nz: 100,
       dzM: 40,
+      stretchZ: 1,
+      strBotM: 2000,
+      strTopM: 18000,
+      dzBotM: 40,
+      dzTopM: 600,
       modelTopM: 18000,
       label: "Regional 120 km",
     };
@@ -12257,8 +12353,13 @@ function domainValue(value: string): {
     value: "local_6km",
     xKm: 6.4,
     yKm: 6.4,
-    nz: 75,
+    nz: 100,
     dzM: 40,
+    stretchZ: 1,
+    strBotM: 2000,
+    strTopM: 18000,
+    dzBotM: 40,
+    dzTopM: 600,
     modelTopM: 18000,
     label: "Local 6 km",
   };
@@ -12272,7 +12373,7 @@ function cadenceValue(value: string): { seconds: number; label: string } {
 
 function runConfigurationGridSummary(configuration: RunConfiguration): string {
   const values = configuration.cm1_values;
-  return `${values.nx} x ${values.ny} x ${values.nz}; dx/dy ${formatMeters(values.dx_m)}, dz ${formatMeters(values.dz_m)}`;
+  return `${values.nx} x ${values.ny} x ${values.nz}; dx/dy ${formatMeters(values.dx_m)}; ${runConfigurationVerticalSummary(values)}`;
 }
 
 function runConfigurationTimingSummary(configuration: RunConfiguration): string {
@@ -12299,7 +12400,25 @@ function resultRunConfigurationLabel(configuration: RunConfiguration): string {
 }
 
 function runConfigurationSummaryGrid(details: RunConfigurationSummary): string {
-  return `${details.nx} x ${details.ny} x ${details.nz}; dx/dy ${formatMeters(details.dx_m)}, dz ${formatMeters(details.dz_m)}`;
+  return `${details.nx} x ${details.ny} x ${details.nz}; dx/dy ${formatMeters(details.dx_m)}; ${runConfigurationSummaryVertical(details)}`;
+}
+
+function runConfigurationVerticalSummary(values: RunConfigurationCM1Values): string {
+  if (values.stretch_z === 1) {
+    return `top ${formatKilometers(values.model_top_m)}, dz ${formatMeters(values.dz_bot_m)} to ${formatMeters(values.dz_top_m)} stretched`;
+  }
+  return `top ${formatKilometers(values.model_top_m)}, dz ${formatMeters(values.dz_m)}`;
+}
+
+function runConfigurationSummaryVertical(details: RunConfigurationSummary): string {
+  if (
+    details.stretch_z === 1 &&
+    details.dz_bot_m !== undefined &&
+    details.dz_top_m !== undefined
+  ) {
+    return `top ${formatKilometers(details.model_top_m)}, dz ${formatMeters(details.dz_bot_m)} to ${formatMeters(details.dz_top_m)} stretched`;
+  }
+  return `top ${formatKilometers(details.model_top_m)}, dz ${formatMeters(details.dz_m)}`;
 }
 
 function runConfigurationSummaryTiming(details: RunConfigurationSummary): string {
@@ -12313,6 +12432,12 @@ function runConfigurationSummaryMultiplier(details: RunConfigurationSummary): st
 function formatMeters(value: number): string {
   const text = value.toFixed(3).replace(/\.?0+$/, "");
   return `${text} m`;
+}
+
+function formatKilometers(value: number): string {
+  const kilometers = value / 1000;
+  const text = kilometers.toFixed(3).replace(/\.?0+$/, "");
+  return `${text} km`;
 }
 
 function formatScientific(value: number | null, units: string): string {
@@ -13032,6 +13157,7 @@ function storageOutputSummary(run: RunStorageEntry): string {
 
 function pipelineRunOutputSummary(run: RunStorageEntry, result: ResultCard | undefined): string {
   if (result) return outputSummary(result.output_file_summary);
+  if (run.category === "running") return "CM1 output in progress";
   if (!run.worker_state) return storageOutputSummary(run);
   const netcdf = run.worker_netcdf_count ?? 0;
   const raw = run.worker_raw_artifact_count ?? 0;

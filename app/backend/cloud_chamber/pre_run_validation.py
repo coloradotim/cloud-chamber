@@ -311,6 +311,13 @@ def _run_shape_validation_payload(contract: CM1InputContract) -> dict[str, Any]:
         "domain_x_km": values.domain_x_km,
         "domain_y_km": values.domain_y_km,
         "model_top": values.model_top_m,
+        "nz": values.nz,
+        "dz_m": values.dz_m,
+        "stretch_z": values.stretch_z,
+        "str_bot_m": values.str_bot_m,
+        "str_top_m": values.str_top_m,
+        "dz_bot_m": values.dz_bot_m,
+        "dz_top_m": values.dz_top_m,
         "horizontal_cell_count": contract.run_configuration.horizontal_cell_count,
         "dx_m": values.dx_m,
         "dy_m": values.dy_m,
@@ -359,6 +366,13 @@ def _run_shape_from_payload(
         "domain_x_km": values.domain_x_km,
         "domain_y_km": values.domain_y_km,
         "model_top": values.model_top_m,
+        "nz": values.nz,
+        "dz_m": values.dz_m,
+        "stretch_z": values.stretch_z,
+        "str_bot_m": values.str_bot_m,
+        "str_top_m": values.str_top_m,
+        "dz_bot_m": values.dz_bot_m,
+        "dz_top_m": values.dz_top_m,
         "horizontal_cell_count": resolved.horizontal_cell_count,
         "dx_m": values.dx_m,
         "dy_m": values.dy_m,
@@ -402,11 +416,11 @@ def _required_outputs_for_story(
     run_recipe: RunRecipe,
 ) -> list[str]:
     if story in DEEP_CONVECTION_STORIES:
-        return ["qv", "qc", "w", "qr", "rain", "dbz", "hfx", "lhfx", "updraft_helicity"]
+        return ["qv", "qc", "w", "qr", "rain", "dbz", "hfx", "qfx", "updraft_helicity"]
     if story == "humid_rainy_candidate":
-        return ["qv", "qc", "w", "qr", "rain", "dbz", "hfx", "lhfx"]
+        return ["qv", "qc", "w", "qr", "rain", "dbz", "hfx", "qfx"]
     if run_recipe == RunRecipe.OBSERVED_SURFACE_FORCED_EVOLUTION:
-        return ["qv", "qc", "w", "hfx", "lhfx"]
+        return ["qv", "qc", "w", "hfx", "qfx"]
     return ["qc", "w"]
 
 

@@ -49,11 +49,16 @@ class CloudScaleDefaults:
     vertical_extent_km: float = 18.0
     horizontal_spacing_m: float = 100.0
     vertical_spacing_m: int = 40
+    stretch_z: int = 1
     time_step_seconds: float = 3.0
     runtime_seconds: int = 21600
     output_cadence_seconds: int = 3600
     restart_cadence_seconds: int = 10800
-    rayleigh_damping_start_m: int = 2500
+    rayleigh_damping_start_m: int = 12000
+    stretch_bottom_m: float = 2000.0
+    stretch_top_m: float = 18000.0
+    dz_bottom_m: float = 40.0
+    dz_top_m: float = 600.0
 
 
 @dataclass(frozen=True)
@@ -255,11 +260,16 @@ def cloud_scale_defaults_for_configuration(configuration: RunConfiguration) -> C
         vertical_extent_km=values.model_top_m / 1000.0,
         horizontal_spacing_m=values.dx_m,
         vertical_spacing_m=int(values.dz_m),
+        stretch_z=values.stretch_z,
         time_step_seconds=values.time_step_seconds,
         runtime_seconds=values.runtime_seconds,
         output_cadence_seconds=values.output_cadence_seconds,
         restart_cadence_seconds=values.restart_cadence_seconds,
         rayleigh_damping_start_m=values.rayleigh_damping_start_m,
+        stretch_bottom_m=values.str_bot_m,
+        stretch_top_m=values.str_top_m,
+        dz_bottom_m=values.dz_bot_m,
+        dz_top_m=values.dz_top_m,
     )
 
 
@@ -341,9 +351,9 @@ def required_output_fields_for_run_recipe(run_recipe: str | RunRecipe) -> tuple[
     resolved = _coerce_run_recipe(run_recipe)
     match resolved:
         case RunRecipe.OBSERVED_SURFACE_FORCED_EVOLUTION:
-            return ("qv", "qc", "w", "qr", "rain", "dbz", "hfx", "lhfx")
+            return ("qv", "qc", "w", "qr", "rain", "dbz", "hfx", "qfx")
         case RunRecipe.GENERATED_REFERENCE_LOWER_ATMOSPHERE:
-            return ("qv", "qc", "w", "qr", "rain", "dbz", "hfx", "lhfx")
+            return ("qv", "qc", "w", "qr", "rain", "dbz", "hfx", "qfx")
         case None:
             return ()
 
@@ -394,7 +404,7 @@ def _expected_outputs(
     diagnostic_set: str,
 ) -> tuple[str, ...]:
     base = ("qc", "qr", "qv", "th", "prs", "u", "v", "w", "rain", "dbz")
-    analysis = (*base, "psfc", "hfx", "lhfx", "lwp")
+    analysis = (*base, "psfc", "hfx", "qfx", "lwp")
     rich = (*analysis, "tke", "km", "kh", "vorticity", "updraft_helicity")
     return rich
 
@@ -457,7 +467,7 @@ def _recipe_assumptions(
             "observed_sounding": {
                 "temperature_profile": "required",
                 "moisture_profile": "required",
-                "wind_profile": "used_when_available",
+                "wind_profile": "required_complete_rendered_u_v_profile",
             },
             "surface_fluxes": _surface_flux_assumption_payload(run_configuration),
             "radiation": {"mode": "disabled", "cm1_radopt": 0},
@@ -805,12 +815,12 @@ def render_cm1_namelist(contract: CM1InputContract) -> str:
  /
 
  &param6
- stretch_z =  0,
+ stretch_z =  {defaults.stretch_z},
  ztop      = {float(defaults.vertical_extent_km * 1000):.1f},
- str_bot   =     0.0,
- str_top   =  2000.0,
- dz_bot    =   125.0,
- dz_top    =   500.0,
+ str_bot   = {defaults.stretch_bottom_m:7.1f},
+ str_top   = {defaults.stretch_top_m:7.1f},
+ dz_bot    = {defaults.dz_bottom_m:7.1f},
+ dz_top    = {defaults.dz_top_m:7.1f},
  /
 
  &param7

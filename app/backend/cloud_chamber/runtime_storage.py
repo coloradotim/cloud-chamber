@@ -19,6 +19,7 @@ from cloud_chamber.run_manifest import (
     ProductState,
     RunManifest,
     RunManifestError,
+    load_run_manifest,
 )
 from cloud_chamber.run_progress import run_progress_from_manifest
 from cloud_chamber.settings import CloudChamberSettings
@@ -248,7 +249,7 @@ def _runtime_delete_plan(
     if run_dir.parent.resolve() != runs_dir.resolve():
         raise RuntimeStorageError(f"Run directory is not directly under {runs_dir}: {run_dir}")
 
-    entry = _run_storage_entry(run_dir)
+    entry = _run_storage_entry(run_dir, reconcile=False)
     if entry.category == "running":
         raise RuntimeStorageError(f"Refusing to delete running run: {run_id}")
     return _RuntimeDeletePlan(run_dir=run_dir, entry=entry)
@@ -260,7 +261,7 @@ def _run_directories(runs_dir: Path) -> list[Path]:
     return sorted(path for path in runs_dir.iterdir() if path.is_dir() or path.is_symlink())
 
 
-def _run_storage_entry(run_dir: Path) -> RunStorageEntry:
+def _run_storage_entry(run_dir: Path, *, reconcile: bool = True) -> RunStorageEntry:
     manifest_path = run_dir / "run_manifest.json"
     size_bytes = _directory_size(run_dir)
     if not manifest_path.exists():
@@ -272,7 +273,11 @@ def _run_storage_entry(run_dir: Path) -> RunStorageEntry:
         )
 
     try:
-        manifest = reconcile_completed_run_manifest(manifest_path)
+        manifest = (
+            reconcile_completed_run_manifest(manifest_path)
+            if reconcile
+            else load_run_manifest(manifest_path)
+        )
     except (RunManifestError, OSError, ValueError) as exc:
         return RunStorageEntry(
             run_id=run_dir.name,

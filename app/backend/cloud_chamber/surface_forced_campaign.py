@@ -28,7 +28,7 @@ from cloud_chamber.lan_worker import (
     lan_worker_run_status,
     start_lan_worker_run,
 )
-from cloud_chamber.local_run_manager import LocalRunManager
+from cloud_chamber.local_run_manager import LocalRunManager, reconcile_completed_run_manifest
 from cloud_chamber.local_run_queue import LocalRunQueueError, LocalRunQueueManager
 from cloud_chamber.observed_sounding import (
     ObservedSoundingError,
@@ -136,6 +136,11 @@ SUPPORTED_REQUIRED_SUMMARY_FIELDS = {
     "dx_m",
     "dy_m",
     "dz_m",
+    "stretch_z",
+    "str_bot_m",
+    "str_top_m",
+    "dz_bot_m",
+    "dz_top_m",
     "model_top_m",
     "output_cadence",
     "expected_output_volume",
@@ -1575,7 +1580,7 @@ def _state_run_with_runtime_status(
                 "updated_at": _now(),
             }
         )
-    manifest = load_run_manifest(manifest_path)
+    manifest = reconcile_completed_run_manifest(manifest_path, load_run_manifest(manifest_path))
     if state_run.status == "blocked":
         return state_run.model_copy(
             update={
@@ -1619,7 +1624,11 @@ def _state_run_with_runtime_status(
     message = state_run.message
     error = state_run.error
     result_id = state_run.result_id
-    if queue_entry is not None:
+    if queue_entry is not None and manifest.lifecycle_state in {
+        LifecycleState.PACKAGED,
+        LifecycleState.QUEUED,
+        LifecycleState.RUNNING,
+    }:
         status = _queue_entry_to_campaign_status(str(queue_entry.get("state")))
         message = _optional_string(queue_entry.get("message")) or message
         error = _optional_string(queue_entry.get("error")) or error
@@ -1628,6 +1637,8 @@ def _state_run_with_runtime_status(
     if result is not None:
         status = "ingested"
         result_id = result.result_id
+        message = "Completed CM1 output ingested."
+        error = None
     return state_run.model_copy(
         update={
             "status": status,
@@ -1768,8 +1779,11 @@ def _summary_for_plan_run(run: CampaignRunPlan, state: CampaignState) -> dict[st
     diagnostics = result.diagnostics if result is not None else None
     science = result.science_summary if result is not None else None
     variables = set(result.variables) if result is not None else set()
+    required_fields = _normalize_campaign_output_fields(
+        manifest.required_output_fields if manifest is not None else []
+    )
     missing_fields = (
-        result.missing_required_output_fields
+        _normalize_campaign_missing_output_fields(result.missing_required_output_fields, variables)
         if result is not None
         else ["unavailable:until_result_ingested"]
     )
@@ -1832,6 +1846,11 @@ def _summary_for_plan_run(run: CampaignRunPlan, state: CampaignState) -> dict[st
         "dx_m": run.cm1_values.get("dx_m"),
         "dy_m": run.cm1_values.get("dy_m"),
         "dz_m": run.cm1_values.get("dz_m"),
+        "stretch_z": run.cm1_values.get("stretch_z"),
+        "str_bot_m": run.cm1_values.get("str_bot_m"),
+        "str_top_m": run.cm1_values.get("str_top_m"),
+        "dz_bot_m": run.cm1_values.get("dz_bot_m"),
+        "dz_top_m": run.cm1_values.get("dz_top_m"),
         "model_top_m": run.cm1_values.get("model_top_m"),
         "output_cadence": run.run_configuration["output_cadence"],
         "expected_output_frames": run.cm1_values.get("expected_output_frames"),
@@ -1839,7 +1858,7 @@ def _summary_for_plan_run(run: CampaignRunPlan, state: CampaignState) -> dict[st
         "cloud_chamber_commit": manifest.app.commit if manifest is not None else None,
         "cm1_version": "unavailable:cm1_version_not_recorded",
         "cm1_build": "unavailable:cm1_build_not_recorded",
-        "required_output_fields": manifest.required_output_fields if manifest is not None else [],
+        "required_output_fields": required_fields,
         "missing_output_fields": missing_fields,
         "available_output_fields": sorted(variables),
         "evidence_fields": sorted(variables),
@@ -1854,8 +1873,11 @@ def _summary_for_plan_run(run: CampaignRunPlan, state: CampaignState) -> dict[st
         "hfx_min": "unavailable:surface_flux_statistics_not_implemented",
         "hfx_max": "unavailable:surface_flux_statistics_not_implemented",
         "hfx_mean": "unavailable:surface_flux_statistics_not_implemented",
-        "lhfx_present": "lhfx" in variables,
-        "lhfx_units": _field_units(result, "lhfx"),
+        "qfx_present": "qfx" in variables,
+        "qfx_units": _field_units(result, "qfx"),
+        "surface_moisture_flux_output_field": _surface_moisture_flux_field(variables),
+        "lhfx_present": _surface_moisture_flux_field(variables) is not None,
+        "lhfx_units": _field_units(result, _surface_moisture_flux_field(variables)),
         "lhfx_min": "unavailable:surface_flux_statistics_not_implemented",
         "lhfx_max": "unavailable:surface_flux_statistics_not_implemented",
         "lhfx_mean": "unavailable:surface_flux_statistics_not_implemented",
@@ -1912,8 +1934,12 @@ def _summary_for_plan_run(run: CampaignRunPlan, state: CampaignState) -> dict[st
             if science is not None
             else "unavailable:not_ingested"
         ),
-        "warnings": result.warnings if result is not None else [],
-        "caveats": _summary_caveats(run, state_run, result),
+        "warnings": _normalize_campaign_messages(
+            result.warnings if result is not None else [], variables
+        ),
+        "caveats": _normalize_campaign_messages(
+            _summary_caveats(run, state_run, result), variables
+        ),
         "gate_override": state_run.gate_override if state_run is not None else None,
         "error": state_run.error if state_run else None,
     }
@@ -1931,8 +1957,11 @@ def _diagnostic_support(result: ResultMetadata | None) -> dict[str, str]:
             "reflectivity": "unavailable:until_result_ingested",
         }
     diagnostics = result.diagnostics
+    variables = set(result.variables)
     return {
-        "surface_fluxes": "available" if {"hfx", "lhfx"} <= set(result.variables) else "missing",
+        "surface_fluxes": "available"
+        if "hfx" in variables and _surface_moisture_flux_field(variables) is not None
+        else "missing",
         "low_level_response": "unavailable:low_level_response_diagnostic_not_implemented",
         "cloud": "available" if diagnostics.cloud.available else "missing",
         "vertical_velocity": "available" if diagnostics.vertical_velocity.available else "missing",
@@ -1942,10 +1971,58 @@ def _diagnostic_support(result: ResultMetadata | None) -> dict[str, str]:
     }
 
 
-def _field_units(result: ResultMetadata | None, field_name: str) -> str | None:
-    if result is None:
+def _field_units(result: ResultMetadata | None, field_name: str | None) -> str | None:
+    if result is None or field_name is None:
         return None
     return next((field.units for field in result.fields_detected if field.name == field_name), None)
+
+
+def _surface_moisture_flux_field(fields: Iterable[str]) -> str | None:
+    available = set(fields)
+    if "qfx" in available:
+        return "qfx"
+    if "lhfx" in available:
+        return "lhfx"
+    return None
+
+
+def _normalize_campaign_output_fields(fields: Iterable[str]) -> list[str]:
+    return _dedupe(_normalize_campaign_output_field_name(field) for field in fields)
+
+
+def _normalize_campaign_output_field_name(field: str) -> str:
+    return "qfx" if field == "lhfx" else field
+
+
+def _normalize_campaign_missing_output_fields(
+    fields: Iterable[str], available_fields: set[str]
+) -> list[str]:
+    normalized: list[str] = []
+    for field in fields:
+        if field.startswith("unavailable:"):
+            normalized.append(field)
+            continue
+        report_field = _normalize_campaign_output_field_name(field)
+        if _field_available(report_field, available_fields):
+            continue
+        normalized.append(report_field)
+    return _dedupe(normalized)
+
+
+def _normalize_campaign_messages(messages: Iterable[str], available_fields: set[str]) -> list[str]:
+    normalized: list[str] = []
+    for message in messages:
+        if _stale_lhfx_missing_message(message, available_fields):
+            continue
+        normalized.append(message.replace("lhfx", "qfx"))
+    return _dedupe(normalized)
+
+
+def _stale_lhfx_missing_message(message: str, available_fields: set[str]) -> bool:
+    if not _field_available("qfx", available_fields):
+        return False
+    lower = message.lower()
+    return "lhfx" in lower and "missing" in lower and "required output" in lower
 
 
 def _first_defined(*values: Any) -> Any:
@@ -2027,7 +2104,7 @@ def _render_markdown_report(plan: CampaignPlan, summary: Mapping[str, Any]) -> s
         "",
         f"Campaign ID: `{plan.campaign_id}`",
         f"Protocol: `{plan.protocol or 'not specified'}`",
-        f"Matrix: `{summary['matrix_path']}`",
+        (f"Matrix file: `{Path(str(summary['matrix_path'])).name}` (runtime-local path omitted)"),
         f"Generated: `{summary['generated_at']}`",
         "",
         "## Objective",
@@ -2114,11 +2191,15 @@ def _render_markdown_report(plan: CampaignPlan, summary: Mapping[str, Any]) -> s
                 f"- Source: `{run['selection_source_type']}` `{run['selection_source_reference']}`",
                 f"- Candidate story: `{run['candidate_story'] or 'unavailable'}`",
                 f"- Required/missing fields: `{required_fields}` / `{missing_fields}`",
-                f"- Surface flux fields: hfx `{run['hfx_present']}`, lhfx `{run['lhfx_present']}`",
+                (
+                    f"- Surface flux fields: hfx `{run['hfx_present']}`, "
+                    f"moisture flux `{run['lhfx_present']}` "
+                    f"via `{run.get('surface_moisture_flux_output_field') or 'missing'}`"
+                ),
                 (
                     f"- Surface flux stats: hfx `{run['hfx_min']}`/"
                     f"`{run['hfx_max']}`/`{run['hfx_mean']}`, "
-                    f"lhfx `{run['lhfx_min']}`/`{run['lhfx_max']}`/"
+                    f"moisture `{run['lhfx_min']}`/`{run['lhfx_max']}`/"
                     f"`{run['lhfx_mean']}`"
                 ),
                 f"- Cloud/updraft: {cloud_updraft}",
@@ -2316,7 +2397,8 @@ def _comparison_unavailable_evidence(
         fields = set(_string_list(summary.get("available_output_fields")))
         for field in _string_list(definition.get("required_available_fields")):
             if not _field_available(field, fields):
-                unavailable.append(f"{role}:missing_required_field:{field}")
+                report_field = _normalize_campaign_output_field_name(field)
+                unavailable.append(f"{role}:missing_required_field:{report_field}")
         support = summary.get("diagnostic_support")
         diagnostic_support = support if isinstance(support, dict) else {}
         for diagnostic in _string_list(definition.get("required_diagnostic_support")):
@@ -2360,6 +2442,8 @@ def _comparison_field_value(summary: Mapping[str, Any], field: str) -> Any:
 
 
 def _field_available(field: str, available_fields: set[str]) -> bool:
+    if field in {"qfx", "lhfx"}:
+        return bool({"qfx", "lhfx"} & available_fields)
     if field == "th_or_temperature":
         return bool({"th", "theta", "theta_v", "temperature", "t"} & available_fields)
     return field in available_fields
@@ -2398,6 +2482,8 @@ def _unavailable_diagnostics(summaries: Sequence[Mapping[str, Any]]) -> list[str
     unavailable: set[str] = set()
     for summary in summaries:
         for field in summary.get("missing_output_fields", []):
+            if isinstance(field, str) and field.startswith("unavailable:"):
+                continue
             unavailable.add(f"missing_output_field:{field}")
         if _is_unavailable(summary.get("low_level_qv_response")):
             unavailable.add("low_level_qv_response")
@@ -2442,6 +2528,12 @@ def _recommended_follow_ups(summaries: Sequence[Mapping[str, Any]]) -> list[str]
 
 def _forcing_response_summary(summary: Mapping[str, Any]) -> str:
     state = summary.get("phase_gate_state")
+    if state == "forcing_path_verified_for_campaign":
+        return (
+            "Phase 1 has ingested comparable surface-forced runs with required surface-flux "
+            "outputs and low-level response diagnostics available. Later phases may be queued "
+            "without an operator override, subject to campaign cost/runtime judgment."
+        )
     if state == "forcing_wiring_verified_but_response_not_verified":
         return (
             "Surface-flux output fields are present in at least one ingested result, but "

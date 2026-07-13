@@ -7,6 +7,7 @@ Tests inject fake processes; CI never requires a real CM1 runtime.
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import subprocess
 from dataclasses import dataclass
@@ -35,6 +36,8 @@ class LocalRunManagerError(RuntimeError):
 
 
 class ProcessHandle(Protocol):
+    pid: int
+
     def poll(self) -> int | None: ...
 
     def wait(self, timeout: float | None = None) -> int: ...
@@ -90,7 +93,14 @@ def default_process_factory(
     stdout: TextIO,
     stderr: TextIO,
 ) -> ProcessHandle:
-    return subprocess.Popen(command, cwd=cwd, stdout=stdout, stderr=stderr, text=True)
+    return subprocess.Popen(
+        command,
+        cwd=cwd,
+        stdout=stdout,
+        stderr=stderr,
+        text=True,
+        start_new_session=True,
+    )
 
 
 class LocalRunManager:
@@ -181,6 +191,7 @@ class LocalRunManager:
             queued,
             state=LifecycleState.RUNNING,
             product_state=ProductState.QUEUED_RUNNING_CM1_PROCESS,
+            process_id=getattr(process, "pid", None),
         )
         write_run_manifest(manifest_path, running)
         self._active = _ActiveRun(manifest_path, process, stdout_handle, stderr_handle)
@@ -262,6 +273,7 @@ class LocalRunManager:
         command: list[str] | None = None,
         stdout_log: Path | None = None,
         stderr_log: Path | None = None,
+        process_id: int | None = None,
         exit_code: int | None = None,
         validation_status: ValidationStatus | None = None,
         outputs: OutputMetadata | None = None,
@@ -289,6 +301,9 @@ class LocalRunManager:
         execution = existing_execution.model_copy(
             update={
                 "command": command or existing_execution.command,
+                "process_id": (
+                    process_id if process_id is not None else existing_execution.process_id
+                ),
                 "started_at": started_at,
                 "finished_at": finished_at,
                 "exit_code": exit_code,
@@ -332,44 +347,133 @@ def reconcile_completed_run_manifest(
     manifest_path: Path,
     manifest: RunManifest | None = None,
 ) -> RunManifest:
-    """Promote stale running manifests when completed CM1 output is evident.
+    """Promote or fail stale running manifests after backend restarts.
 
-    This covers app/backend restarts where the process watcher is gone but CM1
-    finished normally and wrote output. It deliberately requires both stdout
-    termination evidence and output artifacts before changing run state.
+    This covers app/backend restarts where the in-memory process watcher is
+    gone. Normal stdout termination remains the only path to completed output.
+    If no process can be found and no normal completion evidence exists, fail
+    loudly so the serial queue does not remain blocked forever.
     """
     manifest = manifest or load_run_manifest(manifest_path)
     if manifest.lifecycle_state not in {LifecycleState.QUEUED, LifecycleState.RUNNING}:
         return manifest
-    stdout_log = _log_path(manifest.execution.stdout_log)
-    if not _stdout_indicates_normal_completion(stdout_log):
+    if manifest.lifecycle_state == LifecycleState.QUEUED:
         return manifest
+    stdout_log = _log_path(manifest.execution.stdout_log)
     run_dir = Path(manifest.generated_inputs.run_directory).expanduser()
     output_metadata = _detect_output_metadata(run_dir, manifest.execution.stderr_log)
-    if not (output_metadata.netcdf_paths or output_metadata.raw_cm1_artifacts):
-        return manifest
+    if _stdout_indicates_normal_completion(stdout_log):
+        if output_metadata.netcdf_paths or output_metadata.raw_cm1_artifacts:
+            return _write_reconciled_manifest(
+                manifest_path,
+                manifest,
+                state=LifecycleState.COMPLETED,
+                product_state=ProductState.COMPLETED_CM1_RESULT,
+                validation_status=manifest.validation_status,
+                exit_code=0,
+                outputs=output_metadata,
+            )
+        return _write_reconciled_manifest(
+            manifest_path,
+            manifest,
+            state=LifecycleState.COMPLETED,
+            product_state=ProductState.PROCESS_COMPLETED_NO_OUTPUT,
+            validation_status=ValidationStatus.NEEDS_REVIEW,
+            exit_code=0,
+            outputs=output_metadata,
+        )
 
+    stale_warning = _stale_running_process_warning(manifest)
+    if stale_warning is None:
+        return manifest
+    output_metadata = output_metadata.model_copy(
+        update={"runtime_warnings": [*output_metadata.runtime_warnings, stale_warning]}
+    )
+    return _write_reconciled_manifest(
+        manifest_path,
+        manifest,
+        state=LifecycleState.FAILED,
+        product_state=ProductState.FAILED_CANCELED_CM1_RUN,
+        validation_status=ValidationStatus.FAILED,
+        exit_code=manifest.execution.exit_code,
+        outputs=output_metadata,
+    )
+
+
+def _write_reconciled_manifest(
+    manifest_path: Path,
+    manifest: RunManifest,
+    *,
+    state: LifecycleState,
+    product_state: ProductState,
+    validation_status: ValidationStatus,
+    exit_code: int | None,
+    outputs: OutputMetadata,
+) -> RunManifest:
     now = datetime.now(UTC)
     execution = manifest.execution.model_copy(
         update={
             "finished_at": manifest.execution.finished_at or now,
-            "exit_code": 0
-            if manifest.execution.exit_code is None
-            else manifest.execution.exit_code,
+            "exit_code": exit_code,
         }
     )
     updated = manifest.model_copy(
         update={
-            "lifecycle_state": LifecycleState.COMPLETED,
-            "validation_status": manifest.validation_status,
+            "lifecycle_state": state,
+            "validation_status": validation_status,
             "execution": ExecutionMetadata.model_validate(execution.model_dump()),
-            "outputs": output_metadata,
-            "provenance": ProvenanceMetadata(product_state=ProductState.COMPLETED_CM1_RESULT),
+            "outputs": outputs,
+            "provenance": ProvenanceMetadata(product_state=product_state),
             "updated_at": now,
         }
     )
     write_run_manifest(manifest_path, updated)
     return updated
+
+
+def _stale_running_process_warning(manifest: RunManifest) -> str | None:
+    process_id = manifest.execution.process_id
+    if process_id is not None:
+        if _process_id_is_alive(process_id):
+            return None
+        return (
+            f"Tracked CM1 process {process_id} is no longer running and no normal "
+            "completion marker was found; marking the run failed so the serial "
+            "queue can continue."
+        )
+    if _command_process_may_be_running(manifest.execution.command):
+        return None
+    return (
+        "Running CM1 manifest has no tracked process id, no matching cm1 process "
+        "was found, and no normal completion marker was found; marking the run "
+        "failed so the serial queue can continue."
+    )
+
+
+def _process_id_is_alive(process_id: int) -> bool:
+    try:
+        os.kill(process_id, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    return True
+
+
+def _command_process_may_be_running(command: list[str]) -> bool:
+    if not command:
+        return False
+    executable = command[0]
+    try:
+        completed = subprocess.run(
+            ["ps", "-axo", "command="],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+    except (OSError, subprocess.CalledProcessError):
+        return False
+    return any(executable in line for line in completed.stdout.splitlines())
 
 
 def _log_path(configured_path: str | None) -> Path | None:
@@ -457,7 +561,7 @@ def _validate_rayleigh_damping(namelist_text: str) -> None:
     maxz = _domain_top_m(namelist_text)
     if zd is None or maxz is None:
         return
-    if maxz <= 6000 and zd <= maxz / 2:
+    if zd <= maxz / 2:
         raise LocalRunManagerError(
             "Rayleigh damping starts too low for the configured domain: "
             f"zd={zd:g}, maxz={maxz:g}. Damping must not cover more than half the domain."
