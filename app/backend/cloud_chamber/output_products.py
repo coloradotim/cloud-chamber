@@ -170,6 +170,7 @@ class ScienceSummary(BaseModel):
     default_explore_time_index: int | None = None
     default_explore_time_seconds: float | None = None
     cm1_outcome: str | None = None
+    field_quality_assessed: bool = False
     field_quality: dict[str, FieldQuality] = Field(default_factory=dict)
     diagnostic_availability: list[ScienceDiagnosticAvailability] = Field(default_factory=list)
     interesting_time_caveats: list[str] = Field(default_factory=list)
@@ -454,7 +455,7 @@ def build_interesting_time_product(
         output_manifest=output_manifest,
         variables=set(variables),
     )
-    if diagnostics is not None:
+    if diagnostics is not None and diagnostics.field_quality_assessed:
         records = _records_with_field_quality(records, diagnostics.field_quality)
     defaults = _field_defaults(records)
     summary = _science_summary(
@@ -1026,7 +1027,8 @@ def _science_summary(
         default_explore_time_index=default_source.time_index if default_source else None,
         default_explore_time_seconds=default_source.time_seconds if default_source else None,
         cm1_outcome=None,
-        field_quality=diagnostics.field_quality,
+        field_quality_assessed=diagnostics.field_quality_assessed,
+        field_quality=diagnostics.field_quality if diagnostics.field_quality_assessed else {},
         diagnostic_availability=_diagnostic_availability(variables, diagnostics),
         interesting_time_support_state=support_state,
     )
@@ -1246,7 +1248,7 @@ def _availability_field_quality(
     diagnostics: ResultDiagnostics | None,
     field: str,
 ) -> FieldQuality | None:
-    if diagnostics is None:
+    if diagnostics is None or not diagnostics.field_quality_assessed:
         return None
     return diagnostics.field_quality.get(field)
 

@@ -599,6 +599,9 @@ def test_output_product_catalog_advertises_bounded_products_and_unavailable_diag
     assert unavailable["unavailable:dbz"].reason == (
         "expected_known_field_missing_from_result_metadata"
     )
+    assert unavailable["unavailable:dbz"].field_quality is not None
+    assert unavailable["unavailable:dbz"].field_quality.assessed is True
+    assert unavailable["unavailable:dbz"].field_quality.quality_state == "unavailable"
     assert unavailable["near_surface_wind_time_series:u"].reason == (
         "near_surface_wind_diagnostic_not_implemented"
     )
@@ -634,6 +637,9 @@ def test_vertical_profile_domain_mean_preserves_units_coordinates_and_time_index
     assert profile.finite_counts == [12, 12]
     assert profile.non_finite_counts == [0, 0]
     assert profile.aggregation_method == "domain_mean"
+    assert profile.field_quality is not None
+    assert profile.field_quality.assessed is False
+    assert profile.field_quality.reason == "field_quality_not_tracked_for_field"
     assert "native_grid_profile_no_interpolation" in profile.caveats
 
 
@@ -728,6 +734,12 @@ def test_time_height_products_compute_cloud_fraction_and_w_extrema(
     assert cloud_fraction.values[1] == pytest.approx([1.0, 1.0])
     assert cloud_fraction.finite_counts == [[11, 12], [12, 11]]
     assert cloud_fraction.non_finite_counts == [[1, 0], [0, 1]]
+    assert cloud_fraction.field_quality is not None
+    assert cloud_fraction.field_quality.assessed is True
+    assert cloud_fraction.field_quality.quality_state == "caveated"
+    assert cloud_fraction.field_quality.finite_count == 46
+    assert cloud_fraction.field_quality.non_finite_count == 2
+    assert "non_finite_values_detected_in_qc" in cloud_fraction.field_quality.quality_caveats
     assert "cloud_fraction_threshold_kg_kg:1e-06" in cloud_fraction.caveats
 
     assert max_w.field.canonical_field_name == "vertical_velocity"
@@ -827,10 +839,20 @@ def test_time_series_products_cover_surface_rain_reflectivity_and_fluxes(
     assert surface_rain.units == "mm"
     assert surface_rain.values == pytest.approx([2.75, 5.75])
     assert surface_rain.finite_counts == [12, 12]
+    assert surface_rain.field_quality is not None
+    assert surface_rain.field_quality.assessed is True
+    assert surface_rain.field_quality.source_field == "rain"
+    assert surface_rain.field_quality.quality_state == "trusted"
     assert reflectivity.field.canonical_field_name == "reflectivity"
     assert reflectivity.values == pytest.approx([13.0, 37.0])
+    assert reflectivity.field_quality is not None
+    assert reflectivity.field_quality.assessed is True
+    assert reflectivity.field_quality.quality_state == "trusted"
     assert surface_flux.field.canonical_field_name == "surface_sensible_heat_flux"
     assert surface_flux.values == pytest.approx([5.5, 17.5])
+    assert surface_flux.field_quality is not None
+    assert surface_flux.field_quality.assessed is False
+    assert surface_flux.field_quality.reason == "field_quality_not_tracked_for_field"
     assert "native_grid_time_series_no_interpolation" in surface_flux.caveats
 
 
@@ -1478,11 +1500,17 @@ def test_output_product_api_returns_profile_time_height_and_time_series(
     )
     assert profile.status_code == 200
     assert profile.json()["values"] == pytest.approx([0.010055, 0.010175])
+    assert profile.json()["field_quality"]["assessed"] is False
+    assert profile.json()["field_quality"]["reason"] == "field_quality_not_tracked_for_field"
     assert time_height.status_code == 200
     assert time_height.json()["shape"] == [2, 3]
     assert time_height.json()["values"][0] == pytest.approx([11.0, 23.0, 35.0])
     assert time_height.json()["values"][1] == pytest.approx([47.0, 59.0, 71.0])
+    assert time_height.json()["field_quality"]["assessed"] is True
+    assert time_height.json()["field_quality"]["quality_state"] == "trusted"
     assert time_series.status_code == 200
     assert time_series.json()["values"] == pytest.approx([2.75, 5.75])
+    assert time_series.json()["field_quality"]["assessed"] is True
+    assert time_series.json()["field_quality"]["quality_state"] == "trusted"
     assert bad_profile.status_code == 400
     assert "not profile-capable" in bad_profile.json()["detail"]

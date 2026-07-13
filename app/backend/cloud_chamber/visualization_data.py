@@ -24,7 +24,11 @@ from cloud_chamber.output_products import (
     output_product_manifest_from_json,
     resolve_time_index,
 )
-from cloud_chamber.result_diagnostics import QC_CLOUD_THRESHOLD_KG_KG
+from cloud_chamber.result_diagnostics import (
+    QC_CLOUD_THRESHOLD_KG_KG,
+    FieldQuality,
+    FieldQualityState,
+)
 from cloud_chamber.result_ingest import (
     DEEP_CONVECTION_STORY_IDS,
     ResultMetadata,
@@ -39,6 +43,14 @@ OutputProductStatus = Literal["available", "unavailable"]
 ProfileAggregationMethod = Literal["domain_mean", "domain_min", "domain_max", "selected_column"]
 TimeHeightAggregationMethod = Literal["cloud_fraction", "domain_mean", "domain_min", "domain_max"]
 TimeSeriesAggregationMethod = Literal["cloud_fraction", "domain_mean", "domain_min", "domain_max"]
+
+FIELD_QUALITY_KEY_BY_RAW_FIELD = {
+    "qc": "qc",
+    "w": "w",
+    "qr": "qr",
+    "rain": "surface_rain",
+    "dbz": "dbz",
+}
 
 
 @dataclass(frozen=True)
@@ -431,6 +443,20 @@ class FieldCatalogResponse(BaseModel):
     caveats: list[str] = Field(default_factory=list)
 
 
+class OutputProductFieldQuality(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    field: str | None = None
+    source_field: str | None = None
+    assessed: bool = False
+    quality_state: FieldQualityState | None = None
+    reason: str | None = None
+    finite_count: int | None = None
+    non_finite_count: int | None = None
+    total_count: int | None = None
+    quality_caveats: list[str] = Field(default_factory=list)
+
+
 class OutputProductDescriptor(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -444,6 +470,7 @@ class OutputProductDescriptor(BaseModel):
     aggregation_methods: list[str] = Field(default_factory=list)
     required_fields: list[str] = Field(default_factory=list)
     reason: str | None = None
+    field_quality: OutputProductFieldQuality | None = None
     caveats: list[str] = Field(default_factory=list)
 
 
@@ -504,6 +531,7 @@ class VerticalProfileResponse(BaseModel):
     finite_counts: list[int]
     non_finite_counts: list[int]
     aggregation_method: ProfileAggregationMethod
+    field_quality: OutputProductFieldQuality | None = None
     provenance: ProvenancePayload
     caveats: list[str] = Field(default_factory=list)
 
@@ -534,6 +562,7 @@ class TimeHeightResponse(BaseModel):
     finite_counts: list[list[int]]
     non_finite_counts: list[list[int]]
     aggregation_method: TimeHeightAggregationMethod
+    field_quality: OutputProductFieldQuality | None = None
     provenance: ProvenancePayload
     caveats: list[str] = Field(default_factory=list)
 
@@ -560,6 +589,7 @@ class TimeSeriesResponse(BaseModel):
     finite_counts: list[int]
     non_finite_counts: list[int]
     aggregation_method: TimeSeriesAggregationMethod
+    field_quality: OutputProductFieldQuality | None = None
     provenance: ProvenancePayload
     caveats: list[str] = Field(default_factory=list)
 
@@ -602,6 +632,7 @@ class SliceResponse(BaseModel):
     data_encoding: VisualizationEncoding
     values: list[list[float | None]]
     stats: SliceStats
+    field_quality: OutputProductFieldQuality | None = None
     provenance: ProvenancePayload
     caveats: list[str] = Field(default_factory=list)
 
@@ -656,6 +687,7 @@ class PointCloudResponse(BaseModel):
     point_order: list[str]
     points: list[list[float]]
     stats: PointCloudStats
+    field_quality: OutputProductFieldQuality | None = None
     provenance: ProvenancePayload
     caveats: list[str] = Field(default_factory=list)
 
@@ -1063,11 +1095,11 @@ def output_product_catalog(
     time_series_products: list[OutputProductDescriptor] = []
     for field in catalog.available_fields:
         if field.capabilities.profile_candidate:
-            profile_products.append(_profile_product_descriptor(field))
+            profile_products.append(_profile_product_descriptor(metadata, field))
         if field.capabilities.time_height_candidate:
-            time_height_products.append(_time_height_product_descriptor(field))
+            time_height_products.append(_time_height_product_descriptor(metadata, field))
         if _time_series_methods_for_field(field):
-            time_series_products.append(_time_series_product_descriptor(field))
+            time_series_products.append(_time_series_product_descriptor(metadata, field))
 
     unavailable = [
         OutputProductDescriptor(
@@ -1078,15 +1110,18 @@ def output_product_catalog(
             aggregation_methods=[],
             required_fields=["theta", "qv", "surface_fluxes"],
             reason="future_diagnostic_method_not_validated",
+            field_quality=_output_field_quality(metadata, "boundary_layer_depth"),
             caveats=[
                 "boundary_layer_depth_proxy_not_implemented",
                 "method_must_be_documented_and_tested_before_science_use",
             ],
         )
     ]
-    unavailable.extend(_near_surface_wind_unavailable_descriptors(catalog.available_fields))
     unavailable.extend(
-        _unavailable_product_descriptor(field) for field in catalog.unavailable_fields
+        _near_surface_wind_unavailable_descriptors(metadata, catalog.available_fields)
+    )
+    unavailable.extend(
+        _unavailable_product_descriptor(metadata, field) for field in catalog.unavailable_fields
     )
     return OutputProductCatalogResponse(
         result_id=metadata.result_id,
@@ -1153,9 +1188,11 @@ def vertical_profile(
             y_index=y_index,
         )
         resolved_time = _resolved_output_time(metadata, dataset, dims.time, time_index)
+        field_quality = _output_field_quality(metadata, field)
         caveats = _dedupe(
             [
                 *_field_caveats(field, visual_field.coordinate_names),
+                *_output_field_quality_caveats(field_quality),
                 "json_profile_product_mvp",
                 "native_grid_profile_no_interpolation",
                 *resolved_time.time_caveats,
@@ -1194,6 +1231,7 @@ def vertical_profile(
             finite_counts=finite_counts,
             non_finite_counts=non_finite_counts,
             aggregation_method=aggregation_method,
+            field_quality=field_quality,
             provenance=_provenance(
                 metadata,
                 processing_method="backend_xarray_vertical_profile_product",
@@ -1255,9 +1293,11 @@ def time_height_product(
             dims.time,
             time_size=int(data_array.sizes[dims.time]),
         )
+        field_quality = _output_field_quality(metadata, field)
         caveats = _dedupe(
             [
                 *_field_caveats(field, visual_field.coordinate_names),
+                *_output_field_quality_caveats(field_quality),
                 "json_time_height_product_mvp",
                 "native_grid_time_height_no_interpolation",
                 *time_axis.time_caveats,
@@ -1288,6 +1328,7 @@ def time_height_product(
             finite_counts=finite_counts,
             non_finite_counts=non_finite_counts,
             aggregation_method=aggregation_method,
+            field_quality=field_quality,
             provenance=_provenance(
                 metadata,
                 processing_method="backend_xarray_time_height_product",
@@ -1347,9 +1388,11 @@ def time_series_product(
             dims.time,
             time_size=int(data_array.sizes[dims.time]),
         )
+        field_quality = _output_field_quality(metadata, field)
         caveats = _dedupe(
             [
                 *_field_caveats(field, visual_field.coordinate_names),
+                *_output_field_quality_caveats(field_quality),
                 "json_time_series_product_mvp",
                 "native_grid_time_series_no_interpolation",
                 *time_axis.time_caveats,
@@ -1376,6 +1419,7 @@ def time_series_product(
             finite_counts=finite_counts,
             non_finite_counts=non_finite_counts,
             aggregation_method=aggregation_method,
+            field_quality=field_quality,
             provenance=_provenance(
                 metadata,
                 processing_method="backend_xarray_time_series_product",
@@ -1520,9 +1564,11 @@ def point_cloud(
         active_z_values = [point[2] for point in source_points]
         max_location = _max_point_location(source_points)
         visual_field = _visualizable_field(metadata, dataset, field)
+        field_quality = _output_field_quality(metadata, field)
         caveats = _dedupe(
             [
                 *_field_caveats(field, visual_field.coordinate_names),
+                *_output_field_quality_caveats(field_quality),
                 "native_grid_thresholded_point_cloud",
                 f"visualizer_interpretation_of_cm1_{field}",
                 *(["surface_field_rendered_on_domain_floor"] if is_surface_field else []),
@@ -1572,6 +1618,7 @@ def point_cloud(
                 downsampled=source_count > max_points,
                 downsample_stride=stride,
             ),
+            field_quality=field_quality,
             provenance=_provenance(
                 metadata,
                 processing_method="backend_xarray_native_grid_threshold",
@@ -1774,9 +1821,11 @@ def field_slice(
             surface_extent = _surface_vertical_extent(dataset)
             selected_value = surface_extent.min if surface_extent else 0.0
             level_units = surface_extent.units if surface_extent else None
+            field_quality = _output_field_quality(metadata, field)
             caveats = _dedupe(
                 [
                     *_field_caveats(field, visual_field.coordinate_names),
+                    *_output_field_quality_caveats(field_quality),
                     "surface_field_no_vertical_dimension",
                     "surface_field_rendered_on_domain_floor",
                     "native_grid_view_no_interpolation",
@@ -1808,6 +1857,7 @@ def field_slice(
                 data_encoding=encoding,
                 values=values,
                 stats=stats,
+                field_quality=field_quality,
                 provenance=_provenance(metadata),
                 caveats=caveats,
             )
@@ -1829,9 +1879,11 @@ def field_slice(
         vertical_dim = dims.vertical
         vertical_units = _coordinate_units(dataset, vertical_dim)
         level_units = _coordinate_units(dataset, selected_dimension)
+        field_quality = _output_field_quality(metadata, field)
         caveats = _dedupe(
             [
                 *_field_caveats(field, visual_field.coordinate_names),
+                *_output_field_quality_caveats(field_quality),
                 "native_grid_view_no_interpolation",
                 "json_numeric_slice_mvp",
             ]
@@ -1869,6 +1921,7 @@ def field_slice(
             data_encoding=encoding,
             values=values,
             stats=stats,
+            field_quality=field_quality,
             provenance=_provenance(metadata),
             caveats=caveats,
         )
@@ -2225,10 +2278,71 @@ def _field_capabilities(
     )
 
 
-def _profile_product_descriptor(field: VisualizableField) -> OutputProductDescriptor:
+def _output_field_quality(
+    metadata: ResultMetadata,
+    raw_field_name: str,
+) -> OutputProductFieldQuality:
+    diagnostics = metadata.diagnostics
+    quality_key = FIELD_QUALITY_KEY_BY_RAW_FIELD.get(raw_field_name)
+    if diagnostics is None or not diagnostics.field_quality_assessed:
+        return OutputProductFieldQuality(
+            field=quality_key,
+            source_field=raw_field_name,
+            assessed=False,
+            reason="field_quality_not_assessed",
+            quality_caveats=["field_quality_not_assessed"],
+        )
+    if quality_key is None:
+        return OutputProductFieldQuality(
+            source_field=raw_field_name,
+            assessed=False,
+            reason="field_quality_not_tracked_for_field",
+            quality_caveats=["field_quality_not_tracked_for_field"],
+        )
+    quality = diagnostics.field_quality.get(quality_key)
+    if quality is None:
+        return OutputProductFieldQuality(
+            field=quality_key,
+            source_field=raw_field_name,
+            assessed=False,
+            reason="field_quality_missing_for_tracked_field",
+            quality_caveats=["field_quality_missing_for_tracked_field"],
+        )
+    return _output_field_quality_from_diagnostic(quality)
+
+
+def _output_field_quality_from_diagnostic(quality: FieldQuality) -> OutputProductFieldQuality:
+    return OutputProductFieldQuality(
+        field=quality.field,
+        source_field=quality.source_field,
+        assessed=True,
+        quality_state=quality.quality_state,
+        reason=quality.reason,
+        finite_count=quality.finite_count,
+        non_finite_count=quality.non_finite_count,
+        total_count=quality.total_count,
+        quality_caveats=quality.caveats,
+    )
+
+
+def _output_field_quality_caveats(
+    field_quality: OutputProductFieldQuality | None,
+) -> list[str]:
+    if field_quality is None:
+        return []
+    if not field_quality.assessed:
+        return field_quality.quality_caveats
+    return field_quality.quality_caveats if field_quality.quality_state != "trusted" else []
+
+
+def _profile_product_descriptor(
+    metadata: ResultMetadata,
+    field: VisualizableField,
+) -> OutputProductDescriptor:
     methods: list[str] = ["domain_mean", "domain_min", "domain_max"]
     if field.capabilities.selected_column:
         methods.append("selected_column")
+    field_quality = _output_field_quality(metadata, field.raw_field_name)
     return OutputProductDescriptor(
         product_key=f"profile:{field.raw_field_name}",
         product_kind="vertical_profile",
@@ -2239,14 +2353,21 @@ def _profile_product_descriptor(field: VisualizableField) -> OutputProductDescri
         units=field.units,
         aggregation_methods=methods,
         required_fields=[field.raw_field_name],
-        caveats=_dedupe(["bounded_json_profile", *field.caveats]),
+        field_quality=field_quality,
+        caveats=_dedupe(
+            ["bounded_json_profile", *field.caveats, *_output_field_quality_caveats(field_quality)]
+        ),
     )
 
 
-def _time_height_product_descriptor(field: VisualizableField) -> OutputProductDescriptor:
+def _time_height_product_descriptor(
+    metadata: ResultMetadata,
+    field: VisualizableField,
+) -> OutputProductDescriptor:
     methods: list[str] = ["domain_mean", "domain_min", "domain_max"]
     if field.canonical_field_name == "cloud_water":
         methods.insert(0, "cloud_fraction")
+    field_quality = _output_field_quality(metadata, field.raw_field_name)
     return OutputProductDescriptor(
         product_key=f"time_height:{field.raw_field_name}",
         product_kind="time_height",
@@ -2257,12 +2378,23 @@ def _time_height_product_descriptor(field: VisualizableField) -> OutputProductDe
         units=field.units,
         aggregation_methods=methods,
         required_fields=[field.raw_field_name],
-        caveats=_dedupe(["bounded_json_time_height", *field.caveats]),
+        field_quality=field_quality,
+        caveats=_dedupe(
+            [
+                "bounded_json_time_height",
+                *field.caveats,
+                *_output_field_quality_caveats(field_quality),
+            ]
+        ),
     )
 
 
-def _time_series_product_descriptor(field: VisualizableField) -> OutputProductDescriptor:
+def _time_series_product_descriptor(
+    metadata: ResultMetadata,
+    field: VisualizableField,
+) -> OutputProductDescriptor:
     methods = _time_series_methods_for_field(field)
+    field_quality = _output_field_quality(metadata, field.raw_field_name)
     return OutputProductDescriptor(
         product_key=f"time_series:{field.raw_field_name}",
         product_kind="time_series",
@@ -2273,11 +2405,22 @@ def _time_series_product_descriptor(field: VisualizableField) -> OutputProductDe
         units=field.units,
         aggregation_methods=list(methods),
         required_fields=[field.raw_field_name],
-        caveats=_dedupe(["bounded_json_time_series", *field.caveats]),
+        field_quality=field_quality,
+        caveats=_dedupe(
+            [
+                "bounded_json_time_series",
+                *field.caveats,
+                *_output_field_quality_caveats(field_quality),
+            ]
+        ),
     )
 
 
-def _unavailable_product_descriptor(field: UnavailableField) -> OutputProductDescriptor:
+def _unavailable_product_descriptor(
+    metadata: ResultMetadata,
+    field: UnavailableField,
+) -> OutputProductDescriptor:
+    field_quality = _output_field_quality(metadata, field.raw_field_name)
     return OutputProductDescriptor(
         product_key=f"unavailable:{field.raw_field_name}",
         product_kind="future_diagnostic",
@@ -2287,17 +2430,20 @@ def _unavailable_product_descriptor(field: UnavailableField) -> OutputProductDes
         display_name=field.display_name,
         required_fields=[field.raw_field_name],
         reason=field.reason,
-        caveats=field.caveats,
+        field_quality=field_quality,
+        caveats=_dedupe([*field.caveats, *_output_field_quality_caveats(field_quality)]),
     )
 
 
 def _near_surface_wind_unavailable_descriptors(
+    metadata: ResultMetadata,
     fields: list[VisualizableField],
 ) -> list[OutputProductDescriptor]:
     descriptors: list[OutputProductDescriptor] = []
     for field in fields:
         if field.canonical_field_name not in {"east_west_wind", "north_south_wind"}:
             continue
+        field_quality = _output_field_quality(metadata, field.raw_field_name)
         descriptors.append(
             OutputProductDescriptor(
                 product_key=f"near_surface_wind_time_series:{field.raw_field_name}",
@@ -2308,12 +2454,16 @@ def _near_surface_wind_unavailable_descriptors(
                 display_name=f"Near-surface {field.display_name.lower()} time series",
                 required_fields=[field.raw_field_name],
                 reason="near_surface_wind_diagnostic_not_implemented",
-                caveats=[
-                    "lowest_level_wind_selection_method_not_finalized",
-                    "native_staggered_wind_component",
-                    "no_vector_interpolation",
-                    "wind_component_not_wind_gust_outflow_or_rotation_diagnostic",
-                ],
+                field_quality=field_quality,
+                caveats=_dedupe(
+                    [
+                        "lowest_level_wind_selection_method_not_finalized",
+                        "native_staggered_wind_component",
+                        "no_vector_interpolation",
+                        "wind_component_not_wind_gust_outflow_or_rotation_diagnostic",
+                        *_output_field_quality_caveats(field_quality),
+                    ]
+                ),
             )
         )
     return descriptors

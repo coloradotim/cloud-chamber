@@ -156,10 +156,12 @@ def test_result_card_created_from_ingested_metadata(tmp_path: Path) -> None:
     assert card.surface_rain_units == "mm"
     assert card.reflectivity_available is False
     assert card.max_dbz is None
+    assert card.field_quality_assessed is True
     assert card.field_quality["qc"].quality_state == "trusted"
     assert card.field_quality["qr"].quality_state == "trusted"
     assert card.field_quality["dbz"].quality_state == "unavailable"
     assert card.science_summary is not None
+    assert card.science_summary.field_quality_assessed is True
     assert card.science_summary.first_cloud_time_seconds == 1800.0
     assert card.science_summary.max_qc_kg_kg == 2e-6
     assert card.science_summary.max_updraft_w_m_s == 4.0
@@ -410,6 +412,7 @@ def test_result_card_handles_missing_diagnostics_gracefully(tmp_path: Path) -> N
     assert card.field_quality["surface_rain"].quality_state == "unavailable"
     assert card.field_quality["dbz"].quality_state == "unavailable"
     assert card.science_summary is not None
+    assert card.science_summary.field_quality_assessed is True
     assert card.science_summary.interesting_time_support_state == "fallback"
     assert card.default_time_by_field["qc"].support_state == "fallback"
     assert any(

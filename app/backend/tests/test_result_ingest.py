@@ -229,6 +229,7 @@ def test_ingests_valid_tiny_netcdf_metadata(tmp_path: Path) -> None:
     assert result.diagnostics is not None
     assert result.diagnostics.cloud.formed is False
     assert result.diagnostics.rain.field_absent is True
+    assert result.diagnostics.field_quality_assessed is True
     assert result.diagnostics.field_quality["qc"].quality_state == "trusted"
     assert result.diagnostics.field_quality["w"].quality_state == "trusted"
     assert result.diagnostics.field_quality["qr"].quality_state == "unavailable"

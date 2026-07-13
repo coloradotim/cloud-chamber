@@ -835,6 +835,7 @@ type ScienceSummary = {
   default_explore_time_index?: number | null;
   default_explore_time_seconds?: number | null;
   cm1_outcome?: string | null;
+  field_quality_assessed?: boolean;
   field_quality?: Record<string, FieldQuality>;
   diagnostic_availability?: ScienceDiagnosticAvailability[];
   interesting_time_caveats: string[];
@@ -919,6 +920,7 @@ type ResultCard = {
   surface_rain_units?: string | null;
   max_dbz?: number | null;
   reflectivity_available?: boolean | null;
+  field_quality_assessed?: boolean;
   field_quality?: Record<string, FieldQuality>;
   interesting_times?: InterestingTimeRecord[];
   default_time_by_field?: Record<string, FieldDefaultTime>;
@@ -13131,21 +13133,46 @@ const FIELD_QUALITY_LABELS: Record<string, string> = {
 const FIELD_QUALITY_ORDER = ["qc", "w", "qr", "surface_rain", "dbz"];
 
 function resultFieldQuality(result: ResultCard, field: string): FieldQuality | null {
-  return result.field_quality?.[field] ?? result.science_summary?.field_quality?.[field] ?? null;
+  if (result.field_quality_assessed !== undefined) {
+    return result.field_quality?.[field] ?? null;
+  }
+  return result.science_summary?.field_quality?.[field] ?? null;
+}
+
+function resultFieldQualityAssessed(result: ResultCard): boolean {
+  if (result.field_quality_assessed !== undefined) return result.field_quality_assessed;
+  return result.science_summary?.field_quality_assessed ?? false;
 }
 
 function fieldQualityBlocksEvidence(result: ResultCard, field: string): boolean {
+  if (!resultFieldQualityAssessed(result)) return false;
   const quality = resultFieldQuality(result, field);
+  if (!quality) return true;
   return quality?.quality_state === "untrusted" || quality?.quality_state === "unavailable";
 }
 
-function nonTrustedFieldQuality(result: ResultCard): FieldQuality[] {
-  const byField = new Map<string, FieldQuality>();
+type FieldQualityDisplayRow = {
+  key: string;
+  description: string;
+};
+
+function nonTrustedFieldQuality(result: ResultCard): FieldQualityDisplayRow[] {
+  const rows = new Map<string, FieldQualityDisplayRow>();
   for (const field of FIELD_QUALITY_ORDER) {
     const quality = resultFieldQuality(result, field);
-    if (quality && quality.quality_state !== "trusted") byField.set(field, quality);
+    if (!quality) {
+      rows.set(field, {
+        key: field,
+        description: `${FIELD_QUALITY_LABELS[field] ?? humanize(field)} was not assessed.`,
+      });
+    } else if (quality.quality_state !== "trusted") {
+      rows.set(field, {
+        key: field,
+        description: fieldQualityDescription(quality),
+      });
+    }
   }
-  return [...byField.values()];
+  return [...rows.values()];
 }
 
 function fieldQualityCounts(quality: FieldQuality): string {
@@ -13162,18 +13189,21 @@ function fieldQualityDescription(quality: FieldQuality): string {
 }
 
 function FieldQualitySummary({ result }: { result: ResultCard }) {
+  const assessed = resultFieldQualityAssessed(result);
   const rows = nonTrustedFieldQuality(result);
   return (
     <section aria-labelledby="field-quality-title">
       <h4 id="field-quality-title">Field quality</h4>
-      {rows.length > 0 ? (
+      {!assessed ? (
+        <p>Field quality not assessed for this result.</p>
+      ) : rows.length > 0 ? (
         <ul className="compact-list">
-          {rows.map((quality) => (
-            <li key={quality.field}>{fieldQualityDescription(quality)}</li>
+          {rows.map((row) => (
+            <li key={row.key}>{row.description}</li>
           ))}
         </ul>
       ) : (
-        <p>No non-finite field-quality caveats recorded.</p>
+        <p>All tracked field-quality checks are trusted.</p>
       )}
     </section>
   );

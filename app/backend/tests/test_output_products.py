@@ -485,6 +485,7 @@ def test_interesting_times_expose_untrusted_field_quality(tmp_path: Path) -> Non
         vertical_velocity=VerticalVelocityDiagnostics(max_w_m_s=1.0, units="m/s"),
         rain=RainDiagnostics(available=False, field_absent=True),
         time=TimeDiagnostics(source="netcdf_time_coordinate", fallback_used=False),
+        field_quality_assessed=True,
         field_quality={
             "qc": FieldQuality(
                 field="qc",
@@ -514,4 +515,5 @@ def test_interesting_times_expose_untrusted_field_quality(tmp_path: Path) -> Non
     assert records["first_cloud"].field_quality is not None
     assert records["first_cloud"].field_quality.quality_state == "untrusted"
     assert "interesting_time_source_field_untrusted" in records["first_cloud"].caveats
+    assert product.science_summary.field_quality_assessed is True
     assert product.science_summary.field_quality["qc"].quality_state == "untrusted"

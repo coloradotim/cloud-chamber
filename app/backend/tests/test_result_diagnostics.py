@@ -245,6 +245,7 @@ def test_qc_max_time_and_cloud_fraction_series(tmp_path: Path) -> None:
 
     diagnostics = compute_baseline_diagnostics(dataset, [])
 
+    assert diagnostics.field_quality_assessed is True
     assert diagnostics.cloud.max_qc_kg_kg == 1.3e-5
     assert diagnostics.cloud.time_of_max_qc_seconds == 300.0
     assert [point.time_seconds for point in diagnostics.cloud.qc_max_time_series] == [0.0, 300.0]
@@ -357,6 +358,7 @@ def test_missing_qc_and_missing_w_are_graceful(tmp_path: Path) -> None:
 
     diagnostics = compute_baseline_diagnostics(dataset, [])
 
+    assert diagnostics.field_quality_assessed is True
     assert diagnostics.cloud.available is False
     assert diagnostics.vertical_velocity.available is False
     assert "missing_qc_field" in diagnostics.caveats
@@ -435,6 +437,7 @@ def test_field_quality_marks_all_non_finite_core_result_fields_untrusted(
 
     diagnostics = compute_baseline_diagnostics(dataset, [])
 
+    assert diagnostics.field_quality_assessed is True
     expected_totals = {
         "qc": 48,
         "w": 48,

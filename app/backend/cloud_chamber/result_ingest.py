@@ -555,6 +555,9 @@ def _merge_diagnostics(
         [diagnostics.reflectivity for diagnostics in diagnostics_parts]
     )
     field_quality = _merge_field_quality_maps(diagnostics_parts)
+    field_quality_assessed = any(
+        diagnostics.field_quality_assessed for diagnostics in diagnostics_parts
+    )
     caveats = _dedupe_strings(
         [
             *inherited_caveats,
@@ -568,6 +571,7 @@ def _merge_diagnostics(
         surface_rain=surface_rain,
         reflectivity=reflectivity,
         time=time,
+        field_quality_assessed=field_quality_assessed,
         field_quality=field_quality,
         caveats=caveats,
     )
@@ -1182,6 +1186,8 @@ def _candidate_outcome_evidence(science_summary: ScienceSummary) -> list[str]:
 
 
 def _field_quality_comparison_caveats(diagnostics: ResultDiagnostics) -> list[str]:
+    if not diagnostics.field_quality_assessed:
+        return ["field_quality_not_assessed"]
     caveats: list[str] = []
     for field in FIELD_QUALITY_ORDER:
         quality = diagnostics.field_quality.get(field)

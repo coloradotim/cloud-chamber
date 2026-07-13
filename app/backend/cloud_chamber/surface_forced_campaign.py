@@ -1796,7 +1796,14 @@ def _summary_for_plan_run(run: CampaignRunPlan, state: CampaignState) -> dict[st
     )
     caveats = _normalize_campaign_messages(_summary_caveats(run, state_run, result), variables)
     field_quality = diagnostics.field_quality if diagnostics is not None else None
-    diagnostic_trust = _diagnostic_trust(caveats, field_quality)
+    field_quality_assessed = (
+        diagnostics.field_quality_assessed if diagnostics is not None else False
+    )
+    diagnostic_trust = _diagnostic_trust(
+        caveats,
+        field_quality,
+        field_quality_assessed=field_quality_assessed,
+    )
     diagnostic_quality_warnings = _diagnostic_quality_warnings(caveats, field_quality)
     candidate = manifest.candidate_screening if manifest is not None else run.candidate_screening
     cloud = diagnostics.cloud if diagnostics is not None else None
@@ -2124,16 +2131,18 @@ FIELD_TRUST_CAVEATS = {
 def _diagnostic_trust(
     caveats: Iterable[str],
     field_quality: Mapping[str, FieldQuality] | None = None,
+    *,
+    field_quality_assessed: bool = False,
 ) -> dict[str, str]:
     caveat_set = set(caveats)
     if "result_not_ingested" in caveat_set:
         return {field: "unavailable_until_result_ingested" for field in FIELD_TRUST_CAVEATS}
-    if field_quality:
+    if field_quality_assessed:
         quality_trust: dict[str, str] = {}
         for field, codes in FIELD_TRUST_CAVEATS.items():
-            quality = field_quality.get(field)
+            quality = (field_quality or {}).get(field)
             if quality is None:
-                quality_trust[field] = "trusted"
+                quality_trust[field] = "not_assessed"
             elif quality.quality_state == "untrusted":
                 quality_trust[field] = "untrusted_entirely_non_finite"
             elif quality.quality_state == "unavailable":
@@ -2154,7 +2163,7 @@ def _diagnostic_trust(
         elif codes["partial"] in caveat_set:
             trust[field] = "caveated_non_finite_values_detected"
         else:
-            trust[field] = "trusted"
+            trust[field] = "not_assessed"
     return trust
 
 
@@ -2194,6 +2203,8 @@ def _field_trust_label(status: str | None) -> str:
         return "unavailable"
     if status == "unavailable_until_result_ingested":
         return "unavailable"
+    if status == "not_assessed":
+        return "not assessed"
     return "trusted"
 
 
@@ -2203,7 +2214,7 @@ def _trusted_metric_label(label: str, value: Any, trust_status: str | None) -> s
         return f"{label} unavailable (untrusted)"
     if trust_label == "unavailable":
         return f"{label} unavailable"
-    suffix = f" ({trust_label})" if trust_label == "caveated" else ""
+    suffix = f" ({trust_label})" if trust_label in {"caveated", "not assessed"} else ""
     return f"{label} {_fmt(value)}{suffix}"
 
 
@@ -2213,7 +2224,7 @@ def _trusted_bool_label(label: str, value: Any, trust_status: str | None) -> str
         return f"{label} unavailable (untrusted)"
     if trust_label == "unavailable":
         return f"{label} unavailable"
-    suffix = f" ({trust_label})" if trust_label == "caveated" else ""
+    suffix = f" ({trust_label})" if trust_label in {"caveated", "not assessed"} else ""
     return f"{label} {_bool_or_fmt(value)}{suffix}"
 
 

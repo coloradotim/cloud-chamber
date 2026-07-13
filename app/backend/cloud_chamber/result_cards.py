@@ -127,6 +127,7 @@ class ResultCard(BaseModel):
     surface_rain_units: str | None = None
     max_dbz: float | None = None
     reflectivity_available: bool | None = None
+    field_quality_assessed: bool = False
     field_quality: dict[str, FieldQuality] = Field(default_factory=dict)
     interesting_times: list[InterestingTimeRecord] = Field(default_factory=list)
     default_time_by_field: dict[str, FieldDefaultTime] = Field(default_factory=dict)
@@ -305,7 +306,10 @@ def _card_from_metadata(
         surface_rain_units=surface_rain.units if surface_rain else None,
         max_dbz=reflectivity.max_dbz if reflectivity and reflectivity.available else None,
         reflectivity_available=reflectivity.available if reflectivity else None,
-        field_quality=diagnostics.field_quality if diagnostics else {},
+        field_quality_assessed=diagnostics.field_quality_assessed if diagnostics else False,
+        field_quality=diagnostics.field_quality
+        if diagnostics is not None and diagnostics.field_quality_assessed
+        else {},
         interesting_times=metadata.interesting_times,
         default_time_by_field=metadata.default_time_by_field,
         science_summary=metadata.science_summary,

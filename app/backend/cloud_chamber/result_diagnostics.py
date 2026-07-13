@@ -135,6 +135,7 @@ class ResultDiagnostics(BaseModel):
     surface_rain: SurfaceRainDiagnostics = Field(default_factory=SurfaceRainDiagnostics)
     reflectivity: ReflectivityDiagnostics = Field(default_factory=ReflectivityDiagnostics)
     time: TimeDiagnostics
+    field_quality_assessed: bool = False
     field_quality: dict[str, FieldQuality] = Field(default_factory=dict)
     caveats: list[str] = Field(default_factory=list)
 
@@ -372,6 +373,7 @@ def compute_baseline_diagnostics(dataset: Any, inherited_caveats: list[str]) -> 
         surface_rain=surface_rain,
         reflectivity=reflectivity,
         time=time_context.diagnostics,
+        field_quality_assessed=True,
         field_quality=field_quality,
         caveats=_dedupe(caveats),
     )
