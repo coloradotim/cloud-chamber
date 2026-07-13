@@ -38,6 +38,7 @@ from cloud_chamber.observed_sounding import (
 )
 from cloud_chamber.result_diagnostics import (
     FieldQuality,
+    LowLevelResponseFieldDiagnostics,
     SurfaceFluxDiagnostics,
     SurfaceFluxFieldDiagnostics,
 )
@@ -687,7 +688,8 @@ def queue_campaign(
     queue_factory = local_queue_factory or _default_local_queue
     summaries = [_summary_for_plan_run(run, state) for run in plan.runs]
     surface_flux_response = _surface_flux_response_evaluation(plan, summaries)
-    gate_state = _phase_gate_state(summaries, surface_flux_response)
+    low_level_response = _low_level_response_evaluation(plan, summaries)
+    gate_state = _phase_gate_state(summaries, surface_flux_response, low_level_response)
     override = _gate_override_payload(
         enabled=override_phase_gate,
         reason=override_reason,
@@ -1011,6 +1013,7 @@ def report_campaign(
     summaries = [_summary_for_plan_run(run, state) for run in plan.runs]
     comparisons = _evaluate_comparisons(plan, summaries)
     surface_flux_response = _surface_flux_response_evaluation(plan, summaries)
+    low_level_response = _low_level_response_evaluation(plan, summaries)
     summary = {
         "schema_version": CAMPAIGN_SUMMARY_SCHEMA_VERSION,
         "campaign_id": plan.campaign_id,
@@ -1021,14 +1024,23 @@ def report_campaign(
         "generated_at": _now().isoformat(),
         "run_count": len(summaries),
         "status_counts": _status_counts(summaries),
-        "phase_gate_state": _phase_gate_state(summaries, surface_flux_response),
+        "phase_gate_state": _phase_gate_state(
+            summaries,
+            surface_flux_response,
+            low_level_response,
+        ),
         "surface_flux_response": surface_flux_response,
+        "low_level_response": low_level_response,
         "gate_overrides": _gate_overrides(summaries),
         "runs": summaries,
         "comparisons": comparisons,
         "unavailable_diagnostics": _unavailable_diagnostics(summaries),
         "preliminary_diagnosis_categories": _preliminary_diagnosis_categories(summaries),
-        "recommended_follow_ups": _recommended_follow_ups(summaries, surface_flux_response),
+        "recommended_follow_ups": _recommended_follow_ups(
+            summaries,
+            surface_flux_response,
+            low_level_response,
+        ),
     }
 
     markdown_path = report_path or _default_report_path(plan)
@@ -1844,6 +1856,7 @@ def _summary_for_plan_run(run: CampaignRunPlan, state: CampaignState) -> dict[st
     surface_rain = diagnostics.surface_rain if diagnostics is not None else None
     reflectivity = diagnostics.reflectivity if diagnostics is not None else None
     surface_fluxes = diagnostics.surface_fluxes if diagnostics is not None else None
+    low_level_response = diagnostics.low_level_response if diagnostics is not None else None
     hfx_stats = _surface_flux_summary_values(
         surface_fluxes.hfx if surface_fluxes is not None else None,
         source_field="hfx",
@@ -1853,6 +1866,22 @@ def _summary_for_plan_run(run: CampaignRunPlan, state: CampaignState) -> dict[st
         surface_fluxes.qfx if surface_fluxes is not None else None,
         source_field="qfx",
         fallback_units=_field_units(result, "qfx"),
+    )
+    low_level_qv = _low_level_response_summary_values(
+        low_level_response.qv if low_level_response is not None else None,
+        fallback_source_field="qv",
+        fallback_units=_field_units(result, "qv"),
+    )
+    low_level_thermal = _low_level_response_summary_values(
+        low_level_response.theta_or_temperature if low_level_response is not None else None,
+        fallback_source_field=_first_available_field(
+            result,
+            ["th", "theta", "theta_v", "temperature", "t"],
+        ),
+        fallback_units=_field_units(
+            result,
+            _first_available_field(result, ["th", "theta", "theta_v", "temperature", "t"]),
+        ),
     )
     deep_cloud_formed = (
         science.deep_cloud_formed if science is not None else "unavailable:not_ingested"
@@ -2037,14 +2066,34 @@ def _summary_for_plan_run(run: CampaignRunPlan, state: CampaignState) -> dict[st
         "lhfx_min": qfx_stats["min"],
         "lhfx_max": qfx_stats["max"],
         "lhfx_mean": qfx_stats["mean"],
-        "low_level_qv_response": ("unavailable:low_level_response_diagnostic_not_implemented"),
-        "low_level_qv_response_method": "low_level_response_diagnostic_not_implemented",
-        "low_level_theta_or_temperature_response": (
-            "unavailable:low_level_response_diagnostic_not_implemented"
-        ),
-        "low_level_theta_or_temperature_response_method": (
-            "low_level_response_diagnostic_not_implemented"
-        ),
+        "low_level_qv_response": low_level_qv["delta"],
+        "low_level_qv_response_method": low_level_qv["method"],
+        "low_level_qv_response_source_field": low_level_qv["source_field"],
+        "low_level_qv_response_units": low_level_qv["units"],
+        "low_level_qv_response_first_mean": low_level_qv["first_mean"],
+        "low_level_qv_response_final_mean": low_level_qv["final_mean"],
+        "low_level_qv_response_first_time_seconds": low_level_qv["first_time_seconds"],
+        "low_level_qv_response_final_time_seconds": low_level_qv["final_time_seconds"],
+        "low_level_qv_response_first_finite_count": low_level_qv["first_finite_count"],
+        "low_level_qv_response_final_finite_count": low_level_qv["final_finite_count"],
+        "low_level_theta_or_temperature_response": low_level_thermal["delta"],
+        "low_level_theta_or_temperature_response_method": low_level_thermal["method"],
+        "low_level_theta_or_temperature_response_source_field": low_level_thermal["source_field"],
+        "low_level_theta_or_temperature_response_units": low_level_thermal["units"],
+        "low_level_theta_or_temperature_response_first_mean": low_level_thermal["first_mean"],
+        "low_level_theta_or_temperature_response_final_mean": low_level_thermal["final_mean"],
+        "low_level_theta_or_temperature_response_first_time_seconds": low_level_thermal[
+            "first_time_seconds"
+        ],
+        "low_level_theta_or_temperature_response_final_time_seconds": low_level_thermal[
+            "final_time_seconds"
+        ],
+        "low_level_theta_or_temperature_response_first_finite_count": low_level_thermal[
+            "first_finite_count"
+        ],
+        "low_level_theta_or_temperature_response_final_finite_count": low_level_thermal[
+            "final_finite_count"
+        ],
         "first_cloud_time": first_cloud_time,
         "max_cloud_top_m": max_cloud_top_m,
         "max_cloud_top_time": max_cloud_top_time,
@@ -2093,7 +2142,7 @@ def _diagnostic_support(result: ResultMetadata | None) -> dict[str, str]:
     variables = set(result.variables)
     return {
         "surface_fluxes": _surface_flux_support(diagnostics.surface_fluxes, variables),
-        "low_level_response": "unavailable:low_level_response_diagnostic_not_implemented",
+        "low_level_response": _low_level_response_support(diagnostics.low_level_response),
         "cloud": "available" if diagnostics.cloud.available else "missing",
         "vertical_velocity": "available" if diagnostics.vertical_velocity.available else "missing",
         "rain_water_aloft": "available" if diagnostics.rain.available else "missing",
@@ -2112,6 +2161,21 @@ def _surface_flux_support(
     if field_presence:
         return "unavailable:surface_flux_statistics_unavailable"
     return "missing"
+
+
+def _low_level_response_support(response: Any) -> str:
+    qv = response.qv
+    thermal = response.theta_or_temperature
+    if qv.available and thermal.available:
+        return "available"
+    if qv.field_absent or thermal.field_absent:
+        return "missing"
+    reasons = [
+        _low_level_response_unavailable_reason(field)
+        for field in (qv, thermal)
+        if not field.available
+    ]
+    return "unavailable:" + ",".join(_dedupe([reason for reason in reasons if reason]))
 
 
 def _field_units(result: ResultMetadata | None, field_name: str | None) -> str | None:
@@ -2162,6 +2226,72 @@ def _surface_flux_summary_values(
         "non_finite_count": diagnostics.non_finite_count,
         "total_count": diagnostics.total_count,
     }
+
+
+def _low_level_response_summary_values(
+    diagnostics: LowLevelResponseFieldDiagnostics | None,
+    *,
+    fallback_source_field: str | None,
+    fallback_units: str | None,
+) -> dict[str, Any]:
+    unavailable = "unavailable:until_result_ingested"
+    if diagnostics is None:
+        return {
+            "source_field": fallback_source_field,
+            "units": fallback_units,
+            "delta": unavailable,
+            "first_mean": unavailable,
+            "final_mean": unavailable,
+            "first_time_seconds": unavailable,
+            "final_time_seconds": unavailable,
+            "first_finite_count": 0,
+            "final_finite_count": 0,
+            "method": unavailable,
+        }
+    reason = _low_level_response_unavailable_reason(diagnostics)
+    method = (
+        diagnostics.vertical_coordinate_method if diagnostics.available else f"unavailable:{reason}"
+    )
+    return {
+        "source_field": diagnostics.source_field or fallback_source_field,
+        "units": diagnostics.units or fallback_units,
+        "delta": diagnostics.delta_value if diagnostics.available else f"unavailable:{reason}",
+        "first_mean": (
+            diagnostics.first_mean_value if diagnostics.available else f"unavailable:{reason}"
+        ),
+        "final_mean": (
+            diagnostics.final_mean_value if diagnostics.available else f"unavailable:{reason}"
+        ),
+        "first_time_seconds": (
+            diagnostics.first_time_seconds if diagnostics.available else f"unavailable:{reason}"
+        ),
+        "final_time_seconds": (
+            diagnostics.final_time_seconds if diagnostics.available else f"unavailable:{reason}"
+        ),
+        "first_finite_count": diagnostics.first_finite_count,
+        "final_finite_count": diagnostics.final_finite_count,
+        "method": method,
+    }
+
+
+def _low_level_response_unavailable_reason(
+    diagnostics: LowLevelResponseFieldDiagnostics,
+) -> str:
+    if diagnostics.available:
+        return "available"
+    if diagnostics.caveats:
+        return diagnostics.caveats[0]
+    if diagnostics.field_absent:
+        source_field = diagnostics.source_field or "theta_or_temperature"
+        return f"{source_field}_field_absent"
+    return "low_level_response_unavailable"
+
+
+def _first_available_field(result: ResultMetadata | None, fields: Sequence[str]) -> str | None:
+    if result is None:
+        return None
+    variables = set(result.variables)
+    return next((field for field in fields if field in variables), None)
 
 
 def _surface_moisture_flux_field(fields: Iterable[str]) -> str | None:
@@ -2410,7 +2540,6 @@ def _summary_caveats(
 ) -> list[str]:
     caveats = [
         "surface_forcing_is_constant_uniform_proxy",
-        "low_level_response_diagnostic_not_implemented",
     ]
     if run.optional:
         caveats.append("optional_campaign_run")
@@ -2423,6 +2552,11 @@ def _summary_caveats(
         caveats.extend(result.interesting_time_caveats)
         if result.diagnostics is not None:
             caveats.extend(result.diagnostics.caveats)
+            if not (
+                result.diagnostics.low_level_response.qv.available
+                and result.diagnostics.low_level_response.theta_or_temperature.available
+            ):
+                caveats.append("low_level_response_unavailable")
     return _dedupe(caveats)
 
 
@@ -2557,7 +2691,21 @@ def _render_markdown_report(plan: CampaignPlan, summary: Mapping[str, Any]) -> s
                 f"- Precipitation/reflectivity: {precipitation}",
                 f"- Diagnostic trust: `{_diagnostic_trust_summary(diagnostic_trust)}`",
                 f"- Field-quality warnings: `{quality_warnings}`",
-                f"- Low-level response: `{run['low_level_qv_response_method']}`",
+                (
+                    f"- Low-level qv response: `{run['low_level_qv_response']}` "
+                    f"`{run['low_level_qv_response_units'] or ''}` via "
+                    f"`{run['low_level_qv_response_method']}` "
+                    f"({run['low_level_qv_response_first_mean']} -> "
+                    f"{run['low_level_qv_response_final_mean']})"
+                ),
+                (
+                    f"- Low-level theta/temperature response: "
+                    f"`{run['low_level_theta_or_temperature_response']}` "
+                    f"`{run['low_level_theta_or_temperature_response_units'] or ''}` via "
+                    f"`{run['low_level_theta_or_temperature_response_method']}` "
+                    f"({run['low_level_theta_or_temperature_response_first_mean']} -> "
+                    f"{run['low_level_theta_or_temperature_response_final_mean']})"
+                ),
                 f"- Caveats: `{', '.join(run['caveats']) or 'none'}`",
                 "",
             ]
@@ -2598,6 +2746,39 @@ def _render_markdown_report(plan: CampaignPlan, summary: Mapping[str, Any]) -> s
                 )
     else:
         lines.append("No Phase 1 surface-flux response comparisons are available.")
+    lines.extend(
+        [
+            "",
+            "## Low-Level Response",
+            "",
+        ]
+    )
+    low_level_response = summary.get("low_level_response", {})
+    low_level_evaluations = low_level_response.get("evaluations", [])
+    missing_low_level_comparison_types = low_level_response.get(
+        "missing_required_comparison_types",
+        [],
+    )
+    if missing_low_level_comparison_types:
+        lines.append(
+            "- Missing required Phase 1 comparison types: "
+            f"`{', '.join(missing_low_level_comparison_types)}`"
+        )
+    if low_level_evaluations:
+        for evaluation in low_level_evaluations:
+            lines.append(
+                f"- `{evaluation['experiment_matrix_id']}` vs "
+                f"`{evaluation['control_matrix_id']}`: `{evaluation['status']}`"
+            )
+            for expectation in evaluation.get("expectations", []):
+                role = "required" if expectation.get("required") else "informational"
+                lines.append(
+                    f"  - {expectation['field']}: {role}; expected "
+                    f"`{expectation['expected']}`, observed `{expectation['observed']}`; "
+                    f"`{expectation['status']}`"
+                )
+    else:
+        lines.append("No Phase 1 low-level response comparisons are available.")
     lines.extend(
         [
             "",
@@ -2811,6 +2992,8 @@ def _comparison_supported_differences(
         "qr_present",
         "surface_rain_present",
         "max_dbz",
+        "low_level_qv_response",
+        "low_level_theta_or_temperature_response",
     ):
         left = control.get(field)
         right = experiment.get(field)
@@ -2836,6 +3019,10 @@ SURFACE_FLUX_RESPONSE_VERIFIED = "surface_flux_response_verified"
 SURFACE_FLUX_RESPONSE_NOT_VERIFIED = "surface_flux_response_not_verified"
 SURFACE_FLUX_RESPONSE_MISSING = "surface_flux_response_inconclusive_missing_evidence"
 SURFACE_FLUX_RESPONSE_NONCOMPARABLE = "surface_flux_response_inconclusive_noncomparable"
+LOW_LEVEL_RESPONSE_VERIFIED = "low_level_response_verified"
+LOW_LEVEL_RESPONSE_NOT_VERIFIED = "low_level_response_not_verified"
+LOW_LEVEL_RESPONSE_MISSING = "low_level_response_inconclusive_missing_evidence"
+LOW_LEVEL_RESPONSE_NONCOMPARABLE = "low_level_response_inconclusive_noncomparable"
 
 
 def _surface_flux_response_evaluation(
@@ -2898,6 +3085,214 @@ def _surface_flux_response_evaluation(
         "missing_required_comparison_types": missing_required_comparison_types,
         "unavailable_evidence": unavailable_evidence,
         "evaluations": evaluations,
+    }
+
+
+def _low_level_response_evaluation(
+    plan: CampaignPlan,
+    summaries: Sequence[Mapping[str, Any]],
+) -> dict[str, Any]:
+    by_matrix_id = {str(summary["matrix_id"]): summary for summary in summaries}
+    required_comparison_types = list(
+        plan.phase1_required_comparison_types or DEFAULT_PHASE1_REQUIRED_COMPARISON_TYPES
+    )
+    evaluations: list[dict[str, Any]] = []
+    for run in plan.runs:
+        if not _is_phase_one_run(run):
+            continue
+        if not run.comparison_type or not run.comparison_control_matrix_id:
+            continue
+        definition = plan.comparison_types.get(run.comparison_type, {})
+        control = by_matrix_id.get(run.comparison_control_matrix_id)
+        experiment = by_matrix_id.get(run.matrix_id)
+        evaluations.append(
+            _low_level_response_for_pair(
+                comparison_type=run.comparison_type,
+                control_matrix_id=run.comparison_control_matrix_id,
+                experiment_matrix_id=run.matrix_id,
+                definition=definition,
+                control=control,
+                experiment=experiment,
+            )
+        )
+
+    evaluated_comparison_types = {str(evaluation["comparison_type"]) for evaluation in evaluations}
+    missing_required_comparison_types = [
+        comparison_type
+        for comparison_type in required_comparison_types
+        if comparison_type not in evaluated_comparison_types
+    ]
+    unavailable_evidence = [
+        f"missing_phase1_required_comparison_type:{comparison_type}"
+        for comparison_type in missing_required_comparison_types
+    ]
+    if missing_required_comparison_types:
+        state = LOW_LEVEL_RESPONSE_MISSING
+    elif not evaluations:
+        state = LOW_LEVEL_RESPONSE_MISSING
+    elif any(
+        evaluation["status"] == LOW_LEVEL_RESPONSE_NONCOMPARABLE for evaluation in evaluations
+    ):
+        state = LOW_LEVEL_RESPONSE_NONCOMPARABLE
+    elif any(evaluation["status"] == LOW_LEVEL_RESPONSE_MISSING for evaluation in evaluations):
+        state = LOW_LEVEL_RESPONSE_MISSING
+    elif any(evaluation["status"] == LOW_LEVEL_RESPONSE_NOT_VERIFIED for evaluation in evaluations):
+        state = LOW_LEVEL_RESPONSE_NOT_VERIFIED
+    else:
+        state = LOW_LEVEL_RESPONSE_VERIFIED
+    return {
+        "state": state,
+        "required_comparison_types": required_comparison_types,
+        "missing_required_comparison_types": missing_required_comparison_types,
+        "unavailable_evidence": unavailable_evidence,
+        "evaluations": evaluations,
+    }
+
+
+def _low_level_response_for_pair(
+    *,
+    comparison_type: str,
+    control_matrix_id: str,
+    experiment_matrix_id: str,
+    definition: Mapping[str, Any],
+    control: Mapping[str, Any] | None,
+    experiment: Mapping[str, Any] | None,
+) -> dict[str, Any]:
+    base = {
+        "comparison_type": comparison_type,
+        "control_matrix_id": control_matrix_id,
+        "experiment_matrix_id": experiment_matrix_id,
+        "expectations": [],
+        "equality_gate_failures": [],
+        "unavailable_evidence": [],
+    }
+    if control is None or experiment is None:
+        return {
+            **base,
+            "status": LOW_LEVEL_RESPONSE_MISSING,
+            "unavailable_evidence": ["missing_control_or_experiment_summary"],
+        }
+
+    equality_failures = _comparison_equality_failures(control, experiment, definition)
+    if equality_failures:
+        return {
+            **base,
+            "status": LOW_LEVEL_RESPONSE_NONCOMPARABLE,
+            "equality_gate_failures": equality_failures,
+        }
+
+    unavailable = _low_level_pair_unavailable_evidence(control, experiment)
+    if unavailable:
+        status = (
+            LOW_LEVEL_RESPONSE_NONCOMPARABLE
+            if any("noncomparable_units" in item for item in unavailable)
+            else LOW_LEVEL_RESPONSE_MISSING
+        )
+        return {
+            **base,
+            "status": status,
+            "unavailable_evidence": unavailable,
+        }
+
+    expectations = [
+        _low_level_response_expectation(
+            field="low_level_theta_or_temperature_response",
+            selected_control_field="surface_heat_flux_k_m_s",
+            control=control,
+            experiment=experiment,
+        ),
+        _low_level_response_expectation(
+            field="low_level_qv_response",
+            selected_control_field="surface_moisture_flux_g_g_m_s",
+            control=control,
+            experiment=experiment,
+        ),
+    ]
+    required_expectations = [expectation for expectation in expectations if expectation["required"]]
+    status = (
+        LOW_LEVEL_RESPONSE_VERIFIED
+        if all(expectation["status"] == "verified" for expectation in required_expectations)
+        else LOW_LEVEL_RESPONSE_NOT_VERIFIED
+    )
+    if not required_expectations:
+        status = LOW_LEVEL_RESPONSE_NONCOMPARABLE
+    return {
+        **base,
+        "status": status,
+        "expectations": expectations,
+    }
+
+
+def _low_level_pair_unavailable_evidence(
+    control: Mapping[str, Any],
+    experiment: Mapping[str, Any],
+) -> list[str]:
+    unavailable: list[str] = []
+    for summary, role in ((control, "control"), (experiment, "experiment")):
+        if summary.get("status") != "ingested":
+            unavailable.append(f"{role}:result_not_ingested")
+        support = summary.get("diagnostic_support")
+        diagnostic_support = support if isinstance(support, dict) else {}
+        if diagnostic_support.get("low_level_response") != "available":
+            unavailable.append(f"{role}:diagnostic_unavailable:low_level_response")
+        for field in (
+            "low_level_qv_response",
+            "low_level_theta_or_temperature_response",
+        ):
+            value = summary.get(field)
+            if not isinstance(value, int | float) or _is_unavailable(value):
+                unavailable.append(f"{role}:{field}_unavailable:{value}")
+            units = summary.get(f"{field}_units")
+            if not isinstance(units, str) or not units:
+                unavailable.append(f"{role}:{field}_units_unavailable")
+    for field in (
+        "low_level_qv_response",
+        "low_level_theta_or_temperature_response",
+    ):
+        control_units = control.get(f"{field}_units")
+        experiment_units = experiment.get(f"{field}_units")
+        if control_units is None or experiment_units is None:
+            continue
+        if control_units != experiment_units:
+            unavailable.append(f"{field}:noncomparable_units:{control_units}:vs:{experiment_units}")
+    noncomparable = [item for item in unavailable if "noncomparable_units" in item]
+    if noncomparable:
+        return noncomparable
+    return _dedupe(unavailable)
+
+
+def _low_level_response_expectation(
+    *,
+    field: str,
+    selected_control_field: str,
+    control: Mapping[str, Any],
+    experiment: Mapping[str, Any],
+) -> dict[str, Any]:
+    control_selected = _float_or_none(control.get(selected_control_field))
+    experiment_selected = _float_or_none(experiment.get(selected_control_field))
+    control_delta = _float_or_none(control.get(field))
+    experiment_delta = _float_or_none(experiment.get(field))
+    expected = _expected_direction(control_selected, experiment_selected)
+    observed = _expected_direction(control_delta, experiment_delta)
+    required = expected in {"increase", "decrease"}
+    if required:
+        status = "verified" if expected == observed else "not_verified"
+    elif expected == "comparable":
+        status = "informational"
+    else:
+        status = "not_evaluated"
+    return {
+        "field": field,
+        "selected_control_field": selected_control_field,
+        "expected": expected,
+        "observed": observed,
+        "required": required,
+        "status": status,
+        "control_selected": control_selected,
+        "experiment_selected": experiment_selected,
+        "control_delta": control_delta,
+        "experiment_delta": experiment_delta,
+        "units": control.get(f"{field}_units"),
     }
 
 
@@ -3111,6 +3506,7 @@ def _is_unavailable(value: Any) -> bool:
 def _phase_gate_state(
     summaries: Sequence[Mapping[str, Any]],
     surface_flux_response: Mapping[str, Any],
+    low_level_response: Mapping[str, Any],
 ) -> str:
     phase1 = [
         summary for summary in summaries if summary.get("phase") == "forcing_path_smoke_check"
@@ -3124,11 +3520,8 @@ def _phase_gate_state(
     response_state = surface_flux_response.get("state")
     if response_state != SURFACE_FLUX_RESPONSE_VERIFIED:
         return str(response_state or SURFACE_FLUX_RESPONSE_MISSING)
-    if not all(
-        not _is_unavailable(summary.get("low_level_qv_response"))
-        and not _is_unavailable(summary.get("low_level_theta_or_temperature_response"))
-        for summary in phase1
-    ):
+    low_level_state = low_level_response.get("state")
+    if low_level_state != LOW_LEVEL_RESPONSE_VERIFIED:
         return "forcing_wiring_verified_but_response_not_verified"
     return "forcing_path_verified_for_campaign"
 
@@ -3171,9 +3564,9 @@ def _preliminary_diagnosis_categories(summaries: Sequence[Mapping[str, Any]]) ->
 def _recommended_follow_ups(
     summaries: Sequence[Mapping[str, Any]],
     surface_flux_response: Mapping[str, Any],
+    low_level_response: Mapping[str, Any],
 ) -> list[str]:
     followups = [
-        "Implement standardized low-level qv/theta/temperature response diagnostics.",
         (
             "Review campaign rows with unavailable required output fields before "
             "scientific conclusions."
@@ -3183,6 +3576,22 @@ def _recommended_follow_ups(
         followups.append(
             "Resolve Phase 1 surface-flux response comparisons before treating "
             "selected forcing changes as verified in CM1 output."
+        )
+    low_level_state = low_level_response.get("state")
+    if low_level_state == LOW_LEVEL_RESPONSE_MISSING:
+        followups.append(
+            "Resolve missing or unavailable low-level qv/theta response evidence before "
+            "continuing the campaign automatically."
+        )
+    elif low_level_state == LOW_LEVEL_RESPONSE_NOT_VERIFIED:
+        followups.append(
+            "Review Phase 1 low-level response comparisons; emitted surface fluxes changed, "
+            "but boundary-layer qv/theta deltas did not move in the expected direction."
+        )
+    elif low_level_state == LOW_LEVEL_RESPONSE_NONCOMPARABLE:
+        followups.append(
+            "Fix non-comparable Phase 1 low-level response runs or units before "
+            "treating boundary-layer response as verified."
         )
     if any(summary.get("diagnostic_quality_warnings") for summary in summaries):
         followups.append(
@@ -3209,11 +3618,32 @@ def _forcing_response_summary(summary: Mapping[str, Any]) -> str:
             "operator override, subject to campaign cost/runtime judgment."
         )
     if state == "forcing_wiring_verified_but_response_not_verified":
+        low_level_state = (summary.get("low_level_response") or {}).get("state")
+        if low_level_state == LOW_LEVEL_RESPONSE_NOT_VERIFIED:
+            return (
+                "Phase 1 confirmed selected forcing metadata, CM1-facing forcing controls, "
+                "hfx/qfx output-field presence, and matched emitted surface-flux response. "
+                "However, matched low-level qv/theta response did not move in the expected "
+                "direction, so automatic continuation remains blocked."
+            )
+        if low_level_state == LOW_LEVEL_RESPONSE_MISSING:
+            return (
+                "Phase 1 confirmed selected forcing metadata, CM1-facing forcing controls, "
+                "hfx/qfx output-field presence, and matched emitted surface-flux response. "
+                "It did not verify boundary-layer thermodynamic response because low-level "
+                "qv/theta evidence is missing or unavailable."
+            )
+        if low_level_state == LOW_LEVEL_RESPONSE_NONCOMPARABLE:
+            return (
+                "Phase 1 confirmed selected forcing metadata, CM1-facing forcing controls, "
+                "hfx/qfx output-field presence, and matched emitted surface-flux response. "
+                "It did not verify boundary-layer thermodynamic response because the "
+                "low-level response comparisons are not structurally comparable."
+            )
         return (
             "Phase 1 confirmed selected forcing metadata, CM1-facing forcing controls, "
             "hfx/qfx output-field presence, and matched emitted surface-flux response. "
-            "It did not verify boundary-layer thermodynamic response because low-level "
-            "qv/theta response diagnostics are not implemented yet."
+            "It did not verify boundary-layer thermodynamic response."
         )
     if state == SURFACE_FLUX_RESPONSE_NOT_VERIFIED:
         return (

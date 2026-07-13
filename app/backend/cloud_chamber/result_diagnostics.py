@@ -15,6 +15,15 @@ HYDROMETEOR_CLOUD_TOP_FIELDS = ("qr", "qi", "qs", "qg")
 
 TIME_DIMENSION_CANDIDATES = ("time", "mtime", "t")
 VERTICAL_COORDINATE_CANDIDATES = ("z", "zh", "height", "height_m")
+LOW_LEVEL_RESPONSE_LAYER_BOTTOM_M = 0.0
+LOW_LEVEL_RESPONSE_LAYER_TOP_M = 1000.0
+LOW_LEVEL_THERMODYNAMIC_FIELD_CANDIDATES = (
+    "th",
+    "theta",
+    "theta_v",
+    "temperature",
+    "t",
+)
 THERMAL_FATE_CONFIDENCE_VALUES = (
     "supported",
     "candidate",
@@ -153,6 +162,46 @@ class SurfaceFluxDiagnostics(BaseModel):
     )
 
 
+class LowLevelResponseFieldDiagnostics(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    source_field: str | None = None
+    available: bool = False
+    field_absent: bool = True
+    layer_bottom_m: float = LOW_LEVEL_RESPONSE_LAYER_BOTTOM_M
+    layer_top_m: float = LOW_LEVEL_RESPONSE_LAYER_TOP_M
+    vertical_coordinate_name: str | None = None
+    vertical_coordinate_units: str | None = None
+    vertical_coordinate_method: str | None = None
+    time_dimension: str | None = None
+    first_time_index: int | None = None
+    final_time_index: int | None = None
+    first_time_seconds: float | None = None
+    final_time_seconds: float | None = None
+    first_mean_value: float | None = None
+    final_mean_value: float | None = None
+    delta_value: float | None = None
+    units: str | None = None
+    first_finite_count: int = 0
+    first_non_finite_count: int = 0
+    first_total_count: int = 0
+    final_finite_count: int = 0
+    final_non_finite_count: int = 0
+    final_total_count: int = 0
+    caveats: list[str] = Field(default_factory=list)
+
+
+class LowLevelResponseDiagnostics(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    qv: LowLevelResponseFieldDiagnostics = Field(
+        default_factory=lambda: LowLevelResponseFieldDiagnostics(source_field="qv")
+    )
+    theta_or_temperature: LowLevelResponseFieldDiagnostics = Field(
+        default_factory=LowLevelResponseFieldDiagnostics
+    )
+
+
 class ResultDiagnostics(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -162,6 +211,9 @@ class ResultDiagnostics(BaseModel):
     surface_rain: SurfaceRainDiagnostics = Field(default_factory=SurfaceRainDiagnostics)
     reflectivity: ReflectivityDiagnostics = Field(default_factory=ReflectivityDiagnostics)
     surface_fluxes: SurfaceFluxDiagnostics = Field(default_factory=SurfaceFluxDiagnostics)
+    low_level_response: LowLevelResponseDiagnostics = Field(
+        default_factory=LowLevelResponseDiagnostics
+    )
     time: TimeDiagnostics
     field_quality_assessed: bool = False
     field_quality: dict[str, FieldQuality] = Field(default_factory=dict)
@@ -394,6 +446,7 @@ def compute_baseline_diagnostics(dataset: Any, inherited_caveats: list[str]) -> 
     surface_rain = _surface_rain_diagnostics(dataset, time_context, caveats)
     reflectivity = _reflectivity_diagnostics(dataset, time_context, caveats)
     surface_fluxes = _surface_flux_diagnostics(dataset, caveats)
+    low_level_response = _low_level_response_diagnostics(dataset, time_context, caveats)
     field_quality = _field_quality_map(dataset)
     return ResultDiagnostics(
         cloud=cloud,
@@ -402,6 +455,7 @@ def compute_baseline_diagnostics(dataset: Any, inherited_caveats: list[str]) -> 
         surface_rain=surface_rain,
         reflectivity=reflectivity,
         surface_fluxes=surface_fluxes,
+        low_level_response=low_level_response,
         time=time_context.diagnostics,
         field_quality_assessed=True,
         field_quality=field_quality,
@@ -819,6 +873,236 @@ def _surface_flux_field_diagnostics(
         finite_count=finite_count,
         non_finite_count=non_finite_count,
         total_count=total_count,
+        caveats=_dedupe(field_caveats),
+    )
+
+
+def _low_level_response_diagnostics(
+    dataset: Any,
+    time: _TimeContext,
+    caveats: list[str],
+) -> LowLevelResponseDiagnostics:
+    return LowLevelResponseDiagnostics(
+        qv=_low_level_response_field_diagnostics(
+            dataset,
+            source_field="qv",
+            time=time,
+            caveats=caveats,
+        ),
+        theta_or_temperature=_low_level_response_field_diagnostics(
+            dataset,
+            source_field=_first_present(
+                LOW_LEVEL_THERMODYNAMIC_FIELD_CANDIDATES, list(dataset.data_vars)
+            ),
+            time=time,
+            caveats=caveats,
+            missing_reason="theta_or_temperature_field_absent",
+        ),
+    )
+
+
+def _low_level_response_field_diagnostics(
+    dataset: Any,
+    *,
+    source_field: str | None,
+    time: _TimeContext,
+    caveats: list[str],
+    missing_reason: str | None = None,
+) -> LowLevelResponseFieldDiagnostics:
+    if source_field is None or source_field not in dataset.data_vars:
+        reason = missing_reason or f"{source_field or 'unknown'}_field_absent"
+        return LowLevelResponseFieldDiagnostics(
+            source_field=source_field,
+            field_absent=True,
+            caveats=[reason],
+        )
+
+    data_array = dataset[source_field]
+    units = _attr_string(data_array, "units")
+    field_caveats: list[str] = []
+    vertical_name = _first_present(VERTICAL_COORDINATE_CANDIDATES, list(data_array.dims))
+    if vertical_name is None:
+        reason = f"{source_field}_low_level_response_missing_vertical_dimension"
+        caveats.append(reason)
+        return LowLevelResponseFieldDiagnostics(
+            source_field=source_field,
+            field_absent=False,
+            units=units,
+            caveats=[reason],
+        )
+    if vertical_name not in data_array.coords:
+        reason = f"{source_field}_low_level_response_missing_vertical_coordinate"
+        caveats.append(reason)
+        return LowLevelResponseFieldDiagnostics(
+            source_field=source_field,
+            field_absent=False,
+            vertical_coordinate_name=vertical_name,
+            units=units,
+            caveats=[reason],
+        )
+    vertical_coord = data_array.coords[vertical_name]
+    vertical_units = _attr_string(vertical_coord, "units")
+    normalized_units = _normalized_height_units(vertical_units)
+    if normalized_units is None:
+        reason = f"{source_field}_low_level_response_vertical_units_not_supported:{vertical_units}"
+        caveats.append(reason)
+        return LowLevelResponseFieldDiagnostics(
+            source_field=source_field,
+            field_absent=False,
+            vertical_coordinate_name=vertical_name,
+            vertical_coordinate_units=vertical_units,
+            units=units,
+            caveats=[reason],
+        )
+    if vertical_units is None:
+        field_caveats.append(
+            f"{source_field}_low_level_response_vertical_units_missing_assumed_meters"
+        )
+
+    vertical_values = [
+        _height_in_meters(_to_float_or_none(value), vertical_units)
+        for value in vertical_coord.values.tolist()
+    ]
+    low_level_indices = [
+        index
+        for index, value in enumerate(vertical_values)
+        if value is not None
+        and LOW_LEVEL_RESPONSE_LAYER_BOTTOM_M <= value <= LOW_LEVEL_RESPONSE_LAYER_TOP_M
+    ]
+    if not low_level_indices:
+        reason = f"{source_field}_low_level_response_no_levels_in_0_1_km"
+        caveats.append(reason)
+        return LowLevelResponseFieldDiagnostics(
+            source_field=source_field,
+            field_absent=False,
+            vertical_coordinate_name=vertical_name,
+            vertical_coordinate_units=vertical_units,
+            vertical_coordinate_method="coordinate_values_0_1_km_agl",
+            units=units,
+            caveats=_dedupe([*field_caveats, reason]),
+        )
+    if time.dimension is None or time.dimension not in data_array.dims:
+        reason = f"{source_field}_low_level_response_requires_time_dimension"
+        caveats.append(reason)
+        return LowLevelResponseFieldDiagnostics(
+            source_field=source_field,
+            field_absent=False,
+            vertical_coordinate_name=vertical_name,
+            vertical_coordinate_units=vertical_units,
+            vertical_coordinate_method="coordinate_values_0_1_km_agl",
+            units=units,
+            caveats=_dedupe([*field_caveats, reason]),
+        )
+    time_size = int(data_array.sizes[time.dimension])
+    if time_size < 2:
+        reason = f"{source_field}_low_level_response_requires_at_least_two_time_steps"
+        caveats.append(reason)
+        time_index = 0 if time_size else None
+        layer = (
+            data_array.isel({time.dimension: 0, vertical_name: low_level_indices})
+            if time_size
+            else None
+        )
+        layer_mean = _finite_mean(layer) if layer is not None else None
+        finite_count = _finite_count(layer) if layer is not None else 0
+        non_finite_count = _non_finite_count(layer) if layer is not None else 0
+        total_count = _total_count(layer) if layer is not None else 0
+        return LowLevelResponseFieldDiagnostics(
+            source_field=source_field,
+            field_absent=False,
+            vertical_coordinate_name=vertical_name,
+            vertical_coordinate_units=vertical_units,
+            vertical_coordinate_method="coordinate_values_0_1_km_agl",
+            time_dimension=time.dimension,
+            first_time_index=time_index,
+            final_time_index=time_index,
+            first_time_seconds=time.at(0) if time_size else None,
+            final_time_seconds=time.at(time_size - 1) if time_size else None,
+            first_mean_value=layer_mean,
+            final_mean_value=layer_mean,
+            units=units,
+            first_finite_count=finite_count,
+            first_non_finite_count=non_finite_count,
+            first_total_count=total_count,
+            final_finite_count=finite_count,
+            final_non_finite_count=non_finite_count,
+            final_total_count=total_count,
+            caveats=_dedupe([*field_caveats, reason]),
+        )
+
+    first_time_index = 0
+    final_time_index = time_size - 1
+    first_layer = data_array.isel(
+        {
+            time.dimension: first_time_index,
+            vertical_name: low_level_indices,
+        }
+    )
+    final_layer = data_array.isel(
+        {
+            time.dimension: final_time_index,
+            vertical_name: low_level_indices,
+        }
+    )
+    first_finite_count = _finite_count(first_layer)
+    final_finite_count = _finite_count(final_layer)
+    first_non_finite_count = _non_finite_count(first_layer)
+    final_non_finite_count = _non_finite_count(final_layer)
+    if first_non_finite_count > 0 or final_non_finite_count > 0:
+        field_caveat = f"non_finite_values_detected_in_{source_field}_low_level_response"
+        field_caveats.append(field_caveat)
+        caveats.append(field_caveat)
+    if first_finite_count == 0 or final_finite_count == 0:
+        reason = f"{source_field}_low_level_response_endpoint_entirely_non_finite"
+        field_caveats.append(reason)
+        caveats.append(reason)
+        return LowLevelResponseFieldDiagnostics(
+            source_field=source_field,
+            field_absent=False,
+            vertical_coordinate_name=vertical_name,
+            vertical_coordinate_units=vertical_units,
+            vertical_coordinate_method="coordinate_values_0_1_km_agl",
+            time_dimension=time.dimension,
+            first_time_index=first_time_index,
+            final_time_index=final_time_index,
+            first_time_seconds=time.at(first_time_index),
+            final_time_seconds=time.at(final_time_index),
+            units=units,
+            first_finite_count=first_finite_count,
+            first_non_finite_count=first_non_finite_count,
+            first_total_count=_total_count(first_layer),
+            final_finite_count=final_finite_count,
+            final_non_finite_count=final_non_finite_count,
+            final_total_count=_total_count(final_layer),
+            caveats=_dedupe(field_caveats),
+        )
+
+    first_mean = _finite_mean(first_layer)
+    final_mean = _finite_mean(final_layer)
+    return LowLevelResponseFieldDiagnostics(
+        source_field=source_field,
+        available=True,
+        field_absent=False,
+        vertical_coordinate_name=vertical_name,
+        vertical_coordinate_units=vertical_units,
+        vertical_coordinate_method="coordinate_values_0_1_km_agl",
+        time_dimension=time.dimension,
+        first_time_index=first_time_index,
+        final_time_index=final_time_index,
+        first_time_seconds=time.at(first_time_index),
+        final_time_seconds=time.at(final_time_index),
+        first_mean_value=first_mean,
+        final_mean_value=final_mean,
+        delta_value=(final_mean - first_mean)
+        if first_mean is not None and final_mean is not None
+        else None,
+        units=units,
+        first_finite_count=first_finite_count,
+        first_non_finite_count=first_non_finite_count,
+        first_total_count=_total_count(first_layer),
+        final_finite_count=final_finite_count,
+        final_non_finite_count=final_non_finite_count,
+        final_total_count=_total_count(final_layer),
         caveats=_dedupe(field_caveats),
     )
 

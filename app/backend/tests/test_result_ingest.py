@@ -109,6 +109,8 @@ def write_model_netcdf(
     dbz_values: list[float] | None = None,
     hfx_values: list[float] | None = None,
     qfx_values: list[float] | None = None,
+    qv_values: list[float] | None = None,
+    th_values: list[float] | None = None,
     z_values: list[float] | None = None,
     include_qc: bool = True,
     include_w: bool = True,
@@ -168,6 +170,24 @@ def write_model_netcdf(
             ("time", "y", "x"),
             [[[qfx_value for _x in range(4)] for _y in range(3)] for qfx_value in qfx_values],
             {"units": "kg/m^2/s"},
+        )
+    if qv_values is not None:
+        data_vars["qv"] = (
+            ("time", "z", "y", "x"),
+            [
+                [[[qv_value for _x in range(4)] for _y in range(3)] for _z in z_values]
+                for qv_value in qv_values
+            ],
+            {"units": "kg/kg"},
+        )
+    if th_values is not None:
+        data_vars["th"] = (
+            ("time", "z", "y", "x"),
+            [
+                [[[th_value for _x in range(4)] for _y in range(3)] for _z in z_values]
+                for th_value in th_values
+            ],
+            {"units": "K"},
         )
     xr.Dataset(
         data_vars=data_vars,
@@ -306,6 +326,8 @@ def test_ingests_multifile_model_output_sequence_and_excludes_stats(tmp_path: Pa
         w_values=[-5.0],
         hfx_values=[1.0],
         qfx_values=[1.0e-5],
+        qv_values=[0.010],
+        th_values=[300.0],
     )
     write_model_netcdf(
         second,
@@ -314,6 +336,8 @@ def test_ingests_multifile_model_output_sequence_and_excludes_stats(tmp_path: Pa
         w_values=[7.0],
         hfx_values=[3.0],
         qfx_values=[3.0e-5],
+        qv_values=[0.016],
+        th_values=[304.0],
     )
     write_stats_netcdf(stats)
     complete_manifest(
@@ -355,6 +379,17 @@ def test_ingests_multifile_model_output_sequence_and_excludes_stats(tmp_path: Pa
     assert result.diagnostics.surface_fluxes.qfx.total_count == 24
     assert result.diagnostics.field_quality["hfx"].quality_state == "trusted"
     assert result.diagnostics.field_quality["qfx"].quality_state == "trusted"
+    assert result.diagnostics.low_level_response.qv.available is True
+    assert result.diagnostics.low_level_response.qv.first_time_seconds == 300.0
+    assert result.diagnostics.low_level_response.qv.final_time_seconds == 600.0
+    assert result.diagnostics.low_level_response.qv.delta_value == pytest.approx(0.006)
+    assert result.diagnostics.low_level_response.theta_or_temperature.available is True
+    assert result.diagnostics.low_level_response.theta_or_temperature.delta_value == pytest.approx(
+        4.0
+    )
+    assert (
+        "qv_low_level_response_requires_at_least_two_time_steps" not in result.diagnostics.caveats
+    )
     interesting = {record.key: record for record in result.interesting_times}
     assert interesting["first_cloud"].support_state == "supported"
     assert interesting["first_cloud"].time_index == 1
@@ -377,6 +412,10 @@ def test_ingests_multifile_model_output_sequence_and_excludes_stats(tmp_path: Pa
     assert result.science_summary.max_updraft_w_m_s == 7.0
     assert result.science_summary.min_downdraft_w_m_s == -5.0
     assert result.science_summary.latest_output_time_seconds == 600.0
+    assert result.science_summary.low_level_response.qv.delta_value == pytest.approx(0.006)
+    availability = {item.key: item for item in result.science_summary.diagnostic_availability}
+    assert availability["low_level_qv_response"].support_state == "supported"
+    assert availability["low_level_qv_response"].value == pytest.approx(0.006)
 
 
 def test_ingest_keeps_rain_water_surface_rain_and_reflectivity_distinct(

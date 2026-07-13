@@ -14,6 +14,8 @@ from igra_fixtures import IGRA_FIXTURE
 from cloud_chamber.output_products import ScienceSummary
 from cloud_chamber.result_diagnostics import (
     CloudDiagnostics,
+    LowLevelResponseDiagnostics,
+    LowLevelResponseFieldDiagnostics,
     RainDiagnostics,
     ReflectivityDiagnostics,
     ResultDiagnostics,
@@ -811,9 +813,11 @@ def test_campaign_report_summarizes_ingested_result_without_fabricating_bl_respo
     assert run["lhfx_present"] is True
     assert run["diagnostic_support"]["surface_fluxes"] == "available"
     assert run["low_level_qv_response"] == (
-        "unavailable:low_level_response_diagnostic_not_implemented"
+        "unavailable:qv_low_level_response_unavailable_in_fixture"
     )
-    assert run["low_level_qv_response_method"] == "low_level_response_diagnostic_not_implemented"
+    assert run["low_level_qv_response_method"] == (
+        "unavailable:qv_low_level_response_unavailable_in_fixture"
+    )
     assert "low_level_qv_response" in summary["unavailable_diagnostics"]
     assert "max w 2.5" in report_path.read_text()
 
@@ -885,6 +889,85 @@ def test_campaign_report_verifies_matched_phase1_surface_flux_response(
     assert "Surface flux response: `surface_flux_response_verified`" in report
     assert "qfx: informational; expected `comparable`, observed `increase`" in report
     assert "`phase1_control_high_sensible` vs `phase1_control_default_flux`" in report
+
+
+def test_campaign_report_verifies_matched_phase1_low_level_response(
+    tmp_path: Path,
+) -> None:
+    artifacts = _report_phase1_surface_flux_matrix(
+        tmp_path,
+        flux_means={
+            "phase1_control_default_flux": (2.0, 2.0e-5),
+            "phase1_control_high_sensible": (4.0, 2.5e-5),
+            "phase1_control_high_moisture": (2.2, 4.0e-5),
+            "phase1_control_high_both": (4.0, 4.0e-5),
+        },
+        low_level_deltas={
+            "phase1_control_default_flux": (0.001, 1.0),
+            "phase1_control_high_sensible": (0.0012, 3.0),
+            "phase1_control_high_moisture": (0.004, 1.1),
+            "phase1_control_high_both": (0.004, 3.2),
+        },
+    )
+
+    assert artifacts.summary["surface_flux_response"]["state"] == "surface_flux_response_verified"
+    assert artifacts.summary["low_level_response"]["state"] == "low_level_response_verified"
+    assert artifacts.summary["phase_gate_state"] == "forcing_path_verified_for_campaign"
+    run = next(
+        row
+        for row in artifacts.summary["runs"]
+        if row["matrix_id"] == "phase1_control_high_moisture"
+    )
+    assert run["low_level_qv_response"] == pytest.approx(0.004)
+    assert run["low_level_qv_response_method"] == "coordinate_values_0_1_km_agl"
+    assert run["low_level_theta_or_temperature_response"] == pytest.approx(1.1)
+
+    moisture = next(
+        evaluation
+        for evaluation in artifacts.summary["low_level_response"]["evaluations"]
+        if evaluation["comparison_type"] == "moisture_flux_sensitivity"
+    )
+    assert moisture["expectations"][0]["required"] is False
+    assert moisture["expectations"][1]["required"] is True
+    assert moisture["expectations"][1]["field"] == "low_level_qv_response"
+    assert moisture["expectations"][1]["status"] == "verified"
+    report = Path(artifacts.markdown_path).read_text()
+    assert "## Low-Level Response" in report
+    assert "low_level_qv_response: required; expected `increase`, observed `increase`" in report
+
+
+def test_campaign_report_blocks_phase_gate_when_low_level_response_not_verified(
+    tmp_path: Path,
+) -> None:
+    artifacts = _report_phase1_surface_flux_matrix(
+        tmp_path,
+        flux_means={
+            "phase1_control_default_flux": (2.0, 2.0e-5),
+            "phase1_control_high_sensible": (4.0, 2.0e-5),
+            "phase1_control_high_moisture": (2.0, 4.0e-5),
+            "phase1_control_high_both": (4.0, 4.0e-5),
+        },
+        low_level_deltas={
+            "phase1_control_default_flux": (0.001, 1.0),
+            "phase1_control_high_sensible": (0.001, 3.0),
+            "phase1_control_high_moisture": (0.001, 1.0),
+            "phase1_control_high_both": (0.004, 3.2),
+        },
+    )
+
+    assert artifacts.summary["surface_flux_response"]["state"] == "surface_flux_response_verified"
+    assert artifacts.summary["low_level_response"]["state"] == "low_level_response_not_verified"
+    assert artifacts.summary["phase_gate_state"] == (
+        "forcing_wiring_verified_but_response_not_verified"
+    )
+    moisture = next(
+        evaluation
+        for evaluation in artifacts.summary["low_level_response"]["evaluations"]
+        if evaluation["comparison_type"] == "moisture_flux_sensitivity"
+    )
+    assert moisture["expectations"][1]["expected"] == "increase"
+    assert moisture["expectations"][1]["observed"] == "comparable"
+    assert moisture["expectations"][1]["status"] == "not_verified"
 
 
 def test_campaign_report_requires_complete_phase1_surface_flux_response_matrix(
@@ -1218,6 +1301,7 @@ def _report_phase1_surface_flux_matrix(
     tmp_path: Path,
     *,
     flux_means: dict[str, tuple[float, float]],
+    low_level_deltas: dict[str, tuple[float, float]] | None = None,
     non_finite_counts: dict[str, tuple[int, int]] | None = None,
     unit_overrides: dict[str, tuple[str, str]] | None = None,
     mutate_matrix: Any | None = None,
@@ -1243,6 +1327,12 @@ def _report_phase1_surface_flux_matrix(
             Path(state_run.manifest_path or ""),
             hfx_mean=hfx_mean,
             qfx_mean=qfx_mean,
+            low_level_qv_delta=(
+                low_level_deltas[state_run.matrix_id][0] if low_level_deltas is not None else None
+            ),
+            low_level_theta_delta=(
+                low_level_deltas[state_run.matrix_id][1] if low_level_deltas is not None else None
+            ),
             hfx_units=hfx_units,
             qfx_units=qfx_units,
             hfx_non_finite_count=hfx_non_finite,
@@ -1279,6 +1369,49 @@ def _set_manifest_lifecycle(
     )
 
 
+def _fake_low_level_response_field(
+    *,
+    source_field: str,
+    delta: float | None,
+    units: str,
+) -> LowLevelResponseFieldDiagnostics:
+    if delta is None:
+        return LowLevelResponseFieldDiagnostics(
+            source_field=source_field,
+            available=False,
+            field_absent=False,
+            units=units,
+            caveats=[f"{source_field}_low_level_response_unavailable_in_fixture"],
+        )
+    first_mean = 0.010 if source_field == "qv" else 300.0
+    final_mean = first_mean + delta
+    return LowLevelResponseFieldDiagnostics(
+        source_field=source_field,
+        available=True,
+        field_absent=False,
+        layer_bottom_m=0.0,
+        layer_top_m=1000.0,
+        vertical_coordinate_name="z",
+        vertical_coordinate_units="m",
+        vertical_coordinate_method="coordinate_values_0_1_km_agl",
+        time_dimension="time",
+        first_time_index=0,
+        final_time_index=1,
+        first_time_seconds=0.0,
+        final_time_seconds=3600.0,
+        first_mean_value=first_mean,
+        final_mean_value=final_mean,
+        delta_value=delta,
+        units=units,
+        first_finite_count=8,
+        first_non_finite_count=0,
+        first_total_count=8,
+        final_finite_count=8,
+        final_non_finite_count=0,
+        final_total_count=8,
+    )
+
+
 def _write_fake_result_metadata(
     manifest_path: Path,
     *,
@@ -1293,6 +1426,8 @@ def _write_fake_result_metadata(
     qfx_units: str = "kg/m^2/s",
     hfx_non_finite_count: int = 0,
     qfx_non_finite_count: int = 0,
+    low_level_qv_delta: float | None = None,
+    low_level_theta_delta: float | None = None,
 ) -> None:
     manifest = load_run_manifest(manifest_path)
     now = datetime.now(UTC)
@@ -1397,6 +1532,18 @@ def _write_fake_result_metadata(
                     finite_count=8,
                     non_finite_count=qfx_non_finite_count,
                     total_count=8 + qfx_non_finite_count,
+                ),
+            ),
+            low_level_response=LowLevelResponseDiagnostics(
+                qv=_fake_low_level_response_field(
+                    source_field="qv",
+                    delta=low_level_qv_delta,
+                    units="kg/kg",
+                ),
+                theta_or_temperature=_fake_low_level_response_field(
+                    source_field="th",
+                    delta=low_level_theta_delta,
+                    units="K",
                 ),
             ),
             time=TimeDiagnostics(source="time", fallback_used=False, coordinate_name="time"),

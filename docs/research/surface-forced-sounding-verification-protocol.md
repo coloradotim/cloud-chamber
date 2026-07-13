@@ -277,7 +277,9 @@ operator_override_continue
 - Missing selected/product forcing metadata: `forcing_wiring_not_verified`; block automatic continuation.
 - Missing CM1-facing `cnst_shflx` or `cnst_lhflx`: `forcing_wiring_not_verified`; block automatic continuation.
 - Missing `hfx` or `qfx` when requested: `inconclusive_missing_evidence`; block automatic continuation.
-- Missing standardized low-level response diagnostic: `inconclusive_missing_evidence`; block automatic continuation.
+- Missing or unavailable standardized low-level response diagnostic:
+  `forcing_wiring_verified_but_response_not_verified`; block automatic continuation
+  after surface-flux response is verified.
 - Matched Phase 1 emitted `hfx`/`qfx` values are present, trusted, unit-comparable, and every required Phase 1 comparison type is present: `surface_flux_response_verified`; continue to low-level response checks.
 - Missing one of the required `heat_flux_sensitivity`, `moisture_flux_sensitivity`, or `combined_flux_sensitivity` comparisons: `surface_flux_response_inconclusive_missing_evidence`; block automatic continuation.
 - Missing, untrusted, or not-ingested matched Phase 1 `hfx`/`qfx` statistics: `surface_flux_response_inconclusive_missing_evidence`; block automatic continuation.
@@ -313,9 +315,9 @@ Cloud Chamber commit and CM1 version/build are required per run in the summary c
 
 ## Low-level response diagnostic contract
 
-Low-level `qv` and theta/temperature response must be standardized before the campaign runner summarizes them.
-
-Preferred method for #311:
+Low-level `qv` and theta/temperature response is a backend-owned diagnostic.
+The campaign runner must use this standardized output rather than improvising a
+browser-side or report-local calculation.
 
 ```text
 vertical layer: 0-1000 m AGL, using available model vertical coordinate
@@ -327,13 +329,18 @@ forcing sensitivity: response difference against the paired control run with sam
 units: preserve source field units; convert only if the backend has a documented conversion
 ```
 
-If a standardized backend diagnostic is not implemented, report these fields as:
+The result metadata and science-summary payload preserve source field, units,
+vertical-coordinate method, first/final time indices, first/final means, delta,
+and finite/non-finite endpoint counts. Missing `qv`, missing theta/temperature,
+missing vertical coordinates, unsupported vertical units, insufficient output
+times, or entirely non-finite endpoints produce explicit unavailable states.
 
-```text
-unavailable: low_level_response_diagnostic_not_implemented
-```
-
-The campaign runner must not improvise a browser-side or ad hoc calculation without documenting the layer, statistic, reference time, paired control, units, and source fields.
+For Phase 1 gate evaluation, heat-only comparisons require the
+theta/temperature response delta to increase against the matched control;
+moisture-only comparisons require the `qv` response delta to increase against
+the matched control; combined comparisons require both. Non-varied low-level
+response changes are informational unless a later protocol defines a
+field-specific stability tolerance.
 
 ## Phase 1 — Forcing-path smoke check
 
@@ -576,8 +583,18 @@ qfx_finite_count / qfx_non_finite_count / qfx_total_count
 surface_moisture_flux_output_field
 low_level_qv_response with method or unavailable reason
 low_level_qv_response_method
+low_level_qv_response_source_field
+low_level_qv_response_units
+low_level_qv_response_first_mean / low_level_qv_response_final_mean
+low_level_qv_response_first_time_seconds / low_level_qv_response_final_time_seconds
+low_level_qv_response_first_finite_count / low_level_qv_response_final_finite_count
 low_level_theta_or_temperature_response with method or unavailable reason
 low_level_theta_or_temperature_response_method
+low_level_theta_or_temperature_response_source_field
+low_level_theta_or_temperature_response_units
+low_level_theta_or_temperature_response_first_mean / low_level_theta_or_temperature_response_final_mean
+low_level_theta_or_temperature_response_first_time_seconds / low_level_theta_or_temperature_response_final_time_seconds
+low_level_theta_or_temperature_response_first_finite_count / low_level_theta_or_temperature_response_final_finite_count
 first_cloud_time
 max_cloud_top_m and time
 max_qc and time

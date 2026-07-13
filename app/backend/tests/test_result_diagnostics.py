@@ -24,6 +24,9 @@ def base_dataset(
     dbz_values: list[list[list[list[float]]]] | None = None,
     hfx_values: list[list[list[float]]] | None = None,
     qfx_values: list[list[list[float]]] | None = None,
+    qv_values: list[list[list[list[float]]]] | None = None,
+    th_values: list[list[list[list[float]]]] | None = None,
+    temperature_values: list[list[list[list[float]]]] | None = None,
     qi_values: list[list[list[list[float]]]] | None = None,
     qs_values: list[list[list[list[float]]]] | None = None,
     qg_values: list[list[list[list[float]]]] | None = None,
@@ -83,6 +86,24 @@ def base_dataset(
             qfx_values,
             {"units": "kg/m^2/s"},
         )
+    if qv_values is not None:
+        data_vars["qv"] = (
+            ("time", "z", "y", "x"),
+            qv_values,
+            {"units": "kg/kg"},
+        )
+    if th_values is not None:
+        data_vars["th"] = (
+            ("time", "z", "y", "x"),
+            th_values,
+            {"units": "K"},
+        )
+    if temperature_values is not None:
+        data_vars["temperature"] = (
+            ("time", "z", "y", "x"),
+            temperature_values,
+            {"units": "K"},
+        )
     if qi_values is not None:
         data_vars["qi"] = (
             ("time", "z", "y", "x"),
@@ -135,6 +156,13 @@ def surface_values(start: float = 0.0, step: float = 1.0) -> list[list[list[floa
     return values
 
 
+def time_z_values(values_by_time_z: list[list[float]]) -> list[list[list[list[float]]]]:
+    return [
+        [[[value for _x in range(4)] for _y in range(3)] for value in time_values]
+        for time_values in values_by_time_z
+    ]
+
+
 def with_cloud(cloudy_cells: int = 12) -> list[list[list[list[float]]]]:
     values = zeros()
     filled = 0
@@ -147,12 +175,12 @@ def with_cloud(cloudy_cells: int = 12) -> list[list[list[list[float]]]]:
     return values
 
 
-def w_field() -> list[list[list[list[float]]]]:
-    values = zeros()
+def w_field(z_count: int = 2) -> list[list[list[list[float]]]]:
+    values = zeros(z_count=z_count)
     values[0][0][0][0] = -1.5
-    values[0][1][2][3] = 2.5
+    values[0][min(1, z_count - 1)][2][3] = 2.5
     values[1][0][0][0] = -3.0
-    values[1][1][2][3] = 4.0
+    values[1][min(1, z_count - 1)][2][3] = 4.0
     return values
 
 
@@ -507,6 +535,131 @@ def test_surface_flux_statistics_mark_all_non_finite_fields_unavailable(
     assert diagnostics.surface_fluxes.qfx.total_count == 24
     assert diagnostics.field_quality["qfx"].quality_state == "untrusted"
     assert "qfx_field_entirely_non_finite" in diagnostics.caveats
+
+
+def test_low_level_response_computes_0_1km_first_final_deltas(tmp_path: Path) -> None:
+    dataset = write_dataset(
+        tmp_path / "low_level_response.nc",
+        base_dataset(
+            qc_values=zeros(z_count=3),
+            w_values=w_field(z_count=3),
+            qv_values=time_z_values(
+                [
+                    [0.010, 0.012, 0.080],
+                    [0.014, 0.018, 0.090],
+                ]
+            ),
+            th_values=time_z_values(
+                [
+                    [299.0, 301.0, 315.0],
+                    [302.0, 306.0, 318.0],
+                ]
+            ),
+            z_values=[250.0, 750.0, 1500.0],
+            z_units="m",
+        ),
+    )
+
+    diagnostics = compute_baseline_diagnostics(dataset, [])
+
+    qv = diagnostics.low_level_response.qv
+    thermal = diagnostics.low_level_response.theta_or_temperature
+    assert qv.available is True
+    assert qv.source_field == "qv"
+    assert qv.vertical_coordinate_name == "z"
+    assert qv.vertical_coordinate_units == "m"
+    assert qv.vertical_coordinate_method == "coordinate_values_0_1_km_agl"
+    assert qv.first_time_seconds == 0.0
+    assert qv.final_time_seconds == 300.0
+    assert qv.first_mean_value == pytest.approx(0.011)
+    assert qv.final_mean_value == pytest.approx(0.016)
+    assert qv.delta_value == pytest.approx(0.005)
+    assert qv.units == "kg/kg"
+    assert qv.first_finite_count == 24
+    assert qv.final_finite_count == 24
+
+    assert thermal.available is True
+    assert thermal.source_field == "th"
+    assert thermal.first_mean_value == pytest.approx(300.0)
+    assert thermal.final_mean_value == pytest.approx(304.0)
+    assert thermal.delta_value == pytest.approx(4.0)
+    assert thermal.units == "K"
+
+
+def test_low_level_response_marks_missing_fields_unavailable(tmp_path: Path) -> None:
+    dataset = write_dataset(
+        tmp_path / "low_level_response_missing.nc",
+        base_dataset(qc_values=zeros(), w_values=w_field()),
+    )
+
+    diagnostics = compute_baseline_diagnostics(dataset, [])
+
+    assert diagnostics.low_level_response.qv.available is False
+    assert diagnostics.low_level_response.qv.field_absent is True
+    assert diagnostics.low_level_response.qv.caveats == ["qv_field_absent"]
+    thermal = diagnostics.low_level_response.theta_or_temperature
+    assert thermal.available is False
+    assert thermal.field_absent is True
+    assert thermal.caveats == ["theta_or_temperature_field_absent"]
+
+
+def test_low_level_response_requires_vertical_coordinate(tmp_path: Path) -> None:
+    dataset = xr.Dataset(
+        data_vars={
+            "qv": (
+                ("time", "z", "y", "x"),
+                time_z_values([[0.010, 0.012], [0.014, 0.018]]),
+                {"units": "kg/kg"},
+            ),
+            "th": (
+                ("time", "z", "y", "x"),
+                time_z_values([[299.0, 301.0], [302.0, 306.0]]),
+                {"units": "K"},
+            ),
+            "qc": (("time", "z", "y", "x"), zeros(), {"units": "kg/kg"}),
+            "w": (("time", "z", "y", "x"), w_field(), {"units": "m/s"}),
+        },
+        coords={
+            "time": [0.0, 300.0],
+            "y": [0.0, 200.0, 400.0],
+            "x": [0.0, 200.0, 400.0, 600.0],
+        },
+    )
+    dataset = write_dataset(tmp_path / "low_level_response_missing_z_coord.nc", dataset)
+
+    diagnostics = compute_baseline_diagnostics(dataset, [])
+
+    assert diagnostics.low_level_response.qv.available is False
+    assert diagnostics.low_level_response.qv.caveats == [
+        "qv_low_level_response_missing_vertical_coordinate"
+    ]
+    assert "qv_low_level_response_missing_vertical_coordinate" in diagnostics.caveats
+
+
+def test_low_level_response_caveats_partially_non_finite_endpoints(tmp_path: Path) -> None:
+    qv_values = time_z_values([[0.010, 0.012], [0.014, 0.018]])
+    qv_values[1][0][0][0] = float("nan")
+    dataset = write_dataset(
+        tmp_path / "low_level_response_partially_nan.nc",
+        base_dataset(
+            qc_values=zeros(),
+            w_values=w_field(),
+            qv_values=qv_values,
+            temperature_values=time_z_values([[289.0, 291.0], [292.0, 296.0]]),
+            z_values=[250.0, 750.0],
+            z_units="m",
+        ),
+    )
+
+    diagnostics = compute_baseline_diagnostics(dataset, [])
+
+    qv = diagnostics.low_level_response.qv
+    assert qv.available is True
+    assert qv.final_finite_count == 23
+    assert qv.final_non_finite_count == 1
+    assert qv.delta_value == pytest.approx(((0.014 * 11 + 0.018 * 12) / 23) - 0.011)
+    assert "non_finite_values_detected_in_qv_low_level_response" in diagnostics.caveats
+    assert diagnostics.low_level_response.theta_or_temperature.source_field == "temperature"
 
 
 def test_missing_qc_and_missing_w_are_graceful(tmp_path: Path) -> None:

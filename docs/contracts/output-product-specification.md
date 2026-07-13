@@ -255,9 +255,11 @@ output product manifest and mirrors compact fields into `result_metadata.json`:
 `interesting_times`, `default_time_by_field`, `science_summary`, and
 `interesting_time_caveats`. It uses the output-product manifest time index plus
 existing CM1-derived diagnostics; it does not build a second time index and it
-does not ask the browser to parse NetCDF. Missing fields, no-event outcomes,
-and diagnostics that are not implemented yet are represented explicitly with
-support states such as `unavailable`, `unsupported_missing_fields`, and
+does not ask the browser to parse NetCDF. The science summary also carries the
+backend-owned low-level `qv` and theta/temperature response diagnostics when
+available. Missing fields, no-event outcomes, and diagnostics that are not
+implemented yet are represented explicitly with support states such as
+`unavailable`, `unsupported_missing_fields`, and
 `unsupported_missing_diagnostic` rather than silently falling back to a
 misleading cloud/rain-water landmark.
 

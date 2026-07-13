@@ -19,6 +19,8 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from cloud_chamber.result_diagnostics import (
     FieldQuality,
+    LowLevelResponseDiagnostics,
+    LowLevelResponseFieldDiagnostics,
     ResultDiagnostics,
     SurfaceFluxDiagnostics,
     TimeValue,
@@ -176,6 +178,9 @@ class ScienceSummary(BaseModel):
     default_explore_time_seconds: float | None = None
     cm1_outcome: str | None = None
     surface_fluxes: SurfaceFluxDiagnostics = Field(default_factory=SurfaceFluxDiagnostics)
+    low_level_response: LowLevelResponseDiagnostics = Field(
+        default_factory=LowLevelResponseDiagnostics
+    )
     field_quality_assessed: bool = False
     field_quality: dict[str, FieldQuality] = Field(default_factory=dict)
     diagnostic_availability: list[ScienceDiagnosticAvailability] = Field(default_factory=list)
@@ -1034,6 +1039,7 @@ def _science_summary(
         default_explore_time_seconds=default_source.time_seconds if default_source else None,
         cm1_outcome=None,
         surface_fluxes=diagnostics.surface_fluxes,
+        low_level_response=diagnostics.low_level_response,
         field_quality_assessed=diagnostics.field_quality_assessed,
         field_quality=diagnostics.field_quality if diagnostics.field_quality_assessed else {},
         diagnostic_availability=_diagnostic_availability(variables, diagnostics),
@@ -1163,6 +1169,7 @@ def _diagnostic_availability(
 ) -> list[ScienceDiagnosticAvailability]:
     reflectivity_supported = bool(diagnostics and diagnostics.reflectivity.available)
     surface_rain_supported = bool(diagnostics and diagnostics.surface_rain.available)
+    low_level_response = diagnostics.low_level_response if diagnostics is not None else None
     return [
         _availability_record(
             key="max_dbz_or_reflectivity_proxy",
@@ -1204,7 +1211,71 @@ def _diagnostic_availability(
             implemented=False,
             field_quality=None,
         ),
+        _low_level_response_availability_record(
+            key="low_level_qv_response",
+            label="Low-level qv response",
+            source_field="qv",
+            diagnostics=low_level_response.qv if low_level_response is not None else None,
+            field_present="qv" in variables,
+        ),
+        _low_level_response_availability_record(
+            key="low_level_theta_or_temperature_response",
+            label="Low-level theta/temperature response",
+            source_field=(
+                low_level_response.theta_or_temperature.source_field
+                if low_level_response is not None
+                and low_level_response.theta_or_temperature.source_field is not None
+                else "th"
+            ),
+            diagnostics=low_level_response.theta_or_temperature
+            if low_level_response is not None
+            else None,
+            field_present=bool({"th", "theta", "theta_v", "temperature", "t"} & variables),
+        ),
     ]
+
+
+def _low_level_response_availability_record(
+    *,
+    key: str,
+    label: str,
+    source_field: str,
+    diagnostics: LowLevelResponseFieldDiagnostics | None,
+    field_present: bool,
+) -> ScienceDiagnosticAvailability:
+    if diagnostics is not None and diagnostics.available:
+        return ScienceDiagnosticAvailability(
+            key=key,
+            label=label,
+            source_field=diagnostics.source_field or source_field,
+            support_state="supported",
+            value=diagnostics.delta_value,
+            units=diagnostics.units,
+            caveats=diagnostics.caveats,
+        )
+    if not field_present or (diagnostics is not None and diagnostics.field_absent):
+        caveat = (
+            diagnostics.caveats[0]
+            if diagnostics is not None and diagnostics.caveats
+            else f"missing_{source_field}_field"
+        )
+        return ScienceDiagnosticAvailability(
+            key=key,
+            label=label,
+            source_field=source_field,
+            support_state="unsupported_missing_fields",
+            caveats=[caveat],
+        )
+    return ScienceDiagnosticAvailability(
+        key=key,
+        label=label,
+        source_field=diagnostics.source_field if diagnostics is not None else source_field,
+        support_state="unavailable",
+        units=diagnostics.units if diagnostics is not None else None,
+        caveats=diagnostics.caveats
+        if diagnostics is not None and diagnostics.caveats
+        else [f"{key}_unavailable"],
+    )
 
 
 def _availability_record(

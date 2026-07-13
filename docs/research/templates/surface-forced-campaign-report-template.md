@@ -50,7 +50,8 @@ If `qc`, `w`, `qr`, surface `rain`, or `dbz` is entirely non-finite or materiall
 
 ## Low-level response method
 
-State exactly how low-level `qv` and theta/temperature response were computed, or mark them unavailable.
+State exactly how backend-owned low-level `qv` and theta/temperature response
+were computed, or mark them unavailable.
 
 Required method fields:
 
@@ -62,12 +63,7 @@ evaluation time:
 paired control run:
 source fields:
 units:
-```
-
-If the standardized diagnostic is not implemented, write:
-
-```text
-unavailable: low_level_response_diagnostic_not_implemented
+finite/non-finite endpoint counts:
 ```
 
 ## Phase 1 — forcing-path smoke check
@@ -170,7 +166,8 @@ Examples:
 
 ```text
 - Fix package/output wiring before running more cases.
-- Add standardized low-level qv/theta response diagnostics before next campaign.
+- Resolve missing or not-verified low-level qv/theta response evidence before
+  continuing the campaign automatically.
 - Adjust default flux values or add stronger labeled examples.
 - Prefer Regional 60 km / 12 h for first deep-candidate checks.
 - Proceed to differential forcing (#307) as a follow-up candidate because uniform forcing responds but does not focus ascent.

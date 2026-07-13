@@ -23,6 +23,8 @@ from cloud_chamber.output_products import (
 from cloud_chamber.result_diagnostics import (
     CloudDiagnostics,
     FieldQuality,
+    LowLevelResponseDiagnostics,
+    LowLevelResponseFieldDiagnostics,
     ProcessDiagnostics,
     RainDiagnostics,
     ReflectivityDiagnostics,
@@ -559,6 +561,9 @@ def _merge_diagnostics(
     surface_fluxes = _merge_surface_flux_diagnostics(
         [diagnostics.surface_fluxes for diagnostics in diagnostics_parts]
     )
+    low_level_response = _merge_low_level_response_diagnostics(
+        [diagnostics.low_level_response for diagnostics in diagnostics_parts]
+    )
     field_quality = _merge_field_quality_maps(diagnostics_parts)
     field_quality_assessed = any(
         diagnostics.field_quality_assessed for diagnostics in diagnostics_parts
@@ -569,6 +574,19 @@ def _merge_diagnostics(
             *(caveat for diagnostics in diagnostics_parts for caveat in diagnostics.caveats),
         ]
     )
+    if low_level_response.qv.available:
+        caveats = [
+            caveat
+            for caveat in caveats
+            if caveat != "qv_low_level_response_requires_at_least_two_time_steps"
+        ]
+    thermal_source = low_level_response.theta_or_temperature.source_field
+    if low_level_response.theta_or_temperature.available and thermal_source:
+        caveats = [
+            caveat
+            for caveat in caveats
+            if caveat != f"{thermal_source}_low_level_response_requires_at_least_two_time_steps"
+        ]
     return ResultDiagnostics(
         cloud=cloud,
         vertical_velocity=vertical,
@@ -576,6 +594,7 @@ def _merge_diagnostics(
         surface_rain=surface_rain,
         reflectivity=reflectivity,
         surface_fluxes=surface_fluxes,
+        low_level_response=low_level_response,
         time=time,
         field_quality_assessed=field_quality_assessed,
         field_quality=field_quality,
@@ -812,6 +831,113 @@ def _merge_surface_flux_field_diagnostics(
         finite_count=finite_count,
         non_finite_count=non_finite_count,
         total_count=total_count,
+        caveats=caveats,
+    )
+
+
+def _merge_low_level_response_diagnostics(
+    parts: list[LowLevelResponseDiagnostics],
+) -> LowLevelResponseDiagnostics:
+    return LowLevelResponseDiagnostics(
+        qv=_merge_low_level_response_field_diagnostics(
+            "qv",
+            [part.qv for part in parts],
+        ),
+        theta_or_temperature=_merge_low_level_response_field_diagnostics(
+            None,
+            [part.theta_or_temperature for part in parts],
+        ),
+    )
+
+
+def _merge_low_level_response_field_diagnostics(
+    fallback_source_field: str | None,
+    parts: list[LowLevelResponseFieldDiagnostics],
+) -> LowLevelResponseFieldDiagnostics:
+    if not parts:
+        return LowLevelResponseFieldDiagnostics(source_field=fallback_source_field)
+    available_parts = [part for part in parts if part.available]
+    endpoint_parts = [
+        part
+        for part in parts
+        if part.first_mean_value is not None
+        and part.final_mean_value is not None
+        and part.first_finite_count > 0
+        and part.final_finite_count > 0
+    ]
+    source_field = next(
+        (part.source_field for part in parts if part.source_field is not None),
+        fallback_source_field,
+    )
+    units = next((part.units for part in parts if part.units is not None), None)
+    caveats = _dedupe_strings([caveat for part in parts for caveat in part.caveats])
+    vertical_coordinate_name = next(
+        (part.vertical_coordinate_name for part in parts if part.vertical_coordinate_name),
+        None,
+    )
+    vertical_coordinate_units = next(
+        (part.vertical_coordinate_units for part in parts if part.vertical_coordinate_units),
+        None,
+    )
+    vertical_coordinate_method = next(
+        (part.vertical_coordinate_method for part in parts if part.vertical_coordinate_method),
+        None,
+    )
+    time_dimension = next((part.time_dimension for part in parts if part.time_dimension), None)
+    if not available_parts and len(endpoint_parts) >= 2 and source_field:
+        caveats = [
+            caveat
+            for caveat in caveats
+            if caveat != f"{source_field}_low_level_response_requires_at_least_two_time_steps"
+        ]
+    if not available_parts and len(endpoint_parts) < 2:
+        return LowLevelResponseFieldDiagnostics(
+            source_field=source_field,
+            available=False,
+            field_absent=all(part.field_absent for part in parts),
+            vertical_coordinate_name=vertical_coordinate_name,
+            vertical_coordinate_units=vertical_coordinate_units,
+            vertical_coordinate_method=vertical_coordinate_method,
+            time_dimension=time_dimension,
+            units=units,
+            first_finite_count=sum(part.first_finite_count for part in parts),
+            first_non_finite_count=sum(part.first_non_finite_count for part in parts),
+            first_total_count=sum(part.first_total_count for part in parts),
+            final_finite_count=sum(part.final_finite_count for part in parts),
+            final_non_finite_count=sum(part.final_non_finite_count for part in parts),
+            final_total_count=sum(part.final_total_count for part in parts),
+            caveats=caveats,
+        )
+
+    endpoint_source = available_parts or endpoint_parts
+    first = endpoint_source[0]
+    final = endpoint_source[-1]
+    first_mean = first.first_mean_value
+    final_mean = final.final_mean_value
+    return LowLevelResponseFieldDiagnostics(
+        source_field=source_field,
+        available=True,
+        field_absent=False,
+        vertical_coordinate_name=vertical_coordinate_name,
+        vertical_coordinate_units=vertical_coordinate_units,
+        vertical_coordinate_method=vertical_coordinate_method,
+        time_dimension=time_dimension,
+        first_time_index=first.first_time_index,
+        final_time_index=final.final_time_index,
+        first_time_seconds=first.first_time_seconds,
+        final_time_seconds=final.final_time_seconds,
+        first_mean_value=first_mean,
+        final_mean_value=final_mean,
+        delta_value=(final_mean - first_mean)
+        if first_mean is not None and final_mean is not None
+        else None,
+        units=units,
+        first_finite_count=first.first_finite_count,
+        first_non_finite_count=first.first_non_finite_count,
+        first_total_count=first.first_total_count,
+        final_finite_count=final.final_finite_count,
+        final_non_finite_count=final.final_non_finite_count,
+        final_total_count=final.final_total_count,
         caveats=caveats,
     )
 

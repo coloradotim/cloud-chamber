@@ -207,6 +207,15 @@ verification. Non-varied flux changes remain informational unless the protocol
 defines field-specific stability tolerances. Unchanged, reversed, incomplete,
 missing, untrusted, mismatched-unit, or structurally non-comparable cases remain
 blocked.
+Low-level response tests should compute backend-owned 0-1 km AGL domain-mean
+`qv` and theta/temperature first/final means and deltas, preserve source field
+names, units, vertical-coordinate method, time indices, and finite/non-finite
+endpoint counts, and mark missing fields, missing vertical coordinates,
+unsupported vertical units, insufficient output times, and entirely non-finite
+endpoints unavailable. Campaign tests should compare heat-only theta/temperature
+and moisture-only `qv` deltas against matched controls and keep non-varied
+low-level response changes informational unless the protocol defines a
+field-specific tolerance.
 
 Local launcher tests must inject fake subprocess handles. They should assert command construction, stdout/stderr log capture, one-active-run refusal, queued/running/completed/failed/canceled state transitions, missing-settings failure, and protection against pre-existing output-like files. They must not launch real CM1 or require local runtime files in CI.
 They should also assert placeholder-only packages are rejected before launch, Rayleigh damping/domain checks catch damping over more than half the domain, required runtime files such as `LANDUSE.TBL` are staged from temp CM1 run directories, `.dat/.ctl` and NetCDF output artifacts are cataloged separately in the manifest, stderr floating-point flags are surfaced as runtime warnings, and exit code 0 without output becomes `needs_review` rather than `completed_cm1_result`.
