@@ -152,7 +152,7 @@ def create_realistic_field_catalog_result(
                     "qv",
                     "prs",
                     "hfx",
-                    "lhfx",
+                    "qfx",
                     "swten",
                     "lwp",
                     "CAPE",
@@ -303,10 +303,10 @@ def write_realistic_field_catalog_netcdf(path: Path) -> None:
                 surface,
                 {"units": "W m-2"},
             ),
-            "lhfx": (
+            "qfx": (
                 ("time", "yh", "xh"),
-                surface + 100.0,
-                {"units": "W m-2"},
+                surface * 1e-7,
+                {"units": "kg/m^2/s"},
             ),
             "psfc": (
                 ("time", "yh", "xh"),
@@ -469,7 +469,7 @@ def test_field_catalog_classifies_realistic_output_fields_conservatively(
         "qv",
         "prs",
         "hfx",
-        "lhfx",
+        "qfx",
         "psfc",
         "swten",
         "lwp",
@@ -589,7 +589,7 @@ def test_output_product_catalog_advertises_bounded_products_and_unavailable_diag
     assert "time_height:u" in time_height_keys
     assert "time_height:v" in time_height_keys
     assert "time_series:hfx" in time_series_keys
-    assert "time_series:lhfx" in time_series_keys
+    assert "time_series:qfx" in time_series_keys
     assert "time_series:u" in time_series_keys
     assert "time_series:v" in time_series_keys
     assert unavailable["boundary_layer_depth_time_series"].status == "unavailable"

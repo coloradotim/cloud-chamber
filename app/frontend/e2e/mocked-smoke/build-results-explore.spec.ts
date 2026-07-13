@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 
-import { gotoApp, gotoBuild, gotoResults } from "../helpers";
+import { gotoApp, gotoBuild, gotoResults, openRunMonitor } from "../helpers";
 import { mockCloudChamberApis } from "../fixtures";
 
 test.describe("mocked smoke: Build, Results, Explore path", () => {
@@ -19,9 +19,7 @@ test.describe("mocked smoke: Build, Results, Explore path", () => {
     await page.getByLabel("Experiment", { exact: true }).selectOption("baseline-shallow-cumulus");
     await expect(page.getByText(/physical question/i).first()).toBeVisible();
     await expect(page.getByText(/how do low-level moisture/i).first()).toBeVisible();
-    await expect(page.getByText("Run monitor")).toBeVisible();
-    await page.getByText("Run monitor").click();
-    await expect(page.getByRole("heading", { name: "Local run launchpad" })).toBeVisible();
+    await openRunMonitor(page);
     await expect(
       page.getByRole("heading", { name: "Packages and runs needing action" }),
     ).toBeVisible();
@@ -313,7 +311,7 @@ test.describe("mocked smoke: Build, Results, Explore path", () => {
     ).toHaveCount(0);
 
     await gotoBuild(page);
-    await page.getByText("Run monitor").click();
+    await openRunMonitor(page);
     const pipelineRuns = page.getByLabel("Local packages and runs");
     const ingestReadyRun = pipelineRuns.locator("article", { hasText: "dry-run-disposable" });
     await expect(ingestReadyRun.getByText("Ready to ingest")).toBeVisible();

@@ -33,15 +33,20 @@ const defaultRunConfiguration = {
     "surface_flux_proxy_not_real_land_surface_or_evaporation_model",
     "surface_flux_proxy_values_need_local_smoke_validation",
   ],
-  cost_runtime_summary: "6 h model time, 307,200 cells, 15 min saved-output cadence",
-  output_volume_summary: "25 saved frames, full output fields, 307,200 cells per frame",
+  cost_runtime_summary: "6 h model time, 409,600 cells, 15 min saved-output cadence",
+  output_volume_summary: "25 saved frames, full output fields, 409,600 cells per frame",
   cm1_values: {
     nx: 64,
     ny: 64,
-    nz: 75,
+    nz: 100,
     dx_m: 100,
     dy_m: 100,
     dz_m: 40,
+    stretch_z: 1,
+    str_bot_m: 2000,
+    str_top_m: 18000,
+    dz_bot_m: 40,
+    dz_top_m: 600,
     model_top_m: 18000,
     domain_x_km: 6.4,
     domain_y_km: 6.4,
@@ -49,9 +54,9 @@ const defaultRunConfiguration = {
     runtime_seconds: 21600,
     output_cadence_seconds: 900,
     restart_cadence_seconds: 10800,
-    rayleigh_damping_start_m: 2500,
+    rayleigh_damping_start_m: 12000,
     expected_output_frames: 25,
-    grid_cell_count: 307200,
+    grid_cell_count: 409600,
   },
   caveats: ["science_run_configuration_minimum_duration_6h"],
 };
@@ -70,14 +75,19 @@ const defaultRunConfigurationSummary = {
   expected_output_frames: 25,
   nx: 64,
   ny: 64,
-  nz: 75,
+  nz: 100,
   dx_m: 100,
   dy_m: 100,
   dz_m: 40,
+  stretch_z: 1,
+  str_bot_m: 2000,
+  str_top_m: 18000,
+  dz_bot_m: 40,
+  dz_top_m: 600,
   model_top_m: 18000,
   time_step_seconds: 3,
   time_step_note: "CM1 solver timestep is resolved from the selected run configuration.",
-  grid_cell_count: 307200,
+  grid_cell_count: 409600,
   grid_cell_multiplier_vs_default: 1,
   time_step_multiplier_vs_default: 1,
   output_frame_multiplier_vs_default: 1,
@@ -135,7 +145,7 @@ const defaultPreRunValidationReport = {
     output_cadence_seconds: 900,
     diagnostic_set: "full",
     estimated_frames: 25,
-    estimated_output_volume: "25 saved frames, full output fields, 307,200 cells per frame",
+    estimated_output_volume: "25 saved frames, full output fields, 409,600 cells per frame",
   },
   forcing_validation: {
     trigger: "none",
@@ -175,8 +185,8 @@ const highDetailRunConfiguration = {
   output_cadence: "detailed_5min",
   output_cadence_seconds: 300,
   diagnostic_set: "full",
-  cost_runtime_summary: "12 h model time, 4,915,200 cells, 5 min saved-output cadence",
-  output_volume_summary: "145 saved frames, full output fields, 4,915,200 cells per frame",
+  cost_runtime_summary: "12 h model time, 6,553,600 cells, 5 min saved-output cadence",
+  output_volume_summary: "145 saved frames, full output fields, 6,553,600 cells per frame",
   cm1_values: {
     ...defaultRunConfiguration.cm1_values,
     nx: 256,
@@ -188,7 +198,7 @@ const highDetailRunConfiguration = {
     runtime_seconds: 43200,
     output_cadence_seconds: 300,
     expected_output_frames: 145,
-    grid_cell_count: 4915200,
+    grid_cell_count: 6553600,
   },
   caveats: [
     "science_run_configuration_minimum_duration_6h",
@@ -305,7 +315,7 @@ const deepDryRunResponse = {
       ny: 256,
       dx_m: 50,
       dy_m: 50,
-      grid_cell_count: 4915200,
+      grid_cell_count: 6553600,
       grid_cell_multiplier_vs_default: 16,
       output_frame_multiplier_vs_default: 5.8,
       estimated_compute_multiplier_vs_default: 32,
@@ -1296,8 +1306,8 @@ const autoIngestedRunQueue = {
   schema_version: "1",
   entries: [
     {
-      run_id: "dry-run-001",
-      manifest_path: "/tmp/CloudChamber/runs/dry-run-001/run_manifest.json",
+      run_id: "dry-run-quicklook",
+      manifest_path: "/tmp/CloudChamber/runs/dry-run-quicklook/run_manifest.json",
       state: "ingested",
       queued_at: "2026-05-22T15:15:35Z",
       started_at: "2026-05-22T15:15:36Z",
@@ -3299,7 +3309,11 @@ describe("App", () => {
     expect(
       screen.getByText("360 min runtime; 900 s output; 25 saved frames; 3 s timestep"),
     ).toBeInTheDocument();
-    expect(screen.getByText("64 x 64 x 75; dx/dy 100 m, dz 40 m")).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "64 x 64 x 100; dx/dy 100 m; top 18 km, dz 40 m to 600 m stretched",
+      ),
+    ).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Local run launchpad" })).toBeInTheDocument();
     expect(
       screen.getByRole("heading", { name: "Packages and runs needing action" }),
@@ -3839,8 +3853,10 @@ describe("App", () => {
       "Keep this one in the candidate notebook.",
     );
     fireEvent.click(within(savedCard).getByRole("button", { name: "Deep convection candidates" }));
-    expect(within(savedCard).getByLabelText("Tags")).toHaveValue(
-      "Maybe rerun, Deep convection candidates",
+    await waitFor(() =>
+      expect(within(savedCard).getByLabelText("Tags")).toHaveValue(
+        "Maybe rerun, Deep convection candidates",
+      ),
     );
     fireEvent.click(within(savedCard).getByRole("button", { name: "Save tags and notes" }));
 
@@ -4109,7 +4125,7 @@ describe("App", () => {
     expect(packageReview).toHaveTextContent("Pre-run validation");
     expect(packageReview).toHaveTextContent("Valid with caveats");
     expect(packageReview).toHaveTextContent("generated_reference_lower_atmosphere_v1");
-    expect(packageReview).toHaveTextContent("256 x 256 x 75");
+    expect(packageReview).toHaveTextContent("256 x 256 x 100");
     expect(packageReview).toHaveTextContent("dx/dy 50 m");
     expect(packageReview).toHaveTextContent("300 s output");
     expect(packageReview).toHaveTextContent("145 saved frames");
@@ -4308,8 +4324,6 @@ describe("App", () => {
       target: { value: "baseline-shallow-cumulus" },
     });
     const runMonitor = screen.getByText("Run monitor").closest("details");
-    expect(runMonitor).not.toHaveAttribute("open");
-    fireEvent.click(screen.getByText("Run monitor"));
     expect(runMonitor).toHaveAttribute("open");
     expect(await screen.findByRole("heading", { name: "Local run launchpad" })).toBeInTheDocument();
     expect(screen.queryByText("Local experiment loop")).not.toBeInTheDocument();
@@ -4318,6 +4332,7 @@ describe("App", () => {
     expect(screen.getByText("Ready to run")).toBeInTheDocument();
     expect(screen.getAllByText("Ready to ingest").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Running").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Result pending").length).toBeGreaterThan(0);
     expect(screen.queryByText("Ready to review")).not.toBeInTheDocument();
     expect(screen.queryByText("Quick-look shallow cumulus")).not.toBeInTheDocument();
     expect(screen.queryByText("Ingested result")).not.toBeInTheDocument();
@@ -4354,6 +4369,13 @@ describe("App", () => {
     const queuedPackage = {
       ...runningRunQueue,
       entries: [
+        {
+          ...runningRunQueue.entries[0],
+          run_id: "dry-run-old-launch",
+          manifest_path: "/tmp/CloudChamber/runs/dry-run-old-launch/run_manifest.json",
+          state: "launch_failed",
+          message: "Previous local launch failed.",
+        },
         {
           ...runningRunQueue.entries[0],
           run_id: "dry-run-packaged",
@@ -4420,6 +4442,8 @@ describe("App", () => {
       );
     });
     expect(await screen.findByText(/Running dry-run-packaged/)).toBeInTheDocument();
+    expect(screen.getAllByText("dry-run-packaged").length).toBeGreaterThan(0);
+    expect(screen.queryByText("dry-run-old-launch")).not.toBeInTheDocument();
   });
 
   it("shows auto-ingested queue entries without implying result-backed data was deleted", async () => {
@@ -4462,6 +4486,101 @@ describe("App", () => {
 
     expect(await screen.findByText("Auto-ingested")).toBeInTheDocument();
     expect(screen.getByText(/package retained for Results\/Explore/)).toBeInTheDocument();
+    expect(
+      screen.queryByText("Result was auto-ingested. Refresh Results if it is not visible."),
+    ).not.toBeInTheDocument();
+  });
+
+  it("does not show contradictory ingest actions for a current auto-ingested package", async () => {
+    const currentAutoIngestedQueue = {
+      ...autoIngestedRunQueue,
+      entries: [
+        {
+          ...autoIngestedRunQueue.entries[0],
+          run_id: "dry-run-001",
+          manifest_path: "/tmp/CloudChamber/runs/dry-run-001/run_manifest.json",
+        },
+      ],
+    };
+    const currentAutoIngestedRun = {
+      ...storageRuns[1],
+      run_id: "dry-run-001",
+      path: "/tmp/CloudChamber/runs/dry-run-001",
+      manifest_path: "/tmp/CloudChamber/runs/dry-run-001/run_manifest.json",
+    };
+    const currentOnlyInventory = {
+      ...storageInventoryResponse,
+      runs: [currentAutoIngestedRun],
+      largest_runs: [currentAutoIngestedRun],
+    };
+
+    vi.mocked(fetch).mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url === "/api/scenarios") {
+        return Promise.resolve(new Response(JSON.stringify(scenarioResponse), { status: 200 }));
+      }
+      if (url === "/api/results") {
+        return Promise.resolve(new Response(JSON.stringify({ results: [] }), { status: 200 }));
+      }
+      if (url === "/api/storage/inventory") {
+        return Promise.resolve(new Response(JSON.stringify(currentOnlyInventory), { status: 200 }));
+      }
+      if (url === "/api/dry-run-package") {
+        return Promise.resolve(
+          new Response(JSON.stringify(dryRunResponseForRequest(init)), { status: 200 }),
+        );
+      }
+      if (url === "/api/runs/queue") {
+        return Promise.resolve(
+          new Response(JSON.stringify(currentAutoIngestedQueue), { status: 200 }),
+        );
+      }
+      if (url === "/api/lan-worker/config") {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              configured: false,
+              available: false,
+              message: "LAN worker is not configured.",
+              cm1_env_keys: [],
+              cm1_env_settings: [],
+              custom_launch_command: false,
+            }),
+            { status: 200 },
+          ),
+        );
+      }
+      return Promise.resolve(new Response("not found", { status: 404 }));
+    });
+
+    render(<App />);
+    fireEvent.click(await screen.findByRole("button", { name: "Build" }));
+    fireEvent.change(screen.getByLabelText("Experiment"), {
+      target: { value: "baseline-shallow-cumulus" },
+    });
+    fireEvent.click(await screen.findByRole("button", { name: "Create run package" }));
+
+    let card: HTMLElement | null = null;
+    await waitFor(() => {
+      card =
+        screen
+          .getAllByText("dry-run-001")
+          .map((node) => node.closest("article"))
+          .find((article): article is HTMLElement => Boolean(article)) ?? null;
+      expect(card).toBeTruthy();
+    });
+    if (!card) throw new Error("Expected current auto-ingested package card.");
+    expect(within(card).getByText("Auto-ingested")).toBeInTheDocument();
+    expect(within(card).queryByText("Ready to ingest")).not.toBeInTheDocument();
+    expect(within(card).queryByText("Not ingested")).not.toBeInTheDocument();
+    expect(within(card).queryByRole("button", { name: "Ingest output" }))
+      .not.toBeInTheDocument();
+    expect(within(card).queryByRole("button", { name: "Preview cleanup" }))
+      .not.toBeInTheDocument();
+    expect(within(card).getByRole("button", { name: "Open result" }))
+      .toBeInTheDocument();
+    expect(within(card).getByRole("button", { name: "Open in Explore" }))
+      .toBeInTheDocument();
   });
 
   it("automatically copies back, ingests, and cleans LAN worker output after completion", async () => {
@@ -6485,14 +6604,19 @@ describe("App", () => {
     expect(within(cameraControls).getByText(/Camera zoomed in/)).toBeInTheDocument();
     fireEvent.click(within(cameraControls).getByRole("button", { name: "Zoom out" }));
     expect(within(cameraControls).getByText(/Camera zoomed out/)).toBeInTheDocument();
+    fireEvent.click(within(cameraControls).getByRole("button", { name: "Pan view up" }));
+    expect(within(cameraControls).getByText(/Camera moved up/)).toBeInTheDocument();
+    fireEvent.click(within(cameraControls).getByRole("button", { name: "Pan view down" }));
+    expect(within(cameraControls).getByText(/Camera moved down/)).toBeInTheDocument();
+    fireEvent.click(within(cameraControls).getByRole("button", { name: "Taller viewport" }));
+    expect(within(cameraControls).getByText(/Viewport set taller/)).toBeInTheDocument();
+    expect(within(cameraControls).getByRole("button", { name: "Standard viewport" })).toBeInTheDocument();
     fireEvent.click(screen.getByText("Technical visualization details"));
     expect(screen.getByText("Direct Three.js point cloud")).toBeInTheDocument();
 
     fireEvent.click(within(cameraControls).getByRole("button", { name: "Reset camera" }));
 
-    expect(
-      within(cameraControls).getByText(/Camera reset to shallow-cumulus overview/),
-    ).toBeInTheDocument();
+    expect(within(cameraControls).getByText(/Camera reset to overview/)).toBeInTheDocument();
   });
 
   it("updates cloud-water threshold opacity point size and time requests", async () => {

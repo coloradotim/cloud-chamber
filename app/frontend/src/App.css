@@ -1862,6 +1862,10 @@ details[open] > summary {
     var(--color-visualization-background);
 }
 
+.true3d-scene-frame-tall {
+  min-height: clamp(34rem, 62vw, 58rem);
+}
+
 .true3d-canvas-mount,
 .true3d-canvas {
   position: absolute;
@@ -2057,7 +2061,7 @@ details[open] > summary {
 
 .true3d-controls {
   display: grid;
-  grid-template-columns: minmax(18rem, auto) minmax(14rem, auto) minmax(18rem, 1fr);
+  grid-template-columns: minmax(18rem, auto) minmax(22rem, auto) minmax(18rem, 1fr);
   gap: 0.55rem;
   align-items: center;
   border: 1px solid rgba(215, 226, 232, 0.82);

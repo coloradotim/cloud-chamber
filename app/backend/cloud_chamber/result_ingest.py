@@ -37,6 +37,10 @@ from cloud_chamber.run_manifest import LifecycleState, ProductState, RunManifest
 from cloud_chamber.settings import CloudChamberSettings
 
 RESULT_METADATA_FILENAME = "result_metadata.json"
+REQUIRED_OUTPUT_FIELD_ALIASES: dict[str, set[str]] = {
+    "qfx": {"qfx", "lhfx"},
+    "lhfx": {"qfx", "lhfx"},
+}
 MODEL_OUTPUT_PATTERN = re.compile(r"^cm1out_\d+\.nc(?:4)?$")
 STATS_OUTPUT_NAMES = {"cm1out_stats.nc", "cm1out_stats.nc4"}
 DEEP_CONVECTION_STORY_IDS = {
@@ -617,7 +621,7 @@ def _merge_cloud_diagnostics(parts: list[CloudDiagnostics]) -> CloudDiagnostics:
         cloud_present_time_steps=[
             time for part in available_parts for time in part.cloud_present_time_steps
         ],
-        available=all(part.available for part in parts),
+        available=True,
     )
 
 
@@ -651,7 +655,7 @@ def _merge_vertical_velocity_diagnostics(
         w_max_time_series=[point for part in available_parts for point in part.w_max_time_series],
         w_min_time_series=[point for part in available_parts for point in part.w_min_time_series],
         units=next((part.units for part in available_parts if part.units is not None), None),
-        available=all(part.available for part in parts),
+        available=True,
     )
 
 
@@ -676,7 +680,7 @@ def _merge_rain_diagnostics(parts: list[RainDiagnostics]) -> RainDiagnostics:
         time_of_max_qr_seconds=max_qr_time.time_seconds,
         qr_max_time_series=[point for part in present_parts for point in part.qr_max_time_series],
         user_message=("Rain water aloft detected." if present else "No rain water aloft detected."),
-        available=all(part.available for part in parts),
+        available=True,
         field_absent=all(part.field_absent for part in parts),
     )
 
@@ -710,7 +714,7 @@ def _merge_surface_rain_diagnostics(parts: list[SurfaceRainDiagnostics]) -> Surf
         user_message=(
             "Surface rain reached the ground." if present else "No surface rain reached the ground."
         ),
-        available=all(part.available for part in parts),
+        available=True,
         field_absent=all(part.field_absent for part in parts),
     )
 
@@ -741,7 +745,7 @@ def _merge_reflectivity_diagnostics(
             if max_dbz_time.value is not None
             else "Reflectivity unavailable."
         ),
-        available=all(part.available for part in parts),
+        available=True,
         field_absent=all(part.field_absent for part in parts),
     )
 
@@ -954,7 +958,11 @@ def _missing_required_output_fields(
     coordinates: list[str],
 ) -> list[str]:
     available = set(variables) | set(coordinates)
-    return [field for field in manifest.required_output_fields if field not in available]
+    return [
+        field
+        for field in manifest.required_output_fields
+        if not (REQUIRED_OUTPUT_FIELD_ALIASES.get(field, {field}) & available)
+    ]
 
 
 def _candidate_hypothesis_comparison(
@@ -1025,7 +1033,7 @@ def _candidate_hypothesis_comparison(
     missing_comparison_fields = [
         field
         for field in result.missing_required_output_fields
-        if field in {"qc", "w", "qr", "rain", "dbz", "hfx", "lhfx"}
+        if field in {"qc", "w", "qr", "rain", "dbz", "hfx", "qfx", "lhfx"}
     ]
     if (
         deep_cloud

@@ -146,12 +146,13 @@ surface and process outputs:
 | `output_qv`, `output_th`, `output_prs` | Shows lower-atmosphere thermodynamic response. |
 | `output_q`, `output_w`, `output_dbz`, `output_rain` | Shows cloud, updraft, rain water aloft, reflectivity, and surface rain outcomes. |
 
-Cloud Chamber already has field definitions for surface sensible and latent heat
-flux aliases such as `hfx`, `lhfx`, `sensible_heat_flux`, and
-`latent_heat_flux`, and backend output-product tests cover surface-flux time
-series from fixture data. That means the product layer can represent the fields
-when they exist. It does not prove that CM1 emits the expected field names and
-units for all real runs or that changed flux values produce expected responses.
+Cloud Chamber already has field definitions for surface sensible heat flux and
+surface moisture flux aliases such as `hfx`, `qfx`, `sensible_heat_flux`, and
+`surface_moisture_flux`; `lhfx` is accepted only as a legacy/alternate moisture
+flux alias. Backend output-product tests cover surface-flux time series from
+fixture data. That means the product layer can represent the fields when they
+exist. It does not prove that CM1 emits the expected field names and units for
+all real runs or that changed flux values produce expected responses.
 
 ## Smoke Validation Matrix
 

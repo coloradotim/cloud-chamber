@@ -42,10 +42,15 @@ def test_cm1_contract_documents_expected_generated_files_and_default_run_configu
     assert {file.role for file in contract.generated_files} == set(GeneratedFileRole)
     assert contract.cloud_scale_defaults.nx == 64
     assert contract.cloud_scale_defaults.ny == 64
-    assert contract.cloud_scale_defaults.nz == 75
+    assert contract.cloud_scale_defaults.nz == 100
     assert contract.cloud_scale_defaults.horizontal_spacing_m == 100
     assert contract.cloud_scale_defaults.vertical_spacing_m == 40
     assert contract.cloud_scale_defaults.vertical_extent_km == 18.0
+    assert contract.cloud_scale_defaults.stretch_z == 1
+    assert contract.cloud_scale_defaults.stretch_bottom_m == 2000.0
+    assert contract.cloud_scale_defaults.stretch_top_m == 18000.0
+    assert contract.cloud_scale_defaults.dz_bottom_m == 40.0
+    assert contract.cloud_scale_defaults.dz_top_m == 600.0
     assert contract.cloud_scale_defaults.runtime_seconds == 21600
     assert contract.cloud_scale_defaults.output_cadence_seconds == 900
     assert contract.recipe_id == "generated_reference_lower_atmosphere_v1"
@@ -81,15 +86,20 @@ def test_rendered_namelist_default_quick_science_preserves_reference_domain() ->
     assert "&param0" in namelist
     assert "nx           =      64," in namelist
     assert "ny           =      64," in namelist
-    assert "nz           =      75," in namelist
+    assert "nz           =      100," in namelist
     assert "dx     =   100.0," in namelist
     assert "dy     =   100.0," in namelist
     assert "dz     =   40.0," in namelist
     assert "timax  = 21600.0," in namelist
     assert "tapfrq =  900.0," in namelist
     assert "rstfrq = 10800.0," in namelist
-    assert "zd      =  2500.0," in namelist
+    assert "zd      =  12000.0," in namelist
+    assert "stretch_z =  1," in namelist
     assert "ztop      = 18000.0," in namelist
+    assert "str_bot   =  2000.0," in namelist
+    assert "str_top   = 18000.0," in namelist
+    assert "dz_bot    =    40.0," in namelist
+    assert "dz_top    =   600.0," in namelist
     assert "set_znt    =      0," in namelist
     assert "cnst_znt   =   0.00," in namelist
     assert "set_ust    =      1," in namelist
@@ -124,12 +134,15 @@ def test_rendered_namelist_smoke_mode_is_short_package_health_run() -> None:
     assert "tapfrq =  900.0," in namelist
     assert "nx           =      128," in namelist
     assert "ny           =      128," in namelist
-    assert "nz           =      75," in namelist
+    assert "nz           =      100," in namelist
     assert "dx     =   50.0," in namelist
     assert "dy     =   50.0," in namelist
     assert "dz     =   40.0," in namelist
     assert "ztop      = 18000.0," in namelist
-    assert "zd      =  2500.0," in namelist
+    assert "stretch_z =  1," in namelist
+    assert "str_bot   =  2000.0," in namelist
+    assert "str_top   = 18000.0," in namelist
+    assert "zd      =  12000.0," in namelist
     assert "set_znt    =      0," in namelist
     assert "cnst_znt   =   0.00," in namelist
     assert "set_ust    =      1," in namelist
@@ -158,7 +171,7 @@ def test_rendered_namelist_explicit_configuration_changes_domain_detail_and_cade
     assert "configuration_better_suited_to_larger_compute" in (contract.run_configuration.caveats)
     assert "nx           =      256," in namelist
     assert "ny           =      256," in namelist
-    assert "nz           =      75," in namelist
+    assert "nz           =      100," in namelist
     assert "dx     =   50.0," in namelist
     assert "dy     =   50.0," in namelist
     assert "dz     =   40.0," in namelist
@@ -166,6 +179,9 @@ def test_rendered_namelist_explicit_configuration_changes_domain_detail_and_cade
     assert "timax  = 43200.0," in namelist
     assert "tapfrq =  300.0," in namelist
     assert "ztop      = 18000.0," in namelist
+    assert "stretch_z =  1," in namelist
+    assert "str_bot   =  2000.0," in namelist
+    assert "str_top   = 18000.0," in namelist
     assert "testcase  =  3," in namelist
     assert "isnd      = 17," in namelist
     assert "output_format    = 2," in namelist
@@ -207,14 +223,16 @@ def test_observed_contract_declares_surface_forced_v0_recipe_assumptions() -> No
     assert contract.recipe_display_name == "Observed Surface-Forced Evolution v0"
     assert contract.assumption_set_id == "observed_surface_forced_evolution_v0_assumptions"
     assert contract.assumption_mode == "observed_surface_forced_evolution"
-    assert contract.required_output_fields == ("qv", "qc", "w", "qr", "rain", "dbz", "hfx", "lhfx")
+    assert contract.required_output_fields == ("qv", "qc", "w", "qr", "rain", "dbz", "hfx", "qfx")
     trigger = cast(dict[str, Any], contract.recipe_assumptions["trigger"])
     radiation = cast(dict[str, Any], contract.recipe_assumptions["radiation"])
     forcing = cast(dict[str, Any], contract.recipe_assumptions["large_scale_forcing"])
     surface_fluxes = cast(dict[str, Any], contract.recipe_assumptions["surface_fluxes"])
+    observed_sounding = cast(dict[str, Any], contract.recipe_assumptions["observed_sounding"])
     assert trigger["mode"] == "none"
     assert radiation["mode"] == "disabled"
     assert forcing["mode"] == "none"
+    assert observed_sounding["wind_profile"] == "required_complete_rendered_u_v_profile"
     assert surface_fluxes["mode"] == "constant_uniform_surface_flux_proxy"
     assert surface_fluxes["product_selections"] == {
         "surface_heat_flux_k_m_s": 8.0e-3,
@@ -269,7 +287,7 @@ def test_observed_surface_flux_proxy_choices_render_namelist_and_surface_outputs
     assert surface_fluxes["cm1_values"]["set_flx"] == 1
     assert surface_fluxes["cm1_values"]["cnst_shflx"] == 4.0e-2
     assert surface_fluxes["cm1_values"]["cnst_lhflx"] == 1.0e-4
-    for field in ("qc", "qr", "qv", "w", "rain", "dbz", "hfx", "lhfx", "updraft_helicity"):
+    for field in ("qc", "qr", "qv", "w", "rain", "dbz", "hfx", "qfx", "updraft_helicity"):
         assert field in contract.expected_outputs
     assert "isfcflx    =      1," in namelist
     assert "sfcmodel   =      1," in namelist

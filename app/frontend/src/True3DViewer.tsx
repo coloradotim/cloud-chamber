@@ -146,6 +146,7 @@ export function True3DViewer({
   const refs = useRef<SceneRefs | null>(null);
   const [renderError, setRenderError] = useState<string | null>(null);
   const [cameraStatus, setCameraStatus] = useState("Camera ready");
+  const [tallViewport, setTallViewport] = useState(false);
 
   const boundsKey = boundsSignature(pointCloud);
   const bounds = useMemo(() => sceneBoundsFromSignature(boundsKey), [boundsKey]);
@@ -157,7 +158,7 @@ export function True3DViewer({
 
   const resetCamera = useCallback(() => {
     applyCameraPreset("overview", refs.current, bounds);
-    setCameraStatus("Camera reset to shallow-cumulus overview");
+    setCameraStatus("Camera reset to overview");
   }, [bounds]);
 
   const setCameraPreset = useCallback(
@@ -175,6 +176,28 @@ export function True3DViewer({
     const scale = direction === "in" ? 0.82 : 1.18;
     current.camera.position.multiplyScalar(scale);
     current.controls.update();
+  }, []);
+
+  const moveCameraVertical = useCallback(
+    (direction: "up" | "down") => {
+      setCameraStatus(direction === "up" ? "Camera moved up" : "Camera moved down");
+      const current = refs.current;
+      if (!current) return;
+      const step = Math.max(0.5, bounds.zRange * 0.12);
+      const delta = direction === "up" ? step : -step;
+      current.camera.position.y += delta;
+      current.controls.target.y += delta;
+      current.controls.update();
+    },
+    [bounds.zRange],
+  );
+
+  const toggleViewportHeight = useCallback(() => {
+    setTallViewport((current) => {
+      const next = !current;
+      setCameraStatus(next ? "Viewport set taller" : "Viewport set to standard height");
+      return next;
+    });
   }, []);
 
   useEffect(() => {
@@ -298,7 +321,7 @@ export function True3DViewer({
         <p className="state-chip">{status}</p>
       </div>
 
-      <div className="true3d-scene-frame">
+      <div className={`true3d-scene-frame${tallViewport ? " true3d-scene-frame-tall" : ""}`}>
         <div
           ref={mountRef}
           className="true3d-canvas-mount"
@@ -390,8 +413,17 @@ export function True3DViewer({
             <button type="button" onClick={() => zoomCamera("out")}>
               Zoom out
             </button>
+            <button type="button" onClick={() => moveCameraVertical("up")}>
+              Pan view up
+            </button>
+            <button type="button" onClick={() => moveCameraVertical("down")}>
+              Pan view down
+            </button>
             <button type="button" onClick={resetCamera}>
               Reset camera
+            </button>
+            <button type="button" onClick={toggleViewportHeight}>
+              {tallViewport ? "Standard viewport" : "Taller viewport"}
             </button>
           </div>
         </div>
@@ -884,7 +916,7 @@ function applyCameraPreset(
 
 function cameraPresetStatus(preset: CameraPreset): string {
   const labels: Record<CameraPreset, string> = {
-    overview: "Camera set to shallow-cumulus overview",
+    overview: "Camera set to overview",
     top_down_xy: "Camera set to top-down x-y view",
     look_along_x: "Camera looking along the x axis",
     look_along_y: "Camera looking along the y axis",

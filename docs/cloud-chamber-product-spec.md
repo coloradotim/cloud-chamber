@@ -1013,9 +1013,9 @@ diagnostics can directly explain cap limitation.
 Standard cloud-scale assumptions:
 
 ```text
-64 x 64 x 75 grid
+64 x 64 x 100 grid
 100 m horizontal spacing
-40 m nominal vertical spacing
+stretched vertical grid: 40 m low-level spacing to 600 m aloft
 18000 m domain top
 21600 s runtime
 3600 s output cadence

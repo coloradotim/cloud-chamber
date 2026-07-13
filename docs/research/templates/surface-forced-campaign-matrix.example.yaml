@@ -160,12 +160,17 @@ comparison_types:
       - dx_m
       - dy_m
       - dz_m
+      - stretch_z
+      - str_bot_m
+      - str_top_m
+      - dz_bot_m
+      - dz_top_m
       - model_top_m
       - output_cadence
       - cloud_chamber_commit
       - cm1_version
       - required_output_fields
-    required_available_fields: [hfx, lhfx, qv, th_or_temperature, qc, w]
+    required_available_fields: [hfx, qfx, qv, th_or_temperature, qc, w]
     required_diagnostic_support: [surface_fluxes, low_level_response, cloud, vertical_velocity]
     noncomparable_status: inconclusive_noncomparable_runs
 
@@ -185,12 +190,17 @@ comparison_types:
       - dx_m
       - dy_m
       - dz_m
+      - stretch_z
+      - str_bot_m
+      - str_top_m
+      - dz_bot_m
+      - dz_top_m
       - model_top_m
       - output_cadence
       - cloud_chamber_commit
       - cm1_version
       - required_output_fields
-    required_available_fields: [hfx, lhfx, qv, th_or_temperature, qc, w]
+    required_available_fields: [hfx, qfx, qv, th_or_temperature, qc, w]
     required_diagnostic_support: [surface_fluxes, low_level_response, cloud, vertical_velocity]
     noncomparable_status: inconclusive_noncomparable_runs
 
@@ -211,12 +221,17 @@ comparison_types:
       - dx_m
       - dy_m
       - dz_m
+      - stretch_z
+      - str_bot_m
+      - str_top_m
+      - dz_bot_m
+      - dz_top_m
       - model_top_m
       - output_cadence
       - cloud_chamber_commit
       - cm1_version
       - required_output_fields
-    required_available_fields: [hfx, lhfx, qv, th_or_temperature, qc, w]
+    required_available_fields: [hfx, qfx, qv, th_or_temperature, qc, w]
     required_diagnostic_support: [surface_fluxes, low_level_response, cloud, vertical_velocity]
     noncomparable_status: inconclusive_noncomparable_runs
 
@@ -237,12 +252,17 @@ comparison_types:
       - dx_m
       - dy_m
       - dz_m
+      - stretch_z
+      - str_bot_m
+      - str_top_m
+      - dz_bot_m
+      - dz_top_m
       - model_top_m
       - output_cadence
       - cloud_chamber_commit
       - cm1_version
       - required_output_fields
-    required_available_fields: [hfx, lhfx, qv, th_or_temperature, qc, w]
+    required_available_fields: [hfx, qfx, qv, th_or_temperature, qc, w]
     required_diagnostic_support: [surface_fluxes, low_level_response, cloud, vertical_velocity]
     noncomparable_status: inconclusive_noncomparable_runs
 
@@ -266,12 +286,17 @@ comparison_types:
       - dx_m
       - dy_m
       - dz_m
+      - stretch_z
+      - str_bot_m
+      - str_top_m
+      - dz_bot_m
+      - dz_top_m
       - model_top_m
       - output_cadence
       - cloud_chamber_commit
       - cm1_version
       - required_output_fields
-    required_available_fields: [hfx, lhfx, qv, th_or_temperature, qc, w]
+    required_available_fields: [hfx, qfx, qv, th_or_temperature, qc, w]
     required_diagnostic_support: [surface_fluxes, low_level_response, cloud, vertical_velocity]
     noncomparable_status: inconclusive_noncomparable_runs
 
@@ -284,6 +309,11 @@ comparison_types:
       - dx_m
       - dy_m
       - dz_m
+      - stretch_z
+      - str_bot_m
+      - str_top_m
+      - dz_bot_m
+      - dz_top_m
       - model_top_m
       - expected_output_volume
     required_equal_fields:
@@ -297,7 +327,7 @@ comparison_types:
       - cloud_chamber_commit
       - cm1_version
       - required_output_fields
-    required_available_fields: [hfx, lhfx, qv, th_or_temperature, qc, w]
+    required_available_fields: [hfx, qfx, qv, th_or_temperature, qc, w]
     required_diagnostic_support: [surface_fluxes, low_level_response, cloud, vertical_velocity]
     noncomparable_status: inconclusive_noncomparable_runs
 
@@ -325,12 +355,17 @@ comparison_types:
       - dx_m
       - dy_m
       - dz_m
+      - stretch_z
+      - str_bot_m
+      - str_top_m
+      - dz_bot_m
+      - dz_top_m
       - model_top_m
       - output_cadence
       - cloud_chamber_commit
       - cm1_version
       - required_output_fields
-    required_available_fields: [hfx, lhfx, qv, th_or_temperature, qc, w]
+    required_available_fields: [hfx, qfx, qv, th_or_temperature, qc, w]
     required_diagnostic_support: [surface_fluxes, low_level_response, cloud, vertical_velocity]
     noncomparable_status: inconclusive_noncomparable_runs
 
@@ -479,6 +514,11 @@ required_summary_fields:
     - dx_m
     - dy_m
     - dz_m
+    - stretch_z
+    - str_bot_m
+    - str_top_m
+    - dz_bot_m
+    - dz_top_m
     - model_top_m
     - output_cadence
     - expected_output_volume

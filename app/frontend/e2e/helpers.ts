@@ -19,6 +19,16 @@ export async function gotoExplore(page: Page) {
   await page.getByRole("button", { name: /^Explore$/ }).click();
 }
 
+export async function openRunMonitor(page: Page) {
+  const summary = page.locator("summary", { hasText: "Run monitor" });
+  await expect(summary).toBeVisible();
+  await summary.evaluate((node) => {
+    const details = node.closest("details") as HTMLDetailsElement | null;
+    if (details) details.open = true;
+  });
+  await expect(page.getByRole("heading", { name: "Local CM1 queue" })).toBeVisible();
+}
+
 export function collectConsoleProblems(page: Page): string[] {
   const problems: string[] = [];
   page.on("console", (message) => {

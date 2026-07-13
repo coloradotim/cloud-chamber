@@ -8,7 +8,7 @@ backend resolves those choices into CM1-facing values before package creation.
 from __future__ import annotations
 
 import math
-from typing import Any, Literal
+from typing import Any, Literal, TypedDict
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -24,7 +24,12 @@ class RunConfigurationCM1Values(BaseModel):
     dx_m: float
     dy_m: float
     dz_m: float
+    stretch_z: int
     model_top_m: float
+    str_bot_m: float
+    str_top_m: float
+    dz_bot_m: float
+    dz_top_m: float
     domain_x_km: float
     domain_y_km: float
     time_step_seconds: float
@@ -102,8 +107,24 @@ class _DomainChoice(BaseModel):
     y_km: float
     nz: int
     dz_m: float
+    stretch_z: int
     model_top_m: float
+    str_bot_m: float
+    str_top_m: float
+    dz_bot_m: float
+    dz_top_m: float
     label: str
+
+
+class _VerticalGridChoice(TypedDict):
+    nz: int
+    dz_m: float
+    stretch_z: int
+    model_top_m: float
+    str_bot_m: float
+    str_top_m: float
+    dz_bot_m: float
+    dz_top_m: float
 
 
 class _CadenceChoice(BaseModel):
@@ -129,37 +150,40 @@ HORIZONTAL_CELL_CHOICES: dict[str, _HorizontalCellChoice] = {
     "cells_384": _HorizontalCellChoice(cells=384, label="Very high detail 384 x 384"),
 }
 
+TALL_STRETCHED_VERTICAL_GRID: _VerticalGridChoice = {
+    "nz": 100,
+    "dz_m": 40.0,
+    "stretch_z": 1,
+    "model_top_m": 18000.0,
+    "str_bot_m": 2000.0,
+    "str_top_m": 18000.0,
+    "dz_bot_m": 40.0,
+    "dz_top_m": 600.0,
+}
+
 DOMAIN_CHOICES: dict[str, _DomainChoice] = {
     "local_6km": _DomainChoice(
         x_km=6.4,
         y_km=6.4,
-        nz=75,
-        dz_m=40.0,
-        model_top_m=18000.0,
+        **TALL_STRETCHED_VERTICAL_GRID,
         label="Local 6 km",
     ),
     "wide_12km": _DomainChoice(
         x_km=12.8,
         y_km=12.8,
-        nz=75,
-        dz_m=40.0,
-        model_top_m=18000.0,
+        **TALL_STRETCHED_VERTICAL_GRID,
         label="Wide 12 km",
     ),
     "regional_60km": _DomainChoice(
         x_km=60.0,
         y_km=60.0,
-        nz=75,
-        dz_m=40.0,
-        model_top_m=18000.0,
+        **TALL_STRETCHED_VERTICAL_GRID,
         label="Regional 60 km",
     ),
     "regional_120km": _DomainChoice(
         x_km=120.0,
         y_km=120.0,
-        nz=75,
-        dz_m=40.0,
-        model_top_m=18000.0,
+        **TALL_STRETCHED_VERTICAL_GRID,
         label="Regional 120 km",
     ),
 }
@@ -302,7 +326,12 @@ def resolve_run_configuration(
             dx_m=dx_m,
             dy_m=dy_m,
             dz_m=domain.dz_m,
+            stretch_z=domain.stretch_z,
             model_top_m=domain.model_top_m,
+            str_bot_m=domain.str_bot_m,
+            str_top_m=domain.str_top_m,
+            dz_bot_m=domain.dz_bot_m,
+            dz_top_m=domain.dz_top_m,
             domain_x_km=domain.x_km,
             domain_y_km=domain.y_km,
             time_step_seconds=_time_step_seconds(),
@@ -502,7 +531,7 @@ def _time_step_seconds() -> float:
 
 
 def _rayleigh_damping_start_m() -> int:
-    return 2500
+    return 12000
 
 
 def _expected_output_frames(runtime_seconds: int, output_cadence_seconds: int) -> int:

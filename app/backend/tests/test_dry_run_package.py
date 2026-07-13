@@ -124,7 +124,7 @@ def test_dry_run_package_can_use_observed_igra_sounding(tmp_path: Path) -> None:
     assert manifest.recipe_display_name == "Observed Surface-Forced Evolution v0"
     assert manifest.assumption_set_id == "observed_surface_forced_evolution_v0_assumptions"
     assert manifest.assumption_mode == "observed_surface_forced_evolution"
-    assert manifest.required_output_fields == ["qv", "qc", "w", "qr", "rain", "dbz", "hfx", "lhfx"]
+    assert manifest.required_output_fields == ["qv", "qc", "w", "qr", "rain", "dbz", "hfx", "qfx"]
     assert manifest.recipe_assumptions["trigger"]["mode"] == "none"
     assert manifest.recipe_assumptions["radiation"]["mode"] == "disabled"
     assert manifest.recipe_assumptions["large_scale_forcing"]["mode"] == "none"
@@ -154,13 +154,13 @@ def test_dry_run_package_can_use_observed_igra_sounding(tmp_path: Path) -> None:
         "rain",
         "dbz",
         "hfx",
-        "lhfx",
+        "qfx",
     ]
     assert manifest.user.tags == ["compare", "candidate"]
     assert manifest.user.notes == "Compare against humid/rainy candidates."
     assert report["recipe_id"] == "observed_surface_forced_evolution_v0"
     assert report["assumption_mode"] == "observed_surface_forced_evolution"
-    assert report["required_output_fields"] == ["qv", "qc", "w", "qr", "rain", "dbz", "hfx", "lhfx"]
+    assert report["required_output_fields"] == ["qv", "qc", "w", "qr", "rain", "dbz", "hfx", "qfx"]
     assert report["variant_metadata"]["sounding_source"] == "observed_igra_station_text"
     assert report["variant_metadata"]["surface_flux_mode"] == (
         "constant_uniform_surface_flux_proxy"
@@ -248,7 +248,7 @@ def test_observed_dry_run_package_persists_surface_flux_proxy_choices(
         == 1.0e-4
     )
     assert "surface_flux_proxy_not_real_land_surface_or_evaporation_model" in (manifest.run_caveats)
-    for field in ("qc", "qr", "qv", "w", "rain", "dbz", "hfx", "lhfx", "updraft_helicity"):
+    for field in ("qc", "qr", "qv", "w", "rain", "dbz", "hfx", "qfx", "updraft_helicity"):
         assert field in report["expected_outputs"]
     assert report["run_configuration_summary"]["surface_flux_cm1_values"]["cnst_shflx"] == 4.0e-2
     assert report["run_configuration_summary"]["surface_flux_cm1_values"]["cnst_lhflx"] == 1.0e-4
@@ -547,13 +547,18 @@ def test_dry_run_package_writes_cm1_ready_inputs_not_outputs(tmp_path: Path) -> 
     assert "testcase  =  3," in namelist
     assert "nx           =      64," in namelist
     assert "ny           =      64," in namelist
-    assert "nz           =      75," in namelist
+    assert "nz           =      100," in namelist
     assert "dx     =   100.0," in namelist
     assert "dy     =   100.0," in namelist
     assert "dz     =   40.0," in namelist
     assert "timax  = 21600.0," in namelist
     assert "tapfrq =  900.0," in namelist
+    assert "stretch_z =  1," in namelist
     assert "ztop      = 18000.0," in namelist
+    assert "str_bot   =  2000.0," in namelist
+    assert "str_top   = 18000.0," in namelist
+    assert "dz_bot    =    40.0," in namelist
+    assert "dz_top    =   600.0," in namelist
     assert "set_znt    =      0," in namelist
     assert "cnst_znt   =   0.00," in namelist
     assert "set_ust    =      1," in namelist
@@ -594,11 +599,14 @@ def test_dry_run_package_smoke_mode_is_short_package_health_run(tmp_path: Path) 
     assert "tapfrq =  900.0," in namelist
     assert "nx           =      128," in namelist
     assert "ny           =      128," in namelist
-    assert "nz           =      75," in namelist
+    assert "nz           =      100," in namelist
     assert "dx     =   50.0," in namelist
     assert "dy     =   50.0," in namelist
     assert "dz     =   40.0," in namelist
+    assert "stretch_z =  1," in namelist
     assert "ztop      = 18000.0," in namelist
+    assert "str_bot   =  2000.0," in namelist
+    assert "str_top   = 18000.0," in namelist
     assert "set_znt    =      0," in namelist
     assert "set_ust    =      1," in namelist
     assert "cnst_ust   =   0.28," in namelist
@@ -631,10 +639,15 @@ def test_dry_run_package_explicit_high_detail_configuration_reports_cost(
     assert "duration, horizontal cells, domain, cadence" in report["estimated_cost_or_size"]
     assert details["nx"] == 256
     assert details["ny"] == 256
-    assert details["nz"] == 75
+    assert details["nz"] == 100
     assert details["dx_m"] == 50
     assert details["dy_m"] == 50
     assert details["dz_m"] == 40
+    assert details["stretch_z"] == 1
+    assert details["str_bot_m"] == 2000.0
+    assert details["str_top_m"] == 18000.0
+    assert details["dz_bot_m"] == 40.0
+    assert details["dz_top_m"] == 600.0
     assert details["runtime_seconds"] == 43200
     assert details["output_cadence_seconds"] == 300
     assert details["expected_output_frames"] == 145

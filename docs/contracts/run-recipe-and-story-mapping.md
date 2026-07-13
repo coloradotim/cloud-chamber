@@ -210,7 +210,7 @@ required_inputs:
   observed_moisture_profile: required
   observed_wind_profile: required
 required_outputs:
-  fields: [qv, qc, w, qr, rain, dbz, u, v, th, prs, hfx, lhfx]
+  fields: [qv, qc, w, qr, rain, dbz, u, v, th, prs, hfx, qfx]
   diagnostics: [first_cloud, max_qc, cloud_top, max_updraft_w]
 current_support:
   status: supported

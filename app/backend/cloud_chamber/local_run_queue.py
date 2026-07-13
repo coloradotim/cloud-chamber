@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 from pathlib import Path
+from threading import RLock
 from typing import Protocol
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -85,53 +86,82 @@ class LocalRunQueueManager:
     ) -> None:
         self._settings = settings
         self._run_manager = run_manager
+        self._lock = RLock()
 
     def enqueue(self, manifest_path: Path) -> RunQueueState:
-        manifest_path = manifest_path.expanduser()
-        try:
-            manifest = load_run_manifest(manifest_path)
-        except (OSError, RunManifestError) as exc:
-            raise LocalRunQueueError(f"Unable to read run manifest for queueing: {exc}") from exc
-        if manifest.lifecycle_state != LifecycleState.PACKAGED:
-            raise LocalRunQueueError(
-                "Only packaged runs can be queued for local CM1 execution; "
-                f"found {manifest.lifecycle_state.value}."
-            )
-        if report_blocks_execution(manifest.pre_run_validation_report):
-            raise LocalRunQueueError(
-                "Pre-run validation blocked queueing this package for CM1 execution."
-            )
-
-        entries = self._load_entries()
-        existing = _matching_open_entry(entries, manifest_path)
-        if existing is None:
-            now = _now()
-            entries.append(
-                RunQueueEntry(
-                    run_id=manifest.run_id,
-                    manifest_path=str(manifest_path),
-                    state="queued",
-                    queued_at=now,
-                    updated_at=now,
-                    message="Queued for serial local CM1 execution.",
+        with self._lock:
+            manifest_path = manifest_path.expanduser()
+            try:
+                manifest = load_run_manifest(manifest_path)
+            except (OSError, RunManifestError) as exc:
+                raise LocalRunQueueError(
+                    f"Unable to read run manifest for queueing: {exc}"
+                ) from exc
+            if manifest.lifecycle_state != LifecycleState.PACKAGED:
+                raise LocalRunQueueError(
+                    "Only packaged runs can be queued for local CM1 execution; "
+                    f"found {manifest.lifecycle_state.value}."
                 )
-            )
-            self._save_entries(entries)
-        return self.refresh()
+            if report_blocks_execution(manifest.pre_run_validation_report):
+                raise LocalRunQueueError(
+                    "Pre-run validation blocked queueing this package for CM1 execution."
+                )
+
+            entries = self._load_entries()
+            self._recover_open_entries_from_manifests(entries)
+            existing = _matching_open_entry(entries, manifest_path)
+            if existing is None:
+                now = _now()
+                entries.append(
+                    RunQueueEntry(
+                        run_id=manifest.run_id,
+                        manifest_path=str(manifest_path),
+                        state="queued",
+                        queued_at=now,
+                        updated_at=now,
+                        message="Queued for serial local CM1 execution.",
+                    )
+                )
+                self._save_entries(entries)
+            return self.refresh()
 
     def refresh(self) -> RunQueueState:
-        entries = self._load_entries()
-        active = _first_entry_with_state(entries, "running")
-        if active is not None:
-            self._refresh_active_entry(active)
+        with self._lock:
+            entries = self._load_entries()
+            self._recover_open_entries_from_manifests(entries)
+            active = _first_entry_with_state(entries, "running")
+            if active is not None:
+                self._refresh_active_entry(active)
 
-        if _first_entry_with_state(entries, "running") is None:
-            next_entry = _first_entry_with_state(entries, "queued")
-            if next_entry is not None:
-                self._launch_entry(next_entry)
+            if _first_entry_with_state(entries, "running") is None:
+                next_entry = _first_entry_with_state(entries, "queued")
+                if next_entry is not None:
+                    self._launch_entry(next_entry)
 
-        self._save_entries(entries)
-        return self._state(entries)
+            self._save_entries(entries)
+            return self._state(entries)
+
+    def _recover_open_entries_from_manifests(self, entries: list[RunQueueEntry]) -> None:
+        for entry in entries:
+            if entry.state in OPEN_ENTRY_STATES or entry.state == "ingested":
+                continue
+            try:
+                manifest = load_run_manifest(Path(entry.manifest_path))
+            except (OSError, RunManifestError):
+                continue
+            if manifest.lifecycle_state not in {LifecycleState.QUEUED, LifecycleState.RUNNING}:
+                continue
+            entry.state = (
+                "running" if manifest.lifecycle_state == LifecycleState.RUNNING else "queued"
+            )
+            entry.error = None
+            entry.finished_at = None
+            entry.updated_at = _now()
+            if manifest.execution.started_at is not None:
+                entry.started_at = _format_time(manifest.execution.started_at)
+            entry.message = (
+                "Recovered queue state from the run manifest after an overlapping refresh."
+            )
 
     def _refresh_active_entry(self, entry: RunQueueEntry) -> None:
         try:
@@ -264,3 +294,7 @@ def _first_entry_with_state(entries: list[RunQueueEntry], state: str) -> RunQueu
 
 def _now() -> str:
     return datetime.now(UTC).isoformat().replace("+00:00", "Z")
+
+
+def _format_time(value: datetime) -> str:
+    return value.astimezone(UTC).isoformat().replace("+00:00", "Z")
