@@ -3853,8 +3853,10 @@ describe("App", () => {
       "Keep this one in the candidate notebook.",
     );
     fireEvent.click(within(savedCard).getByRole("button", { name: "Deep convection candidates" }));
-    expect(within(savedCard).getByLabelText("Tags")).toHaveValue(
-      "Maybe rerun, Deep convection candidates",
+    await waitFor(() =>
+      expect(within(savedCard).getByLabelText("Tags")).toHaveValue(
+        "Maybe rerun, Deep convection candidates",
+      ),
     );
     fireEvent.click(within(savedCard).getByRole("button", { name: "Save tags and notes" }));
 
