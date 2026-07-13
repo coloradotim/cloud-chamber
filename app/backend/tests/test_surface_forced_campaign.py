@@ -684,7 +684,53 @@ def test_campaign_report_summarizes_ingested_result_without_fabricating_bl_respo
     )
     assert run["low_level_qv_response_method"] == "low_level_response_diagnostic_not_implemented"
     assert "low_level_qv_response" in summary["unavailable_diagnostics"]
-    assert "max w `2.5`" in report_path.read_text()
+    assert "max w 2.5" in report_path.read_text()
+
+
+def test_campaign_report_marks_non_finite_outcomes_as_untrusted(
+    tmp_path: Path,
+) -> None:
+    settings = fake_settings(tmp_path)
+    matrix_path = write_matrix(tmp_path)
+    packaged = package_campaign(matrix_path, settings=settings, resume=True)
+    manifest_path = Path(packaged.runs[0].manifest_path or "")
+    _write_fake_result_metadata(
+        manifest_path,
+        surface_rain_present=True,
+        run_caveats=[
+            "non_finite_values_detected_in_qc",
+            "qc_field_entirely_non_finite",
+            "non_finite_values_detected_in_w",
+            "non_finite_values_detected_in_qr",
+            "qr_field_entirely_non_finite",
+            "non_finite_values_detected_in_surface_rain",
+            "surface_rain_field_entirely_non_finite",
+        ],
+    )
+
+    artifacts = report_campaign(
+        matrix_path,
+        settings=settings,
+        report_path=tmp_path / "report.md",
+        summary_json_path=tmp_path / "summary.json",
+    )
+
+    run = artifacts.summary["runs"][0]
+    assert run["diagnostic_trust"]["qc"] == "untrusted_entirely_non_finite"
+    assert run["diagnostic_trust"]["w"] == "caveated_non_finite_values_detected"
+    assert run["diagnostic_trust"]["qr"] == "untrusted_entirely_non_finite"
+    assert run["diagnostic_trust"]["surface_rain"] == "untrusted_entirely_non_finite"
+    assert run["surface_rain_present"] == (
+        "unavailable:untrusted_surface_rain_field_entirely_non_finite"
+    )
+    assert "surface_rain_field_entirely_non_finite" in run["diagnostic_quality_warnings"]
+
+    report = Path(artifacts.markdown_path).read_text()
+    assert "surface rain unavailable (untrusted)" in report
+    assert "max w 2.5 (caveated)" in report
+    assert "Diagnostic trust: `qc untrusted" in report
+    assert "Field-quality warnings: `" in report
+    assert "surface rain `True`" not in report
 
 
 def test_campaign_report_treats_stale_lhfx_requirement_as_qfx_alias(
@@ -739,6 +785,13 @@ def test_campaign_report_normalizes_stale_lhfx_comparison_evidence(
         summary_json_path=tmp_path / "summary.json",
     )
 
+    assert artifacts.summary["runs"][0]["diagnostic_trust"] == {
+        "qc": "unavailable_until_result_ingested",
+        "w": "unavailable_until_result_ingested",
+        "qr": "unavailable_until_result_ingested",
+        "surface_rain": "unavailable_until_result_ingested",
+        "dbz": "unavailable_until_result_ingested",
+    }
     unavailable_evidence = artifacts.summary["comparisons"][0]["unavailable_evidence"]
     assert "control:missing_required_field:qfx" in unavailable_evidence
     assert "control:missing_required_field:lhfx" not in unavailable_evidence
@@ -846,6 +899,9 @@ def _write_fake_result_metadata(
     *,
     missing_required_output_fields: list[str] | None = None,
     warnings: list[str] | None = None,
+    run_caveats: list[str] | None = None,
+    interesting_time_caveats: list[str] | None = None,
+    surface_rain_present: bool = False,
 ) -> None:
     manifest = load_run_manifest(manifest_path)
     now = datetime.now(UTC)
@@ -914,8 +970,8 @@ def _write_fake_result_metadata(
                 available=True,
             ),
             surface_rain=SurfaceRainDiagnostics(
-                present=False,
-                max_surface_rain=0.0,
+                present=surface_rain_present,
+                max_surface_rain=1.25 if surface_rain_present else 0.0,
                 units="mm",
                 available=True,
                 field_absent=False,
@@ -928,6 +984,7 @@ def _write_fake_result_metadata(
             ),
             time=TimeDiagnostics(source="time", fallback_used=False, coordinate_name="time"),
         ),
+        run_caveats=run_caveats or [],
         science_summary=ScienceSummary(
             cloud_formed=True,
             deep_cloud_formed=False,
@@ -950,6 +1007,7 @@ def _write_fake_result_metadata(
             interesting_time_support_state="supported",
         ),
         warnings=warnings or [],
+        interesting_time_caveats=interesting_time_caveats or [],
         created_at=now,
         updated_at=now,
     )

@@ -36,15 +36,17 @@ Can an easy deep-candidate sounding deepen past shallow cumulus under uniform lo
 
 ## Per-run configuration table
 
-| Matrix ID | Run ID | Result ID | Queue target | cnst_shflx | cnst_lhflx | nx/ny/nz | dx/dy/dz | Model top | Output cadence | Expected output volume | Commit | CM1 version | Required fields | Missing fields | Diagnostic support | Interesting-time support | Warnings/caveats |
-| --- | --- | --- | --- | ---: | ---: | --- | --- | ---: | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| `<matrix_id>` | `<run_id>` | `<result_id>` | `<target>` | `<K m/s>` | `<g/g m/s>` | `<nx>/<ny>/<nz>` | `<dx>/<dy>/<dz>` | `<m>` | `<seconds>` | `<summary>` | `<sha>` | `<version>` | `<fields>` | `<fields>` | `<support>` | `<support>` | `<warnings>` |
+| Matrix ID | Run ID | Result ID | Queue target | cnst_shflx | cnst_lhflx | nx/ny/nz | dx/dy/dz | Model top | Output cadence | Expected output volume | Commit | CM1 version | Required fields | Missing fields | Diagnostic support | Diagnostic trust | Interesting-time support | Warnings/caveats |
+| --- | --- | --- | --- | ---: | ---: | --- | --- | ---: | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `<matrix_id>` | `<run_id>` | `<result_id>` | `<target>` | `<K m/s>` | `<g/g m/s>` | `<nx>/<ny>/<nz>` | `<dx>/<dy>/<dz>` | `<m>` | `<seconds>` | `<summary>` | `<sha>` | `<version>` | `<fields>` | `<fields>` | `<support>` | `<trusted/caveated/untrusted/unavailable by field>` | `<support>` | `<warnings>` |
 
 ## Per-run evidence table
 
-| Matrix ID | hfx | qfx | low_level_qv_response | low_level_theta_or_temperature_response | first_cloud_time | max_cloud_top_m | max_qc | max_w_m_s | cloud_depth_or_classification | qr | surface rain | dbz | Evidence fields | Initial diagnosis |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| `<matrix_id>` | `<present; units; min/max/mean>` | `<present; units; min/max/mean>` | `<value/method/unavailable>` | `<value/method/unavailable>` | `<time/unavailable>` | `<m at time>` | `<kg/kg at time>` | `<m/s at time/height>` | `<class/depth/unavailable>` | `<present/absent/unavailable>` | `<present/absent/unavailable>` | `<present/absent/unavailable>` | `<fields/diagnostics>` | `<category>` |
+| Matrix ID | hfx | qfx | low_level_qv_response | low_level_theta_or_temperature_response | first_cloud_time | max_cloud_top_m | max_qc | max_w_m_s | cloud_depth_or_classification | qr | surface rain | dbz | Diagnostic trust | Field-quality warnings | Evidence fields | Initial diagnosis |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `<matrix_id>` | `<present; units; min/max/mean>` | `<present; units; min/max/mean>` | `<value/method/unavailable>` | `<value/method/unavailable>` | `<time/unavailable>` | `<m at time>` | `<kg/kg at time>` | `<m/s at time/height>` | `<class/depth/unavailable>` | `<present/absent/unavailable>` | `<present/absent/unavailable>` | `<present/absent/unavailable>` | `<trusted/caveated/untrusted/unavailable by field>` | `<non-finite or other severe field-quality warnings>` | `<fields/diagnostics>` | `<category>` |
+
+If `qc`, `w`, `qr`, surface `rain`, or `dbz` is entirely non-finite or materially contaminated by non-finite values, the run summary must mark the affected diagnostic as untrusted or caveated. Do not present surface rain, cloud top, updraft, rain-water-aloft, or reflectivity as clean evidence when the source field quality does not support that conclusion.
 
 ## Low-level response method
 
@@ -76,8 +78,8 @@ unavailable: low_level_response_diagnostic_not_implemented
 | --- | --- | --- | --- |
 | selected forcing values preserved in package metadata | `<pass/warn/fail/unavailable>` | `<run ids / fields>` | `<notes>` |
 | selected values appear in CM1-facing namelist fields | `<pass/warn/fail/unavailable>` | `<cnst_shflx/cnst_lhflx>` | `<notes>` |
-| `hfx` emitted/ingested and reflects prescribed changes | `<pass/warn/fail/unavailable>` | `<field/units/min/max/mean>` | `<notes>` |
-| `qfx` emitted/ingested and reflects prescribed changes | `<pass/warn/fail/unavailable>` | `<field/units/min/max/mean>` | `<notes>` |
+| `hfx` emitted/ingested | `<pass/warn/fail/unavailable>` | `<field/units>` | Do not claim it reflects prescribed changes until hfx statistics exist. |
+| `qfx` emitted/ingested | `<pass/warn/fail/unavailable>` | `<field/units>` | Do not claim it reflects prescribed changes until qfx statistics exist. |
 
 ### Atmospheric response checks
 

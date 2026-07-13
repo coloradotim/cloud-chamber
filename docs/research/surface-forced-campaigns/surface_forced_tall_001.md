@@ -3,7 +3,7 @@
 Campaign ID: `surface_forced_tall_001`
 Protocol: `docs/research/surface-forced-sounding-verification-protocol.md`
 Matrix file: `surface_forced_tall_001.yaml` (runtime-local path omitted)
-Generated: `2026-07-13T15:13:40.086342+00:00`
+Generated: `2026-07-13T16:26:39.825598+00:00`
 
 ## Objective
 
@@ -23,10 +23,10 @@ No operator phase-gate overrides were recorded.
 
 | Matrix ID | Status | Station/time | Forcing | Grid/domain | Key result |
 | --- | --- | --- | --- | --- | --- |
-| phase1_control_default_flux | ingested | VALLEY; NE. 2026-06-07T18:00:00Z | H 0.008 K m/s; M 5.2e-05 g/g m/s | wide_12km 128 dx 100.0 m | cloud top 1.087e+04; max w 4.209; surface rain True |
-| phase1_control_high_sensible | ingested | VALLEY; NE. 2026-06-07T18:00:00Z | H 0.04 K m/s; M 5.2e-05 g/g m/s | wide_12km 128 dx 100.0 m | cloud top 4591; max w 9.897; surface rain True |
-| phase1_control_high_moisture | ingested | VALLEY; NE. 2026-06-07T18:00:00Z | H 0.008 K m/s; M 0.0001 g/g m/s | wide_12km 128 dx 100.0 m | cloud top 1.087e+04; max w 9.921; surface rain True |
-| phase1_control_high_both | ingested | VALLEY; NE. 2026-06-07T18:00:00Z | H 0.04 K m/s; M 0.0001 g/g m/s | wide_12km 128 dx 100.0 m | cloud top 5666; max w 12.34; surface rain True |
+| phase1_control_default_flux | ingested | VALLEY; NE. 2026-06-07T18:00:00Z | H 0.008 K m/s; M 5.2e-05 g/g m/s | wide_12km 128 dx 100.0 m | cloud top unavailable (untrusted); max w 4.209 (caveated); surface rain unavailable (untrusted) |
+| phase1_control_high_sensible | ingested | VALLEY; NE. 2026-06-07T18:00:00Z | H 0.04 K m/s; M 5.2e-05 g/g m/s | wide_12km 128 dx 100.0 m | cloud top 4591; max w 9.897; surface rain yes |
+| phase1_control_high_moisture | ingested | VALLEY; NE. 2026-06-07T18:00:00Z | H 0.008 K m/s; M 0.0001 g/g m/s | wide_12km 128 dx 100.0 m | cloud top 1.087e+04; max w 9.921; surface rain yes |
+| phase1_control_high_both | ingested | VALLEY; NE. 2026-06-07T18:00:00Z | H 0.04 K m/s; M 0.0001 g/g m/s | wide_12km 128 dx 100.0 m | cloud top 5666; max w 12.34; surface rain yes |
 | phase2_easy_deep_default_12km_6h | planned | unavailable time unavailable | H 0.008 K m/s; M 5.2e-05 g/g m/s | wide_12km 128 dx 100.0 m | planned |
 | phase2_easy_deep_strong_12km_6h | planned | unavailable time unavailable | H 0.04 K m/s; M 0.0001 g/g m/s | wide_12km 128 dx 100.0 m | planned |
 | phase2_easy_deep_strong_12km_12h | planned | unavailable time unavailable | H 0.04 K m/s; M 0.0001 g/g m/s | wide_12km 128 dx 100.0 m | planned |
@@ -47,8 +47,10 @@ No operator phase-gate overrides were recorded.
 - Required/missing fields: `qv, qc, w, qr, rain, dbz, hfx, qfx` / `none`
 - Surface flux fields: hfx `True`, moisture flux `True` via `qfx`
 - Surface flux stats: hfx `unavailable:surface_flux_statistics_not_implemented`/`unavailable:surface_flux_statistics_not_implemented`/`unavailable:surface_flux_statistics_not_implemented`, moisture `unavailable:surface_flux_statistics_not_implemented`/`unavailable:surface_flux_statistics_not_implemented`/`unavailable:surface_flux_statistics_not_implemented`
-- Cloud/updraft: first cloud `6300`, max cloud top `1.087e+04`, max qc `0.005951`, max w `4.209`
-- Precipitation/reflectivity: qr `True`, surface rain `True`, max dBZ `29.5`
+- Cloud/updraft: first cloud unavailable (untrusted), max cloud top unavailable (untrusted), max qc unavailable (untrusted), max w 4.209 (caveated)
+- Precipitation/reflectivity: qr unavailable (untrusted), surface rain unavailable (untrusted), max dBZ 29.5
+- Diagnostic trust: `qc untrusted, w caveated, qr untrusted, surface_rain untrusted, dbz trusted`
+- Field-quality warnings: `non_finite_values_detected_in_qc, qc_field_entirely_non_finite, non_finite_values_detected_in_w, non_finite_values_detected_in_qr, qr_field_entirely_non_finite, non_finite_values_detected_in_surface_rain, surface_rain_field_entirely_non_finite`
 - Low-level response: `low_level_response_diagnostic_not_implemented`
 - Caveats: `surface_forcing_is_constant_uniform_proxy, low_level_response_diagnostic_not_implemented, surface_flux_proxy_constant_uniform_not_place_time_energy_budget, surface_flux_proxy_not_real_land_surface_or_evaporation_model, surface_flux_proxy_values_need_local_smoke_validation, science_run_configuration_minimum_duration_6h, configuration_better_suited_to_larger_compute, No artificial atmospheric trigger is applied., Surface heat/moisture fluxes are constant uniform lower-boundary proxy settings; they are not validated place/time surface-energy inputs., Radiation, terrain, GIS surface initialization, and large-scale forcing are not part of v0., Humid/rainy hypotheses remain partial until rain-water-aloft, surface-rain, and reflectivity outputs are present and inspected., CM1 stderr reported floating-point exception flags: IEEE_INVALID_FLAG, IEEE_DIVIDE_BY_ZERO, IEEE_OVERFLOW_FLAG, IEEE_UNDERFLOW_FLAG, cloud_top_uses_total_hydrometeor_fields:qc,qr,qi,qs,qg, max_height_unavailable_missing_vertical_coordinate, non_finite_values_detected_in_qc, qc_field_entirely_non_finite, non_finite_values_detected_in_w, non_finite_values_detected_in_qr, qr_field_entirely_non_finite, non_finite_values_detected_in_surface_rain, surface_rain_field_entirely_non_finite`
 
@@ -63,8 +65,10 @@ No operator phase-gate overrides were recorded.
 - Required/missing fields: `qv, qc, w, qr, rain, dbz, hfx, qfx` / `none`
 - Surface flux fields: hfx `True`, moisture flux `True` via `qfx`
 - Surface flux stats: hfx `unavailable:surface_flux_statistics_not_implemented`/`unavailable:surface_flux_statistics_not_implemented`/`unavailable:surface_flux_statistics_not_implemented`, moisture `unavailable:surface_flux_statistics_not_implemented`/`unavailable:surface_flux_statistics_not_implemented`/`unavailable:surface_flux_statistics_not_implemented`
-- Cloud/updraft: first cloud `1800`, max cloud top `4591`, max qc `0.002924`, max w `9.897`
-- Precipitation/reflectivity: qr `True`, surface rain `True`, max dBZ `56.08`
+- Cloud/updraft: first cloud 1800, max cloud top 4591, max qc 0.002924, max w 9.897
+- Precipitation/reflectivity: qr yes, surface rain yes, max dBZ 56.08
+- Diagnostic trust: `qc trusted, w trusted, qr trusted, surface_rain trusted, dbz trusted`
+- Field-quality warnings: `none`
 - Low-level response: `low_level_response_diagnostic_not_implemented`
 - Caveats: `surface_forcing_is_constant_uniform_proxy, low_level_response_diagnostic_not_implemented, surface_flux_proxy_constant_uniform_not_place_time_energy_budget, surface_flux_proxy_not_real_land_surface_or_evaporation_model, surface_flux_proxy_values_need_local_smoke_validation, science_run_configuration_minimum_duration_6h, configuration_better_suited_to_larger_compute, No artificial atmospheric trigger is applied., Surface heat/moisture fluxes are constant uniform lower-boundary proxy settings; they are not validated place/time surface-energy inputs., Radiation, terrain, GIS surface initialization, and large-scale forcing are not part of v0., Humid/rainy hypotheses remain partial until rain-water-aloft, surface-rain, and reflectivity outputs are present and inspected., CM1 stderr reported floating-point exception flags: IEEE_UNDERFLOW_FLAG, cloud_top_uses_total_hydrometeor_fields:qc,qr,qi,qs,qg, max_height_unavailable_missing_vertical_coordinate, no_deep_cloud_detected`
 
@@ -79,8 +83,10 @@ No operator phase-gate overrides were recorded.
 - Required/missing fields: `qv, qc, w, qr, rain, dbz, hfx, qfx` / `none`
 - Surface flux fields: hfx `True`, moisture flux `True` via `qfx`
 - Surface flux stats: hfx `unavailable:surface_flux_statistics_not_implemented`/`unavailable:surface_flux_statistics_not_implemented`/`unavailable:surface_flux_statistics_not_implemented`, moisture `unavailable:surface_flux_statistics_not_implemented`/`unavailable:surface_flux_statistics_not_implemented`/`unavailable:surface_flux_statistics_not_implemented`
-- Cloud/updraft: first cloud `2700`, max cloud top `1.087e+04`, max qc `0.008663`, max w `9.921`
-- Precipitation/reflectivity: qr `True`, surface rain `True`, max dBZ `57.01`
+- Cloud/updraft: first cloud 2700, max cloud top 1.087e+04, max qc 0.008663, max w 9.921
+- Precipitation/reflectivity: qr yes, surface rain yes, max dBZ 57.01
+- Diagnostic trust: `qc trusted, w trusted, qr trusted, surface_rain trusted, dbz trusted`
+- Field-quality warnings: `none`
 - Low-level response: `low_level_response_diagnostic_not_implemented`
 - Caveats: `surface_forcing_is_constant_uniform_proxy, low_level_response_diagnostic_not_implemented, surface_flux_proxy_constant_uniform_not_place_time_energy_budget, surface_flux_proxy_not_real_land_surface_or_evaporation_model, surface_flux_proxy_values_need_local_smoke_validation, science_run_configuration_minimum_duration_6h, configuration_better_suited_to_larger_compute, No artificial atmospheric trigger is applied., Surface heat/moisture fluxes are constant uniform lower-boundary proxy settings; they are not validated place/time surface-energy inputs., Radiation, terrain, GIS surface initialization, and large-scale forcing are not part of v0., Humid/rainy hypotheses remain partial until rain-water-aloft, surface-rain, and reflectivity outputs are present and inspected., CM1 stderr reported floating-point exception flags: IEEE_INVALID_FLAG, IEEE_UNDERFLOW_FLAG, cloud_top_uses_total_hydrometeor_fields:qc,qr,qi,qs,qg, max_height_unavailable_missing_vertical_coordinate`
 
@@ -95,8 +101,10 @@ No operator phase-gate overrides were recorded.
 - Required/missing fields: `qv, qc, w, qr, rain, dbz, hfx, qfx` / `none`
 - Surface flux fields: hfx `True`, moisture flux `True` via `qfx`
 - Surface flux stats: hfx `unavailable:surface_flux_statistics_not_implemented`/`unavailable:surface_flux_statistics_not_implemented`/`unavailable:surface_flux_statistics_not_implemented`, moisture `unavailable:surface_flux_statistics_not_implemented`/`unavailable:surface_flux_statistics_not_implemented`/`unavailable:surface_flux_statistics_not_implemented`
-- Cloud/updraft: first cloud `1800`, max cloud top `5666`, max qc `0.003865`, max w `12.34`
-- Precipitation/reflectivity: qr `True`, surface rain `True`, max dBZ `58.39`
+- Cloud/updraft: first cloud 1800, max cloud top 5666, max qc 0.003865, max w 12.34
+- Precipitation/reflectivity: qr yes, surface rain yes, max dBZ 58.39
+- Diagnostic trust: `qc trusted, w trusted, qr trusted, surface_rain trusted, dbz trusted`
+- Field-quality warnings: `none`
 - Low-level response: `low_level_response_diagnostic_not_implemented`
 - Caveats: `surface_forcing_is_constant_uniform_proxy, low_level_response_diagnostic_not_implemented, surface_flux_proxy_constant_uniform_not_place_time_energy_budget, surface_flux_proxy_not_real_land_surface_or_evaporation_model, surface_flux_proxy_values_need_local_smoke_validation, science_run_configuration_minimum_duration_6h, configuration_better_suited_to_larger_compute, No artificial atmospheric trigger is applied., Surface heat/moisture fluxes are constant uniform lower-boundary proxy settings; they are not validated place/time surface-energy inputs., Radiation, terrain, GIS surface initialization, and large-scale forcing are not part of v0., Humid/rainy hypotheses remain partial until rain-water-aloft, surface-rain, and reflectivity outputs are present and inspected., CM1 stderr reported floating-point exception flags: IEEE_UNDERFLOW_FLAG, cloud_top_uses_total_hydrometeor_fields:qc,qr,qi,qs,qg, max_height_unavailable_missing_vertical_coordinate, no_deep_cloud_detected`
 
@@ -111,8 +119,10 @@ No operator phase-gate overrides were recorded.
 - Required/missing fields: `unavailable` / `unavailable:until_result_ingested`
 - Surface flux fields: hfx `False`, moisture flux `False` via `missing`
 - Surface flux stats: hfx `unavailable:surface_flux_statistics_not_implemented`/`unavailable:surface_flux_statistics_not_implemented`/`unavailable:surface_flux_statistics_not_implemented`, moisture `unavailable:surface_flux_statistics_not_implemented`/`unavailable:surface_flux_statistics_not_implemented`/`unavailable:surface_flux_statistics_not_implemented`
-- Cloud/updraft: first cloud `unavailable`, max cloud top `unavailable`, max qc `unavailable`, max w `unavailable`
-- Precipitation/reflectivity: qr `None`, surface rain `None`, max dBZ `unavailable`
+- Cloud/updraft: first cloud unavailable, max cloud top unavailable, max qc unavailable, max w unavailable
+- Precipitation/reflectivity: qr unavailable, surface rain unavailable, max dBZ unavailable
+- Diagnostic trust: `qc unavailable, w unavailable, qr unavailable, surface_rain unavailable, dbz unavailable`
+- Field-quality warnings: `none`
 - Low-level response: `low_level_response_diagnostic_not_implemented`
 - Caveats: `surface_forcing_is_constant_uniform_proxy, low_level_response_diagnostic_not_implemented, result_not_ingested`
 
@@ -127,8 +137,10 @@ No operator phase-gate overrides were recorded.
 - Required/missing fields: `unavailable` / `unavailable:until_result_ingested`
 - Surface flux fields: hfx `False`, moisture flux `False` via `missing`
 - Surface flux stats: hfx `unavailable:surface_flux_statistics_not_implemented`/`unavailable:surface_flux_statistics_not_implemented`/`unavailable:surface_flux_statistics_not_implemented`, moisture `unavailable:surface_flux_statistics_not_implemented`/`unavailable:surface_flux_statistics_not_implemented`/`unavailable:surface_flux_statistics_not_implemented`
-- Cloud/updraft: first cloud `unavailable`, max cloud top `unavailable`, max qc `unavailable`, max w `unavailable`
-- Precipitation/reflectivity: qr `None`, surface rain `None`, max dBZ `unavailable`
+- Cloud/updraft: first cloud unavailable, max cloud top unavailable, max qc unavailable, max w unavailable
+- Precipitation/reflectivity: qr unavailable, surface rain unavailable, max dBZ unavailable
+- Diagnostic trust: `qc unavailable, w unavailable, qr unavailable, surface_rain unavailable, dbz unavailable`
+- Field-quality warnings: `none`
 - Low-level response: `low_level_response_diagnostic_not_implemented`
 - Caveats: `surface_forcing_is_constant_uniform_proxy, low_level_response_diagnostic_not_implemented, result_not_ingested`
 
@@ -143,8 +155,10 @@ No operator phase-gate overrides were recorded.
 - Required/missing fields: `unavailable` / `unavailable:until_result_ingested`
 - Surface flux fields: hfx `False`, moisture flux `False` via `missing`
 - Surface flux stats: hfx `unavailable:surface_flux_statistics_not_implemented`/`unavailable:surface_flux_statistics_not_implemented`/`unavailable:surface_flux_statistics_not_implemented`, moisture `unavailable:surface_flux_statistics_not_implemented`/`unavailable:surface_flux_statistics_not_implemented`/`unavailable:surface_flux_statistics_not_implemented`
-- Cloud/updraft: first cloud `unavailable`, max cloud top `unavailable`, max qc `unavailable`, max w `unavailable`
-- Precipitation/reflectivity: qr `None`, surface rain `None`, max dBZ `unavailable`
+- Cloud/updraft: first cloud unavailable, max cloud top unavailable, max qc unavailable, max w unavailable
+- Precipitation/reflectivity: qr unavailable, surface rain unavailable, max dBZ unavailable
+- Diagnostic trust: `qc unavailable, w unavailable, qr unavailable, surface_rain unavailable, dbz unavailable`
+- Field-quality warnings: `none`
 - Low-level response: `low_level_response_diagnostic_not_implemented`
 - Caveats: `surface_forcing_is_constant_uniform_proxy, low_level_response_diagnostic_not_implemented, result_not_ingested`
 
@@ -159,8 +173,10 @@ No operator phase-gate overrides were recorded.
 - Required/missing fields: `unavailable` / `unavailable:until_result_ingested`
 - Surface flux fields: hfx `False`, moisture flux `False` via `missing`
 - Surface flux stats: hfx `unavailable:surface_flux_statistics_not_implemented`/`unavailable:surface_flux_statistics_not_implemented`/`unavailable:surface_flux_statistics_not_implemented`, moisture `unavailable:surface_flux_statistics_not_implemented`/`unavailable:surface_flux_statistics_not_implemented`/`unavailable:surface_flux_statistics_not_implemented`
-- Cloud/updraft: first cloud `unavailable`, max cloud top `unavailable`, max qc `unavailable`, max w `unavailable`
-- Precipitation/reflectivity: qr `None`, surface rain `None`, max dBZ `unavailable`
+- Cloud/updraft: first cloud unavailable, max cloud top unavailable, max qc unavailable, max w unavailable
+- Precipitation/reflectivity: qr unavailable, surface rain unavailable, max dBZ unavailable
+- Diagnostic trust: `qc unavailable, w unavailable, qr unavailable, surface_rain unavailable, dbz unavailable`
+- Field-quality warnings: `none`
 - Low-level response: `low_level_response_diagnostic_not_implemented`
 - Caveats: `surface_forcing_is_constant_uniform_proxy, low_level_response_diagnostic_not_implemented, result_not_ingested`
 
@@ -175,8 +191,10 @@ No operator phase-gate overrides were recorded.
 - Required/missing fields: `unavailable` / `unavailable:until_result_ingested`
 - Surface flux fields: hfx `False`, moisture flux `False` via `missing`
 - Surface flux stats: hfx `unavailable:surface_flux_statistics_not_implemented`/`unavailable:surface_flux_statistics_not_implemented`/`unavailable:surface_flux_statistics_not_implemented`, moisture `unavailable:surface_flux_statistics_not_implemented`/`unavailable:surface_flux_statistics_not_implemented`/`unavailable:surface_flux_statistics_not_implemented`
-- Cloud/updraft: first cloud `unavailable`, max cloud top `unavailable`, max qc `unavailable`, max w `unavailable`
-- Precipitation/reflectivity: qr `None`, surface rain `None`, max dBZ `unavailable`
+- Cloud/updraft: first cloud unavailable, max cloud top unavailable, max qc unavailable, max w unavailable
+- Precipitation/reflectivity: qr unavailable, surface rain unavailable, max dBZ unavailable
+- Diagnostic trust: `qc unavailable, w unavailable, qr unavailable, surface_rain unavailable, dbz unavailable`
+- Field-quality warnings: `none`
 - Low-level response: `low_level_response_diagnostic_not_implemented`
 - Caveats: `surface_forcing_is_constant_uniform_proxy, low_level_response_diagnostic_not_implemented, optional_campaign_run, result_not_ingested`
 
@@ -191,14 +209,16 @@ No operator phase-gate overrides were recorded.
 - Required/missing fields: `unavailable` / `unavailable:until_result_ingested`
 - Surface flux fields: hfx `False`, moisture flux `False` via `missing`
 - Surface flux stats: hfx `unavailable:surface_flux_statistics_not_implemented`/`unavailable:surface_flux_statistics_not_implemented`/`unavailable:surface_flux_statistics_not_implemented`, moisture `unavailable:surface_flux_statistics_not_implemented`/`unavailable:surface_flux_statistics_not_implemented`/`unavailable:surface_flux_statistics_not_implemented`
-- Cloud/updraft: first cloud `unavailable`, max cloud top `unavailable`, max qc `unavailable`, max w `unavailable`
-- Precipitation/reflectivity: qr `None`, surface rain `None`, max dBZ `unavailable`
+- Cloud/updraft: first cloud unavailable, max cloud top unavailable, max qc unavailable, max w unavailable
+- Precipitation/reflectivity: qr unavailable, surface rain unavailable, max dBZ unavailable
+- Diagnostic trust: `qc unavailable, w unavailable, qr unavailable, surface_rain unavailable, dbz unavailable`
+- Field-quality warnings: `none`
 - Low-level response: `low_level_response_diagnostic_not_implemented`
 - Caveats: `surface_forcing_is_constant_uniform_proxy, low_level_response_diagnostic_not_implemented, result_not_ingested`
 
 ## Forcing Response
 
-Surface-flux output fields are present in at least one ingested result, but standardized low-level response diagnostics are not implemented yet.
+Phase 1 confirmed selected forcing metadata, CM1-facing forcing controls, and hfx/qfx output-field presence. It did not verify emitted flux magnitudes or boundary-layer thermodynamic response because surface-flux statistics and low-level qv/theta response diagnostics are not implemented yet.
 
 ## Matched Comparisons
 
@@ -292,4 +312,6 @@ Deepening and class-difference evidence is listed per run above. This report doe
 ## Recommended Follow-Up Issues
 
 - Implement standardized low-level qv/theta/temperature response diagnostics.
+- Add hfx/qfx surface-flux statistics before claiming emitted flux magnitudes.
 - Review campaign rows with unavailable required output fields before scientific conclusions.
+- Standardize non-finite field trust handling across result cards, output products, campaign reports, and comparisons.

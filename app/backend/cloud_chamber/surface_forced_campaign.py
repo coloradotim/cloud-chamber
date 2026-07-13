@@ -151,6 +151,9 @@ SUPPORTED_REQUIRED_SUMMARY_FIELDS = {
     "missing_output_fields",
     "available_output_fields",
     "diagnostic_support",
+    "diagnostic_trust",
+    "diagnostic_quality_warnings",
+    "trusted_key_result",
     "interesting_time_support_state",
     "source_manifest_lifecycle_state",
     "source_manifest_product_state",
@@ -1787,6 +1790,12 @@ def _summary_for_plan_run(run: CampaignRunPlan, state: CampaignState) -> dict[st
         if result is not None
         else ["unavailable:until_result_ingested"]
     )
+    warnings = _normalize_campaign_messages(
+        result.warnings if result is not None else [], variables
+    )
+    caveats = _normalize_campaign_messages(_summary_caveats(run, state_run, result), variables)
+    diagnostic_trust = _diagnostic_trust(caveats)
+    diagnostic_quality_warnings = _diagnostic_quality_warnings(caveats)
     candidate = manifest.candidate_screening if manifest is not None else run.candidate_screening
     cloud = diagnostics.cloud if diagnostics is not None else None
     vertical_velocity = diagnostics.vertical_velocity if diagnostics is not None else None
@@ -1796,7 +1805,91 @@ def _summary_for_plan_run(run: CampaignRunPlan, state: CampaignState) -> dict[st
     deep_cloud_formed = (
         science.deep_cloud_formed if science is not None else "unavailable:not_ingested"
     )
-    return {
+    first_cloud_time = _trusted_outcome(
+        _first_defined(
+            cloud.first_cloud_time_seconds if cloud is not None else None,
+            science.first_cloud_time_seconds if science is not None else None,
+        ),
+        diagnostic_trust,
+        "qc",
+    )
+    max_cloud_top_m = _trusted_outcome(
+        _first_defined(
+            cloud.cloud_top_m if cloud is not None else None,
+            science.highest_cloud_top_m if science is not None else None,
+        ),
+        diagnostic_trust,
+        "qc",
+    )
+    max_cloud_top_time = _trusted_outcome(
+        _time_of_max_time_value(cloud.cloud_top_time_series if cloud is not None else []),
+        diagnostic_trust,
+        "qc",
+    )
+    max_qc = _trusted_outcome(
+        _first_defined(
+            cloud.max_qc_kg_kg if cloud is not None else None,
+            science.max_qc_kg_kg if science is not None else None,
+        ),
+        diagnostic_trust,
+        "qc",
+    )
+    max_qc_time = _trusted_outcome(
+        _first_defined(
+            cloud.time_of_max_qc_seconds if cloud is not None else None,
+            science.max_qc_time_seconds if science is not None else None,
+        ),
+        diagnostic_trust,
+        "qc",
+    )
+    max_w_m_s = _trusted_outcome(
+        _first_defined(
+            vertical_velocity.max_w_m_s if vertical_velocity is not None else None,
+            science.max_updraft_w_m_s if science is not None else None,
+        ),
+        diagnostic_trust,
+        "w",
+    )
+    max_w_time = _trusted_outcome(
+        _first_defined(
+            vertical_velocity.time_of_max_w_seconds if vertical_velocity is not None else None,
+            science.max_updraft_time_seconds if science is not None else None,
+        ),
+        diagnostic_trust,
+        "w",
+    )
+    max_w_height_m = _trusted_outcome(
+        _time_value_at_time(
+            vertical_velocity.max_w_height_time_series if vertical_velocity is not None else [],
+            vertical_velocity.time_of_max_w_seconds if vertical_velocity is not None else None,
+        ),
+        diagnostic_trust,
+        "w",
+    )
+    qr_present = _trusted_outcome(
+        rain.present if rain is not None else None, diagnostic_trust, "qr"
+    )
+    surface_rain_present = _trusted_outcome(
+        surface_rain.present if surface_rain is not None else None,
+        diagnostic_trust,
+        "surface_rain",
+    )
+    surface_rain_max = _trusted_outcome(
+        surface_rain.max_surface_rain if surface_rain is not None else None,
+        diagnostic_trust,
+        "surface_rain",
+    )
+    dbz_present = _trusted_outcome(
+        reflectivity.max_dbz is not None if reflectivity is not None else None,
+        diagnostic_trust,
+        "dbz",
+    )
+    max_dbz = _trusted_outcome(
+        reflectivity.max_dbz if reflectivity is not None else None,
+        diagnostic_trust,
+        "dbz",
+    )
+    summary = {
         "schema_version": CAMPAIGN_SUMMARY_SCHEMA_VERSION,
         "campaign_id": run.campaign_id,
         "matrix_id": run.matrix_id,
@@ -1863,6 +1956,8 @@ def _summary_for_plan_run(run: CampaignRunPlan, state: CampaignState) -> dict[st
         "available_output_fields": sorted(variables),
         "evidence_fields": sorted(variables),
         "diagnostic_support": _diagnostic_support(result),
+        "diagnostic_trust": diagnostic_trust,
+        "diagnostic_quality_warnings": diagnostic_quality_warnings,
         "interesting_time_support_state": (
             science.interesting_time_support_state
             if science is not None
@@ -1889,44 +1984,21 @@ def _summary_for_plan_run(run: CampaignRunPlan, state: CampaignState) -> dict[st
         "low_level_theta_or_temperature_response_method": (
             "low_level_response_diagnostic_not_implemented"
         ),
-        "first_cloud_time": _first_defined(
-            cloud.first_cloud_time_seconds if cloud is not None else None,
-            science.first_cloud_time_seconds if science is not None else None,
-        ),
-        "max_cloud_top_m": _first_defined(
-            cloud.cloud_top_m if cloud is not None else None,
-            science.highest_cloud_top_m if science is not None else None,
-        ),
-        "max_cloud_top_time": _time_of_max_time_value(
-            cloud.cloud_top_time_series if cloud is not None else []
-        ),
-        "max_qc": _first_defined(
-            cloud.max_qc_kg_kg if cloud is not None else None,
-            science.max_qc_kg_kg if science is not None else None,
-        ),
-        "max_qc_time": _first_defined(
-            cloud.time_of_max_qc_seconds if cloud is not None else None,
-            science.max_qc_time_seconds if science is not None else None,
-        ),
-        "cloud_depth_or_classification": _cloud_depth_or_classification(result),
-        "max_w_m_s": _first_defined(
-            vertical_velocity.max_w_m_s if vertical_velocity is not None else None,
-            science.max_updraft_w_m_s if science is not None else None,
-        ),
-        "max_w_time": _first_defined(
-            vertical_velocity.time_of_max_w_seconds if vertical_velocity is not None else None,
-            science.max_updraft_time_seconds if science is not None else None,
-        ),
-        "max_w_height_m": _time_value_at_time(
-            vertical_velocity.max_w_height_time_series if vertical_velocity is not None else [],
-            vertical_velocity.time_of_max_w_seconds if vertical_velocity is not None else None,
-        ),
-        "qr_present": rain.present if rain is not None else None,
-        "surface_rain_present": surface_rain.present if surface_rain is not None else None,
-        "surface_rain_max": (surface_rain.max_surface_rain if surface_rain is not None else None),
+        "first_cloud_time": first_cloud_time,
+        "max_cloud_top_m": max_cloud_top_m,
+        "max_cloud_top_time": max_cloud_top_time,
+        "max_qc": max_qc,
+        "max_qc_time": max_qc_time,
+        "cloud_depth_or_classification": _cloud_depth_or_classification(result, diagnostic_trust),
+        "max_w_m_s": max_w_m_s,
+        "max_w_time": max_w_time,
+        "max_w_height_m": max_w_height_m,
+        "qr_present": qr_present,
+        "surface_rain_present": surface_rain_present,
+        "surface_rain_max": surface_rain_max,
         "surface_rain_units": surface_rain.units if surface_rain is not None else None,
-        "dbz_present": reflectivity.max_dbz is not None if reflectivity is not None else None,
-        "max_dbz": reflectivity.max_dbz if reflectivity is not None else None,
+        "dbz_present": dbz_present,
+        "max_dbz": max_dbz,
         "deep_cloud_formed": deep_cloud_formed,
         "deep_cloud_flag": deep_cloud_formed,
         "first_deep_cloud_time": (
@@ -1934,14 +2006,14 @@ def _summary_for_plan_run(run: CampaignRunPlan, state: CampaignState) -> dict[st
             if science is not None
             else "unavailable:not_ingested"
         ),
-        "warnings": _normalize_campaign_messages(
-            result.warnings if result is not None else [], variables
-        ),
-        "caveats": _normalize_campaign_messages(
-            _summary_caveats(run, state_run, result), variables
-        ),
+        "warnings": warnings,
+        "caveats": caveats,
         "gate_override": state_run.gate_override if state_run is not None else None,
         "error": state_run.error if state_run else None,
+    }
+    return {
+        **summary,
+        "trusted_key_result": _key_result_label(summary),
     }
 
 
@@ -2018,6 +2090,103 @@ def _normalize_campaign_messages(messages: Iterable[str], available_fields: set[
     return _dedupe(normalized)
 
 
+FIELD_TRUST_CAVEATS = {
+    "qc": {
+        "missing": "missing_qc_field",
+        "partial": "non_finite_values_detected_in_qc",
+        "entire": "qc_field_entirely_non_finite",
+    },
+    "w": {
+        "missing": "missing_w_field",
+        "partial": "non_finite_values_detected_in_w",
+        "entire": "w_field_entirely_non_finite",
+    },
+    "qr": {
+        "missing": "qr_field_absent",
+        "partial": "non_finite_values_detected_in_qr",
+        "entire": "qr_field_entirely_non_finite",
+    },
+    "surface_rain": {
+        "missing": "surface_rain_field_absent",
+        "partial": "non_finite_values_detected_in_surface_rain",
+        "entire": "surface_rain_field_entirely_non_finite",
+    },
+    "dbz": {
+        "missing": "dbz_field_absent",
+        "partial": "non_finite_values_detected_in_dbz",
+        "entire": "dbz_field_entirely_non_finite",
+    },
+}
+
+
+def _diagnostic_trust(caveats: Iterable[str]) -> dict[str, str]:
+    caveat_set = set(caveats)
+    if "result_not_ingested" in caveat_set:
+        return {field: "unavailable_until_result_ingested" for field in FIELD_TRUST_CAVEATS}
+    trust: dict[str, str] = {}
+    for field, codes in FIELD_TRUST_CAVEATS.items():
+        if codes["entire"] in caveat_set:
+            trust[field] = "untrusted_entirely_non_finite"
+        elif codes["missing"] in caveat_set:
+            trust[field] = "unavailable_field_missing"
+        elif codes["partial"] in caveat_set:
+            trust[field] = "caveated_non_finite_values_detected"
+        else:
+            trust[field] = "trusted"
+    return trust
+
+
+def _diagnostic_quality_warnings(caveats: Iterable[str]) -> list[str]:
+    return _dedupe(
+        caveat
+        for caveat in caveats
+        if "non_finite" in caveat or caveat.endswith("_field_entirely_non_finite")
+    )
+
+
+def _trusted_outcome(value: Any, diagnostic_trust: Mapping[str, str], field: str) -> Any:
+    if diagnostic_trust.get(field) == "untrusted_entirely_non_finite":
+        return f"unavailable:untrusted_{field}_field_entirely_non_finite"
+    return value
+
+
+def _field_trust_label(status: str | None) -> str:
+    if status == "untrusted_entirely_non_finite":
+        return "untrusted"
+    if status == "caveated_non_finite_values_detected":
+        return "caveated"
+    if status == "unavailable_field_missing":
+        return "unavailable"
+    if status == "unavailable_until_result_ingested":
+        return "unavailable"
+    return "trusted"
+
+
+def _trusted_metric_label(label: str, value: Any, trust_status: str | None) -> str:
+    trust_label = _field_trust_label(trust_status)
+    if trust_label == "untrusted":
+        return f"{label} unavailable (untrusted)"
+    if trust_label == "unavailable":
+        return f"{label} unavailable"
+    suffix = f" ({trust_label})" if trust_label == "caveated" else ""
+    return f"{label} {_fmt(value)}{suffix}"
+
+
+def _trusted_bool_label(label: str, value: Any, trust_status: str | None) -> str:
+    trust_label = _field_trust_label(trust_status)
+    if trust_label == "untrusted":
+        return f"{label} unavailable (untrusted)"
+    if trust_label == "unavailable":
+        return f"{label} unavailable"
+    suffix = f" ({trust_label})" if trust_label == "caveated" else ""
+    return f"{label} {_bool_or_fmt(value)}{suffix}"
+
+
+def _diagnostic_trust_summary(trust: Mapping[str, Any]) -> str:
+    fields = ("qc", "w", "qr", "surface_rain", "dbz")
+    return ", ".join(f"{field} {_field_trust_label(str(trust.get(field)))}" for field in fields)
+
+
 def _stale_lhfx_missing_message(message: str, available_fields: set[str]) -> bool:
     if not _field_available("qfx", available_fields):
         return False
@@ -2061,7 +2230,12 @@ def _time_value_at_time(values: Sequence[Any], target_time: float | None) -> flo
     return None
 
 
-def _cloud_depth_or_classification(result: ResultMetadata | None) -> str:
+def _cloud_depth_or_classification(
+    result: ResultMetadata | None,
+    diagnostic_trust: Mapping[str, str],
+) -> str:
+    if diagnostic_trust.get("qc") == "untrusted_entirely_non_finite":
+        return "unavailable:untrusted_qc_field_entirely_non_finite"
     if result is None or result.diagnostics is None:
         return "unavailable:not_ingested"
     cloud = result.diagnostics.cloud
@@ -2162,16 +2336,31 @@ def _render_markdown_report(plan: CampaignPlan, summary: Mapping[str, Any]) -> s
     for run in summary["runs"]:
         required_fields = ", ".join(run["required_output_fields"]) or "unavailable"
         missing_fields = ", ".join(run["missing_output_fields"]) or "none"
-        cloud_updraft = (
-            f"first cloud `{_fmt(run['first_cloud_time'])}`, "
-            f"max cloud top `{_fmt(run['max_cloud_top_m'])}`, "
-            f"max qc `{_fmt(run['max_qc'])}`, "
-            f"max w `{_fmt(run['max_w_m_s'])}`"
+        trust = run.get("diagnostic_trust")
+        diagnostic_trust = trust if isinstance(trust, dict) else {}
+        quality_warnings = ", ".join(run["diagnostic_quality_warnings"]) or "none"
+        cloud_updraft = ", ".join(
+            [
+                _trusted_metric_label(
+                    "first cloud", run["first_cloud_time"], diagnostic_trust.get("qc")
+                ),
+                _trusted_metric_label(
+                    "max cloud top", run["max_cloud_top_m"], diagnostic_trust.get("qc")
+                ),
+                _trusted_metric_label("max qc", run["max_qc"], diagnostic_trust.get("qc")),
+                _trusted_metric_label("max w", run["max_w_m_s"], diagnostic_trust.get("w")),
+            ]
         )
-        precipitation = (
-            f"qr `{run['qr_present']}`, "
-            f"surface rain `{run['surface_rain_present']}`, "
-            f"max dBZ `{_fmt(run['max_dbz'])}`"
+        precipitation = ", ".join(
+            [
+                _trusted_bool_label("qr", run["qr_present"], diagnostic_trust.get("qr")),
+                _trusted_bool_label(
+                    "surface rain",
+                    run["surface_rain_present"],
+                    diagnostic_trust.get("surface_rain"),
+                ),
+                _trusted_metric_label("max dBZ", run["max_dbz"], diagnostic_trust.get("dbz")),
+            ]
         )
         lines.extend(
             [
@@ -2204,6 +2393,8 @@ def _render_markdown_report(plan: CampaignPlan, summary: Mapping[str, Any]) -> s
                 ),
                 f"- Cloud/updraft: {cloud_updraft}",
                 f"- Precipitation/reflectivity: {precipitation}",
+                f"- Diagnostic trust: `{_diagnostic_trust_summary(diagnostic_trust)}`",
+                f"- Field-quality warnings: `{quality_warnings}`",
                 f"- Low-level response: `{run['low_level_qv_response_method']}`",
                 f"- Caveats: `{', '.join(run['caveats']) or 'none'}`",
                 "",
@@ -2428,7 +2619,12 @@ def _comparison_supported_differences(
     ):
         left = control.get(field)
         right = experiment.get(field)
-        if left not in {None, "unavailable"} or right not in {None, "unavailable"}:
+        if (
+            left is not None
+            and not _is_unavailable(left)
+            or right is not None
+            and not _is_unavailable(right)
+        ):
             differences.append({"field": field, "control": left, "experiment": right})
     return differences
 
@@ -2502,7 +2698,11 @@ def _preliminary_diagnosis_categories(summaries: Sequence[Mapping[str, Any]]) ->
         categories.add("ingested_results_available_for_review")
     if any(summary.get("hfx_present") and summary.get("lhfx_present") for summary in summaries):
         categories.add("surface_flux_outputs_present_in_at_least_one_result")
-    if any(summary.get("max_cloud_top_m") not in {None, "unavailable"} for summary in summaries):
+    if any(
+        summary.get("max_cloud_top_m") is not None
+        and not _is_unavailable(summary.get("max_cloud_top_m"))
+        for summary in summaries
+    ):
         categories.add("cloud_depth_evidence_available")
     if not categories:
         categories.add("campaign_not_far_enough_for_science_diagnosis")
@@ -2512,11 +2712,17 @@ def _preliminary_diagnosis_categories(summaries: Sequence[Mapping[str, Any]]) ->
 def _recommended_follow_ups(summaries: Sequence[Mapping[str, Any]]) -> list[str]:
     followups = [
         "Implement standardized low-level qv/theta/temperature response diagnostics.",
+        "Add hfx/qfx surface-flux statistics before claiming emitted flux magnitudes.",
         (
             "Review campaign rows with unavailable required output fields before "
             "scientific conclusions."
         ),
     ]
+    if any(summary.get("diagnostic_quality_warnings") for summary in summaries):
+        followups.append(
+            "Standardize non-finite field trust handling across result cards, output "
+            "products, campaign reports, and comparisons."
+        )
     if any(summary.get("status") == "package_failed" for summary in summaries):
         followups.append("Fix package-generation blockers before queueing the full campaign.")
     if any(summary.get("status") == "run_failed" for summary in summaries):
@@ -2536,8 +2742,10 @@ def _forcing_response_summary(summary: Mapping[str, Any]) -> str:
         )
     if state == "forcing_wiring_verified_but_response_not_verified":
         return (
-            "Surface-flux output fields are present in at least one ingested result, but "
-            "standardized low-level response diagnostics are not implemented yet."
+            "Phase 1 confirmed selected forcing metadata, CM1-facing forcing controls, "
+            "and hfx/qfx output-field presence. It did not verify emitted flux magnitudes "
+            "or boundary-layer thermodynamic response because surface-flux statistics and "
+            "low-level qv/theta response diagnostics are not implemented yet."
         )
     if state == "forcing_wiring_not_verified":
         return "Surface-flux output fields are missing from ingested results."
@@ -2580,10 +2788,22 @@ def _grid_label(run: Mapping[str, Any]) -> str:
 def _key_result_label(run: Mapping[str, Any]) -> str:
     if run.get("status") != "ingested":
         return str(run.get("status"))
-    return (
-        f"cloud top {_fmt(run.get('max_cloud_top_m'))}; "
-        f"max w {_fmt(run.get('max_w_m_s'))}; "
-        f"surface rain {run.get('surface_rain_present')}"
+    trust = run.get("diagnostic_trust")
+    diagnostic_trust = trust if isinstance(trust, dict) else {}
+    return "; ".join(
+        [
+            _trusted_metric_label(
+                "cloud top",
+                run.get("max_cloud_top_m"),
+                diagnostic_trust.get("qc"),
+            ),
+            _trusted_metric_label("max w", run.get("max_w_m_s"), diagnostic_trust.get("w")),
+            _trusted_bool_label(
+                "surface rain",
+                run.get("surface_rain_present"),
+                diagnostic_trust.get("surface_rain"),
+            ),
+        ]
     )
 
 
@@ -2763,6 +2983,14 @@ def _fmt(value: object) -> str:
     if isinstance(value, float):
         return f"{value:.4g}"
     return str(value)
+
+
+def _bool_or_fmt(value: object) -> str:
+    if value is True:
+        return "yes"
+    if value is False:
+        return "no"
+    return _fmt(value)
 
 
 def _now() -> datetime:
