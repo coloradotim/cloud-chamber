@@ -42,15 +42,16 @@ Can an easy deep-candidate sounding deepen past shallow cumulus under uniform lo
 
 ## Per-run evidence table
 
-| Matrix ID | hfx | qfx | low_level_qv_response | low_level_theta_or_temperature_response | first_cloud_time | max_cloud_top_m | max_qc | max_w_m_s | cloud_depth_or_classification | qr | surface rain | dbz | Diagnostic trust | Field-quality warnings | Evidence fields | Initial diagnosis |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| `<matrix_id>` | `<present; units; min/max/mean>` | `<present; units; min/max/mean>` | `<value/method/unavailable>` | `<value/method/unavailable>` | `<time/unavailable>` | `<m at time>` | `<kg/kg at time>` | `<m/s at time/height>` | `<class/depth/unavailable>` | `<present/absent/unavailable>` | `<present/absent/unavailable>` | `<present/absent/unavailable>` | `<trusted/caveated/untrusted/unavailable by field>` | `<non-finite or other severe field-quality warnings>` | `<fields/diagnostics>` | `<category>` |
+| Matrix ID | hfx | qfx | low_level_qv_early_response_delta | low_level_qv_early_quality | low_level_qv_full_run_delta | low_level_theta_or_temperature_early_response_delta | low_level_theta_or_temperature_early_quality | low_level_theta_or_temperature_full_run_delta | first_cloud_time | max_cloud_top_m | max_qc | max_w_m_s | cloud_depth_or_classification | qr | surface rain | dbz | Diagnostic trust | Field-quality warnings | Evidence fields | Initial diagnosis |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `<matrix_id>` | `<present; units; min/max/mean>` | `<present; units; min/max/mean>` | `<early value/method/unavailable>` | `<trusted/caveated/unavailable plus finite fraction>` | `<full-run value/unavailable>` | `<early value/method/unavailable>` | `<trusted/caveated/unavailable plus finite fraction>` | `<full-run value/unavailable>` | `<time/unavailable>` | `<m at time>` | `<kg/kg at time>` | `<m/s at time/height>` | `<class/depth/unavailable>` | `<present/absent/unavailable>` | `<present/absent/unavailable>` | `<present/absent/unavailable>` | `<trusted/caveated/untrusted/unavailable by field>` | `<non-finite or other severe field-quality warnings>` | `<fields/diagnostics>` | `<category>` |
 
 If `qc`, `w`, `qr`, surface `rain`, or `dbz` is entirely non-finite or materially contaminated by non-finite values, the run summary must mark the affected diagnostic as untrusted or caveated. Do not present surface rain, cloud top, updraft, rain-water-aloft, or reflectivity as clean evidence when the source field quality does not support that conclusion.
 
 ## Low-level response method
 
-State exactly how low-level `qv` and theta/temperature response were computed, or mark them unavailable.
+State exactly how backend-owned low-level `qv` and theta/temperature response
+were computed, or mark them unavailable.
 
 Required method fields:
 
@@ -58,17 +59,22 @@ Required method fields:
 vertical layer:
 spatial statistic:
 reference time:
-evaluation time:
+early response window:
+full-run response:
 paired control run:
 source fields:
 units:
+finite/non-finite endpoint counts:
+early/full-run availability:
+early finite-coverage threshold:
 ```
 
-If the standardized diagnostic is not implemented, write:
-
-```text
-unavailable: low_level_response_diagnostic_not_implemented
-```
+Phase 1 gate checks use the early response window. Full-run deltas remain useful
+atmospheric-evolution evidence, but they are not clean forcing-path verification
+after cloud, precipitation, entrainment, and downdraft feedbacks may have
+developed. Early and full-run response availability must be reported
+independently; a missing or bad final endpoint must not erase valid early
+forcing-response evidence.
 
 ## Phase 1 — forcing-path smoke check
 
@@ -86,8 +92,8 @@ unavailable: low_level_response_diagnostic_not_implemented
 
 | Check | Result | Evidence | Notes |
 | --- | --- | --- | --- |
-| heat-only run shows directionally consistent theta/temp response | `<pass/warn/fail/unavailable>` | `<summary>` | `<notes>` |
-| moisture-only run shows directionally consistent qv response | `<pass/warn/fail/unavailable>` | `<summary>` | `<notes>` |
+| heat-only run shows directionally consistent early theta/temp response | `<pass/warn/fail/unavailable>` | `<summary>` | `<notes>` |
+| moisture-only run shows directionally consistent early qv response | `<pass/warn/fail/unavailable>` | `<summary>` | `<notes>` |
 
 ### Phase 1 gate result
 
@@ -170,7 +176,8 @@ Examples:
 
 ```text
 - Fix package/output wiring before running more cases.
-- Add standardized low-level qv/theta response diagnostics before next campaign.
+- Resolve missing or not-verified low-level qv/theta response evidence before
+  continuing the campaign automatically.
 - Adjust default flux values or add stronger labeled examples.
 - Prefer Regional 60 km / 12 h for first deep-candidate checks.
 - Proceed to differential forcing (#307) as a follow-up candidate because uniform forcing responds but does not focus ascent.

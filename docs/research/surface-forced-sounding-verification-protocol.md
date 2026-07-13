@@ -277,7 +277,9 @@ operator_override_continue
 - Missing selected/product forcing metadata: `forcing_wiring_not_verified`; block automatic continuation.
 - Missing CM1-facing `cnst_shflx` or `cnst_lhflx`: `forcing_wiring_not_verified`; block automatic continuation.
 - Missing `hfx` or `qfx` when requested: `inconclusive_missing_evidence`; block automatic continuation.
-- Missing standardized low-level response diagnostic: `inconclusive_missing_evidence`; block automatic continuation.
+- Missing or unavailable standardized low-level response diagnostic:
+  `forcing_wiring_verified_but_response_not_verified`; block automatic continuation
+  after surface-flux response is verified.
 - Matched Phase 1 emitted `hfx`/`qfx` values are present, trusted, unit-comparable, and every required Phase 1 comparison type is present: `surface_flux_response_verified`; continue to low-level response checks.
 - Missing one of the required `heat_flux_sensitivity`, `moisture_flux_sensitivity`, or `combined_flux_sensitivity` comparisons: `surface_flux_response_inconclusive_missing_evidence`; block automatic continuation.
 - Missing, untrusted, or not-ingested matched Phase 1 `hfx`/`qfx` statistics: `surface_flux_response_inconclusive_missing_evidence`; block automatic continuation.
@@ -313,27 +315,47 @@ Cloud Chamber commit and CM1 version/build are required per run in the summary c
 
 ## Low-level response diagnostic contract
 
-Low-level `qv` and theta/temperature response must be standardized before the campaign runner summarizes them.
-
-Preferred method for #311:
+Low-level `qv` and theta/temperature response is a backend-owned diagnostic.
+The campaign runner must use this standardized output rather than improvising a
+browser-side or report-local calculation.
 
 ```text
 vertical layer: 0-1000 m AGL, using available model vertical coordinate
-spatial statistic: domain mean unless a later issue adds selected-column context
+spatial statistic: thickness-weighted domain mean from vertical cell centers
 reference time: first output time, preferably model time 0 or earliest available output
-evaluation time: final output time for the run unless the report explicitly names another time
-per-run response: evaluation_time_mean - reference_time_mean
+early evaluation time: output closest to 60 minutes after reference, bounded to 30-90 minutes
+full-run evaluation time: final output time for the run
+early response: early_evaluation_time_mean - reference_time_mean
+full-run response: final_time_mean - reference_time_mean
 forcing sensitivity: response difference against the paired control run with same sounding, duration, domain, grid, and cadence
 units: preserve source field units; convert only if the backend has a documented conversion
 ```
 
-If a standardized backend diagnostic is not implemented, report these fields as:
+The result metadata and science-summary payload preserve source field, units,
+vertical-coordinate method, early-response endpoint indices/times/means/delta,
+full-run endpoint indices/times/means/delta, and finite/non-finite endpoint
+counts. Missing `qv`, missing theta/temperature, missing vertical coordinates,
+unsupported vertical units, insufficient output times in the 30-90 minute early
+window, or entirely non-finite endpoints produce explicit unavailable states.
+Early-response availability and full-run-response availability are independent:
+a valid early forcing response can remain available when the final endpoint is
+missing, not distinct from the early endpoint, or entirely non-finite. Likewise,
+a full-run delta can be reported as atmospheric-evolution evidence when the
+early response window is missing, but it must not satisfy the Phase 1 gate.
 
-```text
-unavailable: low_level_response_diagnostic_not_implemented
-```
-
-The campaign runner must not improvise a browser-side or ad hoc calculation without documenting the layer, statistic, reference time, paired control, units, and source fields.
+For Phase 1 gate evaluation, heat-only comparisons require the
+early theta/temperature response delta to increase against the matched control;
+moisture-only comparisons require the early `qv` response delta to increase
+against the matched control; combined comparisons require both. Full-run deltas
+remain experiment evidence but must not be the only Phase 1 forcing-path gate.
+Early endpoints must have at least 95% finite coverage at both the reference
+and early evaluation time. Partially non-finite endpoints above that threshold
+are reported as caveated; below that threshold they are missing evidence for the
+gate, not a scientific non-response.
+Non-varied low-level response changes are informational unless a later protocol
+defines a field-specific stability tolerance. `theta_v` is moisture-coupled and
+must not silently substitute for the thermal response gate unless a future
+protocol explicitly requests virtual-potential-temperature response.
 
 ## Phase 1 — Forcing-path smoke check
 
@@ -574,10 +596,28 @@ qfx_units
 qfx_min / qfx_max / qfx_mean when derivable
 qfx_finite_count / qfx_non_finite_count / qfx_total_count
 surface_moisture_flux_output_field
-low_level_qv_response with method or unavailable reason
+low_level_qv_response with early delta, method, or unavailable reason
+low_level_qv_early_response_delta
+low_level_qv_full_run_delta
 low_level_qv_response_method
-low_level_theta_or_temperature_response with method or unavailable reason
+low_level_qv_response_source_field
+low_level_qv_response_units
+low_level_qv_early_response_start_mean / low_level_qv_early_response_end_mean
+low_level_qv_early_response_start_time_seconds / low_level_qv_early_response_end_time_seconds
+low_level_qv_response_first_mean / low_level_qv_response_final_mean
+low_level_qv_response_first_time_seconds / low_level_qv_response_final_time_seconds
+low_level_qv_response_first_finite_count / low_level_qv_response_final_finite_count
+low_level_theta_or_temperature_response with early delta, method, or unavailable reason
+low_level_theta_or_temperature_early_response_delta
+low_level_theta_or_temperature_full_run_delta
 low_level_theta_or_temperature_response_method
+low_level_theta_or_temperature_response_source_field
+low_level_theta_or_temperature_response_units
+low_level_theta_or_temperature_early_response_start_mean / low_level_theta_or_temperature_early_response_end_mean
+low_level_theta_or_temperature_early_response_start_time_seconds / low_level_theta_or_temperature_early_response_end_time_seconds
+low_level_theta_or_temperature_response_first_mean / low_level_theta_or_temperature_response_final_mean
+low_level_theta_or_temperature_response_first_time_seconds / low_level_theta_or_temperature_response_final_time_seconds
+low_level_theta_or_temperature_response_first_finite_count / low_level_theta_or_temperature_response_final_finite_count
 first_cloud_time
 max_cloud_top_m and time
 max_qc and time

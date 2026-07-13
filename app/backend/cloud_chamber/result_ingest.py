@@ -21,8 +21,13 @@ from cloud_chamber.output_products import (
     write_output_product_manifest,
 )
 from cloud_chamber.result_diagnostics import (
+    LOW_LEVEL_RESPONSE_EARLY_MAX_SECONDS,
+    LOW_LEVEL_RESPONSE_EARLY_MIN_SECONDS,
+    LOW_LEVEL_RESPONSE_EARLY_TARGET_SECONDS,
     CloudDiagnostics,
     FieldQuality,
+    LowLevelResponseDiagnostics,
+    LowLevelResponseFieldDiagnostics,
     ProcessDiagnostics,
     RainDiagnostics,
     ReflectivityDiagnostics,
@@ -559,6 +564,9 @@ def _merge_diagnostics(
     surface_fluxes = _merge_surface_flux_diagnostics(
         [diagnostics.surface_fluxes for diagnostics in diagnostics_parts]
     )
+    low_level_response = _merge_low_level_response_diagnostics(
+        [diagnostics.low_level_response for diagnostics in diagnostics_parts]
+    )
     field_quality = _merge_field_quality_maps(diagnostics_parts)
     field_quality_assessed = any(
         diagnostics.field_quality_assessed for diagnostics in diagnostics_parts
@@ -569,6 +577,19 @@ def _merge_diagnostics(
             *(caveat for diagnostics in diagnostics_parts for caveat in diagnostics.caveats),
         ]
     )
+    if low_level_response.qv.available:
+        caveats = [
+            caveat
+            for caveat in caveats
+            if caveat != "qv_low_level_response_requires_at_least_two_time_steps"
+        ]
+    thermal_source = low_level_response.theta_or_temperature.source_field
+    if low_level_response.theta_or_temperature.available and thermal_source:
+        caveats = [
+            caveat
+            for caveat in caveats
+            if caveat != f"{thermal_source}_low_level_response_requires_at_least_two_time_steps"
+        ]
     return ResultDiagnostics(
         cloud=cloud,
         vertical_velocity=vertical,
@@ -576,6 +597,7 @@ def _merge_diagnostics(
         surface_rain=surface_rain,
         reflectivity=reflectivity,
         surface_fluxes=surface_fluxes,
+        low_level_response=low_level_response,
         time=time,
         field_quality_assessed=field_quality_assessed,
         field_quality=field_quality,
@@ -814,6 +836,203 @@ def _merge_surface_flux_field_diagnostics(
         total_count=total_count,
         caveats=caveats,
     )
+
+
+def _merge_low_level_response_diagnostics(
+    parts: list[LowLevelResponseDiagnostics],
+) -> LowLevelResponseDiagnostics:
+    return LowLevelResponseDiagnostics(
+        qv=_merge_low_level_response_field_diagnostics(
+            "qv",
+            [part.qv for part in parts],
+        ),
+        theta_or_temperature=_merge_low_level_response_field_diagnostics(
+            None,
+            [part.theta_or_temperature for part in parts],
+        ),
+    )
+
+
+def _merge_low_level_response_field_diagnostics(
+    fallback_source_field: str | None,
+    parts: list[LowLevelResponseFieldDiagnostics],
+) -> LowLevelResponseFieldDiagnostics:
+    if not parts:
+        return LowLevelResponseFieldDiagnostics(source_field=fallback_source_field)
+    available_parts = [part for part in parts if part.early_response_available or part.available]
+    time_parts = sorted(
+        [part for part in parts if part.first_time_seconds is not None],
+        key=_low_level_response_endpoint_sort_key,
+    )
+    finite_point_parts = [
+        part
+        for part in time_parts
+        if part.first_mean_value is not None and part.first_finite_count > 0
+    ]
+    source_field = next(
+        (part.source_field for part in parts if part.source_field is not None),
+        fallback_source_field,
+    )
+    units = next((part.units for part in parts if part.units is not None), None)
+    caveats = _dedupe_strings([caveat for part in parts for caveat in part.caveats])
+    vertical_coordinate_name = next(
+        (part.vertical_coordinate_name for part in parts if part.vertical_coordinate_name),
+        None,
+    )
+    vertical_coordinate_units = next(
+        (part.vertical_coordinate_units for part in parts if part.vertical_coordinate_units),
+        None,
+    )
+    vertical_coordinate_method = next(
+        (part.vertical_coordinate_method for part in parts if part.vertical_coordinate_method),
+        None,
+    )
+    time_dimension = next((part.time_dimension for part in parts if part.time_dimension), None)
+    if not available_parts and len(finite_point_parts) >= 2 and source_field:
+        caveats = [
+            caveat
+            for caveat in caveats
+            if caveat != f"{source_field}_low_level_response_requires_at_least_two_time_steps"
+        ]
+    if available_parts and len(finite_point_parts) < 2:
+        part = available_parts[0]
+        return part.model_copy(update={"caveats": caveats})
+    if not available_parts and len(finite_point_parts) < 2:
+        return LowLevelResponseFieldDiagnostics(
+            source_field=source_field,
+            available=False,
+            early_response_available=False,
+            full_run_response_available=False,
+            field_absent=all(part.field_absent for part in parts),
+            vertical_coordinate_name=vertical_coordinate_name,
+            vertical_coordinate_units=vertical_coordinate_units,
+            vertical_coordinate_method=vertical_coordinate_method,
+            time_dimension=time_dimension,
+            units=units,
+            first_finite_count=sum(part.first_finite_count for part in parts),
+            first_non_finite_count=sum(part.first_non_finite_count for part in parts),
+            first_total_count=sum(part.first_total_count for part in parts),
+            final_finite_count=sum(part.final_finite_count for part in parts),
+            final_non_finite_count=sum(part.final_non_finite_count for part in parts),
+            final_total_count=sum(part.final_total_count for part in parts),
+            caveats=caveats,
+        )
+
+    endpoint_source = finite_point_parts
+    first = endpoint_source[0]
+    final = time_parts[-1] if time_parts else endpoint_source[-1]
+    first_mean = first.first_mean_value
+    final_mean = final.first_mean_value
+    early_end = _low_level_response_early_endpoint(endpoint_source, first.first_time_seconds)
+    early_mean = early_end.first_mean_value if early_end is not None else None
+    early_delta = (
+        early_mean - first_mean
+        if early_mean is not None and first_mean is not None and early_end is not None
+        else None
+    )
+    final_endpoint_available = final_mean is not None and final.first_finite_count > 0
+    full_run_has_distinct_endpoint = (
+        final.first_time_seconds != early_end.first_time_seconds
+        if early_end is not None
+        else final.first_time_seconds != first.first_time_seconds
+    )
+    full_run_delta = (
+        final_mean - first_mean
+        if final_endpoint_available and first_mean is not None and final_mean is not None
+        else None
+    )
+    if early_end is None and source_field:
+        caveats = _dedupe_strings(
+            [*caveats, f"{source_field}_low_level_response_missing_early_output_30_90min"]
+        )
+    if not final_endpoint_available and source_field:
+        caveats = _dedupe_strings(
+            [*caveats, f"{source_field}_low_level_response_final_endpoint_entirely_non_finite"]
+        )
+    early_response_available = early_delta is not None
+    full_run_response_available = full_run_delta is not None and full_run_has_distinct_endpoint
+    return LowLevelResponseFieldDiagnostics(
+        source_field=source_field,
+        available=early_response_available,
+        early_response_available=early_response_available,
+        full_run_response_available=full_run_response_available,
+        field_absent=False,
+        vertical_coordinate_name=vertical_coordinate_name,
+        vertical_coordinate_units=vertical_coordinate_units,
+        vertical_coordinate_method=vertical_coordinate_method,
+        time_dimension=time_dimension,
+        first_time_index=first.first_time_index,
+        final_time_index=final.first_time_index,
+        first_time_seconds=first.first_time_seconds,
+        final_time_seconds=final.first_time_seconds,
+        first_mean_value=first_mean,
+        final_mean_value=final_mean,
+        delta_value=early_delta,
+        early_response_start_time_index=first.first_time_index if early_delta is not None else None,
+        early_response_end_time_index=early_end.first_time_index
+        if early_end is not None and early_delta is not None
+        else None,
+        early_response_start_time_seconds=(
+            first.first_time_seconds if early_delta is not None else None
+        ),
+        early_response_end_time_seconds=(
+            early_end.first_time_seconds
+            if early_end is not None and early_delta is not None
+            else None
+        ),
+        early_response_start_mean_value=first_mean if early_delta is not None else None,
+        early_response_end_mean_value=early_mean if early_delta is not None else None,
+        early_response_delta=early_delta,
+        early_response_start_finite_count=first.first_finite_count
+        if early_delta is not None
+        else 0,
+        early_response_start_non_finite_count=first.first_non_finite_count
+        if early_delta is not None
+        else 0,
+        early_response_start_total_count=first.first_total_count if early_delta is not None else 0,
+        early_response_end_finite_count=early_end.first_finite_count
+        if early_end is not None and early_delta is not None
+        else 0,
+        early_response_end_non_finite_count=early_end.first_non_finite_count
+        if early_end is not None and early_delta is not None
+        else 0,
+        early_response_end_total_count=early_end.first_total_count
+        if early_end is not None and early_delta is not None
+        else 0,
+        full_run_delta=full_run_delta if full_run_response_available else None,
+        units=units,
+        first_finite_count=first.first_finite_count,
+        first_non_finite_count=first.first_non_finite_count,
+        first_total_count=first.first_total_count,
+        final_finite_count=final.first_finite_count,
+        final_non_finite_count=final.first_non_finite_count,
+        final_total_count=final.first_total_count,
+        caveats=caveats,
+    )
+
+
+def _low_level_response_endpoint_sort_key(
+    part: LowLevelResponseFieldDiagnostics,
+) -> float:
+    return part.first_time_seconds if part.first_time_seconds is not None else float("inf")
+
+
+def _low_level_response_early_endpoint(
+    parts: list[LowLevelResponseFieldDiagnostics],
+    start_time: float | None,
+) -> LowLevelResponseFieldDiagnostics | None:
+    if start_time is None:
+        return None
+    candidates: list[tuple[float, LowLevelResponseFieldDiagnostics]] = []
+    for part in parts[1:]:
+        if part.first_time_seconds is None:
+            continue
+        elapsed = part.first_time_seconds - start_time
+        if LOW_LEVEL_RESPONSE_EARLY_MIN_SECONDS <= elapsed <= LOW_LEVEL_RESPONSE_EARLY_MAX_SECONDS:
+            candidates.append((abs(elapsed - LOW_LEVEL_RESPONSE_EARLY_TARGET_SECONDS), part))
+    if not candidates:
+        return None
+    return min(candidates, key=lambda item: item[0])[1]
 
 
 FIELD_QUALITY_MERGE_ORDER = ("qc", "w", "qr", "surface_rain", "dbz", "hfx", "qfx")

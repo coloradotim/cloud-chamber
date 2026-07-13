@@ -682,6 +682,14 @@ Current diagnostics compute:
 - optional reflectivity summary from the CM1 `dbz` field;
 - optional surface-flux summaries from CM1 `hfx` and `qfx`, including
   min/max/mean, units, and finite/non-finite counts.
+- optional low-level response summaries from 0-1 km AGL thickness-weighted
+  domain-mean `qv` and theta/temperature. These carry early-response evidence
+  from the output closest to 60 minutes after the first output, bounded to a
+  30-90 minute window, plus full-run first/final evidence. They include source
+  field, units, vertical-coordinate method, endpoint means, deltas, and
+  finite/non-finite endpoint counts. Early forcing-response support and full-run
+  evolution support are independent states; a bad or absent final endpoint must
+  not invalidate an otherwise usable early response.
 
 Diagnostics preserve runtime warnings from the run manifest/result metadata. CM1
 floating-point exception flags are caveats, not automatic failure. The
@@ -698,7 +706,9 @@ non-finite fields are not presented as clean negative or positive outcomes.
 Surface-flux statistics preserve CM1 output units separately from the selected
 namelist controls. In particular, `qfx` evidence is reported as emitted CM1
 moisture-flux output and must not be equated to `cnst_lhflx` without a
-documented interpretation.
+documented interpretation. Low-level response diagnostics require actual
+vertical-coordinate evidence; they do not infer the 0-1 km layer from raw array
+index.
 
 This result metadata is not a Result Card UI and not visualization-ready data. It is the backend bridge that later result cards and inspectors can consume.
 
