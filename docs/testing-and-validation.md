@@ -213,12 +213,15 @@ preserve source field names, units, vertical-coordinate method, early-response
 endpoint times/means/deltas, full-run endpoint times/means/deltas, and
 finite/non-finite endpoint counts. Missing fields, missing vertical
 coordinates, unsupported vertical units, insufficient 30-90 minute early output,
-and entirely non-finite endpoints must be unavailable. Campaign tests should
-compare heat-only early theta/temperature response and moisture-only early `qv`
-response against matched controls, keep full-run deltas informational for the
-Phase 1 gate, and keep non-varied low-level response changes informational
-unless the protocol defines a field-specific tolerance. `theta_v` must not be a
-silent thermal-response fallback for the sensible-heat gate.
+and entirely non-finite endpoints must be unavailable for the affected response
+only. Campaign tests should cover early-only, full-run-only, both-available, and
+bad-final-endpoint cases. Campaign tests should compare heat-only early
+theta/temperature response and moisture-only early `qv` response against matched
+controls, keep full-run deltas informational for the Phase 1 gate, block early
+evidence below the documented finite-coverage threshold, and keep non-varied
+low-level response changes informational unless the protocol defines a
+field-specific tolerance. `theta_v` must not be a silent thermal-response
+fallback for the sensible-heat gate.
 
 Local launcher tests must inject fake subprocess handles. They should assert command construction, stdout/stderr log capture, one-active-run refusal, queued/running/completed/failed/canceled state transitions, missing-settings failure, and protection against pre-existing output-like files. They must not launch real CM1 or require local runtime files in CI.
 They should also assert placeholder-only packages are rejected before launch, Rayleigh damping/domain checks catch damping over more than half the domain, required runtime files such as `LANDUSE.TBL` are staged from temp CM1 run directories, `.dat/.ctl` and NetCDF output artifacts are cataloged separately in the manifest, stderr floating-point flags are surfaced as runtime warnings, and exit code 0 without output becomes `needs_review` rather than `completed_cm1_result`.

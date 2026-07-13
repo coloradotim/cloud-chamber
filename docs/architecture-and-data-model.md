@@ -687,7 +687,9 @@ Current diagnostics compute:
   from the output closest to 60 minutes after the first output, bounded to a
   30-90 minute window, plus full-run first/final evidence. They include source
   field, units, vertical-coordinate method, endpoint means, deltas, and
-  finite/non-finite endpoint counts.
+  finite/non-finite endpoint counts. Early forcing-response support and full-run
+  evolution support are independent states; a bad or absent final endpoint must
+  not invalidate an otherwise usable early response.
 
 Diagnostics preserve runtime warnings from the run manifest/result metadata. CM1
 floating-point exception flags are caveats, not automatic failure. The

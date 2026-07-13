@@ -1243,7 +1243,7 @@ def _low_level_response_availability_record(
     diagnostics: LowLevelResponseFieldDiagnostics | None,
     field_present: bool,
 ) -> ScienceDiagnosticAvailability:
-    if diagnostics is not None and diagnostics.available:
+    if diagnostics is not None and diagnostics.early_response_available:
         return ScienceDiagnosticAvailability(
             key=key,
             label=label,

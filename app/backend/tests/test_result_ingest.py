@@ -384,7 +384,9 @@ def test_ingests_multifile_model_output_sequence_and_excludes_stats(tmp_path: Pa
     assert result.diagnostics.low_level_response.qv.final_time_seconds == 3900.0
     assert result.diagnostics.low_level_response.qv.early_response_end_time_seconds == 3900.0
     assert result.diagnostics.low_level_response.qv.delta_value == pytest.approx(0.006)
-    assert result.diagnostics.low_level_response.qv.full_run_delta == pytest.approx(0.006)
+    assert result.diagnostics.low_level_response.qv.early_response_available is True
+    assert result.diagnostics.low_level_response.qv.full_run_response_available is False
+    assert result.diagnostics.low_level_response.qv.full_run_delta is None
     assert result.diagnostics.low_level_response.theta_or_temperature.available is True
     assert result.diagnostics.low_level_response.theta_or_temperature.delta_value == pytest.approx(
         4.0

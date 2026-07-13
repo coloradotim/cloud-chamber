@@ -571,6 +571,8 @@ def test_low_level_response_computes_weighted_early_and_full_run_deltas(
     qv = diagnostics.low_level_response.qv
     thermal = diagnostics.low_level_response.theta_or_temperature
     assert qv.available is True
+    assert qv.early_response_available is True
+    assert qv.full_run_response_available is True
     assert qv.source_field == "qv"
     assert qv.vertical_coordinate_name == "z"
     assert qv.vertical_coordinate_units == "m"
@@ -591,6 +593,8 @@ def test_low_level_response_computes_weighted_early_and_full_run_deltas(
     assert qv.final_finite_count == 36
 
     assert thermal.available is True
+    assert thermal.early_response_available is True
+    assert thermal.full_run_response_available is True
     assert thermal.source_field == "th"
     assert thermal.first_mean_value == pytest.approx(317.0)
     assert thermal.early_response_end_mean_value == pytest.approx(321.125)
@@ -599,6 +603,100 @@ def test_low_level_response_computes_weighted_early_and_full_run_deltas(
     assert thermal.early_response_delta == pytest.approx(4.125)
     assert thermal.full_run_delta == pytest.approx(5.55)
     assert thermal.units == "K"
+
+
+def test_low_level_response_keeps_early_when_final_endpoint_non_finite(
+    tmp_path: Path,
+) -> None:
+    qv_values = time_z_values(
+        [
+            [0.010, 0.012],
+            [0.014, 0.018],
+            [float("nan"), float("nan")],
+        ]
+    )
+    dataset = write_dataset(
+        tmp_path / "low_level_response_bad_final.nc",
+        base_dataset(
+            qc_values=zeros(time_count=3),
+            w_values=w_field(time_count=3),
+            qv_values=qv_values,
+            th_values=time_z_values(
+                [
+                    [299.0, 301.0],
+                    [302.0, 306.0],
+                    [float("nan"), float("nan")],
+                ]
+            ),
+            time_values=[0.0, 3600.0, 21600.0],
+            z_values=[250.0, 750.0],
+            z_units="m",
+        ),
+    )
+
+    diagnostics = compute_baseline_diagnostics(dataset, [])
+
+    qv = diagnostics.low_level_response.qv
+    assert qv.available is True
+    assert qv.early_response_available is True
+    assert qv.full_run_response_available is False
+    assert qv.early_response_delta == pytest.approx(0.005)
+    assert qv.full_run_delta is None
+    assert qv.final_finite_count == 0
+    assert "qv_low_level_response_final_endpoint_entirely_non_finite" in qv.caveats
+
+
+def test_low_level_response_keeps_early_when_no_distinct_final_endpoint(
+    tmp_path: Path,
+) -> None:
+    dataset = write_dataset(
+        tmp_path / "low_level_response_no_distinct_final.nc",
+        base_dataset(
+            qc_values=zeros(),
+            w_values=w_field(),
+            qv_values=time_z_values([[0.010, 0.012], [0.014, 0.018]]),
+            th_values=time_z_values([[299.0, 301.0], [302.0, 306.0]]),
+            time_values=[0.0, 3600.0],
+            z_values=[250.0, 750.0],
+            z_units="m",
+        ),
+    )
+
+    diagnostics = compute_baseline_diagnostics(dataset, [])
+
+    qv = diagnostics.low_level_response.qv
+    assert qv.available is True
+    assert qv.early_response_available is True
+    assert qv.full_run_response_available is False
+    assert qv.early_response_delta == pytest.approx(0.005)
+    assert qv.full_run_delta is None
+
+
+def test_low_level_response_reports_full_run_when_early_endpoint_missing(
+    tmp_path: Path,
+) -> None:
+    dataset = write_dataset(
+        tmp_path / "low_level_response_missing_early.nc",
+        base_dataset(
+            qc_values=zeros(),
+            w_values=w_field(),
+            qv_values=time_z_values([[0.010, 0.012], [0.020, 0.024]]),
+            th_values=time_z_values([[299.0, 301.0], [306.0, 310.0]]),
+            time_values=[0.0, 21600.0],
+            z_values=[250.0, 750.0],
+            z_units="m",
+        ),
+    )
+
+    diagnostics = compute_baseline_diagnostics(dataset, [])
+
+    qv = diagnostics.low_level_response.qv
+    assert qv.available is False
+    assert qv.early_response_available is False
+    assert qv.full_run_response_available is True
+    assert qv.early_response_delta is None
+    assert qv.full_run_delta == pytest.approx(0.011)
+    assert "qv_low_level_response_missing_early_output_30_90min" in qv.caveats
 
 
 def test_low_level_response_marks_missing_fields_unavailable(tmp_path: Path) -> None:
@@ -674,7 +772,9 @@ def test_low_level_response_caveats_partially_non_finite_endpoints(tmp_path: Pat
     assert qv.final_finite_count == 23
     assert qv.final_non_finite_count == 1
     assert qv.delta_value == pytest.approx(((0.014 * 11 + 0.018 * 12) / 23) - 0.011)
-    assert qv.full_run_delta == qv.delta_value
+    assert qv.early_response_available is True
+    assert qv.full_run_response_available is False
+    assert qv.full_run_delta is None
     assert "non_finite_values_detected_in_qv_low_level_response" in diagnostics.caveats
     assert diagnostics.low_level_response.theta_or_temperature.source_field == "temperature"
 

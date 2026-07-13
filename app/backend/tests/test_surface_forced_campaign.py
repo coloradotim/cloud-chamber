@@ -979,6 +979,88 @@ def test_campaign_gate_uses_early_response_not_full_run_delta(
     assert high_moisture["low_level_qv_full_run_delta"] == pytest.approx(0.002)
 
 
+def test_campaign_gate_blocks_when_early_response_missing_even_with_full_run_delta(
+    tmp_path: Path,
+) -> None:
+    artifacts = _report_phase1_surface_flux_matrix(
+        tmp_path,
+        flux_means={
+            "phase1_control_default_flux": (2.0, 2.0e-5),
+            "phase1_control_high_sensible": (4.0, 2.5e-5),
+            "phase1_control_high_moisture": (2.2, 4.0e-5),
+            "phase1_control_high_both": (4.0, 4.0e-5),
+        },
+        low_level_full_run_deltas={
+            "phase1_control_default_flux": (0.001, 1.0),
+            "phase1_control_high_sensible": (0.0012, 3.0),
+            "phase1_control_high_moisture": (0.004, 1.1),
+            "phase1_control_high_both": (0.004, 3.2),
+        },
+    )
+
+    assert artifacts.summary["low_level_response"]["state"] == (
+        "low_level_response_inconclusive_missing_evidence"
+    )
+    assert artifacts.summary["phase_gate_state"] == (
+        "forcing_wiring_verified_but_response_not_verified"
+    )
+    high_moisture = next(
+        row
+        for row in artifacts.summary["runs"]
+        if row["matrix_id"] == "phase1_control_high_moisture"
+    )
+    assert high_moisture["low_level_qv_early_response_available"] is False
+    assert high_moisture["low_level_qv_full_run_response_available"] is True
+    assert high_moisture["low_level_qv_early_response_delta"] == (
+        "unavailable:low_level_early_response_unavailable"
+    )
+    assert high_moisture["low_level_qv_full_run_delta"] == pytest.approx(0.004)
+
+
+def test_campaign_gate_blocks_caveated_early_response_below_finite_threshold(
+    tmp_path: Path,
+) -> None:
+    artifacts = _report_phase1_surface_flux_matrix(
+        tmp_path,
+        flux_means={
+            "phase1_control_default_flux": (2.0, 2.0e-5),
+            "phase1_control_high_sensible": (4.0, 2.5e-5),
+            "phase1_control_high_moisture": (2.2, 4.0e-5),
+            "phase1_control_high_both": (4.0, 4.0e-5),
+        },
+        low_level_deltas={
+            "phase1_control_default_flux": (0.001, 1.0),
+            "phase1_control_high_sensible": (0.0012, 3.0),
+            "phase1_control_high_moisture": (0.004, 1.1),
+            "phase1_control_high_both": (0.004, 3.2),
+        },
+        low_level_qv_early_end_counts={
+            "phase1_control_high_moisture": (7, 8),
+        },
+    )
+
+    assert artifacts.summary["low_level_response"]["state"] == (
+        "low_level_response_inconclusive_missing_evidence"
+    )
+    moisture = next(
+        evaluation
+        for evaluation in artifacts.summary["low_level_response"]["evaluations"]
+        if evaluation["comparison_type"] == "moisture_flux_sensitivity"
+    )
+    assert any(
+        "experiment:low_level_qv_early_response_delta_finite_fraction_below_threshold" in item
+        for item in moisture["unavailable_evidence"]
+    )
+    high_moisture = next(
+        row
+        for row in artifacts.summary["runs"]
+        if row["matrix_id"] == "phase1_control_high_moisture"
+    )
+    assert high_moisture["low_level_qv_early_response_quality_state"] == (
+        "caveated_below_minimum_finite_fraction"
+    )
+
+
 def test_campaign_report_blocks_phase_gate_when_low_level_response_not_verified(
     tmp_path: Path,
 ) -> None:
@@ -1346,6 +1428,7 @@ def _report_phase1_surface_flux_matrix(
     flux_means: dict[str, tuple[float, float]],
     low_level_deltas: dict[str, tuple[float, float]] | None = None,
     low_level_full_run_deltas: dict[str, tuple[float, float]] | None = None,
+    low_level_qv_early_end_counts: dict[str, tuple[int, int]] | None = None,
     non_finite_counts: dict[str, tuple[int, int]] | None = None,
     unit_overrides: dict[str, tuple[str, str]] | None = None,
     mutate_matrix: Any | None = None,
@@ -1367,6 +1450,9 @@ def _report_phase1_surface_flux_matrix(
             state_run.matrix_id,
             ("K m/s", "kg/m^2/s"),
         )
+        qv_early_end_finite, qv_early_end_total = (low_level_qv_early_end_counts or {}).get(
+            state_run.matrix_id, (8, 8)
+        )
         _write_fake_result_metadata(
             Path(state_run.manifest_path or ""),
             hfx_mean=hfx_mean,
@@ -1382,6 +1468,8 @@ def _report_phase1_surface_flux_matrix(
                 if low_level_full_run_deltas is not None
                 else None
             ),
+            low_level_qv_early_end_finite_count=qv_early_end_finite,
+            low_level_qv_early_end_total_count=qv_early_end_total,
             low_level_theta_full_run_delta=(
                 low_level_full_run_deltas[state_run.matrix_id][1]
                 if low_level_full_run_deltas is not None
@@ -1429,22 +1517,30 @@ def _fake_low_level_response_field(
     delta: float | None,
     full_run_delta: float | None = None,
     units: str,
+    early_end_finite_count: int = 8,
+    early_end_total_count: int = 8,
 ) -> LowLevelResponseFieldDiagnostics:
-    if delta is None:
+    if delta is None and full_run_delta is None:
         return LowLevelResponseFieldDiagnostics(
             source_field=source_field,
             available=False,
+            early_response_available=False,
+            full_run_response_available=False,
             field_absent=False,
             units=units,
             caveats=[f"{source_field}_low_level_response_unavailable_in_fixture"],
         )
     first_mean = 0.010 if source_field == "qv" else 300.0
     full_delta = delta if full_run_delta is None else full_run_delta
-    early_mean = first_mean + delta
-    final_mean = first_mean + full_delta
+    early_mean = first_mean + delta if delta is not None else None
+    final_mean = first_mean + full_delta if full_delta is not None else None
+    early_available = delta is not None
+    full_available = full_run_delta is not None or (delta is not None and full_delta is not None)
     return LowLevelResponseFieldDiagnostics(
         source_field=source_field,
-        available=True,
+        available=early_available,
+        early_response_available=early_available,
+        full_run_response_available=full_available,
         field_absent=False,
         layer_bottom_m=0.0,
         layer_top_m=1000.0,
@@ -1459,20 +1555,22 @@ def _fake_low_level_response_field(
         first_mean_value=first_mean,
         final_mean_value=final_mean,
         delta_value=delta,
-        early_response_start_time_index=0,
-        early_response_end_time_index=1,
-        early_response_start_time_seconds=0.0,
-        early_response_end_time_seconds=3600.0,
-        early_response_start_mean_value=first_mean,
-        early_response_end_mean_value=early_mean,
+        early_response_start_time_index=0 if early_available else None,
+        early_response_end_time_index=1 if early_available else None,
+        early_response_start_time_seconds=0.0 if early_available else None,
+        early_response_end_time_seconds=3600.0 if early_available else None,
+        early_response_start_mean_value=first_mean if early_available else None,
+        early_response_end_mean_value=early_mean if early_available else None,
         early_response_delta=delta,
-        early_response_start_finite_count=8,
+        early_response_start_finite_count=8 if early_available else 0,
         early_response_start_non_finite_count=0,
-        early_response_start_total_count=8,
-        early_response_end_finite_count=8,
-        early_response_end_non_finite_count=0,
-        early_response_end_total_count=8,
-        full_run_delta=full_delta,
+        early_response_start_total_count=8 if early_available else 0,
+        early_response_end_finite_count=early_end_finite_count if early_available else 0,
+        early_response_end_non_finite_count=(
+            max(early_end_total_count - early_end_finite_count, 0) if early_available else 0
+        ),
+        early_response_end_total_count=early_end_total_count if early_available else 0,
+        full_run_delta=full_delta if full_available else None,
         units=units,
         first_finite_count=8,
         first_non_finite_count=0,
@@ -1501,6 +1599,8 @@ def _write_fake_result_metadata(
     low_level_theta_delta: float | None = None,
     low_level_qv_full_run_delta: float | None = None,
     low_level_theta_full_run_delta: float | None = None,
+    low_level_qv_early_end_finite_count: int = 8,
+    low_level_qv_early_end_total_count: int = 8,
 ) -> None:
     manifest = load_run_manifest(manifest_path)
     now = datetime.now(UTC)
@@ -1613,6 +1713,8 @@ def _write_fake_result_metadata(
                     delta=low_level_qv_delta,
                     full_run_delta=low_level_qv_full_run_delta,
                     units="kg/kg",
+                    early_end_finite_count=low_level_qv_early_end_finite_count,
+                    early_end_total_count=low_level_qv_early_end_total_count,
                 ),
                 theta_or_temperature=_fake_low_level_response_field(
                     source_field="th",

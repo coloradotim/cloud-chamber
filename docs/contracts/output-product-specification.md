@@ -258,9 +258,11 @@ existing CM1-derived diagnostics; it does not build a second time index and it
 does not ask the browser to parse NetCDF. The science summary also carries the
 backend-owned low-level `qv` and theta/temperature response diagnostics when
 available, including early 30-90 minute forcing-response deltas and separate
-full-run deltas from 0-1 km AGL thickness-weighted domain means. Missing fields,
-no-event outcomes, and diagnostics that are not implemented yet are represented
-explicitly with support states such as
+full-run deltas from 0-1 km AGL thickness-weighted domain means. Early and
+full-run response availability are exposed separately so consumers do not treat
+bad final-output evolution evidence as a missing early forcing response. Missing
+fields, no-event outcomes, and diagnostics that are not implemented yet are
+represented explicitly with support states such as
 `unavailable`, `unsupported_missing_fields`, and
 `unsupported_missing_diagnostic` rather than silently falling back to a
 misleading cloud/rain-water landmark.

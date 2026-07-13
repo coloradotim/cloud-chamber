@@ -177,6 +177,8 @@ class LowLevelResponseFieldDiagnostics(BaseModel):
 
     source_field: str | None = None
     available: bool = False
+    early_response_available: bool = False
+    full_run_response_available: bool = False
     field_absent: bool = True
     layer_bottom_m: float = LOW_LEVEL_RESPONSE_LAYER_BOTTOM_M
     layer_top_m: float = LOW_LEVEL_RESPONSE_LAYER_TOP_M
@@ -1079,14 +1081,22 @@ def _low_level_response_field_diagnostics(
         field_caveat = f"non_finite_values_detected_in_{source_field}_low_level_response"
         field_caveats.append(field_caveat)
         caveats.append(field_caveat)
-    if (
-        first_stats["finite_count"] == 0
-        or final_stats["finite_count"] == 0
-        or (early_stats is not None and early_stats["finite_count"] == 0)
-    ):
-        reason = f"{source_field}_low_level_response_endpoint_entirely_non_finite"
-        field_caveats.append(reason)
-        caveats.append(reason)
+
+    first_mean = first_stats["mean"]
+    final_mean = final_stats["mean"]
+    early_mean = early_stats["mean"] if early_stats is not None else None
+    first_endpoint_available = first_stats["finite_count"] > 0 and first_mean is not None
+    early_endpoint_available = (
+        early_stats is not None and early_stats["finite_count"] > 0 and early_mean is not None
+    )
+    final_endpoint_available = final_stats["finite_count"] > 0 and final_mean is not None
+
+    if not first_endpoint_available:
+        reason = f"{source_field}_low_level_response_start_endpoint_entirely_non_finite"
+        field_caveats.extend(
+            [reason, f"{source_field}_low_level_response_endpoint_entirely_non_finite"]
+        )
+        caveats.extend([reason, f"{source_field}_low_level_response_endpoint_entirely_non_finite"])
         return LowLevelResponseFieldDiagnostics(
             source_field=source_field,
             field_absent=False,
@@ -1112,21 +1122,40 @@ def _low_level_response_field_diagnostics(
         reason = f"{source_field}_low_level_response_missing_early_output_30_90min"
         field_caveats.append(reason)
         caveats.append(reason)
+    elif not early_endpoint_available:
+        reason = f"{source_field}_low_level_response_early_endpoint_entirely_non_finite"
+        field_caveats.append(reason)
+        caveats.append(reason)
+    if not final_endpoint_available:
+        reason = f"{source_field}_low_level_response_final_endpoint_entirely_non_finite"
+        field_caveats.append(reason)
+        caveats.append(reason)
 
-    first_mean = first_stats["mean"]
-    final_mean = final_stats["mean"]
-    early_mean = early_stats["mean"] if early_stats is not None else None
     early_delta = (
         early_mean - first_mean
-        if early_mean is not None and first_mean is not None and early_time_index is not None
+        if early_endpoint_available
+        and early_mean is not None
+        and first_mean is not None
+        and early_time_index is not None
         else None
     )
-    full_run_delta = (
-        final_mean - first_mean if first_mean is not None and final_mean is not None else None
+    full_run_has_distinct_endpoint = (
+        final_time_index != early_time_index
+        if early_time_index is not None
+        else final_time_index != 0
     )
+    full_run_delta = (
+        final_mean - first_mean
+        if final_endpoint_available and first_mean is not None and final_mean is not None
+        else None
+    )
+    early_response_available = early_delta is not None
+    full_run_response_available = full_run_delta is not None and full_run_has_distinct_endpoint
     return LowLevelResponseFieldDiagnostics(
         source_field=source_field,
-        available=early_delta is not None and full_run_delta is not None,
+        available=early_response_available,
+        early_response_available=early_response_available,
+        full_run_response_available=full_run_response_available,
         field_absent=False,
         vertical_coordinate_name=vertical_name,
         vertical_coordinate_units=vertical_units,
@@ -1174,7 +1203,7 @@ def _low_level_response_field_diagnostics(
         early_response_end_total_count=(
             early_stats["total_count"] if early_stats is not None and early_delta is not None else 0
         ),
-        full_run_delta=full_run_delta,
+        full_run_delta=full_run_delta if full_run_response_available else None,
         units=units,
         first_finite_count=first_stats["finite_count"],
         first_non_finite_count=first_stats["non_finite_count"],

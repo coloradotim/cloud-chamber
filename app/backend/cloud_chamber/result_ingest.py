@@ -859,14 +859,15 @@ def _merge_low_level_response_field_diagnostics(
 ) -> LowLevelResponseFieldDiagnostics:
     if not parts:
         return LowLevelResponseFieldDiagnostics(source_field=fallback_source_field)
-    available_parts = [part for part in parts if part.available]
-    endpoint_parts = [
+    available_parts = [part for part in parts if part.early_response_available or part.available]
+    time_parts = sorted(
+        [part for part in parts if part.first_time_seconds is not None],
+        key=_low_level_response_endpoint_sort_key,
+    )
+    finite_point_parts = [
         part
-        for part in parts
-        if part.first_mean_value is not None
-        and part.final_mean_value is not None
-        and part.first_finite_count > 0
-        and part.final_finite_count > 0
+        for part in time_parts
+        if part.first_mean_value is not None and part.first_finite_count > 0
     ]
     source_field = next(
         (part.source_field for part in parts if part.source_field is not None),
@@ -887,19 +888,21 @@ def _merge_low_level_response_field_diagnostics(
         None,
     )
     time_dimension = next((part.time_dimension for part in parts if part.time_dimension), None)
-    if not available_parts and len(endpoint_parts) >= 2 and source_field:
+    if not available_parts and len(finite_point_parts) >= 2 and source_field:
         caveats = [
             caveat
             for caveat in caveats
             if caveat != f"{source_field}_low_level_response_requires_at_least_two_time_steps"
         ]
-    if available_parts and len(endpoint_parts) < 2:
+    if available_parts and len(finite_point_parts) < 2:
         part = available_parts[0]
         return part.model_copy(update={"caveats": caveats})
-    if not available_parts and len(endpoint_parts) < 2:
+    if not available_parts and len(finite_point_parts) < 2:
         return LowLevelResponseFieldDiagnostics(
             source_field=source_field,
             available=False,
+            early_response_available=False,
+            full_run_response_available=False,
             field_absent=all(part.field_absent for part in parts),
             vertical_coordinate_name=vertical_coordinate_name,
             vertical_coordinate_units=vertical_coordinate_units,
@@ -915,11 +918,11 @@ def _merge_low_level_response_field_diagnostics(
             caveats=caveats,
         )
 
-    endpoint_source = sorted(endpoint_parts, key=_low_level_response_endpoint_sort_key)
+    endpoint_source = finite_point_parts
     first = endpoint_source[0]
-    final = endpoint_source[-1]
+    final = time_parts[-1] if time_parts else endpoint_source[-1]
     first_mean = first.first_mean_value
-    final_mean = final.final_mean_value
+    final_mean = final.first_mean_value
     early_end = _low_level_response_early_endpoint(endpoint_source, first.first_time_seconds)
     early_mean = early_end.first_mean_value if early_end is not None else None
     early_delta = (
@@ -927,25 +930,41 @@ def _merge_low_level_response_field_diagnostics(
         if early_mean is not None and first_mean is not None and early_end is not None
         else None
     )
+    final_endpoint_available = final_mean is not None and final.first_finite_count > 0
+    full_run_has_distinct_endpoint = (
+        final.first_time_seconds != early_end.first_time_seconds
+        if early_end is not None
+        else final.first_time_seconds != first.first_time_seconds
+    )
     full_run_delta = (
-        final_mean - first_mean if first_mean is not None and final_mean is not None else None
+        final_mean - first_mean
+        if final_endpoint_available and first_mean is not None and final_mean is not None
+        else None
     )
     if early_end is None and source_field:
         caveats = _dedupe_strings(
             [*caveats, f"{source_field}_low_level_response_missing_early_output_30_90min"]
         )
+    if not final_endpoint_available and source_field:
+        caveats = _dedupe_strings(
+            [*caveats, f"{source_field}_low_level_response_final_endpoint_entirely_non_finite"]
+        )
+    early_response_available = early_delta is not None
+    full_run_response_available = full_run_delta is not None and full_run_has_distinct_endpoint
     return LowLevelResponseFieldDiagnostics(
         source_field=source_field,
-        available=early_delta is not None and full_run_delta is not None,
+        available=early_response_available,
+        early_response_available=early_response_available,
+        full_run_response_available=full_run_response_available,
         field_absent=False,
         vertical_coordinate_name=vertical_coordinate_name,
         vertical_coordinate_units=vertical_coordinate_units,
         vertical_coordinate_method=vertical_coordinate_method,
         time_dimension=time_dimension,
         first_time_index=first.first_time_index,
-        final_time_index=final.final_time_index,
+        final_time_index=final.first_time_index,
         first_time_seconds=first.first_time_seconds,
-        final_time_seconds=final.final_time_seconds,
+        final_time_seconds=final.first_time_seconds,
         first_mean_value=first_mean,
         final_mean_value=final_mean,
         delta_value=early_delta,
@@ -980,14 +999,14 @@ def _merge_low_level_response_field_diagnostics(
         early_response_end_total_count=early_end.first_total_count
         if early_end is not None and early_delta is not None
         else 0,
-        full_run_delta=full_run_delta,
+        full_run_delta=full_run_delta if full_run_response_available else None,
         units=units,
         first_finite_count=first.first_finite_count,
         first_non_finite_count=first.first_non_finite_count,
         first_total_count=first.first_total_count,
-        final_finite_count=final.final_finite_count,
-        final_non_finite_count=final.final_non_finite_count,
-        final_total_count=final.final_total_count,
+        final_finite_count=final.first_finite_count,
+        final_non_finite_count=final.first_non_finite_count,
+        final_total_count=final.first_total_count,
         caveats=caveats,
     )
 

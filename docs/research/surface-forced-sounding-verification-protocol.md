@@ -337,12 +337,21 @@ full-run endpoint indices/times/means/delta, and finite/non-finite endpoint
 counts. Missing `qv`, missing theta/temperature, missing vertical coordinates,
 unsupported vertical units, insufficient output times in the 30-90 minute early
 window, or entirely non-finite endpoints produce explicit unavailable states.
+Early-response availability and full-run-response availability are independent:
+a valid early forcing response can remain available when the final endpoint is
+missing, not distinct from the early endpoint, or entirely non-finite. Likewise,
+a full-run delta can be reported as atmospheric-evolution evidence when the
+early response window is missing, but it must not satisfy the Phase 1 gate.
 
 For Phase 1 gate evaluation, heat-only comparisons require the
 early theta/temperature response delta to increase against the matched control;
 moisture-only comparisons require the early `qv` response delta to increase
 against the matched control; combined comparisons require both. Full-run deltas
 remain experiment evidence but must not be the only Phase 1 forcing-path gate.
+Early endpoints must have at least 95% finite coverage at both the reference
+and early evaluation time. Partially non-finite endpoints above that threshold
+are reported as caveated; below that threshold they are missing evidence for the
+gate, not a scientific non-response.
 Non-varied low-level response changes are informational unless a later protocol
 defines a field-specific stability tolerance. `theta_v` is moisture-coupled and
 must not silently substitute for the thermal response gate unless a future
