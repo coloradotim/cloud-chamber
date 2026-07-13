@@ -230,6 +230,11 @@ def write_phase1_surface_flux_matrix(tmp_path: Path) -> Path:
             "required_diagnostic_support": ["surface_fluxes"],
         },
     ]
+    matrix["phase1_required_comparison_types"] = [
+        "heat_flux_sensitivity",
+        "moisture_flux_sensitivity",
+        "combined_flux_sensitivity",
+    ]
     matrix["runs"] = [
         {
             "matrix_id": "phase1_control_default_flux",
@@ -306,6 +311,11 @@ def test_campaign_plans_checked_in_example_matrix() -> None:
     assert plan.run_count == 10
     assert plan.execution["max_concurrent_runs"] == 1
     assert "forcing_sensitivity_same_duration" in plan.comparison_types
+    assert plan.phase1_required_comparison_types == [
+        "heat_flux_sensitivity",
+        "moisture_flux_sensitivity",
+        "combined_flux_sensitivity",
+    ]
     assert any(run.optional for run in plan.runs)
     assert plan.required_summary_fields["evidence"]
 
@@ -815,8 +825,8 @@ def test_campaign_report_verifies_matched_phase1_surface_flux_response(
         tmp_path,
         flux_means={
             "phase1_control_default_flux": (2.0, 2.0e-5),
-            "phase1_control_high_sensible": (4.0, 2.0e-5),
-            "phase1_control_high_moisture": (2.0, 4.0e-5),
+            "phase1_control_high_sensible": (4.0, 2.5e-5),
+            "phase1_control_high_moisture": (2.2, 4.0e-5),
             "phase1_control_high_both": (4.0, 4.0e-5),
         },
     )
@@ -840,6 +850,7 @@ def test_campaign_report_verifies_matched_phase1_surface_flux_response(
             "selected_control_field": "surface_heat_flux_k_m_s",
             "expected": "increase",
             "observed": "increase",
+            "required": True,
             "status": "verified",
             "control_selected": 0.008,
             "experiment_selected": 0.04,
@@ -851,18 +862,63 @@ def test_campaign_report_verifies_matched_phase1_surface_flux_response(
             "field": "qfx",
             "selected_control_field": "surface_moisture_flux_g_g_m_s",
             "expected": "comparable",
-            "observed": "comparable",
-            "status": "verified",
+            "observed": "increase",
+            "required": False,
+            "status": "informational",
             "control_selected": 5.2e-05,
             "experiment_selected": 5.2e-05,
             "control_mean": 2.0e-05,
-            "experiment_mean": 2.0e-05,
+            "experiment_mean": 2.5e-05,
             "units": "kg/m^2/s",
         },
     ]
+    moisture = next(
+        evaluation
+        for evaluation in evaluations
+        if evaluation["comparison_type"] == "moisture_flux_sensitivity"
+    )
+    assert moisture["expectations"][0]["required"] is False
+    assert moisture["expectations"][0]["status"] == "informational"
+    assert moisture["expectations"][1]["required"] is True
+    assert moisture["expectations"][1]["status"] == "verified"
     report = Path(artifacts.markdown_path).read_text()
     assert "Surface flux response: `surface_flux_response_verified`" in report
+    assert "qfx: informational; expected `comparable`, observed `increase`" in report
     assert "`phase1_control_high_sensible` vs `phase1_control_default_flux`" in report
+
+
+def test_campaign_report_requires_complete_phase1_surface_flux_response_matrix(
+    tmp_path: Path,
+) -> None:
+    def mutate(matrix: dict[str, Any]) -> None:
+        matrix["runs"] = [
+            run
+            for run in matrix["runs"]
+            if run["matrix_id"] in {"phase1_control_default_flux", "phase1_control_high_sensible"}
+        ]
+
+    artifacts = _report_phase1_surface_flux_matrix(
+        tmp_path,
+        flux_means={
+            "phase1_control_default_flux": (2.0, 2.0e-5),
+            "phase1_control_high_sensible": (4.0, 2.0e-5),
+        },
+        mutate_matrix=mutate,
+    )
+
+    response = artifacts.summary["surface_flux_response"]
+    assert response["state"] == "surface_flux_response_inconclusive_missing_evidence"
+    assert response["missing_required_comparison_types"] == [
+        "moisture_flux_sensitivity",
+        "combined_flux_sensitivity",
+    ]
+    assert response["unavailable_evidence"] == [
+        "missing_phase1_required_comparison_type:moisture_flux_sensitivity",
+        "missing_phase1_required_comparison_type:combined_flux_sensitivity",
+    ]
+    assert artifacts.summary["phase_gate_state"] == (
+        "surface_flux_response_inconclusive_missing_evidence"
+    )
 
 
 def test_campaign_report_rejects_unchanged_emitted_flux_response(

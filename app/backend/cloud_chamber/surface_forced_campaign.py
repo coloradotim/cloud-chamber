@@ -66,6 +66,11 @@ CAMPAIGN_SUMMARY_SCHEMA_VERSION = "surface_forced_campaign_summary_v1"
 OBSERVED_SURFACE_FORCED_RECIPE = RunRecipe.OBSERVED_SURFACE_FORCED_EVOLUTION.value
 DEFAULT_SCENARIO_ID = "baseline-shallow-cumulus"
 DEFAULT_REPORT_ROOT = Path("docs/research/surface-forced-campaigns")
+DEFAULT_PHASE1_REQUIRED_COMPARISON_TYPES = (
+    "heat_flux_sensitivity",
+    "moisture_flux_sensitivity",
+    "combined_flux_sensitivity",
+)
 RUN_CONFIGURATION_KEYS = {
     "duration",
     "horizontal_cell_count",
@@ -289,6 +294,7 @@ class CampaignPlan(BaseModel):
     matrix_path: str | None = None
     execution: dict[str, Any] = Field(default_factory=dict)
     comparison_types: dict[str, dict[str, Any]] = Field(default_factory=dict)
+    phase1_required_comparison_types: list[str] = Field(default_factory=list)
     required_summary_fields: dict[str, list[str]] = Field(default_factory=dict)
     run_count: int
     runs: list[CampaignRunPlan]
@@ -391,6 +397,13 @@ def build_campaign_plan(
         label="comparison_types",
         errors=errors,
     )
+    phase1_required_comparison_types = _string_list(matrix.get("phase1_required_comparison_types"))
+    for required_comparison_type in phase1_required_comparison_types:
+        if required_comparison_type not in comparison_types:
+            errors.append(
+                "phase1_required_comparison_types references unknown comparison_type: "
+                f"{required_comparison_type}"
+            )
     run_defaults = _mapping(matrix.get("run_defaults", {}), "run_defaults", errors)
     runs = _list_of_mappings(matrix.get("runs"), "runs", errors)
     required_summary_fields = _required_summary_fields(
@@ -517,6 +530,7 @@ def build_campaign_plan(
         matrix_path=str(matrix_path) if matrix_path is not None else None,
         execution=execution,
         comparison_types={key: dict(value) for key, value in comparison_types.items()},
+        phase1_required_comparison_types=phase1_required_comparison_types,
         required_summary_fields=required_summary_fields,
         run_count=len(planned),
         runs=planned,
@@ -2560,6 +2574,15 @@ def _render_markdown_report(plan: CampaignPlan, summary: Mapping[str, Any]) -> s
     )
     surface_flux_response = summary.get("surface_flux_response", {})
     response_evaluations = surface_flux_response.get("evaluations", [])
+    missing_required_comparison_types = surface_flux_response.get(
+        "missing_required_comparison_types",
+        [],
+    )
+    if missing_required_comparison_types:
+        lines.append(
+            "- Missing required Phase 1 comparison types: "
+            f"`{', '.join(missing_required_comparison_types)}`"
+        )
     if response_evaluations:
         for evaluation in response_evaluations:
             lines.append(
@@ -2567,9 +2590,11 @@ def _render_markdown_report(plan: CampaignPlan, summary: Mapping[str, Any]) -> s
                 f"`{evaluation['control_matrix_id']}`: `{evaluation['status']}`"
             )
             for expectation in evaluation.get("expectations", []):
+                role = "required" if expectation.get("required") else "informational"
                 lines.append(
-                    f"  - {expectation['field']}: expected "
-                    f"`{expectation['expected']}`, observed `{expectation['observed']}`"
+                    f"  - {expectation['field']}: {role}; expected "
+                    f"`{expectation['expected']}`, observed `{expectation['observed']}`; "
+                    f"`{expectation['status']}`"
                 )
     else:
         lines.append("No Phase 1 surface-flux response comparisons are available.")
@@ -2818,6 +2843,9 @@ def _surface_flux_response_evaluation(
     summaries: Sequence[Mapping[str, Any]],
 ) -> dict[str, Any]:
     by_matrix_id = {str(summary["matrix_id"]): summary for summary in summaries}
+    required_comparison_types = list(
+        plan.phase1_required_comparison_types or DEFAULT_PHASE1_REQUIRED_COMPARISON_TYPES
+    )
     evaluations: list[dict[str, Any]] = []
     for run in plan.runs:
         if not _is_phase_one_run(run):
@@ -2838,7 +2866,19 @@ def _surface_flux_response_evaluation(
             )
         )
 
-    if not evaluations:
+    evaluated_comparison_types = {str(evaluation["comparison_type"]) for evaluation in evaluations}
+    missing_required_comparison_types = [
+        comparison_type
+        for comparison_type in required_comparison_types
+        if comparison_type not in evaluated_comparison_types
+    ]
+    unavailable_evidence = [
+        f"missing_phase1_required_comparison_type:{comparison_type}"
+        for comparison_type in missing_required_comparison_types
+    ]
+    if missing_required_comparison_types:
+        state = SURFACE_FLUX_RESPONSE_MISSING
+    elif not evaluations:
         state = SURFACE_FLUX_RESPONSE_MISSING
     elif any(
         evaluation["status"] == SURFACE_FLUX_RESPONSE_NONCOMPARABLE for evaluation in evaluations
@@ -2854,6 +2894,9 @@ def _surface_flux_response_evaluation(
         state = SURFACE_FLUX_RESPONSE_VERIFIED
     return {
         "state": state,
+        "required_comparison_types": required_comparison_types,
+        "missing_required_comparison_types": missing_required_comparison_types,
+        "unavailable_evidence": unavailable_evidence,
         "evaluations": evaluations,
     }
 
@@ -2917,12 +2960,13 @@ def _surface_flux_response_for_pair(
             selected_control_field="surface_moisture_flux_g_g_m_s",
         ),
     ]
+    required_expectations = [expectation for expectation in expectations if expectation["required"]]
     status = (
         SURFACE_FLUX_RESPONSE_VERIFIED
-        if all(expectation["status"] == "verified" for expectation in expectations)
+        if all(expectation["status"] == "verified" for expectation in required_expectations)
         else SURFACE_FLUX_RESPONSE_NOT_VERIFIED
     )
-    if all(expectation["expected"] == "comparable" for expectation in expectations):
+    if not required_expectations:
         status = SURFACE_FLUX_RESPONSE_NONCOMPARABLE
     return {
         **base,
@@ -2993,12 +3037,19 @@ def _surface_flux_field_expectation(
     experiment_mean = _float_or_none(experiment.get(f"{field}_mean"))
     expected = _expected_direction(control_selected, experiment_selected)
     observed = _expected_direction(control_mean, experiment_mean)
-    status = "verified" if expected == observed else "not_verified"
+    required = expected in {"increase", "decrease"}
+    if required:
+        status = "verified" if expected == observed else "not_verified"
+    elif expected == "comparable":
+        status = "informational"
+    else:
+        status = "not_evaluated"
     return {
         "field": field,
         "selected_control_field": selected_control_field,
         "expected": expected,
         "observed": observed,
+        "required": required,
         "status": status,
         "control_selected": control_selected,
         "experiment_selected": experiment_selected,

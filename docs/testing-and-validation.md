@@ -200,9 +200,13 @@ fields become caveated, entirely non-finite fields become untrusted/unavailable,
 and product payloads carry field quality for the requested flux field.
 Surface-forced campaign tests should verify that matched Phase 1 runs compare
 emitted `hfx` against emitted `hfx` and emitted `qfx` against emitted `qfx`;
-expected directional changes must pass before the automatic phase gate can move
-past surface-flux response verification, while unchanged, reversed, missing,
-untrusted, mismatched-unit, or structurally non-comparable cases remain blocked.
+the heat-only, moisture-only, and combined comparison types must all be present;
+and expected directional changes for intentionally varied fluxes must pass
+before the automatic phase gate can move past surface-flux response
+verification. Non-varied flux changes remain informational unless the protocol
+defines field-specific stability tolerances. Unchanged, reversed, incomplete,
+missing, untrusted, mismatched-unit, or structurally non-comparable cases remain
+blocked.
 
 Local launcher tests must inject fake subprocess handles. They should assert command construction, stdout/stderr log capture, one-active-run refusal, queued/running/completed/failed/canceled state transitions, missing-settings failure, and protection against pre-existing output-like files. They must not launch real CM1 or require local runtime files in CI.
 They should also assert placeholder-only packages are rejected before launch, Rayleigh damping/domain checks catch damping over more than half the domain, required runtime files such as `LANDUSE.TBL` are staged from temp CM1 run directories, `.dat/.ctl` and NetCDF output artifacts are cataloged separately in the manifest, stderr floating-point flags are surfaced as runtime warnings, and exit code 0 without output becomes `needs_review` rather than `completed_cm1_result`.

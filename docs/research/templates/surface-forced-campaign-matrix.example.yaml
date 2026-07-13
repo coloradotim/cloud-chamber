@@ -70,6 +70,11 @@ execution:
     - skipped
     - blocked
 
+phase1_required_comparison_types:
+  - heat_flux_sensitivity
+  - moisture_flux_sensitivity
+  - combined_flux_sensitivity
+
 selection_sets:
   - selection_id: control_sounding
     role: forcing_path_smoke_check
