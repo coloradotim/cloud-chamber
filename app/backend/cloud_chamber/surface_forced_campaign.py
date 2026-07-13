@@ -672,7 +672,8 @@ def queue_campaign(
     state = _load_or_create_state(plan, resolved_settings.runtime_home)
     queue_factory = local_queue_factory or _default_local_queue
     summaries = [_summary_for_plan_run(run, state) for run in plan.runs]
-    gate_state = _phase_gate_state(summaries)
+    surface_flux_response = _surface_flux_response_evaluation(plan, summaries)
+    gate_state = _phase_gate_state(summaries, surface_flux_response)
     override = _gate_override_payload(
         enabled=override_phase_gate,
         reason=override_reason,
@@ -995,6 +996,7 @@ def report_campaign(
     state = _load_or_create_state(plan, resolved_settings.runtime_home)
     summaries = [_summary_for_plan_run(run, state) for run in plan.runs]
     comparisons = _evaluate_comparisons(plan, summaries)
+    surface_flux_response = _surface_flux_response_evaluation(plan, summaries)
     summary = {
         "schema_version": CAMPAIGN_SUMMARY_SCHEMA_VERSION,
         "campaign_id": plan.campaign_id,
@@ -1005,13 +1007,14 @@ def report_campaign(
         "generated_at": _now().isoformat(),
         "run_count": len(summaries),
         "status_counts": _status_counts(summaries),
-        "phase_gate_state": _phase_gate_state(summaries),
+        "phase_gate_state": _phase_gate_state(summaries, surface_flux_response),
+        "surface_flux_response": surface_flux_response,
         "gate_overrides": _gate_overrides(summaries),
         "runs": summaries,
         "comparisons": comparisons,
         "unavailable_diagnostics": _unavailable_diagnostics(summaries),
         "preliminary_diagnosis_categories": _preliminary_diagnosis_categories(summaries),
-        "recommended_follow_ups": _recommended_follow_ups(summaries),
+        "recommended_follow_ups": _recommended_follow_ups(summaries, surface_flux_response),
     }
 
     markdown_path = report_path or _default_report_path(plan)
@@ -2427,6 +2430,10 @@ def _render_markdown_report(plan: CampaignPlan, summary: Mapping[str, Any]) -> s
         f"- Runs planned: {summary['run_count']}",
         f"- Status counts: `{json.dumps(summary['status_counts'], sort_keys=True)}`",
         f"- Phase gate state: `{summary['phase_gate_state']}`",
+        (
+            f"- Surface flux response: "
+            f"`{summary.get('surface_flux_response', {}).get('state', 'unavailable')}`"
+        ),
         "",
         "## Operator Overrides",
         "",
@@ -2546,6 +2553,28 @@ def _render_markdown_report(plan: CampaignPlan, summary: Mapping[str, Any]) -> s
             "## Forcing Response",
             "",
             _forcing_response_summary(summary),
+            "",
+            "## Surface Flux Response",
+            "",
+        ]
+    )
+    surface_flux_response = summary.get("surface_flux_response", {})
+    response_evaluations = surface_flux_response.get("evaluations", [])
+    if response_evaluations:
+        for evaluation in response_evaluations:
+            lines.append(
+                f"- `{evaluation['experiment_matrix_id']}` vs "
+                f"`{evaluation['control_matrix_id']}`: `{evaluation['status']}`"
+            )
+            for expectation in evaluation.get("expectations", []):
+                lines.append(
+                    f"  - {expectation['field']}: expected "
+                    f"`{expectation['expected']}`, observed `{expectation['observed']}`"
+                )
+    else:
+        lines.append("No Phase 1 surface-flux response comparisons are available.")
+    lines.extend(
+        [
             "",
             "## Matched Comparisons",
             "",
@@ -2778,6 +2807,238 @@ def _comparison_field_value(summary: Mapping[str, Any], field: str) -> Any:
     return summary.get(field)
 
 
+SURFACE_FLUX_RESPONSE_VERIFIED = "surface_flux_response_verified"
+SURFACE_FLUX_RESPONSE_NOT_VERIFIED = "surface_flux_response_not_verified"
+SURFACE_FLUX_RESPONSE_MISSING = "surface_flux_response_inconclusive_missing_evidence"
+SURFACE_FLUX_RESPONSE_NONCOMPARABLE = "surface_flux_response_inconclusive_noncomparable"
+
+
+def _surface_flux_response_evaluation(
+    plan: CampaignPlan,
+    summaries: Sequence[Mapping[str, Any]],
+) -> dict[str, Any]:
+    by_matrix_id = {str(summary["matrix_id"]): summary for summary in summaries}
+    evaluations: list[dict[str, Any]] = []
+    for run in plan.runs:
+        if not _is_phase_one_run(run):
+            continue
+        if not run.comparison_type or not run.comparison_control_matrix_id:
+            continue
+        definition = plan.comparison_types.get(run.comparison_type, {})
+        control = by_matrix_id.get(run.comparison_control_matrix_id)
+        experiment = by_matrix_id.get(run.matrix_id)
+        evaluations.append(
+            _surface_flux_response_for_pair(
+                comparison_type=run.comparison_type,
+                control_matrix_id=run.comparison_control_matrix_id,
+                experiment_matrix_id=run.matrix_id,
+                definition=definition,
+                control=control,
+                experiment=experiment,
+            )
+        )
+
+    if not evaluations:
+        state = SURFACE_FLUX_RESPONSE_MISSING
+    elif any(
+        evaluation["status"] == SURFACE_FLUX_RESPONSE_NONCOMPARABLE for evaluation in evaluations
+    ):
+        state = SURFACE_FLUX_RESPONSE_NONCOMPARABLE
+    elif any(evaluation["status"] == SURFACE_FLUX_RESPONSE_MISSING for evaluation in evaluations):
+        state = SURFACE_FLUX_RESPONSE_MISSING
+    elif any(
+        evaluation["status"] == SURFACE_FLUX_RESPONSE_NOT_VERIFIED for evaluation in evaluations
+    ):
+        state = SURFACE_FLUX_RESPONSE_NOT_VERIFIED
+    else:
+        state = SURFACE_FLUX_RESPONSE_VERIFIED
+    return {
+        "state": state,
+        "evaluations": evaluations,
+    }
+
+
+def _surface_flux_response_for_pair(
+    *,
+    comparison_type: str,
+    control_matrix_id: str,
+    experiment_matrix_id: str,
+    definition: Mapping[str, Any],
+    control: Mapping[str, Any] | None,
+    experiment: Mapping[str, Any] | None,
+) -> dict[str, Any]:
+    base = {
+        "comparison_type": comparison_type,
+        "control_matrix_id": control_matrix_id,
+        "experiment_matrix_id": experiment_matrix_id,
+        "expectations": [],
+        "equality_gate_failures": [],
+        "unavailable_evidence": [],
+    }
+    if control is None or experiment is None:
+        return {
+            **base,
+            "status": SURFACE_FLUX_RESPONSE_MISSING,
+            "unavailable_evidence": ["missing_control_or_experiment_summary"],
+        }
+
+    equality_failures = _comparison_equality_failures(control, experiment, definition)
+    if equality_failures:
+        return {
+            **base,
+            "status": SURFACE_FLUX_RESPONSE_NONCOMPARABLE,
+            "equality_gate_failures": equality_failures,
+        }
+
+    unavailable = _surface_flux_pair_unavailable_evidence(control, experiment)
+    if unavailable:
+        status = (
+            SURFACE_FLUX_RESPONSE_NONCOMPARABLE
+            if any("noncomparable_units" in item for item in unavailable)
+            else SURFACE_FLUX_RESPONSE_MISSING
+        )
+        return {
+            **base,
+            "status": status,
+            "unavailable_evidence": unavailable,
+        }
+
+    expectations = [
+        _surface_flux_field_expectation(
+            field="hfx",
+            control=control,
+            experiment=experiment,
+            selected_control_field="surface_heat_flux_k_m_s",
+        ),
+        _surface_flux_field_expectation(
+            field="qfx",
+            control=control,
+            experiment=experiment,
+            selected_control_field="surface_moisture_flux_g_g_m_s",
+        ),
+    ]
+    status = (
+        SURFACE_FLUX_RESPONSE_VERIFIED
+        if all(expectation["status"] == "verified" for expectation in expectations)
+        else SURFACE_FLUX_RESPONSE_NOT_VERIFIED
+    )
+    if all(expectation["expected"] == "comparable" for expectation in expectations):
+        status = SURFACE_FLUX_RESPONSE_NONCOMPARABLE
+    return {
+        **base,
+        "status": status,
+        "expectations": expectations,
+    }
+
+
+def _surface_flux_pair_unavailable_evidence(
+    control: Mapping[str, Any],
+    experiment: Mapping[str, Any],
+) -> list[str]:
+    unavailable: list[str] = []
+    for summary, role in ((control, "control"), (experiment, "experiment")):
+        if summary.get("status") != "ingested":
+            unavailable.append(f"{role}:result_not_ingested")
+        for field in ("hfx", "qfx"):
+            unavailable.extend(_surface_flux_stat_unavailable_reasons(summary, role, field))
+    for field in ("hfx", "qfx"):
+        control_units = control.get(f"{field}_units")
+        experiment_units = experiment.get(f"{field}_units")
+        if control_units is None or experiment_units is None:
+            continue
+        if control_units != experiment_units:
+            unavailable.append(f"{field}:noncomparable_units:{control_units}:vs:{experiment_units}")
+    noncomparable = [item for item in unavailable if "noncomparable_units" in item]
+    if noncomparable:
+        return noncomparable
+    return _dedupe(unavailable)
+
+
+def _surface_flux_stat_unavailable_reasons(
+    summary: Mapping[str, Any],
+    role: str,
+    field: str,
+) -> list[str]:
+    value = summary.get(f"{field}_mean")
+    finite_count = _int_or_none(summary.get(f"{field}_finite_count"))
+    non_finite_count = _int_or_none(summary.get(f"{field}_non_finite_count"))
+    total_count = _int_or_none(summary.get(f"{field}_total_count"))
+    units = summary.get(f"{field}_units")
+    reasons: list[str] = []
+    if not isinstance(value, int | float) or _is_unavailable(value):
+        reasons.append(f"{role}:{field}_mean_unavailable")
+    if finite_count is None or finite_count <= 0:
+        reasons.append(f"{role}:{field}_finite_count_unavailable")
+    if total_count is None or total_count <= 0:
+        reasons.append(f"{role}:{field}_total_count_unavailable")
+    if non_finite_count is None:
+        reasons.append(f"{role}:{field}_non_finite_count_unavailable")
+    elif non_finite_count > 0:
+        reasons.append(f"{role}:{field}_stats_not_trusted_non_finite")
+    if not isinstance(units, str) or not units:
+        reasons.append(f"{role}:{field}_units_unavailable")
+    return reasons
+
+
+def _surface_flux_field_expectation(
+    *,
+    field: str,
+    control: Mapping[str, Any],
+    experiment: Mapping[str, Any],
+    selected_control_field: str,
+) -> dict[str, Any]:
+    control_selected = _float_or_none(control.get(selected_control_field))
+    experiment_selected = _float_or_none(experiment.get(selected_control_field))
+    control_mean = _float_or_none(control.get(f"{field}_mean"))
+    experiment_mean = _float_or_none(experiment.get(f"{field}_mean"))
+    expected = _expected_direction(control_selected, experiment_selected)
+    observed = _expected_direction(control_mean, experiment_mean)
+    status = "verified" if expected == observed else "not_verified"
+    return {
+        "field": field,
+        "selected_control_field": selected_control_field,
+        "expected": expected,
+        "observed": observed,
+        "status": status,
+        "control_selected": control_selected,
+        "experiment_selected": experiment_selected,
+        "control_mean": control_mean,
+        "experiment_mean": experiment_mean,
+        "units": control.get(f"{field}_units"),
+    }
+
+
+def _expected_direction(left: float | None, right: float | None) -> str:
+    if left is None or right is None:
+        return "unknown"
+    tolerance = _comparison_numeric_tolerance(left, right)
+    if right > left + tolerance:
+        return "increase"
+    if right < left - tolerance:
+        return "decrease"
+    return "comparable"
+
+
+def _comparison_numeric_tolerance(left: float, right: float) -> float:
+    return max(abs(left), abs(right), 1.0) * 1e-9
+
+
+def _int_or_none(value: Any) -> int | None:
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value
+    return None
+
+
+def _float_or_none(value: Any) -> float | None:
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int | float):
+        return float(value)
+    return None
+
+
 def _field_available(field: str, available_fields: set[str]) -> bool:
     if field in {"qfx", "lhfx"}:
         return bool({"qfx", "lhfx"} & available_fields)
@@ -2796,7 +3057,10 @@ def _is_unavailable(value: Any) -> bool:
     return isinstance(value, str) and value.startswith("unavailable")
 
 
-def _phase_gate_state(summaries: Sequence[Mapping[str, Any]]) -> str:
+def _phase_gate_state(
+    summaries: Sequence[Mapping[str, Any]],
+    surface_flux_response: Mapping[str, Any],
+) -> str:
     phase1 = [
         summary for summary in summaries if summary.get("phase") == "forcing_path_smoke_check"
     ]
@@ -2804,8 +3068,11 @@ def _phase_gate_state(summaries: Sequence[Mapping[str, Any]]) -> str:
         return "inconclusive_missing_evidence"
     if not all(summary.get("status") == "ingested" for summary in phase1):
         return "inconclusive_missing_evidence"
-    if not all(summary.get("hfx_present") and summary.get("lhfx_present") for summary in phase1):
+    if not all(summary.get("hfx_present") and summary.get("qfx_present") for summary in phase1):
         return "forcing_wiring_not_verified"
+    response_state = surface_flux_response.get("state")
+    if response_state != SURFACE_FLUX_RESPONSE_VERIFIED:
+        return str(response_state or SURFACE_FLUX_RESPONSE_MISSING)
     if not all(
         not _is_unavailable(summary.get("low_level_qv_response"))
         and not _is_unavailable(summary.get("low_level_theta_or_temperature_response"))
@@ -2850,15 +3117,22 @@ def _preliminary_diagnosis_categories(summaries: Sequence[Mapping[str, Any]]) ->
     return sorted(categories)
 
 
-def _recommended_follow_ups(summaries: Sequence[Mapping[str, Any]]) -> list[str]:
+def _recommended_follow_ups(
+    summaries: Sequence[Mapping[str, Any]],
+    surface_flux_response: Mapping[str, Any],
+) -> list[str]:
     followups = [
         "Implement standardized low-level qv/theta/temperature response diagnostics.",
-        "Add hfx/qfx surface-flux statistics before claiming emitted flux magnitudes.",
         (
             "Review campaign rows with unavailable required output fields before "
             "scientific conclusions."
         ),
     ]
+    if surface_flux_response.get("state") != SURFACE_FLUX_RESPONSE_VERIFIED:
+        followups.append(
+            "Resolve Phase 1 surface-flux response comparisons before treating "
+            "selected forcing changes as verified in CM1 output."
+        )
     if any(summary.get("diagnostic_quality_warnings") for summary in summaries):
         followups.append(
             "Review caveated or untrusted non-finite fields before using cloud, "
@@ -2878,16 +3152,34 @@ def _forcing_response_summary(summary: Mapping[str, Any]) -> str:
     state = summary.get("phase_gate_state")
     if state == "forcing_path_verified_for_campaign":
         return (
-            "Phase 1 has ingested comparable surface-forced runs with required surface-flux "
-            "outputs and low-level response diagnostics available. Later phases may be queued "
-            "without an operator override, subject to campaign cost/runtime judgment."
+            "Phase 1 has ingested comparable surface-forced runs, verified matched "
+            "hfx/qfx output response to selected forcing changes, and has low-level "
+            "response diagnostics available. Later phases may be queued without an "
+            "operator override, subject to campaign cost/runtime judgment."
         )
     if state == "forcing_wiring_verified_but_response_not_verified":
         return (
             "Phase 1 confirmed selected forcing metadata, CM1-facing forcing controls, "
-            "and hfx/qfx output-field presence. It did not verify emitted flux magnitudes "
-            "or boundary-layer thermodynamic response because surface-flux statistics and "
-            "low-level qv/theta response diagnostics are not implemented yet."
+            "hfx/qfx output-field presence, and matched emitted surface-flux response. "
+            "It did not verify boundary-layer thermodynamic response because low-level "
+            "qv/theta response diagnostics are not implemented yet."
+        )
+    if state == SURFACE_FLUX_RESPONSE_NOT_VERIFIED:
+        return (
+            "Phase 1 produced hfx/qfx statistics, but matched emitted surface-flux "
+            "means did not move in the expected direction for the selected forcing "
+            "changes."
+        )
+    if state == SURFACE_FLUX_RESPONSE_MISSING:
+        return (
+            "Phase 1 cannot verify emitted surface-flux response because one or more "
+            "matched hfx/qfx statistics are missing, untrusted, or not ingested."
+        )
+    if state == SURFACE_FLUX_RESPONSE_NONCOMPARABLE:
+        return (
+            "Phase 1 cannot verify emitted surface-flux response because one or more "
+            "matched runs are structurally non-comparable or use non-comparable hfx/qfx "
+            "units."
         )
     if state == "forcing_wiring_not_verified":
         return "Surface-flux output fields are missing from ingested results."

@@ -44,6 +44,10 @@ execution:
     force_gate_states:
       verified: forcing_path_verified_for_campaign
       wiring_failed: forcing_wiring_not_verified
+      surface_flux_response_verified: surface_flux_response_verified
+      surface_flux_response_not_verified: surface_flux_response_not_verified
+      surface_flux_response_missing: surface_flux_response_inconclusive_missing_evidence
+      surface_flux_response_noncomparable: surface_flux_response_inconclusive_noncomparable
       wiring_only: forcing_wiring_verified_but_response_not_verified
       missing_evidence: inconclusive_missing_evidence
     minimum_to_continue_automatically:

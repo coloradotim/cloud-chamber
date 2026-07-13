@@ -176,6 +176,108 @@ def write_matrix(
     return matrix_path
 
 
+def write_phase1_surface_flux_matrix(tmp_path: Path) -> Path:
+    matrix_path = write_matrix(tmp_path)
+    matrix = yaml.safe_load(matrix_path.read_text())
+    matrix["comparison_types"] = [
+        {
+            "comparison_type": "heat_flux_sensitivity",
+            "varied_fields": ["surface_heat_flux_k_m_s", "cm1_cnst_shflx"],
+            "required_equal_fields": [
+                "selection_id",
+                "surface_moisture_flux_g_g_m_s",
+                "duration",
+                "domain_size",
+                "horizontal_cell_count",
+                "output_cadence",
+                "required_output_fields",
+            ],
+            "required_available_fields": ["hfx", "qfx"],
+            "required_diagnostic_support": ["surface_fluxes"],
+        },
+        {
+            "comparison_type": "moisture_flux_sensitivity",
+            "varied_fields": ["surface_moisture_flux_g_g_m_s", "cm1_cnst_lhflx"],
+            "required_equal_fields": [
+                "selection_id",
+                "surface_heat_flux_k_m_s",
+                "duration",
+                "domain_size",
+                "horizontal_cell_count",
+                "output_cadence",
+                "required_output_fields",
+            ],
+            "required_available_fields": ["hfx", "qfx"],
+            "required_diagnostic_support": ["surface_fluxes"],
+        },
+        {
+            "comparison_type": "combined_flux_sensitivity",
+            "varied_fields": [
+                "surface_heat_flux_k_m_s",
+                "surface_moisture_flux_g_g_m_s",
+                "cm1_cnst_shflx",
+                "cm1_cnst_lhflx",
+            ],
+            "required_equal_fields": [
+                "selection_id",
+                "duration",
+                "domain_size",
+                "horizontal_cell_count",
+                "output_cadence",
+                "required_output_fields",
+            ],
+            "required_available_fields": ["hfx", "qfx"],
+            "required_diagnostic_support": ["surface_fluxes"],
+        },
+    ]
+    matrix["runs"] = [
+        {
+            "matrix_id": "phase1_control_default_flux",
+            "phase": "forcing_path_smoke_check",
+            "selection_id": "control_sounding",
+            "comparison_role": "phase1_control",
+        },
+        {
+            "matrix_id": "phase1_control_high_sensible",
+            "phase": "forcing_path_smoke_check",
+            "selection_id": "control_sounding",
+            "surface_heat_flux_k_m_s": 4.0e-2,
+            "surface_moisture_flux_g_g_m_s": 5.2e-5,
+            "comparison": {
+                "type": "heat_flux_sensitivity",
+                "control_matrix_id": "phase1_control_default_flux",
+            },
+            "comparison_role": "heat_flux_sensitivity",
+        },
+        {
+            "matrix_id": "phase1_control_high_moisture",
+            "phase": "forcing_path_smoke_check",
+            "selection_id": "control_sounding",
+            "surface_heat_flux_k_m_s": 8.0e-3,
+            "surface_moisture_flux_g_g_m_s": 1.0e-4,
+            "comparison": {
+                "type": "moisture_flux_sensitivity",
+                "control_matrix_id": "phase1_control_default_flux",
+            },
+            "comparison_role": "moisture_flux_sensitivity",
+        },
+        {
+            "matrix_id": "phase1_control_high_both",
+            "phase": "forcing_path_smoke_check",
+            "selection_id": "control_sounding",
+            "surface_heat_flux_k_m_s": 4.0e-2,
+            "surface_moisture_flux_g_g_m_s": 1.0e-4,
+            "comparison": {
+                "type": "combined_flux_sensitivity",
+                "control_matrix_id": "phase1_control_default_flux",
+            },
+            "comparison_role": "combined_flux_sensitivity",
+        },
+    ]
+    matrix_path.write_text(yaml.safe_dump(matrix, sort_keys=False))
+    return matrix_path
+
+
 def test_campaign_plan_validates_matrix_and_resolves_cm1_values(tmp_path: Path) -> None:
     matrix_path = write_matrix(tmp_path)
     plan = build_campaign_plan(yaml.safe_load(matrix_path.read_text()), matrix_path=matrix_path)
@@ -674,12 +776,15 @@ def test_campaign_report_summarizes_ingested_result_without_fabricating_bl_respo
     assert Path(artifacts.markdown_path) == report_path
     assert Path(artifacts.summary_json_path) == summary_path
     assert summary["status_counts"] == {"ingested": 1}
-    assert summary["phase_gate_state"] == "forcing_wiring_verified_but_response_not_verified"
+    assert summary["phase_gate_state"] == "surface_flux_response_inconclusive_missing_evidence"
+    assert summary["surface_flux_response"]["state"] == (
+        "surface_flux_response_inconclusive_missing_evidence"
+    )
     run = summary["runs"][0]
     assert run["hfx_present"] is True
     assert run["hfx_units"] == "K m/s"
-    assert run["hfx_min"] == 1.0
-    assert run["hfx_max"] == 3.0
+    assert run["hfx_min"] == 2.0
+    assert run["hfx_max"] == 2.0
     assert run["hfx_mean"] == 2.0
     assert run["hfx_finite_count"] == 8
     assert run["hfx_non_finite_count"] == 0
@@ -687,8 +792,8 @@ def test_campaign_report_summarizes_ingested_result_without_fabricating_bl_respo
     assert run["qfx_present"] is True
     assert run["surface_moisture_flux_output_field"] == "qfx"
     assert run["qfx_units"] == "kg/m^2/s"
-    assert run["qfx_min"] == 1.0e-5
-    assert run["qfx_max"] == 3.0e-5
+    assert run["qfx_min"] == 2.0e-5
+    assert run["qfx_max"] == 2.0e-5
     assert run["qfx_mean"] == 2.0e-5
     assert run["qfx_finite_count"] == 8
     assert run["qfx_non_finite_count"] == 0
@@ -701,6 +806,171 @@ def test_campaign_report_summarizes_ingested_result_without_fabricating_bl_respo
     assert run["low_level_qv_response_method"] == "low_level_response_diagnostic_not_implemented"
     assert "low_level_qv_response" in summary["unavailable_diagnostics"]
     assert "max w 2.5" in report_path.read_text()
+
+
+def test_campaign_report_verifies_matched_phase1_surface_flux_response(
+    tmp_path: Path,
+) -> None:
+    artifacts = _report_phase1_surface_flux_matrix(
+        tmp_path,
+        flux_means={
+            "phase1_control_default_flux": (2.0, 2.0e-5),
+            "phase1_control_high_sensible": (4.0, 2.0e-5),
+            "phase1_control_high_moisture": (2.0, 4.0e-5),
+            "phase1_control_high_both": (4.0, 4.0e-5),
+        },
+    )
+
+    assert artifacts.summary["surface_flux_response"]["state"] == "surface_flux_response_verified"
+    assert artifacts.summary["phase_gate_state"] == (
+        "forcing_wiring_verified_but_response_not_verified"
+    )
+    evaluations = artifacts.summary["surface_flux_response"]["evaluations"]
+    assert {evaluation["status"] for evaluation in evaluations} == {
+        "surface_flux_response_verified"
+    }
+    heat = next(
+        evaluation
+        for evaluation in evaluations
+        if evaluation["comparison_type"] == "heat_flux_sensitivity"
+    )
+    assert heat["expectations"] == [
+        {
+            "field": "hfx",
+            "selected_control_field": "surface_heat_flux_k_m_s",
+            "expected": "increase",
+            "observed": "increase",
+            "status": "verified",
+            "control_selected": 0.008,
+            "experiment_selected": 0.04,
+            "control_mean": 2.0,
+            "experiment_mean": 4.0,
+            "units": "K m/s",
+        },
+        {
+            "field": "qfx",
+            "selected_control_field": "surface_moisture_flux_g_g_m_s",
+            "expected": "comparable",
+            "observed": "comparable",
+            "status": "verified",
+            "control_selected": 5.2e-05,
+            "experiment_selected": 5.2e-05,
+            "control_mean": 2.0e-05,
+            "experiment_mean": 2.0e-05,
+            "units": "kg/m^2/s",
+        },
+    ]
+    report = Path(artifacts.markdown_path).read_text()
+    assert "Surface flux response: `surface_flux_response_verified`" in report
+    assert "`phase1_control_high_sensible` vs `phase1_control_default_flux`" in report
+
+
+def test_campaign_report_rejects_unchanged_emitted_flux_response(
+    tmp_path: Path,
+) -> None:
+    artifacts = _report_phase1_surface_flux_matrix(
+        tmp_path,
+        flux_means={
+            "phase1_control_default_flux": (2.0, 2.0e-5),
+            "phase1_control_high_sensible": (2.0, 2.0e-5),
+            "phase1_control_high_moisture": (2.0, 2.0e-5),
+            "phase1_control_high_both": (2.0, 2.0e-5),
+        },
+    )
+
+    assert artifacts.summary["surface_flux_response"]["state"] == (
+        "surface_flux_response_not_verified"
+    )
+    assert artifacts.summary["phase_gate_state"] == "surface_flux_response_not_verified"
+    expectations = artifacts.summary["surface_flux_response"]["evaluations"][0]["expectations"]
+    assert expectations[0]["expected"] == "increase"
+    assert expectations[0]["observed"] == "comparable"
+    assert expectations[0]["status"] == "not_verified"
+
+
+def test_campaign_report_rejects_reversed_emitted_flux_response(tmp_path: Path) -> None:
+    artifacts = _report_phase1_surface_flux_matrix(
+        tmp_path,
+        flux_means={
+            "phase1_control_default_flux": (2.0, 2.0e-5),
+            "phase1_control_high_sensible": (1.0, 2.0e-5),
+            "phase1_control_high_moisture": (2.0, 1.0e-5),
+            "phase1_control_high_both": (1.0, 1.0e-5),
+        },
+    )
+
+    assert artifacts.summary["surface_flux_response"]["state"] == (
+        "surface_flux_response_not_verified"
+    )
+    heat = artifacts.summary["surface_flux_response"]["evaluations"][0]
+    assert heat["expectations"][0]["expected"] == "increase"
+    assert heat["expectations"][0]["observed"] == "decrease"
+
+
+def test_campaign_report_requires_trusted_surface_flux_stats(tmp_path: Path) -> None:
+    artifacts = _report_phase1_surface_flux_matrix(
+        tmp_path,
+        flux_means={
+            "phase1_control_default_flux": (2.0, 2.0e-5),
+            "phase1_control_high_sensible": (4.0, 2.0e-5),
+            "phase1_control_high_moisture": (2.0, 4.0e-5),
+            "phase1_control_high_both": (4.0, 4.0e-5),
+        },
+        non_finite_counts={"phase1_control_high_sensible": (1, 0)},
+    )
+
+    assert artifacts.summary["surface_flux_response"]["state"] == (
+        "surface_flux_response_inconclusive_missing_evidence"
+    )
+    heat = artifacts.summary["surface_flux_response"]["evaluations"][0]
+    assert "experiment:hfx_stats_not_trusted_non_finite" in heat["unavailable_evidence"]
+
+
+def test_campaign_report_rejects_mismatched_surface_flux_units(tmp_path: Path) -> None:
+    artifacts = _report_phase1_surface_flux_matrix(
+        tmp_path,
+        flux_means={
+            "phase1_control_default_flux": (2.0, 2.0e-5),
+            "phase1_control_high_sensible": (4.0, 2.0e-5),
+            "phase1_control_high_moisture": (2.0, 4.0e-5),
+            "phase1_control_high_both": (4.0, 4.0e-5),
+        },
+        unit_overrides={"phase1_control_high_sensible": ("W m-2", "kg/m^2/s")},
+    )
+
+    assert artifacts.summary["surface_flux_response"]["state"] == (
+        "surface_flux_response_inconclusive_noncomparable"
+    )
+    heat = artifacts.summary["surface_flux_response"]["evaluations"][0]
+    assert "hfx:noncomparable_units:K m/s:vs:W m-2" in heat["unavailable_evidence"]
+
+
+def test_campaign_report_rejects_structurally_noncomparable_surface_flux_runs(
+    tmp_path: Path,
+) -> None:
+    def mutate(matrix: dict[str, Any]) -> None:
+        for run in matrix["runs"]:
+            if run["matrix_id"] == "phase1_control_high_sensible":
+                run["domain_size"] = "local_6km"
+
+    artifacts = _report_phase1_surface_flux_matrix(
+        tmp_path,
+        flux_means={
+            "phase1_control_default_flux": (2.0, 2.0e-5),
+            "phase1_control_high_sensible": (4.0, 2.0e-5),
+            "phase1_control_high_moisture": (2.0, 4.0e-5),
+            "phase1_control_high_both": (4.0, 4.0e-5),
+        },
+        mutate_matrix=mutate,
+    )
+
+    assert artifacts.summary["surface_flux_response"]["state"] == (
+        "surface_flux_response_inconclusive_noncomparable"
+    )
+    heat = artifacts.summary["surface_flux_response"]["evaluations"][0]
+    assert {"field": "domain_size", "control": "wide_12km", "experiment": "local_6km"} in (
+        heat["equality_gate_failures"]
+    )
 
 
 def test_campaign_report_marks_non_finite_outcomes_as_untrusted(
@@ -888,6 +1158,49 @@ def test_campaign_ingest_updates_state_with_existing_completed_output(
     assert result.runs[0].result_id == "result-surface-forced-test"
 
 
+def _report_phase1_surface_flux_matrix(
+    tmp_path: Path,
+    *,
+    flux_means: dict[str, tuple[float, float]],
+    non_finite_counts: dict[str, tuple[int, int]] | None = None,
+    unit_overrides: dict[str, tuple[str, str]] | None = None,
+    mutate_matrix: Any | None = None,
+) -> Any:
+    settings = fake_settings(tmp_path)
+    matrix_path = write_phase1_surface_flux_matrix(tmp_path)
+    if mutate_matrix is not None:
+        matrix = yaml.safe_load(matrix_path.read_text())
+        mutate_matrix(matrix)
+        matrix_path.write_text(yaml.safe_dump(matrix, sort_keys=False))
+    packaged = package_campaign(matrix_path, settings=settings, resume=True)
+    for state_run in packaged.runs:
+        hfx_mean, qfx_mean = flux_means[state_run.matrix_id]
+        hfx_non_finite, qfx_non_finite = (non_finite_counts or {}).get(
+            state_run.matrix_id,
+            (0, 0),
+        )
+        hfx_units, qfx_units = (unit_overrides or {}).get(
+            state_run.matrix_id,
+            ("K m/s", "kg/m^2/s"),
+        )
+        _write_fake_result_metadata(
+            Path(state_run.manifest_path or ""),
+            hfx_mean=hfx_mean,
+            qfx_mean=qfx_mean,
+            hfx_units=hfx_units,
+            qfx_units=qfx_units,
+            hfx_non_finite_count=hfx_non_finite,
+            qfx_non_finite_count=qfx_non_finite,
+        )
+
+    return report_campaign(
+        matrix_path,
+        settings=settings,
+        report_path=tmp_path / "report.md",
+        summary_json_path=tmp_path / "summary.json",
+    )
+
+
 def _set_manifest_lifecycle(
     manifest_path: Path,
     lifecycle: LifecycleState,
@@ -918,6 +1231,12 @@ def _write_fake_result_metadata(
     run_caveats: list[str] | None = None,
     interesting_time_caveats: list[str] | None = None,
     surface_rain_present: bool = False,
+    hfx_mean: float = 2.0,
+    qfx_mean: float = 2.0e-5,
+    hfx_units: str = "K m/s",
+    qfx_units: str = "kg/m^2/s",
+    hfx_non_finite_count: int = 0,
+    qfx_non_finite_count: int = 0,
 ) -> None:
     manifest = load_run_manifest(manifest_path)
     now = datetime.now(UTC)
@@ -947,10 +1266,10 @@ def _write_fake_result_metadata(
         variables=["qc", "w", "qr", "rain", "dbz", "hfx", "qfx", "qv", "th"],
         fields_detected=[
             FieldMetadata(
-                name="hfx", dimensions=["time", "y", "x"], shape=[2, 2, 2], units="K m/s"
+                name="hfx", dimensions=["time", "y", "x"], shape=[2, 2, 2], units=hfx_units
             ),
             FieldMetadata(
-                name="qfx", dimensions=["time", "y", "x"], shape=[2, 2, 2], units="kg/m^2/s"
+                name="qfx", dimensions=["time", "y", "x"], shape=[2, 2, 2], units=qfx_units
             ),
             FieldMetadata(
                 name="qv", dimensions=["time", "z", "y", "x"], shape=[2, 2, 2, 2], units="kg/kg"
@@ -1003,25 +1322,25 @@ def _write_fake_result_metadata(
                     source_field="hfx",
                     available=True,
                     field_absent=False,
-                    min_value=1.0,
-                    max_value=3.0,
-                    mean_value=2.0,
-                    units="K m/s",
+                    min_value=hfx_mean,
+                    max_value=hfx_mean,
+                    mean_value=hfx_mean,
+                    units=hfx_units,
                     finite_count=8,
-                    non_finite_count=0,
-                    total_count=8,
+                    non_finite_count=hfx_non_finite_count,
+                    total_count=8 + hfx_non_finite_count,
                 ),
                 qfx=SurfaceFluxFieldDiagnostics(
                     source_field="qfx",
                     available=True,
                     field_absent=False,
-                    min_value=1.0e-5,
-                    max_value=3.0e-5,
-                    mean_value=2.0e-5,
-                    units="kg/m^2/s",
+                    min_value=qfx_mean,
+                    max_value=qfx_mean,
+                    mean_value=qfx_mean,
+                    units=qfx_units,
                     finite_count=8,
-                    non_finite_count=0,
-                    total_count=8,
+                    non_finite_count=qfx_non_finite_count,
+                    total_count=8 + qfx_non_finite_count,
                 ),
             ),
             time=TimeDiagnostics(source="time", fallback_used=False, coordinate_name="time"),

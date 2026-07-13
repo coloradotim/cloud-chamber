@@ -80,6 +80,7 @@ unavailable: low_level_response_diagnostic_not_implemented
 | selected values appear in CM1-facing namelist fields | `<pass/warn/fail/unavailable>` | `<cnst_shflx/cnst_lhflx>` | `<notes>` |
 | `hfx` emitted/ingested | `<pass/warn/fail/unavailable>` | `<field/units/min/max/mean/counts>` | Preserve output units separately from selected namelist controls. |
 | `qfx` emitted/ingested | `<pass/warn/fail/unavailable>` | `<field/units/min/max/mean/counts>` | Preserve output units separately from selected namelist controls; do not assume `qfx` equals `cnst_lhflx`. |
+| matched emitted surface-flux response | `<surface_flux_response_verified/not_verified/inconclusive>` | `<matched hfx/qfx means and units>` | Compare emitted `hfx` to emitted `hfx`, and emitted `qfx` to emitted `qfx`, across matched runs. |
 
 ### Atmospheric response checks
 
