@@ -851,8 +851,11 @@ def test_time_series_products_cover_surface_rain_reflectivity_and_fluxes(
     assert surface_flux.field.canonical_field_name == "surface_sensible_heat_flux"
     assert surface_flux.values == pytest.approx([5.5, 17.5])
     assert surface_flux.field_quality is not None
-    assert surface_flux.field_quality.assessed is False
-    assert surface_flux.field_quality.reason == "field_quality_not_tracked_for_field"
+    assert surface_flux.field_quality.assessed is True
+    assert surface_flux.field_quality.source_field == "hfx"
+    assert surface_flux.field_quality.quality_state == "trusted"
+    assert surface_flux.field_quality.finite_count == 24
+    assert surface_flux.field_quality.non_finite_count == 0
     assert "native_grid_time_series_no_interpolation" in surface_flux.caveats
 
 

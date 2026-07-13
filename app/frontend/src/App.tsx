@@ -781,6 +781,25 @@ type FieldQuality = {
   caveats: string[];
 };
 
+type SurfaceFluxFieldDiagnostics = {
+  source_field: string;
+  available: boolean;
+  field_absent: boolean;
+  min_value?: number | null;
+  max_value?: number | null;
+  mean_value?: number | null;
+  units?: string | null;
+  finite_count: number;
+  non_finite_count: number;
+  total_count: number;
+  caveats: string[];
+};
+
+type SurfaceFluxDiagnostics = {
+  hfx: SurfaceFluxFieldDiagnostics;
+  qfx: SurfaceFluxFieldDiagnostics;
+};
+
 type InterestingTimeRecord = {
   key: string;
   label: string;
@@ -837,6 +856,7 @@ type ScienceSummary = {
   cm1_outcome?: string | null;
   field_quality_assessed?: boolean;
   field_quality?: Record<string, FieldQuality>;
+  surface_fluxes?: SurfaceFluxDiagnostics | null;
   diagnostic_availability?: ScienceDiagnosticAvailability[];
   interesting_time_caveats: string[];
   interesting_time_support_state: string;
@@ -920,6 +940,7 @@ type ResultCard = {
   surface_rain_units?: string | null;
   max_dbz?: number | null;
   reflectivity_available?: boolean | null;
+  surface_fluxes?: SurfaceFluxDiagnostics | null;
   field_quality_assessed?: boolean;
   field_quality?: Record<string, FieldQuality>;
   interesting_times?: InterestingTimeRecord[];

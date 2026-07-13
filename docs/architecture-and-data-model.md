@@ -679,19 +679,26 @@ Current diagnostics compute:
 - max/min `w`, time of max/min `w`, and `w` max/min time series;
 - optional rain-water-aloft summary from `qr >= 1e-7 kg/kg`;
 - optional surface-rain summary from the CM1 `rain` field;
-- optional reflectivity summary from the CM1 `dbz` field.
+- optional reflectivity summary from the CM1 `dbz` field;
+- optional surface-flux summaries from CM1 `hfx` and `qfx`, including
+  min/max/mean, units, and finite/non-finite counts.
 
 Diagnostics preserve runtime warnings from the run manifest/result metadata. CM1
 floating-point exception flags are caveats, not automatic failure. The
 diagnostics also count non-finite values in target fields where practical,
 ignore NaN/infinity for finite summaries, and record field-specific caveats if
-`qc`, `w`, `qr`, surface `rain`, or `dbz` are missing or entirely non-finite.
+`qc`, `w`, `qr`, surface `rain`, `dbz`, `hfx`, or `qfx` are missing or entirely
+non-finite.
 Result metadata exposes `field_quality_assessed` plus a `field_quality` map for
 those fields with `trusted`, `caveated`, `untrusted`, or `unavailable` state and
 finite/non-finite counts. Missing assessment is not equivalent to trusted.
 Result cards, output products, campaign reports, and candidate comparisons must
 use explicit assessed quality state so missing, unassessed, or entirely
 non-finite fields are not presented as clean negative or positive outcomes.
+Surface-flux statistics preserve CM1 output units separately from the selected
+namelist controls. In particular, `qfx` evidence is reported as emitted CM1
+moisture-flux output and must not be equated to `cnst_lhflx` without a
+documented interpretation.
 
 This result metadata is not a Result Card UI and not visualization-ready data. It is the backend bridge that later result cards and inspectors can consume.
 

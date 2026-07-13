@@ -44,12 +44,16 @@ execution:
     force_gate_states:
       verified: forcing_path_verified_for_campaign
       wiring_failed: forcing_wiring_not_verified
+      surface_flux_response_verified: surface_flux_response_verified
+      surface_flux_response_not_verified: surface_flux_response_not_verified
+      surface_flux_response_missing: surface_flux_response_inconclusive_missing_evidence
+      surface_flux_response_noncomparable: surface_flux_response_inconclusive_noncomparable
       wiring_only: forcing_wiring_verified_but_response_not_verified
       missing_evidence: inconclusive_missing_evidence
     minimum_to_continue_automatically:
       - selected_values_preserved
       - cm1_facing_values_preserved
-      - emitted_hfx_lhfx_reflect_prescribed_changes
+      - emitted_hfx_qfx_reflect_prescribed_changes
       - heat_only_theta_or_temperature_response_directionally_consistent
       - moisture_only_qv_response_directionally_consistent
   lifecycle_status_values:
@@ -65,6 +69,11 @@ execution:
     - run_canceled
     - skipped
     - blocked
+
+phase1_required_comparison_types:
+  - heat_flux_sensitivity
+  - moisture_flux_sensitivity
+  - combined_flux_sensitivity
 
 selection_sets:
   - selection_id: control_sounding
@@ -536,11 +545,17 @@ required_summary_fields:
     - hfx_min
     - hfx_max
     - hfx_mean
-    - lhfx_present
-    - lhfx_units
-    - lhfx_min
-    - lhfx_max
-    - lhfx_mean
+    - hfx_finite_count
+    - hfx_non_finite_count
+    - hfx_total_count
+    - qfx_present
+    - qfx_units
+    - qfx_min
+    - qfx_max
+    - qfx_mean
+    - qfx_finite_count
+    - qfx_non_finite_count
+    - qfx_total_count
     - low_level_qv_response
     - low_level_qv_response_method
     - low_level_theta_or_temperature_response

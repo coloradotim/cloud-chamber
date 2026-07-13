@@ -50,6 +50,8 @@ FIELD_QUALITY_KEY_BY_RAW_FIELD = {
     "qr": "qr",
     "rain": "surface_rain",
     "dbz": "dbz",
+    "hfx": "hfx",
+    "qfx": "qfx",
 }
 
 

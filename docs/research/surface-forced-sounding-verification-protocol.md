@@ -76,6 +76,7 @@ selection_sets
 run_defaults
 forcing_sets
 comparison_types
+phase1_required_comparison_types
 runs
 required_summary_fields
 ```
@@ -90,6 +91,10 @@ required_summary_fields
 - Each `comparison_types[].comparison_type` must be unique.
 - Each `runs[].matrix_id` must be unique.
 - Each run must reference an existing `selection_id` and `forcing_id`.
+- `phase1_required_comparison_types` must name the Phase 1 comparison types
+  required before surface-flux response can be considered verified. For the
+  current protocol those are `heat_flux_sensitivity`,
+  `moisture_flux_sensitivity`, and `combined_flux_sensitivity`.
 - Use `matrix_id` as the canonical run-matrix identifier. Do not introduce `run_matrix_id` in the same schema.
 
 ### Source union
@@ -257,6 +262,10 @@ Phase 1 must be allowed to stop the campaign before expensive later phases. The 
 
 ```text
 forcing_wiring_not_verified
+surface_flux_response_verified
+surface_flux_response_not_verified
+surface_flux_response_inconclusive_missing_evidence
+surface_flux_response_inconclusive_noncomparable
 forcing_wiring_verified_but_response_not_verified
 forcing_path_verified_for_campaign
 inconclusive_missing_evidence
@@ -269,7 +278,11 @@ operator_override_continue
 - Missing CM1-facing `cnst_shflx` or `cnst_lhflx`: `forcing_wiring_not_verified`; block automatic continuation.
 - Missing `hfx` or `qfx` when requested: `inconclusive_missing_evidence`; block automatic continuation.
 - Missing standardized low-level response diagnostic: `inconclusive_missing_evidence`; block automatic continuation.
-- Emitted `hfx`/`qfx` values do not reflect the prescribed run-to-run forcing changes: `forcing_wiring_not_verified`; block automatic continuation.
+- Matched Phase 1 emitted `hfx`/`qfx` values are present, trusted, unit-comparable, and every required Phase 1 comparison type is present: `surface_flux_response_verified`; continue to low-level response checks.
+- Missing one of the required `heat_flux_sensitivity`, `moisture_flux_sensitivity`, or `combined_flux_sensitivity` comparisons: `surface_flux_response_inconclusive_missing_evidence`; block automatic continuation.
+- Missing, untrusted, or not-ingested matched Phase 1 `hfx`/`qfx` statistics: `surface_flux_response_inconclusive_missing_evidence`; block automatic continuation.
+- Mismatched `hfx`/`qfx` units or structurally non-comparable Phase 1 runs: `surface_flux_response_inconclusive_noncomparable`; block automatic continuation.
+- Emitted means for intentionally varied fluxes do not move in the expected direction for the prescribed run-to-run forcing changes: `surface_flux_response_not_verified`; block automatic continuation. In the heat-only comparison, `hfx` increase is required and `qfx` change is informational. In the moisture-only comparison, `qfx` increase is required and `hfx` change is informational. In the combined comparison, both `hfx` and `qfx` increases are required.
 - Heat-only run does not show a directionally consistent theta/temperature response when the diagnostic is available: `forcing_wiring_verified_but_response_not_verified`; block automatic continuation by default.
 - Moisture-only run does not show a directionally consistent `qv` response when the diagnostic is available: `forcing_wiring_verified_but_response_not_verified`; block automatic continuation by default.
 
@@ -555,9 +568,12 @@ The report should extract these from ingested metadata/output products when avai
 hfx_present
 hfx_units
 hfx_min / hfx_max / hfx_mean when derivable
-lhfx_present
-lhfx_units
-lhfx_min / lhfx_max / lhfx_mean when derivable
+hfx_finite_count / hfx_non_finite_count / hfx_total_count
+qfx_present
+qfx_units
+qfx_min / qfx_max / qfx_mean when derivable
+qfx_finite_count / qfx_non_finite_count / qfx_total_count
+surface_moisture_flux_output_field
 low_level_qv_response with method or unavailable reason
 low_level_qv_response_method
 low_level_theta_or_temperature_response with method or unavailable reason

@@ -263,7 +263,7 @@ misleading cloud/rain-water landmark.
 
 Interesting-time records, field defaults, diagnostic availability records, and
 science summaries may carry target-field `field_quality` metadata for `qc`, `w`,
-`qr`, surface `rain`, and `dbz`. Entirely non-finite source fields are
+`qr`, surface `rain`, `dbz`, `hfx`, and `qfx`. Entirely non-finite source fields are
 `untrusted` and must not produce supported landmarks or clean comparison
 evidence. Partially non-finite fields may remain usable only with visible
 caveats and finite/non-finite counts.
@@ -457,10 +457,10 @@ time-series, native slice, and point-cloud payloads carry a `field_quality`
 object for the requested raw field when diagnostics can evaluate it. The object
 records whether quality was assessed, the source field, quality state, finite
 count, non-finite count, total count, reason, and quality caveats. Tracked fields
-use the current `qc`, `w`, `qr`, surface `rain`, and `dbz` diagnostic quality
-records. Untracked fields such as `qv`, `hfx`, or `qfx` must explicitly report
-that field quality is not tracked rather than implying trusted status. Older
-results or partial metadata with no assessment signal must report
+use the current `qc`, `w`, `qr`, surface `rain`, `dbz`, `hfx`, and `qfx`
+diagnostic quality records. Untracked fields such as `qv` must
+explicitly report that field quality is not tracked rather than implying trusted
+status. Older results or partial metadata with no assessment signal must report
 `assessed = false`; only an explicit assessed `trusted` field-quality record is
 trusted evidence.
 
