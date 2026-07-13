@@ -331,7 +331,7 @@ def test_ingests_multifile_model_output_sequence_and_excludes_stats(tmp_path: Pa
     )
     write_model_netcdf(
         second,
-        times=[600.0],
+        times=[3900.0],
         qc_values=[2e-6],
         w_values=[7.0],
         hfx_values=[3.0],
@@ -352,15 +352,15 @@ def test_ingests_multifile_model_output_sequence_and_excludes_stats(tmp_path: Pa
     assert result.model_output_file_count == 2
     assert result.time_steps == 2
     assert result.first_output_time_seconds == 300.0
-    assert result.last_output_time_seconds == 600.0
+    assert result.last_output_time_seconds == 3900.0
     assert result.time_coordinate_source == "netcdf_time_coordinate"
     assert result.time_coordinate_fallback_used is False
     assert result.diagnostics is not None
     assert result.diagnostics.cloud.formed is True
-    assert result.diagnostics.cloud.first_cloud_time_seconds == 600.0
+    assert result.diagnostics.cloud.first_cloud_time_seconds == 3900.0
     assert len(result.diagnostics.cloud.qc_max_time_series) == 2
     assert result.diagnostics.cloud.max_qc_kg_kg == 2e-6
-    assert result.diagnostics.cloud.time_of_max_qc_seconds == 600.0
+    assert result.diagnostics.cloud.time_of_max_qc_seconds == 3900.0
     assert result.diagnostics.vertical_velocity.min_w_m_s == -5.0
     assert result.diagnostics.vertical_velocity.max_w_m_s == 7.0
     assert result.diagnostics.surface_fluxes.hfx.available is True
@@ -381,8 +381,10 @@ def test_ingests_multifile_model_output_sequence_and_excludes_stats(tmp_path: Pa
     assert result.diagnostics.field_quality["qfx"].quality_state == "trusted"
     assert result.diagnostics.low_level_response.qv.available is True
     assert result.diagnostics.low_level_response.qv.first_time_seconds == 300.0
-    assert result.diagnostics.low_level_response.qv.final_time_seconds == 600.0
+    assert result.diagnostics.low_level_response.qv.final_time_seconds == 3900.0
+    assert result.diagnostics.low_level_response.qv.early_response_end_time_seconds == 3900.0
     assert result.diagnostics.low_level_response.qv.delta_value == pytest.approx(0.006)
+    assert result.diagnostics.low_level_response.qv.full_run_delta == pytest.approx(0.006)
     assert result.diagnostics.low_level_response.theta_or_temperature.available is True
     assert result.diagnostics.low_level_response.theta_or_temperature.delta_value == pytest.approx(
         4.0
@@ -393,7 +395,7 @@ def test_ingests_multifile_model_output_sequence_and_excludes_stats(tmp_path: Pa
     interesting = {record.key: record for record in result.interesting_times}
     assert interesting["first_cloud"].support_state == "supported"
     assert interesting["first_cloud"].time_index == 1
-    assert interesting["first_cloud"].time_seconds == 600.0
+    assert interesting["first_cloud"].time_seconds == 3900.0
     assert interesting["max_qc"].support_state == "supported"
     assert interesting["max_qc"].time_index == 1
     assert interesting["max_updraft_w"].time_index == 1
@@ -406,12 +408,12 @@ def test_ingests_multifile_model_output_sequence_and_excludes_stats(tmp_path: Pa
     assert result.default_time_by_field["w"].time_index == 1
     assert result.default_time_by_field["qr"].support_state == "fallback"
     assert result.science_summary is not None
-    assert result.science_summary.first_cloud_time_seconds == 600.0
+    assert result.science_summary.first_cloud_time_seconds == 3900.0
     assert result.science_summary.max_qc_kg_kg == 2e-6
-    assert result.science_summary.max_qc_time_seconds == 600.0
+    assert result.science_summary.max_qc_time_seconds == 3900.0
     assert result.science_summary.max_updraft_w_m_s == 7.0
     assert result.science_summary.min_downdraft_w_m_s == -5.0
-    assert result.science_summary.latest_output_time_seconds == 600.0
+    assert result.science_summary.latest_output_time_seconds == 3900.0
     assert result.science_summary.low_level_response.qv.delta_value == pytest.approx(0.006)
     availability = {item.key: item for item in result.science_summary.diagnostic_availability}
     assert availability["low_level_qv_response"].support_state == "supported"

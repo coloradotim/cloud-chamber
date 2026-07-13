@@ -321,26 +321,32 @@ browser-side or report-local calculation.
 
 ```text
 vertical layer: 0-1000 m AGL, using available model vertical coordinate
-spatial statistic: domain mean unless a later issue adds selected-column context
+spatial statistic: thickness-weighted domain mean from vertical cell centers
 reference time: first output time, preferably model time 0 or earliest available output
-evaluation time: final output time for the run unless the report explicitly names another time
-per-run response: evaluation_time_mean - reference_time_mean
+early evaluation time: output closest to 60 minutes after reference, bounded to 30-90 minutes
+full-run evaluation time: final output time for the run
+early response: early_evaluation_time_mean - reference_time_mean
+full-run response: final_time_mean - reference_time_mean
 forcing sensitivity: response difference against the paired control run with same sounding, duration, domain, grid, and cadence
 units: preserve source field units; convert only if the backend has a documented conversion
 ```
 
 The result metadata and science-summary payload preserve source field, units,
-vertical-coordinate method, first/final time indices, first/final means, delta,
-and finite/non-finite endpoint counts. Missing `qv`, missing theta/temperature,
-missing vertical coordinates, unsupported vertical units, insufficient output
-times, or entirely non-finite endpoints produce explicit unavailable states.
+vertical-coordinate method, early-response endpoint indices/times/means/delta,
+full-run endpoint indices/times/means/delta, and finite/non-finite endpoint
+counts. Missing `qv`, missing theta/temperature, missing vertical coordinates,
+unsupported vertical units, insufficient output times in the 30-90 minute early
+window, or entirely non-finite endpoints produce explicit unavailable states.
 
 For Phase 1 gate evaluation, heat-only comparisons require the
-theta/temperature response delta to increase against the matched control;
-moisture-only comparisons require the `qv` response delta to increase against
-the matched control; combined comparisons require both. Non-varied low-level
-response changes are informational unless a later protocol defines a
-field-specific stability tolerance.
+early theta/temperature response delta to increase against the matched control;
+moisture-only comparisons require the early `qv` response delta to increase
+against the matched control; combined comparisons require both. Full-run deltas
+remain experiment evidence but must not be the only Phase 1 forcing-path gate.
+Non-varied low-level response changes are informational unless a later protocol
+defines a field-specific stability tolerance. `theta_v` is moisture-coupled and
+must not silently substitute for the thermal response gate unless a future
+protocol explicitly requests virtual-potential-temperature response.
 
 ## Phase 1 — Forcing-path smoke check
 
@@ -581,17 +587,25 @@ qfx_units
 qfx_min / qfx_max / qfx_mean when derivable
 qfx_finite_count / qfx_non_finite_count / qfx_total_count
 surface_moisture_flux_output_field
-low_level_qv_response with method or unavailable reason
+low_level_qv_response with early delta, method, or unavailable reason
+low_level_qv_early_response_delta
+low_level_qv_full_run_delta
 low_level_qv_response_method
 low_level_qv_response_source_field
 low_level_qv_response_units
+low_level_qv_early_response_start_mean / low_level_qv_early_response_end_mean
+low_level_qv_early_response_start_time_seconds / low_level_qv_early_response_end_time_seconds
 low_level_qv_response_first_mean / low_level_qv_response_final_mean
 low_level_qv_response_first_time_seconds / low_level_qv_response_final_time_seconds
 low_level_qv_response_first_finite_count / low_level_qv_response_final_finite_count
-low_level_theta_or_temperature_response with method or unavailable reason
+low_level_theta_or_temperature_response with early delta, method, or unavailable reason
+low_level_theta_or_temperature_early_response_delta
+low_level_theta_or_temperature_full_run_delta
 low_level_theta_or_temperature_response_method
 low_level_theta_or_temperature_response_source_field
 low_level_theta_or_temperature_response_units
+low_level_theta_or_temperature_early_response_start_mean / low_level_theta_or_temperature_early_response_end_mean
+low_level_theta_or_temperature_early_response_start_time_seconds / low_level_theta_or_temperature_early_response_end_time_seconds
 low_level_theta_or_temperature_response_first_mean / low_level_theta_or_temperature_response_final_mean
 low_level_theta_or_temperature_response_first_time_seconds / low_level_theta_or_temperature_response_final_time_seconds
 low_level_theta_or_temperature_response_first_finite_count / low_level_theta_or_temperature_response_final_finite_count

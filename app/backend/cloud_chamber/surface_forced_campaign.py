@@ -193,8 +193,14 @@ SUPPORTED_REQUIRED_SUMMARY_FIELDS = {
     "lhfx_mean",
     "low_level_qv_response",
     "low_level_qv_response_method",
+    "low_level_qv_early_response_delta",
+    "low_level_qv_early_response_delta_units",
+    "low_level_qv_full_run_delta",
     "low_level_theta_or_temperature_response",
     "low_level_theta_or_temperature_response_method",
+    "low_level_theta_or_temperature_early_response_delta",
+    "low_level_theta_or_temperature_early_response_delta_units",
+    "low_level_theta_or_temperature_full_run_delta",
     "first_cloud_time",
     "max_cloud_top_m",
     "max_cloud_top_time",
@@ -1876,11 +1882,11 @@ def _summary_for_plan_run(run: CampaignRunPlan, state: CampaignState) -> dict[st
         low_level_response.theta_or_temperature if low_level_response is not None else None,
         fallback_source_field=_first_available_field(
             result,
-            ["th", "theta", "theta_v", "temperature", "t"],
+            ["th", "theta", "temperature", "t"],
         ),
         fallback_units=_field_units(
             result,
-            _first_available_field(result, ["th", "theta", "theta_v", "temperature", "t"]),
+            _first_available_field(result, ["th", "theta", "temperature", "t"]),
         ),
     )
     deep_cloud_formed = (
@@ -2066,7 +2072,14 @@ def _summary_for_plan_run(run: CampaignRunPlan, state: CampaignState) -> dict[st
         "lhfx_min": qfx_stats["min"],
         "lhfx_max": qfx_stats["max"],
         "lhfx_mean": qfx_stats["mean"],
-        "low_level_qv_response": low_level_qv["delta"],
+        "low_level_qv_response": low_level_qv["early_delta"],
+        "low_level_qv_early_response_delta": low_level_qv["early_delta"],
+        "low_level_qv_early_response_delta_units": low_level_qv["units"],
+        "low_level_qv_early_response_start_mean": low_level_qv["early_start_mean"],
+        "low_level_qv_early_response_end_mean": low_level_qv["early_end_mean"],
+        "low_level_qv_early_response_start_time_seconds": low_level_qv["early_start_time_seconds"],
+        "low_level_qv_early_response_end_time_seconds": low_level_qv["early_end_time_seconds"],
+        "low_level_qv_full_run_delta": low_level_qv["full_delta"],
         "low_level_qv_response_method": low_level_qv["method"],
         "low_level_qv_response_source_field": low_level_qv["source_field"],
         "low_level_qv_response_units": low_level_qv["units"],
@@ -2076,7 +2089,22 @@ def _summary_for_plan_run(run: CampaignRunPlan, state: CampaignState) -> dict[st
         "low_level_qv_response_final_time_seconds": low_level_qv["final_time_seconds"],
         "low_level_qv_response_first_finite_count": low_level_qv["first_finite_count"],
         "low_level_qv_response_final_finite_count": low_level_qv["final_finite_count"],
-        "low_level_theta_or_temperature_response": low_level_thermal["delta"],
+        "low_level_theta_or_temperature_response": low_level_thermal["early_delta"],
+        "low_level_theta_or_temperature_early_response_delta": low_level_thermal["early_delta"],
+        "low_level_theta_or_temperature_early_response_delta_units": low_level_thermal["units"],
+        "low_level_theta_or_temperature_early_response_start_mean": low_level_thermal[
+            "early_start_mean"
+        ],
+        "low_level_theta_or_temperature_early_response_end_mean": low_level_thermal[
+            "early_end_mean"
+        ],
+        "low_level_theta_or_temperature_early_response_start_time_seconds": low_level_thermal[
+            "early_start_time_seconds"
+        ],
+        "low_level_theta_or_temperature_early_response_end_time_seconds": low_level_thermal[
+            "early_end_time_seconds"
+        ],
+        "low_level_theta_or_temperature_full_run_delta": low_level_thermal["full_delta"],
         "low_level_theta_or_temperature_response_method": low_level_thermal["method"],
         "low_level_theta_or_temperature_response_source_field": low_level_thermal["source_field"],
         "low_level_theta_or_temperature_response_units": low_level_thermal["units"],
@@ -2239,7 +2267,14 @@ def _low_level_response_summary_values(
         return {
             "source_field": fallback_source_field,
             "units": fallback_units,
-            "delta": unavailable,
+            "early_delta": unavailable,
+            "early_start_mean": unavailable,
+            "early_end_mean": unavailable,
+            "early_start_time_seconds": unavailable,
+            "early_end_time_seconds": unavailable,
+            "early_start_finite_count": 0,
+            "early_end_finite_count": 0,
+            "full_delta": unavailable,
             "first_mean": unavailable,
             "final_mean": unavailable,
             "first_time_seconds": unavailable,
@@ -2250,23 +2285,65 @@ def _low_level_response_summary_values(
         }
     reason = _low_level_response_unavailable_reason(diagnostics)
     method = (
-        diagnostics.vertical_coordinate_method if diagnostics.available else f"unavailable:{reason}"
+        diagnostics.vertical_coordinate_method
+        if diagnostics.vertical_coordinate_method is not None
+        else f"unavailable:{reason}"
     )
+    early_unavailable = f"unavailable:{reason}"
     return {
         "source_field": diagnostics.source_field or fallback_source_field,
         "units": diagnostics.units or fallback_units,
-        "delta": diagnostics.delta_value if diagnostics.available else f"unavailable:{reason}",
+        "early_delta": (
+            diagnostics.early_response_delta
+            if diagnostics.early_response_delta is not None
+            else early_unavailable
+        ),
+        "early_start_mean": (
+            diagnostics.early_response_start_mean_value
+            if diagnostics.early_response_delta is not None
+            else early_unavailable
+        ),
+        "early_end_mean": (
+            diagnostics.early_response_end_mean_value
+            if diagnostics.early_response_delta is not None
+            else early_unavailable
+        ),
+        "early_start_time_seconds": (
+            diagnostics.early_response_start_time_seconds
+            if diagnostics.early_response_delta is not None
+            else early_unavailable
+        ),
+        "early_end_time_seconds": (
+            diagnostics.early_response_end_time_seconds
+            if diagnostics.early_response_delta is not None
+            else early_unavailable
+        ),
+        "early_start_finite_count": diagnostics.early_response_start_finite_count,
+        "early_end_finite_count": diagnostics.early_response_end_finite_count,
+        "full_delta": (
+            diagnostics.full_run_delta
+            if diagnostics.full_run_delta is not None
+            else f"unavailable:{reason}"
+        ),
         "first_mean": (
-            diagnostics.first_mean_value if diagnostics.available else f"unavailable:{reason}"
+            diagnostics.first_mean_value
+            if diagnostics.first_mean_value is not None
+            else f"unavailable:{reason}"
         ),
         "final_mean": (
-            diagnostics.final_mean_value if diagnostics.available else f"unavailable:{reason}"
+            diagnostics.final_mean_value
+            if diagnostics.final_mean_value is not None
+            else f"unavailable:{reason}"
         ),
         "first_time_seconds": (
-            diagnostics.first_time_seconds if diagnostics.available else f"unavailable:{reason}"
+            diagnostics.first_time_seconds
+            if diagnostics.first_time_seconds is not None
+            else f"unavailable:{reason}"
         ),
         "final_time_seconds": (
-            diagnostics.final_time_seconds if diagnostics.available else f"unavailable:{reason}"
+            diagnostics.final_time_seconds
+            if diagnostics.final_time_seconds is not None
+            else f"unavailable:{reason}"
         ),
         "first_finite_count": diagnostics.first_finite_count,
         "final_finite_count": diagnostics.final_finite_count,
@@ -2692,19 +2769,23 @@ def _render_markdown_report(plan: CampaignPlan, summary: Mapping[str, Any]) -> s
                 f"- Diagnostic trust: `{_diagnostic_trust_summary(diagnostic_trust)}`",
                 f"- Field-quality warnings: `{quality_warnings}`",
                 (
-                    f"- Low-level qv response: `{run['low_level_qv_response']}` "
+                    f"- Low-level qv early response: "
+                    f"`{run['low_level_qv_early_response_delta']}` "
                     f"`{run['low_level_qv_response_units'] or ''}` via "
                     f"`{run['low_level_qv_response_method']}` "
-                    f"({run['low_level_qv_response_first_mean']} -> "
-                    f"{run['low_level_qv_response_final_mean']})"
+                    f"({run['low_level_qv_early_response_start_mean']} -> "
+                    f"{run['low_level_qv_early_response_end_mean']}); "
+                    f"full-run delta `{run['low_level_qv_full_run_delta']}`"
                 ),
                 (
-                    f"- Low-level theta/temperature response: "
-                    f"`{run['low_level_theta_or_temperature_response']}` "
+                    f"- Low-level theta/temperature early response: "
+                    f"`{run['low_level_theta_or_temperature_early_response_delta']}` "
                     f"`{run['low_level_theta_or_temperature_response_units'] or ''}` via "
                     f"`{run['low_level_theta_or_temperature_response_method']}` "
-                    f"({run['low_level_theta_or_temperature_response_first_mean']} -> "
-                    f"{run['low_level_theta_or_temperature_response_final_mean']})"
+                    f"({run['low_level_theta_or_temperature_early_response_start_mean']} -> "
+                    f"{run['low_level_theta_or_temperature_early_response_end_mean']}); "
+                    f"full-run delta "
+                    f"`{run['low_level_theta_or_temperature_full_run_delta']}`"
                 ),
                 f"- Caveats: `{', '.join(run['caveats']) or 'none'}`",
                 "",
@@ -2993,7 +3074,11 @@ def _comparison_supported_differences(
         "surface_rain_present",
         "max_dbz",
         "low_level_qv_response",
+        "low_level_qv_early_response_delta",
+        "low_level_qv_full_run_delta",
         "low_level_theta_or_temperature_response",
+        "low_level_theta_or_temperature_early_response_delta",
+        "low_level_theta_or_temperature_full_run_delta",
     ):
         left = control.get(field)
         right = experiment.get(field)
@@ -3196,13 +3281,13 @@ def _low_level_response_for_pair(
 
     expectations = [
         _low_level_response_expectation(
-            field="low_level_theta_or_temperature_response",
+            field="low_level_theta_or_temperature_early_response_delta",
             selected_control_field="surface_heat_flux_k_m_s",
             control=control,
             experiment=experiment,
         ),
         _low_level_response_expectation(
-            field="low_level_qv_response",
+            field="low_level_qv_early_response_delta",
             selected_control_field="surface_moisture_flux_g_g_m_s",
             control=control,
             experiment=experiment,
@@ -3236,8 +3321,8 @@ def _low_level_pair_unavailable_evidence(
         if diagnostic_support.get("low_level_response") != "available":
             unavailable.append(f"{role}:diagnostic_unavailable:low_level_response")
         for field in (
-            "low_level_qv_response",
-            "low_level_theta_or_temperature_response",
+            "low_level_qv_early_response_delta",
+            "low_level_theta_or_temperature_early_response_delta",
         ):
             value = summary.get(field)
             if not isinstance(value, int | float) or _is_unavailable(value):
@@ -3246,8 +3331,8 @@ def _low_level_pair_unavailable_evidence(
             if not isinstance(units, str) or not units:
                 unavailable.append(f"{role}:{field}_units_unavailable")
     for field in (
-        "low_level_qv_response",
-        "low_level_theta_or_temperature_response",
+        "low_level_qv_early_response_delta",
+        "low_level_theta_or_temperature_early_response_delta",
     ):
         control_units = control.get(f"{field}_units")
         experiment_units = experiment.get(f"{field}_units")
@@ -3489,7 +3574,7 @@ def _field_available(field: str, available_fields: set[str]) -> bool:
     if field in {"qfx", "lhfx"}:
         return bool({"qfx", "lhfx"} & available_fields)
     if field == "th_or_temperature":
-        return bool({"th", "theta", "theta_v", "temperature", "t"} & available_fields)
+        return bool({"th", "theta", "temperature", "t"} & available_fields)
     return field in available_fields
 
 

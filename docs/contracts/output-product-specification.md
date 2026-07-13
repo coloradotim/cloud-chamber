@@ -257,8 +257,10 @@ output product manifest and mirrors compact fields into `result_metadata.json`:
 existing CM1-derived diagnostics; it does not build a second time index and it
 does not ask the browser to parse NetCDF. The science summary also carries the
 backend-owned low-level `qv` and theta/temperature response diagnostics when
-available. Missing fields, no-event outcomes, and diagnostics that are not
-implemented yet are represented explicitly with support states such as
+available, including early 30-90 minute forcing-response deltas and separate
+full-run deltas from 0-1 km AGL thickness-weighted domain means. Missing fields,
+no-event outcomes, and diagnostics that are not implemented yet are represented
+explicitly with support states such as
 `unavailable`, `unsupported_missing_fields`, and
 `unsupported_missing_diagnostic` rather than silently falling back to a
 misleading cloud/rain-water landmark.

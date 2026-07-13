@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from math import isfinite
-from typing import Any, Literal
+from typing import Any, Literal, TypedDict
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -17,10 +17,13 @@ TIME_DIMENSION_CANDIDATES = ("time", "mtime", "t")
 VERTICAL_COORDINATE_CANDIDATES = ("z", "zh", "height", "height_m")
 LOW_LEVEL_RESPONSE_LAYER_BOTTOM_M = 0.0
 LOW_LEVEL_RESPONSE_LAYER_TOP_M = 1000.0
+LOW_LEVEL_RESPONSE_EARLY_TARGET_SECONDS = 3600.0
+LOW_LEVEL_RESPONSE_EARLY_MIN_SECONDS = 1800.0
+LOW_LEVEL_RESPONSE_EARLY_MAX_SECONDS = 5400.0
+LOW_LEVEL_RESPONSE_METHOD = "0_1km_thickness_weighted_domain_mean_early_30_90min"
 LOW_LEVEL_THERMODYNAMIC_FIELD_CANDIDATES = (
     "th",
     "theta",
-    "theta_v",
     "temperature",
     "t",
 )
@@ -32,6 +35,13 @@ THERMAL_FATE_CONFIDENCE_VALUES = (
 )
 
 FieldQualityState = Literal["trusted", "caveated", "untrusted", "unavailable"]
+
+
+class _LowLevelLayerStats(TypedDict):
+    mean: float | None
+    finite_count: int
+    non_finite_count: int
+    total_count: int
 
 
 class FieldQuality(BaseModel):
@@ -181,6 +191,20 @@ class LowLevelResponseFieldDiagnostics(BaseModel):
     first_mean_value: float | None = None
     final_mean_value: float | None = None
     delta_value: float | None = None
+    early_response_start_time_index: int | None = None
+    early_response_end_time_index: int | None = None
+    early_response_start_time_seconds: float | None = None
+    early_response_end_time_seconds: float | None = None
+    early_response_start_mean_value: float | None = None
+    early_response_end_mean_value: float | None = None
+    early_response_delta: float | None = None
+    early_response_start_finite_count: int = 0
+    early_response_start_non_finite_count: int = 0
+    early_response_start_total_count: int = 0
+    early_response_end_finite_count: int = 0
+    early_response_end_non_finite_count: int = 0
+    early_response_end_total_count: int = 0
+    full_run_delta: float | None = None
     units: str | None = None
     first_finite_count: int = 0
     first_non_finite_count: int = 0
@@ -963,13 +987,8 @@ def _low_level_response_field_diagnostics(
         _height_in_meters(_to_float_or_none(value), vertical_units)
         for value in vertical_coord.values.tolist()
     ]
-    low_level_indices = [
-        index
-        for index, value in enumerate(vertical_values)
-        if value is not None
-        and LOW_LEVEL_RESPONSE_LAYER_BOTTOM_M <= value <= LOW_LEVEL_RESPONSE_LAYER_TOP_M
-    ]
-    if not low_level_indices:
+    weighted_levels = _low_level_weighted_levels(vertical_values)
+    if not weighted_levels:
         reason = f"{source_field}_low_level_response_no_levels_in_0_1_km"
         caveats.append(reason)
         return LowLevelResponseFieldDiagnostics(
@@ -977,7 +996,7 @@ def _low_level_response_field_diagnostics(
             field_absent=False,
             vertical_coordinate_name=vertical_name,
             vertical_coordinate_units=vertical_units,
-            vertical_coordinate_method="coordinate_values_0_1_km_agl",
+            vertical_coordinate_method=LOW_LEVEL_RESPONSE_METHOD,
             units=units,
             caveats=_dedupe([*field_caveats, reason]),
         )
@@ -989,7 +1008,7 @@ def _low_level_response_field_diagnostics(
             field_absent=False,
             vertical_coordinate_name=vertical_name,
             vertical_coordinate_units=vertical_units,
-            vertical_coordinate_method="coordinate_values_0_1_km_agl",
+            vertical_coordinate_method=LOW_LEVEL_RESPONSE_METHOD,
             units=units,
             caveats=_dedupe([*field_caveats, reason]),
         )
@@ -998,61 +1017,73 @@ def _low_level_response_field_diagnostics(
         reason = f"{source_field}_low_level_response_requires_at_least_two_time_steps"
         caveats.append(reason)
         time_index = 0 if time_size else None
-        layer = (
-            data_array.isel({time.dimension: 0, vertical_name: low_level_indices})
+        layer_stats = (
+            _low_level_layer_stats(
+                data_array.isel({time.dimension: 0}),
+                vertical_name=vertical_name,
+                weighted_levels=weighted_levels,
+            )
             if time_size
-            else None
+            else _empty_low_level_layer_stats()
         )
-        layer_mean = _finite_mean(layer) if layer is not None else None
-        finite_count = _finite_count(layer) if layer is not None else 0
-        non_finite_count = _non_finite_count(layer) if layer is not None else 0
-        total_count = _total_count(layer) if layer is not None else 0
         return LowLevelResponseFieldDiagnostics(
             source_field=source_field,
             field_absent=False,
             vertical_coordinate_name=vertical_name,
             vertical_coordinate_units=vertical_units,
-            vertical_coordinate_method="coordinate_values_0_1_km_agl",
+            vertical_coordinate_method=LOW_LEVEL_RESPONSE_METHOD,
             time_dimension=time.dimension,
             first_time_index=time_index,
             final_time_index=time_index,
             first_time_seconds=time.at(0) if time_size else None,
             final_time_seconds=time.at(time_size - 1) if time_size else None,
-            first_mean_value=layer_mean,
-            final_mean_value=layer_mean,
+            first_mean_value=layer_stats["mean"],
+            final_mean_value=layer_stats["mean"],
             units=units,
-            first_finite_count=finite_count,
-            first_non_finite_count=non_finite_count,
-            first_total_count=total_count,
-            final_finite_count=finite_count,
-            final_non_finite_count=non_finite_count,
-            final_total_count=total_count,
+            first_finite_count=layer_stats["finite_count"],
+            first_non_finite_count=layer_stats["non_finite_count"],
+            first_total_count=layer_stats["total_count"],
+            final_finite_count=layer_stats["finite_count"],
+            final_non_finite_count=layer_stats["non_finite_count"],
+            final_total_count=layer_stats["total_count"],
             caveats=_dedupe([*field_caveats, reason]),
         )
 
     first_time_index = 0
     final_time_index = time_size - 1
-    first_layer = data_array.isel(
-        {
-            time.dimension: first_time_index,
-            vertical_name: low_level_indices,
-        }
+    early_time_index = _low_level_early_response_end_index(time, time_size)
+    first_stats = _low_level_layer_stats(
+        data_array.isel({time.dimension: first_time_index}),
+        vertical_name=vertical_name,
+        weighted_levels=weighted_levels,
     )
-    final_layer = data_array.isel(
-        {
-            time.dimension: final_time_index,
-            vertical_name: low_level_indices,
-        }
+    final_stats = _low_level_layer_stats(
+        data_array.isel({time.dimension: final_time_index}),
+        vertical_name=vertical_name,
+        weighted_levels=weighted_levels,
     )
-    first_finite_count = _finite_count(first_layer)
-    final_finite_count = _finite_count(final_layer)
-    first_non_finite_count = _non_finite_count(first_layer)
-    final_non_finite_count = _non_finite_count(final_layer)
-    if first_non_finite_count > 0 or final_non_finite_count > 0:
+    early_stats = (
+        _low_level_layer_stats(
+            data_array.isel({time.dimension: early_time_index}),
+            vertical_name=vertical_name,
+            weighted_levels=weighted_levels,
+        )
+        if early_time_index is not None
+        else None
+    )
+    if (
+        first_stats["non_finite_count"] > 0
+        or final_stats["non_finite_count"] > 0
+        or (early_stats is not None and early_stats["non_finite_count"] > 0)
+    ):
         field_caveat = f"non_finite_values_detected_in_{source_field}_low_level_response"
         field_caveats.append(field_caveat)
         caveats.append(field_caveat)
-    if first_finite_count == 0 or final_finite_count == 0:
+    if (
+        first_stats["finite_count"] == 0
+        or final_stats["finite_count"] == 0
+        or (early_stats is not None and early_stats["finite_count"] == 0)
+    ):
         reason = f"{source_field}_low_level_response_endpoint_entirely_non_finite"
         field_caveats.append(reason)
         caveats.append(reason)
@@ -1061,31 +1092,45 @@ def _low_level_response_field_diagnostics(
             field_absent=False,
             vertical_coordinate_name=vertical_name,
             vertical_coordinate_units=vertical_units,
-            vertical_coordinate_method="coordinate_values_0_1_km_agl",
+            vertical_coordinate_method=LOW_LEVEL_RESPONSE_METHOD,
             time_dimension=time.dimension,
             first_time_index=first_time_index,
             final_time_index=final_time_index,
             first_time_seconds=time.at(first_time_index),
             final_time_seconds=time.at(final_time_index),
             units=units,
-            first_finite_count=first_finite_count,
-            first_non_finite_count=first_non_finite_count,
-            first_total_count=_total_count(first_layer),
-            final_finite_count=final_finite_count,
-            final_non_finite_count=final_non_finite_count,
-            final_total_count=_total_count(final_layer),
+            first_finite_count=first_stats["finite_count"],
+            first_non_finite_count=first_stats["non_finite_count"],
+            first_total_count=first_stats["total_count"],
+            final_finite_count=final_stats["finite_count"],
+            final_non_finite_count=final_stats["non_finite_count"],
+            final_total_count=final_stats["total_count"],
             caveats=_dedupe(field_caveats),
         )
 
-    first_mean = _finite_mean(first_layer)
-    final_mean = _finite_mean(final_layer)
+    if early_time_index is None:
+        reason = f"{source_field}_low_level_response_missing_early_output_30_90min"
+        field_caveats.append(reason)
+        caveats.append(reason)
+
+    first_mean = first_stats["mean"]
+    final_mean = final_stats["mean"]
+    early_mean = early_stats["mean"] if early_stats is not None else None
+    early_delta = (
+        early_mean - first_mean
+        if early_mean is not None and first_mean is not None and early_time_index is not None
+        else None
+    )
+    full_run_delta = (
+        final_mean - first_mean if first_mean is not None and final_mean is not None else None
+    )
     return LowLevelResponseFieldDiagnostics(
         source_field=source_field,
-        available=True,
+        available=early_delta is not None and full_run_delta is not None,
         field_absent=False,
         vertical_coordinate_name=vertical_name,
         vertical_coordinate_units=vertical_units,
-        vertical_coordinate_method="coordinate_values_0_1_km_agl",
+        vertical_coordinate_method=LOW_LEVEL_RESPONSE_METHOD,
         time_dimension=time.dimension,
         first_time_index=first_time_index,
         final_time_index=final_time_index,
@@ -1093,18 +1138,139 @@ def _low_level_response_field_diagnostics(
         final_time_seconds=time.at(final_time_index),
         first_mean_value=first_mean,
         final_mean_value=final_mean,
-        delta_value=(final_mean - first_mean)
-        if first_mean is not None and final_mean is not None
-        else None,
+        delta_value=early_delta,
+        early_response_start_time_index=first_time_index if early_delta is not None else None,
+        early_response_end_time_index=early_time_index if early_delta is not None else None,
+        early_response_start_time_seconds=(
+            time.at(first_time_index) if early_delta is not None else None
+        ),
+        early_response_end_time_seconds=(
+            time.at(early_time_index)
+            if early_delta is not None and early_time_index is not None
+            else None
+        ),
+        early_response_start_mean_value=first_mean if early_delta is not None else None,
+        early_response_end_mean_value=early_mean if early_delta is not None else None,
+        early_response_delta=early_delta,
+        early_response_start_finite_count=(
+            first_stats["finite_count"] if early_delta is not None else 0
+        ),
+        early_response_start_non_finite_count=(
+            first_stats["non_finite_count"] if early_delta is not None else 0
+        ),
+        early_response_start_total_count=(
+            first_stats["total_count"] if early_delta is not None else 0
+        ),
+        early_response_end_finite_count=(
+            early_stats["finite_count"]
+            if early_stats is not None and early_delta is not None
+            else 0
+        ),
+        early_response_end_non_finite_count=(
+            early_stats["non_finite_count"]
+            if early_stats is not None and early_delta is not None
+            else 0
+        ),
+        early_response_end_total_count=(
+            early_stats["total_count"] if early_stats is not None and early_delta is not None else 0
+        ),
+        full_run_delta=full_run_delta,
         units=units,
-        first_finite_count=first_finite_count,
-        first_non_finite_count=first_non_finite_count,
-        first_total_count=_total_count(first_layer),
-        final_finite_count=final_finite_count,
-        final_non_finite_count=final_non_finite_count,
-        final_total_count=_total_count(final_layer),
+        first_finite_count=first_stats["finite_count"],
+        first_non_finite_count=first_stats["non_finite_count"],
+        first_total_count=first_stats["total_count"],
+        final_finite_count=final_stats["finite_count"],
+        final_non_finite_count=final_stats["non_finite_count"],
+        final_total_count=final_stats["total_count"],
         caveats=_dedupe(field_caveats),
     )
+
+
+def _low_level_weighted_levels(
+    vertical_values: list[float | None],
+) -> list[tuple[int, float]]:
+    valid_levels = sorted(
+        (index, value) for index, value in enumerate(vertical_values) if value is not None
+    )
+    if not valid_levels:
+        return []
+    if len(valid_levels) == 1:
+        index, value = valid_levels[0]
+        if LOW_LEVEL_RESPONSE_LAYER_BOTTOM_M <= value <= LOW_LEVEL_RESPONSE_LAYER_TOP_M:
+            return [(index, LOW_LEVEL_RESPONSE_LAYER_TOP_M - LOW_LEVEL_RESPONSE_LAYER_BOTTOM_M)]
+        return []
+
+    weighted: list[tuple[int, float]] = []
+    for position, (index, value) in enumerate(valid_levels):
+        if position == 0:
+            next_value = valid_levels[position + 1][1]
+            lower = value - (next_value - value) / 2.0
+        else:
+            previous_value = valid_levels[position - 1][1]
+            lower = (previous_value + value) / 2.0
+        if position == len(valid_levels) - 1:
+            previous_value = valid_levels[position - 1][1]
+            upper = value + (value - previous_value) / 2.0
+        else:
+            next_value = valid_levels[position + 1][1]
+            upper = (value + next_value) / 2.0
+        clipped_lower = max(lower, LOW_LEVEL_RESPONSE_LAYER_BOTTOM_M)
+        clipped_upper = min(upper, LOW_LEVEL_RESPONSE_LAYER_TOP_M)
+        thickness = clipped_upper - clipped_lower
+        if thickness > 0:
+            weighted.append((index, thickness))
+    return weighted
+
+
+def _low_level_early_response_end_index(time: _TimeContext, time_size: int) -> int | None:
+    start_time = time.at(0)
+    if start_time is None:
+        return None
+    candidates: list[tuple[float, int]] = []
+    for index in range(1, time_size):
+        end_time = time.at(index)
+        if end_time is None:
+            continue
+        elapsed = end_time - start_time
+        if LOW_LEVEL_RESPONSE_EARLY_MIN_SECONDS <= elapsed <= LOW_LEVEL_RESPONSE_EARLY_MAX_SECONDS:
+            candidates.append((abs(elapsed - LOW_LEVEL_RESPONSE_EARLY_TARGET_SECONDS), index))
+    if not candidates:
+        return None
+    return min(candidates)[1]
+
+
+def _empty_low_level_layer_stats() -> _LowLevelLayerStats:
+    return {"mean": None, "finite_count": 0, "non_finite_count": 0, "total_count": 0}
+
+
+def _low_level_layer_stats(
+    data_array: Any,
+    *,
+    vertical_name: str,
+    weighted_levels: list[tuple[int, float]],
+) -> _LowLevelLayerStats:
+    weighted_sum = 0.0
+    total_weight = 0.0
+    finite_count = 0
+    non_finite_count = 0
+    total_count = 0
+    for vertical_index, thickness_m in weighted_levels:
+        layer = data_array.isel({vertical_name: vertical_index})
+        for value in layer.values.reshape(-1).tolist():
+            total_count += 1
+            parsed = _to_float_or_none(value)
+            if parsed is None or not isfinite(parsed):
+                non_finite_count += 1
+                continue
+            finite_count += 1
+            weighted_sum += parsed * thickness_m
+            total_weight += thickness_m
+    return {
+        "mean": weighted_sum / total_weight if total_weight else None,
+        "finite_count": finite_count,
+        "non_finite_count": non_finite_count,
+        "total_count": total_count,
+    }
 
 
 def _cloud_extent_array(dataset: Any, qc: Any, caveats: list[str]) -> Any:

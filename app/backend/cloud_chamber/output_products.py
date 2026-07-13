@@ -1207,7 +1207,7 @@ def _diagnostic_availability(
             key="near_surface_theta_perturbation_proxy",
             label="Near-surface theta perturbation",
             source_field="th",
-            field_present=bool({"th", "theta", "theta_v"} & variables),
+            field_present=bool({"th", "theta"} & variables),
             implemented=False,
             field_quality=None,
         ),
@@ -1230,7 +1230,7 @@ def _diagnostic_availability(
             diagnostics=low_level_response.theta_or_temperature
             if low_level_response is not None
             else None,
-            field_present=bool({"th", "theta", "theta_v", "temperature", "t"} & variables),
+            field_present=bool({"th", "theta", "temperature", "t"} & variables),
         ),
     ]
 
@@ -1249,7 +1249,7 @@ def _low_level_response_availability_record(
             label=label,
             source_field=diagnostics.source_field or source_field,
             support_state="supported",
-            value=diagnostics.delta_value,
+            value=diagnostics.early_response_delta,
             units=diagnostics.units,
             caveats=diagnostics.caveats,
         )

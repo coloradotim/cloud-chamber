@@ -682,10 +682,12 @@ Current diagnostics compute:
 - optional reflectivity summary from the CM1 `dbz` field;
 - optional surface-flux summaries from CM1 `hfx` and `qfx`, including
   min/max/mean, units, and finite/non-finite counts.
-- optional low-level response summaries from 0-1 km AGL domain-mean `qv` and
-  theta/temperature at the first and final output time, including source field,
-  units, vertical-coordinate method, endpoint means, deltas, and finite/non-finite
-  endpoint counts.
+- optional low-level response summaries from 0-1 km AGL thickness-weighted
+  domain-mean `qv` and theta/temperature. These carry early-response evidence
+  from the output closest to 60 minutes after the first output, bounded to a
+  30-90 minute window, plus full-run first/final evidence. They include source
+  field, units, vertical-coordinate method, endpoint means, deltas, and
+  finite/non-finite endpoint counts.
 
 Diagnostics preserve runtime warnings from the run manifest/result metadata. CM1
 floating-point exception flags are caveats, not automatic failure. The

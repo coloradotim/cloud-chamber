@@ -31,6 +31,7 @@ def base_dataset(
     qs_values: list[list[list[list[float]]]] | None = None,
     qg_values: list[list[list[list[float]]]] | None = None,
     include_time_coord: bool = True,
+    time_values: list[float] | None = None,
     z_values: list[float] | None = None,
     z_units: str | None = None,
 ) -> xr.Dataset:
@@ -40,7 +41,7 @@ def base_dataset(
         "x": [0.0, 200.0, 400.0, 600.0],
     }
     if include_time_coord:
-        coords["time"] = [0.0, 300.0]
+        coords["time"] = time_values or [0.0, 300.0]
     else:
         coords["time"] = []
     data_vars: dict[str, Any] = {}
@@ -134,10 +135,10 @@ def base_dataset(
     return dataset
 
 
-def zeros(z_count: int = 2) -> list[list[list[list[float]]]]:
+def zeros(time_count: int = 2, z_count: int = 2) -> list[list[list[list[float]]]]:
     return [
         [[[0.0 for _x in range(4)] for _y in range(3)] for _z in range(z_count)]
-        for _time in range(2)
+        for _time in range(time_count)
     ]
 
 
@@ -175,8 +176,8 @@ def with_cloud(cloudy_cells: int = 12) -> list[list[list[list[float]]]]:
     return values
 
 
-def w_field(z_count: int = 2) -> list[list[list[list[float]]]]:
-    values = zeros(z_count=z_count)
+def w_field(time_count: int = 2, z_count: int = 2) -> list[list[list[list[float]]]]:
+    values = zeros(time_count=time_count, z_count=z_count)
     values[0][0][0][0] = -1.5
     values[0][min(1, z_count - 1)][2][3] = 2.5
     values[1][0][0][0] = -3.0
@@ -537,25 +538,30 @@ def test_surface_flux_statistics_mark_all_non_finite_fields_unavailable(
     assert "qfx_field_entirely_non_finite" in diagnostics.caveats
 
 
-def test_low_level_response_computes_0_1km_first_final_deltas(tmp_path: Path) -> None:
+def test_low_level_response_computes_weighted_early_and_full_run_deltas(
+    tmp_path: Path,
+) -> None:
     dataset = write_dataset(
         tmp_path / "low_level_response.nc",
         base_dataset(
-            qc_values=zeros(z_count=3),
-            w_values=w_field(z_count=3),
+            qc_values=zeros(time_count=3, z_count=3),
+            w_values=w_field(time_count=3, z_count=3),
             qv_values=time_z_values(
                 [
-                    [0.010, 0.012, 0.080],
-                    [0.014, 0.018, 0.090],
+                    [0.010, 0.012, 0.020],
+                    [0.011, 0.014, 0.028],
+                    [0.012, 0.013, 0.030],
                 ]
             ),
             th_values=time_z_values(
                 [
-                    [299.0, 301.0, 315.0],
-                    [302.0, 306.0, 318.0],
+                    [300.0, 310.0, 330.0],
+                    [302.0, 313.0, 336.0],
+                    [303.0, 312.0, 340.0],
                 ]
             ),
-            z_values=[250.0, 750.0, 1500.0],
+            time_values=[0.0, 3600.0, 21600.0],
+            z_values=[50.0, 250.0, 900.0],
             z_units="m",
         ),
     )
@@ -568,21 +574,30 @@ def test_low_level_response_computes_0_1km_first_final_deltas(tmp_path: Path) ->
     assert qv.source_field == "qv"
     assert qv.vertical_coordinate_name == "z"
     assert qv.vertical_coordinate_units == "m"
-    assert qv.vertical_coordinate_method == "coordinate_values_0_1_km_agl"
+    assert qv.vertical_coordinate_method == ("0_1km_thickness_weighted_domain_mean_early_30_90min")
     assert qv.first_time_seconds == 0.0
-    assert qv.final_time_seconds == 300.0
-    assert qv.first_mean_value == pytest.approx(0.011)
-    assert qv.final_mean_value == pytest.approx(0.016)
-    assert qv.delta_value == pytest.approx(0.005)
+    assert qv.final_time_seconds == 21600.0
+    assert qv.early_response_start_time_seconds == 0.0
+    assert qv.early_response_end_time_seconds == 3600.0
+    assert qv.first_mean_value == pytest.approx(0.0151)
+    assert qv.early_response_end_mean_value == pytest.approx(0.0195)
+    assert qv.final_mean_value == pytest.approx(0.020075)
+    assert qv.delta_value == pytest.approx(0.0044)
+    assert qv.early_response_delta == pytest.approx(0.0044)
+    assert qv.full_run_delta == pytest.approx(0.004975)
     assert qv.units == "kg/kg"
-    assert qv.first_finite_count == 24
-    assert qv.final_finite_count == 24
+    assert qv.first_finite_count == 36
+    assert qv.early_response_end_finite_count == 36
+    assert qv.final_finite_count == 36
 
     assert thermal.available is True
     assert thermal.source_field == "th"
-    assert thermal.first_mean_value == pytest.approx(300.0)
-    assert thermal.final_mean_value == pytest.approx(304.0)
-    assert thermal.delta_value == pytest.approx(4.0)
+    assert thermal.first_mean_value == pytest.approx(317.0)
+    assert thermal.early_response_end_mean_value == pytest.approx(321.125)
+    assert thermal.final_mean_value == pytest.approx(322.55)
+    assert thermal.delta_value == pytest.approx(4.125)
+    assert thermal.early_response_delta == pytest.approx(4.125)
+    assert thermal.full_run_delta == pytest.approx(5.55)
     assert thermal.units == "K"
 
 
@@ -646,6 +661,7 @@ def test_low_level_response_caveats_partially_non_finite_endpoints(tmp_path: Pat
             w_values=w_field(),
             qv_values=qv_values,
             temperature_values=time_z_values([[289.0, 291.0], [292.0, 296.0]]),
+            time_values=[0.0, 3600.0],
             z_values=[250.0, 750.0],
             z_units="m",
         ),
@@ -658,8 +674,46 @@ def test_low_level_response_caveats_partially_non_finite_endpoints(tmp_path: Pat
     assert qv.final_finite_count == 23
     assert qv.final_non_finite_count == 1
     assert qv.delta_value == pytest.approx(((0.014 * 11 + 0.018 * 12) / 23) - 0.011)
+    assert qv.full_run_delta == qv.delta_value
     assert "non_finite_values_detected_in_qv_low_level_response" in diagnostics.caveats
     assert diagnostics.low_level_response.theta_or_temperature.source_field == "temperature"
+
+
+def test_low_level_response_does_not_use_theta_v_for_heat_gate(tmp_path: Path) -> None:
+    dataset = write_dataset(
+        tmp_path / "low_level_response_theta_v_only.nc",
+        xr.Dataset(
+            data_vars={
+                "qv": (
+                    ("time", "z", "y", "x"),
+                    time_z_values([[0.010, 0.012], [0.014, 0.018]]),
+                    {"units": "kg/kg"},
+                ),
+                "theta_v": (
+                    ("time", "z", "y", "x"),
+                    time_z_values([[299.0, 301.0], [302.0, 306.0]]),
+                    {"units": "K"},
+                ),
+                "qc": (("time", "z", "y", "x"), zeros(), {"units": "kg/kg"}),
+                "w": (("time", "z", "y", "x"), w_field(), {"units": "m/s"}),
+            },
+            coords={
+                "time": [0.0, 3600.0],
+                "z": [250.0, 750.0],
+                "y": [0.0, 200.0, 400.0],
+                "x": [0.0, 200.0, 400.0, 600.0],
+            },
+        ),
+    )
+
+    diagnostics = compute_baseline_diagnostics(dataset, [])
+
+    assert diagnostics.low_level_response.qv.available is True
+    thermal = diagnostics.low_level_response.theta_or_temperature
+    assert thermal.available is False
+    assert thermal.source_field is None
+    assert thermal.field_absent is True
+    assert thermal.caveats == ["theta_or_temperature_field_absent"]
 
 
 def test_missing_qc_and_missing_w_are_graceful(tmp_path: Path) -> None:
