@@ -17,7 +17,12 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from cloud_chamber.result_diagnostics import FieldQuality, ResultDiagnostics, TimeValue
+from cloud_chamber.result_diagnostics import (
+    FieldQuality,
+    ResultDiagnostics,
+    SurfaceFluxDiagnostics,
+    TimeValue,
+)
 
 OUTPUT_PRODUCT_MANIFEST_VERSION = 1
 DERIVED_PRODUCTS_DIRNAME = "derived-products"
@@ -170,6 +175,7 @@ class ScienceSummary(BaseModel):
     default_explore_time_index: int | None = None
     default_explore_time_seconds: float | None = None
     cm1_outcome: str | None = None
+    surface_fluxes: SurfaceFluxDiagnostics = Field(default_factory=SurfaceFluxDiagnostics)
     field_quality_assessed: bool = False
     field_quality: dict[str, FieldQuality] = Field(default_factory=dict)
     diagnostic_availability: list[ScienceDiagnosticAvailability] = Field(default_factory=list)
@@ -1027,6 +1033,7 @@ def _science_summary(
         default_explore_time_index=default_source.time_index if default_source else None,
         default_explore_time_seconds=default_source.time_seconds if default_source else None,
         cm1_outcome=None,
+        surface_fluxes=diagnostics.surface_fluxes,
         field_quality_assessed=diagnostics.field_quality_assessed,
         field_quality=diagnostics.field_quality if diagnostics.field_quality_assessed else {},
         diagnostic_availability=_diagnostic_availability(variables, diagnostics),

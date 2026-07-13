@@ -78,8 +78,8 @@ unavailable: low_level_response_diagnostic_not_implemented
 | --- | --- | --- | --- |
 | selected forcing values preserved in package metadata | `<pass/warn/fail/unavailable>` | `<run ids / fields>` | `<notes>` |
 | selected values appear in CM1-facing namelist fields | `<pass/warn/fail/unavailable>` | `<cnst_shflx/cnst_lhflx>` | `<notes>` |
-| `hfx` emitted/ingested | `<pass/warn/fail/unavailable>` | `<field/units>` | Do not claim it reflects prescribed changes until hfx statistics exist. |
-| `qfx` emitted/ingested | `<pass/warn/fail/unavailable>` | `<field/units>` | Do not claim it reflects prescribed changes until qfx statistics exist. |
+| `hfx` emitted/ingested | `<pass/warn/fail/unavailable>` | `<field/units/min/max/mean/counts>` | Preserve output units separately from selected namelist controls. |
+| `qfx` emitted/ingested | `<pass/warn/fail/unavailable>` | `<field/units/min/max/mean/counts>` | Preserve output units separately from selected namelist controls; do not assume `qfx` equals `cnst_lhflx`. |
 
 ### Atmospheric response checks
 

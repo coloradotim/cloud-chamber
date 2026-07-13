@@ -107,6 +107,8 @@ def write_model_netcdf(
     qr_values: list[float] | None = None,
     rain_values: list[float] | None = None,
     dbz_values: list[float] | None = None,
+    hfx_values: list[float] | None = None,
+    qfx_values: list[float] | None = None,
     z_values: list[float] | None = None,
     include_qc: bool = True,
     include_w: bool = True,
@@ -154,6 +156,18 @@ def write_model_netcdf(
                 for dbz_value in dbz_values
             ],
             {"units": "dBZ"},
+        )
+    if hfx_values is not None:
+        data_vars["hfx"] = (
+            ("time", "y", "x"),
+            [[[hfx_value for _x in range(4)] for _y in range(3)] for hfx_value in hfx_values],
+            {"units": "K m/s"},
+        )
+    if qfx_values is not None:
+        data_vars["qfx"] = (
+            ("time", "y", "x"),
+            [[[qfx_value for _x in range(4)] for _y in range(3)] for qfx_value in qfx_values],
+            {"units": "kg/m^2/s"},
         )
     xr.Dataset(
         data_vars=data_vars,
@@ -229,10 +243,16 @@ def test_ingests_valid_tiny_netcdf_metadata(tmp_path: Path) -> None:
     assert result.diagnostics is not None
     assert result.diagnostics.cloud.formed is False
     assert result.diagnostics.rain.field_absent is True
+    assert result.diagnostics.surface_fluxes.hfx.available is False
+    assert result.diagnostics.surface_fluxes.hfx.field_absent is True
+    assert result.diagnostics.surface_fluxes.qfx.available is False
+    assert result.diagnostics.surface_fluxes.qfx.field_absent is True
     assert result.diagnostics.field_quality_assessed is True
     assert result.diagnostics.field_quality["qc"].quality_state == "trusted"
     assert result.diagnostics.field_quality["w"].quality_state == "trusted"
     assert result.diagnostics.field_quality["qr"].quality_state == "unavailable"
+    assert result.diagnostics.field_quality["hfx"].quality_state == "unavailable"
+    assert result.diagnostics.field_quality["qfx"].quality_state == "unavailable"
     assert result.process_diagnostics is not None
     assert (
         result.process_diagnostics.interpretation_support.thermal_fate_label
@@ -279,8 +299,22 @@ def test_ingests_multifile_model_output_sequence_and_excludes_stats(tmp_path: Pa
     first = run_dir / "cm1out_000001.nc"
     second = run_dir / "cm1out_000002.nc"
     stats = run_dir / "cm1out_stats.nc"
-    write_model_netcdf(first, times=[300.0], qc_values=[0.0], w_values=[-5.0])
-    write_model_netcdf(second, times=[600.0], qc_values=[2e-6], w_values=[7.0])
+    write_model_netcdf(
+        first,
+        times=[300.0],
+        qc_values=[0.0],
+        w_values=[-5.0],
+        hfx_values=[1.0],
+        qfx_values=[1.0e-5],
+    )
+    write_model_netcdf(
+        second,
+        times=[600.0],
+        qc_values=[2e-6],
+        w_values=[7.0],
+        hfx_values=[3.0],
+        qfx_values=[3.0e-5],
+    )
     write_stats_netcdf(stats)
     complete_manifest(
         manifest_path,
@@ -305,6 +339,22 @@ def test_ingests_multifile_model_output_sequence_and_excludes_stats(tmp_path: Pa
     assert result.diagnostics.cloud.time_of_max_qc_seconds == 600.0
     assert result.diagnostics.vertical_velocity.min_w_m_s == -5.0
     assert result.diagnostics.vertical_velocity.max_w_m_s == 7.0
+    assert result.diagnostics.surface_fluxes.hfx.available is True
+    assert result.diagnostics.surface_fluxes.hfx.units == "K m/s"
+    assert result.diagnostics.surface_fluxes.hfx.min_value == pytest.approx(1.0)
+    assert result.diagnostics.surface_fluxes.hfx.max_value == pytest.approx(3.0)
+    assert result.diagnostics.surface_fluxes.hfx.mean_value == pytest.approx(2.0)
+    assert result.diagnostics.surface_fluxes.hfx.finite_count == 24
+    assert result.diagnostics.surface_fluxes.hfx.total_count == 24
+    assert result.diagnostics.surface_fluxes.qfx.available is True
+    assert result.diagnostics.surface_fluxes.qfx.units == "kg/m^2/s"
+    assert result.diagnostics.surface_fluxes.qfx.min_value == pytest.approx(1.0e-5)
+    assert result.diagnostics.surface_fluxes.qfx.max_value == pytest.approx(3.0e-5)
+    assert result.diagnostics.surface_fluxes.qfx.mean_value == pytest.approx(2.0e-5)
+    assert result.diagnostics.surface_fluxes.qfx.finite_count == 24
+    assert result.diagnostics.surface_fluxes.qfx.total_count == 24
+    assert result.diagnostics.field_quality["hfx"].quality_state == "trusted"
+    assert result.diagnostics.field_quality["qfx"].quality_state == "trusted"
     interesting = {record.key: record for record in result.interesting_times}
     assert interesting["first_cloud"].support_state == "supported"
     assert interesting["first_cloud"].time_index == 1

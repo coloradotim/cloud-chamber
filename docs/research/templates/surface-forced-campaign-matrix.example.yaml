@@ -49,7 +49,7 @@ execution:
     minimum_to_continue_automatically:
       - selected_values_preserved
       - cm1_facing_values_preserved
-      - emitted_hfx_lhfx_reflect_prescribed_changes
+      - emitted_hfx_qfx_reflect_prescribed_changes
       - heat_only_theta_or_temperature_response_directionally_consistent
       - moisture_only_qv_response_directionally_consistent
   lifecycle_status_values:
@@ -536,11 +536,17 @@ required_summary_fields:
     - hfx_min
     - hfx_max
     - hfx_mean
-    - lhfx_present
-    - lhfx_units
-    - lhfx_min
-    - lhfx_max
-    - lhfx_mean
+    - hfx_finite_count
+    - hfx_non_finite_count
+    - hfx_total_count
+    - qfx_present
+    - qfx_units
+    - qfx_min
+    - qfx_max
+    - qfx_mean
+    - qfx_finite_count
+    - qfx_non_finite_count
+    - qfx_total_count
     - low_level_qv_response
     - low_level_qv_response_method
     - low_level_theta_or_temperature_response

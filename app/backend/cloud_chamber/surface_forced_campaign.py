@@ -36,7 +36,11 @@ from cloud_chamber.observed_sounding import (
     observed_sounding_from_payload,
     parse_igra_station_text,
 )
-from cloud_chamber.result_diagnostics import FieldQuality
+from cloud_chamber.result_diagnostics import (
+    FieldQuality,
+    SurfaceFluxDiagnostics,
+    SurfaceFluxFieldDiagnostics,
+)
 from cloud_chamber.result_ingest import (
     RESULT_METADATA_FILENAME,
     ResultIngestError,
@@ -165,6 +169,17 @@ SUPPORTED_REQUIRED_SUMMARY_FIELDS = {
     "hfx_min",
     "hfx_max",
     "hfx_mean",
+    "hfx_finite_count",
+    "hfx_non_finite_count",
+    "hfx_total_count",
+    "qfx_present",
+    "qfx_units",
+    "qfx_min",
+    "qfx_max",
+    "qfx_mean",
+    "qfx_finite_count",
+    "qfx_non_finite_count",
+    "qfx_total_count",
     "lhfx_present",
     "lhfx_units",
     "lhfx_min",
@@ -1811,6 +1826,17 @@ def _summary_for_plan_run(run: CampaignRunPlan, state: CampaignState) -> dict[st
     rain = diagnostics.rain if diagnostics is not None else None
     surface_rain = diagnostics.surface_rain if diagnostics is not None else None
     reflectivity = diagnostics.reflectivity if diagnostics is not None else None
+    surface_fluxes = diagnostics.surface_fluxes if diagnostics is not None else None
+    hfx_stats = _surface_flux_summary_values(
+        surface_fluxes.hfx if surface_fluxes is not None else None,
+        source_field="hfx",
+        fallback_units=_field_units(result, "hfx"),
+    )
+    qfx_stats = _surface_flux_summary_values(
+        surface_fluxes.qfx if surface_fluxes is not None else None,
+        source_field="qfx",
+        fallback_units=_field_units(result, "qfx"),
+    )
     deep_cloud_formed = (
         science.deep_cloud_formed if science is not None else "unavailable:not_ingested"
     )
@@ -1973,18 +1999,27 @@ def _summary_for_plan_run(run: CampaignRunPlan, state: CampaignState) -> dict[st
             else "unavailable:not_ingested"
         ),
         "hfx_present": "hfx" in variables,
-        "hfx_units": _field_units(result, "hfx"),
-        "hfx_min": "unavailable:surface_flux_statistics_not_implemented",
-        "hfx_max": "unavailable:surface_flux_statistics_not_implemented",
-        "hfx_mean": "unavailable:surface_flux_statistics_not_implemented",
+        "hfx_units": hfx_stats["units"],
+        "hfx_min": hfx_stats["min"],
+        "hfx_max": hfx_stats["max"],
+        "hfx_mean": hfx_stats["mean"],
+        "hfx_finite_count": hfx_stats["finite_count"],
+        "hfx_non_finite_count": hfx_stats["non_finite_count"],
+        "hfx_total_count": hfx_stats["total_count"],
         "qfx_present": "qfx" in variables,
-        "qfx_units": _field_units(result, "qfx"),
+        "qfx_units": qfx_stats["units"],
+        "qfx_min": qfx_stats["min"],
+        "qfx_max": qfx_stats["max"],
+        "qfx_mean": qfx_stats["mean"],
+        "qfx_finite_count": qfx_stats["finite_count"],
+        "qfx_non_finite_count": qfx_stats["non_finite_count"],
+        "qfx_total_count": qfx_stats["total_count"],
         "surface_moisture_flux_output_field": _surface_moisture_flux_field(variables),
         "lhfx_present": _surface_moisture_flux_field(variables) is not None,
-        "lhfx_units": _field_units(result, _surface_moisture_flux_field(variables)),
-        "lhfx_min": "unavailable:surface_flux_statistics_not_implemented",
-        "lhfx_max": "unavailable:surface_flux_statistics_not_implemented",
-        "lhfx_mean": "unavailable:surface_flux_statistics_not_implemented",
+        "lhfx_units": qfx_stats["units"],
+        "lhfx_min": qfx_stats["min"],
+        "lhfx_max": qfx_stats["max"],
+        "lhfx_mean": qfx_stats["mean"],
         "low_level_qv_response": ("unavailable:low_level_response_diagnostic_not_implemented"),
         "low_level_qv_response_method": "low_level_response_diagnostic_not_implemented",
         "low_level_theta_or_temperature_response": (
@@ -2040,9 +2075,7 @@ def _diagnostic_support(result: ResultMetadata | None) -> dict[str, str]:
     diagnostics = result.diagnostics
     variables = set(result.variables)
     return {
-        "surface_fluxes": "available"
-        if "hfx" in variables and _surface_moisture_flux_field(variables) is not None
-        else "missing",
+        "surface_fluxes": _surface_flux_support(diagnostics.surface_fluxes, variables),
         "low_level_response": "unavailable:low_level_response_diagnostic_not_implemented",
         "cloud": "available" if diagnostics.cloud.available else "missing",
         "vertical_velocity": "available" if diagnostics.vertical_velocity.available else "missing",
@@ -2052,10 +2085,66 @@ def _diagnostic_support(result: ResultMetadata | None) -> dict[str, str]:
     }
 
 
+def _surface_flux_support(
+    diagnostics: SurfaceFluxDiagnostics,
+    variables: set[str],
+) -> str:
+    field_presence = "hfx" in variables and _surface_moisture_flux_field(variables) is not None
+    if diagnostics.hfx.available and diagnostics.qfx.available:
+        return "available"
+    if field_presence:
+        return "unavailable:surface_flux_statistics_unavailable"
+    return "missing"
+
+
 def _field_units(result: ResultMetadata | None, field_name: str | None) -> str | None:
     if result is None or field_name is None:
         return None
     return next((field.units for field in result.fields_detected if field.name == field_name), None)
+
+
+def _surface_flux_summary_values(
+    diagnostics: SurfaceFluxFieldDiagnostics | None,
+    *,
+    source_field: str,
+    fallback_units: str | None,
+) -> dict[str, Any]:
+    if diagnostics is None:
+        unavailable = "unavailable:until_result_ingested"
+        return {
+            "units": fallback_units,
+            "min": unavailable,
+            "max": unavailable,
+            "mean": unavailable,
+            "finite_count": 0,
+            "non_finite_count": 0,
+            "total_count": 0,
+        }
+    if diagnostics.available:
+        return {
+            "units": diagnostics.units or fallback_units,
+            "min": diagnostics.min_value,
+            "max": diagnostics.max_value,
+            "mean": diagnostics.mean_value,
+            "finite_count": diagnostics.finite_count,
+            "non_finite_count": diagnostics.non_finite_count,
+            "total_count": diagnostics.total_count,
+        }
+    if diagnostics.field_absent:
+        reason = f"unavailable:{source_field}_field_absent"
+    elif diagnostics.total_count > 0 and diagnostics.finite_count == 0:
+        reason = f"unavailable:{source_field}_field_entirely_non_finite"
+    else:
+        reason = f"unavailable:{source_field}_statistics_unavailable"
+    return {
+        "units": diagnostics.units or fallback_units,
+        "min": reason,
+        "max": reason,
+        "mean": reason,
+        "finite_count": diagnostics.finite_count,
+        "non_finite_count": diagnostics.non_finite_count,
+        "total_count": diagnostics.total_count,
+    }
 
 
 def _surface_moisture_flux_field(fields: Iterable[str]) -> str | None:
@@ -2436,8 +2525,12 @@ def _render_markdown_report(plan: CampaignPlan, summary: Mapping[str, Any]) -> s
                 (
                     f"- Surface flux stats: hfx `{run['hfx_min']}`/"
                     f"`{run['hfx_max']}`/`{run['hfx_mean']}`, "
-                    f"moisture `{run['lhfx_min']}`/`{run['lhfx_max']}`/"
-                    f"`{run['lhfx_mean']}`"
+                    f"qfx `{run['qfx_min']}`/`{run['qfx_max']}`/"
+                    f"`{run['qfx_mean']}`; counts hfx "
+                    f"`{run['hfx_finite_count']}`/`{run['hfx_non_finite_count']}`/"
+                    f"`{run['hfx_total_count']}`, qfx "
+                    f"`{run['qfx_finite_count']}`/`{run['qfx_non_finite_count']}`/"
+                    f"`{run['qfx_total_count']}`"
                 ),
                 f"- Cloud/updraft: {cloud_updraft}",
                 f"- Precipitation/reflectivity: {precipitation}",

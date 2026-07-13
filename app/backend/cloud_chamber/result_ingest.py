@@ -27,6 +27,8 @@ from cloud_chamber.result_diagnostics import (
     RainDiagnostics,
     ReflectivityDiagnostics,
     ResultDiagnostics,
+    SurfaceFluxDiagnostics,
+    SurfaceFluxFieldDiagnostics,
     SurfaceRainDiagnostics,
     TimeDiagnostics,
     TimeValue,
@@ -554,6 +556,9 @@ def _merge_diagnostics(
     reflectivity = _merge_reflectivity_diagnostics(
         [diagnostics.reflectivity for diagnostics in diagnostics_parts]
     )
+    surface_fluxes = _merge_surface_flux_diagnostics(
+        [diagnostics.surface_fluxes for diagnostics in diagnostics_parts]
+    )
     field_quality = _merge_field_quality_maps(diagnostics_parts)
     field_quality_assessed = any(
         diagnostics.field_quality_assessed for diagnostics in diagnostics_parts
@@ -570,6 +575,7 @@ def _merge_diagnostics(
         rain=rain,
         surface_rain=surface_rain,
         reflectivity=reflectivity,
+        surface_fluxes=surface_fluxes,
         time=time,
         field_quality_assessed=field_quality_assessed,
         field_quality=field_quality,
@@ -757,7 +763,61 @@ def _merge_reflectivity_diagnostics(
     )
 
 
-FIELD_QUALITY_ORDER = ("qc", "w", "qr", "surface_rain", "dbz")
+def _merge_surface_flux_diagnostics(
+    parts: list[SurfaceFluxDiagnostics],
+) -> SurfaceFluxDiagnostics:
+    return SurfaceFluxDiagnostics(
+        hfx=_merge_surface_flux_field_diagnostics("hfx", [part.hfx for part in parts]),
+        qfx=_merge_surface_flux_field_diagnostics("qfx", [part.qfx for part in parts]),
+    )
+
+
+def _merge_surface_flux_field_diagnostics(
+    source_field: str,
+    parts: list[SurfaceFluxFieldDiagnostics],
+) -> SurfaceFluxFieldDiagnostics:
+    if not parts:
+        return SurfaceFluxFieldDiagnostics(source_field=source_field)
+    available_parts = [part for part in parts if part.available]
+    finite_count = sum(part.finite_count for part in parts)
+    non_finite_count = sum(part.non_finite_count for part in parts)
+    total_count = sum(part.total_count for part in parts)
+    units = next((part.units for part in parts if part.units is not None), None)
+    caveats = _dedupe_strings([caveat for part in parts for caveat in part.caveats])
+    if not available_parts:
+        return SurfaceFluxFieldDiagnostics(
+            source_field=source_field,
+            available=False,
+            field_absent=all(part.field_absent for part in parts),
+            units=units,
+            finite_count=finite_count,
+            non_finite_count=non_finite_count,
+            total_count=total_count,
+            caveats=caveats,
+        )
+
+    weighted_total = sum(
+        (part.mean_value or 0.0) * part.finite_count
+        for part in available_parts
+        if part.mean_value is not None
+    )
+    return SurfaceFluxFieldDiagnostics(
+        source_field=source_field,
+        available=True,
+        field_absent=False,
+        min_value=_min_optional([part.min_value for part in available_parts]),
+        max_value=_max_optional([part.max_value for part in available_parts]),
+        mean_value=weighted_total / finite_count if finite_count > 0 else None,
+        units=units,
+        finite_count=finite_count,
+        non_finite_count=non_finite_count,
+        total_count=total_count,
+        caveats=caveats,
+    )
+
+
+FIELD_QUALITY_MERGE_ORDER = ("qc", "w", "qr", "surface_rain", "dbz", "hfx", "qfx")
+FIELD_QUALITY_COMPARISON_ORDER = ("qc", "w", "qr", "surface_rain", "dbz")
 
 
 def _merge_field_quality_maps(
@@ -765,7 +825,7 @@ def _merge_field_quality_maps(
 ) -> dict[str, FieldQuality]:
     field_names = [
         field
-        for field in FIELD_QUALITY_ORDER
+        for field in FIELD_QUALITY_MERGE_ORDER
         if any(field in diagnostics.field_quality for diagnostics in diagnostics_parts)
     ]
     return {
@@ -1189,7 +1249,7 @@ def _field_quality_comparison_caveats(diagnostics: ResultDiagnostics) -> list[st
     if not diagnostics.field_quality_assessed:
         return ["field_quality_not_assessed"]
     caveats: list[str] = []
-    for field in FIELD_QUALITY_ORDER:
+    for field in FIELD_QUALITY_COMPARISON_ORDER:
         quality = diagnostics.field_quality.get(field)
         if quality is None or quality.quality_state == "trusted":
             continue

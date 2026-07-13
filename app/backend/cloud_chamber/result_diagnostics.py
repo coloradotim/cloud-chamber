@@ -126,6 +126,33 @@ class ReflectivityDiagnostics(BaseModel):
     field_absent: bool = True
 
 
+class SurfaceFluxFieldDiagnostics(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    source_field: str
+    available: bool = False
+    field_absent: bool = True
+    min_value: float | None = None
+    max_value: float | None = None
+    mean_value: float | None = None
+    units: str | None = None
+    finite_count: int = 0
+    non_finite_count: int = 0
+    total_count: int = 0
+    caveats: list[str] = Field(default_factory=list)
+
+
+class SurfaceFluxDiagnostics(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    hfx: SurfaceFluxFieldDiagnostics = Field(
+        default_factory=lambda: SurfaceFluxFieldDiagnostics(source_field="hfx")
+    )
+    qfx: SurfaceFluxFieldDiagnostics = Field(
+        default_factory=lambda: SurfaceFluxFieldDiagnostics(source_field="qfx")
+    )
+
+
 class ResultDiagnostics(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -134,6 +161,7 @@ class ResultDiagnostics(BaseModel):
     rain: RainDiagnostics
     surface_rain: SurfaceRainDiagnostics = Field(default_factory=SurfaceRainDiagnostics)
     reflectivity: ReflectivityDiagnostics = Field(default_factory=ReflectivityDiagnostics)
+    surface_fluxes: SurfaceFluxDiagnostics = Field(default_factory=SurfaceFluxDiagnostics)
     time: TimeDiagnostics
     field_quality_assessed: bool = False
     field_quality: dict[str, FieldQuality] = Field(default_factory=dict)
@@ -365,6 +393,7 @@ def compute_baseline_diagnostics(dataset: Any, inherited_caveats: list[str]) -> 
     rain = _rain_diagnostics(dataset, time_context, caveats)
     surface_rain = _surface_rain_diagnostics(dataset, time_context, caveats)
     reflectivity = _reflectivity_diagnostics(dataset, time_context, caveats)
+    surface_fluxes = _surface_flux_diagnostics(dataset, caveats)
     field_quality = _field_quality_map(dataset)
     return ResultDiagnostics(
         cloud=cloud,
@@ -372,6 +401,7 @@ def compute_baseline_diagnostics(dataset: Any, inherited_caveats: list[str]) -> 
         rain=rain,
         surface_rain=surface_rain,
         reflectivity=reflectivity,
+        surface_fluxes=surface_fluxes,
         time=time_context.diagnostics,
         field_quality_assessed=True,
         field_quality=field_quality,
@@ -409,6 +439,18 @@ FIELD_QUALITY_SOURCES = {
         "missing": "dbz_field_absent",
         "partial": "non_finite_values_detected_in_dbz",
         "entire": "dbz_field_entirely_non_finite",
+    },
+    "hfx": {
+        "source_field": "hfx",
+        "missing": "hfx_field_absent",
+        "partial": "non_finite_values_detected_in_hfx",
+        "entire": "hfx_field_entirely_non_finite",
+    },
+    "qfx": {
+        "source_field": "qfx",
+        "missing": "qfx_field_absent",
+        "partial": "non_finite_values_detected_in_qfx",
+        "entire": "qfx_field_entirely_non_finite",
     },
 }
 
@@ -722,6 +764,65 @@ def _reflectivity_diagnostics(
     )
 
 
+def _surface_flux_diagnostics(dataset: Any, caveats: list[str]) -> SurfaceFluxDiagnostics:
+    return SurfaceFluxDiagnostics(
+        hfx=_surface_flux_field_diagnostics(dataset, "hfx", caveats),
+        qfx=_surface_flux_field_diagnostics(dataset, "qfx", caveats),
+    )
+
+
+def _surface_flux_field_diagnostics(
+    dataset: Any,
+    field: str,
+    caveats: list[str],
+) -> SurfaceFluxFieldDiagnostics:
+    if field not in dataset.data_vars:
+        return SurfaceFluxFieldDiagnostics(
+            source_field=field,
+            field_absent=True,
+            caveats=[f"{field}_field_absent"],
+        )
+
+    data_array = dataset[field]
+    units = _attr_string(data_array, "units")
+    finite_count = _finite_count(data_array)
+    non_finite_count = _non_finite_count(data_array)
+    total_count = _total_count(data_array)
+    field_caveats: list[str] = []
+    if non_finite_count > 0:
+        field_caveat = f"non_finite_values_detected_in_{field}"
+        field_caveats.append(field_caveat)
+        caveats.append(field_caveat)
+    if finite_count == 0:
+        field_caveat = f"{field}_field_entirely_non_finite"
+        field_caveats.append(field_caveat)
+        caveats.append(field_caveat)
+        return SurfaceFluxFieldDiagnostics(
+            source_field=field,
+            available=False,
+            field_absent=False,
+            units=units,
+            finite_count=finite_count,
+            non_finite_count=non_finite_count,
+            total_count=total_count,
+            caveats=_dedupe(field_caveats),
+        )
+
+    return SurfaceFluxFieldDiagnostics(
+        source_field=field,
+        available=True,
+        field_absent=False,
+        min_value=_finite_min(data_array),
+        max_value=_finite_max(data_array),
+        mean_value=_finite_mean(data_array),
+        units=units,
+        finite_count=finite_count,
+        non_finite_count=non_finite_count,
+        total_count=total_count,
+        caveats=_dedupe(field_caveats),
+    )
+
+
 def _cloud_extent_array(dataset: Any, qc: Any, caveats: list[str]) -> Any:
     """Return the field used for cloud base/top diagnostics.
 
@@ -927,6 +1028,11 @@ def _finite_max(data_array: Any) -> float | None:
 def _finite_min(data_array: Any) -> float | None:
     values = _finite_values(data_array)
     return min(values) if values else None
+
+
+def _finite_mean(data_array: Any) -> float | None:
+    values = _finite_values(data_array)
+    return sum(values) / len(values) if values else None
 
 
 def _threshold_count(data_array: Any, threshold: float) -> int:

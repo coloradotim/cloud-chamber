@@ -1,6 +1,7 @@
 from pathlib import Path
 from typing import Any
 
+import pytest
 import xarray as xr
 
 from cloud_chamber.result_diagnostics import (
@@ -21,6 +22,8 @@ def base_dataset(
     qr_values: list[list[list[list[float]]]] | None = None,
     rain_values: list[list[list[float]]] | None = None,
     dbz_values: list[list[list[list[float]]]] | None = None,
+    hfx_values: list[list[list[float]]] | None = None,
+    qfx_values: list[list[list[float]]] | None = None,
     qi_values: list[list[list[list[float]]]] | None = None,
     qs_values: list[list[list[list[float]]]] | None = None,
     qg_values: list[list[list[list[float]]]] | None = None,
@@ -68,6 +71,18 @@ def base_dataset(
             dbz_values,
             {"units": "dBZ"},
         )
+    if hfx_values is not None:
+        data_vars["hfx"] = (
+            ("time", "y", "x"),
+            hfx_values,
+            {"units": "K m/s"},
+        )
+    if qfx_values is not None:
+        data_vars["qfx"] = (
+            ("time", "y", "x"),
+            qfx_values,
+            {"units": "kg/m^2/s"},
+        )
     if qi_values is not None:
         data_vars["qi"] = (
             ("time", "z", "y", "x"),
@@ -103,6 +118,21 @@ def zeros(z_count: int = 2) -> list[list[list[list[float]]]]:
         [[[0.0 for _x in range(4)] for _y in range(3)] for _z in range(z_count)]
         for _time in range(2)
     ]
+
+
+def surface_values(start: float = 0.0, step: float = 1.0) -> list[list[list[float]]]:
+    value = start
+    values = []
+    for _time in range(2):
+        time_values = []
+        for _y in range(3):
+            row = []
+            for _x in range(4):
+                row.append(value)
+                value += step
+            time_values.append(row)
+        values.append(time_values)
+    return values
 
 
 def with_cloud(cloudy_cells: int = 12) -> list[list[list[list[float]]]]:
@@ -351,6 +381,132 @@ def test_surface_rain_and_reflectivity_are_distinct_outputs(tmp_path: Path) -> N
     assert diagnostics.reflectivity.max_dbz == 32.0
     assert diagnostics.reflectivity.time_of_max_dbz_seconds == 300.0
     assert diagnostics.reflectivity.units == "dBZ"
+
+
+def test_surface_flux_statistics_preserve_units_and_counts(tmp_path: Path) -> None:
+    dataset = write_dataset(
+        tmp_path / "surface_fluxes.nc",
+        base_dataset(
+            qc_values=zeros(),
+            w_values=w_field(),
+            hfx_values=surface_values(start=1.0, step=1.0),
+            qfx_values=surface_values(start=0.0, step=0.5),
+        ),
+    )
+
+    diagnostics = compute_baseline_diagnostics(dataset, [])
+
+    hfx = diagnostics.surface_fluxes.hfx
+    qfx = diagnostics.surface_fluxes.qfx
+    assert hfx.available is True
+    assert hfx.field_absent is False
+    assert hfx.units == "K m/s"
+    assert hfx.min_value == pytest.approx(1.0)
+    assert hfx.max_value == pytest.approx(24.0)
+    assert hfx.mean_value == pytest.approx(12.5)
+    assert hfx.finite_count == 24
+    assert hfx.non_finite_count == 0
+    assert hfx.total_count == 24
+    assert diagnostics.field_quality["hfx"].quality_state == "trusted"
+    assert diagnostics.field_quality["hfx"].source_field == "hfx"
+
+    assert qfx.available is True
+    assert qfx.field_absent is False
+    assert qfx.units == "kg/m^2/s"
+    assert qfx.min_value == pytest.approx(0.0)
+    assert qfx.max_value == pytest.approx(11.5)
+    assert qfx.mean_value == pytest.approx(5.75)
+    assert qfx.finite_count == 24
+    assert qfx.non_finite_count == 0
+    assert qfx.total_count == 24
+    assert diagnostics.field_quality["qfx"].quality_state == "trusted"
+    assert diagnostics.field_quality["qfx"].source_field == "qfx"
+
+
+def test_surface_flux_statistics_report_missing_fields_without_global_caveats(
+    tmp_path: Path,
+) -> None:
+    dataset = write_dataset(
+        tmp_path / "surface_fluxes_missing.nc",
+        base_dataset(qc_values=zeros(), w_values=w_field()),
+    )
+
+    diagnostics = compute_baseline_diagnostics(dataset, [])
+
+    assert diagnostics.surface_fluxes.hfx.available is False
+    assert diagnostics.surface_fluxes.hfx.field_absent is True
+    assert diagnostics.surface_fluxes.hfx.caveats == ["hfx_field_absent"]
+    assert diagnostics.surface_fluxes.qfx.available is False
+    assert diagnostics.surface_fluxes.qfx.field_absent is True
+    assert diagnostics.surface_fluxes.qfx.caveats == ["qfx_field_absent"]
+    assert diagnostics.field_quality["hfx"].quality_state == "unavailable"
+    assert diagnostics.field_quality["qfx"].quality_state == "unavailable"
+    assert "hfx_field_absent" not in diagnostics.caveats
+    assert "qfx_field_absent" not in diagnostics.caveats
+
+
+def test_surface_flux_statistics_caveat_partially_non_finite_fields(
+    tmp_path: Path,
+) -> None:
+    hfx = surface_values(start=1.0, step=1.0)
+    hfx[0][0][0] = float("nan")
+    qfx = surface_values(start=0.0, step=0.5)
+    qfx[1][2][3] = float("inf")
+    dataset = write_dataset(
+        tmp_path / "surface_fluxes_partially_non_finite.nc",
+        base_dataset(qc_values=zeros(), w_values=w_field(), hfx_values=hfx, qfx_values=qfx),
+    )
+
+    diagnostics = compute_baseline_diagnostics(dataset, [])
+
+    assert diagnostics.surface_fluxes.hfx.available is True
+    assert diagnostics.surface_fluxes.hfx.min_value == pytest.approx(2.0)
+    assert diagnostics.surface_fluxes.hfx.max_value == pytest.approx(24.0)
+    assert diagnostics.surface_fluxes.hfx.finite_count == 23
+    assert diagnostics.surface_fluxes.hfx.non_finite_count == 1
+    assert diagnostics.field_quality["hfx"].quality_state == "caveated"
+    assert "non_finite_values_detected_in_hfx" in diagnostics.caveats
+
+    assert diagnostics.surface_fluxes.qfx.available is True
+    assert diagnostics.surface_fluxes.qfx.min_value == pytest.approx(0.0)
+    assert diagnostics.surface_fluxes.qfx.max_value == pytest.approx(11.0)
+    assert diagnostics.surface_fluxes.qfx.finite_count == 23
+    assert diagnostics.surface_fluxes.qfx.non_finite_count == 1
+    assert diagnostics.field_quality["qfx"].quality_state == "caveated"
+    assert "non_finite_values_detected_in_qfx" in diagnostics.caveats
+
+
+def test_surface_flux_statistics_mark_all_non_finite_fields_unavailable(
+    tmp_path: Path,
+) -> None:
+    all_nan_surface = [[[float("nan") for _x in range(4)] for _y in range(3)] for _time in range(2)]
+    dataset = write_dataset(
+        tmp_path / "surface_fluxes_all_nan.nc",
+        base_dataset(
+            qc_values=zeros(),
+            w_values=w_field(),
+            hfx_values=all_nan_surface,
+            qfx_values=all_nan_surface,
+        ),
+    )
+
+    diagnostics = compute_baseline_diagnostics(dataset, [])
+
+    assert diagnostics.surface_fluxes.hfx.available is False
+    assert diagnostics.surface_fluxes.hfx.field_absent is False
+    assert diagnostics.surface_fluxes.hfx.finite_count == 0
+    assert diagnostics.surface_fluxes.hfx.non_finite_count == 24
+    assert diagnostics.surface_fluxes.hfx.total_count == 24
+    assert diagnostics.field_quality["hfx"].quality_state == "untrusted"
+    assert "hfx_field_entirely_non_finite" in diagnostics.caveats
+
+    assert diagnostics.surface_fluxes.qfx.available is False
+    assert diagnostics.surface_fluxes.qfx.field_absent is False
+    assert diagnostics.surface_fluxes.qfx.finite_count == 0
+    assert diagnostics.surface_fluxes.qfx.non_finite_count == 24
+    assert diagnostics.surface_fluxes.qfx.total_count == 24
+    assert diagnostics.field_quality["qfx"].quality_state == "untrusted"
+    assert "qfx_field_entirely_non_finite" in diagnostics.caveats
 
 
 def test_missing_qc_and_missing_w_are_graceful(tmp_path: Path) -> None:

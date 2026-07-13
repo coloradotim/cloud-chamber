@@ -555,9 +555,12 @@ The report should extract these from ingested metadata/output products when avai
 hfx_present
 hfx_units
 hfx_min / hfx_max / hfx_mean when derivable
-lhfx_present
-lhfx_units
-lhfx_min / lhfx_max / lhfx_mean when derivable
+hfx_finite_count / hfx_non_finite_count / hfx_total_count
+qfx_present
+qfx_units
+qfx_min / qfx_max / qfx_mean when derivable
+qfx_finite_count / qfx_non_finite_count / qfx_total_count
+surface_moisture_flux_output_field
 low_level_qv_response with method or unavailable reason
 low_level_qv_response_method
 low_level_theta_or_temperature_response with method or unavailable reason

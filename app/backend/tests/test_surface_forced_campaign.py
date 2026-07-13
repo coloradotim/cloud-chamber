@@ -17,6 +17,8 @@ from cloud_chamber.result_diagnostics import (
     RainDiagnostics,
     ReflectivityDiagnostics,
     ResultDiagnostics,
+    SurfaceFluxDiagnostics,
+    SurfaceFluxFieldDiagnostics,
     SurfaceRainDiagnostics,
     TimeDiagnostics,
     TimeValue,
@@ -675,10 +677,24 @@ def test_campaign_report_summarizes_ingested_result_without_fabricating_bl_respo
     assert summary["phase_gate_state"] == "forcing_wiring_verified_but_response_not_verified"
     run = summary["runs"][0]
     assert run["hfx_present"] is True
+    assert run["hfx_units"] == "K m/s"
+    assert run["hfx_min"] == 1.0
+    assert run["hfx_max"] == 3.0
+    assert run["hfx_mean"] == 2.0
+    assert run["hfx_finite_count"] == 8
+    assert run["hfx_non_finite_count"] == 0
+    assert run["hfx_total_count"] == 8
     assert run["qfx_present"] is True
     assert run["surface_moisture_flux_output_field"] == "qfx"
     assert run["qfx_units"] == "kg/m^2/s"
+    assert run["qfx_min"] == 1.0e-5
+    assert run["qfx_max"] == 3.0e-5
+    assert run["qfx_mean"] == 2.0e-5
+    assert run["qfx_finite_count"] == 8
+    assert run["qfx_non_finite_count"] == 0
+    assert run["qfx_total_count"] == 8
     assert run["lhfx_present"] is True
+    assert run["diagnostic_support"]["surface_fluxes"] == "available"
     assert run["low_level_qv_response"] == (
         "unavailable:low_level_response_diagnostic_not_implemented"
     )
@@ -981,6 +997,32 @@ def _write_fake_result_metadata(
                 units="dBZ",
                 available=True,
                 field_absent=False,
+            ),
+            surface_fluxes=SurfaceFluxDiagnostics(
+                hfx=SurfaceFluxFieldDiagnostics(
+                    source_field="hfx",
+                    available=True,
+                    field_absent=False,
+                    min_value=1.0,
+                    max_value=3.0,
+                    mean_value=2.0,
+                    units="K m/s",
+                    finite_count=8,
+                    non_finite_count=0,
+                    total_count=8,
+                ),
+                qfx=SurfaceFluxFieldDiagnostics(
+                    source_field="qfx",
+                    available=True,
+                    field_absent=False,
+                    min_value=1.0e-5,
+                    max_value=3.0e-5,
+                    mean_value=2.0e-5,
+                    units="kg/m^2/s",
+                    finite_count=8,
+                    non_finite_count=0,
+                    total_count=8,
+                ),
             ),
             time=TimeDiagnostics(source="time", fallback_used=False, coordinate_name="time"),
         ),
