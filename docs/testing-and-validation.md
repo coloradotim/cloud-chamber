@@ -328,13 +328,14 @@ NetCDF ingest tests use tiny synthetic NetCDF files in temporary run directories
 
 Multi-file NetCDF ingest tests should use tiny generated fixtures under temporary run directories. They should cover CM1-style sequences such as `cm1out_000001.nc`, `cm1out_000002.nc`, and `cm1out_stats.nc`; verify model-field files are sorted by output index; exclude or separately classify stats NetCDF files; count total model output files and time steps; preserve first/last output time; record direct-vs-inferred time handling; tolerate corrupt individual output files with caveats when enough valid files remain; and ensure diagnostics time series span the full model-field sequence. A full-run no-cloud result is meaningful only after all usable model-output files have been evaluated.
 
-Baseline Shallow Cumulus diagnostics tests use tiny synthetic NetCDF fixtures only. They cover no-cloud and cloud-formed cases, the `qc >= 1e-6 kg/kg` threshold, the minimum 10 cloudy grid-cell rule, first cloud time, cloud base/top from vertical coordinates, max `qc`, `qc` max time series, cloud fraction time series, max/min `w`, optional `qr` rain detection with `qr >= 1e-7 kg/kg`, missing `qc`/`w`/`qr`, NaN/infinity handling, entirely non-finite fields, NetCDF time-coordinate use, and inferred output-index fallback. These diagnostics are learning summaries, not morphology validation.
+Baseline Shallow Cumulus diagnostics tests use tiny synthetic NetCDF fixtures only. They cover no-cloud and cloud-formed cases, the `qc >= 1e-6 kg/kg` threshold, the minimum 10 cloudy grid-cell rule, first cloud time, cloud base/top from vertical coordinates, max `qc`, `qc` max time series, cloud fraction time series, max/min `w`, optional `qr` rain detection with `qr >= 1e-7 kg/kg`, missing `qc`/`w`/`qr`, NaN/infinity handling, entirely non-finite fields, NetCDF time-coordinate use, and inferred output-index fallback. They should assert field-quality states and finite/non-finite counts for `qc`, `w`, `qr`, surface `rain`, and `dbz` so unavailable or untrusted fields do not appear as clean scientific outcomes. These diagnostics are learning summaries, not morphology validation.
 
 Result Card / Experiment Notebook tests should use tiny synthetic NetCDF
 fixtures and temporary runtime homes. They should cover creating a card from
 ingested metadata, listing/getting cards, updating name/tags/notes, saving and
-protecting cards, missing diagnostics, provenance labels, output file summary,
-and serialization round trips. They must not use real CM1 output.
+protecting cards, missing diagnostics, field-quality propagation, provenance
+labels, output file summary, and serialization round trips. They must not use
+real CM1 output.
 
 Visualization-ready data contract tests should use tiny synthetic NetCDF
 fixtures and temporary runtime homes only. They should cover the fields endpoint,

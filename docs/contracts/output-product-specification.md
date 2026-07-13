@@ -261,6 +261,13 @@ support states such as `unavailable`, `unsupported_missing_fields`, and
 `unsupported_missing_diagnostic` rather than silently falling back to a
 misleading cloud/rain-water landmark.
 
+Interesting-time records, field defaults, diagnostic availability records, and
+science summaries may carry target-field `field_quality` metadata for `qc`, `w`,
+`qr`, surface `rain`, and `dbz`. Entirely non-finite source fields are
+`untrusted` and must not produce supported landmarks or clean comparison
+evidence. Partially non-finite fields may remain usable only with visible
+caveats and finite/non-finite counts.
+
 Triggered deep-potential results extend the same product with backend-owned
 summary fields for deep-cloud formation, first deep-convection time, strong
 updraft detection, cloud top, rain-water onset, max `qr`, and the default Explore

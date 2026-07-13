@@ -1639,13 +1639,45 @@ const missingDiagnosticsCard = {
   time_of_max_w_seconds: null,
   min_w_m_s: null,
   time_of_min_w_seconds: null,
-  rain_present: false,
+  rain_present: null,
   first_rain_time_seconds: null,
   surface_rain_present: null,
   max_surface_rain: null,
   surface_rain_units: null,
   reflectivity_available: null,
   max_dbz: null,
+  field_quality: {
+    qc: {
+      field: "qc",
+      source_field: "qc",
+      quality_state: "unavailable",
+      reason: "missing_qc_field",
+      finite_count: 0,
+      non_finite_count: 0,
+      total_count: 0,
+      caveats: ["missing_qc_field"],
+    },
+    w: {
+      field: "w",
+      source_field: "w",
+      quality_state: "unavailable",
+      reason: "missing_w_field",
+      finite_count: 0,
+      non_finite_count: 0,
+      total_count: 0,
+      caveats: ["missing_w_field"],
+    },
+    qr: {
+      field: "qr",
+      source_field: "qr",
+      quality_state: "unavailable",
+      reason: "qr_field_absent",
+      finite_count: 0,
+      non_finite_count: 0,
+      total_count: 0,
+      caveats: ["qr_field_absent"],
+    },
+  },
   caveats: ["missing_qc_field", "missing_w_field"],
   output_file_summary: {
     ...resultCard.output_file_summary,
@@ -5415,12 +5447,15 @@ describe("App", () => {
     render(<App />);
 
     fireEvent.click(await screen.findByRole("button", { name: "No diagnostics yet" }));
+    const resultDetail = screen.getByLabelText("Result detail");
 
     expect(screen.getAllByText("Diagnostics unavailable").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("Unknown").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("No rain water aloft detected").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Cloud unavailable").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Rain water aloft unavailable").length).toBeGreaterThan(0);
     expect(screen.getByText("missing_qc_field")).toBeInTheDocument();
     expect(screen.getByText("missing_w_field")).toBeInTheDocument();
+    fireEvent.click(within(resultDetail).getByText("Technical details"));
+    expect(screen.getByText(/Cloud water \(qc\) is unavailable/)).toBeInTheDocument();
     expect(screen.queryByText(/horizontal slice/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/vertical slice/i)).not.toBeInTheDocument();
   });

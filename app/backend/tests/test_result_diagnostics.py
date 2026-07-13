@@ -379,6 +379,16 @@ def test_non_finite_values_are_ignored_and_recorded(tmp_path: Path) -> None:
     assert diagnostics.vertical_velocity.max_w_m_s == 4.0
     assert "non_finite_values_detected_in_qc" in diagnostics.caveats
     assert "non_finite_values_detected_in_w" in diagnostics.caveats
+    qc_quality = diagnostics.field_quality["qc"]
+    w_quality = diagnostics.field_quality["w"]
+    assert qc_quality.quality_state == "caveated"
+    assert qc_quality.finite_count == 47
+    assert qc_quality.non_finite_count == 1
+    assert qc_quality.total_count == 48
+    assert w_quality.quality_state == "caveated"
+    assert w_quality.finite_count == 47
+    assert w_quality.non_finite_count == 1
+    assert w_quality.total_count == 48
 
 
 def test_entirely_non_finite_target_field_fails_gracefully(tmp_path: Path) -> None:
@@ -396,6 +406,53 @@ def test_entirely_non_finite_target_field_fails_gracefully(tmp_path: Path) -> No
     assert diagnostics.cloud.available is False
     assert diagnostics.cloud.max_qc_kg_kg is None
     assert "qc_field_entirely_non_finite" in diagnostics.caveats
+    qc_quality = diagnostics.field_quality["qc"]
+    assert qc_quality.quality_state == "untrusted"
+    assert qc_quality.reason == "qc_field_entirely_non_finite"
+    assert qc_quality.finite_count == 0
+    assert qc_quality.non_finite_count == 48
+    assert qc_quality.total_count == 48
+
+
+def test_field_quality_marks_all_non_finite_core_result_fields_untrusted(
+    tmp_path: Path,
+) -> None:
+    all_nan_field = [
+        [[[float("nan") for _x in range(4)] for _y in range(3)] for _z in range(2)]
+        for _time in range(2)
+    ]
+    all_nan_surface = [[[float("nan") for _x in range(4)] for _y in range(3)] for _time in range(2)]
+    dataset = write_dataset(
+        tmp_path / "all_core_fields_nan.nc",
+        base_dataset(
+            qc_values=all_nan_field,
+            w_values=all_nan_field,
+            qr_values=all_nan_field,
+            rain_values=all_nan_surface,
+            dbz_values=all_nan_field,
+        ),
+    )
+
+    diagnostics = compute_baseline_diagnostics(dataset, [])
+
+    expected_totals = {
+        "qc": 48,
+        "w": 48,
+        "qr": 48,
+        "surface_rain": 24,
+        "dbz": 48,
+    }
+    for field, total in expected_totals.items():
+        quality = diagnostics.field_quality[field]
+        assert quality.quality_state == "untrusted"
+        assert quality.finite_count == 0
+        assert quality.non_finite_count == total
+        assert quality.total_count == total
+    assert diagnostics.cloud.available is False
+    assert diagnostics.vertical_velocity.available is False
+    assert diagnostics.rain.available is False
+    assert diagnostics.surface_rain.available is False
+    assert diagnostics.reflectivity.available is False
 
 
 def test_netcdf_time_coordinate_and_inferred_fallback(tmp_path: Path) -> None:

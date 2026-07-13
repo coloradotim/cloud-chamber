@@ -156,6 +156,9 @@ def test_result_card_created_from_ingested_metadata(tmp_path: Path) -> None:
     assert card.surface_rain_units == "mm"
     assert card.reflectivity_available is False
     assert card.max_dbz is None
+    assert card.field_quality["qc"].quality_state == "trusted"
+    assert card.field_quality["qr"].quality_state == "trusted"
+    assert card.field_quality["dbz"].quality_state == "unavailable"
     assert card.science_summary is not None
     assert card.science_summary.first_cloud_time_seconds == 1800.0
     assert card.science_summary.max_qc_kg_kg == 2e-6
@@ -389,7 +392,7 @@ def test_result_card_handles_missing_diagnostics_gracefully(tmp_path: Path) -> N
     card = get_result_card(settings, result_id)
 
     assert card.diagnostics_summary == (
-        "no cloud formed; no rain water aloft detected; surface rain unavailable; "
+        "cloud unavailable; rain water aloft unavailable; surface rain unavailable; "
         "reflectivity unavailable"
     )
     assert card.first_cloud_time_seconds is None
@@ -399,8 +402,13 @@ def test_result_card_handles_missing_diagnostics_gracefully(tmp_path: Path) -> N
     assert card.time_of_max_w_seconds is None
     assert card.min_w_m_s is None
     assert card.time_of_min_w_seconds is None
-    assert card.rain_present is False
+    assert card.rain_present is None
     assert card.first_rain_time_seconds is None
+    assert card.field_quality["qc"].quality_state == "unavailable"
+    assert card.field_quality["w"].quality_state == "unavailable"
+    assert card.field_quality["qr"].quality_state == "unavailable"
+    assert card.field_quality["surface_rain"].quality_state == "unavailable"
+    assert card.field_quality["dbz"].quality_state == "unavailable"
     assert card.science_summary is not None
     assert card.science_summary.interesting_time_support_state == "fallback"
     assert card.default_time_by_field["qc"].support_state == "fallback"

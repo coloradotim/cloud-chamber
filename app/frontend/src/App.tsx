@@ -768,6 +768,19 @@ type InterestingTimeSupportState =
   | "unsupported_missing_fields"
   | "unsupported_missing_diagnostic";
 
+type FieldQualityState = "trusted" | "caveated" | "untrusted" | "unavailable";
+
+type FieldQuality = {
+  field: string;
+  source_field: string;
+  quality_state: FieldQualityState;
+  reason?: string | null;
+  finite_count: number;
+  non_finite_count: number;
+  total_count: number;
+  caveats: string[];
+};
+
 type InterestingTimeRecord = {
   key: string;
   label: string;
@@ -779,6 +792,7 @@ type InterestingTimeRecord = {
   value?: number | boolean | null;
   units?: string | null;
   support_state: InterestingTimeSupportState;
+  field_quality?: FieldQuality | null;
   caveats: string[];
   fallback_reason?: string | null;
 };
@@ -789,6 +803,7 @@ type FieldDefaultTime = {
   time_seconds?: number | null;
   source_interesting_time_key: string;
   support_state: InterestingTimeSupportState;
+  field_quality?: FieldQuality | null;
   fallback_reason?: string | null;
   caveats: string[];
 };
@@ -820,6 +835,7 @@ type ScienceSummary = {
   default_explore_time_index?: number | null;
   default_explore_time_seconds?: number | null;
   cm1_outcome?: string | null;
+  field_quality?: Record<string, FieldQuality>;
   diagnostic_availability?: ScienceDiagnosticAvailability[];
   interesting_time_caveats: string[];
   interesting_time_support_state: string;
@@ -830,6 +846,7 @@ type ScienceDiagnosticAvailability = {
   label: string;
   support_state: string;
   source_field?: string | null;
+  field_quality?: FieldQuality | null;
   value?: number | boolean | null;
   units?: string | null;
   caveats: string[];
@@ -902,6 +919,7 @@ type ResultCard = {
   surface_rain_units?: string | null;
   max_dbz?: number | null;
   reflectivity_available?: boolean | null;
+  field_quality?: Record<string, FieldQuality>;
   interesting_times?: InterestingTimeRecord[];
   default_time_by_field?: Record<string, FieldDefaultTime>;
   science_summary?: ScienceSummary | null;
@@ -6693,7 +6711,7 @@ function ExploreResultSummary({ result }: { result: ResultCard }) {
       </div>
       <div className="badge-row">
         <OutcomeBadge result={result} />
-        <StatusBadge label={rainOutcome(result.rain_present)} tone="neutral" />
+        <StatusBadge label={rainWaterOutcome(result)} tone="neutral" />
         <StatusBadge label={resultInputSourceLabel(result)} tone="neutral" />
         <StatusBadge label={scienceSupportLabel(result)} tone="neutral" />
       </div>
@@ -8318,7 +8336,7 @@ function ExperimentNotebookList({
                 </p>
                 <div className="badge-row">
                   <OutcomeBadge result={result} />
-                  <StatusBadge label={rainOutcome(result.rain_present)} tone="neutral" />
+                  <StatusBadge label={rainWaterOutcome(result)} tone="neutral" />
                   <StatusBadge label={resultInputSourceLabel(result)} tone="neutral" />
                 </div>
                 <p className="science-card-summary">{compactScienceSummary(result)}</p>
@@ -8392,7 +8410,7 @@ function ResultNotebookCard({
 
       <div className="badge-row">
         <OutcomeBadge result={result} />
-        <StatusBadge label={rainOutcome(result.rain_present)} tone="neutral" />
+        <StatusBadge label={rainWaterOutcome(result)} tone="neutral" />
       </div>
 
       <p className="result-story">{resultStory(result)}</p>
@@ -8411,7 +8429,7 @@ function ResultNotebookCard({
 
       <dl className="metric-grid key-result-values">
         <Metric label="Cloud" value={cloudOutcome(result)} />
-        <Metric label="Rain water aloft" value={rainOutcome(result.rain_present)} />
+        <Metric label="Rain water aloft" value={rainWaterOutcome(result)} />
         <Metric label="Surface rain" value={surfaceRainOutcome(result)} />
         <Metric label="Reflectivity" value={reflectivityOutcome(result)} />
         <Metric label="First cloud time" value={formatSeconds(resultFirstCloudTime(result))} />
@@ -8523,6 +8541,8 @@ function ResultNotebookCard({
             ))}
           </ul>
         </section>
+
+        <FieldQualitySummary result={result} />
 
         <section aria-labelledby="caveats-title">
           <h4 id="caveats-title">Caveats / warnings</h4>
@@ -9838,6 +9858,7 @@ function ResultExplanationPanel({
   result: ResultCard;
   isNoCloudWithUpdraft: boolean;
 }) {
+  const cloudLabel = cloudOutcome(result);
   return (
     <section className="selected-region-inspector" aria-label="Result-level explanation panel">
       <div className="section-heading compact-heading">
@@ -9847,11 +9868,13 @@ function ResultExplanationPanel({
         </div>
         <StatusBadge
           label={
-            cloudOutcome(result) === "Cloud formed"
+            cloudLabel === "Cloud formed"
               ? "Cloud formed in this result"
-              : "No cloud formed in this result"
+              : cloudLabel === "No cloud formed"
+                ? "No cloud formed in this result"
+                : cloudLabel
           }
-          tone={cloudOutcome(result) === "Cloud formed" ? "good" : "warning"}
+          tone={cloudLabel === "Cloud formed" ? "good" : "warning"}
         />
       </div>
       <p>{resultStory(result)}</p>
@@ -9861,7 +9884,7 @@ function ResultExplanationPanel({
           <Metric label="First cloud time" value={formatSeconds(result.first_cloud_time_seconds)} />
           <Metric label="Max qc" value={formatScientific(result.max_qc_kg_kg, "kg/kg")} />
           <Metric label="Max w" value={formatNumber(result.max_w_m_s, "m/s")} />
-          <Metric label="Rain water aloft" value={rainOutcome(result.rain_present)} />
+          <Metric label="Rain water aloft" value={rainWaterOutcome(result)} />
           <Metric label="Surface rain" value={surfaceRainOutcome(result)} />
           <Metric label="Reflectivity" value={reflectivityOutcome(result)} />
         </dl>
@@ -11756,7 +11779,7 @@ function processModeSummary(
       }`,
       annotations: [
         `Diagnostics summary: ${result.diagnostics_summary ?? "Unavailable"}`,
-        `Cloud: ${cloudOutcome(result)}; rain water aloft: ${rainOutcome(result.rain_present)}`,
+        `Cloud: ${cloudOutcome(result)}; rain water aloft: ${rainWaterOutcome(result)}`,
       ],
       caveats,
     };
@@ -11859,17 +11882,18 @@ function processModeSummary(
   }
 
   if (mode === "precipitation_feedback") {
+    const rainWaterDetected = rainWaterOutcome(result) === "Rain water aloft detected";
     return {
       support: "future",
       evidenceType: "qr/rain and downdraft proxy diagnostics",
-      source: result.rain_present
+      source: rainWaterDetected
         ? "Rain-water aloft summary exists, but cold-pool/outflow evidence is not available"
         : "Required rain, downdraft, cold-pool, and outflow evidence is not available",
-      description: result.rain_present
+      description: rainWaterDetected
         ? "Rain water aloft is present, but precipitation-feedback needs downdraft/cold-pool evidence before it can be selected as a normal focus."
         : "Precipitation feedback is future work for this result because rain-water, cold-pool, and outflow diagnostics are not available.",
       annotations: [
-        `Rain water aloft: ${rainOutcome(result.rain_present)}`,
+        `Rain water aloft: ${rainWaterOutcome(result)}`,
         `Min w: ${formatNumber(result.min_w_m_s, "m/s")}`,
       ],
       caveats: [...caveats, "precipitation_feedback_requires_downdraft_and_cold_pool_diagnostics"],
@@ -12758,7 +12782,7 @@ function filterAndSortResults(results: ResultCard[], filters: ResultsFilterState
     )
     .filter((result) =>
       matchesBooleanFilter(
-        rainOutcome(result.rain_present),
+        rainWaterOutcome(result),
         filters.rain,
         "Rain water aloft detected",
         "No rain water aloft detected",
@@ -12822,7 +12846,7 @@ function matchesBooleanFilter(
   if (filter === "all") return true;
   if (filter === "yes") return value === yesValue;
   if (filter === "no") return value === noValue;
-  return value === "Unknown";
+  return value === "Unknown" || value.endsWith(" unavailable");
 }
 
 function compareResults(left: ResultCard, right: ResultCard, sort: ResultsSortKey): number {
@@ -12884,7 +12908,7 @@ function isDryFailedContrast(result: ResultCard): boolean {
     result.scenario_id === "dry-failed-cumulus" &&
     result.source_lifecycle_state === "completed" &&
     cloudOutcome(result) === "No cloud formed" &&
-    result.rain_present === false &&
+    rainWaterOutcome(result) === "No rain water aloft detected" &&
     (result.max_w_m_s ?? 0) > 0
   );
 }
@@ -13066,6 +13090,9 @@ function hasDeepConvectionDiagnostics(result: ResultCard): boolean {
 }
 
 function deepConvectionOutcome(result: ResultCard): string {
+  if (fieldQualityBlocksEvidence(result, "qc") || fieldQualityBlocksEvidence(result, "w")) {
+    return "Deep convection unavailable";
+  }
   const formed = result.science_summary?.deep_cloud_formed;
   if (formed === true) return "Deep convection formed";
   if (formed === false) return "Deep convection not detected";
@@ -13093,7 +13120,67 @@ function caveatLabel(result: ResultCard): string {
     : "Needs review";
 }
 
+const FIELD_QUALITY_LABELS: Record<string, string> = {
+  qc: "Cloud water",
+  w: "Vertical velocity",
+  qr: "Rain water aloft",
+  surface_rain: "Surface rain",
+  dbz: "Reflectivity",
+};
+
+const FIELD_QUALITY_ORDER = ["qc", "w", "qr", "surface_rain", "dbz"];
+
+function resultFieldQuality(result: ResultCard, field: string): FieldQuality | null {
+  return result.field_quality?.[field] ?? result.science_summary?.field_quality?.[field] ?? null;
+}
+
+function fieldQualityBlocksEvidence(result: ResultCard, field: string): boolean {
+  const quality = resultFieldQuality(result, field);
+  return quality?.quality_state === "untrusted" || quality?.quality_state === "unavailable";
+}
+
+function nonTrustedFieldQuality(result: ResultCard): FieldQuality[] {
+  const byField = new Map<string, FieldQuality>();
+  for (const field of FIELD_QUALITY_ORDER) {
+    const quality = resultFieldQuality(result, field);
+    if (quality && quality.quality_state !== "trusted") byField.set(field, quality);
+  }
+  return [...byField.values()];
+}
+
+function fieldQualityCounts(quality: FieldQuality): string {
+  if (quality.total_count <= 0) return "no sampled values";
+  return `${quality.finite_count} finite / ${quality.non_finite_count} non-finite / ${quality.total_count} total`;
+}
+
+function fieldQualityDescription(quality: FieldQuality): string {
+  const label = FIELD_QUALITY_LABELS[quality.field] ?? humanize(quality.field);
+  const reason = quality.reason ? `; ${quality.reason}` : "";
+  return `${label} (${quality.source_field}) is ${quality.quality_state}; ${fieldQualityCounts(
+    quality,
+  )}${reason}`;
+}
+
+function FieldQualitySummary({ result }: { result: ResultCard }) {
+  const rows = nonTrustedFieldQuality(result);
+  return (
+    <section aria-labelledby="field-quality-title">
+      <h4 id="field-quality-title">Field quality</h4>
+      {rows.length > 0 ? (
+        <ul className="compact-list">
+          {rows.map((quality) => (
+            <li key={quality.field}>{fieldQualityDescription(quality)}</li>
+          ))}
+        </ul>
+      ) : (
+        <p>No non-finite field-quality caveats recorded.</p>
+      )}
+    </section>
+  );
+}
+
 function cloudOutcome(result: ResultCard): string {
+  if (fieldQualityBlocksEvidence(result, "qc")) return "Cloud unavailable";
   if (hasDeepConvectionDiagnostics(result)) return deepConvectionOutcome(result);
   if (!result.diagnostics_summary) return "Unknown";
   return result.diagnostics_summary.includes("cloud formed") &&
@@ -13107,7 +13194,13 @@ function rainOutcome(value: boolean | null): string {
   return value ? "Rain water aloft detected" : "No rain water aloft detected";
 }
 
+function rainWaterOutcome(result: ResultCard): string {
+  if (fieldQualityBlocksEvidence(result, "qr")) return "Rain water aloft unavailable";
+  return rainOutcome(result.rain_present);
+}
+
 function surfaceRainOutcome(result: ResultCard): string {
+  if (fieldQualityBlocksEvidence(result, "surface_rain")) return "Unavailable";
   if (result.surface_rain_present === true) {
     return result.max_surface_rain !== null && result.max_surface_rain !== undefined
       ? `Reached ground; max ${formatNumber(result.max_surface_rain, result.surface_rain_units ?? "")}`
@@ -13118,6 +13211,7 @@ function surfaceRainOutcome(result: ResultCard): string {
 }
 
 function reflectivityOutcome(result: ResultCard): string {
+  if (fieldQualityBlocksEvidence(result, "dbz")) return "Unavailable";
   if (!result.reflectivity_available) return "Unavailable";
   return result.max_dbz !== null && result.max_dbz !== undefined
     ? `Max ${formatNumber(result.max_dbz, "dBZ")}`

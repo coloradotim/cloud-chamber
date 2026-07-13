@@ -36,6 +36,7 @@ from cloud_chamber.observed_sounding import (
     observed_sounding_from_payload,
     parse_igra_station_text,
 )
+from cloud_chamber.result_diagnostics import FieldQuality
 from cloud_chamber.result_ingest import (
     RESULT_METADATA_FILENAME,
     ResultIngestError,
@@ -1794,8 +1795,9 @@ def _summary_for_plan_run(run: CampaignRunPlan, state: CampaignState) -> dict[st
         result.warnings if result is not None else [], variables
     )
     caveats = _normalize_campaign_messages(_summary_caveats(run, state_run, result), variables)
-    diagnostic_trust = _diagnostic_trust(caveats)
-    diagnostic_quality_warnings = _diagnostic_quality_warnings(caveats)
+    field_quality = diagnostics.field_quality if diagnostics is not None else None
+    diagnostic_trust = _diagnostic_trust(caveats, field_quality)
+    diagnostic_quality_warnings = _diagnostic_quality_warnings(caveats, field_quality)
     candidate = manifest.candidate_screening if manifest is not None else run.candidate_screening
     cloud = diagnostics.cloud if diagnostics is not None else None
     vertical_velocity = diagnostics.vertical_velocity if diagnostics is not None else None
@@ -2119,10 +2121,30 @@ FIELD_TRUST_CAVEATS = {
 }
 
 
-def _diagnostic_trust(caveats: Iterable[str]) -> dict[str, str]:
+def _diagnostic_trust(
+    caveats: Iterable[str],
+    field_quality: Mapping[str, FieldQuality] | None = None,
+) -> dict[str, str]:
     caveat_set = set(caveats)
     if "result_not_ingested" in caveat_set:
         return {field: "unavailable_until_result_ingested" for field in FIELD_TRUST_CAVEATS}
+    if field_quality:
+        quality_trust: dict[str, str] = {}
+        for field, codes in FIELD_TRUST_CAVEATS.items():
+            quality = field_quality.get(field)
+            if quality is None:
+                quality_trust[field] = "trusted"
+            elif quality.quality_state == "untrusted":
+                quality_trust[field] = "untrusted_entirely_non_finite"
+            elif quality.quality_state == "unavailable":
+                quality_trust[field] = "unavailable_field_missing"
+            elif quality.quality_state == "caveated":
+                quality_trust[field] = "caveated_non_finite_values_detected"
+            else:
+                quality_trust[field] = "trusted"
+            if quality is not None and quality.reason == codes["entire"]:
+                quality_trust[field] = "untrusted_entirely_non_finite"
+        return quality_trust
     trust: dict[str, str] = {}
     for field, codes in FIELD_TRUST_CAVEATS.items():
         if codes["entire"] in caveat_set:
@@ -2136,11 +2158,24 @@ def _diagnostic_trust(caveats: Iterable[str]) -> dict[str, str]:
     return trust
 
 
-def _diagnostic_quality_warnings(caveats: Iterable[str]) -> list[str]:
+def _diagnostic_quality_warnings(
+    caveats: Iterable[str],
+    field_quality: Mapping[str, FieldQuality] | None = None,
+) -> list[str]:
     return _dedupe(
-        caveat
-        for caveat in caveats
-        if "non_finite" in caveat or caveat.endswith("_field_entirely_non_finite")
+        [
+            *(
+                caveat
+                for caveat in caveats
+                if "non_finite" in caveat or caveat.endswith("_field_entirely_non_finite")
+            ),
+            *(
+                caveat
+                for quality in (field_quality or {}).values()
+                for caveat in quality.caveats
+                if "non_finite" in caveat or caveat.endswith("_field_entirely_non_finite")
+            ),
+        ]
     )
 
 
@@ -2269,6 +2304,8 @@ def _summary_caveats(
     else:
         caveats.extend(result.run_caveats)
         caveats.extend(result.interesting_time_caveats)
+        if result.diagnostics is not None:
+            caveats.extend(result.diagnostics.caveats)
     return _dedupe(caveats)
 
 
@@ -2720,8 +2757,9 @@ def _recommended_follow_ups(summaries: Sequence[Mapping[str, Any]]) -> list[str]
     ]
     if any(summary.get("diagnostic_quality_warnings") for summary in summaries):
         followups.append(
-            "Standardize non-finite field trust handling across result cards, output "
-            "products, campaign reports, and comparisons."
+            "Review caveated or untrusted non-finite fields before using cloud, "
+            "updraft, rain-water, surface-rain, or reflectivity outcomes as "
+            "scientific evidence."
         )
     if any(summary.get("status") == "package_failed" for summary in summaries):
         followups.append("Fix package-generation blockers before queueing the full campaign.")
