@@ -1633,6 +1633,7 @@ def _runtime_integrity_for_result(
         Path(manifest.execution.stdout_log).expanduser() if manifest.execution.stdout_log else None
     )
     return assess_runtime_integrity(
+        lifecycle_state=manifest.lifecycle_state.value,
         exit_code=manifest.execution.exit_code,
         runtime_warnings=manifest.outputs.runtime_warnings,
         stdout_log=stdout_log,

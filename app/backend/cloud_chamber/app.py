@@ -900,6 +900,7 @@ def _run_status_payload(status: RunStatus) -> dict[str, object]:
             "pre_run_validation_report": None,
         }
     runtime_integrity = assess_runtime_integrity(
+        lifecycle_state=manifest.lifecycle_state.value,
         exit_code=manifest.execution.exit_code,
         runtime_warnings=manifest.outputs.runtime_warnings,
         stdout_log=status.stdout_log if str(status.stdout_log) else None,

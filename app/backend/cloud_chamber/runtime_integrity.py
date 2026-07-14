@@ -30,6 +30,39 @@ FATAL_FLOATING_POINT_FLAGS = (
     "IEEE_OVERFLOW_FLAG",
 )
 SENTINEL_ABS_THRESHOLD = 1.0e20
+TERMINAL_LIFECYCLE_STATES = {"completed", "ingested", "saved"}
+CM1_STATS_INTEGRITY_VARIABLES = {
+    "cfl",
+    "cflmax",
+    "khhmax",
+    "khvmax",
+    "kmhmax",
+    "kmvmax",
+    "maxqc",
+    "maxqg",
+    "maxqi",
+    "maxqr",
+    "maxqs",
+    "maxqv",
+    "minqc",
+    "minqg",
+    "minqi",
+    "minqr",
+    "minqs",
+    "minqv",
+    "umax",
+    "umin",
+    "vmax",
+    "vmin",
+    "wmax",
+    "wmin",
+}
+TERMINAL_FIELD_CATEGORIES = {
+    "dynamics": {"u", "v", "w", "uinterp", "vinterp", "winterp", "u10", "v10"},
+    "thermodynamics": {"prs", "pressure", "q2", "qv", "t", "t2", "temperature", "th", "theta"},
+    "hydrometeors": {"dbz", "qc", "qg", "qi", "qr", "qs"},
+    "surface": {"hfx", "prate", "qfx", "rain", "surface_rain"},
+}
 
 
 class RuntimeIntegrity(BaseModel):
@@ -52,6 +85,7 @@ class RuntimeIntegrity(BaseModel):
 
 def assess_runtime_integrity(
     *,
+    lifecycle_state: str | None = None,
     exit_code: int | None = None,
     runtime_warnings: Sequence[str] = (),
     stdout_log: Path | None = None,
@@ -79,10 +113,27 @@ def assess_runtime_integrity(
         evidence.append(f"runtime_warning_flag:{flag}")
     if stats_collapse.detected:
         evidence.extend(stats_collapse.evidence)
+    if stats_collapse.ambiguous_evidence:
+        evidence.extend(stats_collapse.ambiguous_evidence)
     for field in terminal_fields:
         evidence.append(f"terminal_output_frame_entirely_non_finite:{field}")
     for field in partial_terminal_fields:
         evidence.append(f"terminal_output_frame_partially_non_finite:{field}")
+
+    if lifecycle_state is not None and lifecycle_state not in TERMINAL_LIFECYCLE_STATES:
+        return _not_assessed(
+            reason="runtime_integrity_not_assessed_until_terminal_lifecycle_state",
+            summary=(
+                "Runtime integrity is not assessed until a CM1 run reaches a terminal "
+                "completed state."
+            ),
+            lifecycle_state=lifecycle_state,
+            exit_code=exit_code,
+            normal_completion_reported=normal_completion_reported,
+            warning_flags=warning_flags,
+            fatal_flags=fatal_flags,
+            evidence=evidence,
+        )
 
     if exit_code is not None and exit_code != 0:
         caveats.append("runtime_integrity_failed_nonzero_exit_code")
@@ -90,10 +141,15 @@ def assess_runtime_integrity(
         caveats.append("runtime_integrity_failed_fatal_floating_point_flags")
     if stats_collapse.detected:
         caveats.append("runtime_integrity_failed_cm1_stats_sentinel_collapse")
-    if terminal_fields:
+    terminal_policy = _terminal_non_finite_policy(terminal_fields)
+    if terminal_policy == "failed":
         caveats.append("runtime_integrity_failed_terminal_output_frame_entirely_non_finite")
+    elif terminal_policy == "caveated":
+        caveats.append("runtime_integrity_caveated_terminal_output_frame_entirely_non_finite")
     if partial_terminal_fields:
         caveats.append("runtime_integrity_caveated_terminal_non_finite_values")
+    if stats_collapse.ambiguous_evidence and not stats_collapse.detected:
+        caveats.append("runtime_integrity_caveated_cm1_stats_ambiguous_non_finite")
     if warning_flags == ["IEEE_UNDERFLOW_FLAG"]:
         caveats.append("runtime_integrity_caveated_underflow_only")
 
@@ -116,6 +172,26 @@ def assess_runtime_integrity(
             terminal_non_finite_fields=terminal_fields,
             caveats=_dedupe(caveats),
             evidence=_dedupe(evidence),
+        )
+
+    if not _has_minimum_assessment_evidence(
+        exit_code=exit_code,
+        normal_completion_reported=normal_completion_reported,
+        warning_flags=warning_flags,
+        stats_paths=stats_netcdf_paths,
+    ):
+        return _not_assessed(
+            reason="runtime_integrity_not_assessed_missing_completion_evidence",
+            summary=(
+                "Runtime integrity was not assessed because completion evidence, runtime "
+                "warnings, and CM1 stats evidence are unavailable."
+            ),
+            lifecycle_state=lifecycle_state,
+            exit_code=exit_code,
+            normal_completion_reported=normal_completion_reported,
+            warning_flags=warning_flags,
+            fatal_flags=fatal_flags,
+            evidence=evidence,
         )
 
     if caveats:
@@ -161,6 +237,63 @@ class _StatsCollapse(BaseModel):
     detected: bool = False
     times_seconds: list[float | None] = Field(default_factory=list)
     evidence: list[str] = Field(default_factory=list)
+    ambiguous_evidence: list[str] = Field(default_factory=list)
+
+
+def _not_assessed(
+    *,
+    reason: str,
+    summary: str,
+    lifecycle_state: str | None,
+    exit_code: int | None,
+    normal_completion_reported: bool | None,
+    warning_flags: list[str],
+    fatal_flags: list[str],
+    evidence: list[str],
+) -> RuntimeIntegrity:
+    if lifecycle_state is not None:
+        evidence = [*evidence, f"lifecycle_state:{lifecycle_state}"]
+    return RuntimeIntegrity(
+        assessed=False,
+        state="not_assessed",
+        reason=reason,
+        summary=summary,
+        exit_code=exit_code,
+        normal_completion_reported=normal_completion_reported,
+        warning_flags=warning_flags,
+        fatal_warning_flags=fatal_flags,
+        caveats=[],
+        evidence=_dedupe(evidence),
+    )
+
+
+def _has_minimum_assessment_evidence(
+    *,
+    exit_code: int | None,
+    normal_completion_reported: bool | None,
+    warning_flags: list[str],
+    stats_paths: Sequence[Path],
+) -> bool:
+    return (
+        exit_code is not None
+        or normal_completion_reported is True
+        or bool(warning_flags)
+        or bool(stats_paths)
+    )
+
+
+def _terminal_non_finite_policy(fields: Sequence[str]) -> RuntimeIntegrityState:
+    if not fields:
+        return "trusted"
+    categories = {
+        category
+        for field in fields
+        for category, category_fields in TERMINAL_FIELD_CATEGORIES.items()
+        if field in category_fields
+    }
+    if len(fields) >= 2 and len(categories) >= 2:
+        return "failed"
+    return "caveated"
 
 
 def _floating_point_flags(warnings: Iterable[str]) -> list[str]:
@@ -214,6 +347,7 @@ def _partial_terminal_non_finite_fields(
 def _stats_sentinel_collapse(paths: Sequence[Path]) -> _StatsCollapse:
     times: list[float | None] = []
     evidence: list[str] = []
+    ambiguous_evidence: list[str] = []
     for path in paths:
         if not path.exists():
             continue
@@ -227,6 +361,10 @@ def _stats_sentinel_collapse(paths: Sequence[Path]) -> _StatsCollapse:
             evidence.extend(
                 f"cm1_stats_sentinel_collapse:{path.name}:{item}" for item in collapse.evidence
             )
+            ambiguous_evidence.extend(
+                f"cm1_stats_ambiguous_non_finite:{path.name}:{item}"
+                for item in collapse.ambiguous_evidence
+            )
         finally:
             close = getattr(dataset, "close", None)
             if callable(close):
@@ -235,6 +373,7 @@ def _stats_sentinel_collapse(paths: Sequence[Path]) -> _StatsCollapse:
         detected=bool(evidence),
         times_seconds=_dedupe_optional_float(times),
         evidence=_dedupe(evidence),
+        ambiguous_evidence=_dedupe(ambiguous_evidence),
     )
 
 
@@ -248,7 +387,9 @@ def _stats_sentinel_collapse_for_dataset(dataset: Any) -> _StatsCollapse:
     time_values = _stats_time_values(dataset, time_name)
     detected_times: list[float | None] = []
     evidence: list[str] = []
+    ambiguous_evidence: list[str] = []
     for variable_name, data_array in dataset.data_vars.items():
+        normalized_name = variable_name.lower()
         values = getattr(data_array, "values", None)
         if values is None:
             continue
@@ -256,28 +397,38 @@ def _stats_sentinel_collapse_for_dataset(dataset: Any) -> _StatsCollapse:
             array = _as_numpy_array(values)
         except Exception:
             continue
-        if array.size == 0:
+        if array.size == 0 or normalized_name not in CM1_STATS_INTEGRITY_VARIABLES:
             continue
         frame_axis = _time_axis(data_array, time_name)
         if frame_axis is None:
-            bad = _contains_sentinel_value(array)
-            if bad:
+            if _contains_collapse_sentinel(array, prior_frames=None):
                 detected_times.append(None)
                 evidence.append(f"{variable_name}:time_unavailable")
+            elif _contains_ambiguous_non_finite(array):
+                ambiguous_evidence.append(f"{variable_name}:time_unavailable")
             continue
         frame_count = int(array.shape[frame_axis])
         for frame_index in range(frame_count):
             frame = _take_frame(array, frame_axis, frame_index)
-            if _contains_sentinel_value(frame):
+            prior_frames = (
+                _take_frame_range(array, frame_axis, frame_index) if frame_index > 0 else None
+            )
+            if _contains_collapse_sentinel(frame, prior_frames=prior_frames):
                 time_seconds = time_values[frame_index] if frame_index < len(time_values) else None
                 detected_times.append(time_seconds)
                 evidence.append(
+                    f"{variable_name}:frame_{frame_index}:time_{_time_label(time_seconds)}"
+                )
+            elif _contains_ambiguous_non_finite(frame):
+                time_seconds = time_values[frame_index] if frame_index < len(time_values) else None
+                ambiguous_evidence.append(
                     f"{variable_name}:frame_{frame_index}:time_{_time_label(time_seconds)}"
                 )
     return _StatsCollapse(
         detected=bool(evidence),
         times_seconds=_dedupe_optional_float(detected_times),
         evidence=_dedupe(evidence),
+        ambiguous_evidence=_dedupe(ambiguous_evidence),
     )
 
 
@@ -316,7 +467,11 @@ def _take_frame(array: Any, axis: int, index: int) -> Any:
     return numpy.take(array, index, axis=axis)
 
 
-def _contains_sentinel_value(array: Any) -> bool:
+def _take_frame_range(array: Any, axis: int, stop: int) -> Any:
+    return array.take(indices=range(stop), axis=axis)
+
+
+def _contains_collapse_sentinel(array: Any, *, prior_frames: Any | None) -> bool:
     numpy = importlib.import_module("numpy")
     try:
         numeric = numpy.asarray(array, dtype=float)
@@ -324,11 +479,40 @@ def _contains_sentinel_value(array: Any) -> bool:
         return False
     if numeric.size == 0:
         return False
-    finite_mask = numpy.isfinite(numeric)
-    if not bool(finite_mask.all()):
+    has_infinity = bool(numpy.isinf(numeric).any())
+    finite_values = numeric[numpy.isfinite(numeric)]
+    has_extreme = bool(
+        finite_values.size and numpy.nanmax(numpy.abs(finite_values)) >= SENTINEL_ABS_THRESHOLD
+    )
+    if not has_infinity and not has_extreme:
+        return False
+    if prior_frames is None:
         return True
-    max_abs = float(numpy.nanmax(numpy.abs(numeric)))
-    return isfinite(max_abs) and max_abs >= SENTINEL_ABS_THRESHOLD
+    return _has_prior_finite_evolution(prior_frames)
+
+
+def _contains_ambiguous_non_finite(array: Any) -> bool:
+    numpy = importlib.import_module("numpy")
+    try:
+        numeric = numpy.asarray(array, dtype=float)
+    except (TypeError, ValueError):
+        return False
+    if numeric.size == 0:
+        return False
+    return bool(numpy.isnan(numeric).any())
+
+
+def _has_prior_finite_evolution(array: Any) -> bool:
+    numpy = importlib.import_module("numpy")
+    try:
+        numeric = numpy.asarray(array, dtype=float)
+    except (TypeError, ValueError):
+        return False
+    finite_values = numeric[numpy.isfinite(numeric)]
+    if finite_values.size == 0:
+        return False
+    max_abs = float(numpy.nanmax(numpy.abs(finite_values)))
+    return isfinite(max_abs) and max_abs < SENTINEL_ABS_THRESHOLD
 
 
 def _float_or_none(value: Any) -> float | None:

@@ -693,10 +693,15 @@ Current diagnostics compute:
 
 Diagnostics preserve runtime warnings from the run manifest/result metadata.
 Result metadata also carries `runtime_integrity`, a backend-owned verdict that
-keeps process lifecycle separate from science trust. Underflow-only warnings are
-caveated; fatal floating-point flags, CM1 stats sentinel collapse, non-zero exit,
-or terminal output-frame non-finite contamination fail runtime integrity. The
-diagnostics also count non-finite values in target fields where practical,
+keeps process lifecycle separate from science trust. Packaged, queued, or running
+manifests are `not_assessed`; a completed run needs completion, warning, or stats
+evidence before it can be marked trusted. Underflow-only warnings are caveated;
+fatal floating-point flags, non-zero exit, and contextual CM1 stats sentinel
+collapse fail runtime integrity. Terminal output-frame contamination fails global
+runtime integrity only when it crosses multiple documented field categories such
+as dynamics, thermodynamics, hydrometeors, and surface fields. A single bad field
+or isolated ambiguous stats NaN remains caveated unless another failure signal is
+present. The diagnostics also count non-finite values in target fields where practical,
 ignore NaN/infinity for finite summaries, and record field-specific caveats if
 `qc`, `w`, `qr`, surface `rain`, `dbz`, `hfx`, or `qfx` are missing or entirely
 non-finite.

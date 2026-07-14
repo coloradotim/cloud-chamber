@@ -15,6 +15,7 @@ def test_runtime_integrity_trusts_clean_normal_completion(tmp_path: Path) -> Non
     stdout.write_text("Program terminated normally\n")
 
     integrity = assess_runtime_integrity(
+        lifecycle_state="completed",
         exit_code=0,
         runtime_warnings=[],
         stdout_log=stdout,
@@ -25,6 +26,23 @@ def test_runtime_integrity_trusts_clean_normal_completion(tmp_path: Path) -> Non
     assert integrity.normal_completion_reported is True
 
 
+def test_runtime_integrity_is_not_assessed_before_terminal_lifecycle() -> None:
+    for lifecycle_state in ("packaged", "queued", "running"):
+        integrity = assess_runtime_integrity(lifecycle_state=lifecycle_state)
+
+        assert integrity.state == "not_assessed"
+        assert integrity.assessed is False
+        assert integrity.reason == "runtime_integrity_not_assessed_until_terminal_lifecycle_state"
+
+
+def test_runtime_integrity_is_not_assessed_without_completion_evidence() -> None:
+    integrity = assess_runtime_integrity(lifecycle_state="completed")
+
+    assert integrity.state == "not_assessed"
+    assert integrity.assessed is False
+    assert integrity.reason == "runtime_integrity_not_assessed_missing_completion_evidence"
+
+
 def test_runtime_integrity_caveats_underflow_only_without_failing(
     tmp_path: Path,
 ) -> None:
@@ -32,6 +50,7 @@ def test_runtime_integrity_caveats_underflow_only_without_failing(
     stdout.write_text("Program terminated normally\n")
 
     integrity = assess_runtime_integrity(
+        lifecycle_state="completed",
         exit_code=0,
         runtime_warnings=[
             "CM1 stderr reported floating-point exception flags: IEEE_UNDERFLOW_FLAG"
@@ -51,6 +70,7 @@ def test_runtime_integrity_fails_invalid_or_overflow_warning(
     stdout.write_text("Program terminated normally\n")
 
     integrity = assess_runtime_integrity(
+        lifecycle_state="completed",
         exit_code=0,
         runtime_warnings=[
             "CM1 stderr reported floating-point exception flags: "
@@ -79,6 +99,7 @@ def test_runtime_integrity_fails_cm1_stats_sentinel_collapse(
     dataset.to_netcdf(stats_path, engine="scipy")
 
     integrity = assess_runtime_integrity(
+        lifecycle_state="completed",
         exit_code=0,
         runtime_warnings=[],
         stats_netcdf_paths=[stats_path],
@@ -91,7 +112,145 @@ def test_runtime_integrity_fails_cm1_stats_sentinel_collapse(
     assert any("umax:frame_2:time_21480" in item for item in integrity.evidence)
 
 
-def test_runtime_integrity_fails_terminal_multi_field_non_finite_output() -> None:
+def test_runtime_integrity_caveats_one_terminal_optional_field() -> None:
+    integrity = assess_runtime_integrity(
+        lifecycle_state="completed",
+        exit_code=0,
+        field_quality=_terminal_field_quality(["dbz"]),
+    )
+
+    assert integrity.state == "caveated"
+    assert integrity.terminal_non_finite_fields == ["dbz"]
+    assert "runtime_integrity_caveated_terminal_output_frame_entirely_non_finite" in (
+        integrity.caveats
+    )
+
+
+def test_runtime_integrity_caveats_one_terminal_core_field() -> None:
+    integrity = assess_runtime_integrity(
+        lifecycle_state="completed",
+        exit_code=0,
+        field_quality=_terminal_field_quality(["qc"]),
+    )
+
+    assert integrity.state == "caveated"
+    assert integrity.terminal_non_finite_fields == ["qc"]
+
+
+def test_runtime_integrity_caveats_terminal_fields_within_one_category() -> None:
+    integrity = assess_runtime_integrity(
+        lifecycle_state="completed",
+        exit_code=0,
+        field_quality=_terminal_field_quality(["qc", "qr", "qi"]),
+    )
+
+    assert integrity.state == "caveated"
+    assert integrity.terminal_non_finite_fields == ["qc", "qi", "qr"]
+
+
+def test_runtime_integrity_fails_terminal_multi_category_non_finite_output() -> None:
+    integrity = assess_runtime_integrity(
+        lifecycle_state="completed",
+        exit_code=0,
+        field_quality=_terminal_field_quality(["qc", "w", "hfx"]),
+    )
+
+    assert integrity.state == "failed"
+    assert integrity.terminal_non_finite_fields == ["hfx", "qc", "w"]
+    assert "runtime_integrity_failed_terminal_output_frame_entirely_non_finite" in (
+        integrity.caveats
+    )
+
+
+def test_runtime_integrity_fails_surface_forced_002_terminal_pattern() -> None:
+    integrity = assess_runtime_integrity(
+        lifecycle_state="completed",
+        exit_code=0,
+        runtime_warnings=[
+            "CM1 stderr reported floating-point exception flags: IEEE_INVALID_FLAG "
+            "IEEE_DIVIDE_BY_ZERO IEEE_OVERFLOW_FLAG IEEE_UNDERFLOW_FLAG"
+        ],
+        field_quality=_terminal_field_quality(["hfx", "qc", "qfx", "qr", "surface_rain", "w"]),
+    )
+
+    assert integrity.state == "failed"
+    assert integrity.terminal_non_finite_fields == [
+        "hfx",
+        "qc",
+        "qfx",
+        "qr",
+        "surface_rain",
+        "w",
+    ]
+    assert "runtime_integrity_failed_fatal_floating_point_flags" in integrity.caveats
+    assert "runtime_integrity_failed_terminal_output_frame_entirely_non_finite" in (
+        integrity.caveats
+    )
+
+
+def test_runtime_integrity_caveats_benign_stats_nan_without_failing(
+    tmp_path: Path,
+) -> None:
+    stdout = tmp_path / "stdout.log"
+    stdout.write_text("Program terminated normally\n")
+    stats_path = tmp_path / "cm1out_stats.nc"
+    xr.Dataset(
+        data_vars={"cflmax": ("mtime", [0.8, float("nan"), 0.7])},
+        coords={"mtime": [0.0, 60.0, 120.0]},
+    ).to_netcdf(stats_path, engine="scipy")
+
+    integrity = assess_runtime_integrity(
+        lifecycle_state="completed",
+        exit_code=0,
+        stdout_log=stdout,
+        stats_netcdf_paths=[stats_path],
+    )
+
+    assert integrity.state == "caveated"
+    assert integrity.stats_sentinel_collapse_detected is False
+    assert "runtime_integrity_caveated_cm1_stats_ambiguous_non_finite" in integrity.caveats
+
+
+def test_runtime_integrity_ignores_unrelated_all_nan_stats_variable(
+    tmp_path: Path,
+) -> None:
+    stdout = tmp_path / "stdout.log"
+    stdout.write_text("Program terminated normally\n")
+    stats_path = tmp_path / "cm1out_stats.nc"
+    xr.Dataset(
+        data_vars={"optional_missing_stat": ("mtime", [float("nan"), float("nan")])},
+        coords={"mtime": [0.0, 60.0]},
+    ).to_netcdf(stats_path, engine="scipy")
+
+    integrity = assess_runtime_integrity(
+        lifecycle_state="completed",
+        exit_code=0,
+        stdout_log=stdout,
+        stats_netcdf_paths=[stats_path],
+    )
+
+    assert integrity.state == "trusted"
+    assert integrity.stats_sentinel_collapse_detected is False
+
+
+def test_runtime_integrity_fails_late_stats_infinity(tmp_path: Path) -> None:
+    stats_path = tmp_path / "cm1out_stats.nc"
+    xr.Dataset(
+        data_vars={"kmhmax": ("mtime", [1.0, 2.0, float("inf")])},
+        coords={"mtime": [0.0, 21420.0, 21480.0]},
+    ).to_netcdf(stats_path, engine="scipy")
+
+    integrity = assess_runtime_integrity(
+        lifecycle_state="completed",
+        exit_code=0,
+        stats_netcdf_paths=[stats_path],
+    )
+
+    assert integrity.state == "failed"
+    assert integrity.stats_sentinel_times_seconds == [21480.0]
+
+
+def _terminal_field_quality(fields: list[str]) -> dict[str, FieldQuality]:
     terminal_frame = FieldFrameQualitySummary(
         frame_times_seconds=[0.0, 21600.0],
         affected_frames=[
@@ -115,10 +274,13 @@ def test_runtime_integrity_fails_terminal_multi_field_non_finite_output() -> Non
         finite_point_fraction=0.5,
         last_finite_frame_time_seconds=0.0,
     )
-    field_quality = {
+    source_fields = {
+        "surface_rain": "rain",
+    }
+    return {
         field: FieldQuality(
             field=field,
-            source_field=source,
+            source_field=source_fields.get(field, field),
             quality_state="untrusted",
             reason=f"{field}_terminal_output_frame_entirely_non_finite",
             finite_count=16,
@@ -128,17 +290,5 @@ def test_runtime_integrity_fails_terminal_multi_field_non_finite_output() -> Non
             frame_quality=terminal_frame,
             caveats=[f"{field}_terminal_output_frame_entirely_non_finite"],
         )
-        for field, source in {"qc": "qc", "qv": "qv", "surface_rain": "rain"}.items()
+        for field in fields
     }
-
-    integrity = assess_runtime_integrity(
-        exit_code=0,
-        runtime_warnings=[],
-        field_quality=field_quality,
-    )
-
-    assert integrity.state == "failed"
-    assert integrity.terminal_non_finite_fields == ["qc", "qv", "surface_rain"]
-    assert "runtime_integrity_failed_terminal_output_frame_entirely_non_finite" in (
-        integrity.caveats
-    )
