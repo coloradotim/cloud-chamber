@@ -37,6 +37,7 @@ from cloud_chamber.observed_sounding import (
     parse_igra_station_text,
 )
 from cloud_chamber.result_diagnostics import (
+    FieldFrameQualitySummary,
     FieldQuality,
     LowLevelResponseFieldDiagnostics,
     SurfaceFluxDiagnostics,
@@ -178,6 +179,8 @@ SUPPORTED_REQUIRED_SUMMARY_FIELDS = {
     "hfx_finite_count",
     "hfx_non_finite_count",
     "hfx_total_count",
+    "hfx_finite_fraction",
+    "hfx_frame_quality",
     "qfx_present",
     "qfx_units",
     "qfx_min",
@@ -186,6 +189,11 @@ SUPPORTED_REQUIRED_SUMMARY_FIELDS = {
     "qfx_finite_count",
     "qfx_non_finite_count",
     "qfx_total_count",
+    "qfx_finite_fraction",
+    "qfx_frame_quality",
+    "terminal_output_contamination",
+    "terminal_output_contamination_fields",
+    "terminal_output_contamination_warnings",
     "lhfx_present",
     "lhfx_units",
     "lhfx_min",
@@ -1984,6 +1992,7 @@ def _summary_for_plan_run(run: CampaignRunPlan, state: CampaignState) -> dict[st
         diagnostic_trust,
         "dbz",
     )
+    terminal_contamination = _terminal_output_contamination_summary(field_quality, warnings)
     summary = {
         "schema_version": CAMPAIGN_SUMMARY_SCHEMA_VERSION,
         "campaign_id": run.campaign_id,
@@ -2066,6 +2075,8 @@ def _summary_for_plan_run(run: CampaignRunPlan, state: CampaignState) -> dict[st
         "hfx_finite_count": hfx_stats["finite_count"],
         "hfx_non_finite_count": hfx_stats["non_finite_count"],
         "hfx_total_count": hfx_stats["total_count"],
+        "hfx_finite_fraction": hfx_stats["finite_fraction"],
+        "hfx_frame_quality": hfx_stats["frame_quality"],
         "qfx_present": "qfx" in variables,
         "qfx_units": qfx_stats["units"],
         "qfx_min": qfx_stats["min"],
@@ -2074,6 +2085,11 @@ def _summary_for_plan_run(run: CampaignRunPlan, state: CampaignState) -> dict[st
         "qfx_finite_count": qfx_stats["finite_count"],
         "qfx_non_finite_count": qfx_stats["non_finite_count"],
         "qfx_total_count": qfx_stats["total_count"],
+        "qfx_finite_fraction": qfx_stats["finite_fraction"],
+        "qfx_frame_quality": qfx_stats["frame_quality"],
+        "terminal_output_contamination": terminal_contamination["present"],
+        "terminal_output_contamination_fields": terminal_contamination["fields"],
+        "terminal_output_contamination_warnings": terminal_contamination["warnings"],
         "surface_moisture_flux_output_field": _surface_moisture_flux_field(variables),
         "lhfx_present": _surface_moisture_flux_field(variables) is not None,
         "lhfx_units": qfx_stats["units"],
@@ -2266,6 +2282,8 @@ def _surface_flux_summary_values(
             "finite_count": 0,
             "non_finite_count": 0,
             "total_count": 0,
+            "finite_fraction": None,
+            "frame_quality": None,
         }
     if diagnostics.available:
         return {
@@ -2276,6 +2294,8 @@ def _surface_flux_summary_values(
             "finite_count": diagnostics.finite_count,
             "non_finite_count": diagnostics.non_finite_count,
             "total_count": diagnostics.total_count,
+            "finite_fraction": diagnostics.finite_fraction,
+            "frame_quality": _frame_quality_summary_values(diagnostics.frame_quality),
         }
     if diagnostics.field_absent:
         reason = f"unavailable:{source_field}_field_absent"
@@ -2291,6 +2311,41 @@ def _surface_flux_summary_values(
         "finite_count": diagnostics.finite_count,
         "non_finite_count": diagnostics.non_finite_count,
         "total_count": diagnostics.total_count,
+        "finite_fraction": diagnostics.finite_fraction,
+        "frame_quality": _frame_quality_summary_values(diagnostics.frame_quality),
+    }
+
+
+def _frame_quality_summary_values(
+    frame_quality: FieldFrameQualitySummary | None,
+) -> dict[str, Any] | None:
+    if frame_quality is None:
+        return None
+    return {
+        "affected_frame_indices": frame_quality.affected_frame_indices,
+        "affected_frame_times_seconds": frame_quality.affected_frame_times_seconds,
+        "initial_frame_affected": frame_quality.initial_frame_affected,
+        "terminal_frame_affected": frame_quality.terminal_frame_affected,
+        "entirely_non_finite_frame_count": frame_quality.entirely_non_finite_frame_count,
+        "partially_non_finite_frame_count": frame_quality.partially_non_finite_frame_count,
+        "finite_frame_count": frame_quality.finite_frame_count,
+        "non_finite_frame_count": frame_quality.non_finite_frame_count,
+        "total_frame_count": frame_quality.total_frame_count,
+        "finite_point_fraction": frame_quality.finite_point_fraction,
+        "first_finite_frame_time_seconds": frame_quality.first_finite_frame_time_seconds,
+        "last_finite_frame_time_seconds": frame_quality.last_finite_frame_time_seconds,
+        "affected_frames": [
+            {
+                "frame_index": frame.frame_index,
+                "time_seconds": frame.time_seconds,
+                "position": frame.position,
+                "finite_count": frame.finite_count,
+                "non_finite_count": frame.non_finite_count,
+                "total_count": frame.total_count,
+                "entirely_non_finite": frame.entirely_non_finite,
+            }
+            for frame in frame_quality.affected_frames
+        ],
     }
 
 
@@ -2596,7 +2651,18 @@ def _diagnostic_trust(
             if quality is None:
                 quality_trust[field] = "not_assessed"
             elif quality.quality_state == "untrusted":
-                quality_trust[field] = "untrusted_entirely_non_finite"
+                if (
+                    quality.reason is not None
+                    and "_terminal_output_frame_entirely_non_finite" in quality.reason
+                ):
+                    quality_trust[field] = "untrusted_terminal_non_finite_frame"
+                elif (
+                    quality.reason is not None
+                    and "_intermediate_output_frame_entirely_non_finite" in quality.reason
+                ):
+                    quality_trust[field] = "untrusted_intermediate_non_finite_frame"
+                else:
+                    quality_trust[field] = "untrusted_entirely_non_finite"
             elif quality.quality_state == "unavailable":
                 quality_trust[field] = "unavailable_field_missing"
             elif quality.quality_state == "caveated":
@@ -2640,14 +2706,39 @@ def _diagnostic_quality_warnings(
     )
 
 
+def _terminal_output_contamination_summary(
+    field_quality: Mapping[str, FieldQuality] | None,
+    warnings: Iterable[str],
+) -> dict[str, Any]:
+    fields: list[str] = []
+    for field, quality in (field_quality or {}).items():
+        if _frame_quality_has_terminal_entirely_non_finite(
+            _frame_quality_summary_values(quality.frame_quality)
+        ):
+            fields.append(field)
+    warning_list = [
+        warning
+        for warning in warnings
+        if "IEEE_" in warning or "floating-point exception" in warning
+    ]
+    return {
+        "present": bool(fields),
+        "fields": sorted(fields),
+        "warnings": _dedupe(warning_list),
+    }
+
+
 def _trusted_outcome(value: Any, diagnostic_trust: Mapping[str, str], field: str) -> Any:
-    if diagnostic_trust.get(field) == "untrusted_entirely_non_finite":
+    status = diagnostic_trust.get(field)
+    if status is not None and status.startswith("untrusted"):
+        if status == "untrusted_terminal_non_finite_frame":
+            return f"unavailable:untrusted_{field}_terminal_output_frame_entirely_non_finite"
         return f"unavailable:untrusted_{field}_field_entirely_non_finite"
     return value
 
 
 def _field_trust_label(status: str | None) -> str:
-    if status == "untrusted_entirely_non_finite":
+    if status is not None and status.startswith("untrusted"):
         return "untrusted"
     if status == "caveated_non_finite_values_detected":
         return "caveated"
@@ -2683,6 +2774,44 @@ def _trusted_bool_label(label: str, value: Any, trust_status: str | None) -> str
 def _diagnostic_trust_summary(trust: Mapping[str, Any]) -> str:
     fields = ("qc", "w", "qr", "surface_rain", "dbz")
     return ", ".join(f"{field} {_field_trust_label(str(trust.get(field)))}" for field in fields)
+
+
+def _frame_quality_report_label(frame_quality: Any) -> str:
+    if not isinstance(frame_quality, Mapping):
+        return "not assessed"
+    indices = frame_quality.get("affected_frame_indices")
+    times = frame_quality.get("affected_frame_times_seconds")
+    if not isinstance(indices, list) or not indices:
+        total = frame_quality.get("total_frame_count")
+        finite = frame_quality.get("finite_frame_count")
+        if isinstance(total, int) and isinstance(finite, int):
+            return f"all {finite}/{total} frames finite"
+        return "no affected frames"
+    time_labels = (
+        [_time_seconds_report_label(time_seconds) for time_seconds in times]
+        if isinstance(times, list)
+        else []
+    )
+    terminal = (
+        "terminal affected" if frame_quality.get("terminal_frame_affected") else "terminal ok"
+    )
+    initial = "initial affected" if frame_quality.get("initial_frame_affected") else "initial ok"
+    entirely = frame_quality.get("entirely_non_finite_frame_count")
+    return (
+        f"affected frames {indices}"
+        + (f" at {', '.join(time_labels)}" if time_labels else "")
+        + f"; {initial}; {terminal}; entirely non-finite frames {entirely}"
+    )
+
+
+def _time_seconds_report_label(value: Any) -> str:
+    if isinstance(value, int):
+        return f"{value} s"
+    if isinstance(value, float):
+        if value.is_integer():
+            return f"{int(value)} s"
+        return f"{value:.3f} s"
+    return "time unavailable"
 
 
 def _stale_lhfx_missing_message(message: str, available_fields: set[str]) -> bool:
@@ -2732,8 +2861,8 @@ def _cloud_depth_or_classification(
     result: ResultMetadata | None,
     diagnostic_trust: Mapping[str, str],
 ) -> str:
-    if diagnostic_trust.get("qc") == "untrusted_entirely_non_finite":
-        return "unavailable:untrusted_qc_field_entirely_non_finite"
+    if str(diagnostic_trust.get("qc", "")).startswith("untrusted"):
+        return "unavailable:untrusted_qc_field"
     if result is None or result.diagnostics is None:
         return "unavailable:not_ingested"
     cloud = result.diagnostics.cloud
@@ -2847,6 +2976,10 @@ def _render_markdown_report(plan: CampaignPlan, summary: Mapping[str, Any]) -> s
         trust = run.get("diagnostic_trust")
         diagnostic_trust = trust if isinstance(trust, dict) else {}
         quality_warnings = ", ".join(run["diagnostic_quality_warnings"]) or "none"
+        terminal_fields = ", ".join(run.get("terminal_output_contamination_fields") or []) or "none"
+        terminal_warnings = (
+            ", ".join(run.get("terminal_output_contamination_warnings") or []) or "none"
+        )
         cloud_updraft = ", ".join(
             [
                 _trusted_metric_label(
@@ -2902,6 +3035,15 @@ def _render_markdown_report(plan: CampaignPlan, summary: Mapping[str, Any]) -> s
                     f"`{run['hfx_total_count']}`, qfx "
                     f"`{run['qfx_finite_count']}`/`{run['qfx_non_finite_count']}`/"
                     f"`{run['qfx_total_count']}`"
+                ),
+                (
+                    f"- Surface flux frame quality: hfx "
+                    f"`{_frame_quality_report_label(run.get('hfx_frame_quality'))}`, "
+                    f"qfx `{_frame_quality_report_label(run.get('qfx_frame_quality'))}`"
+                ),
+                (
+                    f"- Terminal output contamination: "
+                    f"`{terminal_fields}`; warnings `{terminal_warnings}`"
                 ),
                 f"- Cloud/updraft: {cloud_updraft}",
                 f"- Precipitation/reflectivity: {precipitation}",
@@ -2966,6 +3108,10 @@ def _render_markdown_report(plan: CampaignPlan, summary: Mapping[str, Any]) -> s
                     f"  - {expectation['field']}: {role}; expected "
                     f"`{expectation['expected']}`, observed `{expectation['observed']}`; "
                     f"`{expectation['status']}`"
+                )
+            if evaluation.get("unavailable_evidence"):
+                lines.append(
+                    f"  - Unavailable evidence: `{', '.join(evaluation['unavailable_evidence'])}`"
                 )
     else:
         lines.append("No Phase 1 surface-flux response comparisons are available.")
@@ -3292,6 +3438,13 @@ def _surface_flux_response_evaluation(
         f"missing_phase1_required_comparison_type:{comparison_type}"
         for comparison_type in missing_required_comparison_types
     ]
+    unavailable_evidence.extend(
+        evidence
+        for evaluation in evaluations
+        for evidence in evaluation.get("unavailable_evidence", [])
+        if isinstance(evidence, str)
+    )
+    unavailable_evidence = _dedupe(unavailable_evidence)
     if missing_required_comparison_types:
         state = SURFACE_FLUX_RESPONSE_MISSING
     elif not evaluations:
@@ -3660,6 +3813,7 @@ def _surface_flux_stat_unavailable_reasons(
     non_finite_count = _int_or_none(summary.get(f"{field}_non_finite_count"))
     total_count = _int_or_none(summary.get(f"{field}_total_count"))
     units = summary.get(f"{field}_units")
+    frame_quality = _frame_quality_mapping(summary.get(f"{field}_frame_quality"))
     reasons: list[str] = []
     if not isinstance(value, int | float) or _is_unavailable(value):
         reasons.append(f"{role}:{field}_mean_unavailable")
@@ -3670,10 +3824,68 @@ def _surface_flux_stat_unavailable_reasons(
     if non_finite_count is None:
         reasons.append(f"{role}:{field}_non_finite_count_unavailable")
     elif non_finite_count > 0:
-        reasons.append(f"{role}:{field}_stats_not_trusted_non_finite")
+        if _frame_quality_has_terminal_entirely_non_finite(frame_quality):
+            reasons.append(f"{role}:{field}_terminal_output_frame_entirely_non_finite")
+        elif _frame_quality_has_intermediate_entirely_non_finite(frame_quality):
+            reasons.append(f"{role}:{field}_intermediate_output_frame_entirely_non_finite")
+        elif _frame_quality_is_initial_only_entirely_non_finite(frame_quality):
+            pass
+        else:
+            reasons.append(f"{role}:{field}_stats_not_trusted_non_finite")
     if not isinstance(units, str) or not units:
         reasons.append(f"{role}:{field}_units_unavailable")
     return reasons
+
+
+def _frame_quality_mapping(value: Any) -> Mapping[str, Any] | None:
+    return value if isinstance(value, Mapping) else None
+
+
+def _frame_quality_has_terminal_entirely_non_finite(
+    frame_quality: Mapping[str, Any] | None,
+) -> bool:
+    if frame_quality is None:
+        return False
+    return any(
+        isinstance(frame, Mapping)
+        and frame.get("position") in {"terminal", "single"}
+        and frame.get("entirely_non_finite") is True
+        for frame in _frame_quality_affected_frames(frame_quality)
+    )
+
+
+def _frame_quality_has_intermediate_entirely_non_finite(
+    frame_quality: Mapping[str, Any] | None,
+) -> bool:
+    if frame_quality is None:
+        return False
+    return any(
+        isinstance(frame, Mapping)
+        and frame.get("position") == "intermediate"
+        and frame.get("entirely_non_finite") is True
+        for frame in _frame_quality_affected_frames(frame_quality)
+    )
+
+
+def _frame_quality_is_initial_only_entirely_non_finite(
+    frame_quality: Mapping[str, Any] | None,
+) -> bool:
+    if frame_quality is None:
+        return False
+    affected_frames = [
+        frame
+        for frame in _frame_quality_affected_frames(frame_quality)
+        if isinstance(frame, Mapping)
+    ]
+    return bool(affected_frames) and all(
+        frame.get("position") == "initial" and frame.get("entirely_non_finite") is True
+        for frame in affected_frames
+    )
+
+
+def _frame_quality_affected_frames(frame_quality: Mapping[str, Any]) -> Sequence[Any]:
+    frames = frame_quality.get("affected_frames")
+    return frames if isinstance(frames, list) else []
 
 
 def _surface_flux_field_expectation(
@@ -3909,6 +4121,13 @@ def _forcing_response_summary(summary: Mapping[str, Any]) -> str:
             "changes."
         )
     if state == SURFACE_FLUX_RESPONSE_MISSING:
+        if _surface_flux_response_has_terminal_contamination(summary):
+            return (
+                "Phase 1 produced finite hfx/qfx means that can be directionally "
+                "reviewed, but emitted surface-flux verification remains blocked "
+                "because terminal output-frame contamination makes at least one "
+                "matched run untrusted."
+            )
         return (
             "Phase 1 cannot verify emitted surface-flux response because one or more "
             "matched hfx/qfx statistics are missing, untrusted, or not ingested."
@@ -3922,6 +4141,23 @@ def _forcing_response_summary(summary: Mapping[str, Any]) -> str:
     if state == "forcing_wiring_not_verified":
         return "Surface-flux output fields are missing from ingested results."
     return "No ingested result evidence is available yet."
+
+
+def _surface_flux_response_has_terminal_contamination(summary: Mapping[str, Any]) -> bool:
+    surface_flux_response = summary.get("surface_flux_response")
+    if not isinstance(surface_flux_response, Mapping):
+        return False
+    evaluations = surface_flux_response.get("evaluations")
+    if not isinstance(evaluations, list):
+        return False
+    return any(
+        isinstance(evaluation, Mapping)
+        and any(
+            isinstance(item, str) and "terminal_output_frame_entirely_non_finite" in item
+            for item in evaluation.get("unavailable_evidence", [])
+        )
+        for evaluation in evaluations
+    )
 
 
 def _deepening_summary(summary: Mapping[str, Any]) -> str:

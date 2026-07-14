@@ -5,6 +5,7 @@ from __future__ import annotations
 import importlib
 import json
 import re
+from collections.abc import Mapping
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, cast
@@ -25,7 +26,10 @@ from cloud_chamber.result_diagnostics import (
     LOW_LEVEL_RESPONSE_EARLY_MIN_SECONDS,
     LOW_LEVEL_RESPONSE_EARLY_TARGET_SECONDS,
     CloudDiagnostics,
+    FieldFrameQualityRecord,
+    FieldFrameQualitySummary,
     FieldQuality,
+    FramePosition,
     LowLevelResponseDiagnostics,
     LowLevelResponseFieldDiagnostics,
     ProcessDiagnostics,
@@ -577,6 +581,7 @@ def _merge_diagnostics(
             *(caveat for diagnostics in diagnostics_parts for caveat in diagnostics.caveats),
         ]
     )
+    caveats = _sanitize_merged_field_quality_caveats(caveats, field_quality)
     if low_level_response.qv.available:
         caveats = [
             caveat
@@ -603,6 +608,24 @@ def _merge_diagnostics(
         field_quality=field_quality,
         caveats=caveats,
     )
+
+
+def _sanitize_merged_field_quality_caveats(
+    caveats: list[str],
+    field_quality: Mapping[str, FieldQuality],
+) -> list[str]:
+    cleaned = list(caveats)
+    for field, quality in field_quality.items():
+        entire_reason = f"{field}_field_entirely_non_finite"
+        if quality.finite_count > 0:
+            cleaned = [caveat for caveat in cleaned if caveat != entire_reason]
+        if (
+            quality.reason is not None
+            and "_output_frame_entirely_non_finite" in quality.reason
+            and quality.reason not in cleaned
+        ):
+            cleaned.append(quality.reason)
+    return _dedupe_strings(cleaned)
 
 
 def _merge_time_diagnostics(diagnostics_parts: list[ResultDiagnostics]) -> TimeDiagnostics:
@@ -794,6 +817,138 @@ def _merge_surface_flux_diagnostics(
     )
 
 
+def _merge_frame_quality_summaries(
+    summaries: list[FieldFrameQualitySummary | None],
+    *,
+    finite_count: int,
+    total_count: int,
+) -> FieldFrameQualitySummary | None:
+    present = [summary for summary in summaries if summary is not None]
+    if not present:
+        return None
+    total_frame_count = sum(summary.total_frame_count for summary in present)
+    finite_frame_count = sum(summary.finite_frame_count for summary in present)
+    affected_frames: list[FieldFrameQualityRecord] = []
+    first_finite_time: float | None = None
+    last_finite_time: float | None = None
+    offset = 0
+    for summary in present:
+        if first_finite_time is None and summary.first_finite_frame_time_seconds is not None:
+            first_finite_time = summary.first_finite_frame_time_seconds
+        if summary.last_finite_frame_time_seconds is not None:
+            last_finite_time = summary.last_finite_frame_time_seconds
+        for frame in summary.affected_frames:
+            frame_index = frame.frame_index + offset
+            affected_frames.append(
+                FieldFrameQualityRecord(
+                    frame_index=frame_index,
+                    time_seconds=frame.time_seconds,
+                    position=_merged_frame_position(frame_index, total_frame_count),
+                    finite_count=frame.finite_count,
+                    non_finite_count=frame.non_finite_count,
+                    total_count=frame.total_count,
+                    entirely_non_finite=frame.entirely_non_finite,
+                )
+            )
+        offset += summary.total_frame_count
+    return FieldFrameQualitySummary(
+        affected_frames=affected_frames,
+        affected_frame_indices=[frame.frame_index for frame in affected_frames],
+        affected_frame_times_seconds=[frame.time_seconds for frame in affected_frames],
+        initial_frame_affected=any(
+            frame.position in {"initial", "single"} for frame in affected_frames
+        ),
+        terminal_frame_affected=any(
+            frame.position in {"terminal", "single"} for frame in affected_frames
+        ),
+        entirely_non_finite_frame_count=sum(
+            1 for frame in affected_frames if frame.entirely_non_finite
+        ),
+        partially_non_finite_frame_count=sum(
+            1 for frame in affected_frames if not frame.entirely_non_finite
+        ),
+        finite_frame_count=finite_frame_count,
+        non_finite_frame_count=len(affected_frames),
+        total_frame_count=total_frame_count,
+        finite_point_fraction=_finite_fraction(finite_count, total_count),
+        first_finite_frame_time_seconds=first_finite_time,
+        last_finite_frame_time_seconds=last_finite_time,
+    )
+
+
+def _merged_frame_position(index: int, total_frame_count: int) -> FramePosition:
+    if total_frame_count <= 1:
+        return "single"
+    if index == 0:
+        return "initial"
+    if index == total_frame_count - 1:
+        return "terminal"
+    return "intermediate"
+
+
+def _finite_fraction(finite_count: int, total_count: int) -> float | None:
+    if total_count <= 0:
+        return None
+    return finite_count / total_count
+
+
+def _frame_quality_reason(
+    field: str,
+    *,
+    finite_count: int,
+    non_finite_count: int,
+    frame_quality: FieldFrameQualitySummary | None,
+    entire_reason: str,
+    partial_reason: str,
+) -> str | None:
+    if finite_count == 0:
+        return entire_reason
+    if non_finite_count <= 0:
+        return None
+    if frame_quality is None:
+        return partial_reason
+    terminal_entire = any(
+        frame.position == "terminal" and frame.entirely_non_finite
+        for frame in frame_quality.affected_frames
+    )
+    if terminal_entire:
+        return f"{field}_terminal_output_frame_entirely_non_finite"
+    intermediate_entire = any(
+        frame.position in {"intermediate", "single"} and frame.entirely_non_finite
+        for frame in frame_quality.affected_frames
+    )
+    if intermediate_entire:
+        return f"{field}_intermediate_output_frame_entirely_non_finite"
+    initial_entire = any(
+        frame.position == "initial" and frame.entirely_non_finite
+        for frame in frame_quality.affected_frames
+    )
+    if initial_entire and frame_quality.entirely_non_finite_frame_count == 1:
+        return f"{field}_initial_output_frame_entirely_non_finite"
+    return partial_reason
+
+
+def _merged_frame_quality_caveats(
+    *,
+    caveats: list[str],
+    finite_count: int,
+    non_finite_count: int,
+    reason: str | None,
+    entire_reason: str,
+    partial_reason: str,
+) -> list[str]:
+    cleaned = list(caveats)
+    if finite_count > 0:
+        cleaned = [caveat for caveat in cleaned if caveat != entire_reason]
+    if non_finite_count > 0 and partial_reason not in cleaned:
+        cleaned.append(partial_reason)
+    if reason is not None and reason not in {partial_reason, entire_reason}:
+        cleaned.append(reason)
+    if finite_count == 0 and entire_reason not in cleaned:
+        cleaned.append(entire_reason)
+    return _dedupe_strings([caveat for caveat in cleaned if caveat])
+
+
 def _merge_surface_flux_field_diagnostics(
     source_field: str,
     parts: list[SurfaceFluxFieldDiagnostics],
@@ -804,8 +959,31 @@ def _merge_surface_flux_field_diagnostics(
     finite_count = sum(part.finite_count for part in parts)
     non_finite_count = sum(part.non_finite_count for part in parts)
     total_count = sum(part.total_count for part in parts)
+    finite_fraction = _finite_fraction(finite_count, total_count)
     units = next((part.units for part in parts if part.units is not None), None)
-    caveats = _dedupe_strings([caveat for part in parts for caveat in part.caveats])
+    frame_quality = _merge_frame_quality_summaries(
+        [part.frame_quality for part in parts],
+        finite_count=finite_count,
+        total_count=total_count,
+    )
+    entire_reason = f"{source_field}_field_entirely_non_finite"
+    partial_reason = f"non_finite_values_detected_in_{source_field}"
+    reason = _frame_quality_reason(
+        source_field,
+        finite_count=finite_count,
+        non_finite_count=non_finite_count,
+        frame_quality=frame_quality,
+        entire_reason=entire_reason,
+        partial_reason=partial_reason,
+    )
+    caveats = _merged_frame_quality_caveats(
+        caveats=[caveat for part in parts for caveat in part.caveats],
+        finite_count=finite_count,
+        non_finite_count=non_finite_count,
+        reason=reason,
+        entire_reason=entire_reason,
+        partial_reason=partial_reason,
+    )
     if not available_parts:
         return SurfaceFluxFieldDiagnostics(
             source_field=source_field,
@@ -815,6 +993,8 @@ def _merge_surface_flux_field_diagnostics(
             finite_count=finite_count,
             non_finite_count=non_finite_count,
             total_count=total_count,
+            finite_fraction=finite_fraction,
+            frame_quality=frame_quality,
             caveats=caveats,
         )
 
@@ -834,6 +1014,8 @@ def _merge_surface_flux_field_diagnostics(
         finite_count=finite_count,
         non_finite_count=non_finite_count,
         total_count=total_count,
+        finite_fraction=finite_fraction,
+        frame_quality=frame_quality,
         caveats=caveats,
     )
 
@@ -1065,14 +1247,39 @@ def _merge_field_quality(field: str, qualities: list[FieldQuality]) -> FieldQual
     finite_count = sum(quality.finite_count for quality in qualities)
     non_finite_count = sum(quality.non_finite_count for quality in qualities)
     total_count = sum(quality.total_count for quality in qualities)
-    caveats = _dedupe_strings([caveat for quality in qualities for caveat in quality.caveats])
-    reason = next(
+    finite_fraction = _finite_fraction(finite_count, total_count)
+    frame_quality = _merge_frame_quality_summaries(
+        [quality.frame_quality for quality in qualities],
+        finite_count=finite_count,
+        total_count=total_count,
+    )
+    fallback_reason = next(
         (
             quality.reason
             for quality in qualities
             if quality.quality_state != "trusted" and quality.reason is not None
         ),
         None,
+    )
+    entire_reason = f"{field}_field_entirely_non_finite"
+    partial_reason = f"non_finite_values_detected_in_{field}"
+    reason = _frame_quality_reason(
+        field,
+        finite_count=finite_count,
+        non_finite_count=non_finite_count,
+        frame_quality=frame_quality,
+        entire_reason=entire_reason,
+        partial_reason=partial_reason,
+    )
+    if reason is None:
+        reason = fallback_reason
+    caveats = _merged_frame_quality_caveats(
+        caveats=[caveat for quality in qualities for caveat in quality.caveats],
+        finite_count=finite_count,
+        non_finite_count=non_finite_count,
+        reason=reason,
+        entire_reason=entire_reason,
+        partial_reason=partial_reason,
     )
 
     if total_count == 0 and finite_count == 0:
@@ -1092,6 +1299,21 @@ def _merge_field_quality(field: str, qualities: list[FieldQuality]) -> FieldQual
             finite_count=finite_count,
             non_finite_count=non_finite_count,
             total_count=total_count,
+            finite_fraction=finite_fraction,
+            frame_quality=frame_quality,
+            caveats=caveats,
+        )
+    if reason is not None and "_terminal_output_frame_entirely_non_finite" in reason:
+        return FieldQuality(
+            field=field,
+            source_field=source_field,
+            quality_state="untrusted",
+            reason=reason,
+            finite_count=finite_count,
+            non_finite_count=non_finite_count,
+            total_count=total_count,
+            finite_fraction=finite_fraction,
+            frame_quality=frame_quality,
             caveats=caveats,
         )
     if non_finite_count > 0 or any(
@@ -1105,6 +1327,8 @@ def _merge_field_quality(field: str, qualities: list[FieldQuality]) -> FieldQual
             finite_count=finite_count,
             non_finite_count=non_finite_count,
             total_count=total_count,
+            finite_fraction=finite_fraction,
+            frame_quality=frame_quality,
             caveats=caveats,
         )
     return FieldQuality(
@@ -1114,6 +1338,8 @@ def _merge_field_quality(field: str, qualities: list[FieldQuality]) -> FieldQual
         finite_count=finite_count,
         non_finite_count=non_finite_count,
         total_count=total_count,
+        finite_fraction=finite_fraction,
+        frame_quality=frame_quality,
     )
 
 
