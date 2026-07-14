@@ -157,6 +157,14 @@ def surface_values(start: float = 0.0, step: float = 1.0) -> list[list[list[floa
     return values
 
 
+def constant_surface_frames(frame_values: list[float]) -> list[list[list[float]]]:
+    return [[[value for _x in range(4)] for _y in range(3)] for value in frame_values]
+
+
+def entirely_non_finite_surface_frame() -> list[list[float]]:
+    return [[float("nan") for _x in range(4)] for _y in range(3)]
+
+
 def time_z_values(values_by_time_z: list[list[float]]) -> list[list[list[list[float]]]]:
     return [
         [[[value for _x in range(4)] for _y in range(3)] for value in time_values]
@@ -493,6 +501,11 @@ def test_surface_flux_statistics_caveat_partially_non_finite_fields(
     assert diagnostics.surface_fluxes.hfx.max_value == pytest.approx(24.0)
     assert diagnostics.surface_fluxes.hfx.finite_count == 23
     assert diagnostics.surface_fluxes.hfx.non_finite_count == 1
+    hfx_frame_quality = diagnostics.surface_fluxes.hfx.frame_quality
+    assert hfx_frame_quality is not None
+    assert hfx_frame_quality.affected_frame_indices == [0]
+    assert hfx_frame_quality.partially_non_finite_frame_count == 1
+    assert hfx_frame_quality.entirely_non_finite_frame_count == 0
     assert diagnostics.field_quality["hfx"].quality_state == "caveated"
     assert "non_finite_values_detected_in_hfx" in diagnostics.caveats
 
@@ -505,10 +518,93 @@ def test_surface_flux_statistics_caveat_partially_non_finite_fields(
     assert "non_finite_values_detected_in_qfx" in diagnostics.caveats
 
 
+@pytest.mark.parametrize(
+    ("bad_index", "expected_reason", "expected_state", "initial", "terminal"),
+    [
+        (0, "hfx_initial_output_frame_entirely_non_finite", "caveated", True, False),
+        (
+            1,
+            "hfx_intermediate_output_frame_entirely_non_finite",
+            "caveated",
+            False,
+            False,
+        ),
+        (2, "hfx_terminal_output_frame_entirely_non_finite", "untrusted", False, True),
+    ],
+)
+def test_surface_flux_quality_identifies_entirely_non_finite_frame_position(
+    tmp_path: Path,
+    bad_index: int,
+    expected_reason: str,
+    expected_state: str,
+    initial: bool,
+    terminal: bool,
+) -> None:
+    hfx = constant_surface_frames([1.0, 2.0, 3.0])
+    hfx[bad_index] = entirely_non_finite_surface_frame()
+    dataset = write_dataset(
+        tmp_path / f"surface_flux_bad_frame_{bad_index}.nc",
+        base_dataset(
+            qc_values=zeros(time_count=3),
+            w_values=w_field(time_count=3),
+            hfx_values=hfx,
+            qfx_values=constant_surface_frames([1.0e-5, 2.0e-5, 3.0e-5]),
+            time_values=[0.0, 3600.0, 21600.0],
+        ),
+    )
+
+    diagnostics = compute_baseline_diagnostics(dataset, [])
+
+    hfx_stats = diagnostics.surface_fluxes.hfx
+    assert hfx_stats.available is True
+    assert hfx_stats.finite_count == 24
+    assert hfx_stats.non_finite_count == 12
+    assert hfx_stats.frame_quality is not None
+    assert hfx_stats.frame_quality.affected_frame_indices == [bad_index]
+    assert hfx_stats.frame_quality.affected_frame_times_seconds == [
+        [0.0, 3600.0, 21600.0][bad_index]
+    ]
+    assert hfx_stats.frame_quality.initial_frame_affected is initial
+    assert hfx_stats.frame_quality.terminal_frame_affected is terminal
+    assert hfx_stats.frame_quality.entirely_non_finite_frame_count == 1
+    hfx_quality = diagnostics.field_quality["hfx"]
+    assert hfx_quality.quality_state == expected_state
+    assert hfx_quality.reason == expected_reason
+    assert expected_reason in hfx_quality.caveats
+
+
+def test_surface_flux_quality_records_multiple_entirely_non_finite_frames(
+    tmp_path: Path,
+) -> None:
+    hfx = constant_surface_frames([1.0, 2.0, 3.0, 4.0])
+    hfx[0] = entirely_non_finite_surface_frame()
+    hfx[3] = entirely_non_finite_surface_frame()
+    dataset = write_dataset(
+        tmp_path / "surface_flux_multiple_bad_frames.nc",
+        base_dataset(
+            qc_values=zeros(time_count=4),
+            w_values=w_field(time_count=4),
+            hfx_values=hfx,
+            time_values=[0.0, 3600.0, 7200.0, 21600.0],
+        ),
+    )
+
+    diagnostics = compute_baseline_diagnostics(dataset, [])
+
+    hfx_quality = diagnostics.field_quality["hfx"]
+    assert hfx_quality.quality_state == "untrusted"
+    assert hfx_quality.reason == "hfx_terminal_output_frame_entirely_non_finite"
+    assert hfx_quality.frame_quality is not None
+    assert hfx_quality.frame_quality.affected_frame_indices == [0, 3]
+    assert hfx_quality.frame_quality.initial_frame_affected is True
+    assert hfx_quality.frame_quality.terminal_frame_affected is True
+    assert hfx_quality.frame_quality.finite_frame_count == 2
+
+
 def test_surface_flux_statistics_mark_all_non_finite_fields_unavailable(
     tmp_path: Path,
 ) -> None:
-    all_nan_surface = [[[float("nan") for _x in range(4)] for _y in range(3)] for _time in range(2)]
+    all_nan_surface = [entirely_non_finite_surface_frame() for _time in range(2)]
     dataset = write_dataset(
         tmp_path / "surface_fluxes_all_nan.nc",
         base_dataset(
@@ -527,6 +623,9 @@ def test_surface_flux_statistics_mark_all_non_finite_fields_unavailable(
     assert diagnostics.surface_fluxes.hfx.non_finite_count == 24
     assert diagnostics.surface_fluxes.hfx.total_count == 24
     assert diagnostics.field_quality["hfx"].quality_state == "untrusted"
+    assert diagnostics.field_quality["hfx"].reason == "hfx_field_entirely_non_finite"
+    assert diagnostics.field_quality["hfx"].frame_quality is not None
+    assert diagnostics.field_quality["hfx"].frame_quality.affected_frame_indices == [0, 1]
     assert "hfx_field_entirely_non_finite" in diagnostics.caveats
 
     assert diagnostics.surface_fluxes.qfx.available is False

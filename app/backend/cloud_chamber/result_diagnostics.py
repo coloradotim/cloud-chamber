@@ -35,6 +35,7 @@ THERMAL_FATE_CONFIDENCE_VALUES = (
 )
 
 FieldQualityState = Literal["trusted", "caveated", "untrusted", "unavailable"]
+FramePosition = Literal["single", "initial", "intermediate", "terminal"]
 
 
 class _LowLevelLayerStats(TypedDict):
@@ -42,6 +43,39 @@ class _LowLevelLayerStats(TypedDict):
     finite_count: int
     non_finite_count: int
     total_count: int
+
+
+class FieldFrameQualityRecord(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    frame_index: int
+    time_seconds: float | None = None
+    position: FramePosition
+    finite_count: int = 0
+    non_finite_count: int = 0
+    total_count: int = 0
+    entirely_non_finite: bool = False
+
+
+class FieldFrameQualitySummary(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    frame_times_seconds: list[float | None] = Field(default_factory=list)
+    affected_frames: list[FieldFrameQualityRecord] = Field(default_factory=list)
+    affected_frame_indices: list[int] = Field(default_factory=list)
+    affected_frame_times_seconds: list[float | None] = Field(default_factory=list)
+    initial_frame_affected: bool = False
+    terminal_frame_affected: bool = False
+    affected_frame_count: int = 0
+    entirely_non_finite_frame_count: int = 0
+    partially_non_finite_frame_count: int = 0
+    finite_frame_count: int = 0
+    total_frame_count: int = 0
+    finite_point_fraction: float | None = None
+    chronology_available: bool = True
+    chronology_caveats: list[str] = Field(default_factory=list)
+    first_finite_frame_time_seconds: float | None = None
+    last_finite_frame_time_seconds: float | None = None
 
 
 class FieldQuality(BaseModel):
@@ -54,6 +88,8 @@ class FieldQuality(BaseModel):
     finite_count: int = 0
     non_finite_count: int = 0
     total_count: int = 0
+    finite_fraction: float | None = None
+    frame_quality: FieldFrameQualitySummary | None = None
     caveats: list[str] = Field(default_factory=list)
 
 
@@ -158,6 +194,8 @@ class SurfaceFluxFieldDiagnostics(BaseModel):
     finite_count: int = 0
     non_finite_count: int = 0
     total_count: int = 0
+    finite_fraction: float | None = None
+    frame_quality: FieldFrameQualitySummary | None = None
     caveats: list[str] = Field(default_factory=list)
 
 
@@ -471,9 +509,9 @@ def compute_baseline_diagnostics(dataset: Any, inherited_caveats: list[str]) -> 
     rain = _rain_diagnostics(dataset, time_context, caveats)
     surface_rain = _surface_rain_diagnostics(dataset, time_context, caveats)
     reflectivity = _reflectivity_diagnostics(dataset, time_context, caveats)
-    surface_fluxes = _surface_flux_diagnostics(dataset, caveats)
+    surface_fluxes = _surface_flux_diagnostics(dataset, time_context, caveats)
     low_level_response = _low_level_response_diagnostics(dataset, time_context, caveats)
-    field_quality = _field_quality_map(dataset)
+    field_quality = _field_quality_map(dataset, time_context)
     return ResultDiagnostics(
         cloud=cloud,
         vertical_velocity=vertical_velocity,
@@ -535,14 +573,19 @@ FIELD_QUALITY_SOURCES = {
 }
 
 
-def _field_quality_map(dataset: Any) -> dict[str, FieldQuality]:
+def _field_quality_map(dataset: Any, time: _TimeContext) -> dict[str, FieldQuality]:
     return {
-        field: _field_quality(dataset, field, config)
+        field: _field_quality(dataset, field, config, time)
         for field, config in FIELD_QUALITY_SOURCES.items()
     }
 
 
-def _field_quality(dataset: Any, field: str, config: dict[str, str]) -> FieldQuality:
+def _field_quality(
+    dataset: Any,
+    field: str,
+    config: dict[str, str],
+    time: _TimeContext,
+) -> FieldQuality:
     source_field = config["source_field"]
     if source_field not in dataset.data_vars:
         return FieldQuality(
@@ -556,6 +599,16 @@ def _field_quality(dataset: Any, field: str, config: dict[str, str]) -> FieldQua
     finite_count = _finite_count(data_array)
     non_finite_count = _non_finite_count(data_array)
     total_count = _total_count(data_array)
+    finite_fraction = _finite_fraction(finite_count, total_count)
+    frame_quality = _field_frame_quality(data_array, time)
+    reason = _field_quality_reason(
+        field,
+        config,
+        finite_count=finite_count,
+        non_finite_count=non_finite_count,
+        frame_quality=frame_quality,
+    )
+    caveats = _field_quality_caveats(config, reason, non_finite_count)
     if finite_count == 0:
         return FieldQuality(
             field=field,
@@ -565,18 +618,35 @@ def _field_quality(dataset: Any, field: str, config: dict[str, str]) -> FieldQua
             finite_count=finite_count,
             non_finite_count=non_finite_count,
             total_count=total_count,
-            caveats=[config["partial"], config["entire"]],
+            finite_fraction=finite_fraction,
+            frame_quality=frame_quality,
+            caveats=caveats,
+        )
+    if reason is not None and "_terminal_output_frame_entirely_non_finite" in reason:
+        return FieldQuality(
+            field=field,
+            source_field=source_field,
+            quality_state="untrusted",
+            reason=reason,
+            finite_count=finite_count,
+            non_finite_count=non_finite_count,
+            total_count=total_count,
+            finite_fraction=finite_fraction,
+            frame_quality=frame_quality,
+            caveats=caveats,
         )
     if non_finite_count > 0:
         return FieldQuality(
             field=field,
             source_field=source_field,
             quality_state="caveated",
-            reason=config["partial"],
+            reason=reason or config["partial"],
             finite_count=finite_count,
             non_finite_count=non_finite_count,
             total_count=total_count,
-            caveats=[config["partial"]],
+            finite_fraction=finite_fraction,
+            frame_quality=frame_quality,
+            caveats=caveats,
         )
     return FieldQuality(
         field=field,
@@ -585,7 +655,192 @@ def _field_quality(dataset: Any, field: str, config: dict[str, str]) -> FieldQua
         finite_count=finite_count,
         non_finite_count=non_finite_count,
         total_count=total_count,
+        finite_fraction=finite_fraction,
+        frame_quality=frame_quality,
     )
+
+
+def _field_quality_reason(
+    source_field: str,
+    config: dict[str, str],
+    *,
+    finite_count: int,
+    non_finite_count: int,
+    frame_quality: FieldFrameQualitySummary,
+) -> str | None:
+    if finite_count == 0:
+        return config["entire"]
+    if non_finite_count <= 0:
+        return None
+    if not frame_quality.chronology_available:
+        return f"{source_field}_frame_chronology_unavailable"
+    terminal_entire = any(
+        frame.position == "terminal" and frame.entirely_non_finite
+        for frame in frame_quality.affected_frames
+    )
+    if terminal_entire:
+        return f"{source_field}_terminal_output_frame_entirely_non_finite"
+    initial_entire = any(
+        frame.position == "initial" and frame.entirely_non_finite
+        for frame in frame_quality.affected_frames
+    )
+    non_initial_entire = any(
+        frame.position in {"intermediate", "single"} and frame.entirely_non_finite
+        for frame in frame_quality.affected_frames
+    )
+    if non_initial_entire:
+        return f"{source_field}_intermediate_output_frame_entirely_non_finite"
+    if initial_entire and frame_quality.entirely_non_finite_frame_count == 1:
+        return f"{source_field}_initial_output_frame_entirely_non_finite"
+    return config["partial"]
+
+
+def _field_quality_caveats(
+    config: dict[str, str],
+    reason: str | None,
+    non_finite_count: int,
+) -> list[str]:
+    caveats: list[str] = []
+    if non_finite_count > 0:
+        caveats.append(config["partial"])
+    if reason is not None and reason != config["partial"]:
+        caveats.append(reason)
+    return _dedupe(caveats)
+
+
+def _field_frame_quality(data_array: Any, time: _TimeContext) -> FieldFrameQualitySummary:
+    slices = _time_slices(data_array, time.dimension)
+    total_frame_count = len(slices)
+    frame_times_seconds = [time.at(index) for index in range(total_frame_count)]
+    frame_positions, chronology_caveats = _frame_positions_from_times(frame_times_seconds)
+    affected_frames: list[FieldFrameQualityRecord] = []
+    finite_frame_count = 0
+    first_finite_time: float | None = None
+    last_finite_time: float | None = None
+    finite_point_count = 0
+    total_point_count = 0
+
+    for index, frame in enumerate(slices):
+        finite_count = _finite_count(frame)
+        total_count = _total_count(frame)
+        non_finite_count = total_count - finite_count
+        finite_point_count += finite_count
+        total_point_count += total_count
+        time_seconds = time.at(index)
+        if finite_count > 0:
+            finite_frame_count += 1
+            if first_finite_time is None:
+                first_finite_time = time_seconds
+            last_finite_time = time_seconds
+        if non_finite_count > 0:
+            affected_frames.append(
+                FieldFrameQualityRecord(
+                    frame_index=index,
+                    time_seconds=time_seconds,
+                    position=frame_positions[index],
+                    finite_count=finite_count,
+                    non_finite_count=non_finite_count,
+                    total_count=total_count,
+                    entirely_non_finite=finite_count == 0,
+                )
+            )
+
+    return _frame_quality_summary_from_records(
+        affected_frames,
+        frame_times_seconds=frame_times_seconds,
+        finite_frame_count=finite_frame_count,
+        total_frame_count=total_frame_count,
+        finite_point_count=finite_point_count,
+        total_point_count=total_point_count,
+        chronology_caveats=chronology_caveats,
+        first_finite_frame_time_seconds=first_finite_time,
+        last_finite_frame_time_seconds=last_finite_time,
+    )
+
+
+def _frame_quality_summary_from_records(
+    affected_frames: list[FieldFrameQualityRecord],
+    *,
+    frame_times_seconds: list[float | None],
+    finite_frame_count: int,
+    total_frame_count: int,
+    finite_point_count: int,
+    total_point_count: int,
+    chronology_caveats: list[str],
+    first_finite_frame_time_seconds: float | None,
+    last_finite_frame_time_seconds: float | None,
+) -> FieldFrameQualitySummary:
+    return FieldFrameQualitySummary(
+        frame_times_seconds=frame_times_seconds,
+        affected_frames=affected_frames,
+        affected_frame_indices=[frame.frame_index for frame in affected_frames],
+        affected_frame_times_seconds=[frame.time_seconds for frame in affected_frames],
+        initial_frame_affected=any(
+            frame.position in {"initial", "single"} for frame in affected_frames
+        ),
+        terminal_frame_affected=any(
+            frame.position in {"terminal", "single"} for frame in affected_frames
+        ),
+        entirely_non_finite_frame_count=sum(
+            1 for frame in affected_frames if frame.entirely_non_finite
+        ),
+        partially_non_finite_frame_count=sum(
+            1 for frame in affected_frames if not frame.entirely_non_finite
+        ),
+        affected_frame_count=len(affected_frames),
+        finite_frame_count=finite_frame_count,
+        total_frame_count=total_frame_count,
+        finite_point_fraction=_finite_fraction(finite_point_count, total_point_count),
+        chronology_available=not chronology_caveats,
+        chronology_caveats=chronology_caveats,
+        first_finite_frame_time_seconds=first_finite_frame_time_seconds,
+        last_finite_frame_time_seconds=last_finite_frame_time_seconds,
+    )
+
+
+def _frame_positions_from_times(
+    frame_times_seconds: list[float | None],
+) -> tuple[list[FramePosition], list[str]]:
+    total_frame_count = len(frame_times_seconds)
+    if total_frame_count <= 1:
+        return (["single"], [])
+
+    finite_times = [
+        (index, time_seconds)
+        for index, time_seconds in enumerate(frame_times_seconds)
+        if time_seconds is not None and isfinite(time_seconds)
+    ]
+    chronology_caveats: list[str] = []
+    if len(finite_times) != total_frame_count:
+        chronology_caveats.append("frame_chronology_unavailable_missing_time")
+    else:
+        seen_times = {time_seconds for _, time_seconds in finite_times}
+        if len(seen_times) != total_frame_count:
+            chronology_caveats.append("frame_chronology_unavailable_duplicate_time")
+
+    if chronology_caveats:
+        return (
+            [
+                _frame_position_from_index(index, total_frame_count)
+                for index in range(total_frame_count)
+            ],
+            chronology_caveats,
+        )
+
+    positions: list[FramePosition] = ["intermediate"] * total_frame_count
+    for rank, (index, _) in enumerate(sorted(finite_times, key=lambda item: item[1])):
+        positions[index] = _frame_position_from_index(rank, total_frame_count)
+    return positions, []
+
+
+def _frame_position_from_index(index: int, total_frame_count: int) -> FramePosition:
+    if total_frame_count <= 1:
+        return "single"
+    if index == 0:
+        return "initial"
+    if index == total_frame_count - 1:
+        return "terminal"
+    return "intermediate"
 
 
 class _TimeContext(BaseModel):
@@ -844,16 +1099,21 @@ def _reflectivity_diagnostics(
     )
 
 
-def _surface_flux_diagnostics(dataset: Any, caveats: list[str]) -> SurfaceFluxDiagnostics:
+def _surface_flux_diagnostics(
+    dataset: Any,
+    time: _TimeContext,
+    caveats: list[str],
+) -> SurfaceFluxDiagnostics:
     return SurfaceFluxDiagnostics(
-        hfx=_surface_flux_field_diagnostics(dataset, "hfx", caveats),
-        qfx=_surface_flux_field_diagnostics(dataset, "qfx", caveats),
+        hfx=_surface_flux_field_diagnostics(dataset, "hfx", time, caveats),
+        qfx=_surface_flux_field_diagnostics(dataset, "qfx", time, caveats),
     )
 
 
 def _surface_flux_field_diagnostics(
     dataset: Any,
     field: str,
+    time: _TimeContext,
     caveats: list[str],
 ) -> SurfaceFluxFieldDiagnostics:
     if field not in dataset.data_vars:
@@ -868,15 +1128,19 @@ def _surface_flux_field_diagnostics(
     finite_count = _finite_count(data_array)
     non_finite_count = _non_finite_count(data_array)
     total_count = _total_count(data_array)
-    field_caveats: list[str] = []
-    if non_finite_count > 0:
-        field_caveat = f"non_finite_values_detected_in_{field}"
-        field_caveats.append(field_caveat)
-        caveats.append(field_caveat)
+    finite_fraction = _finite_fraction(finite_count, total_count)
+    frame_quality = _field_frame_quality(data_array, time)
+    config = FIELD_QUALITY_SOURCES[field]
+    reason = _field_quality_reason(
+        field,
+        config,
+        finite_count=finite_count,
+        non_finite_count=non_finite_count,
+        frame_quality=frame_quality,
+    )
+    field_caveats = _field_quality_caveats(config, reason, non_finite_count)
+    caveats.extend(field_caveats)
     if finite_count == 0:
-        field_caveat = f"{field}_field_entirely_non_finite"
-        field_caveats.append(field_caveat)
-        caveats.append(field_caveat)
         return SurfaceFluxFieldDiagnostics(
             source_field=field,
             available=False,
@@ -885,6 +1149,8 @@ def _surface_flux_field_diagnostics(
             finite_count=finite_count,
             non_finite_count=non_finite_count,
             total_count=total_count,
+            finite_fraction=finite_fraction,
+            frame_quality=frame_quality,
             caveats=_dedupe(field_caveats),
         )
 
@@ -899,6 +1165,8 @@ def _surface_flux_field_diagnostics(
         finite_count=finite_count,
         non_finite_count=non_finite_count,
         total_count=total_count,
+        finite_fraction=finite_fraction,
+        frame_quality=frame_quality,
         caveats=_dedupe(field_caveats),
     )
 
@@ -1529,6 +1797,12 @@ def _non_finite_count(data_array: Any) -> int:
 
 def _total_count(data_array: Any) -> int:
     return int(data_array.values.size)
+
+
+def _finite_fraction(finite_count: int, total_count: int) -> float | None:
+    if total_count <= 0:
+        return None
+    return finite_count / total_count
 
 
 def _has_finite_values(data_array: Any) -> bool:

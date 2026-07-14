@@ -14,6 +14,9 @@ from igra_fixtures import IGRA_FIXTURE
 from cloud_chamber.output_products import ScienceSummary
 from cloud_chamber.result_diagnostics import (
     CloudDiagnostics,
+    FieldFrameQualityRecord,
+    FieldFrameQualitySummary,
+    FieldQuality,
     LowLevelResponseDiagnostics,
     LowLevelResponseFieldDiagnostics,
     RainDiagnostics,
@@ -1190,6 +1193,117 @@ def test_campaign_report_requires_trusted_surface_flux_stats(tmp_path: Path) -> 
     assert "experiment:hfx_stats_not_trusted_non_finite" in heat["unavailable_evidence"]
 
 
+def test_campaign_report_blocks_initial_surface_flux_frame_contamination_without_policy(
+    tmp_path: Path,
+) -> None:
+    initial_frame = _fake_frame_quality(
+        frame_index=0,
+        time_seconds=0.0,
+        position="initial",
+    )
+    artifacts = _report_phase1_surface_flux_matrix(
+        tmp_path,
+        flux_means={
+            "phase1_control_default_flux": (2.0, 2.0e-5),
+            "phase1_control_high_sensible": (4.0, 2.0e-5),
+            "phase1_control_high_moisture": (2.0, 4.0e-5),
+            "phase1_control_high_both": (4.0, 4.0e-5),
+        },
+        non_finite_counts={"phase1_control_default_flux": (8, 8)},
+        frame_quality_overrides={
+            "phase1_control_default_flux": (initial_frame, initial_frame),
+        },
+    )
+
+    assert artifacts.summary["surface_flux_response"]["state"] == (
+        "surface_flux_response_inconclusive_missing_evidence"
+    )
+    heat = artifacts.summary["surface_flux_response"]["evaluations"][0]
+    assert "control:hfx_initial_output_frame_entirely_non_finite" in heat["unavailable_evidence"]
+    assert "control:qfx_initial_output_frame_entirely_non_finite" in heat["unavailable_evidence"]
+    control = next(
+        run
+        for run in artifacts.summary["runs"]
+        if run["matrix_id"] == "phase1_control_default_flux"
+    )
+    assert control["hfx_frame_quality"]["initial_frame_affected"] is True
+    assert control["hfx_frame_quality"]["terminal_frame_affected"] is False
+
+
+def test_campaign_report_blocks_terminal_surface_flux_frame_contamination(
+    tmp_path: Path,
+) -> None:
+    terminal_frame = _fake_frame_quality(
+        frame_index=24,
+        time_seconds=21600.0,
+        position="terminal",
+        total_frame_count=25,
+        finite_frame_count=24,
+    )
+    terminal_field_overrides = {
+        "qc": _fake_field_quality("qc", "qc", non_finite_count=8, frame_quality=terminal_frame),
+        "qr": _fake_field_quality("qr", "qr", non_finite_count=8, frame_quality=terminal_frame),
+        "surface_rain": _fake_field_quality(
+            "surface_rain", "rain", non_finite_count=8, frame_quality=terminal_frame
+        ),
+    }
+    artifacts = _report_phase1_surface_flux_matrix(
+        tmp_path,
+        flux_means={
+            "phase1_control_default_flux": (2.0, 2.0e-5),
+            "phase1_control_high_sensible": (4.0, 2.0e-5),
+            "phase1_control_high_moisture": (2.0, 4.0e-5),
+            "phase1_control_high_both": (4.0, 4.0e-5),
+        },
+        non_finite_counts={"phase1_control_default_flux": (8, 8)},
+        frame_quality_overrides={
+            "phase1_control_default_flux": (terminal_frame, terminal_frame),
+        },
+        field_quality_overrides_by_run={
+            "phase1_control_default_flux": terminal_field_overrides,
+        },
+        warnings_by_run={
+            "phase1_control_default_flux": [
+                "CM1 stderr reported floating-point exception flags: IEEE_INVALID_FLAG "
+                "IEEE_DIVIDE_BY_ZERO IEEE_OVERFLOW_FLAG IEEE_UNDERFLOW_FLAG"
+            ]
+        },
+    )
+
+    assert artifacts.summary["surface_flux_response"]["state"] == (
+        "surface_flux_response_inconclusive_missing_evidence"
+    )
+    assert artifacts.summary["phase_gate_state"] == (
+        "surface_flux_response_inconclusive_missing_evidence"
+    )
+    heat = artifacts.summary["surface_flux_response"]["evaluations"][0]
+    assert "control:hfx_terminal_output_frame_entirely_non_finite" in heat["unavailable_evidence"]
+    assert "control:qfx_terminal_output_frame_entirely_non_finite" in heat["unavailable_evidence"]
+    control = next(
+        run
+        for run in artifacts.summary["runs"]
+        if run["matrix_id"] == "phase1_control_default_flux"
+    )
+    assert control["terminal_output_contamination"] is True
+    assert control["terminal_output_contamination_fields"] == [
+        "hfx",
+        "qc",
+        "qfx",
+        "qr",
+        "surface_rain",
+    ]
+    assert control["diagnostic_trust"]["qc"] == "untrusted_terminal_non_finite_frame"
+    report = Path(artifacts.markdown_path).read_text()
+    assert "Terminal field contamination" in report
+    assert "Runtime floating-point warnings" in report
+    assert "terminal output-frame contamination" in report
+    assert "control:hfx_terminal_output_frame_entirely_non_finite" in report
+    assert "21600 s" in report
+    assert "Cloud-top values currently use the total hydrometeor envelope" in report
+    assert "See #330" in report
+    assert "hfx_field_entirely_non_finite" not in report
+
+
 def test_campaign_report_rejects_mismatched_surface_flux_units(tmp_path: Path) -> None:
     artifacts = _report_phase1_surface_flux_matrix(
         tmp_path,
@@ -1430,6 +1544,12 @@ def _report_phase1_surface_flux_matrix(
     low_level_full_run_deltas: dict[str, tuple[float, float]] | None = None,
     low_level_qv_early_end_counts: dict[str, tuple[int, int]] | None = None,
     non_finite_counts: dict[str, tuple[int, int]] | None = None,
+    frame_quality_overrides: dict[
+        str, tuple[FieldFrameQualitySummary | None, FieldFrameQualitySummary | None]
+    ]
+    | None = None,
+    field_quality_overrides_by_run: dict[str, dict[str, FieldQuality]] | None = None,
+    warnings_by_run: dict[str, list[str]] | None = None,
     unit_overrides: dict[str, tuple[str, str]] | None = None,
     mutate_matrix: Any | None = None,
 ) -> Any:
@@ -1449,6 +1569,10 @@ def _report_phase1_surface_flux_matrix(
         hfx_units, qfx_units = (unit_overrides or {}).get(
             state_run.matrix_id,
             ("K m/s", "kg/m^2/s"),
+        )
+        hfx_frame_quality, qfx_frame_quality = (frame_quality_overrides or {}).get(
+            state_run.matrix_id,
+            (None, None),
         )
         qv_early_end_finite, qv_early_end_total = (low_level_qv_early_end_counts or {}).get(
             state_run.matrix_id, (8, 8)
@@ -1479,6 +1603,10 @@ def _report_phase1_surface_flux_matrix(
             qfx_units=qfx_units,
             hfx_non_finite_count=hfx_non_finite,
             qfx_non_finite_count=qfx_non_finite,
+            hfx_frame_quality=hfx_frame_quality,
+            qfx_frame_quality=qfx_frame_quality,
+            field_quality_overrides=(field_quality_overrides_by_run or {}).get(state_run.matrix_id),
+            warnings=(warnings_by_run or {}).get(state_run.matrix_id),
         )
 
     return report_campaign(
@@ -1581,6 +1709,201 @@ def _fake_low_level_response_field(
     )
 
 
+def _fake_frame_quality(
+    *,
+    frame_index: int = 2,
+    time_seconds: float = 21600.0,
+    position: str = "terminal",
+    finite_count: int = 0,
+    non_finite_count: int = 8,
+    total_count: int = 8,
+    total_frame_count: int = 3,
+    finite_frame_count: int = 2,
+) -> FieldFrameQualitySummary:
+    frame_times_seconds: list[float | None]
+    if total_frame_count <= 1:
+        frame_times_seconds = [time_seconds]
+    else:
+        frame_times_seconds = [
+            21600.0 * index / (total_frame_count - 1) for index in range(total_frame_count)
+        ]
+        frame_times_seconds[frame_index] = time_seconds
+    return FieldFrameQualitySummary(
+        affected_frames=[
+            FieldFrameQualityRecord(
+                frame_index=frame_index,
+                time_seconds=time_seconds,
+                position=position,  # type: ignore[arg-type]
+                finite_count=finite_count,
+                non_finite_count=non_finite_count,
+                total_count=total_count,
+                entirely_non_finite=finite_count == 0,
+            )
+        ],
+        frame_times_seconds=frame_times_seconds,
+        affected_frame_indices=[frame_index],
+        affected_frame_times_seconds=[time_seconds],
+        initial_frame_affected=position == "initial",
+        terminal_frame_affected=position == "terminal",
+        affected_frame_count=1,
+        entirely_non_finite_frame_count=1 if finite_count == 0 else 0,
+        partially_non_finite_frame_count=0 if finite_count == 0 else 1,
+        finite_frame_count=finite_frame_count,
+        total_frame_count=total_frame_count,
+        finite_point_fraction=finite_frame_count / total_frame_count,
+        chronology_available=True,
+        chronology_caveats=[],
+        first_finite_frame_time_seconds=0.0,
+        last_finite_frame_time_seconds=3600.0 if position == "terminal" else time_seconds,
+    )
+
+
+def _fake_flux_caveats(
+    field: str,
+    non_finite_count: int,
+    frame_quality: FieldFrameQualitySummary | None,
+) -> list[str]:
+    caveats: list[str] = []
+    if non_finite_count > 0:
+        caveats.append(f"non_finite_values_detected_in_{field}")
+    if frame_quality is not None and frame_quality.terminal_frame_affected:
+        caveats.append(f"{field}_terminal_output_frame_entirely_non_finite")
+    elif frame_quality is not None and frame_quality.initial_frame_affected:
+        caveats.append(f"{field}_initial_output_frame_entirely_non_finite")
+    elif frame_quality is not None and frame_quality.entirely_non_finite_frame_count > 0:
+        caveats.append(f"{field}_intermediate_output_frame_entirely_non_finite")
+    return caveats
+
+
+def _fake_field_quality_map(
+    *,
+    hfx_non_finite_count: int,
+    qfx_non_finite_count: int,
+    hfx_frame_quality: FieldFrameQualitySummary | None,
+    qfx_frame_quality: FieldFrameQualitySummary | None,
+) -> dict[str, FieldQuality]:
+    fields = {
+        "qc": "qc",
+        "w": "w",
+        "qr": "qr",
+        "surface_rain": "rain",
+        "dbz": "dbz",
+        "hfx": "hfx",
+        "qfx": "qfx",
+    }
+    qualities = {
+        field: FieldQuality(
+            field=field,
+            source_field=source_field,
+            quality_state="trusted",
+            finite_count=8,
+            non_finite_count=0,
+            total_count=8,
+            finite_fraction=1.0,
+        )
+        for field, source_field in fields.items()
+    }
+    qualities["hfx"] = _fake_field_quality(
+        "hfx",
+        "hfx",
+        non_finite_count=hfx_non_finite_count,
+        frame_quality=hfx_frame_quality,
+    )
+    qualities["qfx"] = _fake_field_quality(
+        "qfx",
+        "qfx",
+        non_finite_count=qfx_non_finite_count,
+        frame_quality=qfx_frame_quality,
+    )
+    return qualities
+
+
+def _fake_field_quality_from_caveats(caveats: list[str]) -> dict[str, FieldQuality]:
+    fields = {
+        "qc": ("qc", "non_finite_values_detected_in_qc", "qc_field_entirely_non_finite"),
+        "w": ("w", "non_finite_values_detected_in_w", "w_field_entirely_non_finite"),
+        "qr": ("qr", "non_finite_values_detected_in_qr", "qr_field_entirely_non_finite"),
+        "surface_rain": (
+            "rain",
+            "non_finite_values_detected_in_surface_rain",
+            "surface_rain_field_entirely_non_finite",
+        ),
+        "dbz": ("dbz", "non_finite_values_detected_in_dbz", "dbz_field_entirely_non_finite"),
+    }
+    overrides: dict[str, FieldQuality] = {}
+    caveat_set = set(caveats)
+    for field, (source_field, partial, entire) in fields.items():
+        if entire in caveat_set:
+            overrides[field] = FieldQuality(
+                field=field,
+                source_field=source_field,
+                quality_state="untrusted",
+                reason=entire,
+                finite_count=0,
+                non_finite_count=8,
+                total_count=8,
+                finite_fraction=0.0,
+                caveats=[partial, entire],
+            )
+        elif partial in caveat_set:
+            overrides[field] = FieldQuality(
+                field=field,
+                source_field=source_field,
+                quality_state="caveated",
+                reason=partial,
+                finite_count=7,
+                non_finite_count=1,
+                total_count=8,
+                finite_fraction=7 / 8,
+                caveats=[partial],
+            )
+    return overrides
+
+
+def _fake_field_quality(
+    field: str,
+    source_field: str,
+    *,
+    non_finite_count: int,
+    frame_quality: FieldFrameQualitySummary | None,
+) -> FieldQuality:
+    if non_finite_count <= 0:
+        return FieldQuality(
+            field=field,
+            source_field=source_field,
+            quality_state="trusted",
+            finite_count=8,
+            non_finite_count=0,
+            total_count=8,
+            finite_fraction=1.0,
+            frame_quality=frame_quality,
+        )
+    if frame_quality is not None and frame_quality.terminal_frame_affected:
+        reason = f"{field}_terminal_output_frame_entirely_non_finite"
+        quality_state = "untrusted"
+    elif frame_quality is not None and frame_quality.initial_frame_affected:
+        reason = f"{field}_initial_output_frame_entirely_non_finite"
+        quality_state = "caveated"
+    elif frame_quality is not None and frame_quality.entirely_non_finite_frame_count > 0:
+        reason = f"{field}_intermediate_output_frame_entirely_non_finite"
+        quality_state = "caveated"
+    else:
+        reason = f"non_finite_values_detected_in_{field}"
+        quality_state = "caveated"
+    return FieldQuality(
+        field=field,
+        source_field=source_field,
+        quality_state=quality_state,  # type: ignore[arg-type]
+        reason=reason,
+        finite_count=8,
+        non_finite_count=non_finite_count,
+        total_count=8 + non_finite_count,
+        finite_fraction=8 / (8 + non_finite_count),
+        frame_quality=frame_quality,
+        caveats=_fake_flux_caveats(field, non_finite_count, frame_quality),
+    )
+
+
 def _write_fake_result_metadata(
     manifest_path: Path,
     *,
@@ -1595,6 +1918,9 @@ def _write_fake_result_metadata(
     qfx_units: str = "kg/m^2/s",
     hfx_non_finite_count: int = 0,
     qfx_non_finite_count: int = 0,
+    hfx_frame_quality: FieldFrameQualitySummary | None = None,
+    qfx_frame_quality: FieldFrameQualitySummary | None = None,
+    field_quality_overrides: dict[str, FieldQuality] | None = None,
     low_level_qv_delta: float | None = None,
     low_level_theta_delta: float | None = None,
     low_level_qv_full_run_delta: float | None = None,
@@ -1604,6 +1930,14 @@ def _write_fake_result_metadata(
 ) -> None:
     manifest = load_run_manifest(manifest_path)
     now = datetime.now(UTC)
+    field_quality = _fake_field_quality_map(
+        hfx_non_finite_count=hfx_non_finite_count,
+        qfx_non_finite_count=qfx_non_finite_count,
+        hfx_frame_quality=hfx_frame_quality,
+        qfx_frame_quality=qfx_frame_quality,
+    )
+    field_quality.update(_fake_field_quality_from_caveats(run_caveats or []))
+    field_quality.update(field_quality_overrides or {})
     result = ResultMetadata(
         result_id=f"result-{manifest.run_id}",
         run_id=manifest.run_id,
@@ -1693,6 +2027,11 @@ def _write_fake_result_metadata(
                     finite_count=8,
                     non_finite_count=hfx_non_finite_count,
                     total_count=8 + hfx_non_finite_count,
+                    finite_fraction=8 / (8 + hfx_non_finite_count)
+                    if (8 + hfx_non_finite_count) > 0
+                    else None,
+                    frame_quality=hfx_frame_quality,
+                    caveats=_fake_flux_caveats("hfx", hfx_non_finite_count, hfx_frame_quality),
                 ),
                 qfx=SurfaceFluxFieldDiagnostics(
                     source_field="qfx",
@@ -1705,6 +2044,11 @@ def _write_fake_result_metadata(
                     finite_count=8,
                     non_finite_count=qfx_non_finite_count,
                     total_count=8 + qfx_non_finite_count,
+                    finite_fraction=8 / (8 + qfx_non_finite_count)
+                    if (8 + qfx_non_finite_count) > 0
+                    else None,
+                    frame_quality=qfx_frame_quality,
+                    caveats=_fake_flux_caveats("qfx", qfx_non_finite_count, qfx_frame_quality),
                 ),
             ),
             low_level_response=LowLevelResponseDiagnostics(
@@ -1724,6 +2068,8 @@ def _write_fake_result_metadata(
                 ),
             ),
             time=TimeDiagnostics(source="time", fallback_used=False, coordinate_name="time"),
+            field_quality_assessed=True,
+            field_quality=field_quality,
         ),
         run_caveats=run_caveats or [],
         science_summary=ScienceSummary(

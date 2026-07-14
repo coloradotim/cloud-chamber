@@ -422,6 +422,202 @@ def test_ingests_multifile_model_output_sequence_and_excludes_stats(tmp_path: Pa
     assert availability["low_level_qv_response"].value == pytest.approx(0.006)
 
 
+def test_ingests_multifile_terminal_non_finite_frame_quality(
+    tmp_path: Path,
+) -> None:
+    manifest_path = create_manifest(tmp_path, run_id="run-terminal-nonfinite")
+    run_dir = manifest_path.parent
+    first = run_dir / "cm1out_000001.nc"
+    second = run_dir / "cm1out_000002.nc"
+    third = run_dir / "cm1out_000003.nc"
+    bad = float("nan")
+    write_model_netcdf(
+        first,
+        times=[0.0],
+        qc_values=[0.0],
+        w_values=[0.5],
+        qr_values=[0.0],
+        rain_values=[0.0],
+        hfx_values=[8.0],
+        qfx_values=[5.0e-5],
+        qv_values=[0.010],
+        th_values=[300.0],
+    )
+    write_model_netcdf(
+        second,
+        times=[3600.0],
+        qc_values=[2e-6],
+        w_values=[3.0],
+        qr_values=[1.0e-7],
+        rain_values=[0.0],
+        hfx_values=[8.0],
+        qfx_values=[5.0e-5],
+        qv_values=[0.012],
+        th_values=[302.0],
+    )
+    write_model_netcdf(
+        third,
+        times=[21600.0],
+        qc_values=[bad],
+        w_values=[bad],
+        qr_values=[bad],
+        rain_values=[bad],
+        hfx_values=[bad],
+        qfx_values=[bad],
+        qv_values=[bad],
+        th_values=[bad],
+    )
+    complete_manifest(
+        manifest_path,
+        OutputMetadata(
+            netcdf_paths=[str(third), str(first), str(second)],
+            runtime_warnings=[
+                "CM1 stderr reported floating-point exception flags: IEEE_INVALID_FLAG "
+                "IEEE_DIVIDE_BY_ZERO IEEE_OVERFLOW_FLAG IEEE_UNDERFLOW_FLAG"
+            ],
+        ),
+    )
+
+    result = ingest_completed_run(manifest_path)
+
+    assert result.model_output_paths == [str(first), str(second), str(third)]
+    assert result.diagnostics is not None
+    hfx = result.diagnostics.surface_fluxes.hfx
+    qfx = result.diagnostics.surface_fluxes.qfx
+    assert hfx.available is True
+    assert hfx.mean_value == pytest.approx(8.0)
+    assert hfx.finite_count == 24
+    assert hfx.non_finite_count == 12
+    assert hfx.frame_quality is not None
+    assert hfx.frame_quality.affected_frame_indices == [2]
+    assert hfx.frame_quality.affected_frame_times_seconds == [21600.0]
+    assert hfx.frame_quality.terminal_frame_affected is True
+    assert "hfx_field_entirely_non_finite" not in hfx.caveats
+    assert "hfx_terminal_output_frame_entirely_non_finite" in hfx.caveats
+    assert "hfx_field_entirely_non_finite" not in result.diagnostics.caveats
+    assert "qfx_field_entirely_non_finite" not in result.diagnostics.caveats
+    assert "hfx_terminal_output_frame_entirely_non_finite" in result.diagnostics.caveats
+    assert "qfx_terminal_output_frame_entirely_non_finite" in result.diagnostics.caveats
+    assert qfx.frame_quality is not None
+    assert qfx.frame_quality.affected_frame_indices == [2]
+    assert qfx.frame_quality.affected_frame_times_seconds == [21600.0]
+    hfx_quality = result.diagnostics.field_quality["hfx"]
+    assert hfx_quality.quality_state == "untrusted"
+    assert hfx_quality.reason == "hfx_terminal_output_frame_entirely_non_finite"
+    assert hfx_quality.frame_quality is not None
+    assert hfx_quality.frame_quality.last_finite_frame_time_seconds == 3600.0
+    assert result.diagnostics.field_quality["qc"].reason == (
+        "qc_terminal_output_frame_entirely_non_finite"
+    )
+    assert result.diagnostics.field_quality["qr"].reason == (
+        "qr_terminal_output_frame_entirely_non_finite"
+    )
+    assert result.diagnostics.field_quality["surface_rain"].reason == (
+        "surface_rain_terminal_output_frame_entirely_non_finite"
+    )
+    assert (
+        "qv_low_level_response_final_endpoint_entirely_non_finite"
+        in result.diagnostics.low_level_response.qv.caveats
+    )
+    assert result.diagnostics.low_level_response.qv.early_response_available is True
+    assert result.diagnostics.low_level_response.qv.full_run_response_available is False
+
+
+def test_ingests_multifile_frame_quality_uses_model_time_chronology(
+    tmp_path: Path,
+) -> None:
+    manifest_path = create_manifest(tmp_path, run_id="run-time-sorted-frame-quality")
+    run_dir = manifest_path.parent
+    late_named_first = run_dir / "cm1out_000001.nc"
+    early_named_second = run_dir / "cm1out_000002.nc"
+    bad = float("nan")
+    write_model_netcdf(
+        late_named_first,
+        times=[21600.0],
+        qc_values=[bad],
+        w_values=[bad],
+        qr_values=[bad],
+        rain_values=[bad],
+        hfx_values=[bad],
+        qfx_values=[bad],
+        qv_values=[bad],
+        th_values=[bad],
+    )
+    write_model_netcdf(
+        early_named_second,
+        times=[0.0, 3600.0],
+        qc_values=[0.0, 2e-6],
+        w_values=[0.5, 3.0],
+        qr_values=[0.0, 1.0e-7],
+        rain_values=[0.0, 0.0],
+        hfx_values=[8.0, 8.0],
+        qfx_values=[5.0e-5, 5.0e-5],
+        qv_values=[0.010, 0.012],
+        th_values=[300.0, 302.0],
+    )
+    complete_manifest(
+        manifest_path,
+        OutputMetadata(netcdf_paths=[str(late_named_first), str(early_named_second)]),
+    )
+
+    result = ingest_completed_run(manifest_path)
+
+    assert result.diagnostics is not None
+    hfx = result.diagnostics.surface_fluxes.hfx
+    assert hfx.frame_quality is not None
+    assert hfx.frame_quality.chronology_available is True
+    assert hfx.frame_quality.frame_times_seconds == [0.0, 3600.0, 21600.0]
+    assert hfx.frame_quality.affected_frame_indices == [2]
+    assert hfx.frame_quality.affected_frame_times_seconds == [21600.0]
+    assert hfx.frame_quality.terminal_frame_affected is True
+    assert result.diagnostics.field_quality["hfx"].reason == (
+        "hfx_terminal_output_frame_entirely_non_finite"
+    )
+
+
+@pytest.mark.parametrize(
+    ("times", "expected_caveat"),
+    [
+        ([0.0, 0.0], "frame_chronology_unavailable_duplicate_time"),
+        ([0.0, float("nan")], "frame_chronology_unavailable_missing_time"),
+    ],
+)
+def test_ingests_frame_quality_caveats_unreliable_time_chronology(
+    tmp_path: Path,
+    times: list[float],
+    expected_caveat: str,
+) -> None:
+    manifest_path = create_manifest(tmp_path, run_id="run-unreliable-frame-chronology")
+    run_dir = manifest_path.parent
+    output = run_dir / "cm1out_000001.nc"
+    write_model_netcdf(
+        output,
+        times=times,
+        qc_values=[0.0, float("nan")],
+        w_values=[0.5, float("nan")],
+        qr_values=[0.0, float("nan")],
+        rain_values=[0.0, float("nan")],
+        hfx_values=[8.0, float("nan")],
+        qfx_values=[5.0e-5, float("nan")],
+        qv_values=[0.010, float("nan")],
+        th_values=[300.0, float("nan")],
+    )
+    complete_manifest(
+        manifest_path,
+        OutputMetadata(netcdf_paths=[str(output)]),
+    )
+
+    result = ingest_completed_run(manifest_path)
+
+    assert result.diagnostics is not None
+    hfx_quality = result.diagnostics.field_quality["hfx"]
+    assert hfx_quality.reason == "hfx_frame_chronology_unavailable"
+    assert hfx_quality.frame_quality is not None
+    assert hfx_quality.frame_quality.chronology_available is False
+    assert expected_caveat in hfx_quality.frame_quality.chronology_caveats
+    assert "hfx_frame_chronology_unavailable" in hfx_quality.caveats
+
+
 def test_ingest_keeps_rain_water_surface_rain_and_reflectivity_distinct(
     tmp_path: Path,
 ) -> None:
