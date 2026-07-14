@@ -515,6 +515,22 @@ def test_ingests_multifile_terminal_non_finite_frame_quality(
     assert result.diagnostics.field_quality["surface_rain"].reason == (
         "surface_rain_terminal_output_frame_entirely_non_finite"
     )
+    assert result.runtime_integrity.state == "failed"
+    assert result.runtime_integrity.normal_completion_reported is None
+    assert result.runtime_integrity.terminal_non_finite_fields == [
+        "hfx",
+        "qc",
+        "qfx",
+        "qr",
+        "surface_rain",
+        "w",
+    ]
+    assert "runtime_integrity_failed_fatal_floating_point_flags" in (
+        result.runtime_integrity.caveats
+    )
+    assert "runtime_integrity_failed_terminal_output_frame_entirely_non_finite" in (
+        result.runtime_integrity.caveats
+    )
     assert (
         "qv_low_level_response_final_endpoint_entirely_non_finite"
         in result.diagnostics.low_level_response.qv.caveats

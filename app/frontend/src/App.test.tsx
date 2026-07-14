@@ -5580,6 +5580,71 @@ describe("App", () => {
     ).not.toBeInTheDocument();
   });
 
+  it("shows failed runtime integrity on result details", async () => {
+    const failedRuntimeCard = {
+      ...resultCard,
+      result_id: "result-runtime-failed",
+      run_id: "dry-run-runtime-failed",
+      name: "Runtime failed result",
+      runtime_integrity: {
+        assessed: true,
+        state: "failed",
+        reason: "runtime_integrity_failure_evidence_present",
+        summary:
+          "CM1 process completion is not enough to trust this result; runtime-integrity checks found fatal floating-point, stats-collapse, or terminal output evidence.",
+        exit_code: 0,
+        normal_completion_reported: true,
+        warning_flags: ["IEEE_INVALID_FLAG", "IEEE_OVERFLOW_FLAG"],
+        fatal_warning_flags: ["IEEE_INVALID_FLAG", "IEEE_OVERFLOW_FLAG"],
+        stats_sentinel_collapse_detected: true,
+        stats_sentinel_times_seconds: [21480],
+        terminal_non_finite_fields: ["qc", "qv", "hfx", "qfx"],
+        caveats: [
+          "runtime_integrity_failed_fatal_floating_point_flags",
+          "runtime_integrity_failed_cm1_stats_sentinel_collapse",
+          "runtime_integrity_failed_terminal_output_frame_entirely_non_finite",
+        ],
+        evidence: [
+          "stdout:program_terminated_normally",
+          "runtime_warning_flag:IEEE_INVALID_FLAG",
+          "cm1_stats_sentinel_collapse:cm1out_stats.nc:umax:frame_358:time_21480",
+        ],
+      },
+    };
+    vi.mocked(fetch).mockImplementation((input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url === "/api/scenarios") {
+        return Promise.resolve(new Response(JSON.stringify(scenarioResponse), { status: 200 }));
+      }
+      if (url === "/api/results") {
+        return Promise.resolve(
+          new Response(JSON.stringify({ results: [failedRuntimeCard] }), { status: 200 }),
+        );
+      }
+      if (url === "/api/storage/inventory") {
+        return Promise.resolve(
+          new Response(JSON.stringify(storageInventoryResponse), { status: 200 }),
+        );
+      }
+      return Promise.resolve(new Response("not found", { status: 404 }));
+    });
+
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Runtime failed result" }));
+    const resultDetail = screen.getByLabelText("Result detail");
+    fireEvent.click(within(resultDetail).getByText("Technical details"));
+
+    expect(screen.getByRole("heading", { name: "Runtime integrity failed" })).toBeInTheDocument();
+    expect(
+      screen.getByText(/CM1 process completion is not enough to trust this result/),
+    ).toBeInTheDocument();
+    expect(screen.getByText("qc, qv, hfx, qfx")).toBeInTheDocument();
+    expect(
+      screen.getByText("runtime_integrity_failed_cm1_stats_sentinel_collapse"),
+    ).toBeInTheDocument();
+  });
+
   it("shows result delete preview and confirm inside Results", async () => {
     render(<App />);
 

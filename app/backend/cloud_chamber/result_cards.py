@@ -26,6 +26,7 @@ from cloud_chamber.result_ingest import (
     result_metadata_from_json,
 )
 from cloud_chamber.run_manifest import load_run_manifest
+from cloud_chamber.runtime_integrity import RuntimeIntegrity
 from cloud_chamber.settings import CloudChamberSettings
 
 RESULT_CARD_FILENAME = "result_card.json"
@@ -128,6 +129,7 @@ class ResultCard(BaseModel):
     max_dbz: float | None = None
     reflectivity_available: bool | None = None
     surface_fluxes: SurfaceFluxDiagnostics | None = None
+    runtime_integrity: RuntimeIntegrity = Field(default_factory=RuntimeIntegrity)
     field_quality_assessed: bool = False
     field_quality: dict[str, FieldQuality] = Field(default_factory=dict)
     interesting_times: list[InterestingTimeRecord] = Field(default_factory=list)
@@ -224,6 +226,8 @@ def _card_from_metadata(
     caveats = list(metadata.warnings)
     if diagnostics:
         caveats.extend(diagnostics.caveats)
+    if metadata.runtime_integrity.assessed and metadata.runtime_integrity.state != "trusted":
+        caveats.extend(metadata.runtime_integrity.caveats)
     return ResultCard(
         result_id=metadata.result_id,
         run_id=metadata.run_id,
@@ -308,6 +312,7 @@ def _card_from_metadata(
         max_dbz=reflectivity.max_dbz if reflectivity and reflectivity.available else None,
         reflectivity_available=reflectivity.available if reflectivity else None,
         surface_fluxes=diagnostics.surface_fluxes if diagnostics else None,
+        runtime_integrity=metadata.runtime_integrity,
         field_quality_assessed=diagnostics.field_quality_assessed if diagnostics else False,
         field_quality=diagnostics.field_quality
         if diagnostics is not None and diagnostics.field_quality_assessed

@@ -47,6 +47,7 @@ from cloud_chamber.result_ingest import (
 )
 from cloud_chamber.run_manifest import RunManifestError, load_run_manifest
 from cloud_chamber.run_progress import run_progress_from_manifest
+from cloud_chamber.runtime_integrity import assess_runtime_integrity
 from cloud_chamber.runtime_storage import (
     RuntimeStorageError,
     delete_ingested_result,
@@ -881,6 +882,7 @@ def _run_status_payload(status: RunStatus) -> dict[str, object]:
                 "processed_artifacts": 0,
             },
             "runtime_warnings": [],
+            "runtime_integrity": None,
             "progress": None,
             "user": None,
             "observed_sounding": None,
@@ -897,6 +899,11 @@ def _run_status_payload(status: RunStatus) -> dict[str, object]:
             "run_configuration": None,
             "pre_run_validation_report": None,
         }
+    runtime_integrity = assess_runtime_integrity(
+        exit_code=manifest.execution.exit_code,
+        runtime_warnings=manifest.outputs.runtime_warnings,
+        stdout_log=status.stdout_log if str(status.stdout_log) else None,
+    )
     return {
         "run_id": status.run_id,
         "lifecycle_state": status.lifecycle_state.value,
@@ -921,6 +928,7 @@ def _run_status_payload(status: RunStatus) -> dict[str, object]:
             "processed_artifacts": len(manifest.outputs.processed_artifacts),
         },
         "runtime_warnings": manifest.outputs.runtime_warnings,
+        "runtime_integrity": runtime_integrity.model_dump(mode="json"),
         "progress": run_progress_from_manifest(manifest),
         "user": manifest.user.model_dump(mode="json"),
         "observed_sounding": manifest.observed_sounding,

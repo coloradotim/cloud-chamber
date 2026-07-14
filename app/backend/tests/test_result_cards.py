@@ -49,6 +49,7 @@ def create_completed_result(
     include_diagnostics_fields: bool = True,
     observed_sounding: dict[str, object] | None = None,
     package_updates: dict[str, object] | None = None,
+    runtime_warnings: list[str] | None = None,
 ) -> tuple[CloudChamberSettings, str, Path]:
     settings = fake_settings(tmp_path)
     package = generate_dry_run_package(
@@ -66,7 +67,9 @@ def create_completed_result(
         "execution": ExecutionMetadata(finished_at=finished_at, exit_code=0),
         "outputs": OutputMetadata(
             netcdf_paths=[str(netcdf_path)],
-            runtime_warnings=["CM1 stderr reported floating-point exception flags: TEST"],
+            runtime_warnings=runtime_warnings
+            if runtime_warnings is not None
+            else ["CM1 stderr reported floating-point exception flags: TEST"],
         ),
         "observed_sounding": observed_sounding,
     }
@@ -183,6 +186,21 @@ def test_result_card_created_from_ingested_metadata(tmp_path: Path) -> None:
     assert card.output_file_summary.netcdf_count == 1
     assert card.output_file_summary.model_output_count == 1
     assert card.output_file_summary.time_steps == 1
+    assert card.runtime_integrity.state == "trusted"
+
+
+def test_result_card_exposes_failed_runtime_integrity(tmp_path: Path) -> None:
+    settings, result_id, _run_dir = create_completed_result(
+        tmp_path,
+        run_id="run-card-runtime-integrity",
+        runtime_warnings=["CM1 stderr reported floating-point exception flags: IEEE_INVALID_FLAG"],
+    )
+
+    card = get_result_card(settings, result_id)
+
+    assert card.runtime_integrity.state == "failed"
+    assert card.runtime_integrity.reason == "runtime_integrity_failure_evidence_present"
+    assert "runtime_integrity_failed_fatal_floating_point_flags" in card.caveats
 
 
 def test_result_card_preserves_observed_surface_forced_recipe_metadata(tmp_path: Path) -> None:
