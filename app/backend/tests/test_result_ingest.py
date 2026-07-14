@@ -849,8 +849,8 @@ def test_deep_candidate_comparison_uses_observed_surface_forced_outcome(
     assert result.candidate_hypothesis_comparison.match_status == "inconclusive"
     assert result.candidate_hypothesis_comparison.cm1_outcome == (
         "Deep convection did not occur under this run configuration by current "
-        "cloud-top and updraft thresholds; this does not disprove the sounding's "
-        "deep-convection potential."
+        "coherent cloud-object top and updraft thresholds; this does not disprove "
+        "the sounding's deep-convection potential."
     )
     assert "trigger" not in result.candidate_hypothesis_comparison.cm1_outcome.lower()
     assert "failed" not in result.candidate_hypothesis_comparison.cm1_outcome.lower()

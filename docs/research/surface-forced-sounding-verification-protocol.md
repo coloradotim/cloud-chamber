@@ -306,7 +306,7 @@ An operator override may continue the campaign, but the report must preserve the
 Where possible, #311 should map report fields to existing backend structures instead of inventing names:
 
 - `ResultMetadata`: result ID, run ID, scenario/recipe IDs, observed sounding, run configuration, expected/required/missing fields, warnings, caveats, candidate screening, result state.
-- `ScienceSummary`: first cloud time, cloud top/deep-cloud state, max `qc`, max `w`, rain-water timing, default interesting time, support state where available.
+- `ScienceSummary`: first cloud time, liquid cloud-water top, coherent cloud-object top, raw hydrometeor trace top, deep-cloud state, max `qc`, max `w`, rain-water timing, default interesting time, support state where available.
 - `ResultDiagnostics` and output-product payloads: field availability, units, min/max/mean when derivable, missing-field support states.
 
 If the backend cannot provide a field, the report must say `unavailable` and identify the missing diagnostic rather than inventing a value.
@@ -378,7 +378,7 @@ Required evidence:
 - Ingested metadata reports `hfx` and `qfx` separately when present.
 - Heat/moisture changes produce directionally consistent `hfx`/`qfx` changes where derivable.
 - Low-level thermal/moisture fields respond in the expected direction if derivable by the standardized low-level response diagnostic.
-- Cloud timing, cloud top, `qc`, or `w` response is summarized, even if weak.
+- Cloud timing, coherent cloud-object top, raw hydrometeor trace top, `qc`, or `w` response is summarized, even if weak.
 
 Interpretation:
 
@@ -424,7 +424,7 @@ The 12 km to 60 km step is not a pure domain-size test when `horizontal_cell_cou
 Required evidence:
 
 - Boundary-layer response compared with the matched Phase 2 control and Phase 1 behavior.
-- Max cloud top and time of max cloud top.
+- Max coherent cloud-object top, raw hydrometeor trace top, and the time of each maximum.
 - Max `w`, plus time and height of max `w` if available.
 - Max `qc` and time of max `qc`.
 - Cloud depth or classification when supported.

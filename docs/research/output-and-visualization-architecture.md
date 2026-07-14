@@ -294,7 +294,7 @@ CM1 documents a broad output field surface:
 | Surface/forcing | sensible/latent flux | `output_sfcflx` | not productized | raw | near-term for realistic inputs |
 | Surface/forcing | 2 m temp/moisture, 10 m winds, roughness | `output_sfcdiags`, `output_sfcparams` | not productized | raw | near-term for land/diurnal |
 | Surface/forcing | radiation terms / OLR | `output_radten`, `output_sfcparams` when radiation enabled | not productized | raw | medium with radiation runs |
-| Time evolution | interesting times | derived from `qc`, `w`, `qr`, cloud top/base | partial defaults | derived | near-term |
+| Time evolution | interesting times | derived from `qc`, `w`, `qr`, coherent cloud-object top/base, and raw hydrometeor trace top | partial defaults | derived | near-term |
 | Time evolution | time-height cloud fraction/max `w` | derive from full sequence | not productized | derived | near-term |
 | Time evolution | domain-mean profiles | domain diagnostics or derive from fields | not productized | raw/derived | near-term / medium |
 | Budgets | `th/qv/u/v/w` budgets | CM1 budget outputs | not productized | raw | future |
@@ -322,7 +322,8 @@ For those runs, #210's output implication is:
 - surface/wetness proxy needs surface fluxes, 2 m temp/moisture, and proxy
   caveats;
 - land/diurnal needs diurnal timing, boundary-layer growth, cloud onset,
-  cloud top/base, and surface flux evolution.
+  coherent cloud-object top/base, raw hydrometeor trace top, and surface flux
+  evolution.
 
 ## Backend Derived Output Products
 
@@ -570,7 +571,9 @@ Near-term interesting times:
 - max `qc`;
 - max updraft;
 - min downdraft;
-- highest cloud top;
+- highest liquid cloud-water top from `qc`;
+- highest coherent cloud-object top from supported, vertically connected hydrometeor levels;
+- highest raw hydrometeor trace top from any hydrometeor threshold crossing;
 - rain onset;
 - max `qr`;
 - max reflectivity;
@@ -741,7 +744,8 @@ Scope:
 
 - Record file/time mapping.
 - Compute interesting times: first cloud, max `qc`, max `w`, min `w`, rain
-  onset, max `qr`, max `dbz`, highest cloud top.
+  onset, max `qr`, max `dbz`, highest coherent cloud-object top, and highest
+  raw hydrometeor trace top.
 - Expose a small API payload for Explore and Results.
 - Preserve direct vs inferred time caveats.
 

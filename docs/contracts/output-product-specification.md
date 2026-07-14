@@ -222,7 +222,9 @@ Near-term interesting times:
 - max `qc`;
 - max updraft `w`;
 - min downdraft `w`;
-- highest cloud top;
+- highest liquid cloud-water top from `qc`;
+- highest coherent cloud-object top from supported, vertically connected `qc`, `qr`, `qi`, `qs`, and `qg` levels when present;
+- highest raw hydrometeor trace top from any `qc`, `qr`, `qi`, `qs`, or `qg` threshold crossing;
 - rain-water onset from `qr`;
 - max rain water aloft from `qr`;
 - max `dbz`;
@@ -269,18 +271,24 @@ misleading cloud/rain-water landmark.
 
 Interesting-time records, field defaults, diagnostic availability records, and
 science summaries may carry target-field `field_quality` metadata for `qc`, `w`,
-`qr`, surface `rain`, `dbz`, `hfx`, and `qfx`. Entirely non-finite source fields are
-`untrusted` and must not produce supported landmarks or clean comparison
-evidence. Partially non-finite fields may remain usable only with visible
-caveats and finite/non-finite counts.
+`qr`, surface `rain`, `dbz`, `hfx`, and `qfx`, plus present ice/snow/graupel
+fields when they contribute to cloud-top diagnostics. Entirely non-finite source
+fields are `untrusted` and must not produce supported landmarks or clean
+comparison evidence. Partially non-finite fields may remain usable only with
+visible caveats and finite/non-finite counts.
 
 Triggered deep-potential results extend the same product with backend-owned
 summary fields for deep-cloud formation, first deep-convection time, strong
-updraft detection, cloud top, rain-water onset, max `qr`, and the default Explore
-time. Unsupported severe-storm diagnostics such as reflectivity maxima,
-surface-rain maxima, updraft-depth proxy, cold-pool proxy, and near-surface
-theta perturbation proxy must be recorded as unavailable or caveated until a
-supported backend diagnostic exists. When candidate-screening metadata is
+updraft detection, liquid cloud-water top, coherent cloud-object top, raw
+hydrometeor trace top, rain-water onset, max `qr`, and the default Explore time.
+The deep-cloud classifier must use coherent cloud-object top, not an isolated raw
+hydrometeor trace. The product must not use a generic "cloud top" label when the
+value comes from the broader trace envelope rather than visible `qc` alone.
+
+Unsupported severe-storm diagnostics such as reflectivity maxima, surface-rain
+maxima, updraft-depth proxy, cold-pool proxy, and near-surface theta
+perturbation proxy must be recorded as unavailable or caveated until a supported
+backend diagnostic exists. When candidate-screening metadata is
 present, result metadata may include a compact `candidate_hypothesis_comparison`
 with `Screened as`, `Ran as`, `CM1 outcome`, match state, evidence, and caveats.
 The comparison uses simple v1 rules and remains a post-run interpretation of

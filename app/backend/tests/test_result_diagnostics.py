@@ -216,14 +216,98 @@ def test_cloud_top_uses_ice_and_snow_hydrometeor_envelope(tmp_path: Path) -> Non
     diagnostics = compute_baseline_diagnostics(dataset, caveats)
 
     assert diagnostics.cloud.formed is True
+    assert diagnostics.cloud.liquid_cloud_base_m == 1500.0
+    assert diagnostics.cloud.liquid_cloud_top_m == 1500.0
+    assert diagnostics.cloud.hydrometeor_envelope_base_m == 1500.0
+    assert diagnostics.cloud.hydrometeor_envelope_top_m == 10500.0
+    assert diagnostics.cloud.hydrometeor_envelope_source_fields == ["qc", "qi", "qs"]
+    assert diagnostics.cloud.raw_hydrometeor_envelope_top_m == 10500.0
+    assert diagnostics.cloud.coherent_cloud_object_base_m == 1500.0
+    assert diagnostics.cloud.coherent_cloud_object_top_m == 10500.0
+    assert diagnostics.cloud.coherent_cloud_object_source_fields == ["qc", "qi", "qs"]
     assert diagnostics.cloud.cloud_base_m == 1500.0
     assert diagnostics.cloud.cloud_top_m == 10500.0
+    assert [point.value for point in diagnostics.cloud.liquid_cloud_top_time_series] == [
+        None,
+        1500.0,
+    ]
     assert [point.value for point in diagnostics.cloud.cloud_top_time_series] == [
         None,
         10500.0,
     ]
     assert diagnostics.cloud.max_qc_kg_kg == 2e-6
     assert "cloud_top_uses_total_hydrometeor_fields:qc,qi,qs" in diagnostics.caveats
+
+
+def test_sparse_high_hydrometeor_trace_does_not_define_coherent_cloud_top(
+    tmp_path: Path,
+) -> None:
+    qc_values = zeros(z_count=4)
+    qs_values = zeros(z_count=4)
+    for y_index in range(3):
+        for x_index in range(4):
+            qc_values[1][1][y_index][x_index] = 2e-6
+    qs_values[1][3][0][0] = 4e-6
+    dataset = write_dataset(
+        tmp_path / "sparse_trace.nc",
+        base_dataset(
+            qc_values=qc_values,
+            qs_values=qs_values,
+            z_values=[500.0, 1500.0, 7500.0, 10500.0],
+        ),
+    )
+    caveats: list[str] = []
+
+    diagnostics = compute_baseline_diagnostics(dataset, caveats)
+
+    assert diagnostics.cloud.formed is True
+    assert diagnostics.cloud.liquid_cloud_top_m == 1500.0
+    assert diagnostics.cloud.raw_hydrometeor_envelope_top_m == 10500.0
+    assert diagnostics.cloud.hydrometeor_envelope_top_m == 10500.0
+    assert diagnostics.cloud.coherent_cloud_object_top_m == 1500.0
+    assert diagnostics.cloud.cloud_top_m == 1500.0
+    assert [point.value for point in diagnostics.cloud.cloud_top_time_series] == [
+        None,
+        1500.0,
+    ]
+    assert [
+        point.value for point in diagnostics.cloud.raw_hydrometeor_envelope_top_time_series
+    ] == [None, 10500.0]
+    assert diagnostics.cloud.raw_hydrometeor_envelope_top_support_time_series[
+        -1
+    ].top_defining_species == ["qs"]
+    assert (
+        "coherent_cloud_object_support_uses_grid_cell_count_not_physical_area"
+        in diagnostics.caveats
+    )
+
+
+def test_substantial_detached_ice_cloud_is_defined_as_coherent_without_qc_support(
+    tmp_path: Path,
+) -> None:
+    qc_values = zeros(z_count=4)
+    qi_values = zeros(z_count=4)
+    for y_index in range(3):
+        for x_index in range(4):
+            qi_values[1][2][y_index][x_index] = 3e-6
+            qi_values[1][3][y_index][x_index] = 4e-6
+    dataset = write_dataset(
+        tmp_path / "detached_ice_cloud.nc",
+        base_dataset(
+            qc_values=qc_values,
+            qi_values=qi_values,
+            z_values=[500.0, 1500.0, 7500.0, 10500.0],
+        ),
+    )
+
+    diagnostics = compute_baseline_diagnostics(dataset, [])
+
+    assert diagnostics.cloud.formed is False
+    assert diagnostics.cloud.liquid_cloud_top_m is None
+    assert diagnostics.cloud.raw_hydrometeor_envelope_top_m == 10500.0
+    assert diagnostics.cloud.coherent_cloud_object_top_m == 10500.0
+    assert diagnostics.cloud.coherent_cloud_object_source_fields == ["qi"]
+    assert "coherent_cloud_object_without_liquid_cloud_water_support" in diagnostics.caveats
 
 
 def test_no_cloud_case(tmp_path: Path) -> None:
@@ -242,7 +326,7 @@ def test_no_cloud_case(tmp_path: Path) -> None:
 def test_cloud_formed_requires_ten_grid_cells_and_reports_base_top(tmp_path: Path) -> None:
     dataset = write_dataset(
         tmp_path / "cloud.nc",
-        base_dataset(qc_values=with_cloud(12), w_values=w_field()),
+        base_dataset(qc_values=with_cloud(24), w_values=w_field()),
     )
 
     diagnostics = compute_baseline_diagnostics(dataset, [])
@@ -251,6 +335,8 @@ def test_cloud_formed_requires_ten_grid_cells_and_reports_base_top(tmp_path: Pat
     assert diagnostics.cloud.first_cloud_time_seconds == 300.0
     assert diagnostics.cloud.cloud_base_m == 500.0
     assert diagnostics.cloud.cloud_top_m == 1500.0
+    assert diagnostics.cloud.liquid_cloud_top_m == 1500.0
+    assert diagnostics.cloud.hydrometeor_envelope_top_m == 1500.0
     assert [point.value for point in diagnostics.cloud.cloud_base_time_series] == [None, 500.0]
     assert [point.value for point in diagnostics.cloud.cloud_top_time_series] == [None, 1500.0]
     assert [point.value for point in diagnostics.cloud.max_qc_height_time_series] == [
@@ -268,7 +354,7 @@ def test_cloud_base_top_converts_km_vertical_coordinate_to_meters(tmp_path: Path
     dataset = write_dataset(
         tmp_path / "cloud_km.nc",
         base_dataset(
-            qc_values=with_cloud(12),
+            qc_values=with_cloud(24),
             w_values=w_field(),
             z_values=[0.5, 1.5],
             z_units="km",
