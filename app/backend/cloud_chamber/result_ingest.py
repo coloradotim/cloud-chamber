@@ -7,6 +7,7 @@ import json
 import re
 from collections.abc import Mapping
 from datetime import UTC, datetime
+from math import isfinite
 from pathlib import Path
 from typing import Any, cast
 
@@ -826,32 +827,92 @@ def _merge_frame_quality_summaries(
     present = [summary for summary in summaries if summary is not None]
     if not present:
         return None
-    total_frame_count = sum(summary.total_frame_count for summary in present)
+    frame_records: list[tuple[int, int, float | None, int]] = []
+    chronology_caveats: list[str] = []
+    sequence_index = 0
+    for part_index, summary in enumerate(present):
+        frame_times = list(summary.frame_times_seconds)
+        if len(frame_times) != summary.total_frame_count:
+            chronology_caveats.append("frame_chronology_unavailable_missing_time")
+            frame_times = [None] * summary.total_frame_count
+        chronology_caveats.extend(summary.chronology_caveats)
+        for local_index in range(summary.total_frame_count):
+            frame_records.append(
+                (
+                    part_index,
+                    local_index,
+                    frame_times[local_index] if local_index < len(frame_times) else None,
+                    sequence_index,
+                )
+            )
+            sequence_index += 1
+
+    total_frame_count = len(frame_records)
     finite_frame_count = sum(summary.finite_frame_count for summary in present)
+    finite_time_values = [
+        time_seconds
+        for _, _, time_seconds, _ in frame_records
+        if time_seconds is not None and isfinite(time_seconds)
+    ]
+    if len(finite_time_values) != total_frame_count:
+        chronology_caveats.append("frame_chronology_unavailable_missing_time")
+    elif len(set(finite_time_values)) != total_frame_count:
+        chronology_caveats.append("frame_chronology_unavailable_duplicate_time")
+    chronology_caveats = _dedupe_strings(chronology_caveats)
+
+    if chronology_caveats:
+        ordered_frame_records = sorted(frame_records, key=lambda record: record[3])
+    else:
+        ordered_frame_records = sorted(
+            frame_records,
+            key=lambda record: cast(float, record[2]),
+        )
+    frame_order: dict[tuple[int, int], tuple[int, FramePosition, float | None]] = {}
+    frame_times_seconds: list[float | None] = []
+    for rank, (part_index, local_index, time_seconds, _) in enumerate(ordered_frame_records):
+        frame_order[(part_index, local_index)] = (
+            rank,
+            _merged_frame_position(rank, total_frame_count),
+            time_seconds,
+        )
+        frame_times_seconds.append(time_seconds)
+
     affected_frames: list[FieldFrameQualityRecord] = []
-    first_finite_time: float | None = None
-    last_finite_time: float | None = None
-    offset = 0
-    for summary in present:
-        if first_finite_time is None and summary.first_finite_frame_time_seconds is not None:
-            first_finite_time = summary.first_finite_frame_time_seconds
-        if summary.last_finite_frame_time_seconds is not None:
-            last_finite_time = summary.last_finite_frame_time_seconds
+    first_finite_candidates = [
+        summary.first_finite_frame_time_seconds
+        for summary in present
+        if summary.first_finite_frame_time_seconds is not None
+        and isfinite(summary.first_finite_frame_time_seconds)
+    ]
+    last_finite_candidates = [
+        summary.last_finite_frame_time_seconds
+        for summary in present
+        if summary.last_finite_frame_time_seconds is not None
+        and isfinite(summary.last_finite_frame_time_seconds)
+    ]
+    first_finite_time = min(first_finite_candidates) if first_finite_candidates else None
+    last_finite_time = max(last_finite_candidates) if last_finite_candidates else None
+    for part_index, summary in enumerate(present):
         for frame in summary.affected_frames:
-            frame_index = frame.frame_index + offset
+            if (part_index, frame.frame_index) not in frame_order:
+                chronology_caveats.append("frame_chronology_unavailable_missing_time")
+                continue
+            frame_index, position, time_seconds = frame_order[(part_index, frame.frame_index)]
             affected_frames.append(
                 FieldFrameQualityRecord(
                     frame_index=frame_index,
-                    time_seconds=frame.time_seconds,
-                    position=_merged_frame_position(frame_index, total_frame_count),
+                    time_seconds=time_seconds,
+                    position=position,
                     finite_count=frame.finite_count,
                     non_finite_count=frame.non_finite_count,
                     total_count=frame.total_count,
                     entirely_non_finite=frame.entirely_non_finite,
                 )
             )
-        offset += summary.total_frame_count
+    affected_frames = sorted(affected_frames, key=lambda frame: frame.frame_index)
+    chronology_caveats = _dedupe_strings(chronology_caveats)
     return FieldFrameQualitySummary(
+        frame_times_seconds=frame_times_seconds,
         affected_frames=affected_frames,
         affected_frame_indices=[frame.frame_index for frame in affected_frames],
         affected_frame_times_seconds=[frame.time_seconds for frame in affected_frames],
@@ -867,10 +928,12 @@ def _merge_frame_quality_summaries(
         partially_non_finite_frame_count=sum(
             1 for frame in affected_frames if not frame.entirely_non_finite
         ),
+        affected_frame_count=len(affected_frames),
         finite_frame_count=finite_frame_count,
-        non_finite_frame_count=len(affected_frames),
         total_frame_count=total_frame_count,
         finite_point_fraction=_finite_fraction(finite_count, total_count),
+        chronology_available=not chronology_caveats,
+        chronology_caveats=chronology_caveats,
         first_finite_frame_time_seconds=first_finite_time,
         last_finite_frame_time_seconds=last_finite_time,
     )
@@ -907,6 +970,8 @@ def _frame_quality_reason(
         return None
     if frame_quality is None:
         return partial_reason
+    if not frame_quality.chronology_available:
+        return f"{field}_frame_chronology_unavailable"
     terminal_entire = any(
         frame.position == "terminal" and frame.entirely_non_finite
         for frame in frame_quality.affected_frames

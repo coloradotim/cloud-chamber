@@ -3,7 +3,7 @@
 Campaign ID: `surface_forced_tall_002`
 Protocol: `docs/research/surface-forced-sounding-verification-protocol.md`
 Matrix file: `surface_forced_tall_002.yaml` (runtime-local path omitted)
-Generated: `2026-07-14T14:43:04.705347+00:00`
+Generated: `2026-07-14T15:18:38.363023+00:00`
 
 ## Objective
 
@@ -35,6 +35,8 @@ No operator phase-gate overrides were recorded.
 | phase2_easy_deep_strong_120km_12h_optional | planned | unavailable time unavailable | H 0.04 K m/s; M 0.0001 g/g m/s | regional_120km 128 dx 937.5 m | planned |
 | phase3_weak_control_strong_60km_12h | planned | unavailable time unavailable | H 0.04 K m/s; M 0.0001 g/g m/s | regional_60km 128 dx 468.75 m | planned |
 
+Cloud-top values currently use the total hydrometeor envelope and may exceed the coherent liquid/ice cloud-object top. See #330.
+
 ## Per-Run Evidence
 
 ### phase1_control_default_flux
@@ -49,7 +51,8 @@ No operator phase-gate overrides were recorded.
 - Surface flux fields: hfx `True`, moisture flux `True` via `qfx`
 - Surface flux stats: hfx `7.944224834442139`/`9.5802640914917`/`8.904636484635072`, qfx `5.134478851687163e-05`/`6.191877037053928e-05`/`5.7552083215108483e-05`; counts hfx `393216`/`16384`/`409600`, qfx `393216`/`16384`/`409600`
 - Surface flux frame quality: hfx `affected frames [24] at 21600 s; initial ok; terminal affected; entirely non-finite frames 1`, qfx `affected frames [24] at 21600 s; initial ok; terminal affected; entirely non-finite frames 1`
-- Terminal output contamination: `hfx, qc, qfx, qr, surface_rain`; warnings `CM1 stderr reported floating-point exception flags: IEEE_INVALID_FLAG, IEEE_DIVIDE_BY_ZERO, IEEE_OVERFLOW_FLAG, IEEE_UNDERFLOW_FLAG`
+- Terminal field contamination: `hfx, qc, qfx, qr, surface_rain`
+- Runtime floating-point warnings: `CM1 stderr reported floating-point exception flags: IEEE_INVALID_FLAG, IEEE_DIVIDE_BY_ZERO, IEEE_OVERFLOW_FLAG, IEEE_UNDERFLOW_FLAG`
 - Cloud/updraft: first cloud unavailable (untrusted), max cloud top unavailable (untrusted), max qc unavailable (untrusted), max w 4.209 (caveated)
 - Precipitation/reflectivity: qr unavailable (untrusted), surface rain unavailable (untrusted), max dBZ 29.5
 - Diagnostic trust: `qc untrusted, w caveated, qr untrusted, surface_rain untrusted, dbz trusted`
@@ -70,7 +73,8 @@ No operator phase-gate overrides were recorded.
 - Surface flux fields: hfx `True`, moisture flux `True` via `qfx`
 - Surface flux stats: hfx `44.11780548095703`/`44.81328582763672`/`44.4474029038474`, qfx `5.70280863030348e-05`/`5.7927085435949266e-05`/`5.745413364151908e-05`; counts hfx `409600`/`0`/`409600`, qfx `409600`/`0`/`409600`
 - Surface flux frame quality: hfx `all 25/25 frames finite`, qfx `all 25/25 frames finite`
-- Terminal output contamination: `none`; warnings `CM1 stderr reported floating-point exception flags: IEEE_UNDERFLOW_FLAG`
+- Terminal field contamination: `none`
+- Runtime floating-point warnings: `CM1 stderr reported floating-point exception flags: IEEE_UNDERFLOW_FLAG`
 - Cloud/updraft: first cloud 1800, max cloud top 4591, max qc 0.002924, max w 9.897
 - Precipitation/reflectivity: qr yes, surface rain yes, max dBZ 56.08
 - Diagnostic trust: `qc trusted, w trusted, qr trusted, surface_rain trusted, dbz trusted`
@@ -91,7 +95,8 @@ No operator phase-gate overrides were recorded.
 - Surface flux fields: hfx `True`, moisture flux `True` via `qfx`
 - Surface flux stats: hfx `8.318500518798828`/`9.38566780090332`/`8.891412899023853`, qfx `0.00010339190339436755`/`0.00011665589408949018`/`0.00011051272358503895`; counts hfx `409600`/`0`/`409600`, qfx `409600`/`0`/`409600`
 - Surface flux frame quality: hfx `all 25/25 frames finite`, qfx `all 25/25 frames finite`
-- Terminal output contamination: `none`; warnings `CM1 stderr reported floating-point exception flags: IEEE_INVALID_FLAG, IEEE_UNDERFLOW_FLAG`
+- Terminal field contamination: `none`
+- Runtime floating-point warnings: `CM1 stderr reported floating-point exception flags: IEEE_INVALID_FLAG, IEEE_UNDERFLOW_FLAG`
 - Cloud/updraft: first cloud 2700, max cloud top 1.087e+04, max qc 0.008663, max w 9.921
 - Precipitation/reflectivity: qr yes, surface rain yes, max dBZ 57.01
 - Diagnostic trust: `qc trusted, w trusted, qr trusted, surface_rain trusted, dbz trusted`
@@ -112,7 +117,8 @@ No operator phase-gate overrides were recorded.
 - Surface flux fields: hfx `True`, moisture flux `True` via `qfx`
 - Surface flux stats: hfx `43.95238494873047`/`44.59759521484375`/`44.39683862362988`, qfx `0.000109258180600591`/`0.00011086207086918876`/`0.00011036302276258069`; counts hfx `409600`/`0`/`409600`, qfx `409600`/`0`/`409600`
 - Surface flux frame quality: hfx `all 25/25 frames finite`, qfx `all 25/25 frames finite`
-- Terminal output contamination: `none`; warnings `CM1 stderr reported floating-point exception flags: IEEE_UNDERFLOW_FLAG`
+- Terminal field contamination: `none`
+- Runtime floating-point warnings: `CM1 stderr reported floating-point exception flags: IEEE_UNDERFLOW_FLAG`
 - Cloud/updraft: first cloud 1800, max cloud top 5666, max qc 0.003865, max w 12.34
 - Precipitation/reflectivity: qr yes, surface rain yes, max dBZ 58.39
 - Diagnostic trust: `qc trusted, w trusted, qr trusted, surface_rain trusted, dbz trusted`
@@ -133,7 +139,8 @@ No operator phase-gate overrides were recorded.
 - Surface flux fields: hfx `False`, moisture flux `False` via `missing`
 - Surface flux stats: hfx `unavailable:until_result_ingested`/`unavailable:until_result_ingested`/`unavailable:until_result_ingested`, qfx `unavailable:until_result_ingested`/`unavailable:until_result_ingested`/`unavailable:until_result_ingested`; counts hfx `0`/`0`/`0`, qfx `0`/`0`/`0`
 - Surface flux frame quality: hfx `not assessed`, qfx `not assessed`
-- Terminal output contamination: `none`; warnings `none`
+- Terminal field contamination: `none`
+- Runtime floating-point warnings: `none`
 - Cloud/updraft: first cloud unavailable, max cloud top unavailable, max qc unavailable, max w unavailable
 - Precipitation/reflectivity: qr unavailable, surface rain unavailable, max dBZ unavailable
 - Diagnostic trust: `qc unavailable, w unavailable, qr unavailable, surface_rain unavailable, dbz unavailable`
@@ -154,7 +161,8 @@ No operator phase-gate overrides were recorded.
 - Surface flux fields: hfx `False`, moisture flux `False` via `missing`
 - Surface flux stats: hfx `unavailable:until_result_ingested`/`unavailable:until_result_ingested`/`unavailable:until_result_ingested`, qfx `unavailable:until_result_ingested`/`unavailable:until_result_ingested`/`unavailable:until_result_ingested`; counts hfx `0`/`0`/`0`, qfx `0`/`0`/`0`
 - Surface flux frame quality: hfx `not assessed`, qfx `not assessed`
-- Terminal output contamination: `none`; warnings `none`
+- Terminal field contamination: `none`
+- Runtime floating-point warnings: `none`
 - Cloud/updraft: first cloud unavailable, max cloud top unavailable, max qc unavailable, max w unavailable
 - Precipitation/reflectivity: qr unavailable, surface rain unavailable, max dBZ unavailable
 - Diagnostic trust: `qc unavailable, w unavailable, qr unavailable, surface_rain unavailable, dbz unavailable`
@@ -175,7 +183,8 @@ No operator phase-gate overrides were recorded.
 - Surface flux fields: hfx `False`, moisture flux `False` via `missing`
 - Surface flux stats: hfx `unavailable:until_result_ingested`/`unavailable:until_result_ingested`/`unavailable:until_result_ingested`, qfx `unavailable:until_result_ingested`/`unavailable:until_result_ingested`/`unavailable:until_result_ingested`; counts hfx `0`/`0`/`0`, qfx `0`/`0`/`0`
 - Surface flux frame quality: hfx `not assessed`, qfx `not assessed`
-- Terminal output contamination: `none`; warnings `none`
+- Terminal field contamination: `none`
+- Runtime floating-point warnings: `none`
 - Cloud/updraft: first cloud unavailable, max cloud top unavailable, max qc unavailable, max w unavailable
 - Precipitation/reflectivity: qr unavailable, surface rain unavailable, max dBZ unavailable
 - Diagnostic trust: `qc unavailable, w unavailable, qr unavailable, surface_rain unavailable, dbz unavailable`
@@ -196,7 +205,8 @@ No operator phase-gate overrides were recorded.
 - Surface flux fields: hfx `False`, moisture flux `False` via `missing`
 - Surface flux stats: hfx `unavailable:until_result_ingested`/`unavailable:until_result_ingested`/`unavailable:until_result_ingested`, qfx `unavailable:until_result_ingested`/`unavailable:until_result_ingested`/`unavailable:until_result_ingested`; counts hfx `0`/`0`/`0`, qfx `0`/`0`/`0`
 - Surface flux frame quality: hfx `not assessed`, qfx `not assessed`
-- Terminal output contamination: `none`; warnings `none`
+- Terminal field contamination: `none`
+- Runtime floating-point warnings: `none`
 - Cloud/updraft: first cloud unavailable, max cloud top unavailable, max qc unavailable, max w unavailable
 - Precipitation/reflectivity: qr unavailable, surface rain unavailable, max dBZ unavailable
 - Diagnostic trust: `qc unavailable, w unavailable, qr unavailable, surface_rain unavailable, dbz unavailable`
@@ -217,7 +227,8 @@ No operator phase-gate overrides were recorded.
 - Surface flux fields: hfx `False`, moisture flux `False` via `missing`
 - Surface flux stats: hfx `unavailable:until_result_ingested`/`unavailable:until_result_ingested`/`unavailable:until_result_ingested`, qfx `unavailable:until_result_ingested`/`unavailable:until_result_ingested`/`unavailable:until_result_ingested`; counts hfx `0`/`0`/`0`, qfx `0`/`0`/`0`
 - Surface flux frame quality: hfx `not assessed`, qfx `not assessed`
-- Terminal output contamination: `none`; warnings `none`
+- Terminal field contamination: `none`
+- Runtime floating-point warnings: `none`
 - Cloud/updraft: first cloud unavailable, max cloud top unavailable, max qc unavailable, max w unavailable
 - Precipitation/reflectivity: qr unavailable, surface rain unavailable, max dBZ unavailable
 - Diagnostic trust: `qc unavailable, w unavailable, qr unavailable, surface_rain unavailable, dbz unavailable`
@@ -238,7 +249,8 @@ No operator phase-gate overrides were recorded.
 - Surface flux fields: hfx `False`, moisture flux `False` via `missing`
 - Surface flux stats: hfx `unavailable:until_result_ingested`/`unavailable:until_result_ingested`/`unavailable:until_result_ingested`, qfx `unavailable:until_result_ingested`/`unavailable:until_result_ingested`/`unavailable:until_result_ingested`; counts hfx `0`/`0`/`0`, qfx `0`/`0`/`0`
 - Surface flux frame quality: hfx `not assessed`, qfx `not assessed`
-- Terminal output contamination: `none`; warnings `none`
+- Terminal field contamination: `none`
+- Runtime floating-point warnings: `none`
 - Cloud/updraft: first cloud unavailable, max cloud top unavailable, max qc unavailable, max w unavailable
 - Precipitation/reflectivity: qr unavailable, surface rain unavailable, max dBZ unavailable
 - Diagnostic trust: `qc unavailable, w unavailable, qr unavailable, surface_rain unavailable, dbz unavailable`

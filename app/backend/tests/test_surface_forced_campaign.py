@@ -1193,7 +1193,7 @@ def test_campaign_report_requires_trusted_surface_flux_stats(tmp_path: Path) -> 
     assert "experiment:hfx_stats_not_trusted_non_finite" in heat["unavailable_evidence"]
 
 
-def test_campaign_report_allows_documented_initial_surface_flux_frame_contamination(
+def test_campaign_report_blocks_initial_surface_flux_frame_contamination_without_policy(
     tmp_path: Path,
 ) -> None:
     initial_frame = _fake_frame_quality(
@@ -1215,9 +1215,12 @@ def test_campaign_report_allows_documented_initial_surface_flux_frame_contaminat
         },
     )
 
-    assert artifacts.summary["surface_flux_response"]["state"] == "surface_flux_response_verified"
+    assert artifacts.summary["surface_flux_response"]["state"] == (
+        "surface_flux_response_inconclusive_missing_evidence"
+    )
     heat = artifacts.summary["surface_flux_response"]["evaluations"][0]
-    assert heat["unavailable_evidence"] == []
+    assert "control:hfx_initial_output_frame_entirely_non_finite" in heat["unavailable_evidence"]
+    assert "control:qfx_initial_output_frame_entirely_non_finite" in heat["unavailable_evidence"]
     control = next(
         run
         for run in artifacts.summary["runs"]
@@ -1291,9 +1294,13 @@ def test_campaign_report_blocks_terminal_surface_flux_frame_contamination(
     ]
     assert control["diagnostic_trust"]["qc"] == "untrusted_terminal_non_finite_frame"
     report = Path(artifacts.markdown_path).read_text()
+    assert "Terminal field contamination" in report
+    assert "Runtime floating-point warnings" in report
     assert "terminal output-frame contamination" in report
     assert "control:hfx_terminal_output_frame_entirely_non_finite" in report
     assert "21600 s" in report
+    assert "Cloud-top values currently use the total hydrometeor envelope" in report
+    assert "See #330" in report
     assert "hfx_field_entirely_non_finite" not in report
 
 
@@ -1713,6 +1720,14 @@ def _fake_frame_quality(
     total_frame_count: int = 3,
     finite_frame_count: int = 2,
 ) -> FieldFrameQualitySummary:
+    frame_times_seconds: list[float | None]
+    if total_frame_count <= 1:
+        frame_times_seconds = [time_seconds]
+    else:
+        frame_times_seconds = [
+            21600.0 * index / (total_frame_count - 1) for index in range(total_frame_count)
+        ]
+        frame_times_seconds[frame_index] = time_seconds
     return FieldFrameQualitySummary(
         affected_frames=[
             FieldFrameQualityRecord(
@@ -1725,16 +1740,19 @@ def _fake_frame_quality(
                 entirely_non_finite=finite_count == 0,
             )
         ],
+        frame_times_seconds=frame_times_seconds,
         affected_frame_indices=[frame_index],
         affected_frame_times_seconds=[time_seconds],
         initial_frame_affected=position == "initial",
         terminal_frame_affected=position == "terminal",
+        affected_frame_count=1,
         entirely_non_finite_frame_count=1 if finite_count == 0 else 0,
         partially_non_finite_frame_count=0 if finite_count == 0 else 1,
         finite_frame_count=finite_frame_count,
-        non_finite_frame_count=1,
         total_frame_count=total_frame_count,
         finite_point_fraction=finite_frame_count / total_frame_count,
+        chronology_available=True,
+        chronology_caveats=[],
         first_finite_frame_time_seconds=0.0,
         last_finite_frame_time_seconds=3600.0 if position == "terminal" else time_seconds,
     )

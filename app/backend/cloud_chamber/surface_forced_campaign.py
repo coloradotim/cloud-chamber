@@ -193,7 +193,7 @@ SUPPORTED_REQUIRED_SUMMARY_FIELDS = {
     "qfx_frame_quality",
     "terminal_output_contamination",
     "terminal_output_contamination_fields",
-    "terminal_output_contamination_warnings",
+    "runtime_floating_point_warnings",
     "lhfx_present",
     "lhfx_units",
     "lhfx_min",
@@ -2089,7 +2089,7 @@ def _summary_for_plan_run(run: CampaignRunPlan, state: CampaignState) -> dict[st
         "qfx_frame_quality": qfx_stats["frame_quality"],
         "terminal_output_contamination": terminal_contamination["present"],
         "terminal_output_contamination_fields": terminal_contamination["fields"],
-        "terminal_output_contamination_warnings": terminal_contamination["warnings"],
+        "runtime_floating_point_warnings": terminal_contamination["warnings"],
         "surface_moisture_flux_output_field": _surface_moisture_flux_field(variables),
         "lhfx_present": _surface_moisture_flux_field(variables) is not None,
         "lhfx_units": qfx_stats["units"],
@@ -2322,16 +2322,19 @@ def _frame_quality_summary_values(
     if frame_quality is None:
         return None
     return {
+        "frame_times_seconds": frame_quality.frame_times_seconds,
         "affected_frame_indices": frame_quality.affected_frame_indices,
         "affected_frame_times_seconds": frame_quality.affected_frame_times_seconds,
         "initial_frame_affected": frame_quality.initial_frame_affected,
         "terminal_frame_affected": frame_quality.terminal_frame_affected,
+        "affected_frame_count": frame_quality.affected_frame_count,
         "entirely_non_finite_frame_count": frame_quality.entirely_non_finite_frame_count,
         "partially_non_finite_frame_count": frame_quality.partially_non_finite_frame_count,
         "finite_frame_count": frame_quality.finite_frame_count,
-        "non_finite_frame_count": frame_quality.non_finite_frame_count,
         "total_frame_count": frame_quality.total_frame_count,
         "finite_point_fraction": frame_quality.finite_point_fraction,
+        "chronology_available": frame_quality.chronology_available,
+        "chronology_caveats": frame_quality.chronology_caveats,
         "first_finite_frame_time_seconds": frame_quality.first_finite_frame_time_seconds,
         "last_finite_frame_time_seconds": frame_quality.last_finite_frame_time_seconds,
         "affected_frames": [
@@ -2966,6 +2969,15 @@ def _render_markdown_report(plan: CampaignPlan, summary: Mapping[str, Any]) -> s
     lines.extend(
         [
             "",
+            (
+                "Cloud-top values currently use the total hydrometeor envelope and may "
+                "exceed the coherent liquid/ice cloud-object top. See #330."
+            ),
+        ]
+    )
+    lines.extend(
+        [
+            "",
             "## Per-Run Evidence",
             "",
         ]
@@ -2977,9 +2989,7 @@ def _render_markdown_report(plan: CampaignPlan, summary: Mapping[str, Any]) -> s
         diagnostic_trust = trust if isinstance(trust, dict) else {}
         quality_warnings = ", ".join(run["diagnostic_quality_warnings"]) or "none"
         terminal_fields = ", ".join(run.get("terminal_output_contamination_fields") or []) or "none"
-        terminal_warnings = (
-            ", ".join(run.get("terminal_output_contamination_warnings") or []) or "none"
-        )
+        runtime_warnings = ", ".join(run.get("runtime_floating_point_warnings") or []) or "none"
         cloud_updraft = ", ".join(
             [
                 _trusted_metric_label(
@@ -3041,10 +3051,8 @@ def _render_markdown_report(plan: CampaignPlan, summary: Mapping[str, Any]) -> s
                     f"`{_frame_quality_report_label(run.get('hfx_frame_quality'))}`, "
                     f"qfx `{_frame_quality_report_label(run.get('qfx_frame_quality'))}`"
                 ),
-                (
-                    f"- Terminal output contamination: "
-                    f"`{terminal_fields}`; warnings `{terminal_warnings}`"
-                ),
+                (f"- Terminal field contamination: `{terminal_fields}`"),
+                f"- Runtime floating-point warnings: `{runtime_warnings}`",
                 f"- Cloud/updraft: {cloud_updraft}",
                 f"- Precipitation/reflectivity: {precipitation}",
                 f"- Diagnostic trust: `{_diagnostic_trust_summary(diagnostic_trust)}`",
@@ -3824,12 +3832,14 @@ def _surface_flux_stat_unavailable_reasons(
     if non_finite_count is None:
         reasons.append(f"{role}:{field}_non_finite_count_unavailable")
     elif non_finite_count > 0:
-        if _frame_quality_has_terminal_entirely_non_finite(frame_quality):
+        if frame_quality is not None and not frame_quality.get("chronology_available", True):
+            reasons.append(f"{role}:{field}_frame_chronology_unavailable")
+        elif _frame_quality_has_terminal_entirely_non_finite(frame_quality):
             reasons.append(f"{role}:{field}_terminal_output_frame_entirely_non_finite")
         elif _frame_quality_has_intermediate_entirely_non_finite(frame_quality):
             reasons.append(f"{role}:{field}_intermediate_output_frame_entirely_non_finite")
         elif _frame_quality_is_initial_only_entirely_non_finite(frame_quality):
-            pass
+            reasons.append(f"{role}:{field}_initial_output_frame_entirely_non_finite")
         else:
             reasons.append(f"{role}:{field}_stats_not_trusted_non_finite")
     if not isinstance(units, str) or not units:

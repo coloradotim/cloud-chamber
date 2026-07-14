@@ -60,17 +60,20 @@ class FieldFrameQualityRecord(BaseModel):
 class FieldFrameQualitySummary(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
+    frame_times_seconds: list[float | None] = Field(default_factory=list)
     affected_frames: list[FieldFrameQualityRecord] = Field(default_factory=list)
     affected_frame_indices: list[int] = Field(default_factory=list)
     affected_frame_times_seconds: list[float | None] = Field(default_factory=list)
     initial_frame_affected: bool = False
     terminal_frame_affected: bool = False
+    affected_frame_count: int = 0
     entirely_non_finite_frame_count: int = 0
     partially_non_finite_frame_count: int = 0
     finite_frame_count: int = 0
-    non_finite_frame_count: int = 0
     total_frame_count: int = 0
     finite_point_fraction: float | None = None
+    chronology_available: bool = True
+    chronology_caveats: list[str] = Field(default_factory=list)
     first_finite_frame_time_seconds: float | None = None
     last_finite_frame_time_seconds: float | None = None
 
@@ -669,6 +672,8 @@ def _field_quality_reason(
         return config["entire"]
     if non_finite_count <= 0:
         return None
+    if not frame_quality.chronology_available:
+        return f"{source_field}_frame_chronology_unavailable"
     terminal_entire = any(
         frame.position == "terminal" and frame.entirely_non_finite
         for frame in frame_quality.affected_frames
@@ -706,6 +711,8 @@ def _field_quality_caveats(
 def _field_frame_quality(data_array: Any, time: _TimeContext) -> FieldFrameQualitySummary:
     slices = _time_slices(data_array, time.dimension)
     total_frame_count = len(slices)
+    frame_times_seconds = [time.at(index) for index in range(total_frame_count)]
+    frame_positions, chronology_caveats = _frame_positions_from_times(frame_times_seconds)
     affected_frames: list[FieldFrameQualityRecord] = []
     finite_frame_count = 0
     first_finite_time: float | None = None
@@ -730,7 +737,7 @@ def _field_frame_quality(data_array: Any, time: _TimeContext) -> FieldFrameQuali
                 FieldFrameQualityRecord(
                     frame_index=index,
                     time_seconds=time_seconds,
-                    position=_frame_position(index, total_frame_count),
+                    position=frame_positions[index],
                     finite_count=finite_count,
                     non_finite_count=non_finite_count,
                     total_count=total_count,
@@ -740,10 +747,12 @@ def _field_frame_quality(data_array: Any, time: _TimeContext) -> FieldFrameQuali
 
     return _frame_quality_summary_from_records(
         affected_frames,
+        frame_times_seconds=frame_times_seconds,
         finite_frame_count=finite_frame_count,
         total_frame_count=total_frame_count,
         finite_point_count=finite_point_count,
         total_point_count=total_point_count,
+        chronology_caveats=chronology_caveats,
         first_finite_frame_time_seconds=first_finite_time,
         last_finite_frame_time_seconds=last_finite_time,
     )
@@ -752,14 +761,17 @@ def _field_frame_quality(data_array: Any, time: _TimeContext) -> FieldFrameQuali
 def _frame_quality_summary_from_records(
     affected_frames: list[FieldFrameQualityRecord],
     *,
+    frame_times_seconds: list[float | None],
     finite_frame_count: int,
     total_frame_count: int,
     finite_point_count: int,
     total_point_count: int,
+    chronology_caveats: list[str],
     first_finite_frame_time_seconds: float | None,
     last_finite_frame_time_seconds: float | None,
 ) -> FieldFrameQualitySummary:
     return FieldFrameQualitySummary(
+        frame_times_seconds=frame_times_seconds,
         affected_frames=affected_frames,
         affected_frame_indices=[frame.frame_index for frame in affected_frames],
         affected_frame_times_seconds=[frame.time_seconds for frame in affected_frames],
@@ -775,16 +787,53 @@ def _frame_quality_summary_from_records(
         partially_non_finite_frame_count=sum(
             1 for frame in affected_frames if not frame.entirely_non_finite
         ),
+        affected_frame_count=len(affected_frames),
         finite_frame_count=finite_frame_count,
-        non_finite_frame_count=len(affected_frames),
         total_frame_count=total_frame_count,
         finite_point_fraction=_finite_fraction(finite_point_count, total_point_count),
+        chronology_available=not chronology_caveats,
+        chronology_caveats=chronology_caveats,
         first_finite_frame_time_seconds=first_finite_frame_time_seconds,
         last_finite_frame_time_seconds=last_finite_frame_time_seconds,
     )
 
 
-def _frame_position(index: int, total_frame_count: int) -> FramePosition:
+def _frame_positions_from_times(
+    frame_times_seconds: list[float | None],
+) -> tuple[list[FramePosition], list[str]]:
+    total_frame_count = len(frame_times_seconds)
+    if total_frame_count <= 1:
+        return (["single"], [])
+
+    finite_times = [
+        (index, time_seconds)
+        for index, time_seconds in enumerate(frame_times_seconds)
+        if time_seconds is not None and isfinite(time_seconds)
+    ]
+    chronology_caveats: list[str] = []
+    if len(finite_times) != total_frame_count:
+        chronology_caveats.append("frame_chronology_unavailable_missing_time")
+    else:
+        seen_times = {time_seconds for _, time_seconds in finite_times}
+        if len(seen_times) != total_frame_count:
+            chronology_caveats.append("frame_chronology_unavailable_duplicate_time")
+
+    if chronology_caveats:
+        return (
+            [
+                _frame_position_from_index(index, total_frame_count)
+                for index in range(total_frame_count)
+            ],
+            chronology_caveats,
+        )
+
+    positions: list[FramePosition] = ["intermediate"] * total_frame_count
+    for rank, (index, _) in enumerate(sorted(finite_times, key=lambda item: item[1])):
+        positions[index] = _frame_position_from_index(rank, total_frame_count)
+    return positions, []
+
+
+def _frame_position_from_index(index: int, total_frame_count: int) -> FramePosition:
     if total_frame_count <= 1:
         return "single"
     if index == 0:
