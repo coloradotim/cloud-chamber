@@ -1299,8 +1299,7 @@ def test_campaign_report_blocks_terminal_surface_flux_frame_contamination(
     assert "terminal output-frame contamination" in report
     assert "control:hfx_terminal_output_frame_entirely_non_finite" in report
     assert "21600 s" in report
-    assert "Cloud-top values currently use the total hydrometeor envelope" in report
-    assert "See #330" in report
+    assert "Cloud-top summaries use the coherent cloud-object top" in report
     assert "hfx_field_entirely_non_finite" not in report
 
 

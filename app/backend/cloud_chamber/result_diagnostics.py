@@ -100,6 +100,19 @@ class TimeValue(BaseModel):
     value: float | None
 
 
+class CloudTopSupportRecord(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    time_seconds: float | None
+    top_m: float | None = None
+    top_defining_species: list[str] = Field(default_factory=list)
+    supporting_species: list[str] = Field(default_factory=list)
+    threshold_kg_kg: float = QC_CLOUD_THRESHOLD_KG_KG
+    qualifying_cell_count: int = 0
+    continuity_supported: bool = False
+    support_rule: str = "minimum_10_cells_per_level_connected_to_lowest_supported_hydrometeor_level"
+
+
 class TimeDiagnostics(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -119,6 +132,27 @@ class CloudDiagnostics(BaseModel):
     cloud_top_m: float | None = None
     cloud_base_time_series: list[TimeValue] = Field(default_factory=list)
     cloud_top_time_series: list[TimeValue] = Field(default_factory=list)
+    liquid_cloud_base_m: float | None = None
+    liquid_cloud_top_m: float | None = None
+    liquid_cloud_base_time_series: list[TimeValue] = Field(default_factory=list)
+    liquid_cloud_top_time_series: list[TimeValue] = Field(default_factory=list)
+    hydrometeor_envelope_base_m: float | None = None
+    hydrometeor_envelope_top_m: float | None = None
+    hydrometeor_envelope_top_time_series: list[TimeValue] = Field(default_factory=list)
+    hydrometeor_envelope_source_fields: list[str] = Field(default_factory=list)
+    raw_hydrometeor_envelope_base_m: float | None = None
+    raw_hydrometeor_envelope_top_m: float | None = None
+    raw_hydrometeor_envelope_top_time_series: list[TimeValue] = Field(default_factory=list)
+    raw_hydrometeor_envelope_top_support_time_series: list[CloudTopSupportRecord] = Field(
+        default_factory=list
+    )
+    coherent_cloud_object_base_m: float | None = None
+    coherent_cloud_object_top_m: float | None = None
+    coherent_cloud_object_top_time_series: list[TimeValue] = Field(default_factory=list)
+    coherent_cloud_object_top_support_time_series: list[CloudTopSupportRecord] = Field(
+        default_factory=list
+    )
+    coherent_cloud_object_source_fields: list[str] = Field(default_factory=list)
     max_qc_kg_kg: float | None = None
     time_of_max_qc_seconds: float | None = None
     max_qc_height_time_series: list[TimeValue] = Field(default_factory=list)
@@ -378,7 +412,9 @@ def compute_process_diagnostics(
     elif has_cloud and _cloud_top_increases(diagnostics.cloud.cloud_top_time_series):
         label = "Growing cumulus"
         confidence = "candidate"
-        summary = "Cloud formed and cloud top increased over available output times."
+        summary = (
+            "Cloud formed and coherent cloud-object top increased over available output times."
+        )
     elif has_cloud:
         label = "Fair-weather cumulus"
         confidence = "candidate"
@@ -574,9 +610,18 @@ FIELD_QUALITY_SOURCES = {
 
 
 def _field_quality_map(dataset: Any, time: _TimeContext) -> dict[str, FieldQuality]:
+    quality_sources = dict(FIELD_QUALITY_SOURCES)
+    for field in HYDROMETEOR_CLOUD_TOP_FIELDS:
+        if field in dataset.data_vars:
+            quality_sources[field] = {
+                "source_field": field,
+                "missing": f"{field}_field_absent",
+                "partial": f"non_finite_values_detected_in_{field}",
+                "entire": f"{field}_field_entirely_non_finite",
+            }
     return {
         field: _field_quality(dataset, field, config, time)
-        for field, config in FIELD_QUALITY_SOURCES.items()
+        for field, config in quality_sources.items()
     }
 
 
@@ -869,13 +914,24 @@ def _cloud_diagnostics(dataset: Any, time: _TimeContext, caveats: list[str]) -> 
         caveats.append("qc_field_entirely_non_finite")
         return CloudDiagnostics(available=False)
 
-    cloud_extent = _cloud_extent_array(dataset, qc, caveats)
+    cloud_extent, envelope_source_fields = _cloud_extent_array(dataset, qc, caveats)
+    envelope_source_arrays = _hydrometeor_source_arrays(dataset, qc, envelope_source_fields)
     series_arrays = _time_slices(qc, time.dimension)
     cloud_extent_series_arrays = _time_slices(cloud_extent, time.dimension)
+    envelope_source_series_arrays = {
+        field: _time_slices(array, time.dimension)
+        for field, array in envelope_source_arrays.items()
+    }
     qc_max_series: list[TimeValue] = []
     cloud_fraction_series: list[TimeValue] = []
     cloud_base_series: list[TimeValue] = []
     cloud_top_series: list[TimeValue] = []
+    liquid_cloud_base_series: list[TimeValue] = []
+    liquid_cloud_top_series: list[TimeValue] = []
+    raw_envelope_top_series: list[TimeValue] = []
+    raw_envelope_support_series: list[CloudTopSupportRecord] = []
+    coherent_cloud_top_series: list[TimeValue] = []
+    coherent_cloud_support_series: list[CloudTopSupportRecord] = []
     max_qc_height_series: list[TimeValue] = []
     cloud_present_steps: list[float | None] = []
     first_cloud_time: float | None = None
@@ -891,11 +947,39 @@ def _cloud_diagnostics(dataset: Any, time: _TimeContext, caveats: list[str]) -> 
         extent_array = (
             cloud_extent_series_arrays[index] if index < len(cloud_extent_series_arrays) else array
         )
-        cloud_base, cloud_top = _cloud_base_top(extent_array, caveats)
+        extent_source_arrays = {
+            field: slices[index] if index < len(slices) else array
+            for field, slices in envelope_source_series_arrays.items()
+        }
+        liquid_cloud_base, liquid_cloud_top = _cloud_base_top(array, caveats)
+        raw_base, raw_top, raw_support = _cloud_top_with_level_support(
+            extent_array,
+            source_arrays=extent_source_arrays,
+            caveats=caveats,
+            time_seconds=time_seconds,
+            minimum_cells=1,
+            require_connected_levels=False,
+        )
+        coherent_base, coherent_top, coherent_support = _cloud_top_with_level_support(
+            extent_array,
+            source_arrays=extent_source_arrays,
+            caveats=caveats,
+            time_seconds=time_seconds,
+            minimum_cells=MINIMUM_CLOUD_GRID_CELLS,
+            require_connected_levels=True,
+        )
         qc_max_series.append(TimeValue(time_seconds=time_seconds, value=slice_max))
         cloud_fraction_series.append(TimeValue(time_seconds=time_seconds, value=cloud_fraction))
-        cloud_base_series.append(TimeValue(time_seconds=time_seconds, value=cloud_base))
-        cloud_top_series.append(TimeValue(time_seconds=time_seconds, value=cloud_top))
+        cloud_base_series.append(TimeValue(time_seconds=time_seconds, value=coherent_base))
+        cloud_top_series.append(TimeValue(time_seconds=time_seconds, value=coherent_top))
+        liquid_cloud_base_series.append(
+            TimeValue(time_seconds=time_seconds, value=liquid_cloud_base)
+        )
+        liquid_cloud_top_series.append(TimeValue(time_seconds=time_seconds, value=liquid_cloud_top))
+        raw_envelope_top_series.append(TimeValue(time_seconds=time_seconds, value=raw_top))
+        raw_envelope_support_series.append(raw_support)
+        coherent_cloud_top_series.append(TimeValue(time_seconds=time_seconds, value=coherent_top))
+        coherent_cloud_support_series.append(coherent_support)
         max_qc_height_series.append(
             TimeValue(time_seconds=time_seconds, value=_height_of_level_max(array, caveats))
         )
@@ -907,14 +991,47 @@ def _cloud_diagnostics(dataset: Any, time: _TimeContext, caveats: list[str]) -> 
             max_qc = slice_max
             time_of_max_qc = time_seconds
 
-    cloud_base, cloud_top = _cloud_base_top(cloud_extent, caveats)
+    liquid_cloud_base, liquid_cloud_top = _cloud_base_top(qc, caveats)
+    raw_base, raw_top, raw_support = _cloud_top_with_level_support(
+        cloud_extent,
+        source_arrays=envelope_source_arrays,
+        caveats=caveats,
+        time_seconds=None,
+        minimum_cells=1,
+        require_connected_levels=False,
+    )
+    coherent_base, coherent_top, coherent_support = _cloud_top_with_level_support(
+        cloud_extent,
+        source_arrays=envelope_source_arrays,
+        caveats=caveats,
+        time_seconds=None,
+        minimum_cells=MINIMUM_CLOUD_GRID_CELLS,
+        require_connected_levels=True,
+    )
     return CloudDiagnostics(
         formed=first_cloud_time is not None,
         first_cloud_time_seconds=first_cloud_time,
-        cloud_base_m=cloud_base,
-        cloud_top_m=cloud_top,
+        cloud_base_m=coherent_base,
+        cloud_top_m=coherent_top,
         cloud_base_time_series=cloud_base_series,
         cloud_top_time_series=cloud_top_series,
+        liquid_cloud_base_m=liquid_cloud_base,
+        liquid_cloud_top_m=liquid_cloud_top,
+        liquid_cloud_base_time_series=liquid_cloud_base_series,
+        liquid_cloud_top_time_series=liquid_cloud_top_series,
+        hydrometeor_envelope_base_m=raw_base,
+        hydrometeor_envelope_top_m=raw_top,
+        hydrometeor_envelope_top_time_series=raw_envelope_top_series,
+        hydrometeor_envelope_source_fields=envelope_source_fields,
+        raw_hydrometeor_envelope_base_m=raw_base,
+        raw_hydrometeor_envelope_top_m=raw_top,
+        raw_hydrometeor_envelope_top_time_series=raw_envelope_top_series,
+        raw_hydrometeor_envelope_top_support_time_series=raw_envelope_support_series,
+        coherent_cloud_object_base_m=coherent_base,
+        coherent_cloud_object_top_m=coherent_top,
+        coherent_cloud_object_top_time_series=coherent_cloud_top_series,
+        coherent_cloud_object_top_support_time_series=coherent_cloud_support_series,
+        coherent_cloud_object_source_fields=coherent_support.supporting_species,
         max_qc_kg_kg=max_qc,
         time_of_max_qc_seconds=time_of_max_qc,
         max_qc_height_time_series=max_qc_height_series,
@@ -1570,17 +1687,17 @@ def _low_level_layer_stats(
     }
 
 
-def _cloud_extent_array(dataset: Any, qc: Any, caveats: list[str]) -> Any:
+def _cloud_extent_array(dataset: Any, qc: Any, caveats: list[str]) -> tuple[Any, list[str]]:
     """Return the field used for cloud base/top diagnostics.
 
     Liquid cloud water remains the source of truth for cloud formation and max-qc
-    diagnostics. For cloud top, deep-convection output can put the upper cloud in
-    ice/snow/graupel fields, so the vertical envelope should include compatible
-    hydrometeor mixing-ratio fields when they are present.
+    diagnostics. For top diagnostics, deep-convection output can put the upper
+    cloud in ice/snow/graupel fields, so the raw trace envelope should include
+    compatible hydrometeor mixing-ratio fields when they are present.
     """
 
     extent = qc
-    included_fields: list[str] = []
+    included_fields: list[str] = ["qc"]
     for field_name in HYDROMETEOR_CLOUD_TOP_FIELDS:
         if field_name not in dataset.data_vars:
             continue
@@ -1590,11 +1707,160 @@ def _cloud_extent_array(dataset: Any, qc: Any, caveats: list[str]) -> Any:
             continue
         extent = extent + field
         included_fields.append(field_name)
-    if included_fields:
-        caveat = "cloud_top_uses_total_hydrometeor_fields:qc," + ",".join(included_fields)
+    if len(included_fields) > 1:
+        caveat = "cloud_top_uses_total_hydrometeor_fields:" + ",".join(included_fields)
         if caveat not in caveats:
             caveats.append(caveat)
-    return extent
+    return extent, included_fields
+
+
+def _hydrometeor_source_arrays(dataset: Any, qc: Any, source_fields: list[str]) -> dict[str, Any]:
+    arrays: dict[str, Any] = {}
+    for field in source_fields:
+        if field == "qc":
+            arrays[field] = qc
+        elif field in dataset.data_vars:
+            arrays[field] = dataset[field]
+    return arrays
+
+
+def _cloud_top_with_level_support(
+    data_array: Any,
+    *,
+    source_arrays: dict[str, Any],
+    caveats: list[str],
+    time_seconds: float | None,
+    minimum_cells: int,
+    require_connected_levels: bool,
+) -> tuple[float | None, float | None, CloudTopSupportRecord]:
+    vertical_name = _first_present(VERTICAL_COORDINATE_CANDIDATES, list(data_array.dims))
+    if vertical_name is None:
+        caveats.append("cloud_object_top_unavailable_missing_vertical_coordinate")
+        return None, None, CloudTopSupportRecord(time_seconds=time_seconds)
+    if require_connected_levels:
+        caveat = "coherent_cloud_object_support_uses_grid_cell_count_not_physical_area"
+        if caveat not in caveats:
+            caveats.append(caveat)
+
+    vertical_values = _vertical_values(data_array, vertical_name, caveats)
+    supported_levels: list[int] = []
+    level_counts: dict[int, int] = {}
+    for index in range(int(data_array.sizes[vertical_name])):
+        count = _threshold_count(
+            data_array.isel({vertical_name: index}),
+            QC_CLOUD_THRESHOLD_KG_KG,
+        )
+        level_counts[index] = count
+        if count >= minimum_cells:
+            supported_levels.append(index)
+
+    if not supported_levels:
+        return None, None, CloudTopSupportRecord(time_seconds=time_seconds)
+
+    connected_levels = (
+        _lowest_connected_level_block(supported_levels)
+        if require_connected_levels
+        else supported_levels
+    )
+    detached_levels = [level for level in supported_levels if level not in connected_levels]
+    if detached_levels and require_connected_levels:
+        caveat = "detached_hydrometeor_layer_not_counted_as_coherent_cloud_object"
+        if caveat not in caveats:
+            caveats.append(caveat)
+
+    level_entries: list[tuple[int, float]] = []
+    for index in connected_levels:
+        if index >= len(vertical_values):
+            continue
+        vertical_value = vertical_values[index]
+        if vertical_value is not None:
+            level_entries.append((index, vertical_value))
+    if not level_entries:
+        return None, None, CloudTopSupportRecord(time_seconds=time_seconds)
+
+    top_index, top_value = max(level_entries, key=lambda entry: entry[1])
+    level_values = [value for _index, value in level_entries]
+    top_defining_species = _top_defining_species(
+        source_arrays,
+        vertical_name=vertical_name,
+        vertical_index=top_index,
+    )
+    supporting_species = _supporting_species(
+        source_arrays,
+        vertical_name=vertical_name,
+        vertical_indices=connected_levels,
+    )
+    if require_connected_levels and "qc" not in supporting_species:
+        caveat = "coherent_cloud_object_without_liquid_cloud_water_support"
+        if caveat not in caveats:
+            caveats.append(caveat)
+
+    return (
+        min(level_values),
+        max(level_values),
+        CloudTopSupportRecord(
+            time_seconds=time_seconds,
+            top_m=top_value,
+            top_defining_species=top_defining_species,
+            supporting_species=supporting_species,
+            threshold_kg_kg=QC_CLOUD_THRESHOLD_KG_KG,
+            qualifying_cell_count=level_counts.get(top_index, 0),
+            continuity_supported=bool(connected_levels),
+        ),
+    )
+
+
+def _lowest_connected_level_block(supported_levels: list[int]) -> list[int]:
+    sorted_levels = sorted(supported_levels)
+    connected = [sorted_levels[0]]
+    for level in sorted_levels[1:]:
+        if level == connected[-1] + 1:
+            connected.append(level)
+        else:
+            break
+    return connected
+
+
+def _top_defining_species(
+    source_arrays: dict[str, Any],
+    *,
+    vertical_name: str,
+    vertical_index: int,
+) -> list[str]:
+    species: list[str] = []
+    for field, array in source_arrays.items():
+        if vertical_name not in array.dims or vertical_index >= int(array.sizes[vertical_name]):
+            continue
+        count = _threshold_count(
+            array.isel({vertical_name: vertical_index}),
+            QC_CLOUD_THRESHOLD_KG_KG,
+        )
+        if count > 0:
+            species.append(field)
+    return species
+
+
+def _supporting_species(
+    source_arrays: dict[str, Any],
+    *,
+    vertical_name: str,
+    vertical_indices: list[int],
+) -> list[str]:
+    species: list[str] = []
+    for field, array in source_arrays.items():
+        if vertical_name not in array.dims:
+            continue
+        for vertical_index in vertical_indices:
+            if vertical_index >= int(array.sizes[vertical_name]):
+                continue
+            count = _threshold_count(
+                array.isel({vertical_name: vertical_index}),
+                QC_CLOUD_THRESHOLD_KG_KG,
+            )
+            if count > 0:
+                species.append(field)
+                break
+    return species
 
 
 def _cloud_base_top(qc: Any, caveats: list[str]) -> tuple[float | None, float | None]:

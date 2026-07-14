@@ -668,6 +668,65 @@ def _merge_cloud_diagnostics(parts: list[CloudDiagnostics]) -> CloudDiagnostics:
         cloud_top_time_series=[
             point for part in available_parts for point in part.cloud_top_time_series
         ],
+        liquid_cloud_base_m=_min_optional([part.liquid_cloud_base_m for part in available_parts]),
+        liquid_cloud_top_m=_max_optional([part.liquid_cloud_top_m for part in available_parts]),
+        liquid_cloud_base_time_series=[
+            point for part in available_parts for point in part.liquid_cloud_base_time_series
+        ],
+        liquid_cloud_top_time_series=[
+            point for part in available_parts for point in part.liquid_cloud_top_time_series
+        ],
+        hydrometeor_envelope_base_m=_min_optional(
+            [part.hydrometeor_envelope_base_m for part in available_parts]
+        ),
+        hydrometeor_envelope_top_m=_max_optional(
+            [part.hydrometeor_envelope_top_m for part in available_parts]
+        ),
+        hydrometeor_envelope_top_time_series=[
+            point for part in available_parts for point in part.hydrometeor_envelope_top_time_series
+        ],
+        hydrometeor_envelope_source_fields=_dedupe_strings(
+            [field for part in available_parts for field in part.hydrometeor_envelope_source_fields]
+        ),
+        raw_hydrometeor_envelope_base_m=_min_optional(
+            [part.raw_hydrometeor_envelope_base_m for part in available_parts]
+        ),
+        raw_hydrometeor_envelope_top_m=_max_optional(
+            [part.raw_hydrometeor_envelope_top_m for part in available_parts]
+        ),
+        raw_hydrometeor_envelope_top_time_series=[
+            point
+            for part in available_parts
+            for point in part.raw_hydrometeor_envelope_top_time_series
+        ],
+        raw_hydrometeor_envelope_top_support_time_series=[
+            point
+            for part in available_parts
+            for point in part.raw_hydrometeor_envelope_top_support_time_series
+        ],
+        coherent_cloud_object_base_m=_min_optional(
+            [part.coherent_cloud_object_base_m for part in available_parts]
+        ),
+        coherent_cloud_object_top_m=_max_optional(
+            [part.coherent_cloud_object_top_m for part in available_parts]
+        ),
+        coherent_cloud_object_top_time_series=[
+            point
+            for part in available_parts
+            for point in part.coherent_cloud_object_top_time_series
+        ],
+        coherent_cloud_object_top_support_time_series=[
+            point
+            for part in available_parts
+            for point in part.coherent_cloud_object_top_support_time_series
+        ],
+        coherent_cloud_object_source_fields=_dedupe_strings(
+            [
+                field
+                for part in available_parts
+                for field in part.coherent_cloud_object_source_fields
+            ]
+        ),
         max_qc_kg_kg=max_qc_time.value,
         time_of_max_qc_seconds=max_qc_time.time_seconds,
         max_qc_height_time_series=[
@@ -1735,8 +1794,25 @@ def _candidate_outcome_evidence(science_summary: ScienceSummary) -> list[str]:
         evidence.append(
             "deep cloud formed" if science_summary.deep_cloud_formed else "no deep cloud detected"
         )
-    if science_summary.highest_cloud_top_m is not None:
-        evidence.append(f"cloud top {_format_metric(science_summary.highest_cloud_top_m, 'm')}")
+    coherent_top = (
+        science_summary.highest_coherent_cloud_object_top_m
+        if science_summary.highest_coherent_cloud_object_top_m is not None
+        else science_summary.highest_cloud_top_m
+    )
+    if coherent_top is not None:
+        evidence.append(f"coherent cloud-object top {_format_metric(coherent_top, 'm')}")
+    raw_envelope_top = (
+        science_summary.highest_raw_hydrometeor_envelope_top_m
+        if science_summary.highest_raw_hydrometeor_envelope_top_m is not None
+        else science_summary.highest_hydrometeor_envelope_top_m
+    )
+    if raw_envelope_top is not None and raw_envelope_top != coherent_top:
+        evidence.append(f"raw hydrometeor trace top {_format_metric(raw_envelope_top, 'm')}")
+    if science_summary.highest_liquid_cloud_top_m is not None:
+        evidence.append(
+            f"liquid cloud-water top "
+            f"{_format_metric(science_summary.highest_liquid_cloud_top_m, 'm')}"
+        )
     if science_summary.max_updraft_w_m_s is not None:
         evidence.append(f"max updraft {_format_metric(science_summary.max_updraft_w_m_s, 'm/s')}")
     if science_summary.rain_onset_time_seconds is not None:
@@ -1811,8 +1887,8 @@ def _deep_candidate_cm1_outcome(
         )
     return (
         "Deep convection did not occur under this run configuration by current "
-        "cloud-top and updraft thresholds; this does not disprove the sounding's "
-        "deep-convection potential."
+        "coherent cloud-object top and updraft thresholds; this does not disprove "
+        "the sounding's deep-convection potential."
     )
 
 
@@ -1826,7 +1902,11 @@ def _match_status_label(match_status: str) -> str:
 
 
 def _format_metric(value: float, units: str) -> str:
-    return f"{value:g} {units}"
+    if abs(value) >= 1000:
+        formatted = f"{value:,.3f}".rstrip("0").rstrip(".")
+    else:
+        formatted = f"{value:g}"
+    return f"{formatted} {units}"
 
 
 def _format_seconds(value: float) -> str:

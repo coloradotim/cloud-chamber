@@ -18,6 +18,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 from cloud_chamber.result_diagnostics import (
+    CloudDiagnostics,
     FieldQuality,
     LowLevelResponseDiagnostics,
     LowLevelResponseFieldDiagnostics,
@@ -166,6 +167,12 @@ class ScienceSummary(BaseModel):
     min_downdraft_w_m_s: float | None = None
     min_downdraft_time_seconds: float | None = None
     highest_cloud_top_m: float | None = None
+    highest_liquid_cloud_top_m: float | None = None
+    highest_coherent_cloud_object_top_m: float | None = None
+    coherent_cloud_object_source_fields: list[str] = Field(default_factory=list)
+    highest_raw_hydrometeor_envelope_top_m: float | None = None
+    highest_hydrometeor_envelope_top_m: float | None = None
+    hydrometeor_envelope_source_fields: list[str] = Field(default_factory=list)
     rain_onset_time_seconds: float | None = None
     max_qr_kg_kg: float | None = None
     max_rain_or_surface_precip: float | None = None
@@ -549,22 +556,59 @@ def _interesting_time_records(
             support_state="unavailable" if cloud.available else "unsupported_missing_fields",
         ),
         _series_max_record(
-            key="highest_cloud_top",
-            label="Highest cloud top",
-            series=cloud.cloud_top_time_series if cloud.available else [],
-            source_field="qc+qr+qi+qs+qg when available",
-            source_diagnostic="diagnostics.cloud.cloud_top_time_series",
+            key="highest_liquid_cloud_top",
+            label="Highest liquid cloud-water top",
+            series=cloud.liquid_cloud_top_time_series if cloud.available else [],
+            source_field="qc",
+            source_diagnostic="diagnostics.cloud.liquid_cloud_top_time_series",
             units="m",
             output_manifest=output_manifest,
-            unavailable_caveat="no_cloud_top_detected" if cloud.available else "missing_qc_field",
+            unavailable_caveat="no_liquid_cloud_top_detected"
+            if cloud.available
+            else "missing_qc_field",
+            support_state="unavailable" if cloud.available else "unsupported_missing_fields",
+        ),
+        _series_max_record(
+            key="highest_cloud_top",
+            label="Highest coherent cloud-object top",
+            series=_coherent_cloud_object_top_time_series(cloud) if cloud.available else [],
+            source_field=_cloud_top_source_field(
+                "coherent_cloud_object",
+                cloud.coherent_cloud_object_source_fields,
+            ),
+            source_diagnostic="diagnostics.cloud.coherent_cloud_object_top_time_series",
+            units="m",
+            output_manifest=output_manifest,
+            unavailable_caveat="no_coherent_cloud_object_top_detected"
+            if cloud.available
+            else "missing_qc_field",
+            support_state="unavailable" if cloud.available else "unsupported_missing_fields",
+        ),
+        _series_max_record(
+            key="highest_raw_hydrometeor_envelope_top",
+            label="Highest raw hydrometeor trace top",
+            series=_raw_hydrometeor_envelope_top_time_series(cloud) if cloud.available else [],
+            source_field=_cloud_top_source_field(
+                "raw_hydrometeor_envelope",
+                cloud.hydrometeor_envelope_source_fields,
+            ),
+            source_diagnostic="diagnostics.cloud.raw_hydrometeor_envelope_top_time_series",
+            units="m",
+            output_manifest=output_manifest,
+            unavailable_caveat="no_raw_hydrometeor_trace_top_detected"
+            if cloud.available
+            else "missing_qc_field",
             support_state="unavailable" if cloud.available else "unsupported_missing_fields",
         ),
         _event_record(
             key="first_deep_convection",
             label="First deep convection",
             time_seconds=_first_deep_convection_time(diagnostics) if cloud.available else None,
-            source_field="qc+qr+qi+qs+qg when available",
-            source_diagnostic="diagnostics.cloud.cloud_top_time_series",
+            source_field=_cloud_top_source_field(
+                "coherent_cloud_object",
+                cloud.coherent_cloud_object_source_fields,
+            ),
+            source_diagnostic="diagnostics.cloud.coherent_cloud_object_top_time_series",
             value=_deep_cloud_formed(diagnostics) if cloud.available else None,
             units=None,
             output_manifest=output_manifest,
@@ -924,14 +968,18 @@ def _record_with_field_quality(
     record: InterestingTimeRecord,
     field_quality: dict[str, FieldQuality],
 ) -> InterestingTimeRecord:
-    quality = _quality_for_source_field(record.source_field, field_quality)
-    if quality is None:
-        return record
-    caveats = _dedupe([*record.caveats, *quality.caveats])
+    qualities, quality_caveats = _qualities_for_source_field(record.source_field, field_quality)
+    quality = qualities[0] if len(qualities) == 1 else None
+    caveats = _dedupe([*record.caveats, *quality_caveats])
     support_state = record.support_state
-    if quality.quality_state == "untrusted" and support_state == "supported":
+    if (
+        any(item.quality_state == "untrusted" for item in qualities)
+        and support_state == "supported"
+    ):
         support_state = "unavailable"
         caveats = _dedupe([*caveats, "interesting_time_source_field_untrusted"])
+    elif any(item.quality_state == "caveated" for item in qualities):
+        caveats = _dedupe([*caveats, "interesting_time_source_field_caveated"])
     return record.model_copy(
         update={
             "field_quality": quality,
@@ -941,23 +989,62 @@ def _record_with_field_quality(
     )
 
 
-def _quality_for_source_field(
+def _qualities_for_source_field(
     source_field: str | None,
     field_quality: dict[str, FieldQuality],
-) -> FieldQuality | None:
+) -> tuple[list[FieldQuality], list[str]]:
     if source_field is None:
-        return None
-    if source_field in {"qc", "qc+qr+qi+qs+qg when available"}:
-        return field_quality.get("qc")
+        return [], []
+    source_fields = _source_field_components(source_field)
+    if source_fields:
+        qualities: list[FieldQuality] = []
+        caveats: list[str] = []
+        for field in source_fields:
+            quality = field_quality.get(field)
+            if quality is None:
+                caveats.append(f"field_quality_not_assessed:{field}")
+            else:
+                qualities.append(quality)
+                caveats.extend(quality.caveats)
+        return qualities, _dedupe(caveats)
     if source_field == "w":
-        return field_quality.get("w")
+        return _single_quality("w", field_quality)
     if source_field == "qr":
-        return field_quality.get("qr")
+        return _single_quality("qr", field_quality)
     if source_field == "rain":
-        return field_quality.get("surface_rain")
+        return _single_quality("surface_rain", field_quality)
     if source_field == "dbz":
-        return field_quality.get("dbz")
-    return None
+        return _single_quality("dbz", field_quality)
+    return [], []
+
+
+def _single_quality(
+    field: str,
+    field_quality: dict[str, FieldQuality],
+) -> tuple[list[FieldQuality], list[str]]:
+    quality = field_quality.get(field)
+    if quality is None:
+        return [], [f"field_quality_not_assessed:{field}"]
+    return [quality], list(quality.caveats)
+
+
+def _source_field_components(source_field: str) -> list[str]:
+    prefixes = (
+        "coherent_cloud_object:",
+        "raw_hydrometeor_envelope:",
+        "hydrometeor_envelope:",
+    )
+    for prefix in prefixes:
+        if source_field.startswith(prefix):
+            fields = source_field.removeprefix(prefix).replace(" when available", "")
+            return [
+                field
+                for field in fields.split("+")
+                if field and field not in {"when available", "none"}
+            ]
+    if source_field == "qc":
+        return ["qc"]
+    return []
 
 
 def _science_summary(
@@ -984,7 +1071,9 @@ def _science_summary(
         "first_cloud",
         "first_deep_convection",
         "max_qc",
+        "highest_liquid_cloud_top",
         "highest_cloud_top",
+        "highest_raw_hydrometeor_envelope_top",
         "max_updraft_w",
         "min_downdraft_w",
         "rain_onset",
@@ -998,9 +1087,23 @@ def _science_summary(
         if record.key in supported_science_keys and record.support_state == "supported"
     )
     support_state = "supported" if supported_count > 0 else "fallback"
-    highest_cloud_top = _record_value(record_by_key.get("highest_cloud_top"))
-    first_deep_convection = _record_time(record_by_key.get("first_deep_convection"))
-    deep_cloud_formed = _deep_cloud_formed(diagnostics)
+    highest_liquid_cloud_top = _record_value(record_by_key.get("highest_liquid_cloud_top"))
+    highest_coherent_cloud_top = _record_value(record_by_key.get("highest_cloud_top"))
+    highest_raw_hydrometeor_envelope_top = _record_value(
+        record_by_key.get("highest_raw_hydrometeor_envelope_top")
+    )
+    first_deep_record = record_by_key.get("first_deep_convection")
+    first_deep_convection = _record_time(first_deep_record)
+    raw_deep_cloud_formed = _deep_cloud_formed(diagnostics)
+    deep_cloud_formed = (
+        True
+        if raw_deep_cloud_formed is True
+        and first_deep_record is not None
+        and first_deep_record.support_state == "supported"
+        else raw_deep_cloud_formed
+        if raw_deep_cloud_formed is not True
+        else None
+    )
     strong_updraft_formed = _strong_updraft_formed(diagnostics)
     default_source = default_record if deep_cloud_formed else qc_default or default_record
     return ScienceSummary(
@@ -1023,7 +1126,13 @@ def _science_summary(
         if diagnostics.vertical_velocity.available
         else None,
         min_downdraft_time_seconds=diagnostics.vertical_velocity.time_of_min_w_seconds,
-        highest_cloud_top_m=highest_cloud_top,
+        highest_cloud_top_m=highest_coherent_cloud_top,
+        highest_liquid_cloud_top_m=highest_liquid_cloud_top,
+        highest_coherent_cloud_object_top_m=highest_coherent_cloud_top,
+        coherent_cloud_object_source_fields=diagnostics.cloud.coherent_cloud_object_source_fields,
+        highest_raw_hydrometeor_envelope_top_m=highest_raw_hydrometeor_envelope_top,
+        highest_hydrometeor_envelope_top_m=highest_raw_hydrometeor_envelope_top,
+        hydrometeor_envelope_source_fields=diagnostics.cloud.hydrometeor_envelope_source_fields,
         rain_onset_time_seconds=diagnostics.rain.first_rain_time_seconds,
         max_qr_kg_kg=diagnostics.rain.max_qr_kg_kg if diagnostics.rain.available else None,
         max_rain_or_surface_precip=diagnostics.surface_rain.max_surface_rain
@@ -1107,7 +1216,7 @@ def _record_time(record: InterestingTimeRecord | None) -> float | None:
 
 
 def _first_deep_convection_time(diagnostics: ResultDiagnostics) -> float | None:
-    for point in diagnostics.cloud.cloud_top_time_series:
+    for point in _coherent_cloud_object_top_time_series(diagnostics.cloud):
         if point.value is not None and point.value >= DEEP_CLOUD_TOP_THRESHOLD_M:
             return point.time_seconds
     return None
@@ -1118,8 +1227,22 @@ def _deep_cloud_formed(diagnostics: ResultDiagnostics) -> bool | None:
         return None
     return any(
         point.value is not None and point.value >= DEEP_CLOUD_TOP_THRESHOLD_M
-        for point in diagnostics.cloud.cloud_top_time_series
+        for point in _coherent_cloud_object_top_time_series(diagnostics.cloud)
     )
+
+
+def _coherent_cloud_object_top_time_series(cloud: CloudDiagnostics) -> list[TimeValue]:
+    return cloud.coherent_cloud_object_top_time_series or cloud.cloud_top_time_series
+
+
+def _raw_hydrometeor_envelope_top_time_series(cloud: CloudDiagnostics) -> list[TimeValue]:
+    return (
+        cloud.raw_hydrometeor_envelope_top_time_series or cloud.hydrometeor_envelope_top_time_series
+    )
+
+
+def _cloud_top_source_field(prefix: str, fields: list[str]) -> str:
+    return f"{prefix}:{'+'.join(fields) if fields else 'none'}"
 
 
 def _strong_updraft_formed(diagnostics: ResultDiagnostics) -> bool | None:
@@ -1161,7 +1284,10 @@ def _cm1_outcome(diagnostics: ResultDiagnostics) -> str:
         return "Deep cloud formed, but the updraft-strength threshold was not met."
     if strong_updraft:
         return "Strong updraft formed, but deep cloud did not reach the threshold."
-    return "Trigger failed to produce deep convection by current cloud-top and updraft thresholds."
+    return (
+        "Deep-convection criteria were not met by current coherent cloud-object "
+        "top and updraft thresholds."
+    )
 
 
 def _diagnostic_availability(

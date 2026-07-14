@@ -1436,6 +1436,12 @@ const resultCard = {
     min_downdraft_w_m_s: -4.21529483795166,
     min_downdraft_time_seconds: 4500,
     highest_cloud_top_m: 1940,
+    highest_liquid_cloud_top_m: 1940,
+    highest_coherent_cloud_object_top_m: 1940,
+    coherent_cloud_object_source_fields: ["qc"],
+    highest_raw_hydrometeor_envelope_top_m: 1940,
+    highest_hydrometeor_envelope_top_m: 1940,
+    hydrometeor_envelope_source_fields: ["qc"],
     rain_onset_time_seconds: 5400,
     max_qr_kg_kg: 2e-7,
     max_rain_or_surface_precip: 4.2,
@@ -1475,11 +1481,11 @@ const resultCard = {
     },
     {
       key: "highest_cloud_top",
-      label: "Highest cloud top",
+      label: "Highest coherent cloud-object top",
       time_index: 3,
       time_seconds: 2700,
-      source_field: "qc",
-      source_diagnostic: "diagnostics.cloud.cloud_top_time_series",
+      source_field: "coherent_cloud_object:qc",
+      source_diagnostic: "diagnostics.cloud.coherent_cloud_object_top_time_series",
       value: 1940,
       units: "m",
       support_state: "supported",
@@ -1831,6 +1837,12 @@ const deepConvectionResultCard = {
     min_downdraft_w_m_s: -7,
     min_downdraft_time_seconds: 1800,
     highest_cloud_top_m: 10200,
+    highest_liquid_cloud_top_m: 6200,
+    highest_coherent_cloud_object_top_m: 10200,
+    coherent_cloud_object_source_fields: ["qc", "qi", "qs"],
+    highest_raw_hydrometeor_envelope_top_m: 10200,
+    highest_hydrometeor_envelope_top_m: 10200,
+    hydrometeor_envelope_source_fields: ["qc", "qi", "qs"],
     rain_onset_time_seconds: 1800,
     max_qr_kg_kg: 4e-7,
     latest_output_time_seconds: 2700,
@@ -1855,8 +1867,8 @@ const deepConvectionResultCard = {
       label: "First deep convection",
       time_index: 2,
       time_seconds: 1800,
-      source_field: "qc+qr+qi+qs+qg when available",
-      source_diagnostic: "diagnostics.cloud.cloud_top_time_series",
+      source_field: "coherent_cloud_object:qc+qi+qs",
+      source_diagnostic: "diagnostics.cloud.coherent_cloud_object_top_time_series",
       value: true,
       units: null,
       support_state: "supported",
@@ -1881,7 +1893,12 @@ const deepConvectionResultCard = {
     cm1_outcome: "Deep convection formed with strong updraft and rain water aloft.",
     match_status: "supported",
     match_status_label: "Supported",
-    evidence: ["deep cloud formed", "cloud top 10200 m", "max updraft 15 m/s"],
+    evidence: [
+      "deep cloud formed",
+      "coherent cloud-object top 10,200 m",
+      "liquid cloud-water top 6,200 m",
+      "max updraft 15 m/s",
+    ],
     caveats: [
       "candidate_screening_is_a_pre_run_hypothesis",
       "candidate_match_uses_simple_v1_deep_convection_rules",
@@ -5238,7 +5255,7 @@ describe("App", () => {
     expect(screen.getAllByText("-4.215 m/s").length).toBeGreaterThan(0);
     expect(resultDetail).toHaveTextContent("Science landmarks");
     expect(resultDetail).toHaveTextContent("Interesting times");
-    expect(resultDetail).toHaveTextContent("Highest cloud top");
+    expect(resultDetail).toHaveTextContent("Highest coherent cloud-object top");
     expect(resultDetail).toHaveTextContent("1,940 m");
     expect(resultDetail).toHaveTextContent("Rain-water onset");
     expect(resultDetail).toHaveTextContent("Default Explore time");
@@ -6349,6 +6366,84 @@ describe("App", () => {
     expect(
       screen.getAllByRole("option", { name: "w - Vertical velocity (slice only)" }).length,
     ).toBeGreaterThan(0);
+  });
+
+  it("explains when liquid cloud water is shallower than the hydrometeor envelope", async () => {
+    const defaultFetch = vi.mocked(fetch).getMockImplementation();
+    vi.mocked(fetch).mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url === "/api/results") {
+        return Promise.resolve(
+          new Response(JSON.stringify({ results: [deepConvectionResultCard] }), { status: 200 }),
+        );
+      }
+      if (url === "/api/results/result-deep-convection/visualization/fields") {
+        return Promise.resolve(new Response(JSON.stringify(fieldCatalogResponse), { status: 200 }));
+      }
+      if (url.startsWith("/api/results/result-deep-convection/visualization/defaults")) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              ...selectedTimeDefaultsResponse(url),
+              result_id: "result-deep-convection",
+            }),
+            { status: 200 },
+          ),
+        );
+      }
+      if (url.includes("/api/results/result-deep-convection/visualization/point-cloud")) {
+        const parsed = new URL(url, "http://localhost");
+        return Promise.resolve(
+          new Response(
+            JSON.stringify(
+              pointCloudResponse({
+                field: mockPointFieldFromParam(parsed.searchParams.get("field")),
+                threshold: Number(parsed.searchParams.get("threshold") ?? 0.000001),
+                timeIndex: Number(parsed.searchParams.get("time_index") ?? 0),
+              }),
+            ),
+            { status: 200 },
+          ),
+        );
+      }
+      if (url.includes("/api/results/result-deep-convection/visualization/slice")) {
+        const parsed = new URL(url, "http://localhost");
+        return Promise.resolve(
+          new Response(
+            JSON.stringify(
+              sliceResponse({
+                field: mockFieldFromParam(parsed.searchParams.get("field")),
+                orientation:
+                  parsed.searchParams.get("orientation") === "vertical_y"
+                    ? "vertical_y"
+                    : parsed.searchParams.get("orientation") === "vertical_x"
+                      ? "vertical_x"
+                      : "horizontal",
+                timeIndex: Number(parsed.searchParams.get("time_index") ?? 0),
+                levelIndex: Number(parsed.searchParams.get("level_index") ?? 0),
+              }),
+            ),
+            { status: 200 },
+          ),
+        );
+      }
+      return (
+        defaultFetch?.(input, init) ?? Promise.resolve(new Response("not found", { status: 404 }))
+      );
+    });
+    render(<App />);
+
+    const resultDetail = await screen.findByLabelText("Result detail");
+    expect(resultDetail).toHaveTextContent("coherent cloud-object top 10,200 m");
+    expect(resultDetail).toHaveTextContent(/Liquid cloud top\s*6,200 m/);
+    expect(resultDetail).toHaveTextContent(/Coherent cloud top\s*10,200 m/);
+    fireEvent.click(within(resultDetail).getByRole("button", { name: "Open in Explore" }));
+
+    expect(
+      await screen.findByText(
+        /Viewing liquid cloud water only: qc tops near 6,200 m, while the coherent cloud object reaches 10,200 m from qc\+qi\+qs\./,
+      ),
+    ).toBeInTheDocument();
   });
 
   it("separates 3-D scalar fields from slice-only fields", async () => {

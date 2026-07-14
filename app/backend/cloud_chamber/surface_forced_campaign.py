@@ -1918,7 +1918,8 @@ def _summary_for_plan_run(run: CampaignRunPlan, state: CampaignState) -> dict[st
     )
     max_cloud_top_m = _trusted_outcome(
         _first_defined(
-            cloud.cloud_top_m if cloud is not None else None,
+            cloud.coherent_cloud_object_top_m if cloud is not None else None,
+            science.highest_coherent_cloud_object_top_m if science is not None else None,
             science.highest_cloud_top_m if science is not None else None,
         ),
         diagnostic_trust,
@@ -2969,10 +2970,8 @@ def _render_markdown_report(plan: CampaignPlan, summary: Mapping[str, Any]) -> s
     lines.extend(
         [
             "",
-            (
-                "Cloud-top values currently use the total hydrometeor envelope and may "
-                "exceed the coherent liquid/ice cloud-object top. See #330."
-            ),
+            "Cloud-top summaries use the coherent cloud-object top. Raw sparse "
+            "hydrometeor trace tops are secondary evidence, not the deep-cloud classifier.",
         ]
     )
     lines.extend(
@@ -2996,7 +2995,9 @@ def _render_markdown_report(plan: CampaignPlan, summary: Mapping[str, Any]) -> s
                     "first cloud", run["first_cloud_time"], diagnostic_trust.get("qc")
                 ),
                 _trusted_metric_label(
-                    "max cloud top", run["max_cloud_top_m"], diagnostic_trust.get("qc")
+                    "max coherent cloud-object top",
+                    run["max_cloud_top_m"],
+                    diagnostic_trust.get("qc"),
                 ),
                 _trusted_metric_label("max qc", run["max_qc"], diagnostic_trust.get("qc")),
                 _trusted_metric_label("max w", run["max_w_m_s"], diagnostic_trust.get("w")),
@@ -4211,7 +4212,7 @@ def _key_result_label(run: Mapping[str, Any]) -> str:
     return "; ".join(
         [
             _trusted_metric_label(
-                "cloud top",
+                "coherent cloud-object top",
                 run.get("max_cloud_top_m"),
                 diagnostic_trust.get("qc"),
             ),

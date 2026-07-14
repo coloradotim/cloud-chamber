@@ -843,6 +843,12 @@ type ScienceSummary = {
   min_downdraft_w_m_s?: number | null;
   min_downdraft_time_seconds?: number | null;
   highest_cloud_top_m?: number | null;
+  highest_liquid_cloud_top_m?: number | null;
+  highest_coherent_cloud_object_top_m?: number | null;
+  coherent_cloud_object_source_fields?: string[];
+  highest_raw_hydrometeor_envelope_top_m?: number | null;
+  highest_hydrometeor_envelope_top_m?: number | null;
+  hydrometeor_envelope_source_fields?: string[];
   rain_onset_time_seconds?: number | null;
   max_qr_kg_kg?: number | null;
   max_rain_or_surface_precip?: number | null;
@@ -8459,7 +8465,23 @@ function ResultNotebookCard({
         <Metric label="Max qc" value={formatScientific(resultMaxQc(result), "kg/kg")} />
         <Metric label="Max updraft" value={formatNumber(resultMaxUpdraft(result), "m/s")} />
         <Metric label="Min downdraft" value={formatNumber(resultMinDowndraft(result), "m/s")} />
-        <Metric label="Cloud top" value={formatNumber(resultCloudTopMeters(result), "m")} />
+        {resultLiquidCloudTopMeters(result) !== null && (
+          <Metric
+            label="Liquid cloud top"
+            value={formatNumber(resultLiquidCloudTopMeters(result), "m")}
+          />
+        )}
+        <Metric
+          label="Coherent cloud top"
+          value={formatNumber(resultCloudTopMeters(result), "m")}
+        />
+        {resultRawHydrometeorEnvelopeTopMeters(result) !== null &&
+          resultRawHydrometeorEnvelopeTopMeters(result) !== resultCloudTopMeters(result) && (
+            <Metric
+              label="Raw hydrometeor trace top"
+              value={formatNumber(resultRawHydrometeorEnvelopeTopMeters(result), "m")}
+            />
+          )}
         {hasDeepConvectionDiagnostics(result) && (
           <Metric label="Deep convection" value={deepConvectionOutcome(result)} />
         )}
@@ -9626,6 +9648,10 @@ export function VisualizerSceneShell({ result }: { result: ResultCard }) {
                       : ""}
                   </p>
                 )}
+                {selectedEncoding?.field.raw_field_name === "qc" &&
+                  cloudTopMismatchNotice(result) && (
+                    <p className="control-help">{cloudTopMismatchNotice(result)}</p>
+                  )}
                 <label htmlFor="cloud-threshold">
                   {selectedEncoding?.thresholdLabel ?? "Visible minimum"}
                   <input
@@ -10900,7 +10926,7 @@ function observedRecipeSignatureLabels(story: CandidateStoryId | null): string[]
     case "dry_failed_candidate":
       return ["Vertical motion without meaningful cloud water"];
     case "capped_suppressed_candidate":
-      return ["Suppressed or shallow cloud", "Limited cloud top"];
+      return ["Suppressed or shallow cloud", "Limited cloud depth"];
     case "humid_rainy_candidate":
       return [
         "Cloud water",
@@ -12970,7 +12996,7 @@ function compactScienceSummary(result: ResultCard): string {
         ? `rain-water onset ${formatSeconds(resultRainOnsetTime(result))}`
         : null,
       resultCloudTopMeters(result) !== null
-        ? `cloud top ${formatNumber(resultCloudTopMeters(result), "m")}`
+        ? `coherent cloud top ${formatNumber(resultCloudTopMeters(result), "m")}`
         : null,
     ].filter(Boolean);
     return parts.join(" · ");
@@ -13020,10 +13046,57 @@ function resultLatestOutputTime(result: ResultCard): number | null {
 }
 
 function resultCloudTopMeters(result: ResultCard): number | null {
-  const value = result.science_summary?.highest_cloud_top_m ?? null;
+  const value =
+    result.science_summary?.highest_coherent_cloud_object_top_m ??
+    result.science_summary?.highest_cloud_top_m ??
+    null;
   if (value === null || value === undefined) return null;
   if (legacyCloudTopWasStoredInKilometers(result)) return value * 1000;
   return value;
+}
+
+function resultRawHydrometeorEnvelopeTopMeters(result: ResultCard): number | null {
+  const value =
+    result.science_summary?.highest_raw_hydrometeor_envelope_top_m ??
+    result.science_summary?.highest_hydrometeor_envelope_top_m ??
+    null;
+  if (value === null || value === undefined) return null;
+  if (legacyCloudTopWasStoredInKilometers(result)) return value * 1000;
+  return value;
+}
+
+function resultLiquidCloudTopMeters(result: ResultCard): number | null {
+  const value = result.science_summary?.highest_liquid_cloud_top_m ?? null;
+  if (value === null || value === undefined) return null;
+  if (legacyCloudTopWasStoredInKilometers(result)) return value * 1000;
+  return value;
+}
+
+function cloudTopMismatchNotice(result: ResultCard): string | null {
+  const liquidTop = resultLiquidCloudTopMeters(result);
+  const coherentTop = resultCloudTopMeters(result);
+  const rawTraceTop = resultRawHydrometeorEnvelopeTopMeters(result);
+  if (liquidTop === null) {
+    return null;
+  }
+  if (coherentTop !== null && coherentTop > liquidTop + 500) {
+    const fields = result.science_summary?.coherent_cloud_object_source_fields;
+    const fieldLabel = fields && fields.length > 1 ? fields.join("+") : "qc plus hydrometeors";
+    return (
+      `Viewing liquid cloud water only: qc tops near ${formatNumber(liquidTop, "m")}, ` +
+      `while the coherent cloud object reaches ${formatNumber(coherentTop, "m")} from ${fieldLabel}.`
+    );
+  }
+  if (rawTraceTop !== null && rawTraceTop > liquidTop + 500) {
+    const fields = result.science_summary?.hydrometeor_envelope_source_fields;
+    const fieldLabel = fields && fields.length > 1 ? fields.join("+") : "qc plus hydrometeors";
+    return (
+      `Viewing liquid cloud water only: qc tops near ${formatNumber(liquidTop, "m")}; ` +
+      `a sparse hydrometeor trace reaches ${formatNumber(rawTraceTop, "m")} from ${fieldLabel}, ` +
+      "but deep-cloud classification uses coherent cloud-object top."
+    );
+  }
+  return null;
 }
 
 function legacyCloudTopWasStoredInKilometers(result: ResultCard): boolean {
@@ -13040,7 +13113,9 @@ function visibleInterestingTimes(result: ResultCard): InterestingTimeRecord[] {
     "first_deep_convection",
     "first_cloud",
     "max_qc",
+    "highest_liquid_cloud_top",
     "highest_cloud_top",
+    "highest_raw_hydrometeor_envelope_top",
     "max_updraft_w",
     "min_downdraft_w",
     "rain_onset",
@@ -13060,6 +13135,14 @@ function visibleInterestingTimes(result: ResultCard): InterestingTimeRecord[] {
 function interestingTimePrimaryValue(record: InterestingTimeRecord, result: ResultCard): string {
   if (record.key === "highest_cloud_top") {
     const cloudTop = resultCloudTopMeters(result);
+    return cloudTop === null ? "Unavailable" : formatNumber(cloudTop, "m");
+  }
+  if (record.key === "highest_liquid_cloud_top") {
+    const cloudTop = resultLiquidCloudTopMeters(result);
+    return cloudTop === null ? "Unavailable" : formatNumber(cloudTop, "m");
+  }
+  if (record.key === "highest_raw_hydrometeor_envelope_top") {
+    const cloudTop = resultRawHydrometeorEnvelopeTopMeters(result);
     return cloudTop === null ? "Unavailable" : formatNumber(cloudTop, "m");
   }
   if (record.key === "latest_output" || record.key === "field_default_time") {

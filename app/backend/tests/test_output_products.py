@@ -290,6 +290,28 @@ def test_deep_convection_interesting_times_and_unavailable_diagnostics(
                 TimeValue(time_seconds=600.0, value=3500.0),
                 TimeValue(time_seconds=1200.0, value=10200.0),
             ],
+            liquid_cloud_top_time_series=[
+                TimeValue(time_seconds=0.0, value=None),
+                TimeValue(time_seconds=600.0, value=2500.0),
+                TimeValue(time_seconds=1200.0, value=6200.0),
+            ],
+            hydrometeor_envelope_top_time_series=[
+                TimeValue(time_seconds=0.0, value=None),
+                TimeValue(time_seconds=600.0, value=3500.0),
+                TimeValue(time_seconds=1200.0, value=10200.0),
+            ],
+            hydrometeor_envelope_source_fields=["qc", "qi", "qs"],
+            raw_hydrometeor_envelope_top_time_series=[
+                TimeValue(time_seconds=0.0, value=None),
+                TimeValue(time_seconds=600.0, value=3500.0),
+                TimeValue(time_seconds=1200.0, value=10200.0),
+            ],
+            coherent_cloud_object_top_time_series=[
+                TimeValue(time_seconds=0.0, value=None),
+                TimeValue(time_seconds=600.0, value=3500.0),
+                TimeValue(time_seconds=1200.0, value=10200.0),
+            ],
+            coherent_cloud_object_source_fields=["qc", "qi", "qs"],
             max_qc_kg_kg=2e-5,
             time_of_max_qc_seconds=1200.0,
         ),
@@ -319,12 +341,28 @@ def test_deep_convection_interesting_times_and_unavailable_diagnostics(
     records = {record.key: record for record in product.available_interesting_times}
     assert records["first_deep_convection"].support_state == "supported"
     assert records["first_deep_convection"].time_index == 2
+    assert records["first_deep_convection"].source_field is not None
+    assert records["first_deep_convection"].source_field.startswith("coherent_cloud_object:")
+    assert records["highest_liquid_cloud_top"].label == "Highest liquid cloud-water top"
+    assert records["highest_liquid_cloud_top"].value == 6200.0
+    assert records["highest_cloud_top"].label == "Highest coherent cloud-object top"
+    assert records["highest_cloud_top"].value == 10200.0
+    assert records["highest_raw_hydrometeor_envelope_top"].label == (
+        "Highest raw hydrometeor trace top"
+    )
+    assert records["highest_raw_hydrometeor_envelope_top"].value == 10200.0
     assert records["max_updraft_w"].time_index == 1
     assert product.science_summary.cloud_formed is True
     assert product.science_summary.deep_cloud_formed is True
     assert product.science_summary.strong_updraft_formed is True
     assert product.science_summary.time_of_first_deep_convection_seconds == 1200.0
     assert product.science_summary.highest_cloud_top_m == 10200.0
+    assert product.science_summary.highest_liquid_cloud_top_m == 6200.0
+    assert product.science_summary.highest_coherent_cloud_object_top_m == 10200.0
+    assert product.science_summary.highest_raw_hydrometeor_envelope_top_m == 10200.0
+    assert product.science_summary.highest_hydrometeor_envelope_top_m == 10200.0
+    assert product.science_summary.coherent_cloud_object_source_fields == ["qc", "qi", "qs"]
+    assert product.science_summary.hydrometeor_envelope_source_fields == ["qc", "qi", "qs"]
     assert product.science_summary.default_explore_time_index == 2
     assert product.science_summary.cm1_outcome is None
     availability = {item.key: item for item in product.science_summary.diagnostic_availability}
@@ -332,6 +370,133 @@ def test_deep_convection_interesting_times_and_unavailable_diagnostics(
         "unsupported_missing_fields"
     )
     assert availability["cold_pool_proxy"].support_state == "unsupported_missing_fields"
+
+
+def test_sparse_raw_hydrometeor_trace_does_not_support_deep_convection(
+    tmp_path: Path,
+) -> None:
+    model = tmp_path / "cm1out_000001.nc"
+    write_model_netcdf(model, times=[0.0, 600.0, 1200.0], values=[0.0, 1.0, 2.0])
+    manifest = build_manifest(tmp_path, [model])
+    diagnostics = ResultDiagnostics(
+        cloud=CloudDiagnostics(
+            formed=True,
+            first_cloud_time_seconds=600.0,
+            cloud_top_time_series=[
+                TimeValue(time_seconds=0.0, value=None),
+                TimeValue(time_seconds=600.0, value=2500.0),
+                TimeValue(time_seconds=1200.0, value=6200.0),
+            ],
+            liquid_cloud_top_time_series=[
+                TimeValue(time_seconds=0.0, value=None),
+                TimeValue(time_seconds=600.0, value=2500.0),
+                TimeValue(time_seconds=1200.0, value=6200.0),
+            ],
+            raw_hydrometeor_envelope_top_time_series=[
+                TimeValue(time_seconds=0.0, value=None),
+                TimeValue(time_seconds=600.0, value=2500.0),
+                TimeValue(time_seconds=1200.0, value=10200.0),
+            ],
+            hydrometeor_envelope_top_time_series=[
+                TimeValue(time_seconds=0.0, value=None),
+                TimeValue(time_seconds=600.0, value=2500.0),
+                TimeValue(time_seconds=1200.0, value=10200.0),
+            ],
+            hydrometeor_envelope_source_fields=["qc", "qs"],
+            coherent_cloud_object_top_time_series=[
+                TimeValue(time_seconds=0.0, value=None),
+                TimeValue(time_seconds=600.0, value=2500.0),
+                TimeValue(time_seconds=1200.0, value=6200.0),
+            ],
+            coherent_cloud_object_source_fields=["qc"],
+            max_qc_kg_kg=2e-5,
+            time_of_max_qc_seconds=1200.0,
+        ),
+        vertical_velocity=VerticalVelocityDiagnostics(
+            max_w_m_s=14.0,
+            time_of_max_w_seconds=600.0,
+            min_w_m_s=-6.0,
+            time_of_min_w_seconds=1200.0,
+            units="m/s",
+        ),
+        rain=RainDiagnostics(
+            present=True,
+            first_rain_time_seconds=1200.0,
+            max_qr_kg_kg=3e-7,
+            time_of_max_qr_seconds=1200.0,
+        ),
+        time=TimeDiagnostics(source="netcdf_time_coordinate", fallback_used=False),
+    )
+
+    product = build_interesting_time_product(
+        result_id="result-sparse-trace",
+        diagnostics=diagnostics,
+        output_manifest=manifest,
+        variables=["qc", "w", "qr"],
+    )
+
+    records = {record.key: record for record in product.available_interesting_times}
+    assert records["highest_cloud_top"].value == 6200.0
+    assert records["highest_raw_hydrometeor_envelope_top"].value == 10200.0
+    assert records["first_deep_convection"].support_state == "unavailable"
+    assert product.science_summary.deep_cloud_formed is False
+    assert product.science_summary.time_of_first_deep_convection_seconds is None
+    assert product.science_summary.highest_cloud_top_m == 6200.0
+    assert product.science_summary.highest_raw_hydrometeor_envelope_top_m == 10200.0
+
+
+def test_composite_cloud_top_uses_contributing_field_quality(tmp_path: Path) -> None:
+    model = tmp_path / "cm1out_000001.nc"
+    write_model_netcdf(model, times=[0.0, 600.0], values=[0.0, 1.0])
+    manifest = build_manifest(tmp_path, [model])
+    diagnostics = ResultDiagnostics(
+        cloud=CloudDiagnostics(
+            formed=True,
+            first_cloud_time_seconds=600.0,
+            cloud_top_time_series=[
+                TimeValue(time_seconds=0.0, value=None),
+                TimeValue(time_seconds=600.0, value=9500.0),
+            ],
+            coherent_cloud_object_top_time_series=[
+                TimeValue(time_seconds=0.0, value=None),
+                TimeValue(time_seconds=600.0, value=9500.0),
+            ],
+            coherent_cloud_object_source_fields=["qc", "qi"],
+            max_qc_kg_kg=2e-5,
+            time_of_max_qc_seconds=600.0,
+        ),
+        vertical_velocity=VerticalVelocityDiagnostics(
+            max_w_m_s=14.0,
+            time_of_max_w_seconds=600.0,
+            units="m/s",
+        ),
+        rain=RainDiagnostics(available=False, field_absent=True),
+        time=TimeDiagnostics(source="netcdf_time_coordinate", fallback_used=False),
+        field_quality_assessed=True,
+        field_quality={
+            "qc": FieldQuality(field="qc", source_field="qc", quality_state="trusted"),
+            "qi": FieldQuality(
+                field="qi",
+                source_field="qi",
+                quality_state="untrusted",
+                reason="qi_field_entirely_non_finite",
+                caveats=["qi_field_entirely_non_finite"],
+            ),
+        },
+    )
+
+    product = build_interesting_time_product(
+        result_id="result-untrusted-ice-top",
+        diagnostics=diagnostics,
+        output_manifest=manifest,
+        variables=["qc", "w"],
+    )
+
+    records = {record.key: record for record in product.available_interesting_times}
+    assert records["highest_cloud_top"].support_state == "unavailable"
+    assert "interesting_time_source_field_untrusted" in records["highest_cloud_top"].caveats
+    assert product.science_summary.deep_cloud_formed is None
+    assert product.science_summary.highest_cloud_top_m is None
 
 
 def test_precipitation_and_reflectivity_outputs_are_supported_when_diagnosed(
