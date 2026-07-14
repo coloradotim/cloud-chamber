@@ -38,6 +38,7 @@ from cloud_chamber.run_manifest import (
     load_run_manifest,
     write_run_manifest,
 )
+from cloud_chamber.runtime_integrity import assess_runtime_integrity
 from cloud_chamber.settings import CloudChamberSettings
 from cloud_chamber.surface_forced_campaign import (
     CampaignError,
@@ -1273,9 +1274,7 @@ def test_campaign_report_blocks_terminal_surface_flux_frame_contamination(
     assert artifacts.summary["surface_flux_response"]["state"] == (
         "surface_flux_response_inconclusive_missing_evidence"
     )
-    assert artifacts.summary["phase_gate_state"] == (
-        "surface_flux_response_inconclusive_missing_evidence"
-    )
+    assert artifacts.summary["phase_gate_state"] == "runtime_integrity_failed"
     heat = artifacts.summary["surface_flux_response"]["evaluations"][0]
     assert "control:hfx_terminal_output_frame_entirely_non_finite" in heat["unavailable_evidence"]
     assert "control:qfx_terminal_output_frame_entirely_non_finite" in heat["unavailable_evidence"]
@@ -1293,10 +1292,21 @@ def test_campaign_report_blocks_terminal_surface_flux_frame_contamination(
         "surface_rain",
     ]
     assert control["diagnostic_trust"]["qc"] == "untrusted_terminal_non_finite_frame"
+    assert control["runtime_integrity_state"] == "failed"
+    assert (
+        "runtime_integrity_failed_fatal_floating_point_flags"
+        in (control["runtime_integrity_caveats"])
+    )
+    assert (
+        "runtime_integrity_failed_terminal_output_frame_entirely_non_finite"
+        in (control["runtime_integrity_caveats"])
+    )
     report = Path(artifacts.markdown_path).read_text()
     assert "Terminal field contamination" in report
     assert "Runtime floating-point warnings" in report
-    assert "terminal output-frame contamination" in report
+    assert "Runtime integrity: `failed`" in report
+    assert "normal CM1 process exit does not make the resulting science output trusted" in report
+    assert "runtime_integrity_failed_terminal_output_frame_entirely_non_finite" in report
     assert "control:hfx_terminal_output_frame_entirely_non_finite" in report
     assert "21600 s" in report
     assert "Cloud-top summaries use the coherent cloud-object top" in report
@@ -1937,6 +1947,11 @@ def _write_fake_result_metadata(
     )
     field_quality.update(_fake_field_quality_from_caveats(run_caveats or []))
     field_quality.update(field_quality_overrides or {})
+    runtime_integrity = assess_runtime_integrity(
+        exit_code=0,
+        runtime_warnings=warnings or [],
+        field_quality=field_quality,
+    )
     result = ResultMetadata(
         result_id=f"result-{manifest.run_id}",
         run_id=manifest.run_id,
@@ -2071,6 +2086,7 @@ def _write_fake_result_metadata(
             field_quality=field_quality,
         ),
         run_caveats=run_caveats or [],
+        runtime_integrity=runtime_integrity,
         science_summary=ScienceSummary(
             cloud_formed=True,
             deep_cloud_formed=False,

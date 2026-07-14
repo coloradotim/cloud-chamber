@@ -1994,6 +1994,7 @@ def _summary_for_plan_run(run: CampaignRunPlan, state: CampaignState) -> dict[st
         "dbz",
     )
     terminal_contamination = _terminal_output_contamination_summary(field_quality, warnings)
+    runtime_integrity = result.runtime_integrity if result is not None else None
     summary = {
         "schema_version": CAMPAIGN_SUMMARY_SCHEMA_VERSION,
         "campaign_id": run.campaign_id,
@@ -2091,6 +2092,31 @@ def _summary_for_plan_run(run: CampaignRunPlan, state: CampaignState) -> dict[st
         "terminal_output_contamination": terminal_contamination["present"],
         "terminal_output_contamination_fields": terminal_contamination["fields"],
         "runtime_floating_point_warnings": terminal_contamination["warnings"],
+        "runtime_integrity_state": (
+            runtime_integrity.state if runtime_integrity is not None else "not_assessed"
+        ),
+        "runtime_integrity_reason": (
+            runtime_integrity.reason
+            if runtime_integrity is not None
+            else "runtime_integrity_not_assessed"
+        ),
+        "runtime_integrity_summary": (
+            runtime_integrity.summary
+            if runtime_integrity is not None
+            else "Runtime integrity was not assessed."
+        ),
+        "runtime_integrity_caveats": (
+            runtime_integrity.caveats if runtime_integrity is not None else []
+        ),
+        "runtime_integrity_evidence": (
+            runtime_integrity.evidence if runtime_integrity is not None else []
+        ),
+        "runtime_integrity_terminal_non_finite_fields": (
+            runtime_integrity.terminal_non_finite_fields if runtime_integrity is not None else []
+        ),
+        "runtime_integrity_stats_sentinel_times_seconds": (
+            runtime_integrity.stats_sentinel_times_seconds if runtime_integrity is not None else []
+        ),
         "surface_moisture_flux_output_field": _surface_moisture_flux_field(variables),
         "lhfx_present": _surface_moisture_flux_field(variables) is not None,
         "lhfx_units": qfx_stats["units"],
@@ -2899,6 +2925,8 @@ def _summary_caveats(
     else:
         caveats.extend(result.run_caveats)
         caveats.extend(result.interesting_time_caveats)
+        if result.runtime_integrity.assessed and result.runtime_integrity.state != "trusted":
+            caveats.extend(result.runtime_integrity.caveats)
         if result.diagnostics is not None:
             caveats.extend(result.diagnostics.caveats)
             if not (
@@ -2989,6 +3017,10 @@ def _render_markdown_report(plan: CampaignPlan, summary: Mapping[str, Any]) -> s
         quality_warnings = ", ".join(run["diagnostic_quality_warnings"]) or "none"
         terminal_fields = ", ".join(run.get("terminal_output_contamination_fields") or []) or "none"
         runtime_warnings = ", ".join(run.get("runtime_floating_point_warnings") or []) or "none"
+        runtime_integrity_caveats = ", ".join(run.get("runtime_integrity_caveats") or []) or "none"
+        runtime_integrity_evidence = (
+            ", ".join(run.get("runtime_integrity_evidence") or []) or "none"
+        )
         cloud_updraft = ", ".join(
             [
                 _trusted_metric_label(
@@ -3054,6 +3086,12 @@ def _render_markdown_report(plan: CampaignPlan, summary: Mapping[str, Any]) -> s
                 ),
                 (f"- Terminal field contamination: `{terminal_fields}`"),
                 f"- Runtime floating-point warnings: `{runtime_warnings}`",
+                (
+                    f"- Runtime integrity: `{run.get('runtime_integrity_state', 'not_assessed')}`; "
+                    f"{run.get('runtime_integrity_summary', 'Runtime integrity was not assessed.')}"
+                ),
+                f"- Runtime integrity caveats: `{runtime_integrity_caveats}`",
+                f"- Runtime integrity evidence: `{runtime_integrity_evidence}`",
                 f"- Cloud/updraft: {cloud_updraft}",
                 f"- Precipitation/reflectivity: {precipitation}",
                 f"- Diagnostic trust: `{_diagnostic_trust_summary(diagnostic_trust)}`",
@@ -3995,6 +4033,8 @@ def _phase_gate_state(
         return "inconclusive_missing_evidence"
     if not all(summary.get("status") == "ingested" for summary in phase1):
         return "inconclusive_missing_evidence"
+    if any(summary.get("runtime_integrity_state") == "failed" for summary in phase1):
+        return "runtime_integrity_failed"
     if not all(summary.get("hfx_present") and summary.get("qfx_present") for summary in phase1):
         return "forcing_wiring_not_verified"
     response_state = surface_flux_response.get("state")
@@ -4151,6 +4191,11 @@ def _forcing_response_summary(summary: Mapping[str, Any]) -> str:
         )
     if state == "forcing_wiring_not_verified":
         return "Surface-flux output fields are missing from ingested results."
+    if state == "runtime_integrity_failed":
+        return (
+            "Phase 1 remains blocked because at least one matched run failed runtime-integrity "
+            "checks. A normal CM1 process exit does not make the resulting science output trusted."
+        )
     return "No ingested result evidence is available yet."
 
 
@@ -4207,6 +4252,8 @@ def _grid_label(run: Mapping[str, Any]) -> str:
 def _key_result_label(run: Mapping[str, Any]) -> str:
     if run.get("status") != "ingested":
         return str(run.get("status"))
+    if run.get("runtime_integrity_state") == "failed":
+        return "runtime integrity failed; science outcomes untrusted"
     trust = run.get("diagnostic_trust")
     diagnostic_trust = trust if isinstance(trust, dict) else {}
     return "; ".join(

@@ -111,13 +111,13 @@ Implemented backend API endpoints:
 - `POST /api/runs/launch` starts one local CM1 run from a generated manifest when local CM1 settings validate.
 - `POST /api/runs/queue` adds a packaged run to the local serial CM1 queue. The queue starts at most one local CM1 process at a time, advances on queue refresh, and auto-ingests completed output-producing runs.
 - `GET /api/runs/queue` refreshes the local serial queue, updates active run status, starts the next queued package when safe, and reports auto-ingest or fallback errors.
-- `GET /api/runs/status?manifest_path=...` refreshes and returns lifecycle status, product/validation state, observed-sounding context, package/user tags and notes, command/log paths, short stdout/stderr tails, output-artifact counts, runtime warnings, timestamps, and bounded progress metadata for a run manifest. Progress uses configured `timax` plus parsed CM1 stdout model-minute lines when available; if model time is not available, the payload says so rather than inventing a percent complete.
+- `GET /api/runs/status?manifest_path=...` refreshes and returns lifecycle status, product/validation state, observed-sounding context, package/user tags and notes, command/log paths, short stdout/stderr tails, output-artifact counts, runtime warnings, runtime-integrity state, timestamps, and bounded progress metadata for a run manifest. Progress uses configured `timax` plus parsed CM1 stdout model-minute lines when available; if model time is not available, the payload says so rather than inventing a percent complete.
 - `POST /api/runs/cancel` cancels the active local run when technically practical.
 - `GET /api/storage/inventory` reports configured runtime-home disk usage and per-run metadata under `~/CloudChamber/runs/`.
 - `POST /api/storage/delete-run` previews or deletes one selected run directory under the configured runtime home.
 - `POST /api/results/ingest` creates result metadata from a completed run manifest with NetCDF output.
 - `GET /api/results` lists Result Card / Experiment Notebook entries under the configured runtime home.
-- `GET /api/results/{result_id}` returns one Result Card with run ID, scenario, run configuration, physical question, diagnostics summary, first cloud time, max `qc`, max/min `w`, rain yes/no, caveats, output file summary, and editable name/tags/notes.
+- `GET /api/results/{result_id}` returns one Result Card with run ID, scenario, run configuration, physical question, diagnostics summary, runtime-integrity state, field-quality state, first cloud time, max `qc`, max/min `w`, rain yes/no, caveats, output file summary, and editable name/tags/notes.
 - `PATCH /api/results/{result_id}` updates notebook fields: `name`, `tags`, and `notes`.
 - `POST /api/results/{result_id}/save` remains as a compatibility endpoint for older clients. The current UI does not expose a separate save/protect mode; ingested results already appear in Results, and notebook edits use `PATCH`.
 

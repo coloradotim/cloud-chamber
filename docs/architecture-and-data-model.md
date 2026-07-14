@@ -559,12 +559,12 @@ The first implemented local run manager is intentionally conservative:
 - launch rejects Rayleigh damping settings that start too low and would damp more than half the vertical domain;
 - launch stages required local runtime files such as `LANDUSE.TBL` from the configured CM1 run directory into the generated package directory;
 - process exit code 0 is not enough to mark a usable completed CM1 result; NetCDF or raw CM1 `.dat/.ctl` output artifacts must exist before `completed_cm1_result` is used;
-- status responses expose enough UI-safe metadata for the guided app flow: lifecycle/product/validation state, command/log paths, short stdout/stderr tails, output-artifact counts, runtime warnings, and timestamps;
+- status responses expose enough UI-safe metadata for the guided app flow: lifecycle/product/validation state, command/log paths, short stdout/stderr tails, output-artifact counts, runtime warnings, runtime-integrity state, and timestamps;
 - tests inject fake subprocesses, so CI never needs a real CM1 executable.
 
 Real CM1 execution remains a manual/local responsibility until the user has local settings and runtime files in place. The manager must fail clearly when CM1 paths are missing rather than pretending a run started. If the process exits successfully but no NetCDF or raw CM1 `.dat/.ctl` output exists, the manifest remains `completed` at the process level but uses `validation_status: needs_review` and `product_state: process_completed_no_output`.
 
-The first successful Baseline Shallow Cumulus smoke run produced GrADS/direct-access CM1 artifacts (`cm1out_*.dat` plus `.ctl` descriptors) rather than NetCDF. That proves local execution but is not full ingest. The manifest should catalog those raw artifacts separately from NetCDF paths and processed visualization artifacts. Floating-point exception flags reported in stderr should be surfaced as runtime warnings/caveats, not automatically treated as launch failure.
+The first successful Baseline Shallow Cumulus smoke run produced GrADS/direct-access CM1 artifacts (`cm1out_*.dat` plus `.ctl` descriptors) rather than NetCDF. That proves local execution but is not full ingest. The manifest should catalog those raw artifacts separately from NetCDF paths and processed visualization artifacts. Floating-point exception flags reported in stderr should remain visible as runtime warnings at launch/status time. Ingested results then add a runtime-integrity assessment so fatal flags, CM1 stats sentinel collapse, or terminal non-finite output frames can make science outcomes untrusted even when the process exited normally.
 
 ### Runtime Storage Inventory And Cleanup
 
@@ -691,9 +691,17 @@ Current diagnostics compute:
   evolution support are independent states; a bad or absent final endpoint must
   not invalidate an otherwise usable early response.
 
-Diagnostics preserve runtime warnings from the run manifest/result metadata. CM1
-floating-point exception flags are caveats, not automatic failure. The
-diagnostics also count non-finite values in target fields where practical,
+Diagnostics preserve runtime warnings from the run manifest/result metadata.
+Result metadata also carries `runtime_integrity`, a backend-owned verdict that
+keeps process lifecycle separate from science trust. Packaged, queued, or running
+manifests are `not_assessed`; a completed run needs completion, warning, or stats
+evidence before it can be marked trusted. Underflow-only warnings are caveated;
+fatal floating-point flags, non-zero exit, and contextual CM1 stats sentinel
+collapse fail runtime integrity. Terminal output-frame contamination fails global
+runtime integrity only when it crosses multiple documented field categories such
+as dynamics, thermodynamics, hydrometeors, and surface fields. A single bad field
+or isolated ambiguous stats NaN remains caveated unless another failure signal is
+present. The diagnostics also count non-finite values in target fields where practical,
 ignore NaN/infinity for finite summaries, and record field-specific caveats if
 `qc`, `w`, `qr`, surface `rain`, `dbz`, `hfx`, or `qfx` are missing or entirely
 non-finite.

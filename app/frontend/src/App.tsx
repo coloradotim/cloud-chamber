@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import type { CSSProperties, FormEvent } from "react";
 
 import "./App.css";
@@ -671,6 +671,7 @@ type RunStatusResponse = {
     processed_artifacts: number;
   };
   runtime_warnings: string[];
+  runtime_integrity?: RuntimeIntegrity | null;
   progress: RunProgressResponse | null;
   user?: UserRunMetadata | null;
   observed_sounding?: ObservedSoundingSummary | null;
@@ -769,6 +770,24 @@ type InterestingTimeSupportState =
   | "unsupported_missing_diagnostic";
 
 type FieldQualityState = "trusted" | "caveated" | "untrusted" | "unavailable";
+
+type RuntimeIntegrityState = "trusted" | "caveated" | "failed" | "not_assessed";
+
+type RuntimeIntegrity = {
+  assessed: boolean;
+  state: RuntimeIntegrityState;
+  reason: string;
+  summary: string;
+  exit_code?: number | null;
+  normal_completion_reported?: boolean | null;
+  warning_flags: string[];
+  fatal_warning_flags: string[];
+  stats_sentinel_collapse_detected: boolean;
+  stats_sentinel_times_seconds: Array<number | null>;
+  terminal_non_finite_fields: string[];
+  caveats: string[];
+  evidence: string[];
+};
 
 type FieldQuality = {
   field: string;
@@ -947,6 +966,7 @@ type ResultCard = {
   max_dbz?: number | null;
   reflectivity_available?: boolean | null;
   surface_fluxes?: SurfaceFluxDiagnostics | null;
+  runtime_integrity?: RuntimeIntegrity | null;
   field_quality_assessed?: boolean;
   field_quality?: Record<string, FieldQuality>;
   interesting_times?: InterestingTimeRecord[];
@@ -7095,6 +7115,7 @@ function LocalRunWorkflowPanel({
                 </ul>
               </div>
             )}
+            <RuntimeIntegritySummary runtimeIntegrity={runStatus.runtime_integrity ?? null} />
             {(runStatus.stdout_tail || runStatus.stderr_tail) && (
               <details>
                 <summary>Latest log tail</summary>
@@ -8588,6 +8609,7 @@ function ResultNotebookCard({
         </section>
 
         <FieldQualitySummary result={result} />
+        <RuntimeIntegritySummary runtimeIntegrity={result.runtime_integrity ?? null} />
 
         <section aria-labelledby="caveats-title">
           <h4 id="caveats-title">Caveats / warnings</h4>
@@ -13290,6 +13312,53 @@ function fieldQualityDescription(quality: FieldQuality): string {
   return `${label} (${quality.source_field}) is ${quality.quality_state}; ${fieldQualityCounts(
     quality,
   )}${reason}`;
+}
+
+function RuntimeIntegritySummary({
+  runtimeIntegrity,
+}: {
+  runtimeIntegrity: RuntimeIntegrity | null;
+}) {
+  const titleId = useId();
+  if (!runtimeIntegrity || runtimeIntegrity.state === "trusted") return null;
+  const title =
+    runtimeIntegrity.state === "failed" ? "Runtime integrity failed" : "Runtime integrity caveated";
+  return (
+    <section aria-labelledby={titleId}>
+      <h4 id={titleId}>{title}</h4>
+      <p>{runtimeIntegrity.summary}</p>
+      <dl className="metric-grid">
+        <Metric label="State" value={humanize(runtimeIntegrity.state)} />
+        <Metric label="Reason" value={humanize(runtimeIntegrity.reason)} />
+        <Metric
+          label="Normal completion"
+          value={
+            runtimeIntegrity.normal_completion_reported === null ||
+            runtimeIntegrity.normal_completion_reported === undefined
+              ? "Unknown"
+              : runtimeIntegrity.normal_completion_reported
+                ? "Yes"
+                : "No"
+          }
+        />
+        <Metric
+          label="Terminal affected fields"
+          value={
+            runtimeIntegrity.terminal_non_finite_fields.length > 0
+              ? runtimeIntegrity.terminal_non_finite_fields.join(", ")
+              : "None"
+          }
+        />
+      </dl>
+      {runtimeIntegrity.caveats.length > 0 && (
+        <ul className="compact-list">
+          {runtimeIntegrity.caveats.map((caveat) => (
+            <li key={caveat}>{caveat}</li>
+          ))}
+        </ul>
+      )}
+    </section>
+  );
 }
 
 function FieldQualitySummary({ result }: { result: ResultCard }) {

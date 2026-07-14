@@ -47,6 +47,7 @@ from cloud_chamber.result_diagnostics import (
     compute_process_diagnostics,
 )
 from cloud_chamber.run_manifest import LifecycleState, ProductState, RunManifest, load_run_manifest
+from cloud_chamber.runtime_integrity import RuntimeIntegrity, assess_runtime_integrity
 from cloud_chamber.settings import CloudChamberSettings
 
 RESULT_METADATA_FILENAME = "result_metadata.json"
@@ -157,6 +158,7 @@ class ResultMetadata(BaseModel):
     diagnostics_summary: str | None = None
     diagnostics: ResultDiagnostics | None = None
     process_diagnostics: ProcessDiagnostics | None = None
+    runtime_integrity: RuntimeIntegrity = Field(default_factory=RuntimeIntegrity)
     interesting_times: list[InterestingTimeRecord] = Field(default_factory=list)
     default_time_by_field: dict[str, FieldDefaultTime] = Field(default_factory=dict)
     science_summary: ScienceSummary | None = None
@@ -312,6 +314,7 @@ def _result_from_model_output_files(
         )
 
     diagnostics = _merge_diagnostics(diagnostics_parts, warnings)
+    runtime_integrity = _runtime_integrity_for_result(manifest, classified, diagnostics)
     process_diagnostics = compute_process_diagnostics(
         diagnostics,
         scenario_id=manifest.scenario.id,
@@ -375,6 +378,7 @@ def _result_from_model_output_files(
         diagnostics_summary=_diagnostics_summary(diagnostics),
         diagnostics=diagnostics,
         process_diagnostics=process_diagnostics,
+        runtime_integrity=runtime_integrity,
         created_at=now,
         updated_at=now,
     )
@@ -1553,6 +1557,7 @@ def _result_from_dataset(
             + ", ".join(missing_required_output_fields)
         )
     diagnostics = compute_baseline_diagnostics(dataset, warnings)
+    runtime_integrity = _runtime_integrity_for_result(manifest, classified, diagnostics)
     process_diagnostics = compute_process_diagnostics(
         diagnostics,
         scenario_id=manifest.scenario.id,
@@ -1613,8 +1618,27 @@ def _result_from_dataset(
         diagnostics_summary=_diagnostics_summary(diagnostics),
         diagnostics=diagnostics,
         process_diagnostics=process_diagnostics,
+        runtime_integrity=runtime_integrity,
         created_at=now,
         updated_at=now,
+    )
+
+
+def _runtime_integrity_for_result(
+    manifest: RunManifest,
+    classified: _ClassifiedNetcdfPaths,
+    diagnostics: ResultDiagnostics,
+) -> RuntimeIntegrity:
+    stdout_log = (
+        Path(manifest.execution.stdout_log).expanduser() if manifest.execution.stdout_log else None
+    )
+    return assess_runtime_integrity(
+        lifecycle_state=manifest.lifecycle_state.value,
+        exit_code=manifest.execution.exit_code,
+        runtime_warnings=manifest.outputs.runtime_warnings,
+        stdout_log=stdout_log,
+        stats_netcdf_paths=classified.stats_netcdf_paths,
+        field_quality=diagnostics.field_quality if diagnostics.field_quality_assessed else None,
     )
 
 
