@@ -667,6 +667,32 @@ def test_dry_run_package_explicit_high_detail_configuration_reports_cost(
     assert "tapfrq =  300.0," in namelist
 
 
+def test_dry_run_package_reports_explicit_timestep_target(tmp_path: Path) -> None:
+    result = generate_dry_run_package(
+        scenario_data=load_baseline_template(),
+        runtime_home=tmp_path,
+        run_id="run-dtl-001",
+        run_configuration={
+            "duration": "short_6h",
+            "horizontal_cell_count": "cells_128",
+            "domain_size": "wide_12km",
+            "output_cadence": "standard_15min",
+            "diagnostic_set": "full",
+            "time_step_seconds": 1.0,
+        },
+    )
+    namelist = (result.package_dir / "namelist.input").read_text()
+    report = json.loads(result.report_path.read_text())
+    details = report["run_configuration_summary"]
+
+    assert report["run_configuration"]["cm1_values"]["time_step_seconds"] == 1.0
+    assert details["time_step_seconds"] == 1.0
+    assert details["time_step_multiplier_vs_default"] == 3.0
+    assert details["estimated_compute_multiplier_vs_default"] == 12.0
+    assert "dtl_1p000e00s" in report["run_configuration"]["configuration_id"]
+    assert "dtl    =   1.000," in namelist
+
+
 def test_baseline_humidity_ladder_packages_change_only_sounding_moisture(
     tmp_path: Path,
 ) -> None:

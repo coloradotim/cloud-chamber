@@ -313,9 +313,11 @@ The first reference-derived validation run, `dry-run-les-shallowcu-2026052214064
 Run configuration uses guarded fields for duration, horizontal cell budget,
 domain size, output cadence, numeric surface forcing, full requested fields,
 advanced CM1-facing values, and a pre-run validation report. Raw numerical
-timestep is not a normal v1 control. Defaults must expose their derived
-CM1-facing values in advanced metadata so dry-run reports and Build UI can show
-exactly what will be written without requiring raw namelist editing.
+timestep is not a normal v1 control, but campaign matrices may set an explicit
+advanced timestep target when numerical stability is the evidence under test.
+Defaults must expose their derived CM1-facing values in advanced metadata so
+dry-run reports and Build UI can show exactly what will be written without
+requiring raw namelist editing.
 
 Current product defaults are deliberately different by source path:
 generated lower-atmosphere references use a six-hour local-domain science run,
@@ -1136,9 +1138,9 @@ scenario + controls
 Run-configuration metadata should flow through this path: scenario templates
 define editable configuration defaults, generated run packages record the
 selected duration, horizontal cell budget, domain, output cadence, diagnostic
-set, forcing, requested fields, advanced CM1-facing values, and validation
-report, run manifests preserve them during execution, and result metadata keeps
-them available for later inspection.
+set, forcing, requested fields, advanced CM1-facing values such as timestep
+target, and validation report, run manifests preserve them during execution, and
+result metadata keeps them available for later inspection.
 
 If size/runtime estimates are not validated yet, manifests and reports should record that explicitly rather than presenting guessed precision.
 

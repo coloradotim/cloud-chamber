@@ -187,6 +187,28 @@ def test_rendered_namelist_explicit_configuration_changes_domain_detail_and_cade
     assert "output_format    = 2," in namelist
 
 
+def test_rendered_namelist_preserves_explicit_timestep_target() -> None:
+    contract = build_cm1_input_contract(
+        baseline_scenario(),
+        run_configuration={
+            "duration": "short_6h",
+            "horizontal_cell_count": "cells_128",
+            "domain_size": "wide_12km",
+            "output_cadence": "standard_15min",
+            "diagnostic_set": "full",
+            "time_step_seconds": 1.0,
+        },
+    )
+    namelist = render_namelist_fragment(contract)
+
+    assert contract.run_configuration.cm1_values.time_step_seconds == 1.0
+    assert "dtl_1p000e00s" in contract.run_configuration.configuration_id
+    assert "non_default_timestep_target_requires_like_for_like_campaign_evidence" in (
+        contract.run_configuration.caveats
+    )
+    assert "dtl    =   1.000," in namelist
+
+
 def test_rendered_input_sounding_is_external_baseline_profile() -> None:
     contract = build_cm1_input_contract(baseline_scenario())
     sounding = render_input_sounding_notes(contract)

@@ -308,6 +308,22 @@ def test_campaign_plan_validates_matrix_and_resolves_cm1_values(tmp_path: Path) 
     assert run.stable_resume_identity
 
 
+def test_campaign_plan_preserves_explicit_timestep_target(tmp_path: Path) -> None:
+    matrix_path = write_matrix(tmp_path)
+    matrix = yaml.safe_load(matrix_path.read_text())
+    matrix["run_defaults"]["time_step_seconds"] = 1.0
+    matrix["comparison_types"][0]["required_equal_fields"].append("time_step_seconds")
+    matrix_path.write_text(yaml.safe_dump(matrix, sort_keys=False))
+
+    plan = build_campaign_plan(yaml.safe_load(matrix_path.read_text()), matrix_path=matrix_path)
+    run = plan.runs[0]
+
+    assert run.run_configuration["time_step_seconds"] == 1.0
+    assert run.cm1_values["time_step_seconds"] == 1.0
+    assert run.resolved_run_configuration["cm1_values"]["time_step_seconds"] == 1.0
+    assert "dtl_1p000e00s" in run.resolved_run_configuration["configuration_id"]
+
+
 def test_campaign_plans_checked_in_example_matrix() -> None:
     plan = plan_campaign(
         REPO_ROOT / "docs/research/templates/surface-forced-campaign-matrix.example.yaml"

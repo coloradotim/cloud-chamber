@@ -558,10 +558,12 @@ sounding validates a science hypothesis. Science runs should use enough model
 time, domain, and output cadence for the atmospheric question being asked.
 
 Grid/detail and output cadence are the main user-facing cost levers. Raw
-numerical timestep is not a normal v1 user control. Cloud Chamber should warn or
-caveat unvalidated control combinations when they can be safely generated,
-block configurations that cannot be rendered or launched honestly, and avoid
-silently replacing bad observed-sounding input with reference defaults.
+numerical timestep is not a normal v1 user control, but campaign and numerical
+validation matrices may set an explicit advanced timestep target when that value
+is part of the evidence being tested. Cloud Chamber should warn or caveat
+unvalidated control combinations when they can be safely generated, block
+configurations that cannot be rendered or launched honestly, and avoid silently
+replacing bad observed-sounding input with reference defaults.
 
 Generated packages include a backend-owned pre-run validation report. The
 report records the selected candidate/hypothesis, selected run recipe and
@@ -604,6 +606,7 @@ run_configuration:
     radiation_mode
     place_time_context
   advanced_cm1_values:
+    timestep_target_seconds
     namelist_summary
     input_sounding_summary
     runtime_files_needed
@@ -693,6 +696,7 @@ run_configuration:
     radiation_mode
     place_time_context
   advanced_cm1_values:
+    timestep_target_seconds
     namelist_summary
     input_sounding_summary
     runtime_files_needed
@@ -1149,6 +1153,7 @@ configuration:
     output_field_density:
     forcing:
     advanced_cm1_values:
+      timestep_target_seconds:
     pre_run_validation_report:
   namelist_parameters:
   input_sounding:
