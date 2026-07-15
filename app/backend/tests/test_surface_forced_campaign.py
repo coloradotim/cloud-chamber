@@ -388,6 +388,29 @@ def test_campaign_package_creates_observed_surface_forced_package_and_resumes(
     assert "Campaign default note." in (manifest.user.notes or "")
 
 
+def test_campaign_package_joins_local_igra_station_metadata_from_cache(
+    tmp_path: Path,
+) -> None:
+    settings = fake_settings(tmp_path)
+    station_list = settings.cache_dir / "igra" / "reference" / "igra2-station-list.txt"
+    station_list.parent.mkdir(parents=True)
+    station_list.write_text(
+        "USM00072357  35.1808  -97.4378  344.9 OK NORMAN/MAX WESTHEIMER A; OK.   1974 2026  28084\n"
+    )
+    matrix_path = write_matrix(tmp_path)
+    fixture_path = tmp_path / "fixtures" / "valley.txt"
+    fixture_path.write_text(IGRA_FIXTURE.replace("USM00072558", "USM00072357"))
+
+    packaged = package_campaign(matrix_path, settings=settings, resume=True)
+    manifest = load_run_manifest(Path(packaged.runs[0].manifest_path or ""))
+
+    assert manifest.observed_sounding is not None
+    assert manifest.observed_sounding["station_id"] == "USM00072357"
+    assert manifest.observed_sounding["station_elevation_m_msl"] == pytest.approx(344.9)
+    assert manifest.observed_sounding["model_bottom_elevation_m_msl"] == pytest.approx(344.9)
+    assert manifest.observed_sounding["provenance"]["station_metadata_source"] == str(station_list)
+
+
 def test_campaign_queue_uses_existing_local_queue_path(
     tmp_path: Path,
 ) -> None:

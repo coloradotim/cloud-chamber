@@ -22,6 +22,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from cloud_chamber.cm1_input_contract import RunRecipe
 from cloud_chamber.dry_run_package import DryRunPackageError, generate_dry_run_package
+from cloud_chamber.igra_catalog import parse_station_metadata
 from cloud_chamber.lan_worker import (
     LanWorkerApiError,
     collect_lan_worker_run,
@@ -33,8 +34,10 @@ from cloud_chamber.local_run_queue import LocalRunQueueError, LocalRunQueueManag
 from cloud_chamber.observed_sounding import (
     ObservedSoundingError,
     ObservedSoundingRecord,
+    StationMetadata,
     observed_sounding_from_payload,
     parse_igra_station_text,
+    summarize_igra_station_text,
 )
 from cloud_chamber.result_diagnostics import (
     FieldFrameQualitySummary,
@@ -1336,10 +1339,12 @@ def _resolve_observed_sounding(
     if source_type == "uploaded_or_local_igra":
         text_path = _local_igra_text_path(source, matrix_path)
         selected_time = _parse_utc_datetime(str(source.get("selected_valid_time_utc")))
+        text = text_path.read_text()
         return parse_igra_station_text(
-            text_path.read_text(),
+            text,
             uploaded_filename=text_path.name,
             selected_time_utc=selected_time,
+            station_metadata=_station_metadata_for_local_igra(settings, text),
         ).selected_sounding
     raise CampaignError(f"Unsupported selection source type: {source_type}")
 
@@ -1481,6 +1486,35 @@ def _local_igra_text_path(source: Mapping[str, Any], matrix_path: Path) -> Path:
     if configured is None:
         raise CampaignError("uploaded_or_local_igra source is missing a text path")
     return _resolve_matrix_path(configured, matrix_path.parent)
+
+
+def _station_metadata_for_local_igra(
+    settings: CloudChamberSettings,
+    station_text: str,
+) -> StationMetadata | None:
+    summaries = summarize_igra_station_text(station_text)
+    if not summaries:
+        return None
+    station_id = summaries[0].station_id
+    station_list_path = (
+        settings.cache_dir.expanduser() / "igra" / "reference" / "igra2-station-list.txt"
+    )
+    if not station_list_path.exists():
+        return None
+    station = parse_station_metadata(
+        station_list_path.read_text(),
+        source=str(station_list_path),
+    ).get(station_id)
+    if station is None:
+        return None
+    return StationMetadata(
+        station_id=station.station_id,
+        station_name=station.station_name,
+        latitude=station.latitude,
+        longitude=station.longitude,
+        elevation_m_msl=station.elevation_m_msl,
+        source=station.source,
+    )
 
 
 def _resolve_matrix_path(value: str, matrix_base: Path) -> Path:
