@@ -38,6 +38,14 @@ from cloud_chamber.run_manifest import (
     ValidationStatus,
 )
 from cloud_chamber.scenario_schema import ScenarioTemplate, validate_scenario_template
+from cloud_chamber.surface_forcing import (
+    CM1_SOURCE_CUSTOMIZATION_FILENAME,
+    SURFACE_FORCING_PATCH_FILENAME,
+    SURFACE_FORCING_PATCH_JSON_FILENAME,
+    cm1_source_customization_artifact,
+    surface_forcing_patch_artifact,
+    surface_forcing_patch_data_text,
+)
 
 
 class DryRunPackageError(RuntimeError):
@@ -134,6 +142,10 @@ def generate_dry_run_package(
         "report": package_dir / "dry_run_report.json",
         "runtime_checklist": package_dir / "runtime_file_checklist.json",
     }
+    if contract.run_configuration.surface_forcing_patch is not None:
+        paths["surface_forcing_patch_json"] = package_dir / SURFACE_FORCING_PATCH_JSON_FILENAME
+        paths["surface_forcing_patch_data"] = package_dir / SURFACE_FORCING_PATCH_FILENAME
+        paths["cm1_source_customization"] = package_dir / CM1_SOURCE_CUSTOMIZATION_FILENAME
 
     manifest = RunManifest(
         run_id=run_id,
@@ -152,6 +164,16 @@ def generate_dry_run_package(
             namelist_input=str(paths["namelist"]),
             input_sounding=str(paths["input_sounding"]),
             dry_run_report=str(paths["report"]),
+            surface_forcing_patch=(
+                str(paths["surface_forcing_patch_data"])
+                if "surface_forcing_patch_data" in paths
+                else None
+            ),
+            cm1_source_customization=(
+                str(paths["cm1_source_customization"])
+                if "cm1_source_customization" in paths
+                else None
+            ),
             runtime_file_checklist=[str(paths["runtime_checklist"])],
         ),
         runtime_paths=RuntimePaths(runtime_home=str(runtime_home.expanduser())),
@@ -217,11 +239,28 @@ def generate_dry_run_package(
             "reference case where available, never committed to the repo."
         ),
     }
+    if contract.run_configuration.surface_forcing_patch is not None:
+        runtime_checklist["source_customization"] = {
+            "status": "checked_and_applied_at_launch",
+            "cm1_source_customization": str(paths["cm1_source_customization"]),
+            "surface_forcing_patch": str(paths["surface_forcing_patch_data"]),
+            "notes": (
+                "Differential surface-forcing packages require Cloud Chamber to patch and "
+                "rebuild the external local CM1 source tree before launch. A launch must "
+                "fail rather than silently run uniform forcing if this customization cannot "
+                "be applied."
+            ),
+        }
 
     _write_json(paths["manifest"], json.loads(manifest.to_json_text()))
     _write_json(paths["case_manifest"], case_manifest)
     paths["namelist"].write_text(render_namelist_fragment(contract))
     paths["input_sounding"].write_text(render_input_sounding_notes(contract))
+    if contract.run_configuration.surface_forcing_patch is not None:
+        patch = contract.run_configuration.surface_forcing_patch
+        _write_json(paths["surface_forcing_patch_json"], surface_forcing_patch_artifact(patch))
+        paths["surface_forcing_patch_data"].write_text(surface_forcing_patch_data_text(patch))
+        _write_json(paths["cm1_source_customization"], cm1_source_customization_artifact(patch))
     _write_json(paths["report"], report)
     _write_json(paths["runtime_checklist"], runtime_checklist)
 
@@ -499,6 +538,11 @@ def _run_configuration_summary(contract: CM1InputContract) -> dict[str, object]:
         "surface_flux_cm1_values": contract.run_configuration.surface_flux_cm1_values.model_dump(
             mode="json"
         ),
+        "surface_forcing_patch": (
+            contract.run_configuration.surface_forcing_patch.model_dump(mode="json")
+            if contract.run_configuration.surface_forcing_patch is not None
+            else None
+        ),
         "surface_flux_caveats": list(contract.run_configuration.surface_flux_caveats),
         "runtime_seconds": defaults.runtime_seconds,
         "output_cadence_seconds": defaults.output_cadence_seconds,
@@ -539,6 +583,16 @@ def _run_configuration_summary(contract: CM1InputContract) -> dict[str, object]:
 
 
 def _run_recipe_mapping_summary(contract: CM1InputContract) -> str:
+    if contract.run_configuration.surface_forcing_patch is not None:
+        return (
+            "observed IGRA external input_sounding profile; the run uses CM1 isnd=7, "
+            "configured duration, configured domain and output cadence, numeric background "
+            "lower-boundary heat/moisture flux values, a generated differential "
+            "surface-forcing patch file, and an external CM1 source customization that "
+            "applies the patch in the prescribed-flux path; no artificial atmospheric "
+            "trigger is used; wind direction/speed is converted to u/v and applied through "
+            "CM1 input_sounding handling"
+        )
     if contract.observed_sounding is not None:
         return (
             "observed IGRA external input_sounding profile; the run uses CM1 isnd=7, "
@@ -558,6 +612,12 @@ def _run_recipe_mapping_summary(contract: CM1InputContract) -> str:
 
 
 def _cm1_mapping_status(contract: CM1InputContract) -> str:
+    if contract.run_configuration.surface_forcing_patch is not None:
+        return (
+            "CM1-ready observed-sounding run with an explicit differential lower-boundary "
+            "heat/moisture forcing patch. Launch requires Cloud Chamber to patch and rebuild "
+            "the external local CM1 source tree; no uniform fallback is allowed."
+        )
     if contract.observed_sounding is not None:
         return (
             "CM1-ready observed-sounding run with explicit uniform lower-boundary "

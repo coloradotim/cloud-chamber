@@ -131,6 +131,7 @@ class ResultMetadata(BaseModel):
     expected_outputs: list[str] = Field(default_factory=list)
     run_caveats: list[str] = Field(default_factory=list)
     manual_validation_status: str | None = None
+    cm1_source_customization_status: dict[str, Any] | None = None
     candidate_screening: dict[str, Any] | None = None
     pre_run_validation_report: dict[str, Any] | None = None
     candidate_hypothesis_comparison: CandidateHypothesisComparison | None = None
@@ -354,6 +355,7 @@ def _result_from_model_output_files(
         expected_outputs=manifest.expected_outputs,
         run_caveats=manifest.run_caveats,
         manual_validation_status=manifest.manual_validation_status,
+        cm1_source_customization_status=manifest.cm1_source_customization_status,
         candidate_screening=manifest.candidate_screening,
         pre_run_validation_report=manifest.pre_run_validation_report,
         raw_cm1_artifacts=manifest.outputs.raw_cm1_artifacts,
@@ -1594,6 +1596,7 @@ def _result_from_dataset(
         expected_outputs=manifest.expected_outputs,
         run_caveats=manifest.run_caveats,
         manual_validation_status=manifest.manual_validation_status,
+        cm1_source_customization_status=manifest.cm1_source_customization_status,
         candidate_screening=manifest.candidate_screening,
         pre_run_validation_report=manifest.pre_run_validation_report,
         raw_cm1_artifacts=manifest.outputs.raw_cm1_artifacts,

@@ -1,9 +1,16 @@
 import json
+import subprocess
 from pathlib import Path
 from typing import Any, TextIO
 
 import pytest
+from igra_fixtures import IGRA_FIXTURE
 
+from cloud_chamber.cm1_source_customization import (
+    CUSTOM_EXECUTABLE_FILENAME,
+    SFCPHYS_MARKER,
+    SOURCE_CUSTOMIZATION_STATUS_FILENAME,
+)
 from cloud_chamber.dry_run_package import generate_dry_run_package
 from cloud_chamber.local_run_manager import (
     LocalRunManager,
@@ -114,6 +121,76 @@ def dry_run_manifest_path(tmp_path: Path, run_id: str = "run-001") -> Path:
     return result.manifest_path
 
 
+def differential_dry_run_manifest_path(tmp_path: Path, run_id: str = "run-diff") -> Path:
+    from cloud_chamber.observed_sounding import parse_igra_station_text
+
+    observed = parse_igra_station_text(
+        IGRA_FIXTURE,
+        uploaded_filename="USM00072558-data-beg2025.txt",
+    ).selected_sounding
+    result = generate_dry_run_package(
+        scenario_data=load_baseline_template(),
+        runtime_home=tmp_path / "CloudChamber",
+        run_id=run_id,
+        observed_sounding=observed,
+        run_configuration={
+            "duration": "short_6h",
+            "horizontal_cell_count": "cells_128",
+            "domain_size": "wide_12km",
+            "output_cadence": "standard_15min",
+            "surface_forcing_mode": "differential_surface_forcing_patch_v0",
+            "surface_heat_flux_k_m_s": 8.0e-3,
+            "surface_moisture_flux_g_g_m_s": 5.2e-5,
+            "surface_patch_heat_flux_perturbation_k_m_s": 4.0e-2,
+            "surface_patch_moisture_flux_perturbation_g_g_m_s": 5.0e-5,
+            "surface_patch_radius_m": 1500.0,
+            "surface_patch_taper_width_m": 500.0,
+            "surface_patch_ramp_seconds": 1800.0,
+        },
+    )
+    return result.manifest_path
+
+
+def write_fake_cm1_source_tree(settings: CloudChamberSettings) -> None:
+    assert settings.cm1_root is not None
+    src_dir = settings.cm1_root / "src"
+    src_dir.mkdir(parents=True)
+    (src_dir / "Makefile").write_text("all:\n\t@true\n")
+    (src_dir / "init_surface.F").write_text(
+        """      subroutine init_surface
+!----------
+!  if initsfc is not 1,2:
+
+      ELSEIF( initsfc.ne.1 .and. initsfc.ne.2 )THEN
+
+        ! build your own initial conditions here:
+
+      ENDIF
+      end subroutine init_surface
+"""
+    )
+    (src_dir / "sfcphys.F").write_text(
+        """      subroutine sfcflux
+      real :: thmag,qvmag,trat1,trat2
+
+  IF( set_flx.eq.1 )THEN
+
+    IF( imoist.eq.1 )THEN
+
+      qvflux(1,1) = cnst_lhflx
+
+    ENDIF
+
+  !c-c-c-c-c-c-c-c-c-c-c-c-c-c-c-c-c-c-c-c-c-c-c-c-c-c-c-c-c!
+
+  ELSE
+
+  ENDIF
+      end subroutine sfcflux
+"""
+    )
+
+
 def test_default_process_factory_detaches_cm1_from_short_lived_callers(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -184,6 +261,94 @@ def test_launch_constructs_cm1_command_and_captures_logs(tmp_path: Path) -> None
     assert manifest.provenance.product_state == ProductState.QUEUED_RUNNING_CM1_PROCESS
     assert manifest.execution.command == [str(settings.cm1_run_dir / "cm1.exe")]
     assert manifest.execution.process_id == fake_process.pid
+
+
+def test_launch_applies_differential_surface_source_customization_before_cm1(
+    tmp_path: Path,
+) -> None:
+    settings = fake_settings(tmp_path)
+    assert settings.cm1_root is not None
+    assert settings.cm1_run_dir is not None
+    cm1_root = settings.cm1_root
+    write_fake_cm1_source_tree(settings)
+    manifest_path = differential_dry_run_manifest_path(tmp_path)
+    run_dir = tmp_path / "CloudChamber" / "runs" / "run-diff"
+    fake_process = FakeProcess()
+    factory = FakeProcessFactory(fake_process)
+    build_calls: list[Path] = []
+
+    def fake_build(
+        command: list[str],
+        *,
+        cwd: Path,
+        check: bool,
+        capture_output: bool,
+        text: bool,
+    ) -> subprocess.CompletedProcess[str]:
+        assert command == ["make"]
+        assert check is True
+        assert capture_output is True
+        assert text is True
+        assert cwd.parent != cm1_root
+        assert SFCPHYS_MARKER in (cwd / "sfcphys.F").read_text()
+        assert SFCPHYS_MARKER not in (cm1_root / "src" / "sfcphys.F").read_text()
+        build_calls.append(cwd)
+        return subprocess.CompletedProcess(command, 0, stdout="built\n", stderr="")
+
+    manager = LocalRunManager(
+        settings=settings,
+        process_factory=factory,
+        source_build_runner=fake_build,
+    )
+
+    status = manager.launch(manifest_path)
+
+    assert status.lifecycle_state == LifecycleState.RUNNING
+    assert len(build_calls) == 1
+    assert build_calls[0].name == "src"
+    custom_executable = run_dir / CUSTOM_EXECUTABLE_FILENAME
+    assert factory.commands == [[str(custom_executable)]]
+    status_payload = json.loads((run_dir / SOURCE_CUSTOMIZATION_STATUS_FILENAME).read_text())
+    assert status_payload["no_silent_uniform_fallback"] is True
+    assert status_payload["source_restored_after_build"] == "not_modified_isolated_build_tree"
+    assert status_payload["custom_executable"] == str(custom_executable)
+    assert status_payload["custom_executable_sha256"]
+    launched_manifest = load_run_manifest(manifest_path)
+    assert launched_manifest.cm1_source_customization_status == status_payload
+    assert SFCPHYS_MARKER not in (cm1_root / "src" / "sfcphys.F").read_text()
+    assert custom_executable.exists()
+
+
+def test_launch_refuses_tampered_differential_patch_data(tmp_path: Path) -> None:
+    settings = fake_settings(tmp_path)
+    write_fake_cm1_source_tree(settings)
+    manifest_path = differential_dry_run_manifest_path(tmp_path)
+    run_dir = tmp_path / "CloudChamber" / "runs" / "run-diff"
+    (run_dir / "cloud_chamber_surface_forcing_patch.dat").write_text("tampered\n")
+    manager = LocalRunManager(
+        settings=settings,
+        process_factory=FakeProcessFactory(FakeProcess()),
+    )
+
+    with pytest.raises(LocalRunManagerError, match="patch data does not match"):
+        manager.launch(manifest_path)
+
+
+def test_launch_refuses_dirty_differential_cm1_source_tree(tmp_path: Path) -> None:
+    settings = fake_settings(tmp_path)
+    assert settings.cm1_root is not None
+    write_fake_cm1_source_tree(settings)
+    (settings.cm1_root / "src" / "sfcphys.F").write_text(
+        (settings.cm1_root / "src" / "sfcphys.F").read_text() + f"\n! {SFCPHYS_MARKER}\n"
+    )
+    manifest_path = differential_dry_run_manifest_path(tmp_path)
+    manager = LocalRunManager(
+        settings=settings,
+        process_factory=FakeProcessFactory(FakeProcess()),
+    )
+
+    with pytest.raises(LocalRunManagerError, match="dirty source tree"):
+        manager.launch(manifest_path)
 
 
 def test_exit_zero_without_output_needs_review_not_completed_result(tmp_path: Path) -> None:

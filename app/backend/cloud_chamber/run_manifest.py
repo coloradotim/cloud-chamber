@@ -63,6 +63,8 @@ class GeneratedInputs(BaseModel):
     namelist_input: str | None = None
     input_sounding: str | None = None
     dry_run_report: str | None = None
+    surface_forcing_patch: str | None = None
+    cm1_source_customization: str | None = None
     runtime_file_checklist: list[str] = Field(default_factory=list)
 
 
@@ -166,6 +168,7 @@ class RunManifest(BaseModel):
     run_limitations: list[str] = Field(default_factory=list)
     run_caveats: list[str] = Field(default_factory=list)
     manual_validation_status: str | None = None
+    cm1_source_customization_status: dict[str, Any] | None = None
 
     @model_validator(mode="after")
     def validate_state_contract(self) -> RunManifest:

@@ -81,13 +81,13 @@ assumption_set:
   assumption_set_id: string
   label: string
   trigger:
-    mode: none | future_differential_surface_forcing | future_explicit_trigger | unavailable
+    mode: none | future_explicit_trigger | unavailable
     description: string
     caveats: [string]
   surface_fluxes:
     sensible_heat_flux: prescribed | derived | disabled | unavailable
     latent_heat_flux: prescribed | derived | disabled | unavailable
-    source: current_control | recipe_default | future_surface_model | none
+    source: current_control | recipe_default | differential_surface_patch | future_surface_model | none
     caveats: [string]
   radiation:
     mode: disabled | prescribed_time_place | future_interactive | unavailable
@@ -109,7 +109,7 @@ assumption_set:
 ```
 
 Assumption sets must distinguish observed evolution under explicit forcing from
-future forcing modes:
+current and future forcing modes:
 
 - `observed_surface_forced_evolution`: no artificial atmospheric trigger; useful
   for asking what the initialized atmosphere does under the selected numeric
@@ -118,9 +118,11 @@ future forcing modes:
 - `surface_forced_evolution`: explicit surface sensible/latent heat-flux
   assumptions; useful for boundary-layer growth, shallow cloud, drizzle, or
   suppression hypotheses.
-- `future_differential_surface_forcing`: spatially varying heating/moisture
-  forcing for initiation, boundaries, gradients, or patch experiments. This is
-  tracked separately from issue #305.
+- `differential_surface_forced_evolution`: one idealized lower-boundary
+  heat/moisture patch for initiation, localized updraft, and organization
+  questions. It is current v0 support, applied through Cloud Chamber's CM1
+  source customization path, and still requires CM1-observable diagnostics
+  before Results can compare predicted signatures.
 - `radiation_place_time_evolution`: radiation/place-time assumptions; future
   contract for fog, nocturnal, winter, and diurnal hypotheses.
 

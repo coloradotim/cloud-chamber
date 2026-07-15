@@ -163,6 +163,30 @@ def test_queue_records_ingest_failure_and_still_starts_next_package(
     assert refreshed.active_run_id == "run-after-ingest-failure"
 
 
+def test_queue_marks_missing_active_manifest_failed_and_starts_next_package(
+    tmp_path: Path,
+) -> None:
+    first = create_manifest(tmp_path, "run-missing-active-manifest")
+    second = create_manifest(tmp_path, "run-after-missing-active-manifest")
+    fake_manager = FakeRunManager()
+    queue = LocalRunQueueManager(settings=fake_settings(tmp_path), run_manager=fake_manager)
+    queue.enqueue(first)
+    queue.enqueue(second)
+    first.unlink()
+
+    refreshed = queue.refresh()
+
+    entries = {entry.run_id: entry for entry in refreshed.entries}
+    assert entries["run-missing-active-manifest"].state == "failed"
+    assert entries["run-missing-active-manifest"].message == (
+        "Active local CM1 queue entry is missing its run manifest; marking failed "
+        "so the serial queue can continue."
+    )
+    assert "missing its run manifest" in (entries["run-missing-active-manifest"].error or "")
+    assert entries["run-after-missing-active-manifest"].state == "running"
+    assert refreshed.active_run_id == "run-after-missing-active-manifest"
+
+
 def test_queue_records_launch_failures_when_local_launch_remains_blocked(tmp_path: Path) -> None:
     first = create_manifest(tmp_path, "run-launch-fails")
     second = create_manifest(tmp_path, "run-waits")

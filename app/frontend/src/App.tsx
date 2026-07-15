@@ -43,8 +43,41 @@ type RunConfigurationInput = {
   domain_size: string;
   output_cadence: string;
   diagnostic_set: string;
+  surface_forcing_mode: string;
   surface_heat_flux_k_m_s: string;
   surface_moisture_flux_g_g_m_s: string;
+  surface_patch_shape: string;
+  surface_patch_radius_m: string;
+  surface_patch_radius_x_m: string;
+  surface_patch_radius_y_m: string;
+  surface_patch_heat_flux_perturbation_k_m_s: string;
+  surface_patch_moisture_flux_perturbation_g_g_m_s: string;
+  surface_patch_taper_width_m: string;
+  surface_patch_ramp_seconds: string;
+};
+
+type SurfaceForcingPatch = {
+  schema_version: string;
+  shape: "circle" | string;
+  center_x_m: number;
+  center_y_m: number;
+  radius_x_m: number;
+  radius_y_m: number;
+  taper_function: string;
+  taper_width_m: number;
+  ramp_seconds: number;
+  background_heat_flux_k_m_s: number;
+  background_moisture_flux_g_g_m_s: number;
+  heat_flux_perturbation_k_m_s: number;
+  moisture_flux_perturbation_g_g_m_s: number;
+  domain_x_m: number;
+  domain_y_m: number;
+  dx_m: number;
+  dy_m: number;
+  support_status?: string;
+  cm1_application_status?: string;
+  pattern_sha256?: string;
+  caveats?: string[];
 };
 
 type RunConfigurationCM1Values = {
@@ -104,6 +137,7 @@ type RunConfiguration = Omit<
   surface_flux_mode: string;
   surface_flux_summary: string;
   surface_flux_cm1_values: RunConfigurationSurfaceFluxCM1Values;
+  surface_forcing_patch?: SurfaceForcingPatch | null;
   surface_flux_caveats: string[];
   caveats: string[];
 };
@@ -122,6 +156,7 @@ type RunConfigurationSummary = {
   surface_flux_mode?: string;
   surface_flux_summary?: string;
   surface_flux_cm1_values?: RunConfigurationSurfaceFluxCM1Values;
+  surface_forcing_patch?: SurfaceForcingPatch | null;
   surface_flux_caveats?: string[];
   runtime_seconds: number;
   output_cadence_seconds: number;
@@ -381,9 +416,12 @@ type CandidateRecipeFitDisplay = {
 
 type RunRecipe =
   | "generated_reference_lower_atmosphere"
-  | "observed_surface_forced_evolution";
+  | "observed_surface_forced_evolution"
+  | "differential_surface_forced_evolution";
 
-type ObservedRunRecipe = "observed_surface_forced_evolution";
+type ObservedRunRecipe =
+  | "observed_surface_forced_evolution"
+  | "differential_surface_forced_evolution";
 type AtmosphereSourcePath = "cached_recommendations" | "saved_candidates" | "upload_igra_text";
 type SearchIntent =
   | "best_overall"
@@ -395,6 +433,8 @@ type StationSelectionMode = "all_cached" | "selected";
 type CandidateHistoryScope = "all_cached" | "latest_per_station";
 type RunPlanQueueTarget = "local" | "lan";
 const CURRENT_OBSERVED_RUN_RECIPE: ObservedRunRecipe = "observed_surface_forced_evolution";
+const DIFFERENTIAL_SURFACE_FORCING_MODE = "differential_surface_forcing_patch_v0";
+const UNIFORM_SURFACE_FORCING_MODE = "constant_uniform_surface_flux_proxy";
 type RunPlanItemStatus =
   | "planned"
   | "packaging"
@@ -1365,8 +1405,17 @@ const DEFAULT_SHALLOW_RUN_CONFIGURATION: RunConfigurationInput = {
   domain_size: "local_6km",
   output_cadence: "standard_15min",
   diagnostic_set: "full",
+  surface_forcing_mode: UNIFORM_SURFACE_FORCING_MODE,
   surface_heat_flux_k_m_s: "8.0e-3",
   surface_moisture_flux_g_g_m_s: "5.2e-5",
+  surface_patch_shape: "circle",
+  surface_patch_radius_m: "1500",
+  surface_patch_radius_x_m: "1500",
+  surface_patch_radius_y_m: "1500",
+  surface_patch_heat_flux_perturbation_k_m_s: "4.0e-2",
+  surface_patch_moisture_flux_perturbation_g_g_m_s: "5.0e-5",
+  surface_patch_taper_width_m: "500",
+  surface_patch_ramp_seconds: "1800",
 };
 
 const DEFAULT_OBSERVED_RUN_CONFIGURATION: RunConfigurationInput = {
@@ -1375,8 +1424,17 @@ const DEFAULT_OBSERVED_RUN_CONFIGURATION: RunConfigurationInput = {
   domain_size: "wide_12km",
   output_cadence: "standard_15min",
   diagnostic_set: "full",
+  surface_forcing_mode: UNIFORM_SURFACE_FORCING_MODE,
   surface_heat_flux_k_m_s: "8.0e-3",
   surface_moisture_flux_g_g_m_s: "5.2e-5",
+  surface_patch_shape: "circle",
+  surface_patch_radius_m: "1500",
+  surface_patch_radius_x_m: "1500",
+  surface_patch_radius_y_m: "1500",
+  surface_patch_heat_flux_perturbation_k_m_s: "4.0e-2",
+  surface_patch_moisture_flux_perturbation_g_g_m_s: "5.0e-5",
+  surface_patch_taper_width_m: "500",
+  surface_patch_ramp_seconds: "1800",
 };
 
 const SEARCH_INTENT_OPTIONS: Array<{ value: SearchIntent; label: string }> = [
@@ -2892,6 +2950,7 @@ export function App() {
     updateRunPlanItem(itemId, (item) => ({
       ...item,
       runConfiguration,
+      runRecipe: runRecipeForRunConfiguration(runConfiguration),
       status: "planned",
       message: "Run configuration changed; package not created yet.",
       dryRun: null,
@@ -2952,7 +3011,7 @@ export function App() {
           OBSERVED_SOUNDING_BASE_SCENARIO_ID,
           item.controls,
           item.runConfiguration,
-          item.runRecipe,
+          runRecipeForRunConfiguration(item.runConfiguration),
           item.observedSounding,
           item.candidateScreening,
           packageUserMetadata,
@@ -3037,7 +3096,7 @@ export function App() {
         selectedScenario.id,
         controls,
         runConfiguration,
-        observedSoundingExperimentSelected ? CURRENT_OBSERVED_RUN_RECIPE : null,
+        observedSoundingExperimentSelected ? runRecipeForRunConfiguration(runConfiguration) : null,
         observedSoundingExperimentSelected ? observedSoundingParse?.selected_sounding : null,
         observedSoundingExperimentSelected ? selectedCandidateScreening : null,
         packageUserMetadata,
@@ -4531,6 +4590,14 @@ function RunConfigurationPanel({
       </div>
 
       <div className="run-configuration-grid">
+        <RunConfigurationSelect
+          id="run-surface-forcing-mode"
+          label="Surface forcing"
+          description="Uniform background fluxes, or an idealized warm/moist lower-boundary patch."
+          value={configuration.surface_forcing_mode}
+          options={SURFACE_FORCING_OPTIONS}
+          onChange={(value) => update("surface_forcing_mode", value)}
+        />
         <RunConfigurationTextInput
           id="run-surface-heat-flux"
           label="Surface heat flux"
@@ -4547,6 +4614,52 @@ function RunConfigurationPanel({
           value={configuration.surface_moisture_flux_g_g_m_s}
           onChange={(value) => update("surface_moisture_flux_g_g_m_s", value)}
         />
+        {configuration.surface_forcing_mode === DIFFERENTIAL_SURFACE_FORCING_MODE && (
+          <>
+            <RunConfigurationTextInput
+              id="run-surface-patch-radius"
+              label="Patch radius"
+              units="m"
+              description="Centered circle radius; must fit inside the domain and span at least three cells."
+              value={configuration.surface_patch_radius_m}
+              onChange={(value) => update("surface_patch_radius_m", value)}
+            />
+            <RunConfigurationTextInput
+              id="run-surface-patch-heat"
+              label="Patch heat perturbation"
+              units="K m/s"
+              description="Added to the background inside the patch after taper and ramp."
+              value={configuration.surface_patch_heat_flux_perturbation_k_m_s}
+              onChange={(value) => update("surface_patch_heat_flux_perturbation_k_m_s", value)}
+            />
+            <RunConfigurationTextInput
+              id="run-surface-patch-moisture"
+              label="Patch moisture perturbation"
+              units="g/g m/s"
+              description="Added to the background inside the patch after taper and ramp."
+              value={configuration.surface_patch_moisture_flux_perturbation_g_g_m_s}
+              onChange={(value) =>
+                update("surface_patch_moisture_flux_perturbation_g_g_m_s", value)
+              }
+            />
+            <RunConfigurationTextInput
+              id="run-surface-patch-taper"
+              label="Patch taper"
+              units="m"
+              description="Raised-cosine edge width."
+              value={configuration.surface_patch_taper_width_m}
+              onChange={(value) => update("surface_patch_taper_width_m", value)}
+            />
+            <RunConfigurationTextInput
+              id="run-surface-patch-ramp"
+              label="Patch ramp"
+              units="s"
+              description="Seconds to ramp from background to full perturbation."
+              value={configuration.surface_patch_ramp_seconds}
+              onChange={(value) => update("surface_patch_ramp_seconds", value)}
+            />
+          </>
+        )}
         <RunConfigurationSelect
           id="run-duration"
           label="Duration"
@@ -6264,7 +6377,7 @@ function ObservedRunRecipePanel({
       <dl className="compact-metrics">
         <Metric
           label="Run scope"
-          value="CM1 evolves the observed profile with the selected uniform lower-boundary heat/moisture forcing."
+          value="CM1 evolves the observed profile with the selected lower-boundary heat/moisture forcing."
         />
       </dl>
     </details>
@@ -6519,6 +6632,14 @@ function RunPlanConfigurationFields({
   };
   return (
     <>
+      <RunConfigurationSelect
+        id={`run-plan-surface-forcing-mode-${item.id}`}
+        label="Surface forcing"
+        description="Uniform background fluxes, or an idealized warm/moist lower-boundary patch."
+        value={item.runConfiguration.surface_forcing_mode}
+        options={SURFACE_FORCING_OPTIONS}
+        onChange={(value) => update("surface_forcing_mode", value)}
+      />
       <RunConfigurationTextInput
         id={`run-plan-surface-heat-flux-${item.id}`}
         label="Surface heat flux"
@@ -6535,6 +6656,52 @@ function RunPlanConfigurationFields({
         value={item.runConfiguration.surface_moisture_flux_g_g_m_s}
         onChange={(value) => update("surface_moisture_flux_g_g_m_s", value)}
       />
+      {item.runConfiguration.surface_forcing_mode === DIFFERENTIAL_SURFACE_FORCING_MODE && (
+        <>
+          <RunConfigurationTextInput
+            id={`run-plan-surface-patch-radius-${item.id}`}
+            label="Patch radius"
+            units="m"
+            description="Centered circle radius; must fit inside domain and span at least three cells."
+            value={item.runConfiguration.surface_patch_radius_m}
+            onChange={(value) => update("surface_patch_radius_m", value)}
+          />
+          <RunConfigurationTextInput
+            id={`run-plan-surface-patch-heat-${item.id}`}
+            label="Patch heat perturbation"
+            units="K m/s"
+            description="Added to background after taper and ramp."
+            value={item.runConfiguration.surface_patch_heat_flux_perturbation_k_m_s}
+            onChange={(value) => update("surface_patch_heat_flux_perturbation_k_m_s", value)}
+          />
+          <RunConfigurationTextInput
+            id={`run-plan-surface-patch-moisture-${item.id}`}
+            label="Patch moisture perturbation"
+            units="g/g m/s"
+            description="Added to background after taper and ramp."
+            value={item.runConfiguration.surface_patch_moisture_flux_perturbation_g_g_m_s}
+            onChange={(value) =>
+              update("surface_patch_moisture_flux_perturbation_g_g_m_s", value)
+            }
+          />
+          <RunConfigurationTextInput
+            id={`run-plan-surface-patch-taper-${item.id}`}
+            label="Patch taper"
+            units="m"
+            description="Raised-cosine edge width."
+            value={item.runConfiguration.surface_patch_taper_width_m}
+            onChange={(value) => update("surface_patch_taper_width_m", value)}
+          />
+          <RunConfigurationTextInput
+            id={`run-plan-surface-patch-ramp-${item.id}`}
+            label="Patch ramp"
+            units="s"
+            description="Seconds to ramp to full perturbation."
+            value={item.runConfiguration.surface_patch_ramp_seconds}
+            onChange={(value) => update("surface_patch_ramp_seconds", value)}
+          />
+        </>
+      )}
       <RunConfigurationSelect
         id={`run-plan-duration-${item.id}`}
         label="Duration"
@@ -10852,7 +11019,7 @@ function candidateRecipeFitForStory(
   if (deepConvectionStoryIds.has(story)) {
     const caveats = [
       "deep_convection_outcome_depends_on_surface_forcing_duration_domain_and_resolution",
-      "differential_surface_initiation_is_tracked_in_issue_307",
+      "differential_surface_forcing_patch_recipe_available_for_initiation_tests",
     ];
     if (candidate.features.observed_wind_available !== true) {
       caveats.push("complete_observed_wind_profile_required_for_input_sounding");
@@ -10861,7 +11028,7 @@ function candidateRecipeFitForStory(
       status: "partially_testable",
       label: "testable as forced observed evolution",
       summary:
-        "This story screens deep-convection ingredients. CM1 can evolve the observed atmosphere under the selected lower-boundary forcing; differential initiation is a follow-up.",
+        "This story screens deep-convection ingredients. CM1 can evolve the observed atmosphere under the selected lower-boundary forcing; choose the differential surface patch when localized initiation is the question.",
       caveats,
     };
   }
@@ -11032,7 +11199,7 @@ function candidateRecipeMismatchWarning(
             score.support !== "unavailable",
         )));
   if (hasMeaningfulDeepStory) {
-    return "This candidate was screened for deep-convection potential. This run will test how it evolves under the selected uniform lower-boundary forcing; differential surface initiation is tracked separately.";
+    return "This candidate was screened for deep-convection potential. This run will test how it evolves under the selected lower-boundary forcing; deep outcomes still depend on duration, domain, resolution, and diagnostics.";
   }
   const hasHumidRainyStory =
     activeStory === "humid_rainy_candidate" ||
@@ -11535,7 +11702,7 @@ function runPlanItemFromUploadedSounding({
     observedSounding,
     candidateScreening: selectedCandidateScreening,
     activeStory: observedRecipeStoryId(selectedCandidateScreening),
-    runRecipe: CURRENT_OBSERVED_RUN_RECIPE,
+    runRecipe: runRecipeForRunConfiguration(runConfiguration),
     runConfiguration,
     controls,
     queueTarget: "local",
@@ -11664,7 +11831,7 @@ function runPlanRecipeMetadata(item: RunPlanItem): {
   recipeCaveats: string[];
 } {
   const report = item.dryRun?.report;
-  const staticMetadata = staticRecipeMetadata();
+  const staticMetadata = staticRecipeMetadata(item.runRecipe);
   return {
     recipeId: report?.recipe_id ?? staticMetadata.recipeId,
     recipeDisplayName: report?.recipe_display_name ?? staticMetadata.recipeDisplayName,
@@ -11677,7 +11844,7 @@ function runPlanRecipeMetadata(item: RunPlanItem): {
   };
 }
 
-function staticRecipeMetadata(): {
+function staticRecipeMetadata(runRecipe: ObservedRunRecipe = CURRENT_OBSERVED_RUN_RECIPE): {
   recipeId: string;
   recipeDisplayName: string;
   assumptionSetId: string;
@@ -11685,6 +11852,20 @@ function staticRecipeMetadata(): {
   requiredOutputFields: string[];
   recipeCaveats: string[];
 } {
+  if (runRecipe === "differential_surface_forced_evolution") {
+    return {
+      recipeId: "differential_surface_forced_evolution_v0",
+      recipeDisplayName: "Differential Surface-Forced Evolution v0",
+      assumptionSetId: "differential_surface_forced_evolution_v0_assumptions",
+      assumptionMode: "differential_surface_forced_evolution",
+      requiredOutputFields: ["qv", "qc", "w", "qr", "rain", "dbz", "hfx", "qfx", "u", "v", "th", "updraft_helicity"],
+      recipeCaveats: [
+        "No artificial atmospheric trigger is applied.",
+        "A centered lower-boundary heat/moisture forcing patch is applied through Cloud Chamber's external CM1 source customization.",
+        "The patch is an idealized surface contrast, not a real land-surface or radiation model.",
+      ],
+    };
+  }
   return {
     recipeId: "observed_surface_forced_evolution_v0",
     recipeDisplayName: "Observed Surface-Forced Evolution v0",
@@ -11712,8 +11893,8 @@ function compactRecipeAssumptions(assumptions: Record<string, unknown> | undefin
     surfaceFluxes &&
     typeof surfaceFluxes === "object" &&
     "mode" in surfaceFluxes &&
-    surfaceFluxes.mode === "constant_uniform_surface_flux_proxy"
-      ? "numeric uniform surface fluxes"
+    surfaceFluxes.mode === DIFFERENTIAL_SURFACE_FORCING_MODE
+      ? "differential surface forcing patch"
       : "numeric uniform surface fluxes";
   const radiationLabel =
     radiation &&
@@ -12243,11 +12424,22 @@ const OUTPUT_CADENCE_OPTIONS = [
   { value: "detailed_5min", label: "Detailed (5 min)" },
 ];
 
+const SURFACE_FORCING_OPTIONS = [
+  { value: UNIFORM_SURFACE_FORCING_MODE, label: "Uniform surface forcing" },
+  { value: DIFFERENTIAL_SURFACE_FORCING_MODE, label: "Differential surface patch" },
+];
+
 function defaultRunConfigurationForSelection(scenarioId: string): RunConfigurationInput {
   if (scenarioId === OBSERVED_SOUNDING_EXPERIMENT_ID) {
     return { ...DEFAULT_OBSERVED_RUN_CONFIGURATION };
   }
   return { ...DEFAULT_SHALLOW_RUN_CONFIGURATION };
+}
+
+function runRecipeForRunConfiguration(configuration: RunConfigurationInput): ObservedRunRecipe {
+  return configuration.surface_forcing_mode === DIFFERENTIAL_SURFACE_FORCING_MODE
+    ? "differential_surface_forced_evolution"
+    : CURRENT_OBSERVED_RUN_RECIPE;
 }
 
 function previewRunConfiguration(configuration: RunConfigurationInput): RunConfiguration {
@@ -12256,6 +12448,10 @@ function previewRunConfiguration(configuration: RunConfigurationInput): RunConfi
   const domain = domainValue(configuration.domain_size);
   const cadence = cadenceValue(configuration.output_cadence);
   const diagnosticSet = { value: "full" };
+  const surfaceForcingMode =
+    configuration.surface_forcing_mode === DIFFERENTIAL_SURFACE_FORCING_MODE
+      ? DIFFERENTIAL_SURFACE_FORCING_MODE
+      : UNIFORM_SURFACE_FORCING_MODE;
   const heatFlux = numericConfigurationValue(configuration.surface_heat_flux_k_m_s, 8.0e-3);
   const moistureFlux = numericConfigurationValue(
     configuration.surface_moisture_flux_g_g_m_s,
@@ -12284,6 +12480,69 @@ function previewRunConfiguration(configuration: RunConfigurationInput): RunConfi
   }
   if (heatFlux < 0 || moistureFlux < 0) {
     caveats.push("surface_flux_values_must_be_non_negative");
+  }
+  const patchShape = "circle";
+  const patchRadiusM = numericConfigurationValue(configuration.surface_patch_radius_m, 1500);
+  const patchRadiusXM = patchRadiusM;
+  const patchRadiusYM = patchRadiusM;
+  const patchTaperM = numericConfigurationValue(configuration.surface_patch_taper_width_m, 500);
+  const patchRampSeconds = numericConfigurationValue(
+    configuration.surface_patch_ramp_seconds,
+    1800,
+  );
+  const patchHeatPerturbation = numericConfigurationValue(
+    configuration.surface_patch_heat_flux_perturbation_k_m_s,
+    4.0e-2,
+  );
+  const patchMoisturePerturbation = numericConfigurationValue(
+    configuration.surface_patch_moisture_flux_perturbation_g_g_m_s,
+    5.0e-5,
+  );
+  let surfaceForcingPatch: SurfaceForcingPatch | null = null;
+  if (surfaceForcingMode === DIFFERENTIAL_SURFACE_FORCING_MODE) {
+    surfaceForcingPatch = {
+      schema_version: "surface_forcing_patch_v0",
+      shape: patchShape,
+      center_x_m: 0,
+      center_y_m: 0,
+      radius_x_m: patchRadiusXM,
+      radius_y_m: patchRadiusYM,
+      taper_function: "raised_cosine",
+      taper_width_m: patchTaperM,
+      ramp_seconds: patchRampSeconds,
+      background_heat_flux_k_m_s: heatFlux,
+      background_moisture_flux_g_g_m_s: moistureFlux,
+      heat_flux_perturbation_k_m_s: patchHeatPerturbation,
+      moisture_flux_perturbation_g_g_m_s: patchMoisturePerturbation,
+      domain_x_m: domain.xKm * 1000,
+      domain_y_m: domain.yKm * 1000,
+      dx_m: dxM,
+      dy_m: dyM,
+      support_status: "requires_cm1_source_customization",
+      cm1_application_status: "source_customization_required_at_launch",
+      caveats: [
+        "differential_surface_forcing_patch_not_real_land_surface_or_radiation",
+        "differential_surface_forcing_patch_requires_cm1_source_customization",
+      ],
+    };
+    if (patchRadiusXM < 3 * dxM || patchRadiusYM < 3 * dyM) {
+      caveats.push("surface_patch_must_span_at_least_three_grid_cells");
+    }
+    if (
+      patchRadiusXM + patchTaperM > (domain.xKm * 1000) / 2 ||
+      patchRadiusYM + patchTaperM > (domain.yKm * 1000) / 2
+    ) {
+      caveats.push("surface_patch_radius_and_taper_must_fit_inside_domain");
+    }
+    if (patchHeatPerturbation < 0 || patchMoisturePerturbation < 0) {
+      caveats.push("surface_patch_perturbations_must_be_non_negative");
+    }
+    if (patchHeatPerturbation === 0 && patchMoisturePerturbation === 0) {
+      caveats.push("surface_patch_requires_heat_or_moisture_perturbation");
+    }
+    if (patchRampSeconds <= 0 || patchRampSeconds > duration.seconds) {
+      caveats.push("surface_patch_ramp_must_be_positive_and_within_run_duration");
+    }
   }
   const surfaceFluxCm1Values: RunConfigurationSurfaceFluxCM1Values = {
     isfcflx: 1,
@@ -12332,6 +12591,7 @@ function previewRunConfiguration(configuration: RunConfigurationInput): RunConfi
       configuration.domain_size,
       configuration.output_cadence,
       diagnosticSet.value,
+      surfaceForcingMode,
     ].join("__"),
     mode: duration.mode,
     label: `${duration.label}; ${domain.label}; ${horizontalCells.label}; ${formatMeters(dxM)} dx/dy; ${cadence.label}`,
@@ -12343,14 +12603,25 @@ function previewRunConfiguration(configuration: RunConfigurationInput): RunConfi
     cm1_values: cm1Values,
     surface_heat_flux_k_m_s: heatFlux,
     surface_moisture_flux_g_g_m_s: moistureFlux,
-    surface_flux_mode: "constant_uniform_surface_flux_proxy",
-    surface_flux_summary: `Surface heat flux ${formatCompactNumber(heatFlux)} K m/s; surface moisture flux ${formatCompactNumber(moistureFlux)} g/g m/s; constant uniform proxy`,
+    surface_flux_mode: surfaceForcingMode,
+    surface_flux_summary:
+      surfaceForcingMode === DIFFERENTIAL_SURFACE_FORCING_MODE && surfaceForcingPatch
+        ? `Differential warm/moist surface patch; source customization required at launch; background H ${formatCompactNumber(heatFlux)} K m/s, M ${formatCompactNumber(moistureFlux)} g/g m/s; patch +H ${formatCompactNumber(patchHeatPerturbation)} K m/s, +M ${formatCompactNumber(patchMoisturePerturbation)} g/g m/s; ${formatMeters(patchRadiusXM)} x ${formatMeters(patchRadiusYM)} ${patchShape}`
+        : `Surface heat flux ${formatCompactNumber(heatFlux)} K m/s; surface moisture flux ${formatCompactNumber(moistureFlux)} g/g m/s; constant uniform proxy`,
     surface_flux_cm1_values: surfaceFluxCm1Values,
-    surface_flux_caveats: [
-      "surface_flux_proxy_constant_uniform_not_place_time_energy_budget",
-      "surface_flux_proxy_not_real_land_surface_or_evaporation_model",
-      "surface_flux_proxy_values_need_local_smoke_validation",
-    ],
+    surface_forcing_patch: surfaceForcingPatch,
+    surface_flux_caveats:
+      surfaceForcingMode === DIFFERENTIAL_SURFACE_FORCING_MODE
+        ? [
+            "differential_surface_forcing_patch_not_real_land_surface_or_radiation",
+            "differential_surface_forcing_patch_requires_cm1_source_customization",
+            "differential_surface_forcing_patch_requires_emitted_flux_and_convergence_validation",
+          ]
+        : [
+            "surface_flux_proxy_constant_uniform_not_place_time_energy_budget",
+            "surface_flux_proxy_not_real_land_surface_or_evaporation_model",
+            "surface_flux_proxy_values_need_local_smoke_validation",
+          ],
     caveats,
   };
 }

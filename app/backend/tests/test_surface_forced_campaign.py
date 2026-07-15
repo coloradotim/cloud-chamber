@@ -324,6 +324,55 @@ def test_campaign_plan_preserves_explicit_timestep_target(tmp_path: Path) -> Non
     assert "dtl_1p000e00s" in run.resolved_run_configuration["configuration_id"]
 
 
+def test_campaign_plan_preserves_differential_surface_patch_configuration(
+    tmp_path: Path,
+) -> None:
+    matrix_path = write_matrix(tmp_path)
+    matrix = yaml.safe_load(matrix_path.read_text())
+    matrix["run_defaults"]["surface_forcing_mode"] = "differential_surface_forcing_patch_v0"
+    matrix["run_defaults"]["surface_patch_radius_m"] = 1600.0
+    matrix["run_defaults"]["surface_patch_heat_flux_perturbation_k_m_s"] = 4.5e-2
+    matrix["run_defaults"]["surface_patch_moisture_flux_perturbation_g_g_m_s"] = 5.0e-5
+    matrix["run_defaults"]["surface_patch_taper_width_m"] = 400.0
+    matrix["run_defaults"]["surface_patch_ramp_seconds"] = 1200.0
+    matrix_path.write_text(yaml.safe_dump(matrix, sort_keys=False))
+
+    plan = build_campaign_plan(yaml.safe_load(matrix_path.read_text()), matrix_path=matrix_path)
+    run = plan.runs[0]
+
+    assert run.run_configuration["surface_forcing_mode"] == (
+        "differential_surface_forcing_patch_v0"
+    )
+    assert run.resolved_run_configuration["surface_flux_mode"] == (
+        "differential_surface_forcing_patch_v0"
+    )
+    patch = run.resolved_run_configuration["surface_forcing_patch"]
+    assert patch["radius_x_m"] == pytest.approx(1600.0)
+    assert patch["radius_y_m"] == pytest.approx(1600.0)
+    assert patch["heat_flux_perturbation_k_m_s"] == pytest.approx(4.5e-2)
+    assert patch["moisture_flux_perturbation_g_g_m_s"] == pytest.approx(5.0e-5)
+    assert patch["pattern_sha256"]
+
+
+def test_campaign_plan_rejects_unknown_differential_surface_key(tmp_path: Path) -> None:
+    matrix_path = write_matrix(tmp_path)
+    matrix = yaml.safe_load(matrix_path.read_text())
+    matrix["run_defaults"]["surface_patch_magic_radius_m"] = 1200.0
+
+    with pytest.raises(CampaignError, match="surface_patch_magic_radius_m"):
+        build_campaign_plan(matrix, matrix_path=matrix_path)
+
+
+def test_campaign_plan_blocks_lan_for_differential_surface_forcing(tmp_path: Path) -> None:
+    matrix_path = write_matrix(tmp_path, queue_target="lan")
+    matrix = yaml.safe_load(matrix_path.read_text())
+    matrix["run_defaults"]["surface_forcing_mode"] = "differential_surface_forcing_patch_v0"
+    matrix["run_defaults"]["surface_patch_radius_m"] = 1600.0
+
+    with pytest.raises(CampaignError, match="queue_target=lan is not supported"):
+        build_campaign_plan(matrix, matrix_path=matrix_path)
+
+
 def test_campaign_plans_checked_in_example_matrix() -> None:
     plan = plan_campaign(
         REPO_ROOT / "docs/research/templates/surface-forced-campaign-matrix.example.yaml"

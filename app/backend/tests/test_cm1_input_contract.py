@@ -39,7 +39,14 @@ def test_cm1_contract_documents_expected_generated_files_and_default_run_configu
     assert contract.run_configuration.duration == "short_6h"
     assert contract.run_configuration.domain_size == "local_6km"
     assert contract.run_configuration.diagnostic_set == "full"
-    assert {file.role for file in contract.generated_files} == set(GeneratedFileRole)
+    assert {file.role for file in contract.generated_files} == {
+        GeneratedFileRole.RUN_MANIFEST,
+        GeneratedFileRole.CASE_MANIFEST,
+        GeneratedFileRole.NAMELIST,
+        GeneratedFileRole.INPUT_SOUNDING,
+        GeneratedFileRole.DRY_RUN_REPORT,
+        GeneratedFileRole.RUNTIME_FILE_CHECKLIST,
+    }
     assert contract.cloud_scale_defaults.nx == 64
     assert contract.cloud_scale_defaults.ny == 64
     assert contract.cloud_scale_defaults.nz == 100
@@ -319,6 +326,60 @@ def test_observed_surface_flux_proxy_choices_render_namelist_and_surface_outputs
     assert "output_sfcflx    = 1," in namelist
     assert "output_sfcparams = 1," in namelist
     assert "output_sfcdiags  = 1," in namelist
+
+
+def test_differential_surface_forcing_declares_patch_recipe_and_source_hook() -> None:
+    from igra_fixtures import IGRA_FIXTURE
+
+    from cloud_chamber.observed_sounding import parse_igra_station_text
+
+    observed = parse_igra_station_text(
+        IGRA_FIXTURE,
+        uploaded_filename="USM00072558-data-beg2025.txt",
+    ).selected_sounding
+
+    contract = build_cm1_input_contract(
+        baseline_scenario(),
+        observed_sounding=observed,
+        run_configuration={
+            "duration": "short_6h",
+            "horizontal_cell_count": "cells_128",
+            "domain_size": "wide_12km",
+            "output_cadence": "standard_15min",
+            "surface_forcing_mode": "differential_surface_forcing_patch_v0",
+            "surface_heat_flux_k_m_s": 8.0e-3,
+            "surface_moisture_flux_g_g_m_s": 5.2e-5,
+            "surface_patch_heat_flux_perturbation_k_m_s": 4.0e-2,
+            "surface_patch_moisture_flux_perturbation_g_g_m_s": 5.0e-5,
+            "surface_patch_radius_m": 1500.0,
+            "surface_patch_taper_width_m": 500.0,
+            "surface_patch_ramp_seconds": 1800.0,
+        },
+    )
+    namelist = render_namelist_fragment(contract)
+    surface_fluxes = cast(dict[str, Any], contract.recipe_assumptions["surface_fluxes"])
+    patch = cast(dict[str, Any], surface_fluxes["surface_forcing_patch"])
+
+    assert contract.run_recipe.value == "differential_surface_forced_evolution"
+    assert contract.recipe_id == "differential_surface_forced_evolution_v0"
+    assert contract.assumption_mode == "differential_surface_forced_evolution"
+    assert "hfx" in contract.required_output_fields
+    assert "qfx" in contract.required_output_fields
+    assert "u" in contract.required_output_fields
+    assert "v" in contract.required_output_fields
+    assert {file.role for file in contract.generated_files} == set(GeneratedFileRole)
+    assert surface_fluxes["mode"] == "differential_surface_forcing_patch_v0"
+    assert surface_fluxes["cm1_runtime_files"]["surface_forcing_patch"] == (
+        "cloud_chamber_surface_forcing_patch.dat"
+    )
+    assert patch["radius_x_m"] == 1500.0
+    assert patch["heat_flux_perturbation_k_m_s"] == 4.0e-2
+    assert "source customization" in surface_fluxes["translation_method"]
+    assert "initsfc    =      1," in namelist
+    assert "cnst_shflx = 8.0e-3," in namelist
+    assert "cnst_lhflx = 5.2e-5," in namelist
+    assert contract.run_configuration.surface_forcing_patch is not None
+    assert "diff_patch_" in contract.run_configuration.configuration_id
 
 
 def test_baseline_humidity_ladder_only_changes_low_level_moisture_profile() -> None:

@@ -172,8 +172,9 @@ and winter/cold-season stories so APIs can distinguish screenable environments
 from runnable configuration paths. Until a story has backend features, scoring
 tests, evidence, caveats, and recipe-fit support, it must not be emitted as an
 enabled runnable label. Severe/deep-convection candidates are currently
-inspectable only as observed-sounding experiments under selected numeric uniform
-surface forcing, with differential-forcing initiation tracked as future work.
+inspectable as observed-sounding experiments under selected lower-boundary
+forcing. The user can choose either numeric uniform surface forcing or the v0
+differential surface patch recipe when localized initiation is the question.
 
 The Build UI consumes this layer through bounded JSON only. `Observed Soundings`
 is the observed-atmosphere entry point, but the user chooses exactly one source
@@ -204,18 +205,25 @@ compare forcing or configuration variants, but package generation and pre-run
 validation remain backend-owned.
 
 Observed-sounding packages extend the same dry-run package contract rather than
-creating separate workflows by story. The package records
-`run_recipe = observed_surface_forced_evolution` as the current backend routing
-value, `input_source = observed_sounding`, numeric uniform surface heat/moisture
-flux selections, expected full output fields, run caveats, and any
+creating separate workflows by story. Uniform packages record
+`run_recipe = observed_surface_forced_evolution`; differential patch packages
+record `run_recipe = differential_surface_forced_evolution`. Both use
+`input_source = observed_sounding`, selected numeric lower-boundary
+heat/moisture values, expected full output fields, run caveats, and any
 candidate-screening payload on the run manifest, case manifest, and dry-run
 report. The generated namelist uses the observed `input_sounding` route
 (`isnd = 7`), requires complete usable observed u/v winds, applies no artificial
 atmospheric trigger, and enables cloud, moisture, wind, rain-water-aloft,
 surface-rain, reflectivity, surface-flux, vorticity, and updraft-helicity output.
-Each observed sounding remains an experiment whose outcome must be inspected
-after CM1 completes. Differential surface heating/moisture or convergence-like
-initiation is future work rather than a hidden current trigger.
+Differential surface forcing also writes a surface patch file and source
+customization manifest. Local launch must build from an isolated copy of the
+external CM1 source tree, copy the customized executable into the run directory,
+record executable/source provenance, and block rather than silently running a
+uniform package. Differential packages are local-only until trusted LAN worker
+custom-source execution is implemented. The v0 package/runtime path remains
+runtime-unvalidated until a real CM1 compile and forcing-footprint smoke test
+prove the emitted hfx/qfx pattern. Each observed sounding remains an experiment
+whose outcome must be inspected after CM1 completes.
 
 Observed surface-forced evolution v0 is the first concrete run configuration
 for observed-sounding hypotheses. Package generation records

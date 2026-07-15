@@ -15,6 +15,11 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Protocol, TextIO
 
+from cloud_chamber.cm1_source_customization import (
+    CM1SourceCustomizationError,
+    CommandRunner,
+    prepare_cm1_source_customization,
+)
 from cloud_chamber.pre_run_validation import report_blocks_execution
 from cloud_chamber.run_manifest import (
     ExecutionMetadata,
@@ -111,9 +116,11 @@ class LocalRunManager:
         *,
         settings: CloudChamberSettings,
         process_factory: ProcessFactory = default_process_factory,
+        source_build_runner: CommandRunner = subprocess.run,
     ) -> None:
         self._settings = settings
         self._process_factory = process_factory
+        self._source_build_runner = source_build_runner
         self._active: _ActiveRun | None = None
 
     def launch(self, manifest_path: Path) -> RunStatus:
@@ -141,6 +148,14 @@ class LocalRunManager:
         run_dir = Path(manifest.generated_inputs.run_directory).expanduser()
         if not run_dir.exists():
             raise LocalRunManagerError(f"Run package directory does not exist: {run_dir}")
+        try:
+            source_customization = prepare_cm1_source_customization(
+                settings=self._settings,
+                manifest=manifest,
+                command_runner=self._source_build_runner,
+            )
+        except CM1SourceCustomizationError as exc:
+            raise LocalRunManagerError(str(exc)) from exc
         _preflight_cm1_inputs(manifest)
         if _existing_output_paths(run_dir):
             raise LocalRunManagerError(
@@ -150,7 +165,17 @@ class LocalRunManager:
             raise LocalRunManagerError("CM1 run directory is not configured.")
         _stage_required_runtime_files(manifest, self._settings.cm1_run_dir, run_dir)
 
-        command = [str(self._settings.cm1_run_dir / "cm1.exe")]
+        executable = (
+            source_customization.executable_path
+            if source_customization is not None
+            else self._settings.cm1_run_dir / "cm1.exe"
+        )
+        source_customization_status = (
+            _read_source_customization_status(source_customization.status_path)
+            if source_customization is not None
+            else None
+        )
+        command = [str(executable)]
         log_dir = run_dir / "logs"
         log_dir.mkdir(parents=True, exist_ok=True)
         stdout_log = log_dir / "stdout.log"
@@ -163,6 +188,7 @@ class LocalRunManager:
             command=command,
             stdout_log=stdout_log,
             stderr_log=stderr_log,
+            cm1_source_customization_status=source_customization_status,
         )
         write_run_manifest(manifest_path, queued)
 
@@ -277,6 +303,7 @@ class LocalRunManager:
         exit_code: int | None = None,
         validation_status: ValidationStatus | None = None,
         outputs: OutputMetadata | None = None,
+        cm1_source_customization_status: dict[str, object] | None = None,
     ) -> RunManifest:
         now = datetime.now(UTC)
         existing_execution = manifest.execution
@@ -324,6 +351,11 @@ class LocalRunManager:
                 "execution": ExecutionMetadata.model_validate(execution.model_dump()),
                 "outputs": outputs or manifest.outputs,
                 "provenance": ProvenanceMetadata(product_state=product_state),
+                "cm1_source_customization_status": (
+                    cm1_source_customization_status
+                    if cm1_source_customization_status is not None
+                    else manifest.cm1_source_customization_status
+                ),
                 "updated_at": now,
             }
         )
@@ -341,6 +373,20 @@ def _status_from_manifest(manifest: RunManifest, manifest_path: Path) -> RunStat
         stderr_log=stderr_log,
         exit_code=manifest.execution.exit_code,
     )
+
+
+def _read_source_customization_status(path: Path) -> dict[str, object]:
+    try:
+        loaded = json.loads(path.read_text())
+    except (OSError, json.JSONDecodeError) as exc:
+        raise LocalRunManagerError(
+            f"Unable to read applied CM1 source customization status: {path}"
+        ) from exc
+    if not isinstance(loaded, dict):
+        raise LocalRunManagerError(
+            f"Applied CM1 source customization status is not an object: {path}"
+        )
+    return loaded
 
 
 def reconcile_completed_run_manifest(

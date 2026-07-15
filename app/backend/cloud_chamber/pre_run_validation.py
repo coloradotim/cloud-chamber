@@ -186,6 +186,7 @@ def _hypothesis_recipe_alignment(
             "caveats": [],
         }
     if story in DEEP_CONVECTION_STORIES:
+        differential = run_recipe == RunRecipe.DIFFERENTIAL_SURFACE_FORCED_EVOLUTION
         return {
             "status": "partial",
             "reasons": [
@@ -196,7 +197,7 @@ def _hypothesis_recipe_alignment(
             "blocking_errors": [],
             "caveats": [
                 "deep_convection_outcome_depends_on_surface_forcing_duration_domain_and_resolution",
-                "differential_surface_initiation_is_tracked_in_issue_307",
+                *([] if differential else ["differential_surface_forcing_is_a_separate_recipe"]),
             ],
         }
     if story == "humid_rainy_candidate":
@@ -279,7 +280,10 @@ def _input_validation_payload(
             "model_bottom_elevation": "generated_reference",
             "caveats": [],
         }
-    wind_required = contract.run_recipe == RunRecipe.OBSERVED_SURFACE_FORCED_EVOLUTION
+    wind_required = contract.run_recipe in {
+        RunRecipe.OBSERVED_SURFACE_FORCED_EVOLUTION,
+        RunRecipe.DIFFERENTIAL_SURFACE_FORCED_EVOLUTION,
+    }
     complete_wind_profile = has_complete_rendered_observed_wind_profile(
         observed_sounding,
         defaults=contract.cloud_scale_defaults,
@@ -393,6 +397,17 @@ def _forcing_validation_payload(contract: CM1InputContract) -> dict[str, Any]:
 
 
 def _forcing_validation_for_recipe(run_recipe: str) -> dict[str, Any]:
+    if run_recipe == RunRecipe.DIFFERENTIAL_SURFACE_FORCED_EVOLUTION.value:
+        return {
+            "trigger": "none",
+            "surface_fluxes": {
+                "mode": "differential_surface_forcing_patch_v0",
+                "status": "selected_values_unavailable_before_configuration_resolves",
+            },
+            "radiation": "disabled",
+            "large_scale_forcing": "none",
+            "source_customization": "checked_and_applied_at_launch",
+        }
     if run_recipe == RunRecipe.OBSERVED_SURFACE_FORCED_EVOLUTION.value:
         return {
             "trigger": "none",
@@ -419,7 +434,10 @@ def _required_outputs_for_story(
         return ["qv", "qc", "w", "qr", "rain", "dbz", "hfx", "qfx", "updraft_helicity"]
     if story == "humid_rainy_candidate":
         return ["qv", "qc", "w", "qr", "rain", "dbz", "hfx", "qfx"]
-    if run_recipe == RunRecipe.OBSERVED_SURFACE_FORCED_EVOLUTION:
+    if run_recipe in {
+        RunRecipe.OBSERVED_SURFACE_FORCED_EVOLUTION,
+        RunRecipe.DIFFERENTIAL_SURFACE_FORCED_EVOLUTION,
+    }:
         return ["qv", "qc", "w", "hfx", "qfx"]
     return ["qc", "w"]
 
