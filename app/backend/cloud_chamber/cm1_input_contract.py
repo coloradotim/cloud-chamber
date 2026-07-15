@@ -522,7 +522,7 @@ def _manual_validation_status(run_recipe: RunRecipe) -> str:
     if run_recipe == RunRecipe.OBSERVED_SURFACE_FORCED_EVOLUTION:
         return "observed_surface_forced_evolution_v0_metadata_only"
     if run_recipe == RunRecipe.DIFFERENTIAL_SURFACE_FORCED_EVOLUTION:
-        return "differential_surface_forced_evolution_v0_runtime_unvalidated"
+        return "differential_surface_forced_evolution_v0_forcing_footprint_validated"
     return "current_run_recipe_path"
 
 

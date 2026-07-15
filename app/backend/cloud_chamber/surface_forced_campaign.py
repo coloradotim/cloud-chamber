@@ -3063,7 +3063,7 @@ def _summary_caveats(
     result: ResultMetadata | None,
 ) -> list[str]:
     if run.resolved_run_configuration.get("surface_flux_mode") == DIFFERENTIAL_SURFACE_FORCING_MODE:
-        caveats = ["differential_surface_forcing_runtime_unvalidated"]
+        caveats = ["differential_surface_forcing_footprint_validated_response_not_validated"]
     else:
         caveats = ["surface_forcing_is_constant_uniform_proxy"]
     if run.optional:
