@@ -117,21 +117,20 @@ comparison is defined in
 [contracts/analyzer-hypothesis-output-signature.md](contracts/analyzer-hypothesis-output-signature.md).
 The bridge from those hypotheses to CM1 run recipes is defined in
 [contracts/run-recipe-and-story-mapping.md](contracts/run-recipe-and-story-mapping.md):
-it maps current story IDs to observed surface-forced, blocked, or future recipes
-and names the assumptions and output fields required before Results can compare
-predicted signatures. Removed triggered deep-potential recipes are not a current
-product path.
+it maps current story IDs to observed surface-forced, differential
+surface-forced, blocked, or future recipes and names the assumptions and output
+fields required before Results can compare predicted signatures. Removed
+triggered deep-potential recipes are not a current product path.
 Real-sounding story families, including severe/deep-convection, boundary-layer,
 low-cloud, and winter/cold-season candidates, are defined in
 [research/expanded-sounding-candidate-taxonomy.md](research/expanded-sounding-candidate-taxonomy.md).
 Those labels must remain disabled, caveated, or absent from product UI until
 backend scoring, evidence, caveats, and package-readiness states support them.
-The first exception is the deep-convection observed-sounding preset backed by
-the internal `deep_convection_trial` package path: severe/deep-convection
-candidates may be presented as pre-run hypotheses for an idealized triggered
-CM1 experiment, not as forecasts or guaranteed storm outcomes. User-facing copy
-should emphasize a configurable deep-convection run starting point instead of a
-half-state "Trial" product when that distinction matters.
+Severe/deep-convection candidates may be presented as pre-run atmospheric
+hypotheses for observed-sounding experiments, not as forecasts or guaranteed
+storm outcomes. Product copy should make the selected run assumptions visible:
+uniform lower-boundary forcing is different from the differential surface patch,
+and neither is an artificial atmospheric trigger.
 The backend may compute richer sounding diagnostics such as profile quality,
 moisture/LCL proxies, lapse-rate and cap proxies, wind shear, dry-layer
 signals, and freezing-level context to support future screening. These are
@@ -183,17 +182,21 @@ packaging or queue failures should remain visible instead of clearing the failed
 item from the plan.
 
 Observed-sounding experiments use the observed temperature, moisture, and
-complete wind profile through CM1 `isnd = 7`, apply numeric uniform lower-boundary
-heat/moisture flux controls, and request the full Results/Explore output field
-set. Severe/deep-convection candidates remain first-class atmospheric hypotheses,
-but current packages do not add an artificial deep-convection trigger. Product
-copy should describe these as observed-sounding experiments under explicit
+complete wind profile through CM1 `isnd = 7`, apply selected lower-boundary
+heat/moisture forcing, and request the full Results/Explore output field set.
+Severe/deep-convection candidates remain first-class atmospheric hypotheses, but
+current packages do not add an artificial deep-convection trigger. Product copy
+should describe these as observed-sounding experiments under explicit
 surface-forcing, duration, grid, domain, and cadence assumptions. Differential
-surface heating/moisture forcing for initiation or boundary experiments is future
-work tracked separately. Short science configurations must still run long enough
-to be meteorologically useful. Build should show expected cost, runtime, and
-output volume, and note when a configuration is better suited to larger compute
-instead of making machine choice the primary product axis.
+surface heating/moisture forcing is a current v0 patch recipe for localized
+initiation or boundary-style experiments; it is not a real front, dryline,
+land-surface, GIS, or radiation model. Its initial v0 geometry is a centered
+circular patch. It is local-only and runtime-unvalidated until the external CM1
+source customization path has passed a real compile plus emitted hfx/qfx
+forcing-footprint smoke test. Short science configurations must still run long
+enough to be meteorologically useful. Build should show expected cost, runtime,
+and output volume, and note when a configuration is better suited to larger
+compute instead of making machine choice the primary product axis.
 
 The run monitor should be compact by default. It should summarize active,
 queued, and completed runtime work while keeping detailed package, queue, LAN,

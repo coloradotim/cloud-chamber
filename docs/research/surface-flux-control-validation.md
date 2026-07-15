@@ -99,8 +99,10 @@ surface-flux path:
 
 The former idealized deep-trigger path is no longer a current Build recipe.
 Deep-convection candidates can still be run as observed-sounding experiments
-under the selected uniform lower-boundary forcing, with caveats that differential
-heating or convergence-style initiation is future work tracked in issue #307.
+under the selected lower-boundary forcing. Uniform forcing remains the baseline
+surface-flux path; the differential surface patch recipe is the current
+localized-initiation path when the experiment question is whether a warm/moist
+surface contrast focuses ascent.
 
 The current observed path is therefore best described as:
 

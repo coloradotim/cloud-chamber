@@ -713,6 +713,45 @@ def test_lan_worker_endpoint_reports_clear_failure(monkeypatch: pytest.MonkeyPat
     assert response.json()["detail"] == "LAN worker SSH failed"
 
 
+def test_lan_worker_start_blocks_differential_surface_forcing(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    observed = parse_igra_station_text(
+        IGRA_FIXTURE,
+        uploaded_filename="USM00072558-data-beg2025.txt",
+    ).selected_sounding
+    result = generate_dry_run_package(
+        scenario_data=json.loads(BASELINE_TEMPLATE.read_text()),
+        runtime_home=tmp_path,
+        run_id="run-differential-lan-blocked",
+        observed_sounding=observed,
+        run_configuration={
+            "duration": "short_6h",
+            "horizontal_cell_count": "cells_128",
+            "domain_size": "wide_12km",
+            "output_cadence": "standard_15min",
+            "surface_forcing_mode": "differential_surface_forcing_patch_v0",
+            "surface_heat_flux_k_m_s": 8.0e-3,
+            "surface_moisture_flux_g_g_m_s": 5.2e-5,
+            "surface_patch_heat_flux_perturbation_k_m_s": 4.0e-2,
+            "surface_patch_moisture_flux_perturbation_g_g_m_s": 5.0e-5,
+            "surface_patch_radius_m": 1500.0,
+            "surface_patch_taper_width_m": 500.0,
+            "surface_patch_ramp_seconds": 1800.0,
+        },
+    )
+    monkeypatch.setenv("CLOUD_CHAMBER_RUNTIME_HOME", str(tmp_path))
+
+    response = TestClient(app).post(
+        "/api/lan-worker/start",
+        json={"manifest_path": str(result.manifest_path)},
+    )
+
+    assert response.status_code == 400
+    assert "Differential surface forcing is local-only" in response.json()["detail"]
+
+
 def test_storage_inventory_api_uses_runtime_home_override(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

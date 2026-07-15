@@ -50,7 +50,9 @@ Current assumptions:
 - Radiation is disabled.
 - Large-scale forcing/convergence is not implemented.
 - Terrain, GIS surface data, soil moisture, vegetation, wet ground, transpiration, and real place/time surface-energy budgets are not implemented.
-- Differential surface forcing is future work tracked separately.
+- Differential surface forcing is a separate v0 patch recipe. It adds an
+  idealized lower-boundary heat/moisture perturbation through CM1 source
+  customization, not through a real land-surface or radiation model.
 
 ## Campaign principles
 

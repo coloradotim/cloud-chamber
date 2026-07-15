@@ -12,6 +12,15 @@ from typing import Any, Literal, TypedDict
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from cloud_chamber.surface_forcing import (
+    DIFFERENTIAL_SURFACE_FORCING_MODE,
+    UNIFORM_SURFACE_FLUX_MODE,
+    SurfaceForcingPatch,
+    resolve_surface_forcing_patch,
+    surface_forcing_mode_from_payload,
+    surface_forcing_patch_summary,
+)
+
 RunMode = Literal["smoke", "science"]
 
 
@@ -81,6 +90,7 @@ class RunConfiguration(BaseModel):
     surface_flux_mode: str
     surface_flux_summary: str
     surface_flux_cm1_values: RunConfigurationSurfaceFluxCM1Values
+    surface_forcing_patch: SurfaceForcingPatch | None = None
     surface_flux_caveats: list[str] = Field(default_factory=list)
     caveats: list[str] = Field(default_factory=list)
 
@@ -211,6 +221,7 @@ def default_run_configuration_payload(run_recipe: str | None = None) -> dict[str
             "diagnostic_set": "full",
             "surface_heat_flux_k_m_s": DEFAULT_SURFACE_HEAT_FLUX_K_M_S,
             "surface_moisture_flux_g_g_m_s": DEFAULT_SURFACE_MOISTURE_FLUX_G_G_M_S,
+            "surface_forcing_mode": UNIFORM_SURFACE_FLUX_MODE,
         }
     return {
         "duration": "short_6h",
@@ -220,6 +231,7 @@ def default_run_configuration_payload(run_recipe: str | None = None) -> dict[str
         "diagnostic_set": "full",
         "surface_heat_flux_k_m_s": DEFAULT_SURFACE_HEAT_FLUX_K_M_S,
         "surface_moisture_flux_g_g_m_s": DEFAULT_SURFACE_MOISTURE_FLUX_G_G_M_S,
+        "surface_forcing_mode": UNIFORM_SURFACE_FLUX_MODE,
     }
 
 
@@ -271,8 +283,26 @@ def resolve_run_configuration(
         "time step seconds",
         default=DEFAULT_TIME_STEP_SECONDS,
     )
+    nx = horizontal_cells.cells
+    ny = horizontal_cells.cells
+    dx_m = domain.x_km * 1000.0 / nx
+    dy_m = domain.y_km * 1000.0 / ny
+    restart_seconds = max(cadence.seconds, min(duration.seconds, 10800))
+    frames = _expected_output_frames(duration.seconds, cadence.seconds)
+    grid_cells = nx * ny * domain.nz
     surface_flux_enabled = True
-    surface_flux_mode = "constant_uniform_surface_flux_proxy"
+    surface_flux_mode = surface_forcing_mode_from_payload(payload)
+    surface_forcing_patch = resolve_surface_forcing_patch(
+        payload=payload,
+        mode=surface_flux_mode,
+        background_heat_flux_k_m_s=heat_flux,
+        background_moisture_flux_g_g_m_s=moisture_flux,
+        domain_x_m=domain.x_km * 1000.0,
+        domain_y_m=domain.y_km * 1000.0,
+        dx_m=dx_m,
+        dy_m=dy_m,
+        duration_seconds=duration.seconds,
+    )
     surface_flux_cm1_values = _surface_flux_cm1_values(
         enabled=surface_flux_enabled,
         heat_flux_k_m_s=heat_flux,
@@ -282,15 +312,8 @@ def resolve_run_configuration(
         surface_flux_mode,
         heat_flux_k_m_s=heat_flux,
         moisture_flux_g_g_m_s=moisture_flux,
+        surface_forcing_patch=surface_forcing_patch,
     )
-
-    nx = horizontal_cells.cells
-    ny = horizontal_cells.cells
-    dx_m = domain.x_km * 1000.0 / nx
-    dy_m = domain.y_km * 1000.0 / ny
-    restart_seconds = max(cadence.seconds, min(duration.seconds, 10800))
-    frames = _expected_output_frames(duration.seconds, cadence.seconds)
-    grid_cells = nx * ny * domain.nz
     configuration_id = _configuration_id(
         duration=str(payload["duration"]),
         horizontal_cell_count=str(payload["horizontal_cell_count"]),
@@ -300,6 +323,9 @@ def resolve_run_configuration(
         surface_heat_flux_k_m_s=heat_flux,
         surface_moisture_flux_g_g_m_s=moisture_flux,
         surface_flux_mode=surface_flux_mode,
+        surface_forcing_patch_sha256=(
+            surface_forcing_patch.pattern_sha256 if surface_forcing_patch is not None else None
+        ),
         time_step_seconds=time_step_seconds,
     )
     caveats = _configuration_caveats(
@@ -360,8 +386,10 @@ def resolve_run_configuration(
             surface_flux_mode,
             heat_flux,
             moisture_flux,
+            surface_forcing_patch=surface_forcing_patch,
         ),
         surface_flux_cm1_values=surface_flux_cm1_values,
+        surface_forcing_patch=surface_forcing_patch,
         surface_flux_caveats=surface_flux_caveats,
         caveats=caveats,
     )
@@ -419,6 +447,7 @@ def _configuration_id(
     surface_heat_flux_k_m_s: float,
     surface_moisture_flux_g_g_m_s: float,
     surface_flux_mode: str,
+    surface_forcing_patch_sha256: str | None,
     time_step_seconds: float,
 ) -> str:
     timestep_suffix = ""
@@ -432,7 +461,8 @@ def _configuration_id(
     return (
         f"{duration}__{horizontal_cell_count}__{domain_size}__{output_cadence}"
         f"__{diagnostic_set}__shflx_{_flux_id(surface_heat_flux_k_m_s)}"
-        f"__qflx_{_flux_id(surface_moisture_flux_g_g_m_s)}{timestep_suffix}"
+        f"__qflx_{_flux_id(surface_moisture_flux_g_g_m_s)}"
+        f"{_surface_mode_id(surface_flux_mode, surface_forcing_patch_sha256)}{timestep_suffix}"
     )
 
 
@@ -514,9 +544,13 @@ def _surface_flux_summary(
     surface_flux_mode: str,
     heat_flux_k_m_s: float,
     moisture_flux_g_g_m_s: float,
+    *,
+    surface_forcing_patch: SurfaceForcingPatch | None = None,
 ) -> str:
     if surface_flux_mode == "disabled":
         return "Surface heat/moisture flux forcing disabled"
+    if surface_flux_mode == DIFFERENTIAL_SURFACE_FORCING_MODE and surface_forcing_patch:
+        return surface_forcing_patch_summary(surface_forcing_patch)
     return (
         f"Surface heat flux {_format_scientific(heat_flux_k_m_s)} K m/s; "
         f"surface moisture flux {_format_scientific(moisture_flux_g_g_m_s)} g/g m/s; "
@@ -529,14 +563,24 @@ def _surface_flux_caveats(
     *,
     heat_flux_k_m_s: float,
     moisture_flux_g_g_m_s: float,
+    surface_forcing_patch: SurfaceForcingPatch | None = None,
 ) -> list[str]:
     if surface_flux_mode == "disabled":
         return []
-    caveats = [
-        "surface_flux_proxy_constant_uniform_not_place_time_energy_budget",
-        "surface_flux_proxy_not_real_land_surface_or_evaporation_model",
-        "surface_flux_proxy_values_need_local_smoke_validation",
-    ]
+    if surface_flux_mode == DIFFERENTIAL_SURFACE_FORCING_MODE:
+        caveats = [
+            "differential_surface_forcing_patch_not_real_land_surface_or_radiation",
+            "differential_surface_forcing_patch_requires_cm1_source_customization",
+            "differential_surface_forcing_patch_requires_emitted_flux_and_convergence_validation",
+        ]
+        if surface_forcing_patch is not None:
+            caveats.extend(surface_forcing_patch.caveats)
+    else:
+        caveats = [
+            "surface_flux_proxy_constant_uniform_not_place_time_energy_budget",
+            "surface_flux_proxy_not_real_land_surface_or_evaporation_model",
+            "surface_flux_proxy_values_need_local_smoke_validation",
+        ]
     if not _in_range(heat_flux_k_m_s, SURFACE_HEAT_FLUX_CONTEXT_RANGE_K_M_S):
         caveats.append("surface_heat_flux_outside_daytime_context_range")
     if not _in_range(moisture_flux_g_g_m_s, SURFACE_MOISTURE_FLUX_CONTEXT_RANGE_G_G_M_S):
@@ -555,6 +599,14 @@ def _format_scientific(value: float) -> str:
 
 def _flux_id(value: float) -> str:
     return f"{value:.3e}".replace("+", "").replace("-", "m").replace(".", "p")
+
+
+def _surface_mode_id(surface_flux_mode: str, patch_sha256: str | None) -> str:
+    if surface_flux_mode == DIFFERENTIAL_SURFACE_FORCING_MODE and patch_sha256:
+        return f"__diff_patch_{patch_sha256[:10]}"
+    if surface_flux_mode != UNIFORM_SURFACE_FLUX_MODE:
+        return f"__{surface_flux_mode}"
+    return ""
 
 
 def _rayleigh_damping_start_m() -> int:

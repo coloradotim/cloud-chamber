@@ -63,7 +63,7 @@ run_recipe:
   assumption_mode:
     observed_surface_forced_evolution
     | surface_forced_evolution
-    | future_differential_surface_forcing
+    | differential_surface_forced_evolution
     | elevated_forced_evolution
     | future
   run_shape:
@@ -78,7 +78,7 @@ run_recipe:
     diagnostic_set: essential | process | full | null
   forcing:
     trigger:
-      mode: none | future_explicit_trigger | future_differential_surface_forcing | unavailable
+      mode: none | future_explicit_trigger | unavailable
       description: string
     surface_sensible_heat_flux:
       mode: current_recipe_default | prescribed | disabled | future | unavailable
@@ -116,6 +116,7 @@ run_recipe:
     run_recipe:
       generated_reference_lower_atmosphere
       | observed_surface_forced_evolution
+      | differential_surface_forced_evolution
       | future
     run_configuration_defaults:
       duration: string | null
@@ -151,13 +152,14 @@ latent heat flux assumptions are explicit. Humid, drizzle, warm-rain, fog,
 post-frontal, and boundary-layer hypotheses need this mode before product copy
 can claim surface-forced precipitation or low-cloud signatures.
 
-### `future_differential_surface_forcing`
+### `differential_surface_forced_evolution`
 
-A future differential-forcing recipe asks whether localized or spatially varying
-surface heating/moisture gradients can initiate or organize convection. It is the
-right shape for future boundary, patch, dryline, or differential-heating
-experiments. It is not implemented by issue #305 and should not be implied by the
-current uniform surface-flux controls.
+A differential surface-forced recipe asks whether one localized lower-boundary
+heat/moisture patch can focus convergence, updraft initiation, cloud growth, and
+later rain/reflectivity differently from the surrounding surface. It is a
+current v0 patch experiment, not a real land-surface, radiation, GIS, front, or
+dryline model. Cloud Chamber applies it through explicit CM1 source
+customization at launch and must not silently fall back to uniform forcing.
 
 ### `radiation_place_time_evolution`
 
@@ -177,8 +179,8 @@ current observed-sounding run builder does not supply.
 Artificial atmospheric perturbation recipes from the earlier deep-potential
 direction are not current product paths. Current observed-sounding experiments
 use no artificial atmospheric trigger and rely on explicit surface-forcing and
-run-shape assumptions. Differential surface forcing is tracked separately as
-future work.
+run-shape assumptions. Differential surface forcing is a current lower-boundary
+patch recipe, not an atmospheric-trigger recipe.
 
 ## Current Recipe Catalog
 
@@ -233,8 +235,83 @@ cm1_mapping:
 This v0 recipe can inspect shallow cloud, humid/rainy, capped, and deep-candidate
 signals when the predicted signature can be evaluated from full CM1 output fields
 and enough duration/cadence. Deep organization, cold-pool, and storm-mode claims
-remain caveated until comparison diagnostics and differential forcing are
-validated.
+remain caveated until comparison diagnostics and the selected forcing recipe can
+support those claims.
+
+### `differential_surface_forced_evolution_v0`
+
+```yaml
+recipe_id: differential_surface_forced_evolution_v0
+display_name: Differential surface-forced evolution v0
+product_question: What happens when one part of the lower boundary is heated
+  and/or moistened more strongly than its surroundings?
+assumption_set_id: differential_surface_forced_evolution_v0_assumptions
+assumption_mode: differential_surface_forced_evolution
+run_shape:
+  duration_seconds: 21600 | configured
+  horizontal_cell_count: 64 | 96 | 128 | 192 | 256 | 384 | configured
+  domain_width_m: 6400 | 12800 | 60000 | 120000 | configured
+  model_top_m: current observed-sounding LES model top
+  output_cadence_seconds: 3600 | 900 | 300 | configured
+  requested_fields: full_output_field_set
+forcing:
+  trigger: {mode: none}
+  surface_sensible_heat_flux:
+    mode: prescribed_background_plus_patch
+    units: K m/s
+    value: configured
+  surface_latent_heat_flux:
+    mode: prescribed_background_plus_patch
+    units: g/g m/s
+    value: configured
+  surface_patch:
+    shape: circle
+    center: domain_center_v0
+    radius_m: configured
+    taper: raised_cosine
+    ramp_seconds: configured
+  radiation: {mode: disabled}
+  large_scale_lift: {mode: none}
+  convergence: {mode: emergent_from_surface_patch}
+required_inputs:
+  observed_temperature_profile: required
+  observed_moisture_profile: required
+  observed_wind_profile: required
+required_outputs:
+  fields: [qv, qc, w, qr, rain, dbz, u, v, th, prs, hfx, qfx, updraft_helicity]
+  diagnostics:
+    - emitted_surface_flux_contrast
+    - convergence_or_divergence_response
+    - localized_updraft_response
+    - coherent_cloud_object_top
+    - rain_water_aloft_onset
+    - max_surface_rain
+    - max_dbz
+current_support:
+  status: runtime_unvalidated
+  caveats:
+    - The v0 patch is centered, circular, and idealized.
+    - It is not a real land-surface, soil-moisture, vegetation, radiation,
+      terrain, GIS, front, or dryline model.
+    - Cloud Chamber copies the local external CM1 source tree into an isolated
+      runtime build tree, patches that copy, rebuilds CM1, and launches the
+      copied custom executable.
+    - Differential surface forcing is local-only until trusted LAN worker source
+      customization and custom-executable provenance are implemented.
+    - Missing, malformed, or hash-mismatched patch files block the run rather
+      than silently falling back to uniform forcing.
+    - This path still requires a real CM1 compile and emitted forcing-footprint
+      smoke test before it can be treated as #307-complete.
+    - Surface-driven convergence, localized updrafts, coherent cloud growth,
+      rain-water aloft, surface rain, and reflectivity remain diagnostics to
+      inspect, not guaranteed outcomes.
+cm1_mapping:
+  run_recipe: differential_surface_forced_evolution
+  runtime_files_needed:
+    - surface_forcing_patch.json
+    - cloud_chamber_surface_forcing_patch.dat
+    - cm1_source_customization.json
+```
 
 ## Domain And Duration Expectations
 

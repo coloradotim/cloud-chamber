@@ -1665,7 +1665,7 @@ def _candidate_recipe_fit(
     if story in DEEP_CONVECTION_STORY_IDS:
         caveats = [
             "deep_convection_outcome_depends_on_surface_forcing_duration_domain_and_resolution",
-            "differential_surface_initiation_is_tracked_in_issue_307",
+            "differential_surface_forcing_patch_recipe_available_for_initiation_tests",
         ]
         if features.get("observed_wind_available") is not True:
             caveats.append("complete_observed_wind_profile_required_for_input_sounding")
@@ -1674,8 +1674,8 @@ def _candidate_recipe_fit(
             "label": "testable as forced observed evolution",
             "summary": (
                 "This story screens deep-convection ingredients. CM1 can evolve the observed "
-                "atmosphere under selected uniform lower-boundary forcing; differential "
-                "initiation is a follow-up."
+                "atmosphere under selected lower-boundary forcing; a differential surface "
+                "patch can be selected when localized initiation is the question."
             ),
             "caveats": caveats,
         }

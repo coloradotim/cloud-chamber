@@ -64,6 +64,7 @@ from cloud_chamber.sounding_candidates import (
     list_screening_inputs,
     screen_cached_soundings,
 )
+from cloud_chamber.surface_forcing import DIFFERENTIAL_SURFACE_FORCING_MODE
 
 MATRIX_SCHEMA_VERSION = "surface_forced_campaign_matrix_v1"
 CAMPAIGN_STATE_SCHEMA_VERSION = "surface_forced_campaign_state_v1"
@@ -82,10 +83,33 @@ RUN_CONFIGURATION_KEYS = {
     "domain_size",
     "output_cadence",
     "diagnostic_set",
+    "surface_forcing_mode",
+    "surface_flux_mode",
     "surface_heat_flux_k_m_s",
     "surface_moisture_flux_g_g_m_s",
+    "surface_patch_shape",
+    "surface_patch_radius_m",
+    "surface_patch_radius_x_m",
+    "surface_patch_radius_y_m",
+    "surface_patch_heat_flux_perturbation_k_m_s",
+    "surface_patch_moisture_flux_perturbation_g_g_m_s",
+    "surface_patch_taper_width_m",
+    "surface_patch_ramp_seconds",
     "time_step_seconds",
 }
+DIFFERENTIAL_SURFACE_CONFIGURATION_KEYS = {
+    "surface_forcing_mode",
+    "surface_flux_mode",
+    "surface_patch_shape",
+    "surface_patch_radius_m",
+    "surface_patch_radius_x_m",
+    "surface_patch_radius_y_m",
+    "surface_patch_heat_flux_perturbation_k_m_s",
+    "surface_patch_moisture_flux_perturbation_g_g_m_s",
+    "surface_patch_taper_width_m",
+    "surface_patch_ramp_seconds",
+}
+DIFFERENTIAL_SURFACE_KEY_PREFIXES = ("surface_patch_",)
 KNOWN_STATUS_VALUES = {
     "planned",
     "packaged",
@@ -138,6 +162,15 @@ SUPPORTED_REQUIRED_SUMMARY_FIELDS = {
     "surface_heat_flux_units",
     "surface_moisture_flux_g_g_m_s",
     "surface_moisture_flux_units",
+    "surface_flux_mode",
+    "surface_forcing_patch_sha256",
+    "surface_patch_shape",
+    "surface_patch_radius_x_m",
+    "surface_patch_radius_y_m",
+    "surface_patch_heat_flux_perturbation_k_m_s",
+    "surface_patch_moisture_flux_perturbation_g_g_m_s",
+    "surface_patch_taper_width_m",
+    "surface_patch_ramp_seconds",
     "cm1_cnst_shflx",
     "cm1_cnst_shflx_units",
     "cm1_cnst_lhflx",
@@ -267,6 +300,9 @@ MATRIX_CONTEXT_FIELDS = {
     "cm1_cnst_lhflx",
     "runtime_seconds",
     "time_step_seconds",
+    "surface_flux_mode",
+    "surface_forcing_patch_sha256",
+    "surface_patch_shape",
     "expected_output_frames",
     "expected_output_volume",
 }
@@ -439,6 +475,9 @@ def build_campaign_plan(
         matrix.get("required_summary_fields"), errors
     )
     _validate_execution(execution, errors)
+    _validate_run_configuration_key_scope(run_defaults, "run_defaults", errors)
+    for forcing_set_id, forcing in forcing_sets.items():
+        _validate_run_configuration_key_scope(forcing, f"forcing_sets[{forcing_set_id}]", errors)
 
     planned: list[CampaignRunPlan] = []
     matrix_ids: set[str] = set()
@@ -451,6 +490,7 @@ def build_campaign_plan(
 
     for index, run in enumerate(runs):
         context = f"runs[{index}]"
+        _validate_run_configuration_key_scope(run, context, errors)
         matrix_id = _required_string(run, "matrix_id", context, errors)
         if matrix_id in matrix_ids:
             errors.append(f"Duplicate run matrix_id: {matrix_id}")
@@ -497,6 +537,14 @@ def build_campaign_plan(
         except ValueError as exc:
             errors.append(f"{context}.run_configuration invalid: {exc}")
             continue
+        if (
+            resolved_configuration.surface_flux_mode == DIFFERENTIAL_SURFACE_FORCING_MODE
+            and queue_target == "lan"
+        ):
+            errors.append(
+                f"{context}.queue_target=lan is not supported for differential surface forcing; "
+                "remote CM1 source customization is not implemented."
+            )
 
         source_type = str(source.get("type", "unknown"))
         source_reference = _selection_source_reference(source)
@@ -1143,6 +1191,24 @@ def _resolved_run_configuration_payload(
                 payload[key] = source[key]
     payload["diagnostic_set"] = "full"
     return payload
+
+
+def _validate_run_configuration_key_scope(
+    source: Mapping[str, Any],
+    context: str,
+    errors: list[str],
+) -> None:
+    for key in source:
+        if key in RUN_CONFIGURATION_KEYS:
+            continue
+        if key in DIFFERENTIAL_SURFACE_CONFIGURATION_KEYS or any(
+            key.startswith(prefix) for prefix in DIFFERENTIAL_SURFACE_KEY_PREFIXES
+        ):
+            errors.append(
+                f"{context}.{key} is not a supported run-configuration field; "
+                "unknown differential surface-forcing fields are rejected to prevent "
+                "silent uniform fallback."
+            )
 
 
 def _stable_resume_identity(
@@ -2032,6 +2098,10 @@ def _summary_for_plan_run(run: CampaignRunPlan, state: CampaignState) -> dict[st
     )
     terminal_contamination = _terminal_output_contamination_summary(field_quality, warnings)
     runtime_integrity = result.runtime_integrity if result is not None else None
+    surface_forcing_patch = run.resolved_run_configuration.get("surface_forcing_patch")
+    surface_forcing_patch_map = (
+        surface_forcing_patch if isinstance(surface_forcing_patch, dict) else None
+    )
     summary = {
         "schema_version": CAMPAIGN_SUMMARY_SCHEMA_VERSION,
         "campaign_id": run.campaign_id,
@@ -2068,6 +2138,47 @@ def _summary_for_plan_run(run: CampaignRunPlan, state: CampaignState) -> dict[st
         "surface_heat_flux_units": "K m/s",
         "surface_moisture_flux_g_g_m_s": run.run_configuration["surface_moisture_flux_g_g_m_s"],
         "surface_moisture_flux_units": "g/g m/s",
+        "surface_flux_mode": run.resolved_run_configuration.get("surface_flux_mode"),
+        "surface_forcing_patch_sha256": (
+            surface_forcing_patch_map.get("pattern_sha256")
+            if surface_forcing_patch_map is not None
+            else None
+        ),
+        "surface_patch_shape": (
+            surface_forcing_patch_map.get("shape")
+            if surface_forcing_patch_map is not None
+            else None
+        ),
+        "surface_patch_radius_x_m": (
+            surface_forcing_patch_map.get("radius_x_m")
+            if surface_forcing_patch_map is not None
+            else None
+        ),
+        "surface_patch_radius_y_m": (
+            surface_forcing_patch_map.get("radius_y_m")
+            if surface_forcing_patch_map is not None
+            else None
+        ),
+        "surface_patch_heat_flux_perturbation_k_m_s": (
+            surface_forcing_patch_map.get("heat_flux_perturbation_k_m_s")
+            if surface_forcing_patch_map is not None
+            else None
+        ),
+        "surface_patch_moisture_flux_perturbation_g_g_m_s": (
+            surface_forcing_patch_map.get("moisture_flux_perturbation_g_g_m_s")
+            if surface_forcing_patch_map is not None
+            else None
+        ),
+        "surface_patch_taper_width_m": (
+            surface_forcing_patch_map.get("taper_width_m")
+            if surface_forcing_patch_map is not None
+            else None
+        ),
+        "surface_patch_ramp_seconds": (
+            surface_forcing_patch_map.get("ramp_seconds")
+            if surface_forcing_patch_map is not None
+            else None
+        ),
         "cm1_cnst_shflx": run.surface_flux_cm1_values.get("cnst_shflx"),
         "cm1_cnst_shflx_units": run.surface_flux_cm1_values.get("cnst_shflx_units"),
         "cm1_cnst_lhflx": run.surface_flux_cm1_values.get("cnst_lhflx"),
@@ -2951,9 +3062,10 @@ def _summary_caveats(
     state_run: CampaignStateRun | None,
     result: ResultMetadata | None,
 ) -> list[str]:
-    caveats = [
-        "surface_forcing_is_constant_uniform_proxy",
-    ]
+    if run.resolved_run_configuration.get("surface_flux_mode") == DIFFERENTIAL_SURFACE_FORCING_MODE:
+        caveats = ["differential_surface_forcing_runtime_unvalidated"]
+    else:
+        caveats = ["surface_forcing_is_constant_uniform_proxy"]
     if run.optional:
         caveats.append("optional_campaign_run")
     if state_run is not None and state_run.error:
@@ -4277,9 +4389,18 @@ def _station_time_label(run: Mapping[str, Any]) -> str:
 
 
 def _forcing_label(run: Mapping[str, Any]) -> str:
-    return (
+    base = (
         f"H {run.get('surface_heat_flux_k_m_s')} K m/s; "
         f"M {run.get('surface_moisture_flux_g_g_m_s')} g/g m/s"
+    )
+    if run.get("surface_flux_mode") != DIFFERENTIAL_SURFACE_FORCING_MODE:
+        return base
+    return (
+        f"{base}; differential patch "
+        f"{run.get('surface_patch_radius_x_m')}x{run.get('surface_patch_radius_y_m')} m; "
+        f"+H {run.get('surface_patch_heat_flux_perturbation_k_m_s')}; "
+        f"+M {run.get('surface_patch_moisture_flux_perturbation_g_g_m_s')}; "
+        f"hash {str(run.get('surface_forcing_patch_sha256') or 'unavailable')[:10]}"
     )
 
 

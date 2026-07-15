@@ -15,6 +15,17 @@ const defaultRunConfiguration = {
   output_cadence: "standard_15min",
   output_cadence_seconds: 900,
   diagnostic_set: "full",
+  surface_forcing_mode: "constant_uniform_surface_flux_proxy",
+  surface_heat_flux_k_m_s: 0.008,
+  surface_moisture_flux_g_g_m_s: 5.2e-5,
+  surface_patch_shape: "circle",
+  surface_patch_radius_m: "1500",
+  surface_patch_radius_x_m: "1500",
+  surface_patch_radius_y_m: "1500",
+  surface_patch_heat_flux_perturbation_k_m_s: "4.0e-2",
+  surface_patch_moisture_flux_perturbation_g_g_m_s: "5.0e-5",
+  surface_patch_taper_width_m: "500",
+  surface_patch_ramp_seconds: "1800",
   surface_flux_mode: "constant_uniform_surface_flux_proxy",
   surface_flux_summary:
     "Surface heat flux 0.008 K m/s; surface moisture flux 5.2e-5 g/g m/s; constant uniform proxy",
@@ -28,6 +39,7 @@ const defaultRunConfiguration = {
     cnst_lhflx: 5.2e-5,
     cnst_lhflx_units: "g/g m/s",
   },
+  surface_forcing_patch: null,
   surface_flux_caveats: [
     "surface_flux_proxy_constant_uniform_not_place_time_energy_budget",
     "surface_flux_proxy_not_real_land_surface_or_evaporation_model",
@@ -100,6 +112,7 @@ const defaultRunConfigurationSummary = {
   surface_flux_mode: defaultRunConfiguration.surface_flux_mode,
   surface_flux_summary: defaultRunConfiguration.surface_flux_summary,
   surface_flux_cm1_values: defaultRunConfiguration.surface_flux_cm1_values,
+  surface_forcing_patch: defaultRunConfiguration.surface_forcing_patch,
   surface_flux_caveats: defaultRunConfiguration.surface_flux_caveats,
 };
 

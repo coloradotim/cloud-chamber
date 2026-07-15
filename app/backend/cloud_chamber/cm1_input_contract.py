@@ -20,6 +20,12 @@ from cloud_chamber.run_configuration import (
     resolve_run_configuration,
 )
 from cloud_chamber.scenario_schema import ControlAudience, ScenarioTemplate
+from cloud_chamber.surface_forcing import (
+    CM1_SOURCE_CUSTOMIZATION_FILENAME,
+    DIFFERENTIAL_SURFACE_FORCING_MODE,
+    SURFACE_FORCING_PATCH_FILENAME,
+    SURFACE_FORCING_PATCH_JSON_FILENAME,
+)
 
 
 class GeneratedFileRole(StrEnum):
@@ -29,11 +35,14 @@ class GeneratedFileRole(StrEnum):
     INPUT_SOUNDING = "input_sounding"
     DRY_RUN_REPORT = "dry_run_report"
     RUNTIME_FILE_CHECKLIST = "runtime_file_checklist"
+    SURFACE_FORCING_PATCH = "surface_forcing_patch"
+    CM1_SOURCE_CUSTOMIZATION = "cm1_source_customization"
 
 
 class RunRecipe(StrEnum):
     GENERATED_REFERENCE_LOWER_ATMOSPHERE = "generated_reference_lower_atmosphere"
     OBSERVED_SURFACE_FORCED_EVOLUTION = "observed_surface_forced_evolution"
+    DIFFERENTIAL_SURFACE_FORCED_EVOLUTION = "differential_surface_forced_evolution"
 
 
 REMOVED_TRIGGERED_DEEP_POTENTIAL_RECIPE = "triggered_deep_potential"
@@ -110,7 +119,7 @@ class CM1InputContract:
     observed_sounding: ObservedSoundingRecord | None = None
 
 
-GENERATED_FILE_SPECS = (
+BASE_GENERATED_FILE_SPECS = (
     GeneratedFileSpec(
         role=GeneratedFileRole.RUN_MANIFEST,
         relative_path="run_manifest.json",
@@ -162,6 +171,28 @@ GENERATED_FILE_SPECS = (
 )
 
 
+DIFFERENTIAL_SURFACE_GENERATED_FILE_SPECS = (
+    GeneratedFileSpec(
+        role=GeneratedFileRole.SURFACE_FORCING_PATCH,
+        relative_path=SURFACE_FORCING_PATCH_JSON_FILENAME,
+        description=(
+            "Declarative lower-boundary heat/moisture forcing patch, plus the small CM1 "
+            f"runtime patch file {SURFACE_FORCING_PATCH_FILENAME}."
+        ),
+        scientific_status="CM1-facing differential surface-forcing input and provenance",
+    ),
+    GeneratedFileSpec(
+        role=GeneratedFileRole.CM1_SOURCE_CUSTOMIZATION,
+        relative_path=CM1_SOURCE_CUSTOMIZATION_FILENAME,
+        description=(
+            "Manifest describing the external CM1 source customization required to apply "
+            "the differential surface-forcing patch at launch."
+        ),
+        scientific_status="runtime source-customization provenance",
+    ),
+)
+
+
 def build_cm1_input_contract(
     scenario: ScenarioTemplate,
     selected_controls: dict[str, str | float | bool] | None = None,
@@ -174,6 +205,10 @@ def build_cm1_input_contract(
     resolved_run_configuration = resolve_run_configuration(
         run_configuration=run_configuration,
         run_recipe=resolved_run_recipe.value,
+    )
+    resolved_run_recipe = _run_recipe_for_configuration(
+        resolved_run_recipe,
+        resolved_run_configuration,
     )
     recipe_assumptions = _recipe_assumptions(
         resolved_run_recipe,
@@ -228,7 +263,7 @@ def build_cm1_input_contract(
         moisture_profile=moisture_profile,
         stability_profile=stability_profile,
         cloud_scale_defaults=defaults,
-        generated_files=GENERATED_FILE_SPECS,
+        generated_files=generated_file_specs_for_configuration(resolved_run_configuration),
         control_fragments=control_fragments,
         expected_diagnostics=_diagnostic_names(scenario),
         expected_outputs=_expected_outputs(
@@ -280,8 +315,8 @@ def _resolve_run_recipe(
     if run_recipe == REMOVED_TRIGGERED_DEEP_POTENTIAL_RECIPE:
         raise ValueError(
             "Triggered deep-potential package generation has been removed. "
-            "Use observed-sounding run configuration with numeric surface heat/moisture "
-            "forcing, or implement differential lower-boundary forcing from issue #307."
+            "Use observed-sounding run configuration with numeric uniform or differential "
+            "lower-boundary heat/moisture forcing."
         )
     if isinstance(run_recipe, RunRecipe):
         return run_recipe
@@ -295,8 +330,28 @@ def _resolve_run_recipe(
     return RunRecipe.GENERATED_REFERENCE_LOWER_ATMOSPHERE
 
 
+def _run_recipe_for_configuration(
+    run_recipe: RunRecipe,
+    run_configuration: RunConfiguration,
+) -> RunRecipe:
+    if run_configuration.surface_flux_mode == DIFFERENTIAL_SURFACE_FORCING_MODE:
+        if run_recipe == RunRecipe.GENERATED_REFERENCE_LOWER_ATMOSPHERE:
+            raise ValueError(
+                "Differential surface forcing requires an observed-sounding run recipe."
+            )
+        return RunRecipe.DIFFERENTIAL_SURFACE_FORCED_EVOLUTION
+    if run_recipe == RunRecipe.DIFFERENTIAL_SURFACE_FORCED_EVOLUTION:
+        raise ValueError(
+            "Differential surface-forced evolution requires "
+            "surface_forcing_mode=differential_surface_forcing_patch_v0."
+        )
+    return run_recipe
+
+
 def _run_recipe_display_name(run_recipe: RunRecipe) -> str:
     match run_recipe:
+        case RunRecipe.DIFFERENTIAL_SURFACE_FORCED_EVOLUTION:
+            return "Differential Surface-Forced Evolution"
         case RunRecipe.OBSERVED_SURFACE_FORCED_EVOLUTION:
             return "Observed Surface-Forced Evolution"
         case RunRecipe.GENERATED_REFERENCE_LOWER_ATMOSPHERE:
@@ -306,6 +361,8 @@ def _run_recipe_display_name(run_recipe: RunRecipe) -> str:
 def recipe_id_for_run_recipe(run_recipe: str | RunRecipe) -> str:
     resolved = _coerce_run_recipe(run_recipe)
     match resolved:
+        case RunRecipe.DIFFERENTIAL_SURFACE_FORCED_EVOLUTION:
+            return "differential_surface_forced_evolution_v0"
         case RunRecipe.OBSERVED_SURFACE_FORCED_EVOLUTION:
             return "observed_surface_forced_evolution_v0"
         case RunRecipe.GENERATED_REFERENCE_LOWER_ATMOSPHERE:
@@ -317,6 +374,8 @@ def recipe_id_for_run_recipe(run_recipe: str | RunRecipe) -> str:
 def recipe_display_name_for_run_recipe(run_recipe: str | RunRecipe) -> str:
     resolved = _coerce_run_recipe(run_recipe)
     match resolved:
+        case RunRecipe.DIFFERENTIAL_SURFACE_FORCED_EVOLUTION:
+            return "Differential Surface-Forced Evolution v0"
         case RunRecipe.OBSERVED_SURFACE_FORCED_EVOLUTION:
             return "Observed Surface-Forced Evolution v0"
         case RunRecipe.GENERATED_REFERENCE_LOWER_ATMOSPHERE:
@@ -328,6 +387,8 @@ def recipe_display_name_for_run_recipe(run_recipe: str | RunRecipe) -> str:
 def assumption_set_id_for_run_recipe(run_recipe: str | RunRecipe) -> str:
     resolved = _coerce_run_recipe(run_recipe)
     match resolved:
+        case RunRecipe.DIFFERENTIAL_SURFACE_FORCED_EVOLUTION:
+            return "differential_surface_forced_evolution_v0_assumptions"
         case RunRecipe.OBSERVED_SURFACE_FORCED_EVOLUTION:
             return "observed_surface_forced_evolution_v0_assumptions"
         case RunRecipe.GENERATED_REFERENCE_LOWER_ATMOSPHERE:
@@ -339,6 +400,8 @@ def assumption_set_id_for_run_recipe(run_recipe: str | RunRecipe) -> str:
 def assumption_mode_for_run_recipe(run_recipe: str | RunRecipe) -> str:
     resolved = _coerce_run_recipe(run_recipe)
     match resolved:
+        case RunRecipe.DIFFERENTIAL_SURFACE_FORCED_EVOLUTION:
+            return "differential_surface_forced_evolution"
         case RunRecipe.OBSERVED_SURFACE_FORCED_EVOLUTION:
             return "observed_surface_forced_evolution"
         case RunRecipe.GENERATED_REFERENCE_LOWER_ATMOSPHERE:
@@ -350,6 +413,21 @@ def assumption_mode_for_run_recipe(run_recipe: str | RunRecipe) -> str:
 def required_output_fields_for_run_recipe(run_recipe: str | RunRecipe) -> tuple[str, ...]:
     resolved = _coerce_run_recipe(run_recipe)
     match resolved:
+        case RunRecipe.DIFFERENTIAL_SURFACE_FORCED_EVOLUTION:
+            return (
+                "qv",
+                "qc",
+                "w",
+                "qr",
+                "rain",
+                "dbz",
+                "hfx",
+                "qfx",
+                "u",
+                "v",
+                "th",
+                "updraft_helicity",
+            )
         case RunRecipe.OBSERVED_SURFACE_FORCED_EVOLUTION:
             return ("qv", "qc", "w", "qr", "rain", "dbz", "hfx", "qfx")
         case RunRecipe.GENERATED_REFERENCE_LOWER_ATMOSPHERE:
@@ -361,6 +439,23 @@ def required_output_fields_for_run_recipe(run_recipe: str | RunRecipe) -> tuple[
 def recipe_caveats_for_run_recipe(run_recipe: str | RunRecipe) -> tuple[str, ...]:
     resolved = _coerce_run_recipe(run_recipe)
     match resolved:
+        case RunRecipe.DIFFERENTIAL_SURFACE_FORCED_EVOLUTION:
+            return (
+                "No artificial atmospheric trigger is applied.",
+                (
+                    "A centered lower-boundary heat/moisture forcing patch is applied "
+                    "through Cloud Chamber's external CM1 source customization."
+                ),
+                (
+                    "The patch is an idealized surface contrast, not a real land-surface, "
+                    "soil-moisture, vegetation, radiation, terrain, GIS, front, or dryline model."
+                ),
+                (
+                    "Surface-driven convergence, localized updraft, coherent cloud growth, "
+                    "rain-water, surface-rain, and reflectivity remain diagnostics to inspect, "
+                    "not guaranteed outcomes."
+                ),
+            )
         case RunRecipe.OBSERVED_SURFACE_FORCED_EVOLUTION:
             return (
                 "No artificial atmospheric trigger is applied.",
@@ -414,7 +509,10 @@ def _run_caveats(
     run_configuration: RunConfiguration,
 ) -> tuple[str, ...]:
     caveats = list(run_configuration.caveats)
-    if run_recipe == RunRecipe.OBSERVED_SURFACE_FORCED_EVOLUTION:
+    if run_recipe in {
+        RunRecipe.OBSERVED_SURFACE_FORCED_EVOLUTION,
+        RunRecipe.DIFFERENTIAL_SURFACE_FORCED_EVOLUTION,
+    }:
         caveats.extend(recipe_caveats_for_run_recipe(run_recipe))
         return tuple(caveats)
     return tuple(caveats)
@@ -423,6 +521,8 @@ def _run_caveats(
 def _manual_validation_status(run_recipe: RunRecipe) -> str:
     if run_recipe == RunRecipe.OBSERVED_SURFACE_FORCED_EVOLUTION:
         return "observed_surface_forced_evolution_v0_metadata_only"
+    if run_recipe == RunRecipe.DIFFERENTIAL_SURFACE_FORCED_EVOLUTION:
+        return "differential_surface_forced_evolution_v0_runtime_unvalidated"
     return "current_run_recipe_path"
 
 
@@ -457,12 +557,21 @@ def _recipe_assumptions(
             "selection": run_configuration.diagnostic_set,
         },
     }
-    if run_recipe == RunRecipe.OBSERVED_SURFACE_FORCED_EVOLUTION:
+    if run_recipe in {
+        RunRecipe.OBSERVED_SURFACE_FORCED_EVOLUTION,
+        RunRecipe.DIFFERENTIAL_SURFACE_FORCED_EVOLUTION,
+    }:
+        trigger_description = "No artificial atmospheric trigger."
+        if run_recipe == RunRecipe.DIFFERENTIAL_SURFACE_FORCED_EVOLUTION:
+            trigger_description = (
+                "No artificial atmospheric trigger; initiation is tested through the selected "
+                "lower-boundary differential surface-forcing patch."
+            )
         return {
             **configured_shape,
             "trigger": {
                 "mode": "none",
-                "description": "No artificial atmospheric trigger.",
+                "description": trigger_description,
             },
             "observed_sounding": {
                 "temperature_profile": "required",
@@ -489,6 +598,35 @@ def _surface_flux_assumption_payload(run_configuration: RunConfiguration) -> dic
             "mode": "disabled",
             "cm1_values": values.model_dump(mode="json"),
         }
+    if run_configuration.surface_flux_mode == DIFFERENTIAL_SURFACE_FORCING_MODE:
+        return {
+            "mode": run_configuration.surface_flux_mode,
+            "description": (
+                "Background uniform lower-boundary heat/moisture forcing plus one centered "
+                "raised-cosine perturbation patch."
+            ),
+            "translation_method": (
+                "Background numeric product values map to CM1 constant-flux namelist "
+                "values. The spatial perturbation is applied by Cloud Chamber's local CM1 "
+                "source customization in the prescribed-flux path."
+            ),
+            "product_selections": {
+                "surface_heat_flux_k_m_s": run_configuration.surface_heat_flux_k_m_s,
+                "surface_moisture_flux_g_g_m_s": (run_configuration.surface_moisture_flux_g_g_m_s),
+                "summary": run_configuration.surface_flux_summary,
+            },
+            "surface_forcing_patch": (
+                run_configuration.surface_forcing_patch.model_dump(mode="json")
+                if run_configuration.surface_forcing_patch is not None
+                else None
+            ),
+            "cm1_values": values.model_dump(mode="json"),
+            "cm1_runtime_files": {
+                "surface_forcing_patch": SURFACE_FORCING_PATCH_FILENAME,
+                "source_customization": CM1_SOURCE_CUSTOMIZATION_FILENAME,
+            },
+            "caveats": list(run_configuration.surface_flux_caveats),
+        }
     return {
         "mode": run_configuration.surface_flux_mode,
         "description": (
@@ -506,6 +644,14 @@ def _surface_flux_assumption_payload(run_configuration: RunConfiguration) -> dic
         "cm1_values": values.model_dump(mode="json"),
         "caveats": list(run_configuration.surface_flux_caveats),
     }
+
+
+def generated_file_specs_for_configuration(
+    run_configuration: RunConfiguration,
+) -> tuple[GeneratedFileSpec, ...]:
+    if run_configuration.surface_flux_mode == DIFFERENTIAL_SURFACE_FORCING_MODE:
+        return (*BASE_GENERATED_FILE_SPECS, *DIFFERENTIAL_SURFACE_GENERATED_FILE_SPECS)
+    return BASE_GENERATED_FILE_SPECS
 
 
 def _output_switches(
@@ -557,6 +703,10 @@ def _output_switches(
             }
         )
     return switches
+
+
+def _initsfc_value(contract: CM1InputContract) -> int:
+    return 1
 
 
 def has_complete_rendered_observed_wind_profile(
@@ -636,9 +786,8 @@ def render_cm1_namelist(contract: CM1InputContract) -> str:
     output = _output_switches(
         contract.run_configuration.diagnostic_set,
         deep_convection=False,
-        surface_flux_outputs=(
-            contract.run_configuration.surface_flux_mode == "constant_uniform_surface_flux_proxy"
-        ),
+        surface_flux_outputs=contract.run_configuration.surface_flux_mode
+        in {"constant_uniform_surface_flux_proxy", DIFFERENTIAL_SURFACE_FORCING_MODE},
     )
     surface = contract.run_configuration.surface_flux_cm1_values
     l_h = 0.0
@@ -772,7 +921,7 @@ def render_cm1_namelist(contract: CM1InputContract) -> str:
  isfcflx    =      {surface.isfcflx},
  sfcmodel   =      {surface.sfcmodel},
  oceanmodel =      {surface.oceanmodel},
- initsfc    =      1,
+ initsfc    =      {_initsfc_value(contract)},
  tsk0       = 299.28,
  tmn0       = 297.28,
  xland0     =    2.0,

@@ -164,8 +164,20 @@ class LocalRunQueueManager:
             )
 
     def _refresh_active_entry(self, entry: RunQueueEntry) -> None:
+        manifest_path = Path(entry.manifest_path)
+        if not manifest_path.exists():
+            now = _now()
+            entry.state = "failed"
+            entry.error = f"Active queue entry is missing its run manifest: {manifest_path}"
+            entry.message = (
+                "Active local CM1 queue entry is missing its run manifest; marking failed "
+                "so the serial queue can continue."
+            )
+            entry.finished_at = now
+            entry.updated_at = now
+            return
         try:
-            status = self._run_manager.status(Path(entry.manifest_path))
+            status = self._run_manager.status(manifest_path)
         except LocalRunManagerError as exc:
             entry.error = str(exc)
             entry.message = "Unable to refresh the active local CM1 run."

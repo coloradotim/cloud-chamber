@@ -14,6 +14,7 @@ import sys
 from pathlib import Path
 from types import ModuleType
 
+from cloud_chamber.cm1_source_customization import manifest_requires_cm1_source_customization
 from cloud_chamber.run_manifest import RunManifestError, load_run_manifest
 from cloud_chamber.settings import CloudChamberSettings
 
@@ -142,9 +143,14 @@ def _run_lan_worker_script(
 def _package_dir_from_manifest(manifest_path: Path) -> Path:
     expanded = manifest_path.expanduser()
     try:
-        load_run_manifest(expanded)
+        manifest = load_run_manifest(expanded)
     except RunManifestError as exc:
         raise LanWorkerApiError(str(exc)) from exc
+    if manifest_requires_cm1_source_customization(manifest):
+        raise LanWorkerApiError(
+            "Differential surface forcing is local-only until LAN worker CM1 source "
+            "customization and custom-executable provenance are implemented."
+        )
     return expanded.parent
 
 

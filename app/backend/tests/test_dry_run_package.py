@@ -259,6 +259,109 @@ def test_observed_dry_run_package_persists_surface_flux_proxy_choices(
     assert "output_sfcdiags  = 1," in namelist
 
 
+def test_differential_surface_forcing_package_writes_patch_artifacts(
+    tmp_path: Path,
+) -> None:
+    observed = parse_igra_station_text(
+        IGRA_FIXTURE,
+        uploaded_filename="USM00072558-data-beg2025.txt",
+    ).selected_sounding
+
+    result = generate_dry_run_package(
+        scenario_data=load_baseline_template(),
+        runtime_home=tmp_path,
+        run_id="run-differential-patch",
+        observed_sounding=observed,
+        run_configuration={
+            "duration": "short_6h",
+            "horizontal_cell_count": "cells_128",
+            "domain_size": "wide_12km",
+            "output_cadence": "standard_15min",
+            "surface_forcing_mode": "differential_surface_forcing_patch_v0",
+            "surface_heat_flux_k_m_s": 8.0e-3,
+            "surface_moisture_flux_g_g_m_s": 5.2e-5,
+            "surface_patch_heat_flux_perturbation_k_m_s": 4.0e-2,
+            "surface_patch_moisture_flux_perturbation_g_g_m_s": 5.0e-5,
+            "surface_patch_radius_m": 1500.0,
+            "surface_patch_taper_width_m": 500.0,
+            "surface_patch_ramp_seconds": 1800.0,
+        },
+    )
+
+    manifest = load_run_manifest(result.manifest_path)
+    report = json.loads(result.report_path.read_text())
+    patch_json = json.loads((result.package_dir / "surface_forcing_patch.json").read_text())
+    patch_data = (result.package_dir / "cloud_chamber_surface_forcing_patch.dat").read_text()
+    source_customization = json.loads(
+        (result.package_dir / "cm1_source_customization.json").read_text()
+    )
+    runtime_checklist = json.loads((result.package_dir / "runtime_file_checklist.json").read_text())
+    namelist = (result.package_dir / "namelist.input").read_text()
+
+    assert manifest.run_recipe == "differential_surface_forced_evolution"
+    assert manifest.recipe_id == "differential_surface_forced_evolution_v0"
+    assert manifest.assumption_mode == "differential_surface_forced_evolution"
+    assert manifest.generated_inputs.surface_forcing_patch == str(
+        result.package_dir / "cloud_chamber_surface_forcing_patch.dat"
+    )
+    assert manifest.generated_inputs.cm1_source_customization == str(
+        result.package_dir / "cm1_source_customization.json"
+    )
+    assert manifest.recipe_assumptions["surface_fluxes"]["mode"] == (
+        "differential_surface_forcing_patch_v0"
+    )
+    assert patch_json["pattern"]["radius_x_m"] == 1500.0
+    assert patch_json["cm1_patch_data_filename"] == "cloud_chamber_surface_forcing_patch.dat"
+    assert "4.000000000000e-02" in patch_data
+    assert "5.000000000000e+02" in patch_data
+    assert source_customization["application_policy"]["no_silent_uniform_fallback"] is True
+    assert source_customization["runtime_patch_file_sha256"]
+    assert runtime_checklist["source_customization"]["status"] == "checked_and_applied_at_launch"
+    assert (
+        report["run_configuration_summary"]["surface_forcing_patch"]["pattern_sha256"]
+        == (patch_json["pattern_sha256"])
+    )
+    assert "initsfc    =      1," in namelist
+    assert "cm1_source_customization.json" in report["generated_files"]["cm1_source_customization"]
+    assert {path.name for path in result.generated_files} >= {
+        "run_manifest.json",
+        "surface_forcing_patch.json",
+        "cloud_chamber_surface_forcing_patch.dat",
+        "cm1_source_customization.json",
+    }
+
+
+def test_differential_surface_forcing_rejects_ellipse_shape(
+    tmp_path: Path,
+) -> None:
+    observed = parse_igra_station_text(
+        IGRA_FIXTURE,
+        uploaded_filename="USM00072558-data-beg2025.txt",
+    ).selected_sounding
+
+    with pytest.raises(DryRunPackageError, match="supports circle patches only"):
+        generate_dry_run_package(
+            scenario_data=load_baseline_template(),
+            runtime_home=tmp_path,
+            run_id="run-differential-ellipse-blocked",
+            observed_sounding=observed,
+            run_configuration={
+                "duration": "short_6h",
+                "horizontal_cell_count": "cells_128",
+                "domain_size": "wide_12km",
+                "output_cadence": "standard_15min",
+                "surface_forcing_mode": "differential_surface_forcing_patch_v0",
+                "surface_heat_flux_k_m_s": 8.0e-3,
+                "surface_moisture_flux_g_g_m_s": 5.2e-5,
+                "surface_patch_shape": "ellipse",
+                "surface_patch_radius_x_m": 2000.0,
+                "surface_patch_radius_y_m": 1200.0,
+                "surface_patch_taper_width_m": 500.0,
+                "surface_patch_ramp_seconds": 1800.0,
+            },
+        )
+
+
 def test_triggered_deep_potential_package_generation_is_removed(
     tmp_path: Path,
 ) -> None:
