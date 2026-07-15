@@ -196,6 +196,7 @@ CADENCE_CHOICES: dict[str, _CadenceChoice] = {
 
 DEFAULT_SURFACE_HEAT_FLUX_K_M_S = 8.0e-3
 DEFAULT_SURFACE_MOISTURE_FLUX_G_G_M_S = 5.2e-5
+DEFAULT_TIME_STEP_SECONDS = 3.0
 SURFACE_HEAT_FLUX_CONTEXT_RANGE_K_M_S = (0.0, 0.2)
 SURFACE_MOISTURE_FLUX_CONTEXT_RANGE_G_G_M_S = (0.0, 2.0e-4)
 
@@ -264,6 +265,12 @@ def resolve_run_configuration(
         "surface_moisture_flux_g_g_m_s",
         "surface moisture flux",
     )
+    time_step_seconds = _positive_float_payload(
+        payload,
+        "time_step_seconds",
+        "time step seconds",
+        default=DEFAULT_TIME_STEP_SECONDS,
+    )
     surface_flux_enabled = True
     surface_flux_mode = "constant_uniform_surface_flux_proxy"
     surface_flux_cm1_values = _surface_flux_cm1_values(
@@ -293,12 +300,14 @@ def resolve_run_configuration(
         surface_heat_flux_k_m_s=heat_flux,
         surface_moisture_flux_g_g_m_s=moisture_flux,
         surface_flux_mode=surface_flux_mode,
+        time_step_seconds=time_step_seconds,
     )
     caveats = _configuration_caveats(
         mode=duration.mode,
         horizontal_cell_count=horizontal_cells.cells,
         domain_size=str(payload["domain_size"]),
         surface_flux_caveats=surface_flux_caveats,
+        time_step_seconds=time_step_seconds,
     )
     return RunConfiguration(
         configuration_id=configuration_id,
@@ -334,7 +343,7 @@ def resolve_run_configuration(
             dz_top_m=domain.dz_top_m,
             domain_x_km=domain.x_km,
             domain_y_km=domain.y_km,
-            time_step_seconds=_time_step_seconds(),
+            time_step_seconds=time_step_seconds,
             runtime_seconds=duration.seconds,
             output_cadence_seconds=cadence.seconds,
             restart_cadence_seconds=restart_seconds,
@@ -385,6 +394,21 @@ def _float_payload(payload: dict[str, Any], key: str, label: str) -> float:
     return parsed
 
 
+def _positive_float_payload(
+    payload: dict[str, Any],
+    key: str,
+    label: str,
+    *,
+    default: float,
+) -> float:
+    if key not in payload:
+        return default
+    parsed = _float_payload(payload, key, label)
+    if parsed <= 0:
+        raise ValueError(f"Invalid {label}: must be greater than zero")
+    return parsed
+
+
 def _configuration_id(
     *,
     duration: str,
@@ -395,16 +419,20 @@ def _configuration_id(
     surface_heat_flux_k_m_s: float,
     surface_moisture_flux_g_g_m_s: float,
     surface_flux_mode: str,
+    time_step_seconds: float,
 ) -> str:
+    timestep_suffix = ""
+    if not math.isclose(time_step_seconds, DEFAULT_TIME_STEP_SECONDS):
+        timestep_suffix = f"__dtl_{_flux_id(time_step_seconds)}s"
     if surface_flux_mode == "disabled":
         return (
             f"{duration}__{horizontal_cell_count}__{domain_size}__{output_cadence}"
-            f"__{diagnostic_set}__surface_fluxes_disabled"
+            f"__{diagnostic_set}__surface_fluxes_disabled{timestep_suffix}"
         )
     return (
         f"{duration}__{horizontal_cell_count}__{domain_size}__{output_cadence}"
         f"__{diagnostic_set}__shflx_{_flux_id(surface_heat_flux_k_m_s)}"
-        f"__qflx_{_flux_id(surface_moisture_flux_g_g_m_s)}"
+        f"__qflx_{_flux_id(surface_moisture_flux_g_g_m_s)}{timestep_suffix}"
     )
 
 
@@ -438,6 +466,7 @@ def _configuration_caveats(
     horizontal_cell_count: int,
     domain_size: str,
     surface_flux_caveats: list[str],
+    time_step_seconds: float,
 ) -> list[str]:
     caveats: list[str] = list(surface_flux_caveats)
     if mode == "smoke":
@@ -450,6 +479,8 @@ def _configuration_caveats(
         "regional_120km",
     }:
         caveats.append("configuration_better_suited_to_larger_compute")
+    if not math.isclose(time_step_seconds, DEFAULT_TIME_STEP_SECONDS):
+        caveats.append("non_default_timestep_target_requires_like_for_like_campaign_evidence")
     return caveats
 
 
@@ -524,10 +555,6 @@ def _format_scientific(value: float) -> str:
 
 def _flux_id(value: float) -> str:
     return f"{value:.3e}".replace("+", "").replace("-", "m").replace(".", "p")
-
-
-def _time_step_seconds() -> float:
-    return 3.0
 
 
 def _rayleigh_damping_start_m() -> int:

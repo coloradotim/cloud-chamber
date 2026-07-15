@@ -203,10 +203,12 @@ emitted `hfx` against emitted `hfx` and emitted `qfx` against emitted `qfx`;
 the heat-only, moisture-only, and combined comparison types must all be present;
 and expected directional changes for intentionally varied fluxes must pass
 before the automatic phase gate can move past surface-flux response
-verification. Non-varied flux changes remain informational unless the protocol
-defines field-specific stability tolerances. Unchanged, reversed, incomplete,
-missing, untrusted, mismatched-unit, or structurally non-comparable cases remain
-blocked.
+verification. Matched campaign rows must also keep CM1-facing numerical settings
+such as `time_step_seconds` like-for-like unless timestep is the explicit
+comparison variable. Non-varied flux changes remain informational unless the
+protocol defines field-specific stability tolerances. Unchanged, reversed,
+incomplete, missing, untrusted, mismatched-unit, or structurally non-comparable
+cases remain blocked.
 Low-level response tests should compute backend-owned 0-1 km AGL
 thickness-weighted domain means for `qv` and theta/temperature. They must
 preserve source field names, units, vertical-coordinate method, early-response

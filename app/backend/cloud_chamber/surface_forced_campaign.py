@@ -81,6 +81,7 @@ RUN_CONFIGURATION_KEYS = {
     "diagnostic_set",
     "surface_heat_flux_k_m_s",
     "surface_moisture_flux_g_g_m_s",
+    "time_step_seconds",
 }
 KNOWN_STATUS_VALUES = {
     "planned",
@@ -154,6 +155,7 @@ SUPPORTED_REQUIRED_SUMMARY_FIELDS = {
     "dz_bot_m",
     "dz_top_m",
     "model_top_m",
+    "time_step_seconds",
     "output_cadence",
     "expected_output_volume",
     "cloud_chamber_commit",
@@ -261,6 +263,7 @@ MATRIX_CONTEXT_FIELDS = {
     "cm1_cnst_shflx",
     "cm1_cnst_lhflx",
     "runtime_seconds",
+    "time_step_seconds",
     "expected_output_frames",
     "expected_output_volume",
 }
@@ -2051,6 +2054,7 @@ def _summary_for_plan_run(run: CampaignRunPlan, state: CampaignState) -> dict[st
         "dz_bot_m": run.cm1_values.get("dz_bot_m"),
         "dz_top_m": run.cm1_values.get("dz_top_m"),
         "model_top_m": run.cm1_values.get("model_top_m"),
+        "time_step_seconds": run.cm1_values.get("time_step_seconds"),
         "output_cadence": run.run_configuration["output_cadence"],
         "expected_output_frames": run.cm1_values.get("expected_output_frames"),
         "expected_output_volume": run.resolved_run_configuration.get("output_volume_summary"),
@@ -4246,7 +4250,10 @@ def _forcing_label(run: Mapping[str, Any]) -> str:
 
 
 def _grid_label(run: Mapping[str, Any]) -> str:
-    return f"{run.get('domain_size')} {run.get('horizontal_cell_count')} dx {run.get('dx_m')} m"
+    return (
+        f"{run.get('domain_size')} {run.get('horizontal_cell_count')} "
+        f"dx {run.get('dx_m')} m; dtl {run.get('time_step_seconds')} s"
+    )
 
 
 def _key_result_label(run: Mapping[str, Any]) -> str:
