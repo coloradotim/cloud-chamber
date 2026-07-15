@@ -8,6 +8,8 @@ Primary report: `docs/research/surface-forced-campaigns/surface_forced_tall_002.
 
 Prior investigation: `docs/research/surface-forced-campaigns/surface_forced_tall_002_terminal_failure.md`
 
+Follow-up probe: `docs/research/surface-forced-campaigns/surface_forced_tall_002_lower_timestep_restart_probe.md`
+
 ## Summary
 
 The existing artifacts are sufficient to choose the next rerun path, but they
@@ -20,10 +22,11 @@ statistics record is `21480 s`; stdout narrows the visible collapse to between
 `357.182 min` and `357.234 min`; the final `21600 s` output frame contains
 terminal multi-field non-finite contamination.
 
-The most defensible next action is a targeted default-control numerical
-diagnosis, not Phase 2/3 and not differential forcing. If any material numerical
-setting is changed to stabilize the default control, the campaign evidence must
-come from a new four-row Phase 1 matrix, `surface_forced_tall_003`.
+The completed lower-timestep restart probe supports the targeted numerical
+diagnosis path. It crossed the old failure interval and finished cleanly, but it
+changed a material numerical setting and used a restart shortcut. Therefore the
+campaign evidence must come from a new four-row Phase 1 matrix,
+`surface_forced_tall_003`, not from patching `surface_forced_tall_002`.
 
 ## Artifact Scope
 
@@ -239,22 +242,23 @@ numerical configuration.
 
 ### Step 1: Targeted default-control numerical diagnosis
 
-Run only the default-control member while varying the smallest number of
-numerical assumptions needed to test stability. The preferred first probe is a
-timestep-focused variant:
+Completed as a diagnostic restart probe. The lower adaptive timestep-target
+variant used:
 
 ```text
 same sounding
 same forcing values
 same domain/grid/output fields
 same microphysics/turbulence/surface model
-lower dtl target, for example 1.0 s
+dtl target lowered from 3.0 s to 1.0 s
 adaptive timestep still enabled
 ```
 
-If a restart-from-`10800 s` path is operationally safe, it can be used as a
-diagnostic shortcut. The result should not be treated as campaign evidence until
-it is rerun from the same initial conditions used by the matrix.
+It restarted from `10800 s`, crossed the previous `357.182-357.234 min` collapse
+window with finite CFL/ks diagnostics, wrote finite saved output through
+`21600 s`, and produced no invalid/divide-by-zero/overflow stderr flags. It
+should not be treated as campaign evidence until it is rerun from the same
+initial conditions used by the matrix.
 
 If the lower-timestep default control still fails, the next diagnostic probes
 should be considered in this order:
@@ -268,22 +272,18 @@ Each probe must record exactly which numerical settings changed and must keep
 surface forcing, sounding, domain, grid, output cadence, and required fields
 fixed.
 
-### Step 2: Decide campaign rerun scope
+### Step 2: Campaign rerun scope
 
-If the default control is fixed without changing material numerical settings,
-regenerate or rerun only the default-control row and reevaluate the existing
-Phase 1 gate.
-
-If any material numerical setting changes, including `dtl`, `idiff`, diffusion
-coefficient, turbulence configuration, solver, damping, or microphysics, do not
-compare the stabilized default control against the old comparator rows as
-campaign evidence. Create:
+The probe changed `dtl`, a material numerical setting. Do not compare the
+stabilized default-control probe against the old comparator rows as campaign
+evidence. Create:
 
 ```text
 surface_forced_tall_003
 ```
 
-and rerun the four Phase 1 rows under the same updated assumptions:
+and rerun the four Phase 1 rows from cold start under the same updated
+assumptions:
 
 ```text
 default
@@ -307,14 +307,15 @@ no terminal multi-field contamination
 ## #318 Update
 
 #318 should continue to classify the current campaign as blocked. The update
-from this diagnosis is:
+from this diagnosis and the follow-up lower-timestep restart probe is:
 
 ```text
 The default-control failure is reproducible in existing _001 and _002 artifacts,
 is upstream of ingest, and is most consistent with a localized late-run CM1
 runtime-integrity failure around the surface-layer/moisture/turbulence path.
-The next action is a targeted default-control numerical diagnosis, beginning
-with a lower-timestep probe. Any material numerical-setting change requires a
-new four-row surface_forced_tall_003 Phase 1 matrix before Phase 2 evidence is
-trusted.
+The lower-timestep restart probe crossed the old failure interval and completed
+with finite saved output and no stats sentinels, which strongly implicates the
+timestep/numerical path. Because the probe changed dtl and used a restart, the
+next campaign action is a cold-start four-row surface_forced_tall_003 Phase 1
+matrix before Phase 2 evidence is trusted.
 ```
