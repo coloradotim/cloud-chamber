@@ -288,7 +288,7 @@ required_outputs:
     - max_surface_rain
     - max_dbz
 current_support:
-  status: runtime_unvalidated
+  status: local_footprint_smoke_validated
   caveats:
     - The v0 patch is centered, circular, and idealized.
     - It is not a real land-surface, soil-moisture, vegetation, radiation,
@@ -296,12 +296,13 @@ current_support:
     - Cloud Chamber copies the local external CM1 source tree into an isolated
       runtime build tree, patches that copy, rebuilds CM1, and launches the
       copied custom executable.
-    - Differential surface forcing is local-only until trusted LAN worker source
-      customization and custom-executable provenance are implemented.
+    - Differential surface forcing is local-only; LAN worker source
+      customization remains unsupported.
     - Missing, malformed, or hash-mismatched patch files block the run rather
       than silently falling back to uniform forcing.
-    - This path still requires a real CM1 compile and emitted forcing-footprint
-      smoke test before it can be treated as #307-complete.
+    - A runtime-local CM1 compile plus emitted hfx/qfx forcing-footprint smoke
+      has verified the v0 local execution path, but #307 still needs
+      localized-response diagnostics before closure.
     - Surface-driven convergence, localized updrafts, coherent cloud growth,
       rain-water aloft, surface rain, and reflectivity remain diagnostics to
       inspect, not guaranteed outcomes.

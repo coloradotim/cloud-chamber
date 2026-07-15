@@ -170,6 +170,11 @@ class LocalRunManager:
             if source_customization is not None
             else self._settings.cm1_run_dir / "cm1.exe"
         )
+        source_customization_status = (
+            _read_source_customization_status(source_customization.status_path)
+            if source_customization is not None
+            else None
+        )
         command = [str(executable)]
         log_dir = run_dir / "logs"
         log_dir.mkdir(parents=True, exist_ok=True)
@@ -183,6 +188,7 @@ class LocalRunManager:
             command=command,
             stdout_log=stdout_log,
             stderr_log=stderr_log,
+            cm1_source_customization_status=source_customization_status,
         )
         write_run_manifest(manifest_path, queued)
 
@@ -297,6 +303,7 @@ class LocalRunManager:
         exit_code: int | None = None,
         validation_status: ValidationStatus | None = None,
         outputs: OutputMetadata | None = None,
+        cm1_source_customization_status: dict[str, object] | None = None,
     ) -> RunManifest:
         now = datetime.now(UTC)
         existing_execution = manifest.execution
@@ -344,6 +351,11 @@ class LocalRunManager:
                 "execution": ExecutionMetadata.model_validate(execution.model_dump()),
                 "outputs": outputs or manifest.outputs,
                 "provenance": ProvenanceMetadata(product_state=product_state),
+                "cm1_source_customization_status": (
+                    cm1_source_customization_status
+                    if cm1_source_customization_status is not None
+                    else manifest.cm1_source_customization_status
+                ),
                 "updated_at": now,
             }
         )
@@ -361,6 +373,20 @@ def _status_from_manifest(manifest: RunManifest, manifest_path: Path) -> RunStat
         stderr_log=stderr_log,
         exit_code=manifest.execution.exit_code,
     )
+
+
+def _read_source_customization_status(path: Path) -> dict[str, object]:
+    try:
+        loaded = json.loads(path.read_text())
+    except (OSError, json.JSONDecodeError) as exc:
+        raise LocalRunManagerError(
+            f"Unable to read applied CM1 source customization status: {path}"
+        ) from exc
+    if not isinstance(loaded, dict):
+        raise LocalRunManagerError(
+            f"Applied CM1 source customization status is not an object: {path}"
+        )
+    return loaded
 
 
 def reconcile_completed_run_manifest(

@@ -67,6 +67,34 @@ def complete_manifest(
     write_run_manifest(manifest_path, updated)
 
 
+def test_ingest_preserves_cm1_source_customization_status(tmp_path: Path) -> None:
+    manifest_path = create_manifest(tmp_path, run_id="run-custom-source")
+    run_dir = manifest_path.parent
+    output_path = run_dir / "cm1out_000001.nc"
+    write_model_netcdf(
+        output_path,
+        times=[0.0],
+        qc_values=[0.0],
+        w_values=[0.0],
+    )
+    complete_manifest(manifest_path, OutputMetadata(netcdf_paths=[str(output_path)]))
+    status = {
+        "schema_version": "cm1_source_customization_status_v0",
+        "surface_flux_mode": "differential_surface_forcing_patch_v0",
+        "custom_executable_sha256": "abc123",
+        "source_restored_after_build": "not_modified_isolated_build_tree",
+    }
+    manifest = load_run_manifest(manifest_path)
+    write_run_manifest(
+        manifest_path,
+        manifest.model_copy(update={"cm1_source_customization_status": status}),
+    )
+
+    result = ingest_completed_run(manifest_path)
+
+    assert result.cm1_source_customization_status == status
+
+
 def write_tiny_netcdf(
     path: Path,
     *,

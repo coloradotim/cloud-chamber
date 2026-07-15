@@ -313,6 +313,8 @@ def test_launch_applies_differential_surface_source_customization_before_cm1(
     assert status_payload["source_restored_after_build"] == "not_modified_isolated_build_tree"
     assert status_payload["custom_executable"] == str(custom_executable)
     assert status_payload["custom_executable_sha256"]
+    launched_manifest = load_run_manifest(manifest_path)
+    assert launched_manifest.cm1_source_customization_status == status_payload
     assert SFCPHYS_MARKER not in (cm1_root / "src" / "sfcphys.F").read_text()
     assert custom_executable.exists()
 
