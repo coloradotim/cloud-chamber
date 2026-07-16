@@ -194,9 +194,12 @@ land-surface, GIS, or radiation model. Its initial v0 geometry is a centered
 circular patch. It is local-only; the external CM1 source customization path has
 runtime-local compile and emitted hfx/qfx forcing-footprint smoke evidence, but
 matched dynamic-response validation remains the #307 closure gate. Results carry
-per-run localized-response diagnostics for emitted footprint, convergence when
-u/v are available, and patch-to-updraft/cloud/rain/reflectivity distance
-metrics. Short science configurations must still run long
+per-run localized diagnostic availability for emitted footprint regions
+(core/taper/background), convergence when physical u/v coordinates are
+available, and instantaneous patch-to-updraft/cloud/rain/reflectivity distance
+metrics with field-quality state. These are not causal response verdicts until
+matched uniform-versus-patch comparisons define persistence and directional
+criteria. Short science configurations must still run long
 enough to be meteorologically useful. Build should show expected cost, runtime,
 and output volume, and note when a configuration is better suited to larger
 compute instead of making machine choice the primary product axis.

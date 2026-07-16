@@ -322,20 +322,40 @@ class PatchSpatialFieldDiagnostics(BaseModel):
     available: bool = False
     field_absent: bool = True
     units: str | None = None
+    quality_state: FieldQualityState = "unavailable"
+    quality_reason: str | None = None
+    finite_count: int = 0
+    non_finite_count: int = 0
+    total_count: int = 0
+    finite_fraction: float | None = None
+    time_index: int | None = None
     time_seconds: float | None = None
+    time_selection_method: str = "field_maximum_time"
+    vertical_coordinate_name: str | None = None
+    vertical_level_index: int | None = None
+    vertical_level_height_m: float | None = None
     max_value: float | None = None
     max_x_m: float | None = None
     max_y_m: float | None = None
     max_distance_from_patch_center_m: float | None = None
     max_inside_patch_radius: bool | None = None
+    max_region: str | None = None
     center_value: float | None = None
+    core_mean: float | None = None
+    taper_mean: float | None = None
+    background_mean: float | None = None
+    center_to_background_ratio: float | None = None
+    core_to_background_ratio: float | None = None
+    core_finite_count: int = 0
+    taper_finite_count: int = 0
+    background_finite_count: int = 0
     inside_patch_mean: float | None = None
     outside_patch_mean: float | None = None
     center_to_outside_ratio: float | None = None
     inside_finite_count: int = 0
     outside_finite_count: int = 0
     total_finite_count: int = 0
-    method: str = "patch_centered_spatial_max_and_inside_outside_mean"
+    method: str = "patch_center_core_taper_background_spatial_summary"
     geometry_note: str = "centered_circle_with_raised_cosine_edge_taper_v0"
     caveats: list[str] = Field(default_factory=list)
 
@@ -344,14 +364,34 @@ class PatchConvergenceDiagnostics(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     available: bool = False
-    source_fields: list[str] = Field(default_factory=lambda: ["u", "v"])
+    source_fields: list[str] = Field(default_factory=list)
     units: str = "s^-1"
+    quality_state: FieldQualityState = "unavailable"
+    quality_reason: str | None = None
+    finite_count: int = 0
+    non_finite_count: int = 0
+    total_count: int = 0
+    finite_fraction: float | None = None
+    time_index: int | None = None
     time_seconds: float | None = None
+    time_selection_method: str = "maximum_finite_convergence_time"
+    vertical_coordinate_name: str | None = None
+    vertical_level_index: int | None = None
+    vertical_level_height_m: float | None = None
     max_convergence_s_1: float | None = None
     max_convergence_x_m: float | None = None
     max_convergence_y_m: float | None = None
     max_convergence_distance_from_patch_center_m: float | None = None
     max_convergence_inside_patch_radius: bool | None = None
+    max_convergence_region: str | None = None
+    max_convergence_time_series: list[TimeValue] = Field(default_factory=list)
+    core_mean_convergence_s_1: float | None = None
+    taper_mean_convergence_s_1: float | None = None
+    background_mean_convergence_s_1: float | None = None
+    core_to_background_convergence_ratio: float | None = None
+    core_finite_count: int = 0
+    taper_finite_count: int = 0
+    background_finite_count: int = 0
     inside_patch_mean_convergence_s_1: float | None = None
     outside_patch_mean_convergence_s_1: float | None = None
     method: str = "lowest_level_collocated_finite_difference_negative_divergence"
@@ -647,13 +687,14 @@ def compute_baseline_diagnostics(
     reflectivity = _reflectivity_diagnostics(dataset, time_context, caveats)
     surface_fluxes = _surface_flux_diagnostics(dataset, time_context, caveats)
     low_level_response = _low_level_response_diagnostics(dataset, time_context, caveats)
+    field_quality = _field_quality_map(dataset, time_context)
     localized_response = _localized_response_diagnostics(
         dataset,
         time_context,
         run_configuration=run_configuration,
+        field_quality=field_quality,
         caveats=caveats,
     )
-    field_quality = _field_quality_map(dataset, time_context)
     return ResultDiagnostics(
         cloud=cloud,
         vertical_velocity=vertical_velocity,
@@ -719,6 +760,14 @@ FIELD_QUALITY_SOURCES = {
 def _field_quality_map(dataset: Any, time: _TimeContext) -> dict[str, FieldQuality]:
     quality_sources = dict(FIELD_QUALITY_SOURCES)
     for field in HYDROMETEOR_CLOUD_TOP_FIELDS:
+        if field in dataset.data_vars:
+            quality_sources[field] = {
+                "source_field": field,
+                "missing": f"{field}_field_absent",
+                "partial": f"non_finite_values_detected_in_{field}",
+                "entire": f"{field}_field_entirely_non_finite",
+            }
+    for field in ("uinterp", "vinterp", "u", "v"):
         if field in dataset.data_vars:
             quality_sources[field] = {
                 "source_field": field,
@@ -1006,6 +1055,15 @@ class _TimeContext(BaseModel):
         if index < len(self.values):
             return self.values[index]
         return float(index)
+
+
+class _VerticalSelection(BaseModel):
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
+    array: Any
+    coordinate_name: str | None = None
+    index: int | None = None
+    height_m: float | None = None
 
 
 def _cloud_diagnostics(dataset: Any, time: _TimeContext, caveats: list[str]) -> CloudDiagnostics:
@@ -1424,6 +1482,7 @@ def _localized_response_diagnostics(
     time: _TimeContext,
     *,
     run_configuration: Mapping[str, Any] | None,
+    field_quality: Mapping[str, FieldQuality],
     caveats: list[str],
 ) -> LocalizedResponseDiagnostics:
     patch_payload = _surface_forcing_patch_payload(run_configuration)
@@ -1448,23 +1507,25 @@ def _localized_response_diagnostics(
         )
 
     local_caveats: list[str] = []
-    hfx = _patch_spatial_field_diagnostics(dataset, "hfx", time, geometry)
-    qfx = _patch_spatial_field_diagnostics(dataset, "qfx", time, geometry)
-    convergence = _patch_convergence_diagnostics(dataset, time, geometry)
+    hfx = _patch_spatial_field_diagnostics(dataset, "hfx", time, geometry, field_quality)
+    qfx = _patch_spatial_field_diagnostics(dataset, "qfx", time, geometry, field_quality)
+    convergence = _patch_convergence_diagnostics(dataset, time, geometry, field_quality)
     updraft = _patch_spatial_field_diagnostics(
         dataset,
         "w",
         time,
         geometry,
+        field_quality,
         vertical="max",
         prefer="max",
-        minimum_signal=0.0,
+        minimum_signal=MEANINGFUL_UPDRAFT_THRESHOLD_M_S,
     )
     cloud_water = _patch_spatial_field_diagnostics(
         dataset,
         "qc",
         time,
         geometry,
+        field_quality,
         vertical="max",
         prefer="max",
         minimum_signal=QC_CLOUD_THRESHOLD_KG_KG,
@@ -1474,6 +1535,7 @@ def _localized_response_diagnostics(
         "qr",
         time,
         geometry,
+        field_quality,
         vertical="max",
         prefer="max",
         minimum_signal=QR_RAIN_THRESHOLD_KG_KG,
@@ -1483,6 +1545,7 @@ def _localized_response_diagnostics(
         "rain",
         time,
         geometry,
+        field_quality,
         minimum_signal=0.0,
     )
     reflectivity = _patch_spatial_field_diagnostics(
@@ -1490,6 +1553,7 @@ def _localized_response_diagnostics(
         "dbz",
         time,
         geometry,
+        field_quality,
         vertical="max",
         prefer="max",
         minimum_signal=0.0,
@@ -1519,9 +1583,9 @@ def _localized_response_diagnostics(
         )
     )
     if emitted_footprint_available and response_available:
-        support_state = "supported"
+        support_state = "footprint_and_response_diagnostics_available"
     elif emitted_footprint_available:
-        support_state = "footprint_supported_response_unavailable"
+        support_state = "footprint_available_response_diagnostics_limited"
     else:
         support_state = "unavailable_missing_emitted_surface_flux_fields"
 
@@ -1573,16 +1637,34 @@ def _patch_spatial_field_diagnostics(
     field: str,
     time: _TimeContext,
     geometry: DifferentialPatchGeometryDiagnostics,
+    field_quality: Mapping[str, FieldQuality],
     *,
     vertical: Literal["none", "lowest", "max"] = "none",
     prefer: Literal["max", "min"] = "max",
     minimum_signal: float | None = None,
 ) -> PatchSpatialFieldDiagnostics:
+    quality = _localized_field_quality(field, field_quality)
     if field not in dataset.data_vars:
         return PatchSpatialFieldDiagnostics(
             source_field=field,
             field_absent=True,
+            quality_state="unavailable",
+            quality_reason=f"{field}_field_absent",
             caveats=[f"{field}_localized_response_field_absent"],
+        )
+    quality_caveats = _localized_quality_caveats(field, quality)
+    if quality is not None and quality.quality_state == "untrusted":
+        return PatchSpatialFieldDiagnostics(
+            source_field=field,
+            field_absent=False,
+            units=_attr_string(dataset[field], "units"),
+            quality_state=quality.quality_state,
+            quality_reason=quality.reason,
+            finite_count=quality.finite_count,
+            non_finite_count=quality.non_finite_count,
+            total_count=quality.total_count,
+            finite_fraction=quality.finite_fraction,
+            caveats=_dedupe([*quality_caveats, f"{field}_localized_response_untrusted_field"]),
         )
     data_array = dataset[field]
     x_name = _first_present(("x", "xh", "lon", "i"), list(data_array.dims))
@@ -1592,7 +1674,12 @@ def _patch_spatial_field_diagnostics(
             source_field=field,
             field_absent=False,
             units=_attr_string(data_array, "units"),
-            caveats=[f"{field}_localized_response_missing_horizontal_dimensions"],
+            quality_state=_localized_quality_state(quality),
+            quality_reason=_localized_quality_reason(quality),
+            caveats=[
+                *quality_caveats,
+                f"{field}_localized_response_missing_horizontal_dimensions",
+            ],
         )
 
     time_index = _time_index_for_field_max(data_array, time, field, prefer=prefer)
@@ -1601,21 +1688,50 @@ def _patch_spatial_field_diagnostics(
             source_field=field,
             field_absent=False,
             units=_attr_string(data_array, "units"),
-            caveats=[f"{field}_localized_response_no_finite_values"],
+            quality_state=_localized_quality_state(quality),
+            quality_reason=_localized_quality_reason(quality),
+            caveats=[*quality_caveats, f"{field}_localized_response_no_finite_values"],
         )
     array = _select_time_slice(data_array, time.dimension, time_index)
-    array = _select_vertical_for_localized_response(array, vertical=vertical, prefer=prefer)
+    vertical_selection = _select_vertical_for_localized_response(
+        array, vertical=vertical, prefer=prefer
+    )
+    array = vertical_selection.array
     if x_name not in array.dims or y_name not in array.dims:
         return PatchSpatialFieldDiagnostics(
             source_field=field,
             field_absent=False,
             units=_attr_string(data_array, "units"),
+            quality_state=_localized_quality_state(quality),
+            quality_reason=_localized_quality_reason(quality),
+            time_index=time_index,
             time_seconds=time.at(time_index),
-            caveats=[f"{field}_localized_response_horizontal_slice_unavailable"],
+            vertical_coordinate_name=vertical_selection.coordinate_name,
+            vertical_level_index=vertical_selection.index,
+            vertical_level_height_m=vertical_selection.height_m,
+            caveats=[
+                *quality_caveats,
+                f"{field}_localized_response_horizontal_slice_unavailable",
+            ],
         )
 
-    x_values = _horizontal_values(array, x_name)
-    y_values = _horizontal_values(array, y_name)
+    x_values, x_caveat = _horizontal_values(array, x_name)
+    y_values, y_caveat = _horizontal_values(array, y_name)
+    coordinate_caveats = [caveat for caveat in (x_caveat, y_caveat) if caveat]
+    if x_values is None or y_values is None:
+        return PatchSpatialFieldDiagnostics(
+            source_field=field,
+            field_absent=False,
+            units=_attr_string(data_array, "units"),
+            quality_state=_localized_quality_state(quality),
+            quality_reason=_localized_quality_reason(quality),
+            time_index=time_index,
+            time_seconds=time.at(time_index),
+            vertical_coordinate_name=vertical_selection.coordinate_name,
+            vertical_level_index=vertical_selection.index,
+            vertical_level_height_m=vertical_selection.height_m,
+            caveats=_dedupe([*quality_caveats, *coordinate_caveats]),
+        )
     cells = _horizontal_cells(
         array,
         x_name=x_name,
@@ -1623,13 +1739,26 @@ def _patch_spatial_field_diagnostics(
         x_values=x_values,
         y_values=y_values,
     )
+    total_count = int(array.sizes[x_name]) * int(array.sizes[y_name])
+    finite_count = len(cells)
+    non_finite_count = max(0, total_count - finite_count)
     if not cells:
         return PatchSpatialFieldDiagnostics(
             source_field=field,
             field_absent=False,
             units=_attr_string(data_array, "units"),
+            quality_state=_localized_quality_state(quality),
+            quality_reason=_localized_quality_reason(quality),
+            finite_count=finite_count,
+            non_finite_count=non_finite_count,
+            total_count=total_count,
+            finite_fraction=_finite_fraction(finite_count, total_count),
+            time_index=time_index,
             time_seconds=time.at(time_index),
-            caveats=[f"{field}_localized_response_no_finite_horizontal_values"],
+            vertical_coordinate_name=vertical_selection.coordinate_name,
+            vertical_level_index=vertical_selection.index,
+            vertical_level_height_m=vertical_selection.height_m,
+            caveats=[*quality_caveats, f"{field}_localized_response_no_finite_horizontal_values"],
         )
 
     best = (
@@ -1642,13 +1771,24 @@ def _patch_spatial_field_diagnostics(
             source_field=field,
             field_absent=False,
             units=_attr_string(data_array, "units"),
+            quality_state=_localized_quality_state(quality),
+            quality_reason=_localized_quality_reason(quality),
+            finite_count=finite_count,
+            non_finite_count=non_finite_count,
+            total_count=total_count,
+            finite_fraction=_finite_fraction(finite_count, total_count),
+            time_index=time_index,
             time_seconds=time.at(time_index),
+            vertical_coordinate_name=vertical_selection.coordinate_name,
+            vertical_level_index=vertical_selection.index,
+            vertical_level_height_m=vertical_selection.height_m,
             max_value=best[2],
             total_finite_count=len(cells),
-            caveats=[f"{field}_localized_response_no_signal_above_threshold"],
+            caveats=[*quality_caveats, f"{field}_localized_response_no_signal_above_threshold"],
         )
-    inside_values: list[float] = []
-    outside_values: list[float] = []
+    core_values: list[float] = []
+    taper_values: list[float] = []
+    background_values: list[float] = []
     center_value: float | None = None
     center_distance: float | None = None
     for x_value, y_value, value in cells:
@@ -1656,32 +1796,60 @@ def _patch_spatial_field_diagnostics(
         if center_distance is None or distance < center_distance:
             center_distance = distance
             center_value = value
-        if _inside_patch_radius(x_value, y_value, geometry):
-            inside_values.append(value)
+        region = _patch_region(x_value, y_value, geometry)
+        if region == "core":
+            core_values.append(value)
+        elif region == "taper":
+            taper_values.append(value)
         else:
-            outside_values.append(value)
+            background_values.append(value)
 
-    outside_mean = _mean(outside_values)
+    background_mean = _mean(background_values)
+    core_mean = _mean(core_values)
     return PatchSpatialFieldDiagnostics(
         source_field=field,
         available=True,
         field_absent=False,
         units=_attr_string(data_array, "units"),
+        quality_state=_localized_quality_state(quality),
+        quality_reason=_localized_quality_reason(quality),
+        finite_count=finite_count,
+        non_finite_count=non_finite_count,
+        total_count=total_count,
+        finite_fraction=_finite_fraction(finite_count, total_count),
+        time_index=time_index,
         time_seconds=time.at(time_index),
+        vertical_coordinate_name=vertical_selection.coordinate_name,
+        vertical_level_index=vertical_selection.index,
+        vertical_level_height_m=vertical_selection.height_m,
         max_value=best[2],
         max_x_m=best[0],
         max_y_m=best[1],
         max_distance_from_patch_center_m=_patch_distance(best[0], best[1], geometry),
         max_inside_patch_radius=_inside_patch_radius(best[0], best[1], geometry),
+        max_region=_patch_region(best[0], best[1], geometry),
         center_value=center_value,
-        inside_patch_mean=_mean(inside_values),
-        outside_patch_mean=outside_mean,
-        center_to_outside_ratio=(
-            center_value / outside_mean if center_value is not None and outside_mean else None
+        core_mean=core_mean,
+        taper_mean=_mean(taper_values),
+        background_mean=background_mean,
+        center_to_background_ratio=(
+            center_value / background_mean if center_value is not None and background_mean else None
         ),
-        inside_finite_count=len(inside_values),
-        outside_finite_count=len(outside_values),
+        core_to_background_ratio=(
+            core_mean / background_mean if core_mean is not None and background_mean else None
+        ),
+        core_finite_count=len(core_values),
+        taper_finite_count=len(taper_values),
+        background_finite_count=len(background_values),
+        inside_patch_mean=core_mean,
+        outside_patch_mean=background_mean,
+        center_to_outside_ratio=(
+            center_value / background_mean if center_value is not None and background_mean else None
+        ),
+        inside_finite_count=len(core_values),
+        outside_finite_count=len(background_values),
         total_finite_count=len(cells),
+        caveats=quality_caveats,
     )
 
 
@@ -1689,6 +1857,7 @@ def _patch_convergence_diagnostics(
     dataset: Any,
     time: _TimeContext,
     geometry: DifferentialPatchGeometryDiagnostics,
+    field_quality: Mapping[str, FieldQuality],
 ) -> PatchConvergenceDiagnostics:
     wind_fields = _localized_convergence_wind_fields(dataset)
     if wind_fields is None:
@@ -1696,77 +1865,177 @@ def _patch_convergence_diagnostics(
             caveats=["localized_response_convergence_requires_u_and_v_fields"]
         )
     u, v = wind_fields
+    source_fields = [str(u.name or "u"), str(v.name or "v")]
+    source_qualities = [
+        quality
+        for source_field in source_fields
+        if (quality := field_quality.get(source_field)) is not None
+    ]
+    quality_state = _combined_quality_state(source_qualities)
+    quality_reason = _combined_quality_reason(source_qualities)
+    quality_caveats = _combined_quality_caveats(source_qualities)
+    if any(quality.quality_state == "untrusted" for quality in source_qualities):
+        return PatchConvergenceDiagnostics(
+            source_fields=source_fields,
+            quality_state=quality_state,
+            quality_reason=quality_reason,
+            finite_count=sum(quality.finite_count for quality in source_qualities),
+            non_finite_count=sum(quality.non_finite_count for quality in source_qualities),
+            total_count=sum(quality.total_count for quality in source_qualities),
+            finite_fraction=_finite_fraction(
+                sum(quality.finite_count for quality in source_qualities),
+                sum(quality.total_count for quality in source_qualities),
+            ),
+            caveats=_dedupe(
+                [*quality_caveats, "localized_response_convergence_untrusted_wind_field"]
+            ),
+        )
     if u.dims != v.dims:
         return PatchConvergenceDiagnostics(
-            caveats=["localized_response_convergence_u_v_dimension_mismatch"]
+            source_fields=source_fields,
+            quality_state=quality_state,
+            quality_reason=quality_reason,
+            caveats=["localized_response_convergence_u_v_dimension_mismatch"],
         )
     x_name = _first_present(("x", "xh", "lon", "i"), list(u.dims))
     y_name = _first_present(("y", "yh", "lat", "j"), list(u.dims))
     if x_name is None or y_name is None:
         return PatchConvergenceDiagnostics(
-            caveats=["localized_response_convergence_missing_horizontal_dimensions"]
+            source_fields=source_fields,
+            quality_state=quality_state,
+            quality_reason=quality_reason,
+            caveats=["localized_response_convergence_missing_horizontal_dimensions"],
         )
-    time_index = _time_index_for_field_max(u, time, "u", prefer="max")
-    if time_index is None:
-        return PatchConvergenceDiagnostics(caveats=["u_localized_response_no_finite_values"])
-    u_slice = _select_vertical_for_localized_response(
-        _select_time_slice(u, time.dimension, time_index),
-        vertical="lowest",
-        prefer="max",
-    )
-    v_slice = _select_vertical_for_localized_response(
-        _select_time_slice(v, time.dimension, time_index),
-        vertical="lowest",
-        prefer="max",
-    )
-    x_values = _horizontal_values(u_slice, x_name)
-    y_values = _horizontal_values(u_slice, y_name)
-    if len(x_values) < 3 or len(y_values) < 3:
+
+    selected: (
+        tuple[int, tuple[float, float, float], list[tuple[float, float, float]], _VerticalSelection]
+        | None
+    ) = None
+    max_time_series: list[TimeValue] = []
+    selected_counts: tuple[int, int] = (0, 0)
+    coordinate_caveats: list[str] = []
+    for time_index, u_time_slice in enumerate(_time_slices(u, time.dimension)):
+        v_time_slice = _select_time_slice(v, time.dimension, time_index)
+        u_selection = _select_vertical_for_localized_response(
+            u_time_slice,
+            vertical="lowest",
+            prefer="max",
+        )
+        v_selection = _select_vertical_for_localized_response(
+            v_time_slice,
+            vertical="lowest",
+            prefer="max",
+        )
+        x_values, x_caveat = _horizontal_values(u_selection.array, x_name)
+        y_values, y_caveat = _horizontal_values(u_selection.array, y_name)
+        coordinate_caveats = [caveat for caveat in (x_caveat, y_caveat) if caveat]
+        if x_values is None or y_values is None:
+            return PatchConvergenceDiagnostics(
+                source_fields=source_fields,
+                quality_state=quality_state,
+                quality_reason=quality_reason,
+                time_index=time_index,
+                time_seconds=time.at(time_index),
+                vertical_coordinate_name=u_selection.coordinate_name,
+                vertical_level_index=u_selection.index,
+                vertical_level_height_m=u_selection.height_m,
+                caveats=_dedupe([*quality_caveats, *coordinate_caveats]),
+            )
+        if len(x_values) < 3 or len(y_values) < 3:
+            return PatchConvergenceDiagnostics(
+                source_fields=source_fields,
+                quality_state=quality_state,
+                quality_reason=quality_reason,
+                time_index=time_index,
+                time_seconds=time.at(time_index),
+                vertical_coordinate_name=u_selection.coordinate_name,
+                vertical_level_index=u_selection.index,
+                vertical_level_height_m=u_selection.height_m,
+                caveats=[
+                    *quality_caveats,
+                    "localized_response_convergence_requires_at_least_3x3_horizontal_grid",
+                ],
+            )
+        convergence_cells, finite_count, total_count = _convergence_cells(
+            u_selection.array,
+            v_selection.array,
+            x_name=x_name,
+            y_name=y_name,
+            x_values=x_values,
+            y_values=y_values,
+        )
+        time_best = max(convergence_cells, key=lambda cell: cell[2]) if convergence_cells else None
+        max_time_series.append(
+            TimeValue(time_seconds=time.at(time_index), value=time_best[2] if time_best else None)
+        )
+        if time_best is not None and (selected is None or time_best[2] > selected[1][2]):
+            selected = (time_index, time_best, convergence_cells, u_selection)
+            selected_counts = (finite_count, total_count)
+
+    if selected is None:
         return PatchConvergenceDiagnostics(
-            time_seconds=time.at(time_index),
-            caveats=["localized_response_convergence_requires_at_least_3x3_horizontal_grid"],
+            source_fields=source_fields,
+            quality_state=quality_state,
+            quality_reason=quality_reason,
+            max_convergence_time_series=max_time_series,
+            caveats=[
+                *quality_caveats,
+                "localized_response_convergence_no_finite_collocated_values",
+            ],
         )
-    convergence_cells: list[tuple[float, float, float]] = []
-    for y_index in range(1, len(y_values) - 1):
-        for x_index in range(1, len(x_values) - 1):
-            u_left = _array_value_2d(u_slice, x_name, y_name, x_index - 1, y_index)
-            u_right = _array_value_2d(u_slice, x_name, y_name, x_index + 1, y_index)
-            v_down = _array_value_2d(v_slice, x_name, y_name, x_index, y_index - 1)
-            v_up = _array_value_2d(v_slice, x_name, y_name, x_index, y_index + 1)
-            if None in {u_left, u_right, v_down, v_up}:
-                continue
-            dx = x_values[x_index + 1] - x_values[x_index - 1]
-            dy = y_values[y_index + 1] - y_values[y_index - 1]
-            if dx == 0 or dy == 0:
-                continue
-            divergence = ((u_right - u_left) / dx) + ((v_up - v_down) / dy)  # type: ignore[operator]
-            convergence_cells.append((x_values[x_index], y_values[y_index], -divergence))
-    if not convergence_cells:
-        return PatchConvergenceDiagnostics(
-            time_seconds=time.at(time_index),
-            caveats=["localized_response_convergence_no_finite_collocated_values"],
-        )
-    best = max(convergence_cells, key=lambda cell: cell[2])
-    inside_values = [
+
+    time_index, best, convergence_cells, vertical_selection = selected
+    finite_count, total_count = selected_counts
+    core_values = [
         value
         for x_value, y_value, value in convergence_cells
-        if _inside_patch_radius(x_value, y_value, geometry)
+        if _patch_region(x_value, y_value, geometry) == "core"
     ]
-    outside_values = [
+    taper_values = [
         value
         for x_value, y_value, value in convergence_cells
-        if not _inside_patch_radius(x_value, y_value, geometry)
+        if _patch_region(x_value, y_value, geometry) == "taper"
     ]
+    background_values = [
+        value
+        for x_value, y_value, value in convergence_cells
+        if _patch_region(x_value, y_value, geometry) == "background"
+    ]
+    core_mean = _mean(core_values)
+    background_mean = _mean(background_values)
     return PatchConvergenceDiagnostics(
         available=True,
+        source_fields=source_fields,
+        quality_state=quality_state,
+        quality_reason=quality_reason,
+        finite_count=finite_count,
+        non_finite_count=max(0, total_count - finite_count),
+        total_count=total_count,
+        finite_fraction=_finite_fraction(finite_count, total_count),
+        time_index=time_index,
         time_seconds=time.at(time_index),
+        vertical_coordinate_name=vertical_selection.coordinate_name,
+        vertical_level_index=vertical_selection.index,
+        vertical_level_height_m=vertical_selection.height_m,
         max_convergence_s_1=best[2],
         max_convergence_x_m=best[0],
         max_convergence_y_m=best[1],
         max_convergence_distance_from_patch_center_m=_patch_distance(best[0], best[1], geometry),
         max_convergence_inside_patch_radius=_inside_patch_radius(best[0], best[1], geometry),
-        inside_patch_mean_convergence_s_1=_mean(inside_values),
-        outside_patch_mean_convergence_s_1=_mean(outside_values),
+        max_convergence_region=_patch_region(best[0], best[1], geometry),
+        max_convergence_time_series=max_time_series,
+        core_mean_convergence_s_1=core_mean,
+        taper_mean_convergence_s_1=_mean(taper_values),
+        background_mean_convergence_s_1=background_mean,
+        core_to_background_convergence_ratio=(
+            core_mean / background_mean if core_mean is not None and background_mean else None
+        ),
+        core_finite_count=len(core_values),
+        taper_finite_count=len(taper_values),
+        background_finite_count=len(background_values),
+        inside_patch_mean_convergence_s_1=core_mean,
+        outside_patch_mean_convergence_s_1=background_mean,
+        caveats=quality_caveats,
     )
 
 
@@ -2511,12 +2780,17 @@ def _select_vertical_for_localized_response(
     *,
     vertical: Literal["none", "lowest", "max"],
     prefer: Literal["max", "min"],
-) -> Any:
+) -> _VerticalSelection:
     vertical_name = _first_present(VERTICAL_COORDINATE_CANDIDATES, list(data_array.dims))
     if vertical == "none" or vertical_name is None:
-        return data_array
+        return _VerticalSelection(array=data_array)
     if vertical == "lowest":
-        return data_array.isel({vertical_name: 0})
+        return _VerticalSelection(
+            array=data_array.isel({vertical_name: 0}),
+            coordinate_name=vertical_name,
+            index=0,
+            height_m=_localized_vertical_height_m(data_array, vertical_name, 0),
+        )
     best_index = 0
     best_value: float | None = None
     for index in range(int(data_array.sizes[vertical_name])):
@@ -2534,21 +2808,67 @@ def _select_vertical_for_localized_response(
         elif prefer == "min" and value < best_value:
             best_index = index
             best_value = value
-    return data_array.isel({vertical_name: best_index})
+    return _VerticalSelection(
+        array=data_array.isel({vertical_name: best_index}),
+        coordinate_name=vertical_name,
+        index=best_index,
+        height_m=_localized_vertical_height_m(data_array, vertical_name, best_index),
+    )
 
 
-def _horizontal_values(data_array: Any, dimension: str) -> list[float]:
-    if dimension in data_array.coords:
-        coordinate = data_array.coords[dimension]
-        units = _attr_string(coordinate, "units")
-        values = [
-            _height_in_meters(_to_float_or_none(value), units)
-            for value in coordinate.values.tolist()
-        ]
-        if all(value is not None for value in values):
-            return [float(value) for value in values if value is not None]
-    size = int(data_array.sizes[dimension])
-    return [float(index) for index in range(size)]
+def _localized_vertical_height_m(data_array: Any, vertical_name: str, index: int) -> float | None:
+    if vertical_name not in data_array.coords:
+        return None
+    coordinate = data_array.coords[vertical_name]
+    values = coordinate.values.tolist()
+    if index >= len(values):
+        return None
+    return _height_in_meters(_to_float_or_none(values[index]), _attr_string(coordinate, "units"))
+
+
+def _horizontal_values(data_array: Any, dimension: str) -> tuple[list[float] | None, str | None]:
+    if dimension not in data_array.coords:
+        return None, f"localized_response_{dimension}_coordinate_missing"
+    coordinate = data_array.coords[dimension]
+    units = _attr_string(coordinate, "units")
+    if units is None:
+        return None, f"localized_response_{dimension}_coordinate_units_missing"
+    if _normalized_height_units(units) is None:
+        return None, f"localized_response_{dimension}_coordinate_units_not_supported:{units}"
+    values = [
+        _height_in_meters(_to_float_or_none(value), units) for value in coordinate.values.tolist()
+    ]
+    if any(value is None for value in values):
+        return None, f"localized_response_{dimension}_coordinate_values_not_finite"
+    return [float(value) for value in values if value is not None], None
+
+
+def _convergence_cells(
+    u_slice: Any,
+    v_slice: Any,
+    *,
+    x_name: str,
+    y_name: str,
+    x_values: list[float],
+    y_values: list[float],
+) -> tuple[list[tuple[float, float, float]], int, int]:
+    convergence_cells: list[tuple[float, float, float]] = []
+    total_count = max(0, len(x_values) - 2) * max(0, len(y_values) - 2)
+    for y_index in range(1, len(y_values) - 1):
+        for x_index in range(1, len(x_values) - 1):
+            u_left = _array_value_2d(u_slice, x_name, y_name, x_index - 1, y_index)
+            u_right = _array_value_2d(u_slice, x_name, y_name, x_index + 1, y_index)
+            v_down = _array_value_2d(v_slice, x_name, y_name, x_index, y_index - 1)
+            v_up = _array_value_2d(v_slice, x_name, y_name, x_index, y_index + 1)
+            if None in {u_left, u_right, v_down, v_up}:
+                continue
+            dx = x_values[x_index + 1] - x_values[x_index - 1]
+            dy = y_values[y_index + 1] - y_values[y_index - 1]
+            if dx == 0 or dy == 0:
+                continue
+            divergence = ((u_right - u_left) / dx) + ((v_up - v_down) / dy)  # type: ignore[operator]
+            convergence_cells.append((x_values[x_index], y_values[y_index], -divergence))
+    return convergence_cells, len(convergence_cells), total_count
 
 
 def _horizontal_cells(
@@ -2607,6 +2927,87 @@ def _inside_patch_radius(
         geometry.radius_y_m if geometry.radius_y_m is not None else 0.0,
     )
     return radius > 0.0 and _patch_distance(x_m, y_m, geometry) <= radius
+
+
+def _patch_region(
+    x_m: float,
+    y_m: float,
+    geometry: DifferentialPatchGeometryDiagnostics,
+) -> Literal["core", "taper", "background"]:
+    radius = min(
+        geometry.radius_x_m if geometry.radius_x_m is not None else 0.0,
+        geometry.radius_y_m if geometry.radius_y_m is not None else 0.0,
+    )
+    taper_width = geometry.taper_width_m or 0.0
+    distance = _patch_distance(x_m, y_m, geometry)
+    if radius > 0.0 and distance <= radius:
+        return "core"
+    if taper_width > 0.0 and distance <= radius + taper_width:
+        return "taper"
+    return "background"
+
+
+def _localized_field_quality(
+    source_field: str,
+    field_quality: Mapping[str, FieldQuality],
+) -> FieldQuality | None:
+    key = "surface_rain" if source_field == "rain" else source_field
+    return field_quality.get(key)
+
+
+def _localized_quality_state(quality: FieldQuality | None) -> FieldQualityState:
+    return quality.quality_state if quality is not None else "caveated"
+
+
+def _localized_quality_reason(quality: FieldQuality | None) -> str | None:
+    return quality.reason if quality is not None else "field_quality_not_assessed"
+
+
+def _localized_quality_caveats(
+    source_field: str,
+    quality: FieldQuality | None,
+) -> list[str]:
+    if quality is None:
+        return [f"field_quality_not_assessed:{source_field}"]
+    if quality.quality_state == "trusted":
+        return []
+    return [
+        *quality.caveats,
+        f"field_quality_{quality.quality_state}:{quality.field}",
+    ]
+
+
+def _combined_quality_state(qualities: list[FieldQuality]) -> FieldQualityState:
+    states = [quality.quality_state for quality in qualities]
+    if not states:
+        return "caveated"
+    if "untrusted" in states:
+        return "untrusted"
+    if "caveated" in states:
+        return "caveated"
+    if "unavailable" in states:
+        return "unavailable"
+    return "trusted"
+
+
+def _combined_quality_reason(qualities: list[FieldQuality]) -> str | None:
+    return next((quality.reason for quality in qualities if quality.reason), None)
+
+
+def _combined_quality_caveats(qualities: list[FieldQuality]) -> list[str]:
+    if not qualities:
+        return ["field_quality_not_assessed:localized_convergence_winds"]
+    return _dedupe(
+        [
+            caveat
+            for quality in qualities
+            if quality.quality_state != "trusted"
+            for caveat in [
+                *quality.caveats,
+                f"field_quality_{quality.quality_state}:{quality.field}",
+            ]
+        ]
+    )
 
 
 def _mean(values: list[float]) -> float | None:

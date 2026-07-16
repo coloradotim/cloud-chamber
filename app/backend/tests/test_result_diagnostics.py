@@ -146,6 +146,8 @@ def base_dataset(
         )
     if z_units is not None:
         dataset["z"].attrs["units"] = z_units
+    dataset["x"].attrs["units"] = "m"
+    dataset["y"].attrs["units"] = "m"
     return dataset
 
 
@@ -1302,7 +1304,7 @@ def test_differential_patch_localized_response_records_geometry_and_alignment(
     response = diagnostics.localized_response
 
     assert response.available is True
-    assert response.support_state == "supported"
+    assert response.support_state == "footprint_and_response_diagnostics_available"
     assert response.geometry is not None
     assert response.geometry.shape == "circle"
     assert response.geometry.pattern_sha256 == "patch-sha"
@@ -1312,11 +1314,16 @@ def test_differential_patch_localized_response_records_geometry_and_alignment(
     assert response.geometry.ramp_seconds == 600.0
     assert response.hfx_footprint.max_inside_patch_radius is True
     assert response.hfx_footprint.max_distance_from_patch_center_m == 0.0
-    assert response.hfx_footprint.center_to_outside_ratio == pytest.approx(6.0)
-    assert response.qfx_footprint.center_to_outside_ratio == pytest.approx(2.0)
+    assert response.hfx_footprint.center_to_background_ratio == pytest.approx(6.0)
+    assert response.hfx_footprint.core_to_background_ratio == pytest.approx(2.0)
+    assert response.qfx_footprint.center_to_background_ratio == pytest.approx(2.0)
     assert response.near_surface_convergence.available is True
     assert response.near_surface_convergence.max_convergence_inside_patch_radius is True
     assert response.near_surface_convergence.max_convergence_s_1 == pytest.approx(0.002)
+    assert response.near_surface_convergence.source_fields == ["u", "v"]
+    assert response.near_surface_convergence.time_selection_method == (
+        "maximum_finite_convergence_time"
+    )
     assert response.updraft.max_inside_patch_radius is True
     assert response.updraft.max_value == pytest.approx(3.0)
     assert response.cloud_water.max_inside_patch_radius is True
@@ -1383,6 +1390,10 @@ def test_differential_patch_localized_response_uses_cm1_native_dimensions(
     )
     dataset["zh"].attrs["units"] = "m"
     dataset["zf"].attrs["units"] = "m"
+    dataset["xh"].attrs["units"] = "m"
+    dataset["yh"].attrs["units"] = "m"
+    dataset["xf"].attrs["units"] = "m"
+    dataset["yf"].attrs["units"] = "m"
     dataset = write_dataset(tmp_path / "localized-real-cm1-dims.nc", dataset)
 
     diagnostics = compute_baseline_diagnostics(
@@ -1392,9 +1403,10 @@ def test_differential_patch_localized_response_uses_cm1_native_dimensions(
     )
     response = diagnostics.localized_response
 
-    assert response.hfx_footprint.center_to_outside_ratio == pytest.approx(6.0)
-    assert response.qfx_footprint.center_to_outside_ratio == pytest.approx(2.0)
+    assert response.hfx_footprint.center_to_background_ratio == pytest.approx(6.0)
+    assert response.qfx_footprint.center_to_background_ratio == pytest.approx(2.0)
     assert response.near_surface_convergence.available is True
+    assert response.near_surface_convergence.source_fields == ["uinterp", "vinterp"]
     assert response.near_surface_convergence.max_convergence_s_1 == pytest.approx(0.002)
     assert response.updraft.available is True
     assert response.updraft.max_value == pytest.approx(4.0)
@@ -1403,6 +1415,152 @@ def test_differential_patch_localized_response_uses_cm1_native_dimensions(
     assert response.cloud_water.max_inside_patch_radius is True
     assert "localized_response_convergence_u_v_dimension_mismatch" not in response.caveats
     assert "w_localized_response_no_finite_horizontal_values" not in response.caveats
+
+
+def test_differential_patch_convergence_selects_max_convergence_not_max_wind(
+    tmp_path: Path,
+) -> None:
+    hfx = constant_surface_frames([1.0, 1.0])
+    qfx = constant_surface_frames([1.0e-5, 1.0e-5])
+    hfx[1][1][1] = 6.0
+    qfx[1][1][1] = 2.0e-5
+    u = zeros()
+    v = zeros()
+    x_values = [0.0, 200.0, 400.0, 600.0]
+    y_values = [0.0, 200.0, 400.0]
+    for z_index in range(2):
+        for y_index, y_value in enumerate(y_values):
+            for x_index, x_value in enumerate(x_values):
+                u[0][z_index][y_index][x_index] = 50.0
+                v[0][z_index][y_index][x_index] = 0.0
+                u[1][z_index][y_index][x_index] = -(x_value - 200.0) * 0.002
+                v[1][z_index][y_index][x_index] = -(y_value - 200.0) * 0.002
+    dataset = write_dataset(
+        tmp_path / "localized-convergence-time.nc",
+        base_dataset(
+            qc_values=zeros(),
+            w_values=w_field(),
+            hfx_values=hfx,
+            qfx_values=qfx,
+            u_values=u,
+            v_values=v,
+        ),
+    )
+
+    diagnostics = compute_baseline_diagnostics(
+        dataset,
+        [],
+        run_configuration=differential_patch_run_configuration(),
+    )
+    convergence = diagnostics.localized_response.near_surface_convergence
+
+    assert convergence.available is True
+    assert convergence.time_seconds == 300.0
+    assert convergence.time_index == 1
+    assert convergence.max_convergence_s_1 == pytest.approx(0.004)
+    assert [point.value for point in convergence.max_convergence_time_series] == [
+        pytest.approx(-0.0),
+        pytest.approx(0.004),
+    ]
+
+
+def test_differential_patch_footprint_separates_core_taper_and_background(
+    tmp_path: Path,
+) -> None:
+    hfx = constant_surface_frames([1.0, 1.0])
+    qfx = constant_surface_frames([1.0e-5, 1.0e-5])
+    hfx[1][1][1] = 6.0
+    hfx[1][0][1] = 3.0
+    hfx[1][1][0] = 3.0
+    hfx[1][1][2] = 3.0
+    hfx[1][2][1] = 3.0
+    qfx[1][1][1] = 2.0e-5
+    config = differential_patch_run_configuration()
+    config["surface_forcing_patch"]["radius_x_m"] = 100.0
+    config["surface_forcing_patch"]["radius_y_m"] = 100.0
+    config["surface_forcing_patch"]["taper_width_m"] = 150.0
+    dataset = write_dataset(
+        tmp_path / "localized-taper.nc",
+        base_dataset(
+            qc_values=zeros(),
+            w_values=w_field(),
+            hfx_values=hfx,
+            qfx_values=qfx,
+        ),
+    )
+
+    diagnostics = compute_baseline_diagnostics(dataset, [], run_configuration=config)
+    footprint = diagnostics.localized_response.hfx_footprint
+
+    assert footprint.available is True
+    assert footprint.core_mean == pytest.approx(6.0)
+    assert footprint.taper_mean == pytest.approx(3.0)
+    assert footprint.background_mean == pytest.approx(1.0)
+    assert footprint.center_to_background_ratio == pytest.approx(6.0)
+    assert footprint.core_to_background_ratio == pytest.approx(6.0)
+    assert footprint.core_finite_count == 1
+    assert footprint.taper_finite_count == 4
+    assert footprint.background_finite_count == 7
+
+
+def test_differential_patch_spatial_metrics_require_physical_coordinate_units(
+    tmp_path: Path,
+) -> None:
+    hfx = constant_surface_frames([1.0, 1.0])
+    qfx = constant_surface_frames([1.0e-5, 1.0e-5])
+    hfx[1][1][1] = 6.0
+    dataset = base_dataset(
+        qc_values=zeros(),
+        w_values=w_field(),
+        hfx_values=hfx,
+        qfx_values=qfx,
+    )
+    dataset["x"].attrs.pop("units", None)
+    dataset["y"].attrs.pop("units", None)
+    opened = write_dataset(tmp_path / "localized-missing-units.nc", dataset)
+
+    diagnostics = compute_baseline_diagnostics(
+        opened,
+        [],
+        run_configuration=differential_patch_run_configuration(),
+    )
+    footprint = diagnostics.localized_response.hfx_footprint
+
+    assert footprint.available is False
+    assert "localized_response_x_coordinate_units_missing" in footprint.caveats
+    assert "localized_response_y_coordinate_units_missing" in footprint.caveats
+
+
+def test_differential_patch_spatial_metrics_accept_kilometer_coordinates(
+    tmp_path: Path,
+) -> None:
+    hfx = constant_surface_frames([1.0, 1.0])
+    qfx = constant_surface_frames([1.0e-5, 1.0e-5])
+    hfx[1][1][1] = 6.0
+    dataset = base_dataset(
+        qc_values=zeros(),
+        w_values=w_field(),
+        hfx_values=hfx,
+        qfx_values=qfx,
+    )
+    dataset = dataset.assign_coords(
+        x=[0.0, 0.2, 0.4, 0.6],
+        y=[0.0, 0.2, 0.4],
+    )
+    dataset["x"].attrs["units"] = "km"
+    dataset["y"].attrs["units"] = "km"
+    opened = write_dataset(tmp_path / "localized-km-coords.nc", dataset)
+
+    diagnostics = compute_baseline_diagnostics(
+        opened,
+        [],
+        run_configuration=differential_patch_run_configuration(),
+    )
+
+    assert diagnostics.localized_response.hfx_footprint.available is True
+    assert diagnostics.localized_response.hfx_footprint.center_to_background_ratio == pytest.approx(
+        6.0
+    )
 
 
 def test_differential_patch_convergence_is_unavailable_without_wind_fields(

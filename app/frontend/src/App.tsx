@@ -875,13 +875,33 @@ type PatchSpatialFieldDiagnostics = {
   available: boolean;
   field_absent: boolean;
   units?: string | null;
+  quality_state?: string | null;
+  quality_reason?: string | null;
+  finite_count?: number;
+  non_finite_count?: number;
+  total_count?: number;
+  finite_fraction?: number | null;
+  time_index?: number | null;
   time_seconds?: number | null;
+  time_selection_method?: string | null;
+  vertical_coordinate_name?: string | null;
+  vertical_level_index?: number | null;
+  vertical_level_height_m?: number | null;
   max_value?: number | null;
   max_x_m?: number | null;
   max_y_m?: number | null;
   max_distance_from_patch_center_m?: number | null;
   max_inside_patch_radius?: boolean | null;
+  max_region?: string | null;
   center_value?: number | null;
+  core_mean?: number | null;
+  taper_mean?: number | null;
+  background_mean?: number | null;
+  center_to_background_ratio?: number | null;
+  core_to_background_ratio?: number | null;
+  core_finite_count?: number;
+  taper_finite_count?: number;
+  background_finite_count?: number;
   inside_patch_mean?: number | null;
   outside_patch_mean?: number | null;
   center_to_outside_ratio?: number | null;
@@ -897,12 +917,32 @@ type PatchConvergenceDiagnostics = {
   available: boolean;
   source_fields: string[];
   units: string;
+  quality_state?: string | null;
+  quality_reason?: string | null;
+  finite_count?: number;
+  non_finite_count?: number;
+  total_count?: number;
+  finite_fraction?: number | null;
+  time_index?: number | null;
   time_seconds?: number | null;
+  time_selection_method?: string | null;
+  vertical_coordinate_name?: string | null;
+  vertical_level_index?: number | null;
+  vertical_level_height_m?: number | null;
   max_convergence_s_1?: number | null;
   max_convergence_x_m?: number | null;
   max_convergence_y_m?: number | null;
   max_convergence_distance_from_patch_center_m?: number | null;
   max_convergence_inside_patch_radius?: boolean | null;
+  max_convergence_region?: string | null;
+  max_convergence_time_series?: Array<{ time_seconds: number | null; value: number | null }>;
+  core_mean_convergence_s_1?: number | null;
+  taper_mean_convergence_s_1?: number | null;
+  background_mean_convergence_s_1?: number | null;
+  core_to_background_convergence_ratio?: number | null;
+  core_finite_count?: number;
+  taper_finite_count?: number;
+  background_finite_count?: number;
   inside_patch_mean_convergence_s_1?: number | null;
   outside_patch_mean_convergence_s_1?: number | null;
   method: string;
@@ -8992,7 +9032,7 @@ function LocalizedResponseSummary({ result }: { result: ResultCard }) {
           label="Near-surface convergence"
           value={convergenceLabel(response.near_surface_convergence)}
         />
-        <Metric label="Max updraft alignment" value={patchDistanceLabel(response.updraft)} />
+        <Metric label="Instantaneous updraft" value={patchDistanceLabel(response.updraft)} />
         <Metric label="Cloud-water alignment" value={patchDistanceLabel(response.cloud_water)} />
       </dl>
       {response.caveats.length > 0 && (
@@ -9003,9 +9043,11 @@ function LocalizedResponseSummary({ result }: { result: ResultCard }) {
 }
 
 function localizedResponseLabel(state: string): string {
-  if (state === "supported") return "Footprint and response available";
-  if (state === "footprint_supported_response_unavailable") {
-    return "Footprint available; response limited";
+  if (state === "footprint_and_response_diagnostics_available") {
+    return "Footprint and response diagnostics available";
+  }
+  if (state === "footprint_available_response_diagnostics_limited") {
+    return "Footprint available; response diagnostics limited";
   }
   if (state === "unavailable_missing_emitted_surface_flux_fields") {
     return "Footprint unavailable";
@@ -9038,30 +9080,46 @@ function patchRatioLabel(field: PatchSpatialFieldDiagnostics, label: string): st
     return `${label}: unavailable`;
   }
   const ratio =
-    field.center_to_outside_ratio !== null && field.center_to_outside_ratio !== undefined
-      ? `${field.center_to_outside_ratio.toFixed(2)}x center/outside`
+    field.center_to_background_ratio !== null && field.center_to_background_ratio !== undefined
+      ? `${field.center_to_background_ratio.toFixed(2)}x center/background`
       : "ratio unavailable";
+  const coreRatio =
+    field.core_to_background_ratio !== null && field.core_to_background_ratio !== undefined
+      ? `; core/background ${field.core_to_background_ratio.toFixed(2)}x`
+      : "";
   const distance = formatNumber(field.max_distance_from_patch_center_m ?? null, "m from center");
-  return `${ratio}; max ${distance}`;
+  const quality = field.quality_state ? `; ${humanize(field.quality_state)}` : "";
+  return `${ratio}${coreRatio}; max ${distance}${quality}`;
 }
 
 function convergenceLabel(convergence: PatchConvergenceDiagnostics): string {
   if (!convergence.available) return "Unavailable";
+  const fields = convergence.source_fields.length > 0 ? convergence.source_fields.join("/") : "winds";
+  const time =
+    convergence.time_seconds !== null && convergence.time_seconds !== undefined
+      ? ` at ${formatNumber(convergence.time_seconds, "s")}`
+      : "";
+  const quality = convergence.quality_state ? `; ${humanize(convergence.quality_state)}` : "";
   return `${formatScientific(
     convergence.max_convergence_s_1 ?? null,
     "s^-1",
   )}; max ${formatNumber(
     convergence.max_convergence_distance_from_patch_center_m ?? null,
     "m from center",
-  )}`;
+  )}${time}; ${fields}${quality}`;
 }
 
 function patchDistanceLabel(field: PatchSpatialFieldDiagnostics): string {
   if (!field.available) return "Unavailable";
+  const time =
+    field.time_seconds !== null && field.time_seconds !== undefined
+      ? ` at ${formatNumber(field.time_seconds, "s")}`
+      : "";
+  const quality = field.quality_state ? `; ${humanize(field.quality_state)}` : "";
   return `${formatNumber(field.max_value ?? null, field.units ?? "")}; max ${formatNumber(
     field.max_distance_from_patch_center_m ?? null,
     "m from center",
-  )}`;
+  )}${time}${quality}`;
 }
 
 function threeDScalarEncoding(field: VisualizableField | undefined): ThreeDScalarEncoding | null {

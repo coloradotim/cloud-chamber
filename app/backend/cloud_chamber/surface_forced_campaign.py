@@ -42,14 +42,17 @@ from cloud_chamber.observed_sounding import (
 from cloud_chamber.result_diagnostics import (
     FieldFrameQualitySummary,
     FieldQuality,
+    LocalizedResponseDiagnostics,
     LowLevelResponseFieldDiagnostics,
     SurfaceFluxDiagnostics,
     SurfaceFluxFieldDiagnostics,
+    compute_baseline_diagnostics,
 )
 from cloud_chamber.result_ingest import (
     RESULT_METADATA_FILENAME,
     ResultIngestError,
     ResultMetadata,
+    _open_model_output_sequence,
     ingest_completed_run,
     result_metadata_from_json,
 )
@@ -171,6 +174,7 @@ SUPPORTED_REQUIRED_SUMMARY_FIELDS = {
     "surface_patch_moisture_flux_perturbation_g_g_m_s",
     "surface_patch_taper_width_m",
     "surface_patch_ramp_seconds",
+    "localized_response_diagnostic_state",
     "localized_response_support_state",
     "localized_patch_shape",
     "localized_patch_radius_x_m",
@@ -178,15 +182,40 @@ SUPPORTED_REQUIRED_SUMMARY_FIELDS = {
     "localized_patch_taper_width_m",
     "localized_patch_ramp_seconds",
     "localized_patch_geometry_note",
-    "localized_hfx_center_to_outside_ratio",
+    "localized_hfx_center_to_background_ratio",
+    "localized_hfx_core_to_background_ratio",
+    "localized_hfx_core_mean",
+    "localized_hfx_taper_mean",
+    "localized_hfx_background_mean",
+    "localized_hfx_quality_state",
+    "localized_hfx_time_seconds",
     "localized_hfx_max_distance_from_patch_center_m",
-    "localized_qfx_center_to_outside_ratio",
+    "localized_qfx_center_to_background_ratio",
+    "localized_qfx_core_to_background_ratio",
+    "localized_qfx_core_mean",
+    "localized_qfx_taper_mean",
+    "localized_qfx_background_mean",
+    "localized_qfx_quality_state",
+    "localized_qfx_time_seconds",
     "localized_qfx_max_distance_from_patch_center_m",
     "localized_max_convergence_s_1",
+    "localized_convergence_time_seconds",
+    "localized_convergence_time_selection_method",
+    "localized_convergence_source_fields",
+    "localized_convergence_quality_state",
+    "localized_convergence_vertical_level_height_m",
+    "localized_convergence_core_mean_s_1",
+    "localized_convergence_taper_mean_s_1",
+    "localized_convergence_background_mean_s_1",
+    "localized_convergence_core_to_background_ratio",
     "localized_convergence_distance_from_patch_center_m",
     "localized_updraft_max",
+    "localized_updraft_quality_state",
+    "localized_updraft_time_seconds",
     "localized_updraft_distance_from_patch_center_m",
     "localized_cloud_water_max",
+    "localized_cloud_water_quality_state",
+    "localized_cloud_water_time_seconds",
     "localized_cloud_water_distance_from_patch_center_m",
     "localized_caveats",
     "cm1_cnst_shflx",
@@ -1961,6 +1990,7 @@ def _summary_for_plan_run(run: CampaignRunPlan, state: CampaignState) -> dict[st
     state_run = _state_run_for_matrix(state, run.matrix_id)
     manifest = None
     result = None
+    manifest_path: Path | None = None
     if state_run is not None and state_run.manifest_path:
         manifest_path = Path(state_run.manifest_path).expanduser()
         if manifest_path.exists():
@@ -2129,6 +2159,12 @@ def _summary_for_plan_run(run: CampaignRunPlan, state: CampaignState) -> dict[st
         "phase": run.phase,
         "stable_resume_identity": run.stable_resume_identity,
         "run_id": state_run.run_id if state_run else run.run_id,
+        "manifest_path": str(manifest_path) if manifest_path is not None else None,
+        "result_metadata_path": (
+            str(manifest_path.parent / RESULT_METADATA_FILENAME)
+            if manifest_path is not None
+            else None
+        ),
         "result_id": (
             result.result_id if result is not None else state_run.result_id if state_run else None
         ),
@@ -2199,30 +2235,62 @@ def _summary_for_plan_run(run: CampaignRunPlan, state: CampaignState) -> dict[st
             if surface_forcing_patch_map is not None
             else None
         ),
-        "localized_response_support_state": localized["support_state"],
+        "localized_response_diagnostic_state": localized["diagnostic_state"],
+        "localized_response_support_state": localized["diagnostic_state"],
         "localized_patch_shape": localized["patch_shape"],
         "localized_patch_radius_x_m": localized["patch_radius_x_m"],
         "localized_patch_radius_y_m": localized["patch_radius_y_m"],
         "localized_patch_taper_width_m": localized["patch_taper_width_m"],
         "localized_patch_ramp_seconds": localized["patch_ramp_seconds"],
         "localized_patch_geometry_note": localized["geometry_note"],
-        "localized_hfx_center_to_outside_ratio": localized["hfx_center_to_outside_ratio"],
+        "localized_hfx_center_to_background_ratio": localized["hfx_center_to_background_ratio"],
+        "localized_hfx_core_to_background_ratio": localized["hfx_core_to_background_ratio"],
+        "localized_hfx_core_mean": localized["hfx_core_mean"],
+        "localized_hfx_taper_mean": localized["hfx_taper_mean"],
+        "localized_hfx_background_mean": localized["hfx_background_mean"],
+        "localized_hfx_quality_state": localized["hfx_quality_state"],
+        "localized_hfx_time_seconds": localized["hfx_time_seconds"],
         "localized_hfx_max_distance_from_patch_center_m": localized[
             "hfx_max_distance_from_patch_center_m"
         ],
-        "localized_qfx_center_to_outside_ratio": localized["qfx_center_to_outside_ratio"],
+        "localized_qfx_center_to_background_ratio": localized["qfx_center_to_background_ratio"],
+        "localized_qfx_core_to_background_ratio": localized["qfx_core_to_background_ratio"],
+        "localized_qfx_core_mean": localized["qfx_core_mean"],
+        "localized_qfx_taper_mean": localized["qfx_taper_mean"],
+        "localized_qfx_background_mean": localized["qfx_background_mean"],
+        "localized_qfx_quality_state": localized["qfx_quality_state"],
+        "localized_qfx_time_seconds": localized["qfx_time_seconds"],
         "localized_qfx_max_distance_from_patch_center_m": localized[
             "qfx_max_distance_from_patch_center_m"
         ],
         "localized_max_convergence_s_1": localized["max_convergence_s_1"],
+        "localized_convergence_time_seconds": localized["convergence_time_seconds"],
+        "localized_convergence_time_selection_method": localized[
+            "convergence_time_selection_method"
+        ],
+        "localized_convergence_source_fields": localized["convergence_source_fields"],
+        "localized_convergence_quality_state": localized["convergence_quality_state"],
+        "localized_convergence_vertical_level_height_m": localized[
+            "convergence_vertical_level_height_m"
+        ],
+        "localized_convergence_core_mean_s_1": localized["convergence_core_mean_s_1"],
+        "localized_convergence_taper_mean_s_1": localized["convergence_taper_mean_s_1"],
+        "localized_convergence_background_mean_s_1": localized["convergence_background_mean_s_1"],
+        "localized_convergence_core_to_background_ratio": localized[
+            "convergence_core_to_background_ratio"
+        ],
         "localized_convergence_distance_from_patch_center_m": localized[
             "convergence_distance_from_patch_center_m"
         ],
         "localized_updraft_max": localized["updraft_max"],
+        "localized_updraft_quality_state": localized["updraft_quality_state"],
+        "localized_updraft_time_seconds": localized["updraft_time_seconds"],
         "localized_updraft_distance_from_patch_center_m": localized[
             "updraft_distance_from_patch_center_m"
         ],
         "localized_cloud_water_max": localized["cloud_water_max"],
+        "localized_cloud_water_quality_state": localized["cloud_water_quality_state"],
+        "localized_cloud_water_time_seconds": localized["cloud_water_time_seconds"],
         "localized_cloud_water_distance_from_patch_center_m": localized[
             "cloud_water_distance_from_patch_center_m"
         ],
@@ -2490,7 +2558,7 @@ def _localized_response_support(response: Any) -> str:
     if response is None:
         return "unavailable:until_result_ingested"
     if getattr(response, "available", False):
-        return "available"
+        return getattr(response, "support_state", None) or "available"
     support_state = getattr(response, "support_state", None)
     if support_state:
         return f"unavailable:{support_state}"
@@ -2507,22 +2575,47 @@ def _localized_response_summary_values(response: Any | None) -> dict[str, Any]:
     unavailable = "unavailable:until_result_ingested"
     if response is None:
         return {
-            "support_state": unavailable,
+            "diagnostic_state": unavailable,
             "patch_shape": None,
             "patch_radius_x_m": None,
             "patch_radius_y_m": None,
             "patch_taper_width_m": None,
             "patch_ramp_seconds": None,
             "geometry_note": None,
-            "hfx_center_to_outside_ratio": unavailable,
+            "hfx_center_to_background_ratio": unavailable,
+            "hfx_core_to_background_ratio": unavailable,
+            "hfx_core_mean": unavailable,
+            "hfx_taper_mean": unavailable,
+            "hfx_background_mean": unavailable,
+            "hfx_quality_state": unavailable,
+            "hfx_time_seconds": unavailable,
             "hfx_max_distance_from_patch_center_m": unavailable,
-            "qfx_center_to_outside_ratio": unavailable,
+            "qfx_center_to_background_ratio": unavailable,
+            "qfx_core_to_background_ratio": unavailable,
+            "qfx_core_mean": unavailable,
+            "qfx_taper_mean": unavailable,
+            "qfx_background_mean": unavailable,
+            "qfx_quality_state": unavailable,
+            "qfx_time_seconds": unavailable,
             "qfx_max_distance_from_patch_center_m": unavailable,
             "max_convergence_s_1": unavailable,
+            "convergence_time_seconds": unavailable,
+            "convergence_time_selection_method": unavailable,
+            "convergence_source_fields": [],
+            "convergence_quality_state": unavailable,
+            "convergence_vertical_level_height_m": unavailable,
+            "convergence_core_mean_s_1": unavailable,
+            "convergence_taper_mean_s_1": unavailable,
+            "convergence_background_mean_s_1": unavailable,
+            "convergence_core_to_background_ratio": unavailable,
             "convergence_distance_from_patch_center_m": unavailable,
             "updraft_max": unavailable,
+            "updraft_quality_state": unavailable,
+            "updraft_time_seconds": unavailable,
             "updraft_distance_from_patch_center_m": unavailable,
             "cloud_water_max": unavailable,
+            "cloud_water_quality_state": unavailable,
+            "cloud_water_time_seconds": unavailable,
             "cloud_water_distance_from_patch_center_m": unavailable,
             "caveats": [],
         }
@@ -2548,22 +2641,47 @@ def _localized_response_summary_values(response: Any | None) -> dict[str, Any]:
         None,
     )
     return {
-        "support_state": getattr(response, "support_state", None) or "unavailable",
+        "diagnostic_state": getattr(response, "support_state", None) or "unavailable",
         "patch_shape": getattr(geometry, "shape", None),
         "patch_radius_x_m": getattr(geometry, "radius_x_m", None),
         "patch_radius_y_m": getattr(geometry, "radius_y_m", None),
         "patch_taper_width_m": getattr(geometry, "taper_width_m", None),
         "patch_ramp_seconds": getattr(geometry, "ramp_seconds", None),
         "geometry_note": geometry_note,
-        "hfx_center_to_outside_ratio": hfx["center_to_outside_ratio"],
+        "hfx_center_to_background_ratio": hfx["center_to_background_ratio"],
+        "hfx_core_to_background_ratio": hfx["core_to_background_ratio"],
+        "hfx_core_mean": hfx["core_mean"],
+        "hfx_taper_mean": hfx["taper_mean"],
+        "hfx_background_mean": hfx["background_mean"],
+        "hfx_quality_state": hfx["quality_state"],
+        "hfx_time_seconds": hfx["time_seconds"],
         "hfx_max_distance_from_patch_center_m": hfx["max_distance_from_patch_center_m"],
-        "qfx_center_to_outside_ratio": qfx["center_to_outside_ratio"],
+        "qfx_center_to_background_ratio": qfx["center_to_background_ratio"],
+        "qfx_core_to_background_ratio": qfx["core_to_background_ratio"],
+        "qfx_core_mean": qfx["core_mean"],
+        "qfx_taper_mean": qfx["taper_mean"],
+        "qfx_background_mean": qfx["background_mean"],
+        "qfx_quality_state": qfx["quality_state"],
+        "qfx_time_seconds": qfx["time_seconds"],
         "qfx_max_distance_from_patch_center_m": qfx["max_distance_from_patch_center_m"],
         "max_convergence_s_1": convergence["max_convergence_s_1"],
+        "convergence_time_seconds": convergence["time_seconds"],
+        "convergence_time_selection_method": convergence["time_selection_method"],
+        "convergence_source_fields": convergence["source_fields"],
+        "convergence_quality_state": convergence["quality_state"],
+        "convergence_vertical_level_height_m": convergence["vertical_level_height_m"],
+        "convergence_core_mean_s_1": convergence["core_mean_convergence_s_1"],
+        "convergence_taper_mean_s_1": convergence["taper_mean_convergence_s_1"],
+        "convergence_background_mean_s_1": convergence["background_mean_convergence_s_1"],
+        "convergence_core_to_background_ratio": convergence["core_to_background_convergence_ratio"],
         "convergence_distance_from_patch_center_m": convergence["distance_from_patch_center_m"],
         "updraft_max": updraft["max_value"],
+        "updraft_quality_state": updraft["quality_state"],
+        "updraft_time_seconds": updraft["time_seconds"],
         "updraft_distance_from_patch_center_m": updraft["max_distance_from_patch_center_m"],
         "cloud_water_max": cloud_water["max_value"],
+        "cloud_water_quality_state": cloud_water["quality_state"],
+        "cloud_water_time_seconds": cloud_water["time_seconds"],
         "cloud_water_distance_from_patch_center_m": cloud_water["max_distance_from_patch_center_m"],
         "caveats": _dedupe(_string_list(getattr(response, "caveats", []))),
     }
@@ -2574,7 +2692,13 @@ def _localized_patch_field_values(field: Any | None, label: str) -> dict[str, An
     if field is None:
         return {
             "max_value": reason,
-            "center_to_outside_ratio": reason,
+            "center_to_background_ratio": reason,
+            "core_to_background_ratio": reason,
+            "core_mean": reason,
+            "taper_mean": reason,
+            "background_mean": reason,
+            "quality_state": reason,
+            "time_seconds": reason,
             "max_distance_from_patch_center_m": reason,
             "geometry_note": None,
         }
@@ -2583,13 +2707,25 @@ def _localized_patch_field_values(field: Any | None, label: str) -> dict[str, An
         reason = f"unavailable:{caveats[0]}" if caveats else reason
         return {
             "max_value": reason,
-            "center_to_outside_ratio": reason,
+            "center_to_background_ratio": reason,
+            "core_to_background_ratio": reason,
+            "core_mean": reason,
+            "taper_mean": reason,
+            "background_mean": reason,
+            "quality_state": getattr(field, "quality_state", "unavailable"),
+            "time_seconds": getattr(field, "time_seconds", None),
             "max_distance_from_patch_center_m": reason,
             "geometry_note": getattr(field, "geometry_note", None),
         }
     return {
         "max_value": getattr(field, "max_value", None),
-        "center_to_outside_ratio": getattr(field, "center_to_outside_ratio", None),
+        "center_to_background_ratio": getattr(field, "center_to_background_ratio", None),
+        "core_to_background_ratio": getattr(field, "core_to_background_ratio", None),
+        "core_mean": getattr(field, "core_mean", None),
+        "taper_mean": getattr(field, "taper_mean", None),
+        "background_mean": getattr(field, "background_mean", None),
+        "quality_state": getattr(field, "quality_state", "unavailable"),
+        "time_seconds": getattr(field, "time_seconds", None),
         "max_distance_from_patch_center_m": getattr(
             field, "max_distance_from_patch_center_m", None
         ),
@@ -2602,6 +2738,15 @@ def _localized_convergence_values(convergence: Any | None) -> dict[str, Any]:
     if convergence is None:
         return {
             "max_convergence_s_1": reason,
+            "time_seconds": reason,
+            "time_selection_method": reason,
+            "source_fields": [],
+            "quality_state": reason,
+            "vertical_level_height_m": reason,
+            "core_mean_convergence_s_1": reason,
+            "taper_mean_convergence_s_1": reason,
+            "background_mean_convergence_s_1": reason,
+            "core_to_background_convergence_ratio": reason,
             "distance_from_patch_center_m": reason,
             "geometry_note": None,
         }
@@ -2610,11 +2755,33 @@ def _localized_convergence_values(convergence: Any | None) -> dict[str, Any]:
         reason = f"unavailable:{caveats[0]}" if caveats else reason
         return {
             "max_convergence_s_1": reason,
+            "time_seconds": getattr(convergence, "time_seconds", None),
+            "time_selection_method": getattr(convergence, "time_selection_method", None),
+            "source_fields": _string_list(getattr(convergence, "source_fields", [])),
+            "quality_state": getattr(convergence, "quality_state", "unavailable"),
+            "vertical_level_height_m": getattr(convergence, "vertical_level_height_m", None),
+            "core_mean_convergence_s_1": reason,
+            "taper_mean_convergence_s_1": reason,
+            "background_mean_convergence_s_1": reason,
+            "core_to_background_convergence_ratio": reason,
             "distance_from_patch_center_m": reason,
             "geometry_note": getattr(convergence, "geometry_note", None),
         }
     return {
         "max_convergence_s_1": getattr(convergence, "max_convergence_s_1", None),
+        "time_seconds": getattr(convergence, "time_seconds", None),
+        "time_selection_method": getattr(convergence, "time_selection_method", None),
+        "source_fields": _string_list(getattr(convergence, "source_fields", [])),
+        "quality_state": getattr(convergence, "quality_state", "unavailable"),
+        "vertical_level_height_m": getattr(convergence, "vertical_level_height_m", None),
+        "core_mean_convergence_s_1": getattr(convergence, "core_mean_convergence_s_1", None),
+        "taper_mean_convergence_s_1": getattr(convergence, "taper_mean_convergence_s_1", None),
+        "background_mean_convergence_s_1": getattr(
+            convergence, "background_mean_convergence_s_1", None
+        ),
+        "core_to_background_convergence_ratio": getattr(
+            convergence, "core_to_background_convergence_ratio", None
+        ),
         "distance_from_patch_center_m": getattr(
             convergence, "max_convergence_distance_from_patch_center_m", None
         ),
@@ -3558,6 +3725,10 @@ def _render_markdown_report(plan: CampaignPlan, summary: Mapping[str, Any]) -> s
                     "",
                 ]
             )
+            localized_reference = comparison.get("localized_reference_diagnostics")
+            if isinstance(localized_reference, Mapping):
+                lines.extend(_localized_reference_comparison_lines(localized_reference))
+                lines.append("")
     else:
         lines.append("No comparison instances are defined in this matrix.")
     lines.extend(
@@ -3647,6 +3818,7 @@ def _evaluate_comparisons(
         equality_failures = _comparison_equality_failures(control, experiment, definition)
         unavailable = _comparison_unavailable_evidence(control, experiment, definition)
         supported = _comparison_supported_differences(control, experiment, definition)
+        localized_reference = _comparison_localized_reference_diagnostics(control, experiment)
         if equality_failures:
             status = "inconclusive_noncomparable_runs"
             interpretation = (
@@ -3674,6 +3846,7 @@ def _evaluate_comparisons(
                 "equality_gate_failures": equality_failures,
                 "unavailable_evidence": unavailable,
                 "supported_differences": supported,
+                "localized_reference_diagnostics": localized_reference,
                 "interpretation": interpretation,
             }
         )
@@ -3757,6 +3930,96 @@ def _comparison_supported_differences(
         ):
             differences.append({"field": field, "control": left, "experiment": right})
     return differences
+
+
+def _comparison_localized_reference_diagnostics(
+    control: Mapping[str, Any],
+    experiment: Mapping[str, Any],
+) -> dict[str, Any] | None:
+    experiment_result = _load_result_for_summary(experiment)
+    patch = (
+        experiment_result.run_configuration.get("surface_forcing_patch")
+        if experiment_result is not None
+        else None
+    )
+    if not isinstance(patch, Mapping):
+        return None
+    return {
+        "reference": "experiment_patch_geometry",
+        "control": _localized_reference_values_for_summary(control, patch),
+        "experiment": _localized_reference_values_for_summary(experiment, patch),
+    }
+
+
+def _localized_reference_values_for_summary(
+    summary: Mapping[str, Any],
+    patch: Mapping[str, Any],
+) -> dict[str, Any]:
+    result = _load_result_for_summary(summary)
+    if result is None:
+        return {
+            "matrix_id": summary.get("matrix_id"),
+            "state": "unavailable:result_metadata_missing",
+        }
+    response = _localized_response_for_reference_patch(result, patch)
+    if response is None:
+        return {
+            "matrix_id": summary.get("matrix_id"),
+            "state": "unavailable:raw_model_output_missing_or_unreadable",
+        }
+    values = _localized_response_summary_values(response)
+    return {
+        "matrix_id": summary.get("matrix_id"),
+        "state": values["diagnostic_state"],
+        "localized": values,
+    }
+
+
+def _load_result_for_summary(summary: Mapping[str, Any]) -> ResultMetadata | None:
+    metadata_path = summary.get("result_metadata_path")
+    if isinstance(metadata_path, str) and metadata_path:
+        path = Path(metadata_path).expanduser()
+        if path.exists():
+            try:
+                return result_metadata_from_json(path.read_text())
+            except Exception:
+                return None
+    manifest_path = summary.get("manifest_path")
+    if isinstance(manifest_path, str) and manifest_path:
+        path = Path(manifest_path).expanduser()
+        if path.exists():
+            return _load_result_for_manifest_path(path)
+    return None
+
+
+def _localized_response_for_reference_patch(
+    result: ResultMetadata,
+    patch: Mapping[str, Any],
+) -> LocalizedResponseDiagnostics | None:
+    paths = [Path(path).expanduser() for path in result.model_output_paths]
+    paths = [path for path in paths if path.exists()]
+    if not paths:
+        return None
+    dataset, _skipped, _contributing, close_datasets = _open_model_output_sequence(paths)
+    try:
+        run_configuration = dict(result.run_configuration)
+        run_configuration["surface_flux_mode"] = DIFFERENTIAL_SURFACE_FORCING_MODE
+        run_configuration["surface_forcing_patch"] = dict(patch)
+        diagnostics = compute_baseline_diagnostics(
+            dataset,
+            result.missing_required_output_fields,
+            run_configuration=run_configuration,
+        )
+        response = diagnostics.localized_response
+        response.caveats.append("localized_reference_region_from_matched_patch_geometry")
+        return response
+    except Exception:
+        return None
+    finally:
+        for close_dataset in close_datasets:
+            close = getattr(close_dataset, "close", None)
+            if callable(close):
+                close()
 
 
 def _comparison_field_value(summary: Mapping[str, Any], field: str) -> Any:
@@ -4586,7 +4849,11 @@ def _forcing_label(run: Mapping[str, Any]) -> str:
 
 
 def _localized_response_report_label(run: Mapping[str, Any]) -> str:
-    state = run.get("localized_response_support_state") or "unavailable"
+    state = (
+        run.get("localized_response_diagnostic_state")
+        or run.get("localized_response_support_state")
+        or "unavailable"
+    )
     if state in {
         "unavailable:until_result_ingested",
         "unavailable_not_differential_surface_forcing",
@@ -4601,37 +4868,176 @@ def _localized_response_report_label(run: Mapping[str, Any]) -> str:
         f"ramp {run.get('localized_patch_ramp_seconds')} s"
     )
     caveats = ", ".join(run.get("localized_caveats") or []) or "none"
-    hfx = _localized_metric_report(
-        "hfx ratio",
-        run.get("localized_hfx_center_to_outside_ratio"),
+    hfx = _localized_patch_region_report(
+        "hfx",
+        run.get("localized_hfx_center_to_background_ratio"),
+        run.get("localized_hfx_core_to_background_ratio"),
+        run.get("localized_hfx_core_mean"),
+        run.get("localized_hfx_taper_mean"),
+        run.get("localized_hfx_background_mean"),
+        run.get("localized_hfx_quality_state"),
+        run.get("localized_hfx_time_seconds"),
         run.get("localized_hfx_max_distance_from_patch_center_m"),
     )
-    qfx = _localized_metric_report(
-        "qfx ratio",
-        run.get("localized_qfx_center_to_outside_ratio"),
+    qfx = _localized_patch_region_report(
+        "qfx",
+        run.get("localized_qfx_center_to_background_ratio"),
+        run.get("localized_qfx_core_to_background_ratio"),
+        run.get("localized_qfx_core_mean"),
+        run.get("localized_qfx_taper_mean"),
+        run.get("localized_qfx_background_mean"),
+        run.get("localized_qfx_quality_state"),
+        run.get("localized_qfx_time_seconds"),
         run.get("localized_qfx_max_distance_from_patch_center_m"),
     )
-    convergence = _localized_metric_report(
-        "convergence",
+    convergence = _localized_convergence_report(
         run.get("localized_max_convergence_s_1"),
         run.get("localized_convergence_distance_from_patch_center_m"),
-        unit_suffix=" s^-1",
+        run.get("localized_convergence_time_seconds"),
+        run.get("localized_convergence_time_selection_method"),
+        run.get("localized_convergence_source_fields"),
+        run.get("localized_convergence_quality_state"),
+        run.get("localized_convergence_vertical_level_height_m"),
+        run.get("localized_convergence_core_mean_s_1"),
+        run.get("localized_convergence_taper_mean_s_1"),
+        run.get("localized_convergence_background_mean_s_1"),
+        run.get("localized_convergence_core_to_background_ratio"),
     )
     updraft = _localized_metric_report(
-        "updraft",
+        "instantaneous updraft",
         run.get("localized_updraft_max"),
         run.get("localized_updraft_distance_from_patch_center_m"),
+        time_seconds=run.get("localized_updraft_time_seconds"),
+        quality_state=run.get("localized_updraft_quality_state"),
     )
     cloud_water = _localized_metric_report(
         "cloud water",
         run.get("localized_cloud_water_max"),
         run.get("localized_cloud_water_distance_from_patch_center_m"),
+        time_seconds=run.get("localized_cloud_water_time_seconds"),
+        quality_state=run.get("localized_cloud_water_quality_state"),
     )
     return (
-        f"state `{state}`; patch `{patch}`; edge "
+        f"diagnostic state `{state}`; patch `{patch}`; edge "
         f"`{run.get('localized_patch_geometry_note') or 'unavailable'}`; "
         f"{hfx}; {qfx}; {convergence}; {updraft}; {cloud_water}; "
         f"caveats `{caveats}`"
+    )
+
+
+def _localized_reference_comparison_lines(reference: Mapping[str, Any]) -> list[str]:
+    lines = ["- Localized reference-region diagnostics:"]
+    for role in ("control", "experiment"):
+        payload = reference.get(role)
+        if not isinstance(payload, Mapping):
+            lines.append(f"  - {role}: unavailable")
+            continue
+        localized = payload.get("localized")
+        if not isinstance(localized, Mapping):
+            lines.append(
+                f"  - {role} `{payload.get('matrix_id')}`: "
+                f"`{payload.get('state') or 'unavailable'}`"
+            )
+            continue
+        lines.append(
+            f"  - {role} `{payload.get('matrix_id')}`: {_localized_values_report_label(localized)}"
+        )
+    return lines
+
+
+def _localized_values_report_label(values: Mapping[str, Any]) -> str:
+    state = values.get("diagnostic_state") or "unavailable"
+    hfx = _localized_patch_region_report(
+        "hfx",
+        values.get("hfx_center_to_background_ratio"),
+        values.get("hfx_core_to_background_ratio"),
+        values.get("hfx_core_mean"),
+        values.get("hfx_taper_mean"),
+        values.get("hfx_background_mean"),
+        values.get("hfx_quality_state"),
+        values.get("hfx_time_seconds"),
+        values.get("hfx_max_distance_from_patch_center_m"),
+    )
+    qfx = _localized_patch_region_report(
+        "qfx",
+        values.get("qfx_center_to_background_ratio"),
+        values.get("qfx_core_to_background_ratio"),
+        values.get("qfx_core_mean"),
+        values.get("qfx_taper_mean"),
+        values.get("qfx_background_mean"),
+        values.get("qfx_quality_state"),
+        values.get("qfx_time_seconds"),
+        values.get("qfx_max_distance_from_patch_center_m"),
+    )
+    convergence = _localized_convergence_report(
+        values.get("max_convergence_s_1"),
+        values.get("convergence_distance_from_patch_center_m"),
+        values.get("convergence_time_seconds"),
+        values.get("convergence_time_selection_method"),
+        values.get("convergence_source_fields"),
+        values.get("convergence_quality_state"),
+        values.get("convergence_vertical_level_height_m"),
+        values.get("convergence_core_mean_s_1"),
+        values.get("convergence_taper_mean_s_1"),
+        values.get("convergence_background_mean_s_1"),
+        values.get("convergence_core_to_background_ratio"),
+    )
+    updraft = _localized_metric_report(
+        "instantaneous updraft",
+        values.get("updraft_max"),
+        values.get("updraft_distance_from_patch_center_m"),
+        time_seconds=values.get("updraft_time_seconds"),
+        quality_state=values.get("updraft_quality_state"),
+    )
+    caveats = ", ".join(_string_list(values.get("caveats"))) or "none"
+    return f"`{state}`; {hfx}; {qfx}; {convergence}; {updraft}; caveats `{caveats}`"
+
+
+def _localized_patch_region_report(
+    label: str,
+    center_ratio: Any,
+    core_ratio: Any,
+    core_mean: Any,
+    taper_mean: Any,
+    background_mean: Any,
+    quality_state: Any,
+    time_seconds: Any,
+    distance_m: Any,
+) -> str:
+    if isinstance(center_ratio, str) and center_ratio.startswith("unavailable:"):
+        return f"{label} `{center_ratio}`"
+    return (
+        f"{label} center/background `{_fmt(center_ratio)}`, "
+        f"core/background `{_fmt(core_ratio)}` "
+        f"(core `{_fmt(core_mean)}`, taper `{_fmt(taper_mean)}`, "
+        f"background `{_fmt(background_mean)}`, quality `{quality_state}`, "
+        f"t `{_fmt(time_seconds)}` s, max distance `{_fmt(distance_m)}` m)"
+    )
+
+
+def _localized_convergence_report(
+    value: Any,
+    distance_m: Any,
+    time_seconds: Any,
+    selection_method: Any,
+    source_fields: Any,
+    quality_state: Any,
+    vertical_height_m: Any,
+    core_mean: Any,
+    taper_mean: Any,
+    background_mean: Any,
+    core_ratio: Any,
+) -> str:
+    if isinstance(value, str) and value.startswith("unavailable:"):
+        return f"convergence `{value}`"
+    fields = ", ".join(_string_list(source_fields)) or "unavailable"
+    return (
+        f"convergence `{_fmt(value)}` s^-1 at `{_fmt(distance_m)}` m, "
+        f"t `{_fmt(time_seconds)}` s "
+        f"({selection_method}, fields `{fields}`, z `{_fmt(vertical_height_m)}` m, "
+        f"quality `{quality_state}`, core `{_fmt(core_mean)}`, "
+        f"taper `{_fmt(taper_mean)}`, background `{_fmt(background_mean)}`, "
+        f"core/background `{_fmt(core_ratio)}`)"
     )
 
 
@@ -4641,10 +5047,20 @@ def _localized_metric_report(
     distance_m: Any,
     *,
     unit_suffix: str = "",
+    time_seconds: Any = None,
+    quality_state: Any = None,
 ) -> str:
     if isinstance(value, str) and value.startswith("unavailable:"):
         return f"{label} `{value}`"
-    return f"{label} `{value}`{unit_suffix} at `{distance_m}` m"
+    suffix = f"{unit_suffix} at `{_fmt(distance_m)}` m"
+    extras: list[str] = []
+    if time_seconds is not None:
+        extras.append(f"t `{_fmt(time_seconds)}` s")
+    if quality_state is not None:
+        extras.append(f"quality `{quality_state}`")
+    if extras:
+        suffix += " (" + ", ".join(extras) + ")"
+    return f"{label} `{_fmt(value)}`{suffix}"
 
 
 def _grid_label(run: Mapping[str, Any]) -> str:
