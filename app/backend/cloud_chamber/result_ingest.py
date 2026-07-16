@@ -31,6 +31,7 @@ from cloud_chamber.result_diagnostics import (
     FieldFrameQualitySummary,
     FieldQuality,
     FramePosition,
+    LocalizedResponseDiagnostics,
     LowLevelResponseDiagnostics,
     LowLevelResponseFieldDiagnostics,
     ProcessDiagnostics,
@@ -279,7 +280,13 @@ def _result_from_model_output_files(
             if metadata_snapshot is None:
                 metadata_snapshot = _metadata_snapshot(normalized)
             contributing_paths.append(path)
-            diagnostics_parts.append(compute_baseline_diagnostics(normalized, []))
+            diagnostics_parts.append(
+                compute_baseline_diagnostics(
+                    normalized,
+                    [],
+                    run_configuration=manifest.run_configuration,
+                )
+            )
             sequence_time_values.extend(_time_values(normalized))
         finally:
             close = getattr(dataset, "close", None)
@@ -578,7 +585,14 @@ def _merge_diagnostics(
     low_level_response = _merge_low_level_response_diagnostics(
         [diagnostics.low_level_response for diagnostics in diagnostics_parts]
     )
+    localized_response = _merge_localized_response_diagnostics(
+        [diagnostics.localized_response for diagnostics in diagnostics_parts]
+    )
     field_quality = _merge_field_quality_maps(diagnostics_parts)
+    localized_response = _apply_merged_quality_to_localized_response(
+        localized_response,
+        field_quality,
+    )
     field_quality_assessed = any(
         diagnostics.field_quality_assessed for diagnostics in diagnostics_parts
     )
@@ -589,6 +603,7 @@ def _merge_diagnostics(
         ]
     )
     caveats = _sanitize_merged_field_quality_caveats(caveats, field_quality)
+    caveats = _sanitize_merged_localized_response_caveats(caveats, localized_response)
     if low_level_response.qv.available:
         caveats = [
             caveat
@@ -610,6 +625,7 @@ def _merge_diagnostics(
         reflectivity=reflectivity,
         surface_fluxes=surface_fluxes,
         low_level_response=low_level_response,
+        localized_response=localized_response,
         time=time,
         field_quality_assessed=field_quality_assessed,
         field_quality=field_quality,
@@ -633,6 +649,16 @@ def _sanitize_merged_field_quality_caveats(
         ):
             cleaned.append(quality.reason)
     return _dedupe_strings(cleaned)
+
+
+def _sanitize_merged_localized_response_caveats(
+    caveats: list[str],
+    localized_response: LocalizedResponseDiagnostics,
+) -> list[str]:
+    retained = set(localized_response.caveats)
+    return _dedupe_strings(
+        [caveat for caveat in caveats if "_localized_response_" not in caveat or caveat in retained]
+    )
 
 
 def _merge_time_diagnostics(diagnostics_parts: list[ResultDiagnostics]) -> TimeDiagnostics:
@@ -1347,7 +1373,269 @@ def _low_level_response_early_endpoint(
     return min(candidates, key=lambda item: item[0])[1]
 
 
-FIELD_QUALITY_MERGE_ORDER = ("qc", "w", "qr", "surface_rain", "dbz", "hfx", "qfx")
+def _merge_localized_response_diagnostics(
+    parts: list[LocalizedResponseDiagnostics],
+) -> LocalizedResponseDiagnostics:
+    if not parts:
+        return LocalizedResponseDiagnostics()
+    geometry = next((part.geometry for part in parts if part.geometry is not None), None)
+    hfx = _best_patch_spatial_field([part.hfx_footprint for part in parts])
+    qfx = _best_patch_spatial_field([part.qfx_footprint for part in parts])
+    convergence = _best_patch_convergence([part.near_surface_convergence for part in parts])
+    updraft = _best_patch_spatial_field([part.updraft for part in parts])
+    cloud_water = _best_patch_spatial_field([part.cloud_water for part in parts])
+    rain_water = _best_patch_spatial_field([part.rain_water_aloft for part in parts])
+    surface_rain = _best_patch_spatial_field([part.surface_rain for part in parts])
+    reflectivity = _best_patch_spatial_field([part.reflectivity for part in parts])
+    emitted_footprint_available = hfx.available or qfx.available
+    response_available = any(
+        diagnostic.available
+        for diagnostic in (
+            convergence,
+            updraft,
+            cloud_water,
+            rain_water,
+            surface_rain,
+            reflectivity,
+        )
+    )
+    if emitted_footprint_available and response_available:
+        support_state = "supported"
+    elif emitted_footprint_available:
+        support_state = "footprint_supported_response_unavailable"
+    else:
+        support_state = "unavailable"
+    selected_caveats = [
+        caveat
+        for diagnostic in (
+            hfx,
+            qfx,
+            convergence,
+            updraft,
+            cloud_water,
+            rain_water,
+            surface_rain,
+            reflectivity,
+        )
+        for caveat in diagnostic.caveats
+    ]
+    if not emitted_footprint_available:
+        selected_caveats.extend(caveat for part in parts for caveat in part.caveats)
+    return LocalizedResponseDiagnostics(
+        available=emitted_footprint_available,
+        support_state=support_state,
+        geometry=geometry,
+        hfx_footprint=hfx,
+        qfx_footprint=qfx,
+        near_surface_convergence=convergence,
+        updraft=updraft,
+        cloud_water=cloud_water,
+        rain_water_aloft=rain_water,
+        surface_rain=surface_rain,
+        reflectivity=reflectivity,
+        caveats=_dedupe_strings(selected_caveats),
+    )
+
+
+def _best_patch_spatial_field(parts: list[Any]) -> Any:
+    available = [part for part in parts if part.available and part.max_value is not None]
+    if available:
+        return max(available, key=lambda part: abs(float(part.max_value)))
+    return parts[0] if parts else None
+
+
+def _best_patch_convergence(parts: list[Any]) -> Any:
+    available = [part for part in parts if part.available and part.max_convergence_s_1 is not None]
+    if available:
+        return max(available, key=lambda part: float(part.max_convergence_s_1))
+    return parts[0] if parts else None
+
+
+def _apply_merged_quality_to_localized_response(
+    response: LocalizedResponseDiagnostics,
+    field_quality: Mapping[str, FieldQuality],
+) -> LocalizedResponseDiagnostics:
+    hfx = _apply_quality_to_patch_spatial_field(response.hfx_footprint, field_quality)
+    qfx = _apply_quality_to_patch_spatial_field(response.qfx_footprint, field_quality)
+    updraft = _apply_quality_to_patch_spatial_field(response.updraft, field_quality)
+    cloud_water = _apply_quality_to_patch_spatial_field(response.cloud_water, field_quality)
+    rain_water = _apply_quality_to_patch_spatial_field(response.rain_water_aloft, field_quality)
+    surface_rain = _apply_quality_to_patch_spatial_field(response.surface_rain, field_quality)
+    reflectivity = _apply_quality_to_patch_spatial_field(response.reflectivity, field_quality)
+    convergence = _apply_quality_to_patch_convergence(
+        response.near_surface_convergence,
+        field_quality,
+    )
+    emitted_footprint_available = hfx.available or qfx.available
+    response_available = any(
+        diagnostic.available
+        for diagnostic in (
+            convergence,
+            updraft,
+            cloud_water,
+            rain_water,
+            surface_rain,
+            reflectivity,
+        )
+    )
+    if emitted_footprint_available and response_available:
+        support_state = "footprint_and_response_diagnostics_available"
+    elif emitted_footprint_available:
+        support_state = "footprint_available_response_diagnostics_limited"
+    else:
+        support_state = "unavailable"
+    caveats = _dedupe_strings(
+        [
+            caveat
+            for diagnostic in (
+                hfx,
+                qfx,
+                convergence,
+                updraft,
+                cloud_water,
+                rain_water,
+                surface_rain,
+                reflectivity,
+            )
+            for caveat in diagnostic.caveats
+        ]
+    )
+    return response.model_copy(
+        update={
+            "available": emitted_footprint_available,
+            "support_state": support_state,
+            "hfx_footprint": hfx,
+            "qfx_footprint": qfx,
+            "near_surface_convergence": convergence,
+            "updraft": updraft,
+            "cloud_water": cloud_water,
+            "rain_water_aloft": rain_water,
+            "surface_rain": surface_rain,
+            "reflectivity": reflectivity,
+            "caveats": caveats,
+        }
+    )
+
+
+def _apply_quality_to_patch_spatial_field(
+    field: Any,
+    field_quality: Mapping[str, FieldQuality],
+) -> Any:
+    quality = _quality_for_localized_source(field.source_field, field_quality)
+    if quality is None:
+        return field
+    caveats = _localized_quality_caveats(quality)
+    if quality.quality_state == "untrusted":
+        caveats.append(f"{field.source_field}_localized_response_untrusted_field")
+        return field.model_copy(
+            update={
+                "available": False,
+                "quality_state": quality.quality_state,
+                "quality_reason": quality.reason,
+                "finite_count": quality.finite_count,
+                "non_finite_count": quality.non_finite_count,
+                "total_count": quality.total_count,
+                "finite_fraction": quality.finite_fraction,
+                "caveats": _dedupe_strings([*field.caveats, *caveats]),
+            }
+        )
+    return field.model_copy(
+        update={
+            "quality_state": quality.quality_state,
+            "quality_reason": quality.reason,
+            "finite_count": field.finite_count or quality.finite_count,
+            "non_finite_count": field.non_finite_count or quality.non_finite_count,
+            "total_count": field.total_count or quality.total_count,
+            "finite_fraction": field.finite_fraction
+            if field.finite_fraction is not None
+            else quality.finite_fraction,
+            "caveats": _dedupe_strings([*field.caveats, *caveats]),
+        }
+    )
+
+
+def _apply_quality_to_patch_convergence(
+    convergence: Any,
+    field_quality: Mapping[str, FieldQuality],
+) -> Any:
+    qualities = [
+        quality
+        for source_field in convergence.source_fields
+        if (quality := field_quality.get(source_field)) is not None
+    ]
+    caveats = _dedupe_strings(
+        [
+            caveat
+            for quality in qualities
+            if quality.quality_state != "trusted"
+            for caveat in [
+                *quality.caveats,
+                f"field_quality_{quality.quality_state}:{quality.field}",
+            ]
+        ]
+    )
+    if any(quality.quality_state == "untrusted" for quality in qualities):
+        return convergence.model_copy(
+            update={
+                "available": False,
+                "quality_state": "untrusted",
+                "quality_reason": next(
+                    (quality.reason for quality in qualities if quality.reason), None
+                ),
+                "caveats": _dedupe_strings(
+                    [
+                        *convergence.caveats,
+                        *caveats,
+                        "localized_response_convergence_untrusted_wind_field",
+                    ]
+                ),
+            }
+        )
+    if not qualities:
+        return convergence
+    quality_state = (
+        "caveated"
+        if any(quality.quality_state != "trusted" for quality in qualities)
+        else "trusted"
+    )
+    return convergence.model_copy(
+        update={
+            "quality_state": quality_state,
+            "quality_reason": next(
+                (quality.reason for quality in qualities if quality.reason), None
+            ),
+            "caveats": _dedupe_strings([*convergence.caveats, *caveats]),
+        }
+    )
+
+
+def _quality_for_localized_source(
+    source_field: str,
+    field_quality: Mapping[str, FieldQuality],
+) -> FieldQuality | None:
+    key = "surface_rain" if source_field == "rain" else source_field
+    return field_quality.get(key)
+
+
+def _localized_quality_caveats(quality: FieldQuality) -> list[str]:
+    if quality.quality_state == "trusted":
+        return []
+    return [*quality.caveats, f"field_quality_{quality.quality_state}:{quality.field}"]
+
+
+FIELD_QUALITY_MERGE_ORDER = (
+    "qc",
+    "w",
+    "qr",
+    "surface_rain",
+    "dbz",
+    "hfx",
+    "qfx",
+    "uinterp",
+    "vinterp",
+    "u",
+    "v",
+)
 FIELD_QUALITY_COMPARISON_ORDER = ("qc", "w", "qr", "surface_rain", "dbz")
 
 
@@ -1558,7 +1846,11 @@ def _result_from_dataset(
             "Recipe required output fields missing from NetCDF metadata: "
             + ", ".join(missing_required_output_fields)
         )
-    diagnostics = compute_baseline_diagnostics(dataset, warnings)
+    diagnostics = compute_baseline_diagnostics(
+        dataset,
+        warnings,
+        run_configuration=manifest.run_configuration,
+    )
     runtime_integrity = _runtime_integrity_for_result(manifest, classified, diagnostics)
     process_diagnostics = compute_process_diagnostics(
         diagnostics,

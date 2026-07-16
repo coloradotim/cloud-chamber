@@ -17,7 +17,11 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict, Field
 
 from cloud_chamber.output_products import FieldDefaultTime, InterestingTimeRecord, ScienceSummary
-from cloud_chamber.result_diagnostics import FieldQuality, SurfaceFluxDiagnostics
+from cloud_chamber.result_diagnostics import (
+    FieldQuality,
+    LocalizedResponseDiagnostics,
+    SurfaceFluxDiagnostics,
+)
 from cloud_chamber.result_ingest import (
     RESULT_METADATA_FILENAME,
     CandidateHypothesisComparison,
@@ -129,6 +133,7 @@ class ResultCard(BaseModel):
     max_dbz: float | None = None
     reflectivity_available: bool | None = None
     surface_fluxes: SurfaceFluxDiagnostics | None = None
+    localized_response: LocalizedResponseDiagnostics | None = None
     runtime_integrity: RuntimeIntegrity = Field(default_factory=RuntimeIntegrity)
     field_quality_assessed: bool = False
     field_quality: dict[str, FieldQuality] = Field(default_factory=dict)
@@ -312,6 +317,7 @@ def _card_from_metadata(
         max_dbz=reflectivity.max_dbz if reflectivity and reflectivity.available else None,
         reflectivity_available=reflectivity.available if reflectivity else None,
         surface_fluxes=diagnostics.surface_fluxes if diagnostics else None,
+        localized_response=diagnostics.localized_response if diagnostics else None,
         runtime_integrity=metadata.runtime_integrity,
         field_quality_assessed=diagnostics.field_quality_assessed if diagnostics else False,
         field_quality=diagnostics.field_quality

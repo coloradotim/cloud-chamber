@@ -235,6 +235,70 @@ def write_stats_netcdf(path: Path) -> None:
     ).to_netcdf(path, engine="scipy")
 
 
+def localized_patch_run_configuration() -> dict[str, Any]:
+    return {
+        "surface_flux_mode": "differential_surface_forcing_patch_v0",
+        "surface_forcing_patch": {
+            "pattern_sha256": "patch-sha",
+            "shape": "circle",
+            "center_x_m": 200.0,
+            "center_y_m": 200.0,
+            "radius_x_m": 250.0,
+            "radius_y_m": 250.0,
+            "taper_width_m": 100.0,
+            "ramp_seconds": 600.0,
+        },
+    }
+
+
+def write_localized_patch_netcdf(
+    path: Path,
+    *,
+    time_seconds: float,
+    w_peak: float,
+    hfx_all_nan: bool = False,
+    w_all_nan: bool = False,
+    wind_all_nan: bool = False,
+) -> None:
+    x = [0.0, 200.0, 400.0, 600.0]
+    y = [0.0, 200.0, 400.0]
+    z = [100.0, 200.0]
+    hfx = [[[1.0 for _x in x] for _y in y]]
+    qfx = [[[1.0e-5 for _x in x] for _y in y]]
+    hfx[0][1][1] = 6.0
+    qfx[0][1][1] = 2.0e-5
+    w = [[[[0.0 for _x in x] for _y in y] for _z in z]]
+    w[0][1][1][1] = w_peak
+    uinterp = [[[[0.0 for _x in x] for _y in y] for _z in z]]
+    vinterp = [[[[0.0 for _x in x] for _y in y] for _z in z]]
+    for z_index in range(len(z)):
+        for y_index, y_value in enumerate(y):
+            for x_index, x_value in enumerate(x):
+                uinterp[0][z_index][y_index][x_index] = -(x_value - 200.0) * 0.001
+                vinterp[0][z_index][y_index][x_index] = -(y_value - 200.0) * 0.001
+    if hfx_all_nan:
+        hfx = [[[float("nan") for _x in x] for _y in y]]
+    if w_all_nan:
+        w = [[[[float("nan") for _x in x] for _y in y] for _z in z]]
+    if wind_all_nan:
+        uinterp = [[[[float("nan") for _x in x] for _y in y] for _z in z]]
+        vinterp = [[[[float("nan") for _x in x] for _y in y] for _z in z]]
+    dataset = xr.Dataset(
+        data_vars={
+            "hfx": (("time", "y", "x"), hfx, {"units": "W/m^2"}),
+            "qfx": (("time", "y", "x"), qfx, {"units": "kg/m^2/s"}),
+            "w": (("time", "z", "y", "x"), w, {"units": "m/s"}),
+            "uinterp": (("time", "z", "y", "x"), uinterp, {"units": "m/s"}),
+            "vinterp": (("time", "z", "y", "x"), vinterp, {"units": "m/s"}),
+        },
+        coords={"time": [time_seconds], "z": z, "y": y, "x": x},
+    )
+    dataset["z"].attrs["units"] = "m"
+    dataset["y"].attrs["units"] = "m"
+    dataset["x"].attrs["units"] = "m"
+    dataset.to_netcdf(path, engine="scipy")
+
+
 def test_ingests_valid_tiny_netcdf_metadata(tmp_path: Path) -> None:
     manifest_path = create_manifest(tmp_path)
     run_dir = manifest_path.parent
@@ -448,6 +512,84 @@ def test_ingests_multifile_model_output_sequence_and_excludes_stats(tmp_path: Pa
     availability = {item.key: item for item in result.science_summary.diagnostic_availability}
     assert availability["low_level_qv_response"].support_state == "supported"
     assert availability["low_level_qv_response"].value == pytest.approx(0.006)
+
+
+def test_multifile_localized_response_keeps_caveats_from_retained_diagnostics(
+    tmp_path: Path,
+) -> None:
+    manifest_path = create_manifest(tmp_path, run_id="run-localized-merge")
+    manifest = load_run_manifest(manifest_path)
+    write_run_manifest(
+        manifest_path,
+        manifest.model_copy(update={"run_configuration": localized_patch_run_configuration()}),
+    )
+    run_dir = manifest_path.parent
+    first = run_dir / "cm1out_000001.nc"
+    second = run_dir / "cm1out_000002.nc"
+    write_localized_patch_netcdf(first, time_seconds=0.0, w_peak=0.0)
+    write_localized_patch_netcdf(second, time_seconds=300.0, w_peak=2.0)
+    complete_manifest(
+        manifest_path,
+        OutputMetadata(netcdf_paths=[str(first), str(second)]),
+    )
+
+    result = ingest_completed_run(manifest_path)
+    assert result.diagnostics is not None
+    response = result.diagnostics.localized_response
+
+    assert response.support_state == "footprint_and_response_diagnostics_available"
+    assert response.updraft.available is True
+    assert response.updraft.max_value == pytest.approx(2.0)
+    assert response.updraft.max_inside_patch_radius is True
+    assert response.near_surface_convergence.available is True
+    assert "w_localized_response_no_signal_above_threshold" not in response.caveats
+    assert "qc_localized_response_field_absent" in response.cloud_water.caveats
+    assert "field_quality_unavailable:qc" in response.cloud_water.caveats
+
+
+def test_multifile_localized_response_suppresses_terminal_untrusted_fields(
+    tmp_path: Path,
+) -> None:
+    manifest_path = create_manifest(tmp_path, run_id="run-localized-terminal-quality")
+    manifest = load_run_manifest(manifest_path)
+    write_run_manifest(
+        manifest_path,
+        manifest.model_copy(update={"run_configuration": localized_patch_run_configuration()}),
+    )
+    run_dir = manifest_path.parent
+    first = run_dir / "cm1out_000001.nc"
+    second = run_dir / "cm1out_000002.nc"
+    write_localized_patch_netcdf(first, time_seconds=0.0, w_peak=2.0)
+    write_localized_patch_netcdf(
+        second,
+        time_seconds=300.0,
+        w_peak=0.0,
+        hfx_all_nan=True,
+        w_all_nan=True,
+        wind_all_nan=True,
+    )
+    complete_manifest(
+        manifest_path,
+        OutputMetadata(netcdf_paths=[str(first), str(second)]),
+    )
+
+    result = ingest_completed_run(manifest_path)
+    assert result.diagnostics is not None
+    response = result.diagnostics.localized_response
+
+    assert response.qfx_footprint.available is True
+    assert response.hfx_footprint.available is False
+    assert response.hfx_footprint.quality_state == "untrusted"
+    assert "hfx_localized_response_untrusted_field" in response.hfx_footprint.caveats
+    assert response.updraft.available is False
+    assert response.updraft.quality_state == "untrusted"
+    assert "w_localized_response_untrusted_field" in response.updraft.caveats
+    assert response.near_surface_convergence.available is False
+    assert response.near_surface_convergence.quality_state == "untrusted"
+    assert "localized_response_convergence_untrusted_wind_field" in (
+        response.near_surface_convergence.caveats
+    )
+    assert response.support_state == "footprint_available_response_diagnostics_limited"
 
 
 def test_ingests_multifile_terminal_non_finite_frame_quality(

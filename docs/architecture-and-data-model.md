@@ -220,10 +220,14 @@ customization manifest. Local launch must build from an isolated copy of the
 external CM1 source tree, copy the customized executable into the run directory,
 record executable/source provenance, and block rather than silently running a
 uniform package. Differential packages are local-only until trusted LAN worker
-custom-source execution is implemented. The v0 package/runtime path remains
-runtime-unvalidated until a real CM1 compile and forcing-footprint smoke test
-prove the emitted hfx/qfx pattern. Each observed sounding remains an experiment
-whose outcome must be inspected after CM1 completes.
+custom-source execution is implemented. The v0 package/runtime path has
+runtime-local compile and emitted hfx/qfx forcing-footprint smoke evidence.
+Result metadata now carries per-run localized-response diagnostics for the
+documented patch geometry, emitted footprint, near-surface convergence when
+u/v are available, and patch-to-updraft/cloud/rain/reflectivity distance
+metrics. Matched campaign-level response validation remains separate; each
+observed sounding remains an experiment whose outcome must be inspected after
+CM1 completes.
 
 Observed surface-forced evolution v0 is the first concrete run configuration
 for observed-sounding hypotheses. Package generation records

@@ -16,7 +16,10 @@ from cloud_chamber.output_products import (
 )
 from cloud_chamber.result_diagnostics import (
     CloudDiagnostics,
+    DifferentialPatchGeometryDiagnostics,
     FieldQuality,
+    LocalizedResponseDiagnostics,
+    PatchSpatialFieldDiagnostics,
     RainDiagnostics,
     ReflectivityDiagnostics,
     ResultDiagnostics,
@@ -443,6 +446,62 @@ def test_sparse_raw_hydrometeor_trace_does_not_support_deep_convection(
     assert product.science_summary.time_of_first_deep_convection_seconds is None
     assert product.science_summary.highest_cloud_top_m == 6200.0
     assert product.science_summary.highest_raw_hydrometeor_envelope_top_m == 10200.0
+
+
+def test_science_summary_preserves_localized_response_diagnostics(tmp_path: Path) -> None:
+    model = tmp_path / "cm1out_000001.nc"
+    write_model_netcdf(model, times=[0.0, 600.0], values=[0.0, 1.0])
+    manifest = build_manifest(tmp_path, [model])
+    diagnostics = ResultDiagnostics(
+        cloud=CloudDiagnostics(available=True, formed=False),
+        vertical_velocity=VerticalVelocityDiagnostics(max_w_m_s=1.0, units="m/s"),
+        rain=RainDiagnostics(available=True, present=False),
+        time=TimeDiagnostics(source="netcdf_time_coordinate", fallback_used=False),
+        localized_response=LocalizedResponseDiagnostics(
+            available=True,
+            support_state="supported",
+            geometry=DifferentialPatchGeometryDiagnostics(
+                pattern_sha256="patch-sha",
+                shape="circle",
+                center_x_m=0.0,
+                center_y_m=0.0,
+                radius_x_m=1500.0,
+                radius_y_m=1500.0,
+                taper_width_m=500.0,
+                ramp_seconds=1800.0,
+            ),
+            hfx_footprint=PatchSpatialFieldDiagnostics(
+                source_field="hfx",
+                available=True,
+                max_value=54.0,
+                center_to_outside_ratio=6.0,
+                max_distance_from_patch_center_m=0.0,
+            ),
+            qfx_footprint=PatchSpatialFieldDiagnostics(
+                source_field="qfx",
+                available=True,
+                max_value=1.1e-4,
+                center_to_outside_ratio=2.0,
+                max_distance_from_patch_center_m=0.0,
+            ),
+        ),
+    )
+
+    product = build_interesting_time_product(
+        result_id="result-localized-response",
+        diagnostics=diagnostics,
+        output_manifest=manifest,
+        variables=["qc", "w", "hfx", "qfx"],
+    )
+
+    response = product.science_summary.localized_response
+    assert response.available is True
+    assert response.geometry is not None
+    assert response.geometry.pattern_sha256 == "patch-sha"
+    assert response.geometry.radius_x_m == 1500.0
+    assert response.geometry.taper_width_m == 500.0
+    assert response.hfx_footprint.center_to_outside_ratio == 6.0
+    assert response.qfx_footprint.center_to_outside_ratio == 2.0
 
 
 def test_composite_cloud_top_uses_contributing_field_quality(tmp_path: Path) -> None:
