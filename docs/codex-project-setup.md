@@ -1,104 +1,47 @@
 # Codex Project Setup Notes
 
-## Recommended New Repo
+## Repository
 
 ```text
 cloud-chamber
 ```
 
-## Local Directory
-
-Recommended:
+Likely local directory:
 
 ```text
 /Users/timpeterson/Documents/Codex/cloud-chamber
 ```
 
-## Initial Files To Add
+## Current Strategic Files
 
-Copy these startup docs into the repo root or `docs/startup/`:
+Read these before product work:
 
 ```text
 README.md
 AGENTS.md
+docs/cloud-first-product-reset.md
 docs/product-vision.md
+docs/current-roadmap.md
 docs/cloud-chamber-product-spec.md
 docs/architecture-and-data-model.md
-docs/current-roadmap.md
 ```
 
-## Suggested Skeleton
+`AGENTS.md` is the operational authority for coding-agent behavior. The
+cloud-first reset and current roadmap are the strategic authority.
 
-```text
-cloud-chamber/
-  AGENTS.md
-  README.md
-  app/
-    frontend/
-    backend/
-  docs/
-    product-vision.md
-    cloud-chamber-product-spec.md
-    architecture-and-data-model.md
-    current-roadmap.md
-    data-policy.md
-  scenarios/
-    lower-atmosphere/
-      baseline-shallow-cumulus/
-      dry-failed-cumulus/
-      capped-suppressed/
-      humid-vigorous/
-      low-stratus/
-  local-data/              # ignored
-  scripts/
-    cm1/
-```
-
-## .gitignore Must Include
-
-```gitignore
-# Local CM1 data and generated artifacts
-local-data/
-data/generated/
-data/local/
-*.nc
-*.ctl
-*.dat
-cm1.exe
-LANDUSE.TBL
-
-# Python / node basics
-.venv/
-__pycache__/
-node_modules/
-dist/
-.env
-.env.local
-```
-
-## First Technical Decision
-
-Choose app architecture:
-
-Recommended:
+## App Architecture
 
 ```text
 React/Vite frontend + Python FastAPI local backend
 ```
 
-Reason:
+Why:
 
-- Python handles xarray/netCDF easily.
-- React handles UI and 3-D viewer.
-- Local backend can launch/manage CM1 processes.
+- Python handles xarray/NetCDF and local CM1 orchestration.
+- React handles Build, Results, Explore, and visual interaction.
+- The local backend can launch and manage CM1 processes.
 
-Alternative later:
-
-```text
-Tauri/Electron wrapper
-```
-
-Do not package too early.
+Do not package a desktop wrapper until the local workflow creates a clear need.
 
 ## CM1 Local Path
 
@@ -108,27 +51,81 @@ Likely current local CM1 path:
 /Users/timpeterson/cm1r21.1/run
 ```
 
-Do not hard-code this in app logic. Store in local settings.
+Do not hard-code it. Store local paths in `~/CloudChamber/settings.json`.
 
-## First Development Principles
+## Runtime And Git Policy
 
-1. No generated output in git.
-2. Every run has a manifest.
-3. Every visualization field has provenance.
-4. Preview and CM1 result are always distinct.
-5. Start with fake fixtures before requiring real CM1 in tests.
-6. Use local paths/settings, not global assumptions.
-7. Prefer one end-to-end scenario before many partial features.
+Runtime data belongs outside the repo:
+
+```text
+~/CloudChamber/
+```
+
+Never commit:
+
+- generated CM1 runs;
+- NetCDF output;
+- CM1 source or binaries;
+- logs;
+- machine-private settings or paths;
+- large visualization artifacts.
+
+Keep tiny fixtures, code, tests, docs, schemas, and recipe definitions in git.
+
+## Development Principles
+
+1. CM1 output is the source of truth for cloud evolution.
+2. Analyzer/recommendation, configuration, active process, completed result, and
+   visualization interpretation remain distinct.
+3. Build should recommend useful sounding–recipe–run-setup combinations rather
+   than requiring the user to interpret soundings alone.
+4. Strong idealized cloud recipes are acceptable when clearly labeled.
+5. Real CM1 scouts are part of cloud-making implementation; automated CI still
+   uses tiny fake fixtures.
+6. Use the existing Build queue/progress/ETA/stop/cleanup workflow for scouts and
+   visible automatic full-run promotion.
+7. Prefer one outcome-oriented vertical slice over many partial plumbing issues.
 
 ## Codex Workflow
 
 - Start from current `main`.
-- Work on a branch for each issue or tightly related issue set.
-- Open a PR; do not push directly to `main`.
-- Keep work scoped to the GitHub issue.
-- Add tests and docs with implementation changes.
-- Do not commit generated CM1 artifacts.
-- For Codex issue work, enable auto-merge after required CI checks pass unless the user explicitly asks for manual review or the PR is high-risk/destructive.
-- Treat destructive cleanup, generated-data policy changes, scientific interpretation changes, and real CM1 execution changes as high-risk unless the user says otherwise.
+- Work on a branch named for the user outcome or issue.
+- Do not push directly to `main`.
+- Read `AGENTS.md`, especially **Cloud-Making Operating Mode**.
+- Scope work to one user outcome, not one implementation layer.
+- Ask only material unresolved questions; do not wait for another go-ahead when
+  the issue and approved product direction are explicit.
+- Add tests and update docs with implementation changes.
+- Run meaningful bounded CM1 scouts early when cloud-making is in scope.
+- If a run is boring, change sounding, recipe, scale, duration, or trigger before
+  adding diagnostics.
+- Create a separate issue only for a real blocker or independent product
+  decision.
+- Run `scripts/check.sh` and relevant E2E checks before opening a PR.
+- Open a PR that describes the cloud/user outcome and real-run evidence where
+  applicable.
+- Enable auto-merge after CI unless the change is destructive/high-risk or the
+  user requests manual review.
 
-See also the root `AGENTS.md`.
+## High-Risk Actions
+
+Ask before:
+
+- deleting user runtime data beyond an explicit cleanup request;
+- launching an unbounded or unexpectedly expensive batch;
+- changing product direction outside the approved cloud-first reset;
+- making backwards-incompatible schema changes without migration;
+- weakening tests rather than fixing the underlying problem.
+
+Do not pause merely because an approved cloud-making issue touches real CM1,
+additive schemas, recipe assumptions, or a bounded scout/full-run workflow.
+
+## Local Checks
+
+```sh
+scripts/check.sh
+```
+
+Use Playwright for user-visible workflow changes when practical. Real CM1 evidence
+belongs in local runtime verification and the PR description; generated output
+stays outside git.
