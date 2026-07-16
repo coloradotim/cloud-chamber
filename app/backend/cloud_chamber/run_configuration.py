@@ -14,6 +14,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from cloud_chamber.surface_forcing import (
     DIFFERENTIAL_SURFACE_FORCING_MODE,
+    DISABLED_SURFACE_FLUX_MODE,
     UNIFORM_SURFACE_FLUX_MODE,
     SurfaceForcingPatch,
     resolve_surface_forcing_patch,
@@ -146,6 +147,7 @@ class _CadenceChoice(BaseModel):
 
 DURATION_CHOICES: dict[str, _DurationChoice] = {
     "smoke_1h": _DurationChoice(seconds=3600, mode="smoke", label="Smoke check"),
+    "scout_2h": _DurationChoice(seconds=7200, mode="science", label="Scout evolution"),
     "short_6h": _DurationChoice(seconds=21600, mode="science", label="Short evolution"),
     "standard_12h": _DurationChoice(seconds=43200, mode="science", label="Standard evolution"),
     "long_24h": _DurationChoice(seconds=86400, mode="science", label="Long evolution"),
@@ -154,6 +156,7 @@ DURATION_CHOICES: dict[str, _DurationChoice] = {
 HORIZONTAL_CELL_CHOICES: dict[str, _HorizontalCellChoice] = {
     "cells_64": _HorizontalCellChoice(cells=64, label="Scout 64 x 64"),
     "cells_96": _HorizontalCellChoice(cells=96, label="Light 96 x 96"),
+    "cells_120": _HorizontalCellChoice(cells=120, label="Deep-tower scout 120 x 120"),
     "cells_128": _HorizontalCellChoice(cells=128, label="Standard 128 x 128"),
     "cells_192": _HorizontalCellChoice(cells=192, label="Detailed 192 x 192"),
     "cells_256": _HorizontalCellChoice(cells=256, label="High detail 256 x 256"),
@@ -196,6 +199,19 @@ DOMAIN_CHOICES: dict[str, _DomainChoice] = {
         **TALL_STRETCHED_VERTICAL_GRID,
         label="Regional 120 km",
     ),
+    "deep_tower_120km": _DomainChoice(
+        x_km=120.0,
+        y_km=120.0,
+        nz=40,
+        dz_m=500.0,
+        stretch_z=0,
+        model_top_m=20000.0,
+        str_bot_m=0.0,
+        str_top_m=2000.0,
+        dz_bot_m=125.0,
+        dz_top_m=500.0,
+        label="Storm 120 km",
+    ),
 }
 
 CADENCE_CHOICES: dict[str, _CadenceChoice] = {
@@ -212,6 +228,18 @@ SURFACE_MOISTURE_FLUX_CONTEXT_RANGE_G_G_M_S = (0.0, 2.0e-4)
 
 
 def default_run_configuration_payload(run_recipe: str | None = None) -> dict[str, str | float]:
+    if run_recipe in {"deep_tower_benchmark", "triggered_deep_potential"}:
+        return {
+            "duration": "scout_2h",
+            "horizontal_cell_count": "cells_120",
+            "domain_size": "deep_tower_120km",
+            "output_cadence": "standard_15min",
+            "diagnostic_set": "full",
+            "surface_heat_flux_k_m_s": 0.0,
+            "surface_moisture_flux_g_g_m_s": 0.0,
+            "surface_forcing_mode": DISABLED_SURFACE_FLUX_MODE,
+            "time_step_seconds": 6.0,
+        }
     if run_recipe == "observed_surface_forced_evolution":
         return {
             "duration": "short_6h",
@@ -252,7 +280,11 @@ def resolve_run_configuration(
         **payload,
     }
 
-    initiation_method = "none"
+    initiation_method = (
+        "cm1_iinit_3_three_warm_bubbles"
+        if run_recipe in {"deep_tower_benchmark", "triggered_deep_potential"}
+        else "none"
+    )
 
     duration = _choice(DURATION_CHOICES, payload.get("duration"), "duration")
     horizontal_cells = _choice(
@@ -290,8 +322,8 @@ def resolve_run_configuration(
     restart_seconds = max(cadence.seconds, min(duration.seconds, 10800))
     frames = _expected_output_frames(duration.seconds, cadence.seconds)
     grid_cells = nx * ny * domain.nz
-    surface_flux_enabled = True
     surface_flux_mode = surface_forcing_mode_from_payload(payload)
+    surface_flux_enabled = surface_flux_mode != DISABLED_SURFACE_FLUX_MODE
     surface_forcing_patch = resolve_surface_forcing_patch(
         payload=payload,
         mode=surface_flux_mode,
@@ -330,6 +362,7 @@ def resolve_run_configuration(
     )
     caveats = _configuration_caveats(
         mode=duration.mode,
+        duration_seconds=duration.seconds,
         horizontal_cell_count=horizontal_cells.cells,
         domain_size=str(payload["domain_size"]),
         surface_flux_caveats=surface_flux_caveats,
@@ -373,7 +406,7 @@ def resolve_run_configuration(
             runtime_seconds=duration.seconds,
             output_cadence_seconds=cadence.seconds,
             restart_cadence_seconds=restart_seconds,
-            rayleigh_damping_start_m=_rayleigh_damping_start_m(),
+            rayleigh_damping_start_m=_rayleigh_damping_start_m(run_recipe),
             expected_output_frames=frames,
             grid_cell_count=grid_cells,
         ),
@@ -493,6 +526,7 @@ def _output_summary(frames: int, grid_cells: int, diagnostic_set: str) -> str:
 def _configuration_caveats(
     *,
     mode: RunMode,
+    duration_seconds: int,
     horizontal_cell_count: int,
     domain_size: str,
     surface_flux_caveats: list[str],
@@ -501,8 +535,12 @@ def _configuration_caveats(
     caveats: list[str] = list(surface_flux_caveats)
     if mode == "smoke":
         caveats.append("short_smoke_mode_is_for_package_health_not_science_evolution")
-    if mode == "science":
+    if domain_size == "deep_tower_120km":
+        caveats.append("storm_scale_domain_for_explicit_deep_tower_initiation")
+    if mode == "science" and duration_seconds >= 21600:
         caveats.append("science_run_configuration_minimum_duration_6h")
+    if mode == "science" and duration_seconds < 21600:
+        caveats.append("short_scout_duration_for_initial_deep_tower_chase")
     if horizontal_cell_count >= 256 or domain_size in {
         "wide_12km",
         "regional_60km",
@@ -515,6 +553,8 @@ def _configuration_caveats(
 
 
 def _initiation_summary(initiation_method: str) -> str:
+    if initiation_method == "cm1_iinit_3_three_warm_bubbles":
+        return "CM1 iinit=3 three warm bubbles"
     return "No artificial initiation"
 
 
@@ -609,7 +649,9 @@ def _surface_mode_id(surface_flux_mode: str, patch_sha256: str | None) -> str:
     return ""
 
 
-def _rayleigh_damping_start_m() -> int:
+def _rayleigh_damping_start_m(run_recipe: str | None = None) -> int:
+    if run_recipe in {"deep_tower_benchmark", "triggered_deep_potential"}:
+        return 15000
     return 12000
 
 

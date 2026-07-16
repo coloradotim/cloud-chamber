@@ -73,12 +73,12 @@ candidate stories. It does not make severe, winter, cold-pool, or specialized
 boundary-layer stories scientifically validated until their scoring, evidence,
 caveats, and package-readiness states are implemented and tested.
 
-The historical deep-convection package design is now evidence and background,
-not the active Build contract. User-facing docs should describe current
-observed-sounding packages as configurable experiments with numeric
-lower-boundary heat/moisture forcing, full output fields, and explicit caveats.
-Differential surface forcing for initiation or boundary experiments is future
-work.
+The Deep-Tower Benchmark is the active first experiment for severe/deep-
+convection sounding stories. It uses observed temperature/moisture/wind input,
+stock CM1 `iinit = 3` three-warm-bubble initiation, disabled surface fluxes,
+storm-scale scout defaults, full output fields, and explicit caveats that the
+trigger is idealized. Observed surface-forced and differential surface-patch
+recipes remain separate lower-boundary forcing questions.
 
 ## Current State
 

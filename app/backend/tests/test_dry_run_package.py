@@ -362,7 +362,108 @@ def test_differential_surface_forcing_rejects_ellipse_shape(
         )
 
 
-def test_triggered_deep_potential_package_generation_is_removed(
+def test_deep_tower_benchmark_package_uses_stock_iinit3_path(
+    tmp_path: Path,
+) -> None:
+    observed = parse_igra_station_text(
+        IGRA_FIXTURE,
+        uploaded_filename="USM00072558-data-beg2025.txt",
+    ).selected_sounding
+    candidate_screening = {
+        "candidate_id": "USM00072558-supercell",
+        "primary_story": "supercell_environment",
+        "active_story": "supercell_environment",
+        "active_story_label": "Supercell-like environment",
+        "rank_score": 93.0,
+    }
+
+    result = generate_dry_run_package(
+        scenario_data=load_baseline_template(),
+        runtime_home=tmp_path,
+        run_id="run-deep-tower-benchmark",
+        run_recipe="deep_tower_benchmark",
+        observed_sounding=observed,
+        candidate_screening=candidate_screening,
+    )
+
+    manifest = load_run_manifest(result.manifest_path)
+    report = json.loads(result.report_path.read_text())
+    case_manifest = json.loads((result.package_dir / "case_manifest.json").read_text())
+    namelist = (result.package_dir / "namelist.input").read_text()
+
+    assert manifest.run_recipe == "deep_tower_benchmark"
+    assert manifest.run_recipe_display_name == "Deep-Tower Benchmark"
+    assert manifest.recipe_id == "deep_tower_benchmark_v0"
+    assert manifest.recipe_display_name == "Deep-Tower Benchmark v0"
+    assert manifest.assumption_set_id == "deep_tower_benchmark_v0_assumptions"
+    assert manifest.assumption_mode == "explicit_thermal_initiation"
+    assert manifest.trigger_type == "warm_bubble"
+    assert manifest.trigger_parameters == {
+        "cm1_iinit": 3,
+        "cm1_trigger": (
+            "CM1 built-in three warm bubbles with 2 K maximum potential-temperature "
+            "perturbations in a line near 1.4 km AGL"
+        ),
+        "raw_controls_exposed": False,
+    }
+    assert manifest.manual_validation_status == (
+        "deep_tower_benchmark_iinit3_fort_worth_prior_smoke_validated"
+    )
+    assert manifest.run_configuration["duration"] == "scout_2h"
+    assert manifest.run_configuration["duration_seconds"] == 7200
+    assert manifest.run_configuration["horizontal_cell_count"] == 120
+    assert manifest.run_configuration["domain_size"] == "deep_tower_120km"
+    assert manifest.run_configuration["surface_flux_mode"] == "disabled"
+    assert manifest.run_configuration["surface_flux_cm1_values"]["isfcflx"] == 0
+    assert manifest.run_configuration["surface_flux_cm1_values"]["set_flx"] == 0
+    assert manifest.run_configuration["cm1_values"]["runtime_seconds"] == 7200
+    assert manifest.run_configuration["cm1_values"]["rayleigh_damping_start_m"] == 15000
+    assert manifest.required_output_fields == [
+        "qv",
+        "qc",
+        "w",
+        "qr",
+        "rain",
+        "dbz",
+        "u",
+        "v",
+        "th",
+        "updraft_helicity",
+    ]
+    assert manifest.recipe_assumptions["trigger"]["mode"] == ("cm1_iinit_3_three_warm_bubbles")
+    assert manifest.recipe_assumptions["observed_sounding"]["wind_profile"] == (
+        "required_complete_rendered_u_v_profile"
+    )
+    assert manifest.recipe_assumptions["surface_fluxes"]["mode"] == "disabled"
+    assert manifest.pre_run_validation_report is not None
+    assert manifest.pre_run_validation_report["hypothesis_recipe_alignment"]["status"] == (
+        "aligned"
+    )
+    assert (
+        "Deep-convection ingredients can be tested with the explicit Deep-Tower Benchmark trigger."
+        in manifest.pre_run_validation_report["hypothesis_recipe_alignment"]["reasons"]
+    )
+    assert (
+        "explicit_thermal_initiation_supplied_not_a_real_observed_trigger"
+        in manifest.pre_run_validation_report["caveats"]
+    )
+    assert report["recipe_id"] == "deep_tower_benchmark_v0"
+    assert report["trigger_type"] == "warm_bubble"
+    assert report["variant_metadata"]["surface_flux_mode"] == "disabled"
+    assert "stock CM1 iinit=3 three-warm-bubble" in report["variant_metadata"]["mapping"]
+    assert "explicit stock-CM1 iinit=3" in report["cm1_mapping_status"]
+    assert case_manifest["contract"]["recipe_id"] == "deep_tower_benchmark_v0"
+    assert case_manifest["contract"]["trigger_type"] == "warm_bubble"
+    assert "testcase  =  0," in namelist
+    assert "isnd      =  7," in namelist
+    assert "iinit     =  3," in namelist
+    assert "isfcflx    =      0," in namelist
+    assert "set_flx    =      0," in namelist
+    assert "cnst_shflx = 0.0," in namelist
+    assert "output_uh        = 1," in namelist
+
+
+def test_legacy_triggered_deep_potential_maps_to_deep_tower_benchmark(
     tmp_path: Path,
 ) -> None:
     observed = parse_igra_station_text(
@@ -370,15 +471,22 @@ def test_triggered_deep_potential_package_generation_is_removed(
         uploaded_filename="USM00072558-data-beg2025.txt",
     ).selected_sounding
 
-    with pytest.raises(DryRunPackageError, match="package generation has been removed"):
-        generate_dry_run_package(
-            scenario_data=load_baseline_template(),
-            runtime_home=tmp_path,
-            run_id="run-triggered-removed",
-            run_recipe="triggered_deep_potential",
-            observed_sounding=observed,
-        )
-    assert not (tmp_path / "runs" / "run-triggered-removed").exists()
+    result = generate_dry_run_package(
+        scenario_data=load_baseline_template(),
+        runtime_home=tmp_path,
+        run_id="run-triggered-legacy",
+        run_recipe="triggered_deep_potential",
+        observed_sounding=observed,
+    )
+
+    manifest = load_run_manifest(result.manifest_path)
+    namelist = (result.package_dir / "namelist.input").read_text()
+
+    assert manifest.run_recipe == "deep_tower_benchmark"
+    assert manifest.recipe_id == "deep_tower_benchmark_v0"
+    assert manifest.run_configuration["surface_flux_mode"] == "disabled"
+    assert "testcase  =  0," in namelist
+    assert "iinit     =  3," in namelist
 
 
 def test_pre_run_validation_caveats_deep_hypothesis_under_uniform_forcing(

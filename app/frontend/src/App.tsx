@@ -54,6 +54,7 @@ type RunConfigurationInput = {
   surface_patch_moisture_flux_perturbation_g_g_m_s: string;
   surface_patch_taper_width_m: string;
   surface_patch_ramp_seconds: string;
+  time_step_seconds?: string;
 };
 
 type SurfaceForcingPatch = {
@@ -417,11 +418,13 @@ type CandidateRecipeFitDisplay = {
 type RunRecipe =
   | "generated_reference_lower_atmosphere"
   | "observed_surface_forced_evolution"
-  | "differential_surface_forced_evolution";
+  | "differential_surface_forced_evolution"
+  | "deep_tower_benchmark";
 
 type ObservedRunRecipe =
   | "observed_surface_forced_evolution"
-  | "differential_surface_forced_evolution";
+  | "differential_surface_forced_evolution"
+  | "deep_tower_benchmark";
 type AtmosphereSourcePath = "cached_recommendations" | "saved_candidates" | "upload_igra_text";
 type SearchIntent =
   | "best_overall"
@@ -435,6 +438,7 @@ type RunPlanQueueTarget = "local" | "lan";
 const CURRENT_OBSERVED_RUN_RECIPE: ObservedRunRecipe = "observed_surface_forced_evolution";
 const DIFFERENTIAL_SURFACE_FORCING_MODE = "differential_surface_forcing_patch_v0";
 const UNIFORM_SURFACE_FORCING_MODE = "constant_uniform_surface_flux_proxy";
+const DISABLED_SURFACE_FORCING_MODE = "disabled";
 type RunPlanItemStatus =
   | "planned"
   | "packaging"
@@ -1545,6 +1549,26 @@ const DEFAULT_OBSERVED_RUN_CONFIGURATION: RunConfigurationInput = {
   surface_patch_ramp_seconds: "1800",
 };
 
+const DEFAULT_DEEP_TOWER_RUN_CONFIGURATION: RunConfigurationInput = {
+  duration: "scout_2h",
+  horizontal_cell_count: "cells_120",
+  domain_size: "deep_tower_120km",
+  output_cadence: "standard_15min",
+  diagnostic_set: "full",
+  surface_forcing_mode: DISABLED_SURFACE_FORCING_MODE,
+  surface_heat_flux_k_m_s: "0",
+  surface_moisture_flux_g_g_m_s: "0",
+  surface_patch_shape: "circle",
+  surface_patch_radius_m: "1500",
+  surface_patch_radius_x_m: "1500",
+  surface_patch_radius_y_m: "1500",
+  surface_patch_heat_flux_perturbation_k_m_s: "4.0e-2",
+  surface_patch_moisture_flux_perturbation_g_g_m_s: "5.0e-5",
+  surface_patch_taper_width_m: "500",
+  surface_patch_ramp_seconds: "1800",
+  time_step_seconds: "6.0",
+};
+
 const SEARCH_INTENT_OPTIONS: Array<{ value: SearchIntent; label: string }> = [
   { value: "best_overall", label: "Best overall recommendations" },
   { value: "deep_convection", label: "Deep-convection ingredients" },
@@ -2180,9 +2204,7 @@ export function App() {
   const [candidateLatestPerStation, setCandidateLatestPerStation] = useState(
     DEFAULT_LATEST_PER_STATION,
   );
-  const [candidateResultLimit, setCandidateResultLimit] = useState(
-    DEFAULT_CANDIDATE_RESULT_LIMIT,
-  );
+  const [candidateResultLimit, setCandidateResultLimit] = useState(DEFAULT_CANDIDATE_RESULT_LIMIT);
   const [candidateStatus, setCandidateStatus] = useState("IGRA cache not checked yet");
   const [candidateError, setCandidateError] = useState<string | null>(null);
   const [candidateScreening, setCandidateScreening] = useState<ScreeningResult | null>(null);
@@ -2948,18 +2970,15 @@ export function App() {
       return;
     }
     const selectedSounding = candidate.selected_sounding_payload;
+    const candidateScreening = candidateScreeningMetadata(candidate, savedCandidate, activeStory);
     setSelectedScenarioId(OBSERVED_SOUNDING_EXPERIMENT_ID);
     setObservedSoundingFilename(candidate.source_file_name);
     setObservedSoundingText(null);
     setObservedSoundingParse(observedSoundingParseFromCandidate(candidate, selectedSounding));
     setObservedSoundingStatus("Candidate loaded from recommendation");
     setObservedSoundingError(null);
-    setSelectedCandidateScreening(
-      candidateScreeningMetadata(candidate, savedCandidate, activeStory),
-    );
-    setRunConfiguration(
-      defaultRunConfigurationForSelection(OBSERVED_SOUNDING_EXPERIMENT_ID),
-    );
+    setSelectedCandidateScreening(candidateScreening);
+    setRunConfiguration(defaultRunConfigurationForCandidateScreening(candidateScreening));
     setDryRun(null);
     setBlockedPreRunValidationReport(null);
     setRunStatus(null);
@@ -3058,7 +3077,7 @@ export function App() {
     updateRunPlanItem(itemId, (item) => ({
       ...item,
       runConfiguration,
-      runRecipe: runRecipeForRunConfiguration(runConfiguration),
+      runRecipe: observedRecipeForSelection(item.candidateScreening, runConfiguration),
       status: "planned",
       message: "Run configuration changed; package not created yet.",
       dryRun: null,
@@ -3119,7 +3138,7 @@ export function App() {
           OBSERVED_SOUNDING_BASE_SCENARIO_ID,
           item.controls,
           item.runConfiguration,
-          runRecipeForRunConfiguration(item.runConfiguration),
+          item.runRecipe,
           item.observedSounding,
           item.candidateScreening,
           packageUserMetadata,
@@ -3204,7 +3223,9 @@ export function App() {
         selectedScenario.id,
         controls,
         runConfiguration,
-        observedSoundingExperimentSelected ? runRecipeForRunConfiguration(runConfiguration) : null,
+        observedSoundingExperimentSelected
+          ? observedRecipeForSelection(selectedCandidateScreening, runConfiguration)
+          : null,
         observedSoundingExperimentSelected ? observedSoundingParse?.selected_sounding : null,
         observedSoundingExperimentSelected ? selectedCandidateScreening : null,
         packageUserMetadata,
@@ -4653,13 +4674,13 @@ function RunConfigurationPanel({
   onChange,
   embedded = false,
 }: {
-	  configuration: RunConfigurationInput;
-	  preview: RunConfiguration;
-	  selectedCandidateScreening?: Record<string, unknown> | null;
-	  onAddToRunPlan?: () => void;
-	  onChange: (configuration: RunConfigurationInput) => void;
-	  embedded?: boolean;
-	}) {
+  configuration: RunConfigurationInput;
+  preview: RunConfiguration;
+  selectedCandidateScreening?: Record<string, unknown> | null;
+  onAddToRunPlan?: () => void;
+  onChange: (configuration: RunConfigurationInput) => void;
+  embedded?: boolean;
+}) {
   const recipeMismatchWarning = selectedCandidateScreening
     ? candidateRecipeMismatchWarning(selectedCandidateScreening)
     : null;
@@ -4827,9 +4848,7 @@ function RunConfigurationPanel({
       )}
 
       {selectedCandidateScreening && (
-        <ObservedRunRecipePanel
-          selectedCandidateScreening={selectedCandidateScreening}
-        />
+        <ObservedRunRecipePanel selectedCandidateScreening={selectedCandidateScreening} />
       )}
 
       <details className="technical-details">
@@ -5267,8 +5286,7 @@ function ObservedAtmosphereCandidatesPanel({
           <p className="eyebrow">Observed atmosphere</p>
           <h3 id="sounding-candidates-title">Find interesting soundings</h3>
           <p className="field-help">
-            Choose the stations and history to search, then review the matching candidate
-            evidence.
+            Choose the stations and history to search, then review the matching candidate evidence.
           </p>
         </div>
         <p className="state-chip" role="status">
@@ -5380,7 +5398,9 @@ function ObservedAtmosphereCandidatesPanel({
             <button
               type="button"
               className={
-                stationSelectionMode === "all_cached" ? "active-secondary-button" : "secondary-button"
+                stationSelectionMode === "all_cached"
+                  ? "active-secondary-button"
+                  : "secondary-button"
               }
               onClick={onSelectAllCachedStations}
             >
@@ -5449,11 +5469,7 @@ function ObservedAtmosphereCandidatesPanel({
           <Metric label="Region" value={catalog?.region.label ?? "Great Plains / Midwest"} />
           <Metric
             label="Catalog"
-            value={
-              catalog?.refreshed_at
-                ? formatDate(catalog.refreshed_at)
-                : "Not refreshed here"
-            }
+            value={catalog?.refreshed_at ? formatDate(catalog.refreshed_at) : "Not refreshed here"}
           />
           <Metric label="Station files" value={cachedStationFiles.toLocaleString()} />
           <Metric label="Parsed soundings" value={cachedInventorySummary} />
@@ -5627,13 +5643,9 @@ function ObservedAtmosphereCandidatesPanel({
                   ? "Refined candidates"
                   : "Recommended cached soundings"}
               </h4>
-              <p className="field-help">
-                {filterTraceSummary.summary}
-              </p>
+              <p className="field-help">{filterTraceSummary.summary}</p>
               {filterTraceSummary.detail && (
-                <p className="field-help candidate-filter-detail">
-                  {filterTraceSummary.detail}
-                </p>
+                <p className="field-help candidate-filter-detail">{filterTraceSummary.detail}</p>
               )}
             </div>
           )}
@@ -6031,11 +6043,7 @@ function SoundingCandidateDetail({
         >
           Configure run
         </button>
-        <button
-          type="button"
-          className="secondary-button"
-          onClick={() => setSaveDrawerOpen(true)}
-        >
+        <button type="button" className="secondary-button" onClick={() => setSaveDrawerOpen(true)}>
           {savedCandidate ? "Edit saved notes" : "Save candidate"}
         </button>
       </div>
@@ -6102,7 +6110,9 @@ function SoundingCandidateDetail({
       </section>
       <section className="candidate-detail-section">
         <h5>Run fit</h5>
-        <p className="candidate-interest-summary">{candidateKeyNote(candidate, story, recipeFit)}</p>
+        <p className="candidate-interest-summary">
+          {candidateKeyNote(candidate, story, recipeFit)}
+        </p>
         <p className="field-help">{recipeFit.summary}</p>
       </section>
       <section className="candidate-detail-section">
@@ -6485,7 +6495,11 @@ function ObservedRunRecipePanel({
       <dl className="compact-metrics">
         <Metric
           label="Run scope"
-          value="CM1 evolves the observed profile with the selected lower-boundary heat/moisture forcing."
+          value={
+            activeStory && deepConvectionStoryIds.has(activeStory)
+              ? "CM1 evolves the observed profile with explicit idealized thermal initiation."
+              : "CM1 evolves the observed profile with the selected lower-boundary heat/moisture forcing."
+          }
         />
       </dl>
     </details>
@@ -6788,9 +6802,7 @@ function RunPlanConfigurationFields({
             units="g/g m/s"
             description="Added to background after taper and ramp."
             value={item.runConfiguration.surface_patch_moisture_flux_perturbation_g_g_m_s}
-            onChange={(value) =>
-              update("surface_patch_moisture_flux_perturbation_g_g_m_s", value)
-            }
+            onChange={(value) => update("surface_patch_moisture_flux_perturbation_g_g_m_s", value)}
           />
           <RunConfigurationTextInput
             id={`run-plan-surface-patch-taper-${item.id}`}
@@ -7916,12 +7928,8 @@ function PipelineRunCard({
             tone={runQueueEntryTone(queueEntry)}
           />
         )}
-        {!resultBacked && resultPending && (
-          <StatusBadge label="Result pending" tone="neutral" />
-        )}
-        {!resultBacked && !resultPending && (
-          <StatusBadge label="Not ingested" tone="neutral" />
-        )}
+        {!resultBacked && resultPending && <StatusBadge label="Result pending" tone="neutral" />}
+        {!resultBacked && !resultPending && <StatusBadge label="Not ingested" tone="neutral" />}
       </div>
       <p>
         {humanize(result?.scenario_id ?? run.scenario_id ?? "unknown scenario")} ·{" "}
@@ -8169,9 +8177,7 @@ function queueEntryHasIngestedResult(entry: RunQueueEntry | undefined): boolean 
 }
 
 function latestAutoIngestedQueueEntry(queue: RunQueueResponse): RunQueueEntry | undefined {
-  return [...queue.entries]
-    .reverse()
-    .find((entry) => queueEntryHasIngestedResult(entry));
+  return [...queue.entries].reverse().find((entry) => queueEntryHasIngestedResult(entry));
 }
 
 function queueEntryForRun(
@@ -9020,14 +9026,8 @@ function LocalizedResponseSummary({ result }: { result: ResultCard }) {
       </div>
       <dl className="metric-grid">
         <Metric label="Patch" value={patchGeometryLabel(geometry)} />
-        <Metric
-          label="Heat footprint"
-          value={patchRatioLabel(response.hfx_footprint, "hfx")}
-        />
-        <Metric
-          label="Moisture footprint"
-          value={patchRatioLabel(response.qfx_footprint, "qfx")}
-        />
+        <Metric label="Heat footprint" value={patchRatioLabel(response.hfx_footprint, "hfx")} />
+        <Metric label="Moisture footprint" value={patchRatioLabel(response.qfx_footprint, "qfx")} />
         <Metric
           label="Near-surface convergence"
           value={convergenceLabel(response.near_surface_convergence)}
@@ -9094,16 +9094,14 @@ function patchRatioLabel(field: PatchSpatialFieldDiagnostics, label: string): st
 
 function convergenceLabel(convergence: PatchConvergenceDiagnostics): string {
   if (!convergence.available) return "Unavailable";
-  const fields = convergence.source_fields.length > 0 ? convergence.source_fields.join("/") : "winds";
+  const fields =
+    convergence.source_fields.length > 0 ? convergence.source_fields.join("/") : "winds";
   const time =
     convergence.time_seconds !== null && convergence.time_seconds !== undefined
       ? ` at ${formatNumber(convergence.time_seconds, "s")}`
       : "";
   const quality = convergence.quality_state ? `; ${humanize(convergence.quality_state)}` : "";
-  return `${formatScientific(
-    convergence.max_convergence_s_1 ?? null,
-    "s^-1",
-  )}; max ${formatNumber(
+  return `${formatScientific(convergence.max_convergence_s_1 ?? null, "s^-1")}; max ${formatNumber(
     convergence.max_convergence_distance_from_patch_center_m ?? null,
     "m from center",
   )}${time}; ${fields}${quality}`;
@@ -11244,17 +11242,17 @@ function candidateRecipeFitForStory(
   }
   if (deepConvectionStoryIds.has(story)) {
     const caveats = [
-      "deep_convection_outcome_depends_on_surface_forcing_duration_domain_and_resolution",
-      "differential_surface_forcing_patch_recipe_available_for_initiation_tests",
+      "deep_convection_outcome_depends_on_explicit_trigger_duration_domain_and_resolution",
+      "deep_tower_benchmark_uses_idealized_warm_bubbles_not_observed_boundary",
     ];
     if (candidate.features.observed_wind_available !== true) {
       caveats.push("complete_observed_wind_profile_required_for_input_sounding");
     }
     return {
       status: "partially_testable",
-      label: "testable as forced observed evolution",
+      label: "testable with Deep-Tower Benchmark",
       summary:
-        "This story screens deep-convection ingredients. CM1 can evolve the observed atmosphere under the selected lower-boundary forcing; choose the differential surface patch when localized initiation is the question.",
+        "This story screens deep-convection ingredients. CM1 can evolve the observed atmosphere with the explicit Deep-Tower Benchmark trigger; use surface-forced recipes when lower-boundary initiation is the question.",
       caveats,
     };
   }
@@ -11311,7 +11309,7 @@ function observedRecipeHypothesisSummary(story: CandidateStoryId | null): string
     return "Inspect cloud, updraft, moisture, and precipitation evolution without a saved pre-run story.";
   }
   if (deepConvectionStoryIds.has(story)) {
-    return "Deep-convection ingredients are present; check whether the selected lower-boundary forcing, duration, domain, and resolution produce deep cloud, strong updraft, and precipitation signatures.";
+    return "Deep-convection ingredients are present; check whether explicit thermal initiation produces deep cloud, strong updraft, and precipitation signatures.";
   }
   switch (story) {
     case "shallow_cumulus_candidate":
@@ -11392,7 +11390,7 @@ function observedRecipeFitSummary(
     return fitSummary;
   }
   if (story && deepConvectionStoryIds.has(story)) {
-    return "Inspectable under the selected surface forcing; deep outcomes depend on duration, domain, resolution, and later differential-forcing support.";
+    return "Inspectable with the explicit Deep-Tower Benchmark trigger; deep outcomes still depend on duration, domain, resolution, and CM1 output fields.";
   }
   return "The selected observed-sounding method can inspect this story when duration, cadence, and requested fields are adequate.";
 }
@@ -11425,7 +11423,7 @@ function candidateRecipeMismatchWarning(
             score.support !== "unavailable",
         )));
   if (hasMeaningfulDeepStory) {
-    return "This candidate was screened for deep-convection potential. This run will test how it evolves under the selected lower-boundary forcing; deep outcomes still depend on duration, domain, resolution, and diagnostics.";
+    return "This candidate was screened for deep-convection potential. This run will test how it evolves under explicit thermal initiation; deep outcomes still depend on duration, domain, resolution, and diagnostics.";
   }
   const hasHumidRainyStory =
     activeStory === "humid_rainy_candidate" ||
@@ -11528,7 +11526,10 @@ function candidateActiveStoryId(
   if (candidate.active_story && scopedStories.has(candidate.active_story)) {
     return candidate.active_story;
   }
-  return candidateActiveStoryScore(candidate, storyFilter, storyFamilyFilter)?.story ?? candidate.primary_story;
+  return (
+    candidateActiveStoryScore(candidate, storyFilter, storyFamilyFilter)?.story ??
+    candidate.primary_story
+  );
 }
 
 function candidateDisplayStoryLabel(
@@ -11538,7 +11539,9 @@ function candidateDisplayStoryLabel(
 ): string {
   const activeStory = candidateActiveStoryId(candidate, storyFilter, storyFamilyFilter);
   if (candidate.active_story === activeStory) {
-    return candidate.display_story ?? candidate.active_story_label ?? candidateStoryLabel(activeStory);
+    return (
+      candidate.display_story ?? candidate.active_story_label ?? candidateStoryLabel(activeStory)
+    );
   }
   return candidateStoryLabel(activeStory);
 }
@@ -11624,7 +11627,7 @@ function candidateKeyNote(
     return candidateTopLimits(candidate, story, recipeFit)[0] ?? "Needs review before run setup.";
   }
   if (candidateStoryFamilyForStory(story) === "deep_convection") {
-    return "Strong signal, but initiation may need more than uniform forcing.";
+    return "Strong signal; use the benchmark trigger to inspect the convective ceiling.";
   }
   if (
     story === "humid_rainy_candidate" ||
@@ -11741,8 +11744,7 @@ function candidateFilterTraceSummary(
       : filters.storyFamilyFilter !== "all"
         ? trace.stage_counts.story_family
         : undefined;
-  const supportStage =
-    filters.supportFilter !== "all" ? trace.stage_counts.support : undefined;
+  const supportStage = filters.supportFilter !== "all" ? trace.stage_counts.support : undefined;
   const readinessStage =
     filters.readinessFilter !== "all" ? trace.stage_counts.readiness : undefined;
   const stationDistribution = trace.station_distribution ?? [];
@@ -11751,8 +11753,7 @@ function candidateFilterTraceSummary(
     trace.history_scope === "latest_per_station" && trace.latest_per_station
       ? `latest ${trace.latest_per_station.toLocaleString()} per station`
       : "all cached history";
-  const selectedStations =
-    trace.selected_station_count ?? stationDistribution.length;
+  const selectedStations = trace.selected_station_count ?? stationDistribution.length;
   const selectedSoundings = trace.selected_cached_soundings ?? trace.analyzed_soundings;
   const parts = [
     `${trace.analyzed_soundings.toLocaleString()} analyzed from ${selectedSoundings.toLocaleString()} selected cached sounding${selectedSoundings === 1 ? "" : "s"}`,
@@ -11788,7 +11789,8 @@ function candidateTraceScopeLabel(
   storyFamilyFilter: CandidateStoryFamilyFilter,
 ): string {
   if (storyFilter !== "all") return candidateStoryLabel(storyFilter).toLowerCase();
-  if (storyFamilyFilter !== "all") return candidateStoryFamilyLabel(storyFamilyFilter).toLowerCase();
+  if (storyFamilyFilter !== "all")
+    return candidateStoryFamilyLabel(storyFamilyFilter).toLowerCase();
   return "selected intent";
 }
 
@@ -11928,7 +11930,7 @@ function runPlanItemFromUploadedSounding({
     observedSounding,
     candidateScreening: selectedCandidateScreening,
     activeStory: observedRecipeStoryId(selectedCandidateScreening),
-    runRecipe: runRecipeForRunConfiguration(runConfiguration),
+    runRecipe: observedRecipeForSelection(selectedCandidateScreening, runConfiguration),
     runConfiguration,
     controls,
     queueTarget: "local",
@@ -12078,13 +12080,51 @@ function staticRecipeMetadata(runRecipe: ObservedRunRecipe = CURRENT_OBSERVED_RU
   requiredOutputFields: string[];
   recipeCaveats: string[];
 } {
+  if (runRecipe === "deep_tower_benchmark") {
+    return {
+      recipeId: "deep_tower_benchmark_v0",
+      recipeDisplayName: "Deep-Tower Benchmark v0",
+      assumptionSetId: "deep_tower_benchmark_v0_assumptions",
+      assumptionMode: "explicit_thermal_initiation",
+      requiredOutputFields: [
+        "qv",
+        "qc",
+        "w",
+        "qr",
+        "rain",
+        "dbz",
+        "u",
+        "v",
+        "th",
+        "updraft_helicity",
+      ],
+      recipeCaveats: [
+        "Explicit initiation is supplied with CM1 iinit=3 three warm bubbles.",
+        "The warm bubbles are an idealized trigger, not a real front, dryline, terrain feature, or observed boundary.",
+        "Surface heat/moisture fluxes, radiation, terrain, GIS surface initialization, and large-scale forcing are not part of v0.",
+      ],
+    };
+  }
   if (runRecipe === "differential_surface_forced_evolution") {
     return {
       recipeId: "differential_surface_forced_evolution_v0",
       recipeDisplayName: "Differential Surface-Forced Evolution v0",
       assumptionSetId: "differential_surface_forced_evolution_v0_assumptions",
       assumptionMode: "differential_surface_forced_evolution",
-      requiredOutputFields: ["qv", "qc", "w", "qr", "rain", "dbz", "hfx", "qfx", "u", "v", "th", "updraft_helicity"],
+      requiredOutputFields: [
+        "qv",
+        "qc",
+        "w",
+        "qr",
+        "rain",
+        "dbz",
+        "hfx",
+        "qfx",
+        "u",
+        "v",
+        "th",
+        "updraft_helicity",
+      ],
       recipeCaveats: [
         "No artificial atmospheric trigger is applied.",
         "A centered lower-boundary heat/moisture forcing patch is applied through Cloud Chamber's external CM1 source customization.",
@@ -12112,8 +12152,11 @@ function compactRecipeAssumptions(assumptions: Record<string, unknown> | undefin
   const radiation = assumptions?.radiation;
   const largeScaleForcing = assumptions?.large_scale_forcing;
   const triggerLabel =
-    trigger && typeof trigger === "object" && "mode" in trigger && trigger.mode === "none"
-      ? "No artificial trigger"
+    trigger &&
+    typeof trigger === "object" &&
+    "mode" in trigger &&
+    trigger.mode === "cm1_iinit_3_three_warm_bubbles"
+      ? "CM1 iinit=3 three warm bubbles"
       : "No artificial trigger";
   const fluxLabel =
     surfaceFluxes &&
@@ -12121,7 +12164,12 @@ function compactRecipeAssumptions(assumptions: Record<string, unknown> | undefin
     "mode" in surfaceFluxes &&
     surfaceFluxes.mode === DIFFERENTIAL_SURFACE_FORCING_MODE
       ? "differential surface forcing patch"
-      : "numeric uniform surface fluxes";
+      : surfaceFluxes &&
+          typeof surfaceFluxes === "object" &&
+          "mode" in surfaceFluxes &&
+          surfaceFluxes.mode === DISABLED_SURFACE_FORCING_MODE
+        ? "surface fluxes disabled"
+        : "numeric uniform surface fluxes";
   const radiationLabel =
     radiation &&
     typeof radiation === "object" &&
@@ -12623,6 +12671,7 @@ function parseTags(value: string): string[] {
 
 const DURATION_OPTIONS = [
   { value: "smoke_1h", label: "Smoke check (1 h)" },
+  { value: "scout_2h", label: "Scout evolution (2 h)" },
   { value: "short_6h", label: "Short evolution (6 h)" },
   { value: "standard_12h", label: "Standard evolution (12 h)" },
   { value: "long_24h", label: "Long evolution (24 h)" },
@@ -12631,6 +12680,7 @@ const DURATION_OPTIONS = [
 const HORIZONTAL_CELL_OPTIONS = [
   { value: "cells_64", label: "Scout (64 x 64)" },
   { value: "cells_96", label: "Light (96 x 96)" },
+  { value: "cells_120", label: "Deep-tower scout (120 x 120)" },
   { value: "cells_128", label: "Standard (128 x 128)" },
   { value: "cells_192", label: "Detailed (192 x 192)" },
   { value: "cells_256", label: "High detail (256 x 256)" },
@@ -12642,6 +12692,7 @@ const DOMAIN_OPTIONS = [
   { value: "wide_12km", label: "Wide 12 km" },
   { value: "regional_60km", label: "Regional 60 km" },
   { value: "regional_120km", label: "Regional 120 km" },
+  { value: "deep_tower_120km", label: "Deep tower 120 km" },
 ];
 
 const OUTPUT_CADENCE_OPTIONS = [
@@ -12653,6 +12704,7 @@ const OUTPUT_CADENCE_OPTIONS = [
 const SURFACE_FORCING_OPTIONS = [
   { value: UNIFORM_SURFACE_FORCING_MODE, label: "Uniform surface forcing" },
   { value: DIFFERENTIAL_SURFACE_FORCING_MODE, label: "Differential surface patch" },
+  { value: DISABLED_SURFACE_FORCING_MODE, label: "Disabled surface fluxes" },
 ];
 
 function defaultRunConfigurationForSelection(scenarioId: string): RunConfigurationInput {
@@ -12662,10 +12714,41 @@ function defaultRunConfigurationForSelection(scenarioId: string): RunConfigurati
   return { ...DEFAULT_SHALLOW_RUN_CONFIGURATION };
 }
 
+function defaultRunConfigurationForCandidateScreening(
+  selectedCandidateScreening: Record<string, unknown> | null,
+): RunConfigurationInput {
+  if (selectedCandidateUsesDeepTowerRecipe(selectedCandidateScreening)) {
+    return { ...DEFAULT_DEEP_TOWER_RUN_CONFIGURATION };
+  }
+  return { ...DEFAULT_OBSERVED_RUN_CONFIGURATION };
+}
+
 function runRecipeForRunConfiguration(configuration: RunConfigurationInput): ObservedRunRecipe {
-  return configuration.surface_forcing_mode === DIFFERENTIAL_SURFACE_FORCING_MODE
-    ? "differential_surface_forced_evolution"
-    : CURRENT_OBSERVED_RUN_RECIPE;
+  const surfaceForcingMode = surfaceForcingModeValue(configuration.surface_forcing_mode);
+  if (surfaceForcingMode === DIFFERENTIAL_SURFACE_FORCING_MODE) {
+    return "differential_surface_forced_evolution";
+  }
+  if (surfaceForcingMode === DISABLED_SURFACE_FORCING_MODE) {
+    return "deep_tower_benchmark";
+  }
+  return CURRENT_OBSERVED_RUN_RECIPE;
+}
+
+function observedRecipeForSelection(
+  selectedCandidateScreening: Record<string, unknown> | null,
+  configuration: RunConfigurationInput,
+): ObservedRunRecipe {
+  if (configuration.surface_forcing_mode === DIFFERENTIAL_SURFACE_FORCING_MODE) {
+    return "differential_surface_forced_evolution";
+  }
+  return runRecipeForRunConfiguration(configuration);
+}
+
+function selectedCandidateUsesDeepTowerRecipe(
+  selectedCandidateScreening: Record<string, unknown> | null,
+): boolean {
+  const story = observedRecipeStoryId(selectedCandidateScreening);
+  return Boolean(story && deepConvectionStoryIds.has(story));
 }
 
 function previewRunConfiguration(configuration: RunConfigurationInput): RunConfiguration {
@@ -12674,14 +12757,20 @@ function previewRunConfiguration(configuration: RunConfigurationInput): RunConfi
   const domain = domainValue(configuration.domain_size);
   const cadence = cadenceValue(configuration.output_cadence);
   const diagnosticSet = { value: "full" };
-  const surfaceForcingMode =
-    configuration.surface_forcing_mode === DIFFERENTIAL_SURFACE_FORCING_MODE
-      ? DIFFERENTIAL_SURFACE_FORCING_MODE
-      : UNIFORM_SURFACE_FORCING_MODE;
-  const heatFlux = numericConfigurationValue(configuration.surface_heat_flux_k_m_s, 8.0e-3);
-  const moistureFlux = numericConfigurationValue(
-    configuration.surface_moisture_flux_g_g_m_s,
-    5.2e-5,
+  const surfaceForcingMode = surfaceForcingModeValue(configuration.surface_forcing_mode);
+  const surfaceFluxEnabled = surfaceForcingMode !== DISABLED_SURFACE_FORCING_MODE;
+  const deepTowerShape =
+    surfaceForcingMode === DISABLED_SURFACE_FORCING_MODE &&
+    configuration.domain_size === "deep_tower_120km";
+  const heatFlux = surfaceFluxEnabled
+    ? numericConfigurationValue(configuration.surface_heat_flux_k_m_s, 8.0e-3)
+    : 0;
+  const moistureFlux = surfaceFluxEnabled
+    ? numericConfigurationValue(configuration.surface_moisture_flux_g_g_m_s, 5.2e-5)
+    : 0;
+  const timeStepSeconds = numericConfigurationValue(
+    configuration.time_step_seconds,
+    deepTowerShape ? 6 : 3,
   );
   const nx = horizontalCells.cells;
   const ny = horizontalCells.cells;
@@ -12693,8 +12782,14 @@ function previewRunConfiguration(configuration: RunConfigurationInput): RunConfi
   if (duration.mode === "smoke") {
     caveats.push("short_smoke_mode_is_for_package_health_not_science_evolution");
   }
-  if (duration.mode === "science") {
+  if (duration.mode === "science" && duration.seconds >= 21600) {
     caveats.push("science_run_configuration_minimum_duration_6h");
+  }
+  if (duration.mode === "science" && duration.seconds < 21600) {
+    caveats.push("short_scout_duration_for_initial_deep_tower_chase");
+  }
+  if (domain.value === "deep_tower_120km") {
+    caveats.push("storm_scale_domain_for_explicit_deep_tower_initiation");
   }
   if (
     horizontalCells.cells >= 256 ||
@@ -12706,6 +12801,9 @@ function previewRunConfiguration(configuration: RunConfigurationInput): RunConfi
   }
   if (heatFlux < 0 || moistureFlux < 0) {
     caveats.push("surface_flux_values_must_be_non_negative");
+  }
+  if (timeStepSeconds !== 3) {
+    caveats.push("non_default_timestep_target_requires_like_for_like_campaign_evidence");
   }
   const patchShape = "circle";
   const patchRadiusM = numericConfigurationValue(configuration.surface_patch_radius_m, 1500);
@@ -12771,17 +12869,17 @@ function previewRunConfiguration(configuration: RunConfigurationInput): RunConfi
     }
   }
   const surfaceFluxCm1Values: RunConfigurationSurfaceFluxCM1Values = {
-    isfcflx: 1,
-    sfcmodel: 1,
-    oceanmodel: 1,
-    set_flx: 1,
+    isfcflx: surfaceFluxEnabled ? 1 : 0,
+    sfcmodel: surfaceFluxEnabled ? 1 : 0,
+    oceanmodel: surfaceFluxEnabled ? 1 : 0,
+    set_flx: surfaceFluxEnabled ? 1 : 0,
     cnst_shflx: heatFlux,
     cnst_shflx_units: "K m/s",
     cnst_lhflx: moistureFlux,
     cnst_lhflx_units: "g/g m/s",
     set_znt: 0,
     cnst_znt: 0,
-    set_ust: 1,
+    set_ust: surfaceFluxEnabled ? 1 : 0,
     cnst_ust: 0.28,
   };
   const cm1Values: RunConfigurationCM1Values = {
@@ -12799,11 +12897,11 @@ function previewRunConfiguration(configuration: RunConfigurationInput): RunConfi
     model_top_m: domain.modelTopM,
     domain_x_km: domain.xKm,
     domain_y_km: domain.yKm,
-    time_step_seconds: 3,
+    time_step_seconds: timeStepSeconds,
     runtime_seconds: duration.seconds,
     output_cadence_seconds: cadence.seconds,
     restart_cadence_seconds: Math.max(cadence.seconds, Math.min(duration.seconds, 10800)),
-    rayleigh_damping_start_m: 12000,
+    rayleigh_damping_start_m: deepTowerShape ? 15000 : 12000,
     expected_output_frames: expectedFrames,
     grid_cell_count: gridCellCount,
   };
@@ -12833,7 +12931,9 @@ function previewRunConfiguration(configuration: RunConfigurationInput): RunConfi
     surface_flux_summary:
       surfaceForcingMode === DIFFERENTIAL_SURFACE_FORCING_MODE && surfaceForcingPatch
         ? `Differential warm/moist surface patch; source customization required at launch; background H ${formatCompactNumber(heatFlux)} K m/s, M ${formatCompactNumber(moistureFlux)} g/g m/s; patch +H ${formatCompactNumber(patchHeatPerturbation)} K m/s, +M ${formatCompactNumber(patchMoisturePerturbation)} g/g m/s; ${formatMeters(patchRadiusXM)} x ${formatMeters(patchRadiusYM)} ${patchShape}`
-        : `Surface heat flux ${formatCompactNumber(heatFlux)} K m/s; surface moisture flux ${formatCompactNumber(moistureFlux)} g/g m/s; constant uniform proxy`,
+        : surfaceForcingMode === DISABLED_SURFACE_FORCING_MODE
+          ? "Surface heat/moisture flux forcing disabled"
+          : `Surface heat flux ${formatCompactNumber(heatFlux)} K m/s; surface moisture flux ${formatCompactNumber(moistureFlux)} g/g m/s; constant uniform proxy`,
     surface_flux_cm1_values: surfaceFluxCm1Values,
     surface_forcing_patch: surfaceForcingPatch,
     surface_flux_caveats:
@@ -12843,18 +12943,26 @@ function previewRunConfiguration(configuration: RunConfigurationInput): RunConfi
             "differential_surface_forcing_patch_requires_cm1_source_customization",
             "differential_surface_forcing_patch_requires_emitted_flux_and_convergence_validation",
           ]
-        : [
-            "surface_flux_proxy_constant_uniform_not_place_time_energy_budget",
-            "surface_flux_proxy_not_real_land_surface_or_evaporation_model",
-            "surface_flux_proxy_values_need_local_smoke_validation",
-          ],
+        : surfaceForcingMode === DISABLED_SURFACE_FORCING_MODE
+          ? []
+          : [
+              "surface_flux_proxy_constant_uniform_not_place_time_energy_budget",
+              "surface_flux_proxy_not_real_land_surface_or_evaporation_model",
+              "surface_flux_proxy_values_need_local_smoke_validation",
+            ],
     caveats,
   };
 }
 
-function numericConfigurationValue(value: string, fallback: number): number {
+function numericConfigurationValue(value: string | undefined, fallback: number): number {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function surfaceForcingModeValue(value: string): string {
+  if (value === DIFFERENTIAL_SURFACE_FORCING_MODE) return DIFFERENTIAL_SURFACE_FORCING_MODE;
+  if (value === DISABLED_SURFACE_FORCING_MODE) return DISABLED_SURFACE_FORCING_MODE;
+  return UNIFORM_SURFACE_FORCING_MODE;
 }
 
 function durationValue(value: string): {
@@ -12863,6 +12971,7 @@ function durationValue(value: string): {
   label: string;
 } {
   if (value === "smoke_1h") return { seconds: 3600, mode: "smoke", label: "Smoke check" };
+  if (value === "scout_2h") return { seconds: 7200, mode: "science", label: "Scout evolution" };
   if (value === "standard_12h") {
     return { seconds: 43200, mode: "science", label: "Standard evolution" };
   }
@@ -12873,6 +12982,7 @@ function durationValue(value: string): {
 function horizontalCellValue(value: string): { cells: number; label: string } {
   if (value === "cells_64") return { cells: 64, label: "Scout 64 x 64" };
   if (value === "cells_96") return { cells: 96, label: "Light 96 x 96" };
+  if (value === "cells_120") return { cells: 120, label: "Deep-tower scout 120 x 120" };
   if (value === "cells_192") return { cells: 192, label: "Detailed 192 x 192" };
   if (value === "cells_256") return { cells: 256, label: "High detail 256 x 256" };
   if (value === "cells_384") return { cells: 384, label: "Very high detail 384 x 384" };
@@ -12941,6 +13051,22 @@ function domainValue(value: string): {
       label: "Regional 120 km",
     };
   }
+  if (value === "deep_tower_120km") {
+    return {
+      value,
+      xKm: 120,
+      yKm: 120,
+      nz: 40,
+      dzM: 500,
+      stretchZ: 0,
+      strBotM: 0,
+      strTopM: 2000,
+      dzBotM: 125,
+      dzTopM: 500,
+      modelTopM: 20000,
+      label: "Storm 120 km",
+    };
+  }
   return {
     value: "local_6km",
     xKm: 6.4,
@@ -13003,11 +13129,7 @@ function runConfigurationVerticalSummary(values: RunConfigurationCM1Values): str
 }
 
 function runConfigurationSummaryVertical(details: RunConfigurationSummary): string {
-  if (
-    details.stretch_z === 1 &&
-    details.dz_bot_m !== undefined &&
-    details.dz_top_m !== undefined
-  ) {
+  if (details.stretch_z === 1 && details.dz_bot_m !== undefined && details.dz_top_m !== undefined) {
     return `top ${formatKilometers(details.model_top_m)}, dz ${formatMeters(details.dz_bot_m)} to ${formatMeters(details.dz_top_m)} stretched`;
   }
   return `top ${formatKilometers(details.model_top_m)}, dz ${formatMeters(details.dz_m)}`;

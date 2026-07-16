@@ -276,6 +276,79 @@ def test_observed_contract_declares_surface_forced_v0_recipe_assumptions() -> No
     assert "No artificial atmospheric trigger is applied." in contract.recipe_caveats
 
 
+def test_deep_tower_benchmark_declares_iinit3_assumptions_and_namelist() -> None:
+    from igra_fixtures import IGRA_FIXTURE
+
+    from cloud_chamber.observed_sounding import parse_igra_station_text
+
+    observed = parse_igra_station_text(
+        IGRA_FIXTURE,
+        uploaded_filename="USM00072558-data-beg2025.txt",
+    ).selected_sounding
+
+    contract = build_cm1_input_contract(
+        baseline_scenario(),
+        observed_sounding=observed,
+        run_recipe="deep_tower_benchmark",
+    )
+    namelist = render_namelist_fragment(contract)
+    trigger = cast(dict[str, Any], contract.recipe_assumptions["trigger"])
+    surface_fluxes = cast(dict[str, Any], contract.recipe_assumptions["surface_fluxes"])
+
+    assert contract.run_recipe.value == "deep_tower_benchmark"
+    assert contract.recipe_id == "deep_tower_benchmark_v0"
+    assert contract.recipe_display_name == "Deep-Tower Benchmark v0"
+    assert contract.assumption_set_id == "deep_tower_benchmark_v0_assumptions"
+    assert contract.assumption_mode == "explicit_thermal_initiation"
+    assert contract.required_output_fields == (
+        "qv",
+        "qc",
+        "w",
+        "qr",
+        "rain",
+        "dbz",
+        "u",
+        "v",
+        "th",
+        "updraft_helicity",
+    )
+    assert contract.run_configuration.duration == "scout_2h"
+    assert contract.run_configuration.duration_seconds == 7200
+    assert contract.run_configuration.domain_size == "deep_tower_120km"
+    assert contract.run_configuration.horizontal_cell_count == 120
+    assert contract.run_configuration.cm1_values.time_step_seconds == 6.0
+    assert contract.run_configuration.cm1_values.rayleigh_damping_start_m == 15000
+    assert contract.run_configuration.surface_flux_mode == "disabled"
+    assert trigger["mode"] == "cm1_iinit_3_three_warm_bubbles"
+    assert trigger["cm1_iinit"] == 3
+    assert trigger["raw_controls_exposed"] is False
+    assert surface_fluxes["mode"] == "disabled"
+    assert surface_fluxes["cm1_values"]["isfcflx"] == 0
+    assert surface_fluxes["cm1_values"]["set_flx"] == 0
+    assert "Explicit initiation is supplied with CM1 iinit=3 three warm bubbles." in (
+        contract.recipe_caveats
+    )
+    assert contract.manual_validation_status == (
+        "deep_tower_benchmark_iinit3_fort_worth_prior_smoke_validated"
+    )
+    assert "nx           =      120," in namelist
+    assert "ny           =      120," in namelist
+    assert "nz           =      40," in namelist
+    assert "dx     =   1000.0," in namelist
+    assert "dy     =   1000.0," in namelist
+    assert "dz     =   500.0," in namelist
+    assert "timax  = 7200.0," in namelist
+    assert "dtl    =   6.000," in namelist
+    assert "zd      =  15000.0," in namelist
+    assert "testcase  =  0," in namelist
+    assert "isnd      =  7," in namelist
+    assert "iwnd      =  0," in namelist
+    assert "iinit     =  3," in namelist
+    assert "isfcflx    =      0," in namelist
+    assert "cnst_shflx = 0.0," in namelist
+    assert "output_uh        = 1," in namelist
+
+
 def test_observed_surface_flux_proxy_choices_render_namelist_and_surface_outputs() -> None:
     from igra_fixtures import IGRA_FIXTURE
 

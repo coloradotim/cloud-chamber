@@ -85,9 +85,9 @@ Future analyzer hypothesis and predicted-output signature tests should follow
 [contracts/analyzer-hypothesis-output-signature.md](contracts/analyzer-hypothesis-output-signature.md):
 no predicted signature without an explicit assumption set, missing output fields
 produce `inconclusive` or field-level `unavailable` states rather than failed
-predictions, observed surface-forced hypotheses remain distinct from future
-differential-forcing and radiation/place-time hypotheses, and `qr`, surface
-`rain`, and `dbz` are evaluated separately.
+predictions, Deep-Tower Benchmark hypotheses remain distinct from observed
+surface-forced, differential-forcing, and radiation/place-time hypotheses, and
+`qr`, surface `rain`, and `dbz` are evaluated separately.
 Future run-recipe mapping tests should follow
 [contracts/run-recipe-and-story-mapping.md](contracts/run-recipe-and-story-mapping.md):
 story IDs must resolve to compatible, partially testable, blocked, or future
@@ -151,8 +151,8 @@ should verify that package generation:
   numeric constant surface fluxes, full output fields, rain output, reflectivity
   output, vorticity output, and updraft-helicity output;
 - writes a numeric `input_sounding` with observed wind components; and
-- preserves observed surface-forced package identity, candidate-screening
-  provenance, numeric forcing, and notes/tags through ingest into Result Cards.
+- preserves declared package identity, candidate-screening provenance, forcing
+  state, and notes/tags through ingest into Result Cards.
 
 Manual/local QA is required before treating the package as scientifically
 accepted for a selected real sounding. New soundings remain experiments whose
@@ -163,16 +163,19 @@ outcomes must be inspected after CM1 runs. The manual smoke loop should:
 3. generate a science package;
 4. inspect `run_manifest.json`, `dry_run_report.json`, `namelist.input`, and
    `input_sounding`;
-5. confirm `isnd = 7`, no artificial deep-trigger path, the selected
-   numeric constant surface-flux values, full output-field switches including
+5. confirm the recipe's declared initiation and lower-boundary path: observed
+   surface-forced runs keep `isnd = 7`, no artificial deep-trigger path, and
+   their selected numeric constant surface-flux values; Deep-Tower Benchmark
+   runs keep `isnd = 7`, CM1 `iinit = 3`, and disabled surface fluxes. In both
+   cases confirm full output-field switches including
    rain/reflectivity/vorticity/updraft-helicity support, complete observed u/v
    wind columns, and domain/grid/runtime values that match the chosen run
    configuration;
 6. run CM1 locally or on the LAN worker outside CI;
 7. ingest completed output;
-8. open Results and Explore to confirm observed surface-forced identity,
-   candidate-screening provenance, numeric forcing, and interpretable CM1 output
-   products; and
+8. open Results and Explore to confirm the declared run identity,
+   candidate-screening provenance, recipe assumptions, forcing state, and
+   interpretable CM1 output products; and
 9. confirm no generated run folders, logs, NetCDF output, copied runtime files,
    screenshots, or videos are committed.
 

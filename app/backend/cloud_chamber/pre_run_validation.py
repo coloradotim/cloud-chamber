@@ -186,6 +186,19 @@ def _hypothesis_recipe_alignment(
             "caveats": [],
         }
     if story in DEEP_CONVECTION_STORIES:
+        if run_recipe == RunRecipe.DEEP_TOWER_BENCHMARK:
+            return {
+                "status": "aligned",
+                "reasons": [
+                    "Deep-convection ingredients can be tested with the explicit "
+                    "Deep-Tower Benchmark trigger."
+                ],
+                "missing_assumptions": [],
+                "blocking_errors": [],
+                "caveats": [
+                    "explicit_thermal_initiation_supplied_not_a_real_observed_trigger",
+                ],
+            }
         differential = run_recipe == RunRecipe.DIFFERENTIAL_SURFACE_FORCED_EVOLUTION
         return {
             "status": "partial",
@@ -283,6 +296,7 @@ def _input_validation_payload(
     wind_required = contract.run_recipe in {
         RunRecipe.OBSERVED_SURFACE_FORCED_EVOLUTION,
         RunRecipe.DIFFERENTIAL_SURFACE_FORCED_EVOLUTION,
+        RunRecipe.DEEP_TOWER_BENCHMARK,
     }
     complete_wind_profile = has_complete_rendered_observed_wind_profile(
         observed_sounding,
@@ -397,6 +411,16 @@ def _forcing_validation_payload(contract: CM1InputContract) -> dict[str, Any]:
 
 
 def _forcing_validation_for_recipe(run_recipe: str) -> dict[str, Any]:
+    if run_recipe == RunRecipe.DEEP_TOWER_BENCHMARK.value:
+        return {
+            "trigger": "cm1_iinit_3_three_warm_bubbles",
+            "surface_fluxes": {
+                "mode": "disabled",
+                "status": "disabled_for_explicit_deep_tower_benchmark_v0",
+            },
+            "radiation": "disabled",
+            "large_scale_forcing": "none",
+        }
     if run_recipe == RunRecipe.DIFFERENTIAL_SURFACE_FORCED_EVOLUTION.value:
         return {
             "trigger": "none",
@@ -431,6 +455,8 @@ def _required_outputs_for_story(
     run_recipe: RunRecipe,
 ) -> list[str]:
     if story in DEEP_CONVECTION_STORIES:
+        if run_recipe == RunRecipe.DEEP_TOWER_BENCHMARK:
+            return ["qv", "qc", "w", "qr", "rain", "dbz", "u", "v", "th", "updraft_helicity"]
         return ["qv", "qc", "w", "qr", "rain", "dbz", "hfx", "qfx", "updraft_helicity"]
     if story == "humid_rainy_candidate":
         return ["qv", "qc", "w", "qr", "rain", "dbz", "hfx", "qfx"]
@@ -512,7 +538,9 @@ def _run_recipe(value: str) -> RunRecipe:
 
 def _run_recipe_display_name(run_recipe: str) -> str:
     if run_recipe == "triggered_deep_potential":
-        return "Removed Triggered Deep-Potential Path"
+        return "Deep-Tower Benchmark"
+    if run_recipe == RunRecipe.DEEP_TOWER_BENCHMARK.value:
+        return "Deep-Tower Benchmark"
     if run_recipe == RunRecipe.OBSERVED_SURFACE_FORCED_EVOLUTION.value:
         return "Observed Surface-Forced Evolution"
     return "Generated Lower-Atmosphere Reference"
