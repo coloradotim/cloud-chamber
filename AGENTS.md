@@ -2,37 +2,142 @@
 
 ## Project Identity
 
-Cloud Chamber is a local-first configuration, run-management, diagnostics, and
-visualization environment for CM1 cloud experiments.
+Cloud Chamber is a local-first **cloud-making sandbox that uses real atmospheres
+as raw material**.
 
-The goal is to make CM1 usable, beautiful, and explainable for guided
-cloud-physics exploration.
+The organizing product question is:
 
-CM1 is the high-fidelity simulation engine; Cloud Chamber is the local
-experiment builder, run manager, result notebook, diagnostics layer, and
-visualizer.
+> Given the soundings available, which ones can make interesting clouds, what
+> setup should I use, and how far do I need to push them?
+
+CM1 is the high-fidelity simulation engine. Cloud Chamber is the opportunity
+finder, recipe and run-setup recommender, local run manager, result notebook,
+diagnostics layer, and visualizer around CM1.
+
+The immediate visible priorities are growing cumulus/congestus, deep convective
+towers, and then precipitation. Cloud Chamber is not a forecast or warning
+product.
 
 ## Product Rule
 
-CM1 is the high-fidelity model. The app should not pretend to be CM1.
+CM1 is the source of truth for cloud evolution. The app should not pretend to be
+CM1.
 
-Reduced/light models may be used only for:
+Reduced/light models and analyzer scores may be used for:
 
-- preview
-- explanation
-- rough guidance
-- sanity checks
+- opportunity ranking;
+- recipe and run-setup recommendations;
+- preview and explanation;
+- scout continuation decisions;
+- rough guidance and sanity checks.
 
-They are not the source of truth for cloud evolution.
+They are decision aids, not simulated cloud output.
+
+## Cloud-Making Operating Mode
+
+This mode applies when the user or issue asks to find promising soundings, make
+interesting clouds, build a cloud recipe, run a scout, continue a promising run,
+or improve the cloud-making workflow. Issue #346 and its related recipe work are
+explicitly in this mode.
+
+Cloud-Making Mode overrides generic conservative defaults that would otherwise
+fragment or delay the outcome.
+
+### Outcome Priority
+
+Optimize for:
+
+```text
+visible cloud outcome + useful learning per unit of user time and compute
+```
+
+A useful result may be:
+
+- growing cumulus or congestus;
+- a deep tower;
+- precipitation or reflectivity;
+- a decisive recommendation to switch recipe or skip a poor sounding;
+- evidence that a run is actually broken or numerically suspicious.
+
+Package plumbing, provenance, diagnostics, and docs support those outcomes. They
+are not the outcome themselves.
+
+### Bounded Big Swings
+
+- Strong idealized assumptions are allowed when clearly labeled.
+- Scientific honesty means naming the added mechanism and limitations; it does
+  not mean always choosing the weakest forcing, smallest domain, shortest run,
+  or least effective trigger.
+- Prefer a meaningful three-run scout or one bold vertical slice over a chain of
+  prerequisite issues.
+- Run real CM1 early enough to influence the implementation.
+- If a run is merely boring, change the sounding, recipe, scale, duration, or
+  trigger before adding diagnostics.
+- Restore or reuse working cloud-making paths from repository history instead of
+  rebuilding them from scratch because later docs became more conservative.
+
+### Scout And Full Run
+
+Scouts must be meaningful for the recipe. When a scout meets explicit promotion
+criteria, it may visibly and automatically queue or continue a full run through
+the existing Build workflow.
+
+The user must be able to see:
+
+- the promoted run;
+- the reason for promotion;
+- configured duration;
+- progress and ETA;
+- stop/cancel and cleanup controls.
+
+Do not launch hidden or unbounded batches.
+
+### Diagnostic Burden
+
+Before adding a diagnostic, identify which decision it changes:
+
+```text
+continue
+scale up
+change one recipe parameter
+switch recipe
+skip sounding
+stop broken run
+```
+
+If it changes none of those decisions, do not make it the next task.
+
+Heavy trust and diagnostic work is appropriate when output is non-finite,
+numerically suspicious, missing the requested mechanism, missing evidence needed
+for the decision, or inconsistent with its configuration. It is not required
+merely because the result is shallow, surprising, or exploratory.
+
+### Issue Scope In Cloud-Making Mode
+
+Scope work to one **user outcome**, not one tiny implementation layer. A vertical
+slice may legitimately include analyzer logic, recipe configuration, Build UI,
+queue behavior, result copy, tests, docs, and a real CM1 scout when all are
+needed to produce the outcome.
+
+Do not create prerequisite or follow-up issues automatically. Create one only
+when the current work is genuinely blocked or the discovered work is an
+independent product decision. Do not use issue creation as a substitute for
+finishing the current outcome.
+
+Comparison is secondary. Compare two or a few runs when an actual cloud result
+creates a useful question; do not require formal matched campaigns before making
+interesting clouds.
 
 ## Durable Distinction
 
 Always distinguish:
 
 ```text
-Preview estimate
+Analyzer/recommendation estimate
 CM1 run configuration
-CM1 running/completed result
+Packaged run
+Queued/running CM1 process
+Completed/ingested CM1 result
 Visualization interpretation
 ```
 
@@ -40,34 +145,43 @@ Visualization interpretation
 
 Do not commit:
 
-- CM1 source
-- CM1 binaries
-- NetCDF output
-- generated run directories
-- LANDUSE.TBL
-- local-data
-- large processed visualization artifacts
+- CM1 source;
+- CM1 binaries;
+- NetCDF output;
+- generated run directories;
+- `LANDUSE.TBL`;
+- local data;
+- machine-private settings or paths;
+- large processed visualization artifacts.
 
 Do commit:
 
-- code
-- tests
-- docs
-- schemas
-- scenario templates
-- tiny fixtures
+- code;
+- tests;
+- docs;
+- schemas;
+- recipe definitions;
+- tiny fixtures.
 
 ## Development Expectations
 
 - Use GitHub issues and PRs.
 - Work on branches; do not push directly to `main`.
-- Keep work scoped to the issue.
+- Keep work scoped to the issue's user outcome.
 - Add tests for new behavior.
-- Update docs when architecture/workflow changes.
+- Update docs when architecture, workflow, recipe behavior, or product direction
+  changes.
 - Use local fake fixtures in CI; do not require real CM1 in automated tests.
-- Do not weaken scientific honesty to make UI look better.
-- For Codex issue work, enable auto-merge after required CI checks pass unless the user explicitly asks for manual review or the PR is high-risk/destructive.
-- Treat destructive cleanup, generated-data policy changes, scientific interpretation changes, and real CM1 execution changes as high-risk unless the user says otherwise.
+- Run real CM1 outside CI when the issue explicitly requires cloud-making or
+  runtime validation.
+- Do not weaken scientific honesty, but do not confuse honesty with weak
+  experiments.
+- Enable auto-merge after required CI checks pass unless the user asks for
+  manual review or the change is destructive/high-risk.
+- Destructive cleanup, generated-data policy changes, unbounded compute, and
+  backwards-incompatible data changes are high-risk.
+- Real CM1 execution is not an automatic stop condition when the user or issue
+  has explicitly authorized a bounded scout or cloud-making run.
 
 ## Initial Architecture Bias
 
@@ -81,7 +195,7 @@ until a stronger reason appears.
 
 ## Local CM1 Runtime
 
-CM1 should remain external to the repo.
+CM1 remains external to the repo.
 
 Likely local path for Tim:
 
@@ -99,200 +213,220 @@ Default Cloud Chamber runtime data belongs outside the repo:
 
 `./local-data/` is only a gitignored development override.
 
-## UI Language
+## Product Language
 
-Use atmospheric language first:
+Use cloud and atmosphere language first:
 
-- thermal fate
+- cloud opportunity;
+- recipe;
+- run setup;
+- growing cumulus;
+- congestus;
+- deep tower;
+- daytime evolution;
+- explicit thermal initiation;
+- broad warm/moist region;
+- suppression / cap challenge;
+- likely ceiling;
+- main obstacle;
+- scout;
+- continue / switch / skip;
+- cloud base and coherent cloud top;
+- updraft strength;
+- cloud water and ice;
+- rain onset and reflectivity;
 - What happened here?
-- selected region
-- lower-atmosphere humidity
-- surface moisture
-- surface heating
-- cap strength
-- cap height
-- dry air aloft
-- mixing / entrainment
-- updraft strength
-- saturation deficit
-- deep breakthrough
-- precipitation feedback
-- downdraft
-- cold pool
-- outflow boundary
-- cloud base
-- cloud top
-- first cloud time
-- rain onset
 
-Raw namelist settings and raw CM1 variable names belong in technical,
-advanced, or developer views. Product-facing views should start with thermal
-fate, selected-region inspection, and atmospheric process language.
+Raw namelist settings and raw CM1 variable names belong in technical, advanced,
+or developer views.
+
+Do not use forecast or warning language. Do not imply that an idealized trigger
+represents a real front, dryline, terrain feature, or observed initiating
+mechanism.
 
 ## Testing Notes
 
 Use fake/small fixtures to test:
 
-- scenario schemas
-- config generation
-- run manifest creation
-- fake process execution
-- NetCDF ingestion from tiny fixtures
-- visualizer metadata loading
+- recommendation and recipe contracts;
+- scenario/run schemas;
+- config generation;
+- run manifest creation;
+- scout/full-run relationship;
+- fake process execution;
+- NetCDF ingestion from tiny fixtures;
+- visualizer metadata loading.
 
-Do not require full CM1 runs in CI.
+Do not require full CM1 runs in CI. Real cloud-making evidence belongs in local
+manual/runtime verification and the PR description or approved research note,
+not in git as generated model output.
 
 ## Before Major Changes
 
-If changing product direction, ask first.
+Ask before changing product direction **outside** the approved cloud-first reset.
+The direction in `docs/cloud-first-product-reset.md` and #346 is already approved.
+Do not repeatedly ask for confirmation to implement it.
 
-If adding physics/science behavior, document:
+When adding a physical mechanism or recipe, document:
 
-1. what physical question it supports
-2. what user control it enables
-3. what diagnostics validate it
-4. what limitations must be disclosed
+1. the cloud outcome or learning question;
+2. the added assumption or mechanism;
+3. the useful user control or supported aggressiveness level;
+4. the meaningful scout and full-run setup;
+5. the continue/change/stop decision evidence;
+6. the limitations that must be visible.
 
 ---
 
-## Claude Code — Working Style and Expectations
+## Coding Agent Working Style
 
-This section governs how Claude Code operates on this project. It extends
-the rules above; nothing here overrides the product rule, guardrails, or
-scientific-honesty requirements.
+This section governs Codex, Claude Code, and similar coding agents.
 
-### Intent First
+### Intent First, Without Stalling
 
-Before writing any code on a non-trivial task, Claude Code must:
+For a non-trivial task:
 
-1. State what it understands the goal to be.
-2. Ask every question needed to fully understand intent — user workflow,
-   edge cases, acceptance criteria, what "done" looks like.
-3. Propose an approach and wait for a go-ahead before executing.
+1. State the user outcome you understand.
+2. Identify only material unresolved decisions.
+3. Make reasonable bounded assumptions for everything else.
+4. Propose the execution direction briefly and proceed when the issue/user intent
+   is already clear.
 
-For small, obviously-scoped tasks (typo fixes, single-line changes, adding
-a missing test for existing behavior) it may proceed directly.
+Do not ask every conceivable question. Do not require another go-ahead when the
+user has already approved the product direction or the issue has explicit
+acceptance criteria.
 
-When in doubt, ask. A short clarifying exchange is cheaper than a wrong
-implementation.
+A clarification is appropriate when different answers would materially change
+the product outcome, delete user data, create unbounded compute, or make the
+requested work unsafe. It is not appropriate merely because implementation has
+multiple reasonable choices.
 
 ### Autonomy
 
-Once intent is confirmed, Claude Code should execute as fully as possible
-without interruption:
+Once intent is clear, execute as fully as possible:
 
-- Write the code.
-- Write or update tests.
-- Run `scripts/check.sh` and fix any failures before committing.
-- Update relevant docs if architecture or workflow changed.
-- Open a PR with a clear description.
-- Create GitHub issues for anything discovered during work that is out of
-  scope for the current task (bugs, missing tests, doc gaps, a11y issues).
-  Do not silently leave TODOs for things that deserve tracking.
+- write the code;
+- add or update tests;
+- run meaningful local CM1 scouts when in scope;
+- inspect the outcome and adjust the implementation or run setup;
+- run `scripts/check.sh` and fix failures;
+- update relevant docs;
+- open a PR with clear verification and real-run evidence when applicable.
 
-Do not ask for permission to run the linter, run tests, fix a type error,
-or update a doc string. Those are part of the job.
+Do not ask permission to run tests, lint, type checks, Playwright, or bounded CM1
+scouts that the issue explicitly requests.
 
-### Branching and PRs
+Do not automatically open issues for every bug, missing test, doc gap, or idea.
+Fix it in the current outcome when reasonably related. Open a separate issue only
+for a real blocker or independent product decision.
 
-- Branch off `main`. Name branches `issue-NNN-short-description`.
-- One issue per branch. Keep PRs scoped.
-- PR description must include:
-  - What changed and why.
-  - How to verify it locally (specific commands or UI steps).
-  - Any known limitations or follow-up issues opened.
-- Enable auto-merge after CI passes unless the task is high-risk (see
-  Guardrails above) or the user asks for manual review.
+### Branching And PRs
+
+- Branch from current `main`.
+- Name branches `issue-NNN-short-description`.
+- One user outcome per branch. A cloud-making vertical slice may span multiple
+  technical layers.
+- Keep unrelated opportunistic cleanup out of the PR.
+- PR descriptions must include:
+  - the user outcome;
+  - what changed and why;
+  - how to verify it locally;
+  - real CM1 runs and visible outcomes when cloud-making is in scope;
+  - known limitations that affect the next decision.
+- Enable auto-merge after CI unless the task is destructive/high-risk or the user
+  asks for manual review.
 
 ### Commit Style
 
 - Conventional commits: `feat:`, `fix:`, `test:`, `docs:`, `chore:`, `refactor:`.
-- Subject line: imperative, ≤72 chars.
-- Body: include the issue number and a sentence on why, not just what.
-- Atomic commits — one logical change per commit. Do not bundle unrelated
-  fixes.
+- Subject line: imperative, at most 72 characters.
+- Body: include the issue number and why the change matters.
+- Keep commits logically coherent. Do not split a vertical slice into artificial
+  commits merely to appear small.
 
 ### Quality Bar
 
-Every PR must pass `scripts/check.sh` cleanly before merge:
+Every PR must pass `scripts/check.sh` before merge:
 
 - Frontend: lint, test, build.
 - Backend: ruff format, ruff check, mypy, pytest.
-- No new warnings introduced without explanation.
+- No unexplained new warnings.
 
-New behavior requires new tests. Refactors must not reduce test coverage.
-UI changes that affect user-visible text or workflow must include an update
-to the relevant doc in `docs/`.
+New behavior requires tests. UI changes that affect user-visible workflow must
+update the relevant docs.
+
+Tests and type safety support iteration; they must not become a reason to avoid a
+meaningful real run.
 
 ### GitHub Issues
 
-When Claude Code opens an issue it must:
+When opening an issue:
 
-- Use the correct label set (see repo labels).
-- Write a description a future developer can act on without context:
-  summary, observed behavior, expected behavior, reproduction steps or
-  fix hint.
-- Tag `priority:p1` for bugs that break core workflows; `priority:p2` for
-  everything else unless the user says otherwise.
-- Reference the PR or commit that surfaced it.
+- use the correct labels;
+- write it around a user-visible outcome or concrete bug;
+- include enough context for future work;
+- avoid turning implementation layers into separate roadmap items;
+- use `priority:p1` for core-workflow blockers and approved immediate product
+  work; `priority:p2` otherwise.
 
-### What Claude Code Must Not Do Without Asking
+### What Agents Must Ask Before Doing
 
-Even with full autonomy confirmed, always pause and ask before:
+Always ask before:
 
-- Changing product direction or adding a new top-level workspace/view.
-- Changing scientific interpretation, diagnostic labels, or provenance
-  language.
-- Modifying data deletion logic or storage cleanup policy.
-- Touching real CM1 execution paths.
-- Changing the run manifest schema or result card schema in a
-  backwards-incompatible way.
-- Removing or weakening a test rather than fixing the underlying issue.
+- deleting or overwriting user-owned runtime data beyond an explicit cleanup
+  request;
+- launching an unbounded or unexpectedly expensive batch;
+- changing product direction outside the approved cloud-first model;
+- making backwards-incompatible manifest/result changes without a migration;
+- removing or weakening tests rather than fixing the underlying issue.
+
+Do **not** pause merely because work touches:
+
+- real CM1 execution explicitly requested by the issue;
+- additive schemas;
+- recipe assumptions within the approved catalog;
+- recommendation or interpretation copy consistent with the approved product
+  model;
+- a bounded scout and visible automatic full-run promotion.
 
 ### Environment Assumptions
 
-Claude Code sessions assume:
+Coding sessions may assume:
 
-- `scripts/dev.sh start` has been run (frontend at `localhost:5173`,
-  backend at `127.0.0.1:8000`).
-- `~/CloudChamber/settings.json` exists with local CM1 paths if CM1
-  work is in scope.
-- `uv` or the pip fallback described in `docs/development.md` is
-  available for backend work.
-- The Playwright E2E suite lives at `~/e2e/` (separate from the repo)
-  and can be run with `npx playwright test` from that directory.
+- `scripts/dev.sh start` can run the frontend at `localhost:5173` and backend at
+  `127.0.0.1:8000`;
+- `~/CloudChamber/settings.json` contains local CM1 paths when CM1 work is in
+  scope;
+- `uv` or the documented pip fallback is available;
+- the Playwright E2E suite may live at `~/e2e/`.
 
 ### Playwright E2E
 
-When fixing a UI bug or adding a UI feature:
+For user-visible workflow changes:
 
-- Check whether an existing Playwright test covers it.
-- If yes, verify the test passes after the change.
-- If no, add a test or open an issue noting the gap.
-- Never delete or skip a Playwright test to make CI pass. Fix the
-  underlying issue or open an issue and mark the test `.skip` with a
-  comment referencing it.
+- check existing Playwright coverage;
+- update or add the smallest useful end-to-end test;
+- verify the actual UI when practical;
+- never delete or skip tests merely to make CI pass.
 
 ### Documentation Standard
 
-- `docs/development.md` is the canonical dev setup reference. Keep it
-  current.
-- `docs/architecture-and-data-model.md` must reflect any schema or
-  API contract changes.
-- `docs/roadmap-and-issues.md` should be updated when milestones
-  shift significantly.
-- Inline code comments explain *why*, not *what*. Remove comments that
-  just restate the code.
+- `docs/cloud-first-product-reset.md` is the current organizing product decision.
+- `docs/current-roadmap.md` is the active priority source.
+- `docs/product-vision.md` describes the durable product model.
+- `docs/development.md` is the canonical dev setup.
+- `docs/architecture-and-data-model.md` must reflect schema/API changes.
+- Inline comments explain why, not what.
 
 ### Maintainability Bias
 
 Prefer:
 
-- Explicit over clever.
-- Small, testable functions over large ones.
-- Types everywhere in TypeScript and Python.
-- Clear error messages that name the problem and suggest a fix.
-- Fail loudly on bad state rather than silently degrade.
+- explicit over clever;
+- small, testable functions over tangled ones;
+- types in TypeScript and Python;
+- clear errors that name the problem and suggest a fix;
+- fail loudly on bad state rather than silently degrade.
 
-When two approaches are roughly equivalent, choose the one that is easier
-to delete or replace later.
+Maintainability serves cloud-making iteration. When two designs are roughly
+equivalent, choose the one that is easier to change after real CM1 evidence.
