@@ -14,11 +14,15 @@ from igra_fixtures import IGRA_FIXTURE
 from cloud_chamber.output_products import ScienceSummary
 from cloud_chamber.result_diagnostics import (
     CloudDiagnostics,
+    DifferentialPatchGeometryDiagnostics,
     FieldFrameQualityRecord,
     FieldFrameQualitySummary,
     FieldQuality,
+    LocalizedResponseDiagnostics,
     LowLevelResponseDiagnostics,
     LowLevelResponseFieldDiagnostics,
+    PatchConvergenceDiagnostics,
+    PatchSpatialFieldDiagnostics,
     RainDiagnostics,
     ReflectivityDiagnostics,
     ResultDiagnostics,
@@ -1596,6 +1600,45 @@ def test_campaign_report_evaluates_comparison_contract(tmp_path: Path) -> None:
     assert "## Matched Comparisons" in Path(artifacts.markdown_path).read_text()
 
 
+def test_campaign_report_surfaces_localized_patch_response(tmp_path: Path) -> None:
+    settings = fake_settings(tmp_path)
+    matrix_path = write_matrix(tmp_path)
+    matrix = yaml.safe_load(matrix_path.read_text())
+    matrix["run_defaults"]["surface_forcing_mode"] = "differential_surface_forcing_patch_v0"
+    matrix["run_defaults"]["surface_patch_radius_m"] = 1500.0
+    matrix["run_defaults"]["surface_patch_heat_flux_perturbation_k_m_s"] = 4.0e-2
+    matrix["run_defaults"]["surface_patch_moisture_flux_perturbation_g_g_m_s"] = 5.0e-5
+    matrix["run_defaults"]["surface_patch_taper_width_m"] = 500.0
+    matrix["run_defaults"]["surface_patch_ramp_seconds"] = 1800.0
+    matrix_path.write_text(yaml.safe_dump(matrix, sort_keys=False))
+    packaged = package_campaign(matrix_path, settings=settings, resume=True)
+    _write_fake_result_metadata(
+        Path(packaged.runs[0].manifest_path or ""),
+        localized_response=True,
+    )
+
+    artifacts = report_campaign(
+        matrix_path,
+        settings=settings,
+        report_path=tmp_path / "report.md",
+        summary_json_path=tmp_path / "summary.json",
+    )
+
+    run = artifacts.summary["runs"][0]
+    assert run["localized_response_support_state"] == "supported"
+    assert run["localized_patch_shape"] == "circle"
+    assert run["localized_patch_radius_x_m"] == 1500.0
+    assert run["localized_patch_taper_width_m"] == 500.0
+    assert run["localized_hfx_center_to_outside_ratio"] == 6.0
+    assert run["localized_qfx_center_to_outside_ratio"] == 2.0
+    assert run["localized_updraft_distance_from_patch_center_m"] == 0.0
+    report = Path(artifacts.markdown_path).read_text()
+    assert "Localized patch response" in report
+    assert "centered_circle_with_raised_cosine_edge_taper_v0" in report
+    assert "hfx ratio `6.0`" in report
+    assert "updraft `4.5` at `0.0` m" in report
+
+
 def test_campaign_ingest_updates_state_with_existing_completed_output(
     tmp_path: Path,
     monkeypatch: Any,
@@ -2001,6 +2044,86 @@ def _fake_field_quality(
     )
 
 
+def _fake_patch_field(
+    source_field: str,
+    *,
+    units: str,
+    max_value: float,
+    center_to_outside_ratio: float,
+) -> PatchSpatialFieldDiagnostics:
+    return PatchSpatialFieldDiagnostics(
+        source_field=source_field,
+        available=True,
+        field_absent=False,
+        units=units,
+        time_seconds=900.0,
+        max_value=max_value,
+        max_x_m=0.0,
+        max_y_m=0.0,
+        max_distance_from_patch_center_m=0.0,
+        max_inside_patch_radius=True,
+        center_value=max_value,
+        inside_patch_mean=max_value * 0.8,
+        outside_patch_mean=max_value / center_to_outside_ratio,
+        center_to_outside_ratio=center_to_outside_ratio,
+        inside_finite_count=20,
+        outside_finite_count=44,
+        total_finite_count=64,
+    )
+
+
+def _fake_localized_response() -> LocalizedResponseDiagnostics:
+    return LocalizedResponseDiagnostics(
+        available=True,
+        support_state="supported",
+        geometry=DifferentialPatchGeometryDiagnostics(
+            pattern_sha256="patch-sha",
+            shape="circle",
+            center_x_m=0.0,
+            center_y_m=0.0,
+            radius_x_m=1500.0,
+            radius_y_m=1500.0,
+            taper_width_m=500.0,
+            ramp_seconds=1800.0,
+        ),
+        hfx_footprint=_fake_patch_field(
+            "hfx",
+            units="K m/s",
+            max_value=0.048,
+            center_to_outside_ratio=6.0,
+        ),
+        qfx_footprint=_fake_patch_field(
+            "qfx",
+            units="g/g m/s",
+            max_value=1.0e-4,
+            center_to_outside_ratio=2.0,
+        ),
+        near_surface_convergence=PatchConvergenceDiagnostics(
+            available=True,
+            time_seconds=900.0,
+            max_convergence_s_1=0.002,
+            max_convergence_x_m=0.0,
+            max_convergence_y_m=0.0,
+            max_convergence_distance_from_patch_center_m=0.0,
+            max_convergence_inside_patch_radius=True,
+            inside_patch_mean_convergence_s_1=0.001,
+            outside_patch_mean_convergence_s_1=0.0001,
+        ),
+        updraft=_fake_patch_field(
+            "w",
+            units="m/s",
+            max_value=4.5,
+            center_to_outside_ratio=15.0,
+        ),
+        cloud_water=_fake_patch_field(
+            "qc",
+            units="kg/kg",
+            max_value=1.2e-3,
+            center_to_outside_ratio=12.0,
+        ),
+    )
+
+
 def _write_fake_result_metadata(
     manifest_path: Path,
     *,
@@ -2024,6 +2147,7 @@ def _write_fake_result_metadata(
     low_level_theta_full_run_delta: float | None = None,
     low_level_qv_early_end_finite_count: int = 8,
     low_level_qv_early_end_total_count: int = 8,
+    localized_response: bool = False,
 ) -> None:
     manifest = load_run_manifest(manifest_path)
     now = datetime.now(UTC)
@@ -2040,6 +2164,7 @@ def _write_fake_result_metadata(
         runtime_warnings=warnings or [],
         field_quality=field_quality,
     )
+    localized = _fake_localized_response() if localized_response else LocalizedResponseDiagnostics()
     result = ResultMetadata(
         result_id=f"result-{manifest.run_id}",
         run_id=manifest.run_id,
@@ -2169,6 +2294,7 @@ def _write_fake_result_metadata(
                     units="K",
                 ),
             ),
+            localized_response=localized,
             time=TimeDiagnostics(source="time", fallback_used=False, coordinate_name="time"),
             field_quality_assessed=True,
             field_quality=field_quality,
@@ -2195,6 +2321,7 @@ def _write_fake_result_metadata(
             default_explore_time_index=1,
             default_explore_time_seconds=1800.0,
             interesting_time_support_state="supported",
+            localized_response=localized,
         ),
         warnings=warnings or [],
         interesting_time_caveats=interesting_time_caveats or [],

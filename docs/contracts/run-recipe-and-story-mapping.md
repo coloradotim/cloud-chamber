@@ -301,8 +301,10 @@ current_support:
     - Missing, malformed, or hash-mismatched patch files block the run rather
       than silently falling back to uniform forcing.
     - A runtime-local CM1 compile plus emitted hfx/qfx forcing-footprint smoke
-      has verified the v0 local execution path, but #307 still needs
-      localized-response diagnostics before closure.
+      has verified the v0 local execution path. Per-run localized-response
+      diagnostics now preserve patch geometry, emitted footprint, convergence
+      when u/v are available, and patch-to-response distance metrics; #307
+      still needs matched dynamic-response validation before closure.
     - Surface-driven convergence, localized updrafts, coherent cloud growth,
       rain-water aloft, surface rain, and reflectivity remain diagnostics to
       inspect, not guaranteed outcomes.

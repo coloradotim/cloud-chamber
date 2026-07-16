@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from math import isfinite
+from collections.abc import Mapping
+from math import hypot, isfinite
 from typing import Any, Literal, TypedDict
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -12,9 +13,10 @@ QR_RAIN_THRESHOLD_KG_KG = 1e-7
 MINIMUM_CLOUD_GRID_CELLS = 10
 MEANINGFUL_UPDRAFT_THRESHOLD_M_S = 0.5
 HYDROMETEOR_CLOUD_TOP_FIELDS = ("qr", "qi", "qs", "qg")
+DIFFERENTIAL_SURFACE_FORCING_MODE = "differential_surface_forcing_patch_v0"
 
 TIME_DIMENSION_CANDIDATES = ("time", "mtime", "t")
-VERTICAL_COORDINATE_CANDIDATES = ("z", "zh", "height", "height_m")
+VERTICAL_COORDINATE_CANDIDATES = ("z", "zh", "zf", "height", "height_m")
 LOW_LEVEL_RESPONSE_LAYER_BOTTOM_M = 0.0
 LOW_LEVEL_RESPONSE_LAYER_TOP_M = 1000.0
 LOW_LEVEL_RESPONSE_EARLY_TARGET_SECONDS = 3600.0
@@ -300,6 +302,96 @@ class LowLevelResponseDiagnostics(BaseModel):
     )
 
 
+class DifferentialPatchGeometryDiagnostics(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    pattern_sha256: str | None = None
+    shape: str | None = None
+    center_x_m: float | None = None
+    center_y_m: float | None = None
+    radius_x_m: float | None = None
+    radius_y_m: float | None = None
+    taper_width_m: float | None = None
+    ramp_seconds: float | None = None
+
+
+class PatchSpatialFieldDiagnostics(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    source_field: str
+    available: bool = False
+    field_absent: bool = True
+    units: str | None = None
+    time_seconds: float | None = None
+    max_value: float | None = None
+    max_x_m: float | None = None
+    max_y_m: float | None = None
+    max_distance_from_patch_center_m: float | None = None
+    max_inside_patch_radius: bool | None = None
+    center_value: float | None = None
+    inside_patch_mean: float | None = None
+    outside_patch_mean: float | None = None
+    center_to_outside_ratio: float | None = None
+    inside_finite_count: int = 0
+    outside_finite_count: int = 0
+    total_finite_count: int = 0
+    method: str = "patch_centered_spatial_max_and_inside_outside_mean"
+    geometry_note: str = "centered_circle_with_raised_cosine_edge_taper_v0"
+    caveats: list[str] = Field(default_factory=list)
+
+
+class PatchConvergenceDiagnostics(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    available: bool = False
+    source_fields: list[str] = Field(default_factory=lambda: ["u", "v"])
+    units: str = "s^-1"
+    time_seconds: float | None = None
+    max_convergence_s_1: float | None = None
+    max_convergence_x_m: float | None = None
+    max_convergence_y_m: float | None = None
+    max_convergence_distance_from_patch_center_m: float | None = None
+    max_convergence_inside_patch_radius: bool | None = None
+    inside_patch_mean_convergence_s_1: float | None = None
+    outside_patch_mean_convergence_s_1: float | None = None
+    method: str = "lowest_level_collocated_finite_difference_negative_divergence"
+    geometry_note: str = "centered_circle_with_raised_cosine_edge_taper_v0"
+    caveats: list[str] = Field(default_factory=list)
+
+
+class LocalizedResponseDiagnostics(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    available: bool = False
+    support_state: str = "unavailable"
+    geometry: DifferentialPatchGeometryDiagnostics | None = None
+    hfx_footprint: PatchSpatialFieldDiagnostics = Field(
+        default_factory=lambda: PatchSpatialFieldDiagnostics(source_field="hfx")
+    )
+    qfx_footprint: PatchSpatialFieldDiagnostics = Field(
+        default_factory=lambda: PatchSpatialFieldDiagnostics(source_field="qfx")
+    )
+    near_surface_convergence: PatchConvergenceDiagnostics = Field(
+        default_factory=PatchConvergenceDiagnostics
+    )
+    updraft: PatchSpatialFieldDiagnostics = Field(
+        default_factory=lambda: PatchSpatialFieldDiagnostics(source_field="w")
+    )
+    cloud_water: PatchSpatialFieldDiagnostics = Field(
+        default_factory=lambda: PatchSpatialFieldDiagnostics(source_field="qc")
+    )
+    rain_water_aloft: PatchSpatialFieldDiagnostics = Field(
+        default_factory=lambda: PatchSpatialFieldDiagnostics(source_field="qr")
+    )
+    surface_rain: PatchSpatialFieldDiagnostics = Field(
+        default_factory=lambda: PatchSpatialFieldDiagnostics(source_field="rain")
+    )
+    reflectivity: PatchSpatialFieldDiagnostics = Field(
+        default_factory=lambda: PatchSpatialFieldDiagnostics(source_field="dbz")
+    )
+    caveats: list[str] = Field(default_factory=list)
+
+
 class ResultDiagnostics(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -311,6 +403,9 @@ class ResultDiagnostics(BaseModel):
     surface_fluxes: SurfaceFluxDiagnostics = Field(default_factory=SurfaceFluxDiagnostics)
     low_level_response: LowLevelResponseDiagnostics = Field(
         default_factory=LowLevelResponseDiagnostics
+    )
+    localized_response: LocalizedResponseDiagnostics = Field(
+        default_factory=LocalizedResponseDiagnostics
     )
     time: TimeDiagnostics
     field_quality_assessed: bool = False
@@ -536,7 +631,12 @@ def compute_process_diagnostics(
     )
 
 
-def compute_baseline_diagnostics(dataset: Any, inherited_caveats: list[str]) -> ResultDiagnostics:
+def compute_baseline_diagnostics(
+    dataset: Any,
+    inherited_caveats: list[str],
+    *,
+    run_configuration: Mapping[str, Any] | None = None,
+) -> ResultDiagnostics:
     """Compute MVP Baseline Shallow Cumulus diagnostics from an xarray dataset."""
     caveats = list(inherited_caveats)
     time_context = _time_context(dataset, _primary_time_dimension(dataset))
@@ -547,6 +647,12 @@ def compute_baseline_diagnostics(dataset: Any, inherited_caveats: list[str]) -> 
     reflectivity = _reflectivity_diagnostics(dataset, time_context, caveats)
     surface_fluxes = _surface_flux_diagnostics(dataset, time_context, caveats)
     low_level_response = _low_level_response_diagnostics(dataset, time_context, caveats)
+    localized_response = _localized_response_diagnostics(
+        dataset,
+        time_context,
+        run_configuration=run_configuration,
+        caveats=caveats,
+    )
     field_quality = _field_quality_map(dataset, time_context)
     return ResultDiagnostics(
         cloud=cloud,
@@ -556,6 +662,7 @@ def compute_baseline_diagnostics(dataset: Any, inherited_caveats: list[str]) -> 
         reflectivity=reflectivity,
         surface_fluxes=surface_fluxes,
         low_level_response=low_level_response,
+        localized_response=localized_response,
         time=time_context.diagnostics,
         field_quality_assessed=True,
         field_quality=field_quality,
@@ -1312,6 +1419,365 @@ def _low_level_response_diagnostics(
     )
 
 
+def _localized_response_diagnostics(
+    dataset: Any,
+    time: _TimeContext,
+    *,
+    run_configuration: Mapping[str, Any] | None,
+    caveats: list[str],
+) -> LocalizedResponseDiagnostics:
+    patch_payload = _surface_forcing_patch_payload(run_configuration)
+    if patch_payload is None:
+        return LocalizedResponseDiagnostics(
+            support_state="unavailable_not_differential_surface_forcing",
+            caveats=["localized_response_requires_differential_surface_forcing_patch"],
+        )
+
+    geometry = _patch_geometry_diagnostics(patch_payload)
+    if geometry.center_x_m is None or geometry.center_y_m is None:
+        return LocalizedResponseDiagnostics(
+            support_state="unavailable_missing_patch_center",
+            geometry=geometry,
+            caveats=["localized_response_missing_patch_center"],
+        )
+    if geometry.radius_x_m is None or geometry.radius_y_m is None:
+        return LocalizedResponseDiagnostics(
+            support_state="unavailable_missing_patch_radius",
+            geometry=geometry,
+            caveats=["localized_response_missing_patch_radius"],
+        )
+
+    local_caveats: list[str] = []
+    hfx = _patch_spatial_field_diagnostics(dataset, "hfx", time, geometry)
+    qfx = _patch_spatial_field_diagnostics(dataset, "qfx", time, geometry)
+    convergence = _patch_convergence_diagnostics(dataset, time, geometry)
+    updraft = _patch_spatial_field_diagnostics(
+        dataset,
+        "w",
+        time,
+        geometry,
+        vertical="max",
+        prefer="max",
+        minimum_signal=0.0,
+    )
+    cloud_water = _patch_spatial_field_diagnostics(
+        dataset,
+        "qc",
+        time,
+        geometry,
+        vertical="max",
+        prefer="max",
+        minimum_signal=QC_CLOUD_THRESHOLD_KG_KG,
+    )
+    rain_water = _patch_spatial_field_diagnostics(
+        dataset,
+        "qr",
+        time,
+        geometry,
+        vertical="max",
+        prefer="max",
+        minimum_signal=QR_RAIN_THRESHOLD_KG_KG,
+    )
+    surface_rain = _patch_spatial_field_diagnostics(
+        dataset,
+        "rain",
+        time,
+        geometry,
+        minimum_signal=0.0,
+    )
+    reflectivity = _patch_spatial_field_diagnostics(
+        dataset,
+        "dbz",
+        time,
+        geometry,
+        vertical="max",
+        prefer="max",
+        minimum_signal=0.0,
+    )
+    for diagnostic in (
+        hfx,
+        qfx,
+        convergence,
+        updraft,
+        cloud_water,
+        rain_water,
+        surface_rain,
+        reflectivity,
+    ):
+        local_caveats.extend(diagnostic.caveats)
+
+    emitted_footprint_available = hfx.available or qfx.available
+    response_available = any(
+        diagnostic.available
+        for diagnostic in (
+            convergence,
+            updraft,
+            cloud_water,
+            rain_water,
+            surface_rain,
+            reflectivity,
+        )
+    )
+    if emitted_footprint_available and response_available:
+        support_state = "supported"
+    elif emitted_footprint_available:
+        support_state = "footprint_supported_response_unavailable"
+    else:
+        support_state = "unavailable_missing_emitted_surface_flux_fields"
+
+    caveats.extend(local_caveats)
+    return LocalizedResponseDiagnostics(
+        available=emitted_footprint_available,
+        support_state=support_state,
+        geometry=geometry,
+        hfx_footprint=hfx,
+        qfx_footprint=qfx,
+        near_surface_convergence=convergence,
+        updraft=updraft,
+        cloud_water=cloud_water,
+        rain_water_aloft=rain_water,
+        surface_rain=surface_rain,
+        reflectivity=reflectivity,
+        caveats=_dedupe(local_caveats),
+    )
+
+
+def _surface_forcing_patch_payload(
+    run_configuration: Mapping[str, Any] | None,
+) -> Mapping[str, Any] | None:
+    if not run_configuration:
+        return None
+    if run_configuration.get("surface_flux_mode") != DIFFERENTIAL_SURFACE_FORCING_MODE:
+        return None
+    patch = run_configuration.get("surface_forcing_patch")
+    return patch if isinstance(patch, Mapping) else None
+
+
+def _patch_geometry_diagnostics(
+    patch: Mapping[str, Any],
+) -> DifferentialPatchGeometryDiagnostics:
+    return DifferentialPatchGeometryDiagnostics(
+        pattern_sha256=_string_or_none(patch.get("pattern_sha256")),
+        shape=_string_or_none(patch.get("shape")),
+        center_x_m=_to_float_or_none(patch.get("center_x_m")),
+        center_y_m=_to_float_or_none(patch.get("center_y_m")),
+        radius_x_m=_to_float_or_none(patch.get("radius_x_m")),
+        radius_y_m=_to_float_or_none(patch.get("radius_y_m")),
+        taper_width_m=_to_float_or_none(patch.get("taper_width_m")),
+        ramp_seconds=_to_float_or_none(patch.get("ramp_seconds")),
+    )
+
+
+def _patch_spatial_field_diagnostics(
+    dataset: Any,
+    field: str,
+    time: _TimeContext,
+    geometry: DifferentialPatchGeometryDiagnostics,
+    *,
+    vertical: Literal["none", "lowest", "max"] = "none",
+    prefer: Literal["max", "min"] = "max",
+    minimum_signal: float | None = None,
+) -> PatchSpatialFieldDiagnostics:
+    if field not in dataset.data_vars:
+        return PatchSpatialFieldDiagnostics(
+            source_field=field,
+            field_absent=True,
+            caveats=[f"{field}_localized_response_field_absent"],
+        )
+    data_array = dataset[field]
+    x_name = _first_present(("x", "xh", "lon", "i"), list(data_array.dims))
+    y_name = _first_present(("y", "yh", "lat", "j"), list(data_array.dims))
+    if x_name is None or y_name is None:
+        return PatchSpatialFieldDiagnostics(
+            source_field=field,
+            field_absent=False,
+            units=_attr_string(data_array, "units"),
+            caveats=[f"{field}_localized_response_missing_horizontal_dimensions"],
+        )
+
+    time_index = _time_index_for_field_max(data_array, time, field, prefer=prefer)
+    if time_index is None:
+        return PatchSpatialFieldDiagnostics(
+            source_field=field,
+            field_absent=False,
+            units=_attr_string(data_array, "units"),
+            caveats=[f"{field}_localized_response_no_finite_values"],
+        )
+    array = _select_time_slice(data_array, time.dimension, time_index)
+    array = _select_vertical_for_localized_response(array, vertical=vertical, prefer=prefer)
+    if x_name not in array.dims or y_name not in array.dims:
+        return PatchSpatialFieldDiagnostics(
+            source_field=field,
+            field_absent=False,
+            units=_attr_string(data_array, "units"),
+            time_seconds=time.at(time_index),
+            caveats=[f"{field}_localized_response_horizontal_slice_unavailable"],
+        )
+
+    x_values = _horizontal_values(array, x_name)
+    y_values = _horizontal_values(array, y_name)
+    cells = _horizontal_cells(
+        array,
+        x_name=x_name,
+        y_name=y_name,
+        x_values=x_values,
+        y_values=y_values,
+    )
+    if not cells:
+        return PatchSpatialFieldDiagnostics(
+            source_field=field,
+            field_absent=False,
+            units=_attr_string(data_array, "units"),
+            time_seconds=time.at(time_index),
+            caveats=[f"{field}_localized_response_no_finite_horizontal_values"],
+        )
+
+    best = (
+        max(cells, key=lambda cell: cell[2])
+        if prefer == "max"
+        else min(cells, key=lambda cell: cell[2])
+    )
+    if minimum_signal is not None and prefer == "max" and best[2] <= minimum_signal:
+        return PatchSpatialFieldDiagnostics(
+            source_field=field,
+            field_absent=False,
+            units=_attr_string(data_array, "units"),
+            time_seconds=time.at(time_index),
+            max_value=best[2],
+            total_finite_count=len(cells),
+            caveats=[f"{field}_localized_response_no_signal_above_threshold"],
+        )
+    inside_values: list[float] = []
+    outside_values: list[float] = []
+    center_value: float | None = None
+    center_distance: float | None = None
+    for x_value, y_value, value in cells:
+        distance = _patch_distance(x_value, y_value, geometry)
+        if center_distance is None or distance < center_distance:
+            center_distance = distance
+            center_value = value
+        if _inside_patch_radius(x_value, y_value, geometry):
+            inside_values.append(value)
+        else:
+            outside_values.append(value)
+
+    outside_mean = _mean(outside_values)
+    return PatchSpatialFieldDiagnostics(
+        source_field=field,
+        available=True,
+        field_absent=False,
+        units=_attr_string(data_array, "units"),
+        time_seconds=time.at(time_index),
+        max_value=best[2],
+        max_x_m=best[0],
+        max_y_m=best[1],
+        max_distance_from_patch_center_m=_patch_distance(best[0], best[1], geometry),
+        max_inside_patch_radius=_inside_patch_radius(best[0], best[1], geometry),
+        center_value=center_value,
+        inside_patch_mean=_mean(inside_values),
+        outside_patch_mean=outside_mean,
+        center_to_outside_ratio=(
+            center_value / outside_mean if center_value is not None and outside_mean else None
+        ),
+        inside_finite_count=len(inside_values),
+        outside_finite_count=len(outside_values),
+        total_finite_count=len(cells),
+    )
+
+
+def _patch_convergence_diagnostics(
+    dataset: Any,
+    time: _TimeContext,
+    geometry: DifferentialPatchGeometryDiagnostics,
+) -> PatchConvergenceDiagnostics:
+    wind_fields = _localized_convergence_wind_fields(dataset)
+    if wind_fields is None:
+        return PatchConvergenceDiagnostics(
+            caveats=["localized_response_convergence_requires_u_and_v_fields"]
+        )
+    u, v = wind_fields
+    if u.dims != v.dims:
+        return PatchConvergenceDiagnostics(
+            caveats=["localized_response_convergence_u_v_dimension_mismatch"]
+        )
+    x_name = _first_present(("x", "xh", "lon", "i"), list(u.dims))
+    y_name = _first_present(("y", "yh", "lat", "j"), list(u.dims))
+    if x_name is None or y_name is None:
+        return PatchConvergenceDiagnostics(
+            caveats=["localized_response_convergence_missing_horizontal_dimensions"]
+        )
+    time_index = _time_index_for_field_max(u, time, "u", prefer="max")
+    if time_index is None:
+        return PatchConvergenceDiagnostics(caveats=["u_localized_response_no_finite_values"])
+    u_slice = _select_vertical_for_localized_response(
+        _select_time_slice(u, time.dimension, time_index),
+        vertical="lowest",
+        prefer="max",
+    )
+    v_slice = _select_vertical_for_localized_response(
+        _select_time_slice(v, time.dimension, time_index),
+        vertical="lowest",
+        prefer="max",
+    )
+    x_values = _horizontal_values(u_slice, x_name)
+    y_values = _horizontal_values(u_slice, y_name)
+    if len(x_values) < 3 or len(y_values) < 3:
+        return PatchConvergenceDiagnostics(
+            time_seconds=time.at(time_index),
+            caveats=["localized_response_convergence_requires_at_least_3x3_horizontal_grid"],
+        )
+    convergence_cells: list[tuple[float, float, float]] = []
+    for y_index in range(1, len(y_values) - 1):
+        for x_index in range(1, len(x_values) - 1):
+            u_left = _array_value_2d(u_slice, x_name, y_name, x_index - 1, y_index)
+            u_right = _array_value_2d(u_slice, x_name, y_name, x_index + 1, y_index)
+            v_down = _array_value_2d(v_slice, x_name, y_name, x_index, y_index - 1)
+            v_up = _array_value_2d(v_slice, x_name, y_name, x_index, y_index + 1)
+            if None in {u_left, u_right, v_down, v_up}:
+                continue
+            dx = x_values[x_index + 1] - x_values[x_index - 1]
+            dy = y_values[y_index + 1] - y_values[y_index - 1]
+            if dx == 0 or dy == 0:
+                continue
+            divergence = ((u_right - u_left) / dx) + ((v_up - v_down) / dy)  # type: ignore[operator]
+            convergence_cells.append((x_values[x_index], y_values[y_index], -divergence))
+    if not convergence_cells:
+        return PatchConvergenceDiagnostics(
+            time_seconds=time.at(time_index),
+            caveats=["localized_response_convergence_no_finite_collocated_values"],
+        )
+    best = max(convergence_cells, key=lambda cell: cell[2])
+    inside_values = [
+        value
+        for x_value, y_value, value in convergence_cells
+        if _inside_patch_radius(x_value, y_value, geometry)
+    ]
+    outside_values = [
+        value
+        for x_value, y_value, value in convergence_cells
+        if not _inside_patch_radius(x_value, y_value, geometry)
+    ]
+    return PatchConvergenceDiagnostics(
+        available=True,
+        time_seconds=time.at(time_index),
+        max_convergence_s_1=best[2],
+        max_convergence_x_m=best[0],
+        max_convergence_y_m=best[1],
+        max_convergence_distance_from_patch_center_m=_patch_distance(best[0], best[1], geometry),
+        max_convergence_inside_patch_radius=_inside_patch_radius(best[0], best[1], geometry),
+        inside_patch_mean_convergence_s_1=_mean(inside_values),
+        outside_patch_mean_convergence_s_1=_mean(outside_values),
+    )
+
+
+def _localized_convergence_wind_fields(dataset: Any) -> tuple[Any, Any] | None:
+    if "uinterp" in dataset.data_vars and "vinterp" in dataset.data_vars:
+        return dataset["uinterp"], dataset["vinterp"]
+    if "u" in dataset.data_vars and "v" in dataset.data_vars:
+        return dataset["u"], dataset["v"]
+    return None
+
+
 def _low_level_response_field_diagnostics(
     dataset: Any,
     *,
@@ -2003,6 +2469,150 @@ def _time_slices(data_array: Any, time_dimension: str | None) -> list[Any]:
     ]
 
 
+def _select_time_slice(data_array: Any, time_dimension: str | None, time_index: int) -> Any:
+    if time_dimension is None or time_dimension not in data_array.dims:
+        return data_array
+    return data_array.isel({time_dimension: time_index})
+
+
+def _time_index_for_field_max(
+    data_array: Any,
+    time: _TimeContext,
+    field: str,
+    *,
+    prefer: Literal["max", "min"],
+) -> int | None:
+    slices = _time_slices(data_array, time.dimension)
+    best_index: int | None = None
+    best_value: float | None = None
+    for index, array in enumerate(slices):
+        value = _finite_max(array) if prefer == "max" else _finite_min(array)
+        if value is None:
+            continue
+        if best_value is None:
+            best_index = index
+            best_value = value
+            continue
+        if prefer == "max" and value > best_value:
+            best_index = index
+            best_value = value
+        elif prefer == "min" and value < best_value:
+            best_index = index
+            best_value = value
+    if best_index is None:
+        return None
+    if time.dimension is not None and time.dimension in data_array.dims:
+        return best_index
+    return 0
+
+
+def _select_vertical_for_localized_response(
+    data_array: Any,
+    *,
+    vertical: Literal["none", "lowest", "max"],
+    prefer: Literal["max", "min"],
+) -> Any:
+    vertical_name = _first_present(VERTICAL_COORDINATE_CANDIDATES, list(data_array.dims))
+    if vertical == "none" or vertical_name is None:
+        return data_array
+    if vertical == "lowest":
+        return data_array.isel({vertical_name: 0})
+    best_index = 0
+    best_value: float | None = None
+    for index in range(int(data_array.sizes[vertical_name])):
+        level = data_array.isel({vertical_name: index})
+        value = _finite_max(level) if prefer == "max" else _finite_min(level)
+        if value is None:
+            continue
+        if best_value is None:
+            best_index = index
+            best_value = value
+            continue
+        if prefer == "max" and value > best_value:
+            best_index = index
+            best_value = value
+        elif prefer == "min" and value < best_value:
+            best_index = index
+            best_value = value
+    return data_array.isel({vertical_name: best_index})
+
+
+def _horizontal_values(data_array: Any, dimension: str) -> list[float]:
+    if dimension in data_array.coords:
+        coordinate = data_array.coords[dimension]
+        units = _attr_string(coordinate, "units")
+        values = [
+            _height_in_meters(_to_float_or_none(value), units)
+            for value in coordinate.values.tolist()
+        ]
+        if all(value is not None for value in values):
+            return [float(value) for value in values if value is not None]
+    size = int(data_array.sizes[dimension])
+    return [float(index) for index in range(size)]
+
+
+def _horizontal_cells(
+    data_array: Any,
+    *,
+    x_name: str,
+    y_name: str,
+    x_values: list[float],
+    y_values: list[float],
+) -> list[tuple[float, float, float]]:
+    cells: list[tuple[float, float, float]] = []
+    if x_name not in data_array.dims or y_name not in data_array.dims:
+        return cells
+    for y_index, y_value in enumerate(y_values):
+        for x_index, x_value in enumerate(x_values):
+            value = _array_value_2d(data_array, x_name, y_name, x_index, y_index)
+            if value is not None:
+                cells.append((x_value, y_value, value))
+    return cells
+
+
+def _array_value_2d(
+    data_array: Any,
+    x_name: str,
+    y_name: str,
+    x_index: int,
+    y_index: int,
+) -> float | None:
+    try:
+        value = data_array.isel({x_name: x_index, y_name: y_index}).values.item()
+    except (IndexError, ValueError, TypeError, AttributeError):
+        return None
+    parsed = _to_float_or_none(value)
+    if parsed is None or not isfinite(parsed):
+        return None
+    return parsed
+
+
+def _patch_distance(
+    x_m: float,
+    y_m: float,
+    geometry: DifferentialPatchGeometryDiagnostics,
+) -> float:
+    center_x = geometry.center_x_m or 0.0
+    center_y = geometry.center_y_m or 0.0
+    return hypot(x_m - center_x, y_m - center_y)
+
+
+def _inside_patch_radius(
+    x_m: float,
+    y_m: float,
+    geometry: DifferentialPatchGeometryDiagnostics,
+) -> bool:
+    radius = min(
+        geometry.radius_x_m if geometry.radius_x_m is not None else 0.0,
+        geometry.radius_y_m if geometry.radius_y_m is not None else 0.0,
+    )
+    return radius > 0.0 and _patch_distance(x_m, y_m, geometry) <= radius
+
+
+def _mean(values: list[float]) -> float | None:
+    return sum(values) / len(values) if values else None
+
+
 def _record_units_caveat(
     data_array: Any, field_name: str, expected_units: str, caveats: list[str]
 ) -> None:
@@ -2080,6 +2690,10 @@ def _to_float_or_none(value: object) -> float | None:
         return float(value)  # type: ignore[arg-type]
     except (TypeError, ValueError):
         return None
+
+
+def _string_or_none(value: object) -> str | None:
+    return str(value) if value is not None else None
 
 
 def _first_present(candidates: tuple[str, ...], names: list[str]) -> str | None:

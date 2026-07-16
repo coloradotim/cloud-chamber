@@ -171,6 +171,24 @@ SUPPORTED_REQUIRED_SUMMARY_FIELDS = {
     "surface_patch_moisture_flux_perturbation_g_g_m_s",
     "surface_patch_taper_width_m",
     "surface_patch_ramp_seconds",
+    "localized_response_support_state",
+    "localized_patch_shape",
+    "localized_patch_radius_x_m",
+    "localized_patch_radius_y_m",
+    "localized_patch_taper_width_m",
+    "localized_patch_ramp_seconds",
+    "localized_patch_geometry_note",
+    "localized_hfx_center_to_outside_ratio",
+    "localized_hfx_max_distance_from_patch_center_m",
+    "localized_qfx_center_to_outside_ratio",
+    "localized_qfx_max_distance_from_patch_center_m",
+    "localized_max_convergence_s_1",
+    "localized_convergence_distance_from_patch_center_m",
+    "localized_updraft_max",
+    "localized_updraft_distance_from_patch_center_m",
+    "localized_cloud_water_max",
+    "localized_cloud_water_distance_from_patch_center_m",
+    "localized_caveats",
     "cm1_cnst_shflx",
     "cm1_cnst_shflx_units",
     "cm1_cnst_lhflx",
@@ -1982,6 +2000,7 @@ def _summary_for_plan_run(run: CampaignRunPlan, state: CampaignState) -> dict[st
     reflectivity = diagnostics.reflectivity if diagnostics is not None else None
     surface_fluxes = diagnostics.surface_fluxes if diagnostics is not None else None
     low_level_response = diagnostics.low_level_response if diagnostics is not None else None
+    localized_response = diagnostics.localized_response if diagnostics is not None else None
     hfx_stats = _surface_flux_summary_values(
         surface_fluxes.hfx if surface_fluxes is not None else None,
         source_field="hfx",
@@ -2008,6 +2027,7 @@ def _summary_for_plan_run(run: CampaignRunPlan, state: CampaignState) -> dict[st
             _first_available_field(result, ["th", "theta", "temperature", "t"]),
         ),
     )
+    localized = _localized_response_summary_values(localized_response)
     deep_cloud_formed = (
         science.deep_cloud_formed if science is not None else "unavailable:not_ingested"
     )
@@ -2179,6 +2199,34 @@ def _summary_for_plan_run(run: CampaignRunPlan, state: CampaignState) -> dict[st
             if surface_forcing_patch_map is not None
             else None
         ),
+        "localized_response_support_state": localized["support_state"],
+        "localized_patch_shape": localized["patch_shape"],
+        "localized_patch_radius_x_m": localized["patch_radius_x_m"],
+        "localized_patch_radius_y_m": localized["patch_radius_y_m"],
+        "localized_patch_taper_width_m": localized["patch_taper_width_m"],
+        "localized_patch_ramp_seconds": localized["patch_ramp_seconds"],
+        "localized_patch_geometry_note": localized["geometry_note"],
+        "localized_hfx_center_to_outside_ratio": localized["hfx_center_to_outside_ratio"],
+        "localized_hfx_max_distance_from_patch_center_m": localized[
+            "hfx_max_distance_from_patch_center_m"
+        ],
+        "localized_qfx_center_to_outside_ratio": localized["qfx_center_to_outside_ratio"],
+        "localized_qfx_max_distance_from_patch_center_m": localized[
+            "qfx_max_distance_from_patch_center_m"
+        ],
+        "localized_max_convergence_s_1": localized["max_convergence_s_1"],
+        "localized_convergence_distance_from_patch_center_m": localized[
+            "convergence_distance_from_patch_center_m"
+        ],
+        "localized_updraft_max": localized["updraft_max"],
+        "localized_updraft_distance_from_patch_center_m": localized[
+            "updraft_distance_from_patch_center_m"
+        ],
+        "localized_cloud_water_max": localized["cloud_water_max"],
+        "localized_cloud_water_distance_from_patch_center_m": localized[
+            "cloud_water_distance_from_patch_center_m"
+        ],
+        "localized_caveats": localized["caveats"],
         "cm1_cnst_shflx": run.surface_flux_cm1_values.get("cnst_shflx"),
         "cm1_cnst_shflx_units": run.surface_flux_cm1_values.get("cnst_shflx_units"),
         "cm1_cnst_lhflx": run.surface_flux_cm1_values.get("cnst_lhflx"),
@@ -2395,6 +2443,7 @@ def _diagnostic_support(result: ResultMetadata | None) -> dict[str, str]:
             "rain_water_aloft": "unavailable:until_result_ingested",
             "surface_rain": "unavailable:until_result_ingested",
             "reflectivity": "unavailable:until_result_ingested",
+            "localized_response": "unavailable:until_result_ingested",
         }
     diagnostics = result.diagnostics
     variables = set(result.variables)
@@ -2406,6 +2455,7 @@ def _diagnostic_support(result: ResultMetadata | None) -> dict[str, str]:
         "rain_water_aloft": "available" if diagnostics.rain.available else "missing",
         "surface_rain": "available" if diagnostics.surface_rain.available else "missing",
         "reflectivity": "available" if diagnostics.reflectivity.available else "missing",
+        "localized_response": _localized_response_support(diagnostics.localized_response),
     }
 
 
@@ -2436,10 +2486,140 @@ def _low_level_response_support(response: Any) -> str:
     return "unavailable:" + ",".join(_dedupe([reason for reason in reasons if reason]))
 
 
+def _localized_response_support(response: Any) -> str:
+    if response is None:
+        return "unavailable:until_result_ingested"
+    if getattr(response, "available", False):
+        return "available"
+    support_state = getattr(response, "support_state", None)
+    if support_state:
+        return f"unavailable:{support_state}"
+    return "unavailable:localized_response_unavailable"
+
+
 def _field_units(result: ResultMetadata | None, field_name: str | None) -> str | None:
     if result is None or field_name is None:
         return None
     return next((field.units for field in result.fields_detected if field.name == field_name), None)
+
+
+def _localized_response_summary_values(response: Any | None) -> dict[str, Any]:
+    unavailable = "unavailable:until_result_ingested"
+    if response is None:
+        return {
+            "support_state": unavailable,
+            "patch_shape": None,
+            "patch_radius_x_m": None,
+            "patch_radius_y_m": None,
+            "patch_taper_width_m": None,
+            "patch_ramp_seconds": None,
+            "geometry_note": None,
+            "hfx_center_to_outside_ratio": unavailable,
+            "hfx_max_distance_from_patch_center_m": unavailable,
+            "qfx_center_to_outside_ratio": unavailable,
+            "qfx_max_distance_from_patch_center_m": unavailable,
+            "max_convergence_s_1": unavailable,
+            "convergence_distance_from_patch_center_m": unavailable,
+            "updraft_max": unavailable,
+            "updraft_distance_from_patch_center_m": unavailable,
+            "cloud_water_max": unavailable,
+            "cloud_water_distance_from_patch_center_m": unavailable,
+            "caveats": [],
+        }
+
+    geometry = getattr(response, "geometry", None)
+    hfx = _localized_patch_field_values(getattr(response, "hfx_footprint", None), "hfx")
+    qfx = _localized_patch_field_values(getattr(response, "qfx_footprint", None), "qfx")
+    updraft = _localized_patch_field_values(getattr(response, "updraft", None), "w")
+    cloud_water = _localized_patch_field_values(getattr(response, "cloud_water", None), "qc")
+    convergence = _localized_convergence_values(getattr(response, "near_surface_convergence", None))
+    geometry_note = next(
+        (
+            note
+            for note in (
+                hfx["geometry_note"],
+                qfx["geometry_note"],
+                convergence["geometry_note"],
+                updraft["geometry_note"],
+                cloud_water["geometry_note"],
+            )
+            if note
+        ),
+        None,
+    )
+    return {
+        "support_state": getattr(response, "support_state", None) or "unavailable",
+        "patch_shape": getattr(geometry, "shape", None),
+        "patch_radius_x_m": getattr(geometry, "radius_x_m", None),
+        "patch_radius_y_m": getattr(geometry, "radius_y_m", None),
+        "patch_taper_width_m": getattr(geometry, "taper_width_m", None),
+        "patch_ramp_seconds": getattr(geometry, "ramp_seconds", None),
+        "geometry_note": geometry_note,
+        "hfx_center_to_outside_ratio": hfx["center_to_outside_ratio"],
+        "hfx_max_distance_from_patch_center_m": hfx["max_distance_from_patch_center_m"],
+        "qfx_center_to_outside_ratio": qfx["center_to_outside_ratio"],
+        "qfx_max_distance_from_patch_center_m": qfx["max_distance_from_patch_center_m"],
+        "max_convergence_s_1": convergence["max_convergence_s_1"],
+        "convergence_distance_from_patch_center_m": convergence["distance_from_patch_center_m"],
+        "updraft_max": updraft["max_value"],
+        "updraft_distance_from_patch_center_m": updraft["max_distance_from_patch_center_m"],
+        "cloud_water_max": cloud_water["max_value"],
+        "cloud_water_distance_from_patch_center_m": cloud_water["max_distance_from_patch_center_m"],
+        "caveats": _dedupe(_string_list(getattr(response, "caveats", []))),
+    }
+
+
+def _localized_patch_field_values(field: Any | None, label: str) -> dict[str, Any]:
+    reason = f"unavailable:{label}_localized_response_unavailable"
+    if field is None:
+        return {
+            "max_value": reason,
+            "center_to_outside_ratio": reason,
+            "max_distance_from_patch_center_m": reason,
+            "geometry_note": None,
+        }
+    if not getattr(field, "available", False):
+        caveats = _string_list(getattr(field, "caveats", []))
+        reason = f"unavailable:{caveats[0]}" if caveats else reason
+        return {
+            "max_value": reason,
+            "center_to_outside_ratio": reason,
+            "max_distance_from_patch_center_m": reason,
+            "geometry_note": getattr(field, "geometry_note", None),
+        }
+    return {
+        "max_value": getattr(field, "max_value", None),
+        "center_to_outside_ratio": getattr(field, "center_to_outside_ratio", None),
+        "max_distance_from_patch_center_m": getattr(
+            field, "max_distance_from_patch_center_m", None
+        ),
+        "geometry_note": getattr(field, "geometry_note", None),
+    }
+
+
+def _localized_convergence_values(convergence: Any | None) -> dict[str, Any]:
+    reason = "unavailable:near_surface_convergence_unavailable"
+    if convergence is None:
+        return {
+            "max_convergence_s_1": reason,
+            "distance_from_patch_center_m": reason,
+            "geometry_note": None,
+        }
+    if not getattr(convergence, "available", False):
+        caveats = _string_list(getattr(convergence, "caveats", []))
+        reason = f"unavailable:{caveats[0]}" if caveats else reason
+        return {
+            "max_convergence_s_1": reason,
+            "distance_from_patch_center_m": reason,
+            "geometry_note": getattr(convergence, "geometry_note", None),
+        }
+    return {
+        "max_convergence_s_1": getattr(convergence, "max_convergence_s_1", None),
+        "distance_from_patch_center_m": getattr(
+            convergence, "max_convergence_distance_from_patch_center_m", None
+        ),
+        "geometry_note": getattr(convergence, "geometry_note", None),
+    }
 
 
 def _surface_flux_summary_values(
@@ -3234,6 +3414,7 @@ def _render_markdown_report(plan: CampaignPlan, summary: Mapping[str, Any]) -> s
                     f"`{_frame_quality_report_label(run.get('hfx_frame_quality'))}`, "
                     f"qfx `{_frame_quality_report_label(run.get('qfx_frame_quality'))}`"
                 ),
+                f"- Localized patch response: {_localized_response_report_label(run)}",
                 (f"- Terminal field contamination: `{terminal_fields}`"),
                 f"- Runtime floating-point warnings: `{runtime_warnings}`",
                 (
@@ -4402,6 +4583,68 @@ def _forcing_label(run: Mapping[str, Any]) -> str:
         f"+M {run.get('surface_patch_moisture_flux_perturbation_g_g_m_s')}; "
         f"hash {str(run.get('surface_forcing_patch_sha256') or 'unavailable')[:10]}"
     )
+
+
+def _localized_response_report_label(run: Mapping[str, Any]) -> str:
+    state = run.get("localized_response_support_state") or "unavailable"
+    if state in {
+        "unavailable:until_result_ingested",
+        "unavailable_not_differential_surface_forcing",
+        "unavailable",
+    }:
+        return f"state `{state}`"
+    patch = (
+        f"{run.get('localized_patch_shape') or 'patch'} "
+        f"{run.get('localized_patch_radius_x_m')}x"
+        f"{run.get('localized_patch_radius_y_m')} m, "
+        f"taper {run.get('localized_patch_taper_width_m')} m, "
+        f"ramp {run.get('localized_patch_ramp_seconds')} s"
+    )
+    caveats = ", ".join(run.get("localized_caveats") or []) or "none"
+    hfx = _localized_metric_report(
+        "hfx ratio",
+        run.get("localized_hfx_center_to_outside_ratio"),
+        run.get("localized_hfx_max_distance_from_patch_center_m"),
+    )
+    qfx = _localized_metric_report(
+        "qfx ratio",
+        run.get("localized_qfx_center_to_outside_ratio"),
+        run.get("localized_qfx_max_distance_from_patch_center_m"),
+    )
+    convergence = _localized_metric_report(
+        "convergence",
+        run.get("localized_max_convergence_s_1"),
+        run.get("localized_convergence_distance_from_patch_center_m"),
+        unit_suffix=" s^-1",
+    )
+    updraft = _localized_metric_report(
+        "updraft",
+        run.get("localized_updraft_max"),
+        run.get("localized_updraft_distance_from_patch_center_m"),
+    )
+    cloud_water = _localized_metric_report(
+        "cloud water",
+        run.get("localized_cloud_water_max"),
+        run.get("localized_cloud_water_distance_from_patch_center_m"),
+    )
+    return (
+        f"state `{state}`; patch `{patch}`; edge "
+        f"`{run.get('localized_patch_geometry_note') or 'unavailable'}`; "
+        f"{hfx}; {qfx}; {convergence}; {updraft}; {cloud_water}; "
+        f"caveats `{caveats}`"
+    )
+
+
+def _localized_metric_report(
+    label: str,
+    value: Any,
+    distance_m: Any,
+    *,
+    unit_suffix: str = "",
+) -> str:
+    if isinstance(value, str) and value.startswith("unavailable:"):
+        return f"{label} `{value}`"
+    return f"{label} `{value}`{unit_suffix} at `{distance_m}` m"
 
 
 def _grid_label(run: Mapping[str, Any]) -> str:

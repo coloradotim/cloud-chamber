@@ -859,6 +859,72 @@ type SurfaceFluxDiagnostics = {
   qfx: SurfaceFluxFieldDiagnostics;
 };
 
+type DifferentialPatchGeometryDiagnostics = {
+  pattern_sha256?: string | null;
+  shape?: string | null;
+  center_x_m?: number | null;
+  center_y_m?: number | null;
+  radius_x_m?: number | null;
+  radius_y_m?: number | null;
+  taper_width_m?: number | null;
+  ramp_seconds?: number | null;
+};
+
+type PatchSpatialFieldDiagnostics = {
+  source_field: string;
+  available: boolean;
+  field_absent: boolean;
+  units?: string | null;
+  time_seconds?: number | null;
+  max_value?: number | null;
+  max_x_m?: number | null;
+  max_y_m?: number | null;
+  max_distance_from_patch_center_m?: number | null;
+  max_inside_patch_radius?: boolean | null;
+  center_value?: number | null;
+  inside_patch_mean?: number | null;
+  outside_patch_mean?: number | null;
+  center_to_outside_ratio?: number | null;
+  inside_finite_count: number;
+  outside_finite_count: number;
+  total_finite_count: number;
+  method: string;
+  geometry_note?: string;
+  caveats: string[];
+};
+
+type PatchConvergenceDiagnostics = {
+  available: boolean;
+  source_fields: string[];
+  units: string;
+  time_seconds?: number | null;
+  max_convergence_s_1?: number | null;
+  max_convergence_x_m?: number | null;
+  max_convergence_y_m?: number | null;
+  max_convergence_distance_from_patch_center_m?: number | null;
+  max_convergence_inside_patch_radius?: boolean | null;
+  inside_patch_mean_convergence_s_1?: number | null;
+  outside_patch_mean_convergence_s_1?: number | null;
+  method: string;
+  geometry_note?: string;
+  caveats: string[];
+};
+
+type LocalizedResponseDiagnostics = {
+  available: boolean;
+  support_state: string;
+  geometry?: DifferentialPatchGeometryDiagnostics | null;
+  hfx_footprint: PatchSpatialFieldDiagnostics;
+  qfx_footprint: PatchSpatialFieldDiagnostics;
+  near_surface_convergence: PatchConvergenceDiagnostics;
+  updraft: PatchSpatialFieldDiagnostics;
+  cloud_water: PatchSpatialFieldDiagnostics;
+  rain_water_aloft: PatchSpatialFieldDiagnostics;
+  surface_rain: PatchSpatialFieldDiagnostics;
+  reflectivity: PatchSpatialFieldDiagnostics;
+  caveats: string[];
+};
+
 type InterestingTimeRecord = {
   key: string;
   label: string;
@@ -922,6 +988,7 @@ type ScienceSummary = {
   field_quality_assessed?: boolean;
   field_quality?: Record<string, FieldQuality>;
   surface_fluxes?: SurfaceFluxDiagnostics | null;
+  localized_response?: LocalizedResponseDiagnostics | null;
   diagnostic_availability?: ScienceDiagnosticAvailability[];
   interesting_time_caveats: string[];
   interesting_time_support_state: string;
@@ -1006,6 +1073,7 @@ type ResultCard = {
   max_dbz?: number | null;
   reflectivity_available?: boolean | null;
   surface_fluxes?: SurfaceFluxDiagnostics | null;
+  localized_response?: LocalizedResponseDiagnostics | null;
   runtime_integrity?: RuntimeIntegrity | null;
   field_quality_assessed?: boolean;
   field_quality?: Record<string, FieldQuality>;
@@ -8632,6 +8700,7 @@ function ResultNotebookCard({
 
       <p className="result-story">{resultStory(result)}</p>
       <CandidateHypothesisSummary result={result} />
+      <LocalizedResponseSummary result={result} />
 
       {(isValidatedQuickLookBaseline(result) || result.caveats.length > 0) && (
         <p className="secondary-result-note">
@@ -8894,6 +8963,105 @@ function CandidateHypothesisSummary({ result }: { result: ResultCard }) {
       )}
     </section>
   );
+}
+
+function LocalizedResponseSummary({ result }: { result: ResultCard }) {
+  const response = result.localized_response ?? result.science_summary?.localized_response ?? null;
+  if (!response || (!response.geometry && response.support_state === "unavailable")) return null;
+  const geometry = response.geometry;
+  return (
+    <section className="candidate-outcome-summary" aria-label="Surface forcing response">
+      <div className="section-heading-row">
+        <div>
+          <p className="eyebrow">Surface forcing response</p>
+          <h4>Differential patch evidence</h4>
+        </div>
+        <StatusBadge label={localizedResponseLabel(response.support_state)} tone="neutral" />
+      </div>
+      <dl className="metric-grid">
+        <Metric label="Patch" value={patchGeometryLabel(geometry)} />
+        <Metric
+          label="Heat footprint"
+          value={patchRatioLabel(response.hfx_footprint, "hfx")}
+        />
+        <Metric
+          label="Moisture footprint"
+          value={patchRatioLabel(response.qfx_footprint, "qfx")}
+        />
+        <Metric
+          label="Near-surface convergence"
+          value={convergenceLabel(response.near_surface_convergence)}
+        />
+        <Metric label="Max updraft alignment" value={patchDistanceLabel(response.updraft)} />
+        <Metric label="Cloud-water alignment" value={patchDistanceLabel(response.cloud_water)} />
+      </dl>
+      {response.caveats.length > 0 && (
+        <p className="secondary-result-note">Caveats: {response.caveats.join(" · ")}</p>
+      )}
+    </section>
+  );
+}
+
+function localizedResponseLabel(state: string): string {
+  if (state === "supported") return "Footprint and response available";
+  if (state === "footprint_supported_response_unavailable") {
+    return "Footprint available; response limited";
+  }
+  if (state === "unavailable_missing_emitted_surface_flux_fields") {
+    return "Footprint unavailable";
+  }
+  if (state === "unavailable_not_differential_surface_forcing") {
+    return "Not a patch run";
+  }
+  return humanize(state);
+}
+
+function patchGeometryLabel(geometry: DifferentialPatchGeometryDiagnostics | null | undefined) {
+  if (!geometry) return "Patch geometry unavailable";
+  const radius =
+    geometry.radius_x_m !== null &&
+    geometry.radius_x_m !== undefined &&
+    geometry.radius_y_m !== null &&
+    geometry.radius_y_m !== undefined &&
+    geometry.radius_x_m === geometry.radius_y_m
+      ? formatNumber(geometry.radius_x_m, "m radius")
+      : `${formatNumber(geometry.radius_x_m ?? null, "m")} x ${formatNumber(
+          geometry.radius_y_m ?? null,
+          "m",
+        )}`;
+  const taper = formatNumber(geometry.taper_width_m ?? null, "m taper");
+  return `${geometry.shape ?? "patch"} · ${radius} · ${taper}`;
+}
+
+function patchRatioLabel(field: PatchSpatialFieldDiagnostics, label: string): string {
+  if (!field.available) {
+    return `${label}: unavailable`;
+  }
+  const ratio =
+    field.center_to_outside_ratio !== null && field.center_to_outside_ratio !== undefined
+      ? `${field.center_to_outside_ratio.toFixed(2)}x center/outside`
+      : "ratio unavailable";
+  const distance = formatNumber(field.max_distance_from_patch_center_m ?? null, "m from center");
+  return `${ratio}; max ${distance}`;
+}
+
+function convergenceLabel(convergence: PatchConvergenceDiagnostics): string {
+  if (!convergence.available) return "Unavailable";
+  return `${formatScientific(
+    convergence.max_convergence_s_1 ?? null,
+    "s^-1",
+  )}; max ${formatNumber(
+    convergence.max_convergence_distance_from_patch_center_m ?? null,
+    "m from center",
+  )}`;
+}
+
+function patchDistanceLabel(field: PatchSpatialFieldDiagnostics): string {
+  if (!field.available) return "Unavailable";
+  return `${formatNumber(field.max_value ?? null, field.units ?? "")}; max ${formatNumber(
+    field.max_distance_from_patch_center_m ?? null,
+    "m from center",
+  )}`;
 }
 
 function threeDScalarEncoding(field: VisualizableField | undefined): ThreeDScalarEncoding | null {

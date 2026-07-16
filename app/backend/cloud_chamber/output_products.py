@@ -20,6 +20,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from cloud_chamber.result_diagnostics import (
     CloudDiagnostics,
     FieldQuality,
+    LocalizedResponseDiagnostics,
     LowLevelResponseDiagnostics,
     LowLevelResponseFieldDiagnostics,
     ResultDiagnostics,
@@ -187,6 +188,9 @@ class ScienceSummary(BaseModel):
     surface_fluxes: SurfaceFluxDiagnostics = Field(default_factory=SurfaceFluxDiagnostics)
     low_level_response: LowLevelResponseDiagnostics = Field(
         default_factory=LowLevelResponseDiagnostics
+    )
+    localized_response: LocalizedResponseDiagnostics = Field(
+        default_factory=LocalizedResponseDiagnostics
     )
     field_quality_assessed: bool = False
     field_quality: dict[str, FieldQuality] = Field(default_factory=dict)
@@ -1149,6 +1153,7 @@ def _science_summary(
         cm1_outcome=None,
         surface_fluxes=diagnostics.surface_fluxes,
         low_level_response=diagnostics.low_level_response,
+        localized_response=diagnostics.localized_response,
         field_quality_assessed=diagnostics.field_quality_assessed,
         field_quality=diagnostics.field_quality if diagnostics.field_quality_assessed else {},
         diagnostic_availability=_diagnostic_availability(variables, diagnostics),

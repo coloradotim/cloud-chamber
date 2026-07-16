@@ -27,6 +27,8 @@ def base_dataset(
     qv_values: list[list[list[list[float]]]] | None = None,
     th_values: list[list[list[list[float]]]] | None = None,
     temperature_values: list[list[list[list[float]]]] | None = None,
+    u_values: list[list[list[list[float]]]] | None = None,
+    v_values: list[list[list[list[float]]]] | None = None,
     qi_values: list[list[list[list[float]]]] | None = None,
     qs_values: list[list[list[list[float]]]] | None = None,
     qg_values: list[list[list[list[float]]]] | None = None,
@@ -104,6 +106,18 @@ def base_dataset(
             ("time", "z", "y", "x"),
             temperature_values,
             {"units": "K"},
+        )
+    if u_values is not None:
+        data_vars["u"] = (
+            ("time", "z", "y", "x"),
+            u_values,
+            {"units": "m/s"},
+        )
+    if v_values is not None:
+        data_vars["v"] = (
+            ("time", "z", "y", "x"),
+            v_values,
+            {"units": "m/s"},
         )
     if qi_values is not None:
         data_vars["qi"] = (
@@ -1214,3 +1228,212 @@ def test_process_diagnostics_marks_growing_cumulus_candidate(tmp_path: Path) -> 
 
     assert process.interpretation_support.thermal_fate_label == "Growing cumulus"
     assert process.interpretation_support.confidence == "candidate"
+
+
+def differential_patch_run_configuration() -> dict[str, Any]:
+    return {
+        "surface_flux_mode": "differential_surface_forcing_patch_v0",
+        "surface_forcing_patch": {
+            "pattern_sha256": "patch-sha",
+            "shape": "circle",
+            "center_x_m": 200.0,
+            "center_y_m": 200.0,
+            "radius_x_m": 250.0,
+            "radius_y_m": 250.0,
+            "taper_width_m": 100.0,
+            "ramp_seconds": 600.0,
+        },
+    }
+
+
+def convergent_wind_field(axis: str) -> list[list[list[list[float]]]]:
+    values = zeros()
+    x_values = [0.0, 200.0, 400.0, 600.0]
+    y_values = [0.0, 200.0, 400.0]
+    for time_index in range(2):
+        for z_index in range(2):
+            for y_index, y_value in enumerate(y_values):
+                for x_index, x_value in enumerate(x_values):
+                    if axis == "u":
+                        values[time_index][z_index][y_index][x_index] = -(x_value - 200.0) * 0.001
+                    else:
+                        values[time_index][z_index][y_index][x_index] = -(y_value - 200.0) * 0.001
+    return values
+
+
+def test_differential_patch_localized_response_records_geometry_and_alignment(
+    tmp_path: Path,
+) -> None:
+    qc = zeros()
+    w = zeros()
+    qr = zeros()
+    dbz = zeros()
+    rain = constant_surface_frames([0.0, 0.0])
+    hfx = constant_surface_frames([1.0, 1.0])
+    qfx = constant_surface_frames([1.0e-5, 1.0e-5])
+    hfx[1][1][1] = 6.0
+    qfx[1][1][1] = 2.0e-5
+    w[1][0][2][3] = 2.0
+    w[1][1][1][1] = 3.0
+    qc[1][0][1][1] = 2.0e-6
+    qr[1][0][1][1] = 3.0e-7
+    dbz[1][0][1][1] = 12.0
+    rain[1][1][1] = 0.2
+    dataset = write_dataset(
+        tmp_path / "localized.nc",
+        base_dataset(
+            qc_values=qc,
+            w_values=w,
+            qr_values=qr,
+            rain_values=rain,
+            dbz_values=dbz,
+            hfx_values=hfx,
+            qfx_values=qfx,
+            u_values=convergent_wind_field("u"),
+            v_values=convergent_wind_field("v"),
+        ),
+    )
+
+    diagnostics = compute_baseline_diagnostics(
+        dataset,
+        [],
+        run_configuration=differential_patch_run_configuration(),
+    )
+    response = diagnostics.localized_response
+
+    assert response.available is True
+    assert response.support_state == "supported"
+    assert response.geometry is not None
+    assert response.geometry.shape == "circle"
+    assert response.geometry.pattern_sha256 == "patch-sha"
+    assert response.geometry.center_x_m == 200.0
+    assert response.geometry.radius_x_m == 250.0
+    assert response.geometry.taper_width_m == 100.0
+    assert response.geometry.ramp_seconds == 600.0
+    assert response.hfx_footprint.max_inside_patch_radius is True
+    assert response.hfx_footprint.max_distance_from_patch_center_m == 0.0
+    assert response.hfx_footprint.center_to_outside_ratio == pytest.approx(6.0)
+    assert response.qfx_footprint.center_to_outside_ratio == pytest.approx(2.0)
+    assert response.near_surface_convergence.available is True
+    assert response.near_surface_convergence.max_convergence_inside_patch_radius is True
+    assert response.near_surface_convergence.max_convergence_s_1 == pytest.approx(0.002)
+    assert response.updraft.max_inside_patch_radius is True
+    assert response.updraft.max_value == pytest.approx(3.0)
+    assert response.cloud_water.max_inside_patch_radius is True
+    assert response.rain_water_aloft.max_inside_patch_radius is True
+    assert response.surface_rain.max_inside_patch_radius is True
+    assert response.reflectivity.max_inside_patch_radius is True
+    assert response.hfx_footprint.geometry_note == (
+        "centered_circle_with_raised_cosine_edge_taper_v0"
+    )
+
+
+def test_differential_patch_localized_response_uses_cm1_native_dimensions(
+    tmp_path: Path,
+) -> None:
+    time_values = [0.0, 300.0]
+    xh = [0.0, 200.0, 400.0, 600.0]
+    yh = [0.0, 200.0, 400.0]
+    zh = [40.0, 120.0]
+    zf = [0.0, 80.0, 160.0]
+    xf = [-100.0, 100.0, 300.0, 500.0, 700.0]
+    yf = [-100.0, 100.0, 300.0, 500.0]
+
+    hfx = constant_surface_frames([1.0, 1.0])
+    qfx = constant_surface_frames([1.0e-5, 1.0e-5])
+    hfx[1][1][1] = 6.0
+    qfx[1][1][1] = 2.0e-5
+
+    w = [[[[0.0 for _x in xh] for _y in yh] for _z in zf] for _time in time_values]
+    w[1][2][1][1] = 4.0
+    qc = zeros(z_count=len(zh))
+    qc[1][1][1][1] = 2.0e-6
+
+    u_native = [[[[0.0 for _x in xf] for _y in yh] for _z in zh] for _time in time_values]
+    v_native = [[[[0.0 for _x in xh] for _y in yf] for _z in zh] for _time in time_values]
+    uinterp = [[[[0.0 for _x in xh] for _y in yh] for _z in zh] for _time in time_values]
+    vinterp = [[[[0.0 for _x in xh] for _y in yh] for _z in zh] for _time in time_values]
+    for time_index in range(len(time_values)):
+        for z_index in range(len(zh)):
+            for y_index, y_value in enumerate(yh):
+                for x_index, x_value in enumerate(xh):
+                    uinterp[time_index][z_index][y_index][x_index] = -(x_value - 200.0) * 0.001
+                    vinterp[time_index][z_index][y_index][x_index] = -(y_value - 200.0) * 0.001
+
+    dataset = xr.Dataset(
+        data_vars={
+            "hfx": (("time", "yh", "xh"), hfx, {"units": "W/m^2"}),
+            "qfx": (("time", "yh", "xh"), qfx, {"units": "kg/m^2/s"}),
+            "w": (("time", "zf", "yh", "xh"), w, {"units": "m/s"}),
+            "qc": (("time", "zh", "yh", "xh"), qc, {"units": "kg/kg"}),
+            "u": (("time", "zh", "yh", "xf"), u_native, {"units": "m/s"}),
+            "v": (("time", "zh", "yf", "xh"), v_native, {"units": "m/s"}),
+            "uinterp": (("time", "zh", "yh", "xh"), uinterp, {"units": "m/s"}),
+            "vinterp": (("time", "zh", "yh", "xh"), vinterp, {"units": "m/s"}),
+        },
+        coords={
+            "time": time_values,
+            "xh": xh,
+            "yh": yh,
+            "zh": zh,
+            "zf": zf,
+            "xf": xf,
+            "yf": yf,
+        },
+    )
+    dataset["zh"].attrs["units"] = "m"
+    dataset["zf"].attrs["units"] = "m"
+    dataset = write_dataset(tmp_path / "localized-real-cm1-dims.nc", dataset)
+
+    diagnostics = compute_baseline_diagnostics(
+        dataset,
+        [],
+        run_configuration=differential_patch_run_configuration(),
+    )
+    response = diagnostics.localized_response
+
+    assert response.hfx_footprint.center_to_outside_ratio == pytest.approx(6.0)
+    assert response.qfx_footprint.center_to_outside_ratio == pytest.approx(2.0)
+    assert response.near_surface_convergence.available is True
+    assert response.near_surface_convergence.max_convergence_s_1 == pytest.approx(0.002)
+    assert response.updraft.available is True
+    assert response.updraft.max_value == pytest.approx(4.0)
+    assert response.updraft.max_inside_patch_radius is True
+    assert response.cloud_water.available is True
+    assert response.cloud_water.max_inside_patch_radius is True
+    assert "localized_response_convergence_u_v_dimension_mismatch" not in response.caveats
+    assert "w_localized_response_no_finite_horizontal_values" not in response.caveats
+
+
+def test_differential_patch_convergence_is_unavailable_without_wind_fields(
+    tmp_path: Path,
+) -> None:
+    hfx = constant_surface_frames([1.0, 1.0])
+    qfx = constant_surface_frames([1.0e-5, 1.0e-5])
+    hfx[1][1][1] = 6.0
+    dataset = write_dataset(
+        tmp_path / "localized-no-wind.nc",
+        base_dataset(
+            qc_values=zeros(),
+            w_values=w_field(),
+            hfx_values=hfx,
+            qfx_values=qfx,
+        ),
+    )
+
+    diagnostics = compute_baseline_diagnostics(
+        dataset,
+        [],
+        run_configuration=differential_patch_run_configuration(),
+    )
+    response = diagnostics.localized_response
+
+    assert response.available is True
+    assert response.hfx_footprint.available is True
+    assert response.near_surface_convergence.available is False
+    assert response.near_surface_convergence.caveats == [
+        "localized_response_convergence_requires_u_and_v_fields"
+    ]
+    assert response.cloud_water.available is False
+    assert response.cloud_water.max_value == 0.0
+    assert response.cloud_water.caveats == ["qc_localized_response_no_signal_above_threshold"]
