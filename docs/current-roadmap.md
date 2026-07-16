@@ -1,277 +1,267 @@
 # Current Roadmap
 
-Status: active roadmap for configurable observed-sounding CM1 runs
+Status: active cloud-first roadmap
 
-This is the active planning source for Cloud Chamber. The previous long
-issue-by-issue roadmap is archived at
-[archive/roadmap-and-issues-legacy.md](archive/roadmap-and-issues-legacy.md)
-for historical reference only.
+This is the current planning source for Cloud Chamber. Historical issue sequencing
+and archived roadmaps are evidence only; they do not override the product reset
+in [cloud-first-product-reset.md](cloud-first-product-reset.md).
 
 ## North Star
 
-Cloud Chamber is a real local LES experiment bench and notebook.
+Cloud Chamber is a **cloud-making sandbox that uses real atmospheres as raw
+material**.
 
-The product should help a user construct one credible CM1 LES experiment, run
-it locally, ingest the completed output, review it as an experiment notebook
-entry, and inspect what happened using CM1-derived evidence.
+The organizing question is:
 
-CM1 remains the high-fidelity source of truth. Cloud Chamber owns the local
-workflow, metadata, diagnostics, output products, and visualization
-interpretations around that source data.
+> Given the soundings available, which ones can make interesting clouds, what
+> setup should I use, and how far do I need to push them?
+
+The current visible outcome priorities are:
+
+1. growing cumulus and congestus;
+2. deep convective towers;
+3. precipitation and reflectivity.
+
+Cloud Chamber is local-first and CM1 remains the source of truth for cloud
+evolution. The product is not operational forecasting and is not a
+publication-style validation workflow.
 
 ## Current Product Model
 
-- **Build** = choose observed or generated atmospheres, configure one or more
-  planned CM1 runs, and launch or queue selected variants. Build owns active,
-  incomplete, and non-ingested package/run work.
-- **Results** = experiment notebook for completed and ingested runs. Results owns
-  ingested-result review, notes, and explicit ingested-result cleanup.
-- **Explore** = scientific inspection of one result using CM1-derived evidence.
+### Build
 
-Runtime inventory and cleanup are contextual actions inside Build and Results,
-not a separate top-level Storage workspace.
+Build should own the full active cloud-making workflow:
+
+- search recent and historical sounding opportunities;
+- answer “show me something cool” and “what can we do with this sounding?”;
+- rank sounding + recipe + run setup combinations;
+- recommend a concrete scout;
+- package and queue through the existing run plan;
+- show progress and ETA;
+- visibly auto-promote a promising scout to a full run;
+- allow stop/cancel, ingest, and cleanup.
+
+### Results
+
+Results is the notebook of completed and ingested cloud runs. It should emphasize
+what cloud formed, the recipe/setup used, and the relationship between scout and
+full run.
+
+### Explore
+
+Explore is the visual payoff: replay and inspect cloud water, ice, vertical
+motion, rain, reflectivity, and the evolving cloud story. Technical evidence
+belongs on demand, not as the primary experience.
 
 ## Hard Product Rules
 
-- LES only for the current planning horizon.
-- Local-first: local CM1, local runtime home, local result evidence.
 - CM1 output is the source of truth for cloud evolution.
-- Always distinguish preview estimate, CM1 run configuration, CM1
-  running/completed result, and visualization interpretation.
-- The browser must not parse raw NetCDF.
-- Generated artifacts do not go in git.
-- Quick means quick to execute, not meteorologically too short to be useful.
-- A smoke check proves package/run/ingest health; it is not a science result.
-- Science runs need enough model time to produce meaningful evolution.
-- Grid/detail and output cadence are the primary user-facing cost levers.
-- Raw numerical timestep is not a normal v1 user control.
-- Presets are starting points. They should expose actual CM1-facing values in an
-  advanced drawer instead of becoming rigid product families.
-- Warn or caveat unvalidated control combinations instead of hiding every
+- Always distinguish recommendation, configuration, packaged run, active process,
+  completed result, and visualization interpretation.
+- The browser does not parse raw NetCDF.
+- Generated CM1 artifacts and machine-private paths do not go in git.
+- A scout must be meaningful for its recipe; quick must not mean useless.
+- Strong idealized assumptions are allowed when clearly labeled.
+- Scientific honesty does not require weak or untriggered setups.
+- Natural/free evolution is one recipe, not the default test of every sounding.
+- The product may recommend skipping a sounding for a requested cloud target.
+- Diagnostics need a concrete continue/change/stop decision.
+- Compare runs only when the comparison answers a useful question.
+- Real CM1 evidence is part of cloud-making implementation, not a deferred final
+  validation ceremony.
+- A promising scout may automatically promote through the visible Build queue.
+- Automatic work must remain bounded, visible, stoppable, and cleanable.
+- Raw timestep remains an advanced numerical assumption, not a normal primary
   control.
-- Build owns non-ingested cleanup; Results owns ingested-result cleanup.
-- Explore remains scientific inspection, not Render Studio.
-
-## Active Source Documents
-
-Use these docs as the current strategic and contract sources:
-
-- [Realistic LES Input Architecture Research](research/realistic-les-input-architecture.md)
-- [Output And Visualization Architecture Research](research/output-and-visualization-architecture.md)
-- [Realistic LES Input Specification](contracts/realistic-les-input-specification.md)
-- [Output Product Specification](contracts/output-product-specification.md)
-- [Sounding Candidate Screening Contract](contracts/sounding-candidate-screening.md)
-- [Analyzer Hypothesis And Output-Signature Contract](contracts/analyzer-hypothesis-output-signature.md)
-- [Run Recipe And Story-Mapping Contract](contracts/run-recipe-and-story-mapping.md)
-- [Expanded Sounding Candidate Taxonomy](research/expanded-sounding-candidate-taxonomy.md)
-
-The research memos are PM input and evidence. The contract docs define the
-implementation boundary that future issues should build from.
-
-The expanded sounding taxonomy is product/science planning input for pre-run
-candidate stories. It does not make severe, winter, cold-pool, or specialized
-boundary-layer stories scientifically validated until their scoring, evidence,
-caveats, and package-readiness states are implemented and tested.
-
-The historical deep-convection package design is now evidence and background,
-not the active Build contract. User-facing docs should describe current
-observed-sounding packages as configurable experiments with numeric
-lower-boundary heat/moisture forcing, full output fields, and explicit caveats.
-Differential surface forcing for initiation or boundary experiments is future
-work.
 
 ## Current State
 
-- Observed-sounding upload and package generation now work through the backend
-  parser and CM1 `input_sounding` route. Observed temperature, moisture, and
-  complete usable u/v wind profiles are package inputs, not decorative metadata.
-- Cached IGRA recent sounding refresh, local cached-sounding inspection,
-  candidate screening, saved candidates, and package-ready/blocked candidate
-  states exist. Candidate scores are pre-run selection aids, not CM1 outcome
-  predictions.
-- The run-recipe contract now defines how current story IDs map to compatible,
-  caveated, blocked, or future CM1 run configurations. That mapping is the handoff from
-  cached-sounding analysis to pre-run validation and predicted-vs-actual Results
-  comparison.
-- Observed-sounding package generation now uses numeric uniform surface
-  heat/moisture forcing and complete observed u/v wind profiles. Deep-convection
-  candidates remain important pre-run hypotheses, but current packages do not add
-  an artificial deep trigger; each observed sounding remains its own experiment
-  whose result must be evaluated after CM1 runs.
-- Build owns active package/run work, including generated packages, queued or
-  running local CM1 work, failed or incomplete runs, completed-but-not-ingested
-  output, serial local queue state, auto-ingest for completed usable output, and
-  LAN-worker status/progress summaries.
-- Results owns ingested notebook entries, result-card review, notes/tags, and
-  explicit cleanup for ingested results plus their backing local data.
-- Explore consumes bounded backend output products, interesting times,
-  diagnostics summaries, native-grid slices, and visualization-ready point
-  layers. The browser still does not parse raw NetCDF.
+Cloud Chamber already has substantial infrastructure:
 
-## Next Roadmap Lanes
+- cached and uploaded IGRA sounding ingestion;
+- sounding candidate analysis and saved candidates;
+- observed temperature, moisture, and wind profile packaging;
+- configurable domain/grid/duration/cadence and surface forcing;
+- local queue, LAN-worker support where compatible, progress/status, ingest, and
+  cleanup;
+- runtime-integrity and field-quality handling;
+- Results notebook entries and Explore field products;
+- a completed differential surface-forcing recipe mechanism with safe local
+  custom-CM1 execution and localized-response diagnostics;
+- repository history proving a successful Deep Convection Trial from a real
+  sounding using stock CM1 `iinit = 3`.
 
-These are candidate implementation lanes for PM review. Do not create them
-automatically from this roadmap.
+The main missing product capability is not more generic plumbing. It is an
+opinionated layer that turns available atmospheres into useful cloud recipes and
+run setups, then follows promising scouts into visible clouds.
 
-### Cached-Sounding Analysis And Sorting
+## Immediate P1 Work
 
-Goal: make the cached IGRA workbench useful for choosing observed atmospheres
-without pretending the score predicts CM1 success.
+### #346 — Cloud Opportunities And Scout-To-Full-Run
 
-Scope: richer cached-sounding analysis, transparent sorting/filtering by story,
-quality and support-state explanations, saved-candidate ergonomics, and clearer
-blocked/package-ready evidence. Keep shallow, humid/rainy, and
-deep-convection-oriented candidate stories as pre-run hypotheses.
+This is the primary product lane.
 
-Non-goals: universal "best sounding" ranking, forecast language, browser-side
-station parsing, or unsupported story labels that look package-ready.
+Deliver:
 
-Why now: configurable observed-sounding runs need a better way to find and
-compare input atmospheres before packaging.
+- “Show me something cool” across selectable sounding history;
+- search by time range, region, target, saved candidate, or specific sounding;
+- ranking of sounding + recipe + run setup;
+- growth-ceiling and initiation-difficulty reasoning;
+- decisive skip recommendations;
+- recipe-specific scout setup and checkpoints;
+- visible automatic promotion into the existing Build queue;
+- at least one interesting cloud result or a decisive compute-saving switch/skip
+  outcome during implementation.
 
-### Configurable Observed-Sounding Run Controls
+This issue is intentionally a vertical slice. Do not split analyzer, UI, queue,
+recipe, and real-run work into prerequisite issues unless genuinely blocked.
 
-Goal: let Build start from a sane preset and then adjust run settings that map
-to real CM1 configuration.
+### #341 — Restore Explicit Thermal / Deep-Tower Recipes
 
-Scope: controls for numeric surface heat/moisture forcing, model duration,
-horizontal cell budget, domain size, and output cadence within guarded bounds.
-Starting points should remain available, and an advanced drawer should expose the
-actual CM1-facing values those choices imply. Current observed-sounding runs
-request the full output field set.
+Restore and modernize the proven Deep Convection Trial from PR #270.
 
-Non-goals: raw numerical timestep as a normal v1 control, raw trigger controls,
-new trigger types, or a full Build redesign in one issue.
+Start from working evidence:
 
-Why now: the product direction is configurable runs, not rigid scenario or
-package-family cages. Horizontal cell budget, domain, output cadence, and full
-output volume are the main cost levers; duration controls must preserve enough
-model time for meaningful evolution.
+- Fort Worth `1997-05-27T00Z`;
+- CM1 `iinit = 3` three-warm-bubble initiation;
+- strong deep convection with `54.126 m/s` maximum updraft and `64.522 dBZ`.
 
-### Pre-Run Configuration Validation
+The first objective is a visibly interesting current-product CM1 result, not a
+new trigger diagnostics framework.
 
-Goal: validate the selected atmosphere, preset, and adjusted CM1-facing settings
-before package generation or launch.
+Expose a first-class Deep-Tower Benchmark and, where stock CM1 cleanly supports
+it, a less aggressive Explicit Thermal recipe or level.
 
-Scope: backend validation for missing required observed fields, incomplete wind
-profiles, suspicious duration/cadence combinations, unsupported output-field
-requests, runtime-file requirements, cost/storage caveats, and clear dry-run
-messages. Unvalidated combinations should warn or caveat when safe rather than
-being hidden by default.
+## P2 Recipe Work
 
-Non-goals: running CM1 in CI, declaring scientific success before CM1 output,
-or silently patching bad input into something packageable.
+### #287 — Daytime Evolution
 
-Why now: configurable controls need trust boundaries before they become normal
-Build workflow.
+Implement an actual evolving heated-day recipe using active place/time radiation
+where supported, or an explicitly labeled simplified diurnal forcing schedule.
 
-### Deep-Convection Candidate Validation Across Soundings
+Do not complete this as a validation memo. Run a meaningful atmosphere early and
+use it to determine whether normal daytime evolution is a good cloud opportunity
+or whether the recommender should switch to explicit initiation.
 
-Goal: keep severe/deep-convection candidate stories first-class while measuring
-where current observed-sounding configurations are run-ready, caveated, or
-misleading.
+### Broad Warm/Moist Surface Region
 
-Scope: validate complete observed-wind requirements, duration, horizontal cell
-budget, domain size, output cadence, full expected fields,
-cost/runtime/output-volume notes, larger-compute suitability notes, numeric
-surface-forcing provenance, and candidate-provenance copy across selected
-observed soundings. Separate package/run/ingest smoke checks from science
-outcomes.
+The differential surface mechanism is complete under closed issue #307. Use it
+through #346 when the recommender identifies a cloud opportunity.
 
-Non-goals: adding artificial atmospheric triggers, exposing raw trigger controls,
-or treating a smoke run as evidence that a specific observed sounding should
-produce deep convection.
+The next useful scale is likely broader than the 1.5 km footprint smoke. Test
+roughly 2.5–3 km before dramatically increasing amplitude, and increase one
+run-shape choice at a time when a real result justifies it.
 
-Why now: deep-convection screening is useful, but the trust language must stay
-honest while observed-sounding configuration coverage expands.
+### Suppression / Cap Challenge
 
-### Surface Sensible/Latent Heat Flux Control Validation
+Add this as a recommendation/recipe under #346 when the analyzer can identify a
+sounding that is valuable specifically for learning how much help is needed to
+break through a cap.
 
-Goal: determine which surface sensible and latent heat flux controls can be
-safely exposed for observed-sounding runs.
+Do not create a standalone issue until a real candidate and useful run ladder are
+clear.
 
-Scope: audit CM1 reference paths and runtime-file requirements, define supported
-and caveated sensible/latent heat flux combinations, document manual smoke-run
-expectations, connect findings to pre-run validation, and decide how flux
-settings are represented in advanced CM1-facing values.
+## Opportunity And Recipe Model
 
-Non-goals: atmospheric radiation validation, GIS/map realism, arbitrary
-real-world terrain/surface initialization, or product promises that the current
-CM1 configuration cannot support.
+The analyzer/recommender should separate:
 
-Why now: surface forcing is a direct run-builder control and should be validated
-before the UI implies it can be varied safely across observed soundings.
+- **growth ceiling** — what the atmosphere may sustain after useful ascent exists;
+- **initiation difficulty** — how much help the selected CM1 setup probably needs.
 
-### Atmospheric Radiation And Place-Time Control Validation
+Rank separately for:
 
-Goal: determine which radiation, date/time, and location-derived settings can be
-safely exposed for observed-sounding runs.
+- growing cumulus/congestus;
+- deep tower after initiation;
+- precipitation;
+- suppression/cap challenge;
+- likely boring/skip.
 
-Scope: audit CM1 radiation/place-time reference paths and runtime-file
-requirements, define supported and caveated combinations, document manual
-smoke-run expectations, and connect findings to pre-run validation.
+The initial recipe catalog is:
 
-Non-goals: arbitrary real-world terrain/surface initialization, GIS/map realism,
-or product promises that the current CM1 configuration cannot support.
+1. Daytime Evolution;
+2. Broad Warm/Moist Surface Region;
+3. Explicit Thermal Initiation;
+4. Deep-Tower Benchmark;
+5. Suppression / Cap Challenge.
 
-Why later: observed soundings preserve place/time provenance, but radiation and
-place-time behavior should follow surface-flux validation unless a later PM
-decision changes that order.
+Each recipe needs an operating contract: suitable soundings, assumptions, scout,
+full run, aggressiveness levels, checkpoints, promotion, escalation, stop/switch,
+and expected visible outcome.
 
-### Evolved-Sounding Output Products
+## Agent Execution Rules
 
-Goal: make completed observed-sounding runs explain how the simulated atmosphere
-changed, not only whether cloud water or vertical velocity appeared.
+For cloud-making work:
 
-Scope: profile and time-height products, evolved thermodynamic/moisture/wind
-summaries, bounded field catalog expansion, provenance, caveats, and tiny
-fixture tests. Results and Explore should consume these as backend-prepared
-products.
+- optimize visible outcome and information per unit time;
+- take bounded big swings;
+- run meaningful CM1 early;
+- allow strong labeled idealizations;
+- do not create prerequisite issues unless blocked;
+- change sounding, recipe, scale, duration, or trigger before adding diagnostics
+  to a merely boring run;
+- keep one user outcome together across technical layers;
+- compare second;
+- keep model artifacts outside git.
 
-Non-goals: browser-side NetCDF parsing, broad diagnostics-lab UI, or external
-export bundles before core result explanation is stable.
+`AGENTS.md` defines the full operating rules.
 
-Why now: observed-sounding experiments become much more useful when users can
-compare the initial profile to CM1-evolved structure.
+## Recently Retired Roadmap Work
 
-## Not Now / Parked
+The following issues were closed during the reset because they would keep pulling
+the project toward mechanisms, formal comparisons, or old campaign gates:
 
-These are not rejected forever. They are parked because they depend on product
-contracts, output products, validation, or local bench maturity.
+- **#307** — completed differential surface-forcing mechanism. It is now one
+  recipe tool, not the roadmap center.
+- **#345** — formal matched initiation campaign. Compare later only when actual
+  cloud results create a useful question.
+- **#336** — forensic numerical investigation. Use safer supported numerical
+  settings and revisit only if a current promising run fails.
+- **#275** — generalized predicted-vs-actual verdict system. Recommendation
+  calibration is secondary to useful cloud opportunities.
 
-- **Bench Mode UI**: wait until realistic input records and output products are
-  stable enough to compare experiments honestly.
-- **Arbitrary GIS/map/imagery inputs**: wait for preprocessing, CM1
-  initialization, and surface-data architecture evidence.
-- **#153 surface heterogeneity**: blocked by realistic surface contract and
-  validation; do not treat it as the next scenario step.
-- **Additional severe-weather or deep-convection products**: the current
-  deep-convection observed-sounding preset stays first-class, but additional
-  severe-weather promises should wait for validation, evidence, and clear
-  caveats.
-- **Raw trigger controls and new trigger types**: keep trigger settings as
-  fixed package metadata until useful ranges are validated.
-- **Rigid experiment-family expansion**: prefer configurable observed-sounding
-  runs with presets as starting points over more separate user-facing families.
-- **#155 precipitation/cold-pool scenarios**: parked until output products can
-  support precipitation, downdraft, and surface-response evidence.
-- **#183 3-D vertical velocity layer**: useful later, but blocked by signed-flow
-  field-product and rendering decisions.
-- **#197 cloud appearance / renderer beauty pass**: parked until output
-  products and inspection workflow are stable.
-- **#198 cloud + field overlay**: parked until scalar/signed overlay contracts
-  are defined.
-- **Renderer-style timelapse ambition**: parked until output products mature.
-  The near-term #201 scope is limited to saved-output play/pause and scrubbing
-  across explicit backend time indices without interpolation, with the main 3-D
-  scalar layer animating while synchronized slice/evidence payloads are deferred
-  until pause and no default looping.
-- **#43 remote/HPC compute**: deferred. The near-term compute extension is a
-  trusted LAN worker used as a CM1 compute appliance while the MacBook remains
-  the Cloud Chamber system of record.
+## Stop Doing
+
+- Stop treating Baseline Shallow Cumulus as the hero outcome.
+- Stop treating natural free evolution as the default test of a sounding.
+- Stop ranking soundings without recommending what to do with them.
+- Stop turning every mechanism into the center of the roadmap.
+- Stop opening a validation issue before a useful real run.
+- Stop requiring formal matched campaigns before shipping a recipe.
+- Stop adding diagnostics that do not change a run decision.
+- Stop shrinking experiments because their assumptions are idealized.
+- Stop optimizing issue closure instead of cloud-making progress.
+
+## Parked / Later
+
+These may become useful after the opportunity and recipe loop works:
+
+- organized/mesoscale convection products;
+- terrain, GIS, or real land-surface initialization;
+- arbitrary user-drawn forcing maps;
+- general result-vs-result comparison surfaces;
+- broad export/reporting systems;
+- renderer-only feature work disconnected from a useful cloud result;
+- remote/HPC orchestration beyond the existing trusted LAN-worker direction;
+- publication-style validation or forecast verification.
+
+Visual quality is not parked indefinitely. Once #341/#346 reliably produce an
+interesting cloud, appearance and replay improvements that make that cloud lovely
+and rewarding to watch should move up immediately.
 
 ## Planning Rule
 
-When a future issue conflicts with this roadmap, update this file first or
-explicitly document why the roadmap no longer applies. Do not let archived
-roadmap material or old issue sequencing drive current planning.
+When an issue conflicts with this roadmap, update the roadmap or explicitly state
+why the issue should override it.
+
+Do not let archived docs, old issue sequencing, or conservative package history
+override the approved cloud-first product direction.
+
+A roadmap item is successful only when it improves one of these outcomes:
+
+```text
+interesting cloud produced
+promising cloud continued
+poor bet skipped
+broken run identified
+cloud easier to see and understand
+```
