@@ -6,310 +6,396 @@
 
 ## North Star
 
-Cloud Chamber helps users configure, run, manage, inspect, explain, and
-beautifully visualize local CM1 cloud experiments.
+Cloud Chamber is a **cloud-making sandbox that uses real atmospheres as raw
+material**.
+
+The organizing question is:
+
+> Given the soundings available, which ones can make interesting clouds, what
+> setup should I use, and how far do I need to push them?
 
 Short version:
 
-> A local CM1 workbench for exploring thermal fate and seeing cloud physics come alive.
+> Find a promising atmosphere, choose an honest cloud recipe, run CM1, and watch
+> something interesting evolve.
 
-Internal anchor:
+Cloud Chamber should help produce and understand:
 
-> Cloud Chamber is a personal, scientifically honest CM1 Thermal Fate workbench:
-> curated experiments, meaningful controls, local-first CM1 runs, replayable
-> saved results, process diagnostics, selected-region inspection, and beautiful
-> visualization.
+1. growing cumulus and congestus;
+2. deep convective towers;
+3. precipitation and reflectivity;
+4. useful suppression/cap cases when cloud growth is not a good bet.
 
-CM1 is the high-fidelity simulation engine; Cloud Chamber is the local
-experiment builder, run manager, result notebook, diagnostics layer, and
-visualizer.
+CM1 is the high-fidelity simulation engine. Cloud Chamber owns opportunity
+finding, recipe and run-setup recommendations, local execution, result
+organization, interpretation, and visualization.
 
-The lesson from earlier Cloud Lab-style experimentation is simple: do not rebuild CM1 poorly. Cloud Chamber should wrap CM1 with a clearer product workflow, not replace the atmospheric model with hidden fake physics.
+The product is not a forecast or warning service. It is for personal cloud
+exploration, learning, and visual experimentation.
 
-Cloud Lab should be treated as archived lesson/source material only. New product work belongs in Cloud Chamber, with useful lessons ported intentionally.
+## Core Product Promise
+
+Cloud Chamber should answer:
+
+```text
+What are the coolest cloud-making opportunities in the sounding history I have?
+What can we do with this specific atmosphere?
+Which recipe and run setup should I use?
+Is this scout worth continuing?
+```
+
+The product should not require the user to be an expert sounding analyst before
+receiving a useful recommendation.
 
 ## What Cloud Chamber Is
 
-Cloud Chamber is a local-first experiment and visualization environment for
-CM1, primarily for personal exploration and learning. Its organizing product
-concept is **Thermal Fate**: why air rises, why some thermals do or do not form
-cloud, why some clouds stay shallow, why others grow taller, why some break
-through into deep convection, and how precipitation feedback can reorganize or
-suppress convection.
+Cloud Chamber is:
 
-It should help a user:
-
-```text
-Choose a cloud scenario
-→ adjust atmospheric controls
-→ preview likely behavior
-→ run CM1 locally
-→ track the run
-→ ingest and organize results
-→ inspect and visualize CM1-derived fields beautifully
-→ replay and inspect saved results later
-→ understand what happened
-```
+- a local-first CM1 cloud workbench;
+- an opinionated sounding–recipe opportunity finder;
+- a recipe and run-setup recommender;
+- a visible scout-to-full-run workflow;
+- a run manager with progress, ETA, stop, ingest, and cleanup;
+- a notebook of completed cloud runs;
+- a visual environment for watching cloud evolution;
+- a place to ask “what happened here?” after an interesting run.
 
 ## What Cloud Chamber Is Not
 
 Cloud Chamber is not:
 
-- a replacement for CM1
-- a lightweight solver pretending to be CM1
-- a generic scientific plotting tool
-- a web app that runs CM1 in the browser
-- a dashboard full of raw namelist parameters
-- a toy renderer with hidden fake physics
-- a real-time slider toy for CM1 execution
+- a replacement for CM1;
+- a weather forecast site;
+- an operational warning tool;
+- a publication or peer-review workflow;
+- a generic namelist editor;
+- a browser-based model solver;
+- a system that treats idealized initiation as dishonest;
+- a diagnostics project whose main output is more diagnostics.
 
-## Core Product Promise
-
-A user can choose or configure an atmospheric experiment, run CM1 locally, save
-the completed result, and explore what happened through diagnostics, comparison,
-selected-region inspection, and provenance-labeled visualization.
-
-CM1 run latency is part of the product model: scenario design, result browsing,
-comparison, and inspection are interactive; CM1 execution is a local simulation
-run, not an instant slider update.
-
-## First Useful Workflow
-
-The first useful workflow is not a full visualizer. It is the scenario package spine:
+## Primary Workflow
 
 ```text
-scenario template
--> user-adjusted experiment config
--> validation
--> run manifest
--> generated CM1 run package
--> dry-run report
+Find promising sounding–recipe pairs
+→ Recommend a concrete run setup
+→ Queue a meaningful scout through Build
+→ Automatically promote a promising scout to a full run
+→ Explore the evolving cloud
 ```
 
-That spine should lead directly to local CM1 launch/monitoring, then ingest and visualization.
+### Find
 
-## Primary User Loop
+Support two entry modes:
+
+1. **Show me something cool** — rank the best cloud-making opportunities across
+   a selectable recent or historical sounding scope.
+2. **Find / inspect** — search by date range, region, cloud target, saved
+   candidate, or specific sounding.
+
+The ranked object is:
 
 ```text
-Choose experiment
-→ adjust controls
-→ preview likely outcome
-→ launch CM1 run
-→ monitor status/logs
-→ open result
-→ inspect diagnostics and fields
-→ visualize in 2-D/3-D
-→ save/name/tag
-→ replay and inspect later
-→ compare with related scenario variants
-→ optionally create a new variation from the same setup
+sounding + recipe + run setup
 ```
 
-Replay / inspect / save is core MVP. Duplicate / tweak / rerun is later.
+A sounding may be boring under free evolution and excellent under explicit
+initiation. Rank the useful combination, not the sounding in isolation.
 
-## Golden Path Principle
+### Recommend
 
-Baseline Shallow Cumulus is the first hero case because it can prove the whole Cloud Chamber loop with one scientifically honest, approachable CM1 experiment.
+For each opportunity, show:
 
-The first hero case should answer:
+- target visible outcome;
+- opportunity score;
+- likely cloud ceiling;
+- main obstacle;
+- recommended recipe;
+- recommended scout setup;
+- why free evolution may be a poor choice;
+- stronger alternative;
+- skip recommendation where appropriate.
+
+The product should be comfortable saying:
 
 ```text
-How do low-level moisture, surface heating, cap strength, and dry air aloft shape whether shallow cumulus forms, when it appears, how tall it gets, and how much cloud water develops?
+Natural evolution is likely boring.
+Best bet: Deep-Tower Benchmark.
 ```
 
-Warm rain remains early, but it should not block the Golden Path. Precipitating shallow cloud workflows should build on the baseline loop after the baseline case can be configured, packaged, run locally, ingested, replayed, inspected, and opened in the visualizer.
+or:
 
-Baseline Shallow Cumulus proves the first executable loop. It is not the entire
-product vision. The broader product should grow into Thermal Fate scenario
-families: moisture-limited, surface-heating-driven, cap-limited,
-dry-air-aloft/dilution-limited, deep-convection breakthrough, precipitation
-feedback/cold-pool interaction, and low-cloud/stratus cases where useful.
+```text
+Skip this sounding for cloud-making.
+Use it only if you want to study suppression.
+```
 
-## User-Facing Concepts
+### Scout
 
-The product should use atmospheric language first:
+A scout is a real CM1 run large and long enough to answer whether the opportunity
+deserves more compute. It is recipe-specific; “scout” does not mean
+meteorologically useless.
 
-- low-level humidity
-- surface moisture
-- surface heating
-- cap strength
-- cap height
-- dry air aloft
-- mixing/entrainment
-- cloud base
-- cloud top
-- first cloud time
-- rain onset
-- updraft strength
-- cloud water
-- thermal fate
-- selected region
+The scout should resolve to one decision:
+
+```text
+continue automatically
+scale one run-shape parameter
+change one recipe parameter
+switch recipe
+skip sounding
+stop broken run
+```
+
+### Full Run
+
+A promising scout may automatically queue or continue a full run through the
+existing Build workflow.
+
+The promotion must be visible and reversible. Show:
+
+- promotion reason;
+- model duration;
+- progress and ETA;
+- stop/cancel control;
+- cleanup behavior;
+- relationship to the scout.
+
+### Explore
+
+Explore is the visual payoff. It should make it easy to:
+
+- replay cloud growth;
+- inspect cloud water, ice, vertical velocity, rain, and reflectivity;
+- understand why a cloud grew, stalled, precipitated, or collapsed;
+- inspect technical evidence on demand;
+- eventually make the cloud presentation beautiful.
+
+Diagnostics support the visible story; they are not the primary experience.
+
+## Analyzer Role
+
+The sounding analyzer should estimate two separate dimensions:
+
+1. **Growth ceiling** — what cloud the atmosphere may sustain once useful ascent
+   exists.
+2. **Initiation difficulty** — how much help the selected CM1 setup probably
+   needs to create that ascent.
+
+It should rank separately for:
+
+- growing cumulus/congestus;
+- deep tower after initiation;
+- precipitation;
+- suppression/cap-learning value;
+- likely boring/skip.
+
+Useful inputs may include CAPE/CIN/LFC/EL where reliable, moisture depth, LCL,
+lapse rates, cap structure, midlevel humidity, precipitable water, freezing
+level, profile quality, wind completeness, recipe compatibility, and package
+readiness.
+
+Missing diagnostics should reduce confidence, not silently become negative
+atmospheric evidence.
+
+## Cloud Recipes
+
+A **recipe** is an honestly labeled way to help a real atmosphere produce or
+reveal a cloud outcome. A **run setup** is the domain, grid, duration, cadence,
+numerical settings, forcing strength, and other concrete CM1 configuration used
+to execute the recipe.
+
+The initial recipe catalog is:
+
+### 1. Daytime Evolution
+
+Simplified normal heated-day evolution using active place/time forcing where
+supported. Intended for boundary-layer growth, growing cumulus, and congestus.
+
+### 2. Broad Warm/Moist Surface Region
+
+A broad idealized lower-boundary heating/moistening region intended to organize
+boundary-layer ascent and growing clouds.
+
+### 3. Explicit Thermal Initiation
+
+A clearly labeled supplied thermal or warm-bubble setup intended to test what an
+atmosphere can sustain when initiation is provided.
+
+### 4. Deep-Tower Benchmark
+
+A stronger controlled trigger intended to reveal the sounding's convective
+ceiling. Restore and modernize the proven Deep Convection Trial from PR #270.
+
+### 5. Suppression / Cap Challenge
+
+A controlled ladder of heating, moistening, or initiation intended to show what
+is required to break through a cap—or when current supported recipes cannot.
+
+These are starting tools, not rigid product families and never “the experiment.”
+The catalog should grow from useful cloud-making questions.
+
+## Recipe Contract
+
+Every recipe must define:
+
+- target visible outcome and learning question;
+- suitable sounding traits;
+- poor/skip traits;
+- exact added assumptions;
+- meaningful scout setup;
+- full-run setup;
+- supported aggressiveness levels;
+- checkpoint timing;
+- automatic-promotion criteria;
+- escalation order;
+- stop/switch criteria;
+- expected visible outcomes;
+- limitations and user-facing label.
+
+A mechanism implementation without this operating contract is incomplete.
+
+## Scientific Honesty
+
+Scientific honesty means:
+
+- distinguish recommendation from CM1 result;
+- show which mechanisms and assumptions were added;
+- preserve enough configuration/provenance to reproduce the run;
+- fail clearly when a requested mechanism did not execute;
+- expose broken or non-finite output;
+- do not use forecast language;
+- do not imply an idealized trigger represents an observed real-world boundary.
+
+Scientific honesty does **not** require weak forcing, untriggered evolution, tiny
+runs, or publication-style validation before exploratory use.
+
+Use two normal modes:
+
+### Exploratory
+
+Bold labeled assumptions. Optimize for learning and visible cloud outcome.
+
+### Compared
+
+Compare two or a few runs when an actual result creates a useful question.
+
+Heavy trust/diagnostic work is reserved for broken, suspicious, or
+configuration-inconsistent output.
+
+## Product Workspaces
+
+### Build
+
+Build owns:
+
+- cloud-opportunity discovery;
+- sounding and recipe recommendations;
+- concrete run setup;
+- scout and full-run plan;
+- package generation;
+- local/LAN execution where supported;
+- queue, progress, ETA, stop, ingest, and cleanup.
+
+### Results
+
+Results is the notebook of ingested cloud runs. It should emphasize what cloud
+formed and make useful runs easy to name, tag, revisit, and relate to their scout
+and recipe.
+
+### Explore
+
+Explore is the synchronized visual and explanatory view of one result. It should
+prioritize cloud evolution and keep technical detail available without making it
+the main event.
+
+## Run Latency
+
+CM1 execution is not an instant slider. Cloud Chamber should make latency useful:
+
+- recommend a setup worth the time;
+- show ETA;
+- checkpoint meaningful scouts;
+- stop poor bets;
+- automatically continue promising clouds;
+- let the user leave and return later.
+
+## Product Language
+
+Use:
+
+- cloud opportunity;
+- recipe;
+- run setup;
+- scout;
+- growing cumulus;
+- congestus;
+- deep tower;
+- daytime evolution;
+- explicit initiation supplied;
+- broad warm/moist region;
+- likely ceiling;
+- main obstacle;
+- continue / switch / skip;
 - What happened here?
-- saturation deficit
-- deep breakthrough
-- precipitation feedback
-- downdraft
-- cold pool
-- outflow boundary
 
-Raw CM1 namelist settings and raw variable names belong in technical,
-advanced, or developer views.
+Raw CM1 variables and namelist values belong in technical views.
 
-The first controls should favor relative, teachable changes around a baseline:
-
-- drier / baseline / more humid low-level air
-- weaker / baseline / stronger surface heating
-- lower / baseline / higher cap
-- weaker / baseline / stronger cap
-- less dry / baseline / drier air aloft
-- weaker / baseline / stronger mixing/entrainment
-
-The first variation workflow should change one control at a time. This is a product teaching choice, not a claim that the atmosphere changes one variable at a time.
-
-## Product Layers
-
-### 1. Scenario Builder
-
-Guided setup for CM1 experiments.
-
-It should provide presets and friendly controls that map to CM1 namelists/soundings/manifests.
-
-### 2. Preview / Light Predictor
-
-A simplified model or diagnostic layer that helps users understand likely behavior before running CM1.
-
-It should be clearly labeled as preview only.
-
-### 3. Local Run Manager
-
-Creates, launches, tracks, and logs CM1 runs.
-
-CM1 runs can be long and local. The user should be able to start a run, leave it, and come back later.
-
-### 4. Results Library
-
-Local library of completed/failed/running CM1 experiments.
-
-Users can name, save, tag, replay, inspect, explain, and delete runs. Saved completed results should behave like experiment notebook entries. Duplicating or rerunning a saved setup is useful later, but the first MVP does not need to make rerun a central result-library feature.
-
-### 5. Thermal Fate Diagnostics
-
-Backend-owned diagnostics should sit between result ingest and visualization.
-They should distinguish global run diagnostics, local selected-region
-diagnostics, comparison diagnostics, and visualizer interpretation.
-
-The selected-region product question is:
-
-```text
-What happened here?
-```
-
-### 6. Unified Explore
-
-An important payoff, but not the only product center of gravity. Explore should
-first feel like one trustworthy instrument for understanding a selected result:
-cloud context, synchronized slices, `What happened here?`, and technical
-evidence on demand.
-
-Near-term Explore should support:
-
-- time replay
-- projection/view controls
-- zoom and reset view
-- slices
-- projections
-- selected-region markers
-- plain-language explanations
-- provenance and caveats
-
-## First Scenario Set
-
-Thermal Fate scenario families should start with:
-
-1. Moisture-limited thermal fate: Baseline, Dry Failed, and humidity ladder.
-2. Surface-heating-driven thermal fate.
-3. Cap-limited thermal fate: Capped / Suppressed Cumulus.
-4. Dry-air-aloft / dilution-limited thermal fate.
-5. Deep-convection breakthrough.
-6. Precipitation feedback / cold-pool interaction.
-7. Low stratus / low-cloud layer where appropriate.
-
-Baseline shallow cumulus is the first end-to-end Golden Path scenario. Warm rain remains early and important, but it should not block proving the baseline shallow-cumulus loop first.
-
-The first variation workflow should favor one-control-at-a-time changes around the baseline instead of arbitrary giant parameter sweeps. This keeps the learning path understandable and keeps CM1 as the truth source.
-
-Later product families can include terrain/orographic cloud, layered
-atmospheres, fog / near-surface cloud, and mixed-phase / ice.
-
-## Thermal Fate And Visualization Philosophy
-
-CM1 output is physical source data. The visualizer may interpret it, but must label the interpretation.
-
-The visualizer should serve the Thermal Fate workbench: process overlays,
-selected-region markers, cloud base/top, cap/inversion context, updrafts,
-moisture/saturation evidence, and precipitation-feedback caveats should guide
-renderer choices. Visual polish follows process needs, not the other way
-around.
-
-Useful views for the current Explore loop:
-
-- Cloud-water context
-- Rain-water field
-- Vertical velocity field
-- Horizontal slices
-- Vertical slices
-- Cloud top/base diagnostics
-- Time replay
-- 3-D projection context
-- Selected-region explanation
-- Technical evidence and caveats
-
-Renderer upgrades such as isosurfaces, volumetric rendering, cinematic lighting,
-fly-through, export, and appearance polish should wait until the notebook,
-comparison, and `What happened here?` loop are stable.
-
-## Trust/Honesty Rules
+## Trust Distinctions
 
 Always distinguish:
 
 ```text
-Preview estimate
+Analyzer/recommendation estimate
 Generated CM1 configuration
-Packaged dry-run output
+Packaged run
 Queued/running CM1 process
 Completed CM1 result
-Failed/canceled CM1 run
 Ingested result metadata
-Visualizer interpretation
-Editable result/notebook entry
+Visualization interpretation
 ```
 
-Never imply:
+Never imply that a recommendation is CM1 output or that a package is a completed
+cloud result.
 
-- a preview is CM1 output
-- a dry-run package is a completed result
-- a visualization interpretation is a raw model field
-- CM1 runs live in browser
-- a scenario is validated if it has not been inspected
+## Current Golden Path
 
-## Success Criteria For The MVP
+The current hero workflow is no longer Baseline Shallow Cumulus.
 
-The MVP should let a user:
+The new Golden Path is:
 
-1. Pick a preset scenario.
-2. See/edit meaningful controls.
-3. Generate a CM1 run directory from the setup.
-4. Launch CM1 locally.
-5. Track whether the run is queued/running/done/failed.
-6. Ingest NetCDF output into an app-friendly format.
-7. Open diagnostics and visualization-ready fields.
-8. Replay and inspect cloud evolution over time.
-9. Save/name/tag the run.
-10. Reopen, replay, inspect, and explain a saved result later.
+```text
+Show me something cool
+→ receive a ranked sounding–recipe opportunity
+→ queue the recommended scout
+→ watch it earn or fail promotion
+→ open a visibly interesting cloud result in Explore
+```
 
-Optional later behavior:
+Baseline Shallow Cumulus remains a useful reference and learning case. It is not
+the product's aspirational ceiling.
 
-- Create a new variation from the same setup.
-- Duplicate and rerun a scenario when that workflow is implemented.
+## Success Criteria
 
-The MVP scientific standard is a credible idealized CM1 cloud lab for personal learning and exploration. It is not a publication-quality LES workflow and not operational forecasting.
+Cloud Chamber succeeds when a user can:
+
+1. search a useful sounding-history scope;
+2. see ranked cloud-making opportunities;
+3. understand why a recipe is recommended;
+4. avoid a likely boring sounding/setup;
+5. queue a meaningful scout through Build;
+6. see progress and ETA;
+7. let a promising scout visibly promote to a full run;
+8. stop or clean up when desired;
+9. ingest and open the result;
+10. watch growing or deep cloud evolution in Explore;
+11. learn which assumptions or atmospheric limits shaped the result.
+
+Within a small set of scouts, the product should produce an interesting cloud or
+save substantial compute with a decisive switch/skip recommendation.
+
+## Current Strategic Sources
+
+- [Cloud-First Product Reset](cloud-first-product-reset.md)
+- [Current Roadmap](current-roadmap.md)
+- [Architecture and Data Model](architecture-and-data-model.md)
+- [Product Spec](cloud-chamber-product-spec.md)
