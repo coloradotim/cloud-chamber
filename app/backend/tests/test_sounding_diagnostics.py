@@ -137,7 +137,7 @@ def test_synthetic_profile_has_known_numeric_diagnostics() -> None:
 def test_sounding_diagnostics_payload_has_quality_provenance_and_required_features() -> None:
     diagnostics = compute_sounding_diagnostics(_record())
 
-    assert diagnostics.diagnostic_version == "sounding-diagnostics-v2"
+    assert diagnostics.diagnostic_version == "sounding-diagnostics-v1"
     assert diagnostics.station_id == "USM00072558"
     assert diagnostics.provenance["source_format"] == "igra_station_text"
     assert diagnostics.provenance["diagnostic_claim"].startswith("computed from observed sounding")
@@ -155,7 +155,6 @@ def test_sounding_diagnostics_payload_has_quality_provenance_and_required_featur
         "has_observed_wind_profile",
         "estimated_lcl_height_m_agl",
         "mean_qv_0_1000m_g_kg",
-        "trigger_layer_mean_qv_750_2250m_g_kg",
         "lapse_rate_0_1000m_c_per_km",
         "cap_strength_proxy",
         "bulk_shear_0_6km_m_s",

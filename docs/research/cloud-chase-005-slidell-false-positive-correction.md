@@ -6,10 +6,9 @@ PR #355 no longer treats the Slidell/Topeka work as a validated scoring
 correction. The durable product change is narrower: a major near-surface
 discontinuity prevents a clean `supported` Deep-Tower recommendation, and the
 score uses mixed-layer CAPE instead of allowing one suspect lowest level to
-dominate. The retained trigger-layer qv field is descriptive evidence only: it
-is an unweighted mean of available rendered sounding levels from 750-2250 m
-AGL, not a thickness-weighted layer mean and not a validated recommendation
-gate.
+dominate. The trigger-layer qv values below are retained only as audit
+evidence; the production diagnostic field and candidate payload were removed
+because those values did not separate outcomes or drive a product decision.
 
 The exact CM1 benchmark artifacts show that the Fort Worth success, Slidell
 miss, and Topeka 2017 miss used the same Deep-Tower Benchmark namelist:
@@ -30,12 +29,15 @@ surface fluxes disabled. Runtime integrity was caveated only by
 | North Platte 2026 | `cloud_chase_001-north_platte_high_potential` | `USM00072562`, `2026-07-02T00:00:00Z` | not recorded | `437b0ec1791021a41d86aee8e547dbb38892e484395c28922695cc852ada13af` | exact outputs available; result metadata absent |
 | Topeka 2026 | `cloud_chase_003-topeka_deep_tower_opportunity` | `USM00072456`, `2026-06-10T00:00:00Z` | not recorded | `f8b8e8eb556403761fed2980c1490046ba3c30e206e5aee1bb0fda7378ac270a` | coherent cloud top 1.25 km, max updraft 0.89 m/s |
 
-The CM1 executable was `/Users/timpeterson/cm1r21.1/run/cm1.exe`, SHA-256
-`5b7304bb04514ec03cf4d6e604bc0b5df6e8076bd4fb53c4b5cf5ea9184cdfd1`.
-The source tree is not a git checkout. A text-source hash over the local CM1
+The run manifests identify the CM1 run tree as `cm1r21.1/run` and executable
+as `cm1.exe`. The executable/source hashes were not captured at run time; they
+were measured post hoc during this audit from the configured local CM1
+source/build. The executable SHA-256 was
+`5b7304bb04514ec03cf4d6e604bc0b5df6e8076bd4fb53c4b5cf5ea9184cdfd1`. The CM1
+source tree was not a git checkout. A text-source hash over the configured CM1
 source tree was
 `87cb9ea94b623d4c9e026424b5e2967bf829c17e7e8621a1360423b41373c2fa`;
-`/Users/timpeterson/cm1r21.1/src/init3d.F` was
+`src/init3d.F` was
 `9c45c0982ba194ea6ea74afd6a2516445cdd011fc90902091d089f4cb92dfd28`.
 
 The authoritative `init3d.F` implementation defines `iinit = 3` as a line of
@@ -148,7 +150,8 @@ convection under a different trigger or configuration.
 
 Topeka 2017 is the more important miss for product confidence. It was clean
 with respect to the near-surface discontinuity rule and still scored about
-78 supported, yet produced only a transient 1.75 km cloud. Its rendered profile
+78 under the experimental numeric heuristic, yet produced only a transient
+1.75 km cloud. Its rendered profile
 is sparse below 3 km, and the very favorable trigger-layer qv evidence comes
 from one available level. The actual profile also dries sharply by 2.84 km.
 Those facts make the analyzer evidence weaker than the headline score, but they

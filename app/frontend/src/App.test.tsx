@@ -684,7 +684,7 @@ const secondaryShallowCandidate = {
     deep_tower_opportunity: 48.9,
     deep_tower_opportunity_support: "weak",
     deep_tower_opportunity_summary:
-      "Deep-Tower opportunity is caveated: some cloud-depth ingredients are present, but moisture depth, CAPE, LCL, or inhibition support is not strong.",
+      "Experimental Deep-Tower evidence is caveated: some cloud-depth ingredients are present, but the fixed benchmark response is uncertain.",
   },
   interest_summary: "Very moist lower atmosphere.",
   interest_reasons: [
@@ -753,9 +753,9 @@ const deepConvectionCandidate = {
   features: {
     ...shallowCandidate.features,
     deep_tower_opportunity: 82,
-    deep_tower_opportunity_support: "supported",
+    deep_tower_opportunity_support: "weak",
     deep_tower_opportunity_summary:
-      "Deep-Tower opportunity is supported for the convective-ceiling question.",
+      "Experimental Deep-Tower evidence is high, but recent benchmark misses show this score is not a reliable recommendation to spend scout compute.",
   },
   discovery_bucket: "Deep convection",
 };
@@ -1062,7 +1062,7 @@ function candidateWithActiveFieldsForTest(
       deepScope && deepOpportunity !== null
         ? deepOpportunity
         : (activeScore?.score_0_to_100 ?? candidate.rank_score),
-    ingredient_score_label: deepScope ? "Deep-Tower opportunity" : "Ingredient score",
+    ingredient_score_label: deepScope ? "Experimental Deep-Tower evidence" : "Ingredient score",
     active_story_support: deepScope ? deepSupport : (activeScore?.support ?? null),
     package_readiness: candidate.package_ready ? "package_ready" : "blocked",
     recipe_fit:
@@ -3916,13 +3916,19 @@ describe("App", () => {
     const deepCard = screen.getByLabelText("Sounding candidate Norman, Oklahoma (USM00072357)");
     expect(deepCard).toHaveTextContent("Supercell-like environment");
     expect(deepCard).toHaveTextContent(
-      "Deep-Tower opportunity is supported for the convective-ceiling question.",
+      "Experimental Deep-Tower evidence is high, but recent benchmark misses show this score is not a reliable recommendation to spend scout compute.",
     );
-    expect(deepCard).toHaveTextContent("Deep-Tower opportunity");
+    expect(deepCard).toHaveTextContent("Experimental Deep-Tower evidence");
 
     fireEvent.click(within(deepCard).getByRole("button", { name: "Configure run" }));
     expect(screen.getByLabelText("Candidate details")).toHaveTextContent(
-      "Recommended Deep-Tower scout · stock CM1 iinit=3 · ~120 km · 2 h.",
+      "Experimental Deep-Tower evidence only.",
+    );
+    expect(screen.getByLabelText("Candidate details")).toHaveTextContent(
+      "not a reliable recommendation to spend scout compute",
+    );
+    expect(screen.getByLabelText("Candidate details")).not.toHaveTextContent(
+      "Recommended Deep-Tower scout",
     );
     fireEvent.click(screen.getByRole("button", { name: "Add to run plan" }));
 
@@ -3965,11 +3971,13 @@ describe("App", () => {
       expect(dryRunBody).toContain('"primary_story":"supercell_environment"');
       expect(dryRunBody).toContain('"candidate_id":"USM00072357-2025052000-supercell"');
       expect(dryRunBody).toContain('"ingredient_score":82');
-      expect(dryRunBody).toContain('"ingredient_score_label":"Deep-Tower opportunity"');
+      expect(dryRunBody).toContain(
+        '"ingredient_score_label":"Experimental Deep-Tower evidence"',
+      );
     });
   });
 
-  it("does not present severe-story support as Deep-Tower opportunity support", async () => {
+  it("does not present severe-story support as experimental Deep-Tower support", async () => {
     const defaultFetch = vi.mocked(fetch).getMockImplementation();
     const lowOpportunityCandidate = {
       ...deepConvectionCandidate,
@@ -3997,7 +4005,7 @@ describe("App", () => {
         deep_tower_opportunity: 41,
         deep_tower_opportunity_support: "unavailable",
         deep_tower_opportunity_summary:
-          "Deep-Tower opportunity is low for this recipe: the thermodynamic profile does not strongly support a tall, useful benchmark cloud.",
+          "Experimental Deep-Tower evidence is low: the current heuristic does not surface this as a strong fixed-benchmark comparison case.",
       },
     };
     vi.mocked(fetch).mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
@@ -4079,19 +4087,17 @@ describe("App", () => {
 
     const lowCard = await screen.findByLabelText("Sounding candidate Topeka, Kansas (USM00072456)");
     expect(lowCard).toHaveTextContent("Supercell-like environment");
-    expect(lowCard).toHaveTextContent("Deep-Tower opportunity");
+    expect(lowCard).toHaveTextContent("Experimental Deep-Tower evidence");
     expect(lowCard).toHaveTextContent("41 %");
     expect(lowCard).toHaveTextContent(
-      "Deep-Tower opportunity is low for this recipe: the thermodynamic profile does not strongly support a tall, useful benchmark cloud.",
+      "Experimental Deep-Tower evidence is low: the current heuristic does not surface this as a strong fixed-benchmark comparison case.",
     );
     expect(lowCard).not.toHaveTextContent("stronger screening support");
 
     fireEvent.click(within(lowCard).getByRole("button", { name: "Configure run" }));
     const details = screen.getByLabelText("Candidate details");
-    expect(details).toHaveTextContent(
-      "Skip for Deep-Tower cloud-making unless deliberately overriding.",
-    );
-    expect(details).toHaveTextContent("Deep-Tower opportunity");
+    expect(details).toHaveTextContent("Low experimental Deep-Tower evidence.");
+    expect(details).toHaveTextContent("Experimental Deep-Tower evidence");
     expect(details).toHaveTextContent("41 %");
     expect(within(lowCard).getByRole("button", { name: "Configure run" })).not.toBeDisabled();
   });
@@ -4214,7 +4220,7 @@ describe("App", () => {
       screen.queryByLabelText("Sounding candidate Norman, Oklahoma (USM00072357)"),
     ).not.toBeInTheDocument();
     const candidateDetails = screen.getByLabelText("Candidate details");
-    expect(candidateDetails).toHaveTextContent("Recommended first run");
+    expect(candidateDetails).toHaveTextContent("Run guidance");
     expect(candidateDetails).toHaveTextContent("Run fit");
     expect(candidateDetails).toHaveTextContent("Top limits");
     expect(candidateDetails).not.toHaveTextContent("Scores rank sounding ingredients only");
@@ -4298,7 +4304,7 @@ describe("App", () => {
       "Sounding candidate Valley, Nebraska (USM00072558)",
     );
     expect(
-      screen.getByRole("heading", { name: "Recommended cached soundings" }),
+      screen.getByRole("heading", { name: "Screened cached soundings" }),
     ).toBeInTheDocument();
 
     fireEvent.click(within(selectedValleyCard).getByRole("button", { name: "Configure run" }));
@@ -4606,14 +4612,14 @@ describe("App", () => {
     );
     expect(wilmingtonCard).toHaveTextContent("High-CAPE pulse storm");
     expect(wilmingtonCard).not.toHaveTextContent("Primary: Humid / rainy");
-    expect(wilmingtonCard).toHaveTextContent("48.9 % deep-tower opportunity");
-    expect(wilmingtonCard).toHaveTextContent("testable with Deep-Tower Benchmark");
+    expect(wilmingtonCard).toHaveTextContent("48.9 % experimental deep-tower evidence");
+    expect(wilmingtonCard).toHaveTextContent("optional Deep-Tower benchmark context");
     expect(wilmingtonCard).toHaveTextContent(
-      "Deep-Tower opportunity is caveated: some cloud-depth ingredients are present, but moisture depth, CAPE, LCL, or inhibition support is not strong.",
+      "Experimental Deep-Tower evidence is caveated: some cloud-depth ingredients are present, but the fixed benchmark response is uncertain.",
     );
     expect(
-      screen.queryByLabelText("Sounding candidate Norman, Oklahoma (USM00072357)"),
-    ).not.toBeInTheDocument();
+      screen.getByLabelText("Sounding candidate Norman, Oklahoma (USM00072357)"),
+    ).toHaveTextContent("82 % experimental deep-tower evidence");
 
     fireEvent.click(within(wilmingtonCard).getByRole("button", { name: /Wilmington, Ohio/ }));
     const candidateDetails = screen.getByLabelText("Candidate details");

@@ -444,7 +444,7 @@ SORT_OPTIONS: tuple[CandidateSortOption, ...] = (
     ),
     CandidateSortOption(
         key="deep_tower_opportunity",
-        label="Deep-Tower opportunity",
+        label="Experimental Deep-Tower evidence",
         units="0-100",
         default_direction="desc",
     ),
@@ -815,7 +815,7 @@ def _candidate_with_analysis_context(
         else active_score_value
     )
     ingredient_score_label = (
-        "Deep-Tower opportunity" if scoped_to_deep_tower else "Ingredient score"
+        "Experimental Deep-Tower evidence" if scoped_to_deep_tower else "Ingredient score"
     )
     visible_support = (
         _candidate_deep_tower_opportunity_support(candidate)
@@ -1696,12 +1696,12 @@ def _candidate_recipe_fit(
         if features.get("observed_wind_available") is not True:
             caveats.append("complete_observed_wind_profile_required_for_input_sounding")
         return {
-            "status": "testable_now",
-            "label": "testable with Deep-Tower Benchmark",
+            "status": "partially_testable",
+            "label": "optional Deep-Tower benchmark context",
             "summary": (
-                "This story screens deep-convection ingredients. CM1 can evolve the observed "
-                "atmosphere with the explicit Deep-Tower Benchmark trigger; use surface-forced "
-                "recipes when lower-boundary initiation is the question."
+                "This story screens deep-convection ingredients. The fixed Deep-Tower "
+                "Benchmark is available for deliberate comparison, but current evidence "
+                "does not make it a reliable first-run recommendation."
             ),
             "caveats": caveats,
         }
@@ -1824,7 +1824,6 @@ def _features_from_record(
     diagnostics = compute_sounding_diagnostics(record)
     for key in (
         "mean_qv_0_3000m_g_kg",
-        "trigger_layer_mean_qv_750_2250m_g_kg",
         "precipitable_water_proxy_or_unavailable",
         "midlevel_lapse_rate_700_500_hpa_c_per_km",
         "has_observed_wind_profile",
@@ -2232,7 +2231,7 @@ def _score_features(
             ],
             caveats=[
                 "line/cold-pool-specific recipe support may come later; "
-                "v1 uses the Deep-Tower Benchmark as a first experiment",
+                "the fixed Deep-Tower Benchmark is only optional comparison context",
                 *deep_caveats,
             ],
         ),
@@ -2265,7 +2264,7 @@ def _score_features(
     ]
     evidence = [
         EvidenceItem(
-            label="Deep-Tower opportunity",
+            label="Experimental Deep-Tower evidence",
             value=features.get("deep_tower_opportunity"),
             units="0-100",
             interpretation=deep_tower_opportunity_summary,
@@ -2314,24 +2313,6 @@ def _score_features(
                 "squall_line_cold_pool_candidate",
             ],
             caveats=_feature_caveats(features, "mean_qv_0_1000m_g_kg"),
-        ),
-        EvidenceItem(
-            label="Trigger-layer mean qv",
-            value=features.get("trigger_layer_mean_qv_750_2250m_g_kg"),
-            units="g/kg",
-            interpretation=(
-                "Descriptive moisture evidence in the approximate stock warm-bubble layer; "
-                "computed as an unweighted mean of available sounding levels, not as a "
-                "validated Deep-Tower recommendation gate."
-            ),
-            supports_story=[
-                "severe_thunderstorm_environment",
-                "supercell_environment",
-                "high_cape_pulse_storm",
-                "squall_line_cold_pool_candidate",
-                "elevated_convection",
-            ],
-            caveats=_feature_caveats(features, "trigger_layer_mean_qv_750_2250m_g_kg"),
         ),
         EvidenceItem(
             label="Near-surface continuity",
@@ -2680,7 +2661,8 @@ def _deep_tower_opportunity(
         return (
             0.0,
             "unavailable",
-            "Blocked profile; Deep-Tower opportunity cannot be evaluated until packaging works.",
+            "Blocked profile; experimental Deep-Tower evidence cannot be evaluated until "
+            "packaging works.",
             ["package_generation_blocked"],
         )
 
@@ -2782,22 +2764,22 @@ def _deep_tower_opportunity(
         score = min(score, 65.0)
     rounded = round(max(0.0, min(100.0, score)), 1)
     if rounded >= 70.0:
-        support: Support = "supported"
+        support: Support = "weak"
         summary = (
-            "Deep-Tower opportunity is supported for the convective-ceiling question: "
-            "buoyancy, low-level moisture, deeper moisture, and profile quality align."
+            "Experimental Deep-Tower evidence is high, but recent benchmark misses show "
+            "this score is not a reliable recommendation to spend scout compute."
         )
     elif rounded >= 45.0:
         support = "weak"
         summary = (
-            "Deep-Tower opportunity is caveated: some cloud-depth ingredients are present, "
-            "but moisture depth, CAPE, LCL, or inhibition support is not strong."
+            "Experimental Deep-Tower evidence is caveated: some cloud-depth ingredients "
+            "are present, but the fixed benchmark response is uncertain."
         )
     else:
         support = "unavailable"
         summary = (
-            "Deep-Tower opportunity is low for this recipe: the thermodynamic profile does "
-            "not strongly support a tall, useful benchmark cloud."
+            "Experimental Deep-Tower evidence is low: the current heuristic does not "
+            "surface this as a strong fixed-benchmark comparison case."
         )
 
     caveats: list[str] = []
@@ -2929,9 +2911,11 @@ def _candidate_interest_reasons(
     )
     deep_tower_opportunity = _numeric_feature(features, "deep_tower_opportunity")
     if deep_tower_opportunity is not None and deep_tower_opportunity >= 70.0:
-        reasons.append("Higher Deep-Tower opportunity for testing the convective ceiling.")
+        reasons.append("Higher experimental Deep-Tower evidence for comparison sorting.")
     elif deep_tower_opportunity is not None and deep_tower_opportunity >= 45.0:
-        reasons.append("Caveated Deep-Tower opportunity; cloud-depth ingredients are mixed.")
+        reasons.append(
+            "Caveated experimental Deep-Tower evidence; cloud-depth ingredients are mixed."
+        )
     elif deep_score >= 65.0:
         reasons.append("Supported deep-convection ingredients with observed wind context.")
     elif deep_score >= 35.0:

@@ -152,7 +152,7 @@ test.describe("mocked smoke: Build, Results, Explore path", () => {
     await expect(valleyCard).toContainText("Good for a surface-forced run");
     const candidateDetails = page.getByLabel("Candidate details");
     await expect(candidateDetails).toContainText("Why this is interesting");
-    await expect(candidateDetails).toContainText("Recommended first run");
+    await expect(candidateDetails).toContainText("Run guidance");
     await expect(candidateDetails).toContainText("Run fit");
     await expect(candidateDetails).toContainText("Top limits");
     await expect(candidateDetails).not.toContainText("Scores rank sounding ingredients only");
