@@ -4699,7 +4699,7 @@ function RunConfigurationPanel({
     );
   }
   const update = (key: keyof RunConfigurationInput, value: string) => {
-    onChange({ ...configuration, [key]: value });
+    onChange(updatedRunConfigurationInput(configuration, key, value));
   };
   const panelClassName = embedded
     ? "run-configuration-panel embedded-run-configuration-panel"
@@ -6750,7 +6750,7 @@ function RunPlanConfigurationFields({
   onConfigurationChange: (itemId: string, configuration: RunConfigurationInput) => void;
 }) {
   const update = (key: keyof RunConfigurationInput, value: string) => {
-    onConfigurationChange(item.id, { ...item.runConfiguration, [key]: value });
+    onConfigurationChange(item.id, updatedRunConfigurationInput(item.runConfiguration, key, value));
   };
   return (
     <>
@@ -12683,6 +12683,7 @@ function parseTags(value: string): string[] {
 
 const DURATION_OPTIONS = [
   { value: "smoke_1h", label: "Smoke check (1 h)" },
+  { value: "detail_60min", label: "Detail scout (60 min)" },
   { value: "scout_2h", label: "Scout evolution (2 h)" },
   { value: "short_6h", label: "Short evolution (6 h)" },
   { value: "standard_12h", label: "Standard evolution (12 h)" },
@@ -12705,6 +12706,7 @@ const DOMAIN_OPTIONS = [
   { value: "regional_60km", label: "Regional 60 km" },
   { value: "regional_120km", label: "Regional 120 km" },
   { value: "deep_tower_120km", label: "Deep tower 120 km" },
+  { value: "deep_tower_detail_120km", label: "Deep tower detail 120 km" },
 ];
 
 const OUTPUT_CADENCE_OPTIONS = [
@@ -12763,6 +12765,21 @@ function selectedCandidateUsesDeepTowerRecipe(
   return Boolean(story && deepConvectionStoryIds.has(story));
 }
 
+function updatedRunConfigurationInput(
+  configuration: RunConfigurationInput,
+  key: keyof RunConfigurationInput,
+  value: string,
+): RunConfigurationInput {
+  const updated = { ...configuration, [key]: value };
+  if (key === "domain_size" && value === "deep_tower_detail_120km") {
+    return { ...updated, time_step_seconds: "1.5" };
+  }
+  if (key === "domain_size" && value === "deep_tower_120km") {
+    return { ...updated, time_step_seconds: "6.0" };
+  }
+  return updated;
+}
+
 function previewRunConfiguration(configuration: RunConfigurationInput): RunConfiguration {
   const duration = durationValue(configuration.duration);
   const horizontalCells = horizontalCellValue(configuration.horizontal_cell_count);
@@ -12771,9 +12788,12 @@ function previewRunConfiguration(configuration: RunConfigurationInput): RunConfi
   const diagnosticSet = { value: "full" };
   const surfaceForcingMode = surfaceForcingModeValue(configuration.surface_forcing_mode);
   const surfaceFluxEnabled = surfaceForcingMode !== DISABLED_SURFACE_FORCING_MODE;
-  const deepTowerShape =
+  const deepTowerScoutShape =
     surfaceForcingMode === DISABLED_SURFACE_FORCING_MODE &&
     configuration.domain_size === "deep_tower_120km";
+  const deepTowerDetailShape =
+    surfaceForcingMode === DISABLED_SURFACE_FORCING_MODE &&
+    configuration.domain_size === "deep_tower_detail_120km";
   const heatFlux = surfaceFluxEnabled
     ? numericConfigurationValue(configuration.surface_heat_flux_k_m_s, 8.0e-3)
     : 0;
@@ -12782,7 +12802,7 @@ function previewRunConfiguration(configuration: RunConfigurationInput): RunConfi
     : 0;
   const timeStepSeconds = numericConfigurationValue(
     configuration.time_step_seconds,
-    deepTowerShape ? 6 : 3,
+    deepTowerDetailShape ? 1.5 : deepTowerScoutShape ? 6 : 3,
   );
   const nx = horizontalCells.cells;
   const ny = horizontalCells.cells;
@@ -12800,14 +12820,15 @@ function previewRunConfiguration(configuration: RunConfigurationInput): RunConfi
   if (duration.mode === "science" && duration.seconds < 21600) {
     caveats.push("short_scout_duration_for_initial_deep_tower_chase");
   }
-  if (domain.value === "deep_tower_120km") {
+  if (domain.value === "deep_tower_120km" || domain.value === "deep_tower_detail_120km") {
     caveats.push("storm_scale_domain_for_explicit_deep_tower_initiation");
   }
   if (
     horizontalCells.cells >= 256 ||
     domain.value === "wide_12km" ||
     domain.value === "regional_60km" ||
-    domain.value === "regional_120km"
+    domain.value === "regional_120km" ||
+    domain.value === "deep_tower_detail_120km"
   ) {
     caveats.push("configuration_better_suited_to_larger_compute");
   }
@@ -12913,7 +12934,7 @@ function previewRunConfiguration(configuration: RunConfigurationInput): RunConfi
     runtime_seconds: duration.seconds,
     output_cadence_seconds: cadence.seconds,
     restart_cadence_seconds: Math.max(cadence.seconds, Math.min(duration.seconds, 10800)),
-    rayleigh_damping_start_m: deepTowerShape ? 15000 : 12000,
+    rayleigh_damping_start_m: deepTowerDetailShape ? 21000 : deepTowerScoutShape ? 15000 : 12000,
     expected_output_frames: expectedFrames,
     grid_cell_count: gridCellCount,
   };
@@ -12983,6 +13004,7 @@ function durationValue(value: string): {
   label: string;
 } {
   if (value === "smoke_1h") return { seconds: 3600, mode: "smoke", label: "Smoke check" };
+  if (value === "detail_60min") return { seconds: 3600, mode: "science", label: "Detail scout" };
   if (value === "scout_2h") return { seconds: 7200, mode: "science", label: "Scout evolution" };
   if (value === "standard_12h") {
     return { seconds: 43200, mode: "science", label: "Standard evolution" };
@@ -13077,6 +13099,22 @@ function domainValue(value: string): {
       dzTopM: 500,
       modelTopM: 20000,
       label: "Storm 120 km",
+    };
+  }
+  if (value === "deep_tower_detail_120km") {
+    return {
+      value,
+      xKm: 120,
+      yKm: 120,
+      nz: 100,
+      dzM: 250,
+      stretchZ: 0,
+      strBotM: 0,
+      strTopM: 2000,
+      dzBotM: 250,
+      dzTopM: 250,
+      modelTopM: 25000,
+      label: "Deep tower detail 120 km",
     };
   }
   return {

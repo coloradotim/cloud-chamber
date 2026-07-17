@@ -349,6 +349,64 @@ def test_deep_tower_benchmark_declares_iinit3_assumptions_and_namelist() -> None
     assert "output_uh        = 1," in namelist
 
 
+def test_deep_tower_detail_shape_raises_top_and_uses_finer_timestep() -> None:
+    from igra_fixtures import IGRA_FIXTURE
+
+    from cloud_chamber.observed_sounding import parse_igra_station_text
+
+    observed = parse_igra_station_text(
+        IGRA_FIXTURE,
+        uploaded_filename="USM00072558-data-beg2025.txt",
+    ).selected_sounding
+
+    contract = build_cm1_input_contract(
+        baseline_scenario(),
+        observed_sounding=observed,
+        run_recipe="deep_tower_benchmark",
+        run_configuration={
+            "duration": "detail_60min",
+            "horizontal_cell_count": "cells_256",
+            "domain_size": "deep_tower_detail_120km",
+            "output_cadence": "detailed_5min",
+            "diagnostic_set": "full",
+            "surface_forcing_mode": "disabled",
+            "surface_heat_flux_k_m_s": 0.0,
+            "surface_moisture_flux_g_g_m_s": 0.0,
+        },
+    )
+    values = contract.run_configuration.cm1_values
+    namelist = render_namelist_fragment(contract)
+
+    assert contract.run_configuration.duration == "detail_60min"
+    assert contract.run_configuration.duration_seconds == 3600
+    assert contract.run_configuration.horizontal_cell_count == 256
+    assert contract.run_configuration.domain_size == "deep_tower_detail_120km"
+    assert contract.run_configuration.output_cadence == "detailed_5min"
+    assert values.nx == 256
+    assert values.ny == 256
+    assert values.nz == 100
+    assert values.dx_m == 468.75
+    assert values.dy_m == 468.75
+    assert values.dz_m == 250.0
+    assert values.model_top_m == 25000.0
+    assert values.rayleigh_damping_start_m == 21000
+    assert values.output_cadence_seconds == 300
+    assert values.expected_output_frames == 13
+    assert values.time_step_seconds == 1.5
+    assert "configuration_better_suited_to_larger_compute" in contract.run_configuration.caveats
+    assert "nx           =      256," in namelist
+    assert "ny           =      256," in namelist
+    assert "nz           =      100," in namelist
+    assert "dx     =   468.75," in namelist
+    assert "dy     =   468.75," in namelist
+    assert "dz     =   250.0," in namelist
+    assert "dtl    =   1.500," in namelist
+    assert "timax  = 3600.0," in namelist
+    assert "tapfrq =  300.0," in namelist
+    assert "zd      =  21000.0," in namelist
+    assert "ztop      = 25000.0," in namelist
+
+
 def test_observed_surface_flux_proxy_choices_render_namelist_and_surface_outputs() -> None:
     from igra_fixtures import IGRA_FIXTURE
 

@@ -3884,6 +3884,24 @@ describe("App", () => {
     expect(runPlan.getByLabelText("Duration")).toHaveValue("scout_2h");
     expect(runPlan.getByLabelText("Horizontal cells")).toHaveValue("cells_120");
     expect(runPlan.getByLabelText("Domain size")).toHaveValue("deep_tower_120km");
+    fireEvent.change(runPlan.getByLabelText("Duration"), {
+      target: { value: "detail_60min" },
+    });
+    fireEvent.change(runPlan.getByLabelText("Horizontal cells"), {
+      target: { value: "cells_256" },
+    });
+    fireEvent.change(runPlan.getByLabelText("Domain size"), {
+      target: { value: "deep_tower_detail_120km" },
+    });
+    fireEvent.change(runPlan.getByLabelText("Output cadence"), {
+      target: { value: "detailed_5min" },
+    });
+    expect(runPlan.getByLabelText("Duration")).toHaveValue("detail_60min");
+    expect(runPlan.getByLabelText("Horizontal cells")).toHaveValue("cells_256");
+    expect(runPlan.getByLabelText("Domain size")).toHaveValue("deep_tower_detail_120km");
+    expect(
+      runPlan.getByText(/256 x 256 x 100; dx\/dy 468.75 m; top 25 km, dz 250 m/),
+    ).toBeInTheDocument();
     expect(screen.getByText("deep_tower_benchmark_v0")).toBeInTheDocument();
     expect(
       screen.getByText(/Explicit initiation is supplied with CM1 iinit=3/i),
@@ -3901,13 +3919,14 @@ describe("App", () => {
     await waitFor(() => {
       expect(dryRunBody).toContain('"run_recipe":"deep_tower_benchmark"');
       expect(dryRunBody).toContain('"diagnostic_set":"full"');
-      expect(dryRunBody).toContain('"duration":"scout_2h"');
-      expect(dryRunBody).toContain('"horizontal_cell_count":"cells_120"');
-      expect(dryRunBody).toContain('"domain_size":"deep_tower_120km"');
+      expect(dryRunBody).toContain('"duration":"detail_60min"');
+      expect(dryRunBody).toContain('"horizontal_cell_count":"cells_256"');
+      expect(dryRunBody).toContain('"domain_size":"deep_tower_detail_120km"');
+      expect(dryRunBody).toContain('"output_cadence":"detailed_5min"');
       expect(dryRunBody).toContain('"surface_forcing_mode":"disabled"');
       expect(dryRunBody).toContain('"surface_heat_flux_k_m_s":"0"');
       expect(dryRunBody).toContain('"surface_moisture_flux_g_g_m_s":"0"');
-      expect(dryRunBody).toContain('"time_step_seconds":"6.0"');
+      expect(dryRunBody).toContain('"time_step_seconds":"1.5"');
       expect(dryRunBody).toContain('"candidate_screening"');
       expect(dryRunBody).toContain('"primary_story":"supercell_environment"');
       expect(dryRunBody).toContain('"candidate_id":"USM00072357-2025052000-supercell"');

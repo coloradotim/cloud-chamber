@@ -147,6 +147,7 @@ class _CadenceChoice(BaseModel):
 
 DURATION_CHOICES: dict[str, _DurationChoice] = {
     "smoke_1h": _DurationChoice(seconds=3600, mode="smoke", label="Smoke check"),
+    "detail_60min": _DurationChoice(seconds=3600, mode="science", label="Detail scout"),
     "scout_2h": _DurationChoice(seconds=7200, mode="science", label="Scout evolution"),
     "short_6h": _DurationChoice(seconds=21600, mode="science", label="Short evolution"),
     "standard_12h": _DurationChoice(seconds=43200, mode="science", label="Standard evolution"),
@@ -212,6 +213,19 @@ DOMAIN_CHOICES: dict[str, _DomainChoice] = {
         dz_top_m=500.0,
         label="Storm 120 km",
     ),
+    "deep_tower_detail_120km": _DomainChoice(
+        x_km=120.0,
+        y_km=120.0,
+        nz=100,
+        dz_m=250.0,
+        stretch_z=0,
+        model_top_m=25000.0,
+        str_bot_m=0.0,
+        str_top_m=2000.0,
+        dz_bot_m=250.0,
+        dz_top_m=250.0,
+        label="Deep tower detail 120 km",
+    ),
 }
 
 CADENCE_CHOICES: dict[str, _CadenceChoice] = {
@@ -270,6 +284,9 @@ def resolve_run_configuration(
 ) -> RunConfiguration:
     if isinstance(run_configuration, RunConfiguration):
         return run_configuration
+    explicit_time_step = (
+        isinstance(run_configuration, dict) and "time_step_seconds" in run_configuration
+    )
     if run_configuration is None:
         payload = default_run_configuration_payload(run_recipe)
     else:
@@ -279,6 +296,8 @@ def resolve_run_configuration(
         **default_run_configuration_payload(run_recipe),
         **payload,
     }
+    if not explicit_time_step:
+        payload["time_step_seconds"] = _default_time_step_seconds(str(payload["domain_size"]))
 
     initiation_method = (
         "cm1_iinit_3_three_warm_bubbles"
@@ -313,7 +332,7 @@ def resolve_run_configuration(
         payload,
         "time_step_seconds",
         "time step seconds",
-        default=DEFAULT_TIME_STEP_SECONDS,
+        default=_default_time_step_seconds(str(payload["domain_size"])),
     )
     nx = horizontal_cells.cells
     ny = horizontal_cells.cells
@@ -406,7 +425,10 @@ def resolve_run_configuration(
             runtime_seconds=duration.seconds,
             output_cadence_seconds=cadence.seconds,
             restart_cadence_seconds=restart_seconds,
-            rayleigh_damping_start_m=_rayleigh_damping_start_m(run_recipe),
+            rayleigh_damping_start_m=_rayleigh_damping_start_m(
+                run_recipe,
+                domain_size=str(payload["domain_size"]),
+            ),
             expected_output_frames=frames,
             grid_cell_count=grid_cells,
         ),
@@ -535,7 +557,7 @@ def _configuration_caveats(
     caveats: list[str] = list(surface_flux_caveats)
     if mode == "smoke":
         caveats.append("short_smoke_mode_is_for_package_health_not_science_evolution")
-    if domain_size == "deep_tower_120km":
+    if domain_size in {"deep_tower_120km", "deep_tower_detail_120km"}:
         caveats.append("storm_scale_domain_for_explicit_deep_tower_initiation")
     if mode == "science" and duration_seconds >= 21600:
         caveats.append("science_run_configuration_minimum_duration_6h")
@@ -545,6 +567,7 @@ def _configuration_caveats(
         "wide_12km",
         "regional_60km",
         "regional_120km",
+        "deep_tower_detail_120km",
     }:
         caveats.append("configuration_better_suited_to_larger_compute")
     if not math.isclose(time_step_seconds, DEFAULT_TIME_STEP_SECONDS):
@@ -649,10 +672,24 @@ def _surface_mode_id(surface_flux_mode: str, patch_sha256: str | None) -> str:
     return ""
 
 
-def _rayleigh_damping_start_m(run_recipe: str | None = None) -> int:
+def _rayleigh_damping_start_m(
+    run_recipe: str | None = None,
+    *,
+    domain_size: str | None = None,
+) -> int:
+    if domain_size == "deep_tower_detail_120km":
+        return 21000
     if run_recipe in {"deep_tower_benchmark", "triggered_deep_potential"}:
         return 15000
     return 12000
+
+
+def _default_time_step_seconds(domain_size: str) -> float:
+    if domain_size == "deep_tower_detail_120km":
+        return 1.5
+    if domain_size == "deep_tower_120km":
+        return 6.0
+    return DEFAULT_TIME_STEP_SECONDS
 
 
 def _expected_output_frames(runtime_seconds: int, output_cadence_seconds: int) -> int:
