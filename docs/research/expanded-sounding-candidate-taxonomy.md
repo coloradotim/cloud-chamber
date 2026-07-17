@@ -199,11 +199,12 @@ Non-goals: do not allow package generation from blocked candidates.
 
 ## Deep Convection / Severe Environments
 
-These stories are first-class product concepts, but they are not current
-package-ready stories. Most require thermodynamic and wind diagnostics that are
-not part of the current candidate scoring contract, such as CAPE, CIN, LFC,
-EL, 0-6 km shear, storm-relative helicity, DCAPE, freezing-level diagnostics,
-or forcing/cold-pool architecture.
+These stories are first-class product concepts, but they are not validated
+severe-weather package stories. The current analyzer exposes a narrower
+`deep_tower_opportunity` selector for the Deep-Tower Benchmark; that selector
+uses simple sounding-only CAPE, CIN, LFC, moisture, lapse-rate, cap, and
+profile-quality inputs to choose a benchmark scout. It does not make
+supercell, squall-line, hail, tornado, or observed-initiation claims.
 
 | Story ID | Visible Label | Family | screenable_from_sounding_now | runnable_with_current_observed_sounding_package | specialized_package_recommended | future_package_required | candidate_can_be_saved | candidate_can_generate_current_package | Implementation Priority |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |

@@ -30,8 +30,8 @@ The v1 candidate stories are:
 
 Visible labels may be friendlier, but every visible story must be backed by
 `story_scores`, feature values, evidence items, caveats, and package readiness.
-Deep-convection-oriented stories are pre-run hypotheses for Deep Convection
-Trial routing, not outcome claims.
+Deep-convection-oriented stories are pre-run hypotheses for Deep-Tower
+Benchmark routing, not outcome claims.
 
 ## Feature Inputs
 
@@ -89,9 +89,24 @@ profile fields, including:
 - required thermodynamic fields
 - observed u/v wind components
 
-The v1 screen does not compute CAPE, CIN, LFC, EL, storm-relative helicity,
-map/GIS forcing, or radar/precipitation predictors. Those require separate
-research, diagnostics, and validation before becoming product-facing evidence.
+The current screen includes simple sounding-only CAPE, CIN, LFC, and EL
+proxies for Deep-Tower Benchmark opportunity scoring. It still does not compute
+storm-relative helicity, map/GIS forcing, or radar/precipitation predictors.
+Those require separate research, diagnostics, and validation before becoming
+product-facing evidence.
+
+### Deep-Tower Opportunity
+
+`deep_tower_opportunity` is a recipe-specific 0-100 selector for the
+Deep-Tower Benchmark. It is not a replacement for severe/supercell story
+scores and should not be read as an observed storm forecast.
+
+The score weights surface-based CAPE, mixed-layer CAPE, CIN, LFC, cap proxy,
+low-level moisture, deeper moisture, 0-3 km and midlevel lapse rates, profile
+completeness, and near-surface continuity. EL or buoyancy depth contributes
+only when the simple EL estimate is usable. Deep-layer shear receives little or
+no weight because this selector asks whether the benchmark trigger can reveal a
+deep convective ceiling, not whether a storm will organize.
 
 ## Story Logic
 

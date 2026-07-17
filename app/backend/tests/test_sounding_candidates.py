@@ -1,6 +1,7 @@
 import json
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import cast
 
 import pytest
 from fastapi.testclient import TestClient
@@ -35,6 +36,7 @@ from cloud_chamber.sounding_candidates import (
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 BASELINE_TEMPLATE = REPO_ROOT / "scenarios/lower-atmosphere/baseline-shallow-cumulus.json"
+type FeatureValue = float | int | str | bool | None
 
 
 def _settings(tmp_path: Path) -> CloudChamberSettings:
@@ -184,7 +186,7 @@ def test_screen_cached_soundings_returns_ranked_package_ready_candidates(
 
     result = screen_cached_soundings(settings, latest_per_station=2, limit=10)
 
-    assert result.screening_version == "sounding-screening-v1"
+    assert result.screening_version == "sounding-screening-v2"
     assert len(result.candidates) == 2
     candidate = result.candidates[0]
     assert candidate.station_id == "USM00072558"
@@ -1075,6 +1077,113 @@ def test_deep_convection_scoring_requires_observed_wind_support() -> None:
     assert supercell.support == "unavailable"
     assert severe.support == "unavailable"
     assert "complete_observed_wind_profile_required_for_input_sounding" in supercell.caveats
+
+
+def test_deep_tower_opportunity_separates_success_from_miss_features() -> None:
+    fort_worth_like: dict[str, FeatureValue] = {
+        "data_completeness_score": 100.0,
+        "low_level_qv_g_kg": 22.094,
+        "mean_qv_0_500m_g_kg": 22.094,
+        "mean_qv_0_1000m_g_kg": 20.398,
+        "mean_qv_0_3000m_g_kg": 14.623,
+        "precipitable_water_proxy_or_unavailable": 43.11,
+        "surface_t_td_spread_c": 6.0,
+        "estimated_lcl_height_m_agl": 750.1,
+        "lapse_rate_0_1000m_c_per_km": 8.36,
+        "lapse_rate_0_3000m_c_per_km": 6.88,
+        "midlevel_lapse_rate_700_500_hpa_c_per_km": 7.97,
+        "cap_strength_proxy": 0.0,
+        "cap_height_m_agl": None,
+        "moisture_depth_m": 1893.8,
+        "midlevel_dry_layer_proxy": 10.0,
+        "qv_drop_0_3000m_g_kg": 7.471,
+        "observed_wind_available": True,
+        "bulk_shear_0_1km_m_s": 8.0,
+        "bulk_shear_0_3km_m_s": 15.0,
+        "bulk_shear_0_6km_m_s": 19.88,
+        "dry_microburst_inverted_v_proxy": 50.0,
+        "freezing_level_m_agl": 4200.0,
+        "surface_based_cape_j_kg": 1781.0,
+        "mixed_layer_cape_j_kg": 1820.3,
+        "surface_based_cin_j_kg": 0.0,
+        "mixed_layer_cin_j_kg": -5.3,
+        "lfc_height_m_agl": 2.8,
+        "el_height_m_agl": 98.2,
+        "profile_top_m_agl": 19311.8,
+        "lowest_level_m_agl": 2.8,
+        "near_surface_discontinuity_flag": False,
+    }
+    north_platte_like = {
+        **fort_worth_like,
+        "low_level_qv_g_kg": 16.199,
+        "mean_qv_0_500m_g_kg": 15.723,
+        "mean_qv_0_1000m_g_kg": 14.83,
+        "mean_qv_0_3000m_g_kg": 11.052,
+        "precipitable_water_proxy_or_unavailable": 27.56,
+        "surface_t_td_spread_c": 9.8,
+        "estimated_lcl_height_m_agl": 1225.1,
+        "lapse_rate_0_1000m_c_per_km": 9.59,
+        "lapse_rate_0_3000m_c_per_km": 8.09,
+        "midlevel_lapse_rate_700_500_hpa_c_per_km": 7.58,
+        "cap_strength_proxy": 0.4,
+        "cap_height_m_agl": 1473.2,
+        "moisture_depth_m": 1542.2,
+        "qv_drop_0_3000m_g_kg": 5.148,
+        "bulk_shear_0_1km_m_s": 2.19,
+        "bulk_shear_0_3km_m_s": 9.47,
+        "bulk_shear_0_6km_m_s": 22.39,
+        "dry_microburst_inverted_v_proxy": 69.6,
+        "surface_based_cape_j_kg": 1081.7,
+        "mixed_layer_cape_j_kg": 994.6,
+        "mixed_layer_cin_j_kg": -1.7,
+        "lfc_height_m_agl": 0.2,
+        "el_height_m_agl": 9390.3,
+        "profile_top_m_agl": 19917.2,
+        "lowest_level_m_agl": 0.2,
+    }
+
+    _score_features(fort_worth_like, package_ready=True)
+    _score_features(north_platte_like, package_ready=True)
+
+    fort_score = cast(float, fort_worth_like["deep_tower_opportunity"])
+    north_platte_score = cast(float, north_platte_like["deep_tower_opportunity"])
+    assert fort_score == pytest.approx(81.7)
+    assert fort_worth_like["deep_tower_opportunity_support"] == "supported"
+    assert north_platte_score == pytest.approx(46.1)
+    assert north_platte_like["deep_tower_opportunity_support"] == "weak"
+    assert fort_score > north_platte_score + 30.0
+
+
+def test_analysis_deep_family_best_match_uses_deep_tower_opportunity(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    high_story_low_opportunity = _analysis_candidate(
+        "high-story-low-opportunity",
+        deep_score=91.0,
+        deep_support="supported",
+    ).model_copy(update={"features": {"deep_tower_opportunity": 41.0}})
+    lower_story_better_opportunity = _analysis_candidate(
+        "lower-story-better-opportunity",
+        deep_score=72.0,
+        deep_support="supported",
+    ).model_copy(update={"features": {"deep_tower_opportunity": 82.0}})
+    _patch_screened_candidates(
+        monkeypatch,
+        [high_story_low_opportunity, lower_story_better_opportunity],
+    )
+
+    result = analyze_cached_soundings(
+        _settings(tmp_path),
+        story_family="deep_convection",
+        sort_by="best_match",
+    )
+
+    assert [item.candidate_id for item in result.candidates] == [
+        "lower-story-better-opportunity",
+        "high-story-low-opportunity",
+    ]
+    assert [item.active_story_score for item in result.candidates] == [72.0, 91.0]
+    assert [item.ingredient_score for item in result.candidates] == [82.0, 41.0]
 
 
 def test_story_scores_and_evidence_are_traceable_to_soundings() -> None:

@@ -33,7 +33,7 @@ from cloud_chamber.observed_sounding import (
 from cloud_chamber.settings import CloudChamberSettings
 from cloud_chamber.sounding_diagnostics import compute_sounding_diagnostics
 
-SCREENING_VERSION = "sounding-screening-v1"
+SCREENING_VERSION = "sounding-screening-v2"
 
 StoryId = Literal[
     "shallow_cumulus_candidate",
@@ -103,6 +103,7 @@ CandidateSortKey = Literal[
     "primary_story",
     "story_family",
     "rank_score",
+    "deep_tower_opportunity",
     "confidence",
     "support",
     "package_readiness",
@@ -129,6 +130,7 @@ CandidateSortKey = Literal[
 SortValue = bool | float | str | datetime
 
 _FEATURE_SORT_KEYS: dict[CandidateSortKey, str] = {
+    "deep_tower_opportunity": "deep_tower_opportunity",
     "observed_wind_available": "observed_wind_available",
     "profile_top_m_agl": "profile_top_m_agl",
     "lowest_level_m_agl": "lowest_level_m_agl",
@@ -158,6 +160,7 @@ _DEFAULT_SORT_DIRECTIONS: dict[CandidateSortKey, CandidateSortDirection] = {
     "primary_story": "asc",
     "story_family": "asc",
     "rank_score": "desc",
+    "deep_tower_opportunity": "desc",
     "confidence": "desc",
     "support": "desc",
     "package_readiness": "desc",
@@ -437,6 +440,12 @@ SORT_OPTIONS: tuple[CandidateSortOption, ...] = (
     CandidateSortOption(key="story_family", label="Story family", default_direction="asc"),
     CandidateSortOption(
         key="rank_score", label="Rank score", units="0-100", default_direction="desc"
+    ),
+    CandidateSortOption(
+        key="deep_tower_opportunity",
+        label="Deep-Tower opportunity",
+        units="0-100",
+        default_direction="desc",
     ),
     CandidateSortOption(key="confidence", label="Confidence", default_direction="desc"),
     CandidateSortOption(key="support", label="Evidence tier", default_direction="desc"),
@@ -798,6 +807,14 @@ def _candidate_with_analysis_context(
     active_label = active_score.label if active_score else candidate.primary_story_label
     active_support = active_score.support if active_score else None
     active_score_value = active_score.score_0_to_100 if active_score else candidate.rank_score
+    scoped_to_deep_tower = (
+        story_filter == "deep_convection_trial" or story_family == "deep_convection"
+    )
+    ingredient_score = (
+        _candidate_deep_tower_opportunity_score(candidate)
+        if scoped_to_deep_tower
+        else active_score_value
+    )
     recipe_fit = _candidate_recipe_fit(
         active_story,
         features=candidate.features,
@@ -831,7 +848,7 @@ def _candidate_with_analysis_context(
             "display_story": active_label,
             "matched_story_ids": [score.story for score in matched_scores],
             "active_story_score": round(active_score_value, 2),
-            "ingredient_score": round(active_score_value, 2),
+            "ingredient_score": round(ingredient_score, 2),
             "active_story_support": active_support,
             "package_readiness": "package_ready" if candidate.package_ready else "blocked",
             "recipe_fit": recipe_fit["status"],
@@ -886,18 +903,7 @@ def _candidate_story_score(candidate: SoundingCandidate, story: TargetStoryId | 
     if story is None:
         return candidate.rank_score
     if story == "deep_convection_trial":
-        return (
-            max(
-                (
-                    score.score_0_to_100
-                    for score in candidate.story_scores
-                    if score.story in DEEP_CONVECTION_STORY_IDS
-                ),
-                default=0.0,
-            )
-            if candidate.package_ready
-            else 0.0
-        )
+        return _candidate_deep_tower_opportunity_score(candidate)
     for score in candidate.story_scores:
         if score.story == story:
             return score.score_0_to_100 if candidate.package_ready else 0.0
@@ -1354,6 +1360,8 @@ def _candidate_sort_value(
     story_family: CandidateStoryFamilyFilter,
 ) -> SortValue | None:
     if sort_by == "best_match":
+        if story_filter == "deep_convection_trial" or story_family == "deep_convection":
+            return _candidate_deep_tower_opportunity_score(candidate)
         score = _candidate_story_score_model(candidate, story_filter, story_family)
         return score.score_0_to_100 if score else candidate.rank_score
     if sort_by == "valid_time":
@@ -1890,6 +1898,16 @@ def _score_features(
     if not observed_wind_available:
         deep_caveats.append("complete_observed_wind_profile_required_for_input_sounding")
 
+    (
+        deep_tower_opportunity,
+        deep_tower_opportunity_support,
+        deep_tower_opportunity_summary,
+        deep_tower_opportunity_caveats,
+    ) = _deep_tower_opportunity(features, package_ready=package_ready)
+    features["deep_tower_opportunity"] = deep_tower_opportunity
+    features["deep_tower_opportunity_support"] = deep_tower_opportunity_support
+    features["deep_tower_opportunity_summary"] = deep_tower_opportunity_summary
+
     moist = _score_high(qv, low=4.0, high=10.0)
     dry = _score_low(qv, low=3.0, high=8.0)
     storm_moisture = _weighted_score(
@@ -2227,6 +2245,20 @@ def _score_features(
         ),
     ]
     evidence = [
+        EvidenceItem(
+            label="Deep-Tower opportunity",
+            value=features.get("deep_tower_opportunity"),
+            units="0-100",
+            interpretation=deep_tower_opportunity_summary,
+            supports_story=[
+                "severe_thunderstorm_environment",
+                "supercell_environment",
+                "high_cape_pulse_storm",
+                "squall_line_cold_pool_candidate",
+                "elevated_convection",
+            ],
+            caveats=deep_tower_opportunity_caveats,
+        ),
         EvidenceItem(
             label="Low-level qv",
             value=features.get("low_level_qv_g_kg"),
@@ -2602,6 +2634,182 @@ def _story_score(
     )
 
 
+def _deep_tower_opportunity(
+    features: dict[str, float | int | str | bool | None],
+    *,
+    package_ready: bool,
+) -> tuple[float, Support, str, list[str]]:
+    if not package_ready:
+        return (
+            0.0,
+            "unavailable",
+            "Blocked profile; Deep-Tower opportunity cannot be evaluated until packaging works.",
+            ["package_generation_blocked"],
+        )
+
+    sbcape = _numeric_feature(features, "surface_based_cape_j_kg")
+    mlcape = _numeric_feature(features, "mixed_layer_cape_j_kg")
+    sbcin = _numeric_feature(features, "surface_based_cin_j_kg")
+    mlcin = _numeric_feature(features, "mixed_layer_cin_j_kg")
+    lfc = _numeric_feature(features, "lfc_height_m_agl")
+    el = _numeric_feature(features, "el_height_m_agl")
+    qv = _numeric_feature(features, "mean_qv_0_1000m_g_kg")
+    qv_500 = _numeric_feature(features, "mean_qv_0_500m_g_kg")
+    qv_3000 = _numeric_feature(features, "mean_qv_0_3000m_g_kg")
+    precipitable_water = _numeric_feature(features, "precipitable_water_proxy_or_unavailable")
+    moisture_depth = _numeric_feature(features, "moisture_depth_m")
+    lcl = _numeric_feature(features, "estimated_lcl_height_m_agl")
+    lapse_0_1km = _numeric_feature(features, "lapse_rate_0_1000m_c_per_km")
+    lapse_0_3km = _numeric_feature(features, "lapse_rate_0_3000m_c_per_km")
+    midlevel_lapse = _numeric_feature(features, "midlevel_lapse_rate_700_500_hpa_c_per_km")
+    cap = _numeric_feature(features, "cap_strength_proxy")
+    completeness = _numeric_feature(features, "data_completeness_score")
+    lowest_level = _numeric_feature(features, "lowest_level_m_agl")
+    profile_top = _numeric_feature(features, "profile_top_m_agl")
+    near_surface_ok = features.get("near_surface_discontinuity_flag") is not True
+
+    cape_score = _weighted_score(
+        [
+            (_score_high(sbcape, low=500.0, high=2500.0), 0.55),
+            (_score_high(mlcape, low=500.0, high=2500.0), 0.45),
+        ]
+    )
+    effective_cin = min(value for value in (sbcin or 0.0, mlcin or 0.0))
+    inhibition_score = _weighted_score(
+        [
+            (_score_low(abs(effective_cin), low=25.0, high=200.0), 0.45),
+            (_score_low(lfc, low=750.0, high=2500.0), 0.30),
+            (_score_low(cap, low=0.5, high=4.0), 0.25),
+        ]
+    )
+    low_moisture_score = _weighted_score(
+        [
+            (_score_high(qv, low=12.0, high=20.0), 0.45),
+            (_score_high(qv_500, low=12.0, high=20.0), 0.35),
+            (_score_high(precipitable_water, low=25.0, high=45.0), 0.20),
+        ]
+    )
+    deep_moisture_score = _weighted_score(
+        [
+            (_score_high(moisture_depth, low=1000.0, high=3000.0), 0.35),
+            (_score_high(qv_3000, low=9.0, high=14.0), 0.40),
+            (_score_high(precipitable_water, low=25.0, high=45.0), 0.25),
+        ]
+    )
+    lapse_score = _weighted_score(
+        [
+            (_score_high(lapse_0_3km, low=5.5, high=8.0), 0.45),
+            (_score_high(midlevel_lapse, low=6.0, high=8.0), 0.45),
+            (_score_high(lapse_0_1km, low=6.0, high=9.5), 0.10),
+        ]
+    )
+    profile_score = _weighted_score(
+        [
+            (_score_high(completeness, low=70.0, high=95.0), 0.45),
+            (_score_low(lowest_level, low=50.0, high=250.0), 0.20),
+            (100.0 if near_surface_ok else 25.0, 0.25),
+            (_score_high(profile_top, low=12000.0, high=18000.0), 0.10),
+        ]
+    )
+    buoyancy_depth_score = 50.0
+    if el is not None and lfc is not None and el >= 3000.0 and el > lfc:
+        buoyancy_depth_available = True
+        buoyancy_depth_score = _score_high(el - lfc, low=5000.0, high=12000.0)
+    else:
+        buoyancy_depth_available = False
+
+    score = _weighted_score(
+        [
+            (cape_score, 0.30),
+            (low_moisture_score, 0.25),
+            (deep_moisture_score, 0.20),
+            (inhibition_score, 0.10),
+            (lapse_score, 0.08),
+            (profile_score, 0.05),
+            (buoyancy_depth_score, 0.02),
+        ]
+    )
+    effective_cape = max(value for value in (sbcape or 0.0, mlcape or 0.0))
+    if effective_cape < 750.0:
+        score = min(score, 42.0)
+    elif effective_cape < 1200.0:
+        score = min(score, 55.0)
+    elif effective_cape < 1500.0:
+        score = min(score, 65.0)
+    rounded = round(max(0.0, min(100.0, score)), 1)
+    if rounded >= 70.0:
+        support: Support = "supported"
+        summary = (
+            "Deep-Tower opportunity is supported for the convective-ceiling question: "
+            "buoyancy, low-level moisture, deeper moisture, and profile quality align."
+        )
+    elif rounded >= 45.0:
+        support = "weak"
+        summary = (
+            "Deep-Tower opportunity is caveated: some cloud-depth ingredients are present, "
+            "but moisture depth, CAPE, LCL, or inhibition support is not strong."
+        )
+    else:
+        support = "unavailable"
+        summary = (
+            "Deep-Tower opportunity is low for this recipe: the thermodynamic profile does "
+            "not strongly support a tall, useful benchmark cloud."
+        )
+
+    caveats: list[str] = []
+    required_features = [
+        "surface_based_cape_j_kg",
+        "mixed_layer_cape_j_kg",
+        "surface_based_cin_j_kg",
+        "mixed_layer_cin_j_kg",
+        "lfc_height_m_agl",
+        "mean_qv_0_1000m_g_kg",
+        "mean_qv_0_3000m_g_kg",
+        "moisture_depth_m",
+        "lapse_rate_0_3000m_c_per_km",
+        "midlevel_lapse_rate_700_500_hpa_c_per_km",
+        "data_completeness_score",
+        "lowest_level_m_agl",
+    ]
+    caveats.extend(
+        f"missing_or_unavailable_feature:{name}"
+        for name in required_features
+        if _numeric_feature(features, name) is None
+    )
+    if sbcape is not None and mlcape is not None and max(sbcape, mlcape) < 1500.0:
+        caveats.append("deep_tower_opportunity_limited_cape")
+    if qv is not None and qv < 16.0:
+        caveats.append("deep_tower_opportunity_limited_low_level_moisture")
+    if moisture_depth is not None and moisture_depth < 1800.0:
+        caveats.append("deep_tower_opportunity_limited_moisture_depth")
+    if lcl is not None and lcl > 1000.0:
+        caveats.append("deep_tower_opportunity_high_lcl")
+    if cap is not None and cap >= 1.0:
+        caveats.append("deep_tower_opportunity_cap_proxy_present")
+    if not near_surface_ok:
+        caveats.append("near_surface_discontinuity_caveat")
+    if not buoyancy_depth_available:
+        caveats.append("deep_tower_simple_el_not_used_as_hard_gate")
+    caveats.append("deep_tower_opportunity_gives_little_weight_to_shear")
+    return rounded, support, summary, _dedupe_nonempty_strings(caveats)
+
+
+def _candidate_deep_tower_opportunity_score(candidate: SoundingCandidate) -> float:
+    if not candidate.package_ready:
+        return 0.0
+    opportunity = _numeric_feature(candidate.features, "deep_tower_opportunity")
+    if opportunity is not None:
+        return opportunity
+    return max(
+        (
+            score.score_0_to_100
+            for score in candidate.story_scores
+            if score.story in DEEP_CONVECTION_STORY_IDS
+        ),
+        default=0.0,
+    )
+
+
 def _deep_story_score(score: float, *, observed_wind_available: bool) -> float:
     """Let strong deep-convection evidence win over broad moist/shallow labels."""
 
@@ -2649,8 +2857,13 @@ def _candidate_interest_reasons(
         ),
         default=0.0,
     )
-    if deep_score >= 65.0:
-        reasons.append("Strong deep-convection ingredients with observed wind support.")
+    deep_tower_opportunity = _numeric_feature(features, "deep_tower_opportunity")
+    if deep_tower_opportunity is not None and deep_tower_opportunity >= 70.0:
+        reasons.append("Higher Deep-Tower opportunity for testing the convective ceiling.")
+    elif deep_tower_opportunity is not None and deep_tower_opportunity >= 45.0:
+        reasons.append("Caveated Deep-Tower opportunity; cloud-depth ingredients are mixed.")
+    elif deep_score >= 65.0:
+        reasons.append("Supported deep-convection ingredients with observed wind context.")
     elif deep_score >= 35.0:
         reasons.append(
             "Some deep-convection ingredients are present, but the evidence is caveated."

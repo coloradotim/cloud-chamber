@@ -376,6 +376,7 @@ type CandidateSort =
   | "primary_story"
   | "story_family"
   | "rank_score"
+  | "deep_tower_opportunity"
   | "confidence"
   | "support"
   | "package_readiness"
@@ -5563,6 +5564,7 @@ function ObservedAtmosphereCandidatesPanel({
               <option value="primary_story">Primary story</option>
               <option value="story_family">Story family</option>
               <option value="rank_score">Rank score</option>
+              <option value="deep_tower_opportunity">Deep-Tower opportunity</option>
               <option value="confidence">Confidence</option>
               <option value="support">Evidence tier</option>
               <option value="package_readiness">Package readiness</option>
@@ -11171,6 +11173,7 @@ function candidateSortLabel(sort: CandidateSort): string {
     primary_story: "Primary story",
     story_family: "Story family",
     rank_score: "Rank score",
+    deep_tower_opportunity: "Deep-Tower opportunity",
     confidence: "Confidence",
     support: "Evidence tier",
     package_readiness: "Package readiness",
