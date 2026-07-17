@@ -186,13 +186,20 @@ def _hypothesis_recipe_alignment(
             "caveats": [],
         }
     if story in DEEP_CONVECTION_STORIES:
-        if run_recipe == RunRecipe.DEEP_TOWER_BENCHMARK:
+        if run_recipe in {
+            RunRecipe.DEEP_TOWER_BENCHMARK,
+            RunRecipe.EXPLICIT_LOCALIZED_THERMAL,
+        }:
+            reason = (
+                "Deep-convection ingredients can be tested with the explicit "
+                "Deep-Tower Benchmark trigger."
+                if run_recipe == RunRecipe.DEEP_TOWER_BENCHMARK
+                else "Deep-convection ingredients can be tested with the "
+                "Explicit localized thermal trigger."
+            )
             return {
                 "status": "aligned",
-                "reasons": [
-                    "Deep-convection ingredients can be tested with the explicit "
-                    "Deep-Tower Benchmark trigger."
-                ],
+                "reasons": [reason],
                 "missing_assumptions": [],
                 "blocking_errors": [],
                 "caveats": [
@@ -421,6 +428,16 @@ def _forcing_validation_for_recipe(run_recipe: str) -> dict[str, Any]:
             "radiation": "disabled",
             "large_scale_forcing": "none",
         }
+    if run_recipe == RunRecipe.EXPLICIT_LOCALIZED_THERMAL.value:
+        return {
+            "trigger": "cm1_iinit_1_single_warm_bubble",
+            "surface_fluxes": {
+                "mode": "disabled",
+                "status": "disabled_for_explicit_localized_thermal_v0",
+            },
+            "radiation": "disabled",
+            "large_scale_forcing": "none",
+        }
     if run_recipe == RunRecipe.DIFFERENTIAL_SURFACE_FORCED_EVOLUTION.value:
         return {
             "trigger": "none",
@@ -455,7 +472,10 @@ def _required_outputs_for_story(
     run_recipe: RunRecipe,
 ) -> list[str]:
     if story in DEEP_CONVECTION_STORIES:
-        if run_recipe == RunRecipe.DEEP_TOWER_BENCHMARK:
+        if run_recipe in {
+            RunRecipe.DEEP_TOWER_BENCHMARK,
+            RunRecipe.EXPLICIT_LOCALIZED_THERMAL,
+        }:
             return ["qv", "qc", "w", "qr", "rain", "dbz", "u", "v", "th", "updraft_helicity"]
         return ["qv", "qc", "w", "qr", "rain", "dbz", "hfx", "qfx", "updraft_helicity"]
     if story == "humid_rainy_candidate":
@@ -541,6 +561,8 @@ def _run_recipe_display_name(run_recipe: str) -> str:
         return "Deep-Tower Benchmark"
     if run_recipe == RunRecipe.DEEP_TOWER_BENCHMARK.value:
         return "Deep-Tower Benchmark"
+    if run_recipe == RunRecipe.EXPLICIT_LOCALIZED_THERMAL.value:
+        return "Explicit localized thermal"
     if run_recipe == RunRecipe.OBSERVED_SURFACE_FORCED_EVOLUTION.value:
         return "Observed Surface-Forced Evolution"
     return "Generated Lower-Atmosphere Reference"

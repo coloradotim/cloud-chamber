@@ -349,6 +349,87 @@ def test_deep_tower_benchmark_declares_iinit3_assumptions_and_namelist() -> None
     assert "output_uh        = 1," in namelist
 
 
+def test_explicit_localized_thermal_declares_stock_iinit1_assumptions_and_namelist() -> None:
+    from igra_fixtures import IGRA_FIXTURE
+
+    from cloud_chamber.observed_sounding import parse_igra_station_text
+
+    observed = parse_igra_station_text(
+        IGRA_FIXTURE,
+        uploaded_filename="USM00072558-data-beg2025.txt",
+    ).selected_sounding
+
+    contract = build_cm1_input_contract(
+        baseline_scenario(),
+        observed_sounding=observed,
+        run_recipe="explicit_localized_thermal",
+    )
+    namelist = render_namelist_fragment(contract)
+    trigger = cast(dict[str, Any], contract.recipe_assumptions["trigger"])
+    surface_fluxes = cast(dict[str, Any], contract.recipe_assumptions["surface_fluxes"])
+
+    assert contract.run_recipe.value == "explicit_localized_thermal"
+    assert contract.run_recipe_display_name == "Explicit localized thermal"
+    assert contract.recipe_id == "explicit_localized_thermal_v0"
+    assert contract.recipe_display_name == "Explicit localized thermal v0"
+    assert contract.assumption_set_id == "explicit_localized_thermal_v0_assumptions"
+    assert contract.assumption_mode == "explicit_localized_thermal"
+    assert contract.required_output_fields == (
+        "qv",
+        "qc",
+        "w",
+        "qr",
+        "rain",
+        "dbz",
+        "u",
+        "v",
+        "th",
+        "updraft_helicity",
+    )
+    assert contract.run_configuration.duration == "smoke_1h"
+    assert contract.run_configuration.duration_seconds == 3600
+    assert contract.run_configuration.output_cadence == "detailed_5min"
+    assert contract.run_configuration.cm1_values.output_cadence_seconds == 300
+    assert contract.run_configuration.domain_size == "deep_tower_120km"
+    assert contract.run_configuration.horizontal_cell_count == 120
+    assert contract.run_configuration.cm1_values.time_step_seconds == 6.0
+    assert contract.run_configuration.cm1_values.rayleigh_damping_start_m == 15000
+    assert contract.run_configuration.surface_flux_mode == "disabled"
+    assert trigger["mode"] == "cm1_iinit_1_single_warm_bubble"
+    assert trigger["cm1_iinit"] == 1
+    assert trigger["bubble_count"] == 1
+    assert trigger["center_height_m_agl"] == 1400.0
+    assert trigger["horizontal_radius_m"] == 10000.0
+    assert trigger["vertical_radius_m"] == 1400.0
+    assert trigger["max_theta_perturbation_k"] == 1.0
+    assert trigger["raw_controls_exposed"] is False
+    assert surface_fluxes["mode"] == "disabled"
+    assert surface_fluxes["cm1_values"]["isfcflx"] == 0
+    assert surface_fluxes["cm1_values"]["set_flx"] == 0
+    assert "Explicit localized thermal initiation is supplied with stock CM1 iinit=1." in (
+        contract.recipe_caveats
+    )
+    assert (
+        contract.manual_validation_status
+        == "explicit_localized_thermal_fort_worth_growing_cloud_validated"
+    )
+    assert "nx           =      120," in namelist
+    assert "ny           =      120," in namelist
+    assert "nz           =      40," in namelist
+    assert "timax  = 3600.0," in namelist
+    assert "tapfrq =  300.0," in namelist
+    assert "dtl    =   6.000," in namelist
+    assert "zd      =  15000.0," in namelist
+    assert "testcase  =  0," in namelist
+    assert "isnd      =  7," in namelist
+    assert "iwnd      =  0," in namelist
+    assert "iinit     =  1," in namelist
+    assert "ibalance  =  0," in namelist
+    assert "isfcflx    =      0," in namelist
+    assert "cnst_shflx = 0.0," in namelist
+    assert "output_uh        = 1," in namelist
+
+
 def test_observed_surface_flux_proxy_choices_render_namelist_and_surface_outputs() -> None:
     from igra_fixtures import IGRA_FIXTURE
 

@@ -228,6 +228,18 @@ SURFACE_MOISTURE_FLUX_CONTEXT_RANGE_G_G_M_S = (0.0, 2.0e-4)
 
 
 def default_run_configuration_payload(run_recipe: str | None = None) -> dict[str, str | float]:
+    if run_recipe == "explicit_localized_thermal":
+        return {
+            "duration": "smoke_1h",
+            "horizontal_cell_count": "cells_120",
+            "domain_size": "deep_tower_120km",
+            "output_cadence": "detailed_5min",
+            "diagnostic_set": "full",
+            "surface_heat_flux_k_m_s": 0.0,
+            "surface_moisture_flux_g_g_m_s": 0.0,
+            "surface_forcing_mode": DISABLED_SURFACE_FLUX_MODE,
+            "time_step_seconds": 6.0,
+        }
     if run_recipe in {"deep_tower_benchmark", "triggered_deep_potential"}:
         return {
             "duration": "scout_2h",
@@ -283,6 +295,8 @@ def resolve_run_configuration(
     initiation_method = (
         "cm1_iinit_3_three_warm_bubbles"
         if run_recipe in {"deep_tower_benchmark", "triggered_deep_potential"}
+        else "cm1_iinit_1_single_warm_bubble"
+        if run_recipe == "explicit_localized_thermal"
         else "none"
     )
 
@@ -555,6 +569,8 @@ def _configuration_caveats(
 def _initiation_summary(initiation_method: str) -> str:
     if initiation_method == "cm1_iinit_3_three_warm_bubbles":
         return "CM1 iinit=3 three warm bubbles"
+    if initiation_method == "cm1_iinit_1_single_warm_bubble":
+        return "CM1 iinit=1 single warm bubble"
     return "No artificial initiation"
 
 
@@ -650,7 +666,11 @@ def _surface_mode_id(surface_flux_mode: str, patch_sha256: str | None) -> str:
 
 
 def _rayleigh_damping_start_m(run_recipe: str | None = None) -> int:
-    if run_recipe in {"deep_tower_benchmark", "triggered_deep_potential"}:
+    if run_recipe in {
+        "deep_tower_benchmark",
+        "triggered_deep_potential",
+        "explicit_localized_thermal",
+    }:
         return 15000
     return 12000
 

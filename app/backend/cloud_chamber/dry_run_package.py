@@ -591,6 +591,15 @@ def _run_recipe_mapping_summary(contract: CM1InputContract) -> str:
             "reflectivity output, vorticity output, and updraft-helicity output; explicit "
             "initiation is supplied and must be interpreted as an idealized trigger"
         )
+    if contract.run_recipe.value == "explicit_localized_thermal":
+        return (
+            "observed IGRA external input_sounding profile with observed u/v winds; "
+            "the run uses CM1 isnd=7, testcase=0, stock CM1 iinit=1 single warm-bubble "
+            "localized thermal initiation, a storm-scale idealized domain, NetCDF output, "
+            "rain output, reflectivity output, vorticity output, and updraft-helicity output; "
+            "explicit initiation is supplied and must be interpreted as an idealized trigger, "
+            "not an observed boundary or spontaneous-convection claim"
+        )
     if contract.run_configuration.surface_forcing_patch is not None:
         return (
             "observed IGRA external input_sounding profile; the run uses CM1 isnd=7, "
@@ -625,6 +634,13 @@ def _cm1_mapping_status(contract: CM1InputContract) -> str:
             "CM1-ready Deep-Tower Benchmark run with explicit stock-CM1 iinit=3 "
             "three-warm-bubble initiation. Prior Fort Worth smoke evidence applies to "
             "the recipe path; each observed sounding remains a CM1 experiment to inspect."
+        )
+    if contract.run_recipe.value == "explicit_localized_thermal":
+        return (
+            "CM1-ready Explicit localized thermal run with stock-CM1 iinit=1 single "
+            "warm-bubble initiation. The trigger is an idealized localized thermal; "
+            "Fort Worth positive-control evidence produced a growing shallow cloud, "
+            "while each observed sounding remains a case-dependent CM1 experiment to inspect."
         )
     if contract.run_configuration.surface_forcing_patch is not None:
         return (

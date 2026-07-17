@@ -64,6 +64,7 @@ run_recipe:
     | surface_forced_evolution
     | differential_surface_forced_evolution
     | explicit_thermal_initiation
+    | explicit_localized_thermal
     | elevated_forced_evolution
     | future
   run_shape:
@@ -117,6 +118,7 @@ run_recipe:
       | observed_surface_forced_evolution
       | differential_surface_forced_evolution
       | deep_tower_benchmark
+      | explicit_localized_thermal
       | future
     run_configuration_defaults:
       duration: string | null
@@ -174,13 +176,15 @@ An elevated recipe asks whether an above-surface source layer can sustain cloud
 or convection. It needs source-layer, forcing, and output assumptions that the
 current observed-sounding run builder does not supply.
 
-### Removed Or Not Active
+### Legacy Or Non-Recipe Trigger Paths
 
-Artificial atmospheric perturbation recipes from the earlier deep-potential
-direction are not current product paths. Current observed-sounding experiments
-use no artificial atmospheric trigger and rely on explicit surface-forcing and
-run-shape assumptions. Differential surface forcing is a current lower-boundary
-patch recipe, not an atmospheric-trigger recipe.
+Artificial atmospheric perturbation paths must be named recipes with explicit
+assumptions before product surfaces can offer them. The current supported
+atmospheric-trigger paths are limited to the Deep-Tower Benchmark and Explicit
+localized thermal recipes below. They are idealized probes, not observed
+boundaries, weather forecasts, or claims of spontaneous convection.
+Differential surface forcing remains a separate lower-boundary patch recipe,
+not an atmospheric-trigger recipe.
 
 ## Current Recipe Catalog
 
@@ -434,6 +438,71 @@ sounding has a complete rendered wind profile. The result can inspect whether
 deep cloud, strong updraft, rain-water aloft, surface rain, and reflectivity
 occur under the explicit trigger. Surface-forced and differential surface patch
 recipes remain separate lower-boundary initiation questions.
+
+### `explicit_localized_thermal_v0`
+
+```yaml
+recipe_id: explicit_localized_thermal_v0
+display_name: Explicit localized thermal
+product_question: How does this observed atmosphere respond to one modest,
+  localized idealized warm bubble?
+assumption_set_id: explicit_localized_thermal_v0_assumptions
+assumption_mode: explicit_localized_thermal
+run_shape:
+  duration_seconds: 3600
+  horizontal_cell_count: 120
+  domain_width_m: 120000
+  model_top_m: 20000
+  output_cadence_seconds: 300
+  requested_fields: full_output_field_set
+forcing:
+  trigger:
+    mode: stock_cm1_iinit_1
+    description: one 1 K cosine-squared warm bubble centered in the domain
+      near 1.4 km AGL
+  surface_sensible_heat_flux: {mode: disabled}
+  surface_latent_heat_flux: {mode: disabled}
+  radiation: {mode: disabled}
+  large_scale_lift: {mode: none}
+  convergence: {mode: none}
+required_inputs:
+  observed_temperature_profile: required
+  observed_moisture_profile: required
+  observed_wind_profile: required
+required_outputs:
+  fields: [qv, qc, w, qr, rain, dbz, u, v, th, updraft_helicity]
+  diagnostics:
+    - first_cloud
+    - cloud_top
+    - max_updraft_w
+    - rain_water_aloft_onset
+    - max_surface_rain
+    - max_dbz
+current_support:
+  status: fort_worth_growing_cloud_positive_control
+  caveats:
+    - The trigger is CM1's stock `iinit = 1` single warm bubble; it is not a
+      real front, dryline, terrain feature, sea breeze, outflow boundary, or
+      forecast of spontaneous convection.
+    - The trigger is fixed and modest, with no product-facing trigger editor.
+    - Surface heat/moisture fluxes, radiation, terrain, GIS surface
+      initialization, and large-scale forcing are disabled in v0.
+    - Fort Worth produced a growing shallow cloud under this recipe; Topeka
+      did not form cloud under the identical trigger and run shape.
+cm1_mapping:
+  run_recipe: explicit_localized_thermal
+  run_configuration_defaults:
+    duration: smoke_1h
+    horizontal_cell_count: cells_120
+    domain_size: deep_tower_120km
+    output_cadence: detailed_5min
+    requested_fields: full_output_field_set
+```
+
+This recipe is an exploratory localized-thermal probe. It can preserve one
+known-capable positive control and compare case-dependent response to the same
+modest thermal, but it is not a default compute-spending recommendation for
+deep-convection candidates.
 
 ### `squall_line_cold_pool_future`
 

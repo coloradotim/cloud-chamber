@@ -463,6 +463,102 @@ def test_deep_tower_benchmark_package_uses_stock_iinit3_path(
     assert "output_uh        = 1," in namelist
 
 
+def test_explicit_localized_thermal_package_uses_stock_iinit1_path(
+    tmp_path: Path,
+) -> None:
+    observed = parse_igra_station_text(
+        IGRA_FIXTURE,
+        uploaded_filename="USM00072558-data-beg2025.txt",
+    ).selected_sounding
+    candidate_screening = {
+        "candidate_id": "USM00072558-supercell",
+        "primary_story": "supercell_environment",
+        "active_story": "supercell_environment",
+        "active_story_label": "Supercell-like environment",
+        "rank_score": 93.0,
+    }
+
+    result = generate_dry_run_package(
+        scenario_data=load_baseline_template(),
+        runtime_home=tmp_path,
+        run_id="run-explicit-localized-thermal",
+        run_recipe="explicit_localized_thermal",
+        observed_sounding=observed,
+        candidate_screening=candidate_screening,
+    )
+
+    manifest = load_run_manifest(result.manifest_path)
+    report = json.loads(result.report_path.read_text())
+    case_manifest = json.loads((result.package_dir / "case_manifest.json").read_text())
+    namelist = (result.package_dir / "namelist.input").read_text()
+
+    assert manifest.run_recipe == "explicit_localized_thermal"
+    assert manifest.run_recipe_display_name == "Explicit localized thermal"
+    assert manifest.recipe_id == "explicit_localized_thermal_v0"
+    assert manifest.recipe_display_name == "Explicit localized thermal v0"
+    assert manifest.assumption_set_id == "explicit_localized_thermal_v0_assumptions"
+    assert manifest.assumption_mode == "explicit_localized_thermal"
+    assert manifest.trigger_type == "warm_bubble"
+    trigger_parameters = manifest.trigger_parameters
+    assert trigger_parameters is not None
+    assert trigger_parameters["cm1_iinit"] == 1
+    assert trigger_parameters["bubble_count"] == 1
+    assert trigger_parameters["center_height_m_agl"] == 1400.0
+    assert trigger_parameters["horizontal_radius_m"] == 10000.0
+    assert trigger_parameters["vertical_radius_m"] == 1400.0
+    assert trigger_parameters["max_theta_perturbation_k"] == 1.0
+    assert trigger_parameters["raw_controls_exposed"] is False
+    assert (
+        manifest.manual_validation_status
+        == "explicit_localized_thermal_fort_worth_growing_cloud_validated"
+    )
+    assert manifest.run_configuration["duration"] == "smoke_1h"
+    assert manifest.run_configuration["duration_seconds"] == 3600
+    assert manifest.run_configuration["output_cadence"] == "detailed_5min"
+    assert manifest.run_configuration["output_cadence_seconds"] == 300
+    assert manifest.run_configuration["horizontal_cell_count"] == 120
+    assert manifest.run_configuration["domain_size"] == "deep_tower_120km"
+    assert manifest.run_configuration["surface_flux_mode"] == "disabled"
+    assert manifest.run_configuration["surface_flux_cm1_values"]["isfcflx"] == 0
+    assert manifest.run_configuration["surface_flux_cm1_values"]["set_flx"] == 0
+    assert manifest.run_configuration["cm1_values"]["runtime_seconds"] == 3600
+    assert manifest.run_configuration["cm1_values"]["output_cadence_seconds"] == 300
+    assert manifest.run_configuration["cm1_values"]["rayleigh_damping_start_m"] == 15000
+    assert manifest.recipe_assumptions["trigger"]["mode"] == "cm1_iinit_1_single_warm_bubble"
+    assert manifest.recipe_assumptions["trigger"]["cm1_iinit"] == 1
+    assert manifest.recipe_assumptions["observed_sounding"]["wind_profile"] == (
+        "required_complete_rendered_u_v_profile"
+    )
+    assert manifest.recipe_assumptions["surface_fluxes"]["mode"] == "disabled"
+    assert manifest.pre_run_validation_report is not None
+    assert manifest.pre_run_validation_report["hypothesis_recipe_alignment"]["status"] == (
+        "aligned"
+    )
+    assert (
+        "Deep-convection ingredients can be tested with the Explicit localized thermal trigger."
+        in manifest.pre_run_validation_report["hypothesis_recipe_alignment"]["reasons"]
+    )
+    assert (
+        "explicit_thermal_initiation_supplied_not_a_real_observed_trigger"
+        in manifest.pre_run_validation_report["caveats"]
+    )
+    assert report["recipe_id"] == "explicit_localized_thermal_v0"
+    assert report["trigger_type"] == "warm_bubble"
+    assert report["variant_metadata"]["surface_flux_mode"] == "disabled"
+    assert "stock CM1 iinit=1 single warm-bubble" in report["variant_metadata"]["mapping"]
+    assert "stock-CM1 iinit=1" in report["cm1_mapping_status"]
+    assert case_manifest["contract"]["recipe_id"] == "explicit_localized_thermal_v0"
+    assert case_manifest["contract"]["trigger_type"] == "warm_bubble"
+    assert "testcase  =  0," in namelist
+    assert "isnd      =  7," in namelist
+    assert "iinit     =  1," in namelist
+    assert "ibalance  =  0," in namelist
+    assert "isfcflx    =      0," in namelist
+    assert "set_flx    =      0," in namelist
+    assert "cnst_shflx = 0.0," in namelist
+    assert "output_uh        = 1," in namelist
+
+
 def test_legacy_triggered_deep_potential_maps_to_deep_tower_benchmark(
     tmp_path: Path,
 ) -> None:

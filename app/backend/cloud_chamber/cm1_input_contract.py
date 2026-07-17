@@ -45,6 +45,7 @@ class RunRecipe(StrEnum):
     OBSERVED_SURFACE_FORCED_EVOLUTION = "observed_surface_forced_evolution"
     DIFFERENTIAL_SURFACE_FORCED_EVOLUTION = "differential_surface_forced_evolution"
     DEEP_TOWER_BENCHMARK = "deep_tower_benchmark"
+    EXPLICIT_LOCALIZED_THERMAL = "explicit_localized_thermal"
 
 
 LEGACY_TRIGGERED_DEEP_POTENTIAL_RECIPE = "triggered_deep_potential"
@@ -217,8 +218,15 @@ def build_cm1_input_contract(
         resolved_run_configuration,
     )
     defaults = cloud_scale_defaults_for_configuration(resolved_run_configuration)
-    if resolved_run_recipe == RunRecipe.DEEP_TOWER_BENCHMARK and observed_sounding is None:
-        raise ValueError("Deep-Tower Benchmark requires a validated observed sounding.")
+    if (
+        resolved_run_recipe
+        in {RunRecipe.DEEP_TOWER_BENCHMARK, RunRecipe.EXPLICIT_LOCALIZED_THERMAL}
+        and observed_sounding is None
+    ):
+        raise ValueError(
+            f"{_run_recipe_display_name(resolved_run_recipe)} requires a validated "
+            "observed sounding."
+        )
     if observed_sounding is not None and not has_complete_rendered_observed_wind_profile(
         observed_sounding,
         defaults=defaults,
@@ -260,7 +268,10 @@ def build_cm1_input_contract(
         if observed_sounding is not None
         else "generated_reference",
         trigger_type=(
-            "warm_bubble" if resolved_run_recipe == RunRecipe.DEEP_TOWER_BENCHMARK else None
+            "warm_bubble"
+            if resolved_run_recipe
+            in {RunRecipe.DEEP_TOWER_BENCHMARK, RunRecipe.EXPLICIT_LOCALIZED_THERMAL}
+            else None
         ),
         trigger_parameters=_trigger_parameters(resolved_run_recipe),
         scenario_id=scenario.id,
@@ -337,19 +348,19 @@ def _run_recipe_for_configuration(
     run_configuration: RunConfiguration,
 ) -> RunRecipe:
     if (
-        run_recipe == RunRecipe.DEEP_TOWER_BENCHMARK
+        run_recipe in {RunRecipe.DEEP_TOWER_BENCHMARK, RunRecipe.EXPLICIT_LOCALIZED_THERMAL}
         and run_configuration.surface_forcing_patch is not None
     ):
         raise ValueError(
-            "Deep-Tower Benchmark uses CM1 iinit=3 explicit thermal initiation; "
+            f"{_run_recipe_display_name(run_recipe)} uses explicit thermal initiation; "
             "differential surface forcing must use its own run recipe."
         )
     if (
-        run_recipe == RunRecipe.DEEP_TOWER_BENCHMARK
+        run_recipe in {RunRecipe.DEEP_TOWER_BENCHMARK, RunRecipe.EXPLICIT_LOCALIZED_THERMAL}
         and run_configuration.surface_flux_mode != DISABLED_SURFACE_FLUX_MODE
     ):
         raise ValueError(
-            "Deep-Tower Benchmark requires surface_forcing_mode=disabled; "
+            f"{_run_recipe_display_name(run_recipe)} requires surface_forcing_mode=disabled; "
             "use an observed surface-forced recipe for lower-boundary forcing experiments."
         )
     if run_configuration.surface_flux_mode == DIFFERENTIAL_SURFACE_FORCING_MODE:
@@ -372,6 +383,8 @@ def _run_recipe_display_name(run_recipe: RunRecipe) -> str:
             return "Differential Surface-Forced Evolution"
         case RunRecipe.DEEP_TOWER_BENCHMARK:
             return "Deep-Tower Benchmark"
+        case RunRecipe.EXPLICIT_LOCALIZED_THERMAL:
+            return "Explicit localized thermal"
         case RunRecipe.OBSERVED_SURFACE_FORCED_EVOLUTION:
             return "Observed Surface-Forced Evolution"
         case RunRecipe.GENERATED_REFERENCE_LOWER_ATMOSPHERE:
@@ -385,6 +398,8 @@ def recipe_id_for_run_recipe(run_recipe: str | RunRecipe) -> str:
             return "differential_surface_forced_evolution_v0"
         case RunRecipe.DEEP_TOWER_BENCHMARK:
             return "deep_tower_benchmark_v0"
+        case RunRecipe.EXPLICIT_LOCALIZED_THERMAL:
+            return "explicit_localized_thermal_v0"
         case RunRecipe.OBSERVED_SURFACE_FORCED_EVOLUTION:
             return "observed_surface_forced_evolution_v0"
         case RunRecipe.GENERATED_REFERENCE_LOWER_ATMOSPHERE:
@@ -400,6 +415,8 @@ def recipe_display_name_for_run_recipe(run_recipe: str | RunRecipe) -> str:
             return "Differential Surface-Forced Evolution v0"
         case RunRecipe.DEEP_TOWER_BENCHMARK:
             return "Deep-Tower Benchmark v0"
+        case RunRecipe.EXPLICIT_LOCALIZED_THERMAL:
+            return "Explicit localized thermal v0"
         case RunRecipe.OBSERVED_SURFACE_FORCED_EVOLUTION:
             return "Observed Surface-Forced Evolution v0"
         case RunRecipe.GENERATED_REFERENCE_LOWER_ATMOSPHERE:
@@ -415,6 +432,8 @@ def assumption_set_id_for_run_recipe(run_recipe: str | RunRecipe) -> str:
             return "differential_surface_forced_evolution_v0_assumptions"
         case RunRecipe.DEEP_TOWER_BENCHMARK:
             return "deep_tower_benchmark_v0_assumptions"
+        case RunRecipe.EXPLICIT_LOCALIZED_THERMAL:
+            return "explicit_localized_thermal_v0_assumptions"
         case RunRecipe.OBSERVED_SURFACE_FORCED_EVOLUTION:
             return "observed_surface_forced_evolution_v0_assumptions"
         case RunRecipe.GENERATED_REFERENCE_LOWER_ATMOSPHERE:
@@ -430,6 +449,8 @@ def assumption_mode_for_run_recipe(run_recipe: str | RunRecipe) -> str:
             return "differential_surface_forced_evolution"
         case RunRecipe.DEEP_TOWER_BENCHMARK:
             return "explicit_thermal_initiation"
+        case RunRecipe.EXPLICIT_LOCALIZED_THERMAL:
+            return "explicit_localized_thermal"
         case RunRecipe.OBSERVED_SURFACE_FORCED_EVOLUTION:
             return "observed_surface_forced_evolution"
         case RunRecipe.GENERATED_REFERENCE_LOWER_ATMOSPHERE:
@@ -456,7 +477,7 @@ def required_output_fields_for_run_recipe(run_recipe: str | RunRecipe) -> tuple[
                 "th",
                 "updraft_helicity",
             )
-        case RunRecipe.DEEP_TOWER_BENCHMARK:
+        case RunRecipe.DEEP_TOWER_BENCHMARK | RunRecipe.EXPLICIT_LOCALIZED_THERMAL:
             return (
                 "qv",
                 "qc",
@@ -514,6 +535,23 @@ def recipe_caveats_for_run_recipe(run_recipe: str | RunRecipe) -> tuple[str, ...
                     "behavior remain CM1 outcomes to inspect after completion."
                 ),
             )
+        case RunRecipe.EXPLICIT_LOCALIZED_THERMAL:
+            return (
+                "Explicit localized thermal initiation is supplied with stock CM1 iinit=1.",
+                (
+                    "The thermal is an idealized single warm bubble, not a real front, "
+                    "dryline, terrain feature, sea breeze, outflow boundary, or forecast "
+                    "of spontaneous convection."
+                ),
+                (
+                    "Surface heat/moisture fluxes, radiation, terrain, GIS surface "
+                    "initialization, and large-scale forcing are not part of v0."
+                ),
+                (
+                    "Cloud growth, updraft, precipitation, and reflectivity remain CM1 "
+                    "outcomes to inspect after completion."
+                ),
+            )
         case RunRecipe.OBSERVED_SURFACE_FORCED_EVOLUTION:
             return (
                 "No artificial atmospheric trigger is applied.",
@@ -558,6 +596,26 @@ def _trigger_parameters(
             ),
             "raw_controls_exposed": False,
         }
+    if run_recipe == RunRecipe.EXPLICIT_LOCALIZED_THERMAL:
+        return {
+            "cm1_iinit": 1,
+            "cm1_trigger": (
+                "CM1 built-in single warm bubble with 1 K maximum "
+                "potential-temperature perturbation centered at the domain center "
+                "near 1.4 km AGL"
+            ),
+            "bubble_count": 1,
+            "center_x": "domain center",
+            "center_y": "domain center",
+            "center_height_m_agl": 1400.0,
+            "horizontal_radius_m": 10000.0,
+            "vertical_radius_m": 1400.0,
+            "max_theta_perturbation_k": 1.0,
+            "shape": "cosine-squared ellipsoid for beta < 1",
+            "qv_behavior": "no direct qv perturbation; maintain_rh is false in stock source",
+            "pressure_balance": "namelist ibalance=0; no pressure-balancing solve is applied",
+            "raw_controls_exposed": False,
+        }
     return {}
 
 
@@ -580,6 +638,7 @@ def _run_caveats(
         RunRecipe.OBSERVED_SURFACE_FORCED_EVOLUTION,
         RunRecipe.DIFFERENTIAL_SURFACE_FORCED_EVOLUTION,
         RunRecipe.DEEP_TOWER_BENCHMARK,
+        RunRecipe.EXPLICIT_LOCALIZED_THERMAL,
     }:
         caveats.extend(recipe_caveats_for_run_recipe(run_recipe))
         return tuple(caveats)
@@ -589,6 +648,8 @@ def _run_caveats(
 def _manual_validation_status(run_recipe: RunRecipe) -> str:
     if run_recipe == RunRecipe.DEEP_TOWER_BENCHMARK:
         return "deep_tower_benchmark_iinit3_fort_worth_prior_smoke_validated"
+    if run_recipe == RunRecipe.EXPLICIT_LOCALIZED_THERMAL:
+        return "explicit_localized_thermal_fort_worth_growing_cloud_validated"
     if run_recipe == RunRecipe.OBSERVED_SURFACE_FORCED_EVOLUTION:
         return "observed_surface_forced_evolution_v0_metadata_only"
     if run_recipe == RunRecipe.DIFFERENTIAL_SURFACE_FORCED_EVOLUTION:
@@ -631,6 +692,7 @@ def _recipe_assumptions(
         RunRecipe.OBSERVED_SURFACE_FORCED_EVOLUTION,
         RunRecipe.DIFFERENTIAL_SURFACE_FORCED_EVOLUTION,
         RunRecipe.DEEP_TOWER_BENCHMARK,
+        RunRecipe.EXPLICIT_LOCALIZED_THERMAL,
     }:
         trigger_description = "No artificial atmospheric trigger."
         if run_recipe == RunRecipe.DIFFERENTIAL_SURFACE_FORCED_EVOLUTION:
@@ -645,6 +707,12 @@ def _recipe_assumptions(
                 "Explicit idealized thermal initiation supplied by stock CM1 iinit=3 "
                 "three-warm-bubble line trigger."
             )
+        if run_recipe == RunRecipe.EXPLICIT_LOCALIZED_THERMAL:
+            trigger_mode = "cm1_iinit_1_single_warm_bubble"
+            trigger_description = (
+                "Explicit localized thermal initiation supplied by stock CM1 iinit=1 "
+                "single warm bubble."
+            )
         return {
             **configured_shape,
             "trigger": {
@@ -656,6 +724,19 @@ def _recipe_assumptions(
                         "raw_controls_exposed": False,
                     }
                     if run_recipe == RunRecipe.DEEP_TOWER_BENCHMARK
+                    else {}
+                ),
+                **(
+                    {
+                        "cm1_iinit": 1,
+                        "bubble_count": 1,
+                        "center_height_m_agl": 1400.0,
+                        "horizontal_radius_m": 10000.0,
+                        "vertical_radius_m": 1400.0,
+                        "max_theta_perturbation_k": 1.0,
+                        "raw_controls_exposed": False,
+                    }
+                    if run_recipe == RunRecipe.EXPLICIT_LOCALIZED_THERMAL
                     else {}
                 ),
             },
@@ -857,30 +938,32 @@ def render_cm1_namelist(contract: CM1InputContract) -> str:
     sounding_source_id = 7 if contract.observed_sounding is not None else 17
     wind_profile_id = 0 if contract.observed_sounding is not None else 9
     deep_tower = contract.run_recipe == RunRecipe.DEEP_TOWER_BENCHMARK
-    testcase = 0 if deep_tower else 3
-    adapt_dt = 0 if deep_tower else 1
+    localized_thermal = contract.run_recipe == RunRecipe.EXPLICIT_LOCALIZED_THERMAL
+    explicit_thermal = deep_tower or localized_thermal
+    testcase = 0 if explicit_thermal else 3
+    adapt_dt = 0 if explicit_thermal else 1
     ptype = 5
-    ihail = 1 if deep_tower else 0
-    iautoc = 1 if deep_tower else 0
-    icor = 0 if deep_tower else 1
-    lspgrad = 0 if deep_tower else 2
-    idiss = 1 if deep_tower else 0
-    wbc = ebc = sbc = nbc = 2 if deep_tower else 1
-    bbc = 1 if deep_tower else 3
-    iinit = 3 if deep_tower else 0
-    irandp = 0 if deep_tower else 1
-    imove = 1 if deep_tower else 0
+    ihail = 1 if explicit_thermal else 0
+    iautoc = 1 if explicit_thermal else 0
+    icor = 0 if explicit_thermal else 1
+    lspgrad = 0 if explicit_thermal else 2
+    idiss = 1 if explicit_thermal else 0
+    wbc = ebc = sbc = nbc = 2 if explicit_thermal else 1
+    bbc = 1 if explicit_thermal else 3
+    iinit = 3 if deep_tower else 1 if localized_thermal else 0
+    irandp = 0 if explicit_thermal else 1
+    imove = 1 if explicit_thermal else 0
     output = _output_switches(
         contract.run_configuration.diagnostic_set,
-        deep_convection=deep_tower,
+        deep_convection=explicit_thermal,
         surface_flux_outputs=contract.run_configuration.surface_flux_mode
         in {"constant_uniform_surface_flux_proxy", DIFFERENTIAL_SURFACE_FORCING_MODE},
     )
     surface = contract.run_configuration.surface_flux_cm1_values
-    l_h = 100.0 if deep_tower else 0.0
-    lhref1 = 100.0 if deep_tower else 0.0
-    lhref2 = 1000.0 if deep_tower else 0.0
-    ndcnst = 250.0 if deep_tower else 100.0
+    l_h = 100.0 if explicit_thermal else 0.0
+    lhref1 = 100.0 if explicit_thermal else 0.0
+    lhref2 = 1000.0 if explicit_thermal else 0.0
+    ndcnst = 250.0 if explicit_thermal else 100.0
     return f"""
  &param0
  nx           =      {defaults.nx},

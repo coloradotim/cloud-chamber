@@ -38,6 +38,7 @@ type ScenarioResponse = {
 };
 
 type RunConfigurationInput = {
+  run_recipe?: ObservedRunRecipe;
   duration: string;
   horizontal_cell_count: string;
   domain_size: string;
@@ -421,12 +422,14 @@ type RunRecipe =
   | "generated_reference_lower_atmosphere"
   | "observed_surface_forced_evolution"
   | "differential_surface_forced_evolution"
-  | "deep_tower_benchmark";
+  | "deep_tower_benchmark"
+  | "explicit_localized_thermal";
 
 type ObservedRunRecipe =
   | "observed_surface_forced_evolution"
   | "differential_surface_forced_evolution"
-  | "deep_tower_benchmark";
+  | "deep_tower_benchmark"
+  | "explicit_localized_thermal";
 type AtmosphereSourcePath = "cached_recommendations" | "saved_candidates" | "upload_igra_text";
 type SearchIntent =
   | "best_overall"
@@ -12184,6 +12187,31 @@ function staticRecipeMetadata(runRecipe: ObservedRunRecipe = CURRENT_OBSERVED_RU
       ],
     };
   }
+  if (runRecipe === "explicit_localized_thermal") {
+    return {
+      recipeId: "explicit_localized_thermal_v0",
+      recipeDisplayName: "Explicit localized thermal v0",
+      assumptionSetId: "explicit_localized_thermal_v0_assumptions",
+      assumptionMode: "explicit_localized_thermal",
+      requiredOutputFields: [
+        "qv",
+        "qc",
+        "w",
+        "qr",
+        "rain",
+        "dbz",
+        "u",
+        "v",
+        "th",
+        "updraft_helicity",
+      ],
+      recipeCaveats: [
+        "Explicit localized thermal initiation is supplied with stock CM1 iinit=1.",
+        "The thermal is an idealized single warm bubble, not a real front, dryline, terrain feature, sea breeze, outflow boundary, or forecast of spontaneous convection.",
+        "Surface heat/moisture fluxes, radiation, terrain, GIS surface initialization, and large-scale forcing are not part of v0.",
+      ],
+    };
+  }
   if (runRecipe === "differential_surface_forced_evolution") {
     return {
       recipeId: "differential_surface_forced_evolution_v0",
@@ -12803,6 +12831,9 @@ function defaultRunConfigurationForCandidateScreening(
 }
 
 function runRecipeForRunConfiguration(configuration: RunConfigurationInput): ObservedRunRecipe {
+  if (configuration.run_recipe) {
+    return configuration.run_recipe;
+  }
   const surfaceForcingMode = surfaceForcingModeValue(configuration.surface_forcing_mode);
   if (surfaceForcingMode === DIFFERENTIAL_SURFACE_FORCING_MODE) {
     return "differential_surface_forced_evolution";
