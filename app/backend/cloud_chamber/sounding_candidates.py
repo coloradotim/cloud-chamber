@@ -33,7 +33,7 @@ from cloud_chamber.observed_sounding import (
 from cloud_chamber.settings import CloudChamberSettings
 from cloud_chamber.sounding_diagnostics import compute_sounding_diagnostics
 
-SCREENING_VERSION = "sounding-screening-v2"
+SCREENING_VERSION = "sounding-screening-v3"
 
 StoryId = Literal[
     "shallow_cumulus_candidate",
@@ -2320,8 +2320,9 @@ def _score_features(
             value=features.get("trigger_layer_mean_qv_750_2250m_g_kg"),
             units="g/kg",
             interpretation=(
-                "Moisture in the approximate stock warm-bubble layer helps judge whether "
-                "the Deep-Tower Benchmark trigger is lifting a useful source layer."
+                "Descriptive moisture evidence in the approximate stock warm-bubble layer; "
+                "computed as an unweighted mean of available sounding levels, not as a "
+                "validated Deep-Tower recommendation gate."
             ),
             supports_story=[
                 "severe_thunderstorm_environment",
@@ -2692,7 +2693,6 @@ def _deep_tower_opportunity(
     qv = _numeric_feature(features, "mean_qv_0_1000m_g_kg")
     qv_500 = _numeric_feature(features, "mean_qv_0_500m_g_kg")
     qv_3000 = _numeric_feature(features, "mean_qv_0_3000m_g_kg")
-    trigger_layer_qv = _numeric_feature(features, "trigger_layer_mean_qv_750_2250m_g_kg")
     precipitable_water = _numeric_feature(features, "precipitable_water_proxy_or_unavailable")
     moisture_depth = _numeric_feature(features, "moisture_depth_m")
     lcl = _numeric_feature(features, "estimated_lcl_height_m_agl")
@@ -2772,12 +2772,6 @@ def _deep_tower_opportunity(
             (buoyancy_depth_score, 0.02),
         ]
     )
-    if trigger_layer_qv is None:
-        score = min(score, 69.0)
-    elif trigger_layer_qv < 11.5:
-        score = min(score, 44.0)
-    elif trigger_layer_qv < 13.0:
-        score = min(score, 69.0)
     if not near_surface_ok:
         score = min(score, 69.0)
     if effective_cape < 750.0:
@@ -2815,7 +2809,6 @@ def _deep_tower_opportunity(
         "lfc_height_m_agl",
         "mean_qv_0_1000m_g_kg",
         "mean_qv_0_3000m_g_kg",
-        "trigger_layer_mean_qv_750_2250m_g_kg",
         "moisture_depth_m",
         "lapse_rate_0_3000m_c_per_km",
         "midlevel_lapse_rate_700_500_hpa_c_per_km",
@@ -2831,12 +2824,6 @@ def _deep_tower_opportunity(
         caveats.append("deep_tower_opportunity_limited_cape")
     if qv is not None and qv < 16.0:
         caveats.append("deep_tower_opportunity_limited_low_level_moisture")
-    if trigger_layer_qv is None:
-        caveats.append("deep_tower_opportunity_trigger_layer_moisture_unavailable")
-    elif trigger_layer_qv < 11.5:
-        caveats.append("deep_tower_opportunity_poor_trigger_layer_moisture")
-    elif trigger_layer_qv < 13.0:
-        caveats.append("deep_tower_opportunity_caveated_trigger_layer_moisture")
     if moisture_depth is not None and moisture_depth < 1800.0:
         caveats.append("deep_tower_opportunity_limited_moisture_depth")
     if lcl is not None and lcl > 1000.0:

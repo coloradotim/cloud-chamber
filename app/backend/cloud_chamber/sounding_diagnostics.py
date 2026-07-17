@@ -15,7 +15,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from cloud_chamber.observed_sounding import ObservedSoundingLevel, ObservedSoundingRecord
 
-DIAGNOSTIC_VERSION = "sounding-diagnostics-v1"
+DIAGNOSTIC_VERSION = "sounding-diagnostics-v2"
 
 SupportState = Literal["supported", "weak", "unavailable"]
 
@@ -312,7 +312,7 @@ def compute_sounding_diagnostics(record: ObservedSoundingRecord) -> SoundingDiag
             "Trigger-layer mean qv 750-2250 m",
             _mean_qv(levels, 750.0, 2250.0),
             "g/kg",
-            "mean finite qv over the approximate stock iinit=3 warm-bubble layer",
+            "unweighted mean finite qv over available levels from 750-2250 m AGL",
         )
     )
     add(
@@ -742,7 +742,7 @@ def _unavailable(
         label,
         None,
         units,
-        "not implemented in sounding-diagnostics-v1",
+        f"not implemented in {DIAGNOSTIC_VERSION}",
         support_state="unavailable",
         caveats=[caveat],
     )

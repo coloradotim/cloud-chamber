@@ -137,7 +137,7 @@ def test_synthetic_profile_has_known_numeric_diagnostics() -> None:
 def test_sounding_diagnostics_payload_has_quality_provenance_and_required_features() -> None:
     diagnostics = compute_sounding_diagnostics(_record())
 
-    assert diagnostics.diagnostic_version == "sounding-diagnostics-v1"
+    assert diagnostics.diagnostic_version == "sounding-diagnostics-v2"
     assert diagnostics.station_id == "USM00072558"
     assert diagnostics.provenance["source_format"] == "igra_station_text"
     assert diagnostics.provenance["diagnostic_claim"].startswith("computed from observed sounding")
