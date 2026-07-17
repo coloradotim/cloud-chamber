@@ -502,8 +502,14 @@ function preRunValidationReportForRequest(body: {
       story_id: activeStory,
       story_label: activeLabel,
       ingredient_score:
-        typeof body.candidate_screening?.rank_score === "number"
-          ? body.candidate_screening.rank_score
+        typeof body.candidate_screening?.ingredient_score === "number"
+          ? body.candidate_screening.ingredient_score
+          : typeof body.candidate_screening?.rank_score === "number"
+            ? body.candidate_screening.rank_score
+            : null,
+      ingredient_score_label:
+        typeof body.candidate_screening?.ingredient_score_label === "string"
+          ? body.candidate_screening.ingredient_score_label
           : null,
       predicted_output_signature:
         observed || deepTower ? ["qv", "qc", "w", "qr", "rain", "dbz"] : [],
@@ -675,6 +681,10 @@ const secondaryShallowCandidate = {
     ...shallowCandidate.features,
     mean_qv_0_1000m_g_kg: 13.6,
     estimated_lcl_height_m_agl: 640,
+    deep_tower_opportunity: 48.9,
+    deep_tower_opportunity_support: "weak",
+    deep_tower_opportunity_summary:
+      "Deep-Tower opportunity is caveated: some cloud-depth ingredients are present, but moisture depth, CAPE, LCL, or inhibition support is not strong.",
   },
   interest_summary: "Very moist lower atmosphere.",
   interest_reasons: [
@@ -740,6 +750,13 @@ const deepConvectionCandidate = {
     "Strong deep-convection ingredients with observed wind support.",
     "Observed 0-6 km shear gives storm-organization context.",
   ],
+  features: {
+    ...shallowCandidate.features,
+    deep_tower_opportunity: 82,
+    deep_tower_opportunity_support: "supported",
+    deep_tower_opportunity_summary:
+      "Deep-Tower opportunity is supported for the convective-ceiling question.",
+  },
   discovery_bucket: "Deep convection",
 };
 
@@ -902,6 +919,9 @@ function screeningResponseForRequest(init?: RequestInit) {
   });
   const supportFiltered = storyFiltered.filter((candidate) => {
     if (support === "all") return true;
+    if (storyFilter === "deep_convection_trial" || storyFamily === "deep_convection") {
+      return candidateDeepTowerSupportForTest(candidate) === support;
+    }
     const scopedScores = storyScoresForTest(candidate, storyFilter, storyFamily);
     if (storyFilter === "all" && storyFamily === "all") {
       const score = storyScoreForTest(candidate, storyFilter, storyFamily);
@@ -1025,6 +1045,10 @@ function candidateWithActiveFieldsForTest(
     )[0] ?? null;
   const activeStory = activeScore?.story ?? candidate.primary_story;
   const activeLabel = activeScore?.label ?? candidate.primary_story_label;
+  const deepScope = storyFilter === "deep_convection_trial" || storyFamily === "deep_convection";
+  const deepOpportunity = candidateDeepTowerOpportunityForTest(candidate);
+  const deepSupport = candidateDeepTowerSupportForTest(candidate);
+  const deepSummary = candidateDeepTowerSummaryForTest(candidate);
   return {
     ...candidate,
     active_story: activeStory,
@@ -1034,12 +1058,16 @@ function candidateWithActiveFieldsForTest(
       .sort((left, right) => right.score_0_to_100 - left.score_0_to_100)
       .map((score) => score.story),
     active_story_score: activeScore?.score_0_to_100 ?? candidate.rank_score,
-    ingredient_score: activeScore?.score_0_to_100 ?? candidate.rank_score,
-    active_story_support: activeScore?.support ?? null,
+    ingredient_score:
+      deepScope && deepOpportunity !== null
+        ? deepOpportunity
+        : (activeScore?.score_0_to_100 ?? candidate.rank_score),
+    ingredient_score_label: deepScope ? "Deep-Tower opportunity" : "Ingredient score",
+    active_story_support: deepScope ? deepSupport : (activeScore?.support ?? null),
     package_readiness: candidate.package_ready ? "package_ready" : "blocked",
     recipe_fit:
       "recipe_fit_status" in candidate ? candidate.recipe_fit_status : "partially_testable",
-    top_reasons: candidate.interest_reasons ?? [],
+    top_reasons: deepScope && deepSummary ? [deepSummary] : (candidate.interest_reasons ?? []),
     top_caveats: candidate.caveats.slice(0, 2),
     evidence_summary: candidate.evidence.map((item) => item.interpretation).slice(0, 3),
   };
@@ -1106,6 +1134,9 @@ function candidateSortValueForTest(
   sortBy: string,
 ) {
   if (sortBy === "best_match") {
+    if (storyFilter === "deep_convection_trial" || storyFamily === "deep_convection") {
+      return candidateDeepTowerOpportunityForTest(candidate);
+    }
     return (
       storyScoreForTest(candidate, storyFilter, storyFamily)?.score_0_to_100 ?? candidate.rank_score
     );
@@ -1115,6 +1146,27 @@ function candidateSortValueForTest(
   if (sortBy === "package_readiness") return Number(candidate.package_ready);
   const value = (candidate.features as Record<string, unknown>)[sortBy];
   return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function candidateDeepTowerOpportunityForTest(
+  candidate: (typeof screeningResponse.candidates)[number],
+): number | null {
+  const value = (candidate.features as Record<string, unknown>).deep_tower_opportunity;
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function candidateDeepTowerSupportForTest(
+  candidate: (typeof screeningResponse.candidates)[number],
+): string | null {
+  const value = (candidate.features as Record<string, unknown>).deep_tower_opportunity_support;
+  return typeof value === "string" ? value : null;
+}
+
+function candidateDeepTowerSummaryForTest(
+  candidate: (typeof screeningResponse.candidates)[number],
+): string | null {
+  const value = (candidate.features as Record<string, unknown>).deep_tower_opportunity_summary;
+  return typeof value === "string" && value.length > 0 ? value : null;
 }
 
 const savedCandidatesResponse = {
@@ -3864,12 +3916,13 @@ describe("App", () => {
     const deepCard = screen.getByLabelText("Sounding candidate Norman, Oklahoma (USM00072357)");
     expect(deepCard).toHaveTextContent("Supercell-like environment");
     expect(deepCard).toHaveTextContent(
-      "Deep-tower candidate with stronger screening support; use the benchmark trigger to test the convective ceiling.",
+      "Deep-Tower opportunity is supported for the convective-ceiling question.",
     );
+    expect(deepCard).toHaveTextContent("Deep-Tower opportunity");
 
     fireEvent.click(within(deepCard).getByRole("button", { name: "Configure run" }));
     expect(screen.getByLabelText("Candidate details")).toHaveTextContent(
-      "First run: Deep-Tower Benchmark · stock CM1 iinit=3 · ~120 km · 2 h.",
+      "Recommended Deep-Tower scout · stock CM1 iinit=3 · ~120 km · 2 h.",
     );
     fireEvent.click(screen.getByRole("button", { name: "Add to run plan" }));
 
@@ -3911,7 +3964,136 @@ describe("App", () => {
       expect(dryRunBody).toContain('"candidate_screening"');
       expect(dryRunBody).toContain('"primary_story":"supercell_environment"');
       expect(dryRunBody).toContain('"candidate_id":"USM00072357-2025052000-supercell"');
+      expect(dryRunBody).toContain('"ingredient_score":82');
+      expect(dryRunBody).toContain('"ingredient_score_label":"Deep-Tower opportunity"');
     });
+  });
+
+  it("does not present severe-story support as Deep-Tower opportunity support", async () => {
+    const defaultFetch = vi.mocked(fetch).getMockImplementation();
+    const lowOpportunityCandidate = {
+      ...deepConvectionCandidate,
+      candidate_id: "USM00072456-2025060300-low-deep-opportunity",
+      station_id: "USM00072456",
+      station_name: "Topeka, Kansas",
+      valid_time_utc: "2025-06-03T00:00:00Z",
+      rank_score: 91,
+      story_scores: [
+        {
+          story: "supercell_environment",
+          label: "Supercell-like environment",
+          score_0_to_100: 91,
+          support: "supported",
+        },
+        {
+          story: "severe_thunderstorm_environment",
+          label: "Severe thunderstorm environment",
+          score_0_to_100: 84,
+          support: "supported",
+        },
+      ],
+      features: {
+        ...deepConvectionCandidate.features,
+        deep_tower_opportunity: 41,
+        deep_tower_opportunity_support: "unavailable",
+        deep_tower_opportunity_summary:
+          "Deep-Tower opportunity is low for this recipe: the thermodynamic profile does not strongly support a tall, useful benchmark cloud.",
+      },
+    };
+    vi.mocked(fetch).mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url === "/api/sounding-candidates/analyze") {
+        const request = JSON.parse(String(init?.body ?? "{}")) as {
+          story_filter?: string;
+          story_family?: string;
+          support?: string;
+        };
+        const activeCandidate = candidateWithActiveFieldsForTest(
+          lowOpportunityCandidate as (typeof screeningResponse.candidates)[number],
+          request.story_filter ?? "all",
+          request.story_family ?? "all",
+        );
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              ...screeningResponse,
+              candidates:
+                request.support === "supported" ? [] : [activeCandidate],
+              total_candidate_count: 1,
+              filtered_candidate_count: request.support === "supported" ? 0 : 1,
+              filters: {
+                ...screeningResponse.filters,
+                story_filter: request.story_filter ?? "all",
+                story_family: request.story_family ?? "all",
+                support: request.support ?? "all",
+              },
+              filter_trace: {
+                ...screeningResponse.filter_trace,
+                selected_station_count: 1,
+                selected_cached_soundings: 1,
+                analyzed_soundings: 1,
+                story_score_records: 2,
+                stage_counts: {
+                  ...screeningResponse.filter_trace.stage_counts,
+                  analyzed_soundings: 1,
+                  story_filter: 1,
+                  story_family: 1,
+                  support: request.support === "supported" ? 0 : 1,
+                  readiness: request.support === "supported" ? 0 : 1,
+                  station_search: request.support === "supported" ? 0 : 1,
+                  sorted_or_recommended: request.support === "supported" ? 0 : 1,
+                  limited: request.support === "supported" ? 0 : 1,
+                },
+                station_distribution:
+                  request.support === "supported"
+                    ? []
+                    : [
+                        {
+                          station_id: "USM00072456",
+                          station_name: "Topeka, Kansas",
+                          count: 1,
+                        },
+                      ],
+              },
+            }),
+            { status: 200 },
+          ),
+        );
+      }
+      return (
+        defaultFetch?.(input, init) ?? Promise.resolve(new Response("not found", { status: 404 }))
+      );
+    });
+
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Build" }));
+    fireEvent.change(await screen.findByLabelText("Experiment"), {
+      target: { value: "__observed_sounding_upload__" },
+    });
+    fireEvent.click(await screen.findByText("Advanced filters"));
+    fireEvent.change(await screen.findByLabelText("Story"), {
+      target: { value: "deep_convection_trial" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Apply advanced filters" }));
+
+    const lowCard = await screen.findByLabelText("Sounding candidate Topeka, Kansas (USM00072456)");
+    expect(lowCard).toHaveTextContent("Supercell-like environment");
+    expect(lowCard).toHaveTextContent("Deep-Tower opportunity");
+    expect(lowCard).toHaveTextContent("41 %");
+    expect(lowCard).toHaveTextContent(
+      "Deep-Tower opportunity is low for this recipe: the thermodynamic profile does not strongly support a tall, useful benchmark cloud.",
+    );
+    expect(lowCard).not.toHaveTextContent("stronger screening support");
+
+    fireEvent.click(within(lowCard).getByRole("button", { name: "Configure run" }));
+    const details = screen.getByLabelText("Candidate details");
+    expect(details).toHaveTextContent(
+      "Skip for Deep-Tower cloud-making unless deliberately overriding.",
+    );
+    expect(details).toHaveTextContent("Deep-Tower opportunity");
+    expect(details).toHaveTextContent("41 %");
+    expect(within(lowCard).getByRole("button", { name: "Configure run" })).not.toBeDisabled();
   });
 
   it("keeps humid/rainy candidates with weak deep scores on observed quick-look", async () => {
@@ -4424,10 +4606,10 @@ describe("App", () => {
     );
     expect(wilmingtonCard).toHaveTextContent("High-CAPE pulse storm");
     expect(wilmingtonCard).not.toHaveTextContent("Primary: Humid / rainy");
-    expect(wilmingtonCard).toHaveTextContent("48.9 % ingredient score");
+    expect(wilmingtonCard).toHaveTextContent("48.9 % deep-tower opportunity");
     expect(wilmingtonCard).toHaveTextContent("testable with Deep-Tower Benchmark");
     expect(wilmingtonCard).toHaveTextContent(
-      "Caveated deep-tower candidate; use the benchmark trigger to test the convective ceiling.",
+      "Deep-Tower opportunity is caveated: some cloud-depth ingredients are present, but moisture depth, CAPE, LCL, or inhibition support is not strong.",
     );
     expect(
       screen.queryByLabelText("Sounding candidate Norman, Oklahoma (USM00072357)"),

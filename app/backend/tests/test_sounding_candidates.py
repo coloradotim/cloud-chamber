@@ -104,8 +104,18 @@ def _analysis_candidate(
     primary_support: Support = "supported",
     deep_score: float = 70.0,
     deep_support: Support = "supported",
+    deep_opportunity_score: float | None = None,
+    deep_opportunity_support: Support | None = None,
+    deep_opportunity_summary: str | None = None,
     deep_story: StoryId = "supercell_environment",
 ) -> SoundingCandidate:
+    opportunity_score = deep_score if deep_opportunity_score is None else deep_opportunity_score
+    opportunity_support = (
+        deep_support if deep_opportunity_support is None else deep_opportunity_support
+    )
+    opportunity_summary = deep_opportunity_summary or (
+        f"Deep-Tower opportunity fixture summary for {candidate_id}."
+    )
     story_scores = [
         StoryScore(
             story="humid_rainy_candidate",
@@ -135,7 +145,11 @@ def _analysis_candidate(
         rank_score=primary_score,
         confidence="high",
         package_ready=True,
-        features={},
+        features={
+            "deep_tower_opportunity": opportunity_score,
+            "deep_tower_opportunity_support": opportunity_support,
+            "deep_tower_opportunity_summary": opportunity_summary,
+        },
         evidence=[],
         created_at=datetime(2026, 7, 1, tzinfo=UTC),
     )
@@ -530,9 +544,14 @@ def test_analysis_family_filter_includes_supported_secondary_deep_story(
     assert result.candidates[0].matched_story_ids == ["supercell_environment"]
     assert result.candidates[0].active_story_score == 74.0
     assert result.candidates[0].active_story_support == "supported"
+    assert result.candidates[0].ingredient_score == 74.0
+    assert result.candidates[0].ingredient_score_label == "Deep-Tower opportunity"
+    assert result.candidates[0].top_reasons == [
+        "Deep-Tower opportunity fixture summary for primary-humid-supported-secondary-supercell."
+    ]
 
 
-def test_analysis_family_support_filter_uses_deep_family_scores(
+def test_analysis_family_support_filter_uses_deep_tower_opportunity_support(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     supported = _analysis_candidate(
@@ -540,14 +559,18 @@ def test_analysis_family_support_filter_uses_deep_family_scores(
         primary_score=92.0,
         deep_score=74.0,
         deep_support="supported",
+        deep_opportunity_score=82.0,
+        deep_opportunity_support="supported",
     )
-    weak = _analysis_candidate(
-        "secondary-deep-weak",
+    story_supported_low_opportunity = _analysis_candidate(
+        "secondary-deep-story-supported-low-opportunity",
         primary_score=96.0,
-        deep_score=48.0,
-        deep_support="weak",
+        deep_score=88.0,
+        deep_support="supported",
+        deep_opportunity_score=41.0,
+        deep_opportunity_support="unavailable",
     )
-    _patch_screened_candidates(monkeypatch, [weak, supported])
+    _patch_screened_candidates(monkeypatch, [story_supported_low_opportunity, supported])
 
     result = analyze_cached_soundings(
         _settings(tmp_path),
@@ -558,9 +581,11 @@ def test_analysis_family_support_filter_uses_deep_family_scores(
     assert [item.candidate_id for item in result.candidates] == ["secondary-deep-supported"]
     assert result.filtered_candidate_count == 1
     assert result.candidates[0].active_story == "supercell_environment"
+    assert result.candidates[0].ingredient_score == 82.0
+    assert result.candidates[0].active_story_support == "supported"
     assert result.filter_trace.stage_counts["story_family"] == 2
     assert result.filter_trace.stage_counts["support"] == 1
-    assert result.filter_trace.top_excluded_reasons[0].reason == "Evidence tier: strong signal"
+    assert result.filter_trace.top_excluded_reasons[0].reason == "Evidence tier: supported"
     assert result.filter_trace.top_excluded_reasons[0].count == 1
 
 
@@ -570,14 +595,18 @@ def test_analysis_deep_family_best_match_sort_uses_best_deep_score(
     humid_but_weaker_deep = _analysis_candidate(
         "humid-high-weaker-deep",
         primary_score=99.0,
-        deep_score=67.0,
+        deep_score=91.0,
         deep_support="supported",
+        deep_opportunity_score=41.0,
+        deep_opportunity_support="unavailable",
     )
     lower_primary_better_deep = _analysis_candidate(
         "humid-lower-better-deep",
         primary_score=76.0,
-        deep_score=91.0,
+        deep_score=67.0,
         deep_support="supported",
+        deep_opportunity_score=82.0,
+        deep_opportunity_support="supported",
     )
     _patch_screened_candidates(monkeypatch, [humid_but_weaker_deep, lower_primary_better_deep])
 
@@ -591,7 +620,12 @@ def test_analysis_deep_family_best_match_sort_uses_best_deep_score(
         "humid-lower-better-deep",
         "humid-high-weaker-deep",
     ]
-    assert [item.active_story_score for item in result.candidates] == [91.0, 67.0]
+    assert [item.active_story_score for item in result.candidates] == [67.0, 91.0]
+    assert [item.ingredient_score for item in result.candidates] == [82.0, 41.0]
+    assert [item.active_story_support for item in result.candidates] == [
+        "supported",
+        "unavailable",
+    ]
 
 
 def test_analysis_filter_trace_preserves_distinct_candidate_rows_after_grouping(

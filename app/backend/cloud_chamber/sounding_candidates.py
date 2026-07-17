@@ -281,6 +281,7 @@ class SoundingCandidate(BaseModel):
     matched_story_ids: list[StoryId] = Field(default_factory=list)
     active_story_score: float | None = None
     ingredient_score: float | None = None
+    ingredient_score_label: str | None = None
     active_story_support: Support | None = None
     package_readiness: str | None = None
     recipe_fit: str | None = None
@@ -807,13 +808,22 @@ def _candidate_with_analysis_context(
     active_label = active_score.label if active_score else candidate.primary_story_label
     active_support = active_score.support if active_score else None
     active_score_value = active_score.score_0_to_100 if active_score else candidate.rank_score
-    scoped_to_deep_tower = (
-        story_filter == "deep_convection_trial" or story_family == "deep_convection"
-    )
+    scoped_to_deep_tower = _candidate_scope_is_deep_tower(story_filter, story_family)
     ingredient_score = (
         _candidate_deep_tower_opportunity_score(candidate)
         if scoped_to_deep_tower
         else active_score_value
+    )
+    ingredient_score_label = (
+        "Deep-Tower opportunity" if scoped_to_deep_tower else "Ingredient score"
+    )
+    visible_support = (
+        _candidate_deep_tower_opportunity_support(candidate)
+        if scoped_to_deep_tower
+        else active_support
+    )
+    opportunity_summary = (
+        _candidate_deep_tower_opportunity_summary(candidate) if scoped_to_deep_tower else None
     )
     recipe_fit = _candidate_recipe_fit(
         active_story,
@@ -828,6 +838,7 @@ def _candidate_with_analysis_context(
     evidence_summary = _candidate_evidence_summary(candidate, active_story)
     top_reasons = _dedupe_nonempty_strings(
         [
+            opportunity_summary or "",
             *(active_score.reasons if active_score else []),
             *candidate.interest_reasons,
             *(evidence_summary[:2]),
@@ -849,7 +860,8 @@ def _candidate_with_analysis_context(
             "matched_story_ids": [score.story for score in matched_scores],
             "active_story_score": round(active_score_value, 2),
             "ingredient_score": round(ingredient_score, 2),
-            "active_story_support": active_support,
+            "ingredient_score_label": ingredient_score_label,
+            "active_story_support": visible_support,
             "package_readiness": "package_ready" if candidate.package_ready else "blocked",
             "recipe_fit": recipe_fit["status"],
             "top_reasons": top_reasons,
@@ -1191,6 +1203,8 @@ def _candidate_matches_support_filter(
 ) -> bool:
     if support == "all":
         return True
+    if _candidate_scope_is_deep_tower(story_filter, story_family):
+        return _candidate_deep_tower_opportunity_support(candidate) == support
     scoped_scores = _candidate_story_scores_for_scope(
         candidate,
         story_filter=story_filter,
@@ -1271,7 +1285,7 @@ def _support_label(support: CandidateSupportFilter) -> str:
     if support == "all":
         return "all evidence tiers"
     if support == "supported":
-        return "strong signal"
+        return "supported"
     if support == "weak":
         return "plausible / caveated"
     return "little or no signal"
@@ -1299,12 +1313,13 @@ def _candidate_matches_analysis_filters(
     if story_filter != "all":
         if score is None or not _meaningful_story_score(score):
             return False
-    if support != "all":
-        if story_filter == "all" and story_family == "all":
-            if score is None or score.support != support:
-                return False
-        elif not any(score.support == support for score in scoped_scores):
-            return False
+    if support != "all" and not _candidate_matches_support_filter(
+        candidate,
+        story_filter=story_filter,
+        story_family=story_family,
+        support=support,
+    ):
+        return False
     if not _candidate_matches_station_search(candidate, station_search):
         return False
     return True
@@ -1360,7 +1375,7 @@ def _candidate_sort_value(
     story_family: CandidateStoryFamilyFilter,
 ) -> SortValue | None:
     if sort_by == "best_match":
-        if story_filter == "deep_convection_trial" or story_family == "deep_convection":
+        if _candidate_scope_is_deep_tower(story_filter, story_family):
             return _candidate_deep_tower_opportunity_score(candidate)
         score = _candidate_story_score_model(candidate, story_filter, story_family)
         return score.score_0_to_100 if score else candidate.rank_score
@@ -1380,6 +1395,9 @@ def _candidate_sort_value(
     if sort_by == "confidence":
         return {"low": 0.0, "medium": 1.0, "high": 2.0}[candidate.confidence]
     if sort_by == "support":
+        if _candidate_scope_is_deep_tower(story_filter, story_family):
+            support = _candidate_deep_tower_opportunity_support(candidate)
+            return {"unavailable": 0.0, "weak": 1.0, "supported": 2.0}[support] if support else None
         score = _candidate_story_score_model(candidate, story_filter, story_family)
         return {"unavailable": 0.0, "weak": 1.0, "supported": 2.0}[score.support] if score else None
     if sort_by == "package_readiness":
@@ -2808,6 +2826,31 @@ def _candidate_deep_tower_opportunity_score(candidate: SoundingCandidate) -> flo
         ),
         default=0.0,
     )
+
+
+def _candidate_scope_is_deep_tower(
+    story_filter: CandidateStoryFilter,
+    story_family: CandidateStoryFamilyFilter,
+) -> bool:
+    return story_filter == "deep_convection_trial" or story_family == "deep_convection"
+
+
+def _candidate_deep_tower_opportunity_support(candidate: SoundingCandidate) -> Support | None:
+    support = candidate.features.get("deep_tower_opportunity_support")
+    if support == "supported":
+        return "supported"
+    if support == "weak":
+        return "weak"
+    if support == "unavailable":
+        return "unavailable"
+    return None
+
+
+def _candidate_deep_tower_opportunity_summary(candidate: SoundingCandidate) -> str | None:
+    summary = candidate.features.get("deep_tower_opportunity_summary")
+    if isinstance(summary, str) and summary.strip():
+        return summary.strip()
+    return None
 
 
 def _deep_story_score(score: float, *, observed_wind_available: bool) -> float:
