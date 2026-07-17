@@ -198,6 +198,7 @@ type PreRunValidationReport = {
     story_id?: string | null;
     story_label?: string | null;
     ingredient_score?: number | null;
+    ingredient_score_label?: string | null;
     predicted_output_signature?: string[];
   } | null;
   selected_run_recipe?: {
@@ -376,6 +377,7 @@ type CandidateSort =
   | "primary_story"
   | "story_family"
   | "rank_score"
+  | "deep_tower_opportunity"
   | "confidence"
   | "support"
   | "package_readiness"
@@ -521,6 +523,7 @@ type SoundingCandidate = {
   matched_story_ids?: CandidateStoryId[];
   active_story_score?: number | null;
   ingredient_score?: number | null;
+  ingredient_score_label?: string | null;
   active_story_support?: "supported" | "weak" | "unavailable" | null;
   package_readiness?: string | null;
   recipe_fit?: CandidateRecipeFitStatus | string | null;
@@ -4530,7 +4533,10 @@ function PreRunValidationReportPanel({ report }: { report: PreRunValidationRepor
           }
         />
         {typeof hypothesis?.ingredient_score === "number" && (
-          <Metric label="Ingredient score" value={`${Math.round(hypothesis.ingredient_score)} %`} />
+          <Metric
+            label={hypothesis.ingredient_score_label ?? "Ingredient score"}
+            value={`${Math.round(hypothesis.ingredient_score)} %`}
+          />
         )}
         <Metric
           label="Run recipe"
@@ -5545,7 +5551,7 @@ function ObservedAtmosphereCandidatesPanel({
               }
             >
               <option value="all">All evidence tiers</option>
-              <option value="supported">Strong signal</option>
+              <option value="supported">Supported</option>
               <option value="weak">Plausible / caveated</option>
               <option value="unavailable">Little or no signal</option>
             </select>
@@ -5563,6 +5569,7 @@ function ObservedAtmosphereCandidatesPanel({
               <option value="primary_story">Primary story</option>
               <option value="story_family">Story family</option>
               <option value="rank_score">Rank score</option>
+              <option value="deep_tower_opportunity">Deep-Tower opportunity</option>
               <option value="confidence">Confidence</option>
               <option value="support">Evidence tier</option>
               <option value="package_readiness">Package readiness</option>
@@ -5888,6 +5895,11 @@ function SoundingCandidateCard({
   const story = candidateActiveStoryId(candidate, storyFilter, storyFamilyFilter);
   const activeFamily = story ? candidateStoryFamilyForStory(story) : candidate.story_family;
   const ingredientScore = candidateIngredientScore(candidate, storyFilter, storyFamilyFilter);
+  const ingredientScoreLabel = candidateIngredientScoreLabel(
+    candidate,
+    storyFilter,
+    storyFamilyFilter,
+  );
   const recipeFit = candidateRecipeFitForStory(candidate, story);
   const reasons = candidateInterestReasons(candidate).slice(0, 3);
   const keyNote = candidateKeyNote(candidate, story, recipeFit);
@@ -5907,7 +5919,7 @@ function SoundingCandidateCard({
         </span>
         <span className="candidate-card-storyline">
           {candidateDisplayStoryLabel(candidate, storyFilter, storyFamilyFilter)} ·{" "}
-          {formatNumber(ingredientScore, "%")} ingredient score ·{" "}
+          {formatNumber(ingredientScore, "%")} {ingredientScoreLabel.toLowerCase()} ·{" "}
           {candidate.package_ready ? "Package-ready" : "Blocked"}
         </span>
       </button>
@@ -5982,6 +5994,11 @@ function SoundingCandidateDetail({
   const story = candidateActiveStoryId(activeCandidate, storyFilter, storyFamilyFilter);
   const activeFamily = story ? candidateStoryFamilyForStory(story) : activeCandidate.story_family;
   const ingredientScore = candidateIngredientScore(activeCandidate, storyFilter, storyFamilyFilter);
+  const ingredientScoreLabel = candidateIngredientScoreLabel(
+    activeCandidate,
+    storyFilter,
+    storyFamilyFilter,
+  );
   const recipeFit = candidateRecipeFitForStory(activeCandidate, story);
   const reasons = candidateInterestReasons(activeCandidate).slice(0, 5);
   const topLimits = candidateTopLimits(activeCandidate, story, recipeFit);
@@ -6124,7 +6141,7 @@ function SoundingCandidateDetail({
         </ul>
       </section>
       <dl className="compact-metrics">
-        <Metric label="Ingredient score" value={formatNumber(ingredientScore, "%")} />
+        <Metric label={ingredientScoreLabel} value={formatNumber(ingredientScore, "%")} />
         <Metric label="Evidence level" value={humanize(candidate.confidence)} />
         <Metric label="Screened story family" value={candidateStoryFamilyLabel(activeFamily)} />
         <Metric label="Recipe fit" value={recipeFit.label} />
@@ -11171,6 +11188,7 @@ function candidateSortLabel(sort: CandidateSort): string {
     primary_story: "Primary story",
     story_family: "Story family",
     rank_score: "Rank score",
+    deep_tower_opportunity: "Deep-Tower opportunity",
     confidence: "Confidence",
     support: "Evidence tier",
     package_readiness: "Package readiness",
@@ -11200,7 +11218,7 @@ function candidateSortLabel(sort: CandidateSort): string {
 function supportTierLabel(support: CandidateSupportFilter): string {
   const labels: Record<CandidateSupportFilter, string> = {
     all: "All evidence tiers",
-    supported: "Strong signal",
+    supported: "Supported",
     weak: "Plausible / caveated",
     unavailable: "Little or no signal",
   };
@@ -11565,6 +11583,24 @@ function candidateIngredientScore(
   );
 }
 
+function candidateIngredientScoreLabel(
+  candidate: SoundingCandidate,
+  storyFilter: CandidateStoryFilter,
+  storyFamilyFilter: CandidateStoryFamilyFilter = "all",
+): string {
+  if (candidateScopeIsDeepTower(storyFilter, storyFamilyFilter)) {
+    return candidate.ingredient_score_label ?? "Deep-Tower opportunity";
+  }
+  return candidate.ingredient_score_label ?? "Ingredient score";
+}
+
+function candidateScopeIsDeepTower(
+  storyFilter: CandidateStoryFilter,
+  storyFamilyFilter: CandidateStoryFamilyFilter,
+): boolean {
+  return storyFilter === "deep_convection_trial" || storyFamilyFilter === "deep_convection";
+}
+
 function candidateActiveStoryScore(
   candidate: SoundingCandidate,
   storyFilter: CandidateStoryFilter,
@@ -11627,17 +11663,19 @@ function candidateKeyNote(
     return candidateTopLimits(candidate, story, recipeFit)[0] ?? "Needs review before run setup.";
   }
   if (candidateStoryFamilyForStory(story) === "deep_convection") {
+    const opportunitySummary = candidateDeepTowerOpportunitySummary(candidate);
+    if (opportunitySummary) return opportunitySummary;
     const activeSupport =
       candidate.active_story === story
         ? candidate.active_story_support
         : candidate.story_scores.find((score) => score.story === story)?.support;
     if (activeSupport === "supported") {
-      return "Deep-tower candidate with stronger screening support; use the benchmark trigger to test the convective ceiling.";
+      return "Deep-Tower opportunity is supported; use the benchmark trigger to test the convective ceiling.";
     }
     if (activeSupport === "weak") {
-      return "Caveated deep-tower candidate; use the benchmark trigger to test the convective ceiling.";
+      return "Caveated Deep-Tower opportunity; use the benchmark trigger to test the convective ceiling.";
     }
-    return "Deep-tower candidate; use the benchmark trigger to test the convective ceiling.";
+    return "Deep-Tower candidate; use the benchmark trigger to test the convective ceiling.";
   }
   if (
     story === "humid_rainy_candidate" ||
@@ -11648,6 +11686,22 @@ function candidateKeyNote(
     return "Good for a surface-forced run.";
   }
   return candidateTopLimits(candidate, story, recipeFit)[0] ?? "No major blocker found.";
+}
+
+function candidateDeepTowerOpportunitySummary(candidate: SoundingCandidate): string | null {
+  const summary = candidate.features.deep_tower_opportunity_summary;
+  return typeof summary === "string" && summary.length > 0 ? summary : null;
+}
+
+function candidateDeepTowerOpportunityScore(candidate: SoundingCandidate): number | null {
+  if (typeof candidate.ingredient_score === "number" && Number.isFinite(candidate.ingredient_score)) {
+    return candidate.ingredient_score;
+  }
+  const opportunity = candidate.features.deep_tower_opportunity;
+  if (typeof opportunity === "number" && Number.isFinite(opportunity)) {
+    return opportunity;
+  }
+  return null;
 }
 
 function candidateTopLimits(
@@ -11702,12 +11756,32 @@ function candidateRunRecommendation(
     };
   }
   if (candidateStoryFamilyForStory(story) === "deep_convection") {
+    const opportunityScore = candidateDeepTowerOpportunityScore(candidate);
+    if (opportunityScore !== null && opportunityScore >= 70) {
+      return {
+        title: "Recommended Deep-Tower scout · stock CM1 iinit=3 · ~120 km · 2 h.",
+        detail:
+          "Disable surface fluxes and use explicit thermal initiation to test this observed atmosphere's convective ceiling.",
+        followUp:
+          "Inspect cloud depth, updraft, precipitation, and reflectivity before changing the trigger or resolution.",
+      };
+    }
+    if (opportunityScore !== null && opportunityScore >= 45) {
+      return {
+        title:
+          "Weak Deep-Tower opportunity · run for calibration or learning, not as a best cloud bet.",
+        detail:
+          "If deliberately running it, keep the Deep-Tower Benchmark setup comparable: stock CM1 iinit=3, ~120 km domain, 2 h, and disabled surface fluxes.",
+        followUp:
+          "Use the result to calibrate the selector rather than treating it as the next visual cloud-making target.",
+      };
+    }
     return {
-      title: "First run: Deep-Tower Benchmark · stock CM1 iinit=3 · ~120 km · 2 h.",
+      title: "Skip for Deep-Tower cloud-making unless deliberately overriding.",
       detail:
-        "Disable surface fluxes and use explicit thermal initiation to test this observed atmosphere's convective ceiling.",
+        "Manual configuration remains available; if overriding, keep the Deep-Tower Benchmark setup comparable so the outcome is interpretable.",
       followUp:
-        "Inspect cloud depth, updraft, precipitation, and reflectivity before changing the trigger or resolution.",
+        "Spend normal cloud-making scout compute on candidates with supported Deep-Tower opportunity.",
     };
   }
   if (story === "dry_failed_candidate" || story === "capped_suppressed_candidate") {
@@ -11875,6 +11949,7 @@ function candidateScreeningMetadata(
     rank_score: candidate.rank_score,
     active_story_score: candidate.active_story_score ?? null,
     ingredient_score: candidate.ingredient_score ?? null,
+    ingredient_score_label: candidate.ingredient_score_label ?? null,
     active_story_support: candidate.active_story_support ?? null,
     confidence: candidate.confidence,
     features: candidate.features,
