@@ -1120,6 +1120,7 @@ def test_deep_tower_opportunity_separates_success_from_miss_features() -> None:
         "mean_qv_0_500m_g_kg": 22.094,
         "mean_qv_0_1000m_g_kg": 20.398,
         "mean_qv_0_3000m_g_kg": 14.623,
+        "trigger_layer_mean_qv_750_2250m_g_kg": 13.336,
         "precipitable_water_proxy_or_unavailable": 43.11,
         "surface_t_td_spread_c": 6.0,
         "estimated_lcl_height_m_agl": 750.1,
@@ -1153,6 +1154,7 @@ def test_deep_tower_opportunity_separates_success_from_miss_features() -> None:
         "mean_qv_0_500m_g_kg": 15.723,
         "mean_qv_0_1000m_g_kg": 14.83,
         "mean_qv_0_3000m_g_kg": 11.052,
+        "trigger_layer_mean_qv_750_2250m_g_kg": 9.783,
         "precipitable_water_proxy_or_unavailable": 27.56,
         "surface_t_td_spread_c": 9.8,
         "estimated_lcl_height_m_agl": 1225.1,
@@ -1183,9 +1185,103 @@ def test_deep_tower_opportunity_separates_success_from_miss_features() -> None:
     north_platte_score = cast(float, north_platte_like["deep_tower_opportunity"])
     assert fort_score == pytest.approx(81.7)
     assert fort_worth_like["deep_tower_opportunity_support"] == "supported"
-    assert north_platte_score == pytest.approx(46.1)
-    assert north_platte_like["deep_tower_opportunity_support"] == "weak"
+    assert north_platte_score == pytest.approx(44.0)
+    assert north_platte_like["deep_tower_opportunity_support"] == "unavailable"
     assert fort_score > north_platte_score + 30.0
+
+
+def test_deep_tower_opportunity_caps_discontinuous_surface_cape_signal() -> None:
+    slidell_like: dict[str, FeatureValue] = {
+        "data_completeness_score": 70.0,
+        "low_level_qv_g_kg": 31.0,
+        "mean_qv_0_500m_g_kg": 21.5,
+        "mean_qv_0_1000m_g_kg": 19.6,
+        "mean_qv_0_3000m_g_kg": 12.4,
+        "trigger_layer_mean_qv_750_2250m_g_kg": 12.42,
+        "precipitable_water_proxy_or_unavailable": 48.0,
+        "surface_t_td_spread_c": 2.2,
+        "estimated_lcl_height_m_agl": 275.0,
+        "lapse_rate_0_1000m_c_per_km": 6.9,
+        "lapse_rate_0_3000m_c_per_km": 6.4,
+        "midlevel_lapse_rate_700_500_hpa_c_per_km": 6.7,
+        "cap_strength_proxy": 0.0,
+        "cap_height_m_agl": None,
+        "moisture_depth_m": 3000.0,
+        "midlevel_dry_layer_proxy": 7.0,
+        "qv_drop_0_3000m_g_kg": 18.6,
+        "observed_wind_available": True,
+        "bulk_shear_0_1km_m_s": 9.0,
+        "bulk_shear_0_3km_m_s": 16.0,
+        "bulk_shear_0_6km_m_s": 28.0,
+        "dry_microburst_inverted_v_proxy": 35.0,
+        "freezing_level_m_agl": 4600.0,
+        "surface_based_cape_j_kg": 3762.0,
+        "mixed_layer_cape_j_kg": 1300.0,
+        "surface_based_cin_j_kg": 0.0,
+        "mixed_layer_cin_j_kg": -20.0,
+        "lfc_height_m_agl": 900.0,
+        "el_height_m_agl": 12000.0,
+        "profile_top_m_agl": 18000.0,
+        "lowest_level_m_agl": 0.0,
+        "near_surface_discontinuity_flag": True,
+    }
+
+    _, evidence = _score_features(slidell_like, package_ready=True)
+
+    score = cast(float, slidell_like["deep_tower_opportunity"])
+    deep_tower = next(item for item in evidence if item.label == "Deep-Tower opportunity")
+    assert score < 70.0
+    assert slidell_like["deep_tower_opportunity_support"] == "weak"
+    assert score >= 45.0
+    assert "near_surface_discontinuity_caveat" in deep_tower.caveats
+    assert "surface_based_cape_ignored_due_to_near_surface_discontinuity" in deep_tower.caveats
+    assert "deep_tower_opportunity_caveated_trigger_layer_moisture" in deep_tower.caveats
+
+
+def test_deep_tower_opportunity_trigger_layer_fit_is_not_overridden_by_severe_story() -> None:
+    poor_trigger_layer_fit: dict[str, FeatureValue] = {
+        "data_completeness_score": 96.0,
+        "low_level_qv_g_kg": 22.0,
+        "mean_qv_0_500m_g_kg": 21.0,
+        "mean_qv_0_1000m_g_kg": 19.5,
+        "mean_qv_0_3000m_g_kg": 14.8,
+        "trigger_layer_mean_qv_750_2250m_g_kg": 9.5,
+        "precipitable_water_proxy_or_unavailable": 46.0,
+        "surface_t_td_spread_c": 5.0,
+        "estimated_lcl_height_m_agl": 625.0,
+        "lapse_rate_0_1000m_c_per_km": 8.0,
+        "lapse_rate_0_3000m_c_per_km": 7.8,
+        "midlevel_lapse_rate_700_500_hpa_c_per_km": 8.0,
+        "cap_strength_proxy": 0.0,
+        "cap_height_m_agl": None,
+        "moisture_depth_m": 4200.0,
+        "midlevel_dry_layer_proxy": 2.0,
+        "qv_drop_0_3000m_g_kg": 7.2,
+        "observed_wind_available": True,
+        "bulk_shear_0_1km_m_s": 10.0,
+        "bulk_shear_0_3km_m_s": 20.0,
+        "bulk_shear_0_6km_m_s": 32.0,
+        "dry_microburst_inverted_v_proxy": 30.0,
+        "freezing_level_m_agl": 4300.0,
+        "surface_based_cape_j_kg": 3200.0,
+        "mixed_layer_cape_j_kg": 2800.0,
+        "surface_based_cin_j_kg": -10.0,
+        "mixed_layer_cin_j_kg": -15.0,
+        "lfc_height_m_agl": 700.0,
+        "el_height_m_agl": 15000.0,
+        "profile_top_m_agl": 19000.0,
+        "lowest_level_m_agl": 0.0,
+        "near_surface_discontinuity_flag": False,
+    }
+
+    scores, evidence = _score_features(poor_trigger_layer_fit, package_ready=True)
+
+    severe = next(score for score in scores if score.story == "severe_thunderstorm_environment")
+    deep_tower = next(item for item in evidence if item.label == "Deep-Tower opportunity")
+    assert severe.support == "supported"
+    assert poor_trigger_layer_fit["deep_tower_opportunity_support"] == "unavailable"
+    assert cast(float, poor_trigger_layer_fit["deep_tower_opportunity"]) == pytest.approx(44.0)
+    assert "deep_tower_opportunity_poor_trigger_layer_moisture" in deep_tower.caveats
 
 
 def test_analysis_deep_family_best_match_uses_deep_tower_opportunity(

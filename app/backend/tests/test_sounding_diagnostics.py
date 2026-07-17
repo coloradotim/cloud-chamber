@@ -155,6 +155,7 @@ def test_sounding_diagnostics_payload_has_quality_provenance_and_required_featur
         "has_observed_wind_profile",
         "estimated_lcl_height_m_agl",
         "mean_qv_0_1000m_g_kg",
+        "trigger_layer_mean_qv_750_2250m_g_kg",
         "lapse_rate_0_1000m_c_per_km",
         "cap_strength_proxy",
         "bulk_shear_0_6km_m_s",

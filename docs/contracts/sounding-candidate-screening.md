@@ -102,11 +102,14 @@ Deep-Tower Benchmark. It is not a replacement for severe/supercell story
 scores and should not be read as an observed storm forecast.
 
 The score weights surface-based CAPE, mixed-layer CAPE, CIN, LFC, cap proxy,
-low-level moisture, deeper moisture, 0-3 km and midlevel lapse rates, profile
-completeness, and near-surface continuity. EL or buoyancy depth contributes
-only when the simple EL estimate is usable. Deep-layer shear receives little or
-no weight because this selector asks whether the benchmark trigger can reveal a
-deep convective ceiling, not whether a storm will organize.
+low-level moisture, trigger-layer moisture around the stock warm-bubble layer,
+deeper moisture, 0-3 km and midlevel lapse rates, profile completeness, and
+near-surface continuity. EL or buoyancy depth contributes only when the simple
+EL estimate is usable. Deep-layer shear receives little or no weight because
+this selector asks whether the benchmark trigger can reveal a deep convective
+ceiling, not whether a storm will organize. If the near-surface profile has a
+large discontinuity, the selector cannot return `supported`; the opportunity
+uses mixed-layer CAPE rather than allowing one suspect lowest level to dominate.
 
 ## Story Logic
 

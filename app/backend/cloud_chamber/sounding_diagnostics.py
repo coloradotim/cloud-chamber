@@ -308,6 +308,15 @@ def compute_sounding_diagnostics(record: ObservedSoundingRecord) -> SoundingDiag
     )
     add(
         _feature(
+            "trigger_layer_mean_qv_750_2250m_g_kg",
+            "Trigger-layer mean qv 750-2250 m",
+            _mean_qv(levels, 750.0, 2250.0),
+            "g/kg",
+            "mean finite qv over the approximate stock iinit=3 warm-bubble layer",
+        )
+    )
+    add(
+        _feature(
             "moisture_depth_m",
             "Moisture depth",
             _moisture_depth(levels, min_qv_g_kg=6.0),

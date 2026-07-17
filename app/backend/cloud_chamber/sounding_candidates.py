@@ -1824,6 +1824,7 @@ def _features_from_record(
     diagnostics = compute_sounding_diagnostics(record)
     for key in (
         "mean_qv_0_3000m_g_kg",
+        "trigger_layer_mean_qv_750_2250m_g_kg",
         "precipitable_water_proxy_or_unavailable",
         "midlevel_lapse_rate_700_500_hpa_c_per_km",
         "has_observed_wind_profile",
@@ -2315,6 +2316,23 @@ def _score_features(
             caveats=_feature_caveats(features, "mean_qv_0_1000m_g_kg"),
         ),
         EvidenceItem(
+            label="Trigger-layer mean qv",
+            value=features.get("trigger_layer_mean_qv_750_2250m_g_kg"),
+            units="g/kg",
+            interpretation=(
+                "Moisture in the approximate stock warm-bubble layer helps judge whether "
+                "the Deep-Tower Benchmark trigger is lifting a useful source layer."
+            ),
+            supports_story=[
+                "severe_thunderstorm_environment",
+                "supercell_environment",
+                "high_cape_pulse_storm",
+                "squall_line_cold_pool_candidate",
+                "elevated_convection",
+            ],
+            caveats=_feature_caveats(features, "trigger_layer_mean_qv_750_2250m_g_kg"),
+        ),
+        EvidenceItem(
             label="Near-surface continuity",
             value="large jump" if features.get("near_surface_discontinuity_flag") else "ok",
             interpretation=(
@@ -2674,6 +2692,7 @@ def _deep_tower_opportunity(
     qv = _numeric_feature(features, "mean_qv_0_1000m_g_kg")
     qv_500 = _numeric_feature(features, "mean_qv_0_500m_g_kg")
     qv_3000 = _numeric_feature(features, "mean_qv_0_3000m_g_kg")
+    trigger_layer_qv = _numeric_feature(features, "trigger_layer_mean_qv_750_2250m_g_kg")
     precipitable_water = _numeric_feature(features, "precipitable_water_proxy_or_unavailable")
     moisture_depth = _numeric_feature(features, "moisture_depth_m")
     lcl = _numeric_feature(features, "estimated_lcl_height_m_agl")
@@ -2686,13 +2705,19 @@ def _deep_tower_opportunity(
     profile_top = _numeric_feature(features, "profile_top_m_agl")
     near_surface_ok = features.get("near_surface_discontinuity_flag") is not True
 
-    cape_score = _weighted_score(
-        [
-            (_score_high(sbcape, low=500.0, high=2500.0), 0.55),
-            (_score_high(mlcape, low=500.0, high=2500.0), 0.45),
-        ]
-    )
-    effective_cin = min(value for value in (sbcin or 0.0, mlcin or 0.0))
+    if near_surface_ok:
+        cape_score = _weighted_score(
+            [
+                (_score_high(sbcape, low=500.0, high=2500.0), 0.55),
+                (_score_high(mlcape, low=500.0, high=2500.0), 0.45),
+            ]
+        )
+        effective_cape = max(value for value in (sbcape or 0.0, mlcape or 0.0))
+        effective_cin = min(value for value in (sbcin or 0.0, mlcin or 0.0))
+    else:
+        cape_score = _score_high(mlcape, low=500.0, high=2500.0)
+        effective_cape = mlcape or 0.0
+        effective_cin = mlcin or 0.0
     inhibition_score = _weighted_score(
         [
             (_score_low(abs(effective_cin), low=25.0, high=200.0), 0.45),
@@ -2747,7 +2772,14 @@ def _deep_tower_opportunity(
             (buoyancy_depth_score, 0.02),
         ]
     )
-    effective_cape = max(value for value in (sbcape or 0.0, mlcape or 0.0))
+    if trigger_layer_qv is None:
+        score = min(score, 69.0)
+    elif trigger_layer_qv < 11.5:
+        score = min(score, 44.0)
+    elif trigger_layer_qv < 13.0:
+        score = min(score, 69.0)
+    if not near_surface_ok:
+        score = min(score, 69.0)
     if effective_cape < 750.0:
         score = min(score, 42.0)
     elif effective_cape < 1200.0:
@@ -2783,6 +2815,7 @@ def _deep_tower_opportunity(
         "lfc_height_m_agl",
         "mean_qv_0_1000m_g_kg",
         "mean_qv_0_3000m_g_kg",
+        "trigger_layer_mean_qv_750_2250m_g_kg",
         "moisture_depth_m",
         "lapse_rate_0_3000m_c_per_km",
         "midlevel_lapse_rate_700_500_hpa_c_per_km",
@@ -2798,6 +2831,12 @@ def _deep_tower_opportunity(
         caveats.append("deep_tower_opportunity_limited_cape")
     if qv is not None and qv < 16.0:
         caveats.append("deep_tower_opportunity_limited_low_level_moisture")
+    if trigger_layer_qv is None:
+        caveats.append("deep_tower_opportunity_trigger_layer_moisture_unavailable")
+    elif trigger_layer_qv < 11.5:
+        caveats.append("deep_tower_opportunity_poor_trigger_layer_moisture")
+    elif trigger_layer_qv < 13.0:
+        caveats.append("deep_tower_opportunity_caveated_trigger_layer_moisture")
     if moisture_depth is not None and moisture_depth < 1800.0:
         caveats.append("deep_tower_opportunity_limited_moisture_depth")
     if lcl is not None and lcl > 1000.0:
@@ -2806,6 +2845,7 @@ def _deep_tower_opportunity(
         caveats.append("deep_tower_opportunity_cap_proxy_present")
     if not near_surface_ok:
         caveats.append("near_surface_discontinuity_caveat")
+        caveats.append("surface_based_cape_ignored_due_to_near_surface_discontinuity")
     if not buoyancy_depth_available:
         caveats.append("deep_tower_simple_el_not_used_as_hard_gate")
     caveats.append("deep_tower_opportunity_gives_little_weight_to_shear")
