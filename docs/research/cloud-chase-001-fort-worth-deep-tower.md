@@ -116,9 +116,18 @@ produced only a weak, shallow, transient response.
 
 ## Product Recommendation
 
-Keep Deep-Tower Benchmark as a repeatable Build recipe, but improve the analyzer
-before spending more CM1 runs: down-rank known-boring stations/cases from prior
-Deep-Tower outcomes and require stronger deep-instability evidence than moisture
-and shear proxies alone before labeling a case high-potential. Build should
-still label the recipe as explicit initiation and keep surface-forced and
-observed-boundary initiation recipes separate.
+Keep Deep-Tower Benchmark as a repeatable Build recipe, but treat North Platte
+`USM00072562` at `2026-07-02T00:00:00Z` as a negative recommendation trial for
+this exact setup: `deep_tower_benchmark_v0`, stock CM1 `iinit = 3`, 120 km by
+120 km domain, 120 by 120 horizontal cells, 20 km model top, 2 hour scout,
+15 minute output cadence, 6 s time step, and disabled surface fluxes. The actual
+outcome was no coherent cloud, no precipitation, maximum updraft near 0.86 m/s,
+and visual-interest rating 1/5 through 6300 s.
+
+Do not infer a station-level penalty from that miss; a different North Platte
+sounding may be excellent. The analyzer should instead learn from the specific
+valid time, recipe version, run setup, and outcome pattern, and require stronger
+deep-instability evidence before labeling a case high-potential for this
+explicit-initiation benchmark. Build should still label the recipe as explicit
+initiation and keep surface-forced and observed-boundary initiation recipes
+separate.

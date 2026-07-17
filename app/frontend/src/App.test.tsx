@@ -3863,8 +3863,14 @@ describe("App", () => {
     expect(screenBody).toContain('"story_filter":"deep_convection_trial"');
     const deepCard = screen.getByLabelText("Sounding candidate Norman, Oklahoma (USM00072357)");
     expect(deepCard).toHaveTextContent("Supercell-like environment");
+    expect(deepCard).toHaveTextContent(
+      "Deep-tower candidate with stronger screening support; use the benchmark trigger to test the convective ceiling.",
+    );
 
     fireEvent.click(within(deepCard).getByRole("button", { name: "Configure run" }));
+    expect(screen.getByLabelText("Candidate details")).toHaveTextContent(
+      "First run: Deep-Tower Benchmark · stock CM1 iinit=3 · ~120 km · 2 h.",
+    );
     fireEvent.click(screen.getByRole("button", { name: "Add to run plan" }));
 
     expect(
@@ -4420,6 +4426,9 @@ describe("App", () => {
     expect(wilmingtonCard).not.toHaveTextContent("Primary: Humid / rainy");
     expect(wilmingtonCard).toHaveTextContent("48.9 % ingredient score");
     expect(wilmingtonCard).toHaveTextContent("testable with Deep-Tower Benchmark");
+    expect(wilmingtonCard).toHaveTextContent(
+      "Caveated deep-tower candidate; use the benchmark trigger to test the convective ceiling.",
+    );
     expect(
       screen.queryByLabelText("Sounding candidate Norman, Oklahoma (USM00072357)"),
     ).not.toBeInTheDocument();

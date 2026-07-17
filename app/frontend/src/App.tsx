@@ -11627,7 +11627,17 @@ function candidateKeyNote(
     return candidateTopLimits(candidate, story, recipeFit)[0] ?? "Needs review before run setup.";
   }
   if (candidateStoryFamilyForStory(story) === "deep_convection") {
-    return "Strong signal; use the benchmark trigger to inspect the convective ceiling.";
+    const activeSupport =
+      candidate.active_story === story
+        ? candidate.active_story_support
+        : candidate.story_scores.find((score) => score.story === story)?.support;
+    if (activeSupport === "supported") {
+      return "Deep-tower candidate with stronger screening support; use the benchmark trigger to test the convective ceiling.";
+    }
+    if (activeSupport === "weak") {
+      return "Caveated deep-tower candidate; use the benchmark trigger to test the convective ceiling.";
+    }
+    return "Deep-tower candidate; use the benchmark trigger to test the convective ceiling.";
   }
   if (
     story === "humid_rainy_candidate" ||
@@ -11693,9 +11703,11 @@ function candidateRunRecommendation(
   }
   if (candidateStoryFamilyForStory(story) === "deep_convection") {
     return {
-      title: "First run: Wide 12 km · 6 h · baseline surface forcing.",
-      detail: "Cheap scout run before trying longer regional runs.",
-      followUp: "Next if scout stays shallow: stronger heat + moisture forcing.",
+      title: "First run: Deep-Tower Benchmark · stock CM1 iinit=3 · ~120 km · 2 h.",
+      detail:
+        "Disable surface fluxes and use explicit thermal initiation to test this observed atmosphere's convective ceiling.",
+      followUp:
+        "Inspect cloud depth, updraft, precipitation, and reflectivity before changing the trigger or resolution.",
     };
   }
   if (story === "dry_failed_candidate" || story === "capped_suppressed_candidate") {
