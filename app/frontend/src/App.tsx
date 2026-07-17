@@ -5903,6 +5903,8 @@ function SoundingCandidateCard({
   const recipeFit = candidateRecipeFitForStory(candidate, story);
   const reasons = candidateInterestReasons(candidate).slice(0, 3);
   const keyNote = candidateKeyNote(candidate, story, recipeFit);
+  const configureActionLabel =
+    activeFamily === "deep_convection" ? "Configure benchmark probe" : "Configure run";
   return (
     <article
       className={`candidate-card${selected ? " selected-candidate-card" : ""}`}
@@ -5944,7 +5946,7 @@ function SoundingCandidateCard({
           disabled={!candidate.package_ready}
           onClick={() => onSelectForRunSetup(story)}
         >
-          Configure run
+          {configureActionLabel}
         </button>
         <button type="button" className="secondary-button" disabled={saved} onClick={onSave}>
           {saved ? "Saved" : "Save"}
@@ -6003,6 +6005,8 @@ function SoundingCandidateDetail({
   const reasons = candidateInterestReasons(activeCandidate).slice(0, 5);
   const topLimits = candidateTopLimits(activeCandidate, story, recipeFit);
   const runRecommendation = candidateRunRecommendation(activeCandidate, story, recipeFit);
+  const configureActionLabel =
+    activeFamily === "deep_convection" ? "Configure benchmark probe" : "Configure run";
   const savedTagValues = parseTags(tagDraft);
   function handleTagSuggestion(tag: string) {
     setTagDraft(_dedupeStrings([...savedTagValues, tag]).join(", "));
@@ -6058,7 +6062,7 @@ function SoundingCandidateDetail({
           disabled={!candidate.package_ready}
           onClick={() => onSelectForRunSetup(candidate, story)}
         >
-          Configure run
+          {configureActionLabel}
         </button>
         <button type="button" className="secondary-button" onClick={() => setSaveDrawerOpen(true)}>
           {savedCandidate ? "Edit saved notes" : "Save candidate"}

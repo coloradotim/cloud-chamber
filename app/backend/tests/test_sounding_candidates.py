@@ -622,14 +622,14 @@ def test_analysis_deep_family_best_match_sort_uses_best_deep_score(
     )
 
     assert [item.candidate_id for item in result.candidates] == [
-        "humid-lower-better-deep",
         "humid-high-weaker-deep",
+        "humid-lower-better-deep",
     ]
-    assert [item.active_story_score for item in result.candidates] == [67.0, 91.0]
-    assert [item.ingredient_score for item in result.candidates] == [82.0, 41.0]
+    assert [item.active_story_score for item in result.candidates] == [91.0, 67.0]
+    assert [item.ingredient_score for item in result.candidates] == [41.0, 82.0]
     assert [item.active_story_support for item in result.candidates] == [
-        "weak",
         "unavailable",
+        "weak",
     ]
 
 
@@ -1333,7 +1333,7 @@ def test_deep_tower_opportunity_near_surface_guardrail_is_not_overridden_by_seve
     assert "surface_based_cape_ignored_due_to_near_surface_discontinuity" in deep_tower.caveats
 
 
-def test_analysis_deep_family_best_match_uses_deep_tower_opportunity(
+def test_analysis_deep_family_explicit_opportunity_sort_uses_experimental_score(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     high_story_low_opportunity = _analysis_candidate(
@@ -1351,18 +1351,32 @@ def test_analysis_deep_family_best_match_uses_deep_tower_opportunity(
         [high_story_low_opportunity, lower_story_better_opportunity],
     )
 
-    result = analyze_cached_soundings(
+    best_match_result = analyze_cached_soundings(
         _settings(tmp_path),
         story_family="deep_convection",
         sort_by="best_match",
     )
+    opportunity_result = analyze_cached_soundings(
+        _settings(tmp_path),
+        story_family="deep_convection",
+        sort_by="deep_tower_opportunity",
+    )
 
-    assert [item.candidate_id for item in result.candidates] == [
+    assert [item.candidate_id for item in best_match_result.candidates] == [
+        "high-story-low-opportunity",
+        "lower-story-better-opportunity",
+    ]
+    assert [item.active_story_score for item in best_match_result.candidates] == [91.0, 72.0]
+    assert [item.ingredient_score for item in best_match_result.candidates] == [41.0, 82.0]
+    assert [item.candidate_id for item in opportunity_result.candidates] == [
         "lower-story-better-opportunity",
         "high-story-low-opportunity",
     ]
-    assert [item.active_story_score for item in result.candidates] == [72.0, 91.0]
-    assert [item.ingredient_score for item in result.candidates] == [82.0, 41.0]
+    assert [item.active_story_score for item in opportunity_result.candidates] == [72.0, 91.0]
+    assert [item.ingredient_score for item in opportunity_result.candidates] == [82.0, 41.0]
+    assert [item.candidate_id for item in best_match_result.candidates] != [
+        item.candidate_id for item in opportunity_result.candidates
+    ]
 
 
 def test_story_scores_and_evidence_are_traceable_to_soundings() -> None:

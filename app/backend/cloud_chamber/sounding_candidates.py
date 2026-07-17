@@ -1375,8 +1375,6 @@ def _candidate_sort_value(
     story_family: CandidateStoryFamilyFilter,
 ) -> SortValue | None:
     if sort_by == "best_match":
-        if _candidate_scope_is_deep_tower(story_filter, story_family):
-            return _candidate_deep_tower_opportunity_score(candidate)
         score = _candidate_story_score_model(candidate, story_filter, story_family)
         return score.score_0_to_100 if score else candidate.rank_score
     if sort_by == "valid_time":

@@ -1134,9 +1134,6 @@ function candidateSortValueForTest(
   sortBy: string,
 ) {
   if (sortBy === "best_match") {
-    if (storyFilter === "deep_convection_trial" || storyFamily === "deep_convection") {
-      return candidateDeepTowerOpportunityForTest(candidate);
-    }
     return (
       storyScoreForTest(candidate, storyFilter, storyFamily)?.score_0_to_100 ?? candidate.rank_score
     );
@@ -3920,7 +3917,7 @@ describe("App", () => {
     );
     expect(deepCard).toHaveTextContent("Experimental Deep-Tower evidence");
 
-    fireEvent.click(within(deepCard).getByRole("button", { name: "Configure run" }));
+    fireEvent.click(within(deepCard).getByRole("button", { name: "Configure benchmark probe" }));
     expect(screen.getByLabelText("Candidate details")).toHaveTextContent(
       "Experimental Deep-Tower evidence only.",
     );
@@ -4094,12 +4091,12 @@ describe("App", () => {
     );
     expect(lowCard).not.toHaveTextContent("stronger screening support");
 
-    fireEvent.click(within(lowCard).getByRole("button", { name: "Configure run" }));
+    fireEvent.click(within(lowCard).getByRole("button", { name: "Configure benchmark probe" }));
     const details = screen.getByLabelText("Candidate details");
     expect(details).toHaveTextContent("Low experimental Deep-Tower evidence.");
     expect(details).toHaveTextContent("Experimental Deep-Tower evidence");
     expect(details).toHaveTextContent("41 %");
-    expect(within(lowCard).getByRole("button", { name: "Configure run" })).not.toBeDisabled();
+    expect(within(lowCard).getByRole("button", { name: "Configure benchmark probe" })).not.toBeDisabled();
   });
 
   it("keeps humid/rainy candidates with weak deep scores on observed quick-look", async () => {
