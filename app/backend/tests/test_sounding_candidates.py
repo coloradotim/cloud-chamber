@@ -111,10 +111,12 @@ def _analysis_candidate(
 ) -> SoundingCandidate:
     opportunity_score = deep_score if deep_opportunity_score is None else deep_opportunity_score
     opportunity_support = (
-        deep_support if deep_opportunity_support is None else deep_opportunity_support
+        ("weak" if opportunity_score >= 45.0 else "unavailable")
+        if deep_opportunity_support is None
+        else deep_opportunity_support
     )
     opportunity_summary = deep_opportunity_summary or (
-        f"Deep-Tower opportunity fixture summary for {candidate_id}."
+        f"Experimental Deep-Tower evidence fixture summary for {candidate_id}."
     )
     story_scores = [
         StoryScore(
@@ -200,7 +202,7 @@ def test_screen_cached_soundings_returns_ranked_package_ready_candidates(
 
     result = screen_cached_soundings(settings, latest_per_station=2, limit=10)
 
-    assert result.screening_version == "sounding-screening-v2"
+    assert result.screening_version == "sounding-screening-v3"
     assert len(result.candidates) == 2
     candidate = result.candidates[0]
     assert candidate.station_id == "USM00072558"
@@ -543,24 +545,25 @@ def test_analysis_family_filter_includes_supported_secondary_deep_story(
     assert result.candidates[0].display_story == "Supercell-like environment"
     assert result.candidates[0].matched_story_ids == ["supercell_environment"]
     assert result.candidates[0].active_story_score == 74.0
-    assert result.candidates[0].active_story_support == "supported"
+    assert result.candidates[0].active_story_support == "weak"
     assert result.candidates[0].ingredient_score == 74.0
-    assert result.candidates[0].ingredient_score_label == "Deep-Tower opportunity"
+    assert result.candidates[0].ingredient_score_label == "Experimental Deep-Tower evidence"
     assert result.candidates[0].top_reasons == [
-        "Deep-Tower opportunity fixture summary for primary-humid-supported-secondary-supercell."
+        "Experimental Deep-Tower evidence fixture summary for "
+        "primary-humid-supported-secondary-supercell."
     ]
 
 
-def test_analysis_family_support_filter_uses_deep_tower_opportunity_support(
+def test_analysis_family_support_filter_uses_experimental_deep_tower_support(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    supported = _analysis_candidate(
-        "secondary-deep-supported",
+    weak_experimental = _analysis_candidate(
+        "secondary-deep-weak-experimental",
         primary_score=92.0,
         deep_score=74.0,
         deep_support="supported",
         deep_opportunity_score=82.0,
-        deep_opportunity_support="supported",
+        deep_opportunity_support="weak",
     )
     story_supported_low_opportunity = _analysis_candidate(
         "secondary-deep-story-supported-low-opportunity",
@@ -570,22 +573,24 @@ def test_analysis_family_support_filter_uses_deep_tower_opportunity_support(
         deep_opportunity_score=41.0,
         deep_opportunity_support="unavailable",
     )
-    _patch_screened_candidates(monkeypatch, [story_supported_low_opportunity, supported])
+    _patch_screened_candidates(monkeypatch, [story_supported_low_opportunity, weak_experimental])
 
     result = analyze_cached_soundings(
         _settings(tmp_path),
         story_family="deep_convection",
-        support="supported",
+        support="weak",
     )
 
-    assert [item.candidate_id for item in result.candidates] == ["secondary-deep-supported"]
+    assert [item.candidate_id for item in result.candidates] == ["secondary-deep-weak-experimental"]
     assert result.filtered_candidate_count == 1
     assert result.candidates[0].active_story == "supercell_environment"
     assert result.candidates[0].ingredient_score == 82.0
-    assert result.candidates[0].active_story_support == "supported"
+    assert result.candidates[0].active_story_support == "weak"
     assert result.filter_trace.stage_counts["story_family"] == 2
     assert result.filter_trace.stage_counts["support"] == 1
-    assert result.filter_trace.top_excluded_reasons[0].reason == "Evidence tier: supported"
+    assert (
+        result.filter_trace.top_excluded_reasons[0].reason == "Evidence tier: plausible / caveated"
+    )
     assert result.filter_trace.top_excluded_reasons[0].count == 1
 
 
@@ -606,7 +611,7 @@ def test_analysis_deep_family_best_match_sort_uses_best_deep_score(
         deep_score=67.0,
         deep_support="supported",
         deep_opportunity_score=82.0,
-        deep_opportunity_support="supported",
+        deep_opportunity_support="weak",
     )
     _patch_screened_candidates(monkeypatch, [humid_but_weaker_deep, lower_primary_better_deep])
 
@@ -617,14 +622,14 @@ def test_analysis_deep_family_best_match_sort_uses_best_deep_score(
     )
 
     assert [item.candidate_id for item in result.candidates] == [
-        "humid-lower-better-deep",
         "humid-high-weaker-deep",
+        "humid-lower-better-deep",
     ]
-    assert [item.active_story_score for item in result.candidates] == [67.0, 91.0]
-    assert [item.ingredient_score for item in result.candidates] == [82.0, 41.0]
+    assert [item.active_story_score for item in result.candidates] == [91.0, 67.0]
+    assert [item.ingredient_score for item in result.candidates] == [41.0, 82.0]
     assert [item.active_story_support for item in result.candidates] == [
-        "supported",
         "unavailable",
+        "weak",
     ]
 
 
@@ -1182,13 +1187,153 @@ def test_deep_tower_opportunity_separates_success_from_miss_features() -> None:
     fort_score = cast(float, fort_worth_like["deep_tower_opportunity"])
     north_platte_score = cast(float, north_platte_like["deep_tower_opportunity"])
     assert fort_score == pytest.approx(81.7)
-    assert fort_worth_like["deep_tower_opportunity_support"] == "supported"
+    assert fort_worth_like["deep_tower_opportunity_support"] == "weak"
     assert north_platte_score == pytest.approx(46.1)
     assert north_platte_like["deep_tower_opportunity_support"] == "weak"
     assert fort_score > north_platte_score + 30.0
 
 
-def test_analysis_deep_family_best_match_uses_deep_tower_opportunity(
+def test_deep_tower_opportunity_caps_discontinuous_surface_cape_signal() -> None:
+    slidell_like: dict[str, FeatureValue] = {
+        "data_completeness_score": 70.0,
+        "low_level_qv_g_kg": 31.0,
+        "mean_qv_0_500m_g_kg": 21.5,
+        "mean_qv_0_1000m_g_kg": 19.6,
+        "mean_qv_0_3000m_g_kg": 12.4,
+        "precipitable_water_proxy_or_unavailable": 48.0,
+        "surface_t_td_spread_c": 2.2,
+        "estimated_lcl_height_m_agl": 275.0,
+        "lapse_rate_0_1000m_c_per_km": 6.9,
+        "lapse_rate_0_3000m_c_per_km": 6.4,
+        "midlevel_lapse_rate_700_500_hpa_c_per_km": 6.7,
+        "cap_strength_proxy": 0.0,
+        "cap_height_m_agl": None,
+        "moisture_depth_m": 3000.0,
+        "midlevel_dry_layer_proxy": 7.0,
+        "qv_drop_0_3000m_g_kg": 18.6,
+        "observed_wind_available": True,
+        "bulk_shear_0_1km_m_s": 9.0,
+        "bulk_shear_0_3km_m_s": 16.0,
+        "bulk_shear_0_6km_m_s": 28.0,
+        "dry_microburst_inverted_v_proxy": 35.0,
+        "freezing_level_m_agl": 4600.0,
+        "surface_based_cape_j_kg": 3762.0,
+        "mixed_layer_cape_j_kg": 1300.0,
+        "surface_based_cin_j_kg": 0.0,
+        "mixed_layer_cin_j_kg": -20.0,
+        "lfc_height_m_agl": 900.0,
+        "el_height_m_agl": 12000.0,
+        "profile_top_m_agl": 18000.0,
+        "lowest_level_m_agl": 0.0,
+        "near_surface_discontinuity_flag": True,
+    }
+
+    _, evidence = _score_features(slidell_like, package_ready=True)
+
+    score = cast(float, slidell_like["deep_tower_opportunity"])
+    deep_tower = next(item for item in evidence if item.label == "Experimental Deep-Tower evidence")
+    assert score < 70.0
+    assert slidell_like["deep_tower_opportunity_support"] == "weak"
+    assert score >= 45.0
+    assert "near_surface_discontinuity_caveat" in deep_tower.caveats
+    assert "surface_based_cape_ignored_due_to_near_surface_discontinuity" in deep_tower.caveats
+
+
+def test_high_deep_tower_opportunity_is_experimental_not_supported() -> None:
+    high_experimental_evidence: dict[str, FeatureValue] = {
+        "data_completeness_score": 96.0,
+        "low_level_qv_g_kg": 22.0,
+        "mean_qv_0_500m_g_kg": 21.0,
+        "mean_qv_0_1000m_g_kg": 19.5,
+        "mean_qv_0_3000m_g_kg": 14.8,
+        "precipitable_water_proxy_or_unavailable": 46.0,
+        "surface_t_td_spread_c": 5.0,
+        "estimated_lcl_height_m_agl": 625.0,
+        "lapse_rate_0_1000m_c_per_km": 8.0,
+        "lapse_rate_0_3000m_c_per_km": 7.8,
+        "midlevel_lapse_rate_700_500_hpa_c_per_km": 8.0,
+        "cap_strength_proxy": 0.0,
+        "cap_height_m_agl": None,
+        "moisture_depth_m": 4200.0,
+        "midlevel_dry_layer_proxy": 2.0,
+        "qv_drop_0_3000m_g_kg": 7.2,
+        "observed_wind_available": True,
+        "bulk_shear_0_1km_m_s": 10.0,
+        "bulk_shear_0_3km_m_s": 20.0,
+        "bulk_shear_0_6km_m_s": 32.0,
+        "dry_microburst_inverted_v_proxy": 30.0,
+        "freezing_level_m_agl": 4300.0,
+        "surface_based_cape_j_kg": 3200.0,
+        "mixed_layer_cape_j_kg": 2800.0,
+        "surface_based_cin_j_kg": -10.0,
+        "mixed_layer_cin_j_kg": -15.0,
+        "lfc_height_m_agl": 700.0,
+        "el_height_m_agl": 15000.0,
+        "profile_top_m_agl": 19000.0,
+        "lowest_level_m_agl": 0.0,
+        "near_surface_discontinuity_flag": False,
+    }
+
+    scores, evidence = _score_features(high_experimental_evidence, package_ready=True)
+
+    severe = next(score for score in scores if score.story == "severe_thunderstorm_environment")
+    deep_tower = next(item for item in evidence if item.label == "Experimental Deep-Tower evidence")
+    assert severe.support == "supported"
+    assert high_experimental_evidence["deep_tower_opportunity_support"] == "weak"
+    assert cast(float, high_experimental_evidence["deep_tower_opportunity"]) >= 70.0
+    assert "not a reliable recommendation" in str(
+        high_experimental_evidence["deep_tower_opportunity_summary"]
+    )
+    assert "deep_tower_opportunity_poor_trigger_layer_moisture" not in deep_tower.caveats
+
+
+def test_deep_tower_opportunity_near_surface_guardrail_is_not_overridden_by_severe_story() -> None:
+    discontinuous_profile: dict[str, FeatureValue] = {
+        "data_completeness_score": 96.0,
+        "low_level_qv_g_kg": 32.0,
+        "mean_qv_0_500m_g_kg": 21.0,
+        "mean_qv_0_1000m_g_kg": 19.5,
+        "mean_qv_0_3000m_g_kg": 14.8,
+        "precipitable_water_proxy_or_unavailable": 46.0,
+        "surface_t_td_spread_c": 2.0,
+        "estimated_lcl_height_m_agl": 250.0,
+        "lapse_rate_0_1000m_c_per_km": 8.0,
+        "lapse_rate_0_3000m_c_per_km": 7.8,
+        "midlevel_lapse_rate_700_500_hpa_c_per_km": 8.0,
+        "cap_strength_proxy": 0.0,
+        "cap_height_m_agl": None,
+        "moisture_depth_m": 4200.0,
+        "midlevel_dry_layer_proxy": 2.0,
+        "qv_drop_0_3000m_g_kg": 17.2,
+        "observed_wind_available": True,
+        "bulk_shear_0_1km_m_s": 10.0,
+        "bulk_shear_0_3km_m_s": 20.0,
+        "bulk_shear_0_6km_m_s": 32.0,
+        "dry_microburst_inverted_v_proxy": 30.0,
+        "freezing_level_m_agl": 4300.0,
+        "surface_based_cape_j_kg": 3200.0,
+        "mixed_layer_cape_j_kg": 1800.0,
+        "surface_based_cin_j_kg": -10.0,
+        "mixed_layer_cin_j_kg": -15.0,
+        "lfc_height_m_agl": 700.0,
+        "el_height_m_agl": 15000.0,
+        "profile_top_m_agl": 19000.0,
+        "lowest_level_m_agl": 0.0,
+        "near_surface_discontinuity_flag": True,
+    }
+
+    scores, evidence = _score_features(discontinuous_profile, package_ready=True)
+
+    severe = next(score for score in scores if score.story == "severe_thunderstorm_environment")
+    deep_tower = next(item for item in evidence if item.label == "Experimental Deep-Tower evidence")
+    assert severe.support == "supported"
+    assert discontinuous_profile["deep_tower_opportunity_support"] == "weak"
+    assert cast(float, discontinuous_profile["deep_tower_opportunity"]) < 70.0
+    assert "near_surface_discontinuity_caveat" in deep_tower.caveats
+    assert "surface_based_cape_ignored_due_to_near_surface_discontinuity" in deep_tower.caveats
+
+
+def test_analysis_deep_family_explicit_opportunity_sort_uses_experimental_score(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     high_story_low_opportunity = _analysis_candidate(
@@ -1206,18 +1351,32 @@ def test_analysis_deep_family_best_match_uses_deep_tower_opportunity(
         [high_story_low_opportunity, lower_story_better_opportunity],
     )
 
-    result = analyze_cached_soundings(
+    best_match_result = analyze_cached_soundings(
         _settings(tmp_path),
         story_family="deep_convection",
         sort_by="best_match",
     )
+    opportunity_result = analyze_cached_soundings(
+        _settings(tmp_path),
+        story_family="deep_convection",
+        sort_by="deep_tower_opportunity",
+    )
 
-    assert [item.candidate_id for item in result.candidates] == [
+    assert [item.candidate_id for item in best_match_result.candidates] == [
+        "high-story-low-opportunity",
+        "lower-story-better-opportunity",
+    ]
+    assert [item.active_story_score for item in best_match_result.candidates] == [91.0, 72.0]
+    assert [item.ingredient_score for item in best_match_result.candidates] == [41.0, 82.0]
+    assert [item.candidate_id for item in opportunity_result.candidates] == [
         "lower-story-better-opportunity",
         "high-story-low-opportunity",
     ]
-    assert [item.active_story_score for item in result.candidates] == [72.0, 91.0]
-    assert [item.ingredient_score for item in result.candidates] == [82.0, 41.0]
+    assert [item.active_story_score for item in opportunity_result.candidates] == [72.0, 91.0]
+    assert [item.ingredient_score for item in opportunity_result.candidates] == [82.0, 41.0]
+    assert [item.candidate_id for item in best_match_result.candidates] != [
+        item.candidate_id for item in opportunity_result.candidates
+    ]
 
 
 def test_story_scores_and_evidence_are_traceable_to_soundings() -> None:

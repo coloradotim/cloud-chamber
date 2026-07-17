@@ -733,7 +733,7 @@ def _unavailable(
         label,
         None,
         units,
-        "not implemented in sounding-diagnostics-v1",
+        f"not implemented in {DIAGNOSTIC_VERSION}",
         support_state="unavailable",
         caveats=[caveat],
     )

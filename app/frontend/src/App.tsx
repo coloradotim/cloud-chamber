@@ -5562,14 +5562,14 @@ function ObservedAtmosphereCandidatesPanel({
               value={sort}
               onChange={(event) => onSortChange(event.target.value as CandidateSort)}
             >
-              <option value="best_match">Recommended</option>
+              <option value="best_match">Best match</option>
               <option value="valid_time">Valid time</option>
               <option value="station_id">Station ID</option>
               <option value="station_name">Station name</option>
               <option value="primary_story">Primary story</option>
               <option value="story_family">Story family</option>
               <option value="rank_score">Rank score</option>
-              <option value="deep_tower_opportunity">Deep-Tower opportunity</option>
+              <option value="deep_tower_opportunity">Experimental Deep-Tower evidence</option>
               <option value="confidence">Confidence</option>
               <option value="support">Evidence tier</option>
               <option value="package_readiness">Package readiness</option>
@@ -5648,7 +5648,7 @@ function ObservedAtmosphereCandidatesPanel({
               <h4>
                 {activeRefinements.length > 0
                   ? "Refined candidates"
-                  : "Recommended cached soundings"}
+                  : "Screened cached soundings"}
               </h4>
               <p className="field-help">{filterTraceSummary.summary}</p>
               {filterTraceSummary.detail && (
@@ -5903,6 +5903,8 @@ function SoundingCandidateCard({
   const recipeFit = candidateRecipeFitForStory(candidate, story);
   const reasons = candidateInterestReasons(candidate).slice(0, 3);
   const keyNote = candidateKeyNote(candidate, story, recipeFit);
+  const configureActionLabel =
+    activeFamily === "deep_convection" ? "Configure benchmark probe" : "Configure run";
   return (
     <article
       className={`candidate-card${selected ? " selected-candidate-card" : ""}`}
@@ -5944,7 +5946,7 @@ function SoundingCandidateCard({
           disabled={!candidate.package_ready}
           onClick={() => onSelectForRunSetup(story)}
         >
-          Configure run
+          {configureActionLabel}
         </button>
         <button type="button" className="secondary-button" disabled={saved} onClick={onSave}>
           {saved ? "Saved" : "Save"}
@@ -6003,6 +6005,8 @@ function SoundingCandidateDetail({
   const reasons = candidateInterestReasons(activeCandidate).slice(0, 5);
   const topLimits = candidateTopLimits(activeCandidate, story, recipeFit);
   const runRecommendation = candidateRunRecommendation(activeCandidate, story, recipeFit);
+  const configureActionLabel =
+    activeFamily === "deep_convection" ? "Configure benchmark probe" : "Configure run";
   const savedTagValues = parseTags(tagDraft);
   function handleTagSuggestion(tag: string) {
     setTagDraft(_dedupeStrings([...savedTagValues, tag]).join(", "));
@@ -6058,7 +6062,7 @@ function SoundingCandidateDetail({
           disabled={!candidate.package_ready}
           onClick={() => onSelectForRunSetup(candidate, story)}
         >
-          Configure run
+          {configureActionLabel}
         </button>
         <button type="button" className="secondary-button" onClick={() => setSaveDrawerOpen(true)}>
           {savedCandidate ? "Edit saved notes" : "Save candidate"}
@@ -6120,7 +6124,7 @@ function SoundingCandidateDetail({
         </ul>
       </section>
       <section className="candidate-detail-section">
-        <h5>Recommended first run</h5>
+        <h5>Run guidance</h5>
         <p className="candidate-interest-summary">{runRecommendation.title}</p>
         <p className="field-help">{runRecommendation.detail}</p>
         {runRecommendation.followUp && <p className="field-help">{runRecommendation.followUp}</p>}
@@ -11181,14 +11185,14 @@ function candidateStoryFamilyForStory(story: CandidateStoryId): CandidateStoryFa
 
 function candidateSortLabel(sort: CandidateSort): string {
   const labels: Record<CandidateSort, string> = {
-    best_match: "Recommended",
+    best_match: "Best match",
     valid_time: "Valid time",
     station_id: "Station ID",
     station_name: "Station name",
     primary_story: "Primary story",
     story_family: "Story family",
     rank_score: "Rank score",
-    deep_tower_opportunity: "Deep-Tower opportunity",
+    deep_tower_opportunity: "Experimental Deep-Tower evidence",
     confidence: "Confidence",
     support: "Evidence tier",
     package_readiness: "Package readiness",
@@ -11268,9 +11272,9 @@ function candidateRecipeFitForStory(
     }
     return {
       status: "partially_testable",
-      label: "testable with Deep-Tower Benchmark",
+      label: "optional Deep-Tower benchmark context",
       summary:
-        "This story screens deep-convection ingredients. CM1 can evolve the observed atmosphere with the explicit Deep-Tower Benchmark trigger; use surface-forced recipes when lower-boundary initiation is the question.",
+        "This story screens deep-convection ingredients. The fixed Deep-Tower Benchmark is available for deliberate comparison, but current evidence does not make it a reliable first-run recommendation.",
       caveats,
     };
   }
@@ -11408,7 +11412,7 @@ function observedRecipeFitSummary(
     return fitSummary;
   }
   if (story && deepConvectionStoryIds.has(story)) {
-    return "Inspectable with the explicit Deep-Tower Benchmark trigger; deep outcomes still depend on duration, domain, resolution, and CM1 output fields.";
+    return "Inspectable with an explicit Deep-Tower Benchmark trigger only as deliberate comparison context; deep outcomes still depend on duration, domain, resolution, and CM1 output fields.";
   }
   return "The selected observed-sounding method can inspect this story when duration, cadence, and requested fields are adequate.";
 }
@@ -11589,7 +11593,7 @@ function candidateIngredientScoreLabel(
   storyFamilyFilter: CandidateStoryFamilyFilter = "all",
 ): string {
   if (candidateScopeIsDeepTower(storyFilter, storyFamilyFilter)) {
-    return candidate.ingredient_score_label ?? "Deep-Tower opportunity";
+    return candidate.ingredient_score_label ?? "Experimental Deep-Tower evidence";
   }
   return candidate.ingredient_score_label ?? "Ingredient score";
 }
@@ -11665,17 +11669,7 @@ function candidateKeyNote(
   if (candidateStoryFamilyForStory(story) === "deep_convection") {
     const opportunitySummary = candidateDeepTowerOpportunitySummary(candidate);
     if (opportunitySummary) return opportunitySummary;
-    const activeSupport =
-      candidate.active_story === story
-        ? candidate.active_story_support
-        : candidate.story_scores.find((score) => score.story === story)?.support;
-    if (activeSupport === "supported") {
-      return "Deep-Tower opportunity is supported; use the benchmark trigger to test the convective ceiling.";
-    }
-    if (activeSupport === "weak") {
-      return "Caveated Deep-Tower opportunity; use the benchmark trigger to test the convective ceiling.";
-    }
-    return "Deep-Tower candidate; use the benchmark trigger to test the convective ceiling.";
+    return "Experimental Deep-Tower evidence only; do not treat this as a reliable fixed-recipe recommendation.";
   }
   if (
     story === "humid_rainy_candidate" ||
@@ -11759,29 +11753,27 @@ function candidateRunRecommendation(
     const opportunityScore = candidateDeepTowerOpportunityScore(candidate);
     if (opportunityScore !== null && opportunityScore >= 70) {
       return {
-        title: "Recommended Deep-Tower scout · stock CM1 iinit=3 · ~120 km · 2 h.",
+        title: "Experimental Deep-Tower evidence only.",
         detail:
-          "Disable surface fluxes and use explicit thermal initiation to test this observed atmosphere's convective ceiling.",
+          "A high score can help sort comparison cases, but it is not a reliable recommendation to spend scout compute on the fixed stock iinit=3 benchmark.",
         followUp:
-          "Inspect cloud depth, updraft, precipitation, and reflectivity before changing the trigger or resolution.",
+          "Manual configuration remains available if you deliberately want a comparable benchmark probe.",
       };
     }
     if (opportunityScore !== null && opportunityScore >= 45) {
       return {
-        title:
-          "Weak Deep-Tower opportunity · run for calibration or learning, not as a best cloud bet.",
+        title: "Caveated experimental Deep-Tower evidence.",
         detail:
-          "If deliberately running it, keep the Deep-Tower Benchmark setup comparable: stock CM1 iinit=3, ~120 km domain, 2 h, and disabled surface fluxes.",
+          "The fixed benchmark response is uncertain; this is comparison context, not automatic compute-spending advice.",
         followUp:
-          "Use the result to calibrate the selector rather than treating it as the next visual cloud-making target.",
+          "Manual configuration remains available if a reviewer deliberately chooses a comparable probe.",
       };
     }
     return {
-      title: "Skip for Deep-Tower cloud-making unless deliberately overriding.",
+      title: "Low experimental Deep-Tower evidence.",
       detail:
-        "Manual configuration remains available; if overriding, keep the Deep-Tower Benchmark setup comparable so the outcome is interpretable.",
-      followUp:
-        "Spend normal cloud-making scout compute on candidates with supported Deep-Tower opportunity.",
+        "This score does not support using the fixed Deep-Tower Benchmark as a product recommendation.",
+      followUp: "Manual configuration remains available for deliberate overrides.",
     };
   }
   if (story === "dry_failed_candidate" || story === "capped_suppressed_candidate") {

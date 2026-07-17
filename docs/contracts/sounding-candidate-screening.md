@@ -97,16 +97,21 @@ product-facing evidence.
 
 ### Deep-Tower Opportunity
 
-`deep_tower_opportunity` is a recipe-specific 0-100 selector for the
-Deep-Tower Benchmark. It is not a replacement for severe/supercell story
-scores and should not be read as an observed storm forecast.
+`deep_tower_opportunity` is an experimental 0-100 sounding heuristic for
+comparing possible Deep-Tower Benchmark cases. It is not a recipe
+recommendation, not a promise that the fixed stock `iinit = 3` benchmark will
+make a deep cloud, and not a replacement for severe/supercell story scores.
+High values may be used as optional sort evidence, but they must not drive
+automatic compute-spending advice.
 
 The score weights surface-based CAPE, mixed-layer CAPE, CIN, LFC, cap proxy,
 low-level moisture, deeper moisture, 0-3 km and midlevel lapse rates, profile
 completeness, and near-surface continuity. EL or buoyancy depth contributes
 only when the simple EL estimate is usable. Deep-layer shear receives little or
-no weight because this selector asks whether the benchmark trigger can reveal a
-deep convective ceiling, not whether a storm will organize.
+no weight because this heuristic is scoped to possible cloud-depth ingredients,
+not storm organization. If the near-surface profile has a large discontinuity,
+the heuristic cannot surface as clean `supported` evidence; it uses mixed-layer
+CAPE rather than allowing one suspect lowest level to dominate.
 
 ## Story Logic
 
