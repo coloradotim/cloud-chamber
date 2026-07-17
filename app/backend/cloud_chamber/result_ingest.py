@@ -2185,8 +2185,6 @@ def _candidate_story_label(story: str | None) -> str | None:
 def _display_run_recipe(run_recipe: str | None) -> str:
     if run_recipe == "deep_tower_benchmark":
         return "Deep-Tower Benchmark"
-    if run_recipe == "deep_tower_low_level_lift":
-        return "Deep-Tower Low-Level Lift Benchmark"
     if run_recipe == "observed_surface_forced_evolution":
         return "Observed Surface-Forced Evolution"
     return "CM1 run"

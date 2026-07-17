@@ -349,69 +349,6 @@ def test_deep_tower_benchmark_declares_iinit3_assumptions_and_namelist() -> None
     assert "output_uh        = 1," in namelist
 
 
-def test_deep_tower_low_level_lift_declares_iinit9_assumptions_and_namelist() -> None:
-    from igra_fixtures import IGRA_FIXTURE
-
-    from cloud_chamber.observed_sounding import parse_igra_station_text
-
-    observed = parse_igra_station_text(
-        IGRA_FIXTURE,
-        uploaded_filename="USM00072558-data-beg2025.txt",
-    ).selected_sounding
-
-    contract = build_cm1_input_contract(
-        baseline_scenario(),
-        observed_sounding=observed,
-        run_recipe="deep_tower_low_level_lift",
-    )
-    namelist = render_namelist_fragment(contract)
-    trigger = cast(dict[str, Any], contract.recipe_assumptions["trigger"])
-    surface_fluxes = cast(dict[str, Any], contract.recipe_assumptions["surface_fluxes"])
-
-    assert contract.run_recipe.value == "deep_tower_low_level_lift"
-    assert contract.recipe_id == "deep_tower_low_level_lift_v0"
-    assert contract.recipe_display_name == "Deep-Tower Low-Level Lift Benchmark v0"
-    assert contract.assumption_set_id == "deep_tower_low_level_lift_v0_assumptions"
-    assert contract.assumption_mode == "explicit_low_level_lift"
-    assert contract.trigger_type == "forced_convergence"
-    assert contract.run_configuration.duration == "scout_2h"
-    assert contract.run_configuration.duration_seconds == 7200
-    assert contract.run_configuration.domain_size == "deep_tower_120km"
-    assert contract.run_configuration.horizontal_cell_count == 120
-    assert contract.run_configuration.cm1_values.time_step_seconds == 6.0
-    assert contract.run_configuration.cm1_values.rayleigh_damping_start_m == 15000
-    assert contract.run_configuration.initiation_method == "cm1_iinit_9_forced_convergence"
-    assert contract.run_configuration.surface_flux_mode == "disabled"
-    assert trigger["mode"] == "cm1_iinit_9_forced_convergence"
-    assert trigger["cm1_iinit"] == 9
-    assert trigger["raw_controls_exposed"] is False
-    assert surface_fluxes["mode"] == "disabled"
-    assert surface_fluxes["cm1_values"]["isfcflx"] == 0
-    assert "Explicit initiation is supplied with CM1 iinit=9 low-level forced convergence." in (
-        contract.recipe_caveats
-    )
-    assert (
-        contract.manual_validation_status
-        == "deep_tower_low_level_lift_iinit9_slidell_negative_smoke_validated"
-    )
-    assert "nx           =      120," in namelist
-    assert "ny           =      120," in namelist
-    assert "nz           =      40," in namelist
-    assert "dx     =   1000.0," in namelist
-    assert "dy     =   1000.0," in namelist
-    assert "dz     =   500.0," in namelist
-    assert "timax  = 7200.0," in namelist
-    assert "dtl    =   6.000," in namelist
-    assert "zd      =  15000.0," in namelist
-    assert "testcase  =  0," in namelist
-    assert "isnd      =  7," in namelist
-    assert "iwnd      =  0," in namelist
-    assert "iinit     =  9," in namelist
-    assert "isfcflx    =      0," in namelist
-    assert "cnst_shflx = 0.0," in namelist
-    assert "output_uh        = 1," in namelist
-
-
 def test_observed_surface_flux_proxy_choices_render_namelist_and_surface_outputs() -> None:
     from igra_fixtures import IGRA_FIXTURE
 

@@ -61,14 +61,22 @@ The failed Slidell benchmark was not missing the trigger. The namelist used
 thermal structure as Fort Worth.
 
 To test whether fixed warm-bubble placement alone was the limiting factor, a
-single additional rung was added and run:
-`deep_tower_low_level_lift_v0`, stock CM1 `iinit = 9`, `Dmax = -1.0e-3 s^-1`,
-0-2 km forced-convergence depth, 10 km horizontal scale, 900 s duration, same
-120 km / 2 h / disabled-flux scout shape. The forcing appeared by 900 s, with
-near-surface convergence about 1.46e-3 s^-1 and maximum vertical velocity about
-0.74 m/s in that frame.
+one-off trigger-suitability probe selected stock CM1 `iinit = 9` with the same
+normalized Slidell sounding, same 120 km / 2 h / disabled-flux scout shape, and
+the same validated output set. Cloud Chamber selected `iinit = 9`; the detailed
+convergence controls are defined by the configured CM1 source/build, not by a
+durable Cloud Chamber recipe contract. The package did not explicitly control
+or validate `Dmax`, forcing depth, horizontal scale, or forcing duration.
 
-That follow-up completed and auto-ingested as
+Available provenance for that probe: CM1 reported release `cm1r21.1`; the
+configured executable was `cm1.exe` from the configured CM1 run directory; Cloud
+Chamber app version was `0.1.0`; no source-customization artifact was recorded;
+the process started at `2026-07-17T12:41:49Z`, finished at
+`2026-07-17T12:51:35Z`, and exited `0`. The forcing appeared in model output by
+900 s, with observed near-surface convergence about 1.46e-3 s^-1 and maximum
+vertical velocity about 0.74 m/s in that frame.
+
+The one-off follow-up completed and auto-ingested as
 `cloud_chase_004-slidell_low_level_lift_probe`: normal termination, underflow
 warning only, nine output frames through 7200 s. Outcome: no cloud, no raw
 hydrometeor trace, no rain, max updraft 1.28 m/s at 900 s, max qc 0, max qr 0,
@@ -77,21 +85,26 @@ max reflectivity 0.
 ## Conclusion
 
 Fort Worth and Slidell responded differently for physically understandable
-reasons: Fort Worth's bubble-layer thermodynamic profile could sustain the
-imposed thermal into deep buoyant growth, while Slidell's apparent opportunity
-was dominated by a shallow, discontinuous near-surface moisture/CAPE signal that
-did not translate into cloud under either the fixed warm bubble or one low-level
-forced-convergence rung.
+reasons under the tested Deep-Tower benchmark triggers: Fort Worth's
+bubble-layer thermodynamic profile could sustain the imposed thermal into deep
+buoyant growth, while Slidell's apparent opportunity was dominated by a
+shallow, discontinuous near-surface moisture/CAPE signal that did not translate
+into cloud under either the fixed warm bubble or the one-off `iinit = 9`
+trigger-suitability probe.
 
-Choose outcome **B: the analyzer overestimates atmospheric potential** for this
-specific profile. The fixed trigger was a plausible suspect, but the low-level
-lift rung made the same no-cloud result, so trigger placement alone is not the
-best product explanation.
+Choose outcome **B: the analyzer overestimated atmospheric potential** for this
+specific profile and these tested Deep-Tower benchmark triggers.
+`sounding-screening-v2` overestimated Slidell's usefulness because a shallow,
+discontinuous near-surface moisture/CAPE signal inflated the recommendation.
+This does not show that Slidell could not support deep convection under a
+stronger or different setup.
 
 ## Recommendation
 
 Record Slidell `USM00072233` at `1998-06-20T00:00:00Z` as a negative supported
-Deep-Tower trial for both `deep_tower_benchmark_v0` and
-`deep_tower_low_level_lift_v0`, and use it in the next analyzer review to
-handle near-surface discontinuity / surface-CAPE-dominated profiles without
-retuning the opportunity weights in this change.
+Deep-Tower trial for `deep_tower_benchmark_v0`, and record
+`cloud_chase_004-slidell_low_level_lift_probe` as a one-off `iinit = 9`
+trigger-suitability probe, not a supported product recipe. Use the result in
+the next analyzer review to handle near-surface discontinuity /
+surface-CAPE-dominated profiles without retuning the opportunity weights in
+this change.

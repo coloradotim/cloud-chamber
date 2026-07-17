@@ -591,15 +591,6 @@ def _run_recipe_mapping_summary(contract: CM1InputContract) -> str:
             "reflectivity output, vorticity output, and updraft-helicity output; explicit "
             "initiation is supplied and must be interpreted as an idealized trigger"
         )
-    if contract.run_recipe.value == "deep_tower_low_level_lift":
-        return (
-            "observed IGRA external input_sounding profile with observed u/v winds; "
-            "the run uses CM1 isnd=7, testcase=0, stock CM1 iinit=9 forced "
-            "low-level convergence, a storm-scale idealized domain, NetCDF output, "
-            "rain output, reflectivity output, vorticity output, and updraft-helicity "
-            "output; explicit low-level lift is supplied and must be interpreted as "
-            "an idealized trigger, not an observed boundary"
-        )
     if contract.run_configuration.surface_forcing_patch is not None:
         return (
             "observed IGRA external input_sounding profile; the run uses CM1 isnd=7, "
@@ -634,12 +625,6 @@ def _cm1_mapping_status(contract: CM1InputContract) -> str:
             "CM1-ready Deep-Tower Benchmark run with explicit stock-CM1 iinit=3 "
             "three-warm-bubble initiation. Prior Fort Worth smoke evidence applies to "
             "the recipe path; each observed sounding remains a CM1 experiment to inspect."
-        )
-    if contract.run_recipe.value == "deep_tower_low_level_lift":
-        return (
-            "CM1-ready Deep-Tower Low-Level Lift Benchmark run with explicit stock-CM1 "
-            "iinit=9 forced convergence. Local Slidell smoke evidence confirms the "
-            "recipe path runs and is interpretable, but it did not produce cloud."
         )
     if contract.run_configuration.surface_forcing_patch is not None:
         return (
