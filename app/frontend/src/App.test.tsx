@@ -458,10 +458,15 @@ function preRunValidationReportForRequest(body: {
       ? "observed_surface_forced_evolution"
       : "generated_reference_lower_atmosphere");
   const observed = runRecipe === "observed_surface_forced_evolution";
-  const recipeId = observed
+  const deepTower = runRecipe === "deep_tower_benchmark";
+  const recipeId = deepTower
+    ? "deep_tower_benchmark_v0"
+    : observed
       ? "observed_surface_forced_evolution_v0"
       : "generated_reference_lower_atmosphere_v1";
-  const recipeDisplayName = observed
+  const recipeDisplayName = deepTower
+    ? "Deep-Tower Benchmark v0"
+    : observed
       ? "Observed Surface-Forced Evolution v0"
       : "Generated Lower-Atmosphere Reference";
   const activeStory =
@@ -500,19 +505,26 @@ function preRunValidationReportForRequest(body: {
         typeof body.candidate_screening?.rank_score === "number"
           ? body.candidate_screening.rank_score
           : null,
-      predicted_output_signature: observed ? ["qv", "qc", "w", "qr", "rain", "dbz"] : [],
+      predicted_output_signature:
+        observed || deepTower ? ["qv", "qc", "w", "qr", "rain", "dbz"] : [],
     },
     selected_run_recipe: {
       run_recipe: runRecipe,
       recipe_id: recipeId,
-      display_name: observed
+      display_name: deepTower
+        ? "Deep-Tower Benchmark"
+        : observed
           ? "Observed Surface-Forced Evolution"
           : "Generated Lower-Atmosphere Reference",
       recipe_display_name: recipeDisplayName,
-      assumption_set_id: observed
+      assumption_set_id: deepTower
+        ? "deep_tower_benchmark_v0_assumptions"
+        : observed
           ? "observed_surface_forced_evolution_v0_assumptions"
           : "generated_reference_lower_atmosphere_v1",
-      assumption_mode: observed
+      assumption_mode: deepTower
+        ? "explicit_thermal_initiation"
+        : observed
           ? "observed_surface_forced_evolution"
           : "generated_reference",
     },
@@ -918,15 +930,16 @@ function screeningResponseForRequest(init?: RequestInit) {
     .sort((left, right) => compareCandidateFixtures(left, right, storyFilter, storyFamily, sortBy));
   const limitedCandidates = candidates.slice(0, limit);
   const stationDistribution = Array.from(
-    limitedCandidates.reduce((counts, candidate) => {
-      const current = counts.get(candidate.station_id) ?? {
-        station_id: candidate.station_id,
-        station_name: candidate.station_name,
-        count: 0,
-      };
-      counts.set(candidate.station_id, { ...current, count: current.count + 1 });
-      return counts;
-    }, new Map<string, { station_id: string; station_name?: string | null; count: number }>())
+    limitedCandidates
+      .reduce((counts, candidate) => {
+        const current = counts.get(candidate.station_id) ?? {
+          station_id: candidate.station_id,
+          station_name: candidate.station_name,
+          count: 0,
+        };
+        counts.set(candidate.station_id, { ...current, count: current.count + 1 });
+        return counts;
+      }, new Map<string, { station_id: string; station_name?: string | null; count: number }>())
       .values(),
   );
   return {
@@ -3698,9 +3711,7 @@ describe("App", () => {
       screen.getByText("360 min runtime; 900 s output; 25 saved frames; 3 s timestep"),
     ).toBeInTheDocument();
     expect(
-      screen.getByText(
-        "64 x 64 x 100; dx/dy 100 m; top 18 km, dz 40 m to 600 m stretched",
-      ),
+      screen.getByText("64 x 64 x 100; dx/dy 100 m; top 18 km, dz 40 m to 600 m stretched"),
     ).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Local run launchpad" })).toBeInTheDocument();
     expect(
@@ -3795,7 +3806,9 @@ describe("App", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Add to run plan" }));
     expect(screen.getByRole("heading", { name: "Plan multiple CM1 runs" })).toBeInTheDocument();
-    expect(within(screen.getByLabelText("Run plan")).queryByLabelText("Recipe")).not.toBeInTheDocument();
+    expect(
+      within(screen.getByLabelText("Run plan")).queryByLabelText("Recipe"),
+    ).not.toBeInTheDocument();
 
     fireEvent.click(
       screen.getByRole("button", { name: "Create packages and queue selected runs" }),
@@ -3812,7 +3825,7 @@ describe("App", () => {
     });
   });
 
-  it("stages deep-convection candidates as observed forcing runs", async () => {
+  it("stages deep-convection candidates as Deep-Tower Benchmark runs", async () => {
     const defaultFetch = vi.mocked(fetch).getMockImplementation();
     let dryRunBody = "";
     let screenBody = "";
@@ -3850,8 +3863,14 @@ describe("App", () => {
     expect(screenBody).toContain('"story_filter":"deep_convection_trial"');
     const deepCard = screen.getByLabelText("Sounding candidate Norman, Oklahoma (USM00072357)");
     expect(deepCard).toHaveTextContent("Supercell-like environment");
+    expect(deepCard).toHaveTextContent(
+      "Deep-tower candidate with stronger screening support; use the benchmark trigger to test the convective ceiling.",
+    );
 
     fireEvent.click(within(deepCard).getByRole("button", { name: "Configure run" }));
+    expect(screen.getByLabelText("Candidate details")).toHaveTextContent(
+      "First run: Deep-Tower Benchmark · stock CM1 iinit=3 · ~120 km · 2 h.",
+    );
     fireEvent.click(screen.getByRole("button", { name: "Add to run plan" }));
 
     expect(
@@ -3859,10 +3878,16 @@ describe("App", () => {
     ).toBeInTheDocument();
     const runPlan = within(screen.getByLabelText("Run plan"));
     expect(runPlan.queryByLabelText("Recipe")).not.toBeInTheDocument();
-    expect(runPlan.getByLabelText("Surface heat flux")).toHaveValue("8.0e-3");
-    expect(runPlan.getByLabelText("Surface moisture flux")).toHaveValue("5.2e-5");
-    expect(screen.getByText("observed_surface_forced_evolution_v0")).toBeInTheDocument();
-    expect(screen.getByText(/No artificial trigger/i)).toBeInTheDocument();
+    expect(runPlan.getByLabelText("Surface forcing")).toHaveValue("disabled");
+    expect(runPlan.getByLabelText("Surface heat flux")).toHaveValue("0");
+    expect(runPlan.getByLabelText("Surface moisture flux")).toHaveValue("0");
+    expect(runPlan.getByLabelText("Duration")).toHaveValue("scout_2h");
+    expect(runPlan.getByLabelText("Horizontal cells")).toHaveValue("cells_120");
+    expect(runPlan.getByLabelText("Domain size")).toHaveValue("deep_tower_120km");
+    expect(screen.getByText("deep_tower_benchmark_v0")).toBeInTheDocument();
+    expect(
+      screen.getByText(/Explicit initiation is supplied with CM1 iinit=3/i),
+    ).toBeInTheDocument();
     expect(screen.getAllByLabelText(/^Run plan item /)).toHaveLength(1);
 
     fireEvent.click(screen.getByRole("button", { name: "Duplicate variant" }));
@@ -3874,10 +3899,15 @@ describe("App", () => {
     );
 
     await waitFor(() => {
-      expect(dryRunBody).toContain('"run_recipe":"observed_surface_forced_evolution"');
+      expect(dryRunBody).toContain('"run_recipe":"deep_tower_benchmark"');
       expect(dryRunBody).toContain('"diagnostic_set":"full"');
-      expect(dryRunBody).toContain('"surface_heat_flux_k_m_s":"8.0e-3"');
-      expect(dryRunBody).toContain('"surface_moisture_flux_g_g_m_s":"5.2e-5"');
+      expect(dryRunBody).toContain('"duration":"scout_2h"');
+      expect(dryRunBody).toContain('"horizontal_cell_count":"cells_120"');
+      expect(dryRunBody).toContain('"domain_size":"deep_tower_120km"');
+      expect(dryRunBody).toContain('"surface_forcing_mode":"disabled"');
+      expect(dryRunBody).toContain('"surface_heat_flux_k_m_s":"0"');
+      expect(dryRunBody).toContain('"surface_moisture_flux_g_g_m_s":"0"');
+      expect(dryRunBody).toContain('"time_step_seconds":"6.0"');
       expect(dryRunBody).toContain('"candidate_screening"');
       expect(dryRunBody).toContain('"primary_story":"supercell_environment"');
       expect(dryRunBody).toContain('"candidate_id":"USM00072357-2025052000-supercell"');
@@ -3922,7 +3952,9 @@ describe("App", () => {
     expect(
       await screen.findByText("Wilmington, Ohio (USM00072426) added to the run plan"),
     ).toBeInTheDocument();
-    expect(within(screen.getByLabelText("Run plan")).queryByLabelText("Recipe")).not.toBeInTheDocument();
+    expect(
+      within(screen.getByLabelText("Run plan")).queryByLabelText("Recipe"),
+    ).not.toBeInTheDocument();
     expect(screen.getByText("observed_surface_forced_evolution_v0")).toBeInTheDocument();
 
     fireEvent.click(
@@ -3975,9 +4007,7 @@ describe("App", () => {
     expect(screen.getByText(/Choose the stations and history/)).toBeInTheDocument();
     expect(screen.getByText("Cached soundings ready to search")).toBeInTheDocument();
     expect(screen.queryByLabelText("Save into")).not.toBeInTheDocument();
-    expect(
-      screen.getByRole("button", { name: "Search selected soundings" }),
-    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Search selected soundings" })).toBeInTheDocument();
 
     fireEvent.click(screen.getByText("Advanced filters"));
     fireEvent.change(screen.getByLabelText("Story"), {
@@ -4006,12 +4036,12 @@ describe("App", () => {
     expect(candidateDetails).toHaveTextContent("Run fit");
     expect(candidateDetails).toHaveTextContent("Top limits");
     expect(candidateDetails).not.toHaveTextContent("Scores rank sounding ingredients only");
-    expect(within(candidateDetails).getByText("All evidence").closest("details")).not.toHaveAttribute(
-      "open",
-    );
-    expect(within(candidateDetails).getByText("Feature values").closest("details")).not.toHaveAttribute(
-      "open",
-    );
+    expect(
+      within(candidateDetails).getByText("All evidence").closest("details"),
+    ).not.toHaveAttribute("open");
+    expect(
+      within(candidateDetails).getByText("Feature values").closest("details"),
+    ).not.toHaveAttribute("open");
     expect(within(candidateDetails).queryByLabelText("Tags")).not.toBeInTheDocument();
     fireEvent.click(within(candidateDetails).getByRole("button", { name: "Save candidate" }));
     fireEvent.change(within(candidateDetails).getByLabelText("Tags"), {
@@ -4089,9 +4119,7 @@ describe("App", () => {
       screen.getByRole("heading", { name: "Recommended cached soundings" }),
     ).toBeInTheDocument();
 
-    fireEvent.click(
-      within(selectedValleyCard).getByRole("button", { name: "Configure run" }),
-    );
+    fireEvent.click(within(selectedValleyCard).getByRole("button", { name: "Configure run" }));
     fireEvent.click(screen.getByRole("button", { name: "Add to run plan" }));
     expect(
       await screen.findByText("Valley, Nebraska (USM00072558) added to the run plan"),
@@ -4293,7 +4321,9 @@ describe("App", () => {
       target: { value: "deep_convection" },
     });
     expect(screen.getByText("Advanced filters").closest("details")).not.toHaveAttribute("open");
-    expect(screen.getByText("Search intent changed; search selected soundings")).toBeInTheDocument();
+    expect(
+      screen.getByText("Search intent changed; search selected soundings"),
+    ).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Search selected soundings" }));
 
     expect(await screen.findByText("Recommendation run complete")).toBeInTheDocument();
@@ -4304,12 +4334,13 @@ describe("App", () => {
     expect(analyzeBody).toContain('"latest_per_station":null');
     expect(analyzeBody).toContain('"limit":100');
     expect(
-      screen.getByText((content) =>
-        content.includes("5 analyzed from 5 selected cached soundings") &&
-        content.includes("4 stations") &&
-        content.includes("all cached history") &&
-        content.includes("2 matched deep convection stories") &&
-        content.includes("2 shown"),
+      screen.getByText(
+        (content) =>
+          content.includes("5 analyzed from 5 selected cached soundings") &&
+          content.includes("4 stations") &&
+          content.includes("all cached history") &&
+          content.includes("2 matched deep convection stories") &&
+          content.includes("2 shown"),
       ),
     ).toBeInTheDocument();
     expect(
@@ -4367,8 +4398,7 @@ describe("App", () => {
       expect(analyzeBody).toContain('"latest_per_station":3');
     });
     expect(
-      (await screen.findAllByLabelText("Sounding candidate Norman, Oklahoma (USM00072357)"))
-        .length,
+      (await screen.findAllByLabelText("Sounding candidate Norman, Oklahoma (USM00072357)")).length,
     ).toBeGreaterThan(0);
   });
 
@@ -4395,7 +4425,10 @@ describe("App", () => {
     expect(wilmingtonCard).toHaveTextContent("High-CAPE pulse storm");
     expect(wilmingtonCard).not.toHaveTextContent("Primary: Humid / rainy");
     expect(wilmingtonCard).toHaveTextContent("48.9 % ingredient score");
-    expect(wilmingtonCard).toHaveTextContent("testable as forced observed evolution");
+    expect(wilmingtonCard).toHaveTextContent("testable with Deep-Tower Benchmark");
+    expect(wilmingtonCard).toHaveTextContent(
+      "Caveated deep-tower candidate; use the benchmark trigger to test the convective ceiling.",
+    );
     expect(
       screen.queryByLabelText("Sounding candidate Norman, Oklahoma (USM00072357)"),
     ).not.toBeInTheDocument();
@@ -4460,9 +4493,7 @@ describe("App", () => {
         expect(init?.body).toEqual(expect.stringContaining('"domain_size":"wide_12km"'));
         expect(init?.body).toEqual(expect.stringContaining('"output_cadence":"detailed_5min"'));
         expect(init?.body).toEqual(expect.stringContaining('"diagnostic_set":"full"'));
-        expect(init?.body).toEqual(
-          expect.stringContaining('"surface_heat_flux_k_m_s":"0.04"'),
-        );
+        expect(init?.body).toEqual(expect.stringContaining('"surface_heat_flux_k_m_s":"0.04"'));
         expect(init?.body).toEqual(
           expect.stringContaining('"surface_moisture_flux_g_g_m_s":"1.1e-4"'),
         );
@@ -4961,14 +4992,10 @@ describe("App", () => {
     expect(within(card).getByText("Auto-ingested")).toBeInTheDocument();
     expect(within(card).queryByText("Ready to ingest")).not.toBeInTheDocument();
     expect(within(card).queryByText("Not ingested")).not.toBeInTheDocument();
-    expect(within(card).queryByRole("button", { name: "Ingest output" }))
-      .not.toBeInTheDocument();
-    expect(within(card).queryByRole("button", { name: "Preview cleanup" }))
-      .not.toBeInTheDocument();
-    expect(within(card).getByRole("button", { name: "Open result" }))
-      .toBeInTheDocument();
-    expect(within(card).getByRole("button", { name: "Open in Explore" }))
-      .toBeInTheDocument();
+    expect(within(card).queryByRole("button", { name: "Ingest output" })).not.toBeInTheDocument();
+    expect(within(card).queryByRole("button", { name: "Preview cleanup" })).not.toBeInTheDocument();
+    expect(within(card).getByRole("button", { name: "Open result" })).toBeInTheDocument();
+    expect(within(card).getByRole("button", { name: "Open in Explore" })).toBeInTheDocument();
   });
 
   it("automatically copies back, ingests, and cleans LAN worker output after completion", async () => {
@@ -5618,9 +5645,7 @@ describe("App", () => {
     render(<App />);
 
     const resultDetail = await screen.findByLabelText("Result detail");
-    expect(resultDetail).toHaveTextContent(
-      "Observed Surface-Forced Experiment — Norman, Oklahoma",
-    );
+    expect(resultDetail).toHaveTextContent("Observed Surface-Forced Experiment — Norman, Oklahoma");
     expect(resultDetail).toHaveTextContent("Deep convection formed");
     expect(resultDetail).toHaveTextContent("Screening vs CM1");
     expect(resultDetail).toHaveTextContent("Supercell-like environment");
@@ -7196,7 +7221,9 @@ describe("App", () => {
     expect(within(cameraControls).getByText(/Camera moved down/)).toBeInTheDocument();
     fireEvent.click(within(cameraControls).getByRole("button", { name: "Taller viewport" }));
     expect(within(cameraControls).getByText(/Viewport set taller/)).toBeInTheDocument();
-    expect(within(cameraControls).getByRole("button", { name: "Standard viewport" })).toBeInTheDocument();
+    expect(
+      within(cameraControls).getByRole("button", { name: "Standard viewport" }),
+    ).toBeInTheDocument();
     fireEvent.click(screen.getByText("Technical visualization details"));
     expect(screen.getByText("Direct Three.js point cloud")).toBeInTheDocument();
 

@@ -11,6 +11,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 UNIFORM_SURFACE_FLUX_MODE = "constant_uniform_surface_flux_proxy"
 DIFFERENTIAL_SURFACE_FORCING_MODE = "differential_surface_forcing_patch_v0"
+DISABLED_SURFACE_FLUX_MODE = "disabled"
 SURFACE_FORCING_PATCH_FILENAME = "cloud_chamber_surface_forcing_patch.dat"
 SURFACE_FORCING_PATCH_JSON_FILENAME = "surface_forcing_patch.json"
 CM1_SOURCE_CUSTOMIZATION_FILENAME = "cm1_source_customization.json"
@@ -66,7 +67,11 @@ def surface_forcing_mode_from_payload(payload: dict[str, Any]) -> str:
         return UNIFORM_SURFACE_FLUX_MODE
     if raw == "uniform":
         return UNIFORM_SURFACE_FLUX_MODE
-    if raw in {UNIFORM_SURFACE_FLUX_MODE, DIFFERENTIAL_SURFACE_FORCING_MODE}:
+    if raw in {
+        UNIFORM_SURFACE_FLUX_MODE,
+        DIFFERENTIAL_SURFACE_FORCING_MODE,
+        DISABLED_SURFACE_FLUX_MODE,
+    }:
         return str(raw)
     raise ValueError(f"Unknown surface forcing mode: {raw}")
 

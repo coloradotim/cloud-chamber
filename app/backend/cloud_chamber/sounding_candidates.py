@@ -1664,18 +1664,18 @@ def _candidate_recipe_fit(
         }
     if story in DEEP_CONVECTION_STORY_IDS:
         caveats = [
-            "deep_convection_outcome_depends_on_surface_forcing_duration_domain_and_resolution",
-            "differential_surface_forcing_patch_recipe_available_for_initiation_tests",
+            "deep_convection_outcome_depends_on_explicit_trigger_duration_domain_and_resolution",
+            "deep_tower_benchmark_uses_idealized_warm_bubbles_not_observed_boundary",
         ]
         if features.get("observed_wind_available") is not True:
             caveats.append("complete_observed_wind_profile_required_for_input_sounding")
         return {
-            "status": "partially_testable",
-            "label": "testable as forced observed evolution",
+            "status": "testable_now",
+            "label": "testable with Deep-Tower Benchmark",
             "summary": (
                 "This story screens deep-convection ingredients. CM1 can evolve the observed "
-                "atmosphere under selected lower-boundary forcing; a differential surface "
-                "patch can be selected when localized initiation is the question."
+                "atmosphere with the explicit Deep-Tower Benchmark trigger; use surface-forced "
+                "recipes when lower-boundary initiation is the question."
             ),
             "caveats": caveats,
         }
@@ -2195,7 +2195,7 @@ def _score_features(
             ],
             caveats=[
                 "line/cold-pool-specific recipe support may come later; "
-                "v1 runs as observed surface-forced evolution",
+                "v1 uses the Deep-Tower Benchmark as a first experiment",
                 *deep_caveats,
             ],
         ),

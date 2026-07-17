@@ -60,10 +60,10 @@ run_recipe:
   product_question: string
   compatible_story_ids: [string]
   assumption_set_id: string
-  assumption_mode:
-    observed_surface_forced_evolution
+  assumption_mode: observed_surface_forced_evolution
     | surface_forced_evolution
     | differential_surface_forced_evolution
+    | explicit_thermal_initiation
     | elevated_forced_evolution
     | future
   run_shape:
@@ -113,10 +113,10 @@ run_recipe:
     status: supported | caveated | blocked | future
     caveats: [string]
   cm1_mapping:
-    run_recipe:
-      generated_reference_lower_atmosphere
+    run_recipe: generated_reference_lower_atmosphere
       | observed_surface_forced_evolution
       | differential_surface_forced_evolution
+      | deep_tower_benchmark
       | future
     run_configuration_defaults:
       duration: string | null
@@ -201,12 +201,14 @@ run_shape:
   output_cadence_seconds: 3600 | 900 | 300 | configured
   requested_fields: full_output_field_set
 forcing:
-  trigger: {mode: none}
-  surface_sensible_heat_flux: {mode: prescribed, units: K m/s, value: configured}
-  surface_latent_heat_flux: {mode: prescribed, units: g/g m/s, value: configured}
-  radiation: {mode: disabled}
-  large_scale_lift: {mode: none}
-  convergence: {mode: none}
+  trigger: { mode: none }
+  surface_sensible_heat_flux:
+    { mode: prescribed, units: K m/s, value: configured }
+  surface_latent_heat_flux:
+    { mode: prescribed, units: g/g m/s, value: configured }
+  radiation: { mode: disabled }
+  large_scale_lift: { mode: none }
+  convergence: { mode: none }
 required_inputs:
   observed_temperature_profile: required
   observed_moisture_profile: required
@@ -398,11 +400,40 @@ This is the honest bridge for `humid_rainy_candidate`: Cloud Chamber may run a
 moist observed-sounding experiment now, but precipitation signatures are only
 testable when the required fields are requested, ingested, and clearly labeled.
 
-Deep-convection candidate stories currently use the same observed-sounding
-surface-forced run path with stronger caveats. The run can inspect whether deep
-cloud, strong updraft, rain-water aloft, surface rain, and reflectivity occur
-under selected uniform lower-boundary forcing. It does not claim to supply a
-localized storm trigger.
+### `deep_tower_benchmark_v0`
+
+```yaml
+recipe_id: deep_tower_benchmark_v0
+display_name: Deep-Tower Benchmark
+product_question: What convective ceiling does this observed atmosphere show
+  under explicit idealized thermal initiation?
+assumption_set_id: deep_tower_benchmark_v0_assumptions
+assumption_mode: explicit_thermal_initiation
+required_outputs:
+  fields: [qv, qc, w, qr, rain, dbz, u, v, th, updraft_helicity]
+  diagnostics:
+    - first_cloud
+    - first_deep_convection
+    - max_updraft_w
+    - rain_water_aloft_onset
+    - max_surface_rain
+    - max_dbz
+current_support:
+  status: supported
+  caveats:
+    - The trigger is CM1's stock `iinit = 3` three-warm-bubble line; it is not
+      a real front, dryline, terrain feature, or observed boundary.
+    - Surface heat/moisture fluxes, radiation, terrain, GIS surface
+      initialization, and large-scale forcing are disabled in v0.
+cm1_mapping:
+  run_recipe: deep_tower_benchmark
+```
+
+Deep-convection candidate stories route to this benchmark when an observed
+sounding has a complete rendered wind profile. The result can inspect whether
+deep cloud, strong updraft, rain-water aloft, surface rain, and reflectivity
+occur under the explicit trigger. Surface-forced and differential surface patch
+recipes remain separate lower-boundary initiation questions.
 
 ### `squall_line_cold_pool_future`
 
@@ -450,26 +481,26 @@ source layer and forcing assumptions being tested.
 
 ## Initial Story-To-Recipe Mapping
 
-| Story ID | Primary recipe | Recipe fit | Required assumptions | Required outputs for comparison | Result comparison intent |
-| --- | --- | --- | --- | --- | --- |
-| `shallow_cumulus_candidate` | `observed_surface_forced_evolution_v0` | `testable_now` when the run is long enough | no artificial trigger; numeric uniform surface heat/moisture fluxes; complete observed temperature/moisture/wind profile | `qv`, `qc`, `w`, time and vertical coordinates | cloud formation, cloud top/depth, persistence, vertical velocity |
-| `dry_failed_candidate` | `observed_surface_forced_evolution_v0` | `testable_now` when duration/cadence can support a no-cloud conclusion | no artificial trigger; numeric uniform surface heat/moisture fluxes; complete observed temperature/moisture/wind profile | `qv`, `qc`, `w`, time coordinate | weak/no cloud with meaningful vertical motion; moisture limitation remains caveated |
-| `capped_suppressed_candidate` | `observed_capped_evolution_v1` | `partially_testable` | no explicit trigger; cap comes from observed profile; enough run time to observe delayed growth | `qc`, `w`, `th`, time and vertical coordinates | reduced cloud depth, delayed cloud, or capped vertical motion |
-| `humid_rainy_candidate` | `surface_forced_moist_evolution_v1` | `partially_testable` until surface-flux smoke evidence is broad | numeric uniform surface-flux assumptions; no artificial trigger; precipitation fields requested | `qc`, `w`, `qr`, `rain`, `dbz` when precipitation is predicted | cloud, rain water aloft, surface rain, and reflectivity evaluated separately |
-| `severe_thunderstorm_environment` | `observed_surface_forced_evolution_v0` plus future differential forcing | `partially_testable` | no artificial trigger; numeric uniform surface fluxes; complete observed wind profile; domain/duration/resolution caveats | `qc`, `w`, `qr`, `rain`, `dbz`, `u`, `v`, updraft diagnostics | whether deep cloud and strong updraft occur under the selected uniform forcing; not a storm-initiation guarantee |
-| `supercell_environment` | `observed_surface_forced_evolution_v0` plus future differential forcing | `partially_testable` | no artificial trigger; complete observed wind profile; rotation diagnostics caveated | `qc`, `w`, `qr`, `rain`, `dbz`, `u`, `v`, updraft-helicity when available | deep convection and organization evidence under uniform forcing; not a tornado or forecast product |
-| `high_cape_pulse_storm` | `observed_surface_forced_evolution_v0` plus future differential forcing | `partially_testable` | no artificial trigger; high-CAPE interpretation caveated until parcel diagnostics are implemented | `qc`, `w`, `qr`, `rain`, `dbz` | strong buoyant updraft and deep cloud if CM1 produces them under selected forcing |
-| `dry_microburst_inverted_v` | `observed_surface_forced_evolution_v0` plus future downdraft diagnostics | `partially_testable` only if precipitation/downdraft pathway develops | precipitation aloft; subcloud dry-layer evidence; downdraft diagnostics caveated | `qr`, `rain`, `w`, `th`, near-surface wind fields when implemented | rain water aloft, downdraft/cooling/outflow evidence; not a wind-gust forecast |
-| `squall_line_cold_pool_candidate` | `observed_surface_forced_evolution_v0` plus future `squall_line_cold_pool_future` | `partially_testable` for generic deep-cloud evidence; `requires_recipe` for line/cold-pool claims | no line trigger now; future line forcing and cold-pool diagnostics for the full story | `qc`, `w`, `qr`, `rain`, `dbz`, `th`, `u`, `v` | current run can inspect storm/deep-cloud evidence; cold-pool/line match is future |
-| `elevated_convection` | `elevated_forced_evolution_future` | `requires_recipe` unless a chosen recipe declares source-layer assumptions | elevated source layer, forcing, and surface-decoupling assumptions | `qc`, `w`, `qr`, `rain`, `dbz`, layer diagnostics | future elevated cloud/updraft source-layer comparison |
-| `needs_review` | none by default; user selects a concrete hypothesis first | `not_evaluated` | depends on selected hypothesis | depends on selected hypothesis | cannot compare until an active story and recipe are chosen |
-| `poor_or_incomplete_candidate` | none | `blocked` | package-readiness blockers must be resolved | none | no runnable recipe until profile/input safety passes |
+| Story ID                          | Primary recipe                                                                           | Recipe fit                                                                                        | Required assumptions                                                                                                                  | Required outputs for comparison                                                 | Result comparison intent                                                                                                                                     |
+| --------------------------------- | ---------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `shallow_cumulus_candidate`       | `observed_surface_forced_evolution_v0`                                                   | `testable_now` when the run is long enough                                                        | no artificial trigger; numeric uniform surface heat/moisture fluxes; complete observed temperature/moisture/wind profile              | `qv`, `qc`, `w`, time and vertical coordinates                                  | cloud formation, cloud top/depth, persistence, vertical velocity                                                                                             |
+| `dry_failed_candidate`            | `observed_surface_forced_evolution_v0`                                                   | `testable_now` when duration/cadence can support a no-cloud conclusion                            | no artificial trigger; numeric uniform surface heat/moisture fluxes; complete observed temperature/moisture/wind profile              | `qv`, `qc`, `w`, time coordinate                                                | weak/no cloud with meaningful vertical motion; moisture limitation remains caveated                                                                          |
+| `capped_suppressed_candidate`     | `observed_capped_evolution_v1`                                                           | `partially_testable`                                                                              | no explicit trigger; cap comes from observed profile; enough run time to observe delayed growth                                       | `qc`, `w`, `th`, time and vertical coordinates                                  | reduced cloud depth, delayed cloud, or capped vertical motion                                                                                                |
+| `humid_rainy_candidate`           | `surface_forced_moist_evolution_v1`                                                      | `partially_testable` until surface-flux smoke evidence is broad                                   | numeric uniform surface-flux assumptions; no artificial trigger; precipitation fields requested                                       | `qc`, `w`, `qr`, `rain`, `dbz` when precipitation is predicted                  | cloud, rain water aloft, surface rain, and reflectivity evaluated separately                                                                                 |
+| `severe_thunderstorm_environment` | `deep_tower_benchmark_v0` plus future observed-boundary and differential forcing recipes | `partially_testable`                                                                              | explicit CM1 `iinit = 3` thermal trigger; surface fluxes disabled; complete observed wind profile; domain/duration/resolution caveats | `qc`, `w`, `qr`, `rain`, `dbz`, `u`, `v`, `th`, updraft diagnostics             | whether the observed environment can support deep cloud, rain, and strong updrafts under the benchmark trigger; not an observed initiation or forecast claim |
+| `supercell_environment`           | `deep_tower_benchmark_v0` plus future observed-boundary and storm-mode recipes           | `partially_testable`                                                                              | explicit CM1 `iinit = 3` thermal trigger; surface fluxes disabled; complete observed wind profile; rotation diagnostics caveated      | `qc`, `w`, `qr`, `rain`, `dbz`, `u`, `v`, `th`, updraft-helicity when available | deep convection and organization evidence under the benchmark trigger; not a tornado or forecast product                                                     |
+| `high_cape_pulse_storm`           | `observed_surface_forced_evolution_v0` plus future differential forcing                  | `partially_testable`                                                                              | no artificial trigger; high-CAPE interpretation caveated until parcel diagnostics are implemented                                     | `qc`, `w`, `qr`, `rain`, `dbz`                                                  | strong buoyant updraft and deep cloud if CM1 produces them under selected forcing                                                                            |
+| `dry_microburst_inverted_v`       | `observed_surface_forced_evolution_v0` plus future downdraft diagnostics                 | `partially_testable` only if precipitation/downdraft pathway develops                             | precipitation aloft; subcloud dry-layer evidence; downdraft diagnostics caveated                                                      | `qr`, `rain`, `w`, `th`, near-surface wind fields when implemented              | rain water aloft, downdraft/cooling/outflow evidence; not a wind-gust forecast                                                                               |
+| `squall_line_cold_pool_candidate` | `observed_surface_forced_evolution_v0` plus future `squall_line_cold_pool_future`        | `partially_testable` for generic deep-cloud evidence; `requires_recipe` for line/cold-pool claims | no line trigger now; future line forcing and cold-pool diagnostics for the full story                                                 | `qc`, `w`, `qr`, `rain`, `dbz`, `th`, `u`, `v`                                  | current run can inspect storm/deep-cloud evidence; cold-pool/line match is future                                                                            |
+| `elevated_convection`             | `elevated_forced_evolution_future`                                                       | `requires_recipe` unless a chosen recipe declares source-layer assumptions                        | elevated source layer, forcing, and surface-decoupling assumptions                                                                    | `qc`, `w`, `qr`, `rain`, `dbz`, layer diagnostics                               | future elevated cloud/updraft source-layer comparison                                                                                                        |
+| `needs_review`                    | none by default; user selects a concrete hypothesis first                                | `not_evaluated`                                                                                   | depends on selected hypothesis                                                                                                        | depends on selected hypothesis                                                  | cannot compare until an active story and recipe are chosen                                                                                                   |
+| `poor_or_incomplete_candidate`    | none                                                                                     | `blocked`                                                                                         | package-readiness blockers must be resolved                                                                                           | none                                                                            | no runnable recipe until profile/input safety passes                                                                                                         |
 
-Deep-convection stories should not silently promise initiation. The current
-observed-sounding run path can inspect deep-cloud/updraft evidence under selected
-uniform lower-boundary forcing; Results must keep differential-initiation,
-storm-mode, cold-pool, and severe-weather claims caveated unless the required
-fields and diagnostics exist.
+Deep-convection stories should not silently promise observed initiation. The
+current observed-sounding run path can inspect deep-cloud/updraft evidence with
+the explicit Deep-Tower Benchmark trigger; Results must keep observed-boundary,
+differential-initiation, storm-mode, cold-pool, and severe-weather claims
+caveated unless the required fields and diagnostics exist.
 
 ## Pre-Run Validation Feed (#284)
 

@@ -336,9 +336,13 @@ generated lower-atmosphere references use a six-hour local-domain science run,
 and uploaded or cached observed soundings use observed surface-forced evolution
 with numeric uniform surface heat/moisture forcing, complete observed
 temperature/moisture/wind input, full output fields, and a wider default domain.
-Deep-convection candidates are candidate stories under that run configuration,
-not a separate hidden package family or storm-domain route. One-hour smoke mode
-is an explicit package-health check, not the default science path.
+Cached observed soundings selected through severe/deep-convection stories use
+the Deep-Tower Benchmark instead: complete observed input sounding, surface
+fluxes disabled, stock CM1 `iinit = 3` three-warm-bubble line initiation,
+`testcase = 0`, a two-hour storm-scale scout shape, and explicit caveats that
+the trigger is idealized rather than an observed front, dryline, terrain
+feature, or boundary. One-hour smoke mode is an explicit package-health check,
+not the default science path.
 
 The first quick-look validation run, `dry-run-quicklook-les-shallowcu-20260522151536`, preserved those settings, completed locally, and ingested 13 model-output time steps over 10800 seconds. Diagnostics still reported cloud formation, vertical motion, and rain, so the architecture can treat this runtime-only quick-look preset as the first validated shorter Baseline Shallow Cumulus variant.
 

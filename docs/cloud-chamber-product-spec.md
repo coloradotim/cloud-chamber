@@ -118,19 +118,21 @@ comparison is defined in
 The bridge from those hypotheses to CM1 run recipes is defined in
 [contracts/run-recipe-and-story-mapping.md](contracts/run-recipe-and-story-mapping.md):
 it maps current story IDs to observed surface-forced, differential
-surface-forced, blocked, or future recipes and names the assumptions and output
-fields required before Results can compare predicted signatures. Removed
-triggered deep-potential recipes are not a current product path.
+surface-forced, Deep-Tower Benchmark, blocked, or future recipes and names the
+assumptions and output fields required before Results can compare predicted
+signatures. The legacy `triggered_deep_potential` identifier is only a
+compatibility alias for the current Deep-Tower Benchmark recipe.
 Real-sounding story families, including severe/deep-convection, boundary-layer,
 low-cloud, and winter/cold-season candidates, are defined in
 [research/expanded-sounding-candidate-taxonomy.md](research/expanded-sounding-candidate-taxonomy.md).
 Those labels must remain disabled, caveated, or absent from product UI until
 backend scoring, evidence, caveats, and package-readiness states support them.
 Severe/deep-convection candidates may be presented as pre-run atmospheric
-hypotheses for observed-sounding experiments, not as forecasts or guaranteed
-storm outcomes. Product copy should make the selected run assumptions visible:
-uniform lower-boundary forcing is different from the differential surface patch,
-and neither is an artificial atmospheric trigger.
+hypotheses for the Deep-Tower Benchmark, not as forecasts or guaranteed storm
+outcomes. Product copy should make the selected run assumptions visible:
+CM1 `iinit = 3` warm-bubble initiation is an idealized trigger, uniform
+lower-boundary forcing is a separate surface-forced recipe, and the differential
+surface patch is a separate lower-boundary initiation experiment.
 The backend may compute richer sounding diagnostics such as profile quality,
 moisture/LCL proxies, lapse-rate and cap proxies, wind shear, dry-layer
 signals, and freezing-level context to support future screening. These are
@@ -182,16 +184,17 @@ packaging or queue failures should remain visible instead of clearing the failed
 item from the plan.
 
 Observed-sounding experiments use the observed temperature, moisture, and
-complete wind profile through CM1 `isnd = 7`, apply selected lower-boundary
-heat/moisture forcing, and request the full Results/Explore output field set.
-Severe/deep-convection candidates remain first-class atmospheric hypotheses, but
-current packages do not add an artificial deep-convection trigger. Product copy
-should describe these as observed-sounding experiments under explicit
-surface-forcing, duration, grid, domain, and cadence assumptions. Differential
-surface heating/moisture forcing is a current v0 patch recipe for localized
-initiation or boundary-style experiments; it is not a real front, dryline,
-land-surface, GIS, or radiation model. Its initial v0 geometry is a centered
-circular patch. It is local-only; the external CM1 source customization path has
+complete wind profile through CM1 `isnd = 7` and request the full
+Results/Explore output field set. Severe/deep-convection candidates remain
+first-class atmospheric hypotheses and default to the Deep-Tower Benchmark:
+surface fluxes disabled, stock CM1 `iinit = 3` three-warm-bubble initiation,
+storm-scale domain, and explicit caveats that the trigger is idealized rather
+than an observed boundary. Observed surface-forced runs still apply selected
+lower-boundary heat/moisture forcing. Differential surface heating/moisture
+forcing is a current v0 patch recipe for localized initiation or boundary-style
+experiments; it is not a real front, dryline, land-surface, GIS, or radiation
+model. Its initial v0 geometry is a centered circular patch. It is local-only;
+the external CM1 source customization path has
 runtime-local compile and emitted hfx/qfx forcing-footprint smoke evidence, but
 matched dynamic-response validation remains the #307 closure gate. Results carry
 per-run localized diagnostic availability for emitted footprint regions
@@ -680,32 +683,25 @@ controls:
   - allowed range/options
   - maps_to
 run_configuration:
-  duration:
-    model_time_seconds
-  grid_detail:
-    nx
+  duration: model_time_seconds
+  grid_detail: nx
     ny
     nz
     dx_m
     dy_m
     vertical_grid_summary
-  domain:
-    width_m
+  domain: width_m
     depth_m
     model_top_m
-  output_cadence:
-    model_seconds_between_outputs
+  output_cadence: model_seconds_between_outputs
     expected_saved_frames
-  output_field_density:
-    level
+  output_field_density: level
     requested_fields
-  forcing:
-    surface_sensible_heat_flux
+  forcing: surface_sensible_heat_flux
     surface_latent_heat_flux
     radiation_mode
     place_time_context
-  advanced_cm1_values:
-    timestep_target_seconds
+  advanced_cm1_values: timestep_target_seconds
     namelist_summary
     input_sounding_summary
     runtime_files_needed
@@ -715,11 +711,9 @@ pre_run_validation_report:
   caveats:
   estimated_runtime:
   estimated_output_volume:
-outputs_expected:
-  fields
+outputs_expected: fields
   diagnostics
-visualization_defaults:
-  camera
+visualization_defaults: camera
   fields
   color/opacity
 physical_question:
@@ -727,8 +721,7 @@ learning_goals:
 variation_policy:
   recommended_story_thread:
   recommended_comparison_pattern:
-validation_status:
-  unrun | generated | accepted | needs_calibration
+validation_status: unrun | generated | accepted | needs_calibration
 notes:
 ```
 

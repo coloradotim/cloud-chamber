@@ -171,18 +171,18 @@ output or a clearly labeled supported diagnostic, not from cloud water alone.
 
 ## Outcome Types And Required Fields
 
-| Prediction type | Required fields | Notes |
-| --- | --- | --- |
-| First cloud / cloud formed | `qc`, time coordinate | Uses backend cloud-water threshold and minimum grid-cell rules. |
-| Cloud depth/top | `qc`, vertical coordinate, time coordinate | Must report threshold and cloud-top method. |
-| Shallow cloud persistence | `qc`, time coordinate | Needs enough duration and cadence to distinguish transient noise from evolution. |
-| Updraft strength | `w`, time coordinate | May include height/region caveats when available. |
-| Deep breakthrough | `qc`, `w`, vertical coordinate, time coordinate | Current observed-sounding runs can inspect deep-cloud/updraft evidence under uniform forcing, but broad deep-convection prediction remains caveated until differential forcing and comparison diagnostics are validated. |
-| Rain water aloft | `qr`, time coordinate | User-facing label should say rain water aloft. |
-| Surface rain | `rain` or supported surface precipitation field | Must preserve units and must not be inferred from `qr`. |
-| Reflectivity | `dbz` or supported reflectivity diagnostic | Unsupported reflectivity stays unavailable. |
-| Cold-pool or outflow proxy | near-surface thermodynamic/wind fields plus time coordinate | Must be caveated until backend diagnostics are implemented. |
-| Suppression / no cloud | `qc`, `w`, duration/cadence context | Requires enough run length and output cadence to say the test was meaningful. |
+| Prediction type            | Required fields                                             | Notes                                                                                                                                                                                                                                                  |
+| -------------------------- | ----------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| First cloud / cloud formed | `qc`, time coordinate                                       | Uses backend cloud-water threshold and minimum grid-cell rules.                                                                                                                                                                                        |
+| Cloud depth/top            | `qc`, vertical coordinate, time coordinate                  | Must report threshold and cloud-top method.                                                                                                                                                                                                            |
+| Shallow cloud persistence  | `qc`, time coordinate                                       | Needs enough duration and cadence to distinguish transient noise from evolution.                                                                                                                                                                       |
+| Updraft strength           | `w`, time coordinate                                        | May include height/region caveats when available.                                                                                                                                                                                                      |
+| Deep breakthrough          | `qc`, `w`, vertical coordinate, time coordinate             | Current observed-sounding runs can inspect deep-cloud/updraft evidence with the explicit Deep-Tower Benchmark trigger, but broad deep-convection prediction remains caveated until observed-boundary forcing and comparison diagnostics are validated. |
+| Rain water aloft           | `qr`, time coordinate                                       | User-facing label should say rain water aloft.                                                                                                                                                                                                         |
+| Surface rain               | `rain` or supported surface precipitation field             | Must preserve units and must not be inferred from `qr`.                                                                                                                                                                                                |
+| Reflectivity               | `dbz` or supported reflectivity diagnostic                  | Unsupported reflectivity stays unavailable.                                                                                                                                                                                                            |
+| Cold-pool or outflow proxy | near-surface thermodynamic/wind fields plus time coordinate | Must be caveated until backend diagnostics are implemented.                                                                                                                                                                                            |
+| Suppression / no cloud     | `qc`, `w`, duration/cadence context                         | Requires enough run length and output cadence to say the test was meaningful.                                                                                                                                                                          |
 
 If a required field is absent from the run recipe, the prediction is not
 testable and must not be compared as a miss.
@@ -198,8 +198,7 @@ shape below is the analyzer payload reference to that contract.
 recommended_run_recipes:
   - recipe_id: string
     label: string
-    run_recipe:
-      generated_reference_lower_atmosphere
+    run_recipe: generated_reference_lower_atmosphere
       | observed_surface_forced_evolution
       | future
     run_configuration:
@@ -286,15 +285,15 @@ Explore should inspect the CM1-derived evidence:
 
 Current `story_scores` can map into the future hypothesis object as follows:
 
-| Current field | Future field |
-| --- | --- |
-| `story` | `story_id` |
-| `label` | `story_label` |
-| `score_0_to_100` | `ingredient_score_0_to_100` |
-| `support` | `support` |
-| `reasons` / evidence items | `evidence` |
-| `caveats` | `caveats` |
-| `recipe_fit_status` | `testability.status` seed |
+| Current field              | Future field                |
+| -------------------------- | --------------------------- |
+| `story`                    | `story_id`                  |
+| `label`                    | `story_label`               |
+| `score_0_to_100`           | `ingredient_score_0_to_100` |
+| `support`                  | `support`                   |
+| `reasons` / evidence items | `evidence`                  |
+| `caveats`                  | `caveats`                   |
+| `recipe_fit_status`        | `testability.status` seed   |
 
 Until assumption sets and predicted output signatures exist, the analyzer should
 emit ingredient/screening scores, recipe-fit caveats, and no predicted output
@@ -307,8 +306,8 @@ Tests for the future implementation should prove:
 - hypotheses cannot include predicted signatures without assumption sets;
 - missing required output fields produce `inconclusive` or field-level
   `unavailable`, not a failed prediction;
-- observed surface-forced hypotheses remain distinct from future differential
-  forcing and radiation/place-time hypotheses;
+- Deep-Tower Benchmark hypotheses remain distinct from observed surface-forced,
+  differential-forcing, and radiation/place-time hypotheses;
 - `qr`, surface `rain`, and `dbz` are labeled and evaluated separately;
 - the browser receives bounded backend JSON and does not parse raw IGRA, ZIP, or
   NetCDF data;

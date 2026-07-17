@@ -139,6 +139,7 @@ def write_model_netcdf(
     qfx_values: list[float] | None = None,
     qv_values: list[float] | None = None,
     th_values: list[float] | None = None,
+    uh_values: list[float] | None = None,
     z_values: list[float] | None = None,
     include_qc: bool = True,
     include_w: bool = True,
@@ -216,6 +217,12 @@ def write_model_netcdf(
                 for th_value in th_values
             ],
             {"units": "K"},
+        )
+    if uh_values is not None:
+        data_vars["uh"] = (
+            ("time", "y", "x"),
+            [[[uh_value for _x in range(4)] for _y in range(3)] for uh_value in uh_values],
+            {"units": "m2/s2"},
         )
     xr.Dataset(
         data_vars=data_vars,
@@ -386,6 +393,33 @@ def test_ingests_valid_tiny_netcdf_metadata(tmp_path: Path) -> None:
     assert [entry.time_index for entry in product_manifest.time_index] == [0]
     assert product_manifest.time_index[0].source_file == str(netcdf_path)
     assert product_manifest.time_index[0].local_time_index == 0
+
+
+def test_required_updraft_helicity_accepts_cm1_uh_variable(tmp_path: Path) -> None:
+    manifest_path = create_manifest(tmp_path, run_id="run-updraft-helicity-alias")
+    run_dir = manifest_path.parent
+    netcdf_path = run_dir / "cm1out_000001.nc"
+    write_model_netcdf(
+        netcdf_path,
+        times=[0.0],
+        qc_values=[0.0],
+        w_values=[0.0],
+        uh_values=[12.0],
+    )
+    manifest = load_run_manifest(manifest_path)
+    write_run_manifest(
+        manifest_path,
+        manifest.model_copy(update={"required_output_fields": ["qc", "w", "updraft_helicity"]}),
+    )
+    complete_manifest(manifest_path, OutputMetadata(netcdf_paths=[str(netcdf_path)]))
+
+    result = ingest_completed_run(manifest_path)
+
+    assert set(result.variables) == {"qc", "w", "uh"}
+    assert result.missing_required_output_fields == []
+    assert not any(
+        warning.startswith("Recipe required output fields missing") for warning in result.warnings
+    )
 
 
 def test_result_metadata_serializes_and_lists_from_runtime_home(tmp_path: Path) -> None:

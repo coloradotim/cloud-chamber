@@ -55,6 +55,8 @@ RESULT_METADATA_FILENAME = "result_metadata.json"
 REQUIRED_OUTPUT_FIELD_ALIASES: dict[str, set[str]] = {
     "qfx": {"qfx", "lhfx"},
     "lhfx": {"qfx", "lhfx"},
+    "updraft_helicity": {"updraft_helicity", "uh"},
+    "uh": {"updraft_helicity", "uh"},
 }
 MODEL_OUTPUT_PATTERN = re.compile(r"^cm1out_\d+\.nc(?:4)?$")
 STATS_OUTPUT_NAMES = {"cm1out_stats.nc", "cm1out_stats.nc4"}
@@ -2181,6 +2183,8 @@ def _candidate_story_label(story: str | None) -> str | None:
 
 
 def _display_run_recipe(run_recipe: str | None) -> str:
+    if run_recipe == "deep_tower_benchmark":
+        return "Deep-Tower Benchmark"
     if run_recipe == "observed_surface_forced_evolution":
         return "Observed Surface-Forced Evolution"
     return "CM1 run"
