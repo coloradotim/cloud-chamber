@@ -108,6 +108,10 @@ only when the simple EL estimate is usable. Deep-layer shear receives little or
 no weight because this selector asks whether the benchmark trigger can reveal a
 deep convective ceiling, not whether a storm will organize.
 
+Supported opportunity means the atmosphere is worth a benchmark test; it does
+not prove that the fixed warm-bubble trigger is the right lift for every
+surface-rooted or shallow-inflow profile.
+
 ## Story Logic
 
 Scores are 0-100 candidate-selection aids. They are weighted heuristics, not

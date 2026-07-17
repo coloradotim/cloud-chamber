@@ -225,10 +225,15 @@ DEFAULT_SURFACE_MOISTURE_FLUX_G_G_M_S = 5.2e-5
 DEFAULT_TIME_STEP_SECONDS = 3.0
 SURFACE_HEAT_FLUX_CONTEXT_RANGE_K_M_S = (0.0, 0.2)
 SURFACE_MOISTURE_FLUX_CONTEXT_RANGE_G_G_M_S = (0.0, 2.0e-4)
+DEEP_TOWER_RUN_RECIPES = {
+    "deep_tower_benchmark",
+    "deep_tower_low_level_lift",
+    "triggered_deep_potential",
+}
 
 
 def default_run_configuration_payload(run_recipe: str | None = None) -> dict[str, str | float]:
-    if run_recipe in {"deep_tower_benchmark", "triggered_deep_potential"}:
+    if run_recipe in DEEP_TOWER_RUN_RECIPES:
         return {
             "duration": "scout_2h",
             "horizontal_cell_count": "cells_120",
@@ -281,7 +286,9 @@ def resolve_run_configuration(
     }
 
     initiation_method = (
-        "cm1_iinit_3_three_warm_bubbles"
+        "cm1_iinit_9_forced_convergence"
+        if run_recipe == "deep_tower_low_level_lift"
+        else "cm1_iinit_3_three_warm_bubbles"
         if run_recipe in {"deep_tower_benchmark", "triggered_deep_potential"}
         else "none"
     )
@@ -555,6 +562,8 @@ def _configuration_caveats(
 def _initiation_summary(initiation_method: str) -> str:
     if initiation_method == "cm1_iinit_3_three_warm_bubbles":
         return "CM1 iinit=3 three warm bubbles"
+    if initiation_method == "cm1_iinit_9_forced_convergence":
+        return "CM1 iinit=9 low-level forced convergence"
     return "No artificial initiation"
 
 
@@ -650,7 +659,7 @@ def _surface_mode_id(surface_flux_mode: str, patch_sha256: str | None) -> str:
 
 
 def _rayleigh_damping_start_m(run_recipe: str | None = None) -> int:
-    if run_recipe in {"deep_tower_benchmark", "triggered_deep_potential"}:
+    if run_recipe in DEEP_TOWER_RUN_RECIPES:
         return 15000
     return 12000
 
