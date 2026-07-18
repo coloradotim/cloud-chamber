@@ -1,298 +1,141 @@
-# AGENTS.md - Cloud Chamber
+# AGENTS.md — Cloud Chamber Repository Recovery
 
-## Project Identity
+## Product authority
 
-Cloud Chamber is a local-first configuration, run-management, diagnostics, and
-visualization environment for CM1 cloud experiments.
+Before any nontrivial work, read:
 
-The goal is to make CM1 usable, beautiful, and explainable for guided
-cloud-physics exploration.
+1. `NORTH_STAR.md`
+2. `docs/product/PRODUCT_VISION.md`
 
-CM1 is the high-fidelity simulation engine; Cloud Chamber is the local
-experiment builder, run manager, result notebook, diagnostics layer, and
-visualizer.
+These are the controlling statements of why Cloud Chamber exists and what product it is intended to become.
 
-## Product Rule
+Existing issues, scenarios, roadmaps, product specifications, research notes, UI language, and implementation structures may reflect superseded product directions. They are evidence and history, not automatic product authority.
 
-CM1 is the high-fidelity model. The app should not pretend to be CM1.
+When a lower-level artifact conflicts with the North Star or Product Vision, stop and ask for direction. Do not reconcile the conflict by silently changing the product.
 
-Reduced/light models may be used only for:
+## Repository recovery mode
 
-- preview
-- explanation
-- rough guidance
-- sanity checks
+Cloud Chamber is currently in repository recovery.
 
-They are not the source of truth for cloud evolution.
+Until recovery mode is explicitly ended:
 
-## Durable Distinction
+- all pull requests require manual review;
+- do not enable auto-merge;
+- do not create follow-up issues autonomously;
+- do not infer roadmap priority from the open issue backlog;
+- do not treat the current app structure as the final product design;
+- do not treat current scenarios as validated recipes;
+- do not promote research mechanisms, scores, triggers, or one-off runs into product concepts;
+- do not revise the North Star or Product Vision;
+- do not make product, science, recipe, scenario, roadmap, or UX decisions unless the task explicitly supplies the decision.
 
-Always distinguish:
+## Codex and agent role
+
+During recovery, agents execute bounded decisions. They do not formulate product strategy.
+
+A recovery task must specify:
+
+- the exact files allowed to change;
+- the exact intended disposition or replacement content;
+- what must not change;
+- whether the task is mechanical, descriptive, research, or product work;
+- the required manual-review posture.
+
+If a task requires deciding whether a historical document, scenario, issue, experiment, or capability is still valid, stop and ask. That is PM judgment, not mechanical cleanup.
+
+## Product-drift check
+
+Before proposing or implementing a nontrivial change, state:
 
 ```text
-Preview estimate
-CM1 run configuration
-CM1 running/completed result
-Visualization interpretation
+Stable vision:
+What remains unchanged?
+
+Current task:
+What specific part of the vision or recovery does this advance?
+
+Non-implications:
+What does this work not redefine?
+
+Portfolio effect:
+Does this preserve, broaden, or accidentally narrow Cloud Chamber?
 ```
 
-## Guardrails
+The current experiment is never the whole product.
+
+## Allowed work during recovery
+
+Allowed when explicitly requested:
+
+- repository inventory and read-only audits;
+- exact documentation changes supplied by the PM;
+- approved mechanical file moves or link updates;
+- tests and fixes required by those exact changes;
+- critical fixes preventing data loss, corrupted results, or broken development workflows;
+- manually reviewed dependency and security maintenance;
+- preservation of existing research and experimental evidence.
+
+## Work that requires explicit approval
+
+Always stop and ask before:
+
+- changing product direction;
+- changing scientific interpretation;
+- adding or promoting a recipe or scenario;
+- changing default cloud regimes, triggers, forcing, or sounding behavior;
+- changing user-facing scientific language;
+- changing navigation or top-level workspaces;
+- changing destructive cleanup behavior;
+- touching real CM1 execution paths;
+- making backwards-incompatible manifest, result, or scenario-schema changes;
+- closing, rewriting, reprioritizing, or creating issues;
+- changing authoritative documents.
+
+## Engineering guardrails
 
 Do not commit:
 
-- CM1 source
-- CM1 binaries
-- NetCDF output
-- generated run directories
-- LANDUSE.TBL
-- local-data
-- large processed visualization artifacts
+- CM1 source;
+- CM1 binaries;
+- NetCDF output;
+- generated run directories;
+- `LANDUSE.TBL`;
+- local runtime data;
+- downloaded IGRA cache data;
+- large processed visualization artifacts;
+- machine-private paths or settings.
 
-Do commit:
+Use tiny fixtures and fake process execution in automated tests. Do not require real CM1 runs in CI.
 
-- code
-- tests
-- docs
-- schemas
-- scenario templates
-- tiny fixtures
+Use branches and pull requests. Do not push directly to `main`.
 
-## Development Expectations
+Run `scripts/check.sh` before opening a PR unless the task explicitly explains why it cannot be run.
 
-- Use GitHub issues and PRs.
-- Work on branches; do not push directly to `main`.
-- Keep work scoped to the issue.
-- Add tests for new behavior.
-- Update docs when architecture/workflow changes.
-- Use local fake fixtures in CI; do not require real CM1 in automated tests.
-- Do not weaken scientific honesty to make UI look better.
-- For Codex issue work, enable auto-merge after required CI checks pass unless the user explicitly asks for manual review or the PR is high-risk/destructive.
-- Treat destructive cleanup, generated-data policy changes, scientific interpretation changes, and real CM1 execution changes as high-risk unless the user says otherwise.
+Do not remove or weaken tests merely to make a change pass.
 
-## Initial Architecture Bias
-
-Prefer:
+Preserve the distinction between:
 
 ```text
-React/Vite frontend + Python FastAPI local backend
+configured experiment
+running CM1 process
+completed CM1 output
+backend-derived diagnostic
+visualization interpretation
 ```
 
-until a stronger reason appears.
+## Current implementation is not current vision
 
-## Local CM1 Runtime
+Existing capabilities may remain valuable even when their framing is under review. Preserve working infrastructure unless a reviewed task explicitly removes it.
 
-CM1 should remain external to the repo.
+In particular, do not assume that repository recovery means deleting:
 
-Likely local path for Tim:
+- local CM1 execution;
+- run queueing and progress;
+- ingest and result persistence;
+- observed-sounding support;
+- scientific field products;
+- result replay and timelapse;
+- 2-D or 3-D visualization;
+- provenance and runtime-integrity handling.
 
-```text
-/Users/timpeterson/cm1r21.1/run
-```
-
-Treat this as a local setting, not a hard-coded app constant.
-
-Default Cloud Chamber runtime data belongs outside the repo:
-
-```text
-~/CloudChamber/
-```
-
-`./local-data/` is only a gitignored development override.
-
-## UI Language
-
-Use atmospheric language first:
-
-- thermal fate
-- What happened here?
-- selected region
-- lower-atmosphere humidity
-- surface moisture
-- surface heating
-- cap strength
-- cap height
-- dry air aloft
-- mixing / entrainment
-- updraft strength
-- saturation deficit
-- deep breakthrough
-- precipitation feedback
-- downdraft
-- cold pool
-- outflow boundary
-- cloud base
-- cloud top
-- first cloud time
-- rain onset
-
-Raw namelist settings and raw CM1 variable names belong in technical,
-advanced, or developer views. Product-facing views should start with thermal
-fate, selected-region inspection, and atmospheric process language.
-
-## Testing Notes
-
-Use fake/small fixtures to test:
-
-- scenario schemas
-- config generation
-- run manifest creation
-- fake process execution
-- NetCDF ingestion from tiny fixtures
-- visualizer metadata loading
-
-Do not require full CM1 runs in CI.
-
-## Before Major Changes
-
-If changing product direction, ask first.
-
-If adding physics/science behavior, document:
-
-1. what physical question it supports
-2. what user control it enables
-3. what diagnostics validate it
-4. what limitations must be disclosed
-
----
-
-## Claude Code — Working Style and Expectations
-
-This section governs how Claude Code operates on this project. It extends
-the rules above; nothing here overrides the product rule, guardrails, or
-scientific-honesty requirements.
-
-### Intent First
-
-Before writing any code on a non-trivial task, Claude Code must:
-
-1. State what it understands the goal to be.
-2. Ask every question needed to fully understand intent — user workflow,
-   edge cases, acceptance criteria, what "done" looks like.
-3. Propose an approach and wait for a go-ahead before executing.
-
-For small, obviously-scoped tasks (typo fixes, single-line changes, adding
-a missing test for existing behavior) it may proceed directly.
-
-When in doubt, ask. A short clarifying exchange is cheaper than a wrong
-implementation.
-
-### Autonomy
-
-Once intent is confirmed, Claude Code should execute as fully as possible
-without interruption:
-
-- Write the code.
-- Write or update tests.
-- Run `scripts/check.sh` and fix any failures before committing.
-- Update relevant docs if architecture or workflow changed.
-- Open a PR with a clear description.
-- Create GitHub issues for anything discovered during work that is out of
-  scope for the current task (bugs, missing tests, doc gaps, a11y issues).
-  Do not silently leave TODOs for things that deserve tracking.
-
-Do not ask for permission to run the linter, run tests, fix a type error,
-or update a doc string. Those are part of the job.
-
-### Branching and PRs
-
-- Branch off `main`. Name branches `issue-NNN-short-description`.
-- One issue per branch. Keep PRs scoped.
-- PR description must include:
-  - What changed and why.
-  - How to verify it locally (specific commands or UI steps).
-  - Any known limitations or follow-up issues opened.
-- Enable auto-merge after CI passes unless the task is high-risk (see
-  Guardrails above) or the user asks for manual review.
-
-### Commit Style
-
-- Conventional commits: `feat:`, `fix:`, `test:`, `docs:`, `chore:`, `refactor:`.
-- Subject line: imperative, ≤72 chars.
-- Body: include the issue number and a sentence on why, not just what.
-- Atomic commits — one logical change per commit. Do not bundle unrelated
-  fixes.
-
-### Quality Bar
-
-Every PR must pass `scripts/check.sh` cleanly before merge:
-
-- Frontend: lint, test, build.
-- Backend: ruff format, ruff check, mypy, pytest.
-- No new warnings introduced without explanation.
-
-New behavior requires new tests. Refactors must not reduce test coverage.
-UI changes that affect user-visible text or workflow must include an update
-to the relevant doc in `docs/`.
-
-### GitHub Issues
-
-When Claude Code opens an issue it must:
-
-- Use the correct label set (see repo labels).
-- Write a description a future developer can act on without context:
-  summary, observed behavior, expected behavior, reproduction steps or
-  fix hint.
-- Tag `priority:p1` for bugs that break core workflows; `priority:p2` for
-  everything else unless the user says otherwise.
-- Reference the PR or commit that surfaced it.
-
-### What Claude Code Must Not Do Without Asking
-
-Even with full autonomy confirmed, always pause and ask before:
-
-- Changing product direction or adding a new top-level workspace/view.
-- Changing scientific interpretation, diagnostic labels, or provenance
-  language.
-- Modifying data deletion logic or storage cleanup policy.
-- Touching real CM1 execution paths.
-- Changing the run manifest schema or result card schema in a
-  backwards-incompatible way.
-- Removing or weakening a test rather than fixing the underlying issue.
-
-### Environment Assumptions
-
-Claude Code sessions assume:
-
-- `scripts/dev.sh start` has been run (frontend at `localhost:5173`,
-  backend at `127.0.0.1:8000`).
-- `~/CloudChamber/settings.json` exists with local CM1 paths if CM1
-  work is in scope.
-- `uv` or the pip fallback described in `docs/development.md` is
-  available for backend work.
-- The Playwright E2E suite lives at `~/e2e/` (separate from the repo)
-  and can be run with `npx playwright test` from that directory.
-
-### Playwright E2E
-
-When fixing a UI bug or adding a UI feature:
-
-- Check whether an existing Playwright test covers it.
-- If yes, verify the test passes after the change.
-- If no, add a test or open an issue noting the gap.
-- Never delete or skip a Playwright test to make CI pass. Fix the
-  underlying issue or open an issue and mark the test `.skip` with a
-  comment referencing it.
-
-### Documentation Standard
-
-- `docs/development.md` is the canonical dev setup reference. Keep it
-  current.
-- `docs/architecture-and-data-model.md` must reflect any schema or
-  API contract changes.
-- `docs/roadmap-and-issues.md` should be updated when milestones
-  shift significantly.
-- Inline code comments explain *why*, not *what*. Remove comments that
-  just restate the code.
-
-### Maintainability Bias
-
-Prefer:
-
-- Explicit over clever.
-- Small, testable functions over large ones.
-- Types everywhere in TypeScript and Python.
-- Clear error messages that name the problem and suggest a fix.
-- Fail loudly on bad state rather than silently degrade.
-
-When two approaches are roughly equivalent, choose the one that is easier
-to delete or replace later.
+Their future product roles will be decided after the experimentation path and MVP are defined.
