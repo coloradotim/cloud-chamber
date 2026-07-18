@@ -1,8 +1,8 @@
 # Trusted LAN Worker CM1 Setup
 
-Status: setup/validation note for #226
+**Status:** Current operational guide moved from a setup/validation note
 
-Cloud Chamber remains local-first. The MacBook is the system of record for the
+Cloud Chamber remains local-first. The primary Cloud Chamber host is the system of record for the
 app server, browser UI, runtime inventory, result notebook, ingest, diagnostics,
 and Explore. A trusted LAN worker is only a CM1 compute appliance for heavier
 solver execution.
@@ -15,7 +15,7 @@ paths.
 ## Architecture Boundary
 
 ```text
-MacBook
+primary Cloud Chamber host
   Cloud Chamber backend and frontend
   configured runtime home
   package generation
@@ -30,11 +30,11 @@ Trusted LAN worker
   raw CM1 output generation before copy-back
 ```
 
-The worker should not host the Cloud Chamber web app, expose the backend on the
+The worker must not host the Cloud Chamber web app, expose the backend on the
 LAN, ingest NetCDF directly into the notebook, or act as a network share for
-Explore. Future automation should copy a generated package to the worker, run
-CM1 there, and copy completed output/logs back into the MacBook runtime home
-before normal ingest.
+Explore. The current helper path copies a generated package to the worker, runs
+CM1 there, and copies completed output/logs back into the primary Cloud Chamber
+host runtime home before normal ingest.
 
 ## Security Assumptions
 
@@ -44,17 +44,17 @@ before normal ingest.
 - The worker is not exposed to the public internet for Cloud Chamber.
 - No SSH private keys, hostnames, usernames, IP addresses, or known-host
   entries are committed.
-- No interactive sudo should be required for normal CM1 runs.
+- No interactive sudo is expected for normal CM1 runs.
 - Generated packages, logs, NetCDF output, copied runtime files, and scratch
   folders stay outside git.
 
-The real SSH alias should stay in `~/.ssh/config`; Cloud Chamber docs and future
-app config should refer to a placeholder or local-only setting instead of
+The real SSH alias belongs in `~/.ssh/config`; Cloud Chamber docs and local
+app config refer to a placeholder or local-only setting instead of
 committing it.
 
 ## Local-Only Configuration Shape
 
-Worker settings should live in an ignored local config file or environment
+Worker settings belong in an ignored local config file or environment
 overrides, not committed repo files.
 
 The preferred local file is:
@@ -107,12 +107,11 @@ CLOUD_CHAMBER_LAN_WORKER_CM1_EXE=<worker-cm1-run-dir>/cm1.exe
 CLOUD_CHAMBER_LAN_WORKER_CM1_COMMAND=<optional launch command>
 ```
 
-Optional future values:
+Additional current command overrides:
 
 ```text
 CLOUD_CHAMBER_LAN_WORKER_RSYNC=rsync
 CLOUD_CHAMBER_LAN_WORKER_SSH=ssh
-CLOUD_CHAMBER_LAN_WORKER_MAX_ACTIVE_RUNS=1
 ```
 
 `scripts/lan-worker-run.sh` reads the first three required values. `cm1_env`
@@ -127,9 +126,13 @@ The optional `ssh` and `rsync` config values can override command names or add
 local-only flags. Environment variables override the JSON file when both are
 present.
 
-## Worker Performance Modes
+## Performance Recommendations
 
-The worker should not use a serial proof binary for normal Cloud Chamber runs.
+These are performance recommendations, not behavior implemented by Cloud
+Chamber itself.
+
+The worker is not expected to use a serial proof binary for normal Cloud
+Chamber runs.
 Treat worker CM1 builds as explicit performance modes:
 
 ```text
@@ -185,9 +188,9 @@ The worker needs:
 - normal shell utilities used by manual checks, such as `mkdir`, `du`, `find`,
   `tail`, `rsync`, or `scp`.
 
-The worker scratch root should be disposable. It should not be the source CM1
-install, the user's home directory root, the MacBook runtime home, or a repo
-checkout.
+The worker scratch root is disposable. It must not be the source CM1 install,
+the user's home directory root, the primary Cloud Chamber host runtime home, or
+a repo checkout.
 
 ## Script-Assisted Package / Run / Return Workflow
 
@@ -239,20 +242,20 @@ worker_complete.marker or worker_failed.marker
 After required returned files and worker status are verified, it promotes the
 returned output/logs into the original local package directory and updates the
 local `run_manifest.json` to the same completed/failed states used by local CM1
-runs. Local ingest still happens on the MacBook; Results and Explore continue
-to read MacBook-local files.
+runs. Local ingest still happens on the primary Cloud Chamber host. Results and
+Explore continue to read files local to the primary Cloud Chamber host.
 
 Generated `.incoming` staging folders are removed after successful promotion.
 Failed collect attempts leave staging evidence for inspection.
 
 ## Worker Cleanup After Local Ingest
 
-Worker output can be large. The worker copy should be cleaned up after:
+Worker output can be large. Clean up the worker copy after:
 
-1. copy-back to the MacBook succeeds;
+1. copy-back to the primary Cloud Chamber host succeeds;
 2. the returned files are verified and promoted into the local runtime home;
-3. local MacBook ingest succeeds, or the user explicitly decides the worker copy
-   is no longer needed.
+3. local ingest on the primary Cloud Chamber host succeeds, or the user explicitly
+   decides the worker copy is no longer needed.
 
 Cleanup is explicit and separate:
 
@@ -306,7 +309,7 @@ ssh <worker-ssh-alias> '
 '
 ```
 
-If the CM1 source is already available on the MacBook, copy a clean CM1 release
+If the CM1 source is already available on the primary Cloud Chamber host, copy a clean CM1 release
 tree to the worker. Do not copy generated CM1 output. A safe first transfer
 shape is:
 
@@ -322,8 +325,8 @@ rsync -av \
   <worker-ssh-alias>:<worker-cm1-root>/
 ```
 
-The copied tree should include CM1 source files, `src/Makefile`, `README.*`
-files, `run/config_files/`, and static runtime lookup/data files. It should not
+The copied tree is expected to include CM1 source files, `src/Makefile`,
+`README.*` files, `run/config_files/`, and static runtime lookup/data files. It must not
 include old run output.
 
 On the worker, adapt the copied Makefile for Ubuntu NetCDF paths and build the
@@ -347,7 +350,7 @@ PY
 '
 ```
 
-Successful compilation should create:
+Successful compilation creates:
 
 ```text
 <worker-cm1-root>/run/cm1.exe
@@ -376,7 +379,7 @@ OUTPUTOPT = -DNETCDF -DNCFPLUS
 LINKOPTS  = -lnetcdf -lnetcdff
 ```
 
-The active hardware section for the first worker proof should be the
+The active hardware section for the first worker proof is the
 single-process GNU compiler section:
 
 ```make
@@ -390,7 +393,7 @@ single-process executable that can run a basic case.
 
 ## Basic Validation Case
 
-The first validation should use a basic CM1 case that is already known to run on
+The first validation uses a basic CM1 case that is already known to run on
 the worker independent of Cloud Chamber automation.
 
 Acceptable validation options:
@@ -405,13 +408,13 @@ important evidence is:
 - stdout/stderr are captured;
 - CM1 terminates normally or fails with an understandable CM1/config error;
 - CM1 output/log files are produced in the expected worker run directory;
-- the MacBook can copy a small file to and from the worker over SSH.
+- the primary Cloud Chamber host can copy a small file to and from the worker over SSH.
 
 Generated output from this validation must not be committed.
 
 ## Manual Validation Checklist
 
-Run these from the MacBook unless a step explicitly says "on worker".
+Run these from the primary Cloud Chamber host unless a step explicitly says "on worker".
 
 ### 1. Confirm SSH Alias
 
@@ -469,8 +472,8 @@ Expected evidence:
 - `cmp` exits successfully;
 - the temporary transfer file is removed on both machines.
 
-`scp` is acceptable if `rsync` is unavailable, but future automation should
-prefer `rsync` because it gives better incremental copy behavior and clearer
+`scp` is acceptable if `rsync` is unavailable, but the current helper path uses
+`rsync` by default because it gives better incremental copy behavior and clearer
 file lists.
 
 ### 5. Run A Basic CM1 Case On Worker
@@ -525,15 +528,15 @@ rm -f /tmp/cloud-chamber-worker-stdout.log
 
 Expected evidence:
 
-- MacBook can copy worker run artifacts back over SSH;
-- full generated CM1 output remains outside git unless a future automation
-  explicitly copies it into the MacBook runtime home.
+- primary Cloud Chamber host can copy worker run artifacts back over SSH;
+- full generated CM1 output remains outside git unless a local helper operation
+  explicitly copies it into the primary Cloud Chamber host runtime home.
 
-## What Tim Needs To Provide Before Automation
+## Local Information Required Before Using The Worker Helper
 
 An existing SSH alias is enough for the SSH alias requirement if it works
-non-interactively from the MacBook shell. Before Cloud Chamber can automate the
-trusted-worker path, it still needs local answers to:
+non-interactively from the primary Cloud Chamber host shell. The worker-helper
+path needs local answers to:
 
 1. Permission to install the Ubuntu build prerequisites if they are missing:
    `build-essential`, `gfortran`, `libnetcdf-dev`, `libnetcdff-dev`,
@@ -549,28 +552,27 @@ trusted-worker path, it still needs local answers to:
 6. Confirmation that `rsync` or `scp` works both directions.
 7. Confirmation that a basic CM1 case runs manually on the worker.
 8. Approximate worker disk budget for copied packages and output.
-9. Whether only one worker CM1 run should be active at a time for the first
-   automation pass.
+9. Whether only one worker CM1 run is allowed to be active at a time for local
+   use.
 
-Do not send or commit SSH private keys. If a future config file is needed, it
-should live under the local Cloud Chamber runtime home or environment, and it
+Do not send or commit SSH private keys. Worker config belongs under the local
+Cloud Chamber runtime home or environment, and it
 must stay gitignored.
 
-## Future Automation Boundary
+## Current Automation Boundary
 
-This setup note is the prerequisite for a later package-run-return issue.
-Future automation should preserve this sequence:
+The current package-run-return helper preserves this sequence:
 
 ```text
-MacBook generates package
+primary Cloud Chamber host generates package
 -> copy package to worker scratch
 -> worker runs CM1 in copied package
--> copy output/logs back to MacBook runtime home
--> MacBook ingests output
--> Results / Explore use MacBook-local data
+-> copy output/logs back to primary Cloud Chamber host runtime home
+-> primary Cloud Chamber host ingests output
+-> Results / Explore use files local to the primary Cloud Chamber host
 ```
 
-Future automation should not:
+The trusted-LAN path must not:
 
 - mount worker output directly into Explore;
 - require network shares for ingest;

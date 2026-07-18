@@ -75,11 +75,12 @@ Start here:
 
 - [Documentation status and authority](docs/DOCUMENTATION_STATUS.md)
 - [Current State](docs/current/CURRENT_STATE.md)
-- [Development](docs/development.md)
-- [Testing and Validation](docs/testing-and-validation.md)
-- [CI and Branch Protection](docs/ci-and-branch-protection.md)
+- [Current Architecture](docs/current/CURRENT_ARCHITECTURE.md)
+- [Development](docs/development/DEVELOPMENT.md)
+- [Testing](docs/development/TESTING.md)
+- [CI and Branch Protection](docs/development/CI_AND_BRANCH_PROTECTION.md)
 
-The read-only documentation disposition audit is complete and approved. The highest-risk superseded product-direction documents are preserved under `docs/archive/`, and the repository intentionally has no active roadmap during recovery. The [documentation status and authority guide](docs/DOCUMENTATION_STATUS.md) explains how to interpret remaining documents during recovery.
+The read-only documentation disposition audit is complete and approved. The highest-risk superseded product-direction documents are preserved under `docs/archive/`, current operational docs are maintained under `docs/current/` and `docs/development/`, and the repository intentionally has no controlling roadmap during recovery. The [documentation status and authority guide](docs/DOCUMENTATION_STATUS.md) explains how to interpret remaining documents during recovery.
 
 ## Development
 
@@ -112,7 +113,7 @@ scripts/check-e2e.sh
 
 The frontend normally runs at `http://localhost:5173` and the backend at `http://127.0.0.1:8000`.
 
-Real CM1 execution requires an external local CM1 installation and local Cloud Chamber settings. See [Development](docs/development.md) for setup details.
+Real CM1 execution requires an external local CM1 installation and local Cloud Chamber settings. See [Development](docs/development/DEVELOPMENT.md) for setup details.
 
 ## Runtime data
 
