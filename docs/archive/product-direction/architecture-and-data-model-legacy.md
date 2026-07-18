@@ -1,5 +1,7 @@
 # Cloud Chamber Architecture And Data Model
 
+> **Archive status:** This historical/superseded document is preserved for project history. It does not establish current product direction, recipe status, roadmap priority, or MVP scope.
+
 ## Architecture Overview
 
 Cloud Chamber should be local-first.

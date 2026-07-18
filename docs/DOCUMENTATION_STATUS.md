@@ -32,6 +32,8 @@ It does not replace the Product Vision. It prevents lower-level work from rewrit
 ## 3. Current descriptive documents
 
 - [Current State](current/CURRENT_STATE.md)
+- [Current Architecture](current/CURRENT_ARCHITECTURE.md)
+- [Ingest, Results, And Runtime Cleanup Lifecycle](current/INGEST_RESULTS_STORAGE_LIFECYCLE.md)
 - [README](../README.md)
 
 These documents describe the current repository and application.
@@ -42,18 +44,19 @@ They may identify legacy behavior, unresolved questions, and capabilities under 
 
 Documents such as these contain setup, testing, CI, runtime, and engineering information:
 
-- [Development](development.md)
-- [Testing and Validation](testing-and-validation.md)
-- [CI and Branch Protection](ci-and-branch-protection.md)
+- [Development](development/DEVELOPMENT.md)
+- [Testing](development/TESTING.md)
+- [CI and Branch Protection](development/CI_AND_BRANCH_PROTECTION.md)
+- [Trusted LAN Worker](development/LAN_WORKER.md)
 
 Use their operational instructions where they remain accurate.
 
-Some currently mix valid engineering detail with superseded product framing. The read-only documentation disposition audit is complete and approved. Batch 3B-1 has implemented the approved archive moves for the highest-risk superseded product-direction documents, but remaining approved moves, rewrites, archives, splits, deletions, and deferrals have not yet been implemented.
+The read-only documentation disposition audit is complete and approved. Batch 3B-1 implemented the approved archive moves for the highest-risk superseded product-direction documents. Batch 3B-2 rebuilt the active architecture, development, testing, CI, lifecycle, and LAN-worker operational docs listed above.
 
-Until those approved repository changes are implemented:
+For documents not yet handled by a recovery batch:
 
 - prefer commands, paths, APIs, test procedures, and implemented behavior that can be verified;
-- do not treat their product priorities, Golden Paths, scenario sequencing, or future-work language as authoritative;
+- do not treat their product priorities, old priority labels, scenario sequencing, or future-work language as authoritative;
 - resolve any conflict in favor of the North Star, Product Vision, Current State, and `AGENTS.md`.
 
 ## 5. Architecture and data-model documents
@@ -110,6 +113,7 @@ Known high-risk archived examples include:
 
 - [Thermal Fate product vision](archive/product-direction/product-vision-thermal-fate-legacy.md);
 - [Cloud Chamber product spec](archive/product-direction/cloud-chamber-product-spec-legacy.md);
+- [Architecture and data model](archive/product-direction/architecture-and-data-model-legacy.md);
 - [Configurable observed-sounding roadmap](archive/roadmaps/configurable-observed-sounding-roadmap-legacy.md);
 - [Thermal Fate process diagnostics](archive/product-direction/thermal-fate-diagnostics-legacy.md);
 - [Guided experiment notebook UX reset](archive/ux/guided-experiment-notebook-reset-legacy.md);
@@ -119,9 +123,6 @@ Known high-risk archived examples include:
 
 Additional active-path documents may still contain superseded framing and approved disposition recommendations, including:
 
-- sections of `architecture-and-data-model.md`;
-- sections of `development.md`;
-- sections of `testing-and-validation.md`;
 - scenario and recipe planning contracts tied to older product directions.
 
 These files may contain useful technical or historical content.
@@ -148,7 +149,7 @@ The documentation audit classified documents using these terms:
 | **Superseded** | Conflicts with or has been replaced by current authority |
 | **Unresolved** | Requires product, scientific, or implementation review |
 
-These labels are interpretive aids. This Batch does not yet move or relabel every file.
+These labels are interpretive aids. Repository recovery does not yet move or relabel every file.
 
 ## Recommended reading paths
 
@@ -157,13 +158,15 @@ These labels are interpretive aids. This Batch does not yet move or relabel ever
 1. [North Star](../NORTH_STAR.md)
 2. [Product Vision](product/PRODUCT_VISION.md)
 3. [Current State](current/CURRENT_STATE.md)
+4. [Current Architecture](current/CURRENT_ARCHITECTURE.md)
 
 ### Contribute during recovery
 
 1. [AGENTS.md](../AGENTS.md)
 2. [Current State](current/CURRENT_STATE.md)
-3. [Development](development.md)
-4. [Testing and Validation](testing-and-validation.md)
+3. [Development](development/DEVELOPMENT.md)
+4. [Testing](development/TESTING.md)
+5. [CI and Branch Protection](development/CI_AND_BRANCH_PROTECTION.md)
 
 Ignore conflicting product-direction language in lower-authority documents and ask for direction when a conflict affects the task.
 
@@ -193,8 +196,10 @@ A read-only disposition manifest has evaluated every document and its recommenda
 - delete it;
 - or defer judgment.
 
-Batch 3B-1 has implemented the approved quarantine of the highest-risk superseded product-direction documents and retired the obsolete roadmap pointer.
+Batch 3B-1 implemented the approved quarantine of the highest-risk superseded product-direction documents and retired the obsolete roadmap pointer.
 
-Remaining repository moves, rewrites, splits, archives, deletions, and deferrals from the approved disposition have not yet been implemented.
+Batch 3B-2 rebuilt the current operational documentation set for architecture, development, testing, CI, lifecycle, and LAN-worker setup.
+
+Remaining repository moves, rewrites, splits, archives, deletions, and deferrals from the approved disposition may still exist outside those handled paths.
 
 No bulk document move or rewrite should occur outside the approved disposition implementation.
