@@ -179,9 +179,11 @@ The documentation tree contains a mixture of:
 
 Batch 1 established the North Star, Product Vision, and repository-recovery `AGENTS.md`.
 
-A full file-by-file documentation audit has not yet been completed.
+A full file-by-file read-only documentation disposition audit has been completed and approved.
 
-Until that audit is complete:
+The repository moves, rewrites, archives, splits, deletions, and deferrals from that approved disposition have not yet been implemented.
+
+Until those approved repository changes are implemented:
 
 - lower-authority documents may contain useful facts;
 - their product framing may be stale;
@@ -197,10 +199,7 @@ Completed:
 - approved North Star;
 - approved Product Vision;
 - recovery-mode `AGENTS.md`;
-- closure of selected superseded product-direction issues and pull requests.
-
-In progress:
-
+- closure of selected superseded product-direction issues and pull requests;
 - replacement README;
 - this descriptive Current State document;
 - documentation status and authority guide;
@@ -210,7 +209,7 @@ In progress:
 
 Not yet completed:
 
-- full documentation disposition;
+- implementation of the approved documentation disposition;
 - scenario dependency and status review;
 - application semantic map;
 - CM1 experimentation strategy;

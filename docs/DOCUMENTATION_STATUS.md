@@ -48,7 +48,9 @@ Documents such as these contain setup, testing, CI, runtime, and engineering inf
 
 Use their operational instructions where they remain accurate.
 
-Some currently mix valid engineering detail with superseded product framing. Until the documentation audit is complete:
+Some currently mix valid engineering detail with superseded product framing. The read-only documentation disposition audit is complete and approved, but its repository moves, rewrites, archives, splits, deletions, and deferrals have not yet been implemented.
+
+Until those approved repository changes are implemented:
 
 - prefer commands, paths, APIs, test procedures, and implemented behavior that can be verified;
 - do not treat their product priorities, Golden Paths, scenario sequencing, or future-work language as authoritative;
@@ -80,9 +82,9 @@ Documents under `contracts/` may describe:
 - proposed future contracts;
 - product semantics that were codified before the current vision.
 
-The contracts directory is under audit.
+The approved documentation disposition includes the contracts directory.
 
-Until that audit is complete, verify a contract against current code before treating it as implemented. Do not use a proposal-only or stale contract to create new product direction.
+Until the approved contract dispositions are implemented, verify a contract against current code before treating it as implemented. Do not use a proposal-only or stale contract to create new product direction.
 
 ## 7. Research and experiment evidence
 
@@ -102,7 +104,7 @@ Negative, failed, contradictory, and superseded research should be preserved rat
 
 ## 8. Historical and superseded product direction
 
-Several active-path documents currently contain superseded framing and will be dispositioned during the documentation audit.
+Several active-path documents currently contain superseded framing and have approved disposition recommendations from the documentation audit.
 
 Known high-risk examples include:
 
@@ -126,7 +128,7 @@ Until they are archived, split, or rewritten:
 
 ## Document status vocabulary
 
-The documentation audit will classify documents using these terms:
+The documentation audit classified documents using these terms:
 
 | Status | Meaning |
 |---|---|
@@ -175,7 +177,7 @@ Do not rely on a single old product specification or roadmap.
 
 The documentation tree has not yet been comprehensively reorganized.
 
-A later read-only disposition manifest will evaluate every document and recommend whether to:
+A read-only disposition manifest has evaluated every document and its recommendations have been approved. Those recommendations indicate whether to:
 
 - keep it;
 - rewrite it;
@@ -184,4 +186,6 @@ A later read-only disposition manifest will evaluate every document and recommen
 - delete it;
 - or defer judgment.
 
-No bulk document move or rewrite should occur before that manifest is reviewed.
+The repository moves, rewrites, splits, archives, deletions, and deferrals from that approved disposition have not yet been implemented.
+
+No bulk document move or rewrite should occur outside the approved disposition implementation.
