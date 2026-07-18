@@ -48,7 +48,7 @@ Documents such as these contain setup, testing, CI, runtime, and engineering inf
 
 Use their operational instructions where they remain accurate.
 
-Some currently mix valid engineering detail with superseded product framing. The read-only documentation disposition audit is complete and approved, but its repository moves, rewrites, archives, splits, deletions, and deferrals have not yet been implemented.
+Some currently mix valid engineering detail with superseded product framing. The read-only documentation disposition audit is complete and approved. Batch 3B-1 has implemented the approved archive moves for the highest-risk superseded product-direction documents, but remaining approved moves, rewrites, archives, splits, deletions, and deferrals have not yet been implemented.
 
 Until those approved repository changes are implemented:
 
@@ -104,14 +104,21 @@ Negative, failed, contradictory, and superseded research should be preserved rat
 
 ## 8. Historical and superseded product direction
 
-Several active-path documents currently contain superseded framing and have approved disposition recommendations from the documentation audit.
+Several formerly active-path documents containing superseded framing have been quarantined under archive paths.
 
-Known high-risk examples include:
+Known high-risk archived examples include:
 
-- `product-vision.md`;
-- `cloud-chamber-product-spec.md`;
-- `current-roadmap.md`;
-- `thermal-fate-process-diagnostics.md`;
+- [Thermal Fate product vision](archive/product-direction/product-vision-thermal-fate-legacy.md);
+- [Cloud Chamber product spec](archive/product-direction/cloud-chamber-product-spec-legacy.md);
+- [Configurable observed-sounding roadmap](archive/roadmaps/configurable-observed-sounding-roadmap-legacy.md);
+- [Thermal Fate process diagnostics](archive/product-direction/thermal-fate-diagnostics-legacy.md);
+- [Guided experiment notebook UX reset](archive/ux/guided-experiment-notebook-reset-legacy.md);
+- [Codex project setup notes](archive/setup/codex-project-setup-legacy.md);
+- [legacy roadmap and startup issues](archive/roadmaps/roadmap-and-issues-legacy.md);
+- [deep-convection package design proposal](archive/proposals/deep-convection-package-design-legacy.md).
+
+Additional active-path documents may still contain superseded framing and approved disposition recommendations, including:
+
 - sections of `architecture-and-data-model.md`;
 - sections of `development.md`;
 - sections of `testing-and-validation.md`;
@@ -186,6 +193,8 @@ A read-only disposition manifest has evaluated every document and its recommenda
 - delete it;
 - or defer judgment.
 
-The repository moves, rewrites, splits, archives, deletions, and deferrals from that approved disposition have not yet been implemented.
+Batch 3B-1 has implemented the approved quarantine of the highest-risk superseded product-direction documents and retired the obsolete roadmap pointer.
+
+Remaining repository moves, rewrites, splits, archives, deletions, and deferrals from the approved disposition have not yet been implemented.
 
 No bulk document move or rewrite should occur outside the approved disposition implementation.

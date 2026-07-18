@@ -1,8 +1,6 @@
 # Cloud Chamber Roadmap And Startup Issues
 
-> Status: archived legacy roadmap. This file is historical/reference context,
-> not the active planning source. Use
-> [../current-roadmap.md](../current-roadmap.md) for the current roadmap.
+> **Archive status:** This historical/superseded document is preserved for project history. It does not establish current product direction, recipe status, roadmap priority, or MVP scope.
 
 Cloud Chamber should move toward the first usable product spine, not scaffolding for scaffolding's sake:
 

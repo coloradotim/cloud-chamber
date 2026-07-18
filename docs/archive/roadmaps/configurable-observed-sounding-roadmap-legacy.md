@@ -1,5 +1,7 @@
 # Current Roadmap
 
+> **Archive status:** This historical/superseded document is preserved for project history. It does not establish current product direction, recipe status, roadmap priority, or MVP scope.
+
 Status: active roadmap for configurable observed-sounding CM1 runs
 
 This is the active planning source for Cloud Chamber. The previous long
