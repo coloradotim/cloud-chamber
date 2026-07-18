@@ -4,7 +4,8 @@
 
 The Cloud Chamber documentation tree contains current technical information, research evidence, historical decisions, proposals, and superseded product direction.
 
-During repository recovery, a document’s presence under `docs/` does not make it current authority.
+During the gated product-architecture program, a document’s presence under
+`docs/` does not make it current authority.
 
 Use the hierarchy below.
 
@@ -14,8 +15,16 @@ These documents define why Cloud Chamber exists and what it is intended to becom
 
 1. [North Star](../NORTH_STAR.md)
 2. [Product Vision](product/PRODUCT_VISION.md)
+3. [Application Semantics](product/APPLICATION_SEMANTICS.md)
 
-They are the highest product authority in the repository.
+The North Star and Product Vision are the highest product authority in the
+repository. Application Semantics is the approved product-semantic authority for
+Cloud World, Recipe, Simulation, Lens, Saved View, Comparison, Exploration,
+Experiment, and supporting terms.
+
+Approved PM stage decisions control bounded stage work where they explicitly
+apply. They do not silently rewrite the North Star, Product Vision, or
+Application Semantics.
 
 No roadmap, issue, scenario, research note, architecture document, product specification, or implementation should silently redefine them.
 
@@ -25,7 +34,8 @@ Changes require explicit PM approval.
 
 - [AGENTS.md](../AGENTS.md)
 
-`AGENTS.md` defines how agents and contributors must operate during repository recovery.
+`AGENTS.md` defines how agents and contributors must operate during the gated
+product-architecture program.
 
 It does not replace the Product Vision. It prevents lower-level work from rewriting it.
 
@@ -51,13 +61,22 @@ Documents such as these contain setup, testing, CI, runtime, and engineering inf
 
 Use their operational instructions where they remain accurate.
 
-The read-only documentation disposition audit is complete and approved. Batch 3B-1 implemented the approved archive moves for the highest-risk superseded product-direction documents. Batch 3B-2 rebuilt the active architecture, development, testing, CI, lifecycle, and LAN-worker operational docs listed above.
+Stage 1 operational-documentation recovery is complete. The read-only
+documentation disposition audit is complete and approved. Batch 3B-1
+implemented the approved archive moves for the highest-risk superseded
+product-direction documents. Batch 3B-2 rebuilt the active architecture,
+development, testing, CI, lifecycle, and LAN-worker operational docs listed
+above.
+
+Stage 2 semantic architecture is complete. Application Semantics is now the
+approved semantic authority.
 
 For documents not yet handled by a recovery batch:
 
 - prefer commands, paths, APIs, test procedures, and implemented behavior that can be verified;
 - do not treat their product priorities, old priority labels, scenario sequencing, or future-work language as authoritative;
-- resolve any conflict in favor of the North Star, Product Vision, Current State, and `AGENTS.md`.
+- resolve any conflict in favor of the North Star, Product Vision, Application
+  Semantics, Current State, and `AGENTS.md`.
 
 ## 5. Architecture and data-model documents
 
@@ -75,19 +94,22 @@ Do not automatically interpret them as:
 
 Architecture changes remain subject to the Product Vision and future experimentation and MVP decisions.
 
-## 6. Contracts
+## 6. Implemented contracts
 
-Documents under `contracts/` may describe:
+The active `docs/contracts/` directory contains only current implemented
+contracts verified against code and tests:
 
-- implemented data contracts;
-- current API behavior;
-- partially implemented interfaces;
-- proposed future contracts;
-- product semantics that were codified before the current vision.
+- [Output Product Specification](contracts/output-product-specification.md)
+- [Sounding Candidate Screening Contract](contracts/sounding-candidate-screening.md)
 
-The approved documentation disposition includes the contracts directory.
+These contracts describe current interfaces and implementation behavior. They
+do not establish final product architecture or define supported Cloud Worlds,
+Recipes, Simulations, Explorations, or Experiments.
 
-Until the approved contract dispositions are implemented, verify a contract against current code before treating it as implemented. Do not use a proposal-only or stale contract to create new product direction.
+Archived contract proposals and mixed historical contracts live under
+`docs/archive/contracts/`. Those files preserve historical design and
+implementation context, but they are not active implemented contracts and do not
+establish current product direction.
 
 ## 7. Research and experiment evidence
 
@@ -121,13 +143,11 @@ Known high-risk archived examples include:
 - [legacy roadmap and startup issues](archive/roadmaps/roadmap-and-issues-legacy.md);
 - [deep-convection package design proposal](archive/proposals/deep-convection-package-design-legacy.md).
 
-Additional active-path documents may still contain superseded framing and approved disposition recommendations, including:
+Additional active-path documents may still contain superseded framing and
+approved disposition recommendations.
 
-- scenario and recipe planning contracts tied to older product directions.
-
-These files may contain useful technical or historical content.
-
-Until they are archived, split, or rewritten:
+These files may contain useful technical or historical content. Until they are
+archived, split, or rewritten:
 
 - do not use them as controlling product authority;
 - do not update them merely to make them appear consistent with the new vision;
@@ -149,7 +169,8 @@ The documentation audit classified documents using these terms:
 | **Superseded** | Conflicts with or has been replaced by current authority |
 | **Unresolved** | Requires product, scientific, or implementation review |
 
-These labels are interpretive aids. Repository recovery does not yet move or relabel every file.
+These labels are interpretive aids. The gated product-architecture program has
+not moved or relabeled every file.
 
 ## Recommended reading paths
 
@@ -157,16 +178,18 @@ These labels are interpretive aids. Repository recovery does not yet move or rel
 
 1. [North Star](../NORTH_STAR.md)
 2. [Product Vision](product/PRODUCT_VISION.md)
-3. [Current State](current/CURRENT_STATE.md)
-4. [Current Architecture](current/CURRENT_ARCHITECTURE.md)
+3. [Application Semantics](product/APPLICATION_SEMANTICS.md)
+4. [Current State](current/CURRENT_STATE.md)
+5. [Current Architecture](current/CURRENT_ARCHITECTURE.md)
 
-### Contribute during recovery
+### Contribute during the gated product-architecture program
 
 1. [AGENTS.md](../AGENTS.md)
-2. [Current State](current/CURRENT_STATE.md)
-3. [Development](development/DEVELOPMENT.md)
-4. [Testing](development/TESTING.md)
-5. [CI and Branch Protection](development/CI_AND_BRANCH_PROTECTION.md)
+2. [Application Semantics](product/APPLICATION_SEMANTICS.md)
+3. [Current State](current/CURRENT_STATE.md)
+4. [Development](development/DEVELOPMENT.md)
+5. [Testing](development/TESTING.md)
+6. [CI and Branch Protection](development/CI_AND_BRANCH_PROTECTION.md)
 
 Ignore conflicting product-direction language in lower-authority documents and ask for direction when a conflict affects the task.
 
@@ -183,9 +206,9 @@ Use the current source code, tests, runtime contracts, and Current State documen
 
 Do not rely on a single old product specification or roadmap.
 
-## Recovery note
+## Program note
 
-The documentation tree has not yet been comprehensively reorganized.
+The documentation tree has not been comprehensively reorganized.
 
 A read-only disposition manifest has evaluated every document and its recommendations have been approved. Those recommendations indicate whether to:
 
@@ -199,6 +222,12 @@ A read-only disposition manifest has evaluated every document and its recommenda
 Batch 3B-1 implemented the approved quarantine of the highest-risk superseded product-direction documents and retired the obsolete roadmap pointer.
 
 Batch 3B-2 rebuilt the current operational documentation set for architecture, development, testing, CI, lifecycle, and LAN-worker setup.
+
+Stage 2 added the approved Application Semantics document.
+
+Stage 3 classified the active contract directory: two implemented contracts
+remain active, and five historical/proposal contract documents are preserved
+under `docs/archive/contracts/`.
 
 Remaining repository moves, rewrites, splits, archives, deletions, and deferrals from the approved disposition may still exist outside those handled paths.
 

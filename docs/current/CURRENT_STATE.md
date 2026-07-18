@@ -19,6 +19,7 @@ The controlling product documents are:
 
 1. [North Star](../../NORTH_STAR.md)
 2. [Product Vision](../product/PRODUCT_VISION.md)
+3. [Application Semantics](../product/APPLICATION_SEMANTICS.md)
 
 Where this document describes current implementation that does not match the Product Vision, the mismatch is intentional and should remain visible.
 
@@ -49,7 +50,7 @@ The current technical flow is broadly:
 ```text
 React / TypeScript frontend
 → Python / FastAPI backend
-→ experiment configuration and package generation
+→ configured run and package generation
 → external CM1 execution
 → runtime and NetCDF ingest
 → persistent result metadata
@@ -67,7 +68,7 @@ This is the present interface structure. No decision has been made that it is th
 
 ## Implemented capabilities
 
-### Experiment configuration and packaging
+### Run configuration and packaging
 
 The repository currently supports combinations of:
 
@@ -150,7 +151,7 @@ The repository currently includes:
 
 The existence of these capabilities does not decide how important observed soundings will be in the eventual product.
 
-### Experiment and scenario content
+### Run, research, and scenario content
 
 The repository currently contains:
 
@@ -179,11 +180,16 @@ The documentation tree contains a mixture of:
 
 Batch 1 established the North Star, Product Vision, and repository-recovery `AGENTS.md`.
 
-A full file-by-file read-only documentation disposition audit has been completed and approved.
+A full file-by-file read-only documentation disposition audit has been
+completed and approved. Stage 1 operational-documentation recovery and Stage 2
+semantic architecture are complete. The active contract directory has been
+classified so implemented contracts remain active while proposal and historical
+mixed contracts are archived under `docs/archive/contracts/`.
 
-The repository moves, rewrites, archives, splits, deletions, and deferrals from that approved disposition have not yet been implemented.
+Remaining repository moves, rewrites, archives, splits, deletions, and deferrals
+outside those completed stages may still exist.
 
-Until those approved repository changes are implemented:
+Until a document is handled by an approved bounded stage:
 
 - lower-authority documents may contain useful facts;
 - their product framing may be stale;
@@ -192,26 +198,27 @@ Until those approved repository changes are implemented:
 
 See [Documentation Status and Authority](../DOCUMENTATION_STATUS.md).
 
-## Current recovery status
+## Current gated product-architecture status
 
 Completed:
 
 - approved North Star;
 - approved Product Vision;
-- recovery-mode `AGENTS.md`;
+- gated-program `AGENTS.md`;
 - closure of selected superseded product-direction issues and pull requests;
 - replacement README;
 - this descriptive Current State document;
 - documentation status and authority guide;
+- operational-documentation recovery;
+- approved Application Semantics;
+- active contract classification for implemented contracts;
 - concise pull-request template update;
 - controlled-work issue template;
 - reusable Codex task prompt template.
 
 Not yet completed:
 
-- implementation of the approved documentation disposition;
 - scenario dependency and status review;
-- application semantic map;
 - CM1 experimentation strategy;
 - MVP definition;
 - final application architecture or workflow decisions.

@@ -1,6 +1,6 @@
 # Cloud Chamber Application Semantics
 
-**Status:** Proposed product-semantic authority for review
+**Status:** Approved product-semantic authority
 
 This document defines the foundational product vocabulary for Cloud Chamber.
 

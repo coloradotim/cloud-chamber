@@ -8,7 +8,7 @@ Cloud Chamber exists because clouds are beautiful, dynamic, and mostly hidden fr
 
 That is the product vision, not a description of the software as it exists today.
 
-Today, Cloud Chamber is a working but uneven collection of CM1 experiment-building, run-management, sounding, diagnostics, and visualization capabilities shaped by several earlier product directions. Some of those capabilities are strong foundations. Others are incomplete, misframed, or may not belong in the eventual product.
+Today, Cloud Chamber is a working but uneven collection of CM1 run-building, run-management, sounding, diagnostics, and visualization capabilities shaped by several earlier product directions. Some of those capabilities are strong foundations. Others are incomplete, misframed, or may not belong in the eventual product.
 
 The long-term vision is a scientific cloud laboratory: a collection of explorable cloud worlds where users can watch clouds form and evolve, reveal the normally invisible processes inside them, change meaningful atmospheric conditions, and understand how the clouds respond.
 
@@ -16,10 +16,12 @@ Read the controlling product documents:
 
 - [North Star](NORTH_STAR.md)
 - [Product Vision](docs/product/PRODUCT_VISION.md)
+- [Application Semantics](docs/product/APPLICATION_SEMANTICS.md)
 
 ## Repository status
 
-Cloud Chamber is currently in **product and repository recovery**.
+Cloud Chamber is currently in a **gated product-architecture program** after
+the initial repository-recovery and semantic-architecture stages.
 
 The repository contains substantial working simulation, run-management, data, and visualization infrastructure. It also contains scenarios, workflows, terminology, and planning documents inherited from several earlier product directions.
 
@@ -32,7 +34,7 @@ Do not infer the long-term product from:
 - existing sounding scores or recommendation language;
 - a particular trigger or forcing mechanism;
 - an old roadmap, product specification, or issue;
-- one successful or unsuccessful CM1 experiment.
+- one successful or unsuccessful CM1 run.
 
 See [Current State](docs/current/CURRENT_STATE.md) for a candid description of what exists today and what remains under review.
 
@@ -48,7 +50,7 @@ Cloud Chamber currently provides useful foundations for future product developme
 - saved-output playback and time-based result inspection;
 - 2-D slices and 3-D inspection of CM1-derived fields;
 - separate treatment of cloud water, ice and other hydrometeors, rain water aloft, surface rain, and reflectivity;
-- observed-sounding ingest, caching, diagnostics, and experiment configuration;
+- observed-sounding ingest, caching, diagnostics, and run configuration;
 - runtime-integrity and field-quality checks that distinguish a completed process from trustworthy scientific output.
 
 These capabilities are not all guaranteed to appear in the eventual product in their current form. They should be preserved while their future roles are evaluated.
@@ -80,7 +82,14 @@ Start here:
 - [Testing](docs/development/TESTING.md)
 - [CI and Branch Protection](docs/development/CI_AND_BRANCH_PROTECTION.md)
 
-The read-only documentation disposition audit is complete and approved. The highest-risk superseded product-direction documents are preserved under `docs/archive/`, current operational docs are maintained under `docs/current/` and `docs/development/`, and the repository intentionally has no controlling roadmap during recovery. The [documentation status and authority guide](docs/DOCUMENTATION_STATUS.md) explains how to interpret remaining documents during recovery.
+The read-only documentation disposition audit is complete and approved. The
+highest-risk superseded product-direction documents are preserved under
+`docs/archive/`, current operational docs are maintained under `docs/current/`
+and `docs/development/`, Application Semantics is the approved semantic
+authority, and the repository intentionally has no controlling roadmap during
+the gated product-architecture program. The
+[documentation status and authority guide](docs/DOCUMENTATION_STATUS.md)
+explains how to interpret remaining documents.
 
 ## Development
 
@@ -139,13 +148,13 @@ Do not commit:
 - local settings or machine-private paths;
 - screenshots, videos, traces, logs, or large processed visualization artifacts.
 
-## Contributing during recovery
+## Contributing during the gated product-architecture program
 
 Read [AGENTS.md](AGENTS.md) before nontrivial work.
 
 Use the [controlled-work issue template](.github/ISSUE_TEMPLATE/controlled-work.md) to define bounded work before implementation, and the [Codex task prompt template](docs/templates/codex-task-prompt.md) to translate an approved issue into execution instructions.
 
-During repository recovery:
+During the gated product-architecture program:
 
 - all pull requests require manual review;
 - auto-merge is disabled;
