@@ -1,5 +1,7 @@
 # Deep Convection Package Design
 
+> **Archive status:** This historical/superseded document is preserved for project history. It does not establish current product direction, recipe status, roadmap priority, or MVP scope.
+
 Issue: #260
 
 Status: research design, not an implementation contract

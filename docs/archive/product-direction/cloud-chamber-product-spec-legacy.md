@@ -1,5 +1,7 @@
 # Cloud Chamber Product Spec
 
+> **Archive status:** This historical/superseded document is preserved for project history. It does not establish current product direction, recipe status, roadmap priority, or MVP scope.
+
 ## Product Summary
 
 Cloud Chamber is a local-first desktop/browser application for configuring,

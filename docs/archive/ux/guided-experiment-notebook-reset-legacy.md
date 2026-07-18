@@ -1,5 +1,7 @@
 # UX Reset: Guided Experiment Notebook
 
+> **Archive status:** This historical/superseded document is preserved for project history. It does not establish current product direction, recipe status, roadmap priority, or MVP scope.
+
 ## 1. Summary
 
 Cloud Chamber's user-facing UX direction is:

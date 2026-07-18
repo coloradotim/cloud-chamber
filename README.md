@@ -79,7 +79,7 @@ Start here:
 - [Testing and Validation](docs/testing-and-validation.md)
 - [CI and Branch Protection](docs/ci-and-branch-protection.md)
 
-The documentation tree is being audited. Some existing documents contain useful technical detail alongside superseded product framing. The [documentation status and authority guide](docs/DOCUMENTATION_STATUS.md) explains how to interpret them during recovery.
+The read-only documentation disposition audit is complete and approved. The highest-risk superseded product-direction documents are preserved under `docs/archive/`, and the repository intentionally has no active roadmap during recovery. The [documentation status and authority guide](docs/DOCUMENTATION_STATUS.md) explains how to interpret remaining documents during recovery.
 
 ## Development
 

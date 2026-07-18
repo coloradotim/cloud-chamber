@@ -1,5 +1,7 @@
 # Codex Project Setup Notes
 
+> **Archive status:** This historical/superseded document is preserved for project history. It does not establish current product direction, recipe status, roadmap priority, or MVP scope.
+
 ## Recommended New Repo
 
 ```text

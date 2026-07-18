@@ -1,5 +1,7 @@
 # Thermal Fate Process Diagnostics
 
+> **Archive status:** This historical/superseded document is preserved for project history. It does not establish current product direction, recipe status, roadmap priority, or MVP scope.
+
 This document is the product and diagnostic contract for Cloud Chamber's Thermal
 Fate Framework.
 
