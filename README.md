@@ -1,109 +1,122 @@
 # Cloud Chamber
 
-Cloud Chamber is a local CM1 experiment builder, run manager, results notebook,
-and Thermal Fate exploration workbench.
+## See clouds from the inside
 
-It helps users configure CM1 scenarios, run them locally, ingest outputs, save
-and compare results, inspect CM1 fields, and understand the fate of thermals
-through diagnostics and provenance-labeled visualizations.
+Cloud Chamber exists because clouds are beautiful, dynamic, and mostly hidden from us.
 
-CM1 is the high-fidelity simulation engine; Cloud Chamber is the local
-experiment builder, run manager, result notebook, diagnostics layer, and
-visualizer.
+> **Cloud Chamber is intended to become a place where people can create beautiful, scientifically meaningful cloud worlds, see the invisible processes inside them, change the atmosphere, and learn by watching the clouds respond.**
 
-## Core Direction
+That is the product vision, not a description of the software as it exists today.
 
-Build a local-first, personal-use CM1 configuration, run-management,
-diagnostics, and visualization environment for guided cloud-physics
-experiments.
+Today, Cloud Chamber is a working but uneven collection of CM1 experiment-building, run-management, sounding, diagnostics, and visualization capabilities shaped by several earlier product directions. Some of those capabilities are strong foundations. Others are incomplete, misframed, or may not belong in the eventual product.
 
-The first executable Golden Path is **Baseline Shallow Cumulus**: a credible
-idealized CM1 case for learning how lower-atmosphere controls shape thermal
-fate, cloud formation, vertical motion, and rain.
+The long-term vision is a scientific cloud laboratory: a collection of explorable cloud worlds where users can watch clouds form and evolve, reveal the normally invisible processes inside them, change meaningful atmospheric conditions, and understand how the clouds respond.
 
-## Core Workflow
+Read the controlling product documents:
 
-```text
-Choose experiment
--> adjust meaningful atmospheric controls
--> preview likely behavior with a lightweight predictor
--> generate/launch a local CM1 run
--> monitor status/logs
--> ingest results
--> inspect and visualize CM1-derived fields
--> save/name/tag useful runs
--> replay and inspect them later
--> compare scenario variants
--> ask what happened to a selected thermal/region as diagnostics mature
+- [North Star](NORTH_STAR.md)
+- [Product Vision](docs/product/PRODUCT_VISION.md)
+
+## Repository status
+
+Cloud Chamber is currently in **product and repository recovery**.
+
+The repository contains substantial working simulation, run-management, data, and visualization infrastructure. It also contains scenarios, workflows, terminology, and planning documents inherited from several earlier product directions.
+
+The current application is therefore **evidence and capability, not the final product design**.
+
+Do not infer the long-term product from:
+
+- the current default scenario;
+- the current Build, Results, or Explore workflow;
+- existing sounding scores or recommendation language;
+- a particular trigger or forcing mechanism;
+- an old roadmap, product specification, or issue;
+- one successful or unsuccessful CM1 experiment.
+
+See [Current State](docs/current/CURRENT_STATE.md) for a candid description of what exists today and what remains under review.
+
+## What works today
+
+Cloud Chamber currently provides useful foundations for future product development:
+
+- local CM1 package generation and execution;
+- serial run queueing, progress reporting, cancellation, and automatic ingest;
+- optional trusted-LAN execution support;
+- persistent result records with names, tags, notes, provenance, and cleanup controls;
+- backend-owned NetCDF ingest and bounded visualization-ready data products;
+- saved-output playback and time-based result inspection;
+- 2-D slices and 3-D inspection of CM1-derived fields;
+- separate treatment of cloud water, ice and other hydrometeors, rain water aloft, surface rain, and reflectivity;
+- observed-sounding ingest, caching, diagnostics, and experiment configuration;
+- runtime-integrity and field-quality checks that distinguish a completed process from trustworthy scientific output.
+
+These capabilities are not all guaranteed to appear in the eventual product in their current form. They should be preserved while their future roles are evaluated.
+
+## What is not settled
+
+The following remain open product and scientific questions:
+
+- the first cloud world or cloud worlds to support;
+- what constitutes a validated Cloud Chamber recipe;
+- how observed atmospheres should enter regime-specific experiments;
+- which controls belong to each cloud regime;
+- practical and high-fidelity compute tiers;
+- how beautiful cloud appearance and scientific field inspection should work together;
+- the role of Build, Results, and Explore in the eventual experience;
+- the experimentation path;
+- the MVP.
+
+Existing scenarios and implementation choices do not answer those questions by themselves.
+
+## Documentation
+
+Start here:
+
+- [Documentation status and authority](docs/DOCUMENTATION_STATUS.md)
+- [Current State](docs/current/CURRENT_STATE.md)
+- [Development](docs/development.md)
+- [Testing and Validation](docs/testing-and-validation.md)
+- [CI and Branch Protection](docs/ci-and-branch-protection.md)
+
+The documentation tree is being audited. Some existing documents contain useful technical detail alongside superseded product framing. The [documentation status and authority guide](docs/DOCUMENTATION_STATUS.md) explains how to interpret them during recovery.
+
+## Development
+
+From the repository root, start the local frontend and backend:
+
+```sh
+scripts/dev.sh start
 ```
 
-This repo is still evolving, but it is no longer only the initial scaffold. The
-current app has a guided local run loop, local CM1 launch/status handling,
-NetCDF ingest, result cards/notebook entries, Results/Compare/Storage
-workspaces, 2-D field inspection, and an initial 3-D cloud-water/slice
-visualization path. Real CM1 execution remains local/manual and outside CI.
+Other server controls:
 
-## Docs
+```sh
+scripts/dev.sh status
+scripts/dev.sh restart
+scripts/dev.sh stop
+scripts/dev.sh logs
+```
 
-- [Product vision](docs/product-vision.md)
-- [Product spec](docs/cloud-chamber-product-spec.md)
-- [Architecture and data model](docs/architecture-and-data-model.md)
-- [Thermal Fate process diagnostics](docs/thermal-fate-process-diagnostics.md)
-- [Current roadmap](docs/current-roadmap.md)
-- [Codex project setup](docs/codex-project-setup.md)
-- [Development](docs/development.md)
-- [Testing and validation](docs/testing-and-validation.md)
-- [CI and branch protection](docs/ci-and-branch-protection.md)
-
-## Current App Shape
-
-- Frontend: TypeScript, React, Vite, Vitest, ESLint, Prettier.
-- Backend/tooling: Python 3.12+, pytest, ruff, mypy.
-- Build workspace: scenario selection, curated controls, package generation,
-  launch/status review, and ingest action against local backend APIs.
-- Results workspace: result notebook, comparison, and runtime storage views.
-- Explore workspace: 2-D slices and initial 3-D visualization over backend
-  visualization-ready data.
-- Local checks: `scripts/check.sh`.
-- CI: GitHub Actions jobs for frontend, backend, scripts, docs, and config sanity.
-
-## Guardrails
-
-Cloud Chamber should not pretend to be CM1. Lightweight previews may support explanation, rough guidance, and sanity checks, but CM1 remains the source of truth for cloud evolution.
-
-Saved results should behave like experiment notebook entries: named, tagged, replayable, inspectable, and explainable. Rerunning or duplicating a saved setup is useful later, but replay/inspect/save is the core MVP result behavior.
-
-Optional remote/cloud compute is not part of the MVP. The near-term heavier-run direction is a trusted LAN worker used as a CM1 compute appliance while Cloud Chamber remains local-first and MacBook-centered.
-
-Do not commit CM1 source, CM1 binaries, NetCDF output, generated run directories, `LANDUSE.TBL`, local data, or large processed visualization artifacts.
-
-## Local Checks
-
-From the repo root:
+Run the canonical local validation gate before opening a pull request:
 
 ```sh
 scripts/check.sh
 ```
 
-The script is executable and runs the same fast checks as CI.
-
-`scripts/check.sh` is the canonical local validation gate. Run it before opening PRs. It intentionally does not run real CM1, require a local CM1 installation, use NetCDF sample output, or create generated CM1 artifacts.
-
-## Local Dev Servers
-
-From the repo root:
+For mocked browser workflow checks:
 
 ```sh
-scripts/dev.sh start
-scripts/dev.sh restart
-scripts/dev.sh stop
+scripts/check-e2e.sh
 ```
 
-The helper runs the FastAPI backend on `http://127.0.0.1:8000` and the Vite frontend on `http://localhost:5173`, with logs and PID files under `.dev/`.
+The frontend normally runs at `http://localhost:5173` and the backend at `http://127.0.0.1:8000`.
 
-## Runtime Data
+Real CM1 execution requires an external local CM1 installation and local Cloud Chamber settings. See [Development](docs/development.md) for setup details.
 
-Runtime data belongs outside the repo by default:
+## Runtime data
+
+Runtime data belongs outside the repository by default:
 
 ```text
 ~/CloudChamber/
@@ -113,14 +126,28 @@ Runtime data belongs outside the repo by default:
   logs/
 ```
 
-`./local-data/` may be used as a gitignored development override, but generated CM1 runs and outputs should not live in source control.
+`./local-data/` may be used as a gitignored development override.
 
-The top-level `data/` directory is placeholder/fixture-only. It is not the runtime data home.
+Do not commit:
 
-## Current Near-Term Scope
+- CM1 source or binaries;
+- NetCDF output;
+- generated run directories;
+- `LANDUSE.TBL`;
+- downloaded sounding caches;
+- local settings or machine-private paths;
+- screenshots, videos, traces, logs, or large processed visualization artifacts.
 
-Near-term work is shifting from the first executable Baseline Shallow Cumulus
-loop toward Thermal Fate diagnostics: process summaries, selected-region
-`What happened here?` inspection, surface-heating and deep-breakthrough
-scenario families, precipitation-feedback/cold-pool reasoning, and renderer
-upgrades only after those process needs are clear.
+## Contributing during recovery
+
+Read [AGENTS.md](AGENTS.md) before nontrivial work.
+
+Use the [controlled-work issue template](.github/ISSUE_TEMPLATE/controlled-work.md) to define bounded work before implementation, and the [Codex task prompt template](docs/templates/codex-task-prompt.md) to translate an approved issue into execution instructions.
+
+During repository recovery:
+
+- all pull requests require manual review;
+- auto-merge is disabled;
+- agents do not create follow-up issues autonomously;
+- product, scientific, recipe, scenario, roadmap, and major UX decisions require explicit direction;
+- existing issues and documents are not presumed to be current product authority.

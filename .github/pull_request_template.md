@@ -1,30 +1,58 @@
-## What changed?
+## Summary
 
-## Why?
+What changed and why?
 
-## Related issue
+## Scope
 
-## Tests run
+Related issue:
 
-## Docs updated
+Files or systems changed:
 
-## Screenshots/video for UI changes
+Explicitly out of scope:
 
-## Follow-up issues
+## Product and science impact
 
-## Repo settings checklist
+Does this change any of the following?
 
-- [ ] First CI run completed and exact GitHub Actions check names were noted, if this PR changes CI.
-- [ ] Branch protection/ruleset settings were created or updated manually, if this PR establishes CI.
-- [ ] Auto-merge is appropriate after required CI passes, or this PR is explicitly marked for manual review.
-- [ ] High-risk/destructive behavior is called out, including cleanup, generated-data policy, CM1 runtime execution, scientific interpretation, or visualization semantics.
+- product direction;
+- scientific interpretation;
+- recipe or scenario status;
+- user-facing scientific language;
+- destructive cleanup behavior;
+- real CM1 execution behavior;
+- a backwards-incompatible manifest, result, or scenario schema.
 
-## Generated-data check
+If yes, identify where the decision was explicitly approved.
 
-- [ ] I did not commit CM1 source, binaries, NetCDF outputs, generated run directories, LANDUSE.TBL, local runtime files, or large visualization artifacts.
+What does this PR **not** establish?
 
-## Product-direction check
+Write `None` where applicable.
 
-- [ ] This keeps CM1 as the source of truth.
-- [ ] Preview/reduced-model behavior, if touched, is clearly labeled as guidance only.
-- [ ] User-facing workflow remains product-shaped, not raw-namelist-shaped.
+## Verification
+
+Commands and manual checks performed:
+
+```text
+scripts/check.sh
+```
+
+For UI workflow changes, include:
+
+```text
+scripts/check-e2e.sh
+```
+
+## Risks and review focus
+
+What should the reviewer inspect closely?
+
+## Artifact check
+
+- [ ] No CM1 source or binaries were committed.
+- [ ] No NetCDF output, generated run directories, runtime data, or sounding caches were committed.
+- [ ] No machine-private paths, settings, logs, screenshots, videos, traces, or large generated artifacts were committed unless explicitly approved.
+
+## Merge posture
+
+- [ ] Manual review required.
+- [ ] Auto-merge is not enabled.
