@@ -11,20 +11,23 @@ Use the hierarchy below.
 
 ## 1. Controlling product authority
 
-These documents define why Cloud Chamber exists and what it is intended to become:
+Use this product-authority order:
 
 1. [North Star](../NORTH_STAR.md)
 2. [Product Vision](product/PRODUCT_VISION.md)
-3. [Application Semantics](product/APPLICATION_SEMANTICS.md)
+3. explicit approved PM decisions for bounded stage work
+4. approved product-architecture documents such as
+   [Application Semantics](product/APPLICATION_SEMANTICS.md)
+5. current implementation documentation
 
 The North Star and Product Vision are the highest product authority in the
-repository. Application Semantics is the approved product-semantic authority for
-Cloud World, Recipe, Simulation, Lens, Saved View, Comparison, Exploration,
-Experiment, and supporting terms.
+repository. Approved PM decisions control bounded stage work where they
+explicitly apply. Application Semantics is the approved product-semantic
+authority for Cloud World, Recipe, Simulation, Lens, Saved View, Comparison,
+Exploration, Experiment, and supporting terms.
 
-Approved PM stage decisions control bounded stage work where they explicitly
-apply. They do not silently rewrite the North Star, Product Vision, or
-Application Semantics.
+PM decisions and product-architecture documents do not silently rewrite higher
+authority.
 
 No roadmap, issue, scenario, research note, architecture document, product specification, or implementation should silently redefine them.
 
@@ -75,8 +78,9 @@ For documents not yet handled by a recovery batch:
 
 - prefer commands, paths, APIs, test procedures, and implemented behavior that can be verified;
 - do not treat their product priorities, old priority labels, scenario sequencing, or future-work language as authoritative;
-- resolve any conflict in favor of the North Star, Product Vision, Application
-  Semantics, Current State, and `AGENTS.md`.
+- resolve any conflict in favor of the North Star, Product Vision, explicit
+  approved PM decisions for bounded stage work, Application Semantics, Current
+  State, and `AGENTS.md`.
 
 ## 5. Architecture and data-model documents
 

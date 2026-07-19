@@ -126,24 +126,24 @@ location does not define product identity.
 
 Current API routes include:
 
-- `/api/results/ingest`;
-- `/api/results`;
-- `/api/results/{result_id}`;
-- `/api/results/{result_id}/delete-preview`;
-- `/api/results/{result_id}/delete`;
-- `/api/results/{result_id}`;
-- `/api/results/{result_id}/save`;
-- `/api/results/{result_id}/visualization/fields`;
-- `/api/results/{result_id}/visualization/defaults`;
-- `/api/results/{result_id}/visualization/slice`;
-- `/api/results/{result_id}/visualization/point-cloud`;
-- `/api/results/{result_id}/output-products`;
-- `/api/results/{result_id}/output-products/profile`;
-- `/api/results/{result_id}/output-products/time-height`;
-- `/api/results/{result_id}/output-products/time-series`;
-- `/api/results/{result_id}/diagnostics/selected-region`;
-- `/api/storage/inventory`;
-- `/api/storage/delete-run`.
+- `POST /api/results/ingest`;
+- `GET /api/results`;
+- `GET /api/results/{result_id}`;
+- `POST /api/results/{result_id}/delete-preview`;
+- `POST /api/results/{result_id}/delete`;
+- `PATCH /api/results/{result_id}`;
+- `POST /api/results/{result_id}/save`;
+- `GET /api/results/{result_id}/visualization/fields`;
+- `GET /api/results/{result_id}/visualization/defaults`;
+- `GET /api/results/{result_id}/visualization/slice`;
+- `GET /api/results/{result_id}/visualization/point-cloud`;
+- `GET /api/results/{result_id}/output-products`;
+- `GET /api/results/{result_id}/output-products/profile`;
+- `GET /api/results/{result_id}/output-products/time-height`;
+- `GET /api/results/{result_id}/output-products/time-series`;
+- `GET /api/results/{result_id}/diagnostics/selected-region`;
+- `GET /api/storage/inventory`;
+- `POST /api/storage/delete-run`.
 
 ## Persistence Or Runtime Records
 
@@ -211,10 +211,10 @@ Tests:
 Current result discovery is filesystem-coupled to run directories under the
 runtime home. There is no separate database-backed result index.
 
-Current output products are JSON payloads and runtime-local derived records.
-There is no implemented Render Studio, Diagnostics Lab, VAPOR/ParaView/VTK/Zarr
-export path, browser-side raw NetCDF parser, or future binary/chunked product
-format in this contract.
+Current browser-facing output products use bounded JSON payloads. The persisted
+derived record is the runtime-local output-product manifest. No additional
+output or export format is part of this implemented contract. The browser does
+not parse raw NetCDF.
 
 Field availability, field quality, interesting times, and diagnostics depend on
 the fields produced by the run and on backend diagnostic support. Unsupported

@@ -64,10 +64,23 @@ near-surface discontinuity evidence.
 from package readiness, rank score, and completeness.
 
 `deep_tower_opportunity` is an experimental numeric heuristic stored in
-candidate features and evidence. It remains an evidence/sort field only. A high
-value is not a reliable fixed-recipe recommendation and must not automatically
-authorize expensive compute. Current high values are intentionally summarized as
-experimental evidence rather than as supported Deep-Tower scout advice.
+candidate features and evidence. Current implementation uses it to:
+
+- populate the deep-scope displayed `ingredient_score` and
+  `ingredient_score_label`;
+- derive visible deep-scope support through
+  `deep_tower_opportunity_support`;
+- filter deep-convection-scope candidates by support;
+- rank the `deep_convection_trial` target screening path;
+- order the explicit `deep_tower_opportunity` sort;
+- contribute a bounded bonus, capped at 10 points, to the default discovery
+  ranking.
+
+Those are implemented screening, display, filtering, and ranking roles. A high
+value remains experimental evidence, not a reliable fixed-recipe
+recommendation, and must not automatically authorize expensive compute. Current
+high values are intentionally summarized as experimental evidence rather than
+as supported Deep-Tower scout advice.
 
 The current near-surface guardrail prevents a major near-surface discontinuity
 from producing clean Deep-Tower support: surface-based CAPE is ignored for that
