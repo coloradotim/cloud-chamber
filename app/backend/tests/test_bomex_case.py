@@ -124,18 +124,17 @@ def test_package_records_hashes_provenance_and_no_recipe(
     settings = fake_settings(tmp_path)
     provenance = fake_provenance(tmp_path)
     monkeypatch.setattr(bomex_case, "collect_cm1_provenance", lambda _settings: provenance)
+    monkeypatch.setattr(bomex_case, "_clean_git_commit", lambda: "commit-test")
 
     smoke = generate_bomex_package(
         settings=settings,
         variant=BomexVariant.SMOKE,
         run_id="bomex-smoke-test",
-        app_commit="commit-test",
     )
     full = generate_bomex_package(
         settings=settings,
         variant=BomexVariant.FULL,
         run_id="bomex-full-test",
-        app_commit="commit-test",
     )
 
     smoke_manifest = load_run_manifest(smoke.manifest_path)
@@ -143,6 +142,7 @@ def test_package_records_hashes_provenance_and_no_recipe(
     smoke_config = smoke_manifest.run_configuration
     full_config = full_manifest.run_configuration
     assert smoke_manifest.run_recipe is None
+    assert smoke_manifest.app.commit == "commit-test"
     assert smoke_manifest.observed_sounding is None
     assert smoke_manifest.trigger_type is None
     assert smoke_config["case_id"] == bomex_case.CASE_ID
@@ -185,8 +185,70 @@ def test_model_frame_evidence_uses_cwp_and_converts_km_heights(tmp_path: Path) -
         },
     ).to_netcdf(path)
 
-    metrics, _non_finite, _profiles, heights = bomex_case._model_frame_evidence([path])
+    metrics, _cloud_profiles, _non_finite, _profiles, heights = bomex_case._model_frame_evidence(
+        [path]
+    )
 
     assert metrics[0]["mean_lwp"] == pytest.approx(0.25)
     assert metrics[0]["max_lwp"] == pytest.approx(0.25)
     assert heights == pytest.approx([20.0, 60.0])
+
+
+def test_package_refuses_dirty_worktree_before_writing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    settings = fake_settings(tmp_path)
+
+    def dirty_git_output(*args: str) -> str:
+        if args == ("rev-parse", "HEAD"):
+            return "clean-commit"
+        if args == ("status", "--porcelain=v1", "--untracked-files=all"):
+            return " M app/backend/cloud_chamber/bomex_case.py"
+        raise AssertionError(args)
+
+    monkeypatch.setattr(bomex_case, "_git_output", dirty_git_output)
+
+    with pytest.raises(bomex_case.BomexCaseError, match="requires a clean Git worktree"):
+        generate_bomex_package(
+            settings=settings,
+            variant=BomexVariant.SMOKE,
+            run_id="dirty-bomex-package",
+        )
+
+    assert not (settings.runtime_home / "runs" / "dirty-bomex-package").exists()
+
+
+def test_final_three_hour_cloud_fraction_peak_uses_time_mean_profile(tmp_path: Path) -> None:
+    first_path = tmp_path / "cm1out_000001.nc"
+    second_path = tmp_path / "cm1out_000002.nc"
+    first_liquid = np.zeros((1, 2, 2, 2), dtype=float)
+    first_liquid[0, 0, :, :] = 2.0e-6
+    second_liquid = np.zeros((1, 2, 2, 2), dtype=float)
+    second_liquid[0, 1, 0, :] = 2.0e-6
+
+    for path, time_seconds, liquid in (
+        (first_path, 10_800.0, first_liquid),
+        (second_path, 11_100.0, second_liquid),
+    ):
+        xr.Dataset(
+            data_vars={"ql": (("time", "zh", "yh", "xh"), liquid)},
+            coords={
+                "time": ("time", [time_seconds]),
+                "zh": ("zh", [20.0, 60.0], {"units": "m"}),
+                "yh": ("yh", [0.0, 100.0]),
+                "xh": ("xh", [0.0, 100.0]),
+            },
+        ).to_netcdf(path)
+
+    metrics, cloud_profiles, _non_finite, _profiles, heights = bomex_case._model_frame_evidence(
+        [first_path, second_path]
+    )
+    peak_percent, peak_height_m = bomex_case._final_three_hour_cloud_fraction_peak(
+        cloud_profiles, heights
+    )
+
+    assert [metric["peak_cloud_fraction_percent"] for metric in metrics] == pytest.approx(
+        [100.0, 50.0]
+    )
+    assert peak_percent == pytest.approx(50.0)
+    assert peak_height_m == pytest.approx(20.0)

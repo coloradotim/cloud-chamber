@@ -192,6 +192,12 @@ class BomexPackageResult:
     generated_files: tuple[Path, ...]
 
 
+@dataclass(frozen=True)
+class _CloudFractionProfile:
+    time_seconds: float
+    values_percent: tuple[float, ...]
+
+
 class BomexRunEvidence(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -223,6 +229,8 @@ class BomexRunEvidence(BaseModel):
     max_surface_rain: float | None = None
     mean_total_cloud_cover_final_three_hours_percent: float | None = None
     peak_cloud_fraction_final_three_hours_percent: float | None = None
+    peak_cloud_fraction_final_three_hours_height_m: float | None = None
+    max_instantaneous_peak_cloud_fraction_final_three_hours_percent: float | None = None
     mean_lwp_final_three_hours_kg_m2: float | None = None
     max_lwp_kg_m2: float | None = None
     lwp_cycle_peak_count: int
@@ -343,9 +351,9 @@ def generate_bomex_package(
     variant: BomexVariant,
     run_id: str,
     allow_overwrite: bool = False,
-    app_commit: str | None = None,
 ) -> BomexPackageResult:
     """Generate a deterministic, provenance-rich BOMEX runtime package."""
+    resolved_commit = _clean_git_commit()
     provenance = collect_cm1_provenance(settings)
     package_dir = settings.runtime_home.expanduser() / "runs" / run_id
     if package_dir.exists():
@@ -393,7 +401,6 @@ def generate_bomex_package(
     generated_hashes["case_manifest.json"] = sha256_file(paths["case_manifest"])
 
     now = datetime.now(UTC)
-    resolved_commit = app_commit if app_commit is not None else _git_commit()
     run_configuration: dict[str, Any] = {
         "case_id": CASE_ID,
         "mapping_version": MAPPING_VERSION,
@@ -517,7 +524,13 @@ def build_bomex_run_evidence(
     expected_count = int(config.get("expected_model_output_count", 0))
     required_missing = _missing_required_fields(result.variables)
     paths = [Path(path) for path in result.model_output_paths]
-    frame_metrics, non_finite_counts, final_profiles, final_heights = _model_frame_evidence(paths)
+    (
+        frame_metrics,
+        cloud_fraction_profiles,
+        non_finite_counts,
+        final_profiles,
+        final_heights,
+    ) = _model_frame_evidence(paths)
     final_three_hour = [
         frame
         for frame in frame_metrics
@@ -544,6 +557,9 @@ def build_bomex_run_evidence(
         caveats.append("required_output_fields_missing")
     if not diag_summary:
         caveats.append("forcing_diagnostic_fields_unavailable")
+    peak_time_mean_cloud_fraction, peak_time_mean_cloud_fraction_height = (
+        _final_three_hour_cloud_fraction_peak(cloud_fraction_profiles, final_heights)
+    )
 
     return BomexRunEvidence(
         run_id=result.run_id,
@@ -573,7 +589,9 @@ def build_bomex_run_evidence(
         mean_total_cloud_cover_final_three_hours_percent=_mean_metric(
             final_three_hour, "total_cloud_cover_percent"
         ),
-        peak_cloud_fraction_final_three_hours_percent=_max_metric(
+        peak_cloud_fraction_final_three_hours_percent=peak_time_mean_cloud_fraction,
+        peak_cloud_fraction_final_three_hours_height_m=peak_time_mean_cloud_fraction_height,
+        max_instantaneous_peak_cloud_fraction_final_three_hours_percent=_max_metric(
             final_three_hour, "peak_cloud_fraction_percent"
         ),
         mean_lwp_final_three_hours_kg_m2=_mean_metric(final_three_hour, "mean_lwp"),
@@ -681,19 +699,35 @@ def _linear_profile_value(height_m: float, knots: tuple[tuple[float, float], ...
     return knots[-1][1]
 
 
-def _git_commit() -> str | None:
+def _clean_git_commit() -> str:
+    commit = _git_output("rev-parse", "HEAD")
+    dirty_state = _git_output("status", "--porcelain=v1", "--untracked-files=all")
+    if dirty_state:
+        raise BomexCaseError(
+            "BOMEX evidence generation requires a clean Git worktree; commit or stash all "
+            "tracked and untracked changes before packaging."
+        )
+    if not commit:
+        raise BomexCaseError("Unable to identify the clean Cloud Chamber Git commit.")
+    return commit
+
+
+def _git_output(*args: str) -> str:
     repo_root = Path(__file__).resolve().parents[3]
     try:
         completed = subprocess.run(
-            ["git", "rev-parse", "HEAD"],
+            ["git", *args],
             cwd=repo_root,
             check=True,
             capture_output=True,
             text=True,
         )
-    except (OSError, subprocess.CalledProcessError):
-        return None
-    return completed.stdout.strip() or None
+    except (OSError, subprocess.CalledProcessError) as exc:
+        command = " ".join(("git", *args))
+        raise BomexCaseError(
+            f"Unable to verify Cloud Chamber Git provenance with {command}."
+        ) from exc
+    return completed.stdout.strip()
 
 
 def _write_json(path: Path, payload: object) -> None:
@@ -712,12 +746,14 @@ def _model_frame_evidence(
     paths: list[Path],
 ) -> tuple[
     list[dict[str, float | None]],
+    list[_CloudFractionProfile],
     dict[str, int],
     dict[str, list[float | None]],
     list[float | None],
 ]:
     xarray = importlib.import_module("xarray")
     metrics: list[dict[str, float | None]] = []
+    cloud_fraction_profiles: list[_CloudFractionProfile] = []
     non_finite_counts: dict[str, int] = {}
     final_profiles: dict[str, list[float | None]] = {}
     final_heights: list[float | None] = []
@@ -735,6 +771,14 @@ def _model_frame_evidence(
                 axis for axis in range(cloud_mask.ndim) if axis != vertical_axis
             )
             level_fraction = np.mean(cloud_mask, axis=horizontal_axes)
+            cloud_fraction_profiles.append(
+                _CloudFractionProfile(
+                    time_seconds=time_seconds,
+                    values_percent=tuple(
+                        float(value * 100.0) for value in np.asarray(level_fraction).reshape(-1)
+                    ),
+                )
+            )
             column_cloud = np.any(cloud_mask, axis=vertical_axis)
             lwp = _optional_array(dataset, "cwp")
             w = _optional_array(dataset, "w")
@@ -763,7 +807,7 @@ def _model_frame_evidence(
                 final_heights = _vertical_values(liquid, vertical_name)
         finally:
             dataset.close()
-    return metrics, non_finite_counts, final_profiles, final_heights
+    return metrics, cloud_fraction_profiles, non_finite_counts, final_profiles, final_heights
 
 
 def _diagnostic_evidence(
@@ -907,6 +951,22 @@ def _max_metric(frames: list[dict[str, float | None]], key: str) -> float | None
         if value is not None:
             values.append(value)
     return max(values) if values else None
+
+
+def _final_three_hour_cloud_fraction_peak(
+    profiles: list[_CloudFractionProfile],
+    heights_m: list[float | None],
+) -> tuple[float | None, float | None]:
+    selected = [profile.values_percent for profile in profiles if profile.time_seconds >= 10_800.0]
+    if not selected:
+        return None, None
+    profile_lengths = {len(profile) for profile in selected}
+    if len(profile_lengths) != 1:
+        raise BomexCaseError("Final-three-hour cloud-fraction profiles use inconsistent grids.")
+    time_mean_profile = np.mean(np.asarray(selected, dtype=float), axis=0)
+    peak_index = int(np.argmax(time_mean_profile))
+    peak_height = heights_m[peak_index] if peak_index < len(heights_m) else None
+    return float(time_mean_profile[peak_index]), peak_height
 
 
 def _local_peak_count(values: list[float]) -> int:
