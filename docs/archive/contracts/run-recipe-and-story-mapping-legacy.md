@@ -1,3 +1,9 @@
+# Archived Contract: Run Recipe And Story-Mapping
+
+> **Status: Historical mixed proposal contract**
+>
+> This document is preserved as historical design and implementation context. It is not an active implemented contract and does not establish current product direction, supported Recipe status, roadmap priority, MVP scope, or final application architecture. Current product semantics are defined in `docs/product/APPLICATION_SEMANTICS.md`.
+
 # Run Recipe And Story-Mapping Contract
 
 Status: forward product/data contract

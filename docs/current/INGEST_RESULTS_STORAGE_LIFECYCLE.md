@@ -271,41 +271,18 @@ bulky output and notebook metadata. That is simple and local-first, but it
 means cleanup is not just "delete bulky output." It also deletes the Result
 Card and diagnostics unless those are moved or copied elsewhere first.
 
-## Compatibility With The Desired Product Model
+## Current Storage Coupling
 
-Desired future model to evaluate:
+Current compatibility finding:
 
-```text
-Ingested = appears in Results as an experiment notebook entry.
-Save changes = title/notes/tags edits.
-Local data retention = whether bulky local run data remains available.
-```
+- Ingest creates metadata that appears in the current Results surface.
+- Title, notes, and tags are current local Result Card sidecar state.
+- Legacy saved/protected fields may exist in old local metadata, but they are no
+  longer the current user-facing retention mode.
+- Because `result_metadata.json` and `result_card.json` live inside the run
+  directory, deleting the managed run directory also removes the current
+  discoverable metadata, editable card state, diagnostics, and source output
+  for that result.
 
-Current compatibility: **partially compatible, blocked by storage architecture.**
-
-- Compatible: ingest already creates metadata that appears in Results.
-- Compatible: title/notes/tags edits are already local Result Card state.
-- Compatible with caveat: legacy saved/protected fields may exist in old local
-  metadata, but they are no longer the current user-facing mode.
-- Blocked: because `result_metadata.json` and `result_card.json` live inside the
-  run directory, deleting "bulky local run data" also deletes the notebook entry
-  and diagnostics. A true "ingested notebook entry can remain after local output
-  cleanup" model requires moving or copying result metadata/card state outside
-  the deletable run directory, or adding an archive/metadata-only cleanup mode
-  that preserves those files while removing large output.
-
-## Product Decision Hooks
-
-Before changing UI labels or cleanup behavior, decide these separately:
-
-1. Should ingested metadata move to a stable notebook/results directory outside
-   `runs/<run-id>`?
-2. Should `result_card.json` remain sidecar state, or become part of a central
-   notebook store?
-3. Should cleanup support "remove bulky output but keep metadata/card" as a
-   distinct action from "delete entire run directory"?
-4. Should backend delete protection read Result Card state, update manifest
-   state when a card is saved, or both?
-5. Should "Saved" mean editable notebook changes are persisted, or should the
-   UI use different language such as "Protected" / "Keep local output" for
-   cleanup protection?
+This audit records the current storage coupling. It does not choose a future
+notebook, database, archive, metadata-only cleanup, or storage-retention model.

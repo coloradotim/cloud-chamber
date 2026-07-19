@@ -9,7 +9,8 @@ The controlling product documents remain:
 
 1. [North Star](../../NORTH_STAR.md)
 2. [Product Vision](../product/PRODUCT_VISION.md)
-3. [Current State](CURRENT_STATE.md)
+3. [Application Semantics](../product/APPLICATION_SEMANTICS.md)
+4. [Current State](CURRENT_STATE.md)
 
 ## Current Implementation Flow
 
@@ -172,7 +173,8 @@ The current architecture leaves several decisions unresolved:
 - whether filesystem-backed result metadata remains sufficient;
 - whether observed soundings, candidate screening, local queueing, LAN execution, or specific
   initiation and forcing mechanisms remain product priorities;
-- which current scenarios or run paths become supported cloud worlds;
+- which current scenarios or run paths provide implementation evidence or
+  ingredients for future Recipes within a Cloud World;
 - how visualization and process explanation are combined in the final experience.
 
 Those decisions are outside this descriptive architecture snapshot.
