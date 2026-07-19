@@ -56,6 +56,7 @@ def create_visualization_result(
     include_qr: bool = False,
     include_qv: bool = True,
     include_dbz: bool = True,
+    cloud_liquid_field: str = "qc",
     run_id: str = "run-visualization",
     package_updates: dict[str, object] | None = None,
 ) -> tuple[CloudChamberSettings, str, Path]:
@@ -75,6 +76,7 @@ def create_visualization_result(
         include_qr=include_qr,
         include_qv=include_qv,
         include_dbz=include_dbz,
+        cloud_liquid_field=cloud_liquid_field,
     )
     manifest = load_run_manifest(package.manifest_path)
     update_payload = {
@@ -93,6 +95,7 @@ def create_multifile_visualization_result(
     *,
     file_count: int = 3,
     run_id: str = "run-multifile-visualization",
+    domain_dz_m: float | None = None,
 ) -> tuple[CloudChamberSettings, str, Path]:
     settings = fake_settings(tmp_path)
     package = generate_dry_run_package(
@@ -111,15 +114,19 @@ def create_multifile_visualization_result(
         )
         paths.append(path)
     manifest = load_run_manifest(package.manifest_path)
+    update_payload: dict[str, object] = {
+        "lifecycle_state": LifecycleState.COMPLETED,
+        "provenance": ProvenanceMetadata(product_state=ProductState.COMPLETED_CM1_RESULT),
+        "outputs": OutputMetadata(netcdf_paths=[str(path) for path in paths]),
+    }
+    if domain_dz_m is not None:
+        update_payload["run_configuration"] = {
+            **manifest.run_configuration,
+            "domain": {"dz_m": domain_dz_m},
+        }
     write_run_manifest(
         package.manifest_path,
-        manifest.model_copy(
-            update={
-                "lifecycle_state": LifecycleState.COMPLETED,
-                "provenance": ProvenanceMetadata(product_state=ProductState.COMPLETED_CM1_RESULT),
-                "outputs": OutputMetadata(netcdf_paths=[str(path) for path in paths]),
-            }
-        ),
+        manifest.model_copy(update=update_payload),
     )
     result = ingest_completed_run(package.manifest_path)
     return settings, result.result_id, package.package_dir
@@ -178,13 +185,14 @@ def write_visualization_netcdf(
     include_qr: bool,
     include_qv: bool,
     include_dbz: bool,
+    cloud_liquid_field: str,
 ) -> None:
     data_vars: dict[str, Any] = {}
     if include_qc:
         qc = np.arange(2 * 2 * 3 * 4, dtype=float).reshape(2, 2, 3, 4) * 1e-6
         qc[0, 0, 0, 0] = np.nan
         qc[1, 1, 2, 3] = np.inf
-        data_vars["qc"] = (
+        data_vars[cloud_liquid_field] = (
             ("time", "zh", "yh", "xh"),
             qc,
             {"units": "kg/kg"},
@@ -323,6 +331,11 @@ def write_realistic_field_catalog_netcdf(path: Path) -> None:
                 surface * 1e-3,
                 {"units": "kg m-2"},
             ),
+            "cwp": (
+                ("time", "yh", "xh"),
+                surface * 2e-3,
+                {"units": "kg m-2"},
+            ),
             "CAPE": (
                 ("time", "yh", "xh"),
                 surface * 10.0,
@@ -420,6 +433,25 @@ def test_field_catalog_includes_qc_and_w_with_provenance(tmp_path: Path) -> None
     assert "native-grid view" in catalog.provenance.provenance_label
 
 
+def test_field_catalog_supports_cm1_ql_as_cloud_water(tmp_path: Path) -> None:
+    settings, result_id, _run_dir = create_visualization_result(
+        tmp_path,
+        cloud_liquid_field="ql",
+        run_id="run-visualization-ql",
+    )
+
+    catalog = field_catalog(settings, result_id)
+    fields = {field.raw_field_name: field for field in catalog.available_fields}
+
+    assert fields["ql"].canonical_field_name == "cloud_water"
+    assert fields["ql"].native_grid == "zh/yh/xh"
+    assert "cm1_ql_mapped_to_canonical_cloud_water" in fields["ql"].caveats
+
+    defaults = view_defaults(settings, result_id)
+    assert defaults.preferred_field == "ql"
+    assert "missing_visualization_field:qc_or_ql" not in defaults.caveats
+
+
 def test_field_catalog_uses_ingested_metadata_without_reopening_netcdf(tmp_path: Path) -> None:
     settings, result_id, run_dir = create_visualization_result(tmp_path)
     for path in run_dir.glob("cm1out_*.nc"):
@@ -452,7 +484,7 @@ def test_field_catalog_handles_missing_qc_and_missing_w(tmp_path: Path) -> None:
     w_missing = field_catalog(settings_w_missing, result_id_w_missing)
 
     assert "qc" not in {field.raw_field_name for field in qc_missing.available_fields}
-    assert "missing_visualization_field:qc" in qc_missing.caveats
+    assert "missing_visualization_field:qc_or_ql" in qc_missing.caveats
     assert "w" not in {field.raw_field_name for field in w_missing.available_fields}
     assert "missing_visualization_field:w" in w_missing.caveats
 
@@ -473,6 +505,7 @@ def test_field_catalog_classifies_realistic_output_fields_conservatively(
         "psfc",
         "swten",
         "lwp",
+        "cwp",
         "CAPE",
         "CIN",
         "LCL",
@@ -515,6 +548,12 @@ def test_field_catalog_classifies_realistic_output_fields_conservatively(
     assert fields["lwp"].native_grid_class == "surface_2d"
     assert fields["lwp"].capabilities.profile_candidate is False
     assert "column_integrated_field_no_vertical_profile" in fields["lwp"].caveats
+
+    assert fields["cwp"].canonical_field_name == "liquid_water_path"
+    assert fields["cwp"].field_family == "column_integrated_water"
+    assert fields["cwp"].native_grid_class == "surface_2d"
+    assert fields["cwp"].capabilities.profile_candidate is False
+    assert "cm1_cwp_is_nonprecipitating_liquid_water_path" in fields["cwp"].caveats
 
     assert fields["CAPE"].canonical_field_name == "cape"
     assert fields["CAPE"].display_name == "CAPE"
@@ -931,6 +970,20 @@ def test_metadata_defaults_use_multifile_interesting_time_for_large_results(
     assert defaults.fields["qc"].time_index == 9
     assert defaults.fields["qc"].time_seconds == 5400.0
     assert defaults.fields["qc"].horizontal_level_index == 0
+
+
+def test_metadata_defaults_use_recorded_vertical_spacing_for_large_results(
+    tmp_path: Path,
+) -> None:
+    settings, result_id, _run_dir = create_multifile_visualization_result(
+        tmp_path,
+        file_count=10,
+        domain_dz_m=40.0,
+    )
+
+    defaults = view_defaults(settings, result_id)
+
+    assert defaults.fields["qc"].horizontal_level_index == 1
 
 
 def test_horizontal_qc_slice_uses_json_values_and_counts_non_finite(

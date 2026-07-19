@@ -1062,6 +1062,15 @@ type CandidateHypothesisComparison = {
   caveats: string[];
 };
 
+type PersistedRunConfiguration = {
+  label?: string | null;
+  configuration_id?: string | null;
+  case_id?: string | null;
+  mapping_version?: string | null;
+  cm1_values?: RunConfigurationCM1Values | null;
+  expected_model_output_count?: number | null;
+};
+
 type ResultCard = {
   result_id: string;
   run_id: string;
@@ -1072,7 +1081,7 @@ type ResultCard = {
   protected: boolean;
   scenario_id: string;
   scenario_name: string | null;
-  run_configuration: RunConfiguration;
+  run_configuration: PersistedRunConfiguration | null;
   pre_run_validation_report?: PreRunValidationReport | null;
   physical_question: string;
   controls: Record<string, string | number | boolean>;
@@ -1167,7 +1176,7 @@ type RunStorageEntry = {
   lifecycle_state: string | null;
   validation_status: string | null;
   product_state: string | null;
-  run_configuration: RunConfiguration | null;
+  run_configuration: PersistedRunConfiguration | null;
   pre_run_validation_report?: PreRunValidationReport | null;
   created_at: string | null;
   updated_at: string | null;
@@ -7956,7 +7965,7 @@ function PipelineRunCard({
         {humanize(result?.scenario_id ?? run.scenario_id ?? "unknown scenario")} ·{" "}
         {result
           ? resultRunConfigurationLabel(result.run_configuration)
-          : runConfigurationLabel(run.run_configuration)}
+          : resultRunConfigurationLabel(run.run_configuration)}
       </p>
       <p className="state-note">
         {pipelineRunOutputSummary(run, result)} · Local package {formatBytes(run.size_bytes)}
@@ -8400,7 +8409,10 @@ function workerProgressSummary(run: RunStorageEntry): string | null {
 
 function workerEstimatedFinish(run: RunStorageEntry): string | null {
   if (!run.worker_started_at) return null;
-  const expectedFrames = run.run_configuration?.cm1_values.expected_output_frames ?? null;
+  const expectedFrames =
+    run.run_configuration?.cm1_values?.expected_output_frames ??
+    run.run_configuration?.expected_model_output_count ??
+    null;
   if (!expectedFrames) return null;
   const netcdfCount = run.worker_netcdf_count ?? 0;
   const observedModelFrames = Math.max(0, netcdfCount - 1);
@@ -13187,13 +13199,14 @@ function formatSeconds(value: number | null): string {
   return `${value.toLocaleString()} s`;
 }
 
-function runConfigurationLabel(configuration: RunConfiguration | null | undefined): string {
+function resultRunConfigurationLabel(
+  configuration: PersistedRunConfiguration | null | undefined,
+): string {
   if (!configuration) return "Run configuration unavailable";
-  return configuration.label || humanize(configuration.configuration_id);
-}
+  if (configuration.label?.trim()) return configuration.label;
 
-function resultRunConfigurationLabel(configuration: RunConfiguration): string {
-  return runConfigurationLabel(configuration);
+  const identifier = configuration.configuration_id ?? configuration.case_id;
+  return identifier?.trim() ? humanize(identifier) : "Custom run configuration";
 }
 
 function runConfigurationSummaryGrid(details: RunConfigurationSummary): string {

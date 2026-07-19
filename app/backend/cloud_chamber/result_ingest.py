@@ -53,6 +53,8 @@ from cloud_chamber.settings import CloudChamberSettings
 
 RESULT_METADATA_FILENAME = "result_metadata.json"
 REQUIRED_OUTPUT_FIELD_ALIASES: dict[str, set[str]] = {
+    "qc": {"qc", "ql"},
+    "ql": {"qc", "ql"},
     "qfx": {"qfx", "lhfx"},
     "lhfx": {"qfx", "lhfx"},
     "updraft_helicity": {"updraft_helicity", "uh"},
@@ -303,11 +305,10 @@ def _result_from_model_output_files(
 
     warnings = list(manifest.outputs.runtime_warnings)
     warnings.extend(f"skipped_netcdf_output:{path}" for path in skipped_paths)
-    missing_expected = [
-        field
-        for field in ("qc", "w")
-        if field not in metadata_snapshot.variables and field not in metadata_snapshot.coordinates
-    ]
+    missing_expected = _missing_expected_fields(
+        metadata_snapshot.variables,
+        metadata_snapshot.coordinates,
+    )
     if missing_expected:
         warnings.append(
             "Expected fields missing from NetCDF metadata: " + ", ".join(missing_expected)
@@ -1831,9 +1832,7 @@ def _result_from_dataset(
     grid_shape = _grid_shape(dimensions)
     warnings = list(manifest.outputs.runtime_warnings)
     warnings.extend(f"skipped_netcdf_output:{path}" for path in skipped_paths)
-    missing_expected = [
-        field for field in ("qc", "w") if field not in variables and field not in coordinates
-    ]
+    missing_expected = _missing_expected_fields(variables, coordinates)
     if missing_expected:
         warnings.append(
             "Expected fields missing from NetCDF metadata: " + ", ".join(missing_expected)
@@ -2001,6 +2000,16 @@ def _missing_required_output_fields(
         for field in manifest.required_output_fields
         if not (REQUIRED_OUTPUT_FIELD_ALIASES.get(field, {field}) & available)
     ]
+
+
+def _missing_expected_fields(variables: list[str], coordinates: list[str]) -> list[str]:
+    available = set(variables) | set(coordinates)
+    missing: list[str] = []
+    if not ({"qc", "ql"} & available):
+        missing.append("qc")
+    if "w" not in available:
+        missing.append("w")
+    return missing
 
 
 def _candidate_hypothesis_comparison(

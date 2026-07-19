@@ -15,6 +15,36 @@ def write_dataset(path: Path, dataset: xr.Dataset) -> xr.Dataset:
     return xr.open_dataset(path)
 
 
+def test_ql_is_supported_as_canonical_cloud_liquid() -> None:
+    values = [
+        [
+            [[2.0e-6 for _x in range(4)] for _y in range(3)],
+            [[0.0 for _x in range(4)] for _y in range(3)],
+        ],
+        [
+            [[3.0e-6 for _x in range(4)] for _y in range(3)],
+            [[0.0 for _x in range(4)] for _y in range(3)],
+        ],
+    ]
+    dataset = base_dataset(qc_values=values, w_values=values).rename({"qc": "ql"})
+
+    diagnostics = compute_baseline_diagnostics(dataset, [])
+    process = compute_process_diagnostics(
+        diagnostics,
+        scenario_id="bomex_trade_cumulus_baseline_v0",
+        controls={},
+        variables=["ql", "w"],
+    )
+
+    assert diagnostics.cloud.available is True
+    assert diagnostics.cloud.formed is True
+    assert diagnostics.cloud.max_qc_kg_kg == pytest.approx(3.0e-6)
+    assert diagnostics.field_quality["qc"].source_field == "ql"
+    assert diagnostics.field_quality["qc"].quality_state == "trusted"
+    assert "cloud_liquid_ql_mapped_to_canonical_qc_diagnostics" in diagnostics.caveats
+    assert process.cloud_lifecycle.status == "supported"
+
+
 def base_dataset(
     *,
     qc_values: list[list[list[list[float]]]] | None = None,

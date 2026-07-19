@@ -4949,6 +4949,50 @@ describe("App", () => {
     expect(screen.queryByText(/Preview estimate not implemented/)).not.toBeInTheDocument();
   });
 
+  it("renders Build pipeline runs with case-manifest run configurations", async () => {
+    const defaultFetch = vi.mocked(fetch).getMockImplementation();
+    const bomexStoredRun = {
+      ...storageRuns[0],
+      run_id: "bomex-full",
+      scenario_id: "bomex_trade_cumulus_baseline_v0",
+      scenario_name: null,
+      worker_state: "running",
+      worker_progress: null,
+      worker_started_at: "2026-07-19T15:00:00Z",
+      worker_netcdf_count: 2,
+      run_configuration: {
+        case_id: "bomex_trade_cumulus_baseline_v0",
+        mapping_version: "bomex_cm1_mapping_v1",
+        variant: "full",
+        expected_model_output_count: 73,
+      },
+    };
+    vi.mocked(fetch).mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input) === "/api/storage/inventory") {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              ...storageInventoryResponse,
+              runs: [bomexStoredRun],
+              largest_runs: [bomexStoredRun],
+            }),
+            { status: 200 },
+          ),
+        );
+      }
+      return (
+        defaultFetch?.(input, init) ?? Promise.resolve(new Response("not found", { status: 404 }))
+      );
+    });
+
+    render(<App />);
+    fireEvent.click(await screen.findByRole("button", { name: "Build" }));
+
+    const pipeline = await screen.findByLabelText("Local packages and runs");
+    expect(pipeline).toHaveTextContent("bomex-full");
+    expect(pipeline).toHaveTextContent("bomex trade cumulus baseline v0");
+  });
+
   it("can move completed local output from the Build pipeline into result ingest", async () => {
     render(<App />);
 
@@ -5768,6 +5812,41 @@ describe("App", () => {
       screen.getByText("CM1 stderr reported floating-point exception flags: IEEE_INVALID_FLAG"),
     ).toBeInTheDocument();
     expect(screen.getAllByText("Completed CM1 result").length).toBeGreaterThan(0);
+    expect(within(resultDetail).getByRole("button", { name: "Open in Explore" })).toBeEnabled();
+  });
+
+  it("renders result cards with case-manifest run configurations", async () => {
+    const defaultFetch = vi.mocked(fetch).getMockImplementation();
+    const bomexResultCard = {
+      ...resultCard,
+      result_id: "result-bomex-full",
+      run_id: "bomex-full",
+      name: "BOMEX full baseline",
+      scenario_id: "bomex_trade_cumulus_baseline_v0",
+      scenario_name: null,
+      run_configuration: {
+        case_id: "bomex_trade_cumulus_baseline_v0",
+        mapping_version: "bomex_cm1_mapping_v1",
+        variant: "full",
+        duration_seconds: 21600,
+      },
+    };
+    vi.mocked(fetch).mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input) === "/api/results") {
+        return Promise.resolve(
+          new Response(JSON.stringify({ results: [bomexResultCard] }), { status: 200 }),
+        );
+      }
+      return (
+        defaultFetch?.(input, init) ?? Promise.resolve(new Response("not found", { status: 404 }))
+      );
+    });
+
+    render(<App />);
+
+    const resultDetail = await screen.findByLabelText("Result detail");
+    expect(resultDetail).toHaveTextContent("BOMEX full baseline");
+    expect(screen.getAllByText("bomex trade cumulus baseline v0").length).toBeGreaterThan(0);
     expect(within(resultDetail).getByRole("button", { name: "Open in Explore" })).toBeEnabled();
   });
 
