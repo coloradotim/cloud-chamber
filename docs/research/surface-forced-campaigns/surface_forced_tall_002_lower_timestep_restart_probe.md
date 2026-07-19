@@ -1,5 +1,12 @@
 # Surface-Forced Tall 002 Lower-Timestep Restart Probe
 
+> **Status: Valid bounded engineering evidence from a restart probe.** This is
+> not campaign validation, a supported setup, or proof that every future case
+> should use the same numerical configuration. The [final issue #336 PM
+> disposition](https://github.com/coloradotim/cloud-chamber/issues/336#issuecomment-4995992707)
+> retains only the safer-timestep lesson for relevant future work and supersedes
+> the `surface_forced_tall_003` recommendation below.
+
 Related issues: `#336`, `#318`
 
 Campaign ID: `surface_forced_tall_002`
@@ -181,4 +188,3 @@ field-quality state
 
 Phase 2 remains blocked until the new four-row Phase 1 passes runtime-integrity,
 surface-flux response, and low-level early-response gates.
-

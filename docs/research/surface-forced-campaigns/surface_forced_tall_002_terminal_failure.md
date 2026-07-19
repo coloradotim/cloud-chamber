@@ -1,5 +1,13 @@
 # Surface-Forced Tall 002 Terminal Failure Investigation
 
+> **Status: Historical investigation.** This record established that the
+> endpoint failure occurred upstream of ingest. Later context is in the
+> [stability diagnosis](surface_forced_tall_002_default_control_stability.md),
+> [lower-timestep restart probe](surface_forced_tall_002_lower_timestep_restart_probe.md),
+> and [final issue #336 PM
+> disposition](https://github.com/coloradotim/cloud-chamber/issues/336#issuecomment-4995992707).
+> That disposition supersedes the `surface_forced_tall_003` recommendation below.
+
 Campaign ID: `surface_forced_tall_002`
 Related issue: `#333`
 Report: `docs/research/surface-forced-campaigns/surface_forced_tall_002.md`

@@ -1,5 +1,12 @@
 # Surface-Forced Tall 002 Default-Control Stability Diagnosis
 
+> **Status: Historical diagnosis with a superseded recommendation.** The final
+> [issue #336 PM
+> disposition](https://github.com/coloradotim/cloud-chamber/issues/336#issuecomment-4995992707)
+> retained the safer-timestep lesson but superseded this document's recommendation
+> for a cold-start `surface_forced_tall_003` matrix and closed the broader forensic
+> campaign as not planned.
+
 Related issues: `#336`, `#318`
 
 Campaign ID: `surface_forced_tall_002`

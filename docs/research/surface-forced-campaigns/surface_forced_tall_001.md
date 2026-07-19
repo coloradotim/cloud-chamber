@@ -1,5 +1,11 @@
 # Surface-Forced Campaign Report: surface_forced_tall_001
 
+> **Status: Historical point-in-time campaign snapshot.** This report predates
+> the later hfx/qfx statistics and low-level-response diagnostics. Its statements
+> that those diagnostics were unavailable remain accurate for this snapshot but
+> do not describe current implementation status. It is not current setup
+> authority or a supported Recipe.
+
 Campaign ID: `surface_forced_tall_001`
 Protocol: `docs/research/surface-forced-sounding-verification-protocol.md`
 Matrix file: `surface_forced_tall_001.yaml` (runtime-local path omitted)

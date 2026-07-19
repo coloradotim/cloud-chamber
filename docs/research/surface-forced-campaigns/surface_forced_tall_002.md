@@ -1,5 +1,13 @@
 # Surface-Forced Campaign Report: surface_forced_tall_002
 
+> **Status: Historical, inconclusive campaign snapshot.** This report is not a
+> current campaign plan or supported setup. Read it with the later [terminal
+> failure investigation](surface_forced_tall_002_terminal_failure.md), [stability
+> diagnosis](surface_forced_tall_002_default_control_stability.md),
+> [lower-timestep restart probe](surface_forced_tall_002_lower_timestep_restart_probe.md),
+> and [final issue #336 PM
+> disposition](https://github.com/coloradotim/cloud-chamber/issues/336#issuecomment-4995992707).
+
 Campaign ID: `surface_forced_tall_002`
 Protocol: `docs/research/surface-forced-sounding-verification-protocol.md`
 Matrix file: `surface_forced_tall_002.yaml` (runtime-local path omitted)
