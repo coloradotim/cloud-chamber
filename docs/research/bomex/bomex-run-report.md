@@ -28,9 +28,23 @@ Intercomparison Study of Shallow Cumulus Convection*:
 
 ## Configuration and Provenance
 
-Both runs used app commit `6808e5f5962bb42b58c450d3e564a4a00f58fdeb`
-and configured CM1 release `21.1`. All 91 original configured `src/*.F` files
-matched official NCAR tag `21.1` commit
+The executed run manifests recorded app commit
+`6808e5f5962bb42b58c450d3e564a4a00f58fdeb`, but package generation occurred
+from a dirty worktree containing the then-uncommitted BOMEX implementation.
+That commit is the Stage 3 merge base and cannot by itself reproduce these
+packages. It is retained here as the original manifest value, not treated as
+valid implementation provenance.
+
+The corrected package generator now fails closed unless tracked and untracked
+worktree state is clean. Package-only smoke and full variants were regenerated
+from clean implementation commit
+`84126c75c2db31deb8ba0a3e3bb447a1f94dad27`. Their namelist, profile audit,
+runtime checklist, case manifest, and normalized science hashes match the
+executed packages byte-for-byte. This clean-commit equivalence establishes
+reproducible implementation provenance without repeating either CM1 run.
+
+Both executed and regenerated packages use configured CM1 release `21.1`. All
+91 original configured `src/*.F` files matched official NCAR tag `21.1` commit
 `0f734f64efa89a684963a66d2ac32db67617912b` byte-for-byte.
 
 | Evidence | SHA-256 |
@@ -40,13 +54,18 @@ matched official NCAR tag `21.1` commit
 | CM1 `README.namelist` | `7b95be56db51f5c9396c59dca252cf96b918a312cc70107451f91149a34ab3b5` |
 | Normalized non-duration science settings | `c65b5d4052ff78fe00d447050e2e72a3b62c3a074bee3a17b31cb0a669333e0b` |
 | Generated profile audit, both variants | `703cdbd38f9ef13712b86e1cc8d7aa19f40478947325d75b5266fafa94d6f645` |
+| Runtime checklist, both variants | `f0967d30d8b26bcc4a9e205a4d658ec7ee3a7d12f6c1a60d3e8dea3f82a8d22d` |
 | Smoke namelist | `52435321e13a9a4a53f14a172af942d60a3df3d8679e5bcdcf4aeceecbb929f2` |
+| Smoke case manifest | `d206efc5692be15cb277add2a5d2bba0c9ff96897c85314775f15258ad386753` |
 | Full namelist | `0928f137668663fec38276ea02dc76b2eb2390b6a8904e409249f113055bc8e2` |
+| Full case manifest | `14acd71d736c998e3946c473b7c09c63414a48fdbac3632bbd10c2b20843b5c8` |
 
 The normalized science hash and profile hash are identical. Direct generated
 namelist comparison found only `timax=600 s` versus `timax=21600 s`; the output
-count changes consequently. No observed sounding, sounding candidate,
-analyzer, `run_recipe`, or warm-bubble initiation path was used.
+count changes consequently. The clean regeneration produced no differing
+scientific or package artifact hash, so no rerun threshold was triggered. No
+observed sounding, sounding candidate, analyzer, `run_recipe`, or warm-bubble
+initiation path was used.
 
 ## Smoke Gate
 
@@ -100,9 +119,11 @@ During the final three hours:
 
 - mean total cloud cover was `10.61%`, with frame means from `8.13%` to
   `13.18%`; the published model means span `8-17%` with a `13%` ensemble mean;
-- the time-mean cloud-fraction profile peaked at `6.53%` near `620 m`, close to
-  the published approximately `6%` maximum near cloud base, and decreased
-  upward through the cloud layer;
+- the evaluator retained the per-level cloud-fraction profile for all 37 frames
+  from hour three through hour six, averaged each level across those frames,
+  and found the resulting time-mean profile peak at `6.5344%` at `620 m`, close
+  to the published approximately `6%` maximum near cloud base; the distinct
+  maximum instantaneous per-frame profile peak was `8.9600%`;
 - supported cloud base averaged `569 m` and ranged from `540-580 m`, close to
   the published approximately `500 m` cloud base;
 - supported cloud top averaged `1,784 m` and ranged from `1,500-2,140 m`.
