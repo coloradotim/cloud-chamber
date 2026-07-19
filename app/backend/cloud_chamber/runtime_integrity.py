@@ -60,7 +60,7 @@ CM1_STATS_INTEGRITY_VARIABLES = {
 TERMINAL_FIELD_CATEGORIES = {
     "dynamics": {"u", "v", "w", "uinterp", "vinterp", "winterp", "u10", "v10"},
     "thermodynamics": {"prs", "pressure", "q2", "qv", "t", "t2", "temperature", "th", "theta"},
-    "hydrometeors": {"dbz", "qc", "qg", "qi", "qr", "qs"},
+    "hydrometeors": {"dbz", "qc", "ql", "qg", "qi", "qr", "qs"},
     "surface": {"hfx", "prate", "qfx", "rain", "surface_rain"},
 }
 

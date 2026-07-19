@@ -162,6 +162,17 @@ def test_runtime_integrity_fails_terminal_multi_category_non_finite_output() -> 
     )
 
 
+def test_runtime_integrity_classifies_ql_as_a_hydrometeor() -> None:
+    integrity = assess_runtime_integrity(
+        lifecycle_state="completed",
+        exit_code=0,
+        field_quality=_terminal_field_quality(["ql", "w"]),
+    )
+
+    assert integrity.state == "failed"
+    assert integrity.terminal_non_finite_fields == ["ql", "w"]
+
+
 def test_runtime_integrity_fails_surface_forced_002_terminal_pattern() -> None:
     integrity = assess_runtime_integrity(
         lifecycle_state="completed",

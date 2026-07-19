@@ -46,6 +46,7 @@ TimeSeriesAggregationMethod = Literal["cloud_fraction", "domain_mean", "domain_m
 
 FIELD_QUALITY_KEY_BY_RAW_FIELD = {
     "qc": "qc",
+    "ql": "qc",
     "w": "w",
     "qr": "qr",
     "rain": "surface_rain",
@@ -77,6 +78,15 @@ FIELD_DEFINITIONS: dict[str, FieldDefinition] = {
         "Supported for native slices, selected-place diagnostics, and 3-D scalar points.",
         point_cloud_allowed=True,
         render_ready_candidate=True,
+    ),
+    "ql": FieldDefinition(
+        "cloud_water",
+        "Cloud water",
+        "cloud_hydrometeor",
+        "CM1 reversible-moist cloud liquid; supported as canonical cloud water.",
+        point_cloud_allowed=True,
+        render_ready_candidate=True,
+        caveats=("cm1_ql_mapped_to_canonical_cloud_water",),
     ),
     "w": FieldDefinition(
         "vertical_velocity",
@@ -272,6 +282,21 @@ FIELD_DEFINITIONS: dict[str, FieldDefinition] = {
         profile_candidate=False,
         time_height_candidate=False,
         caveats=("column_integrated_field_no_vertical_profile",),
+    ),
+    "cwp": FieldDefinition(
+        "liquid_water_path",
+        "Cloud water path",
+        "column_integrated_water",
+        (
+            "CM1 cloud-water path; for nonprecipitating reversible-moist cases this is "
+            "the liquid-water path field."
+        ),
+        profile_candidate=False,
+        time_height_candidate=False,
+        caveats=(
+            "column_integrated_field_no_vertical_profile",
+            "cm1_cwp_is_nonprecipitating_liquid_water_path",
+        ),
     ),
     "cape": FieldDefinition(
         "cape",
@@ -845,7 +870,11 @@ def _metadata_view_defaults(
                     else []
                 ),
                 *metadata.warnings,
-                *(["missing_visualization_field:qc"] if "qc" not in fields else []),
+                *(
+                    ["missing_visualization_field:qc_or_ql"]
+                    if not ({"qc", "ql"} & fields.keys())
+                    else []
+                ),
                 *(["missing_visualization_field:w"] if "w" not in fields else []),
             ]
         ),
@@ -920,26 +949,37 @@ def _metadata_horizontal_level_index(
 ) -> int:
     if vertical_size <= 1:
         return 0
-    if field.raw_field_name not in {"qc", "qr", "dbz"} or metadata.diagnostics is None:
+    if field.raw_field_name not in {"qc", "ql", "qr", "dbz"} or metadata.diagnostics is None:
         return max(0, vertical_size // 2)
 
     target_height_m = _metadata_cloud_focus_height_m(metadata, field.raw_field_name)
     if target_height_m is None:
         return max(0, vertical_size // 2)
 
-    # Metadata-only defaults intentionally avoid opening large output sequences.
-    # CM1 deep-trial files currently expose 500 m-ish scalar levels; this maps
-    # shallow cloud-water metadata away from the domain midpoint without
-    # pretending we know the exact native coordinate.
-    estimated_index = math.ceil(max(0.0, target_height_m) / 500.0) - 1
+    domain = metadata.run_configuration.get("domain")
+    configured_dz = domain.get("dz_m") if isinstance(domain, Mapping) else None
+    if configured_dz is None:
+        vertical_spacing_m = 500.0
+    else:
+        try:
+            vertical_spacing_m = float(configured_dz)
+        except (TypeError, ValueError):
+            vertical_spacing_m = 500.0
+    if not math.isfinite(vertical_spacing_m) or vertical_spacing_m <= 0.0:
+        vertical_spacing_m = 500.0
+
+    # Scalar levels are centered at dz / 2 for the uniform grids represented by
+    # current run metadata. Fall back to the established 500 m estimate when dz
+    # was not recorded.
+    estimated_index = round(max(0.0, target_height_m) / vertical_spacing_m - 0.5)
     return max(0, min(vertical_size - 1, estimated_index))
 
 
 def _metadata_cloud_focus_height_m(metadata: ResultMetadata, field_name: str) -> float | None:
     diagnostics = metadata.diagnostics
-    if diagnostics is None or field_name not in {"qc", "qr", "dbz"}:
+    if diagnostics is None or field_name not in {"qc", "ql", "qr", "dbz"}:
         return None
-    if field_name == "qc" and diagnostics.cloud.time_of_max_qc_seconds is not None:
+    if field_name in {"qc", "ql"} and diagnostics.cloud.time_of_max_qc_seconds is not None:
         height = _time_value_at(
             diagnostics.cloud.max_qc_height_time_series,
             diagnostics.cloud.time_of_max_qc_seconds,
@@ -1483,7 +1523,11 @@ def view_defaults(
                         else []
                     ),
                     *metadata.warnings,
-                    *(["missing_visualization_field:qc"] if "qc" not in fields else []),
+                    *(
+                        ["missing_visualization_field:qc_or_ql"]
+                        if not ({"qc", "ql"} & fields.keys())
+                        else []
+                    ),
                     *(["missing_visualization_field:w"] if "w" not in fields else []),
                 ]
             ),
@@ -1764,7 +1808,10 @@ def _fallback_view_defaults(
 def _preferred_field(metadata: ResultMetadata, fields: Mapping[str, object]) -> str | None:
     if _metadata_is_deep_candidate(metadata) and "w" in fields:
         return "w"
-    return "qc" if "qc" in fields else next(iter(fields), None)
+    for cloud_liquid_field in ("qc", "ql"):
+        if cloud_liquid_field in fields:
+            return cloud_liquid_field
+    return next(iter(fields), None)
 
 
 def _metadata_is_deep_candidate(metadata: ResultMetadata) -> bool:
@@ -2737,9 +2784,10 @@ def _catalog_caveats(
 ) -> list[str]:
     available = {field.raw_field_name for field in fields}
     caveats = list(metadata.warnings)
-    for required in ("qc", "w"):
-        if required not in available:
-            caveats.append(f"missing_visualization_field:{required}")
+    if not ({"qc", "ql"} & available):
+        caveats.append("missing_visualization_field:qc_or_ql")
+    if "w" not in available:
+        caveats.append("missing_visualization_field:w")
     caveats.extend(
         f"expected_field_unavailable:{field.raw_field_name}" for field in unavailable_fields
     )

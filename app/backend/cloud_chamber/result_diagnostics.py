@@ -498,7 +498,11 @@ def compute_process_diagnostics(
     """Compute conservative Thermal Fate process summaries from supported diagnostics."""
 
     available_fields = set(variables)
-    caveats: list[str] = []
+    if "qc" not in available_fields and "ql" in available_fields:
+        available_fields.add("qc")
+        caveats = ["cloud_liquid_ql_mapped_to_canonical_qc_diagnostics"]
+    else:
+        caveats = []
     if not diagnostics.cloud.available:
         caveats.append("thermal_fate_missing_qc")
     if not diagnostics.vertical_velocity.available:
@@ -679,6 +683,11 @@ def compute_baseline_diagnostics(
 ) -> ResultDiagnostics:
     """Compute MVP Baseline Shallow Cumulus diagnostics from an xarray dataset."""
     caveats = list(inherited_caveats)
+    cloud_liquid_source = "qc"
+    if "qc" not in dataset.data_vars and "ql" in dataset.data_vars:
+        dataset = dataset.rename({"ql": "qc"})
+        cloud_liquid_source = "ql"
+        caveats.append("cloud_liquid_ql_mapped_to_canonical_qc_diagnostics")
     time_context = _time_context(dataset, _primary_time_dimension(dataset))
     cloud = _cloud_diagnostics(dataset, time_context, caveats)
     vertical_velocity = _vertical_velocity_diagnostics(dataset, time_context, caveats)
@@ -688,6 +697,19 @@ def compute_baseline_diagnostics(
     surface_fluxes = _surface_flux_diagnostics(dataset, time_context, caveats)
     low_level_response = _low_level_response_diagnostics(dataset, time_context, caveats)
     field_quality = _field_quality_map(dataset, time_context)
+    if cloud_liquid_source == "ql" and "qc" in field_quality:
+        qc_quality = field_quality["qc"]
+        field_quality["qc"] = qc_quality.model_copy(
+            update={
+                "source_field": "ql",
+                "caveats": _dedupe(
+                    [
+                        *qc_quality.caveats,
+                        "cloud_liquid_ql_mapped_to_canonical_qc_diagnostics",
+                    ]
+                ),
+            }
+        )
     localized_response = _localized_response_diagnostics(
         dataset,
         time_context,

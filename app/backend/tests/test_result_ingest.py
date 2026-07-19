@@ -422,6 +422,37 @@ def test_required_updraft_helicity_accepts_cm1_uh_variable(tmp_path: Path) -> No
     )
 
 
+def test_ingest_accepts_cm1_ql_as_cloud_liquid_alias(tmp_path: Path) -> None:
+    manifest_path = create_manifest(tmp_path, run_id="run-cloud-liquid-ql-alias")
+    run_dir = manifest_path.parent
+    netcdf_path = run_dir / "cm1out_000001.nc"
+    write_model_netcdf(
+        netcdf_path,
+        times=[0.0],
+        qc_values=[2.0e-6],
+        w_values=[0.5],
+    )
+    with xr.open_dataset(netcdf_path) as source:
+        renamed = source.rename({"qc": "ql"}).load()
+    netcdf_path.unlink()
+    renamed.to_netcdf(netcdf_path, engine="scipy")
+    manifest = load_run_manifest(manifest_path)
+    write_run_manifest(
+        manifest_path,
+        manifest.model_copy(update={"required_output_fields": ["qc", "ql", "w"]}),
+    )
+    complete_manifest(manifest_path, OutputMetadata(netcdf_paths=[str(netcdf_path)]))
+
+    result = ingest_completed_run(manifest_path)
+
+    assert set(result.variables) == {"ql", "w"}
+    assert result.missing_required_output_fields == []
+    assert result.diagnostics is not None
+    assert result.diagnostics.cloud.formed is True
+    assert result.diagnostics.field_quality["qc"].source_field == "ql"
+    assert not any("Expected fields missing" in warning for warning in result.warnings)
+
+
 def test_result_metadata_serializes_and_lists_from_runtime_home(tmp_path: Path) -> None:
     settings = fake_settings(tmp_path)
     manifest_path = create_manifest(tmp_path)
