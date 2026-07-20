@@ -35,7 +35,9 @@ This MVP is grounded in the completed or active evidence program for:
 - the two-state Surface Moisture Supply Control;
 - the Trade Cumulus Updraft Lens;
 - the fixed Trade Cumulus vertical-velocity scale;
-- the curated Baseline versus More Moisture Comparison.
+- the first curated Baseline versus More Moisture Comparison.
+
+Application Semantics already establishes that a Comparison may be casual and exploratory or may form part of a deliberate Experiment. A formal Experiment requires a controlled contrast; ordinary Comparison does not require a validation or graduation gate.
 
 Current application structure is implementation context. It does not define the final MVP journey.
 
@@ -50,10 +52,13 @@ The MVP should make it easy to:
 - reveal hidden atmospheric processes through Lenses;
 - inspect scientific detail without losing the visual experience;
 - read concise explanations that refresh atmospheric-science knowledge;
-- save interesting views and return to them later;
-- compare validated changes honestly;
-- preserve worthwhile simulations as durable content;
-- use the Lab to create, evaluate, keep, or abandon the next candidate world.
+- create or ingest a related Simulation and return after the model run finishes;
+- compare that Simulation with its parent, reference, or another compatible Simulation;
+- see exactly which configuration values differ;
+- investigate strong, weak, surprising, mixed, inconclusive, or absent responses;
+- save useful views, comparisons, and personal notes for later return;
+- preserve worthwhile Simulations as durable content;
+- use the Lab to continue building, testing, retaining, or leaving behind cloud-world variations.
 
 Trade Cumulus is the first installed Cloud World. It is not the permanent definition of Cloud Chamber.
 
@@ -94,30 +99,33 @@ Explanations should therefore:
 
 The MVP does not define external personas, classrooms, teams, institutions, or commercial users.
 
-## 2. Product structure: Worlds and Lab
+## 2. Product structure
 
-Cloud Chamber has two distinct product contexts.
+Cloud Chamber has four related product roles.
 
-## Worlds
+### Worlds organize atmospheric context
 
-Worlds contain curated, durable cloud experiences that the user returns to.
+Cloud Worlds are the durable settings the user returns to.
 
-A Cloud World may contain:
+A Cloud World may organize:
 
-- one or more validated Simulations;
-- a baseline Recipe;
-- meaningful Controls;
+- one reference Simulation;
+- retained variations and recent runs;
+- Recipes and meaningful Controls;
 - world-appropriate Lenses;
 - Saved Views;
-- curated Comparisons;
-- authored explanations;
-- scientific limits and provenance.
+- saved Comparisons;
+- featured explanations and Comparisons;
+- scientific limits and provenance;
+- ordinary history that is useful to retain without featuring.
+
+A World is not a museum containing only formally validated showcase pieces. It is the durable scientific context for related Simulations, examinations, notes, and comparisons.
 
 Worlds are the primary product entrance.
 
-## Lab
+### Lab creates and tracks Simulations
 
-The Lab contains the technical and scientific work used to create future world content.
+The Lab contains the technical and scientific work used to create new Simulations and future world content.
 
 It may contain:
 
@@ -126,16 +134,42 @@ It may contain:
 - local CM1 execution;
 - run monitoring;
 - ingest;
-- result inspection;
-- evidence generation;
+- technical integrity and field trust;
 - storage and cleanup;
-- retention, rejection, and promotion decisions.
+- run lineage and configuration differences;
+- retention, archive, rejection, and feature decisions.
 
 Current Build, Results, run management, ingest, and storage behavior belongs primarily to the Lab.
 
-The Lab remains important because the user is also the cloud-world author. It is not the front door to an already curated world.
+The Lab remains important because the user is also the cloud-world author. It is not the front door to an already installed world.
 
-The MVP does not require a polished general-purpose promotion editor. Initial promotion of validated Lab content into a World may remain a controlled repository or local-content operation.
+### Explore examines one Simulation
+
+Explore is the instrument for watching and investigating one Simulation.
+
+It coordinates:
+
+- three-dimensional cloud structure;
+- model time;
+- Lenses and native-grid slices;
+- scientific evidence;
+- authored explanation;
+- technical detail and provenance;
+- Saved Views.
+
+### Compare examines a relationship
+
+Compare is the instrument for examining two related Simulations or Saved Views together.
+
+It should help answer:
+
+- What configuration values differ?
+- What appears to have changed in the cloud field?
+- What changed little or not at all?
+- Is the response consistent, mixed, surprising, or inconclusive?
+- Which views make the response easiest to understand and remember?
+
+Compare is not restricted to a PM-approved or scientifically graduated Control. Technical inspectability is the entry requirement; interpretation is the work the user does inside Compare.
 
 ## 3. First installed Cloud World
 
@@ -150,8 +184,11 @@ Trade Cumulus
 ├── Canonical BOMEX Baseline
 ├── More Moisture
 ├── Updraft Lens
-└── Curated Moisture Comparison
+├── Saved Views
+└── Moisture Comparison
 ```
+
+The Moisture Comparison implemented through issue #381 is the first **featured saved Comparison**. It proves one authored compare-and-explain presentation. It does not define the full long-term Compare workflow.
 
 ### Product identities
 
@@ -163,15 +200,15 @@ Primary names should be:
 
 ```text
 Cloud World: Trade Cumulus
-Baseline Simulation: Canonical BOMEX Baseline
-Control state: More Moisture
+Reference Simulation: Canonical BOMEX Baseline
+Variation: More Moisture
 Lens: Updraft Lens
-Comparison: How does stronger surface moisture supply change the cloud field?
+Featured Comparison: How does stronger surface moisture supply change the cloud field?
 ```
 
 ### Precomputed first
 
-The golden path uses installed, precomputed content.
+The first revisit journey uses installed, precomputed content.
 
 Entering Trade Cumulus must not require:
 
@@ -181,11 +218,13 @@ Entering Trade Cumulus must not require:
 - finding a timestamped Result;
 - understanding runtime storage before seeing a cloud.
 
-The Lab remains available when the user wants to create or test new content.
+The Lab remains available when the user wants to create or test a new variation.
 
-## 4. Essential user journey
+## 4. Essential user journeys
 
-The MVP golden path is:
+The MVP must support two equally important loops.
+
+### Revisit and explore
 
 ```text
 Open Cloud Chamber
@@ -197,13 +236,31 @@ Open Cloud Chamber
 → inspect coordinated 3-D and slice views
 → read an explanation beside the evidence
 → save an interesting view and optional note
-→ open the More Moisture Comparison
-→ inspect either full Simulation
-→ return later to the same world and last view
-→ enter the Lab when developing the next Control, Lens, Recipe, or Cloud World
+→ open a saved or featured Comparison
+→ return later to the same world and state
 ```
 
-The default journey should not pass through Build or Results ceremony.
+### Create, return, compare, and remember
+
+```text
+Open the Lab from Trade Cumulus
+→ start from a reference or prior Simulation
+→ change one or more settings
+→ launch or ingest the related Simulation
+→ leave while the model runs
+→ return later and see the completed or caveated result
+→ Compare with the parent, reference, or another compatible Simulation
+→ inspect the exact configuration difference
+→ begin with aligned views where scientifically compatible
+→ independently adjust the two views when that better reveals the response
+→ write a title and personal note
+→ save the Comparison
+→ find and reopen it later inside Trade Cumulus
+```
+
+The default revisit journey should not pass through Build or Results ceremony.
+
+The Lab journey may use technical machinery because the user is deliberately creating new content.
 
 ## 5. Explore is the product center
 
@@ -218,7 +275,7 @@ The primary desktop workspace should coordinate:
 ```text
 World and Simulation identity
 
-3-D cloud scene                 Explanation / Science / Details inspector
+3-D cloud scene                 Explain / Science / Details inspector
 Native-grid Lens slice
 
 Persistent timeline and active Lens controls
@@ -297,7 +354,8 @@ The supporting inspector should have three clear layers.
 - exact fields and units;
 - model time and slice coordinates;
 - Recipe and Control values;
-- run, result, and asset identifiers;
+- run, result, asset, and parent identifiers;
+- configuration differences;
 - hashes and provenance;
 - runtime integrity;
 - CM1 and NetCDF implementation details.
@@ -331,19 +389,117 @@ For example, when the three-dimensional cloud point layer fails:
 - retry applies only to the failed layer;
 - the page-level narrative is not replaced by a rendering error.
 
-## 6. Saved Views and resume
+## 6. Compare is ordinary investigation
 
-Saved Views are required MVP behavior.
+Comparison is a normal part of Exploration.
 
-A Saved View deliberately preserves a useful way of examining a Simulation or Comparison.
+It should be available when two Simulations have enough readable, compatible data to examine the requested views and Lenses. It does not require that the changed condition, response, or interpretation already be validated.
 
-### Required Saved View state
+### Technical trust is separate from interpretation
+
+Compare should distinguish:
+
+```text
+Can these outputs be read and compared honestly?
+What configuration values differ?
+What appears to have happened?
+Is the result worth saving or featuring?
+```
+
+Only the first is an automatic technical gate.
+
+A caveated Simulation may still be useful to compare when the caveat is visible and the required fields remain usable. Missing or untrusted evidence must never be silently converted into a clean comparison.
+
+### Run lineage
+
+A related Simulation should preserve, when known:
+
+- Cloud World;
+- source Recipe;
+- parent or reference Simulation;
+- user question or run note;
+- exact changed configuration values;
+- an unchanged-configuration fingerprint or summary;
+- technical run and result identity.
+
+When the run becomes inspectable, the product should offer an obvious action such as:
+
+```text
+Compare to Canonical BOMEX Baseline
+```
+
+or:
+
+```text
+Compare to parent Simulation
+```
+
+The user should not need to reconstruct lineage from filenames, timestamps, or memory.
+
+### Configuration difference
+
+Compare must show the exact differences before interpreting the response.
+
+When one physical condition changed, the interface may foreground that condition without claiming causal proof from one run pair.
+
+When several physical or numerical values changed, the interface must show all material differences and avoid attributing the response to one factor.
+
+Operational differences such as output cadence should remain visible but distinguishable from atmospheric changes.
+
+### Aligned inspection
+
+For compatible Simulations, Compare should begin with aligned views:
+
+- same model time or explicit time mapping;
+- same Lens;
+- same scale;
+- same slice orientation and position;
+- same camera and display settings where practical.
+
+This mode supports direct inspection of what differs at a common examination state.
+
+The product must not fake alignment when grids, times, fields, or domains are incompatible.
+
+### Independent examination
+
+The user may unlock the two sides and choose independently:
+
+- model time;
+- slice orientation and position;
+- camera;
+- selected view state.
+
+This mode supports finding the most informative view in each Simulation.
+
+Independently selected views must identify their exact times and positions and must not imply one-to-one identity between individual clouds.
+
+The current issue #381 B5/M5 story is an example of an independently arranged, featured Comparison.
+
+### Saving and featuring
+
+A Comparison may be saved because it is useful, surprising, confusing, inconclusive, or worth revisiting.
+
+Saving means:
+
+> This examination is worth returning to.
+
+It does not mean:
+
+> This change has been scientifically validated.
+
+A saved Comparison may later be pinned or featured within its Cloud World. Feature status controls prominence, not scientific certification.
+
+## 7. Saved Views, saved Comparisons, and resume
+
+The MVP needs durable memory for both single-Simulation and two-Simulation work.
+
+### Saved View
 
 A Saved View preserves, at minimum:
 
 - Cloud World;
-- Simulation or Comparison;
-- model time;
+- Simulation;
+- model time or playback range;
 - camera state;
 - three-dimensional field;
 - threshold, opacity, and point size;
@@ -355,11 +511,31 @@ A Saved View preserves, at minimum:
 - optional title;
 - optional personal note.
 
+### Saved Comparison
+
+A Saved Comparison preserves, at minimum:
+
+- title and optional personal note;
+- Cloud World;
+- left and right Simulations;
+- parent, reference, or other relationship when known;
+- exact configuration difference;
+- technical trust summaries;
+- aligned or independent mode;
+- the complete Saved View state for each side;
+- shared or side-specific Lens state;
+- selected response metrics or evidence;
+- optional authored or personal explanation;
+- pinned or featured state;
+- created and updated times.
+
+A Saved Comparison is a personal lab-notebook page with live scientific views. It is not a formal claims graph.
+
 ### Resume behavior
 
-The product remembers the last active view for each Cloud World.
+The product remembers the last active state for each Cloud World.
 
-Returning to a world should resume the prior state unless the user explicitly chooses a baseline or another Saved View.
+Returning to a World should resume the prior state unless the user explicitly chooses a reference Simulation, Saved View, or Saved Comparison.
 
 ### Scope boundary
 
@@ -372,13 +548,13 @@ The MVP does not require:
 - automatic scientific conclusions;
 - cloud-object identity tracking.
 
-Saved Views and notes are sufficient for the initial personal knowledge trail.
+Saved Views, saved Comparisons, and personal notes are sufficient for the initial knowledge trail.
 
-## 7. Comparison experience
+## 8. First featured Comparison
 
-The first Comparison is the curated Baseline versus More Moisture story.
+The first featured Comparison is the Baseline versus More Moisture story implemented through issue #381.
 
-It should communicate:
+It communicates:
 
 - the one condition changed;
 - the major measured responses;
@@ -387,48 +563,51 @@ It should communicate:
 - two illustrative Lens views;
 - an authored explanation grounded in full-run evidence.
 
-The illustrative views may use different times and positions. They help show the measured response but do not establish it on their own.
+The illustrative views use different times and positions. They help show the measured response but do not establish it on their own.
 
 The user can open either Simulation in the full Explore workspace.
 
-The MVP does not require arbitrary result pairing or a generalized Comparison builder.
+This featured story is reusable content for the later integrated Compare workspace. It is not the final Compare information architecture and does not limit Comparison to preapproved Controls or curated stories.
 
-## 8. Content durability and recovery
+## 9. Content durability and recovery
 
-Curated world content must be more durable than ordinary timestamped runtime output.
+Retained world content must be more durable than ordinary timestamped runtime output.
 
 The MVP requires a bounded Trade Cumulus content mechanism that can:
 
-- give the Baseline, More Moisture Simulation, Comparison evidence, and authored content stable identities;
+- give the reference Simulation, More Moisture Simulation, Comparison evidence, Saved Views, saved Comparisons, and authored content stable identities;
 - verify expected manifests, files, and hashes;
-- protect curated assets from ordinary cleanup;
+- preserve parent/reference lineage and configuration differences;
+- protect featured and pinned assets from ordinary cleanup;
+- make cleanup effects explicit for ordinary retained history;
 - detect missing or corrupt content;
-- explain which part of the world is unavailable;
-- reinstall or repair the known content predictably;
+- explain which part of the World is unavailable;
+- reinstall or repair the known installed content predictably;
 - avoid committing multi-gigabyte NetCDF files to Git.
 
 The exact storage and delivery mechanism is an implementation decision for a later bounded issue.
 
-The first solution should support one known local world bundle. It should not become a marketplace, remote content service, or generalized plugin registry.
+The first solution should support one known local world bundle and ordinary local variations. It should not become a marketplace, remote content service, or generalized plugin registry.
 
-## 9. Continuing cloud-world evolution
+## 10. Continuing cloud-world evolution
 
 A second Cloud World is not required for MVP completion.
 
 The core shell should nevertheless avoid hard-coding Trade Cumulus into every viewer decision.
 
-Adding a later world should primarily involve:
+Adding a later World should primarily involve:
 
-- a scientifically validated world definition;
-- one or more durable Simulations;
+- a scientifically grounded world definition;
+- one reference or known-working Simulation;
+- retained variations;
 - world-appropriate Recipe assumptions;
-- Controls;
+- meaningful Controls;
 - Lenses and their defaults;
 - authored explanations;
-- Saved Views and Comparisons;
+- Saved Views and saved Comparisons;
 - world-specific scientific evidence.
 
-It should not require rebuilding the core Explore workspace.
+It should not require rebuilding the core Explore or Compare workspace.
 
 This requirement does not authorize:
 
@@ -436,15 +615,15 @@ This requirement does not authorize:
 - a Lens registry framework;
 - a content marketplace;
 - generalized multi-engine architecture;
-- speculative support for future collaboration or remote compute.
+- speculative remote compute.
 
-## 10. Included MVP capabilities
+## 11. Included MVP capabilities
 
 The MVP includes:
 
 - a Worlds entry surface;
 - one installed Trade Cumulus world;
-- stable Baseline and More Moisture identities;
+- stable reference and variation identities;
 - precomputed local scientific content;
 - direct world entry and per-world resume;
 - an integrated Explore workspace;
@@ -454,14 +633,18 @@ The MVP includes:
 - world-owned Lens defaults and scale;
 - world-aware scientific evidence;
 - authored explanations;
-- the curated Moisture Comparison;
-- Saved Views and optional notes;
+- run lineage for related Simulations;
+- Compare to parent or reference;
+- exact configuration differences;
+- aligned and independent Compare modes;
+- the featured Moisture Comparison;
+- Saved Views, saved Comparisons, and optional notes;
 - durable-content validation and cleanup protection;
 - graceful missing-content and partial-layer states;
 - continued access to Lab tools;
 - technical provenance and runtime integrity on demand.
 
-## 11. Explicit exclusions
+## 12. Explicit exclusions
 
 The MVP excludes:
 
@@ -471,53 +654,59 @@ The MVP excludes:
 - analytics, telemetry, or growth instrumentation;
 - mobile-first scientific exploration;
 - cloud hosting or remote compute;
-- mandatory live CM1 execution in the golden path;
-- arbitrary Recipe creation from the Worlds experience;
-- free-form atmospheric parameter editing;
+- mandatory live CM1 execution in the revisit journey;
+- a polished arbitrary Recipe editor in Worlds;
+- a universal free-form control surface outside the Lab;
 - another Cloud World before the first shell is sound;
 - another Control or Lens merely to demonstrate breadth;
-- arbitrary result pairing;
-- a generalized Comparison platform;
+- comparison of unrelated or scientifically incompatible outputs as though they were directly comparable;
+- a generalized public Comparison platform;
 - generic Lens or visualization plugins;
 - automated causal explanation;
-- statistical-significance claims from one deterministic pair;
+- statistical-significance claims without appropriate evidence;
 - formal collaborative observations or claims graphs;
 - repository-wide retirement of current technical workspaces.
 
-## 12. Quality and trust requirements
+## 13. Quality and trust requirements
 
 ### Scientific trust
 
-- Every world and Simulation retains source, Recipe, Control, model, field, and integrity provenance.
-- Authored explanation is distinguishable from backend-derived diagnostics.
+- Every World and Simulation retains source, Recipe, Control, model, field, lineage, and integrity provenance.
+- Authored or personal explanation is distinguishable from backend-derived diagnostics.
 - World-aware diagnostics do not present expected exclusions as surprising failures.
 - Lens scales and thresholds remain stable and explicit.
-- Comparisons state changed and fixed assumptions clearly.
+- Comparisons state configuration differences before presenting interpretation.
+- Aligned views use genuinely compatible coordinates, times, fields, and scales.
+- Multiple changed settings are never presented as a one-factor causal contrast.
 - Missing or untrusted evidence is never silently converted to zero or certainty.
+- Saving or featuring a Comparison is not labeled as scientific validation.
 
 ### Interaction quality
 
 - The core exploration loop is coherent on the target MacBook Air.
 - Time, scene, Lens slice, explanation, and scientific detail are coordinated.
+- Compare makes it easy to move from aligned inspection to independent examination.
 - Ordinary exploration does not require repeated movement among Build, Results, and long page sections.
 - Product-facing names take precedence over issue, run, and result identifiers.
 - Partial rendering failures remain local and recoverable.
 
 ### Persistence quality
 
-- Saved Views restore the intended state deterministically.
-- The last active state is retained per world.
-- Curated content cannot be removed by ordinary cleanup without an explicit protected-content action.
-- Missing or corrupt world assets are reported clearly and can be repaired.
+- Saved Views and saved Comparisons restore the intended state deterministically.
+- The last active state is retained per World.
+- Parent/reference relationships and configuration differences survive reloads.
+- Featured content cannot be removed by ordinary cleanup without an explicit protected-content action.
+- Missing or corrupt assets are reported clearly and can be repaired.
 
 ### Operational quality
 
-- The installed-world golden path works without internet access after required local assets are present.
-- The golden path does not require CM1 execution.
-- Lab tools remain available for future content development.
+- The installed-world revisit journey works without internet access after required local assets are present.
+- The revisit journey does not require CM1 execution.
+- Lab tools remain available for future Simulation and world development.
+- Returning later reveals whether a local run completed, failed, or remains incomplete.
 - Automated tests and one live acceptance pass cover the complete MVP journey.
 
-## 13. Measurable completion criteria
+## 14. Measurable completion criteria
 
 The MVP is complete only when all of the following are demonstrated on the target MacBook Air.
 
@@ -525,8 +714,8 @@ The MVP is complete only when all of the following are demonstrated on the targe
 
 - Cloud Chamber opens to a Worlds-oriented entrance rather than requiring Build or Results first.
 - Trade Cumulus is visible as installed content.
-- Entering the world opens the Baseline or the last resumed view without launching CM1.
-- Primary UI uses stable world and Simulation names rather than issue/run/result IDs.
+- Entering the World opens the reference Simulation or the last resumed state without launching CM1.
+- Primary UI uses stable World and Simulation names rather than issue/run/result IDs.
 
 ### Integrated Explore workspace
 
@@ -540,95 +729,116 @@ The MVP is complete only when all of the following are demonstrated on the targe
 ### Explanation and detail
 
 - Authored explanation is available beside the visual evidence.
-- Science and Details views expose the required evidence and provenance without dominating the primary scene.
+- Science and Details views expose the required evidence, configuration, lineage, and provenance without dominating the primary scene.
 - Atmospheric refresher text is direct, technically accurate, and optional.
 
-### Saved Views and resume
+### Lab return and lineage
 
-- A user can save a view with a title and optional note.
-- Reloading the application and opening that Saved View restores the scientific and visual state defined in this document.
-- Re-entering Trade Cumulus resumes its last active view.
-- Saved View restoration failures are explicit rather than silently falling back.
+- A related Trade Cumulus variation can be created or ingested with a parent or reference relationship and an optional question or note.
+- Returning to Cloud Chamber shows whether that run completed, failed, or remains incomplete.
+- A completed inspectable variation offers Compare to parent or reference without reconstructing the relationship from names.
+- Exact changed values and sufficiently comparable fixed settings are visible before interpretation.
 
-### Comparison
+### Compare investigation
 
-- The curated Baseline versus More Moisture Comparison opens from Trade Cumulus.
-- The Comparison states what changed, what responded materially, what changed little or varied, and what stayed fixed.
-- Either Simulation can be opened in the integrated Explore workspace.
+- Compare can open the existing More Moisture variation against the Canonical BOMEX Baseline as a related pair.
+- It begins in an aligned inspection state where the data support honest alignment.
+- The user can unlock the two sides and choose independent times, planes, and cameras.
+- The interface identifies whether the views are aligned or independently arranged.
+- Incompatible alignment is reported rather than faked.
+- The featured issue #381 Comparison remains available as one saved, independently arranged story.
+
+### Saved Views, saved Comparisons, and resume
+
+- A user can save a single-Simulation view with a title and optional note.
+- A user can save a Comparison with a title, optional note, configuration difference, mode, and both view states.
+- Reloading the application restores either saved object deterministically.
+- Re-entering Trade Cumulus resumes its last active state.
+- Saved-state restoration failures are explicit rather than silently falling back.
+- The saved Comparison can be found again from Trade Cumulus and can reopen either underlying Simulation.
 
 ### Content durability
 
-- The expected Trade Cumulus content bundle is validated by stable identity and hashes.
-- Ordinary cleanup does not remove protected world content.
-- Missing or corrupt assets produce a bounded repair state rather than a broken or empty world.
+- The expected Trade Cumulus installed content is validated by stable identity and hashes.
+- Ordinary cleanup does not remove protected featured content.
+- Cleanup impact on ordinary retained variations is explicit.
+- Missing or corrupt assets produce a bounded repair state rather than a broken or empty World.
 - Multi-gigabyte model output remains outside Git.
 
 ### Failure isolation
 
 - A failed three-dimensional scalar layer does not disable the Lens slice, timeline, explanation, or scientific evidence.
 - Retry targets the failed layer.
-- Missing Comparison evidence does not make the Baseline unavailable.
+- Missing saved-Comparison evidence does not make either underlying Simulation unavailable.
 
 ### Lab continuity
 
-- The Lab remains reachable for package generation, runs, ingest, result evaluation, and storage work.
-- Lab machinery is not presented as the primary entrance to installed worlds.
+- The Lab remains reachable for package generation, runs, ingest, result evaluation, Compare entry, and storage work.
+- Lab machinery is not presented as the primary entrance to installed Worlds.
 
 ### Verification
 
-- The full golden path has automated coverage where practical.
-- One live acceptance pass records startup, world entry, playback, Lens use, Saved View restoration, Comparison, partial-layer failure, and Lab return.
-- Performance thresholds for initial load, frame changes, and Saved View restoration are set in the approved Explore UX specification from measured MacBook Air baselines rather than guessed in this document.
+- The full revisit and create-return-compare-save journeys have automated coverage where practical.
+- One live acceptance pass records startup, World entry, playback, Lens use, Lab return, related-Simulation comparison, Saved View restoration, saved-Comparison restoration, partial-layer failure, and return to either underlying Simulation.
+- No new CM1 run is required for MVP acceptance; the existing Baseline and More Moisture pair may exercise the related-Simulation workflow.
+- Performance thresholds for initial load, frame changes, Compare transitions, and saved-state restoration are set in the approved UX specification from measured MacBook Air baselines rather than guessed in this document.
 
-## 14. Recommended implementation sequence
+## 15. Recommended implementation sequence
 
 Implementation proceeds one bounded issue at a time.
 
-### Increment 1 — Explore workspace UX specification
+### Increment 1 — Explore and Compare UX specification
 
 Create a PM-authored specification with:
 
-- annotated desktop wireframe;
+- annotated desktop wireframes for single-Simulation Explore and two-Simulation Compare;
 - information hierarchy;
-- scene/slice/timeline layout;
-- inspector behavior;
+- scene, slice, timeline, and inspector layout;
+- aligned and independent Compare behavior;
+- configuration-difference presentation;
 - Lens controls and legend placement;
-- authored-explanation placement;
+- authored and personal explanation placement;
 - world-aware diagnostics;
 - layer-failure states;
-- Save View behavior;
+- Save View and Save Comparison behavior;
 - exact current elements to remove, retain, or relocate;
 - measurable interaction and performance targets based on the target machine.
 
-Do not begin with an open-ended instruction to “clean up Explore.”
+Do not begin with an open-ended instruction to “clean up Explore” or “generalize Compare.”
 
-### Increment 2 — durable Trade Cumulus world bundle
+### Increment 2 — stable World identities, content, and run lineage
 
-Implement stable identities, manifest/hash validation, protected content, missing-content reporting, and bounded repair for the known Baseline, More Moisture, Comparison evidence, and authored content.
+Implement stable World and Simulation identities, the known Trade Cumulus installed bundle, parent/reference relationships, configuration-difference records, manifest/hash validation, cleanup protection, missing-content reporting, and bounded repair.
 
 ### Increment 3 — integrated Explore shell
 
 Reorganize existing visual and scientific capabilities into the approved workspace before adding another scientific feature.
 
-### Increment 4 — Saved Views and resume
+### Increment 4 — related-Simulation Compare workflow
 
-Persist and restore the approved examination state and optional notes.
+Implement Compare to parent/reference, exact configuration differences, technically honest aligned inspection, and independent examination using the approved workspace design.
 
-### Increment 5 — Worlds entry and golden path
+Reuse issue #381’s evidence and presentation components where they fit. Do not preserve its current Results-driven entry or long standalone-report layout as final information architecture.
 
-Add direct world entry, resume, saved-view access, and Comparison entry.
+### Increment 5 — Saved Views, saved Comparisons, and resume
 
-### Increment 6 — Lab reframing
+Persist and restore the approved single- and two-Simulation examination states and optional personal notes.
 
-Retain current technical capabilities while moving them out of the primary installed-world hierarchy.
+### Increment 6 — Worlds entry and golden path
 
-### Increment 7 — MVP hardening and personal acceptance
+Add direct World entry, resume, reference and variation access, saved-state access, and featured Comparison entry.
+
+### Increment 7 — Lab reframing
+
+Retain current technical capabilities while making run lineage, return-after-run, and Compare entry coherent and moving Lab machinery out of the primary installed-World hierarchy.
+
+### Increment 8 — MVP hardening and personal acceptance
 
 Complete content recovery, error states, performance verification, provenance access, automated coverage, and one live personal acceptance pass.
 
 No second Cloud World, Control, or Lens should begin before the first MVP shell passes this gate unless a direct blocking contradiction is found.
 
-## 15. Stage 7 exit and next bounded decision
+## 16. Stage 7 exit and next bounded decision
 
 This MVP definition is approved only when:
 
@@ -636,14 +846,15 @@ This MVP definition is approved only when:
 - the Stage 5 Trade Cumulus slice is accepted for MVP inclusion;
 - the completed Stage 5B experiment track is explicitly accepted as satisfying the practical purpose of the old Stage 6 experimentation gate;
 - the sole-user, personal-lab scope is approved;
+- ordinary Compare is approved as an investigation and memory workflow rather than a validation-only artifact;
 - the included, excluded, and completion criteria are approved;
 - issue #364 records the decision;
-- the next work is one bounded Explore workspace UX specification.
+- the next work is one bounded Explore and Compare workspace UX specification.
 
 The MVP approval gate does not authorize broad frontend implementation by itself.
 
 The single next bounded issue after approval should be:
 
-> **Define the integrated Explore workspace UX for the personal cloud laboratory MVP.**
+> **Define the integrated Explore and Compare workspace UX for the personal cloud laboratory MVP.**
 
-That issue should produce the visual and interaction specification needed before Codex is asked to reorganize the current Explore implementation.
+That issue should produce the visual and interaction specification needed before Codex is asked to reorganize the current Explore implementation or generalize the first featured Comparison.
