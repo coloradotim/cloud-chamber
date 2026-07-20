@@ -1,6 +1,7 @@
 import json
 from datetime import UTC, datetime
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 import xarray as xr
@@ -28,9 +29,56 @@ from cloud_chamber.run_manifest import (
     load_run_manifest,
     write_run_manifest,
 )
+from cloud_chamber.trade_cumulus_comparison_story import (
+    TradeCumulusComparisonStoryConflict,
+    TradeCumulusComparisonStoryNotFound,
+)
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 BASELINE_TEMPLATE = REPO_ROOT / "scenarios/lower-atmosphere/baseline-shallow-cumulus.json"
+
+
+def test_trade_cumulus_comparison_story_api_returns_payload(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    story = SimpleNamespace(
+        model_dump=lambda **_kwargs: {"comparison_id": "trade_cumulus_moisture_v1"}
+    )
+    monkeypatch.setattr(
+        "cloud_chamber.app.trade_cumulus_moisture_comparison_story",
+        lambda _settings: story,
+    )
+
+    response = TestClient(app).get("/api/comparisons/trade-cumulus-moisture-v1")
+
+    assert response.status_code == 200
+    assert response.json() == {"comparison_id": "trade_cumulus_moisture_v1"}
+
+
+@pytest.mark.parametrize(
+    ("error", "status_code"),
+    [
+        (TradeCumulusComparisonStoryNotFound("Comparison unavailable."), 404),
+        (TradeCumulusComparisonStoryConflict("Comparison conflicts."), 409),
+    ],
+)
+def test_trade_cumulus_comparison_story_api_maps_errors(
+    monkeypatch: pytest.MonkeyPatch,
+    error: RuntimeError,
+    status_code: int,
+) -> None:
+    def raise_error(_settings: object) -> object:
+        raise error
+
+    monkeypatch.setattr(
+        "cloud_chamber.app.trade_cumulus_moisture_comparison_story",
+        raise_error,
+    )
+
+    response = TestClient(app).get("/api/comparisons/trade-cumulus-moisture-v1")
+
+    assert response.status_code == status_code
+    assert "/Users/" not in response.text
 
 
 class FakeRunManager:

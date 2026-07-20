@@ -2,6 +2,10 @@ import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react"
 import type { CSSProperties, FormEvent } from "react";
 
 import "./App.css";
+import {
+  TradeCumulusComparisonStory,
+  type TradeCumulusComparisonStoryResponse,
+} from "./TradeCumulusComparisonStory";
 import { True3DViewer } from "./True3DViewer";
 import {
   type UpdraftLensDefaults,
@@ -1992,6 +1996,35 @@ async function fetchResults(): Promise<ResultsResponse> {
   return normalizeResultsResponse(await response.json());
 }
 
+type ComparisonStoryLoadResult = {
+  story: TradeCumulusComparisonStoryResponse | null;
+  status: string | null;
+};
+
+async function fetchTradeCumulusComparisonStory(): Promise<ComparisonStoryLoadResult> {
+  try {
+    const response = await fetch("/api/comparisons/trade-cumulus-moisture-v1");
+    if (response.status === 404 || response.status === 409) {
+      return { story: null, status: null };
+    }
+    if (!response.ok) {
+      return {
+        story: null,
+        status: "The curated comparison is temporarily unavailable.",
+      };
+    }
+    return {
+      story: (await response.json()) as TradeCumulusComparisonStoryResponse,
+      status: null,
+    };
+  } catch {
+    return {
+      story: null,
+      status: "The curated comparison is temporarily unavailable.",
+    };
+  }
+}
+
 function normalizeResultsResponse(payload: unknown): ResultsResponse {
   if (Array.isArray(payload)) {
     return { results: payload as ResultCard[] };
@@ -2304,6 +2337,11 @@ export function App() {
   const [results, setResults] = useState<ResultCard[]>([]);
   const [selectedResultId, setSelectedResultId] = useState<string | null>(null);
   const selectedResultIdRef = useRef<string | null>(null);
+  const [comparisonStory, setComparisonStory] =
+    useState<TradeCumulusComparisonStoryResponse | null>(null);
+  const [comparisonStoryStatus, setComparisonStoryStatus] = useState<string | null>(null);
+  const [comparisonStoryMemberIds, setComparisonStoryMemberIds] = useState<string[]>([]);
+  const [comparisonStoryActive, setComparisonStoryActive] = useState(false);
   const [resultDraft, setResultDraft] = useState({ name: "", tags: "", notes: "" });
   const [resultsStatus, setResultsStatus] = useState("Loading results...");
   const [storageInventory, setStorageInventory] = useState<StorageInventoryResponse | null>(null);
@@ -2366,6 +2404,7 @@ export function App() {
 
   useEffect(() => {
     let active = true;
+    let resultsFailed = false;
     fetchResults()
       .then((payload) => {
         if (!active) return;
@@ -2376,11 +2415,29 @@ export function App() {
       })
       .catch((caught: unknown) => {
         if (!active) return;
+        resultsFailed = true;
         setResults([]);
         setSelectedResultId(null);
+        setComparisonStory(null);
+        setComparisonStoryStatus(null);
+        setComparisonStoryMemberIds([]);
+        setComparisonStoryActive(false);
         setResultsError(caught instanceof Error ? caught.message : "Could not load results.");
         setResultsStatus("Results unavailable");
       });
+    fetchTradeCumulusComparisonStory().then((comparison) => {
+      if (!active || resultsFailed) return;
+      setComparisonStory(comparison.story);
+      setComparisonStoryStatus(comparison.status);
+      if (comparison.story) {
+        setComparisonStoryMemberIds([
+          comparison.story.baseline.result_id,
+          comparison.story.more_moisture.result_id,
+        ]);
+      } else if (!comparison.status) {
+        setComparisonStoryMemberIds([]);
+      }
+    });
     return () => {
       active = false;
     };
@@ -2454,6 +2511,7 @@ export function App() {
   useEffect(() => {
     selectedResultIdRef.current = selectedResultId;
     setResultDeletePreview(null);
+    setComparisonStoryActive(false);
   }, [selectedResultId]);
   const autoFinalizingWorkerRunIdSet = useMemo(
     () => new Set(autoFinalizingWorkerRunIds),
@@ -3526,6 +3584,7 @@ export function App() {
   }
 
   async function refreshResults(selectResultId?: string) {
+    const comparisonRequest = fetchTradeCumulusComparisonStory();
     const payload = await fetchResults();
     const prioritized = prioritizeResults(payload.results);
     setResults(prioritized);
@@ -3535,7 +3594,35 @@ export function App() {
       return prioritized[0]?.result_id ?? null;
     });
     setResultsStatus(payload.results.length > 0 ? "Results loaded" : "No ingested results");
+    void comparisonRequest.then((comparison) => {
+      setComparisonStory(comparison.story);
+      setComparisonStoryStatus(comparison.status);
+      if (comparison.story) {
+        setComparisonStoryMemberIds([
+          comparison.story.baseline.result_id,
+          comparison.story.more_moisture.result_id,
+        ]);
+      } else if (!comparison.status) {
+        setComparisonStoryMemberIds([]);
+      }
+      if (!comparison.story) setComparisonStoryActive(false);
+    });
     return prioritized;
+  }
+
+  function selectOrdinaryResult(resultId: string) {
+    setComparisonStoryActive(false);
+    setSelectedResultId(resultId);
+  }
+
+  function openOrdinaryResult(resultId: string, section: "results" | "explore") {
+    selectOrdinaryResult(resultId);
+    setActiveSection(section);
+  }
+
+  function handleWorkspaceNavigation(section: WorkspaceSection) {
+    if (section !== "explore") setComparisonStoryActive(false);
+    setActiveSection(section);
   }
 
   async function handleRefreshResults() {
@@ -3546,6 +3633,10 @@ export function App() {
     } catch (caught) {
       setResults([]);
       setSelectedResultId(null);
+      setComparisonStory(null);
+      setComparisonStoryStatus(null);
+      setComparisonStoryMemberIds([]);
+      setComparisonStoryActive(false);
       setResultsError(caught instanceof Error ? caught.message : "Could not load results.");
       setResultsStatus("Results unavailable");
     }
@@ -3793,7 +3884,7 @@ export function App() {
               key={section}
               type="button"
               className={activeSection === section ? "active-control" : ""}
-              onClick={() => setActiveSection(section)}
+              onClick={() => handleWorkspaceNavigation(section)}
             >
               {sectionLabel(section)}
             </button>
@@ -3916,20 +4007,18 @@ export function App() {
           onFinalizeStoredLanWorkerRun={handleFinalizeStoredLanWorkerRun}
           onIngestStoredRun={handleIngestStoredRun}
           onOpenInResults={() => {
-            if (ingestedResultId) setSelectedResultId(ingestedResultId);
-            setActiveSection("results");
+            if (ingestedResultId) openOrdinaryResult(ingestedResultId, "results");
+            else handleWorkspaceNavigation("results");
           }}
           onInspectIngested={() => {
-            if (ingestedResultId) setSelectedResultId(ingestedResultId);
-            setActiveSection("explore");
+            if (ingestedResultId) openOrdinaryResult(ingestedResultId, "explore");
+            else handleWorkspaceNavigation("explore");
           }}
           onOpenStoredResult={(resultId) => {
-            setSelectedResultId(resultId);
-            setActiveSection("results");
+            openOrdinaryResult(resultId, "results");
           }}
           onExploreStoredResult={(resultId) => {
-            setSelectedResultId(resultId);
-            setActiveSection("explore");
+            openOrdinaryResult(resultId, "explore");
           }}
           onRefreshStorage={handleRefreshStorage}
           onPreviewRunDelete={handlePreviewRunDelete}
@@ -3949,11 +4038,22 @@ export function App() {
           resultsError={resultsError}
           resultDeletePreview={resultDeletePreview}
           draft={resultDraft}
-          onSelectResult={setSelectedResultId}
+          comparisonStory={comparisonStory}
+          comparisonStoryStatus={
+            selectedResultId && comparisonStoryMemberIds.includes(selectedResultId)
+              ? comparisonStoryStatus
+              : null
+          }
+          onSelectResult={selectOrdinaryResult}
           onDraftChange={setResultDraft}
           onSubmit={handleResultUpdate}
           onRefreshResults={handleRefreshResults}
           onInspect={() => {
+            setComparisonStoryActive(false);
+            setActiveSection("explore");
+          }}
+          onCompare={() => {
+            setComparisonStoryActive(true);
             setActiveSection("explore");
           }}
           onPreviewResultDelete={handlePreviewResultDelete}
@@ -3965,7 +4065,17 @@ export function App() {
         />
       )}
 
-      {activeSection === "explore" && <ExploreWorkspace selectedResult={selectedResult} />}
+      {activeSection === "explore" && (
+        <ExploreWorkspace
+          selectedResult={selectedResult}
+          comparisonStory={comparisonStoryActive ? comparisonStory : null}
+          onBackToResults={() => {
+            setComparisonStoryActive(false);
+            setActiveSection("results");
+          }}
+          onOpenResult={(resultId) => openOrdinaryResult(resultId, "explore")}
+        />
+      )}
     </main>
   );
 }
@@ -6960,11 +7070,14 @@ function ResultsWorkspace({
   resultsError,
   resultDeletePreview,
   draft,
+  comparisonStory,
+  comparisonStoryStatus,
   onSelectResult,
   onDraftChange,
   onSubmit,
   onRefreshResults,
   onInspect,
+  onCompare,
   onPreviewResultDelete,
   onConfirmResultDelete,
   onCancelResultDelete,
@@ -6976,11 +7089,14 @@ function ResultsWorkspace({
   resultsError: string | null;
   resultDeletePreview: DeleteResultResponse | null;
   draft: { name: string; tags: string; notes: string };
+  comparisonStory: TradeCumulusComparisonStoryResponse | null;
+  comparisonStoryStatus: string | null;
   onSelectResult: (resultId: string) => void;
   onDraftChange: (draft: { name: string; tags: string; notes: string }) => void;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
   onRefreshResults: () => void;
   onInspect: () => void;
+  onCompare: () => void;
   onPreviewResultDelete: (resultId: string) => void;
   onConfirmResultDelete: (resultId: string) => void;
   onCancelResultDelete: () => void;
@@ -7011,10 +7127,13 @@ function ResultsWorkspace({
         selectedResult={selectedResult}
         selectedResultId={selectedResultId}
         draft={draft}
+        comparisonStory={comparisonStory}
+        comparisonStoryStatus={comparisonStoryStatus}
         onSelectResult={onSelectResult}
         onDraftChange={onDraftChange}
         onSubmit={onSubmit}
         onInspect={onInspect}
+        onCompare={onCompare}
         onOpenResultInExplore={(resultId) => {
           onSelectResult(resultId);
           onInspect();
@@ -7033,10 +7152,13 @@ function NotebookWorkspace({
   selectedResult,
   selectedResultId,
   draft,
+  comparisonStory,
+  comparisonStoryStatus,
   onSelectResult,
   onDraftChange,
   onSubmit,
   onInspect,
+  onCompare,
   onOpenResultInExplore,
   deletePreview,
   onPreviewDelete,
@@ -7047,10 +7169,13 @@ function NotebookWorkspace({
   selectedResult: ResultCard | undefined;
   selectedResultId: string | null;
   draft: { name: string; tags: string; notes: string };
+  comparisonStory: TradeCumulusComparisonStoryResponse | null;
+  comparisonStoryStatus: string | null;
   onSelectResult: (resultId: string) => void;
   onDraftChange: (draft: { name: string; tags: string; notes: string }) => void;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
   onInspect: () => void;
+  onCompare: () => void;
   onOpenResultInExplore: (resultId: string) => void;
   deletePreview: DeleteResultResponse | null;
   onPreviewDelete: (resultId: string) => void;
@@ -7085,9 +7210,12 @@ function NotebookWorkspace({
         <ResultNotebookCard
           result={selectedResult}
           draft={draft}
+          comparisonStory={comparisonStory}
+          comparisonStoryStatus={comparisonStoryStatus}
           onDraftChange={onDraftChange}
           onSubmit={onSubmit}
           onInspect={onInspect}
+          onCompare={onCompare}
           deletePreview={deletePreview}
           onPreviewDelete={onPreviewDelete}
           onConfirmDelete={onConfirmDelete}
@@ -7098,16 +7226,34 @@ function NotebookWorkspace({
   );
 }
 
-function ExploreWorkspace({ selectedResult }: { selectedResult: ResultCard | undefined }) {
+function ExploreWorkspace({
+  selectedResult,
+  comparisonStory,
+  onOpenResult,
+  onBackToResults,
+}: {
+  selectedResult: ResultCard | undefined;
+  comparisonStory: TradeCumulusComparisonStoryResponse | null;
+  onOpenResult: (resultId: string) => void;
+  onBackToResults: () => void;
+}) {
   return (
     <section className="workspace-section explore-workspace" aria-label="Explore this result">
-      {!selectedResult && (
+      {comparisonStory && (
+        <TradeCumulusComparisonStory
+          story={comparisonStory}
+          onOpenResult={onOpenResult}
+          onBackToResults={onBackToResults}
+        />
+      )}
+
+      {!comparisonStory && !selectedResult && (
         <section className="status-panel">
           <p>Select an ingested result from Results to inspect or visualize it.</p>
         </section>
       )}
 
-      {selectedResult && (
+      {!comparisonStory && selectedResult && (
         <section className="explore-result-view">
           <ExploreResultSummary result={selectedResult} />
           <VisualizerSceneShell result={selectedResult} />
@@ -8792,9 +8938,12 @@ function ExperimentNotebookList({
 function ResultNotebookCard({
   result,
   draft,
+  comparisonStory,
+  comparisonStoryStatus,
   onDraftChange,
   onSubmit,
   onInspect,
+  onCompare,
   deletePreview,
   onPreviewDelete,
   onConfirmDelete,
@@ -8802,9 +8951,12 @@ function ResultNotebookCard({
 }: {
   result: ResultCard | undefined;
   draft: { name: string; tags: string; notes: string };
+  comparisonStory: TradeCumulusComparisonStoryResponse | null;
+  comparisonStoryStatus: string | null;
   onDraftChange: (draft: { name: string; tags: string; notes: string }) => void;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
   onInspect: () => void;
+  onCompare: () => void;
   deletePreview: DeleteResultResponse | null;
   onPreviewDelete: (resultId: string) => void;
   onConfirmDelete: (resultId: string) => void;
@@ -8819,6 +8971,11 @@ function ResultNotebookCard({
   }
 
   const visibleDeletePreview = deletePreview?.result_id === result.result_id ? deletePreview : null;
+  const comparisonMemberSelected = Boolean(
+    comparisonStory &&
+    (result.result_id === comparisonStory.baseline.result_id ||
+      result.result_id === comparisonStory.more_moisture.result_id),
+  );
 
   return (
     <section className="notebook-card" aria-label="Result detail">
@@ -9025,6 +9182,11 @@ function ResultNotebookCard({
         />
 
         <div className="button-row">
+          {comparisonMemberSelected && (
+            <button type="button" onClick={onCompare}>
+              Compare Baseline and More Moisture
+            </button>
+          )}
           <button type="button" onClick={onInspect}>
             Open in Explore
           </button>
@@ -9039,6 +9201,11 @@ function ResultNotebookCard({
             Save changes
           </button>
         </div>
+        {!comparisonStory && comparisonStoryStatus && (
+          <p className="inline-status" role="status">
+            {comparisonStoryStatus}
+          </p>
+        )}
       </form>
     </section>
   );

@@ -3,9 +3,425 @@ import { expect, test } from "@playwright/test";
 import { gotoApp, gotoBuild, gotoResults, openRunMonitor } from "../helpers";
 import { mockCloudChamberApis, results } from "../fixtures";
 
+const comparisonBaselineId = "result-trade-cumulus-5b-full-baseline-20260720T162342Z";
+const comparisonMoreMoistureId = "result-trade-cumulus-5b-full-more_moisture-20260720T162342Z";
+
+const comparisonBaselineResult = {
+  ...results[0],
+  result_id: comparisonBaselineId,
+  run_id: "trade-cumulus-5b-full-baseline-20260720T162342Z",
+  name: "Canonical BOMEX Baseline",
+  scenario_id: "bomex_trade_cumulus_baseline_v0",
+  scenario_name: "Trade Cumulus",
+  run_configuration: {
+    ...results[0].run_configuration,
+    case_id: "bomex_trade_cumulus_baseline_v0",
+  },
+};
+
+const comparisonMoreMoistureResult = {
+  ...comparisonBaselineResult,
+  result_id: comparisonMoreMoistureId,
+  run_id: "trade-cumulus-5b-full-more_moisture-20260720T162342Z",
+  name: "More Moisture",
+};
+
+const comparisonStory = {
+  comparison_id: "trade_cumulus_moisture_v1",
+  comparison_group_id: "trade_cumulus_moisture_v1",
+  product_slice_id: "trade_cumulus_v1",
+  case_id: "bomex_trade_cumulus_baseline_v0",
+  title: "Trade Cumulus: Baseline and More Moisture",
+  question: "How does stronger surface moisture supply change the trade-cumulus field?",
+  illustrative_view_note:
+    "Illustrative views: selected to help show the response measured across the full simulations. Times and locations may differ, and these are not corresponding individual clouds.",
+  baseline: {
+    result_id: comparisonBaselineId,
+    run_id: comparisonBaselineResult.run_id,
+    display_name: "Canonical BOMEX Baseline",
+    control_state: "baseline",
+    control_label: "Surface moisture supply",
+    control_value: 5.2e-5,
+    control_units: "g/g m/s",
+    control_display: "5.2 × 10⁻⁵ g/g m/s",
+    curated_view: {
+      time_index: 152,
+      time_seconds: 18_240,
+      orientation: "vertical_x",
+      plane_dimension: "y",
+      plane_index: 5,
+      plane_coordinate: -2.6500000953674316,
+      plane_units: "km",
+      camera_preset: "overview",
+      cloud_field: "ql",
+      cloud_threshold_kg_kg: 1e-6,
+      lens_id: "updraft",
+      scale_id: "trade_cumulus_updraft_velocity_v1",
+      wind_mode: "perturbation",
+      show_wind: true,
+      show_cloud_boundary: true,
+      opacity: 0.68,
+      point_size: 11,
+      caption:
+        "This illustrative Baseline view shows one concentrated active cloud reaching about 2 km, with a strong rising core bordered by sinking air.",
+    },
+  },
+  more_moisture: {
+    result_id: comparisonMoreMoistureId,
+    run_id: comparisonMoreMoistureResult.run_id,
+    display_name: "More Moisture",
+    control_state: "more_moisture",
+    control_label: "Surface moisture supply",
+    control_value: 7.8e-5,
+    control_units: "g/g m/s",
+    control_display: "7.8 × 10⁻⁵ g/g m/s",
+    curated_view: {
+      time_index: 169,
+      time_seconds: 20_280,
+      orientation: "vertical_x",
+      plane_dimension: "y",
+      plane_index: 51,
+      plane_coordinate: 1.9500000476837158,
+      plane_units: "km",
+      camera_preset: "overview",
+      cloud_field: "ql",
+      cloud_threshold_kg_kg: 1e-6,
+      lens_id: "updraft",
+      scale_id: "trade_cumulus_updraft_velocity_v1",
+      wind_mode: "perturbation",
+      show_wind: true,
+      show_cloud_boundary: true,
+      opacity: 0.68,
+      point_size: 11,
+      caption:
+        "This illustrative More Moisture view shows several active clouds across the slice, with rising cores distributed through a broader cloud-filled region reaching just above 2 km.",
+    },
+  },
+  changed_condition: {
+    label: "Surface moisture supply",
+    baseline_display: "5.2 × 10⁻⁵ g/g m/s",
+    more_moisture_display: "7.8 × 10⁻⁵ g/g m/s",
+    change_display: "+50%",
+  },
+  material_responses: [
+    {
+      metric_id: "mean_cloud_cover_final_three_hours",
+      label: "Mean cloud cover, final three hours",
+      baseline_value: 10.596239697802197,
+      more_moisture_value: 12.710873111263735,
+      absolute_delta: 2.1146334134615383,
+      percent_delta: 19.956451286206196,
+      units: "%",
+      method: "time mean of horizontal columns containing ql >= 1e-6 kg/kg",
+      window: "time >= 10800 s",
+      baseline_display: "10.596%",
+      more_moisture_display: "12.711%",
+      change_display: "+2.115 percentage points",
+    },
+    {
+      metric_id: "mean_cloud_water_path_final_three_hours",
+      label: "Mean cloud-water path, final three hours",
+      baseline_value: 0.006351999299305916,
+      more_moisture_value: 0.009071426778155891,
+      absolute_delta: 0.0027194274788499753,
+      percent_delta: 42.81215017053178,
+      units: "kg/m^2",
+      method: "time mean of horizontal domain-mean cwp",
+      window: "time >= 10800 s",
+      baseline_display: "0.006352 kg/m²",
+      more_moisture_display: "0.009071 kg/m²",
+      change_display: "+42.812%",
+    },
+    {
+      metric_id: "mean_coherent_cloud_top_final_three_hours",
+      label: "Mean coherent cloud top, final three hours",
+      baseline_value: 1668.3517340775375,
+      more_moisture_value: 1805.0550379595913,
+      absolute_delta: 136.7033038820539,
+      percent_delta: 8.193913854600911,
+      units: "m",
+      method: "mean supported coherent cloud-object top",
+      window: "time >= 10800 s",
+      baseline_display: "1,668 m",
+      more_moisture_display: "1,805 m",
+      change_display: "+137 m",
+    },
+  ],
+  small_or_mixed_responses: [
+    {
+      title: "Initial cloud-liquid onset was unchanged.",
+      body: "Both simulations first reached the cloud-liquid threshold at 1,080 s.",
+    },
+    {
+      title: "The cloud-fraction peak stayed at the same height.",
+      body: "Both final-three-hour profiles peaked near 620 m.",
+    },
+    {
+      title: "The fraction of cloudy air rising changed very little.",
+      body: "It was 90.379% in Baseline and 90.451% in More Moisture.",
+    },
+    {
+      title: "The response varied through time.",
+      body: "More Moisture was not cloudier or wetter than Baseline at every individual saved frame.",
+    },
+  ],
+  held_fixed_by_design: {
+    lead: "Only surface moisture supply changed.",
+    groups: [
+      {
+        title: "Initial atmosphere",
+        body: "Thermodynamic, moisture, and wind profiles, including the deterministic perturbation.",
+      },
+      {
+        title: "Forcing",
+        body: "Sensible heat supply, friction velocity, large-scale forcing, geostrophic wind, and Coriolis treatment.",
+      },
+      {
+        title: "Model setup",
+        body: "Moist physics, turbulence, boundaries, domain, grid, and timestep strategy.",
+      },
+      {
+        title: "Execution and outputs",
+        body: "Duration, output cadence, requested fields, CM1 source and executable, and the Cloud Chamber implementation commit.",
+      },
+    ],
+  },
+  explanation_paragraphs: [
+    "More surface moisture produced a cloudier, wetter, somewhat deeper trade-cumulus field.",
+    "Only the lower-boundary moisture supply changed. Over the final three hours, More Moisture covered more of the domain with cloud, held about 43 percent more mean cloud-water path, and produced coherent clouds averaging 137 meters taller.",
+    "It did not create a completely different circulation regime. Initial cloud-liquid onset and the height of the cloud-fraction maximum were unchanged, and about 90 percent of cloudy cells were rising in both simulations.",
+    "The illustrative Lens views are selected to help show the measured response. They show different times and locations and are not one-to-one matches of individual clouds. More Moisture was also not cloudier at every saved frame, so the result is a change in the evolving cloud field rather than a rule that every moment must look larger.",
+  ],
+  evidence_summary: {
+    analysis_window: "time >= 10800 s",
+    analysis_start_seconds: 10_800,
+    analysis_end_seconds: 21_600,
+    output_cadence_seconds: 120,
+    paired_saved_frame_count: 181,
+  },
+  provenance: {
+    evidence_state: "matched_runs_valid",
+    evidence_version: "trade_cumulus_moisture_comparison_evidence_v1",
+    implementation_commit: "49da1defc9914d3cc903ed9589c1312ddd843726",
+    fixed_assumptions_sha256: "71d746b110fb1310ebb6dafbef4cfa4bd44c379fc6964ed1787deaf45e422535",
+    baseline_run_id: comparisonBaselineResult.run_id,
+    baseline_result_id: comparisonBaselineId,
+    more_moisture_run_id: comparisonMoreMoistureResult.run_id,
+    more_moisture_result_id: comparisonMoreMoistureId,
+    scale_id: "trade_cumulus_updraft_velocity_v1",
+    comparison_source: "runtime_matched_pair_evidence",
+  },
+  caveats: [
+    "one_deterministic_les_realization_per_control_state",
+    "illustrative_views_are_not_direct_frame_matches",
+    "individual_clouds_are_not_paired_one_to_one",
+    "candidate_product_slice_not_supported_status",
+  ],
+};
+
+const comparisonUpdraftScale = {
+  w_range_min_m_s: -1,
+  w_range_max_m_s: 5,
+  w_range_method: "fixed_trade_cumulus_updraft_velocity_v1",
+  w_scale_id: "trade_cumulus_updraft_velocity_v1",
+  w_scale_owner: "trade_cumulus",
+  w_scale_type: "fixed_discrete",
+  w_scale_units: "m/s",
+  w_scale_breakpoints_m_s: [-1, -0.5, -0.1, 0.1, 0.5, 1, 2, 3, 5],
+  w_scale_colors: [
+    "#4b0082",
+    "#0057d9",
+    "#00c9d8",
+    "#ffffff",
+    "#00d63b",
+    "#8fe000",
+    "#ffe000",
+    "#ff9800",
+    "#ff3b00",
+    "#c40000",
+  ],
+  w_scale_neutral_interval_m_s: [-0.1, 0.1],
+  w_scale_source: "pm_approved_issue_379_from_stage5b2_matched_pair",
+  w_scale_clipping_behavior:
+    "values_below_-1.0_and_at_or_above_5.0_use_endpoint_colors_and_are_reported_as_clipped",
+};
+
+type ComparisonMember = typeof comparisonStory.baseline;
+
+function comparisonPointCloud(member: ComparisonMember) {
+  const offset = member.control_state === "baseline" ? 0 : 0.45;
+  const points: Array<[number, number, number, number]> = [
+    [-1.8 + offset, -0.8, 0.5, 0.00035],
+    [-1.2 + offset, -0.4, 0.9, 0.0008],
+    [-0.5 + offset, 0.1, 1.35, 0.0012],
+    [0.3 + offset, 0.6, 1.8, 0.00095],
+    [1.4 + offset, 1.1, 1.15, 0.0005],
+  ];
+  return {
+    result_id: member.result_id,
+    run_id: member.run_id,
+    scenario_id: "bomex_trade_cumulus_baseline_v0",
+    field: { raw_field_name: "ql", display_name: "Cloud water", units: "kg/kg" },
+    selection: {
+      field: "ql",
+      time_index: member.curated_view.time_index,
+      time_seconds: member.curated_view.time_seconds,
+      threshold: 1e-6,
+      max_points: 50_000,
+    },
+    coordinate_units: { xh: "km", yh: "km", zh: "km" },
+    coordinate_extents: {
+      xh: { min: -3.2, max: 3.2, units: "km" },
+      yh: { min: -3.2, max: 3.2, units: "km" },
+      zh: { min: 0, max: 3, units: "km" },
+    },
+    points,
+    stats: {
+      source_count: points.length,
+      returned_count: points.length,
+      field_min_value: 0,
+      field_max_value: 0.0012,
+      field_mean_value: 0.00076,
+      field_finite_count: points.length,
+      field_non_finite_count: 0,
+      min_value: 0.00035,
+      max_value: 0.0012,
+      active_z_min: 0.5,
+      active_z_max: 1.8,
+      downsampled: false,
+      downsample_stride: 1,
+    },
+    provenance: {
+      source_model: "CM1",
+      result_id: member.result_id,
+      run_id: member.run_id,
+      scenario_id: "bomex_trade_cumulus_baseline_v0",
+      processing_method: "backend_xarray_native_grid_threshold",
+      rendering_method: "thresholded_point_cloud",
+      provenance_label: "CM1-derived cloud water point cloud",
+    },
+    caveats: [],
+  };
+}
+
+function comparisonLensFrame(member: ComparisonMember) {
+  const values =
+    member.control_state === "baseline"
+      ? [
+          [-0.6, -0.2, 0.3, 0.6],
+          [-0.3, 0.1, 0.9, 1.4],
+          [-0.1, 0.4, 1.8, 2.5],
+          [0, 0.2, 0.8, 0.4],
+        ]
+      : [
+          [-0.5, -0.1, 0.4, 0.8],
+          [-0.2, 0.5, 1.5, 2.2],
+          [0.1, 0.9, 2.8, 4.1],
+          [0.2, 0.6, 1.7, 0.7],
+        ];
+  return {
+    result_id: member.result_id,
+    time_index: member.curated_view.time_index,
+    time_seconds: member.curated_view.time_seconds,
+    orientation: "vertical_x",
+    plane_dimension: "y",
+    plane_index: member.curated_view.plane_index,
+    plane_coordinate: member.curated_view.plane_coordinate,
+    plane_units: "km",
+    dimension_order: ["z", "x"],
+    x_indices: [0, 1, 2, 3],
+    x_values_km: [-3.2, -1.1, 1.1, 3.2],
+    y_indices: [0, 1],
+    y_values_km: [-3.2, 3.2],
+    z_indices: [0, 1, 2, 3],
+    z_values_km: [0, 1, 2, 3],
+    w_values_m_s: values,
+    cloud_mask: [
+      [false, true, true, false],
+      [true, true, true, false],
+      [false, true, true, true],
+      [false, false, true, false],
+    ],
+    cloud_threshold_kg_kg: 1e-6,
+    ...comparisonUpdraftScale,
+    w_finite_count: 16,
+    w_low_clipped_count: 0,
+    w_high_clipped_count: 0,
+    w_low_clipped_fraction: 0,
+    w_high_clipped_fraction: 0,
+    wind_mode: "perturbation",
+    wind_target_level_m: 600,
+    wind_actual_level_m: 580,
+    wind_level_index: 14,
+    wind_stride: 8,
+    wind_reference_m_s: 0.9,
+    wind_arrow_domain_fraction: 0.08,
+    domain_mean_u_m_s: 0,
+    domain_mean_v_m_s: 0,
+    wind_vectors: [
+      { x_km: -2, y_km: 0, z_km: 0.58, u_m_s: 0.4, v_m_s: 0.2, magnitude_m_s: 0.45 },
+      { x_km: 0, y_km: 0, z_km: 0.58, u_m_s: -0.3, v_m_s: 0.4, magnitude_m_s: 0.5 },
+      { x_km: 2, y_km: 0, z_km: 0.58, u_m_s: 0.2, v_m_s: -0.4, magnitude_m_s: 0.45 },
+    ],
+    provenance: {
+      source_model: "CM1",
+      result_id: member.result_id,
+      run_id: member.run_id,
+      scenario_id: "bomex_trade_cumulus_baseline_v0",
+      processing_method: "trade_cumulus_updraft_lens_frame",
+      rendering_method: "native_grid_slice",
+      provenance_label: "CM1-derived Updraft Lens frame",
+    },
+    caveats: [],
+  };
+}
+
+async function mockTradeCumulusComparison(page: Parameters<typeof mockCloudChamberApis>[0]) {
+  await page.route("**/api/results", (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        results: [comparisonBaselineResult, comparisonMoreMoistureResult, results[0]],
+      }),
+    }),
+  );
+  await page.route("**/api/comparisons/trade-cumulus-moisture-v1", (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify(comparisonStory),
+    }),
+  );
+  await page.route("**/api/results/*/visualization/point-cloud**", (route) => {
+    const url = route.request().url();
+    const member = url.includes(comparisonMoreMoistureId)
+      ? comparisonStory.more_moisture
+      : comparisonStory.baseline;
+    return route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify(comparisonPointCloud(member)),
+    });
+  });
+  await page.route("**/api/results/*/visualization/trade-cumulus-updraft-lens/frame**", (route) => {
+    const member = route.request().url().includes(comparisonMoreMoistureId)
+      ? comparisonStory.more_moisture
+      : comparisonStory.baseline;
+    return route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify(comparisonLensFrame(member)),
+    });
+  });
+}
+
 test.describe("mocked smoke: Build, Results, Explore path", () => {
   test.beforeEach(async ({ page }) => {
     await mockCloudChamberApis(page);
+    await page.route("**/api/comparisons/trade-cumulus-moisture-v1", (route) =>
+      route.fulfill({ status: 404, contentType: "application/json", body: "{}" }),
+    );
     await gotoApp(page);
   });
 
@@ -243,6 +659,117 @@ test.describe("mocked smoke: Build, Results, Explore path", () => {
     await expect(resultDetail.getByText("Local data")).toBeVisible();
     await expect(page.getByRole("tab", { name: "Compare" })).toHaveCount(0);
     await expect(page.getByRole("tab", { name: "Storage" })).toHaveCount(0);
+  });
+
+  test("Results opens the complete curated Trade Cumulus comparison story", async ({ page }) => {
+    const browserErrors: string[] = [];
+    page.on("console", (message) => {
+      if (message.type() === "error") browserErrors.push(`console: ${message.text()}`);
+    });
+    page.on("pageerror", (error) => browserErrors.push(`page: ${error.message}`));
+    page.on("requestfailed", (request) => {
+      const failure = request.failure()?.errorText ?? "unknown failure";
+      if (request.url().includes("/api/") && !failure.includes("ERR_ABORTED")) {
+        browserErrors.push(`request: ${request.method()} ${request.url()} (${failure})`);
+      }
+    });
+
+    await mockTradeCumulusComparison(page);
+    await page.reload();
+    await gotoResults(page);
+    browserErrors.length = 0;
+
+    await page.getByRole("button", { name: "Canonical BOMEX Baseline" }).click();
+    const resultDetail = page.getByLabel("Result detail");
+    await resultDetail.getByRole("button", { name: "Compare Baseline and More Moisture" }).click();
+
+    await expect(
+      page.getByRole("heading", { name: "Trade Cumulus: Baseline and More Moisture" }),
+    ).toBeVisible();
+    await expect(page.getByText(comparisonStory.question)).toBeVisible();
+    await expect(page.getByLabel("Changed condition")).toContainText("+50%");
+    await expect(page.getByText(comparisonStory.illustrative_view_note)).toBeVisible();
+
+    const simulations = page.locator("article.comparison-simulation");
+    await expect(simulations).toHaveCount(2);
+    await expect(simulations.nth(0)).toContainText("18,240 s · 05:04:00");
+    await expect(simulations.nth(0)).toContainText("Vertical x-z slice at y = -2.65 km");
+    await expect(simulations.nth(1)).toContainText("20,280 s · 05:38:00");
+    await expect(simulations.nth(1)).toContainText("Vertical x-z slice at y = 1.95 km");
+    await expect(page.getByRole("img", { name: /Updraft Lens vertical x-z slice/ })).toHaveCount(2);
+    await expect(page.getByTestId("updraft-lens-cloud-boundary")).toHaveCount(2);
+    await expect(page.getByLabel(/3-D viewer Vertical velocity \(w\), m\/s/)).toHaveCount(2);
+    await expect(page.getByLabel(/2-D inspector Vertical velocity \(w\), m\/s/)).toHaveCount(2);
+    await expect(page.getByRole("heading", { name: "What responded materially" })).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: "What changed little or varied" }),
+    ).toBeVisible();
+    await expect(page.getByRole("heading", { name: "What stayed fixed" })).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: "What this comparison suggests" }),
+    ).toBeVisible();
+
+    const canvases = page.locator("canvas.true3d-canvas");
+    await expect(canvases).toHaveCount(2);
+    for (let index = 0; index < 2; index += 1) {
+      await expect(canvases.nth(index)).toBeVisible();
+      const dimensions = await canvases.nth(index).evaluate((canvas: HTMLCanvasElement) => ({
+        displayWidth: canvas.clientWidth,
+        displayHeight: canvas.clientHeight,
+        renderWidth: canvas.width,
+        renderHeight: canvas.height,
+      }));
+      expect(dimensions.displayWidth).toBeGreaterThan(100);
+      expect(dimensions.displayHeight).toBeGreaterThan(100);
+      expect(dimensions.renderWidth).toBeGreaterThan(100);
+      expect(dimensions.renderHeight).toBeGreaterThan(100);
+      const renderedPixels = await canvases.nth(index).screenshot();
+      expect(renderedPixels.byteLength).toBeGreaterThan(5_000);
+    }
+
+    const baselineControls = simulations.nth(0).getByLabel("3-D camera controls");
+    const moreMoistureControls = simulations.nth(1).getByLabel("3-D camera controls");
+    await baselineControls.getByRole("button", { name: "Look along x" }).click();
+    await expect(baselineControls).toContainText("Camera looking along the x axis");
+    await expect(moreMoistureControls).toContainText("Camera ready");
+
+    await page.setViewportSize({ width: 390, height: 844 });
+    await expect(simulations.nth(0)).toBeVisible();
+    await expect(simulations.nth(1)).toBeVisible();
+    const mobileLayout = await simulations.evaluateAll((cards) => {
+      const first = cards[0].getBoundingClientRect();
+      const second = cards[1].getBoundingClientRect();
+      return {
+        stacked: second.top >= first.bottom,
+        fitsViewport: document.documentElement.scrollWidth <= document.documentElement.clientWidth,
+      };
+    });
+    expect(mobileLayout).toEqual({ stacked: true, fitsViewport: true });
+
+    await page.setViewportSize({ width: 1440, height: 1000 });
+    await simulations.nth(1).getByRole("button", { name: "Open More Moisture in Explore" }).click();
+    await expect(
+      page.getByRole("heading", { name: "Trade Cumulus: Baseline and More Moisture" }),
+    ).toHaveCount(0);
+    await expect(page.getByLabel("Explore viewer controls")).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByText("More Moisture").first()).toBeVisible();
+
+    await page
+      .getByRole("navigation", { name: "Cloud Chamber workspace" })
+      .getByRole("button", { name: "Results" })
+      .click();
+    await expect(page.getByRole("heading", { name: "Experiment Notebook" })).toBeVisible();
+    await page.getByRole("button", { name: "More Moisture", exact: true }).click();
+    await page
+      .getByLabel("Result detail")
+      .getByRole("button", { name: "Compare Baseline and More Moisture" })
+      .click();
+    await expect(
+      page.getByRole("heading", { name: "Trade Cumulus: Baseline and More Moisture" }),
+    ).toBeVisible();
+    await page.getByRole("button", { name: "Back to Results" }).click();
+    await expect(page.getByRole("heading", { name: "Experiment Notebook" })).toBeVisible();
+    expect(browserErrors).toEqual([]);
   });
 
   test("Results filters and sorts by science metadata", async ({ page }) => {
@@ -730,18 +1257,17 @@ test.describe("mocked smoke: Build, Results, Explore path", () => {
 
     await expect(page.getByLabel("Explore viewer controls")).toBeVisible();
     await expect(page.getByLabel("Timelapse playback controls")).toBeVisible();
-    await expect(page.getByRole("button", { name: "Play time" })).toBeVisible();
+    const playbackButton = page.getByLabel("Timelapse playback controls").getByRole("button");
+    await expect(playbackButton).toHaveText("Play time");
     await expect(page.getByLabel("Playback speed")).toHaveValue("1");
     await expect(page.getByRole("slider", { name: "Saved output time" })).toBeVisible();
 
     await page.locator("#explore-time").selectOption("1");
-    await page.getByLabel("Playback speed").selectOption("2");
-    await page.getByRole("button", { name: "Play time" }).click();
+    await page.getByLabel("Playback speed").selectOption("0.5");
+    await playbackButton.click();
 
-    await expect(page.getByRole("button", { name: "Pause time" })).toHaveAttribute(
-      "aria-pressed",
-      "true",
-    );
+    await expect(playbackButton).toHaveText("Pause time");
+    await expect(playbackButton).toHaveAttribute("aria-pressed", "true");
     await expect(
       page.getByText("Pause playback to select a cell and explain this time step."),
     ).toBeVisible();
@@ -750,22 +1276,17 @@ test.describe("mocked smoke: Build, Results, Explore path", () => {
         /Animating 3-D scene at .*; slice and evidence remain at .* until playback is paused\./,
       ),
     ).toBeVisible();
-    await expect(page.locator("#explore-time")).toHaveValue("2", { timeout: 2_000 });
-
-    await page.getByRole("button", { name: "Pause time" }).click();
-    await expect(page.getByRole("button", { name: "Play time" })).toHaveAttribute(
-      "aria-pressed",
-      "false",
-    );
+    await expect(page.locator("#explore-time")).toHaveValue("2", { timeout: 4_000 });
+    await expect(playbackButton).toHaveText("Play time", { timeout: 4_000 });
+    await expect(playbackButton).toHaveAttribute("aria-pressed", "false");
+    await expect(page.locator("#explore-time")).toHaveValue("0");
 
     await page.getByRole("button", { name: "Last frame" }).click();
     await expect(page.locator("#explore-time")).toHaveValue("2");
-    await page.getByRole("button", { name: "Play time" }).click();
-    await expect(page.locator("#explore-time")).toHaveValue("0", { timeout: 2_000 });
-    await expect(page.getByRole("button", { name: "Play time" })).toHaveAttribute(
-      "aria-pressed",
-      "false",
-    );
+    await playbackButton.click();
+    await expect(page.locator("#explore-time")).toHaveValue("0", { timeout: 4_000 });
+    await expect(playbackButton).toHaveText("Play time");
+    await expect(playbackButton).toHaveAttribute("aria-pressed", "false");
   });
 
   test("Explore process evidence offers useful modes and moves unsupported modes secondary", async ({
