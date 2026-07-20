@@ -35,11 +35,13 @@ Lens, or Comparison supported merely by being documented.
 
 The [MVP](product/MVP.md) is the PM-authored Stage 7 product-scope definition for
 Cloud Chamber as a single-user personal cloud laboratory and growing
-cloud-world atlas. Until issue #381 exits and issue #383 is explicitly approved
-and merged, it remains a queued Stage 7 definition rather than controlling MVP
-authority. After approval, it controls MVP inclusion, exclusion, quality, and
-completion decisions while remaining subordinate to the North Star, Product
-Vision, approved PM decisions, and Application Semantics.
+cloud-world atlas. Stage 7A is active and under independent review through issue
+#383 and PR #384. The Stage 5 exit and the practical Stage 6 disposition are
+already satisfied, and PR #385 has merged the first featured Comparison. The
+MVP becomes controlling only after explicit PM approval and merge of PR #384.
+After approval, it controls MVP inclusion, exclusion, quality, completion, and
+bounded implementation sequencing while remaining subordinate to the North
+Star, Product Vision, approved PM decisions, and Application Semantics.
 
 PM decisions and product-architecture documents do not silently rewrite higher
 authority.
@@ -250,10 +252,12 @@ Stage 3 classified the active contract directory: two implemented contracts
 remain active, and five historical/proposal contract documents are preserved
 under `docs/archive/contracts/`.
 
-Stage 5 established the bounded Trade Cumulus product slice and the staged
-scientific, Lens, Control, and Comparison evidence needed to make an MVP scope
-decision. The Stage 7 MVP definition is drafted under issue #383 and remains
-queued behind completion of issue #381.
+Stage 5 established the Trade Cumulus product slice and the scientific, Lens,
+Control, and Comparison evidence used to make an MVP decision. The Stage 5 exit
+and practical Stage 6 disposition are approved. Stage 7A is active under issue
+#383, and PR #384 is the current MVP review target. PR #385 has merged the first
+featured Comparison; any remaining issue #381 close-out is program hygiene, not
+an unresolved MVP product or science gate.
 
 Remaining repository moves, rewrites, splits, archives, deletions, and deferrals from the approved disposition may still exist outside those handled paths.
 
