@@ -7,6 +7,7 @@ import type {
   UpdraftLensWindMode,
   UpdraftLensWindVector,
 } from "./UpdraftLensSlice";
+import { UpdraftLensScaleLegend } from "./UpdraftLensSlice";
 import {
   cameraDistanceLimits,
   scalarPointPixelSize,
@@ -385,6 +386,9 @@ export function True3DViewer({
             <span>{windReferenceMps.toFixed(1)} m/s reference = 8% domain width</span>
           </div>
         )}
+        {updraftLensFrame && (
+          <UpdraftLensScaleLegend frame={updraftLensFrame} viewLabel="3-D viewer" />
+        )}
         <div
           ref={axisLabelLayerRef}
           className="true3d-axis-label-layer"
@@ -556,8 +560,8 @@ function updraftLensSlicePlane(frame: UpdraftLensFrame, bounds: SceneBounds): TH
       frame.w_values_m_s,
       width,
       height,
-      frame.w_range_min_m_s,
-      frame.w_range_max_m_s,
+      frame.w_scale_breakpoints_m_s,
+      frame.w_scale_colors,
     ),
     width,
     height,

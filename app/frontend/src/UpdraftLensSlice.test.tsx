@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
 import {
@@ -6,9 +6,23 @@ import {
   UpdraftLensSlice,
   updraftLensBoundaryPath,
   updraftLensCellGeometry,
-  updraftLensColor,
+  updraftLensDiscreteColor,
   updraftLensSelectionFromPointer,
 } from "./UpdraftLensSlice";
+
+const breakpoints = [-1.0, -0.5, -0.1, 0.1, 0.5, 1.0, 2.0, 3.0, 5.0];
+const colors = [
+  "#4b0082",
+  "#0057d9",
+  "#00c9d8",
+  "#ffffff",
+  "#00d63b",
+  "#8fe000",
+  "#ffe000",
+  "#ff9800",
+  "#ff3b00",
+  "#c40000",
+];
 
 const frame: UpdraftLensFrame = {
   result_id: "result-bomex",
@@ -36,8 +50,23 @@ const frame: UpdraftLensFrame = {
   ],
   cloud_threshold_kg_kg: 1e-6,
   w_range_min_m_s: -1,
-  w_range_max_m_s: 1,
-  w_range_method: "fixed",
+  w_range_max_m_s: 5,
+  w_range_method: "fixed_trade_cumulus_updraft_velocity_v1",
+  w_scale_id: "trade_cumulus_updraft_velocity_v1",
+  w_scale_owner: "trade_cumulus",
+  w_scale_type: "fixed_discrete",
+  w_scale_units: "m/s",
+  w_scale_breakpoints_m_s: breakpoints,
+  w_scale_colors: colors,
+  w_scale_neutral_interval_m_s: [-0.1, 0.1],
+  w_scale_source: "pm_approved_issue_379_from_stage5b2_matched_pair",
+  w_scale_clipping_behavior:
+    "values_below_-1.0_and_at_or_above_5.0_use_endpoint_colors_and_are_reported_as_clipped",
+  w_finite_count: 5,
+  w_low_clipped_count: 0,
+  w_high_clipped_count: 0,
+  w_low_clipped_fraction: 0,
+  w_high_clipped_fraction: 0,
   wind_mode: "perturbation",
   wind_target_level_m: 600,
   wind_actual_level_m: 580,
@@ -61,13 +90,25 @@ const frame: UpdraftLensFrame = {
 };
 
 describe("UpdraftLensSlice colors", () => {
-  it("uses the approved fixed diverging palette and distinct missing color", () => {
-    expect(updraftLensColor(-1, -1, 1)).toBe("#2166ac");
-    expect(updraftLensColor(0, -1, 1)).toBe("#f7f7f7");
-    expect(updraftLensColor(1, -1, 1)).toBe("#b2182b");
-    expect(updraftLensColor(null, -1, 1)).toBe("#747b80");
-    expect(updraftLensColor(-20, -1, 1)).toBe("#2166ac");
-    expect(updraftLensColor(20, -1, 1)).toBe("#b2182b");
+  it("uses exact half-open classes immediately below, at, and above every breakpoint", () => {
+    breakpoints.forEach((breakpoint, index) => {
+      expect(updraftLensDiscreteColor(breakpoint - 1e-6, breakpoints, colors)).toBe(colors[index]);
+      expect(updraftLensDiscreteColor(breakpoint, breakpoints, colors)).toBe(colors[index + 1]);
+      expect(updraftLensDiscreteColor(breakpoint + 1e-6, breakpoints, colors)).toBe(
+        colors[index + 1],
+      );
+    });
+  });
+
+  it("keeps neutral boundaries, missing values, and classes deterministic without interpolation", () => {
+    expect(updraftLensDiscreteColor(-0.1, breakpoints, colors)).toBe("#ffffff");
+    expect(updraftLensDiscreteColor(0, breakpoints, colors)).toBe("#ffffff");
+    expect(updraftLensDiscreteColor(0.1, breakpoints, colors)).toBe("#00d63b");
+    expect(updraftLensDiscreteColor(0.11, breakpoints, colors)).toBe("#00d63b");
+    expect(updraftLensDiscreteColor(0.49, breakpoints, colors)).toBe("#00d63b");
+    expect(updraftLensDiscreteColor(null, breakpoints, colors)).toBe("#747b80");
+    expect(updraftLensDiscreteColor(Number.NaN, breakpoints, colors)).toBe("#747b80");
+    expect(updraftLensDiscreteColor(Number.POSITIVE_INFINITY, breakpoints, colors)).toBe("#747b80");
   });
 });
 
@@ -110,14 +151,57 @@ describe("UpdraftLensSlice geometry", () => {
 });
 
 describe("UpdraftLensSlice rendering", () => {
-  it("preserves physical aspect, fixed legend, boundary, and accessible summary", () => {
+  it("preserves physical aspect, fixed legend, boundary, and slice range", () => {
     const { container } = render(<UpdraftLensSlice frame={frame} />);
     const plot = screen.getByRole("img", { name: /Updraft Lens vertical x-z slice/ });
     expect(plot).toHaveAttribute("data-domain-aspect", "0.750000");
     expect(plot).toHaveAttribute("data-orientation", "vertical_x");
     expect(container.querySelectorAll("rect")).toHaveLength(6);
-    expect(screen.getByLabelText("Vertical velocity color scale")).toHaveTextContent("-1.0");
+    const legend = screen.getByLabelText(/2-D inspector Vertical velocity \(w\), m\/s/);
+    expect(legend).toHaveTextContent("-0.1 to < 0.1 m/s");
+    expect(legend).toHaveTextContent(">= 5.0 m/s");
+    expect(legend).not.toHaveTextContent("near-neutral motion");
+    expect(legend).not.toHaveTextContent("#ffffff");
+    expect(legend.querySelectorAll(".updraft-lens-scale-swatch")).toHaveLength(10);
+    expect(
+      within(legend)
+        .getAllByRole("listitem")
+        .map((item) => item.textContent),
+    ).toEqual([
+      ">= 5.0 m/s",
+      "3.0 to < 5.0 m/s",
+      "2.0 to < 3.0 m/s",
+      "1.0 to < 2.0 m/s",
+      "0.5 to < 1.0 m/s",
+      "0.1 to < 0.5 m/s",
+      "-0.1 to < 0.1 m/s",
+      "-0.5 to < -0.1 m/s",
+      "-1.0 to < -0.5 m/s",
+      "< -1.0 m/s",
+    ]);
+    expect(legend).toHaveTextContent("Slice maximum 1.00 m/s.");
+    expect(legend).toHaveTextContent("Slice minimum -1.00 m/s.");
+    expect(screen.queryByText(/Clipped in this slice/)).not.toBeInTheDocument();
     expect(screen.getByTestId("updraft-lens-cloud-boundary")).toBeInTheDocument();
+  });
+
+  it.each([
+    [2, 0],
+    [0, 3],
+    [2, 3],
+  ])("keeps clipping counts out of the visible range summary (%s, %s)", (lowCount, highCount) => {
+    render(
+      <UpdraftLensSlice
+        frame={{
+          ...frame,
+          w_low_clipped_count: lowCount,
+          w_high_clipped_count: highCount,
+        }}
+      />,
+    );
+    expect(screen.getByText("Slice maximum 1.00 m/s.")).toBeInTheDocument();
+    expect(screen.getByText("Slice minimum -1.00 m/s.")).toBeInTheDocument();
+    expect(screen.queryByText(/Clipped in this slice/)).not.toBeInTheDocument();
   });
 
   it("hides the boundary and reports native indices on click", () => {

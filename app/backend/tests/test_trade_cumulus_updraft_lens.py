@@ -267,6 +267,84 @@ def test_fixed_range_uses_percentile_floor_and_rounding() -> None:
     assert lens.rounded_percentile_reference([np.asarray([0.61, 0.62])], 99, 0.5) == 0.7
 
 
+def test_defaults_return_exact_world_owned_fixed_scale(tmp_path: Path) -> None:
+    settings, _ = _install_result(tmp_path, _dataset(scalar_w=True))
+    defaults = trade_cumulus_updraft_lens_defaults(settings, "result-trade-cumulus")
+
+    assert defaults.w_scale_id == "trade_cumulus_updraft_velocity_v1"
+    assert defaults.w_scale_owner == "trade_cumulus"
+    assert lens.TRADE_CUMULUS_UPDRAFT_LENS_ID == "updraft"
+    assert defaults.w_scale_type == "fixed_discrete"
+    assert defaults.w_scale_units == "m/s"
+    assert defaults.w_scale_breakpoints_m_s == [
+        -1.0,
+        -0.5,
+        -0.1,
+        0.1,
+        0.5,
+        1.0,
+        2.0,
+        3.0,
+        5.0,
+    ]
+    assert defaults.w_scale_colors == [
+        "#4b0082",
+        "#0057d9",
+        "#00c9d8",
+        "#ffffff",
+        "#00d63b",
+        "#8fe000",
+        "#ffe000",
+        "#ff9800",
+        "#ff3b00",
+        "#c40000",
+    ]
+    assert defaults.w_scale_neutral_interval_m_s == [-0.1, 0.1]
+    assert defaults.w_scale_source == "pm_approved_issue_379_from_stage5b2_matched_pair"
+    assert defaults.w_scale_clipping_behavior == (
+        "values_below_-1.0_and_at_or_above_5.0_use_endpoint_colors_and_are_reported_as_clipped"
+    )
+    assert defaults.w_range_min_m_s == -1.0
+    assert defaults.w_range_max_m_s == 5.0
+    assert defaults.w_range_method == "fixed_trade_cumulus_updraft_velocity_v1"
+
+
+def test_defaults_scale_is_independent_of_result_w_distribution(tmp_path: Path) -> None:
+    low_dataset = _dataset(scalar_w=True)
+    low_dataset["w"].values[:] = -40.0
+    middle_dataset = _dataset(scalar_w=True)
+    middle_dataset["w"].values[:] = 0.02
+    high_dataset = _dataset(scalar_w=True)
+    high_dataset["w"].values[:] = 40.0
+
+    low_settings, _ = _install_result(tmp_path / "low", low_dataset)
+    low_defaults = trade_cumulus_updraft_lens_defaults(low_settings, "result-trade-cumulus")
+    middle_settings, _ = _install_result(tmp_path / "middle", middle_dataset)
+    middle_defaults = trade_cumulus_updraft_lens_defaults(middle_settings, "result-trade-cumulus")
+    high_settings, _ = _install_result(tmp_path / "high", high_dataset)
+    high_defaults = trade_cumulus_updraft_lens_defaults(high_settings, "result-trade-cumulus")
+
+    scale_fields = (
+        "w_scale_id",
+        "w_scale_owner",
+        "w_scale_type",
+        "w_scale_units",
+        "w_scale_breakpoints_m_s",
+        "w_scale_colors",
+        "w_scale_neutral_interval_m_s",
+        "w_scale_source",
+        "w_scale_clipping_behavior",
+        "w_range_min_m_s",
+        "w_range_max_m_s",
+        "w_range_method",
+    )
+    scale_payloads = [
+        defaults.model_dump(include=set(scale_fields))
+        for defaults in (low_defaults, middle_defaults, high_defaults)
+    ]
+    assert scale_payloads[0] == scale_payloads[1] == scale_payloads[2]
+
+
 def test_u_and_v_faces_are_centered_to_scalar_grid() -> None:
     dataset = _dataset()
     ql, dimensions = lens._scalar_ql(dataset, 0)
@@ -373,6 +451,52 @@ def test_frame_orders_z_ascending_and_serializes_nonfinite_values(tmp_path: Path
     )
     assert frame.z_values_km == sorted(frame.z_values_km)
     assert frame.w_values_m_s[0][0] is None or frame.w_values_m_s[1][0] is None
+
+
+def test_frame_reports_exact_finite_and_clipping_semantics(tmp_path: Path) -> None:
+    dataset = _dataset(scalar_w=True)
+    dataset["w"].values[1, :, 1, :] = np.asarray(
+        [
+            [-1.01, -1.0, 4.99, 5.0],
+            [np.nan, np.inf, -np.inf, 0.0],
+            [-2.0, 8.0, -0.1, 0.1],
+        ]
+    )
+    settings, _ = _install_result(tmp_path, dataset)
+    frame = trade_cumulus_updraft_lens_frame(
+        settings,
+        "result-trade-cumulus",
+        time_index=1,
+        plane_index=1,
+        wind_mode="perturbation",
+    )
+
+    assert frame.w_finite_count == 9
+    assert frame.w_low_clipped_count == 2
+    assert frame.w_high_clipped_count == 2
+    assert frame.w_low_clipped_fraction == pytest.approx(2 / 9)
+    assert frame.w_high_clipped_fraction == pytest.approx(2 / 9)
+    assert frame.w_scale_breakpoints_m_s == [-1.0, -0.5, -0.1, 0.1, 0.5, 1.0, 2.0, 3.0, 5.0]
+    assert frame.w_range_method == "fixed_trade_cumulus_updraft_velocity_v1"
+
+
+def test_frame_uses_null_clipping_fractions_when_no_finite_w_exists(tmp_path: Path) -> None:
+    dataset = _dataset(scalar_w=True)
+    dataset["w"].values[:] = np.nan
+    settings, _ = _install_result(tmp_path, dataset)
+    frame = trade_cumulus_updraft_lens_frame(
+        settings,
+        "result-trade-cumulus",
+        time_index=1,
+        plane_index=1,
+        wind_mode="perturbation",
+    )
+
+    assert frame.w_finite_count == 0
+    assert frame.w_low_clipped_count == 0
+    assert frame.w_high_clipped_count == 0
+    assert frame.w_low_clipped_fraction is None
+    assert frame.w_high_clipped_fraction is None
 
 
 def test_invalid_indices_and_wind_mode_are_rejected(tmp_path: Path) -> None:

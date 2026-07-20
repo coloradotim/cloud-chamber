@@ -36,6 +36,20 @@ export type UpdraftLensFrame = {
   w_range_min_m_s: number;
   w_range_max_m_s: number;
   w_range_method: string;
+  w_scale_id: string;
+  w_scale_owner: string;
+  w_scale_type: "fixed_discrete";
+  w_scale_units: "m/s";
+  w_scale_breakpoints_m_s: number[];
+  w_scale_colors: string[];
+  w_scale_neutral_interval_m_s: number[];
+  w_scale_source: string;
+  w_scale_clipping_behavior: string;
+  w_finite_count: number;
+  w_low_clipped_count: number;
+  w_high_clipped_count: number;
+  w_low_clipped_fraction: number | null;
+  w_high_clipped_fraction: number | null;
   wind_mode: UpdraftLensWindMode;
   wind_target_level_m: number;
   wind_actual_level_m: number;
@@ -83,6 +97,15 @@ export type UpdraftLensDefaults = {
   w_range_min_m_s: number;
   w_range_max_m_s: number;
   w_range_method: string;
+  w_scale_id: string;
+  w_scale_owner: string;
+  w_scale_type: "fixed_discrete";
+  w_scale_units: "m/s";
+  w_scale_breakpoints_m_s: number[];
+  w_scale_colors: string[];
+  w_scale_neutral_interval_m_s: number[];
+  w_scale_source: string;
+  w_scale_clipping_behavior: string;
   wind_target_level_m: number;
   wind_actual_level_m: number;
   wind_level_index: number;
@@ -110,10 +133,23 @@ type CellGeometry = {
   height: number;
 };
 
-const DOWNDRAFT_COLOR = "#2166ac";
-const NEUTRAL_COLOR = "#f7f7f7";
-const UPDRAFT_COLOR = "#b2182b";
 const MISSING_COLOR = "#747b80";
+const LEGACY_DOWNDRAFT_COLOR = "#2166ac";
+const LEGACY_NEUTRAL_COLOR = "#f7f7f7";
+const LEGACY_UPDRAFT_COLOR = "#b2182b";
+const SCALE_TITLE = "Vertical velocity (w), m/s";
+const INTERVAL_MEANINGS = [
+  "strongest or clipped downdraft",
+  "downdraft",
+  "weak downdraft",
+  "near-neutral motion",
+  "weak updraft",
+  "moderate updraft",
+  "active updraft",
+  "strong updraft",
+  "very strong updraft",
+  "exceptional or clipped updraft",
+];
 
 export function UpdraftLensSlice({
   frame,
@@ -203,7 +239,11 @@ export function UpdraftLensSlice({
                     y={geometry.y}
                     width={geometry.width}
                     height={geometry.height}
-                    fill={updraftLensColor(value, frame.w_range_min_m_s, frame.w_range_max_m_s)}
+                    fill={updraftLensDiscreteColor(
+                      value,
+                      frame.w_scale_breakpoints_m_s,
+                      frame.w_scale_colors,
+                    )}
                   />
                 );
               }),
@@ -233,16 +273,27 @@ export function UpdraftLensSlice({
           <strong>{columnDimension} (km)</strong>
           <span>{formatKilometers(columnMax)}</span>
         </div>
-        <div className="updraft-lens-legend" aria-label="Vertical velocity color scale">
-          <span>{frame.w_range_min_m_s.toFixed(1)}</span>
-          <span className="updraft-lens-color-ramp" />
-          <span>{frame.w_range_max_m_s.toFixed(1)} m/s</span>
-        </div>
       </div>
+      <UpdraftLensScaleLegend frame={frame} viewLabel="2-D inspector" />
     </section>
   );
 }
 
+export function updraftLensDiscreteColor(
+  value: number | null,
+  breakpoints: number[],
+  colors: string[],
+): string {
+  if (value === null || !Number.isFinite(value)) return MISSING_COLOR;
+  if (colors.length !== breakpoints.length + 1 || colors.length === 0) return MISSING_COLOR;
+  let colorIndex = 0;
+  while (colorIndex < breakpoints.length && value >= breakpoints[colorIndex]) {
+    colorIndex += 1;
+  }
+  return colors[colorIndex] ?? MISSING_COLOR;
+}
+
+// Retained for the Standard-view selected-value swatch; Lens rendering uses the discrete lookup.
 export function updraftLensColor(
   value: number | null,
   rangeMinimum: number,
@@ -251,10 +302,82 @@ export function updraftLensColor(
   if (value === null || !Number.isFinite(value)) return MISSING_COLOR;
   if (value <= 0) {
     const denominator = Math.max(Number.EPSILON, Math.abs(rangeMinimum));
-    return interpolateHex(DOWNDRAFT_COLOR, NEUTRAL_COLOR, 1 - clamp(Math.abs(value) / denominator));
+    return interpolateHex(
+      LEGACY_DOWNDRAFT_COLOR,
+      LEGACY_NEUTRAL_COLOR,
+      1 - clamp(Math.abs(value) / denominator),
+    );
   }
   const denominator = Math.max(Number.EPSILON, Math.abs(rangeMaximum));
-  return interpolateHex(NEUTRAL_COLOR, UPDRAFT_COLOR, clamp(value / denominator));
+  return interpolateHex(LEGACY_NEUTRAL_COLOR, LEGACY_UPDRAFT_COLOR, clamp(value / denominator));
+}
+
+export function UpdraftLensScaleLegend({
+  frame,
+  viewLabel,
+}: {
+  frame: UpdraftLensFrame;
+  viewLabel: "2-D inspector" | "3-D viewer";
+}) {
+  const intervals = updraftLensScaleIntervals(frame.w_scale_breakpoints_m_s, frame.w_scale_colors);
+  const finiteValues = frame.w_values_m_s
+    .flat()
+    .filter((value): value is number => value !== null && Number.isFinite(value));
+  const sliceMinimum = finiteValues.length > 0 ? Math.min(...finiteValues) : null;
+  const sliceMaximum = finiteValues.length > 0 ? Math.max(...finiteValues) : null;
+  const viewClass = viewLabel === "2-D inspector" ? "2d" : "3d";
+  return (
+    <section
+      className={`updraft-lens-scale-legend updraft-lens-scale-legend-${viewClass}`}
+      aria-label={`${viewLabel} ${SCALE_TITLE}; ${frame.w_scale_id}`}
+    >
+      <div className="updraft-lens-scale-heading">
+        <strong>{SCALE_TITLE}</strong>
+      </div>
+      <p className="updraft-lens-slice-range updraft-lens-slice-range-maximum">
+        Slice maximum {sliceMaximum === null ? "unavailable" : `${sliceMaximum.toFixed(2)} m/s`}.
+      </p>
+      <ol className="updraft-lens-scale-intervals" aria-label="Exact vertical velocity intervals">
+        {[...intervals].reverse().map((interval, reversedIndex) => {
+          const index = intervals.length - 1 - reversedIndex;
+          return (
+            <li
+              key={`${interval.label}-${interval.color}`}
+              aria-label={`${interval.label} ${frame.w_scale_units}; ${INTERVAL_MEANINGS[index]}; color ${interval.color}`}
+            >
+              <span
+                className="updraft-lens-scale-swatch"
+                style={{ backgroundColor: interval.color }}
+                aria-hidden="true"
+              />
+              <span>
+                {interval.label} {frame.w_scale_units}
+              </span>
+            </li>
+          );
+        })}
+      </ol>
+      <p className="updraft-lens-slice-range updraft-lens-slice-range-minimum">
+        Slice minimum {sliceMinimum === null ? "unavailable" : `${sliceMinimum.toFixed(2)} m/s`}.
+      </p>
+    </section>
+  );
+}
+
+export function updraftLensScaleIntervals(
+  breakpoints: number[],
+  colors: string[],
+): Array<{ label: string; color: string }> {
+  return colors.map((color, index) => {
+    if (index === 0) return { label: `< ${formatVelocity(breakpoints[0])}`, color };
+    if (index === colors.length - 1) {
+      return { label: `>= ${formatVelocity(breakpoints.at(-1))}`, color };
+    }
+    return {
+      label: `${formatVelocity(breakpoints[index - 1])} to < ${formatVelocity(breakpoints[index])}`,
+      color,
+    };
+  });
 }
 
 export function updraftLensCellGeometry(
@@ -400,6 +523,10 @@ function clamp(value: number): number {
 
 function formatKilometers(value: number): string {
   return `${Number(value.toFixed(2))}`;
+}
+
+function formatVelocity(value: number | undefined): string {
+  return Number.isFinite(value) ? Number(value).toFixed(1) : "unavailable";
 }
 
 function updraftLensAccessibleSummary(frame: UpdraftLensFrame): string {
