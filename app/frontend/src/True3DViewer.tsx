@@ -2,7 +2,17 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 
-import { cameraDistanceLimits, scalarPointPixelSize } from "./True3DViewer.utils";
+import type {
+  UpdraftLensFrame,
+  UpdraftLensWindMode,
+  UpdraftLensWindVector,
+} from "./UpdraftLensSlice";
+import {
+  cameraDistanceLimits,
+  scalarPointPixelSize,
+  updraftLensTextureData,
+  windArrowLength,
+} from "./True3DViewer.utils";
 
 type CoordinateExtent = { min: number; max: number; units: string | null };
 
@@ -83,6 +93,12 @@ type True3DViewerProps = {
   status: string;
   provenanceLabel: string;
   noCloudMessage: string;
+  windVectors?: UpdraftLensWindVector[];
+  showWindVectors?: boolean;
+  windMode?: UpdraftLensWindMode;
+  windReferenceMps?: number;
+  windArrowDomainFraction?: number;
+  updraftLensFrame?: UpdraftLensFrame | null;
 };
 
 type SceneRefs = {
@@ -140,6 +156,12 @@ export function True3DViewer({
   status,
   provenanceLabel,
   noCloudMessage,
+  windVectors = [],
+  showWindVectors = false,
+  windMode = "perturbation",
+  windReferenceMps = 0,
+  windArrowDomainFraction = 0.08,
+  updraftLensFrame = null,
 }: True3DViewerProps) {
   const mountRef = useRef<HTMLDivElement | null>(null);
   const axisLabelLayerRef = useRef<HTMLDivElement | null>(null);
@@ -299,6 +321,11 @@ export function True3DViewer({
       selectedPoint,
       opacity,
       pointSize,
+      windVectors,
+      showWindVectors,
+      windReferenceMps,
+      windArrowDomainFraction,
+      updraftLensFrame,
     });
   }, [
     activeSlice,
@@ -309,6 +336,11 @@ export function True3DViewer({
     pointSize,
     selectedPoint,
     showSlicePlane,
+    showWindVectors,
+    windArrowDomainFraction,
+    windReferenceMps,
+    windVectors,
+    updraftLensFrame,
   ]);
 
   return (
@@ -347,6 +379,12 @@ export function True3DViewer({
             </div>
           </div>
         )}
+        {showWindVectors && windVectors.length > 0 && (
+          <div className="true3d-wind-legend" aria-label="Horizontal wind overlay legend">
+            <strong>{windMode === "perturbation" ? "Local departures" : "Total wind"}</strong>
+            <span>{windReferenceMps.toFixed(1)} m/s reference = 8% domain width</span>
+          </div>
+        )}
         <div
           ref={axisLabelLayerRef}
           className="true3d-axis-label-layer"
@@ -362,8 +400,13 @@ export function True3DViewer({
             </span>
           ))}
         </div>
-        {showSlicePlane && activeSlice && (
-          <p className="true3d-slice-label">Slice plane: {activeSliceLabel}</p>
+        {updraftLensFrame ? (
+          <p className="true3d-slice-label true3d-slice-label-updraft-lens">
+            Updraft Lens slice: {activeSliceLabel}
+          </p>
+        ) : (
+          showSlicePlane &&
+          activeSlice && <p className="true3d-slice-label">Slice plane: {activeSliceLabel}</p>
         )}
         {selectedPoint && (
           <p className="true3d-selected-point-label">
@@ -452,6 +495,11 @@ function rebuildScene(
     selectedPoint,
     opacity,
     pointSize,
+    windVectors,
+    showWindVectors,
+    windReferenceMps,
+    windArrowDomainFraction,
+    updraftLensFrame,
   }: {
     bounds: SceneBounds;
     pointCloud: PointCloudResponse | null;
@@ -461,6 +509,11 @@ function rebuildScene(
     selectedPoint: { x: number; y: number; z: number } | null;
     opacity: number;
     pointSize: number;
+    windVectors: UpdraftLensWindVector[];
+    showWindVectors: boolean;
+    windReferenceMps: number;
+    windArrowDomainFraction: number;
+    updraftLensFrame: UpdraftLensFrame | null;
   },
 ) {
   disposeScene(scene);
@@ -478,6 +531,14 @@ function rebuildScene(
     scene.add(cloudPointLayer(pointCloud, bounds, opacity, pointSize));
   }
 
+  if (showWindVectors && windVectors.length) {
+    scene.add(horizontalWindLayer(windVectors, bounds, windReferenceMps, windArrowDomainFraction));
+  }
+
+  if (updraftLensFrame) {
+    scene.add(updraftLensSlicePlane(updraftLensFrame, bounds));
+  }
+
   if (showSlicePlane && activeSlice) {
     scene.add(slicePlane(activeSlice, activeSliceLabel, bounds));
   }
@@ -485,6 +546,107 @@ function rebuildScene(
   if (selectedPoint) {
     scene.add(selectedPointMarker(selectedPoint, bounds));
   }
+}
+
+function updraftLensSlicePlane(frame: UpdraftLensFrame, bounds: SceneBounds): THREE.Group {
+  const width = Math.max(1, frame.w_values_m_s[0]?.length ?? 0);
+  const height = Math.max(1, frame.w_values_m_s.length);
+  const texture = new THREE.DataTexture(
+    updraftLensTextureData(
+      frame.w_values_m_s,
+      width,
+      height,
+      frame.w_range_min_m_s,
+      frame.w_range_max_m_s,
+    ),
+    width,
+    height,
+    THREE.RGBAFormat,
+    THREE.UnsignedByteType,
+  );
+  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.magFilter = THREE.NearestFilter;
+  texture.minFilter = THREE.NearestFilter;
+  texture.generateMipmaps = false;
+  texture.needsUpdate = true;
+
+  let geometry: THREE.PlaneGeometry;
+  if (frame.orientation === "horizontal") {
+    geometry = new THREE.PlaneGeometry(bounds.xRange, bounds.yRange);
+  } else if (frame.orientation === "vertical_y") {
+    geometry = new THREE.PlaneGeometry(bounds.yRange, bounds.zRange);
+  } else {
+    geometry = new THREE.PlaneGeometry(bounds.xRange, bounds.zRange);
+  }
+  const material = new THREE.MeshBasicMaterial({
+    map: texture,
+    transparent: true,
+    opacity: 0.68,
+    side: THREE.DoubleSide,
+    depthWrite: false,
+  });
+  const plane = new THREE.Mesh(geometry, material);
+  plane.name = `Updraft Lens ${frame.orientation} vertical-velocity plane`;
+  if (frame.orientation === "horizontal") {
+    plane.rotation.x = Math.PI / 2;
+    plane.position.y = centeredCoordinate(frame.plane_coordinate ?? 0, bounds.z);
+  } else if (frame.orientation === "vertical_y") {
+    plane.rotation.y = -Math.PI / 2;
+    plane.position.x = centeredCoordinate(frame.plane_coordinate ?? 0, bounds.x);
+  } else {
+    plane.position.z = centeredCoordinate(frame.plane_coordinate ?? 0, bounds.y);
+  }
+  plane.renderOrder = 10;
+
+  const outline = new THREE.LineSegments(
+    new THREE.EdgesGeometry(geometry),
+    new THREE.LineBasicMaterial({ color: 0x263238, transparent: true, opacity: 0.9 }),
+  );
+  outline.name = "Updraft Lens plane outline";
+  outline.position.copy(plane.position);
+  outline.rotation.copy(plane.rotation);
+  outline.renderOrder = 11;
+
+  const group = new THREE.Group();
+  group.name = "trade-cumulus-updraft-lens-slice-plane";
+  group.add(plane, outline);
+  return group;
+}
+
+function horizontalWindLayer(
+  vectors: UpdraftLensWindVector[],
+  bounds: SceneBounds,
+  referenceMps: number,
+  domainFraction: number,
+): THREE.Group {
+  const group = new THREE.Group();
+  group.name = "trade-cumulus-updraft-lens-wind-vectors";
+  for (const vector of vectors) {
+    const length = windArrowLength(
+      vector.magnitude_m_s,
+      referenceMps,
+      bounds.xRange,
+      domainFraction,
+    );
+    if (length <= 0) continue;
+    const direction = new THREE.Vector3(vector.u_m_s, 0, vector.v_m_s);
+    if (direction.lengthSq() === 0) continue;
+    direction.normalize();
+    const mapped = mapCoordinate(vector.x_km, vector.y_km, vector.z_km, bounds);
+    const headLength = Math.min(length * 0.36, Math.max(0.04, bounds.xRange * 0.025));
+    const headWidth = Math.min(length * 0.24, Math.max(0.025, bounds.xRange * 0.016));
+    const arrow = new THREE.ArrowHelper(
+      direction,
+      new THREE.Vector3(mapped.x, mapped.y, mapped.z),
+      length,
+      0x263238,
+      headLength,
+      headWidth,
+    );
+    arrow.name = "horizontal-wind-vector";
+    group.add(arrow);
+  }
+  return group;
 }
 
 function boundsSignature(pointCloud: PointCloudResponse | null): string {

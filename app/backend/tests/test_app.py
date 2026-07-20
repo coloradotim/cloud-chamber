@@ -105,6 +105,95 @@ def test_health_endpoint_identifies_scaffold_without_cm1() -> None:
     assert "CM1 is the high-fidelity simulation engine" in response.json()["engine_note"]
 
 
+def test_trade_cumulus_updraft_lens_defaults_endpoint(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class FakeResponse:
+        def model_dump(self, *, mode: str) -> dict[str, object]:
+            assert mode == "json"
+            return {
+                "result_id": "result-bomex",
+                "eligible": True,
+                "default_time_index": 61,
+                "default_plane_index": 5,
+            }
+
+    monkeypatch.setattr(
+        "cloud_chamber.app.trade_cumulus_updraft_lens_defaults",
+        lambda _settings, result_id: FakeResponse(),
+    )
+
+    response = TestClient(app).get(
+        "/api/results/result-bomex/visualization/trade-cumulus-updraft-lens/defaults"
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "result_id": "result-bomex",
+        "eligible": True,
+        "default_time_index": 61,
+        "default_plane_index": 5,
+    }
+
+
+def test_trade_cumulus_updraft_lens_frame_endpoint_validates_and_forwards_query(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    received: dict[str, object] = {}
+
+    class FakeResponse:
+        def model_dump(self, *, mode: str) -> dict[str, object]:
+            assert mode == "json"
+            return {"result_id": "result-bomex", "wind_mode": "total"}
+
+    def fake_frame(
+        _settings: object,
+        result_id: str,
+        *,
+        time_index: int,
+        orientation: str,
+        plane_index: int,
+        wind_mode: str,
+    ) -> FakeResponse:
+        received.update(
+            result_id=result_id,
+            time_index=time_index,
+            orientation=orientation,
+            plane_index=plane_index,
+            wind_mode=wind_mode,
+        )
+        return FakeResponse()
+
+    monkeypatch.setattr("cloud_chamber.app.trade_cumulus_updraft_lens_frame", fake_frame)
+    client = TestClient(app)
+
+    response = client.get(
+        "/api/results/result-bomex/visualization/trade-cumulus-updraft-lens/frame"
+        "?time_index=4&plane_index=3&orientation=vertical_y&wind_mode=total"
+    )
+    invalid = client.get(
+        "/api/results/result-bomex/visualization/trade-cumulus-updraft-lens/frame"
+        "?time_index=4&plane_index=3&wind_mode=unsupported"
+    )
+
+    assert response.status_code == 200
+    assert response.json()["wind_mode"] == "total"
+    assert received == {
+        "result_id": "result-bomex",
+        "time_index": 4,
+        "orientation": "vertical_y",
+        "plane_index": 3,
+        "wind_mode": "total",
+    }
+    assert invalid.status_code == 400
+
+    invalid_orientation = client.get(
+        "/api/results/result-bomex/visualization/trade-cumulus-updraft-lens/frame"
+        "?time_index=4&plane_index=3&orientation=diagonal"
+    )
+    assert invalid_orientation.status_code == 400
+
+
 def test_list_scenarios_includes_baseline_golden_path() -> None:
     response = TestClient(app).get("/api/scenarios")
 

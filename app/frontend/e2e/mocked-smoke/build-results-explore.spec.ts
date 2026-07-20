@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test";
 
 import { gotoApp, gotoBuild, gotoResults, openRunMonitor } from "../helpers";
-import { mockCloudChamberApis } from "../fixtures";
+import { mockCloudChamberApis, results } from "../fixtures";
 
 test.describe("mocked smoke: Build, Results, Explore path", () => {
   test.beforeEach(async ({ page }) => {
@@ -179,10 +179,7 @@ test.describe("mocked smoke: Build, Results, Explore path", () => {
       .getByRole("button", { name: "Save candidate" })
       .click();
     await page.getByRole("textbox", { name: "Tags" }).fill("smoke");
-    await page
-      .getByLabel("Save candidate notes")
-      .getByRole("button", { name: "Save" })
-      .click();
+    await page.getByLabel("Save candidate notes").getByRole("button", { name: "Save" }).click();
     await expect(page.getByText("Sounding candidate saved")).toBeVisible();
     await page.getByRole("tab", { name: /Saved candidates/ }).click();
     const savedCard = page.getByLabel("Saved sounding candidate Valley, Nebraska (USM00072558)");
@@ -198,10 +195,10 @@ test.describe("mocked smoke: Build, Results, Explore path", () => {
       const runPlan = document.querySelector('[aria-label="Run plan"]');
       return Boolean(
         saved &&
-          setup &&
-          runPlan &&
-          (saved.compareDocumentPosition(setup) & Node.DOCUMENT_POSITION_FOLLOWING) &&
-          (setup.compareDocumentPosition(runPlan) & Node.DOCUMENT_POSITION_FOLLOWING),
+        setup &&
+        runPlan &&
+        saved.compareDocumentPosition(setup) & Node.DOCUMENT_POSITION_FOLLOWING &&
+        setup.compareDocumentPosition(runPlan) & Node.DOCUMENT_POSITION_FOLLOWING,
       );
     });
     expect(selectedSetupOrderIsCorrect).toBe(true);
@@ -376,6 +373,23 @@ test.describe("mocked smoke: Build, Results, Explore path", () => {
     await expect(page.getByRole("button", { name: /move up/i })).toBeVisible();
     const heatmap = page.getByRole("img", { name: /heatmap/i });
     await expect(heatmap).toBeVisible();
+    await expect(page.getByTestId("slice-cloud-boundary")).toBeVisible();
+    const heatmapLayout = await heatmap.evaluate((element) => {
+      const bounds = element.getBoundingClientRect();
+      const grid = element.querySelector<HTMLElement>(".slice-heatmap-grid");
+      const row = element.querySelector<HTMLElement>(".heatmap-row");
+      return {
+        declaredAspect: Number(element.getAttribute("data-domain-aspect")),
+        renderedAspect: bounds.width / bounds.height,
+        gridGap: grid ? getComputedStyle(grid).gap : null,
+        rowGap: row ? getComputedStyle(row).gap : null,
+        padding: getComputedStyle(element).padding,
+      };
+    });
+    expect(Math.abs(heatmapLayout.declaredAspect - heatmapLayout.renderedAspect)).toBeLessThan(0.03);
+    expect(heatmapLayout.gridGap).toBe("0px");
+    expect(heatmapLayout.rowGap).toBe("0px");
+    expect(heatmapLayout.padding).toBe("0px");
     const fieldControlsPrecedeHeatmap = await heatmap.evaluate((element) => {
       const fieldControl = document.querySelector("#explore-slice-field");
       return Boolean(
@@ -400,6 +414,264 @@ test.describe("mocked smoke: Build, Results, Explore path", () => {
     await expect(page.getByText("Cloud formed here")).toHaveCount(0);
     await expect(page.getByRole("button", { name: /reset camera/i })).toBeVisible();
     await expect(page.getByText(/selected point: x/i)).toBeVisible();
+  });
+
+  test("Trade Cumulus activates the Updraft Lens with bounded process controls", async ({
+    page,
+  }) => {
+    const catalog = await page.evaluate(async () =>
+      fetch("/api/results/result-baseline/visualization/fields").then((response) =>
+        response.json(),
+      ),
+    );
+    const tradeResult = {
+      ...results[0],
+      name: "Trade Cumulus",
+      scenario_id: "bomex_trade_cumulus_baseline_v0",
+      scenario_name: "Trade Cumulus",
+      run_configuration: {
+        ...results[0].run_configuration,
+        case_id: "bomex_trade_cumulus_baseline_v0",
+      },
+    };
+    catalog.scenario_id = "bomex_trade_cumulus_baseline_v0";
+    catalog.available_fields[0] = {
+      ...catalog.available_fields[0],
+      raw_field: "ql",
+      raw_field_name: "ql",
+      display_name: "Cloud liquid",
+    };
+
+    await page.route("**/api/results", (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ results: [tradeResult] }),
+      }),
+    );
+    await page.route("**/api/results/result-baseline/visualization/fields", (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(catalog),
+      }),
+    );
+    await page.route(
+      "**/api/results/result-baseline/visualization/trade-cumulus-updraft-lens/defaults",
+      (route) =>
+        route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify({
+            result_id: "result-baseline",
+            case_id: "bomex_trade_cumulus_baseline_v0",
+            eligible: true,
+            primary_field: "w",
+            cloud_field: "ql",
+            orientation: "vertical_x",
+            default_time_index: 1,
+            default_time_seconds: 1800,
+            default_time_method: "max_finite_domain_mean_cwp_at_or_after_10800_seconds",
+            default_plane_dimension: "y",
+            default_plane_index: 2,
+            default_plane_coordinate: 0.05,
+            default_plane_units: "km",
+            default_plane_method: "greatest_coherent_positive_w_times_ql_score",
+            cloud_threshold_kg_kg: 1e-6,
+            w_range_min_m_s: -0.9,
+            w_range_max_m_s: 0.9,
+            w_range_method: "all_frames_p99_absolute_centered_w",
+            wind_target_level_m: 600,
+            wind_actual_level_m: 580,
+            wind_level_index: 1,
+            wind_default_mode: "perturbation",
+            wind_stride: 8,
+            wind_shown_by_default: true,
+            perturbation_wind_reference_m_s: 0.9,
+            total_wind_reference_m_s: 8.8,
+            wind_arrow_domain_fraction: 0.08,
+            provenance: catalog.provenance,
+            caveats: [],
+          }),
+        }),
+    );
+    await page.route(
+      "**/api/results/result-baseline/visualization/trade-cumulus-updraft-lens/frame**",
+      (route) => {
+        const url = new URL(route.request().url());
+        const windMode = url.searchParams.get("wind_mode") === "total" ? "total" : "perturbation";
+        const orientation =
+          url.searchParams.get("orientation") === "horizontal"
+            ? "horizontal"
+            : url.searchParams.get("orientation") === "vertical_y"
+              ? "vertical_y"
+              : "vertical_x";
+        const planeIndex = Number(url.searchParams.get("plane_index") ?? 2);
+        const timeIndex = Number(url.searchParams.get("time_index") ?? 1);
+        const planeDimension =
+          orientation === "horizontal" ? "z" : orientation === "vertical_y" ? "x" : "y";
+        const dimensionOrder =
+          orientation === "horizontal"
+            ? ["y", "x"]
+            : orientation === "vertical_y"
+              ? ["z", "y"]
+              : ["z", "x"];
+        const wValues =
+          orientation === "horizontal"
+            ? [
+                [-0.9, -0.4, 0.2, 0.6],
+                [-0.5, 0, 0.5, 0.9],
+                [-0.2, 0.3, 0.7, null],
+                [0, 0.1, 0.4, 0.2],
+              ]
+            : [
+                [-0.9, -0.4, 0.2, 0.6],
+                [-0.5, 0, 0.5, 0.9],
+                [-0.2, 0.3, 0.7, null],
+                [0, 0.1, 0.4, 0.2],
+              ];
+        return route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify({
+            result_id: "result-baseline",
+            time_index: timeIndex,
+            time_seconds: [0, 1800, 3600][timeIndex] ?? 1800,
+            orientation,
+            plane_dimension: planeDimension,
+            plane_index: planeIndex,
+            plane_coordinate: [-0.15, -0.05, 0.05, 0.15][planeIndex] ?? 0.05,
+            plane_units: "km",
+            dimension_order: dimensionOrder,
+            x_indices: [0, 1, 2, 3],
+            x_values_km: [-0.15, -0.05, 0.05, 0.15],
+            y_indices: [0, 1, 2, 3],
+            y_values_km: [-0.15, -0.05, 0.05, 0.15],
+            z_indices: [0, 1, 2, 3],
+            z_values_km: [0.1, 0.3, 0.5, 0.7],
+            w_values_m_s: wValues,
+            cloud_mask: [
+              [false, false, false, false],
+              [false, true, true, false],
+              [true, true, true, false],
+              [false, true, false, false],
+            ],
+            cloud_threshold_kg_kg: 1e-6,
+            w_range_min_m_s: -0.9,
+            w_range_max_m_s: 0.9,
+            w_range_method: "fixed",
+            wind_mode: windMode,
+            wind_target_level_m: 600,
+            wind_actual_level_m: 580,
+            wind_level_index: 1,
+            wind_stride: 8,
+            wind_reference_m_s: windMode === "total" ? 8.8 : 0.9,
+            wind_arrow_domain_fraction: 0.08,
+            domain_mean_u_m_s: -8,
+            domain_mean_v_m_s: 0,
+            wind_vectors: [
+              {
+                x_km: 0,
+                y_km: 0,
+                z_km: 0.58,
+                u_m_s: windMode === "total" ? -7.5 : 0.5,
+                v_m_s: 0.2,
+                magnitude_m_s: windMode === "total" ? 7.5 : 0.54,
+              },
+            ],
+            provenance: catalog.provenance,
+            caveats: [],
+          }),
+        });
+      },
+    );
+
+    await page.reload();
+    await gotoResults(page);
+    await page.getByRole("button", { name: "Open in Explore" }).first().click();
+
+    const ordinaryTimeValue = await page.getByRole("combobox", { name: "Time" }).inputValue();
+    const viewMode = page.getByLabel("Explore view mode");
+    await expect(viewMode).toBeVisible();
+    const lensToggle = viewMode.getByRole("button", { name: "Updraft Lens" });
+    await expect(lensToggle).toBeEnabled();
+    await lensToggle.click();
+    await expect(page.getByRole("heading", { name: "Updraft Lens" })).toBeVisible();
+    await expect(page.getByRole("img", { name: /Updraft Lens vertical x-z slice/ })).toBeVisible();
+    await expect(page.getByLabel("Cloud boundary")).toBeChecked();
+    await expect(page.getByRole("checkbox", { name: "Horizontal wind" })).toBeChecked();
+    await expect(page.getByRole("button", { name: "Local departures" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    await expect(page.getByLabel("Horizontal wind overlay legend")).toContainText(
+      "0.9 m/s reference",
+    );
+    await expect(page.getByLabel("Vertical velocity color scale")).toContainText("0.9 m/s");
+    await expect(page.getByLabel("Updraft Lens slice position")).toHaveValue("2");
+    await expect(page.getByRole("button", { name: "Vertical x-z" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    await expect(
+      page.getByText("Updraft Lens slice: Vertical x-z slice at y = 0.05 km", { exact: true }),
+    ).toBeVisible();
+    await expect(page.getByLabel("Slice field")).toHaveCount(0);
+    const scalarField = page.getByLabel("3-D scalar field", { exact: true });
+    await expect(scalarField).toBeVisible();
+    await scalarField.selectOption("qv");
+    await expect(scalarField).toHaveValue("qv");
+    await expect(page.getByLabel("Updraft Lens slice position")).toHaveValue("2");
+    await expect(page.getByRole("img", { name: /y index 2/ })).toBeVisible();
+    await page.getByLabel("Layer opacity").fill("0.45");
+    await page.getByLabel("Point size").fill("14");
+    await expect(page.getByLabel("Layer opacity")).toHaveValue("0.45");
+    await expect(page.getByLabel("Point size")).toHaveValue("14");
+    const sliceAspect = await page.locator(".updraft-lens-svg").evaluate((element) => {
+      const bounds = element.getBoundingClientRect();
+      return {
+        declared: Number(element.getAttribute("data-domain-aspect")),
+        rendered: bounds.width / bounds.height,
+      };
+    });
+    expect(Math.abs(sliceAspect.declared - sliceAspect.rendered)).toBeLessThan(0.03);
+
+    await page.getByRole("button", { name: "Horizontal x-y" }).click();
+    await expect(
+      page.getByRole("img", { name: /Updraft Lens horizontal x-y slice/ }),
+    ).toBeVisible();
+    await expect(page.getByText(/Updraft Lens slice: Horizontal x-y layer at z =/)).toBeVisible();
+    await page.getByRole("button", { name: "Vertical y-z" }).click();
+    await expect(page.getByRole("img", { name: /Updraft Lens vertical y-z slice/ })).toBeVisible();
+    await expect(page.getByText(/Updraft Lens slice: Vertical y-z slice at x =/)).toBeVisible();
+    await page.getByRole("button", { name: "Vertical x-z" }).click();
+    await expect(page.getByRole("img", { name: /Updraft Lens vertical x-z slice/ })).toBeVisible();
+
+    await page.getByLabel("Updraft Lens slice position").fill("3");
+    await expect(page.getByLabel("Updraft Lens slice position")).toHaveValue("3");
+    await expect(page.getByRole("img", { name: /y index 3/ })).toBeVisible();
+    await expect(
+      page.getByText("Updraft Lens slice: Vertical x-z slice at y = 0.15 km", { exact: true }),
+    ).toBeVisible();
+    await page.getByRole("combobox", { name: "Time" }).selectOption({ label: "3,600 s" });
+    await expect(
+      page.getByText("Vertical x-z slice at y = 0.15 km · w · 3,600 s", { exact: true }),
+    ).toBeVisible();
+    await expect(page.getByLabel("Vertical velocity color scale")).toContainText("-0.9");
+    await expect(page.getByLabel("Vertical velocity color scale")).toContainText("0.9 m/s");
+
+    await page.getByRole("button", { name: "Total wind" }).click();
+    await expect(page.getByLabel("Horizontal wind overlay legend")).toContainText(
+      "8.8 m/s reference",
+    );
+    await page.getByLabel("Cloud boundary").uncheck();
+    await expect(page.getByTestId("updraft-lens-cloud-boundary")).toHaveCount(0);
+    await page.getByRole("checkbox", { name: "Horizontal wind" }).uncheck();
+    await expect(page.getByLabel("Horizontal wind overlay legend")).toHaveCount(0);
+    await viewMode.getByRole("button", { name: "Standard" }).click();
+    await expect(page.getByRole("heading", { name: "Inspect the current slice" })).toBeVisible();
+    await expect(page.getByLabel("Slice field")).toBeVisible();
+    await expect(page.getByRole("combobox", { name: "Time" })).toHaveValue(ordinaryTimeValue);
   });
 
   test("Unified Explore plays through saved output times", async ({ page }) => {

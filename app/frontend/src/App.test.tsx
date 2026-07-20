@@ -3166,6 +3166,209 @@ function pointCloudResponse({
   };
 }
 
+const tradeCumulusResultCard = {
+  ...resultCard,
+  result_id: "result-trade-cumulus",
+  run_id: "trade-cumulus",
+  name: "Trade Cumulus",
+  scenario_id: "bomex_trade_cumulus_baseline_v0",
+  scenario_name: "Trade Cumulus",
+  run_configuration: {
+    ...defaultRunConfiguration,
+    case_id: "bomex_trade_cumulus_baseline_v0",
+  },
+};
+
+const tradeCumulusFieldCatalog = {
+  ...fieldCatalogResponse,
+  result_id: "result-trade-cumulus",
+  run_id: "trade-cumulus",
+  scenario_id: "bomex_trade_cumulus_baseline_v0",
+  available_fields: [
+    {
+      ...fieldCatalogResponse.available_fields[0],
+      raw_field_name: "ql",
+      display_name: "Cloud liquid",
+      provenance: {
+        ...provenance,
+        result_id: "result-trade-cumulus",
+        run_id: "trade-cumulus",
+        scenario_id: "bomex_trade_cumulus_baseline_v0",
+      },
+    },
+    fieldCatalogResponse.available_fields[5],
+    fieldCatalogResponse.available_fields[1],
+  ],
+};
+
+const tradeCumulusViewDefaults = {
+  ...viewDefaultsResponse,
+  result_id: "result-trade-cumulus",
+  run_id: "trade-cumulus",
+  scenario_id: "bomex_trade_cumulus_baseline_v0",
+  preferred_field: "ql",
+  fields: {
+    ql: { ...viewDefaultsResponse.fields.qc, field: "ql" },
+    w: viewDefaultsResponse.fields.w,
+  },
+};
+
+const tradeCumulusUpdraftLensDefaults = {
+  result_id: "result-trade-cumulus",
+  case_id: "bomex_trade_cumulus_baseline_v0",
+  eligible: true,
+  primary_field: "w",
+  cloud_field: "ql",
+  orientation: "vertical_x",
+  default_time_index: 2,
+  default_time_seconds: 1800,
+  default_time_method: "max_finite_domain_mean_cwp_at_or_after_10800_seconds",
+  default_plane_dimension: "y",
+  default_plane_index: 1,
+  default_plane_coordinate: 0.05,
+  default_plane_units: "km",
+  default_plane_method: "greatest_coherent_positive_w_times_ql_score",
+  cloud_threshold_kg_kg: 1e-6,
+  w_range_min_m_s: -0.9,
+  w_range_max_m_s: 0.9,
+  w_range_method: "all_frames_p99_absolute_centered_w",
+  wind_target_level_m: 600,
+  wind_actual_level_m: 580,
+  wind_level_index: 1,
+  wind_default_mode: "perturbation",
+  wind_stride: 8,
+  wind_shown_by_default: true,
+  perturbation_wind_reference_m_s: 0.9,
+  total_wind_reference_m_s: 8.8,
+  wind_arrow_domain_fraction: 0.08,
+  provenance: {
+    ...provenance,
+    result_id: "result-trade-cumulus",
+    run_id: "trade-cumulus",
+    scenario_id: "bomex_trade_cumulus_baseline_v0",
+  },
+  caveats: [],
+};
+
+function tradeCumulusUpdraftLensFrame({
+  timeIndex = 2,
+  planeIndex = 1,
+  orientation = "vertical_x",
+  windMode = "perturbation",
+  range = 0.9,
+}: {
+  timeIndex?: number;
+  planeIndex?: number;
+  orientation?: "horizontal" | "vertical_x" | "vertical_y";
+  windMode?: "perturbation" | "total";
+  range?: number;
+} = {}) {
+  const reference = windMode === "perturbation" ? 0.9 : 8.8;
+  const planeDimension =
+    orientation === "horizontal" ? "z" : orientation === "vertical_y" ? "x" : "y";
+  const dimensionOrder =
+    orientation === "horizontal"
+      ? (["y", "x"] as const)
+      : orientation === "vertical_y"
+        ? (["z", "y"] as const)
+        : (["z", "x"] as const);
+  const wValues =
+    orientation === "vertical_y"
+      ? [
+          [-range, range],
+          [null, range / 2],
+        ]
+      : [
+          [-range, 0, range],
+          [null, -range / 2, range / 2],
+        ];
+  const cloudMask = wValues.map((row, rowIndex) =>
+    row.map((_, columnIndex) => rowIndex === 0 || columnIndex === 1),
+  );
+  return {
+    result_id: "result-trade-cumulus",
+    time_index: timeIndex,
+    time_seconds: [0, 900, 1800, 2700][timeIndex] ?? 1800,
+    orientation,
+    plane_dimension: planeDimension,
+    plane_index: planeIndex,
+    plane_coordinate: [-0.05, 0.05][planeIndex] ?? 0.05,
+    plane_units: "km",
+    dimension_order: dimensionOrder,
+    x_indices: [0, 1, 2],
+    x_values_km: [-0.1, 0, 0.1],
+    y_indices: [0, 1],
+    y_values_km: [-0.05, 0.05],
+    z_indices: [0, 1],
+    z_values_km: [0.1, 0.3],
+    w_values_m_s: wValues,
+    cloud_mask: cloudMask,
+    cloud_threshold_kg_kg: 1e-6,
+    w_range_min_m_s: -range,
+    w_range_max_m_s: range,
+    w_range_method: "fixed",
+    wind_mode: windMode,
+    wind_target_level_m: 600,
+    wind_actual_level_m: 580,
+    wind_level_index: 1,
+    wind_stride: 8,
+    wind_reference_m_s: reference,
+    wind_arrow_domain_fraction: 0.08,
+    domain_mean_u_m_s: -8,
+    domain_mean_v_m_s: 0,
+    wind_vectors: [
+      {
+        x_km: 0,
+        y_km: 0,
+        z_km: 0.58,
+        u_m_s: windMode === "perturbation" ? 0.5 : -7.5,
+        v_m_s: 0.2,
+        magnitude_m_s: windMode === "perturbation" ? 0.54 : 7.5,
+      },
+    ],
+    provenance: tradeCumulusUpdraftLensDefaults.provenance,
+    caveats: [],
+  };
+}
+
+function tradeCumulusPointCloudResponse() {
+  const response = pointCloudResponse({ field: "qc", timeIndex: 2 });
+  return {
+    ...response,
+    result_id: "result-trade-cumulus",
+    run_id: "trade-cumulus",
+    scenario_id: "bomex_trade_cumulus_baseline_v0",
+    field: tradeCumulusFieldCatalog.available_fields[0],
+    selection: { ...response.selection, field: "ql" },
+  };
+}
+
+function tradeCumulusSliceResponse(url: string) {
+  const parsed = new URL(url, "http://localhost");
+  const field = parsed.searchParams.get("field") === "w" ? "w" : "qc";
+  const response = sliceResponse({
+    field,
+    orientation:
+      parsed.searchParams.get("orientation") === "vertical_x"
+        ? "vertical_x"
+        : parsed.searchParams.get("orientation") === "vertical_y"
+          ? "vertical_y"
+          : "horizontal",
+    timeIndex: Number(parsed.searchParams.get("time_index") ?? 0),
+    levelIndex: Number(parsed.searchParams.get("level_index") ?? 0),
+  });
+  return {
+    ...response,
+    result_id: "result-trade-cumulus",
+    run_id: "trade-cumulus",
+    scenario_id: "bomex_trade_cumulus_baseline_v0",
+    field:
+      field === "w"
+        ? tradeCumulusFieldCatalog.available_fields[1]
+        : tradeCumulusFieldCatalog.available_fields[0],
+  };
+}
+
 function mockFieldRange(field: MockPointFieldName): { min: number; max: number; mean: number } {
   const ranges: Record<MockPointFieldName, { min: number; max: number; mean: number }> = {
     qc: { min: 0, max: 0.000008, mean: 0.000002 },
@@ -3724,6 +3927,71 @@ async function openSelectedResultInExplore() {
   fireEvent.click(await within(resultDetail).findByRole("button", { name: "Open in Explore" }));
 }
 
+function mockTradeCumulusVisualizer(
+  frameResponse?: (url: string, init?: RequestInit) => Promise<Response>,
+) {
+  const defaultFetch = vi.mocked(fetch).getMockImplementation();
+  vi.mocked(fetch).mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input);
+    if (
+      url === "/api/results/result-trade-cumulus/visualization/trade-cumulus-updraft-lens/defaults"
+    ) {
+      return Promise.resolve(
+        new Response(JSON.stringify(tradeCumulusUpdraftLensDefaults), { status: 200 }),
+      );
+    }
+    if (
+      url.startsWith(
+        "/api/results/result-trade-cumulus/visualization/trade-cumulus-updraft-lens/frame",
+      )
+    ) {
+      if (frameResponse) return frameResponse(url, init);
+      const parsed = new URL(url, "http://localhost");
+      return Promise.resolve(
+        new Response(
+          JSON.stringify(
+            tradeCumulusUpdraftLensFrame({
+              timeIndex: Number(parsed.searchParams.get("time_index") ?? 2),
+              planeIndex: Number(parsed.searchParams.get("plane_index") ?? 1),
+              orientation:
+                parsed.searchParams.get("orientation") === "horizontal"
+                  ? "horizontal"
+                  : parsed.searchParams.get("orientation") === "vertical_y"
+                    ? "vertical_y"
+                    : "vertical_x",
+              windMode: parsed.searchParams.get("wind_mode") === "total" ? "total" : "perturbation",
+            }),
+          ),
+          { status: 200 },
+        ),
+      );
+    }
+    if (url === "/api/results/result-trade-cumulus/visualization/fields") {
+      return Promise.resolve(
+        new Response(JSON.stringify(tradeCumulusFieldCatalog), { status: 200 }),
+      );
+    }
+    if (url.startsWith("/api/results/result-trade-cumulus/visualization/defaults")) {
+      return Promise.resolve(
+        new Response(JSON.stringify(tradeCumulusViewDefaults), { status: 200 }),
+      );
+    }
+    if (url.includes("/api/results/result-trade-cumulus/visualization/point-cloud")) {
+      return Promise.resolve(
+        new Response(JSON.stringify(tradeCumulusPointCloudResponse()), { status: 200 }),
+      );
+    }
+    if (url.includes("/api/results/result-trade-cumulus/visualization/slice")) {
+      return Promise.resolve(
+        new Response(JSON.stringify(tradeCumulusSliceResponse(url)), { status: 200 }),
+      );
+    }
+    return (
+      defaultFetch?.(input, init) ?? Promise.resolve(new Response("not found", { status: 404 }))
+    );
+  });
+}
+
 describe("App", () => {
   it("renders guided Build setup with extensible experiment metadata", async () => {
     render(<App />);
@@ -3968,9 +4236,7 @@ describe("App", () => {
       expect(dryRunBody).toContain('"primary_story":"supercell_environment"');
       expect(dryRunBody).toContain('"candidate_id":"USM00072357-2025052000-supercell"');
       expect(dryRunBody).toContain('"ingredient_score":82');
-      expect(dryRunBody).toContain(
-        '"ingredient_score_label":"Experimental Deep-Tower evidence"',
-      );
+      expect(dryRunBody).toContain('"ingredient_score_label":"Experimental Deep-Tower evidence"');
     });
   });
 
@@ -4022,8 +4288,7 @@ describe("App", () => {
           new Response(
             JSON.stringify({
               ...screeningResponse,
-              candidates:
-                request.support === "supported" ? [] : [activeCandidate],
+              candidates: request.support === "supported" ? [] : [activeCandidate],
               total_candidate_count: 1,
               filtered_candidate_count: request.support === "supported" ? 0 : 1,
               filters: {
@@ -4096,7 +4361,9 @@ describe("App", () => {
     expect(details).toHaveTextContent("Low experimental Deep-Tower evidence.");
     expect(details).toHaveTextContent("Experimental Deep-Tower evidence");
     expect(details).toHaveTextContent("41 %");
-    expect(within(lowCard).getByRole("button", { name: "Configure benchmark probe" })).not.toBeDisabled();
+    expect(
+      within(lowCard).getByRole("button", { name: "Configure benchmark probe" }),
+    ).not.toBeDisabled();
   });
 
   it("keeps humid/rainy candidates with weak deep scores on observed quick-look", async () => {
@@ -4300,9 +4567,7 @@ describe("App", () => {
     const selectedValleyCard = await screen.findByLabelText(
       "Sounding candidate Valley, Nebraska (USM00072558)",
     );
-    expect(
-      screen.getByRole("heading", { name: "Screened cached soundings" }),
-    ).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Screened cached soundings" })).toBeInTheDocument();
 
     fireEvent.click(within(selectedValleyCard).getByRole("button", { name: "Configure run" }));
     fireEvent.click(screen.getByRole("button", { name: "Add to run plan" }));
@@ -6461,6 +6726,163 @@ describe("App", () => {
     );
   });
 
+  it("does not expose the Updraft Lens for an unapproved case", async () => {
+    const visualizerResult = resultCard as unknown as Parameters<
+      typeof VisualizerSceneShell
+    >[0]["result"];
+    render(<VisualizerSceneShell result={visualizerResult} />);
+    await screen.findByText("Slice synced");
+    expect(screen.queryByRole("button", { name: "Updraft Lens" })).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Explore view mode")).not.toBeInTheDocument();
+  });
+
+  it("activates the Updraft Lens, applies defaults, controls overlays, and restores Explore", async () => {
+    mockTradeCumulusVisualizer();
+    const visualizerResult = tradeCumulusResultCard as unknown as Parameters<
+      typeof VisualizerSceneShell
+    >[0]["result"];
+    render(<VisualizerSceneShell result={visualizerResult} />);
+
+    const viewMode = await screen.findByLabelText("Explore view mode");
+    const lensToggle = within(viewMode).getByRole("button", { name: "Updraft Lens" });
+    await waitFor(() => expect(lensToggle).toBeEnabled());
+    expect(within(viewMode).getByRole("button", { name: "Standard" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    expect(screen.queryByRole("heading", { name: "Updraft Lens" })).not.toBeInTheDocument();
+    fireEvent.click(lensToggle);
+
+    expect(await screen.findByRole("heading", { name: "Updraft Lens" })).toBeInTheDocument();
+    expect(
+      await screen.findByRole("img", { name: /Updraft Lens vertical x-z slice/ }),
+    ).toBeInTheDocument();
+    expect(screen.getByLabelText("Time")).toHaveValue("2");
+    expect(screen.getByLabelText("Updraft Lens slice position")).toHaveValue("1");
+    expect(screen.getByRole("button", { name: "Vertical x-z" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    expect(screen.getByLabelText("Cloud boundary")).toBeChecked();
+    expect(screen.getByLabelText("Horizontal wind")).toBeChecked();
+    expect(screen.getByRole("button", { name: "Local departures" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    expect(screen.queryByLabelText("Slice field")).not.toBeInTheDocument();
+    expect(screen.getByLabelText("3-D scalar field")).toHaveValue("ql");
+    fireEvent.change(screen.getByLabelText("3-D scalar field"), { target: { value: "qv" } });
+    expect(screen.getByLabelText("3-D scalar field")).toHaveValue("qv");
+    expect(screen.getByLabelText("Updraft Lens slice position")).toHaveValue("1");
+    await waitFor(() =>
+      expect(fetch).toHaveBeenCalledWith(
+        expect.stringMatching(/orientation=vertical_x.*plane_index=1/),
+        expect.objectContaining({ signal: expect.any(AbortSignal) }),
+      ),
+    );
+    fireEvent.change(screen.getByLabelText("Layer opacity"), { target: { value: "0.45" } });
+    fireEvent.change(screen.getByLabelText("Point size"), { target: { value: "14" } });
+    expect(screen.getByLabelText("Layer opacity")).toHaveValue("0.45");
+    expect(screen.getByLabelText("Point size")).toHaveValue("14");
+    expect(screen.getByLabelText("Horizontal wind overlay legend")).toHaveTextContent(
+      "0.9 m/s reference",
+    );
+    expect(screen.getByText(/Updraft Lens slice: Vertical x-z slice at y =/)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Horizontal x-y" }));
+    expect(
+      await screen.findByRole("img", { name: /Updraft Lens horizontal x-y slice/ }),
+    ).toBeInTheDocument();
+    expect(fetch).toHaveBeenCalledWith(
+      expect.stringContaining("orientation=horizontal"),
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Vertical y-z" }));
+    expect(
+      await screen.findByRole("img", { name: /Updraft Lens vertical y-z slice/ }),
+    ).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Vertical x-z" }));
+    expect(
+      await screen.findByRole("img", { name: /Updraft Lens vertical x-z slice/ }),
+    ).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Total wind" }));
+    await waitFor(() =>
+      expect(screen.getByLabelText("Horizontal wind overlay legend")).toHaveTextContent(
+        "8.8 m/s reference",
+      ),
+    );
+    expect(fetch).toHaveBeenCalledWith(
+      expect.stringContaining("wind_mode=total"),
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
+    );
+
+    fireEvent.click(screen.getByLabelText("Cloud boundary"));
+    expect(screen.queryByTestId("updraft-lens-cloud-boundary")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByLabelText("Horizontal wind"));
+    expect(screen.queryByLabelText("Horizontal wind overlay legend")).not.toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText("Updraft Lens slice position"), {
+      target: { value: "0" },
+    });
+    await waitFor(() =>
+      expect(fetch).toHaveBeenCalledWith(
+        expect.stringContaining("plane_index=0"),
+        expect.objectContaining({ signal: expect.any(AbortSignal) }),
+      ),
+    );
+
+    fireEvent.click(within(viewMode).getByRole("button", { name: "Standard" }));
+    expect(await screen.findByLabelText("Slice field")).toBeInTheDocument();
+    expect(screen.getByLabelText("3-D scalar field")).toBeInTheDocument();
+    expect(screen.getByLabelText("Time")).toHaveValue("3");
+    expect(screen.queryByRole("heading", { name: "Updraft Lens" })).not.toBeInTheDocument();
+  });
+
+  it("ignores stale Updraft Lens frame responses", async () => {
+    let resolveFirst: ((response: Response) => void) | undefined;
+    let resolveSecond: ((response: Response) => void) | undefined;
+    mockTradeCumulusVisualizer((url) => {
+      const parsed = new URL(url, "http://localhost");
+      const timeIndex = Number(parsed.searchParams.get("time_index"));
+      return new Promise<Response>((resolve) => {
+        if (timeIndex === 2) resolveFirst = resolve;
+        else resolveSecond = resolve;
+      });
+    });
+    const visualizerResult = tradeCumulusResultCard as unknown as Parameters<
+      typeof VisualizerSceneShell
+    >[0]["result"];
+    render(<VisualizerSceneShell result={visualizerResult} />);
+
+    const lensToggle = await screen.findByRole("button", { name: "Updraft Lens" });
+    await waitFor(() => expect(lensToggle).toBeEnabled());
+    fireEvent.click(lensToggle);
+    await waitFor(() => expect(resolveFirst).toBeDefined());
+    fireEvent.change(screen.getByLabelText("Time"), { target: { value: "1" } });
+    await waitFor(() => expect(resolveSecond).toBeDefined());
+
+    await act(async () => {
+      resolveSecond?.(
+        new Response(JSON.stringify(tradeCumulusUpdraftLensFrame({ timeIndex: 1, range: 1.4 })), {
+          status: 200,
+        }),
+      );
+    });
+    const legend = await screen.findByLabelText("Vertical velocity color scale");
+    expect(legend).toHaveTextContent("1.4 m/s");
+
+    await act(async () => {
+      resolveFirst?.(
+        new Response(JSON.stringify(tradeCumulusUpdraftLensFrame({ timeIndex: 2, range: 0.9 })), {
+          status: 200,
+        }),
+      );
+    });
+    expect(legend).toHaveTextContent("1.4 m/s");
+    expect(legend).not.toHaveTextContent("0.9 m/s");
+  });
+
   it("opens the 2-D field inspector from a result and shows qc slices", async () => {
     render(<App />);
 
@@ -6482,6 +6904,11 @@ describe("App", () => {
     expect(screen.getByRole("button", { name: "Move up" })).toBeInTheDocument();
     const horizontalHeatmap = screen.getByLabelText(/Horizontal layer at z = .* heatmap/);
     expect(horizontalHeatmap).toBeInTheDocument();
+    expect(horizontalHeatmap).toHaveAttribute("data-domain-aspect", "1.000000");
+    expect(within(horizontalHeatmap).getByTestId("slice-cloud-boundary")).toBeInTheDocument();
+    const minimumCell = within(horizontalHeatmap).getByRole("button", { name: /row 1, column 1/i });
+    const maximumCell = within(horizontalHeatmap).getByRole("button", { name: /row 2, column 3/i });
+    expect(minimumCell.style.background).not.toBe(maximumCell.style.background);
     const colorScale = screen.getByLabelText(/Horizontal layer at z = .* color scale/);
     expect(colorScale).toBeInTheDocument();
     expect(colorScale.querySelector(".heatmap-scale-cloud-water")).not.toBeNull();

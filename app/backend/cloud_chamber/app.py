@@ -85,6 +85,13 @@ from cloud_chamber.sounding_candidates import (
     screen_cached_soundings,
     update_saved_candidate,
 )
+from cloud_chamber.trade_cumulus_updraft_lens import (
+    LensOrientation,
+    TradeCumulusUpdraftLensError,
+    WindMode,
+    trade_cumulus_updraft_lens_defaults,
+    trade_cumulus_updraft_lens_frame,
+)
 from cloud_chamber.visualization_data import (
     ProfileAggregationMethod,
     TimeHeightAggregationMethod,
@@ -699,6 +706,45 @@ def get_visualization_point_cloud(
     except ResultIngestError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except VisualizationDataError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return result.model_dump(mode="json")
+
+
+@app.get("/api/results/{result_id}/visualization/trade-cumulus-updraft-lens/defaults")
+def get_trade_cumulus_updraft_lens_defaults(result_id: str) -> dict[str, object]:
+    try:
+        result = trade_cumulus_updraft_lens_defaults(load_settings(), result_id)
+    except ResultIngestError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except TradeCumulusUpdraftLensError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return result.model_dump(mode="json")
+
+
+@app.get("/api/results/{result_id}/visualization/trade-cumulus-updraft-lens/frame")
+def get_trade_cumulus_updraft_lens_frame(
+    result_id: str,
+    time_index: int,
+    plane_index: int,
+    orientation: str = "vertical_x",
+    wind_mode: str = "perturbation",
+) -> dict[str, object]:
+    if orientation not in {"horizontal", "vertical_x", "vertical_y"}:
+        raise HTTPException(status_code=400, detail=f"Unsupported orientation: {orientation}")
+    if wind_mode not in {"perturbation", "total"}:
+        raise HTTPException(status_code=400, detail=f"Unsupported wind_mode: {wind_mode}")
+    try:
+        result = trade_cumulus_updraft_lens_frame(
+            load_settings(),
+            result_id,
+            time_index=time_index,
+            orientation=cast(LensOrientation, orientation),
+            plane_index=plane_index,
+            wind_mode=cast(WindMode, wind_mode),
+        )
+    except ResultIngestError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except TradeCumulusUpdraftLensError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return result.model_dump(mode="json")
 
