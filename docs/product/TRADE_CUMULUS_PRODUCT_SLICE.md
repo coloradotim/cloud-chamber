@@ -154,10 +154,10 @@ It represents the rate at which the idealized lower boundary supplies water vapo
 
 The first validation exposes exactly two states:
 
-| State | Product meaning | CM1-facing moisture flux |
-| --- | --- | ---: |
-| Baseline | Canonical BOMEX surface moisture supply | `5.2e-5 g/g m/s` |
-| More moisture | Fifty percent stronger surface moisture supply | `7.8e-5 g/g m/s` |
+| State         | Product meaning                                | CM1-facing moisture flux |
+| ------------- | ---------------------------------------------- | -----------------------: |
+| Baseline      | Canonical BOMEX surface moisture supply        |         `5.2e-5 g/g m/s` |
+| More moisture | Fifty percent stronger surface moisture supply |         `7.8e-5 g/g m/s` |
 
 The product should present understandable states, not a raw free-form CM1 parameter.
 
@@ -269,26 +269,34 @@ For a single Simulation:
 
 If no qualifying overlap exists, fall back first to a plane through the largest coherent cloud-liquid object, then to the domain midpoint.
 
-### Vertical-velocity palette
+### Fixed Trade Cumulus vertical-velocity scale
 
-Use a divergent palette with a physically meaningful zero:
+The Updraft Lens uses the world-owned fixed scale:
 
 ```text
-negative vertical velocity → blue
-near zero → neutral
-positive vertical velocity → red
+trade_cumulus_updraft_velocity_v1
 ```
 
-The default range must:
+Every eligible Trade Cumulus Simulation, frame, slice orientation, and Comparison uses the same discrete vertical-velocity encoding:
 
-- be symmetric about zero;
-- be robust to isolated extrema;
-- remain fixed through playback;
-- be visibly labeled in `m/s`.
+| Vertical velocity    | Color     | Interpretation                 |
+| -------------------- | --------- | ------------------------------ |
+| `< -1.0 m/s`         | `#4b0082` | strongest or clipped downdraft |
+| `-1.0 to < -0.5 m/s` | `#0057d9` | downdraft                      |
+| `-0.5 to < -0.1 m/s` | `#00c9d8` | weak downdraft                 |
+| `-0.1 to < 0.1 m/s`  | `#ffffff` | near-neutral motion            |
+| `0.1 to < 0.5 m/s`   | `#00d63b` | weak updraft                   |
+| `0.5 to < 1.0 m/s`   | `#8fe000` | moderate updraft               |
+| `1.0 to < 2.0 m/s`   | `#ffe000` | active updraft                 |
+| `2.0 to < 3.0 m/s`   | `#ff9800` | strong updraft                 |
+| `3.0 to < 5.0 m/s`   | `#ff3b00` | very strong updraft            |
+| `>= 5.0 m/s`         | `#c40000` | exceptional or clipped updraft |
 
-For a Comparison, derive one shared symmetric range from both Simulations and keep it fixed across both views and all synchronized frames.
+Values outside the finite outer breakpoints use the endpoint colors. Per-slice clipping counts remain available in the Lens payload for technical diagnostics, while the visible legend reports the current slice minimum and maximum. Missing values remain distinct from neutral motion.
 
-Do not rescale each frame independently.
+This scale is specific to the Trade Cumulus Cloud World. It is not a universal Cloud Chamber vertical-velocity scale and does not determine the appropriate Updraft Lens scale for deep convection or another Cloud World.
+
+The scale remains fixed through playback and is shared across Comparisons. It is never rescaled independently by frame, plane, Simulation, or viewer session.
 
 ### Slice rendering
 
@@ -347,7 +355,7 @@ The Comparison contains:
 - the meaningful changed condition stated plainly;
 - synchronized model time;
 - a shared default vertical plane;
-- a shared `w` range;
+- the shared fixed Trade Cumulus Updraft Scale v1;
 - a shared cloud threshold;
 - shared horizontal-wind overlay settings;
 - the same scientific and numerical assumptions except for surface moisture supply.
@@ -430,12 +438,12 @@ Automated causal reasoning is not required.
 
 ## 9. Candidate status and graduation
 
-| Product element | Current status |
-| --- | --- |
-| Trade Cumulus Cloud World | Candidate |
-| Canonical BOMEX Baseline Recipe | Candidate |
-| Surface moisture supply Control | Experimental |
-| Updraft Lens for Trade Cumulus | Candidate |
+| Product element                          | Current status     |
+| ---------------------------------------- | ------------------ |
+| Trade Cumulus Cloud World                | Candidate          |
+| Canonical BOMEX Baseline Recipe          | Candidate          |
+| Surface moisture supply Control          | Experimental       |
+| Updraft Lens for Trade Cumulus           | Candidate          |
 | Baseline versus More Moisture Comparison | Planned validation |
 
 The slice may advance only when the matched implementation demonstrates:

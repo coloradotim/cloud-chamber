@@ -1,4 +1,4 @@
-import { updraftLensColor } from "./UpdraftLensSlice";
+import { updraftLensDiscreteColor } from "./UpdraftLensSlice";
 
 const DEFAULT_SCALAR_POINT_PIXEL_SIZE = 11;
 const MIN_SCALAR_POINT_PIXEL_SIZE = 3;
@@ -45,8 +45,8 @@ export function updraftLensTextureData(
   values: Array<Array<number | null>>,
   width: number,
   height: number,
-  rangeMinimum: number,
-  rangeMaximum: number,
+  breakpoints: number[],
+  colors: string[],
 ): Uint8Array {
   const resolvedWidth = Math.max(1, Math.trunc(width));
   const resolvedHeight = Math.max(1, Math.trunc(height));
@@ -55,7 +55,7 @@ export function updraftLensTextureData(
     for (let xIndex = 0; xIndex < resolvedWidth; xIndex += 1) {
       const offset = (zIndex * resolvedWidth + xIndex) * 4;
       const [red, green, blue] = hexColorChannels(
-        updraftLensColor(values[zIndex]?.[xIndex] ?? null, rangeMinimum, rangeMaximum),
+        updraftLensDiscreteColor(values[zIndex]?.[xIndex] ?? null, breakpoints, colors),
       );
       data[offset] = red;
       data[offset + 1] = green;

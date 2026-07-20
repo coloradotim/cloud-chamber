@@ -6,6 +6,7 @@ import {
   updraftLensTextureData,
   windArrowLength,
 } from "./True3DViewer.utils";
+import { updraftLensDiscreteColor } from "./UpdraftLensSlice";
 
 describe("True3DViewer scalar point sizing", () => {
   it("uses the UI point-size value as a bounded screen-pixel size", () => {
@@ -42,21 +43,39 @@ describe("True3DViewer wind arrow scaling", () => {
 
 describe("True3DViewer Updraft Lens texture", () => {
   it("uses the exact fixed-scale colors and missing-data color", () => {
-    expect(
-      Array.from(
-        updraftLensTextureData(
-          [
-            [-1, 0],
-            [1, null],
-          ],
-          2,
-          2,
-          -1,
-          1,
-        ),
-      ),
-    ).toEqual([
-      0x21, 0x66, 0xac, 255, 0xf7, 0xf7, 0xf7, 255, 0xb2, 0x18, 0x2b, 255, 0x74, 0x7b, 0x80, 255,
+    const breakpoints = [-1.0, -0.5, -0.1, 0.1, 0.5, 1.0, 2.0, 3.0, 5.0];
+    const colors = [
+      "#4b0082",
+      "#0057d9",
+      "#00c9d8",
+      "#ffffff",
+      "#00d63b",
+      "#8fe000",
+      "#ffe000",
+      "#ff9800",
+      "#ff3b00",
+      "#c40000",
+    ];
+    const values = [
+      [-1.01, -1.0, -0.1, 0],
+      [0.1, 1.0, 5.0, null],
+    ];
+    const textureBytes = Array.from(updraftLensTextureData(values, 4, 2, breakpoints, colors));
+    expect(textureBytes).toEqual([
+      0x4b, 0x00, 0x82, 255, 0x00, 0x57, 0xd9, 255, 0xff, 0xff, 0xff, 255, 0xff, 0xff, 0xff, 255,
+      0x00, 0xd6, 0x3b, 255, 0xff, 0xe0, 0x00, 255, 0xc4, 0x00, 0x00, 255, 0x74, 0x7b, 0x80, 255,
     ]);
+    const sliceBytes = values.flatMap((row) =>
+      row.flatMap((value) => {
+        const color = updraftLensDiscreteColor(value, breakpoints, colors);
+        return [
+          Number.parseInt(color.slice(1, 3), 16),
+          Number.parseInt(color.slice(3, 5), 16),
+          Number.parseInt(color.slice(5, 7), 16),
+          255,
+        ];
+      }),
+    );
+    expect(textureBytes).toEqual(sliceBytes);
   });
 });

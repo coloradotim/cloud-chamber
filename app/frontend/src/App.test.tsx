@@ -3213,6 +3213,33 @@ const tradeCumulusViewDefaults = {
   },
 };
 
+const tradeCumulusUpdraftScale = {
+  w_range_min_m_s: -1.0,
+  w_range_max_m_s: 5.0,
+  w_range_method: "fixed_trade_cumulus_updraft_velocity_v1",
+  w_scale_id: "trade_cumulus_updraft_velocity_v1",
+  w_scale_owner: "trade_cumulus",
+  w_scale_type: "fixed_discrete",
+  w_scale_units: "m/s",
+  w_scale_breakpoints_m_s: [-1.0, -0.5, -0.1, 0.1, 0.5, 1.0, 2.0, 3.0, 5.0],
+  w_scale_colors: [
+    "#4b0082",
+    "#0057d9",
+    "#00c9d8",
+    "#ffffff",
+    "#00d63b",
+    "#8fe000",
+    "#ffe000",
+    "#ff9800",
+    "#ff3b00",
+    "#c40000",
+  ],
+  w_scale_neutral_interval_m_s: [-0.1, 0.1],
+  w_scale_source: "pm_approved_issue_379_from_stage5b2_matched_pair",
+  w_scale_clipping_behavior:
+    "values_below_-1.0_and_at_or_above_5.0_use_endpoint_colors_and_are_reported_as_clipped",
+} as const;
+
 const tradeCumulusUpdraftLensDefaults = {
   result_id: "result-trade-cumulus",
   case_id: "bomex_trade_cumulus_baseline_v0",
@@ -3229,9 +3256,7 @@ const tradeCumulusUpdraftLensDefaults = {
   default_plane_units: "km",
   default_plane_method: "greatest_coherent_positive_w_times_ql_score",
   cloud_threshold_kg_kg: 1e-6,
-  w_range_min_m_s: -0.9,
-  w_range_max_m_s: 0.9,
-  w_range_method: "all_frames_p99_absolute_centered_w",
+  ...tradeCumulusUpdraftScale,
   wind_target_level_m: 600,
   wind_actual_level_m: 580,
   wind_level_index: 1,
@@ -3255,13 +3280,13 @@ function tradeCumulusUpdraftLensFrame({
   planeIndex = 1,
   orientation = "vertical_x",
   windMode = "perturbation",
-  range = 0.9,
+  valueRange = 0.9,
 }: {
   timeIndex?: number;
   planeIndex?: number;
   orientation?: "horizontal" | "vertical_x" | "vertical_y";
   windMode?: "perturbation" | "total";
-  range?: number;
+  valueRange?: number;
 } = {}) {
   const reference = windMode === "perturbation" ? 0.9 : 8.8;
   const planeDimension =
@@ -3275,16 +3300,19 @@ function tradeCumulusUpdraftLensFrame({
   const wValues =
     orientation === "vertical_y"
       ? [
-          [-range, range],
-          [null, range / 2],
+          [-valueRange, valueRange],
+          [null, valueRange / 2],
         ]
       : [
-          [-range, 0, range],
-          [null, -range / 2, range / 2],
+          [-valueRange, 0, valueRange],
+          [null, -valueRange / 2, valueRange / 2],
         ];
   const cloudMask = wValues.map((row, rowIndex) =>
     row.map((_, columnIndex) => rowIndex === 0 || columnIndex === 1),
   );
+  const finiteW = wValues.flat().filter((value): value is number => Number.isFinite(value));
+  const lowClippedCount = finiteW.filter((value) => value < -1.0).length;
+  const highClippedCount = finiteW.filter((value) => value >= 5.0).length;
   return {
     result_id: "result-trade-cumulus",
     time_index: timeIndex,
@@ -3304,9 +3332,12 @@ function tradeCumulusUpdraftLensFrame({
     w_values_m_s: wValues,
     cloud_mask: cloudMask,
     cloud_threshold_kg_kg: 1e-6,
-    w_range_min_m_s: -range,
-    w_range_max_m_s: range,
-    w_range_method: "fixed",
+    ...tradeCumulusUpdraftScale,
+    w_finite_count: finiteW.length,
+    w_low_clipped_count: lowClippedCount,
+    w_high_clipped_count: highClippedCount,
+    w_low_clipped_fraction: finiteW.length ? lowClippedCount / finiteW.length : null,
+    w_high_clipped_fraction: finiteW.length ? highClippedCount / finiteW.length : null,
     wind_mode: windMode,
     wind_target_level_m: 600,
     wind_actual_level_m: 580,
@@ -6787,6 +6818,13 @@ describe("App", () => {
     expect(screen.getByLabelText("Horizontal wind overlay legend")).toHaveTextContent(
       "0.9 m/s reference",
     );
+    expect(screen.getAllByText("Vertical velocity (w), m/s")).toHaveLength(2);
+    expect(screen.getByLabelText(/2-D inspector Vertical velocity \(w\), m\/s/)).toHaveTextContent(
+      "-0.1 to < 0.1",
+    );
+    expect(screen.getByLabelText(/3-D viewer Vertical velocity \(w\), m\/s/)).toHaveTextContent(
+      "m/s",
+    );
     expect(screen.getByText(/Updraft Lens slice: Vertical x-z slice at y =/)).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Horizontal x-y" }));
@@ -6864,23 +6902,31 @@ describe("App", () => {
 
     await act(async () => {
       resolveSecond?.(
-        new Response(JSON.stringify(tradeCumulusUpdraftLensFrame({ timeIndex: 1, range: 1.4 })), {
-          status: 200,
-        }),
+        new Response(
+          JSON.stringify(tradeCumulusUpdraftLensFrame({ timeIndex: 1, valueRange: 1.4 })),
+          { status: 200 },
+        ),
       );
     });
-    const legend = await screen.findByLabelText("Vertical velocity color scale");
-    expect(legend).toHaveTextContent("1.4 m/s");
+    const legend = await screen.findByLabelText(/2-D inspector Vertical velocity \(w\), m\/s/);
+    expect(legend).toHaveTextContent("Vertical velocity (w), m/s");
+    expect(screen.getAllByText("Slice maximum 1.40 m/s.")).toHaveLength(2);
+    expect(screen.getAllByText("Slice minimum -1.40 m/s.")).toHaveLength(2);
 
     await act(async () => {
       resolveFirst?.(
-        new Response(JSON.stringify(tradeCumulusUpdraftLensFrame({ timeIndex: 2, range: 0.9 })), {
-          status: 200,
-        }),
+        new Response(
+          JSON.stringify(tradeCumulusUpdraftLensFrame({ timeIndex: 2, valueRange: 0.9 })),
+          { status: 200 },
+        ),
       );
     });
-    expect(legend).toHaveTextContent("1.4 m/s");
-    expect(legend).not.toHaveTextContent("0.9 m/s");
+    expect(legend).toHaveTextContent("Vertical velocity (w), m/s");
+    expect(screen.getAllByText("Slice maximum 1.40 m/s.")).toHaveLength(2);
+    expect(screen.getAllByText("Slice minimum -1.40 m/s.")).toHaveLength(2);
+    expect(screen.queryByText("Slice maximum 0.90 m/s.")).not.toBeInTheDocument();
+    expect(screen.queryByText("Slice minimum -0.90 m/s.")).not.toBeInTheDocument();
+    expect(screen.queryByText(/Clipped in this slice/)).not.toBeInTheDocument();
   });
 
   it("opens the 2-D field inspector from a result and shows qc slices", async () => {

@@ -7,7 +7,7 @@ import math
 from collections import OrderedDict
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, Literal, TypedDict
 
 import numpy as np
 from pydantic import BaseModel, ConfigDict, Field
@@ -20,6 +20,40 @@ CLOUD_THRESHOLD_KG_KG = 1e-6
 W_PERCENTILE = 99
 W_MIN_RANGE_M_S = 0.5
 W_ROUNDING_M_S = 0.1
+TRADE_CUMULUS_UPDRAFT_SCALE_ID = "trade_cumulus_updraft_velocity_v1"
+TRADE_CUMULUS_UPDRAFT_SCALE_OWNER = "trade_cumulus"
+TRADE_CUMULUS_UPDRAFT_LENS_ID = "updraft"
+TRADE_CUMULUS_UPDRAFT_SCALE_TYPE: Literal["fixed_discrete"] = "fixed_discrete"
+TRADE_CUMULUS_UPDRAFT_SCALE_UNITS: Literal["m/s"] = "m/s"
+TRADE_CUMULUS_UPDRAFT_SCALE_BREAKPOINTS_M_S = (
+    -1.0,
+    -0.5,
+    -0.1,
+    0.1,
+    0.5,
+    1.0,
+    2.0,
+    3.0,
+    5.0,
+)
+TRADE_CUMULUS_UPDRAFT_SCALE_COLORS = (
+    "#4b0082",
+    "#0057d9",
+    "#00c9d8",
+    "#ffffff",
+    "#00d63b",
+    "#8fe000",
+    "#ffe000",
+    "#ff9800",
+    "#ff3b00",
+    "#c40000",
+)
+TRADE_CUMULUS_UPDRAFT_SCALE_NEUTRAL_INTERVAL_M_S = (-0.1, 0.1)
+TRADE_CUMULUS_UPDRAFT_SCALE_SOURCE = "pm_approved_issue_379_from_stage5b2_matched_pair"
+TRADE_CUMULUS_UPDRAFT_SCALE_CLIPPING_BEHAVIOR = (
+    "values_below_-1.0_and_at_or_above_5.0_use_endpoint_colors_and_are_reported_as_clipped"
+)
+TRADE_CUMULUS_UPDRAFT_RANGE_METHOD = "fixed_trade_cumulus_updraft_velocity_v1"
 WIND_TARGET_LEVEL_M = 600
 WIND_STRIDE = 8
 WIND_PERCENTILE = 95
@@ -28,6 +62,23 @@ WIND_ARROW_DOMAIN_FRACTION = 0.08
 MIN_COHERENT_CLOUD_CELLS = 10
 
 WindMode = Literal["perturbation", "total"]
+
+
+class _WScalePayload(TypedDict):
+    w_range_min_m_s: float
+    w_range_max_m_s: float
+    w_range_method: str
+    w_scale_id: str
+    w_scale_owner: str
+    w_scale_type: Literal["fixed_discrete"]
+    w_scale_units: Literal["m/s"]
+    w_scale_breakpoints_m_s: list[float]
+    w_scale_colors: list[str]
+    w_scale_neutral_interval_m_s: list[float]
+    w_scale_source: str
+    w_scale_clipping_behavior: str
+
+
 LensOrientation = Literal["horizontal", "vertical_x", "vertical_y"]
 LensDimension = Literal["x", "y", "z"]
 
@@ -69,6 +120,15 @@ class TradeCumulusUpdraftLensDefaults(BaseModel):
     w_range_min_m_s: float
     w_range_max_m_s: float
     w_range_method: str
+    w_scale_id: str
+    w_scale_owner: str
+    w_scale_type: Literal["fixed_discrete"]
+    w_scale_units: Literal["m/s"]
+    w_scale_breakpoints_m_s: list[float]
+    w_scale_colors: list[str]
+    w_scale_neutral_interval_m_s: list[float]
+    w_scale_source: str
+    w_scale_clipping_behavior: str
     wind_target_level_m: float = WIND_TARGET_LEVEL_M
     wind_actual_level_m: float
     wind_level_index: int
@@ -117,6 +177,20 @@ class TradeCumulusUpdraftLensFrame(BaseModel):
     w_range_min_m_s: float
     w_range_max_m_s: float
     w_range_method: str
+    w_scale_id: str
+    w_scale_owner: str
+    w_scale_type: Literal["fixed_discrete"]
+    w_scale_units: Literal["m/s"]
+    w_scale_breakpoints_m_s: list[float]
+    w_scale_colors: list[str]
+    w_scale_neutral_interval_m_s: list[float]
+    w_scale_source: str
+    w_scale_clipping_behavior: str
+    w_finite_count: int
+    w_low_clipped_count: int
+    w_high_clipped_count: int
+    w_low_clipped_fraction: float | None
+    w_high_clipped_fraction: float | None
     wind_mode: WindMode
     wind_target_level_m: float = WIND_TARGET_LEVEL_M
     wind_actual_level_m: float
@@ -246,6 +320,18 @@ def trade_cumulus_updraft_lens_frame(
             y_values,
             cached.response.wind_actual_level_m / 1000.0,
         )
+        finite_w = np.isfinite(w_slice)
+        w_finite_count = int(np.count_nonzero(finite_w))
+        w_low_clipped_count = int(
+            np.count_nonzero(finite_w & (w_slice < TRADE_CUMULUS_UPDRAFT_SCALE_BREAKPOINTS_M_S[0]))
+        )
+        w_high_clipped_count = int(
+            np.count_nonzero(
+                finite_w & (w_slice >= TRADE_CUMULUS_UPDRAFT_SCALE_BREAKPOINTS_M_S[-1])
+            )
+        )
+        w_low_clipped_fraction = w_low_clipped_count / w_finite_count if w_finite_count else None
+        w_high_clipped_fraction = w_high_clipped_count / w_finite_count if w_finite_count else None
 
         return TradeCumulusUpdraftLensFrame(
             result_id=metadata.result_id,
@@ -265,9 +351,12 @@ def trade_cumulus_updraft_lens_frame(
             z_values_km=[float(value) for value in z_values],
             w_values_m_s=_json_float_matrix(w_slice),
             cloud_mask=cloud_slice.astype(bool).tolist(),
-            w_range_min_m_s=cached.response.w_range_min_m_s,
-            w_range_max_m_s=cached.response.w_range_max_m_s,
-            w_range_method=cached.response.w_range_method,
+            **_w_scale_payload(),
+            w_finite_count=w_finite_count,
+            w_low_clipped_count=w_low_clipped_count,
+            w_high_clipped_count=w_high_clipped_count,
+            w_low_clipped_fraction=w_low_clipped_fraction,
+            w_high_clipped_fraction=w_high_clipped_fraction,
             wind_mode=wind_mode,
             wind_actual_level_m=cached.response.wind_actual_level_m,
             wind_level_index=wind_level_index,
@@ -319,7 +408,6 @@ def _cached_defaults(metadata: ResultMetadata) -> _CachedDefaults:
 def _compute_defaults(metadata: ResultMetadata, paths: list[Path]) -> _CachedDefaults:
     frames: list[_FrameLocation] = []
     cwp_scores: list[float | None] = []
-    absolute_w: list[np.ndarray[Any, np.dtype[np.floating[Any]]]] = []
     perturbation_speeds: list[np.ndarray[Any, np.dtype[np.floating[Any]]]] = []
     total_speeds: list[np.ndarray[Any, np.dtype[np.floating[Any]]]] = []
     wind_level_index: int | None = None
@@ -333,9 +421,6 @@ def _compute_defaults(metadata: ResultMetadata, paths: list[Path]) -> _CachedDef
             local_count = _time_count(dataset)
             for local_index in range(local_count):
                 ql, dimensions = _scalar_ql(dataset, local_index)
-                w = center_vertical_velocity_to_scalar_grid(
-                    dataset, local_index, dimensions, ql.shape
-                )
                 if first_dimensions is None:
                     first_dimensions = dimensions
                 elif dimensions != first_dimensions:
@@ -352,10 +437,6 @@ def _compute_defaults(metadata: ResultMetadata, paths: list[Path]) -> _CachedDef
                     )
                 )
                 cwp_scores.append(_domain_mean_cwp(dataset, local_index))
-                finite_absolute_w = np.abs(w[np.isfinite(w)])
-                if finite_absolute_w.size:
-                    absolute_w.append(finite_absolute_w.astype(np.float32, copy=False))
-
                 if wind_level_index is None:
                     z_values_m = _coordinate_as(dataset, dimensions[0], "m", ql.shape[0])
                     wind_level_index = int(np.argmin(np.abs(z_values_m - WIND_TARGET_LEVEL_M)))
@@ -404,7 +485,6 @@ def _compute_defaults(metadata: ResultMetadata, paths: list[Path]) -> _CachedDef
     finally:
         selected_dataset.close()
 
-    w_range = rounded_percentile_reference(absolute_w, W_PERCENTILE, W_MIN_RANGE_M_S)
     perturbation_reference = rounded_percentile_reference(
         perturbation_speeds, WIND_PERCENTILE, WIND_MIN_REFERENCE_M_S
     )
@@ -422,9 +502,7 @@ def _compute_defaults(metadata: ResultMetadata, paths: list[Path]) -> _CachedDef
         default_plane_coordinate=default_plane_coordinate,
         default_plane_units=default_plane_units,
         default_plane_method=default_plane_method,
-        w_range_min_m_s=-w_range,
-        w_range_max_m_s=w_range,
-        w_range_method=("all_frames_p99_absolute_centered_w_rounded_up_0.1_m_s_with_0.5_m_s_floor"),
+        **_w_scale_payload(),
         wind_actual_level_m=wind_actual_level_m,
         wind_level_index=wind_level_index,
         perturbation_wind_reference_m_s=perturbation_reference,
@@ -433,10 +511,27 @@ def _compute_defaults(metadata: ResultMetadata, paths: list[Path]) -> _CachedDef
         caveats=[
             *time_caveats,
             "candidate_trade_cumulus_lens_not_a_supported_product",
-            "fixed_scales_are_derived_from_this_result_only",
+            "world_owned_fixed_scale_is_specific_to_trade_cumulus",
         ],
     )
     return _CachedDefaults(response=response, frames=tuple(frames))
+
+
+def _w_scale_payload() -> _WScalePayload:
+    return {
+        "w_range_min_m_s": TRADE_CUMULUS_UPDRAFT_SCALE_BREAKPOINTS_M_S[0],
+        "w_range_max_m_s": TRADE_CUMULUS_UPDRAFT_SCALE_BREAKPOINTS_M_S[-1],
+        "w_range_method": TRADE_CUMULUS_UPDRAFT_RANGE_METHOD,
+        "w_scale_id": TRADE_CUMULUS_UPDRAFT_SCALE_ID,
+        "w_scale_owner": TRADE_CUMULUS_UPDRAFT_SCALE_OWNER,
+        "w_scale_type": TRADE_CUMULUS_UPDRAFT_SCALE_TYPE,
+        "w_scale_units": TRADE_CUMULUS_UPDRAFT_SCALE_UNITS,
+        "w_scale_breakpoints_m_s": list(TRADE_CUMULUS_UPDRAFT_SCALE_BREAKPOINTS_M_S),
+        "w_scale_colors": list(TRADE_CUMULUS_UPDRAFT_SCALE_COLORS),
+        "w_scale_neutral_interval_m_s": list(TRADE_CUMULUS_UPDRAFT_SCALE_NEUTRAL_INTERVAL_M_S),
+        "w_scale_source": TRADE_CUMULUS_UPDRAFT_SCALE_SOURCE,
+        "w_scale_clipping_behavior": TRADE_CUMULUS_UPDRAFT_SCALE_CLIPPING_BEHAVIOR,
+    }
 
 
 def _select_default_time(

@@ -386,7 +386,9 @@ test.describe("mocked smoke: Build, Results, Explore path", () => {
         padding: getComputedStyle(element).padding,
       };
     });
-    expect(Math.abs(heatmapLayout.declaredAspect - heatmapLayout.renderedAspect)).toBeLessThan(0.03);
+    expect(Math.abs(heatmapLayout.declaredAspect - heatmapLayout.renderedAspect)).toBeLessThan(
+      0.03,
+    );
     expect(heatmapLayout.gridGap).toBe("0px");
     expect(heatmapLayout.rowGap).toBe("0px");
     expect(heatmapLayout.padding).toBe("0px");
@@ -441,6 +443,32 @@ test.describe("mocked smoke: Build, Results, Explore path", () => {
       raw_field_name: "ql",
       display_name: "Cloud liquid",
     };
+    const updraftScale = {
+      w_range_min_m_s: -1.0,
+      w_range_max_m_s: 5.0,
+      w_range_method: "fixed_trade_cumulus_updraft_velocity_v1",
+      w_scale_id: "trade_cumulus_updraft_velocity_v1",
+      w_scale_owner: "trade_cumulus",
+      w_scale_type: "fixed_discrete",
+      w_scale_units: "m/s",
+      w_scale_breakpoints_m_s: [-1.0, -0.5, -0.1, 0.1, 0.5, 1.0, 2.0, 3.0, 5.0],
+      w_scale_colors: [
+        "#4b0082",
+        "#0057d9",
+        "#00c9d8",
+        "#ffffff",
+        "#00d63b",
+        "#8fe000",
+        "#ffe000",
+        "#ff9800",
+        "#ff3b00",
+        "#c40000",
+      ],
+      w_scale_neutral_interval_m_s: [-0.1, 0.1],
+      w_scale_source: "pm_approved_issue_379_from_stage5b2_matched_pair",
+      w_scale_clipping_behavior:
+        "values_below_-1.0_and_at_or_above_5.0_use_endpoint_colors_and_are_reported_as_clipped",
+    };
 
     await page.route("**/api/results", (route) =>
       route.fulfill({
@@ -478,9 +506,7 @@ test.describe("mocked smoke: Build, Results, Explore path", () => {
             default_plane_units: "km",
             default_plane_method: "greatest_coherent_positive_w_times_ql_score",
             cloud_threshold_kg_kg: 1e-6,
-            w_range_min_m_s: -0.9,
-            w_range_max_m_s: 0.9,
-            w_range_method: "all_frames_p99_absolute_centered_w",
+            ...updraftScale,
             wind_target_level_m: 600,
             wind_actual_level_m: 580,
             wind_level_index: 1,
@@ -519,17 +545,20 @@ test.describe("mocked smoke: Build, Results, Explore path", () => {
         const wValues =
           orientation === "horizontal"
             ? [
-                [-0.9, -0.4, 0.2, 0.6],
+                [-1.2, -0.4, 0.2, 0.6],
                 [-0.5, 0, 0.5, 0.9],
-                [-0.2, 0.3, 0.7, null],
+                [-0.2, 0.3, 0.7, 5.2],
                 [0, 0.1, 0.4, 0.2],
               ]
             : [
-                [-0.9, -0.4, 0.2, 0.6],
+                [-1.2, -0.4, 0.2, 0.6],
                 [-0.5, 0, 0.5, 0.9],
-                [-0.2, 0.3, 0.7, null],
+                [-0.2, 0.3, 0.7, 5.2],
                 [0, 0.1, 0.4, 0.2],
               ];
+        const finiteW = wValues.flat().filter((value): value is number => Number.isFinite(value));
+        const lowClippedCount = finiteW.filter((value) => value < -1.0).length;
+        const highClippedCount = finiteW.filter((value) => value >= 5.0).length;
         return route.fulfill({
           status: 200,
           contentType: "application/json",
@@ -557,9 +586,12 @@ test.describe("mocked smoke: Build, Results, Explore path", () => {
               [false, true, false, false],
             ],
             cloud_threshold_kg_kg: 1e-6,
-            w_range_min_m_s: -0.9,
-            w_range_max_m_s: 0.9,
-            w_range_method: "fixed",
+            ...updraftScale,
+            w_finite_count: finiteW.length,
+            w_low_clipped_count: lowClippedCount,
+            w_high_clipped_count: highClippedCount,
+            w_low_clipped_fraction: lowClippedCount / finiteW.length,
+            w_high_clipped_fraction: highClippedCount / finiteW.length,
             wind_mode: windMode,
             wind_target_level_m: 600,
             wind_actual_level_m: 580,
@@ -607,7 +639,14 @@ test.describe("mocked smoke: Build, Results, Explore path", () => {
     await expect(page.getByLabel("Horizontal wind overlay legend")).toContainText(
       "0.9 m/s reference",
     );
-    await expect(page.getByLabel("Vertical velocity color scale")).toContainText("0.9 m/s");
+    const inspectorLegend = page.getByLabel(/2-D inspector Vertical velocity \(w\), m\/s/);
+    const viewerLegend = page.getByLabel(/3-D viewer Vertical velocity \(w\), m\/s/);
+    await expect(inspectorLegend).toContainText("Vertical velocity (w), m/s");
+    await expect(viewerLegend).toContainText("-0.1 to < 0.1");
+    await expect(page.locator(".updraft-lens-scale-swatch")).toHaveCount(20);
+    await expect(page.getByText("Slice maximum 5.20 m/s.")).toHaveCount(2);
+    await expect(page.getByText("Slice minimum -1.20 m/s.")).toHaveCount(2);
+    await expect(page.getByText(/Clipped in this slice/)).toHaveCount(0);
     await expect(page.getByLabel("Updraft Lens slice position")).toHaveValue("2");
     await expect(page.getByRole("button", { name: "Vertical x-z" })).toHaveAttribute(
       "aria-pressed",
@@ -657,8 +696,8 @@ test.describe("mocked smoke: Build, Results, Explore path", () => {
     await expect(
       page.getByText("Vertical x-z slice at y = 0.15 km · w · 3,600 s", { exact: true }),
     ).toBeVisible();
-    await expect(page.getByLabel("Vertical velocity color scale")).toContainText("-0.9");
-    await expect(page.getByLabel("Vertical velocity color scale")).toContainText("0.9 m/s");
+    await expect(inspectorLegend).toContainText("Vertical velocity (w), m/s");
+    await expect(inspectorLegend).toContainText(">= 5.0");
 
     await page.getByRole("button", { name: "Total wind" }).click();
     await expect(page.getByLabel("Horizontal wind overlay legend")).toContainText(
@@ -668,6 +707,17 @@ test.describe("mocked smoke: Build, Results, Explore path", () => {
     await expect(page.getByTestId("updraft-lens-cloud-boundary")).toHaveCount(0);
     await page.getByRole("checkbox", { name: "Horizontal wind" }).uncheck();
     await expect(page.getByLabel("Horizontal wind overlay legend")).toHaveCount(0);
+    expect(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth <= document.documentElement.clientWidth,
+      ),
+    ).toBe(true);
+    await page.setViewportSize({ width: 390, height: 844 });
+    expect(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth <= document.documentElement.clientWidth,
+      ),
+    ).toBe(true);
     await viewMode.getByRole("button", { name: "Standard" }).click();
     await expect(page.getByRole("heading", { name: "Inspect the current slice" })).toBeVisible();
     await expect(page.getByLabel("Slice field")).toBeVisible();
