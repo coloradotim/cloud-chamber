@@ -440,6 +440,42 @@ describe("TradeCumulusComparisonStory", () => {
     expect(screen.queryByTestId("comparison-updraft-lens-slice")).not.toBeInTheDocument();
   });
 
+  it.each([
+    { caseName: "empty", points: [] as number[][], returnedCount: 0 },
+    { caseName: "count-inconsistent", points: [[0, 0, 1, 0.001]], returnedCount: 2 },
+  ])("fails closed when a point cloud is $caseName", async ({ points, returnedCount }) => {
+    vi.mocked(fetch).mockImplementation((input: RequestInfo | URL) => {
+      const url = String(input);
+      const member = url.includes(moreId) ? story.more_moisture : story.baseline;
+      let payload = url.includes("point-cloud") ? pointCloud(member) : frame(member);
+      if (url.includes("point-cloud") && member === story.baseline) {
+        payload = {
+          ...pointCloud(member),
+          points,
+          stats: {
+            ...pointCloud(member).stats,
+            returned_count: returnedCount,
+          },
+        };
+      }
+      return Promise.resolve(new Response(JSON.stringify(payload), { status: 200 }));
+    });
+
+    render(
+      <TradeCumulusComparisonStory
+        story={story}
+        onOpenResult={vi.fn()}
+        onBackToResults={vi.fn()}
+      />,
+    );
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Curated point-cloud data conflicts with the comparison story.",
+    );
+    expect(screen.queryByTestId("comparison-true3d-viewer")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("comparison-updraft-lens-slice")).not.toBeInTheDocument();
+  });
+
   it("routes Back and both member actions without adding comparison controls", async () => {
     const onOpenResult = vi.fn();
     const onBackToResults = vi.fn();

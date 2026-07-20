@@ -46,6 +46,11 @@ MORE_MOISTURE_RUN_ID = "trade-cumulus-5b-full-more_moisture-20260720T162342Z"
 EXPECTED_FIXED_ASSUMPTIONS_SHA256 = (
     "71d746b110fb1310ebb6dafbef4cfa4bd44c379fc6964ed1787deaf45e422535"
 )
+EXPECTED_IMPLEMENTATION_COMMIT = "49da1defc9914d3cc903ed9589c1312ddd843726"
+EXPECTED_CM1_SOURCE_MANIFEST_SHA256 = (
+    "fbe2367dfcd6d8c55cac4bd03362d8d49f13f80cebd13b36230c20d71119a84e"
+)
+EXPECTED_CM1_EXECUTABLE_SHA256 = "5b7304bb04514ec03cf4d6e604bc0b5df6e8076bd4fb53c4b5cf5ea9184cdfd1"
 COMPARISON_EVIDENCE_RELATIVE_PATH = (
     "comparisons/trade-cumulus-moisture-20260720T162342Z/comparison_evidence.json"
 )
@@ -326,6 +331,7 @@ def trade_cumulus_moisture_comparison_story(
         control_state="more_moisture",
         control_value=7.8e-5,
     )
+    _validate_shared_cm1_provenance(baseline_metadata, more_metadata)
     baseline_view = _validated_curated_view(settings, BASELINE_VIEW)
     more_view = _validated_curated_view(settings, MORE_MOISTURE_VIEW)
     metrics = {key: _validated_metric(evidence, spec) for key, spec in _METRIC_SPECS.items()}
@@ -511,14 +517,18 @@ def _load_and_validate_evidence(settings: CloudChamberSettings) -> TradeCumulusP
 
     _require_equal(evidence.evidence_version, COMPARISON_EVIDENCE_VERSION, "evidence version")
     _require_equal(evidence.evidence_state, "matched_runs_valid", "evidence state")
-    if not evidence.implementation_commit.strip():
-        _conflict("implementation commit")
+    _require_equal(
+        evidence.implementation_commit,
+        EXPECTED_IMPLEMENTATION_COMMIT,
+        "implementation commit",
+    )
     _validate_evidence_member(
         evidence.baseline,
         result_id=BASELINE_RESULT_ID,
         run_id=BASELINE_RUN_ID,
         control_state="baseline",
         control_value=5.2e-5,
+        implementation_commit=evidence.implementation_commit,
     )
     _validate_evidence_member(
         evidence.more_moisture,
@@ -526,6 +536,7 @@ def _load_and_validate_evidence(settings: CloudChamberSettings) -> TradeCumulusP
         run_id=MORE_MOISTURE_RUN_ID,
         control_state="more_moisture",
         control_value=7.8e-5,
+        implementation_commit=evidence.implementation_commit,
     )
     if not evidence.stage4_consistency.passed:
         _conflict("Stage 4 consistency")
@@ -544,6 +555,7 @@ def _validate_evidence_member(
     run_id: str,
     control_state: str,
     control_value: float,
+    implementation_commit: str,
 ) -> None:
     expected = {
         "run evidence version": (member.evidence_version, RUN_EVIDENCE_VERSION),
@@ -555,6 +567,8 @@ def _validate_evidence_member(
         "run length": (member.run_length, "full"),
         "run identity": (member.run_id, run_id),
         "result identity": (member.result_id, result_id),
+        "run implementation commit": (member.app_commit, EXPECTED_IMPLEMENTATION_COMMIT),
+        "run/top-level implementation commit": (member.app_commit, implementation_commit),
         "run lifecycle": (member.gate.lifecycle_state, "completed"),
         "run product state": (member.gate.product_state, "completed_cm1_result"),
     }
@@ -626,6 +640,49 @@ def _validate_result_metadata(
         EXPECTED_FIXED_ASSUMPTIONS_SHA256,
         "fixed assumptions hash",
     )
+
+
+def _validate_shared_cm1_provenance(
+    baseline: ResultMetadata,
+    more_moisture: ResultMetadata,
+) -> None:
+    baseline_source, baseline_executable = _cm1_provenance_hashes(baseline, "Baseline")
+    more_source, more_executable = _cm1_provenance_hashes(more_moisture, "More Moisture")
+    _require_equal(baseline_source, more_source, "paired CM1 source manifest hash")
+    _require_equal(baseline_executable, more_executable, "paired CM1 executable hash")
+    _require_equal(
+        baseline_source,
+        EXPECTED_CM1_SOURCE_MANIFEST_SHA256,
+        "Baseline CM1 source manifest hash",
+    )
+    _require_equal(
+        more_source,
+        EXPECTED_CM1_SOURCE_MANIFEST_SHA256,
+        "More Moisture CM1 source manifest hash",
+    )
+    _require_equal(
+        baseline_executable,
+        EXPECTED_CM1_EXECUTABLE_SHA256,
+        "Baseline CM1 executable hash",
+    )
+    _require_equal(
+        more_executable,
+        EXPECTED_CM1_EXECUTABLE_SHA256,
+        "More Moisture CM1 executable hash",
+    )
+
+
+def _cm1_provenance_hashes(metadata: ResultMetadata, member_label: str) -> tuple[str, str]:
+    provenance = metadata.run_configuration.get("cm1_provenance")
+    if not isinstance(provenance, dict):
+        _conflict(f"{member_label} CM1 provenance")
+    source_hash = provenance.get("source_manifest_sha256")
+    executable_hash = provenance.get("executable_sha256")
+    if not isinstance(source_hash, str) or not source_hash:
+        _conflict(f"{member_label} CM1 source manifest hash")
+    if not isinstance(executable_hash, str) or not executable_hash:
+        _conflict(f"{member_label} CM1 executable hash")
+    return source_hash, executable_hash
 
 
 def _validated_curated_view(

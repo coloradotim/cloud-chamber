@@ -291,6 +291,14 @@ def _metadata(
             "fixed_assumptions_sha256": (
                 "71d746b110fb1310ebb6dafbef4cfa4bd44c379fc6964ed1787deaf45e422535"
             ),
+            "cm1_provenance": {
+                "source_manifest_sha256": (
+                    "fbe2367dfcd6d8c55cac4bd03362d8d49f13f80cebd13b36230c20d71119a84e"
+                ),
+                "executable_sha256": (
+                    "5b7304bb04514ec03cf4d6e604bc0b5df6e8076bd4fb53c4b5cf5ea9184cdfd1"
+                ),
+            },
         },
         source_lifecycle_state="completed",
         source_product_state="completed_cm1_result",
@@ -498,6 +506,23 @@ def test_story_rejects_conflicting_runtime_evidence(
         trade_cumulus_moisture_comparison_story(settings)
 
 
+@pytest.mark.parametrize("target", ["top_level", "baseline", "more_moisture"])
+def test_story_rejects_mismatched_implementation_commit(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    target: str,
+) -> None:
+    evidence = _evidence()
+    if target == "top_level":
+        evidence["implementation_commit"] = "wrong"
+    else:
+        evidence[target]["app_commit"] = "wrong"
+    settings = _install_valid_dependencies(tmp_path, monkeypatch, evidence=evidence)
+
+    with pytest.raises(TradeCumulusComparisonStoryConflict, match="implementation commit"):
+        trade_cumulus_moisture_comparison_story(settings)
+
+
 def test_story_rejects_wrong_result_hash(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     settings = _install_valid_dependencies(tmp_path, monkeypatch)
     original = comparison_story.get_result_metadata
@@ -511,6 +536,36 @@ def test_story_rejects_wrong_result_hash(tmp_path: Path, monkeypatch: pytest.Mon
     monkeypatch.setattr(comparison_story, "get_result_metadata", wrong_hash)
 
     with pytest.raises(TradeCumulusComparisonStoryConflict, match="fixed assumptions hash"):
+        trade_cumulus_moisture_comparison_story(settings)
+
+
+@pytest.mark.parametrize(
+    ("result_id", "hash_key"),
+    [
+        (BASELINE_RESULT_ID, "source_manifest_sha256"),
+        (MORE_MOISTURE_RESULT_ID, "source_manifest_sha256"),
+        (BASELINE_RESULT_ID, "executable_sha256"),
+        (MORE_MOISTURE_RESULT_ID, "executable_sha256"),
+    ],
+)
+def test_story_rejects_mismatched_persisted_cm1_provenance(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    result_id: str,
+    hash_key: str,
+) -> None:
+    settings = _install_valid_dependencies(tmp_path, monkeypatch)
+    original = comparison_story.get_result_metadata
+
+    def wrong_provenance(_settings: CloudChamberSettings, requested_id: str) -> ResultMetadata:
+        metadata = original(_settings, requested_id)
+        if requested_id == result_id:
+            metadata.run_configuration["cm1_provenance"][hash_key] = "wrong"
+        return metadata
+
+    monkeypatch.setattr(comparison_story, "get_result_metadata", wrong_provenance)
+
+    with pytest.raises(TradeCumulusComparisonStoryConflict, match="CM1"):
         trade_cumulus_moisture_comparison_story(settings)
 
 

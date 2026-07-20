@@ -443,7 +443,11 @@ function validatePointCloud(member: TradeCumulusComparisonMember, pointCloud: Po
     pointCloud.selection.field !== view.cloud_field ||
     pointCloud.selection.time_index !== view.time_index ||
     !numbersMatch(pointCloud.selection.time_seconds, view.time_seconds) ||
-    !numbersMatch(pointCloud.selection.threshold, view.cloud_threshold_kg_kg)
+    !numbersMatch(pointCloud.selection.threshold, view.cloud_threshold_kg_kg) ||
+    pointCloud.points.length === 0 ||
+    !Number.isInteger(pointCloud.stats.returned_count) ||
+    pointCloud.stats.returned_count <= 0 ||
+    pointCloud.stats.returned_count !== pointCloud.points.length
   ) {
     throw new Error("Curated point-cloud data conflicts with the comparison story.");
   }
