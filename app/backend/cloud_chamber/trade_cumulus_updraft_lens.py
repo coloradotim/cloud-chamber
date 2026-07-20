@@ -188,7 +188,9 @@ def trade_cumulus_updraft_lens_frame(
     dataset = _open_dataset(frame.path)
     try:
         ql, dimensions = _scalar_ql(dataset, frame.local_index)
-        w = _center_w(dataset, frame.local_index, dimensions, ql.shape)
+        w = center_vertical_velocity_to_scalar_grid(
+            dataset, frame.local_index, dimensions, ql.shape
+        )
         nz, ny, nx = ql.shape
         plane_size = {
             "horizontal": nz,
@@ -222,7 +224,9 @@ def trade_cumulus_updraft_lens_frame(
             w_slice = w[:, :, plane_index]
             cloud_slice = ql[:, :, plane_index] >= CLOUD_THRESHOLD_KG_KG
 
-        u, v = _center_horizontal_wind(dataset, frame.local_index, dimensions, ql.shape)
+        u, v = center_horizontal_wind_to_scalar_grid(
+            dataset, frame.local_index, dimensions, ql.shape
+        )
         wind_level_index = cached.response.wind_level_index
         level_u = u[wind_level_index]
         level_v = v[wind_level_index]
@@ -329,7 +333,9 @@ def _compute_defaults(metadata: ResultMetadata, paths: list[Path]) -> _CachedDef
             local_count = _time_count(dataset)
             for local_index in range(local_count):
                 ql, dimensions = _scalar_ql(dataset, local_index)
-                w = _center_w(dataset, local_index, dimensions, ql.shape)
+                w = center_vertical_velocity_to_scalar_grid(
+                    dataset, local_index, dimensions, ql.shape
+                )
                 if first_dimensions is None:
                     first_dimensions = dimensions
                 elif dimensions != first_dimensions:
@@ -354,7 +360,9 @@ def _compute_defaults(metadata: ResultMetadata, paths: list[Path]) -> _CachedDef
                     z_values_m = _coordinate_as(dataset, dimensions[0], "m", ql.shape[0])
                     wind_level_index = int(np.argmin(np.abs(z_values_m - WIND_TARGET_LEVEL_M)))
                     wind_actual_level_m = float(z_values_m[wind_level_index])
-                u, v = _center_horizontal_wind(dataset, local_index, dimensions, ql.shape)
+                u, v = center_horizontal_wind_to_scalar_grid(
+                    dataset, local_index, dimensions, ql.shape
+                )
                 level_u = u[wind_level_index]
                 level_v = v[wind_level_index]
                 mean_u = _finite_mean(level_u)
@@ -383,7 +391,7 @@ def _compute_defaults(metadata: ResultMetadata, paths: list[Path]) -> _CachedDef
     selected_dataset = _open_dataset(selected_frame.path)
     try:
         selected_ql, dimensions = _scalar_ql(selected_dataset, selected_frame.local_index)
-        selected_w = _center_w(
+        selected_w = center_vertical_velocity_to_scalar_grid(
             selected_dataset,
             selected_frame.local_index,
             dimensions,
@@ -396,11 +404,13 @@ def _compute_defaults(metadata: ResultMetadata, paths: list[Path]) -> _CachedDef
     finally:
         selected_dataset.close()
 
-    w_range = _rounded_reference(absolute_w, W_PERCENTILE, W_MIN_RANGE_M_S)
-    perturbation_reference = _rounded_reference(
+    w_range = rounded_percentile_reference(absolute_w, W_PERCENTILE, W_MIN_RANGE_M_S)
+    perturbation_reference = rounded_percentile_reference(
         perturbation_speeds, WIND_PERCENTILE, WIND_MIN_REFERENCE_M_S
     )
-    total_reference = _rounded_reference(total_speeds, WIND_PERCENTILE, WIND_MIN_REFERENCE_M_S)
+    total_reference = rounded_percentile_reference(
+        total_speeds, WIND_PERCENTILE, WIND_MIN_REFERENCE_M_S
+    )
     response = TradeCumulusUpdraftLensDefaults(
         result_id=metadata.result_id,
         case_id=CASE_ID,
@@ -559,7 +569,7 @@ def _scalar_ql(dataset: Any, time_index: int) -> tuple[np.ndarray[Any, Any], tup
     return values, dimensions
 
 
-def _center_w(
+def center_vertical_velocity_to_scalar_grid(
     dataset: Any,
     time_index: int,
     scalar_dimensions: tuple[str, str, str],
@@ -583,7 +593,7 @@ def _center_w(
     )
 
 
-def _center_horizontal_wind(
+def center_horizontal_wind_to_scalar_grid(
     dataset: Any,
     time_index: int,
     scalar_dimensions: tuple[str, str, str],
@@ -780,7 +790,7 @@ def _coordinate_units(dataset: Any, name: str) -> str | None:
     return str(units) if units is not None else None
 
 
-def _rounded_reference(
+def rounded_percentile_reference(
     arrays: list[np.ndarray[Any, Any]], percentile: float, minimum: float
 ) -> float:
     if not arrays:

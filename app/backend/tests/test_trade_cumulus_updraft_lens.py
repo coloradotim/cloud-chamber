@@ -144,7 +144,7 @@ def test_eligibility_does_not_infer_from_raw_fields(tmp_path: Path) -> None:
 def test_w_face_grid_is_centered_to_ql_levels() -> None:
     dataset = _dataset()
     ql, dimensions = lens._scalar_ql(dataset, 0)
-    centered = lens._center_w(dataset, 0, dimensions, ql.shape)
+    centered = lens.center_vertical_velocity_to_scalar_grid(dataset, 0, dimensions, ql.shape)
     assert centered.shape == ql.shape
     assert centered[:, 1, :] == pytest.approx(np.full((3, 4), 2.0))
 
@@ -152,7 +152,7 @@ def test_w_face_grid_is_centered_to_ql_levels() -> None:
 def test_w_scalar_grid_is_used_directly() -> None:
     dataset = _dataset(scalar_w=True)
     ql, dimensions = lens._scalar_ql(dataset, 0)
-    centered = lens._center_w(dataset, 0, dimensions, ql.shape)
+    centered = lens.center_vertical_velocity_to_scalar_grid(dataset, 0, dimensions, ql.shape)
     assert centered[:, 1, :] == pytest.approx(np.full((3, 4), 2.0))
 
 
@@ -161,7 +161,7 @@ def test_w_rejects_unsupported_vertical_stagger() -> None:
     dataset["w"] = (("time", "bad_z", "yh", "xh"), np.zeros((2, 5, 4, 4)))
     with pytest.raises(TradeCumulusUpdraftLensError, match="supported z dimension"):
         ql, dimensions = lens._scalar_ql(dataset, 0)
-        lens._center_w(dataset, 0, dimensions, ql.shape)
+        lens.center_vertical_velocity_to_scalar_grid(dataset, 0, dimensions, ql.shape)
 
 
 def test_default_time_uses_max_domain_mean_cwp_after_three_hours(tmp_path: Path) -> None:
@@ -263,18 +263,26 @@ def test_plane_falls_back_to_domain_midpoint_without_coherent_cloud() -> None:
 
 
 def test_fixed_range_uses_percentile_floor_and_rounding() -> None:
-    assert lens._rounded_reference([np.asarray([0.2, 0.21])], 99, 0.5) == 0.5
-    assert lens._rounded_reference([np.asarray([0.61, 0.62])], 99, 0.5) == 0.7
+    assert lens.rounded_percentile_reference([np.asarray([0.2, 0.21])], 99, 0.5) == 0.5
+    assert lens.rounded_percentile_reference([np.asarray([0.61, 0.62])], 99, 0.5) == 0.7
 
 
 def test_u_and_v_faces_are_centered_to_scalar_grid() -> None:
     dataset = _dataset()
     ql, dimensions = lens._scalar_ql(dataset, 0)
-    u, v = lens._center_horizontal_wind(dataset, 0, dimensions, ql.shape)
+    u, v = lens.center_horizontal_wind_to_scalar_grid(dataset, 0, dimensions, ql.shape)
     assert u.shape == ql.shape
     assert v.shape == ql.shape
     assert u[0, 0] == pytest.approx([0.5, 1.5, 2.5, 3.5])
     assert v[0, :, 0] == pytest.approx([0.5, 1.5, 2.5, 3.5])
+
+
+def test_horizontal_wind_rejects_unsupported_face_stagger() -> None:
+    dataset = _dataset().drop_vars("u")
+    dataset["u"] = (("time", "zh", "yh", "bad_x"), np.zeros((2, 3, 4, 6)))
+    ql, dimensions = lens._scalar_ql(dataset, 0)
+    with pytest.raises(TradeCumulusUpdraftLensError, match="supported x dimension"):
+        lens.center_horizontal_wind_to_scalar_grid(dataset, 0, dimensions, ql.shape)
 
 
 def test_frame_switches_between_perturbation_and_total_wind(tmp_path: Path) -> None:
@@ -348,8 +356,8 @@ def test_wind_stride_bounds_arrow_count_and_skips_zero_vectors() -> None:
 
 
 def test_wind_references_use_p95_floor() -> None:
-    assert lens._rounded_reference([np.asarray([0.1, 0.2])], 95, 0.5) == 0.5
-    assert lens._rounded_reference([np.asarray([0.81, 0.82])], 95, 0.5) == 0.9
+    assert lens.rounded_percentile_reference([np.asarray([0.1, 0.2])], 95, 0.5) == 0.5
+    assert lens.rounded_percentile_reference([np.asarray([0.81, 0.82])], 95, 0.5) == 0.9
 
 
 def test_frame_orders_z_ascending_and_serializes_nonfinite_values(tmp_path: Path) -> None:
