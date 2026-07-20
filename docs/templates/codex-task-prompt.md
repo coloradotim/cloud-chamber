@@ -13,15 +13,27 @@ Controlling issue:
 
 #[ISSUE_NUMBER] — [ISSUE_TITLE]
 
-Read these authority documents before doing any work:
+Read these sources before doing any work.
 
-1. AGENTS.md
-2. NORTH_STAR.md
-3. docs/product/PRODUCT_VISION.md
-4. explicit approved PM decisions identified by issue #[ISSUE_NUMBER]
-5. docs/product/APPLICATION_SEMANTICS.md
-6. docs/DOCUMENTATION_STATUS.md
-7. the complete body and all comments of issue #[ISSUE_NUMBER]
+Repository and agent operating authority:
+
+- AGENTS.md
+
+Product authority, in precedence order:
+
+1. NORTH_STAR.md
+2. docs/product/PRODUCT_VISION.md
+3. explicit approved PM decisions identified by issue #[ISSUE_NUMBER]
+4. docs/product/APPLICATION_SEMANTICS.md
+5. current implementation documentation where the controlling issue requires it
+
+Authority and status guide:
+
+- docs/DOCUMENTATION_STATUS.md
+
+Controlling work instruction:
+
+- the complete body and all comments of issue #[ISSUE_NUMBER]
 
 The issue is the controlling implementation instruction. Existing roadmaps,
 scenarios, product specifications, research notes, old issues, and current UI
@@ -79,9 +91,10 @@ TASK
 
 [PASTE THE ISSUE'S OUTCOME AND DECISIONS-ALREADY-MADE SECTIONS]
 
-Evidence to inspect without treating it as a supplied decision:
+Supporting documents and evidence to inspect without treating them as supplied
+decisions:
 
-[PASTE THE ISSUE'S EVIDENCE-TO-INSPECT SECTION]
+[PASTE THE ISSUE'S SUPPORTING-DOCUMENTS-AND-EVIDENCE-TO-INSPECT SECTION]
 
 ============================================================
 ALLOWED SCOPE

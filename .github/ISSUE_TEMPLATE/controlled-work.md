@@ -23,16 +23,6 @@ Relevant authority:
 - `docs/product/APPLICATION_SEMANTICS.md`
 - `docs/DOCUMENTATION_STATUS.md`
 
-## Supporting documents and evidence
-
-List each supporting document, issue, run record, or other source the
-implementer should inspect. For each one, state whether it is authoritative,
-current descriptive, an implemented contract, research evidence, a proposal,
-historical, superseded, or unresolved.
-
-Do not treat supporting evidence as a decision unless an authority above
-explicitly approves that decision.
-
 ## Stable vision
 
 What remains unchanged regardless of the outcome of this issue?
@@ -54,11 +44,13 @@ State the product, scientific, UX, or implementation decisions that this issue s
 
 Do not ask Codex to infer these decisions from old issues, scenarios, roadmaps, or research notes.
 
-## Evidence to inspect
+## Supporting documents and evidence to inspect
 
-List the implementation facts, current documentation, research evidence,
-historical records, proposals, or unresolved material the implementer must
-inspect without treating them as decisions already made.
+List each implementation fact, document, issue, run record, or other source the
+implementer must inspect. For each one, state whether it is authoritative,
+current descriptive, an implemented contract, research evidence, a proposal,
+historical, superseded, or unresolved. Do not treat it as a decision already
+made unless an authority above explicitly supplies that decision.
 
 ## Decisions still open
 
