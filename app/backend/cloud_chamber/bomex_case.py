@@ -323,15 +323,15 @@ def render_bomex_namelist(reference_text: str, variant: BomexVariant) -> str:
     rendered = reference_text
     overrides = {**_COMMON_NAMELIST_OVERRIDES, "timax": f"{variant.duration_seconds}.0"}
     for name, value in overrides.items():
-        rendered = _replace_namelist_assignment(rendered, name, value)
+        rendered = replace_bomex_namelist_assignment(rendered, name, value)
     for name, value in REQUIRED_OUTPUT_SWITCHES.items():
-        rendered = _replace_namelist_assignment(rendered, name, value)
+        rendered = replace_bomex_namelist_assignment(rendered, name, value)
     return rendered.rstrip() + "\n"
 
 
 def normalized_science_namelist(namelist_text: str) -> str:
     """Normalize the sole smoke/full science difference for equivalence checks."""
-    return _replace_namelist_assignment(namelist_text, "timax", "<duration_seconds>")
+    return replace_bomex_namelist_assignment(namelist_text, "timax", "<duration_seconds>")
 
 
 def render_profile_audit() -> str:
@@ -353,7 +353,7 @@ def generate_bomex_package(
     allow_overwrite: bool = False,
 ) -> BomexPackageResult:
     """Generate a deterministic, provenance-rich BOMEX runtime package."""
-    resolved_commit = _clean_git_commit()
+    resolved_commit = verified_clean_git_commit()
     provenance = collect_cm1_provenance(settings)
     package_dir = settings.runtime_home.expanduser() / "runs" / run_id
     if package_dir.exists():
@@ -596,7 +596,7 @@ def build_bomex_run_evidence(
         ),
         mean_lwp_final_three_hours_kg_m2=_mean_metric(final_three_hour, "mean_lwp"),
         max_lwp_kg_m2=max(lwp_values) if lwp_values else None,
-        lwp_cycle_peak_count=_local_peak_count(lwp_values),
+        lwp_cycle_peak_count=cloud_water_cycle_peak_count(lwp_values),
         forcing_diagnostic_fields=diag_summary,
         resolved_turbulent_flux_fields=flux_fields,
         final_domain_mean_profiles=final_profiles,
@@ -677,7 +677,8 @@ def _case_manifest_payload(
     }
 
 
-def _replace_namelist_assignment(text: str, name: str, value: str) -> str:
+def replace_bomex_namelist_assignment(text: str, name: str, value: str) -> str:
+    """Replace exactly one assignment in the pinned BOMEX namelist."""
     pattern = re.compile(
         rf"^(?P<prefix>\s*{re.escape(name)}\s*=\s*)(?P<value>[^,!\n]+)(?P<suffix>\s*,.*)$",
         re.MULTILINE,
@@ -699,7 +700,8 @@ def _linear_profile_value(height_m: float, knots: tuple[tuple[float, float], ...
     return knots[-1][1]
 
 
-def _clean_git_commit() -> str:
+def verified_clean_git_commit() -> str:
+    """Return HEAD only when the repository worktree is verifiably clean."""
     commit = _git_output("rev-parse", "HEAD")
     dirty_state = _git_output("status", "--porcelain=v1", "--untracked-files=all")
     if dirty_state:
@@ -969,7 +971,8 @@ def _final_three_hour_cloud_fraction_peak(
     return float(time_mean_profile[peak_index]), peak_height
 
 
-def _local_peak_count(values: list[float]) -> int:
+def cloud_water_cycle_peak_count(values: list[float]) -> int:
+    """Count cloud-water cycle peaks using the preserved Stage 4 method."""
     if len(values) < 3:
         return 0
     maximum = max(values)

@@ -124,7 +124,7 @@ def test_package_records_hashes_provenance_and_no_recipe(
     settings = fake_settings(tmp_path)
     provenance = fake_provenance(tmp_path)
     monkeypatch.setattr(bomex_case, "collect_cm1_provenance", lambda _settings: provenance)
-    monkeypatch.setattr(bomex_case, "_clean_git_commit", lambda: "commit-test")
+    monkeypatch.setattr(bomex_case, "verified_clean_git_commit", lambda: "commit-test")
 
     smoke = generate_bomex_package(
         settings=settings,
