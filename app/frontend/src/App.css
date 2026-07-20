@@ -3189,6 +3189,279 @@ details[open] > summary {
   padding-top: 0.4rem;
 }
 
+.trade-cumulus-comparison {
+  display: grid;
+  gap: 1.25rem;
+  min-width: 0;
+}
+
+.comparison-story-header,
+.comparison-story-section {
+  display: grid;
+  gap: 0.85rem;
+  min-width: 0;
+  border-top: 1px solid var(--color-border);
+  padding-top: 1rem;
+}
+
+.comparison-story-header {
+  border-top: 0;
+  padding-top: 0;
+}
+
+.comparison-story-heading-row,
+.comparison-simulation-header {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.comparison-story-heading-row h2 {
+  margin-bottom: 0.35rem;
+}
+
+.comparison-story-question {
+  margin: 0;
+  color: var(--color-text-primary);
+  font-size: 1.05rem;
+  font-weight: 750;
+}
+
+.comparison-changed-condition {
+  margin: 0;
+  border: 1px solid var(--color-border-strong);
+  border-left: 4px solid var(--color-accent-primary);
+  border-radius: 6px;
+  padding: 0.75rem 0.85rem;
+  background: var(--color-surface);
+}
+
+.comparison-changed-condition dt,
+.comparison-simulation-header dt,
+.comparison-material-responses dt,
+.comparison-held-fixed dt {
+  color: var(--color-text-primary);
+  font-size: 0.78rem;
+  font-weight: 850;
+  text-transform: uppercase;
+}
+
+.comparison-changed-condition dd {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem 0.75rem;
+  align-items: baseline;
+  margin: 0.3rem 0 0;
+  color: var(--color-text-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+.comparison-changed-condition strong {
+  color: var(--color-success);
+}
+
+.comparison-illustrative-note {
+  margin: 0;
+  border-left: 3px solid var(--color-border-strong);
+  padding: 0.2rem 0 0.2rem 0.75rem;
+  color: var(--color-text-primary);
+}
+
+.comparison-story-load-state {
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  padding: 1rem;
+  background: var(--color-surface);
+}
+
+.comparison-story-load-state > :last-child {
+  margin-bottom: 0;
+}
+
+.comparison-simulation-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+  align-items: start;
+  min-width: 0;
+}
+
+.comparison-simulation {
+  display: grid;
+  gap: 0.85rem;
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  padding: 0.85rem;
+  background: rgba(255, 255, 255, 0.82);
+  box-shadow: var(--shadow-subtle);
+}
+
+.comparison-simulation-header h3,
+.comparison-lens-heading h4 {
+  margin-bottom: 0.2rem;
+}
+
+.comparison-simulation-header > * {
+  min-width: 0;
+}
+
+.comparison-simulation-header p {
+  margin: 0;
+}
+
+.comparison-simulation-header dl {
+  display: grid;
+  flex: 0 1 13rem;
+  gap: 0.4rem;
+  min-width: 0;
+  margin: 0;
+  text-align: right;
+}
+
+.comparison-simulation-header dd {
+  margin: 0.08rem 0 0;
+  color: var(--color-text-primary);
+  font-size: 0.84rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.comparison-view-caption {
+  min-height: 4.5rem;
+  margin: 0;
+  color: var(--color-text-primary);
+  overflow-wrap: anywhere;
+}
+
+.comparison-simulation .true3d-viewer,
+.comparison-simulation .true3d-controls,
+.comparison-simulation .true3d-control-section {
+  min-width: 0;
+}
+
+.comparison-simulation .true3d-scene-frame {
+  min-height: clamp(22rem, 28vw, 31rem);
+}
+
+.comparison-simulation .true3d-scene-label {
+  display: none;
+}
+
+.comparison-simulation .true3d-slice-label-updraft-lens {
+  display: none;
+}
+
+.comparison-simulation .true3d-field-legend {
+  min-width: 0;
+  max-width: min(11rem, calc(100% - 1.5rem));
+}
+
+.comparison-simulation .true3d-field-legend-row {
+  grid-template-columns: auto minmax(2.5rem, 1fr) auto;
+}
+
+.comparison-simulation .true3d-controls {
+  grid-template-columns: 1fr;
+  align-items: start;
+}
+
+.comparison-lens-view {
+  display: grid;
+  gap: 0.55rem;
+  min-width: 0;
+  border-top: 1px solid var(--color-border);
+  padding-top: 0.85rem;
+}
+
+.comparison-lens-heading .eyebrow {
+  margin-bottom: 0.15rem;
+}
+
+.comparison-simulation-action {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.comparison-story-section h3 {
+  margin: 0;
+  font-size: 1.25rem;
+}
+
+.comparison-material-responses,
+.comparison-held-fixed {
+  display: grid;
+  gap: 0.75rem;
+  margin: 0;
+}
+
+.comparison-material-responses {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.comparison-material-responses > div,
+.comparison-held-fixed > div {
+  border-left: 3px solid var(--color-border-strong);
+  padding-left: 0.75rem;
+}
+
+.comparison-material-responses dd {
+  display: grid;
+  gap: 0.2rem;
+  margin: 0.45rem 0 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.comparison-material-responses strong {
+  margin-top: 0.15rem;
+  color: var(--color-success);
+}
+
+.comparison-authored-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.75rem 1.25rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.comparison-authored-list li {
+  display: grid;
+  gap: 0.25rem;
+}
+
+.comparison-authored-list strong {
+  color: var(--color-text-primary);
+}
+
+.comparison-section-lead {
+  margin: 0;
+  color: var(--color-text-primary);
+  font-weight: 800;
+}
+
+.comparison-held-fixed {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.comparison-held-fixed dd {
+  margin: 0.35rem 0 0;
+}
+
+.comparison-explanation {
+  max-width: 78rem;
+}
+
+.comparison-explanation p {
+  color: var(--color-text-primary);
+}
+
+.comparison-explanation p:last-child {
+  margin-bottom: 0;
+}
+
 @media (max-width: 860px) {
   .topbar,
   .builder-layout,
@@ -3203,6 +3476,48 @@ details[open] > summary {
   .explore-result-summary,
   .embedded-run-configuration-panel .run-configuration-grid {
     grid-template-columns: 1fr;
+  }
+
+  .comparison-simulation-grid,
+  .comparison-material-responses,
+  .comparison-authored-list,
+  .comparison-held-fixed {
+    grid-template-columns: 1fr;
+  }
+
+  .comparison-story-heading-row,
+  .comparison-simulation-header {
+    display: grid;
+  }
+
+  .comparison-simulation-header dl {
+    min-width: 0;
+    text-align: left;
+  }
+
+  .comparison-simulation-action {
+    justify-content: flex-start;
+  }
+
+  .comparison-simulation .true3d-scene-frame {
+    min-height: 24rem;
+  }
+
+  .comparison-simulation .true3d-wind-legend,
+  .comparison-simulation .true3d-field-legend {
+    box-sizing: border-box;
+    width: 7.5rem;
+    max-width: calc(100% - 11.25rem);
+    overflow-wrap: anywhere;
+  }
+
+  .comparison-simulation .true3d-field-legend-row {
+    grid-template-columns: 1fr;
+    gap: 0.2rem;
+  }
+
+  .comparison-simulation .true3d-field-legend-row small:last-child {
+    text-align: right;
   }
 
   .visualizer-workbench {

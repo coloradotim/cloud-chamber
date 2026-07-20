@@ -85,6 +85,11 @@ from cloud_chamber.sounding_candidates import (
     screen_cached_soundings,
     update_saved_candidate,
 )
+from cloud_chamber.trade_cumulus_comparison_story import (
+    TradeCumulusComparisonStoryConflict,
+    TradeCumulusComparisonStoryNotFound,
+    trade_cumulus_moisture_comparison_story,
+)
 from cloud_chamber.trade_cumulus_updraft_lens import (
     LensOrientation,
     TradeCumulusUpdraftLensError,
@@ -568,6 +573,17 @@ def list_results() -> dict[str, object]:
     return {
         "results": [card.model_dump(mode="json") for card in list_result_cards(load_settings())]
     }
+
+
+@app.get("/api/comparisons/trade-cumulus-moisture-v1")
+def get_trade_cumulus_moisture_comparison_story() -> dict[str, object]:
+    try:
+        story = trade_cumulus_moisture_comparison_story(load_settings())
+    except TradeCumulusComparisonStoryNotFound as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except TradeCumulusComparisonStoryConflict as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return story.model_dump(mode="json")
 
 
 @app.get("/api/results/{result_id}")

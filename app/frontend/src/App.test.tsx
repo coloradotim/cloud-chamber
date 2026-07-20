@@ -3179,6 +3179,129 @@ const tradeCumulusResultCard = {
   },
 };
 
+const comparisonBaselineResultCard = {
+  ...tradeCumulusResultCard,
+  result_id: "result-trade-cumulus-5b-full-baseline-20260720T162342Z",
+  run_id: "trade-cumulus-5b-full-baseline-20260720T162342Z",
+  name: "Canonical BOMEX Baseline",
+};
+
+const comparisonMoreResultCard = {
+  ...tradeCumulusResultCard,
+  result_id: "result-trade-cumulus-5b-full-more_moisture-20260720T162342Z",
+  run_id: "trade-cumulus-5b-full-more_moisture-20260720T162342Z",
+  name: "More Moisture",
+};
+
+const tradeCumulusComparisonStoryResponse = {
+  comparison_id: "trade_cumulus_moisture_v1",
+  comparison_group_id: "trade_cumulus_moisture_v1",
+  product_slice_id: "trade_cumulus_v1",
+  case_id: "bomex_trade_cumulus_baseline_v0",
+  title: "Trade Cumulus: Baseline and More Moisture",
+  question: "How does stronger surface moisture supply change the trade-cumulus field?",
+  illustrative_view_note:
+    "Illustrative views: selected to help show the response measured across the full simulations. Times and locations may differ, and these are not corresponding individual clouds.",
+  baseline: {
+    result_id: comparisonBaselineResultCard.result_id,
+    run_id: comparisonBaselineResultCard.run_id,
+    display_name: "Canonical BOMEX Baseline",
+    control_state: "baseline",
+    control_label: "Surface moisture supply",
+    control_value: 5.2e-5,
+    control_units: "g/g m/s",
+    control_display: "5.2 × 10⁻⁵ g/g m/s",
+    curated_view: {
+      time_index: 152,
+      time_seconds: 18240,
+      orientation: "vertical_x",
+      plane_dimension: "y",
+      plane_index: 5,
+      plane_coordinate: -2.6500000953674316,
+      plane_units: "km",
+      camera_preset: "overview",
+      cloud_field: "ql",
+      cloud_threshold_kg_kg: 1e-6,
+      lens_id: "updraft",
+      scale_id: "trade_cumulus_updraft_velocity_v1",
+      wind_mode: "perturbation",
+      show_wind: true,
+      show_cloud_boundary: true,
+      opacity: 0.68,
+      point_size: 11,
+      caption: "Baseline curated view.",
+    },
+  },
+  more_moisture: {
+    result_id: comparisonMoreResultCard.result_id,
+    run_id: comparisonMoreResultCard.run_id,
+    display_name: "More Moisture",
+    control_state: "more_moisture",
+    control_label: "Surface moisture supply",
+    control_value: 7.8e-5,
+    control_units: "g/g m/s",
+    control_display: "7.8 × 10⁻⁵ g/g m/s",
+    curated_view: {
+      time_index: 169,
+      time_seconds: 20280,
+      orientation: "vertical_x",
+      plane_dimension: "y",
+      plane_index: 51,
+      plane_coordinate: 1.9500000476837158,
+      plane_units: "km",
+      camera_preset: "overview",
+      cloud_field: "ql",
+      cloud_threshold_kg_kg: 1e-6,
+      lens_id: "updraft",
+      scale_id: "trade_cumulus_updraft_velocity_v1",
+      wind_mode: "perturbation",
+      show_wind: true,
+      show_cloud_boundary: true,
+      opacity: 0.68,
+      point_size: 11,
+      caption: "More Moisture curated view.",
+    },
+  },
+  changed_condition: {
+    label: "Surface moisture supply",
+    baseline_display: "5.2 × 10⁻⁵ g/g m/s",
+    more_moisture_display: "7.8 × 10⁻⁵ g/g m/s",
+    change_display: "+50%",
+  },
+  material_responses: [],
+  small_or_mixed_responses: [],
+  held_fixed_by_design: {
+    lead: "Only surface moisture supply changed.",
+    groups: [],
+  },
+  explanation_paragraphs: [],
+  evidence_summary: {
+    analysis_window: "time >= 10800 s",
+    analysis_start_seconds: 10800,
+    analysis_end_seconds: 21600,
+    output_cadence_seconds: 120,
+    paired_saved_frame_count: 181,
+  },
+  provenance: {
+    evidence_state: "matched_runs_valid",
+    evidence_version: "trade_cumulus_moisture_comparison_evidence_v1",
+    implementation_commit: "49da1defc9914d3cc903ed9589c1312ddd843726",
+    fixed_assumptions_sha256: "71d746b110fb1310ebb6dafbef4cfa4bd44c379fc6964ed1787deaf45e422535",
+    baseline_run_id: comparisonBaselineResultCard.run_id,
+    baseline_result_id: comparisonBaselineResultCard.result_id,
+    more_moisture_run_id: comparisonMoreResultCard.run_id,
+    more_moisture_result_id: comparisonMoreResultCard.result_id,
+    scale_id: "trade_cumulus_updraft_velocity_v1",
+    comparison_source: "runtime_matched_pair_evidence",
+  },
+  caveats: [
+    "one_deterministic_les_realization_per_control_state",
+    "illustrative_views_are_not_direct_frame_matches",
+    "individual_clouds_are_not_paired_one_to_one",
+    "candidate_product_slice_not_supported_status",
+  ],
+};
+
 const tradeCumulusFieldCatalog = {
   ...fieldCatalogResponse,
   result_id: "result-trade-cumulus",
@@ -4016,6 +4139,94 @@ function mockTradeCumulusVisualizer(
       return Promise.resolve(
         new Response(JSON.stringify(tradeCumulusSliceResponse(url)), { status: 200 }),
       );
+    }
+    return (
+      defaultFetch?.(input, init) ?? Promise.resolve(new Response("not found", { status: 404 }))
+    );
+  });
+}
+
+function comparisonPointCloud(member: typeof tradeCumulusComparisonStoryResponse.baseline) {
+  const response = tradeCumulusPointCloudResponse();
+  return {
+    ...response,
+    result_id: member.result_id,
+    run_id: member.run_id,
+    selection: {
+      ...response.selection,
+      field: "ql",
+      time_index: member.curated_view.time_index,
+      time_seconds: member.curated_view.time_seconds,
+      threshold: member.curated_view.cloud_threshold_kg_kg,
+      max_points: 50000,
+    },
+    provenance: {
+      ...response.provenance,
+      result_id: member.result_id,
+      run_id: member.run_id,
+    },
+  };
+}
+
+function comparisonFrame(member: typeof tradeCumulusComparisonStoryResponse.baseline) {
+  const response = tradeCumulusUpdraftLensFrame({
+    timeIndex: member.curated_view.time_index,
+    planeIndex: member.curated_view.plane_index,
+    orientation: "vertical_x",
+    windMode: "perturbation",
+  });
+  return {
+    ...response,
+    result_id: member.result_id,
+    time_seconds: member.curated_view.time_seconds,
+    plane_coordinate: member.curated_view.plane_coordinate,
+    provenance: {
+      ...response.provenance,
+      result_id: member.result_id,
+      run_id: member.run_id,
+    },
+  };
+}
+
+function mockTradeCumulusComparisonApp(storyStatus = 200) {
+  const defaultFetch = vi.mocked(fetch).getMockImplementation();
+  vi.mocked(fetch).mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input);
+    if (url === "/api/results") {
+      return Promise.resolve(
+        new Response(
+          JSON.stringify({
+            results: [comparisonBaselineResultCard, comparisonMoreResultCard, resultCard],
+          }),
+          { status: 200 },
+        ),
+      );
+    }
+    if (url === "/api/comparisons/trade-cumulus-moisture-v1") {
+      return Promise.resolve(
+        new Response(
+          storyStatus === 200 ? JSON.stringify(tradeCumulusComparisonStoryResponse) : "unavailable",
+          { status: storyStatus },
+        ),
+      );
+    }
+    if (
+      url.includes(comparisonBaselineResultCard.result_id) ||
+      url.includes(comparisonMoreResultCard.result_id)
+    ) {
+      const member = url.includes(comparisonMoreResultCard.result_id)
+        ? tradeCumulusComparisonStoryResponse.more_moisture
+        : tradeCumulusComparisonStoryResponse.baseline;
+      if (url.includes("/visualization/point-cloud")) {
+        return Promise.resolve(
+          new Response(JSON.stringify(comparisonPointCloud(member)), { status: 200 }),
+        );
+      }
+      if (url.includes("/trade-cumulus-updraft-lens/frame")) {
+        return Promise.resolve(
+          new Response(JSON.stringify(comparisonFrame(member)), { status: 200 }),
+        );
+      }
     }
     return (
       defaultFetch?.(input, init) ?? Promise.resolve(new Response("not found", { status: 404 }))
@@ -6109,6 +6320,59 @@ describe("App", () => {
     ).toBeInTheDocument();
     expect(screen.getAllByText("Completed CM1 result").length).toBeGreaterThan(0);
     expect(within(resultDetail).getByRole("button", { name: "Open in Explore" })).toBeEnabled();
+  });
+
+  it("opens the curated comparison from either approved member inside Explore", async () => {
+    mockTradeCumulusComparisonApp();
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Canonical BOMEX Baseline" }));
+    const baselineDetail = await screen.findByLabelText("Result detail");
+    const compareButton = await within(baselineDetail).findByRole("button", {
+      name: "Compare Baseline and More Moisture",
+    });
+    fireEvent.click(compareButton);
+
+    expect(
+      await screen.findByRole("heading", {
+        name: "Trade Cumulus: Baseline and More Moisture",
+      }),
+    ).toBeInTheDocument();
+    const topNav = screen.getByRole("navigation", { name: "Cloud Chamber workspace" });
+    expect(within(topNav).getByRole("button", { name: "Explore" })).toHaveClass("active-control");
+    expect(within(topNav).getAllByRole("button")).toHaveLength(3);
+
+    fireEvent.click(screen.getByRole("button", { name: "Back to Results" }));
+    expect(await screen.findByRole("heading", { name: "Experiment Notebook" })).toBeInTheDocument();
+    expect(
+      screen.queryByRole("heading", { name: "Trade Cumulus: Baseline and More Moisture" }),
+    ).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "More Moisture" }));
+    expect(
+      await within(screen.getByLabelText("Result detail")).findByRole("button", {
+        name: "Compare Baseline and More Moisture",
+      }),
+    ).toBeInTheDocument();
+  });
+
+  it("does not expose comparison for unrelated results or unavailable story evidence", async () => {
+    mockTradeCumulusComparisonApp(409);
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Canonical BOMEX Baseline" }));
+    expect(
+      within(await screen.findByLabelText("Result detail")).queryByRole("button", {
+        name: "Compare Baseline and More Moisture",
+      }),
+    ).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Quick-look shallow cumulus" }));
+    expect(
+      within(await screen.findByLabelText("Result detail")).queryByRole("button", {
+        name: "Compare Baseline and More Moisture",
+      }),
+    ).not.toBeInTheDocument();
   });
 
   it("renders result cards with case-manifest run configurations", async () => {

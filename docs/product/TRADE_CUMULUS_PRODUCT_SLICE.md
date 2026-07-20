@@ -342,7 +342,7 @@ For a Comparison, both Simulations must use the same arrow mode, height, density
 
 This is flow context within the Updraft Lens. It does not establish a generalized vector-rendering platform or a separate Wind Lens.
 
-## 6. First matched Comparison
+## 6. First curated Comparison
 
 The first deliberate question is:
 
@@ -353,38 +353,39 @@ The Comparison contains:
 - one Canonical BOMEX Baseline Simulation;
 - one More Moisture Simulation;
 - the meaningful changed condition stated plainly;
-- synchronized model time;
-- a shared default vertical plane;
+- one independently curated illustrative Updraft Lens view from each Simulation;
 - the shared fixed Trade Cumulus Updraft Scale v1;
-- a shared cloud threshold;
-- shared horizontal-wind overlay settings;
-- the same scientific and numerical assumptions except for surface moisture supply.
+- the same cloud threshold and horizontal-wind treatment;
+- a concise account of what responded materially, what changed little or varied, and what remained fixed by design;
+- an authored explanation grounded in the full-run evidence.
 
-### Reference ownership
+### Illustrative views
 
-The baseline is the reference Simulation.
+The two default views may use different model times and slice positions.
 
-Its default time and plane are selected once and inherited by the variant.
+They are selected to help a person see and understand the response measured across the full simulations. They are not corresponding individual clouds, and the images do not establish the response on their own.
 
-Do not independently pick the most flattering time or plane from each Simulation.
+Each view must identify its exact Simulation, time, orientation, and position. Both use the same world-owned vertical-velocity scale, cloud threshold, perturbation-wind treatment, and scientific rendering conventions.
 
-The user may move the shared time or plane, but the Comparison should remain synchronized.
+The selected views are authored defaults for this one Comparison. This does not establish an automatic view-ranking system, arbitrary result pairing, or Saved View persistence.
 
-### Honest comparability
+### Evidence summary
 
-The two runs use the same deterministic perturbation seed and differ only in surface moisture supply.
+The Comparison should state:
 
-Even so, large-eddy simulations can diverge through time.
+- the one Control that changed;
+- the major aggregate responses measured across the final three hours;
+- important outcomes that did not change or changed only slightly;
+- time-dependent behavior that prevents a simplistic every-frame claim;
+- the scientific and numerical assumptions held fixed.
 
-The product must not imply that one individual baseline cloud retains one-to-one identity with one individual variant cloud through the full six hours.
+One deterministic realization per state does not support statistical-significance language or a general uncertainty estimate.
 
-Compare:
+### Honest comparison boundary
 
-- field-level behavior;
-- cloud population and lifecycle;
-- process patterns;
-- aggregate and time-dependent response;
-- representative aligned views.
+The two large-eddy simulations share the same deterministic perturbation and differ only in surface moisture supply, but their individual cloud populations diverge through time.
+
+The product must not imply one-to-one identity between clouds or describe the curated images as a direct frame-for-frame comparison. The images illustrate the evidence; the complete matched-run analysis supports the interpretation.
 
 ## 7. Output cadence and required evidence
 
