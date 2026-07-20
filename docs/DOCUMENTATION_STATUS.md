@@ -26,6 +26,13 @@ explicitly apply. Application Semantics is the approved product-semantic
 authority for Cloud World, Recipe, Simulation, Lens, Saved View, Comparison,
 Exploration, Experiment, and supporting terms.
 
+The [Trade Cumulus Product Slice](product/TRADE_CUMULUS_PRODUCT_SLICE.md) is an
+approved bounded product-architecture document for the Stage 5 candidate Trade
+Cumulus experience. It defines candidate and experimental statuses only. It is
+subordinate to the North Star, Product Vision, explicit approved PM decisions,
+and Application Semantics, and it does not make a Cloud World, Recipe, Control,
+Lens, or Comparison supported merely by being documented.
+
 PM decisions and product-architecture documents do not silently rewrite higher
 authority.
 
@@ -183,8 +190,9 @@ not moved or relabeled every file.
 1. [North Star](../NORTH_STAR.md)
 2. [Product Vision](product/PRODUCT_VISION.md)
 3. [Application Semantics](product/APPLICATION_SEMANTICS.md)
-4. [Current State](current/CURRENT_STATE.md)
-5. [Current Architecture](current/CURRENT_ARCHITECTURE.md)
+4. [Trade Cumulus Product Slice](product/TRADE_CUMULUS_PRODUCT_SLICE.md)
+5. [Current State](current/CURRENT_STATE.md)
+6. [Current Architecture](current/CURRENT_ARCHITECTURE.md)
 
 ### Contribute during the gated product-architecture program
 
