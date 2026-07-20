@@ -86,6 +86,7 @@ from cloud_chamber.sounding_candidates import (
     update_saved_candidate,
 )
 from cloud_chamber.trade_cumulus_updraft_lens import (
+    LensOrientation,
     TradeCumulusUpdraftLensError,
     WindMode,
     trade_cumulus_updraft_lens_defaults,
@@ -725,8 +726,11 @@ def get_trade_cumulus_updraft_lens_frame(
     result_id: str,
     time_index: int,
     plane_index: int,
+    orientation: str = "vertical_x",
     wind_mode: str = "perturbation",
 ) -> dict[str, object]:
+    if orientation not in {"horizontal", "vertical_x", "vertical_y"}:
+        raise HTTPException(status_code=400, detail=f"Unsupported orientation: {orientation}")
     if wind_mode not in {"perturbation", "total"}:
         raise HTTPException(status_code=400, detail=f"Unsupported wind_mode: {wind_mode}")
     try:
@@ -734,6 +738,7 @@ def get_trade_cumulus_updraft_lens_frame(
             load_settings(),
             result_id,
             time_index=time_index,
+            orientation=cast(LensOrientation, orientation),
             plane_index=plane_index,
             wind_mode=cast(WindMode, wind_mode),
         )

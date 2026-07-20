@@ -151,12 +151,14 @@ def test_trade_cumulus_updraft_lens_frame_endpoint_validates_and_forwards_query(
         result_id: str,
         *,
         time_index: int,
+        orientation: str,
         plane_index: int,
         wind_mode: str,
     ) -> FakeResponse:
         received.update(
             result_id=result_id,
             time_index=time_index,
+            orientation=orientation,
             plane_index=plane_index,
             wind_mode=wind_mode,
         )
@@ -167,7 +169,7 @@ def test_trade_cumulus_updraft_lens_frame_endpoint_validates_and_forwards_query(
 
     response = client.get(
         "/api/results/result-bomex/visualization/trade-cumulus-updraft-lens/frame"
-        "?time_index=4&plane_index=3&wind_mode=total"
+        "?time_index=4&plane_index=3&orientation=vertical_y&wind_mode=total"
     )
     invalid = client.get(
         "/api/results/result-bomex/visualization/trade-cumulus-updraft-lens/frame"
@@ -179,10 +181,17 @@ def test_trade_cumulus_updraft_lens_frame_endpoint_validates_and_forwards_query(
     assert received == {
         "result_id": "result-bomex",
         "time_index": 4,
+        "orientation": "vertical_y",
         "plane_index": 3,
         "wind_mode": "total",
     }
     assert invalid.status_code == 400
+
+    invalid_orientation = client.get(
+        "/api/results/result-bomex/visualization/trade-cumulus-updraft-lens/frame"
+        "?time_index=4&plane_index=3&orientation=diagonal"
+    )
+    assert invalid_orientation.status_code == 400
 
 
 def test_list_scenarios_includes_baseline_golden_path() -> None:

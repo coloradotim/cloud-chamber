@@ -2,8 +2,17 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 
-import type { UpdraftLensWindMode, UpdraftLensWindVector } from "./UpdraftLensSlice";
-import { cameraDistanceLimits, scalarPointPixelSize, windArrowLength } from "./True3DViewer.utils";
+import type {
+  UpdraftLensFrame,
+  UpdraftLensWindMode,
+  UpdraftLensWindVector,
+} from "./UpdraftLensSlice";
+import {
+  cameraDistanceLimits,
+  scalarPointPixelSize,
+  updraftLensTextureData,
+  windArrowLength,
+} from "./True3DViewer.utils";
 
 type CoordinateExtent = { min: number; max: number; units: string | null };
 
@@ -89,6 +98,7 @@ type True3DViewerProps = {
   windMode?: UpdraftLensWindMode;
   windReferenceMps?: number;
   windArrowDomainFraction?: number;
+  updraftLensFrame?: UpdraftLensFrame | null;
 };
 
 type SceneRefs = {
@@ -151,6 +161,7 @@ export function True3DViewer({
   windMode = "perturbation",
   windReferenceMps = 0,
   windArrowDomainFraction = 0.08,
+  updraftLensFrame = null,
 }: True3DViewerProps) {
   const mountRef = useRef<HTMLDivElement | null>(null);
   const axisLabelLayerRef = useRef<HTMLDivElement | null>(null);
@@ -314,6 +325,7 @@ export function True3DViewer({
       showWindVectors,
       windReferenceMps,
       windArrowDomainFraction,
+      updraftLensFrame,
     });
   }, [
     activeSlice,
@@ -328,6 +340,7 @@ export function True3DViewer({
     windArrowDomainFraction,
     windReferenceMps,
     windVectors,
+    updraftLensFrame,
   ]);
 
   return (
@@ -387,8 +400,13 @@ export function True3DViewer({
             </span>
           ))}
         </div>
-        {showSlicePlane && activeSlice && (
-          <p className="true3d-slice-label">Slice plane: {activeSliceLabel}</p>
+        {updraftLensFrame ? (
+          <p className="true3d-slice-label true3d-slice-label-updraft-lens">
+            Updraft Lens slice: {activeSliceLabel}
+          </p>
+        ) : (
+          showSlicePlane &&
+          activeSlice && <p className="true3d-slice-label">Slice plane: {activeSliceLabel}</p>
         )}
         {selectedPoint && (
           <p className="true3d-selected-point-label">
@@ -481,6 +499,7 @@ function rebuildScene(
     showWindVectors,
     windReferenceMps,
     windArrowDomainFraction,
+    updraftLensFrame,
   }: {
     bounds: SceneBounds;
     pointCloud: PointCloudResponse | null;
@@ -494,6 +513,7 @@ function rebuildScene(
     showWindVectors: boolean;
     windReferenceMps: number;
     windArrowDomainFraction: number;
+    updraftLensFrame: UpdraftLensFrame | null;
   },
 ) {
   disposeScene(scene);
@@ -515,6 +535,10 @@ function rebuildScene(
     scene.add(horizontalWindLayer(windVectors, bounds, windReferenceMps, windArrowDomainFraction));
   }
 
+  if (updraftLensFrame) {
+    scene.add(updraftLensSlicePlane(updraftLensFrame, bounds));
+  }
+
   if (showSlicePlane && activeSlice) {
     scene.add(slicePlane(activeSlice, activeSliceLabel, bounds));
   }
@@ -522,6 +546,71 @@ function rebuildScene(
   if (selectedPoint) {
     scene.add(selectedPointMarker(selectedPoint, bounds));
   }
+}
+
+function updraftLensSlicePlane(frame: UpdraftLensFrame, bounds: SceneBounds): THREE.Group {
+  const width = Math.max(1, frame.w_values_m_s[0]?.length ?? 0);
+  const height = Math.max(1, frame.w_values_m_s.length);
+  const texture = new THREE.DataTexture(
+    updraftLensTextureData(
+      frame.w_values_m_s,
+      width,
+      height,
+      frame.w_range_min_m_s,
+      frame.w_range_max_m_s,
+    ),
+    width,
+    height,
+    THREE.RGBAFormat,
+    THREE.UnsignedByteType,
+  );
+  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.magFilter = THREE.NearestFilter;
+  texture.minFilter = THREE.NearestFilter;
+  texture.generateMipmaps = false;
+  texture.needsUpdate = true;
+
+  let geometry: THREE.PlaneGeometry;
+  if (frame.orientation === "horizontal") {
+    geometry = new THREE.PlaneGeometry(bounds.xRange, bounds.yRange);
+  } else if (frame.orientation === "vertical_y") {
+    geometry = new THREE.PlaneGeometry(bounds.yRange, bounds.zRange);
+  } else {
+    geometry = new THREE.PlaneGeometry(bounds.xRange, bounds.zRange);
+  }
+  const material = new THREE.MeshBasicMaterial({
+    map: texture,
+    transparent: true,
+    opacity: 0.68,
+    side: THREE.DoubleSide,
+    depthWrite: false,
+  });
+  const plane = new THREE.Mesh(geometry, material);
+  plane.name = `Updraft Lens ${frame.orientation} vertical-velocity plane`;
+  if (frame.orientation === "horizontal") {
+    plane.rotation.x = Math.PI / 2;
+    plane.position.y = centeredCoordinate(frame.plane_coordinate ?? 0, bounds.z);
+  } else if (frame.orientation === "vertical_y") {
+    plane.rotation.y = -Math.PI / 2;
+    plane.position.x = centeredCoordinate(frame.plane_coordinate ?? 0, bounds.x);
+  } else {
+    plane.position.z = centeredCoordinate(frame.plane_coordinate ?? 0, bounds.y);
+  }
+  plane.renderOrder = 10;
+
+  const outline = new THREE.LineSegments(
+    new THREE.EdgesGeometry(geometry),
+    new THREE.LineBasicMaterial({ color: 0x263238, transparent: true, opacity: 0.9 }),
+  );
+  outline.name = "Updraft Lens plane outline";
+  outline.position.copy(plane.position);
+  outline.rotation.copy(plane.rotation);
+  outline.renderOrder = 11;
+
+  const group = new THREE.Group();
+  group.name = "trade-cumulus-updraft-lens-slice-plane";
+  group.add(plane, outline);
+  return group;
 }
 
 function horizontalWindLayer(

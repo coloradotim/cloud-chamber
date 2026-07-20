@@ -28,6 +28,8 @@ WIND_ARROW_DOMAIN_FRACTION = 0.08
 MIN_COHERENT_CLOUD_CELLS = 10
 
 WindMode = Literal["perturbation", "total"]
+LensOrientation = Literal["horizontal", "vertical_x", "vertical_y"]
+LensDimension = Literal["x", "y", "z"]
 
 
 class TradeCumulusUpdraftLensError(RuntimeError):
@@ -97,13 +99,16 @@ class TradeCumulusUpdraftLensFrame(BaseModel):
     result_id: str
     time_index: int
     time_seconds: float | None
-    orientation: Literal["vertical_x"] = "vertical_x"
-    plane_dimension: Literal["y"] = "y"
+    orientation: LensOrientation
+    plane_dimension: LensDimension
     plane_index: int
     plane_coordinate: float | None
     plane_units: str | None
+    dimension_order: list[LensDimension]
     x_indices: list[int]
     x_values_km: list[float]
+    y_indices: list[int]
+    y_values_km: list[float]
     z_indices: list[int]
     z_values_km: list[float]
     w_values_m_s: list[list[float | None]]
@@ -162,6 +167,7 @@ def trade_cumulus_updraft_lens_frame(
     result_id: str,
     *,
     time_index: int,
+    orientation: LensOrientation = "vertical_x",
     plane_index: int,
     wind_mode: WindMode,
 ) -> TradeCumulusUpdraftLensFrame:
@@ -173,6 +179,8 @@ def trade_cumulus_updraft_lens_frame(
         )
     if plane_index < 0:
         raise TradeCumulusUpdraftLensError("plane_index must be non-negative.")
+    if orientation not in {"horizontal", "vertical_x", "vertical_y"}:
+        raise TradeCumulusUpdraftLensError(f"Unsupported orientation: {orientation}")
     if wind_mode not in {"perturbation", "total"}:
         raise TradeCumulusUpdraftLensError(f"Unsupported wind_mode: {wind_mode}")
 
@@ -182,16 +190,37 @@ def trade_cumulus_updraft_lens_frame(
         ql, dimensions = _scalar_ql(dataset, frame.local_index)
         w = _center_w(dataset, frame.local_index, dimensions, ql.shape)
         nz, ny, nx = ql.shape
-        if plane_index >= ny:
+        plane_size = {
+            "horizontal": nz,
+            "vertical_x": ny,
+            "vertical_y": nx,
+        }[orientation]
+        if plane_index >= plane_size:
             raise TradeCumulusUpdraftLensError(
-                f"plane_index must be between 0 and {max(0, ny - 1)}."
+                f"plane_index must be between 0 and {max(0, plane_size - 1)}."
             )
 
         x_values = _coordinate_as(dataset, dimensions[2], "km", nx)
-        y_values = _coordinate_values(dataset, dimensions[1], ny)
+        y_values = _coordinate_as(dataset, dimensions[1], "km", ny)
         z_values = _coordinate_as(dataset, dimensions[0], "km", nz)
-        plane_coordinate = _finite_float(y_values[plane_index])
-        plane_units = _coordinate_units(dataset, dimensions[1])
+        if orientation == "horizontal":
+            plane_dimension: LensDimension = "z"
+            dimension_order: list[LensDimension] = ["y", "x"]
+            plane_coordinate = _finite_float(z_values[plane_index])
+            w_slice = w[plane_index, :, :]
+            cloud_slice = ql[plane_index, :, :] >= CLOUD_THRESHOLD_KG_KG
+        elif orientation == "vertical_x":
+            plane_dimension = "y"
+            dimension_order = ["z", "x"]
+            plane_coordinate = _finite_float(y_values[plane_index])
+            w_slice = w[:, plane_index, :]
+            cloud_slice = ql[:, plane_index, :] >= CLOUD_THRESHOLD_KG_KG
+        else:
+            plane_dimension = "x"
+            dimension_order = ["z", "y"]
+            plane_coordinate = _finite_float(x_values[plane_index])
+            w_slice = w[:, :, plane_index]
+            cloud_slice = ql[:, :, plane_index] >= CLOUD_THRESHOLD_KG_KG
 
         u, v = _center_horizontal_wind(dataset, frame.local_index, dimensions, ql.shape)
         wind_level_index = cached.response.wind_level_index
@@ -210,21 +239,24 @@ def trade_cumulus_updraft_lens_frame(
             shown_u,
             shown_v,
             x_values,
-            _values_as(y_values, plane_units, "km"),
+            y_values,
             cached.response.wind_actual_level_m / 1000.0,
         )
 
-        w_slice = w[:, plane_index, :]
-        cloud_slice = ql[:, plane_index, :] >= CLOUD_THRESHOLD_KG_KG
         return TradeCumulusUpdraftLensFrame(
             result_id=metadata.result_id,
             time_index=time_index,
             time_seconds=frame.time_seconds,
+            orientation=orientation,
+            plane_dimension=plane_dimension,
             plane_index=plane_index,
             plane_coordinate=plane_coordinate,
-            plane_units=plane_units,
+            plane_units="km",
+            dimension_order=dimension_order,
             x_indices=list(range(nx)),
             x_values_km=[float(value) for value in x_values],
+            y_indices=list(range(ny)),
+            y_values_km=[float(value) for value in y_values],
             z_indices=list(range(nz)),
             z_values_km=[float(value) for value in z_values],
             w_values_m_s=_json_float_matrix(w_slice),

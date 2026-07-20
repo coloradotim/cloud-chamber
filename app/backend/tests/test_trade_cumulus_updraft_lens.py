@@ -299,6 +299,43 @@ def test_frame_switches_between_perturbation_and_total_wind(tmp_path: Path) -> N
     assert total.wind_reference_m_s == defaults.total_wind_reference_m_s
 
 
+@pytest.mark.parametrize(
+    ("orientation", "plane_index", "plane_dimension", "dimension_order", "shape"),
+    [
+        ("horizontal", 1, "z", ["y", "x"], (4, 4)),
+        ("vertical_x", 1, "y", ["z", "x"], (3, 4)),
+        ("vertical_y", 2, "x", ["z", "y"], (3, 4)),
+    ],
+)
+def test_frame_returns_native_grid_for_each_slice_orientation(
+    tmp_path: Path,
+    orientation: lens.LensOrientation,
+    plane_index: int,
+    plane_dimension: str,
+    dimension_order: list[str],
+    shape: tuple[int, int],
+) -> None:
+    settings, _ = _install_result(tmp_path, _dataset(scalar_w=True))
+    frame = trade_cumulus_updraft_lens_frame(
+        settings,
+        "result-trade-cumulus",
+        time_index=1,
+        orientation=orientation,
+        plane_index=plane_index,
+        wind_mode="perturbation",
+    )
+
+    assert frame.orientation == orientation
+    assert frame.plane_dimension == plane_dimension
+    assert frame.dimension_order == dimension_order
+    assert np.asarray(frame.w_values_m_s).shape == shape
+    assert np.asarray(frame.cloud_mask).shape == shape
+    assert frame.plane_units == "km"
+    assert frame.x_values_km == pytest.approx([-0.15, -0.05, 0.05, 0.15])
+    assert frame.y_values_km == pytest.approx([-0.15, -0.05, 0.05, 0.15])
+    assert frame.z_values_km == pytest.approx([0.2, 0.6, 1.0])
+
+
 def test_wind_stride_bounds_arrow_count_and_skips_zero_vectors() -> None:
     u = np.ones((64, 64))
     v = np.zeros((64, 64))
@@ -337,6 +374,15 @@ def test_invalid_indices_and_wind_mode_are_rejected(tmp_path: Path) -> None:
             settings,
             "result-trade-cumulus",
             time_index=-1,
+            plane_index=0,
+            wind_mode="total",
+        )
+    with pytest.raises(TradeCumulusUpdraftLensError, match="orientation"):
+        trade_cumulus_updraft_lens_frame(
+            settings,
+            "result-trade-cumulus",
+            time_index=0,
+            orientation="diagonal",  # type: ignore[arg-type]
             plane_index=0,
             wind_mode="total",
         )

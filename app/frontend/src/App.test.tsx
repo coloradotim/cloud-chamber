@@ -3196,6 +3196,7 @@ const tradeCumulusFieldCatalog = {
         scenario_id: "bomex_trade_cumulus_baseline_v0",
       },
     },
+    fieldCatalogResponse.available_fields[5],
     fieldCatalogResponse.available_fields[1],
   ],
 };
@@ -3252,36 +3253,56 @@ const tradeCumulusUpdraftLensDefaults = {
 function tradeCumulusUpdraftLensFrame({
   timeIndex = 2,
   planeIndex = 1,
+  orientation = "vertical_x",
   windMode = "perturbation",
   range = 0.9,
 }: {
   timeIndex?: number;
   planeIndex?: number;
+  orientation?: "horizontal" | "vertical_x" | "vertical_y";
   windMode?: "perturbation" | "total";
   range?: number;
 } = {}) {
   const reference = windMode === "perturbation" ? 0.9 : 8.8;
+  const planeDimension =
+    orientation === "horizontal" ? "z" : orientation === "vertical_y" ? "x" : "y";
+  const dimensionOrder =
+    orientation === "horizontal"
+      ? (["y", "x"] as const)
+      : orientation === "vertical_y"
+        ? (["z", "y"] as const)
+        : (["z", "x"] as const);
+  const wValues =
+    orientation === "vertical_y"
+      ? [
+          [-range, range],
+          [null, range / 2],
+        ]
+      : [
+          [-range, 0, range],
+          [null, -range / 2, range / 2],
+        ];
+  const cloudMask = wValues.map((row, rowIndex) =>
+    row.map((_, columnIndex) => rowIndex === 0 || columnIndex === 1),
+  );
   return {
     result_id: "result-trade-cumulus",
     time_index: timeIndex,
     time_seconds: [0, 900, 1800, 2700][timeIndex] ?? 1800,
-    orientation: "vertical_x",
-    plane_dimension: "y",
+    orientation,
+    plane_dimension: planeDimension,
     plane_index: planeIndex,
     plane_coordinate: [-0.05, 0.05][planeIndex] ?? 0.05,
     plane_units: "km",
+    dimension_order: dimensionOrder,
     x_indices: [0, 1, 2],
     x_values_km: [-0.1, 0, 0.1],
+    y_indices: [0, 1],
+    y_values_km: [-0.05, 0.05],
     z_indices: [0, 1],
     z_values_km: [0.1, 0.3],
-    w_values_m_s: [
-      [-range, 0, range],
-      [null, -range / 2, range / 2],
-    ],
-    cloud_mask: [
-      [true, true, false],
-      [false, true, false],
-    ],
+    w_values_m_s: wValues,
+    cloud_mask: cloudMask,
     cloud_threshold_kg_kg: 1e-6,
     w_range_min_m_s: -range,
     w_range_max_m_s: range,
@@ -3328,7 +3349,11 @@ function tradeCumulusSliceResponse(url: string) {
   const response = sliceResponse({
     field,
     orientation:
-      parsed.searchParams.get("orientation") === "vertical_x" ? "vertical_x" : "horizontal",
+      parsed.searchParams.get("orientation") === "vertical_x"
+        ? "vertical_x"
+        : parsed.searchParams.get("orientation") === "vertical_y"
+          ? "vertical_y"
+          : "horizontal",
     timeIndex: Number(parsed.searchParams.get("time_index") ?? 0),
     levelIndex: Number(parsed.searchParams.get("level_index") ?? 0),
   });
@@ -3928,6 +3953,12 @@ function mockTradeCumulusVisualizer(
             tradeCumulusUpdraftLensFrame({
               timeIndex: Number(parsed.searchParams.get("time_index") ?? 2),
               planeIndex: Number(parsed.searchParams.get("plane_index") ?? 1),
+              orientation:
+                parsed.searchParams.get("orientation") === "horizontal"
+                  ? "horizontal"
+                  : parsed.searchParams.get("orientation") === "vertical_y"
+                    ? "vertical_y"
+                    : "vertical_x",
               windMode: parsed.searchParams.get("wind_mode") === "total" ? "total" : "perturbation",
             }),
           ),
@@ -6702,6 +6733,7 @@ describe("App", () => {
     render(<VisualizerSceneShell result={visualizerResult} />);
     await screen.findByText("Slice synced");
     expect(screen.queryByRole("button", { name: "Updraft Lens" })).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Explore view mode")).not.toBeInTheDocument();
   });
 
   it("activates the Updraft Lens, applies defaults, controls overlays, and restores Explore", async () => {
@@ -6711,8 +6743,13 @@ describe("App", () => {
     >[0]["result"];
     render(<VisualizerSceneShell result={visualizerResult} />);
 
-    const lensToggle = await screen.findByRole("button", { name: "Updraft Lens" });
+    const viewMode = await screen.findByLabelText("Explore view mode");
+    const lensToggle = within(viewMode).getByRole("button", { name: "Updraft Lens" });
     await waitFor(() => expect(lensToggle).toBeEnabled());
+    expect(within(viewMode).getByRole("button", { name: "Standard" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
     expect(screen.queryByRole("heading", { name: "Updraft Lens" })).not.toBeInTheDocument();
     fireEvent.click(lensToggle);
 
@@ -6721,7 +6758,11 @@ describe("App", () => {
       await screen.findByRole("img", { name: /Updraft Lens vertical x-z slice/ }),
     ).toBeInTheDocument();
     expect(screen.getByLabelText("Time")).toHaveValue("2");
-    expect(screen.getByLabelText("Updraft Lens vertical plane")).toHaveValue("1");
+    expect(screen.getByLabelText("Updraft Lens slice position")).toHaveValue("1");
+    expect(screen.getByRole("button", { name: "Vertical x-z" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
     expect(screen.getByLabelText("Cloud boundary")).toBeChecked();
     expect(screen.getByLabelText("Horizontal wind")).toBeChecked();
     expect(screen.getByRole("button", { name: "Local departures" })).toHaveAttribute(
@@ -6729,10 +6770,41 @@ describe("App", () => {
       "true",
     );
     expect(screen.queryByLabelText("Slice field")).not.toBeInTheDocument();
-    expect(screen.queryByLabelText("3-D scalar field")).not.toBeInTheDocument();
+    expect(screen.getByLabelText("3-D scalar field")).toHaveValue("ql");
+    fireEvent.change(screen.getByLabelText("3-D scalar field"), { target: { value: "qv" } });
+    expect(screen.getByLabelText("3-D scalar field")).toHaveValue("qv");
+    expect(screen.getByLabelText("Updraft Lens slice position")).toHaveValue("1");
+    await waitFor(() =>
+      expect(fetch).toHaveBeenCalledWith(
+        expect.stringMatching(/orientation=vertical_x.*plane_index=1/),
+        expect.objectContaining({ signal: expect.any(AbortSignal) }),
+      ),
+    );
+    fireEvent.change(screen.getByLabelText("Layer opacity"), { target: { value: "0.45" } });
+    fireEvent.change(screen.getByLabelText("Point size"), { target: { value: "14" } });
+    expect(screen.getByLabelText("Layer opacity")).toHaveValue("0.45");
+    expect(screen.getByLabelText("Point size")).toHaveValue("14");
     expect(screen.getByLabelText("Horizontal wind overlay legend")).toHaveTextContent(
       "0.9 m/s reference",
     );
+    expect(screen.getByText(/Updraft Lens slice: Vertical x-z slice at y =/)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Horizontal x-y" }));
+    expect(
+      await screen.findByRole("img", { name: /Updraft Lens horizontal x-y slice/ }),
+    ).toBeInTheDocument();
+    expect(fetch).toHaveBeenCalledWith(
+      expect.stringContaining("orientation=horizontal"),
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Vertical y-z" }));
+    expect(
+      await screen.findByRole("img", { name: /Updraft Lens vertical y-z slice/ }),
+    ).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Vertical x-z" }));
+    expect(
+      await screen.findByRole("img", { name: /Updraft Lens vertical x-z slice/ }),
+    ).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Total wind" }));
     await waitFor(() =>
@@ -6750,7 +6822,7 @@ describe("App", () => {
     fireEvent.click(screen.getByLabelText("Horizontal wind"));
     expect(screen.queryByLabelText("Horizontal wind overlay legend")).not.toBeInTheDocument();
 
-    fireEvent.change(screen.getByLabelText("Updraft Lens vertical plane"), {
+    fireEvent.change(screen.getByLabelText("Updraft Lens slice position"), {
       target: { value: "0" },
     });
     await waitFor(() =>
@@ -6760,7 +6832,7 @@ describe("App", () => {
       ),
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "Turn off Updraft Lens" }));
+    fireEvent.click(within(viewMode).getByRole("button", { name: "Standard" }));
     expect(await screen.findByLabelText("Slice field")).toBeInTheDocument();
     expect(screen.getByLabelText("3-D scalar field")).toBeInTheDocument();
     expect(screen.getByLabelText("Time")).toHaveValue("3");
@@ -6832,6 +6904,11 @@ describe("App", () => {
     expect(screen.getByRole("button", { name: "Move up" })).toBeInTheDocument();
     const horizontalHeatmap = screen.getByLabelText(/Horizontal layer at z = .* heatmap/);
     expect(horizontalHeatmap).toBeInTheDocument();
+    expect(horizontalHeatmap).toHaveAttribute("data-domain-aspect", "1.000000");
+    expect(within(horizontalHeatmap).getByTestId("slice-cloud-boundary")).toBeInTheDocument();
+    const minimumCell = within(horizontalHeatmap).getByRole("button", { name: /row 1, column 1/i });
+    const maximumCell = within(horizontalHeatmap).getByRole("button", { name: /row 2, column 3/i });
+    expect(minimumCell.style.background).not.toBe(maximumCell.style.background);
     const colorScale = screen.getByLabelText(/Horizontal layer at z = .* color scale/);
     expect(colorScale).toBeInTheDocument();
     expect(colorScale.querySelector(".heatmap-scale-cloud-water")).not.toBeNull();

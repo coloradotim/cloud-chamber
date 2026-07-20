@@ -19,8 +19,11 @@ const frame: UpdraftLensFrame = {
   plane_index: 5,
   plane_coordinate: -2.65,
   plane_units: "km",
+  dimension_order: ["z", "x"],
   x_indices: [0, 1, 2],
   x_values_km: [-0.1, 0, 0.1],
+  y_indices: [0, 1, 2, 3, 4, 5],
+  y_values_km: [-0.5, -0.4, -0.3, -0.2, -0.1, 0],
   z_indices: [0, 1],
   z_values_km: [0.1, 0.3],
   w_values_m_s: [
@@ -91,11 +94,18 @@ describe("UpdraftLensSlice geometry", () => {
   });
 
   it("maps top-left pointer position to highest-z native indices", () => {
-    expect(updraftLensSelectionFromPointer(0, 0, 300, 200, [-0.1, 0, 0.1], [0.1, 0.3], 5)).toEqual({
-      xIndex: 0,
-      yIndex: 5,
-      zIndex: 1,
-    });
+    expect(
+      updraftLensSelectionFromPointer(0, 0, 300, 200, [-0.1, 0, 0.1], [0.1, 0.3], "vertical_x", 5),
+    ).toEqual({ xIndex: 0, yIndex: 5, zIndex: 1 });
+  });
+
+  it("maps pointer positions for horizontal and y-z slices", () => {
+    expect(
+      updraftLensSelectionFromPointer(300, 0, 300, 200, [0, 1, 2], [0, 1], "horizontal", 4),
+    ).toEqual({ xIndex: 2, yIndex: 1, zIndex: 4 });
+    expect(
+      updraftLensSelectionFromPointer(300, 200, 300, 200, [0, 1, 2], [0, 1], "vertical_y", 3),
+    ).toEqual({ xIndex: 3, yIndex: 2, zIndex: 0 });
   });
 });
 
@@ -104,6 +114,7 @@ describe("UpdraftLensSlice rendering", () => {
     const { container } = render(<UpdraftLensSlice frame={frame} />);
     const plot = screen.getByRole("img", { name: /Updraft Lens vertical x-z slice/ });
     expect(plot).toHaveAttribute("data-domain-aspect", "0.750000");
+    expect(plot).toHaveAttribute("data-orientation", "vertical_x");
     expect(container.querySelectorAll("rect")).toHaveLength(6);
     expect(screen.getByLabelText("Vertical velocity color scale")).toHaveTextContent("-1.0");
     expect(screen.getByTestId("updraft-lens-cloud-boundary")).toBeInTheDocument();
@@ -129,5 +140,31 @@ describe("UpdraftLensSlice rendering", () => {
     fireEvent.click(plot, { clientX: 300, clientY: 200 });
     expect(onSelectPoint).toHaveBeenCalledWith({ xIndex: 2, yIndex: 5, zIndex: 0 });
     expect(screen.queryByTestId("updraft-lens-cloud-boundary")).not.toBeInTheDocument();
+  });
+
+  it("renders horizontal axes from the frame dimension order", () => {
+    render(
+      <UpdraftLensSlice
+        frame={{
+          ...frame,
+          orientation: "horizontal",
+          plane_dimension: "z",
+          plane_index: 1,
+          dimension_order: ["y", "x"],
+          w_values_m_s: [
+            [-1, 0, 1],
+            [0, 0.5, 1],
+          ],
+          cloud_mask: [
+            [false, true, false],
+            [false, true, false],
+          ],
+        }}
+      />,
+    );
+    expect(screen.getByRole("img", { name: /horizontal x-y slice/ })).toHaveAttribute(
+      "data-orientation",
+      "horizontal",
+    );
   });
 });

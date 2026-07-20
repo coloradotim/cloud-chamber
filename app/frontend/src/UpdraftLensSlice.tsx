@@ -2,6 +2,8 @@
 import type { MouseEvent as ReactMouseEvent } from "react";
 
 export type UpdraftLensWindMode = "perturbation" | "total";
+export type UpdraftLensOrientation = "horizontal" | "vertical_x" | "vertical_y";
+export type UpdraftLensDimension = "x" | "y" | "z";
 
 export type UpdraftLensWindVector = {
   x_km: number;
@@ -16,13 +18,16 @@ export type UpdraftLensFrame = {
   result_id: string;
   time_index: number;
   time_seconds: number | null;
-  orientation: "vertical_x";
-  plane_dimension: "y";
+  orientation: UpdraftLensOrientation;
+  plane_dimension: UpdraftLensDimension;
   plane_index: number;
   plane_coordinate: number | null;
   plane_units: string | null;
+  dimension_order: UpdraftLensDimension[];
   x_indices: number[];
   x_values_km: number[];
+  y_indices: number[];
+  y_values_km: number[];
   z_indices: number[];
   z_values_km: number[];
   w_values_m_s: Array<Array<number | null>>;
@@ -116,24 +121,38 @@ export function UpdraftLensSlice({
   selectedPoint = null,
   onSelectPoint,
 }: UpdraftLensSliceProps) {
-  const xEdges = coordinateEdges(frame.x_values_km);
-  const zEdges = coordinateEdges(frame.z_values_km);
-  const xMin = xEdges[0] ?? 0;
-  const xMax = xEdges.at(-1) ?? 1;
-  const zMin = zEdges[0] ?? 0;
-  const zMax = zEdges.at(-1) ?? 1;
-  const width = Math.max(Number.EPSILON, xMax - xMin);
-  const height = Math.max(Number.EPSILON, zMax - zMin);
+  const rowDimension = frame.dimension_order[0] ?? "z";
+  const columnDimension = frame.dimension_order[1] ?? "x";
+  const rowValues = updraftLensCoordinateValues(frame, rowDimension);
+  const columnValues = updraftLensCoordinateValues(frame, columnDimension);
+  const columnEdges = coordinateEdges(columnValues);
+  const rowEdges = coordinateEdges(rowValues);
+  const columnMin = columnEdges[0] ?? 0;
+  const columnMax = columnEdges.at(-1) ?? 1;
+  const rowMin = rowEdges[0] ?? 0;
+  const rowMax = rowEdges.at(-1) ?? 1;
+  const width = Math.max(Number.EPSILON, columnMax - columnMin);
+  const height = Math.max(Number.EPSILON, rowMax - rowMin);
   const boundaryPath = showCloudBoundary
-    ? updraftLensBoundaryPath(frame.cloud_mask, xEdges, zEdges)
+    ? updraftLensBoundaryPath(frame.cloud_mask, columnEdges, rowEdges)
     : "";
-  const selectedX =
-    selectedPoint && selectedPoint.yIndex === frame.plane_index
-      ? frame.x_values_km[selectedPoint.xIndex]
+  const selectedColumnIndex = selectedPoint
+    ? updraftLensPointIndex(selectedPoint, columnDimension)
+    : undefined;
+  const selectedRowIndex = selectedPoint
+    ? updraftLensPointIndex(selectedPoint, rowDimension)
+    : undefined;
+  const selectedColumn =
+    selectedPoint &&
+    updraftLensPointIndex(selectedPoint, frame.plane_dimension) === frame.plane_index &&
+    selectedColumnIndex !== undefined
+      ? columnValues[selectedColumnIndex]
       : undefined;
-  const selectedZ =
-    selectedPoint && selectedPoint.yIndex === frame.plane_index
-      ? frame.z_values_km[selectedPoint.zIndex]
+  const selectedRow =
+    selectedPoint &&
+    updraftLensPointIndex(selectedPoint, frame.plane_dimension) === frame.plane_index &&
+    selectedRowIndex !== undefined
+      ? rowValues[selectedRowIndex]
       : undefined;
 
   function handlePointer(event: ReactMouseEvent<SVGSVGElement>) {
@@ -144,8 +163,9 @@ export function UpdraftLensSlice({
       event.clientY - bounds.top,
       bounds.width,
       bounds.height,
-      frame.x_values_km,
-      frame.z_values_km,
+      columnValues,
+      rowValues,
+      frame.orientation,
       frame.plane_index,
     );
     if (selection) onSelectPoint(selection);
@@ -154,9 +174,9 @@ export function UpdraftLensSlice({
   return (
     <section className="updraft-lens-slice" aria-label="Updraft Lens vertical slice">
       <div className="updraft-lens-axis updraft-lens-axis-z" aria-hidden="true">
-        <span>{formatKilometers(zMax)}</span>
-        <strong>z (km)</strong>
-        <span>{formatKilometers(zMin)}</span>
+        <span>{formatKilometers(rowMax)}</span>
+        <strong>{rowDimension} (km)</strong>
+        <span>{formatKilometers(rowMin)}</span>
       </div>
       <div className="updraft-lens-plot-column">
         <svg
@@ -164,16 +184,17 @@ export function UpdraftLensSlice({
           role="img"
           aria-label={updraftLensAccessibleSummary(frame)}
           data-domain-aspect={(width / height).toFixed(6)}
-          viewBox={`${xMin} ${zMin} ${width} ${height}`}
+          data-orientation={frame.orientation}
+          viewBox={`${columnMin} ${rowMin} ${width} ${height}`}
           preserveAspectRatio="none"
           style={{ aspectRatio: `${width} / ${height}` }}
           shapeRendering="crispEdges"
           onClick={handlePointer}
         >
-          <g transform={`translate(0 ${zMin + zMax}) scale(1 -1)`}>
+          <g transform={`translate(0 ${rowMin + rowMax}) scale(1 -1)`}>
             {frame.w_values_m_s.map((row, zIndex) =>
               row.map((value, xIndex) => {
-                const geometry = updraftLensCellGeometry(xEdges, zEdges, xIndex, zIndex);
+                const geometry = updraftLensCellGeometry(columnEdges, rowEdges, xIndex, zIndex);
                 return (
                   <rect
                     key={`${zIndex}-${xIndex}`}
@@ -196,11 +217,11 @@ export function UpdraftLensSlice({
                 vectorEffect="non-scaling-stroke"
               />
             )}
-            {selectedX !== undefined && selectedZ !== undefined && (
+            {selectedColumn !== undefined && selectedRow !== undefined && (
               <circle
                 className="updraft-lens-selected-point"
-                cx={selectedX}
-                cy={selectedZ}
+                cx={selectedColumn}
+                cy={selectedRow}
                 r={Math.min(width, height) * 0.018}
                 vectorEffect="non-scaling-stroke"
               />
@@ -208,9 +229,9 @@ export function UpdraftLensSlice({
           </g>
         </svg>
         <div className="updraft-lens-axis updraft-lens-axis-x" aria-hidden="true">
-          <span>{formatKilometers(xMin)}</span>
-          <strong>x (km)</strong>
-          <span>{formatKilometers(xMax)}</span>
+          <span>{formatKilometers(columnMin)}</span>
+          <strong>{columnDimension} (km)</strong>
+          <span>{formatKilometers(columnMax)}</span>
         </div>
         <div className="updraft-lens-legend" aria-label="Vertical velocity color scale">
           <span>{frame.w_range_min_m_s.toFixed(1)}</span>
@@ -279,25 +300,54 @@ export function updraftLensSelectionFromPointer(
   pointerY: number,
   renderedWidth: number,
   renderedHeight: number,
-  xValues: number[],
-  zValues: number[],
-  yIndex: number,
+  columnValues: number[],
+  rowValues: number[],
+  orientation: UpdraftLensOrientation,
+  planeIndex: number,
 ): UpdraftLensPointSelection | null {
-  if (renderedWidth <= 0 || renderedHeight <= 0 || xValues.length === 0 || zValues.length === 0) {
+  if (
+    renderedWidth <= 0 ||
+    renderedHeight <= 0 ||
+    columnValues.length === 0 ||
+    rowValues.length === 0
+  ) {
     return null;
   }
-  const xEdges = coordinateEdges(xValues);
-  const zEdges = coordinateEdges(zValues);
-  const xCoordinate =
-    (xEdges[0] ?? 0) + clamp(pointerX / renderedWidth) * ((xEdges.at(-1) ?? 1) - (xEdges[0] ?? 0));
-  const zCoordinate =
-    (zEdges.at(-1) ?? 1) -
-    clamp(pointerY / renderedHeight) * ((zEdges.at(-1) ?? 1) - (zEdges[0] ?? 0));
-  return {
-    xIndex: nearestIndex(xValues, xCoordinate),
-    yIndex,
-    zIndex: nearestIndex(zValues, zCoordinate),
-  };
+  const columnEdges = coordinateEdges(columnValues);
+  const rowEdges = coordinateEdges(rowValues);
+  const columnCoordinate =
+    (columnEdges[0] ?? 0) +
+    clamp(pointerX / renderedWidth) * ((columnEdges.at(-1) ?? 1) - (columnEdges[0] ?? 0));
+  const rowCoordinate =
+    (rowEdges.at(-1) ?? 1) -
+    clamp(pointerY / renderedHeight) * ((rowEdges.at(-1) ?? 1) - (rowEdges[0] ?? 0));
+  const columnIndex = nearestIndex(columnValues, columnCoordinate);
+  const rowIndex = nearestIndex(rowValues, rowCoordinate);
+  if (orientation === "horizontal") {
+    return { xIndex: columnIndex, yIndex: rowIndex, zIndex: planeIndex };
+  }
+  if (orientation === "vertical_x") {
+    return { xIndex: columnIndex, yIndex: planeIndex, zIndex: rowIndex };
+  }
+  return { xIndex: planeIndex, yIndex: columnIndex, zIndex: rowIndex };
+}
+
+export function updraftLensCoordinateValues(
+  frame: UpdraftLensFrame,
+  dimension: UpdraftLensDimension,
+): number[] {
+  if (dimension === "x") return frame.x_values_km;
+  if (dimension === "y") return frame.y_values_km;
+  return frame.z_values_km;
+}
+
+function updraftLensPointIndex(
+  selection: UpdraftLensPointSelection,
+  dimension: UpdraftLensDimension,
+): number {
+  if (dimension === "x") return selection.xIndex;
+  if (dimension === "y") return selection.yIndex;
+  return selection.zIndex;
 }
 
 function coordinateEdges(values: number[]): number[] {
@@ -357,5 +407,11 @@ function updraftLensAccessibleSummary(frame: UpdraftLensFrame): string {
   const updraftCells = finiteValues.filter((value) => value > 0).length;
   const downdraftCells = finiteValues.filter((value) => value < 0).length;
   const cloudCells = frame.cloud_mask.flat().filter(Boolean).length;
-  return `Updraft Lens vertical x-z slice at y index ${frame.plane_index}; ${updraftCells} updraft cells, ${downdraftCells} downdraft cells, and ${cloudCells} cloud cells.`;
+  return `Updraft Lens ${updraftLensOrientationLabel(frame.orientation)} at ${frame.plane_dimension} index ${frame.plane_index}; ${updraftCells} updraft cells, ${downdraftCells} downdraft cells, and ${cloudCells} cloud cells.`;
+}
+
+function updraftLensOrientationLabel(orientation: UpdraftLensOrientation): string {
+  if (orientation === "horizontal") return "horizontal x-y slice";
+  if (orientation === "vertical_y") return "vertical y-z slice";
+  return "vertical x-z slice";
 }

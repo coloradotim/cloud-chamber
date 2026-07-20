@@ -373,6 +373,23 @@ test.describe("mocked smoke: Build, Results, Explore path", () => {
     await expect(page.getByRole("button", { name: /move up/i })).toBeVisible();
     const heatmap = page.getByRole("img", { name: /heatmap/i });
     await expect(heatmap).toBeVisible();
+    await expect(page.getByTestId("slice-cloud-boundary")).toBeVisible();
+    const heatmapLayout = await heatmap.evaluate((element) => {
+      const bounds = element.getBoundingClientRect();
+      const grid = element.querySelector<HTMLElement>(".slice-heatmap-grid");
+      const row = element.querySelector<HTMLElement>(".heatmap-row");
+      return {
+        declaredAspect: Number(element.getAttribute("data-domain-aspect")),
+        renderedAspect: bounds.width / bounds.height,
+        gridGap: grid ? getComputedStyle(grid).gap : null,
+        rowGap: row ? getComputedStyle(row).gap : null,
+        padding: getComputedStyle(element).padding,
+      };
+    });
+    expect(Math.abs(heatmapLayout.declaredAspect - heatmapLayout.renderedAspect)).toBeLessThan(0.03);
+    expect(heatmapLayout.gridGap).toBe("0px");
+    expect(heatmapLayout.rowGap).toBe("0px");
+    expect(heatmapLayout.padding).toBe("0px");
     const fieldControlsPrecedeHeatmap = await heatmap.evaluate((element) => {
       const fieldControl = document.querySelector("#explore-slice-field");
       return Boolean(
@@ -483,8 +500,36 @@ test.describe("mocked smoke: Build, Results, Explore path", () => {
       (route) => {
         const url = new URL(route.request().url());
         const windMode = url.searchParams.get("wind_mode") === "total" ? "total" : "perturbation";
+        const orientation =
+          url.searchParams.get("orientation") === "horizontal"
+            ? "horizontal"
+            : url.searchParams.get("orientation") === "vertical_y"
+              ? "vertical_y"
+              : "vertical_x";
         const planeIndex = Number(url.searchParams.get("plane_index") ?? 2);
         const timeIndex = Number(url.searchParams.get("time_index") ?? 1);
+        const planeDimension =
+          orientation === "horizontal" ? "z" : orientation === "vertical_y" ? "x" : "y";
+        const dimensionOrder =
+          orientation === "horizontal"
+            ? ["y", "x"]
+            : orientation === "vertical_y"
+              ? ["z", "y"]
+              : ["z", "x"];
+        const wValues =
+          orientation === "horizontal"
+            ? [
+                [-0.9, -0.4, 0.2, 0.6],
+                [-0.5, 0, 0.5, 0.9],
+                [-0.2, 0.3, 0.7, null],
+                [0, 0.1, 0.4, 0.2],
+              ]
+            : [
+                [-0.9, -0.4, 0.2, 0.6],
+                [-0.5, 0, 0.5, 0.9],
+                [-0.2, 0.3, 0.7, null],
+                [0, 0.1, 0.4, 0.2],
+              ];
         return route.fulfill({
           status: 200,
           contentType: "application/json",
@@ -492,21 +537,19 @@ test.describe("mocked smoke: Build, Results, Explore path", () => {
             result_id: "result-baseline",
             time_index: timeIndex,
             time_seconds: [0, 1800, 3600][timeIndex] ?? 1800,
-            orientation: "vertical_x",
-            plane_dimension: "y",
+            orientation,
+            plane_dimension: planeDimension,
             plane_index: planeIndex,
             plane_coordinate: [-0.15, -0.05, 0.05, 0.15][planeIndex] ?? 0.05,
             plane_units: "km",
+            dimension_order: dimensionOrder,
             x_indices: [0, 1, 2, 3],
             x_values_km: [-0.15, -0.05, 0.05, 0.15],
+            y_indices: [0, 1, 2, 3],
+            y_values_km: [-0.15, -0.05, 0.05, 0.15],
             z_indices: [0, 1, 2, 3],
             z_values_km: [0.1, 0.3, 0.5, 0.7],
-            w_values_m_s: [
-              [-0.9, -0.4, 0.2, 0.6],
-              [-0.5, 0, 0.5, 0.9],
-              [-0.2, 0.3, 0.7, null],
-              [0, 0.1, 0.4, 0.2],
-            ],
+            w_values_m_s: wValues,
             cloud_mask: [
               [false, false, false, false],
               [false, true, true, false],
@@ -548,7 +591,9 @@ test.describe("mocked smoke: Build, Results, Explore path", () => {
     await page.getByRole("button", { name: "Open in Explore" }).first().click();
 
     const ordinaryTimeValue = await page.getByRole("combobox", { name: "Time" }).inputValue();
-    const lensToggle = page.getByRole("button", { name: "Updraft Lens" });
+    const viewMode = page.getByLabel("Explore view mode");
+    await expect(viewMode).toBeVisible();
+    const lensToggle = viewMode.getByRole("button", { name: "Updraft Lens" });
     await expect(lensToggle).toBeEnabled();
     await lensToggle.click();
     await expect(page.getByRole("heading", { name: "Updraft Lens" })).toBeVisible();
@@ -563,13 +608,51 @@ test.describe("mocked smoke: Build, Results, Explore path", () => {
       "0.9 m/s reference",
     );
     await expect(page.getByLabel("Vertical velocity color scale")).toContainText("0.9 m/s");
-    await expect(page.getByLabel("Updraft Lens vertical plane")).toHaveValue("2");
+    await expect(page.getByLabel("Updraft Lens slice position")).toHaveValue("2");
+    await expect(page.getByRole("button", { name: "Vertical x-z" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    await expect(
+      page.getByText("Updraft Lens slice: Vertical x-z slice at y = 0.05 km", { exact: true }),
+    ).toBeVisible();
     await expect(page.getByLabel("Slice field")).toHaveCount(0);
-    await expect(page.locator("#explore-3d-field")).toHaveCount(0);
+    const scalarField = page.getByLabel("3-D scalar field", { exact: true });
+    await expect(scalarField).toBeVisible();
+    await scalarField.selectOption("qv");
+    await expect(scalarField).toHaveValue("qv");
+    await expect(page.getByLabel("Updraft Lens slice position")).toHaveValue("2");
+    await expect(page.getByRole("img", { name: /y index 2/ })).toBeVisible();
+    await page.getByLabel("Layer opacity").fill("0.45");
+    await page.getByLabel("Point size").fill("14");
+    await expect(page.getByLabel("Layer opacity")).toHaveValue("0.45");
+    await expect(page.getByLabel("Point size")).toHaveValue("14");
+    const sliceAspect = await page.locator(".updraft-lens-svg").evaluate((element) => {
+      const bounds = element.getBoundingClientRect();
+      return {
+        declared: Number(element.getAttribute("data-domain-aspect")),
+        rendered: bounds.width / bounds.height,
+      };
+    });
+    expect(Math.abs(sliceAspect.declared - sliceAspect.rendered)).toBeLessThan(0.03);
 
-    await page.getByLabel("Updraft Lens vertical plane").fill("3");
-    await expect(page.getByLabel("Updraft Lens vertical plane")).toHaveValue("3");
+    await page.getByRole("button", { name: "Horizontal x-y" }).click();
+    await expect(
+      page.getByRole("img", { name: /Updraft Lens horizontal x-y slice/ }),
+    ).toBeVisible();
+    await expect(page.getByText(/Updraft Lens slice: Horizontal x-y layer at z =/)).toBeVisible();
+    await page.getByRole("button", { name: "Vertical y-z" }).click();
+    await expect(page.getByRole("img", { name: /Updraft Lens vertical y-z slice/ })).toBeVisible();
+    await expect(page.getByText(/Updraft Lens slice: Vertical y-z slice at x =/)).toBeVisible();
+    await page.getByRole("button", { name: "Vertical x-z" }).click();
+    await expect(page.getByRole("img", { name: /Updraft Lens vertical x-z slice/ })).toBeVisible();
+
+    await page.getByLabel("Updraft Lens slice position").fill("3");
+    await expect(page.getByLabel("Updraft Lens slice position")).toHaveValue("3");
     await expect(page.getByRole("img", { name: /y index 3/ })).toBeVisible();
+    await expect(
+      page.getByText("Updraft Lens slice: Vertical x-z slice at y = 0.15 km", { exact: true }),
+    ).toBeVisible();
     await page.getByRole("combobox", { name: "Time" }).selectOption({ label: "3,600 s" });
     await expect(
       page.getByText("Vertical x-z slice at y = 0.15 km · w · 3,600 s", { exact: true }),
@@ -585,7 +668,7 @@ test.describe("mocked smoke: Build, Results, Explore path", () => {
     await expect(page.getByTestId("updraft-lens-cloud-boundary")).toHaveCount(0);
     await page.getByRole("checkbox", { name: "Horizontal wind" }).uncheck();
     await expect(page.getByLabel("Horizontal wind overlay legend")).toHaveCount(0);
-    await page.getByRole("button", { name: "Turn off Updraft Lens" }).click();
+    await viewMode.getByRole("button", { name: "Standard" }).click();
     await expect(page.getByRole("heading", { name: "Inspect the current slice" })).toBeVisible();
     await expect(page.getByLabel("Slice field")).toBeVisible();
     await expect(page.getByRole("combobox", { name: "Time" })).toHaveValue(ordinaryTimeValue);
