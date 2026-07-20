@@ -319,7 +319,7 @@ For a Comparison, both Simulations must use the same cloud threshold.
 
 ### Horizontal-flow context in the 3-D view
 
-The Updraft Lens may add a sparse horizontal-wind overlay to the three-dimensional cloud view.
+The Updraft Lens provides an optional sparse horizontal-wind overlay in the three-dimensional cloud view. It is shown by default when the Lens is active and may be hidden by the user.
 
 Default behavior:
 
