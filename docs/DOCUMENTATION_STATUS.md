@@ -33,6 +33,14 @@ subordinate to the North Star, Product Vision, explicit approved PM decisions,
 and Application Semantics, and it does not make a Cloud World, Recipe, Control,
 Lens, or Comparison supported merely by being documented.
 
+The [MVP](product/MVP.md) is the PM-authored Stage 7 product-scope definition for
+Cloud Chamber as a single-user personal cloud laboratory and growing
+cloud-world atlas. Until issue #381 exits and issue #383 is explicitly approved
+and merged, it remains a queued Stage 7 definition rather than controlling MVP
+authority. After approval, it controls MVP inclusion, exclusion, quality, and
+completion decisions while remaining subordinate to the North Star, Product
+Vision, approved PM decisions, and Application Semantics.
+
 PM decisions and product-architecture documents do not silently rewrite higher
 authority.
 
@@ -191,8 +199,9 @@ not moved or relabeled every file.
 2. [Product Vision](product/PRODUCT_VISION.md)
 3. [Application Semantics](product/APPLICATION_SEMANTICS.md)
 4. [Trade Cumulus Product Slice](product/TRADE_CUMULUS_PRODUCT_SLICE.md)
-5. [Current State](current/CURRENT_STATE.md)
-6. [Current Architecture](current/CURRENT_ARCHITECTURE.md)
+5. [MVP](product/MVP.md)
+6. [Current State](current/CURRENT_STATE.md)
+7. [Current Architecture](current/CURRENT_ARCHITECTURE.md)
 
 ### Contribute during the gated product-architecture program
 
@@ -240,6 +249,11 @@ Stage 2 added the approved Application Semantics document.
 Stage 3 classified the active contract directory: two implemented contracts
 remain active, and five historical/proposal contract documents are preserved
 under `docs/archive/contracts/`.
+
+Stage 5 established the bounded Trade Cumulus product slice and the staged
+scientific, Lens, Control, and Comparison evidence needed to make an MVP scope
+decision. The Stage 7 MVP definition is drafted under issue #383 and remains
+queued behind completion of issue #381.
 
 Remaining repository moves, rewrites, splits, archives, deletions, and deferrals from the approved disposition may still exist outside those handled paths.
 
