@@ -1685,6 +1685,24 @@ details[open] > summary {
   align-items: start;
 }
 
+.explore-control-deck-lens {
+  grid-template-columns: minmax(14rem, 0.8fr) minmax(24rem, 1.2fr);
+}
+
+.visualizer-heading-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  justify-content: flex-end;
+  align-items: center;
+}
+
+.updraft-lens-toggle[aria-pressed="true"] {
+  border-color: #8e2530;
+  background: #fff1f1;
+  color: #8e2530;
+}
+
 .explore-control-card {
   display: grid;
   gap: 0.42rem;
@@ -1780,6 +1798,43 @@ details[open] > summary {
   border: 1px solid var(--color-border);
   background: var(--color-surface);
   color: var(--color-accent-primary);
+}
+
+.explore-control-card-updraft-lens {
+  grid-template-columns: minmax(15rem, 1fr) minmax(10rem, auto);
+}
+
+.explore-control-card-updraft-lens legend,
+.explore-control-card-updraft-lens > label:first-of-type,
+.explore-control-card-updraft-lens .control-help,
+.explore-control-card-updraft-lens [role="alert"] {
+  grid-column: 1 / -1;
+}
+
+.explore-control-card-updraft-lens .checkbox-label {
+  display: flex;
+  gap: 0.42rem;
+  align-items: center;
+  white-space: nowrap;
+}
+
+.explore-control-card-updraft-lens .checkbox-label input {
+  width: auto;
+}
+
+.updraft-lens-mode-control {
+  grid-column: 1 / -1;
+  display: grid;
+  gap: 0.24rem;
+  color: var(--color-text-primary);
+  font-size: 0.82rem;
+  font-weight: 800;
+}
+
+.updraft-lens-mode-control .segmented-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
 }
 
 .slice-position-label {
@@ -1923,6 +1978,28 @@ details[open] > summary {
   color: #244457;
   box-shadow: 0 8px 22px rgba(40, 80, 110, 0.08);
   pointer-events: none;
+}
+
+.true3d-wind-legend {
+  position: absolute;
+  z-index: 2;
+  left: 0.75rem;
+  top: 3.7rem;
+  display: grid;
+  gap: 0.1rem;
+  max-width: min(24rem, calc(100% - 1.5rem));
+  border: 1px solid rgba(38, 50, 56, 0.22);
+  border-radius: 8px;
+  padding: 0.38rem 0.52rem;
+  background: rgba(255, 255, 255, 0.86);
+  color: #263238;
+  font-size: 0.76rem;
+  pointer-events: none;
+}
+
+.true3d-wind-legend span {
+  color: var(--color-text-muted);
+  font-weight: 700;
 }
 
 .true3d-field-legend > span {
@@ -2896,6 +2973,91 @@ details[open] > summary {
   font-variant-numeric: tabular-nums;
 }
 
+.updraft-lens-slice {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 0.55rem;
+  align-items: stretch;
+  width: 100%;
+  min-width: 0;
+}
+
+.updraft-lens-plot-column {
+  display: grid;
+  gap: 0.38rem;
+  min-width: 0;
+}
+
+.updraft-lens-svg {
+  display: block;
+  width: 100%;
+  max-height: 34rem;
+  border: 1px solid rgba(36, 63, 82, 0.36);
+  border-radius: 4px;
+  background: #747b80;
+  cursor: crosshair;
+}
+
+.updraft-lens-cloud-boundary {
+  stroke: #0b0c0c;
+  stroke-width: 1.25;
+  stroke-linecap: square;
+  stroke-linejoin: miter;
+  pointer-events: none;
+}
+
+.updraft-lens-selected-point {
+  fill: none;
+  stroke: #f8d44d;
+  stroke-width: 2;
+  pointer-events: none;
+}
+
+.updraft-lens-axis {
+  display: flex;
+  justify-content: space-between;
+  color: var(--color-text-muted);
+  font-size: 0.76rem;
+  font-weight: 750;
+}
+
+.updraft-lens-axis strong {
+  color: var(--color-text-primary);
+  font-size: 0.78rem;
+}
+
+.updraft-lens-axis-z {
+  flex-direction: column;
+  align-items: center;
+  padding: 0.1rem 0 1.75rem;
+}
+
+.updraft-lens-axis-z strong {
+  writing-mode: vertical-rl;
+  transform: rotate(180deg);
+}
+
+.updraft-lens-axis-x {
+  align-items: center;
+}
+
+.updraft-lens-legend {
+  display: grid;
+  grid-template-columns: auto minmax(8rem, 1fr) auto;
+  gap: 0.48rem;
+  align-items: center;
+  color: var(--color-text-primary);
+  font-size: 0.78rem;
+  font-weight: 750;
+}
+
+.updraft-lens-color-ramp {
+  height: 0.72rem;
+  border: 1px solid rgba(23, 43, 58, 0.14);
+  border-radius: 3px;
+  background: linear-gradient(90deg, #2166ac 0%, #f7f7f7 50%, #b2182b 100%);
+}
+
 @media (max-width: 860px) {
   .topbar,
   .builder-layout,
@@ -2980,9 +3142,14 @@ details[open] > summary {
 
   .explore-control-deck,
   .explore-control-card-slice,
+  .explore-control-card-updraft-lens,
   .timelapse-controls,
   .true3d-controls {
     grid-template-columns: 1fr;
+  }
+
+  .visualizer-heading-actions {
+    justify-content: flex-start;
   }
 
   .notebook-list-panel {

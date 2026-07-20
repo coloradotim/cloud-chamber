@@ -2,7 +2,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 
-import { cameraDistanceLimits, scalarPointPixelSize } from "./True3DViewer.utils";
+import type { UpdraftLensWindMode, UpdraftLensWindVector } from "./UpdraftLensSlice";
+import { cameraDistanceLimits, scalarPointPixelSize, windArrowLength } from "./True3DViewer.utils";
 
 type CoordinateExtent = { min: number; max: number; units: string | null };
 
@@ -83,6 +84,11 @@ type True3DViewerProps = {
   status: string;
   provenanceLabel: string;
   noCloudMessage: string;
+  windVectors?: UpdraftLensWindVector[];
+  showWindVectors?: boolean;
+  windMode?: UpdraftLensWindMode;
+  windReferenceMps?: number;
+  windArrowDomainFraction?: number;
 };
 
 type SceneRefs = {
@@ -140,6 +146,11 @@ export function True3DViewer({
   status,
   provenanceLabel,
   noCloudMessage,
+  windVectors = [],
+  showWindVectors = false,
+  windMode = "perturbation",
+  windReferenceMps = 0,
+  windArrowDomainFraction = 0.08,
 }: True3DViewerProps) {
   const mountRef = useRef<HTMLDivElement | null>(null);
   const axisLabelLayerRef = useRef<HTMLDivElement | null>(null);
@@ -299,6 +310,10 @@ export function True3DViewer({
       selectedPoint,
       opacity,
       pointSize,
+      windVectors,
+      showWindVectors,
+      windReferenceMps,
+      windArrowDomainFraction,
     });
   }, [
     activeSlice,
@@ -309,6 +324,10 @@ export function True3DViewer({
     pointSize,
     selectedPoint,
     showSlicePlane,
+    showWindVectors,
+    windArrowDomainFraction,
+    windReferenceMps,
+    windVectors,
   ]);
 
   return (
@@ -345,6 +364,12 @@ export function True3DViewer({
               />
               <small>{fieldLegendMaximum(pointCloud)}</small>
             </div>
+          </div>
+        )}
+        {showWindVectors && windVectors.length > 0 && (
+          <div className="true3d-wind-legend" aria-label="Horizontal wind overlay legend">
+            <strong>{windMode === "perturbation" ? "Local departures" : "Total wind"}</strong>
+            <span>{windReferenceMps.toFixed(1)} m/s reference = 8% domain width</span>
           </div>
         )}
         <div
@@ -452,6 +477,10 @@ function rebuildScene(
     selectedPoint,
     opacity,
     pointSize,
+    windVectors,
+    showWindVectors,
+    windReferenceMps,
+    windArrowDomainFraction,
   }: {
     bounds: SceneBounds;
     pointCloud: PointCloudResponse | null;
@@ -461,6 +490,10 @@ function rebuildScene(
     selectedPoint: { x: number; y: number; z: number } | null;
     opacity: number;
     pointSize: number;
+    windVectors: UpdraftLensWindVector[];
+    showWindVectors: boolean;
+    windReferenceMps: number;
+    windArrowDomainFraction: number;
   },
 ) {
   disposeScene(scene);
@@ -478,6 +511,10 @@ function rebuildScene(
     scene.add(cloudPointLayer(pointCloud, bounds, opacity, pointSize));
   }
 
+  if (showWindVectors && windVectors.length) {
+    scene.add(horizontalWindLayer(windVectors, bounds, windReferenceMps, windArrowDomainFraction));
+  }
+
   if (showSlicePlane && activeSlice) {
     scene.add(slicePlane(activeSlice, activeSliceLabel, bounds));
   }
@@ -485,6 +522,42 @@ function rebuildScene(
   if (selectedPoint) {
     scene.add(selectedPointMarker(selectedPoint, bounds));
   }
+}
+
+function horizontalWindLayer(
+  vectors: UpdraftLensWindVector[],
+  bounds: SceneBounds,
+  referenceMps: number,
+  domainFraction: number,
+): THREE.Group {
+  const group = new THREE.Group();
+  group.name = "trade-cumulus-updraft-lens-wind-vectors";
+  for (const vector of vectors) {
+    const length = windArrowLength(
+      vector.magnitude_m_s,
+      referenceMps,
+      bounds.xRange,
+      domainFraction,
+    );
+    if (length <= 0) continue;
+    const direction = new THREE.Vector3(vector.u_m_s, 0, vector.v_m_s);
+    if (direction.lengthSq() === 0) continue;
+    direction.normalize();
+    const mapped = mapCoordinate(vector.x_km, vector.y_km, vector.z_km, bounds);
+    const headLength = Math.min(length * 0.36, Math.max(0.04, bounds.xRange * 0.025));
+    const headWidth = Math.min(length * 0.24, Math.max(0.025, bounds.xRange * 0.016));
+    const arrow = new THREE.ArrowHelper(
+      direction,
+      new THREE.Vector3(mapped.x, mapped.y, mapped.z),
+      length,
+      0x263238,
+      headLength,
+      headWidth,
+    );
+    arrow.name = "horizontal-wind-vector";
+    group.add(arrow);
+  }
+  return group;
 }
 
 function boundsSignature(pointCloud: PointCloudResponse | null): string {

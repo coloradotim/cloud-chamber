@@ -18,3 +18,23 @@ export function cameraDistanceLimits(maxRange: number): {
     maxDistance: Math.max(40, resolvedMaxRange * 3),
   };
 }
+
+export function windArrowLength(
+  magnitudeMps: number,
+  referenceMps: number,
+  domainWidth: number,
+  domainFraction = 0.08,
+): number {
+  if (
+    !Number.isFinite(magnitudeMps) ||
+    magnitudeMps <= 0 ||
+    !Number.isFinite(referenceMps) ||
+    referenceMps <= 0 ||
+    !Number.isFinite(domainWidth) ||
+    domainWidth <= 0
+  ) {
+    return 0;
+  }
+  const fraction = Number.isFinite(domainFraction) && domainFraction > 0 ? domainFraction : 0.08;
+  return (magnitudeMps / referenceMps) * domainWidth * fraction;
+}

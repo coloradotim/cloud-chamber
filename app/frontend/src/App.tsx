@@ -3,6 +3,13 @@ import type { CSSProperties, FormEvent } from "react";
 
 import "./App.css";
 import { True3DViewer } from "./True3DViewer";
+import {
+  type UpdraftLensDefaults,
+  type UpdraftLensFrame,
+  type UpdraftLensPointSelection,
+  type UpdraftLensWindMode,
+  UpdraftLensSlice,
+} from "./UpdraftLensSlice";
 
 type ControlOption = {
   value: string;
@@ -1489,7 +1496,20 @@ type ProcessMode =
   | "precipitation_feedback";
 type SceneSlicePlane = "horizontal" | "vertical_x" | "vertical_y";
 
+type OrdinaryExploreState = {
+  selectedFieldName: string;
+  sliceFieldName: string;
+  timeIndex: number;
+  activeSlicePlane: SceneSlicePlane;
+  sliceOrientation: "vertical_x" | "vertical_y";
+  horizontalSliceLevel: number;
+  verticalSliceIndex: number;
+  showSlicePlanes: boolean;
+  threshold: number;
+};
+
 const FIELD_LOAD_TIMEOUT_MS = 30000;
+const TRADE_CUMULUS_CASE_ID = "bomex_trade_cumulus_baseline_v0";
 const OBSERVED_SOUNDING_EXPERIMENT_ID = "__observed_sounding_upload__";
 const OBSERVED_SOUNDING_BASE_SCENARIO_ID = "baseline-shallow-cumulus";
 const candidateStoryIdValues = new Set<string>([
@@ -2090,6 +2110,42 @@ async function fetchVisualizationDefaults(
     throw new Error(await responseError(response, "Unable to load visualization defaults."));
   }
   return response.json() as Promise<ViewDefaultsResponse>;
+}
+
+async function fetchTradeCumulusUpdraftLensDefaults(
+  resultId: string,
+): Promise<UpdraftLensDefaults> {
+  const response = await fetch(
+    `/api/results/${resultId}/visualization/trade-cumulus-updraft-lens/defaults`,
+  );
+  if (!response.ok) {
+    throw new Error(await responseError(response, "Unable to load Updraft Lens defaults."));
+  }
+  return response.json() as Promise<UpdraftLensDefaults>;
+}
+
+async function fetchTradeCumulusUpdraftLensFrame(
+  resultId: string,
+  params: {
+    timeIndex: number;
+    planeIndex: number;
+    windMode: UpdraftLensWindMode;
+  },
+  signal?: AbortSignal,
+): Promise<UpdraftLensFrame> {
+  const search = new URLSearchParams({
+    time_index: String(params.timeIndex),
+    plane_index: String(params.planeIndex),
+    wind_mode: params.windMode,
+  });
+  const response = await fetch(
+    `/api/results/${resultId}/visualization/trade-cumulus-updraft-lens/frame?${search}`,
+    { signal },
+  );
+  if (!response.ok) {
+    throw new Error(await responseError(response, "Unable to load Updraft Lens frame."));
+  }
+  return response.json() as Promise<UpdraftLensFrame>;
 }
 
 async function fetchVisualizationSlice(
@@ -9275,8 +9331,16 @@ function sliceFieldOptionLabel(field: VisualizableField): string {
   return `${field.raw_field_name} - ${field.display_name}${suffix}`;
 }
 
+function tradeCumulusUpdraftLensEligible(result: ResultCard): boolean {
+  return (
+    result.scenario_id === TRADE_CUMULUS_CASE_ID ||
+    result.run_configuration?.case_id === TRADE_CUMULUS_CASE_ID
+  );
+}
+
 export function VisualizerSceneShell({ result }: { result: ResultCard }) {
   const resultId = result.result_id;
+  const updraftLensEligible = tradeCumulusUpdraftLensEligible(result);
   const initialResultRef = useRef(result);
   if (initialResultRef.current.result_id !== resultId) {
     initialResultRef.current = result;
@@ -9316,6 +9380,17 @@ export function VisualizerSceneShell({ result }: { result: ResultCard }) {
     useState<SelectedRegionDiagnosticsResponse | null>(null);
   const [regionStatus, setRegionStatus] = useState("Click a slice cell to inspect that point.");
   const [regionError, setRegionError] = useState<string | null>(null);
+  const [updraftLensDefaults, setUpdraftLensDefaults] = useState<UpdraftLensDefaults | null>(null);
+  const [updraftLensActive, setUpdraftLensActive] = useState(false);
+  const [updraftLensFrame, setUpdraftLensFrame] = useState<UpdraftLensFrame | null>(null);
+  const [updraftLensLoading, setUpdraftLensLoading] = useState(false);
+  const [updraftLensError, setUpdraftLensError] = useState<string | null>(null);
+  const [showUpdraftLensBoundary, setShowUpdraftLensBoundary] = useState(true);
+  const [showUpdraftLensWind, setShowUpdraftLensWind] = useState(true);
+  const [updraftLensWindMode, setUpdraftLensWindMode] =
+    useState<UpdraftLensWindMode>("perturbation");
+  const ordinaryExploreStateRef = useRef<OrdinaryExploreState | null>(null);
+  const updraftLensRequestRef = useRef(0);
   const maxPoints = 50_000;
 
   useEffect(() => {
@@ -9348,6 +9423,16 @@ export function VisualizerSceneShell({ result }: { result: ResultCard }) {
     setRegionDiagnostics(null);
     setRegionError(null);
     setRegionStatus("Click a slice cell to inspect that point.");
+    setUpdraftLensDefaults(null);
+    setUpdraftLensActive(false);
+    setUpdraftLensFrame(null);
+    setUpdraftLensLoading(false);
+    setUpdraftLensError(null);
+    setShowUpdraftLensBoundary(true);
+    setShowUpdraftLensWind(true);
+    setUpdraftLensWindMode("perturbation");
+    ordinaryExploreStateRef.current = null;
+    updraftLensRequestRef.current += 1;
     setSceneStatus("Loading scene data...");
     withTimeout(
       Promise.all([
@@ -9411,6 +9496,30 @@ export function VisualizerSceneShell({ result }: { result: ResultCard }) {
       active = false;
     };
   }, [fieldLoadAttempt, resultId]);
+
+  useEffect(() => {
+    if (!updraftLensEligible) {
+      setUpdraftLensDefaults(null);
+      return;
+    }
+    let active = true;
+    setUpdraftLensError(null);
+    fetchTradeCumulusUpdraftLensDefaults(resultId)
+      .then((defaults) => {
+        if (!active) return;
+        setUpdraftLensDefaults(defaults);
+      })
+      .catch((caught: unknown) => {
+        if (!active) return;
+        setUpdraftLensDefaults(null);
+        setUpdraftLensError(
+          caught instanceof Error ? caught.message : "Unable to load Updraft Lens defaults.",
+        );
+      });
+    return () => {
+      active = false;
+    };
+  }, [resultId, updraftLensEligible]);
 
   const selectedField = useMemo(
     () => catalog?.available_fields.find((field) => field.raw_field_name === selectedFieldName),
@@ -9486,8 +9595,20 @@ export function VisualizerSceneShell({ result }: { result: ResultCard }) {
   const playbackIntervalMs = Math.max(150, Math.round(900 / playbackSpeed));
   const canPlayTimelapse = timeOptions.length > 1;
   const activeSlice = activeSlicePlane === "horizontal" ? sceneHorizontalSlice : sceneVerticalSlice;
-  const activeSliceLabel = slicePlainLabel(activeSlice, activeSlicePlane, activeSliceIndex);
-  const selectedSliceValue = selectedSliceCellValue(activeSlice, selectedRegion);
+  const ordinaryActiveSliceLabel = slicePlainLabel(activeSlice, activeSlicePlane, activeSliceIndex);
+  const updraftLensPlaneLabel = updraftLensFrame
+    ? `Vertical x-z slice at y = ${
+        updraftLensFrame.plane_coordinate === null
+          ? `index ${updraftLensFrame.plane_index}`
+          : formatCompactNumber(updraftLensFrame.plane_coordinate)
+      }${updraftLensFrame.plane_units ? ` ${updraftLensFrame.plane_units}` : ""}`
+    : updraftLensDefaults
+      ? `Vertical x-z slice at y index ${verticalSliceIndex}`
+      : "Vertical x-z slice";
+  const activeSliceLabel = updraftLensActive ? updraftLensPlaneLabel : ordinaryActiveSliceLabel;
+  const selectedSliceValue = updraftLensActive
+    ? selectedUpdraftLensValue(updraftLensFrame, selectedRegion)
+    : selectedSliceCellValue(activeSlice, selectedRegion);
   const processModeStates = useMemo(
     () => processModeClassifications(result, catalog, sliceField, activeSlice),
     [activeSlice, catalog, result, sliceField],
@@ -9554,6 +9675,80 @@ export function VisualizerSceneShell({ result }: { result: ResultCard }) {
     playbackTimeIndex,
     resolvedTimeIndex,
     timeOptions.length,
+  ]);
+
+  const handleUpdraftLensToggle = useCallback(() => {
+    if (updraftLensActive) {
+      const ordinary = ordinaryExploreStateRef.current;
+      setUpdraftLensActive(false);
+      setUpdraftLensFrame(null);
+      setUpdraftLensLoading(false);
+      setUpdraftLensError(null);
+      updraftLensRequestRef.current += 1;
+      if (ordinary) {
+        setSelectedFieldName(ordinary.selectedFieldName);
+        setSliceFieldName(ordinary.sliceFieldName);
+        setTimeIndex(ordinary.timeIndex);
+        setPlaybackTimeIndex(ordinary.timeIndex);
+        setActiveSlicePlane(ordinary.activeSlicePlane);
+        setSliceOrientation(ordinary.sliceOrientation);
+        setHorizontalSliceLevel(ordinary.horizontalSliceLevel);
+        setVerticalSliceIndex(ordinary.verticalSliceIndex);
+        setShowSlicePlanes(ordinary.showSlicePlanes);
+        setThreshold(ordinary.threshold);
+      }
+      ordinaryExploreStateRef.current = null;
+      clearSelectedRegionForTimeChange();
+      return;
+    }
+    if (!updraftLensDefaults || !catalog) return;
+    ordinaryExploreStateRef.current = {
+      selectedFieldName,
+      sliceFieldName,
+      timeIndex: resolvedTimeIndex,
+      activeSlicePlane,
+      sliceOrientation,
+      horizontalSliceLevel,
+      verticalSliceIndex,
+      showSlicePlanes,
+      threshold,
+    };
+    const cloudField = catalog.available_fields.find(
+      (field) => field.raw_field_name === updraftLensDefaults.cloud_field,
+    );
+    const primaryField = catalog.available_fields.find(
+      (field) => field.raw_field_name === updraftLensDefaults.primary_field,
+    );
+    setSelectedFieldName(cloudField?.raw_field_name ?? selectedFieldName);
+    setSliceFieldName(primaryField?.raw_field_name ?? sliceFieldName);
+    setTimeIndex(updraftLensDefaults.default_time_index);
+    setPlaybackTimeIndex(updraftLensDefaults.default_time_index);
+    setIsPlaybackRunning(false);
+    setActiveSlicePlane("vertical_x");
+    setSliceOrientation("vertical_x");
+    setVerticalSliceIndex(updraftLensDefaults.default_plane_index);
+    setShowSlicePlanes(true);
+    setThreshold(updraftLensDefaults.cloud_threshold_kg_kg);
+    setShowUpdraftLensBoundary(true);
+    setShowUpdraftLensWind(updraftLensDefaults.wind_shown_by_default);
+    setUpdraftLensWindMode(updraftLensDefaults.wind_default_mode);
+    setUpdraftLensError(null);
+    setUpdraftLensActive(true);
+    clearSelectedRegionForTimeChange();
+  }, [
+    activeSlicePlane,
+    catalog,
+    clearSelectedRegionForTimeChange,
+    horizontalSliceLevel,
+    resolvedTimeIndex,
+    selectedFieldName,
+    showSlicePlanes,
+    sliceFieldName,
+    sliceOrientation,
+    threshold,
+    updraftLensActive,
+    updraftLensDefaults,
+    verticalSliceIndex,
   ]);
 
   useEffect(() => {
@@ -9663,6 +9858,13 @@ export function VisualizerSceneShell({ result }: { result: ResultCard }) {
       setSliceLoading(false);
       return;
     }
+    if (updraftLensActive) {
+      setSceneHorizontalSlice(null);
+      setSceneVerticalSlice(null);
+      setSliceLoading(false);
+      setSliceError(null);
+      return;
+    }
     let active = true;
     setSliceLoading(true);
     setSliceError(null);
@@ -9704,6 +9906,52 @@ export function VisualizerSceneShell({ result }: { result: ResultCard }) {
     sliceField,
     sliceSupportsVertical,
     sliceOrientation,
+    verticalSliceIndex,
+    updraftLensActive,
+  ]);
+
+  useEffect(() => {
+    if (!updraftLensActive || !updraftLensDefaults) {
+      setUpdraftLensFrame(null);
+      setUpdraftLensLoading(false);
+      return;
+    }
+    const requestId = updraftLensRequestRef.current + 1;
+    updraftLensRequestRef.current = requestId;
+    const controller = new AbortController();
+    setUpdraftLensLoading(true);
+    setUpdraftLensError(null);
+    fetchTradeCumulusUpdraftLensFrame(
+      result.result_id,
+      {
+        timeIndex: resolvedTimeIndex,
+        planeIndex: verticalSliceIndex,
+        windMode: updraftLensWindMode,
+      },
+      controller.signal,
+    )
+      .then((payload) => {
+        if (updraftLensRequestRef.current !== requestId) return;
+        setUpdraftLensFrame(payload);
+        setUpdraftLensLoading(false);
+      })
+      .catch((caught: unknown) => {
+        if (controller.signal.aborted || updraftLensRequestRef.current !== requestId) return;
+        setUpdraftLensFrame(null);
+        setUpdraftLensLoading(false);
+        setUpdraftLensError(
+          caught instanceof Error ? caught.message : "Unable to load Updraft Lens frame.",
+        );
+      });
+    return () => {
+      controller.abort();
+    };
+  }, [
+    resolvedTimeIndex,
+    result.result_id,
+    updraftLensActive,
+    updraftLensDefaults,
+    updraftLensWindMode,
     verticalSliceIndex,
   ]);
 
@@ -9747,6 +9995,21 @@ export function VisualizerSceneShell({ result }: { result: ResultCard }) {
     setSelectedRegion(selectionFromSlice(slice, rowIndex, columnIndex, "point"));
   }
 
+  function selectPointFromUpdraftLens(selection: UpdraftLensPointSelection) {
+    if (isPlaybackRunning) {
+      clearSelectedRegionForTimeChange(
+        "Pause playback to select a cell and explain this time step.",
+      );
+      return;
+    }
+    setSelectedRegion({
+      regionType: "point",
+      xIndex: selection.xIndex,
+      yIndex: selection.yIndex,
+      zIndex: selection.zIndex,
+    });
+  }
+
   return (
     <section className="visualizer-shell" aria-labelledby="visualizer-shell-title">
       <div className="section-heading">
@@ -9754,7 +10017,26 @@ export function VisualizerSceneShell({ result }: { result: ResultCard }) {
           <p className="eyebrow">Field view</p>
           <h2 id="visualizer-shell-title">What happened in this result?</h2>
         </div>
-        <p className="state-chip">{sceneStatus}</p>
+        <div className="visualizer-heading-actions">
+          <p className="state-chip">
+            {updraftLensActive
+              ? updraftLensLoading
+                ? "Loading Updraft Lens"
+                : "Updraft Lens active"
+              : sceneStatus}
+          </p>
+          {updraftLensEligible && (
+            <button
+              type="button"
+              className="updraft-lens-toggle"
+              aria-pressed={updraftLensActive}
+              disabled={!updraftLensActive && !updraftLensDefaults}
+              onClick={handleUpdraftLensToggle}
+            >
+              {updraftLensActive ? "Turn off Updraft Lens" : "Updraft Lens"}
+            </button>
+          )}
+        </div>
       </div>
 
       {sceneError && (
@@ -9768,6 +10050,10 @@ export function VisualizerSceneShell({ result }: { result: ResultCard }) {
 
       {catalog && catalog.available_fields.length === 0 && (
         <p role="status">No visualization-ready fields are available for this result.</p>
+      )}
+
+      {updraftLensEligible && !updraftLensActive && updraftLensError && (
+        <p role="alert">{updraftLensError}</p>
       )}
 
       <div className="visualizer-workbench" aria-label="Scientific visualization workbench">
@@ -9784,10 +10070,14 @@ export function VisualizerSceneShell({ result }: { result: ResultCard }) {
               selectedEncoding?.valueChannel ?? "3-D scalar rendering unavailable."
             }
             activeSlice={
-              activeSlicePlane === "horizontal" ? sceneHorizontalSlice : sceneVerticalSlice
+              updraftLensActive
+                ? null
+                : activeSlicePlane === "horizontal"
+                  ? sceneHorizontalSlice
+                  : sceneVerticalSlice
             }
             activeSliceLabel={activeSliceLabel}
-            showSlicePlane={showSlicePlanes}
+            showSlicePlane={!updraftLensActive && showSlicePlanes}
             selectedRegion={selectedRegion}
             coordinateSizes={{ x: sliceXSize, y: sliceYSize, z: sliceVerticalSize }}
             selectedTimeLabel={selectedTimeLabel}
@@ -9804,9 +10094,19 @@ export function VisualizerSceneShell({ result }: { result: ResultCard }) {
                   ? "No cloud water formed in this result; vertical velocity is available in the 2-D slice inspector."
                   : selectedEncoding.emptyStateTitle
             }
+            windVectors={updraftLensFrame?.wind_vectors ?? []}
+            showWindVectors={updraftLensActive && showUpdraftLensWind && Boolean(updraftLensFrame)}
+            windMode={updraftLensWindMode}
+            windReferenceMps={updraftLensFrame?.wind_reference_m_s ?? 0}
+            windArrowDomainFraction={updraftLensFrame?.wind_arrow_domain_fraction ?? 0.08}
           />
           {catalog && sliceField && (
-            <section className="explore-control-deck" aria-label="Explore viewer controls">
+            <section
+              className={`explore-control-deck${
+                updraftLensActive ? " explore-control-deck-lens" : ""
+              }`}
+              aria-label="Explore viewer controls"
+            >
               <fieldset className="explore-control-card explore-control-card-time">
                 <legend>Time</legend>
                 <div className="timelapse-controls" aria-label="Timelapse playback controls">
@@ -9893,252 +10193,333 @@ export function VisualizerSceneShell({ result }: { result: ResultCard }) {
                 )}
               </fieldset>
 
-              <fieldset className="explore-control-card explore-control-card-slice">
-                <legend>Slice</legend>
-                <label htmlFor="explore-slice-field">
-                  2-D slice field
-                  <select
-                    id="explore-slice-field"
-                    aria-label="Slice field"
-                    value={sliceFieldName}
-                    onChange={(event) => {
-                      const nextField = catalog.available_fields.find(
-                        (field) => field.raw_field_name === event.target.value,
-                      );
-                      setSliceFieldName(event.target.value);
-                      const nextDefaults = defaultsForField(viewDefaults, event.target.value);
-                      setHorizontalSliceLevel(defaultHorizontalLevel(nextField, nextDefaults));
-                      setVerticalSliceIndex(
-                        defaultVerticalIndex(nextField, sliceOrientation, nextDefaults),
-                      );
-                      if (!nextField?.coordinate_names.vertical) {
-                        setActiveSlicePlane("horizontal");
-                      }
-                      setSelectedRegion(null);
-                    }}
-                  >
-                    {catalog.available_fields.map((field) => (
-                      <option key={field.raw_field_name} value={field.raw_field_name}>
-                        {sliceFieldOptionLabel(field)}
-                      </option>
-                    ))}
-                  </select>
-                </label>
+              {updraftLensActive ? (
+                <fieldset className="explore-control-card explore-control-card-updraft-lens">
+                  <legend>Updraft Lens</legend>
+                  <label htmlFor="updraft-lens-plane-position">
+                    Vertical plane
+                    <input
+                      id="updraft-lens-plane-position"
+                      aria-label="Updraft Lens vertical plane"
+                      type="range"
+                      min={0}
+                      max={Math.max(0, sliceYSize - 1)}
+                      value={verticalSliceIndex}
+                      onChange={(event) => {
+                        setVerticalSliceIndex(Number(event.target.value));
+                        setSelectedRegion(null);
+                      }}
+                    />
+                    <span className="slice-position-label">
+                      <span>{updraftLensPlaneLabel}</span>
+                      <small>index {verticalSliceIndex}</small>
+                    </span>
+                  </label>
 
-                <div className="segmented-buttons" aria-label="Slice orientation">
-                  <button
-                    type="button"
-                    className={activeSlicePlane === "horizontal" ? "active-control" : ""}
-                    onClick={() => {
-                      setActiveSlicePlane("horizontal");
-                      setSelectedRegion(null);
-                    }}
-                  >
-                    Horizontal layer
-                  </button>
-                  <button
-                    type="button"
-                    className={activeSlicePlane === "vertical_x" ? "active-control" : ""}
-                    disabled={!sliceSupportsVertical}
-                    onClick={() => {
-                      setActiveSlicePlane("vertical_x");
-                      setSliceOrientation("vertical_x");
-                      setSelectedRegion(null);
-                    }}
-                  >
-                    Vertical x-z slice
-                  </button>
-                  <button
-                    type="button"
-                    className={activeSlicePlane === "vertical_y" ? "active-control" : ""}
-                    disabled={!sliceSupportsVertical}
-                    onClick={() => {
-                      setActiveSlicePlane("vertical_y");
-                      setSliceOrientation("vertical_y");
-                      setSelectedRegion(null);
-                    }}
-                  >
-                    Vertical y-z slice
-                  </button>
-                </div>
+                  <label className="checkbox-label" htmlFor="updraft-lens-cloud-boundary">
+                    <input
+                      id="updraft-lens-cloud-boundary"
+                      type="checkbox"
+                      checked={showUpdraftLensBoundary}
+                      onChange={(event) => setShowUpdraftLensBoundary(event.target.checked)}
+                    />
+                    Cloud boundary
+                  </label>
 
-                <label htmlFor="explore-slice-position">
-                  Position
-                  <input
-                    id="explore-slice-position"
-                    aria-label="Slice position"
-                    type="range"
-                    min={0}
-                    max={Math.max(0, activeSliceMax - 1)}
-                    value={activeSliceIndex}
-                    onChange={(event) => {
-                      const nextIndex = Number(event.target.value);
-                      if (activeSlicePlane === "horizontal") {
-                        setHorizontalSliceLevel(nextIndex);
-                      } else {
-                        setVerticalSliceIndex(nextIndex);
-                      }
-                      setSelectedRegion(null);
-                    }}
-                  />
-                  <span className="slice-position-label">
-                    {activeSlicePositionLabel || `index ${activeSliceIndex}`}{" "}
-                    <small>index {activeSliceIndex}</small>
-                  </span>
-                </label>
+                  <label className="checkbox-label" htmlFor="updraft-lens-wind-overlay">
+                    <input
+                      id="updraft-lens-wind-overlay"
+                      type="checkbox"
+                      checked={showUpdraftLensWind}
+                      onChange={(event) => setShowUpdraftLensWind(event.target.checked)}
+                    />
+                    Horizontal wind
+                  </label>
 
-                <div className="button-row slice-move-buttons">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const nextIndex = Math.max(0, activeSliceIndex - 1);
-                      if (activeSlicePlane === "horizontal") {
-                        setHorizontalSliceLevel(nextIndex);
-                      } else {
-                        setVerticalSliceIndex(nextIndex);
-                      }
-                      setSelectedRegion(null);
-                    }}
-                  >
-                    {activeSlicePlane === "horizontal" ? "Move down" : "Move back"}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const nextIndex = Math.min(
-                        Math.max(0, activeSliceMax - 1),
-                        activeSliceIndex + 1,
-                      );
-                      if (activeSlicePlane === "horizontal") {
-                        setHorizontalSliceLevel(nextIndex);
-                      } else {
-                        setVerticalSliceIndex(nextIndex);
-                      }
-                      setSelectedRegion(null);
-                    }}
-                  >
-                    {activeSlicePlane === "horizontal" ? "Move up" : "Move forward"}
-                  </button>
-                </div>
-
-                <label className="checkbox-label" htmlFor="show-slice-plane">
-                  <input
-                    id="show-slice-plane"
-                    type="checkbox"
-                    checked={showSlicePlanes}
-                    onChange={(event) => setShowSlicePlanes(event.target.checked)}
-                  />
-                  Show slice plane
-                </label>
-              </fieldset>
-
-              <fieldset className="explore-control-card explore-control-card-rendering">
-                <legend>3-D scalar layer</legend>
-                <label htmlFor="explore-3d-field">
-                  3-D field
-                  <select
-                    id="explore-3d-field"
-                    aria-label="3-D scalar field"
-                    value={selectedFieldName}
-                    disabled={threeDScalarEncodings.length === 0}
-                    onChange={(event) => {
-                      const nextEncoding =
-                        threeDScalarEncodings.find(
-                          (encoding) => encoding.field.raw_field_name === event.target.value,
-                        ) ?? null;
-                      setSelectedFieldName(event.target.value);
-                      if (nextEncoding) {
-                        setSliceFieldName(nextEncoding.field.raw_field_name);
-                        setThreshold(nextEncoding.defaultThreshold);
-                        if (!nextEncoding.field.coordinate_names.vertical) {
-                          setActiveSlicePlane("horizontal");
-                        }
-                        const nextDefaults =
-                          defaultsForField(
-                            selectedTimeDefaults,
-                            nextEncoding.field.raw_field_name,
-                          ) ?? defaultsForField(viewDefaults, nextEncoding.field.raw_field_name);
-                        setHorizontalSliceLevel(
-                          defaultHorizontalLevel(nextEncoding.field, nextDefaults),
-                        );
-                        setVerticalSliceIndex(
-                          defaultVerticalIndex(nextEncoding.field, sliceOrientation, nextDefaults),
-                        );
-                      }
-                      setSelectedRegion(null);
-                    }}
-                  >
-                    {threeDScalarEncodings.length === 0 && (
-                      <option value="">No 3-D scalar fields</option>
-                    )}
-                    {threeDScalarEncodings.map((encoding) => (
-                      <option
-                        key={encoding.field.raw_field_name}
-                        value={encoding.field.raw_field_name}
+                  <div className="updraft-lens-mode-control">
+                    <span>Wind mode</span>
+                    <div className="segmented-buttons" aria-label="Updraft Lens wind mode">
+                      <button
+                        type="button"
+                        className={updraftLensWindMode === "perturbation" ? "active-control" : ""}
+                        aria-pressed={updraftLensWindMode === "perturbation"}
+                        onClick={() => setUpdraftLensWindMode("perturbation")}
                       >
-                        {encoding.field.raw_field_name} - {encoding.field.display_name}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <p className="control-help">
-                  {selectedEncoding
-                    ? selectedEncoding.valueChannel
-                    : "Only fields with a defined 3-D scalar encoding appear here; vertical velocity remains slice-only."}
-                </p>
-                {pointCloud && selectedEncoding && (
-                  <p className="control-help">
-                    {pointCloudFieldSummary(pointCloud)}
-                    {selectedEncoding.field.raw_field_name === "dbz"
-                      ? " Weather-radar colors use a fixed 0 to 60+ dBZ scale."
-                      : ""}
-                  </p>
-                )}
-                {selectedEncoding?.field.raw_field_name === "qc" &&
-                  cloudTopMismatchNotice(result) && (
-                    <p className="control-help">{cloudTopMismatchNotice(result)}</p>
+                        Local departures
+                      </button>
+                      <button
+                        type="button"
+                        className={updraftLensWindMode === "total" ? "active-control" : ""}
+                        aria-pressed={updraftLensWindMode === "total"}
+                        onClick={() => setUpdraftLensWindMode("total")}
+                      >
+                        Total wind
+                      </button>
+                    </div>
+                  </div>
+                  {updraftLensFrame && (
+                    <p className="control-help">
+                      Wind level {Math.round(updraftLensFrame.wind_actual_level_m)} m · reference{" "}
+                      {updraftLensFrame.wind_reference_m_s.toFixed(1)} m/s
+                    </p>
                   )}
-                <label htmlFor="cloud-threshold">
-                  {selectedEncoding?.thresholdLabel ?? "Visible minimum"}
-                  <input
-                    id="cloud-threshold"
-                    aria-label={selectedEncoding?.thresholdAriaLabel ?? "3-D scalar threshold"}
-                    type="number"
-                    min={0}
-                    step={selectedEncoding?.thresholdStep ?? 0.000001}
-                    value={threshold}
-                    onChange={(event) => setThreshold(Number(event.target.value))}
-                    disabled={!selectedEncoding}
-                  />
-                </label>
-                <label htmlFor="cloud-opacity">
-                  Opacity
-                  <input
-                    id="cloud-opacity"
-                    aria-label="Layer opacity"
-                    type="range"
-                    min={0.1}
-                    max={1}
-                    step={0.05}
-                    value={opacity}
-                    onChange={(event) => setOpacity(Number(event.target.value))}
-                  />
-                  <output htmlFor="cloud-opacity">{opacity}</output>
-                </label>
-                <label htmlFor="cloud-point-size">
-                  Point size
-                  <input
-                    id="cloud-point-size"
-                    aria-label="Point size"
-                    type="range"
-                    min={3}
-                    max={18}
-                    value={pointSize}
-                    onChange={(event) => setPointSize(Number(event.target.value))}
-                  />
-                  <output htmlFor="cloud-point-size">{pointSize}px</output>
-                </label>
-              </fieldset>
+                  {updraftLensError && <p role="alert">{updraftLensError}</p>}
+                </fieldset>
+              ) : (
+                <>
+                  <fieldset className="explore-control-card explore-control-card-slice">
+                    <legend>Slice</legend>
+                    <label htmlFor="explore-slice-field">
+                      2-D slice field
+                      <select
+                        id="explore-slice-field"
+                        aria-label="Slice field"
+                        value={sliceFieldName}
+                        onChange={(event) => {
+                          const nextField = catalog.available_fields.find(
+                            (field) => field.raw_field_name === event.target.value,
+                          );
+                          setSliceFieldName(event.target.value);
+                          const nextDefaults = defaultsForField(viewDefaults, event.target.value);
+                          setHorizontalSliceLevel(defaultHorizontalLevel(nextField, nextDefaults));
+                          setVerticalSliceIndex(
+                            defaultVerticalIndex(nextField, sliceOrientation, nextDefaults),
+                          );
+                          if (!nextField?.coordinate_names.vertical) {
+                            setActiveSlicePlane("horizontal");
+                          }
+                          setSelectedRegion(null);
+                        }}
+                      >
+                        {catalog.available_fields.map((field) => (
+                          <option key={field.raw_field_name} value={field.raw_field_name}>
+                            {sliceFieldOptionLabel(field)}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+
+                    <div className="segmented-buttons" aria-label="Slice orientation">
+                      <button
+                        type="button"
+                        className={activeSlicePlane === "horizontal" ? "active-control" : ""}
+                        onClick={() => {
+                          setActiveSlicePlane("horizontal");
+                          setSelectedRegion(null);
+                        }}
+                      >
+                        Horizontal layer
+                      </button>
+                      <button
+                        type="button"
+                        className={activeSlicePlane === "vertical_x" ? "active-control" : ""}
+                        disabled={!sliceSupportsVertical}
+                        onClick={() => {
+                          setActiveSlicePlane("vertical_x");
+                          setSliceOrientation("vertical_x");
+                          setSelectedRegion(null);
+                        }}
+                      >
+                        Vertical x-z slice
+                      </button>
+                      <button
+                        type="button"
+                        className={activeSlicePlane === "vertical_y" ? "active-control" : ""}
+                        disabled={!sliceSupportsVertical}
+                        onClick={() => {
+                          setActiveSlicePlane("vertical_y");
+                          setSliceOrientation("vertical_y");
+                          setSelectedRegion(null);
+                        }}
+                      >
+                        Vertical y-z slice
+                      </button>
+                    </div>
+
+                    <label htmlFor="explore-slice-position">
+                      Position
+                      <input
+                        id="explore-slice-position"
+                        aria-label="Slice position"
+                        type="range"
+                        min={0}
+                        max={Math.max(0, activeSliceMax - 1)}
+                        value={activeSliceIndex}
+                        onChange={(event) => {
+                          const nextIndex = Number(event.target.value);
+                          if (activeSlicePlane === "horizontal") {
+                            setHorizontalSliceLevel(nextIndex);
+                          } else {
+                            setVerticalSliceIndex(nextIndex);
+                          }
+                          setSelectedRegion(null);
+                        }}
+                      />
+                      <span className="slice-position-label">
+                        {activeSlicePositionLabel || `index ${activeSliceIndex}`}{" "}
+                        <small>index {activeSliceIndex}</small>
+                      </span>
+                    </label>
+
+                    <div className="button-row slice-move-buttons">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const nextIndex = Math.max(0, activeSliceIndex - 1);
+                          if (activeSlicePlane === "horizontal") {
+                            setHorizontalSliceLevel(nextIndex);
+                          } else {
+                            setVerticalSliceIndex(nextIndex);
+                          }
+                          setSelectedRegion(null);
+                        }}
+                      >
+                        {activeSlicePlane === "horizontal" ? "Move down" : "Move back"}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const nextIndex = Math.min(
+                            Math.max(0, activeSliceMax - 1),
+                            activeSliceIndex + 1,
+                          );
+                          if (activeSlicePlane === "horizontal") {
+                            setHorizontalSliceLevel(nextIndex);
+                          } else {
+                            setVerticalSliceIndex(nextIndex);
+                          }
+                          setSelectedRegion(null);
+                        }}
+                      >
+                        {activeSlicePlane === "horizontal" ? "Move up" : "Move forward"}
+                      </button>
+                    </div>
+
+                    <label className="checkbox-label" htmlFor="show-slice-plane">
+                      <input
+                        id="show-slice-plane"
+                        type="checkbox"
+                        checked={showSlicePlanes}
+                        onChange={(event) => setShowSlicePlanes(event.target.checked)}
+                      />
+                      Show slice plane
+                    </label>
+                  </fieldset>
+
+                  <fieldset className="explore-control-card explore-control-card-rendering">
+                    <legend>3-D scalar layer</legend>
+                    <label htmlFor="explore-3d-field">
+                      3-D field
+                      <select
+                        id="explore-3d-field"
+                        aria-label="3-D scalar field"
+                        value={selectedFieldName}
+                        disabled={threeDScalarEncodings.length === 0}
+                        onChange={(event) => {
+                          const nextEncoding =
+                            threeDScalarEncodings.find(
+                              (encoding) => encoding.field.raw_field_name === event.target.value,
+                            ) ?? null;
+                          setSelectedFieldName(event.target.value);
+                          if (nextEncoding) {
+                            setSliceFieldName(nextEncoding.field.raw_field_name);
+                            setThreshold(nextEncoding.defaultThreshold);
+                            if (!nextEncoding.field.coordinate_names.vertical) {
+                              setActiveSlicePlane("horizontal");
+                            }
+                            const nextDefaults =
+                              defaultsForField(
+                                selectedTimeDefaults,
+                                nextEncoding.field.raw_field_name,
+                              ) ??
+                              defaultsForField(viewDefaults, nextEncoding.field.raw_field_name);
+                            setHorizontalSliceLevel(
+                              defaultHorizontalLevel(nextEncoding.field, nextDefaults),
+                            );
+                            setVerticalSliceIndex(
+                              defaultVerticalIndex(
+                                nextEncoding.field,
+                                sliceOrientation,
+                                nextDefaults,
+                              ),
+                            );
+                          }
+                          setSelectedRegion(null);
+                        }}
+                      >
+                        {threeDScalarEncodings.length === 0 && (
+                          <option value="">No 3-D scalar fields</option>
+                        )}
+                        {threeDScalarEncodings.map((encoding) => (
+                          <option
+                            key={encoding.field.raw_field_name}
+                            value={encoding.field.raw_field_name}
+                          >
+                            {encoding.field.raw_field_name} - {encoding.field.display_name}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <p className="control-help">
+                      {selectedEncoding
+                        ? selectedEncoding.valueChannel
+                        : "Only fields with a defined 3-D scalar encoding appear here; vertical velocity remains slice-only."}
+                    </p>
+                    {pointCloud && selectedEncoding && (
+                      <p className="control-help">
+                        {pointCloudFieldSummary(pointCloud)}
+                        {selectedEncoding.field.raw_field_name === "dbz"
+                          ? " Weather-radar colors use a fixed 0 to 60+ dBZ scale."
+                          : ""}
+                      </p>
+                    )}
+                    {selectedEncoding?.field.raw_field_name === "qc" &&
+                      cloudTopMismatchNotice(result) && (
+                        <p className="control-help">{cloudTopMismatchNotice(result)}</p>
+                      )}
+                    <label htmlFor="cloud-threshold">
+                      {selectedEncoding?.thresholdLabel ?? "Visible minimum"}
+                      <input
+                        id="cloud-threshold"
+                        aria-label={selectedEncoding?.thresholdAriaLabel ?? "3-D scalar threshold"}
+                        type="number"
+                        min={0}
+                        step={selectedEncoding?.thresholdStep ?? 0.000001}
+                        value={threshold}
+                        onChange={(event) => setThreshold(Number(event.target.value))}
+                        disabled={!selectedEncoding}
+                      />
+                    </label>
+                    <label htmlFor="cloud-opacity">
+                      Opacity
+                      <input
+                        id="cloud-opacity"
+                        aria-label="Layer opacity"
+                        type="range"
+                        min={0.1}
+                        max={1}
+                        step={0.05}
+                        value={opacity}
+                        onChange={(event) => setOpacity(Number(event.target.value))}
+                      />
+                      <output htmlFor="cloud-opacity">{opacity}</output>
+                    </label>
+                    <label htmlFor="cloud-point-size">
+                      Point size
+                      <input
+                        id="cloud-point-size"
+                        aria-label="Point size"
+                        type="range"
+                        min={3}
+                        max={18}
+                        value={pointSize}
+                        onChange={(event) => setPointSize(Number(event.target.value))}
+                      />
+                      <output htmlFor="cloud-point-size">{pointSize}px</output>
+                    </label>
+                  </fieldset>
+                </>
+              )}
             </section>
           )}
         </div>
@@ -10307,33 +10688,65 @@ export function VisualizerSceneShell({ result }: { result: ResultCard }) {
           <div className="section-heading compact-heading">
             <div>
               <p className="eyebrow">Slice inspector</p>
-              <h2 id="unified-slice-title">Inspect the current slice</h2>
+              <h2 id="unified-slice-title">
+                {updraftLensActive ? "Updraft Lens" : "Inspect the current slice"}
+              </h2>
               <p>
-                {activeSliceLabel} · {sliceField.raw_field_name} · {selectedTimeLabel}
+                {activeSliceLabel} · {updraftLensActive ? "w" : sliceField.raw_field_name} ·{" "}
+                {selectedTimeLabel}
               </p>
             </div>
             <p className="state-chip">
-              {sliceError
-                ? "Slice unavailable"
-                : sliceLoading || !activeSlice
-                  ? "Loading slice"
-                  : "Slice synced"}
+              {updraftLensActive
+                ? updraftLensError
+                  ? "Lens unavailable"
+                  : updraftLensLoading || !updraftLensFrame
+                    ? "Loading Lens"
+                    : "Lens synced"
+                : sliceError
+                  ? "Slice unavailable"
+                  : sliceLoading || !activeSlice
+                    ? "Loading slice"
+                    : "Slice synced"}
             </p>
           </div>
 
           {sliceError && <p role="alert">{sliceError}</p>}
 
-          <SlicePanel
-            title={activeSliceLabel}
-            slice={activeSlice}
-            pointCloud={pointCloud}
-            selectedRegion={selectedRegion}
-            onSelectRegion={selectPointFromSlice}
-          />
+          {updraftLensActive ? (
+            updraftLensFrame ? (
+              <UpdraftLensSlice
+                frame={updraftLensFrame}
+                showCloudBoundary={showUpdraftLensBoundary}
+                selectedPoint={
+                  selectedRegion?.xIndex !== undefined &&
+                  selectedRegion.yIndex !== undefined &&
+                  selectedRegion.zIndex !== undefined
+                    ? {
+                        xIndex: selectedRegion.xIndex,
+                        yIndex: selectedRegion.yIndex,
+                        zIndex: selectedRegion.zIndex,
+                      }
+                    : null
+                }
+                onSelectPoint={selectPointFromUpdraftLens}
+              />
+            ) : (
+              !updraftLensError && <p role="status">Loading Updraft Lens frame...</p>
+            )
+          ) : (
+            <SlicePanel
+              title={activeSliceLabel}
+              slice={activeSlice}
+              pointCloud={pointCloud}
+              selectedRegion={selectedRegion}
+              onSelectRegion={selectPointFromSlice}
+            />
+          )}
 
           <SelectedRegionInspector
             selectedRegion={selectedRegion}
-            slice={activeSlice}
+            slice={updraftLensActive ? null : activeSlice}
             selectedValue={selectedSliceValue}
             diagnostics={regionDiagnostics}
             status={regionStatus}
@@ -10488,6 +10901,21 @@ function selectedSliceCellValue(
     }
   }
   return null;
+}
+
+function selectedUpdraftLensValue(
+  frame: UpdraftLensFrame | null,
+  selectedRegion: SelectedRegionRequest | null,
+): number | null {
+  if (
+    !frame ||
+    selectedRegion?.xIndex === undefined ||
+    selectedRegion.yIndex !== frame.plane_index ||
+    selectedRegion.zIndex === undefined
+  ) {
+    return null;
+  }
+  return frame.w_values_m_s[selectedRegion.zIndex]?.[selectedRegion.xIndex] ?? null;
 }
 
 function SlicePanel({
