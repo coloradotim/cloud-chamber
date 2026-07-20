@@ -1,258 +1,48 @@
-# Surface Flux Control Validation
+# Surface Flux Control Evidence Status
 
-Status: implementation contract for issue #305
+**Status:** Current descriptive implementation status and qualified research
+evidence
 
-PM recommendation: expose numeric constant lower-boundary heat/moisture forcing
-controls with explicit CM1 units, full output fields, and caveats.
+This document records verified current facts about the observed-sounding
+surface-flux path and qualifies the historical campaign evidence. The original
+mixed validation and implementation-decision record is preserved in the
+[archive](../archive/research/surface-flux-control-validation-legacy.md).
 
-Cloud Chamber exposes surface sensible and latent heat flux as numeric Build
-controls for observed-sounding runs. CM1 has the needed constant-flux namelist
-knobs, and Cloud Chamber records the selected values, translated CM1 namelist
-values, caveats, and full output-field request in package metadata. The controls
-are intentionally raw numeric sensitivities in CM1 units, not reduced/baseline/
-enhanced presets.
+## Implemented Path
 
-This is not a recommendation to drop surface forcing. It is a recommendation to
-treat surface forcing as an explicit, caveated lower-boundary proxy until smoke
-validation proves the path.
+[PR #308](https://github.com/coloradotim/cloud-chamber/pull/308) implemented
+numeric constant uniform surface heat and moisture controls for the
+observed-sounding path.
 
-## Evidence Checked
+- The selected values are direct CM1-facing proxy controls:
+  `cnst_shflx` in `K m/s` and `cnst_lhflx` in `g/g m/s`. They are not `W/m2`
+  surface-energy-budget inputs.
+- The forcing is uniform over the domain and constant through model time for
+  this path.
+- Package, run, and result metadata preserve the selected values, units, CM1
+  values, and the `constant_uniform_surface_flux_proxy` boundary.
+- This path is not a realistic land-surface, radiation, soil-hydrology,
+  transpiration, wet-ground, terrain, or place/time energy-budget model.
 
-- CM1 r21.1 `README.namelist` documents `isfcflx`, `sfcmodel`, and the
-  `sfcmodel = 1` constant-flux controls in the surface-model section.
-- CM1 r21.1 `README.namelist` documents `output_sfcflx`,
-  `output_sfcparams`, and `output_sfcdiags` in the output section.
-- `app/backend/cloud_chamber/cm1_input_contract.py` currently renders the
-  non-triggered observed-sounding surface-flux settings and output switches.
-- `app/backend/cloud_chamber/visualization_data.py` currently defines surface
-  sensible/latent heat flux field aliases when those fields are present.
-- Existing docs in `docs/research/realistic-les-input-architecture.md` already
-  classify uniform surface fluxes as likely namelist/config-only and spatially
-  varying realistic surface inputs as a later architecture lane.
+## Research Evidence
 
-No qualifying local CM1 smoke matrix was found or added in this PR. That missing
-manual evidence is the reason this recommendation stops at metadata-only rather
-than "expose as controls now."
+- [`surface_forced_tall_001`](surface-forced-campaigns/surface_forced_tall_001.md)
+  and
+  [`surface_forced_tall_002`](surface-forced-campaigns/surface_forced_tall_002.md)
+  are point-in-time research evidence, not current setup authority.
+- The old three-second six-hour default path showed a terminal
+  numerical-integrity failure upstream of ingest. The
+  [lower-timestep restart probe](surface-forced-campaigns/surface_forced_tall_002_lower_timestep_restart_probe.md)
+  crossed the prior failure window with finite output, providing bounded
+  stability evidence only.
+- The [final issue #336 PM
+  disposition](https://github.com/coloradotim/cloud-chamber/issues/336#issuecomment-4995992707)
+  retained the safer-timestep lesson but superseded the recommendation to run a
+  full cold-start `surface_forced_tall_003` forensic campaign. That broader
+  campaign is not planned.
 
-## Product Question
+## Boundaries
 
-The user-facing question is:
-
-```text
-Given an observed sounding, what happens when the lower boundary supplies a
-controlled amount of heat and moisture to the boundary layer?
-```
-
-That is different from:
-
-```text
-What did the real ground, vegetation, soil moisture, radiation, and terrain do
-at this place and time?
-```
-
-The first question can plausibly be tested with a uniform constant surface-flux
-proxy. The second needs a validated land-surface, radiation, place/time, and
-surface-state architecture that Cloud Chamber does not have yet.
-
-## CM1 Controls
-
-CM1 r21.1 documents direct support for surface heat and moisture fluxes:
-
-| Control | CM1 meaning | Validation note |
-| --- | --- | --- |
-| `isfcflx` | Include surface fluxes of heat and moisture. | Needed for any surface-flux experiment. |
-| `sfcmodel` | Surface model used to calculate fluxes and stress. | Constant-flux controls require `sfcmodel = 1`. |
-| `oceanmodel` | Ocean/water surface model. | `sfcmodel = 1` requires `oceanmodel = 1`. |
-| `set_flx` | Impose constant surface heat fluxes. | Must be `1` for `cnst_shflx` and `cnst_lhflx` to act as prescribed controls. |
-| `cnst_shflx` | Constant surface sensible heat flux if `set_flx = 1`. | CM1 documents units as `K m/s`, not W/m2. |
-| `cnst_lhflx` | Constant surface latent heat flux if `set_flx = 1`. | CM1 documents units as `g/g m/s`, not W/m2. |
-| `set_znt`, `cnst_znt` | Constant roughness-length switch and value. | Relevant to stress and surface-layer interpretation. |
-| `set_ust`, `cnst_ust` | Constant friction-velocity switch and value. | Current observed path uses fixed friction velocity. |
-
-CM1 also states that default initial surface conditions are spatially uniform
-and that arbitrary spatially varying surface temperature, land/water flag, and
-land-use values must be coded in `init_surface.F`. That keeps this validation in
-the uniform-proxy lane, not the realistic land-surface lane.
-
-Important unit decision: product controls expose `cnst_shflx` in `K m/s` and
-`cnst_lhflx` in `g/g m/s`. They must not be described as W/m2. The UI may show
-reasonable examples and warnings, but users may enter any finite non-negative
-numeric value; backend validation records the exact CM1-facing values.
-
-## Current Cloud Chamber State
-
-Current non-triggered observed-sounding generation already follows a simple
-surface-flux path:
-
-| Current setting | Current value |
-| --- | --- |
-| `isfcflx` | `1` for non-triggered observed evolution |
-| `sfcmodel` | `1` for non-triggered observed evolution |
-| `oceanmodel` | `1` for non-triggered observed evolution |
-| `set_flx` | `1` for non-triggered observed evolution |
-| `cnst_shflx` | `8.0e-3` |
-| `cnst_lhflx` | `5.2e-5` |
-| `set_znt` | `0` |
-| `cnst_znt` | `0.00` |
-| `set_ust` | `1` |
-| `cnst_ust` | `0.28` |
-
-The former idealized deep-trigger path is no longer a current Build recipe.
-Deep-convection candidates can still be run as observed-sounding experiments
-under the selected lower-boundary forcing. Uniform forcing remains the baseline
-surface-flux path; the differential surface patch recipe is the current
-localized-initiation path when the experiment question is whether a warm/moist
-surface contrast focuses ascent.
-
-The current observed path is therefore best described as:
-
-```text
-uniform fixed-surface-temperature, fixed-moisture-availability,
-constant sensible/latent flux proxy with fixed friction velocity
-```
-
-It is not:
-
-```text
-real land-surface heating
-real soil moisture
-transpiration
-real wet-ground behavior
-diurnal radiation forcing
-place/time surface-energy budget
-```
-
-## Runtime Files
-
-For the current `sfcmodel = 1`, `set_flx = 1`, uniform constant-flux path, no new
-Cloud Chamber package architecture appears necessary. Cloud Chamber already
-stages the existing external runtime-file checklist, including `LANDUSE.TBL`, as
-part of the current reference-derived package path.
-
-This finding does not generalize to radiation, realistic land categories,
-spatially varying surface fields, or arbitrary GIS-derived surface inputs. Those
-paths may require additional runtime files, preprocessing, or CM1 source-level
-customization.
-
-## Output Evidence Required
-
-To expose controls safely, a completed result must prove both the forcing and
-the atmospheric response. At minimum, the run configuration should request
-surface and process outputs:
-
-| Output | Why it matters |
-| --- | --- |
-| `output_sfcflx` | Records surface fluxes of potential temperature, water vapor, and exchange coefficients when `isfcflx = 1`. |
-| `output_sfcparams` | Records parameters used by surface, soil, or ocean models. |
-| `output_sfcdiags` | Records surface-layer diagnostics such as 10 m winds, 2 m temperature/moisture, and roughness where available. |
-| `output_qv`, `output_th`, `output_prs` | Shows lower-atmosphere thermodynamic response. |
-| `output_q`, `output_w`, `output_dbz`, `output_rain` | Shows cloud, updraft, rain water aloft, reflectivity, and surface rain outcomes. |
-
-Cloud Chamber already has field definitions for surface sensible heat flux and
-surface moisture flux aliases such as `hfx`, `qfx`, `sensible_heat_flux`, and
-`surface_moisture_flux`; `lhfx` is accepted only as a legacy/alternate moisture
-flux alias. Backend output-product tests cover surface-flux time series from
-fixture data. That means the product layer can represent the fields when they
-exist. It does not prove that CM1 emits the expected field names and units for
-all real runs or that changed flux values produce expected responses.
-
-## Smoke Validation Matrix
-
-The implementation remains caveated until this matrix has local CM1 evidence:
-
-| Run | Change | Required evidence |
-| --- | --- | --- |
-| Control/default | Current non-triggered observed defaults. | CM1 exits cleanly, ingest succeeds, surface-flux outputs are present when requested, and metadata records the exact flux assumptions. |
-| Higher sensible heat flux | Increase the prescribed sensible-flux control only. | Surface sensible flux output changes in the expected direction; lower-boundary theta and boundary-layer response are visible or explicitly absent. |
-| Higher latent heat flux | Increase the prescribed latent-flux control only. | Surface moisture-flux output changes in the expected direction; near-surface qv response is visible or explicitly absent. |
-| Combined sensible + latent | Increase both prescribed controls. | Both flux outputs change, thermodynamic response is inspectable, and cloud/updraft/precipitation differences are distinguishable from the control run. |
-
-Each smoke record should capture:
-
-- run ID
-- sounding station, location, and observed time
-- model duration
-- domain size, cell count, dx/dy, and model top
-- saved-output cadence
-- full output-field request and saved-output cadence
-- exact CM1 namelist values for `isfcflx`, `sfcmodel`, `set_flx`,
-  `cnst_shflx`, `cnst_lhflx`, `set_znt`, `cnst_znt`, `set_ust`, and `cnst_ust`
-- CM1 exit status
-- ingest status
-- units and max/min/mean time series for surface sensible and latent flux when
-  available
-- qv/theta response when available
-- cloud, updraft, rain-water-aloft, surface-rain, and reflectivity outcomes when
-  available
-- caveats explaining proxy status and missing fields
-
-The smoke evidence belongs in docs or PR notes as summarized metrics and run
-IDs only. Generated packages, NetCDF files, logs, runtime directories,
-screenshots, traces, videos, SSH config, and local settings must remain
-uncommitted.
-
-## Metadata Requirements
-
-Before controls are exposed, package, run, and result metadata should preserve:
-
-- selected surface-forcing mode, such as `constant_uniform_surface_flux_proxy`
-- product-level selected sensible-flux value and unit
-- product-level selected latent-flux value and unit
-- translated CM1 values for `cnst_shflx` and `cnst_lhflx`
-- translation method and assumptions, if product units differ from CM1 units
-- `sfcmodel`, `oceanmodel`, `isfcflx`, `set_flx`, roughness, and friction
-  velocity settings
-- requested surface output switches
-- whether flux outputs were actually ingested
-- caveats that the run is not a real land-surface, soil-hydrology,
-  transpiration, wet-ground, radiation, or place/time energy-budget simulation
-
-Results and Explore should show the same assumption set beside the outcome so a
-surface-forced run cannot be mistaken for an unforced observed evolution or a
-real-weather reconstruction.
-
-## Product Language
-
-Recommended user-facing wording:
-
-- "surface sensible heat flux"
-- "surface latent heat flux proxy"
-- "surface moisture-flux proxy"
-- "uniform lower-boundary heat/moisture forcing"
-- "constant over the domain and model time"
-
-Avoid until a stronger model path is validated:
-
-- "transpiration"
-- "soil moisture"
-- "wet ground"
-- "evaporation from the real surface"
-- "real land-surface heating"
-- "diurnal heating"
-- "place/time surface-energy budget"
-
-## Decision
-
-Keep surface sensible and latent heat flux metadata-only / not exposed yet.
-
-Rationale:
-
-1. CM1 supports a simple constant-flux path, and Cloud Chamber already uses the
-   relevant non-triggered observed-run switches.
-2. The raw CM1 control units are not the product units users will expect, so a
-   safe implementation needs an explicit translation layer and metadata copy.
-3. Surface-flux output fields are represented in Cloud Chamber fixtures, but
-   real-run smoke evidence has not yet shown that changed prescribed flux values
-   are emitted, ingested, and explained correctly.
-4. The current path is a uniform proxy, not a realistic land-surface or
-   transpiration model.
-
-Next implementation should be a narrow surface-forced proxy path, not a broad
-land-surface feature:
-
-- add explicit product-level sensible/latent flux selections;
-- translate those selections to CM1 `cnst_shflx` and `cnst_lhflx`;
-- request `output_sfcflx`, `output_sfcparams`, and `output_sfcdiags`;
-- copy the full assumption set into package/run/result metadata;
-- run the smoke matrix above before moving the controls out of advanced or
-  metadata-only status.
+This evidence does not define canonical BOMEX, an approved Cloud World or
+Recipe, a current campaign plan, or future product direction. It does not
+prescribe new controls, runs, UI, or implementation work.

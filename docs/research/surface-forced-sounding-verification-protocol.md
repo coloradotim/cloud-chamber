@@ -1,5 +1,10 @@
 # Surface-Forced Sounding Verification Protocol
 
+> **Status: Historical research protocol.** This document preserves the
+> observed-sounding verification protocol and template used for issues
+> #310-#318. It is not canonical BOMEX guidance, current program authority, or
+> a supported Recipe definition.
+
 Status: protocol/template for issue #310
 
 ## Purpose

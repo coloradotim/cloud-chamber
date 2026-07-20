@@ -13,17 +13,40 @@ Controlling issue:
 
 #[ISSUE_NUMBER] — [ISSUE_TITLE]
 
-Read these authority documents before doing any work:
+Read these sources before doing any work.
+
+Repository and agent operating authority:
+
+- AGENTS.md
+
+Product authority, in precedence order:
 
 1. NORTH_STAR.md
 2. docs/product/PRODUCT_VISION.md
-3. AGENTS.md
-4. the complete body and comments of issue #[ISSUE_NUMBER]
+3. explicit approved PM decisions identified by issue #[ISSUE_NUMBER]
+4. docs/product/APPLICATION_SEMANTICS.md
+5. current implementation documentation where the controlling issue requires it
+
+Authority and status guide:
+
+- docs/DOCUMENTATION_STATUS.md
+
+Controlling work instruction:
+
+- the complete body and all comments of issue #[ISSUE_NUMBER]
 
 The issue is the controlling implementation instruction. Existing roadmaps,
 scenarios, product specifications, research notes, old issues, and current UI
 language may reflect superseded directions. Do not use them to broaden or
 reinterpret the task.
+
+For every supporting document, issue, run record, or other source named by the
+controlling issue, identify whether it is authoritative, current descriptive,
+an implemented contract, research evidence, a proposal, historical,
+superseded, or unresolved. Use it only according to that status. Evidence does
+not become a product, scientific, UX, or implementation decision unless the
+controlling issue or another explicit approved PM decision supplies that
+decision.
 
 ============================================================
 PRE-FLIGHT: PRESERVE EXISTING GIT WORK
@@ -67,6 +90,11 @@ TASK
 ============================================================
 
 [PASTE THE ISSUE'S OUTCOME AND DECISIONS-ALREADY-MADE SECTIONS]
+
+Supporting documents and evidence to inspect without treating them as supplied
+decisions:
+
+[PASTE THE ISSUE'S SUPPORTING-DOCUMENTS-AND-EVIDENCE-TO-INSPECT SECTION]
 
 ============================================================
 ALLOWED SCOPE
@@ -123,7 +151,9 @@ Do not paraphrase, improve, expand, or reorganize approved product language.
 
 Preserve the distinction between:
 
-configured experiment
+scientific case definition
+configured run
+generated package
 running CM1 process
 completed CM1 output
 backend-derived diagnostic
