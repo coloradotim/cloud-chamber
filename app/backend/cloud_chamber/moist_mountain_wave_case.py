@@ -1005,14 +1005,18 @@ def verify_preserved_run_artifacts(
         actual[relative_path] = actual_sha256
 
     manifest = load_run_manifest(package.manifest_path)
-    expected_history_names = [f"cm1out_{index:06d}.nc" for index in range(1, 22)]
+    expected_output_names = [
+        *(f"cm1out_{index:06d}.nc" for index in range(1, 22)),
+        "cm1out_stats.nc",
+    ]
     manifest_history_paths = [Path(path).resolve() for path in manifest.outputs.netcdf_paths]
     expected_history_paths = [
-        (package.package_dir / name).resolve() for name in expected_history_names
+        (package.package_dir / name).resolve() for name in expected_output_names
     ]
     if manifest_history_paths != expected_history_paths:
         raise MoistMountainWaveCaseError(
-            "Preserved manifest no longer names the exact 21 pinned histories in order."
+            "Preserved manifest no longer names the exact 21 pinned histories and stats "
+            "file in order."
         )
     expected_stdout = (package.package_dir / "logs/stdout.log").resolve()
     expected_stderr = (package.package_dir / "logs/stderr.log").resolve()

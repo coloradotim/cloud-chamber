@@ -344,6 +344,20 @@ def test_preserved_run_reevaluation_hashes_before_and_after_without_execution(
     )
     stats.to_netcdf(stats_path)
     stats.close()
+    completed_manifest = load_run_manifest(package.manifest_path)
+    write_run_manifest(
+        package.manifest_path,
+        completed_manifest.model_copy(
+            update={
+                "outputs": OutputMetadata(
+                    netcdf_paths=[
+                        *completed_manifest.outputs.netcdf_paths,
+                        str(stats_path),
+                    ]
+                )
+            }
+        ),
+    )
     relative_paths = [
         "run_manifest.json",
         "case_manifest.json",
