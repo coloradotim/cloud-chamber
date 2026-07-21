@@ -122,6 +122,7 @@ export type UpdraftLensDefaults = {
 type UpdraftLensSliceProps = {
   frame: UpdraftLensFrame;
   showCloudBoundary?: boolean;
+  showLegend?: boolean;
   selectedPoint?: UpdraftLensPointSelection | null;
   onSelectPoint?: (selection: UpdraftLensPointSelection) => void;
 };
@@ -154,6 +155,7 @@ const INTERVAL_MEANINGS = [
 export function UpdraftLensSlice({
   frame,
   showCloudBoundary = true,
+  showLegend = true,
   selectedPoint = null,
   onSelectPoint,
 }: UpdraftLensSliceProps) {
@@ -208,7 +210,10 @@ export function UpdraftLensSlice({
   }
 
   return (
-    <section className="updraft-lens-slice" aria-label="Updraft Lens vertical slice">
+    <section
+      className={`updraft-lens-slice${showLegend ? "" : " updraft-lens-slice-without-legend"}`}
+      aria-label="Updraft Lens slice"
+    >
       <div className="updraft-lens-axis updraft-lens-axis-z" aria-hidden="true">
         <span>{formatKilometers(rowMax)}</span>
         <strong>{rowDimension} (km)</strong>
@@ -274,7 +279,7 @@ export function UpdraftLensSlice({
           <span>{formatKilometers(columnMax)}</span>
         </div>
       </div>
-      <UpdraftLensScaleLegend frame={frame} viewLabel="2-D inspector" />
+      {showLegend && <UpdraftLensScaleLegend frame={frame} viewLabel="2-D inspector" />}
     </section>
   );
 }
@@ -317,7 +322,7 @@ export function UpdraftLensScaleLegend({
   viewLabel,
 }: {
   frame: UpdraftLensFrame;
-  viewLabel: "2-D inspector" | "3-D viewer";
+  viewLabel: "2-D inspector" | "3-D viewer" | "Explore workspace";
 }) {
   const intervals = updraftLensScaleIntervals(frame.w_scale_breakpoints_m_s, frame.w_scale_colors);
   const finiteValues = frame.w_values_m_s
@@ -325,7 +330,8 @@ export function UpdraftLensScaleLegend({
     .filter((value): value is number => value !== null && Number.isFinite(value));
   const sliceMinimum = finiteValues.length > 0 ? Math.min(...finiteValues) : null;
   const sliceMaximum = finiteValues.length > 0 ? Math.max(...finiteValues) : null;
-  const viewClass = viewLabel === "2-D inspector" ? "2d" : "3d";
+  const viewClass =
+    viewLabel === "2-D inspector" ? "2d" : viewLabel === "3-D viewer" ? "3d" : "workspace";
   return (
     <section
       className={`updraft-lens-scale-legend updraft-lens-scale-legend-${viewClass}`}

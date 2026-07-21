@@ -100,6 +100,7 @@ type True3DViewerProps = {
   windReferenceMps?: number;
   windArrowDomainFraction?: number;
   updraftLensFrame?: UpdraftLensFrame | null;
+  showUpdraftLensLegend?: boolean;
 };
 
 type SceneRefs = {
@@ -163,6 +164,7 @@ export function True3DViewer({
   windReferenceMps = 0,
   windArrowDomainFraction = 0.08,
   updraftLensFrame = null,
+  showUpdraftLensLegend = true,
 }: True3DViewerProps) {
   const mountRef = useRef<HTMLDivElement | null>(null);
   const axisLabelLayerRef = useRef<HTMLDivElement | null>(null);
@@ -386,7 +388,7 @@ export function True3DViewer({
             <span>{windReferenceMps.toFixed(1)} m/s reference = 8% domain width</span>
           </div>
         )}
-        {updraftLensFrame && (
+        {updraftLensFrame && showUpdraftLensLegend && (
           <UpdraftLensScaleLegend frame={updraftLensFrame} viewLabel="3-D viewer" />
         )}
         <div

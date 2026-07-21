@@ -4463,8 +4463,9 @@ describe("App", () => {
       expect(
         await screen.findByLabelText(`${resultName} Lab result workspace`),
       ).toBeInTheDocument();
-      const breadcrumb = screen.getByRole("navigation", { name: "Breadcrumb" });
-      expect(within(breadcrumb).getByRole("button", { name: "Lab" })).toBeInTheDocument();
+      expect(
+        screen.getByRole("heading", { name: `Trade Cumulus Lab / ${resultName}` }),
+      ).toBeInTheDocument();
       fireEvent.click(screen.getByRole("button", { name: "Back to Lab Results" }));
       expect(
         await screen.findByRole("heading", { name: "Experiment Notebook" }),
@@ -6738,7 +6739,9 @@ describe("App", () => {
     expect(await screen.findByLabelText("Explore viewer controls")).toBeInTheDocument();
     expect(screen.getByLabelText("Slice field")).toHaveValue("w");
     expect(screen.getByLabelText("Time")).toHaveValue("2");
-    expect(screen.getByText(/Supercell-like environment · Supported/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Science" }));
+    fireEvent.click(screen.getByText("Process evidence"));
+    expect(screen.getByLabelText("Process mode")).toHaveValue("thermal_fate");
     await waitFor(() => {
       expect(fetch).toHaveBeenCalledWith(
         expect.stringContaining(
@@ -7335,13 +7338,10 @@ describe("App", () => {
     expect(screen.getByLabelText("Horizontal wind overlay legend")).toHaveTextContent(
       "0.9 m/s reference",
     );
-    expect(screen.getAllByText("Vertical velocity (w), m/s")).toHaveLength(2);
-    expect(screen.getByLabelText(/2-D inspector Vertical velocity \(w\), m\/s/)).toHaveTextContent(
-      "-0.1 to < 0.1",
-    );
-    expect(screen.getByLabelText(/3-D viewer Vertical velocity \(w\), m\/s/)).toHaveTextContent(
-      "m/s",
-    );
+    expect(screen.getAllByText("Vertical velocity (w), m/s")).toHaveLength(1);
+    expect(
+      screen.getByLabelText(/Explore workspace Vertical velocity \(w\), m\/s/),
+    ).toHaveTextContent("-0.1 to < 0.1");
     expect(screen.getByText(/Updraft Lens slice: Vertical x-z slice at y =/)).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Horizontal x-y" }));
@@ -7425,10 +7425,10 @@ describe("App", () => {
         ),
       );
     });
-    const legend = await screen.findByLabelText(/2-D inspector Vertical velocity \(w\), m\/s/);
+    const legend = await screen.findByLabelText(/Explore workspace Vertical velocity \(w\), m\/s/);
     expect(legend).toHaveTextContent("Vertical velocity (w), m/s");
-    expect(screen.getAllByText("Slice maximum 1.40 m/s.")).toHaveLength(2);
-    expect(screen.getAllByText("Slice minimum -1.40 m/s.")).toHaveLength(2);
+    expect(screen.getAllByText("Slice maximum 1.40 m/s.")).toHaveLength(1);
+    expect(screen.getAllByText("Slice minimum -1.40 m/s.")).toHaveLength(1);
 
     await act(async () => {
       resolveFirst?.(
@@ -7439,8 +7439,8 @@ describe("App", () => {
       );
     });
     expect(legend).toHaveTextContent("Vertical velocity (w), m/s");
-    expect(screen.getAllByText("Slice maximum 1.40 m/s.")).toHaveLength(2);
-    expect(screen.getAllByText("Slice minimum -1.40 m/s.")).toHaveLength(2);
+    expect(screen.getAllByText("Slice maximum 1.40 m/s.")).toHaveLength(1);
+    expect(screen.getAllByText("Slice minimum -1.40 m/s.")).toHaveLength(1);
     expect(screen.queryByText("Slice maximum 0.90 m/s.")).not.toBeInTheDocument();
     expect(screen.queryByText("Slice minimum -0.90 m/s.")).not.toBeInTheDocument();
     expect(screen.queryByText(/Clipped in this slice/)).not.toBeInTheDocument();
@@ -7451,9 +7451,7 @@ describe("App", () => {
 
     await openSelectedResultInExplore();
 
-    expect(
-      await screen.findByRole("heading", { name: "What happened in this result?" }),
-    ).toBeInTheDocument();
+    expect(await screen.findByLabelText("Integrated Explore workspace")).toBeInTheDocument();
     expect(await screen.findByLabelText("Explore viewer controls")).toBeInTheDocument();
     await screen.findByText("Slice synced");
     expect(screen.getByLabelText("Slice field")).toHaveValue("qc");
@@ -7566,7 +7564,7 @@ describe("App", () => {
     ).toBe(false);
   });
 
-  it("plays saved output times without refetching fields until pause and resets at the end", async () => {
+  it("plays coordinated saved output times and resets at the end", async () => {
     render(<App />);
 
     await openSelectedResultInExplore();
@@ -7599,9 +7597,7 @@ describe("App", () => {
     ).toBeInTheDocument();
     expect(screen.queryByText("Selected point")).not.toBeInTheDocument();
     expect(
-      screen.getByText(
-        "Animating 3-D scene at 900 s; slice and evidence remain at 900 s until playback is paused.",
-      ),
+      screen.getByText("Animating the coordinated scene and slice at 900 s."),
     ).toBeInTheDocument();
 
     await act(async () => {
@@ -7611,9 +7607,7 @@ describe("App", () => {
     expect(screen.getByLabelText("Time")).toHaveValue("2");
     expect(screen.getByLabelText("Saved output time")).toHaveValue("2");
     expect(
-      screen.getByText(
-        "Animating 3-D scene at 1,800 s; slice and evidence remain at 900 s until playback is paused.",
-      ),
+      screen.getByText("Animating the coordinated scene and slice at 1,800 s."),
     ).toBeInTheDocument();
     expect(screen.getByLabelText("Slice position")).toHaveValue("0");
     expect(
@@ -7628,13 +7622,13 @@ describe("App", () => {
         ([url]) =>
           String(url).includes("/visualization/slice") && String(url).includes("time_index=2"),
       ),
-    ).toBe(false);
+    ).toBe(true);
     expect(
       fetchMock.mock.calls.some(
         ([url]) =>
           String(url).includes("/visualization/defaults") && String(url).includes("time_index=2"),
       ),
-    ).toBe(false);
+    ).toBe(true);
     expect(
       screen.getByText("Pause playback to select a cell and explain this time step."),
     ).toBeInTheDocument();
@@ -7689,6 +7683,7 @@ describe("App", () => {
 
     await openSelectedResultInExplore();
     await screen.findByText("Slice synced");
+    fireEvent.click(screen.getByRole("button", { name: "Science" }));
 
     const heatmap = screen.getAllByRole("img", { name: /heatmap/i })[0];
     fireEvent.click(within(heatmap).getByRole("button", { name: /row 1, column 2/i }));
@@ -7827,6 +7822,7 @@ describe("App", () => {
     const resultDetail = await screen.findByLabelText("Result detail");
     fireEvent.click(within(resultDetail).getByRole("button", { name: "Open in Explore" }));
     await screen.findByText("Slice synced");
+    fireEvent.click(screen.getByRole("button", { name: "Science" }));
     fireEvent.click(
       within(screen.getAllByRole("img", { name: /heatmap/i })[0]).getByRole("button", {
         name: /row 1, column 1/i,
@@ -7861,16 +7857,15 @@ describe("App", () => {
     const resultDetail = await screen.findByLabelText("Result detail");
     fireEvent.click(within(resultDetail).getByRole("button", { name: "Open in Explore" }));
 
-    expect(
-      await screen.findByRole("heading", { name: "What happened in this result?" }),
-    ).toBeInTheDocument();
+    expect(await screen.findByLabelText("Integrated Explore workspace")).toBeInTheDocument();
     await screen.findAllByText("Cloud-water point layer loaded");
-    expect(screen.getByText("Result explanation")).toBeInTheDocument();
+    expect(screen.getByText("What happened in this result?")).toBeInTheDocument();
     expect(
       screen.getAllByText(/Cloud water formed in the validated reference baseline/).length,
     ).toBeGreaterThan(0);
 
-    fireEvent.click(screen.getByText("Process evidence details"));
+    fireEvent.click(screen.getByRole("button", { name: "Science" }));
+    fireEvent.click(screen.getByText("Process evidence"));
     const processMode = screen.getByLabelText("Process mode");
     expect(processMode).toHaveValue("thermal_fate");
     expect(
@@ -7910,11 +7905,10 @@ describe("App", () => {
     const resultDetail = await screen.findByLabelText("Result detail");
     fireEvent.click(within(resultDetail).getByRole("button", { name: "Open in Explore" }));
 
-    expect(
-      await screen.findByRole("heading", { name: "What happened in this result?" }),
-    ).toBeInTheDocument();
+    expect(await screen.findByLabelText("Integrated Explore workspace")).toBeInTheDocument();
     await screen.findByText("Slice synced");
-    fireEvent.click(screen.getByText("Process evidence details"));
+    fireEvent.click(screen.getByRole("button", { name: "Science" }));
+    fireEvent.click(screen.getByText("Process evidence"));
     const processMode = screen.getByLabelText("Process mode");
     expect(
       within(processMode).getByRole("option", { name: /Moisture \/ Saturation \(candidate\)/ }),
@@ -7940,11 +7934,10 @@ describe("App", () => {
     const resultDetail = await screen.findByLabelText("Result detail");
     fireEvent.click(within(resultDetail).getByRole("button", { name: "Open in Explore" }));
 
-    expect(
-      await screen.findByRole("heading", { name: "What happened in this result?" }),
-    ).toBeInTheDocument();
+    expect(await screen.findByLabelText("Integrated Explore workspace")).toBeInTheDocument();
     await screen.findByText("Slice synced");
-    fireEvent.click(screen.getByText("Process evidence details"));
+    fireEvent.click(screen.getByRole("button", { name: "Science" }));
+    fireEvent.click(screen.getByText("Process evidence"));
     const processMode = screen.getByLabelText("Process mode");
     expect(
       within(processMode).getByRole("option", { name: /Cap \/ Inversion \(candidate\)/ }),
@@ -7964,9 +7957,7 @@ describe("App", () => {
     const resultDetail = screen.getByLabelText("Result detail");
     fireEvent.click(within(resultDetail).getByRole("button", { name: "Open in Explore" }));
 
-    expect(
-      await screen.findByRole("heading", { name: "What happened in this result?" }),
-    ).toBeInTheDocument();
+    expect(await screen.findByLabelText("Integrated Explore workspace")).toBeInTheDocument();
     await screen.findByText("Slice synced");
     expect(screen.getByLabelText("Slice field")).toHaveValue("w");
     expect(screen.queryByRole("option", { name: /qc/ })).not.toBeInTheDocument();
@@ -7980,9 +7971,7 @@ describe("App", () => {
     const resultDetail = await screen.findByLabelText("Result detail");
     fireEvent.click(within(resultDetail).getByRole("button", { name: "Open in Explore" }));
 
-    expect(
-      await screen.findByRole("heading", { name: "What happened in this result?" }),
-    ).toBeInTheDocument();
+    expect(await screen.findByLabelText("Integrated Explore workspace")).toBeInTheDocument();
     await screen.findByText("Slice synced");
     expect(screen.getByLabelText("True 3-D scalar field viewer")).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Field Slice" })).toBeInTheDocument();
@@ -8164,9 +8153,7 @@ describe("App", () => {
       }),
     );
 
-    expect(
-      await screen.findByRole("heading", { name: "What happened in this result?" }),
-    ).toBeInTheDocument();
+    expect(await screen.findByLabelText("Integrated Explore workspace")).toBeInTheDocument();
     await screen.findAllByText("Cloud water max is 0 kg/kg; no points are above 1.000e-6 kg/kg");
     expect(screen.getByRole("heading", { name: "Field Slice" })).toBeInTheDocument();
     expect(screen.getByLabelText("Slice field")).toHaveValue("w");
@@ -8280,14 +8267,76 @@ describe("App", () => {
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   });
 
+  it("keeps the slice timeline and inspector usable when the 3-D layer fails", async () => {
+    const defaultFetch = vi.mocked(fetch).getMockImplementation();
+    let allowPointCloud = false;
+    vi.mocked(fetch).mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes("/visualization/point-cloud") && !allowPointCloud) {
+        return Promise.resolve(
+          new Response(JSON.stringify({ detail: "Point cloud temporarily unavailable." }), {
+            status: 503,
+          }),
+        );
+      }
+      return (
+        defaultFetch?.(input, init) ?? Promise.resolve(new Response("not found", { status: 404 }))
+      );
+    });
+
+    render(<App />);
+    await openSelectedResultInExplore();
+
+    expect(await screen.findByText("3-D cloud layer unavailable")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Field Slice" })).toBeInTheDocument();
+    expect(screen.getByRole("slider", { name: "Saved output time" })).toBeInTheDocument();
+    expect(screen.getByLabelText("Explore inspector")).toBeInTheDocument();
+    expect(await screen.findByText("Slice synced")).toBeInTheDocument();
+
+    allowPointCloud = true;
+    fireEvent.click(screen.getByRole("button", { name: "Retry 3-D layer" }));
+    await screen.findAllByText("Cloud-water point layer loaded");
+    expect(screen.queryByText("3-D cloud layer unavailable")).not.toBeInTheDocument();
+  });
+
+  it("keeps the 3-D scene timeline and inspector usable when the slice fails", async () => {
+    const defaultFetch = vi.mocked(fetch).getMockImplementation();
+    let allowSlice = false;
+    vi.mocked(fetch).mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes("/visualization/slice") && !allowSlice) {
+        return Promise.resolve(
+          new Response(JSON.stringify({ detail: "Slice temporarily unavailable." }), {
+            status: 503,
+          }),
+        );
+      }
+      return (
+        defaultFetch?.(input, init) ?? Promise.resolve(new Response("not found", { status: 404 }))
+      );
+    });
+
+    render(<App />);
+    await openSelectedResultInExplore();
+
+    expect(await screen.findByText("Field Slice unavailable")).toBeInTheDocument();
+    expect(screen.getByLabelText("True 3-D scalar field viewer")).toBeInTheDocument();
+    expect(screen.getByRole("slider", { name: "Saved output time" })).toBeInTheDocument();
+    expect(screen.getByLabelText("Explore inspector")).toBeInTheDocument();
+    await screen.findAllByText("Cloud-water point layer loaded");
+
+    allowSlice = true;
+    fireEvent.click(screen.getByRole("button", { name: "Retry Field Slice" }));
+    expect(await screen.findByText("Slice synced")).toBeInTheDocument();
+    expect(screen.queryByText("Field Slice unavailable")).not.toBeInTheDocument();
+  });
+
   it("renders cloud-water context in unified Explore", async () => {
     render(<App />);
 
     await openSelectedResultInExplore();
 
-    expect(
-      await screen.findByRole("heading", { name: "What happened in this result?" }),
-    ).toBeInTheDocument();
+    expect(await screen.findByLabelText("Integrated Explore workspace")).toBeInTheDocument();
     await screen.findAllByText("Cloud-water point layer loaded");
     expect(screen.getByText("Cloud formed in this result")).toBeInTheDocument();
     expect(screen.queryByText("Cloud formed here")).not.toBeInTheDocument();
@@ -8300,7 +8349,7 @@ describe("App", () => {
     ).toBeInTheDocument();
     expect(screen.getByLabelText("Scientific visualization workbench")).toBeInTheDocument();
     expect(screen.getByLabelText("Fixed visualization viewport region")).toBeInTheDocument();
-    expect(screen.getByLabelText("Visualization details")).toBeInTheDocument();
+    expect(screen.getByLabelText("Explore inspector")).toBeInTheDocument();
     expect(screen.getByLabelText("Explore viewer controls")).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Field Slice" })).toBeInTheDocument();
     expect(within(viewer).getByText("True 3-D scene")).toBeInTheDocument();
@@ -8520,9 +8569,7 @@ describe("App", () => {
     const resultDetail = screen.getByLabelText("Result detail");
     fireEvent.click(within(resultDetail).getByRole("button", { name: "Open in Explore" }));
 
-    expect(
-      await screen.findByRole("heading", { name: "What happened in this result?" }),
-    ).toBeInTheDocument();
+    expect(await screen.findByLabelText("Integrated Explore workspace")).toBeInTheDocument();
     await screen.findAllByText("Slice fields ready; no 3-D scalar field available");
     expect(screen.getByText("No supported 3-D scalar field")).toBeInTheDocument();
     expect(screen.getByLabelText("Slice field")).toHaveValue("w");
@@ -8536,9 +8583,7 @@ describe("App", () => {
     const resultDetail = screen.getByLabelText("Result detail");
     fireEvent.click(within(resultDetail).getByRole("button", { name: "Open in Explore" }));
 
-    expect(
-      await screen.findByRole("heading", { name: "What happened in this result?" }),
-    ).toBeInTheDocument();
+    expect(await screen.findByLabelText("Integrated Explore workspace")).toBeInTheDocument();
     await screen.findAllByText("No fields available");
     expect(
       screen.getByText("No visualization-ready fields are available for this result."),

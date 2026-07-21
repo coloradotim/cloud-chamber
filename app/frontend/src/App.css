@@ -3781,6 +3781,346 @@ details[open] > summary {
   display: none;
 }
 
+@media (min-width: 1100px) {
+  .world-context-workspace:has(.integrated-explore-workspace) {
+    gap: 0.45rem;
+  }
+
+  .integrated-explore-workspace {
+    display: grid;
+    gap: 0.45rem;
+    min-width: 0;
+  }
+
+  .integrated-explore-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    border-bottom: 1px solid var(--color-border);
+    padding: 0 0.15rem 0.45rem;
+  }
+
+  .integrated-explore-header .eyebrow,
+  .integrated-explore-header h2 {
+    margin-bottom: 0;
+  }
+
+  .integrated-explore-header h2 {
+    font-size: 1.25rem;
+  }
+
+  .integrated-explore-actions {
+    display: flex;
+    gap: 0.4rem;
+  }
+
+  .integrated-explore-workspace .visualizer-shell {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 21rem;
+    grid-template-areas:
+      "scene inspector"
+      "slice inspector"
+      "controls controls";
+    grid-template-rows: auto auto auto;
+    gap: 0.45rem;
+    min-width: 0;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
+  }
+
+  .integrated-explore-workspace .visualizer-workbench,
+  .integrated-explore-workspace .visualizer-stage {
+    display: contents;
+  }
+
+  .integrated-explore-workspace .true3d-viewer {
+    grid-area: scene;
+    gap: 0.3rem;
+    min-width: 0;
+    padding: 0.45rem;
+  }
+
+  .integrated-explore-workspace .true3d-scene-header .eyebrow {
+    margin-bottom: 0.08rem;
+  }
+
+  .integrated-explore-workspace .true3d-scene-header h3 {
+    font-size: 0.95rem;
+  }
+
+  .integrated-explore-workspace .true3d-scene-frame,
+  .integrated-explore-workspace .true3d-scene-frame-tall {
+    height: 18rem;
+    min-height: 18rem;
+  }
+
+  .integrated-explore-workspace .true3d-controls {
+    grid-template-columns: auto minmax(0, 1fr) auto minmax(0, 1.4fr);
+    gap: 0.3rem 0.45rem;
+    align-items: center;
+    padding: 0.3rem 0.4rem;
+  }
+
+  .integrated-explore-workspace .true3d-control-section {
+    display: contents;
+  }
+
+  .integrated-explore-workspace .true3d-controls > p {
+    display: none;
+  }
+
+  .integrated-explore-workspace .true3d-preset-buttons {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+  }
+
+  .integrated-explore-workspace .true3d-preset-buttons button {
+    padding: 0.28rem 0.4rem;
+    font-size: 0.76rem;
+    white-space: nowrap;
+  }
+
+  .integrated-explore-workspace .true3d-provenance {
+    display: none;
+  }
+
+  .integrated-explore-workspace .unified-slice-inspector {
+    grid-area: slice;
+    align-content: start;
+    gap: 0.35rem;
+    min-width: 0;
+    min-height: 14.5rem;
+    max-height: 16.5rem;
+    overflow: auto;
+    border: 1px solid var(--color-border);
+    border-radius: 8px;
+    padding: 0.45rem;
+    background: var(--color-surface);
+  }
+
+  .integrated-explore-workspace .unified-slice-inspector .section-heading h2 {
+    margin-bottom: 0.1rem;
+    font-size: 1rem;
+  }
+
+  .integrated-explore-workspace .unified-slice-inspector .section-heading p {
+    margin-bottom: 0;
+    font-size: 0.78rem;
+  }
+
+  .integrated-explore-workspace .updraft-lens-slice-without-legend {
+    grid-template-columns: auto minmax(0, 1fr);
+    width: min(100%, 47rem);
+  }
+
+  .integrated-explore-workspace .updraft-lens-slice-without-legend .updraft-lens-svg {
+    width: auto;
+    height: auto;
+    max-width: 100%;
+    max-height: 12.25rem;
+  }
+
+  .integrated-explore-workspace .updraft-lens-slice-without-legend .updraft-lens-plot-column {
+    justify-items: center;
+  }
+
+  .integrated-explore-workspace .slice-panel {
+    padding: 0.2rem;
+    box-shadow: none;
+  }
+
+  .integrated-explore-workspace .slice-panel > .section-heading {
+    display: none;
+  }
+
+  .integrated-explore-workspace .unified-slice-inspector .slice-panel > h3,
+  .integrated-explore-workspace .unified-slice-inspector .slice-axis-summary {
+    display: none;
+  }
+
+  .integrated-explore-workspace .slice-map-frame {
+    width: min(100%, calc(12rem * var(--slice-domain-aspect) + 4rem));
+    max-width: none;
+    margin-inline: auto;
+  }
+
+  .integrated-explore-workspace .slice-map-frame .slice-heatmap {
+    width: min(calc(12rem * var(--slice-domain-aspect)), calc(100% - 4rem));
+    max-width: none !important;
+  }
+
+  .integrated-explore-workspace .explore-control-deck {
+    grid-area: controls;
+    grid-template-columns: minmax(8.5rem, 0.45fr) minmax(20rem, 1.05fr) minmax(28rem, 1.5fr) minmax(
+        14rem,
+        0.8fr
+      );
+    gap: 0.4rem;
+    max-height: 12.5rem;
+    overflow: auto;
+  }
+
+  .integrated-explore-workspace .explore-control-deck:not(.explore-control-deck-has-view-mode) {
+    grid-template-columns: minmax(20rem, 0.8fr) minmax(28rem, 1.2fr) minmax(14rem, 0.7fr);
+  }
+
+  .integrated-explore-workspace .explore-control-card {
+    gap: 0.28rem;
+    padding: 0.38rem;
+  }
+
+  .integrated-explore-workspace .explore-control-card legend,
+  .integrated-explore-workspace .explore-control-card label,
+  .integrated-explore-workspace .explore-control-card button,
+  .integrated-explore-workspace .explore-control-card select,
+  .integrated-explore-workspace .explore-control-card input {
+    font-size: 0.76rem;
+  }
+
+  .integrated-explore-workspace .frame-step-controls {
+    display: flex;
+    gap: 0.25rem;
+  }
+
+  .integrated-explore-workspace .explore-control-card-time {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .integrated-explore-workspace .explore-control-card-time legend,
+  .integrated-explore-workspace .explore-control-card-time label[for="explore-time-scrubber"],
+  .integrated-explore-workspace .explore-control-card-time .time-preset-buttons,
+  .integrated-explore-workspace .explore-control-card-time .control-help {
+    grid-column: 1 / -1;
+  }
+
+  .integrated-explore-workspace .explore-inspector {
+    grid-area: inspector;
+    display: grid;
+    grid-template-rows: auto minmax(0, 1fr);
+    min-width: 0;
+    min-height: 0;
+    max-height: 39rem;
+    overflow: hidden;
+    border: 1px solid var(--color-border);
+    border-radius: 8px;
+    background: var(--color-surface);
+  }
+
+  .integrated-explore-workspace .explore-inspector-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    border-bottom: 1px solid var(--color-border);
+    padding: 0.45rem;
+  }
+
+  .integrated-explore-workspace .explore-inspector-header button {
+    padding: 0.28rem 0.42rem;
+    font-size: 0.74rem;
+  }
+
+  .integrated-explore-workspace .explore-inspector > div {
+    min-height: 0;
+    overflow: auto;
+  }
+
+  .integrated-explore-workspace .explore-inspector-tabs {
+    position: sticky;
+    z-index: 3;
+    top: 0;
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 0.2rem;
+    border-bottom: 1px solid var(--color-border);
+    padding: 0.35rem;
+    background: var(--color-surface);
+  }
+
+  .integrated-explore-workspace .explore-inspector-tabs button {
+    padding: 0.34rem 0.2rem;
+    background: transparent;
+    color: var(--color-text-muted);
+    font-size: 0.74rem;
+    box-shadow: none;
+  }
+
+  .integrated-explore-workspace .explore-inspector-tabs .active-control {
+    background: var(--color-accent-soft);
+    color: var(--color-accent-primary);
+  }
+
+  .integrated-explore-workspace .explore-inspector-panel {
+    display: grid;
+    gap: 0.65rem;
+    padding: 0.55rem;
+  }
+
+  .integrated-explore-workspace .explore-inspector-panel[hidden] {
+    display: none;
+  }
+
+  .integrated-explore-workspace .explore-inspector-panel h3,
+  .integrated-explore-workspace .explore-inspector-panel h4,
+  .integrated-explore-workspace .explore-inspector-panel p {
+    margin-bottom: 0.35rem;
+  }
+
+  .integrated-explore-workspace .explore-inspector-panel .selected-region-inspector {
+    gap: 0.55rem;
+    border: 0;
+    padding: 0;
+    background: transparent;
+  }
+
+  .integrated-explore-workspace .explore-inspector-panel .metric-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.38rem;
+  }
+
+  .integrated-explore-workspace .explore-inspector-panel .metric-grid div {
+    padding: 0.38rem;
+  }
+
+  .integrated-explore-workspace .updraft-lens-scale-legend-workspace .updraft-lens-scale-intervals {
+    grid-template-columns: 1fr;
+  }
+
+  .integrated-explore-workspace .inspector-code-block {
+    max-width: 100%;
+    overflow: auto;
+    font-size: 0.72rem;
+    white-space: pre-wrap;
+  }
+
+  .integrated-explore-workspace .explore-inspector-collapsed {
+    max-height: 3rem;
+  }
+
+  .integrated-explore-workspace .explore-inspector-collapsed .explore-inspector-header strong {
+    writing-mode: vertical-rl;
+  }
+
+  .integrated-explore-workspace .visualizer-shell:has(.explore-inspector-collapsed) {
+    grid-template-columns: minmax(0, 1fr) 4.5rem;
+  }
+
+  .integrated-explore-workspace .layer-local-error-3d {
+    z-index: 8;
+    grid-area: scene;
+    align-self: start;
+    justify-self: center;
+    margin-top: 3.5rem;
+  }
+
+  .integrated-explore-workspace .workspace-catalog-error {
+    grid-column: 1 / -1;
+  }
+}
+
 @media (max-width: 860px) {
   .topbar,
   .builder-layout,
