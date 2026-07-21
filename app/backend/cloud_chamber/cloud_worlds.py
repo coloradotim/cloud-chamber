@@ -6,6 +6,7 @@ import json
 from collections import Counter
 from collections.abc import Mapping
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
@@ -21,19 +22,18 @@ from cloud_chamber.trade_cumulus_comparison_story import (
     BASELINE_RESULT_ID,
     BASELINE_RUN_ID,
     CASE_ID,
-    COMPARISON_EVIDENCE_RELATIVE_PATH,
-    COMPARISON_EVIDENCE_VERSION,
     COMPARISON_GROUP_ID,
     COMPARISON_ID,
     EXPECTED_CM1_EXECUTABLE_SHA256,
     EXPECTED_CM1_SOURCE_MANIFEST_SHA256,
     EXPECTED_FIXED_ASSUMPTIONS_SHA256,
-    EXPECTED_IMPLEMENTATION_COMMIT,
     MORE_MOISTURE_RESULT_ID,
     MORE_MOISTURE_RUN_ID,
     PRODUCT_SLICE_ID,
+    TradeCumulusComparisonStoryConflict,
+    TradeCumulusComparisonStoryNotFound,
+    trade_cumulus_moisture_comparison_story,
 )
-from cloud_chamber.trade_cumulus_moisture_comparison import TradeCumulusPairedEvidence
 
 WORLD_ID: Literal["trade_cumulus"] = "trade_cumulus"
 WORLD_DISPLAY_NAME: Literal["Trade Cumulus"] = "Trade Cumulus"
@@ -47,7 +47,7 @@ FEATURED_COMPARISON_DISPLAY_NAME: Literal["More Moisture versus Baseline"] = (
 )
 WORLD_SHORT_DESCRIPTION = (
     "A maritime shallow-cumulus field for watching clouds form, mix, decay, and respond "
-    "to changes in lower-boundary moisture."
+    "to changes in initial conditions and forcing."
 )
 
 AvailabilityState = Literal["available", "partial", "unavailable", "conflict"]
@@ -205,6 +205,13 @@ class _KnownSimulationSpec:
 class _LoadedKnownSimulation:
     record: SimulationRecord
     metadata: ResultMetadata | None
+
+
+@dataclass(frozen=True)
+class _Inspectability:
+    technical_state: TechnicalState
+    technical_state_message: str
+    explore_available: bool
 
 
 @dataclass(frozen=True)
@@ -370,7 +377,9 @@ def _load_known_simulation(
         return _LoadedKnownSimulation(record=_conflicting_known_record(spec), metadata=None)
     if not _known_identity_matches(metadata, spec):
         return _LoadedKnownSimulation(record=_conflicting_known_record(spec), metadata=None)
-    return _LoadedKnownSimulation(record=_known_record(spec, metadata), metadata=metadata)
+    return _LoadedKnownSimulation(
+        record=_known_record(spec, metadata, _inspectability(metadata)), metadata=metadata
+    )
 
 
 def _known_identity_matches(metadata: ResultMetadata, spec: _KnownSimulationSpec) -> bool:
@@ -404,7 +413,11 @@ def _known_identity_matches(metadata: ResultMetadata, spec: _KnownSimulationSpec
     )
 
 
-def _known_record(spec: _KnownSimulationSpec, metadata: ResultMetadata) -> SimulationRecord:
+def _known_record(
+    spec: _KnownSimulationSpec,
+    metadata: ResultMetadata,
+    inspectability: _Inspectability,
+) -> SimulationRecord:
     source_recipe = metadata.run_configuration.get("recipe_candidate_id")
     return SimulationRecord(
         simulation_id=spec.simulation_id,
@@ -417,10 +430,14 @@ def _known_record(spec: _KnownSimulationSpec, metadata: ResultMetadata) -> Simul
         source_recipe_id=source_recipe if isinstance(source_recipe, str) else None,
         parent_simulation_id=spec.parent_simulation_id,
         reference_simulation_id=REFERENCE_SIMULATION_ID,
-        technical_state="available",
-        technical_state_message="Simulation output is available for inspection.",
-        technical_trust_state=_trust_state(metadata),
-        explore_available=True,
+        technical_state=inspectability.technical_state,
+        technical_state_message=inspectability.technical_state_message,
+        technical_trust_state=(
+            _trust_state(metadata)
+            if inspectability.technical_state == "available"
+            else "unavailable"
+        ),
+        explore_available=inspectability.explore_available,
         lineage_state="known",
         created_at=metadata.created_at.isoformat(),
         completed_at=metadata.updated_at.isoformat(),
@@ -475,51 +492,18 @@ def _featured_comparison(
             availability_message="The complete featured Comparison pair is not installed.",
             open_available=False,
         )
-    evidence_path = settings.runtime_home.expanduser() / COMPARISON_EVIDENCE_RELATIVE_PATH
-    if not evidence_path.is_file():
+    try:
+        trade_cumulus_moisture_comparison_story(settings)
+    except TradeCumulusComparisonStoryNotFound:
         return FeaturedComparisonRecord(
             availability_state="missing",
-            availability_message="Featured Comparison evidence is unavailable.",
+            availability_message="Featured Comparison story is unavailable.",
             open_available=False,
         )
-    try:
-        evidence = TradeCumulusPairedEvidence.model_validate_json(evidence_path.read_text())
-    except (OSError, ValueError, ValidationError):
+    except TradeCumulusComparisonStoryConflict:
         return FeaturedComparisonRecord(
             availability_state="conflict",
-            availability_message="Featured Comparison evidence conflicts with the approved pair.",
-            open_available=False,
-        )
-    if (
-        evidence.evidence_state != "matched_runs_valid"
-        or evidence.evidence_version != COMPARISON_EVIDENCE_VERSION
-        or evidence.implementation_commit != EXPECTED_IMPLEMENTATION_COMMIT
-        or evidence.baseline.result_id != BASELINE_RESULT_ID
-        or evidence.baseline.run_id != BASELINE_RUN_ID
-        or evidence.more_moisture.result_id != MORE_MOISTURE_RESULT_ID
-        or evidence.more_moisture.run_id != MORE_MOISTURE_RUN_ID
-        or evidence.baseline.product_slice_id != PRODUCT_SLICE_ID
-        or evidence.more_moisture.product_slice_id != PRODUCT_SLICE_ID
-        or evidence.baseline.comparison_group_id != COMPARISON_GROUP_ID
-        or evidence.more_moisture.comparison_group_id != COMPARISON_GROUP_ID
-        or evidence.baseline.case_id != CASE_ID
-        or evidence.more_moisture.case_id != CASE_ID
-        or evidence.baseline.control_id != "surface_moisture_supply"
-        or evidence.more_moisture.control_id != "surface_moisture_supply"
-        or evidence.baseline.control_state != "baseline"
-        or evidence.more_moisture.control_state != "more_moisture"
-        or evidence.baseline.surface_moisture_flux_g_g_m_s != 5.2e-5
-        or evidence.more_moisture.surface_moisture_flux_g_g_m_s != 7.8e-5
-        or not evidence.baseline.gate.valid
-        or not evidence.more_moisture.gate.valid
-        or evidence.baseline.gate.failures
-        or evidence.more_moisture.gate.failures
-        or not evidence.stage4_consistency.passed
-        or evidence.stage4_consistency.new_baseline_result_id != BASELINE_RESULT_ID
-    ):
-        return FeaturedComparisonRecord(
-            availability_state="conflict",
-            availability_message="Featured Comparison members do not match the approved pair.",
+            availability_message="Featured Comparison story conflicts with the approved pair.",
             open_available=False,
         )
     return FeaturedComparisonRecord(
@@ -558,30 +542,63 @@ def _ordinary_simulations(
             if candidate.simulation_id in candidate_ids
         }
     )
-    all_result_ids = {metadata.result_id for metadata in metadata_records} | set(
-        result_to_simulation
+    candidates_by_id = {
+        candidate.simulation_id: candidate
+        for candidate in candidates
+        if candidate.simulation_id in candidate_ids
+    }
+    structurally_valid_ids = {
+        candidate.simulation_id
+        for candidate in candidates
+        if _lineage_resolves(
+            candidate,
+            counts=counts,
+            resolvable_ids=resolvable_ids,
+            result_to_simulation=result_to_simulation,
+        )
+        and candidate.simulation_id is not None
+    }
+    valid_candidate_ids = structurally_valid_ids - _cyclic_lineage_ids(
+        candidates_by_id,
+        structurally_valid_ids=structurally_valid_ids,
+        result_to_simulation=result_to_simulation,
     )
+    while True:
+        invalid_dependents = {
+            simulation_id
+            for simulation_id in valid_candidate_ids
+            if any(
+                target_id in candidate_ids and target_id not in valid_candidate_ids
+                for target_id in _resolved_lineage_target_ids(
+                    candidates_by_id[simulation_id], result_to_simulation
+                )
+            )
+        }
+        if not invalid_dependents:
+            break
+        valid_candidate_ids -= invalid_dependents
     metadata_by_simulation = dict(known_metadata)
     metadata_by_simulation.update(
         {
             candidate.simulation_id: candidate.metadata
             for candidate in candidates
-            if candidate.simulation_id in candidate_ids
+            if candidate.simulation_id in valid_candidate_ids
         }
     )
 
     retained: list[SimulationRecord] = []
     history: list[SimulationRecord] = []
     for candidate in candidates:
-        valid = _lineage_resolves(
-            candidate,
-            counts=counts,
-            resolvable_ids=resolvable_ids,
-            all_result_ids=all_result_ids,
-            result_to_simulation=result_to_simulation,
-        )
+        valid = candidate.simulation_id in valid_candidate_ids
+        inspectability = _inspectability(candidate.metadata)
         if not valid:
-            history.append(_lab_history_record(candidate, invalid=candidate.supplied_keys))
+            history.append(
+                _lab_history_record(
+                    candidate,
+                    invalid=candidate.supplied_keys,
+                    inspectability=inspectability,
+                )
+            )
             continue
         parent_id = candidate.parent_simulation_id or (
             result_to_simulation.get(candidate.parent_result_id)
@@ -611,10 +628,14 @@ def _ordinary_simulations(
                 source_recipe_id=candidate.source_recipe_id,
                 parent_simulation_id=parent_id,
                 reference_simulation_id=reference_id,
-                technical_state="available",
-                technical_state_message="Simulation output is available for inspection.",
-                technical_trust_state=_trust_state(candidate.metadata),
-                explore_available=True,
+                technical_state=inspectability.technical_state,
+                technical_state_message=inspectability.technical_state_message,
+                technical_trust_state=(
+                    _trust_state(candidate.metadata)
+                    if inspectability.technical_state == "available"
+                    else "unavailable"
+                ),
+                explore_available=inspectability.explore_available,
                 configuration_difference_from_reference=differences,
                 lineage_state="valid",
                 created_at=candidate.metadata.created_at.isoformat(),
@@ -662,7 +683,6 @@ def _lineage_resolves(
     *,
     counts: Counter[str],
     resolvable_ids: set[str],
-    all_result_ids: set[str],
     result_to_simulation: Mapping[str, str],
 ) -> bool:
     simulation_id = candidate.simulation_id
@@ -680,9 +700,9 @@ def _lineage_resolves(
         and candidate.reference_simulation_id not in resolvable_ids
     ):
         return False
-    if candidate.parent_result_id and candidate.parent_result_id not in all_result_ids:
+    if candidate.parent_result_id and candidate.parent_result_id not in result_to_simulation:
         return False
-    if candidate.reference_result_id and candidate.reference_result_id not in all_result_ids:
+    if candidate.reference_result_id and candidate.reference_result_id not in result_to_simulation:
         return False
     if candidate.parent_simulation_id and candidate.parent_result_id:
         if result_to_simulation.get(candidate.parent_result_id) != candidate.parent_simulation_id:
@@ -693,10 +713,61 @@ def _lineage_resolves(
             != candidate.reference_simulation_id
         ):
             return False
-    return True
+    return simulation_id not in _resolved_lineage_target_ids(candidate, result_to_simulation)
 
 
-def _lab_history_record(candidate: _LineageCandidate, *, invalid: bool) -> SimulationRecord:
+def _resolved_lineage_target_ids(
+    candidate: _LineageCandidate, result_to_simulation: Mapping[str, str]
+) -> set[str]:
+    targets = {
+        target
+        for target in (candidate.parent_simulation_id, candidate.reference_simulation_id)
+        if target is not None
+    }
+    for result_id in (candidate.parent_result_id, candidate.reference_result_id):
+        if result_id is not None and (target := result_to_simulation.get(result_id)) is not None:
+            targets.add(target)
+    return targets
+
+
+def _cyclic_lineage_ids(
+    candidates_by_id: Mapping[str, _LineageCandidate],
+    *,
+    structurally_valid_ids: set[str],
+    result_to_simulation: Mapping[str, str],
+) -> set[str]:
+    visiting: set[str] = set()
+    visited: set[str] = set()
+    path: list[str] = []
+    cyclic: set[str] = set()
+
+    def visit(simulation_id: str) -> None:
+        if simulation_id in visited:
+            return
+        if simulation_id in visiting:
+            cyclic.update(path[path.index(simulation_id) :])
+            return
+        visiting.add(simulation_id)
+        path.append(simulation_id)
+        candidate = candidates_by_id[simulation_id]
+        for target_id in _resolved_lineage_target_ids(candidate, result_to_simulation):
+            if target_id in structurally_valid_ids:
+                visit(target_id)
+        path.pop()
+        visiting.remove(simulation_id)
+        visited.add(simulation_id)
+
+    for simulation_id in sorted(structurally_valid_ids):
+        visit(simulation_id)
+    return cyclic
+
+
+def _lab_history_record(
+    candidate: _LineageCandidate,
+    *,
+    invalid: bool,
+    inspectability: _Inspectability,
+) -> SimulationRecord:
     return SimulationRecord(
         simulation_id=None,
         display_name="Unretained Trade Cumulus result",
@@ -705,14 +776,22 @@ def _lab_history_record(candidate: _LineageCandidate, *, invalid: bool) -> Simul
         case_id=CASE_ID,
         result_id=candidate.metadata.result_id,
         run_id=candidate.metadata.run_id,
-        technical_state="available",
+        technical_state=inspectability.technical_state,
         technical_state_message=(
-            "Stable lineage is invalid; this result remains in Lab history."
-            if invalid
-            else "Stable lineage is absent; this result remains in Lab history."
+            (
+                "Stable lineage is invalid; this result remains in Lab history."
+                if invalid
+                else "Stable lineage is absent; this result remains in Lab history."
+            )
+            if inspectability.technical_state == "available"
+            else inspectability.technical_state_message
         ),
-        technical_trust_state=_trust_state(candidate.metadata),
-        explore_available=True,
+        technical_trust_state=(
+            _trust_state(candidate.metadata)
+            if inspectability.technical_state == "available"
+            else "unavailable"
+        ),
+        explore_available=inspectability.explore_available,
         lineage_state="invalid" if invalid else "unlineaged",
         created_at=candidate.metadata.created_at.isoformat(),
         completed_at=candidate.metadata.updated_at.isoformat(),
@@ -785,6 +864,68 @@ def _world_availability(
     return "available", "Reference, variation, and featured Comparison are available."
 
 
+def _inspectability(metadata: ResultMetadata) -> _Inspectability:
+    paths = metadata.model_output_paths or metadata.netcdf_paths
+    if metadata.missing_required_output_fields:
+        return _Inspectability(
+            technical_state="conflict",
+            technical_state_message="Persisted output is missing required scientific fields.",
+            explore_available=False,
+        )
+    if not paths:
+        return _Inspectability(
+            technical_state="missing",
+            technical_state_message="Simulation model output is not installed.",
+            explore_available=False,
+        )
+    if metadata.model_output_file_count and metadata.model_output_file_count != len(paths):
+        return _Inspectability(
+            technical_state="conflict",
+            technical_state_message="Persisted output inventory conflicts with available files.",
+            explore_available=False,
+        )
+    for raw_path in paths:
+        path = Path(raw_path).expanduser()
+        if not path.exists():
+            return _Inspectability(
+                technical_state="missing",
+                technical_state_message="Simulation model output is not installed.",
+                explore_available=False,
+            )
+        if not path.is_file():
+            return _Inspectability(
+                technical_state="conflict",
+                technical_state_message="Persisted output inventory is not readable model output.",
+                explore_available=False,
+            )
+        try:
+            with path.open("rb") as handle:
+                first_byte = handle.read(1)
+        except FileNotFoundError:
+            return _Inspectability(
+                technical_state="missing",
+                technical_state_message="Simulation model output is not installed.",
+                explore_available=False,
+            )
+        except OSError:
+            return _Inspectability(
+                technical_state="conflict",
+                technical_state_message="Persisted model output cannot be read.",
+                explore_available=False,
+            )
+        if not first_byte:
+            return _Inspectability(
+                technical_state="conflict",
+                technical_state_message="Persisted model output is empty.",
+                explore_available=False,
+            )
+    return _Inspectability(
+        technical_state="available",
+        technical_state_message="Simulation output is available for inspection.",
+        explore_available=True,
+    )
+
+
 def _trust_state(metadata: ResultMetadata) -> TrustState:
     state = metadata.runtime_integrity.state
     if state == "trusted":
@@ -836,6 +977,12 @@ def _compare_values(
                 continue
             _compare_values(left_value, right_value, child_path, differences)
         return
+    if isinstance(left, (list, tuple)) and isinstance(right, (list, tuple)):
+        for index in range(max(len(left), len(right))):
+            left_value = left[index] if index < len(left) else "(missing)"
+            right_value = right[index] if index < len(right) else "(missing)"
+            _compare_values(left_value, right_value, (*path, f"[{index}]"), differences)
+        return
     left_value = _normalize_value(left)
     right_value = _normalize_value(right)
     if left_value == right_value or _ignore_difference(path, left_value, right_value):
@@ -843,7 +990,7 @@ def _compare_values(
     category, label, units = _classify_difference(path)
     differences.append(
         ConfigurationDifference(
-            path=".".join(path),
+            path=_difference_path(path),
             label=label,
             category=category,
             left_value=left_value,
@@ -917,6 +1064,21 @@ _DIFFERENCE_CLASSIFICATIONS: dict[str, tuple[DifferenceCategory, str, str | None
         "Surface sensible heat supply",
         "K m/s",
     ),
+    "surface_heat_flux_k_m_s": (
+        "atmospheric",
+        "Surface sensible heat supply",
+        "K m/s",
+    ),
+    "surface_patch_heat_flux_perturbation_k_m_s": (
+        "atmospheric",
+        "Surface-patch heat-flux perturbation",
+        "K m/s",
+    ),
+    "surface_patch_moisture_flux_perturbation_g_g_m_s": (
+        "atmospheric",
+        "Surface-patch moisture-flux perturbation",
+        "g/g m/s",
+    ),
     "surface_temperature_k": ("atmospheric", "Surface temperature", "K"),
     "dx_m": ("numerical", "Grid spacing x", "m"),
     "dy_m": ("numerical", "Grid spacing y", "m"),
@@ -935,10 +1097,14 @@ _DIFFERENCE_CLASSIFICATIONS: dict[str, tuple[DifferenceCategory, str, str | None
 _DIFFERENCE_CONTAINER_CATEGORIES: dict[str, DifferenceCategory] = {
     "atmospheric_profile": "atmospheric",
     "atmospheric_profiles": "atmospheric",
+    "forcing": "atmospheric",
     "initial_profile": "atmospheric",
     "initial_profiles": "atmospheric",
     "large_scale_forcing": "atmospheric",
     "sounding": "atmospheric",
+    "surface_fluxes": "atmospheric",
+    "surface_forcing": "atmospheric",
+    "surface_forcing_patch": "atmospheric",
     "boundary_conditions": "numerical",
     "domain": "numerical",
     "grid": "numerical",
@@ -964,6 +1130,16 @@ def _classify_difference(path: tuple[str, ...]) -> tuple[DifferenceCategory, str
 
 def _humanize(value: str) -> str:
     return value.replace("_", " ").strip().capitalize()
+
+
+def _difference_path(path: tuple[str, ...]) -> str:
+    rendered = ""
+    for segment in path:
+        if segment.startswith("["):
+            rendered += segment
+        else:
+            rendered += f".{segment}" if rendered else segment
+    return rendered
 
 
 def _optional_string(value: object) -> str | None:

@@ -574,7 +574,10 @@ test.describe("mocked smoke: Build, Results, Explore path", () => {
 
     await expect(page.getByRole("navigation", { name: "Trade Cumulus sections" })).toBeVisible();
     await expect(page.getByRole("heading", { name: "Return to the cloud field" })).toBeVisible();
-    await page.getByRole("button", { name: "Open Canonical BOMEX Baseline" }).click();
+    await page
+      .getByLabel("Canonical BOMEX Baseline Simulation")
+      .getByRole("button", { name: "Explore" })
+      .click();
     await expect(page.getByRole("button", { name: "Back to Trade Cumulus" })).toBeVisible();
     await expect(page.getByLabel("Canonical BOMEX Baseline workspace")).toBeVisible();
     await expect(page.getByRole("heading", { name: "Field Slice" })).toBeVisible({

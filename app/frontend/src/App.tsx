@@ -11,6 +11,7 @@ import {
   type SimulationRecord,
   type TradeCumulusLabSection,
   TradeCumulusWorld,
+  type TradeCumulusWorldDetail,
   type TradeCumulusWorldSection,
 } from "./TradeCumulusWorld";
 import { True3DViewer } from "./True3DViewer";
@@ -1267,6 +1268,9 @@ type DeleteResultResponse = {
 
 type WorkspaceSection = "build" | "results" | "explore";
 type ProductLocation = "worlds" | "world" | "explore" | "comparison";
+type WorldExploreContext =
+  | { kind: "simulation"; displayName: string }
+  | { kind: "lab_result"; displayName: string };
 type ScenarioLoadState = "loading" | "loaded" | "failed" | "empty";
 
 type ProvenancePayload = {
@@ -2012,8 +2016,11 @@ type ComparisonStoryLoadResult = {
 async function fetchTradeCumulusComparisonStory(): Promise<ComparisonStoryLoadResult> {
   try {
     const response = await fetch("/api/comparisons/trade-cumulus-moisture-v1");
-    if (response.status === 404 || response.status === 409) {
-      return { story: null, status: null };
+    if (response.status === 404) {
+      return { story: null, status: "The featured Comparison is not installed." };
+    }
+    if (response.status === 409) {
+      return { story: null, status: "The featured Comparison evidence is inconsistent." };
     }
     if (!response.ok) {
       return {
@@ -2281,6 +2288,9 @@ export function App() {
   const [productLocation, setProductLocation] = useState<ProductLocation>("worlds");
   const [worldSection, setWorldSection] = useState<TradeCumulusWorldSection>("overview");
   const [worldLabSection, setWorldLabSection] = useState<TradeCumulusLabSection>("results");
+  const [worldDetail, setWorldDetail] = useState<TradeCumulusWorldDetail | null>(null);
+  const [worldExploreContext, setWorldExploreContext] = useState<WorldExploreContext | null>(null);
+  const [worldComparisonStatus, setWorldComparisonStatus] = useState<string | null>(null);
   const [activeSection, setActiveSection] = useState<WorkspaceSection>("results");
   const [scenarios, setScenarios] = useState<Scenario[]>([]);
   const [selectedScenarioId, setSelectedScenarioId] = useState(OBSERVED_SOUNDING_EXPERIMENT_ID);
@@ -2445,7 +2455,7 @@ export function App() {
           comparison.story.baseline.result_id,
           comparison.story.more_moisture.result_id,
         ]);
-      } else if (!comparison.status) {
+      } else {
         setComparisonStoryMemberIds([]);
       }
     });
@@ -3613,7 +3623,7 @@ export function App() {
           comparison.story.baseline.result_id,
           comparison.story.more_moisture.result_id,
         ]);
-      } else if (!comparison.status) {
+      } else {
         setComparisonStoryMemberIds([]);
       }
       if (!comparison.story) setComparisonStoryActive(false);
@@ -3626,11 +3636,30 @@ export function App() {
     setSelectedResultId(resultId);
   }
 
+  function enterWorldExplore(resultId: string, simulation?: SimulationRecord) {
+    const retainedSimulation =
+      simulation?.role !== "lab_history" && simulation?.technical_state === "available"
+        ? simulation
+        : worldDetail?.simulations.find(
+            (candidate) =>
+              candidate.result_id === resultId &&
+              candidate.role !== "lab_history" &&
+              candidate.technical_state === "available",
+          );
+    const result = results.find((candidate) => candidate.result_id === resultId);
+    setWorldExploreContext(
+      retainedSimulation
+        ? { kind: "simulation", displayName: retainedSimulation.display_name }
+        : { kind: "lab_result", displayName: result?.name ?? "Lab result" },
+    );
+    setProductLocation("explore");
+  }
+
   function openOrdinaryResult(resultId: string, section: "results" | "explore") {
     selectOrdinaryResult(resultId);
     if (productLocation === "world") {
       if (section === "explore") {
-        setProductLocation("explore");
+        enterWorldExplore(resultId);
       } else {
         setWorldSection("lab");
         setWorldLabSection("results");
@@ -3644,7 +3673,7 @@ export function App() {
     if (section !== "explore") setComparisonStoryActive(false);
     if (productLocation === "world") {
       if (section === "explore") {
-        setProductLocation("explore");
+        if (selectedResultId) enterWorldExplore(selectedResultId);
       } else {
         setWorldSection("lab");
         setWorldLabSection(section);
@@ -3656,16 +3685,45 @@ export function App() {
 
   function openWorldSimulation(simulation: SimulationRecord) {
     selectOrdinaryResult(simulation.result_id);
-    setProductLocation("explore");
+    enterWorldExplore(simulation.result_id, simulation);
   }
 
-  function openWorldComparison() {
-    setComparisonStoryActive(true);
+  async function openWorldComparison() {
+    setComparisonStoryActive(false);
+    setWorldComparisonStatus("Loading featured Comparison...");
     setProductLocation("comparison");
+    const comparison = comparisonStory
+      ? { story: comparisonStory, status: null }
+      : await fetchTradeCumulusComparisonStory();
+    setComparisonStory(comparison.story);
+    setComparisonStoryStatus(comparison.status);
+    if (!comparison.story) {
+      setComparisonStoryMemberIds([]);
+      setWorldComparisonStatus(
+        comparison.status ?? "The featured Comparison is currently unavailable.",
+      );
+      return;
+    }
+    setComparisonStoryMemberIds([
+      comparison.story.baseline.result_id,
+      comparison.story.more_moisture.result_id,
+    ]);
+    setComparisonStoryActive(true);
+    setWorldComparisonStatus(null);
   }
 
   function returnToTradeCumulus() {
     setComparisonStoryActive(false);
+    setWorldExploreContext(null);
+    setWorldComparisonStatus(null);
+    setProductLocation("world");
+  }
+
+  function returnToLabResults() {
+    setComparisonStoryActive(false);
+    setWorldExploreContext(null);
+    setWorldSection("lab");
+    setWorldLabSection("results");
     setProductLocation("world");
   }
 
@@ -4072,13 +4130,19 @@ export function App() {
       onRefreshResults={handleRefreshResults}
       onInspect={() => {
         setComparisonStoryActive(false);
-        if (productLocation === "world") setProductLocation("explore");
-        else setActiveSection("explore");
+        if (productLocation === "world" && selectedResultId) {
+          enterWorldExplore(selectedResultId);
+        } else {
+          setActiveSection("explore");
+        }
       }}
       onCompare={() => {
-        setComparisonStoryActive(true);
-        if (productLocation === "world") setProductLocation("comparison");
-        else setActiveSection("explore");
+        if (productLocation === "world") {
+          void openWorldComparison();
+        } else {
+          setComparisonStoryActive(true);
+          setActiveSection("explore");
+        }
       }}
       onPreviewResultDelete={handlePreviewResultDelete}
       onConfirmResultDelete={handleConfirmResultDelete}
@@ -4124,13 +4188,15 @@ export function App() {
   const worldContextName =
     productLocation === "comparison"
       ? "More Moisture versus Baseline"
-      : worldSimulationDisplayName(selectedResult?.result_id, selectedResult?.name);
+      : (worldExploreContext?.displayName ??
+        worldSimulationDisplayName(selectedResult?.result_id, selectedResult?.name));
+  const labResultContext =
+    productLocation === "explore" && worldExploreContext?.kind === "lab_result";
 
   return (
     <main className="app-shell">
       <header className="topbar">
         <div className="brand-mark">
-          <p className="eyebrow">Personal cloud laboratory</p>
           <h1>Cloud Chamber</h1>
         </div>
         {productLocation !== "worlds" && (
@@ -4163,13 +4229,17 @@ export function App() {
           onBackToWorlds={() => setProductLocation("worlds")}
           onExploreSimulation={openWorldSimulation}
           onOpenFeaturedComparison={openWorldComparison}
+          onWorldDetailChange={setWorldDetail}
           buildContent={buildWorkspace}
           resultsContent={resultsWorkspace}
         />
       )}
 
       {(productLocation === "explore" || productLocation === "comparison") && (
-        <section className="world-context-workspace" aria-label={`${worldContextName} workspace`}>
+        <section
+          className="world-context-workspace"
+          aria-label={`${worldContextName}${labResultContext ? " Lab result" : ""} workspace`}
+        >
           <header className="world-context-header">
             <nav className="world-breadcrumb" aria-label="Breadcrumb">
               <button type="button" onClick={() => setProductLocation("worlds")}>
@@ -4179,22 +4249,39 @@ export function App() {
               <button type="button" onClick={returnToTradeCumulus}>
                 Trade Cumulus
               </button>
+              {labResultContext && (
+                <>
+                  <span aria-hidden="true">/</span>
+                  <button type="button" onClick={returnToLabResults}>
+                    Lab
+                  </button>
+                </>
+              )}
               <span aria-hidden="true">/</span>
               <span>{worldContextName}</span>
             </nav>
-            <button type="button" onClick={returnToTradeCumulus}>
-              Back to Trade Cumulus
+            <button
+              type="button"
+              onClick={labResultContext ? returnToLabResults : returnToTradeCumulus}
+            >
+              {labResultContext ? "Back to Lab Results" : "Back to Trade Cumulus"}
             </button>
           </header>
-          <ExploreWorkspace
-            selectedResult={selectedResult}
-            comparisonStory={productLocation === "comparison" ? comparisonStory : null}
-            onBackToResults={returnToTradeCumulus}
-            onOpenResult={(resultId) => {
-              selectOrdinaryResult(resultId);
-              setProductLocation("explore");
-            }}
-          />
+          {productLocation === "comparison" && (!comparisonStoryActive || !comparisonStory) ? (
+            <section className="status-panel" role="status">
+              <p>{worldComparisonStatus ?? "Loading featured Comparison..."}</p>
+            </section>
+          ) : (
+            <ExploreWorkspace
+              selectedResult={selectedResult}
+              comparisonStory={productLocation === "comparison" ? comparisonStory : null}
+              onBackToResults={returnToTradeCumulus}
+              onOpenResult={(resultId) => {
+                selectOrdinaryResult(resultId);
+                enterWorldExplore(resultId);
+              }}
+            />
+          )}
         </section>
       )}
     </main>

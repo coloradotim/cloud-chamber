@@ -21,8 +21,9 @@ from cloud_chamber.trade_cumulus_comparison_story import (
     BASELINE_RUN_ID,
     MORE_MOISTURE_RESULT_ID,
     MORE_MOISTURE_RUN_ID,
+    TradeCumulusComparisonStoryConflict,
+    TradeCumulusComparisonStoryNotFound,
 )
-from cloud_chamber.trade_cumulus_moisture_comparison import TradeCumulusPairedEvidence
 
 
 def _settings(tmp_path: Path) -> CloudChamberSettings:
@@ -102,42 +103,17 @@ def _metadata(
     )
 
 
-def _write_metadata(settings: CloudChamberSettings, metadata: ResultMetadata) -> None:
-    path = settings.runtime_home / "runs" / metadata.run_id / "result_metadata.json"
-    path.parent.mkdir(parents=True, exist_ok=True)
+def _write_metadata(settings: CloudChamberSettings, metadata: ResultMetadata) -> Path:
+    run_dir = settings.runtime_home / "runs" / metadata.run_id
+    path = run_dir / "result_metadata.json"
+    run_dir.mkdir(parents=True, exist_ok=True)
+    output_path = run_dir / "cm1out_000001.nc"
+    output_path.write_bytes(b"CDF fixture")
+    metadata.model_output_paths = [str(output_path)]
+    metadata.netcdf_paths = [str(output_path)]
+    metadata.model_output_file_count = 1
     path.write_text(metadata.to_json_text())
-
-
-def _evidence_stub() -> SimpleNamespace:
-    def member(result_id: str, run_id: str, state: str, value: float) -> SimpleNamespace:
-        return SimpleNamespace(
-            result_id=result_id,
-            run_id=run_id,
-            product_slice_id="trade_cumulus_v1",
-            comparison_group_id="trade_cumulus_moisture_v1",
-            case_id="bomex_trade_cumulus_baseline_v0",
-            control_id="surface_moisture_supply",
-            control_state=state,
-            surface_moisture_flux_g_g_m_s=value,
-            gate=SimpleNamespace(valid=True, failures=[]),
-        )
-
-    return SimpleNamespace(
-        evidence_state="matched_runs_valid",
-        evidence_version="trade_cumulus_moisture_comparison_evidence_v1",
-        implementation_commit="49da1defc9914d3cc903ed9589c1312ddd843726",
-        baseline=member(BASELINE_RESULT_ID, BASELINE_RUN_ID, "baseline", 5.2e-5),
-        more_moisture=member(
-            MORE_MOISTURE_RESULT_ID,
-            MORE_MOISTURE_RUN_ID,
-            "more_moisture",
-            7.8e-5,
-        ),
-        stage4_consistency=SimpleNamespace(
-            passed=True,
-            new_baseline_result_id=BASELINE_RESULT_ID,
-        ),
-    )
+    return output_path
 
 
 def _install_pair(
@@ -157,18 +133,9 @@ def _install_pair(
     )
     _write_metadata(settings, baseline)
     _write_metadata(settings, more_moisture)
-    evidence_path = (
-        settings.runtime_home
-        / "comparisons"
-        / "trade-cumulus-moisture-20260720T162342Z"
-        / "comparison_evidence.json"
-    )
-    evidence_path.parent.mkdir(parents=True)
-    evidence_path.write_text("{}")
     monkeypatch.setattr(
-        TradeCumulusPairedEvidence,
-        "model_validate_json",
-        classmethod(lambda _cls, _text: _evidence_stub()),
+        "cloud_chamber.cloud_worlds.trade_cumulus_moisture_comparison_story",
+        lambda _settings: SimpleNamespace(),
     )
     return baseline, more_moisture
 
@@ -229,14 +196,58 @@ def test_missing_comparison_keeps_both_simulations_available(
 ) -> None:
     settings = _settings(tmp_path)
     _install_pair(settings, monkeypatch)
-    evidence_path = next((settings.runtime_home / "comparisons").glob("**/*.json"))
-    evidence_path.unlink()
+
+    def missing_story(_settings: CloudChamberSettings) -> None:
+        raise TradeCumulusComparisonStoryNotFound("missing")
+
+    monkeypatch.setattr(
+        "cloud_chamber.cloud_worlds.trade_cumulus_moisture_comparison_story",
+        missing_story,
+    )
 
     detail = trade_cumulus_world_detail(settings)
 
     assert all(record.explore_available for record in detail.simulations[:2])
     assert detail.featured_comparison.availability_state == "missing"
     assert detail.capabilities.featured_comparison is False
+
+
+def test_stale_known_metadata_without_model_output_disables_explore(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    settings = _settings(tmp_path)
+    _install_pair(settings, monkeypatch)
+    output_path = settings.runtime_home / "runs" / BASELINE_RUN_ID / "cm1out_000001.nc"
+    output_path.unlink()
+
+    detail = trade_cumulus_world_detail(settings)
+    summary = list_cloud_world_summaries(settings)[0]
+
+    assert detail.reference_simulation.technical_state == "missing"
+    assert detail.reference_simulation.explore_available is False
+    assert detail.featured_comparison.availability_state == "missing"
+    assert summary.reference_available is False
+
+
+def test_world_comparison_fails_closed_when_story_validation_conflicts(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    settings = _settings(tmp_path)
+    _install_pair(settings, monkeypatch)
+
+    def conflicting_story(_settings: CloudChamberSettings) -> None:
+        raise TradeCumulusComparisonStoryConflict("curated view mismatch")
+
+    monkeypatch.setattr(
+        "cloud_chamber.cloud_worlds.trade_cumulus_moisture_comparison_story",
+        conflicting_story,
+    )
+
+    detail = trade_cumulus_world_detail(settings)
+
+    assert all(record.explore_available for record in detail.simulations[:2])
+    assert detail.featured_comparison.availability_state == "conflict"
+    assert detail.featured_comparison.open_available is False
 
 
 def test_contradictory_known_identity_returns_controlled_conflict(
@@ -325,6 +336,106 @@ def test_unlineaged_and_colliding_results_remain_lab_history(
     assert all(record.result_id != "result-collision" for record in detail.simulations)
 
 
+def test_stale_ordinary_outputs_disable_retained_and_lab_history_explore(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    settings = _settings(tmp_path)
+    _install_pair(settings, monkeypatch)
+    retained = _metadata(
+        "result-retained-stale",
+        "retained-stale",
+        configuration_updates={
+            "cloud_world_id": "trade_cumulus",
+            "simulation_id": "trade_cumulus_retained_stale",
+            "simulation_display_name": "Retained stale output",
+            "parent_simulation_id": REFERENCE_SIMULATION_ID,
+        },
+    )
+    history = _metadata("result-history-stale", "history-stale")
+    _write_metadata(settings, retained).unlink()
+    _write_metadata(settings, history).unlink()
+
+    detail = trade_cumulus_world_detail(settings)
+    retained_record = next(
+        record
+        for record in detail.simulations
+        if record.simulation_id == "trade_cumulus_retained_stale"
+    )
+    history_record = next(
+        record for record in detail.lab_history if record.result_id == "result-history-stale"
+    )
+
+    assert retained_record.technical_state == "missing"
+    assert retained_record.explore_available is False
+    assert history_record.technical_state == "missing"
+    assert history_record.explore_available is False
+
+
+def test_impossible_and_cyclic_lineage_remains_invalid_lab_history(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    settings = _settings(tmp_path)
+    _install_pair(settings, monkeypatch)
+    records = [
+        _metadata(
+            "result-self",
+            "self",
+            configuration_updates={
+                "cloud_world_id": "trade_cumulus",
+                "simulation_id": "trade_cumulus_self",
+                "simulation_display_name": "Self relationship",
+                "parent_simulation_id": "trade_cumulus_self",
+                "reference_simulation_id": "trade_cumulus_self",
+            },
+        ),
+        _metadata(
+            "result-cycle-a",
+            "cycle-a",
+            configuration_updates={
+                "cloud_world_id": "trade_cumulus",
+                "simulation_id": "trade_cumulus_cycle_a",
+                "simulation_display_name": "Cycle A",
+                "parent_simulation_id": "trade_cumulus_cycle_b",
+            },
+        ),
+        _metadata(
+            "result-cycle-b",
+            "cycle-b",
+            configuration_updates={
+                "cloud_world_id": "trade_cumulus",
+                "simulation_id": "trade_cumulus_cycle_b",
+                "simulation_display_name": "Cycle B",
+                "reference_simulation_id": "trade_cumulus_cycle_a",
+            },
+        ),
+        _metadata("result-unmapped-parent", "unmapped-parent"),
+        _metadata(
+            "result-lost-relationship",
+            "lost-relationship",
+            configuration_updates={
+                "cloud_world_id": "trade_cumulus",
+                "simulation_id": "trade_cumulus_lost_relationship",
+                "simulation_display_name": "Lost relationship",
+                "parent_result_id": "result-unmapped-parent",
+            },
+        ),
+    ]
+    for record in records:
+        _write_metadata(settings, record)
+
+    detail = trade_cumulus_world_detail(settings)
+    history_by_result = {record.result_id: record for record in detail.lab_history}
+
+    for result_id in (
+        "result-self",
+        "result-cycle-a",
+        "result-cycle-b",
+        "result-lost-relationship",
+    ):
+        assert history_by_result[result_id].lineage_state == "invalid"
+        assert all(record.result_id != result_id for record in detail.simulations)
+
+
 def test_known_pair_reports_only_surface_moisture_as_material_atmospheric_difference() -> None:
     baseline = _metadata(
         BASELINE_RESULT_ID,
@@ -370,3 +481,51 @@ def test_configuration_differences_exclude_private_paths_and_sort_deterministica
     assert first == second
     assert [item.category for item in first] == ["numerical", "output"]
     assert not any("path" in item.path or "sha256" in item.path for item in first)
+
+
+def test_configuration_differences_recurse_profiles_and_classify_current_forcing_keys() -> None:
+    baseline = _metadata(
+        "left",
+        "left",
+        configuration_updates={
+            "initial_profiles": [
+                {"height_m": 0.0, "temperature_k": 299.0},
+                {"height_m": 500.0, "temperature_k": 296.0},
+            ],
+            "surface_heat_flux_k_m_s": 8.0e-3,
+            "surface_forcing_patch": {
+                "surface_patch_heat_flux_perturbation_k_m_s": 4.0e-2,
+                "surface_patch_moisture_flux_perturbation_g_g_m_s": 5.0e-5,
+            },
+        },
+    )
+    variation = _metadata(
+        "right",
+        "right",
+        configuration_updates={
+            "initial_profiles": [
+                {"height_m": 0.0, "temperature_k": 299.0},
+                {"height_m": 500.0, "temperature_k": 297.0},
+            ],
+            "surface_heat_flux_k_m_s": 1.2e-2,
+            "surface_forcing_patch": {
+                "surface_patch_heat_flux_perturbation_k_m_s": 4.5e-2,
+                "surface_patch_moisture_flux_perturbation_g_g_m_s": 6.0e-5,
+            },
+        },
+    )
+
+    differences = configuration_differences(baseline, variation)
+    material = [difference for difference in differences if difference.material]
+
+    assert all(difference.category == "atmospheric" for difference in material)
+    assert {difference.label for difference in material} == {
+        "Surface sensible heat supply",
+        "Surface-patch heat-flux perturbation",
+        "Surface-patch moisture-flux perturbation",
+        "Temperature k",
+    }
+    assert any(
+        difference.path == "run_configuration.initial_profiles[1].temperature_k"
+        for difference in material
+    )

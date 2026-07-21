@@ -153,6 +153,10 @@ type ComparisonData = {
   moreMoisture: CuratedMemberData;
 };
 
+function formatSurfaceMoistureFlux(value: number) {
+  return `${(value * 1000).toPrecision(2)} g/kg m/s`;
+}
+
 export function TradeCumulusComparisonStory({
   story,
   onOpenResult,
@@ -213,9 +217,9 @@ export function TradeCumulusComparisonStory({
           <div>
             <dt>{story.changed_condition.label}</dt>
             <dd>
-              <span>{story.changed_condition.baseline_display}</span>
+              <span>{formatSurfaceMoistureFlux(story.baseline.control_value)}</span>
               <span aria-hidden="true">to</span>
-              <span>{story.changed_condition.more_moisture_display}</span>
+              <span>{formatSurfaceMoistureFlux(story.more_moisture.control_value)}</span>
               <strong>{story.changed_condition.change_display}</strong>
             </dd>
           </div>
@@ -333,7 +337,7 @@ function SimulationView({
         <div>
           <p className="eyebrow">Simulation</p>
           <h3 id={`comparison-simulation-${member.control_state}`}>{member.display_name}</h3>
-          <p>{member.control_display}</p>
+          <p>{formatSurfaceMoistureFlux(member.control_value)}</p>
         </div>
         <dl>
           <div>

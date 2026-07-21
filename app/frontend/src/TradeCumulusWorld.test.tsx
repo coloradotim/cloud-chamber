@@ -127,7 +127,11 @@ describe("TradeCumulusWorld", () => {
     renderWorld({ onExploreSimulation: onExplore, onOpenFeaturedComparison: onCompare });
     await screen.findByRole("heading", { name: "Trade Cumulus" });
 
-    fireEvent.click(screen.getByRole("button", { name: "Open Canonical BOMEX Baseline" }));
+    fireEvent.click(
+      within(screen.getByLabelText("Canonical BOMEX Baseline Simulation")).getByRole("button", {
+        name: "Explore",
+      }),
+    );
     expect(onExplore).toHaveBeenCalledWith(baseline);
     fireEvent.click(screen.getByRole("button", { name: "Open Comparison" }));
     expect(onCompare).toHaveBeenCalledOnce();
@@ -149,7 +153,7 @@ describe("TradeCumulusWorld", () => {
     expect(screen.getByText("result-unlineaged")).toBeInTheDocument();
   });
 
-  it("shows a missing reference as partial and disables reference Explore", async () => {
+  it("shows a missing reference and disables reference Explore", async () => {
     vi.mocked(fetch).mockResolvedValue(
       ok({
         ...world,
@@ -165,8 +169,20 @@ describe("TradeCumulusWorld", () => {
       }),
     );
     renderWorld();
-    expect(await screen.findByText("Partially available")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Open Canonical BOMEX Baseline" })).toBeDisabled();
+    const card = await screen.findByLabelText("Canonical BOMEX Baseline Simulation");
+    expect(within(card).getByText("Missing")).toBeInTheDocument();
+    expect(within(card).getByRole("button", { name: "Explore" })).toBeDisabled();
+  });
+
+  it("keeps runtime integrity secondary and displays moisture flux in g/kg m/s", async () => {
+    renderWorld();
+    const card = await screen.findByLabelText("More Moisture Simulation");
+
+    expect(card).toHaveTextContent("0.05200 g/kg m/s to 0.07800 g/kg m/s");
+    expect(within(card).getByText("Caveated output")).not.toBeVisible();
+    fireEvent.click(within(card).getByText("Details"));
+    expect(within(card).getByText("Runtime integrity")).toBeInTheDocument();
+    expect(within(card).getByText("Caveated output")).toBeVisible();
   });
 
   it("shows retry and retained Lab content when World detail fails", async () => {

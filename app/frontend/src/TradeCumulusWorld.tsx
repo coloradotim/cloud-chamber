@@ -90,6 +90,7 @@ export function TradeCumulusWorld({
   labSection: controlledLabSection,
   onSectionChange,
   onLabSectionChange,
+  onWorldDetailChange,
   initialSection = "overview",
   initialLabSection = "results",
 }: {
@@ -102,6 +103,7 @@ export function TradeCumulusWorld({
   labSection?: TradeCumulusLabSection;
   onSectionChange?: (section: TradeCumulusWorldSection) => void;
   onLabSectionChange?: (section: TradeCumulusLabSection) => void;
+  onWorldDetailChange?: (world: TradeCumulusWorldDetail | null) => void;
   initialSection?: TradeCumulusWorldSection;
   initialLabSection?: TradeCumulusLabSection;
 }) {
@@ -134,6 +136,10 @@ export function TradeCumulusWorld({
   useEffect(() => {
     void loadWorld();
   }, [loadWorld]);
+
+  useEffect(() => {
+    onWorldDetailChange?.(world);
+  }, [onWorldDetailChange, world]);
 
   function changeSection(target: TradeCumulusWorldSection) {
     if (controlledSection === undefined) setInternalSection(target);
@@ -192,15 +198,8 @@ export function TradeCumulusWorld({
       <WorldBreadcrumb onBackToWorlds={onBackToWorlds} />
       <header className="world-header">
         <div>
-          <p className="eyebrow">Cloud World</p>
           <h2>{world.display_name}</h2>
           <p>{world.short_description}</p>
-        </div>
-        <div className="world-header-state">
-          <span className={`world-availability ${world.availability_state}`}>
-            {availabilityLabel(world.availability_state)}
-          </span>
-          <p>{world.availability_message}</p>
         </div>
       </header>
 
@@ -291,13 +290,6 @@ function Overview({
           <p className="eyebrow">Overview</p>
           <h3 id="world-overview-title">Return to the cloud field</h3>
         </div>
-        <button
-          type="button"
-          disabled={!world.reference_simulation.explore_available}
-          onClick={() => onExploreSimulation(world.reference_simulation)}
-        >
-          Open Canonical BOMEX Baseline
-        </button>
       </div>
 
       <div className="world-overview-grid">
@@ -396,7 +388,6 @@ function SimulationCard({
           <span className={`technical-state ${simulation.technical_state}`}>
             {technicalStateLabel(simulation.technical_state)}
           </span>
-          <span className="trust-state">{trustLabel(simulation.technical_trust_state)}</span>
         </div>
       </header>
       <p>{simulation.technical_state_message}</p>
@@ -429,6 +420,10 @@ function SimulationCard({
           <div>
             <dt>Run ID</dt>
             <dd>{simulation.run_id}</dd>
+          </div>
+          <div>
+            <dt>Runtime integrity</dt>
+            <dd>{trustLabel(simulation.technical_trust_state)}</dd>
           </div>
         </dl>
       </details>
@@ -558,7 +553,11 @@ function LabWorkspace({
                   <span>{simulation.technical_state_message}</span>
                   <code>{simulation.result_id}</code>
                 </div>
-                <button type="button" onClick={() => onExploreSimulation(simulation)}>
+                <button
+                  type="button"
+                  disabled={!simulation.explore_available}
+                  onClick={() => onExploreSimulation(simulation)}
+                >
                   Explore
                 </button>
               </article>
@@ -695,15 +694,6 @@ function sectionLabel(section: TradeCumulusWorldSection): string {
   }[section];
 }
 
-function availabilityLabel(state: TradeCumulusWorldDetail["availability_state"]): string {
-  return {
-    available: "Available",
-    partial: "Partially available",
-    unavailable: "Unavailable",
-    conflict: "Identity conflict",
-  }[state];
-}
-
 function technicalStateLabel(state: "available" | "missing" | "conflict"): string {
   return { available: "Available", missing: "Missing", conflict: "Conflict" }[state];
 }
@@ -731,9 +721,19 @@ function relationshipName(simulationId: string): string {
 }
 
 function formatDifference(difference: ConfigurationDifference): string {
-  const left = formatValue(difference.left_value);
-  const right = formatValue(difference.right_value);
-  const units = difference.units ? ` ${difference.units}` : "";
+  const moistureFlux = difference.units === "g/g m/s";
+  const left = formatValue(
+    moistureFlux && typeof difference.left_value === "number"
+      ? difference.left_value * 1000
+      : difference.left_value,
+  );
+  const right = formatValue(
+    moistureFlux && typeof difference.right_value === "number"
+      ? difference.right_value * 1000
+      : difference.right_value,
+  );
+  const displayUnits = moistureFlux ? "g/kg m/s" : difference.units;
+  const units = displayUnits ? ` ${displayUnits}` : "";
   return `${left}${units} to ${right}${units}`;
 }
 

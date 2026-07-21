@@ -3193,6 +3193,13 @@ const comparisonMoreResultCard = {
   name: "More Moisture",
 };
 
+const unlineagedTradeResultCard = {
+  ...tradeCumulusResultCard,
+  result_id: "result-trade-cumulus-unlineaged",
+  run_id: "trade-cumulus-unlineaged",
+  name: "Unlineaged Trade Cumulus output",
+};
+
 const tradeCumulusComparisonStoryResponse = {
   comparison_id: "trade_cumulus_moisture_v1",
   comparison_group_id: "trade_cumulus_moisture_v1",
@@ -4196,7 +4203,12 @@ function mockTradeCumulusComparisonApp(storyStatus = 200) {
       return Promise.resolve(
         new Response(
           JSON.stringify({
-            results: [comparisonBaselineResultCard, comparisonMoreResultCard, resultCard],
+            results: [
+              comparisonBaselineResultCard,
+              comparisonMoreResultCard,
+              unlineagedTradeResultCard,
+              resultCard,
+            ],
           }),
           { status: 200 },
         ),
@@ -4317,8 +4329,8 @@ const tradeCumulusWorldDetail = {
       simulation_id: null,
       display_name: "Unretained result",
       role: "lab_history",
-      result_id: resultCard.result_id,
-      run_id: resultCard.run_id,
+      result_id: unlineagedTradeResultCard.result_id,
+      run_id: unlineagedTradeResultCard.run_id,
       reference_simulation_id: null,
       lineage_state: "unlineaged",
     },
@@ -4348,8 +4360,8 @@ const tradeCumulusWorldDetail = {
   caveats: [],
 };
 
-function mockWorldScopedApp() {
-  mockTradeCumulusComparisonApp();
+function mockWorldScopedApp(storyStatus = 200) {
+  mockTradeCumulusComparisonApp(storyStatus);
   const defaultFetch = vi.mocked(fetch).getMockImplementation();
   vi.mocked(fetch).mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
@@ -4389,7 +4401,12 @@ describe("App", () => {
     mockWorldScopedApp();
     render(<App />);
     fireEvent.click(await screen.findByRole("button", { name: "Enter Trade Cumulus" }));
-    fireEvent.click(await screen.findByRole("button", { name: "Open Canonical BOMEX Baseline" }));
+    fireEvent.click(
+      within(await screen.findByLabelText("Canonical BOMEX Baseline Simulation")).getByRole(
+        "button",
+        { name: "Explore" },
+      ),
+    );
 
     expect(
       await screen.findByRole("button", { name: "Back to Trade Cumulus" }),
@@ -4411,6 +4428,45 @@ describe("App", () => {
     expect(
       await screen.findByRole("heading", { name: "Return to the cloud field" }),
     ).toBeInTheDocument();
+  });
+
+  it("fails closed when World Comparison availability disagrees with the story endpoint", async () => {
+    mockWorldScopedApp(409);
+    render(<App />);
+    fireEvent.click(await screen.findByRole("button", { name: "Enter Trade Cumulus" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Open Comparison" }));
+
+    expect(
+      await screen.findByText("The featured Comparison evidence is inconsistent."),
+    ).toBeInTheDocument();
+    expect(screen.getByLabelText("More Moisture versus Baseline workspace")).toBeInTheDocument();
+    expect(screen.queryByLabelText("Selected Explore result")).not.toBeInTheDocument();
+  });
+
+  it("keeps unrelated and unlineaged Explore entries in explicit Lab-result context", async () => {
+    mockWorldScopedApp();
+    render(<App />);
+    fireEvent.click(await screen.findByRole("button", { name: "Enter Trade Cumulus" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Lab" }));
+
+    for (const resultName of ["Quick-look shallow cumulus", "Unlineaged Trade Cumulus output"]) {
+      fireEvent.click(await screen.findByRole("button", { name: resultName }));
+      fireEvent.click(
+        within(await screen.findByLabelText("Result detail")).getByRole("button", {
+          name: "Open in Explore",
+        }),
+      );
+
+      expect(
+        await screen.findByLabelText(`${resultName} Lab result workspace`),
+      ).toBeInTheDocument();
+      const breadcrumb = screen.getByRole("navigation", { name: "Breadcrumb" });
+      expect(within(breadcrumb).getByRole("button", { name: "Lab" })).toBeInTheDocument();
+      fireEvent.click(screen.getByRole("button", { name: "Back to Lab Results" }));
+      expect(
+        await screen.findByRole("heading", { name: "Experiment Notebook" }),
+      ).toBeInTheDocument();
+    }
   });
 
   it("retains existing Build and Results only inside Trade Cumulus Lab", async () => {

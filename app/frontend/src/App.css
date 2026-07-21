@@ -3572,8 +3572,7 @@ details[open] > summary {
 }
 
 .world-availability,
-.technical-state,
-.trust-state {
+.technical-state {
   display: inline-flex;
   align-items: center;
   width: fit-content;
@@ -3638,17 +3637,6 @@ details[open] > summary {
 .world-header > div:first-child p:last-child {
   max-width: 58rem;
   margin-bottom: 0;
-}
-
-.world-header-state {
-  display: grid;
-  justify-items: end;
-  max-width: 30rem;
-  text-align: right;
-}
-
-.world-header-state p {
-  margin: 0.45rem 0 0;
 }
 
 .world-section-nav,
