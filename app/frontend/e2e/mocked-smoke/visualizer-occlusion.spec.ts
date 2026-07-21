@@ -52,6 +52,7 @@ async function expectInside(container: Locator, target: Locator, label: string) 
 
 test.describe("mocked smoke: visualizer occlusion regression", () => {
   test.beforeEach(async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 });
     await mockCloudChamberApis(page);
     await gotoApp(page);
     await gotoResults(page);
@@ -60,7 +61,7 @@ test.describe("mocked smoke: visualizer occlusion regression", () => {
   });
 
   test("3-D scene does not cover its primary controls", async ({ page }) => {
-    await expect(page.getByText(/what happened in this result/i).first()).toBeVisible({
+    await expect(page.getByText(/what am i seeing/i).first()).toBeVisible({
       timeout: 12_000,
     });
     await expect(page.getByLabel("True 3-D scalar field viewer")).toBeVisible({
@@ -68,13 +69,13 @@ test.describe("mocked smoke: visualizer occlusion regression", () => {
     });
     await expect(page.getByLabel("3-D camera controls")).toBeVisible();
 
+    await expectClickableCenter(page, page.getByRole("button", { name: "Reset camera" }), "Reset");
+    await expectClickableCenter(page, page.getByLabel("Camera view"), "Camera view");
     await expectClickableCenter(
       page,
-      page.getByRole("button", { name: /reset camera/i }),
-      "Reset camera",
+      page.locator("details.true3d-display-control > summary"),
+      "Display controls",
     );
-    await expectClickableCenter(page, page.getByRole("button", { name: /zoom in/i }), "Zoom in");
-    await expectClickableCenter(page, page.getByRole("button", { name: /zoom out/i }), "Zoom out");
     await expectClickableCenter(page, page.getByLabel("Slice position"), "Slice position slider");
     await expectClickableCenter(
       page,
@@ -82,24 +83,47 @@ test.describe("mocked smoke: visualizer occlusion regression", () => {
       "Vertical x-z slice control",
     );
     await expect(page.getByRole("heading", { name: "Field Slice" })).toBeVisible();
+
+    await page.locator("details.true3d-display-control > summary").click();
+    await expect(page.getByLabel("3-D scalar field", { exact: true })).toBeVisible();
+    await expect(page.getByLabel("Layer opacity")).toBeVisible();
+    await expect(page.getByLabel("Point size")).toBeVisible();
   });
 
-  test("true 3-D scene labels stay inside the viewer frame", async ({ page }) => {
+  test("true 3-D overlays stay inside the viewer without collisions", async ({ page }) => {
     const scene = page.getByLabel("True 3-D scalar field viewer");
     const canvasMount = page.getByLabel(
       "Interactive Three.js scene showing a CM1 scalar field, domain bounds, slice plane, and selected point",
     );
-    const contextLabel = page.locator(".true3d-scene-label").first();
-    const sliceLabel = page.locator(".true3d-slice-label").first();
+    const contextStack = page.getByLabel("3-D scene context");
+    const fieldLegend = page.getByLabel("3-D field color legend");
     const cameraControls = page.getByLabel("3-D camera controls");
+    const canvas = page.locator("canvas.true3d-canvas");
 
     await expect(scene).toBeVisible();
     await expect(canvasMount).toBeVisible();
-    await expect(contextLabel).toBeVisible();
-    await expect(sliceLabel).toBeVisible();
+    await expect(contextStack).toBeVisible();
+    await expect(fieldLegend).toBeVisible();
     await expect(cameraControls).toBeVisible();
-    await expectInside(scene, contextLabel, "Scene context label");
-    await expectInside(scene, sliceLabel, "Slice plane label");
-    await expectNoOverlap(canvasMount, cameraControls, "Canvas mount and camera controls");
+    await expectInside(scene, contextStack, "Scene context stack");
+    await expectInside(scene, fieldLegend, "Field legend");
+    await expectInside(scene, cameraControls, "Camera controls");
+    await expectNoOverlap(contextStack, fieldLegend, "Context stack and field legend");
+    await expectNoOverlap(contextStack, cameraControls, "Context stack and camera controls");
+    await expectNoOverlap(fieldLegend, cameraControls, "Field legend and camera controls");
+
+    await expect(canvas).toBeVisible();
+    const dimensions = await canvas.evaluate((element: HTMLCanvasElement) => ({
+      displayWidth: element.clientWidth,
+      displayHeight: element.clientHeight,
+      renderWidth: element.width,
+      renderHeight: element.height,
+    }));
+    expect(dimensions.displayWidth).toBeGreaterThan(300);
+    expect(dimensions.displayHeight).toBeGreaterThan(300);
+    expect(dimensions.renderWidth).toBeGreaterThan(300);
+    expect(dimensions.renderHeight).toBeGreaterThan(300);
+    const renderedPixels = await canvas.screenshot();
+    expect(renderedPixels.byteLength).toBeGreaterThan(5_000);
   });
 });

@@ -97,18 +97,22 @@ export function CloudWorldsHome({
                 <p className="eyebrow">Installed World</p>
                 <h2 id="trade-cumulus-world-title">{tradeCumulus.display_name}</h2>
               </div>
-              <span className={`world-availability ${tradeCumulus.availability_state}`}>
-                {availabilityLabel(tradeCumulus.availability_state)}
-              </span>
+              {tradeCumulus.availability_state !== "available" && (
+                <span className={`world-availability ${tradeCumulus.availability_state}`}>
+                  {availabilityLabel(tradeCumulus.availability_state)}
+                </span>
+              )}
             </div>
             <p className="world-description">{tradeCumulus.short_description}</p>
-            <p className="world-availability-message">{tradeCumulus.availability_message}</p>
+            {tradeCumulus.availability_state !== "available" && (
+              <p className="world-availability-message">{tradeCumulus.availability_message}</p>
+            )}
           </div>
 
           <dl className="world-card-metrics">
             <div>
               <dt>Reference</dt>
-              <dd>{tradeCumulus.reference_available ? "Available" : "Unavailable"}</dd>
+              <dd>{tradeCumulus.reference_available ? "Canonical BOMEX" : "Unavailable"}</dd>
             </div>
             <div>
               <dt>Simulations</dt>

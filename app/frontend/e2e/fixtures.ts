@@ -1511,6 +1511,30 @@ export async function mockCloudChamberApis(page: Page) {
 
   await page.route("**/api/results", (route) => json(route, { results: currentResults }));
 
+  await page.route("**/api/results/*", async (route) => {
+    if (route.request().method() !== "PATCH") {
+      await route.fallback();
+      return;
+    }
+    const resultId = resultIdFromUrl(route.request().url());
+    const body = (route.request().postDataJSON() ?? {}) as {
+      name?: string;
+      tags?: string[];
+      notes?: string | null;
+    };
+    const current = currentResults.find((item) => item.result_id === resultId) ?? results[0];
+    const updated = {
+      ...current,
+      ...(body.name !== undefined ? { name: body.name } : {}),
+      ...(body.tags !== undefined ? { tags: body.tags } : {}),
+      ...(body.notes !== undefined ? { notes: body.notes } : {}),
+    };
+    currentResults = currentResults.map((item) =>
+      item.result_id === resultId ? updated : item,
+    );
+    await json(route, updated);
+  });
+
   await page.route("**/api/results/*/delete-preview", (route) => {
     const resultId = resultIdFromUrl(route.request().url());
     const result = currentResults.find((item) => item.result_id === resultId) ?? results[0];

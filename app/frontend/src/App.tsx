@@ -1505,16 +1505,6 @@ type ViewDefaultsResponse = {
   caveats: string[];
 };
 
-type ProcessMode =
-  | "thermal_fate"
-  | "cloud_water"
-  | "updrafts"
-  | "moisture"
-  | "buoyancy"
-  | "cap"
-  | "cloud_lifecycle"
-  | "deep_breakthrough"
-  | "precipitation_feedback";
 type SceneSlicePlane = "horizontal" | "vertical_x" | "vertical_y";
 
 type OrdinaryExploreState = {
@@ -4174,6 +4164,7 @@ export function App() {
     <ExploreWorkspace
       selectedResult={selectedResult}
       comparisonStory={comparisonStoryActive ? comparisonStory : null}
+      onResultUpdated={updateResultInList}
       onBackToResults={() => {
         setComparisonStoryActive(false);
         setActiveSection("results");
@@ -4223,7 +4214,7 @@ export function App() {
   );
 
   return (
-    <main className="app-shell">
+    <main className={`app-shell${productLocation === "explore" ? " app-shell-explore" : ""}`}>
       <header className="topbar">
         <div className="brand-mark">
           <h1>Cloud Chamber</h1>
@@ -4234,7 +4225,7 @@ export function App() {
             className="secondary-button"
             onClick={() => setProductLocation("worlds")}
           >
-            Cloud Worlds
+            Home
           </button>
         )}
       </header>
@@ -4295,6 +4286,7 @@ export function App() {
             <ExploreWorkspace
               selectedResult={selectedResult}
               comparisonStory={productLocation === "comparison" ? comparisonStory : null}
+              onResultUpdated={updateResultInList}
               onBackToResults={returnToTradeCumulus}
               onOpenResult={(resultId) => {
                 selectOrdinaryResult(resultId);
@@ -7462,6 +7454,7 @@ function NotebookWorkspace({
 function ExploreWorkspace({
   selectedResult,
   comparisonStory,
+  onResultUpdated,
   onOpenResult,
   onBackToResults,
   worldName,
@@ -7474,6 +7467,7 @@ function ExploreWorkspace({
 }: {
   selectedResult: ResultCard | undefined;
   comparisonStory: TradeCumulusComparisonStoryResponse | null;
+  onResultUpdated: (result: ResultCard) => void;
   onOpenResult: (resultId: string) => void;
   onBackToResults: () => void;
   worldName?: string;
@@ -7511,6 +7505,7 @@ function ExploreWorkspace({
             backLabel={backLabel}
             onBack={onBack}
             onCompare={onCompare}
+            onResultUpdated={onResultUpdated}
           />
         </section>
       )}
@@ -9753,6 +9748,7 @@ export function VisualizerSceneShell({
   backLabel,
   onBack,
   onCompare,
+  onResultUpdated,
 }: {
   result: ResultCard;
   worldName?: string;
@@ -9762,6 +9758,7 @@ export function VisualizerSceneShell({
   backLabel?: string;
   onBack?: () => void;
   onCompare?: () => void;
+  onResultUpdated?: (result: ResultCard) => void;
 }) {
   const resultId = result.result_id;
   const updraftLensEligible = tradeCumulusUpdraftLensEligible(result);
@@ -9785,8 +9782,8 @@ export function VisualizerSceneShell({
   const [threshold, setThreshold] = useState(1e-6);
   const [opacity, setOpacity] = useState(0.68);
   const [pointSize, setPointSize] = useState(11);
+  const [focusedViewer, setFocusedViewer] = useState<"scene" | "slice" | null>(null);
   const [pointCloud, setPointCloud] = useState<PointCloudResponse | null>(null);
-  const [processMode, setProcessMode] = useState<ProcessMode>("thermal_fate");
   const [showSlicePlanes, setShowSlicePlanes] = useState(true);
   const [sliceFieldName, setSliceFieldName] = useState("qc");
   const [activeSlicePlane, setActiveSlicePlane] = useState<SceneSlicePlane>("horizontal");
@@ -9843,7 +9840,6 @@ export function VisualizerSceneShell({
     setOpacity(0.68);
     setPointSize(11);
     setPointCloud(null);
-    setProcessMode("thermal_fate");
     setShowSlicePlanes(true);
     setSliceFieldName("qc");
     setActiveSlicePlane("horizontal");
@@ -10032,6 +10028,8 @@ export function VisualizerSceneShell({
   const selectedTimeLabel = formatTimeValue(selectedTimeValue);
   const displayTimeValue = timeOptions[displayTimeIndex] ?? null;
   const displayTimeLabel = formatTimeValue(displayTimeValue);
+  const displayClockLabel = formatClockTime(displayTimeValue);
+  const finalClockLabel = formatClockTime(timeOptions.at(-1) ?? null);
   const sceneTimeValue = timeOptions[sceneTimeIndex] ?? null;
   const sceneTimeLabel = formatTimeValue(sceneTimeValue);
   const playbackSpeedOptions = [0.5, 1, 2, 4];
@@ -10052,18 +10050,6 @@ export function VisualizerSceneShell({
   const selectedSliceValue = updraftLensActive
     ? selectedUpdraftLensValue(updraftLensFrame, selectedRegion)
     : selectedSliceCellValue(activeSlice, selectedRegion);
-  const processModeStates = useMemo(
-    () => processModeClassifications(result, catalog, sliceField, activeSlice),
-    [activeSlice, catalog, result, sliceField],
-  );
-  const primaryProcessModes = processModeStates.filter((state) => state.primary);
-  const unavailableProcessModes = processModeStates.filter((state) => !state.primary);
-  const activeProcessMode = primaryProcessModes.some((state) => state.mode === processMode)
-    ? processMode
-    : (primaryProcessModes[0]?.mode ?? "thermal_fate");
-  const activeProcessModeState =
-    primaryProcessModes.find((state) => state.mode === activeProcessMode) ??
-    processModeStates.find((state) => state.mode === activeProcessMode);
   const timePresets = [
     result.time_of_max_qc_seconds !== null && result.time_of_max_qc_seconds !== undefined
       ? { label: "Max cloud water", seconds: result.time_of_max_qc_seconds }
@@ -10196,12 +10182,6 @@ export function VisualizerSceneShell({
     verticalSliceIndex,
     viewDefaults,
   ]);
-
-  useEffect(() => {
-    if (processMode !== activeProcessMode) {
-      setProcessMode(activeProcessMode);
-    }
-  }, [activeProcessMode, processMode]);
 
   useEffect(() => {
     if (!canPlayTimelapse && isPlaybackRunning) {
@@ -10460,7 +10440,7 @@ export function VisualizerSceneShell({
       .then((payload) => {
         if (!active) return;
         setRegionDiagnostics(payload);
-        setRegionStatus("Selected-point diagnostics loaded");
+        setRegionStatus("Point ready");
       })
       .catch((caught: unknown) => {
         if (!active) return;
@@ -10468,7 +10448,7 @@ export function VisualizerSceneShell({
         setRegionError(
           caught instanceof Error ? caught.message : "Unable to inspect the selected point.",
         );
-        setRegionStatus("Selected-point request failed");
+        setRegionStatus("Point unavailable");
       });
     return () => {
       active = false;
@@ -10500,6 +10480,31 @@ export function VisualizerSceneShell({
     });
   }
 
+  function handleThreeDFieldChange(nextFieldName: string) {
+    const nextEncoding =
+      threeDScalarEncodings.find(
+        (encoding) => encoding.field.raw_field_name === nextFieldName,
+      ) ?? null;
+    setSelectedFieldName(nextFieldName);
+    if (nextEncoding) {
+      setThreshold(nextEncoding.defaultThreshold);
+      if (!updraftLensActive) {
+        setSliceFieldName(nextEncoding.field.raw_field_name);
+        if (!nextEncoding.field.coordinate_names.vertical) {
+          setActiveSlicePlane("horizontal");
+        }
+        const nextDefaults =
+          defaultsForField(selectedTimeDefaults, nextEncoding.field.raw_field_name) ??
+          defaultsForField(viewDefaults, nextEncoding.field.raw_field_name);
+        setHorizontalSliceLevel(defaultHorizontalLevel(nextEncoding.field, nextDefaults));
+        setVerticalSliceIndex(
+          defaultVerticalIndex(nextEncoding.field, sliceOrientation, nextDefaults),
+        );
+      }
+    }
+    setSelectedRegion(null);
+  }
+
   return (
     <IntegratedExploreWorkspace
       worldName={productWorldName}
@@ -10508,7 +10513,10 @@ export function VisualizerSceneShell({
       onBack={onBack}
       onCompare={onCompare}
     >
-      <section className="visualizer-shell" aria-label="Integrated Explore workspace">
+      <section
+        className={`visualizer-shell${focusedViewer ? ` visualizer-shell-focused-${focusedViewer}` : ""}`}
+        aria-label="Integrated Explore workspace"
+      >
         {sceneError && (
           <div className="workspace-catalog-error" role="alert">
             <p>{sceneError}</p>
@@ -10564,7 +10572,10 @@ export function VisualizerSceneShell({
               coordinateSizes={{ x: sliceXSize, y: sliceYSize, z: sliceVerticalSize }}
               selectedTimeLabel={selectedTimeLabel}
               sceneTimeLabel={sceneTimeLabel}
-              thresholdLabel={formatScientific(threshold, selectedEncoding?.field.units ?? "")}
+              thresholdLabel={formatScientific(
+                threshold * scalarDisplayScale(selectedEncoding?.field),
+                scalarDisplayUnits(selectedEncoding?.field),
+              )}
               opacity={opacity}
               pointSize={pointSize}
               status={sceneStatus}
@@ -10585,6 +10596,28 @@ export function VisualizerSceneShell({
               windArrowDomainFraction={updraftLensFrame?.wind_arrow_domain_fraction ?? 0.08}
               updraftLensFrame={updraftLensActive ? updraftLensFrame : null}
               showUpdraftLensLegend={false}
+              compactWorkspace
+              maximized={focusedViewer === "scene"}
+              onToggleMaximize={() =>
+                setFocusedViewer((current) => (current === "scene" ? null : "scene"))
+              }
+              compactDisplayControls={
+                <ExploreRenderingControls
+                  compact
+                  encodings={threeDScalarEncodings}
+                  selectedFieldName={selectedFieldName}
+                  selectedEncoding={selectedEncoding}
+                  pointCloud={pointCloud}
+                  result={result}
+                  threshold={threshold}
+                  opacity={opacity}
+                  pointSize={pointSize}
+                  onFieldChange={handleThreeDFieldChange}
+                  onThresholdChange={setThreshold}
+                  onOpacityChange={setOpacity}
+                  onPointSizeChange={setPointSize}
+                />
+              }
             />
             {catalog && sliceField && (
               <section
@@ -10593,51 +10626,26 @@ export function VisualizerSceneShell({
                 }${updraftLensActive ? " explore-control-deck-lens" : ""}`}
                 aria-label="Explore viewer controls"
               >
-                {updraftLensEligible && (
-                  <fieldset className="explore-control-card explore-control-card-view-mode">
-                    <legend>View</legend>
-                    <div className="segmented-buttons" aria-label="Explore view mode">
-                      <button
-                        type="button"
-                        className={!updraftLensActive ? "active-control" : ""}
-                        aria-pressed={!updraftLensActive}
-                        onClick={() => {
-                          if (updraftLensActive) handleUpdraftLensToggle();
-                        }}
-                      >
-                        Standard
-                      </button>
-                      <button
-                        type="button"
-                        className={updraftLensActive ? "active-control" : ""}
-                        aria-pressed={updraftLensActive}
-                        disabled={!updraftLensActive && !updraftLensDefaults}
-                        onClick={() => {
-                          if (!updraftLensActive) handleUpdraftLensToggle();
-                        }}
-                      >
-                        Updraft Lens
-                      </button>
-                    </div>
-                  </fieldset>
-                )}
-
                 <fieldset className="explore-control-card explore-control-card-time">
                   <legend>Time</legend>
                   <div className="frame-step-controls" aria-label="Saved frame step controls">
                     <button
                       type="button"
+                      aria-label="Previous"
+                      title="Previous saved frame"
                       disabled={displayTimeIndex <= 0}
                       onClick={() => handleTimeIndexChange(displayTimeIndex - 1)}
                     >
-                      Previous
+                      <span aria-hidden="true">&lsaquo;</span>
                     </button>
                     <button
                       type="button"
+                      aria-label="Next"
+                      title="Next saved frame"
                       disabled={displayTimeIndex >= timeMax}
                       onClick={() => handleTimeIndexChange(displayTimeIndex + 1)}
                     >
-                      Next
+                      <span aria-hidden="true">&rsaquo;</span>
                     </button>
                   </div>
                   <div className="timelapse-controls" aria-label="Timelapse playback controls">
@@ -10666,7 +10674,7 @@ export function VisualizerSceneShell({
                     </label>
                   </div>
                   <label htmlFor="explore-time-scrubber">
-                    Saved output time
+                    <span className="timeline-label">Saved output time</span>
                     <input
                       id="explore-time-scrubber"
                       aria-label="Saved output time"
@@ -10678,9 +10686,12 @@ export function VisualizerSceneShell({
                       onChange={(event) => handleTimeIndexChange(Number(event.target.value))}
                     />
                     <span className="slice-position-label">
-                      <span>{displayTimeLabel}</span>
+                      <span>
+                        {displayClockLabel} / {finalClockLabel}
+                      </span>
                       <small>
-                        frame {displayTimeIndex + 1} of {Math.max(1, timeOptions.length)}
+                        {displayTimeLabel} · frame {displayTimeIndex + 1} of{" "}
+                        {Math.max(1, timeOptions.length)}
                       </small>
                     </span>
                   </label>
@@ -10700,22 +10711,29 @@ export function VisualizerSceneShell({
                     </select>
                   </label>
 
-                  <div className="time-preset-buttons" aria-label="Time presets">
-                    {timePresets.map((preset) => (
-                      <button
-                        key={preset.label}
-                        type="button"
-                        onClick={() =>
-                          handleTimeIndexChange(closestTimeIndex(timeOptions, preset.seconds))
+                  <label className="timeline-key-moments">
+                    Moment
+                    <select
+                      aria-label="Key moments"
+                      value=""
+                      onChange={(event) => {
+                        if (event.target.value !== "") {
+                          handleTimeIndexChange(Number(event.target.value));
                         }
-                      >
-                        {preset.label}
-                      </button>
-                    ))}
-                    <button type="button" onClick={() => handleTimeIndexChange(timeMax)}>
-                      Last frame
-                    </button>
-                  </div>
+                      }}
+                    >
+                      <option value="">Choose</option>
+                      {timePresets.map((preset) => (
+                        <option
+                          key={preset.label}
+                          value={closestTimeIndex(timeOptions, preset.seconds)}
+                        >
+                          {preset.label}
+                        </option>
+                      ))}
+                      <option value={timeMax}>Last frame</option>
+                    </select>
+                  </label>
                   {isPlaybackRunning && (
                     <p className="control-help">
                       Animating the coordinated scene and slice at {sceneTimeLabel}.
@@ -11021,120 +11039,6 @@ export function VisualizerSceneShell({
                   </fieldset>
                 )}
 
-                <fieldset className="explore-control-card explore-control-card-rendering">
-                  <legend>3-D scalar layer</legend>
-                  <label htmlFor="explore-3d-field">
-                    3-D field
-                    <select
-                      id="explore-3d-field"
-                      aria-label="3-D scalar field"
-                      value={selectedFieldName}
-                      disabled={threeDScalarEncodings.length === 0}
-                      onChange={(event) => {
-                        const nextEncoding =
-                          threeDScalarEncodings.find(
-                            (encoding) => encoding.field.raw_field_name === event.target.value,
-                          ) ?? null;
-                        setSelectedFieldName(event.target.value);
-                        if (nextEncoding) {
-                          setThreshold(nextEncoding.defaultThreshold);
-                          if (!updraftLensActive) {
-                            setSliceFieldName(nextEncoding.field.raw_field_name);
-                            if (!nextEncoding.field.coordinate_names.vertical) {
-                              setActiveSlicePlane("horizontal");
-                            }
-                            const nextDefaults =
-                              defaultsForField(
-                                selectedTimeDefaults,
-                                nextEncoding.field.raw_field_name,
-                              ) ??
-                              defaultsForField(viewDefaults, nextEncoding.field.raw_field_name);
-                            setHorizontalSliceLevel(
-                              defaultHorizontalLevel(nextEncoding.field, nextDefaults),
-                            );
-                            setVerticalSliceIndex(
-                              defaultVerticalIndex(
-                                nextEncoding.field,
-                                sliceOrientation,
-                                nextDefaults,
-                              ),
-                            );
-                          }
-                        }
-                        setSelectedRegion(null);
-                      }}
-                    >
-                      {threeDScalarEncodings.length === 0 && (
-                        <option value="">No 3-D scalar fields</option>
-                      )}
-                      {threeDScalarEncodings.map((encoding) => (
-                        <option
-                          key={encoding.field.raw_field_name}
-                          value={encoding.field.raw_field_name}
-                        >
-                          {encoding.field.raw_field_name} - {encoding.field.display_name}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <p className="control-help">
-                    {selectedEncoding
-                      ? selectedEncoding.valueChannel
-                      : "Only fields with a defined 3-D scalar encoding appear here; vertical velocity remains slice-only."}
-                  </p>
-                  {pointCloud && selectedEncoding && (
-                    <p className="control-help">
-                      {pointCloudFieldSummary(pointCloud)}
-                      {selectedEncoding.field.raw_field_name === "dbz"
-                        ? " Weather-radar colors use a fixed 0 to 60+ dBZ scale."
-                        : ""}
-                    </p>
-                  )}
-                  {selectedEncoding?.field.raw_field_name === "qc" &&
-                    cloudTopMismatchNotice(result) && (
-                      <p className="control-help">{cloudTopMismatchNotice(result)}</p>
-                    )}
-                  <label htmlFor="cloud-threshold">
-                    {selectedEncoding?.thresholdLabel ?? "Visible minimum"}
-                    <input
-                      id="cloud-threshold"
-                      aria-label={selectedEncoding?.thresholdAriaLabel ?? "3-D scalar threshold"}
-                      type="number"
-                      min={0}
-                      step={selectedEncoding?.thresholdStep ?? 0.000001}
-                      value={threshold}
-                      onChange={(event) => setThreshold(Number(event.target.value))}
-                      disabled={!selectedEncoding}
-                    />
-                  </label>
-                  <label htmlFor="cloud-opacity">
-                    Opacity
-                    <input
-                      id="cloud-opacity"
-                      aria-label="Layer opacity"
-                      type="range"
-                      min={0.1}
-                      max={1}
-                      step={0.05}
-                      value={opacity}
-                      onChange={(event) => setOpacity(Number(event.target.value))}
-                    />
-                    <output htmlFor="cloud-opacity">{opacity}</output>
-                  </label>
-                  <label htmlFor="cloud-point-size">
-                    Point size
-                    <input
-                      id="cloud-point-size"
-                      aria-label="Point size"
-                      type="range"
-                      min={3}
-                      max={18}
-                      value={pointSize}
-                      onChange={(event) => setPointSize(Number(event.target.value))}
-                    />
-                    <output htmlFor="cloud-point-size">{pointSize}px</output>
-                  </label>
-                </fieldset>
               </section>
             )}
           </div>
@@ -11142,77 +11046,7 @@ export function VisualizerSceneShell({
           <ExploreInspector
             sections={{
               explain: (
-                <>
-                  <ResultExplanationPanel
-                    result={result}
-                    tradeCumulus={updraftLensEligible}
-                    isNoCloudWithUpdraft={isNoCloudWithUpdraft}
-                    updraftLensActive={updraftLensActive}
-                    updraftLensFrame={updraftLensFrame}
-                  />
-                  {updraftLensActive && updraftLensFrame && (
-                    <section className="integrated-lens-legend" aria-label="Updraft Lens context">
-                      <p>
-                        The Updraft Lens relates rising and sinking air to the visible cloud
-                        boundary.
-                      </p>
-                      <UpdraftLensScaleLegend
-                        frame={updraftLensFrame}
-                        viewLabel="Explore workspace"
-                      />
-                      <dl className="metric-grid compact-metric-grid">
-                        <Metric label="Plane" value={activeSliceLabel} />
-                        <Metric
-                          label="Cloud boundary"
-                          value={showUpdraftLensBoundary ? "Visible" : "Hidden"}
-                        />
-                        <Metric
-                          label="Horizontal wind"
-                          value={
-                            showUpdraftLensWind ? windModeLabel(updraftLensWindMode) : "Hidden"
-                          }
-                        />
-                        <Metric
-                          label="Wind reference"
-                          value={`${updraftLensFrame.wind_reference_m_s.toFixed(1)} m/s at ${Math.round(
-                            updraftLensFrame.wind_actual_level_m,
-                          )} m`}
-                        />
-                      </dl>
-                    </section>
-                  )}
-                </>
-              ),
-              science: (
-                <>
-                  <ExploreSciencePanel
-                    result={result}
-                    tradeCumulus={updraftLensEligible}
-                    pointCloud={pointCloud}
-                    updraftLensFrame={updraftLensFrame}
-                    selectedTimeLabel={selectedTimeLabel}
-                  />
-                  <details className="technical-details">
-                    <summary>Process evidence</summary>
-                    <ProcessModeControl
-                      processMode={activeProcessMode}
-                      processModeStates={primaryProcessModes}
-                      activeProcessModeState={activeProcessModeState}
-                      unavailableProcessModes={unavailableProcessModes}
-                      onProcessModeChange={setProcessMode}
-                    />
-                    <ProcessOverlayPanel
-                      result={result}
-                      catalog={catalog}
-                      selectedField={sliceField}
-                      processMode={activeProcessMode}
-                      slice={
-                        activeSlicePlane === "horizontal"
-                          ? sceneHorizontalSlice
-                          : sceneVerticalSlice
-                      }
-                    />
-                  </details>
+                selectedRegion || regionError || isPlaybackRunning ? (
                   <SelectedRegionInspector
                     selectedRegion={selectedRegion}
                     slice={updraftLensActive ? null : activeSlice}
@@ -11222,9 +11056,21 @@ export function VisualizerSceneShell({
                     error={regionError}
                     playbackRunning={isPlaybackRunning}
                   />
-                </>
+                ) : (
+                  <ResultExplanationPanel
+                    result={result}
+                    tradeCumulus={updraftLensEligible}
+                    isNoCloudWithUpdraft={isNoCloudWithUpdraft}
+                    updraftLensActive={updraftLensActive}
+                    updraftLensFrame={updraftLensFrame}
+                    selectedTimeLabel={selectedTimeLabel}
+                    activeSliceLabel={activeSliceLabel}
+                  />
+                )
               ),
-              notes: <SimulationNotesPanel result={result} />,
+              notes: (
+                <SimulationNotesPanel result={result} onResultUpdated={onResultUpdated} />
+              ),
               details: (
                 <>
                   <SimulationDetailsPanel
@@ -11237,7 +11083,7 @@ export function VisualizerSceneShell({
                     activeSliceLabel={activeSliceLabel}
                   />
                   <details className="technical-details">
-                    <summary>Technical visualization details</summary>
+                    <summary>Visualization details</summary>
                     <dl className="metric-grid">
                       <Metric label="Run ID" value={result.run_id} />
                       <Metric label="Renderer" value="Direct Three.js point cloud" />
@@ -11250,12 +11096,15 @@ export function VisualizerSceneShell({
                         }
                       />
                       <Metric label="3-D scene time" value={sceneTimeLabel} />
-                      <Metric label="Slice/evidence time" value={selectedTimeLabel} />
+                      <Metric label="Slice time" value={selectedTimeLabel} />
                       <Metric label="Slice plane" value={activeSliceLabel} />
                       <Metric label="Slice plane visible" value={showSlicePlanes ? "Yes" : "No"} />
                       <Metric
                         label={selectedEncoding?.thresholdLabel ?? "Visible threshold"}
-                        value={formatScientific(threshold, selectedField?.units ?? "")}
+                        value={formatScientific(
+                          threshold * scalarDisplayScale(selectedField),
+                          scalarDisplayUnits(selectedField),
+                        )}
                       />
                       <Metric label="Opacity" value={String(opacity)} />
                       <Metric label="Point size" value={`${pointSize}px`} />
@@ -11271,9 +11120,9 @@ export function VisualizerSceneShell({
                         label={selectedEncoding?.rangeLabel ?? "3-D field range"}
                         value={
                           pointCloud
-                            ? `${formatMaybeNumber(pointCloud.stats.min_value, selectedField?.units ?? "kg/kg")} to ${formatMaybeNumber(
+                            ? `${formatFieldMaybeNumber(pointCloud.stats.min_value, selectedField)} to ${formatFieldMaybeNumber(
                                 pointCloud.stats.max_value,
-                                selectedField?.units ?? "kg/kg",
+                                selectedField,
                               )}`
                             : "Unavailable"
                         }
@@ -11282,12 +11131,9 @@ export function VisualizerSceneShell({
                         label="Selected-field range"
                         value={
                           pointCloud
-                            ? `${formatMaybeNumber(
-                                pointCloud.stats.field_min_value,
-                                selectedField?.units ?? "kg/kg",
-                              )} to ${formatMaybeNumber(
+                            ? `${formatFieldMaybeNumber(pointCloud.stats.field_min_value, selectedField)} to ${formatFieldMaybeNumber(
                                 pointCloud.stats.field_max_value,
-                                selectedField?.units ?? "kg/kg",
+                                selectedField,
                               )}`
                             : "Unavailable"
                         }
@@ -11350,28 +11196,6 @@ export function VisualizerSceneShell({
                       />
                     </dl>
 
-                    <section aria-labelledby="visualizer-provenance-title">
-                      <h3 id="visualizer-provenance-title">Provenance / rendering labels</h3>
-                      <ul className="compact-list">
-                        <li>{provenanceLabel}</li>
-                        <li>Visualizer interpretation of CM1-derived output</li>
-                        <li>
-                          Value channel:{" "}
-                          {selectedEncoding?.valueChannel ?? "3-D scalar rendering unavailable"}
-                        </li>
-                        <li>
-                          Processing method: backend native-grid thresholded point cloud for
-                          supported scalar fields
-                        </li>
-                        <li>Rendering method: direct Three.js scalar point cloud</li>
-                        <li>Slice planes: native-grid JSON slices from the backend</li>
-                        <li>No raw NetCDF parsing in the browser</li>
-                        <li>
-                          No interpolation, ray marching, isosurface extraction, or synthetic cloud
-                          physics
-                        </li>
-                      </ul>
-                    </section>
                   </details>
                 </>
               ),
@@ -11381,18 +11205,58 @@ export function VisualizerSceneShell({
 
         {catalog && sliceField && (
           <section className="unified-slice-inspector" aria-labelledby="unified-slice-title">
-            <div className="section-heading compact-heading">
+            <div className="instrument-header">
               <div>
-                <p className="eyebrow">Field Slice</p>
                 <h2 id="unified-slice-title">
                   {updraftLensActive ? "Updraft Lens" : "Field Slice"}
                 </h2>
                 <p>
-                  {activeSliceLabel} · {updraftLensActive ? "w" : sliceField.raw_field_name} ·{" "}
-                  {selectedTimeLabel}
+                  {activeSliceLabel} · {updraftLensActive ? "w" : sliceField.raw_field_name}
                 </p>
               </div>
-              <p className="state-chip">
+              <div className="instrument-actions">
+                {updraftLensEligible && (
+                  <div className="instrument-view-toggle" aria-label="Explore view mode">
+                    <button
+                      type="button"
+                      className={!updraftLensActive ? "active-control" : ""}
+                      aria-pressed={!updraftLensActive}
+                      onClick={() => {
+                        if (updraftLensActive) handleUpdraftLensToggle();
+                      }}
+                    >
+                      Field
+                    </button>
+                    <button
+                      type="button"
+                      className={updraftLensActive ? "active-control" : ""}
+                      aria-pressed={updraftLensActive}
+                      disabled={!updraftLensActive && !updraftLensDefaults}
+                      onClick={() => {
+                        if (!updraftLensActive) handleUpdraftLensToggle();
+                      }}
+                    >
+                      Updraft Lens
+                    </button>
+                  </div>
+                )}
+                <button
+                  type="button"
+                  className="viewer-maximize-button"
+                  aria-label={
+                    focusedViewer === "slice" ? "Restore slice viewer" : "Maximize slice viewer"
+                  }
+                  title={
+                    focusedViewer === "slice" ? "Restore slice viewer" : "Maximize slice viewer"
+                  }
+                  onClick={() =>
+                    setFocusedViewer((current) => (current === "slice" ? null : "slice"))
+                  }
+                >
+                  <span aria-hidden="true">{"\u26f6"}</span>
+                </button>
+              </div>
+              <p className="sr-only" role="status">
                 {updraftLensActive
                   ? updraftLensError
                     ? "Lens unavailable"
@@ -11430,23 +11294,29 @@ export function VisualizerSceneShell({
 
             {updraftLensActive ? (
               updraftLensFrame ? (
-                <UpdraftLensSlice
-                  frame={updraftLensFrame}
-                  showCloudBoundary={showUpdraftLensBoundary}
-                  showLegend={false}
-                  selectedPoint={
-                    selectedRegion?.xIndex !== undefined &&
-                    selectedRegion.yIndex !== undefined &&
-                    selectedRegion.zIndex !== undefined
-                      ? {
-                          xIndex: selectedRegion.xIndex,
-                          yIndex: selectedRegion.yIndex,
-                          zIndex: selectedRegion.zIndex,
-                        }
-                      : null
-                  }
-                  onSelectPoint={selectPointFromUpdraftLens}
-                />
+                <div className="updraft-lens-instrument-body">
+                  <UpdraftLensSlice
+                    frame={updraftLensFrame}
+                    showCloudBoundary={showUpdraftLensBoundary}
+                    showLegend={false}
+                    selectedPoint={
+                      selectedRegion?.xIndex !== undefined &&
+                      selectedRegion.yIndex !== undefined &&
+                      selectedRegion.zIndex !== undefined
+                        ? {
+                            xIndex: selectedRegion.xIndex,
+                            yIndex: selectedRegion.yIndex,
+                            zIndex: selectedRegion.zIndex,
+                          }
+                        : null
+                    }
+                    onSelectPoint={selectPointFromUpdraftLens}
+                  />
+                  <UpdraftLensScaleLegend
+                    frame={updraftLensFrame}
+                    viewLabel="Explore workspace"
+                  />
+                </div>
               ) : (
                 !updraftLensError && <p role="status">Loading Updraft Lens frame...</p>
               )
@@ -11467,18 +11337,137 @@ export function VisualizerSceneShell({
   );
 }
 
+function ExploreRenderingControls({
+  compact = false,
+  encodings,
+  selectedFieldName,
+  selectedEncoding,
+  pointCloud,
+  result,
+  threshold,
+  opacity,
+  pointSize,
+  onFieldChange,
+  onThresholdChange,
+  onOpacityChange,
+  onPointSizeChange,
+}: {
+  compact?: boolean;
+  encodings: ThreeDScalarEncoding[];
+  selectedFieldName: string;
+  selectedEncoding: ThreeDScalarEncoding | null;
+  pointCloud: PointCloudResponse | null;
+  result: ResultCard;
+  threshold: number;
+  opacity: number;
+  pointSize: number;
+  onFieldChange: (fieldName: string) => void;
+  onThresholdChange: (value: number) => void;
+  onOpacityChange: (value: number) => void;
+  onPointSizeChange: (value: number) => void;
+}) {
+  const thresholdScale = scalarDisplayScale(selectedEncoding?.field);
+  const thresholdUnits = scalarDisplayUnits(selectedEncoding?.field);
+  return (
+    <section
+      className={`inspector-rendering-controls${compact ? " inspector-rendering-controls-compact" : ""}`}
+      aria-label={compact ? "3-D display controls" : undefined}
+      aria-labelledby={compact ? undefined : "rendering-controls-title"}
+    >
+      {!compact && <h3 id="rendering-controls-title">3-D layer</h3>}
+      <label htmlFor="explore-3d-field">
+        Field
+        <select
+          id="explore-3d-field"
+          aria-label="3-D scalar field"
+          value={selectedFieldName}
+          disabled={encodings.length === 0}
+          onChange={(event) => onFieldChange(event.target.value)}
+        >
+          {encodings.length === 0 && <option value="">No 3-D scalar fields</option>}
+          {encodings.map((encoding) => (
+            <option key={encoding.field.raw_field_name} value={encoding.field.raw_field_name}>
+              {encoding.field.raw_field_name} - {encoding.field.display_name}
+            </option>
+          ))}
+        </select>
+      </label>
+      <label htmlFor="cloud-threshold">
+        {selectedEncoding?.thresholdLabel ?? "Visible minimum"}
+        {thresholdUnits ? ` (${thresholdUnits})` : ""}
+        <input
+          id="cloud-threshold"
+          aria-label={selectedEncoding?.thresholdAriaLabel ?? "3-D scalar threshold"}
+          type="number"
+          min={0}
+          step={(selectedEncoding?.thresholdStep ?? 0.000001) * thresholdScale}
+          value={threshold * thresholdScale}
+          onChange={(event) => onThresholdChange(Number(event.target.value) / thresholdScale)}
+          disabled={!selectedEncoding}
+        />
+      </label>
+      <div className="rendering-range-controls">
+        <label htmlFor="cloud-opacity">
+          Opacity
+          <input
+            id="cloud-opacity"
+            aria-label="Layer opacity"
+            type="range"
+            min={0.1}
+            max={1}
+            step={0.05}
+            value={opacity}
+            onChange={(event) => onOpacityChange(Number(event.target.value))}
+          />
+          <output htmlFor="cloud-opacity">{opacity}</output>
+        </label>
+        <label htmlFor="cloud-point-size">
+          Point size
+          <input
+            id="cloud-point-size"
+            aria-label="Point size"
+            type="range"
+            min={3}
+            max={18}
+            value={pointSize}
+            onChange={(event) => onPointSizeChange(Number(event.target.value))}
+          />
+          <output htmlFor="cloud-point-size">{pointSize}px</output>
+        </label>
+      </div>
+      <div className={compact ? "sr-only" : undefined}>
+        <p className="control-help">
+          {selectedEncoding
+            ? selectedEncoding.valueChannel
+            : "Only fields with a defined 3-D scalar encoding appear here."}
+        </p>
+        {pointCloud && selectedEncoding && (
+          <p className="control-help">{pointCloudFieldSummary(pointCloud)}</p>
+        )}
+        {selectedEncoding?.field.raw_field_name === "qc" && cloudTopMismatchNotice(result) && (
+          <p className="control-help">{cloudTopMismatchNotice(result)}</p>
+        )}
+      </div>
+    </section>
+  );
+}
+
 function ResultExplanationPanel({
   result,
   tradeCumulus,
   isNoCloudWithUpdraft,
   updraftLensActive,
   updraftLensFrame,
+  selectedTimeLabel,
+  activeSliceLabel,
 }: {
   result: ResultCard;
   tradeCumulus: boolean;
   isNoCloudWithUpdraft: boolean;
   updraftLensActive: boolean;
   updraftLensFrame: UpdraftLensFrame | null;
+  selectedTimeLabel: string;
+  activeSliceLabel: string;
 }) {
   const cloudLabel = tradeCumulus
     ? fieldQualityBlocksEvidence(result, "qc")
@@ -11487,152 +11476,121 @@ function ResultExplanationPanel({
         ? "Cloud formed"
         : "No cloud formed"
     : cloudOutcome(result);
-  const explanation = tradeCumulus
-    ? `Cloud water first appeared at ${formatSeconds(resultFirstCloudTime(result))}. The Simulation reached ${formatNumber(
-        resultMaxUpdraft(result),
-        "m/s",
-      )} maximum upward motion and ${formatNumber(
-        resultMinDowndraft(result),
-        "m/s",
-      )} minimum vertical motion.${
-        updraftLensActive && updraftLensFrame
-          ? ` The active Lens shows ${formatNumber(updraftLensFrame.w_range_min_m_s, "m/s")} to ${formatNumber(
-              updraftLensFrame.w_range_max_m_s,
-              "m/s",
-            )} on the selected plane.`
-          : " Activate the Updraft Lens to relate that motion to the cloud boundary."
-      }`
-    : resultStory(result);
+  const currentViewExplanation =
+    updraftLensActive && updraftLensFrame
+      ? `At model time ${selectedTimeLabel}, the ${activeSliceLabel} shows vertical velocity from ${formatNumber(
+          updraftLensFrame.w_range_min_m_s,
+          "m/s",
+        )} to ${formatNumber(
+          updraftLensFrame.w_range_max_m_s,
+          "m/s",
+        )}. Warm colors mark rising air, cool colors mark sinking air, and the black outline marks cloud water.`
+      : `At model time ${selectedTimeLabel}, the 3-D cloud field and ${activeSliceLabel} show the same saved model state. The plane in the scene locates the Field Slice in the cloud domain.`;
   return (
     <section className="selected-region-inspector" aria-label="Result-level explanation panel">
       <div className="section-heading compact-heading">
         <div>
-          <p className="eyebrow">Explanation</p>
-          <h3>What happened in this result?</h3>
+          <h3>What am I seeing?</h3>
         </div>
         <StatusBadge
           label={
             cloudLabel === "Cloud formed"
-              ? "Cloud formed in this result"
+              ? "Cloud formed"
               : cloudLabel === "No cloud formed"
-                ? "No cloud formed in this result"
+                ? "No cloud formed"
                 : cloudLabel
           }
           tone={cloudLabel === "Cloud formed" ? "good" : "warning"}
         />
       </div>
-      <p>{explanation}</p>
-      <section aria-label="Evidence">
-        <h4>Evidence</h4>
-        <dl className="metric-grid">
+      <p>{currentViewExplanation}</p>
+      <section aria-label="Current context">
+        <dl className="context-metrics">
+          <Metric label="Model time" value={selectedTimeLabel} />
           <Metric label="First cloud" value={formatSeconds(resultFirstCloudTime(result))} />
-          <Metric label="Max cloud water" value={formatScientific(resultMaxQc(result), "kg/kg")} />
           <Metric
-            label="Max vertical velocity"
-            value={formatNumber(resultMaxUpdraft(result), "m/s")}
+            label="Cloud water max"
+            value={formatMixingRatio(resultMaxQc(result))}
           />
           <Metric
-            label="Min vertical velocity"
-            value={formatNumber(resultMinDowndraft(result), "m/s")}
+            label="Vertical velocity"
+            value={`${formatNumber(resultMinDowndraft(result), "m/s")} to ${formatNumber(
+              resultMaxUpdraft(result),
+              "m/s",
+            )}`}
           />
-          <Metric
-            label="Coherent cloud top"
-            value={formatNumber(resultCloudTopMeters(result), "m")}
-          />
-          <Metric label="Latest output" value={formatSeconds(resultLatestOutputTime(result))} />
         </dl>
       </section>
       {isNoCloudWithUpdraft && (
         <p>For this no-cloud result, use vertical velocity (w) slices to inspect the thermals.</p>
       )}
-      <details>
-        <summary>Technical details</summary>
-        <ul className="compact-list">
-          <li>Thermal Fate is the internal explanation model.</li>
-          <li>Evidence comes from ingested CM1 diagnostics and visualization-ready fields.</li>
-          <li>No raw NetCDF parsing in the browser.</li>
-          {result.caveats.map((caveat) => (
-            <li key={caveat}>{caveat}</li>
-          ))}
-        </ul>
-      </details>
     </section>
   );
 }
 
-function ExploreSciencePanel({
+function SimulationNotesPanel({
   result,
-  tradeCumulus,
-  pointCloud,
-  updraftLensFrame,
-  selectedTimeLabel,
+  onResultUpdated,
 }: {
   result: ResultCard;
-  tradeCumulus: boolean;
-  pointCloud: PointCloudResponse | null;
-  updraftLensFrame: UpdraftLensFrame | null;
-  selectedTimeLabel: string;
+  onResultUpdated?: (result: ResultCard) => void;
 }) {
-  return (
-    <section aria-labelledby="explore-science-title">
-      <h3 id="explore-science-title">Science at this time</h3>
-      <dl className="metric-grid compact-metric-grid">
-        <Metric label="Model time" value={selectedTimeLabel} />
-        <Metric label="Max cloud water" value={formatScientific(resultMaxQc(result), "kg/kg")} />
-        <Metric
-          label="Coherent cloud top"
-          value={formatNumber(resultCloudTopMeters(result), "m")}
-        />
-        <Metric
-          label="Max vertical velocity"
-          value={formatNumber(resultMaxUpdraft(result), "m/s")}
-        />
-        <Metric
-          label="Min vertical velocity"
-          value={formatNumber(resultMinDowndraft(result), "m/s")}
-        />
-        <Metric
-          label="Visible 3-D points"
-          value={pointCloud ? pointCloud.stats.returned_count.toLocaleString() : "Unavailable"}
-        />
-        <Metric
-          label="Current 3-D field range"
-          value={
-            pointCloud
-              ? `${formatMaybeNumber(pointCloud.stats.field_min_value, pointCloud.field.units ?? "")} to ${formatMaybeNumber(
-                  pointCloud.stats.field_max_value,
-                  pointCloud.field.units ?? "",
-                )}`
-              : "Unavailable"
-          }
-        />
-        <Metric
-          label="Current Lens range"
-          value={
-            updraftLensFrame
-              ? `${formatNumber(updraftLensFrame.w_range_min_m_s, "m/s")} to ${formatNumber(
-                  updraftLensFrame.w_range_max_m_s,
-                  "m/s",
-                )}`
-              : "Lens inactive"
-          }
-        />
-        {!tradeCumulus && (
-          <>
-            <Metric label="Rain water aloft" value={rainWaterOutcome(result)} />
-            <Metric label="Reflectivity" value={reflectivityOutcome(result)} />
-          </>
-        )}
-      </dl>
-    </section>
-  );
-}
+  const [draft, setDraft] = useState(result.notes ?? "");
+  const [status, setStatus] = useState("");
+  const [saving, setSaving] = useState(false);
+  const statusResultIdRef = useRef(result.result_id);
 
-function SimulationNotesPanel({ result }: { result: ResultCard }) {
+  useEffect(() => {
+    const resultChanged = statusResultIdRef.current !== result.result_id;
+    statusResultIdRef.current = result.result_id;
+    setDraft(result.notes ?? "");
+    if (resultChanged) setStatus("");
+  }, [result.result_id, result.notes]);
+
+  async function saveNote(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setSaving(true);
+    setStatus("Saving note...");
+    try {
+      const updated = await patchResultCard(result.result_id, {
+        notes: draft.trim() || null,
+      });
+      setDraft(updated.notes ?? "");
+      onResultUpdated?.(updated);
+      setStatus("Note saved");
+    } catch (caught) {
+      setStatus(caught instanceof Error ? caught.message : "Unable to save note.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const savedNote = result.notes ?? "";
   return (
     <section aria-labelledby="simulation-notes-title">
       <h3 id="simulation-notes-title">Simulation notes</h3>
-      <p>{result.notes?.trim() || "No note recorded for this Simulation."}</p>
+      <form className="simulation-notes-form" onSubmit={(event) => void saveNote(event)}>
+        <label htmlFor={`simulation-notes-${result.result_id}`}>
+          <span className="sr-only">Notes for {result.name}</span>
+          <textarea
+            id={`simulation-notes-${result.result_id}`}
+            aria-label="Simulation notes"
+            rows={9}
+            placeholder="Record observations, questions, or follow-up ideas."
+            value={draft}
+            onChange={(event) => {
+              setDraft(event.target.value);
+              setStatus("");
+            }}
+          />
+        </label>
+        <div className="simulation-notes-actions">
+          <button type="submit" disabled={saving || draft === savedNote}>
+            {saving ? "Saving..." : "Save note"}
+          </button>
+          {status && <p role="status">{status}</p>}
+        </div>
+      </form>
     </section>
   );
 }
@@ -11670,7 +11628,7 @@ function SimulationDetailsPanel({
           label="3-D field"
           value={
             selectedField
-              ? `${selectedField.display_name} (${selectedField.units ?? "unitless"})`
+              ? `${selectedField.display_name} (${scalarDisplayUnits(selectedField)})`
               : "Unavailable"
           }
         />
@@ -11678,7 +11636,7 @@ function SimulationDetailsPanel({
           label="Slice field"
           value={
             sliceField
-              ? `${sliceField.display_name} (${sliceField.units ?? "unitless"})`
+              ? `${sliceField.display_name} (${scalarDisplayUnits(sliceField)})`
               : "Unavailable"
           }
         />
@@ -11752,10 +11710,6 @@ function formatDetailValue(value: unknown): string {
     return String(value);
   }
   return JSON.stringify(value);
-}
-
-function windModeLabel(mode: UpdraftLensWindMode): string {
-  return mode === "perturbation" ? "Local departures" : "Total wind";
 }
 
 function activeSlicePosition(
@@ -11945,8 +11899,8 @@ function SlicePanel({
           <Metric label="Time" value={formatSeconds(slice.selection.time_seconds)} />
           <Metric label="Shape" value={slice.shape.join(" x ")} />
           <Metric label="Dimensions" value={slice.dimension_order.join(", ")} />
-          <Metric label="Min" value={formatMaybeNumber(slice.stats.min, slice.field.units)} />
-          <Metric label="Max" value={formatMaybeNumber(slice.stats.max, slice.field.units)} />
+          <Metric label="Min" value={formatFieldMaybeNumber(slice.stats.min, slice.field)} />
+          <Metric label="Max" value={formatFieldMaybeNumber(slice.stats.max, slice.field)} />
           <Metric label="Finite values" value={String(slice.stats.finite_count)} />
           <Metric label="Non-finite values" value={String(slice.stats.non_finite_count)} />
         </dl>
@@ -12046,134 +12000,6 @@ function axisSize(slice: SliceResponse, dimension: string | null): number {
   return index >= 0 ? (slice.field.shape[index] ?? 1) : 1;
 }
 
-function ProcessModeControl({
-  processMode,
-  processModeStates,
-  activeProcessModeState,
-  unavailableProcessModes,
-  onProcessModeChange,
-}: {
-  processMode: ProcessMode;
-  processModeStates: ProcessModeClassification[];
-  activeProcessModeState: ProcessModeClassification | undefined;
-  unavailableProcessModes: ProcessModeClassification[];
-  onProcessModeChange: (mode: ProcessMode) => void;
-}) {
-  return (
-    <fieldset className="process-mode-control">
-      <legend>Explanation focus</legend>
-      {processModeStates.length > 0 ? (
-        <>
-          <select
-            aria-label="Process mode"
-            value={processMode}
-            onChange={(event) => onProcessModeChange(event.target.value as ProcessMode)}
-          >
-            {processModeStates.map((state) => (
-              <option key={state.mode} value={state.mode}>
-                {processModeLabel(state.mode)}
-                {state.support === "candidate" ? " (candidate)" : ""}
-              </option>
-            ))}
-          </select>
-          {activeProcessModeState && (
-            <p className="process-mode-helper">
-              <StatusBadge
-                label={processSupportLabel(activeProcessModeState.support)}
-                tone={
-                  activeProcessModeState.support === "supported"
-                    ? "good"
-                    : activeProcessModeState.support === "candidate"
-                      ? "neutral"
-                      : "warning"
-                }
-              />
-              <span>{activeProcessModeState.primaryReason}</span>
-            </p>
-          )}
-        </>
-      ) : (
-        <p>No supported process evidence focus is available for this result yet.</p>
-      )}
-      {unavailableProcessModes.length > 0 && (
-        <details className="unavailable-diagnostics">
-          <summary>Not available for this result</summary>
-          <ul className="compact-list">
-            {unavailableProcessModes.map((state) => (
-              <li key={state.mode}>
-                <strong>{processModeLabel(state.mode)}</strong>{" "}
-                <span className="muted-text">
-                  {processSupportLabel(state.support)}. {state.primaryReason} {state.description}
-                </span>
-              </li>
-            ))}
-          </ul>
-        </details>
-      )}
-    </fieldset>
-  );
-}
-
-function ProcessOverlayPanel({
-  result,
-  catalog,
-  selectedField,
-  processMode,
-  slice,
-}: {
-  result: ResultCard;
-  catalog: FieldCatalogResponse | null;
-  selectedField: VisualizableField | undefined;
-  processMode: ProcessMode;
-  slice?: SliceResponse | null;
-}) {
-  const summary = processModeSummary(processMode, result, catalog, selectedField, slice ?? null);
-  return (
-    <section className="process-overlay-panel" aria-label="Explanation evidence">
-      <div className="section-heading compact-heading">
-        <div>
-          <p className="eyebrow">Evidence</p>
-          <h3>{processModeLabel(processMode)}</h3>
-        </div>
-        <StatusBadge
-          label={processSupportLabel(summary.support)}
-          tone={
-            summary.support === "supported"
-              ? "good"
-              : summary.support === "candidate"
-                ? "neutral"
-                : "warning"
-          }
-        />
-      </div>
-      <p>{summary.description}</p>
-      <dl className="metric-grid">
-        <Metric label="Evidence type" value={summary.evidenceType} />
-        <Metric label="Source" value={summary.source} />
-        <Metric label="Process confidence" value={processSupportLabel(summary.support)} />
-        <Metric label="Selected field" value={selectedField?.raw_field_name ?? "Unavailable"} />
-      </dl>
-      {summary.annotations.length > 0 && (
-        <ul className="compact-list">
-          {summary.annotations.map((annotation) => (
-            <li key={annotation}>{annotation}</li>
-          ))}
-        </ul>
-      )}
-      {summary.caveats.length > 0 && (
-        <details>
-          <summary>Process caveats</summary>
-          <ul className="compact-list">
-            {_dedupeStrings(summary.caveats).map((caveat) => (
-              <li key={caveat}>{caveat}</li>
-            ))}
-          </ul>
-        </details>
-      )}
-    </section>
-  );
-}
-
 function SelectedRegionInspector({
   selectedRegion,
   slice,
@@ -12253,7 +12079,7 @@ function SelectedRegionInspector({
             />
             <Metric
               label="Local max qc"
-              value={formatScientific(diagnostics.diagnostics.local_max_qc_kg_kg, "kg/kg")}
+              value={formatMixingRatio(diagnostics.diagnostics.local_max_qc_kg_kg)}
             />
             <Metric
               label="Local max w"
@@ -12274,7 +12100,7 @@ function SelectedRegionInspector({
           </dl>
 
           <details>
-            <summary>Technical details and provenance</summary>
+            <summary>Selected-point details</summary>
             <dl className="metric-grid">
               <Metric label="Region type" value={humanize(diagnostics.region.region_type)} />
               <Metric label="Native grid" value={diagnostics.region.native_grid ?? "Unavailable"} />
@@ -12308,10 +12134,7 @@ function SelectedRegionInspector({
                 )}
               />
             </dl>
-            <p>{diagnostics.provenance.provenance_label}</p>
             <ul className="compact-list">
-              <li>Backend xarray selected-region diagnostics; no raw NetCDF parsing in browser.</li>
-              <li>Selected region is not cloud-object tracking.</li>
               {_dedupeStrings([
                 ...diagnostics.caveats,
                 ...diagnostics.interpretation.caveats,
@@ -12368,7 +12191,7 @@ function SelectedPointContext({
         />
         <Metric
           label="Selected field value"
-          value={formatMaybeNumber(selectedValue, slice?.field.units ?? null)}
+          value={formatFieldMaybeNumber(selectedValue, slice?.field)}
         />
         <Metric label="x" value={x} />
         <Metric label="y" value={y} />
@@ -12426,7 +12249,7 @@ function SliceHeatmap({
                   title={
                     cell.value === null
                       ? "missing"
-                      : formatMaybeNumber(cell.value, slice.field.units)
+                      : formatFieldMaybeNumber(cell.value, slice.field)
                   }
                   aria-label={`Inspect ${title} row ${displayRowIndex + 1}, column ${displayColumnIndex + 1}`}
                   style={sliceCellStyle(cell.value, slice)}
@@ -13839,305 +13662,12 @@ function Metric({ label, value }: { label: string; value: string }) {
   );
 }
 
-const PROCESS_MODES: ProcessMode[] = [
-  "thermal_fate",
-  "cloud_water",
-  "updrafts",
-  "cloud_lifecycle",
-  "cap",
-  "moisture",
-  "buoyancy",
-  "deep_breakthrough",
-  "precipitation_feedback",
-];
-
 type ProcessSupport =
   | "supported"
   | "candidate"
   | "insufficient_evidence"
   | "unsupported_missing_fields"
   | "future";
-
-type ProcessModeSummary = {
-  support: ProcessSupport;
-  evidenceType: string;
-  source: string;
-  description: string;
-  annotations: string[];
-  caveats: string[];
-};
-
-type ProcessModeClassification = ProcessModeSummary & {
-  mode: ProcessMode;
-  primary: boolean;
-  primaryReason: string;
-};
-
-function processModeSummary(
-  mode: ProcessMode,
-  result: ResultCard,
-  catalog: FieldCatalogResponse | null,
-  selectedField: VisualizableField | undefined,
-  slice: SliceResponse | null,
-): ProcessModeSummary {
-  const fields = new Set(catalog?.available_fields.map((field) => field.raw_field_name) ?? []);
-  const caveats = [...result.caveats];
-  const thermalLabel = result.thermal_fate_label ?? "Insufficient evidence";
-  const confidence = normalizeProcessSupport(result.thermal_fate_confidence);
-  const fieldSource = selectedField
-    ? `${selectedField.raw_field_name} on native ${selectedField.native_grid}`
-    : "No selected field";
-  const sliceAnnotation = slice
-    ? `Active slice ${slice.selection.orientation} shows ${slice.field.raw_field_name} min ${formatMaybeNumber(
-        slice.stats.min,
-        slice.field.units,
-      )}, max ${formatMaybeNumber(slice.stats.max, slice.field.units)}.`
-    : "No active slice summary is available yet.";
-
-  if (mode === "thermal_fate") {
-    const hasResultSummary = Boolean(result.thermal_fate_label || result.diagnostics_summary);
-    const summarySupport =
-      confidence === "insufficient_evidence" && hasResultSummary ? "candidate" : confidence;
-    return {
-      support: summarySupport,
-      evidenceType: "backend process diagnostics",
-      source: "Result Card process fields from ingested CM1 output",
-      description: `${thermalLabel}. ${
-        result.main_limiting_factor && result.main_limiting_factor !== "unknown"
-          ? `Main limiting factor: ${result.main_limiting_factor}.`
-          : "No supported main limiting factor is available yet."
-      }`,
-      annotations: [
-        `Diagnostics summary: ${result.diagnostics_summary ?? "Unavailable"}`,
-        `Cloud: ${cloudOutcome(result)}; rain water aloft: ${rainWaterOutcome(result)}`,
-      ],
-      caveats,
-    };
-  }
-
-  if (mode === "cloud_water") {
-    return {
-      support: fields.has("qc") ? "supported" : "unsupported_missing_fields",
-      evidenceType: "direct CM1 field plus derived threshold diagnostics",
-      source: fieldSource,
-      description: fields.has("qc")
-        ? "Cloud-water overlay uses direct qc output with the documented cloud threshold."
-        : "Cloud-water overlay is unavailable because qc is missing for this result.",
-      annotations: [
-        `Max qc: ${formatScientific(result.max_qc_kg_kg, "kg/kg")}`,
-        `First cloud time: ${formatSeconds(result.first_cloud_time_seconds)}`,
-        sliceAnnotation,
-      ],
-      caveats: fields.has("qc") ? caveats : [...caveats, "missing_visualization_field:qc"],
-    };
-  }
-
-  if (mode === "updrafts") {
-    return {
-      support: fields.has("w") ? "supported" : "unsupported_missing_fields",
-      evidenceType: "direct CM1 vertical-velocity field",
-      source: fieldSource,
-      description: fields.has("w")
-        ? "Updraft overlay uses direct w output and max/min vertical velocity summaries."
-        : "Updraft overlay is unavailable because w is missing for this result.",
-      annotations: [
-        `Max w: ${formatNumber(result.max_w_m_s, "m/s")}`,
-        `Min w: ${formatNumber(result.min_w_m_s, "m/s")}`,
-        sliceAnnotation,
-      ],
-      caveats: fields.has("w") ? caveats : [...caveats, "missing_visualization_field:w"],
-    };
-  }
-
-  if (mode === "cloud_lifecycle") {
-    const available = result.first_cloud_time_seconds !== null || result.max_qc_kg_kg !== null;
-    return {
-      support: available ? "candidate" : "insufficient_evidence",
-      evidenceType: "derived cloud lifecycle diagnostics",
-      source: "Ingested result diagnostics",
-      description: available
-        ? "Cloud lifecycle uses first cloud time, qc summaries, cloud fraction, and slice annotations where available."
-        : "Cloud lifecycle diagnostics are not available for this result.",
-      annotations: [
-        `First cloud time: ${formatSeconds(result.first_cloud_time_seconds)}`,
-        `Max qc: ${formatScientific(result.max_qc_kg_kg, "kg/kg")}`,
-        sliceAnnotation,
-      ],
-      caveats,
-    };
-  }
-
-  if (mode === "cap") {
-    const capped =
-      result.scenario_id.includes("capped") || result.controls.cap_strength === "stronger";
-    return {
-      support: capped ? "candidate" : "insufficient_evidence",
-      evidenceType: "scenario/control proxy plus cloud-top diagnostics",
-      source: "Scenario metadata and derived diagnostics",
-      description: capped
-        ? "Cap/inversion overlay is a candidate process view; current data suggests cap context but does not directly diagnose inhibition."
-        : "Cap/inversion overlay needs stronger-cap metadata or cap-relative diagnostics before making a process claim.",
-      annotations: [
-        `Cap strength: ${String(result.controls.cap_strength ?? "not recorded")}`,
-        `Thermal Fate label: ${thermalLabel}`,
-      ],
-      caveats: [...caveats, "cap_layer_annotation_is_proxy_without_full_cap_diagnostics"],
-    };
-  }
-
-  if (mode === "moisture") {
-    const moistureLimited =
-      result.main_limiting_factor === "moisture" ||
-      result.scenario_id.includes("dry-failed") ||
-      result.caveats.some((caveat) => caveat.includes("moisture"));
-    return {
-      support: moistureLimited ? "candidate" : "unsupported_missing_fields",
-      evidenceType: moistureLimited
-        ? "scenario/control proxy plus cloud-water and updraft diagnostics"
-        : "unavailable moisture diagnostic group",
-      source: moistureLimited
-        ? "Dry Failed / moisture-limited result metadata and derived diagnostics"
-        : "Required humidity, qv, RH, or saturation-deficit fields were not ingested",
-      description: moistureLimited
-        ? "Moisture limitation is a candidate explanation for this contrast case because thermals are present while cloud water and rain stay below threshold."
-        : "Moisture / saturation diagnostics need qv, RH, or saturation-deficit fields before they can be selected as a focus.",
-      annotations: [
-        `Main limiting factor: ${String(result.main_limiting_factor ?? "not recorded")}`,
-        `Cloud: ${cloudOutcome(result)}; max w: ${formatNumber(result.max_w_m_s, "m/s")}`,
-      ],
-      caveats: moistureLimited
-        ? [...caveats, "moisture_limitation_is_candidate_without_direct_qv_or_rh_diagnostics"]
-        : [...caveats, "moisture_unsupported_missing_fields"],
-    };
-  }
-
-  if (mode === "precipitation_feedback") {
-    const rainWaterDetected = rainWaterOutcome(result) === "Rain water aloft detected";
-    return {
-      support: "future",
-      evidenceType: "qr/rain and downdraft proxy diagnostics",
-      source: rainWaterDetected
-        ? "Rain-water aloft summary exists, but cold-pool/outflow evidence is not available"
-        : "Required rain, downdraft, cold-pool, and outflow evidence is not available",
-      description: rainWaterDetected
-        ? "Rain water aloft is present, but precipitation-feedback needs downdraft/cold-pool evidence before it can be selected as a normal focus."
-        : "Precipitation feedback is future work for this result because rain-water, cold-pool, and outflow diagnostics are not available.",
-      annotations: [
-        `Rain water aloft: ${rainWaterOutcome(result)}`,
-        `Min w: ${formatNumber(result.min_w_m_s, "m/s")}`,
-      ],
-      caveats: [...caveats, "precipitation_feedback_requires_downdraft_and_cold_pool_diagnostics"],
-    };
-  }
-
-  const unavailableLabels: Record<ProcessMode, string> = {
-    thermal_fate: "",
-    cloud_water: "",
-    updrafts: "",
-    cloud_lifecycle: "",
-    cap: "",
-    moisture: "Moisture / saturation diagnostics need qv/RH or saturation-deficit fields.",
-    buoyancy: "Buoyancy diagnostics need thermodynamic fields and a documented buoyancy method.",
-    deep_breakthrough:
-      "Deep-breakthrough diagnostics need CAPE/CIN/LFC/EL and sustained-updraft context.",
-    precipitation_feedback:
-      "Precipitation-feedback diagnostics need rain, downdraft, cold-pool, and outflow evidence.",
-  };
-  return {
-    support:
-      mode === "buoyancy" || mode === "deep_breakthrough" ? "future" : "unsupported_missing_fields",
-    evidenceType: "unavailable diagnostic group",
-    source: "Required source fields were not ingested",
-    description: unavailableLabels[mode],
-    annotations: ["Unavailable diagnostics are shown explicitly rather than hidden."],
-    caveats: [...caveats, `${mode}_unsupported_missing_fields`],
-  };
-}
-
-function processModeClassifications(
-  result: ResultCard,
-  catalog: FieldCatalogResponse | null,
-  selectedField: VisualizableField | undefined,
-  slice: SliceResponse | null,
-): ProcessModeClassification[] {
-  return PROCESS_MODES.map((mode) => {
-    const summary = processModeSummary(mode, result, catalog, selectedField, slice);
-    const primary = processModeIsPrimary(mode, summary, result);
-    return {
-      mode,
-      ...summary,
-      primary,
-      primaryReason: primary
-        ? "Supported or useful candidate for this result."
-        : unavailableProcessReason(mode, summary),
-    };
-  });
-}
-
-function processModeIsPrimary(
-  mode: ProcessMode,
-  summary: ProcessModeSummary,
-  result: ResultCard,
-): boolean {
-  if (summary.support === "supported") return true;
-  if (summary.support !== "candidate") return false;
-  if (mode === "precipitation_feedback") return false;
-  if (mode === "cap") {
-    return result.scenario_id.includes("capped") || result.controls.cap_strength === "stronger";
-  }
-  if (mode === "moisture") {
-    return (
-      result.main_limiting_factor === "moisture" ||
-      result.scenario_id.includes("dry-failed") ||
-      result.caveats.some((caveat) => caveat.includes("moisture"))
-    );
-  }
-  return true;
-}
-
-function unavailableProcessReason(mode: ProcessMode, summary: ProcessModeSummary): string {
-  if (summary.support === "future") {
-    return "Future diagnostic: required backend evidence is not implemented for this result family.";
-  }
-  if (summary.support === "unsupported_missing_fields") {
-    return "Missing required CM1 fields or derived diagnostics for this selected result.";
-  }
-  if (summary.support === "insufficient_evidence") {
-    return "Evidence is present but not enough to make this a useful primary focus.";
-  }
-  if (summary.support === "candidate" && mode === "precipitation_feedback") {
-    return "Rain alone is not enough to select precipitation feedback without downdraft/cold-pool evidence.";
-  }
-  return "Not useful as a primary focus for this selected result.";
-}
-
-function processModeLabel(mode: ProcessMode): string {
-  const labels: Record<ProcessMode, string> = {
-    thermal_fate: "Thermal Fate summary",
-    cloud_water: "Cloud Water",
-    updrafts: "Updrafts",
-    moisture: "Moisture / Saturation",
-    buoyancy: "Buoyancy",
-    cap: "Cap / Inversion",
-    cloud_lifecycle: "Cloud Lifecycle",
-    deep_breakthrough: "Deep Breakthrough",
-    precipitation_feedback: "Precipitation Feedback",
-  };
-  return labels[mode];
-}
-
-function normalizeProcessSupport(value: string | null | undefined): ProcessSupport {
-  if (
-    value === "supported" ||
-    value === "candidate" ||
-    value === "insufficient_evidence" ||
-    value === "unsupported_missing_fields" ||
-    value === "future"
-  ) {
-    return value;
-  }
-  return "insufficient_evidence";
-}
 
 function processSupportLabel(value: ProcessSupport): string {
   const labels: Record<ProcessSupport, string> = {
@@ -14764,6 +14294,28 @@ function formatScientific(value: number | null, units: string): string {
   return `${value.toExponential(3)}${units ? ` ${units}` : ""}`;
 }
 
+function scalarDisplayScale(field: VisualizableField | undefined): number {
+  return field?.units === "kg/kg" ? 1000 : 1;
+}
+
+function scalarDisplayUnits(field: VisualizableField | undefined): string {
+  return field?.units === "kg/kg" ? "g/kg" : (field?.units ?? "");
+}
+
+function formatFieldMaybeNumber(
+  value: number | null,
+  field: VisualizableField | undefined,
+): string {
+  return formatMaybeNumber(
+    value === null ? null : value * scalarDisplayScale(field),
+    scalarDisplayUnits(field),
+  );
+}
+
+function formatMixingRatio(value: number | null): string {
+  return formatScientific(value === null ? null : value * 1000, "g/kg");
+}
+
 function formatNumber(value: number | null, units: string): string {
   if (value === null) return "Unavailable";
   const formatted = Number(value.toFixed(3)).toLocaleString();
@@ -14800,6 +14352,15 @@ function formatTimeValue(value: number | string | null): string {
   if (value === null) return "Time unavailable";
   if (typeof value === "number") return `${value.toLocaleString()} s`;
   return value;
+}
+
+function formatClockTime(value: number | string | null): string {
+  if (typeof value !== "number" || !Number.isFinite(value)) return formatTimeValue(value);
+  const totalSeconds = Math.max(0, Math.round(value));
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+  return [hours, minutes, seconds].map((part) => String(part).padStart(2, "0")).join(":");
 }
 
 function runIdFromPackage(dryRun: DryRunResponse): string {
@@ -14851,9 +14412,8 @@ function verticalCoordinateUnit(pointCloud: PointCloudResponse | null): string |
 }
 
 function pointCloudFieldSummary(pointCloud: PointCloudResponse): string {
-  const units = pointCloud.field.units ?? "";
-  const maxValue = formatMaybeNumber(pointCloud.stats.field_max_value, units);
-  const threshold = formatScientific(pointCloud.selection.threshold, units);
+  const maxValue = formatFieldMaybeNumber(pointCloud.stats.field_max_value, pointCloud.field);
+  const threshold = formatFieldMaybeNumber(pointCloud.selection.threshold, pointCloud.field);
   return `Current field max: ${maxValue}. Visible points above ${threshold}: ${pointCloud.stats.source_count.toLocaleString()}.`;
 }
 
@@ -14861,14 +14421,8 @@ function emptyPointCloudStatus(
   pointCloud: PointCloudResponse,
   selectedEncoding: ThreeDScalarEncoding,
 ): string {
-  const maxValue = formatMaybeNumber(
-    pointCloud.stats.field_max_value,
-    selectedEncoding.field.units ?? "",
-  );
-  const threshold = formatScientific(
-    pointCloud.selection.threshold,
-    selectedEncoding.field.units ?? "",
-  );
+  const maxValue = formatFieldMaybeNumber(pointCloud.stats.field_max_value, selectedEncoding.field);
+  const threshold = formatFieldMaybeNumber(pointCloud.selection.threshold, selectedEncoding.field);
   return `${selectedEncoding.field.display_name} max is ${maxValue}; no points are above ${threshold}`;
 }
 
@@ -14878,7 +14432,7 @@ function maxPointLocationLabel(pointCloud: PointCloudResponse | null): string {
   const units = verticalCoordinateUnit(pointCloud) ?? "";
   return `x ${formatCompactNumber(location.x)}, y ${formatCompactNumber(location.y)}, z ${formatCompactNumber(
     location.z,
-  )}${units ? ` ${units}` : ""}, value ${formatCompactNumber(location.value)}`;
+  )}${units ? ` ${units}` : ""}, value ${formatFieldMaybeNumber(location.value, pointCloud?.field)}`;
 }
 
 function heatmapScaleClass(field: VisualizableField): string {
@@ -14948,14 +14502,14 @@ function sliceLegendMinimum(slice: SliceResponse): string {
   if (slice.field.raw_field_name === "dbz" || slice.field.canonical_field_name === "reflectivity") {
     return "0 dBZ";
   }
-  return formatMaybeNumber(slice.stats.min, slice.field.units);
+  return formatFieldMaybeNumber(slice.stats.min, slice.field);
 }
 
 function sliceLegendMaximum(slice: SliceResponse): string {
   if (slice.field.raw_field_name === "dbz" || slice.field.canonical_field_name === "reflectivity") {
     return "60+ dBZ";
   }
-  return formatMaybeNumber(slice.stats.max, slice.field.units);
+  return formatFieldMaybeNumber(slice.stats.max, slice.field);
 }
 
 function radarReflectivityBackground(dbz: number): string {

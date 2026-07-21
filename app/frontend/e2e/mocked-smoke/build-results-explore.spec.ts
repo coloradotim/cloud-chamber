@@ -539,6 +539,7 @@ async function mockTradeCumulusWorld(page: Parameters<typeof mockCloudChamberApi
 
 test.describe("mocked smoke: Build, Results, Explore path", () => {
   test.beforeEach(async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 });
     await mockCloudChamberApis(page);
     await page.route("**/api/comparisons/trade-cumulus-moisture-v1", (route) =>
       route.fulfill({ status: 404, contentType: "application/json", body: "{}" }),
@@ -578,15 +579,13 @@ test.describe("mocked smoke: Build, Results, Explore path", () => {
       .getByLabel("Canonical BOMEX Baseline Simulation")
       .getByRole("button", { name: "Explore" })
       .click();
-    await expect(
-      page.getByRole("heading", { name: "Trade Cumulus / Canonical BOMEX Baseline" }),
-    ).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Canonical BOMEX Baseline" })).toBeVisible();
     await expect(page.getByRole("button", { name: "Back to Trade Cumulus" })).toBeVisible();
     await expect(page.getByLabel("Canonical BOMEX Baseline workspace")).toBeVisible();
     await expect(page.getByLabel("True 3-D scalar field viewer")).toBeVisible();
     await expect(page.getByRole("slider", { name: "Saved output time" })).toBeVisible();
     await expect(page.getByRole("complementary", { name: "Explore inspector" })).toBeVisible();
-    await expect(page.getByText("Cloud formed in this result")).toBeVisible();
+    await expect(page.getByText("Cloud formed")).toBeVisible();
     await expect(page.getByText("Deep convection not detected")).toHaveCount(0);
     await expect(page.getByRole("heading", { name: "Field Slice" })).toBeVisible({
       timeout: 12_000,
@@ -598,14 +597,12 @@ test.describe("mocked smoke: Build, Results, Explore path", () => {
     await page.getByRole("button", { name: "Previous" }).click();
     await page.getByLabel("Updraft Lens slice position").fill("3");
     await expect(page.getByLabel("Updraft Lens slice position")).toHaveValue("3");
-    await page.getByRole("button", { name: "Science" }).click();
-    await expect(page.getByRole("heading", { name: "Science at this time" })).toBeVisible();
-    await page.getByRole("button", { name: "Details" }).click();
+    await expect(page.getByRole("heading", { name: "What am I seeing?" })).toBeVisible();
     await expect(page.getByRole("heading", { name: "Simulation details" })).toBeVisible();
     await page.getByRole("button", { name: "Collapse inspector" }).click();
     await expect(page.getByRole("button", { name: "Open inspector" })).toBeVisible();
     await page.getByRole("button", { name: "Open inspector" }).click();
-    await expect(page.getByRole("heading", { name: "Simulation details" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "What am I seeing?" })).toBeVisible();
     await expect(page.getByRole("button", { name: "Compare" })).toHaveCount(0);
     await page.getByRole("button", { name: "Back to Trade Cumulus" }).click();
 
@@ -942,19 +939,6 @@ test.describe("mocked smoke: Build, Results, Explore path", () => {
     await expect(baselineControls).toContainText("Camera looking along the x axis");
     await expect(moreMoistureControls).toContainText("Camera ready");
 
-    await page.setViewportSize({ width: 390, height: 844 });
-    await expect(simulations.nth(0)).toBeVisible();
-    await expect(simulations.nth(1)).toBeVisible();
-    const mobileLayout = await simulations.evaluateAll((cards) => {
-      const first = cards[0].getBoundingClientRect();
-      const second = cards[1].getBoundingClientRect();
-      return {
-        stacked: second.top >= first.bottom,
-        fitsViewport: document.documentElement.scrollWidth <= document.documentElement.clientWidth,
-      };
-    });
-    expect(mobileLayout).toEqual({ stacked: true, fitsViewport: true });
-
     await page.setViewportSize({ width: 1440, height: 1000 });
     await simulations.nth(1).getByRole("button", { name: "Open More Moisture in Explore" }).click();
     await expect(
@@ -1068,21 +1052,6 @@ test.describe("mocked smoke: Build, Results, Explore path", () => {
     await expect(page.getByLabel("Integrated Explore workspace")).toBeVisible();
   });
 
-  test("Results notebook remains card-first on mobile", async ({ page }) => {
-    await page.setViewportSize({ width: 390, height: 844 });
-    await gotoResults(page);
-
-    await expect(page.getByRole("heading", { name: "Experiment Notebook" })).toBeVisible();
-    const resultsList = page.getByLabel("Results list");
-    await expect(resultsList).toBeVisible();
-    await expect(page.getByText("Baseline Shallow Cumulus — Quick Look").first()).toBeVisible();
-    await expect(
-      resultsList.getByText(/Cloud water formed in the validated reference baseline/i),
-    ).toBeVisible();
-    await expect(page.getByLabel("Result detail")).toBeVisible();
-    await expect(page.getByRole("button", { name: "Open in Explore" }).first()).toBeVisible();
-  });
-
   test("Unified Explore renders cloud context, slice inspector, and explanation", async ({
     page,
   }) => {
@@ -1105,8 +1074,6 @@ test.describe("mocked smoke: Build, Results, Explore path", () => {
     await expect(page.getByRole("heading", { name: "Field Slice" })).toBeVisible();
     await expect(page.getByText(/Horizontal layer at z = /i).first()).toBeVisible();
     await expect(page.getByLabel("Slice position")).toBeVisible();
-    await expect(page.getByRole("button", { name: /move down/i })).toBeVisible();
-    await expect(page.getByRole("button", { name: /move up/i })).toBeVisible();
     const heatmap = page.getByRole("img", { name: /heatmap/i });
     await expect(heatmap).toBeVisible();
     await expect(page.getByTestId("slice-cloud-boundary")).toBeVisible();
@@ -1117,6 +1084,10 @@ test.describe("mocked smoke: Build, Results, Explore path", () => {
       return {
         declaredAspect: Number(element.getAttribute("data-domain-aspect")),
         renderedAspect: bounds.width / bounds.height,
+        renderedWidth: bounds.width,
+        renderedHeight: bounds.height,
+        contentFits:
+          element.scrollWidth <= element.clientWidth && element.scrollHeight <= element.clientHeight,
         gridGap: grid ? getComputedStyle(grid).gap : null,
         rowGap: row ? getComputedStyle(row).gap : null,
         padding: getComputedStyle(element).padding,
@@ -1125,6 +1096,9 @@ test.describe("mocked smoke: Build, Results, Explore path", () => {
     expect(Math.abs(heatmapLayout.declaredAspect - heatmapLayout.renderedAspect)).toBeLessThan(
       0.03,
     );
+    expect(heatmapLayout.renderedWidth).toBeGreaterThan(220);
+    expect(heatmapLayout.renderedHeight).toBeGreaterThan(220);
+    expect(heatmapLayout.contentFits).toBe(true);
     expect(heatmapLayout.gridGap).toBe("0px");
     expect(heatmapLayout.rowGap).toBe("0px");
     expect(heatmapLayout.padding).toBe("0px");
@@ -1136,15 +1110,14 @@ test.describe("mocked smoke: Build, Results, Explore path", () => {
       );
     });
     expect(fieldControlsPrecedeHeatmap).toBe(true);
-    await expect(page.getByText("Cloud formed in this result")).toBeVisible();
+    await expect(page.getByText("Cloud formed")).toBeVisible();
     await expect(page.getByText("Cloud formed here")).toHaveCount(0);
-    await page.getByRole("button", { name: "Science" }).click();
     await page
       .getByRole("button", { name: /inspect .*row 2, column 2/i })
       .first()
       .click();
     await expect(page.getByText(/what happened here/i).first()).toBeVisible();
-    await expect(page.getByText(/selected-point diagnostics loaded/i)).toBeVisible();
+    await expect(page.getByText("Point ready")).toBeVisible();
     await expect(page.getByText(/cloud water appeared locally/i)).toBeVisible();
     await expect(page.getByText(/local max w/i)).toBeVisible();
     await page.getByText("Technical slice details").first().click();
@@ -1152,10 +1125,10 @@ test.describe("mocked smoke: Build, Results, Explore path", () => {
     await expect(page.getByText(/\[\[[\d.,\s]+\]\]/)).not.toBeVisible();
 
     await expect(page.getByRole("button", { name: /reset camera/i })).toBeVisible();
-    await expect(page.getByText(/selected point: x/i)).toBeVisible();
+    await expect(page.getByText(/selected: x/i)).toBeVisible();
   });
 
-  test("Trade Cumulus activates the Updraft Lens with bounded process controls", async ({
+  test("Trade Cumulus activates the Updraft Lens with coordinated rendering controls", async ({
     page,
   }) => {
     const catalog = await page.evaluate(async () =>
@@ -1359,7 +1332,8 @@ test.describe("mocked smoke: Build, Results, Explore path", () => {
     await gotoResults(page);
     await page.getByRole("button", { name: "Open in Explore" }).first().click();
 
-    const ordinaryTimeValue = await page.getByRole("combobox", { name: "Time" }).inputValue();
+    const savedTime = page.getByRole("slider", { name: "Saved output time" });
+    const ordinaryTimeValue = await savedTime.inputValue();
     const viewMode = page.getByLabel("Explore view mode");
     await expect(viewMode).toBeVisible();
     const lensToggle = viewMode.getByRole("button", { name: "Updraft Lens" });
@@ -1389,9 +1363,10 @@ test.describe("mocked smoke: Build, Results, Explore path", () => {
       "true",
     );
     await expect(
-      page.getByText("Updraft Lens slice: Vertical x-z slice at y = 0.05 km", { exact: true }),
+      page.getByText("Updraft Lens: Vertical x-z slice at y = 0.05 km", { exact: true }),
     ).toBeVisible();
     await expect(page.getByLabel("Slice field")).toHaveCount(0);
+    await page.locator("details.true3d-display-control > summary").click();
     const scalarField = page.getByLabel("3-D scalar field", { exact: true });
     await expect(scalarField).toBeVisible();
     await scalarField.selectOption("qv");
@@ -1415,10 +1390,10 @@ test.describe("mocked smoke: Build, Results, Explore path", () => {
     await expect(
       page.getByRole("img", { name: /Updraft Lens horizontal x-y slice/ }),
     ).toBeVisible();
-    await expect(page.getByText(/Updraft Lens slice: Horizontal x-y layer at z =/)).toBeVisible();
+    await expect(page.getByText(/Updraft Lens: Horizontal x-y layer at z =/)).toBeVisible();
     await page.getByRole("button", { name: "Vertical y-z" }).click();
     await expect(page.getByRole("img", { name: /Updraft Lens vertical y-z slice/ })).toBeVisible();
-    await expect(page.getByText(/Updraft Lens slice: Vertical y-z slice at x =/)).toBeVisible();
+    await expect(page.getByText(/Updraft Lens: Vertical y-z slice at x =/)).toBeVisible();
     await page.getByRole("button", { name: "Vertical x-z" }).click();
     await expect(page.getByRole("img", { name: /Updraft Lens vertical x-z slice/ })).toBeVisible();
 
@@ -1426,12 +1401,10 @@ test.describe("mocked smoke: Build, Results, Explore path", () => {
     await expect(page.getByLabel("Updraft Lens slice position")).toHaveValue("3");
     await expect(page.getByRole("img", { name: /y index 3/ })).toBeVisible();
     await expect(
-      page.getByText("Updraft Lens slice: Vertical x-z slice at y = 0.15 km", { exact: true }),
+      page.getByText("Updraft Lens: Vertical x-z slice at y = 0.15 km", { exact: true }),
     ).toBeVisible();
-    await page.getByRole("combobox", { name: "Time" }).selectOption({ label: "3,600 s" });
-    await expect(
-      page.getByText("Vertical x-z slice at y = 0.15 km · w · 3,600 s", { exact: true }),
-    ).toBeVisible();
+    await savedTime.fill("2");
+    await expect(page.getByText("3,600 s · frame 3 of 3", { exact: true })).toBeVisible();
     await expect(inspectorLegend).toContainText("Vertical velocity (w), m/s");
     await expect(inspectorLegend).toContainText(">= 5.0");
 
@@ -1448,10 +1421,28 @@ test.describe("mocked smoke: Build, Results, Explore path", () => {
         () => document.documentElement.scrollWidth <= document.documentElement.clientWidth,
       ),
     ).toBe(true);
-    await viewMode.getByRole("button", { name: "Standard" }).click();
+
+    await page.getByRole("button", { name: "Maximize slice viewer" }).click();
+    const focusedLensFit = await page.locator(".updraft-lens-instrument-body").evaluate((body) => {
+      const svg = body.querySelector<SVGElement>(".updraft-lens-svg");
+      const bodyBounds = body.getBoundingClientRect();
+      const svgBounds = svg?.getBoundingClientRect();
+      return {
+        bodyFits:
+          body.scrollWidth <= body.clientWidth && body.scrollHeight <= body.clientHeight,
+        svgFits:
+          Boolean(svgBounds) &&
+          svgBounds!.right <= bodyBounds.right + 1 &&
+          svgBounds!.bottom <= bodyBounds.bottom + 1,
+      };
+    });
+    expect(focusedLensFit).toEqual({ bodyFits: true, svgFits: true });
+    await page.getByRole("button", { name: "Restore slice viewer" }).click();
+
+    await viewMode.getByRole("button", { name: "Field" }).click();
     await expect(page.getByRole("heading", { name: "Field Slice" })).toBeVisible();
     await expect(page.getByLabel("Slice field")).toBeVisible();
-    await expect(page.getByRole("combobox", { name: "Time" })).toHaveValue(ordinaryTimeValue);
+    await expect(savedTime).toHaveValue(ordinaryTimeValue);
   });
 
   test("Unified Explore plays through saved output times", async ({ page }) => {
@@ -1465,27 +1456,27 @@ test.describe("mocked smoke: Build, Results, Explore path", () => {
     await expect(page.getByLabel("Playback speed")).toHaveValue("1");
     await expect(page.getByRole("slider", { name: "Saved output time" })).toBeVisible();
 
-    await page.locator("#explore-time").selectOption("1");
+    const savedTime = page.getByRole("slider", { name: "Saved output time" });
+    await savedTime.fill("1");
     await page.getByLabel("Playback speed").selectOption("0.5");
     await playbackButton.click();
 
     await expect(playbackButton).toHaveText("Pause time");
     await expect(playbackButton).toHaveAttribute("aria-pressed", "true");
-    await expect(page.getByText(/Animating the coordinated scene and slice at .*/i)).toBeVisible();
-    await expect(page.locator("#explore-time")).toHaveValue("2", { timeout: 4_000 });
+    await expect(savedTime).toHaveValue("2", { timeout: 4_000 });
     await expect(playbackButton).toHaveText("Play time", { timeout: 4_000 });
     await expect(playbackButton).toHaveAttribute("aria-pressed", "false");
-    await expect(page.locator("#explore-time")).toHaveValue("0");
+    await expect(savedTime).toHaveValue("0");
 
-    await page.getByRole("button", { name: "Last frame" }).click();
-    await expect(page.locator("#explore-time")).toHaveValue("2");
+    await page.getByLabel("Key moments").selectOption({ label: "Last frame" });
+    await expect(savedTime).toHaveValue("2");
     await playbackButton.click();
-    await expect(page.locator("#explore-time")).toHaveValue("0", { timeout: 4_000 });
+    await expect(savedTime).toHaveValue("0", { timeout: 4_000 });
     await expect(playbackButton).toHaveText("Play time");
     await expect(playbackButton).toHaveAttribute("aria-pressed", "false");
   });
 
-  test("Explore process evidence offers useful modes and moves unsupported modes secondary", async ({
+  test("Explore keeps current context primary and persists notes below the viewers", async ({
     page,
   }) => {
     await gotoResults(page);
@@ -1494,25 +1485,19 @@ test.describe("mocked smoke: Build, Results, Explore path", () => {
     await expect(page.getByLabel("Integrated Explore workspace")).toBeVisible({
       timeout: 10_000,
     });
-    await page.getByRole("button", { name: "Science" }).click();
-    await page.getByText("Process evidence").click();
+    await expect(page.getByRole("heading", { name: "What am I seeing?" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Science" })).toHaveCount(0);
+    await expect(page.getByText("Process evidence")).toHaveCount(0);
 
-    const processMode = page.getByLabel("Process mode");
-    await expect(processMode).toBeVisible();
-    await expect(processMode.locator("option", { hasText: "Thermal Fate summary" })).toHaveCount(1);
-    await expect(processMode.locator("option", { hasText: "Cloud Water" })).toHaveCount(1);
-    await expect(processMode.locator("option", { hasText: "Updrafts" })).toHaveCount(1);
-    await expect(processMode.locator("option", { hasText: "Moisture" })).toHaveCount(0);
-    await expect(processMode.locator("option", { hasText: "Buoyancy" })).toHaveCount(0);
-    await expect(processMode.locator("option", { hasText: "Deep Breakthrough" })).toHaveCount(0);
-    await expect(processMode.locator("option", { hasText: "Precipitation Feedback" })).toHaveCount(
-      0,
-    );
-
-    await page.getByText("Not available for this result").click();
-    await expect(page.getByText("Moisture / Saturation", { exact: true })).toBeVisible();
-    await expect(page.getByText("Deep Breakthrough", { exact: true })).toBeVisible();
-    await expect(page.getByText(/missing required CM1 fields/i)).toBeVisible();
+    const notebook = page.getByLabel("Simulation notebook", { exact: true });
+    await notebook.scrollIntoViewIfNeeded();
+    const notes = notebook.getByRole("textbox", { name: "Simulation notes" });
+    await notes.fill("Watch the western cloud turret.");
+    await notebook.getByRole("button", { name: "Save note" }).click();
+    await expect(notebook.getByText("Note saved")).toBeVisible();
+    await expect(notes).toHaveValue("Watch the western cloud turret.");
+    await expect(page.getByRole("heading", { name: "Simulation details" })).toBeVisible();
+    await expect(page.getByText("Visualization details")).toBeVisible();
   });
 
   test("Results to Explore loads cloud-forming qc and w fields", async ({ page }) => {
@@ -1546,6 +1531,7 @@ test.describe("mocked smoke: Build, Results, Explore path", () => {
     await expect(page.getByText(/cloud-water point layer loaded/i).first()).toBeVisible({
       timeout: 12_000,
     });
+    await page.locator("details.true3d-display-control > summary").click();
     const threeDField = page.locator("#explore-3d-field");
     await expect(threeDField).toBeVisible();
     await expect(threeDField.locator("option", { hasText: "qc - Cloud water" })).toHaveCount(1);
@@ -1597,7 +1583,7 @@ test.describe("mocked smoke: Build, Results, Explore path", () => {
     await expect(
       page.getByText(/No cloud water formed in this result; vertical velocity is available/i),
     ).toBeVisible();
-    await expect(page.getByText("No cloud formed in this result")).toBeVisible();
+    await expect(page.getByText(/For this no-cloud result, use vertical velocity/)).toBeVisible();
     await expect(page.getByText("No cloud formed here")).toHaveCount(0);
 
     await expect(page.getByText(/slice synced/i).first()).toBeVisible({ timeout: 10_000 });
@@ -1670,10 +1656,10 @@ test.describe("mocked smoke: Build, Results, Explore path", () => {
     await expect(page.getByRole("complementary", { name: "Explore inspector" })).toBeVisible();
   });
 
-  test("Explore narrow desktop keeps visualization and inspector ahead of technical details", async ({
+  test("Explore desktop cockpit prioritizes viewers and supports either maximized view", async ({
     page,
   }) => {
-    await page.setViewportSize({ width: 1024, height: 768 });
+    await page.setViewportSize({ width: 1440, height: 900 });
     await gotoResults(page);
     await page.getByRole("button", { name: "Open in Explore" }).first().click();
 
@@ -1684,28 +1670,62 @@ test.describe("mocked smoke: Build, Results, Explore path", () => {
     const heatmap = page.getByRole("img", { name: /heatmap/i });
     await expect(heatmap).toBeVisible({ timeout: 10_000 });
 
-    const heatmapPrecedesTechnicalDetails = await heatmap.evaluate((element) => {
-      const technicalSummary = Array.from(document.querySelectorAll("summary")).find((summary) =>
-        summary.textContent?.includes("Technical slice details"),
-      );
-      return Boolean(
-        technicalSummary &&
-        element.compareDocumentPosition(technicalSummary) & Node.DOCUMENT_POSITION_FOLLOWING,
-      );
-    });
-    expect(heatmapPrecedesTechnicalDetails).toBe(true);
-
     const scene = page.getByLabel("True 3-D scalar field viewer");
-    const explanation = page.getByRole("complementary", { name: "Explore inspector" });
+    const slice = page.getByLabel("Field Slice");
+    const context = page.getByRole("complementary", { name: "Explore inspector" });
+    const notebook = page.getByLabel("Simulation notebook and details");
     await expect(scene).toBeVisible({ timeout: 12_000 });
-    await expect(explanation).toBeVisible();
-    await expect(explanation.getByRole("button", { name: "Explain" })).toHaveAttribute(
-      "aria-pressed",
-      "true",
+    await expect(slice).toBeVisible();
+    await expect(context).toBeVisible();
+
+    const cockpitGeometry = await page.evaluate(() => {
+      const rect = (selector: string) => document.querySelector(selector)?.getBoundingClientRect();
+      const sliceControls = document.querySelector<HTMLElement>(".explore-control-card-slice");
+      const timeline = document.querySelector<HTMLElement>(".explore-control-card-time");
+      const notebookRegion = document.querySelector<HTMLElement>(".explore-secondary-content");
+      const sceneRegion = document.querySelector<HTMLElement>(".true3d-viewer");
+      return {
+        documentFits: document.documentElement.scrollWidth <= document.documentElement.clientWidth,
+        sliceControlsFit:
+          Boolean(sliceControls) &&
+          sliceControls!.scrollWidth <= sliceControls!.clientWidth &&
+          sliceControls!.scrollHeight <= sliceControls!.clientHeight,
+        timelineFits:
+          Boolean(timeline) &&
+          timeline!.scrollWidth <= timeline!.clientWidth &&
+          timeline!.scrollHeight <= timeline!.clientHeight,
+        notebookBelowScene:
+          Boolean(notebookRegion && sceneRegion) &&
+          notebookRegion!.getBoundingClientRect().top >= sceneRegion!.getBoundingClientRect().bottom,
+        shell: rect(".visualizer-shell")?.width ?? 0,
+      };
+    });
+    expect(cockpitGeometry).toEqual({
+      documentFits: true,
+      sliceControlsFit: true,
+      timelineFits: true,
+      notebookBelowScene: true,
+      shell: expect.any(Number),
+    });
+    expect(cockpitGeometry.shell).toBeGreaterThan(1200);
+
+    await page.getByRole("button", { name: "Maximize 3-D viewer" }).click();
+    await expect(page.getByLabel("Integrated Explore workspace")).toHaveClass(
+      /visualizer-shell-focused-scene/,
     );
-    await expect(explanation.getByRole("button", { name: "Details" })).toHaveAttribute(
-      "aria-pressed",
-      "false",
+    await expect(page.getByRole("button", { name: "Restore 3-D viewer" })).toBeVisible();
+    await page.getByRole("button", { name: "Restore 3-D viewer" }).click();
+
+    await page.getByRole("button", { name: "Maximize slice viewer" }).click();
+    await expect(page.getByLabel("Integrated Explore workspace")).toHaveClass(
+      /visualizer-shell-focused-slice/,
     );
+    await expect(page.getByRole("button", { name: "Restore slice viewer" })).toBeVisible();
+    const focusedHeatmap = page.getByRole("img", { name: /heatmap/i });
+    const focusedHeatmapBox = await focusedHeatmap.boundingBox();
+    expect(focusedHeatmapBox?.width ?? 0).toBeGreaterThan(280);
+    expect(focusedHeatmapBox?.height ?? 0).toBeGreaterThan(280);
+    await page.getByRole("button", { name: "Restore slice viewer" }).click();
+    await expect(notebook).toBeAttached();
   });
 });

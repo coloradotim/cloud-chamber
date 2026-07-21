@@ -384,13 +384,15 @@ function SimulationCard({
           <p className="eyebrow">{roleLabel(simulation.role)}</p>
           <h3>{simulation.display_name}</h3>
         </div>
-        <div className="simulation-state-row">
-          <span className={`technical-state ${simulation.technical_state}`}>
-            {technicalStateLabel(simulation.technical_state)}
-          </span>
-        </div>
+        {simulation.technical_state !== "available" && (
+          <div className="simulation-state-row">
+            <span className={`technical-state ${simulation.technical_state}`}>
+              {technicalStateLabel(simulation.technical_state)}
+            </span>
+          </div>
+        )}
       </header>
-      <p>{simulation.technical_state_message}</p>
+      {simulation.technical_state !== "available" && <p>{simulation.technical_state_message}</p>}
       {simulation.parent_simulation_id && (
         <p className="simulation-relationship">
           Parent: {relationshipName(simulation.parent_simulation_id)}
@@ -495,11 +497,13 @@ function ComparisonCard({
           <p className="eyebrow">Featured Comparison</p>
           <h3>{comparison.display_name}</h3>
         </div>
-        <span className={`technical-state ${comparison.availability_state}`}>
-          {technicalStateLabel(comparison.availability_state)}
-        </span>
+        {comparison.availability_state !== "available" && (
+          <span className={`technical-state ${comparison.availability_state}`}>
+            {technicalStateLabel(comparison.availability_state)}
+          </span>
+        )}
       </header>
-      <p>{comparison.availability_message}</p>
+      {comparison.availability_state !== "available" && <p>{comparison.availability_message}</p>}
       <button type="button" disabled={!comparison.open_available} onClick={onOpen}>
         Open Comparison
       </button>

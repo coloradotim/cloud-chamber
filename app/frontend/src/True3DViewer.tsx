@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 
@@ -101,6 +101,10 @@ type True3DViewerProps = {
   windArrowDomainFraction?: number;
   updraftLensFrame?: UpdraftLensFrame | null;
   showUpdraftLensLegend?: boolean;
+  compactWorkspace?: boolean;
+  compactDisplayControls?: ReactNode;
+  maximized?: boolean;
+  onToggleMaximize?: () => void;
 };
 
 type SceneRefs = {
@@ -165,6 +169,10 @@ export function True3DViewer({
   windArrowDomainFraction = 0.08,
   updraftLensFrame = null,
   showUpdraftLensLegend = true,
+  compactWorkspace = false,
+  compactDisplayControls,
+  maximized = false,
+  onToggleMaximize,
 }: True3DViewerProps) {
   const mountRef = useRef<HTMLDivElement | null>(null);
   const axisLabelLayerRef = useRef<HTMLDivElement | null>(null);
@@ -347,14 +355,20 @@ export function True3DViewer({
   ]);
 
   return (
-    <section className="true3d-viewer" aria-label="True 3-D scalar field viewer">
-      <div className="true3d-scene-header">
-        <div>
-          <p className="eyebrow">True 3-D scene</p>
-          <h3>{resultName}</h3>
+    <section
+      className={`true3d-viewer${compactWorkspace ? " true3d-viewer-compact" : ""}`}
+      aria-label="True 3-D scalar field viewer"
+      data-result-name={resultName}
+    >
+      {!compactWorkspace && (
+        <div className="true3d-scene-header">
+          <div>
+            <p className="eyebrow">True 3-D scene</p>
+            <h3>{resultName}</h3>
+          </div>
+          <p className="state-chip">{status}</p>
         </div>
-        <p className="state-chip">{status}</p>
-      </div>
+      )}
 
       <div className={`true3d-scene-frame${tallViewport ? " true3d-scene-frame-tall" : ""}`}>
         <div
@@ -363,11 +377,18 @@ export function True3DViewer({
           role="img"
           aria-label="Interactive Three.js scene showing a CM1 scalar field, domain bounds, slice plane, and selected point"
         />
-        <div className="true3d-scene-label true3d-scene-label-context">
-          <strong>{fieldLabel}</strong>
-          <span>{sceneTimeLabel || selectedTimeLabel}</span>
-          <span>Threshold {thresholdLabel}</span>
-        </div>
+        {compactWorkspace && (
+          <p className="sr-only" role="status">
+            {status}
+          </p>
+        )}
+        {!compactWorkspace && (
+          <div className="true3d-scene-label true3d-scene-label-context">
+            <strong>{fieldLabel}</strong>
+            <span>{sceneTimeLabel || selectedTimeLabel}</span>
+            <span>Threshold {thresholdLabel}</span>
+          </div>
+        )}
         {pointCloud && (
           <div className="true3d-field-legend" aria-label="3-D field color legend">
             <span>{pointCloud.field.display_name}</span>
@@ -382,7 +403,7 @@ export function True3DViewer({
             </div>
           </div>
         )}
-        {showWindVectors && windVectors.length > 0 && (
+        {!compactWorkspace && showWindVectors && windVectors.length > 0 && (
           <div className="true3d-wind-legend" aria-label="Horizontal wind overlay legend">
             <strong>{windMode === "perturbation" ? "Local departures" : "Total wind"}</strong>
             <span>{windReferenceMps.toFixed(1)} m/s reference = 8% domain width</span>
@@ -406,20 +427,50 @@ export function True3DViewer({
             </span>
           ))}
         </div>
-        {updraftLensFrame ? (
-          <p className="true3d-slice-label true3d-slice-label-updraft-lens">
-            Updraft Lens slice: {activeSliceLabel}
-          </p>
+        {compactWorkspace ? (
+          <div className="true3d-context-stack" aria-label="3-D scene context">
+            {updraftLensFrame ? (
+              <p className="true3d-slice-label true3d-slice-label-updraft-lens">
+                Updraft Lens: {activeSliceLabel}
+              </p>
+            ) : (
+              showSlicePlane &&
+              activeSlice && <p className="true3d-slice-label">Slice: {activeSliceLabel}</p>
+            )}
+            {selectedPoint && (
+              <p className="true3d-selected-point-label">
+                Selected: x {formatCoordinate(selectedPoint.x, bounds.x.units)}, y{" "}
+                {formatCoordinate(selectedPoint.y, bounds.y.units)}, z{" "}
+                {formatCoordinate(selectedPoint.z, bounds.z.units)}
+              </p>
+            )}
+            {showWindVectors && windVectors.length > 0 && (
+              <div className="true3d-wind-legend" aria-label="Horizontal wind overlay legend">
+                <strong>
+                  {windMode === "perturbation" ? "Local departures" : "Total wind"}
+                </strong>
+                <span>{windReferenceMps.toFixed(1)} m/s reference</span>
+              </div>
+            )}
+          </div>
         ) : (
-          showSlicePlane &&
-          activeSlice && <p className="true3d-slice-label">Slice plane: {activeSliceLabel}</p>
-        )}
-        {selectedPoint && (
-          <p className="true3d-selected-point-label">
-            Selected point: x {formatCoordinate(selectedPoint.x, bounds.x.units)}, y{" "}
-            {formatCoordinate(selectedPoint.y, bounds.y.units)}, z{" "}
-            {formatCoordinate(selectedPoint.z, bounds.z.units)}
-          </p>
+          <>
+            {updraftLensFrame ? (
+              <p className="true3d-slice-label true3d-slice-label-updraft-lens">
+                Updraft Lens slice: {activeSliceLabel}
+              </p>
+            ) : (
+              showSlicePlane &&
+              activeSlice && <p className="true3d-slice-label">Slice plane: {activeSliceLabel}</p>
+            )}
+            {selectedPoint && (
+              <p className="true3d-selected-point-label">
+                Selected point: x {formatCoordinate(selectedPoint.x, bounds.x.units)}, y{" "}
+                {formatCoordinate(selectedPoint.y, bounds.y.units)}, z{" "}
+                {formatCoordinate(selectedPoint.z, bounds.z.units)}
+              </p>
+            )}
+          </>
         )}
         {renderError && (
           <p className="true3d-render-error" role="status">
@@ -435,53 +486,101 @@ export function True3DViewer({
         )}
       </div>
 
-      <div className="true3d-controls" aria-label="3-D camera controls">
-        <div className="true3d-control-section">
-          <span>Camera</span>
-          <div className="true3d-preset-buttons" aria-label="3-D camera presets">
-            <button type="button" onClick={() => setCameraPreset("overview")}>
-              Overview
+      {compactWorkspace ? (
+        <div className="true3d-controls true3d-controls-compact" aria-label="3-D camera controls">
+          {compactDisplayControls && (
+            <details className="true3d-display-control">
+              <summary>
+                <span>Display</span>
+              </summary>
+              <div className="true3d-display-panel">{compactDisplayControls}</div>
+            </details>
+          )}
+          <label>
+            <span className="sr-only">Camera view</span>
+            <select
+              aria-label="Camera view"
+              defaultValue="overview"
+              onChange={(event) => setCameraPreset(event.target.value as CameraPreset)}
+            >
+              <option value="overview">Overview</option>
+              <option value="top_down_xy">Top-down x-y</option>
+              <option value="look_along_x">Look along x</option>
+              <option value="look_along_y">Look along y</option>
+            </select>
+          </label>
+          <button
+            type="button"
+            className="true3d-icon-command"
+            aria-label="Reset camera"
+            title="Reset camera"
+            onClick={resetCamera}
+          >
+            <span aria-hidden="true">{"\u21ba"}</span>
+          </button>
+          {onToggleMaximize && (
+            <button
+              type="button"
+              className="viewer-maximize-button"
+              aria-label={maximized ? "Restore 3-D viewer" : "Maximize 3-D viewer"}
+              title={maximized ? "Restore 3-D viewer" : "Maximize 3-D viewer"}
+              onClick={onToggleMaximize}
+            >
+              <span aria-hidden="true">{"\u26f6"}</span>
             </button>
-            <button type="button" onClick={() => setCameraPreset("top_down_xy")}>
-              Top-down x-y
-            </button>
-            <button type="button" onClick={() => setCameraPreset("look_along_x")}>
-              Look along x
-            </button>
-            <button type="button" onClick={() => setCameraPreset("look_along_y")}>
-              Look along y
-            </button>
-          </div>
+          )}
         </div>
-        <div className="true3d-control-section">
-          <span>View</span>
-          <div className="true3d-preset-buttons" aria-label="3-D view actions">
-            <button type="button" onClick={() => zoomCamera("in")}>
-              Zoom in
-            </button>
-            <button type="button" onClick={() => zoomCamera("out")}>
-              Zoom out
-            </button>
-            <button type="button" onClick={() => moveCameraVertical("up")}>
-              Pan view up
-            </button>
-            <button type="button" onClick={() => moveCameraVertical("down")}>
-              Pan view down
-            </button>
-            <button type="button" onClick={resetCamera}>
-              Reset camera
-            </button>
-            <button type="button" onClick={toggleViewportHeight}>
-              {tallViewport ? "Standard viewport" : "Taller viewport"}
-            </button>
+      ) : (
+        <>
+          <div className="true3d-controls" aria-label="3-D camera controls">
+            <div className="true3d-control-section">
+              <span>Camera</span>
+              <div className="true3d-preset-buttons" aria-label="3-D camera presets">
+                <button type="button" onClick={() => setCameraPreset("overview")}>
+                  Overview
+                </button>
+                <button type="button" onClick={() => setCameraPreset("top_down_xy")}>
+                  Top-down x-y
+                </button>
+                <button type="button" onClick={() => setCameraPreset("look_along_x")}>
+                  Look along x
+                </button>
+                <button type="button" onClick={() => setCameraPreset("look_along_y")}>
+                  Look along y
+                </button>
+              </div>
+            </div>
+            <div className="true3d-control-section">
+              <span>View</span>
+              <div className="true3d-preset-buttons" aria-label="3-D view actions">
+                <button type="button" onClick={() => zoomCamera("in")}>
+                  Zoom in
+                </button>
+                <button type="button" onClick={() => zoomCamera("out")}>
+                  Zoom out
+                </button>
+                <button type="button" onClick={() => moveCameraVertical("up")}>
+                  Pan view up
+                </button>
+                <button type="button" onClick={() => moveCameraVertical("down")}>
+                  Pan view down
+                </button>
+                <button type="button" onClick={resetCamera}>
+                  Reset camera
+                </button>
+                <button type="button" onClick={toggleViewportHeight}>
+                  {tallViewport ? "Standard viewport" : "Taller viewport"}
+                </button>
+              </div>
+            </div>
+            <p>{cameraStatus}. Drag to orbit, right-drag to pan, scroll to zoom.</p>
           </div>
-        </div>
-        <p>{cameraStatus}. Drag to orbit, right-drag to pan, scroll to zoom.</p>
-      </div>
-      <p className="true3d-provenance" aria-label="3-D provenance labels">
-        {valueChannelLabel} CM1-derived visualization-ready scalar points and native-grid slice
-        plane; rendered with direct Three.js. {provenanceLabel}
-      </p>
+          <p className="true3d-provenance" aria-label="3-D provenance labels">
+            {valueChannelLabel} CM1-derived visualization-ready scalar points and native-grid slice
+            plane; rendered with direct Three.js. {provenanceLabel}
+          </p>
+        </>
+      )}
     </section>
   );
 }
@@ -976,12 +1075,16 @@ function scalarRampKey(fieldName: string): string {
 
 function fieldLegendMinimum(pointCloud: PointCloudResponse): string {
   if (pointCloud.field.raw_field_name === "dbz") return "0 dBZ";
-  return formatValue(pointCloud.stats.min_value, pointCloud.field.units);
+  return formatFieldLegendValue(pointCloud.stats.min_value, pointCloud.field.units);
 }
 
 function fieldLegendMaximum(pointCloud: PointCloudResponse): string {
   if (pointCloud.field.raw_field_name === "dbz") return "60+ dBZ";
-  return formatValue(pointCloud.stats.max_value, pointCloud.field.units);
+  return formatFieldLegendValue(pointCloud.stats.max_value, pointCloud.field.units);
+}
+
+function formatFieldLegendValue(value: number | null, units: string | null): string {
+  return units === "kg/kg" ? formatValue(value === null ? null : value * 1000, "g/kg") : formatValue(value, units);
 }
 
 function slicePlane(slice: SliceResponse, label: string, bounds: SceneBounds): THREE.Group {

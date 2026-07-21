@@ -18,21 +18,19 @@ describe("IntegratedExploreWorkspace", () => {
       </IntegratedExploreWorkspace>,
     );
 
-    expect(
-      screen.getByRole("heading", { name: "Trade Cumulus / Canonical BOMEX Baseline" }),
-    ).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Canonical BOMEX Baseline" })).toBeInTheDocument();
+    expect(screen.queryByText("Trade Cumulus / Canonical BOMEX Baseline")).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Back to Trade Cumulus" }));
     fireEvent.click(screen.getByRole("button", { name: "Compare" }));
     expect(onBack).toHaveBeenCalledOnce();
     expect(onCompare).toHaveBeenCalledOnce();
   });
 
-  it("switches inspector sections and preserves the active section across collapse", () => {
+  it("keeps current context primary and places notes and details in secondary content", () => {
     render(
       <ExploreInspector
         sections={{
           explain: <p>Authored explanation</p>,
-          science: <p>Shallow-cloud evidence</p>,
           notes: <p>No note recorded</p>,
           details: <p>Technical provenance</p>,
         }}
@@ -40,11 +38,14 @@ describe("IntegratedExploreWorkspace", () => {
     );
 
     expect(screen.getByText("Authored explanation")).toBeVisible();
-    fireEvent.click(screen.getByRole("button", { name: "Science" }));
-    expect(screen.getByText("Shallow-cloud evidence")).toBeVisible();
+    expect(screen.getByLabelText("Simulation notebook")).toHaveTextContent("No note recorded");
+    expect(screen.getByLabelText("Simulation technical details")).toHaveTextContent(
+      "Technical provenance",
+    );
     fireEvent.click(screen.getByRole("button", { name: "Collapse inspector" }));
     expect(screen.getByLabelText("Explore inspector")).toHaveAttribute("data-collapsed", "true");
+    expect(screen.getByLabelText("Simulation notebook")).toBeVisible();
     fireEvent.click(screen.getByRole("button", { name: "Open inspector" }));
-    expect(screen.getByText("Shallow-cloud evidence")).toBeVisible();
+    expect(screen.getByText("Authored explanation")).toBeVisible();
   });
 });
