@@ -2,6 +2,9 @@
 
 Status: one source-locked CM1 process completed and evaluated.
 
+Review correction status: the exact preserved output was reevaluated offline with the
+hash-pinned v2 evaluator. No CM1 process or run manager was started.
+
 Final disposition: `advance_as_candidate_world_evidence`
 
 ## Decision and boundary
@@ -53,6 +56,7 @@ centering offset, the pinned CM1 2 s integration step, and 200 s evidence cadenc
 case_id: cm1_r21_1_toy2011_boulder_moist_wave_4000s_v1
 run_id: moist-mountain-wave-toy-1972-20260721T215226Z
 implementation commit: ebdbb528c92c57d3d4a19080b4bddc4820b0bc6a
+offline evaluator commit: 133e4840d9bba9cf0e5199eabc8ae36146ff21d7
 CM1 release: 21.1
 CM1 tag commit: 0f734f64efa89a684963a66d2ac32db67617912b
 CM1 executable SHA-256: 5b7304bb04514ec03cf4d6e604bc0b5df6e8076bd4fb53c4b5cf5ea9184cdfd1
@@ -76,6 +80,25 @@ radiation, aerosol, microphysics lookup, or external-grid file was consumed.
 
 Exactly one full 4,000 s CM1 process ran. No shortened smoke process, tuning process,
 retry, alternate executable, LAN worker, or second process ran.
+
+## Corrected offline reevaluation
+
+The PM/scientific review authorized one evaluator-only correction against the exact
+preserved run. The v2 path verifies the source lock and 30 pinned artifacts before and
+after reading output: both manifests, generated namelist, sounding, terrain record,
+execution preflight, stdout/stderr, stats NetCDF, and all 21 numbered histories. The
+before/after hash maps are identical. The path is pinned to the run ID above, rejects
+any other run, and does not import, construct, or invoke a run manager.
+
+```text
+evidence version: moist_mountain_wave_gate_d_e_v2
+offline evaluator commit: 133e4840d9bba9cf0e5199eabc8ae36146ff21d7
+corrected evidence SHA-256: 4d68ab004ad62ac7bb4d1668743caa67f64ed341f1e025bdbc427fe668af08ad
+original implementation commit retained: ebdbb528c92c57d3d4a19080b4bddc4820b0bc6a
+preserved artifact count: 30
+preserved artifacts unchanged: true
+run manager constructed or invoked: false
+```
 
 ## Generated configuration and audit
 
@@ -123,22 +146,28 @@ criterion rather than replacing it with a new post-run threshold.
    4,000 s at exact 200 s intervals; every required field was finite at every time.
 2. **Terrain, physical-height, and active-top integrity:** passed. Terrain error was
    `9.54e-5 m`, physical-height transform error was `0.0041 m`, minimum scalar spacing
-   was `183.996 m`, and the output top was `25,000.002 m` at every history.
+   was `183.996 m`, and final nominal `zf` and runtime `ztop` were both `25,000.002 m`
+   at every history, agreeing with configured `125 x 200 m = 25,000 m`.
 3. **Initial and upstream clear air:** passed. Initial maximum `ql` was zero. The
    maximum `ql` in the `-100..-60 km`, below-12-km upstream sector was zero at every
    history.
 4. **Interior formation with ascent and saturation:** passed. First condensate above
    `1e-6 kg/kg` appeared at 200 s in one 15-cell component at `x=-7.5..-0.5 km` and
-   `z=3.52..3.87 km`; 12 cells were simultaneously ascending and at least 99% RH.
+   `z=3.52..3.87 km`; 12 of those same first-frame interior cells were simultaneously
+   ascending and at least 99% RH. The first-frame peak itself was at `x=-2.5 km`,
+   `z=3.60 km`, with `w=0.371 m/s` and RH `100.67%`.
 5. **Coherence, persistence, and material peak:** passed. The cloud was coherent for
    every history from 200 through 4,000 s. Peak `ql` reached `6.4445e-4 kg/kg`
    (`0.6445 g/kg`), above the predeclared `0.2 g/kg` material check.
-6. **Descent and evaporation:** passed. At 1,200 s, eight east/downstream cells adjacent
-   to the dominant cloud were clear, descending, and unsaturated; median `w` was
-   `-1.63 m/s` and median RH was 97.9%. At 4,000 s there were 30 such cells, with
-   median `w=-4.18 m/s`, median RH 93.6%, and `ql=0`. Cumulative CM1 condensation was
-   `6.9582e7` mass units and evaporation was `5.9357e7`, so active evaporation was
-   substantial rather than inferred only from a color boundary.
+6. **Descent and evaporation:** passed. The corrected method selects clear cells one
+   scalar-grid cell immediately east of cloud, with `w<0`, RH below one, and `ql` below
+   the locked cloud floor. At 1,200 s it retains 18 cells in 11 connected groups across
+   `x=-5.5..18.5 km`, `z=2.62..4.73 km`; median `w` was `-2.26 m/s`, median RH was
+   96.34%, and `ql=0`. At 4,000 s it retains 30 cells in 15 groups across
+   `x=17.5..27.5 km`, `z=2.38..8.33 km`; median `w=-4.18 m/s`, median RH 93.60%, and
+   `ql=0`. Cumulative CM1 condensation was `6.9582e7` mass units and evaporation was
+   `5.9357e7`, so active evaporation was substantial rather than inferred only from a
+   color boundary.
 7. **Terrain/wave locking:** passed. The early windward component remained tied to the
    mountain. By 1,600 s the dominant component was the lee cloud at `x=14.5..19.5 km`;
    its centroid stayed between 17.2 and 19.1 km through 4,000 s while it grew. It did
@@ -188,7 +217,8 @@ Runtime evidence identities:
 | Stdout | `42a120685c18d29d855cdea5039f54a3530157f2d36497cd41318f1af97fc0cb` |
 | Stderr | `6e8658cbd2bf71044b960ff59b4371a98438c32a7d4cb54ab562294b8cc4f05d` |
 | Stats NetCDF | `46cf824b20ab0c4b00806cd9ec2b0e52833e35d1913e2fa4d9205e12a523ff7a` |
-| Native evaluator evidence | `354b99419cdae3d27374080807f92c2c078b7ec87b1d17cae86b09e017d013d0` |
+| Original v1 evaluator evidence | `354b99419cdae3d27374080807f92c2c078b7ec87b1d17cae86b09e017d013d0` |
+| Corrected v2 offline evaluator evidence | `4d68ab004ad62ac7bb4d1668743caa67f64ed341f1e025bdbc427fe668af08ad` |
 
 ## Native output inventory
 
@@ -258,6 +288,19 @@ alternating vertical-motion pattern.
 
 ## Boundary, top, and startup assessment
 
+- Every history reports final nominal `zf=25,000.002 m` and runtime
+  `ztop=25,000.002 m`; both agree with configured `nz x dz=25,000 m` and the source
+  lock. The evaluator fails closed on disagreement at any time.
+- Actual staggered `u`, `v`, and bottom `w` retain lower-boundary tangency metrics at
+  every history. The initial residual RMS was `0.0284 m/s` with predicted/observed
+  correlation `0.99984`; at 4,000 s RMS was `0.0558 m/s` with correlation `0.99985`.
+  The maximum absolute residual across all histories was `0.3323 m/s`.
+- The native initial upstream profile in the locked `-100..-60 km`, below-12-km
+  sector contains 2,400 cells. Initial `u` ranged from `-3.63` to `35.60 m/s`, with
+  median `25.89 m/s`; `v=0`, and median `w=0`. All 59 calculated layer values of
+  `N^2` were positive, with median `1.056e-4 s^-2` and range
+  `9.64e-6..1.759e-3 s^-2`. Per-time upstream wind summaries are retained through
+  4,000 s.
 - The periodic west/east seam remained clear. No cloud originated in the outer 10 km
   edge sectors or the far-upstream source sector.
 - The first native frame at 0 s had `ql=0` everywhere and maximum RH 94.93%. Cloud
@@ -282,8 +325,11 @@ Both views used red for ascent, blue for descent, and outlined cells for
 broad mountain, a shallow windward streamer, and a substantial but not artificially
 stretched lee-wave cloud. The 4,000 s dominant component spans approximately
 `x=13.5..26.5 km` and `z=2.42..8.45 km`. Browser inspection at desktop size found all
-four canvases correctly proportioned and no console errors. The HTML, JSON, and PNG
-review artifacts remain runtime-only and are not committed.
+four canvases correctly proportioned and no console errors. These temporary diagnostic
+renders were generated outside the application visualization machinery by reading the
+native NetCDF directly; they are not output from the merged Gate C route or any Cloud
+Chamber product surface. The HTML, JSON, and PNG review artifacts remain runtime-only
+and are not committed.
 
 ## Limitations and unresolved questions
 
