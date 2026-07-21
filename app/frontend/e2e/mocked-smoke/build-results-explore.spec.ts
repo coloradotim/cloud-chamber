@@ -219,6 +219,109 @@ const comparisonStory = {
   ],
 };
 
+const worldBaselineSimulation = {
+  simulation_id: "trade_cumulus_canonical_bomex",
+  display_name: "Canonical BOMEX Baseline",
+  role: "reference",
+  world_id: "trade_cumulus",
+  product_slice_id: "trade_cumulus_v1",
+  case_id: "bomex_trade_cumulus_baseline_v0",
+  result_id: comparisonBaselineId,
+  run_id: comparisonBaselineResult.run_id,
+  source_recipe_id: null,
+  parent_simulation_id: null,
+  reference_simulation_id: "trade_cumulus_canonical_bomex",
+  technical_state: "available",
+  technical_state_message: "Completed output is available.",
+  technical_trust_state: "caveated",
+  explore_available: true,
+  compare_suggestions: [],
+  configuration_difference_from_reference: [],
+  lineage_state: "known",
+  created_at: null,
+  completed_at: null,
+};
+
+const worldMoreMoistureSimulation = {
+  ...worldBaselineSimulation,
+  simulation_id: "trade_cumulus_more_moisture",
+  display_name: "More Moisture",
+  role: "variation",
+  result_id: comparisonMoreMoistureId,
+  run_id: comparisonMoreMoistureResult.run_id,
+  parent_simulation_id: "trade_cumulus_canonical_bomex",
+  compare_suggestions: [
+    {
+      comparison_id: "trade_cumulus_moisture_v1",
+      display_name: "More Moisture versus Baseline",
+      target_simulation_id: "trade_cumulus_canonical_bomex",
+    },
+  ],
+  configuration_difference_from_reference: [
+    {
+      path: "run_configuration.surface_moisture_flux_g_g_m_s",
+      label: "Surface moisture supply",
+      category: "atmospheric",
+      left_value: 0.000052,
+      right_value: 0.000078,
+      units: "g/g m/s",
+      material: true,
+    },
+  ],
+};
+
+const tradeCumulusWorld = {
+  world_id: "trade_cumulus",
+  display_name: "Trade Cumulus",
+  status: "mvp_candidate",
+  short_description: "Investigate shallow maritime cumulus and surface moisture supply.",
+  availability_state: "available",
+  availability_message: "Reference, variation, and featured comparison are available.",
+  reference_simulation: worldBaselineSimulation,
+  simulations: [worldBaselineSimulation, worldMoreMoistureSimulation],
+  lab_history: [],
+  featured_comparison: {
+    comparison_id: "trade_cumulus_moisture_v1",
+    display_name: "More Moisture versus Baseline",
+    baseline_simulation_id: "trade_cumulus_canonical_bomex",
+    more_moisture_simulation_id: "trade_cumulus_more_moisture",
+    availability_state: "available",
+    availability_message: "Featured comparison is available.",
+    open_available: true,
+  },
+  lab_summary: {
+    active_run_count: 0,
+    completed_uninspected_run_count: 1,
+    lab_history_count: 0,
+    summary: "1 completed run awaits inspection",
+  },
+  capabilities: {
+    reference_explore: true,
+    featured_comparison: true,
+    lab: true,
+    saved_views: false,
+    ordinary_compare: false,
+  },
+  caveats: [],
+};
+
+const cloudWorldSummary = {
+  world_id: "trade_cumulus",
+  display_name: "Trade Cumulus",
+  status: "mvp_candidate",
+  short_description: tradeCumulusWorld.short_description,
+  reference_simulation_id: "trade_cumulus_canonical_bomex",
+  reference_available: true,
+  simulation_count: 2,
+  saved_view_count: 0,
+  saved_comparison_count: 1,
+  featured_comparison_count: 1,
+  active_run_count: 0,
+  completed_uninspected_run_count: 1,
+  availability_state: "available",
+  availability_message: tradeCumulusWorld.availability_message,
+};
+
 const comparisonUpdraftScale = {
   w_range_min_m_s: -1,
   w_range_max_m_s: 5,
@@ -416,6 +519,24 @@ async function mockTradeCumulusComparison(page: Parameters<typeof mockCloudChamb
   });
 }
 
+async function mockTradeCumulusWorld(page: Parameters<typeof mockCloudChamberApis>[0]) {
+  await mockTradeCumulusComparison(page);
+  await page.route("**/api/worlds", (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify([cloudWorldSummary]),
+    }),
+  );
+  await page.route("**/api/worlds/trade-cumulus", (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify(tradeCumulusWorld),
+    }),
+  );
+}
+
 test.describe("mocked smoke: Build, Results, Explore path", () => {
   test.beforeEach(async ({ page }) => {
     await mockCloudChamberApis(page);
@@ -423,6 +544,68 @@ test.describe("mocked smoke: Build, Results, Explore path", () => {
       route.fulfill({ status: 404, contentType: "application/json", body: "{}" }),
     );
     await gotoApp(page);
+  });
+
+  test("Cloud Worlds completes the World-scoped desktop journey", async ({ page }) => {
+    const browserErrors: string[] = [];
+    const failedRequests: string[] = [];
+    page.on("pageerror", (error) => browserErrors.push(error.message));
+    page.on("console", (message) => {
+      if (message.type() === "error") browserErrors.push(message.text());
+    });
+    page.on("response", (response) => {
+      if (response.status() >= 400) {
+        failedRequests.push(`${response.status()} ${new URL(response.url()).pathname}`);
+      }
+    });
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.unroute("**/api/worlds");
+    await page.unroute("**/api/comparisons/trade-cumulus-moisture-v1");
+    await mockTradeCumulusWorld(page);
+    await gotoApp(page);
+
+    await expect(page.getByRole("heading", { name: "Cloud Worlds" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Trade Cumulus" })).toBeVisible();
+    await page.waitForLoadState("networkidle");
+    failedRequests.length = 0;
+    browserErrors.length = 0;
+    await expect(page.getByRole("navigation", { name: "Cloud Chamber workspace" })).toHaveCount(0);
+    await page.getByRole("button", { name: "Enter Trade Cumulus" }).click();
+
+    await expect(page.getByRole("navigation", { name: "Trade Cumulus sections" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Return to the cloud field" })).toBeVisible();
+    await page.getByRole("button", { name: "Open Canonical BOMEX Baseline" }).click();
+    await expect(page.getByRole("button", { name: "Back to Trade Cumulus" })).toBeVisible();
+    await expect(page.getByLabel("Canonical BOMEX Baseline workspace")).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Field Slice" })).toBeVisible({
+      timeout: 12_000,
+    });
+    await expect(page.getByText("Updraft Lens", { exact: true }).first()).toBeVisible();
+    await page.getByRole("button", { name: "Back to Trade Cumulus" }).click();
+
+    await page.getByRole("button", { name: "Open Comparison" }).click();
+    await expect(
+      page.getByRole("heading", { name: "Trade Cumulus: Baseline and More Moisture" }),
+    ).toBeVisible();
+    await expect(page.getByLabel("More Moisture versus Baseline workspace")).toBeVisible();
+    await page.getByRole("button", { name: "Back to Trade Cumulus" }).click();
+
+    await page.getByRole("button", { name: "Lab", exact: true }).click();
+    await expect(page.getByRole("heading", { name: "Experiment Notebook" })).toBeVisible();
+    const labNav = page.getByRole("navigation", { name: "Trade Cumulus Lab" });
+    await labNav.getByRole("button", { name: "Build" }).click();
+    await expect(
+      page.getByRole("heading", { name: "Build and run a CM1 experiment" }),
+    ).toBeVisible();
+    await labNav.getByRole("button", { name: "Results" }).click();
+    await expect(page.getByRole("heading", { name: "Experiment Notebook" })).toBeVisible();
+
+    const overflow = await page.evaluate(
+      () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
+    );
+    expect(overflow).toBeLessThanOrEqual(0);
+    expect(failedRequests).toEqual([]);
+    expect(browserErrors).toEqual([]);
   });
 
   test("Build exposes the Golden Path scenario and creates a safe dry-run package", async ({
@@ -893,7 +1076,7 @@ test.describe("mocked smoke: Build, Results, Explore path", () => {
       ),
     ).toBeVisible();
     await expect(page.getByLabel("3-D camera controls")).toBeVisible();
-    await expect(page.getByRole("heading", { name: "Inspect the current slice" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Field Slice" })).toBeVisible();
     await expect(page.getByText(/Horizontal layer at z = /i).first()).toBeVisible();
     await expect(page.getByLabel("Slice position")).toBeVisible();
     await expect(page.getByRole("button", { name: /move down/i })).toBeVisible();
@@ -1246,7 +1429,7 @@ test.describe("mocked smoke: Build, Results, Explore path", () => {
       ),
     ).toBe(true);
     await viewMode.getByRole("button", { name: "Standard" }).click();
-    await expect(page.getByRole("heading", { name: "Inspect the current slice" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Field Slice" })).toBeVisible();
     await expect(page.getByLabel("Slice field")).toBeVisible();
     await expect(page.getByRole("combobox", { name: "Time" })).toHaveValue(ordinaryTimeValue);
   });

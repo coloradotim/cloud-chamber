@@ -510,8 +510,7 @@ export const results = [
     scenario_id: "baseline-shallow-cumulus",
     scenario_name: "Uploaded Sounding",
     run_configuration: defaultRunConfiguration,
-    physical_question:
-      "What cloud behavior emerges from the uploaded observed sounding profile?",
+    physical_question: "What cloud behavior emerges from the uploaded observed sounding profile?",
     controls: { surface_heating: "baseline" },
     status: "ingested",
     source_lifecycle_state: "completed",
@@ -992,14 +991,13 @@ function slicePayload(resultId: string, url: string) {
       time_index: timeIndex,
       time_seconds: [0, 1800, 3600][timeIndex] ?? 1800,
       orientation,
-      selected_dimension:
-        isSurface
-          ? "surface"
-          : orientation === "vertical_y"
-            ? "xh"
-            : orientation === "vertical_x"
-              ? "yh"
-              : (field.coordinate_names.vertical ?? "zh"),
+      selected_dimension: isSurface
+        ? "surface"
+        : orientation === "vertical_y"
+          ? "xh"
+          : orientation === "vertical_x"
+            ? "yh"
+            : (field.coordinate_names.vertical ?? "zh"),
       selected_index: Number(parsed.searchParams.get("level_index") ?? 1),
       selected_coordinate_value: isSurface ? 0 : orientation === "horizontal" ? 0.8 : 0,
       level_units: orientation === "horizontal" ? "km" : null,
@@ -1020,7 +1018,11 @@ function slicePayload(resultId: string, url: string) {
     },
     provenance: catalog.provenance,
     caveats: isSurface
-      ? ["native_grid_no_interpolation", "surface_field_no_vertical_dimension", "surface_field_rendered_on_domain_floor"]
+      ? [
+          "native_grid_no_interpolation",
+          "surface_field_no_vertical_dimension",
+          "surface_field_rendered_on_domain_floor",
+        ]
       : ["native_grid_no_interpolation"],
   };
 }
@@ -1111,7 +1113,9 @@ function pointCloudPayload(resultId: string, url: string) {
   const parsed = new URL(url);
   const dryFailed = resultId === "result-dry-failed";
   const fieldName = parsed.searchParams.get("field") ?? "qc";
-  const threshold = Number(parsed.searchParams.get("threshold") ?? (fieldName === "qr" ? 0.0000001 : 0.000001));
+  const threshold = Number(
+    parsed.searchParams.get("threshold") ?? (fieldName === "qr" ? 0.0000001 : 0.000001),
+  );
   const points = mockPointCloudPoints(fieldName, dryFailed, threshold);
   const values = points.map((point) => point[3]);
   const catalog = fieldCatalog(resultId);
@@ -1131,7 +1135,9 @@ function pointCloudPayload(resultId: string, url: string) {
       threshold,
       max_points: Number(parsed.searchParams.get("max_points") ?? 50000),
     },
-    coordinate_units: isSurface ? { xh: "km", yh: "km", z: "km" } : { xh: "km", yh: "km", zh: "km" },
+    coordinate_units: isSurface
+      ? { xh: "km", yh: "km", z: "km" }
+      : { xh: "km", yh: "km", zh: "km" },
     coordinate_extents: {
       x: { min: 0, max: 6.4, units: "km" },
       y: { min: 0, max: 6.4, units: "km" },
@@ -1174,12 +1180,14 @@ function pointCloudPayload(resultId: string, url: string) {
 
 function mockPointFieldRange(fieldName: string, dryFailed: boolean) {
   if (dryFailed && fieldName === "qc") return { min: 0, max: 0, mean: 0 };
-  if (fieldName === "qr") return dryFailed ? { min: 0, max: 0, mean: 0 } : { min: 0, max: 0.000001, mean: 0.0000003 };
+  if (fieldName === "qr")
+    return dryFailed ? { min: 0, max: 0, mean: 0 } : { min: 0, max: 0.000001, mean: 0.0000003 };
   if (fieldName === "qv") return { min: 0.0101, max: 0.0124, mean: 0.0111 };
   if (fieldName === "dbz") {
     return dryFailed ? { min: -10, max: 4, mean: -3 } : { min: 0, max: 32, mean: 14 };
   }
-  if (fieldName === "rain") return dryFailed ? { min: 0, max: 0, mean: 0 } : { min: 0, max: 4.2, mean: 1.3 };
+  if (fieldName === "rain")
+    return dryFailed ? { min: 0, max: 0, mean: 0 } : { min: 0, max: 4.2, mean: 1.3 };
   return dryFailed ? { min: 0, max: 0, mean: 0 } : { min: 0, max: 0.002, mean: 0.0006 };
 }
 
@@ -1238,6 +1246,8 @@ export async function mockCloudChamberApis(page: Page) {
     queued_count: 0,
     updated_at: "2026-05-22T15:15:00Z",
   };
+
+  await page.route("**/api/worlds", (route) => json(route, []));
 
   await page.route("**/api/scenarios", (route) =>
     json(route, { golden_path_scenario_id: "baseline-shallow-cumulus", scenarios: [scenario] }),

@@ -60,7 +60,9 @@ test.describe("mocked smoke: visualizer occlusion regression", () => {
   });
 
   test("3-D scene does not cover its primary controls", async ({ page }) => {
-    await expect(page.getByText(/what happened in this result/i).first()).toBeVisible({ timeout: 12_000 });
+    await expect(page.getByText(/what happened in this result/i).first()).toBeVisible({
+      timeout: 12_000,
+    });
     await expect(page.getByLabel("True 3-D scalar field viewer")).toBeVisible({
       timeout: 12_000,
     });
@@ -73,17 +75,13 @@ test.describe("mocked smoke: visualizer occlusion regression", () => {
     );
     await expectClickableCenter(page, page.getByRole("button", { name: /zoom in/i }), "Zoom in");
     await expectClickableCenter(page, page.getByRole("button", { name: /zoom out/i }), "Zoom out");
-    await expectClickableCenter(
-      page,
-      page.getByLabel("Slice position"),
-      "Slice position slider",
-    );
+    await expectClickableCenter(page, page.getByLabel("Slice position"), "Slice position slider");
     await expectClickableCenter(
       page,
       page.getByRole("button", { name: /vertical x-z slice/i }),
       "Vertical x-z slice control",
     );
-    await expect(page.getByRole("heading", { name: "Inspect the current slice" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Field Slice" })).toBeVisible();
   });
 
   test("true 3-D scene labels stay inside the viewer frame", async ({ page }) => {

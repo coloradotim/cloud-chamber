@@ -38,6 +38,133 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
 BASELINE_TEMPLATE = REPO_ROOT / "scenarios/lower-atmosphere/baseline-shallow-cumulus.json"
 
 
+def _world_summary_payload() -> dict[str, object]:
+    return {
+        "world_id": "trade_cumulus",
+        "display_name": "Trade Cumulus",
+        "status": "mvp_candidate",
+        "short_description": "A maritime shallow-cumulus field.",
+        "reference_simulation_id": "trade_cumulus_canonical_bomex",
+        "reference_available": True,
+        "simulation_count": 2,
+        "saved_view_count": 0,
+        "saved_comparison_count": 1,
+        "featured_comparison_count": 1,
+        "active_run_count": 0,
+        "completed_uninspected_run_count": 0,
+        "availability_state": "available",
+        "availability_message": "World content is available.",
+    }
+
+
+def _simulation_payload() -> dict[str, object]:
+    return {
+        "simulation_id": "trade_cumulus_canonical_bomex",
+        "display_name": "Canonical BOMEX Baseline",
+        "role": "reference",
+        "world_id": "trade_cumulus",
+        "product_slice_id": "trade_cumulus_v1",
+        "case_id": "bomex_trade_cumulus_baseline_v0",
+        "result_id": "result-baseline",
+        "run_id": "run-baseline",
+        "source_recipe_id": "canonical_bomex_baseline",
+        "parent_simulation_id": None,
+        "reference_simulation_id": "trade_cumulus_canonical_bomex",
+        "technical_state": "available",
+        "technical_state_message": "Simulation output is available for inspection.",
+        "technical_trust_state": "caveated",
+        "explore_available": True,
+        "compare_suggestions": [],
+        "configuration_difference_from_reference": None,
+        "lineage_state": "known",
+        "created_at": "2026-07-20T00:00:00Z",
+        "completed_at": "2026-07-20T01:00:00Z",
+    }
+
+
+def _world_detail_payload() -> dict[str, object]:
+    simulation = _simulation_payload()
+    return {
+        "world_id": "trade_cumulus",
+        "display_name": "Trade Cumulus",
+        "status": "mvp_candidate",
+        "short_description": "A maritime shallow-cumulus field.",
+        "availability_state": "available",
+        "availability_message": "World content is available.",
+        "reference_simulation": simulation,
+        "simulations": [simulation],
+        "lab_history": [],
+        "featured_comparison": {
+            "comparison_id": "trade_cumulus_moisture_v1",
+            "display_name": "More Moisture versus Baseline",
+            "baseline_simulation_id": "trade_cumulus_canonical_bomex",
+            "more_moisture_simulation_id": "trade_cumulus_more_moisture",
+            "availability_state": "available",
+            "availability_message": "Featured Comparison is available.",
+            "open_available": True,
+        },
+        "lab_summary": {
+            "active_run_count": 0,
+            "completed_uninspected_run_count": 0,
+            "lab_history_count": 0,
+            "summary": "Lab is idle",
+        },
+        "capabilities": {
+            "reference_explore": True,
+            "featured_comparison": True,
+            "lab": True,
+            "saved_views": False,
+            "ordinary_compare": False,
+        },
+        "caveats": [],
+    }
+
+
+def test_world_endpoints_return_typed_payloads(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        "cloud_chamber.app.list_cloud_world_summaries",
+        lambda _settings: [_world_summary_payload()],
+    )
+    monkeypatch.setattr(
+        "cloud_chamber.app.trade_cumulus_world_detail",
+        lambda _settings: _world_detail_payload(),
+    )
+    client = TestClient(app)
+
+    worlds_response = client.get("/api/worlds")
+    detail_response = client.get("/api/worlds/trade-cumulus")
+
+    assert worlds_response.status_code == 200
+    assert worlds_response.json() == [_world_summary_payload()]
+    assert detail_response.status_code == 200
+    assert detail_response.json()["reference_simulation"]["display_name"] == (
+        "Canonical BOMEX Baseline"
+    )
+
+
+@pytest.mark.parametrize(
+    ("path", "attribute"),
+    [
+        ("/api/worlds", "list_cloud_world_summaries"),
+        ("/api/worlds/trade-cumulus", "trade_cumulus_world_detail"),
+    ],
+)
+def test_world_endpoints_bound_failures_without_leaking_paths(
+    monkeypatch: pytest.MonkeyPatch,
+    path: str,
+    attribute: str,
+) -> None:
+    def fail(_settings: object) -> object:
+        raise OSError("/Users/private/runtime/result_metadata.json")
+
+    monkeypatch.setattr(f"cloud_chamber.app.{attribute}", fail)
+
+    response = TestClient(app).get(path)
+
+    assert response.status_code == 500
+    assert "/Users/private" not in response.text
+
+
 def test_trade_cumulus_comparison_story_api_returns_payload(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

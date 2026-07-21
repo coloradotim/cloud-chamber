@@ -2,10 +2,17 @@ import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react"
 import type { CSSProperties, FormEvent } from "react";
 
 import "./App.css";
+import { CloudWorldsHome } from "./CloudWorldsHome";
 import {
   TradeCumulusComparisonStory,
   type TradeCumulusComparisonStoryResponse,
 } from "./TradeCumulusComparisonStory";
+import {
+  type SimulationRecord,
+  type TradeCumulusLabSection,
+  TradeCumulusWorld,
+  type TradeCumulusWorldSection,
+} from "./TradeCumulusWorld";
 import { True3DViewer } from "./True3DViewer";
 import {
   type UpdraftLensDefaults,
@@ -1259,6 +1266,7 @@ type DeleteResultResponse = {
 };
 
 type WorkspaceSection = "build" | "results" | "explore";
+type ProductLocation = "worlds" | "world" | "explore" | "comparison";
 type ScenarioLoadState = "loading" | "loaded" | "failed" | "empty";
 
 type ProvenancePayload = {
@@ -2270,6 +2278,9 @@ async function responseError(response: Response, fallback: string): Promise<stri
 }
 
 export function App() {
+  const [productLocation, setProductLocation] = useState<ProductLocation>("worlds");
+  const [worldSection, setWorldSection] = useState<TradeCumulusWorldSection>("overview");
+  const [worldLabSection, setWorldLabSection] = useState<TradeCumulusLabSection>("results");
   const [activeSection, setActiveSection] = useState<WorkspaceSection>("results");
   const [scenarios, setScenarios] = useState<Scenario[]>([]);
   const [selectedScenarioId, setSelectedScenarioId] = useState(OBSERVED_SOUNDING_EXPERIMENT_ID);
@@ -3617,12 +3628,45 @@ export function App() {
 
   function openOrdinaryResult(resultId: string, section: "results" | "explore") {
     selectOrdinaryResult(resultId);
+    if (productLocation === "world") {
+      if (section === "explore") {
+        setProductLocation("explore");
+      } else {
+        setWorldSection("lab");
+        setWorldLabSection("results");
+      }
+      return;
+    }
     setActiveSection(section);
   }
 
   function handleWorkspaceNavigation(section: WorkspaceSection) {
     if (section !== "explore") setComparisonStoryActive(false);
+    if (productLocation === "world") {
+      if (section === "explore") {
+        setProductLocation("explore");
+      } else {
+        setWorldSection("lab");
+        setWorldLabSection(section);
+      }
+      return;
+    }
     setActiveSection(section);
+  }
+
+  function openWorldSimulation(simulation: SimulationRecord) {
+    selectOrdinaryResult(simulation.result_id);
+    setProductLocation("explore");
+  }
+
+  function openWorldComparison() {
+    setComparisonStoryActive(true);
+    setProductLocation("comparison");
+  }
+
+  function returnToTradeCumulus() {
+    setComparisonStoryActive(false);
+    setProductLocation("world");
   }
 
   async function handleRefreshResults() {
@@ -3870,211 +3914,288 @@ export function App() {
     }
   }
 
+  const buildWorkspace = (
+    <BuildWorkspace
+      scenarioLoadState={scenarioLoadState}
+      scenarioError={scenarioError}
+      packageError={error}
+      scenarios={scenarios}
+      selectedScenario={selectedScenario}
+      selectedScenarioId={selectedScenarioId}
+      observedSoundingExperimentSelected={observedSoundingExperimentSelected}
+      controls={controls}
+      runConfiguration={runConfiguration}
+      observedSoundingParse={observedSoundingParse}
+      observedSoundingStatus={observedSoundingStatus}
+      observedSoundingError={observedSoundingError}
+      selectedCandidateScreening={selectedCandidateScreening}
+      atmosphereSourcePath={atmosphereSourcePath}
+      searchIntent={searchIntent}
+      stationSelectionMode={stationSelectionMode}
+      selectedStationIds={selectedStationIds}
+      candidateHistoryScope={candidateHistoryScope}
+      igraCatalog={igraCatalog}
+      igraCache={igraCache}
+      screeningInputs={screeningInputs}
+      candidateStoryFilter={candidateStoryFilter}
+      candidateStoryFamilyFilter={candidateStoryFamilyFilter}
+      candidateSupportFilter={candidateSupportFilter}
+      candidateSort={candidateSort}
+      candidateStationSearch={candidateStationSearch}
+      candidateReadinessFilter={candidateReadinessFilter}
+      candidateLatestPerStation={candidateLatestPerStation}
+      candidateResultLimit={candidateResultLimit}
+      candidateStatus={candidateStatus}
+      candidateError={candidateError}
+      candidateScreening={candidateScreening}
+      savedCandidates={savedCandidates}
+      candidateDetailId={candidateDetailId}
+      runPlanItems={runPlanItems}
+      batchQueueStatus={batchQueueStatus}
+      validationMessages={validationMessages}
+      dryRun={dryRun}
+      blockedPreRunValidationReport={blockedPreRunValidationReport}
+      runStatus={runStatus}
+      runQueue={runQueue}
+      runQueueStatus={runQueueStatus}
+      runWorkflowError={runWorkflowError}
+      lanWorkerConfig={lanWorkerConfig}
+      lanWorkerStatus={lanWorkerStatus}
+      lanWorkerError={lanWorkerError}
+      lanWorkerActionStatus={lanWorkerActionStatus}
+      ingestedResultId={ingestedResultId}
+      storageInventory={storageInventory}
+      storageStatus={storageStatus}
+      storageError={storageError}
+      runDeletePreview={runDeletePreview}
+      runDeleteMessage={runDeleteMessage}
+      results={results}
+      autoFinalizingWorkerRunIds={autoFinalizingWorkerRunIdSet}
+      failedAutoFinalizingWorkerRunIds={failedAutoFinalizingWorkerRunIdSet}
+      onSelectScenario={handleSelectScenario}
+      onControlChange={(id, value) =>
+        setControls((current) => ({
+          ...current,
+          [id]: value,
+        }))
+      }
+      onRunConfigurationChange={setRunConfiguration}
+      onObservedSoundingFile={handleObservedSoundingFile}
+      onObservedSoundingTimeChange={handleObservedSoundingTimeChange}
+      onAtmosphereSourcePathChange={handleAtmosphereSourcePathChange}
+      onSearchIntentChange={handleSearchIntentChange}
+      onStationSelectionModeChange={handleStationSelectionModeChange}
+      onSelectedStationToggle={handleSelectedStationToggle}
+      onSelectAllCachedStations={handleSelectAllCachedStations}
+      onClearSelectedStations={handleClearSelectedStations}
+      onCandidateHistoryScopeChange={handleCandidateHistoryScopeChange}
+      onCandidateStoryFilterChange={handleCandidateStoryFilterChange}
+      onCandidateStoryFamilyFilterChange={handleCandidateStoryFamilyFilterChange}
+      onCandidateSupportFilterChange={handleCandidateSupportFilterChange}
+      onCandidateSortChange={handleCandidateSortChange}
+      onCandidateStationSearchChange={handleCandidateStationSearchChange}
+      onCandidateReadinessFilterChange={handleCandidateReadinessFilterChange}
+      onClearCandidateAnalysisFilters={handleClearCandidateAnalysisFilters}
+      onCandidateLatestPerStationChange={handleCandidateLatestPerStationChange}
+      onCandidateResultLimitChange={handleCandidateResultLimitChange}
+      onCandidateDetailChange={setCandidateDetailId}
+      onRefreshIGRAData={handleRefreshIGRAData}
+      onCacheIGRAStationFiles={handleCacheIGRAStationFiles}
+      onPrepareAndSearchLocalSoundings={handlePrepareAndSearchLocalSoundings}
+      onScreenSoundingCandidates={handleScreenSoundingCandidates}
+      onSaveSoundingCandidate={handleSaveSoundingCandidate}
+      onRemoveSavedSoundingCandidate={handleRemoveSavedSoundingCandidate}
+      onSelectCandidateForRunSetup={handleSelectCandidateForRunSetup}
+      onAddSelectedSoundingToRunPlan={handleAddSelectedSoundingToRunPlan}
+      onDuplicateRunPlanItem={handleDuplicateRunPlanItem}
+      onRemoveRunPlanItem={handleRemoveRunPlanItem}
+      onClearSelectedRunPlanItems={handleClearSelectedRunPlanItems}
+      onClearRunPlan={handleClearRunPlan}
+      onRunPlanItemSelectedChange={handleRunPlanItemSelectedChange}
+      onRunPlanItemQueueTargetChange={handleRunPlanItemQueueTargetChange}
+      onRunPlanItemConfigurationChange={handleRunPlanItemConfigurationChange}
+      onCreateAndQueueRunPlan={handleCreateAndQueueRunPlan}
+      onDryRun={handleDryRun}
+      onLaunchRun={handleLaunchRun}
+      onRefreshRunStatus={handleRefreshRunStatus}
+      onLaunchLanWorkerRun={() => void handleLaunchLanWorkerRun()}
+      onRefreshLanWorkerStatus={handleRefreshLanWorkerStatus}
+      onCollectLanWorkerRun={handleCollectLanWorkerRun}
+      onCleanupLanWorkerRun={handleCleanupLanWorkerRun}
+      onIngestRun={handleIngestRun}
+      onLaunchStoredRun={handleLaunchStoredRun}
+      onLaunchStoredLanWorkerRun={(manifestPath) => void handleLaunchLanWorkerRun(manifestPath)}
+      onRefreshStoredLanWorkerStatus={handleRefreshStoredLanWorkerStatus}
+      onFinalizeStoredLanWorkerRun={handleFinalizeStoredLanWorkerRun}
+      onIngestStoredRun={handleIngestStoredRun}
+      onOpenInResults={() => {
+        if (ingestedResultId) openOrdinaryResult(ingestedResultId, "results");
+        else handleWorkspaceNavigation("results");
+      }}
+      onInspectIngested={() => {
+        if (ingestedResultId) openOrdinaryResult(ingestedResultId, "explore");
+        else handleWorkspaceNavigation("explore");
+      }}
+      onOpenStoredResult={(resultId) => {
+        openOrdinaryResult(resultId, "results");
+      }}
+      onExploreStoredResult={(resultId) => {
+        openOrdinaryResult(resultId, "explore");
+      }}
+      onRefreshStorage={handleRefreshStorage}
+      onPreviewRunDelete={handlePreviewRunDelete}
+      onConfirmRunDelete={handleConfirmRunDelete}
+      onRetryScenarios={() => {
+        void loadScenarios();
+      }}
+    />
+  );
+
+  const resultsWorkspace = (
+    <ResultsWorkspace
+      results={results}
+      selectedResult={selectedResult}
+      selectedResultId={selectedResultId}
+      resultsStatus={resultsStatus}
+      resultsError={resultsError}
+      resultDeletePreview={resultDeletePreview}
+      draft={resultDraft}
+      comparisonStory={comparisonStory}
+      comparisonStoryStatus={
+        selectedResultId && comparisonStoryMemberIds.includes(selectedResultId)
+          ? comparisonStoryStatus
+          : null
+      }
+      onSelectResult={selectOrdinaryResult}
+      onDraftChange={setResultDraft}
+      onSubmit={handleResultUpdate}
+      onRefreshResults={handleRefreshResults}
+      onInspect={() => {
+        setComparisonStoryActive(false);
+        if (productLocation === "world") setProductLocation("explore");
+        else setActiveSection("explore");
+      }}
+      onCompare={() => {
+        setComparisonStoryActive(true);
+        if (productLocation === "world") setProductLocation("comparison");
+        else setActiveSection("explore");
+      }}
+      onPreviewResultDelete={handlePreviewResultDelete}
+      onConfirmResultDelete={handleConfirmResultDelete}
+      onCancelResultDelete={() => {
+        setResultDeletePreview(null);
+        setResultsStatus("Results loaded");
+      }}
+    />
+  );
+
+  const legacyExploreWorkspace = (
+    <ExploreWorkspace
+      selectedResult={selectedResult}
+      comparisonStory={comparisonStoryActive ? comparisonStory : null}
+      onBackToResults={() => {
+        setComparisonStoryActive(false);
+        setActiveSection("results");
+      }}
+      onOpenResult={(resultId) => openOrdinaryResult(resultId, "explore")}
+    />
+  );
+
+  const legacyWorkspace = (
+    <section className="legacy-workspace-fallback" aria-label="Existing application fallback">
+      <nav className="workspace-nav" aria-label="Cloud Chamber workspace">
+        {(["build", "results", "explore"] as WorkspaceSection[]).map((section) => (
+          <button
+            key={section}
+            type="button"
+            className={activeSection === section ? "active-control" : ""}
+            onClick={() => handleWorkspaceNavigation(section)}
+          >
+            {sectionLabel(section)}
+          </button>
+        ))}
+      </nav>
+      {activeSection === "build" && buildWorkspace}
+      {activeSection === "results" && resultsWorkspace}
+      {activeSection === "explore" && legacyExploreWorkspace}
+    </section>
+  );
+
+  const worldContextName =
+    productLocation === "comparison"
+      ? "More Moisture versus Baseline"
+      : worldSimulationDisplayName(selectedResult?.result_id, selectedResult?.name);
+
   return (
     <main className="app-shell">
       <header className="topbar">
         <div className="brand-mark">
-          <p className="eyebrow">Local CM1 experiment lab</p>
+          <p className="eyebrow">Personal cloud laboratory</p>
           <h1>Cloud Chamber</h1>
         </div>
-
-        <nav className="workspace-nav" aria-label="Cloud Chamber workspace">
-          {(["build", "results", "explore"] as WorkspaceSection[]).map((section) => (
-            <button
-              key={section}
-              type="button"
-              className={activeSection === section ? "active-control" : ""}
-              onClick={() => handleWorkspaceNavigation(section)}
-            >
-              {sectionLabel(section)}
-            </button>
-          ))}
-        </nav>
+        {productLocation !== "worlds" && (
+          <button
+            type="button"
+            className="secondary-button"
+            onClick={() => setProductLocation("worlds")}
+          >
+            Cloud Worlds
+          </button>
+        )}
       </header>
 
-      {activeSection === "build" && (
-        <BuildWorkspace
-          scenarioLoadState={scenarioLoadState}
-          scenarioError={scenarioError}
-          packageError={error}
-          scenarios={scenarios}
-          selectedScenario={selectedScenario}
-          selectedScenarioId={selectedScenarioId}
-          observedSoundingExperimentSelected={observedSoundingExperimentSelected}
-          controls={controls}
-          runConfiguration={runConfiguration}
-          observedSoundingParse={observedSoundingParse}
-          observedSoundingStatus={observedSoundingStatus}
-          observedSoundingError={observedSoundingError}
-          selectedCandidateScreening={selectedCandidateScreening}
-          atmosphereSourcePath={atmosphereSourcePath}
-          searchIntent={searchIntent}
-          stationSelectionMode={stationSelectionMode}
-          selectedStationIds={selectedStationIds}
-          candidateHistoryScope={candidateHistoryScope}
-          igraCatalog={igraCatalog}
-          igraCache={igraCache}
-          screeningInputs={screeningInputs}
-          candidateStoryFilter={candidateStoryFilter}
-          candidateStoryFamilyFilter={candidateStoryFamilyFilter}
-          candidateSupportFilter={candidateSupportFilter}
-          candidateSort={candidateSort}
-          candidateStationSearch={candidateStationSearch}
-          candidateReadinessFilter={candidateReadinessFilter}
-          candidateLatestPerStation={candidateLatestPerStation}
-          candidateResultLimit={candidateResultLimit}
-          candidateStatus={candidateStatus}
-          candidateError={candidateError}
-          candidateScreening={candidateScreening}
-          savedCandidates={savedCandidates}
-          candidateDetailId={candidateDetailId}
-          runPlanItems={runPlanItems}
-          batchQueueStatus={batchQueueStatus}
-          validationMessages={validationMessages}
-          dryRun={dryRun}
-          blockedPreRunValidationReport={blockedPreRunValidationReport}
-          runStatus={runStatus}
-          runQueue={runQueue}
-          runQueueStatus={runQueueStatus}
-          runWorkflowError={runWorkflowError}
-          lanWorkerConfig={lanWorkerConfig}
-          lanWorkerStatus={lanWorkerStatus}
-          lanWorkerError={lanWorkerError}
-          lanWorkerActionStatus={lanWorkerActionStatus}
-          ingestedResultId={ingestedResultId}
-          storageInventory={storageInventory}
-          storageStatus={storageStatus}
-          storageError={storageError}
-          runDeletePreview={runDeletePreview}
-          runDeleteMessage={runDeleteMessage}
-          results={results}
-          autoFinalizingWorkerRunIds={autoFinalizingWorkerRunIdSet}
-          failedAutoFinalizingWorkerRunIds={failedAutoFinalizingWorkerRunIdSet}
-          onSelectScenario={handleSelectScenario}
-          onControlChange={(id, value) =>
-            setControls((current) => ({
-              ...current,
-              [id]: value,
-            }))
-          }
-          onRunConfigurationChange={setRunConfiguration}
-          onObservedSoundingFile={handleObservedSoundingFile}
-          onObservedSoundingTimeChange={handleObservedSoundingTimeChange}
-          onAtmosphereSourcePathChange={handleAtmosphereSourcePathChange}
-          onSearchIntentChange={handleSearchIntentChange}
-          onStationSelectionModeChange={handleStationSelectionModeChange}
-          onSelectedStationToggle={handleSelectedStationToggle}
-          onSelectAllCachedStations={handleSelectAllCachedStations}
-          onClearSelectedStations={handleClearSelectedStations}
-          onCandidateHistoryScopeChange={handleCandidateHistoryScopeChange}
-          onCandidateStoryFilterChange={handleCandidateStoryFilterChange}
-          onCandidateStoryFamilyFilterChange={handleCandidateStoryFamilyFilterChange}
-          onCandidateSupportFilterChange={handleCandidateSupportFilterChange}
-          onCandidateSortChange={handleCandidateSortChange}
-          onCandidateStationSearchChange={handleCandidateStationSearchChange}
-          onCandidateReadinessFilterChange={handleCandidateReadinessFilterChange}
-          onClearCandidateAnalysisFilters={handleClearCandidateAnalysisFilters}
-          onCandidateLatestPerStationChange={handleCandidateLatestPerStationChange}
-          onCandidateResultLimitChange={handleCandidateResultLimitChange}
-          onCandidateDetailChange={setCandidateDetailId}
-          onRefreshIGRAData={handleRefreshIGRAData}
-          onCacheIGRAStationFiles={handleCacheIGRAStationFiles}
-          onPrepareAndSearchLocalSoundings={handlePrepareAndSearchLocalSoundings}
-          onScreenSoundingCandidates={handleScreenSoundingCandidates}
-          onSaveSoundingCandidate={handleSaveSoundingCandidate}
-          onRemoveSavedSoundingCandidate={handleRemoveSavedSoundingCandidate}
-          onSelectCandidateForRunSetup={handleSelectCandidateForRunSetup}
-          onAddSelectedSoundingToRunPlan={handleAddSelectedSoundingToRunPlan}
-          onDuplicateRunPlanItem={handleDuplicateRunPlanItem}
-          onRemoveRunPlanItem={handleRemoveRunPlanItem}
-          onClearSelectedRunPlanItems={handleClearSelectedRunPlanItems}
-          onClearRunPlan={handleClearRunPlan}
-          onRunPlanItemSelectedChange={handleRunPlanItemSelectedChange}
-          onRunPlanItemQueueTargetChange={handleRunPlanItemQueueTargetChange}
-          onRunPlanItemConfigurationChange={handleRunPlanItemConfigurationChange}
-          onCreateAndQueueRunPlan={handleCreateAndQueueRunPlan}
-          onDryRun={handleDryRun}
-          onLaunchRun={handleLaunchRun}
-          onRefreshRunStatus={handleRefreshRunStatus}
-          onLaunchLanWorkerRun={() => void handleLaunchLanWorkerRun()}
-          onRefreshLanWorkerStatus={handleRefreshLanWorkerStatus}
-          onCollectLanWorkerRun={handleCollectLanWorkerRun}
-          onCleanupLanWorkerRun={handleCleanupLanWorkerRun}
-          onIngestRun={handleIngestRun}
-          onLaunchStoredRun={handleLaunchStoredRun}
-          onLaunchStoredLanWorkerRun={(manifestPath) => void handleLaunchLanWorkerRun(manifestPath)}
-          onRefreshStoredLanWorkerStatus={handleRefreshStoredLanWorkerStatus}
-          onFinalizeStoredLanWorkerRun={handleFinalizeStoredLanWorkerRun}
-          onIngestStoredRun={handleIngestStoredRun}
-          onOpenInResults={() => {
-            if (ingestedResultId) openOrdinaryResult(ingestedResultId, "results");
-            else handleWorkspaceNavigation("results");
+      {productLocation === "worlds" && (
+        <CloudWorldsHome
+          onEnterTradeCumulus={() => {
+            setWorldSection("overview");
+            setProductLocation("world");
           }}
-          onInspectIngested={() => {
-            if (ingestedResultId) openOrdinaryResult(ingestedResultId, "explore");
-            else handleWorkspaceNavigation("explore");
-          }}
-          onOpenStoredResult={(resultId) => {
-            openOrdinaryResult(resultId, "results");
-          }}
-          onExploreStoredResult={(resultId) => {
-            openOrdinaryResult(resultId, "explore");
-          }}
-          onRefreshStorage={handleRefreshStorage}
-          onPreviewRunDelete={handlePreviewRunDelete}
-          onConfirmRunDelete={handleConfirmRunDelete}
-          onRetryScenarios={() => {
-            void loadScenarios();
-          }}
+          fallback={legacyWorkspace}
         />
       )}
 
-      {activeSection === "results" && (
-        <ResultsWorkspace
-          results={results}
-          selectedResult={selectedResult}
-          selectedResultId={selectedResultId}
-          resultsStatus={resultsStatus}
-          resultsError={resultsError}
-          resultDeletePreview={resultDeletePreview}
-          draft={resultDraft}
-          comparisonStory={comparisonStory}
-          comparisonStoryStatus={
-            selectedResultId && comparisonStoryMemberIds.includes(selectedResultId)
-              ? comparisonStoryStatus
-              : null
-          }
-          onSelectResult={selectOrdinaryResult}
-          onDraftChange={setResultDraft}
-          onSubmit={handleResultUpdate}
-          onRefreshResults={handleRefreshResults}
-          onInspect={() => {
-            setComparisonStoryActive(false);
-            setActiveSection("explore");
-          }}
-          onCompare={() => {
-            setComparisonStoryActive(true);
-            setActiveSection("explore");
-          }}
-          onPreviewResultDelete={handlePreviewResultDelete}
-          onConfirmResultDelete={handleConfirmResultDelete}
-          onCancelResultDelete={() => {
-            setResultDeletePreview(null);
-            setResultsStatus("Results loaded");
-          }}
+      {productLocation === "world" && (
+        <TradeCumulusWorld
+          section={worldSection}
+          labSection={worldLabSection}
+          onSectionChange={setWorldSection}
+          onLabSectionChange={setWorldLabSection}
+          onBackToWorlds={() => setProductLocation("worlds")}
+          onExploreSimulation={openWorldSimulation}
+          onOpenFeaturedComparison={openWorldComparison}
+          buildContent={buildWorkspace}
+          resultsContent={resultsWorkspace}
         />
       )}
 
-      {activeSection === "explore" && (
-        <ExploreWorkspace
-          selectedResult={selectedResult}
-          comparisonStory={comparisonStoryActive ? comparisonStory : null}
-          onBackToResults={() => {
-            setComparisonStoryActive(false);
-            setActiveSection("results");
-          }}
-          onOpenResult={(resultId) => openOrdinaryResult(resultId, "explore")}
-        />
+      {(productLocation === "explore" || productLocation === "comparison") && (
+        <section className="world-context-workspace" aria-label={`${worldContextName} workspace`}>
+          <header className="world-context-header">
+            <nav className="world-breadcrumb" aria-label="Breadcrumb">
+              <button type="button" onClick={() => setProductLocation("worlds")}>
+                Cloud Worlds
+              </button>
+              <span aria-hidden="true">/</span>
+              <button type="button" onClick={returnToTradeCumulus}>
+                Trade Cumulus
+              </button>
+              <span aria-hidden="true">/</span>
+              <span>{worldContextName}</span>
+            </nav>
+            <button type="button" onClick={returnToTradeCumulus}>
+              Back to Trade Cumulus
+            </button>
+          </header>
+          <ExploreWorkspace
+            selectedResult={selectedResult}
+            comparisonStory={productLocation === "comparison" ? comparisonStory : null}
+            onBackToResults={returnToTradeCumulus}
+            onOpenResult={(resultId) => {
+              selectOrdinaryResult(resultId);
+              setProductLocation("explore");
+            }}
+          />
+        </section>
       )}
     </main>
   );
@@ -5826,9 +5947,7 @@ function ObservedAtmosphereCandidatesPanel({
           {screening && (
             <div className="candidate-list-heading">
               <h4>
-                {activeRefinements.length > 0
-                  ? "Refined candidates"
-                  : "Screened cached soundings"}
+                {activeRefinements.length > 0 ? "Refined candidates" : "Screened cached soundings"}
               </h4>
               <p className="field-help">{filterTraceSummary.summary}</p>
               {filterTraceSummary.detail && (
@@ -10303,9 +10422,9 @@ export function VisualizerSceneShell({ result }: { result: ResultCard }) {
             provenanceLabel={provenanceLabel}
             noCloudMessage={
               !selectedEncoding
-                ? "No supported 3-D scalar field is available for this result. Use the 2-D slice inspector for available fields."
+                ? "No supported 3-D scalar field is available for this result. Use Field Slice for available fields."
                 : selectedEncoding.field.raw_field_name === "qc" && isNoCloudWithUpdraft
-                  ? "No cloud water formed in this result; vertical velocity is available in the 2-D slice inspector."
+                  ? "No cloud water formed in this result; vertical velocity is available in Field Slice."
                   : selectedEncoding.emptyStateTitle
             }
             windVectors={updraftLensFrame?.wind_vectors ?? []}
@@ -10599,7 +10718,7 @@ export function VisualizerSceneShell({ result }: { result: ResultCard }) {
                 <fieldset className="explore-control-card explore-control-card-slice">
                   <legend>Slice</legend>
                   <label htmlFor="explore-slice-field">
-                    2-D slice field
+                    Field Slice field
                     <select
                       id="explore-slice-field"
                       aria-label="Slice field"
@@ -10767,7 +10886,11 @@ export function VisualizerSceneShell({ result }: { result: ResultCard }) {
                             defaultHorizontalLevel(nextEncoding.field, nextDefaults),
                           );
                           setVerticalSliceIndex(
-                            defaultVerticalIndex(nextEncoding.field, sliceOrientation, nextDefaults),
+                            defaultVerticalIndex(
+                              nextEncoding.field,
+                              sliceOrientation,
+                              nextDefaults,
+                            ),
                           );
                         }
                       }
@@ -11012,10 +11135,8 @@ export function VisualizerSceneShell({ result }: { result: ResultCard }) {
         <section className="unified-slice-inspector" aria-labelledby="unified-slice-title">
           <div className="section-heading compact-heading">
             <div>
-              <p className="eyebrow">Slice inspector</p>
-              <h2 id="unified-slice-title">
-                {updraftLensActive ? "Updraft Lens" : "Inspect the current slice"}
-              </h2>
+              <p className="eyebrow">Field Slice</p>
+              <h2 id="unified-slice-title">{updraftLensActive ? "Updraft Lens" : "Field Slice"}</h2>
               <p>
                 {activeSliceLabel} · {updraftLensActive ? "w" : sliceField.raw_field_name} ·{" "}
                 {selectedTimeLabel}
@@ -12587,7 +12708,10 @@ function candidateDeepTowerOpportunitySummary(candidate: SoundingCandidate): str
 }
 
 function candidateDeepTowerOpportunityScore(candidate: SoundingCandidate): number | null {
-  if (typeof candidate.ingredient_score === "number" && Number.isFinite(candidate.ingredient_score)) {
+  if (
+    typeof candidate.ingredient_score === "number" &&
+    Number.isFinite(candidate.ingredient_score)
+  ) {
     return candidate.ingredient_score;
   }
   const opportunity = candidate.features.deep_tower_opportunity;
@@ -14411,6 +14535,16 @@ function sectionLabel(section: WorkspaceSection): string {
     explore: "Explore",
   };
   return labels[section];
+}
+
+function worldSimulationDisplayName(resultId?: string, fallback?: string): string {
+  if (resultId === "result-trade-cumulus-5b-full-baseline-20260720T162342Z") {
+    return "Canonical BOMEX Baseline";
+  }
+  if (resultId === "result-trade-cumulus-5b-full-more_moisture-20260720T162342Z") {
+    return "More Moisture";
+  }
+  return fallback || "Simulation";
 }
 
 const DEFAULT_RESULTS_FILTERS: ResultsFilterState = {
