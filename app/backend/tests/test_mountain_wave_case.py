@@ -20,13 +20,15 @@ from cloud_chamber.mountain_wave_case import (
     evaluate_mountain_wave_run,
     expected_output_times,
     generate_mountain_wave_package,
+    load_completed_mountain_wave_package_for_evaluation,
     load_mountain_wave_package,
     lower_boundary_tangency_metrics,
     normalize_length_to_m,
     normalize_time_to_seconds,
     reconstruct_physical_heights,
     render_mountain_wave_namelist,
-    resolve_active_top_m,
+    resolve_active_top_evidence,
+    verify_evaluation_input_identity,
 )
 from cloud_chamber.run_manifest import (
     ExecutionMetadata,
@@ -48,6 +50,7 @@ def reference_namelist_text() -> str:
         "dx": "200.0",
         "dy": "200.0",
         "dz": "200.0",
+        "stretch_z": "0",
         "dtl": "2.000",
         "timax": "2160.0",
         "tapfrq": "216.0",
@@ -278,18 +281,46 @@ def test_actual_units_are_normalized_or_rejected() -> None:
         normalize_length_to_m([1.0], "furlong")
 
 
-def test_terrain_and_physical_height_reconstruction_rejects_inert_ztop() -> None:
+def test_terrain_and_physical_height_reconstruction_agrees_across_active_top_sources() -> None:
     x_m = np.array([-900.0, 100.0, 1_100.0])
     terrain = analytic_itern1_terrain(x_m)[None, :]
     nominal = np.array([100.0, 10_000.0, 19_900.0])
     physical = reconstruct_physical_heights(terrain, nominal, active_top_m=ACTIVE_TOP_M)
-    active_top, netcdf_top, rejected = resolve_active_top_m([0.0, 10.0, 20.0], "km", [18.0], "km")
+    active_top = resolve_active_top_evidence(
+        [0.0, 10.0, 20.0],
+        "km",
+        [20.0],
+        "km",
+        configured_nz=100,
+        configured_dz_m=200.0,
+    )
 
     assert terrain[0, 1] == pytest.approx(400.0)
     assert np.all(np.diff(physical, axis=0) > 0.0)
-    assert active_top == 20_000.0
-    assert netcdf_top == 18_000.0
-    assert rejected is True
+    assert active_top.final_nominal_zf_m == 20_000.0
+    assert active_top.runtime_ztop_m == 20_000.0
+    assert active_top.nz_times_dz_m == 20_000.0
+    assert active_top.all_active_top_sources_agree is True
+    assert active_top.transform_top_source == "final_nominal_zf"
+
+
+@pytest.mark.parametrize(
+    ("runtime_ztop_km", "configured_nz"),
+    [(18.0, 100), (20.0, 90)],
+)
+def test_active_top_evidence_rejects_inconsistent_runtime_or_configuration(
+    runtime_ztop_km: float,
+    configured_nz: int,
+) -> None:
+    with pytest.raises(mountain_wave_case.MountainWaveCaseError, match="Active-top evidence"):
+        resolve_active_top_evidence(
+            [0.0, 10.0, 20.0],
+            "km",
+            [runtime_ztop_km],
+            "km",
+            configured_nz=configured_nz,
+            configured_dz_m=200.0,
+        )
 
 
 def test_lower_boundary_residual_collocates_staggered_velocity() -> None:
@@ -320,13 +351,17 @@ def test_central_boundary_metrics_separate_rayleigh_and_lateral_zones() -> None:
     heights = np.broadcast_to(z_m, (2, 1, 10))
     values = np.ones_like(heights)
     values[0, :, :2] = 3.0
-    values[0, :, -2:] = 3.0
+    values[0, :, -2:] = 4.0
     values[1] = 2.0
 
     metrics = central_boundary_metrics(values, x_m, heights)
 
     assert metrics["central_below_rayleigh_rms"] == pytest.approx(1.0)
-    assert metrics["boundary_below_rayleigh_rms"] == pytest.approx(3.0)
+    assert metrics["west_below_rayleigh_rms"] == pytest.approx(3.0)
+    assert metrics["east_below_rayleigh_rms"] == pytest.approx(4.0)
+    assert metrics["outer_combined_below_rayleigh_rms"] == pytest.approx(
+        np.sqrt((3.0**2 + 4.0**2) / 2.0)
+    )
     assert metrics["rayleigh_layer_rms"] == pytest.approx(2.0)
 
 
@@ -352,14 +387,84 @@ def test_evaluator_records_native_inventory_coordinates_and_serializable_evidenc
     assert evidence.output_inventory["actual_times_seconds"] == list(EXPECTED_OUTPUT_TIMES_SECONDS)
     assert evidence.output_inventory["variable_inventory"]["u"]["staggering"] == ("u_staggered_x")
     assert evidence.output_inventory["variable_inventory"]["w"]["staggering"] == ("w_staggered_z")
-    assert evidence.terrain_and_coordinates["inert_netcdf_ztop_rejected"] is True
-    assert evidence.terrain_and_coordinates["active_top_from_final_nominal_zf_m"] == 20_000.0
+    active_top = evidence.terrain_and_coordinates["active_top_evidence"]
+    assert active_top["final_nominal_zf_m"] == 20_000.0
+    assert active_top["runtime_ztop_m"] == 20_000.0
+    assert active_top["nz_times_dz_m"] == 20_000.0
+    assert active_top["all_active_top_sources_agree"] is True
+    assert len(evidence.terrain_and_coordinates["active_top_checks_by_time"]) == 11
+    assert all(
+        item["runtime_ztop_m"] == 20_000.0
+        for item in evidence.terrain_and_coordinates["active_top_checks_by_time"]
+    )
+    assert (
+        evidence.boundary_and_damping["metrics_by_time"][-1]["w"]["west_below_rayleigh_rms"]
+        is not None
+    )
+    assert (
+        evidence.boundary_and_damping["metrics_by_time"][-1]["w"]["east_below_rayleigh_rms"]
+        is not None
+    )
     assert evidence.lower_boundary["maximum_abs_residual_m_s"] == pytest.approx(0.0, abs=1.0e-12)
     assert evidence.runtime_integrity["normal_termination_marker_present"] is True
     assert evidence.runtime_integrity["stats_evidence"]["status"] == ("stats_netcdf_inspected")
     assert "cflmax" in evidence.runtime_integrity["stats_evidence"]["selected_fields"]
     assert serialized["case_id"] == mountain_wave_case.CASE_ID
     assert serialized["implementation_commit"] == "implementation-commit"
+
+    altered_path = output_paths[-1].with_suffix(".altered.nc")
+    with xr.open_dataset(output_paths[-1]) as source:
+        altered = source.load()
+    altered["ztop"].values[...] = 18.0
+    altered.to_netcdf(altered_path)
+    altered.close()
+    altered_path.replace(output_paths[-1])
+    with pytest.raises(mountain_wave_case.MountainWaveCaseError, match="Active-top evidence"):
+        evaluate_mountain_wave_run(settings=settings, package=package)
+
+
+def test_completed_package_identity_is_hash_pinned_for_offline_evaluation(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    settings = fake_settings(tmp_path)
+    provenance = fake_provenance(tmp_path)
+    monkeypatch.setattr(mountain_wave_case, "collect_cm1_provenance", lambda _settings: provenance)
+    monkeypatch.setattr(
+        mountain_wave_case, "verified_clean_git_commit", lambda: "implementation-commit"
+    )
+    monkeypatch.setattr(mountain_wave_case, "active_cm1_processes", lambda: [])
+    package = generate_mountain_wave_package(settings=settings, run_id="preserved-evaluation")
+    output_paths = _write_synthetic_native_outputs(package.package_dir)
+    _mark_package_completed(package, output_paths)
+    completed = load_completed_mountain_wave_package_for_evaluation(
+        settings=settings,
+        run_id=package.run_id,
+        expected_implementation_commit="implementation-commit",
+    )
+    expected_hashes = {
+        "run_manifest.json": mountain_wave_case.sha256_file(package.manifest_path),
+        "namelist.input": mountain_wave_case.sha256_file(package.package_dir / "namelist.input"),
+        "cm1out_000001.nc": mountain_wave_case.sha256_file(output_paths[0]),
+    }
+
+    identity = verify_evaluation_input_identity(
+        completed,
+        expected_run_id=package.run_id,
+        expected_implementation_commit="implementation-commit",
+        expected_file_sha256=expected_hashes,
+    )
+
+    assert identity["all_inputs_match_pinned_original"] is True
+    assert identity["file_sha256"] == expected_hashes
+    output_paths[0].write_bytes(output_paths[0].read_bytes() + b"changed")
+    with pytest.raises(mountain_wave_case.MountainWaveCaseError, match="identity mismatch"):
+        verify_evaluation_input_identity(
+            completed,
+            expected_run_id=package.run_id,
+            expected_implementation_commit="implementation-commit",
+            expected_file_sha256=expected_hashes,
+        )
 
 
 def _write_synthetic_native_outputs(package_dir: Path) -> list[Path]:
@@ -388,7 +493,7 @@ def _write_synthetic_native_outputs(package_dir: Path) -> list[Path]:
         w[2, 0, :] = phase * np.cos(xh_m / 1_200.0) * 0.1
         dataset = xr.Dataset(
             data_vars={
-                "ztop": (("one",), np.array([18.0]), {"units": "km"}),
+                "ztop": (("one",), np.array([20.0]), {"units": "km"}),
                 "zs": (("time", "yh", "xh"), terrain[None, :, :], {"units": "m"}),
                 "zhval": (
                     ("time", "zh", "yh", "xh"),

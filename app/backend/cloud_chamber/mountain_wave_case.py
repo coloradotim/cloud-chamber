@@ -83,11 +83,46 @@ EXPECTED_OUTPUT_TIMES_SECONDS = tuple(
     range(0, EXPECTED_DURATION_SECONDS + 1, EXPECTED_OUTPUT_CADENCE_SECONDS)
 )
 ACTIVE_TOP_M = 20_000.0
-INERT_NETCDF_ZTOP_M = 18_000.0
+INACTIVE_NAMELIST_ZTOP_M = 18_000.0
 RAYLEIGH_ONSET_M = 14_000.0
 TERRAIN_HEIGHT_M = 400.0
 TERRAIN_HALF_WIDTH_M = 1_000.0
 TERRAIN_CENTER_M = 100.0
+PRESERVED_GATE_B_RUN_ID = "dry-mountain-wave-official-20260721T183530Z"
+PRESERVED_GATE_B_IMPLEMENTATION_COMMIT = "9ff73ff244c393bee2a2e93a851ad1ba2dc16287"
+PRESERVED_GATE_B_EVALUATION_INPUT_SHA256 = {
+    "run_manifest.json": "a72c2a9ba795b76cc779013817937bf34735835a74ad29c29efaf6df3ee1c13b",
+    "case_manifest.json": "5a9d7ccc1dc9299c725eec4a3bd2c8e53163d918fe5d6ed7247527cd262c6356",
+    "namelist.input": "bf202fb8e50abb903d50cb1cbeb86fb114efc88ff8049ab41ebf5bdd550b43be",
+    "input_sounding": "75cf557b6258ab90943ee4368d3106a79ff63189e1d15aa0a6dcd2a051a033b3",
+    "runtime_file_checklist.json": (
+        "0a96a368c90454d8555f80ccb8f746da656276247a80f4dcb505e978f3586d63"
+    ),
+    "official_namelist_diff.json": (
+        "7fda4d5ee51747e6b14f620ba087eb1b91f8a416cc8f635c5e2d9befefbeae92"
+    ),
+    "official_namelist_diff.txt": (
+        "f9beafaddd3f156303a0375416db9f1620c912c754a29b760c0bbf2aa3254bfe"
+    ),
+    "storage_estimate.json": "2d9593624eefd69607b5204967c50d1bebed536fdd63b22e0baa3a4a938a9784",
+    "execution_preflight.json": (
+        "efc0dad92ba42e2cdaa4fb08905d08ca921a482b94356cd8ca9d50ff8d6a7286"
+    ),
+    "logs/stdout.log": "1018a9415063bbe9d5fcf87f1587f8086f614ddff9c1a1c44e74293cbb4e2fd0",
+    "logs/stderr.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "cm1out_stats.nc": "f26c12eee2cd9a23b2049374cd691394fae4b4793b56501bd97a633052148f58",
+    "cm1out_000001.nc": "e894f6310f92827d8d0b8f15e11a36df7516d3f1113213a8bfca719c483faffe",
+    "cm1out_000002.nc": "65d0e0eeb98c2e23309625a8931765e76d862c8e64d3d5bcfaf6abb86c16f73f",
+    "cm1out_000003.nc": "457cc4b4da864a6cb41c2fe3199e4a2620025ee0994a4765b892661fc17ba3d2",
+    "cm1out_000004.nc": "00a16c0c2d2390d8820d89502a506f967f5cd1ad3107084ab5436a24a517df9a",
+    "cm1out_000005.nc": "0a3afb2fa258ad981e24fa4a4012d227fc4c7db34826d044e188856608d8398d",
+    "cm1out_000006.nc": "dce854fd5cb90869edf5aa81f7ed50b56dd9ded8e704b9e815fd081860e01a3f",
+    "cm1out_000007.nc": "e1dd0fb3f90f52a19e0ccda13194123b69511da6f76a529a5a48b30a63bff7df",
+    "cm1out_000008.nc": "872bd649656084f82eca4409afbb2f4c509a424dcabbbd9a6c52266fd12a969e",
+    "cm1out_000009.nc": "7a8553bfe14d751108db47a5696272c46842f1ec31db0f49ec17c05d2f563462",
+    "cm1out_000010.nc": "a580260ddc8bcc1ab1c768bab510b6017513b686ed40b0a544220df3e83bddda",
+    "cm1out_000011.nc": "b51ee4ca777bd825a5c4f52c92c6e39dd913071affb3c2694d36845cd687ded2",
+}
 SOURCE_MANIFEST_METHOD = (
     "sha256 each sorted src/*.F line as '<sha256>  src/<name>\\n', then sha256 manifest"
 )
@@ -194,6 +229,19 @@ class ExecutionPreflight(BaseModel):
     passed: bool
 
 
+class ActiveTopEvidence(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    transform_top_source: str = "final_nominal_zf"
+    final_nominal_zf_m: float
+    runtime_ztop_m: float
+    configured_nz: int
+    configured_dz_m: float
+    nz_times_dz_m: float
+    all_active_top_sources_agree: bool
+    inactive_namelist_ztop_m: float = INACTIVE_NAMELIST_ZTOP_M
+
+
 class MountainWaveRunEvidence(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -202,6 +250,7 @@ class MountainWaveRunEvidence(BaseModel):
     run_id: str
     implementation_commit: str
     generated_at: datetime
+    reevaluation_identity: dict[str, Any]
     lifecycle: dict[str, Any]
     provenance: dict[str, Any]
     namelist_audit: NamelistAudit
@@ -715,7 +764,7 @@ def generate_mountain_wave_package(
             "dy_m": 200.0,
             "dz_m": 200.0,
             "active_model_top_m": ACTIVE_TOP_M,
-            "inactive_namelist_ztop_m": INERT_NETCDF_ZTOP_M,
+            "inactive_namelist_ztop_m": INACTIVE_NAMELIST_ZTOP_M,
         },
         "terrain": {
             "terrain_flag": True,
@@ -811,6 +860,41 @@ def load_mountain_wave_package(
     *, settings: CloudChamberSettings, run_id: str
 ) -> MountainWavePackageResult:
     """Load the exact previously generated package for explicit execution."""
+    return _load_mountain_wave_package(
+        settings=settings,
+        run_id=run_id,
+        required_lifecycle=LifecycleState.PACKAGED,
+    )
+
+
+def load_completed_mountain_wave_package_for_evaluation(
+    *,
+    settings: CloudChamberSettings,
+    run_id: str,
+    expected_implementation_commit: str,
+) -> MountainWavePackageResult:
+    """Load a completed package without exposing any execution operation."""
+    package = _load_mountain_wave_package(
+        settings=settings,
+        run_id=run_id,
+        required_lifecycle=LifecycleState.COMPLETED,
+    )
+    manifest = load_run_manifest(package.manifest_path)
+    if manifest.execution.exit_code != 0:
+        raise MountainWaveCaseError("Offline evaluation requires a zero-exit completed run.")
+    if package.implementation_commit != expected_implementation_commit:
+        raise MountainWaveCaseError(
+            "Completed package implementation commit does not match reevaluation authority."
+        )
+    return package
+
+
+def _load_mountain_wave_package(
+    *,
+    settings: CloudChamberSettings,
+    run_id: str,
+    required_lifecycle: LifecycleState,
+) -> MountainWavePackageResult:
     package_dir = settings.runtime_home.expanduser() / "runs" / run_id
     paths = {
         "manifest": package_dir / "run_manifest.json",
@@ -831,10 +915,10 @@ def load_mountain_wave_package(
     manifest = load_run_manifest(paths["manifest"])
     if manifest.run_id != run_id or manifest.scenario.id != SCENARIO_ID:
         raise MountainWaveCaseError("Existing package identity does not match Gate B.")
-    if manifest.lifecycle_state != LifecycleState.PACKAGED:
+    if manifest.lifecycle_state != required_lifecycle:
         raise MountainWaveCaseError(
-            f"Existing package {run_id} is already {manifest.lifecycle_state.value}; "
-            "a second execution is forbidden."
+            f"Existing package {run_id} is {manifest.lifecycle_state.value}; "
+            f"expected {required_lifecycle.value}."
         )
     case_manifest = json.loads(paths["case_manifest"].read_text())
     implementation_commit = case_manifest.get("implementation_commit")
@@ -852,6 +936,66 @@ def load_mountain_wave_package(
         implementation_commit=implementation_commit,
         generated_files=tuple(paths.values()),
     )
+
+
+def verify_evaluation_input_identity(
+    package: MountainWavePackageResult,
+    *,
+    expected_run_id: str,
+    expected_implementation_commit: str,
+    expected_file_sha256: dict[str, str],
+) -> dict[str, Any]:
+    """Fail closed unless every preserved evaluation input matches its pinned hash."""
+    if package.run_id != expected_run_id:
+        raise MountainWaveCaseError("Preserved run ID does not match reevaluation authority.")
+    if package.implementation_commit != expected_implementation_commit:
+        raise MountainWaveCaseError(
+            "Preserved implementation commit does not match reevaluation authority."
+        )
+    manifest = load_run_manifest(package.manifest_path)
+    if manifest.lifecycle_state != LifecycleState.COMPLETED or manifest.execution.exit_code != 0:
+        raise MountainWaveCaseError(
+            "Preserved reevaluation input is not a completed zero-exit run."
+        )
+    if manifest.app.commit != expected_implementation_commit:
+        raise MountainWaveCaseError("Run manifest implementation commit changed.")
+    active = active_cm1_processes()
+    if active:
+        raise MountainWaveCaseError(
+            f"Offline evaluation requires no active CM1/MPI process: {active}"
+        )
+
+    package_root = package.package_dir.resolve()
+    actual_file_sha256: dict[str, str] = {}
+    mismatches: list[str] = []
+    for logical_path, expected_hash in expected_file_sha256.items():
+        path = (package_root / logical_path).resolve()
+        if not path.is_relative_to(package_root):
+            raise MountainWaveCaseError(f"Evaluation input escapes package: {logical_path}")
+        if not path.is_file():
+            mismatches.append(f"missing:{logical_path}")
+            continue
+        actual_hash = sha256_file(path)
+        actual_file_sha256[logical_path] = actual_hash
+        if actual_hash != expected_hash:
+            mismatches.append(f"sha256_mismatch:{logical_path}:{actual_hash}")
+    if mismatches:
+        raise MountainWaveCaseError(
+            "Preserved Gate B evaluation identity mismatch: " + "; ".join(mismatches)
+        )
+
+    recorded_namelist_hash = manifest.run_configuration.get("generated_input_sha256", {}).get(
+        "namelist.input"
+    )
+    if recorded_namelist_hash != actual_file_sha256.get("namelist.input"):
+        raise MountainWaveCaseError("Manifest and preserved namelist hashes disagree.")
+    return {
+        "run_id": package.run_id,
+        "implementation_commit": package.implementation_commit,
+        "verification_mode": "pinned_sha256_before_and_after_offline_evaluation",
+        "file_sha256": actual_file_sha256,
+        "all_inputs_match_pinned_original": True,
+    }
 
 
 def preflight_package_for_execution(
@@ -1029,32 +1173,40 @@ def reconstruct_physical_heights(
     )
 
 
-def resolve_active_top_m(
+def resolve_active_top_evidence(
     nominal_zf: Any,
     nominal_zf_units: str | None,
-    netcdf_ztop: Any,
-    netcdf_ztop_units: str | None,
-) -> tuple[float, float, bool]:
+    runtime_ztop: Any,
+    runtime_ztop_units: str | None,
+    *,
+    configured_nz: int,
+    configured_dz_m: float,
+) -> ActiveTopEvidence:
     full_levels_m = normalize_length_to_m(nominal_zf, nominal_zf_units)
     if full_levels_m.ndim != 1 or full_levels_m.size < 2:
         raise MountainWaveCaseError("Nominal zf must contain the full vertical coordinate.")
-    active_top = float(full_levels_m[-1])
-    scalar_top_values = normalize_length_to_m(netcdf_ztop, netcdf_ztop_units).reshape(-1)
+    final_nominal_zf_m = float(full_levels_m[-1])
+    scalar_top_values = normalize_length_to_m(runtime_ztop, runtime_ztop_units).reshape(-1)
     if scalar_top_values.size != 1:
-        raise MountainWaveCaseError("NetCDF ztop must be scalar-valued.")
-    netcdf_top = float(scalar_top_values[0])
-    rejected = not math.isclose(active_top, netcdf_top, rel_tol=0.0, abs_tol=0.01)
-    if not math.isclose(active_top, ACTIVE_TOP_M, rel_tol=0.0, abs_tol=0.01):
+        raise MountainWaveCaseError("Runtime NetCDF ztop must be scalar-valued.")
+    runtime_ztop_m = float(scalar_top_values[0])
+    nz_times_dz_m = configured_nz * configured_dz_m
+    evidence = ActiveTopEvidence(
+        final_nominal_zf_m=final_nominal_zf_m,
+        runtime_ztop_m=runtime_ztop_m,
+        configured_nz=configured_nz,
+        configured_dz_m=configured_dz_m,
+        nz_times_dz_m=nz_times_dz_m,
+        all_active_top_sources_agree=all(
+            math.isclose(value, final_nominal_zf_m, rel_tol=0.0, abs_tol=0.01)
+            for value in (runtime_ztop_m, nz_times_dz_m, ACTIVE_TOP_M)
+        ),
+    )
+    if not evidence.all_active_top_sources_agree:
         raise MountainWaveCaseError(
-            f"Active top from nominal zf is {active_top:g} m, expected {ACTIVE_TOP_M:g} m."
+            "Active-top evidence disagrees among final nominal zf, runtime ztop, and nz*dz."
         )
-    if not math.isclose(netcdf_top, INERT_NETCDF_ZTOP_M, rel_tol=0.0, abs_tol=0.01):
-        raise MountainWaveCaseError(
-            f"NetCDF ztop is {netcdf_top:g} m, expected inert value {INERT_NETCDF_ZTOP_M:g} m."
-        )
-    if not rejected:
-        raise MountainWaveCaseError("Evaluator did not reject inert NetCDF ztop.")
-    return active_top, netcdf_top, rejected
+    return evidence
 
 
 def lower_boundary_tangency_metrics(
@@ -1146,17 +1298,24 @@ def central_boundary_metrics(
     west_limit = float(np.quantile(x, 0.2))
     east_limit = float(np.quantile(x, 0.8))
     central_x = (x >= west_limit) & (x <= east_limit)
-    boundary_x = ~central_x
+    west_x = x < west_limit
+    east_x = x > east_limit
     below = heights < rayleigh_onset_m
     rayleigh = heights >= rayleigh_onset_m
     central_mask = below & central_x[None, None, :]
-    boundary_mask = below & boundary_x[None, None, :]
+    west_mask = below & west_x[None, None, :]
+    east_mask = below & east_x[None, None, :]
+    outer_mask = west_mask | east_mask
     return {
-        "x_partition_method": "outer 20 percent west/east versus central 60 percent",
+        "x_partition_method": (
+            "west 20 percent, central 60 percent, and east 20 percent evaluated separately"
+        ),
         "west_central_limit_m": west_limit,
         "east_central_limit_m": east_limit,
         "central_below_rayleigh_rms": _masked_rms(field, central_mask),
-        "boundary_below_rayleigh_rms": _masked_rms(field, boundary_mask),
+        "west_below_rayleigh_rms": _masked_rms(field, west_mask),
+        "east_below_rayleigh_rms": _masked_rms(field, east_mask),
+        "outer_combined_below_rayleigh_rms": _masked_rms(field, outer_mask),
         "all_below_rayleigh_rms": _masked_rms(field, below),
         "rayleigh_layer_rms": _masked_rms(field, rayleigh),
         "top_two_km_rms": _masked_rms(field, heights >= ACTIVE_TOP_M - 2_000.0),
@@ -1177,6 +1336,7 @@ def evaluate_mountain_wave_run(
     *,
     settings: CloudChamberSettings,
     package: MountainWavePackageResult,
+    reevaluation_identity: dict[str, Any] | None = None,
 ) -> MountainWaveRunEvidence:
     """Evaluate the one completed run directly from native terrain-following NetCDF."""
     manifest = load_run_manifest(package.manifest_path)
@@ -1190,6 +1350,11 @@ def evaluate_mountain_wave_run(
     official_text = provenance.mountain_wave_namelist_path.read_text()
     generated_text = Path(manifest.generated_inputs.namelist_input or "").read_text()
     namelist_audit = audit_namelist(official_text, generated_text)
+    generated_assignments = parse_namelist_assignments(generated_text)
+    if _integer_value(generated_assignments, "stretch_z") != 0:
+        raise MountainWaveCaseError("Gate B active-top evaluation requires stretch_z=0.")
+    configured_nz = _integer_value(generated_assignments, "nz")
+    configured_dz_m = float(generated_assignments["dz"])
     storage = StorageEstimate.model_validate(json.loads(package.storage_estimate_path.read_text()))
 
     output_candidates = [Path(path) for path in manifest.outputs.netcdf_paths]
@@ -1207,9 +1372,7 @@ def evaluate_mountain_wave_run(
     first_th: np.ndarray[Any, np.dtype[np.float64]] | None = None
     first_zh_physical: np.ndarray[Any, np.dtype[np.float64]] | None = None
     full_heights: np.ndarray[Any, np.dtype[np.float64]] | None = None
-    active_top: float | None = None
-    netcdf_top: float | None = None
-    ztop_rejected = False
+    active_top_evidence: ActiveTopEvidence | None = None
     terrain_frame_errors: list[dict[str, Any]] = []
     zh_frame_errors: list[dict[str, Any]] = []
     tangency_by_time: list[dict[str, Any]] = []
@@ -1217,6 +1380,7 @@ def evaluate_mountain_wave_run(
     boundary_by_time: list[dict[str, Any]] = []
     flow_by_time: list[dict[str, Any]] = []
     moisture_by_time: list[dict[str, Any]] = []
+    active_top_by_time: list[dict[str, Any]] = []
     actual_times: list[float] = []
 
     for path in model_paths:
@@ -1229,19 +1393,30 @@ def evaluate_mountain_wave_run(
             coords = _normalized_coordinates(dataset)
             terrain = _field_array(dataset, "zs", ("yh", "xh"))
             zh_physical = _field_array(dataset, "zhval", ("zh", "yh", "xh"))
+            frame_active_top = resolve_active_top_evidence(
+                dataset["zf"].values,
+                str(dataset["zf"].attrs.get("units", "")),
+                dataset["ztop"].values,
+                str(dataset["ztop"].attrs.get("units", "")),
+                configured_nz=configured_nz,
+                configured_dz_m=configured_dz_m,
+            )
+            active_top_by_time.append(
+                {
+                    "time_seconds": time_seconds,
+                    **frame_active_top.model_dump(mode="json"),
+                }
+            )
 
             if first_coords is None:
                 first_coords = coords
                 first_terrain = terrain
                 first_th = _field_array(dataset, "th", ("zh", "yh", "xh"))
-                active_top, netcdf_top, ztop_rejected = resolve_active_top_m(
-                    dataset["zf"].values,
-                    str(dataset["zf"].attrs.get("units", "")),
-                    dataset["ztop"].values,
-                    str(dataset["ztop"].attrs.get("units", "")),
-                )
+                active_top_evidence = frame_active_top
                 full_heights = reconstruct_physical_heights(
-                    terrain, coords["zf"], active_top_m=active_top
+                    terrain,
+                    coords["zf"],
+                    active_top_m=active_top_evidence.final_nominal_zf_m,
                 )
                 first_zh_physical = zh_physical
             else:
@@ -1250,7 +1425,7 @@ def evaluate_mountain_wave_run(
             assert first_terrain is not None
             assert first_th is not None
             assert full_heights is not None
-            assert active_top is not None
+            assert active_top_evidence is not None
 
             terrain_expected = np.broadcast_to(
                 analytic_itern1_terrain(coords["xh"])[None, :], terrain.shape
@@ -1266,7 +1441,9 @@ def evaluate_mountain_wave_run(
                 }
             )
             expected_zh = reconstruct_physical_heights(
-                terrain, coords["zh"], active_top_m=active_top
+                terrain,
+                coords["zh"],
+                active_top_m=active_top_evidence.final_nominal_zf_m,
             )
             zh_frame_errors.append(
                 {
@@ -1360,8 +1537,7 @@ def evaluate_mountain_wave_run(
     assert first_th is not None
     assert first_zh_physical is not None
     assert full_heights is not None
-    assert active_top is not None
-    assert netcdf_top is not None
+    assert active_top_evidence is not None
 
     _require_complete_times(actual_times)
     non_finite_total = sum(
@@ -1422,9 +1598,8 @@ def evaluate_mountain_wave_run(
         "nominal_zh_units_in_output": first_inventory["coordinates"]["zh"]["units"],
         "nominal_zf_units_in_output": first_inventory["coordinates"]["zf"]["units"],
         "zhval_units_in_output": first_inventory["variables"]["zhval"]["units"],
-        "active_top_from_final_nominal_zf_m": active_top,
-        "netcdf_scalar_ztop_m": netcdf_top,
-        "inert_netcdf_ztop_rejected": ztop_rejected,
+        "active_top_evidence": active_top_evidence.model_dump(mode="json"),
+        "active_top_checks_by_time": active_top_by_time,
         "zhval_transform_max_abs_error_m": zh_max_error,
         "minimum_scalar_column_spacing_m": float(np.min(np.diff(first_zh_physical, axis=0))),
         "full_level_bottom_equals_terrain_max_abs_error_m": float(
@@ -1468,8 +1643,9 @@ def evaluate_mountain_wave_run(
         "rayleigh_onset_m": RAYLEIGH_ONSET_M,
         "metrics_by_time": boundary_by_time,
         "interpretation_method": (
-            "compare RMS w and theta perturbations in the outer 20 percent west/east zones "
-            "with the central 60 percent, and below 14 km with the Rayleigh and top layers"
+            "compare RMS w and theta perturbations in separate west 20 percent, central 60 "
+            "percent, and east 20 percent zones; compare below 14 km with Rayleigh and top "
+            "layers; east-zone growth is retained separately from upstream west reflection"
         ),
     }
     runtime_integrity = _runtime_integrity_evidence(package, manifest, model_paths)
@@ -1485,6 +1661,14 @@ def evaluate_mountain_wave_run(
         run_id=package.run_id,
         implementation_commit=package.implementation_commit,
         generated_at=datetime.now(UTC),
+        reevaluation_identity=reevaluation_identity
+        or {
+            "run_id": package.run_id,
+            "implementation_commit": package.implementation_commit,
+            "verification_mode": "initial_same-process_post-run_evaluation",
+            "file_sha256": {path.name: sha256_file(path) for path in model_paths},
+            "all_inputs_match_pinned_original": False,
+        },
         lifecycle={
             "state": manifest.lifecycle_state.value,
             "exit_code": manifest.execution.exit_code,
@@ -1504,6 +1688,38 @@ def evaluate_mountain_wave_run(
         runtime_integrity=runtime_integrity,
         caveats=caveats,
     )
+
+
+def reevaluate_preserved_mountain_wave_run(
+    *,
+    settings: CloudChamberSettings,
+    package: MountainWavePackageResult,
+) -> MountainWaveRunEvidence:
+    """Evaluate the PM-authorized preserved run without any package or launch operation."""
+    evaluator_commit = verified_clean_git_commit()
+    before = verify_evaluation_input_identity(
+        package,
+        expected_run_id=PRESERVED_GATE_B_RUN_ID,
+        expected_implementation_commit=PRESERVED_GATE_B_IMPLEMENTATION_COMMIT,
+        expected_file_sha256=PRESERVED_GATE_B_EVALUATION_INPUT_SHA256,
+    )
+    evidence = evaluate_mountain_wave_run(
+        settings=settings,
+        package=package,
+        reevaluation_identity=before,
+    )
+    after = verify_evaluation_input_identity(
+        package,
+        expected_run_id=PRESERVED_GATE_B_RUN_ID,
+        expected_implementation_commit=PRESERVED_GATE_B_IMPLEMENTATION_COMMIT,
+        expected_file_sha256=PRESERVED_GATE_B_EVALUATION_INPUT_SHA256,
+    )
+    if before["file_sha256"] != after["file_sha256"]:
+        raise MountainWaveCaseError("Preserved evaluation inputs changed during analysis.")
+    identity = dict(after)
+    identity["evaluator_commit"] = evaluator_commit
+    identity["verified_before_and_after_evaluation"] = True
+    return evidence.model_copy(update={"reevaluation_identity": identity})
 
 
 def write_mountain_wave_run_evidence(path: Path, evidence: MountainWaveRunEvidence) -> None:

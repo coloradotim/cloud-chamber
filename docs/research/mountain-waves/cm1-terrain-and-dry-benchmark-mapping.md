@@ -97,9 +97,9 @@ zh(x,y,k) = zs(x,y) + sigma(k)  * (z_t - zs(x,y)) / z_t
 zf(x,y,k) = zs(x,y) + sigmaf(k) * (z_t - zs(x,y)) / z_t
 ```
 
-`zh` is the physical height of scalar levels and `zf` is the physical height of full or `w` levels. Model surfaces follow terrain most strongly at the bottom and converge to a constant-height top. They are stationary, not moving terrain. With `stretch_z=0`, official documentation and `src/param.F` show that `z_t=maxz=sigmaf(nz+1)=nz*dz`; the `ztop` namelist value belongs to stretched-grid configuration and is not the active top for this case. Thus the official case top is **20,000 m**, not the inert `ztop=18,000 m` entry.
+`zh` is the physical height of scalar levels and `zf` is the physical height of full or `w` levels. Model surfaces follow terrain most strongly at the bottom and converge to a constant-height top. They are stationary, not moving terrain. With `stretch_z=0`, `src/param.F` normalizes the runtime `ztop` to `dz*nk`; therefore `z_t=ztop=maxz=sigmaf(nz+1)=nz*dz`. Thus the official case's active top and runtime NetCDF `ztop` are both **20,000 m**. The unchanged `ztop=18,000 m` text in the supplied namelist is inactive configuration retained only in the official-input audit.
 
-There is a consequential output caveat: `src/writeout_nc.F` writes the namelist variable `ztop` as the NetCDF scalar `ztop`, even in this unstretched case. A faithful r21.1 NetCDF run can therefore contain `ztop=18,000 m` while its active top and last nominal `zf` level are 20,000 m. The later evaluator must derive the transform top from the active top `maxz` reported at startup or from `zf(nz+1)`, and must flag rather than trust the NetCDF `ztop` scalar.
+The evaluator derives the transform top from the final nominal `zf` level and independently verifies that it agrees with the runtime NetCDF `ztop` and configured `nz*dz`. Any disagreement among these active sources is a fail-closed evaluation error. The inactive 18 km namelist entry is recorded separately and never participates in terrain-coordinate reconstruction.
 
 CM1 derives terrain gradients and metric terms after constructing `zs`, `zh`, and `zf`. The governing-equation form is:
 
@@ -151,7 +151,7 @@ The controlling configuration is the tag-pinned [`run/config_files/nh_mountain_w
 | --- | --- | --- | --- | --- |
 | Dimensions | `nx=100`, `ny=1`, `nz=100` | Two-dimensional `x-z` ridge-flow case with a singleton `y` scalar dimension. | direct official benchmark setting | `param0` |
 | Uniform grid | `dx=dy=dz=200 m`; `stretch_x=stretch_y=stretch_z=0` | 20 km `x` extent, nominal 0.2 km `y` extent, and 20 km model top; no active stretching. | direct official benchmark setting | `param1`, `param4-6`, terrain guide |
-| Inert stretched-grid top | `ztop=18000 m` while `stretch_z=0` | Not the active top; `maxz=nz*dz=20000 m`. NetCDF nevertheless writes this namelist value as scalar `ztop`. | CM1 implementation default | `param6`, `param.F`, `writeout_nc.F` |
+| Inactive stretched-grid top input | Supplied namelist text has `ztop=18000 m` while `stretch_z=0` | Not the active top. `param.F` normalizes runtime `ztop=maxz=nz*dz=20000 m`, which is also written to NetCDF; the 18 km input remains only in the official-input audit. | CM1 implementation behavior | `param6`, `param.F`, `writeout_nc.F` |
 | Origin | `iorigin=2` | Centered horizontal coordinates: nominal `x=-10` to `+10 km`. | direct official benchmark setting | `param2`, `README.namelist` |
 | Time integration | `dtl=2 s`, `adapt_dt=0`, `timax=2160 s` | Fixed long timestep; 36-minute official-duration integration. | direct official benchmark setting | `param1-2` |
 | History cadence | `tapfrq=216 s` | History at 3.6-minute intervals, including initial output when normal CM1 scheduling applies. | operational/output choice | `param1`, `README.namelist` |
@@ -258,7 +258,7 @@ The later gate should make one explicit operational change to the official bundl
 | `zs` | 2-D scalar horizontal grid, meters | Verify terrain shape/location and construct physical heights. | Retained in recognized NetCDF metadata as a data variable. | No. It is absent from the field catalog and generic surface rendering assumes a flat floor. |
 | coordinate `zh` | 1-D scalar vertical coordinate | In terrain NetCDF this contains nominal `sigma(k)`, not physical height by column. | Retained as a coordinate. | Misleading if treated as physical altitude over terrain. |
 | coordinate `zf` | 1-D full-level vertical coordinate | Nominal `sigmaf(k)` for `w` staggering; its last value is the active 20 km top. | Retained as a coordinate. | Misleading if treated as physical altitude over terrain except for the constant-height top. |
-| scalar `ztop` | NetCDF scalar copied from the namelist | Contains 18 km here even though the unstretched active top is 20 km. | Retained if present. | Must not drive terrain-coordinate reconstruction. |
+| scalar `ztop` | Runtime NetCDF scalar | Contains the normalized 20 km active top for this unstretched run. | Retained if present. | Independently cross-check against the final nominal `zf` and configured `nz*dz`; fail closed on disagreement. |
 | `zhval` | 3-D scalar grid, meters | Physical height `zh(x,y,k)` for `th`, `prs`, and scalar-interpolated evaluation. | Retained in metadata but not specially interpreted. | No; no field definition or terrain-aware mesh path. |
 | `th` | 3-D scalar grid | Potential-temperature displacement and wave phase. | Recognized. | Values can be sliced, but current altitude placement uses the nominal 1-D coordinate. |
 | `prs` | 3-D scalar grid | Hydrostatic/field integrity and pressure response. | Recognized. | Same flat-grid placement limitation. |
@@ -269,7 +269,7 @@ The later gate should make one explicit operational change to the official bundl
 
 For native output, `output_zs=1` emits `zs` in meters and `output_zh=1` emits a three-dimensional variable named `zhval`, described as height on model levels. The NetCDF coordinate variables still write one-dimensional `zh=sigma` and `zf=sigmaf` when terrain is active. This naming distinction is essential.
 
-CM1 does not expose a corresponding three-dimensional `zfval` through `output_zh`. The later evaluator can reconstruct physical full-level heights exactly from verified `zs`, nominal `zf`/`sigmaf`, and the active top from the last nominal `zf` value using the r21.1 equation. It must not use the inconsistent NetCDF `ztop` scalar. The derivation must be tested against `zf_physical(:,:,1)=zs` and `zf_physical(:,:,nz+1)=20,000 m` before evaluating `w` in physical space.
+CM1 does not expose a corresponding three-dimensional `zfval` through `output_zh`. The later evaluator can reconstruct physical full-level heights exactly from verified `zs`, nominal `zf`/`sigmaf`, and the active top from the last nominal `zf` value using the r21.1 equation. It must independently confirm that the final nominal `zf`, runtime NetCDF `ztop`, and configured `nz*dz` all resolve to 20,000 m. The derivation must be tested against `zf_physical(:,:,1)=zs` and `zf_physical(:,:,nz+1)=20,000 m` before evaluating `w` in physical space.
 
 ### Native versus interpolated output
 
@@ -372,7 +372,7 @@ For scale, the required six three-dimensional fields plus `zs` comprise about 70
 - Capture command, environment summary without machine-private paths, source/executable identities, wall time, exit code, stdout/stderr, and normal-termination marker.
 - Verify exactly expected history times and files.
 - Run finite/count/range checks for all required fields.
-- Verify analytic `zs`, physical `zhval`, reconstructed physical `zf`, monotonic columns, dimensions, staggering, and static terrain. Record the expected `ztop=18 km` versus active `maxz=20 km` discrepancy and reject any evaluator that uses the former in the transform.
+- Verify analytic `zs`, physical `zhval`, reconstructed physical `zf`, monotonic columns, dimensions, staggering, and static terrain. Record the inactive 18 km input separately, require the final nominal `zf`, runtime NetCDF `ztop`, and configured `nz*dz` to agree at the 20 km active top, and reject any evaluator if those active sources disagree.
 - Record upstream `u`, dry stability, and moisture absence.
 - Produce native-grid `w` and `th` cross sections in physical height for initial, early, middle, and final times.
 - Record extrema and locations by time without turning them into unsupported pass thresholds.
@@ -405,7 +405,7 @@ Return the evidence to PM. One bounded correction may be proposed only after ide
 | Terrain-coordinate distortion | The analytic 400 m / 1 km hill and 20 km top are known, but r21.1 publishes no numeric distortion tolerance. Physical layer spacing and metric behavior must be inspected. |
 | `output_interp` limitations | Official documentation says it is coarse and doubles output. It is not acceptable as the only scientific representation. |
 | Physical-height semantics | Native NetCDF provides 1-D nominal `zh`/`zf`, 2-D `zs`, and 3-D scalar `zhval`; full-level physical heights for `w` must be reconstructed and checked. |
-| Inconsistent top metadata | In the unstretched official case, active `maxz` is 20 km but the NetCDF scalar `ztop` is copied from the inert 18 km namelist value. Evaluation must use startup `maxz` or the last nominal `zf` level. |
+| Active-top interpretation | The supplied namelist retains an inactive 18 km `ztop`, but `param.F` normalizes runtime `ztop` to the 20 km unstretched-grid top. Evaluation derives the transform top from the final nominal `zf` and requires agreement with runtime `ztop` and configured `nz*dz`. |
 | Current flat-grid application assumptions | Ingest retains metadata, but existing slices, profiles, time-height payloads, point clouds, and Three.js placement do not use terrain-aware physical heights. |
 | Official example versus validated benchmark | The bundled case is source-traceable and literature-linked, but no official r21.1 field checksum or quantitative tolerance was found. The later gate establishes reproducibility and structural fidelity, not formal solution convergence. |
 | Configured runtime behavior | Prior repository evidence records source/executable identity, but actual terrain run behavior, NetCDF availability, output inventory, numerical ranges, and termination remain unverified until Tim's configured runtime executes the case. |
