@@ -31,6 +31,7 @@ from cloud_chamber.mountain_wave_case import (  # noqa: E402
     MountainWaveCaseError,
     evaluate_mountain_wave_run,
     generate_mountain_wave_package,
+    load_mountain_wave_package,
     preflight_package_for_execution,
     write_mountain_wave_run_evidence,
 )
@@ -46,7 +47,11 @@ def main(argv: list[str] | None = None) -> int:
     run_id = args.run_id or _default_run_id()
 
     try:
-        package = generate_mountain_wave_package(settings=settings, run_id=run_id)
+        package_dir = settings.runtime_home.expanduser() / "runs" / run_id
+        if args.execute and package_dir.exists():
+            package = load_mountain_wave_package(settings=settings, run_id=run_id)
+        else:
+            package = generate_mountain_wave_package(settings=settings, run_id=run_id)
         if not args.execute:
             print(
                 json.dumps(

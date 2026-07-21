@@ -807,6 +807,53 @@ def generate_mountain_wave_package(
     )
 
 
+def load_mountain_wave_package(
+    *, settings: CloudChamberSettings, run_id: str
+) -> MountainWavePackageResult:
+    """Load the exact previously generated package for explicit execution."""
+    package_dir = settings.runtime_home.expanduser() / "runs" / run_id
+    paths = {
+        "manifest": package_dir / "run_manifest.json",
+        "case_manifest": package_dir / "case_manifest.json",
+        "namelist": package_dir / "namelist.input",
+        "input_sounding": package_dir / "input_sounding",
+        "report": package_dir / "dry_run_report.json",
+        "runtime_checklist": package_dir / "runtime_file_checklist.json",
+        "namelist_audit": package_dir / "official_namelist_diff.json",
+        "namelist_audit_text": package_dir / "official_namelist_diff.txt",
+        "storage_estimate": package_dir / "storage_estimate.json",
+    }
+    missing = sorted(path.name for path in paths.values() if not path.is_file())
+    if missing:
+        raise MountainWaveCaseError(
+            f"Existing Gate B package is incomplete for {run_id}: {missing}"
+        )
+    manifest = load_run_manifest(paths["manifest"])
+    if manifest.run_id != run_id or manifest.scenario.id != SCENARIO_ID:
+        raise MountainWaveCaseError("Existing package identity does not match Gate B.")
+    if manifest.lifecycle_state != LifecycleState.PACKAGED:
+        raise MountainWaveCaseError(
+            f"Existing package {run_id} is already {manifest.lifecycle_state.value}; "
+            "a second execution is forbidden."
+        )
+    case_manifest = json.loads(paths["case_manifest"].read_text())
+    implementation_commit = case_manifest.get("implementation_commit")
+    if not isinstance(implementation_commit, str) or not implementation_commit:
+        raise MountainWaveCaseError("Existing package lacks its implementation commit.")
+    if manifest.app.commit != implementation_commit:
+        raise MountainWaveCaseError("Existing package commit records disagree.")
+    return MountainWavePackageResult(
+        run_id=run_id,
+        package_dir=package_dir,
+        manifest_path=paths["manifest"],
+        case_manifest_path=paths["case_manifest"],
+        namelist_audit_path=paths["namelist_audit"],
+        storage_estimate_path=paths["storage_estimate"],
+        implementation_commit=implementation_commit,
+        generated_files=tuple(paths.values()),
+    )
+
+
 def preflight_package_for_execution(
     *,
     settings: CloudChamberSettings,

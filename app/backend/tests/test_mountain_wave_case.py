@@ -20,6 +20,7 @@ from cloud_chamber.mountain_wave_case import (
     evaluate_mountain_wave_run,
     expected_output_times,
     generate_mountain_wave_package,
+    load_mountain_wave_package,
     lower_boundary_tangency_metrics,
     normalize_length_to_m,
     normalize_time_to_seconds,
@@ -200,6 +201,10 @@ def test_package_contains_only_bounded_inputs_and_labels_non_consumed_sounding(
         "cloud chamber input_sounding notes"
         not in (package.package_dir / "input_sounding").read_text()
     )
+
+    loaded = load_mountain_wave_package(settings=settings, run_id="mountain-wave-test")
+    assert loaded.package_dir == package.package_dir
+    assert loaded.implementation_commit == "implementation-commit"
 
 
 def test_package_refuses_dirty_worktree_before_writing(
