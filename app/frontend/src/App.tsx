@@ -2013,6 +2013,23 @@ type ComparisonStoryLoadResult = {
   status: string | null;
 };
 
+function tradeCumulusComparisonStoryForDisplay(
+  story: TradeCumulusComparisonStoryResponse,
+): TradeCumulusComparisonStoryResponse {
+  const baselineDisplay = `${(story.baseline.control_value * 1000).toPrecision(2)} g/kg m/s`;
+  const moreMoistureDisplay = `${(story.more_moisture.control_value * 1000).toPrecision(2)} g/kg m/s`;
+  return {
+    ...story,
+    baseline: { ...story.baseline, control_display: baselineDisplay },
+    more_moisture: { ...story.more_moisture, control_display: moreMoistureDisplay },
+    changed_condition: {
+      ...story.changed_condition,
+      baseline_display: baselineDisplay,
+      more_moisture_display: moreMoistureDisplay,
+    },
+  };
+}
+
 async function fetchTradeCumulusComparisonStory(): Promise<ComparisonStoryLoadResult> {
   try {
     const response = await fetch("/api/comparisons/trade-cumulus-moisture-v1");
@@ -2028,10 +2045,8 @@ async function fetchTradeCumulusComparisonStory(): Promise<ComparisonStoryLoadRe
         status: "The curated comparison is temporarily unavailable.",
       };
     }
-    return {
-      story: (await response.json()) as TradeCumulusComparisonStoryResponse,
-      status: null,
-    };
+    const story = (await response.json()) as TradeCumulusComparisonStoryResponse;
+    return { story: tradeCumulusComparisonStoryForDisplay(story), status: null };
   } catch {
     return {
       story: null,

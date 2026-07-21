@@ -4424,6 +4424,9 @@ describe("App", () => {
     expect(
       screen.getByRole("heading", { name: "Trade Cumulus: Baseline and More Moisture" }),
     ).toBeInTheDocument();
+    expect(screen.getAllByText("0.052 g/kg m/s")).toHaveLength(2);
+    expect(screen.getAllByText("0.078 g/kg m/s")).toHaveLength(2);
+    expect(screen.queryByText(/g\/g m\/s/)).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Back to Trade Cumulus" }));
     expect(
       await screen.findByRole("heading", { name: "Return to the cloud field" }),

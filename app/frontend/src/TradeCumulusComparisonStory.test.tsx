@@ -375,9 +375,6 @@ describe("TradeCumulusComparisonStory", () => {
     expect(screen.getAllByText("Vertical x-z slice at y = 1.95 km")).toHaveLength(2);
     expect(screen.getByText(story.baseline.curated_view.caption)).toBeInTheDocument();
     expect(screen.getByText(story.more_moisture.curated_view.caption)).toBeInTheDocument();
-    expect(screen.getAllByText("0.052 g/kg m/s")).toHaveLength(2);
-    expect(screen.getAllByText("0.078 g/kg m/s")).toHaveLength(2);
-    expect(screen.queryByText(/g\/g m\/s/)).not.toBeInTheDocument();
     expect(screen.getByText("+50%")).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "What responded materially" })).toBeInTheDocument();
     expect(screen.getByText("+2.115 percentage points")).toBeInTheDocument();
