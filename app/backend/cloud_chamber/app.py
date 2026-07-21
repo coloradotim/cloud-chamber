@@ -39,6 +39,11 @@ from cloud_chamber.lan_worker import (
 )
 from cloud_chamber.local_run_manager import LocalRunManager, LocalRunManagerError, RunStatus
 from cloud_chamber.local_run_queue import LocalRunQueueError, LocalRunQueueManager
+from cloud_chamber.mountain_wave_terrain_visualization import (
+    MountainWaveTerrainField,
+    MountainWaveTerrainVisualizationError,
+    preserved_mountain_wave_terrain_frame,
+)
 from cloud_chamber.observed_sounding import ObservedSoundingError, parse_igra_station_text
 from cloud_chamber.result_cards import (
     ResultCardUpdate,
@@ -759,6 +764,22 @@ def get_trade_cumulus_updraft_lens_defaults(result_id: str) -> dict[str, object]
     except ResultIngestError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except TradeCumulusUpdraftLensError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return result.model_dump(mode="json")
+
+
+@app.get("/api/research/mountain-wave-terrain")
+def get_mountain_wave_terrain_frame(
+    field: MountainWaveTerrainField = "w",
+    time_index: int = 0,
+) -> dict[str, object]:
+    try:
+        result = preserved_mountain_wave_terrain_frame(
+            load_settings(),
+            field=field,
+            time_index=time_index,
+        )
+    except MountainWaveTerrainVisualizationError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return result.model_dump(mode="json")
 

@@ -37,6 +37,8 @@ describe("CloudWorldsHome", () => {
     expect(await screen.findByRole("heading", { name: "Trade Cumulus" })).toBeInTheDocument();
     expect(screen.getByText(summary.short_description)).toBeInTheDocument();
     expect(screen.getByText("2 awaiting inspection")).toBeInTheDocument();
+    expect(screen.queryByText(/mountain-wave/i)).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /terrain/i })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Enter Trade Cumulus" }));
     expect(onEnter).toHaveBeenCalledOnce();
   });

@@ -78,6 +78,53 @@ Current backend output-product payloads include:
 - time-series arrays;
 - selected-region diagnostics for point, column, and box requests.
 
+### Bounded terrain-aware research payload
+
+`GET /api/research/mountain-wave-terrain` is an additive, research-only JSON
+payload for the hash-pinned Gate B dry mountain-wave result. It does not replace
+or alter the shared flat-grid visualization contract. The endpoint accepts
+`field=w|theta_perturbation` and an exact native `time_index` from `0` through
+`10`.
+
+The `mountain_wave_terrain_research_v1` response carries:
+
+- the exact 11 native model times and selected numbered history;
+- native `xh` centers and `xf` edges, terrain `zs`, native physical scalar
+  heights from `zhval`, and reconstructed physical full heights;
+- nominal `zh` and `zf` coordinates, all normalized to meters and explicitly
+  distinguished from physical model height;
+- native `w(zf,yh,xh)` or derived `th(t)-th(t=0)` values on their respective
+  physical full or scalar levels, with dimensions, staggering, and units;
+- final nominal `zf`, runtime `ztop`, configured `nz` and `dz`, and `nz*dz`
+  active-top evidence, which must agree at 20,000 m;
+- fixed cross-time field scale, selected-time range, terrain masking, display
+  binning, derivation, and no-field-interpolation provenance;
+- dry two-dimensional and singleton-`y` disclosure, pinned identity status,
+  extraction/serialization timing, and serialized payload bytes.
+
+The endpoint verifies every pinned manifest, generated input, stats/log, and
+numbered history before and after extraction. It fails closed on missing or
+changed identity, incomplete times, unsupported units or dimensions,
+non-singleton `y`, non-monotonic physical columns, active-top disagreement,
+physical heights below terrain, a bottom full level different from terrain, or
+a non-constant physical top.
+
+The browser uses the physical mesh as coordinate authority. Native field values
+are not interpolated or collocated. For raster display only, interior horizontal
+cell boundaries use the midpoint of neighboring physical center heights. Scalar
+samples occupy the physical full-level bounds around their native scalar level;
+full-level `w` samples occupy physical vertical midpoint bounds clamped to
+terrain and active top. Hover reports the selected native sample's `xh`,
+physical model height, nominal level, and local AGL (`physical height - zs` at
+the same x cell). Model height is not labeled MSL.
+
+The local inspection route is `/research/mountain-wave-terrain`. It is selected
+only by that unlinked development URL and is absent from Home, Trade Cumulus,
+and product navigation. It presents no three-dimensional extrusion. Supporting
+another terrain-following result would require integrating equivalent physical
+mesh metadata into result ingest and the shared visualization API; this bounded
+endpoint is not a generic terrain framework.
+
 ## Behavioral Rules And Invariants
 
 Raw NetCDF stays backend-owned. The browser receives JSON payloads produced by
@@ -142,6 +189,7 @@ Current API routes include:
 - `GET /api/results/{result_id}/output-products/time-height`;
 - `GET /api/results/{result_id}/output-products/time-series`;
 - `GET /api/results/{result_id}/diagnostics/selected-region`;
+- `GET /api/research/mountain-wave-terrain` (bounded research-only contract);
 - `GET /api/storage/inventory`;
 - `POST /api/storage/delete-run`.
 
@@ -188,10 +236,12 @@ Implementation evidence:
 - `app/backend/cloud_chamber/runtime_storage.py`;
 - `app/backend/cloud_chamber/run_manifest.py`;
 - `app/backend/cloud_chamber/app.py`.
+- `app/backend/cloud_chamber/mountain_wave_terrain_visualization.py`.
 
 Frontend consumers:
 
 - `app/frontend/src/App.tsx`;
+- `app/frontend/src/MountainWaveTerrainResearch.tsx`;
 - `app/frontend/e2e/mocked-smoke/build-results-explore.spec.ts`.
 
 Tests:
@@ -204,7 +254,9 @@ Tests:
 - `app/backend/tests/test_result_cards.py`;
 - `app/backend/tests/test_runtime_storage.py`;
 - `app/backend/tests/test_app.py`;
+- `app/backend/tests/test_mountain_wave_terrain_visualization.py`;
 - `app/frontend/src/App.test.tsx`.
+- `app/frontend/src/MountainWaveTerrainResearch.test.tsx`.
 
 ## Known Implementation Limits
 

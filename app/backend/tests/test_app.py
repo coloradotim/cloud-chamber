@@ -142,6 +142,44 @@ def test_world_endpoints_return_typed_payloads(monkeypatch: pytest.MonkeyPatch) 
     )
 
 
+def test_mountain_wave_terrain_research_api_returns_bounded_payload(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[tuple[str, int]] = []
+
+    def frame(_settings: object, *, field: str, time_index: int) -> SimpleNamespace:
+        calls.append((field, time_index))
+        return SimpleNamespace(
+            model_dump=lambda **_kwargs: {
+                "run_id": "dry-mountain-wave-official-20260721T183530Z",
+                "field": {"key": field},
+                "time_index": time_index,
+                "singleton_y": True,
+            }
+        )
+
+    monkeypatch.setattr("cloud_chamber.app.preserved_mountain_wave_terrain_frame", frame)
+
+    response = TestClient(app).get(
+        "/api/research/mountain-wave-terrain",
+        params={"field": "theta_perturbation", "time_index": 4},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["field"]["key"] == "theta_perturbation"
+    assert response.json()["singleton_y"] is True
+    assert calls == [("theta_perturbation", 4)]
+
+
+def test_mountain_wave_terrain_research_api_rejects_unknown_fields() -> None:
+    response = TestClient(app).get(
+        "/api/research/mountain-wave-terrain",
+        params={"field": "cloud_water", "time_index": 0},
+    )
+
+    assert response.status_code == 422
+
+
 @pytest.mark.parametrize(
     ("path", "attribute"),
     [
