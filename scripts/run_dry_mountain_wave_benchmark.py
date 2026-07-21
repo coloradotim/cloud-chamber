@@ -15,12 +15,12 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 BACKEND_ROOT = REPO_ROOT / "app" / "backend"
 BACKEND_VENV_PYTHON = BACKEND_ROOT / ".venv" / "bin" / "python"
 
-if sys.version_info < (3, 12):  # noqa: UP036 - bootstrap into the backend venv.
-    if BACKEND_VENV_PYTHON.exists() and Path(sys.executable) != BACKEND_VENV_PYTHON:
-        os.execv(
-            str(BACKEND_VENV_PYTHON),
-            [str(BACKEND_VENV_PYTHON), str(Path(__file__).resolve()), *sys.argv[1:]],
-        )
+if BACKEND_VENV_PYTHON.exists() and Path(sys.executable).resolve() != BACKEND_VENV_PYTHON.resolve():
+    os.execv(
+        str(BACKEND_VENV_PYTHON),
+        [str(BACKEND_VENV_PYTHON), str(Path(__file__).resolve()), *sys.argv[1:]],
+    )
+if sys.version_info < (3, 12):  # noqa: UP036 - cover environments without a repository venv.
     raise SystemExit("run_dry_mountain_wave_benchmark.py requires Python 3.12 or newer.")
 
 if str(BACKEND_ROOT) not in sys.path:
