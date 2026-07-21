@@ -587,12 +587,12 @@ test.describe("mocked smoke: Build, Results, Explore path", () => {
     await expect(page.getByRole("complementary", { name: "Explore inspector" })).toBeVisible();
     await expect(page.getByText("Cloud formed")).toBeVisible();
     await expect(page.getByText("Deep convection not detected")).toHaveCount(0);
-    await expect(page.getByRole("heading", { name: "Field Slice" })).toBeVisible({
+    await expect(page.getByRole("heading", { name: "Updraft Lens" })).toBeVisible({
       timeout: 12_000,
     });
     const lensButton = page.getByRole("button", { name: "Updraft Lens" });
     await expect(lensButton).toBeEnabled();
-    await lensButton.click();
+    await expect(lensButton).toHaveAttribute("aria-pressed", "true");
     await expect(page.getByRole("img", { name: /Updraft Lens vertical x-z slice/ })).toBeVisible();
     await page.getByRole("button", { name: "Previous" }).click();
     await page.getByLabel("Updraft Lens slice position").fill("3");
@@ -1087,7 +1087,8 @@ test.describe("mocked smoke: Build, Results, Explore path", () => {
         renderedWidth: bounds.width,
         renderedHeight: bounds.height,
         contentFits:
-          element.scrollWidth <= element.clientWidth && element.scrollHeight <= element.clientHeight,
+          element.scrollWidth <= element.clientWidth &&
+          element.scrollHeight <= element.clientHeight,
         gridGap: grid ? getComputedStyle(grid).gap : null,
         rowGap: row ? getComputedStyle(row).gap : null,
         padding: getComputedStyle(element).padding,
@@ -1333,11 +1334,17 @@ test.describe("mocked smoke: Build, Results, Explore path", () => {
     await page.getByRole("button", { name: "Open in Explore" }).first().click();
 
     const savedTime = page.getByRole("slider", { name: "Saved output time" });
-    const ordinaryTimeValue = await savedTime.inputValue();
     const viewMode = page.getByLabel("Explore view mode");
     await expect(viewMode).toBeVisible();
     const lensToggle = viewMode.getByRole("button", { name: "Updraft Lens" });
     await expect(lensToggle).toBeEnabled();
+    await expect(lensToggle).toHaveAttribute("aria-pressed", "true");
+    await expect(viewMode.getByRole("button").allTextContents()).resolves.toEqual([
+      "Updraft Lens",
+      "Field",
+    ]);
+    await viewMode.getByRole("button", { name: "Field" }).click();
+    await expect(page.getByRole("heading", { name: "Field Slice" })).toBeVisible();
     await lensToggle.click();
     await expect(page.getByRole("heading", { name: "Updraft Lens" })).toBeVisible();
     await expect(page.getByRole("img", { name: /Updraft Lens vertical x-z slice/ })).toBeVisible();
@@ -1351,12 +1358,31 @@ test.describe("mocked smoke: Build, Results, Explore path", () => {
       "0.9 m/s reference",
     );
     const inspectorLegend = page.getByLabel(/Explore workspace Vertical velocity \(w\), m\/s/);
-    await expect(inspectorLegend).toContainText("Vertical velocity (w), m/s");
+    await expect(inspectorLegend).toContainText("w (m/s)");
     await expect(inspectorLegend).toContainText("-0.1 to < 0.1");
     await expect(page.locator(".updraft-lens-scale-swatch")).toHaveCount(10);
-    await expect(page.getByText("Slice maximum 5.20 m/s.")).toHaveCount(1);
-    await expect(page.getByText("Slice minimum -1.20 m/s.")).toHaveCount(1);
+    await expect(inspectorLegend.getByRole("listitem").first()).not.toContainText("m/s");
+    await expect(page.getByText("Slice maximum 5.20 m/s.")).toHaveCount(0);
+    await expect(page.getByText("Slice minimum -1.20 m/s.")).toHaveCount(0);
     await expect(page.getByText(/Clipped in this slice/)).toHaveCount(0);
+    const compactLensLayout = await page
+      .locator(".updraft-lens-instrument-body-compact")
+      .evaluate((body) => {
+        const svg = body.querySelector<SVGElement>(".updraft-lens-svg");
+        const legend = body.querySelector<HTMLElement>(".updraft-lens-scale-legend-compact");
+        const svgBounds = svg?.getBoundingClientRect();
+        const legendBounds = legend?.getBoundingClientRect();
+        return {
+          plotWidth: svgBounds?.width ?? 0,
+          plotHeight: svgBounds?.height ?? 0,
+          legendBelowPlot: Boolean(
+            svgBounds && legendBounds && legendBounds.top >= svgBounds.bottom,
+          ),
+        };
+      });
+    expect(compactLensLayout.plotWidth).toBeGreaterThan(100);
+    expect(compactLensLayout.plotHeight).toBeGreaterThan(200);
+    expect(compactLensLayout.legendBelowPlot).toBe(true);
     await expect(page.getByLabel("Updraft Lens slice position")).toHaveValue("2");
     await expect(page.getByRole("button", { name: "Vertical x-z" })).toHaveAttribute(
       "aria-pressed",
@@ -1367,6 +1393,19 @@ test.describe("mocked smoke: Build, Results, Explore path", () => {
     ).toBeVisible();
     await expect(page.getByLabel("Slice field")).toHaveCount(0);
     await page.locator("details.true3d-display-control > summary").click();
+    const displayAlignment = await page.locator(".true3d-controls-compact").evaluate((controls) => {
+      const elements = [
+        controls.querySelector(".true3d-display-control > summary"),
+        controls.querySelector("select[aria-label='Camera view']"),
+        ...controls.querySelectorAll(":scope > button"),
+      ].filter((element): element is Element => element !== null);
+      const centers = elements.map((element) => {
+        const bounds = element.getBoundingClientRect();
+        return bounds.top + bounds.height / 2;
+      });
+      return Math.max(...centers) - Math.min(...centers);
+    });
+    expect(displayAlignment).toBeLessThan(1.5);
     const scalarField = page.getByLabel("3-D scalar field", { exact: true });
     await expect(scalarField).toBeVisible();
     await scalarField.selectOption("qv");
@@ -1375,8 +1414,14 @@ test.describe("mocked smoke: Build, Results, Explore path", () => {
     await expect(page.getByRole("img", { name: /y index 2/ })).toBeVisible();
     await page.getByLabel("Layer opacity").fill("0.45");
     await page.getByLabel("Point size").fill("14");
+    await page.getByLabel("Lens opacity").fill("0.6");
     await expect(page.getByLabel("Layer opacity")).toHaveValue("0.45");
     await expect(page.getByLabel("Point size")).toHaveValue("14");
+    await expect(page.getByLabel("Lens opacity")).toHaveValue("0.6");
+    await expect(page.getByLabel("True 3-D scalar field viewer")).toHaveAttribute(
+      "data-updraft-lens-opacity",
+      "0.6",
+    );
     const sliceAspect = await page.locator(".updraft-lens-svg").evaluate((element) => {
       const bounds = element.getBoundingClientRect();
       return {
@@ -1405,7 +1450,7 @@ test.describe("mocked smoke: Build, Results, Explore path", () => {
     ).toBeVisible();
     await savedTime.fill("2");
     await expect(page.getByText("3,600 s · frame 3 of 3", { exact: true })).toBeVisible();
-    await expect(inspectorLegend).toContainText("Vertical velocity (w), m/s");
+    await expect(inspectorLegend).toContainText("w (m/s)");
     await expect(inspectorLegend).toContainText(">= 5.0");
 
     await page.getByRole("button", { name: "Total wind" }).click();
@@ -1414,6 +1459,10 @@ test.describe("mocked smoke: Build, Results, Explore path", () => {
     );
     await page.getByLabel("Cloud boundary").uncheck();
     await expect(page.getByTestId("updraft-lens-cloud-boundary")).toHaveCount(0);
+    await expect(page.getByLabel("True 3-D scalar field viewer")).toHaveAttribute(
+      "data-updraft-lens-cloud-boundary",
+      "false",
+    );
     await page.getByRole("checkbox", { name: "Horizontal wind" }).uncheck();
     await expect(page.getByLabel("Horizontal wind overlay legend")).toHaveCount(0);
     expect(
@@ -1423,26 +1472,89 @@ test.describe("mocked smoke: Build, Results, Explore path", () => {
     ).toBe(true);
 
     await page.getByRole("button", { name: "Maximize slice viewer" }).click();
+    await expect(inspectorLegend).toContainText("Vertical velocity (w), m/s");
+    await expect(inspectorLegend).toContainText("Slice maximum 5.20 m/s.");
+    await expect(inspectorLegend).toContainText("Slice minimum -1.20 m/s.");
     const focusedLensFit = await page.locator(".updraft-lens-instrument-body").evaluate((body) => {
       const svg = body.querySelector<SVGElement>(".updraft-lens-svg");
+      const xLabels = body.querySelectorAll<HTMLElement>(".updraft-lens-axis-x span");
+      const zLabels = body.querySelectorAll<HTMLElement>(".updraft-lens-axis-z span");
       const bodyBounds = body.getBoundingClientRect();
       const svgBounds = svg?.getBoundingClientRect();
       return {
-        bodyFits:
-          body.scrollWidth <= body.clientWidth && body.scrollHeight <= body.clientHeight,
+        bodyFits: body.scrollWidth <= body.clientWidth && body.scrollHeight <= body.clientHeight,
+        expands: Boolean(svgBounds) && svgBounds!.height >= 420,
         svgFits:
           Boolean(svgBounds) &&
           svgBounds!.right <= bodyBounds.right + 1 &&
           svgBounds!.bottom <= bodyBounds.bottom + 1,
+        axesAlign:
+          Boolean(svgBounds) &&
+          Math.abs(xLabels[0].getBoundingClientRect().left - svgBounds!.left) < 4 &&
+          Math.abs(xLabels[1].getBoundingClientRect().right - svgBounds!.right) < 4 &&
+          Math.abs(zLabels[0].getBoundingClientRect().top - svgBounds!.top) < 4 &&
+          Math.abs(zLabels[1].getBoundingClientRect().bottom - svgBounds!.bottom) < 4,
+        axisDeltas: svgBounds
+          ? {
+              xStart: xLabels[0].getBoundingClientRect().left - svgBounds.left,
+              xEnd: xLabels[1].getBoundingClientRect().right - svgBounds.right,
+              zTop: zLabels[0].getBoundingClientRect().top - svgBounds.top,
+              zBottom: zLabels[1].getBoundingClientRect().bottom - svgBounds.bottom,
+            }
+          : null,
       };
     });
-    expect(focusedLensFit).toEqual({ bodyFits: true, svgFits: true });
+    expect(focusedLensFit).toMatchObject({
+      bodyFits: true,
+      expands: true,
+      svgFits: true,
+      axesAlign: true,
+    });
+
+    await page.getByRole("button", { name: "Horizontal x-y" }).click();
+    await expect(
+      page.getByRole("img", { name: /Updraft Lens horizontal x-y slice/ }),
+    ).toBeVisible();
+    const focusedTopDownFit = await page
+      .locator(".updraft-lens-instrument-body")
+      .evaluate((body) => {
+        const svg = body.querySelector<SVGElement>(".updraft-lens-svg");
+        const bounds = svg?.getBoundingClientRect();
+        return {
+          expands: Boolean(bounds) && bounds!.height >= 420,
+          preservesAspect:
+            Boolean(bounds) &&
+            Math.abs(
+              bounds!.width / bounds!.height - Number(svg!.getAttribute("data-domain-aspect")),
+            ) < 0.03,
+          noOverflow:
+            body.scrollWidth <= body.clientWidth && body.scrollHeight <= body.clientHeight,
+        };
+      });
+    expect(focusedTopDownFit).toEqual({
+      expands: true,
+      preservesAspect: true,
+      noOverflow: true,
+    });
+    await page.getByRole("button", { name: "Vertical x-z" }).click();
     await page.getByRole("button", { name: "Restore slice viewer" }).click();
 
     await viewMode.getByRole("button", { name: "Field" }).click();
     await expect(page.getByRole("heading", { name: "Field Slice" })).toBeVisible();
     await expect(page.getByLabel("Slice field")).toBeVisible();
-    await expect(savedTime).toHaveValue(ordinaryTimeValue);
+    await expect(savedTime).toHaveValue("2");
+    await expect(page.getByLabel("Slice position")).toHaveValue("3");
+    await expect(page.getByRole("button", { name: "Vertical x-z slice", exact: true })).toHaveClass(
+      /active-control/,
+    );
+
+    await lensToggle.click();
+    await expect(page.getByLabel("Updraft Lens slice position")).toHaveValue("3");
+    await expect(savedTime).toHaveValue("2");
+    await expect(page.getByRole("button", { name: "Vertical x-z" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
   });
 
   test("Unified Explore plays through saved output times", async ({ page }) => {
@@ -1452,7 +1564,7 @@ test.describe("mocked smoke: Build, Results, Explore path", () => {
     await expect(page.getByLabel("Explore viewer controls")).toBeVisible();
     await expect(page.getByLabel("Timelapse playback controls")).toBeVisible();
     const playbackButton = page.getByLabel("Timelapse playback controls").getByRole("button");
-    await expect(playbackButton).toHaveText("Play time");
+    await expect(playbackButton).toHaveAccessibleName("Play");
     await expect(page.getByLabel("Playback speed")).toHaveValue("1");
     await expect(page.getByRole("slider", { name: "Saved output time" })).toBeVisible();
 
@@ -1461,10 +1573,10 @@ test.describe("mocked smoke: Build, Results, Explore path", () => {
     await page.getByLabel("Playback speed").selectOption("0.5");
     await playbackButton.click();
 
-    await expect(playbackButton).toHaveText("Pause time");
+    await expect(playbackButton).toHaveAccessibleName("Pause");
     await expect(playbackButton).toHaveAttribute("aria-pressed", "true");
     await expect(savedTime).toHaveValue("2", { timeout: 4_000 });
-    await expect(playbackButton).toHaveText("Play time", { timeout: 4_000 });
+    await expect(playbackButton).toHaveAccessibleName("Play", { timeout: 4_000 });
     await expect(playbackButton).toHaveAttribute("aria-pressed", "false");
     await expect(savedTime).toHaveValue("0");
 
@@ -1472,7 +1584,7 @@ test.describe("mocked smoke: Build, Results, Explore path", () => {
     await expect(savedTime).toHaveValue("2");
     await playbackButton.click();
     await expect(savedTime).toHaveValue("0", { timeout: 4_000 });
-    await expect(playbackButton).toHaveText("Play time");
+    await expect(playbackButton).toHaveAccessibleName("Play");
     await expect(playbackButton).toHaveAttribute("aria-pressed", "false");
   });
 
@@ -1696,7 +1808,8 @@ test.describe("mocked smoke: Build, Results, Explore path", () => {
           timeline!.scrollHeight <= timeline!.clientHeight,
         notebookBelowScene:
           Boolean(notebookRegion && sceneRegion) &&
-          notebookRegion!.getBoundingClientRect().top >= sceneRegion!.getBoundingClientRect().bottom,
+          notebookRegion!.getBoundingClientRect().top >=
+            sceneRegion!.getBoundingClientRect().bottom,
         shell: rect(".visualizer-shell")?.width ?? 0,
       };
     });

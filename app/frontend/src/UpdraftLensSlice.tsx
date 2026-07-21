@@ -1,5 +1,5 @@
 /* eslint-disable react-refresh/only-export-components */
-import type { MouseEvent as ReactMouseEvent } from "react";
+import type { CSSProperties, MouseEvent as ReactMouseEvent } from "react";
 
 export type UpdraftLensWindMode = "perturbation" | "total";
 export type UpdraftLensOrientation = "horizontal" | "vertical_x" | "vertical_y";
@@ -211,8 +211,12 @@ export function UpdraftLensSlice({
 
   return (
     <section
-      className={`updraft-lens-slice${showLegend ? "" : " updraft-lens-slice-without-legend"}`}
+      className={`updraft-lens-slice updraft-lens-slice-${
+        frame.orientation === "horizontal" ? "top-down" : "side-on"
+      }${showLegend ? "" : " updraft-lens-slice-without-legend"}`}
       aria-label="Updraft Lens slice"
+      data-orientation={frame.orientation}
+      style={{ "--updraft-lens-domain-aspect": String(width / height) } as CSSProperties}
     >
       <div className="updraft-lens-axis updraft-lens-axis-z" aria-hidden="true">
         <span>{formatKilometers(rowMax)}</span>
@@ -320,9 +324,11 @@ export function updraftLensColor(
 export function UpdraftLensScaleLegend({
   frame,
   viewLabel,
+  compact = false,
 }: {
   frame: UpdraftLensFrame;
   viewLabel: "2-D inspector" | "3-D viewer" | "Explore workspace";
+  compact?: boolean;
 }) {
   const intervals = updraftLensScaleIntervals(frame.w_scale_breakpoints_m_s, frame.w_scale_colors);
   const finiteValues = frame.w_values_m_s
@@ -334,15 +340,19 @@ export function UpdraftLensScaleLegend({
     viewLabel === "2-D inspector" ? "2d" : viewLabel === "3-D viewer" ? "3d" : "workspace";
   return (
     <section
-      className={`updraft-lens-scale-legend updraft-lens-scale-legend-${viewClass}`}
+      className={`updraft-lens-scale-legend updraft-lens-scale-legend-${viewClass}${
+        compact ? " updraft-lens-scale-legend-compact" : ""
+      }`}
       aria-label={`${viewLabel} ${SCALE_TITLE}; ${frame.w_scale_id}`}
     >
       <div className="updraft-lens-scale-heading">
-        <strong>{SCALE_TITLE}</strong>
+        <strong>{compact ? "w (m/s)" : SCALE_TITLE}</strong>
       </div>
-      <p className="updraft-lens-slice-range updraft-lens-slice-range-maximum">
-        Slice maximum {sliceMaximum === null ? "unavailable" : `${sliceMaximum.toFixed(2)} m/s`}.
-      </p>
+      {!compact && (
+        <p className="updraft-lens-slice-range updraft-lens-slice-range-maximum">
+          Slice maximum {sliceMaximum === null ? "unavailable" : `${sliceMaximum.toFixed(2)} m/s`}.
+        </p>
+      )}
       <ol className="updraft-lens-scale-intervals" aria-label="Exact vertical velocity intervals">
         {[...intervals].reverse().map((interval, reversedIndex) => {
           const index = intervals.length - 1 - reversedIndex;
@@ -356,16 +366,16 @@ export function UpdraftLensScaleLegend({
                 style={{ backgroundColor: interval.color }}
                 aria-hidden="true"
               />
-              <span>
-                {interval.label} {frame.w_scale_units}
-              </span>
+              <span>{compact ? interval.label : `${interval.label} ${frame.w_scale_units}`}</span>
             </li>
           );
         })}
       </ol>
-      <p className="updraft-lens-slice-range updraft-lens-slice-range-minimum">
-        Slice minimum {sliceMinimum === null ? "unavailable" : `${sliceMinimum.toFixed(2)} m/s`}.
-      </p>
+      {!compact && (
+        <p className="updraft-lens-slice-range updraft-lens-slice-range-minimum">
+          Slice minimum {sliceMinimum === null ? "unavailable" : `${sliceMinimum.toFixed(2)} m/s`}.
+        </p>
+      )}
     </section>
   );
 }

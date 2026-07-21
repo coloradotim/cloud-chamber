@@ -9,9 +9,10 @@ import type {
 } from "./UpdraftLensSlice";
 import { UpdraftLensScaleLegend } from "./UpdraftLensSlice";
 import {
+  axisAlignedPlaneOccludesPoint,
   cameraDistanceLimits,
   scalarPointPixelSize,
-  updraftLensTextureData,
+  updraftLensPlaneTextureData,
   windArrowLength,
 } from "./True3DViewer.utils";
 
@@ -100,6 +101,8 @@ type True3DViewerProps = {
   windReferenceMps?: number;
   windArrowDomainFraction?: number;
   updraftLensFrame?: UpdraftLensFrame | null;
+  updraftLensOpacity?: number;
+  showUpdraftLensBoundary?: boolean;
   showUpdraftLensLegend?: boolean;
   compactWorkspace?: boolean;
   compactDisplayControls?: ReactNode;
@@ -168,6 +171,8 @@ export function True3DViewer({
   windReferenceMps = 0,
   windArrowDomainFraction = 0.08,
   updraftLensFrame = null,
+  updraftLensOpacity = 0.9,
+  showUpdraftLensBoundary = true,
   showUpdraftLensLegend = true,
   compactWorkspace = false,
   compactDisplayControls,
@@ -177,6 +182,8 @@ export function True3DViewer({
   const mountRef = useRef<HTMLDivElement | null>(null);
   const axisLabelLayerRef = useRef<HTMLDivElement | null>(null);
   const refs = useRef<SceneRefs | null>(null);
+  const axisOcclusionRef = useRef({ frame: updraftLensFrame, opacity: updraftLensOpacity });
+  axisOcclusionRef.current = { frame: updraftLensFrame, opacity: updraftLensOpacity };
   const [renderError, setRenderError] = useState<string | null>(null);
   const [cameraStatus, setCameraStatus] = useState("Camera ready");
   const [tallViewport, setTallViewport] = useState(false);
@@ -284,7 +291,14 @@ export function True3DViewer({
       const animate = () => {
         controls.update();
         renderer.render(scene, camera);
-        positionAxisLabels(axisLabelLayerRef.current, renderer.domElement, camera, axisLabels);
+        positionAxisLabels(
+          axisLabelLayerRef.current,
+          renderer.domElement,
+          camera,
+          axisLabels,
+          bounds,
+          axisOcclusionRef.current,
+        );
         const current = refs.current;
         if (current) current.animationFrame = window.requestAnimationFrame(animate);
       };
@@ -337,6 +351,8 @@ export function True3DViewer({
       windReferenceMps,
       windArrowDomainFraction,
       updraftLensFrame,
+      updraftLensOpacity,
+      showUpdraftLensBoundary,
     });
   }, [
     activeSlice,
@@ -352,6 +368,8 @@ export function True3DViewer({
     windReferenceMps,
     windVectors,
     updraftLensFrame,
+    updraftLensOpacity,
+    showUpdraftLensBoundary,
   ]);
 
   return (
@@ -359,6 +377,8 @@ export function True3DViewer({
       className={`true3d-viewer${compactWorkspace ? " true3d-viewer-compact" : ""}`}
       aria-label="True 3-D scalar field viewer"
       data-result-name={resultName}
+      data-updraft-lens-opacity={updraftLensFrame ? updraftLensOpacity : undefined}
+      data-updraft-lens-cloud-boundary={updraftLensFrame ? showUpdraftLensBoundary : undefined}
     >
       {!compactWorkspace && (
         <div className="true3d-scene-header">
@@ -446,9 +466,7 @@ export function True3DViewer({
             )}
             {showWindVectors && windVectors.length > 0 && (
               <div className="true3d-wind-legend" aria-label="Horizontal wind overlay legend">
-                <strong>
-                  {windMode === "perturbation" ? "Local departures" : "Total wind"}
-                </strong>
+                <strong>{windMode === "perturbation" ? "Local departures" : "Total wind"}</strong>
                 <span>{windReferenceMps.toFixed(1)} m/s reference</span>
               </div>
             )}
@@ -605,6 +623,8 @@ function rebuildScene(
     windReferenceMps,
     windArrowDomainFraction,
     updraftLensFrame,
+    updraftLensOpacity,
+    showUpdraftLensBoundary,
   }: {
     bounds: SceneBounds;
     pointCloud: PointCloudResponse | null;
@@ -619,6 +639,8 @@ function rebuildScene(
     windReferenceMps: number;
     windArrowDomainFraction: number;
     updraftLensFrame: UpdraftLensFrame | null;
+    updraftLensOpacity: number;
+    showUpdraftLensBoundary: boolean;
   },
 ) {
   disposeScene(scene);
@@ -633,7 +655,7 @@ function rebuildScene(
   scene.add(axisTickMarks(bounds));
 
   if (pointCloud?.points.length) {
-    scene.add(cloudPointLayer(pointCloud, bounds, opacity, pointSize));
+    scene.add(cloudPointLayer(pointCloud, bounds, opacity, pointSize, Boolean(updraftLensFrame)));
   }
 
   if (showWindVectors && windVectors.length) {
@@ -641,7 +663,9 @@ function rebuildScene(
   }
 
   if (updraftLensFrame) {
-    scene.add(updraftLensSlicePlane(updraftLensFrame, bounds));
+    scene.add(
+      updraftLensSlicePlane(updraftLensFrame, bounds, updraftLensOpacity, showUpdraftLensBoundary),
+    );
   }
 
   if (showSlicePlane && activeSlice) {
@@ -653,19 +677,27 @@ function rebuildScene(
   }
 }
 
-function updraftLensSlicePlane(frame: UpdraftLensFrame, bounds: SceneBounds): THREE.Group {
+function updraftLensSlicePlane(
+  frame: UpdraftLensFrame,
+  bounds: SceneBounds,
+  opacity: number,
+  showCloudBoundary: boolean,
+): THREE.Group {
   const width = Math.max(1, frame.w_values_m_s[0]?.length ?? 0);
   const height = Math.max(1, frame.w_values_m_s.length);
-  const texture = new THREE.DataTexture(
-    updraftLensTextureData(
-      frame.w_values_m_s,
-      width,
-      height,
-      frame.w_scale_breakpoints_m_s,
-      frame.w_scale_colors,
-    ),
+  const texturePayload = updraftLensPlaneTextureData(
+    frame.w_values_m_s,
     width,
     height,
+    frame.w_scale_breakpoints_m_s,
+    frame.w_scale_colors,
+    frame.cloud_mask,
+    showCloudBoundary,
+  );
+  const texture = new THREE.DataTexture(
+    texturePayload.data,
+    texturePayload.width,
+    texturePayload.height,
     THREE.RGBAFormat,
     THREE.UnsignedByteType,
   );
@@ -675,18 +707,23 @@ function updraftLensSlicePlane(frame: UpdraftLensFrame, bounds: SceneBounds): TH
   texture.generateMipmaps = false;
   texture.needsUpdate = true;
 
-  let geometry: THREE.PlaneGeometry;
+  let planeWidth: number;
+  let planeHeight: number;
   if (frame.orientation === "horizontal") {
-    geometry = new THREE.PlaneGeometry(bounds.xRange, bounds.yRange);
+    planeWidth = bounds.xRange;
+    planeHeight = bounds.yRange;
   } else if (frame.orientation === "vertical_y") {
-    geometry = new THREE.PlaneGeometry(bounds.yRange, bounds.zRange);
+    planeWidth = bounds.yRange;
+    planeHeight = bounds.zRange;
   } else {
-    geometry = new THREE.PlaneGeometry(bounds.xRange, bounds.zRange);
+    planeWidth = bounds.xRange;
+    planeHeight = bounds.zRange;
   }
+  const geometry = new THREE.PlaneGeometry(planeWidth, planeHeight);
   const material = new THREE.MeshBasicMaterial({
     map: texture,
     transparent: true,
-    opacity: 0.68,
+    opacity: Math.min(1, Math.max(0.15, opacity)),
     side: THREE.DoubleSide,
     depthWrite: false,
   });
@@ -701,7 +738,7 @@ function updraftLensSlicePlane(frame: UpdraftLensFrame, bounds: SceneBounds): TH
   } else {
     plane.position.z = centeredCoordinate(frame.plane_coordinate ?? 0, bounds.y);
   }
-  plane.renderOrder = 10;
+  plane.renderOrder = 30;
 
   const outline = new THREE.LineSegments(
     new THREE.EdgesGeometry(geometry),
@@ -710,7 +747,7 @@ function updraftLensSlicePlane(frame: UpdraftLensFrame, bounds: SceneBounds): TH
   outline.name = "Updraft Lens plane outline";
   outline.position.copy(plane.position);
   outline.rotation.copy(plane.rotation);
-  outline.renderOrder = 11;
+  outline.renderOrder = 31;
 
   const group = new THREE.Group();
   group.name = "trade-cumulus-updraft-lens-slice-plane";
@@ -936,6 +973,8 @@ function positionAxisLabels(
   canvas: HTMLCanvasElement,
   camera: THREE.Camera,
   labels: AxisLabel[],
+  bounds: SceneBounds,
+  updraftLens: { frame: UpdraftLensFrame | null; opacity: number },
 ) {
   if (!layer) return;
   const width = canvas.clientWidth;
@@ -959,9 +998,54 @@ function positionAxisLabels(
       x <= width + 24 &&
       y >= -24 &&
       y <= height + 24;
+    const occluded =
+      updraftLens.frame !== null &&
+      updraftLensOccludesAxisLabel(camera.position, label.position, updraftLens.frame, bounds);
+    const lensVisibility = occluded ? (1 - updraftLens.opacity) ** 2 : 1;
     element.style.transform = `translate(${x}px, ${y}px) translate(-50%, -50%)`;
-    element.style.opacity = visible ? "1" : "0";
+    element.style.opacity = visible ? String(lensVisibility) : "0";
   });
+}
+
+function updraftLensOccludesAxisLabel(
+  camera: THREE.Vector3,
+  label: THREE.Vector3,
+  frame: UpdraftLensFrame,
+  bounds: SceneBounds,
+): boolean {
+  const halfX = bounds.xRange / 2;
+  const halfY = bounds.yRange / 2;
+  const halfZ = bounds.zRange / 2;
+  const planeBounds = {
+    x: { min: -halfX, max: halfX },
+    y: { min: -halfZ, max: halfZ },
+    z: { min: -halfY, max: halfY },
+  };
+  if (frame.orientation === "horizontal") {
+    return axisAlignedPlaneOccludesPoint(
+      camera,
+      label,
+      "y",
+      centeredCoordinate(frame.plane_coordinate ?? 0, bounds.z),
+      planeBounds,
+    );
+  }
+  if (frame.orientation === "vertical_y") {
+    return axisAlignedPlaneOccludesPoint(
+      camera,
+      label,
+      "x",
+      centeredCoordinate(frame.plane_coordinate ?? 0, bounds.x),
+      planeBounds,
+    );
+  }
+  return axisAlignedPlaneOccludesPoint(
+    camera,
+    label,
+    "z",
+    centeredCoordinate(frame.plane_coordinate ?? 0, bounds.y),
+    planeBounds,
+  );
 }
 
 function cloudPointLayer(
@@ -969,6 +1053,7 @@ function cloudPointLayer(
   bounds: SceneBounds,
   opacity: number,
   pointSize: number,
+  depthWrite: boolean,
 ): THREE.Points {
   const positions = new Float32Array(pointCloud.points.length * 3);
   const colors = new Float32Array(pointCloud.points.length * 3);
@@ -994,7 +1079,7 @@ function cloudPointLayer(
     vertexColors: true,
     transparent: true,
     opacity,
-    depthWrite: false,
+    depthWrite,
     sizeAttenuation: false,
   });
   const layer = new THREE.Points(geometry, material);
@@ -1084,7 +1169,9 @@ function fieldLegendMaximum(pointCloud: PointCloudResponse): string {
 }
 
 function formatFieldLegendValue(value: number | null, units: string | null): string {
-  return units === "kg/kg" ? formatValue(value === null ? null : value * 1000, "g/kg") : formatValue(value, units);
+  return units === "kg/kg"
+    ? formatValue(value === null ? null : value * 1000, "g/kg")
+    : formatValue(value, units);
 }
 
 function slicePlane(slice: SliceResponse, label: string, bounds: SceneBounds): THREE.Group {

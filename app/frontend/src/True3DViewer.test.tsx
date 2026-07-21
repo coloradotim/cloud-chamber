@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  axisAlignedPlaneOccludesPoint,
   cameraDistanceLimits,
   scalarPointPixelSize,
+  updraftLensPlaneTextureData,
   updraftLensTextureData,
   windArrowLength,
 } from "./True3DViewer.utils";
@@ -77,5 +79,59 @@ describe("True3DViewer Updraft Lens texture", () => {
       }),
     );
     expect(textureBytes).toEqual(sliceBytes);
+  });
+
+  it("burns a stable black cloud boundary into the higher-resolution plane texture", () => {
+    const withBoundary = updraftLensPlaneTextureData(
+      [[0, 0]],
+      2,
+      1,
+      [-0.1],
+      ["#ffffff", "#00d63b"],
+      [[true, false]],
+      true,
+    );
+    const withoutBoundary = updraftLensPlaneTextureData(
+      [[0, 0]],
+      2,
+      1,
+      [-0.1],
+      ["#ffffff", "#00d63b"],
+      [[true, false]],
+      false,
+    );
+    const countBlackPixels = (data: Uint8Array) => {
+      let count = 0;
+      for (let index = 0; index < data.length; index += 4) {
+        if (data[index] === 0x0b && data[index + 1] === 0x0c && data[index + 2] === 0x0c) {
+          count += 1;
+        }
+      }
+      return count;
+    };
+    expect(withBoundary.width).toBe(12);
+    expect(withBoundary.height).toBe(6);
+    expect(countBlackPixels(withBoundary.data)).toBeGreaterThan(0);
+    expect(countBlackPixels(withoutBoundary.data)).toBe(0);
+  });
+});
+
+describe("True3DViewer Lens occlusion", () => {
+  const bounds = {
+    x: { min: -1, max: 1 },
+    y: { min: -1, max: 1 },
+    z: { min: -1, max: 1 },
+  };
+
+  it("recognizes a point behind the bounded Lens plane", () => {
+    expect(
+      axisAlignedPlaneOccludesPoint({ x: 0, y: 0, z: 10 }, { x: 0, y: 0, z: -5 }, "z", 0, bounds),
+    ).toBe(true);
+    expect(
+      axisAlignedPlaneOccludesPoint({ x: 0, y: 0, z: 10 }, { x: 4, y: 0, z: -5 }, "z", 0, bounds),
+    ).toBe(false);
+    expect(
+      axisAlignedPlaneOccludesPoint({ x: 0, y: 0, z: 10 }, { x: 0, y: 0, z: 5 }, "z", 0, bounds),
+    ).toBe(false);
   });
 });

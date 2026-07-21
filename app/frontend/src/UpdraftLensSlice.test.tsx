@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import {
   type UpdraftLensFrame,
+  UpdraftLensScaleLegend,
   UpdraftLensSlice,
   updraftLensBoundaryPath,
   updraftLensCellGeometry,
@@ -183,6 +184,16 @@ describe("UpdraftLensSlice rendering", () => {
     expect(legend).toHaveTextContent("Slice minimum -1.00 m/s.");
     expect(screen.queryByText(/Clipped in this slice/)).not.toBeInTheDocument();
     expect(screen.getByTestId("updraft-lens-cloud-boundary")).toBeInTheDocument();
+  });
+
+  it("uses a compact unit-once legend outside the maximized Lens", () => {
+    render(<UpdraftLensScaleLegend frame={frame} viewLabel="Explore workspace" compact />);
+    const legend = screen.getByLabelText(/Explore workspace Vertical velocity \(w\), m\/s/);
+    expect(legend).toHaveTextContent("w (m/s)");
+    expect(legend).toHaveTextContent("3.0 to < 5.0");
+    expect(legend).not.toHaveTextContent("3.0 to < 5.0 m/s");
+    expect(legend).not.toHaveTextContent("Slice maximum");
+    expect(legend).not.toHaveTextContent("Slice minimum");
   });
 
   it.each([

@@ -1510,11 +1510,6 @@ type SceneSlicePlane = "horizontal" | "vertical_x" | "vertical_y";
 type OrdinaryExploreState = {
   selectedFieldName: string;
   sliceFieldName: string;
-  timeIndex: number;
-  activeSlicePlane: SceneSlicePlane;
-  sliceOrientation: "vertical_x" | "vertical_y";
-  horizontalSliceLevel: number;
-  verticalSliceIndex: number;
   showSlicePlanes: boolean;
   threshold: number;
 };
@@ -9816,12 +9811,14 @@ export function VisualizerSceneShell({
   const [updraftLensFrame, setUpdraftLensFrame] = useState<UpdraftLensFrame | null>(null);
   const [updraftLensLoading, setUpdraftLensLoading] = useState(false);
   const [updraftLensError, setUpdraftLensError] = useState<string | null>(null);
+  const [updraftLensOpacity, setUpdraftLensOpacity] = useState(0.9);
   const [showUpdraftLensBoundary, setShowUpdraftLensBoundary] = useState(true);
   const [showUpdraftLensWind, setShowUpdraftLensWind] = useState(true);
   const [updraftLensWindMode, setUpdraftLensWindMode] =
     useState<UpdraftLensWindMode>("perturbation");
   const ordinaryExploreStateRef = useRef<OrdinaryExploreState | null>(null);
   const updraftLensRequestRef = useRef(0);
+  const autoActivatedUpdraftLensResultRef = useRef<string | null>(null);
   const maxPoints = 50_000;
 
   useEffect(() => {
@@ -9863,10 +9860,12 @@ export function VisualizerSceneShell({
     setUpdraftLensFrame(null);
     setUpdraftLensLoading(false);
     setUpdraftLensError(null);
+    setUpdraftLensOpacity(0.9);
     setShowUpdraftLensBoundary(true);
     setShowUpdraftLensWind(true);
     setUpdraftLensWindMode("perturbation");
     ordinaryExploreStateRef.current = null;
+    autoActivatedUpdraftLensResultRef.current = null;
     updraftLensRequestRef.current += 1;
     setSceneStatus("Loading scene data...");
     withTimeout(
@@ -10106,81 +10105,99 @@ export function VisualizerSceneShell({
     timeOptions.length,
   ]);
 
-  const handleUpdraftLensToggle = useCallback(() => {
-    if (updraftLensActive) {
-      const ordinary = ordinaryExploreStateRef.current;
-      setUpdraftLensActive(false);
-      setUpdraftLensFrame(null);
-      setUpdraftLensLoading(false);
-      setUpdraftLensError(null);
-      updraftLensRequestRef.current += 1;
-      if (ordinary) {
-        setSelectedFieldName(ordinary.selectedFieldName);
-        setSliceFieldName(ordinary.sliceFieldName);
-        setTimeIndex(ordinary.timeIndex);
-        setPlaybackTimeIndex(ordinary.timeIndex);
-        setActiveSlicePlane(ordinary.activeSlicePlane);
-        setSliceOrientation(ordinary.sliceOrientation);
-        setHorizontalSliceLevel(ordinary.horizontalSliceLevel);
-        setVerticalSliceIndex(ordinary.verticalSliceIndex);
-        setShowSlicePlanes(ordinary.showSlicePlanes);
-        setThreshold(ordinary.threshold);
+  const handleUpdraftLensToggle = useCallback(
+    (useCandidateDefaults = false) => {
+      if (updraftLensActive) {
+        const ordinary = ordinaryExploreStateRef.current;
+        setUpdraftLensActive(false);
+        setUpdraftLensFrame(null);
+        setUpdraftLensLoading(false);
+        setUpdraftLensError(null);
+        updraftLensRequestRef.current += 1;
+        if (ordinary) {
+          setSelectedFieldName(ordinary.selectedFieldName);
+          setSliceFieldName(ordinary.sliceFieldName);
+          setShowSlicePlanes(ordinary.showSlicePlanes);
+          setThreshold(ordinary.threshold);
+        }
+        ordinaryExploreStateRef.current = null;
+        clearSelectedRegionForTimeChange();
+        return;
       }
-      ordinaryExploreStateRef.current = null;
+      if (
+        !updraftLensDefaults ||
+        !catalog ||
+        updraftLensDefaults.result_id !== resultId ||
+        catalog.result_id !== resultId
+      ) {
+        return;
+      }
+      ordinaryExploreStateRef.current = {
+        selectedFieldName,
+        sliceFieldName,
+        showSlicePlanes,
+        threshold,
+      };
+      const cloudField = catalog.available_fields.find(
+        (field) => field.raw_field_name === updraftLensDefaults.cloud_field,
+      );
+      const primaryField = catalog.available_fields.find(
+        (field) => field.raw_field_name === updraftLensDefaults.primary_field,
+      );
+      setSelectedFieldName(cloudField?.raw_field_name ?? selectedFieldName);
+      setSliceFieldName(primaryField?.raw_field_name ?? sliceFieldName);
+      setIsPlaybackRunning(false);
+      if (useCandidateDefaults) {
+        const primaryDefaults = defaultsForField(viewDefaults, primaryField?.raw_field_name ?? "");
+        setTimeIndex(updraftLensDefaults.default_time_index);
+        setPlaybackTimeIndex(updraftLensDefaults.default_time_index);
+        setActiveSlicePlane("vertical_x");
+        setSliceOrientation("vertical_x");
+        setHorizontalSliceLevel(defaultHorizontalLevel(primaryField, primaryDefaults));
+        setVerticalSliceIndex(updraftLensDefaults.default_plane_index);
+      }
+      setShowSlicePlanes(true);
+      setThreshold(updraftLensDefaults.cloud_threshold_kg_kg);
+      setShowUpdraftLensBoundary(true);
+      setShowUpdraftLensWind(updraftLensDefaults.wind_shown_by_default);
+      setUpdraftLensWindMode(updraftLensDefaults.wind_default_mode);
+      setUpdraftLensError(null);
+      setUpdraftLensActive(true);
       clearSelectedRegionForTimeChange();
+    },
+    [
+      catalog,
+      clearSelectedRegionForTimeChange,
+      resultId,
+      selectedFieldName,
+      showSlicePlanes,
+      sliceFieldName,
+      threshold,
+      updraftLensActive,
+      updraftLensDefaults,
+      viewDefaults,
+    ],
+  );
+
+  useEffect(() => {
+    if (
+      !updraftLensEligible ||
+      updraftLensActive ||
+      !updraftLensDefaults ||
+      !catalog ||
+      autoActivatedUpdraftLensResultRef.current === resultId
+    ) {
       return;
     }
-    if (!updraftLensDefaults || !catalog) return;
-    ordinaryExploreStateRef.current = {
-      selectedFieldName,
-      sliceFieldName,
-      timeIndex: resolvedTimeIndex,
-      activeSlicePlane,
-      sliceOrientation,
-      horizontalSliceLevel,
-      verticalSliceIndex,
-      showSlicePlanes,
-      threshold,
-    };
-    const cloudField = catalog.available_fields.find(
-      (field) => field.raw_field_name === updraftLensDefaults.cloud_field,
-    );
-    const primaryField = catalog.available_fields.find(
-      (field) => field.raw_field_name === updraftLensDefaults.primary_field,
-    );
-    const primaryDefaults = defaultsForField(viewDefaults, primaryField?.raw_field_name ?? "");
-    setSelectedFieldName(cloudField?.raw_field_name ?? selectedFieldName);
-    setSliceFieldName(primaryField?.raw_field_name ?? sliceFieldName);
-    setTimeIndex(updraftLensDefaults.default_time_index);
-    setPlaybackTimeIndex(updraftLensDefaults.default_time_index);
-    setIsPlaybackRunning(false);
-    setActiveSlicePlane("vertical_x");
-    setSliceOrientation("vertical_x");
-    setHorizontalSliceLevel(defaultHorizontalLevel(primaryField, primaryDefaults));
-    setVerticalSliceIndex(updraftLensDefaults.default_plane_index);
-    setShowSlicePlanes(true);
-    setThreshold(updraftLensDefaults.cloud_threshold_kg_kg);
-    setShowUpdraftLensBoundary(true);
-    setShowUpdraftLensWind(updraftLensDefaults.wind_shown_by_default);
-    setUpdraftLensWindMode(updraftLensDefaults.wind_default_mode);
-    setUpdraftLensError(null);
-    setUpdraftLensActive(true);
-    clearSelectedRegionForTimeChange();
+    autoActivatedUpdraftLensResultRef.current = resultId;
+    handleUpdraftLensToggle(true);
   }, [
-    activeSlicePlane,
     catalog,
-    clearSelectedRegionForTimeChange,
-    horizontalSliceLevel,
-    resolvedTimeIndex,
-    selectedFieldName,
-    showSlicePlanes,
-    sliceFieldName,
-    sliceOrientation,
-    threshold,
+    handleUpdraftLensToggle,
+    resultId,
     updraftLensActive,
     updraftLensDefaults,
-    verticalSliceIndex,
-    viewDefaults,
+    updraftLensEligible,
   ]);
 
   useEffect(() => {
@@ -10482,9 +10499,8 @@ export function VisualizerSceneShell({
 
   function handleThreeDFieldChange(nextFieldName: string) {
     const nextEncoding =
-      threeDScalarEncodings.find(
-        (encoding) => encoding.field.raw_field_name === nextFieldName,
-      ) ?? null;
+      threeDScalarEncodings.find((encoding) => encoding.field.raw_field_name === nextFieldName) ??
+      null;
     setSelectedFieldName(nextFieldName);
     if (nextEncoding) {
       setThreshold(nextEncoding.defaultThreshold);
@@ -10595,6 +10611,8 @@ export function VisualizerSceneShell({
               windReferenceMps={updraftLensFrame?.wind_reference_m_s ?? 0}
               windArrowDomainFraction={updraftLensFrame?.wind_arrow_domain_fraction ?? 0.08}
               updraftLensFrame={updraftLensActive ? updraftLensFrame : null}
+              updraftLensOpacity={updraftLensOpacity}
+              showUpdraftLensBoundary={updraftLensActive && showUpdraftLensBoundary}
               showUpdraftLensLegend={false}
               compactWorkspace
               maximized={focusedViewer === "scene"}
@@ -10612,10 +10630,12 @@ export function VisualizerSceneShell({
                   threshold={threshold}
                   opacity={opacity}
                   pointSize={pointSize}
+                  lensOpacity={updraftLensActive ? updraftLensOpacity : undefined}
                   onFieldChange={handleThreeDFieldChange}
                   onThresholdChange={setThreshold}
                   onOpacityChange={setOpacity}
                   onPointSizeChange={setPointSize}
+                  onLensOpacityChange={setUpdraftLensOpacity}
                 />
               }
             />
@@ -10651,14 +10671,31 @@ export function VisualizerSceneShell({
                   <div className="timelapse-controls" aria-label="Timelapse playback controls">
                     <button
                       type="button"
+                      className="timelapse-toggle"
                       disabled={!canPlayTimelapse}
                       aria-pressed={isPlaybackRunning}
+                      aria-label={isPlaybackRunning ? "Pause" : "Play"}
+                      title={isPlaybackRunning ? "Pause" : "Play"}
                       onClick={handlePlaybackToggle}
                     >
-                      {isPlaybackRunning ? "Pause time" : "Play time"}
+                      <span
+                        className={`timelapse-icon timelapse-icon-${
+                          isPlaybackRunning ? "pause" : "play"
+                        }`}
+                        aria-hidden="true"
+                      >
+                        {isPlaybackRunning ? (
+                          <>
+                            <span />
+                            <span />
+                          </>
+                        ) : (
+                          <span />
+                        )}
+                      </span>
                     </button>
                     <label htmlFor="explore-playback-speed">
-                      Speed
+                      <span className="sr-only">Playback speed</span>
                       <select
                         id="explore-playback-speed"
                         aria-label="Playback speed"
@@ -11038,14 +11075,13 @@ export function VisualizerSceneShell({
                     </label>
                   </fieldset>
                 )}
-
               </section>
             )}
           </div>
 
           <ExploreInspector
             sections={{
-              explain: (
+              explain:
                 selectedRegion || regionError || isPlaybackRunning ? (
                   <SelectedRegionInspector
                     selectedRegion={selectedRegion}
@@ -11066,11 +11102,8 @@ export function VisualizerSceneShell({
                     selectedTimeLabel={selectedTimeLabel}
                     activeSliceLabel={activeSliceLabel}
                   />
-                )
-              ),
-              notes: (
-                <SimulationNotesPanel result={result} onResultUpdated={onResultUpdated} />
-              ),
+                ),
+              notes: <SimulationNotesPanel result={result} onResultUpdated={onResultUpdated} />,
               details: (
                 <>
                   <SimulationDetailsPanel
@@ -11195,7 +11228,6 @@ export function VisualizerSceneShell({
                         value={selectedTimeSliceDefaults?.source ?? "Unavailable"}
                       />
                     </dl>
-
                   </details>
                 </>
               ),
@@ -11219,16 +11251,6 @@ export function VisualizerSceneShell({
                   <div className="instrument-view-toggle" aria-label="Explore view mode">
                     <button
                       type="button"
-                      className={!updraftLensActive ? "active-control" : ""}
-                      aria-pressed={!updraftLensActive}
-                      onClick={() => {
-                        if (updraftLensActive) handleUpdraftLensToggle();
-                      }}
-                    >
-                      Field
-                    </button>
-                    <button
-                      type="button"
                       className={updraftLensActive ? "active-control" : ""}
                       aria-pressed={updraftLensActive}
                       disabled={!updraftLensActive && !updraftLensDefaults}
@@ -11237,6 +11259,16 @@ export function VisualizerSceneShell({
                       }}
                     >
                       Updraft Lens
+                    </button>
+                    <button
+                      type="button"
+                      className={!updraftLensActive ? "active-control" : ""}
+                      aria-pressed={!updraftLensActive}
+                      onClick={() => {
+                        if (updraftLensActive) handleUpdraftLensToggle();
+                      }}
+                    >
+                      Field
                     </button>
                   </div>
                 )}
@@ -11294,7 +11326,11 @@ export function VisualizerSceneShell({
 
             {updraftLensActive ? (
               updraftLensFrame ? (
-                <div className="updraft-lens-instrument-body">
+                <div
+                  className={`updraft-lens-instrument-body${
+                    focusedViewer === "slice" ? "" : " updraft-lens-instrument-body-compact"
+                  }`}
+                >
                   <UpdraftLensSlice
                     frame={updraftLensFrame}
                     showCloudBoundary={showUpdraftLensBoundary}
@@ -11315,6 +11351,7 @@ export function VisualizerSceneShell({
                   <UpdraftLensScaleLegend
                     frame={updraftLensFrame}
                     viewLabel="Explore workspace"
+                    compact={focusedViewer !== "slice"}
                   />
                 </div>
               ) : (
@@ -11347,10 +11384,12 @@ function ExploreRenderingControls({
   threshold,
   opacity,
   pointSize,
+  lensOpacity,
   onFieldChange,
   onThresholdChange,
   onOpacityChange,
   onPointSizeChange,
+  onLensOpacityChange,
 }: {
   compact?: boolean;
   encodings: ThreeDScalarEncoding[];
@@ -11361,10 +11400,12 @@ function ExploreRenderingControls({
   threshold: number;
   opacity: number;
   pointSize: number;
+  lensOpacity?: number;
   onFieldChange: (fieldName: string) => void;
   onThresholdChange: (value: number) => void;
   onOpacityChange: (value: number) => void;
   onPointSizeChange: (value: number) => void;
+  onLensOpacityChange?: (value: number) => void;
 }) {
   const thresholdScale = scalarDisplayScale(selectedEncoding?.field);
   const thresholdUnits = scalarDisplayUnits(selectedEncoding?.field);
@@ -11408,7 +11449,7 @@ function ExploreRenderingControls({
       </label>
       <div className="rendering-range-controls">
         <label htmlFor="cloud-opacity">
-          Opacity
+          Cloud opacity
           <input
             id="cloud-opacity"
             aria-label="Layer opacity"
@@ -11421,6 +11462,22 @@ function ExploreRenderingControls({
           />
           <output htmlFor="cloud-opacity">{opacity}</output>
         </label>
+        {lensOpacity !== undefined && onLensOpacityChange && (
+          <label className="lens-opacity-control" htmlFor="updraft-lens-opacity">
+            Lens opacity
+            <input
+              id="updraft-lens-opacity"
+              aria-label="Lens opacity"
+              type="range"
+              min={0.15}
+              max={1}
+              step={0.05}
+              value={lensOpacity}
+              onChange={(event) => onLensOpacityChange(Number(event.target.value))}
+            />
+            <output htmlFor="updraft-lens-opacity">{lensOpacity}</output>
+          </label>
+        )}
         <label htmlFor="cloud-point-size">
           Point size
           <input
@@ -11508,10 +11565,7 @@ function ResultExplanationPanel({
         <dl className="context-metrics">
           <Metric label="Model time" value={selectedTimeLabel} />
           <Metric label="First cloud" value={formatSeconds(resultFirstCloudTime(result))} />
-          <Metric
-            label="Cloud water max"
-            value={formatMixingRatio(resultMaxQc(result))}
-          />
+          <Metric label="Cloud water max" value={formatMixingRatio(resultMaxQc(result))} />
           <Metric
             label="Vertical velocity"
             value={`${formatNumber(resultMinDowndraft(result), "m/s")} to ${formatNumber(
@@ -11872,6 +11926,7 @@ function SlicePanel({
       <div
         className="slice-map-frame"
         aria-label={`${title} orientation map`}
+        data-orientation={slice.selection.orientation}
         style={{ "--slice-domain-aspect": String(domainAspect) } as CSSProperties}
       >
         <span className="slice-map-anchor slice-map-anchor-top">{anchors.top}</span>

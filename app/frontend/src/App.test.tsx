@@ -7285,7 +7285,7 @@ describe("App", () => {
     expect(screen.queryByLabelText("Explore view mode")).not.toBeInTheDocument();
   });
 
-  it("activates the Updraft Lens, applies defaults, controls overlays, and restores Explore", async () => {
+  it("opens in the Updraft Lens, applies defaults, controls overlays, and restores Explore", async () => {
     mockTradeCumulusVisualizer();
     const visualizerResult = tradeCumulusResultCard as unknown as Parameters<
       typeof VisualizerSceneShell
@@ -7295,12 +7295,12 @@ describe("App", () => {
     const viewMode = await screen.findByLabelText("Explore view mode");
     const lensToggle = within(viewMode).getByRole("button", { name: "Updraft Lens" });
     await waitFor(() => expect(lensToggle).toBeEnabled());
-    expect(within(viewMode).getByRole("button", { name: "Field" })).toHaveAttribute(
-      "aria-pressed",
-      "true",
-    );
-    expect(screen.queryByRole("heading", { name: "Updraft Lens" })).not.toBeInTheDocument();
-    fireEvent.click(lensToggle);
+    expect(
+      within(viewMode)
+        .getAllByRole("button")
+        .map((button) => button.textContent),
+    ).toEqual(["Updraft Lens", "Field"]);
+    await waitFor(() => expect(lensToggle).toHaveAttribute("aria-pressed", "true"));
 
     expect(await screen.findByRole("heading", { name: "Updraft Lens" })).toBeInTheDocument();
     expect(
@@ -7331,15 +7331,22 @@ describe("App", () => {
     );
     fireEvent.change(screen.getByLabelText("Layer opacity"), { target: { value: "0.45" } });
     fireEvent.change(screen.getByLabelText("Point size"), { target: { value: "14" } });
+    fireEvent.change(screen.getByLabelText("Lens opacity"), { target: { value: "0.75" } });
     expect(screen.getByLabelText("Layer opacity")).toHaveValue("0.45");
     expect(screen.getByLabelText("Point size")).toHaveValue("14");
+    expect(screen.getByLabelText("Lens opacity")).toHaveValue("0.75");
+    expect(screen.getByLabelText("True 3-D scalar field viewer")).toHaveAttribute(
+      "data-updraft-lens-opacity",
+      "0.75",
+    );
     expect(screen.getByLabelText("Horizontal wind overlay legend")).toHaveTextContent(
       "0.9 m/s reference",
     );
-    expect(screen.getAllByText("Vertical velocity (w), m/s")).toHaveLength(1);
+    expect(screen.getByText("w (m/s)")).toBeInTheDocument();
     expect(
       screen.getByLabelText(/Explore workspace Vertical velocity \(w\), m\/s/),
     ).toHaveTextContent("-0.1 to < 0.1");
+    expect(screen.queryByText(/Slice maximum/)).not.toBeInTheDocument();
     expect(screen.getByText(/Updraft Lens: Vertical x-z slice at y =/)).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Horizontal x-y" }));
@@ -7372,6 +7379,10 @@ describe("App", () => {
 
     fireEvent.click(screen.getByLabelText("Cloud boundary"));
     expect(screen.queryByTestId("updraft-lens-cloud-boundary")).not.toBeInTheDocument();
+    expect(screen.getByLabelText("True 3-D scalar field viewer")).toHaveAttribute(
+      "data-updraft-lens-cloud-boundary",
+      "false",
+    );
     fireEvent.click(screen.getByLabelText("Horizontal wind"));
     expect(screen.queryByLabelText("Horizontal wind overlay legend")).not.toBeInTheDocument();
 
@@ -7388,8 +7399,20 @@ describe("App", () => {
     fireEvent.click(within(viewMode).getByRole("button", { name: "Field" }));
     expect(await screen.findByLabelText("Slice field")).toBeInTheDocument();
     expect(screen.getByLabelText("3-D scalar field")).toBeInTheDocument();
-    expect(screen.getByLabelText("Time")).toHaveValue("3");
+    expect(screen.getByLabelText("Time")).toHaveValue("2");
+    expect(screen.getByLabelText("Slice position")).toHaveValue("0");
+    expect(screen.getByRole("button", { name: "Vertical x-z slice" })).toHaveClass(
+      "active-control",
+    );
     expect(screen.queryByRole("heading", { name: "Updraft Lens" })).not.toBeInTheDocument();
+
+    fireEvent.click(within(viewMode).getByRole("button", { name: "Updraft Lens" }));
+    expect(await screen.findByLabelText("Updraft Lens slice position")).toHaveValue("0");
+    expect(screen.getByLabelText("Time")).toHaveValue("2");
+    expect(screen.getByRole("button", { name: "Vertical x-z" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
   });
 
   it("ignores stale Updraft Lens frame responses", async () => {
@@ -7409,8 +7432,8 @@ describe("App", () => {
     render(<VisualizerSceneShell result={visualizerResult} />);
 
     const lensToggle = await screen.findByRole("button", { name: "Updraft Lens" });
-    await waitFor(() => expect(lensToggle).toBeEnabled());
-    fireEvent.click(lensToggle);
+    await waitFor(() => expect(lensToggle).toHaveAttribute("aria-pressed", "true"));
+    fireEvent.click(screen.getByRole("button", { name: "Maximize slice viewer" }));
     await waitFor(() => expect(resolveFirst).toBeDefined());
     fireEvent.change(screen.getByLabelText("Time"), { target: { value: "1" } });
     await waitFor(() => expect(resolveSecond).toBeDefined());
@@ -7584,12 +7607,9 @@ describe("App", () => {
     expect(await screen.findByText("Point ready")).toBeInTheDocument();
 
     vi.useFakeTimers();
-    fireEvent.click(screen.getByRole("button", { name: "Play time" }));
+    fireEvent.click(screen.getByRole("button", { name: "Play" }));
 
-    expect(screen.getByRole("button", { name: "Pause time" })).toHaveAttribute(
-      "aria-pressed",
-      "true",
-    );
+    expect(screen.getByRole("button", { name: "Pause" })).toHaveAttribute("aria-pressed", "true");
     expect(
       screen.getByText("Pause playback to select a cell and explain this time step."),
     ).toBeInTheDocument();
@@ -7631,11 +7651,8 @@ describe("App", () => {
       screen.getByText("Pause playback to select a cell and explain this time step."),
     ).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: "Pause time" }));
-    expect(screen.getByRole("button", { name: "Play time" })).toHaveAttribute(
-      "aria-pressed",
-      "false",
-    );
+    fireEvent.click(screen.getByRole("button", { name: "Pause" }));
+    expect(screen.getByRole("button", { name: "Play" })).toHaveAttribute("aria-pressed", "false");
     vi.useRealTimers();
     await waitFor(() =>
       expect(
@@ -7660,14 +7677,11 @@ describe("App", () => {
     fetchMock.mockClear();
 
     vi.useFakeTimers();
-    fireEvent.click(screen.getByRole("button", { name: "Play time" }));
+    fireEvent.click(screen.getByRole("button", { name: "Play" }));
     await act(async () => {
       vi.advanceTimersByTime(900);
     });
-    expect(screen.getByRole("button", { name: "Play time" })).toHaveAttribute(
-      "aria-pressed",
-      "false",
-    );
+    expect(screen.getByRole("button", { name: "Play" })).toHaveAttribute("aria-pressed", "false");
     expect(screen.getByLabelText("Time")).toHaveValue("0");
     expect(screen.getByLabelText("Saved output time")).toHaveValue("0");
     vi.useRealTimers();
@@ -8290,9 +8304,8 @@ describe("App", () => {
     expect(screen.getByLabelText("Time")).toBeInTheDocument();
     expect(screen.getByLabelText("Show slice plane")).toBeChecked();
     expect(
-      screen.getAllByText(
-        "Current field max: 0.008 g/kg. Visible points above 0.001 g/kg: 3.",
-      ).length,
+      screen.getAllByText("Current field max: 0.008 g/kg. Visible points above 0.001 g/kg: 3.")
+        .length,
     ).toBeGreaterThan(0);
     expect(screen.getByText("0 to 3 km")).toBeInTheDocument();
     expect(screen.getByText("0.8 km to 1.2 km")).toBeInTheDocument();
@@ -8369,9 +8382,7 @@ describe("App", () => {
 
     const viewer = screen.getByLabelText("True 3-D scalar field viewer");
     expect(within(viewer).getByText(/Slice: Horizontal layer at z = /)).toBeInTheDocument();
-    expect(
-      within(viewer).queryByText(/Slice: Vertical x-z slice at y = /),
-    ).not.toBeInTheDocument();
+    expect(within(viewer).queryByText(/Slice: Vertical x-z slice at y = /)).not.toBeInTheDocument();
     expect(screen.getAllByText("qc (Cloud water)").length).toBeGreaterThan(0);
     expect(screen.getAllByText("native_grid_view_no_interpolation").length).toBeGreaterThan(0);
     fireEvent.click(screen.getByRole("button", { name: "Move down" }));
@@ -8387,9 +8398,7 @@ describe("App", () => {
     );
     expect(screen.getByLabelText("Slice position")).toBeInTheDocument();
     await waitFor(() => {
-      expect(
-        within(viewer).getByText(/Slice: Vertical x-z slice at y = /),
-      ).toBeInTheDocument();
+      expect(within(viewer).getByText(/Slice: Vertical x-z slice at y = /)).toBeInTheDocument();
     });
 
     fireEvent.click(screen.getByRole("button", { name: "Vertical y-z slice" }));
@@ -8399,9 +8408,7 @@ describe("App", () => {
     expect(screen.getByLabelText("Slice position")).toBeInTheDocument();
     await waitFor(() => {
       expect(fetch).toHaveBeenCalledWith(expect.stringContaining("orientation=vertical_y"));
-      expect(
-        within(viewer).getByText(/Slice: Vertical y-z slice at x = /),
-      ).toBeInTheDocument();
+      expect(within(viewer).getByText(/Slice: Vertical y-z slice at x = /)).toBeInTheDocument();
     });
     fireEvent.click(screen.getByRole("button", { name: "Move back" }));
     await waitFor(() => {
@@ -8431,9 +8438,7 @@ describe("App", () => {
     fireEvent.click(screen.getByRole("button", { name: "Vertical x-z slice" }));
     const viewer = screen.getByLabelText("True 3-D scalar field viewer");
     await waitFor(() => {
-      expect(
-        within(viewer).getByText(/Slice: Vertical x-z slice at y = /),
-      ).toBeInTheDocument();
+      expect(within(viewer).getByText(/Slice: Vertical x-z slice at y = /)).toBeInTheDocument();
     });
 
     fireEvent.click(screen.getByRole("button", { name: "Horizontal layer" }));
