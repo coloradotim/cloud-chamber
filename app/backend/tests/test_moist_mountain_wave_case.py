@@ -15,6 +15,7 @@ from cloud_chamber.moist_mountain_wave_case import (
     MATERIAL_PEAK_KG_KG,
     NX,
     NY,
+    PRESERVED_RUN_ID,
     MoistMountainWavePackageResult,
     analytic_terrain_m,
     audit_input_sounding,
@@ -22,11 +23,14 @@ from cloud_chamber.moist_mountain_wave_case import (
     evaluate_moist_mountain_wave_run,
     expected_output_times,
     generate_moist_mountain_wave_package,
+    load_preserved_moist_mountain_wave_run,
     preflight_package_for_execution,
+    reevaluate_preserved_moist_mountain_wave_run,
     render_input_sounding,
     render_moist_namelist,
     sounding_records,
     terrain_x_m,
+    verify_preserved_run_artifacts,
     write_terrain_file,
 )
 from cloud_chamber.mountain_wave_case import (
@@ -256,12 +260,143 @@ def test_evaluator_detects_clear_coherent_material_gravity_wave_cloud(
     assert evidence.cloud_and_wave["peak_cloud_frame"]["maximum_ql_kg_kg"] >= (MATERIAL_PEAK_KG_KG)
     assert evidence.cloud_and_wave["persistent_windows_seconds"]
     assert evidence.cloud_and_wave["descent_evaporation_frames_seconds"]
+    first_cloud = evidence.cloud_and_wave["first_cloud_frame"]
+    assert first_cloud["cloud_in_ascent_and_saturation_cells"] > 0
+    assert first_cloud["cloud_components"][0]["x_bounds_m"] == [-2500.0, -500.0]
+    downstream = first_cloud["downstream_descent_evaporation"]
+    assert downstream["direction"] == "downstream_east_positive_x"
+    assert downstream["selected_cell_count"] == 3
+    assert downstream["x_bounds_m"] == [500.0, 500.0]
+    assert downstream["w_m_s"]["median"] == -1.0
+    assert downstream["relative_humidity_fraction"]["maximum"] < 1.0
+    assert downstream["ql_kg_kg"]["maximum"] == 0.0
     assert evidence.geometry["physical_height_transform_maximum_abs_error_m"] == pytest.approx(0.0)
+    assert len(evidence.geometry["active_top_checks_by_time"]) == 21
+    assert evidence.geometry["lower_boundary_tangency"]["per_time_metrics"]
+    assert evidence.initial_and_upstream["initial_upstream_state"]["profile_by_level"]
+    assert len(evidence.initial_and_upstream["upstream_flow_by_time"]) == 21
     assert all(evidence.predeclared_checks.values())
     assert json.loads(evidence.to_json_text())["case_id"] == moist_mountain_wave_case.CASE_ID
 
 
-def _write_synthetic_native_outputs(package_dir: Path) -> list[Path]:
+def test_first_cloud_causality_cannot_pass_from_a_later_frame(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    settings = fake_settings(tmp_path)
+    provenance = fake_provenance(tmp_path)
+    patch_package_preconditions(monkeypatch, provenance)
+    package = generate_moist_mountain_wave_package(
+        settings=settings, run_id="moist-wave-first-cloud-counterexample"
+    )
+    output_paths = _write_synthetic_native_outputs(
+        package.package_dir, first_cloud_has_ascent_and_saturation=False
+    )
+    _mark_package_completed(package, output_paths)
+
+    evidence = evaluate_moist_mountain_wave_run(settings=settings, package=package)
+
+    first_cloud = evidence.cloud_and_wave["first_cloud_frame"]
+    assert first_cloud["time_seconds"] == 200.0
+    assert first_cloud["cloud_cell_count"] > 0
+    assert first_cloud["cloud_in_ascent_and_saturation_cells"] == 0
+    assert any(
+        frame["cloud_in_ascent_and_saturation_cells"] > 0
+        for frame in evidence.cloud_and_wave["frames"]
+        if frame["time_seconds"] > 200.0
+    )
+    assert evidence.predeclared_checks["first_cloud_forms_interior_not_edge"] is True
+    assert evidence.predeclared_checks["cloud_colocated_with_ascent_and_saturation"] is False
+
+
+def test_evaluator_rejects_active_top_disagreement_in_any_history(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    settings = fake_settings(tmp_path)
+    provenance = fake_provenance(tmp_path)
+    patch_package_preconditions(monkeypatch, provenance)
+    package = generate_moist_mountain_wave_package(
+        settings=settings, run_id="moist-wave-active-top-counterexample"
+    )
+    output_paths = _write_synthetic_native_outputs(package.package_dir, altered_active_top_frame=7)
+    _mark_package_completed(package, output_paths)
+
+    with pytest.raises(
+        moist_mountain_wave_case.MoistMountainWaveCaseError,
+        match="Active-top evidence disagrees",
+    ):
+        evaluate_moist_mountain_wave_run(settings=settings, package=package)
+
+
+def test_preserved_run_reevaluation_hashes_before_and_after_without_execution(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    settings = fake_settings(tmp_path)
+    provenance = fake_provenance(tmp_path)
+    patch_package_preconditions(monkeypatch, provenance)
+    package = generate_moist_mountain_wave_package(settings=settings, run_id=PRESERVED_RUN_ID)
+    output_paths = _write_synthetic_native_outputs(package.package_dir)
+    _mark_package_completed(package, output_paths, nested_logs=True)
+    (package.package_dir / "execution_preflight.json").write_text("{}\n")
+    stats_path = package.package_dir / "cm1out_stats.nc"
+    stats = xr.Dataset(
+        data_vars={"cflmax": (("time",), np.array([0.1]))},
+        coords={"time": (("time",), np.array([0.0]))},
+    )
+    stats.to_netcdf(stats_path)
+    stats.close()
+    relative_paths = [
+        "run_manifest.json",
+        "case_manifest.json",
+        "namelist.input",
+        "input_sounding",
+        "perts.dat",
+        "execution_preflight.json",
+        "logs/stdout.log",
+        "logs/stderr.log",
+        "cm1out_stats.nc",
+        *(f"cm1out_{index:06d}.nc" for index in range(1, 22)),
+    ]
+    expected_hashes = {
+        relative_path: sha256_file(package.package_dir / relative_path)
+        for relative_path in relative_paths
+    }
+    monkeypatch.setattr(
+        moist_mountain_wave_case,
+        "PRESERVED_RUN_ARTIFACT_SHA256",
+        expected_hashes,
+    )
+
+    preserved = load_preserved_moist_mountain_wave_run(settings=settings, run_id=PRESERVED_RUN_ID)
+    evidence = reevaluate_preserved_moist_mountain_wave_run(
+        settings=settings,
+        package=preserved,
+        evaluator_commit="offline-evaluator-commit",
+    )
+
+    assert evidence.implementation_commit == "implementation-commit"
+    assert evidence.offline_reevaluation is not None
+    assert evidence.offline_reevaluation["run_manager_constructed_or_invoked"] is False
+    assert evidence.offline_reevaluation["artifacts_unchanged"] is True
+    before = evidence.offline_reevaluation["artifact_hashes_verified_before"]
+    after = evidence.offline_reevaluation["artifact_hashes_verified_after"]
+    assert before == after
+    assert before["artifact_count"] == len(relative_paths)
+
+    sounding_path = package.package_dir / "input_sounding"
+    sounding_path.write_text(sounding_path.read_text() + "changed\n")
+    with pytest.raises(
+        moist_mountain_wave_case.MoistMountainWaveCaseError,
+        match="Preserved run artifact changed: input_sounding",
+    ):
+        verify_preserved_run_artifacts(preserved)
+
+
+def _write_synthetic_native_outputs(
+    package_dir: Path,
+    *,
+    first_cloud_has_ascent_and_saturation: bool = True,
+    altered_active_top_frame: int | None = None,
+) -> list[Path]:
     xh_m = terrain_x_m()
     xf_m = np.arange(-110_000.0, 111_000.0, 1_000.0)
     yh_m = np.array([0.0])
@@ -284,9 +419,10 @@ def _write_synthetic_native_outputs(package_dir: Path) -> list[Path]:
         if 2 <= number <= 8:
             for z_index in range(3):
                 ql[z_index, 0, cloud_x] = 3.0e-4
-                qv[z_index, 0, cloud_x] = qsat[z_index, 0, cloud_x]
-                w[z_index, 0, cloud_x] = 1.0
-                w[z_index + 1, 0, cloud_x] = 1.0
+                if number > 2 or first_cloud_has_ascent_and_saturation:
+                    qv[z_index, 0, cloud_x] = qsat[z_index, 0, cloud_x]
+                    w[z_index, 0, cloud_x] = 1.0
+                    w[z_index + 1, 0, cloud_x] = 1.0
             descent_x = cloud_x[-1] + 1
             w[0:3, 0, descent_x] = -1.0
         dataset = xr.Dataset(
@@ -332,6 +468,11 @@ def _write_synthetic_native_outputs(package_dir: Path) -> list[Path]:
                     w[None],
                     {"units": "m/s"},
                 ),
+                "ztop": (
+                    ("one",),
+                    np.array([24.0 if number == altered_active_top_frame else 25.0]),
+                    {"units": "km"},
+                ),
             },
             coords={
                 "time": ("time", [float(time_seconds)], {"units": "s"}),
@@ -351,10 +492,15 @@ def _write_synthetic_native_outputs(package_dir: Path) -> list[Path]:
 
 
 def _mark_package_completed(
-    package: MoistMountainWavePackageResult, output_paths: list[Path]
+    package: MoistMountainWavePackageResult,
+    output_paths: list[Path],
+    *,
+    nested_logs: bool = False,
 ) -> None:
-    stdout = package.package_dir / "stdout.log"
-    stderr = package.package_dir / "stderr.log"
+    log_dir = package.package_dir / "logs" if nested_logs else package.package_dir
+    log_dir.mkdir(exist_ok=True)
+    stdout = log_dir / "stdout.log"
+    stderr = log_dir / "stderr.log"
     stdout.write_text("Program terminated normally\n")
     stderr.write_text("")
     started = datetime(2026, 7, 21, 12, 0, tzinfo=UTC)

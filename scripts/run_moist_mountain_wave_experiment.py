@@ -31,16 +31,20 @@ if sys.version_info < (3, 12):  # noqa: UP036
 if str(BACKEND_ROOT) not in sys.path:
     sys.path.insert(0, str(BACKEND_ROOT))
 
-from cloud_chamber.local_run_manager import LocalRunManager, LocalRunManagerError  # noqa: E402
 from cloud_chamber.moist_mountain_wave_case import (  # noqa: E402
     MoistMountainWaveCaseError,
     evaluate_moist_mountain_wave_run,
     generate_moist_mountain_wave_package,
     load_moist_mountain_wave_package,
+    load_preserved_moist_mountain_wave_run,
     preflight_package_for_execution,
+    reevaluate_preserved_moist_mountain_wave_run,
     write_moist_mountain_wave_evidence,
 )
-from cloud_chamber.mountain_wave_case import MountainWaveCaseError  # noqa: E402
+from cloud_chamber.mountain_wave_case import (  # noqa: E402
+    MountainWaveCaseError,
+    verified_clean_git_commit,
+)
 from cloud_chamber.run_manifest import LifecycleState  # noqa: E402
 from cloud_chamber.settings import load_settings  # noqa: E402
 
@@ -53,6 +57,41 @@ def main(argv: list[str] | None = None) -> int:
     run_id = args.run_id or _default_run_id()
 
     try:
+        if args.reevaluate_preserved_run:
+            if args.run_id is None:
+                raise MoistMountainWaveCaseError(
+                    "Offline reevaluation requires the exact preserved --run-id."
+                )
+            package = load_preserved_moist_mountain_wave_run(
+                settings=settings, run_id=run_id
+            )
+            evidence = reevaluate_preserved_moist_mountain_wave_run(
+                settings=settings,
+                package=package,
+                evaluator_commit=verified_clean_git_commit(),
+            )
+            evidence_path = package.package_dir / "moist_mountain_wave_evidence_v2.json"
+            write_moist_mountain_wave_evidence(evidence_path, evidence)
+            assert evidence.offline_reevaluation is not None
+            print(
+                json.dumps(
+                    {
+                        "status": "preserved_run_offline_reevaluated_without_cm1",
+                        "run_id": run_id,
+                        "evidence_path": str(evidence_path),
+                        "implementation_commit": package.implementation_commit,
+                        "evaluator_commit": evidence.offline_reevaluation[
+                            "evaluator_commit"
+                        ],
+                        "preserved_artifacts_unchanged": True,
+                        "run_manager_constructed_or_invoked": False,
+                        "predeclared_checks": evidence.predeclared_checks,
+                    },
+                    indent=2,
+                )
+            )
+            return 0
+
         package_dir = settings.runtime_home.expanduser() / "runs" / run_id
         if args.execute and package_dir.exists():
             package = load_moist_mountain_wave_package(settings=settings, run_id=run_id)
@@ -83,15 +122,26 @@ def main(argv: list[str] | None = None) -> int:
             )
             return 0
 
+        from cloud_chamber.local_run_manager import (
+            LocalRunManager,
+            LocalRunManagerError,
+        )
+
         manager = LocalRunManager(settings=settings)
-        status = manager.launch(package.manifest_path)
+        try:
+            status = manager.launch(package.manifest_path)
+        except LocalRunManagerError as exc:
+            raise MoistMountainWaveCaseError(str(exc)) from exc
         try:
             while status.lifecycle_state in {
                 LifecycleState.QUEUED,
                 LifecycleState.RUNNING,
             }:
                 time.sleep(args.poll_seconds)
-                status = manager.status(package.manifest_path)
+                try:
+                    status = manager.status(package.manifest_path)
+                except LocalRunManagerError as exc:
+                    raise MoistMountainWaveCaseError(str(exc)) from exc
         except KeyboardInterrupt:
             manager.cancel()
             raise
@@ -140,11 +190,7 @@ def main(argv: list[str] | None = None) -> int:
             file=sys.stderr,
         )
         return 130
-    except (
-        MoistMountainWaveCaseError,
-        MountainWaveCaseError,
-        LocalRunManagerError,
-    ) as exc:
+    except (MoistMountainWaveCaseError, MountainWaveCaseError) as exc:
         print(f"moist-mountain-wave: {exc}", file=sys.stderr)
         return 2
 
@@ -161,10 +207,19 @@ def _build_parser() -> argparse.ArgumentParser:
         "--runtime-home",
         help="Cloud Chamber runtime home. Defaults to configured local settings.",
     )
-    parser.add_argument(
+    execution_mode = parser.add_mutually_exclusive_group()
+    execution_mode.add_argument(
         "--execute",
         action="store_true",
         help="After repeated hard preflight passes, start the one authorized CM1 process.",
+    )
+    execution_mode.add_argument(
+        "--reevaluate-preserved-run",
+        action="store_true",
+        help=(
+            "Fail closed while reevaluating the exact hash-pinned completed run; this "
+            "mode never imports, constructs, or invokes the run manager."
+        ),
     )
     parser.add_argument(
         "--poll-seconds",

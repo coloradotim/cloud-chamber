@@ -19,6 +19,7 @@ from cloud_chamber.mountain_wave_case import (
     accepted_model_output_paths,
     active_cm1_processes,
     collect_cm1_provenance,
+    lower_boundary_tangency_metrics,
     normalize_length_to_m,
     normalize_time_to_seconds,
     parse_namelist_assignments,
@@ -46,7 +47,8 @@ from cloud_chamber.settings import CloudChamberSettings
 
 CASE_ID = "cm1_r21_1_toy2011_boulder_moist_wave_4000s_v1"
 SCENARIO_ID = CASE_ID
-EVIDENCE_VERSION = "moist_mountain_wave_gate_d_e_v1"
+EVIDENCE_VERSION = "moist_mountain_wave_gate_d_e_v2"
+PRESERVED_RUN_ID = "moist-mountain-wave-toy-1972-20260721T215226Z"
 SOURCE_LOCK_RELATIVE_PATH = Path("docs/research/mountain-waves/moist-reference-case-selection.md")
 SOURCE_LOCK_SHA256 = "939c4b7c6b067c125402383e7ed966b6e09eed2f5e0c0762ca6331a6f381b20b"
 IGRA_STATION_ID = "USM00072476"
@@ -80,6 +82,38 @@ EDGE_WIDTH_M = 10_000.0
 REQUIRED_OUTPUT_FIELDS = ("zs", "zhval", "th", "prs", "qv", "ql", "u", "v", "w")
 REQUIRED_COORDINATES = ("time", "xh", "xf", "yh", "yf", "zh", "zf")
 _OUTPUT_LIKE_PATTERNS = ("cm1out*", "*.nc", "*.nc4", "*.ctl")
+PRESERVED_RUN_ARTIFACT_SHA256 = {
+    "run_manifest.json": "026a3887f4120fa3e2e6663d8a486a28f83338ff5b3be09639cd245fd8ba1845",
+    "case_manifest.json": "208d05ba72149a53f423ef13fa97cab4e298f374f20f30e6ea9c12fc6e016a78",
+    "namelist.input": "d94f54d5e60627daf9020aa9eceaecd4f3b35fa1c81590186c72c7ccf99a10be",
+    "input_sounding": "cb43243d04e328e9dd1a08ff52139f5a6096dcbe89f7b0d0e4aeb536f6a33b22",
+    "perts.dat": "10d4fd60cac78acc2a19fe4a84b5d3c12c7e8a2ab58789faecebc40bf23e1028",
+    "execution_preflight.json": "917f2f17c33f602760801c4447e014ef09e0f6031a2218b9dba4a49a2e0b9185",
+    "logs/stdout.log": "42a120685c18d29d855cdea5039f54a3530157f2d36497cd41318f1af97fc0cb",
+    "logs/stderr.log": "6e8658cbd2bf71044b960ff59b4371a98438c32a7d4cb54ab562294b8cc4f05d",
+    "cm1out_stats.nc": "46cf824b20ab0c4b00806cd9ec2b0e52833e35d1913e2fa4d9205e12a523ff7a",
+    "cm1out_000001.nc": "a62959ceaae1c108ea0d2eb3805809615faf233a0e35096eeeceac18329ae9a5",
+    "cm1out_000002.nc": "79a4d4a95534b29dbd98286d1086dbf2a168af4484862b994e30e09af3b76c0a",
+    "cm1out_000003.nc": "bbe5d4d40bcf59acb4c87d44a2aa73060d5dca9eb72572ccc58ec87a6b33ecf3",
+    "cm1out_000004.nc": "b5bcad79828812d1f81b1d1972622d492e7967e97dc35a9c6b505301033e16c1",
+    "cm1out_000005.nc": "5dd3efac88159d955e6e4e2880ca3faf06c7024c3ffc9de4c6f45ba43e5493df",
+    "cm1out_000006.nc": "cf5aeb035f784fc8f252f08a92b6bb6a78740431b6060a20bdbc30a3d6540699",
+    "cm1out_000007.nc": "48091a925b4e9a9219c6f1e07902ea1a09a8f427113b5f25589d0a2ef322019e",
+    "cm1out_000008.nc": "183ceae29cd44cc767a8987db4f218c9479d283d8f7330547d65992e02094752",
+    "cm1out_000009.nc": "294fe39221cfe6af1d48ea65093bc0698d903bc848535d349371f898cf66b6d6",
+    "cm1out_000010.nc": "316fb4c2c0bb2c93ef588eeae50516b78c2bca6087bc85cf62da7596c9a526b6",
+    "cm1out_000011.nc": "41a9a6c8fdd7a81e3ea1074fb2cb717a312a46602e814e58c57f5eb1b81fd2ce",
+    "cm1out_000012.nc": "e7ce11ae105ea035d9dc0f408647507a3ed51a7165eb75fae2fc38e3549d1572",
+    "cm1out_000013.nc": "93d0b34b075a194f5c621c7f8d5b0ca8de82f51170fad30456962fdacaf298e7",
+    "cm1out_000014.nc": "9410bcb03d2ff9f251356f01f9d19391eaa6d254f1bf6497f27901e461ff75e8",
+    "cm1out_000015.nc": "49956dcf04d32f2569e8d585e4d76af23e4765012c8111a63b1d426b93fe0d73",
+    "cm1out_000016.nc": "724a5acf714b2fa1a55e497a9a3c5343dea4608863db7a1702af5187d7b7063d",
+    "cm1out_000017.nc": "9bc9e235bacfc73424651bf547c68c56cf24d3422741f5d732660ff647db4290",
+    "cm1out_000018.nc": "82d3a544ff5026ad74ec066c90adcddf17251ef161bccb0053684b57c3f20375",
+    "cm1out_000019.nc": "9caac2cd58d33852934579dc2973c183113383f23665f2ed8b17795759e67613",
+    "cm1out_000020.nc": "c6920f6d47eb6b0fb8a2cfd7ca8ac901a49e92802d40f9f1f161937eadb76023",
+    "cm1out_000021.nc": "0f8f31f2bf91ca80d430b326025cc734f4295e1ad6c687d2bae7f02ae0fe2b43",
+}
 
 
 class MoistMountainWaveCaseError(RuntimeError):
@@ -234,6 +268,7 @@ class MoistMountainWaveEvidence(BaseModel):
     run_id: str
     implementation_commit: str
     generated_at: datetime
+    offline_reevaluation: dict[str, Any] | None = None
     source_lock: dict[str, Any]
     provenance: dict[str, Any]
     lifecycle: dict[str, Any]
@@ -904,6 +939,131 @@ def _audit_existing_terrain(path: Path) -> dict[str, Any]:
     return {"sha256": sha256_file(path), "maximum_roundtrip_error_m": max_error, "checks": checks}
 
 
+def load_preserved_moist_mountain_wave_run(
+    *, settings: CloudChamberSettings, run_id: str
+) -> MoistMountainWavePackageResult:
+    """Load only the exact completed run authorized for offline reevaluation."""
+    if run_id != PRESERVED_RUN_ID:
+        raise MoistMountainWaveCaseError(
+            f"Offline reevaluation is pinned to {PRESERVED_RUN_ID}; found {run_id}."
+        )
+    package_dir = settings.runtime_home.expanduser() / "runs" / run_id
+    required = {
+        "manifest": package_dir / "run_manifest.json",
+        "case_manifest": package_dir / "case_manifest.json",
+        "namelist_audit": package_dir / "source_namelist_diff.json",
+        "storage_estimate": package_dir / "storage_estimate.json",
+    }
+    missing = sorted(path.name for path in required.values() if not path.is_file())
+    if missing:
+        raise MoistMountainWaveCaseError(f"Preserved run is incomplete: {missing}")
+
+    manifest = load_run_manifest(required["manifest"])
+    case_manifest = json.loads(required["case_manifest"].read_text())
+    implementation_commit = case_manifest.get("implementation_commit")
+    if (
+        manifest.run_id != PRESERVED_RUN_ID
+        or manifest.scenario.id != SCENARIO_ID
+        or manifest.lifecycle_state != LifecycleState.COMPLETED
+        or manifest.execution.exit_code != 0
+        or not isinstance(implementation_commit, str)
+        or manifest.app.commit != implementation_commit
+    ):
+        raise MoistMountainWaveCaseError(
+            "Preserved run identity, lifecycle, or implementation commit changed."
+        )
+    return MoistMountainWavePackageResult(
+        run_id=run_id,
+        package_dir=package_dir,
+        manifest_path=required["manifest"],
+        case_manifest_path=required["case_manifest"],
+        namelist_audit_path=required["namelist_audit"],
+        storage_estimate_path=required["storage_estimate"],
+        implementation_commit=implementation_commit,
+        generated_files=tuple(required.values()),
+    )
+
+
+def verify_preserved_run_artifacts(
+    package: MoistMountainWavePackageResult,
+) -> dict[str, Any]:
+    """Fail closed unless every source, input, log, stat, and history hash is pinned."""
+    if package.run_id != PRESERVED_RUN_ID:
+        raise MoistMountainWaveCaseError("Preserved artifact verification received another run.")
+    source_lock = verify_source_lock()
+    actual: dict[str, str] = {}
+    for relative_path, expected_sha256 in PRESERVED_RUN_ARTIFACT_SHA256.items():
+        path = package.package_dir / relative_path
+        if not path.is_file():
+            raise MoistMountainWaveCaseError(f"Preserved run artifact is missing: {relative_path}.")
+        actual_sha256 = sha256_file(path)
+        if actual_sha256 != expected_sha256:
+            raise MoistMountainWaveCaseError(
+                f"Preserved run artifact changed: {relative_path}; expected "
+                f"{expected_sha256}, found {actual_sha256}."
+            )
+        actual[relative_path] = actual_sha256
+
+    manifest = load_run_manifest(package.manifest_path)
+    expected_history_names = [f"cm1out_{index:06d}.nc" for index in range(1, 22)]
+    manifest_history_paths = [Path(path).resolve() for path in manifest.outputs.netcdf_paths]
+    expected_history_paths = [
+        (package.package_dir / name).resolve() for name in expected_history_names
+    ]
+    if manifest_history_paths != expected_history_paths:
+        raise MoistMountainWaveCaseError(
+            "Preserved manifest no longer names the exact 21 pinned histories in order."
+        )
+    expected_stdout = (package.package_dir / "logs/stdout.log").resolve()
+    expected_stderr = (package.package_dir / "logs/stderr.log").resolve()
+    if Path(manifest.execution.stdout_log or "").resolve() != expected_stdout:
+        raise MoistMountainWaveCaseError("Preserved stdout path identity changed.")
+    if Path(manifest.execution.stderr_log or "").resolve() != expected_stderr:
+        raise MoistMountainWaveCaseError("Preserved stderr path identity changed.")
+
+    case_manifest = json.loads(package.case_manifest_path.read_text())
+    if case_manifest.get("source_lock") != source_lock:
+        raise MoistMountainWaveCaseError("Preserved case-manifest source lock changed.")
+    if case_manifest.get("implementation_commit") != package.implementation_commit:
+        raise MoistMountainWaveCaseError("Preserved implementation commit identity changed.")
+    return {
+        "run_id": package.run_id,
+        "source_lock": source_lock,
+        "artifact_sha256": actual,
+        "artifact_count": len(actual),
+    }
+
+
+def reevaluate_preserved_moist_mountain_wave_run(
+    *,
+    settings: CloudChamberSettings,
+    package: MoistMountainWavePackageResult,
+    evaluator_commit: str,
+) -> MoistMountainWaveEvidence:
+    """Reevaluate the pinned output without constructing or invoking a run manager."""
+    before = verify_preserved_run_artifacts(package)
+    evidence = evaluate_moist_mountain_wave_run(settings=settings, package=package)
+    after = verify_preserved_run_artifacts(package)
+    if before != after:
+        raise MoistMountainWaveCaseError(
+            "Preserved run hashes changed during offline reevaluation."
+        )
+    return evidence.model_copy(
+        update={
+            "offline_reevaluation": {
+                "mode": "fail_closed_preserved_native_output_only",
+                "run_id": package.run_id,
+                "original_implementation_commit": package.implementation_commit,
+                "evaluator_commit": evaluator_commit,
+                "run_manager_constructed_or_invoked": False,
+                "artifact_hashes_verified_before": before,
+                "artifact_hashes_verified_after": after,
+                "artifacts_unchanged": True,
+            }
+        }
+    )
+
+
 def evaluate_moist_mountain_wave_run(
     *, settings: CloudChamberSettings, package: MoistMountainWavePackageResult
 ) -> MoistMountainWaveEvidence:
@@ -936,6 +1096,10 @@ def evaluate_moist_mountain_wave_run(
     minimum_vertical_spacing = math.inf
     maximum_height_transform_error = 0.0
     top_values: list[float] = []
+    active_top_by_time: list[dict[str, Any]] = []
+    tangency_by_time: list[dict[str, Any]] = []
+    upstream_flow_by_time: list[dict[str, Any]] = []
+    initial_upstream_state: dict[str, Any] | None = None
     inventory: dict[str, Any] | None = None
 
     for path in model_paths:
@@ -946,6 +1110,8 @@ def evaluate_moist_mountain_wave_run(
             coords = _coordinates(dataset)
             terrain = _field(dataset, "zs", ("yh", "xh"))
             zh_physical = _field(dataset, "zhval", ("zh", "yh", "xh"))
+            active_top = _active_top_evidence(dataset, coords, time_seconds=time_seconds)
+            active_top_by_time.append(active_top)
             if first_coords is None:
                 first_coords = coords
                 first_terrain = terrain
@@ -976,7 +1142,7 @@ def evaluate_moist_mountain_wave_run(
                 maximum_height_transform_error,
                 float(np.max(np.abs(zh_physical - expected_zh))),
             )
-            top_values.append(float(coords["zf"][-1]))
+            top_values.append(float(active_top["final_nominal_zf_m"]))
 
             fields = {name: np.asarray(dataset[name].values) for name in REQUIRED_OUTPUT_FIELDS}
             for name, values in fields.items():
@@ -996,12 +1162,47 @@ def evaluate_moist_mountain_wave_run(
             qv = _field(dataset, "qv", ("zh", "yh", "xh"))[:, 0, :]
             theta = _field(dataset, "th", ("zh", "yh", "xh"))[:, 0, :]
             pressure = _field(dataset, "prs", ("zh", "yh", "xh"))[:, 0, :]
+            u = _field(dataset, "u", ("zh", "yh", "xf"))
+            v = _field(dataset, "v", ("zh", "yf", "xh"))
             w_full = _field(dataset, "w", ("zf", "yh", "xh"))[:, 0, :]
+            u_scalar = 0.5 * (u[:, 0, :-1] + u[:, 0, 1:])
+            v_scalar = 0.5 * (v[:, :-1, :] + v[:, 1:, :])[:, 0, :]
             w_scalar = 0.5 * (w_full[:-1] + w_full[1:])
             temperature = theta * (pressure / 100_000.0) ** (287.04 / 1004.0)
             qsat = _saturation_mixing_ratio_kg_kg(temperature, pressure)
             relative_humidity = np.divide(qv, qsat, out=np.zeros_like(qv), where=qsat > 0.0)
             height = zh_physical[:, 0, :]
+            tangency = lower_boundary_tangency_metrics(
+                x_m=coords["xh"],
+                y_m=coords["yh"],
+                zs_m=terrain,
+                u_bottom=u[0, :, :],
+                v_bottom=v[0, :, :],
+                w_bottom=w_full[0, :][None, :],
+            )
+            tangency["time_seconds"] = time_seconds
+            tangency_by_time.append(tangency)
+            upstream_flow_by_time.append(
+                _upstream_flow_evidence(
+                    time_seconds=time_seconds,
+                    x_m=coords["xh"],
+                    height_m=height,
+                    u=u_scalar,
+                    v=v_scalar,
+                    w=w_scalar,
+                )
+            )
+            if initial_upstream_state is None:
+                initial_upstream_state = _initial_upstream_state_evidence(
+                    x_m=coords["xh"],
+                    height_m=height,
+                    theta=theta,
+                    pressure=pressure,
+                    qv=qv,
+                    u=u_scalar,
+                    v=v_scalar,
+                    w=w_scalar,
+                )
             frame = _cloud_frame_evidence(
                 time_seconds=time_seconds,
                 x_m=coords["xh"],
@@ -1024,6 +1225,7 @@ def evaluate_moist_mountain_wave_run(
     assert first_coords is not None
     assert first_terrain is not None
     assert inventory is not None
+    assert initial_upstream_state is not None
 
     coherent_flags = [frame["largest_component_cells"] >= MIN_COHERENT_CELLS for frame in frames]
     persistent_windows = [
@@ -1036,7 +1238,10 @@ def evaluate_moist_mountain_wave_run(
     upstream_maximum = max(float(frame["upstream_maximum_ql_kg_kg"]) for frame in frames)
     edge_maximum = max(float(frame["edge_maximum_ql_kg_kg"]) for frame in frames)
     descent_evaporation_frames = [
-        frame["time_seconds"] for frame in frames if frame["descending_clear_near_cloud_cells"] > 0
+        frame["time_seconds"]
+        for frame in frames
+        if frame["downstream_descent_evaporation"]["selected_cell_count"] > 0
+        and frame["downstream_descent_evaporation"]["largest_component_cells"] > 0
     ]
     runtime_integrity = _runtime_integrity(package, manifest, model_paths)
     checks = {
@@ -1052,14 +1257,24 @@ def evaluate_moist_mountain_wave_run(
         "upstream_clear_at_interpretable_floor": upstream_maximum < CLOUD_FLOOR_KG_KG,
         "first_cloud_forms_interior_not_edge": first_cloud is not None
         and first_cloud["interior_cloud_cell_count"] > 0
-        and first_cloud["edge_cloud_cell_count"] == 0,
+        and first_cloud["edge_cloud_cell_count"] == 0
+        and first_cloud["peak_location_is_interior"],
         "coherent_cloud_persists_three_histories": bool(persistent_windows),
         "material_peak_reached": float(peak_frame["maximum_ql_kg_kg"]) >= MATERIAL_PEAK_KG_KG,
-        "cloud_colocated_with_ascent_and_saturation": any(
-            frame["cloud_in_ascent_and_saturation_cells"] > 0 for frame in frames
-        ),
+        "cloud_colocated_with_ascent_and_saturation": first_cloud is not None
+        and first_cloud["interior_cloud_in_ascent_and_saturation_cells"] > 0
+        and first_cloud["peak_location_w_m_s"] > 0.0
+        and first_cloud["peak_location_relative_humidity"] >= 0.99,
         "descent_and_evaporation_evidence_present": bool(descent_evaporation_frames),
         "edge_cloud_does_not_compromise_interpretation": edge_maximum < CLOUD_FLOOR_KG_KG,
+        "active_top_sources_agree_all_histories": all(
+            bool(item["all_active_top_sources_agree"]) for item in active_top_by_time
+        ),
+        "lower_boundary_tangency_metrics_retained": len(tangency_by_time)
+        == len(EXPECTED_OUTPUT_TIMES_SECONDS),
+        "initial_upstream_wind_and_stability_retained": bool(
+            initial_upstream_state["profile_by_level"]
+        ),
     }
     return MoistMountainWaveEvidence(
         run_id=package.run_id,
@@ -1093,12 +1308,26 @@ def evaluate_moist_mountain_wave_run(
             "physical_height_transform_maximum_abs_error_m": maximum_height_transform_error,
             "minimum_scalar_vertical_spacing_m": minimum_vertical_spacing,
             "active_top_values_m": top_values,
+            "active_top_checks_by_time": active_top_by_time,
+            "lower_boundary_tangency": {
+                "physical_condition": "w = u * dzs/dx + v * dzs/dy",
+                "per_time_metrics": tangency_by_time,
+                "maximum_abs_residual_m_s": max(
+                    max(
+                        abs(float(item["residual_min_m_s"])),
+                        abs(float(item["residual_max_m_s"])),
+                    )
+                    for item in tangency_by_time
+                ),
+            },
         },
         initial_and_upstream={
             "initial_maximum_ql_kg_kg": first_ql_max,
             "upstream_maximum_ql_kg_kg_all_times": upstream_maximum,
             "upstream_x_bounds_m": list(UPSTREAM_X_BOUNDS_M),
             "evaluation_top_m": EVALUATION_TOP_M,
+            "initial_upstream_state": initial_upstream_state,
+            "upstream_flow_by_time": upstream_flow_by_time,
         },
         cloud_and_wave={
             "cloud_floor_kg_kg": CLOUD_FLOOR_KG_KG,
@@ -1109,6 +1338,9 @@ def evaluate_moist_mountain_wave_run(
             "peak_cloud_frame": peak_frame,
             "persistent_windows_seconds": persistent_windows,
             "descent_evaporation_frames_seconds": descent_evaporation_frames,
+            "downstream_descent_evaporation_by_time": [
+                frame["downstream_descent_evaporation"] for frame in frames
+            ],
             "frames": frames,
         },
         boundaries_and_top={
@@ -1132,6 +1364,129 @@ def evaluate_moist_mountain_wave_run(
     )
 
 
+def _active_top_evidence(
+    dataset: xr.Dataset,
+    coords: dict[str, np.ndarray[Any, Any]],
+    *,
+    time_seconds: float,
+) -> dict[str, Any]:
+    if "ztop" not in dataset:
+        raise MoistMountainWaveCaseError("Native output is missing runtime ztop.")
+    runtime_values = normalize_length_to_m(
+        dataset["ztop"].values,
+        str(dataset["ztop"].attrs.get("units", "")),
+    ).reshape(-1)
+    if runtime_values.size != 1:
+        raise MoistMountainWaveCaseError("Runtime ztop must be scalar-valued.")
+    final_nominal_zf_m = float(coords["zf"][-1])
+    runtime_ztop_m = float(runtime_values[0])
+    configured_top_m = NZ * DZ_M
+    agrees = all(
+        math.isclose(value, final_nominal_zf_m, rel_tol=0.0, abs_tol=0.01)
+        for value in (runtime_ztop_m, configured_top_m, ACTIVE_TOP_M)
+    )
+    if not agrees:
+        raise MoistMountainWaveCaseError(
+            "Active-top evidence disagrees among final nominal zf, runtime ztop, "
+            "configured nz*dz, and the source lock."
+        )
+    return {
+        "time_seconds": time_seconds,
+        "final_nominal_zf_m": final_nominal_zf_m,
+        "runtime_ztop_m": runtime_ztop_m,
+        "configured_nz": NZ,
+        "configured_dz_m": DZ_M,
+        "configured_nz_times_dz_m": configured_top_m,
+        "source_locked_active_top_m": ACTIVE_TOP_M,
+        "all_active_top_sources_agree": agrees,
+    }
+
+
+def _upstream_flow_evidence(
+    *,
+    time_seconds: float,
+    x_m: np.ndarray[Any, Any],
+    height_m: np.ndarray[Any, Any],
+    u: np.ndarray[Any, Any],
+    v: np.ndarray[Any, Any],
+    w: np.ndarray[Any, Any],
+) -> dict[str, Any]:
+    upstream_x = (x_m >= UPSTREAM_X_BOUNDS_M[0]) & (x_m <= UPSTREAM_X_BOUNDS_M[1])
+    mask = upstream_x[None, :] & (height_m < EVALUATION_TOP_M)
+    return {
+        "time_seconds": time_seconds,
+        "x_bounds_m": list(UPSTREAM_X_BOUNDS_M),
+        "height_maximum_m": EVALUATION_TOP_M,
+        "selected_cell_count": int(np.count_nonzero(mask)),
+        "u_m_s": _numeric_summary(u[mask]),
+        "v_m_s": _numeric_summary(v[mask]),
+        "w_m_s": _numeric_summary(w[mask]),
+    }
+
+
+def _initial_upstream_state_evidence(
+    *,
+    x_m: np.ndarray[Any, Any],
+    height_m: np.ndarray[Any, Any],
+    theta: np.ndarray[Any, Any],
+    pressure: np.ndarray[Any, Any],
+    qv: np.ndarray[Any, Any],
+    u: np.ndarray[Any, Any],
+    v: np.ndarray[Any, Any],
+    w: np.ndarray[Any, Any],
+) -> dict[str, Any]:
+    upstream_x = (x_m >= UPSTREAM_X_BOUNDS_M[0]) & (x_m <= UPSTREAM_X_BOUNDS_M[1])
+    profile: list[dict[str, Any]] = []
+    for level_index in range(height_m.shape[0]):
+        selected_x = upstream_x & (height_m[level_index] < EVALUATION_TOP_M)
+        if not np.any(selected_x):
+            continue
+        profile.append(
+            {
+                "level_index": level_index,
+                "sample_count": int(np.count_nonzero(selected_x)),
+                "mean_height_m": float(np.mean(height_m[level_index, selected_x])),
+                "mean_theta_k": float(np.mean(theta[level_index, selected_x])),
+                "mean_pressure_pa": float(np.mean(pressure[level_index, selected_x])),
+                "mean_qv_kg_kg": float(np.mean(qv[level_index, selected_x])),
+                "mean_u_m_s": float(np.mean(u[level_index, selected_x])),
+                "mean_v_m_s": float(np.mean(v[level_index, selected_x])),
+                "mean_w_m_s": float(np.mean(w[level_index, selected_x])),
+            }
+        )
+    if len(profile) < 2:
+        raise MoistMountainWaveCaseError(
+            "Initial upstream profile does not contain enough levels for stability evidence."
+        )
+    heights = np.asarray([item["mean_height_m"] for item in profile], dtype=np.float64)
+    theta_values = np.asarray([item["mean_theta_k"] for item in profile], dtype=np.float64)
+    delta_height = np.diff(heights)
+    if np.any(delta_height <= 0.0):
+        raise MoistMountainWaveCaseError("Initial upstream physical heights are not monotonic.")
+    theta_mid = 0.5 * (theta_values[:-1] + theta_values[1:])
+    n_squared = 9.81 / theta_mid * np.diff(theta_values) / delta_height
+    return {
+        "method": (
+            "native t=0 scalar-grid means in the locked -100 to -60 km upstream sector "
+            "below 12 km; N^2=(g/theta_mid)*(delta theta/delta physical height)"
+        ),
+        "x_bounds_m": list(UPSTREAM_X_BOUNDS_M),
+        "height_maximum_m": EVALUATION_TOP_M,
+        "profile_by_level": profile,
+        "wind_summary": {
+            "u_m_s": _numeric_summary(u[:, upstream_x][height_m[:, upstream_x] < EVALUATION_TOP_M]),
+            "v_m_s": _numeric_summary(v[:, upstream_x][height_m[:, upstream_x] < EVALUATION_TOP_M]),
+            "w_m_s": _numeric_summary(w[:, upstream_x][height_m[:, upstream_x] < EVALUATION_TOP_M]),
+        },
+        "stability": {
+            "sample_count": int(n_squared.size),
+            "n_squared_s_2": _numeric_summary(n_squared),
+            "negative_n_squared_count": int(np.count_nonzero(n_squared < 0.0)),
+            "positive_n_squared_count": int(np.count_nonzero(n_squared > 0.0)),
+        },
+    }
+
+
 def _cloud_frame_evidence(
     *,
     time_seconds: float,
@@ -1145,6 +1500,21 @@ def _cloud_frame_evidence(
     cloud = (ql >= CLOUD_FLOOR_KG_KG) & below
     components = _connected_components(cloud)
     largest = max(components, key=len, default=[])
+    component_evidence = sorted(
+        (
+            _component_evidence(
+                component,
+                x_m=x_m,
+                height_m=height_m,
+                ql=ql,
+                w=w,
+                relative_humidity=relative_humidity,
+            )
+            for component in components
+        ),
+        key=lambda item: int(item["cell_count"]),
+        reverse=True,
+    )
     interior_x = (x_m >= INTERIOR_X_BOUNDS_M[0]) & (x_m <= INTERIOR_X_BOUNDS_M[1])
     upstream_x = (x_m >= UPSTREAM_X_BOUNDS_M[0]) & (x_m <= UPSTREAM_X_BOUNDS_M[1])
     edge_x = (x_m <= x_m.min() + EDGE_WIDTH_M) | (x_m >= x_m.max() - EDGE_WIDTH_M)
@@ -1153,6 +1523,20 @@ def _cloud_frame_evidence(
     edge = below & edge_x[None, :]
     near_cloud = _dilate_mask(cloud)
     descending_clear = near_cloud & below & (w < 0.0) & (relative_humidity < 1.0) & ~cloud
+    east_adjacent = np.zeros_like(cloud)
+    east_adjacent[:, 1:] = cloud[:, :-1]
+    downstream_descending_clear = (
+        east_adjacent & below & (w < 0.0) & (relative_humidity < 1.0) & (ql < CLOUD_FLOOR_KG_KG)
+    )
+    downstream_evidence = _downstream_descent_evidence(
+        time_seconds=time_seconds,
+        mask=downstream_descending_clear,
+        x_m=x_m,
+        height_m=height_m,
+        w=w,
+        relative_humidity=relative_humidity,
+        ql=ql,
+    )
     cloud_ascent_saturated = cloud & (w > 0.0) & (relative_humidity >= 0.99)
     peak_index = np.unravel_index(int(np.argmax(ql)), ql.shape)
     component_centroid_x: float | None = None
@@ -1170,21 +1554,134 @@ def _cloud_frame_evidence(
         "largest_component_cells": len(largest),
         "largest_component_centroid_x_m": component_centroid_x,
         "largest_component_centroid_height_m": component_centroid_z,
+        "cloud_components": component_evidence,
         "interior_cloud_cell_count": int(np.count_nonzero(cloud & interior)),
         "upstream_cloud_cell_count": int(np.count_nonzero(cloud & upstream)),
         "edge_cloud_cell_count": int(np.count_nonzero(cloud & edge)),
         "upstream_maximum_ql_kg_kg": _masked_maximum(ql, upstream),
         "edge_maximum_ql_kg_kg": _masked_maximum(ql, edge),
         "cloud_in_ascent_and_saturation_cells": int(np.count_nonzero(cloud_ascent_saturated)),
+        "interior_cloud_in_ascent_and_saturation_cells": int(
+            np.count_nonzero(cloud_ascent_saturated & interior)
+        ),
         "descending_clear_near_cloud_cells": int(np.count_nonzero(descending_clear)),
+        "downstream_descent_evaporation": downstream_evidence,
         "cloud_weighted_mean_w_m_s": _weighted_mean(w, ql, cloud),
         "cloud_weighted_mean_relative_humidity": _weighted_mean(relative_humidity, ql, cloud),
         "peak_location_x_m": float(x_m[peak_index[1]]),
         "peak_location_height_m": float(height_m[peak_index]),
         "peak_location_w_m_s": float(w[peak_index]),
         "peak_location_relative_humidity": float(relative_humidity[peak_index]),
+        "peak_location_is_interior": bool(interior[peak_index]),
         "top_abs_w_maximum_m_s": _masked_maximum(np.abs(w), top_mask),
         "top_ql_maximum_kg_kg": _masked_maximum(ql, top_mask),
+    }
+
+
+def _component_evidence(
+    component: list[tuple[int, int]],
+    *,
+    x_m: np.ndarray[Any, Any],
+    height_m: np.ndarray[Any, Any],
+    ql: np.ndarray[Any, Any],
+    w: np.ndarray[Any, Any],
+    relative_humidity: np.ndarray[Any, Any],
+) -> dict[str, Any]:
+    mask = np.zeros(ql.shape, dtype=bool)
+    for index in component:
+        mask[index] = True
+    z_indices, x_indices = np.nonzero(mask)
+    x_values = x_m[x_indices]
+    height_values = height_m[z_indices, x_indices]
+    return {
+        "cell_count": len(component),
+        "centroid_x_m": float(np.mean(x_values)),
+        "centroid_height_m": float(np.mean(height_values)),
+        "x_bounds_m": [float(np.min(x_values)), float(np.max(x_values))],
+        "height_bounds_m": [float(np.min(height_values)), float(np.max(height_values))],
+        "maximum_ql_kg_kg": float(np.max(ql[mask])),
+        "ql_weighted_mean_w_m_s": _weighted_mean(w, ql, mask),
+        "ql_weighted_mean_relative_humidity": _weighted_mean(relative_humidity, ql, mask),
+    }
+
+
+def _downstream_descent_evidence(
+    *,
+    time_seconds: float,
+    mask: np.ndarray[Any, Any],
+    x_m: np.ndarray[Any, Any],
+    height_m: np.ndarray[Any, Any],
+    w: np.ndarray[Any, Any],
+    relative_humidity: np.ndarray[Any, Any],
+    ql: np.ndarray[Any, Any],
+) -> dict[str, Any]:
+    components = _connected_components(mask)
+    largest = max(components, key=len, default=[])
+    selected_z, selected_x = np.nonzero(mask)
+    selected_count = int(selected_z.size)
+    bounds: dict[str, list[float] | None]
+    if selected_count:
+        selected_heights = height_m[selected_z, selected_x]
+        bounds = {
+            "x_bounds_m": [float(np.min(x_m[selected_x])), float(np.max(x_m[selected_x]))],
+            "height_bounds_m": [
+                float(np.min(selected_heights)),
+                float(np.max(selected_heights)),
+            ],
+        }
+    else:
+        bounds = {"x_bounds_m": None, "height_bounds_m": None}
+
+    largest_bounds: dict[str, list[float] | None]
+    if largest:
+        largest_z = np.asarray([index[0] for index in largest], dtype=np.int64)
+        largest_x = np.asarray([index[1] for index in largest], dtype=np.int64)
+        largest_heights = height_m[largest_z, largest_x]
+        largest_bounds = {
+            "x_bounds_m": [float(np.min(x_m[largest_x])), float(np.max(x_m[largest_x]))],
+            "height_bounds_m": [
+                float(np.min(largest_heights)),
+                float(np.max(largest_heights)),
+            ],
+        }
+    else:
+        largest_bounds = {"x_bounds_m": None, "height_bounds_m": None}
+
+    return {
+        "time_seconds": time_seconds,
+        "method": (
+            "clear scalar cells one x-grid cell immediately east of a cloud cell, with "
+            "w<0, RH<1, and ql below the locked interpretable cloud floor"
+        ),
+        "direction": "downstream_east_positive_x",
+        "selected_cell_count": selected_count,
+        "component_count": len(components),
+        "largest_component_cells": len(largest),
+        **bounds,
+        "largest_component_bounds": largest_bounds,
+        "w_m_s": _numeric_summary(w[mask]),
+        "relative_humidity_fraction": _numeric_summary(relative_humidity[mask]),
+        "ql_kg_kg": _numeric_summary(ql[mask]),
+    }
+
+
+def _numeric_summary(values: Any) -> dict[str, float | int | None]:
+    array = np.asarray(values, dtype=np.float64).reshape(-1)
+    finite = array[np.isfinite(array)]
+    if finite.size == 0:
+        return {
+            "sample_count": 0,
+            "minimum": None,
+            "median": None,
+            "mean": None,
+            "maximum": None,
+        }
+    return {
+        "sample_count": int(finite.size),
+        "minimum": float(np.min(finite)),
+        "median": float(np.median(finite)),
+        "mean": float(np.mean(finite)),
+        "maximum": float(np.max(finite)),
     }
 
 
@@ -1246,7 +1743,9 @@ def _weighted_mean(
 
 def _require_fields(dataset: xr.Dataset) -> None:
     available = set(dataset.data_vars) | set(dataset.coords)
-    missing = sorted((set(REQUIRED_OUTPUT_FIELDS) | set(REQUIRED_COORDINATES)) - available)
+    missing = sorted(
+        (set(REQUIRED_OUTPUT_FIELDS) | set(REQUIRED_COORDINATES) | {"ztop"}) - available
+    )
     if missing:
         raise MoistMountainWaveCaseError(f"Native output is missing required data: {missing}")
 
