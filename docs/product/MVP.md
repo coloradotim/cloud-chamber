@@ -1,12 +1,12 @@
 # Cloud Chamber MVP
 
-**Status:** Stage 7A is active and under independent review through issue #383 and PR #384. The Stage 5 product/science exit and the practical purpose of the former Stage 6 experimentation gate are satisfied. This document becomes controlling MVP scope only after explicit PM approval and merge of PR #384.
+**Status:** Approved controlling MVP scope. PR #384 established the personal-laboratory MVP, and issue #396 amends its homepage, Fun With Soundings, Trade Cumulus Lab, and implementation-roadmap details. The amendment does not reopen the North Star, Product Vision, Application Semantics, or the core Explore / Compare / persistence decisions.
 
 ## Purpose
 
 This document defines the first durable version of Cloud Chamber worth building and keeping.
 
-Cloud Chamber is not being designed for a public launch, a classroom, a team, or a generalized scientific-computing market. It is the smallest coherent version of the product that its sole initial user will repeatedly open, learn from, save work in, and extend with additional cloud worlds.
+Cloud Chamber is not being designed for a public launch, classroom, team, or generalized scientific-computing market. It is the smallest coherent product that its sole initial user will repeatedly open, learn from, save work in, and extend.
 
 The governing question is:
 
@@ -20,7 +20,7 @@ Controlling authority remains:
 2. `docs/product/PRODUCT_VISION.md`
 3. explicit approved PM decisions
 4. `docs/product/APPLICATION_SEMANTICS.md`
-5. this MVP definition, after approval
+5. this approved MVP definition
 6. bounded product documents such as `docs/product/TRADE_CUMULUS_PRODUCT_SLICE.md`
 7. current implementation documentation and code
 8. research and run evidence
@@ -33,9 +33,11 @@ This MVP is grounded in:
 - the Surface Moisture Supply comparison;
 - the Trade Cumulus Updraft Lens;
 - the fixed Trade Cumulus vertical-velocity scale;
-- the first featured Baseline versus More Moisture Comparison merged through PR #385.
+- the first featured Baseline versus More Moisture Comparison merged through PR #385;
+- the World-scoped foundation merged through PR #387;
+- the existing observed-sounding, candidate-screening, run, ingest, and Result workflows that will be preserved under Fun With Soundings.
 
-Application Semantics already establishes that a Comparison may be casual and exploratory or may form part of a deliberate Experiment. A formal Experiment requires a controlled contrast; ordinary Comparison does not require a validation or graduation gate.
+Application Semantics establishes that a Comparison may be casual and exploratory or may form part of a deliberate Experiment. A formal Experiment requires a controlled contrast; ordinary Comparison does not require validation or graduation.
 
 Current Build / Results / Explore structure is implementation context. It does not define the final MVP journey.
 
@@ -45,22 +47,26 @@ Cloud Chamber is the repository owner’s **personal cloud laboratory and growin
 
 The MVP should make it easy to:
 
-- enter a cloud world without first operating model machinery;
+- enter a Cloud World without first operating model machinery;
 - watch a modeled cloud field evolve;
 - reveal hidden atmospheric processes through Lenses;
 - inspect scientific detail without losing the visual experience;
 - read concise explanations that refresh atmospheric-science knowledge;
-- create or ingest a related Simulation and return after its model run finishes;
-- compare that Simulation with its parent, reference, or another compatible Simulation;
+- start from an existing Simulation, change one or more supported settings, and launch a related run;
+- leave while a model runs and return later without reconstructing context;
+- compare a Simulation with its parent, reference, or another compatible Simulation;
 - see exactly which configuration values differ;
 - investigate strong, weak, surprising, mixed, inconclusive, or absent responses;
-- save useful views, comparisons, and personal notes for later return;
+- save useful views, comparisons, and personal notes;
 - preserve worthwhile Simulations as durable content;
-- continue building, testing, retaining, archiving, or leaving behind cloud-world variations.
+- use observed soundings and broader experiments without forcing them into a Cloud World;
+- continue building, testing, archiving, or leaving behind scientific directions.
 
-Trade Cumulus is the first installed Cloud World. It is not the permanent definition of Cloud Chamber.
+Trade Cumulus is the first Cloud World in the MVP. It is not the permanent definition of Cloud Chamber.
 
-The MVP is successful when its owner voluntarily returns to it as an instrument, not merely when a scripted demo passes.
+Fun With Soundings is the first non-World workbench. It preserves flexible atmospheric experimentation that should not be buried inside a particular World.
+
+The MVP succeeds when its owner voluntarily returns to it as an instrument, not merely when a scripted demo passes.
 
 ## 1. Sole target user and use context
 
@@ -72,12 +78,12 @@ Primary machine: MacBook Air
 Usage: local desktop browser and local runtime
 Background: physics and atmospheric science
 Knowledge state: technically capable, but atmospheric concepts may need concise refreshers
-Role: both cloud-world author and product user
+Role: both Cloud World author and product user
 ```
 
 The product may assume comfort with physical quantities, units, plots, slices, model output, and technical provenance. It should not assume every atmospheric concept is fresh in memory.
 
-Explanations should therefore:
+Explanations should:
 
 - lead with a direct physical account;
 - retain field names and units;
@@ -85,46 +91,65 @@ Explanations should therefore:
 - make exact model and numerical details available on demand;
 - avoid both unexplained specialist shorthand and beginner-oriented condescension.
 
-The MVP does not define external personas, classrooms, teams, institutions, or commercial users.
+The MVP does not define external personas, classrooms, institutions, teams, or commercial users.
 
 ## 2. Product information architecture
 
-### Worlds is the sole primary product level
+### Cloud Chamber home is the primary entrance
 
-The primary product entrance is **Cloud Worlds**.
+The primary entrance is **Cloud Chamber home**.
 
-Explore, Compare, Lab, Saved Views, saved Comparisons, notes, and Simulations live within a Cloud World. They are not global peers to Worlds.
-
-The first structure is:
+The initial first-class destinations are:
 
 ```text
-Cloud Worlds
-└── Trade Cumulus
-    ├── Overview
-    ├── Simulations
-    ├── Saved Views
-    ├── Comparisons
-    └── Lab
+Cloud Chamber
+├── Trade Cumulus — Cloud World
+└── Fun With Soundings — Atmospheric workbench
 ```
 
-A future world begins as a draft World with its own Lab:
+Both destinations should be visible directly at a `1440 × 900` desktop viewport. Fun With Soundings must not be buried in settings, a secondary tools drawer, or Trade Cumulus.
+
+Cloud Worlds remain core product concepts. Explore, Compare, Lab, Saved Views, saved Comparisons, notes, and Simulations belong within a World when the work has a coherent World context.
+
+Fun With Soundings is not a World. It is a workbench for observed atmospheres, candidate screening, broader experiments, and unassigned or legacy Result history.
+
+### A Cloud World is simply a Cloud World
+
+For the sole user, a Cloud World is a Cloud World regardless of how much content has been authored or whether it is the current focus of work.
+
+Do not organize Worlds in the product under:
+
+- Installed Worlds;
+- Draft Worlds;
+- candidate versus graduated Worlds;
+- product-development lifecycle categories.
+
+Technical availability remains legitimate operational information. A World may report that content is available, partial, missing, corrupt, or in conflict. Those are content states, not user-facing classes of World.
+
+A future World should appear alongside other Cloud Worlds without requiring a separate development-state shelf.
+
+### Trade Cumulus World structure
 
 ```text
-Cloud Worlds
-→ New Cloud World
-→ Draft World
-→ Lab
+Trade Cumulus
+├── Overview
+├── Simulations
+├── Saved Views
+├── Comparisons
+└── Lab
+    ├── Activity
+    ├── Create Variation
+    └── History
 ```
-
-Global settings, storage diagnostics, and application maintenance may remain available as utilities. They are not primary product destinations.
 
 ### A Cloud World is durable context, not a validation museum
 
 A World may organize:
 
 - a reference Simulation;
-- retained variations and recent runs;
-- Recipes and meaningful Controls where they apply;
+- retained or automatically associated variations;
+- active and historical run attempts;
+- Recipes and Controls where they apply;
 - world-appropriate Lenses;
 - Saved Views;
 - saved Comparisons;
@@ -132,25 +157,7 @@ A World may organize:
 - ordinary history worth retaining without featuring;
 - the World’s Lab.
 
-A World is not limited to formally validated showcase pieces. Saving or featuring content controls return and prominence; it does not certify a scientific conclusion.
-
-### Each World owns its Lab
-
-The Lab contains the technical and scientific work used to create new Simulations in that World.
-
-It may contain:
-
-- setup and configuration work;
-- package generation;
-- local CM1 execution;
-- run monitoring;
-- ingest;
-- technical integrity and field trust;
-- storage and cleanup;
-- run lineage and configuration differences;
-- retention, archive, rejection, and feature decisions.
-
-Current Build, Results, run management, ingest, and storage behavior belongs primarily to the active World’s Lab.
+Saving or featuring controls return and prominence. It does not certify a scientific conclusion.
 
 ### Explore and Compare are workspace states
 
@@ -158,28 +165,40 @@ Current Build, Results, run management, ingest, and storage behavior belongs pri
 
 **Compare** examines the relationship between two related Simulations or Saved Views.
 
-They are opened from a World, a Simulation, a completed Lab run, a Saved View, or a saved Comparison. They are not permanent global navigation sections.
+They are opened from a World, Simulation, completed Lab item, Saved View, or saved Comparison. They are not permanent global navigation peers.
 
-## 3. Simulation, Run, and lineage
+### Fun With Soundings structure
 
-Explore presents a **Simulation**, not a technical Run.
+```text
+Fun With Soundings
+├── Find Soundings
+├── Candidates
+├── Build & Run
+└── Past Experiments
+```
 
-The normal lineage is:
+Fun With Soundings preserves flexible experiment work without implying that every sounding or Result belongs to a Cloud World.
+
+## 3. Simulation, Run, Result, and lineage
+
+Explore presents a **Simulation**, not a technical Run or Result.
+
+The ordinary World lineage is:
 
 ```text
 Cloud World
-→ World Lab
-→ Recipe, reference Simulation, or prior Simulation
-→ selected configuration changes
+→ parent or reference Simulation
+→ selected supported changes
 → technical Run
 → completed model output
+→ Result metadata and assets
 → Simulation
 → Explore or Compare
 ```
 
-A Run is execution machinery. A Simulation is the modeled atmospheric evolution the user returns to.
+A Run is execution machinery. A Result is the ingested technical record. A Simulation is the modeled atmospheric evolution the user returns to.
 
-Every related Simulation retains, when known:
+Every related World Simulation retains, when known:
 
 - Cloud World;
 - source Recipe;
@@ -187,18 +206,32 @@ Every related Simulation retains, when known:
 - optional user question or run note;
 - exact changed physical and numerical values;
 - sufficiently comparable fixed settings or an unchanged-configuration fingerprint;
-- technical run, result, source-model, field, and integrity identity;
-- Control identity and values **when an explicit Control applies**.
+- technical run, Result, source-model, field, and integrity identity;
+- Control identity and values when an explicit Control applies.
 
-A Simulation does not require a graduated Control in order to be explored or compared.
+A Simulation does not require a graduated Control to be explored or compared.
 
-The user should not reconstruct lineage from filenames, timestamps, issue numbers, or memory.
+The user should not reconstruct lineage from filenames, timestamps, issue numbers, tags, or memory.
 
-## 4. First installed Cloud World
+### World variation identity
 
-The first installed world is:
+A variation intentionally created from an existing World Simulation belongs to that World from inception.
 
-> **Trade Cumulus**
+Its stable Simulation identity exists before package creation. When a technically inspectable Result is ingested for that identity, the Simulation becomes explorable automatically.
+
+No separate Retain, promotion, or graduation ceremony is required.
+
+Failed or non-inspectable attempts remain in World Lab Activity and History but cannot masquerade as available Simulations.
+
+### Non-World experiment identity
+
+A Fun With Soundings experiment remains an experiment unless the user later deliberately associates it with a World through a separately approved workflow.
+
+The product must not silently infer World membership from cloud type, sounding shape, scenario name, or Result content.
+
+## 4. Trade Cumulus
+
+Trade Cumulus is the first Cloud World in the MVP.
 
 Its initial durable content is:
 
@@ -211,81 +244,201 @@ Trade Cumulus
 └── Featured Moisture Comparison
 ```
 
-The Moisture Comparison merged through PR #385 is the first **featured saved Comparison**. It proves one authored compare-and-explain presentation. It does not define the full future Compare workflow.
+The Moisture Comparison merged through PR #385 is the first **featured saved Comparison**. It proves one authored compare-and-explain presentation. It does not define the complete Compare workflow.
 
-User-facing identities are stable and independent of timestamped run and result names. Technical identifiers remain available in Details and provenance.
+User-facing identities are stable and independent of timestamped run and Result names. Technical identifiers remain available in Details and provenance.
 
-### Precomputed first
+### Precomputed revisit path
 
-The revisit journey uses installed, precomputed content.
+The revisit journey uses local precomputed content.
 
 Entering Trade Cumulus must not require:
 
 - launching CM1;
 - generating a package;
-- waiting for a six-hour simulation;
+- waiting for a six-hour Simulation;
 - finding a timestamped Result;
 - understanding runtime storage before seeing a cloud.
 
-The World’s Lab remains available when the user wants to create or test a new variation.
+Trade Cumulus Lab remains available when the user wants to create a variation.
 
-## 5. Essential user journeys
+## 5. Fun With Soundings
 
-### Revisit and explore
+Fun With Soundings is a first-class atmospheric workbench.
+
+It exists because observed soundings and broad atmosphere-first experiments may produce:
+
+- shallow clouds;
+- deep convection;
+- dry thermals;
+- capped or elevated responses;
+- no cloud;
+- a failed or incoherent experiment.
+
+That flexibility is useful. It should not be forced into Trade Cumulus or mislabeled as a Cloud World.
+
+### Find Soundings
+
+Preserve and clarify current capabilities for:
+
+- IGRA catalog loading and refresh;
+- cached station-file management;
+- station search and selection;
+- sounding time selection;
+- supported local/source-path selection;
+- manual sounding upload where implemented;
+- parsing;
+- profile and data-quality preview.
+
+Lead with the selected atmospheric source, station, time, availability, and next action rather than internal scenario IDs or machine paths.
+
+### Candidates
+
+Preserve and clarify:
+
+- candidate screening;
+- story/family/support/readiness filters;
+- station-history scope;
+- latest-per-station behavior;
+- sorting and result limits;
+- candidate detail;
+- saving/removing candidates;
+- selecting a candidate for setup;
+- run-plan and batch-queue preparation.
+
+Use progressive disclosure so power remains available without presenting every filter as equally important.
+
+### Build & Run
+
+Preserve the current useful observed-sounding workflow:
+
+- selected sounding or candidate;
+- bounded supported run configuration;
+- pre-run validation;
+- dry-run package creation;
+- run plan and batch queue;
+- local execution;
+- LAN-worker launch, refresh, collect, finalize, and cleanup;
+- ingest;
+- storage status and deletion preview.
+
+Present the workflow as:
+
+```text
+Atmosphere
+→ Experiment setup
+→ Review
+→ Create package
+→ Run and monitor
+```
+
+Do not turn it into a universal CM1 namelist editor.
+
+### Past Experiments
+
+Past Experiments is the home for:
+
+- observed-sounding Results;
+- unassigned experiments;
+- legacy scenario Results that do not belong to a World;
+- broad technical Result inspection;
+- legacy tags and Result notes until superseded;
+- storage and cleanup access.
+
+Default to sounding-related experiments, with a clear option to show legacy and unassigned work.
+
+A World-owned Simulation encountered through the broad archive must display its World ownership and open in its World. Fun With Soundings must not appear to own it.
+
+Non-World Result Explore uses an experiment/workbench context, not a Trade Cumulus breadcrumb.
+
+## 6. Essential user journeys
+
+### Revisit and explore Trade Cumulus
 
 ```text
 Open Cloud Chamber
-→ see Cloud Worlds
+→ see Trade Cumulus and Fun With Soundings
 → enter or resume Trade Cumulus
 → watch the Canonical BOMEX Baseline evolve
 → move through model time
 → activate the Updraft Lens or inspect a Field Slice
 → inspect coordinated 3-D and slice views
 → read explanation and science beside the evidence
-→ write a Simulation note or save a view with a note
+→ write a Simulation note or save a view
 → open a saved or featured Comparison
 → return later to the same World and state
 ```
 
-### Create, leave, return, compare, and remember
+### Create a Trade Cumulus variation
 
 ```text
-Open Trade Cumulus Lab
-→ start from the reference or a prior Simulation
-→ change one or more settings
-→ launch or ingest the related Simulation
-→ leave while the model runs
-→ return later and see completed, caveated, failed, or incomplete status
-→ Compare with the parent, reference, or another compatible Simulation
+Open a Trade Cumulus Simulation
+→ Create Variation
+→ inherit its exact configuration
+→ name the variation and optionally write a question
+→ change one or more supported settings
 → inspect every material configuration difference
-→ begin aligned where scientifically honest
-→ independently adjust views when useful
-→ write a title and personal note
-→ save the Comparison
-→ find and reopen it later inside Trade Cumulus
+→ review and launch through existing execution machinery
+→ leave while the model runs
+→ return to Trade Cumulus Lab Activity
+→ see running, completed, caveated, failed, or incomplete state
+→ Explore the inspectable Simulation
+→ Compare to its parent or Canonical BOMEX Baseline
 ```
 
-### Start another World
+No later promotion action is required for an inspectable variation that was created with valid Trade Cumulus identity and lineage.
+
+### Investigate through Compare
 
 ```text
-Open Cloud Worlds
-→ create a draft World
-→ enter that World’s Lab
-→ develop its first scientifically grounded Simulation
-→ retain, archive, or leave the draft behind
+Open Compare from a Simulation, World, or completed Lab item
+→ choose parent, reference, or another compatible Simulation
+→ inspect exact differences and technical trust
+→ begin aligned where scientifically honest
+→ link or unlink time, camera, plane, and Lens/scale
+→ independently arrange views when useful
+→ write a note
+→ save the Comparison
+→ reopen it later
 ```
 
-The default revisit journey should not pass through Build or Results ceremony. The Lab journey may use technical machinery because the user is deliberately creating content.
+### Work with observed soundings
 
-## 6. World overview requirements
+```text
+Open Fun With Soundings
+→ find, load, or upload a sounding
+→ inspect its profile and quality
+→ screen or select a candidate
+→ configure a bounded experiment
+→ create a package
+→ run locally or through the current worker
+→ return later
+→ ingest and inspect the Result
+→ find it again in Past Experiments
+```
 
-The Trade Cumulus overview should provide:
+### Begin another Cloud World
+
+```text
+Open Cloud Chamber home
+→ create or add a Cloud World
+→ enter its Lab
+→ develop its first scientifically grounded Simulation
+→ continue, archive work, or leave it alone
+```
+
+The product does not label the World “draft” merely because it is early.
+
+## 7. Trade Cumulus overview requirements
+
+The overview should provide:
 
 - **Resume:** last active Simulation, Saved View, or saved Comparison;
-- **Simulations:** reference, retained variations, and recent inspectable Lab outputs;
+- **Simulations:** reference and related variations;
 - **Saved Views:** preserved single-Simulation examinations;
 - **Comparisons:** saved and featured Comparisons;
-- **Lab status:** active runs, completed runs awaiting inspection, and entry to the World’s Lab.
+- **Lab status:** active, completed, caveated, failed, or incomplete work needing attention;
+- **Create Variation:** a direct path from the reference or another eligible Simulation.
 
 A representative structure is:
 
@@ -298,7 +451,7 @@ Canonical BOMEX Baseline — 04:18:00 — Updraft Lens
 Simulations
 Canonical BOMEX Baseline
 More Moisture
-Recent Lab variations
+Recent variations
 
 Saved Views
 ...
@@ -309,14 +462,103 @@ Saved: ...
 
 Lab
 1 run in progress
-2 completed runs awaiting inspection
+2 completed items ready to inspect
+Create Variation
 ```
 
-## 7. Explore workspace contract
+## 8. Trade Cumulus Lab contract
 
-Explore is the central MVP instrument for one Simulation.
+The final Lab is not the legacy global Build / Results interface placed inside a World.
 
-At a `1440 × 900` CSS-pixel desktop viewport, it should form one coherent workspace rather than a long page of implementation-specific components.
+It is:
+
+```text
+Trade Cumulus Lab
+├── Activity
+├── Create Variation
+└── History
+```
+
+### Activity
+
+Activity is the default actionable work queue.
+
+It groups relevant records by state:
+
+- Needs attention;
+- Running;
+- Completed awaiting ingest;
+- Completed or caveated and ready to inspect;
+- Failed or incomplete;
+- Recently completed.
+
+Each card leads with:
+
+- intended Simulation/variation name;
+- parent or reference;
+- optional question;
+- exact material difference summary;
+- lifecycle, ingest, and technical-trust state;
+- last update;
+- next useful actions.
+
+Possible actions include:
+
+- View status;
+- Ingest;
+- Explore;
+- Compare to parent;
+- Compare to Canonical BOMEX Baseline;
+- Review failure;
+- Open technical details.
+
+Do not display actions that cannot complete.
+
+### Create Variation
+
+Create Variation starts from an eligible Trade Cumulus Simulation.
+
+The editor:
+
+- clones the parent configuration exactly;
+- requires a variation name;
+- accepts an optional question;
+- exposes only package-supported settings;
+- groups settings into Atmosphere and forcing, Numerics and domain, Outputs, and advanced supported settings;
+- shows a live categorized diff;
+- validates output and Lens compatibility;
+- writes stable identity and lineage before execution;
+- uses the existing local and LAN-worker run machinery.
+
+When the Result becomes inspectable, it appears automatically as the intended Simulation.
+
+### History
+
+History contains only Trade Cumulus-related work:
+
+- retained or automatically associated Simulations;
+- lineaged but non-inspectable attempts;
+- failed and incomplete attempts;
+- prior World run history.
+
+It does not contain unrelated sounding, deep-convection, or legacy Results merely because they exist globally.
+
+Useful filters include:
+
+- lifecycle/status;
+- parent/reference;
+- inspectable versus non-inspectable;
+- technical trust;
+- date;
+- search over Simulation name, question, and technical IDs.
+
+Technical detail remains available on demand instead of permanently consuming half the page.
+
+## 9. Explore workspace contract
+
+Explore is the central instrument for one Simulation.
+
+At `1440 × 900`, it should form one coherent workspace rather than a long page of implementation-specific components.
 
 ### Core hierarchy
 
@@ -329,7 +571,7 @@ Active Field Slice or Lens slice
 Persistent timeline and active view controls
 ```
 
-The 3-D scene and active slice are visible at the same time. The supporting inspector is visible by default and collapsible.
+The 3-D scene and active slice are visible simultaneously. The inspector is visible by default and collapsible.
 
 ### Coordinated visual state
 
@@ -338,20 +580,20 @@ The 3-D scene and slice share:
 - Simulation;
 - model time;
 - active Lens or selected Field Slice;
-- slice orientation and position;
+- slice orientation and physical position;
 - cloud threshold where applicable;
 - Lens scale;
 - wind mode;
 - cloud-boundary visibility.
 
-Changing time or slice position updates the coordinated views. The active plane remains visible in the 3-D scene.
+Changing time or slice position updates coordinated views. A slice-based Lens displays its active plane in 3-D.
 
 ### Persistent timeline
 
-The timeline remains available while exploring and provides:
+The timeline provides:
 
 - play and pause;
-- frame stepping;
+- previous/next saved frame;
 - playback speed;
 - current model time;
 - saved-output position;
@@ -359,41 +601,35 @@ The timeline remains available while exploring and provides:
 
 ### Field Slice versus Lens
 
-A **Field Slice** is a generic scientific inspection tool:
+A **Field Slice** answers:
 
 > Show this field on this plane.
 
-It owns a field, orientation, position, units, display scale, and native-value inspection.
+It owns a field, orientation, position, units, scale, and native-value inspection.
 
-A **Lens** is a curated way to reveal and interpret a process. It may combine:
+A **Lens** is a curated process view. It may combine:
 
-- one or more model fields;
-- a derived diagnostic or scientifically meaningful proxy;
+- one or more fields;
+- derived diagnostics or proxies;
 - world-specific scales and thresholds;
-- contours, vectors, or other overlays;
-- useful default time, orientation, and region;
+- contours, vectors, or overlays;
+- useful defaults;
 - explanation and interpretation guidance.
 
-The Updraft Lens is not merely a `w` slice. It combines vertical velocity, the fixed Trade Cumulus scale, cloud-liquid boundary, perturbation horizontal wind, world-appropriate defaults, and explanation.
-
-A Lens may include a Field Slice but need not be slice-based.
-
-Potential future Lenses such as Buoyancy/Thermal, Moisture Mixing, Cloud Lifecycle, Surface Coupling, Turbulence, Inversion/Entrainment, or Cold Pool are examples only. They are not approved MVP features.
+The Updraft Lens combines vertical velocity, the fixed Trade Cumulus scale, cloud-liquid boundary, perturbation horizontal wind, defaults, and explanation. It is not merely a `w` slice.
 
 ### One Lens context
 
-When a Lens is active, one coherent legend and control context serves the 3-D scene and slice. Do not repeat full legends for each rendering component when they express the same scale.
+One coherent Lens control and legend context serves the scene and slice. Do not repeat full legends for components expressing the same scale.
 
 ### Inspector
-
-The inspector has four sections.
 
 **Explain**
 
 - authored explanation;
-- physical interpretation of what is visible;
-- concise atmospheric-science refreshers;
-- material limits or uncertainty.
+- physical interpretation;
+- concise refresher content;
+- material limits.
 
 **Science**
 
@@ -402,77 +638,72 @@ The inspector has four sections.
 
 **Notes**
 
-- an editable general Simulation note;
-- the note attached to a Saved View when one is open;
-- clear unsaved and saved state.
+- editable Simulation note;
+- Saved View note when relevant;
+- clear saved and unsaved state.
 
 **Details**
 
 - exact fields and units;
-- model time and slice coordinates;
+- time and slice coordinates;
 - Recipe and applicable Control values;
 - parent/reference identity;
 - configuration differences;
-- run, result, and asset identifiers;
+- run, Result, and asset IDs;
 - hashes, provenance, runtime integrity, CM1, and NetCDF details.
 
 ### World-aware diagnostics
 
-Trade Cumulus should emphasize cloud amount, cloud depth, cloud-water path, cloud lifecycle, updraft/downdraft structure, mixing/transport, and surface/large-scale forcing.
+Trade Cumulus emphasizes cloud amount, depth, cloud-water path, lifecycle, updraft/downdraft structure, mixing/transport, and surface/large-scale forcing.
 
-Expected absences such as deep convection, precipitation, and reflectivity should not dominate this World’s primary interface.
+Expected absence of deep convection, precipitation, and reflectivity should not dominate its primary interface.
 
 ### Partial failure
 
-Failure of one visual layer must remain local. A failed 3-D cloud layer does not disable the slice, timeline, explanation, science, notes, or Details. Retry targets the failed layer.
+Failure of one visual layer remains local. A failed 3-D layer does not disable the slice, timeline, explanation, science, notes, or Details. Retry targets the failed layer.
 
-## 8. Compare workspace contract
+## 10. Compare workspace contract
 
 Compare is ordinary investigation, not a validation-only report.
 
-It should be available when two Simulations have enough readable, compatible data to examine the requested views and Lenses. A caveated Simulation may still be useful when caveats are visible and required fields remain usable.
+It is available when two Simulations have enough readable, compatible data to examine requested views or Lenses. A caveated Simulation may still be useful when caveats remain visible.
 
-### How Compare opens
+### Entry
 
-**From a completed World Lab run**
+From a completed World Lab item:
 
-Primary suggestions are:
-
-1. Compare to parent Simulation;
-2. Compare to the World reference Simulation;
+1. Compare to parent;
+2. Compare to World reference;
 3. Explore on its own.
 
-**From Explore**
+From Explore, candidate order is:
 
-The current Simulation is fixed as one side. Candidate ordering is:
-
-1. parent Simulation;
-2. World reference Simulation;
+1. parent;
+2. World reference;
 3. recent related Simulations;
 4. Saved Views from related Simulations;
-5. other compatible Simulations in the same World.
+5. other compatible same-World Simulations.
 
-**From the World**
+From the World, Comparisons offers saved/featured Comparisons and New Comparison.
 
-The Comparisons section offers saved/featured Comparisons and **New Comparison**.
+From a Saved View, Compare this view preserves it as one side.
 
-**From a Saved View**
+Cross-World comparison is outside the MVP.
 
-`Compare this view…` preserves that view as one side.
+### Preview
 
-Cross-World comparison is outside the MVP unless a later concrete need establishes scientific and visual compatibility.
+Before opening, show:
 
-### Preview before opening
+- stable member identities;
+- relationship;
+- every material configuration difference;
+- output/operational differences separately;
+- trust and caveats;
+- alignment compatibility.
 
-The chooser shows the relationship and exact configuration difference before opening Compare.
+Several changed settings must never become a one-factor causal claim.
 
-When several values changed, all material physical and numerical differences are listed. The product must not attribute the response to one factor.
-
-Operational differences such as output cadence are visible but distinguishable from atmospheric changes.
-
-### Aligned and Independent are presets over link controls
-
-The Compare toolbar provides:
+### Aligned and Independent presets
 
 ```text
 View preset: Aligned | Independent
@@ -484,66 +715,51 @@ Slice plane
 Lens and scale
 ```
 
-The user may manipulate either side. Linked state causes the other side to follow.
+Aligned enables every compatible link. Independent disables links. Mixed states are supported.
 
-**Aligned preset** enables every scientifically compatible link.
-
-**Independent preset** disables links and permits separate examination states.
-
-A mixed state is allowed, for example linked camera and Lens scale with independent time and slice plane.
+The user may manipulate either side; linked state causes the other to follow.
 
 ### Linking semantics
 
-- Time links by modeled seconds, not frame index. Different cadences use nearest available times and expose any offset.
-- Slice position links by physical coordinate, not array index.
-- Camera links by normalized domain-relative orientation, target, and zoom.
-- Lens and scale link when the same Lens and scientifically compatible scale apply.
-- A link is disabled with a reason when the Simulations are not compatible enough.
-- The interface always identifies whether the current views are aligned, independent, or mixed.
+- Time links by modeled seconds, not frame index.
+- Different cadences use nearest saved times and expose offsets without interpolation claims.
+- Slice planes link by physical coordinate, not array index.
+- Cameras link by normalized domain-relative orientation, target, and zoom.
+- Lens and scale link only when scientifically compatible.
+- Disabled links explain why.
+- The interface identifies aligned, independent, or mixed state.
+- Alignment is never faked.
 
-The product must never fake alignment.
+### Featured Comparison
 
-### Independent examination
+The PR #385 B5/M5 story reopens inside the ordinary Compare shell with its exact independent times, planes, cameras, scale, display state, evidence, and authored explanation.
 
-Independent views may use different times, planes, cameras, or selected states. Exact times and positions remain visible, and the product must not imply one-to-one cloud identity.
+## 11. Notes, Saved Views, saved Comparisons, and resume
 
-The PR #385 B5/M5 story is the first independently arranged featured Comparison.
+### Notes
 
-### Compare inspector
+The MVP requires:
 
-Compare uses the same four inspector sections:
+1. Simulation note;
+2. Saved View title and optional note;
+3. Saved Comparison title and optional note.
 
-- **Explain:** authored or personal interpretation;
-- **Science:** selected metrics, similarities, differences, and uncertainty;
-- **Notes:** the working Comparison note and saved note;
-- **Details:** lineage, exact configuration difference, technical trust, fields, coordinates, provenance, and saved link state.
+A working Compare note may autosave locally during the session. Saving the Comparison makes it durable.
 
-## 9. Notes, Saved Views, and saved Comparisons
-
-### Notes model
-
-The MVP requires only three note contexts:
-
-1. **Simulation note:** an ongoing general note attached to one Simulation;
-2. **Saved View note:** a title and optional note attached to one preserved examination state;
-3. **Saved Comparison note:** a title and optional note attached to the preserved two-Simulation examination.
-
-A working Compare note autosaves locally while the session is open. Saving the Comparison makes it durable.
-
-A formal Observation database, claims graph, collaboration model, or generalized notebook ontology is not required.
+No formal Observation database, claims graph, collaboration model, or generalized notebook ontology is required.
 
 ### Saved View
 
 A Saved View preserves:
 
-- Cloud World and Simulation;
+- World and Simulation;
 - model time or playback range;
 - camera;
 - 3-D field and display settings;
 - active Lens or Field Slice;
 - slice orientation and position;
 - cloud-boundary and wind state;
-- active inspector section;
+- active inspector section and collapse state;
 - title and optional note.
 
 ### Saved Comparison
@@ -551,17 +767,17 @@ A Saved View preserves:
 A Saved Comparison preserves:
 
 - title and optional note;
-- Cloud World;
+- World;
 - left and right Simulations or Saved Views;
-- parent/reference/other relationship;
-- exact configuration difference;
-- technical trust summaries;
-- Aligned, Independent, or mixed state;
-- every individual link toggle;
-- the complete view state for each side;
+- relationship;
+- exact configuration-difference snapshot;
+- technical-trust snapshot;
+- aligned, independent, or mixed state;
+- every link toggle;
+- complete left and right view state;
 - shared or side-specific Lens/Field Slice state;
 - selected evidence;
-- optional authored or personal explanation;
+- optional explanation;
 - pinned or featured state;
 - created and updated times.
 
@@ -573,282 +789,347 @@ It does not mean:
 
 > This change has been scientifically validated.
 
-A featured Comparison is a saved Comparison promoted on the World overview. Featuring changes prominence, not scientific status.
+Featuring changes prominence, not scientific status.
 
 ### Resume
 
-The product remembers the last active state for each World. Returning to a World resumes that state unless the user explicitly chooses a reference Simulation, Saved View, or saved Comparison.
+The product remembers last active state for each World and relevant workbench context.
 
-## 10. Technical trust and interpretation
+Returning to Trade Cumulus resumes its valid state unless the user explicitly chooses another object.
+
+Returning to Fun With Soundings resumes the last workbench section and safely restorable selection where practical.
+
+Restoration failures are explicit rather than silent.
+
+## 12. Technical trust and interpretation
 
 The product separates:
 
-1. Can the outputs be read and compared honestly?
+1. Can outputs be read and compared honestly?
 2. What configuration values differ?
 3. What appears to have happened?
-4. How confident is the user in that interpretation?
+4. How confident is the user?
 5. Is the examination worth saving or featuring?
 
 Only the first is an automatic technical gate.
 
-Every World and related Simulation retains:
+Authored or personal explanation is distinguishable from backend-derived diagnostics. Missing or untrusted evidence is never converted silently to zero or certainty.
 
-- scientific source and Recipe context;
-- parent/reference lineage;
-- exact changed values;
-- comparable fixed settings;
-- source model, fields, run/result identity, and integrity provenance;
-- Control identity only where an explicit Control applies.
+## 13. Content durability and recovery
 
-Authored or personal explanation is distinguishable from backend-derived diagnostics. Missing or untrusted evidence is never silently converted to zero or certainty.
-
-## 11. Content durability and recovery
-
-Retained World content must be more durable than ordinary timestamped runtime output.
+World content must be more durable than ordinary timestamped output.
 
 The MVP requires a bounded Trade Cumulus content mechanism that can:
 
-- give the reference Simulation, More Moisture Simulation, featured Comparison evidence, Saved Views, saved Comparisons, and authored content stable identities;
-- verify expected manifests, files, and hashes;
+- give reference, variation, featured Comparison, Saved View, saved Comparison, and authored-content assets stable identities;
+- verify manifests, files, hashes, readability, required fields, and Lens prerequisites;
 - preserve lineage and configuration differences;
-- protect featured and pinned assets from ordinary cleanup;
-- make cleanup effects explicit for ordinary retained history;
+- protect featured and pinned content from ordinary cleanup;
+- make cleanup impact explicit for ordinary variations;
 - detect missing or corrupt content;
-- explain which part of the World is unavailable;
-- reinstall or repair known installed content predictably;
-- keep multi-gigabyte model output outside Git.
+- identify which World capability is unavailable;
+- repair or reimport known local content predictably;
+- keep multi-gigabyte output outside Git.
 
-The first solution supports one known local World bundle and ordinary local variations. It is not a marketplace, remote content service, or generalized plugin registry.
+Saved objects preserve references when model content is missing so repair can restore them.
 
-## 12. Continuing cloud-world evolution
+The first solution is local. It is not a marketplace, remote service, or plugin registry.
+
+## 14. Continuing product evolution
 
 A second Cloud World is not required for MVP completion.
 
 Adding a later World should primarily involve:
 
-- a scientifically grounded world definition;
+- a scientifically grounded definition;
 - one reference or known-working Simulation;
-- retained variations;
-- world-appropriate Recipe assumptions;
+- related variations;
+- Recipe assumptions;
 - Controls where useful;
 - Lenses and Field Slice defaults;
 - explanations;
-- Saved Views and saved Comparisons;
+- Saved Views and Comparisons;
 - world-specific evidence.
 
-It should not require rebuilding the core World, Explore, or Compare shell.
+It should not require rebuilding the core home, World, Explore, or Compare shell.
 
-This does not authorize a generic plugin platform, Lens registry framework, marketplace, generalized multi-engine architecture, or speculative remote compute.
+The sole-user product should not categorize the World by authoring maturity.
 
-## 13. Included MVP capabilities
+Fun With Soundings may help discover atmosphere/experiment directions that later motivate a World, but automatic promotion is not part of the MVP.
+
+This does not authorize a generic plugin platform, marketplace, generalized multi-engine architecture, or speculative remote compute.
+
+## 15. Included MVP capabilities
 
 The MVP includes:
 
-- a Worlds-only primary product entrance;
-- one installed Trade Cumulus World and its Lab;
-- stable reference and variation identities;
-- precomputed local scientific content;
-- direct World entry and per-World resume;
+- Cloud Chamber home;
+- Trade Cumulus as a first-class Cloud World destination;
+- Fun With Soundings as a first-class atmospheric workbench;
+- no user-facing Installed/Draft World taxonomy;
+- stable World and Simulation identities;
+- precomputed local Trade Cumulus content;
+- Trade Cumulus Overview, Simulations, Saved Views, Comparisons, and Lab;
+- Trade Cumulus Lab Activity, Create Variation, and History;
+- variation creation from any eligible Trade Cumulus Simulation;
+- exact parent cloning and configuration differences;
+- return-after-run lifecycle;
 - one-Simulation Explore;
-- three-dimensional cloud playback;
+- three-dimensional playback;
 - coordinated Field Slice and Lens rendering;
-- the Trade Cumulus Updraft Lens;
+- persistent timeline;
+- Trade Cumulus Updraft Lens;
 - world-aware science and authored explanation;
+- ordinary same-World Compare;
+- linked, independent, and mixed Compare controls;
+- featured Moisture Comparison;
 - Simulation notes;
-- run lineage and exact configuration differences;
-- Compare to parent/reference and compatible same-World Simulations;
-- linked and independent Compare controls;
-- the featured Moisture Comparison;
-- Saved Views, saved Comparisons, and notes;
-- durable-content validation and cleanup protection;
+- Saved Views, saved Comparisons, and resume;
+- observed-sounding search, screening, Build & Run, and Past Experiments;
+- legacy and unassigned Result access outside Trade Cumulus;
+- local content validation, protection, and repair;
 - graceful missing-content and partial-layer states;
-- continued access to World Lab tools;
 - technical provenance and integrity on demand.
 
-## 14. Explicit exclusions
+## 16. Explicit exclusions
 
 The MVP excludes:
 
 - public users or onboarding;
-- accounts, authentication, permissions, teams, collaboration, or sharing workflows;
+- accounts, authentication, permissions, teams, collaboration, or sharing;
 - analytics, telemetry, or growth instrumentation;
 - mobile-first scientific exploration;
 - cloud hosting or remote compute;
 - mandatory live CM1 execution in the revisit journey;
-- a polished arbitrary Recipe editor in Worlds;
-- a universal free-form control surface outside the Lab;
-- another World before the first shell is sound;
+- universal free-form CM1 namelist editing;
+- automatic assignment of sounding experiments to a World;
+- Installed/Draft/candidate/graduated World homepage taxonomy;
+- another World merely to demonstrate breadth;
 - another Control or Lens merely to demonstrate breadth;
 - cross-World or incompatible comparison presented as direct comparison;
-- a generalized public Comparison platform;
+- generalized public Comparison tooling;
 - generic Lens or visualization plugins;
 - automated causal explanation;
 - statistical-significance claims without appropriate evidence;
-- a formal Observation database, claims graph, or collaborative notebook;
-- repository-wide retirement of current technical workspaces.
+- a formal Observation database or claims graph;
+- a generalized promotion/demotion framework;
+- a content marketplace or registry.
 
-## 15. Quality and trust requirements
+## 17. Quality and trust requirements
 
 ### Scientific trust
 
 - Configuration differences appear before interpretation.
-- Multiple changed settings are never presented as a one-factor causal contrast.
+- Multiple changes are never presented as a one-factor causal contrast.
 - Aligned views use genuinely compatible coordinates, times, fields, and scales.
 - Lens scales and thresholds remain stable and explicit.
 - Saving or featuring is never labeled scientific validation.
 - Expected absences are not treated as surprising failures.
+- World membership is explicit and never silently inferred for sounding experiments.
 
 ### Interaction quality
 
+- The home makes Trade Cumulus and Fun With Soundings equally discoverable.
 - The core World, Explore, and Compare loop is coherent on the target MacBook Air.
-- The scene, slice, timeline, Lens context, inspector, and notes are coordinated.
-- Compare can move among linked, independent, and mixed states without losing clarity.
-- Product-facing names take precedence over issue/run/result identifiers.
-- Partial rendering failures remain local and recoverable.
+- The Trade Cumulus Lab is an actionable World workflow, not a global database page.
+- Fun With Soundings preserves expert capability through progressive disclosure.
+- Product-facing names take precedence over issue/run/Result IDs.
+- Partial failures remain local and recoverable.
 
 ### Persistence quality
 
-- Saved Views and saved Comparisons restore deterministically.
-- Last active state is retained per World.
-- Lineage, configuration differences, technical trust, notes, and link state survive reloads.
+- Saved Views and Comparisons restore deterministically.
+- Last active state is retained for Trade Cumulus and relevant workbench context.
+- Lineage, differences, trust, notes, and link state survive reloads.
 - Featured content cannot be removed by ordinary cleanup without an explicit protected-content action.
-- Missing or corrupt assets are reported clearly and can be repaired.
+- Missing/corrupt assets are reported and repairable.
 
 ### Operational quality
 
-- The installed-World revisit journey works without internet access after required local assets are present.
-- Lab tools remain available for future Simulation and World development.
-- Returning later reveals whether a run completed, failed, remains incomplete, or completed with caveats.
+- Trade Cumulus revisit works offline after required local assets are present.
+- Existing local and LAN-worker technical execution paths remain available.
+- Returning later reveals queued, running, completed, caveated, failed, or incomplete state.
+- Historical Results and sounding caches are not lost during UI reorganization.
 
-## 16. Measurable completion criteria
+## 18. Measurable completion criteria
 
-The MVP is complete only when all of the following are demonstrated on the target MacBook Air.
+The MVP is complete only when the following are demonstrated on the target MacBook Air.
 
-### World entry
+### Home and destinations
 
-- Cloud Chamber opens to Cloud Worlds rather than Build or Results.
-- Trade Cumulus exposes Overview, Simulations, Saved Views, Comparisons, and Lab.
-- Entering the World opens its reference Simulation or resumes the last state without launching CM1.
-- Stable World and Simulation names replace issue/run/result IDs in primary UI.
+- Cloud Chamber opens to a home showing Trade Cumulus and Fun With Soundings.
+- Both are visible without category expansion or scrolling at `1440 × 900`.
+- No Installed/Draft World taxonomy appears.
+- Trade Cumulus opens in World context.
+- Fun With Soundings opens in workbench context.
+- Stable product names lead.
 
-### Explore
+### Trade Cumulus Explore
 
-- At `1440 × 900`, the 3-D scene, active slice, timeline, and inspector form one coherent workspace without long page-level scrolling.
+- At `1440 × 900`, 3-D scene, active slice, timeline, and inspector form one workspace without long page scrolling.
 - 3-D and active Lens/Field Slice are visible together.
-- Time and plane changes update all coordinated views.
-- One Lens context serves the scene and slice.
-- Explain, Science, Notes, and Details are available beside the visual evidence.
+- Time and plane changes update coordinated views.
+- One Lens context serves scene and slice.
+- Explain, Science, Notes, and Details are available.
 - A Simulation note can be written and restored.
+- Layer failures remain local.
 
-### Ordinary non-featured related Simulation
+### Ordinary non-featured variation
 
-A bounded local fixture or ingested test result represents a technically inspectable, **non-featured** Trade Cumulus variation that:
+A fixture or ingested Result represents a technically inspectable, non-featured Trade Cumulus variation that:
 
-- requires no validation or graduation status;
-- retains parent/reference lineage;
+- starts from an existing Simulation;
+- requires no validation or graduation;
+- retains lineage;
 - changes at least two material physical or numerical values;
-- is not the existing Baseline/More Moisture featured pair.
+- is not the featured Baseline/More Moisture pair.
 
 For this case:
 
-- Compare opens from the completed or ingested Simulation through its lineage;
-- every material difference is visible before interpretation;
-- the product does not attribute the response to one factor;
-- alignment is offered only where honest;
-- the user can arrange independent views;
-- the Comparison can be saved and reopened from Trade Cumulus.
+- the parent configuration was cloned before changes;
+- every difference is visible;
+- the variation appears in Activity during lifecycle;
+- inspectable output appears automatically as the named Simulation;
+- Compare opens through lineage;
+- no one-factor causation is implied;
+- the Comparison can be saved and reopened.
 
-This acceptance case may use a fixture or existing ingested data. It does not require a new CM1 run.
+No new CM1 run is required for acceptance.
 
 ### Compare linking
 
-- A new related-run Compare opens with every compatible link enabled.
-- Manipulating either linked timeline or camera moves the other view.
+- A new related Compare opens with every compatible link enabled.
+- Manipulating either linked timeline or camera moves the other.
 - Time links use modeled seconds; plane links use physical coordinates.
-- Individual Time, Camera, Slice Plane, and Lens/Scale links can be toggled.
-- Mixed link states are supported and saved.
-- Incompatible links are disabled with a reason rather than faked.
-- PR #385’s B5/M5 Comparison reopens in its saved independent state.
+- Time, Camera, Slice Plane, and Lens/Scale links toggle independently.
+- Mixed states are supported and saved.
+- Incompatible links explain why.
+- PR #385 B5/M5 reopens exactly in its independent state.
 
-### Saved states and notes
+### Saved states and resume
 
-- A Saved View restores its complete examination state and note.
-- A saved Comparison restores both complete view states, link toggles, configuration difference, trust summary, title, and note.
-- Re-entering Trade Cumulus resumes its last active state.
-- Restoration failures are explicit rather than silently falling back.
+- A Saved View restores complete state and note.
+- A saved Comparison restores both views, links, differences, trust, title, and note.
+- Trade Cumulus resumes its last valid state.
+- Fun With Soundings resumes its safe workbench context.
+- Restoration failures are explicit.
 
-### Content and failure handling
+### Trade Cumulus Lab
 
-- Installed Trade Cumulus content is validated by stable identity and hashes.
-- Ordinary cleanup does not remove protected featured content.
-- Missing or corrupt assets produce bounded repair states.
-- A failed 3-D layer does not disable the slice, timeline, explanation, notes, or science.
-- Multi-gigabyte model output remains outside Git.
+- Lab defaults to Activity.
+- Activity groups actionable lifecycle state.
+- Cards show variation identity, parent/reference, question, differences, trust, and actions.
+- History contains only Trade Cumulus-related work.
+- Duplicate Lab-history and global Experiment Notebook presentations are gone.
+- Technical details are on demand.
+- Create Variation is visible from eligible Simulations and Lab.
+- Failed/non-inspectable attempts remain history without appearing available.
+
+### Fun With Soundings
+
+- IGRA/catalog/cache/station/time/upload/parse capabilities remain available where implemented.
+- Candidate screening, filters, detail, save/select, and run-plan behavior remain available.
+- Package, preflight, local/worker lifecycle, ingest, and storage behavior remain available.
+- The current step, selected atmosphere, and next action are clear.
+- Sounding Results are easy to find.
+- Legacy/unassigned Results remain accessible.
+- World-owned Simulations show ownership and open in their World.
+- Non-World Result Explore uses workbench context.
+- No historical Result or sounding cache is deleted by the UX migration.
+
+### Content and recovery
+
+- Trade Cumulus content is validated by stable identity and hashes.
+- Ordinary cleanup does not remove protected content.
+- Cleanup preview identifies dependent saved objects.
+- Missing/corrupt assets produce bounded repair states.
+- Local verified repair restores saved references.
+- Multi-gigabyte output remains outside Git.
 
 ### Verification
 
-- Automated coverage exercises the revisit and create-return-compare-save journeys where practical.
-- One live acceptance pass records World entry, playback, Lens use, Field Slice use, Simulation notes, Lab return, ordinary non-featured Compare, linked and independent controls, Saved View restoration, saved-Comparison restoration, featured Comparison, partial-layer failure, and return to either underlying Simulation.
-- Performance thresholds are based on measured MacBook Air behavior in the first implementation issue, not guessed here.
+- Automated coverage exercises home, World, workbench, Explore, Compare, persistence, variation lifecycle, Lab Activity/History, sounding workflow, and durability where practical.
+- One live acceptance pass records the complete personal journey.
+- Performance thresholds are based on measured MacBook Air behavior rather than guessed targets.
+- No acceptance criterion requires running CM1.
 
-## 17. Bounded implementation sequence
+## 19. Bounded implementation roadmap
 
-The PM/UX decisions in this document are sufficient to begin bounded implementation. Do not create another general product-strategy or open-ended “polish Explore” document.
+Implementation proceeds one active issue at a time. Queued issues remain visible so sequencing is not hidden.
 
-Implementation proceeds one issue at a time.
+### Increment 1 — World-scoped foundation — complete
 
-### Increment 1 — World-scoped shell and investigation foundation
+**Issue #386 / PR #387**
 
-Establish:
+Established:
 
-- Worlds as the primary product entrance;
-- the Trade Cumulus World overview and World Lab boundary;
-- stable World/Simulation identity and parent/reference lineage;
-- exact configuration-difference presentation;
-- entry from a completed related Simulation into Compare;
-- existing Explore and PR #385 featured Comparison rendered under World context;
-- the Field Slice versus Lens product distinction in UI language.
+- Cloud World and Trade Cumulus shell;
+- stable Simulation identity and lineage foundation;
+- configuration differences;
+- existing Explore and featured Comparison under World context;
+- Field Slice versus Lens language.
 
-This increment may reuse current components and does not yet implement full persistence or the final integrated visual layout.
+### Increment 2 — integrated Explore
 
-### Increment 2 — integrated Explore workspace
+**Issue #388**
 
-Reorganize the existing scene, slice, timeline, inspector, Lens context, Field Slice, and Simulation note into the approved MacBook Air workspace.
+Implement the approved one-Simulation MacBook Air workspace.
 
-### Increment 3 — linked ordinary Compare
+### Increment 3 — ordinary Compare
 
-Implement Aligned/Independent presets, individual link controls, honest mapping, the configuration chooser, and same-World comparison entry points.
+**Issue #389**
 
-### Increment 4 — Saved Views, saved Comparisons, and resume
+Implement candidate selection, difference preview, Aligned/Independent presets, individual links, and the shared Compare shell.
 
-Persist and restore view state, two-sided link state, titles, and notes.
+### Increment 4 — Saved Views, saved Comparisons, notes, and resume
 
-### Increment 5 — durable World content and recovery
+**Issue #390**
 
-Complete stable installed-content manifests, cleanup protection, missing-content reporting, and bounded repair.
+Persist and restore one- and two-Simulation examination state and notes.
 
-### Increment 6 — Lab and World hardening
+### Increment 5 — Fun With Soundings
 
-Complete return-after-run status, Lab integration, performance verification, error states, provenance access, automated coverage, and personal acceptance.
+**Issue #395**
 
-No second World, Control, or Lens should begin before the first MVP shell passes this gate unless a direct blocking contradiction is found.
+Create the first-class homepage workbench while preserving and reorganizing observed-sounding and broad experiment workflows.
 
-## 18. Stage 7A exit and next bounded decision
+### Increment 6 — Trade Cumulus Lab Activity and History
 
-The Stage 5 exit and practical Stage 6 disposition are complete. PR #385 has merged the first featured Comparison.
+**Issue #394**
 
-Stage 7A is approved when:
+Replace the transitional global Result notebook inside Trade Cumulus with a World-specific actionable Lab and history.
 
-- the sole-user personal-laboratory scope is approved;
-- Worlds as the sole primary product level is approved;
-- World-owned Lab, Explore, Compare, Field Slice, Lens, notes, Saved Views, and saved Comparisons are approved as defined here;
-- ordinary Compare is approved as investigation and memory rather than validation-only behavior;
-- the included, excluded, quality, and completion criteria are approved;
-- issue #364 records the decision;
-- PR #384 is explicitly approved and merged.
+### Increment 7 — Create Variation and return after the run
 
-After approval, the single next bounded issue is:
+**Issue #391**
 
-> **MVP Increment 1 — establish the World-scoped shell and investigation foundation.**
+Start from any eligible Trade Cumulus Simulation, change one or more supported settings, preserve lineage, run, return, and Explore or Compare without a promotion ceremony.
 
-The MVP approval gate authorizes that bounded issue only. It does not authorize broad frontend cleanup or simultaneous implementation of every increment.
+### Increment 8 — durable World content and repair
+
+**Issue #392**
+
+Implement installed-content manifests, protection, dependency-aware cleanup, and local repair.
+
+### Increment 9 — hardening and personal acceptance
+
+**Issue #393**
+
+Measure, correct only blocking defects, and record the final personal MVP acceptance disposition.
+
+Roadmap changes require an explicit PM decision in issue #364 and corresponding authority update when product scope changes.
+
+## 20. MVP authority and implementation gate
+
+PR #384 approved the controlling MVP. PR #387 completed Increment 1.
+
+Issue #396 amends the controlling scope to include:
+
+- Cloud Chamber home rather than a Worlds-only homepage;
+- first-class Fun With Soundings;
+- no Installed/Draft World taxonomy;
+- Trade Cumulus Lab Activity / Create Variation / History;
+- automatic World membership for valid parent-based variations;
+- the nine-increment roadmap above.
+
+The amendment authorizes only the bounded issues recorded in the roadmap. It does not authorize simultaneous implementation, broad frontend cleanup, or unrelated product expansion.
