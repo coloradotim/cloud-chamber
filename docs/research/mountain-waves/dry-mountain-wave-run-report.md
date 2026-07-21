@@ -2,25 +2,22 @@
 
 ## Status and boundary
 
-Gate B executed the exact official-duration dry mountain-wave package once. CM1
-completed normally and wrote the expected native NetCDF histories, but the
-committed evaluator stopped on a source-interpretation discrepancy:
+Gate B executed the exact official-duration dry mountain-wave package once.
+CM1 completed normally and wrote the expected native NetCDF histories. The
+first evaluator correctly stopped when its expectation for runtime `ztop`
+conflicted with the output. PM then authorized one bounded evaluator correction
+and offline reevaluation of that exact preserved run.
 
-```text
-NetCDF ztop is 20000 m, expected inert value 18000 m.
-```
+The corrected evaluator follows CM1 r21.1 source behavior: with `stretch_z=0`,
+`src/param.F` normalizes runtime `ztop` to `dz*nk=20,000 m` before
+`src/writeout_nc.F` writes it. The unchanged `ztop=18,000 m` assignment remains
+only in the official-input audit. Physical-height reconstruction uses the final
+nominal `zf` and fails closed unless it, runtime `ztop`, and configured `nz*dz`
+all agree.
 
-The actual output is consistent with CM1 r21.1 source behavior. In an
-unstretched grid, `src/param.F` replaces the namelist value with `dz*nk` before
-`src/writeout_nc.F` writes `ztop`. The emitted scalar is therefore the active
-20,000 m top, not the inactive 18,000 m namelist entry expected by Gate A and
-the evaluator.
-
-Issue #403 requires an evaluator discrepancy to stop the gate and forbids a
-correction or second process. No correction is included in this report and no
-second CM1 process ran. Read-only inspection of the preserved native files is
-recorded below to bound the defect, but it is diagnostic context rather than a
-successful evaluator disposition.
+The preserved inputs were SHA-256 verified before and after evaluation. No
+package was regenerated, no scientific setting changed, and no second CM1
+process ran. The corrected evaluator passed all 11 original histories.
 
 This work reproduces a source-bundled dry benchmark. It does not approve a
 Cloud World, Recipe, Simulation, moist mountain case, cloud response, terrain
@@ -28,11 +25,14 @@ visualization, browser contract, or product direction.
 
 ## Decision question
 
-The configured runtime did faithfully execute the official case at practical
-local cost. The native output appears complete, finite, terrain-consistent, and
-structurally interpretable. However, Gate B cannot make the required trusted
-coordinate disposition while its committed evaluator rejects the actual
-r21.1 top metadata. The candidate therefore cannot advance in this PR.
+The configured runtime faithfully executed the official case at practical
+local cost. The corrected offline evaluation finds complete and finite native
+output, internally consistent terrain coordinates, credible lower-boundary
+tangency, and a coherent central terrain-forced gravity-wave response. Separate
+west/east evidence indicates expected downstream signal at the east boundary
+without material upstream, Rayleigh-layer, or top contamination of the central
+solution. Gate B therefore advances the candidate to terrain-aware
+visualization work within the limits stated below.
 
 ## Implementation and evidence identity
 
@@ -41,7 +41,10 @@ r21.1 top metadata. The candidate therefore cannot advance in this PR.
 | Case and scenario ID | `cm1_r21_1_dry_mountain_wave_official_v0` |
 | Run ID | `dry-mountain-wave-official-20260721T183530Z` |
 | Package/run implementation commit | `9ff73ff244c393bee2a2e93a851ad1ba2dc16287` |
-| Report provenance | This report is committed later on the same branch and does not change the recorded package/run implementation commit. |
+| Corrected evaluator commit | `cb504a223c98dbae5080783c7dbd9e4670f89c63` |
+| Offline reevaluation time | `2026-07-21T19:17:19.861560Z` |
+| Reevaluation mode | pinned SHA-256 before and after offline evaluation; no launch operation |
+| Report provenance | This report is committed after the evaluator correction and does not change the recorded package/run implementation commit. |
 | Run Recipe | `null` |
 | Recipe ID | `null` |
 | Cloud World ID | absent |
@@ -51,6 +54,39 @@ r21.1 top metadata. The candidate therefore cannot advance in this PR.
 Runtime files remain outside the repository. No machine-private path, NetCDF,
 log, plot, screenshot, executable, CM1 source, or generated run directory is
 committed.
+
+### Preserved reevaluation inputs
+
+The evaluator required every logical input below to match its pinned original
+SHA-256 both before and after analysis. The evaluator evidence and summary JSON
+are outputs of reevaluation and are intentionally not inputs to this identity
+check.
+
+| Preserved input | SHA-256 |
+| --- | --- |
+| `run_manifest.json` | `a72c2a9ba795b76cc779013817937bf34735835a74ad29c29efaf6df3ee1c13b` |
+| `case_manifest.json` | `5a9d7ccc1dc9299c725eec4a3bd2c8e53163d918fe5d6ed7247527cd262c6356` |
+| `namelist.input` | `bf202fb8e50abb903d50cb1cbeb86fb114efc88ff8049ab41ebf5bdd550b43be` |
+| `input_sounding` | `75cf557b6258ab90943ee4368d3106a79ff63189e1d15aa0a6dcd2a051a033b3` |
+| `runtime_file_checklist.json` | `0a96a368c90454d8555f80ccb8f746da656276247a80f4dcb505e978f3586d63` |
+| `official_namelist_diff.json` | `7fda4d5ee51747e6b14f620ba087eb1b91f8a416cc8f635c5e2d9befefbeae92` |
+| `official_namelist_diff.txt` | `f9beafaddd3f156303a0375416db9f1620c912c754a29b760c0bbf2aa3254bfe` |
+| `storage_estimate.json` | `2d9593624eefd69607b5204967c50d1bebed536fdd63b22e0baa3a4a938a9784` |
+| `execution_preflight.json` | `efc0dad92ba42e2cdaa4fb08905d08ca921a482b94356cd8ca9d50ff8d6a7286` |
+| `logs/stdout.log` | `1018a9415063bbe9d5fcf87f1587f8086f614ddff9c1a1c44e74293cbb4e2fd0` |
+| `logs/stderr.log` | `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855` |
+| `cm1out_stats.nc` | `f26c12eee2cd9a23b2049374cd691394fae4b4793b56501bd97a633052148f58` |
+| `cm1out_000001.nc` | `e894f6310f92827d8d0b8f15e11a36df7516d3f1113213a8bfca719c483faffe` |
+| `cm1out_000002.nc` | `65d0e0eeb98c2e23309625a8931765e76d862c8e64d3d5bcfaf6abb86c16f73f` |
+| `cm1out_000003.nc` | `457cc4b4da864a6cb41c2fe3199e4a2620025ee0994a4765b892661fc17ba3d2` |
+| `cm1out_000004.nc` | `00a16c0c2d2390d8820d89502a506f967f5cd1ad3107084ab5436a24a517df9a` |
+| `cm1out_000005.nc` | `0a3afb2fa258ad981e24fa4a4012d227fc4c7db34826d044e188856608d8398d` |
+| `cm1out_000006.nc` | `dce854fd5cb90869edf5aa81f7ed50b56dd9ded8e704b9e815fd081860e01a3f` |
+| `cm1out_000007.nc` | `e1dd0fb3f90f52a19e0ccda13194123b69511da6f76a529a5a48b30a63bff7df` |
+| `cm1out_000008.nc` | `872bd649656084f82eca4409afbb2f4c509a424dcabbbd9a6c52266fd12a969e` |
+| `cm1out_000009.nc` | `7a8553bfe14d751108db47a5696272c46842f1ec31db0f49ec17c05d2f563462` |
+| `cm1out_000010.nc` | `a580260ddc8bcc1ab1c768bab510b6017513b686ed40b0a544220df3e83bddda` |
+| `cm1out_000011.nc` | `b51ee4ca777bd825a5c4f52c92c6e39dd913071affb3c2694d36845cd687ded2` |
 
 ## CM1 provenance
 
@@ -147,6 +183,18 @@ redacted logical command `configured_cm1_run_directory/cm1.exe`.
 | Stdout | 2,019,400 bytes |
 | Peak memory | unavailable from the current local run manager |
 
+After commit `cb504a223c98dbae5080783c7dbd9e4670f89c63`, the preserved files were
+reevaluated with:
+
+```text
+scripts/run_dry_mountain_wave_benchmark.py --evaluate-preserved
+```
+
+This mutually exclusive CLI mode loads only the exact completed run, verifies
+the pinned identities before and after analysis, and returns before any local
+run manager is constructed. No CM1 or MPI process was active before or after
+the reevaluation.
+
 The CM1 stats file contained 1,081 samples from 0 through 2,160 s. `cflmax`
 was finite throughout and ranged from `0.1008904` to `0.1412708`. Total mass
 ranged from `39,024,488,448` to `39,024,533,504 kg`, a range of 45,056 kg or
@@ -195,20 +243,20 @@ Read-only diagnostics against the preserved output found:
 | Minimum physical scalar spacing | 196.0 m |
 | Reconstructed full-level bottom error from terrain | 0.0 m |
 | Reconstructed top range across columns | 0.0 m |
-| Final nominal `zf` / active top | 20,000.0 m |
-| Actual NetCDF scalar `ztop` | 20,000.0 m |
+| Transform-top source | final nominal `zf` |
+| Final nominal `zf` | 20,000.0 m |
+| Runtime NetCDF scalar `ztop` | 20,000.0 m |
+| Configured `nz*dz` | `100 * 200 m = 20,000.0 m` |
+| Active-source checks | all three sources agree in all 11 histories |
+| Inactive official namelist assignment | `ztop=18,000.0 m`; audit only |
 
-The terrain and transformed heights are internally consistent when the active
-20 km top is used. The blocking problem is the committed evaluator's assertion
-that actual NetCDF `ztop` must equal the inactive 18 km namelist value.
-
-Source inspection explains the output without changing the scientific case:
-for `stretch_z<1`, `src/param.F` assigns `ztop=dz*nk`; with `dz=200 m` and
-`nk=100`, this is 20 km. `src/writeout_nc.F` then writes that runtime value.
-The later bounded correction should preserve final nominal `zf` as the
-terrain-transform authority, require the emitted scalar to agree with the
-active top for this configuration, and update the synthetic fixture and Gate A
-wording. This PR does not implement that correction.
+The corrected evaluator derives the terrain transform from the final nominal
+`zf`, independently checks runtime `ztop` and configured `nz*dz`, and rejects
+any disagreement. All three active sources resolve to 20 km in every preserved
+history. This matches `src/param.F`, which assigns `ztop=dz*nk` for
+`stretch_z<1`, and `src/writeout_nc.F`, which writes that normalized runtime
+value. The 18 km input remains unchanged in the complete official namelist and
+is correctly excluded from the transform.
 
 ## Base state and lower boundary
 
@@ -220,9 +268,9 @@ consistent with configured `N=0.01 s^-1`. Pressure decreased in all 9,900
 tested vertical differences. All thermodynamic fields were finite.
 
 At 2,160 s, upstream mean `u` was `10.0217 m/s`; domain-mean `u` had changed by
-`+0.0312 m/s` and domain-mean `v` by `-0.0188 m/s`. The small background change
-does not by itself indicate an unexplained balance failure, but the blocked
-gate does not promote that observation to acceptance evidence.
+`+0.0312 m/s` and domain-mean `v` by `-0.0188 m/s`. The small background change,
+together with finite hydrostatic fields and the coherent forced response, does
+not indicate a material unexplained balance failure.
 
 The lower-boundary calculation used arithmetic face-to-scalar averaging for
 `u` and `v`, coordinate gradients for terrain slope, and residual
@@ -255,28 +303,42 @@ rather than collapsing into isolated cells. No plot is committed.
 Sign regions used 10 percent of each frame's maximum absolute `w` only as a
 descriptive mask, not a pass threshold. The evolving potential-temperature
 displacement and the paired ascent/descent bands are consistent with a
-terrain-forced gravity-wave response. A corrected evaluator still needs to
-make the authoritative structural disposition from the preserved files.
+terrain-forced gravity-wave response. The corrected evaluator reproduced these
+metrics from the hash-pinned native files.
 
 ## Boundary and damping assessment
 
-The metric partitions were the outer 20 percent at west/east versus the
-central 60 percent, and heights below 14 km versus the Rayleigh layer and top
-2 km.
+The evaluator partitions the horizontal domain into separate west 20 percent,
+central 60 percent, and east 20 percent zones. It evaluates each below 14 km,
+then separately evaluates the full Rayleigh layer at or above 14 km and the top
+2 km. This separation prevents expected downstream signal at the east open
+boundary from being conflated with upstream reflection.
 
-| Time (s) | Central `w` RMS below 14 km | Boundary `w` RMS below 14 km | Rayleigh-layer `w` RMS | Top-2-km `w` RMS |
-| ---: | ---: | ---: | ---: | ---: |
-| 0 | 0.12383 | 0.00223 | 0.00000 | 0.00000 |
-| 432 | 0.31715 | 0.05138 | 0.01077 | 0.00929 |
-| 1080 | 0.42589 | 0.18132 | 0.03526 | 0.01295 |
-| 2160 | 0.54084 | 0.37216 | 0.15562 | 0.05446 |
+| Time (s) | Central `w` RMS below 14 km | West `w` RMS below 14 km | East `w` RMS below 14 km | Rayleigh-layer `w` RMS | Top-2-km `w` RMS |
+| ---: | ---: | ---: | ---: | ---: | ---: |
+| 0 | 0.12383 | 0.00214 | 0.00232 | 0.00000 | 0.00000 |
+| 432 | 0.31715 | 0.02149 | 0.06940 | 0.01077 | 0.00929 |
+| 1080 | 0.42589 | 0.04992 | 0.25152 | 0.03526 | 0.01295 |
+| 2160 | 0.54084 | 0.08917 | 0.51870 | 0.15562 | 0.05446 |
 
-The central signal remained stronger than the boundary zones, and top-layer
-amplitude remained well below central lower-atmosphere amplitude. Boundary and
-Rayleigh-layer activity grew with time, so reflection and damping deserve the
-intended scientific review. The source bundle supplies no quantitative
-acceptance tolerance, and the evaluator discrepancy prevents this gate from
-declaring those effects non-material.
+| Time (s) | Central theta-prime RMS below 14 km | West theta-prime RMS below 14 km | East theta-prime RMS below 14 km | Rayleigh-layer theta-prime RMS | Top-2-km theta-prime RMS |
+| ---: | ---: | ---: | ---: | ---: | ---: |
+| 0 | 0.00000 | 0.00000 | 0.00000 | 0.00000 | 0.00000 |
+| 432 | 0.12166 | 0.01992 | 0.04783 | 0.00268 | 0.00095 |
+| 1080 | 0.20223 | 0.03212 | 0.11766 | 0.01205 | 0.00356 |
+| 2160 | 0.31485 | 0.09413 | 0.37064 | 0.08792 | 0.02709 |
+
+No official pointwise or RMS tolerance exists, so these values are interpreted
+structurally rather than converted into a fabricated pass threshold. The west
+response remains substantially below the central response through the final
+time, which provides no sign of material upstream reflection. East-zone growth
+tracks the observed downstream and vertical propagation of the coherent wave.
+At the final time, Rayleigh-layer `w` RMS is about 29 percent of central
+below-layer RMS and top-2-km `w` RMS is about 10 percent; the corresponding
+theta-prime values remain similarly reduced aloft. Together with the persistent
+central tilted bands, this evidence supports the bounded judgment that lateral,
+Rayleigh-layer, and top-boundary behavior does not materially compromise the
+central dry-wave response.
 
 ## Cloud Chamber implications and limits
 
@@ -286,33 +348,33 @@ declaring those effects non-material.
   namelist, provenance, inactive settings, runtime-file exclusions, and the
   one-process boundary.
 - The native files preserve terrain, physical scalar heights, nominal full
-  levels, and staggered velocity needed by a later corrected evaluator.
+  levels, and staggered velocity sufficient for corrected offline evaluation.
 - Current flat-grid ingest and browser views remain unsuitable as acceptance
   evidence and were not used.
 - Nothing here validates moisture, condensation, lenticular cloud formation,
   three-dimensional terrain, a user control, a Recipe, or a Mountain Wave
   Cloud World.
 
-## Unresolved questions
+## Remaining limitations
 
-1. PM must authorize a bounded code-only correction to the top-metadata
-   interpretation. The correction should update the source mapping, evaluator,
-   and synthetic test from expected emitted 18 km to expected emitted 20 km for
-   `stretch_z=0`, while continuing to derive the transform top from active-grid
-   evidence.
-2. PM must decide whether the preserved one-run native files may be reevaluated
-   after that correction without another CM1 process. No rerun appears
-   technically necessary, but this issue does not authorize the correction.
-3. The authoritative central-wave and boundary/damping judgment remains
-   pending that corrected offline evaluation.
+- The source bundle supplies no pointwise reference field or formal numerical
+  tolerance, so this is a structural reproduction judgment rather than a
+  convergence or checksum benchmark.
+- The case is dry and two-dimensional. It does not validate moisture,
+  condensation, lenticular clouds, finite three-dimensional terrain, or a
+  product experience.
+- Current flat-grid browser payloads were not used and remain outside this
+  gate's acceptance evidence.
 
 ## Final disposition
 
-The one identifiable defect is the committed evaluator's incorrect expectation
-for emitted `ztop`. It is source-traceable, bounded, and plausibly correctable
-without changing or rerunning the scientific case, but it prevents this PR from
-satisfying the Gate B coordinate and structural acceptance criteria.
+The corrected evaluator passes the exact preserved files, all active-top
+sources agree, and the central dry-wave response remains coherent and
+interpretable without material boundary or damping compromise. Runtime and
+storage cost are practical. This disposition authorizes only the next bounded
+terrain-aware visualization study; it does not approve a moist case or product
+implementation.
 
 ```text
-bounded_dry_case_correction_required
+advance_to_terrain_visualization
 ```
