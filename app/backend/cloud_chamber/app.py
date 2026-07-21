@@ -11,6 +11,12 @@ from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
 
 from cloud_chamber.cli import ENGINE_NOTE
+from cloud_chamber.cloud_worlds import (
+    CloudWorldSummary,
+    TradeCumulusWorldDetail,
+    list_cloud_world_summaries,
+    trade_cumulus_world_detail,
+)
 from cloud_chamber.dry_run_package import (
     DryRunPackageError,
     generate_dry_run_package,
@@ -542,6 +548,26 @@ def cleanup_lan_worker(request: LanWorkerRunRequest) -> dict[str, object]:
 def storage_inventory() -> dict[str, object]:
     inventory = runtime_storage_inventory(load_settings())
     return inventory.model_dump(mode="json")
+
+
+@app.get("/api/worlds", response_model=list[CloudWorldSummary])
+def list_worlds() -> list[CloudWorldSummary]:
+    try:
+        return list_cloud_world_summaries(load_settings())
+    except (OSError, ValueError) as exc:
+        raise HTTPException(
+            status_code=500, detail="Cloud World inventory is unavailable."
+        ) from exc
+
+
+@app.get("/api/worlds/trade-cumulus", response_model=TradeCumulusWorldDetail)
+def get_trade_cumulus_world() -> TradeCumulusWorldDetail:
+    try:
+        return trade_cumulus_world_detail(load_settings())
+    except (OSError, ValueError) as exc:
+        raise HTTPException(
+            status_code=500, detail="Trade Cumulus World data is unavailable."
+        ) from exc
 
 
 @app.post("/api/storage/delete-run")

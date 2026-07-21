@@ -3193,6 +3193,13 @@ const comparisonMoreResultCard = {
   name: "More Moisture",
 };
 
+const unlineagedTradeResultCard = {
+  ...tradeCumulusResultCard,
+  result_id: "result-trade-cumulus-unlineaged",
+  run_id: "trade-cumulus-unlineaged",
+  name: "Unlineaged Trade Cumulus output",
+};
+
 const tradeCumulusComparisonStoryResponse = {
   comparison_id: "trade_cumulus_moisture_v1",
   comparison_group_id: "trade_cumulus_moisture_v1",
@@ -4196,7 +4203,12 @@ function mockTradeCumulusComparisonApp(storyStatus = 200) {
       return Promise.resolve(
         new Response(
           JSON.stringify({
-            results: [comparisonBaselineResultCard, comparisonMoreResultCard, resultCard],
+            results: [
+              comparisonBaselineResultCard,
+              comparisonMoreResultCard,
+              unlineagedTradeResultCard,
+              resultCard,
+            ],
           }),
           { status: 200 },
         ),
@@ -4234,7 +4246,248 @@ function mockTradeCumulusComparisonApp(storyStatus = 200) {
   });
 }
 
+const cloudWorldSummary = {
+  world_id: "trade_cumulus",
+  display_name: "Trade Cumulus",
+  status: "mvp_candidate",
+  short_description: "Investigate shallow maritime cumulus and surface moisture supply.",
+  reference_simulation_id: "trade_cumulus_canonical_bomex",
+  reference_available: true,
+  simulation_count: 2,
+  saved_view_count: 0,
+  saved_comparison_count: 1,
+  featured_comparison_count: 1,
+  active_run_count: 0,
+  completed_uninspected_run_count: 1,
+  availability_state: "available",
+  availability_message: "Reference, variation, and featured comparison are available.",
+};
+
+const worldBaselineSimulation = {
+  simulation_id: "trade_cumulus_canonical_bomex",
+  display_name: "Canonical BOMEX Baseline",
+  role: "reference",
+  world_id: "trade_cumulus",
+  product_slice_id: "trade_cumulus_v1",
+  case_id: "bomex_trade_cumulus_baseline_v0",
+  result_id: comparisonBaselineResultCard.result_id,
+  run_id: comparisonBaselineResultCard.run_id,
+  source_recipe_id: null,
+  parent_simulation_id: null,
+  reference_simulation_id: "trade_cumulus_canonical_bomex",
+  technical_state: "available",
+  technical_state_message: "Completed output is available.",
+  technical_trust_state: "caveated",
+  explore_available: true,
+  compare_suggestions: [],
+  configuration_difference_from_reference: [],
+  lineage_state: "known",
+  created_at: null,
+  completed_at: null,
+};
+
+const worldMoreMoistureSimulation = {
+  ...worldBaselineSimulation,
+  simulation_id: "trade_cumulus_more_moisture",
+  display_name: "More Moisture",
+  role: "variation",
+  result_id: comparisonMoreResultCard.result_id,
+  run_id: comparisonMoreResultCard.run_id,
+  parent_simulation_id: "trade_cumulus_canonical_bomex",
+  compare_suggestions: [
+    {
+      comparison_id: "trade_cumulus_moisture_v1",
+      display_name: "More Moisture versus Baseline",
+      target_simulation_id: "trade_cumulus_canonical_bomex",
+    },
+  ],
+  configuration_difference_from_reference: [
+    {
+      path: "run_configuration.surface_moisture_flux_g_g_m_s",
+      label: "Surface moisture supply",
+      category: "atmospheric",
+      left_value: 0.000052,
+      right_value: 0.000078,
+      units: "g/g m/s",
+      material: true,
+    },
+  ],
+};
+
+const tradeCumulusWorldDetail = {
+  world_id: "trade_cumulus",
+  display_name: "Trade Cumulus",
+  status: "mvp_candidate",
+  short_description: cloudWorldSummary.short_description,
+  availability_state: "available",
+  availability_message: cloudWorldSummary.availability_message,
+  reference_simulation: worldBaselineSimulation,
+  simulations: [worldBaselineSimulation, worldMoreMoistureSimulation],
+  lab_history: [
+    {
+      ...worldBaselineSimulation,
+      simulation_id: null,
+      display_name: "Unretained result",
+      role: "lab_history",
+      result_id: unlineagedTradeResultCard.result_id,
+      run_id: unlineagedTradeResultCard.run_id,
+      reference_simulation_id: null,
+      lineage_state: "unlineaged",
+    },
+  ],
+  featured_comparison: {
+    comparison_id: "trade_cumulus_moisture_v1",
+    display_name: "More Moisture versus Baseline",
+    baseline_simulation_id: "trade_cumulus_canonical_bomex",
+    more_moisture_simulation_id: "trade_cumulus_more_moisture",
+    availability_state: "available",
+    availability_message: "Featured comparison is available.",
+    open_available: true,
+  },
+  lab_summary: {
+    active_run_count: 0,
+    completed_uninspected_run_count: 1,
+    lab_history_count: 1,
+    summary: "1 completed run awaits inspection",
+  },
+  capabilities: {
+    reference_explore: true,
+    featured_comparison: true,
+    lab: true,
+    saved_views: false,
+    ordinary_compare: false,
+  },
+  caveats: [],
+};
+
+function mockWorldScopedApp(storyStatus = 200) {
+  mockTradeCumulusComparisonApp(storyStatus);
+  const defaultFetch = vi.mocked(fetch).getMockImplementation();
+  vi.mocked(fetch).mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input);
+    if (url === "/api/worlds") {
+      return Promise.resolve(new Response(JSON.stringify([cloudWorldSummary]), { status: 200 }));
+    }
+    if (url === "/api/worlds/trade-cumulus") {
+      return Promise.resolve(
+        new Response(JSON.stringify(tradeCumulusWorldDetail), { status: 200 }),
+      );
+    }
+    return (
+      defaultFetch?.(input, init) ?? Promise.resolve(new Response("not found", { status: 404 }))
+    );
+  });
+}
+
 describe("App", () => {
+  it("uses Cloud Worlds as the primary entrance and removes global workspace peers", async () => {
+    mockWorldScopedApp();
+    render(<App />);
+
+    expect(await screen.findByRole("heading", { name: "Cloud Worlds" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Trade Cumulus" })).toBeInTheDocument();
+    expect(
+      screen.queryByRole("navigation", { name: "Cloud Chamber workspace" }),
+    ).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Enter Trade Cumulus" }));
+    expect(
+      await screen.findByRole("navigation", { name: "Trade Cumulus sections" }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Return to the cloud field" })).toBeInTheDocument();
+  });
+
+  it("returns from stable Simulation Explore and the featured Comparison to the World", async () => {
+    mockWorldScopedApp();
+    render(<App />);
+    fireEvent.click(await screen.findByRole("button", { name: "Enter Trade Cumulus" }));
+    fireEvent.click(
+      within(await screen.findByLabelText("Canonical BOMEX Baseline Simulation")).getByRole(
+        "button",
+        { name: "Explore" },
+      ),
+    );
+
+    expect(
+      await screen.findByRole("button", { name: "Back to Trade Cumulus" }),
+    ).toBeInTheDocument();
+    expect(screen.getByLabelText("Canonical BOMEX Baseline workspace")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Back to Trade Cumulus" }));
+    expect(
+      await screen.findByRole("heading", { name: "Return to the cloud field" }),
+    ).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Open Comparison" }));
+    expect(
+      await screen.findByLabelText("More Moisture versus Baseline workspace"),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { name: "Trade Cumulus: Baseline and More Moisture" }),
+    ).toBeInTheDocument();
+    expect(screen.getAllByText("0.052 g/kg m/s")).toHaveLength(2);
+    expect(screen.getAllByText("0.078 g/kg m/s")).toHaveLength(2);
+    expect(screen.queryByText(/g\/g m\/s/)).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Back to Trade Cumulus" }));
+    expect(
+      await screen.findByRole("heading", { name: "Return to the cloud field" }),
+    ).toBeInTheDocument();
+  });
+
+  it("fails closed when World Comparison availability disagrees with the story endpoint", async () => {
+    mockWorldScopedApp(409);
+    render(<App />);
+    fireEvent.click(await screen.findByRole("button", { name: "Enter Trade Cumulus" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Open Comparison" }));
+
+    expect(
+      await screen.findByText("The featured Comparison evidence is inconsistent."),
+    ).toBeInTheDocument();
+    expect(screen.getByLabelText("More Moisture versus Baseline workspace")).toBeInTheDocument();
+    expect(screen.queryByLabelText("Selected Explore result")).not.toBeInTheDocument();
+  });
+
+  it("keeps unrelated and unlineaged Explore entries in explicit Lab-result context", async () => {
+    mockWorldScopedApp();
+    render(<App />);
+    fireEvent.click(await screen.findByRole("button", { name: "Enter Trade Cumulus" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Lab" }));
+
+    for (const resultName of ["Quick-look shallow cumulus", "Unlineaged Trade Cumulus output"]) {
+      fireEvent.click(await screen.findByRole("button", { name: resultName }));
+      fireEvent.click(
+        within(await screen.findByLabelText("Result detail")).getByRole("button", {
+          name: "Open in Explore",
+        }),
+      );
+
+      expect(
+        await screen.findByLabelText(`${resultName} Lab result workspace`),
+      ).toBeInTheDocument();
+      const breadcrumb = screen.getByRole("navigation", { name: "Breadcrumb" });
+      expect(within(breadcrumb).getByRole("button", { name: "Lab" })).toBeInTheDocument();
+      fireEvent.click(screen.getByRole("button", { name: "Back to Lab Results" }));
+      expect(
+        await screen.findByRole("heading", { name: "Experiment Notebook" }),
+      ).toBeInTheDocument();
+    }
+  });
+
+  it("retains existing Build and Results only inside Trade Cumulus Lab", async () => {
+    mockWorldScopedApp();
+    render(<App />);
+    fireEvent.click(await screen.findByRole("button", { name: "Enter Trade Cumulus" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Lab" }));
+
+    expect(await screen.findByRole("heading", { name: "Experiment Notebook" })).toBeInTheDocument();
+    const labNav = screen.getByRole("navigation", { name: "Trade Cumulus Lab" });
+    fireEvent.click(within(labNav).getByRole("button", { name: "Build" }));
+    expect(
+      await screen.findByRole("heading", { name: "Build and run a CM1 experiment" }),
+    ).toBeInTheDocument();
+    fireEvent.click(within(labNav).getByRole("button", { name: "Results" }));
+    expect(await screen.findByRole("heading", { name: "Experiment Notebook" })).toBeInTheDocument();
+  });
+
   it("renders guided Build setup with extensible experiment metadata", async () => {
     render(<App />);
 
@@ -5339,7 +5592,7 @@ describe("App", () => {
 
     render(<App />);
 
-    fireEvent.click(screen.getByRole("button", { name: "Build" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Build" }));
     expect(screen.getByRole("heading", { name: "Loading scenario catalog" })).toBeInTheDocument();
     expect(screen.getByLabelText("Experiment")).toBeDisabled();
     expect(screen.queryByRole("button", { name: "Create run package" })).not.toBeInTheDocument();
@@ -7207,7 +7460,7 @@ describe("App", () => {
     expect(screen.getAllByText("qc (Cloud water)").length).toBeGreaterThan(0);
     expect(screen.getAllByText(/kg\/kg/).length).toBeGreaterThan(0);
     expect(screen.getByRole("button", { name: "Horizontal layer" })).toHaveClass("active-control");
-    expect(screen.getByRole("heading", { name: "Inspect the current slice" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Field Slice" })).toBeInTheDocument();
     expect(screen.getAllByText(/Horizontal layer at z = /).length).toBeGreaterThan(0);
     expect(screen.getByLabelText("Slice position")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Move down" })).toBeInTheDocument();
@@ -7732,7 +7985,7 @@ describe("App", () => {
     ).toBeInTheDocument();
     await screen.findByText("Slice synced");
     expect(screen.getByLabelText("True 3-D scalar field viewer")).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Inspect the current slice" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Field Slice" })).toBeInTheDocument();
     expect(screen.getByLabelText("Slice field")).toHaveValue("qc");
     expect(screen.getAllByRole("option", { name: "qc - Cloud water" }).length).toBeGreaterThan(0);
     expect(
@@ -7915,7 +8168,7 @@ describe("App", () => {
       await screen.findByRole("heading", { name: "What happened in this result?" }),
     ).toBeInTheDocument();
     await screen.findAllByText("Cloud water max is 0 kg/kg; no points are above 1.000e-6 kg/kg");
-    expect(screen.getByRole("heading", { name: "Inspect the current slice" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Field Slice" })).toBeInTheDocument();
     expect(screen.getByLabelText("Slice field")).toHaveValue("w");
     expect(screen.getAllByRole("option", { name: "qc - Cloud water" }).length).toBeGreaterThan(0);
     expect(
@@ -8049,7 +8302,7 @@ describe("App", () => {
     expect(screen.getByLabelText("Fixed visualization viewport region")).toBeInTheDocument();
     expect(screen.getByLabelText("Visualization details")).toBeInTheDocument();
     expect(screen.getByLabelText("Explore viewer controls")).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Inspect the current slice" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Field Slice" })).toBeInTheDocument();
     expect(within(viewer).getByText("True 3-D scene")).toBeInTheDocument();
     expect(within(viewer).getByText("Cloud water")).toBeInTheDocument();
     const axisLabels = within(viewer).getByLabelText("3-D axis tick labels");

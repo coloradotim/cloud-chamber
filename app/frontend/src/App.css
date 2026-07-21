@@ -3462,6 +3462,325 @@ details[open] > summary {
   margin-bottom: 0;
 }
 
+.worlds-home,
+.world-shell,
+.world-context-workspace,
+.legacy-workspace-fallback {
+  display: grid;
+  align-content: start;
+  gap: 1rem;
+  min-width: 0;
+}
+
+.worlds-heading,
+.world-header,
+.world-section-heading,
+.world-context-header,
+.world-card-heading,
+.simulation-card header,
+.comparison-card header,
+.world-lab-summary,
+.world-load-failure {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.worlds-heading h2,
+.world-header h2,
+.world-section-heading h3,
+.world-context-header p,
+.world-card h2,
+.simulation-card h3,
+.comparison-card h3,
+.world-lab-summary h3,
+.world-load-failure h2,
+.world-load-failure p {
+  margin-bottom: 0;
+}
+
+.worlds-heading {
+  display: block;
+}
+
+.world-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(31rem, 0.8fr) auto;
+  gap: 1.5rem;
+  align-items: center;
+  border: 1px solid var(--color-border-strong);
+  border-radius: 8px;
+  padding: clamp(1rem, 2vw, 1.5rem);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-subtle);
+}
+
+.world-card-main,
+.world-header > div:first-child,
+.simulation-card header > div:first-child,
+.comparison-card header > div:first-child {
+  min-width: 0;
+}
+
+.world-description {
+  max-width: 54rem;
+  margin-bottom: 0.55rem;
+  color: var(--color-text-primary);
+  font-size: 1.05rem;
+}
+
+.world-availability-message {
+  margin-bottom: 0;
+}
+
+.world-card-metrics,
+.configuration-differences,
+.simulation-details dl {
+  display: grid;
+  gap: 0.6rem;
+  margin: 0;
+}
+
+.world-card-metrics {
+  grid-template-columns: repeat(4, minmax(6.75rem, 1fr));
+}
+
+.world-card-metrics div,
+.configuration-differences div,
+.simulation-details dl div {
+  display: grid;
+  gap: 0.1rem;
+}
+
+.world-card-metrics dt,
+.configuration-differences dt,
+.simulation-details dt {
+  color: var(--color-text-muted);
+  font-size: 0.78rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.world-card-metrics dd,
+.configuration-differences dd,
+.simulation-details dd {
+  margin: 0;
+  color: var(--color-text-primary);
+  font-weight: 750;
+  overflow-wrap: anywhere;
+}
+
+.world-availability,
+.technical-state {
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  padding: 0.28rem 0.5rem;
+  background: var(--color-surface-muted);
+  color: var(--color-text-muted);
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
+.world-availability.available,
+.technical-state.available {
+  border-color: rgba(77, 139, 106, 0.45);
+  background: var(--color-success-soft);
+  color: #326848;
+}
+
+.world-availability.partial,
+.technical-state.missing {
+  border-color: rgba(183, 121, 31, 0.45);
+  background: var(--color-warning-soft);
+  color: #80520f;
+}
+
+.world-availability.conflict,
+.technical-state.conflict {
+  border-color: rgba(185, 74, 72, 0.45);
+  background: var(--color-danger-soft);
+  color: #8e302f;
+}
+
+.world-breadcrumb,
+.world-section-nav,
+.lab-subnav,
+.simulation-actions,
+.simulation-state-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.world-breadcrumb button {
+  padding: 0;
+  background: transparent;
+  color: var(--color-accent-primary);
+  box-shadow: none;
+}
+
+.world-breadcrumb span {
+  color: var(--color-text-muted);
+  font-weight: 700;
+}
+
+.world-header {
+  border-bottom: 1px solid var(--color-border);
+  padding: 0.35rem 0 1rem;
+}
+
+.world-header > div:first-child p:last-child {
+  max-width: 58rem;
+  margin-bottom: 0;
+}
+
+.world-section-nav,
+.lab-subnav {
+  border-bottom: 1px solid var(--color-border);
+  padding-bottom: 0.55rem;
+}
+
+.world-section-nav button,
+.lab-subnav button {
+  background: transparent;
+  color: var(--color-text-muted);
+  box-shadow: none;
+}
+
+.world-section-nav .active-control,
+.lab-subnav .active-control {
+  background: var(--color-accent-soft);
+  color: var(--color-accent-primary);
+  box-shadow: inset 0 0 0 1px rgba(47, 116, 168, 0.16);
+}
+
+.world-section {
+  display: grid;
+  align-content: start;
+  gap: 1rem;
+  min-width: 0;
+}
+
+.world-overview-grid,
+.simulation-card-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.85rem;
+}
+
+.simulation-card,
+.comparison-card,
+.world-lab-summary,
+.world-empty-state,
+.world-load-failure,
+.lab-history {
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  padding: 1rem;
+  background: var(--color-surface);
+}
+
+.simulation-card,
+.comparison-card {
+  display: grid;
+  align-content: start;
+  gap: 0.75rem;
+}
+
+.simulation-card > p,
+.comparison-card > p {
+  margin-bottom: 0;
+}
+
+.simulation-relationship {
+  color: var(--color-text-primary);
+  font-weight: 700;
+}
+
+.configuration-differences {
+  border-left: 3px solid var(--color-accent-primary);
+  padding-left: 0.75rem;
+}
+
+.simulation-details summary,
+.lab-history summary {
+  color: var(--color-accent-primary);
+  cursor: pointer;
+  font-weight: 800;
+}
+
+.simulation-details dl {
+  margin-top: 0.75rem;
+}
+
+.simulation-actions {
+  align-self: end;
+  margin-top: auto;
+}
+
+.world-lab-summary {
+  align-items: center;
+}
+
+.world-lab-summary p {
+  margin-bottom: 0;
+}
+
+.world-empty-state p {
+  margin-bottom: 0;
+}
+
+.world-load-failure {
+  border-color: rgba(185, 74, 72, 0.45);
+  background: var(--color-danger-soft);
+}
+
+.lab-history-list {
+  display: grid;
+  gap: 0.55rem;
+  margin-top: 0.8rem;
+}
+
+.lab-history-list article {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  border-top: 1px solid var(--color-border);
+  padding-top: 0.55rem;
+}
+
+.lab-history-list article div {
+  display: grid;
+  gap: 0.2rem;
+  min-width: 0;
+}
+
+.lab-history-list code {
+  color: var(--color-text-muted);
+  overflow-wrap: anywhere;
+}
+
+.lab-content,
+.world-context-workspace {
+  min-width: 0;
+}
+
+.world-context-header {
+  align-items: center;
+  border-bottom: 1px solid var(--color-border);
+  padding-bottom: 0.75rem;
+}
+
+.world-context-workspace .comparison-story-heading-row > .secondary-button {
+  display: none;
+}
+
 @media (max-width: 860px) {
   .topbar,
   .builder-layout,
