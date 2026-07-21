@@ -406,7 +406,7 @@ describe("TradeCumulusComparisonStory", () => {
     expect(requestedUrls).toContain(
       `/api/results/${moreId}/visualization/trade-cumulus-updraft-lens/frame?time_index=169&plane_index=51&orientation=vertical_x&wind_mode=perturbation`,
     );
-    expect(screen.queryByRole("button", { name: "Play time" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Play" })).not.toBeInTheDocument();
     expect(screen.queryByLabelText("Position")).not.toBeInTheDocument();
     expect(screen.queryByLabelText("2-D slice field")).not.toBeInTheDocument();
   });

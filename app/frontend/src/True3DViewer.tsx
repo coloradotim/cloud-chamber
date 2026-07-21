@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 
@@ -9,9 +9,10 @@ import type {
 } from "./UpdraftLensSlice";
 import { UpdraftLensScaleLegend } from "./UpdraftLensSlice";
 import {
+  axisAlignedPlaneOccludesPoint,
   cameraDistanceLimits,
   scalarPointPixelSize,
-  updraftLensTextureData,
+  updraftLensPlaneTextureData,
   windArrowLength,
 } from "./True3DViewer.utils";
 
@@ -100,6 +101,13 @@ type True3DViewerProps = {
   windReferenceMps?: number;
   windArrowDomainFraction?: number;
   updraftLensFrame?: UpdraftLensFrame | null;
+  updraftLensOpacity?: number;
+  showUpdraftLensBoundary?: boolean;
+  showUpdraftLensLegend?: boolean;
+  compactWorkspace?: boolean;
+  compactDisplayControls?: ReactNode;
+  maximized?: boolean;
+  onToggleMaximize?: () => void;
 };
 
 type SceneRefs = {
@@ -163,10 +171,19 @@ export function True3DViewer({
   windReferenceMps = 0,
   windArrowDomainFraction = 0.08,
   updraftLensFrame = null,
+  updraftLensOpacity = 0.9,
+  showUpdraftLensBoundary = true,
+  showUpdraftLensLegend = true,
+  compactWorkspace = false,
+  compactDisplayControls,
+  maximized = false,
+  onToggleMaximize,
 }: True3DViewerProps) {
   const mountRef = useRef<HTMLDivElement | null>(null);
   const axisLabelLayerRef = useRef<HTMLDivElement | null>(null);
   const refs = useRef<SceneRefs | null>(null);
+  const axisOcclusionRef = useRef({ frame: updraftLensFrame, opacity: updraftLensOpacity });
+  axisOcclusionRef.current = { frame: updraftLensFrame, opacity: updraftLensOpacity };
   const [renderError, setRenderError] = useState<string | null>(null);
   const [cameraStatus, setCameraStatus] = useState("Camera ready");
   const [tallViewport, setTallViewport] = useState(false);
@@ -274,7 +291,14 @@ export function True3DViewer({
       const animate = () => {
         controls.update();
         renderer.render(scene, camera);
-        positionAxisLabels(axisLabelLayerRef.current, renderer.domElement, camera, axisLabels);
+        positionAxisLabels(
+          axisLabelLayerRef.current,
+          renderer.domElement,
+          camera,
+          axisLabels,
+          bounds,
+          axisOcclusionRef.current,
+        );
         const current = refs.current;
         if (current) current.animationFrame = window.requestAnimationFrame(animate);
       };
@@ -327,6 +351,8 @@ export function True3DViewer({
       windReferenceMps,
       windArrowDomainFraction,
       updraftLensFrame,
+      updraftLensOpacity,
+      showUpdraftLensBoundary,
     });
   }, [
     activeSlice,
@@ -342,17 +368,27 @@ export function True3DViewer({
     windReferenceMps,
     windVectors,
     updraftLensFrame,
+    updraftLensOpacity,
+    showUpdraftLensBoundary,
   ]);
 
   return (
-    <section className="true3d-viewer" aria-label="True 3-D scalar field viewer">
-      <div className="true3d-scene-header">
-        <div>
-          <p className="eyebrow">True 3-D scene</p>
-          <h3>{resultName}</h3>
+    <section
+      className={`true3d-viewer${compactWorkspace ? " true3d-viewer-compact" : ""}`}
+      aria-label="True 3-D scalar field viewer"
+      data-result-name={resultName}
+      data-updraft-lens-opacity={updraftLensFrame ? updraftLensOpacity : undefined}
+      data-updraft-lens-cloud-boundary={updraftLensFrame ? showUpdraftLensBoundary : undefined}
+    >
+      {!compactWorkspace && (
+        <div className="true3d-scene-header">
+          <div>
+            <p className="eyebrow">True 3-D scene</p>
+            <h3>{resultName}</h3>
+          </div>
+          <p className="state-chip">{status}</p>
         </div>
-        <p className="state-chip">{status}</p>
-      </div>
+      )}
 
       <div className={`true3d-scene-frame${tallViewport ? " true3d-scene-frame-tall" : ""}`}>
         <div
@@ -361,11 +397,18 @@ export function True3DViewer({
           role="img"
           aria-label="Interactive Three.js scene showing a CM1 scalar field, domain bounds, slice plane, and selected point"
         />
-        <div className="true3d-scene-label true3d-scene-label-context">
-          <strong>{fieldLabel}</strong>
-          <span>{sceneTimeLabel || selectedTimeLabel}</span>
-          <span>Threshold {thresholdLabel}</span>
-        </div>
+        {compactWorkspace && (
+          <p className="sr-only" role="status">
+            {status}
+          </p>
+        )}
+        {!compactWorkspace && (
+          <div className="true3d-scene-label true3d-scene-label-context">
+            <strong>{fieldLabel}</strong>
+            <span>{sceneTimeLabel || selectedTimeLabel}</span>
+            <span>Threshold {thresholdLabel}</span>
+          </div>
+        )}
         {pointCloud && (
           <div className="true3d-field-legend" aria-label="3-D field color legend">
             <span>{pointCloud.field.display_name}</span>
@@ -380,13 +423,13 @@ export function True3DViewer({
             </div>
           </div>
         )}
-        {showWindVectors && windVectors.length > 0 && (
+        {!compactWorkspace && showWindVectors && windVectors.length > 0 && (
           <div className="true3d-wind-legend" aria-label="Horizontal wind overlay legend">
             <strong>{windMode === "perturbation" ? "Local departures" : "Total wind"}</strong>
             <span>{windReferenceMps.toFixed(1)} m/s reference = 8% domain width</span>
           </div>
         )}
-        {updraftLensFrame && (
+        {updraftLensFrame && showUpdraftLensLegend && (
           <UpdraftLensScaleLegend frame={updraftLensFrame} viewLabel="3-D viewer" />
         )}
         <div
@@ -404,20 +447,48 @@ export function True3DViewer({
             </span>
           ))}
         </div>
-        {updraftLensFrame ? (
-          <p className="true3d-slice-label true3d-slice-label-updraft-lens">
-            Updraft Lens slice: {activeSliceLabel}
-          </p>
+        {compactWorkspace ? (
+          <div className="true3d-context-stack" aria-label="3-D scene context">
+            {updraftLensFrame ? (
+              <p className="true3d-slice-label true3d-slice-label-updraft-lens">
+                Updraft Lens: {activeSliceLabel}
+              </p>
+            ) : (
+              showSlicePlane &&
+              activeSlice && <p className="true3d-slice-label">Slice: {activeSliceLabel}</p>
+            )}
+            {selectedPoint && (
+              <p className="true3d-selected-point-label">
+                Selected: x {formatCoordinate(selectedPoint.x, bounds.x.units)}, y{" "}
+                {formatCoordinate(selectedPoint.y, bounds.y.units)}, z{" "}
+                {formatCoordinate(selectedPoint.z, bounds.z.units)}
+              </p>
+            )}
+            {showWindVectors && windVectors.length > 0 && (
+              <div className="true3d-wind-legend" aria-label="Horizontal wind overlay legend">
+                <strong>{windMode === "perturbation" ? "Local departures" : "Total wind"}</strong>
+                <span>{windReferenceMps.toFixed(1)} m/s reference</span>
+              </div>
+            )}
+          </div>
         ) : (
-          showSlicePlane &&
-          activeSlice && <p className="true3d-slice-label">Slice plane: {activeSliceLabel}</p>
-        )}
-        {selectedPoint && (
-          <p className="true3d-selected-point-label">
-            Selected point: x {formatCoordinate(selectedPoint.x, bounds.x.units)}, y{" "}
-            {formatCoordinate(selectedPoint.y, bounds.y.units)}, z{" "}
-            {formatCoordinate(selectedPoint.z, bounds.z.units)}
-          </p>
+          <>
+            {updraftLensFrame ? (
+              <p className="true3d-slice-label true3d-slice-label-updraft-lens">
+                Updraft Lens slice: {activeSliceLabel}
+              </p>
+            ) : (
+              showSlicePlane &&
+              activeSlice && <p className="true3d-slice-label">Slice plane: {activeSliceLabel}</p>
+            )}
+            {selectedPoint && (
+              <p className="true3d-selected-point-label">
+                Selected point: x {formatCoordinate(selectedPoint.x, bounds.x.units)}, y{" "}
+                {formatCoordinate(selectedPoint.y, bounds.y.units)}, z{" "}
+                {formatCoordinate(selectedPoint.z, bounds.z.units)}
+              </p>
+            )}
+          </>
         )}
         {renderError && (
           <p className="true3d-render-error" role="status">
@@ -433,53 +504,101 @@ export function True3DViewer({
         )}
       </div>
 
-      <div className="true3d-controls" aria-label="3-D camera controls">
-        <div className="true3d-control-section">
-          <span>Camera</span>
-          <div className="true3d-preset-buttons" aria-label="3-D camera presets">
-            <button type="button" onClick={() => setCameraPreset("overview")}>
-              Overview
+      {compactWorkspace ? (
+        <div className="true3d-controls true3d-controls-compact" aria-label="3-D camera controls">
+          {compactDisplayControls && (
+            <details className="true3d-display-control">
+              <summary>
+                <span>Display</span>
+              </summary>
+              <div className="true3d-display-panel">{compactDisplayControls}</div>
+            </details>
+          )}
+          <label>
+            <span className="sr-only">Camera view</span>
+            <select
+              aria-label="Camera view"
+              defaultValue="overview"
+              onChange={(event) => setCameraPreset(event.target.value as CameraPreset)}
+            >
+              <option value="overview">Overview</option>
+              <option value="top_down_xy">Top-down x-y</option>
+              <option value="look_along_x">Look along x</option>
+              <option value="look_along_y">Look along y</option>
+            </select>
+          </label>
+          <button
+            type="button"
+            className="true3d-icon-command"
+            aria-label="Reset camera"
+            title="Reset camera"
+            onClick={resetCamera}
+          >
+            <span aria-hidden="true">{"\u21ba"}</span>
+          </button>
+          {onToggleMaximize && (
+            <button
+              type="button"
+              className="viewer-maximize-button"
+              aria-label={maximized ? "Restore 3-D viewer" : "Maximize 3-D viewer"}
+              title={maximized ? "Restore 3-D viewer" : "Maximize 3-D viewer"}
+              onClick={onToggleMaximize}
+            >
+              <span aria-hidden="true">{"\u26f6"}</span>
             </button>
-            <button type="button" onClick={() => setCameraPreset("top_down_xy")}>
-              Top-down x-y
-            </button>
-            <button type="button" onClick={() => setCameraPreset("look_along_x")}>
-              Look along x
-            </button>
-            <button type="button" onClick={() => setCameraPreset("look_along_y")}>
-              Look along y
-            </button>
-          </div>
+          )}
         </div>
-        <div className="true3d-control-section">
-          <span>View</span>
-          <div className="true3d-preset-buttons" aria-label="3-D view actions">
-            <button type="button" onClick={() => zoomCamera("in")}>
-              Zoom in
-            </button>
-            <button type="button" onClick={() => zoomCamera("out")}>
-              Zoom out
-            </button>
-            <button type="button" onClick={() => moveCameraVertical("up")}>
-              Pan view up
-            </button>
-            <button type="button" onClick={() => moveCameraVertical("down")}>
-              Pan view down
-            </button>
-            <button type="button" onClick={resetCamera}>
-              Reset camera
-            </button>
-            <button type="button" onClick={toggleViewportHeight}>
-              {tallViewport ? "Standard viewport" : "Taller viewport"}
-            </button>
+      ) : (
+        <>
+          <div className="true3d-controls" aria-label="3-D camera controls">
+            <div className="true3d-control-section">
+              <span>Camera</span>
+              <div className="true3d-preset-buttons" aria-label="3-D camera presets">
+                <button type="button" onClick={() => setCameraPreset("overview")}>
+                  Overview
+                </button>
+                <button type="button" onClick={() => setCameraPreset("top_down_xy")}>
+                  Top-down x-y
+                </button>
+                <button type="button" onClick={() => setCameraPreset("look_along_x")}>
+                  Look along x
+                </button>
+                <button type="button" onClick={() => setCameraPreset("look_along_y")}>
+                  Look along y
+                </button>
+              </div>
+            </div>
+            <div className="true3d-control-section">
+              <span>View</span>
+              <div className="true3d-preset-buttons" aria-label="3-D view actions">
+                <button type="button" onClick={() => zoomCamera("in")}>
+                  Zoom in
+                </button>
+                <button type="button" onClick={() => zoomCamera("out")}>
+                  Zoom out
+                </button>
+                <button type="button" onClick={() => moveCameraVertical("up")}>
+                  Pan view up
+                </button>
+                <button type="button" onClick={() => moveCameraVertical("down")}>
+                  Pan view down
+                </button>
+                <button type="button" onClick={resetCamera}>
+                  Reset camera
+                </button>
+                <button type="button" onClick={toggleViewportHeight}>
+                  {tallViewport ? "Standard viewport" : "Taller viewport"}
+                </button>
+              </div>
+            </div>
+            <p>{cameraStatus}. Drag to orbit, right-drag to pan, scroll to zoom.</p>
           </div>
-        </div>
-        <p>{cameraStatus}. Drag to orbit, right-drag to pan, scroll to zoom.</p>
-      </div>
-      <p className="true3d-provenance" aria-label="3-D provenance labels">
-        {valueChannelLabel} CM1-derived visualization-ready scalar points and native-grid slice
-        plane; rendered with direct Three.js. {provenanceLabel}
-      </p>
+          <p className="true3d-provenance" aria-label="3-D provenance labels">
+            {valueChannelLabel} CM1-derived visualization-ready scalar points and native-grid slice
+            plane; rendered with direct Three.js. {provenanceLabel}
+          </p>
+        </>
+      )}
     </section>
   );
 }
@@ -504,6 +623,8 @@ function rebuildScene(
     windReferenceMps,
     windArrowDomainFraction,
     updraftLensFrame,
+    updraftLensOpacity,
+    showUpdraftLensBoundary,
   }: {
     bounds: SceneBounds;
     pointCloud: PointCloudResponse | null;
@@ -518,6 +639,8 @@ function rebuildScene(
     windReferenceMps: number;
     windArrowDomainFraction: number;
     updraftLensFrame: UpdraftLensFrame | null;
+    updraftLensOpacity: number;
+    showUpdraftLensBoundary: boolean;
   },
 ) {
   disposeScene(scene);
@@ -532,7 +655,7 @@ function rebuildScene(
   scene.add(axisTickMarks(bounds));
 
   if (pointCloud?.points.length) {
-    scene.add(cloudPointLayer(pointCloud, bounds, opacity, pointSize));
+    scene.add(cloudPointLayer(pointCloud, bounds, opacity, pointSize, Boolean(updraftLensFrame)));
   }
 
   if (showWindVectors && windVectors.length) {
@@ -540,7 +663,9 @@ function rebuildScene(
   }
 
   if (updraftLensFrame) {
-    scene.add(updraftLensSlicePlane(updraftLensFrame, bounds));
+    scene.add(
+      updraftLensSlicePlane(updraftLensFrame, bounds, updraftLensOpacity, showUpdraftLensBoundary),
+    );
   }
 
   if (showSlicePlane && activeSlice) {
@@ -552,19 +677,27 @@ function rebuildScene(
   }
 }
 
-function updraftLensSlicePlane(frame: UpdraftLensFrame, bounds: SceneBounds): THREE.Group {
+function updraftLensSlicePlane(
+  frame: UpdraftLensFrame,
+  bounds: SceneBounds,
+  opacity: number,
+  showCloudBoundary: boolean,
+): THREE.Group {
   const width = Math.max(1, frame.w_values_m_s[0]?.length ?? 0);
   const height = Math.max(1, frame.w_values_m_s.length);
-  const texture = new THREE.DataTexture(
-    updraftLensTextureData(
-      frame.w_values_m_s,
-      width,
-      height,
-      frame.w_scale_breakpoints_m_s,
-      frame.w_scale_colors,
-    ),
+  const texturePayload = updraftLensPlaneTextureData(
+    frame.w_values_m_s,
     width,
     height,
+    frame.w_scale_breakpoints_m_s,
+    frame.w_scale_colors,
+    frame.cloud_mask,
+    showCloudBoundary,
+  );
+  const texture = new THREE.DataTexture(
+    texturePayload.data,
+    texturePayload.width,
+    texturePayload.height,
     THREE.RGBAFormat,
     THREE.UnsignedByteType,
   );
@@ -574,18 +707,23 @@ function updraftLensSlicePlane(frame: UpdraftLensFrame, bounds: SceneBounds): TH
   texture.generateMipmaps = false;
   texture.needsUpdate = true;
 
-  let geometry: THREE.PlaneGeometry;
+  let planeWidth: number;
+  let planeHeight: number;
   if (frame.orientation === "horizontal") {
-    geometry = new THREE.PlaneGeometry(bounds.xRange, bounds.yRange);
+    planeWidth = bounds.xRange;
+    planeHeight = bounds.yRange;
   } else if (frame.orientation === "vertical_y") {
-    geometry = new THREE.PlaneGeometry(bounds.yRange, bounds.zRange);
+    planeWidth = bounds.yRange;
+    planeHeight = bounds.zRange;
   } else {
-    geometry = new THREE.PlaneGeometry(bounds.xRange, bounds.zRange);
+    planeWidth = bounds.xRange;
+    planeHeight = bounds.zRange;
   }
+  const geometry = new THREE.PlaneGeometry(planeWidth, planeHeight);
   const material = new THREE.MeshBasicMaterial({
     map: texture,
     transparent: true,
-    opacity: 0.68,
+    opacity: Math.min(1, Math.max(0.15, opacity)),
     side: THREE.DoubleSide,
     depthWrite: false,
   });
@@ -600,7 +738,7 @@ function updraftLensSlicePlane(frame: UpdraftLensFrame, bounds: SceneBounds): TH
   } else {
     plane.position.z = centeredCoordinate(frame.plane_coordinate ?? 0, bounds.y);
   }
-  plane.renderOrder = 10;
+  plane.renderOrder = 30;
 
   const outline = new THREE.LineSegments(
     new THREE.EdgesGeometry(geometry),
@@ -609,7 +747,7 @@ function updraftLensSlicePlane(frame: UpdraftLensFrame, bounds: SceneBounds): TH
   outline.name = "Updraft Lens plane outline";
   outline.position.copy(plane.position);
   outline.rotation.copy(plane.rotation);
-  outline.renderOrder = 11;
+  outline.renderOrder = 31;
 
   const group = new THREE.Group();
   group.name = "trade-cumulus-updraft-lens-slice-plane";
@@ -835,6 +973,8 @@ function positionAxisLabels(
   canvas: HTMLCanvasElement,
   camera: THREE.Camera,
   labels: AxisLabel[],
+  bounds: SceneBounds,
+  updraftLens: { frame: UpdraftLensFrame | null; opacity: number },
 ) {
   if (!layer) return;
   const width = canvas.clientWidth;
@@ -858,9 +998,54 @@ function positionAxisLabels(
       x <= width + 24 &&
       y >= -24 &&
       y <= height + 24;
+    const occluded =
+      updraftLens.frame !== null &&
+      updraftLensOccludesAxisLabel(camera.position, label.position, updraftLens.frame, bounds);
+    const lensVisibility = occluded ? (1 - updraftLens.opacity) ** 2 : 1;
     element.style.transform = `translate(${x}px, ${y}px) translate(-50%, -50%)`;
-    element.style.opacity = visible ? "1" : "0";
+    element.style.opacity = visible ? String(lensVisibility) : "0";
   });
+}
+
+function updraftLensOccludesAxisLabel(
+  camera: THREE.Vector3,
+  label: THREE.Vector3,
+  frame: UpdraftLensFrame,
+  bounds: SceneBounds,
+): boolean {
+  const halfX = bounds.xRange / 2;
+  const halfY = bounds.yRange / 2;
+  const halfZ = bounds.zRange / 2;
+  const planeBounds = {
+    x: { min: -halfX, max: halfX },
+    y: { min: -halfZ, max: halfZ },
+    z: { min: -halfY, max: halfY },
+  };
+  if (frame.orientation === "horizontal") {
+    return axisAlignedPlaneOccludesPoint(
+      camera,
+      label,
+      "y",
+      centeredCoordinate(frame.plane_coordinate ?? 0, bounds.z),
+      planeBounds,
+    );
+  }
+  if (frame.orientation === "vertical_y") {
+    return axisAlignedPlaneOccludesPoint(
+      camera,
+      label,
+      "x",
+      centeredCoordinate(frame.plane_coordinate ?? 0, bounds.x),
+      planeBounds,
+    );
+  }
+  return axisAlignedPlaneOccludesPoint(
+    camera,
+    label,
+    "z",
+    centeredCoordinate(frame.plane_coordinate ?? 0, bounds.y),
+    planeBounds,
+  );
 }
 
 function cloudPointLayer(
@@ -868,6 +1053,7 @@ function cloudPointLayer(
   bounds: SceneBounds,
   opacity: number,
   pointSize: number,
+  depthWrite: boolean,
 ): THREE.Points {
   const positions = new Float32Array(pointCloud.points.length * 3);
   const colors = new Float32Array(pointCloud.points.length * 3);
@@ -893,7 +1079,7 @@ function cloudPointLayer(
     vertexColors: true,
     transparent: true,
     opacity,
-    depthWrite: false,
+    depthWrite,
     sizeAttenuation: false,
   });
   const layer = new THREE.Points(geometry, material);
@@ -974,12 +1160,18 @@ function scalarRampKey(fieldName: string): string {
 
 function fieldLegendMinimum(pointCloud: PointCloudResponse): string {
   if (pointCloud.field.raw_field_name === "dbz") return "0 dBZ";
-  return formatValue(pointCloud.stats.min_value, pointCloud.field.units);
+  return formatFieldLegendValue(pointCloud.stats.min_value, pointCloud.field.units);
 }
 
 function fieldLegendMaximum(pointCloud: PointCloudResponse): string {
   if (pointCloud.field.raw_field_name === "dbz") return "60+ dBZ";
-  return formatValue(pointCloud.stats.max_value, pointCloud.field.units);
+  return formatFieldLegendValue(pointCloud.stats.max_value, pointCloud.field.units);
+}
+
+function formatFieldLegendValue(value: number | null, units: string | null): string {
+  return units === "kg/kg"
+    ? formatValue(value === null ? null : value * 1000, "g/kg")
+    : formatValue(value, units);
 }
 
 function slicePlane(slice: SliceResponse, label: string, bounds: SceneBounds): THREE.Group {

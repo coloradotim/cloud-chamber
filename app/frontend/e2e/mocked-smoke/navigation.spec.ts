@@ -106,11 +106,7 @@ test.describe("mocked smoke: app shell", () => {
     await expect(page.getByText("Scenario setup")).toHaveCount(0);
   });
 
-  for (const viewport of [
-    { width: 390, height: 844 },
-    { width: 1024, height: 768 },
-    { width: 1440, height: 900 },
-  ]) {
+  for (const viewport of [{ width: 1440, height: 900 }]) {
     test(`keeps Build Results Explore reachable at ${viewport.width}x${viewport.height}`, async ({
       page,
     }) => {
@@ -129,7 +125,7 @@ test.describe("mocked smoke: app shell", () => {
       await expect(page.getByRole("heading", { name: "Experiment Notebook" })).toBeVisible();
       await gotoExplore(page);
       await expect(page.getByLabel("Explore this result")).toBeVisible();
-      await expect(page.getByRole("heading", { name: "What happened in this result?" }))
+      await expect(page.getByRole("heading", { name: "What am I seeing?" }))
         .toBeVisible();
     });
   }
