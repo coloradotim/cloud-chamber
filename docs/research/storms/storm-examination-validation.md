@@ -147,7 +147,7 @@ Rejected or qualified questions:
 
 ## 9. Timeline semantics
 
-The surface exposes all nine retained histories and marks 45, 60, 75, 90, 105, and 120 minutes as visible mature checkpoints. Previous, next, play/pause, slider, and playback speed use the shared Explore grammar. Scales remain fixed during playback.
+The reader validates all nine retained histories. The examination timeline intentionally exposes only the six mature histories at 45, 60, 75, 90, 105, and 120 minutes. Previous, next, play/pause, slider, and playback speed operate within those six checkpoints using the shared Explore grammar. Scales remain fixed during playback.
 
 Phase labels describe what is visible at a checkpoint. They are not exact event markers. The 15-minute cadence does not support exact initiation, splitting, occlusion, or decay times, and continuity between frames remains a bounded inference.
 
@@ -159,7 +159,7 @@ The Context inspector supplies Lens question, concise state labels, x/y/z, model
 
 ## 11. Visual review findings
 
-Desktop review used a 1920 x 1080 live browser and Playwright against the retained backend. Eighteen final screenshots cover every candidate Lens at all six mature checkpoints; the required packet subset includes at least 45, 75, 90, and 120 minutes.
+Desktop review used Playwright against the retained backend in a 1920 x 1080 browser viewport. Eighteen Lens-by-checkpoint screenshots cover every candidate Lens at all six mature checkpoints; three additional screenshots show selected-point coordination, full-domain context, and maximized views. The PNGs are 1912 x 1080 because the in-app browser content area excludes its outer chrome.
 
 - The fixed red-up/blue-down palette makes strengthening descent and persistent ascent immediately comparable through time; near-neutral cells remain white.
 - Plan and section axes preserve their physical aspect within each coordinated panel. Storm and full-domain payload extents match the actual displayed native cells.
