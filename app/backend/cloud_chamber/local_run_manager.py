@@ -584,10 +584,9 @@ def _matching_paths(run_dir: Path, patterns: tuple[str, ...]) -> tuple[Path, ...
 
 
 def _preflight_cm1_inputs(manifest: RunManifest) -> None:
-    checks = {
-        "namelist.input": manifest.generated_inputs.namelist_input,
-        "input_sounding": manifest.generated_inputs.input_sounding,
-    }
+    checks = {"namelist.input": manifest.generated_inputs.namelist_input}
+    if manifest.generated_inputs.input_sounding is not None:
+        checks["input_sounding"] = manifest.generated_inputs.input_sounding
     for label, configured_path in checks.items():
         if configured_path is None:
             raise LocalRunManagerError(f"Missing generated CM1 input path: {label}")

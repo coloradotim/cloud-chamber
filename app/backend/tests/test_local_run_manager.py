@@ -264,6 +264,37 @@ def test_launch_constructs_cm1_command_and_captures_logs(tmp_path: Path) -> None
     assert manifest.execution.process_id == fake_process.pid
 
 
+def test_launch_allows_source_defined_case_without_input_sounding(tmp_path: Path) -> None:
+    settings = fake_settings(tmp_path)
+    manifest_path = dry_run_manifest_path(tmp_path, run_id="source-defined")
+    manifest = load_run_manifest(manifest_path)
+    input_sounding = Path(manifest.generated_inputs.input_sounding or "")
+    input_sounding.unlink()
+    generated_inputs = manifest.generated_inputs.model_copy(update={"input_sounding": None})
+    run_configuration = {
+        key: value
+        for key, value in manifest.run_configuration.items()
+        if key != "generated_input_sha256"
+    }
+    write_run_manifest(
+        manifest_path,
+        manifest.model_copy(
+            update={
+                "generated_inputs": generated_inputs,
+                "run_configuration": run_configuration,
+            }
+        ),
+    )
+    factory = FakeProcessFactory(FakeProcess())
+
+    status = LocalRunManager(settings=settings, process_factory=factory).launch(manifest_path)
+
+    assert status.lifecycle_state == LifecycleState.RUNNING
+    assert factory.cwd == tmp_path / "CloudChamber" / "runs" / "source-defined"
+    assert factory.cwd is not None
+    assert not (factory.cwd / "input_sounding").exists()
+
+
 def test_launch_rechecks_generated_input_hashes_after_packaging(tmp_path: Path) -> None:
     settings = fake_settings(tmp_path)
     manifest_path = dry_run_manifest_path(tmp_path)
