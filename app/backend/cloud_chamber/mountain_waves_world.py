@@ -1,0 +1,465 @@
+"""Mountain Waves Cloud World inventory and persistent Simulation state."""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any, Literal
+
+from pydantic import BaseModel, ConfigDict, Field
+
+from cloud_chamber.local_run_manager import reconcile_completed_run_manifest
+from cloud_chamber.run_manifest import (
+    LifecycleState,
+    RunManifest,
+    RunManifestError,
+    load_run_manifest,
+)
+from cloud_chamber.settings import CloudChamberSettings
+
+WORLD_ID: Literal["mountain_waves"] = "mountain_waves"
+WORLD_DISPLAY_NAME: Literal["Mountain Waves"] = "Mountain Waves"
+WORLD_DESCRIPTION = (
+    "Experiment with how terrain, wind, stability, and moisture create mountain waves and "
+    "mountain-wave clouds."
+)
+DRY_SIMULATION_ID = "mountain_waves_dry_ridge"
+DRY_RUN_ID = "dry-mountain-wave-official-20260721T183530Z"
+DRY_CASE_ID = "cm1_r21_1_dry_mountain_wave_official_v0"
+MOIST_SIMULATION_ID = "mountain_waves_boulder_moist_reference"
+MOIST_RUN_ID = "moist-mountain-wave-toy-1972-20260721T215226Z"
+MOIST_CASE_ID = "cm1_r21_1_toy2011_boulder_moist_wave_4000s_v1"
+
+AvailabilityState = Literal["available", "partial", "unavailable", "conflict"]
+SimulationState = Literal[
+    "available", "packaged", "queued", "running", "failed", "canceled", "unavailable", "conflict"
+]
+SimulationRole = Literal["built_in", "variation"]
+
+
+class MountainWavesWorldSummary(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    world_id: Literal["mountain_waves"] = WORLD_ID
+    display_name: Literal["Mountain Waves"] = WORLD_DISPLAY_NAME
+    short_description: str = WORLD_DESCRIPTION
+    reference_simulation_id: Literal["mountain_waves_boulder_moist_reference"] = (
+        "mountain_waves_boulder_moist_reference"
+    )
+    reference_available: bool
+    simulation_count: int
+    saved_view_count: Literal[0] = 0
+    saved_comparison_count: Literal[0] = 0
+    featured_comparison_count: Literal[0] = 0
+    active_run_count: int
+    completed_uninspected_run_count: int
+    availability_state: AvailabilityState
+    availability_message: str
+
+
+class MountainWavesSimulationRecord(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    simulation_id: str
+    display_name: str
+    role: SimulationRole
+    world_id: Literal["mountain_waves"] = WORLD_ID
+    run_id: str
+    case_id: str
+    parent_simulation_id: str | None = None
+    parent_run_id: str | None = None
+    reference_simulation_id: str = MOIST_SIMULATION_ID
+    user_question: str | None = None
+    state: SimulationState
+    state_message: str
+    inspectable: bool
+    can_create_variation: bool
+    moist: bool
+    purpose: str
+    configuration: dict[str, Any] | None = None
+    differences: dict[str, list[dict[str, Any]]] = Field(default_factory=dict)
+    warnings: list[str] = Field(default_factory=list)
+    caveats: list[str] = Field(default_factory=list)
+    manifest_path: str | None = None
+    created_at: str | None = None
+    started_at: str | None = None
+    completed_at: str | None = None
+
+
+class MountainWavesLabSummary(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    active_run_count: int
+    packaged_run_count: int
+    completed_simulation_count: int
+    failed_run_count: int
+    total_variation_count: int
+
+
+class MountainWavesWorldDetail(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    world_id: Literal["mountain_waves"] = WORLD_ID
+    display_name: Literal["Mountain Waves"] = WORLD_DISPLAY_NAME
+    short_description: str = WORLD_DESCRIPTION
+    availability_state: AvailabilityState
+    availability_message: str
+    default_parent_simulation_id: str = MOIST_SIMULATION_ID
+    simulations: list[MountainWavesSimulationRecord]
+    activity: list[MountainWavesSimulationRecord]
+    history: list[MountainWavesSimulationRecord]
+    lab_summary: MountainWavesLabSummary
+    caveats: list[str] = Field(
+        default_factory=lambda: [
+            (
+                "The dry and moist built-ins use different scientific configurations "
+                "and are not a controlled pair."
+            ),
+            (
+                "Mountain Waves is an honest native two-dimensional x-z World; "
+                "singleton y is not a three-dimensional volume."
+            ),
+        ]
+    )
+
+    def summary(self) -> MountainWavesWorldSummary:
+        moist_reference = next(
+            (item for item in self.simulations if item.simulation_id == MOIST_SIMULATION_ID),
+            None,
+        )
+        return MountainWavesWorldSummary(
+            reference_available=bool(moist_reference and moist_reference.inspectable),
+            simulation_count=sum(item.inspectable for item in self.simulations),
+            active_run_count=self.lab_summary.active_run_count,
+            completed_uninspected_run_count=0,
+            availability_state=self.availability_state,
+            availability_message=self.availability_message,
+        )
+
+
+@dataclass(frozen=True)
+class _BuiltInSpec:
+    simulation_id: str
+    display_name: str
+    run_id: str
+    case_id: str
+    moist: bool
+    purpose: str
+    caveats: tuple[str, ...]
+
+
+_BUILT_INS = (
+    _BuiltInSpec(
+        simulation_id=DRY_SIMULATION_ID,
+        display_name="Dry Ridge — Wave Mechanics",
+        run_id=DRY_RUN_ID,
+        case_id=DRY_CASE_ID,
+        moist=False,
+        purpose=(
+            "See the terrain-forced gravity wave without cloud and inspect vertical "
+            "motion and temperature displacement."
+        ),
+        caveats=(
+            "This dry benchmark does not simulate moisture or cloud formation.",
+            "Its built-in analytic sounding is not exposed as an editable parent profile.",
+        ),
+    ),
+    _BuiltInSpec(
+        simulation_id=MOIST_SIMULATION_ID,
+        display_name="Boulder Windstorm — Moist Reference",
+        run_id=MOIST_RUN_ID,
+        case_id=MOIST_CASE_ID,
+        moist=True,
+        purpose=(
+            "Watch clear air form windward and lee-wave cloud, then use the "
+            "source-backed atmosphere as an experimental parent."
+        ),
+        caveats=(
+            (
+                "The run is a two-dimensional feasibility reference and was still "
+                "intensifying at 4,000 s."
+            ),
+            "It is not a controlled moisture variation of Dry Ridge.",
+        ),
+    ),
+)
+
+
+def mountain_waves_world_detail(settings: CloudChamberSettings) -> MountainWavesWorldDetail:
+    built_ins = [_built_in_record(settings, spec) for spec in _BUILT_INS]
+    variations = _variation_records(settings)
+    completed = [item for item in variations if item.inspectable]
+    simulations = [*built_ins, *completed]
+    active_states = {"queued", "running"}
+    activity = [
+        item for item in variations if item.state in active_states or item.state == "packaged"
+    ]
+    failed_count = sum(item.state in {"failed", "canceled"} for item in variations)
+    available_built_ins = sum(item.inspectable for item in built_ins)
+    if available_built_ins == 2:
+        availability: AvailabilityState = "available"
+        message = "Both built-in Simulations and the Mountain Waves Lab are available."
+    elif available_built_ins:
+        availability = "partial"
+        message = "One built-in Simulation is unavailable; the Lab remains available."
+    else:
+        availability = "unavailable"
+        message = (
+            "Built-in output is unavailable locally; the Lab remains available for "
+            "retained variations."
+        )
+    return MountainWavesWorldDetail(
+        availability_state=availability,
+        availability_message=message,
+        simulations=simulations,
+        activity=activity,
+        history=variations,
+        lab_summary=MountainWavesLabSummary(
+            active_run_count=sum(item.state in active_states for item in variations),
+            packaged_run_count=sum(item.state == "packaged" for item in variations),
+            completed_simulation_count=len(completed),
+            failed_run_count=failed_count,
+            total_variation_count=len(variations),
+        ),
+    )
+
+
+def mountain_waves_simulation(
+    settings: CloudChamberSettings, simulation_id: str
+) -> MountainWavesSimulationRecord | None:
+    world = mountain_waves_world_detail(settings)
+    return next(
+        (
+            item
+            for item in [*world.simulations, *world.history]
+            if item.simulation_id == simulation_id
+        ),
+        None,
+    )
+
+
+def mountain_waves_run_manifest(
+    settings: CloudChamberSettings, simulation_id: str
+) -> tuple[MountainWavesSimulationRecord, RunManifest, Path]:
+    record = mountain_waves_simulation(settings, simulation_id)
+    if record is None or record.manifest_path is None:
+        raise ValueError(f"Mountain Waves Simulation not found: {simulation_id}")
+    manifest_path = Path(record.manifest_path).expanduser()
+    try:
+        manifest = load_run_manifest(manifest_path)
+    except (OSError, RunManifestError) as exc:
+        raise ValueError(f"Mountain Waves manifest is unavailable: {simulation_id}") from exc
+    return record, manifest, manifest_path
+
+
+def _built_in_record(
+    settings: CloudChamberSettings, spec: _BuiltInSpec
+) -> MountainWavesSimulationRecord:
+    manifest_path = settings.runtime_home.expanduser() / "runs" / spec.run_id / "run_manifest.json"
+    base: dict[str, Any] = dict(
+        simulation_id=spec.simulation_id,
+        display_name=spec.display_name,
+        role="built_in",
+        run_id=spec.run_id,
+        case_id=spec.case_id,
+        moist=spec.moist,
+        purpose=spec.purpose,
+        caveats=list(spec.caveats),
+        manifest_path=str(manifest_path),
+    )
+    try:
+        manifest = load_run_manifest(manifest_path)
+    except OSError:
+        return MountainWavesSimulationRecord.model_validate(
+            {
+                **base,
+                "state": "unavailable",
+                "state_message": (
+                    "Preserved runtime evidence is not present in the configured runtime home."
+                ),
+                "inspectable": False,
+                "can_create_variation": False,
+            }
+        )
+    except RunManifestError:
+        return MountainWavesSimulationRecord.model_validate(
+            {
+                **base,
+                "state": "conflict",
+                "state_message": (
+                    "The preserved run manifest is unreadable or conflicts with the "
+                    "expected identity."
+                ),
+                "inspectable": False,
+                "can_create_variation": False,
+            }
+        )
+    if manifest.run_id != spec.run_id or manifest.scenario.id != spec.case_id:
+        return MountainWavesSimulationRecord.model_validate(
+            {
+                **base,
+                "state": "conflict",
+                "state_message": (
+                    "The preserved run identity does not match this built-in Simulation."
+                ),
+                "inspectable": False,
+                "can_create_variation": False,
+            }
+        )
+    inspectable = _manifest_is_inspectable(manifest)
+    return MountainWavesSimulationRecord.model_validate(
+        {
+            **base,
+            "state": (
+                "available" if inspectable else _state_from_lifecycle(manifest.lifecycle_state)
+            ),
+            "state_message": (
+                "Exact preserved output is available for terrain-aware inspection."
+                if inspectable
+                else (
+                    f"Preserved output is {manifest.lifecycle_state.value} and cannot be "
+                    "inspected yet."
+                )
+            ),
+            "inspectable": inspectable,
+            "can_create_variation": inspectable,
+            "configuration": _built_in_configuration(manifest, spec),
+            "warnings": list(manifest.outputs.runtime_warnings),
+            "created_at": manifest.created_at.isoformat(),
+            "started_at": _iso(manifest.execution.started_at),
+            "completed_at": _iso(manifest.execution.finished_at),
+        }
+    )
+
+
+def _variation_records(settings: CloudChamberSettings) -> list[MountainWavesSimulationRecord]:
+    runs_dir = settings.runtime_home.expanduser() / "runs"
+    if not runs_dir.exists():
+        return []
+    records: list[MountainWavesSimulationRecord] = []
+    for manifest_path in sorted(runs_dir.glob("*/run_manifest.json")):
+        try:
+            manifest = load_run_manifest(manifest_path)
+        except (OSError, RunManifestError):
+            continue
+        if manifest.run_configuration.get("cloud_world_id") != WORLD_ID:
+            continue
+        if manifest.lifecycle_state in {LifecycleState.QUEUED, LifecycleState.RUNNING}:
+            manifest = reconcile_completed_run_manifest(manifest_path, manifest)
+        record = _variation_record(manifest, manifest_path)
+        if record is not None:
+            records.append(record)
+    records.sort(key=lambda item: item.created_at or "", reverse=True)
+    return records
+
+
+def _variation_record(
+    manifest: RunManifest, manifest_path: Path
+) -> MountainWavesSimulationRecord | None:
+    configuration = manifest.run_configuration
+    simulation_id = _string(configuration.get("simulation_id"))
+    display_name = _string(configuration.get("simulation_display_name"))
+    if not simulation_id or not display_name:
+        return None
+    inspectable = _manifest_is_inspectable(manifest)
+    state = "available" if inspectable else _state_from_lifecycle(manifest.lifecycle_state)
+    exact_configuration = configuration.get("mountain_waves_configuration")
+    differences = configuration.get("configuration_difference")
+    warning_values = configuration.get("warnings")
+    return MountainWavesSimulationRecord(
+        simulation_id=simulation_id,
+        display_name=display_name,
+        role="variation",
+        run_id=manifest.run_id,
+        case_id=manifest.scenario.id,
+        parent_simulation_id=_string(configuration.get("parent_simulation_id")),
+        parent_run_id=_string(configuration.get("parent_run_id")),
+        user_question=_string(configuration.get("user_question")),
+        state=state,
+        state_message=_variation_state_message(manifest, inspectable),
+        inspectable=inspectable,
+        can_create_variation=inspectable and isinstance(exact_configuration, dict),
+        moist=True,
+        purpose=(
+            "Explore the retained configuration and use its exact state for another experiment."
+        ),
+        configuration=exact_configuration if isinstance(exact_configuration, dict) else None,
+        differences=(
+            {str(key): value for key, value in differences.items() if isinstance(value, list)}
+            if isinstance(differences, dict)
+            else {}
+        ),
+        warnings=(
+            [str(value) for value in warning_values]
+            if isinstance(warning_values, list)
+            else list(manifest.outputs.runtime_warnings)
+        ),
+        caveats=list(manifest.run_caveats),
+        manifest_path=str(manifest_path),
+        created_at=manifest.created_at.isoformat(),
+        started_at=_iso(manifest.execution.started_at),
+        completed_at=_iso(manifest.execution.finished_at),
+    )
+
+
+def _built_in_configuration(manifest: RunManifest, spec: _BuiltInSpec) -> dict[str, Any]:
+    configuration = manifest.run_configuration
+    return {
+        "duration_seconds": configuration.get("duration_seconds"),
+        "output_cadence_seconds": configuration.get("output_cadence_seconds"),
+        "domain": configuration.get("domain"),
+        "terrain": configuration.get("terrain")
+        or (
+            {"height_m": 2000.0, "half_width_m": 10000.0, "center_m": 500.0} if spec.moist else None
+        ),
+    }
+
+
+def _manifest_is_inspectable(manifest: RunManifest) -> bool:
+    if manifest.lifecycle_state not in {
+        LifecycleState.COMPLETED,
+        LifecycleState.INGESTED,
+        LifecycleState.SAVED,
+    }:
+        return False
+    return bool(
+        [
+            path
+            for path in manifest.outputs.netcdf_paths
+            if Path(path).name.startswith("cm1out_") and "stats" not in Path(path).name
+        ]
+    )
+
+
+def _state_from_lifecycle(state: LifecycleState) -> SimulationState:
+    if state == LifecycleState.PACKAGED:
+        return "packaged"
+    if state == LifecycleState.QUEUED:
+        return "queued"
+    if state == LifecycleState.RUNNING:
+        return "running"
+    if state == LifecycleState.CANCELED:
+        return "canceled"
+    if state == LifecycleState.FAILED:
+        return "failed"
+    return "unavailable"
+
+
+def _variation_state_message(manifest: RunManifest, inspectable: bool) -> str:
+    if inspectable:
+        return "CM1 completed with terrain-aware output ready for inspection."
+    return {
+        LifecycleState.PACKAGED: "Configuration is packaged and ready to run.",
+        LifecycleState.QUEUED: "Waiting for the local CM1 runner.",
+        LifecycleState.RUNNING: "CM1 is running locally.",
+        LifecycleState.FAILED: "The attempt failed and remains in Lab history.",
+        LifecycleState.CANCELED: "The attempt was canceled and remains in Lab history.",
+    }.get(manifest.lifecycle_state, "Output is not inspectable.")
+
+
+def _iso(value: Any) -> str | None:
+    return value.isoformat() if value is not None else None
+
+
+def _string(value: object) -> str | None:
+    return value if isinstance(value, str) and value else None

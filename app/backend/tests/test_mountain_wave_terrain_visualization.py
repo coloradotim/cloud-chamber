@@ -8,6 +8,7 @@ from cloud_chamber.mountain_wave_case import EXPECTED_OUTPUT_TIMES_SECONDS
 from cloud_chamber.mountain_wave_terrain_visualization import (
     MountainWaveTerrainVisualizationError,
     local_agl_m,
+    mountain_waves_frame_from_native_outputs,
     terrain_frame_from_native_outputs,
 )
 
@@ -114,6 +115,110 @@ def test_local_agl_uses_local_terrain_and_rejects_below_ground() -> None:
         local_agl_m(model_height_m=399.0, terrain_height_m=400.0)
 
 
+@pytest.mark.parametrize(
+    "field, expected_units",
+    [
+        ("cloud_over_wave", "m/s"),
+        ("w", "m/s"),
+        ("cloud_liquid", "g/kg"),
+        ("relative_humidity", "%"),
+        ("theta_perturbation", "K"),
+    ],
+)
+def test_mountain_waves_moist_fields_share_native_geometry_and_fixed_time_scale(
+    tmp_path: Path, field: str, expected_units: str
+) -> None:
+    paths, namelist = _write_world_histories(tmp_path, moist=True)
+
+    frame = mountain_waves_frame_from_native_outputs(
+        output_paths=paths,
+        namelist_path=namelist,
+        field=field,  # type: ignore[arg-type]
+        time_index=1,
+        run_id="moist-test",
+        case_label="Moist test",
+        implementation_commit="test-commit",
+        dry_case=False,
+        caveats=[],
+    )
+
+    assert frame.schema_version == "mountain_waves_explore_v1"
+    assert frame.times_seconds == [0, 200, 400]
+    assert frame.time_seconds == 200
+    assert frame.field.units == expected_units
+    assert frame.field.vertical_grid == "physical_scalar_levels"
+    assert frame.scale.fixed_across_all_times is True
+    assert frame.active_top_evidence.inactive_namelist_ztop_m == pytest.approx(19_000.0)
+    assert frame.active_top_evidence.all_sources_agree is True
+    assert frame.pointer_context is not None
+    assert frame.pointer_context.horizontal_wind_m_s[0][0] == pytest.approx(11.0)
+    assert frame.pointer_context.potential_temperature_k[0][0] == pytest.approx(285.2)
+    assert frame.pointer_context.cloud_liquid_g_kg is not None
+    assert frame.pointer_context.relative_humidity_percent is not None
+    assert frame.viewport is not None
+    assert frame.viewport.default_mode == "focus"
+    assert frame.viewport.focus_available is True
+    assert frame.viewport.focus.x_minimum_m == pytest.approx(-30_000.0)
+    assert frame.viewport.focus.x_maximum_m == pytest.approx(50_000.0)
+    assert frame.viewport.focus.z_maximum_m == pytest.approx(12_000.0)
+    assert frame.lens is not None
+    assert frame.lens.horizontal_wind_reference_m_s == pytest.approx(40.0)
+    assert frame.lens.vertical_velocity_neutral_threshold_m_s == pytest.approx(0.1)
+    assert frame.lens.potential_temperature_contour_interval_k == pytest.approx(10.0)
+    assert frame.lens.potential_temperature_contour_values_k == [290.0]
+    if field in {"cloud_over_wave", "w", "theta_perturbation"}:
+        assert frame.scale.minimum == pytest.approx(-frame.scale.maximum)
+        assert len(frame.scale.breakpoints) == 10
+        assert len(frame.scale.colors) == 11
+    if field == "cloud_over_wave":
+        assert frame.overlay is not None
+        assert frame.overlay.units == "g/kg"
+        assert frame.overlay.threshold == pytest.approx(0.001)
+        assert frame.overlay.maximum > frame.overlay.threshold
+    else:
+        assert frame.overlay is None
+
+
+def test_mountain_waves_dry_frame_rejects_moist_fields(tmp_path: Path) -> None:
+    paths, namelist = _write_world_histories(tmp_path, moist=False)
+
+    frame = mountain_waves_frame_from_native_outputs(
+        output_paths=paths,
+        namelist_path=namelist,
+        field="theta_perturbation",
+        time_index=2,
+        run_id="dry-test",
+        case_label="Dry test",
+        implementation_commit="test-commit",
+        dry_case=True,
+        caveats=["Dry."],
+    )
+    assert frame.dry_case is True
+    assert frame.field_options == ["w", "theta_perturbation"]
+    assert frame.pointer_context is not None
+    assert frame.pointer_context.horizontal_wind_m_s[1][2] == pytest.approx(37.0)
+    assert frame.pointer_context.potential_temperature_k[0][0] == pytest.approx(285.4)
+    assert frame.pointer_context.cloud_liquid_g_kg is None
+    assert frame.viewport is not None
+    assert frame.viewport.default_mode == "full"
+    assert frame.viewport.focus_available is False
+    assert frame.lens is not None
+    assert frame.lens.horizontal_wind_reference_m_s == pytest.approx(40.0)
+
+    with pytest.raises(MountainWaveTerrainVisualizationError, match="requires moist output"):
+        mountain_waves_frame_from_native_outputs(
+            output_paths=paths,
+            namelist_path=namelist,
+            field="relative_humidity",
+            time_index=0,
+            run_id="dry-test",
+            case_label="Dry test",
+            implementation_commit="test-commit",
+            dry_case=True,
+            caveats=[],
+        )
+
+
 def _write_native_histories(
     root: Path,
     *,
@@ -170,6 +275,102 @@ def _write_native_histories(
                     [expected_time + time_offset_seconds],
                     {"units": "seconds"},
                 ),
+                "xh": ("xh", xh_m / 1_000.0, {"units": "km"}),
+                "xf": ("xf", xf_m / 1_000.0, {"units": "km"}),
+                "yh": ("yh", [0.0], {"units": "km"}),
+                "zh": ("zh", nominal_scalar_m / 1_000.0, {"units": "km"}),
+                "zf": ("zf", nominal_full_m / 1_000.0, {"units": "km"}),
+                "one": ("one", [1]),
+            },
+        )
+        path = root / f"cm1out_{index + 1:06d}.nc"
+        dataset.to_netcdf(path)
+        paths.append(path)
+    return paths, namelist
+
+
+def _write_world_histories(root: Path, *, moist: bool) -> tuple[list[Path], Path]:
+    namelist = root / "world-namelist.input"
+    namelist.write_text(
+        """ &param0
+ nx = 3,
+ ny = 1,
+ nz = 2,
+ dx = 100000.0,
+ dy = 1000.0,
+ dz = 10000.0,
+ timax = 400.0,
+ tapfrq = 200.0,
+ stretch_z = 0,
+ ztop = 19000.0,
+ /
+"""
+    )
+    xh_m = np.asarray([-100_000.0, 0.0, 100_000.0])
+    xf_m = np.asarray([-150_000.0, -50_000.0, 50_000.0, 150_000.0])
+    terrain_m = np.asarray([0.0, 400.0, 100.0])
+    nominal_scalar_m = np.asarray([5_000.0, 15_000.0])
+    nominal_full_m = np.asarray([0.0, 10_000.0, 20_000.0])
+    scalar_height_m = (
+        terrain_m[None, :] + nominal_scalar_m[:, None] * (20_000.0 - terrain_m[None, :]) / 20_000.0
+    )
+    paths: list[Path] = []
+    for index, time_seconds in enumerate((0, 200, 400)):
+        theta = 285.0 + np.arange(6, dtype=np.float64).reshape(2, 1, 3) + index * 0.2
+        pressure = np.asarray([55_000.0, 15_000.0])[:, None, None] * np.ones((2, 1, 3))
+        scalar_w = np.asarray([[[-0.5, 0.0, 0.5]], [[-1.0, 0.25, 1.0]]], dtype=np.float64) * (
+            index + 1
+        )
+        scalar_u = (
+            np.asarray([[[10.0, 15.0, 20.0]], [[25.0, 30.0, 35.0]]], dtype=np.float64) + index
+        )
+        full_w = np.zeros((3, 1, 3), dtype=np.float64)
+        full_w[:2] = scalar_w
+        full_w[2] = scalar_w[-1]
+        data_vars: dict[str, tuple[tuple[str, ...], object, dict[str, str]]] = {
+            "zs": (("time", "yh", "xh"), terrain_m.reshape(1, 1, 3), {"units": "m"}),
+            "zhval": (
+                ("time", "zh", "yh", "xh"),
+                scalar_height_m.reshape(1, 2, 1, 3),
+                {"units": "m"},
+            ),
+            "th": (("time", "zh", "yh", "xh"), theta[None, ...], {"units": "K"}),
+            "prs": (
+                ("time", "zh", "yh", "xh"),
+                pressure[None, ...],
+                {"units": "Pa"},
+            ),
+            "winterp": (
+                ("time", "zh", "yh", "xh"),
+                scalar_w[None, ...],
+                {"units": "m/s"},
+            ),
+            "uinterp": (
+                ("time", "zh", "yh", "xh"),
+                scalar_u[None, ...],
+                {"units": "m/s"},
+            ),
+            "w": (("time", "zf", "yh", "xh"), full_w[None, ...], {"units": "m/s"}),
+            "ztop": (("one",), [20_000.0], {"units": "m"}),
+        }
+        if moist:
+            ql = np.zeros((2, 1, 3), dtype=np.float64)
+            ql[0, 0, 1] = 0.002 * (index + 1)
+            qv = np.full((2, 1, 3), 0.0025, dtype=np.float64)
+            data_vars["ql"] = (
+                ("time", "zh", "yh", "xh"),
+                ql[None, ...],
+                {"units": "kg/kg"},
+            )
+            data_vars["qv"] = (
+                ("time", "zh", "yh", "xh"),
+                qv[None, ...],
+                {"units": "kg/kg"},
+            )
+        dataset = xr.Dataset(
+            data_vars=data_vars,
+            coords={
+                "time": ("time", [time_seconds], {"units": "seconds"}),
                 "xh": ("xh", xh_m / 1_000.0, {"units": "km"}),
                 "xf": ("xf", xf_m / 1_000.0, {"units": "km"}),
                 "yh": ("yh", [0.0], {"units": "km"}),

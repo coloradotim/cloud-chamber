@@ -11,6 +11,10 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
+from cloud_chamber.mountain_waves_world import (
+    MountainWavesWorldSummary,
+    mountain_waves_world_detail,
+)
 from cloud_chamber.result_ingest import (
     ResultMetadata,
     list_result_metadata,
@@ -262,9 +266,14 @@ _LINEAGE_KEYS = {
 }
 
 
-def list_cloud_world_summaries(settings: CloudChamberSettings) -> list[CloudWorldSummary]:
-    """Return the single installed or partially available Trade Cumulus World."""
-    return [trade_cumulus_world_detail(settings).summary()]
+def list_cloud_world_summaries(
+    settings: CloudChamberSettings,
+) -> list[CloudWorldSummary | MountainWavesWorldSummary]:
+    """Return real Cloud Worlds without assigning one shared scientific framing."""
+    return [
+        trade_cumulus_world_detail(settings).summary(),
+        mountain_waves_world_detail(settings).summary(),
+    ]
 
 
 def trade_cumulus_world_detail(settings: CloudChamberSettings) -> TradeCumulusWorldDetail:

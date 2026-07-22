@@ -42,7 +42,25 @@ from cloud_chamber.local_run_queue import LocalRunQueueError, LocalRunQueueManag
 from cloud_chamber.mountain_wave_terrain_visualization import (
     MountainWaveTerrainField,
     MountainWaveTerrainVisualizationError,
+    mountain_waves_frame_from_native_outputs,
     preserved_mountain_wave_terrain_frame,
+)
+from cloud_chamber.mountain_waves_variations import (
+    MountainWavesVariationError,
+    MountainWavesVariationPackage,
+    MountainWavesVariationPreview,
+    MountainWavesVariationRequest,
+    MountainWavesVariationTemplate,
+    create_mountain_waves_variation,
+    mountain_waves_variation_template,
+    preflight_mountain_waves_variation,
+    preview_mountain_waves_variation,
+)
+from cloud_chamber.mountain_waves_world import (
+    MountainWavesWorldDetail,
+    MountainWavesWorldSummary,
+    mountain_waves_run_manifest,
+    mountain_waves_world_detail,
 )
 from cloud_chamber.observed_sounding import ObservedSoundingError, parse_igra_station_text
 from cloud_chamber.result_cards import (
@@ -555,8 +573,8 @@ def storage_inventory() -> dict[str, object]:
     return inventory.model_dump(mode="json")
 
 
-@app.get("/api/worlds", response_model=list[CloudWorldSummary])
-def list_worlds() -> list[CloudWorldSummary]:
+@app.get("/api/worlds", response_model=list[CloudWorldSummary | MountainWavesWorldSummary])
+def list_worlds() -> list[CloudWorldSummary | MountainWavesWorldSummary]:
     try:
         return list_cloud_world_summaries(load_settings())
     except (OSError, ValueError) as exc:
@@ -573,6 +591,101 @@ def get_trade_cumulus_world() -> TradeCumulusWorldDetail:
         raise HTTPException(
             status_code=500, detail="Trade Cumulus World data is unavailable."
         ) from exc
+
+
+@app.get("/api/worlds/mountain-waves", response_model=MountainWavesWorldDetail)
+def get_mountain_waves_world() -> MountainWavesWorldDetail:
+    try:
+        return mountain_waves_world_detail(load_settings())
+    except (OSError, ValueError) as exc:
+        raise HTTPException(
+            status_code=500, detail="Mountain Waves World data is unavailable."
+        ) from exc
+
+
+@app.get(
+    "/api/worlds/mountain-waves/variation-template",
+    response_model=MountainWavesVariationTemplate,
+)
+def get_mountain_waves_variation_template(
+    parent_simulation_id: str,
+) -> MountainWavesVariationTemplate:
+    try:
+        return mountain_waves_variation_template(load_settings(), parent_simulation_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except (OSError, MountainWavesVariationError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post(
+    "/api/worlds/mountain-waves/variations/preview",
+    response_model=MountainWavesVariationPreview,
+)
+def preview_mountain_waves_variation_request(
+    request: MountainWavesVariationRequest,
+) -> MountainWavesVariationPreview:
+    try:
+        return preview_mountain_waves_variation(load_settings(), request)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except (OSError, MountainWavesVariationError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post(
+    "/api/worlds/mountain-waves/variations",
+    response_model=MountainWavesVariationPackage,
+)
+def package_mountain_waves_variation(
+    request: MountainWavesVariationRequest,
+) -> MountainWavesVariationPackage:
+    try:
+        return create_mountain_waves_variation(load_settings(), request)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except (OSError, MountainWavesVariationError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/api/worlds/mountain-waves/variations/preflight")
+def preflight_mountain_waves_variation_request(request: LaunchRunRequest) -> dict[str, Any]:
+    try:
+        return preflight_mountain_waves_variation(Path(request.manifest_path).expanduser())
+    except (OSError, ValueError, MountainWavesVariationError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.get("/api/worlds/mountain-waves/simulations/{simulation_id}/frame")
+def get_mountain_waves_simulation_frame(
+    simulation_id: str,
+    field: MountainWaveTerrainField = "w",
+    time_index: int = 0,
+) -> dict[str, Any]:
+    try:
+        record, manifest, _manifest_path = mountain_waves_run_manifest(
+            load_settings(), simulation_id
+        )
+        if not record.inspectable:
+            raise MountainWaveTerrainVisualizationError(
+                f"Simulation {simulation_id} does not have inspectable completed output."
+            )
+        response = mountain_waves_frame_from_native_outputs(
+            output_paths=[Path(value).expanduser() for value in manifest.outputs.netcdf_paths],
+            namelist_path=Path(manifest.generated_inputs.namelist_input or "").expanduser(),
+            field=field,
+            time_index=time_index,
+            run_id=manifest.run_id,
+            case_label=record.display_name,
+            implementation_commit=manifest.app.commit or "unknown",
+            dry_case=not record.moist,
+            caveats=[*record.caveats, *record.warnings],
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except (OSError, MountainWaveTerrainVisualizationError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return response.model_dump(mode="json")
 
 
 @app.post("/api/storage/delete-run")
