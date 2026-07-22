@@ -29,7 +29,7 @@ test.describe("mocked smoke: Mountain Waves product path", () => {
     await expect(page.getByRole("heading", { name: /Change the terrain/ })).toBeVisible();
     await page.getByLabel("Variation name").fill("Broader Ridge");
     await page.getByLabel("Half-width").fill("11000");
-    await expect(page.getByText("1 exact changes")).toBeVisible();
+    await expect(page.getByText("1 exact change")).toBeVisible();
     await page.getByRole("button", { name: "Create and queue" }).click();
 
     await expect(page.getByText(/Queued · Waiting for the local CM1 runner/)).toBeVisible();

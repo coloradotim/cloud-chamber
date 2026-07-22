@@ -139,7 +139,7 @@ describe("MountainWavesVariationEditor", () => {
     expect(await screen.findByRole("heading", { name: /Change the terrain/ })).toBeInTheDocument();
     await screen.findByText("0 exact changes");
     fireEvent.change(screen.getByLabelText("Height"), { target: { value: "1200" } });
-    expect(await screen.findByText("1 exact changes")).toBeInTheDocument();
+    expect(await screen.findByText("1 exact change")).toBeInTheDocument();
     expect(screen.getByText("Ridge height")).toBeInTheDocument();
 
     fireEvent.change(screen.getByLabelText("Variation name"), {

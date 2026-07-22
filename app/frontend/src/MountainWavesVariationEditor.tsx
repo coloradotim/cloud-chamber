@@ -552,7 +552,11 @@ export function MountainWavesVariationEditor({
           <header>
             <div>
               <p className="eyebrow">Change summary</p>
-              <h3>{previewing ? "Updating..." : `${differenceCount} exact changes`}</h3>
+              <h3>
+                {previewing
+                  ? "Updating..."
+                  : `${differenceCount} exact ${differenceCount === 1 ? "change" : "changes"}`}
+              </h3>
             </div>
             {preview && preview.blocking_errors.length === 0 && (
               <span className="technical-state available">Ready</span>
