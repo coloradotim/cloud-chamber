@@ -384,6 +384,17 @@ def test_evaluator_reads_every_tiny_native_field_and_renders_report(
     automated_evidence = evaluate_supercell_run(settings=settings, package=package)
     assert automated_evidence.final_disposition == "bounded_benchmark_correction_required"
 
+    post_run_evidence = package.package_dir / supercell_benchmark.EVIDENCE_FILENAME
+    post_run_evidence.write_bytes(b"post-run evidence")
+    review_dir = package.package_dir / "gate_b_spatial_review"
+    review_dir.mkdir()
+    (review_dir / "checkpoint.png").write_bytes(b"post-run spatial review")
+    retained_runtime_bytes = sum(
+        path.stat().st_size
+        for path in package.package_dir.iterdir()
+        if path.is_file() and path != post_run_evidence
+    ) + sum(path.stat().st_size for path in (package.package_dir / "logs").iterdir())
+
     evidence = evaluate_supercell_run(
         settings=settings,
         package=package,
@@ -395,6 +406,7 @@ def test_evaluator_reads_every_tiny_native_field_and_renders_report(
     assert evidence.implementation_commit == "abc123"
     assert evidence.evaluation_commit == "abc123"
     assert evidence.integrity_checks["all_required_fields_finite"] is True
+    assert evidence.runtime_integrity["artifact_bytes"]["total"] == retained_runtime_bytes
     assert (
         evidence.rotation_and_organization[
             "concurrent_mature_convection_and_rotating_updraft_evidence"

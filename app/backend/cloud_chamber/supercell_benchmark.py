@@ -49,6 +49,7 @@ from cloud_chamber.settings import CloudChamberSettings, discover_cm1
 CASE_ID = "cm1_r21_1_quarter_circle_supercell_official_v0"
 SCENARIO_ID = CASE_ID
 EVIDENCE_VERSION = "supercell_gate_b_v1"
+EVIDENCE_FILENAME = "supercell_gate_b_evidence.json"
 CM1_RELEASE = "21.1"
 CM1_OFFICIAL_COMMIT = "0f734f64efa89a684963a66d2ac32db67617912b"
 CM1_SOURCE_MANIFEST_SHA256 = "fbe2367dfcd6d8c55cac4bd03362d8d49f13f80cebd13b36230c20d71119a84e"
@@ -1434,7 +1435,12 @@ def _runtime_integrity(
     wall: float | None = None
     if manifest.execution.started_at is not None and manifest.execution.finished_at is not None:
         wall = (manifest.execution.finished_at - manifest.execution.started_at).total_seconds()
-    files = [path for path in package.package_dir.rglob("*") if path.is_file()]
+    files = [
+        path
+        for path in package.package_dir.iterdir()
+        if path.is_file() and path.name != EVIDENCE_FILENAME
+    ]
+    files.extend(path for path in (stdout_path, stderr_path) if path.is_file())
     return {
         "execution_mode": "single_local_non_mpi_process",
         "command": ["configured_cm1_run_directory/cm1.exe"],

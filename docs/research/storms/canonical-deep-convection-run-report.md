@@ -15,7 +15,7 @@ Decision question: does the stock CM1 r21.1 quarter-circle benchmark produce a t
 
 ## 3. Implementation and report commits
 
-The package and process used implementation commit `b465c35aa39a54bca46a869668da38caa45d2556`. The completed output was evaluated at `96e6fa221247c3c815dd5619df0a294f561e26cb`. This report is committed later and does not alter the executed package or retained output.
+The package and process used implementation commit `b465c35aa39a54bca46a869668da38caa45d2556`. The completed output was evaluated at `5d87575a78b6e0e083790b24e1aa1197dc3288e7`. This report is committed later and does not alter the executed package or retained output.
 
 ## 4. CM1 provenance and controlling hashes
 
@@ -1061,7 +1061,7 @@ Materially evolving hydrometeor categories: qc, qr, qi, qs, qg. `qg`/`ncg` are t
 | 105 | 1.7815e+06 | 1.3067e+05 | 3.8717e+05 | 60821 |
 | 120 | 1.7859e+06 | 1.2689e+05 | 4.0558e+05 | 86277 |
 
-## 14. Vorticity, updraft helicity, swaths, and organized rotation
+## 14. Concurrent convection, rotating-updraft evidence, and swaths
 
 | Time (min) | Primary w | zvort at primary w | zvort max | UH max | Rotating-updraft cells |
 |---:|---:|---:|---:|---:|---:|
@@ -1075,27 +1075,14 @@ Materially evolving hydrometeor categories: qc, qr, qi, qs, qg. `qg`/`ncg` are t
 | 105 | 59.2 | 0.0156 | 0.0307 | 752 | 949 |
 | 120 | 55.7 | 0.0107 | 0.0229 | 661 | 998 |
 
-Joint mature-frame screen: [2700.0, 3600.0, 4500.0, 5400.0, 6300.0, 7200.0] s. Sustained organized rotation: True. This combines structure, signed motion, vorticity collocation, UH, reflectivity, rain, and hydrometeors rather than approving one maximum.
+Automated concurrent-evidence screen: [2700.0, 3600.0, 4500.0, 5400.0, 6300.0, 7200.0] s. Concurrent mature convection and rotating-updraft evidence: True. The screen combines independent domain-wide w, reflectivity, rain, and UH checks with grid-cell w-positive-zvort collocation. It does not establish same-object continuity, UH collocation, or precipitation/reflectivity organization.
 
 ### Native and translated surface-product maxima
 
+The raw t=0 fields remain in the native integrity inventory. They are excluded below because accumulated/swath products are not physical evolution evidence at initialization; uniform -1000 and 200000 values are source-consistent sentinel-like initial states for the affected extrema products.
+
 | Time (min) | Product | Maximum | Nonzero cells |
 |---:|---|---:|---:|
-| 0 | `sws` | 0 | 0 |
-| 0 | `svs` | -1000 | 14400 |
-| 0 | `sps` | 2e+05 | 14400 |
-| 0 | `srs` | 0 | 0 |
-| 0 | `sgs` | 0 | 0 |
-| 0 | `sus` | -1000 | 14400 |
-| 0 | `shs` | 0 | 0 |
-| 0 | `rain2` | 0 | 0 |
-| 0 | `sws2` | 0 | 0 |
-| 0 | `svs2` | -1000 | 14400 |
-| 0 | `sps2` | 2e+05 | 14400 |
-| 0 | `srs2` | 0 | 0 |
-| 0 | `sgs2` | 0 | 0 |
-| 0 | `sus2` | -1000 | 14400 |
-| 0 | `shs2` | 0 | 0 |
 | 15 | `sws` | 2.3375 | 14400 |
 | 15 | `svs` | 0.00015609 | 14149 |
 | 15 | `sps` | -0.10156 | 14400 |
@@ -1217,12 +1204,42 @@ Joint mature-frame screen: [2700.0, 3600.0, 4500.0, 5400.0, 6300.0, 7200.0] s. S
 | 120 | `sus2` | 37.977 | 14400 |
 | 120 | `shs2` | 780.86 | 14398 |
 
-## 15. Structural checkpoints near 45, 75/90, and 120 minutes
+## 15. Structural checkpoints and manual spatial examination
 
 - **45 min:** primary scalar w 49 m/s at {'x_m': -7500.000476837158, 'y_m': 5500.000476837158, 'z_m': 10250.000953674316}; max UH 663 m2/s2; max dBZ 67.2; rain-positive cells 707.
 - **75 min:** primary scalar w 60.1 m/s at {'x_m': -7500.000476837158, 'y_m': 2500.0, 'z_m': 10250.000953674316}; max UH 702 m2/s2; max dBZ 69.5; rain-positive cells 2669.
 - **90 min:** primary scalar w 58.7 m/s at {'x_m': -6500.000476837158, 'y_m': -1500.0001192092896, 'z_m': 10250.000953674316}; max UH 628 m2/s2; max dBZ 67.6; rain-positive cells 4464.
 - **120 min:** primary scalar w 55.7 m/s at {'x_m': -1500.0001192092896, 'y_m': -11500.000953674316, 'z_m': 9250.0}; max UH 661 m2/s2; max dBZ 67.7; rain-positive cells 8384.
+
+### Manual spatial examination
+
+- Reviewer: `codex_retained_output_manual_review`
+- Reviewed at: `2026-07-22T15:28:30+00:00`
+- Packet manifest: `packet_manifest.json` (`6d3b830c16ad4f63ed5f55961d5f0f37a05bc6adffa486a41b76005edb5859c3`)
+- Packet files: `supercell-spatial-review-045min.png`, `supercell-spatial-review-075min.png`, `supercell-spatial-review-090min.png`, `supercell-spatial-review-120min.png`
+- Judgment: `supports_coherent_persistent_rotating_supercell`
+- Initiation: Initiation occurs before the first required packet checkpoint and is not spatially resolved by this packet. At 45 minutes, the retained output directly shows an established deep convective storm with a compact rotating updraft and organized reflectivity.
+- Splitting/cell multiplicity: The 75-, 90-, and 120-minute plan views directly show secondary updraft-helicity and vertical-vorticity structures north of the marked primary storm. This is evidence of cell multiplicity; the four saved frames do not by themselves establish parentage or a continuous split track.
+- Persistence: Across 45, 75, 90, and 120 minutes, the marked primary updraft follows a spatially coherent track from approximately (-7.5, 5.5) km to (-1.5, -11.5) km while remaining embedded in deep condensate and reflectivity. Persistence between the saved checkpoints is inferred from that ordered evolution rather than directly observed continuously.
+- Rotation/updraft relationship: At every checkpoint, the primary updraft marker lies within or immediately adjacent to the dominant positive 2-5 km updraft-helicity maximum and the strongest cyclonic vertical-vorticity contours at 3.25 km. The sections show a deep updraft column through the primary storm at each time.
+- Precipitation organization: Composite reflectivity remains organized around the primary storm and expands into multiple high-reflectivity lobes by 120 minutes. The accumulated-rain field forms a continuous swath along the storm's path, with secondary maxima consistent with the later multicell structure.
+- Boundary separation: The marked primary storm remains well inside the plotted 120 km by 120 km domain at all four checkpoints, with no visible contact between the primary updraft and a lateral model boundary. This supports interpreting the primary structure as interior-domain convection rather than boundary contamination.
+- Upper-level/damping interaction: The x-z and y-z sections directly show condensate, reflectivity, and vertical-motion structure reaching the 15 km lower edge of the Rayleigh damping layer, with some weak structure extending above it. The packet demonstrates overlap with the damping region but cannot determine whether damping materially altered storm intensity or organization.
+
+Directly visible:
+
+- One dominant rotating primary updraft is colocated with positive updraft helicity and cyclonic vertical vorticity at all four checkpoints.
+- The primary updraft remains deep and embedded in condensate and reflectivity from 45 through 120 minutes.
+- Secondary rotating and convective structures are present by 75 minutes and become more numerous by 120 minutes.
+- An accumulated-rain swath and increasingly complex reflectivity structure follow the storm evolution.
+- Storm-top condensate, reflectivity, and vertical motion reach the lower edge of the 15-20 km damping layer.
+
+Inferred or intentionally unresolved:
+
+- Continuous object identity between saved checkpoints is inferred from the ordered primary-updraft track and associated spatial fields.
+- The secondary cells may reflect splitting or later cell generation, but their parentage is not established by four snapshots.
+- The packet does not establish a causal effect of the Rayleigh damping layer on storm structure.
+- The manual structural judgment applies to this retained benchmark run and does not validate a general storm recipe or product capability.
 
 The 15-minute history cadence supports 45, 75/90, and 120-minute inspection. It does not support claims of exact 40- or 80-minute figure reproduction.
 
@@ -1246,7 +1263,7 @@ Vertical motion and condensate maxima were recorded separately below 15 km and i
 
 ## 17. Runtime integrity, storage, warnings, and cost
 
-The process ran for 552.652 s and retained 186,849,921 bytes. History output used 184,178,903 bytes; statistics used 1,052,565; logs used 779,923. Floating-point flags: ['IEEE_UNDERFLOW_FLAG']. Normal termination and finite required fields were both verified. Peak memory was not captured by the current launcher.
+The process ran for 552.652 s and retained 192,538,989 bytes. History output used 184,178,903 bytes; statistics used 1,052,565; logs used 779,923. Floating-point flags: ['IEEE_UNDERFLOW_FLAG']. Normal termination and finite required fields were both verified. Peak memory was not captured by the current launcher.
 
 ## 18. Qualitative lineage and stock-versus-paper differences
 
@@ -1258,7 +1275,7 @@ This gate establishes mechanics and practical cost for one source-locked storm b
 
 ## 20. Unresolved questions
 
-- PM/scientific review must inspect the retained spatial evidence before accepting the structural judgment.
+- PM/scientific review must inspect the attached hashed spatial packet before accepting the recorded manual structural judgment.
 - The launcher does not currently record peak memory.
 - The source supplies no pointwise boundary- or damping-contamination tolerance.
 - A later gate would need to define examination, not rerun or tune this benchmark.
