@@ -15,7 +15,7 @@ Decision question: does the stock CM1 r21.1 quarter-circle benchmark produce a t
 
 ## 3. Implementation and report commits
 
-The package and process used implementation commit `b465c35aa39a54bca46a869668da38caa45d2556`. The completed output was evaluated at `5d87575a78b6e0e083790b24e1aa1197dc3288e7`. This report is committed later and does not alter the executed package or retained output.
+The package and process used implementation commit `b465c35aa39a54bca46a869668da38caa45d2556`. The completed output was evaluated at `bc55d643f58f67cdfb05347c6fcceb4c606abcb4`. This report is committed later and does not alter the executed package or retained output.
 
 ## 4. CM1 provenance and controlling hashes
 
@@ -1263,7 +1263,7 @@ Vertical motion and condensate maxima were recorded separately below 15 km and i
 
 ## 17. Runtime integrity, storage, warnings, and cost
 
-The process ran for 552.652 s and retained 192,538,989 bytes. History output used 184,178,903 bytes; statistics used 1,052,565; logs used 779,923. Floating-point flags: ['IEEE_UNDERFLOW_FLAG']. Normal termination and finite required fields were both verified. Peak memory was not captured by the current launcher.
+The process ran for 552.652 s and retained 186,144,198 bytes. History output used 184,178,903 bytes; statistics used 1,052,565; logs used 779,923. Floating-point flags: ['IEEE_UNDERFLOW_FLAG']. Normal termination and finite required fields were both verified. Peak memory was not captured by the current launcher.
 
 ## 18. Qualitative lineage and stock-versus-paper differences
 
