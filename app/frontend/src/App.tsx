@@ -4,6 +4,8 @@ import type { CSSProperties, FormEvent } from "react";
 import "./App.css";
 import { CloudWorldsHome } from "./CloudWorldsHome";
 import { ExploreInspector, IntegratedExploreWorkspace } from "./IntegratedExploreWorkspace";
+import { MountainWavesExplore } from "./MountainWavesExplore";
+import { type MountainWavesSimulation, MountainWavesWorld } from "./MountainWavesWorld";
 import {
   TradeCumulusComparisonStory,
   type TradeCumulusComparisonStoryResponse,
@@ -1269,7 +1271,13 @@ type DeleteResultResponse = {
 };
 
 type WorkspaceSection = "build" | "results" | "explore";
-type ProductLocation = "worlds" | "world" | "explore" | "comparison";
+type ProductLocation =
+  | "worlds"
+  | "world"
+  | "explore"
+  | "comparison"
+  | "mountain-world"
+  | "mountain-explore";
 type WorldExploreContext =
   | { kind: "simulation"; displayName: string }
   | { kind: "lab_result"; displayName: string };
@@ -2288,6 +2296,8 @@ async function responseError(response: Response, fallback: string): Promise<stri
 
 export function App() {
   const [productLocation, setProductLocation] = useState<ProductLocation>("worlds");
+  const [mountainWavesSimulation, setMountainWavesSimulation] =
+    useState<MountainWavesSimulation | null>(null);
   const [worldSection, setWorldSection] = useState<TradeCumulusWorldSection>("overview");
   const [worldLabSection, setWorldLabSection] = useState<TradeCumulusLabSection>("results");
   const [worldDetail, setWorldDetail] = useState<TradeCumulusWorldDetail | null>(null);
@@ -4209,7 +4219,13 @@ export function App() {
   );
 
   return (
-    <main className={`app-shell${productLocation === "explore" ? " app-shell-explore" : ""}`}>
+    <main
+      className={`app-shell${
+        productLocation === "explore" || productLocation === "mountain-explore"
+          ? " app-shell-explore"
+          : ""
+      }`}
+    >
       <header className="topbar">
         <div className="brand-mark">
           <h1>Cloud Chamber</h1>
@@ -4231,6 +4247,10 @@ export function App() {
             setWorldSection("overview");
             setProductLocation("world");
           }}
+          onEnterMountainWaves={() => {
+            setMountainWavesSimulation(null);
+            setProductLocation("mountain-world");
+          }}
           fallback={legacyWorkspace}
         />
       )}
@@ -4248,6 +4268,28 @@ export function App() {
           buildContent={buildWorkspace}
           resultsContent={resultsWorkspace}
         />
+      )}
+
+      {productLocation === "mountain-world" && (
+        <MountainWavesWorld
+          onBackToWorlds={() => setProductLocation("worlds")}
+          onExploreSimulation={(simulation) => {
+            setMountainWavesSimulation(simulation);
+            setProductLocation("mountain-explore");
+          }}
+        />
+      )}
+
+      {productLocation === "mountain-explore" && mountainWavesSimulation && (
+        <section
+          className="world-context-workspace"
+          aria-label={`${mountainWavesSimulation.display_name} workspace`}
+        >
+          <MountainWavesExplore
+            simulation={mountainWavesSimulation}
+            onBack={() => setProductLocation("mountain-world")}
+          />
+        </section>
       )}
 
       {(productLocation === "explore" || productLocation === "comparison") && (

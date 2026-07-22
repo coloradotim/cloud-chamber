@@ -1,6 +1,6 @@
 import { type ReactNode, useCallback, useEffect, useState } from "react";
 
-export type CloudWorldSummary = {
+export type TradeCumulusWorldSummary = {
   world_id: "trade_cumulus";
   display_name: "Trade Cumulus";
   status: "mvp_candidate";
@@ -17,6 +17,24 @@ export type CloudWorldSummary = {
   availability_message: string;
 };
 
+export type MountainWavesWorldSummary = {
+  world_id: "mountain_waves";
+  display_name: "Mountain Waves";
+  short_description: string;
+  reference_simulation_id: "mountain_waves_boulder_moist_reference";
+  reference_available: boolean;
+  simulation_count: number;
+  saved_view_count: 0;
+  saved_comparison_count: 0;
+  featured_comparison_count: 0;
+  active_run_count: number;
+  completed_uninspected_run_count: number;
+  availability_state: "available" | "partial" | "unavailable" | "conflict";
+  availability_message: string;
+};
+
+export type CloudWorldSummary = TradeCumulusWorldSummary | MountainWavesWorldSummary;
+
 type LoadState =
   | { status: "loading"; worlds: CloudWorldSummary[]; error: null }
   | { status: "loaded"; worlds: CloudWorldSummary[]; error: null }
@@ -24,9 +42,11 @@ type LoadState =
 
 export function CloudWorldsHome({
   onEnterTradeCumulus,
+  onEnterMountainWaves,
   fallback,
 }: {
   onEnterTradeCumulus: () => void;
+  onEnterMountainWaves: () => void;
   fallback?: ReactNode;
 }) {
   const [loadState, setLoadState] = useState<LoadState>({
@@ -85,61 +105,77 @@ export function CloudWorldsHome({
     );
   }
 
-  const tradeCumulus = loadState.worlds[0];
   return (
     <section className="worlds-home" aria-labelledby="cloud-worlds-title">
       <WorldsHeading />
-      {tradeCumulus ? (
-        <article className="world-card" aria-labelledby="trade-cumulus-world-title">
-          <div className="world-card-main">
-            <div className="world-card-heading">
-              <div>
-                <p className="eyebrow">Installed World</p>
-                <h2 id="trade-cumulus-world-title">{tradeCumulus.display_name}</h2>
-              </div>
-              {tradeCumulus.availability_state !== "available" && (
-                <span className={`world-availability ${tradeCumulus.availability_state}`}>
-                  {availabilityLabel(tradeCumulus.availability_state)}
-                </span>
-              )}
-            </div>
-            <p className="world-description">{tradeCumulus.short_description}</p>
-            {tradeCumulus.availability_state !== "available" && (
-              <p className="world-availability-message">{tradeCumulus.availability_message}</p>
-            )}
-          </div>
-
-          <dl className="world-card-metrics">
-            <div>
-              <dt>Reference</dt>
-              <dd>{tradeCumulus.reference_available ? "Canonical BOMEX" : "Unavailable"}</dd>
-            </div>
-            <div>
-              <dt>Simulations</dt>
-              <dd>{tradeCumulus.simulation_count}</dd>
-            </div>
-            <div>
-              <dt>Comparisons</dt>
-              <dd>{tradeCumulus.saved_comparison_count}</dd>
-            </div>
-            <div>
-              <dt>Lab</dt>
-              <dd>{labSummary(tradeCumulus)}</dd>
-            </div>
-          </dl>
-
-          <div className="world-card-action">
-            <button type="button" onClick={onEnterTradeCumulus}>
-              Enter Trade Cumulus
-            </button>
-          </div>
-        </article>
+      {loadState.worlds.length > 0 ? (
+        <div className="world-card-list">
+          {loadState.worlds.map((world) => (
+            <WorldCard
+              key={world.world_id}
+              world={world}
+              onEnter={
+                world.world_id === "trade_cumulus" ? onEnterTradeCumulus : onEnterMountainWaves
+              }
+            />
+          ))}
+        </div>
       ) : (
         <section className="status-panel">
           <p>No Cloud Worlds are installed.</p>
         </section>
       )}
     </section>
+  );
+}
+
+function WorldCard({ world, onEnter }: { world: CloudWorldSummary; onEnter: () => void }) {
+  const titleId = `${world.world_id}-world-title`;
+  return (
+    <article className="world-card" aria-labelledby={titleId}>
+      <div className="world-card-main">
+        <div className="world-card-heading">
+          <div>
+            <p className="eyebrow">Cloud World</p>
+            <h2 id={titleId}>{world.display_name}</h2>
+          </div>
+          {world.availability_state !== "available" && (
+            <span className={`world-availability ${world.availability_state}`}>
+              {availabilityLabel(world.availability_state)}
+            </span>
+          )}
+        </div>
+        <p className="world-description">{world.short_description}</p>
+        {world.availability_state !== "available" && (
+          <p className="world-availability-message">{world.availability_message}</p>
+        )}
+      </div>
+
+      <dl className="world-card-metrics">
+        <div>
+          <dt>Reference</dt>
+          <dd>{referenceLabel(world)}</dd>
+        </div>
+        <div>
+          <dt>Simulations</dt>
+          <dd>{world.simulation_count}</dd>
+        </div>
+        <div>
+          <dt>Comparisons</dt>
+          <dd>{world.saved_comparison_count}</dd>
+        </div>
+        <div>
+          <dt>Lab</dt>
+          <dd>{labSummary(world)}</dd>
+        </div>
+      </dl>
+
+      <div className="world-card-action">
+        <button type="button" onClick={onEnter}>
+          Enter {world.display_name}
+        </button>
+      </div>
+    </article>
   );
 }
 
@@ -170,8 +206,13 @@ function labSummary(world: CloudWorldSummary): string {
   return "Idle";
 }
 
+function referenceLabel(world: CloudWorldSummary): string {
+  if (!world.reference_available) return "Unavailable";
+  return world.world_id === "trade_cumulus" ? "Canonical BOMEX" : "Boulder Windstorm";
+}
+
 function validateWorldSummaries(payload: unknown): CloudWorldSummary[] {
-  if (!Array.isArray(payload) || payload.length !== 1 || !isWorldSummary(payload[0])) {
+  if (!Array.isArray(payload) || payload.length === 0 || !payload.every(isWorldSummary)) {
     throw new Error("Cloud Worlds response does not match the required contract.");
   }
   return payload;
@@ -179,6 +220,24 @@ function validateWorldSummaries(payload: unknown): CloudWorldSummary[] {
 
 function isWorldSummary(value: unknown): value is CloudWorldSummary {
   if (!isRecord(value)) return false;
+  if (value.world_id === "mountain_waves") {
+    return (
+      value.display_name === "Mountain Waves" &&
+      typeof value.short_description === "string" &&
+      value.reference_simulation_id === "mountain_waves_boulder_moist_reference" &&
+      typeof value.reference_available === "boolean" &&
+      isNonnegativeNumber(value.simulation_count) &&
+      value.saved_view_count === 0 &&
+      value.saved_comparison_count === 0 &&
+      value.featured_comparison_count === 0 &&
+      isNonnegativeNumber(value.active_run_count) &&
+      isNonnegativeNumber(value.completed_uninspected_run_count) &&
+      ["available", "partial", "unavailable", "conflict"].includes(
+        String(value.availability_state),
+      ) &&
+      typeof value.availability_message === "string"
+    );
+  }
   return (
     value.world_id === "trade_cumulus" &&
     value.display_name === "Trade Cumulus" &&

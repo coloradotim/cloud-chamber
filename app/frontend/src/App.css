@@ -37,6 +37,792 @@
   text-rendering: optimizeLegibility;
 }
 
+.world-card-list {
+  display: grid;
+  gap: 0.8rem;
+}
+
+.mountain-waves-overview-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.mountain-waves-variation-editor {
+  display: grid;
+  gap: 1rem;
+}
+
+.variation-editor-header {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 1.2rem;
+}
+
+.variation-editor-header h3,
+.variation-editor-header p {
+  margin: 0;
+}
+
+.variation-editor-header > div {
+  display: grid;
+  gap: 0.3rem;
+  max-width: 54rem;
+}
+
+.variation-editor-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(19rem, 24rem);
+  gap: 1rem;
+  align-items: start;
+}
+
+.variation-editor-main {
+  display: grid;
+  gap: 0.8rem;
+  min-width: 0;
+}
+
+.variation-section {
+  display: grid;
+  gap: 0.65rem;
+  min-width: 0;
+  margin: 0;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  padding: 0.8rem;
+  background: var(--color-surface);
+}
+
+.variation-section legend {
+  padding: 0 0.25rem;
+  color: var(--color-text-primary);
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
+.variation-section label,
+.number-field {
+  display: grid;
+  gap: 0.28rem;
+  min-width: 0;
+  color: var(--color-text-primary);
+  font-size: 0.72rem;
+  font-weight: 800;
+}
+
+.variation-section input,
+.variation-section select {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+
+.variation-identity-section {
+  grid-template-columns: minmax(14rem, 0.85fr) minmax(15rem, 1fr) minmax(15rem, 1fr);
+  align-items: end;
+}
+
+.variation-question-field span {
+  color: var(--color-text-muted);
+  font-weight: 500;
+}
+
+.variation-parent-source {
+  grid-column: 1 / -1;
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: 0.68rem;
+}
+
+.variation-physical-grid {
+  display: grid;
+  grid-template-columns: minmax(22rem, 0.9fr) minmax(24rem, 1.1fr);
+  gap: 0.8rem;
+}
+
+.compact-field-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.55rem;
+}
+
+.number-input-wrap {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  overflow: hidden;
+  border: 1px solid var(--color-border-strong);
+  border-radius: 4px;
+  background: #fff;
+}
+
+.number-input-wrap input {
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+.number-input-wrap small {
+  padding: 0 0.48rem;
+  color: var(--color-text-muted);
+  font-size: 0.68rem;
+  font-weight: 700;
+}
+
+.terrain-preview-svg {
+  width: 100%;
+  height: 6.4rem;
+  border-top: 1px solid var(--color-border);
+}
+
+.terrain-preview-svg path {
+  fill: #41515b;
+}
+
+.terrain-preview-svg line {
+  stroke: var(--color-border-strong);
+}
+
+.terrain-preview-placeholder {
+  height: 6.4rem;
+  border-top: 1px solid var(--color-border);
+}
+
+.variation-profile-transforms {
+  align-content: start;
+}
+
+.profile-transform-row {
+  display: grid;
+  grid-template-columns: minmax(8rem, 1fr) minmax(8rem, 1fr) auto;
+  gap: 0.55rem;
+  align-items: end;
+}
+
+.moisture-transform-row {
+  grid-template-columns: minmax(8rem, 1fr) auto auto;
+}
+
+.profile-transform-row button {
+  min-height: 2.2rem;
+}
+
+.variation-profile-transforms .control-help {
+  margin: 0;
+}
+
+.stability-summary {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.6rem;
+  border-top: 1px solid var(--color-border);
+  padding-top: 0.55rem;
+  color: var(--color-text-muted);
+  font-size: 0.7rem;
+}
+
+.stability-summary strong {
+  color: var(--color-text-primary);
+}
+
+.variation-time-section {
+  grid-template-columns: minmax(10rem, 1fr) minmax(10rem, 1fr) auto;
+  align-items: end;
+}
+
+.variation-output-count {
+  align-self: center;
+  color: var(--color-text-muted);
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
+.variation-advanced {
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  padding: 0.75rem 0.8rem;
+  background: var(--color-surface);
+}
+
+.variation-advanced summary {
+  color: var(--color-text-primary);
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.variation-advanced > p {
+  max-width: 62rem;
+  color: var(--color-text-muted);
+  font-size: 0.75rem;
+}
+
+.variation-advanced table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.72rem;
+}
+
+.variation-advanced th,
+.variation-advanced td {
+  border-top: 1px solid var(--color-border);
+  padding: 0.35rem 0.45rem;
+  text-align: right;
+}
+
+.variation-advanced th {
+  color: var(--color-text-muted);
+  font-size: 0.65rem;
+}
+
+.variation-advanced input {
+  width: 7rem;
+  min-height: 1.9rem;
+  padding: 0.25rem 0.35rem;
+  text-align: right;
+}
+
+.variation-preview {
+  position: sticky;
+  top: 0.8rem;
+  display: grid;
+  gap: 0.65rem;
+  max-height: calc(100vh - 7rem);
+  overflow-y: auto;
+  border-left: 1px solid var(--color-border-strong);
+  padding-left: 1rem;
+  scrollbar-gutter: stable;
+}
+
+.variation-preview > header,
+.variation-difference-groups section > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.variation-preview h3,
+.variation-preview p {
+  margin: 0;
+}
+
+.variation-message {
+  border-left: 3px solid var(--color-border-strong);
+  padding: 0.45rem 0.55rem;
+  font-size: 0.7rem;
+  line-height: 1.35;
+}
+
+.variation-message-warning {
+  border-left-color: #b7791f;
+  background: #fff9eb;
+}
+
+.variation-message-blocking {
+  border-left-color: #b42318;
+  background: #fff2f0;
+}
+
+.variation-difference-groups {
+  display: grid;
+  gap: 0;
+  border-top: 1px solid var(--color-border);
+}
+
+.variation-difference-groups section {
+  border-bottom: 1px solid var(--color-border);
+  padding: 0.5rem 0;
+}
+
+.variation-difference-groups section > header strong,
+.variation-difference-groups section > header span {
+  font-size: 0.68rem;
+}
+
+.variation-difference-groups section > header span {
+  color: var(--color-text-muted);
+}
+
+.variation-difference-groups ul {
+  display: grid;
+  gap: 0.22rem;
+  margin: 0.35rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.variation-difference-groups li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.5rem;
+  color: var(--color-text-muted);
+  font-size: 0.65rem;
+}
+
+.variation-difference-groups li strong {
+  color: var(--color-text-primary);
+  text-align: right;
+}
+
+.variation-difference-groups section > p {
+  margin-top: 0.25rem;
+  color: var(--color-text-muted);
+  font-size: 0.65rem;
+}
+
+.variation-submit {
+  display: grid;
+  gap: 0.35rem;
+  padding-bottom: 1rem;
+}
+
+.variation-submit p {
+  color: var(--color-text-muted);
+  font-size: 0.68rem;
+}
+
+.mountain-waves-scientific-view {
+  min-width: 0;
+  min-height: 0;
+  background: var(--color-visualization-background);
+}
+
+.mountain-waves-science-body {
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+}
+
+.mountain-waves-instrument-header .instrument-actions {
+  align-items: center;
+}
+
+.mountain-waves-plot-column {
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+  padding: 0.55rem 0.55rem 2.85rem 3rem;
+}
+
+.mountain-waves-canvas-wrap {
+  width: 100%;
+  height: 100%;
+  min-height: 18rem;
+}
+
+.mountain-waves-canvas-wrap canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  cursor: crosshair;
+}
+
+.mountain-waves-y-axis-label {
+  position: absolute;
+  top: 50%;
+  left: 0.2rem;
+  color: var(--color-text-primary);
+  font-size: 0.72rem;
+  font-weight: 800;
+  transform: rotate(-90deg) translateX(-50%);
+  transform-origin: 0 0;
+}
+
+.mountain-waves-y-axis-maximum,
+.mountain-waves-y-axis-minimum {
+  position: absolute;
+  left: 2rem;
+  color: var(--color-text-muted);
+  font-size: 0.66rem;
+  font-weight: 700;
+}
+
+.mountain-waves-y-axis-maximum {
+  top: 0.45rem;
+}
+
+.mountain-waves-y-axis-minimum {
+  bottom: 2.75rem;
+}
+
+.mountain-waves-x-axis {
+  position: absolute;
+  right: 0.55rem;
+  bottom: 1.35rem;
+  left: 3rem;
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  gap: 0.4rem;
+  align-items: baseline;
+  color: var(--color-text-muted);
+  font-size: 0.66rem;
+  font-weight: 700;
+}
+
+.mountain-waves-x-axis span:last-child {
+  text-align: right;
+}
+
+.mountain-waves-x-axis strong {
+  color: var(--color-text-primary);
+  font-size: 0.72rem;
+}
+
+.mountain-waves-geometry-note {
+  position: absolute;
+  right: 0.55rem;
+  bottom: 0.1rem;
+  left: 3rem;
+  overflow: hidden;
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: 0.6rem;
+  text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mountain-waves-legend {
+  align-self: center;
+  display: grid;
+  gap: 0.18rem;
+  border-left: 1px solid var(--color-border);
+  padding: 0.25rem 0 0.25rem 0.65rem;
+}
+
+.mountain-waves-legend > strong {
+  font-size: 0.7rem;
+}
+
+.mountain-waves-legend > p {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: 0.6rem;
+  font-weight: 700;
+}
+
+.mountain-waves-legend ol {
+  display: grid;
+  gap: 0.08rem;
+  margin: 0.1rem 0;
+  padding: 0;
+  list-style: none;
+}
+
+.mountain-waves-legend li {
+  display: grid;
+  grid-template-columns: 0.55rem minmax(0, 1fr);
+  gap: 0.28rem;
+  align-items: stretch;
+  font-size: 0.57rem;
+  line-height: 1.12;
+}
+
+.mountain-waves-legend li span {
+  min-height: 0.95rem;
+  border: 1px solid rgba(49, 69, 82, 0.18);
+  border-radius: 1px;
+}
+
+.mountain-waves-legend li b {
+  align-self: center;
+  font-weight: 750;
+}
+
+.mountain-waves-legend small {
+  color: var(--color-text-muted);
+  font-size: 0.56rem;
+}
+
+.mountain-waves-lens-keys {
+  display: grid;
+  grid-template-columns: 1.4rem minmax(0, 1fr);
+  gap: 0.25rem 0.35rem;
+  align-items: center;
+  border-top: 1px solid var(--color-border);
+  margin-top: 0.2rem;
+  padding-top: 0.35rem;
+  color: var(--color-text-muted);
+  font-size: 0.57rem;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.mountain-waves-cloud-key {
+  display: grid;
+  grid-template-columns: 1.4rem minmax(0, 1fr);
+  gap: 0.35rem;
+  align-items: center;
+  margin-top: 0.2rem;
+  padding-top: 0.35rem;
+  color: var(--color-text-muted);
+  font-size: 0.57rem;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.mountain-waves-cloud-key small {
+  display: block;
+  margin-top: 0.12rem;
+  font-weight: 600;
+}
+
+.mountain-waves-cloud-point-key {
+  width: 0.72rem;
+  height: 0.72rem;
+  justify-self: center;
+  border: 1px solid rgba(49, 69, 82, 0.32);
+  border-radius: 50%;
+  background: rgb(134, 210, 222);
+}
+
+.mountain-waves-wind-key {
+  color: #1f313b;
+  font-size: 1.25rem;
+  line-height: 0.7;
+}
+
+.mountain-waves-theta-key {
+  width: 1.25rem;
+  border-top: 1px solid rgba(57, 70, 78, 0.55);
+}
+
+.mountain-waves-plot-loading,
+.mountain-waves-local-error {
+  grid-column: 1 / -1;
+  align-self: center;
+  justify-self: center;
+}
+
+.mountain-waves-frame-loading {
+  position: absolute;
+  top: 0.55rem;
+  right: 12rem;
+  border: 1px solid var(--color-border);
+  border-radius: 3px;
+  padding: 0.25rem 0.42rem;
+  background: rgba(255, 255, 255, 0.9);
+  color: var(--color-text-muted);
+  font-size: 0.62rem;
+}
+
+.mountain-waves-control-strip {
+  display: flex;
+  align-items: stretch;
+  min-width: 0;
+  overflow: hidden;
+  border-top: 1px solid var(--color-border);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.mountain-waves-control-strip fieldset {
+  display: grid;
+  align-content: start;
+  gap: 0.3rem;
+  min-width: 0;
+  min-height: 3.9rem;
+  margin: 0;
+  border: 0;
+  border-right: 1px solid var(--color-border);
+  padding: 0.42rem 0.6rem;
+}
+
+.mountain-waves-control-strip fieldset:last-child {
+  border-right: 0;
+}
+
+.mountain-waves-control-strip legend {
+  padding: 0;
+  color: var(--color-text-muted);
+  font-size: 0.62rem;
+  font-weight: 800;
+}
+
+.mountain-waves-control-strip .segmented-buttons {
+  display: flex;
+  gap: 0.18rem;
+}
+
+.mountain-waves-control-strip button,
+.mountain-waves-control-strip select,
+.mountain-waves-control-strip label {
+  font-size: 0.67rem;
+}
+
+.mountain-waves-control-strip button {
+  min-height: 1.85rem;
+  padding: 0.25rem 0.38rem;
+  white-space: nowrap;
+}
+
+.mountain-waves-field-control {
+  flex: 1 1 18rem;
+}
+
+.mountain-waves-field-control select {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 12rem;
+  height: auto;
+  min-height: 2.15rem;
+  padding: 0.36rem 1.8rem 0.36rem 0.55rem;
+  line-height: 1.25;
+}
+
+.mountain-waves-field-control label {
+  display: block;
+  min-width: 0;
+  overflow: visible;
+}
+
+.mountain-waves-overlay-controls {
+  flex: 1 1 31rem;
+  grid-template-columns: repeat(5, auto);
+  align-content: center;
+  justify-content: start;
+}
+
+.mountain-waves-overlay-controls legend {
+  grid-column: 1 / -1;
+}
+
+.mountain-waves-overlay-controls label {
+  display: flex;
+  gap: 0.25rem;
+  align-items: center;
+  white-space: nowrap;
+}
+
+.mountain-waves-cloud-rendering-controls {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(11rem, 15rem));
+  gap: 0.3rem 0.8rem;
+  align-items: center;
+}
+
+.mountain-waves-cloud-rendering-controls label {
+  display: grid;
+  grid-template-columns: auto minmax(4.5rem, 1fr) 2.7rem;
+  gap: 0.35rem;
+  align-items: center;
+  min-width: 0;
+}
+
+.mountain-waves-cloud-rendering-controls input[type="range"] {
+  width: 100%;
+  min-width: 4.5rem;
+}
+
+.mountain-waves-cloud-rendering-controls output {
+  color: var(--color-text-muted);
+  font-size: 0.6rem;
+  font-weight: 700;
+  text-align: right;
+}
+
+.mountain-waves-geometry-control {
+  margin-left: auto !important;
+}
+
+.mountain-waves-viewport-control,
+.mountain-waves-geometry-control {
+  flex: 0 0 auto;
+}
+
+.mountain-waves-state-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+}
+
+.mountain-waves-point-context .section-heading button {
+  justify-self: start;
+}
+
+.context-selection-prompt {
+  border-left: 3px solid var(--color-accent-primary);
+  padding-left: 0.5rem;
+  color: var(--color-text-muted);
+  font-size: 0.68rem;
+}
+
+@media (min-width: 1100px) {
+  .world-overview-grid.mountain-waves-overview-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .integrated-explore-workspace .mountain-waves-explore-shell {
+    grid-template-columns: minmax(0, 1fr) minmax(280px, 300px);
+    grid-template-rows: minmax(34rem, calc(100vh - 310px)) auto 64px auto;
+    gap: 8px;
+  }
+
+  .mountain-waves-explore-shell .mountain-waves-scientific-view {
+    grid-column: 1;
+    grid-row: 1;
+    display: grid;
+    grid-template-rows: auto minmax(0, 1fr);
+    overflow: hidden;
+    border: 0;
+  }
+
+  .mountain-waves-explore-shell .mountain-waves-science-body {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 10.8rem;
+    gap: 0.55rem;
+    overflow: hidden;
+  }
+
+  .mountain-waves-explore-shell .mountain-waves-control-strip {
+    grid-column: 1;
+    grid-row: 2;
+  }
+
+  .integrated-explore-workspace .mountain-waves-timeline {
+    grid-column: 1;
+    grid-row: 3;
+    grid-template-columns: auto auto minmax(12rem, 1fr) auto;
+  }
+
+  .mountain-waves-explore-shell > .explore-inspector {
+    grid-column: 2;
+    grid-row: 1 / 4;
+  }
+
+  .mountain-waves-explore-shell > .explore-secondary-content {
+    grid-column: 1 / -1;
+    grid-row: 4;
+  }
+
+  .integrated-explore-workspace .mountain-waves-explore-shell:has(.explore-inspector-collapsed) {
+    grid-template-columns: minmax(0, 1fr) 3rem;
+  }
+
+  .integrated-explore-workspace
+    .mountain-waves-explore-shell-maximized
+    .mountain-waves-scientific-view {
+    grid-column: 1 / -1;
+  }
+
+  .integrated-explore-workspace
+    .mountain-waves-explore-shell-maximized
+    .mountain-waves-control-strip,
+  .integrated-explore-workspace .mountain-waves-explore-shell-maximized .mountain-waves-timeline {
+    grid-column: 1 / -1;
+  }
+
+  .mountain-waves-explore-shell-maximized > .explore-inspector {
+    display: none;
+  }
+
+  .integrated-explore-workspace .mountain-waves-explore-shell-maximized {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(42rem, calc(100vh - 270px)) auto 64px auto;
+  }
+}
+
 body {
   margin: 0;
   min-width: 320px;
@@ -5493,4 +6279,148 @@ details[open] > summary {
   .notebook-card {
     order: 2;
   }
+}
+
+/* Mountain Waves adapts the Integrated Explore cockpit to one native x-z instrument. */
+@media (min-width: 1100px) {
+  .world-overview-grid.mountain-waves-overview-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .integrated-explore-workspace .visualizer-shell.mountain-waves-explore-shell {
+    grid-template-columns: minmax(0, 1fr) minmax(280px, 300px);
+    grid-template-rows: minmax(34rem, calc(100vh - 310px)) auto 64px auto;
+    gap: 8px;
+  }
+
+  .integrated-explore-workspace
+    .visualizer-shell.mountain-waves-explore-shell
+    .mountain-waves-scientific-view {
+    grid-column: 1;
+    grid-row: 1;
+    display: grid;
+    grid-template-rows: auto minmax(0, 1fr);
+    min-width: 0;
+    min-height: 0;
+    overflow: hidden;
+    border: 0;
+  }
+
+  .integrated-explore-workspace
+    .visualizer-shell.mountain-waves-explore-shell
+    .mountain-waves-science-body {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 10.8rem;
+    gap: 0.55rem;
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  .integrated-explore-workspace
+    .visualizer-shell.mountain-waves-explore-shell
+    .mountain-waves-control-strip {
+    grid-column: 1;
+    grid-row: 2;
+    display: grid;
+    grid-template-columns: auto auto minmax(0, 1fr);
+    gap: 0.35rem 1rem;
+    overflow: visible;
+    padding: 0.42rem 0.6rem;
+  }
+
+  .integrated-explore-workspace
+    .visualizer-shell.mountain-waves-explore-shell
+    .mountain-waves-control-strip fieldset {
+    border: 0;
+    padding: 0;
+  }
+
+  .integrated-explore-workspace
+    .visualizer-shell.mountain-waves-explore-shell
+    .mountain-waves-overlay-controls {
+    grid-template-columns: repeat(3, auto);
+  }
+
+  .integrated-explore-workspace
+    .visualizer-shell.mountain-waves-explore-shell
+    .mountain-waves-geometry-control {
+    margin-left: 0 !important;
+  }
+
+  .integrated-explore-workspace
+    .visualizer-shell.mountain-waves-explore-shell
+    .mountain-waves-control-strip:not(:has(.mountain-waves-viewport-control)) {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .integrated-explore-workspace
+    .visualizer-shell.mountain-waves-explore-shell
+    .mountain-waves-timeline {
+    grid-column: 1;
+    grid-row: 3;
+    grid-template-columns: auto auto minmax(12rem, 1fr) auto;
+  }
+
+  .integrated-explore-workspace
+    .visualizer-shell.mountain-waves-explore-shell
+    > .explore-inspector {
+    grid-column: 2;
+    grid-row: 1 / 4;
+  }
+
+  .integrated-explore-workspace
+    .visualizer-shell.mountain-waves-explore-shell
+    > .explore-secondary-content {
+    grid-column: 1 / -1;
+    grid-row: 4;
+  }
+
+  .integrated-explore-workspace
+    .visualizer-shell.mountain-waves-explore-shell:has(.explore-inspector-collapsed) {
+    grid-template-columns: minmax(0, 1fr) 3rem;
+  }
+
+  .integrated-explore-workspace .visualizer-shell.mountain-waves-explore-shell-maximized {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(42rem, calc(100vh - 270px)) auto 64px auto;
+  }
+
+  .integrated-explore-workspace
+    .visualizer-shell.mountain-waves-explore-shell-maximized
+    .mountain-waves-scientific-view,
+  .integrated-explore-workspace
+    .visualizer-shell.mountain-waves-explore-shell-maximized
+    .mountain-waves-control-strip,
+  .integrated-explore-workspace
+    .visualizer-shell.mountain-waves-explore-shell-maximized
+    .mountain-waves-timeline {
+    grid-column: 1 / -1;
+  }
+
+  .integrated-explore-workspace
+    .visualizer-shell.mountain-waves-explore-shell-maximized
+    > .explore-inspector {
+    display: none;
+  }
+}
+
+@media (min-width: 1500px) {
+  .integrated-explore-workspace
+    .visualizer-shell.mountain-waves-explore-shell
+    .mountain-waves-control-strip {
+    grid-template-columns: auto auto minmax(0, 1fr);
+  }
+
+  .integrated-explore-workspace
+    .visualizer-shell.mountain-waves-explore-shell
+    .mountain-waves-control-strip:not(:has(.mountain-waves-viewport-control)) {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .integrated-explore-workspace
+    .visualizer-shell.mountain-waves-explore-shell
+    .mountain-waves-overlay-controls {
+    grid-template-columns: repeat(5, auto);
+  }
+
 }

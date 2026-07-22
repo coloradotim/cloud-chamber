@@ -149,12 +149,14 @@ def test_world_summary_and_detail_map_exact_known_pair(
     detail = trade_cumulus_world_detail(settings)
     summaries = list_cloud_world_summaries(settings)
 
-    assert len(summaries) == 1
-    assert summaries[0].world_id == "trade_cumulus"
-    assert summaries[0].reference_available is True
-    assert summaries[0].simulation_count == 2
-    assert summaries[0].saved_view_count == 0
-    assert summaries[0].saved_comparison_count == 1
+    assert len(summaries) == 2
+    summaries_by_id = {summary.world_id: summary for summary in summaries}
+    trade_cumulus = summaries_by_id["trade_cumulus"]
+    assert trade_cumulus.reference_available is True
+    assert trade_cumulus.simulation_count == 2
+    assert trade_cumulus.saved_view_count == 0
+    assert trade_cumulus.saved_comparison_count == 1
+    assert summaries_by_id["mountain_waves"].availability_state == "unavailable"
     assert detail.reference_simulation.simulation_id == REFERENCE_SIMULATION_ID
     assert detail.reference_simulation.display_name == "Canonical BOMEX Baseline"
     assert detail.simulations[1].simulation_id == MORE_MOISTURE_SIMULATION_ID

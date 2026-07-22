@@ -1,3 +1,4 @@
+import hashlib
 import json
 import subprocess
 from pathlib import Path
@@ -261,6 +262,30 @@ def test_launch_constructs_cm1_command_and_captures_logs(tmp_path: Path) -> None
     assert manifest.provenance.product_state == ProductState.QUEUED_RUNNING_CM1_PROCESS
     assert manifest.execution.command == [str(settings.cm1_run_dir / "cm1.exe")]
     assert manifest.execution.process_id == fake_process.pid
+
+
+def test_launch_rechecks_generated_input_hashes_after_packaging(tmp_path: Path) -> None:
+    settings = fake_settings(tmp_path)
+    manifest_path = dry_run_manifest_path(tmp_path)
+    manifest = load_run_manifest(manifest_path)
+    namelist = Path(manifest.generated_inputs.namelist_input or "")
+    expected = hashlib.sha256(namelist.read_bytes()).hexdigest()
+    run_configuration = {
+        **manifest.run_configuration,
+        "generated_input_sha256": {namelist.name: expected},
+    }
+    write_run_manifest(
+        manifest_path,
+        manifest.model_copy(update={"run_configuration": run_configuration}),
+    )
+    namelist.write_text(namelist.read_text() + "\n! changed after packaging\n")
+    factory = FakeProcessFactory(FakeProcess())
+    manager = LocalRunManager(settings=settings, process_factory=factory)
+
+    with pytest.raises(LocalRunManagerError, match="changed after packaging"):
+        manager.launch(manifest_path)
+
+    assert factory.commands == []
 
 
 def test_launch_applies_differential_surface_source_customization_before_cm1(

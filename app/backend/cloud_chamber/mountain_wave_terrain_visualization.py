@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 import math
+from collections import OrderedDict
+from dataclasses import dataclass
 from pathlib import Path
+from threading import RLock
 from time import perf_counter
 from typing import Any, Literal
 
@@ -26,9 +29,31 @@ from cloud_chamber.mountain_wave_case import (
     resolve_active_top_evidence,
     verify_evaluation_input_identity,
 )
+from cloud_chamber.result_diagnostics import QC_CLOUD_THRESHOLD_KG_KG
 from cloud_chamber.settings import CloudChamberSettings
 
-MountainWaveTerrainField = Literal["w", "theta_perturbation"]
+CLOUD_THRESHOLD_G_KG = 1_000.0 * QC_CLOUD_THRESHOLD_KG_KG
+
+MountainWaveTerrainField = Literal[
+    "w",
+    "theta_perturbation",
+    "cloud_liquid",
+    "relative_humidity",
+    "cloud_over_wave",
+]
+
+MOUNTAIN_WAVES_EXPLORE_REQUIRED_FIELDS = frozenset(
+    {"zs", "zhval", "th", "prs", "qv", "ql", "uinterp", "winterp", "w"}
+)
+MOUNTAIN_WAVES_EXPLORE_REQUIRED_COORDINATES = frozenset(
+    {"time", "xh", "xf", "yh", "yf", "zh", "zf"}
+)
+
+_RUN_METADATA_CACHE_LIMIT = 16
+_RUN_METADATA_CACHE: OrderedDict[tuple[tuple[str, ...], str, bool], _MountainWavesRunMetadata] = (
+    OrderedDict()
+)
+_RUN_METADATA_CACHE_LOCK = RLock()
 
 
 class MountainWaveTerrainVisualizationError(RuntimeError):
@@ -93,6 +118,11 @@ class TerrainScale(BaseModel):
     selected_time_minimum: float
     selected_time_maximum: float
     palette: str = "blue_white_red_diverging"
+    scale_id: str = "terrain_research_auto_v1"
+    scale_type: Literal["fixed_across_time_discrete"] = "fixed_across_time_discrete"
+    units: str = ""
+    breakpoints: list[float] = Field(default_factory=list)
+    colors: list[str] = Field(default_factory=list)
 
 
 class TerrainProvenance(BaseModel):
@@ -127,6 +157,60 @@ class TerrainPerformance(BaseModel):
     serialized_payload_bytes: int = 0
 
 
+class TerrainCloudOverlay(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    key: Literal["cloud_liquid"] = "cloud_liquid"
+    display_name: str = "Cloud liquid water"
+    units: str = "g/kg"
+    values: list[list[float]]
+    threshold: float = CLOUD_THRESHOLD_G_KG
+    maximum: float
+    vertical_grid: Literal["physical_scalar_levels"] = "physical_scalar_levels"
+
+
+class TerrainViewportBounds(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    x_minimum_m: float
+    x_maximum_m: float
+    z_minimum_m: float = 0.0
+    z_maximum_m: float
+
+
+class TerrainViewportMetadata(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    default_mode: Literal["focus", "full"]
+    focus_available: bool
+    focus: TerrainViewportBounds
+    full: TerrainViewportBounds
+
+
+class TerrainLensMetadata(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    horizontal_wind_scale_id: str = "mountain_waves_horizontal_wind_v1"
+    horizontal_wind_reference_m_s: float
+    vertical_velocity_neutral_threshold_m_s: float = 0.1
+    potential_temperature_contour_scale_id: str = (
+        "mountain_waves_total_potential_temperature_contours_v1"
+    )
+    potential_temperature_contour_interval_k: float
+    potential_temperature_contour_values_k: list[float]
+
+
+class TerrainPointerContext(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    horizontal_wind_m_s: list[list[float]]
+    vertical_velocity_m_s: list[list[float]]
+    potential_temperature_k: list[list[float]]
+    theta_perturbation_k: list[list[float]]
+    cloud_liquid_g_kg: list[list[float]] | None = None
+    relative_humidity_percent: list[list[float]] | None = None
+
+
 class MountainWaveTerrainFrame(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -141,6 +225,11 @@ class MountainWaveTerrainFrame(BaseModel):
     dry_case: bool = True
     field: TerrainFieldMetadata
     values: list[list[float]]
+    field_options: list[MountainWaveTerrainField] = Field(default_factory=list)
+    overlay: TerrainCloudOverlay | None = None
+    pointer_context: TerrainPointerContext | None = None
+    viewport: TerrainViewportMetadata | None = None
+    lens: TerrainLensMetadata | None = None
     geometry: TerrainGeometry
     active_top_evidence: TerrainActiveTopEvidence
     vertical_references: TerrainVerticalReferences = Field(
@@ -159,6 +248,28 @@ class MountainWaveTerrainFrame(BaseModel):
             ),
         ]
     )
+
+
+@dataclass(frozen=True)
+class _MountainWavesRunMetadata:
+    fingerprint: tuple[tuple[str, int, int, int], ...]
+    paths: tuple[Path, ...]
+    times_seconds: tuple[int, ...]
+    x_center_m: np.ndarray[Any, np.dtype[np.float64]]
+    x_edge_m: np.ndarray[Any, np.dtype[np.float64]]
+    terrain_m: np.ndarray[Any, np.dtype[np.float64]]
+    scalar_height_m: np.ndarray[Any, np.dtype[np.float64]]
+    full_height_m: np.ndarray[Any, np.dtype[np.float64]]
+    nominal_scalar_m: np.ndarray[Any, np.dtype[np.float64]]
+    nominal_full_m: np.ndarray[Any, np.dtype[np.float64]]
+    singleton_y_m: float
+    active_top: TerrainActiveTopEvidence
+    theta_reference: np.ndarray[Any, np.dtype[np.float64]]
+    scales: dict[MountainWaveTerrainField, tuple[float, float, str]]
+    cloud_liquid_maximum_g_kg: float
+    horizontal_wind_maximum_m_s: float
+    potential_temperature_minimum_k: float
+    potential_temperature_maximum_k: float
 
 
 def terrain_frame_from_native_outputs(
@@ -392,6 +503,488 @@ def terrain_frame_from_native_outputs(
     return _measure_serialization(response)
 
 
+def mountain_waves_frame_from_native_outputs(
+    *,
+    output_paths: list[Path],
+    namelist_path: Path,
+    field: MountainWaveTerrainField,
+    time_index: int,
+    run_id: str,
+    case_label: str,
+    implementation_commit: str,
+    dry_case: bool,
+    caveats: list[str],
+    measure_serialization: bool = True,
+) -> MountainWaveTerrainFrame:
+    """Extract one native x-z frame using cached run-level validation metadata."""
+    started = perf_counter()
+    metadata = _mountain_waves_run_metadata(
+        output_paths=output_paths,
+        namelist_path=namelist_path,
+        dry_case=dry_case,
+    )
+    paths = list(metadata.paths)
+    if time_index == -1:
+        time_index = len(paths) - 1
+    if not 0 <= time_index < len(paths):
+        raise MountainWaveTerrainVisualizationError(
+            f"Time index {time_index} is outside 0..{len(paths) - 1}."
+        )
+    if dry_case and field not in {"w", "theta_perturbation"}:
+        raise MountainWaveTerrainVisualizationError(
+            f"Field {field} requires moist output and is unavailable for this Simulation."
+        )
+
+    selected_path = paths[time_index]
+    try:
+        with xr.open_dataset(selected_path, decode_times=False) as dataset:
+            _require_native_semantics(dataset)
+            selected_time = int(round(_single_time_seconds(dataset)))
+            if selected_time != metadata.times_seconds[time_index]:
+                raise MountainWaveTerrainVisualizationError(
+                    f"Native history {selected_path.name} changed after run validation."
+                )
+            _require_world_field_units(dataset, moist=not dry_case)
+            scalar_u = _field_3d(dataset, "uinterp", ("zh", "yh", "xh"))[:, 0, :]
+            scalar_w = _field_3d(dataset, "winterp", ("zh", "yh", "xh"))[:, 0, :]
+            theta = _field_3d(dataset, "th", ("zh", "yh", "xh"))[:, 0, :]
+            pressure = _field_3d(dataset, "prs", ("zh", "yh", "xh"))[:, 0, :]
+            theta_perturbation = theta - metadata.theta_reference
+            selected_ql: np.ndarray[Any, np.dtype[np.float64]] | None = None
+            selected_rh: np.ndarray[Any, np.dtype[np.float64]] | None = None
+            if not dry_case:
+                selected_ql = 1_000.0 * _field_3d(dataset, "ql", ("zh", "yh", "xh"))[:, 0, :]
+                qv = _field_3d(dataset, "qv", ("zh", "yh", "xh"))[:, 0, :]
+                selected_rh = _relative_humidity_from_native(theta, pressure, qv)
+    except MountainWaveTerrainVisualizationError:
+        raise
+    except (MountainWaveCaseError, OSError, ValueError, KeyError) as exc:
+        raise MountainWaveTerrainVisualizationError(
+            f"Native history {selected_path.name} could not be decoded with required "
+            "Mountain Waves semantics."
+        ) from exc
+
+    selected = {
+        "w": scalar_w,
+        "theta_perturbation": theta_perturbation,
+        "cloud_liquid": selected_ql,
+        "relative_humidity": selected_rh,
+        "cloud_over_wave": scalar_w,
+    }[field]
+    if selected is None or not np.isfinite(selected).all():
+        raise MountainWaveTerrainVisualizationError(
+            f"Field {field} is unavailable or contains non-finite values."
+        )
+    scale_minimum, scale_maximum, palette = metadata.scales[field]
+    scale_identity, scale_breakpoints, scale_colors = _world_scale_definition(
+        field, scale_minimum, scale_maximum
+    )
+    overlay = None
+    if field == "cloud_over_wave" and selected_ql is not None:
+        overlay = TerrainCloudOverlay(
+            values=selected_ql.tolist(),
+            maximum=metadata.cloud_liquid_maximum_g_kg,
+        )
+    field_options: list[MountainWaveTerrainField] = ["w", "theta_perturbation"]
+    if not dry_case:
+        field_options = [
+            "cloud_over_wave",
+            "w",
+            "cloud_liquid",
+            "relative_humidity",
+            "theta_perturbation",
+        ]
+    response = MountainWaveTerrainFrame(
+        schema_version="mountain_waves_explore_v1",
+        run_id=run_id,
+        case_label=case_label,
+        time_index=time_index,
+        time_seconds=metadata.times_seconds[time_index],
+        times_seconds=list(metadata.times_seconds),
+        dry_case=dry_case,
+        field=_world_field_metadata(field),
+        values=selected.tolist(),
+        field_options=field_options,
+        overlay=overlay,
+        pointer_context=TerrainPointerContext(
+            horizontal_wind_m_s=scalar_u.tolist(),
+            vertical_velocity_m_s=scalar_w.tolist(),
+            potential_temperature_k=theta.tolist(),
+            theta_perturbation_k=theta_perturbation.tolist(),
+            cloud_liquid_g_kg=selected_ql.tolist() if selected_ql is not None else None,
+            relative_humidity_percent=selected_rh.tolist() if selected_rh is not None else None,
+        ),
+        viewport=_world_viewport_metadata(
+            x_center_m=metadata.x_center_m,
+            x_edge_m=metadata.x_edge_m,
+            terrain_m=metadata.terrain_m,
+            active_top_m=metadata.active_top.final_nominal_zf_m,
+            dry_case=dry_case,
+        ),
+        lens=TerrainLensMetadata(
+            horizontal_wind_reference_m_s=_rounded_reference(
+                metadata.horizontal_wind_maximum_m_s, step=5.0
+            ),
+            potential_temperature_contour_interval_k=10.0,
+            potential_temperature_contour_values_k=_fixed_contour_values(
+                metadata.potential_temperature_minimum_k,
+                metadata.potential_temperature_maximum_k,
+                interval=10.0,
+            ),
+        ),
+        geometry=TerrainGeometry(
+            x_center_m=metadata.x_center_m.tolist(),
+            x_edge_m=metadata.x_edge_m.tolist(),
+            terrain_m=metadata.terrain_m.tolist(),
+            scalar_height_m=metadata.scalar_height_m.tolist(),
+            full_height_m=metadata.full_height_m.tolist(),
+            nominal_scalar_height_m=metadata.nominal_scalar_m.tolist(),
+            nominal_full_height_m=metadata.nominal_full_m.tolist(),
+            active_top_m=metadata.active_top.final_nominal_zf_m,
+            singleton_y_m=metadata.singleton_y_m,
+        ),
+        active_top_evidence=metadata.active_top,
+        scale=TerrainScale(
+            minimum=scale_minimum,
+            maximum=scale_maximum,
+            selected_time_minimum=float(np.min(selected)),
+            selected_time_maximum=float(np.max(selected)),
+            palette=palette,
+            scale_id=scale_identity,
+            units=_world_field_metadata(field).units,
+            breakpoints=scale_breakpoints,
+            colors=scale_colors,
+        ),
+        provenance=TerrainProvenance(
+            source_history_file=selected_path.name,
+            reference_history_file=(paths[0].name if field == "theta_perturbation" else None),
+            display_binning=(
+                "Native scalar samples painted between physical full-level bounds; "
+                "native values are not spatially interpolated."
+            ),
+            physical_height_source="native zhval verified against terrain-following reconstruction",
+            full_height_source="reconstructed from native zs, nominal zf, and active-top agreement",
+        ),
+        identity=TerrainIdentity(
+            implementation_commit=implementation_commit,
+            verification_mode="run_manifest_and_native_output_contract",
+            verified_file_count=len(paths),
+            verified_before_and_after_extraction=False,
+        ),
+        performance=TerrainPerformance(extraction_ms=(perf_counter() - started) * 1_000.0),
+        caveats=caveats,
+    )
+    return _measure_serialization(response) if measure_serialization else response
+
+
+def clear_mountain_waves_run_metadata_cache() -> None:
+    """Clear in-process validation metadata; intended for bounded test isolation."""
+    with _RUN_METADATA_CACHE_LOCK:
+        _RUN_METADATA_CACHE.clear()
+
+
+def _mountain_waves_run_metadata(
+    *, output_paths: list[Path], namelist_path: Path, dry_case: bool
+) -> _MountainWavesRunMetadata:
+    paths = tuple(accepted_model_output_paths(output_paths))
+    if not paths:
+        raise MountainWaveTerrainVisualizationError("No native numbered histories are available.")
+    resolved_namelist = namelist_path.expanduser().resolve()
+    cache_key = (tuple(str(path.resolve()) for path in paths), str(resolved_namelist), dry_case)
+    fingerprint = _artifact_fingerprint((*paths, resolved_namelist))
+    with _RUN_METADATA_CACHE_LOCK:
+        cached = _RUN_METADATA_CACHE.get(cache_key)
+        if cached is not None and cached.fingerprint == fingerprint:
+            _RUN_METADATA_CACHE.move_to_end(cache_key)
+            return cached
+
+    metadata = _build_mountain_waves_run_metadata(
+        paths=paths,
+        namelist_path=resolved_namelist,
+        dry_case=dry_case,
+        fingerprint=fingerprint,
+    )
+    if _artifact_fingerprint((*paths, resolved_namelist)) != fingerprint:
+        raise MountainWaveTerrainVisualizationError(
+            "Mountain Waves artifacts changed during native-data validation."
+        )
+    with _RUN_METADATA_CACHE_LOCK:
+        _RUN_METADATA_CACHE[cache_key] = metadata
+        _RUN_METADATA_CACHE.move_to_end(cache_key)
+        while len(_RUN_METADATA_CACHE) > _RUN_METADATA_CACHE_LIMIT:
+            _RUN_METADATA_CACHE.popitem(last=False)
+    return metadata
+
+
+def _build_mountain_waves_run_metadata(
+    *,
+    paths: tuple[Path, ...],
+    namelist_path: Path,
+    dry_case: bool,
+    fingerprint: tuple[tuple[str, int, int, int], ...],
+) -> _MountainWavesRunMetadata:
+    assignments = parse_namelist_assignments(namelist_path.read_text())
+    configured_nz = _namelist_int(assignments, "nz")
+    configured_dz_m = _namelist_float(assignments, "dz")
+    if _namelist_int(assignments, "ny") != 1:
+        raise MountainWaveTerrainVisualizationError(
+            "Mountain Waves Explore requires the native singleton y dimension."
+        )
+    if _namelist_int(assignments, "stretch_z") != 0:
+        raise MountainWaveTerrainVisualizationError(
+            "Mountain Waves Explore currently supports the retained unstretched vertical setup."
+        )
+    duration = int(round(_namelist_float(assignments, "timax")))
+    cadence = int(round(_namelist_float(assignments, "tapfrq")))
+    if duration <= 0 or cadence <= 0 or duration % cadence:
+        raise MountainWaveTerrainVisualizationError(
+            "Saved-output timing does not form an exact integral sequence."
+        )
+    expected_times = list(range(0, duration + 1, cadence))
+    if len(paths) != len(expected_times):
+        raise MountainWaveTerrainVisualizationError(
+            f"Expected {len(expected_times)} numbered histories; found {len(paths)}."
+        )
+
+    times: list[int] = []
+    expected_geometry: tuple[np.ndarray[Any, np.dtype[np.float64]], ...] | None = None
+    singleton_y_m: float | None = None
+    active_top: TerrainActiveTopEvidence | None = None
+    theta_reference: np.ndarray[Any, np.dtype[np.float64]] | None = None
+    w_maximum = 0.0
+    theta_perturbation_maximum = 0.0
+    cloud_liquid_maximum = 0.0
+    relative_humidity_maximum = 0.0
+    horizontal_wind_maximum = 0.0
+    potential_temperature_minimum = math.inf
+    potential_temperature_maximum = -math.inf
+
+    for path in paths:
+        try:
+            with xr.open_dataset(path, decode_times=False) as dataset:
+                _require_world_inventory(dataset, moist=not dry_case)
+                times.append(int(round(_single_time_seconds(dataset))))
+                x_center_m = _length_coordinate(dataset, "xh")
+                x_edge_m = _length_coordinate(dataset, "xf")
+                y_center_m = _length_coordinate(dataset, "yh")
+                y_edge_m = _length_coordinate(dataset, "yf")
+                nominal_scalar_m = _length_coordinate(dataset, "zh")
+                nominal_full_m = _length_coordinate(dataset, "zf")
+                if y_center_m.size != 1 or y_edge_m.size != 2:
+                    raise MountainWaveTerrainVisualizationError(
+                        "Native output does not preserve the required singleton-y topology."
+                    )
+                if singleton_y_m is None:
+                    singleton_y_m = float(y_center_m[0])
+                elif not math.isclose(singleton_y_m, float(y_center_m[0]), abs_tol=0.01):
+                    raise MountainWaveTerrainVisualizationError(
+                        "Native singleton-y coordinate changes between histories."
+                    )
+                terrain_m = _field_2d(dataset, "zs", ("yh", "xh"))[0]
+                scalar_height_m = _field_3d(dataset, "zhval", ("zh", "yh", "xh"))[:, 0, :]
+                current_active_top = _world_active_top_evidence(
+                    dataset,
+                    nominal_full_m=nominal_full_m,
+                    configured_nz=configured_nz,
+                    configured_dz_m=configured_dz_m,
+                    configured_ztop_m=float(
+                        assignments.get("ztop", configured_nz * configured_dz_m)
+                    ),
+                )
+                full_height_m = reconstruct_physical_heights(
+                    terrain_m[None, :],
+                    nominal_full_m,
+                    active_top_m=current_active_top.final_nominal_zf_m,
+                )[:, 0, :]
+                reconstructed_scalar_m = reconstruct_physical_heights(
+                    terrain_m[None, :],
+                    nominal_scalar_m,
+                    active_top_m=current_active_top.final_nominal_zf_m,
+                )[:, 0, :]
+                if scalar_height_m.shape != reconstructed_scalar_m.shape or not np.allclose(
+                    scalar_height_m, reconstructed_scalar_m, rtol=0.0, atol=0.02
+                ):
+                    raise MountainWaveTerrainVisualizationError(
+                        "Native scalar heights disagree with terrain-following reconstruction."
+                    )
+                _require_geometry_invariants(
+                    terrain_m=terrain_m,
+                    scalar_height_m=scalar_height_m,
+                    full_height_m=full_height_m,
+                    active_top_m=current_active_top.final_nominal_zf_m,
+                )
+                geometry = (
+                    x_center_m,
+                    x_edge_m,
+                    terrain_m,
+                    scalar_height_m,
+                    full_height_m,
+                    nominal_scalar_m,
+                    nominal_full_m,
+                )
+                if expected_geometry is None:
+                    expected_geometry = tuple(value.copy() for value in geometry)
+                    active_top = current_active_top
+                else:
+                    _require_same_geometry(expected_geometry, geometry)
+
+                theta = _field_3d(dataset, "th", ("zh", "yh", "xh"))[:, 0, :]
+                pressure = _field_3d(dataset, "prs", ("zh", "yh", "xh"))[:, 0, :]
+                scalar_u = _field_3d(dataset, "uinterp", ("zh", "yh", "xh"))[:, 0, :]
+                scalar_w = _field_3d(dataset, "winterp", ("zh", "yh", "xh"))[:, 0, :]
+                _field_3d(dataset, "w", ("zf", "yh", "xh"))
+                if theta_reference is None:
+                    theta_reference = theta.copy()
+                theta_perturbation = theta - theta_reference
+                w_maximum = max(w_maximum, float(np.max(np.abs(scalar_w))))
+                theta_perturbation_maximum = max(
+                    theta_perturbation_maximum,
+                    float(np.max(np.abs(theta_perturbation))),
+                )
+                horizontal_wind_maximum = max(
+                    horizontal_wind_maximum, float(np.max(np.abs(scalar_u)))
+                )
+                potential_temperature_minimum = min(
+                    potential_temperature_minimum, float(np.min(theta))
+                )
+                potential_temperature_maximum = max(
+                    potential_temperature_maximum, float(np.max(theta))
+                )
+                if not dry_case:
+                    ql_g_kg = 1_000.0 * _field_3d(dataset, "ql", ("zh", "yh", "xh"))[:, 0, :]
+                    qv = _field_3d(dataset, "qv", ("zh", "yh", "xh"))[:, 0, :]
+                    rh_percent = _relative_humidity_from_native(theta, pressure, qv)
+                    cloud_liquid_maximum = max(cloud_liquid_maximum, float(np.max(ql_g_kg)))
+                    relative_humidity_maximum = max(
+                        relative_humidity_maximum, float(np.max(rh_percent))
+                    )
+        except MountainWaveTerrainVisualizationError:
+            raise
+        except (MountainWaveCaseError, OSError, ValueError, KeyError) as exc:
+            raise MountainWaveTerrainVisualizationError(
+                f"Native history {path.name} could not be decoded with required "
+                "Mountain Waves semantics."
+            ) from exc
+
+    if times != expected_times:
+        raise MountainWaveTerrainVisualizationError(
+            f"Native history times differ from the manifest timing: {times}."
+        )
+    if expected_geometry is None or active_top is None or theta_reference is None:
+        raise MountainWaveTerrainVisualizationError("Run metadata could not be extracted.")
+    w_limit = _rounded_symmetric_limit(w_maximum)
+    theta_limit = _rounded_symmetric_limit(theta_perturbation_maximum)
+    ql_limit = max(cloud_liquid_maximum, 0.001)
+    rh_limit = max(relative_humidity_maximum, 100.0)
+    scales: dict[MountainWaveTerrainField, tuple[float, float, str]] = {
+        "w": (-w_limit, w_limit, "blue_white_red_diverging"),
+        "cloud_over_wave": (-w_limit, w_limit, "blue_white_red_diverging"),
+        "theta_perturbation": (-theta_limit, theta_limit, "blue_white_red_diverging"),
+        "cloud_liquid": (0.0, ql_limit, "white_cyan_cloud_liquid"),
+        "relative_humidity": (0.0, rh_limit, "brown_white_blue_relative_humidity"),
+    }
+    (
+        x_center_m,
+        x_edge_m,
+        terrain_m,
+        scalar_height_m,
+        full_height_m,
+        nominal_scalar_m,
+        nominal_full_m,
+    ) = expected_geometry
+    return _MountainWavesRunMetadata(
+        fingerprint=fingerprint,
+        paths=paths,
+        times_seconds=tuple(times),
+        x_center_m=x_center_m,
+        x_edge_m=x_edge_m,
+        terrain_m=terrain_m,
+        scalar_height_m=scalar_height_m,
+        full_height_m=full_height_m,
+        nominal_scalar_m=nominal_scalar_m,
+        nominal_full_m=nominal_full_m,
+        singleton_y_m=singleton_y_m or 0.0,
+        active_top=active_top,
+        theta_reference=theta_reference,
+        scales=scales,
+        cloud_liquid_maximum_g_kg=ql_limit,
+        horizontal_wind_maximum_m_s=horizontal_wind_maximum,
+        potential_temperature_minimum_k=potential_temperature_minimum,
+        potential_temperature_maximum_k=potential_temperature_maximum,
+    )
+
+
+def _artifact_fingerprint(paths: tuple[Path, ...]) -> tuple[tuple[str, int, int, int], ...]:
+    fingerprint: list[tuple[str, int, int, int]] = []
+    for path in paths:
+        resolved = path.expanduser().resolve()
+        try:
+            stat = resolved.stat()
+        except OSError as exc:
+            raise MountainWaveTerrainVisualizationError(
+                f"Required Mountain Waves artifact is unavailable: {resolved.name}."
+            ) from exc
+        fingerprint.append((str(resolved), stat.st_size, stat.st_mtime_ns, stat.st_ino))
+    return tuple(fingerprint)
+
+
+def _require_world_inventory(dataset: xr.Dataset, *, moist: bool) -> None:
+    missing_coordinates = sorted(
+        MOUNTAIN_WAVES_EXPLORE_REQUIRED_COORDINATES - set(dataset.variables)
+    )
+    required_fields = set(MOUNTAIN_WAVES_EXPLORE_REQUIRED_FIELDS)
+    if not moist:
+        required_fields -= {"qv", "ql"}
+    missing_fields = sorted(required_fields - set(dataset.variables))
+    if missing_coordinates or missing_fields:
+        raise MountainWaveTerrainVisualizationError(
+            "Native output inventory is incomplete; "
+            f"fields={missing_fields}, coordinates={missing_coordinates}."
+        )
+    _require_native_semantics(dataset)
+    _require_world_field_units(dataset, moist=moist)
+
+
+def _require_world_field_units(dataset: xr.Dataset, *, moist: bool) -> None:
+    _require_units(dataset, "th", {"k", "kelvin"})
+    _require_units(dataset, "prs", {"pa", "pascal", "pascals"})
+    _require_units(dataset, "uinterp", {"m/s", "m s-1", "m s^-1"})
+    _require_units(dataset, "winterp", {"m/s", "m s-1", "m s^-1"})
+    _require_units(dataset, "w", {"m/s", "m s-1", "m s^-1"})
+    if moist:
+        _require_units(dataset, "ql", {"kg/kg", "kg kg-1", "kg kg^-1"})
+        _require_units(dataset, "qv", {"kg/kg", "kg kg-1", "kg kg^-1"})
+
+
+def validate_mountain_waves_native_outputs(
+    *,
+    output_paths: list[Path],
+    namelist_path: Path,
+    run_id: str,
+    implementation_commit: str,
+    moist_fields_available: bool,
+) -> dict[str, Any]:
+    """Validate one complete variation inventory against the Explore data contract."""
+    metadata = _mountain_waves_run_metadata(
+        output_paths=output_paths,
+        namelist_path=namelist_path,
+        dry_case=not moist_fields_available,
+    )
+    required_fields = (
+        MOUNTAIN_WAVES_EXPLORE_REQUIRED_FIELDS
+        if moist_fields_available
+        else MOUNTAIN_WAVES_EXPLORE_REQUIRED_FIELDS - {"qv", "ql"}
+    )
+    return {
+        "history_count": len(metadata.paths),
+        "times_seconds": list(metadata.times_seconds),
+        "required_fields": sorted(required_fields),
+        "required_coordinates": sorted(MOUNTAIN_WAVES_EXPLORE_REQUIRED_COORDINATES),
+        "run_id": run_id,
+        "implementation_commit": implementation_commit,
+    }
+
+
 def preserved_mountain_wave_terrain_frame(
     settings: CloudChamberSettings,
     *,
@@ -459,13 +1052,277 @@ def _field_metadata(field: MountainWaveTerrainField) -> TerrainFieldMetadata:
             vertical_grid="physical_full_levels",
             derivation="native CM1 w; no interpolation or collocation",
         )
+    if field == "theta_perturbation":
+        return TerrainFieldMetadata(
+            key=field,
+            display_name="Potential-temperature perturbation",
+            units="K",
+            native_dimensions=["zh", "yh", "xh"],
+            vertical_grid="physical_scalar_levels",
+            derivation="native CM1 th minus the same native scalar cell at t=0 s",
+        )
+    if field == "cloud_liquid":
+        return TerrainFieldMetadata(
+            key=field,
+            display_name="Cloud liquid water",
+            units="g/kg",
+            native_dimensions=["zh", "yh", "xh"],
+            vertical_grid="physical_scalar_levels",
+            derivation="native CM1 ql converted from kg/kg to g/kg",
+        )
+    if field == "relative_humidity":
+        return TerrainFieldMetadata(
+            key=field,
+            display_name="Relative humidity",
+            units="%",
+            native_dimensions=["zh", "yh", "xh"],
+            vertical_grid="physical_scalar_levels",
+            derivation="derived from native qv, th, and prs at the same scalar cell",
+        )
     return TerrainFieldMetadata(
         key=field,
-        display_name="Potential-temperature perturbation",
-        units="K",
+        display_name="Cloud over vertical velocity",
+        units="m/s",
         native_dimensions=["zh", "yh", "xh"],
         vertical_grid="physical_scalar_levels",
-        derivation="native CM1 th minus the same native scalar cell at t=0 s",
+        derivation=(
+            "native scalar-grid winterp with native ql cloud overlay; no spatial interpolation"
+        ),
+    )
+
+
+def _world_field_metadata(field: MountainWaveTerrainField) -> TerrainFieldMetadata:
+    metadata = _field_metadata(field)
+    if field == "w":
+        return metadata.model_copy(
+            update={
+                "native_dimensions": ["zh", "yh", "xh"],
+                "vertical_grid": "physical_scalar_levels",
+                "derivation": "native CM1 winterp at scalar cells; no spatial interpolation",
+            }
+        )
+    return metadata
+
+
+def _world_field_scale(
+    field: MountainWaveTerrainField,
+    frames: list[np.ndarray[Any, np.dtype[np.float64]]],
+) -> tuple[float, float, str]:
+    if field in {"w", "theta_perturbation", "cloud_over_wave"}:
+        maximum = max(float(np.max(np.abs(values))) for values in frames)
+        maximum = _rounded_symmetric_limit(maximum)
+        return -maximum, maximum, "blue_white_red_diverging"
+    if field == "cloud_liquid":
+        maximum = max(float(np.max(values)) for values in frames)
+        return 0.0, max(maximum, 0.001), "white_cyan_cloud_liquid"
+    maximum = max(float(np.max(values)) for values in frames)
+    return 0.0, max(100.0, maximum), "brown_white_blue_relative_humidity"
+
+
+def _world_scale_definition(
+    field: MountainWaveTerrainField, minimum: float, maximum: float
+) -> tuple[str, list[float], list[str]]:
+    diverging_colors = [
+        "#4b0082",
+        "#0057d9",
+        "#008fe1",
+        "#00c9d8",
+        "#b7edf0",
+        "#ffffff",
+        "#00d63b",
+        "#8fe000",
+        "#ffe000",
+        "#ff3b00",
+        "#c40000",
+    ]
+    if field in {"w", "cloud_over_wave", "theta_perturbation"}:
+        magnitude = max(abs(minimum), abs(maximum))
+        fractions = [-0.8, -0.6, -0.4, -0.2, -0.1, 0.1, 0.2, 0.4, 0.6, 0.8]
+        scale_id = (
+            "mountain_waves_vertical_velocity_v1"
+            if field in {"w", "cloud_over_wave"}
+            else "mountain_waves_theta_perturbation_v1"
+        )
+        return scale_id, [magnitude * value for value in fractions], diverging_colors
+    if field == "cloud_liquid":
+        fractions = [0.01, 0.03, 0.08, 0.16, 0.3, 0.48, 0.66, 0.82, 0.94]
+        return (
+            "mountain_waves_cloud_liquid_v1",
+            [maximum * value for value in fractions],
+            [
+                "#ffffff",
+                "#e8f8fa",
+                "#cef0f4",
+                "#9edfe8",
+                "#66c8d8",
+                "#36adc3",
+                "#168ea9",
+                "#08718d",
+                "#075970",
+                "#053f52",
+            ],
+        )
+    fractions = [0.1, 0.25, 0.4, 0.55, 0.7, 0.82, 0.9, 0.97, 1.0]
+    return (
+        "mountain_waves_relative_humidity_v1",
+        [maximum * value for value in fractions],
+        [
+            "#704128",
+            "#a87552",
+            "#d1ad8e",
+            "#eee0d2",
+            "#f7f7f2",
+            "#d5e9ee",
+            "#a4d1df",
+            "#66aec6",
+            "#2f82a2",
+            "#155a78",
+        ],
+    )
+
+
+def _rounded_symmetric_limit(magnitude: float) -> float:
+    if not math.isfinite(magnitude) or magnitude <= 0.0:
+        return 1.0
+    if magnitude >= 1.0:
+        return float(math.ceil(magnitude))
+    if magnitude >= 0.1:
+        return math.ceil(magnitude * 10.0) / 10.0
+    return math.ceil(magnitude * 100.0) / 100.0
+
+
+def _rounded_reference(maximum: float, *, step: float) -> float:
+    if not math.isfinite(maximum) or maximum <= 0.0:
+        return step
+    return math.ceil(maximum / step) * step
+
+
+def _fixed_contour_values(minimum: float, maximum: float, *, interval: float) -> list[float]:
+    if not math.isfinite(minimum) or not math.isfinite(maximum) or interval <= 0.0:
+        raise MountainWaveTerrainVisualizationError(
+            "Potential-temperature contour evidence is not finite."
+        )
+    first = math.ceil(minimum / interval) * interval
+    last = math.floor(maximum / interval) * interval
+    if first > last:
+        return []
+    count = int(round((last - first) / interval)) + 1
+    return [first + index * interval for index in range(count)]
+
+
+def _world_viewport_metadata(
+    *,
+    x_center_m: np.ndarray[Any, np.dtype[np.float64]],
+    x_edge_m: np.ndarray[Any, np.dtype[np.float64]],
+    terrain_m: np.ndarray[Any, np.dtype[np.float64]],
+    active_top_m: float,
+    dry_case: bool,
+) -> TerrainViewportMetadata:
+    full = TerrainViewportBounds(
+        x_minimum_m=float(x_edge_m[0]),
+        x_maximum_m=float(x_edge_m[-1]),
+        z_maximum_m=float(active_top_m),
+    )
+    if dry_case:
+        return TerrainViewportMetadata(
+            default_mode="full",
+            focus_available=False,
+            focus=full,
+            full=full,
+        )
+
+    domain_width = full.x_maximum_m - full.x_minimum_m
+    target_width = min(80_000.0, domain_width)
+    terrain_peak_index = int(np.argmax(terrain_m))
+    terrain_center = round(float(x_center_m[terrain_peak_index]) / 1_000.0) * 1_000.0
+    focus_minimum = terrain_center - min(30_000.0, target_width * 0.375)
+    focus_maximum = focus_minimum + target_width
+    if focus_minimum < full.x_minimum_m:
+        focus_minimum = full.x_minimum_m
+        focus_maximum = focus_minimum + target_width
+    if focus_maximum > full.x_maximum_m:
+        focus_maximum = full.x_maximum_m
+        focus_minimum = focus_maximum - target_width
+    focus = TerrainViewportBounds(
+        x_minimum_m=focus_minimum,
+        x_maximum_m=focus_maximum,
+        z_maximum_m=min(12_000.0, float(active_top_m)),
+    )
+    focus_available = (
+        focus.x_minimum_m > full.x_minimum_m
+        or focus.x_maximum_m < full.x_maximum_m
+        or focus.z_maximum_m < full.z_maximum_m
+    )
+    return TerrainViewportMetadata(
+        default_mode="focus" if focus_available else "full",
+        focus_available=focus_available,
+        focus=focus,
+        full=full,
+    )
+
+
+def _relative_humidity_from_native(
+    theta_k: np.ndarray[Any, np.dtype[np.float64]],
+    pressure_pa: np.ndarray[Any, np.dtype[np.float64]],
+    qv_kg_kg: np.ndarray[Any, np.dtype[np.float64]],
+) -> np.ndarray[Any, np.dtype[np.float64]]:
+    if np.any(pressure_pa <= 0.0):
+        raise MountainWaveTerrainVisualizationError(
+            "Relative humidity requires positive native pressure."
+        )
+    temperature_k = theta_k * np.power(pressure_pa / 100_000.0, 287.05 / 1004.0)
+    saturation_vapor_pressure = 611.2 * np.exp(
+        17.67 * (temperature_k - 273.15) / (temperature_k - 29.65)
+    )
+    saturation_mixing_ratio = (
+        0.622 * saturation_vapor_pressure / np.maximum(1.0, pressure_pa - saturation_vapor_pressure)
+    )
+    relative_humidity = 100.0 * np.divide(
+        qv_kg_kg,
+        saturation_mixing_ratio,
+        out=np.zeros_like(qv_kg_kg),
+        where=saturation_mixing_ratio > 0.0,
+    )
+    if not np.isfinite(relative_humidity).all():
+        raise MountainWaveTerrainVisualizationError(
+            "Derived relative humidity contains non-finite values."
+        )
+    return np.asarray(relative_humidity, dtype=np.float64)
+
+
+def _world_active_top_evidence(
+    dataset: xr.Dataset,
+    *,
+    nominal_full_m: np.ndarray[Any, np.dtype[np.float64]],
+    configured_nz: int,
+    configured_dz_m: float,
+    configured_ztop_m: float,
+) -> TerrainActiveTopEvidence:
+    final_nominal_zf_m = float(nominal_full_m[-1])
+    runtime_values = normalize_length_to_m(
+        dataset["ztop"].values, str(dataset["ztop"].attrs.get("units", ""))
+    ).reshape(-1)
+    if runtime_values.size != 1:
+        raise MountainWaveTerrainVisualizationError("Runtime ztop is not scalar-valued.")
+    runtime_ztop_m = float(runtime_values[0])
+    nz_times_dz_m = configured_nz * configured_dz_m
+    agreement = all(
+        math.isclose(value, final_nominal_zf_m, rel_tol=0.0, abs_tol=0.02)
+        for value in (runtime_ztop_m, nz_times_dz_m)
+    )
+    if not agreement:
+        raise MountainWaveTerrainVisualizationError(
+            "Active-top evidence disagrees among native zf, runtime ztop, and nz*dz."
+        )
+    return TerrainActiveTopEvidence(
+        transform_top_source="final_nominal_zf",
+        final_nominal_zf_m=final_nominal_zf_m,
+        runtime_ztop_m=runtime_ztop_m,
+        configured_nz=configured_nz,
+        configured_dz_m=configured_dz_m,
+        nz_times_dz_m=nz_times_dz_m,
+        all_sources_agree=True,
+        inactive_namelist_ztop_m=configured_ztop_m,
     )
 
 

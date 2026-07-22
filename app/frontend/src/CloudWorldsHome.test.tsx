@@ -20,6 +20,22 @@ const summary: CloudWorldSummary = {
   availability_message: "Reference, variation, and featured comparison are available.",
 };
 
+const mountainWavesSummary: CloudWorldSummary = {
+  world_id: "mountain_waves",
+  display_name: "Mountain Waves",
+  short_description: "Investigate terrain-forced waves and the clouds they organize.",
+  reference_simulation_id: "mountain_waves_boulder_moist_reference",
+  reference_available: true,
+  simulation_count: 2,
+  saved_view_count: 0,
+  saved_comparison_count: 0,
+  featured_comparison_count: 0,
+  active_run_count: 0,
+  completed_uninspected_run_count: 0,
+  availability_state: "available",
+  availability_message: "Dry Ridge and Boulder Windstorm are available.",
+};
+
 describe("CloudWorldsHome", () => {
   beforeEach(() => {
     vi.stubGlobal("fetch", vi.fn());
@@ -29,18 +45,27 @@ describe("CloudWorldsHome", () => {
     vi.unstubAllGlobals();
   });
 
-  it("presents Trade Cumulus as the sole World entrance", async () => {
-    vi.mocked(fetch).mockResolvedValue(ok([summary]));
-    const onEnter = vi.fn();
-    render(<CloudWorldsHome onEnterTradeCumulus={onEnter} />);
+  it("presents both Cloud Worlds as peer entrances", async () => {
+    vi.mocked(fetch).mockResolvedValue(ok([summary, mountainWavesSummary]));
+    const onEnterTradeCumulus = vi.fn();
+    const onEnterMountainWaves = vi.fn();
+    render(
+      <CloudWorldsHome
+        onEnterTradeCumulus={onEnterTradeCumulus}
+        onEnterMountainWaves={onEnterMountainWaves}
+      />,
+    );
 
     expect(await screen.findByRole("heading", { name: "Trade Cumulus" })).toBeInTheDocument();
     expect(screen.getByText(summary.short_description)).toBeInTheDocument();
     expect(screen.getByText("2 awaiting inspection")).toBeInTheDocument();
-    expect(screen.queryByText(/mountain-wave/i)).not.toBeInTheDocument();
-    expect(screen.queryByRole("link", { name: /terrain/i })).not.toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Mountain Waves" })).toBeInTheDocument();
+    expect(screen.getByText(mountainWavesSummary.short_description)).toBeInTheDocument();
+    expect(screen.getByText("Boulder Windstorm")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Enter Trade Cumulus" }));
-    expect(onEnter).toHaveBeenCalledOnce();
+    fireEvent.click(screen.getByRole("button", { name: "Enter Mountain Waves" }));
+    expect(onEnterTradeCumulus).toHaveBeenCalledOnce();
+    expect(onEnterMountainWaves).toHaveBeenCalledOnce();
   });
 
   it("shows bounded partial availability", async () => {
@@ -54,7 +79,7 @@ describe("CloudWorldsHome", () => {
         },
       ]),
     );
-    render(<CloudWorldsHome onEnterTradeCumulus={vi.fn()} />);
+    render(<CloudWorldsHome onEnterTradeCumulus={vi.fn()} onEnterMountainWaves={vi.fn()} />);
 
     expect(await screen.findByText("Partially available")).toBeInTheDocument();
     expect(screen.getByText("Canonical BOMEX Baseline is missing.")).toBeInTheDocument();
@@ -68,6 +93,7 @@ describe("CloudWorldsHome", () => {
     render(
       <CloudWorldsHome
         onEnterTradeCumulus={vi.fn()}
+        onEnterMountainWaves={vi.fn()}
         fallback={<div>Existing application remains available</div>}
       />,
     );

@@ -944,6 +944,7 @@ def verify_evaluation_input_identity(
     expected_run_id: str,
     expected_implementation_commit: str,
     expected_file_sha256: dict[str, str],
+    require_idle_processes: bool = True,
 ) -> dict[str, Any]:
     """Fail closed unless every preserved evaluation input matches its pinned hash."""
     if package.run_id != expected_run_id:
@@ -959,7 +960,7 @@ def verify_evaluation_input_identity(
         )
     if manifest.app.commit != expected_implementation_commit:
         raise MountainWaveCaseError("Run manifest implementation commit changed.")
-    active = active_cm1_processes()
+    active = active_cm1_processes() if require_idle_processes else []
     if active:
         raise MountainWaveCaseError(
             f"Offline evaluation requires no active CM1/MPI process: {active}"

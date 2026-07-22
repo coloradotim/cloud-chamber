@@ -20,6 +20,10 @@ from cloud_chamber.cm1_source_customization import (
     CommandRunner,
     prepare_cm1_source_customization,
 )
+from cloud_chamber.generated_input_identity import (
+    GeneratedInputIdentityError,
+    verify_generated_input_identity,
+)
 from cloud_chamber.pre_run_validation import report_blocks_execution
 from cloud_chamber.run_manifest import (
     ExecutionMetadata,
@@ -148,6 +152,12 @@ class LocalRunManager:
         run_dir = Path(manifest.generated_inputs.run_directory).expanduser()
         if not run_dir.exists():
             raise LocalRunManagerError(f"Run package directory does not exist: {run_dir}")
+        try:
+            verify_generated_input_identity(manifest)
+        except GeneratedInputIdentityError as exc:
+            raise LocalRunManagerError(
+                f"Generated input identity check failed before launch: {exc}"
+            ) from exc
         try:
             source_customization = prepare_cm1_source_customization(
                 settings=self._settings,
