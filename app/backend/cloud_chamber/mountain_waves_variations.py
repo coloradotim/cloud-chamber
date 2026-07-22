@@ -22,6 +22,9 @@ from cloud_chamber.mountain_wave_case import (
     sha256_file,
     verified_clean_git_commit,
 )
+from cloud_chamber.mountain_wave_terrain_visualization import (
+    MOUNTAIN_WAVES_EXPLORE_REQUIRED_FIELDS,
+)
 from cloud_chamber.mountain_waves_world import (
     MOIST_SIMULATION_ID,
     WORLD_ID,
@@ -152,6 +155,13 @@ def mountain_waves_variation_template(
 ) -> MountainWavesVariationTemplate:
     parent, manifest, manifest_path = mountain_waves_run_manifest(settings, parent_simulation_id)
     if not parent.can_create_variation:
+        unavailable_reason = (
+            "Dry Ridge preserves a source-defined analytic atmosphere and terrain setup "
+            "that this variation package cannot inherit exactly; it remains inspectable "
+            "but is not an editable parent."
+            if not parent.moist_fields_available
+            else "This Simulation does not retain an exact editable configuration."
+        )
         return MountainWavesVariationTemplate(
             parent_simulation_id=parent.simulation_id,
             parent_run_id=parent.run_id,
@@ -159,7 +169,7 @@ def mountain_waves_variation_template(
             parent_configuration_source="unavailable",
             configuration=_fallback_configuration(parent, manifest),
             can_create_variation=False,
-            unavailable_reason=("This Simulation does not retain an exact editable configuration."),
+            unavailable_reason=unavailable_reason,
         )
     configuration = _configuration_from_parent(parent, manifest, manifest_path)
     return MountainWavesVariationTemplate(
@@ -185,10 +195,20 @@ def preview_mountain_waves_variation(
             terrain_profile=[],
         )
     differences = configuration_differences(template.configuration, request.configuration)
+    _parent, parent_manifest, _manifest_path = mountain_waves_run_manifest(
+        settings, request.parent_simulation_id
+    )
     blocking = _configuration_errors(
         request,
+        parent=template.configuration,
+        inherited_domain=parent_manifest.run_configuration.get("domain"),
         required_top_m=template.configuration.sounding[-1].height_m,
     )
+    if not any(differences.values()):
+        blocking.append(
+            "Change at least one editable setting; an unchanged technical rerun is a "
+            "separate action."
+        )
     warnings = configuration_warnings(request.configuration, differences)
     return MountainWavesVariationPreview(
         differences=differences,
@@ -338,7 +358,7 @@ def create_mountain_waves_variation(
                 "configuration_difference": preview.differences,
                 "package_path": "existing_local_run_manager",
             },
-            required_output_fields=["zs", "zhval", "th", "prs", "qv", "ql", "winterp", "w"],
+            required_output_fields=sorted(MOUNTAIN_WAVES_EXPLORE_REQUIRED_FIELDS),
             input_source="mountain_waves_parent_external_sounding_and_terrain",
             expected_outputs=["native_numbered_cm1_model_netcdf", "cm1_stats_and_logs"],
             run_caveats=preview.warnings,
@@ -708,7 +728,11 @@ def _read_parent_sounding(sounding_path: Path, case_manifest_path: Path) -> list
 
 
 def _configuration_errors(
-    request: MountainWavesVariationRequest, *, required_top_m: float
+    request: MountainWavesVariationRequest,
+    *,
+    parent: MountainWavesConfiguration,
+    inherited_domain: object,
+    required_top_m: float,
 ) -> list[str]:
     configuration = request.configuration
     errors: list[str] = []
@@ -722,6 +746,14 @@ def _configuration_errors(
         errors.append("Ridge height must be between 1 and 6,000 m.")
     if not 500.0 <= terrain.half_width_m <= 50_000.0:
         errors.append("Ridge half-width must be between 500 and 50,000 m.")
+    domain_bounds = _domain_x_bounds(inherited_domain)
+    if domain_bounds is None:
+        errors.append("The inherited parent domain is unavailable for ridge-center validation.")
+    elif not domain_bounds[0] <= terrain.center_m <= domain_bounds[1]:
+        errors.append(
+            "Ridge center must remain inside the inherited parent domain "
+            f"({domain_bounds[0]:g} to {domain_bounds[1]:g} m)."
+        )
     if configuration.duration_seconds < 600 or configuration.duration_seconds > 14_400:
         errors.append("Integration duration must be between 600 and 14,400 s.")
     cadence = configuration.output_cadence_seconds
@@ -734,6 +766,14 @@ def _configuration_errors(
             "The final sounding level must reach the parent profile top "
             f"({required_top_m / 1_000.0:g} km)."
         )
+    if len(configuration.sounding) != len(parent.sounding) or any(
+        not math.isclose(level.height_m, parent_level.height_m)
+        or not math.isclose(level.pressure_pa, parent_level.pressure_pa)
+        for level, parent_level in zip(configuration.sounding, parent.sounding, strict=False)
+    ):
+        errors.append(
+            "Sounding heights and pressures are inherited from the parent and cannot be changed."
+        )
     for level in configuration.sounding:
         if not 150.0 <= level.theta_k <= 800.0:
             errors.append(f"Potential temperature at {level.height_m:g} m is outside 150-800 K.")
@@ -742,6 +782,19 @@ def _configuration_errors(
         if not -100.0 <= level.u_m_s <= 100.0:
             errors.append(f"Cross-ridge wind at {level.height_m:g} m is outside -100 to 100 m/s.")
     return errors
+
+
+def _domain_x_bounds(domain: object) -> tuple[float, float] | None:
+    if not isinstance(domain, dict):
+        return None
+    nx = domain.get("nx")
+    dx_m = domain.get("dx_m")
+    if not isinstance(nx, int | float) or not isinstance(dx_m, int | float):
+        return None
+    if int(nx) < 2 or float(dx_m) <= 0.0:
+        return None
+    half_span = (int(nx) - 1) * float(dx_m) / 2.0
+    return -half_span, half_span
 
 
 def _render_variation_namelist(parent_text: str, configuration: MountainWavesConfiguration) -> str:

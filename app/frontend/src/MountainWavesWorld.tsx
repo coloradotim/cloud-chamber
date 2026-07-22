@@ -34,6 +34,7 @@ export type MountainWavesSimulation = {
   inspectable: boolean;
   can_create_variation: boolean;
   moist: boolean;
+  moist_fields_available: boolean;
   purpose: string;
   configuration: Record<string, unknown> | null;
   differences: Record<string, MountainWavesDifference[]>;
@@ -505,7 +506,7 @@ function stateLabel(state: MountainWavesSimulation["state"]): string {
     failed: "Failed",
     canceled: "Canceled",
     unavailable: "Unavailable",
-    conflict: "Identity conflict",
+    conflict: "Not inspectable",
   }[state];
 }
 

@@ -1,10 +1,7 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import {
-  MountainWavesExplore,
-  mountainWavesCloudPointRendering,
-} from "./MountainWavesExplore";
+import { MountainWavesExplore, mountainWavesCloudPointRendering } from "./MountainWavesExplore";
 import type { MountainWavesSimulation } from "./MountainWavesWorld";
 
 const { cloudPointColor, cloudPointOpacity, nativeCloudCellPoints } =
@@ -26,6 +23,7 @@ const simulation: MountainWavesSimulation = {
   inspectable: true,
   can_create_variation: true,
   moist: true,
+  moist_fields_available: true,
   purpose: "Moist wave reference",
   configuration: null,
   differences: {},
@@ -45,6 +43,7 @@ const drySimulation: MountainWavesSimulation = {
   case_id: "dry-case",
   reference_simulation_id: "mountain_waves_boulder_moist_reference",
   moist: false,
+  moist_fields_available: false,
   purpose: "Dry wave structure",
 };
 
@@ -228,9 +227,7 @@ describe("MountainWavesExplore", () => {
       "Fixed across this Simulation",
     );
     expect(screen.getByLabelText("w (m/s) legend")).toHaveTextContent("u reference 25 m/s");
-    expect(screen.getByLabelText("w (m/s) legend")).toHaveTextContent(
-      "ql ≥ 0.001 g/kg",
-    );
+    expect(screen.getByLabelText("w (m/s) legend")).toHaveTextContent("ql ≥ 0.001 g/kg");
     expect(screen.getByLabelText("w (m/s) legend")).toHaveTextContent(
       "Point opacity increases with ql",
     );
@@ -357,9 +354,7 @@ describe("MountainWavesExplore", () => {
         overlay: null,
       }),
     );
-    expect(
-      await screen.findByRole("heading", { name: "Cloud liquid water" }),
-    ).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Cloud liquid water" })).toBeInTheDocument();
 
     resolveW?.(ok({ ...frame, field: { ...frame.field, key: "w" }, overlay: null }));
     await new Promise((resolve) => window.setTimeout(resolve, 0));

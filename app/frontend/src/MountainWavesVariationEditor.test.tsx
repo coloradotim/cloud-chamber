@@ -39,6 +39,7 @@ const world = {
       inspectable: true,
       can_create_variation: true,
       moist: true,
+      moist_fields_available: true,
       purpose: "Reference",
       configuration: null,
       differences: {},

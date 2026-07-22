@@ -9,8 +9,26 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 from cloud_chamber.local_run_manager import reconcile_completed_run_manifest
+from cloud_chamber.moist_mountain_wave_case import (
+    MoistMountainWaveCaseError,
+    load_preserved_moist_mountain_wave_run,
+    verify_preserved_run_artifacts,
+)
+from cloud_chamber.mountain_wave_case import (
+    PRESERVED_GATE_B_EVALUATION_INPUT_SHA256,
+    PRESERVED_GATE_B_IMPLEMENTATION_COMMIT,
+    MountainWaveCaseError,
+    load_completed_mountain_wave_package_for_evaluation,
+    verify_evaluation_input_identity,
+)
+from cloud_chamber.mountain_wave_terrain_visualization import (
+    MOUNTAIN_WAVES_EXPLORE_REQUIRED_FIELDS,
+    MountainWaveTerrainVisualizationError,
+    validate_mountain_waves_native_outputs,
+)
 from cloud_chamber.run_manifest import (
     LifecycleState,
+    ProductState,
     RunManifest,
     RunManifestError,
     load_run_manifest,
@@ -75,6 +93,7 @@ class MountainWavesSimulationRecord(BaseModel):
     inspectable: bool
     can_create_variation: bool
     moist: bool
+    moist_fields_available: bool
     purpose: str
     configuration: dict[str, Any] | None = None
     differences: dict[str, list[dict[str, Any]]] = Field(default_factory=dict)
@@ -131,7 +150,7 @@ class MountainWavesWorldDetail(BaseModel):
             reference_available=bool(moist_reference and moist_reference.inspectable),
             simulation_count=sum(item.inspectable for item in self.simulations),
             active_run_count=self.lab_summary.active_run_count,
-            completed_uninspected_run_count=0,
+            completed_uninspected_run_count=sum(item.state == "conflict" for item in self.history),
             availability_state=self.availability_state,
             availability_message=self.availability_message,
         )
@@ -263,6 +282,7 @@ def _built_in_record(
         run_id=spec.run_id,
         case_id=spec.case_id,
         moist=spec.moist,
+        moist_fields_available=spec.moist,
         purpose=spec.purpose,
         caveats=list(spec.caveats),
         manifest_path=str(manifest_path),
@@ -306,7 +326,7 @@ def _built_in_record(
                 "can_create_variation": False,
             }
         )
-    inspectable = _manifest_is_inspectable(manifest)
+    inspectable, inspectability_message = _built_in_inspectability(settings, spec, manifest)
     return MountainWavesSimulationRecord.model_validate(
         {
             **base,
@@ -314,15 +334,19 @@ def _built_in_record(
                 "available" if inspectable else _state_from_lifecycle(manifest.lifecycle_state)
             ),
             "state_message": (
-                "Exact preserved output is available for terrain-aware inspection."
-                if inspectable
-                else (
-                    f"Preserved output is {manifest.lifecycle_state.value} and cannot be "
-                    "inspected yet."
+                (
+                    "Exact preserved output is available for terrain-aware inspection."
+                    if spec.moist
+                    else (
+                        "Exact preserved output is available for terrain-aware inspection; "
+                        "its source-defined dry setup is not an editable variation parent."
+                    )
                 )
+                if inspectable
+                else inspectability_message
             ),
             "inspectable": inspectable,
-            "can_create_variation": inspectable,
+            "can_create_variation": inspectable and spec.moist,
             "configuration": _built_in_configuration(manifest, spec),
             "warnings": list(manifest.outputs.runtime_warnings),
             "created_at": manifest.created_at.isoformat(),
@@ -361,9 +385,19 @@ def _variation_record(
     display_name = _string(configuration.get("simulation_display_name"))
     if not simulation_id or not display_name:
         return None
-    inspectable = _manifest_is_inspectable(manifest)
-    state = "available" if inspectable else _state_from_lifecycle(manifest.lifecycle_state)
     exact_configuration = configuration.get("mountain_waves_configuration")
+    moist = _configuration_is_moist(exact_configuration)
+    inspectable, inspectability_message = _variation_inspectability(manifest, manifest_path)
+    state = (
+        "available"
+        if inspectable
+        else (
+            "conflict"
+            if manifest.lifecycle_state
+            in {LifecycleState.COMPLETED, LifecycleState.INGESTED, LifecycleState.SAVED}
+            else _state_from_lifecycle(manifest.lifecycle_state)
+        )
+    )
     differences = configuration.get("configuration_difference")
     warning_values = configuration.get("warnings")
     return MountainWavesSimulationRecord(
@@ -376,10 +410,11 @@ def _variation_record(
         parent_run_id=_string(configuration.get("parent_run_id")),
         user_question=_string(configuration.get("user_question")),
         state=state,
-        state_message=_variation_state_message(manifest, inspectable),
+        state_message=_variation_state_message(manifest, inspectable, inspectability_message),
         inspectable=inspectable,
         can_create_variation=inspectable and isinstance(exact_configuration, dict),
-        moist=True,
+        moist=moist,
+        moist_fields_available=True,
         purpose=(
             "Explore the retained configuration and use its exact state for another experiment."
         ),
@@ -415,19 +450,106 @@ def _built_in_configuration(manifest: RunManifest, spec: _BuiltInSpec) -> dict[s
     }
 
 
-def _manifest_is_inspectable(manifest: RunManifest) -> bool:
+def _built_in_inspectability(
+    settings: CloudChamberSettings, spec: _BuiltInSpec, manifest: RunManifest
+) -> tuple[bool, str]:
+    if manifest.lifecycle_state != LifecycleState.COMPLETED or manifest.execution.exit_code != 0:
+        return False, "Preserved output is not a completed zero-exit CM1 run."
+    try:
+        if spec.moist:
+            moist_package = load_preserved_moist_mountain_wave_run(
+                settings=settings, run_id=spec.run_id
+            )
+            before = verify_preserved_run_artifacts(moist_package)
+            _validate_manifest_native_outputs(manifest, moist_fields_available=True)
+            after = verify_preserved_run_artifacts(moist_package)
+        else:
+            dry_package = load_completed_mountain_wave_package_for_evaluation(
+                settings=settings,
+                run_id=spec.run_id,
+                expected_implementation_commit=PRESERVED_GATE_B_IMPLEMENTATION_COMMIT,
+            )
+            before = verify_evaluation_input_identity(
+                dry_package,
+                expected_run_id=spec.run_id,
+                expected_implementation_commit=PRESERVED_GATE_B_IMPLEMENTATION_COMMIT,
+                expected_file_sha256=PRESERVED_GATE_B_EVALUATION_INPUT_SHA256,
+                require_idle_processes=False,
+            )
+            _validate_manifest_native_outputs(manifest, moist_fields_available=False)
+            after = verify_evaluation_input_identity(
+                dry_package,
+                expected_run_id=spec.run_id,
+                expected_implementation_commit=PRESERVED_GATE_B_IMPLEMENTATION_COMMIT,
+                expected_file_sha256=PRESERVED_GATE_B_EVALUATION_INPUT_SHA256,
+                require_idle_processes=False,
+            )
+        if before != after:
+            raise ValueError("Preserved artifacts changed during inspectability validation.")
+    except (
+        OSError,
+        ValueError,
+        MountainWaveCaseError,
+        MoistMountainWaveCaseError,
+        MountainWaveTerrainVisualizationError,
+    ) as exc:
+        return False, f"Preserved output failed strict identity or native-data validation: {exc}"
+    return True, "Exact preserved output passed strict identity and native-data validation."
+
+
+def _validate_manifest_native_outputs(
+    manifest: RunManifest, *, moist_fields_available: bool
+) -> dict[str, Any]:
+    return validate_mountain_waves_native_outputs(
+        output_paths=[Path(path).expanduser() for path in manifest.outputs.netcdf_paths],
+        namelist_path=Path(manifest.generated_inputs.namelist_input or "").expanduser(),
+        run_id=manifest.run_id,
+        implementation_commit=manifest.app.commit or "unknown",
+        moist_fields_available=moist_fields_available,
+    )
+
+
+def _variation_inspectability(manifest: RunManifest, manifest_path: Path) -> tuple[bool, str]:
     if manifest.lifecycle_state not in {
         LifecycleState.COMPLETED,
         LifecycleState.INGESTED,
         LifecycleState.SAVED,
     }:
-        return False
-    return bool(
-        [
-            path
-            for path in manifest.outputs.netcdf_paths
-            if Path(path).name.startswith("cm1out_") and "stats" not in Path(path).name
-        ]
+        return False, f"Output is {manifest.lifecycle_state.value} and is not inspectable yet."
+    if (
+        manifest.execution.exit_code != 0
+        or manifest.execution.started_at is None
+        or manifest.execution.finished_at is None
+        or manifest.provenance.product_state != ProductState.COMPLETED_CM1_RESULT
+    ):
+        return False, "Completed output lacks normal zero-exit process evidence."
+    missing_contract_fields = sorted(
+        MOUNTAIN_WAVES_EXPLORE_REQUIRED_FIELDS - set(manifest.required_output_fields)
+    )
+    if missing_contract_fields:
+        return False, (
+            "Completed output does not declare every Explore field: "
+            + ", ".join(missing_contract_fields)
+            + "."
+        )
+    run_dir = Path(manifest.generated_inputs.run_directory).expanduser().resolve()
+    output_paths = [Path(path).expanduser().resolve() for path in manifest.outputs.netcdf_paths]
+    escaped = [path.name for path in output_paths if not path.is_relative_to(run_dir)]
+    if escaped:
+        return False, f"Completed output inventory escapes its retained run: {escaped}."
+    try:
+        validation = validate_mountain_waves_native_outputs(
+            output_paths=output_paths,
+            namelist_path=Path(manifest.generated_inputs.namelist_input or "").expanduser(),
+            run_id=manifest.run_id,
+            implementation_commit=manifest.app.commit or "unknown",
+            moist_fields_available=True,
+        )
+    except (OSError, ValueError, MountainWaveTerrainVisualizationError) as exc:
+        return False, f"Completed output failed native-data validation: {exc}"
+    return True, (
+        f"CM1 completed normally with {validation['history_count']} exact native histories "
+        "ready for inspection."
     )
 
 
@@ -445,9 +567,17 @@ def _state_from_lifecycle(state: LifecycleState) -> SimulationState:
     return "unavailable"
 
 
-def _variation_state_message(manifest: RunManifest, inspectable: bool) -> str:
+def _variation_state_message(
+    manifest: RunManifest, inspectable: bool, inspectability_message: str
+) -> str:
     if inspectable:
-        return "CM1 completed with terrain-aware output ready for inspection."
+        return inspectability_message
+    if manifest.lifecycle_state in {
+        LifecycleState.COMPLETED,
+        LifecycleState.INGESTED,
+        LifecycleState.SAVED,
+    }:
+        return inspectability_message
     return {
         LifecycleState.PACKAGED: "Configuration is packaged and ready to run.",
         LifecycleState.QUEUED: "Waiting for the local CM1 runner.",
@@ -455,6 +585,20 @@ def _variation_state_message(manifest: RunManifest, inspectable: bool) -> str:
         LifecycleState.FAILED: "The attempt failed and remains in Lab history.",
         LifecycleState.CANCELED: "The attempt was canceled and remains in Lab history.",
     }.get(manifest.lifecycle_state, "Output is not inspectable.")
+
+
+def _configuration_is_moist(configuration: object) -> bool:
+    if not isinstance(configuration, dict):
+        return False
+    sounding = configuration.get("sounding")
+    if not isinstance(sounding, list):
+        return False
+    return any(
+        isinstance(level, dict)
+        and isinstance(level.get("qv_g_kg"), int | float)
+        and float(level["qv_g_kg"]) > 0.0
+        for level in sounding
+    )
 
 
 def _iso(value: Any) -> str | None:

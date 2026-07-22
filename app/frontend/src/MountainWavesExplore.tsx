@@ -161,11 +161,7 @@ function cloudPointOpacity(
   return global * localOpacity;
 }
 
-function cloudPointColor(
-  valueGKg: number,
-  thresholdGKg: number,
-  maximumGKg: number,
-): string {
+function cloudPointColor(valueGKg: number, thresholdGKg: number, maximumGKg: number): string {
   const range = Math.max(maximumGKg - thresholdGKg, thresholdGKg, Number.EPSILON);
   const intensity = clamp((valueGKg - thresholdGKg) / range, 0, 1);
   const red = Math.round((0.24 + intensity * 0.55) * 255);
@@ -217,7 +213,9 @@ export function MountainWavesExplore({
   simulation: MountainWavesSimulation;
   onBack: () => void;
 }) {
-  const [viewMode, setViewMode] = useState<ViewMode>(simulation.moist ? "cloud" : "structure");
+  const [viewMode, setViewMode] = useState<ViewMode>(
+    simulation.moist_fields_available ? "cloud" : "structure",
+  );
   const [field, setField] = useState<Exclude<MountainWaveField, "cloud_over_wave">>("w");
   const [geometryMode, setGeometryMode] = useState<GeometryMode>("expanded");
   const [viewportMode, setViewportMode] = useState<ViewportMode | null>(null);
@@ -234,8 +232,7 @@ export function MountainWavesExplore({
   const [horizontalWind, setHorizontalWind] = useState(true);
   const [structurePotentialTemperatureContours, setStructurePotentialTemperatureContours] =
     useState(true);
-  const [cloudPotentialTemperatureContours, setCloudPotentialTemperatureContours] =
-    useState(false);
+  const [cloudPotentialTemperatureContours, setCloudPotentialTemperatureContours] = useState(false);
   const [cloudOpacity, setCloudOpacity] = useState(0.68);
   const [cloudPointSize, setCloudPointSize] = useState(11);
   const [maximized, setMaximized] = useState(false);
@@ -304,8 +301,8 @@ export function MountainWavesExplore({
   }, [frame, playbackSpeed, playing]);
 
   useEffect(() => {
-    if (viewMode === "cloud" && !simulation.moist) setViewMode("structure");
-  }, [simulation.moist, viewMode]);
+    if (viewMode === "cloud" && !simulation.moist_fields_available) setViewMode("structure");
+  }, [simulation.moist_fields_available, viewMode]);
 
   useEffect(() => {
     setViewportMode(null);
@@ -364,7 +361,7 @@ export function MountainWavesExplore({
                 >
                   Wave Structure Lens
                 </button>
-                {simulation.moist && (
+                {simulation.moist_fields_available && (
                   <button
                     type="button"
                     className={viewMode === "cloud" ? "active-control" : ""}
@@ -577,9 +574,7 @@ export function MountainWavesExplore({
                       value={cloudPointSize}
                       onChange={(event) => setCloudPointSize(Number(event.target.value))}
                     />
-                    <output htmlFor="mountain-waves-cloud-point-size">
-                      {cloudPointSize}px
-                    </output>
+                    <output htmlFor="mountain-waves-cloud-point-size">{cloudPointSize}px</output>
                   </label>
                 </div>
               )}
@@ -718,8 +713,7 @@ function TerrainPlot({
     const xIndex = nearestIndex(frame.geometry.x_center_m, xModel);
     const zModel =
       transform.zMinimum +
-      (transform.zMaximum - transform.zMinimum) *
-        (1 - (yPixel - transform.top) / transform.height);
+      (transform.zMaximum - transform.zMinimum) * (1 - (yPixel - transform.top) / transform.height);
     const heights = frame.geometry.scalar_height_m.map((row) => row[xIndex]);
     const zIndex = nearestIndex(heights, zModel);
     onSelectPoint({ xIndex, zIndex });
@@ -801,7 +795,9 @@ function MountainWavesLegend({
         <div className="mountain-waves-lens-keys">
           {horizontalWind && (
             <>
-              <span className="mountain-waves-wind-key" aria-hidden="true">→</span>
+              <span className="mountain-waves-wind-key" aria-hidden="true">
+                →
+              </span>
               <span>u reference {formatNumber(frame.lens.horizontal_wind_reference_m_s)} m/s</span>
             </>
           )}
@@ -1002,7 +998,7 @@ function MountainWavesContext({
           ? "Vertical velocity remains primary. Native-cell cloud points and the black boundary locate cloud liquid water; the RH = 100% contour and horizontal wind show the moist wave environment. Potential-temperature contours can be added for wave structure."
           : viewMode === "structure"
             ? "Vertical velocity remains primary while horizontal wind and total potential-temperature contours reveal the terrain-forced wave."
-          : `The selected Field is shown directly on its fixed Simulation scale${frame ? ` in ${frame.field.units}` : ""}.`}
+            : `The selected Field is shown directly on its fixed Simulation scale${frame ? ` in ${frame.field.units}` : ""}.`}
       </p>
       <dl className="context-metrics">
         <Metric label="Simulation" value={simulation.display_name} />
@@ -1011,7 +1007,10 @@ function MountainWavesContext({
           label="Geometry"
           value={geometryMode === "expanded" ? "Expanded height" : "True physical scale"}
         />
-        <Metric label="Viewport" value={viewportMode === "focus" ? "Focus region" : "Full domain"} />
+        <Metric
+          label="Viewport"
+          value={viewportMode === "focus" ? "Focus region" : "Full domain"}
+        />
         <Metric label="Model time" value={formatTime(frame?.time_seconds ?? 0)} />
         <Metric
           label="Relevant caveat"
@@ -1022,7 +1021,9 @@ function MountainWavesContext({
                 ? "Cloud state is instantaneous; no formation or erosion process is inferred at a point."
                 : simulation.moist
                   ? "Point labels describe the saved instant; they do not infer process direction."
-                  : "This dry Simulation contains no water-vapor or cloud fields."
+                  : simulation.moist_fields_available
+                    ? "The configured atmosphere is dry; retained moisture fields remain available for inspection."
+                    : "This dry Simulation contains no water-vapor or cloud fields."
           }
         />
       </dl>
@@ -1212,13 +1213,7 @@ function drawTerrainFrame(
     );
   }
   if (options.viewMode !== "field" && options.horizontalWind) {
-    drawHorizontalWind(
-      context,
-      frame,
-      xPixel,
-      zPixel,
-      viewport,
-    );
+    drawHorizontalWind(context, frame, xPixel, zPixel, viewport);
   }
 
   drawTerrainSilhouette(context, frame, xPixel, zPixel, left, zPixel(zMinimum));
@@ -1302,18 +1297,10 @@ function drawPotentialTemperatureContours(
   zPixel: (value: number) => number,
 ) {
   frame.lens.potential_temperature_contour_values_k.forEach((level) => {
-    drawMaskBoundary(
-      context,
-      frame,
-      values,
-      (value) => value >= level,
-      xPixel,
-      zPixel,
-      {
-        color: "rgba(57, 70, 78, 0.46)",
-        width: 0.7,
-      },
-    );
+    drawMaskBoundary(context, frame, values, (value) => value >= level, xPixel, zPixel, {
+      color: "rgba(57, 70, 78, 0.46)",
+      width: 0.7,
+    });
   });
 }
 

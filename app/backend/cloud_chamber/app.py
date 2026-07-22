@@ -678,7 +678,7 @@ def get_mountain_waves_simulation_frame(
             run_id=manifest.run_id,
             case_label=record.display_name,
             implementation_commit=manifest.app.commit or "unknown",
-            dry_case=not record.moist,
+            dry_case=not record.moist_fields_available,
             caveats=[*record.caveats, *record.warnings],
         )
     except ValueError as exc:

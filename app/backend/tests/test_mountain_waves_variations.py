@@ -41,19 +41,23 @@ from cloud_chamber.run_manifest import (
 from cloud_chamber.settings import CloudChamberSettings
 
 
-def test_dry_reference_template_is_source_derived_and_editable(tmp_path: Path) -> None:
+@pytest.fixture(autouse=True)
+def _trust_test_built_in_artifacts(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        "cloud_chamber.mountain_waves_world._built_in_inspectability",
+        lambda _settings, _spec, _manifest: (True, "Test artifact accepted."),
+    )
+
+
+def test_dry_reference_is_inspectable_but_not_an_editable_parent(tmp_path: Path) -> None:
     settings = _settings(tmp_path)
     _write_parent(settings, run_id=DRY_RUN_ID, case_id=DRY_CASE_ID, configuration=None)
 
     template = mountain_waves_variation_template(settings, DRY_SIMULATION_ID)
 
-    assert template.can_create_variation is True
-    assert "isnd=9" in template.parent_configuration_source
+    assert template.can_create_variation is False
+    assert "source-defined" in (template.unavailable_reason or "")
     assert template.configuration.terrain.height_m == pytest.approx(400.0)
-    assert template.configuration.sounding[0].height_m == pytest.approx(0.0)
-    assert template.configuration.sounding[-1].height_m > 20_000.0
-    assert {level.qv_g_kg for level in template.configuration.sounding} == {0.0}
-    assert {level.u_m_s for level in template.configuration.sounding} == {10.0}
 
 
 def test_preview_groups_multiple_exact_changes_and_keeps_science_warnings_nonblocking(
@@ -123,6 +127,38 @@ def test_malformed_configuration_blocks_without_turning_warnings_into_gates(
     assert any("divide" in error for error in preview.blocking_errors)
 
 
+def test_unchanged_and_noninherited_coordinates_are_blocked(tmp_path: Path) -> None:
+    settings = _settings(tmp_path)
+    parent = _configuration()
+    _write_parent(settings, run_id=MOIST_RUN_ID, case_id=MOIST_CASE_ID, configuration=parent)
+
+    unchanged = preview_mountain_waves_variation(
+        settings,
+        MountainWavesVariationRequest(
+            parent_simulation_id=MOIST_SIMULATION_ID,
+            simulation_name="No-op",
+            configuration=parent,
+        ),
+    )
+    assert any("Change at least one" in error for error in unchanged.blocking_errors)
+
+    changed = parent.model_copy(deep=True)
+    changed.terrain.height_m = 1_900.0
+    changed.terrain.center_m = 200_000.0
+    changed.sounding[1].height_m += 1.0
+    changed.sounding[1].pressure_pa += 1.0
+    preview = preview_mountain_waves_variation(
+        settings,
+        MountainWavesVariationRequest(
+            parent_simulation_id=MOIST_SIMULATION_ID,
+            simulation_name="Invalid inherited coordinates",
+            configuration=changed,
+        ),
+    )
+    assert any("Ridge center" in error for error in preview.blocking_errors)
+    assert any("heights and pressures" in error for error in preview.blocking_errors)
+
+
 def test_package_persists_identity_lineage_inputs_and_clean_preflight(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -164,6 +200,7 @@ def test_package_persists_identity_lineage_inputs_and_clean_preflight(
     assert manifest.run_configuration["mountain_waves_configuration"] == intended.model_dump(
         mode="json"
     )
+    assert "uinterp" in manifest.required_output_fields
     assert manifest.run_configuration["configuration_difference"]["terrain"]
     assert manifest.generated_inputs.input_sounding is not None
     assert Path(manifest.generated_inputs.input_sounding).read_text().startswith("1000.0000")

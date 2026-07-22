@@ -39,6 +39,13 @@ MountainWaveTerrainField = Literal[
     "cloud_over_wave",
 ]
 
+MOUNTAIN_WAVES_EXPLORE_REQUIRED_FIELDS = frozenset(
+    {"zs", "zhval", "th", "prs", "qv", "ql", "uinterp", "winterp", "w"}
+)
+MOUNTAIN_WAVES_EXPLORE_REQUIRED_COORDINATES = frozenset(
+    {"time", "xh", "xf", "yh", "yf", "zh", "zf"}
+)
+
 
 class MountainWaveTerrainVisualizationError(RuntimeError):
     """Raised when the bounded terrain-aware payload cannot be represented honestly."""
@@ -476,6 +483,7 @@ def mountain_waves_frame_from_native_outputs(
     implementation_commit: str,
     dry_case: bool,
     caveats: list[str],
+    measure_serialization: bool = True,
 ) -> MountainWaveTerrainFrame:
     """Extract a run-parameterized native x-z frame for the Mountain Waves World."""
     started = perf_counter()
@@ -783,7 +791,74 @@ def mountain_waves_frame_from_native_outputs(
         performance=TerrainPerformance(extraction_ms=(perf_counter() - started) * 1_000.0),
         caveats=caveats,
     )
-    return _measure_serialization(response)
+    return _measure_serialization(response) if measure_serialization else response
+
+
+def validate_mountain_waves_native_outputs(
+    *,
+    output_paths: list[Path],
+    namelist_path: Path,
+    run_id: str,
+    implementation_commit: str,
+    moist_fields_available: bool,
+) -> dict[str, Any]:
+    """Validate one complete variation inventory against the Explore data contract."""
+    paths = accepted_model_output_paths(output_paths)
+    for path in paths:
+        if not path.is_file():
+            raise MountainWaveTerrainVisualizationError(f"Native history is missing: {path.name}.")
+        try:
+            with xr.open_dataset(path, decode_times=False) as dataset:
+                missing_coordinates = sorted(
+                    MOUNTAIN_WAVES_EXPLORE_REQUIRED_COORDINATES - set(dataset.variables)
+                )
+                required_fields = set(MOUNTAIN_WAVES_EXPLORE_REQUIRED_FIELDS)
+                if not moist_fields_available:
+                    required_fields -= {"qv", "ql"}
+                missing_fields = sorted(required_fields - set(dataset.variables))
+                if missing_coordinates or missing_fields:
+                    raise MountainWaveTerrainVisualizationError(
+                        "Native output inventory is incomplete; "
+                        f"fields={missing_fields}, coordinates={missing_coordinates}."
+                    )
+                _single_time_seconds(dataset)
+                coordinates = {
+                    name: _length_coordinate(dataset, name)
+                    for name in MOUNTAIN_WAVES_EXPLORE_REQUIRED_COORDINATES - {"time"}
+                }
+                if coordinates["yh"].size != 1 or coordinates["yf"].size != 2:
+                    raise MountainWaveTerrainVisualizationError(
+                        "Native output does not preserve the required singleton-y topology."
+                    )
+        except MountainWaveTerrainVisualizationError:
+            raise
+        except (OSError, ValueError, KeyError) as exc:
+            raise MountainWaveTerrainVisualizationError(
+                f"Native history {path.name} could not be decoded."
+            ) from exc
+
+    frame = mountain_waves_frame_from_native_outputs(
+        output_paths=output_paths,
+        namelist_path=namelist_path,
+        field="cloud_over_wave" if moist_fields_available else "w",
+        time_index=0,
+        run_id=run_id,
+        case_label="inspectability validation",
+        implementation_commit=implementation_commit,
+        dry_case=not moist_fields_available,
+        caveats=[],
+        measure_serialization=False,
+    )
+    return {
+        "history_count": len(paths),
+        "times_seconds": frame.times_seconds,
+        "required_fields": sorted(
+            MOUNTAIN_WAVES_EXPLORE_REQUIRED_FIELDS
+            if moist_fields_available
+            else MOUNTAIN_WAVES_EXPLORE_REQUIRED_FIELDS - {"qv", "ql"}
+        ),
+        "required_coordinates": sorted(MOUNTAIN_WAVES_EXPLORE_REQUIRED_COORDINATES),
+    }
 
 
 def preserved_mountain_wave_terrain_frame(
