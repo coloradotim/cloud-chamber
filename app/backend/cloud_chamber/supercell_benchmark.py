@@ -10,7 +10,7 @@ import subprocess
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import numpy as np
 import xarray as xr
@@ -77,6 +77,7 @@ DZ_M = 500.0
 ACTIVE_TOP_M = 20_000.0
 RAYLEIGH_ONSET_M = 15_000.0
 COORDINATE_SPACING_ABS_TOLERANCE_M = 0.01
+MINIMUM_BOUNDARY_DISTANCE_M = 5_000.0
 EXPECTED_DURATION_SECONDS = 7_200
 EXPECTED_HISTORY_CADENCE_SECONDS = 900
 EXPECTED_STATS_CADENCE_SECONDS = 60
@@ -268,6 +269,37 @@ class ExecutionPreflight(BaseModel):
     passed: bool
 
 
+class ManualStructuralInterpretation(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    initiation: str
+    splitting_or_cell_multiplicity: str
+    persistence: str
+    rotation_updraft_relationship: str
+    precipitation_organization: str
+    boundary_separation: str
+    upper_level_damping_interaction: str
+
+
+class ManualStructuralReview(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    review_version: str = "supercell_gate_b_manual_spatial_review_v1"
+    reviewer: str
+    reviewed_at: datetime
+    packet_manifest_filename: str
+    packet_manifest_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    packet_files: list[str]
+    checkpoint_times_seconds: list[int]
+    judgment: Literal[
+        "supports_coherent_persistent_rotating_supercell",
+        "does_not_support_structural_advancement",
+    ]
+    interpretation: ManualStructuralInterpretation
+    directly_visible: list[str]
+    inferred: list[str]
+
+
 class SupercellRunEvidence(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -290,6 +322,7 @@ class SupercellRunEvidence(BaseModel):
     boundaries_translation_and_damping: dict[str, Any]
     runtime_integrity: dict[str, Any]
     integrity_checks: dict[str, bool]
+    manual_structural_review: ManualStructuralReview | None = None
     final_disposition: str
     caveats: list[str] = Field(default_factory=list)
 
@@ -792,6 +825,34 @@ def load_supercell_package(
     )
 
 
+def load_manual_structural_review(path: Path) -> ManualStructuralReview:
+    review_path = path.expanduser().resolve()
+    try:
+        review = ManualStructuralReview.model_validate_json(review_path.read_text())
+    except (OSError, ValueError) as exc:
+        raise SupercellBenchmarkError(f"Manual structural review is invalid: {exc}") from exc
+    if Path(review.packet_manifest_filename).name != review.packet_manifest_filename:
+        raise SupercellBenchmarkError("Packet manifest must be a basename beside the review file.")
+    if any(Path(name).name != name for name in review.packet_files):
+        raise SupercellBenchmarkError("Packet files must be basenames beside the review file.")
+    expected_times = [2700, 4500, 5400, 7200]
+    if review.checkpoint_times_seconds != expected_times:
+        raise SupercellBenchmarkError(f"Manual review checkpoints must be {expected_times}.")
+    manifest_path = review_path.parent / review.packet_manifest_filename
+    if not manifest_path.is_file() or sha256_file(manifest_path) != review.packet_manifest_sha256:
+        raise SupercellBenchmarkError("Manual review packet manifest identity does not match.")
+    try:
+        manifest = json.loads(manifest_path.read_text())
+    except (OSError, json.JSONDecodeError) as exc:
+        raise SupercellBenchmarkError(f"Review packet manifest is invalid: {exc}") from exc
+    manifest_files = [item.get("filename") for item in manifest.get("files", [])]
+    if manifest_files != review.packet_files:
+        raise SupercellBenchmarkError("Manual review packet file inventory does not match.")
+    if manifest.get("checkpoint_times_seconds") != expected_times:
+        raise SupercellBenchmarkError("Review packet checkpoint inventory does not match.")
+    return review
+
+
 def _existing_output_like_paths(package_dir: Path) -> list[str]:
     found = {
         path.name
@@ -1214,10 +1275,23 @@ def _frame_evidence(
         frame["cloud_top_m"] = float(coordinates["zh"][int(cloud_levels[-1])])
     for name in SWATH_FIELDS:
         values = _field(dataset, name, ("yh", "xh"))
+        t0_sentinel_like = time_seconds == 0.0 and bool(
+            np.all(values == -1000.0) or np.all(values == 200000.0)
+        )
         frame["swaths"][name] = {
             "minimum": float(np.min(values)),
             "maximum": float(np.max(values)),
             "nonzero_cell_count": int(np.count_nonzero(values)),
+            "physical_evolution_summary_eligible": time_seconds > 0.0,
+            "interpretation": (
+                "source_consistent_initialization_sentinel_not_physical_evidence"
+                if t0_sentinel_like
+                else (
+                    "initialization_value_not_physical_evolution"
+                    if time_seconds == 0.0
+                    else "physical_accumulated_or_swath_evidence"
+                )
+            ),
         }
     return frame
 
@@ -1401,7 +1475,10 @@ def _nearest_frames(frames: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 
 def evaluate_supercell_run(
-    *, settings: CloudChamberSettings, package: SupercellPackageResult
+    *,
+    settings: CloudChamberSettings,
+    package: SupercellPackageResult,
+    manual_structural_review: ManualStructuralReview | None = None,
 ) -> SupercellRunEvidence:
     evaluation_commit = verified_clean_git_commit()
     manifest = load_run_manifest(package.manifest_path)
@@ -1556,7 +1633,7 @@ def evaluate_supercell_run(
         )
 
     mature = [frame for frame in frames if float(frame["time_seconds"]) >= 2700.0]
-    mature_organized = [
+    mature_concurrent_evidence = [
         frame
         for frame in mature
         if float(frame["w_max_m_s"]) >= 10.0
@@ -1570,7 +1647,7 @@ def evaluate_supercell_run(
         for name in HYDROMETEOR_FIELDS
         if max(float(frame["hydrometeors"][name]["maximum_kg_kg"]) for frame in frames) > 1.0e-8
     ]
-    sustained_organized_rotation = len(mature_organized) >= 3
+    concurrent_mature_evidence_present = len(mature_concurrent_evidence) >= 3
     deep_multispecies = len(species_with_material_evolution) == len(HYDROMETEOR_FIELDS)
     active_updraft_frames = [
         frame for frame in frames if float(frame["primary_scalar_updraft_m_s"]) > 0.0
@@ -1617,18 +1694,23 @@ def evaluate_supercell_run(
         ),
         "only_underflow_warning_if_any": not disallowed_flags,
     }
-    interpretable_boundaries = minimum_boundary_distance >= 5_000.0
-    advances = (
+    interpretable_boundaries = minimum_boundary_distance >= MINIMUM_BOUNDARY_DISTANCE_M
+    automated_gate_passes = (
         all(integrity_checks.values())
-        and sustained_organized_rotation
+        and concurrent_mature_evidence_present
         and deep_multispecies
         and interpretable_boundaries
     )
-    disposition = (
-        "advance_to_storm_examination_validation"
-        if advances
-        else "defer_or_reject_storms_candidate"
+    manual_review_supports_advancement = bool(
+        manual_structural_review is not None
+        and manual_structural_review.judgment == "supports_coherent_persistent_rotating_supercell"
     )
+    if automated_gate_passes and manual_review_supports_advancement:
+        disposition = "advance_to_storm_examination_validation"
+    elif automated_gate_passes and manual_structural_review is None:
+        disposition = "bounded_benchmark_correction_required"
+    else:
+        disposition = "defer_or_reject_storms_candidate"
     return SupercellRunEvidence(
         run_id=package.run_id,
         implementation_commit=package.implementation_commit,
@@ -1686,13 +1768,20 @@ def evaluate_supercell_run(
         },
         rotation_and_organization={
             "method": (
-                "joint saved-frame evidence from primary updraft continuity, positive vertical "
-                "vorticity collocation, 2-5 km AGL UH, reflectivity, rain, and hydrometeors"
+                "concurrent saved-frame screen using independent domain-wide w, reflectivity, "
+                "rain, and UH evidence plus grid-cell w-positive-zvort collocation; it does not "
+                "establish storm-object continuity or UH/reflectivity/rain collocation"
             ),
-            "mature_organized_frame_times_seconds": [
-                frame["time_seconds"] for frame in mature_organized
+            "mature_concurrent_evidence_frame_times_seconds": [
+                frame["time_seconds"] for frame in mature_concurrent_evidence
             ],
-            "sustained_organized_rotation": sustained_organized_rotation,
+            "concurrent_mature_convection_and_rotating_updraft_evidence": (
+                concurrent_mature_evidence_present
+            ),
+            "automated_structural_claim_limit": (
+                "No same-object continuity, UH collocation, or precipitation/reflection "
+                "organization claim is made by this Boolean screen."
+            ),
             "qualitative_gate_requires_pm_scientific_review": True,
         },
         boundaries_translation_and_damping={
@@ -1713,6 +1802,7 @@ def evaluate_supercell_run(
         },
         runtime_integrity=runtime,
         integrity_checks=integrity_checks,
+        manual_structural_review=manual_structural_review,
         final_disposition=disposition,
         caveats=[
             "The stock benchmark is not an observed storm or a validated product recipe.",
@@ -1743,6 +1833,13 @@ def render_supercell_run_report(evidence: SupercellRunEvidence) -> str:
     frames = evidence.evolution["frames"]
     wind_profile = evidence.initial_state["wind_profile"]
     boundary_evidence = evidence.boundaries_translation_and_damping
+    manual_review = evidence.manual_structural_review
+    concurrent_times = evidence.rotation_and_organization[
+        "mature_concurrent_evidence_frame_times_seconds"
+    ]
+    concurrent_evidence = evidence.rotation_and_organization[
+        "concurrent_mature_convection_and_rotating_updraft_evidence"
+    ]
     lines = [
         "# Canonical Deep-Convection Run Report",
         "",
@@ -1982,7 +2079,7 @@ def render_supercell_run_report(evidence: SupercellRunEvidence) -> str:
     lines.extend(
         [
             "",
-            "## 14. Vorticity, updraft helicity, swaths, and organized rotation",
+            "## 14. Concurrent convection, rotating-updraft evidence, and swaths",
             "",
             "| Time (min) | Primary w | zvort at primary w | zvort max | UH max | "
             "Rotating-updraft cells |",
@@ -2000,14 +2097,20 @@ def render_supercell_run_report(evidence: SupercellRunEvidence) -> str:
     lines.extend(
         [
             "",
-            f"Joint mature-frame screen: "
-            f"{evidence.rotation_and_organization['mature_organized_frame_times_seconds']} s. "
-            f"Sustained organized rotation: "
-            f"{evidence.rotation_and_organization['sustained_organized_rotation']}. This "
-            "combines structure, signed motion, vorticity collocation, UH, reflectivity, rain, "
-            "and hydrometeors rather than approving one maximum.",
+            "Automated concurrent-evidence screen: "
+            f"{concurrent_times} "
+            "s. Concurrent mature convection and rotating-updraft evidence: "
+            f"{concurrent_evidence}. "
+            "The screen combines independent domain-wide w, reflectivity, rain, and UH checks "
+            "with grid-cell w-positive-zvort collocation. It does not establish same-object "
+            "continuity, UH collocation, or precipitation/reflectivity organization.",
             "",
             "### Native and translated surface-product maxima",
+            "",
+            "The raw t=0 fields remain in the native integrity inventory. They are excluded "
+            "below because accumulated/swath products are not physical evolution evidence at "
+            "initialization; uniform -1000 and 200000 values are source-consistent sentinel-like "
+            "initial states for the affected extrema products.",
             "",
             "| Time (min) | Product | Maximum | Nonzero cells |",
             "|---:|---|---:|---:|",
@@ -2015,6 +2118,8 @@ def render_supercell_run_report(evidence: SupercellRunEvidence) -> str:
     )
     for frame in frames:
         for name, item in frame["swaths"].items():
+            if not item["physical_evolution_summary_eligible"]:
+                continue
             lines.append(
                 f"| {float(frame['time_seconds']) / 60.0:g} | `{name}` | "
                 f"{item['maximum']:.5g} | {item['nonzero_cell_count']} |"
@@ -2022,7 +2127,7 @@ def render_supercell_run_report(evidence: SupercellRunEvidence) -> str:
     lines.extend(
         [
             "",
-            "## 15. Structural checkpoints near 45, 75/90, and 120 minutes",
+            "## 15. Structural checkpoints and manual spatial examination",
             "",
         ]
     )
@@ -2033,6 +2138,45 @@ def render_supercell_run_report(evidence: SupercellRunEvidence) -> str:
             f"{frame['primary_scalar_updraft_location']}; max UH "
             f"{frame['uh_max_m2_s2']:.3g} m2/s2; max dBZ {frame['dbz_max']:.3g}; "
             f"rain-positive cells {frame['rain_positive_cell_count']}."
+        )
+    if manual_review is None:
+        lines.extend(
+            [
+                "",
+                "No hashed manual spatial review was supplied. The automated screen cannot "
+                "produce an advancing structural disposition by itself.",
+            ]
+        )
+    else:
+        interpretation = manual_review.interpretation
+        lines.extend(
+            [
+                "",
+                "### Manual spatial examination",
+                "",
+                f"- Reviewer: `{manual_review.reviewer}`",
+                f"- Reviewed at: `{manual_review.reviewed_at.isoformat()}`",
+                f"- Packet manifest: `{manual_review.packet_manifest_filename}` "
+                f"(`{manual_review.packet_manifest_sha256}`)",
+                f"- Packet files: {', '.join(f'`{name}`' for name in manual_review.packet_files)}",
+                f"- Judgment: `{manual_review.judgment}`",
+                f"- Initiation: {interpretation.initiation}",
+                f"- Splitting/cell multiplicity: {interpretation.splitting_or_cell_multiplicity}",
+                f"- Persistence: {interpretation.persistence}",
+                f"- Rotation/updraft relationship: {interpretation.rotation_updraft_relationship}",
+                f"- Precipitation organization: {interpretation.precipitation_organization}",
+                f"- Boundary separation: {interpretation.boundary_separation}",
+                f"- Upper-level/damping interaction: "
+                f"{interpretation.upper_level_damping_interaction}",
+                "",
+                "Directly visible:",
+                "",
+                *[f"- {item}" for item in manual_review.directly_visible],
+                "",
+                "Inferred or intentionally unresolved:",
+                "",
+                *[f"- {item}" for item in manual_review.inferred],
+            ]
         )
     lines.extend(
         [
@@ -2095,8 +2239,8 @@ def render_supercell_run_report(evidence: SupercellRunEvidence) -> str:
             "",
             "## 20. Unresolved questions",
             "",
-            "- PM/scientific review must inspect the retained spatial evidence before accepting "
-            "the structural judgment.",
+            "- PM/scientific review must inspect the attached hashed spatial packet before "
+            "accepting the recorded manual structural judgment.",
             "- The launcher does not currently record peak memory.",
             "- The source supplies no pointwise boundary- or damping-contamination tolerance.",
             "- A later gate would need to define examination, not rerun or tune this benchmark.",

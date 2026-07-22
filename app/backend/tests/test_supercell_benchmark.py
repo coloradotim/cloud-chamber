@@ -24,10 +24,13 @@ from cloud_chamber.supercell_benchmark import (
     EXPECTED_OUTPUT_TIMES_SECONDS,
     MINIMUM_FREE_BYTES,
     CM1Provenance,
+    ManualStructuralInterpretation,
+    ManualStructuralReview,
     SupercellBenchmarkError,
     audit_supercell_namelist,
     evaluate_supercell_run,
     generate_supercell_package,
+    load_manual_structural_review,
     preflight_supercell_package,
     render_supercell_namelist,
     render_supercell_run_report,
@@ -131,6 +134,53 @@ def test_coordinate_spacing_accepts_float32_kilometer_precision_only() -> None:
         materially_wrong_x_m,
         1000.0,
     )
+
+
+def _manual_review() -> ManualStructuralReview:
+    return ManualStructuralReview(
+        reviewer="test-reviewer",
+        reviewed_at=datetime(2026, 7, 22, 15, 0, tzinfo=UTC),
+        packet_manifest_filename="packet_manifest.json",
+        packet_manifest_sha256="a" * 64,
+        packet_files=[f"checkpoint-{minutes:03d}.png" for minutes in (45, 75, 90, 120)],
+        checkpoint_times_seconds=[2700, 4500, 5400, 7200],
+        judgment="supports_coherent_persistent_rotating_supercell",
+        interpretation=ManualStructuralInterpretation(
+            initiation="One initiated storm object is visible.",
+            splitting_or_cell_multiplicity="No unresolved split in the fixture.",
+            persistence="The selected object persists.",
+            rotation_updraft_relationship="Rotation overlaps the updraft.",
+            precipitation_organization="Rain remains associated with the storm.",
+            boundary_separation="The object remains separated from boundaries.",
+            upper_level_damping_interaction="Interaction is visible and remains qualified.",
+        ),
+        directly_visible=["Collocated fields are visible."],
+        inferred=["Saved-frame continuity is inferred between outputs."],
+    )
+
+
+def test_manual_review_loader_verifies_packet_identity(tmp_path: Path) -> None:
+    packet_files = [f"checkpoint-{minutes:03d}.png" for minutes in (45, 75, 90, 120)]
+    manifest = {
+        "checkpoint_times_seconds": [2700, 4500, 5400, 7200],
+        "files": [{"filename": name} for name in packet_files],
+    }
+    manifest_path = tmp_path / "packet_manifest.json"
+    manifest_path.write_text(json.dumps(manifest))
+    review = _manual_review().model_copy(
+        update={
+            "packet_manifest_sha256": supercell_benchmark.sha256_file(manifest_path),
+        }
+    )
+    review_path = tmp_path / "manual_review.json"
+    review_path.write_text(review.model_dump_json())
+
+    loaded = load_manual_structural_review(review_path)
+    assert loaded.judgment == "supports_coherent_persistent_rotating_supercell"
+
+    manifest_path.write_text("{}")
+    with pytest.raises(SupercellBenchmarkError, match="identity does not match"):
+        load_manual_structural_review(review_path)
 
 
 def test_package_and_explicit_preflight_are_nonexecuting_and_input_free(
@@ -242,9 +292,14 @@ def _write_tiny_histories(
             )
         for name in supercell_benchmark.SURFACE_FIELDS:
             if name not in data_vars:
+                swath_values = surface
+                if time_seconds == 0 and name in {"svs", "sus", "svs2", "sus2"}:
+                    swath_values = np.full_like(surface, -1000.0)
+                elif time_seconds == 0 and name in {"sps", "sps2"}:
+                    swath_values = np.full_like(surface, 200000.0)
                 data_vars[name] = (
                     ("time", "yh", "xh"),
-                    surface,
+                    swath_values,
                     {"units": "native"},
                 )
         dataset = xr.Dataset(
@@ -321,18 +376,31 @@ def test_evaluator_reads_every_tiny_native_field_and_renders_report(
     _patch_preconditions(monkeypatch, provenance)
     package = generate_supercell_package(settings=settings, run_id="native-fixture")
     _tiny_grid(monkeypatch)
+    monkeypatch.setattr(supercell_benchmark, "MINIMUM_BOUNDARY_DISTANCE_M", 0.0)
     outputs = _write_tiny_histories(package.package_dir)
     outputs.append(_write_stats(package.package_dir))
     _mark_completed(package, outputs)
 
-    evidence = evaluate_supercell_run(settings=settings, package=package)
+    automated_evidence = evaluate_supercell_run(settings=settings, package=package)
+    assert automated_evidence.final_disposition == "bounded_benchmark_correction_required"
+
+    evidence = evaluate_supercell_run(
+        settings=settings,
+        package=package,
+        manual_structural_review=_manual_review(),
+    )
     report = render_supercell_run_report(evidence)
 
     assert evidence.output_inventory["history_times_seconds"] == list(EXPECTED_OUTPUT_TIMES_SECONDS)
     assert evidence.implementation_commit == "abc123"
     assert evidence.evaluation_commit == "abc123"
     assert evidence.integrity_checks["all_required_fields_finite"] is True
-    assert evidence.rotation_and_organization["sustained_organized_rotation"] is True
+    assert (
+        evidence.rotation_and_organization[
+            "concurrent_mature_convection_and_rotating_updraft_evidence"
+        ]
+        is True
+    )
     boundary_times = [
         item["time_seconds"]
         for item in evidence.boundaries_translation_and_damping[
@@ -340,6 +408,12 @@ def test_evaluator_reads_every_tiny_native_field_and_renders_report(
         ]
     ]
     assert boundary_times == [float(value) for value in EXPECTED_OUTPUT_TIMES_SECONDS[1:]]
+    t0_svs = evidence.evolution["frames"][0]["swaths"]["svs"]
+    assert t0_svs["physical_evolution_summary_eligible"] is False
+    assert (
+        t0_svs["interpretation"]
+        == "source_consistent_initialization_sentinel_not_physical_evidence"
+    )
     assert evidence.evolution["hydrometeor_species_with_material_evolution"] == [
         "qc",
         "qr",
@@ -348,6 +422,9 @@ def test_evaluator_reads_every_tiny_native_field_and_renders_report(
         "qg",
     ]
     assert "## 21. Final disposition" in report
+    assert "The raw t=0 fields remain in the native integrity inventory" in report
+    assert "### Manual spatial examination" in report
+    assert evidence.final_disposition == "advance_to_storm_examination_validation"
     assert evidence.final_disposition in report
 
 

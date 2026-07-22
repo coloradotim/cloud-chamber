@@ -37,6 +37,7 @@ from cloud_chamber.supercell_benchmark import (  # noqa: E402
     SupercellBenchmarkError,
     evaluate_supercell_run,
     generate_supercell_package,
+    load_manual_structural_review,
     load_supercell_package,
     preflight_supercell_package,
     write_supercell_evidence,
@@ -50,13 +51,26 @@ def main(argv: list[str] | None = None) -> int:
     settings = load_settings(home=runtime_home)
     run_id = args.run_id or _default_run_id()
     try:
+        if args.manual_review and not args.evaluate_existing:
+            raise SupercellBenchmarkError(
+                "--manual-review is only valid with --evaluate-existing."
+            )
         if args.evaluate_existing:
             if args.run_id is None:
                 raise SupercellBenchmarkError(
                     "Existing-output evaluation requires the exact existing --run-id."
                 )
             package = load_supercell_package(settings=settings, run_id=run_id)
-            evidence = evaluate_supercell_run(settings=settings, package=package)
+            manual_review = (
+                load_manual_structural_review(Path(args.manual_review))
+                if args.manual_review
+                else None
+            )
+            evidence = evaluate_supercell_run(
+                settings=settings,
+                package=package,
+                manual_structural_review=manual_review,
+            )
             evidence_path = package.package_dir / "supercell_gate_b_evidence.json"
             write_supercell_evidence(evidence_path, evidence)
             report_path = (
@@ -71,6 +85,11 @@ def main(argv: list[str] | None = None) -> int:
                         "run_id": run_id,
                         "implementation_commit": package.implementation_commit,
                         "evaluation_commit": evidence.evaluation_commit,
+                        "manual_structural_judgment": (
+                            evidence.manual_structural_review.judgment
+                            if evidence.manual_structural_review
+                            else None
+                        ),
                         "evidence_path": str(evidence_path),
                         "report_path": str(report_path),
                         "wall_clock_seconds": evidence.runtime_integrity[
@@ -233,6 +252,13 @@ def _build_parser() -> argparse.ArgumentParser:
         "--evaluate-existing",
         action="store_true",
         help="Evaluate and report an existing completed run without starting CM1.",
+    )
+    parser.add_argument(
+        "--manual-review",
+        help=(
+            "Hash-verified manual spatial-review JSON for --evaluate-existing. "
+            "Without it, automated evidence cannot advance the gate."
+        ),
     )
     parser.add_argument(
         "--poll-seconds",
