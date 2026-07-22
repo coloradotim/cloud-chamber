@@ -164,6 +164,13 @@ mechanics reference for this gate** because:
 
 No product-experience preference is inferred from this selection.
 
+The stock squall-line candidate is now governed separately by the queued
+[Squall Line program, issue #413](https://github.com/coloradotim/cloud-chamber/issues/413).
+Its Gate A work in
+[issue #414](https://github.com/coloradotim/cloud-chamber/issues/414) remains
+blocked until the Supercell program reaches Mountain Waves-equivalent maturity.
+This artifact neither selects a benchmark for #414 nor activates that work.
+
 ## 4. Selected benchmark and rationale
 
 The exact selected benchmark is:
@@ -461,8 +468,9 @@ selected switches: `kdiff2=75` and `kdiff6=0.040` (`idiff=0`), `v_t=7`
 | `ndcnst=250 cm^-3` | constant cloud-droplet concentration because pinned Morrison `graupel_init` sets `INUM=1` |
 | `iautoc=1` | inactive for `ptype=5`; `README.namelist` says this switch applies only to the Goddard-LFO `ptype=2` scheme |
 
-Pinned `src/param.F` shows that `ptype=5` with `INUM=1` emits ten moisture
-variables when `output_q=1`:
+Pinned `src/param.F` shows that `ptype=5` with `INUM=1`, together with the
+independently enabled `output_qv=1` and `output_q=1`, requests `qv` plus five
+condensate mass fields and four number-concentration fields:
 
 | Field | Meaning | Source unit |
 |---|---|---|
@@ -740,6 +748,12 @@ declared from one maximum value alone.
 
 ## 8. Current Cloud Chamber compatibility and gap analysis
 
+This compatibility assessment is source-locked to Cloud Chamber commit
+`a14202cc8af1d7d3438d69b9ca0d0b3852e923ec`, the reviewed `main` base for this
+branch. The branch differs from that commit only by this research artifact, so
+the classifications below describe application capability at that exact base
+rather than capability after later Supercell work.
+
 | Capability | Classification | Evidence and bounded implication |
 |---|---|---|
 | Generate or stage the exact official case | **bounded adaptation required** | Generic `deep_tower_benchmark` rendering is built around observed `isnd=7`, `iwnd` ignored, and `iinit=3`; it cannot honestly represent analytic `isnd=5`, `iwnd=2`, `iinit=1`. A dedicated source-locked stock-supercell package path is needed. |
@@ -913,12 +927,50 @@ The dedicated package must:
 - Expected statistics: one NetCDF statistics stream at 60 s cadence, subject to
   actual CM1 naming.
 - Expected restart files: none because `rstfrq` is negative.
-- Planning wall-time band: 12-20 minutes. Fort Worth's 11.45 minutes is the
-  empirical lower anchor; output differences and physics evolution justify
-  headroom.
-- Planning storage band: 250-350 MB for package, history, statistics, logs, and
-  reports. Require at least 700 MB free before launch so generation and ingest do
-  not operate at the limit. Report actual bytes by artifact class.
+- Planning wall-time band: 15-30 minutes. Fort Worth's 11.45 minutes remains the
+  same-grid, same-duration integration anchor, but the stock benchmark's larger
+  required history inventory materially increases output work. The wider band
+  is provisional until Gate B records compute and write timing separately.
+- Planning retained-storage band: 650-900 MB for package, history, statistics,
+  coordinates and metadata, logs, reports, and other retained provenance
+  artifacts. Require at least 2.0 GB free immediately before launch. That
+  threshold covers the 900 MB retained upper plan, at least 900 MB of temporary
+  finalization and inspection/ingest workspace, and a 200 MB reserve. Fail
+  closed below the threshold and report actual bytes by artifact class.
+
+The storage plan starts from the exact active grid and the requested fields,
+not the smaller Fort Worth retained directory. Pinned `writeout.F` and
+`writeout_nc.F` classify the expected arrays and write these variables as
+four-byte NetCDF `NF90_FLOAT` values:
+
+| Expected history payload class | Arrays | Values per array | Bytes per history |
+|---|---:|---:|---:|
+| Scalar-grid 3-D: `th`, `prs`, ten moisture fields, `dbz`, three interpolated winds, and three vorticity components | 19 | `120 x 120 x 40 = 576,000` | 43,776,000 |
+| W-grid 3-D: `tke`, `kmh`, `kmv`, `khh`, `khv` | 5 | `120 x 120 x 41 = 590,400` | 11,808,000 |
+| Native staggered `u` | 1 | `121 x 120 x 40 = 580,800` | 2,323,200 |
+| Native staggered `v` | 1 | `120 x 121 x 40 = 580,800` | 2,323,200 |
+| Native staggered `w` | 1 | `120 x 120 x 41 = 590,400` | 2,361,600 |
+| Scalar-grid 2-D: rain and seven swath families, their moving-domain translated forms, and instantaneous 2-5 km AGL updraft helicity | 17 | `120 x 120 = 14,400` | 979,200 |
+| **Uncompressed numeric payload lower bound** | **44** | | **63,571,200** |
+
+Across nine expected histories, that is at least **572,140,800 bytes
+(572.1 MB; about 545.6 MiB)** before coordinate values, time and moving-domain
+scalars, NetCDF structure and attributes, statistics, logs, reports, package
+files, or inspection/ingest products. Each sequence file also carries at least
+the six scalar and staggered coordinate vectors (`xh`, `xf`, `yh`, `yf`, `zh`,
+`zf`) plus `ztop`, time, and moving-domain scalars. Their numeric values are
+small relative to the fields, but their attributes and NetCDF container
+overhead are not included in the lower bound.
+
+The 650-900 MB retained band reserves additional space for that coordinate and
+metadata overhead, the 121 expected 60-second statistics records, source-lock
+and package material, stdout/stderr, validation reports, and other provenance
+artifacts. Pinned `writeout_nc.F` contains conditional deflate support only
+under the compile-time `NCFPLUS` path and per-variable compression flags; the
+available evidence does not prove that path for the pinned executable or a
+realized compression ratio. The estimate therefore credits **no compression**.
+Gate B must replace every planning allowance with measured native-file and
+artifact-class sizes.
 
 ### Required native output inventory
 
