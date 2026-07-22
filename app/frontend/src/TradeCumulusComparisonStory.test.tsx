@@ -18,8 +18,8 @@ vi.mock("./UpdraftLensSlice", () => ({
   ),
 }));
 
-const baselineId = "result-trade-cumulus-5b-full-baseline-20260720T162342Z";
-const moreId = "result-trade-cumulus-5b-full-more_moisture-20260720T162342Z";
+const baselineId = "result-trade-cumulus-presentation-v1-baseline-20260722";
+const moreId = "result-trade-cumulus-presentation-v1-more-moisture-20260722";
 
 const story: TradeCumulusComparisonStoryResponse = {
   comparison_id: "trade_cumulus_moisture_v1",
@@ -32,20 +32,20 @@ const story: TradeCumulusComparisonStoryResponse = {
     "Illustrative views: selected to help show the response measured across the full simulations. Times and locations may differ, and these are not corresponding individual clouds.",
   baseline: {
     result_id: baselineId,
-    run_id: "trade-cumulus-5b-full-baseline-20260720T162342Z",
+    run_id: "trade-cumulus-presentation-v1-baseline-20260722",
     display_name: "Canonical BOMEX Baseline",
     control_state: "baseline",
     control_label: "Surface moisture supply",
     control_value: 5.2e-5,
     control_units: "g/g m/s",
-    control_display: "5.2 × 10⁻⁵ g/g m/s",
+    control_display: "0.0520 g/kg m/s",
     curated_view: {
-      time_index: 152,
-      time_seconds: 18_240,
+      time_index: 201,
+      time_seconds: 12_060,
       orientation: "vertical_x",
       plane_dimension: "y",
-      plane_index: 5,
-      plane_coordinate: -2.6500000953674316,
+      plane_index: 83,
+      plane_coordinate: 2.366666555404663,
       plane_units: "km",
       camera_preset: "overview",
       cloud_field: "ql",
@@ -58,25 +58,25 @@ const story: TradeCumulusComparisonStoryResponse = {
       opacity: 0.68,
       point_size: 11,
       caption:
-        "This illustrative Baseline view shows one concentrated active cloud reaching about 2 km, with a strong rising core bordered by sinking air.",
+        "This illustrative Baseline view shows several active cells across the slice, with rising cores bordered by sinking air.",
     },
   },
   more_moisture: {
     result_id: moreId,
-    run_id: "trade-cumulus-5b-full-more_moisture-20260720T162342Z",
+    run_id: "trade-cumulus-presentation-v1-more-moisture-20260722",
     display_name: "More Moisture",
     control_state: "more_moisture",
     control_label: "Surface moisture supply",
     control_value: 7.8e-5,
     control_units: "g/g m/s",
-    control_display: "7.8 × 10⁻⁵ g/g m/s",
+    control_display: "0.0780 g/kg m/s",
     curated_view: {
-      time_index: 169,
-      time_seconds: 20_280,
+      time_index: 232,
+      time_seconds: 13_920,
       orientation: "vertical_x",
       plane_dimension: "y",
-      plane_index: 51,
-      plane_coordinate: 1.9500000476837158,
+      plane_index: 72,
+      plane_coordinate: 1.6333333253860474,
       plane_units: "km",
       camera_preset: "overview",
       cloud_field: "ql",
@@ -89,71 +89,71 @@ const story: TradeCumulusComparisonStoryResponse = {
       opacity: 0.68,
       point_size: 11,
       caption:
-        "This illustrative More Moisture view shows several active clouds across the slice, with rising cores distributed through a broader cloud-filled region reaching just above 2 km.",
+        "This illustrative More Moisture view shows a concentrated active core within a broader region of cloud and vertical motion.",
     },
   },
   changed_condition: {
     label: "Surface moisture supply",
-    baseline_display: "5.2 × 10⁻⁵ g/g m/s",
-    more_moisture_display: "7.8 × 10⁻⁵ g/g m/s",
+    baseline_display: "0.0520 g/kg m/s",
+    more_moisture_display: "0.0780 g/kg m/s",
     change_display: "+50%",
   },
   material_responses: [
     {
       metric_id: "mean_cloud_cover_final_three_hours",
       label: "Mean cloud cover, final three hours",
-      baseline_value: 10.596239697802197,
-      more_moisture_value: 12.710873111263735,
-      absolute_delta: 2.1146334134615383,
-      percent_delta: 19.956451286206196,
+      baseline_value: 12.049246566144873,
+      more_moisture_value: 14.248040880141192,
+      absolute_delta: 2.198794313996318,
+      percent_delta: 18.24839671033321,
       units: "%",
       method: "time mean of horizontal columns containing ql >= 1e-6 kg/kg",
-      window: "time >= 10800 s",
-      baseline_display: "10.596%",
-      more_moisture_display: "12.711%",
-      change_display: "+2.115 percentage points",
+      window: "time >= 3600 s",
+      baseline_display: "12.049%",
+      more_moisture_display: "14.248%",
+      change_display: "+2.199 percentage points",
     },
     {
       metric_id: "mean_cloud_water_path_final_three_hours",
       label: "Mean cloud-water path, final three hours",
-      baseline_value: 0.006351999299305916,
-      more_moisture_value: 0.009071426778155891,
-      absolute_delta: 0.0027194274788499753,
-      percent_delta: 42.81215017053178,
+      baseline_value: 0.006739830541318102,
+      more_moisture_value: 0.009686668911071296,
+      absolute_delta: 0.0029468383697531936,
+      percent_delta: 43.72273682087092,
       units: "kg/m^2",
       method: "time mean of horizontal domain-mean cwp",
-      window: "time >= 10800 s",
-      baseline_display: "0.006352 kg/m²",
-      more_moisture_display: "0.009071 kg/m²",
-      change_display: "+42.812%",
+      window: "time >= 3600 s",
+      baseline_display: "0.006740 kg/m²",
+      more_moisture_display: "0.009687 kg/m²",
+      change_display: "+43.723%",
     },
     {
       metric_id: "mean_coherent_cloud_top_final_three_hours",
       label: "Mean coherent cloud top, final three hours",
-      baseline_value: 1668.3517340775375,
-      more_moisture_value: 1805.0550379595913,
-      absolute_delta: 136.7033038820539,
-      percent_delta: 8.193913854600911,
+      baseline_value: 1750.690681499671,
+      more_moisture_value: 1859.9172027071536,
+      absolute_delta: 109.22652120748262,
+      percent_delta: 6.2390530983987045,
       units: "m",
       method: "mean supported coherent cloud-object top",
-      window: "time >= 10800 s",
-      baseline_display: "1,668 m",
-      more_moisture_display: "1,805 m",
-      change_display: "+137 m",
+      window: "time >= 3600 s",
+      baseline_display: "1,751 m",
+      more_moisture_display: "1,860 m",
+      change_display: "+109 m",
     },
   ],
   small_or_mixed_responses: [
     {
       title: "Initial cloud-liquid onset was unchanged.",
-      body: "Both simulations first reached the cloud-liquid threshold at 1,080 s.",
+      body: "Both simulations first reached the cloud-liquid threshold at 1,140 s.",
     },
     {
-      title: "The cloud-fraction peak stayed at the same height.",
-      body: "Both final-three-hour profiles peaked near 620 m.",
+      title: "The cloud-fraction peak shifted only slightly.",
+      body: "The final-three-hour profile peaked near 615 m in Baseline and 585 m in More Moisture.",
     },
     {
       title: "The fraction of cloudy air rising changed very little.",
-      body: "It was 90.379% in Baseline and 90.451% in More Moisture.",
+      body: "It was 89.518% in Baseline and 89.543% in More Moisture.",
     },
     {
       title: "The response varied through time.",
@@ -183,25 +183,25 @@ const story: TradeCumulusComparisonStoryResponse = {
   },
   explanation_paragraphs: [
     "More surface moisture produced a cloudier, wetter, somewhat deeper trade-cumulus field.",
-    "Only the lower-boundary moisture supply changed. Over the final three hours, More Moisture covered more of the domain with cloud, held about 43 percent more mean cloud-water path, and produced coherent clouds averaging 137 meters taller.",
-    "It did not create a completely different circulation regime. Initial cloud-liquid onset and the height of the cloud-fraction maximum were unchanged, and about 90 percent of cloudy cells were rising in both simulations.",
+    "Only the lower-boundary moisture supply changed. Over the final three hours, More Moisture covered more of the domain with cloud, held about 43 percent more mean cloud-water path, and produced coherent clouds averaging 109 meters taller.",
+    "It did not create a completely different circulation regime. Initial cloud-liquid onset was unchanged, the cloud-fraction maximum shifted only 30 meters lower, and about 89.5 percent of cloudy cells were rising in both simulations.",
     "The illustrative Lens views are selected to help show the measured response. They show different times and locations and are not one-to-one matches of individual clouds. More Moisture was also not cloudier at every saved frame, so the result is a change in the evolving cloud field rather than a rule that every moment must look larger.",
   ],
   evidence_summary: {
-    analysis_window: "time >= 10800 s",
-    analysis_start_seconds: 10_800,
-    analysis_end_seconds: 21_600,
-    output_cadence_seconds: 120,
-    paired_saved_frame_count: 181,
+    analysis_window: "time >= 3600 s",
+    analysis_start_seconds: 3_600,
+    analysis_end_seconds: 14_400,
+    output_cadence_seconds: 60,
+    paired_saved_frame_count: 241,
   },
   provenance: {
     evidence_state: "matched_runs_valid",
-    evidence_version: "trade_cumulus_moisture_comparison_evidence_v1",
-    implementation_commit: "49da1defc9914d3cc903ed9589c1312ddd843726",
-    fixed_assumptions_sha256: "71d746b110fb1310ebb6dafbef4cfa4bd44c379fc6964ed1787deaf45e422535",
-    baseline_run_id: "trade-cumulus-5b-full-baseline-20260720T162342Z",
+    evidence_version: "trade_cumulus_moisture_comparison_evidence_v2",
+    implementation_commit: "4647ef54a6c1b7a5d31e6e758c3c276fc5e5b2e0",
+    fixed_assumptions_sha256: "861375a82d209c36cc63ccce2d20934553b0e7e8811579c718dfb275899172a7",
+    baseline_run_id: "trade-cumulus-presentation-v1-baseline-20260722",
     baseline_result_id: baselineId,
-    more_moisture_run_id: "trade-cumulus-5b-full-more_moisture-20260720T162342Z",
+    more_moisture_run_id: "trade-cumulus-presentation-v1-more-moisture-20260722",
     more_moisture_result_id: moreId,
     scale_id: "trade_cumulus_updraft_velocity_v1",
     comparison_source: "runtime_matched_pair_evidence",
@@ -369,17 +369,17 @@ describe("TradeCumulusComparisonStory", () => {
       expect(screen.getAllByTestId("comparison-true3d-viewer")).toHaveLength(2);
     });
     expect(screen.getAllByTestId("comparison-updraft-lens-slice")).toHaveLength(2);
-    expect(screen.getByText("18,240 s · 05:04:00")).toBeInTheDocument();
-    expect(screen.getByText("20,280 s · 05:38:00")).toBeInTheDocument();
-    expect(screen.getAllByText("Vertical x-z slice at y = -2.65 km")).toHaveLength(2);
-    expect(screen.getAllByText("Vertical x-z slice at y = 1.95 km")).toHaveLength(2);
+    expect(screen.getByText("12,060 s · 03:21:00")).toBeInTheDocument();
+    expect(screen.getByText("13,920 s · 03:52:00")).toBeInTheDocument();
+    expect(screen.getAllByText("Vertical x-z slice at y = 2.37 km")).toHaveLength(2);
+    expect(screen.getAllByText("Vertical x-z slice at y = 1.63 km")).toHaveLength(2);
     expect(screen.getByText(story.baseline.curated_view.caption)).toBeInTheDocument();
     expect(screen.getByText(story.more_moisture.curated_view.caption)).toBeInTheDocument();
     expect(screen.getByText("+50%")).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "What responded materially" })).toBeInTheDocument();
-    expect(screen.getByText("+2.115 percentage points")).toBeInTheDocument();
-    expect(screen.getByText("+42.812%")).toBeInTheDocument();
-    expect(screen.getByText("+137 m")).toBeInTheDocument();
+    expect(screen.getByText("+2.199 percentage points")).toBeInTheDocument();
+    expect(screen.getByText("+43.723%")).toBeInTheDocument();
+    expect(screen.getByText("+109 m")).toBeInTheDocument();
     expect(
       screen.getByRole("heading", { name: "What changed little or varied" }),
     ).toBeInTheDocument();
@@ -395,16 +395,16 @@ describe("TradeCumulusComparisonStory", () => {
 
     const requestedUrls = vi.mocked(fetch).mock.calls.map(([input]) => String(input));
     expect(requestedUrls).toContain(
-      `/api/results/${baselineId}/visualization/point-cloud?field=ql&time_index=152&threshold=0.000001&max_points=50000&encoding=json`,
+      `/api/results/${baselineId}/visualization/point-cloud?field=ql&time_index=201&threshold=0.000001&max_points=50000&encoding=json`,
     );
     expect(requestedUrls).toContain(
-      `/api/results/${baselineId}/visualization/trade-cumulus-updraft-lens/frame?time_index=152&plane_index=5&orientation=vertical_x&wind_mode=perturbation`,
+      `/api/results/${baselineId}/visualization/trade-cumulus-updraft-lens/frame?time_index=201&plane_index=83&orientation=vertical_x&wind_mode=perturbation`,
     );
     expect(requestedUrls).toContain(
-      `/api/results/${moreId}/visualization/point-cloud?field=ql&time_index=169&threshold=0.000001&max_points=50000&encoding=json`,
+      `/api/results/${moreId}/visualization/point-cloud?field=ql&time_index=232&threshold=0.000001&max_points=50000&encoding=json`,
     );
     expect(requestedUrls).toContain(
-      `/api/results/${moreId}/visualization/trade-cumulus-updraft-lens/frame?time_index=169&plane_index=51&orientation=vertical_x&wind_mode=perturbation`,
+      `/api/results/${moreId}/visualization/trade-cumulus-updraft-lens/frame?time_index=232&plane_index=72&orientation=vertical_x&wind_mode=perturbation`,
     );
     expect(screen.queryByRole("button", { name: "Play" })).not.toBeInTheDocument();
     expect(screen.queryByLabelText("Position")).not.toBeInTheDocument();

@@ -28,6 +28,7 @@ from cloud_chamber.presentation_runs import (  # noqa: E402
     PRESENTATION_RUN_SPECS,
     PresentationRunError,
     aggregate_estimated_bytes,
+    finalize_trade_cumulus_presentation_pair,
     generate_presentation_package,
     load_presentation_package,
     validate_completed_presentation_run,
@@ -42,6 +43,7 @@ def main(argv: list[str] | None = None) -> int:
     mode = parser.add_mutually_exclusive_group(required=True)
     mode.add_argument("--package", action="store_true")
     mode.add_argument("--execute", action="store_true")
+    mode.add_argument("--finalize", action="store_true")
     parser.add_argument("--runtime-home")
     parser.add_argument("--poll-seconds", type=float, default=5.0)
     args = parser.parse_args(argv)
@@ -49,6 +51,26 @@ def main(argv: list[str] | None = None) -> int:
         home=Path(args.runtime_home).expanduser() if args.runtime_home else None
     )
     try:
+        if args.finalize:
+            evidence = [
+                validate_completed_presentation_run(settings=settings, spec=spec)
+                for spec in PRESENTATION_RUN_SPECS
+            ]
+            paired, evidence_path = finalize_trade_cumulus_presentation_pair(
+                settings=settings
+            )
+            print(
+                json.dumps(
+                    {
+                        "status": "presentation_artifacts_finalized_without_cm1_execution",
+                        "runs": [item.model_dump(mode="json") for item in evidence],
+                        "trade_cumulus_evidence_state": paired.evidence_state,
+                        "trade_cumulus_evidence_path": str(evidence_path),
+                    },
+                    indent=2,
+                )
+            )
+            return 0
         if args.package:
             estimate = aggregate_estimated_bytes(settings)
             available = shutil.disk_usage(settings.runtime_home.expanduser()).free

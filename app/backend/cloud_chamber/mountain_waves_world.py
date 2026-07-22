@@ -16,22 +16,17 @@ from cloud_chamber.generated_input_identity import (
     verify_generated_input_identity,
 )
 from cloud_chamber.local_run_manager import reconcile_completed_run_manifest
-from cloud_chamber.moist_mountain_wave_case import (
-    MoistMountainWaveCaseError,
-    load_preserved_moist_mountain_wave_run,
-    verify_preserved_run_artifacts,
-)
-from cloud_chamber.mountain_wave_case import (
-    PRESERVED_GATE_B_EVALUATION_INPUT_SHA256,
-    PRESERVED_GATE_B_IMPLEMENTATION_COMMIT,
-    MountainWaveCaseError,
-    load_completed_mountain_wave_package_for_evaluation,
-    verify_evaluation_input_identity,
-)
 from cloud_chamber.mountain_wave_terrain_visualization import (
+    MOUNTAIN_WAVES_EXPLORE_REQUIRED_COORDINATES,
     MOUNTAIN_WAVES_EXPLORE_REQUIRED_FIELDS,
     MountainWaveTerrainVisualizationError,
     validate_mountain_waves_native_outputs,
+)
+from cloud_chamber.presentation_runs import (
+    PresentationRunError,
+    PresentationRunEvidence,
+    load_presentation_package,
+    spec_by_key,
 )
 from cloud_chamber.run_manifest import (
     LifecycleState,
@@ -49,11 +44,11 @@ WORLD_DESCRIPTION = (
     "mountain-wave clouds."
 )
 DRY_SIMULATION_ID = "mountain_waves_dry_ridge"
-DRY_RUN_ID = "dry-mountain-wave-official-20260721T183530Z"
-DRY_CASE_ID = "cm1_r21_1_dry_mountain_wave_official_v0"
+DRY_RUN_ID = "dry-mountain-wave-presentation-v1-20260722"
+DRY_CASE_ID = "cm1_r21_1_dry_mountain_wave_presentation_v1"
 MOIST_SIMULATION_ID = "mountain_waves_boulder_moist_reference"
-MOIST_RUN_ID = "moist-mountain-wave-toy-1972-20260721T215226Z"
-MOIST_CASE_ID = "cm1_r21_1_toy2011_boulder_moist_wave_4000s_v1"
+MOIST_RUN_ID = "moist-mountain-wave-presentation-v1-20260722"
+MOIST_CASE_ID = "cm1_r21_1_toy2011_boulder_moist_wave_7200s_presentation_v1"
 
 AvailabilityState = Literal["available", "partial", "unavailable", "conflict"]
 SimulationState = Literal[
@@ -176,6 +171,7 @@ class _BuiltInSpec:
     run_id: str
     case_id: str
     moist: bool
+    presentation_key: str
     purpose: str
     caveats: tuple[str, ...]
 
@@ -187,6 +183,7 @@ _BUILT_INS = (
         run_id=DRY_RUN_ID,
         case_id=DRY_CASE_ID,
         moist=False,
+        presentation_key="mountain_dry",
         purpose=(
             "See the terrain-forced gravity wave without cloud and inspect vertical "
             "motion and temperature displacement."
@@ -202,14 +199,15 @@ _BUILT_INS = (
         run_id=MOIST_RUN_ID,
         case_id=MOIST_CASE_ID,
         moist=True,
+        presentation_key="mountain_moist",
         purpose=(
             "Watch clear air form windward and lee-wave cloud, then use the "
             "source-backed atmosphere as an experimental parent."
         ),
         caveats=(
             (
-                "The run is a two-dimensional feasibility reference and was still "
-                "intensifying at 4,000 s."
+                "The run is a two-dimensional presentation reference, not a "
+                "three-dimensional mountain-flow simulation."
             ),
             "It is not a controlled moisture variation of Dry Ridge.",
         ),
@@ -512,45 +510,94 @@ def _evaluate_built_in_inspectability(
     if manifest.lifecycle_state != LifecycleState.COMPLETED or manifest.execution.exit_code != 0:
         return False, "Preserved output is not a completed zero-exit CM1 run."
     try:
-        if spec.moist:
-            moist_package = load_preserved_moist_mountain_wave_run(
-                settings=settings, run_id=spec.run_id
-            )
-            before = verify_preserved_run_artifacts(moist_package)
-            _validate_manifest_native_outputs(manifest, moist_fields_available=True)
-            after = verify_preserved_run_artifacts(moist_package)
-        else:
-            dry_package = load_completed_mountain_wave_package_for_evaluation(
-                settings=settings,
-                run_id=spec.run_id,
-                expected_implementation_commit=PRESERVED_GATE_B_IMPLEMENTATION_COMMIT,
-            )
-            before = verify_evaluation_input_identity(
-                dry_package,
-                expected_run_id=spec.run_id,
-                expected_implementation_commit=PRESERVED_GATE_B_IMPLEMENTATION_COMMIT,
-                expected_file_sha256=PRESERVED_GATE_B_EVALUATION_INPUT_SHA256,
-                require_idle_processes=False,
-            )
-            _validate_manifest_native_outputs(manifest, moist_fields_available=False)
-            after = verify_evaluation_input_identity(
-                dry_package,
-                expected_run_id=spec.run_id,
-                expected_implementation_commit=PRESERVED_GATE_B_IMPLEMENTATION_COMMIT,
-                expected_file_sha256=PRESERVED_GATE_B_EVALUATION_INPUT_SHA256,
-                require_idle_processes=False,
-            )
+        before = _verify_presentation_built_in(settings, spec, manifest)
+        native_validation = _validate_manifest_native_outputs(
+            manifest, moist_fields_available=spec.moist
+        )
+        after = _verify_presentation_built_in(settings, spec, manifest)
         if before != after:
             raise ValueError("Preserved artifacts changed during inspectability validation.")
+        if native_validation != before["world_validation"]:
+            raise ValueError("Presentation evidence disagrees with native World validation.")
     except (
         OSError,
         ValueError,
-        MountainWaveCaseError,
-        MoistMountainWaveCaseError,
+        GeneratedInputIdentityError,
         MountainWaveTerrainVisualizationError,
+        PresentationRunError,
     ) as exc:
         return False, f"Preserved output failed strict identity or native-data validation: {exc}"
     return True, "Exact preserved output passed strict identity and native-data validation."
+
+
+def _verify_presentation_built_in(
+    settings: CloudChamberSettings, spec: _BuiltInSpec, manifest: RunManifest
+) -> dict[str, Any]:
+    presentation_spec = spec_by_key(spec.presentation_key)
+    if (
+        presentation_spec.run_id != spec.run_id
+        or presentation_spec.case_id != spec.case_id
+        or presentation_spec.moist_terrain != spec.moist
+    ):
+        raise ValueError("Mountain Waves presentation identity conflicts with the built-in spec.")
+    package = load_presentation_package(settings=settings, spec=presentation_spec)
+    generated_manifest_path = manifest.generated_inputs.manifest_path
+    if generated_manifest_path is None:
+        raise ValueError("Mountain Waves preserved run has no generated-input manifest path.")
+    if package.manifest_path.resolve() != Path(generated_manifest_path).resolve():
+        raise ValueError("Mountain Waves presentation manifest path conflicts with the package.")
+    verified_inputs = verify_generated_input_identity(manifest)
+    evidence_path = package.package_dir / "presentation_run_evidence.json"
+    evidence_bytes = evidence_path.read_bytes()
+    evidence = PresentationRunEvidence.model_validate_json(evidence_bytes)
+    expected_grid = {
+        "nx": presentation_spec.nx,
+        "ny": presentation_spec.ny,
+        "nz": presentation_spec.nz,
+        "dx_m": presentation_spec.dx_m,
+        "dy_m": presentation_spec.dy_m,
+        "dz_m": presentation_spec.dz_m,
+    }
+    expected_world_validation = {
+        "history_count": len(presentation_spec.expected_times_seconds),
+        "times_seconds": list(presentation_spec.expected_times_seconds),
+        "required_fields": sorted(
+            MOUNTAIN_WAVES_EXPLORE_REQUIRED_FIELDS
+            if spec.moist
+            else MOUNTAIN_WAVES_EXPLORE_REQUIRED_FIELDS - {"qv", "ql"}
+        ),
+        "required_coordinates": sorted(MOUNTAIN_WAVES_EXPLORE_REQUIRED_COORDINATES),
+        "run_id": spec.run_id,
+        "implementation_commit": manifest.app.commit or "unknown",
+    }
+    checks = {
+        "run_id": (evidence.run_id, spec.run_id),
+        "world": (evidence.world, WORLD_ID),
+        "case_id": (evidence.case_id, spec.case_id),
+        "implementation_commit": (evidence.implementation_commit, manifest.app.commit),
+        "grid": (evidence.grid, expected_grid),
+        "duration_seconds": (evidence.duration_seconds, presentation_spec.duration_seconds),
+        "output_cadence_seconds": (
+            evidence.output_cadence_seconds,
+            presentation_spec.output_cadence_seconds,
+        ),
+        "history_count": (evidence.history_count, len(presentation_spec.expected_times_seconds)),
+        "times_seconds": (evidence.times_seconds, list(presentation_spec.expected_times_seconds)),
+        "normal_completion": (evidence.normal_completion, True),
+        "world_validation": (evidence.world_validation, expected_world_validation),
+    }
+    mismatches = {
+        name: {"actual": actual, "expected": expected}
+        for name, (actual, expected) in checks.items()
+        if actual != expected
+    }
+    if mismatches:
+        raise ValueError(f"Mountain Waves presentation evidence conflicts: {mismatches}")
+    return {
+        "generated_input_sha256": verified_inputs,
+        "presentation_evidence_sha256": hashlib.sha256(evidence_bytes).hexdigest(),
+        "world_validation": expected_world_validation,
+    }
 
 
 def _validate_manifest_native_outputs(

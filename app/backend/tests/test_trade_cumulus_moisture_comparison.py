@@ -18,6 +18,7 @@ from cloud_chamber.trade_cumulus_moisture_comparison import (
     COMPARISON_GROUP_ID,
     OUTPUT_CADENCE_SECONDS,
     PERCENT_DELTA_MINIMUM_DENOMINATOR,
+    JointLensPreparation,
     PackageComparisonProof,
     RunGateEvidence,
     ScalarRunMetric,
@@ -28,6 +29,7 @@ from cloud_chamber.trade_cumulus_moisture_comparison import (
     TradeCumulusRunEvidence,
     TradeCumulusRunLength,
     VerticalProfile,
+    build_paired_evidence,
     compare_matched_packages,
     compare_stage4_baseline,
     generate_trade_cumulus_matched_package,
@@ -431,6 +433,33 @@ def test_package_comparison_proof_forbids_extra_difference(tmp_path: Path) -> No
         compare_matched_packages(baseline, variant)
 
 
+def test_presentation_contract_overrides_timing_without_changing_pair_semantics(
+    tmp_path: Path,
+) -> None:
+    package = TradeCumulusMatchedPackage(
+        run_id="presentation-baseline",
+        control_state=TradeCumulusMoistureState.BASELINE,
+        run_length=TradeCumulusRunLength.FULL,
+        package_dir=tmp_path,
+        manifest_path=tmp_path / "run_manifest.json",
+        case_manifest_path=tmp_path / "case_manifest.json",
+        namelist_path=tmp_path / "namelist.input",
+        science_settings_sha256="science",
+        fixed_assumptions_sha256="fixed",
+        app_commit="commit",
+        duration_seconds_override=14_400,
+        output_cadence_seconds_override=60,
+        analysis_start_seconds_override=3_600,
+    )
+
+    assert package.run_length_label == "full"
+    assert package.duration_seconds == 14_400
+    assert package.output_cadence_seconds == 60
+    assert package.analysis_start_seconds == 3_600
+    assert package.expected_model_output_count == 241
+    assert package.expected_diagnostic_output_count == 241
+
+
 def test_package_proof_model_serializes_stably() -> None:
     proof = PackageComparisonProof(
         run_length="smoke",
@@ -443,3 +472,47 @@ def test_package_proof_model_serializes_stably() -> None:
         valid=True,
     )
     assert proof.model_dump_json() == proof.model_copy().model_dump_json()
+
+
+def test_presentation_pair_uses_matched_package_proof_without_stage4() -> None:
+    gate = RunGateEvidence.model_construct(valid=True)
+    baseline = TradeCumulusRunEvidence.model_construct(
+        control_state=TradeCumulusMoistureState.BASELINE.value,
+        app_commit="presentation-commit",
+        scalar_metrics={},
+        time_series={},
+        gate=gate,
+        output_bytes=1_000,
+    )
+    more_moisture = TradeCumulusRunEvidence.model_construct(
+        control_state=TradeCumulusMoistureState.MORE_MOISTURE.value,
+        app_commit="presentation-commit",
+        scalar_metrics={},
+        time_series={},
+        gate=gate,
+        output_bytes=1_100,
+    )
+    proof = PackageComparisonProof(
+        run_length="full",
+        baseline_run_id="presentation-baseline",
+        more_moisture_run_id="presentation-more-moisture",
+        differing_namelist_assignments=["cnst_lhflx"],
+        fixed_assumptions_sha256="fixed",
+        baseline_science_settings_sha256="baseline-science",
+        more_moisture_science_settings_sha256="more-moisture-science",
+        valid=True,
+    )
+
+    paired = build_paired_evidence(
+        baseline,
+        more_moisture,
+        implementation_commit="presentation-commit",
+        matched_package_proof=proof,
+        lens_preparation=JointLensPreparation.model_construct(),
+        estimated_full_pair_bytes=2_500,
+    )
+
+    assert paired.evidence_version == "trade_cumulus_moisture_comparison_evidence_v2"
+    assert paired.evidence_state == "matched_runs_valid"
+    assert paired.matched_package_proof == proof
+    assert paired.stage4_consistency is None

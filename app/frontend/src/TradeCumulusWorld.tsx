@@ -13,7 +13,7 @@ export type ConfigurationDifference = {
 export type SimulationRecord = {
   simulation_id: string | null;
   display_name: string;
-  role: "reference" | "variation" | "lab_history";
+  role: "reference" | "variation" | "historical" | "lab_history";
   world_id: "trade_cumulus";
   product_slice_id: string;
   case_id: string;
@@ -50,7 +50,7 @@ export type TradeCumulusWorldDetail = {
   featured_comparison: {
     comparison_id: "trade_cumulus_moisture_v1";
     display_name: "More Moisture versus Baseline";
-    baseline_simulation_id: "trade_cumulus_canonical_bomex";
+    baseline_simulation_id: string;
     more_moisture_simulation_id: "trade_cumulus_more_moisture";
     availability_state: "available" | "missing" | "conflict";
     availability_message: string;
@@ -281,8 +281,13 @@ function Overview({
   onOpenLab: () => void;
 }) {
   const moreMoisture = world.simulations.find(
-    (simulation) => simulation.simulation_id === "trade_cumulus_more_moisture",
+    (simulation) =>
+      simulation.simulation_id === "trade_cumulus_more_moisture" &&
+      simulation.parent_simulation_id === world.reference_simulation.simulation_id,
   );
+  const comparisonMatchesReference =
+    world.featured_comparison.baseline_simulation_id ===
+    world.reference_simulation.simulation_id;
   return (
     <section className="world-section" aria-labelledby="world-overview-title">
       <div className="world-section-heading">
@@ -307,7 +312,12 @@ function Overview({
             onCompare={onOpenFeaturedComparison}
           />
         )}
-        <ComparisonCard comparison={world.featured_comparison} onOpen={onOpenFeaturedComparison} />
+        {comparisonMatchesReference && (
+          <ComparisonCard
+            comparison={world.featured_comparison}
+            onOpen={onOpenFeaturedComparison}
+          />
+        )}
       </div>
 
       <section className="world-lab-summary" aria-label="Trade Cumulus Lab status">
@@ -610,7 +620,7 @@ function isSimulation(value: unknown): value is SimulationRecord {
   return (
     (typeof value.simulation_id === "string" || value.simulation_id === null) &&
     typeof value.display_name === "string" &&
-    ["reference", "variation", "lab_history"].includes(String(value.role)) &&
+    ["reference", "variation", "historical", "lab_history"].includes(String(value.role)) &&
     value.world_id === "trade_cumulus" &&
     typeof value.product_slice_id === "string" &&
     typeof value.case_id === "string" &&
@@ -713,13 +723,19 @@ function trustLabel(state: SimulationRecord["technical_trust_state"]): string {
 }
 
 function roleLabel(role: SimulationRecord["role"]): string {
-  return { reference: "Reference Simulation", variation: "Variation", lab_history: "Lab history" }[
-    role
-  ];
+  return {
+    reference: "Reference Simulation",
+    variation: "Variation",
+    historical: "Previous reference",
+    lab_history: "Lab history",
+  }[role];
 }
 
 function relationshipName(simulationId: string): string {
   if (simulationId === "trade_cumulus_canonical_bomex") return "Canonical BOMEX Baseline";
+  if (simulationId === "trade_cumulus_canonical_bomex_legacy") {
+    return "Canonical BOMEX Baseline - 6-hour run";
+  }
   if (simulationId === "trade_cumulus_more_moisture") return "More Moisture";
   return simulationId;
 }

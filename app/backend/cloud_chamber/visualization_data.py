@@ -13,7 +13,7 @@ import math
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, Literal, cast
 
 import numpy as np
 from pydantic import BaseModel, ConfigDict, Field
@@ -2139,36 +2139,33 @@ def _threshold_points(
 ) -> list[list[float]]:
     if not dims.vertical or not dims.y or not dims.x:
         return []
-    points: list[list[float]] = []
-    values = data_array.values
+    values = np.asarray(data_array.values, dtype=float)
     z_values = _coordinate_values(dataset, dims.vertical)
     y_values = _coordinate_values(dataset, dims.y)
     x_values = _coordinate_values(dataset, dims.x)
     vertical_axis = data_array.dims.index(dims.vertical)
     y_axis = data_array.dims.index(dims.y)
     x_axis = data_array.dims.index(dims.x)
+    native_indices = np.argwhere(np.isfinite(values) & (values >= threshold))
+    if native_indices.size == 0:
+        return []
 
-    # Iterate in native array order so stride downsampling is deterministic.
-    for native_index in itertools.product(*(range(int(size)) for size in data_array.shape)):
-        raw_value = values[native_index]
-        try:
-            numeric = float(raw_value)
-        except (TypeError, ValueError):
-            continue
-        if not math.isfinite(numeric) or numeric < threshold:
-            continue
-        z_index = native_index[vertical_axis]
-        y_index = native_index[y_axis]
-        x_index = native_index[x_axis]
-        points.append(
-            [
-                _coordinate_number(x_values, x_index),
-                _coordinate_number(y_values, y_index),
-                _coordinate_number(z_values, z_index),
-                numeric,
-            ]
-        )
-    return points
+    # np.argwhere retains C/native array order, preserving deterministic stride sampling.
+    x_coordinates = _coordinate_number_array(x_values, int(data_array.shape[x_axis]))
+    y_coordinates = _coordinate_number_array(y_values, int(data_array.shape[y_axis]))
+    z_coordinates = _coordinate_number_array(z_values, int(data_array.shape[vertical_axis]))
+    selected_values = values[tuple(native_indices.T)]
+    return cast(
+        list[list[float]],
+        np.column_stack(
+            (
+                x_coordinates[native_indices[:, x_axis]],
+                y_coordinates[native_indices[:, y_axis]],
+                z_coordinates[native_indices[:, vertical_axis]],
+                selected_values,
+            )
+        ).tolist(),
+    )
 
 
 def _threshold_surface_points(
@@ -2180,34 +2177,34 @@ def _threshold_surface_points(
 ) -> list[list[float]]:
     if not dims.y or not dims.x:
         return []
-    points: list[list[float]] = []
-    values = data_array.values
+    values = np.asarray(data_array.values, dtype=float)
     y_values = _coordinate_values(dataset, dims.y)
     x_values = _coordinate_values(dataset, dims.x)
     y_axis = data_array.dims.index(dims.y)
     x_axis = data_array.dims.index(dims.x)
     z_value = _surface_vertical_extent(dataset).min
+    native_indices = np.argwhere(np.isfinite(values) & (values >= threshold))
+    if native_indices.size == 0:
+        return []
 
-    # Iterate in native array order so stride downsampling is deterministic.
-    for native_index in itertools.product(*(range(int(size)) for size in data_array.shape)):
-        raw_value = values[native_index]
-        try:
-            numeric = float(raw_value)
-        except (TypeError, ValueError):
-            continue
-        if not math.isfinite(numeric) or numeric < threshold:
-            continue
-        y_index = native_index[y_axis]
-        x_index = native_index[x_axis]
-        points.append(
-            [
-                _coordinate_number(x_values, x_index),
-                _coordinate_number(y_values, y_index),
-                z_value,
-                numeric,
-            ]
-        )
-    return points
+    x_coordinates = _coordinate_number_array(x_values, int(data_array.shape[x_axis]))
+    y_coordinates = _coordinate_number_array(y_values, int(data_array.shape[y_axis]))
+    selected_values = values[tuple(native_indices.T)]
+    return cast(
+        list[list[float]],
+        np.column_stack(
+            (
+                x_coordinates[native_indices[:, x_axis]],
+                y_coordinates[native_indices[:, y_axis]],
+                np.full(native_indices.shape[0], z_value, dtype=float),
+                selected_values,
+            )
+        ).tolist(),
+    )
+
+
+def _coordinate_number_array(values: list[float | str | None], size: int) -> np.ndarray[Any, Any]:
+    return np.fromiter((_coordinate_number(values, index) for index in range(size)), dtype=float)
 
 
 def _coordinate_number(values: list[float | str | None], index: int) -> float:

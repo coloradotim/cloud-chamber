@@ -7,15 +7,15 @@ import {
   type TradeCumulusWorldDetail,
 } from "./TradeCumulusWorld";
 
-const baselineId = "result-trade-cumulus-5b-full-baseline-20260720T162342Z";
-const moreId = "result-trade-cumulus-5b-full-more_moisture-20260720T162342Z";
+const baselineId = "result-trade-cumulus-presentation-v1-baseline-20260722";
+const moreId = "result-trade-cumulus-presentation-v1-more-moisture-20260722";
 
 const baseline: SimulationRecord = simulation({
   simulation_id: "trade_cumulus_canonical_bomex",
   display_name: "Canonical BOMEX Baseline",
   role: "reference",
   result_id: baselineId,
-  run_id: "trade-cumulus-5b-full-baseline-20260720T162342Z",
+  run_id: "trade-cumulus-presentation-v1-baseline-20260722",
   parent_simulation_id: null,
   reference_simulation_id: "trade_cumulus_canonical_bomex",
   lineage_state: "known",
@@ -26,7 +26,7 @@ const moreMoisture: SimulationRecord = simulation({
   display_name: "More Moisture",
   role: "variation",
   result_id: moreId,
-  run_id: "trade-cumulus-5b-full-more_moisture-20260720T162342Z",
+  run_id: "trade-cumulus-presentation-v1-more-moisture-20260722",
   parent_simulation_id: "trade_cumulus_canonical_bomex",
   reference_simulation_id: "trade_cumulus_canonical_bomex",
   lineage_state: "known",
@@ -50,6 +50,17 @@ const moreMoisture: SimulationRecord = simulation({
   ],
 });
 
+const legacyBaseline: SimulationRecord = simulation({
+  simulation_id: "trade_cumulus_canonical_bomex_legacy",
+  display_name: "Canonical BOMEX Baseline - 6-hour run",
+  role: "historical",
+  result_id: "result-trade-cumulus-5b-full-baseline-20260720T162342Z",
+  run_id: "trade-cumulus-5b-full-baseline-20260720T162342Z",
+  parent_simulation_id: null,
+  reference_simulation_id: "trade_cumulus_canonical_bomex_legacy",
+  lineage_state: "known",
+});
+
 const labHistory = simulation({
   simulation_id: null,
   display_name: "Unretained Trade Cumulus result",
@@ -71,7 +82,7 @@ const world: TradeCumulusWorldDetail = {
   availability_state: "available",
   availability_message: "Reference, variation, and featured comparison are available.",
   reference_simulation: baseline,
-  simulations: [baseline, moreMoisture],
+  simulations: [baseline, moreMoisture, legacyBaseline],
   lab_history: [labHistory],
   featured_comparison: {
     comparison_id: "trade_cumulus_moisture_v1",
@@ -118,6 +129,14 @@ describe("TradeCumulusWorld", () => {
       0,
     );
     expect(screen.getByRole("heading", { name: "More Moisture" })).toBeInTheDocument();
+    expect(
+      screen.queryByRole("heading", { name: "Canonical BOMEX Baseline - 6-hour run" }),
+    ).not.toBeInTheDocument();
+    fireEvent.click(within(nav).getByRole("button", { name: "Simulations" }));
+    expect(screen.getByRole("heading", { name: "More Moisture" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { name: "Canonical BOMEX Baseline - 6-hour run" }),
+    ).toBeInTheDocument();
     expect(screen.queryByText("result-unlineaged")).not.toBeInTheDocument();
   });
 
@@ -133,6 +152,7 @@ describe("TradeCumulusWorld", () => {
       }),
     );
     expect(onExplore).toHaveBeenCalledWith(baseline);
+    fireEvent.click(screen.getByRole("button", { name: "Comparisons" }));
     fireEvent.click(screen.getByRole("button", { name: "Open Comparison" }));
     expect(onCompare).toHaveBeenCalledOnce();
   });
@@ -176,6 +196,8 @@ describe("TradeCumulusWorld", () => {
 
   it("keeps runtime integrity secondary and displays moisture flux in g/kg m/s", async () => {
     renderWorld();
+    await screen.findByRole("heading", { name: "Trade Cumulus" });
+    fireEvent.click(screen.getByRole("button", { name: "Simulations" }));
     const card = await screen.findByLabelText("More Moisture Simulation");
 
     expect(card).toHaveTextContent("0.05200 g/kg m/s to 0.07800 g/kg m/s");

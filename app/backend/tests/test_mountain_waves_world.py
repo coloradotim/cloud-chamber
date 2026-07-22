@@ -25,6 +25,7 @@ from cloud_chamber.mountain_waves_world import (
     mountain_waves_run_manifest,
     mountain_waves_world_detail,
 )
+from cloud_chamber.presentation_runs import spec_by_key
 from cloud_chamber.run_manifest import (
     AppMetadata,
     ExecutionMetadata,
@@ -72,6 +73,14 @@ def test_world_installs_distinct_dry_and_moist_references(tmp_path: Path) -> Non
     assert world.simulations[0].moist is False
     assert world.simulations[1].moist is True
     assert any("not a controlled pair" in caveat for caveat in world.caveats)
+
+
+def test_built_ins_resolve_the_exact_presentation_run_contracts() -> None:
+    for built_in in _BUILT_INS:
+        presentation = spec_by_key(built_in.presentation_key)
+        assert presentation.run_id == built_in.run_id
+        assert presentation.case_id == built_in.case_id
+        assert presentation.moist_terrain == built_in.moist
 
 
 def test_missing_reference_is_honest_without_disabling_lab(tmp_path: Path) -> None:
@@ -181,8 +190,8 @@ def test_contradictory_built_in_artifact_is_not_promoted(
 
     manifest = load_run_manifest(manifest_path)
     monkeypatch.setattr(
-        "cloud_chamber.mountain_waves_world.load_completed_mountain_wave_package_for_evaluation",
-        lambda **_kwargs: (_ for _ in ()).throw(ValueError("hash contradiction")),
+        "cloud_chamber.mountain_waves_world._verify_presentation_built_in",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(ValueError("hash contradiction")),
     )
 
     inspectable, message = _built_in_inspectability(settings, _BUILT_INS[0], manifest)

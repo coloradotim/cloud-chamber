@@ -31,7 +31,10 @@ from cloud_chamber.mountain_wave_case import (
 from cloud_chamber.mountain_wave_case import (
     collect_cm1_provenance as collect_mountain_cm1_provenance,
 )
-from cloud_chamber.result_ingest import ingest_completed_run
+from cloud_chamber.mountain_wave_terrain_visualization import (
+    validate_mountain_waves_native_outputs,
+)
+from cloud_chamber.result_ingest import get_result_metadata, ingest_completed_run
 from cloud_chamber.run_manifest import (
     GeneratedInputs,
     LifecycleState,
@@ -44,6 +47,19 @@ from cloud_chamber.run_manifest import (
     write_run_manifest,
 )
 from cloud_chamber.settings import CloudChamberSettings
+from cloud_chamber.trade_cumulus_moisture_comparison import (
+    TradeCumulusMatchedPackage,
+    TradeCumulusMoistureState,
+    TradeCumulusPairedEvidence,
+    TradeCumulusRunEvidence,
+    TradeCumulusRunLength,
+    build_joint_lens_preparation,
+    build_paired_evidence,
+    build_trade_cumulus_run_evidence,
+    compare_matched_packages,
+    write_paired_evidence,
+    write_trade_cumulus_run_evidence,
+)
 
 PRESENTATION_PROFILE_ID = "cloud_world_presentation_v1"
 MINIMUM_POST_RUN_FREE_BYTES = 5 * 1024**3
@@ -212,6 +228,7 @@ class PresentationRunEvidence(BaseModel):
     runtime_seconds: float | None
     runtime_warnings: list[str] = Field(default_factory=list)
     normal_completion: bool
+    world_validation: dict[str, Any] | None = None
 
 
 def spec_by_key(key: str) -> PresentationRunSpec:
@@ -324,6 +341,7 @@ def generate_presentation_package(
                 "generated_input_sha256": generated_hashes,
                 "storage_estimate": storage.model_dump(),
                 "changed_namelist_assignments": spec.changed_assignments,
+                "case_manifest_path": str(case_manifest_path),
             }
         )
         diagnostic_cadence = configuration.get("diagnostic_cadence_seconds")
@@ -571,6 +589,15 @@ def validate_completed_presentation_run(
     runtime = None
     if manifest.execution.started_at and manifest.execution.finished_at:
         runtime = (manifest.execution.finished_at - manifest.execution.started_at).total_seconds()
+    world_validation = None
+    if spec.world == "mountain_waves":
+        world_validation = validate_mountain_waves_native_outputs(
+            output_paths=paths,
+            namelist_path=Path(manifest.generated_inputs.namelist_input or "").expanduser(),
+            run_id=manifest.run_id,
+            implementation_commit=manifest.app.commit or "unknown",
+            moist_fields_available=spec.moist_terrain,
+        )
     evidence = PresentationRunEvidence(
         run_id=spec.run_id,
         source_run_id=spec.source_run_id,
@@ -599,10 +626,11 @@ def validate_completed_presentation_run(
         runtime_seconds=runtime,
         runtime_warnings=warnings,
         normal_completion=True,
+        world_validation=world_validation,
     )
     evidence_path = package.package_dir / "presentation_run_evidence.json"
     _write_json(evidence_path, evidence.model_dump())
-    processed = [*manifest.outputs.processed_artifacts, str(evidence_path)]
+    processed = list(dict.fromkeys([*manifest.outputs.processed_artifacts, str(evidence_path)]))
     updated = manifest.model_copy(
         update={
             "validation_status": ValidationStatus.VALID,
@@ -614,7 +642,131 @@ def validate_completed_presentation_run(
     write_run_manifest(package.manifest_path, updated)
     if spec.world == "trade_cumulus":
         ingest_completed_run(package.manifest_path)
+        _write_trade_presentation_evidence(settings=settings, spec=spec)
     return evidence
+
+
+def _write_trade_presentation_evidence(
+    *, settings: CloudChamberSettings, spec: PresentationRunSpec
+) -> TradeCumulusRunEvidence:
+    package = load_presentation_package(settings=settings, spec=spec)
+    manifest = load_run_manifest(package.manifest_path)
+    matched_package = _trade_presentation_package(settings=settings, spec=spec)
+    result = get_result_metadata(settings, f"result-{spec.run_id}")
+    runtime_seconds = None
+    if manifest.execution.started_at and manifest.execution.finished_at:
+        runtime_seconds = (
+            manifest.execution.finished_at - manifest.execution.started_at
+        ).total_seconds()
+    run_evidence = build_trade_cumulus_run_evidence(
+        result,
+        matched_package,
+        wall_clock_seconds=runtime_seconds,
+    )
+    if not run_evidence.gate.valid:
+        raise PresentationRunError(
+            f"Trade Cumulus presentation evidence gate failed: {run_evidence.gate.failures}"
+        )
+    evidence_path = package.package_dir / "trade_cumulus_presentation_run_evidence.json"
+    write_trade_cumulus_run_evidence(evidence_path, run_evidence)
+    current = load_run_manifest(package.manifest_path)
+    processed = list(dict.fromkeys([*current.outputs.processed_artifacts, str(evidence_path)]))
+    write_run_manifest(
+        package.manifest_path,
+        current.model_copy(
+            update={
+                "outputs": current.outputs.model_copy(update={"processed_artifacts": processed}),
+                "updated_at": datetime.now(UTC),
+            }
+        ),
+    )
+    return run_evidence
+
+
+def finalize_trade_cumulus_presentation_pair(
+    *, settings: CloudChamberSettings
+) -> tuple[TradeCumulusPairedEvidence, Path]:
+    """Build the matched-pair artifact after both presentation runs validate."""
+    baseline_spec = spec_by_key("trade_baseline")
+    more_moisture_spec = spec_by_key("trade_more_moisture")
+    baseline_package = _trade_presentation_package(settings=settings, spec=baseline_spec)
+    more_moisture_package = _trade_presentation_package(settings=settings, spec=more_moisture_spec)
+    proof = compare_matched_packages(baseline_package, more_moisture_package)
+    baseline_evidence = _load_trade_presentation_evidence(settings=settings, spec=baseline_spec)
+    more_moisture_evidence = _load_trade_presentation_evidence(
+        settings=settings, spec=more_moisture_spec
+    )
+    baseline_result = get_result_metadata(settings, baseline_evidence.result_id)
+    more_moisture_result = get_result_metadata(settings, more_moisture_evidence.result_id)
+    lens_preparation = build_joint_lens_preparation(settings, baseline_result, more_moisture_result)
+    paired = build_paired_evidence(
+        baseline_evidence,
+        more_moisture_evidence,
+        implementation_commit=baseline_evidence.app_commit,
+        matched_package_proof=proof,
+        lens_preparation=lens_preparation,
+        estimated_full_pair_bytes=(
+            load_presentation_package(
+                settings=settings, spec=baseline_spec
+            ).storage.estimated_retained_bytes
+            + load_presentation_package(
+                settings=settings, spec=more_moisture_spec
+            ).storage.estimated_retained_bytes
+        ),
+    )
+    evidence_path = (
+        settings.runtime_home.expanduser()
+        / "comparisons"
+        / "trade-cumulus-presentation-v1-20260722"
+        / "comparison_evidence.json"
+    )
+    paired = paired.model_copy(update={"runtime_local_evidence_path": str(evidence_path)})
+    write_paired_evidence(evidence_path, paired)
+    return paired, evidence_path
+
+
+def _trade_presentation_package(
+    *, settings: CloudChamberSettings, spec: PresentationRunSpec
+) -> TradeCumulusMatchedPackage:
+    package = load_presentation_package(settings=settings, spec=spec)
+    manifest = load_run_manifest(package.manifest_path)
+    control_state = {
+        "trade_baseline": TradeCumulusMoistureState.BASELINE,
+        "trade_more_moisture": TradeCumulusMoistureState.MORE_MOISTURE,
+    }.get(spec.key)
+    if control_state is None:
+        raise PresentationRunError(f"Presentation run is not a Trade Cumulus member: {spec.key}")
+    configuration = manifest.run_configuration
+    return TradeCumulusMatchedPackage(
+        run_id=spec.run_id,
+        control_state=control_state,
+        run_length=TradeCumulusRunLength.FULL,
+        package_dir=package.package_dir,
+        manifest_path=package.manifest_path,
+        case_manifest_path=package.package_dir / "case_manifest.json",
+        namelist_path=Path(manifest.generated_inputs.namelist_input or "").expanduser(),
+        science_settings_sha256=str(configuration.get("science_settings_sha256", "")),
+        fixed_assumptions_sha256=str(configuration.get("fixed_assumptions_sha256", "")),
+        app_commit=manifest.app.commit or "unknown",
+        duration_seconds_override=spec.duration_seconds,
+        output_cadence_seconds_override=spec.output_cadence_seconds,
+        analysis_start_seconds_override=max(0.0, spec.duration_seconds - 3 * 60 * 60),
+    )
+
+
+def _load_trade_presentation_evidence(
+    *, settings: CloudChamberSettings, spec: PresentationRunSpec
+) -> TradeCumulusRunEvidence:
+    package = load_presentation_package(settings=settings, spec=spec)
+    path = package.package_dir / "trade_cumulus_presentation_run_evidence.json"
+    if not path.is_file():
+        raise PresentationRunError(f"Trade Cumulus presentation evidence is unavailable: {path}")
+    try:
+        return TradeCumulusRunEvidence.model_validate_json(path.read_text())
+    except (OSError, ValueError) as exc:
+        raise PresentationRunError(
+            f"Trade Cumulus presentation evidence is invalid: {path}"
+        ) from exc
 
 
 def render_presentation_namelist(text: str, spec: PresentationRunSpec) -> str:

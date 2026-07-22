@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { MountainWavesExplore, mountainWavesCloudPointRendering } from "./MountainWavesExplore";
@@ -207,6 +207,7 @@ describe("MountainWavesExplore", () => {
   });
 
   afterEach(() => {
+    vi.useRealTimers();
     cleanup();
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
@@ -235,6 +236,54 @@ describe("MountainWavesExplore", () => {
     expect(screen.getByRole("slider", { name: /Saved output/ })).toHaveAttribute("max", "1");
     expect(screen.getByText(/Select a point in the cross-section/)).toBeInTheDocument();
     expect(screen.getAllByRole("button", { name: "Wave Cloud Lens" })).toHaveLength(1);
+  });
+
+  it("waits for the displayed frame before advancing playback again", async () => {
+    const playbackFrame = { ...frame, times_seconds: [0, 180, 360] };
+    vi.mocked(fetch).mockResolvedValue(ok(playbackFrame));
+    render(<MountainWavesExplore simulation={simulation} onBack={vi.fn()} />);
+    await screen.findByRole("heading", { name: "Wave Cloud Lens" });
+
+    let resolveSecondFrame: ((response: Response) => void) | undefined;
+    vi.mocked(fetch).mockImplementation((input) => {
+      const url = String(input);
+      if (url.includes("time_index=1")) {
+        return new Promise((resolve) => {
+          resolveSecondFrame = resolve;
+        });
+      }
+      return Promise.resolve(ok({ ...playbackFrame, time_index: 2, time_seconds: 360 }));
+    });
+
+    vi.useFakeTimers();
+    fireEvent.click(screen.getByRole("button", { name: "Play" }));
+    await act(async () => {
+      vi.advanceTimersByTime(900);
+      await Promise.resolve();
+    });
+    expect(fetch).toHaveBeenCalledWith(expect.stringContaining("time_index=1"));
+    expect(screen.getByRole("slider", { name: /Saved output/ })).toHaveValue("1");
+
+    await act(async () => {
+      vi.advanceTimersByTime(3_600);
+      await Promise.resolve();
+    });
+    expect(screen.getByRole("slider", { name: /Saved output/ })).toHaveValue("1");
+    expect(vi.mocked(fetch).mock.calls.some(([url]) => String(url).includes("time_index=2"))).toBe(
+      false,
+    );
+
+    await act(async () => {
+      resolveSecondFrame?.(ok({ ...playbackFrame, time_index: 1, time_seconds: 180 }));
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(screen.queryByText("Loading frame...")).not.toBeInTheDocument();
+    await act(async () => {
+      vi.advanceTimersByTime(900);
+      await Promise.resolve();
+    });
+    expect(fetch).toHaveBeenCalledWith(expect.stringContaining("time_index=2"));
   });
 
   it("switches to direct Field inspection and preserves the geometry choice", async () => {

@@ -75,7 +75,7 @@ export type TradeCumulusComparisonStoryResponse = {
   };
   explanation_paragraphs: string[];
   evidence_summary: {
-    analysis_window: "time >= 10800 s";
+    analysis_window: "time >= 3600 s";
     analysis_start_seconds: number;
     analysis_end_seconds: number;
     output_cadence_seconds: number;

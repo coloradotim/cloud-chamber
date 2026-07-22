@@ -567,3 +567,45 @@ def test_defaults_cache_reuses_computation_and_closes_every_open_dataset(
     assert first is second
     assert opens == 2
     assert closes == opens
+
+
+def test_one_file_per_output_defaults_open_only_the_supported_default_frame(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    paths: list[Path] = []
+    for index in range(4):
+        path = tmp_path / f"cm1out_{index:06d}.nc"
+        _dataset(times=[10_800.0 + index * 100.0]).to_netcdf(path)
+        paths.append(path)
+    metadata = _metadata(
+        paths[0],
+        time_steps=len(paths),
+        default_time_by_field={
+            "qc": {
+                "field": "qc",
+                "time_index": 2,
+                "time_seconds": 11_000,
+                "source_interesting_time_key": "max_qc",
+                "support_state": "supported",
+                "caveats": [],
+            }
+        },
+    )
+    metadata.model_output_paths = [str(path) for path in paths]
+    metadata.last_output_time_seconds = 11_100
+    opens: list[Path] = []
+    real_open_dataset = lens._open_dataset
+
+    def open_dataset(path: Path) -> Any:
+        opens.append(path)
+        return real_open_dataset(path)
+
+    clear_trade_cumulus_updraft_lens_cache()
+    monkeypatch.setattr(lens, "_open_dataset", open_dataset)
+    defaults = lens._cached_defaults(metadata).response
+
+    assert defaults.default_time_index == 2
+    assert defaults.default_time_seconds == 11_000
+    assert defaults.default_time_method == "diagnostics_supported_time_of_max_cloud_liquid"
+    assert opens == [paths[2]]
+    assert "wind_reference_derived_from_default_frame_and_fixed_across_playback" in defaults.caveats

@@ -120,6 +120,38 @@ class TradeCumulusMatchedPackage:
     science_settings_sha256: str
     fixed_assumptions_sha256: str
     app_commit: str
+    duration_seconds_override: int | None = None
+    output_cadence_seconds_override: int | None = None
+    analysis_start_seconds_override: float | None = None
+    run_length_label_override: str | None = None
+
+    @property
+    def duration_seconds(self) -> int:
+        return self.duration_seconds_override or self.run_length.duration_seconds
+
+    @property
+    def output_cadence_seconds(self) -> int:
+        return self.output_cadence_seconds_override or OUTPUT_CADENCE_SECONDS
+
+    @property
+    def analysis_start_seconds(self) -> float:
+        return (
+            self.analysis_start_seconds_override
+            if self.analysis_start_seconds_override is not None
+            else FINAL_THREE_HOUR_START_SECONDS
+        )
+
+    @property
+    def run_length_label(self) -> str:
+        return self.run_length_label_override or self.run_length.value
+
+    @property
+    def expected_model_output_count(self) -> int:
+        return self.duration_seconds // self.output_cadence_seconds + 1
+
+    @property
+    def expected_diagnostic_output_count(self) -> int:
+        return self.duration_seconds // DIAGNOSTIC_CADENCE_SECONDS + 1
 
 
 class PackageComparisonProof(BaseModel):
@@ -303,7 +335,7 @@ class JointLensPreparation(BaseModel):
 class TradeCumulusPairedEvidence(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    evidence_version: str = "trade_cumulus_moisture_comparison_evidence_v1"
+    evidence_version: str = "trade_cumulus_moisture_comparison_evidence_v2"
     evidence_state: Literal[
         "matched_runs_valid",
         "baseline_invalid",
@@ -315,7 +347,8 @@ class TradeCumulusPairedEvidence(BaseModel):
     more_moisture: TradeCumulusRunEvidence
     scalar_metrics: dict[str, PairedScalarMetric]
     exact_time_pairing: dict[str, list[TimedValue]]
-    stage4_consistency: Stage4ConsistencyEvidence
+    matched_package_proof: PackageComparisonProof
+    stage4_consistency: Stage4ConsistencyEvidence | None = None
     lens_preparation: JointLensPreparation
     estimated_full_pair_bytes: int
     actual_full_pair_bytes: int
@@ -787,7 +820,7 @@ def build_trade_cumulus_run_evidence(
             f"Result {result.result_id} does not belong to package {package.run_id}."
         )
     manifest = load_run_manifest(package.manifest_path)
-    frames = _analyze_model_frames(result)
+    frames = _analyze_model_frames(result, analysis_start_seconds=package.analysis_start_seconds)
     forcing, forcing_fields, diagnostic_times = _analyze_diagnostic_frames(result)
     cm1_reported_runtime_seconds = _cm1_reported_runtime_seconds(manifest)
     gate = _build_run_gate(
@@ -801,7 +834,7 @@ def build_trade_cumulus_run_evidence(
     final_indices = [
         index
         for index, time_seconds in enumerate(frames.times_seconds)
-        if time_seconds >= FINAL_THREE_HOUR_START_SECONDS
+        if time_seconds >= package.analysis_start_seconds
     ]
     final_cwp = [frames.domain_mean_cwp[index] for index in final_indices]
     final_cover = [frames.total_cloud_cover_percent[index] for index in final_indices]
@@ -823,13 +856,14 @@ def build_trade_cumulus_run_evidence(
     final_coherent_tops = [
         point.value
         for point in coherent_top_series
-        if point.time_seconds >= FINAL_THREE_HOUR_START_SECONDS and point.value is not None
+        if point.time_seconds >= package.analysis_start_seconds and point.value is not None
     ]
     positive_cloud_fraction = (
         frames.final_positive_cloudy_count / frames.final_cloudy_count * 100.0
         if frames.final_cloudy_count
         else None
     )
+    analysis_window = f"time >= {package.analysis_start_seconds:g} s"
     scalar_metrics = {
         "first_isolated_cloud_liquid_time": _metric(
             frames.first_isolated_cloud_time_seconds,
@@ -848,37 +882,37 @@ def build_trade_cumulus_run_evidence(
             _finite_mean_list(final_cover),
             "%",
             "time mean of horizontal columns containing ql >= 1e-6 kg/kg",
-            "time >= 10800 s",
+            analysis_window,
         ),
         "time_mean_cloud_fraction_profile_peak": _metric(
             peak_fraction,
             "%",
             "peak of final-three-hour time-mean horizontal cloud-fraction profile",
-            "time >= 10800 s",
+            analysis_window,
         ),
         "time_mean_cloud_fraction_profile_peak_height": _metric(
             peak_height,
             "m",
             "height of first maximum in final-three-hour time-mean cloud-fraction profile",
-            "time >= 10800 s",
+            analysis_window,
         ),
         "domain_mean_cwp_final_three_hour_mean": _metric(
             _finite_mean_list(final_cwp),
             "kg/m^2",
             "time mean of horizontal domain-mean cwp",
-            "time >= 10800 s",
+            analysis_window,
         ),
         "domain_mean_cwp_final_three_hour_minimum": _metric(
             _finite_min_list(final_cwp),
             "kg/m^2",
             "minimum horizontal domain-mean cwp",
-            "time >= 10800 s",
+            analysis_window,
         ),
         "domain_mean_cwp_final_three_hour_maximum": _metric(
             _finite_max_list(final_cwp),
             "kg/m^2",
             "maximum horizontal domain-mean cwp",
-            "time >= 10800 s",
+            analysis_window,
         ),
         "cloud_water_growth_decay_peak_count": _metric(
             float(cloud_water_cycle_peak_count(frames.domain_mean_cwp)),
@@ -904,21 +938,21 @@ def build_trade_cumulus_run_evidence(
             _finite_mean_list(final_coherent_tops),
             "m",
             "mean supported coherent cloud-object top",
-            "time >= 10800 s",
+            analysis_window,
             unavailable_reason="final_three_hour_coherent_cloud_top_unavailable",
         ),
         "coherent_cloud_top_final_three_hour_minimum": _metric(
             _finite_min_list(final_coherent_tops),
             "m",
             "minimum supported coherent cloud-object top",
-            "time >= 10800 s",
+            analysis_window,
             unavailable_reason="final_three_hour_coherent_cloud_top_unavailable",
         ),
         "coherent_cloud_top_final_three_hour_maximum": _metric(
             _finite_max_list(final_coherent_tops),
             "m",
             "maximum supported coherent cloud-object top",
-            "time >= 10800 s",
+            analysis_window,
             unavailable_reason="final_three_hour_coherent_cloud_top_unavailable",
         ),
         "maximum_cloud_liquid": _metric(
@@ -943,20 +977,20 @@ def build_trade_cumulus_run_evidence(
             positive_cloud_fraction,
             "%",
             "pooled fraction of cloudy scalar cells with centered w > 0",
-            "time >= 10800 s",
+            analysis_window,
             unavailable_reason="no_cloudy_scalar_cells_in_window",
         ),
         "qv_0_1000m_final_three_hour_mean": _metric(
             _finite_mean_list([frames.low_level_qv[index] for index in final_indices]),
             "kg/kg",
             "time mean of thickness-weighted horizontal/domain qv over 0-1000 m",
-            "time >= 10800 s",
+            analysis_window,
         ),
         "th_0_1000m_final_three_hour_mean": _metric(
             _finite_mean_list([frames.low_level_th[index] for index in final_indices]),
             "K",
             "time mean of thickness-weighted horizontal/domain th over 0-1000 m",
-            "time >= 10800 s",
+            analysis_window,
         ),
         "wall_clock_runtime": _metric(
             wall_clock_seconds,
@@ -994,14 +1028,14 @@ def build_trade_cumulus_run_evidence(
             values=time_mean_cloud_profile,
             units="%",
             method="time mean of horizontal ql >= 1e-6 kg/kg fraction by scalar level",
-            window="time >= 10800 s",
+            window=analysis_window,
         ),
         "cloud_conditioned_centered_w_final_three_hours": VerticalProfile(
             height_m=frames.height_m,
             values=cloud_w_profile,
             units="m/s",
             method="time mean of per-frame centered w mean over cloudy scalar cells by level",
-            window="time >= 10800 s",
+            window=analysis_window,
             quality="trusted"
             if any(value is not None for value in cloud_w_profile)
             else "unavailable",
@@ -1023,12 +1057,13 @@ def build_trade_cumulus_run_evidence(
     caveats = sorted(set(result.runtime_integrity.caveats))
     return TradeCumulusRunEvidence(
         control_state=package.control_state.value,
-        run_length=package.run_length.value,
+        run_length=package.run_length_label,
         run_id=result.run_id,
         result_id=result.result_id,
         app_commit=package.app_commit,
         surface_moisture_flux_g_g_m_s=(package.control_state.surface_moisture_flux_g_g_m_s),
-        duration_seconds=package.run_length.duration_seconds,
+        duration_seconds=package.duration_seconds,
+        output_cadence_seconds=package.output_cadence_seconds,
         wall_clock_seconds=wall_clock_seconds,
         cm1_reported_runtime_seconds=cm1_reported_runtime_seconds,
         output_bytes=frames.output_bytes,
@@ -1053,7 +1088,8 @@ def build_paired_evidence(
     more_moisture: TradeCumulusRunEvidence,
     *,
     implementation_commit: str,
-    stage4_consistency: Stage4ConsistencyEvidence,
+    matched_package_proof: PackageComparisonProof,
+    stage4_consistency: Stage4ConsistencyEvidence | None = None,
     lens_preparation: JointLensPreparation,
     estimated_full_pair_bytes: int,
 ) -> TradeCumulusPairedEvidence:
@@ -1088,7 +1124,9 @@ def build_paired_evidence(
         ] = "baseline_invalid"
     elif not more_moisture.gate.valid:
         state = "more_moisture_invalid"
-    elif not stage4_consistency.passed:
+    elif not matched_package_proof.valid:
+        state = "comparison_inconclusive_missing_evidence"
+    elif stage4_consistency is not None and not stage4_consistency.passed:
         state = "comparison_inconclusive_missing_evidence"
     else:
         state = "matched_runs_valid"
@@ -1099,6 +1137,7 @@ def build_paired_evidence(
         more_moisture=more_moisture,
         scalar_metrics=paired_metrics,
         exact_time_pairing=paired_series,
+        matched_package_proof=matched_package_proof,
         stage4_consistency=stage4_consistency,
         lens_preparation=lens_preparation,
         estimated_full_pair_bytes=estimated_full_pair_bytes,
@@ -1137,7 +1176,9 @@ class _ModelFrameAnalysis:
     output_bytes: int
 
 
-def _analyze_model_frames(result: ResultMetadata) -> _ModelFrameAnalysis:
+def _analyze_model_frames(
+    result: ResultMetadata, *, analysis_start_seconds: float
+) -> _ModelFrameAnalysis:
     xarray = importlib.import_module("xarray")
     times: list[float] = []
     heights: list[float] | None = None
@@ -1230,7 +1271,7 @@ def _analyze_model_frames(result: ResultMetadata) -> _ModelFrameAnalysis:
                     non_finite_counts[required_field] += int(
                         values.size - np.count_nonzero(np.isfinite(values))
                     )
-                if time_seconds >= FINAL_THREE_HOUR_START_SECONDS:
+                if time_seconds >= analysis_start_seconds:
                     final_cloudy_count += cloudy_count
                     final_positive_count += int(np.count_nonzero(cloud_mask & (w > 0.0)))
                 final_profiles = {
@@ -1338,8 +1379,8 @@ def _build_run_gate(
     forcing: dict[str, dict[str, float | None]],
     diagnostic_times: list[float],
 ) -> RunGateEvidence:
-    expected_model = package.run_length.expected_model_output_count
-    expected_diagnostic = package.run_length.expected_diagnostic_output_count
+    expected_model = package.expected_model_output_count
+    expected_diagnostic = package.expected_diagnostic_output_count
     failures: list[str] = []
     if result.source_lifecycle_state != "completed":
         failures.append(f"lifecycle_state:{result.source_lifecycle_state}")
@@ -1371,10 +1412,12 @@ def _build_run_gate(
     if len(frame_analysis.times_seconds) != expected_model:
         failures.append(f"model_frame_count:{len(frame_analysis.times_seconds)}!={expected_model}")
     expected_model_times = [
-        float(index * OUTPUT_CADENCE_SECONDS) for index in range(expected_model)
+        float(index * package.output_cadence_seconds) for index in range(expected_model)
     ]
     if frame_analysis.times_seconds != expected_model_times:
-        failures.append("model_output_times_do_not_match_120_second_cadence")
+        failures.append(
+            f"model_output_times_do_not_match_{package.output_cadence_seconds}_second_cadence"
+        )
     if len(diagnostic_times) != expected_diagnostic:
         failures.append(f"diagnostic_frame_count:{len(diagnostic_times)}!={expected_diagnostic}")
     expected_diagnostic_times = [

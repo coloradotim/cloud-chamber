@@ -39,24 +39,24 @@ COMPARISON_ID: Literal["trade_cumulus_moisture_v1"] = "trade_cumulus_moisture_v1
 COMPARISON_GROUP_ID: Literal["trade_cumulus_moisture_v1"] = "trade_cumulus_moisture_v1"
 PRODUCT_SLICE_ID: Literal["trade_cumulus_v1"] = "trade_cumulus_v1"
 CASE_ID: Literal["bomex_trade_cumulus_baseline_v0"] = "bomex_trade_cumulus_baseline_v0"
-BASELINE_RESULT_ID = "result-trade-cumulus-5b-full-baseline-20260720T162342Z"
-MORE_MOISTURE_RESULT_ID = "result-trade-cumulus-5b-full-more_moisture-20260720T162342Z"
-BASELINE_RUN_ID = "trade-cumulus-5b-full-baseline-20260720T162342Z"
-MORE_MOISTURE_RUN_ID = "trade-cumulus-5b-full-more_moisture-20260720T162342Z"
+BASELINE_RESULT_ID = "result-trade-cumulus-presentation-v1-baseline-20260722"
+MORE_MOISTURE_RESULT_ID = "result-trade-cumulus-presentation-v1-more-moisture-20260722"
+BASELINE_RUN_ID = "trade-cumulus-presentation-v1-baseline-20260722"
+MORE_MOISTURE_RUN_ID = "trade-cumulus-presentation-v1-more-moisture-20260722"
 EXPECTED_FIXED_ASSUMPTIONS_SHA256 = (
-    "71d746b110fb1310ebb6dafbef4cfa4bd44c379fc6964ed1787deaf45e422535"
+    "861375a82d209c36cc63ccce2d20934553b0e7e8811579c718dfb275899172a7"
 )
-EXPECTED_IMPLEMENTATION_COMMIT = "49da1defc9914d3cc903ed9589c1312ddd843726"
+EXPECTED_IMPLEMENTATION_COMMIT = "4647ef54a6c1b7a5d31e6e758c3c276fc5e5b2e0"
 EXPECTED_CM1_SOURCE_MANIFEST_SHA256 = (
     "fbe2367dfcd6d8c55cac4bd03362d8d49f13f80cebd13b36230c20d71119a84e"
 )
 EXPECTED_CM1_EXECUTABLE_SHA256 = "5b7304bb04514ec03cf4d6e604bc0b5df6e8076bd4fb53c4b5cf5ea9184cdfd1"
 COMPARISON_EVIDENCE_RELATIVE_PATH = (
-    "comparisons/trade-cumulus-moisture-20260720T162342Z/comparison_evidence.json"
+    "comparisons/trade-cumulus-presentation-v1-20260722/comparison_evidence.json"
 )
-COMPARISON_EVIDENCE_VERSION = "trade_cumulus_moisture_comparison_evidence_v1"
+COMPARISON_EVIDENCE_VERSION = "trade_cumulus_moisture_comparison_evidence_v2"
 RUN_EVIDENCE_VERSION = "trade_cumulus_moisture_run_evidence_v1"
-FINAL_THREE_HOUR_START_SECONDS = 10_800.0
+FINAL_THREE_HOUR_START_SECONDS = 3_600.0
 
 
 class TradeCumulusComparisonStoryNotFound(RuntimeError):
@@ -154,7 +154,7 @@ class HeldFixedByDesign(BaseModel):
 class EvidenceSummary(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    analysis_window: Literal["time >= 10800 s"]
+    analysis_window: Literal["time >= 3600 s"]
     analysis_start_seconds: float
     analysis_end_seconds: float
     output_cadence_seconds: int
@@ -222,25 +222,24 @@ class _MetricSpec:
 
 BASELINE_VIEW = _CuratedViewSpec(
     result_id=BASELINE_RESULT_ID,
-    time_index=152,
-    time_seconds=18_240.0,
-    plane_index=5,
-    plane_coordinate=-2.6500000953674316,
+    time_index=201,
+    time_seconds=12_060.0,
+    plane_index=83,
+    plane_coordinate=2.366666555404663,
     caption=(
-        "This illustrative Baseline view shows one concentrated active cloud reaching about "
-        "2 km, with a strong rising core bordered by sinking air."
+        "This illustrative Baseline view shows several active cells across the slice, with "
+        "rising cores bordered by sinking air."
     ),
 )
 MORE_MOISTURE_VIEW = _CuratedViewSpec(
     result_id=MORE_MOISTURE_RESULT_ID,
-    time_index=169,
-    time_seconds=20_280.0,
-    plane_index=51,
-    plane_coordinate=1.9500000476837158,
+    time_index=232,
+    time_seconds=13_920.0,
+    plane_index=72,
+    plane_coordinate=1.6333333253860474,
     caption=(
-        "This illustrative More Moisture view shows several active clouds across the slice, "
-        "with rising cores distributed through a broader cloud-filled region reaching just "
-        "above 2 km."
+        "This illustrative More Moisture view shows a concentrated active core within a "
+        "broader region of cloud and vertical motion."
     ),
 )
 
@@ -249,39 +248,39 @@ _METRIC_SPECS = {
         key="mean_total_cloud_cover_final_three_hours",
         units="%",
         method="time mean of horizontal columns containing ql >= 1e-6 kg/kg",
-        window="time >= 10800 s",
-        baseline=10.596239697802197,
-        more_moisture=12.710873111263735,
-        absolute_delta=2.1146334134615383,
-        percent_delta=19.956451286206196,
+        window="time >= 3600 s",
+        baseline=12.049246566144873,
+        more_moisture=14.248040880141192,
+        absolute_delta=2.198794313996318,
+        percent_delta=18.24839671033321,
     ),
     "domain_mean_cwp_final_three_hour_mean": _MetricSpec(
         key="domain_mean_cwp_final_three_hour_mean",
         units="kg/m^2",
         method="time mean of horizontal domain-mean cwp",
-        window="time >= 10800 s",
-        baseline=0.006351999299305916,
-        more_moisture=0.009071426778155891,
-        absolute_delta=0.0027194274788499753,
-        percent_delta=42.81215017053178,
+        window="time >= 3600 s",
+        baseline=0.006739830541318102,
+        more_moisture=0.009686668911071296,
+        absolute_delta=0.0029468383697531936,
+        percent_delta=43.72273682087092,
     ),
     "coherent_cloud_top_final_three_hour_mean": _MetricSpec(
         key="coherent_cloud_top_final_three_hour_mean",
         units="m",
         method="mean supported coherent cloud-object top",
-        window="time >= 10800 s",
-        baseline=1668.3517340775375,
-        more_moisture=1805.0550379595913,
-        absolute_delta=136.7033038820539,
-        percent_delta=8.193913854600911,
+        window="time >= 3600 s",
+        baseline=1750.690681499671,
+        more_moisture=1859.9172027071536,
+        absolute_delta=109.22652120748262,
+        percent_delta=6.2390530983987045,
     ),
     "first_isolated_cloud_liquid_time": _MetricSpec(
         key="first_isolated_cloud_liquid_time",
         units="s",
         method="first model frame with any finite ql >= 1e-6 kg/kg",
         window="full run",
-        baseline=1080.0,
-        more_moisture=1080.0,
+        baseline=1140.0,
+        more_moisture=1140.0,
         absolute_delta=0.0,
         percent_delta=0.0,
     ),
@@ -289,21 +288,21 @@ _METRIC_SPECS = {
         key="time_mean_cloud_fraction_profile_peak_height",
         units="m",
         method="height of first maximum in final-three-hour time-mean cloud-fraction profile",
-        window="time >= 10800 s",
-        baseline=620.0000047683716,
-        more_moisture=620.0000047683716,
-        absolute_delta=0.0,
-        percent_delta=0.0,
+        window="time >= 3600 s",
+        baseline=615.0000095367432,
+        more_moisture=585.0000381469727,
+        absolute_delta=-29.999971389770508,
+        percent_delta=-4.87804405277463,
     ),
     "cloudy_scalar_cells_with_positive_centered_w": _MetricSpec(
         key="cloudy_scalar_cells_with_positive_centered_w",
         units="%",
         method="pooled fraction of cloudy scalar cells with centered w > 0",
-        window="time >= 10800 s",
-        baseline=90.3791231845806,
-        more_moisture=90.45123498042852,
-        absolute_delta=0.07211179584791694,
-        percent_delta=0.0797881117972826,
+        window="time >= 3600 s",
+        baseline=89.51790219011582,
+        more_moisture=89.54264215595985,
+        absolute_delta=0.024739965844034373,
+        percent_delta=0.02763689188280158,
     ),
 }
 
@@ -353,18 +352,18 @@ def trade_cumulus_moisture_comparison_story(
             evidence.baseline,
             baseline_view,
             display_name="Canonical BOMEX Baseline",
-            control_display="5.2 × 10⁻⁵ g/g m/s",
+            control_display="0.0520 g/kg m/s",
         ),
         more_moisture=_member(
             evidence.more_moisture,
             more_view,
             display_name="More Moisture",
-            control_display="7.8 × 10⁻⁵ g/g m/s",
+            control_display="0.0780 g/kg m/s",
         ),
         changed_condition=ChangedCondition(
             label="Surface moisture supply",
-            baseline_display="5.2 × 10⁻⁵ g/g m/s",
-            more_moisture_display="7.8 × 10⁻⁵ g/g m/s",
+            baseline_display="0.0520 g/kg m/s",
+            more_moisture_display="0.0780 g/kg m/s",
             change_display="+50%",
         ),
         material_responses=[
@@ -372,39 +371,42 @@ def trade_cumulus_moisture_comparison_story(
                 metrics["mean_total_cloud_cover_final_three_hours"],
                 metric_id="mean_cloud_cover_final_three_hours",
                 label="Mean cloud cover, final three hours",
-                baseline_display="10.596%",
-                more_display="12.711%",
-                change_display="+2.115 percentage points",
+                baseline_display="12.049%",
+                more_display="14.248%",
+                change_display="+2.199 percentage points",
             ),
             _material_response(
                 metrics["domain_mean_cwp_final_three_hour_mean"],
                 metric_id="mean_cloud_water_path_final_three_hours",
                 label="Mean cloud-water path, final three hours",
-                baseline_display="0.006352 kg/m²",
-                more_display="0.009071 kg/m²",
-                change_display="+42.812%",
+                baseline_display="0.006740 kg/m²",
+                more_display="0.009687 kg/m²",
+                change_display="+43.723%",
             ),
             _material_response(
                 metrics["coherent_cloud_top_final_three_hour_mean"],
                 metric_id="mean_coherent_cloud_top_final_three_hours",
                 label="Mean coherent cloud top, final three hours",
-                baseline_display="1,668 m",
-                more_display="1,805 m",
-                change_display="+137 m",
+                baseline_display="1,751 m",
+                more_display="1,860 m",
+                change_display="+109 m",
             ),
         ],
         small_or_mixed_responses=[
             AuthoredResponse(
                 title="Initial cloud-liquid onset was unchanged.",
-                body="Both simulations first reached the cloud-liquid threshold at 1,080 s.",
+                body="Both simulations first reached the cloud-liquid threshold at 1,140 s.",
             ),
             AuthoredResponse(
-                title="The cloud-fraction peak stayed at the same height.",
-                body="Both final-three-hour profiles peaked near 620 m.",
+                title="The cloud-fraction peak shifted only slightly.",
+                body=(
+                    "The final-three-hour profile peaked near 615 m in Baseline and 585 m in "
+                    "More Moisture."
+                ),
             ),
             AuthoredResponse(
                 title="The fraction of cloudy air rising changed very little.",
-                body="It was 90.379% in Baseline and 90.451% in More Moisture.",
+                body="It was 89.518% in Baseline and 89.543% in More Moisture.",
             ),
             AuthoredResponse(
                 title="The response varied through time.",
@@ -455,12 +457,13 @@ def trade_cumulus_moisture_comparison_story(
             (
                 "Only the lower-boundary moisture supply changed. Over the final three hours, "
                 "More Moisture covered more of the domain with cloud, held about 43 percent more "
-                "mean cloud-water path, and produced coherent clouds averaging 137 meters taller."
+                "mean cloud-water path, and produced coherent clouds averaging 109 meters taller."
             ),
             (
                 "It did not create a completely different circulation regime. Initial "
-                "cloud-liquid onset and the height of the cloud-fraction maximum were unchanged, "
-                "and about 90 percent of cloudy cells were rising in both simulations."
+                "cloud-liquid onset was unchanged, the cloud-fraction maximum shifted only 30 "
+                "meters lower, and about 89.5 percent of cloudy cells were rising in both "
+                "simulations."
             ),
             (
                 "The illustrative Lens views are selected to help show the measured response. "
@@ -471,7 +474,7 @@ def trade_cumulus_moisture_comparison_story(
             ),
         ],
         evidence_summary=EvidenceSummary(
-            analysis_window="time >= 10800 s",
+            analysis_window="time >= 3600 s",
             analysis_start_seconds=FINAL_THREE_HOUR_START_SECONDS,
             analysis_end_seconds=float(evidence.baseline.duration_seconds),
             output_cadence_seconds=evidence.baseline.output_cadence_seconds,
@@ -538,13 +541,31 @@ def _load_and_validate_evidence(settings: CloudChamberSettings) -> TradeCumulusP
         control_value=7.8e-5,
         implementation_commit=evidence.implementation_commit,
     )
-    if not evidence.stage4_consistency.passed:
-        _conflict("Stage 4 consistency")
+    proof = evidence.matched_package_proof
+    if not proof.valid:
+        _conflict("matched package proof")
     _require_equal(
-        evidence.stage4_consistency.new_baseline_result_id,
-        BASELINE_RESULT_ID,
-        "Stage 4 baseline identity",
+        proof.baseline_run_id,
+        BASELINE_RUN_ID,
+        "matched package Baseline identity",
     )
+    _require_equal(
+        proof.more_moisture_run_id,
+        MORE_MOISTURE_RUN_ID,
+        "matched package More Moisture identity",
+    )
+    _require_equal(
+        proof.differing_namelist_assignments,
+        ["cnst_lhflx"],
+        "matched package changed assignments",
+    )
+    _require_equal(
+        proof.fixed_assumptions_sha256,
+        EXPECTED_FIXED_ASSUMPTIONS_SHA256,
+        "matched package fixed assumptions hash",
+    )
+    if evidence.stage4_consistency is not None and not evidence.stage4_consistency.passed:
+        _conflict("historical Stage 4 consistency")
     return evidence
 
 

@@ -3182,15 +3182,15 @@ const tradeCumulusResultCard = {
 
 const comparisonBaselineResultCard = {
   ...tradeCumulusResultCard,
-  result_id: "result-trade-cumulus-5b-full-baseline-20260720T162342Z",
-  run_id: "trade-cumulus-5b-full-baseline-20260720T162342Z",
+  result_id: "result-trade-cumulus-presentation-v1-baseline-20260722",
+  run_id: "trade-cumulus-presentation-v1-baseline-20260722",
   name: "Canonical BOMEX Baseline",
 };
 
 const comparisonMoreResultCard = {
   ...tradeCumulusResultCard,
-  result_id: "result-trade-cumulus-5b-full-more_moisture-20260720T162342Z",
-  run_id: "trade-cumulus-5b-full-more_moisture-20260720T162342Z",
+  result_id: "result-trade-cumulus-presentation-v1-more-moisture-20260722",
+  run_id: "trade-cumulus-presentation-v1-more-moisture-20260722",
   name: "More Moisture",
 };
 
@@ -3218,14 +3218,14 @@ const tradeCumulusComparisonStoryResponse = {
     control_label: "Surface moisture supply",
     control_value: 5.2e-5,
     control_units: "g/g m/s",
-    control_display: "5.2 × 10⁻⁵ g/g m/s",
+    control_display: "0.0520 g/kg m/s",
     curated_view: {
-      time_index: 152,
-      time_seconds: 18240,
+      time_index: 201,
+      time_seconds: 12060,
       orientation: "vertical_x",
       plane_dimension: "y",
-      plane_index: 5,
-      plane_coordinate: -2.6500000953674316,
+      plane_index: 83,
+      plane_coordinate: 2.366666555404663,
       plane_units: "km",
       camera_preset: "overview",
       cloud_field: "ql",
@@ -3248,14 +3248,14 @@ const tradeCumulusComparisonStoryResponse = {
     control_label: "Surface moisture supply",
     control_value: 7.8e-5,
     control_units: "g/g m/s",
-    control_display: "7.8 × 10⁻⁵ g/g m/s",
+    control_display: "0.0780 g/kg m/s",
     curated_view: {
-      time_index: 169,
-      time_seconds: 20280,
+      time_index: 232,
+      time_seconds: 13920,
       orientation: "vertical_x",
       plane_dimension: "y",
-      plane_index: 51,
-      plane_coordinate: 1.9500000476837158,
+      plane_index: 72,
+      plane_coordinate: 1.6333333253860474,
       plane_units: "km",
       camera_preset: "overview",
       cloud_field: "ql",
@@ -3272,8 +3272,8 @@ const tradeCumulusComparisonStoryResponse = {
   },
   changed_condition: {
     label: "Surface moisture supply",
-    baseline_display: "5.2 × 10⁻⁵ g/g m/s",
-    more_moisture_display: "7.8 × 10⁻⁵ g/g m/s",
+    baseline_display: "0.0520 g/kg m/s",
+    more_moisture_display: "0.0780 g/kg m/s",
     change_display: "+50%",
   },
   material_responses: [],
@@ -3284,17 +3284,17 @@ const tradeCumulusComparisonStoryResponse = {
   },
   explanation_paragraphs: [],
   evidence_summary: {
-    analysis_window: "time >= 10800 s",
-    analysis_start_seconds: 10800,
-    analysis_end_seconds: 21600,
-    output_cadence_seconds: 120,
-    paired_saved_frame_count: 181,
+    analysis_window: "time >= 3600 s",
+    analysis_start_seconds: 3600,
+    analysis_end_seconds: 14400,
+    output_cadence_seconds: 60,
+    paired_saved_frame_count: 241,
   },
   provenance: {
     evidence_state: "matched_runs_valid",
-    evidence_version: "trade_cumulus_moisture_comparison_evidence_v1",
-    implementation_commit: "49da1defc9914d3cc903ed9589c1312ddd843726",
-    fixed_assumptions_sha256: "71d746b110fb1310ebb6dafbef4cfa4bd44c379fc6964ed1787deaf45e422535",
+    evidence_version: "trade_cumulus_moisture_comparison_evidence_v2",
+    implementation_commit: "4647ef54a6c1b7a5d31e6e758c3c276fc5e5b2e0",
+    fixed_assumptions_sha256: "861375a82d209c36cc63ccce2d20934553b0e7e8811579c718dfb275899172a7",
     baseline_run_id: comparisonBaselineResultCard.run_id,
     baseline_result_id: comparisonBaselineResultCard.result_id,
     more_moisture_run_id: comparisonMoreResultCard.run_id,
@@ -4432,6 +4432,45 @@ describe("App", () => {
     expect(
       await screen.findByRole("heading", { name: "Return to the cloud field" }),
     ).toBeInTheDocument();
+  });
+
+  it("refreshes a stale Results inventory before opening a newly ingested World Simulation", async () => {
+    mockWorldScopedApp();
+    const worldFetch = vi.mocked(fetch).getMockImplementation();
+    let resultRequests = 0;
+    vi.mocked(fetch).mockImplementation((input, init) => {
+      if (String(input) === "/api/results") {
+        resultRequests += 1;
+        if (resultRequests === 1) {
+          return Promise.resolve(
+            new Response(
+              JSON.stringify({
+                results: [comparisonMoreResultCard, unlineagedTradeResultCard, resultCard],
+              }),
+              { status: 200 },
+            ),
+          );
+        }
+      }
+      return (
+        worldFetch?.(input, init) ?? Promise.resolve(new Response("not found", { status: 404 }))
+      );
+    });
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Enter Trade Cumulus" }));
+    fireEvent.click(
+      within(await screen.findByLabelText("Canonical BOMEX Baseline Simulation")).getByRole(
+        "button",
+        { name: "Explore" },
+      ),
+    );
+
+    expect(
+      await screen.findByRole("button", { name: "Back to Trade Cumulus" }),
+    ).toBeInTheDocument();
+    expect(resultRequests).toBe(2);
+    expect(screen.queryByText(/Select an ingested result/)).not.toBeInTheDocument();
   });
 
   it("fails closed when World Comparison availability disagrees with the story endpoint", async () => {
@@ -7688,6 +7727,70 @@ describe("App", () => {
     await waitFor(() =>
       expect(fetchMock).toHaveBeenCalledWith(expect.stringContaining("time_index=0")),
     );
+  });
+
+  it("does not advance Explore beyond a frame whose 3-D payload is still loading", async () => {
+    render(<App />);
+    await openSelectedResultInExplore();
+    await screen.findByText("Slice synced");
+
+    fireEvent.change(screen.getByLabelText("Time"), { target: { value: "1" } });
+    await waitFor(() =>
+      expect(fetch).toHaveBeenCalledWith(expect.stringContaining("time_index=1")),
+    );
+
+    const fetchMock = vi.mocked(fetch);
+    const defaultFetch = fetchMock.getMockImplementation();
+    let resolvePointCloud: ((response: Response) => void) | undefined;
+    fetchMock.mockImplementation((input, init) => {
+      const url = String(input);
+      if (url.includes("/visualization/point-cloud") && url.includes("time_index=2")) {
+        return new Promise((resolve) => {
+          resolvePointCloud = resolve;
+        });
+      }
+      if (!defaultFetch) throw new Error("Missing default fetch mock.");
+      return defaultFetch(input, init);
+    });
+    fetchMock.mockClear();
+
+    vi.useFakeTimers();
+    fireEvent.click(screen.getByRole("button", { name: "Play" }));
+    await act(async () => {
+      vi.advanceTimersByTime(900);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(screen.getByLabelText("Time")).toHaveValue("2");
+
+    await act(async () => {
+      vi.advanceTimersByTime(3_600);
+      await Promise.resolve();
+    });
+    expect(screen.getByLabelText("Time")).toHaveValue("2");
+    expect(
+      fetchMock.mock.calls.some(
+        ([url]) =>
+          String(url).includes("/visualization/point-cloud") &&
+          String(url).includes("time_index=3"),
+      ),
+    ).toBe(false);
+
+    await act(async () => {
+      resolvePointCloud?.(
+        new Response(JSON.stringify(pointCloudResponse({ field: "qc", timeIndex: 2 })), {
+          status: 200,
+        }),
+      );
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    await act(async () => {
+      vi.advanceTimersByTime(900);
+      await Promise.resolve();
+    });
+    expect(screen.getByLabelText("Time")).toHaveValue("3");
+    vi.useRealTimers();
   });
 
   it("selects a slice region and renders backend Thermal Fate Inspector diagnostics", async () => {
