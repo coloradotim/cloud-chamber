@@ -15,6 +15,10 @@ import numpy as np
 from pydantic import BaseModel, ConfigDict, model_validator
 
 from cloud_chamber import __version__
+from cloud_chamber.generated_input_identity import (
+    GeneratedInputIdentityError,
+    verify_generated_input_identity,
+)
 from cloud_chamber.mountain_wave_case import (
     collect_cm1_provenance,
     parse_namelist_assignments,
@@ -153,6 +157,15 @@ class MountainWavesVariationPackage(BaseModel):
 def mountain_waves_variation_template(
     settings: CloudChamberSettings, parent_simulation_id: str
 ) -> MountainWavesVariationTemplate:
+    template, _parent, _manifest, _manifest_path = _variation_template_context(
+        settings, parent_simulation_id
+    )
+    return template
+
+
+def _variation_template_context(
+    settings: CloudChamberSettings, parent_simulation_id: str
+) -> tuple[MountainWavesVariationTemplate, MountainWavesSimulationRecord, RunManifest, Path]:
     parent, manifest, manifest_path = mountain_waves_run_manifest(settings, parent_simulation_id)
     if not parent.can_create_variation:
         unavailable_reason = (
@@ -162,30 +175,50 @@ def mountain_waves_variation_template(
             if not parent.moist_fields_available
             else "This Simulation does not retain an exact editable configuration."
         )
-        return MountainWavesVariationTemplate(
+        return (
+            MountainWavesVariationTemplate(
+                parent_simulation_id=parent.simulation_id,
+                parent_run_id=parent.run_id,
+                parent_display_name=parent.display_name,
+                parent_configuration_source="unavailable",
+                configuration=_fallback_configuration(parent, manifest),
+                can_create_variation=False,
+                unavailable_reason=unavailable_reason,
+            ),
+            parent,
+            manifest,
+            manifest_path,
+        )
+    configuration = _configuration_from_parent(parent, manifest, manifest_path)
+    return (
+        MountainWavesVariationTemplate(
             parent_simulation_id=parent.simulation_id,
             parent_run_id=parent.run_id,
             parent_display_name=parent.display_name,
-            parent_configuration_source="unavailable",
-            configuration=_fallback_configuration(parent, manifest),
-            can_create_variation=False,
-            unavailable_reason=unavailable_reason,
-        )
-    configuration = _configuration_from_parent(parent, manifest, manifest_path)
-    return MountainWavesVariationTemplate(
-        parent_simulation_id=parent.simulation_id,
-        parent_run_id=parent.run_id,
-        parent_display_name=parent.display_name,
-        parent_configuration_source=_parent_configuration_source(parent),
-        configuration=configuration,
-        can_create_variation=True,
+            parent_configuration_source=_parent_configuration_source(parent),
+            configuration=configuration,
+            can_create_variation=True,
+        ),
+        parent,
+        manifest,
+        manifest_path,
     )
 
 
 def preview_mountain_waves_variation(
     settings: CloudChamberSettings, request: MountainWavesVariationRequest
 ) -> MountainWavesVariationPreview:
-    template = mountain_waves_variation_template(settings, request.parent_simulation_id)
+    template, _parent, parent_manifest, _manifest_path = _variation_template_context(
+        settings, request.parent_simulation_id
+    )
+    return _preview_mountain_waves_variation(request, template, parent_manifest)
+
+
+def _preview_mountain_waves_variation(
+    request: MountainWavesVariationRequest,
+    template: MountainWavesVariationTemplate,
+    parent_manifest: RunManifest,
+) -> MountainWavesVariationPreview:
     if not template.can_create_variation:
         return MountainWavesVariationPreview(
             differences=_empty_differences(),
@@ -195,9 +228,6 @@ def preview_mountain_waves_variation(
             terrain_profile=[],
         )
     differences = configuration_differences(template.configuration, request.configuration)
-    _parent, parent_manifest, _manifest_path = mountain_waves_run_manifest(
-        settings, request.parent_simulation_id
-    )
     blocking = _configuration_errors(
         request,
         parent=template.configuration,
@@ -222,13 +252,12 @@ def preview_mountain_waves_variation(
 def create_mountain_waves_variation(
     settings: CloudChamberSettings, request: MountainWavesVariationRequest
 ) -> MountainWavesVariationPackage:
-    preview = preview_mountain_waves_variation(settings, request)
-    if preview.blocking_errors:
-        raise MountainWavesVariationError(" ".join(preview.blocking_errors))
-    template = mountain_waves_variation_template(settings, request.parent_simulation_id)
-    parent, parent_manifest, parent_manifest_path = mountain_waves_run_manifest(
+    template, parent, parent_manifest, parent_manifest_path = _variation_template_context(
         settings, request.parent_simulation_id
     )
+    preview = _preview_mountain_waves_variation(request, template, parent_manifest)
+    if preview.blocking_errors:
+        raise MountainWavesVariationError(" ".join(preview.blocking_errors))
     if not template.can_create_variation:
         raise MountainWavesVariationError(template.unavailable_reason or "Parent is unavailable.")
 
@@ -422,12 +451,11 @@ def preflight_mountain_waves_variation(manifest_path: Path) -> dict[str, Any]:
     ]
     missing = [path.name for path in required if not path.is_file()]
     outputs = sorted(path.name for path in run_dir.glob("cm1out*") if path.is_file())
-    hashes = manifest.run_configuration.get("generated_input_sha256")
-    hash_checks: dict[str, bool] = {}
-    if isinstance(hashes, dict):
-        for name, expected in hashes.items():
-            path = run_dir / str(name)
-            hash_checks[str(name)] = path.is_file() and sha256_file(path) == expected
+    try:
+        verified_hashes = verify_generated_input_identity(manifest)
+    except GeneratedInputIdentityError:
+        verified_hashes = {}
+    hash_checks = {name: True for name in verified_hashes}
     checks = {
         "packaged_manifest": True,
         "required_inputs_present": not missing,

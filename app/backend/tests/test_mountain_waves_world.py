@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+import os
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -8,6 +10,9 @@ import numpy as np
 import pytest
 import xarray as xr
 
+from cloud_chamber.mountain_wave_terrain_visualization import (
+    validate_mountain_waves_native_outputs,
+)
 from cloud_chamber.mountain_waves_world import (
     _BUILT_INS,
     DRY_CASE_ID,
@@ -17,6 +22,7 @@ from cloud_chamber.mountain_waves_world import (
     MOIST_RUN_ID,
     MOIST_SIMULATION_ID,
     _built_in_inspectability,
+    mountain_waves_run_manifest,
     mountain_waves_world_detail,
 )
 from cloud_chamber.run_manifest import (
@@ -32,6 +38,7 @@ from cloud_chamber.run_manifest import (
     ScenarioReference,
     UserMetadata,
     ValidationStatus,
+    load_run_manifest,
     write_run_manifest,
 )
 from cloud_chamber.settings import CloudChamberSettings
@@ -182,6 +189,119 @@ def test_contradictory_built_in_artifact_is_not_promoted(
 
     assert inspectable is False
     assert "hash contradiction" in message
+
+
+def test_world_polling_reuses_validation_until_artifact_fingerprint_changes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    settings = _settings(tmp_path)
+    _write_run(settings, run_id=DRY_RUN_ID, case_id=DRY_CASE_ID)
+    _write_run(settings, run_id=MOIST_RUN_ID, case_id=MOIST_CASE_ID)
+    manifest_path = _write_run(
+        settings,
+        run_id="mw-cached-validation",
+        case_id="mountain_waves_exploratory_variation_v1",
+        run_configuration={
+            "cloud_world_id": "mountain_waves",
+            "simulation_id": "mountain_waves_cached_validation",
+            "simulation_display_name": "Cached validation",
+            "parent_simulation_id": MOIST_SIMULATION_ID,
+            "parent_run_id": MOIST_RUN_ID,
+            "mountain_waves_configuration": _configuration(),
+        },
+    )
+    original = validate_mountain_waves_native_outputs
+    calls = 0
+
+    def counted_validation(**kwargs: Any) -> dict[str, Any]:
+        nonlocal calls
+        calls += 1
+        return original(**kwargs)
+
+    monkeypatch.setattr(
+        "cloud_chamber.mountain_waves_world.validate_mountain_waves_native_outputs",
+        counted_validation,
+    )
+
+    mountain_waves_world_detail(settings)
+    mountain_waves_world_detail(settings)
+    assert calls == 1
+
+    output = manifest_path.parent / "cm1out_000002.nc"
+    os.utime(output, None)
+    mountain_waves_world_detail(settings)
+    assert calls == 2
+
+
+def test_completed_variation_rechecks_generated_input_hashes_before_promotion(
+    tmp_path: Path,
+) -> None:
+    settings = _settings(tmp_path)
+    _write_run(settings, run_id=DRY_RUN_ID, case_id=DRY_CASE_ID)
+    _write_run(settings, run_id=MOIST_RUN_ID, case_id=MOIST_CASE_ID)
+    manifest_path = _write_run(
+        settings,
+        run_id="mw-tampered-input",
+        case_id="mountain_waves_exploratory_variation_v1",
+        run_configuration={
+            "cloud_world_id": "mountain_waves",
+            "simulation_id": "mountain_waves_tampered_input",
+            "simulation_display_name": "Tampered input",
+            "parent_simulation_id": MOIST_SIMULATION_ID,
+            "parent_run_id": MOIST_RUN_ID,
+            "mountain_waves_configuration": _configuration(),
+        },
+    )
+    manifest = load_run_manifest(manifest_path)
+    namelist = Path(manifest.generated_inputs.namelist_input or "")
+    digest = hashlib.sha256(namelist.read_bytes()).hexdigest()
+    configuration = {
+        **manifest.run_configuration,
+        "generated_input_sha256": {namelist.name: digest},
+    }
+    write_run_manifest(
+        manifest_path,
+        manifest.model_copy(update={"run_configuration": configuration}),
+    )
+    namelist.write_text(namelist.read_text() + "\n! changed after packaging\n")
+
+    world = mountain_waves_world_detail(settings)
+    attempt = next(item for item in world.history if item.run_id == "mw-tampered-input")
+
+    assert attempt.inspectable is False
+    assert "changed after packaging" in attempt.state_message
+
+
+def test_direct_simulation_resolution_does_not_reconstruct_the_world(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    settings = _settings(tmp_path)
+    _write_run(settings, run_id=DRY_RUN_ID, case_id=DRY_CASE_ID)
+    _write_run(settings, run_id=MOIST_RUN_ID, case_id=MOIST_CASE_ID)
+    _write_run(
+        settings,
+        run_id="mw-direct-resolution",
+        case_id="mountain_waves_exploratory_variation_v1",
+        run_configuration={
+            "cloud_world_id": "mountain_waves",
+            "simulation_id": "mountain_waves_direct_resolution",
+            "simulation_display_name": "Direct resolution",
+            "parent_simulation_id": MOIST_SIMULATION_ID,
+            "parent_run_id": MOIST_RUN_ID,
+            "mountain_waves_configuration": _configuration(),
+        },
+    )
+    monkeypatch.setattr(
+        "cloud_chamber.mountain_waves_world.mountain_waves_world_detail",
+        lambda _settings: (_ for _ in ()).throw(AssertionError("whole World rebuilt")),
+    )
+
+    record, manifest, _manifest_path = mountain_waves_run_manifest(
+        settings, "mountain_waves_direct_resolution"
+    )
+
+    assert record.inspectable is True
+    assert manifest.run_id == "mw-direct-resolution"
 
 
 def _settings(tmp_path: Path) -> CloudChamberSettings:

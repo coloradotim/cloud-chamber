@@ -1,4 +1,5 @@
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 import pytest
@@ -7,9 +8,11 @@ import xarray as xr
 from cloud_chamber.mountain_wave_case import EXPECTED_OUTPUT_TIMES_SECONDS
 from cloud_chamber.mountain_wave_terrain_visualization import (
     MountainWaveTerrainVisualizationError,
+    clear_mountain_waves_run_metadata_cache,
     local_agl_m,
     mountain_waves_frame_from_native_outputs,
     terrain_frame_from_native_outputs,
+    validate_mountain_waves_native_outputs,
 )
 
 
@@ -219,6 +222,81 @@ def test_mountain_waves_dry_frame_rejects_moist_fields(tmp_path: Path) -> None:
         )
 
 
+def test_cached_run_metadata_opens_only_the_requested_history_after_validation(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    paths, namelist = _write_world_histories(tmp_path, moist=True)
+    clear_mountain_waves_run_metadata_cache()
+    opened: list[Path] = []
+    original_open_dataset = xr.open_dataset
+
+    def counted_open_dataset(path: Any, *args: Any, **kwargs: Any) -> Any:
+        opened.append(Path(path))
+        return original_open_dataset(path, *args, **kwargs)
+
+    monkeypatch.setattr(
+        "cloud_chamber.mountain_wave_terrain_visualization.xr.open_dataset",
+        counted_open_dataset,
+    )
+
+    validate_mountain_waves_native_outputs(
+        output_paths=paths,
+        namelist_path=namelist,
+        run_id="cached-test",
+        implementation_commit="test-commit",
+        moist_fields_available=True,
+    )
+    assert opened == paths
+
+    opened.clear()
+    for time_index in (1, 2):
+        mountain_waves_frame_from_native_outputs(
+            output_paths=paths,
+            namelist_path=namelist,
+            field="cloud_over_wave",
+            time_index=time_index,
+            run_id="cached-test",
+            case_label="Cached test",
+            implementation_commit="test-commit",
+            dry_case=False,
+            caveats=[],
+            measure_serialization=False,
+        )
+    assert opened == [paths[1], paths[2]]
+
+
+@pytest.mark.parametrize("corruption", ["dimensions", "units", "nonfinite"])
+def test_native_w_contract_validates_dimensions_units_and_finite_values(
+    tmp_path: Path, corruption: str
+) -> None:
+    paths, namelist = _write_world_histories(tmp_path, moist=True)
+    path = paths[1]
+    with xr.open_dataset(path, decode_times=False) as source:
+        dataset = source.load()
+    if corruption == "dimensions":
+        dataset = dataset.drop_vars("w")
+        dataset["w"] = xr.DataArray(
+            np.zeros((1, 2, 1, 3)),
+            dims=("time", "zh", "yh", "xh"),
+            attrs={"units": "m/s"},
+        )
+    elif corruption == "units":
+        dataset["w"].attrs["units"] = "knots"
+    else:
+        dataset["w"].values[0, 0, 0, 0] = np.nan
+    dataset.to_netcdf(path, mode="w")
+    clear_mountain_waves_run_metadata_cache()
+
+    with pytest.raises(MountainWaveTerrainVisualizationError, match="w"):
+        validate_mountain_waves_native_outputs(
+            output_paths=paths,
+            namelist_path=namelist,
+            run_id="invalid-w",
+            implementation_commit="test-commit",
+            moist_fields_available=True,
+        )
+
+
 def _write_native_histories(
     root: Path,
     *,
@@ -278,6 +356,7 @@ def _write_native_histories(
                 "xh": ("xh", xh_m / 1_000.0, {"units": "km"}),
                 "xf": ("xf", xf_m / 1_000.0, {"units": "km"}),
                 "yh": ("yh", [0.0], {"units": "km"}),
+                "yf": ("yf", [-0.5, 0.5], {"units": "km"}),
                 "zh": ("zh", nominal_scalar_m / 1_000.0, {"units": "km"}),
                 "zf": ("zf", nominal_full_m / 1_000.0, {"units": "km"}),
                 "one": ("one", [1]),
@@ -374,6 +453,7 @@ def _write_world_histories(root: Path, *, moist: bool) -> tuple[list[Path], Path
                 "xh": ("xh", xh_m / 1_000.0, {"units": "km"}),
                 "xf": ("xf", xf_m / 1_000.0, {"units": "km"}),
                 "yh": ("yh", [0.0], {"units": "km"}),
+                "yf": ("yf", [-0.5, 0.5], {"units": "km"}),
                 "zh": ("zh", nominal_scalar_m / 1_000.0, {"units": "km"}),
                 "zf": ("zf", nominal_full_m / 1_000.0, {"units": "km"}),
                 "one": ("one", [1]),

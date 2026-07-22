@@ -2,12 +2,19 @@
 
 from __future__ import annotations
 
+import hashlib
+from collections import OrderedDict
 from dataclasses import dataclass
 from pathlib import Path
+from threading import RLock
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from cloud_chamber.generated_input_identity import (
+    GeneratedInputIdentityError,
+    verify_generated_input_identity,
+)
 from cloud_chamber.local_run_manager import reconcile_completed_run_manifest
 from cloud_chamber.moist_mountain_wave_case import (
     MoistMountainWaveCaseError,
@@ -53,6 +60,12 @@ SimulationState = Literal[
     "available", "packaged", "queued", "running", "failed", "canceled", "unavailable", "conflict"
 ]
 SimulationRole = Literal["built_in", "variation"]
+
+_INSPECTABILITY_CACHE_LIMIT = 64
+_INSPECTABILITY_CACHE: OrderedDict[
+    tuple[str, str, tuple[tuple[str, int, int, int], ...]], tuple[bool, str]
+] = OrderedDict()
+_INSPECTABILITY_CACHE_LOCK = RLock()
 
 
 class MountainWavesWorldSummary(BaseModel):
@@ -246,29 +259,60 @@ def mountain_waves_world_detail(settings: CloudChamberSettings) -> MountainWaves
 def mountain_waves_simulation(
     settings: CloudChamberSettings, simulation_id: str
 ) -> MountainWavesSimulationRecord | None:
-    world = mountain_waves_world_detail(settings)
-    return next(
-        (
-            item
-            for item in [*world.simulations, *world.history]
-            if item.simulation_id == simulation_id
-        ),
-        None,
-    )
+    built_in = next((spec for spec in _BUILT_INS if spec.simulation_id == simulation_id), None)
+    if built_in is not None:
+        return _built_in_record(settings, built_in)
+    resolved = _variation_manifest(settings, simulation_id)
+    if resolved is None:
+        return None
+    manifest, manifest_path = resolved
+    return _variation_record(manifest, manifest_path)
 
 
 def mountain_waves_run_manifest(
     settings: CloudChamberSettings, simulation_id: str
 ) -> tuple[MountainWavesSimulationRecord, RunManifest, Path]:
-    record = mountain_waves_simulation(settings, simulation_id)
-    if record is None or record.manifest_path is None:
-        raise ValueError(f"Mountain Waves Simulation not found: {simulation_id}")
-    manifest_path = Path(record.manifest_path).expanduser()
+    built_in = next((spec for spec in _BUILT_INS if spec.simulation_id == simulation_id), None)
+    if built_in is not None:
+        manifest_path = (
+            settings.runtime_home.expanduser() / "runs" / built_in.run_id / "run_manifest.json"
+        )
+    else:
+        resolved = _variation_manifest(settings, simulation_id)
+        if resolved is None:
+            raise ValueError(f"Mountain Waves Simulation not found: {simulation_id}")
+        manifest, manifest_path = resolved
+        record = _variation_record(manifest, manifest_path)
+        if record is None:
+            raise ValueError(f"Mountain Waves Simulation not found: {simulation_id}")
+        return record, manifest, manifest_path
     try:
         manifest = load_run_manifest(manifest_path)
     except (OSError, RunManifestError) as exc:
         raise ValueError(f"Mountain Waves manifest is unavailable: {simulation_id}") from exc
+    record = _built_in_record(settings, built_in)
     return record, manifest, manifest_path
+
+
+def _variation_manifest(
+    settings: CloudChamberSettings, simulation_id: str
+) -> tuple[RunManifest, Path] | None:
+    runs_dir = settings.runtime_home.expanduser() / "runs"
+    if not runs_dir.exists():
+        return None
+    for manifest_path in sorted(runs_dir.glob("*/run_manifest.json")):
+        try:
+            manifest = load_run_manifest(manifest_path)
+        except (OSError, RunManifestError):
+            continue
+        if manifest.run_configuration.get("cloud_world_id") != WORLD_ID:
+            continue
+        if manifest.run_configuration.get("simulation_id") != simulation_id:
+            continue
+        if manifest.lifecycle_state in {LifecycleState.QUEUED, LifecycleState.RUNNING}:
+            manifest = reconcile_completed_run_manifest(manifest_path, manifest)
+        return manifest, manifest_path
+    return None
 
 
 def _built_in_record(
@@ -453,6 +497,18 @@ def _built_in_configuration(manifest: RunManifest, spec: _BuiltInSpec) -> dict[s
 def _built_in_inspectability(
     settings: CloudChamberSettings, spec: _BuiltInSpec, manifest: RunManifest
 ) -> tuple[bool, str]:
+    key = ("built_in", spec.simulation_id, _manifest_artifact_fingerprint(manifest))
+    cached = _inspectability_cache_get(key)
+    if cached is not None:
+        return cached
+    result = _evaluate_built_in_inspectability(settings, spec, manifest)
+    _inspectability_cache_put(key, result)
+    return result
+
+
+def _evaluate_built_in_inspectability(
+    settings: CloudChamberSettings, spec: _BuiltInSpec, manifest: RunManifest
+) -> tuple[bool, str]:
     if manifest.lifecycle_state != LifecycleState.COMPLETED or manifest.execution.exit_code != 0:
         return False, "Preserved output is not a completed zero-exit CM1 run."
     try:
@@ -510,6 +566,22 @@ def _validate_manifest_native_outputs(
 
 
 def _variation_inspectability(manifest: RunManifest, manifest_path: Path) -> tuple[bool, str]:
+    key = (
+        "variation",
+        str(manifest_path.expanduser().resolve()),
+        _manifest_artifact_fingerprint(manifest),
+    )
+    cached = _inspectability_cache_get(key)
+    if cached is not None:
+        return cached
+    result = _evaluate_variation_inspectability(manifest, manifest_path)
+    _inspectability_cache_put(key, result)
+    return result
+
+
+def _evaluate_variation_inspectability(
+    manifest: RunManifest, manifest_path: Path
+) -> tuple[bool, str]:
     if manifest.lifecycle_state not in {
         LifecycleState.COMPLETED,
         LifecycleState.INGESTED,
@@ -538,6 +610,7 @@ def _variation_inspectability(manifest: RunManifest, manifest_path: Path) -> tup
     if escaped:
         return False, f"Completed output inventory escapes its retained run: {escaped}."
     try:
+        verify_generated_input_identity(manifest)
         validation = validate_mountain_waves_native_outputs(
             output_paths=output_paths,
             namelist_path=Path(manifest.generated_inputs.namelist_input or "").expanduser(),
@@ -545,12 +618,65 @@ def _variation_inspectability(manifest: RunManifest, manifest_path: Path) -> tup
             implementation_commit=manifest.app.commit or "unknown",
             moist_fields_available=True,
         )
-    except (OSError, ValueError, MountainWaveTerrainVisualizationError) as exc:
+    except (
+        OSError,
+        ValueError,
+        GeneratedInputIdentityError,
+        MountainWaveTerrainVisualizationError,
+    ) as exc:
         return False, f"Completed output failed native-data validation: {exc}"
     return True, (
         f"CM1 completed normally with {validation['history_count']} exact native histories "
         "ready for inspection."
     )
+
+
+def clear_mountain_waves_inspectability_cache() -> None:
+    """Clear in-process promotion decisions; intended for bounded test isolation."""
+    with _INSPECTABILITY_CACHE_LOCK:
+        _INSPECTABILITY_CACHE.clear()
+
+
+def _manifest_artifact_fingerprint(
+    manifest: RunManifest,
+) -> tuple[tuple[str, int, int, int], ...]:
+    manifest_digest = hashlib.sha256(manifest.model_dump_json().encode("utf-8")).hexdigest()
+    fingerprint: list[tuple[str, int, int, int]] = [
+        ("__manifest__", 0, 0, int(manifest_digest[:16], 16))
+    ]
+    run_dir = Path(manifest.generated_inputs.run_directory).expanduser().resolve()
+    paths = (
+        sorted(path for path in run_dir.rglob("*") if path.is_file()) if run_dir.exists() else []
+    )
+    for path in paths:
+        try:
+            stat = path.stat()
+        except OSError:
+            fingerprint.append((str(path), -1, -1, -1))
+            continue
+        fingerprint.append((str(path), stat.st_size, stat.st_mtime_ns, stat.st_ino))
+    return tuple(fingerprint)
+
+
+def _inspectability_cache_get(
+    key: tuple[str, str, tuple[tuple[str, int, int, int], ...]],
+) -> tuple[bool, str] | None:
+    with _INSPECTABILITY_CACHE_LOCK:
+        value = _INSPECTABILITY_CACHE.get(key)
+        if value is not None:
+            _INSPECTABILITY_CACHE.move_to_end(key)
+        return value
+
+
+def _inspectability_cache_put(
+    key: tuple[str, str, tuple[tuple[str, int, int, int], ...]],
+    value: tuple[bool, str],
+) -> None:
+    with _INSPECTABILITY_CACHE_LOCK:
+        _INSPECTABILITY_CACHE[key] = value
+        _INSPECTABILITY_CACHE.move_to_end(key)
+        while len(_INSPECTABILITY_CACHE) > _INSPECTABILITY_CACHE_LIMIT:
+            _INSPECTABILITY_CACHE.popitem(last=False)
 
 
 def _state_from_lifecycle(state: LifecycleState) -> SimulationState:

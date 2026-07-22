@@ -22,6 +22,7 @@ from cloud_chamber.mountain_waves_world import (
     MOIST_CASE_ID,
     MOIST_RUN_ID,
     MOIST_SIMULATION_ID,
+    mountain_waves_run_manifest,
 )
 from cloud_chamber.run_manifest import (
     AppMetadata,
@@ -157,6 +158,38 @@ def test_unchanged_and_noninherited_coordinates_are_blocked(tmp_path: Path) -> N
     )
     assert any("Ridge center" in error for error in preview.blocking_errors)
     assert any("heights and pressures" in error for error in preview.blocking_errors)
+
+
+def test_each_preview_edit_resolves_its_parent_once(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    settings = _settings(tmp_path)
+    parent = _configuration()
+    _write_parent(settings, run_id=MOIST_RUN_ID, case_id=MOIST_CASE_ID, configuration=parent)
+    intended = parent.model_copy(deep=True)
+    intended.terrain.height_m += 100.0
+    request = MountainWavesVariationRequest(
+        parent_simulation_id=MOIST_SIMULATION_ID,
+        simulation_name="Preview edits",
+        configuration=intended,
+    )
+    original = mountain_waves_run_manifest
+    calls = 0
+
+    def counted_resolver(*args: Any, **kwargs: Any) -> Any:
+        nonlocal calls
+        calls += 1
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(
+        "cloud_chamber.mountain_waves_variations.mountain_waves_run_manifest",
+        counted_resolver,
+    )
+
+    preview_mountain_waves_variation(settings, request)
+    preview_mountain_waves_variation(settings, request)
+
+    assert calls == 2
 
 
 def test_package_persists_identity_lineage_inputs_and_clean_preflight(
