@@ -3695,7 +3695,23 @@ export function App() {
     setActiveSection(section);
   }
 
-  function openWorldSimulation(simulation: SimulationRecord) {
+  async function openWorldSimulation(simulation: SimulationRecord) {
+    if (!results.some((result) => result.result_id === simulation.result_id)) {
+      setResultsError(null);
+      setResultsStatus("Refreshing results...");
+      try {
+        const refreshed = await refreshResults(simulation.result_id);
+        if (!refreshed.some((result) => result.result_id === simulation.result_id)) {
+          setResultsStatus("Simulation result unavailable");
+          setResultsError("This Simulation is listed in its World but its result is unavailable.");
+          return;
+        }
+      } catch (caught) {
+        setResultsStatus("Could not refresh results");
+        setResultsError(caught instanceof Error ? caught.message : "Could not refresh results.");
+        return;
+      }
+    }
     selectOrdinaryResult(simulation.result_id);
     enterWorldExplore(simulation.result_id, simulation);
   }
@@ -10076,6 +10092,17 @@ export function VisualizerSceneShell({
   const playbackSpeedOptions = [0.5, 1, 2, 4];
   const playbackIntervalMs = Math.max(150, Math.round(900 / playbackSpeed));
   const canPlayTimelapse = timeOptions.length > 1;
+  const pointCloudFrameReady =
+    !selectedEncoding || pointCloud?.selection.time_index === displayTimeIndex;
+  const sliceFrameReady =
+    updraftLensActive ||
+    !sliceField ||
+    (sceneHorizontalSlice?.selection.time_index === displayTimeIndex &&
+      (!sliceSupportsVertical || sceneVerticalSlice?.selection.time_index === displayTimeIndex));
+  const updraftLensFrameReady =
+    !updraftLensActive || updraftLensFrame?.time_index === displayTimeIndex;
+  const playbackFrameReady =
+    pointCloudFrameReady && sliceFrameReady && updraftLensFrameReady && !sliceLoading;
   const activeSlice = activeSlicePlane === "horizontal" ? sceneHorizontalSlice : sceneVerticalSlice;
   const activeCloudBoundarySlice =
     !updraftLensActive && sliceField && isCloudWaterField(sliceField)
@@ -10250,9 +10277,9 @@ export function VisualizerSceneShell({
   }, [canPlayTimelapse, isPlaybackRunning, resolvedTimeIndex]);
 
   useEffect(() => {
-    if (!isPlaybackRunning || !canPlayTimelapse) return undefined;
+    if (!isPlaybackRunning || !canPlayTimelapse || !playbackFrameReady) return undefined;
     clearSelectedRegionForTimeChange("Pause playback to select a cell and explain this time step.");
-    const intervalId = window.setInterval(() => {
+    const timeoutId = window.setTimeout(() => {
       clearSelectedRegionForTimeChange(
         "Pause playback to select a cell and explain this time step.",
       );
@@ -10265,14 +10292,21 @@ export function VisualizerSceneShell({
         return current + 1;
       });
     }, playbackIntervalMs);
-    return () => window.clearInterval(intervalId);
+    return () => window.clearTimeout(timeoutId);
   }, [
     canPlayTimelapse,
     clearSelectedRegionForTimeChange,
     isPlaybackRunning,
+    playbackFrameReady,
     playbackIntervalMs,
     timeMax,
   ]);
+
+  useEffect(() => {
+    if (!isPlaybackRunning || (!pointCloudError && !sliceError && !updraftLensError)) return;
+    setIsPlaybackRunning(false);
+    setTimeIndex(displayTimeIndex);
+  }, [displayTimeIndex, isPlaybackRunning, pointCloudError, sliceError, updraftLensError]);
 
   useEffect(() => {
     if (!sliceSupportsVertical && activeSlicePlane !== "horizontal") {
@@ -14691,10 +14725,16 @@ function sectionLabel(section: WorkspaceSection): string {
 }
 
 function worldSimulationDisplayName(resultId?: string, fallback?: string): string {
-  if (resultId === "result-trade-cumulus-5b-full-baseline-20260720T162342Z") {
+  if (
+    resultId === "result-trade-cumulus-presentation-v1-baseline-20260722" ||
+    resultId === "result-trade-cumulus-5b-full-baseline-20260720T162342Z"
+  ) {
     return "Canonical BOMEX Baseline";
   }
-  if (resultId === "result-trade-cumulus-5b-full-more_moisture-20260720T162342Z") {
+  if (
+    resultId === "result-trade-cumulus-presentation-v1-more-moisture-20260722" ||
+    resultId === "result-trade-cumulus-5b-full-more_moisture-20260720T162342Z"
+  ) {
     return "More Moisture";
   }
   return fallback || "Simulation";

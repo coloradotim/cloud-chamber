@@ -272,6 +272,7 @@ export function MountainWavesExplore({
     } catch (caught) {
       if (requestId !== requestSequence.current) return;
       setError(caught instanceof Error ? caught.message : "This saved output could not be loaded.");
+      setPlaying(false);
     } finally {
       if (requestId === requestSequence.current) setLoading(false);
     }
@@ -285,9 +286,12 @@ export function MountainWavesExplore({
   }, [loadFrame]);
 
   useEffect(() => {
-    if (!playing || !frame) return;
+    const requestedTimeIndex = timeIndex ?? frame?.time_index ?? null;
+    const displayedFrameReady =
+      frame !== null && !loading && requestedTimeIndex === frame.time_index;
+    if (!playing || !frame || !displayedFrameReady) return;
     const delay = Math.max(120, 900 / playbackSpeed);
-    const timer = window.setInterval(() => {
+    const timer = window.setTimeout(() => {
       setTimeIndex((current) => {
         const activeIndex = current ?? frame.time_index;
         if (activeIndex >= frame.times_seconds.length - 1) {
@@ -297,8 +301,8 @@ export function MountainWavesExplore({
         return activeIndex + 1;
       });
     }, delay);
-    return () => window.clearInterval(timer);
-  }, [frame, playbackSpeed, playing]);
+    return () => window.clearTimeout(timer);
+  }, [frame, loading, playbackSpeed, playing, timeIndex]);
 
   useEffect(() => {
     if (viewMode === "cloud" && !simulation.moist_fields_available) setViewMode("structure");

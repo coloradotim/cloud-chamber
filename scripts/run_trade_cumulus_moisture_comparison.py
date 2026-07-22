@@ -168,6 +168,7 @@ def main(argv: list[str] | None = None) -> int:
             baseline_full.evidence,
             variant_full.evidence,
             implementation_commit=implementation_commit,
+            matched_package_proof=proofs[-1],
             stage4_consistency=stage4,
             lens_preparation=lens,
             estimated_full_pair_bytes=estimated_full_pair_bytes,

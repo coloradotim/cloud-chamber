@@ -9,6 +9,11 @@ import pytest
 
 from cloud_chamber.cloud_worlds import (
     MORE_MOISTURE_SIMULATION_ID,
+    PRESENTATION_BASELINE_RESULT_ID,
+    PRESENTATION_BASELINE_RUN_ID,
+    PRESENTATION_FIXED_ASSUMPTIONS_SHA256,
+    PRESENTATION_MORE_MOISTURE_RESULT_ID,
+    PRESENTATION_MORE_MOISTURE_RUN_ID,
     REFERENCE_SIMULATION_ID,
     configuration_differences,
     list_cloud_world_summaries,
@@ -17,10 +22,6 @@ from cloud_chamber.cloud_worlds import (
 from cloud_chamber.result_ingest import ResultMetadata
 from cloud_chamber.settings import CloudChamberSettings
 from cloud_chamber.trade_cumulus_comparison_story import (
-    BASELINE_RESULT_ID,
-    BASELINE_RUN_ID,
-    MORE_MOISTURE_RESULT_ID,
-    MORE_MOISTURE_RUN_ID,
     TradeCumulusComparisonStoryConflict,
     TradeCumulusComparisonStoryNotFound,
 )
@@ -119,25 +120,49 @@ def _write_metadata(settings: CloudChamberSettings, metadata: ResultMetadata) ->
 def _install_pair(
     settings: CloudChamberSettings, monkeypatch: pytest.MonkeyPatch
 ) -> tuple[ResultMetadata, ResultMetadata]:
-    baseline = _metadata(
-        BASELINE_RESULT_ID,
-        BASELINE_RUN_ID,
+    presentation_baseline = _metadata(
+        PRESENTATION_BASELINE_RESULT_ID,
+        PRESENTATION_BASELINE_RUN_ID,
         control_state="baseline",
         moisture=5.2e-5,
+        configuration_updates={
+            "fixed_assumptions_sha256": PRESENTATION_FIXED_ASSUMPTIONS_SHA256,
+            "duration_seconds": 14_400,
+            "output_cadence_seconds": 60,
+            "domain": {
+                "nx": 96,
+                "ny": 96,
+                "nz": 100,
+                "dx_m": 6400 / 96,
+                "dy_m": 6400 / 96,
+            },
+        },
     )
     more_moisture = _metadata(
-        MORE_MOISTURE_RESULT_ID,
-        MORE_MOISTURE_RUN_ID,
+        PRESENTATION_MORE_MOISTURE_RESULT_ID,
+        PRESENTATION_MORE_MOISTURE_RUN_ID,
         control_state="more_moisture",
         moisture=7.8e-5,
+        configuration_updates={
+            "fixed_assumptions_sha256": PRESENTATION_FIXED_ASSUMPTIONS_SHA256,
+            "duration_seconds": 14_400,
+            "output_cadence_seconds": 60,
+            "domain": {
+                "nx": 96,
+                "ny": 96,
+                "nz": 100,
+                "dx_m": 6400 / 96,
+                "dy_m": 6400 / 96,
+            },
+        },
     )
-    _write_metadata(settings, baseline)
+    _write_metadata(settings, presentation_baseline)
     _write_metadata(settings, more_moisture)
     monkeypatch.setattr(
         "cloud_chamber.cloud_worlds.trade_cumulus_moisture_comparison_story",
         lambda _settings: SimpleNamespace(),
     )
-    return baseline, more_moisture
+    return presentation_baseline, more_moisture
 
 
 def test_world_summary_and_detail_map_exact_known_pair(
@@ -158,9 +183,11 @@ def test_world_summary_and_detail_map_exact_known_pair(
     assert trade_cumulus.saved_comparison_count == 1
     assert summaries_by_id["mountain_waves"].availability_state == "unavailable"
     assert detail.reference_simulation.simulation_id == REFERENCE_SIMULATION_ID
+    assert detail.reference_simulation.run_id == PRESENTATION_BASELINE_RUN_ID
     assert detail.reference_simulation.display_name == "Canonical BOMEX Baseline"
     assert detail.simulations[1].simulation_id == MORE_MOISTURE_SIMULATION_ID
     assert detail.simulations[1].parent_simulation_id == REFERENCE_SIMULATION_ID
+    assert len(detail.simulations) == 2
     assert detail.featured_comparison.open_available is True
 
 
@@ -180,7 +207,7 @@ def test_missing_more_moisture_does_not_disable_baseline(
 ) -> None:
     settings = _settings(tmp_path)
     baseline, _ = _install_pair(settings, monkeypatch)
-    more_path = settings.runtime_home / "runs" / MORE_MOISTURE_RUN_ID
+    more_path = settings.runtime_home / "runs" / PRESENTATION_MORE_MOISTURE_RUN_ID
     for path in more_path.iterdir():
         path.unlink()
     more_path.rmdir()
@@ -219,7 +246,7 @@ def test_stale_known_metadata_without_model_output_disables_explore(
 ) -> None:
     settings = _settings(tmp_path)
     _install_pair(settings, monkeypatch)
-    output_path = settings.runtime_home / "runs" / BASELINE_RUN_ID / "cm1out_000001.nc"
+    output_path = settings.runtime_home / "runs" / PRESENTATION_BASELINE_RUN_ID / "cm1out_000001.nc"
     output_path.unlink()
 
     detail = trade_cumulus_world_detail(settings)
@@ -257,7 +284,7 @@ def test_contradictory_known_identity_returns_controlled_conflict(
 ) -> None:
     settings = _settings(tmp_path)
     _install_pair(settings, monkeypatch)
-    path = settings.runtime_home / "runs" / BASELINE_RUN_ID / "result_metadata.json"
+    path = settings.runtime_home / "runs" / PRESENTATION_BASELINE_RUN_ID / "result_metadata.json"
     payload = path.read_text().replace(
         '"scenario_id": "bomex_trade_cumulus_baseline_v0"',
         '"scenario_id": "contradictory_case"',
@@ -288,7 +315,15 @@ def test_optional_valid_lineage_creates_retained_simulation_with_all_material_di
             "source_recipe_id": "canonical_bomex_baseline",
             "parent_simulation_id": REFERENCE_SIMULATION_ID,
             "reference_simulation_id": REFERENCE_SIMULATION_ID,
-            "domain": {"nx": 64, "ny": 64, "nz": 75, "dx_m": 200.0, "dy_m": 100.0},
+            "duration_seconds": 14_400,
+            "output_cadence_seconds": 60,
+            "domain": {
+                "nx": 96,
+                "ny": 96,
+                "nz": 100,
+                "dx_m": 200.0,
+                "dy_m": 6400 / 96,
+            },
         },
     )
     _write_metadata(settings, ordinary)
@@ -440,16 +475,40 @@ def test_impossible_and_cyclic_lineage_remains_invalid_lab_history(
 
 def test_known_pair_reports_only_surface_moisture_as_material_atmospheric_difference() -> None:
     baseline = _metadata(
-        BASELINE_RESULT_ID,
-        BASELINE_RUN_ID,
+        PRESENTATION_BASELINE_RESULT_ID,
+        PRESENTATION_BASELINE_RUN_ID,
         control_state="baseline",
         moisture=5.2e-5,
+        configuration_updates={
+            "fixed_assumptions_sha256": PRESENTATION_FIXED_ASSUMPTIONS_SHA256,
+            "duration_seconds": 14_400,
+            "output_cadence_seconds": 60,
+            "domain": {
+                "nx": 96,
+                "ny": 96,
+                "nz": 100,
+                "dx_m": 6400 / 96,
+                "dy_m": 6400 / 96,
+            },
+        },
     )
     more_moisture = _metadata(
-        MORE_MOISTURE_RESULT_ID,
-        MORE_MOISTURE_RUN_ID,
+        PRESENTATION_MORE_MOISTURE_RESULT_ID,
+        PRESENTATION_MORE_MOISTURE_RUN_ID,
         control_state="more_moisture",
         moisture=7.8e-5,
+        configuration_updates={
+            "fixed_assumptions_sha256": PRESENTATION_FIXED_ASSUMPTIONS_SHA256,
+            "duration_seconds": 14_400,
+            "output_cadence_seconds": 60,
+            "domain": {
+                "nx": 96,
+                "ny": 96,
+                "nz": 100,
+                "dx_m": 6400 / 96,
+                "dy_m": 6400 / 96,
+            },
+        },
     )
 
     differences = configuration_differences(baseline, more_moisture)

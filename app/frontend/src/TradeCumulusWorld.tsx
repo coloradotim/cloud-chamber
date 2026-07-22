@@ -50,7 +50,7 @@ export type TradeCumulusWorldDetail = {
   featured_comparison: {
     comparison_id: "trade_cumulus_moisture_v1";
     display_name: "More Moisture versus Baseline";
-    baseline_simulation_id: "trade_cumulus_canonical_bomex";
+    baseline_simulation_id: string;
     more_moisture_simulation_id: "trade_cumulus_more_moisture";
     availability_state: "available" | "missing" | "conflict";
     availability_message: string;
@@ -281,8 +281,13 @@ function Overview({
   onOpenLab: () => void;
 }) {
   const moreMoisture = world.simulations.find(
-    (simulation) => simulation.simulation_id === "trade_cumulus_more_moisture",
+    (simulation) =>
+      simulation.simulation_id === "trade_cumulus_more_moisture" &&
+      simulation.parent_simulation_id === world.reference_simulation.simulation_id,
   );
+  const comparisonMatchesReference =
+    world.featured_comparison.baseline_simulation_id ===
+    world.reference_simulation.simulation_id;
   return (
     <section className="world-section" aria-labelledby="world-overview-title">
       <div className="world-section-heading">
@@ -307,7 +312,12 @@ function Overview({
             onCompare={onOpenFeaturedComparison}
           />
         )}
-        <ComparisonCard comparison={world.featured_comparison} onOpen={onOpenFeaturedComparison} />
+        {comparisonMatchesReference && (
+          <ComparisonCard
+            comparison={world.featured_comparison}
+            onOpen={onOpenFeaturedComparison}
+          />
+        )}
       </div>
 
       <section className="world-lab-summary" aria-label="Trade Cumulus Lab status">
@@ -713,9 +723,11 @@ function trustLabel(state: SimulationRecord["technical_trust_state"]): string {
 }
 
 function roleLabel(role: SimulationRecord["role"]): string {
-  return { reference: "Reference Simulation", variation: "Variation", lab_history: "Lab history" }[
-    role
-  ];
+  return {
+    reference: "Reference Simulation",
+    variation: "Variation",
+    lab_history: "Lab history",
+  }[role];
 }
 
 function relationshipName(simulationId: string): string {

@@ -23,16 +23,11 @@ from cloud_chamber.result_ingest import (
 from cloud_chamber.run_manifest import LifecycleState, RunManifestError, load_run_manifest
 from cloud_chamber.settings import CloudChamberSettings
 from cloud_chamber.trade_cumulus_comparison_story import (
-    BASELINE_RESULT_ID,
-    BASELINE_RUN_ID,
     CASE_ID,
     COMPARISON_GROUP_ID,
     COMPARISON_ID,
     EXPECTED_CM1_EXECUTABLE_SHA256,
     EXPECTED_CM1_SOURCE_MANIFEST_SHA256,
-    EXPECTED_FIXED_ASSUMPTIONS_SHA256,
-    MORE_MOISTURE_RESULT_ID,
-    MORE_MOISTURE_RUN_ID,
     PRODUCT_SLICE_ID,
     TradeCumulusComparisonStoryConflict,
     TradeCumulusComparisonStoryNotFound,
@@ -44,6 +39,13 @@ WORLD_DISPLAY_NAME: Literal["Trade Cumulus"] = "Trade Cumulus"
 WORLD_STATUS: Literal["mvp_candidate"] = "mvp_candidate"
 REFERENCE_SIMULATION_ID: Literal["trade_cumulus_canonical_bomex"] = "trade_cumulus_canonical_bomex"
 REFERENCE_DISPLAY_NAME = "Canonical BOMEX Baseline"
+PRESENTATION_BASELINE_RESULT_ID = "result-trade-cumulus-presentation-v1-baseline-20260722"
+PRESENTATION_BASELINE_RUN_ID = "trade-cumulus-presentation-v1-baseline-20260722"
+PRESENTATION_MORE_MOISTURE_RESULT_ID = "result-trade-cumulus-presentation-v1-more-moisture-20260722"
+PRESENTATION_MORE_MOISTURE_RUN_ID = "trade-cumulus-presentation-v1-more-moisture-20260722"
+PRESENTATION_FIXED_ASSUMPTIONS_SHA256 = (
+    "861375a82d209c36cc63ccce2d20934553b0e7e8811579c718dfb275899172a7"
+)
 MORE_MOISTURE_SIMULATION_ID: Literal["trade_cumulus_more_moisture"] = "trade_cumulus_more_moisture"
 MORE_MOISTURE_DISPLAY_NAME = "More Moisture"
 FEATURED_COMPARISON_DISPLAY_NAME: Literal["More Moisture versus Baseline"] = (
@@ -235,8 +237,8 @@ class _LineageCandidate:
 _REFERENCE_SPEC = _KnownSimulationSpec(
     simulation_id=REFERENCE_SIMULATION_ID,
     display_name=REFERENCE_DISPLAY_NAME,
-    result_id=BASELINE_RESULT_ID,
-    run_id=BASELINE_RUN_ID,
+    result_id=PRESENTATION_BASELINE_RESULT_ID,
+    run_id=PRESENTATION_BASELINE_RUN_ID,
     role="reference",
     control_state="baseline",
     control_value=5.2e-5,
@@ -245,8 +247,8 @@ _REFERENCE_SPEC = _KnownSimulationSpec(
 _MORE_MOISTURE_SPEC = _KnownSimulationSpec(
     simulation_id=MORE_MOISTURE_SIMULATION_ID,
     display_name=MORE_MOISTURE_DISPLAY_NAME,
-    result_id=MORE_MOISTURE_RESULT_ID,
-    run_id=MORE_MOISTURE_RUN_ID,
+    result_id=PRESENTATION_MORE_MOISTURE_RESULT_ID,
+    run_id=PRESENTATION_MORE_MOISTURE_RUN_ID,
     role="variation",
     control_state="more_moisture",
     control_value=7.8e-5,
@@ -317,7 +319,11 @@ def trade_cumulus_world_detail(settings: CloudChamberSettings) -> TradeCumulusWo
     other_metadata = [
         metadata
         for metadata in all_metadata
-        if metadata.result_id not in {BASELINE_RESULT_ID, MORE_MOISTURE_RESULT_ID}
+        if metadata.result_id
+        not in {
+            PRESENTATION_BASELINE_RESULT_ID,
+            PRESENTATION_MORE_MOISTURE_RESULT_ID,
+        }
         and _is_trade_cumulus_result(metadata)
     ]
     retained, lab_history = _ordinary_simulations(
@@ -408,7 +414,7 @@ def _known_identity_matches(metadata: ResultMetadata, spec: _KnownSimulationSpec
         (configuration.get("comparison_group_id"), COMPARISON_GROUP_ID),
         (configuration.get("control_id"), "surface_moisture_supply"),
         (configuration.get("control_state"), spec.control_state),
-        (configuration.get("fixed_assumptions_sha256"), EXPECTED_FIXED_ASSUMPTIONS_SHA256),
+        (configuration.get("fixed_assumptions_sha256"), PRESENTATION_FIXED_ASSUMPTIONS_SHA256),
         (metadata.controls.get("control_id"), "surface_moisture_supply"),
         (metadata.controls.get("control_state"), spec.control_state),
         (provenance.get("source_manifest_sha256"), EXPECTED_CM1_SOURCE_MANIFEST_SHA256),

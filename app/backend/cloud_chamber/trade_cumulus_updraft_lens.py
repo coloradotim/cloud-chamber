@@ -406,6 +406,13 @@ def _cached_defaults(metadata: ResultMetadata) -> _CachedDefaults:
 
 
 def _compute_defaults(metadata: ResultMetadata, paths: list[Path]) -> _CachedDefaults:
+    if (
+        metadata.time_steps is not None
+        and metadata.time_steps > 1
+        and len(paths) == metadata.time_steps
+    ):
+        return _compute_one_file_per_frame_defaults(metadata, paths)
+
     frames: list[_FrameLocation] = []
     cwp_scores: list[float | None] = []
     perturbation_speeds: list[np.ndarray[Any, np.dtype[np.floating[Any]]]] = []
@@ -515,6 +522,104 @@ def _compute_defaults(metadata: ResultMetadata, paths: list[Path]) -> _CachedDef
         ],
     )
     return _CachedDefaults(response=response, frames=tuple(frames))
+
+
+def _compute_one_file_per_frame_defaults(
+    metadata: ResultMetadata, paths: list[Path]
+) -> _CachedDefaults:
+    frames = [
+        _FrameLocation(
+            global_index=index,
+            path=path,
+            local_index=0,
+            time_seconds=_metadata_sequence_time(metadata, index, len(paths)),
+        )
+        for index, path in enumerate(paths)
+    ]
+    default_time_index, default_time_method, time_caveats = _select_default_time(
+        metadata, frames, [None] * len(frames)
+    )
+    selected_frame = frames[default_time_index]
+    selected_dataset = _open_dataset(selected_frame.path)
+    try:
+        selected_ql, dimensions = _scalar_ql(selected_dataset, selected_frame.local_index)
+        selected_w = center_vertical_velocity_to_scalar_grid(
+            selected_dataset,
+            selected_frame.local_index,
+            dimensions,
+            selected_ql.shape,
+        )
+        default_plane_index, default_plane_method = _select_default_plane(selected_ql, selected_w)
+        y_values = _coordinate_values(selected_dataset, dimensions[1], selected_ql.shape[1])
+        default_plane_coordinate = _finite_float(y_values[default_plane_index])
+        default_plane_units = _coordinate_units(selected_dataset, dimensions[1])
+
+        z_values_m = _coordinate_as(selected_dataset, dimensions[0], "m", selected_ql.shape[0])
+        wind_level_index = int(np.argmin(np.abs(z_values_m - WIND_TARGET_LEVEL_M)))
+        wind_actual_level_m = float(z_values_m[wind_level_index])
+        u, v = center_horizontal_wind_to_scalar_grid(
+            selected_dataset,
+            selected_frame.local_index,
+            dimensions,
+            selected_ql.shape,
+        )
+        level_u = u[wind_level_index]
+        level_v = v[wind_level_index]
+        mean_u = _finite_mean(level_u)
+        mean_v = _finite_mean(level_v)
+        total_speed = np.hypot(level_u, level_v)
+        perturbation_speed = np.hypot(level_u - mean_u, level_v - mean_v)
+        finite_total = total_speed[np.isfinite(total_speed)]
+        finite_perturbation = perturbation_speed[np.isfinite(perturbation_speed)]
+    finally:
+        selected_dataset.close()
+
+    perturbation_reference = rounded_percentile_reference(
+        [finite_perturbation.astype(np.float32, copy=False)],
+        WIND_PERCENTILE,
+        WIND_MIN_REFERENCE_M_S,
+    )
+    total_reference = rounded_percentile_reference(
+        [finite_total.astype(np.float32, copy=False)],
+        WIND_PERCENTILE,
+        WIND_MIN_REFERENCE_M_S,
+    )
+    response = TradeCumulusUpdraftLensDefaults(
+        result_id=metadata.result_id,
+        case_id=CASE_ID,
+        eligible=True,
+        default_time_index=default_time_index,
+        default_time_seconds=selected_frame.time_seconds,
+        default_time_method=default_time_method,
+        default_plane_index=default_plane_index,
+        default_plane_coordinate=default_plane_coordinate,
+        default_plane_units=default_plane_units,
+        default_plane_method=default_plane_method,
+        **_w_scale_payload(),
+        wind_actual_level_m=wind_actual_level_m,
+        wind_level_index=wind_level_index,
+        perturbation_wind_reference_m_s=perturbation_reference,
+        total_wind_reference_m_s=total_reference,
+        provenance=_provenance(metadata, "trade_cumulus_updraft_lens_defaults"),
+        caveats=[
+            *time_caveats,
+            "one_file_per_output_chronology_from_ingested_result_metadata",
+            "wind_reference_derived_from_default_frame_and_fixed_across_playback",
+            "candidate_trade_cumulus_lens_not_a_supported_product",
+            "world_owned_fixed_scale_is_specific_to_trade_cumulus",
+        ],
+    )
+    return _CachedDefaults(response=response, frames=tuple(frames))
+
+
+def _metadata_sequence_time(metadata: ResultMetadata, index: int, count: int) -> float | None:
+    first = metadata.first_output_time_seconds
+    last = metadata.last_output_time_seconds
+    if first is None or last is None:
+        return None
+    if count <= 1:
+        return first
+    return first + (index / (count - 1)) * (last - first)
 
 
 def _w_scale_payload() -> _WScalePayload:
