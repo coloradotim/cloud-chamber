@@ -557,7 +557,7 @@ export function MountainWavesExplore({
                       type="range"
                       min={0.1}
                       max={1}
-                      step={0.05}
+                      step={0.01}
                       value={cloudOpacity}
                       onChange={(event) => setCloudOpacity(Number(event.target.value))}
                     />
@@ -936,7 +936,7 @@ function MountainWavesContext({
             <h3>Native cell evidence</h3>
           </div>
           <button type="button" className="secondary-button" onClick={onClearSelection}>
-            Clear
+            Clear selection
           </button>
         </div>
         <div className="mountain-waves-state-row">

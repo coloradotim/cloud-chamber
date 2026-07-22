@@ -262,6 +262,7 @@ describe("MountainWavesExplore", () => {
     expect(screen.getByRole("checkbox", { name: "Potential temperature" })).not.toBeChecked();
     expect(screen.queryByRole("checkbox", { name: "Cloud fill" })).not.toBeInTheDocument();
     expect(screen.getByRole("slider", { name: "Cloud opacity" })).toHaveValue("0.68");
+    expect(screen.getByRole("slider", { name: "Cloud opacity" })).toHaveAttribute("step", "0.01");
     expect(screen.getByRole("slider", { name: "Cloud point size" })).toHaveValue("11");
 
     fireEvent.change(screen.getByRole("slider", { name: "Cloud opacity" }), {
