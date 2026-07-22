@@ -18,6 +18,7 @@ Use this product-authority order:
 4. approved product-architecture documents:
    - [Application Semantics](product/APPLICATION_SEMANTICS.md)
    - [MVP](product/MVP.md)
+   - [Current Product Sequence](product/CURRENT_PRODUCT_SEQUENCE.md)
 5. bounded approved product documents such as [Trade Cumulus Product Slice](product/TRADE_CUMULUS_PRODUCT_SLICE.md)
 6. current implementation documentation and code
 7. research and run evidence
@@ -26,21 +27,17 @@ The North Star and Product Vision are the highest product authority.
 
 Application Semantics is the approved semantic authority for Cloud World, Recipe, Simulation, Lens, Saved View, Comparison, Exploration, Experiment, and supporting terms.
 
-The MVP is approved controlling scope for Cloud Chamber as a single-user personal cloud laboratory and growing cloud-world atlas. PR #384 established the MVP. Issue #396 amends the homepage, Fun With Soundings, Trade Cumulus Lab, variation, and implementation-roadmap details.
+The MVP is approved controlling scope for Cloud Chamber as a single-user personal cloud laboratory and growing cloud-world atlas. PR #384 established the MVP. Issue #396 amended its homepage, Fun With Soundings, Trade Cumulus Lab, variation, and original implementation-roadmap details.
 
-The controlling initial information architecture is:
+The Current Product Sequence records later approved sequencing across the current World portfolio. It supersedes only conflicting implementation-order language in the older MVP and documentation-status roadmaps. It does not reopen the MVP thesis or Application Semantics.
+
+The current approved destination model is:
 
 ```text
 Cloud Chamber
 ├── Trade Cumulus — Cloud World
-│   ├── Overview
-│   ├── Simulations
-│   ├── Saved Views
-│   ├── Comparisons
-│   └── Lab
-│       ├── Activity
-│       ├── Create Variation
-│       └── History
+├── Mountain Waves — Cloud World
+├── Supercells — approved Cloud World; implementation governed by #423
 └── Fun With Soundings — Atmospheric workbench
     ├── Find Soundings
     ├── Candidates
@@ -50,9 +47,11 @@ Cloud Chamber
 
 Cloud Worlds are not organized for the sole user under Installed, Draft, candidate, graduated, or development-state categories. Technical content availability remains an operational state.
 
+A World should expose only surfaces it actually implements. Do not create empty Lab, Compare, Saved View, or other placeholders merely to make all Worlds look structurally identical.
+
 Fun With Soundings is a first-class workbench and is not a Cloud World.
 
-The Trade Cumulus Product Slice remains a bounded scientific/product document. It is subordinate to the North Star, Product Vision, approved PM decisions, Application Semantics, and the MVP. It does not make a Recipe, Control, Lens, Comparison, or scientific claim supported merely by being documented.
+The Trade Cumulus Product Slice remains a bounded scientific/product document. It is subordinate to the North Star, Product Vision, approved PM decisions, Application Semantics, the MVP, and the Current Product Sequence. It does not make a Recipe, Control, Lens, Comparison, or scientific claim supported merely by being documented.
 
 PM decisions and product documents do not silently rewrite higher authority. Changes require explicit PM approval.
 
@@ -73,7 +72,7 @@ These documents describe current software and operations.
 
 They may identify legacy behavior, unresolved questions, and implementation constraints. They do not establish final product design.
 
-The current transitional embedding of legacy Build and Results under Trade Cumulus does not override the approved final Lab and Fun With Soundings structure.
+Do not update Current State or Current Architecture to describe an approved future capability before its implementation merges. Update them later when the repository’s actual descriptive state changes.
 
 ## 4. Development and operational documentation
 
@@ -180,18 +179,20 @@ These labels are interpretive aids. The repository has not moved or relabeled ev
 2. [Product Vision](product/PRODUCT_VISION.md)
 3. [Application Semantics](product/APPLICATION_SEMANTICS.md)
 4. [MVP](product/MVP.md)
-5. [Trade Cumulus Product Slice](product/TRADE_CUMULUS_PRODUCT_SLICE.md)
-6. [Current State](current/CURRENT_STATE.md)
-7. [Current Architecture](current/CURRENT_ARCHITECTURE.md)
+5. [Current Product Sequence](product/CURRENT_PRODUCT_SEQUENCE.md)
+6. relevant bounded World/product decision records
+7. [Current State](current/CURRENT_STATE.md)
+8. [Current Architecture](current/CURRENT_ARCHITECTURE.md)
 
 ### Contribute during the gated program
 
 1. [AGENTS.md](../AGENTS.md)
 2. approved PM decisions in issue #364 and the controlling bounded issue
-3. [MVP](product/MVP.md)
-4. [Application Semantics](product/APPLICATION_SEMANTICS.md)
-5. relevant current operational documentation
-6. current code and tests
+3. [Current Product Sequence](product/CURRENT_PRODUCT_SEQUENCE.md)
+4. [MVP](product/MVP.md)
+5. [Application Semantics](product/APPLICATION_SEMANTICS.md)
+6. relevant current operational documentation
+7. current code and tests
 
 Ignore conflicting product-direction language in lower-authority documents and ask for direction when a conflict affects the task.
 
@@ -209,40 +210,51 @@ Use current source code, tests, runtime contracts, Current State, and merged PR 
 
 Do not rely on one old product specification or roadmap.
 
-## 9. Active MVP implementation roadmap
+## 9. Current implementation sequence
 
-One implementation issue is active at a time. The queued roadmap is visible:
+The controlling sequence is maintained in [Current Product Sequence](product/CURRENT_PRODUCT_SEQUENCE.md).
+
+The currently approved order is:
 
 ```text
-#386 / PR #387 — World-scoped foundation — complete
-#388 — integrated Explore
-#389 — ordinary related-Simulation Compare
-#390 — Saved Views, Saved Comparisons, notes, and resume
-#395 — Fun With Soundings
-#394 — Trade Cumulus Lab Activity and History
-#391 — Create Variation from a Simulation and return after the run
-#392 — durable World content and repair
-#393 — hardening and personal acceptance
+#420 — higher-resolution presentation runs for the current Trade Cumulus and
+       Mountain Waves built-in Simulations
+
+→ #423 — build Supercells as the third three-dimensional Cloud World
+
+→ #421 — produce and adopt the higher-resolution, denser-cadence,
+         longer-duration Supercell presentation run
+
+→ return to shared functionality across the three-World application
 ```
 
-Issue #364 records activation, exits, and any roadmap changes.
+After #421, PM will freshly scope the next program from the implemented product. The intended areas are:
 
-Current issue bodies and latest PM comments control their bounded implementation scope. Older comments are historical when a later PM comment explicitly supersedes them.
+- durable World-aware Explore state, resume, and Saved Views;
+- ordinary related-Simulation Compare and saved Comparisons;
+- a fresh review of variations across Trade Cumulus, Mountain Waves, and Supercells;
+- later notes, content durability, cleanup, repair, Activity/History consistency, and personal acceptance.
+
+The older bodies of issues #389, #390, and #391 remain useful prior plans, but they are not current assignment authority until PM reviews and updates or replaces them for the three-World application.
+
+Issue #364 records major activation, exit, and roadmap changes. Current issue bodies and latest PM comments control each bounded implementation scope. Older comments are historical when a later PM comment explicitly supersedes them.
 
 ## Program note
 
 The documentation tree has not been comprehensively reorganized.
 
-Completed program work includes:
+Completed or approved program work includes:
 
 - operational-documentation recovery;
 - semantic architecture;
 - contract classification;
 - canonical BOMEX and Trade Cumulus evidence;
-- Updraft Lens and fixed scale;
-- the first featured Comparison;
-- approved MVP authority;
-- the World-scoped foundation.
+- the Trade Cumulus Updraft Lens, fixed scale, and first featured Comparison;
+- approved MVP authority and World-scoped foundation;
+- Mountain Waves benchmark, visualization, World, Explore, and variation work;
+- Supercell benchmark selection, exact reproduction, examination validation, and the approved Supercells World decision;
+- active presentation-quality run work for current Worlds;
+- active Supercells implementation and approved later high-resolution Supercell run.
 
 Remaining repository moves, rewrites, archives, and implementation work must occur through bounded approved issues.
 
