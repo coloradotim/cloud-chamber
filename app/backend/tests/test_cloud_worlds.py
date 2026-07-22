@@ -8,9 +8,6 @@ from typing import Any
 import pytest
 
 from cloud_chamber.cloud_worlds import (
-    LEGACY_BASELINE_RESULT_ID,
-    LEGACY_BASELINE_RUN_ID,
-    LEGACY_REFERENCE_SIMULATION_ID,
     MORE_MOISTURE_SIMULATION_ID,
     PRESENTATION_BASELINE_RESULT_ID,
     PRESENTATION_BASELINE_RUN_ID,
@@ -141,12 +138,6 @@ def _install_pair(
             },
         },
     )
-    legacy_baseline = _metadata(
-        LEGACY_BASELINE_RESULT_ID,
-        LEGACY_BASELINE_RUN_ID,
-        control_state="baseline",
-        moisture=5.2e-5,
-    )
     more_moisture = _metadata(
         PRESENTATION_MORE_MOISTURE_RESULT_ID,
         PRESENTATION_MORE_MOISTURE_RUN_ID,
@@ -166,7 +157,6 @@ def _install_pair(
         },
     )
     _write_metadata(settings, presentation_baseline)
-    _write_metadata(settings, legacy_baseline)
     _write_metadata(settings, more_moisture)
     monkeypatch.setattr(
         "cloud_chamber.cloud_worlds.trade_cumulus_moisture_comparison_story",
@@ -188,7 +178,7 @@ def test_world_summary_and_detail_map_exact_known_pair(
     summaries_by_id = {summary.world_id: summary for summary in summaries}
     trade_cumulus = summaries_by_id["trade_cumulus"]
     assert trade_cumulus.reference_available is True
-    assert trade_cumulus.simulation_count == 3
+    assert trade_cumulus.simulation_count == 2
     assert trade_cumulus.saved_view_count == 0
     assert trade_cumulus.saved_comparison_count == 1
     assert summaries_by_id["mountain_waves"].availability_state == "unavailable"
@@ -197,7 +187,7 @@ def test_world_summary_and_detail_map_exact_known_pair(
     assert detail.reference_simulation.display_name == "Canonical BOMEX Baseline"
     assert detail.simulations[1].simulation_id == MORE_MOISTURE_SIMULATION_ID
     assert detail.simulations[1].parent_simulation_id == REFERENCE_SIMULATION_ID
-    assert detail.simulations[2].simulation_id == LEGACY_REFERENCE_SIMULATION_ID
+    assert len(detail.simulations) == 2
     assert detail.featured_comparison.open_available is True
 
 
@@ -485,16 +475,40 @@ def test_impossible_and_cyclic_lineage_remains_invalid_lab_history(
 
 def test_known_pair_reports_only_surface_moisture_as_material_atmospheric_difference() -> None:
     baseline = _metadata(
-        LEGACY_BASELINE_RESULT_ID,
-        LEGACY_BASELINE_RUN_ID,
+        PRESENTATION_BASELINE_RESULT_ID,
+        PRESENTATION_BASELINE_RUN_ID,
         control_state="baseline",
         moisture=5.2e-5,
+        configuration_updates={
+            "fixed_assumptions_sha256": PRESENTATION_FIXED_ASSUMPTIONS_SHA256,
+            "duration_seconds": 14_400,
+            "output_cadence_seconds": 60,
+            "domain": {
+                "nx": 96,
+                "ny": 96,
+                "nz": 100,
+                "dx_m": 6400 / 96,
+                "dy_m": 6400 / 96,
+            },
+        },
     )
     more_moisture = _metadata(
         PRESENTATION_MORE_MOISTURE_RESULT_ID,
         PRESENTATION_MORE_MOISTURE_RUN_ID,
         control_state="more_moisture",
         moisture=7.8e-5,
+        configuration_updates={
+            "fixed_assumptions_sha256": PRESENTATION_FIXED_ASSUMPTIONS_SHA256,
+            "duration_seconds": 14_400,
+            "output_cadence_seconds": 60,
+            "domain": {
+                "nx": 96,
+                "ny": 96,
+                "nz": 100,
+                "dx_m": 6400 / 96,
+                "dy_m": 6400 / 96,
+            },
+        },
     )
 
     differences = configuration_differences(baseline, more_moisture)

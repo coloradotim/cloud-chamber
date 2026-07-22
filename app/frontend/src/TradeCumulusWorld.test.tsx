@@ -50,17 +50,6 @@ const moreMoisture: SimulationRecord = simulation({
   ],
 });
 
-const legacyBaseline: SimulationRecord = simulation({
-  simulation_id: "trade_cumulus_canonical_bomex_legacy",
-  display_name: "Canonical BOMEX Baseline - 6-hour run",
-  role: "historical",
-  result_id: "result-trade-cumulus-5b-full-baseline-20260720T162342Z",
-  run_id: "trade-cumulus-5b-full-baseline-20260720T162342Z",
-  parent_simulation_id: null,
-  reference_simulation_id: "trade_cumulus_canonical_bomex_legacy",
-  lineage_state: "known",
-});
-
 const labHistory = simulation({
   simulation_id: null,
   display_name: "Unretained Trade Cumulus result",
@@ -82,7 +71,7 @@ const world: TradeCumulusWorldDetail = {
   availability_state: "available",
   availability_message: "Reference, variation, and featured comparison are available.",
   reference_simulation: baseline,
-  simulations: [baseline, moreMoisture, legacyBaseline],
+  simulations: [baseline, moreMoisture],
   lab_history: [labHistory],
   featured_comparison: {
     comparison_id: "trade_cumulus_moisture_v1",
@@ -129,14 +118,9 @@ describe("TradeCumulusWorld", () => {
       0,
     );
     expect(screen.getByRole("heading", { name: "More Moisture" })).toBeInTheDocument();
-    expect(
-      screen.queryByRole("heading", { name: "Canonical BOMEX Baseline - 6-hour run" }),
-    ).not.toBeInTheDocument();
     fireEvent.click(within(nav).getByRole("button", { name: "Simulations" }));
     expect(screen.getByRole("heading", { name: "More Moisture" })).toBeInTheDocument();
-    expect(
-      screen.getByRole("heading", { name: "Canonical BOMEX Baseline - 6-hour run" }),
-    ).toBeInTheDocument();
+    expect(screen.getAllByRole("article", { name: /Simulation$/ })).toHaveLength(2);
     expect(screen.queryByText("result-unlineaged")).not.toBeInTheDocument();
   });
 
