@@ -180,6 +180,58 @@ def test_mountain_wave_terrain_research_api_rejects_unknown_fields() -> None:
     assert response.status_code == 422
 
 
+def test_storm_examination_research_api_forwards_bounded_selection(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[dict[str, object]] = []
+
+    def frame(_settings: object, **kwargs: object) -> SimpleNamespace:
+        calls.append(kwargs)
+        return SimpleNamespace(
+            model_dump=lambda **_options: {
+                "run_id": "quarter-circle-supercell-official-20260722T142521Z",
+                "lens_id": kwargs["lens"],
+                "time_index": kwargs["time_index"],
+            }
+        )
+
+    monkeypatch.setattr("cloud_chamber.app.preserved_storm_examination_frame", frame)
+
+    response = TestClient(app).get(
+        "/api/research/storm-examination",
+        params={
+            "lens": "low_level_interactions",
+            "time_index": 7,
+            "viewport": "full",
+            "x_index": 4,
+            "y_index": 5,
+            "z_index": 2,
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["lens_id"] == "low_level_interactions"
+    assert calls == [
+        {
+            "lens": "low_level_interactions",
+            "time_index": 7,
+            "viewport": "full",
+            "x_index": 4,
+            "y_index": 5,
+            "z_index": 2,
+        }
+    ]
+
+
+def test_storm_examination_research_api_rejects_unknown_lens() -> None:
+    response = TestClient(app).get(
+        "/api/research/storm-examination",
+        params={"lens": "tornado_probability"},
+    )
+
+    assert response.status_code == 422
+
+
 @pytest.mark.parametrize(
     ("path", "attribute"),
     [

@@ -114,6 +114,16 @@ from cloud_chamber.sounding_candidates import (
     screen_cached_soundings,
     update_saved_candidate,
 )
+from cloud_chamber.storm_examination import (
+    LensId as StormExaminationLensId,
+)
+from cloud_chamber.storm_examination import (
+    StormExaminationError,
+    preserved_storm_examination_frame,
+)
+from cloud_chamber.storm_examination import (
+    ViewportId as StormExaminationViewportId,
+)
 from cloud_chamber.trade_cumulus_comparison_story import (
     TradeCumulusComparisonStoryConflict,
     TradeCumulusComparisonStoryNotFound,
@@ -893,6 +903,30 @@ def get_mountain_wave_terrain_frame(
             time_index=time_index,
         )
     except MountainWaveTerrainVisualizationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return result.model_dump(mode="json")
+
+
+@app.get("/api/research/storm-examination")
+def get_storm_examination_frame(
+    lens: StormExaminationLensId = "rotating_updraft",
+    time_index: int = 5,
+    viewport: StormExaminationViewportId = "storm",
+    x_index: int | None = None,
+    y_index: int | None = None,
+    z_index: int | None = None,
+) -> dict[str, object]:
+    try:
+        result = preserved_storm_examination_frame(
+            load_settings(),
+            lens=lens,
+            time_index=time_index,
+            viewport=viewport,
+            x_index=x_index,
+            y_index=y_index,
+            z_index=z_index,
+        )
+    except StormExaminationError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return result.model_dump(mode="json")
 
