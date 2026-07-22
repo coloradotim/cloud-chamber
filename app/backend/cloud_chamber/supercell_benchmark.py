@@ -76,6 +76,7 @@ DY_M = 1_000.0
 DZ_M = 500.0
 ACTIVE_TOP_M = 20_000.0
 RAYLEIGH_ONSET_M = 15_000.0
+COORDINATE_SPACING_ABS_TOLERANCE_M = 0.01
 EXPECTED_DURATION_SECONDS = 7_200
 EXPECTED_HISTORY_CADENCE_SECONDS = 900
 EXPECTED_STATS_CADENCE_SECONDS = 60
@@ -274,6 +275,7 @@ class SupercellRunEvidence(BaseModel):
     case_id: str = CASE_ID
     run_id: str
     implementation_commit: str
+    evaluation_commit: str
     generated_at: datetime
     lifecycle: dict[str, Any]
     provenance: dict[str, Any]
@@ -932,6 +934,23 @@ def _same_coordinates(
     )
 
 
+def _coordinate_spacing_matches(
+    coordinate_m: np.ndarray[Any, np.dtype[np.float64]],
+    expected_spacing_m: float,
+) -> bool:
+    deltas = np.diff(coordinate_m)
+    return bool(
+        deltas.size > 0
+        and np.all(np.isfinite(deltas))
+        and np.allclose(
+            deltas,
+            expected_spacing_m,
+            rtol=0.0,
+            atol=COORDINATE_SPACING_ABS_TOLERANCE_M,
+        )
+    )
+
+
 def _field(
     dataset: xr.Dataset,
     name: str,
@@ -1384,6 +1403,7 @@ def _nearest_frames(frames: list[dict[str, Any]]) -> list[dict[str, Any]]:
 def evaluate_supercell_run(
     *, settings: CloudChamberSettings, package: SupercellPackageResult
 ) -> SupercellRunEvidence:
+    evaluation_commit = verified_clean_git_commit()
     manifest = load_run_manifest(package.manifest_path)
     if manifest.lifecycle_state != LifecycleState.COMPLETED or manifest.execution.exit_code != 0:
         raise SupercellBenchmarkError(
@@ -1504,7 +1524,18 @@ def evaluate_supercell_run(
         name: sorted({round(float(value), 9) for value in np.diff(coordinates[name])})
         for name in ("xh", "xf", "yh", "yf", "zh", "zf")
     }
-    if spacing["xh"] != [DX_M] or spacing["yh"] != [DY_M] or spacing["zh"] != [DZ_M]:
+    expected_spacing = {
+        "xh": DX_M,
+        "xf": DX_M,
+        "yh": DY_M,
+        "yf": DY_M,
+        "zh": DZ_M,
+        "zf": DZ_M,
+    }
+    if not all(
+        _coordinate_spacing_matches(coordinates[name], expected)
+        for name, expected in expected_spacing.items()
+    ):
         raise SupercellBenchmarkError(f"Emitted coordinate spacing is not exact: {spacing}.")
     if not math.isclose(float(coordinates["zf"][-1]), ACTIVE_TOP_M):
         raise SupercellBenchmarkError("Unstretched emitted active top is not 20 km.")
@@ -1541,8 +1572,15 @@ def evaluate_supercell_run(
     ]
     sustained_organized_rotation = len(mature_organized) >= 3
     deep_multispecies = len(species_with_material_evolution) == len(HYDROMETEOR_FIELDS)
+    active_updraft_frames = [
+        frame for frame in frames if float(frame["primary_scalar_updraft_m_s"]) > 0.0
+    ]
+    if not active_updraft_frames:
+        raise SupercellBenchmarkError(
+            "No positive primary updraft exists for boundary-distance evaluation."
+        )
     primary_boundary_distances = []
-    for frame in frames:
+    for frame in active_updraft_frames:
         location = frame["primary_scalar_updraft_location"]
         primary_boundary_distances.append(
             {
@@ -1594,6 +1632,7 @@ def evaluate_supercell_run(
     return SupercellRunEvidence(
         run_id=package.run_id,
         implementation_commit=package.implementation_commit,
+        evaluation_commit=evaluation_commit,
         generated_at=datetime.now(UTC),
         lifecycle={
             "state": manifest.lifecycle_state.value,
@@ -1726,7 +1765,8 @@ def render_supercell_run_report(evidence: SupercellRunEvidence) -> str:
         "## 3. Implementation and report commits",
         "",
         f"The package and process used implementation commit `{evidence.implementation_commit}`. "
-        "This report is committed later and does not alter the executed package.",
+        f"The completed output was evaluated at `{evidence.evaluation_commit}`. This report is "
+        "committed later and does not alter the executed package or retained output.",
         "",
         "## 4. CM1 provenance and controlling hashes",
         "",

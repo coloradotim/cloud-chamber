@@ -50,6 +50,42 @@ def main(argv: list[str] | None = None) -> int:
     settings = load_settings(home=runtime_home)
     run_id = args.run_id or _default_run_id()
     try:
+        if args.evaluate_existing:
+            if args.run_id is None:
+                raise SupercellBenchmarkError(
+                    "Existing-output evaluation requires the exact existing --run-id."
+                )
+            package = load_supercell_package(settings=settings, run_id=run_id)
+            evidence = evaluate_supercell_run(settings=settings, package=package)
+            evidence_path = package.package_dir / "supercell_gate_b_evidence.json"
+            write_supercell_evidence(evidence_path, evidence)
+            report_path = (
+                REPO_ROOT
+                / "docs/research/storms/canonical-deep-convection-run-report.md"
+            )
+            write_supercell_run_report(report_path, evidence)
+            print(
+                json.dumps(
+                    {
+                        "status": "preserved_output_evaluated_and_reported_no_process_started",
+                        "run_id": run_id,
+                        "implementation_commit": package.implementation_commit,
+                        "evaluation_commit": evidence.evaluation_commit,
+                        "evidence_path": str(evidence_path),
+                        "report_path": str(report_path),
+                        "wall_clock_seconds": evidence.runtime_integrity[
+                            "wall_clock_seconds"
+                        ],
+                        "retained_bytes": evidence.runtime_integrity["artifact_bytes"][
+                            "total"
+                        ],
+                        "final_disposition": evidence.final_disposition,
+                        "process_started": False,
+                    },
+                    indent=2,
+                )
+            )
+            return 0
         if args.preflight or args.execute:
             if args.run_id is None:
                 raise SupercellBenchmarkError(
@@ -192,6 +228,11 @@ def _build_parser() -> argparse.ArgumentParser:
         "--execute",
         action="store_true",
         help="Re-run hard preflight, then start the one authorized 7,200-second process.",
+    )
+    mode.add_argument(
+        "--evaluate-existing",
+        action="store_true",
+        help="Evaluate and report an existing completed run without starting CM1.",
     )
     parser.add_argument(
         "--poll-seconds",

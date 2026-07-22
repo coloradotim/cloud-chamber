@@ -115,6 +115,24 @@ def test_namelist_rejects_any_scientific_change() -> None:
         audit_supercell_namelist(official, generated)
 
 
+def test_coordinate_spacing_accepts_float32_kilometer_precision_only() -> None:
+    observed_x_m = (
+        np.asarray(
+            [-59.500003814697266, -58.5, -57.5, -56.500003814697266],
+            dtype=np.float64,
+        )
+        * 1000.0
+    )
+    materially_wrong_x_m = observed_x_m.copy()
+    materially_wrong_x_m[2] += 0.1
+
+    assert supercell_benchmark._coordinate_spacing_matches(observed_x_m, 1000.0)
+    assert not supercell_benchmark._coordinate_spacing_matches(
+        materially_wrong_x_m,
+        1000.0,
+    )
+
+
 def test_package_and_explicit_preflight_are_nonexecuting_and_input_free(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -311,8 +329,17 @@ def test_evaluator_reads_every_tiny_native_field_and_renders_report(
     report = render_supercell_run_report(evidence)
 
     assert evidence.output_inventory["history_times_seconds"] == list(EXPECTED_OUTPUT_TIMES_SECONDS)
+    assert evidence.implementation_commit == "abc123"
+    assert evidence.evaluation_commit == "abc123"
     assert evidence.integrity_checks["all_required_fields_finite"] is True
     assert evidence.rotation_and_organization["sustained_organized_rotation"] is True
+    boundary_times = [
+        item["time_seconds"]
+        for item in evidence.boundaries_translation_and_damping[
+            "primary_updraft_boundary_distances_by_time"
+        ]
+    ]
+    assert boundary_times == [float(value) for value in EXPECTED_OUTPUT_TIMES_SECONDS[1:]]
     assert evidence.evolution["hydrometeor_species_with_material_evolution"] == [
         "qc",
         "qr",
