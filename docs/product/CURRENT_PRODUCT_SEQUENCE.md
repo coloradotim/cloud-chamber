@@ -117,7 +117,9 @@ below the fold
 
 World-specific scientific content remains legitimate. Shared structure must not erase scientific or geometric differences.
 
-Per-Simulation Notes introduced through this work must be treated as the first bounded durable-content contract, not as disposable frontend-only state or a general annotation platform.
+Per-Simulation Notes introduced through this work must be treated as the first bounded durable-content contract, not as disposable frontend-only state or a general annotation platform. The contract should use stable World and Simulation identity, persist across reloads, fail visibly, and leave a clear extension path for later Saved Views and Saved Comparisons without implementing those features now.
+
+Issue #428 must not serialize complete Explore state, implement resume, create Saved Views, or establish a generic annotation framework. Those belong to the next program after the shared information architecture is stable.
 
 ## Next program: personal scientific memory
 
