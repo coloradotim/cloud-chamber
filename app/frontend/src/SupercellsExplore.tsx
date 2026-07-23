@@ -51,6 +51,7 @@ type LensPresentation = {
   sceneOpacity: number;
   scenePointSize: number;
   selection: Selection | null;
+  selectedEvidenceVisible: boolean;
 };
 
 const LENSES: Array<{ id: LensId; label: string }> = [
@@ -90,6 +91,7 @@ export function SupercellsExplore({
     sceneOpacity,
     scenePointSize,
     selection,
+    selectedEvidenceVisible,
   } = presentation;
   const visibleLayerKeys = presentation.visibleLayerKeys ?? [];
   const [focusedViewer, setFocusedViewer] = useState<FocusedViewer>(null);
@@ -198,7 +200,7 @@ export function SupercellsExplore({
 
   function selectPoint(next: Selection) {
     setPlaying(false);
-    updatePresentation({ selection: next });
+    updatePresentation({ selection: next, selectedEvidenceVisible: true });
   }
 
   function updatePresentation(patch: Partial<LensPresentation>) {
@@ -236,7 +238,12 @@ export function SupercellsExplore({
 
   function resetSlicePosition() {
     setPlaying(false);
-    updatePresentation({ selection: null });
+    updatePresentation({ selection: null, selectedEvidenceVisible: false });
+  }
+
+  function clearSelectedEvidence() {
+    setPlaying(false);
+    updatePresentation({ selectedEvidenceVisible: false });
   }
 
   function toggleLayer(key: string, visible: boolean) {
@@ -300,7 +307,7 @@ export function SupercellsExplore({
                 activeSliceLabel={activeSliceLabel}
                 showSlicePlane={evidenceView !== "plan" || frame.plan.selection_z_indices === null}
                 selectedRegion={
-                  frame && selection
+                  frame && selection && selectedEvidenceVisible
                     ? {
                         xIndex: frame.selected_point.x_index,
                         yIndex: frame.selected_point.y_index,
@@ -335,7 +342,7 @@ export function SupercellsExplore({
                 stormPointSize={scenePointSize}
                 compactAxisLabels
                 selectedPointCoordinates={
-                  selection && frame
+                  selection && selectedEvidenceVisible && frame
                     ? {
                         x: frame.selected_point.x_km,
                         y: frame.selected_point.y_km,
@@ -430,13 +437,19 @@ export function SupercellsExplore({
               <div className="supercells-evidence-body">
                 <div className="supercells-active-plot">
                   {evidenceView === "plan" ? (
-                    <StormPlanPlot frame={frame} overlays={overlays} onSelect={selectPoint} />
+                    <StormPlanPlot
+                      frame={frame}
+                      overlays={overlays}
+                      onSelect={selectPoint}
+                      showSelection={selection === null || selectedEvidenceVisible}
+                    />
                   ) : (
                     <StormSectionPlot
                       section={evidenceView === "xz" ? frame.xz_section : frame.yz_section}
                       frame={frame}
                       overlays={overlays}
                       onSelect={selectPoint}
+                      showSelection={selection === null || selectedEvidenceVisible}
                     />
                   )}
                 </div>
@@ -466,8 +479,8 @@ export function SupercellsExplore({
               lens={lens}
               viewport={viewport}
               evidenceView={evidenceView}
-              selected={selection !== null}
-              onClearSelection={resetSlicePosition}
+              selected={selection !== null && selectedEvidenceVisible}
+              onClearSelection={clearSelectedEvidence}
             />
           </ExploreInspector>
         </div>
@@ -1136,6 +1149,7 @@ function lensPresentationDefaults(): Record<LensId, LensPresentation> {
       sceneOpacity: 1,
       scenePointSize: 1,
       selection: null,
+      selectedEvidenceVisible: false,
     },
     cloud_precipitation: {
       viewport: "storm",
@@ -1148,6 +1162,7 @@ function lensPresentationDefaults(): Record<LensId, LensPresentation> {
       sceneOpacity: 0.9,
       scenePointSize: 0.9,
       selection: null,
+      selectedEvidenceVisible: false,
     },
     low_level_interactions: {
       viewport: "storm",
@@ -1160,6 +1175,7 @@ function lensPresentationDefaults(): Record<LensId, LensPresentation> {
       sceneOpacity: 1,
       scenePointSize: 1,
       selection: null,
+      selectedEvidenceVisible: false,
     },
   };
 }

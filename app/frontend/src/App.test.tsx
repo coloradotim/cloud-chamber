@@ -3645,8 +3645,14 @@ function selectedRegionResponse() {
         { time_seconds: 900, value: 0.000006 },
         { time_seconds: 1800, value: 0.00002 },
       ],
-      local_cloud_base_time_series: [],
-      local_cloud_top_time_series: [],
+      local_cloud_base_time_series: [
+        { time_seconds: 900, value: 500 },
+        { time_seconds: 1800, value: 600 },
+      ],
+      local_cloud_top_time_series: [
+        { time_seconds: 900, value: 900 },
+        { time_seconds: 1800, value: 1400 },
+      ],
       local_max_qc_height_time_series: [],
       local_max_w_height_time_series: [],
       local_rain_present: true,
@@ -7832,6 +7838,47 @@ describe("App", () => {
 
     expect(screen.queryByLabelText("Selected native-grid evidence")).not.toBeInTheDocument();
     expect(screen.getByText("Slice synced")).toBeInTheDocument();
+  });
+
+  it("loads quantitative selected-column history on demand under Science", async () => {
+    render(<App />);
+
+    await openSelectedResultInExplore();
+    await screen.findByText("Slice synced");
+    const heatmap = screen.getAllByRole("img", { name: /heatmap/i })[0];
+    fireEvent.click(within(heatmap).getByRole("button", { name: /row 1, column 2/i }));
+
+    const loadHistory = await screen.findByRole("button", {
+      name: "Load selected-column history",
+    });
+    expect(
+      vi
+        .mocked(fetch)
+        .mock.calls.some(([url]) => String(url).includes("/diagnostics/selected-region")),
+    ).toBe(false);
+    expect(screen.queryByText("Thermal Fate")).not.toBeInTheDocument();
+    expect(screen.queryByText("What happened here?")).not.toBeInTheDocument();
+
+    fireEvent.click(loadHistory);
+
+    const localHistory = await screen.findByLabelText("Selected-column history");
+    expect(within(localHistory).getByText("Vertical-motion envelope")).toBeInTheDocument();
+    expect(within(localHistory).getByText("-1.2 m/s to 4.5 m/s")).toBeInTheDocument();
+    expect(within(localHistory).getByText("First local cloud")).toBeInTheDocument();
+    expect(within(localHistory).getByText("0.02 g/kg at 1,800 s")).toBeInTheDocument();
+    fireEvent.click(within(localHistory).getByText("Cloud-depth evolution"));
+    expect(
+      within(localHistory).getByText(/900 s: base 500 m, top 900 m, depth 400 m/),
+    ).toBeVisible();
+    expect(
+      vi
+        .mocked(fetch)
+        .mock.calls.some(([url]) => String(url).includes("/diagnostics/selected-region")),
+    ).toBe(true);
+    expect(fetch).toHaveBeenCalledWith(
+      expect.stringMatching(/diagnostics\/selected-region\?region_type=column.*x_index=.*y_index=/),
+    );
+    expect(within(localHistory).queryByText("Growing cumulus")).not.toBeInTheDocument();
   });
 
   it("selects the source grid point represented by a downsampled cloud-water block", async () => {

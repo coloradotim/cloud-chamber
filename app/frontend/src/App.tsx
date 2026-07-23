@@ -1432,6 +1432,31 @@ type SelectedRegionRequest = {
   neighborhood?: number;
 };
 
+type SelectedRegionTimeValue = {
+  time_seconds: number | null;
+  value: number | null;
+};
+
+type SelectedRegionHistoryResponse = {
+  diagnostics: {
+    available: boolean;
+    local_max_w_m_s: number | null;
+    time_of_local_max_w_seconds: number | null;
+    local_min_w_m_s: number | null;
+    time_of_local_min_w_seconds: number | null;
+    local_max_qc_kg_kg: number | null;
+    time_of_local_max_qc_seconds: number | null;
+    first_local_cloud_time_seconds: number | null;
+    local_cloud_base_time_series: SelectedRegionTimeValue[];
+    local_cloud_top_time_series: SelectedRegionTimeValue[];
+    local_rain_present: boolean;
+    first_local_rain_time_seconds: number | null;
+    local_max_qr_kg_kg: number | null;
+    time_of_local_max_qr_seconds: number | null;
+  };
+  caveats: string[];
+};
+
 type FieldViewDefaults = {
   field: string;
   time_index: number;
@@ -2198,6 +2223,35 @@ async function fetchVisualizationPointCloud(
     throw new Error(await responseError(response, "Unable to load 3-D scalar point layer."));
   }
   return response.json() as Promise<PointCloudResponse>;
+}
+
+async function fetchSelectedRegionHistory(
+  resultId: string,
+  request: SelectedRegionRequest,
+): Promise<SelectedRegionHistoryResponse> {
+  const search = new URLSearchParams({
+    region_type: request.regionType,
+    neighborhood: String(request.neighborhood ?? 0),
+  });
+  const indices: Array<[string, number | undefined]> = [
+    ["x_index", request.xIndex],
+    ["y_index", request.yIndex],
+    ["z_index", request.zIndex],
+    ["x_start", request.xStart],
+    ["x_end", request.xEnd],
+    ["y_start", request.yStart],
+    ["y_end", request.yEnd],
+    ["z_start", request.zStart],
+    ["z_end", request.zEnd],
+  ];
+  indices.forEach(([key, value]) => {
+    if (value !== undefined) search.set(key, String(value));
+  });
+  const response = await fetch(`/api/results/${resultId}/diagnostics/selected-region?${search}`);
+  if (!response.ok) {
+    throw new Error(await responseError(response, "Unable to load selected-column history."));
+  }
+  return response.json() as Promise<SelectedRegionHistoryResponse>;
 }
 
 async function responseError(response: Response, fallback: string): Promise<string> {
@@ -11121,7 +11175,7 @@ export function VisualizerSceneShell({
 
         <ExploreSecondarySections
           sections={{
-            science: <TradeCumulusScience result={result} />,
+            science: <TradeCumulusScience result={result} selectedRegion={selectedRegion} />,
             notes: simulationRecord?.simulation_id ? (
               <SimulationNotes
                 worldId={simulationRecord.world_id}
@@ -11368,7 +11422,65 @@ function ResultExplanationPanel({
   );
 }
 
-function TradeCumulusScience({ result }: { result: ResultCard }) {
+function TradeCumulusScience({
+  result,
+  selectedRegion,
+}: {
+  result: ResultCard;
+  selectedRegion: SelectedRegionRequest | null;
+}) {
+  const [localHistory, setLocalHistory] = useState<SelectedRegionHistoryResponse | null>(null);
+  const [localHistoryLoading, setLocalHistoryLoading] = useState(false);
+  const [localHistoryError, setLocalHistoryError] = useState<string | null>(null);
+  const requestRef = useRef(0);
+  const selectionKey = selectedRegion
+    ? [
+        selectedRegion.regionType,
+        selectedRegion.xIndex,
+        selectedRegion.yIndex,
+        selectedRegion.zIndex,
+        selectedRegion.xStart,
+        selectedRegion.xEnd,
+        selectedRegion.yStart,
+        selectedRegion.yEnd,
+        selectedRegion.zStart,
+        selectedRegion.zEnd,
+        selectedRegion.neighborhood,
+      ].join(":")
+    : "";
+
+  useEffect(() => {
+    requestRef.current += 1;
+    setLocalHistory(null);
+    setLocalHistoryLoading(false);
+    setLocalHistoryError(null);
+  }, [result.result_id, selectionKey]);
+
+  async function loadLocalHistory() {
+    if (!selectedRegion) return;
+    const requestId = requestRef.current + 1;
+    requestRef.current = requestId;
+    setLocalHistoryLoading(true);
+    setLocalHistoryError(null);
+    try {
+      const payload = await fetchSelectedRegionHistory(result.result_id, {
+        regionType: "column",
+        xIndex: selectedRegion.xIndex,
+        yIndex: selectedRegion.yIndex,
+        neighborhood: selectedRegion.neighborhood ?? 0,
+      });
+      if (requestRef.current !== requestId) return;
+      setLocalHistory(payload);
+    } catch (caught) {
+      if (requestRef.current !== requestId) return;
+      setLocalHistoryError(
+        caught instanceof Error ? caught.message : "Unable to load selected-column history.",
+      );
+    } finally {
+      if (requestRef.current === requestId) setLocalHistoryLoading(false);
+    }
+  }
+
   return (
     <section className="explore-science-section">
       <p className="eyebrow">Science</p>
@@ -11405,8 +11517,179 @@ function TradeCumulusScience({ result }: { result: ResultCard }) {
           Extrema describe saved outputs and do not identify a causal cloud process by themselves.
         </p>
       </details>
+      <section className="selected-column-history" aria-label="Selected-column history">
+        <p className="eyebrow">Selected column</p>
+        <h3>Local history at the selected column</h3>
+        {selectedRegion ? (
+          <>
+            <p>
+              Load retained quantitative history for the column containing the cell selected in
+              Context. This can take longer than reading the current frame.
+            </p>
+            {!localHistory && (
+              <button
+                type="button"
+                className="secondary-button"
+                disabled={localHistoryLoading}
+                onClick={() => void loadLocalHistory()}
+              >
+                {localHistoryLoading ? "Loading local history..." : "Load selected-column history"}
+              </button>
+            )}
+            {localHistoryError && (
+              <div className="layer-local-error" role="alert">
+                <span>{localHistoryError}</span>
+                <button type="button" onClick={() => void loadLocalHistory()}>
+                  Retry local history
+                </button>
+              </div>
+            )}
+            {localHistory && (
+              <SelectedColumnHistory
+                history={localHistory}
+                loading={localHistoryLoading}
+                onReload={loadLocalHistory}
+              />
+            )}
+          </>
+        ) : (
+          <p>Select a slice cell to make its column history available here.</p>
+        )}
+      </section>
     </section>
   );
+}
+
+function SelectedColumnHistory({
+  history,
+  loading,
+  onReload,
+}: {
+  history: SelectedRegionHistoryResponse;
+  loading: boolean;
+  onReload: () => Promise<void>;
+}) {
+  const diagnostics = history.diagnostics;
+  const cloudDepth = pairCloudDepthHistory(
+    diagnostics.local_cloud_base_time_series,
+    diagnostics.local_cloud_top_time_series,
+  );
+  return (
+    <section className="explore-science-callout">
+      <div className="section-heading compact-heading">
+        <div>
+          <p className="eyebrow">Retained column history</p>
+          <h4>Quantitative local evidence</h4>
+        </div>
+        <button
+          type="button"
+          className="secondary-button"
+          disabled={loading}
+          onClick={() => void onReload()}
+        >
+          {loading ? "Reloading..." : "Reload"}
+        </button>
+      </div>
+      {diagnostics.available ? (
+        <>
+          <dl className="metric-grid compact-metric-grid">
+            <Metric
+              label="Vertical-motion envelope"
+              value={`${formatNumber(diagnostics.local_min_w_m_s, "m/s")} to ${formatNumber(
+                diagnostics.local_max_w_m_s,
+                "m/s",
+              )}`}
+            />
+            <Metric
+              label="Strongest ascent"
+              value={formatSeconds(diagnostics.time_of_local_max_w_seconds)}
+            />
+            <Metric
+              label="Strongest descent"
+              value={formatSeconds(diagnostics.time_of_local_min_w_seconds)}
+            />
+            <Metric
+              label="First local cloud"
+              value={formatSeconds(diagnostics.first_local_cloud_time_seconds)}
+            />
+            <Metric
+              label="Maximum local cloud water"
+              value={`${formatNumber(
+                diagnostics.local_max_qc_kg_kg === null
+                  ? null
+                  : diagnostics.local_max_qc_kg_kg * 1_000,
+                "g/kg",
+              )} at ${formatSeconds(diagnostics.time_of_local_max_qc_seconds)}`}
+            />
+            <Metric
+              label="First local rain water"
+              value={formatSeconds(diagnostics.first_local_rain_time_seconds)}
+            />
+            <Metric
+              label="Maximum local rain water"
+              value={
+                diagnostics.local_rain_present
+                  ? `${formatNumber(
+                      diagnostics.local_max_qr_kg_kg === null
+                        ? null
+                        : diagnostics.local_max_qr_kg_kg * 1_000,
+                      "g/kg",
+                    )} at ${formatSeconds(diagnostics.time_of_local_max_qr_seconds)}`
+                  : "Not detected"
+              }
+            />
+          </dl>
+          <details>
+            <summary>Cloud-depth evolution</summary>
+            {cloudDepth.length > 0 ? (
+              <ul className="compact-list">
+                {cloudDepth.map((frame) => (
+                  <li key={`${frame.timeSeconds}-${frame.baseMeters}-${frame.topMeters}`}>
+                    {formatSeconds(frame.timeSeconds)}: base {formatNumber(frame.baseMeters, "m")},
+                    top {formatNumber(frame.topMeters, "m")}, depth{" "}
+                    {formatNumber(
+                      frame.baseMeters !== null && frame.topMeters !== null
+                        ? Math.max(0, frame.topMeters - frame.baseMeters)
+                        : null,
+                      "m",
+                    )}
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p>No local cloud-depth series is available for this selected column.</p>
+            )}
+          </details>
+        </>
+      ) : (
+        <p>Local history is unavailable for this selected column.</p>
+      )}
+      {history.caveats.length > 0 && (
+        <details>
+          <summary>Data caveats</summary>
+          <ul className="compact-list">
+            {_dedupeStrings(history.caveats).map((caveat) => (
+              <li key={caveat}>{humanize(caveat)}</li>
+            ))}
+          </ul>
+        </details>
+      )}
+    </section>
+  );
+}
+
+function pairCloudDepthHistory(
+  bases: SelectedRegionTimeValue[],
+  tops: SelectedRegionTimeValue[],
+): Array<{ timeSeconds: number | null; baseMeters: number | null; topMeters: number | null }> {
+  const topsByTime = new Map(tops.map((item) => [item.time_seconds, item.value]));
+  return bases
+    .map((base) => ({
+      timeSeconds: base.time_seconds,
+      baseMeters: base.value,
+      topMeters: topsByTime.get(base.time_seconds) ?? null,
+    }))
+    .filter((item) => item.baseMeters !== null || item.topMeters !== null);
 }
 
 function SimulationDetailsPanel({

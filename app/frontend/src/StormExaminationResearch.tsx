@@ -634,10 +634,12 @@ export function StormPlanPlot({
   frame,
   overlays,
   onSelect,
+  showSelection = true,
 }: {
   frame: StormExaminationFrame;
   overlays: OverlayState;
   onSelect: (value: Selection) => void;
+  showSelection?: boolean;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const geometryRef = useRef<PlotGeometry | null>(null);
@@ -649,8 +651,8 @@ export function StormPlanPlot({
   );
   useCanvasRender(canvasRef, () => {
     const canvas = canvasRef.current;
-    if (canvas) geometryRef.current = drawPlan(canvas, frame, overlays);
-  }, [frame, overlays]);
+    if (canvas) geometryRef.current = drawPlan(canvas, frame, overlays, showSelection);
+  }, [frame, overlays, showSelection]);
 
   function select(event: ReactMouseEvent<HTMLCanvasElement>) {
     const canvas = canvasRef.current;
@@ -694,11 +696,13 @@ export function StormSectionPlot({
   frame,
   overlays,
   onSelect,
+  showSelection = true,
 }: {
   section: VerticalSection;
   frame: StormExaminationFrame;
   overlays: OverlayState;
   onSelect: (value: Selection) => void;
+  showSelection?: boolean;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const geometryRef = useRef<PlotGeometry | null>(null);
@@ -714,8 +718,10 @@ export function StormSectionPlot({
   );
   useCanvasRender(canvasRef, () => {
     const canvas = canvasRef.current;
-    if (canvas) geometryRef.current = drawSection(canvas, section, frame, overlays);
-  }, [frame, overlays, section]);
+    if (canvas) {
+      geometryRef.current = drawSection(canvas, section, frame, overlays, showSelection);
+    }
+  }, [frame, overlays, section, showSelection]);
 
   function select(event: ReactMouseEvent<HTMLCanvasElement>) {
     const canvas = canvasRef.current;
@@ -1034,6 +1040,7 @@ function drawPlan(
   canvas: HTMLCanvasElement,
   frame: StormExaminationFrame,
   overlays: OverlayState,
+  showSelection = true,
 ): PlotGeometry {
   const context = prepareCanvas(canvas);
   const geometry = plotGeometry(canvas, 43, 12, 12, 34, frame.viewport_bounds_km);
@@ -1127,8 +1134,10 @@ function drawPlan(
     }
     if (overlays.wind) drawWindVectors(context, geometry, frame.plan.wind_vectors);
   }
-  drawPlanCrosshairs(context, geometry, frame.selected_point);
-  drawSelectedMarker(context, geometry, frame.selected_point.x_km, frame.selected_point.y_km);
+  if (showSelection) {
+    drawPlanCrosshairs(context, geometry, frame.selected_point);
+    drawSelectedMarker(context, geometry, frame.selected_point.x_km, frame.selected_point.y_km);
+  }
   return geometry;
 }
 
@@ -1137,6 +1146,7 @@ function drawSection(
   section: VerticalSection,
   frame: StormExaminationFrame,
   overlays: OverlayState,
+  showSelection = true,
 ): PlotGeometry {
   const context = prepareCanvas(canvas);
   const xMinimum = section.horizontal_km[0];
@@ -1183,9 +1193,11 @@ function drawSection(
       drawThresholdOutline(context, geometry, section.overlays.reflectivity, 35, "#7b572a", 1.05);
     }
   }
-  const horizontal =
-    section.orientation === "xz" ? frame.selected_point.x_km : frame.selected_point.y_km;
-  drawSelectedMarker(context, geometry, horizontal, frame.selected_point.z_km);
+  if (showSelection) {
+    const horizontal =
+      section.orientation === "xz" ? frame.selected_point.x_km : frame.selected_point.y_km;
+    drawSelectedMarker(context, geometry, horizontal, frame.selected_point.z_km);
+  }
   return geometry;
 }
 

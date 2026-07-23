@@ -1182,6 +1182,16 @@ test.describe("mocked smoke: Build, Results, Explore path", () => {
     ).toBeVisible();
     await expect(selectedEvidence.getByText("Cloud water", { exact: true })).toBeVisible();
     await expect(selectedEvidence.getByText("Native cell", { exact: true })).toBeVisible();
+    await page.getByRole("tab", { name: "Science" }).click();
+    await expect(page.getByRole("button", { name: "Load selected-column history" })).toBeVisible();
+    await expect(page.getByText("Thermal Fate")).toHaveCount(0);
+    await expect(page.getByText("What happened here?")).toHaveCount(0);
+    await page.getByRole("button", { name: "Load selected-column history" }).click();
+    const localHistory = page.getByLabel("Selected-column history");
+    await expect(localHistory.getByText("Vertical-motion envelope")).toBeVisible();
+    await expect(localHistory.getByText("First local cloud")).toBeVisible();
+    await localHistory.getByText("Cloud-depth evolution").click();
+    await expect(localHistory.getByText(/1,800 s: base 500 m, top 1,100 m/)).toBeVisible();
     await page.getByRole("tab", { name: "Details" }).click();
     await page.getByText("Technical slice details").first().click();
     await expect(page.getByText(/finite values/i).first()).toBeVisible();

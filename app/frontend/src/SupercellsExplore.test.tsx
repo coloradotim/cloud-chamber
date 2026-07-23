@@ -643,6 +643,33 @@ describe("SupercellsExplore", () => {
     );
   });
 
+  it("clears selected evidence without moving a non-default vertical plane", async () => {
+    render(<SupercellsExplore simulation={simulation} onBack={vi.fn()} />);
+    await waitForLensContext("rotating_updraft");
+
+    fireEvent.click(
+      within(screen.getByLabelText("Slice orientation")).getByRole("button", {
+        name: "Vertical x-z",
+      }),
+    );
+    const position = screen.getByLabelText("Vertical x-z y position");
+    fireEvent.change(position, { target: { value: "0" } });
+
+    const selectedEvidence = await screen.findByLabelText("Selected native-grid evidence");
+    expect(position).toHaveValue("0");
+    expect(screen.getAllByText("y -10.0 km").length).toBeGreaterThan(0);
+
+    fireEvent.click(within(selectedEvidence).getByRole("button", { name: "Clear" }));
+
+    expect(screen.queryByLabelText("Selected native-grid evidence")).not.toBeInTheDocument();
+    expect(position).toHaveValue("0");
+    expect(screen.getAllByText("y -10.0 km").length).toBeGreaterThan(0);
+    expect(fetch).toHaveBeenLastCalledWith(
+      expect.stringMatching(/x_index=1&y_index=0&z_index=1/),
+      expect.anything(),
+    );
+  });
+
   it("uses the selected Low-Level altitude in 2-D and 3-D labels", async () => {
     render(<SupercellsExplore simulation={simulation} onBack={vi.fn()} />);
     await waitForLensContext("rotating_updraft");

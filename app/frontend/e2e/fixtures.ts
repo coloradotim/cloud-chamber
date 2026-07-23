@@ -1709,8 +1709,14 @@ export async function mockCloudChamberApis(page: Page) {
         first_local_cloud_time_seconds: 1800,
         local_cloud_fraction_time_series: [{ time_seconds: 1800, value: 0.5 }],
         local_qc_max_time_series: [{ time_seconds: 1800, value: 0.002 }],
-        local_cloud_base_time_series: [],
-        local_cloud_top_time_series: [],
+        local_cloud_base_time_series: [
+          { time_seconds: 1800, value: 500 },
+          { time_seconds: 2700, value: 650 },
+        ],
+        local_cloud_top_time_series: [
+          { time_seconds: 1800, value: 1100 },
+          { time_seconds: 2700, value: 1600 },
+        ],
         local_max_qc_height_time_series: [],
         local_max_w_height_time_series: [],
         local_rain_present: true,

@@ -72,40 +72,18 @@ The presentation-quality and third-World program established:
 #423 — Supercells as the third three-dimensional Cloud World — complete
 
 #421 — higher-resolution, denser-cadence, longer-duration Supercell
-       presentation run — final adoption review in PR #430
+       presentation run — complete
+
+#429 — Supercells slice-position navigation and missing camera controls
+       — complete
+
+#428 — shared live Context, below-the-fold Science | Notes | Details, and
+       durable per-Simulation Notes across all three Worlds — complete
 ```
 
 The completed work preserves stable World and Simulation identities while allowing backing run assets to improve.
 
-PR #430 must complete its bounded review corrections and merge before #421 is treated as complete. No additional CM1 run is required unless a later explicit PM decision authorizes one.
-
-## Immediate bounded follow-ups
-
-After PR #430 merges, execute:
-
-```text
-#429 — add slice-position navigation and missing 3-D camera controls to
-       Supercells Explore
-
-→ #428 — commonalize live Context and below-the-fold Science, Notes, and
-         Details across all three Worlds
-```
-
-### #429 — complete Supercells spatial navigation
-
-Issue #429 closes a bounded usability gap in the accepted Supercells workspace:
-
-- move horizontal and vertical evidence planes by native physical coordinate;
-- keep the represented 2-D and 3-D planes synchronized;
-- preserve user-selected slice positions during playback;
-- expose zoom and vertical-pan controls already supported by the shared 3-D viewer behavior;
-- preserve per-Lens camera and slice state.
-
-It does not reopen Supercell Lens questions, scales, scientific fields, or rendering design.
-
-### #428 — shared Explore information architecture
-
-Issue #428 should establish one recognizable information hierarchy across Trade Cumulus, Mountain Waves, and Supercells:
+The shared Explore information architecture is:
 
 ```text
 above the fold
@@ -117,13 +95,11 @@ below the fold
 
 World-specific scientific content remains legitimate. Shared structure must not erase scientific or geometric differences.
 
-Per-Simulation Notes introduced through this work must be treated as the first bounded durable-content contract, not as disposable frontend-only state or a general annotation platform. The contract should use stable World and Simulation identity, persist across reloads, fail visibly, and leave a clear extension path for later Saved Views and Saved Comparisons without implementing those features now.
-
-Issue #428 must not serialize complete Explore state, implement resume, create Saved Views, or establish a generic annotation framework. Those belong to the next program after the shared information architecture is stable.
+Per-Simulation Notes are the first bounded durable-content contract. They use stable World and Simulation identity, persist across reloads, and fail visibly. They do not serialize complete Explore state, implement resume, create Saved Views, or establish a generic annotation framework.
 
 ## Next program: personal scientific memory
 
-After #429 and #428, establish one versioned, World-aware Explore-state contract before implementing Compare.
+Establish one versioned, World-aware Explore-state contract before implementing Compare.
 
 The contract should represent, as applicable:
 
