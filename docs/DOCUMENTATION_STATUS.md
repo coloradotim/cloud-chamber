@@ -1,14 +1,17 @@
 # Cloud Chamber Documentation Status and Authority
 
-## Authority and status
+## Authority and Status
 
-The Cloud Chamber documentation tree contains current technical information, research evidence, historical decisions, proposals, and superseded product direction.
+The Cloud Chamber documentation tree contains current technical information,
+research evidence, historical decisions, proposals, and superseded product
+direction. A document's presence under `docs/` does not make it current
+authority.
 
-A document’s presence under `docs/` does not make it current authority.
+Use the hierarchy below.
 
-## 1. Controlling product authority
+## 1. Controlling Product Authority
 
-Use this order:
+Use this product-authority order:
 
 1. [North Star](../NORTH_STAR.md)
 2. [Product Vision](product/PRODUCT_VISION.md)
@@ -17,115 +20,162 @@ Use this order:
    - [Application Semantics](product/APPLICATION_SEMANTICS.md)
    - [MVP](product/MVP.md)
    - [Current Product Sequence](product/CURRENT_PRODUCT_SEQUENCE.md)
-5. bounded approved World or product documents
+5. bounded approved World or product documents such as
+   [Trade Cumulus Product Slice](product/TRADE_CUMULUS_PRODUCT_SLICE.md)
 6. current implementation documentation and code
 7. research and run evidence
 
 The North Star and Product Vision are the highest product authority.
 
-Application Semantics controls the meaning of Cloud World, Recipe, Simulation, Lens, Saved View, Comparison, Exploration, Experiment, and supporting terms.
+Application Semantics defines Cloud World, Recipe, Simulation, Lens, Saved
+View, Comparison, Exploration, Experiment, and supporting terms.
 
-The MVP controls Cloud Chamber’s approved scope as a single-user personal cloud laboratory and growing cloud-world atlas. The Current Product Sequence controls later implementation ordering where it conflicts with the MVP’s historical roadmap. It does not reopen the MVP thesis or Application Semantics.
+The MVP defines Cloud Chamber as a local, single-user personal cloud laboratory
+and growing cloud-world atlas. The Current Product Sequence controls later
+implementation ordering where it conflicts with the MVP's historical roadmap.
+It does not reopen the MVP thesis or Application Semantics.
 
-Current issue bodies and the latest explicit PM comments control bounded implementation scope.
+Current issue bodies and the latest explicit PM comments control each bounded
+implementation task.
 
-## 2. Current approved destination model
+## 2. Approved Direction Versus Implemented State
 
-```text
-Cloud Chamber
-├── Trade Cumulus — Cloud World
-├── Mountain Waves — Cloud World
-├── Supercells — Cloud World
-└── Fun With Soundings — atmospheric workbench
-```
+Keep product approval separate from software availability:
 
-The three Worlds share product vocabulary and core workspace behavior but may legitimately differ in geometry, Lenses, controls, comparison questions, and variation surfaces.
+| Subject | Approved direction | Current implemented state |
+| --- | --- | --- |
+| Cloud Worlds | A growing collection of explorable cloud regimes | Trade Cumulus, Mountain Waves, and Supercells are accessible |
+| Fun With Soundings | A separate first-class atmospheric workbench | Not accessible; sounding and run capabilities remain in transitional paths |
+| Saved Views | Durable user-curated views | Placeholder only; no durable Saved Views |
+| Compare | Related Simulations can be compared | One featured Trade Cumulus Comparison; no ordinary World-aware Compare |
+| Variation | Create a related Simulation from a World Simulation | Working Mountain Waves Lab path; no shared three-World workflow |
+| Explore | World-specific science in a shared application vocabulary | Implemented separately for all three accessible Worlds |
 
-A World should expose only surfaces it actually implements. Do not create empty Lab, Compare, Saved View, or other placeholders merely to make all Worlds structurally identical.
+The three Worlds share product vocabulary and core workspace behavior but may
+legitimately differ in geometry, Lenses, controls, comparison questions, and
+variation surfaces.
 
-Cloud Worlds are not organized for the sole user under Installed, Draft, candidate, graduated, or development-state categories. Technical content availability remains an operational state.
+A World should expose only surfaces it implements. Do not create empty Lab,
+Compare, or Saved View placeholders merely to make all Worlds structurally
+identical.
 
-Fun With Soundings is a first-class workbench and is not a Cloud World.
+Fun With Soundings is an approved first-class workbench, not a Cloud World.
+Issue #395 remains queued; approval does not make the workbench accessible in
+the current application.
 
-The [Trade Cumulus Product Slice](product/TRADE_CUMULUS_PRODUCT_SLICE.md) remains a bounded scientific/product document subordinate to higher authority. Its presence does not by itself establish a Recipe, Control, Lens, Comparison, or scientific claim.
+The Trade Cumulus Product Slice remains subordinate to the North Star, Product
+Vision, approved PM decisions, Application Semantics, and the MVP. Being
+documented does not by itself make a Recipe, Lens, Comparison, or scientific
+claim supported.
 
-## 3. Repository and agent authority
+Do not rewrite approved concepts merely because their implementation is
+incomplete. Do not describe approved but inaccessible work as shipped.
+
+## 3. Current Product Sequence
+
+[Current Product Sequence](product/CURRENT_PRODUCT_SEQUENCE.md) is the
+repository authority for current implementation ordering. The latest approved
+PM comment and issue body still control the exact scope of each bounded task.
+
+The presentation-quality and three-World foundation is complete through #420,
+#423, #421, and #429. Issue #428 remains the immediate shared Explore
+information-architecture follow-up.
+
+Rewritten issues #394 and #395 and issues #432 through #438 record bounded
+follow-on product work for Activity and History, Fun With Soundings, durable
+Explore state and Saved Views, Compare and Saved Comparisons, variation
+contracts, retained assets, and curated defaults. Their presence does not
+activate them or replace the sequencing authority. Issues #389, #390, and #391
+were closed as superseded and are not current assignment authority.
+
+Keep detailed ordering in Current Product Sequence and explicit later PM
+decisions rather than duplicating a second roadmap here.
+
+## 4. Repository and Agent Authority
 
 - [AGENTS.md](../AGENTS.md)
 
-`AGENTS.md` defines how agents and contributors must operate. It does not replace product authority.
+`AGENTS.md` controls how agents and contributors operate during the current
+gated product-architecture program. Repository recovery and semantic
+architecture are completed earlier stages; their completion did not end the
+requirements for bounded work, manual pull-request review, or disabled
+auto-merge.
 
-## 4. Current descriptive documents
+`AGENTS.md` does not replace product authority.
 
+## 5. Current Descriptive Documents
+
+- [README](../README.md)
 - [Current State](current/CURRENT_STATE.md)
 - [Current Architecture](current/CURRENT_ARCHITECTURE.md)
-- [Ingest, Results, And Runtime Cleanup Lifecycle](current/INGEST_RESULTS_STORAGE_LIFECYCLE.md)
-- [README](../README.md)
+- [Ingest, Results, and Runtime Cleanup Lifecycle](current/INGEST_RESULTS_STORAGE_LIFECYCLE.md)
 
-These documents describe current software and operations. They may identify legacy behavior, unresolved questions, and implementation constraints. They do not establish final product design.
+These documents describe current software and operations. They may identify
+transitional behavior and implementation limits; they do not establish product
+direction.
 
-Do not update Current State or Current Architecture to describe an approved future capability before its implementation merges. Update them when the repository’s actual descriptive state changes.
+The current embedding of legacy Build and Results under Trade Cumulus does not
+override the approved World Lab or Fun With Soundings concepts.
 
-Current State and Current Architecture now require a bounded factual refresh after the completed World and presentation-run work. Until that update merges, use current code, tests, merged PR history, and the Current Product Sequence together rather than treating their older Build/Results/Explore framing as complete.
+Do not update Current State or Current Architecture to describe an approved
+future capability before its implementation merges. Update them when the
+repository's actual descriptive state changes.
 
-## 5. Development and operational documentation
+## 6. Development and Operational Documentation
 
 - [Development](development/DEVELOPMENT.md)
 - [Testing](development/TESTING.md)
 - [CI and Branch Protection](development/CI_AND_BRANCH_PROTECTION.md)
 - [Trusted LAN Worker](development/LAN_WORKER.md)
 
-Use operational instructions where they remain accurate.
+Use operational instructions where they remain accurate. Prefer commands,
+paths, APIs, and test procedures that can be verified against current code.
 
-Operational-documentation recovery, the documentation disposition audit, semantic architecture, and active-contract classification are complete.
+Completed earlier-stage programs include:
+
+- repository and operational-documentation recovery;
+- documentation disposition audit;
+- semantic architecture;
+- active contract classification;
+- archive moves for the highest-risk superseded product direction.
 
 For documents not handled by those programs:
 
-- prefer verifiable commands, paths, APIs, test procedures, and implemented behavior;
-- do not execute old product priorities, scenario sequencing, or roadmap language without a current approved issue;
-- resolve product conflicts in favor of the authority order above.
+- do not execute old scenario sequencing or roadmap language;
+- resolve product conflicts using the authority order above;
+- preserve useful implementation and research evidence;
+- request PM direction when a conflict affects bounded work.
 
-## 6. Architecture and data-model documents
+## 7. Implemented Contracts
 
-Architecture documents may describe real implemented systems and useful constraints while also containing product assumptions inherited from earlier directions.
-
-Interpret them as:
-
-> This is what the current software does or was designed to do.
-
-Do not automatically interpret them as:
-
-> This is what the eventual product must be.
-
-Architecture changes remain subject to approved product authority and bounded implementation issues.
-
-## 7. Implemented contracts
-
-The active `docs/contracts/` directory contains current implemented contracts verified against code and tests:
+The active `docs/contracts/` directory contains verified current contracts:
 
 - [Output Product Specification](contracts/output-product-specification.md)
 - [Sounding Candidate Screening Contract](contracts/sounding-candidate-screening.md)
 
-These contracts describe interfaces and current behavior. They do not define the final product hierarchy or make a Cloud World, Recipe, Simulation, Comparison, or workbench experiment scientifically supported.
+Implemented contracts describe current interfaces and behavior. They do not
+define final product hierarchy or make a World, Recipe, Simulation,
+Comparison, or Experiment scientifically supported.
 
 Historical and proposal contracts live under `docs/archive/contracts/`.
 
-## 8. Research and experiment evidence
+## 8. Research and Experiment Evidence
 
-Documents under `research/` record investigations, validation attempts, run outcomes, literature findings, and design exploration.
+Documents under `research/` record investigations, validation attempts, run
+outcomes, literature findings, and design exploration.
 
 Research is evidence. It is not automatically:
 
 - product direction;
 - a supported Recipe;
 - roadmap priority;
-- proof that an experimental mechanism should be a default;
-- proof that a sounding experiment belongs to a Cloud World;
-- proof that a new Cloud World should be activated.
+- a default forcing or initiation mechanism;
+- proof that a Result belongs to a Cloud World;
+- proof that a research route is a product route.
 
 Negative, failed, contradictory, and superseded evidence should be preserved.
 
-## 9. Historical and superseded product direction
+## 9. Historical and Superseded Direction
 
 Known high-risk archived examples include:
 
@@ -135,21 +185,21 @@ Known high-risk archived examples include:
 - [Configurable observed-sounding roadmap](archive/roadmaps/configurable-observed-sounding-roadmap-legacy.md);
 - [Thermal Fate process diagnostics](archive/product-direction/thermal-fate-diagnostics-legacy.md);
 - [Guided experiment notebook UX reset](archive/ux/guided-experiment-notebook-reset-legacy.md);
-- [Codex project setup notes](archive/setup/codex-project-setup-legacy.md);
 - [legacy roadmap and startup issues](archive/roadmaps/roadmap-and-issues-legacy.md);
 - [deep-convection package design proposal](archive/proposals/deep-convection-package-design-legacy.md).
 
-Active-path documents may still contain superseded framing. Until bounded work changes them:
+Active-path documents may still contain superseded framing. Until bounded work
+changes them:
 
 - do not use them as controlling product authority;
-- do not update them merely for cosmetic consistency;
 - do not execute their roadmap language;
-- do not delete them without approved disposition.
+- do not delete them without approved disposition;
+- do not update them merely for cosmetic consistency.
 
-## Document status vocabulary
+## Document Status Vocabulary
 
 | Status | Meaning |
-|---|---|
+| --- | --- |
 | **Authoritative** | Controls product or repository behavior |
 | **Current descriptive** | Accurately describes present software or operations |
 | **Implemented contract** | Describes a verified current interface |
@@ -159,11 +209,12 @@ Active-path documents may still contain superseded framing. Until bounded work c
 | **Superseded** | Conflicts with or has been replaced by current authority |
 | **Unresolved** | Requires product, scientific, or implementation review |
 
-These labels are interpretive aids. The repository has not moved or relabeled every file.
+These labels are interpretive aids. The repository has not moved or relabeled
+every file.
 
-## Recommended reading paths
+## Recommended Reading Paths
 
-### Understand the product
+### Understand the Product
 
 1. [North Star](../NORTH_STAR.md)
 2. [Product Vision](product/PRODUCT_VISION.md)
@@ -174,80 +225,40 @@ These labels are interpretive aids. The repository has not moved or relabeled ev
 7. [Current State](current/CURRENT_STATE.md)
 8. [Current Architecture](current/CURRENT_ARCHITECTURE.md)
 
-### Contribute
+### Contribute During the Gated Program
 
 1. [AGENTS.md](../AGENTS.md)
 2. explicit PM decisions and the controlling bounded issue
 3. [Current Product Sequence](product/CURRENT_PRODUCT_SEQUENCE.md)
-4. [MVP](product/MVP.md)
-5. [Application Semantics](product/APPLICATION_SEMANTICS.md)
-6. relevant operational documentation
-7. current code and tests
+4. relevant product authority
+5. current operational documentation
+6. current code and tests
 
-Ignore conflicting lower-authority roadmap language and ask for direction when a conflict affects the task.
+Ignore conflicting lower-authority product language and ask for direction when
+a conflict affects the task.
 
-### Understand a scientific or CM1 experiment
+### Understand a Scientific or CM1 Experiment
 
 1. Identify the relevant research and run records.
-2. Determine whether the work is a canonical source, controlled adaptation, exploratory sounding experiment, technical mechanism, or hypothesis.
-3. Confirm the actual configuration, output, integrity, and provenance.
+2. Determine whether the work is canonical, adapted, exploratory, technical, or
+   hypothetical.
+3. Confirm the actual configuration, output, runtime integrity, and provenance.
 4. Do not assume that a Result belongs to a Cloud World.
 5. Do not assume that an experiment is a supported Recipe or product default.
 
-### Understand current implementation
+### Understand Current Implementation
 
-Use current source code, tests, runtime contracts, Current State, Current Architecture, and merged PR history together. Do not rely on one old product specification or roadmap.
+Use source code, tests, runtime contracts, [Current State](current/CURRENT_STATE.md),
+[Current Architecture](current/CURRENT_ARCHITECTURE.md), and merged pull-request
+history together.
 
-## 10. Current implementation sequence
+Do not rely on one old product specification, roadmap, or research page.
 
-The controlling sequence is maintained in [Current Product Sequence](product/CURRENT_PRODUCT_SEQUENCE.md).
+## Program Note
 
-The presentation-quality and third-World foundation is:
+The documentation tree has not been comprehensively reorganized. Remaining
+moves, rewrites, archives, and implementation work require bounded approved
+issues.
 
-```text
-#420 — Trade Cumulus and Mountain Waves presentation runs — complete
-#423 — Supercells World and Explore — complete
-#421 — high-resolution Supercell presentation run — final adoption review
-```
-
-After #421 merges, the immediate bounded follow-ups are:
-
-```text
-#429 — Supercells slice-position and 3-D camera navigation
-→ #428 — shared Context and Science | Notes | Details information architecture
-```
-
-Issue #428 may establish durable per-Simulation Notes as the first bounded durable-content contract. It must not also implement complete Explore-state persistence, resume, Saved Views, Saved Comparisons, or a generic annotation framework.
-
-The next program should then establish:
-
-```text
-versioned World-aware Explore state
-→ last-state resume
-→ Saved Views
-→ ordinary World-aware Compare
-→ Saved Comparisons
-→ fresh three-World variation review
-```
-
-Later work should reconcile Activity and History, Result-to-Simulation promotion, retained-asset protection, storage and dependency-aware deletion, repair, state migration, performance, and personal acceptance.
-
-Issues #389, #390, and #391 remain useful prior plans but are not current assignment authority until PM updates or replaces them for the three-World application.
-
-Squall Line issue #414 remains blocked. Completion of the Supercell program does not automatically activate a fourth World.
-
-## Program note
-
-Completed or approved work includes:
-
-- operational-documentation recovery;
-- semantic architecture and contract classification;
-- canonical BOMEX and Trade Cumulus evidence;
-- Trade Cumulus World, Updraft Lens, fixed scale, featured Comparison, and presentation runs;
-- Mountain Waves benchmark, visualization, World, Explore, variation, and presentation runs;
-- Supercell benchmark selection, exact reproduction, examination validation, World, Explore, and presentation run pending final adoption corrections;
-- approved MVP authority and World-scoped foundation.
-
-Remaining repository moves, rewrites, archives, and implementation work must occur through bounded approved issues.
-
-No bulk documentation or product rewrite is authorized by this status document.
+This status document records authority and current disposition. It does not
+authorize bulk documentation changes or redefine product scope.
