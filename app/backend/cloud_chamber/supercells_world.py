@@ -8,8 +8,9 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from cloud_chamber.settings import CloudChamberSettings
 from cloud_chamber.storm_examination import (
-    PRESERVED_CASE_ID,
-    PRESERVED_RUN_ID,
+    DEFAULT_PRESENTATION_TIME_INDEX,
+    PRESENTATION_CASE_ID,
+    PRESENTATION_RUN_ID,
     StormExaminationError,
     storm_examination_inventory,
 )
@@ -36,8 +37,8 @@ class SupercellSimulationRecord(BaseModel):
     display_name: Literal["Quarter-Circle Supercell"] = REFERENCE_DISPLAY_NAME
     role: Literal["reference"] = "reference"
     world_id: Literal["supercells"] = WORLD_ID
-    run_id: str = PRESERVED_RUN_ID
-    case_id: str = PRESERVED_CASE_ID
+    run_id: str = PRESENTATION_RUN_ID
+    case_id: str = PRESENTATION_CASE_ID
     technical_state: TechnicalState
     technical_state_message: str
     explore_available: bool
@@ -45,6 +46,7 @@ class SupercellSimulationRecord(BaseModel):
     model_start_seconds: float | None
     model_end_seconds: float | None
     history_cadence_seconds: float | None
+    default_explore_time_index: int = DEFAULT_PRESENTATION_TIME_INDEX
     lineage_state: Literal["known"] = "known"
 
 
@@ -145,7 +147,8 @@ def supercells_world_detail(settings: CloudChamberSettings) -> SupercellsWorldDe
         simulations=[simulation],
         capabilities=SupercellsCapabilities(reference_explore=True),
         caveats=[
-            "This is an idealized stock CM1 quarter-circle benchmark, not an observed storm.",
+            "This is an idealized presentation simulation derived from the accepted stock "
+            "CM1 quarter-circle benchmark, not an observed storm.",
             "Horizontal coordinates and winds use the translating model frame.",
         ],
     )

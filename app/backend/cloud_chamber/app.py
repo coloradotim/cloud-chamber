@@ -115,12 +115,13 @@ from cloud_chamber.sounding_candidates import (
     update_saved_candidate,
 )
 from cloud_chamber.storm_examination import (
-    LensId as StormExaminationLensId,
-)
-from cloud_chamber.storm_examination import (
+    DEFAULT_PRESENTATION_TIME_INDEX,
     StormExaminationError,
     preserved_storm_examination_frame,
     supercells_explore_frame,
+)
+from cloud_chamber.storm_examination import (
+    LensId as StormExaminationLensId,
 )
 from cloud_chamber.storm_examination import (
     ViewportId as StormExaminationViewportId,
@@ -928,7 +929,7 @@ def get_mountain_wave_terrain_frame(
 def get_supercells_simulation_frame(
     simulation_id: str,
     lens: StormExaminationLensId = "rotating_updraft",
-    time_index: int = 5,
+    time_index: int = DEFAULT_PRESENTATION_TIME_INDEX,
     viewport: StormExaminationViewportId = "storm",
     x_index: int | None = None,
     y_index: int | None = None,

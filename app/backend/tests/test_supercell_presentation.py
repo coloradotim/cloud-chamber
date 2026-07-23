@@ -24,7 +24,13 @@ from cloud_chamber.run_manifest import (
     write_run_manifest,
 )
 from cloud_chamber.settings import CloudChamberSettings
-from cloud_chamber.supercell_benchmark import CM1Provenance
+from cloud_chamber.supercell_benchmark import (
+    CASE_ID as SOURCE_CASE_ID,
+)
+from cloud_chamber.supercell_benchmark import (
+    CM1Provenance,
+    sha256_file,
+)
 from cloud_chamber.supercell_presentation import (
     CHARACTERIZATION_SPEC,
     MINIMUM_POST_RUN_FREE_BYTES,
@@ -94,7 +100,7 @@ def _write_accepted_source(settings: CloudChamberSettings) -> None:
     manifest = RunManifest(
         run_id=supercell_presentation.SOURCE_RUN_ID,
         scenario=ScenarioReference(
-            id=supercell_presentation.SOURCE_CASE_ID,
+            id=SOURCE_CASE_ID,
             schema_version="supercell_gate_b_v1",
         ),
         controls={},
@@ -121,7 +127,7 @@ def _write_accepted_source(settings: CloudChamberSettings) -> None:
         json.dumps(
             {
                 "run_id": supercell_presentation.SOURCE_RUN_ID,
-                "case_id": supercell_presentation.SOURCE_CASE_ID,
+                "case_id": SOURCE_CASE_ID,
                 "final_disposition": "advance_to_storm_examination_validation",
                 "manual_structural_review": {
                     "judgment": "supports_coherent_persistent_rotating_supercell"
@@ -247,7 +253,7 @@ def test_completed_validation_rejects_non_finite_required_field(
     manifest_path = package_dir / "run_manifest.json"
     namelist_path = package_dir / "namelist.input"
     namelist_path.write_text(" &param0\n /\n")
-    generated_hash = supercell_presentation.sha256_file(namelist_path)
+    generated_hash = sha256_file(namelist_path)
     manifest = RunManifest(
         run_id=spec.run_id,
         scenario=ScenarioReference(id=spec.case_id, schema_version="test"),

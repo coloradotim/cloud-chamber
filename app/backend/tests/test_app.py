@@ -232,6 +232,40 @@ def test_storm_examination_research_api_rejects_unknown_lens() -> None:
     assert response.status_code == 422
 
 
+def test_supercells_product_api_defaults_to_presentation_mature_frame(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[dict[str, object]] = []
+
+    def frame(_settings: object, **kwargs: object) -> SimpleNamespace:
+        calls.append(kwargs)
+        return SimpleNamespace(
+            model_dump=lambda **_options: {
+                "run_id": "quarter-circle-supercell-presentation-v1-20260723",
+                "time_index": kwargs["time_index"],
+            }
+        )
+
+    monkeypatch.setattr("cloud_chamber.app.supercells_explore_frame", frame)
+
+    response = TestClient(app).get(
+        "/api/worlds/supercells/simulations/supercells_quarter_circle_reference/frame"
+    )
+
+    assert response.status_code == 200
+    assert response.json()["time_index"] == 37
+    assert calls == [
+        {
+            "lens": "rotating_updraft",
+            "time_index": 37,
+            "viewport": "storm",
+            "x_index": None,
+            "y_index": None,
+            "z_index": None,
+        }
+    ]
+
+
 @pytest.mark.parametrize(
     ("path", "attribute"),
     [
