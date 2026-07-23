@@ -23,7 +23,7 @@ def test_world_exposes_stable_identity_and_data_driven_timeline(
     monkeypatch.setattr(
         "cloud_chamber.supercells_world.storm_examination_inventory",
         lambda _settings: tuple(
-            (tmp_path / f"cm1out_{index + 1:06d}.nc", float(index * 900)) for index in range(9)
+            (tmp_path / f"cm1out_{index + 1:06d}.nc", float(index * 120)) for index in range(91)
         ),
     )
 
@@ -35,10 +35,13 @@ def test_world_exposes_stable_identity_and_data_driven_timeline(
     simulation = detail.reference_simulation
     assert simulation.simulation_id == "supercells_quarter_circle_reference"
     assert simulation.display_name == "Quarter-Circle Supercell"
+    assert simulation.run_id == "quarter-circle-supercell-presentation-v1-20260723"
+    assert simulation.case_id == "cm1_r21_1_quarter_circle_supercell_presentation_v1"
     assert simulation.explore_available is True
-    assert simulation.saved_output_count == 9
-    assert simulation.model_end_seconds == 7_200
-    assert simulation.history_cadence_seconds == 900
+    assert simulation.saved_output_count == 91
+    assert simulation.model_end_seconds == 10_800
+    assert simulation.history_cadence_seconds == 120
+    assert simulation.default_explore_time_index == 37
     assert detail.capabilities.lab is False
     assert detail.capabilities.compare is False
     assert detail.summary().simulation_count == 1

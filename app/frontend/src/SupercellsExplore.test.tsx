@@ -49,15 +49,16 @@ const simulation: SupercellSimulation = {
   display_name: "Quarter-Circle Supercell",
   role: "reference",
   world_id: "supercells",
-  run_id: "quarter-circle-supercell-official-20260722T142521Z",
-  case_id: "cm1_r21_1_quarter_circle_supercell_official_v0",
+  run_id: "quarter-circle-supercell-presentation-v1-20260723",
+  case_id: "cm1_r21_1_quarter_circle_supercell_presentation_v1",
   technical_state: "available",
   technical_state_message: "Available",
   explore_available: true,
-  saved_output_count: 9,
+  saved_output_count: 91,
   model_start_seconds: 0,
-  model_end_seconds: 7_200,
-  history_cadence_seconds: 900,
+  model_end_seconds: 10_800,
+  history_cadence_seconds: 120,
+  default_explore_time_index: 37,
   lineage_state: "known",
 };
 
@@ -225,8 +226,8 @@ function frameFor(url: string): StormExaminationFrame {
   const search = new URL(url, "http://localhost").searchParams;
   const lens = (search.get("lens") ?? "rotating_updraft") as LensId;
   const viewport = search.get("viewport") === "full" ? "full" : "storm";
-  const timeIndex = Number(search.get("time_index") ?? 5);
-  const times = [0, 900, 1_800, 2_700, 3_600, 4_500, 5_400, 6_300, 7_200];
+  const timeIndex = Number(search.get("time_index") ?? 37);
+  const times = Array.from({ length: 91 }, (_value, index) => index * 120);
   const xIndex = Number(search.get("x_index") ?? 1);
   const yIndex = Number(search.get("y_index") ?? 1);
   const zIndex = Number(search.get("z_index") ?? 1);
@@ -263,11 +264,11 @@ function frameFor(url: string): StormExaminationFrame {
     time_index: timeIndex,
     time_seconds: times[timeIndex],
     times_seconds: times,
-    mature_checkpoint_indices: [3, 4, 5, 6, 7, 8],
+    mature_checkpoint_indices: [22, 30, 37, 45, 52, 60],
     timeline_checkpoints: [
       {
-        time_seconds: 4_500,
-        label: "75 min",
+        time_seconds: 4_440,
+        label: "74 min",
         phase: "Organized mature storm",
         phase_kind: "visible_checkpoint",
       },
@@ -394,7 +395,7 @@ function frameFor(url: string): StormExaminationFrame {
       point_budget: 20_000,
       source_history_file: `cm1out_${String(timeIndex + 1).padStart(6, "0")}.nc`,
     },
-    caveats: ["Saved histories are 15 minutes apart."],
+    caveats: ["Saved histories are 2 minutes apart."],
     provenance: { source_history_file: `cm1out_${String(timeIndex + 1).padStart(6, "0")}.nc` },
     extraction_milliseconds: 120,
   };
@@ -466,11 +467,11 @@ describe("SupercellsExplore", () => {
 
     expect(await screen.findByRole("heading", { name: "Rotating Updraft" })).toBeVisible();
     expect(fetch).toHaveBeenCalledWith(
-      expect.stringContaining("lens=rotating_updraft&viewport=storm&time_index=5"),
+      expect.stringContaining("lens=rotating_updraft&viewport=storm&time_index=37"),
       expect.anything(),
     );
-    expect(screen.getByLabelText("Saved output time")).toHaveAttribute("max", "8");
-    expect(screen.getByText("frame 6 of 9 · Organized mature storm")).toBeVisible();
+    expect(screen.getByLabelText("Saved output time")).toHaveAttribute("max", "90");
+    expect(screen.getByText("frame 38 of 91 · Organized mature storm")).toBeVisible();
     expect(screen.getByRole("button", { name: "Rotating Updraft" })).toHaveAttribute(
       "aria-pressed",
       "true",
@@ -485,7 +486,7 @@ describe("SupercellsExplore", () => {
     fireEvent.click(screen.getByRole("button", { name: "Cloud and Precipitation" }));
     await waitFor(() =>
       expect(fetch).toHaveBeenCalledWith(
-        expect.stringContaining("lens=cloud_precipitation&viewport=storm&time_index=5"),
+        expect.stringContaining("lens=cloud_precipitation&viewport=storm&time_index=37"),
         expect.anything(),
       ),
     );
@@ -536,7 +537,7 @@ describe("SupercellsExplore", () => {
     fireEvent.click(screen.getByRole("button", { name: "Full domain" }));
     await waitFor(() =>
       expect(fetch).toHaveBeenCalledWith(
-        expect.stringContaining("lens=cloud_precipitation&viewport=full&time_index=5"),
+        expect.stringContaining("lens=cloud_precipitation&viewport=full&time_index=37"),
         expect.anything(),
       ),
     );
@@ -557,8 +558,8 @@ describe("SupercellsExplore", () => {
     render(<SupercellsExplore simulation={simulation} onBack={vi.fn()} />);
     await screen.findByRole("heading", { name: "Rotating Updraft" });
 
-    fireEvent.change(screen.getByLabelText("Saved output time"), { target: { value: "8" } });
-    expect(await screen.findByText("120 min · 7,200 s")).toBeVisible();
+    fireEvent.change(screen.getByLabelText("Saved output time"), { target: { value: "90" } });
+    expect(await screen.findByText("180 min · 10,800 s")).toBeVisible();
 
     fireEvent.click(screen.getByRole("button", { name: "Maximize scene" }));
     expect(screen.getByLabelText("Supercells integrated Explore workspace")).toHaveClass(
@@ -581,7 +582,7 @@ describe("SupercellsExplore", () => {
       "aria-pressed",
       "true",
     );
-    expect(screen.getByLabelText("Saved output time")).toHaveValue("8");
+    expect(screen.getByLabelText("Saved output time")).toHaveValue("90");
   });
 
   it("offers the shared Explain, Science, Notes, and Details inspector grammar", async () => {

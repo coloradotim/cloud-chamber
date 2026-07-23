@@ -1,16 +1,23 @@
 import json
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 import pytest
 import xarray as xr
 
+from cloud_chamber import storm_examination
 from cloud_chamber.settings import CloudChamberSettings
 from cloud_chamber.storm_examination import (
+    PRESENTATION_CASE_ID,
+    PRESENTATION_EVIDENCE_FILENAME,
+    PRESENTATION_RUN_ID,
+    PRESENTATION_TIMES_SECONDS,
     PRESERVED_CASE_ID,
     PRESERVED_RUN_ID,
     StormExaminationError,
     preserved_storm_examination_frame,
+    storm_examination_inventory,
     supercells_explore_frame,
 )
 
@@ -25,20 +32,35 @@ def _settings(runtime_home: Path) -> CloudChamberSettings:
     )
 
 
-def _write_retained_fixture(runtime_home: Path) -> Path:
-    run_dir = runtime_home / "runs" / PRESERVED_RUN_ID
+def _write_retained_fixture(
+    runtime_home: Path,
+    *,
+    presentation: bool = False,
+) -> Path:
+    run_id = PRESENTATION_RUN_ID if presentation else PRESERVED_RUN_ID
+    case_id = PRESENTATION_CASE_ID if presentation else PRESERVED_CASE_ID
+    times = PRESENTATION_TIMES_SECONDS if presentation else tuple(range(0, 7_201, 900))
+    implementation_commit = "presentation-test-commit"
+    run_dir = runtime_home / "runs" / run_id
     run_dir.mkdir(parents=True)
     (run_dir / "run_manifest.json").write_text(
-        json.dumps({"run_id": PRESERVED_RUN_ID, "lifecycle_state": "completed"})
+        json.dumps({"run_id": run_id, "lifecycle_state": "completed"})
     )
     (run_dir / "case_manifest.json").write_text(
-        json.dumps({"run_id": PRESERVED_RUN_ID, "case_id": PRESERVED_CASE_ID})
+        json.dumps(
+            {
+                "run_id": run_id,
+                "case_id": case_id,
+                "implementation_commit": implementation_commit,
+            }
+        )
     )
     x = np.asarray([-60.0, -30.0, 0.0, 30.0, 60.0], dtype=np.float32)
     y = np.asarray([-60.0, -30.0, 0.0, 30.0, 60.0], dtype=np.float32)
     z = np.asarray([0.25, 1.25, 3.25, 10.25, 15.25], dtype=np.float32)
     shape = (1, len(z), len(y), len(x))
-    for number, time_seconds in enumerate(range(0, 7_201, 900), start=1):
+    history_inventory = []
+    for number, time_seconds in enumerate(times, start=1):
         w = np.zeros(shape, dtype=np.float32)
         w[0, 3, 2, 2] = 40 + number
         w[0, 1, 1, 1] = -6
@@ -89,7 +111,44 @@ def _write_retained_fixture(runtime_home: Path) -> Path:
                 "zh": ("zh", z, {"units": "km"}),
             },
         )
-        dataset.to_netcdf(run_dir / f"cm1out_{number:06d}.nc")
+        history_path = run_dir / f"cm1out_{number:06d}.nc"
+        dataset.to_netcdf(history_path)
+        history_inventory.append(
+            {
+                "filename": history_path.name,
+                "time_seconds": time_seconds,
+                "bytes": history_path.stat().st_size,
+                "sha256": "fixture-does-not-reverify-content-hash",
+            }
+        )
+    if presentation:
+        (run_dir / PRESENTATION_EVIDENCE_FILENAME).write_text(
+            json.dumps(
+                {
+                    "evidence_version": "supercell_presentation_run_evidence_v1",
+                    "kind": "final",
+                    "run_id": run_id,
+                    "case_id": case_id,
+                    "source_run_id": PRESERVED_RUN_ID,
+                    "implementation_commit": implementation_commit,
+                    "grid": {
+                        "dx_m": 500.0,
+                        "dy_m": 500.0,
+                        "dz_m": 20_000.0 / 60.0,
+                        "nx": 240,
+                        "ny": 240,
+                        "nz": 60,
+                    },
+                    "duration_seconds": 10_800,
+                    "output_cadence_seconds": 120,
+                    "required_fields": sorted(storm_examination.PRESENTATION_REQUIRED_FIELDS),
+                    "normal_completion": True,
+                    "times_seconds": list(times),
+                    "history_count": len(times),
+                    "history_inventory": history_inventory,
+                }
+            )
+        )
     return run_dir
 
 
@@ -179,19 +238,20 @@ def test_low_level_view_combines_motion_rain_and_model_relative_flow(tmp_path: P
 
 
 def test_storm_viewport_is_fixed_across_saved_outputs(tmp_path: Path) -> None:
-    _write_retained_fixture(tmp_path)
+    _write_retained_fixture(tmp_path, presentation=True)
     settings = _settings(tmp_path)
 
     first = supercells_explore_frame(settings, time_index=0, viewport="storm")
-    last = supercells_explore_frame(settings, time_index=8, viewport="storm")
+    last = supercells_explore_frame(settings, time_index=90, viewport="storm")
 
     assert first.viewport_bounds_km == last.viewport_bounds_km
     assert first.viewport_bounds_km == {
-        "x_min": -35.5,
-        "x_max": 24.5,
-        "y_min": -33.5,
-        "y_max": 26.5,
+        "x_min": -40.0,
+        "x_max": 40.0,
+        "y_min": -45.0,
+        "y_max": 35.0,
     }
+    assert any("fixed inspection window" in caveat for caveat in first.caveats)
 
 
 def test_retained_identity_mismatch_fails_closed(tmp_path: Path) -> None:
@@ -202,10 +262,65 @@ def test_retained_identity_mismatch_fails_closed(tmp_path: Path) -> None:
         preserved_storm_examination_frame(_settings(tmp_path))
 
 
+def test_presentation_evidence_mismatch_fails_closed(tmp_path: Path) -> None:
+    run_dir = _write_retained_fixture(tmp_path, presentation=True)
+    evidence_path = run_dir / PRESENTATION_EVIDENCE_FILENAME
+    evidence = json.loads(evidence_path.read_text())
+    evidence["history_count"] = 90
+    evidence_path.write_text(json.dumps(evidence))
+
+    with pytest.raises(StormExaminationError, match="validation evidence is not accepted"):
+        storm_examination_inventory(_settings(tmp_path))
+
+
+def test_presentation_inventory_uses_promotion_evidence_then_reads_selected_history(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _write_retained_fixture(tmp_path, presentation=True)
+    original_open_dataset = xr.open_dataset
+    opened: list[str] = []
+
+    def counted_open_dataset(filename_or_obj: str | Path, **kwargs: Any) -> xr.Dataset:
+        opened.append(Path(filename_or_obj).name)
+        return original_open_dataset(filename_or_obj, **kwargs)
+
+    monkeypatch.setattr(
+        "cloud_chamber.storm_examination.xr.open_dataset",
+        counted_open_dataset,
+    )
+    inventory = storm_examination_inventory(_settings(tmp_path))
+
+    assert len(inventory) == 91
+    assert opened == []
+
+    supercells_explore_frame(
+        _settings(tmp_path),
+        lens="rotating_updraft",
+        time_index=37,
+        viewport="storm",
+    )
+
+    assert opened == ["cm1out_000038.nc"]
+
+
+def test_presentation_inventory_cache_invalidates_when_history_is_removed(
+    tmp_path: Path,
+) -> None:
+    run_dir = _write_retained_fixture(tmp_path, presentation=True)
+    settings = _settings(tmp_path)
+
+    assert len(storm_examination_inventory(settings)) == 91
+    (run_dir / "cm1out_000038.nc").unlink()
+
+    with pytest.raises(StormExaminationError, match="presentation output is unavailable"):
+        storm_examination_inventory(settings)
+
+
 def test_product_frame_adds_bounded_volume_layers_without_changing_science_path(
     tmp_path: Path,
 ) -> None:
-    _write_retained_fixture(tmp_path)
+    _write_retained_fixture(tmp_path, presentation=True)
 
     frame = supercells_explore_frame(
         _settings(tmp_path), lens="rotating_updraft", time_index=5, viewport="storm"
@@ -215,6 +330,10 @@ def test_product_frame_adds_bounded_volume_layers_without_changing_science_path(
     assert frame.authority_state == "supercells_product_world"
     assert frame.world_id == "supercells"
     assert frame.simulation_id == "supercells_quarter_circle_reference"
+    assert frame.run_id == PRESENTATION_RUN_ID
+    assert frame.case_id == PRESENTATION_CASE_ID
+    assert len(frame.times_seconds) == 91
+    assert frame.times_seconds[-1] == 10_800
     assert frame.scene is not None
     layers = {layer.key: layer for layer in frame.scene.layers}
     assert layers["storm_cloud_body"].threshold_label.endswith("0.05 g/kg")
@@ -226,29 +345,40 @@ def test_product_frame_adds_bounded_volume_layers_without_changing_science_path(
     assert layers["cyclonic_rotation"].threshold_label.endswith("0.01 s^-1 in rising air")
     assert layers["updraft_helicity"].default_visible is True
     assert "300 m^2/s^2" in layers["updraft_helicity"].threshold_label
+    assert layers["updraft_helicity"].scale is not None
+    assert layers["updraft_helicity"].scale.scale_id == "supercell_updraft_helicity_v2"
+    assert layers["updraft_helicity"].scale.minimum == 0
+    assert layers["updraft_helicity"].scale.maximum == 2_000
     assert layers["reflectivity"].default_visible is False
+    assert layers["reflectivity"].scale is not None
+    assert layers["reflectivity"].scale.scale_id == "supercell_reflectivity_v2"
+    assert layers["reflectivity"].scale.maximum == 75
     assert all(layer.returned_count <= layer.source_count for layer in layers.values())
 
 
 def test_product_hydrometeor_scene_keeps_exact_large_ice_label(tmp_path: Path) -> None:
-    _write_retained_fixture(tmp_path)
+    _write_retained_fixture(tmp_path, presentation=True)
 
     frame = supercells_explore_frame(
         _settings(tmp_path), lens="cloud_precipitation", time_index=5, viewport="full"
     )
 
     assert frame.scene is not None
+    assert frame.plan.x_indices == [0, 2, 4]
+    assert frame.plan.y_indices == [0, 2, 4]
+    assert frame.provenance["full_domain_level_of_detail"] == "every_other_native_x_y_cell"
     category_layer = next(
         layer for layer in frame.scene.layers if layer.key == "hydrometeor_categories"
     )
     assert category_layer.default_visible is True
     assert category_layer.categories[-1].label == "Hail-treated large ice"
     assert category_layer.scale is not None
-    assert category_layer.scale.scale_id == "supercell_total_condensate_v1"
+    assert category_layer.scale.scale_id == "supercell_total_condensate_v2"
+    assert category_layer.scale.maximum == 20
 
 
 def test_product_low_level_scene_identifies_model_relative_flow(tmp_path: Path) -> None:
-    _write_retained_fixture(tmp_path)
+    _write_retained_fixture(tmp_path, presentation=True)
 
     frame = supercells_explore_frame(
         _settings(tmp_path), lens="low_level_interactions", time_index=5, viewport="storm"
@@ -261,8 +391,12 @@ def test_product_low_level_scene_identifies_model_relative_flow(tmp_path: Path) 
     assert frame.scene.coordinate_sizes["z"] == 3
     layers = {layer.key: layer for layer in frame.scene.layers}
     precipitation = layers["precipitating_condensate"]
+    accumulated_rain = layers["accumulated_surface_rain"]
     assert precipitation.scale is not None
     assert precipitation.scale.scale_id == "supercell_low_level_precipitating_condensate_v1"
+    assert accumulated_rain.scale is not None
+    assert accumulated_rain.scale.scale_id == "supercell_accumulated_rain_v2"
+    assert accumulated_rain.scale.maximum == 120
     assert "through 3.25 km" in precipitation.threshold_label
     assert max(point[2] for point in precipitation.points) <= 3.25
     assert max(point[2] for point in layers["reflectivity"].points) <= 5.25

@@ -58,7 +58,7 @@ export function SupercellsExplore({
   onBack: () => void;
 }) {
   const [lens, setLens] = useState<LensId>("rotating_updraft");
-  const [timeIndex, setTimeIndex] = useState(5);
+  const [timeIndex, setTimeIndex] = useState(simulation.default_explore_time_index);
   const [frame, setFrame] = useState<StormExaminationFrame | null>(null);
   const [presentations, setPresentations] = useState<Record<LensId, LensPresentation>>(
     lensPresentationDefaults,
@@ -833,7 +833,9 @@ function SupercellScience({
   const point = frame.selected_point;
   return (
     <section className="supercells-context-panel">
-      <p className="eyebrow">{selected ? "Selected point" : "Strongest-updraft reference"}</p>
+      <p className="eyebrow">
+        {selected ? "Selected point" : "Strongest-updraft column at slice level"}
+      </p>
       <h3>
         x {point.x_km.toFixed(1)}, y {point.y_km.toFixed(1)}, z {point.z_km.toFixed(2)} km
       </h3>
@@ -851,7 +853,7 @@ function SupercellScience({
           />
         ))}
         <Metric
-          label="Distance to strongest updraft"
+          label="Horizontal distance to strongest-updraft column"
           value={`${point.distance_to_primary_updraft_km.toFixed(1)} km`}
         />
       </dl>
@@ -1219,7 +1221,7 @@ async function prefetchAdjacentFrames(
   lens: LensId,
   viewport: ViewportId,
 ) {
-  const candidates = [frame.time_index - 1, frame.time_index + 1].filter(
+  const candidates = [frame.time_index + 1, frame.time_index - 1].filter(
     (index) => index >= 0 && index < frame.times_seconds.length,
   );
   for (const index of candidates) {

@@ -14,6 +14,7 @@ export type SupercellSimulation = {
   model_start_seconds: number | null;
   model_end_seconds: number | null;
   history_cadence_seconds: number | null;
+  default_explore_time_index: number;
   lineage_state: "known";
 };
 
@@ -234,7 +235,8 @@ function validateSupercellsWorld(payload: unknown): SupercellsWorldDetail {
   if (
     !isRecord(reference) ||
     reference.simulation_id !== "supercells_quarter_circle_reference" ||
-    reference.display_name !== "Quarter-Circle Supercell"
+    reference.display_name !== "Quarter-Circle Supercell" ||
+    typeof reference.default_explore_time_index !== "number"
   ) {
     throw new Error("Supercells reference Simulation identity is invalid.");
   }

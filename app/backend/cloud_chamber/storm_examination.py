@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import time
+from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
 from typing import Any, Literal
@@ -18,16 +19,84 @@ PRESERVED_RUN_ID = "quarter-circle-supercell-official-20260722T142521Z"
 PRESERVED_CASE_ID = "cm1_r21_1_quarter_circle_supercell_official_v0"
 EXPECTED_TIMES_SECONDS = tuple(range(0, 7_201, 900))
 HISTORY_FILENAMES = tuple(f"cm1out_{index:06d}.nc" for index in range(1, 10))
+PRESENTATION_RUN_ID = "quarter-circle-supercell-presentation-v1-20260723"
+PRESENTATION_CASE_ID = "cm1_r21_1_quarter_circle_supercell_presentation_v1"
+PRESENTATION_TIMES_SECONDS = tuple(range(0, 10_801, 120))
+PRESENTATION_HISTORY_FILENAMES = tuple(f"cm1out_{index:06d}.nc" for index in range(1, 92))
+PRESENTATION_EVIDENCE_FILENAME = "supercell_presentation_evidence.json"
+PRESENTATION_DEFAULT_TIME_SECONDS = 4_440
+DEFAULT_PRESENTATION_TIME_INDEX = PRESENTATION_TIMES_SECONDS.index(
+    PRESENTATION_DEFAULT_TIME_SECONDS
+)
 HYDROMETEORS = ("qc", "qr", "qi", "qs", "qg")
+PRESENTATION_REQUIRED_FIELDS = {
+    "th",
+    "prs",
+    "qv",
+    "qc",
+    "qr",
+    "qi",
+    "qs",
+    "qg",
+    "nci",
+    "ncs",
+    "ncr",
+    "ncg",
+    "dbz",
+    "uinterp",
+    "vinterp",
+    "winterp",
+    "xvort",
+    "yvort",
+    "zvort",
+    "rain",
+    "prate",
+    "uh",
+    "cref",
+}
 LensId = Literal["rotating_updraft", "cloud_precipitation", "low_level_interactions"]
 ViewportId = Literal["storm", "full"]
 FramePurpose = Literal["research", "product"]
 STORM_VIEW_BOUNDS_KM = {
+    "x_min": -40.0,
+    "x_max": 40.0,
+    "y_min": -45.0,
+    "y_max": 35.0,
+}
+GATE_C_STORM_VIEW_BOUNDS_KM = {
     "x_min": -35.5,
     "x_max": 24.5,
     "y_min": -33.5,
     "y_max": 26.5,
 }
+
+
+@dataclass(frozen=True)
+class _RunContract:
+    run_id: str
+    case_id: str
+    expected_times_seconds: tuple[int, ...]
+    history_filenames: tuple[str, ...]
+    evidence_filename: str | None
+    unavailable_label: str
+
+
+GATE_C_RUN = _RunContract(
+    run_id=PRESERVED_RUN_ID,
+    case_id=PRESERVED_CASE_ID,
+    expected_times_seconds=EXPECTED_TIMES_SECONDS,
+    history_filenames=HISTORY_FILENAMES,
+    evidence_filename=None,
+    unavailable_label="accepted Gate B retained output",
+)
+PRESENTATION_RUN = _RunContract(
+    run_id=PRESENTATION_RUN_ID,
+    case_id=PRESENTATION_CASE_ID,
+    expected_times_seconds=PRESENTATION_TIMES_SECONDS,
+    history_filenames=PRESENTATION_HISTORY_FILENAMES,
+    evidence_filename=PRESENTATION_EVIDENCE_FILENAME,
+    unavailable_label="accepted presentation output",
+)
 
 W_COLORS = (
     "#4b0082",
@@ -260,7 +329,7 @@ def supercells_explore_frame(
     settings: CloudChamberSettings,
     *,
     lens: LensId = "rotating_updraft",
-    time_index: int = 5,
+    time_index: int = DEFAULT_PRESENTATION_TIME_INDEX,
     viewport: ViewportId = "storm",
     x_index: int | None = None,
     y_index: int | None = None,
@@ -282,9 +351,9 @@ def supercells_explore_frame(
 def storm_examination_inventory(
     settings: CloudChamberSettings,
 ) -> tuple[tuple[Path, float], ...]:
-    """Return the cached, identity-validated retained history inventory."""
-    run_dir = settings.runtime_home.expanduser() / "runs" / PRESERVED_RUN_ID
-    return _validated_inventory(run_dir)
+    """Return the cached, identity-validated production history inventory."""
+    run_dir = settings.runtime_home.expanduser() / "runs" / PRESENTATION_RUN_ID
+    return _validated_inventory(run_dir, PRESENTATION_RUN)
 
 
 def _storm_frame(
@@ -300,8 +369,9 @@ def _storm_frame(
 ) -> StormExaminationFrame:
     """Extract coordinated, bounded views from one retained native history."""
     started = time.perf_counter()
-    run_dir = settings.runtime_home.expanduser() / "runs" / PRESERVED_RUN_ID
-    inventory = _validated_inventory(run_dir)
+    contract = PRESENTATION_RUN if purpose == "product" else GATE_C_RUN
+    run_dir = settings.runtime_home.expanduser() / "runs" / contract.run_id
+    inventory = _validated_inventory(run_dir, contract)
     checked_time_index = _checked_index(time_index, len(inventory), "time_index")
     history_path, time_seconds = inventory[checked_time_index]
 
@@ -328,10 +398,27 @@ def _storm_frame(
             )
         }
 
-    primary_index = tuple(
-        int(value)
-        for value in np.unravel_index(np.nanargmax(fields["winterp"]), fields["winterp"].shape)
-    )
+    bounds = _viewport_bounds(viewport, x_km, y_km, purpose)
+    native_x_indices = _coordinate_indices(x_km, bounds["x_min"], bounds["x_max"])
+    native_y_indices = _coordinate_indices(y_km, bounds["y_min"], bounds["y_max"])
+    if purpose == "product" and viewport == "storm":
+        focused_w = fields["winterp"][:, native_y_indices, :][:, :, native_x_indices]
+        focused_primary = np.unravel_index(np.nanargmax(focused_w), focused_w.shape)
+        primary_index = (
+            int(focused_primary[0]),
+            int(native_y_indices[focused_primary[1]]),
+            int(native_x_indices[focused_primary[2]]),
+        )
+    else:
+        full_primary = np.unravel_index(
+            np.nanargmax(fields["winterp"]),
+            fields["winterp"].shape,
+        )
+        primary_index = (
+            int(full_primary[0]),
+            int(full_primary[1]),
+            int(full_primary[2]),
+        )
     primary_z, primary_y, primary_x = primary_index
     default_level = _default_level_index(lens, z_km, primary_z)
     selected_x = _checked_index(x_index if x_index is not None else primary_x, len(x_km), "x_index")
@@ -349,9 +436,11 @@ def _storm_frame(
         z_km=float(z_km[primary_z]),
         w_m_s=float(fields["winterp"][primary_index]),
     )
-    bounds = _viewport_bounds(viewport, x_km, y_km)
-    x_indices = _coordinate_indices(x_km, bounds["x_min"], bounds["x_max"])
-    y_indices = _coordinate_indices(y_km, bounds["y_min"], bounds["y_max"])
+    x_indices = native_x_indices
+    y_indices = native_y_indices
+    if purpose == "product" and viewport == "full":
+        x_indices = x_indices[::2]
+        y_indices = y_indices[::2]
     plan = _plan_view(lens, fields, x_km, y_km, z_km, default_level, x_indices, y_indices)
     xz_section = _vertical_section(
         lens,
@@ -420,9 +509,13 @@ def _storm_frame(
         ),
         world_id="supercells" if purpose == "product" else None,
         simulation_id="supercells_quarter_circle_reference" if purpose == "product" else None,
-        run_id=PRESERVED_RUN_ID,
-        case_id=PRESERVED_CASE_ID,
-        simulation_label="Official CM1 r21.1 quarter-circle benchmark",
+        run_id=contract.run_id,
+        case_id=contract.case_id,
+        simulation_label=(
+            "Quarter-Circle Supercell presentation simulation"
+            if purpose == "product"
+            else "Official CM1 r21.1 quarter-circle benchmark"
+        ),
         lens_id=lens,
         lens_name=lens_name,
         lens_question=lens_question,
@@ -431,8 +524,8 @@ def _storm_frame(
         time_index=checked_time_index,
         time_seconds=time_seconds,
         times_seconds=[value for _path, value in inventory],
-        mature_checkpoint_indices=[3, 4, 5, 6, 7, 8],
-        timeline_checkpoints=_timeline_checkpoints(),
+        mature_checkpoint_indices=_mature_checkpoint_indices(inventory),
+        timeline_checkpoints=_timeline_checkpoints(inventory),
         viewport=viewport,
         viewport_bounds_km=bounds,
         primary_updraft=primary,
@@ -442,12 +535,25 @@ def _storm_frame(
         yz_section=yz_section,
         scene=scene,
         caveats=[
-            "Saved histories are 15 minutes apart; continuity between frames is inferred, "
-            "not observed continuously.",
+            (
+                "Saved histories are 2 minutes apart; continuity between frames remains "
+                "inferred, not observed continuously."
+                if purpose == "product"
+                else "Saved histories are 15 minutes apart; continuity between frames is "
+                "inferred, not observed continuously."
+            ),
             "Coordinates are in the translating model frame; ground-relative horizontal wind "
             "adds (12.5, 3.0) m/s.",
             "Secondary rotating and convective structures are present after 60 minutes; "
             "no split lineage is assigned.",
+            *(
+                [
+                    "Storm region is a fixed inspection window; use Full domain to inspect "
+                    "later outer-domain structures."
+                ]
+                if purpose == "product"
+                else []
+            ),
             "The 15-20 km Rayleigh layer overlaps upper storm structure; this view does not "
             "diagnose its causal effect.",
             "Low-level fields can show motion and precipitation relationships but do not by "
@@ -455,14 +561,28 @@ def _storm_frame(
         ],
         provenance={
             "source_history_file": history_path.name,
-            "source_kind": "retained_native_cm1_history",
+            "source_kind": (
+                "presentation_native_cm1_history"
+                if purpose == "product"
+                else "retained_native_cm1_history"
+            ),
             "browser_payload": (
                 "bounded 3-D layers, selected plan, and two native-grid vertical sections"
                 if purpose == "product"
                 else "selected plan and two native-grid vertical sections only"
             ),
             "interpolation": "none",
+            "full_domain_level_of_detail": (
+                "every_other_native_x_y_cell"
+                if purpose == "product" and viewport == "full"
+                else "all_native_x_y_cells_in_viewport"
+            ),
             "coordinate_frame": "translating_model_coordinates",
+            "primary_selection": (
+                "strongest_updraft_within_fixed_storm_view"
+                if purpose == "product" and viewport == "storm"
+                else "strongest_updraft_within_full_domain"
+            ),
             "product_boundary": (
                 "Supercells production Explore"
                 if purpose == "product"
@@ -473,23 +593,33 @@ def _storm_frame(
     )
 
 
-def _validated_inventory(run_dir: Path) -> tuple[tuple[Path, float], ...]:
-    fingerprint = _run_fingerprint(run_dir)
-    return _cached_inventory(str(run_dir), fingerprint)
+def _validated_inventory(
+    run_dir: Path,
+    contract: _RunContract,
+) -> tuple[tuple[Path, float], ...]:
+    fingerprint = _run_fingerprint(run_dir, contract)
+    return _cached_inventory(str(run_dir), fingerprint, contract)
 
 
-def _run_fingerprint(run_dir: Path) -> tuple[tuple[str, int, int], ...]:
+def _run_fingerprint(
+    run_dir: Path,
+    contract: _RunContract,
+) -> tuple[tuple[str, int, int], ...]:
     paths = [run_dir / "run_manifest.json", run_dir / "case_manifest.json"]
-    paths.extend(run_dir / name for name in HISTORY_FILENAMES)
+    paths.extend(run_dir / name for name in contract.history_filenames)
+    if contract.evidence_filename is not None:
+        paths.append(run_dir / contract.evidence_filename)
     try:
         return tuple((path.name, path.stat().st_size, path.stat().st_mtime_ns) for path in paths)
     except OSError as exc:
-        raise StormExaminationError("The accepted Gate B retained output is unavailable.") from exc
+        raise StormExaminationError(f"The {contract.unavailable_label} is unavailable.") from exc
 
 
 @lru_cache(maxsize=4)
 def _cached_inventory(
-    run_dir_text: str, _fingerprint: tuple[tuple[str, int, int], ...]
+    run_dir_text: str,
+    _fingerprint: tuple[tuple[str, int, int], ...],
+    contract: _RunContract,
 ) -> tuple[tuple[Path, float], ...]:
     run_dir = Path(run_dir_text)
     try:
@@ -499,23 +629,109 @@ def _cached_inventory(
         raise StormExaminationError(
             "The retained benchmark identity could not be verified."
         ) from exc
-    if manifest.get("run_id") != PRESERVED_RUN_ID or manifest.get("lifecycle_state") != "completed":
-        raise StormExaminationError("The retained benchmark is not the accepted completed run.")
-    if case_manifest.get("case_id") != PRESERVED_CASE_ID:
-        raise StormExaminationError("The retained benchmark case identity does not match Gate B.")
+    if manifest.get("run_id") != contract.run_id or manifest.get("lifecycle_state") != "completed":
+        raise StormExaminationError("The selected Simulation is not an accepted completed run.")
+    if case_manifest.get("case_id") != contract.case_id:
+        raise StormExaminationError("The selected Simulation case identity does not match.")
+    evidence_inventory: dict[str, tuple[int, int]] | None = None
+    if contract.evidence_filename is not None:
+        evidence_inventory = _presentation_evidence_inventory(
+            run_dir / contract.evidence_filename,
+            contract,
+            case_manifest,
+        )
 
     inventory: list[tuple[Path, float]] = []
-    for expected_time, filename in zip(EXPECTED_TIMES_SECONDS, HISTORY_FILENAMES, strict=True):
+    for expected_time, filename in zip(
+        contract.expected_times_seconds,
+        contract.history_filenames,
+        strict=True,
+    ):
         path = run_dir / filename
+        if evidence_inventory is not None:
+            expected_inventory_item = evidence_inventory.get(filename)
+            try:
+                actual_size = path.stat().st_size
+            except OSError as exc:
+                raise StormExaminationError(
+                    "A required presentation history is unavailable."
+                ) from exc
+            if expected_inventory_item is None or (
+                actual_size != expected_inventory_item[1]
+                or expected_inventory_item[0] != expected_time
+            ):
+                raise StormExaminationError(
+                    "The presentation history inventory changed after validation."
+                )
+            inventory.append((path, float(expected_time)))
+            continue
         try:
             with xr.open_dataset(path, decode_times=False) as dataset:
                 actual_time = float(np.asarray(dataset["time"].values).reshape(-1)[0])
         except (OSError, KeyError, ValueError) as exc:
             raise StormExaminationError("A required retained history is unreadable.") from exc
         if not np.isclose(actual_time, expected_time):
-            raise StormExaminationError("The retained history timeline does not match Gate B.")
+            raise StormExaminationError(
+                "The retained history timeline does not match its contract."
+            )
         inventory.append((path, actual_time))
     return tuple(inventory)
+
+
+def _presentation_evidence_inventory(
+    evidence_path: Path,
+    contract: _RunContract,
+    case_manifest: dict[str, Any],
+) -> dict[str, tuple[int, int]]:
+    try:
+        evidence = json.loads(evidence_path.read_text())
+    except (OSError, json.JSONDecodeError) as exc:
+        raise StormExaminationError("The presentation validation evidence is unreadable.") from exc
+    if (
+        evidence.get("evidence_version") != "supercell_presentation_run_evidence_v1"
+        or evidence.get("kind") != "final"
+        or evidence.get("run_id") != contract.run_id
+        or evidence.get("case_id") != contract.case_id
+        or evidence.get("source_run_id") != PRESERVED_RUN_ID
+        or evidence.get("implementation_commit") != case_manifest.get("implementation_commit")
+        or evidence.get("grid")
+        != {
+            "dx_m": 500.0,
+            "dy_m": 500.0,
+            "dz_m": 20_000.0 / 60.0,
+            "nx": 240,
+            "ny": 240,
+            "nz": 60,
+        }
+        or evidence.get("duration_seconds") != 10_800
+        or evidence.get("output_cadence_seconds") != 120
+        or set(evidence.get("required_fields", [])) != PRESENTATION_REQUIRED_FIELDS
+        or evidence.get("normal_completion") is not True
+        or evidence.get("times_seconds") != list(contract.expected_times_seconds)
+        or evidence.get("history_count") != len(contract.history_filenames)
+    ):
+        raise StormExaminationError("The presentation validation evidence is not accepted.")
+    items = evidence.get("history_inventory")
+    if not isinstance(items, list) or len(items) != len(contract.history_filenames):
+        raise StormExaminationError("The presentation history evidence is incomplete.")
+    inventory: dict[str, tuple[int, int]] = {}
+    for item in items:
+        if not isinstance(item, dict):
+            raise StormExaminationError("The presentation history evidence is invalid.")
+        filename = item.get("filename")
+        time_seconds = item.get("time_seconds")
+        size_bytes = item.get("bytes")
+        if (
+            not isinstance(filename, str)
+            or not isinstance(time_seconds, int)
+            or not isinstance(size_bytes, int)
+            or size_bytes <= 0
+        ):
+            raise StormExaminationError("The presentation history evidence is invalid.")
+        inventory[filename] = (time_seconds, size_bytes)
+    if set(inventory) != set(contract.history_filenames):
+        raise StormExaminationError("The presentation history evidence names changed.")
+    return inventory
 
 
 def _validate_selected_history(dataset: xr.Dataset, expected_time: float) -> None:
@@ -1407,7 +1623,7 @@ def _volume_scene(
             view_y,
             float(z_km[level_index]),
             level_index,
-            5 if viewport == "storm" else 10,
+            10 if viewport == "storm" else 5,
         )
 
     return StormVolumeScene(
@@ -1532,16 +1748,18 @@ def _viewport_bounds(
     viewport: ViewportId,
     x_km: np.ndarray[Any, np.dtype[np.float64]],
     y_km: np.ndarray[Any, np.dtype[np.float64]],
+    purpose: FramePurpose,
 ) -> dict[str, float]:
     x_min, x_max = float(np.min(x_km) - 0.5), float(np.max(x_km) + 0.5)
     y_min, y_max = float(np.min(y_km) - 0.5), float(np.max(y_km) + 0.5)
     if viewport == "full":
         return {"x_min": x_min, "x_max": x_max, "y_min": y_min, "y_max": y_max}
+    requested = STORM_VIEW_BOUNDS_KM if purpose == "product" else GATE_C_STORM_VIEW_BOUNDS_KM
     return {
-        "x_min": max(x_min, STORM_VIEW_BOUNDS_KM["x_min"]),
-        "x_max": min(x_max, STORM_VIEW_BOUNDS_KM["x_max"]),
-        "y_min": max(y_min, STORM_VIEW_BOUNDS_KM["y_min"]),
-        "y_max": min(y_max, STORM_VIEW_BOUNDS_KM["y_max"]),
+        "x_min": max(x_min, requested["x_min"]),
+        "x_max": min(x_max, requested["x_max"]),
+        "y_min": max(y_min, requested["y_min"]),
+        "y_max": min(y_max, requested["y_max"]),
     }
 
 
@@ -1667,44 +1885,54 @@ def _lens_identity(lens: LensId) -> tuple[str, str]:
     )
 
 
-def _timeline_checkpoints() -> list[TimelineCheckpoint]:
+def _timeline_checkpoints(
+    inventory: tuple[tuple[Path, float], ...],
+) -> list[TimelineCheckpoint]:
+    gate_c_checkpoints = (
+        (2_700, "Established deep rotating storm"),
+        (3_600, "Mature storm with secondary convection"),
+        (4_440, "Dominant core and growing secondary cells"),
+        (5_400, "Multiple active convective structures"),
+        (6_240, "Expanding storm field"),
+        (7_200, "Strong southern core in a broad storm field"),
+    )
+    presentation_extension = (
+        (8_400, "Persistent southern convection"),
+        (9_600, "Renewed intense rotation"),
+        (10_800, "Active structures across the full domain"),
+    )
+    requested = (
+        (*gate_c_checkpoints, *presentation_extension)
+        if inventory[-1][1] > 7_200
+        else gate_c_checkpoints
+    )
+    available = [int(round(value)) for _path, value in inventory]
+    checkpoints: list[TimelineCheckpoint] = []
+    used: set[int] = set()
+    for source_time, phase in requested:
+        selected = min(available, key=lambda value: abs(value - source_time))
+        if selected in used:
+            continue
+        used.add(selected)
+        checkpoints.append(
+            TimelineCheckpoint(
+                time_seconds=selected,
+                label=f"{selected // 60} min",
+                phase=phase,
+                phase_kind="visible_checkpoint",
+            )
+        )
+    return checkpoints
+
+
+def _mature_checkpoint_indices(
+    inventory: tuple[tuple[Path, float], ...],
+) -> list[int]:
+    checkpoint_times = {checkpoint.time_seconds for checkpoint in _timeline_checkpoints(inventory)}
     return [
-        TimelineCheckpoint(
-            time_seconds=2_700,
-            label="45 min",
-            phase="Established deep rotating storm",
-            phase_kind="visible_checkpoint",
-        ),
-        TimelineCheckpoint(
-            time_seconds=3_600,
-            label="60 min",
-            phase="Mature checkpoint",
-            phase_kind="visible_checkpoint",
-        ),
-        TimelineCheckpoint(
-            time_seconds=4_500,
-            label="75 min",
-            phase="Dominant primary with secondary structure",
-            phase_kind="visible_checkpoint",
-        ),
-        TimelineCheckpoint(
-            time_seconds=5_400,
-            label="90 min",
-            phase="Broader precipitation and cell multiplicity",
-            phase_kind="visible_checkpoint",
-        ),
-        TimelineCheckpoint(
-            time_seconds=6_300,
-            label="105 min",
-            phase="Mature checkpoint",
-            phase_kind="visible_checkpoint",
-        ),
-        TimelineCheckpoint(
-            time_seconds=7_200,
-            label="120 min",
-            phase="Persistent primary and expanded secondary convection",
-            phase_kind="visible_checkpoint",
-        ),
+        index
+        for index, (_path, value) in enumerate(inventory)
+        if int(round(value)) in checkpoint_times
     ]
 
 
@@ -1767,12 +1995,12 @@ def _w_scale(scale_id: str, maximum: float, breakpoints: list[float]) -> ScaleMe
 
 def _reflectivity_scale() -> ScaleMetadata:
     return ScaleMetadata(
-        scale_id="supercell_reflectivity_v1",
+        scale_id="supercell_reflectivity_v2",
         display_name="Reflectivity",
         units="dBZ",
         scale_type="fixed_continuous",
         minimum=-10,
-        maximum=70,
+        maximum=75,
         breakpoints=[20, 40, 60],
         colors=["#d8e5eb", "#8ac7b8", "#f1c453", "#d65332"],
     )
@@ -1780,12 +2008,12 @@ def _reflectivity_scale() -> ScaleMetadata:
 
 def _rain_scale() -> ScaleMetadata:
     return ScaleMetadata(
-        scale_id="supercell_accumulated_rain_v1",
+        scale_id="supercell_accumulated_rain_v2",
         display_name="Accumulated surface rain",
         units="mm",
         scale_type="fixed_continuous",
         minimum=0,
-        maximum=90,
+        maximum=120,
         breakpoints=[1, 10, 30, 60],
         colors=["#ffffff", "#c7e1ee", "#6daed1", "#236b9e", "#0b3557"],
     )
@@ -1793,12 +2021,12 @@ def _rain_scale() -> ScaleMetadata:
 
 def _condensate_scale() -> ScaleMetadata:
     return ScaleMetadata(
-        scale_id="supercell_total_condensate_v1",
+        scale_id="supercell_total_condensate_v2",
         display_name="Total condensate",
         units="g/kg",
         scale_type="fixed_continuous",
         minimum=0,
-        maximum=16,
+        maximum=20,
         breakpoints=[0.05, 0.5, 2, 8],
         colors=["#ffffff", "#d9eef2", "#86cbd7", "#3a91ae", "#15506f"],
     )
@@ -1832,12 +2060,12 @@ def _vorticity_scale() -> ScaleMetadata:
 
 def _uh_scale() -> ScaleMetadata:
     return ScaleMetadata(
-        scale_id="supercell_updraft_helicity_v1",
+        scale_id="supercell_updraft_helicity_v2",
         display_name="2-5 km AGL updraft helicity",
         units="m^2/s^2",
         scale_type="fixed_continuous",
-        minimum=-800,
-        maximum=800,
-        breakpoints=[100, 300, 600],
+        minimum=0,
+        maximum=2_000,
+        breakpoints=[300, 800, 1_400],
         colors=["#ffffff", "#f6b27d", "#d9583f", "#7f1d1d"],
     )
