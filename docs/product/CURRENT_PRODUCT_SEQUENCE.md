@@ -4,7 +4,7 @@
 
 ## Purpose and authority
 
-This document records the current implementation sequence and the product areas to address after the first three Cloud Worlds are established.
+This document records the current implementation sequence now that Cloud Chamber has established its first three Cloud Worlds.
 
 It is subordinate to:
 
