@@ -141,7 +141,7 @@ const frame: StormExaminationFrame = {
     distance_to_primary_updraft_km: 0,
   },
   plan: {
-    title: "Midlevel updraft and rotation",
+    title: "Updraft and rotation",
     subtitle: "Signed vertical velocity with rotation",
     x_indices: [0, 1],
     y_indices: [0, 1],
@@ -342,7 +342,7 @@ describe("StormExaminationResearch", () => {
     render(<StormExaminationResearch />);
     await screen.findByRole("heading", { name: "Rotating Updraft" });
 
-    fireEvent.click(screen.getByLabelText("Midlevel updraft and rotation plan view"), {
+    fireEvent.click(screen.getByLabelText("Updraft and rotation plan view"), {
       clientX: 250,
       clientY: 150,
       offsetX: 250,

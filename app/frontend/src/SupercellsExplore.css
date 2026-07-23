@@ -398,7 +398,7 @@
 
 .supercells-control-deck {
   display: grid;
-  grid-template-columns: auto auto minmax(0, 1fr);
+  grid-template-columns: auto auto minmax(20rem, 0.9fr) minmax(0, 1fr);
   gap: 0.7rem;
   align-items: center;
   min-width: 0;
@@ -438,6 +438,61 @@
 .supercells-overlay-controls {
   flex-wrap: wrap;
   justify-content: flex-end;
+}
+
+.supercells-control-deck .supercells-slice-position {
+  display: grid;
+  grid-template-columns: minmax(17rem, 1fr) auto;
+  gap: 0.42rem;
+}
+
+.supercells-slice-position p {
+  grid-column: 1 / -1;
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: 0.64rem;
+  line-height: 1.25;
+}
+
+.supercells-slice-position .native-slice-position-range {
+  display: grid;
+  grid-template-columns: auto minmax(7rem, 1fr) auto;
+  gap: 0.42rem;
+  align-items: center;
+  min-width: 0;
+  color: var(--color-text-primary);
+  font-weight: 750;
+}
+
+.supercells-slice-position .native-slice-position-range-compact {
+  grid-template-columns: minmax(7rem, 1fr) auto;
+}
+
+.supercells-slice-position .native-slice-position-range input {
+  width: 100%;
+  min-width: 0;
+}
+
+.supercells-slice-position .slice-position-label {
+  white-space: nowrap;
+}
+
+.supercells-slice-position .slice-move-buttons {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 0.2rem;
+  align-items: center;
+}
+
+.supercells-control-deck .native-slice-position-reset {
+  display: grid;
+  width: 1.9rem;
+  min-width: 1.9rem;
+  height: 1.9rem;
+  min-height: 1.9rem;
+  place-items: center;
+  padding: 0;
+  font-size: 1rem;
 }
 
 .supercells-overlay-controls label {
@@ -587,8 +642,7 @@
   grid-template-columns: minmax(0, 1fr);
 }
 
-.supercells-explore-focused-evidence
-  .supercells-workbench:not(.supercells-context-collapsed) {
+.supercells-explore-focused-evidence .supercells-workbench:not(.supercells-context-collapsed) {
   grid-template-columns: minmax(0, 1fr) minmax(18rem, 20rem);
 }
 
@@ -718,7 +772,8 @@
 
   .supercells-explore-shell {
     grid-template-rows: minmax(31rem, calc(100vh - 19rem)) auto auto;
-    padding-bottom: 8px;
+    gap: 4px;
+    padding-bottom: 0;
   }
 
   .supercells-workbench,
@@ -987,7 +1042,7 @@
   }
 
   .supercells-control-deck {
-    grid-template-columns: repeat(2, auto);
+    grid-template-columns: repeat(2, auto) minmax(17rem, 1fr);
   }
 
   .supercells-overlay-controls {

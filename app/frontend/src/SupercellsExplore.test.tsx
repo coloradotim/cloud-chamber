@@ -20,6 +20,9 @@ vi.mock("./True3DViewer", () => ({
     onSelectStormPoint,
     compactDisplayControls,
     cameraPreset,
+    cameraTransform,
+    onCameraTransformChange,
+    windOverlayLabel,
   }: {
     fieldLabel: string;
     activeSliceLabel: string;
@@ -28,11 +31,36 @@ vi.mock("./True3DViewer", () => ({
     onSelectStormPoint: (point: [number, number, number, number, number]) => void;
     compactDisplayControls: ReactNode;
     cameraPreset: string;
+    cameraTransform: {
+      position: [number, number, number];
+      target: [number, number, number];
+      up: [number, number, number];
+    } | null;
+    onCameraTransformChange: (transform: {
+      position: [number, number, number];
+      target: [number, number, number];
+      up: [number, number, number];
+    }) => void;
+    windOverlayLabel?: string;
   }) => (
     <section aria-label="Mock 3-D storm scene">
       <h2>{fieldLabel}</h2>
       <p>{activeSliceLabel}</p>
       <p>Camera: {cameraPreset}</p>
+      <p>Camera position: {cameraTransform?.position.join(",") ?? "default"}</p>
+      {windOverlayLabel && <p>{windOverlayLabel}</p>}
+      <button
+        type="button"
+        onClick={() =>
+          onCameraTransformChange({
+            position: [4, 5, 6],
+            target: [1, 2, 3],
+            up: [0, 1, 0],
+          })
+        }
+      >
+        Move mock camera
+      </button>
       <button type="button" onClick={() => onSelectStormPoint([9.1, 19.1, 3.1, 12, 0])}>
         Select 3-D point
       </button>
@@ -345,14 +373,14 @@ function frameFor(url: string): StormExaminationFrame {
       distance_to_primary_updraft_km: 0,
     },
     plan: {
-      title: lens === "cloud_precipitation" ? "Hydrometeor plan" : "Midlevel storm structure",
+      title: lens === "cloud_precipitation" ? "Hydrometeor plan" : "Updraft and rotation",
       subtitle: "Native-grid plan evidence",
       x_indices: [0, 1, 2],
       y_indices: [0, 1, 2],
       x_km: xCoordinates,
       y_km: yCoordinates,
-      level_index: 1,
-      level_km: 3,
+      level_index: zIndex,
+      level_km: zCoordinates[zIndex] ?? 3,
       selection_z_indices:
         lens === "cloud_precipitation"
           ? [
@@ -365,11 +393,11 @@ function frameFor(url: string): StormExaminationFrame {
       overlays: {
         vertical_vorticity: field("zvort", "Vertical vorticity"),
         updraft_helicity: field("uh", "Updraft helicity"),
-      vertical_velocity: field("winterp", "Vertical velocity"),
-      composite_reflectivity: field("dbz", "Reflectivity"),
-      accumulated_surface_rain: field("rain", "Accumulated rain"),
-      total_condensate: field("total_condensate", "Total condensate"),
-      low_level_precipitating_condensate: field(
+        vertical_velocity: field("winterp", "Vertical velocity"),
+        composite_reflectivity: field("dbz", "Reflectivity"),
+        accumulated_surface_rain: field("rain", "Accumulated rain"),
+        total_condensate: field("total_condensate", "Total condensate"),
+        low_level_precipitating_condensate: field(
           "precipitating_condensate",
           "Current precipitating condensate",
         ),
@@ -386,10 +414,25 @@ function frameFor(url: string): StormExaminationFrame {
         z: { min: 0.25, max: lens === "low_level_interactions" ? 5.25 : 19.75 },
       },
       coordinate_sizes: { x: 120, y: 120, z: 40 },
+      coordinate_indices: { x: [0, 1, 2], y: [0, 1, 2], z: [0, 1, 2] },
+      coordinate_values_km: {
+        x: xCoordinates,
+        y: yCoordinates,
+        z: zCoordinates,
+      },
       layers: sceneLayers(lens),
       wind_vectors:
         lens === "low_level_interactions"
-          ? [{ x_km: 0, y_km: 10, z_km: 1.25, u_m_s: 12, v_m_s: 5, magnitude_m_s: 13 }]
+          ? [
+              {
+                x_km: 0,
+                y_km: 10,
+                z_km: zCoordinates[zIndex] ?? 3,
+                u_m_s: 12,
+                v_m_s: 5,
+                magnitude_m_s: 13,
+              },
+            ]
           : [],
       wind_reference_m_s: 25,
       point_budget: 20_000,
@@ -479,6 +522,162 @@ describe("SupercellsExplore", () => {
     expect(screen.getByLabelText("Mock 3-D storm scene")).toHaveTextContent("Camera: look_along_y");
   });
 
+  it("moves each evidence orientation through native planes and keeps a user plane across time", async () => {
+    render(<SupercellsExplore simulation={simulation} onBack={vi.fn()} />);
+    await screen.findByRole("heading", { name: "Rotating Updraft" });
+
+    const horizontalPosition = screen.getByLabelText("Horizontal x-y z position");
+    expect(horizontalPosition).toHaveValue("1");
+    expect(screen.getByText("z 3.00 km")).toBeVisible();
+    expect(screen.getByText("native index 1")).toBeVisible();
+
+    fireEvent.change(horizontalPosition, { target: { value: "0" } });
+    await waitFor(() =>
+      expect(fetch).toHaveBeenCalledWith(
+        expect.stringMatching(/x_index=1&y_index=1&z_index=0/),
+        expect.anything(),
+      ),
+    );
+    expect(screen.getByLabelText("Horizontal x-y z position")).toHaveValue("0");
+    expect(await screen.findByText("z 0.50 km")).toBeVisible();
+    expect(screen.getByText("native index 0")).toBeVisible();
+
+    fireEvent.change(screen.getByLabelText("Horizontal x-y z position"), {
+      target: { value: "2" },
+    });
+    await waitFor(() =>
+      expect(fetch).toHaveBeenCalledWith(
+        expect.stringMatching(/x_index=1&y_index=1&z_index=2/),
+        expect.anything(),
+      ),
+    );
+    expect(await screen.findByText("z 8.00 km")).toBeVisible();
+    expect(screen.getByText("native index 2")).toBeVisible();
+
+    const orientation = within(screen.getByLabelText("Slice orientation"));
+    fireEvent.click(orientation.getByRole("button", { name: "Vertical x-z" }));
+    expect(screen.getByLabelText("Vertical x-z y position")).toHaveValue("1");
+    fireEvent.change(screen.getByLabelText("Vertical x-z y position"), {
+      target: { value: "0" },
+    });
+    await waitFor(() =>
+      expect(fetch).toHaveBeenCalledWith(
+        expect.stringMatching(/x_index=1&y_index=0&z_index=2/),
+        expect.anything(),
+      ),
+    );
+    expect(await screen.findByText("y -10.0 km")).toBeVisible();
+    expect(screen.getByText("native index 0")).toBeVisible();
+
+    fireEvent.click(screen.getByRole("button", { name: "Next saved output" }));
+    await waitFor(() =>
+      expect(fetch).toHaveBeenCalledWith(
+        expect.stringMatching(/time_index=38&x_index=1&y_index=0&z_index=2/),
+        expect.anything(),
+      ),
+    );
+    expect(screen.getByLabelText("Vertical x-z y position")).toHaveValue("0");
+
+    fireEvent.click(orientation.getByRole("button", { name: "Vertical y-z" }));
+    fireEvent.change(screen.getByLabelText("Vertical y-z x position"), {
+      target: { value: "2" },
+    });
+    await waitFor(() =>
+      expect(fetch).toHaveBeenCalledWith(
+        expect.stringMatching(/x_index=2&y_index=0&z_index=2/),
+        expect.anything(),
+      ),
+    );
+    expect(await screen.findByText("x 10.0 km")).toBeVisible();
+    expect(screen.getByText("native index 2")).toBeVisible();
+
+    fireEvent.click(screen.getByRole("button", { name: "Return slice to curated position" }));
+    await waitFor(() =>
+      expect(fetch).toHaveBeenCalledWith(
+        expect.stringMatching(/lens=rotating_updraft&viewport=storm&time_index=38$/),
+        expect.anything(),
+      ),
+    );
+  });
+
+  it("keeps rapid cross-axis slice changes in one local native selection", async () => {
+    render(<SupercellsExplore simulation={simulation} onBack={vi.fn()} />);
+    await screen.findByRole("heading", { name: "Rotating Updraft" });
+
+    vi.mocked(fetch).mockImplementation((input: RequestInfo | URL) => {
+      const url = String(input);
+      if (/x_index=1&y_index=1&z_index=2/.test(url)) {
+        return new Promise<Response>(() => {});
+      }
+      return Promise.resolve(ok(frameFor(url)));
+    });
+
+    fireEvent.change(screen.getByLabelText("Horizontal x-y z position"), {
+      target: { value: "2" },
+    });
+    fireEvent.click(
+      within(screen.getByLabelText("Slice orientation")).getByRole("button", {
+        name: "Vertical x-z",
+      }),
+    );
+    fireEvent.change(screen.getByLabelText("Vertical x-z y position"), {
+      target: { value: "0" },
+    });
+
+    await waitFor(() =>
+      expect(fetch).toHaveBeenCalledWith(
+        expect.stringMatching(/x_index=1&y_index=0&z_index=2/),
+        expect.anything(),
+      ),
+    );
+  });
+
+  it("uses the selected Low-Level altitude in 2-D and 3-D labels", async () => {
+    render(<SupercellsExplore simulation={simulation} onBack={vi.fn()} />);
+    await screen.findByRole("heading", { name: "Rotating Updraft" });
+
+    fireEvent.click(screen.getByRole("button", { name: "Low-Level Interactions" }));
+    await screen.findByRole("heading", { name: "Low-Level Interactions" });
+    fireEvent.change(screen.getByLabelText("Horizontal x-y z position"), {
+      target: { value: "2" },
+    });
+
+    await waitFor(() =>
+      expect(fetch).toHaveBeenCalledWith(
+        expect.stringMatching(/lens=low_level_interactions.*z_index=2/),
+        expect.anything(),
+      ),
+    );
+    expect(
+      await screen.findAllByText("Model-relative wind at z = 8.00 km"),
+    ).not.toHaveLength(0);
+    expect(screen.getByText(/x-y slice at z = 8.00 km coordinate current motion/)).toBeVisible();
+    expect(screen.getByText("Model-relative flow at z = 8.00 km")).toBeVisible();
+  });
+
+  it("keeps a user-framed camera transform per Lens across ordinary workspace changes", async () => {
+    render(<SupercellsExplore simulation={simulation} onBack={vi.fn()} />);
+    await screen.findByRole("heading", { name: "Rotating Updraft" });
+
+    expect(screen.getByText("Camera position: default")).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "Move mock camera" }));
+    expect(screen.getByText("Camera position: 4,5,6")).toBeVisible();
+
+    fireEvent.click(screen.getByRole("button", { name: "Maximize scene" }));
+    expect(screen.getByText("Camera position: 4,5,6")).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "Restore scene" }));
+    fireEvent.click(screen.getByRole("button", { name: "Next saved output" }));
+    expect(screen.getByText("Camera position: 4,5,6")).toBeVisible();
+
+    fireEvent.click(screen.getByRole("button", { name: "Cloud and Precipitation" }));
+    await screen.findByRole("heading", { name: "Cloud and Precipitation" });
+    expect(screen.getByText("Camera position: default")).toBeVisible();
+
+    fireEvent.click(screen.getByRole("button", { name: "Rotating Updraft" }));
+    await screen.findByRole("heading", { name: "Rotating Updraft" });
+    expect(screen.getByText("Camera position: 4,5,6")).toBeVisible();
+  });
+
   it("keeps lens defaults, viewport, evidence orientation, and native selection synchronized", async () => {
     render(<SupercellsExplore simulation={simulation} onBack={vi.fn()} />);
     await screen.findByRole("heading", { name: "Rotating Updraft" });
@@ -491,9 +690,7 @@ describe("SupercellsExplore", () => {
       ),
     );
     expect(await screen.findByRole("heading", { name: "Cloud and Precipitation" })).toBeVisible();
-    await waitFor(() =>
-      expect(screen.getByLabelText("Dominant hydrometeor")).toBeChecked(),
-    );
+    await waitFor(() => expect(screen.getByLabelText("Dominant hydrometeor")).toBeChecked());
     expect(screen.getByLabelText("Vertical-motion contours")).toBeChecked();
     expect(screen.getByText("X-z evidence at this saved output.")).toBeVisible();
     expect(
@@ -549,9 +746,24 @@ describe("SupercellsExplore", () => {
         expect.anything(),
       ),
     );
+    expect(screen.getByLabelText("Vertical y-z x position")).toHaveValue("2");
+    fireEvent.click(orientation.getByRole("button", { name: "Vertical x-z" }));
+    expect(screen.getByLabelText("Vertical x-z y position")).toHaveValue("2");
+    fireEvent.change(screen.getByLabelText("Vertical x-z y position"), {
+      target: { value: "1" },
+    });
+    await waitFor(() =>
+      expect(fetch).toHaveBeenCalledWith(
+        expect.stringMatching(/x_index=2&y_index=1&z_index=1/),
+        expect.anything(),
+      ),
+    );
+    expect(screen.getByLabelText("Mock 3-D storm scene")).toHaveTextContent(
+      "xz section at y = 10.0 km",
+    );
     fireEvent.click(screen.getByRole("tab", { name: "Science" }));
     expect(await screen.findByText("Selected point")).toBeVisible();
-    expect(screen.getByRole("heading", { name: "x 10.0, y 20.0, z 3.00 km" })).toBeVisible();
+    expect(screen.getByRole("heading", { name: "x 10.0, y 10.0, z 3.00 km" })).toBeVisible();
   });
 
   it("preserves the lens and time while maximizing and restoring either scientific view", async () => {

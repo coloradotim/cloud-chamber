@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { ExploreInspector, IntegratedExploreWorkspace } from "./IntegratedExploreWorkspace";
+import { NativeSlicePositionControl } from "./NativeSlicePositionControl";
 import type { SupercellSimulation } from "./SupercellsWorld";
 import {
   type LensId,
@@ -13,6 +14,7 @@ import {
   type ViewportId,
 } from "./StormExaminationResearch";
 import {
+  type CameraTransform,
   type CameraPreset,
   type StormScenePayload,
   type StormScenePoint,
@@ -24,6 +26,13 @@ import "./SupercellsExplore.css";
 
 type EvidenceView = "plan" | "xz" | "yz";
 type FocusedViewer = "scene" | "evidence" | null;
+type SliceAxis = "x" | "y" | "z";
+type SlicePositionState = {
+  axis: SliceAxis;
+  coordinatesKm: number[];
+  nativeIndices: number[];
+  positionIndex: number;
+};
 type LensPresentation = {
   viewport: ViewportId;
   evidenceView: EvidenceView;
@@ -31,6 +40,7 @@ type LensPresentation = {
   visibleLayerKeys: string[] | null;
   categoryCodes: number[];
   cameraPreset: CameraPreset;
+  cameraTransform: CameraTransform | null;
   sceneOpacity: number;
   scenePointSize: number;
   selection: Selection | null;
@@ -60,9 +70,8 @@ export function SupercellsExplore({
   const [lens, setLens] = useState<LensId>("rotating_updraft");
   const [timeIndex, setTimeIndex] = useState(simulation.default_explore_time_index);
   const [frame, setFrame] = useState<StormExaminationFrame | null>(null);
-  const [presentations, setPresentations] = useState<Record<LensId, LensPresentation>>(
-    lensPresentationDefaults,
-  );
+  const [presentations, setPresentations] =
+    useState<Record<LensId, LensPresentation>>(lensPresentationDefaults);
   const presentation = presentations[lens];
   const {
     viewport,
@@ -70,6 +79,7 @@ export function SupercellsExplore({
     overlays,
     categoryCodes,
     cameraPreset,
+    cameraTransform,
     sceneOpacity,
     scenePointSize,
     selection,
@@ -115,6 +125,7 @@ export function SupercellsExplore({
           payload,
           lens,
           viewport,
+          selection,
         );
       } catch (caught) {
         if (!signal.aborted) {
@@ -134,11 +145,7 @@ export function SupercellsExplore({
   }, [loadFrame, retryNonce]);
 
   useEffect(() => {
-    if (
-      !frame?.scene ||
-      frame.lens_id !== lens ||
-      presentations[lens].visibleLayerKeys !== null
-    )
+    if (!frame?.scene || frame.lens_id !== lens || presentations[lens].visibleLayerKeys !== null)
       return;
     const layerKeys = frame.scene.layers
       .filter((layer) => layer.default_visible)
@@ -167,6 +174,10 @@ export function SupercellsExplore({
     [evidenceView, frame],
   );
   const activeSliceLabel = frame ? evidenceLabel(frame, evidenceView) : "Evidence unavailable";
+  const slicePosition = useMemo(
+    () => (frame ? slicePositionState(frame, evidenceView, selection) : null),
+    [evidenceView, frame, selection],
+  );
   const checkpoint = frame?.timeline_checkpoints.find(
     (item) => item.time_seconds === frame.time_seconds,
   );
@@ -197,6 +208,28 @@ export function SupercellsExplore({
       yIndex: nearestCoordinateIndex(point[1], frame.plan.y_km, frame.plan.y_indices),
       zIndex: nearestCoordinateIndex(point[2], frame.xz_section.z_km),
     });
+  }
+
+  function setSlicePosition(positionIndex: number) {
+    if (!frame || !slicePosition) return;
+    const nativeIndex = slicePosition.nativeIndices[positionIndex];
+    if (nativeIndex === undefined) return;
+    const next = selection
+      ? { ...selection }
+      : {
+          xIndex: frame.selected_point.x_index,
+          yIndex: frame.selected_point.y_index,
+          zIndex: frame.selected_point.z_index,
+        };
+    if (slicePosition.axis === "x") next.xIndex = nativeIndex;
+    if (slicePosition.axis === "y") next.yIndex = nativeIndex;
+    if (slicePosition.axis === "z") next.zIndex = nativeIndex;
+    selectPoint(next);
+  }
+
+  function resetSlicePosition() {
+    setPlaying(false);
+    updatePresentation({ selection: null });
   }
 
   function toggleLayer(key: string, visible: boolean) {
@@ -258,7 +291,7 @@ export function SupercellsExplore({
                 valueChannelLabel="Native and explicitly derived Supercell layers."
                 activeSlice={activeSlice}
                 activeSliceLabel={activeSliceLabel}
-                showSlicePlane={evidenceView !== "plan"}
+                showSlicePlane={evidenceView !== "plan" || frame.plan.selection_z_indices === null}
                 selectedRegion={
                   frame && selection
                     ? {
@@ -281,6 +314,7 @@ export function SupercellsExplore({
                 showWindVectors={visibleLayerKeys.includes("model_relative_wind")}
                 windMode="total"
                 windReferenceMps={frame.scene.wind_reference_m_s}
+                windOverlayLabel={`Model-relative wind at z = ${frame.plan.level_km.toFixed(2)} km`}
                 windArrowDomainFraction={0.055}
                 compactWorkspace
                 compactDisplayLabel="3-D layers"
@@ -305,6 +339,8 @@ export function SupercellsExplore({
                 onSelectStormPoint={selectScenePoint}
                 cameraPreset={cameraPreset}
                 onCameraPresetChange={(next) => updatePresentation({ cameraPreset: next })}
+                cameraTransform={cameraTransform}
+                onCameraTransformChange={(next) => updatePresentation({ cameraTransform: next })}
                 compactDisplayControls={
                   <StormDisplayControls
                     frame={frame}
@@ -437,12 +473,16 @@ export function SupercellsExplore({
           lens={lens}
           viewport={viewport}
           evidenceView={evidenceView}
+          planLevelKm={frame?.plan.level_km ?? null}
           overlays={overlays}
           onViewport={(next) => {
             setPlaying(false);
             updatePresentation({ viewport: next });
           }}
           onEvidenceView={(next) => updatePresentation({ evidenceView: next })}
+          slicePosition={slicePosition}
+          onSlicePosition={setSlicePosition}
+          onResetSlicePosition={resetSlicePosition}
           onOverlays={(next) => updatePresentation({ overlays: next })}
         />
 
@@ -505,11 +545,9 @@ function StormDisplayControls({
             <input
               type="checkbox"
               checked={visibleLayerKeys.includes("model_relative_wind")}
-              onChange={(event) =>
-                onLayer("model_relative_wind", event.currentTarget.checked)
-              }
+              onChange={(event) => onLayer("model_relative_wind", event.currentTarget.checked)}
             />
-            Model-relative wind at 1.25 km
+            Model-relative wind at z = {frame.plan.level_km.toFixed(2)} km
           </label>
         )}
       </div>
@@ -568,20 +606,28 @@ function StormExploreControls({
   lens,
   viewport,
   evidenceView,
+  planLevelKm,
   overlays,
+  slicePosition,
   onViewport,
   onEvidenceView,
+  onSlicePosition,
+  onResetSlicePosition,
   onOverlays,
 }: {
   lens: LensId;
   viewport: ViewportId;
   evidenceView: EvidenceView;
+  planLevelKm: number | null;
   overlays: OverlayState;
+  slicePosition: SlicePositionState | null;
   onViewport: (value: ViewportId) => void;
   onEvidenceView: (value: EvidenceView) => void;
+  onSlicePosition: (positionIndex: number) => void;
+  onResetSlicePosition: () => void;
   onOverlays: (value: OverlayState) => void;
 }) {
-  const controls = overlayControls(lens, evidenceView);
+  const controls = overlayControls(lens, evidenceView, planLevelKm);
   function update(control: OverlayControl, checked: boolean) {
     onOverlays({ ...overlays, [control.overlayKey]: checked });
   }
@@ -624,6 +670,12 @@ function StormExploreControls({
           ))}
         </div>
       </fieldset>
+      <SupercellSlicePositionControl
+        view={evidenceView}
+        position={slicePosition}
+        onPosition={onSlicePosition}
+        onReset={onResetSlicePosition}
+      />
       <fieldset className="supercells-overlay-controls">
         <legend>2-D evidence</legend>
         {controls.map((control) => (
@@ -641,12 +693,64 @@ function StormExploreControls({
   );
 }
 
+function SupercellSlicePositionControl({
+  view,
+  position,
+  onPosition,
+  onReset,
+}: {
+  view: EvidenceView;
+  position: SlicePositionState | null;
+  onPosition: (positionIndex: number) => void;
+  onReset: () => void;
+}) {
+  if (!position) {
+    return (
+      <fieldset className="supercells-slice-position">
+        <legend>Position</legend>
+        <p>Column-derived across z; choose a vertical slice to position a native plane.</p>
+      </fieldset>
+    );
+  }
+  const coordinate = position.coordinatesKm[position.positionIndex] ?? 0;
+  const nativeIndex = position.nativeIndices[position.positionIndex] ?? 0;
+  const label = `${sliceControlLabel(view)} ${position.axis} position`;
+  const plane =
+    view === "plan"
+      ? ("horizontal" as const)
+      : view === "xz"
+        ? ("vertical_x" as const)
+        : ("vertical_y" as const);
+  return (
+    <fieldset className="supercells-slice-position">
+      <legend>Position</legend>
+      <NativeSlicePositionControl
+        id={`supercells-${view}-position`}
+        ariaLabel={label}
+        plane={plane}
+        positionIndex={position.positionIndex}
+        positionCount={position.coordinatesKm.length}
+        positionLabel={`${position.axis} ${formatCoordinateKm(coordinate)}`}
+        indexLabel={`native index ${nativeIndex}`}
+        onPositionChange={onPosition}
+        onReset={onReset}
+        resetLabel="Return slice to curated position"
+        compact
+      />
+    </fieldset>
+  );
+}
+
 type OverlayControl = {
   label: string;
   overlayKey: keyof OverlayState;
 };
 
-function overlayControls(lens: LensId, evidenceView: EvidenceView): OverlayControl[] {
+function overlayControls(
+  lens: LensId,
+  evidenceView: EvidenceView,
+  planLevelKm: number | null,
+): OverlayControl[] {
   if (lens === "rotating_updraft") {
     const controls: OverlayControl[] = [
       { label: "Cloud boundary", overlayKey: "condensate" },
@@ -669,9 +773,13 @@ function overlayControls(lens: LensId, evidenceView: EvidenceView): OverlayContr
     { label: "Reflectivity contour", overlayKey: "reflectivity" },
   ];
   if (evidenceView === "plan") {
+    const flowLevel =
+      typeof planLevelKm === "number" && Number.isFinite(planLevelKm)
+        ? ` at z = ${planLevelKm.toFixed(2)} km`
+        : "";
     controls.unshift(
       { label: "Accumulated rain (history)", overlayKey: "rain" },
-      { label: "Flow arrows at 1.25 km", overlayKey: "wind" },
+      { label: `Flow arrows${flowLevel}`, overlayKey: "wind" },
     );
   }
   return controls;
@@ -799,7 +907,7 @@ function SupercellExplanation({
     <section className="supercells-context-panel">
       <p className="eyebrow">{frame?.lens_name ?? "Supercell Lens"}</p>
       <h3>{question}</h3>
-      <p>{lensExplanation(lens, evidenceView)}</p>
+      <p>{lensExplanation(lens, evidenceView, frame?.plan.level_km)}</p>
       {frame && (
         <div className="supercells-notice-now">
           <strong>What to notice now</strong>
@@ -967,6 +1075,7 @@ function lensPresentationDefaults(): Record<LensId, LensPresentation> {
       visibleLayerKeys: null,
       categoryCodes,
       cameraPreset: "look_along_y",
+      cameraTransform: null,
       sceneOpacity: 1,
       scenePointSize: 1,
       selection: null,
@@ -978,6 +1087,7 @@ function lensPresentationDefaults(): Record<LensId, LensPresentation> {
       visibleLayerKeys: null,
       categoryCodes,
       cameraPreset: "look_along_y",
+      cameraTransform: null,
       sceneOpacity: 0.9,
       scenePointSize: 0.9,
       selection: null,
@@ -989,6 +1099,7 @@ function lensPresentationDefaults(): Record<LensId, LensPresentation> {
       visibleLayerKeys: null,
       categoryCodes,
       cameraPreset: "low_level",
+      cameraTransform: null,
       sceneOpacity: 1,
       scenePointSize: 1,
       selection: null,
@@ -1026,6 +1137,37 @@ function nearestCoordinateIndex(
     }
   });
   return sourceIndices?.[nearest] ?? nearest;
+}
+
+function slicePositionState(
+  frame: StormExaminationFrame,
+  view: EvidenceView,
+  selection: Selection | null,
+): SlicePositionState | null {
+  if (view === "plan" && frame.plan.selection_z_indices) return null;
+  const axis: SliceAxis = view === "plan" ? "z" : view === "xz" ? "y" : "x";
+  const coordinatesKm = frame.scene?.coordinate_values_km[axis] ?? [];
+  const nativeIndices = frame.scene?.coordinate_indices[axis] ?? [];
+  if (coordinatesKm.length === 0 || coordinatesKm.length !== nativeIndices.length) return null;
+  const selectedNativeIndex =
+    axis === "x"
+      ? (selection?.xIndex ?? frame.selected_point.x_index)
+      : axis === "y"
+        ? (selection?.yIndex ?? frame.selected_point.y_index)
+        : (selection?.zIndex ?? frame.plan.level_index);
+  const exactPosition = nativeIndices.indexOf(selectedNativeIndex);
+  const positionIndex =
+    exactPosition >= 0
+      ? exactPosition
+      : nativeIndices.reduce(
+          (nearest, candidate, index) =>
+            Math.abs(candidate - selectedNativeIndex) <
+            Math.abs(nativeIndices[nearest] - selectedNativeIndex)
+              ? index
+              : nearest,
+          0,
+        );
+  return { axis, coordinatesKm, nativeIndices, positionIndex };
 }
 
 function evidenceSlice(frame: StormExaminationFrame, view: EvidenceView) {
@@ -1077,10 +1219,7 @@ function evidenceLabel(frame: StormExaminationFrame, view: EvidenceView): string
   return view === "xz" ? frame.xz_section.title : frame.yz_section.title;
 }
 
-function evidenceTitle(
-  frame: StormExaminationFrame | null,
-  view: EvidenceView,
-): string {
+function evidenceTitle(frame: StormExaminationFrame | null, view: EvidenceView): string {
   if (view === "plan" && frame?.plan.selection_z_indices) {
     return "Column-derived x-y view";
   }
@@ -1092,10 +1231,17 @@ function sliceControlLabel(view: EvidenceView): string {
   return view === "xz" ? "Vertical x-z" : "Vertical y-z";
 }
 
-function lensExplanation(lens: LensId, evidenceView: EvidenceView): string {
+function lensExplanation(
+  lens: LensId,
+  evidenceView: EvidenceView,
+  planLevelKm?: number,
+): string {
+  const level = typeof planLevelKm === "number" && Number.isFinite(planLevelKm)
+    ? `z = ${planLevelKm.toFixed(2)} km`
+    : "the selected native altitude";
   if (lens === "rotating_updraft") {
     return evidenceView === "plan"
-      ? "The 3.25 km x-y slice pairs signed vertical motion with cyclonic vorticity and the 2–5 km updraft-helicity footprint, showing where ascent and rotation organize together."
+      ? `The x-y slice at ${level} pairs signed vertical motion with cyclonic vorticity and the 2–5 km updraft-helicity footprint, showing where ascent and rotation organize together.`
       : "This native vertical section pairs signed vertical motion with cyclonic-vorticity contours, showing whether the rotating rising core remains vertically connected.";
   }
   if (lens === "cloud_precipitation") {
@@ -1104,7 +1250,7 @@ function lensExplanation(lens: LensId, evidenceView: EvidenceView): string {
       : "This storm-core native section shows the dominant hydrometeor at each cell. Vertical-motion contours remain subordinate, and every native species value remains available in Context.";
   }
   return evidenceView === "plan"
-    ? "The fixed 3-D lower-troposphere view and 1.25 km x-y slice coordinate current motion, precipitating condensate, and model-relative flow with the historical accumulated-rain footprint without diagnosing a cold pool."
+    ? `The fixed 3-D lower-troposphere view and x-y slice at ${level} coordinate current motion, precipitating condensate, and model-relative flow with the historical accumulated-rain footprint without diagnosing a cold pool.`
     : "The 3-D view remains fixed on the lowest 5.25 km, while this native vertical section shows full-depth current ascent, descent, and precipitating condensate; accumulated surface rain remains a separate historical plan-view quantity.";
 }
 
@@ -1172,6 +1318,11 @@ function formatTime(seconds: number): string {
   return `${minutes} min · ${seconds.toLocaleString()} s`;
 }
 
+function formatCoordinateKm(value: number): string {
+  const precision = Math.abs(value) >= 10 ? 1 : 2;
+  return `${value.toFixed(precision)} km`;
+}
+
 function frameRequestKey(
   lens: LensId,
   viewport: ViewportId,
@@ -1220,15 +1371,16 @@ async function prefetchAdjacentFrames(
   frame: StormExaminationFrame,
   lens: LensId,
   viewport: ViewportId,
+  selection: Selection | null,
 ) {
   const candidates = [frame.time_index + 1, frame.time_index - 1].filter(
     (index) => index >= 0 && index < frame.times_seconds.length,
   );
   for (const index of candidates) {
-    const key = frameRequestKey(lens, viewport, index, null);
+    const key = frameRequestKey(lens, viewport, index, selection);
     if (cache.has(key)) continue;
     try {
-      cache.set(key, await fetchSupercellFrame(simulationId, lens, viewport, index, null));
+      cache.set(key, await fetchSupercellFrame(simulationId, lens, viewport, index, selection));
       trimCache(cache, 8);
     } catch {
       // Adjacent prefetch is optional; the requested frame remains authoritative.

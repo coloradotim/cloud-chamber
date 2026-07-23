@@ -356,6 +356,37 @@ def test_product_frame_adds_bounded_volume_layers_without_changing_science_path(
     assert all(layer.returned_count <= layer.source_count for layer in layers.values())
 
 
+def test_product_frame_exposes_native_plane_inventory_and_honors_selected_height(
+    tmp_path: Path,
+) -> None:
+    _write_retained_fixture(tmp_path, presentation=True)
+
+    frame = supercells_explore_frame(
+        _settings(tmp_path),
+        lens="rotating_updraft",
+        time_index=5,
+        viewport="storm",
+        x_index=2,
+        y_index=1,
+        z_index=4,
+    )
+
+    assert frame.plan.level_index == 4
+    assert frame.plan.level_km == pytest.approx(15.25)
+    assert frame.plan.title == "Updraft and rotation"
+    assert frame.what_to_notice_by_view is not None
+    assert "15.25 km slice" in frame.what_to_notice_by_view["plan"]
+    assert frame.scene is not None
+    assert frame.scene.coordinate_indices == {
+        "x": [1, 2, 3],
+        "y": [1, 2, 3],
+        "z": [0, 1, 2, 3, 4],
+    }
+    assert frame.scene.coordinate_values_km["x"] == pytest.approx([-30, 0, 30])
+    assert frame.scene.coordinate_values_km["y"] == pytest.approx([-30, 0, 30])
+    assert frame.scene.coordinate_values_km["z"] == pytest.approx([0.25, 1.25, 3.25, 10.25, 15.25])
+
+
 def test_product_hydrometeor_scene_keeps_exact_large_ice_label(tmp_path: Path) -> None:
     _write_retained_fixture(tmp_path, presentation=True)
 
@@ -366,6 +397,8 @@ def test_product_hydrometeor_scene_keeps_exact_large_ice_label(tmp_path: Path) -
     assert frame.scene is not None
     assert frame.plan.x_indices == [0, 2, 4]
     assert frame.plan.y_indices == [0, 2, 4]
+    assert frame.scene.coordinate_indices["x"] == [0, 1, 2, 3, 4]
+    assert frame.scene.coordinate_indices["y"] == [0, 1, 2, 3, 4]
     assert frame.provenance["full_domain_level_of_detail"] == "every_other_native_x_y_cell"
     category_layer = next(
         layer for layer in frame.scene.layers if layer.key == "hydrometeor_categories"
@@ -381,15 +414,23 @@ def test_product_low_level_scene_identifies_model_relative_flow(tmp_path: Path) 
     _write_retained_fixture(tmp_path, presentation=True)
 
     frame = supercells_explore_frame(
-        _settings(tmp_path), lens="low_level_interactions", time_index=5, viewport="storm"
+        _settings(tmp_path),
+        lens="low_level_interactions",
+        time_index=5,
+        viewport="storm",
+        z_index=2,
     )
 
     assert frame.scene is not None
     assert frame.scene.wind_vectors
-    assert frame.scene.wind_vectors[0].z_km == pytest.approx(1.25)
+    assert frame.plan.level_km == pytest.approx(3.25)
+    assert frame.scene.wind_vectors[0].z_km == pytest.approx(frame.plan.level_km)
     assert frame.scene.coordinate_extents_km["z"]["max"] == pytest.approx(5.25)
     assert frame.scene.coordinate_sizes["z"] == 3
+    assert frame.scene.coordinate_indices["z"] == [0, 1, 2]
+    assert frame.scene.coordinate_values_km["z"] == pytest.approx([0.25, 1.25, 3.25])
     layers = {layer.key: layer for layer in frame.scene.layers}
+    motion = layers["low_level_vertical_motion"]
     precipitation = layers["precipitating_condensate"]
     accumulated_rain = layers["accumulated_surface_rain"]
     assert precipitation.scale is not None
@@ -399,9 +440,17 @@ def test_product_low_level_scene_identifies_model_relative_flow(tmp_path: Path) 
     assert accumulated_rain.scale.maximum == 120
     assert "through 3.25 km" in precipitation.threshold_label
     assert max(point[2] for point in precipitation.points) <= 3.25
+    assert motion.points
+    assert all(point[2] == pytest.approx(frame.plan.level_km) for point in motion.points)
     assert max(point[2] for point in layers["reflectivity"].points) <= 5.25
-    assert frame.plan.wind_vectors[0].u_m_s == pytest.approx(12)
+    assert frame.plan.wind_vectors[0].u_m_s == pytest.approx(frame.scene.wind_vectors[0].u_m_s)
+    assert frame.plan.wind_vectors[0].v_m_s == pytest.approx(frame.scene.wind_vectors[0].v_m_s)
     assert layers["precipitating_condensate"].default_visible is True
     assert frame.plan.overlays["low_level_precipitating_condensate"].units == "g/kg"
+    assert "displayed 3.25 km level" in (
+        frame.plan.overlays["low_level_precipitating_condensate"].derivation or ""
+    )
+    assert frame.what_to_notice_by_view is not None
+    assert "current 3.25 km motion" in frame.what_to_notice_by_view["plan"]
     assert frame.selected_point.coordinate_frame.startswith("translating model frame")
     assert "cold pool" in frame.caveats[-1]
