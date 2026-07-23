@@ -174,7 +174,7 @@ def test_world_summary_and_detail_map_exact_known_pair(
     detail = trade_cumulus_world_detail(settings)
     summaries = list_cloud_world_summaries(settings)
 
-    assert len(summaries) == 2
+    assert len(summaries) == 3
     summaries_by_id = {summary.world_id: summary for summary in summaries}
     trade_cumulus = summaries_by_id["trade_cumulus"]
     assert trade_cumulus.reference_available is True
@@ -182,6 +182,7 @@ def test_world_summary_and_detail_map_exact_known_pair(
     assert trade_cumulus.saved_view_count == 0
     assert trade_cumulus.saved_comparison_count == 1
     assert summaries_by_id["mountain_waves"].availability_state == "unavailable"
+    assert summaries_by_id["supercells"].availability_state == "unavailable"
     assert detail.reference_simulation.simulation_id == REFERENCE_SIMULATION_ID
     assert detail.reference_simulation.run_id == PRESENTATION_BASELINE_RUN_ID
     assert detail.reference_simulation.display_name == "Canonical BOMEX Baseline"

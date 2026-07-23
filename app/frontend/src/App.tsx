@@ -6,6 +6,8 @@ import { CloudWorldsHome } from "./CloudWorldsHome";
 import { ExploreInspector, IntegratedExploreWorkspace } from "./IntegratedExploreWorkspace";
 import { MountainWavesExplore } from "./MountainWavesExplore";
 import { type MountainWavesSimulation, MountainWavesWorld } from "./MountainWavesWorld";
+import { SupercellsExplore } from "./SupercellsExplore";
+import { type SupercellSimulation, SupercellsWorld } from "./SupercellsWorld";
 import {
   TradeCumulusComparisonStory,
   type TradeCumulusComparisonStoryResponse,
@@ -1277,7 +1279,9 @@ type ProductLocation =
   | "explore"
   | "comparison"
   | "mountain-world"
-  | "mountain-explore";
+  | "mountain-explore"
+  | "supercells-world"
+  | "supercells-explore";
 type WorldExploreContext =
   | { kind: "simulation"; displayName: string }
   | { kind: "lab_result"; displayName: string };
@@ -2296,6 +2300,7 @@ async function responseError(response: Response, fallback: string): Promise<stri
 
 export function App() {
   const [productLocation, setProductLocation] = useState<ProductLocation>("worlds");
+  const [supercellSimulation, setSupercellSimulation] = useState<SupercellSimulation | null>(null);
   const [mountainWavesSimulation, setMountainWavesSimulation] =
     useState<MountainWavesSimulation | null>(null);
   const [worldSection, setWorldSection] = useState<TradeCumulusWorldSection>("overview");
@@ -4237,7 +4242,9 @@ export function App() {
   return (
     <main
       className={`app-shell${
-        productLocation === "explore" || productLocation === "mountain-explore"
+        productLocation === "explore" ||
+        productLocation === "mountain-explore" ||
+        productLocation === "supercells-explore"
           ? " app-shell-explore"
           : ""
       }`}
@@ -4266,6 +4273,10 @@ export function App() {
           onEnterMountainWaves={() => {
             setMountainWavesSimulation(null);
             setProductLocation("mountain-world");
+          }}
+          onEnterSupercells={() => {
+            setSupercellSimulation(null);
+            setProductLocation("supercells-world");
           }}
           fallback={legacyWorkspace}
         />
@@ -4304,6 +4315,28 @@ export function App() {
           <MountainWavesExplore
             simulation={mountainWavesSimulation}
             onBack={() => setProductLocation("mountain-world")}
+          />
+        </section>
+      )}
+
+      {productLocation === "supercells-world" && (
+        <SupercellsWorld
+          onBackToWorlds={() => setProductLocation("worlds")}
+          onExploreSimulation={(simulation) => {
+            setSupercellSimulation(simulation);
+            setProductLocation("supercells-explore");
+          }}
+        />
+      )}
+
+      {productLocation === "supercells-explore" && supercellSimulation && (
+        <section
+          className="world-context-workspace"
+          aria-label={`${supercellSimulation.display_name} workspace`}
+        >
+          <SupercellsExplore
+            simulation={supercellSimulation}
+            onBack={() => setProductLocation("supercells-world")}
           />
         </section>
       )}

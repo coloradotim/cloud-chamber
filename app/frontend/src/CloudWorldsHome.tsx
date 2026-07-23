@@ -33,7 +33,26 @@ export type MountainWavesWorldSummary = {
   availability_message: string;
 };
 
-export type CloudWorldSummary = TradeCumulusWorldSummary | MountainWavesWorldSummary;
+export type SupercellsWorldSummary = {
+  world_id: "supercells";
+  display_name: "Supercells";
+  short_description: string;
+  reference_simulation_id: "supercells_quarter_circle_reference";
+  reference_available: boolean;
+  simulation_count: number;
+  saved_view_count: 0;
+  saved_comparison_count: 0;
+  featured_comparison_count: 0;
+  active_run_count: 0;
+  completed_uninspected_run_count: 0;
+  availability_state: "available" | "partial" | "unavailable";
+  availability_message: string;
+};
+
+export type CloudWorldSummary =
+  | TradeCumulusWorldSummary
+  | MountainWavesWorldSummary
+  | SupercellsWorldSummary;
 
 type LoadState =
   | { status: "loading"; worlds: CloudWorldSummary[]; error: null }
@@ -43,10 +62,12 @@ type LoadState =
 export function CloudWorldsHome({
   onEnterTradeCumulus,
   onEnterMountainWaves,
+  onEnterSupercells,
   fallback,
 }: {
   onEnterTradeCumulus: () => void;
   onEnterMountainWaves: () => void;
+  onEnterSupercells: () => void;
   fallback?: ReactNode;
 }) {
   const [loadState, setLoadState] = useState<LoadState>({
@@ -115,7 +136,11 @@ export function CloudWorldsHome({
               key={world.world_id}
               world={world}
               onEnter={
-                world.world_id === "trade_cumulus" ? onEnterTradeCumulus : onEnterMountainWaves
+                world.world_id === "trade_cumulus"
+                  ? onEnterTradeCumulus
+                  : world.world_id === "mountain_waves"
+                    ? onEnterMountainWaves
+                    : onEnterSupercells
               }
             />
           ))}
@@ -208,7 +233,9 @@ function labSummary(world: CloudWorldSummary): string {
 
 function referenceLabel(world: CloudWorldSummary): string {
   if (!world.reference_available) return "Unavailable";
-  return world.world_id === "trade_cumulus" ? "Canonical BOMEX" : "Boulder Windstorm";
+  if (world.world_id === "trade_cumulus") return "Canonical BOMEX";
+  if (world.world_id === "mountain_waves") return "Boulder Windstorm";
+  return "Quarter-Circle Supercell";
 }
 
 function validateWorldSummaries(payload: unknown): CloudWorldSummary[] {
@@ -220,6 +247,22 @@ function validateWorldSummaries(payload: unknown): CloudWorldSummary[] {
 
 function isWorldSummary(value: unknown): value is CloudWorldSummary {
   if (!isRecord(value)) return false;
+  if (value.world_id === "supercells") {
+    return (
+      value.display_name === "Supercells" &&
+      typeof value.short_description === "string" &&
+      value.reference_simulation_id === "supercells_quarter_circle_reference" &&
+      typeof value.reference_available === "boolean" &&
+      isNonnegativeNumber(value.simulation_count) &&
+      value.saved_view_count === 0 &&
+      value.saved_comparison_count === 0 &&
+      value.featured_comparison_count === 0 &&
+      value.active_run_count === 0 &&
+      value.completed_uninspected_run_count === 0 &&
+      ["available", "partial", "unavailable"].includes(String(value.availability_state)) &&
+      typeof value.availability_message === "string"
+    );
+  }
   if (value.world_id === "mountain_waves") {
     return (
       value.display_name === "Mountain Waves" &&

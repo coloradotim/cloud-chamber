@@ -58,6 +58,30 @@ type PointCloudResponse = {
   caveats: string[];
 };
 
+export type StormSceneLayer = {
+  key: string;
+  display_name: string;
+  units: string;
+  rendering: "neutral_cloud" | "signed_scalar" | "scalar" | "categorical";
+  points: Array<[number, number, number, number, number]>;
+  default_opacity: number;
+  default_point_size: number;
+  scale: {
+    minimum: number;
+    maximum: number;
+    breakpoints: number[];
+    colors: string[];
+  } | null;
+  categories: Array<{ code: number; color: string }>;
+};
+
+export type StormScenePayload = {
+  coordinate_extents_km: Record<"x" | "y" | "z", { min: number; max: number }>;
+  layers: StormSceneLayer[];
+};
+
+export type StormScenePoint = [number, number, number, number, number];
+
 type SliceResponse = {
   field: VisualizableField;
   selection: {
@@ -108,6 +132,13 @@ type True3DViewerProps = {
   compactDisplayControls?: ReactNode;
   maximized?: boolean;
   onToggleMaximize?: () => void;
+  stormScene?: StormScenePayload | null;
+  visibleStormLayerKeys?: string[];
+  stormOpacity?: number;
+  stormPointSize?: number;
+  compactAxisLabels?: boolean;
+  selectedPointCoordinates?: { x: number; y: number; z: number } | null;
+  onSelectStormPoint?: (point: StormScenePoint) => void;
 };
 
 type SceneRefs = {
@@ -178,22 +209,34 @@ export function True3DViewer({
   compactDisplayControls,
   maximized = false,
   onToggleMaximize,
+  stormScene = null,
+  visibleStormLayerKeys = [],
+  stormOpacity = 1,
+  stormPointSize = 1,
+  compactAxisLabels = false,
+  selectedPointCoordinates = null,
+  onSelectStormPoint,
 }: True3DViewerProps) {
   const mountRef = useRef<HTMLDivElement | null>(null);
   const axisLabelLayerRef = useRef<HTMLDivElement | null>(null);
   const refs = useRef<SceneRefs | null>(null);
   const axisOcclusionRef = useRef({ frame: updraftLensFrame, opacity: updraftLensOpacity });
+  const stormSelectionRef = useRef(onSelectStormPoint);
   axisOcclusionRef.current = { frame: updraftLensFrame, opacity: updraftLensOpacity };
+  stormSelectionRef.current = onSelectStormPoint;
   const [renderError, setRenderError] = useState<string | null>(null);
   const [cameraStatus, setCameraStatus] = useState("Camera ready");
   const [tallViewport, setTallViewport] = useState(false);
 
-  const boundsKey = boundsSignature(pointCloud);
+  const boundsKey = boundsSignature(pointCloud, stormScene);
   const bounds = useMemo(() => sceneBoundsFromSignature(boundsKey), [boundsKey]);
-  const axisLabels = useMemo(() => axisLabelDefinitions(bounds), [bounds]);
+  const axisLabels = useMemo(
+    () => axisLabelDefinitions(bounds, compactAxisLabels),
+    [bounds, compactAxisLabels],
+  );
   const selectedPoint = useMemo(
-    () => selectedRegionPoint(selectedRegion, coordinateSizes, bounds),
-    [bounds, coordinateSizes, selectedRegion],
+    () => selectedPointCoordinates ?? selectedRegionPoint(selectedRegion, coordinateSizes, bounds),
+    [bounds, coordinateSizes, selectedPointCoordinates, selectedRegion],
   );
 
   const resetCamera = useCallback(() => {
@@ -273,6 +316,21 @@ export function True3DViewer({
       };
       applyCameraPreset("overview", { camera, controls }, bounds);
 
+      let pointerDown: { x: number; y: number } | null = null;
+      const handlePointerDown = (event: PointerEvent) => {
+        pointerDown = { x: event.clientX, y: event.clientY };
+      };
+      const handlePointerUp = (event: PointerEvent) => {
+        if (!pointerDown || !stormSelectionRef.current) return;
+        const movement = Math.hypot(event.clientX - pointerDown.x, event.clientY - pointerDown.y);
+        pointerDown = null;
+        if (movement > 4) return;
+        const point = selectedStormScenePoint(event, renderer.domElement, camera, scene, bounds);
+        if (point) stormSelectionRef.current(point);
+      };
+      renderer.domElement.addEventListener("pointerdown", handlePointerDown);
+      renderer.domElement.addEventListener("pointerup", handlePointerUp);
+
       const resize = () => {
         if (!mounted) return;
         const width = Math.max(1, mount.clientWidth);
@@ -322,6 +380,8 @@ export function True3DViewer({
         window.cancelAnimationFrame(current.animationFrame);
         current.resizeObserver?.disconnect();
         current.controls.dispose();
+        current.renderer.domElement.removeEventListener("pointerdown", handlePointerDown);
+        current.renderer.domElement.removeEventListener("pointerup", handlePointerUp);
         disposeScene(current.scene);
         current.renderer.dispose();
         current.renderer.domElement.remove();
@@ -353,6 +413,10 @@ export function True3DViewer({
       updraftLensFrame,
       updraftLensOpacity,
       showUpdraftLensBoundary,
+      stormScene,
+      visibleStormLayerKeys,
+      stormOpacity,
+      stormPointSize,
     });
   }, [
     activeSlice,
@@ -370,6 +434,10 @@ export function True3DViewer({
     updraftLensFrame,
     updraftLensOpacity,
     showUpdraftLensBoundary,
+    stormScene,
+    visibleStormLayerKeys,
+    stormOpacity,
+    stormPointSize,
   ]);
 
   return (
@@ -495,13 +563,14 @@ export function True3DViewer({
             Three.js renderer unavailable: {renderError}
           </p>
         )}
-        {(!pointCloud || pointCloud.points.length === 0) && (
-          <div className="true3d-empty-state">
-            <p className="eyebrow">3-D scalar layer</p>
-            <h4>{noCloudMessage}</h4>
-            <p>The domain and slice plane remain visible so the result does not look broken.</p>
-          </div>
-        )}
+        {(!pointCloud || pointCloud.points.length === 0) &&
+          (!stormScene || visibleStormLayerKeys.length === 0) && (
+            <div className="true3d-empty-state">
+              <p className="eyebrow">3-D scalar layer</p>
+              <h4>{noCloudMessage}</h4>
+              <p>The domain and slice plane remain visible so the result does not look broken.</p>
+            </div>
+          )}
       </div>
 
       {compactWorkspace ? (
@@ -625,6 +694,10 @@ function rebuildScene(
     updraftLensFrame,
     updraftLensOpacity,
     showUpdraftLensBoundary,
+    stormScene,
+    visibleStormLayerKeys,
+    stormOpacity,
+    stormPointSize,
   }: {
     bounds: SceneBounds;
     pointCloud: PointCloudResponse | null;
@@ -641,6 +714,10 @@ function rebuildScene(
     updraftLensFrame: UpdraftLensFrame | null;
     updraftLensOpacity: number;
     showUpdraftLensBoundary: boolean;
+    stormScene: StormScenePayload | null;
+    visibleStormLayerKeys: string[];
+    stormOpacity: number;
+    stormPointSize: number;
   },
 ) {
   disposeScene(scene);
@@ -656,6 +733,14 @@ function rebuildScene(
 
   if (pointCloud?.points.length) {
     scene.add(cloudPointLayer(pointCloud, bounds, opacity, pointSize, Boolean(updraftLensFrame)));
+  }
+
+  if (stormScene) {
+    for (const layer of stormScene.layers) {
+      if (visibleStormLayerKeys.includes(layer.key) && layer.points.length > 0) {
+        scene.add(stormPointLayer(layer, bounds, stormOpacity, stormPointSize));
+      }
+    }
   }
 
   if (showWindVectors && windVectors.length) {
@@ -791,11 +876,15 @@ function horizontalWindLayer(
   return group;
 }
 
-function boundsSignature(pointCloud: PointCloudResponse | null): string {
+function boundsSignature(
+  pointCloud: PointCloudResponse | null,
+  stormScene: StormScenePayload | null,
+): string {
   const extents = pointCloud?.coordinate_extents;
-  const x = extents?.xh ?? extents?.x ?? DEFAULT_BOUNDS.x;
-  const y = extents?.yh ?? extents?.y ?? DEFAULT_BOUNDS.y;
-  const z = extents?.zh ?? extents?.z ?? DEFAULT_BOUNDS.z;
+  const stormExtents = stormScene?.coordinate_extents_km;
+  const x = extents?.xh ?? extents?.x ?? extentWithUnits(stormExtents?.x) ?? DEFAULT_BOUNDS.x;
+  const y = extents?.yh ?? extents?.y ?? extentWithUnits(stormExtents?.y) ?? DEFAULT_BOUNDS.y;
+  const z = extents?.zh ?? extents?.z ?? extentWithUnits(stormExtents?.z) ?? DEFAULT_BOUNDS.z;
   return [
     x.min,
     x.max,
@@ -807,6 +896,12 @@ function boundsSignature(pointCloud: PointCloudResponse | null): string {
     z.max,
     z.units ?? "",
   ].join("|");
+}
+
+function extentWithUnits(
+  extent: { min: number; max: number } | undefined,
+): CoordinateExtent | null {
+  return extent ? { ...extent, units: "km" } : null;
 }
 
 function sceneBoundsFromSignature(signature: string): SceneBounds {
@@ -937,7 +1032,7 @@ function axisTickMarks(bounds: SceneBounds): THREE.Group {
   return group;
 }
 
-function axisLabelDefinitions(bounds: SceneBounds): AxisLabel[] {
+function axisLabelDefinitions(bounds: SceneBounds, compact: boolean): AxisLabel[] {
   const labelOffset = Math.max(0.18, bounds.maxRange * 0.035);
   const floor = -bounds.zRange / 2;
   const xMin = -bounds.xRange / 2;
@@ -958,7 +1053,7 @@ function axisLabelDefinitions(bounds: SceneBounds): AxisLabel[] {
       position: new THREE.Vector3(xMin - labelOffset, floor, centeredCoordinate(value, bounds.y)),
     });
   }
-  for (const value of majorTickValues(bounds.z)) {
+  for (const value of compact ? representativeTickValues(bounds.z) : majorTickValues(bounds.z)) {
     labels.push({
       axis: "z",
       text: `z ${formatSignedCoordinate(value, bounds.z.units)}`,
@@ -966,6 +1061,33 @@ function axisLabelDefinitions(bounds: SceneBounds): AxisLabel[] {
     });
   }
   return labels;
+}
+
+function representativeTickValues(extent: CoordinateExtent): number[] {
+  const midpoint = (extent.min + extent.max) / 2;
+  return [...new Set([extent.min, midpoint, extent.max].map(roundTick))];
+}
+
+function selectedStormScenePoint(
+  event: PointerEvent,
+  canvas: HTMLCanvasElement,
+  camera: THREE.Camera,
+  scene: THREE.Scene,
+  bounds: SceneBounds,
+): StormScenePoint | null {
+  const rect = canvas.getBoundingClientRect();
+  const pointer = new THREE.Vector2(
+    ((event.clientX - rect.left) / rect.width) * 2 - 1,
+    -((event.clientY - rect.top) / rect.height) * 2 + 1,
+  );
+  const raycaster = new THREE.Raycaster();
+  raycaster.params.Points = { threshold: bounds.maxRange * 0.018 };
+  raycaster.setFromCamera(pointer, camera);
+  for (const intersection of raycaster.intersectObjects(scene.children, true)) {
+    const points = intersection.object.userData.stormPoints as StormScenePoint[] | undefined;
+    if (points && intersection.index !== undefined) return points[intersection.index] ?? null;
+  }
+  return null;
 }
 
 function positionAxisLabels(
@@ -1086,6 +1208,73 @@ function cloudPointLayer(
   layer.name = "CM1 scalar point cloud";
   layer.renderOrder = 20;
   return layer;
+}
+
+function stormPointLayer(
+  layer: StormSceneLayer,
+  bounds: SceneBounds,
+  opacityMultiplier: number,
+  pointSizeMultiplier: number,
+): THREE.Points {
+  const positions = new Float32Array(layer.points.length * 3);
+  const colors = new Float32Array(layer.points.length * 3);
+  layer.points.forEach((point, index) => {
+    const mapped = mapCoordinate(point[0], point[1], point[2], bounds);
+    positions[index * 3] = mapped.x;
+    positions[index * 3 + 1] = mapped.y;
+    positions[index * 3 + 2] = mapped.z;
+    const color = stormPointColor(layer, point[3], point[4]);
+    colors[index * 3] = color.r;
+    colors[index * 3 + 1] = color.g;
+    colors[index * 3 + 2] = color.b;
+  });
+
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+  geometry.setAttribute("color", new THREE.BufferAttribute(colors, 3));
+  const material = new THREE.PointsMaterial({
+    size: scalarPointPixelSize(layer.default_point_size * pointSizeMultiplier),
+    vertexColors: true,
+    transparent: true,
+    opacity: Math.min(1, Math.max(0.05, layer.default_opacity * opacityMultiplier)),
+    depthWrite: layer.rendering !== "neutral_cloud",
+    sizeAttenuation: false,
+  });
+  const points = new THREE.Points(geometry, material);
+  points.name = `Supercells ${layer.display_name}`;
+  points.userData.stormPoints = layer.points;
+  points.renderOrder = layer.rendering === "neutral_cloud" ? 12 : 22;
+  return points;
+}
+
+function stormPointColor(layer: StormSceneLayer, value: number, categoryCode: number): THREE.Color {
+  if (layer.rendering === "neutral_cloud") {
+    const intensity = normalize(value, layer.scale?.minimum ?? 0, layer.scale?.maximum ?? 16);
+    return new THREE.Color().setRGB(
+      0.72 + intensity * 0.2,
+      0.84 + intensity * 0.13,
+      0.88 + intensity * 0.11,
+    );
+  }
+  if (layer.rendering === "categorical") {
+    const category = layer.categories.find((item) => item.code === categoryCode);
+    return new THREE.Color(category?.color ?? "#ffffff");
+  }
+  const scale = layer.scale;
+  if (!scale || scale.colors.length === 0) return new THREE.Color("#5d7f91");
+  if (layer.rendering === "signed_scalar" || scale.breakpoints.length === scale.colors.length - 1) {
+    const interval = scale.breakpoints.findIndex((breakpoint) => value < breakpoint);
+    const colorIndex = interval === -1 ? scale.colors.length - 1 : interval;
+    return new THREE.Color(scale.colors[Math.min(colorIndex, scale.colors.length - 1)]);
+  }
+  const normalized = normalize(value, scale.minimum, scale.maximum);
+  const scaled = normalized * Math.max(1, scale.colors.length - 1);
+  const lowerIndex = Math.min(scale.colors.length - 1, Math.floor(scaled));
+  const upperIndex = Math.min(scale.colors.length - 1, lowerIndex + 1);
+  return new THREE.Color(scale.colors[lowerIndex]).lerp(
+    new THREE.Color(scale.colors[upperIndex]),
+    scaled - lowerIndex,
+  );
 }
 
 function scalarPointColor(

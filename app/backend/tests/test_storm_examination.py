@@ -11,6 +11,7 @@ from cloud_chamber.storm_examination import (
     PRESERVED_RUN_ID,
     StormExaminationError,
     preserved_storm_examination_frame,
+    supercells_explore_frame,
 )
 
 
@@ -164,3 +165,58 @@ def test_retained_identity_mismatch_fails_closed(tmp_path: Path) -> None:
 
     with pytest.raises(StormExaminationError, match="case identity"):
         preserved_storm_examination_frame(_settings(tmp_path))
+
+
+def test_product_frame_adds_bounded_volume_layers_without_changing_science_path(
+    tmp_path: Path,
+) -> None:
+    _write_retained_fixture(tmp_path)
+
+    frame = supercells_explore_frame(
+        _settings(tmp_path), lens="rotating_updraft", time_index=5, viewport="storm"
+    )
+
+    assert frame.schema_version == "supercells_explore_v1"
+    assert frame.authority_state == "supercells_product_world"
+    assert frame.world_id == "supercells"
+    assert frame.simulation_id == "supercells_quarter_circle_reference"
+    assert frame.scene is not None
+    layers = {layer.key: layer for layer in frame.scene.layers}
+    assert layers["storm_cloud_body"].threshold_label.endswith("0.05 g/kg")
+    assert layers["vertical_motion"].scale is not None
+    assert layers["vertical_motion"].scale.scale_id == "supercell_full_depth_vertical_velocity_v1"
+    assert layers["cyclonic_rotation"].source_fields == ["zvort"]
+    assert layers["updraft_helicity"].default_visible is True
+    assert layers["reflectivity"].default_visible is False
+    assert all(layer.returned_count <= layer.source_count for layer in layers.values())
+
+
+def test_product_hydrometeor_scene_keeps_exact_large_ice_label(tmp_path: Path) -> None:
+    _write_retained_fixture(tmp_path)
+
+    frame = supercells_explore_frame(
+        _settings(tmp_path), lens="cloud_precipitation", time_index=5, viewport="full"
+    )
+
+    assert frame.scene is not None
+    category_layer = next(
+        layer for layer in frame.scene.layers if layer.key == "hydrometeor_categories"
+    )
+    assert category_layer.default_visible is True
+    assert category_layer.categories[-1].label == "Hail-treated large ice"
+    assert category_layer.scale is not None
+    assert category_layer.scale.scale_id == "supercell_total_condensate_v1"
+
+
+def test_product_low_level_scene_identifies_model_relative_flow(tmp_path: Path) -> None:
+    _write_retained_fixture(tmp_path)
+
+    frame = supercells_explore_frame(
+        _settings(tmp_path), lens="low_level_interactions", time_index=5, viewport="storm"
+    )
+
+    assert frame.scene is not None
+    assert frame.scene.wind_vectors
+    assert frame.scene.wind_vectors[0].z_km == pytest.approx(1.25)
+    assert frame.selected_point.coordinate_frame.startswith("translating model frame")
+    assert "cold pool" in frame.caveats[-1]

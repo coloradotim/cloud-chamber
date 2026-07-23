@@ -22,6 +22,7 @@ from cloud_chamber.result_ingest import (
 )
 from cloud_chamber.run_manifest import LifecycleState, RunManifestError, load_run_manifest
 from cloud_chamber.settings import CloudChamberSettings
+from cloud_chamber.supercells_world import SupercellsWorldSummary, supercells_world_detail
 from cloud_chamber.trade_cumulus_comparison_story import (
     CASE_ID,
     COMPARISON_GROUP_ID,
@@ -270,11 +271,12 @@ _LINEAGE_KEYS = {
 
 def list_cloud_world_summaries(
     settings: CloudChamberSettings,
-) -> list[CloudWorldSummary | MountainWavesWorldSummary]:
+) -> list[CloudWorldSummary | MountainWavesWorldSummary | SupercellsWorldSummary]:
     """Return real Cloud Worlds without assigning one shared scientific framing."""
     return [
         trade_cumulus_world_detail(settings).summary(),
         mountain_waves_world_detail(settings).summary(),
+        supercells_world_detail(settings).summary(),
     ]
 
 

@@ -51,6 +51,8 @@ function layer(key = "winterp", displayName = "Vertical velocity") {
 const frame: StormExaminationFrame = {
   schema_version: "storm_examination_gate_c_v1",
   authority_state: "issue_418_gate_c_research_not_product",
+  world_id: null,
+  simulation_id: null,
   run_id: "quarter-circle-supercell-official-20260722T142521Z",
   case_id: "cm1_r21_1_quarter_circle_supercell_official_v0",
   simulation_label: "Official CM1 r21.1 quarter-circle benchmark",
@@ -190,6 +192,7 @@ const frame: StormExaminationFrame = {
     },
     categories: null,
   },
+  scene: null,
   caveats: [
     "Saved histories are 15 minutes apart.",
     "Coordinates are in the translating model frame.",
@@ -352,7 +355,8 @@ describe("StormExaminationResearch", () => {
   it("fails locally when retained evidence is unavailable and retries without leaving the page", async () => {
     vi.mocked(fetch).mockResolvedValueOnce({
       ok: false,
-      json: () => Promise.resolve({ detail: "The accepted Gate B retained output is unavailable." }),
+      json: () =>
+        Promise.resolve({ detail: "The accepted Gate B retained output is unavailable." }),
     } as Response);
 
     render(<StormExaminationResearch />);

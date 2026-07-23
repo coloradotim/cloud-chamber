@@ -36,6 +36,22 @@ const mountainWavesSummary: CloudWorldSummary = {
   availability_message: "Dry Ridge and Boulder Windstorm are available.",
 };
 
+const supercellsSummary: CloudWorldSummary = {
+  world_id: "supercells",
+  display_name: "Supercells",
+  short_description: "Enter a deep rotating thunderstorm and reveal its internal structure.",
+  reference_simulation_id: "supercells_quarter_circle_reference",
+  reference_available: true,
+  simulation_count: 1,
+  saved_view_count: 0,
+  saved_comparison_count: 0,
+  featured_comparison_count: 0,
+  active_run_count: 0,
+  completed_uninspected_run_count: 0,
+  availability_state: "available",
+  availability_message: "Quarter-Circle Supercell is available for Explore.",
+};
+
 describe("CloudWorldsHome", () => {
   beforeEach(() => {
     vi.stubGlobal("fetch", vi.fn());
@@ -45,14 +61,16 @@ describe("CloudWorldsHome", () => {
     vi.unstubAllGlobals();
   });
 
-  it("presents both Cloud Worlds as peer entrances", async () => {
-    vi.mocked(fetch).mockResolvedValue(ok([summary, mountainWavesSummary]));
+  it("presents all three Cloud Worlds as peer entrances", async () => {
+    vi.mocked(fetch).mockResolvedValue(ok([summary, mountainWavesSummary, supercellsSummary]));
     const onEnterTradeCumulus = vi.fn();
     const onEnterMountainWaves = vi.fn();
+    const onEnterSupercells = vi.fn();
     render(
       <CloudWorldsHome
         onEnterTradeCumulus={onEnterTradeCumulus}
         onEnterMountainWaves={onEnterMountainWaves}
+        onEnterSupercells={onEnterSupercells}
       />,
     );
 
@@ -62,10 +80,14 @@ describe("CloudWorldsHome", () => {
     expect(screen.getByRole("heading", { name: "Mountain Waves" })).toBeInTheDocument();
     expect(screen.getByText(mountainWavesSummary.short_description)).toBeInTheDocument();
     expect(screen.getByText("Boulder Windstorm")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Supercells" })).toBeInTheDocument();
+    expect(screen.getByText("Quarter-Circle Supercell")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Enter Trade Cumulus" }));
     fireEvent.click(screen.getByRole("button", { name: "Enter Mountain Waves" }));
+    fireEvent.click(screen.getByRole("button", { name: "Enter Supercells" }));
     expect(onEnterTradeCumulus).toHaveBeenCalledOnce();
     expect(onEnterMountainWaves).toHaveBeenCalledOnce();
+    expect(onEnterSupercells).toHaveBeenCalledOnce();
   });
 
   it("shows bounded partial availability", async () => {
@@ -79,7 +101,13 @@ describe("CloudWorldsHome", () => {
         },
       ]),
     );
-    render(<CloudWorldsHome onEnterTradeCumulus={vi.fn()} onEnterMountainWaves={vi.fn()} />);
+    render(
+      <CloudWorldsHome
+        onEnterTradeCumulus={vi.fn()}
+        onEnterMountainWaves={vi.fn()}
+        onEnterSupercells={vi.fn()}
+      />,
+    );
 
     expect(await screen.findByText("Partially available")).toBeInTheDocument();
     expect(screen.getByText("Canonical BOMEX Baseline is missing.")).toBeInTheDocument();
@@ -94,6 +122,7 @@ describe("CloudWorldsHome", () => {
       <CloudWorldsHome
         onEnterTradeCumulus={vi.fn()}
         onEnterMountainWaves={vi.fn()}
+        onEnterSupercells={vi.fn()}
         fallback={<div>Existing application remains available</div>}
       />,
     );

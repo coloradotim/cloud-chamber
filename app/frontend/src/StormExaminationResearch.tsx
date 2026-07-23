@@ -6,11 +6,11 @@ import "./App.css";
 import "./StormExaminationResearch.css";
 import { ExploreInspector, IntegratedExploreWorkspace } from "./IntegratedExploreWorkspace";
 
-type LensId = "rotating_updraft" | "cloud_precipitation" | "low_level_interactions";
-type ViewportId = "storm" | "full";
-type SectionOrientation = "xz" | "yz";
+export type LensId = "rotating_updraft" | "cloud_precipitation" | "low_level_interactions";
+export type ViewportId = "storm" | "full";
+export type SectionOrientation = "xz" | "yz";
 
-type ScaleMetadata = {
+export type ScaleMetadata = {
   scale_id: string;
   display_name: string;
   units: string;
@@ -22,7 +22,7 @@ type ScaleMetadata = {
   fixed_across_time: boolean;
 };
 
-type FieldLayer = {
+export type FieldLayer = {
   key: string;
   display_name: string;
   units: string;
@@ -35,14 +35,14 @@ type FieldLayer = {
   scale: ScaleMetadata;
 };
 
-type CategoryDefinition = {
+export type CategoryDefinition = {
   code: number;
   key: string;
   label: string;
   color: string;
 };
 
-type CategoryLayer = {
+export type CategoryLayer = {
   key: string;
   display_name: string;
   evidence_kind: "derived";
@@ -53,7 +53,7 @@ type CategoryLayer = {
   categories: CategoryDefinition[];
 };
 
-type WindVector = {
+export type WindVector = {
   x_km: number;
   y_km: number;
   u_m_s: number;
@@ -61,7 +61,7 @@ type WindVector = {
   magnitude_m_s: number;
 };
 
-type PlanView = {
+export type PlanView = {
   title: string;
   subtitle: string;
   x_indices: number[];
@@ -76,7 +76,7 @@ type PlanView = {
   wind_vectors: WindVector[];
 };
 
-type VerticalSection = {
+export type VerticalSection = {
   orientation: SectionOrientation;
   title: string;
   horizontal_dimension: "x" | "y";
@@ -89,7 +89,7 @@ type VerticalSection = {
   categories: CategoryLayer | null;
 };
 
-type SelectedPoint = {
+export type SelectedPoint = {
   x_index: number;
   y_index: number;
   z_index: number;
@@ -105,9 +105,47 @@ type SelectedPoint = {
   distance_to_primary_updraft_km: number;
 };
 
+export type VolumeLayer = {
+  key: string;
+  display_name: string;
+  units: string;
+  evidence_kind: "native" | "derived";
+  source_fields: string[];
+  derivation: string | null;
+  rendering: "neutral_cloud" | "signed_scalar" | "scalar" | "categorical";
+  points: Array<[number, number, number, number, number]>;
+  source_count: number;
+  returned_count: number;
+  threshold_label: string;
+  default_visible: boolean;
+  default_opacity: number;
+  default_point_size: number;
+  scale: ScaleMetadata | null;
+  categories: CategoryDefinition[];
+};
+
+export type StormVolumeScene = {
+  coordinate_extents_km: Record<"x" | "y" | "z", { min: number; max: number }>;
+  coordinate_sizes: Record<"x" | "y" | "z", number>;
+  layers: VolumeLayer[];
+  wind_vectors: Array<{
+    x_km: number;
+    y_km: number;
+    z_km: number;
+    u_m_s: number;
+    v_m_s: number;
+    magnitude_m_s: number;
+  }>;
+  wind_reference_m_s: number;
+  point_budget: number;
+  source_history_file: string;
+};
+
 export type StormExaminationFrame = {
-  schema_version: "storm_examination_gate_c_v1";
-  authority_state: "issue_418_gate_c_research_not_product";
+  schema_version: "storm_examination_gate_c_v1" | "supercells_explore_v1";
+  authority_state: "issue_418_gate_c_research_not_product" | "supercells_product_world";
+  world_id: "supercells" | null;
+  simulation_id: "supercells_quarter_circle_reference" | null;
   run_id: string;
   case_id: string;
   simulation_label: string;
@@ -139,13 +177,14 @@ export type StormExaminationFrame = {
   plan: PlanView;
   xz_section: VerticalSection;
   yz_section: VerticalSection;
+  scene: StormVolumeScene | null;
   caveats: string[];
   provenance: Record<string, string>;
   extraction_milliseconds: number;
 };
 
-type Selection = { xIndex: number; yIndex: number; zIndex: number };
-type OverlayState = {
+export type Selection = { xIndex: number; yIndex: number; zIndex: number };
+export type OverlayState = {
   rotation: boolean;
   updraftHelicity: boolean;
   reflectivity: boolean;
@@ -189,7 +228,7 @@ const HYDROMETEOR_SHORT: Record<string, string> = {
   qr: "Rain",
   qi: "Cloud ice",
   qs: "Snow",
-  qg: "Large ice",
+  qg: "Hail-treated large ice",
 };
 
 export function StormExaminationResearch() {
@@ -573,7 +612,7 @@ function StormTimeline({
   );
 }
 
-function StormPlanPlot({
+export function StormPlanPlot({
   frame,
   overlays,
   onSelect,
@@ -623,7 +662,7 @@ function StormPlanPlot({
   );
 }
 
-function StormSectionPlot({
+export function StormSectionPlot({
   section,
   frame,
   overlays,
@@ -681,7 +720,7 @@ function StormSectionPlot({
   );
 }
 
-function StormLegend({ frame }: { frame: StormExaminationFrame }) {
+export function StormLegend({ frame }: { frame: StormExaminationFrame }) {
   if (frame.plan.categories) {
     return (
       <aside className="storm-legend" aria-label="Hydrometeor legend">
