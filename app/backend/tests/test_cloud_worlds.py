@@ -17,6 +17,7 @@ from cloud_chamber.cloud_worlds import (
     REFERENCE_SIMULATION_ID,
     configuration_differences,
     list_cloud_world_summaries,
+    trade_cumulus_simulation_exists,
     trade_cumulus_world_detail,
 )
 from cloud_chamber.result_ingest import ResultMetadata
@@ -190,6 +191,21 @@ def test_world_summary_and_detail_map_exact_known_pair(
     assert detail.simulations[1].parent_simulation_id == REFERENCE_SIMULATION_ID
     assert len(detail.simulations) == 2
     assert detail.featured_comparison.open_available is True
+
+
+def test_simulation_identity_lookup_skips_complete_world_construction(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    settings = _settings(tmp_path)
+    _install_pair(settings, monkeypatch)
+    monkeypatch.setattr(
+        "cloud_chamber.cloud_worlds.trade_cumulus_moisture_comparison_story",
+        lambda _settings: pytest.fail("The identity lookup must not build the featured story."),
+    )
+
+    assert trade_cumulus_simulation_exists(settings, REFERENCE_SIMULATION_ID)
+    assert trade_cumulus_simulation_exists(settings, MORE_MOISTURE_SIMULATION_ID)
+    assert not trade_cumulus_simulation_exists(settings, "not-a-simulation")
 
 
 def test_missing_baseline_is_bounded_and_keeps_lab_available(tmp_path: Path) -> None:

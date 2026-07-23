@@ -1,7 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import { ExploreInspector, IntegratedExploreWorkspace } from "./IntegratedExploreWorkspace";
+import {
+  ExploreContextContent,
+  ExploreInspector,
+  ExploreSelectedEvidence,
+  ExploreSecondarySections,
+  IntegratedExploreWorkspace,
+} from "./IntegratedExploreWorkspace";
 import { NativeSlicePositionControl } from "./NativeSlicePositionControl";
+import { SimulationNotes } from "./SimulationNotes";
 import type { SupercellSimulation } from "./SupercellsWorld";
 import {
   type LensId,
@@ -44,6 +51,7 @@ type LensPresentation = {
   sceneOpacity: number;
   scenePointSize: number;
   selection: Selection | null;
+  selectedEvidenceVisible: boolean;
 };
 
 const LENSES: Array<{ id: LensId; label: string }> = [
@@ -83,6 +91,7 @@ export function SupercellsExplore({
     sceneOpacity,
     scenePointSize,
     selection,
+    selectedEvidenceVisible,
   } = presentation;
   const visibleLayerKeys = presentation.visibleLayerKeys ?? [];
   const [focusedViewer, setFocusedViewer] = useState<FocusedViewer>(null);
@@ -191,7 +200,7 @@ export function SupercellsExplore({
 
   function selectPoint(next: Selection) {
     setPlaying(false);
-    updatePresentation({ selection: next });
+    updatePresentation({ selection: next, selectedEvidenceVisible: true });
   }
 
   function updatePresentation(patch: Partial<LensPresentation>) {
@@ -229,7 +238,12 @@ export function SupercellsExplore({
 
   function resetSlicePosition() {
     setPlaying(false);
-    updatePresentation({ selection: null });
+    updatePresentation({ selection: null, selectedEvidenceVisible: false });
+  }
+
+  function clearSelectedEvidence() {
+    setPlaying(false);
+    updatePresentation({ selectedEvidenceVisible: false });
   }
 
   function toggleLayer(key: string, visible: boolean) {
@@ -293,7 +307,7 @@ export function SupercellsExplore({
                 activeSliceLabel={activeSliceLabel}
                 showSlicePlane={evidenceView !== "plan" || frame.plan.selection_z_indices === null}
                 selectedRegion={
-                  frame && selection
+                  frame && selection && selectedEvidenceVisible
                     ? {
                         xIndex: frame.selected_point.x_index,
                         yIndex: frame.selected_point.y_index,
@@ -328,7 +342,7 @@ export function SupercellsExplore({
                 stormPointSize={scenePointSize}
                 compactAxisLabels
                 selectedPointCoordinates={
-                  selection && frame
+                  selection && selectedEvidenceVisible && frame
                     ? {
                         x: frame.selected_point.x_km,
                         y: frame.selected_point.y_km,
@@ -423,13 +437,19 @@ export function SupercellsExplore({
               <div className="supercells-evidence-body">
                 <div className="supercells-active-plot">
                   {evidenceView === "plan" ? (
-                    <StormPlanPlot frame={frame} overlays={overlays} onSelect={selectPoint} />
+                    <StormPlanPlot
+                      frame={frame}
+                      overlays={overlays}
+                      onSelect={selectPoint}
+                      showSelection={selection === null || selectedEvidenceVisible}
+                    />
                   ) : (
                     <StormSectionPlot
                       section={evidenceView === "xz" ? frame.xz_section : frame.yz_section}
                       frame={frame}
                       overlays={overlays}
                       onSelect={selectPoint}
+                      showSelection={selection === null || selectedEvidenceVisible}
                     />
                   )}
                 </div>
@@ -453,20 +473,16 @@ export function SupercellsExplore({
             collapsed={contextCollapsed}
             onCollapsedChange={setContextCollapsed}
             showCollapseControl={false}
-            sections={{
-              explain: (
-                <SupercellExplanation
-                  frame={frame}
-                  lens={lens}
-                  viewport={viewport}
-                  evidenceView={evidenceView}
-                />
-              ),
-              science: <SupercellScience frame={frame} selected={selection !== null} />,
-              notes: <SupercellNotes />,
-              details: <SupercellDetails frame={frame} simulation={simulation} />,
-            }}
-          />
+          >
+            <SupercellExplanation
+              frame={frame}
+              lens={lens}
+              viewport={viewport}
+              evidenceView={evidenceView}
+              selected={selection !== null && selectedEvidenceVisible}
+              onClearSelection={clearSelectedEvidence}
+            />
+          </ExploreInspector>
         </div>
 
         <StormExploreControls
@@ -499,6 +515,20 @@ export function SupercellsExplore({
           }}
           onPlaying={setPlaying}
           onPlaybackSpeed={setPlaybackSpeed}
+        />
+
+        <ExploreSecondarySections
+          sections={{
+            science: <SupercellScience frame={frame} lens={lens} />,
+            notes: (
+              <SimulationNotes
+                worldId="supercells"
+                simulationId={simulation.simulation_id}
+                simulationName={simulation.display_name}
+              />
+            ),
+            details: <SupercellDetails frame={frame} simulation={simulation} />,
+          }}
         />
       </section>
     </IntegratedExploreWorkspace>
@@ -895,88 +925,128 @@ function SupercellExplanation({
   lens,
   viewport,
   evidenceView,
+  selected,
+  onClearSelection,
 }: {
   frame: StormExaminationFrame | null;
   lens: LensId;
   viewport: ViewportId;
   evidenceView: EvidenceView;
+  selected: boolean;
+  onClearSelection: () => void;
 }) {
   const question =
     frame?.lens_question ?? LENSES.find((item) => item.id === lens)?.label ?? "Storm evidence";
+  const point = frame?.selected_point;
+  const selectedEvidence =
+    selected && point ? (
+      <ExploreSelectedEvidence
+        eyebrow="Selected cell"
+        title="Native-grid evidence"
+        states={point.states}
+        metrics={[
+          { label: "x", value: `${point.x_km.toFixed(1)} km` },
+          { label: "y", value: `${point.y_km.toFixed(1)} km` },
+          { label: "z", value: `${point.z_km.toFixed(2)} km` },
+          { label: "Model time", value: formatTime(point.model_time_seconds) },
+          ...scienceKeys(frame.lens_id).map((key) => ({
+            label: scienceLabel(key),
+            value: `${formatScientific(point.values[key])} ${point.units[key] ?? ""}`.trim(),
+          })),
+        ]}
+        onClear={onClearSelection}
+        className="supercells-selected-context"
+      />
+    ) : undefined;
   return (
-    <section className="supercells-context-panel">
-      <p className="eyebrow">{frame?.lens_name ?? "Supercell Lens"}</p>
-      <h3>{question}</h3>
-      <p>{lensExplanation(lens, evidenceView, frame?.plan.level_km)}</p>
-      {frame && (
-        <div className="supercells-notice-now">
-          <strong>What to notice now</strong>
+    <ExploreContextContent
+      identity={frame?.lens_name ?? "Supercell Lens"}
+      question={question}
+      explanation={<p>{lensExplanation(lens, evidenceView, frame?.plan.level_km)}</p>}
+      selectedEvidence={selectedEvidence}
+      whatToNotice={
+        frame ? (
           <p>{frame.what_to_notice_by_view?.[evidenceView] ?? frame.what_to_notice_now}</p>
-        </div>
+        ) : undefined
+      }
+      orientation={[
+        { label: "Simulation", value: "Quarter-Circle Supercell" },
+        { label: "View", value: sliceControlLabel(evidenceView) },
+        { label: "Viewport", value: viewport === "storm" ? "Storm region" : "Full domain" },
+        { label: "Model time", value: formatTime(frame?.time_seconds ?? 0) },
+        {
+          label: "Relevant caveat",
+          value:
+            frame?.caveats[lens === "low_level_interactions" ? 4 : 0] ??
+            "Retained storm evidence is loading.",
+        },
+      ]}
+      selectionPrompt={
+        selected ? undefined : "Select a cell in the plan or section for native-grid evidence."
+      }
+    />
+  );
+}
+
+function SupercellScience({ frame, lens }: { frame: StormExaminationFrame | null; lens: LensId }) {
+  const primary = frame?.plan.primary;
+  return (
+    <section className="explore-science-section">
+      <p className="eyebrow">Science</p>
+      <h3>{frame?.lens_name ?? LENSES.find((item) => item.id === lens)?.label}</h3>
+      <p>{supercellScienceExplanation(lens)}</p>
+      <dl className="metric-grid compact-metric-grid">
+        <Metric
+          label="Fixed primary scale"
+          value={
+            primary
+              ? `${formatScientific(primary.scale.minimum)} to ${formatScientific(
+                  primary.scale.maximum,
+                )} ${primary.scale.units}`
+              : "Loading"
+          }
+        />
+        <Metric
+          label="Current plan range"
+          value={
+            primary
+              ? `${formatScientific(primary.selected_frame_minimum)} to ${formatScientific(
+                  primary.selected_frame_maximum,
+                )} ${primary.units}`
+              : "Loading"
+          }
+        />
+        <Metric
+          label="Coordinate frame"
+          value={frame?.selected_point.coordinate_frame ?? "Translating model frame"}
+        />
+        <Metric
+          label="Sampling"
+          value="Retained native cells; overlays identify explicitly derived quantities"
+        />
+      </dl>
+      {frame && (
+        <details>
+          <summary>Scientific limitations</summary>
+          <ul>
+            {frame.caveats.map((caveat) => (
+              <li key={caveat}>{caveat}</li>
+            ))}
+          </ul>
+        </details>
       )}
-      <dl className="metric-grid">
-        <Metric label="Simulation" value="Quarter-Circle Supercell" />
-        <Metric label="Viewport" value={viewport === "storm" ? "Storm region" : "Full domain"} />
-        <Metric label="Model time" value={formatTime(frame?.time_seconds ?? 0)} />
-        <Metric
-          label="Frame"
-          value={frame ? `${frame.time_index + 1} of ${frame.times_seconds.length}` : "Loading"}
-        />
-      </dl>
-      <p className="context-callout">
-        Select a cell in the plan or section to inspect native-grid evidence.
-      </p>
     </section>
   );
 }
 
-function SupercellScience({
-  frame,
-  selected,
-}: {
-  frame: StormExaminationFrame | null;
-  selected: boolean;
-}) {
-  if (!frame) return <p>Scientific evidence is loading.</p>;
-  const point = frame.selected_point;
-  return (
-    <section className="supercells-context-panel">
-      <p className="eyebrow">
-        {selected ? "Selected point" : "Strongest-updraft column at slice level"}
-      </p>
-      <h3>
-        x {point.x_km.toFixed(1)}, y {point.y_km.toFixed(1)}, z {point.z_km.toFixed(2)} km
-      </h3>
-      <div className="supercells-state-row">
-        {point.states.map((state) => (
-          <span key={state}>{state}</span>
-        ))}
-      </div>
-      <dl className="metric-grid">
-        {scienceKeys(frame.lens_id).map((key) => (
-          <Metric
-            key={key}
-            label={scienceLabel(key)}
-            value={`${formatScientific(point.values[key])} ${point.units[key] ?? ""}`.trim()}
-          />
-        ))}
-        <Metric
-          label="Horizontal distance to strongest-updraft column"
-          value={`${point.distance_to_primary_updraft_km.toFixed(1)} km`}
-        />
-      </dl>
-      <p className="context-coordinate-frame">{point.coordinate_frame}</p>
-    </section>
-  );
-}
-
-function SupercellNotes() {
-  return (
-    <section className="supercells-context-panel">
-      <h3>Simulation notes</h3>
-      <p>No note is recorded for this built-in Simulation.</p>
-    </section>
-  );
+function supercellScienceExplanation(lens: LensId): string {
+  if (lens === "rotating_updraft") {
+    return "Compare the signed updraft with cyclonic vorticity and the 2-5 km updraft-helicity footprint. Their overlap shows where sustained ascent and rotation are organized together; no single overlay is treated as the storm by itself.";
+  }
+  if (lens === "cloud_precipitation") {
+    return "Dominant hydrometeor identity shows which retained condensate species has the largest local mass. Use it with the vertical-motion field and precipitation evidence to distinguish cloud structure from falling or accumulated water.";
+  }
+  return "Read low-level ascent and descent together with the rain footprint and model-relative flow. The view tests how outflow, inflow, precipitation, and near-surface vertical motion occupy the same storm-relative region without inferring a process from one cell.";
 }
 
 function SupercellDetails({
@@ -1079,6 +1149,7 @@ function lensPresentationDefaults(): Record<LensId, LensPresentation> {
       sceneOpacity: 1,
       scenePointSize: 1,
       selection: null,
+      selectedEvidenceVisible: false,
     },
     cloud_precipitation: {
       viewport: "storm",
@@ -1091,6 +1162,7 @@ function lensPresentationDefaults(): Record<LensId, LensPresentation> {
       sceneOpacity: 0.9,
       scenePointSize: 0.9,
       selection: null,
+      selectedEvidenceVisible: false,
     },
     low_level_interactions: {
       viewport: "storm",
@@ -1103,6 +1175,7 @@ function lensPresentationDefaults(): Record<LensId, LensPresentation> {
       sceneOpacity: 1,
       scenePointSize: 1,
       selection: null,
+      selectedEvidenceVisible: false,
     },
   };
 }
@@ -1231,14 +1304,11 @@ function sliceControlLabel(view: EvidenceView): string {
   return view === "xz" ? "Vertical x-z" : "Vertical y-z";
 }
 
-function lensExplanation(
-  lens: LensId,
-  evidenceView: EvidenceView,
-  planLevelKm?: number,
-): string {
-  const level = typeof planLevelKm === "number" && Number.isFinite(planLevelKm)
-    ? `z = ${planLevelKm.toFixed(2)} km`
-    : "the selected native altitude";
+function lensExplanation(lens: LensId, evidenceView: EvidenceView, planLevelKm?: number): string {
+  const level =
+    typeof planLevelKm === "number" && Number.isFinite(planLevelKm)
+      ? `z = ${planLevelKm.toFixed(2)} km`
+      : "the selected native altitude";
   if (lens === "rotating_updraft") {
     return evidenceView === "plan"
       ? `The x-y slice at ${level} pairs signed vertical motion with cyclonic vorticity and the 2–5 km updraft-helicity footprint, showing where ascent and rotation organize together.`

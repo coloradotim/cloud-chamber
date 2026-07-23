@@ -1,8 +1,15 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { MouseEvent as ReactMouseEvent } from "react";
 
-import { ExploreInspector, IntegratedExploreWorkspace } from "./IntegratedExploreWorkspace";
+import {
+  ExploreContextContent,
+  ExploreInspector,
+  ExploreSelectedEvidence,
+  ExploreSecondarySections,
+  IntegratedExploreWorkspace,
+} from "./IntegratedExploreWorkspace";
 import type { MountainWavesSimulation } from "./MountainWavesWorld";
+import { SimulationNotes } from "./SimulationNotes";
 import { scalarPointPixelSize } from "./True3DViewer.utils";
 
 type MountainWaveField =
@@ -596,27 +603,29 @@ export function MountainWavesExplore({
           onPlaybackSpeed={setPlaybackSpeed}
         />
 
-        <ExploreInspector
+        <ExploreInspector>
+          <MountainWavesContext
+            simulation={simulation}
+            frame={frame}
+            viewMode={viewMode}
+            geometryMode={geometryMode}
+            viewportMode={viewportMode ?? frame?.viewport.default_mode ?? "full"}
+            selectedEvidence={selectedEvidence}
+            onClearSelection={() => setSelectedPoint(null)}
+          />
+        </ExploreInspector>
+
+        <ExploreSecondarySections
           sections={{
-            explain: (
-              <MountainWavesContext
-                simulation={simulation}
-                frame={frame}
-                viewMode={viewMode}
-                geometryMode={geometryMode}
-                viewportMode={viewportMode ?? frame?.viewport.default_mode ?? "full"}
-                selectedEvidence={selectedEvidence}
-                onClearSelection={() => setSelectedPoint(null)}
-              />
+            science: (
+              <MountainWavesScience simulation={simulation} frame={frame} viewMode={viewMode} />
             ),
             notes: (
-              <section className="mountain-waves-notebook">
-                <h3>Experiment question</h3>
-                <p>
-                  {simulation.user_question ||
-                    "No question was recorded for this Simulation. New questions can be attached when creating a Variation in the Lab."}
-                </p>
-              </section>
+              <SimulationNotes
+                worldId="mountain_waves"
+                simulationId={simulation.simulation_id}
+                simulationName={simulation.display_name}
+              />
             ),
             details: <MountainWavesDetails simulation={simulation} frame={frame} />,
           }}
@@ -931,109 +940,187 @@ function MountainWavesContext({
   selectedEvidence: ReturnType<typeof pointEvidence> | null;
   onClearSelection: () => void;
 }) {
-  if (selectedEvidence) {
-    return (
-      <section className="selected-region-inspector mountain-waves-point-context">
-        <div className="section-heading">
-          <div>
-            <p className="eyebrow">Selected point</p>
-            <h3>Native cell evidence</h3>
-          </div>
-          <button type="button" className="secondary-button" onClick={onClearSelection}>
-            Clear selection
-          </button>
-        </div>
-        <div className="mountain-waves-state-row">
-          <span className="state-chip">{selectedEvidence.motionState}</span>
-          {selectedEvidence.cloudState && (
-            <span className="state-chip">{selectedEvidence.cloudState}</span>
-          )}
-          {selectedEvidence.saturationState && (
-            <span className="state-chip">{selectedEvidence.saturationState}</span>
-          )}
-        </div>
-        <dl className="context-metrics">
-          <Metric label="x" value={`${formatNumber(selectedEvidence.xM / 1_000)} km`} />
-          <Metric label="Model height" value={`${formatNumber(selectedEvidence.modelHeightM)} m`} />
-          <Metric label="Local AGL" value={`${formatNumber(selectedEvidence.aglM)} m`} />
-          <Metric label="Model time" value={formatTime(selectedEvidence.timeSeconds)} />
-          <Metric label="Horizontal wind" value={`${formatSigned(selectedEvidence.u)} m/s`} />
-          <Metric label="Vertical velocity" value={`${formatSigned(selectedEvidence.w)} m/s`} />
-          {selectedEvidence.ql !== null && (
-            <Metric
-              label="Cloud liquid water"
-              value={`${formatNumber(selectedEvidence.ql, 4)} g/kg`}
-            />
-          )}
-          {selectedEvidence.rh !== null && (
-            <Metric label="Relative humidity" value={`${formatNumber(selectedEvidence.rh, 1)}%`} />
-          )}
-          <Metric
-            label="Potential temperature"
-            value={`${formatNumber(selectedEvidence.theta, 1)} K`}
-          />
-          <Metric
-            label="Potential-temperature perturbation"
-            value={`${formatSigned(selectedEvidence.thetaPerturbation)} K`}
-          />
-        </dl>
-      </section>
-    );
-  }
+  const identity =
+    viewMode === "cloud"
+      ? "Wave Cloud Lens"
+      : viewMode === "structure"
+        ? "Wave Structure Lens"
+        : "Field";
+  const question =
+    viewMode === "cloud"
+      ? "Where does cloud sit within rising and descending wave motion?"
+      : viewMode === "structure"
+        ? "How is terrain displacing the atmosphere into a gravity wave?"
+        : `What does ${frame?.field.display_name ?? "this field"} show directly?`;
+  const explanation =
+    viewMode === "cloud"
+      ? "Vertical velocity remains primary. Native cloudy-cell markers and the black boundary locate cloud liquid water; the saturation contour and horizontal wind place that cloud in the wave."
+      : viewMode === "structure"
+        ? "Vertical velocity remains primary while horizontal wind and potential-temperature contours reveal the terrain-forced displacement."
+        : `The selected Field is shown directly on one fixed Simulation scale${frame ? ` in ${frame.field.units}` : ""}.`;
+  const relevantCaveat =
+    geometryMode === "expanded"
+      ? "Displayed terrain angles are vertically exaggerated for inspection."
+      : viewMode === "cloud"
+        ? "Cloud state is instantaneous; no formation or erosion process is inferred at a point."
+        : simulation.moist
+          ? "Point labels describe the saved instant; they do not infer process direction."
+          : simulation.moist_fields_available
+            ? "The configured atmosphere is dry; retained moisture fields remain available for inspection."
+            : "This dry Simulation contains no water-vapor or cloud fields.";
+  const selectedPoint = selectedEvidence ? (
+    <ExploreSelectedEvidence
+      eyebrow="Selected point"
+      title="Native cell evidence"
+      states={[
+        selectedEvidence.motionState,
+        selectedEvidence.cloudState,
+        selectedEvidence.saturationState,
+      ].filter((state): state is string => Boolean(state))}
+      metrics={[
+        { label: "x", value: `${formatNumber(selectedEvidence.xM / 1_000)} km` },
+        {
+          label: "Model height",
+          value: `${formatNumber(selectedEvidence.modelHeightM)} m`,
+        },
+        { label: "Local AGL", value: `${formatNumber(selectedEvidence.aglM)} m` },
+        { label: "Model time", value: formatTime(selectedEvidence.timeSeconds) },
+        {
+          label: "Horizontal wind",
+          value: `${formatSigned(selectedEvidence.u)} m/s`,
+        },
+        {
+          label: "Vertical velocity",
+          value: `${formatSigned(selectedEvidence.w)} m/s`,
+        },
+        ...(selectedEvidence.ql !== null
+          ? [
+              {
+                label: "Cloud liquid water",
+                value: `${formatNumber(selectedEvidence.ql, 4)} g/kg`,
+              },
+            ]
+          : []),
+        ...(selectedEvidence.rh !== null
+          ? [
+              {
+                label: "Relative humidity",
+                value: `${formatNumber(selectedEvidence.rh, 1)}%`,
+              },
+            ]
+          : []),
+        {
+          label: "Potential-temperature perturbation",
+          value: `${formatSigned(selectedEvidence.thetaPerturbation)} K`,
+        },
+      ]}
+      onClear={onClearSelection}
+      className="mountain-waves-point-context"
+    />
+  ) : undefined;
 
   return (
-    <section className="mountain-waves-context-summary">
-      <p className="eyebrow">
-        {viewMode === "cloud"
-          ? "Wave Cloud Lens"
-          : viewMode === "structure"
-            ? "Wave Structure Lens"
-            : "Field"}
-      </p>
-      <h3>
-        {viewMode === "cloud"
-          ? "Where does cloud sit within rising and descending wave motion?"
-          : viewMode === "structure"
-            ? "How is terrain displacing the atmosphere into a gravity wave?"
-            : frame?.field.display_name}
-      </h3>
+    <ExploreContextContent
+      identity={identity}
+      question={question}
+      explanation={<p>{explanation}</p>}
+      selectedEvidence={selectedPoint}
+      whatToNotice={
+        frame ? (
+          <p>
+            This frame spans {formatSigned(frame.scale.selected_time_minimum)} to{" "}
+            {formatSigned(frame.scale.selected_time_maximum)} {frame.scale.units} on the fixed
+            Simulation scale.
+          </p>
+        ) : undefined
+      }
+      orientation={[
+        { label: "Simulation", value: simulation.display_name },
+        { label: "Atmosphere", value: simulation.moist ? "Moist" : "Dry" },
+        {
+          label: "Geometry",
+          value: geometryMode === "expanded" ? "Expanded height" : "True physical scale",
+        },
+        {
+          label: "Viewport",
+          value: viewportMode === "focus" ? "Focus region" : "Full domain",
+        },
+        { label: "Model time", value: formatTime(frame?.time_seconds ?? 0) },
+        { label: "Relevant caveat", value: relevantCaveat },
+      ]}
+      selectionPrompt={
+        selectedEvidence ? undefined : "Select a point in the cross-section for native values."
+      }
+    />
+  );
+}
+
+function MountainWavesScience({
+  simulation,
+  frame,
+  viewMode,
+}: {
+  simulation: MountainWavesSimulation;
+  frame: MountainWaveFrame | null;
+  viewMode: ViewMode;
+}) {
+  return (
+    <section className="explore-science-section">
+      <p className="eyebrow">Science</p>
+      <h3>Terrain-forced wave structure</h3>
       <p>
         {viewMode === "cloud"
-          ? "Vertical velocity remains primary. Native-cell cloud points and the black boundary locate cloud liquid water; the RH = 100% contour and horizontal wind show the moist wave environment. Potential-temperature contours can be added for wave structure."
+          ? "Use the signed vertical-motion field to locate wave ascent and descent, then test whether native cloudy cells, their boundary, and saturation occupy the expected phase of that wave."
           : viewMode === "structure"
-            ? "Vertical velocity remains primary while horizontal wind and total potential-temperature contours reveal the terrain-forced wave."
-            : `The selected Field is shown directly on its fixed Simulation scale${frame ? ` in ${frame.field.units}` : ""}.`}
+            ? "Alternating ascent and descent, wind deflection, and displaced potential-temperature surfaces show the resolved wave without requiring cloud."
+            : "Field mode preserves one quantitative model variable so its magnitude and location can be inspected without interpretive overlays."}
       </p>
-      <dl className="context-metrics">
-        <Metric label="Simulation" value={simulation.display_name} />
-        <Metric label="Atmosphere" value={simulation.moist ? "Moist" : "Dry"} />
+      {simulation.user_question && (
+        <section className="explore-science-callout">
+          <strong>Experiment question</strong>
+          <p>{simulation.user_question}</p>
+        </section>
+      )}
+      <dl className="metric-grid compact-metric-grid">
         <Metric
-          label="Geometry"
-          value={geometryMode === "expanded" ? "Expanded height" : "True physical scale"}
-        />
-        <Metric
-          label="Viewport"
-          value={viewportMode === "focus" ? "Focus region" : "Full domain"}
-        />
-        <Metric label="Model time" value={formatTime(frame?.time_seconds ?? 0)} />
-        <Metric
-          label="Relevant caveat"
+          label="Fixed field scale"
           value={
-            geometryMode === "expanded"
-              ? "Displayed terrain angles are vertically exaggerated for inspection."
-              : viewMode === "cloud"
-                ? "Cloud state is instantaneous; no formation or erosion process is inferred at a point."
-                : simulation.moist
-                  ? "Point labels describe the saved instant; they do not infer process direction."
-                  : simulation.moist_fields_available
-                    ? "The configured atmosphere is dry; retained moisture fields remain available for inspection."
-                    : "This dry Simulation contains no water-vapor or cloud fields."
+            frame
+              ? `${formatSigned(frame.scale.minimum)} to ${formatSigned(frame.scale.maximum)} ${frame.scale.units}`
+              : "Loading"
+          }
+        />
+        <Metric
+          label="Current frame range"
+          value={
+            frame
+              ? `${formatSigned(frame.scale.selected_time_minimum)} to ${formatSigned(
+                  frame.scale.selected_time_maximum,
+                )} ${frame.scale.units}`
+              : "Loading"
+          }
+        />
+        <Metric
+          label="Native geometry"
+          value={frame?.provenance.topology ?? "Native 2-D x-z output"}
+        />
+        <Metric
+          label="Cloud threshold"
+          value={
+            frame?.overlay ? `${formatNumber(frame.overlay.threshold, 4)} g/kg` : "Not available"
           }
         />
       </dl>
-      <p className="context-selection-prompt">
-        Select a point in the cross-section for native values.
-      </p>
+      {frame && frame.caveats.length > 0 && (
+        <details>
+          <summary>Scientific limitations</summary>
+          <ul>
+            {frame.caveats.map((caveat) => (
+              <li key={caveat}>{caveat}</li>
+            ))}
+          </ul>
+        </details>
+      )}
     </section>
   );
 }

@@ -1,7 +1,12 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
-import { ExploreInspector, IntegratedExploreWorkspace } from "./IntegratedExploreWorkspace";
+import {
+  ExploreContextContent,
+  ExploreInspector,
+  ExploreSecondarySections,
+  IntegratedExploreWorkspace,
+} from "./IntegratedExploreWorkspace";
 
 describe("IntegratedExploreWorkspace", () => {
   it("leads with stable product identity and bounded actions", () => {
@@ -26,34 +31,34 @@ describe("IntegratedExploreWorkspace", () => {
     expect(onCompare).toHaveBeenCalledOnce();
   });
 
-  it("keeps current context primary and places notes and details in secondary content", () => {
+  it("keeps one context-sensitive sidebar that collapses independently", () => {
     render(
       <ExploreInspector
-        sections={{
-          explain: <p>Authored explanation</p>,
-          notes: <p>No note recorded</p>,
-          details: <p>Technical provenance</p>,
-        }}
+        children={
+          <ExploreContextContent
+            identity="Updraft Lens"
+            question="Where is air rising through cloud?"
+            explanation={<p>Warm colors show rising air.</p>}
+            selectedEvidence={<p>Selected cell evidence</p>}
+            orientation={[{ label: "Model time", value: "1,200 s" }]}
+          />
+        }
       />,
     );
 
-    expect(screen.getByText("Authored explanation")).toBeVisible();
-    expect(screen.getByLabelText("Simulation notebook")).toHaveTextContent("No note recorded");
-    expect(screen.getByLabelText("Simulation technical details")).toHaveTextContent(
-      "Technical provenance",
-    );
-    fireEvent.click(screen.getByRole("button", { name: "Collapse inspector" }));
-    expect(screen.getByLabelText("Explore inspector")).toHaveAttribute("data-collapsed", "true");
-    expect(screen.getByLabelText("Simulation notebook")).toBeVisible();
-    fireEvent.click(screen.getByRole("button", { name: "Open inspector" }));
-    expect(screen.getByText("Authored explanation")).toBeVisible();
+    expect(screen.getByText("Selected cell evidence")).toBeVisible();
+    expect(screen.getByLabelText("Context")).toHaveAttribute("data-collapsed", "false");
+    expect(screen.queryByRole("tablist")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Hide Context" }));
+    expect(screen.getByLabelText("Context")).toHaveAttribute("data-collapsed", "true");
+    fireEvent.click(screen.getByRole("button", { name: "Show Context" }));
+    expect(screen.getByText("Warm colors show rising air.")).toBeVisible();
   });
 
-  it("uses an accessible tabbed Context inspector when Science is available", () => {
+  it("places Science, Notes, and Details in one accessible below-workspace navigator", () => {
     render(
-      <ExploreInspector
+      <ExploreSecondarySections
         sections={{
-          explain: <p>Storm explanation</p>,
           science: <p>Selected native evidence</p>,
           notes: <p>Simulation notes</p>,
           details: <p>Run lineage</p>,
@@ -61,12 +66,15 @@ describe("IntegratedExploreWorkspace", () => {
       />,
     );
 
-    const tablist = screen.getByRole("tablist", { name: "Context sections" });
-    expect(screen.getByRole("tab", { name: "Explain" })).toHaveAttribute("aria-selected", "true");
-    fireEvent.click(screen.getByRole("tab", { name: "Science" }));
+    const tablist = screen.getByRole("tablist", { name: "Simulation support sections" });
+    expect(screen.getByRole("tab", { name: "Science" })).toHaveAttribute("aria-selected", "true");
+    fireEvent.click(screen.getByRole("tab", { name: "Notes" }));
+    expect(screen.getByRole("tabpanel")).toHaveTextContent("Simulation notes");
+    fireEvent.keyDown(screen.getByRole("tab", { name: "Notes" }), { key: "ArrowRight" });
+    expect(screen.getByRole("tab", { name: "Details" })).toHaveAttribute("aria-selected", "true");
+    fireEvent.keyDown(screen.getByRole("tab", { name: "Details" }), { key: "Home" });
     expect(screen.getByRole("tabpanel")).toHaveTextContent("Selected native evidence");
     expect(screen.getByRole("tab", { name: "Science" })).toHaveAttribute("aria-selected", "true");
     expect(tablist).toBeVisible();
-    expect(screen.queryByLabelText("Simulation notebook")).not.toBeInTheDocument();
   });
 });

@@ -66,7 +66,7 @@ test.describe("mocked smoke: Supercells product path", () => {
     await expect(page.getByText("frame 6 of 9 · Organized mature storm")).toBeVisible();
     const sceneBox = await page.getByLabel("3-D storm scene").boundingBox();
     const evidenceBox = await page.getByLabel("Coordinated storm evidence").boundingBox();
-    const contextBox = await page.getByLabel("Explore inspector").boundingBox();
+    const contextBox = await page.getByRole("complementary", { name: "Context" }).boundingBox();
     expect(sceneBox?.width ?? 0).toBeLessThan((evidenceBox?.width ?? 1) * 1.7);
     expect(evidenceBox?.width ?? 0).toBeGreaterThan(500);
     expect(contextBox?.width ?? 0).toBeGreaterThanOrEqual(288);
@@ -147,11 +147,14 @@ test.describe("mocked smoke: Supercells product path", () => {
     expect((sectionBox?.width ?? 0) / (sectionBox?.height ?? 1)).toBeCloseTo(sectionAspect, 1);
 
     await page.getByLabel("xz section at y = 10.0 km").click({ position: { x: 180, y: 120 } });
-    await page.getByRole("tab", { name: "Science" }).click();
-    await expect(page.getByText("Selected point")).toBeVisible();
+    const selectedEvidence = page.getByLabel("Selected native-grid evidence");
+    await expect(selectedEvidence).toBeVisible();
+    await expect(
+      selectedEvidence.getByRole("heading", { name: "Native-grid evidence" }),
+    ).toBeVisible();
 
     await page.getByRole("button", { name: "Next saved output" }).click();
-    await expect(page.getByText("90 min · 5,400 s")).toBeVisible();
+    await expect(page.getByLabel("Saved-output timeline")).toContainText("90 min · 5,400 s");
     await page.getByLabel("Playback speed").selectOption("2");
     await expect(page.getByLabel("Playback speed")).toHaveValue("2");
 
@@ -160,18 +163,18 @@ test.describe("mocked smoke: Supercells product path", () => {
     const evidenceMaximized = await page.getByLabel("Coordinated storm evidence").boundingBox();
     expect(evidenceMaximized?.width ?? 0).toBeGreaterThan((evidenceBefore?.width ?? 0) * 2);
     await expect(page.getByRole("button", { name: "Open Context" })).toBeVisible();
-    await expect(page.getByLabel("Explore inspector")).toHaveCount(0);
+    await expect(page.getByRole("complementary", { name: "Context" })).toHaveCount(0);
     const maximizedSectionBox = await page.getByLabel("xz section at y = 10.0 km").boundingBox();
     expect((maximizedSectionBox?.width ?? 0) / (maximizedSectionBox?.height ?? 1)).toBeCloseTo(
       sectionAspect,
       1,
     );
     await page.getByRole("button", { name: "Open Context" }).click();
-    await expect(page.getByLabel("Explore inspector")).toBeVisible();
+    await expect(page.getByRole("complementary", { name: "Context" })).toBeVisible();
     await page.getByRole("button", { name: "Restore evidence" }).click();
 
     await page.getByRole("button", { name: "Collapse Context" }).click();
-    await expect(page.getByLabel("Explore inspector")).toHaveCount(0);
+    await expect(page.getByRole("complementary", { name: "Context" })).toHaveCount(0);
     await expect(page.getByRole("button", { name: "Open Context" })).toBeVisible();
     await page.getByRole("button", { name: "Open Context" }).click();
 
@@ -200,7 +203,8 @@ test.describe("mocked smoke: Supercells product path", () => {
     await gotoSupercellsExplore(page);
     await expect(page.getByText(/Three\.js renderer unavailable/)).toBeVisible();
     await expect(page.getByLabel("Updraft and rotation plan view")).toBeVisible();
-    await expect(page.getByRole("tab", { name: "Explain" })).toBeVisible();
+    await expect(page.getByLabel("Current scientific context")).toBeVisible();
+    await expect(page.getByRole("tab", { name: "Science" })).toBeVisible();
     await expect(page.getByLabel("Saved output time")).toBeEnabled();
   });
 
@@ -211,12 +215,10 @@ test.describe("mocked smoke: Supercells product path", () => {
     const sceneFrame = await page.locator(".supercells-scene .true3d-scene-frame").boundingBox();
     const evidence = await page.getByLabel("Coordinated storm evidence").boundingBox();
     const documentWidth = await page.evaluate(() => document.documentElement.scrollWidth);
-    const documentHeight = await page.evaluate(() => document.documentElement.scrollHeight);
 
     expect(sceneFrame?.height ?? 0).toBeGreaterThanOrEqual(398);
     expect(evidence?.height ?? 0).toBeGreaterThanOrEqual(398);
     expect(documentWidth).toBe(1024);
-    expect(documentHeight).toBeLessThanOrEqual(856);
     await expect(page.getByRole("heading", { name: "Horizontal x-y slice" })).toBeVisible();
     const compactPlan = await page.getByLabel("Updraft and rotation plan view").boundingBox();
     expect((compactPlan?.width ?? 0) / (compactPlan?.height ?? 1)).toBeCloseTo(1, 1);

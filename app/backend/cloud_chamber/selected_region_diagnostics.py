@@ -25,6 +25,7 @@ from cloud_chamber.visualization_data import (
     _coordinate_units,
     _coordinate_values,
     _field_dimensions,
+    _open_dataset_for_time,
     _open_dataset_sequence,
     _provenance,
     _time_value_seconds,
@@ -151,52 +152,173 @@ def selected_region_diagnostics(
         raise SelectedRegionError("neighborhood must be greater than or equal to 0.")
 
     metadata = get_result_metadata(settings, result_id)
+    if _has_one_file_per_time(metadata):
+        try:
+            return _selected_region_diagnostics_from_files(metadata, request)
+        except VisualizationDataError as exc:
+            raise SelectedRegionError(str(exc)) from exc
+
     dataset, close_datasets = _open_dataset_sequence(metadata)
     try:
         caveats = list(metadata.warnings)
-        if "qc" not in dataset.data_vars:
+        cloud_liquid_field = _cloud_liquid_field(dataset)
+        if cloud_liquid_field is None:
             caveats.append("missing_qc_field")
         if "w" not in dataset.data_vars:
             caveats.append("missing_w_field")
 
-        reference_field = (
-            "qc" if "qc" in dataset.data_vars else "w" if "w" in dataset.data_vars else None
-        )
+        reference_field = cloud_liquid_field or ("w" if "w" in dataset.data_vars else None)
         if reference_field is None:
             raise SelectedRegionError("Selected-region diagnostics require qc or w fields.")
         region = _region_metadata(dataset, request, reference_field)
         diagnostics = _local_diagnostics(dataset, request, caveats)
         comparison = _comparison_to_domain(metadata, diagnostics)
         interpretation = _interpret_region(diagnostics, caveats)
-        return SelectedRegionDiagnosticsResponse(
-            result_id=metadata.result_id,
-            run_id=metadata.run_id,
-            scenario_id=metadata.scenario_id,
-            region=region,
-            diagnostics=diagnostics,
-            comparison_to_domain=comparison,
-            interpretation=interpretation,
-            provenance=_provenance(
-                metadata,
-                processing_method="backend_xarray_selected_region_diagnostics",
-                rendering_method="thermal_fate_inspector_summary",
-                provenance_label=(
-                    "CM1-derived selected-region diagnostics; native-grid summary; "
-                    "browser receives bounded payload only"
-                ),
-            ),
-            caveats=_dedupe(
-                [
-                    *caveats,
-                    "native_grid_region_summary_no_interpolation",
-                    "selected_region_is_not_cloud_object_tracking",
-                ]
-            ),
+        return _selected_region_response(
+            metadata,
+            region,
+            diagnostics,
+            comparison,
+            interpretation,
+            caveats,
         )
     except VisualizationDataError as exc:
         raise SelectedRegionError(str(exc)) from exc
     finally:
         _close_all(close_datasets)
+
+
+def _has_one_file_per_time(metadata: Any) -> bool:
+    return (
+        metadata.time_steps is not None
+        and metadata.time_steps > 1
+        and len(metadata.model_output_paths) == metadata.time_steps
+    )
+
+
+def _selected_region_diagnostics_from_files(
+    metadata: Any,
+    request: SelectedRegionRequest,
+) -> SelectedRegionDiagnosticsResponse:
+    caveats = list(metadata.warnings)
+    diagnostics = LocalDiagnosticSummary()
+    region: RegionMetadata | None = None
+
+    for time_index in range(int(metadata.time_steps or 0)):
+        dataset, close_datasets, _ = _open_dataset_for_time(metadata, time_index)
+        try:
+            if region is None:
+                cloud_liquid_field = _cloud_liquid_field(dataset)
+                reference_field = cloud_liquid_field or ("w" if "w" in dataset.data_vars else None)
+                if reference_field is None:
+                    raise SelectedRegionError("Selected-region diagnostics require qc or w fields.")
+                region = _region_metadata(dataset, request, reference_field)
+                if cloud_liquid_field is None:
+                    caveats.append("missing_qc_field")
+                if "w" not in dataset.data_vars:
+                    caveats.append("missing_w_field")
+            _merge_local_diagnostics(
+                diagnostics,
+                _local_diagnostics(dataset, request, caveats),
+            )
+        finally:
+            _close_all(close_datasets)
+
+    if region is None:
+        raise SelectedRegionError("Selected-region diagnostics found no retained model output.")
+    comparison = _comparison_to_domain(metadata, diagnostics)
+    interpretation = _interpret_region(diagnostics, caveats)
+    return _selected_region_response(
+        metadata,
+        region,
+        diagnostics,
+        comparison,
+        interpretation,
+        caveats,
+    )
+
+
+def _merge_local_diagnostics(
+    target: LocalDiagnosticSummary,
+    source: LocalDiagnosticSummary,
+) -> None:
+    target.available = target.available and source.available
+    target.local_w_max_time_series.extend(source.local_w_max_time_series)
+    target.local_w_min_time_series.extend(source.local_w_min_time_series)
+    target.local_qc_max_time_series.extend(source.local_qc_max_time_series)
+    target.local_cloud_fraction_time_series.extend(source.local_cloud_fraction_time_series)
+    target.local_cloud_base_time_series.extend(source.local_cloud_base_time_series)
+    target.local_cloud_top_time_series.extend(source.local_cloud_top_time_series)
+    target.local_max_qc_height_time_series.extend(source.local_max_qc_height_time_series)
+    target.local_max_w_height_time_series.extend(source.local_max_w_height_time_series)
+    target.local_qr_max_time_series.extend(source.local_qr_max_time_series)
+
+    if source.local_max_w_m_s is not None and (
+        target.local_max_w_m_s is None or source.local_max_w_m_s > target.local_max_w_m_s
+    ):
+        target.local_max_w_m_s = source.local_max_w_m_s
+        target.time_of_local_max_w_seconds = source.time_of_local_max_w_seconds
+    if source.local_min_w_m_s is not None and (
+        target.local_min_w_m_s is None or source.local_min_w_m_s < target.local_min_w_m_s
+    ):
+        target.local_min_w_m_s = source.local_min_w_m_s
+        target.time_of_local_min_w_seconds = source.time_of_local_min_w_seconds
+    if source.local_max_qc_kg_kg is not None and (
+        target.local_max_qc_kg_kg is None or source.local_max_qc_kg_kg > target.local_max_qc_kg_kg
+    ):
+        target.local_max_qc_kg_kg = source.local_max_qc_kg_kg
+        target.time_of_local_max_qc_seconds = source.time_of_local_max_qc_seconds
+    if (
+        target.first_local_cloud_time_seconds is None
+        and source.first_local_cloud_time_seconds is not None
+    ):
+        target.first_local_cloud_time_seconds = source.first_local_cloud_time_seconds
+    if source.local_max_qr_kg_kg is not None and (
+        target.local_max_qr_kg_kg is None or source.local_max_qr_kg_kg > target.local_max_qr_kg_kg
+    ):
+        target.local_max_qr_kg_kg = source.local_max_qr_kg_kg
+        target.time_of_local_max_qr_seconds = source.time_of_local_max_qr_seconds
+    target.local_rain_present = target.local_rain_present or source.local_rain_present
+    if (
+        target.first_local_rain_time_seconds is None
+        and source.first_local_rain_time_seconds is not None
+    ):
+        target.first_local_rain_time_seconds = source.first_local_rain_time_seconds
+
+
+def _selected_region_response(
+    metadata: Any,
+    region: RegionMetadata,
+    diagnostics: LocalDiagnosticSummary,
+    comparison: DomainComparison,
+    interpretation: SelectedRegionInterpretation,
+    caveats: list[str],
+) -> SelectedRegionDiagnosticsResponse:
+    return SelectedRegionDiagnosticsResponse(
+        result_id=metadata.result_id,
+        run_id=metadata.run_id,
+        scenario_id=metadata.scenario_id,
+        region=region,
+        diagnostics=diagnostics,
+        comparison_to_domain=comparison,
+        interpretation=interpretation,
+        provenance=_provenance(
+            metadata,
+            processing_method="backend_xarray_selected_region_diagnostics",
+            rendering_method="thermal_fate_inspector_summary",
+            provenance_label=(
+                "CM1-derived selected-region diagnostics; native-grid summary; "
+                "browser receives bounded payload only"
+            ),
+        ),
+        caveats=_dedupe(
+            [
+                *caveats,
+                "native_grid_region_summary_no_interpolation",
+                "selected_region_is_not_cloud_object_tracking",
+            ]
+        ),
+    )
 
 
 def _local_diagnostics(
@@ -205,8 +327,9 @@ def _local_diagnostics(
     caveats: list[str],
 ) -> LocalDiagnosticSummary:
     summary = LocalDiagnosticSummary()
-    if "qc" in dataset.data_vars:
-        _add_qc_summary(dataset, request, summary, caveats)
+    cloud_liquid_field = _cloud_liquid_field(dataset)
+    if cloud_liquid_field is not None:
+        _add_qc_summary(dataset, cloud_liquid_field, request, summary, caveats)
     else:
         summary.available = False
     if "w" in dataset.data_vars:
@@ -220,11 +343,12 @@ def _local_diagnostics(
 
 def _add_qc_summary(
     dataset: Any,
+    field_name: str,
     request: SelectedRegionRequest,
     summary: LocalDiagnosticSummary,
     caveats: list[str],
 ) -> None:
-    data_array = dataset["qc"]
+    data_array = dataset[field_name]
     dims = _field_dimensions(data_array)
     if not dims.time or not dims.vertical or not dims.y or not dims.x:
         summary.available = False
@@ -266,6 +390,13 @@ def _add_qc_summary(
             max_time = time_seconds
     summary.local_max_qc_kg_kg = max_value
     summary.time_of_local_max_qc_seconds = max_time
+
+
+def _cloud_liquid_field(dataset: Any) -> str | None:
+    for field_name in ("qc", "ql"):
+        if field_name in dataset.data_vars:
+            return field_name
+    return None
 
 
 def _add_w_summary(

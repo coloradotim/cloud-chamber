@@ -1224,6 +1224,17 @@ function mockPointCloudPoints(fieldName: string, dryFailed: boolean, threshold: 
 }
 
 export async function mockCloudChamberApis(page: Page) {
+  const simulationNotes = new Map<
+    string,
+    {
+      schema_version: number;
+      world_id: string;
+      simulation_id: string;
+      text: string;
+      created_at: string;
+      updated_at: string;
+    }
+  >();
   let savedSoundingCandidates: Array<{
     saved_candidate_id: string;
     candidate: typeof shallowSoundingCandidate;
@@ -1246,6 +1257,33 @@ export async function mockCloudChamberApis(page: Page) {
     queued_count: 0,
     updated_at: "2026-05-22T15:15:00Z",
   };
+
+  await page.route("**/api/worlds/*/simulations/*/note", (route) => {
+    const url = new URL(route.request().url());
+    const segments = url.pathname.split("/");
+    const worldId = (segments[3] ?? "").replaceAll("-", "_");
+    const simulationId = decodeURIComponent(segments[5] ?? "");
+    const key = `${worldId}/${simulationId}`;
+    if (route.request().method() === "PUT") {
+      const body = (route.request().postDataJSON() ?? {}) as { text?: string };
+      const text = body.text?.trim() ?? "";
+      if (text) {
+        const existing = simulationNotes.get(key);
+        const updatedAt = "2026-07-23T18:30:00Z";
+        simulationNotes.set(key, {
+          schema_version: 1,
+          world_id: worldId,
+          simulation_id: simulationId,
+          text,
+          created_at: existing?.created_at ?? updatedAt,
+          updated_at: updatedAt,
+        });
+      } else {
+        simulationNotes.delete(key);
+      }
+    }
+    return json(route, { note: simulationNotes.get(key) ?? null });
+  });
 
   await page.route("**/api/worlds", (route) => json(route, []));
 
@@ -1671,8 +1709,14 @@ export async function mockCloudChamberApis(page: Page) {
         first_local_cloud_time_seconds: 1800,
         local_cloud_fraction_time_series: [{ time_seconds: 1800, value: 0.5 }],
         local_qc_max_time_series: [{ time_seconds: 1800, value: 0.002 }],
-        local_cloud_base_time_series: [],
-        local_cloud_top_time_series: [],
+        local_cloud_base_time_series: [
+          { time_seconds: 1800, value: 500 },
+          { time_seconds: 2700, value: 650 },
+        ],
+        local_cloud_top_time_series: [
+          { time_seconds: 1800, value: 1100 },
+          { time_seconds: 2700, value: 1600 },
+        ],
         local_max_qc_height_time_series: [],
         local_max_w_height_time_series: [],
         local_rain_present: true,

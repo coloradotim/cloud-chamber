@@ -149,6 +149,26 @@ The backend caches validated run inventory using artifact fingerprints. A
 selected frame opens its corresponding history only. The frontend keeps a
 small frame cache and prefetches adjacent frames for playback.
 
+### Shared information architecture
+
+All three Explore implementations compose the shared
+`IntegratedExploreWorkspace`, `ExploreInspector`, `ExploreContextContent`,
+`ExploreSelectedEvidence`, and `ExploreSecondarySections` contracts.
+
+The shared structure is:
+
+```text
+coordinated scientific viewer(s) + controls + timeline + collapsible Context
+
+Science | Notes | Details
+```
+
+Context owns concise current-view explanation and immediate selected-point
+evidence. Science owns World-specific retained-history evidence, Notes owns
+user-authored per-Simulation content, and Details owns technical and provenance
+information. World-specific geometry and science remain in their World
+components rather than being forced through one generic renderer.
+
 ## Scientific Payload Rules
 
 Explore payloads preserve several implementation boundaries:
@@ -239,11 +259,27 @@ The runtime home defaults to `~/CloudChamber` and stores:
 - sounding caches;
 - retained presentation-run assets;
 - result metadata and editable result sidecars;
+- per-Simulation notes keyed by stable World and Simulation identity;
 - validation and derived caches.
 
 Large CM1 histories and generated visualization artifacts are not stored in
 Git. Built-in World content therefore depends on local retained assets being
 present and valid.
+
+Per-Simulation Notes are the first bounded durable product-content contract:
+
+```text
+GET /api/worlds/{world_id}/simulations/{simulation_id}/note
+PUT /api/worlds/{world_id}/simulations/{simulation_id}/note
+
+<runtime-home>/simulation-notes/<world_id>/<simulation_id>.json
+```
+
+The backend validates stable identities and bounded text, and writes updates
+atomically through a temporary file, filesystem synchronization, and replace.
+Blank content clears the note. Read and write failures stay local to Notes and
+are reported in the interface. Notes do not become run identity, result
+metadata, or a general annotation model.
 
 Saved Views and complete Explore workspace state are not durably persisted.
 The only product Comparison currently exposed is the featured Trade Cumulus
@@ -266,7 +302,6 @@ reused.
 
 - World shells and Explore implementations share vocabulary but still contain
   World-specific state and rendering code.
-- Context and below-the-fold information architecture is not yet common.
 - Durable Saved Views and general World-aware Compare are absent.
 - Variation is implemented only for Mountain Waves.
 - Legacy run, result, and sounding surfaces remain interleaved with the newer

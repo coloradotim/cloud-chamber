@@ -15,6 +15,7 @@ from cloud_chamber.cloud_worlds import (
     CloudWorldSummary,
     TradeCumulusWorldDetail,
     list_cloud_world_summaries,
+    trade_cumulus_simulation_exists,
     trade_cumulus_world_detail,
 )
 from cloud_chamber.dry_run_package import (
@@ -60,6 +61,7 @@ from cloud_chamber.mountain_waves_world import (
     MountainWavesWorldDetail,
     MountainWavesWorldSummary,
     mountain_waves_run_manifest,
+    mountain_waves_simulation,
     mountain_waves_world_detail,
 )
 from cloud_chamber.observed_sounding import ObservedSoundingError, parse_igra_station_text
@@ -94,7 +96,14 @@ from cloud_chamber.selected_region_diagnostics import (
     SelectedRegionRequest,
     selected_region_diagnostics,
 )
-from cloud_chamber.settings import load_settings
+from cloud_chamber.settings import CloudChamberSettings, load_settings
+from cloud_chamber.simulation_notes import (
+    SimulationNoteError,
+    SimulationNoteResponse,
+    SimulationNoteUpdate,
+    load_simulation_note,
+    save_simulation_note,
+)
 from cloud_chamber.sounding_candidates import (
     CandidateHistoryScope,
     CandidateReadinessFilter,
@@ -632,6 +641,59 @@ def get_supercells_world() -> SupercellsWorldDetail:
 
 
 @app.get(
+    "/api/worlds/{world_id}/simulations/{simulation_id}/note",
+    response_model=SimulationNoteResponse,
+)
+def get_simulation_note(world_id: str, simulation_id: str) -> SimulationNoteResponse:
+    settings = load_settings()
+    canonical_world_id = _canonical_note_world_id(world_id)
+    if not _simulation_note_target_exists(
+        canonical_world_id,
+        simulation_id,
+        settings=settings,
+    ):
+        raise HTTPException(status_code=404, detail="Cloud World Simulation not found.")
+    try:
+        note = load_simulation_note(
+            settings,
+            world_id=canonical_world_id,
+            simulation_id=simulation_id,
+        )
+    except SimulationNoteError as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+    return SimulationNoteResponse(note=note)
+
+
+@app.put(
+    "/api/worlds/{world_id}/simulations/{simulation_id}/note",
+    response_model=SimulationNoteResponse,
+)
+def put_simulation_note(
+    world_id: str,
+    simulation_id: str,
+    request: SimulationNoteUpdate,
+) -> SimulationNoteResponse:
+    settings = load_settings()
+    canonical_world_id = _canonical_note_world_id(world_id)
+    if not _simulation_note_target_exists(
+        canonical_world_id,
+        simulation_id,
+        settings=settings,
+    ):
+        raise HTTPException(status_code=404, detail="Cloud World Simulation not found.")
+    try:
+        note = save_simulation_note(
+            settings,
+            world_id=canonical_world_id,
+            simulation_id=simulation_id,
+            text=request.text,
+        )
+    except SimulationNoteError as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+    return SimulationNoteResponse(note=note)
+
+
+@app.get(
     "/api/worlds/mountain-waves/variation-template",
     response_model=MountainWavesVariationTemplate,
 )
@@ -974,6 +1036,35 @@ def get_storm_examination_frame(
     except StormExaminationError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return result.model_dump(mode="json")
+
+
+def _canonical_note_world_id(world_id: str) -> str:
+    aliases = {
+        "trade-cumulus": "trade_cumulus",
+        "trade_cumulus": "trade_cumulus",
+        "mountain-waves": "mountain_waves",
+        "mountain_waves": "mountain_waves",
+        "supercells": "supercells",
+    }
+    canonical = aliases.get(world_id)
+    if canonical is None:
+        raise HTTPException(status_code=404, detail="Cloud World not found.")
+    return canonical
+
+
+def _simulation_note_target_exists(
+    world_id: str,
+    simulation_id: str,
+    *,
+    settings: CloudChamberSettings,
+) -> bool:
+    if world_id == "trade_cumulus":
+        return trade_cumulus_simulation_exists(settings, simulation_id)
+    if world_id == "mountain_waves":
+        return mountain_waves_simulation(settings, simulation_id) is not None
+    if world_id == "supercells":
+        return simulation_id == SUPERCELLS_REFERENCE_SIMULATION_ID
+    return False
 
 
 @app.get("/api/results/{result_id}/visualization/trade-cumulus-updraft-lens/frame")

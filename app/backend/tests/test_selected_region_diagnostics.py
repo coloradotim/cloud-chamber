@@ -46,6 +46,8 @@ def create_region_result(
     include_w: bool = True,
     include_qr: bool = True,
     run_id: str = "run-region",
+    separate_files: bool = False,
+    cloud_field_name: str = "qc",
 ) -> tuple[CloudChamberSettings, str]:
     settings = fake_settings(tmp_path)
     package = generate_dry_run_package(
@@ -53,13 +55,19 @@ def create_region_result(
         runtime_home=settings.runtime_home,
         run_id=run_id,
     )
-    netcdf_path = package.package_dir / "cm1out_000001.nc"
-    write_region_netcdf(
-        netcdf_path,
-        include_qc=include_qc,
-        include_w=include_w,
-        include_qr=include_qr,
-    )
+    netcdf_paths = [
+        package.package_dir / f"cm1out_{index + 1:06d}.nc"
+        for index in range(3 if separate_files else 1)
+    ]
+    for index, netcdf_path in enumerate(netcdf_paths):
+        write_region_netcdf(
+            netcdf_path,
+            include_qc=include_qc,
+            include_w=include_w,
+            include_qr=include_qr,
+            time_indices=[index] if separate_files else None,
+            cloud_field_name=cloud_field_name,
+        )
     manifest = load_run_manifest(package.manifest_path)
     write_run_manifest(
         package.manifest_path,
@@ -67,7 +75,7 @@ def create_region_result(
             update={
                 "lifecycle_state": LifecycleState.COMPLETED,
                 "provenance": ProvenanceMetadata(product_state=ProductState.COMPLETED_CM1_RESULT),
-                "outputs": OutputMetadata(netcdf_paths=[str(netcdf_path)]),
+                "outputs": OutputMetadata(netcdf_paths=[str(path) for path in netcdf_paths]),
             }
         ),
     )
@@ -81,29 +89,44 @@ def write_region_netcdf(
     include_qc: bool,
     include_w: bool,
     include_qr: bool,
+    time_indices: list[int] | None = None,
+    cloud_field_name: str = "qc",
 ) -> None:
+    selected_times = time_indices or [0, 1, 2]
     data_vars = {}
     if include_qc:
         qc = np.zeros((3, 3, 3, 4), dtype=float)
         qc[1, 1, 1, 2] = 2e-6
         qc[2, 2, 1, 2] = 5e-6
         qc[2, 1, 0, 0] = np.inf
-        data_vars["qc"] = (("time", "zh", "yh", "xh"), qc, {"units": "kg/kg"})
+        data_vars[cloud_field_name] = (
+            ("time", "zh", "yh", "xh"),
+            qc[selected_times],
+            {"units": "kg/kg"},
+        )
     if include_w:
         w = np.zeros((3, 3, 3, 4), dtype=float)
         w[0, 1, 1, 2] = 0.4
         w[1, 1, 1, 2] = 1.8
         w[2, 2, 1, 2] = 2.4
         w[2, 0, 0, 0] = -0.7
-        data_vars["w"] = (("time", "zf", "yh", "xh"), w, {"units": "m/s"})
+        data_vars["w"] = (("time", "zf", "yh", "xh"), w[selected_times], {"units": "m/s"})
     if include_qr:
         qr = np.zeros((3, 3, 3, 4), dtype=float)
         qr[2, 1, 1, 2] = 2e-7
-        data_vars["qr"] = (("time", "zh", "yh", "xh"), qr, {"units": "kg/kg"})
+        data_vars["qr"] = (
+            ("time", "zh", "yh", "xh"),
+            qr[selected_times],
+            {"units": "kg/kg"},
+        )
     xr.Dataset(
         data_vars=data_vars,
         coords={
-            "time": ("time", [0.0, 900.0, 1800.0], {"units": "s"}),
+            "time": (
+                "time",
+                [[0.0, 900.0, 1800.0][index] for index in selected_times],
+                {"units": "s"},
+            ),
             "zh": ("zh", [0.4, 0.8, 1.2], {"units": "km"}),
             "zf": ("zf", [0.0, 0.8, 1.6], {"units": "km"}),
             "yh": ("yh", [0.0, 1.0, 2.0], {"units": "km"}),
@@ -158,6 +181,52 @@ def test_column_region_uses_vertical_extent_and_detects_growth(tmp_path: Path) -
     assert payload.diagnostics.local_cloud_top_time_series[-1].value == 1200.0
     assert payload.diagnostics.local_max_w_height_time_series[-1].value == 1600.0
     assert payload.interpretation.thermal_fate_label == "Growing cumulus"
+
+
+def test_separate_history_files_are_processed_with_bounded_memory(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    settings, result_id = create_region_result(tmp_path, separate_files=True)
+
+    def reject_combined_sequence(*_args: object, **_kwargs: object) -> None:
+        raise AssertionError("one-file-per-time histories must not be concatenated")
+
+    monkeypatch.setattr(
+        "cloud_chamber.selected_region_diagnostics._open_dataset_sequence",
+        reject_combined_sequence,
+    )
+    payload = selected_region_diagnostics(
+        settings,
+        result_id,
+        SelectedRegionRequest(region_type="column", x_index=2, y_index=1),
+    )
+
+    assert len(payload.diagnostics.local_w_max_time_series) == 3
+    assert payload.diagnostics.local_max_w_m_s == 2.4
+    assert payload.diagnostics.time_of_local_max_w_seconds == 1800.0
+    assert payload.diagnostics.local_max_qc_kg_kg == 5e-6
+    assert payload.diagnostics.local_cloud_top_time_series[-1].value == 1200.0
+    assert payload.diagnostics.first_local_rain_time_seconds == 1800.0
+
+
+def test_native_ql_is_used_as_cloud_liquid_history(tmp_path: Path) -> None:
+    settings, result_id = create_region_result(
+        tmp_path,
+        separate_files=True,
+        cloud_field_name="ql",
+    )
+
+    payload = selected_region_diagnostics(
+        settings,
+        result_id,
+        SelectedRegionRequest(region_type="column", x_index=2, y_index=1),
+    )
+
+    assert payload.diagnostics.available is True
+    assert payload.diagnostics.local_max_qc_kg_kg == 5e-6
+    assert payload.diagnostics.first_local_cloud_time_seconds == 900.0
+    assert "missing_qc_field" not in payload.caveats
 
 
 def test_box_region_summarizes_bounded_area(tmp_path: Path) -> None:

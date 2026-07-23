@@ -4,7 +4,11 @@ import type { CSSProperties, MouseEvent as ReactMouseEvent } from "react";
 
 import "./App.css";
 import "./StormExaminationResearch.css";
-import { ExploreInspector, IntegratedExploreWorkspace } from "./IntegratedExploreWorkspace";
+import {
+  ExploreInspector,
+  ExploreSecondarySections,
+  IntegratedExploreWorkspace,
+} from "./IntegratedExploreWorkspace";
 
 export type LensId = "rotating_updraft" | "cloud_precipitation" | "low_level_interactions";
 export type ViewportId = "storm" | "full";
@@ -429,16 +433,25 @@ export function StormExaminationResearch() {
             onPlaybackSpeed={setPlaybackSpeed}
           />
 
-          <ExploreInspector
+          <ExploreInspector>
+            <StormContext frame={frame} lens={lens} viewport={viewport} />
+          </ExploreInspector>
+          <ExploreSecondarySections
+            label="Research support"
             sections={{
-              explain: <StormContext frame={frame} lens={lens} viewport={viewport} />,
-              notes: (
+              science: (
                 <section>
                   <h3>Gate C examination</h3>
                   <p>
                     This bounded surface evaluates whether one retained storm result supports a
                     legible Storms World. It is not a product route or a final Lens contract.
                   </p>
+                </section>
+              ),
+              notes: (
+                <section>
+                  <h3>Simulation notes</h3>
+                  <p>Durable notes are available from the Supercells World Explore route.</p>
                 </section>
               ),
               details: <StormDetails frame={frame} />,
@@ -621,10 +634,12 @@ export function StormPlanPlot({
   frame,
   overlays,
   onSelect,
+  showSelection = true,
 }: {
   frame: StormExaminationFrame;
   overlays: OverlayState;
   onSelect: (value: Selection) => void;
+  showSelection?: boolean;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const geometryRef = useRef<PlotGeometry | null>(null);
@@ -636,8 +651,8 @@ export function StormPlanPlot({
   );
   useCanvasRender(canvasRef, () => {
     const canvas = canvasRef.current;
-    if (canvas) geometryRef.current = drawPlan(canvas, frame, overlays);
-  }, [frame, overlays]);
+    if (canvas) geometryRef.current = drawPlan(canvas, frame, overlays, showSelection);
+  }, [frame, overlays, showSelection]);
 
   function select(event: ReactMouseEvent<HTMLCanvasElement>) {
     const canvas = canvasRef.current;
@@ -681,11 +696,13 @@ export function StormSectionPlot({
   frame,
   overlays,
   onSelect,
+  showSelection = true,
 }: {
   section: VerticalSection;
   frame: StormExaminationFrame;
   overlays: OverlayState;
   onSelect: (value: Selection) => void;
+  showSelection?: boolean;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const geometryRef = useRef<PlotGeometry | null>(null);
@@ -701,8 +718,10 @@ export function StormSectionPlot({
   );
   useCanvasRender(canvasRef, () => {
     const canvas = canvasRef.current;
-    if (canvas) geometryRef.current = drawSection(canvas, section, frame, overlays);
-  }, [frame, overlays, section]);
+    if (canvas) {
+      geometryRef.current = drawSection(canvas, section, frame, overlays, showSelection);
+    }
+  }, [frame, overlays, section, showSelection]);
 
   function select(event: ReactMouseEvent<HTMLCanvasElement>) {
     const canvas = canvasRef.current;
@@ -1021,6 +1040,7 @@ function drawPlan(
   canvas: HTMLCanvasElement,
   frame: StormExaminationFrame,
   overlays: OverlayState,
+  showSelection = true,
 ): PlotGeometry {
   const context = prepareCanvas(canvas);
   const geometry = plotGeometry(canvas, 43, 12, 12, 34, frame.viewport_bounds_km);
@@ -1114,8 +1134,10 @@ function drawPlan(
     }
     if (overlays.wind) drawWindVectors(context, geometry, frame.plan.wind_vectors);
   }
-  drawPlanCrosshairs(context, geometry, frame.selected_point);
-  drawSelectedMarker(context, geometry, frame.selected_point.x_km, frame.selected_point.y_km);
+  if (showSelection) {
+    drawPlanCrosshairs(context, geometry, frame.selected_point);
+    drawSelectedMarker(context, geometry, frame.selected_point.x_km, frame.selected_point.y_km);
+  }
   return geometry;
 }
 
@@ -1124,6 +1146,7 @@ function drawSection(
   section: VerticalSection,
   frame: StormExaminationFrame,
   overlays: OverlayState,
+  showSelection = true,
 ): PlotGeometry {
   const context = prepareCanvas(canvas);
   const xMinimum = section.horizontal_km[0];
@@ -1170,9 +1193,11 @@ function drawSection(
       drawThresholdOutline(context, geometry, section.overlays.reflectivity, 35, "#7b572a", 1.05);
     }
   }
-  const horizontal =
-    section.orientation === "xz" ? frame.selected_point.x_km : frame.selected_point.y_km;
-  drawSelectedMarker(context, geometry, horizontal, frame.selected_point.z_km);
+  if (showSelection) {
+    const horizontal =
+      section.orientation === "xz" ? frame.selected_point.x_km : frame.selected_point.y_km;
+    drawSelectedMarker(context, geometry, horizontal, frame.selected_point.z_km);
+  }
   return geometry;
 }
 

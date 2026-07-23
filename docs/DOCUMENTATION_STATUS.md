@@ -78,8 +78,14 @@ repository authority for current implementation ordering. The latest approved
 PM comment and issue body still control the exact scope of each bounded task.
 
 The presentation-quality and three-World foundation is complete through #420,
-#423, #421, and #429. Issue #428 remains the immediate shared Explore
-information-architecture follow-up.
+#423, #421, #429, and #428. All three Explore implementations now use one
+collapsible Context and shared below-the-fold Science, Notes, and Details
+structure. Per-Simulation Notes are the first durable content contract; complete
+Explore state and Saved Views remain unimplemented.
+
+The next approved program is personal scientific memory: define one versioned,
+World-aware serializable Explore-state contract before ordinary resume, named
+Saved Views, or Compare work.
 
 Rewritten issues #394 and #395 and issues #432 through #438 record bounded
 follow-on product work for Activity and History, Fun With Soundings, durable

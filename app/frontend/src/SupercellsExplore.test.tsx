@@ -465,6 +465,17 @@ function section(orientation: "xz" | "yz", horizontal: "x" | "y", coordinate: nu
   };
 }
 
+const LENS_QUESTIONS = {
+  rotating_updraft: "Where is the storm rising and rotating as one organized structure?",
+  cloud_precipitation: "How are cloud and precipitation organized through the storm?",
+  low_level_interactions:
+    "How do ascent, descent, rain, and horizontal flow meet beneath the storm?",
+} as const;
+
+function waitForLensContext(lens: LensId) {
+  return screen.findByRole("heading", { name: LENS_QUESTIONS[lens] });
+}
+
 describe("SupercellsExplore", () => {
   const originalGetContext = HTMLCanvasElement.prototype.getContext;
   const originalBounds = HTMLCanvasElement.prototype.getBoundingClientRect;
@@ -508,7 +519,7 @@ describe("SupercellsExplore", () => {
   it("opens at the mature Rotating Updraft frame with the complete retained timeline", async () => {
     render(<SupercellsExplore simulation={simulation} onBack={vi.fn()} />);
 
-    expect(await screen.findByRole("heading", { name: "Rotating Updraft" })).toBeVisible();
+    expect(await waitForLensContext("rotating_updraft")).toBeVisible();
     expect(fetch).toHaveBeenCalledWith(
       expect.stringContaining("lens=rotating_updraft&viewport=storm&time_index=37"),
       expect.anything(),
@@ -524,7 +535,7 @@ describe("SupercellsExplore", () => {
 
   it("moves each evidence orientation through native planes and keeps a user plane across time", async () => {
     render(<SupercellsExplore simulation={simulation} onBack={vi.fn()} />);
-    await screen.findByRole("heading", { name: "Rotating Updraft" });
+    await waitForLensContext("rotating_updraft");
 
     const horizontalPosition = screen.getByLabelText("Horizontal x-y z position");
     expect(horizontalPosition).toHaveValue("1");
@@ -602,7 +613,7 @@ describe("SupercellsExplore", () => {
 
   it("keeps rapid cross-axis slice changes in one local native selection", async () => {
     render(<SupercellsExplore simulation={simulation} onBack={vi.fn()} />);
-    await screen.findByRole("heading", { name: "Rotating Updraft" });
+    await waitForLensContext("rotating_updraft");
 
     vi.mocked(fetch).mockImplementation((input: RequestInfo | URL) => {
       const url = String(input);
@@ -632,12 +643,39 @@ describe("SupercellsExplore", () => {
     );
   });
 
+  it("clears selected evidence without moving a non-default vertical plane", async () => {
+    render(<SupercellsExplore simulation={simulation} onBack={vi.fn()} />);
+    await waitForLensContext("rotating_updraft");
+
+    fireEvent.click(
+      within(screen.getByLabelText("Slice orientation")).getByRole("button", {
+        name: "Vertical x-z",
+      }),
+    );
+    const position = screen.getByLabelText("Vertical x-z y position");
+    fireEvent.change(position, { target: { value: "0" } });
+
+    const selectedEvidence = await screen.findByLabelText("Selected native-grid evidence");
+    expect(position).toHaveValue("0");
+    expect(screen.getAllByText("y -10.0 km").length).toBeGreaterThan(0);
+
+    fireEvent.click(within(selectedEvidence).getByRole("button", { name: "Clear" }));
+
+    expect(screen.queryByLabelText("Selected native-grid evidence")).not.toBeInTheDocument();
+    expect(position).toHaveValue("0");
+    expect(screen.getAllByText("y -10.0 km").length).toBeGreaterThan(0);
+    expect(fetch).toHaveBeenLastCalledWith(
+      expect.stringMatching(/x_index=1&y_index=0&z_index=1/),
+      expect.anything(),
+    );
+  });
+
   it("uses the selected Low-Level altitude in 2-D and 3-D labels", async () => {
     render(<SupercellsExplore simulation={simulation} onBack={vi.fn()} />);
-    await screen.findByRole("heading", { name: "Rotating Updraft" });
+    await waitForLensContext("rotating_updraft");
 
     fireEvent.click(screen.getByRole("button", { name: "Low-Level Interactions" }));
-    await screen.findByRole("heading", { name: "Low-Level Interactions" });
+    await waitForLensContext("low_level_interactions");
     fireEvent.change(screen.getByLabelText("Horizontal x-y z position"), {
       target: { value: "2" },
     });
@@ -648,16 +686,14 @@ describe("SupercellsExplore", () => {
         expect.anything(),
       ),
     );
-    expect(
-      await screen.findAllByText("Model-relative wind at z = 8.00 km"),
-    ).not.toHaveLength(0);
+    expect(await screen.findAllByText("Model-relative wind at z = 8.00 km")).not.toHaveLength(0);
     expect(screen.getByText(/x-y slice at z = 8.00 km coordinate current motion/)).toBeVisible();
     expect(screen.getByText("Model-relative flow at z = 8.00 km")).toBeVisible();
   });
 
   it("keeps a user-framed camera transform per Lens across ordinary workspace changes", async () => {
     render(<SupercellsExplore simulation={simulation} onBack={vi.fn()} />);
-    await screen.findByRole("heading", { name: "Rotating Updraft" });
+    await waitForLensContext("rotating_updraft");
 
     expect(screen.getByText("Camera position: default")).toBeVisible();
     fireEvent.click(screen.getByRole("button", { name: "Move mock camera" }));
@@ -670,17 +706,17 @@ describe("SupercellsExplore", () => {
     expect(screen.getByText("Camera position: 4,5,6")).toBeVisible();
 
     fireEvent.click(screen.getByRole("button", { name: "Cloud and Precipitation" }));
-    await screen.findByRole("heading", { name: "Cloud and Precipitation" });
+    await waitForLensContext("cloud_precipitation");
     expect(screen.getByText("Camera position: default")).toBeVisible();
 
     fireEvent.click(screen.getByRole("button", { name: "Rotating Updraft" }));
-    await screen.findByRole("heading", { name: "Rotating Updraft" });
+    await waitForLensContext("rotating_updraft");
     expect(screen.getByText("Camera position: 4,5,6")).toBeVisible();
   });
 
   it("keeps lens defaults, viewport, evidence orientation, and native selection synchronized", async () => {
     render(<SupercellsExplore simulation={simulation} onBack={vi.fn()} />);
-    await screen.findByRole("heading", { name: "Rotating Updraft" });
+    await waitForLensContext("rotating_updraft");
 
     fireEvent.click(screen.getByRole("button", { name: "Cloud and Precipitation" }));
     await waitFor(() =>
@@ -689,7 +725,7 @@ describe("SupercellsExplore", () => {
         expect.anything(),
       ),
     );
-    expect(await screen.findByRole("heading", { name: "Cloud and Precipitation" })).toBeVisible();
+    expect(await waitForLensContext("cloud_precipitation")).toBeVisible();
     await waitFor(() => expect(screen.getByLabelText("Dominant hydrometeor")).toBeChecked());
     expect(screen.getByLabelText("Vertical-motion contours")).toBeChecked();
     expect(screen.getByText("X-z evidence at this saved output.")).toBeVisible();
@@ -722,9 +758,9 @@ describe("SupercellsExplore", () => {
     expect(screen.getByText("Y-z evidence at this saved output.")).toBeVisible();
 
     fireEvent.click(screen.getByRole("button", { name: "Rotating Updraft" }));
-    await screen.findByRole("heading", { name: "Rotating Updraft" });
+    await waitForLensContext("rotating_updraft");
     fireEvent.click(screen.getByRole("button", { name: "Cloud and Precipitation" }));
-    await screen.findByRole("heading", { name: "Cloud and Precipitation" });
+    await waitForLensContext("cloud_precipitation");
     expect(
       within(screen.getByLabelText("Slice orientation")).getByRole("button", {
         name: "Vertical y-z",
@@ -761,14 +797,14 @@ describe("SupercellsExplore", () => {
     expect(screen.getByLabelText("Mock 3-D storm scene")).toHaveTextContent(
       "xz section at y = 10.0 km",
     );
-    fireEvent.click(screen.getByRole("tab", { name: "Science" }));
-    expect(await screen.findByText("Selected point")).toBeVisible();
-    expect(screen.getByRole("heading", { name: "x 10.0, y 10.0, z 3.00 km" })).toBeVisible();
+    const context = screen.getByLabelText("Context");
+    expect(await within(context).findByText("Selected cell")).toBeVisible();
+    expect(within(context).getByRole("heading", { name: "Native-grid evidence" })).toBeVisible();
   });
 
   it("preserves the lens and time while maximizing and restoring either scientific view", async () => {
     render(<SupercellsExplore simulation={simulation} onBack={vi.fn()} />);
-    await screen.findByRole("heading", { name: "Rotating Updraft" });
+    await waitForLensContext("rotating_updraft");
 
     fireEvent.change(screen.getByLabelText("Saved output time"), { target: { value: "90" } });
     expect(await screen.findByText("180 min · 10,800 s")).toBeVisible();
@@ -785,9 +821,9 @@ describe("SupercellsExplore", () => {
       "supercells-explore-focused-evidence",
     );
     expect(screen.getByRole("button", { name: "Open Context" })).toBeVisible();
-    expect(screen.queryByLabelText("Explore inspector")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Context")).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Open Context" }));
-    expect(screen.getByLabelText("Explore inspector")).toBeVisible();
+    expect(screen.getByLabelText("Context")).toBeVisible();
     fireEvent.click(screen.getByRole("button", { name: "Restore evidence" }));
 
     expect(screen.getByRole("button", { name: "Rotating Updraft" })).toHaveAttribute(
@@ -797,17 +833,21 @@ describe("SupercellsExplore", () => {
     expect(screen.getByLabelText("Saved output time")).toHaveValue("90");
   });
 
-  it("offers the shared Explain, Science, Notes, and Details inspector grammar", async () => {
+  it("uses one live Context sidebar with shared below-workspace support sections", async () => {
     render(<SupercellsExplore simulation={simulation} onBack={vi.fn()} />);
-    await screen.findByRole("heading", { name: "Rotating Updraft" });
+    await waitForLensContext("rotating_updraft");
 
-    const inspector = screen.getByLabelText("Explore inspector");
-    for (const name of ["Explain", "Science", "Notes", "Details"]) {
-      expect(within(inspector).getByRole("tab", { name })).toBeVisible();
+    const context = screen.getByLabelText("Context");
+    expect(within(context).getByText("What to notice now")).toBeVisible();
+    expect(within(context).queryByRole("tab")).not.toBeInTheDocument();
+
+    const support = screen.getByLabelText("Simulation support");
+    for (const name of ["Science", "Notes", "Details"]) {
+      expect(within(support).getByRole("tab", { name })).toBeVisible();
     }
-    fireEvent.click(within(inspector).getByRole("tab", { name: "Notes" }));
+    fireEvent.click(within(support).getByRole("tab", { name: "Notes" }));
     expect(screen.getByRole("heading", { name: "Simulation notes" })).toBeVisible();
-    fireEvent.click(within(inspector).getByRole("tab", { name: "Details" }));
+    fireEvent.click(within(support).getByRole("tab", { name: "Details" }));
     expect(screen.getByRole("heading", { name: "Simulation details" })).toBeVisible();
   });
 });

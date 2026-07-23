@@ -108,6 +108,12 @@ Current Explore surfaces use:
 - persistent playback and saved-output controls;
 - explicit loading, missing-content, and failure states.
 
+Each Explore now places concise, context-sensitive explanation and current
+selected-point evidence in one collapsible **Context** inspector. Supporting
+content follows the shared below-the-fold **Science | Notes | Details**
+structure. Science remains World-specific, Notes persist by stable World and
+Simulation identity, and Details contain technical and provenance evidence.
+
 World-specific Lenses combine fields and overlays to answer a bounded
 scientific question. A Lens is an interpretation layer, not a new model field
 or a claim of unsupported process evidence.
@@ -153,14 +159,13 @@ The implemented application does not yet provide:
 - ordinary World-aware Compare beyond the featured Trade Cumulus Comparison;
 - one shared World-aware variation workflow across all accessible Worlds;
 - a first-class Fun With Soundings entrance;
-- one common Context and below-the-fold information architecture across all
-  Explore implementations;
 - durable persistence for complete Explore or comparison workspaces.
 
-Issue #428 tracks the approved cleanup of Explore Context and below-the-fold
-content. Older issues #389, #390, and #391 are closed as superseded by the
-current three-World implementation sequence; they should not be read as active
-roadmap authority.
+Per-Simulation Notes are durable content, but camera, time, Lens, overlay,
+selection, and other complete Explore workspace state are not yet persisted.
+Older issues #389, #390, and #391 are closed as superseded by the current
+three-World implementation sequence; they should not be read as active roadmap
+authority.
 
 ## Local-First Runtime
 
