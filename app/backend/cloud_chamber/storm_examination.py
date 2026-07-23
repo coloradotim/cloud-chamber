@@ -495,7 +495,7 @@ def _storm_frame(
             y_indices,
             native_x_indices,
             native_y_indices,
-            default_level,
+            selected_z,
             history_path.name,
             viewport,
         )
@@ -873,7 +873,7 @@ def _plan_view(
             _condensate_scale(),
             "1000 * (qc + qr + qi + qs + qg)",
         )
-        title = "Midlevel updraft and rotation"
+        title = "Updraft and rotation"
         subtitle = "Signed vertical velocity with cyclonic vorticity and 2-5 km AGL UH"
         categories = None
         selection_z_indices = None
@@ -924,8 +924,9 @@ def _plan_view(
             _low_level_w_scale(),
         )
         title = "Low-level motion and rain footprint"
+        level_km = float(z_km[level_index])
         subtitle = (
-            "1.25 km current motion, precipitation, model-relative flow, "
+            f"{level_km:.2f} km current motion, precipitation, model-relative flow, "
             "and historical rain accumulation"
         )
         selection_z_indices = None
@@ -944,7 +945,7 @@ def _plan_view(
             ["qr", "qs", "qg"],
             precipitating,
             _condensate_scale(),
-            "1000 * (qr + qs + qg) at the displayed 1.25 km level",
+            f"1000 * (qr + qs + qg) at the displayed {level_km:.2f} km level",
         )
     return PlanView(
         title=title,
@@ -1795,7 +1796,7 @@ def _what_to_notice_by_view(
         uh_max = plan.overlays["updraft_helicity"].selected_frame_maximum
         return {
             "plan": (
-                f"At {minutes} min, {overlap} cells on the 3.25 km slice combine "
+                f"At {minutes} min, {overlap} cells on the {plan.level_km:.2f} km slice combine "
                 f"rising motion of at least 5 m/s with cyclonic vorticity of at least "
                 f"0.01 s^-1; 2-5 km AGL UH peaks at {uh_max:.0f} m^2/s^2."
             ),
@@ -1825,7 +1826,8 @@ def _what_to_notice_by_view(
     precip_max = plan.overlays["low_level_precipitating_condensate"].selected_frame_maximum
     return {
         "plan": (
-            f"At {minutes} min, current 1.25 km motion spans {w_min:+.1f} to "
+            f"At {minutes} min, current {plan.level_km:.2f} km motion spans "
+            f"{w_min:+.1f} to "
             f"{w_max:+.1f} m/s and precipitating condensate reaches "
             f"{precip_max:.2f} g/kg; the historical rain footprint peaks at "
             f"{rain_max:.1f} mm."

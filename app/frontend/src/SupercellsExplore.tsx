@@ -214,11 +214,13 @@ export function SupercellsExplore({
     if (!frame || !slicePosition) return;
     const nativeIndex = slicePosition.nativeIndices[positionIndex];
     if (nativeIndex === undefined) return;
-    const next = {
-      xIndex: frame.selected_point.x_index,
-      yIndex: frame.selected_point.y_index,
-      zIndex: frame.selected_point.z_index,
-    };
+    const next = selection
+      ? { ...selection }
+      : {
+          xIndex: frame.selected_point.x_index,
+          yIndex: frame.selected_point.y_index,
+          zIndex: frame.selected_point.z_index,
+        };
     if (slicePosition.axis === "x") next.xIndex = nativeIndex;
     if (slicePosition.axis === "y") next.yIndex = nativeIndex;
     if (slicePosition.axis === "z") next.zIndex = nativeIndex;
@@ -312,6 +314,7 @@ export function SupercellsExplore({
                 showWindVectors={visibleLayerKeys.includes("model_relative_wind")}
                 windMode="total"
                 windReferenceMps={frame.scene.wind_reference_m_s}
+                windOverlayLabel={`Model-relative wind at z = ${frame.plan.level_km.toFixed(2)} km`}
                 windArrowDomainFraction={0.055}
                 compactWorkspace
                 compactDisplayLabel="3-D layers"
@@ -470,6 +473,7 @@ export function SupercellsExplore({
           lens={lens}
           viewport={viewport}
           evidenceView={evidenceView}
+          planLevelKm={frame?.plan.level_km ?? null}
           overlays={overlays}
           onViewport={(next) => {
             setPlaying(false);
@@ -543,7 +547,7 @@ function StormDisplayControls({
               checked={visibleLayerKeys.includes("model_relative_wind")}
               onChange={(event) => onLayer("model_relative_wind", event.currentTarget.checked)}
             />
-            Model-relative wind at 1.25 km
+            Model-relative wind at z = {frame.plan.level_km.toFixed(2)} km
           </label>
         )}
       </div>
@@ -602,6 +606,7 @@ function StormExploreControls({
   lens,
   viewport,
   evidenceView,
+  planLevelKm,
   overlays,
   slicePosition,
   onViewport,
@@ -613,6 +618,7 @@ function StormExploreControls({
   lens: LensId;
   viewport: ViewportId;
   evidenceView: EvidenceView;
+  planLevelKm: number | null;
   overlays: OverlayState;
   slicePosition: SlicePositionState | null;
   onViewport: (value: ViewportId) => void;
@@ -621,7 +627,7 @@ function StormExploreControls({
   onResetSlicePosition: () => void;
   onOverlays: (value: OverlayState) => void;
 }) {
-  const controls = overlayControls(lens, evidenceView);
+  const controls = overlayControls(lens, evidenceView, planLevelKm);
   function update(control: OverlayControl, checked: boolean) {
     onOverlays({ ...overlays, [control.overlayKey]: checked });
   }
@@ -740,7 +746,11 @@ type OverlayControl = {
   overlayKey: keyof OverlayState;
 };
 
-function overlayControls(lens: LensId, evidenceView: EvidenceView): OverlayControl[] {
+function overlayControls(
+  lens: LensId,
+  evidenceView: EvidenceView,
+  planLevelKm: number | null,
+): OverlayControl[] {
   if (lens === "rotating_updraft") {
     const controls: OverlayControl[] = [
       { label: "Cloud boundary", overlayKey: "condensate" },
@@ -763,9 +773,13 @@ function overlayControls(lens: LensId, evidenceView: EvidenceView): OverlayContr
     { label: "Reflectivity contour", overlayKey: "reflectivity" },
   ];
   if (evidenceView === "plan") {
+    const flowLevel =
+      typeof planLevelKm === "number" && Number.isFinite(planLevelKm)
+        ? ` at z = ${planLevelKm.toFixed(2)} km`
+        : "";
     controls.unshift(
       { label: "Accumulated rain (history)", overlayKey: "rain" },
-      { label: "Flow arrows at 1.25 km", overlayKey: "wind" },
+      { label: `Flow arrows${flowLevel}`, overlayKey: "wind" },
     );
   }
   return controls;
@@ -893,7 +907,7 @@ function SupercellExplanation({
     <section className="supercells-context-panel">
       <p className="eyebrow">{frame?.lens_name ?? "Supercell Lens"}</p>
       <h3>{question}</h3>
-      <p>{lensExplanation(lens, evidenceView)}</p>
+      <p>{lensExplanation(lens, evidenceView, frame?.plan.level_km)}</p>
       {frame && (
         <div className="supercells-notice-now">
           <strong>What to notice now</strong>
@@ -1217,10 +1231,17 @@ function sliceControlLabel(view: EvidenceView): string {
   return view === "xz" ? "Vertical x-z" : "Vertical y-z";
 }
 
-function lensExplanation(lens: LensId, evidenceView: EvidenceView): string {
+function lensExplanation(
+  lens: LensId,
+  evidenceView: EvidenceView,
+  planLevelKm?: number,
+): string {
+  const level = typeof planLevelKm === "number" && Number.isFinite(planLevelKm)
+    ? `z = ${planLevelKm.toFixed(2)} km`
+    : "the selected native altitude";
   if (lens === "rotating_updraft") {
     return evidenceView === "plan"
-      ? "The 3.25 km x-y slice pairs signed vertical motion with cyclonic vorticity and the 2–5 km updraft-helicity footprint, showing where ascent and rotation organize together."
+      ? `The x-y slice at ${level} pairs signed vertical motion with cyclonic vorticity and the 2–5 km updraft-helicity footprint, showing where ascent and rotation organize together.`
       : "This native vertical section pairs signed vertical motion with cyclonic-vorticity contours, showing whether the rotating rising core remains vertically connected.";
   }
   if (lens === "cloud_precipitation") {
@@ -1229,7 +1250,7 @@ function lensExplanation(lens: LensId, evidenceView: EvidenceView): string {
       : "This storm-core native section shows the dominant hydrometeor at each cell. Vertical-motion contours remain subordinate, and every native species value remains available in Context.";
   }
   return evidenceView === "plan"
-    ? "The fixed 3-D lower-troposphere view and 1.25 km x-y slice coordinate current motion, precipitating condensate, and model-relative flow with the historical accumulated-rain footprint without diagnosing a cold pool."
+    ? `The fixed 3-D lower-troposphere view and x-y slice at ${level} coordinate current motion, precipitating condensate, and model-relative flow with the historical accumulated-rain footprint without diagnosing a cold pool.`
     : "The 3-D view remains fixed on the lowest 5.25 km, while this native vertical section shows full-depth current ascent, descent, and precipitating condensate; accumulated surface rain remains a separate historical plan-view quantity.";
 }
 

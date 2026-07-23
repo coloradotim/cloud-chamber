@@ -129,6 +129,7 @@ type True3DViewerProps = {
   showWindVectors?: boolean;
   windMode?: UpdraftLensWindMode;
   windReferenceMps?: number;
+  windOverlayLabel?: string;
   windArrowDomainFraction?: number;
   updraftLensFrame?: UpdraftLensFrame | null;
   updraftLensOpacity?: number;
@@ -216,6 +217,7 @@ export function True3DViewer({
   showWindVectors = false,
   windMode = "perturbation",
   windReferenceMps = 0,
+  windOverlayLabel,
   windArrowDomainFraction = 0.08,
   updraftLensFrame = null,
   updraftLensOpacity = 0.9,
@@ -566,7 +568,10 @@ export function True3DViewer({
         )}
         {!compactWorkspace && showWindVectors && windVectors.length > 0 && (
           <div className="true3d-wind-legend" aria-label="Horizontal wind overlay legend">
-            <strong>{windMode === "perturbation" ? "Local departures" : "Total wind"}</strong>
+            <strong>
+              {windOverlayLabel ??
+                (windMode === "perturbation" ? "Local departures" : "Total wind")}
+            </strong>
             <span>{windReferenceMps.toFixed(1)} m/s reference = 8% domain width</span>
           </div>
         )}
@@ -607,7 +612,10 @@ export function True3DViewer({
             )}
             {showWindVectors && windVectors.length > 0 && (
               <div className="true3d-wind-legend" aria-label="Horizontal wind overlay legend">
-                <strong>{windMode === "perturbation" ? "Local departures" : "Total wind"}</strong>
+                <strong>
+                  {windOverlayLabel ??
+                    (windMode === "perturbation" ? "Local departures" : "Total wind")}
+                </strong>
                 <span>{windReferenceMps.toFixed(1)} m/s reference</span>
               </div>
             )}

@@ -22,6 +22,7 @@ vi.mock("./True3DViewer", () => ({
     cameraPreset,
     cameraTransform,
     onCameraTransformChange,
+    windOverlayLabel,
   }: {
     fieldLabel: string;
     activeSliceLabel: string;
@@ -40,12 +41,14 @@ vi.mock("./True3DViewer", () => ({
       target: [number, number, number];
       up: [number, number, number];
     }) => void;
+    windOverlayLabel?: string;
   }) => (
     <section aria-label="Mock 3-D storm scene">
       <h2>{fieldLabel}</h2>
       <p>{activeSliceLabel}</p>
       <p>Camera: {cameraPreset}</p>
       <p>Camera position: {cameraTransform?.position.join(",") ?? "default"}</p>
+      {windOverlayLabel && <p>{windOverlayLabel}</p>}
       <button
         type="button"
         onClick={() =>
@@ -370,7 +373,7 @@ function frameFor(url: string): StormExaminationFrame {
       distance_to_primary_updraft_km: 0,
     },
     plan: {
-      title: lens === "cloud_precipitation" ? "Hydrometeor plan" : "Midlevel storm structure",
+      title: lens === "cloud_precipitation" ? "Hydrometeor plan" : "Updraft and rotation",
       subtitle: "Native-grid plan evidence",
       x_indices: [0, 1, 2],
       y_indices: [0, 1, 2],
@@ -420,7 +423,16 @@ function frameFor(url: string): StormExaminationFrame {
       layers: sceneLayers(lens),
       wind_vectors:
         lens === "low_level_interactions"
-          ? [{ x_km: 0, y_km: 10, z_km: 1.25, u_m_s: 12, v_m_s: 5, magnitude_m_s: 13 }]
+          ? [
+              {
+                x_km: 0,
+                y_km: 10,
+                z_km: zCoordinates[zIndex] ?? 3,
+                u_m_s: 12,
+                v_m_s: 5,
+                magnitude_m_s: 13,
+              },
+            ]
           : [],
       wind_reference_m_s: 25,
       point_budget: 20_000,
@@ -586,6 +598,61 @@ describe("SupercellsExplore", () => {
         expect.anything(),
       ),
     );
+  });
+
+  it("keeps rapid cross-axis slice changes in one local native selection", async () => {
+    render(<SupercellsExplore simulation={simulation} onBack={vi.fn()} />);
+    await screen.findByRole("heading", { name: "Rotating Updraft" });
+
+    vi.mocked(fetch).mockImplementation((input: RequestInfo | URL) => {
+      const url = String(input);
+      if (/x_index=1&y_index=1&z_index=2/.test(url)) {
+        return new Promise<Response>(() => {});
+      }
+      return Promise.resolve(ok(frameFor(url)));
+    });
+
+    fireEvent.change(screen.getByLabelText("Horizontal x-y z position"), {
+      target: { value: "2" },
+    });
+    fireEvent.click(
+      within(screen.getByLabelText("Slice orientation")).getByRole("button", {
+        name: "Vertical x-z",
+      }),
+    );
+    fireEvent.change(screen.getByLabelText("Vertical x-z y position"), {
+      target: { value: "0" },
+    });
+
+    await waitFor(() =>
+      expect(fetch).toHaveBeenCalledWith(
+        expect.stringMatching(/x_index=1&y_index=0&z_index=2/),
+        expect.anything(),
+      ),
+    );
+  });
+
+  it("uses the selected Low-Level altitude in 2-D and 3-D labels", async () => {
+    render(<SupercellsExplore simulation={simulation} onBack={vi.fn()} />);
+    await screen.findByRole("heading", { name: "Rotating Updraft" });
+
+    fireEvent.click(screen.getByRole("button", { name: "Low-Level Interactions" }));
+    await screen.findByRole("heading", { name: "Low-Level Interactions" });
+    fireEvent.change(screen.getByLabelText("Horizontal x-y z position"), {
+      target: { value: "2" },
+    });
+
+    await waitFor(() =>
+      expect(fetch).toHaveBeenCalledWith(
+        expect.stringMatching(/lens=low_level_interactions.*z_index=2/),
+        expect.anything(),
+      ),
+    );
+    expect(
+      await screen.findAllByText("Model-relative wind at z = 8.00 km"),
+    ).not.toHaveLength(0);
+    expect(screen.getByText(/x-y slice at z = 8.00 km coordinate current motion/)).toBeVisible();
+    expect(screen.getByText("Model-relative flow at z = 8.00 km")).toBeVisible();
   });
 
   it("keeps a user-framed camera transform per Lens across ordinary workspace changes", async () => {

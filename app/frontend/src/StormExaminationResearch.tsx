@@ -789,7 +789,12 @@ export function StormLegend({
         <small className="storm-legend-note">
           Derived category; native species retained in Context.
         </small>
-        <OverlayKey lens={frame.lens_id} overlays={overlays} evidenceView={evidenceView} />
+        <OverlayKey
+          lens={frame.lens_id}
+          overlays={overlays}
+          evidenceView={evidenceView}
+          planLevelKm={frame.plan.level_km}
+        />
       </aside>
     );
   }
@@ -815,7 +820,12 @@ export function StormLegend({
         <span>Frame max {formatSigned(evidence.primary.selected_frame_maximum)}</span>
         <span>Frame min {formatSigned(evidence.primary.selected_frame_minimum)}</span>
       </div>
-      <OverlayKey lens={frame.lens_id} overlays={overlays} evidenceView={evidenceView} />
+      <OverlayKey
+        lens={frame.lens_id}
+        overlays={overlays}
+        evidenceView={evidenceView}
+        planLevelKm={frame.plan.level_km}
+      />
     </aside>
   );
 }
@@ -824,10 +834,12 @@ function OverlayKey({
   lens,
   overlays,
   evidenceView,
+  planLevelKm,
 }: {
   lens: LensId;
   overlays?: OverlayState;
   evidenceView: "plan" | "xz" | "yz";
+  planLevelKm: number;
 }) {
   const items: Array<[string, string]> = [];
   if (lens === "rotating_updraft") {
@@ -849,7 +861,7 @@ function OverlayKey({
     }
     if (overlays?.reflectivity) items.push(["brown", "Reflectivity >= 35 dBZ"]);
     if (evidenceView === "plan" && overlays?.wind) {
-      items.push(["arrow", "Model-relative flow at 1.25 km"]);
+      items.push(["arrow", `Model-relative flow at z = ${planLevelKm.toFixed(2)} km`]);
     }
   }
   if (!items.length) return null;
