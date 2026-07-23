@@ -10,11 +10,12 @@ Current state:
 ```text
 source_and_product_contract_reviewed
 presentation_configuration_selected
-characterization_not_started
+characterization_completed_and_native_validated
 final_process_not_started
 ```
 
-No issue #421 CM1 process had been started when this plan was recorded.
+The one authorized characterization completed without a retry or tuning
+process. The final process has not started.
 
 ## Stable product identity
 
@@ -115,15 +116,39 @@ measured cost before the full process. It is not a tuning run.
 
 No automatic retry is authorized for either process.
 
-## Pending evidence
+## Characterization evidence
 
-After characterization:
+The exact-final-grid characterization used the final 240 x 240 x 60 grid,
+3-second timestep, and required output inventory for 300 model seconds. It
+completed normally with:
 
-- measured wall time;
-- peak resident memory;
-- actual history sizes;
-- updated full-run runtime and storage projection;
-- explicit final launch decision.
+| Evidence | Measured value |
+|---|---:|
+| Runtime | 295.448 s |
+| Peak resident memory | 1,595,932,672 bytes |
+| Saved histories | 2 |
+| History bytes | 55,154,210 bytes |
+| Retained run bytes | 55,728,945 bytes |
+| Free space after validation | 36,319,924,224 bytes |
+
+Both expected histories at 0 and 300 seconds were present. Every required
+field had the expected dimensions and units and contained only finite values.
+CM1 emitted its normal completion marker. Standard error contained only the
+known nonfatal `IEEE_UNDERFLOW_FLAG`.
+
+Simple measured-time scaling projects the 10,800-second integration to about
+2.95 hours before the denser mature-storm output overhead. The final planning
+band is therefore 3-4 hours. The actual characterization files demonstrate
+NetCDF4 storage reduction, but final launch eligibility continues to assume no
+compression and retains the 22.34 GiB numeric floor plus 5 GiB reserve.
+
+Decision:
+
+```text
+advance_to_single_final_presentation_process_without_configuration_change
+```
+
+## Pending final evidence
 
 After the final process:
 
