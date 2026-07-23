@@ -1,269 +1,205 @@
 # Cloud Chamber Current State
 
-**Status:** Descriptive repository snapshot
+**Status:** Current descriptive implementation snapshot
 
 ## Purpose
 
-This document describes the software and repository as they exist today.
+This document describes the software and repository as they exist today. It is
+not a roadmap or a substitute for product authority.
 
-It is not:
-
-- a product vision;
-- a roadmap;
-- an MVP definition;
-- a decision about which current capabilities should remain;
-- a decision about which scenarios or experiments should become supported recipes;
-- a decision about the final application structure.
-
-The controlling product documents are:
+Read higher-authority documents first:
 
 1. [North Star](../../NORTH_STAR.md)
 2. [Product Vision](../product/PRODUCT_VISION.md)
 3. [Application Semantics](../product/APPLICATION_SEMANTICS.md)
+4. [MVP](../product/MVP.md)
 
-Where this document describes current implementation that does not match the Product Vision, the mismatch is intentional and should remain visible.
+Where current implementation is incomplete, this document records the gap
+without changing the approved product direction.
 
-## Current repository condition
+## Current Application
 
-Cloud Chamber has been developed through several different product framings.
-
-The repository currently contains language, workflows, scenarios, contracts, issues, and implementation choices associated with ideas including:
-
-- Baseline Shallow Cumulus as a Golden Path;
-- Thermal Fate as an organizing concept;
-- configurable observed-sounding runs;
-- sounding screening and recommendation;
-- surface-forcing experiments;
-- explicit thermal and deep-convection initiation;
-- cloud-opportunity and scout-to-full-run workflows.
-
-These framings overlap and sometimes conflict.
-
-Their presence in the repository records project history and implementation context. It does not establish current product direction.
-
-## Current application structure
-
-The application is local-first and uses an external CM1 installation.
-
-The current technical flow is broadly:
+Cloud Chamber is a local, single-user atmospheric laboratory. Its primary
+entrance is a Cloud Worlds home with three accessible Worlds:
 
 ```text
-React / TypeScript frontend
-→ Python / FastAPI backend
-→ configured run and package generation
-→ external CM1 execution
-→ runtime and NetCDF ingest
-→ persistent result metadata
-→ backend-derived diagnostics and visualization data
-→ browser-based inspection
+Cloud Chamber
+├── Trade Cumulus
+├── Mountain Waves
+└── Supercells
 ```
 
-The current interface is organized around three top-level areas:
+Each World owns stable World and Simulation identities. Those product
+identities resolve to local retained run and result assets; they are not the
+same thing as CM1 run IDs, result IDs, or filesystem paths.
 
-- **Build**
-- **Results**
-- **Explore**
+**Fun With Soundings** is approved as a separate atmospheric workbench, not a
+Cloud World. It is not currently accessible as a first-class application
+destination. Issue #395 remains open for that work.
 
-This is the present interface structure. No decision has been made that it is the final product structure.
+## Accessible Cloud Worlds
 
-## Implemented capabilities
+| World | Current content | Current surfaces | Current limitation |
+| --- | --- | --- | --- |
+| **Trade Cumulus** | Canonical BOMEX Baseline and More Moisture retained Simulations | Overview, Simulations, Saved Views placeholder, featured Comparison, Lab, and Explore | Saved Views are not durable; ordinary World-aware Compare is not implemented; Lab still embeds transitional Build and Results |
+| **Mountain Waves** | Dry Ridge and Boulder Windstorm retained Simulations | Overview, Simulations, variation Lab, and Explore | Variation is World-specific rather than shared; no ordinary Compare or Saved Views |
+| **Supercells** | Quarter-Circle Supercell retained Simulation | Overview, Simulations, and Explore | No variation Lab, ordinary Compare, or Saved Views |
 
-### Run configuration and packaging
+The World Overview and Simulations surfaces use stable content identities and
+explicit availability states. Missing, invalid, or conflicting retained
+content fails closed instead of silently substituting a different run.
 
-The repository currently supports combinations of:
+## Explore Experiences
 
-- committed scenario templates;
-- observed IGRA sounding input;
-- CM1-facing package and manifest generation;
-- run duration, domain, grid, cadence, and output selection;
-- surface heat and moisture forcing;
-- supported idealized initiation modes;
-- provenance and configuration review before execution.
+The three Explore implementations share Cloud Chamber's interaction and visual
+vocabulary while preserving the geometry and evidence native to each regime.
 
-The exact options available depend on the selected workflow and current implementation path.
+### Trade Cumulus
 
-### CM1 execution and run management
+Trade Cumulus Explore combines:
 
-The application currently includes:
+- a true three-dimensional shallow-cloud point field;
+- native horizontal and vertical scalar slices;
+- direct Field inspection and an Updraft Lens;
+- a cloud boundary and horizontal-wind evidence;
+- fixed World-owned scientific scales;
+- synchronized time, slice position, selected-point evidence, and Context.
 
-- local CM1 launch;
-- serial local run queueing;
-- progress and estimated completion reporting;
-- cancellation where technically practical;
-- automatic ingest for completed output-producing runs;
-- optional trusted-LAN execution for supported paths;
-- runtime logs and lifecycle state;
-- checks that distinguish process completion from trustworthy scientific output.
+### Mountain Waves
 
-### Results and storage
+Mountain Waves output is native two-dimensional x-z data. Explore therefore
+uses:
 
-The application currently includes:
+- one large terrain-aware x-z scientific view;
+- direct Field inspection;
+- Wave Structure and Wave Cloud Lenses;
+- expanded-height and true-physical-scale geometry;
+- terrain, wind, cloud-point, boundary, saturation, and potential-temperature
+  evidence where applicable;
+- fixed World-owned scales, timeline, selected-point evidence, and Context.
 
-- persistent result records;
-- editable result names, tags, and notes;
-- run, scenario, sounding, configuration, and source provenance;
-- explicit result and runtime cleanup controls;
-- field-quality and runtime-integrity metadata;
-- result summaries derived by the backend.
+There is no fake singleton-y three-dimensional extrusion.
 
-### Scientific fields and diagnostics
+### Supercells
 
-Current ingest and diagnostic code handles a range of CM1-derived information, including where available:
+Supercells Explore coordinates:
 
-- cloud water;
-- vertical velocity;
-- water vapor and thermodynamic fields;
-- rain water aloft;
-- surface rain;
-- reflectivity;
-- ice and other hydrometeor species;
-- surface heat and moisture fluxes;
-- cloud-top and hydrometeor-envelope distinctions;
-- selected-region or selected-point summaries;
-- sounding-derived diagnostics and screening fields.
+- a three-dimensional storm view;
+- native horizontal x-y and vertical x-z and y-z sections;
+- Rotating Updraft, Cloud and Precipitation, and Low-Level Interactions Lenses;
+- storm-region and full-domain inspection;
+- fixed World-owned scales and World-specific overlays;
+- synchronized camera, slice position, timeline, selected-point evidence, and
+  Context.
 
-Availability and trust vary by run configuration, output fields, and data quality.
+The sections use native model coordinates. Moving between a Lens and a direct
+slice preserves the selected orientation and position where the underlying
+data permits.
 
-### Visualization
+## Shared Scientific Presentation
 
-The current application includes:
+Current Explore surfaces use:
 
-- 2-D field slices;
-- initial 3-D field inspection;
-- cloud-water visualization;
-- output-time selection;
-- saved-output timelapse playback;
-- camera and field controls;
-- selected-region and selected-point inspection.
+- fixed-across-time, World-owned scales rather than per-frame autoscaling;
+- concise legends with explicit units and displayed frame extrema;
+- backend-derived, bounded payloads rather than browser-side NetCDF parsing;
+- native coordinates and declared derived quantities;
+- selected-point evidence tied to actual payload values;
+- persistent playback and saved-output controls;
+- explicit loading, missing-content, and failure states.
 
-The current visualizer does not yet provide the complete experience described in the Product Vision.
+World-specific Lenses combine fields and overlays to answer a bounded
+scientific question. A Lens is an interpretation layer, not a new model field
+or a claim of unsupported process evidence.
 
-### Observed-sounding support
+## Retained Presentation Simulations
 
-The repository currently includes:
+The built-in World content currently resolves to retained presentation-quality
+CM1 output:
 
-- IGRA sounding parsing and normalization;
-- observed thermodynamic and wind-profile handling;
-- local sounding cache workflows;
-- sounding-derived diagnostics;
-- candidate screening, sorting, saving, tagging, and notes;
-- package configuration from selected observed soundings.
+| World | Stable Simulation | Current retained run |
+| --- | --- | --- |
+| Trade Cumulus | Canonical BOMEX Baseline | `trade-cumulus-presentation-v1-baseline-20260722` |
+| Trade Cumulus | More Moisture | `trade-cumulus-presentation-v1-more-moisture-20260722` |
+| Mountain Waves | Dry Ridge | `dry-mountain-wave-presentation-v1-20260722` |
+| Mountain Waves | Boulder Windstorm | `moist-mountain-wave-presentation-v1-20260722` |
+| Supercells | Quarter-Circle Supercell | `quarter-circle-supercell-presentation-v1-20260723` |
 
-The existence of these capabilities does not decide how important observed soundings will be in the eventual product.
+These run IDs identify current local artifacts, not permanent product identity.
+The large NetCDF histories remain outside Git under the runtime home.
 
-### Run, research, and scenario content
+## Transitional Capabilities
 
-The repository currently contains:
+Working infrastructure remains available even where its product placement is
+not final:
 
-- a lower-atmosphere scenario catalog;
-- shallow-cumulus contrast scenarios;
-- low-cloud and warm-rain placeholders;
-- uniform and differential surface-forcing work;
-- observed-sounding evolution paths;
-- explicit thermal-initiation work;
-- deep-convection benchmark work;
-- research notes and run records from successful, unsuccessful, and inconclusive experiments.
+- observed-sounding search, screening, caching, and package configuration;
+- CM1 package generation and provenance review;
+- local CM1 launch, serial queueing, progress, cancellation, and ingest;
+- Results records with local notes, tags, diagnostics, and cleanup;
+- generic field and result inspection;
+- trusted-LAN execution for supported paths;
+- runtime-integrity and field-quality handling.
 
-The scientific and product status of these items has not yet been reviewed under the new Product Vision.
+Some of this infrastructure appears inside the current Trade Cumulus Lab.
+That transitional placement does not make Build or Results the final World Lab
+information architecture, and it does not make Fun With Soundings accessible.
 
-## Current documentation condition
+## Current Gaps
 
-The documentation tree contains a mixture of:
+The implemented application does not yet provide:
 
-- current operational instructions;
-- implemented technical contracts;
-- research evidence;
-- design proposals;
-- historical roadmaps;
-- superseded product direction;
-- documents that combine several of those roles.
+- durable Saved Views;
+- ordinary World-aware Compare beyond the featured Trade Cumulus Comparison;
+- one shared World-aware variation workflow across all accessible Worlds;
+- a first-class Fun With Soundings entrance;
+- one common Context and below-the-fold information architecture across all
+  Explore implementations;
+- durable persistence for complete Explore or comparison workspaces.
 
-Batch 1 established the North Star, Product Vision, and repository-recovery `AGENTS.md`.
+Issue #428 tracks the approved cleanup of Explore Context and below-the-fold
+content. Older issues #389, #390, and #391 are closed as superseded by the
+current three-World implementation sequence; they should not be read as active
+roadmap authority.
 
-A full file-by-file read-only documentation disposition audit has been
-completed and approved. Stage 1 operational-documentation recovery and Stage 2
-semantic architecture are complete. The active contract directory has been
-classified so implemented contracts remain active while proposal and historical
-mixed contracts are archived under `docs/archive/contracts/`.
+## Local-First Runtime
 
-Remaining repository moves, rewrites, archives, splits, deletions, and deferrals
-outside those completed stages may still exist.
+The current technical flow is:
 
-Until a document is handled by an approved bounded stage:
+```text
+React / TypeScript / Vite frontend
+-> Python / FastAPI backend
+-> generated CM1 package and manifest
+-> external CM1 process
+-> local NetCDF histories and runtime evidence
+-> backend validation, ingest, diagnostics, and visualization payloads
+-> browser inspection
+```
 
-- lower-authority documents may contain useful facts;
-- their product framing may be stale;
-- their roadmap language should not be executed without new approval;
-- their presence should not be interpreted as a decision to keep or remove the described capability.
+Runtime assets default to `~/CloudChamber`. The application depends on those
+local assets for retained Simulations and generated Experiments. Deleting a run
+can remove the corresponding output and result sidecars; the repository is not
+a durable store for those artifacts.
 
-See [Documentation Status and Authority](../DOCUMENTATION_STATUS.md).
+## Interpretation Rules
 
-## Current gated product-architecture status
+- **Accessible** means the user can reach the World or surface in the current
+  application.
+- **Implemented** means a capability exists in the current software; it does
+  not elevate that capability above product authority.
+- **Retained Simulation** means validated output is available locally for a
+  stable Simulation identity.
+- **Presentation run** describes the current backing artifact, not the stable
+  Simulation identity.
+- **Lens** means a World-owned scientific interpretation of available evidence,
+  not a new prognostic field.
+- **Transitional** does not mean disposable; it means the eventual product
+  placement remains incomplete.
+- Research pages and one-off validation artifacts are evidence, not product
+  routes.
 
-Completed:
+## Updating This Document
 
-- approved North Star;
-- approved Product Vision;
-- gated-program `AGENTS.md`;
-- closure of selected superseded product-direction issues and pull requests;
-- replacement README;
-- this descriptive Current State document;
-- documentation status and authority guide;
-- operational-documentation recovery;
-- approved Application Semantics;
-- active contract classification for implemented contracts;
-- concise pull-request template update;
-- controlled-work issue template;
-- reusable Codex task prompt template.
-
-Not yet completed:
-
-- scenario dependency and status review;
-- CM1 experimentation strategy;
-- MVP definition;
-- final application architecture or workflow decisions.
-
-## Questions that remain open
-
-No final decision has yet been made about:
-
-- which cloud regime or regimes should be developed first;
-- which current scenarios have scientific or product value;
-- what a supported Cloud Chamber recipe requires;
-- how observed soundings should be used;
-- which current forcing and initiation mechanisms should remain available;
-- which diagnostics should be central to the user experience;
-- which current capabilities should be retained, changed, or removed;
-- whether Build, Results, and Explore should remain the top-level structure;
-- what compute and fidelity tiers the product should support;
-- what belongs in the MVP;
-- how comparison should work;
-- how cloud appearance and invisible-process visualization should be combined.
-
-Those questions should be answered through explicit product decisions and the forthcoming experimentation strategy, not inferred from current code or repository history.
-
-## Interpretation rules
-
-When using this document:
-
-- **Implemented** means the capability exists in some current form. It does not mean the capability is approved for the eventual product.
-- **Current** means present in the repository or application now. It does not mean preferred.
-- **Historical** does not mean useless.
-- **Under review** does not mean targeted for removal.
-- A successful experiment does not establish a general recipe.
-- An unsuccessful experiment does not establish that the underlying cloud regime or mechanism lacks value.
-- Existing architecture creates constraints and opportunities, but does not by itself decide the product.
-
-## Updating this document
-
-Update this document only to reflect material changes in the descriptive state of the repository or application.
-
-Do not use an update to this document to make product decisions.
-
-Any proposed edit should make clear whether it is:
-
-- correcting a factual description;
-- recording an implemented capability;
-- recording removal of an implemented capability;
-- recording repository-recovery progress;
-- or attempting to make a product decision that belongs elsewhere.
+Update this file when the material descriptive state changes. Do not use it to
+approve a new World, Recipe, scientific interpretation, or implementation
+sequence.

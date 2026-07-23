@@ -2,131 +2,122 @@
 
 ## See clouds from the inside
 
-Cloud Chamber exists because clouds are beautiful, dynamic, and mostly hidden from us.
+Cloud Chamber is a local, single-user atmospheric laboratory for exploring
+scientifically meaningful cloud simulations. The current application opens into
+three Cloud Worlds:
 
-> **Cloud Chamber is intended to become a place where people can create beautiful, scientifically meaningful cloud worlds, see the invisible processes inside them, change the atmosphere, and learn by watching the clouds respond.**
+| Cloud World | Current experience |
+| --- | --- |
+| **Trade Cumulus** | A three-dimensional shallow-cloud field with two retained Simulations, an Updraft Lens, direct field inspection, and one featured moisture Comparison. |
+| **Mountain Waves** | A terrain-aware native two-dimensional x-z World with dry and moist Simulations, Field views, Wave Structure and Wave Cloud Lenses, and a working variation Lab. |
+| **Supercells** | A coordinated three-dimensional storm view plus native x-y, x-z, and y-z evidence for a retained quarter-circle Supercell Simulation and three storm Lenses. |
 
-That is the product vision, not a description of the software as it exists today.
+The approved product direction also includes **Fun With Soundings**, a
+non-World atmospheric workbench. It is not currently accessible from the
+application. Sounding search, screening, package generation, run management,
+Results, and general Explore capabilities remain available through transitional
+paths, including the existing Trade Cumulus Lab.
 
-Today, Cloud Chamber is a working but uneven collection of CM1 run-building, run-management, sounding, diagnostics, and visualization capabilities shaped by several earlier product directions. Some of those capabilities are strong foundations. Others are incomplete, misframed, or may not belong in the eventual product.
+Cloud Chamber is not a forecasting product. It uses idealized and source-backed
+CM1 experiments to make cloud structure and normally invisible atmospheric
+processes visible.
 
-The long-term vision is a scientific cloud laboratory: a collection of explorable cloud worlds where users can watch clouds form and evolve, reveal the normally invisible processes inside them, change meaningful atmospheric conditions, and understand how the clouds respond.
+## Current boundaries
 
-Read the controlling product documents:
+The implemented application does not yet provide:
 
-- [North Star](NORTH_STAR.md)
-- [Product Vision](docs/product/PRODUCT_VISION.md)
-- [Application Semantics](docs/product/APPLICATION_SEMANTICS.md)
+- durable Saved Views;
+- ordinary World-aware Compare beyond the featured Trade Cumulus Comparison;
+- one shared variation workflow across all three Worlds;
+- a first-class Fun With Soundings destination;
+- durable persistence for complete Explore or comparison workspaces.
 
-## Repository status
+These are current limitations, not decisions to remove the corresponding
+approved product concepts.
 
-Cloud Chamber is currently in a **gated product-architecture program** after
-the initial repository-recovery and semantic-architecture stages.
+## Product authority
 
-The repository contains substantial working simulation, run-management, data, and visualization infrastructure. It also contains scenarios, workflows, terminology, and planning documents inherited from several earlier product directions.
+Read these documents before nontrivial product work:
 
-The current application is therefore **evidence and capability, not the final product design**.
+1. [North Star](NORTH_STAR.md)
+2. [Product Vision](docs/product/PRODUCT_VISION.md)
+3. [Application Semantics](docs/product/APPLICATION_SEMANTICS.md)
+4. [MVP](docs/product/MVP.md)
+5. [Documentation Status and Authority](docs/DOCUMENTATION_STATUS.md)
 
-Do not infer the long-term product from:
+Current software is described in:
 
-- the current default scenario;
-- the current Build, Results, or Explore workflow;
-- existing sounding scores or recommendation language;
-- a particular trigger or forcing mechanism;
-- an old roadmap, product specification, or issue;
-- one successful or unsuccessful CM1 run.
-
-See [Current State](docs/current/CURRENT_STATE.md) for a candid description of what exists today and what remains under review.
-
-## What works today
-
-Cloud Chamber currently provides useful foundations for future product development:
-
-- local CM1 package generation and execution;
-- serial run queueing, progress reporting, cancellation, and automatic ingest;
-- optional trusted-LAN execution support;
-- persistent result records with names, tags, notes, provenance, and cleanup controls;
-- backend-owned NetCDF ingest and bounded visualization-ready data products;
-- saved-output playback and time-based result inspection;
-- 2-D slices and 3-D inspection of CM1-derived fields;
-- separate treatment of cloud water, ice and other hydrometeors, rain water aloft, surface rain, and reflectivity;
-- observed-sounding ingest, caching, diagnostics, and run configuration;
-- runtime-integrity and field-quality checks that distinguish a completed process from trustworthy scientific output.
-
-These capabilities are not all guaranteed to appear in the eventual product in their current form. They should be preserved while their future roles are evaluated.
-
-## What is not settled
-
-The following remain open product and scientific questions:
-
-- the first cloud world or cloud worlds to support;
-- what constitutes a validated Cloud Chamber recipe;
-- how observed atmospheres should enter regime-specific experiments;
-- which controls belong to each cloud regime;
-- practical and high-fidelity compute tiers;
-- how beautiful cloud appearance and scientific field inspection should work together;
-- the role of Build, Results, and Explore in the eventual experience;
-- the experimentation path;
-- the MVP.
-
-Existing scenarios and implementation choices do not answer those questions by themselves.
-
-## Documentation
-
-Start here:
-
-- [Documentation status and authority](docs/DOCUMENTATION_STATUS.md)
 - [Current State](docs/current/CURRENT_STATE.md)
 - [Current Architecture](docs/current/CURRENT_ARCHITECTURE.md)
-- [Development](docs/development/DEVELOPMENT.md)
-- [Testing](docs/development/TESTING.md)
-- [CI and Branch Protection](docs/development/CI_AND_BRANCH_PROTECTION.md)
 
-The read-only documentation disposition audit is complete and approved. The
-highest-risk superseded product-direction documents are preserved under
-`docs/archive/`, current operational docs are maintained under `docs/current/`
-and `docs/development/`, Application Semantics is the approved semantic
-authority, and the repository intentionally has no controlling roadmap during
-the gated product-architecture program. The
-[documentation status and authority guide](docs/DOCUMENTATION_STATUS.md)
-explains how to interpret remaining documents.
+## Run locally
 
-## Development
+Prerequisites:
 
-From the repository root, start the local frontend and backend:
+- Git and Bash;
+- Node.js with npm; CI currently uses Node 22;
+- Python 3.12 or newer;
+- `lsof`.
+
+Install frontend dependencies:
+
+```sh
+cd app/frontend
+npm install
+```
+
+Install backend dependencies:
+
+```sh
+cd app/backend
+python3.12 -m venv .venv
+source .venv/bin/activate
+python -m pip install --upgrade pip
+python -m pip install -e ".[dev]"
+```
+
+From the repository root, start both servers:
 
 ```sh
 scripts/dev.sh start
 ```
 
-Other server controls:
+The default addresses are:
+
+- frontend: `http://localhost:5173`
+- backend: `http://127.0.0.1:8000`
+
+Other server commands:
 
 ```sh
 scripts/dev.sh status
 scripts/dev.sh restart
-scripts/dev.sh stop
 scripts/dev.sh logs
+scripts/dev.sh stop
 ```
 
-Run the canonical local validation gate before opening a pull request:
+Run the repository verification gate before opening a pull request:
 
 ```sh
 scripts/check.sh
 ```
 
-For mocked browser workflow checks:
+Run mocked browser checks separately:
 
 ```sh
 scripts/check-e2e.sh
 ```
 
-The frontend normally runs at `http://localhost:5173` and the backend at `http://127.0.0.1:8000`.
+See [Development](docs/development/DEVELOPMENT.md) and
+[Testing](docs/development/TESTING.md) for the complete operational contract.
 
-Real CM1 execution requires an external local CM1 installation and local Cloud Chamber settings. See [Development](docs/development/DEVELOPMENT.md) for setup details.
+## CM1 and runtime assets
 
-## Runtime data
+CM1 is external to this repository. Real execution requires a compatible local
+CM1 installation, a configured `cm1.exe`, and the required runtime files.
+Automated tests use tiny fixtures and fake processes; CI does not run CM1.
 
-Runtime data belongs outside the repository by default:
+Cloud Chamber stores local runtime state outside Git by default:
 
 ```text
 ~/CloudChamber/
@@ -136,28 +127,28 @@ Runtime data belongs outside the repository by default:
   logs/
 ```
 
-`./local-data/` may be used as a gitignored development override.
+The retained NetCDF histories that back built-in Simulations are large local
+assets under the runtime home. Stable World and Simulation identities resolve
+to those run assets; the assets themselves are not stored in Git.
 
 Do not commit:
 
 - CM1 source or binaries;
-- NetCDF output;
-- generated run directories;
+- NetCDF output or generated run directories;
 - `LANDUSE.TBL`;
 - downloaded sounding caches;
 - local settings or machine-private paths;
-- screenshots, videos, traces, logs, or large processed visualization artifacts.
+- logs, screenshots, videos, traces, or large processed visualization
+  artifacts.
 
-## Contributing during the gated product-architecture program
+## Repository guides
 
-Read [AGENTS.md](AGENTS.md) before nontrivial work.
+- [Development](docs/development/DEVELOPMENT.md)
+- [Testing](docs/development/TESTING.md)
+- [CI and Branch Protection](docs/development/CI_AND_BRANCH_PROTECTION.md)
+- [Ingest, Results, and Runtime Cleanup Lifecycle](docs/current/INGEST_RESULTS_STORAGE_LIFECYCLE.md)
 
-Use the [controlled-work issue template](.github/ISSUE_TEMPLATE/controlled-work.md) to define bounded work before implementation, and the [Codex task prompt template](docs/templates/codex-task-prompt.md) to translate an approved issue into execution instructions.
-
-During the gated product-architecture program:
-
-- all pull requests require manual review;
-- auto-merge is disabled;
-- agents do not create follow-up issues autonomously;
-- product, scientific, recipe, scenario, roadmap, and major UX decisions require explicit direction;
-- existing issues and documents are not presumed to be current product authority.
+Read [AGENTS.md](AGENTS.md) before agent-assisted work. Cloud Chamber is in a
+gated product-architecture program after the completed repository-recovery and
+semantic-architecture stages. Work remains bounded, pull requests require
+manual review, and auto-merge remains disabled.
