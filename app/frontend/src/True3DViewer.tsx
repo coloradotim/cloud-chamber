@@ -82,6 +82,12 @@ export type StormScenePayload = {
 
 export type StormScenePoint = [number, number, number, number, number];
 
+export type CameraTransform = {
+  position: [number, number, number];
+  target: [number, number, number];
+  up: [number, number, number];
+};
+
 type SliceResponse = {
   field: VisualizableField;
   selection: {
@@ -142,6 +148,8 @@ type True3DViewerProps = {
   onSelectStormPoint?: (point: StormScenePoint) => void;
   cameraPreset?: CameraPreset;
   onCameraPresetChange?: (preset: CameraPreset) => void;
+  cameraTransform?: CameraTransform | null;
+  onCameraTransformChange?: (transform: CameraTransform) => void;
 };
 
 type SceneRefs = {
@@ -227,6 +235,8 @@ export function True3DViewer({
   onSelectStormPoint,
   cameraPreset = "overview",
   onCameraPresetChange,
+  cameraTransform = null,
+  onCameraTransformChange,
 }: True3DViewerProps) {
   const mountRef = useRef<HTMLDivElement | null>(null);
   const axisLabelLayerRef = useRef<HTMLDivElement | null>(null);
@@ -234,13 +244,17 @@ export function True3DViewer({
   const axisOcclusionRef = useRef({ frame: updraftLensFrame, opacity: updraftLensOpacity });
   const stormSelectionRef = useRef(onSelectStormPoint);
   const cameraPresetRef = useRef(cameraPreset);
+  const cameraTransformRef = useRef(cameraTransform);
+  const cameraTransformChangeRef = useRef(onCameraTransformChange);
+  const appliedCameraPresetRef = useRef(cameraPreset);
   axisOcclusionRef.current = { frame: updraftLensFrame, opacity: updraftLensOpacity };
   stormSelectionRef.current = onSelectStormPoint;
   cameraPresetRef.current = cameraPreset;
+  cameraTransformRef.current = cameraTransform;
+  cameraTransformChangeRef.current = onCameraTransformChange;
   const [renderError, setRenderError] = useState<string | null>(null);
   const [cameraStatus, setCameraStatus] = useState("Camera ready");
-  const [selectedCameraPreset, setSelectedCameraPreset] =
-    useState<CameraPreset>(cameraPreset);
+  const [selectedCameraPreset, setSelectedCameraPreset] = useState<CameraPreset>(cameraPreset);
   const [tallViewport, setTallViewport] = useState(false);
 
   const boundsKey = boundsSignature(pointCloud, stormScene);
@@ -254,6 +268,12 @@ export function True3DViewer({
     [bounds, coordinateSizes, selectedPointCoordinates, selectedRegion],
   );
 
+  const reportCameraTransform = useCallback(() => {
+    const current = refs.current;
+    if (!current) return;
+    cameraTransformChangeRef.current?.(cameraTransformFromRefs(current));
+  }, []);
+
   const resetCamera = useCallback(() => {
     applyCameraPreset(
       selectedCameraPreset,
@@ -262,31 +282,32 @@ export function True3DViewer({
       cameraDistanceScale(selectedCameraPreset, maximized),
     );
     setCameraStatus(`${cameraPresetStatus(selectedCameraPreset)} (reset)`);
-  }, [bounds, maximized, selectedCameraPreset]);
+    reportCameraTransform();
+  }, [bounds, maximized, reportCameraTransform, selectedCameraPreset]);
 
   const setCameraPreset = useCallback(
     (preset: CameraPreset) => {
       setSelectedCameraPreset(preset);
-      applyCameraPreset(
-        preset,
-        refs.current,
-        bounds,
-        cameraDistanceScale(preset, maximized),
-      );
+      applyCameraPreset(preset, refs.current, bounds, cameraDistanceScale(preset, maximized));
       setCameraStatus(cameraPresetStatus(preset));
+      reportCameraTransform();
       onCameraPresetChange?.(preset);
     },
-    [bounds, maximized, onCameraPresetChange],
+    [bounds, maximized, onCameraPresetChange, reportCameraTransform],
   );
 
-  const zoomCamera = useCallback((direction: "in" | "out") => {
-    setCameraStatus(direction === "in" ? "Camera zoomed in" : "Camera zoomed out");
-    const current = refs.current;
-    if (!current) return;
-    const scale = direction === "in" ? 0.82 : 1.18;
-    current.camera.position.multiplyScalar(scale);
-    current.controls.update();
-  }, []);
+  const zoomCamera = useCallback(
+    (direction: "in" | "out") => {
+      setCameraStatus(direction === "in" ? "Camera zoomed in" : "Camera zoomed out");
+      const current = refs.current;
+      if (!current) return;
+      const scale = direction === "in" ? 0.82 : 1.18;
+      current.camera.position.multiplyScalar(scale);
+      current.controls.update();
+      reportCameraTransform();
+    },
+    [reportCameraTransform],
+  );
 
   const moveCameraVertical = useCallback(
     (direction: "up" | "down") => {
@@ -298,8 +319,9 @@ export function True3DViewer({
       current.camera.position.y += delta;
       current.controls.target.y += delta;
       current.controls.update();
+      reportCameraTransform();
     },
-    [bounds.zRange],
+    [bounds.zRange, reportCameraTransform],
   );
 
   const toggleViewportHeight = useCallback(() => {
@@ -342,6 +364,14 @@ export function True3DViewer({
         RIGHT: THREE.MOUSE.PAN,
       };
       applyCameraPreset(cameraPresetRef.current, { camera, controls }, bounds);
+      if (cameraTransformRef.current) {
+        applyCameraTransform(cameraTransformRef.current, { camera, controls });
+      }
+      const handleCameraEnd = () => {
+        const current = refs.current;
+        if (current) cameraTransformChangeRef.current?.(cameraTransformFromRefs(current));
+      };
+      controls.addEventListener("end", handleCameraEnd);
 
       let pointerDown: { x: number; y: number } | null = null;
       const handlePointerDown = (event: PointerEvent) => {
@@ -406,6 +436,7 @@ export function True3DViewer({
         if (!current) return;
         window.cancelAnimationFrame(current.animationFrame);
         current.resizeObserver?.disconnect();
+        current.controls.removeEventListener("end", handleCameraEnd);
         current.controls.dispose();
         current.renderer.domElement.removeEventListener("pointerdown", handlePointerDown);
         current.renderer.domElement.removeEventListener("pointerup", handlePointerUp);
@@ -422,15 +453,18 @@ export function True3DViewer({
   }, [axisLabels, bounds]);
 
   useEffect(() => {
+    const presetChanged = appliedCameraPresetRef.current !== cameraPreset;
+    appliedCameraPresetRef.current = cameraPreset;
     setSelectedCameraPreset(cameraPreset);
-    applyCameraPreset(
-      cameraPreset,
-      refs.current,
-      bounds,
-      cameraDistanceScale(cameraPreset, maximized),
-    );
-    setCameraStatus(cameraPresetStatus(cameraPreset));
-  }, [bounds, cameraPreset, maximized]);
+    if (cameraTransform) {
+      applyCameraTransform(cameraTransform, refs.current);
+    } else {
+      applyCameraPreset(cameraPreset, refs.current, bounds);
+    }
+    if (!cameraTransform || presetChanged) {
+      setCameraStatus(cameraPresetStatus(cameraPreset));
+    }
+  }, [bounds, cameraPreset, cameraTransform]);
 
   useEffect(() => {
     const current = refs.current;
@@ -485,6 +519,7 @@ export function True3DViewer({
       data-result-name={resultName}
       data-updraft-lens-opacity={updraftLensFrame ? updraftLensOpacity : undefined}
       data-updraft-lens-cloud-boundary={updraftLensFrame ? showUpdraftLensBoundary : undefined}
+      data-camera-position={cameraTransform?.position.join(",")}
     >
       {!compactWorkspace && (
         <div className="true3d-scene-header">
@@ -638,6 +673,42 @@ export function True3DViewer({
           <button
             type="button"
             className="true3d-icon-command"
+            aria-label="Zoom in"
+            title="Zoom in"
+            onClick={() => zoomCamera("in")}
+          >
+            <span aria-hidden="true">+</span>
+          </button>
+          <button
+            type="button"
+            className="true3d-icon-command"
+            aria-label="Zoom out"
+            title="Zoom out"
+            onClick={() => zoomCamera("out")}
+          >
+            <span aria-hidden="true">-</span>
+          </button>
+          <button
+            type="button"
+            className="true3d-icon-command"
+            aria-label="Pan view up"
+            title="Pan view up"
+            onClick={() => moveCameraVertical("up")}
+          >
+            <span aria-hidden="true">{"\u2191"}</span>
+          </button>
+          <button
+            type="button"
+            className="true3d-icon-command"
+            aria-label="Pan view down"
+            title="Pan view down"
+            onClick={() => moveCameraVertical("down")}
+          >
+            <span aria-hidden="true">{"\u2193"}</span>
+          </button>
+          <button
+            type="button"
+            className="true3d-icon-command"
             aria-label="Reset camera"
             title="Reset camera"
             onClick={resetCamera}
@@ -655,6 +726,9 @@ export function True3DViewer({
               <span aria-hidden="true">{"\u26f6"}</span>
             </button>
           )}
+          <span className="sr-only" role="status" aria-live="polite">
+            {cameraStatus}
+          </span>
         </div>
       ) : (
         <>
@@ -1483,8 +1557,7 @@ function applyCameraPreset(
   distanceScale = 1,
 ) {
   if (!refs) return;
-  const distance =
-    Math.max(bounds.xRange, bounds.yRange, bounds.zRange) * 1.65 * distanceScale;
+  const distance = Math.max(bounds.xRange, bounds.yRange, bounds.zRange) * 1.65 * distanceScale;
   if (preset === "top_down_xy") {
     refs.camera.position.set(0, distance, 0.001);
     refs.camera.up.set(0, 0, -1);
@@ -1495,10 +1568,7 @@ function applyCameraPreset(
     refs.camera.position.set(0, bounds.zRange * 0.22, distance);
     refs.camera.up.set(0, 1, 0);
   } else if (preset === "low_level") {
-    const lowTarget = centeredCoordinate(
-      Math.min(bounds.z.max, bounds.z.min + 1.0),
-      bounds.z,
-    );
+    const lowTarget = centeredCoordinate(Math.min(bounds.z.max, bounds.z.min + 1.0), bounds.z);
     const xTarget = 0;
     const yTarget = bounds.yRange * 0.18;
     refs.camera.position.set(
@@ -1515,6 +1585,25 @@ function applyCameraPreset(
     refs.camera.up.set(0, 1, 0);
   }
   refs.controls.target.set(0, 0, 0);
+  refs.controls.update();
+}
+
+function cameraTransformFromRefs(refs: Pick<SceneRefs, "camera" | "controls">): CameraTransform {
+  return {
+    position: [refs.camera.position.x, refs.camera.position.y, refs.camera.position.z],
+    target: [refs.controls.target.x, refs.controls.target.y, refs.controls.target.z],
+    up: [refs.camera.up.x, refs.camera.up.y, refs.camera.up.z],
+  };
+}
+
+function applyCameraTransform(
+  transform: CameraTransform,
+  refs: Pick<SceneRefs, "camera" | "controls"> | null,
+) {
+  if (!refs) return;
+  refs.camera.position.fromArray(transform.position);
+  refs.camera.up.fromArray(transform.up);
+  refs.controls.target.fromArray(transform.target);
   refs.controls.update();
 }
 

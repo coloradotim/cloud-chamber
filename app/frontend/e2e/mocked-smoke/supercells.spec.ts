@@ -17,6 +17,7 @@ const simulation = {
   model_start_seconds: 0,
   model_end_seconds: 7_200,
   history_cadence_seconds: 900,
+  default_explore_time_index: 5,
   lineage_state: "known",
 };
 
@@ -72,17 +73,35 @@ test.describe("mocked smoke: Supercells product path", () => {
     const planBox = await page.getByLabel("Midlevel storm structure plan view").boundingBox();
     expect((planBox?.width ?? 0) / (planBox?.height ?? 1)).toBeCloseTo(1, 1);
 
+    await expect(page.getByLabel("Horizontal x-y z position")).toHaveValue("1");
+    await expect(page.getByText("z 3.00 km")).toBeVisible();
+    await expect(page.getByText("native index 1")).toBeVisible();
+    await page.getByLabel("Horizontal x-y z position").fill("0");
+    await expect(page.getByLabel("Horizontal x-y z position")).toHaveValue("0");
+    await expect(page.getByText("z 0.50 km")).toBeVisible();
+    await expect(page.getByText("native index 0")).toBeVisible();
+    await expect(page.getByText(/Slice: Midlevel storm structure · z = 0.50 km/)).toBeVisible();
+
+    for (const command of ["Zoom in", "Zoom out", "Pan view up", "Pan view down"]) {
+      await expect(page.getByRole("button", { name: command })).toBeVisible();
+    }
+    await page.getByRole("button", { name: "Zoom in" }).click();
+    await expect(page.locator('.true3d-controls-compact [aria-live="polite"]')).toHaveText(
+      "Camera zoomed in",
+    );
     await expect(page.getByLabel("Camera view")).toHaveValue("look_along_y");
     await page.getByLabel("Camera view").selectOption("top_down_xy");
+    const rotatingCameraPosition = await page
+      .getByLabel("True 3-D scalar field viewer")
+      .getAttribute("data-camera-position");
+    expect(rotatingCameraPosition).toBeTruthy();
     await page.getByRole("button", { name: "Cloud and Precipitation" }).click();
     await expect(page.getByRole("button", { name: "Cloud and Precipitation" })).toHaveAttribute(
       "aria-pressed",
       "true",
     );
     await expect(
-      page
-        .getByLabel("Slice orientation")
-        .getByRole("button", { name: "Vertical x-z" }),
+      page.getByLabel("Slice orientation").getByRole("button", { name: "Vertical x-z" }),
     ).toHaveAttribute("aria-pressed", "true");
     await expect(page.getByLabel("Camera view")).toHaveValue("look_along_y");
     await page.locator(".true3d-display-control > summary").click();
@@ -100,6 +119,10 @@ test.describe("mocked smoke: Supercells product path", () => {
 
     await page.getByRole("button", { name: "Rotating Updraft" }).click();
     await expect(page.getByLabel("Camera view")).toHaveValue("top_down_xy");
+    await expect(page.getByLabel("True 3-D scalar field viewer")).toHaveAttribute(
+      "data-camera-position",
+      rotatingCameraPosition ?? "",
+    );
     await page.getByRole("button", { name: "Low-Level Interactions" }).click();
 
     await page
@@ -112,9 +135,11 @@ test.describe("mocked smoke: Supercells product path", () => {
     await expect(page.getByText("Slice: xz section at y = 10.0 km")).toBeVisible();
     await expect(page.getByLabel("xz section at y = 10.0 km")).toBeVisible();
     const sectionBox = await page.getByLabel("xz section at y = 10.0 km").boundingBox();
-    const sectionAspect = await page.locator(".storm-section-plot").evaluate((element) =>
-      Number(getComputedStyle(element).getPropertyValue("--storm-data-aspect")),
-    );
+    const sectionAspect = await page
+      .locator(".storm-section-plot")
+      .evaluate((element) =>
+        Number(getComputedStyle(element).getPropertyValue("--storm-data-aspect")),
+      );
     expect((sectionBox?.width ?? 0) / (sectionBox?.height ?? 1)).toBeCloseTo(sectionAspect, 1);
 
     await page.getByLabel("xz section at y = 10.0 km").click({ position: { x: 180, y: 120 } });
@@ -133,9 +158,10 @@ test.describe("mocked smoke: Supercells product path", () => {
     await expect(page.getByRole("button", { name: "Open Context" })).toBeVisible();
     await expect(page.getByLabel("Explore inspector")).toHaveCount(0);
     const maximizedSectionBox = await page.getByLabel("xz section at y = 10.0 km").boundingBox();
-    expect(
-      (maximizedSectionBox?.width ?? 0) / (maximizedSectionBox?.height ?? 1),
-    ).toBeCloseTo(sectionAspect, 1);
+    expect((maximizedSectionBox?.width ?? 0) / (maximizedSectionBox?.height ?? 1)).toBeCloseTo(
+      sectionAspect,
+      1,
+    );
     await page.getByRole("button", { name: "Open Context" }).click();
     await expect(page.getByLabel("Explore inspector")).toBeVisible();
     await page.getByRole("button", { name: "Restore evidence" }).click();
@@ -147,6 +173,8 @@ test.describe("mocked smoke: Supercells product path", () => {
 
     await page.getByRole("button", { name: "Maximize 3-D viewer" }).click();
     await expect(page.getByRole("button", { name: "Restore 3-D viewer" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Zoom in" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Pan view down" })).toBeVisible();
     await expect(page.getByRole("button", { name: "Low-Level Interactions" })).toHaveAttribute(
       "aria-pressed",
       "true",
@@ -318,7 +346,7 @@ function supercellsFrame(url: string) {
       w_m_s: 48,
     },
     selected_point: selectedPoint(xIndex, yIndex, zIndex, x, y, z, times[timeIndex]),
-    plan: plan(typedLens, x, y),
+    plan: plan(typedLens, x, y, zIndex, z),
     xz_section: section("xz", "x", y[yIndex] ?? 10),
     yz_section: section("yz", "y", x[xIndex] ?? 0),
     scene: scene(typedLens, viewport),
@@ -403,7 +431,7 @@ function field(key = "winterp", displayName = "Vertical velocity") {
   };
 }
 
-function plan(lens: string, x: number[], y: number[]) {
+function plan(lens: string, x: number[], y: number[], zIndex: number, z: number[]) {
   return {
     title: lens === "cloud_precipitation" ? "Hydrometeor plan" : "Midlevel storm structure",
     subtitle: "Native-grid plan evidence",
@@ -411,8 +439,8 @@ function plan(lens: string, x: number[], y: number[]) {
     y_indices: [0, 1, 2],
     x_km: x,
     y_km: y,
-    level_index: 1,
-    level_km: 3,
+    level_index: zIndex,
+    level_km: z[zIndex] ?? 3,
     selection_z_indices:
       lens === "cloud_precipitation"
         ? [
@@ -508,18 +536,11 @@ function scene(lens: string, viewport: string) {
   });
   const layers =
     lens === "cloud_precipitation"
-      ? [
-          layer("hydrometeor_categories", "Dominant hydrometeor", "categorical", true, null),
-        ]
+      ? [layer("hydrometeor_categories", "Dominant hydrometeor", "categorical", true, null)]
       : lens === "low_level_interactions"
         ? [
             layer("storm_cloud_body", "Storm cloud body", "neutral_cloud", false, null),
-            layer(
-              "precipitating_condensate",
-              "Low-level precipitating condensate",
-              "scalar",
-              true,
-            ),
+            layer("precipitating_condensate", "Low-level precipitating condensate", "scalar", true),
             layer("low_level_vertical_motion", "Low-level vertical motion", "signed_scalar", true),
             layer("accumulated_surface_rain", "Accumulated rain", "scalar", true),
           ]
@@ -537,6 +558,8 @@ function scene(lens: string, viewport: string) {
       z: { min: 0.25, max: lens === "low_level_interactions" ? 5.25 : 19.75 },
     },
     coordinate_sizes: { x: 120, y: 120, z: 40 },
+    coordinate_indices: { x: [0, 1, 2], y: [0, 1, 2], z: [0, 1, 2] },
+    coordinate_values_km: { x: [-10, 0, 10], y: [-10, 10, 20], z: [0.5, 3, 8] },
     layers,
     wind_vectors: [{ x_km: 0, y_km: 10, z_km: 1.25, u_m_s: 12, v_m_s: 5, magnitude_m_s: 13 }],
     wind_reference_m_s: 25,

@@ -128,6 +128,8 @@ export type VolumeLayer = {
 export type StormVolumeScene = {
   coordinate_extents_km: Record<"x" | "y" | "z", { min: number; max: number }>;
   coordinate_sizes: Record<"x" | "y" | "z", number>;
+  coordinate_indices: Record<"x" | "y" | "z", number[]>;
+  coordinate_values_km: Record<"x" | "y" | "z", number[]>;
   layers: VolumeLayer[];
   wind_vectors: Array<{
     x_km: number;
@@ -650,8 +652,7 @@ export function StormPlanPlot({
       xIndex: frame.plan.x_indices[localXIndex],
       yIndex: frame.plan.y_indices[localYIndex],
       zIndex:
-        frame.plan.selection_z_indices?.[localYIndex]?.[localXIndex] ??
-        frame.plan.level_index,
+        frame.plan.selection_z_indices?.[localYIndex]?.[localXIndex] ?? frame.plan.level_index,
     });
   }
 
@@ -1020,14 +1021,7 @@ function drawPlan(
   if (frame.lens_id === "rotating_updraft") {
     const totalCondensate = frame.plan.overlays.total_condensate;
     if (overlays.condensate && totalCondensate) {
-      drawThresholdOutline(
-        context,
-        geometry,
-        totalCondensate,
-        0.05,
-        "#2f7280",
-        1.15,
-      );
+      drawThresholdOutline(context, geometry, totalCondensate, 0.05, "#2f7280", 1.15);
     }
     if (overlays.rotation) {
       drawThresholdOutline(
@@ -1076,21 +1070,8 @@ function drawPlan(
   } else {
     const currentPrecipitation = frame.plan.overlays.low_level_precipitating_condensate;
     if (overlays.precipitatingCondensate && currentPrecipitation) {
-      drawTransparentRaster(
-        context,
-        geometry,
-        currentPrecipitation,
-        "#7b572a",
-        0.2,
-      );
-      drawThresholdOutline(
-        context,
-        geometry,
-        currentPrecipitation,
-        0.1,
-        "#7b572a",
-        1.5,
-      );
+      drawTransparentRaster(context, geometry, currentPrecipitation, "#7b572a", 0.2);
+      drawThresholdOutline(context, geometry, currentPrecipitation, 0.1, "#7b572a", 1.5);
     }
     if (overlays.rain) {
       drawTransparentRaster(
@@ -1151,14 +1132,7 @@ function drawSection(
     drawRaster(context, geometry, section.primary);
     const verticalVorticity = section.overlays.vertical_vorticity;
     if (overlays.rotation && frame.lens_id === "rotating_updraft" && verticalVorticity) {
-      drawThresholdOutline(
-        context,
-        geometry,
-        verticalVorticity,
-        0.01,
-        "#632b73",
-        1.8,
-      );
+      drawThresholdOutline(context, geometry, verticalVorticity, 0.01, "#632b73", 1.8);
     }
     if (overlays.condensate && frame.lens_id === "rotating_updraft") {
       drawThresholdOutline(

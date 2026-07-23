@@ -208,6 +208,8 @@ class VolumeWindVector(BaseModel):
 class StormVolumeScene(BaseModel):
     coordinate_extents_km: dict[str, dict[str, float]]
     coordinate_sizes: dict[str, int]
+    coordinate_indices: dict[str, list[int]]
+    coordinate_values_km: dict[str, list[float]]
     layers: list[VolumeLayer]
     wind_vectors: list[VolumeWindVector] = Field(default_factory=list)
     wind_reference_m_s: float
@@ -441,7 +443,7 @@ def _storm_frame(
     if purpose == "product" and viewport == "full":
         x_indices = x_indices[::2]
         y_indices = y_indices[::2]
-    plan = _plan_view(lens, fields, x_km, y_km, z_km, default_level, x_indices, y_indices)
+    plan = _plan_view(lens, fields, x_km, y_km, z_km, selected_z, x_indices, y_indices)
     xz_section = _vertical_section(
         lens,
         "xz",
@@ -491,6 +493,8 @@ def _storm_frame(
             z_km,
             x_indices,
             y_indices,
+            native_x_indices,
+            native_y_indices,
             default_level,
             history_path.name,
             viewport,
@@ -1307,6 +1311,8 @@ def _volume_scene(
     z_km: np.ndarray[Any, np.dtype[np.float64]],
     x_indices: np.ndarray[Any, np.dtype[np.int64]],
     y_indices: np.ndarray[Any, np.dtype[np.int64]],
+    navigation_x_indices: np.ndarray[Any, np.dtype[np.int64]],
+    navigation_y_indices: np.ndarray[Any, np.dtype[np.int64]],
     level_index: int,
     history_filename: str,
     viewport: ViewportId,
@@ -1324,6 +1330,7 @@ def _volume_scene(
     budget_scale = 1.0 if viewport == "storm" else 0.62
     low_level_volume = z_km[:, np.newaxis, np.newaxis] <= 5.25
     scene_z_max = 5.25 if lens == "low_level_interactions" else float(np.max(z_km))
+    scene_z_indices = np.flatnonzero(z_km <= scene_z_max)
 
     cloud = _volume_layer(
         key="storm_cloud_body",
@@ -1635,7 +1642,17 @@ def _volume_scene(
         coordinate_sizes={
             "x": len(x_km),
             "y": len(y_km),
-            "z": int(np.count_nonzero(z_km <= scene_z_max)),
+            "z": len(scene_z_indices),
+        },
+        coordinate_indices={
+            "x": [int(value) for value in navigation_x_indices],
+            "y": [int(value) for value in navigation_y_indices],
+            "z": [int(value) for value in scene_z_indices],
+        },
+        coordinate_values_km={
+            "x": _float_list(x_km[navigation_x_indices]),
+            "y": _float_list(y_km[navigation_y_indices]),
+            "z": _float_list(z_km[scene_z_indices]),
         },
         layers=layers,
         wind_vectors=wind_vectors,

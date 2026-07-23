@@ -6,6 +6,7 @@ import { CloudWorldsHome } from "./CloudWorldsHome";
 import { ExploreInspector, IntegratedExploreWorkspace } from "./IntegratedExploreWorkspace";
 import { MountainWavesExplore } from "./MountainWavesExplore";
 import { type MountainWavesSimulation, MountainWavesWorld } from "./MountainWavesWorld";
+import { NativeSlicePositionControl } from "./NativeSlicePositionControl";
 import { SupercellsExplore } from "./SupercellsExplore";
 import { type SupercellSimulation, SupercellsWorld } from "./SupercellsWorld";
 import {
@@ -10937,64 +10938,23 @@ export function VisualizerSceneShell({
                       </button>
                     </div>
 
-                    <label htmlFor="updraft-lens-plane-position">
-                      Position
-                      <input
-                        id="updraft-lens-plane-position"
-                        aria-label="Updraft Lens slice position"
-                        type="range"
-                        min={0}
-                        max={Math.max(0, activeSliceMax - 1)}
-                        value={activeSliceIndex}
-                        onChange={(event) => {
-                          const nextIndex = Number(event.target.value);
-                          if (activeSlicePlane === "horizontal") {
-                            setHorizontalSliceLevel(nextIndex);
-                          } else {
-                            setVerticalSliceIndex(nextIndex);
-                          }
-                          setSelectedRegion(null);
-                        }}
-                      />
-                      <span className="slice-position-label">
-                        <span>{updraftLensPlaneLabel}</span>
-                        <small>index {activeSliceIndex}</small>
-                      </span>
-                    </label>
-
-                    <div className="button-row slice-move-buttons">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const nextIndex = Math.max(0, activeSliceIndex - 1);
-                          if (activeSlicePlane === "horizontal") {
-                            setHorizontalSliceLevel(nextIndex);
-                          } else {
-                            setVerticalSliceIndex(nextIndex);
-                          }
-                          setSelectedRegion(null);
-                        }}
-                      >
-                        {activeSlicePlane === "horizontal" ? "Move down" : "Move back"}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const nextIndex = Math.min(
-                            Math.max(0, activeSliceMax - 1),
-                            activeSliceIndex + 1,
-                          );
-                          if (activeSlicePlane === "horizontal") {
-                            setHorizontalSliceLevel(nextIndex);
-                          } else {
-                            setVerticalSliceIndex(nextIndex);
-                          }
-                          setSelectedRegion(null);
-                        }}
-                      >
-                        {activeSlicePlane === "horizontal" ? "Move up" : "Move forward"}
-                      </button>
-                    </div>
+                    <NativeSlicePositionControl
+                      id="updraft-lens-plane-position"
+                      ariaLabel="Updraft Lens slice position"
+                      plane={activeSlicePlane}
+                      positionIndex={activeSliceIndex}
+                      positionCount={activeSliceMax}
+                      positionLabel={updraftLensPlaneLabel}
+                      indexLabel={`index ${activeSliceIndex}`}
+                      onPositionChange={(nextIndex) => {
+                        if (activeSlicePlane === "horizontal") {
+                          setHorizontalSliceLevel(nextIndex);
+                        } else {
+                          setVerticalSliceIndex(nextIndex);
+                        }
+                        setSelectedRegion(null);
+                      }}
+                    />
 
                     <label className="checkbox-label" htmlFor="updraft-lens-cloud-boundary">
                       <input
@@ -11114,64 +11074,23 @@ export function VisualizerSceneShell({
                       </button>
                     </div>
 
-                    <label htmlFor="explore-slice-position">
-                      Position
-                      <input
-                        id="explore-slice-position"
-                        aria-label="Slice position"
-                        type="range"
-                        min={0}
-                        max={Math.max(0, activeSliceMax - 1)}
-                        value={activeSliceIndex}
-                        onChange={(event) => {
-                          const nextIndex = Number(event.target.value);
-                          if (activeSlicePlane === "horizontal") {
-                            setHorizontalSliceLevel(nextIndex);
-                          } else {
-                            setVerticalSliceIndex(nextIndex);
-                          }
-                          setSelectedRegion(null);
-                        }}
-                      />
-                      <span className="slice-position-label">
-                        {activeSlicePositionLabel || `index ${activeSliceIndex}`}{" "}
-                        <small>index {activeSliceIndex}</small>
-                      </span>
-                    </label>
-
-                    <div className="button-row slice-move-buttons">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const nextIndex = Math.max(0, activeSliceIndex - 1);
-                          if (activeSlicePlane === "horizontal") {
-                            setHorizontalSliceLevel(nextIndex);
-                          } else {
-                            setVerticalSliceIndex(nextIndex);
-                          }
-                          setSelectedRegion(null);
-                        }}
-                      >
-                        {activeSlicePlane === "horizontal" ? "Move down" : "Move back"}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const nextIndex = Math.min(
-                            Math.max(0, activeSliceMax - 1),
-                            activeSliceIndex + 1,
-                          );
-                          if (activeSlicePlane === "horizontal") {
-                            setHorizontalSliceLevel(nextIndex);
-                          } else {
-                            setVerticalSliceIndex(nextIndex);
-                          }
-                          setSelectedRegion(null);
-                        }}
-                      >
-                        {activeSlicePlane === "horizontal" ? "Move up" : "Move forward"}
-                      </button>
-                    </div>
+                    <NativeSlicePositionControl
+                      id="explore-slice-position"
+                      ariaLabel="Slice position"
+                      plane={activeSlicePlane}
+                      positionIndex={activeSliceIndex}
+                      positionCount={activeSliceMax}
+                      positionLabel={activeSlicePositionLabel || `index ${activeSliceIndex}`}
+                      indexLabel={`index ${activeSliceIndex}`}
+                      onPositionChange={(nextIndex) => {
+                        if (activeSlicePlane === "horizontal") {
+                          setHorizontalSliceLevel(nextIndex);
+                        } else {
+                          setVerticalSliceIndex(nextIndex);
+                        }
+                        setSelectedRegion(null);
+                      }}
+                    />
 
                     <label className="checkbox-label" htmlFor="show-slice-plane">
                       <input
