@@ -2,9 +2,12 @@ import { type ReactNode, useState } from "react";
 
 type InspectorSections = {
   explain: ReactNode;
+  science?: ReactNode;
   notes: ReactNode;
   details: ReactNode;
 };
+
+type InspectorTab = "explain" | "science" | "notes" | "details";
 
 export function IntegratedExploreWorkspace({
   worldName,
@@ -50,39 +53,99 @@ export function IntegratedExploreWorkspace({
   );
 }
 
-export function ExploreInspector({ sections }: { sections: InspectorSections }) {
-  const [collapsed, setCollapsed] = useState(false);
+export function ExploreInspector({
+  id,
+  sections,
+  collapsed: controlledCollapsed,
+  onCollapsedChange,
+  showCollapseControl = true,
+}: {
+  id?: string;
+  sections: InspectorSections;
+  collapsed?: boolean;
+  onCollapsedChange?: (collapsed: boolean) => void;
+  showCollapseControl?: boolean;
+}) {
+  const [internalCollapsed, setInternalCollapsed] = useState(false);
+  const [activeTab, setActiveTab] = useState<InspectorTab>("explain");
+  const collapsed = controlledCollapsed ?? internalCollapsed;
+  const tabbed = sections.science !== undefined;
+  const activePanel =
+    activeTab === "explain"
+      ? sections.explain
+      : activeTab === "science"
+        ? sections.science
+        : activeTab === "notes"
+          ? sections.notes
+          : sections.details;
+
+  function toggleCollapsed() {
+    const next = !collapsed;
+    if (controlledCollapsed === undefined) setInternalCollapsed(next);
+    onCollapsedChange?.(next);
+  }
+
+  if (collapsed && !showCollapseControl) return null;
 
   return (
     <>
       <aside
+        id={id}
         className={`explore-inspector${collapsed ? " explore-inspector-collapsed" : ""}`}
         aria-label="Explore inspector"
         data-collapsed={collapsed ? "true" : "false"}
       >
         <header className="explore-inspector-header">
           {!collapsed && <strong>Context</strong>}
-          <button
-            type="button"
-            className="explore-inspector-toggle"
-            aria-expanded={!collapsed}
-            aria-label={collapsed ? "Open inspector" : "Collapse inspector"}
-            title={collapsed ? "Open inspector" : "Collapse inspector"}
-            onClick={() => setCollapsed((current) => !current)}
-          >
-            <span aria-hidden="true">{collapsed ? "\u00ab" : "\u00bb"}</span>
-          </button>
+          {showCollapseControl && (
+            <button
+              type="button"
+              className="explore-inspector-toggle"
+              aria-expanded={!collapsed}
+              aria-label={collapsed ? "Open inspector" : "Collapse inspector"}
+              title={collapsed ? "Open inspector" : "Collapse inspector"}
+              onClick={toggleCollapsed}
+            >
+              <span aria-hidden="true">{collapsed ? "\u00ab" : "\u00bb"}</span>
+            </button>
+          )}
         </header>
         <div hidden={collapsed}>
-          <section className="explore-inspector-panel" aria-label="Context inspector">
-            {sections.explain}
+          {tabbed && (
+            <nav className="explore-inspector-tabs" aria-label="Context sections" role="tablist">
+              {(["explain", "science", "notes", "details"] as InspectorTab[]).map((tab) => (
+                <button
+                  key={tab}
+                  type="button"
+                  id={`explore-inspector-tab-${tab}`}
+                  role="tab"
+                  className={activeTab === tab ? "active-control" : ""}
+                  aria-selected={activeTab === tab}
+                  aria-controls="explore-inspector-active-panel"
+                  onClick={() => setActiveTab(tab)}
+                >
+                  {tab[0].toUpperCase() + tab.slice(1)}
+                </button>
+              ))}
+            </nav>
+          )}
+          <section
+            id={tabbed ? "explore-inspector-active-panel" : undefined}
+            className="explore-inspector-panel"
+            aria-label="Context inspector"
+            role={tabbed ? "tabpanel" : undefined}
+            aria-labelledby={tabbed ? `explore-inspector-tab-${activeTab}` : undefined}
+          >
+            {tabbed ? activePanel : sections.explain}
           </section>
         </div>
       </aside>
-      <section className="explore-secondary-content" aria-label="Simulation notebook and details">
-        <section aria-label="Simulation notebook">{sections.notes}</section>
-        <section aria-label="Simulation technical details">{sections.details}</section>
-      </section>
+      {!tabbed && (
+        <section className="explore-secondary-content" aria-label="Simulation notebook and details">
+          <section aria-label="Simulation notebook">{sections.notes}</section>
+          <section aria-label="Simulation technical details">{sections.details}</section>
+        </section>
+      )}
     </>
   );
 }

@@ -1,16 +1,16 @@
 /* eslint-disable react-refresh/only-export-components */
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { MouseEvent as ReactMouseEvent } from "react";
+import type { CSSProperties, MouseEvent as ReactMouseEvent } from "react";
 
 import "./App.css";
 import "./StormExaminationResearch.css";
 import { ExploreInspector, IntegratedExploreWorkspace } from "./IntegratedExploreWorkspace";
 
-type LensId = "rotating_updraft" | "cloud_precipitation" | "low_level_interactions";
-type ViewportId = "storm" | "full";
-type SectionOrientation = "xz" | "yz";
+export type LensId = "rotating_updraft" | "cloud_precipitation" | "low_level_interactions";
+export type ViewportId = "storm" | "full";
+export type SectionOrientation = "xz" | "yz";
 
-type ScaleMetadata = {
+export type ScaleMetadata = {
   scale_id: string;
   display_name: string;
   units: string;
@@ -22,7 +22,7 @@ type ScaleMetadata = {
   fixed_across_time: boolean;
 };
 
-type FieldLayer = {
+export type FieldLayer = {
   key: string;
   display_name: string;
   units: string;
@@ -35,14 +35,14 @@ type FieldLayer = {
   scale: ScaleMetadata;
 };
 
-type CategoryDefinition = {
+export type CategoryDefinition = {
   code: number;
   key: string;
   label: string;
   color: string;
 };
 
-type CategoryLayer = {
+export type CategoryLayer = {
   key: string;
   display_name: string;
   evidence_kind: "derived";
@@ -53,7 +53,7 @@ type CategoryLayer = {
   categories: CategoryDefinition[];
 };
 
-type WindVector = {
+export type WindVector = {
   x_km: number;
   y_km: number;
   u_m_s: number;
@@ -61,7 +61,7 @@ type WindVector = {
   magnitude_m_s: number;
 };
 
-type PlanView = {
+export type PlanView = {
   title: string;
   subtitle: string;
   x_indices: number[];
@@ -70,13 +70,14 @@ type PlanView = {
   y_km: number[];
   level_index: number;
   level_km: number;
+  selection_z_indices: number[][] | null;
   primary: FieldLayer;
   overlays: Record<string, FieldLayer>;
   categories: CategoryLayer | null;
   wind_vectors: WindVector[];
 };
 
-type VerticalSection = {
+export type VerticalSection = {
   orientation: SectionOrientation;
   title: string;
   horizontal_dimension: "x" | "y";
@@ -89,7 +90,7 @@ type VerticalSection = {
   categories: CategoryLayer | null;
 };
 
-type SelectedPoint = {
+export type SelectedPoint = {
   x_index: number;
   y_index: number;
   z_index: number;
@@ -105,15 +106,55 @@ type SelectedPoint = {
   distance_to_primary_updraft_km: number;
 };
 
+export type VolumeLayer = {
+  key: string;
+  display_name: string;
+  units: string;
+  evidence_kind: "native" | "derived";
+  source_fields: string[];
+  derivation: string | null;
+  rendering: "neutral_cloud" | "signed_scalar" | "scalar" | "categorical";
+  points: Array<[number, number, number, number, number]>;
+  source_count: number;
+  returned_count: number;
+  threshold_label: string;
+  default_visible: boolean;
+  default_opacity: number;
+  default_point_size: number;
+  scale: ScaleMetadata | null;
+  categories: CategoryDefinition[];
+};
+
+export type StormVolumeScene = {
+  coordinate_extents_km: Record<"x" | "y" | "z", { min: number; max: number }>;
+  coordinate_sizes: Record<"x" | "y" | "z", number>;
+  layers: VolumeLayer[];
+  wind_vectors: Array<{
+    x_km: number;
+    y_km: number;
+    z_km: number;
+    u_m_s: number;
+    v_m_s: number;
+    magnitude_m_s: number;
+  }>;
+  wind_reference_m_s: number;
+  point_budget: number;
+  source_history_file: string;
+};
+
 export type StormExaminationFrame = {
-  schema_version: "storm_examination_gate_c_v1";
-  authority_state: "issue_418_gate_c_research_not_product";
+  schema_version: "storm_examination_gate_c_v1" | "supercells_explore_v1";
+  authority_state: "issue_418_gate_c_research_not_product" | "supercells_product_world";
+  world_id: "supercells" | null;
+  simulation_id: "supercells_quarter_circle_reference" | null;
   run_id: string;
   case_id: string;
   simulation_label: string;
   lens_id: LensId;
   lens_name: string;
   lens_question: string;
+  what_to_notice_now: string;
+  what_to_notice_by_view?: Partial<Record<"plan" | "xz" | "yz", string>> | null;
   time_index: number;
   time_seconds: number;
   times_seconds: number[];
@@ -139,13 +180,14 @@ export type StormExaminationFrame = {
   plan: PlanView;
   xz_section: VerticalSection;
   yz_section: VerticalSection;
+  scene: StormVolumeScene | null;
   caveats: string[];
   provenance: Record<string, string>;
   extraction_milliseconds: number;
 };
 
-type Selection = { xIndex: number; yIndex: number; zIndex: number };
-type OverlayState = {
+export type Selection = { xIndex: number; yIndex: number; zIndex: number };
+export type OverlayState = {
   rotation: boolean;
   updraftHelicity: boolean;
   reflectivity: boolean;
@@ -189,7 +231,7 @@ const HYDROMETEOR_SHORT: Record<string, string> = {
   qr: "Rain",
   qi: "Cloud ice",
   qs: "Snow",
-  qg: "Large ice",
+  qg: "Hail-treated large ice",
 };
 
 export function StormExaminationResearch() {
@@ -347,7 +389,7 @@ export function StormExaminationResearch() {
                     onSelect={selectPoint}
                   />
                 </div>
-                <StormLegend frame={frame} />
+                <StormLegend frame={frame} overlays={overlays} />
               </div>
             ) : (
               <div className="storm-loading" role="status">
@@ -573,7 +615,7 @@ function StormTimeline({
   );
 }
 
-function StormPlanPlot({
+export function StormPlanPlot({
   frame,
   overlays,
   onSelect,
@@ -584,6 +626,12 @@ function StormPlanPlot({
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const geometryRef = useRef<PlotGeometry | null>(null);
+  const plotStyle = dataAspectStyle(
+    frame.viewport_bounds_km.x_min,
+    frame.viewport_bounds_km.x_max,
+    frame.viewport_bounds_km.y_min,
+    frame.viewport_bounds_km.y_max,
+  );
   useCanvasRender(canvasRef, () => {
     const canvas = canvasRef.current;
     if (canvas) geometryRef.current = drawPlan(canvas, frame, overlays);
@@ -596,15 +644,19 @@ function StormPlanPlot({
       (canvas ? plotGeometry(canvas, 43, 12, 12, 34, frame.viewport_bounds_km) : null);
     const model = pointerToModel(event, canvas, geometry);
     if (!model) return;
+    const localXIndex = nearestIndex(frame.plan.x_km, model.x);
+    const localYIndex = nearestIndex(frame.plan.y_km, model.y);
     onSelect({
-      xIndex: frame.plan.x_indices[nearestIndex(frame.plan.x_km, model.x)],
-      yIndex: frame.plan.y_indices[nearestIndex(frame.plan.y_km, model.y)],
-      zIndex: frame.plan.level_index,
+      xIndex: frame.plan.x_indices[localXIndex],
+      yIndex: frame.plan.y_indices[localYIndex],
+      zIndex:
+        frame.plan.selection_z_indices?.[localYIndex]?.[localXIndex] ??
+        frame.plan.level_index,
     });
   }
 
   return (
-    <figure className="storm-plot storm-plan-plot">
+    <figure className="storm-plot storm-plan-plot" style={plotStyle}>
       <figcaption>
         <div>
           <strong>{frame.plan.title}</strong>
@@ -623,7 +675,7 @@ function StormPlanPlot({
   );
 }
 
-function StormSectionPlot({
+export function StormSectionPlot({
   section,
   frame,
   overlays,
@@ -636,6 +688,16 @@ function StormSectionPlot({
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const geometryRef = useRef<PlotGeometry | null>(null);
+  const horizontalMinimum = section.horizontal_km[0];
+  const horizontalMaximum = section.horizontal_km.at(-1) ?? horizontalMinimum;
+  const verticalMinimum = section.z_km[0] - 0.25;
+  const verticalMaximum = (section.z_km.at(-1) ?? 20) + 0.25;
+  const plotStyle = dataAspectStyle(
+    horizontalMinimum,
+    horizontalMaximum,
+    verticalMinimum,
+    verticalMaximum,
+  );
   useCanvasRender(canvasRef, () => {
     const canvas = canvasRef.current;
     if (canvas) geometryRef.current = drawSection(canvas, section, frame, overlays);
@@ -667,7 +729,7 @@ function StormSectionPlot({
   }
 
   return (
-    <figure className="storm-plot storm-section-plot">
+    <figure className="storm-plot storm-section-plot" style={plotStyle}>
       <figcaption>
         <strong>{section.title}</strong>
         <span>{section.primary.display_name}</span>
@@ -681,14 +743,34 @@ function StormSectionPlot({
   );
 }
 
-function StormLegend({ frame }: { frame: StormExaminationFrame }) {
-  if (frame.plan.categories) {
+export function StormLegend({
+  frame,
+  overlays,
+  evidenceView = "plan",
+}: {
+  frame: StormExaminationFrame;
+  overlays?: OverlayState;
+  evidenceView?: "plan" | "xz" | "yz";
+}) {
+  const evidence =
+    evidenceView === "plan"
+      ? frame.plan
+      : evidenceView === "xz"
+        ? frame.xz_section
+        : frame.yz_section;
+  if (evidence.categories) {
     return (
-      <aside className="storm-legend" aria-label="Hydrometeor legend">
-        <strong>Dominant hydrometeor</strong>
-        <small>at column condensate maximum</small>
-        <ol>
-          {frame.plan.categories.categories
+      <aside className="storm-legend storm-category-legend" aria-label="Hydrometeor legend">
+        <div className="storm-legend-heading">
+          <strong>Dominant hydrometeor</strong>
+          <small>
+            {evidenceView === "plan"
+              ? "column-derived at each cell's condensate maximum"
+              : "at each native section cell"}
+          </small>
+        </div>
+        <ol className="storm-legend-scale">
+          {evidence.categories.categories
             .filter((category) => category.code > 0)
             .map((category) => (
               <li key={category.code}>
@@ -697,23 +779,29 @@ function StormLegend({ frame }: { frame: StormExaminationFrame }) {
               </li>
             ))}
         </ol>
-        <p>
-          Mass: {formatValue(frame.plan.primary.selected_frame_minimum)} to{" "}
-          {formatValue(frame.plan.primary.selected_frame_maximum)} g/kg
-        </p>
-        <small>Derived category; native species retained in Context.</small>
-        <OverlayKey lens={frame.lens_id} />
+        <div className="storm-legend-range">
+          <span>
+            Mass {formatValue(evidence.primary.selected_frame_minimum)} to{" "}
+            {formatValue(evidence.primary.selected_frame_maximum)} g/kg
+          </span>
+        </div>
+        <small className="storm-legend-note">
+          Derived category; native species retained in Context.
+        </small>
+        <OverlayKey lens={frame.lens_id} overlays={overlays} evidenceView={evidenceView} />
       </aside>
     );
   }
-  const scale = frame.plan.primary.scale;
+  const scale = evidence.primary.scale;
   return (
     <aside className="storm-legend" aria-label={`${scale.display_name} legend`}>
-      <strong>w (m/s)</strong>
-      <p>Frame max {formatSigned(frame.plan.primary.selected_frame_maximum)}</p>
-      <ol>
+      <div className="storm-legend-heading">
+        <strong>w (m/s)</strong>
+        <small>Fixed across all retained times</small>
+      </div>
+      <ol className="storm-legend-scale">
         {scale.colors
-          .map((color, index) => ({ color, label: scaleIntervalLabel(scale, index) }))
+          .map((color, index) => ({ color, label: compactScaleIntervalLabel(scale, index) }))
           .reverse()
           .map((item) => (
             <li key={`${item.color}-${item.label}`}>
@@ -722,31 +810,48 @@ function StormLegend({ frame }: { frame: StormExaminationFrame }) {
             </li>
           ))}
       </ol>
-      <p>Frame min {formatSigned(frame.plan.primary.selected_frame_minimum)}</p>
-      <small>Fixed across all retained times.</small>
-      <OverlayKey lens={frame.lens_id} />
+      <div className="storm-legend-range">
+        <span>Frame max {formatSigned(evidence.primary.selected_frame_maximum)}</span>
+        <span>Frame min {formatSigned(evidence.primary.selected_frame_minimum)}</span>
+      </div>
+      <OverlayKey lens={frame.lens_id} overlays={overlays} evidenceView={evidenceView} />
     </aside>
   );
 }
 
-function OverlayKey({ lens }: { lens: LensId }) {
-  const items =
-    lens === "rotating_updraft"
-      ? [
-          ["purple", "Cyclonic vorticity >= 0.01 s^-1"],
-          ["black", "UH >= 300 m^2/s^2"],
-          ["brown", "Reflectivity >= 35 dBZ"],
-        ]
-      : lens === "cloud_precipitation"
-        ? [
-            ["black", "Reflectivity >= 35 dBZ"],
-            ["signed", "w: red rising / blue descending"],
-          ]
-        : [
-            ["navy", "Rain footprint >= 2 mm"],
-            ["brown", "Reflectivity >= 35 dBZ"],
-            ["arrow", "Native model-relative flow"],
-          ];
+function OverlayKey({
+  lens,
+  overlays,
+  evidenceView,
+}: {
+  lens: LensId;
+  overlays?: OverlayState;
+  evidenceView: "plan" | "xz" | "yz";
+}) {
+  const items: Array<[string, string]> = [];
+  if (lens === "rotating_updraft") {
+    if (overlays?.condensate) items.push(["teal", "Cloud boundary >= 0.05 g/kg"]);
+    if (overlays?.rotation) items.push(["purple", "Cyclonic vorticity >= 0.01 s^-1"]);
+    if (evidenceView === "plan" && overlays?.updraftHelicity) {
+      items.push(["black", "UH >= 300 m^2/s^2"]);
+    }
+    if (overlays?.reflectivity) items.push(["brown", "Reflectivity >= 35 dBZ"]);
+  } else if (lens === "cloud_precipitation") {
+    if (overlays?.verticalMotion) items.push(["signed", "w >= +5 red / w <= -5 blue"]);
+    if (overlays?.reflectivity) items.push(["black", "Reflectivity >= 35 dBZ"]);
+  } else {
+    if (evidenceView === "plan" && overlays?.rain) {
+      items.push(["navy", "Accumulated rain (history) >= 2 mm"]);
+    }
+    if (overlays?.precipitatingCondensate) {
+      items.push(["brown", "Current precipitating condensate >= 0.1 g/kg"]);
+    }
+    if (overlays?.reflectivity) items.push(["brown", "Reflectivity >= 35 dBZ"]);
+    if (evidenceView === "plan" && overlays?.wind) {
+      items.push(["arrow", "Model-relative flow at 1.25 km"]);
+    }
+  }
+  if (!items.length) return null;
   return (
     <div className="storm-overlay-key">
       {items.map(([kind, label]) => (
@@ -913,6 +1018,17 @@ function drawPlan(
     drawRaster(context, geometry, frame.plan.primary);
   }
   if (frame.lens_id === "rotating_updraft") {
+    const totalCondensate = frame.plan.overlays.total_condensate;
+    if (overlays.condensate && totalCondensate) {
+      drawThresholdOutline(
+        context,
+        geometry,
+        totalCondensate,
+        0.05,
+        "#2f7280",
+        1.15,
+      );
+    }
     if (overlays.rotation) {
       drawThresholdOutline(
         context,
@@ -944,6 +1060,9 @@ function drawPlan(
       );
     }
   } else if (frame.lens_id === "cloud_precipitation") {
+    if (overlays.verticalMotion) {
+      drawSignedOutlines(context, geometry, frame.plan.overlays.vertical_velocity, 5);
+    }
     if (overlays.reflectivity) {
       drawThresholdOutline(
         context,
@@ -955,6 +1074,24 @@ function drawPlan(
       );
     }
   } else {
+    const currentPrecipitation = frame.plan.overlays.low_level_precipitating_condensate;
+    if (overlays.precipitatingCondensate && currentPrecipitation) {
+      drawTransparentRaster(
+        context,
+        geometry,
+        currentPrecipitation,
+        "#7b572a",
+        0.2,
+      );
+      drawThresholdOutline(
+        context,
+        geometry,
+        currentPrecipitation,
+        0.1,
+        "#7b572a",
+        1.5,
+      );
+    }
     if (overlays.rain) {
       drawTransparentRaster(
         context,
@@ -1012,14 +1149,25 @@ function drawSection(
     }
   } else {
     drawRaster(context, geometry, section.primary);
+    const verticalVorticity = section.overlays.vertical_vorticity;
+    if (overlays.rotation && frame.lens_id === "rotating_updraft" && verticalVorticity) {
+      drawThresholdOutline(
+        context,
+        geometry,
+        verticalVorticity,
+        0.01,
+        "#632b73",
+        1.8,
+      );
+    }
     if (overlays.condensate && frame.lens_id === "rotating_updraft") {
       drawThresholdOutline(
         context,
         geometry,
         section.overlays.total_condensate,
         0.05,
-        "#111820",
-        1.4,
+        "#2f7280",
+        1.3,
       );
     }
     if (overlays.precipitatingCondensate && frame.lens_id === "low_level_interactions") {
@@ -1028,7 +1176,7 @@ function drawSection(
         geometry,
         section.overlays.precipitating_condensate,
         0.1,
-        "#111820",
+        "#7b572a",
         1.4,
       );
     }
@@ -1069,16 +1217,43 @@ function plotGeometry(
   bounds: Record<"x_min" | "x_max" | "y_min" | "y_max", number>,
 ): PlotGeometry {
   const rect = canvas.getBoundingClientRect();
+  const availableWidth = Math.max(20, rect.width - left - right);
+  const availableHeight = Math.max(20, rect.height - top - bottom);
+  const modelWidth = Math.max(Number.EPSILON, bounds.x_max - bounds.x_min);
+  const modelHeight = Math.max(Number.EPSILON, bounds.y_max - bounds.y_min);
+  const modelAspect = modelWidth / modelHeight;
+  let width = availableWidth;
+  let height = width / modelAspect;
+  let fittedLeft = left;
+  let fittedTop = top;
+  if (height > availableHeight) {
+    height = availableHeight;
+    width = height * modelAspect;
+    fittedLeft += (availableWidth - width) / 2;
+  } else {
+    fittedTop += (availableHeight - height) / 2;
+  }
   return {
-    left,
-    top,
-    width: Math.max(20, rect.width - left - right),
-    height: Math.max(20, rect.height - top - bottom),
+    left: fittedLeft,
+    top: fittedTop,
+    width,
+    height,
     xMinimum: bounds.x_min,
     xMaximum: bounds.x_max,
     yMinimum: bounds.y_min,
     yMaximum: bounds.y_max,
   };
+}
+
+function dataAspectStyle(
+  horizontalMinimum: number,
+  horizontalMaximum: number,
+  verticalMinimum: number,
+  verticalMaximum: number,
+): CSSProperties {
+  const horizontalSpan = Math.max(Number.EPSILON, horizontalMaximum - horizontalMinimum);
+  const verticalSpan = Math.max(Number.EPSILON, verticalMaximum - verticalMinimum);
+  return { "--storm-data-aspect": horizontalSpan / verticalSpan } as CSSProperties;
 }
 
 function drawGrid(context: CanvasRenderingContext2D, geometry: PlotGeometry) {
@@ -1230,12 +1405,14 @@ function drawSignedOutlines(
   layer: FieldLayer,
   threshold: number,
 ) {
-  drawThresholdOutline(context, geometry, layer, threshold, "#b5221f", 1.25);
   const negative: FieldLayer = {
     ...layer,
     values: layer.values.map((row) => row.map((value) => (value === null ? null : -value))),
   };
-  drawThresholdOutline(context, geometry, negative, threshold, "#174f9c", 1.25);
+  drawThresholdOutline(context, geometry, layer, threshold, "rgba(255,255,255,0.94)", 4.2);
+  drawThresholdOutline(context, geometry, negative, threshold, "rgba(255,255,255,0.94)", 4.2);
+  drawThresholdOutline(context, geometry, layer, threshold, "#c72b22", 2.2);
+  drawThresholdOutline(context, geometry, negative, threshold, "#1559b0", 2.2);
 }
 
 function drawWindVectors(
@@ -1365,12 +1542,24 @@ function scaleColor(value: number, scale: ScaleMetadata): string {
   return scale.colors[Math.round(normalized * (scale.colors.length - 1))] ?? scale.colors[0];
 }
 
+function compactScaleIntervalLabel(scale: ScaleMetadata, index: number): string {
+  const lower = index === 0 ? null : scale.breakpoints[index - 1];
+  const upper = scale.breakpoints[index] ?? null;
+  if (lower === null) return `<${formatCompactLegendValue(upper ?? scale.minimum)}`;
+  if (upper === null) return `>=${formatCompactLegendValue(lower)}`;
+  return `${formatCompactLegendValue(lower)}–${formatCompactLegendValue(upper)}`;
+}
+
 function scaleIntervalLabel(scale: ScaleMetadata, index: number): string {
   const lower = index === 0 ? null : scale.breakpoints[index - 1];
   const upper = scale.breakpoints[index] ?? null;
   if (lower === null) return `< ${formatValue(upper ?? scale.minimum)}`;
   if (upper === null) return `>= ${formatValue(lower)}`;
   return `${formatValue(lower)} to < ${formatValue(upper)}`;
+}
+
+function formatCompactLegendValue(value: number): string {
+  return Number.isInteger(value) ? value.toFixed(0) : formatValue(value);
 }
 
 function withAlpha(hex: string, alpha: number): string {

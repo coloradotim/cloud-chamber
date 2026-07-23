@@ -51,12 +51,15 @@ function layer(key = "winterp", displayName = "Vertical velocity") {
 const frame: StormExaminationFrame = {
   schema_version: "storm_examination_gate_c_v1",
   authority_state: "issue_418_gate_c_research_not_product",
+  world_id: null,
+  simulation_id: null,
   run_id: "quarter-circle-supercell-official-20260722T142521Z",
   case_id: "cm1_r21_1_quarter_circle_supercell_official_v0",
   simulation_label: "Official CM1 r21.1 quarter-circle benchmark",
   lens_id: "rotating_updraft",
   lens_name: "Rotating Updraft",
   lens_question: "Where is the storm rising and rotating as one organized structure?",
+  what_to_notice_now: "The rotating core is organized at this saved output.",
   time_index: 5,
   time_seconds: 4500,
   times_seconds: [0, 900, 1800, 2700, 3600, 4500, 5400, 6300, 7200],
@@ -146,12 +149,19 @@ const frame: StormExaminationFrame = {
     y_km: [-10, 10],
     level_index: 1,
     level_km: 3.25,
+    selection_z_indices: null,
     primary: layer(),
     overlays: {
       vertical_vorticity: layer("zvort", "Vertical vorticity"),
       updraft_helicity: layer("uh", "Updraft helicity"),
+      vertical_velocity: layer("winterp", "Vertical velocity"),
       composite_reflectivity: layer("dbz", "Reflectivity"),
       accumulated_surface_rain: layer("rain", "Rain"),
+      total_condensate: layer("total_condensate", "Total condensate"),
+      low_level_precipitating_condensate: layer(
+        "precipitating_condensate",
+        "Current precipitating condensate",
+      ),
     },
     categories: null,
     wind_vectors: [{ x_km: 0, y_km: 0, u_m_s: 12, v_m_s: 5, magnitude_m_s: 13 }],
@@ -166,6 +176,7 @@ const frame: StormExaminationFrame = {
     cross_section_coordinate_km: 10,
     primary: layer(),
     overlays: {
+      vertical_vorticity: layer("zvort", "Vertical vorticity"),
       total_condensate: layer("total_condensate", "Total condensate"),
       precipitating_condensate: layer("precipitating_condensate", "Precipitating condensate"),
       reflectivity: layer("dbz", "Reflectivity"),
@@ -183,6 +194,7 @@ const frame: StormExaminationFrame = {
     cross_section_coordinate_km: 10,
     primary: layer(),
     overlays: {
+      vertical_vorticity: layer("zvort", "Vertical vorticity"),
       total_condensate: layer("total_condensate", "Total condensate"),
       precipitating_condensate: layer("precipitating_condensate", "Precipitating condensate"),
       reflectivity: layer("dbz", "Reflectivity"),
@@ -190,6 +202,7 @@ const frame: StormExaminationFrame = {
     },
     categories: null,
   },
+  scene: null,
   caveats: [
     "Saved histories are 15 minutes apart.",
     "Coordinates are in the translating model frame.",
@@ -352,7 +365,8 @@ describe("StormExaminationResearch", () => {
   it("fails locally when retained evidence is unavailable and retries without leaving the page", async () => {
     vi.mocked(fetch).mockResolvedValueOnce({
       ok: false,
-      json: () => Promise.resolve({ detail: "The accepted Gate B retained output is unavailable." }),
+      json: () =>
+        Promise.resolve({ detail: "The accepted Gate B retained output is unavailable." }),
     } as Response);
 
     render(<StormExaminationResearch />);

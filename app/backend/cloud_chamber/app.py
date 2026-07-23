@@ -120,9 +120,18 @@ from cloud_chamber.storm_examination import (
 from cloud_chamber.storm_examination import (
     StormExaminationError,
     preserved_storm_examination_frame,
+    supercells_explore_frame,
 )
 from cloud_chamber.storm_examination import (
     ViewportId as StormExaminationViewportId,
+)
+from cloud_chamber.supercells_world import (
+    REFERENCE_SIMULATION_ID as SUPERCELLS_REFERENCE_SIMULATION_ID,
+)
+from cloud_chamber.supercells_world import (
+    SupercellsWorldDetail,
+    SupercellsWorldSummary,
+    supercells_world_detail,
 )
 from cloud_chamber.trade_cumulus_comparison_story import (
     TradeCumulusComparisonStoryConflict,
@@ -583,8 +592,11 @@ def storage_inventory() -> dict[str, object]:
     return inventory.model_dump(mode="json")
 
 
-@app.get("/api/worlds", response_model=list[CloudWorldSummary | MountainWavesWorldSummary])
-def list_worlds() -> list[CloudWorldSummary | MountainWavesWorldSummary]:
+@app.get(
+    "/api/worlds",
+    response_model=list[CloudWorldSummary | MountainWavesWorldSummary | SupercellsWorldSummary],
+)
+def list_worlds() -> list[CloudWorldSummary | MountainWavesWorldSummary | SupercellsWorldSummary]:
     try:
         return list_cloud_world_summaries(load_settings())
     except (OSError, ValueError) as exc:
@@ -611,6 +623,11 @@ def get_mountain_waves_world() -> MountainWavesWorldDetail:
         raise HTTPException(
             status_code=500, detail="Mountain Waves World data is unavailable."
         ) from exc
+
+
+@app.get("/api/worlds/supercells", response_model=SupercellsWorldDetail)
+def get_supercells_world() -> SupercellsWorldDetail:
+    return supercells_world_detail(load_settings())
 
 
 @app.get(
@@ -905,6 +922,33 @@ def get_mountain_wave_terrain_frame(
     except MountainWaveTerrainVisualizationError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return result.model_dump(mode="json")
+
+
+@app.get("/api/worlds/supercells/simulations/{simulation_id}/frame")
+def get_supercells_simulation_frame(
+    simulation_id: str,
+    lens: StormExaminationLensId = "rotating_updraft",
+    time_index: int = 5,
+    viewport: StormExaminationViewportId = "storm",
+    x_index: int | None = None,
+    y_index: int | None = None,
+    z_index: int | None = None,
+) -> dict[str, object]:
+    if simulation_id != SUPERCELLS_REFERENCE_SIMULATION_ID:
+        raise HTTPException(status_code=404, detail="Supercell Simulation not found.")
+    try:
+        frame = supercells_explore_frame(
+            load_settings(),
+            lens=lens,
+            time_index=time_index,
+            viewport=viewport,
+            x_index=x_index,
+            y_index=y_index,
+            z_index=z_index,
+        )
+    except StormExaminationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return frame.model_dump(mode="json")
 
 
 @app.get("/api/research/storm-examination")

@@ -58,6 +58,30 @@ type PointCloudResponse = {
   caveats: string[];
 };
 
+export type StormSceneLayer = {
+  key: string;
+  display_name: string;
+  units: string;
+  rendering: "neutral_cloud" | "signed_scalar" | "scalar" | "categorical";
+  points: Array<[number, number, number, number, number]>;
+  default_opacity: number;
+  default_point_size: number;
+  scale: {
+    minimum: number;
+    maximum: number;
+    breakpoints: number[];
+    colors: string[];
+  } | null;
+  categories: Array<{ code: number; color: string }>;
+};
+
+export type StormScenePayload = {
+  coordinate_extents_km: Record<"x" | "y" | "z", { min: number; max: number }>;
+  layers: StormSceneLayer[];
+};
+
+export type StormScenePoint = [number, number, number, number, number];
+
 type SliceResponse = {
   field: VisualizableField;
   selection: {
@@ -106,8 +130,18 @@ type True3DViewerProps = {
   showUpdraftLensLegend?: boolean;
   compactWorkspace?: boolean;
   compactDisplayControls?: ReactNode;
+  compactDisplayLabel?: string;
   maximized?: boolean;
   onToggleMaximize?: () => void;
+  stormScene?: StormScenePayload | null;
+  visibleStormLayerKeys?: string[];
+  stormOpacity?: number;
+  stormPointSize?: number;
+  compactAxisLabels?: boolean;
+  selectedPointCoordinates?: { x: number; y: number; z: number } | null;
+  onSelectStormPoint?: (point: StormScenePoint) => void;
+  cameraPreset?: CameraPreset;
+  onCameraPresetChange?: (preset: CameraPreset) => void;
 };
 
 type SceneRefs = {
@@ -129,7 +163,12 @@ type SceneBounds = {
   maxRange: number;
 };
 
-type CameraPreset = "overview" | "top_down_xy" | "look_along_x" | "look_along_y";
+export type CameraPreset =
+  | "overview"
+  | "top_down_xy"
+  | "look_along_x"
+  | "look_along_y"
+  | "low_level";
 
 type AxisLabel = {
   axis: "x" | "y" | "z";
@@ -176,37 +215,68 @@ export function True3DViewer({
   showUpdraftLensLegend = true,
   compactWorkspace = false,
   compactDisplayControls,
+  compactDisplayLabel = "Display",
   maximized = false,
   onToggleMaximize,
+  stormScene = null,
+  visibleStormLayerKeys = [],
+  stormOpacity = 1,
+  stormPointSize = 1,
+  compactAxisLabels = false,
+  selectedPointCoordinates = null,
+  onSelectStormPoint,
+  cameraPreset = "overview",
+  onCameraPresetChange,
 }: True3DViewerProps) {
   const mountRef = useRef<HTMLDivElement | null>(null);
   const axisLabelLayerRef = useRef<HTMLDivElement | null>(null);
   const refs = useRef<SceneRefs | null>(null);
   const axisOcclusionRef = useRef({ frame: updraftLensFrame, opacity: updraftLensOpacity });
+  const stormSelectionRef = useRef(onSelectStormPoint);
+  const cameraPresetRef = useRef(cameraPreset);
   axisOcclusionRef.current = { frame: updraftLensFrame, opacity: updraftLensOpacity };
+  stormSelectionRef.current = onSelectStormPoint;
+  cameraPresetRef.current = cameraPreset;
   const [renderError, setRenderError] = useState<string | null>(null);
   const [cameraStatus, setCameraStatus] = useState("Camera ready");
+  const [selectedCameraPreset, setSelectedCameraPreset] =
+    useState<CameraPreset>(cameraPreset);
   const [tallViewport, setTallViewport] = useState(false);
 
-  const boundsKey = boundsSignature(pointCloud);
+  const boundsKey = boundsSignature(pointCloud, stormScene);
   const bounds = useMemo(() => sceneBoundsFromSignature(boundsKey), [boundsKey]);
-  const axisLabels = useMemo(() => axisLabelDefinitions(bounds), [bounds]);
+  const axisLabels = useMemo(
+    () => axisLabelDefinitions(bounds, compactAxisLabels),
+    [bounds, compactAxisLabels],
+  );
   const selectedPoint = useMemo(
-    () => selectedRegionPoint(selectedRegion, coordinateSizes, bounds),
-    [bounds, coordinateSizes, selectedRegion],
+    () => selectedPointCoordinates ?? selectedRegionPoint(selectedRegion, coordinateSizes, bounds),
+    [bounds, coordinateSizes, selectedPointCoordinates, selectedRegion],
   );
 
   const resetCamera = useCallback(() => {
-    applyCameraPreset("overview", refs.current, bounds);
-    setCameraStatus("Camera reset to overview");
-  }, [bounds]);
+    applyCameraPreset(
+      selectedCameraPreset,
+      refs.current,
+      bounds,
+      cameraDistanceScale(selectedCameraPreset, maximized),
+    );
+    setCameraStatus(`${cameraPresetStatus(selectedCameraPreset)} (reset)`);
+  }, [bounds, maximized, selectedCameraPreset]);
 
   const setCameraPreset = useCallback(
     (preset: CameraPreset) => {
-      applyCameraPreset(preset, refs.current, bounds);
+      setSelectedCameraPreset(preset);
+      applyCameraPreset(
+        preset,
+        refs.current,
+        bounds,
+        cameraDistanceScale(preset, maximized),
+      );
       setCameraStatus(cameraPresetStatus(preset));
+      onCameraPresetChange?.(preset);
     },
-    [bounds],
+    [bounds, maximized, onCameraPresetChange],
   );
 
   const zoomCamera = useCallback((direction: "in" | "out") => {
@@ -271,7 +341,22 @@ export function True3DViewer({
         MIDDLE: THREE.MOUSE.DOLLY,
         RIGHT: THREE.MOUSE.PAN,
       };
-      applyCameraPreset("overview", { camera, controls }, bounds);
+      applyCameraPreset(cameraPresetRef.current, { camera, controls }, bounds);
+
+      let pointerDown: { x: number; y: number } | null = null;
+      const handlePointerDown = (event: PointerEvent) => {
+        pointerDown = { x: event.clientX, y: event.clientY };
+      };
+      const handlePointerUp = (event: PointerEvent) => {
+        if (!pointerDown || !stormSelectionRef.current) return;
+        const movement = Math.hypot(event.clientX - pointerDown.x, event.clientY - pointerDown.y);
+        pointerDown = null;
+        if (movement > 4) return;
+        const point = selectedStormScenePoint(event, renderer.domElement, camera, scene, bounds);
+        if (point) stormSelectionRef.current(point);
+      };
+      renderer.domElement.addEventListener("pointerdown", handlePointerDown);
+      renderer.domElement.addEventListener("pointerup", handlePointerUp);
 
       const resize = () => {
         if (!mounted) return;
@@ -322,6 +407,8 @@ export function True3DViewer({
         window.cancelAnimationFrame(current.animationFrame);
         current.resizeObserver?.disconnect();
         current.controls.dispose();
+        current.renderer.domElement.removeEventListener("pointerdown", handlePointerDown);
+        current.renderer.domElement.removeEventListener("pointerup", handlePointerUp);
         disposeScene(current.scene);
         current.renderer.dispose();
         current.renderer.domElement.remove();
@@ -333,6 +420,17 @@ export function True3DViewer({
       return undefined;
     }
   }, [axisLabels, bounds]);
+
+  useEffect(() => {
+    setSelectedCameraPreset(cameraPreset);
+    applyCameraPreset(
+      cameraPreset,
+      refs.current,
+      bounds,
+      cameraDistanceScale(cameraPreset, maximized),
+    );
+    setCameraStatus(cameraPresetStatus(cameraPreset));
+  }, [bounds, cameraPreset, maximized]);
 
   useEffect(() => {
     const current = refs.current;
@@ -353,6 +451,10 @@ export function True3DViewer({
       updraftLensFrame,
       updraftLensOpacity,
       showUpdraftLensBoundary,
+      stormScene,
+      visibleStormLayerKeys,
+      stormOpacity,
+      stormPointSize,
     });
   }, [
     activeSlice,
@@ -370,6 +472,10 @@ export function True3DViewer({
     updraftLensFrame,
     updraftLensOpacity,
     showUpdraftLensBoundary,
+    stormScene,
+    visibleStormLayerKeys,
+    stormOpacity,
+    stormPointSize,
   ]);
 
   return (
@@ -495,13 +601,14 @@ export function True3DViewer({
             Three.js renderer unavailable: {renderError}
           </p>
         )}
-        {(!pointCloud || pointCloud.points.length === 0) && (
-          <div className="true3d-empty-state">
-            <p className="eyebrow">3-D scalar layer</p>
-            <h4>{noCloudMessage}</h4>
-            <p>The domain and slice plane remain visible so the result does not look broken.</p>
-          </div>
-        )}
+        {(!pointCloud || pointCloud.points.length === 0) &&
+          (!stormScene || visibleStormLayerKeys.length === 0) && (
+            <div className="true3d-empty-state">
+              <p className="eyebrow">3-D scalar layer</p>
+              <h4>{noCloudMessage}</h4>
+              <p>The domain and slice plane remain visible so the result does not look broken.</p>
+            </div>
+          )}
       </div>
 
       {compactWorkspace ? (
@@ -509,7 +616,7 @@ export function True3DViewer({
           {compactDisplayControls && (
             <details className="true3d-display-control">
               <summary>
-                <span>Display</span>
+                <span>{compactDisplayLabel}</span>
               </summary>
               <div className="true3d-display-panel">{compactDisplayControls}</div>
             </details>
@@ -518,13 +625,14 @@ export function True3DViewer({
             <span className="sr-only">Camera view</span>
             <select
               aria-label="Camera view"
-              defaultValue="overview"
+              value={selectedCameraPreset}
               onChange={(event) => setCameraPreset(event.target.value as CameraPreset)}
             >
               <option value="overview">Overview</option>
               <option value="top_down_xy">Top-down x-y</option>
               <option value="look_along_x">Look along x</option>
               <option value="look_along_y">Look along y</option>
+              <option value="low_level">Low-level</option>
             </select>
           </label>
           <button
@@ -625,6 +733,10 @@ function rebuildScene(
     updraftLensFrame,
     updraftLensOpacity,
     showUpdraftLensBoundary,
+    stormScene,
+    visibleStormLayerKeys,
+    stormOpacity,
+    stormPointSize,
   }: {
     bounds: SceneBounds;
     pointCloud: PointCloudResponse | null;
@@ -641,6 +753,10 @@ function rebuildScene(
     updraftLensFrame: UpdraftLensFrame | null;
     updraftLensOpacity: number;
     showUpdraftLensBoundary: boolean;
+    stormScene: StormScenePayload | null;
+    visibleStormLayerKeys: string[];
+    stormOpacity: number;
+    stormPointSize: number;
   },
 ) {
   disposeScene(scene);
@@ -656,6 +772,14 @@ function rebuildScene(
 
   if (pointCloud?.points.length) {
     scene.add(cloudPointLayer(pointCloud, bounds, opacity, pointSize, Boolean(updraftLensFrame)));
+  }
+
+  if (stormScene) {
+    for (const layer of stormScene.layers) {
+      if (visibleStormLayerKeys.includes(layer.key) && layer.points.length > 0) {
+        scene.add(stormPointLayer(layer, bounds, stormOpacity, stormPointSize));
+      }
+    }
   }
 
   if (showWindVectors && windVectors.length) {
@@ -791,11 +915,15 @@ function horizontalWindLayer(
   return group;
 }
 
-function boundsSignature(pointCloud: PointCloudResponse | null): string {
+function boundsSignature(
+  pointCloud: PointCloudResponse | null,
+  stormScene: StormScenePayload | null,
+): string {
   const extents = pointCloud?.coordinate_extents;
-  const x = extents?.xh ?? extents?.x ?? DEFAULT_BOUNDS.x;
-  const y = extents?.yh ?? extents?.y ?? DEFAULT_BOUNDS.y;
-  const z = extents?.zh ?? extents?.z ?? DEFAULT_BOUNDS.z;
+  const stormExtents = stormScene?.coordinate_extents_km;
+  const x = extents?.xh ?? extents?.x ?? extentWithUnits(stormExtents?.x) ?? DEFAULT_BOUNDS.x;
+  const y = extents?.yh ?? extents?.y ?? extentWithUnits(stormExtents?.y) ?? DEFAULT_BOUNDS.y;
+  const z = extents?.zh ?? extents?.z ?? extentWithUnits(stormExtents?.z) ?? DEFAULT_BOUNDS.z;
   return [
     x.min,
     x.max,
@@ -807,6 +935,12 @@ function boundsSignature(pointCloud: PointCloudResponse | null): string {
     z.max,
     z.units ?? "",
   ].join("|");
+}
+
+function extentWithUnits(
+  extent: { min: number; max: number } | undefined,
+): CoordinateExtent | null {
+  return extent ? { ...extent, units: "km" } : null;
 }
 
 function sceneBoundsFromSignature(signature: string): SceneBounds {
@@ -937,7 +1071,7 @@ function axisTickMarks(bounds: SceneBounds): THREE.Group {
   return group;
 }
 
-function axisLabelDefinitions(bounds: SceneBounds): AxisLabel[] {
+function axisLabelDefinitions(bounds: SceneBounds, compact: boolean): AxisLabel[] {
   const labelOffset = Math.max(0.18, bounds.maxRange * 0.035);
   const floor = -bounds.zRange / 2;
   const xMin = -bounds.xRange / 2;
@@ -958,7 +1092,7 @@ function axisLabelDefinitions(bounds: SceneBounds): AxisLabel[] {
       position: new THREE.Vector3(xMin - labelOffset, floor, centeredCoordinate(value, bounds.y)),
     });
   }
-  for (const value of majorTickValues(bounds.z)) {
+  for (const value of compact ? representativeTickValues(bounds.z) : majorTickValues(bounds.z)) {
     labels.push({
       axis: "z",
       text: `z ${formatSignedCoordinate(value, bounds.z.units)}`,
@@ -966,6 +1100,33 @@ function axisLabelDefinitions(bounds: SceneBounds): AxisLabel[] {
     });
   }
   return labels;
+}
+
+function representativeTickValues(extent: CoordinateExtent): number[] {
+  const midpoint = (extent.min + extent.max) / 2;
+  return [...new Set([extent.min, midpoint, extent.max].map(roundTick))];
+}
+
+function selectedStormScenePoint(
+  event: PointerEvent,
+  canvas: HTMLCanvasElement,
+  camera: THREE.Camera,
+  scene: THREE.Scene,
+  bounds: SceneBounds,
+): StormScenePoint | null {
+  const rect = canvas.getBoundingClientRect();
+  const pointer = new THREE.Vector2(
+    ((event.clientX - rect.left) / rect.width) * 2 - 1,
+    -((event.clientY - rect.top) / rect.height) * 2 + 1,
+  );
+  const raycaster = new THREE.Raycaster();
+  raycaster.params.Points = { threshold: bounds.maxRange * 0.018 };
+  raycaster.setFromCamera(pointer, camera);
+  for (const intersection of raycaster.intersectObjects(scene.children, true)) {
+    const points = intersection.object.userData.stormPoints as StormScenePoint[] | undefined;
+    if (points && intersection.index !== undefined) return points[intersection.index] ?? null;
+  }
+  return null;
 }
 
 function positionAxisLabels(
@@ -1086,6 +1247,73 @@ function cloudPointLayer(
   layer.name = "CM1 scalar point cloud";
   layer.renderOrder = 20;
   return layer;
+}
+
+function stormPointLayer(
+  layer: StormSceneLayer,
+  bounds: SceneBounds,
+  opacityMultiplier: number,
+  pointSizeMultiplier: number,
+): THREE.Points {
+  const positions = new Float32Array(layer.points.length * 3);
+  const colors = new Float32Array(layer.points.length * 3);
+  layer.points.forEach((point, index) => {
+    const mapped = mapCoordinate(point[0], point[1], point[2], bounds);
+    positions[index * 3] = mapped.x;
+    positions[index * 3 + 1] = mapped.y;
+    positions[index * 3 + 2] = mapped.z;
+    const color = stormPointColor(layer, point[3], point[4]);
+    colors[index * 3] = color.r;
+    colors[index * 3 + 1] = color.g;
+    colors[index * 3 + 2] = color.b;
+  });
+
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+  geometry.setAttribute("color", new THREE.BufferAttribute(colors, 3));
+  const material = new THREE.PointsMaterial({
+    size: scalarPointPixelSize(layer.default_point_size * pointSizeMultiplier),
+    vertexColors: true,
+    transparent: true,
+    opacity: Math.min(1, Math.max(0.05, layer.default_opacity * opacityMultiplier)),
+    depthWrite: layer.rendering !== "neutral_cloud",
+    sizeAttenuation: false,
+  });
+  const points = new THREE.Points(geometry, material);
+  points.name = `Supercells ${layer.display_name}`;
+  points.userData.stormPoints = layer.points;
+  points.renderOrder = layer.rendering === "neutral_cloud" ? 12 : 22;
+  return points;
+}
+
+function stormPointColor(layer: StormSceneLayer, value: number, categoryCode: number): THREE.Color {
+  if (layer.rendering === "neutral_cloud") {
+    const intensity = normalize(value, layer.scale?.minimum ?? 0, layer.scale?.maximum ?? 16);
+    return new THREE.Color().setRGB(
+      0.72 + intensity * 0.2,
+      0.84 + intensity * 0.13,
+      0.88 + intensity * 0.11,
+    );
+  }
+  if (layer.rendering === "categorical") {
+    const category = layer.categories.find((item) => item.code === categoryCode);
+    return new THREE.Color(category?.color ?? "#ffffff");
+  }
+  const scale = layer.scale;
+  if (!scale || scale.colors.length === 0) return new THREE.Color("#5d7f91");
+  if (layer.rendering === "signed_scalar" || scale.breakpoints.length === scale.colors.length - 1) {
+    const interval = scale.breakpoints.findIndex((breakpoint) => value < breakpoint);
+    const colorIndex = interval === -1 ? scale.colors.length - 1 : interval;
+    return new THREE.Color(scale.colors[Math.min(colorIndex, scale.colors.length - 1)]);
+  }
+  const normalized = normalize(value, scale.minimum, scale.maximum);
+  const scaled = normalized * Math.max(1, scale.colors.length - 1);
+  const lowerIndex = Math.min(scale.colors.length - 1, Math.floor(scaled));
+  const upperIndex = Math.min(scale.colors.length - 1, lowerIndex + 1);
+  return new THREE.Color(scale.colors[lowerIndex]).lerp(
+    new THREE.Color(scale.colors[upperIndex]),
+    scaled - lowerIndex,
+  );
 }
 
 function scalarPointColor(
@@ -1252,9 +1480,11 @@ function applyCameraPreset(
   preset: CameraPreset,
   refs: Pick<SceneRefs, "camera" | "controls"> | null,
   bounds: SceneBounds,
+  distanceScale = 1,
 ) {
   if (!refs) return;
-  const distance = Math.max(bounds.xRange, bounds.yRange, bounds.zRange) * 1.65;
+  const distance =
+    Math.max(bounds.xRange, bounds.yRange, bounds.zRange) * 1.65 * distanceScale;
   if (preset === "top_down_xy") {
     refs.camera.position.set(0, distance, 0.001);
     refs.camera.up.set(0, 0, -1);
@@ -1264,6 +1494,22 @@ function applyCameraPreset(
   } else if (preset === "look_along_y") {
     refs.camera.position.set(0, bounds.zRange * 0.22, distance);
     refs.camera.up.set(0, 1, 0);
+  } else if (preset === "low_level") {
+    const lowTarget = centeredCoordinate(
+      Math.min(bounds.z.max, bounds.z.min + 1.0),
+      bounds.z,
+    );
+    const xTarget = 0;
+    const yTarget = bounds.yRange * 0.18;
+    refs.camera.position.set(
+      xTarget + bounds.xRange * 0.18,
+      lowTarget + bounds.maxRange * 0.72,
+      yTarget + bounds.yRange * 0.42,
+    );
+    refs.camera.up.set(0, 1, 0);
+    refs.controls.target.set(xTarget, lowTarget, yTarget);
+    refs.controls.update();
+    return;
   } else {
     refs.camera.position.set(bounds.xRange * 0.85, bounds.zRange * 0.8, bounds.yRange * 1.18);
     refs.camera.up.set(0, 1, 0);
@@ -1272,12 +1518,19 @@ function applyCameraPreset(
   refs.controls.update();
 }
 
+function cameraDistanceScale(preset: CameraPreset, maximized: boolean): number {
+  if (!maximized || preset === "low_level") return 1;
+  if (preset === "top_down_xy") return 0.78;
+  return 0.62;
+}
+
 function cameraPresetStatus(preset: CameraPreset): string {
   const labels: Record<CameraPreset, string> = {
     overview: "Camera set to overview",
     top_down_xy: "Camera set to top-down x-y view",
     look_along_x: "Camera looking along the x axis",
     look_along_y: "Camera looking along the y axis",
+    low_level: "Camera focused on the low-level storm",
   };
   return labels[preset];
 }

@@ -48,4 +48,25 @@ describe("IntegratedExploreWorkspace", () => {
     fireEvent.click(screen.getByRole("button", { name: "Open inspector" }));
     expect(screen.getByText("Authored explanation")).toBeVisible();
   });
+
+  it("uses an accessible tabbed Context inspector when Science is available", () => {
+    render(
+      <ExploreInspector
+        sections={{
+          explain: <p>Storm explanation</p>,
+          science: <p>Selected native evidence</p>,
+          notes: <p>Simulation notes</p>,
+          details: <p>Run lineage</p>,
+        }}
+      />,
+    );
+
+    const tablist = screen.getByRole("tablist", { name: "Context sections" });
+    expect(screen.getByRole("tab", { name: "Explain" })).toHaveAttribute("aria-selected", "true");
+    fireEvent.click(screen.getByRole("tab", { name: "Science" }));
+    expect(screen.getByRole("tabpanel")).toHaveTextContent("Selected native evidence");
+    expect(screen.getByRole("tab", { name: "Science" })).toHaveAttribute("aria-selected", "true");
+    expect(tablist).toBeVisible();
+    expect(screen.queryByLabelText("Simulation notebook")).not.toBeInTheDocument();
+  });
 });

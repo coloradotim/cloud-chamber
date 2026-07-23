@@ -21,6 +21,13 @@ HISTORY_FILENAMES = tuple(f"cm1out_{index:06d}.nc" for index in range(1, 10))
 HYDROMETEORS = ("qc", "qr", "qi", "qs", "qg")
 LensId = Literal["rotating_updraft", "cloud_precipitation", "low_level_interactions"]
 ViewportId = Literal["storm", "full"]
+FramePurpose = Literal["research", "product"]
+STORM_VIEW_BOUNDS_KM = {
+    "x_min": -35.5,
+    "x_max": 24.5,
+    "y_min": -33.5,
+    "y_max": 26.5,
+}
 
 W_COLORS = (
     "#4b0082",
@@ -101,6 +108,44 @@ class PointMarker(BaseModel):
     w_m_s: float
 
 
+class VolumeLayer(BaseModel):
+    key: str
+    display_name: str
+    units: str
+    evidence_kind: Literal["native", "derived"]
+    source_fields: list[str]
+    derivation: str | None = None
+    rendering: Literal["neutral_cloud", "signed_scalar", "scalar", "categorical"]
+    points: list[tuple[float, float, float, float, int]]
+    source_count: int
+    returned_count: int
+    threshold_label: str
+    default_visible: bool
+    default_opacity: float
+    default_point_size: float
+    scale: ScaleMetadata | None = None
+    categories: list[CategoryDefinition] = Field(default_factory=list)
+
+
+class VolumeWindVector(BaseModel):
+    x_km: float
+    y_km: float
+    z_km: float
+    u_m_s: float
+    v_m_s: float
+    magnitude_m_s: float
+
+
+class StormVolumeScene(BaseModel):
+    coordinate_extents_km: dict[str, dict[str, float]]
+    coordinate_sizes: dict[str, int]
+    layers: list[VolumeLayer]
+    wind_vectors: list[VolumeWindVector] = Field(default_factory=list)
+    wind_reference_m_s: float
+    point_budget: int
+    source_history_file: str
+
+
 class PlanView(BaseModel):
     title: str
     subtitle: str
@@ -110,6 +155,7 @@ class PlanView(BaseModel):
     y_km: list[float]
     level_index: int
     level_km: float
+    selection_z_indices: list[list[int]] | None = None
     primary: FieldLayer
     overlays: dict[str, FieldLayer]
     categories: CategoryLayer | None = None
@@ -153,16 +199,22 @@ class TimelineCheckpoint(BaseModel):
 
 
 class StormExaminationFrame(BaseModel):
-    schema_version: Literal["storm_examination_gate_c_v1"] = "storm_examination_gate_c_v1"
-    authority_state: Literal["issue_418_gate_c_research_not_product"] = (
-        "issue_418_gate_c_research_not_product"
+    schema_version: Literal["storm_examination_gate_c_v1", "supercells_explore_v1"] = (
+        "storm_examination_gate_c_v1"
     )
+    authority_state: Literal[
+        "issue_418_gate_c_research_not_product", "supercells_product_world"
+    ] = "issue_418_gate_c_research_not_product"
+    world_id: Literal["supercells"] | None = None
+    simulation_id: Literal["supercells_quarter_circle_reference"] | None = None
     run_id: str
     case_id: str
     simulation_label: str
     lens_id: LensId
     lens_name: str
     lens_question: str
+    what_to_notice_now: str
+    what_to_notice_by_view: dict[str, str] | None = None
     time_index: int
     time_seconds: float
     times_seconds: list[float]
@@ -175,6 +227,7 @@ class StormExaminationFrame(BaseModel):
     plan: PlanView
     xz_section: VerticalSection
     yz_section: VerticalSection
+    scene: StormVolumeScene | None = None
     caveats: list[str]
     provenance: dict[str, str]
     extraction_milliseconds: float
@@ -189,6 +242,61 @@ def preserved_storm_examination_frame(
     x_index: int | None = None,
     y_index: int | None = None,
     z_index: int | None = None,
+) -> StormExaminationFrame:
+    """Return the accepted Gate C research surface through the shared extractor."""
+    return _storm_frame(
+        settings,
+        lens=lens,
+        time_index=time_index,
+        viewport=viewport,
+        x_index=x_index,
+        y_index=y_index,
+        z_index=z_index,
+        purpose="research",
+    )
+
+
+def supercells_explore_frame(
+    settings: CloudChamberSettings,
+    *,
+    lens: LensId = "rotating_updraft",
+    time_index: int = 5,
+    viewport: ViewportId = "storm",
+    x_index: int | None = None,
+    y_index: int | None = None,
+    z_index: int | None = None,
+) -> StormExaminationFrame:
+    """Return the production Supercells frame from the accepted Gate C science path."""
+    return _storm_frame(
+        settings,
+        lens=lens,
+        time_index=time_index,
+        viewport=viewport,
+        x_index=x_index,
+        y_index=y_index,
+        z_index=z_index,
+        purpose="product",
+    )
+
+
+def storm_examination_inventory(
+    settings: CloudChamberSettings,
+) -> tuple[tuple[Path, float], ...]:
+    """Return the cached, identity-validated retained history inventory."""
+    run_dir = settings.runtime_home.expanduser() / "runs" / PRESERVED_RUN_ID
+    return _validated_inventory(run_dir)
+
+
+def _storm_frame(
+    settings: CloudChamberSettings,
+    *,
+    lens: LensId,
+    time_index: int,
+    viewport: ViewportId,
+    x_index: int | None,
+    y_index: int | None,
+    z_index: int | None,
+    purpose: FramePurpose,
 ) -> StormExaminationFrame:
     """Extract coordinated, bounded views from one retained native history."""
     started = time.perf_counter()
@@ -241,7 +349,7 @@ def preserved_storm_examination_frame(
         z_km=float(z_km[primary_z]),
         w_m_s=float(fields["winterp"][primary_index]),
     )
-    bounds = _viewport_bounds(viewport, x_km, y_km, primary)
+    bounds = _viewport_bounds(viewport, x_km, y_km)
     x_indices = _coordinate_indices(x_km, bounds["x_min"], bounds["x_max"])
     y_indices = _coordinate_indices(y_km, bounds["y_min"], bounds["y_max"])
     plan = _plan_view(lens, fields, x_km, y_km, z_km, default_level, x_indices, y_indices)
@@ -281,13 +389,45 @@ def preserved_storm_examination_frame(
         primary,
     )
     lens_name, lens_question = _lens_identity(lens)
+    what_to_notice_by_view = _what_to_notice_by_view(
+        lens, time_seconds, plan, xz_section, yz_section
+    )
+    default_notice_view = "xz" if lens == "cloud_precipitation" else "plan"
+    scene = (
+        _volume_scene(
+            lens,
+            fields,
+            x_km,
+            y_km,
+            z_km,
+            x_indices,
+            y_indices,
+            default_level,
+            history_path.name,
+            viewport,
+        )
+        if purpose == "product"
+        else None
+    )
     return StormExaminationFrame(
+        schema_version=(
+            "supercells_explore_v1" if purpose == "product" else "storm_examination_gate_c_v1"
+        ),
+        authority_state=(
+            "supercells_product_world"
+            if purpose == "product"
+            else "issue_418_gate_c_research_not_product"
+        ),
+        world_id="supercells" if purpose == "product" else None,
+        simulation_id="supercells_quarter_circle_reference" if purpose == "product" else None,
         run_id=PRESERVED_RUN_ID,
         case_id=PRESERVED_CASE_ID,
         simulation_label="Official CM1 r21.1 quarter-circle benchmark",
         lens_id=lens,
         lens_name=lens_name,
         lens_question=lens_question,
+        what_to_notice_now=what_to_notice_by_view[default_notice_view],
+        what_to_notice_by_view=what_to_notice_by_view,
         time_index=checked_time_index,
         time_seconds=time_seconds,
         times_seconds=[value for _path, value in inventory],
@@ -300,6 +440,7 @@ def preserved_storm_examination_frame(
         plan=plan,
         xz_section=xz_section,
         yz_section=yz_section,
+        scene=scene,
         caveats=[
             "Saved histories are 15 minutes apart; continuity between frames is inferred, "
             "not observed continuously.",
@@ -315,11 +456,17 @@ def preserved_storm_examination_frame(
         provenance={
             "source_history_file": history_path.name,
             "source_kind": "retained_native_cm1_history",
-            "browser_payload": "selected plan and two native-grid vertical sections only",
+            "browser_payload": (
+                "bounded 3-D layers, selected plan, and two native-grid vertical sections"
+                if purpose == "product"
+                else "selected plan and two native-grid vertical sections only"
+            ),
             "interpolation": "none",
             "coordinate_frame": "translating_model_coordinates",
             "product_boundary": (
-                "bounded Gate C research; not a Cloud World or final Lens implementation"
+                "Supercells production Explore"
+                if purpose == "product"
+                else "bounded Gate C research; not a Cloud World or final Lens implementation"
             ),
         },
         extraction_milliseconds=round((time.perf_counter() - started) * 1_000, 3),
@@ -468,6 +615,7 @@ def _plan_view(
         ),
     }
     if lens == "rotating_updraft":
+        total = _total_condensate_g_kg(view_fields)
         primary = _layer(
             "winterp",
             "Vertical velocity",
@@ -495,13 +643,25 @@ def _plan_view(
             view_fields["uh"],
             _uh_scale(),
         )
+        overlays["total_condensate"] = _layer(
+            "total_condensate",
+            "Total condensate",
+            "g/kg",
+            "derived",
+            list(HYDROMETEORS),
+            total[level_index],
+            _condensate_scale(),
+            "1000 * (qc + qr + qi + qs + qg)",
+        )
         title = "Midlevel updraft and rotation"
         subtitle = "Signed vertical velocity with cyclonic vorticity and 2-5 km AGL UH"
         categories = None
+        selection_z_indices = None
         vectors: list[WindVector] = []
     elif lens == "cloud_precipitation":
         total = _total_condensate_g_kg(view_fields)
         column_max = np.max(total, axis=0)
+        strongest_level = np.argmax(total, axis=0)
         primary = _layer(
             "column_max_total_condensate",
             "Column-maximum total condensate",
@@ -512,9 +672,26 @@ def _plan_view(
             _condensate_scale(),
             "1000 * max_z(qc + qr + qi + qs + qg)",
         )
-        categories = _column_hydrometeor_categories(view_fields, column_max)
+        categories = _column_hydrometeor_categories(view_fields, column_max, strongest_level)
+        aligned_vertical_velocity = np.take_along_axis(
+            view_fields["winterp"], strongest_level[np.newaxis, :, :], axis=0
+        )[0]
+        overlays["vertical_velocity"] = _layer(
+            "vertical_velocity_at_condensate_maximum",
+            "Vertical velocity at strongest condensate level",
+            "m/s",
+            "derived",
+            ["winterp", *HYDROMETEORS],
+            aligned_vertical_velocity,
+            _midlevel_w_scale(),
+            (
+                "native winterp sampled at each x/y cell's level of maximum "
+                "1000 * (qc + qr + qi + qs + qg)"
+            ),
+        )
         title = "Cloud and precipitation structure"
-        subtitle = "Dominant hydrometeor at the column's strongest condensate level"
+        subtitle = "Column-derived category and motion at each cell's strongest condensate level"
+        selection_z_indices = [[int(value) for value in row] for row in strongest_level.tolist()]
         vectors = []
     else:
         primary = _layer(
@@ -528,10 +705,27 @@ def _plan_view(
         )
         title = "Low-level motion and rain footprint"
         subtitle = (
-            "1.25 km vertical motion, accumulated rain, reflectivity, and model-relative flow"
+            "1.25 km current motion, precipitation, model-relative flow, "
+            "and historical rain accumulation"
         )
+        selection_z_indices = None
         categories = None
-        vectors = _wind_vectors(view_fields, view_x_km, view_y_km)
+        vectors = _wind_vectors(view_fields, view_x_km, view_y_km, level_index)
+        precipitating = 1_000.0 * (
+            view_fields["qr"][level_index]
+            + view_fields["qs"][level_index]
+            + view_fields["qg"][level_index]
+        )
+        overlays["low_level_precipitating_condensate"] = _layer(
+            "low_level_precipitating_condensate",
+            "Current precipitating condensate",
+            "g/kg",
+            "derived",
+            ["qr", "qs", "qg"],
+            precipitating,
+            _condensate_scale(),
+            "1000 * (qr + qs + qg) at the displayed 1.25 km level",
+        )
     return PlanView(
         title=title,
         subtitle=subtitle,
@@ -541,6 +735,7 @@ def _plan_view(
         y_km=_float_list(view_y_km),
         level_index=level_index,
         level_km=float(z_km[level_index]),
+        selection_z_indices=selection_z_indices,
         primary=primary,
         overlays=overlays,
         categories=categories,
@@ -569,6 +764,7 @@ def _vertical_section(
         w_section = fields["winterp"][:, y_index, horizontal_indices]
         condensate = _total_condensate_g_kg(fields)[:, y_index, horizontal_indices]
         reflectivity = fields["dbz"][:, y_index, horizontal_indices]
+        vorticity = fields["zvort"][:, y_index, horizontal_indices]
         precipitating = 1_000.0 * (
             fields["qr"][:, y_index, horizontal_indices]
             + fields["qs"][:, y_index, horizontal_indices]
@@ -583,6 +779,7 @@ def _vertical_section(
         w_section = fields["winterp"][:, horizontal_indices, x_index]
         condensate = _total_condensate_g_kg(fields)[:, horizontal_indices, x_index]
         reflectivity = fields["dbz"][:, horizontal_indices, x_index]
+        vorticity = fields["zvort"][:, horizontal_indices, x_index]
         precipitating = 1_000.0 * (
             fields["qr"][:, horizontal_indices, x_index]
             + fields["qs"][:, horizontal_indices, x_index]
@@ -626,6 +823,15 @@ def _vertical_section(
             ["winterp"],
             w_section,
             _section_w_scale(),
+        ),
+        "vertical_vorticity": _layer(
+            "zvort",
+            "Vertical vorticity",
+            "s^-1",
+            "native",
+            ["zvort"],
+            vorticity,
+            _vorticity_scale(),
         ),
     }
     if lens == "cloud_precipitation":
@@ -773,10 +979,9 @@ def _total_condensate_g_kg(
 def _column_hydrometeor_categories(
     fields: dict[str, np.ndarray[Any, np.dtype[np.float64]]],
     column_max: np.ndarray[Any, np.dtype[np.float64]],
+    strongest_level: np.ndarray[Any, np.dtype[np.int64]],
 ) -> CategoryLayer:
     masses = np.stack([fields[name] for name in HYDROMETEORS], axis=0)
-    total = np.sum(masses, axis=0)
-    strongest_level = np.argmax(total, axis=0)
     categories = np.zeros(column_max.shape, dtype=np.int64)
     for y_index in range(column_max.shape[0]):
         for x_index in range(column_max.shape[1]):
@@ -837,25 +1042,29 @@ def _category_layer(
         ),
         values=[[int(value) for value in row] for row in values.tolist()],
         magnitude=magnitude,
-        categories=[
-            CategoryDefinition(
-                code=0, key="clear", label="Below condensate threshold", color="#ffffff"
-            ),
-            CategoryDefinition(code=1, key="qc", label="Cloud liquid", color="#62c6d7"),
-            CategoryDefinition(code=2, key="qr", label="Rain", color="#2a78b8"),
-            CategoryDefinition(code=3, key="qi", label="Cloud ice", color="#cab6e8"),
-            CategoryDefinition(code=4, key="qs", label="Snow", color="#8b9fd8"),
-            CategoryDefinition(code=5, key="qg", label="Hail-treated large ice", color="#e38a36"),
-        ],
+        categories=_hydrometeor_category_definitions(),
     )
+
+
+def _hydrometeor_category_definitions() -> list[CategoryDefinition]:
+    return [
+        CategoryDefinition(
+            code=0, key="clear", label="Below condensate threshold", color="#ffffff"
+        ),
+        CategoryDefinition(code=1, key="qc", label="Cloud liquid", color="#62c6d7"),
+        CategoryDefinition(code=2, key="qr", label="Rain", color="#2a78b8"),
+        CategoryDefinition(code=3, key="qi", label="Cloud ice", color="#cab6e8"),
+        CategoryDefinition(code=4, key="qs", label="Snow", color="#8b9fd8"),
+        CategoryDefinition(code=5, key="qg", label="Hail-treated large ice", color="#e38a36"),
+    ]
 
 
 def _wind_vectors(
     fields: dict[str, np.ndarray[Any, np.dtype[np.float64]]],
     x_km: np.ndarray[Any, np.dtype[np.float64]],
     y_km: np.ndarray[Any, np.dtype[np.float64]],
+    level_index: int,
 ) -> list[WindVector]:
-    level_index = 0
     stride = 8
     vectors: list[WindVector] = []
     for y_index in range(0, len(y_km), stride):
@@ -874,37 +1083,571 @@ def _wind_vectors(
     return vectors
 
 
+def _volume_scene(
+    lens: LensId,
+    fields: dict[str, np.ndarray[Any, np.dtype[np.float64]]],
+    x_km: np.ndarray[Any, np.dtype[np.float64]],
+    y_km: np.ndarray[Any, np.dtype[np.float64]],
+    z_km: np.ndarray[Any, np.dtype[np.float64]],
+    x_indices: np.ndarray[Any, np.dtype[np.int64]],
+    y_indices: np.ndarray[Any, np.dtype[np.int64]],
+    level_index: int,
+    history_filename: str,
+    viewport: ViewportId,
+) -> StormVolumeScene:
+    view = {
+        name: values[:, y_indices, :][:, :, x_indices]
+        if values.ndim == 3
+        else values[y_indices, :][:, x_indices]
+        for name, values in fields.items()
+    }
+    view_x = x_km[x_indices]
+    view_y = y_km[y_indices]
+    total = _total_condensate_g_kg(view)
+    precipitating = 1_000.0 * (view["qr"] + view["qs"] + view["qg"])
+    budget_scale = 1.0 if viewport == "storm" else 0.62
+    low_level_volume = z_km[:, np.newaxis, np.newaxis] <= 5.25
+    scene_z_max = 5.25 if lens == "low_level_interactions" else float(np.max(z_km))
+
+    cloud = _volume_layer(
+        key="storm_cloud_body",
+        display_name="Storm cloud body",
+        units="g/kg",
+        evidence_kind="derived",
+        source_fields=list(HYDROMETEORS),
+        derivation="1000 * (qc + qr + qi + qs + qg)",
+        rendering="neutral_cloud",
+        values=total,
+        mask=(total >= 0.05) & (low_level_volume if lens == "low_level_interactions" else True),
+        x_km=view_x,
+        y_km=view_y,
+        z_km=z_km,
+        point_budget=round(12_000 * budget_scale),
+        threshold_label="Total condensate at or above 0.05 g/kg",
+        default_visible=lens == "rotating_updraft",
+        default_opacity=0.22,
+        default_point_size=4.5,
+        scale=_condensate_scale(),
+    )
+    layers: list[VolumeLayer] = [cloud]
+    wind_vectors: list[VolumeWindVector] = []
+
+    if lens == "rotating_updraft":
+        layers.extend(
+            [
+                _volume_layer(
+                    key="rising_core",
+                    display_name="Rising core",
+                    units="m/s",
+                    evidence_kind="native",
+                    source_fields=["winterp"],
+                    derivation=None,
+                    rendering="signed_scalar",
+                    values=view["winterp"],
+                    mask=view["winterp"] >= 5.0,
+                    x_km=view_x,
+                    y_km=view_y,
+                    z_km=z_km,
+                    point_budget=round(6_000 * budget_scale),
+                    threshold_label="Rising motion at or above 5 m/s",
+                    default_visible=True,
+                    default_opacity=0.88,
+                    default_point_size=6.8,
+                    scale=_midlevel_w_scale(),
+                ),
+                _volume_layer(
+                    key="strong_descent",
+                    display_name="Strong descent",
+                    units="m/s",
+                    evidence_kind="native",
+                    source_fields=["winterp"],
+                    derivation=None,
+                    rendering="signed_scalar",
+                    values=view["winterp"],
+                    mask=view["winterp"] <= -5.0,
+                    x_km=view_x,
+                    y_km=view_y,
+                    z_km=z_km,
+                    point_budget=round(3_000 * budget_scale),
+                    threshold_label="Descending motion at or below -5 m/s",
+                    default_visible=False,
+                    default_opacity=0.58,
+                    default_point_size=5.0,
+                    scale=_midlevel_w_scale(),
+                ),
+                _volume_layer(
+                    key="cyclonic_rotation",
+                    display_name="Cyclonic vertical vorticity",
+                    units="s^-1",
+                    evidence_kind="native",
+                    source_fields=["zvort"],
+                    derivation=None,
+                    rendering="scalar",
+                    values=view["zvort"],
+                    mask=(view["zvort"] >= 0.01) & (view["winterp"] >= 2.0),
+                    x_km=view_x,
+                    y_km=view_y,
+                    z_km=z_km,
+                    point_budget=round(3_500 * budget_scale),
+                    threshold_label="Cyclonic vorticity at or above 0.01 s^-1 in rising air",
+                    default_visible=True,
+                    default_opacity=0.92,
+                    default_point_size=4.2,
+                    scale=_vorticity_scale(),
+                ),
+                _surface_volume_layer(
+                    key="updraft_helicity",
+                    display_name="2-5 km AGL updraft helicity",
+                    units="m^2/s^2",
+                    evidence_kind="native",
+                    source_fields=["uh"],
+                    derivation=None,
+                    rendering="scalar",
+                    values=view["uh"],
+                    mask=view["uh"] >= 300.0,
+                    x_km=view_x,
+                    y_km=view_y,
+                    z_km=float(z_km[0]),
+                    point_budget=round(3_000 * budget_scale),
+                    threshold_label="Cyclonic 2-5 km AGL UH at or above 300 m^2/s^2",
+                    default_visible=True,
+                    default_opacity=0.78,
+                    default_point_size=5.2,
+                    scale=_uh_scale(),
+                ),
+                _volume_layer(
+                    key="reflectivity",
+                    display_name="Reflectivity",
+                    units="dBZ",
+                    evidence_kind="native",
+                    source_fields=["dbz"],
+                    derivation=None,
+                    rendering="scalar",
+                    values=view["dbz"],
+                    mask=(view["dbz"] >= 20.0) & low_level_volume,
+                    x_km=view_x,
+                    y_km=view_y,
+                    z_km=z_km,
+                    point_budget=round(5_000 * budget_scale),
+                    threshold_label="Reflectivity at or above 20 dBZ",
+                    default_visible=False,
+                    default_opacity=0.58,
+                    default_point_size=5.0,
+                    scale=_reflectivity_scale(),
+                ),
+            ]
+        )
+    elif lens == "cloud_precipitation":
+        masses = np.stack([view[name] for name in HYDROMETEORS], axis=0)
+        categories = np.argmax(masses, axis=0).astype(np.int64) + 1
+        dominant_mass = np.max(masses, axis=0) * 1_000.0
+        category_thresholds = np.asarray([0.0, 0.10, 0.20, 0.10, 0.30, 2.00])
+        category_mask = dominant_mass >= category_thresholds[categories]
+        categories[~category_mask] = 0
+        layers.extend(
+            [
+                _volume_layer(
+                    key="hydrometeor_categories",
+                    display_name="Dominant hydrometeor",
+                    units="g/kg",
+                    evidence_kind="derived",
+                    source_fields=list(HYDROMETEORS),
+                    derivation="largest native hydrometeor mass mixing ratio per cloudy cell",
+                    rendering="categorical",
+                    values=total,
+                    mask=category_mask,
+                    categories=categories,
+                    category_definitions=_hydrometeor_category_definitions(),
+                    x_km=view_x,
+                    y_km=view_y,
+                    z_km=z_km,
+                    point_budget=round(10_000 * budget_scale),
+                    threshold_label=(
+                        "Native dominant-species thresholds: qc/qi 0.10, qr 0.20, "
+                        "qs 0.30, qg 2.00 g/kg"
+                    ),
+                    default_visible=True,
+                    default_opacity=0.42,
+                    default_point_size=4.2,
+                    scale=_condensate_scale(),
+                ),
+                _volume_layer(
+                    key="vertical_motion",
+                    display_name="Strong vertical motion",
+                    units="m/s",
+                    evidence_kind="native",
+                    source_fields=["winterp"],
+                    derivation=None,
+                    rendering="signed_scalar",
+                    values=view["winterp"],
+                    mask=np.abs(view["winterp"]) >= 8.0,
+                    x_km=view_x,
+                    y_km=view_y,
+                    z_km=z_km,
+                    point_budget=round(5_000 * budget_scale),
+                    threshold_label="Absolute vertical velocity at or above 8 m/s",
+                    default_visible=False,
+                    default_opacity=0.6,
+                    default_point_size=5.5,
+                    scale=_section_w_scale(),
+                ),
+                _volume_layer(
+                    key="reflectivity",
+                    display_name="Reflectivity",
+                    units="dBZ",
+                    evidence_kind="native",
+                    source_fields=["dbz"],
+                    derivation=None,
+                    rendering="scalar",
+                    values=view["dbz"],
+                    mask=view["dbz"] >= 25.0,
+                    x_km=view_x,
+                    y_km=view_y,
+                    z_km=z_km,
+                    point_budget=round(5_000 * budget_scale),
+                    threshold_label="Reflectivity at or above 25 dBZ",
+                    default_visible=False,
+                    default_opacity=0.55,
+                    default_point_size=5.0,
+                    scale=_reflectivity_scale(),
+                ),
+            ]
+        )
+    else:
+        layers.extend(
+            [
+                _surface_volume_layer(
+                    key="low_level_vertical_motion",
+                    display_name="Low-level vertical motion",
+                    units="m/s",
+                    evidence_kind="native",
+                    source_fields=["winterp"],
+                    derivation=None,
+                    rendering="signed_scalar",
+                    values=view["winterp"][level_index],
+                    mask=np.ones_like(view["winterp"][level_index], dtype=np.bool_),
+                    x_km=view_x,
+                    y_km=view_y,
+                    z_km=float(z_km[level_index]),
+                    point_budget=round(8_000 * budget_scale),
+                    threshold_label=f"Native plane at z = {float(z_km[level_index]):.2f} km",
+                    default_visible=True,
+                    default_opacity=0.72,
+                    default_point_size=5.0,
+                    scale=_low_level_w_scale(),
+                ),
+                _surface_volume_layer(
+                    key="accumulated_surface_rain",
+                    display_name="Accumulated surface rain",
+                    units="mm",
+                    evidence_kind="derived",
+                    source_fields=["rain"],
+                    derivation="native accumulated rain in cm multiplied by 10",
+                    rendering="scalar",
+                    values=view["rain"] * 10.0,
+                    mask=view["rain"] >= 0.01,
+                    x_km=view_x,
+                    y_km=view_y,
+                    z_km=float(z_km[0]),
+                    point_budget=round(5_000 * budget_scale),
+                    threshold_label="Accumulated rain at or above 0.1 mm",
+                    default_visible=True,
+                    default_opacity=0.72,
+                    default_point_size=5.5,
+                    scale=_rain_scale(),
+                ),
+                _volume_layer(
+                    key="precipitating_condensate",
+                    display_name="Low-level precipitating condensate",
+                    units="g/kg",
+                    evidence_kind="derived",
+                    source_fields=["qr", "qs", "qg"],
+                    derivation="1000 * (qr + qs + qg)",
+                    rendering="scalar",
+                    values=precipitating,
+                    mask=(precipitating >= 0.25) & (z_km[:, np.newaxis, np.newaxis] <= 3.25),
+                    x_km=view_x,
+                    y_km=view_y,
+                    z_km=z_km,
+                    point_budget=round(6_000 * budget_scale),
+                    threshold_label=(
+                        "Rain, snow, and hail-treated large ice at or above 0.25 g/kg "
+                        "through 3.25 km"
+                    ),
+                    default_visible=True,
+                    default_opacity=0.24,
+                    default_point_size=3.2,
+                    scale=_precipitating_condensate_scale(),
+                ),
+                _volume_layer(
+                    key="reflectivity",
+                    display_name="Reflectivity",
+                    units="dBZ",
+                    evidence_kind="native",
+                    source_fields=["dbz"],
+                    derivation=None,
+                    rendering="scalar",
+                    values=view["dbz"],
+                    mask=(view["dbz"] >= 20.0) & low_level_volume,
+                    x_km=view_x,
+                    y_km=view_y,
+                    z_km=z_km,
+                    point_budget=round(5_000 * budget_scale),
+                    threshold_label="Reflectivity at or above 20 dBZ",
+                    default_visible=False,
+                    default_opacity=0.52,
+                    default_point_size=5.0,
+                    scale=_reflectivity_scale(),
+                ),
+            ]
+        )
+        wind_vectors = _volume_wind_vectors(
+            view,
+            view_x,
+            view_y,
+            float(z_km[level_index]),
+            level_index,
+            5 if viewport == "storm" else 10,
+        )
+
+    return StormVolumeScene(
+        coordinate_extents_km={
+            "x": {"min": float(np.min(view_x)), "max": float(np.max(view_x))},
+            "y": {"min": float(np.min(view_y)), "max": float(np.max(view_y))},
+            "z": {"min": float(np.min(z_km)), "max": scene_z_max},
+        },
+        coordinate_sizes={
+            "x": len(x_km),
+            "y": len(y_km),
+            "z": int(np.count_nonzero(z_km <= scene_z_max)),
+        },
+        layers=layers,
+        wind_vectors=wind_vectors,
+        wind_reference_m_s=25.0,
+        point_budget=sum(layer.returned_count for layer in layers),
+        source_history_file=history_filename,
+    )
+
+
+def _volume_layer(
+    *,
+    key: str,
+    display_name: str,
+    units: str,
+    evidence_kind: Literal["native", "derived"],
+    source_fields: list[str],
+    derivation: str | None,
+    rendering: Literal["neutral_cloud", "signed_scalar", "scalar", "categorical"],
+    values: np.ndarray[Any, np.dtype[np.float64]],
+    mask: np.ndarray[Any, np.dtype[np.bool_]],
+    x_km: np.ndarray[Any, np.dtype[np.float64]],
+    y_km: np.ndarray[Any, np.dtype[np.float64]],
+    z_km: np.ndarray[Any, np.dtype[np.float64]],
+    point_budget: int,
+    threshold_label: str,
+    default_visible: bool,
+    default_opacity: float,
+    default_point_size: float,
+    scale: ScaleMetadata | None,
+    categories: np.ndarray[Any, np.dtype[np.int64]] | None = None,
+    category_definitions: list[CategoryDefinition] | None = None,
+) -> VolumeLayer:
+    locations = np.argwhere(mask & np.isfinite(values))
+    source_count = len(locations)
+    if source_count > point_budget:
+        stride = max(1, int(np.ceil(source_count / point_budget)))
+        locations = locations[::stride][:point_budget]
+    points = [
+        (
+            round(float(x_km[x_index]), 5),
+            round(float(y_km[y_index]), 5),
+            round(float(z_km[z_index]), 5),
+            round(float(values[z_index, y_index, x_index]), 6),
+            int(categories[z_index, y_index, x_index]) if categories is not None else 0,
+        )
+        for z_index, y_index, x_index in locations
+    ]
+    return VolumeLayer(
+        key=key,
+        display_name=display_name,
+        units=units,
+        evidence_kind=evidence_kind,
+        source_fields=source_fields,
+        derivation=derivation,
+        rendering=rendering,
+        points=points,
+        source_count=source_count,
+        returned_count=len(points),
+        threshold_label=threshold_label,
+        default_visible=default_visible,
+        default_opacity=default_opacity,
+        default_point_size=default_point_size,
+        scale=scale,
+        categories=category_definitions or [],
+    )
+
+
+def _surface_volume_layer(
+    *,
+    values: np.ndarray[Any, np.dtype[np.float64]],
+    mask: np.ndarray[Any, np.dtype[np.bool_]],
+    z_km: float,
+    **kwargs: Any,
+) -> VolumeLayer:
+    return _volume_layer(
+        values=values[np.newaxis, :, :],
+        mask=mask[np.newaxis, :, :],
+        z_km=np.asarray([z_km], dtype=np.float64),
+        **kwargs,
+    )
+
+
+def _volume_wind_vectors(
+    fields: dict[str, np.ndarray[Any, np.dtype[np.float64]]],
+    x_km: np.ndarray[Any, np.dtype[np.float64]],
+    y_km: np.ndarray[Any, np.dtype[np.float64]],
+    z_km: float,
+    level_index: int,
+    stride: int,
+) -> list[VolumeWindVector]:
+    vectors: list[VolumeWindVector] = []
+    for y_index in range(0, len(y_km), stride):
+        for x_index in range(0, len(x_km), stride):
+            u = float(fields["uinterp"][level_index, y_index, x_index])
+            v = float(fields["vinterp"][level_index, y_index, x_index])
+            vectors.append(
+                VolumeWindVector(
+                    x_km=float(x_km[x_index]),
+                    y_km=float(y_km[y_index]),
+                    z_km=z_km,
+                    u_m_s=u,
+                    v_m_s=v,
+                    magnitude_m_s=float(np.hypot(u, v)),
+                )
+            )
+    return vectors
+
+
 def _viewport_bounds(
     viewport: ViewportId,
     x_km: np.ndarray[Any, np.dtype[np.float64]],
     y_km: np.ndarray[Any, np.dtype[np.float64]],
-    primary: PointMarker,
 ) -> dict[str, float]:
     x_min, x_max = float(np.min(x_km) - 0.5), float(np.max(x_km) + 0.5)
     y_min, y_max = float(np.min(y_km) - 0.5), float(np.max(y_km) + 0.5)
     if viewport == "full":
         return {"x_min": x_min, "x_max": x_max, "y_min": y_min, "y_max": y_max}
-    half_width = 30.0
-    focus_x_min = max(x_min, primary.x_km - half_width)
-    focus_x_max = min(x_max, primary.x_km + half_width)
-    focus_y_min = max(y_min, primary.y_km - half_width)
-    focus_y_max = min(y_max, primary.y_km + half_width)
-    if focus_x_max - focus_x_min < half_width * 2:
-        if focus_x_min == x_min:
-            focus_x_max = min(x_max, x_min + half_width * 2)
-        else:
-            focus_x_min = max(x_min, x_max - half_width * 2)
-    if focus_y_max - focus_y_min < half_width * 2:
-        if focus_y_min == y_min:
-            focus_y_max = min(y_max, y_min + half_width * 2)
-        else:
-            focus_y_min = max(y_min, y_max - half_width * 2)
     return {
-        "x_min": focus_x_min,
-        "x_max": focus_x_max,
-        "y_min": focus_y_min,
-        "y_max": focus_y_max,
+        "x_min": max(x_min, STORM_VIEW_BOUNDS_KM["x_min"]),
+        "x_max": min(x_max, STORM_VIEW_BOUNDS_KM["x_max"]),
+        "y_min": max(y_min, STORM_VIEW_BOUNDS_KM["y_min"]),
+        "y_max": min(y_max, STORM_VIEW_BOUNDS_KM["y_max"]),
     }
+
+
+def _what_to_notice_by_view(
+    lens: LensId,
+    time_seconds: float,
+    plan: PlanView,
+    xz_section: VerticalSection,
+    yz_section: VerticalSection,
+) -> dict[str, str]:
+    minutes = round(time_seconds / 60)
+    if lens == "rotating_updraft":
+        w = np.asarray(plan.primary.values, dtype=np.float64)
+        vorticity = np.asarray(plan.overlays["vertical_vorticity"].values, dtype=np.float64)
+        overlap = int(np.count_nonzero((w >= 5.0) & (vorticity >= 0.01)))
+        uh_max = plan.overlays["updraft_helicity"].selected_frame_maximum
+        return {
+            "plan": (
+                f"At {minutes} min, {overlap} cells on the 3.25 km slice combine "
+                f"rising motion of at least 5 m/s with cyclonic vorticity of at least "
+                f"0.01 s^-1; 2-5 km AGL UH peaks at {uh_max:.0f} m^2/s^2."
+            ),
+            "xz": _rotating_section_notice(minutes, xz_section),
+            "yz": _rotating_section_notice(minutes, yz_section),
+        }
+    if lens == "cloud_precipitation":
+        categories = plan.categories
+        if categories is None:
+            plan_notice = f"At {minutes} min, the column-derived cloud view is unavailable."
+        else:
+            common = _most_common_category(categories)
+            plan_notice = (
+                f"At {minutes} min, the column-derived x-y view most often assigns "
+                f"{common.lower()} where condensate is present; column-maximum total "
+                f"condensate reaches {plan.primary.selected_frame_maximum:.2f} g/kg. "
+                "Selecting a cell inspects the native level responsible for that category."
+            )
+        return {
+            "plan": plan_notice,
+            "xz": _cloud_section_notice(minutes, xz_section),
+            "yz": _cloud_section_notice(minutes, yz_section),
+        }
+    w_min = plan.primary.selected_frame_minimum
+    w_max = plan.primary.selected_frame_maximum
+    rain_max = plan.overlays["accumulated_surface_rain"].selected_frame_maximum
+    precip_max = plan.overlays["low_level_precipitating_condensate"].selected_frame_maximum
+    return {
+        "plan": (
+            f"At {minutes} min, current 1.25 km motion spans {w_min:+.1f} to "
+            f"{w_max:+.1f} m/s and precipitating condensate reaches "
+            f"{precip_max:.2f} g/kg; the historical rain footprint peaks at "
+            f"{rain_max:.1f} mm."
+        ),
+        "xz": _low_level_section_notice(minutes, xz_section),
+        "yz": _low_level_section_notice(minutes, yz_section),
+    }
+
+
+def _most_common_category(categories: CategoryLayer) -> str:
+    codes = np.asarray(categories.values, dtype=np.int64)
+    present = codes[codes > 0]
+    definitions = {item.code: item.label for item in categories.categories}
+    if present.size == 0:
+        return "No hydrometeor"
+    return definitions[int(np.bincount(present).argmax())]
+
+
+def _rotating_section_notice(minutes: int, section: VerticalSection) -> str:
+    w = np.asarray(section.primary.values, dtype=np.float64)
+    vorticity = np.asarray(section.overlays["vertical_vorticity"].values, dtype=np.float64)
+    overlap = int(np.count_nonzero((w >= 5.0) & (vorticity >= 0.01)))
+    return (
+        f"At {minutes} min, this {section.orientation} section intersects {overlap} cells "
+        f"with both rising motion of at least 5 m/s and cyclonic vorticity of at least "
+        f"0.01 s^-1; vertical velocity spans "
+        f"{section.primary.selected_frame_minimum:+.1f} to "
+        f"{section.primary.selected_frame_maximum:+.1f} m/s."
+    )
+
+
+def _cloud_section_notice(minutes: int, section: VerticalSection) -> str:
+    categories = section.categories
+    if categories is None:
+        return f"At {minutes} min, this {section.orientation} cloud section is unavailable."
+    common = _most_common_category(categories)
+    total_max = section.primary.selected_frame_maximum
+    precip_max = section.overlays["precipitating_condensate"].selected_frame_maximum
+    coordinate = "y" if section.orientation == "xz" else "x"
+    return (
+        f"At {minutes} min, this {section.orientation} section through {coordinate} = "
+        f"{section.cross_section_coordinate_km:.1f} km most often shows {common.lower()} "
+        f"where condensate is present; total condensate reaches {total_max:.2f} g/kg "
+        f"and precipitating condensate reaches {precip_max:.2f} g/kg."
+    )
+
+
+def _low_level_section_notice(minutes: int, section: VerticalSection) -> str:
+    precip_max = section.overlays["precipitating_condensate"].selected_frame_maximum
+    coordinate = "y" if section.orientation == "xz" else "x"
+    return (
+        f"At {minutes} min, this {section.orientation} section through {coordinate} = "
+        f"{section.cross_section_coordinate_km:.1f} km shows vertical motion from "
+        f"{section.primary.selected_frame_minimum:+.1f} to "
+        f"{section.primary.selected_frame_maximum:+.1f} m/s; current precipitating "
+        f"condensate reaches {precip_max:.2f} g/kg."
+    )
 
 
 def _lens_identity(lens: LensId) -> tuple[str, str]:
@@ -1061,16 +1804,29 @@ def _condensate_scale() -> ScaleMetadata:
     )
 
 
+def _precipitating_condensate_scale() -> ScaleMetadata:
+    return ScaleMetadata(
+        scale_id="supercell_low_level_precipitating_condensate_v1",
+        display_name="Low-level precipitating condensate",
+        units="g/kg",
+        scale_type="fixed_continuous",
+        minimum=0,
+        maximum=10,
+        breakpoints=[0.25, 1, 3, 6],
+        colors=["#f4ecdc", "#dfc18b", "#bd8446", "#8a5526", "#583516"],
+    )
+
+
 def _vorticity_scale() -> ScaleMetadata:
     return ScaleMetadata(
         scale_id="supercell_vertical_vorticity_v1",
-        display_name="Vertical vorticity",
+        display_name="Cyclonic vertical vorticity",
         units="s^-1",
         scale_type="fixed_continuous",
-        minimum=-0.035,
+        minimum=0,
         maximum=0.035,
-        breakpoints=[-0.02, -0.01, -0.005, 0.005, 0.01, 0.02],
-        colors=["#7e22ce", "#ffffff", "#111827"],
+        breakpoints=[0.01, 0.02, 0.03],
+        colors=["#d8c4e2", "#9c5bad", "#632b73", "#32113d"],
     )
 
 
