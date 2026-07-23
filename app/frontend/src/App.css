@@ -731,7 +731,7 @@
   flex: 0 0 auto;
 }
 
-.mountain-waves-state-row {
+.explore-context-state-row {
   display: flex;
   flex-wrap: wrap;
   gap: 0.25rem;
@@ -4784,31 +4784,6 @@ details[open] > summary {
     overflow: auto;
   }
 
-  .integrated-explore-workspace .explore-inspector-tabs {
-    position: sticky;
-    z-index: 3;
-    top: 0;
-    display: grid;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-    gap: 0.2rem;
-    border-bottom: 1px solid var(--color-border);
-    padding: 0.35rem;
-    background: var(--color-surface);
-  }
-
-  .integrated-explore-workspace .explore-inspector-tabs button {
-    padding: 0.34rem 0.2rem;
-    background: transparent;
-    color: var(--color-text-muted);
-    font-size: 0.74rem;
-    box-shadow: none;
-  }
-
-  .integrated-explore-workspace .explore-inspector-tabs .active-control {
-    background: var(--color-accent-soft);
-    color: var(--color-accent-primary);
-  }
-
   .integrated-explore-workspace .explore-inspector-panel {
     display: grid;
     gap: 0.65rem;
@@ -5748,33 +5723,6 @@ details[open] > summary {
     font-size: 0.78rem;
   }
 
-  .integrated-explore-workspace .explore-inspector-tabs {
-    position: static;
-    display: grid;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-    gap: 0;
-    border: 0;
-    padding: 0;
-    background: transparent;
-  }
-
-  .integrated-explore-workspace .explore-inspector-tabs button {
-    border: 0;
-    border-bottom: 2px solid transparent;
-    border-radius: 0;
-    padding: 0.58rem 0.18rem 0.48rem;
-    background: transparent;
-    color: var(--color-text-muted);
-    font-size: 0.7rem;
-    box-shadow: none;
-  }
-
-  .integrated-explore-workspace .explore-inspector-tabs .active-control {
-    border-bottom-color: var(--color-accent-primary);
-    background: transparent;
-    color: var(--color-accent-primary);
-  }
-
   .integrated-explore-workspace .explore-inspector-toggle {
     align-self: center;
     width: 1.85rem;
@@ -5817,8 +5765,9 @@ details[open] > summary {
 
   .integrated-explore-workspace .selected-region-inspector .section-heading {
     display: grid;
-    grid-template-columns: minmax(0, 1fr);
+    grid-template-columns: minmax(0, 1fr) auto;
     gap: 0.3rem;
+    align-items: start;
   }
 
   .integrated-explore-workspace .selected-region-inspector .state-chip {
@@ -5929,11 +5878,13 @@ details[open] > summary {
 
   .simulation-notes-actions {
     display: flex;
+    flex-wrap: wrap;
     gap: 0.6rem;
     align-items: center;
   }
 
-  .simulation-notes-actions p {
+  .simulation-notes-actions p,
+  .simulation-notes-actions small {
     margin: 0;
     color: var(--color-text-muted);
     font-size: 0.72rem;
@@ -5943,23 +5894,46 @@ details[open] > summary {
     grid-column: 1 / -1;
     grid-row: 4;
     display: grid;
-    grid-template-columns: minmax(18rem, 0.8fr) minmax(0, 1.2fr);
-    gap: 1.5rem;
+    grid-template-rows: auto minmax(15rem, auto);
+    gap: 0;
     border-top: 1px solid var(--color-border-strong);
-    padding: 1.15rem 0 2rem;
+    padding: 0 0 2rem;
   }
 
-  .explore-secondary-content > section {
+  .explore-secondary-tabs {
+    display: flex;
+    gap: 0;
+    border-bottom: 1px solid var(--color-border);
+    padding: 0.5rem 0 0;
+  }
+
+  .explore-secondary-tabs button {
+    min-width: 7rem;
+    border: 0;
+    border-bottom: 2px solid transparent;
+    border-radius: 0;
+    padding: 0.65rem 1rem 0.55rem;
+    background: transparent;
+    color: var(--color-text-muted);
+    box-shadow: none;
+  }
+
+  .explore-secondary-tabs button:hover,
+  .explore-secondary-tabs button:focus-visible,
+  .explore-secondary-tabs .active-control {
+    border-bottom-color: var(--color-accent-primary);
+    background: transparent;
+    color: var(--color-accent-primary);
+  }
+
+  .explore-secondary-panel {
     min-width: 0;
-  }
-
-  .explore-secondary-content > section + section {
-    border-left: 1px solid var(--color-border);
-    padding-left: 1.5rem;
+    max-width: 76rem;
+    padding: 1.1rem 0;
   }
 
   .explore-secondary-content .metric-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 
   .explore-secondary-content dd,
@@ -5967,6 +5941,90 @@ details[open] > summary {
   .explore-secondary-content pre {
     overflow-wrap: anywhere;
     word-break: break-word;
+  }
+
+  .explore-science-section,
+  .simulation-notes,
+  .explore-secondary-panel > section {
+    display: grid;
+    gap: 0.65rem;
+  }
+
+  .explore-science-section > *,
+  .simulation-notes > * {
+    margin-top: 0;
+    margin-bottom: 0;
+  }
+
+  .explore-science-callout,
+  .explore-context-notice {
+    border-left: 3px solid var(--color-accent-primary);
+    padding: 0.45rem 0.65rem;
+    background: rgba(232, 243, 249, 0.62);
+  }
+
+  .explore-science-callout p,
+  .explore-context-notice p {
+    margin: 0.2rem 0 0;
+  }
+
+  .explore-context-content {
+    display: grid;
+    gap: 0.55rem;
+  }
+
+  .explore-context-content > * {
+    margin-top: 0;
+    margin-bottom: 0;
+  }
+
+  .explore-context-content > h3 {
+    font-size: 1rem;
+    line-height: 1.25;
+  }
+
+  .explore-context-explanation p {
+    margin: 0;
+  }
+
+  .selected-region-inspector {
+    border-top: 1px solid var(--color-border-strong);
+    border-bottom: 1px solid var(--color-border);
+    padding: 0.65rem 0;
+  }
+
+  .selected-region-inspector h4 {
+    margin: 0;
+    font-size: 0.8rem;
+  }
+
+  .simulation-notes-description {
+    color: var(--color-text-muted);
+  }
+
+  .simulation-note-state {
+    align-self: center;
+    color: var(--color-text-muted);
+    font-size: 0.72rem;
+    font-weight: 750;
+  }
+
+  .simulation-note-state-unsaved {
+    color: #8a5b12;
+  }
+
+  .simulation-note-state-failed,
+  .simulation-note-failure {
+    color: var(--color-danger);
+  }
+
+  .simulation-note-failure {
+    display: grid;
+    justify-items: start;
+    gap: 0.55rem;
+    border-left: 3px solid var(--color-danger);
+    padding: 0.65rem;
+    background: #fff4f2;
   }
 
   .integrated-explore-workspace .visualizer-shell-focused-scene .true3d-viewer {
@@ -6330,7 +6388,8 @@ details[open] > summary {
 
   .integrated-explore-workspace
     .visualizer-shell.mountain-waves-explore-shell
-    .mountain-waves-control-strip fieldset {
+    .mountain-waves-control-strip
+    fieldset {
     border: 0;
     padding: 0;
   }
@@ -6422,5 +6481,4 @@ details[open] > summary {
     .mountain-waves-overlay-controls {
     grid-template-columns: repeat(5, auto);
   }
-
 }

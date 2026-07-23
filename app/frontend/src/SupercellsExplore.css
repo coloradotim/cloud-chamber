@@ -1,6 +1,6 @@
 .supercells-explore-shell {
   display: grid;
-  grid-template-rows: minmax(32rem, calc(100vh - 21rem)) auto auto;
+  grid-template-rows: minmax(32rem, calc(100vh - 21rem)) auto auto auto;
   gap: 8px;
   min-width: 0;
   padding: 10px 0 18px;
@@ -311,10 +311,6 @@
   overflow: auto;
 }
 
-.supercells-workbench > .explore-secondary-content {
-  display: none;
-}
-
 .supercells-scene .true3d-context-stack {
   max-width: calc(100% - 25rem);
 }
@@ -330,22 +326,6 @@
 
 .supercells-context-panel .metric-grid {
   grid-template-columns: repeat(2, minmax(0, 1fr));
-}
-
-.supercells-state-row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.25rem;
-  margin-bottom: 0.55rem;
-}
-
-.supercells-state-row span {
-  border-radius: 3px;
-  padding: 0.2rem 0.36rem;
-  background: var(--color-accent-soft);
-  color: var(--color-text-primary);
-  font-size: 0.66rem;
-  font-weight: 750;
 }
 
 .context-callout {
@@ -988,35 +968,6 @@
     align-items: center;
     border-bottom: 1px solid var(--color-border);
     padding-left: 8px;
-  }
-
-  .supercells-workbench > .explore-inspector .explore-inspector-tabs {
-    position: sticky;
-    z-index: 3;
-    top: 0;
-    display: grid;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-    gap: 0;
-    border-bottom: 1px solid var(--color-border);
-    padding: 0;
-    background: var(--color-surface);
-  }
-
-  .supercells-workbench > .explore-inspector .explore-inspector-tabs button {
-    min-height: 1.9rem;
-    border: 0;
-    border-bottom: 2px solid transparent;
-    border-radius: 0;
-    padding: 0.35rem 0.18rem;
-    background: transparent;
-    color: var(--color-text-muted);
-    font-size: 0.68rem;
-    box-shadow: none;
-  }
-
-  .supercells-workbench > .explore-inspector .explore-inspector-tabs .active-control {
-    border-bottom-color: var(--color-accent-primary);
-    color: var(--color-accent-primary);
   }
 
   .supercells-workbench > .explore-inspector .explore-inspector-toggle {

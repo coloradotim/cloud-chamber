@@ -61,7 +61,7 @@ test.describe("mocked smoke: visualizer occlusion regression", () => {
   });
 
   test("3-D scene does not cover its primary controls", async ({ page }) => {
-    await expect(page.getByText(/what am i seeing/i).first()).toBeVisible({
+    await expect(page.getByLabel("Current scientific context")).toBeVisible({
       timeout: 12_000,
     });
     await expect(page.getByLabel("True 3-D scalar field viewer")).toBeVisible({

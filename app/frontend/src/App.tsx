@@ -1,12 +1,19 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
-import type { CSSProperties, FormEvent } from "react";
+import type { CSSProperties, FormEvent, ReactNode } from "react";
 
 import "./App.css";
 import { CloudWorldsHome } from "./CloudWorldsHome";
-import { ExploreInspector, IntegratedExploreWorkspace } from "./IntegratedExploreWorkspace";
+import {
+  ExploreContextContent,
+  ExploreInspector,
+  ExploreSelectedEvidence,
+  ExploreSecondarySections,
+  IntegratedExploreWorkspace,
+} from "./IntegratedExploreWorkspace";
 import { MountainWavesExplore } from "./MountainWavesExplore";
 import { type MountainWavesSimulation, MountainWavesWorld } from "./MountainWavesWorld";
 import { NativeSlicePositionControl } from "./NativeSlicePositionControl";
+import { SimulationNotes } from "./SimulationNotes";
 import { SupercellsExplore } from "./SupercellsExplore";
 import { type SupercellSimulation, SupercellsWorld } from "./SupercellsWorld";
 import {
@@ -1425,75 +1432,6 @@ type SelectedRegionRequest = {
   neighborhood?: number;
 };
 
-type AxisSelection = {
-  dimension: string;
-  start_index: number;
-  end_index: number;
-  start_coordinate: number | string | null;
-  end_coordinate: number | string | null;
-  units: string | null;
-};
-
-type TimeValue = {
-  time_seconds: number | null;
-  value: number | null;
-};
-
-type SelectedRegionDiagnosticsResponse = {
-  result_id: string;
-  run_id: string;
-  scenario_id: string;
-  region: {
-    region_type: RegionType;
-    requested: Record<string, unknown>;
-    x: AxisSelection | null;
-    y: AxisSelection | null;
-    vertical: AxisSelection | null;
-    native_grid: string | null;
-    cell_count: number | null;
-  };
-  diagnostics: {
-    available: boolean;
-    local_max_w_m_s: number | null;
-    time_of_local_max_w_seconds: number | null;
-    local_min_w_m_s: number | null;
-    time_of_local_min_w_seconds: number | null;
-    local_w_max_time_series: TimeValue[];
-    local_w_min_time_series: TimeValue[];
-    local_max_qc_kg_kg: number | null;
-    time_of_local_max_qc_seconds: number | null;
-    first_local_cloud_time_seconds: number | null;
-    local_cloud_fraction_time_series: TimeValue[];
-    local_qc_max_time_series: TimeValue[];
-    local_cloud_base_time_series: TimeValue[];
-    local_cloud_top_time_series: TimeValue[];
-    local_max_qc_height_time_series: TimeValue[];
-    local_max_w_height_time_series: TimeValue[];
-    local_rain_present: boolean;
-    first_local_rain_time_seconds: number | null;
-    local_max_qr_kg_kg: number | null;
-    time_of_local_max_qr_seconds: number | null;
-    local_qr_max_time_series: TimeValue[];
-  };
-  comparison_to_domain: {
-    local_max_w_fraction_of_domain: number | null;
-    local_max_qc_fraction_of_domain: number | null;
-    local_first_cloud_time_delta_seconds: number | null;
-    local_cloud_top_fraction_of_domain: number | null;
-    local_first_rain_time_delta_seconds: number | null;
-    caveats: string[];
-  };
-  interpretation: {
-    thermal_fate_label: string;
-    confidence: ProcessSupport;
-    main_limiting_factor: string;
-    summary: string;
-    caveats: string[];
-  };
-  provenance: ProvenancePayload;
-  caveats: string[];
-};
-
 type FieldViewDefaults = {
   field: string;
   time_index: number;
@@ -2260,34 +2198,6 @@ async function fetchVisualizationPointCloud(
     throw new Error(await responseError(response, "Unable to load 3-D scalar point layer."));
   }
   return response.json() as Promise<PointCloudResponse>;
-}
-
-async function fetchSelectedRegionDiagnostics(
-  resultId: string,
-  request: SelectedRegionRequest,
-): Promise<SelectedRegionDiagnosticsResponse> {
-  const search = new URLSearchParams({
-    region_type: request.regionType,
-    neighborhood: String(request.neighborhood ?? 0),
-  });
-  addOptionalIndex(search, "x_index", request.xIndex);
-  addOptionalIndex(search, "y_index", request.yIndex);
-  addOptionalIndex(search, "z_index", request.zIndex);
-  addOptionalIndex(search, "x_start", request.xStart);
-  addOptionalIndex(search, "x_end", request.xEnd);
-  addOptionalIndex(search, "y_start", request.yStart);
-  addOptionalIndex(search, "y_end", request.yEnd);
-  addOptionalIndex(search, "z_start", request.zStart);
-  addOptionalIndex(search, "z_end", request.zEnd);
-  const response = await fetch(`/api/results/${resultId}/diagnostics/selected-region?${search}`);
-  if (!response.ok) {
-    throw new Error(await responseError(response, "Unable to inspect the selected region."));
-  }
-  return response.json() as Promise<SelectedRegionDiagnosticsResponse>;
-}
-
-function addOptionalIndex(search: URLSearchParams, key: string, value: number | undefined) {
-  if (value !== undefined) search.set(key, String(value));
 }
 
 async function responseError(response: Response, fallback: string): Promise<string> {
@@ -4191,7 +4101,6 @@ export function App() {
     <ExploreWorkspace
       selectedResult={selectedResult}
       comparisonStory={comparisonStoryActive ? comparisonStory : null}
-      onResultUpdated={updateResultInList}
       onBackToResults={() => {
         setComparisonStoryActive(false);
         setActiveSection("results");
@@ -4373,7 +4282,6 @@ export function App() {
             <ExploreWorkspace
               selectedResult={selectedResult}
               comparisonStory={productLocation === "comparison" ? comparisonStory : null}
-              onResultUpdated={updateResultInList}
               onBackToResults={returnToTradeCumulus}
               onOpenResult={(resultId) => {
                 selectOrdinaryResult(resultId);
@@ -7541,7 +7449,6 @@ function NotebookWorkspace({
 function ExploreWorkspace({
   selectedResult,
   comparisonStory,
-  onResultUpdated,
   onOpenResult,
   onBackToResults,
   worldName,
@@ -7554,7 +7461,6 @@ function ExploreWorkspace({
 }: {
   selectedResult: ResultCard | undefined;
   comparisonStory: TradeCumulusComparisonStoryResponse | null;
-  onResultUpdated: (result: ResultCard) => void;
   onOpenResult: (resultId: string) => void;
   onBackToResults: () => void;
   worldName?: string;
@@ -7592,7 +7498,6 @@ function ExploreWorkspace({
             backLabel={backLabel}
             onBack={onBack}
             onCompare={onCompare}
-            onResultUpdated={onResultUpdated}
           />
         </section>
       )}
@@ -9835,7 +9740,6 @@ export function VisualizerSceneShell({
   backLabel,
   onBack,
   onCompare,
-  onResultUpdated,
 }: {
   result: ResultCard;
   worldName?: string;
@@ -9845,7 +9749,6 @@ export function VisualizerSceneShell({
   backLabel?: string;
   onBack?: () => void;
   onCompare?: () => void;
-  onResultUpdated?: (result: ResultCard) => void;
 }) {
   const resultId = result.result_id;
   const updraftLensEligible = tradeCumulusUpdraftLensEligible(result);
@@ -9894,10 +9797,6 @@ export function VisualizerSceneShell({
   const [sliceLoadAttempt, setSliceLoadAttempt] = useState(0);
   const [updraftLensLoadAttempt, setUpdraftLensLoadAttempt] = useState(0);
   const [selectedRegion, setSelectedRegion] = useState<SelectedRegionRequest | null>(null);
-  const [regionDiagnostics, setRegionDiagnostics] =
-    useState<SelectedRegionDiagnosticsResponse | null>(null);
-  const [regionStatus, setRegionStatus] = useState("Click a slice cell to inspect that point.");
-  const [regionError, setRegionError] = useState<string | null>(null);
   const [updraftLensDefaults, setUpdraftLensDefaults] = useState<UpdraftLensDefaults | null>(null);
   const [updraftLensActive, setUpdraftLensActive] = useState(false);
   const [updraftLensFrame, setUpdraftLensFrame] = useState<UpdraftLensFrame | null>(null);
@@ -9944,9 +9843,6 @@ export function VisualizerSceneShell({
     setSliceLoadAttempt(0);
     setUpdraftLensLoadAttempt(0);
     setSelectedRegion(null);
-    setRegionDiagnostics(null);
-    setRegionError(null);
-    setRegionStatus("Click a slice cell to inspect that point.");
     setUpdraftLensDefaults(null);
     setUpdraftLensActive(false);
     setUpdraftLensFrame(null);
@@ -10112,9 +10008,6 @@ export function VisualizerSceneShell({
     selectedField?.provenance.provenance_label ??
     catalog?.provenance.provenance_label ??
     "CM1-derived visualization-ready data; rendering not implemented";
-  const selectedDefaults = defaultsForField(viewDefaults, selectedFieldName);
-  const selectedTimeFieldDefaults = defaultsForField(selectedTimeDefaults, selectedFieldName);
-  const selectedTimeSliceDefaults = defaultsForField(selectedTimeDefaults, sliceFieldName);
   const selectedTimeValue = timeOptions[displayTimeIndex] ?? null;
   const selectedTimeLabel = formatTimeValue(selectedTimeValue);
   const displayTimeValue = timeOptions[displayTimeIndex] ?? null;
@@ -10167,15 +10060,9 @@ export function VisualizerSceneShell({
       : null,
   ].filter((preset): preset is { label: string; seconds: number } => preset !== null);
 
-  const clearSelectedRegionForTimeChange = useCallback(
-    (nextStatus = "Click a slice cell to inspect that point.") => {
-      setSelectedRegion(null);
-      setRegionDiagnostics(null);
-      setRegionError(null);
-      setRegionStatus(nextStatus);
-    },
-    [],
-  );
+  const clearSelectedRegionForTimeChange = useCallback(() => {
+    setSelectedRegion(null);
+  }, []);
 
   const handleTimeIndexChange = useCallback(
     (nextIndex: number) => {
@@ -10199,7 +10086,7 @@ export function VisualizerSceneShell({
     }
     setPlaybackTimeIndex(resolvedTimeIndex);
     setIsPlaybackRunning(true);
-    clearSelectedRegionForTimeChange("Pause playback to select a cell and explain this time step.");
+    clearSelectedRegionForTimeChange();
   }, [
     clearSelectedRegionForTimeChange,
     isPlaybackRunning,
@@ -10312,11 +10199,9 @@ export function VisualizerSceneShell({
 
   useEffect(() => {
     if (!isPlaybackRunning || !canPlayTimelapse || !playbackFrameReady) return undefined;
-    clearSelectedRegionForTimeChange("Pause playback to select a cell and explain this time step.");
+    clearSelectedRegionForTimeChange();
     const timeoutId = window.setTimeout(() => {
-      clearSelectedRegionForTimeChange(
-        "Pause playback to select a cell and explain this time step.",
-      );
+      clearSelectedRegionForTimeChange();
       setPlaybackTimeIndex((current) => {
         if (current >= timeMax) {
           setIsPlaybackRunning(false);
@@ -10552,41 +10437,9 @@ export function VisualizerSceneShell({
     updraftLensWindMode,
   ]);
 
-  useEffect(() => {
-    if (!selectedRegion) {
-      setRegionDiagnostics(null);
-      setRegionError(null);
-      setRegionStatus("Click a slice cell to inspect that point.");
-      return;
-    }
-    let active = true;
-    setRegionDiagnostics(null);
-    setRegionError(null);
-    setRegionStatus("Loading selected-point diagnostics...");
-    fetchSelectedRegionDiagnostics(result.result_id, selectedRegion)
-      .then((payload) => {
-        if (!active) return;
-        setRegionDiagnostics(payload);
-        setRegionStatus("Point ready");
-      })
-      .catch((caught: unknown) => {
-        if (!active) return;
-        setRegionDiagnostics(null);
-        setRegionError(
-          caught instanceof Error ? caught.message : "Unable to inspect the selected point.",
-        );
-        setRegionStatus("Point unavailable");
-      });
-    return () => {
-      active = false;
-    };
-  }, [result.result_id, selectedRegion]);
-
   function selectPointFromSlice(slice: SliceResponse, rowIndex: number, columnIndex: number) {
     if (isPlaybackRunning) {
-      clearSelectedRegionForTimeChange(
-        "Pause playback to select a cell and explain this time step.",
-      );
+      clearSelectedRegionForTimeChange();
       return;
     }
     setSelectedRegion(selectionFromSlice(slice, rowIndex, columnIndex, "point"));
@@ -10594,9 +10447,7 @@ export function VisualizerSceneShell({
 
   function selectPointFromUpdraftLens(selection: UpdraftLensPointSelection) {
     if (isPlaybackRunning) {
-      clearSelectedRegionForTimeChange(
-        "Pause playback to select a cell and explain this time step.",
-      );
+      clearSelectedRegionForTimeChange();
       return;
     }
     setSelectedRegion({
@@ -11107,160 +10958,30 @@ export function VisualizerSceneShell({
             )}
           </div>
 
-          <ExploreInspector
-            sections={{
-              explain:
-                selectedRegion || regionError || isPlaybackRunning ? (
+          <ExploreInspector>
+            <ResultExplanationPanel
+              result={result}
+              simulationName={productSimulationName}
+              tradeCumulus={updraftLensEligible}
+              isNoCloudWithUpdraft={isNoCloudWithUpdraft}
+              updraftLensActive={updraftLensActive}
+              updraftLensFrame={updraftLensFrame}
+              selectedTimeLabel={selectedTimeLabel}
+              activeSliceLabel={activeSliceLabel}
+              selectedEvidence={
+                selectedRegion || isPlaybackRunning ? (
                   <SelectedRegionInspector
                     selectedRegion={selectedRegion}
                     slice={updraftLensActive ? null : activeSlice}
                     selectedValue={selectedSliceValue}
-                    diagnostics={regionDiagnostics}
-                    status={regionStatus}
-                    error={regionError}
+                    updraftLensFrame={updraftLensActive ? updraftLensFrame : null}
                     playbackRunning={isPlaybackRunning}
+                    onClear={() => setSelectedRegion(null)}
                   />
-                ) : (
-                  <ResultExplanationPanel
-                    result={result}
-                    tradeCumulus={updraftLensEligible}
-                    isNoCloudWithUpdraft={isNoCloudWithUpdraft}
-                    updraftLensActive={updraftLensActive}
-                    updraftLensFrame={updraftLensFrame}
-                    selectedTimeLabel={selectedTimeLabel}
-                    activeSliceLabel={activeSliceLabel}
-                  />
-                ),
-              notes: <SimulationNotesPanel result={result} onResultUpdated={onResultUpdated} />,
-              details: (
-                <>
-                  <SimulationDetailsPanel
-                    result={result}
-                    simulationRecord={simulationRecord}
-                    assetPath={assetPath}
-                    selectedField={selectedField}
-                    sliceField={sliceField}
-                    selectedTimeLabel={selectedTimeLabel}
-                    activeSliceLabel={activeSliceLabel}
-                  />
-                  <details className="technical-details">
-                    <summary>Visualization details</summary>
-                    <dl className="metric-grid">
-                      <Metric label="Run ID" value={result.run_id} />
-                      <Metric label="Renderer" value="Direct Three.js point cloud" />
-                      <Metric
-                        label="3-D field"
-                        value={
-                          selectedField
-                            ? `${selectedField.raw_field_name} (${selectedField.display_name})`
-                            : "Unavailable"
-                        }
-                      />
-                      <Metric label="3-D scene time" value={sceneTimeLabel} />
-                      <Metric label="Slice time" value={selectedTimeLabel} />
-                      <Metric label="Slice plane" value={activeSliceLabel} />
-                      <Metric label="Slice plane visible" value={showSlicePlanes ? "Yes" : "No"} />
-                      <Metric
-                        label={selectedEncoding?.thresholdLabel ?? "Visible threshold"}
-                        value={formatScientific(
-                          threshold * scalarDisplayScale(selectedField),
-                          scalarDisplayUnits(selectedField),
-                        )}
-                      />
-                      <Metric label="Opacity" value={String(opacity)} />
-                      <Metric label="Point size" value={`${pointSize}px`} />
-                      <Metric
-                        label="Point count"
-                        value={
-                          pointCloud
-                            ? `${pointCloud.stats.returned_count.toLocaleString()} of ${pointCloud.stats.source_count.toLocaleString()}`
-                            : "Unavailable"
-                        }
-                      />
-                      <Metric
-                        label={selectedEncoding?.rangeLabel ?? "3-D field range"}
-                        value={
-                          pointCloud
-                            ? `${formatFieldMaybeNumber(pointCloud.stats.min_value, selectedField)} to ${formatFieldMaybeNumber(
-                                pointCloud.stats.max_value,
-                                selectedField,
-                              )}`
-                            : "Unavailable"
-                        }
-                      />
-                      <Metric
-                        label="Selected-field range"
-                        value={
-                          pointCloud
-                            ? `${formatFieldMaybeNumber(pointCloud.stats.field_min_value, selectedField)} to ${formatFieldMaybeNumber(
-                                pointCloud.stats.field_max_value,
-                                selectedField,
-                              )}`
-                            : "Unavailable"
-                        }
-                      />
-                      <Metric
-                        label="Downsampling"
-                        value={
-                          pointCloud?.stats.downsampled
-                            ? `Deterministic stride ${pointCloud.stats.downsample_stride}`
-                            : "Not applied"
-                        }
-                      />
-                      <Metric
-                        label="Default source"
-                        value={
-                          selectedTimeFieldDefaults?.source ??
-                          selectedDefaults?.source ??
-                          "domain center fallback"
-                        }
-                      />
-                      <Metric
-                        label="Slice source"
-                        value={
-                          sliceField
-                            ? `${sliceField.raw_field_name} (${sliceField.display_name})`
-                            : "Unavailable"
-                        }
-                      />
-                      <Metric
-                        label="Slice orientation"
-                        value={
-                          activeSlicePlane === "horizontal" && sceneHorizontalSlice
-                            ? `${sceneHorizontalSlice.selection.orientation} at ${sceneHorizontalSlice.selection.selected_dimension}[${sceneHorizontalSlice.selection.selected_index}]`
-                            : sceneVerticalSlice
-                              ? `${sceneVerticalSlice.selection.orientation} at ${sceneVerticalSlice.selection.selected_dimension}[${sceneVerticalSlice.selection.selected_index}]`
-                              : "Unavailable"
-                        }
-                      />
-                      <Metric label="Domain x extent" value={extentLabel(pointCloud, "xh")} />
-                      <Metric label="Domain y extent" value={extentLabel(pointCloud, "yh")} />
-                      <Metric label="Domain z extent" value={verticalExtentLabel(pointCloud)} />
-                      <Metric
-                        label="Active cloud z range"
-                        value={
-                          pointCloud
-                            ? `${formatMaybeNumber(pointCloud.stats.active_z_min, verticalCoordinateUnit(pointCloud))} to ${formatMaybeNumber(
-                                pointCloud.stats.active_z_max,
-                                verticalCoordinateUnit(pointCloud),
-                              )}`
-                            : "Unavailable"
-                        }
-                      />
-                      <Metric
-                        label="Max 3-D field location"
-                        value={maxPointLocationLabel(pointCloud)}
-                      />
-                      <Metric
-                        label="Selected-time slice default"
-                        value={selectedTimeSliceDefaults?.source ?? "Unavailable"}
-                      />
-                    </dl>
-                  </details>
-                </>
-              ),
-            }}
-          />
+                ) : undefined
+              }
+            />
+          </ExploreInspector>
         </div>
 
         {catalog && sliceField && (
@@ -11397,6 +11118,37 @@ export function VisualizerSceneShell({
             )}
           </section>
         )}
+
+        <ExploreSecondarySections
+          sections={{
+            science: <TradeCumulusScience result={result} />,
+            notes: simulationRecord?.simulation_id ? (
+              <SimulationNotes
+                worldId={simulationRecord.world_id}
+                simulationId={simulationRecord.simulation_id}
+                simulationName={productSimulationName}
+              />
+            ) : (
+              <section className="simulation-note-failure">
+                <h3>Simulation notes</h3>
+                <p role="alert">
+                  Notes are unavailable because this result has no stable Simulation identity.
+                </p>
+              </section>
+            ),
+            details: (
+              <SimulationDetailsPanel
+                result={result}
+                simulationRecord={simulationRecord}
+                assetPath={assetPath}
+                selectedField={selectedField}
+                sliceField={sliceField}
+                selectedTimeLabel={selectedTimeLabel}
+                activeSliceLabel={activeSliceLabel}
+              />
+            ),
+          }}
+        />
       </section>
     </IntegratedExploreWorkspace>
   );
@@ -11539,20 +11291,24 @@ function ExploreRenderingControls({
 
 function ResultExplanationPanel({
   result,
+  simulationName,
   tradeCumulus,
   isNoCloudWithUpdraft,
   updraftLensActive,
   updraftLensFrame,
   selectedTimeLabel,
   activeSliceLabel,
+  selectedEvidence,
 }: {
   result: ResultCard;
+  simulationName: string;
   tradeCumulus: boolean;
   isNoCloudWithUpdraft: boolean;
   updraftLensActive: boolean;
   updraftLensFrame: UpdraftLensFrame | null;
   selectedTimeLabel: string;
   activeSliceLabel: string;
+  selectedEvidence?: ReactNode;
 }) {
   const cloudLabel = tradeCumulus
     ? fieldQualityBlocksEvidence(result, "qc")
@@ -11571,108 +11327,84 @@ function ResultExplanationPanel({
           "m/s",
         )}. Warm colors mark rising air, cool colors mark sinking air, and the black outline marks cloud water.`
       : `At model time ${selectedTimeLabel}, the 3-D cloud field and ${activeSliceLabel} show the same saved model state. The plane in the scene locates the Field Slice in the cloud domain.`;
+  const identity = updraftLensActive ? "Updraft Lens" : "Field";
+  const question = updraftLensActive
+    ? "Where is air rising and sinking through cloud?"
+    : "What does this saved cloud field show now?";
   return (
-    <section className="selected-region-inspector" aria-label="Result-level explanation panel">
-      <div className="section-heading compact-heading">
-        <div>
-          <h3>What am I seeing?</h3>
-        </div>
-        <StatusBadge
-          label={
-            cloudLabel === "Cloud formed"
-              ? "Cloud formed"
-              : cloudLabel === "No cloud formed"
-                ? "No cloud formed"
-                : cloudLabel
-          }
-          tone={cloudLabel === "Cloud formed" ? "good" : "warning"}
-        />
-      </div>
-      <p>{currentViewExplanation}</p>
-      <section aria-label="Current context">
-        <dl className="context-metrics">
-          <Metric label="Model time" value={selectedTimeLabel} />
-          <Metric label="First cloud" value={formatSeconds(resultFirstCloudTime(result))} />
-          <Metric label="Cloud water max" value={formatMixingRatio(resultMaxQc(result))} />
-          <Metric
-            label="Vertical velocity"
-            value={`${formatNumber(resultMinDowndraft(result), "m/s")} to ${formatNumber(
-              resultMaxUpdraft(result),
-              "m/s",
-            )}`}
+    <ExploreContextContent
+      identity={identity}
+      question={question}
+      explanation={<p>{currentViewExplanation}</p>}
+      selectedEvidence={selectedEvidence}
+      whatToNotice={
+        <div className="explore-context-status">
+          <StatusBadge
+            label={cloudLabel}
+            tone={cloudLabel === "Cloud formed" ? "good" : "warning"}
           />
-        </dl>
-      </section>
-      {isNoCloudWithUpdraft && (
-        <p>For this no-cloud result, use vertical velocity (w) slices to inspect the thermals.</p>
-      )}
-    </section>
+          {isNoCloudWithUpdraft && (
+            <p>Use vertical velocity slices to inspect thermals that did not produce cloud.</p>
+          )}
+        </div>
+      }
+      orientation={[
+        { label: "Simulation", value: simulationName },
+        { label: "View", value: identity },
+        { label: "Model time", value: selectedTimeLabel },
+        { label: "Slice", value: activeSliceLabel },
+        {
+          label: "Relevant caveat",
+          value:
+            result.runtime_integrity?.state === "caveated"
+              ? "This Simulation carries runtime-integrity caveats; see Details."
+              : "The view describes retained saved output, not continuous model evolution.",
+        },
+      ]}
+      selectionPrompt={
+        selectedEvidence ? undefined : "Select a slice cell for coordinated native-grid evidence."
+      }
+    />
   );
 }
 
-function SimulationNotesPanel({
-  result,
-  onResultUpdated,
-}: {
-  result: ResultCard;
-  onResultUpdated?: (result: ResultCard) => void;
-}) {
-  const [draft, setDraft] = useState(result.notes ?? "");
-  const [status, setStatus] = useState("");
-  const [saving, setSaving] = useState(false);
-  const statusResultIdRef = useRef(result.result_id);
-
-  useEffect(() => {
-    const resultChanged = statusResultIdRef.current !== result.result_id;
-    statusResultIdRef.current = result.result_id;
-    setDraft(result.notes ?? "");
-    if (resultChanged) setStatus("");
-  }, [result.result_id, result.notes]);
-
-  async function saveNote(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    setSaving(true);
-    setStatus("Saving note...");
-    try {
-      const updated = await patchResultCard(result.result_id, {
-        notes: draft.trim() || null,
-      });
-      setDraft(updated.notes ?? "");
-      onResultUpdated?.(updated);
-      setStatus("Note saved");
-    } catch (caught) {
-      setStatus(caught instanceof Error ? caught.message : "Unable to save note.");
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  const savedNote = result.notes ?? "";
+function TradeCumulusScience({ result }: { result: ResultCard }) {
   return (
-    <section aria-labelledby="simulation-notes-title">
-      <h3 id="simulation-notes-title">Simulation notes</h3>
-      <form className="simulation-notes-form" onSubmit={(event) => void saveNote(event)}>
-        <label htmlFor={`simulation-notes-${result.result_id}`}>
-          <span className="sr-only">Notes for {result.name}</span>
-          <textarea
-            id={`simulation-notes-${result.result_id}`}
-            aria-label="Simulation notes"
-            rows={9}
-            placeholder="Record observations, questions, or follow-up ideas."
-            value={draft}
-            onChange={(event) => {
-              setDraft(event.target.value);
-              setStatus("");
-            }}
-          />
-        </label>
-        <div className="simulation-notes-actions">
-          <button type="submit" disabled={saving || draft === savedNote}>
-            {saving ? "Saving..." : "Save note"}
-          </button>
-          {status && <p role="status">{status}</p>}
-        </div>
-      </form>
+    <section className="explore-science-section">
+      <p className="eyebrow">Science</p>
+      <h3>Cloud-field evolution</h3>
+      <p>
+        Follow the timing and magnitude of cloud water together with the vertical-motion envelope.
+        The Updraft Lens shows their spatial relationship at one saved time; these Simulation-wide
+        extrema summarize the retained history.
+      </p>
+      <dl className="metric-grid compact-metric-grid">
+        <Metric label="First cloud" value={formatSeconds(resultFirstCloudTime(result))} />
+        <Metric label="Maximum cloud water" value={formatMixingRatio(resultMaxQc(result))} />
+        <Metric
+          label="Vertical-motion envelope"
+          value={`${formatNumber(resultMinDowndraft(result), "m/s")} to ${formatNumber(
+            resultMaxUpdraft(result),
+            "m/s",
+          )}`}
+        />
+        <Metric
+          label="Coherent cloud top"
+          value={formatNumber(resultCloudTopMeters(result), "m")}
+        />
+        <Metric
+          label="Latest retained output"
+          value={formatSeconds(resultLatestOutputTime(result))}
+        />
+        <Metric label="Surface rain" value={surfaceRainOutcome(result)} />
+      </dl>
+      <details>
+        <summary>Interpretation boundaries</summary>
+        <p>
+          Lens colors and boundaries are visualization interpretations of retained CM1 fields.
+          Extrema describe saved outputs and do not identify a causal cloud process by themselves.
+        </p>
+      </details>
     </section>
   );
 }
@@ -11899,6 +11631,48 @@ function selectedUpdraftLensValue(
   return frame.w_values_m_s[indices[rowDimension]]?.[indices[columnDimension]] ?? null;
 }
 
+function selectedUpdraftLensEvidence(
+  frame: UpdraftLensFrame,
+  selectedRegion: SelectedRegionRequest,
+): {
+  x: string;
+  y: string;
+  z: string;
+  verticalVelocity: number | null;
+  cloudy: boolean;
+} | null {
+  const xIndex = selectedRegion.xIndex;
+  const yIndex = selectedRegion.yIndex;
+  const zIndex = selectedRegion.zIndex;
+  if (xIndex === undefined || yIndex === undefined || zIndex === undefined) return null;
+  const indices = { x: xIndex, y: yIndex, z: zIndex };
+  if (indices[frame.plane_dimension] !== frame.plane_index) return null;
+  const rowDimension = frame.dimension_order[0];
+  const columnDimension = frame.dimension_order[1];
+  if (!rowDimension || !columnDimension) return null;
+  const rowIndex = indices[rowDimension];
+  const columnIndex = indices[columnDimension];
+  return {
+    x: updraftLensCoordinateLabel(frame.x_values_km, xIndex),
+    y: updraftLensCoordinateLabel(frame.y_values_km, yIndex),
+    z: updraftLensCoordinateLabel(frame.z_values_km, zIndex),
+    verticalVelocity: frame.w_values_m_s[rowIndex]?.[columnIndex] ?? null,
+    cloudy: frame.cloud_mask[rowIndex]?.[columnIndex] ?? false,
+  };
+}
+
+function updraftLensCoordinateLabel(valuesKm: number[], index: number): string {
+  const coordinate = valuesKm[index];
+  return coordinate === undefined ? `index ${index}` : `${formatCompactNumber(coordinate)} km`;
+}
+
+function motionStateLabel(value: number | null): string {
+  if (value === null || !Number.isFinite(value)) return "Motion unavailable";
+  if (value > 0.1) return "Rising";
+  if (value < -0.1) return "Descending";
+  return "Near neutral";
+}
+
 function updraftLensSliceLabel(
   frame: UpdraftLensFrame | null,
   orientation: SceneSlicePlane,
@@ -12087,200 +11861,82 @@ function SelectedRegionInspector({
   selectedRegion,
   slice,
   selectedValue,
-  diagnostics,
-  status,
-  error,
+  updraftLensFrame,
   playbackRunning,
+  onClear,
 }: {
   selectedRegion: SelectedRegionRequest | null;
   slice: SliceResponse | null;
   selectedValue: number | null;
-  diagnostics: SelectedRegionDiagnosticsResponse | null;
-  status: string;
-  error: string | null;
+  updraftLensFrame: UpdraftLensFrame | null;
   playbackRunning?: boolean;
+  onClear: () => void;
 }) {
-  if (!selectedRegion && !error && !playbackRunning) {
-    return null;
-  }
-
-  return (
-    <section className="selected-region-inspector" aria-label="What happened here panel">
-      <div className="section-heading compact-heading">
-        <div>
-          <p className="eyebrow">Explanation</p>
-          <h3>What happened here?</h3>
-        </div>
-        <p className="state-chip">
-          {playbackRunning && !selectedRegion && !error ? "Playback running" : status}
-        </p>
-      </div>
-
-      {error && <p role="alert">{error}</p>}
-
-      {playbackRunning && !selectedRegion && !error && (
+  if (!selectedRegion && !playbackRunning) return null;
+  if (playbackRunning && !selectedRegion) {
+    return (
+      <section className="selected-region-inspector">
+        <p className="eyebrow">Selection paused</p>
+        <h4>Playback is running</h4>
         <p>Pause playback to select a cell and explain this time step.</p>
-      )}
+      </section>
+    );
+  }
+  if (!selectedRegion) return null;
 
-      {selectedRegion && (
-        <SelectedPointContext
-          selectedRegion={selectedRegion}
-          slice={slice}
-          selectedValue={selectedValue}
-          diagnostics={diagnostics}
-        />
-      )}
+  const lensEvidence = updraftLensFrame
+    ? selectedUpdraftLensEvidence(updraftLensFrame, selectedRegion)
+    : null;
+  const states = lensEvidence
+    ? [motionStateLabel(lensEvidence.verticalVelocity), lensEvidence.cloudy ? "Cloudy" : "Clear"]
+    : slice?.field.raw_field_name === "w" && selectedValue !== null
+      ? [motionStateLabel(selectedValue)]
+      : [];
+  const metrics = lensEvidence
+    ? [
+        { label: "x", value: lensEvidence.x },
+        { label: "y", value: lensEvidence.y },
+        { label: "z", value: lensEvidence.z },
+        { label: "Model time", value: formatSeconds(updraftLensFrame?.time_seconds ?? null) },
+        {
+          label: "Vertical velocity",
+          value: formatNumber(lensEvidence.verticalVelocity, "m/s"),
+        },
+        {
+          label: "Cloud liquid water",
+          value: `${lensEvidence.cloudy ? "At or above" : "Below"} ${formatCompactNumber(
+            updraftLensFrame!.cloud_threshold_kg_kg * 1_000,
+          )} g/kg`,
+        },
+      ]
+    : [
+        {
+          label: "Slice",
+          value: slice
+            ? slicePlainLabel(slice, slice.selection.orientation, slice.selection.selected_index)
+            : "Unavailable",
+        },
+        { label: "Model time", value: formatSeconds(slice?.selection.time_seconds ?? null) },
+        {
+          label: slice?.field.display_name ?? "Selected field",
+          value: formatFieldMaybeNumber(selectedValue, slice?.field),
+        },
+        {
+          label: "Native cell",
+          value: `x ${indexOrUnavailable(selectedRegion.xIndex)} · y ${indexOrUnavailable(
+            selectedRegion.yIndex,
+          )} · z ${indexOrUnavailable(selectedRegion.zIndex)}`,
+        },
+      ];
 
-      {diagnostics && (
-        <>
-          <div className="inspector-summary">
-            <StatusBadge
-              label={diagnostics.interpretation.thermal_fate_label}
-              tone={
-                diagnostics.interpretation.confidence === "supported"
-                  ? "good"
-                  : diagnostics.interpretation.confidence === "candidate"
-                    ? "neutral"
-                    : "warning"
-              }
-            />
-            <p>{diagnostics.interpretation.summary}</p>
-          </div>
-
-          <dl className="metric-grid">
-            <Metric
-              label="Confidence"
-              value={processSupportLabel(diagnostics.interpretation.confidence)}
-            />
-            <Metric
-              label="Main limiting factor"
-              value={humanize(diagnostics.interpretation.main_limiting_factor)}
-            />
-            <Metric
-              label="First local cloud time"
-              value={formatSeconds(diagnostics.diagnostics.first_local_cloud_time_seconds)}
-            />
-            <Metric
-              label="Local max qc"
-              value={formatMixingRatio(diagnostics.diagnostics.local_max_qc_kg_kg)}
-            />
-            <Metric
-              label="Local max w"
-              value={formatNumber(diagnostics.diagnostics.local_max_w_m_s, "m/s")}
-            />
-            <Metric
-              label="Local min w"
-              value={formatNumber(diagnostics.diagnostics.local_min_w_m_s, "m/s")}
-            />
-            <Metric
-              label="Local rain"
-              value={
-                diagnostics.diagnostics.local_rain_present
-                  ? "Rain water aloft detected"
-                  : "No rain water aloft detected"
-              }
-            />
-          </dl>
-
-          <details>
-            <summary>Selected-point details</summary>
-            <dl className="metric-grid">
-              <Metric label="Region type" value={humanize(diagnostics.region.region_type)} />
-              <Metric label="Native grid" value={diagnostics.region.native_grid ?? "Unavailable"} />
-              <Metric
-                label="Cell count"
-                value={String(diagnostics.region.cell_count ?? "unknown")}
-              />
-              <Metric label="x" value={axisSelectionLabel(diagnostics.region.x)} />
-              <Metric label="y" value={axisSelectionLabel(diagnostics.region.y)} />
-              <Metric label="vertical" value={axisSelectionLabel(diagnostics.region.vertical)} />
-              <Metric
-                label="Max w fraction"
-                value={formatRatio(diagnostics.comparison_to_domain.local_max_w_fraction_of_domain)}
-              />
-              <Metric
-                label="Max qc fraction"
-                value={formatRatio(
-                  diagnostics.comparison_to_domain.local_max_qc_fraction_of_domain,
-                )}
-              />
-              <Metric
-                label="First cloud delta"
-                value={formatSignedSeconds(
-                  diagnostics.comparison_to_domain.local_first_cloud_time_delta_seconds,
-                )}
-              />
-              <Metric
-                label="Cloud-top fraction"
-                value={formatRatio(
-                  diagnostics.comparison_to_domain.local_cloud_top_fraction_of_domain,
-                )}
-              />
-            </dl>
-            <ul className="compact-list">
-              {_dedupeStrings([
-                ...diagnostics.caveats,
-                ...diagnostics.interpretation.caveats,
-                ...diagnostics.comparison_to_domain.caveats,
-              ]).map((caveat) => (
-                <li key={caveat}>{caveat}</li>
-              ))}
-            </ul>
-          </details>
-        </>
-      )}
-    </section>
-  );
-}
-
-function SelectedPointContext({
-  selectedRegion,
-  slice,
-  selectedValue,
-  diagnostics,
-}: {
-  selectedRegion: SelectedRegionRequest;
-  slice: SliceResponse | null;
-  selectedValue: number | null;
-  diagnostics: SelectedRegionDiagnosticsResponse | null;
-}) {
-  const x = diagnostics?.region.x
-    ? axisSelectionLabel(diagnostics.region.x)
-    : indexOrUnavailable(selectedRegion.xIndex);
-  const y = diagnostics?.region.y
-    ? axisSelectionLabel(diagnostics.region.y)
-    : indexOrUnavailable(selectedRegion.yIndex);
-  const z = diagnostics?.region.vertical
-    ? axisSelectionLabel(diagnostics.region.vertical)
-    : indexOrUnavailable(selectedRegion.zIndex);
   return (
-    <section className="selected-point-context" aria-label="Selected point context">
-      <h4>Selected point</h4>
-      <dl className="metric-grid">
-        <Metric
-          label="Slice"
-          value={
-            slice
-              ? slicePlainLabel(slice, slice.selection.orientation, slice.selection.selected_index)
-              : "Unavailable"
-          }
-        />
-        <Metric label="Time" value={formatSeconds(slice?.selection.time_seconds ?? null)} />
-        <Metric
-          label="Field"
-          value={
-            slice ? `${slice.field.raw_field_name} (${slice.field.display_name})` : "Unavailable"
-          }
-        />
-        <Metric
-          label="Selected field value"
-          value={formatFieldMaybeNumber(selectedValue, slice?.field)}
-        />
-        <Metric label="x" value={x} />
-        <Metric label="y" value={y} />
-        <Metric label="z" value={z} />
-      </dl>
-    </section>
+    <ExploreSelectedEvidence
+      eyebrow="Selected cell"
+      title="Native-grid evidence"
+      states={states}
+      metrics={metrics}
+      onClear={onClear}
+    />
   );
 }
 
@@ -13745,24 +13401,6 @@ function Metric({ label, value }: { label: string; value: string }) {
   );
 }
 
-type ProcessSupport =
-  | "supported"
-  | "candidate"
-  | "insufficient_evidence"
-  | "unsupported_missing_fields"
-  | "future";
-
-function processSupportLabel(value: ProcessSupport): string {
-  const labels: Record<ProcessSupport, string> = {
-    supported: "Supported",
-    candidate: "Candidate",
-    insufficient_evidence: "Insufficient evidence",
-    unsupported_missing_fields: "Unavailable",
-    future: "Future",
-  };
-  return labels[value];
-}
-
 function selectionFromSlice(
   slice: SliceResponse,
   rowIndex: number,
@@ -13839,38 +13477,8 @@ function isSelectedSliceDisplayCell(
   return false;
 }
 
-function axisSelectionLabel(axis: AxisSelection | null): string {
-  if (!axis) return "Unavailable";
-  const coordinate =
-    axis.start_coordinate === axis.end_coordinate
-      ? formatAxisCoordinate(axis.start_coordinate)
-      : `${formatAxisCoordinate(axis.start_coordinate)} to ${formatAxisCoordinate(axis.end_coordinate)}`;
-  const index =
-    axis.start_index === axis.end_index
-      ? `${axis.dimension}[${axis.start_index}]`
-      : `${axis.dimension}[${axis.start_index}..${axis.end_index}]`;
-  return `${index}; ${coordinate}${axis.units ? ` ${axis.units}` : ""}`;
-}
-
-function formatAxisCoordinate(value: number | string | null | undefined): string {
-  if (value === null || value === undefined) return "unknown";
-  const numericValue = typeof value === "number" ? value : Number(value);
-  return Number.isFinite(numericValue) ? formatCompactNumber(numericValue) : String(value);
-}
-
 function indexOrUnavailable(index: number | undefined): string {
   return index === undefined ? "Unavailable" : `index ${index}`;
-}
-
-function formatRatio(value: number | null): string {
-  if (value === null || !Number.isFinite(value)) return "Unavailable";
-  return `${formatCompactNumber(value * 100)}%`;
-}
-
-function formatSignedSeconds(value: number | null): string {
-  if (value === null || !Number.isFinite(value)) return "Unavailable";
-  const prefix = value > 0 ? "+" : "";
-  return `${prefix}${formatSeconds(value)}`;
 }
 
 function _dedupeStrings(values: string[]): string[] {
@@ -14468,32 +14076,6 @@ function normalize(value: number, min: number, max: number): number {
   return (value - min) / (max - min);
 }
 
-function extentLabel(pointCloud: PointCloudResponse | null, coordinate: string): string {
-  const extent = pointCloud?.coordinate_extents[coordinate];
-  if (!extent) return "Unavailable";
-  const suffix = extent.units ? ` ${extent.units}` : "";
-  return `${formatCompactNumber(extent.min)} to ${formatCompactNumber(extent.max)}${suffix}`;
-}
-
-function verticalExtentLabel(pointCloud: PointCloudResponse | null): string {
-  const extent =
-    pointCloud?.coordinate_extents.zh ??
-    pointCloud?.coordinate_extents.zf ??
-    pointCloud?.coordinate_extents.z;
-  if (!extent) return "Unavailable";
-  const suffix = extent.units ? ` ${extent.units}` : "";
-  return `${formatCompactNumber(extent.min)} to ${formatCompactNumber(extent.max)}${suffix}`;
-}
-
-function verticalCoordinateUnit(pointCloud: PointCloudResponse | null): string | null {
-  return (
-    pointCloud?.coordinate_units.zh ??
-    pointCloud?.coordinate_units.zf ??
-    pointCloud?.coordinate_units.z ??
-    null
-  );
-}
-
 function pointCloudFieldSummary(pointCloud: PointCloudResponse): string {
   const maxValue = formatFieldMaybeNumber(pointCloud.stats.field_max_value, pointCloud.field);
   const threshold = formatFieldMaybeNumber(pointCloud.selection.threshold, pointCloud.field);
@@ -14507,15 +14089,6 @@ function emptyPointCloudStatus(
   const maxValue = formatFieldMaybeNumber(pointCloud.stats.field_max_value, selectedEncoding.field);
   const threshold = formatFieldMaybeNumber(pointCloud.selection.threshold, selectedEncoding.field);
   return `${selectedEncoding.field.display_name} max is ${maxValue}; no points are above ${threshold}`;
-}
-
-function maxPointLocationLabel(pointCloud: PointCloudResponse | null): string {
-  const location = pointCloud?.stats.max_value_location;
-  if (!location) return "Unavailable";
-  const units = verticalCoordinateUnit(pointCloud) ?? "";
-  return `x ${formatCompactNumber(location.x)}, y ${formatCompactNumber(location.y)}, z ${formatCompactNumber(
-    location.z,
-  )}${units ? ` ${units}` : ""}, value ${formatFieldMaybeNumber(location.value, pointCloud?.field)}`;
 }
 
 function heatmapScaleClass(field: VisualizableField): string {

@@ -6777,7 +6777,9 @@ describe("App", () => {
     expect(await screen.findByLabelText("Explore viewer controls")).toBeInTheDocument();
     expect(screen.getByLabelText("Slice field")).toHaveValue("w");
     expect(screen.getByLabelText("Time")).toHaveValue("2");
-    expect(screen.getByRole("heading", { name: "What am I seeing?" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { name: "What does this saved cloud field show now?" }),
+    ).toBeInTheDocument();
     expect(screen.queryByLabelText("Process mode")).not.toBeInTheDocument();
     await waitFor(() => {
       expect(fetch).toHaveBeenCalledWith(
@@ -7515,7 +7517,7 @@ describe("App", () => {
     expect(await screen.findByLabelText("Explore viewer controls")).toBeInTheDocument();
     await screen.findByText("Slice synced");
     expect(screen.getByLabelText("Slice field")).toHaveValue("qc");
-    expect(screen.getAllByText("qc (Cloud water)").length).toBeGreaterThan(0);
+    expect(screen.getAllByRole("option", { name: "qc - Cloud water" }).length).toBeGreaterThan(0);
     expect(screen.getAllByText(/g\/kg/).length).toBeGreaterThan(0);
     expect(screen.getByRole("button", { name: "Horizontal layer" })).toHaveClass("active-control");
     expect(screen.getByRole("heading", { name: "Field Slice" })).toBeInTheDocument();
@@ -7643,7 +7645,9 @@ describe("App", () => {
 
     const heatmap = screen.getAllByRole("img", { name: /heatmap/i })[0];
     fireEvent.click(within(heatmap).getByRole("button", { name: /row 1, column 2/i }));
-    expect(await screen.findByText("Point ready")).toBeInTheDocument();
+    expect(
+      await screen.findByRole("heading", { name: "Native-grid evidence" }),
+    ).toBeInTheDocument();
 
     vi.useFakeTimers();
     fireEvent.click(screen.getByRole("button", { name: "Play" }));
@@ -7793,7 +7797,7 @@ describe("App", () => {
     vi.useRealTimers();
   });
 
-  it("selects a slice region and renders backend Thermal Fate Inspector diagnostics", async () => {
+  it("selects a slice cell and renders immediate current-frame native evidence", async () => {
     render(<App />);
 
     await openSelectedResultInExplore();
@@ -7802,30 +7806,32 @@ describe("App", () => {
     const heatmap = screen.getAllByRole("img", { name: /heatmap/i })[0];
     fireEvent.click(within(heatmap).getByRole("button", { name: /row 1, column 2/i }));
 
-    expect(await screen.findByText("Point ready")).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "What happened here?" })).toBeInTheDocument();
-    expect(screen.getAllByText("Growing cumulus").length).toBeGreaterThan(0);
+    const selectedEvidence = await screen.findByLabelText("Selected native-grid evidence");
     expect(
-      screen.getByText(/Cloud water appeared locally after upward motion strengthened/),
+      within(selectedEvidence).getByRole("heading", { name: "Native-grid evidence" }),
     ).toBeInTheDocument();
-    expect(screen.getByText("First local cloud time")).toBeInTheDocument();
-    expect(screen.getByText("Local max qc")).toBeInTheDocument();
-    expect(screen.getAllByText("2.000e-2 g/kg").length).toBeGreaterThan(0);
-    expect(screen.getByText("Local max w")).toBeInTheDocument();
-    expect(screen.getByText("4.5 m/s")).toBeInTheDocument();
-    expect(screen.getByText("Local rain")).toBeInTheDocument();
-    expect(screen.getAllByText("Rain water aloft detected").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("xh[32]; 0.05 km").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("yh[16]; -1.55 km").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("zh[15]; 0.62 km").length).toBeGreaterThan(0);
-    expect(screen.queryByText(/0\.05000000074505806/)).not.toBeInTheDocument();
-    expect(screen.queryByText(/-1\.5500000715255737/)).not.toBeInTheDocument();
-    expect(screen.getByText("Selected-point details")).toBeInTheDocument();
-    expect(fetch).toHaveBeenCalledWith(
-      expect.stringContaining(
-        "/api/results/result-dry-run-quicklook/diagnostics/selected-region?region_type=point",
-      ),
-    );
+    expect(within(selectedEvidence).getByText("Cloud water")).toBeInTheDocument();
+    expect(within(selectedEvidence).getByText("Native cell")).toBeInTheDocument();
+    expect(within(selectedEvidence).getByRole("button", { name: "Clear" })).toBeInTheDocument();
+    expect(
+      vi
+        .mocked(fetch)
+        .mock.calls.some(([url]) => String(url).includes("/diagnostics/selected-region")),
+    ).toBe(false);
+  });
+
+  it("clears selected native evidence without disturbing the current view", async () => {
+    render(<App />);
+
+    await openSelectedResultInExplore();
+    await screen.findByText("Slice synced");
+    const heatmap = screen.getAllByRole("img", { name: /heatmap/i })[0];
+    fireEvent.click(within(heatmap).getByRole("button", { name: /row 1, column 2/i }));
+    const selectedEvidence = await screen.findByLabelText("Selected native-grid evidence");
+    fireEvent.click(within(selectedEvidence).getByRole("button", { name: "Clear" }));
+
+    expect(screen.queryByLabelText("Selected native-grid evidence")).not.toBeInTheDocument();
+    expect(screen.getByText("Slice synced")).toBeInTheDocument();
   });
 
   it("selects the source grid point represented by a downsampled cloud-water block", async () => {
@@ -7854,95 +7860,14 @@ describe("App", () => {
       }),
     );
 
-    expect(await screen.findByText("Point ready")).toBeInTheDocument();
-    const selectedPoint = screen.getByLabelText("Selected point context");
+    const selectedPoint = await screen.findByLabelText("Selected native-grid evidence");
     expect(within(selectedPoint).getByText("0.005 g/kg")).toBeInTheDocument();
     expect(within(selectedPoint).queryByText("0 kg/kg")).not.toBeInTheDocument();
-    expect(fetch).toHaveBeenCalledWith(expect.stringContaining("x_index=1&y_index=0&z_index=1"));
-  });
-
-  it("shows selected-region backend failures as actionable inspector errors", async () => {
-    vi.mocked(fetch).mockImplementation((input: RequestInfo | URL) => {
-      const url = String(input);
-      if (url === "/api/scenarios") {
-        return Promise.resolve(new Response(JSON.stringify(scenarioResponse), { status: 200 }));
-      }
-      if (url === "/api/results") {
-        return Promise.resolve(new Response(JSON.stringify(resultsResponse), { status: 200 }));
-      }
-      if (url === "/api/storage/inventory") {
-        return Promise.resolve(
-          new Response(JSON.stringify(storageInventoryResponse), { status: 200 }),
-        );
-      }
-      if (url.includes("/visualization/fields")) {
-        return Promise.resolve(new Response(JSON.stringify(fieldCatalogResponse), { status: 200 }));
-      }
-      if (url.includes("/visualization/defaults")) {
-        return Promise.resolve(
-          new Response(JSON.stringify(selectedTimeDefaultsResponse(url)), { status: 200 }),
-        );
-      }
-      if (url.includes("/visualization/point-cloud")) {
-        const parsed = new URL(url, "http://localhost");
-        const requestedField = mockPointFieldFromParam(parsed.searchParams.get("field"));
-        return Promise.resolve(
-          new Response(
-            JSON.stringify(
-              pointCloudResponse({
-                field: requestedField,
-                threshold: Number(parsed.searchParams.get("threshold") ?? 0.000001),
-                timeIndex: Number(parsed.searchParams.get("time_index") ?? 0),
-              }),
-            ),
-            { status: 200 },
-          ),
-        );
-      }
-      if (url.includes("/visualization/slice")) {
-        const parsed = new URL(url, "http://localhost");
-        return Promise.resolve(
-          new Response(
-            JSON.stringify(
-              sliceResponse({
-                field: mockFieldFromParam(parsed.searchParams.get("field")),
-                orientation:
-                  parsed.searchParams.get("orientation") === "vertical_y"
-                    ? "vertical_y"
-                    : parsed.searchParams.get("orientation") === "vertical_x"
-                      ? "vertical_x"
-                      : "horizontal",
-                timeIndex: Number(parsed.searchParams.get("time_index") ?? 0),
-                levelIndex: Number(parsed.searchParams.get("level_index") ?? 0),
-              }),
-            ),
-            { status: 200 },
-          ),
-        );
-      }
-      if (url.includes("/diagnostics/selected-region")) {
-        return Promise.resolve(
-          new Response(JSON.stringify({ detail: "Unsupported selected region." }), {
-            status: 400,
-          }),
-        );
-      }
-      return Promise.resolve(new Response("not found", { status: 404 }));
-    });
-
-    render(<App />);
-
-    const resultDetail = await screen.findByLabelText("Result detail");
-    fireEvent.click(within(resultDetail).getByRole("button", { name: "Open in Explore" }));
-    await screen.findByText("Slice synced");
-    fireEvent.click(
-      within(screen.getAllByRole("img", { name: /heatmap/i })[0]).getByRole("button", {
-        name: /row 1, column 1/i,
-      }),
-    );
-
-    expect(await screen.findByRole("alert")).toHaveTextContent("Unsupported selected region.");
-    expect(screen.getByText("Point unavailable")).toBeInTheDocument();
+    expect(
+      vi
+        .mocked(fetch)
+        .mock.calls.some(([url]) => String(url).includes("/diagnostics/selected-region")),
+    ).toBe(false);
   });
 
   it("supports field and time selection through visualization-ready APIs", async () => {
@@ -7953,9 +7878,7 @@ describe("App", () => {
     fireEvent.change(await screen.findByLabelText("Slice field"), { target: { value: "w" } });
     fireEvent.change(screen.getByLabelText("Time"), { target: { value: "1" } });
 
-    await waitFor(() => {
-      expect(screen.getByText("w (Vertical velocity)")).toBeInTheDocument();
-    });
+    await waitFor(() => expect(screen.getByLabelText("Slice field")).toHaveValue("w"));
     expect(screen.getAllByText("900 s").length).toBeGreaterThan(0);
     expect(screen.getAllByText("6.5 m/s").length).toBeGreaterThan(0);
     expect(fetch).toHaveBeenCalledWith(
@@ -7971,10 +7894,12 @@ describe("App", () => {
 
     expect(await screen.findByLabelText("Integrated Explore workspace")).toBeInTheDocument();
     await screen.findAllByText("Cloud-water point layer loaded");
-    expect(screen.getByRole("heading", { name: "What am I seeing?" })).toBeInTheDocument();
-    expect(screen.getByLabelText("Current context")).toBeInTheDocument();
-    expect(screen.getByLabelText("Simulation notebook and details")).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Science" })).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { name: "What does this saved cloud field show now?" }),
+    ).toBeInTheDocument();
+    expect(screen.getByLabelText("Context")).toBeInTheDocument();
+    expect(screen.getByLabelText("Simulation support")).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "Science" })).toBeInTheDocument();
     expect(screen.queryByText("Process evidence")).not.toBeInTheDocument();
     expect(screen.queryByLabelText("Process mode")).not.toBeInTheDocument();
     expect(screen.queryByText(/Thermal Fate/)).not.toBeInTheDocument();
@@ -8194,7 +8119,7 @@ describe("App", () => {
     expect(screen.getByText("No cloud formed")).toBeInTheDocument();
     expect(
       screen.getByText(
-        "For this no-cloud result, use vertical velocity (w) slices to inspect the thermals.",
+        "Use vertical velocity slices to inspect thermals that did not produce cloud.",
       ),
     ).toBeInTheDocument();
     await screen.findByText("Slice synced");
@@ -8321,7 +8246,7 @@ describe("App", () => {
     expect(await screen.findByText("3-D cloud layer unavailable")).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Field Slice" })).toBeInTheDocument();
     expect(screen.getByRole("slider", { name: "Saved output time" })).toBeInTheDocument();
-    expect(screen.getByLabelText("Explore inspector")).toBeInTheDocument();
+    expect(screen.getByLabelText("Context")).toBeInTheDocument();
     expect(await screen.findByText("Slice synced")).toBeInTheDocument();
 
     allowPointCloud = true;
@@ -8353,7 +8278,7 @@ describe("App", () => {
     expect(await screen.findByText("Field Slice unavailable")).toBeInTheDocument();
     expect(screen.getByLabelText("True 3-D scalar field viewer")).toBeInTheDocument();
     expect(screen.getByRole("slider", { name: "Saved output time" })).toBeInTheDocument();
-    expect(screen.getByLabelText("Explore inspector")).toBeInTheDocument();
+    expect(screen.getByLabelText("Context")).toBeInTheDocument();
     await screen.findAllByText("Cloud-water point layer loaded");
 
     allowSlice = true;
@@ -8380,7 +8305,7 @@ describe("App", () => {
     ).toBeInTheDocument();
     expect(screen.getByLabelText("Scientific visualization workbench")).toBeInTheDocument();
     expect(screen.getByLabelText("Fixed visualization viewport region")).toBeInTheDocument();
-    expect(screen.getByLabelText("Explore inspector")).toBeInTheDocument();
+    expect(screen.getByLabelText("Context")).toBeInTheDocument();
     expect(screen.getByLabelText("Explore viewer controls")).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Field Slice" })).toBeInTheDocument();
     expect(within(viewer).queryByText("True 3-D scene")).not.toBeInTheDocument();
@@ -8410,28 +8335,67 @@ describe("App", () => {
       screen.getAllByText("Current field max: 0.008 g/kg. Visible points above 0.001 g/kg: 3.")
         .length,
     ).toBeGreaterThan(0);
-    expect(screen.getByText("0 to 3 km")).toBeInTheDocument();
-    expect(screen.getByText("0.8 km to 1.2 km")).toBeInTheDocument();
-    expect(screen.getByText("x 2, y 1, z 1.2 km, value 0.008 g/kg")).toBeInTheDocument();
-    expect(screen.getByText("3 of 3")).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { name: "What does this saved cloud field show now?" }),
+    ).toBeInTheDocument();
+    expect(screen.getByLabelText("Simulation support")).toBeInTheDocument();
     expect(screen.getAllByText("2,700 s").length).toBeGreaterThan(0);
-    expect(screen.getByText("0.002 g/kg to 0.008 g/kg")).toBeInTheDocument();
     expect(fetch).toHaveBeenCalledWith(expect.stringContaining("time_index=3"));
     expect(fetch).toHaveBeenCalledWith(
       "/api/results/result-dry-run-quicklook/visualization/defaults?time_index=3",
     );
   });
 
-  it("saves Simulation notes from Explore through the result API", async () => {
+  it("saves stable Simulation notes from Trade Cumulus Explore", async () => {
+    mockWorldScopedApp();
     const defaultFetch = vi.mocked(fetch).getMockImplementation();
     vi.mocked(fetch).mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
-      if (url === "/api/results/result-dry-run-quicklook" && init?.method === "PATCH") {
-        const body = JSON.parse(String(init.body ?? "{}")) as { notes?: string | null };
+      const noteUrl = "/api/worlds/trade-cumulus/simulations/trade_cumulus_canonical_bomex/note";
+      if (url === noteUrl && !init?.method) {
+        return Promise.resolve(new Response(JSON.stringify({ note: null }), { status: 200 }));
+      }
+      if (url === noteUrl && init?.method === "PUT") {
+        const body = JSON.parse(String(init.body ?? "{}")) as { text?: string };
         return Promise.resolve(
-          new Response(JSON.stringify({ ...resultCard, notes: body.notes ?? null }), {
-            status: 200,
-          }),
+          new Response(
+            JSON.stringify({
+              note: {
+                schema_version: 1,
+                world_id: "trade_cumulus",
+                simulation_id: "trade_cumulus_canonical_bomex",
+                text: body.text ?? "",
+                created_at: "2026-07-23T12:00:00Z",
+                updated_at: "2026-07-23T12:00:00Z",
+              },
+            }),
+            { status: 200 },
+          ),
+        );
+      }
+      if (url.includes(comparisonBaselineResultCard.result_id)) {
+        if (url.endsWith("/visualization/fields")) {
+          return Promise.resolve(
+            new Response(JSON.stringify(tradeCumulusFieldCatalog), { status: 200 }),
+          );
+        }
+        if (url.includes("/visualization/defaults")) {
+          return Promise.resolve(
+            new Response(JSON.stringify(tradeCumulusViewDefaults), { status: 200 }),
+          );
+        }
+        if (url.endsWith("/trade-cumulus-updraft-lens/defaults")) {
+          return Promise.resolve(
+            new Response(JSON.stringify(tradeCumulusUpdraftLensDefaults), { status: 200 }),
+          );
+        }
+        if (url.includes("/visualization/slice")) {
+          return Promise.resolve(
+            new Response(JSON.stringify(tradeCumulusSliceResponse(url)), { status: 200 }),
+          );
+        }
+        return (
+          defaultFetch?.(input, init) ?? Promise.resolve(new Response("not found", { status: 404 }))
         );
       }
       return (
@@ -8440,21 +8404,31 @@ describe("App", () => {
     });
 
     render(<App />);
-    await openSelectedResultInExplore();
+    fireEvent.click(await screen.findByRole("button", { name: "Enter Trade Cumulus" }));
+    fireEvent.click(
+      within(await screen.findByLabelText("Canonical BOMEX Baseline Simulation")).getByRole(
+        "button",
+        { name: "Explore" },
+      ),
+    );
+    const support = await screen.findByLabelText("Simulation support");
+    fireEvent.click(within(support).getByRole("tab", { name: "Notes" }));
 
-    const notes = await screen.findByRole("textbox", { name: "Simulation notes" });
-    expect(notes).toHaveValue("Reference-derived quick-look result.");
+    const notes = await screen.findByRole("textbox", {
+      name: "Notes for Canonical BOMEX Baseline",
+    });
+    expect(notes).toHaveValue("");
     fireEvent.change(notes, { target: { value: "Watch the western cloud turret." } });
     fireEvent.click(screen.getByRole("button", { name: "Save note" }));
 
     await waitFor(() => {
-      expect(screen.getByText("Note saved")).toBeInTheDocument();
+      expect(screen.getByText("Saved")).toBeInTheDocument();
     });
     expect(fetch).toHaveBeenCalledWith(
-      "/api/results/result-dry-run-quicklook",
+      "/api/worlds/trade-cumulus/simulations/trade_cumulus_canonical_bomex/note",
       expect.objectContaining({
-        method: "PATCH",
-        body: JSON.stringify({ notes: "Watch the western cloud turret." }),
+        method: "PUT",
+        body: JSON.stringify({ text: "Watch the western cloud turret." }),
       }),
     );
     expect(notes).toHaveValue("Watch the western cloud turret.");
@@ -8486,7 +8460,7 @@ describe("App", () => {
     const viewer = screen.getByLabelText("True 3-D scalar field viewer");
     expect(within(viewer).getByText(/Slice: Horizontal layer at z = /)).toBeInTheDocument();
     expect(within(viewer).queryByText(/Slice: Vertical x-z slice at y = /)).not.toBeInTheDocument();
-    expect(screen.getAllByText("qc (Cloud water)").length).toBeGreaterThan(0);
+    expect(screen.getAllByRole("option", { name: "qc - Cloud water" }).length).toBeGreaterThan(0);
     expect(screen.getAllByText("native_grid_view_no_interpolation").length).toBeGreaterThan(0);
     fireEvent.click(screen.getByRole("button", { name: "Move down" }));
     expect(screen.getByLabelText("Slice position")).toHaveValue("0");
@@ -8522,7 +8496,7 @@ describe("App", () => {
     fireEvent.change(screen.getByLabelText("Time"), { target: { value: "1" } });
 
     await waitFor(() => {
-      expect(screen.getAllByText("w (Vertical velocity)").length).toBeGreaterThan(0);
+      expect(screen.getByLabelText("Slice field")).toHaveValue("w");
     });
     expect(screen.getAllByText("900 s").length).toBeGreaterThan(0);
     expect(screen.getAllByText("6.5 m/s").length).toBeGreaterThan(0);
@@ -8575,9 +8549,6 @@ describe("App", () => {
     expect(cameraView).toHaveValue("look_along_x");
     fireEvent.change(cameraView, { target: { value: "look_along_y" } });
     expect(cameraView).toHaveValue("look_along_y");
-    fireEvent.click(screen.getByText("Visualization details"));
-    expect(screen.getByText("Direct Three.js point cloud")).toBeInTheDocument();
-
     fireEvent.click(within(cameraControls).getByRole("button", { name: "Reset camera" }));
   });
 

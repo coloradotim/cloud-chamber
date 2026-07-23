@@ -479,7 +479,48 @@ function comparisonLensFrame(member: ComparisonMember) {
   };
 }
 
+function comparisonLensDefaults(member: ComparisonMember) {
+  return {
+    result_id: member.result_id,
+    case_id: "bomex_trade_cumulus_baseline_v0",
+    eligible: true,
+    primary_field: "w",
+    cloud_field: "ql",
+    orientation: "vertical_x",
+    default_time_index: member.curated_view.time_index,
+    default_time_seconds: member.curated_view.time_seconds,
+    default_time_method: "curated_comparison_view",
+    default_plane_dimension: "y",
+    default_plane_index: member.curated_view.plane_index,
+    default_plane_coordinate: member.curated_view.plane_coordinate,
+    default_plane_units: "km",
+    default_plane_method: "curated_comparison_view",
+    cloud_threshold_kg_kg: 1e-6,
+    ...comparisonUpdraftScale,
+    wind_target_level_m: 600,
+    wind_actual_level_m: 580,
+    wind_level_index: 14,
+    wind_default_mode: "perturbation",
+    wind_stride: 8,
+    wind_shown_by_default: true,
+    perturbation_wind_reference_m_s: 0.9,
+    total_wind_reference_m_s: 8.8,
+    wind_arrow_domain_fraction: 0.08,
+    provenance: comparisonLensFrame(member).provenance,
+    caveats: [],
+  };
+}
+
 async function mockTradeCumulusComparison(page: Parameters<typeof mockCloudChamberApis>[0]) {
+  for (const result of [comparisonBaselineResult, comparisonMoreMoistureResult]) {
+    await page.route(`**/api/results/${result.result_id}`, (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(result),
+      }),
+    );
+  }
   await page.route("**/api/results", (route) =>
     route.fulfill({
       status: 200,
@@ -507,6 +548,19 @@ async function mockTradeCumulusComparison(page: Parameters<typeof mockCloudChamb
       body: JSON.stringify(comparisonPointCloud(member)),
     });
   });
+  await page.route(
+    "**/api/results/*/visualization/trade-cumulus-updraft-lens/defaults",
+    (route) => {
+      const member = route.request().url().includes(comparisonMoreMoistureId)
+        ? comparisonStory.more_moisture
+        : comparisonStory.baseline;
+      return route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(comparisonLensDefaults(member)),
+      });
+    },
+  );
   await page.route("**/api/results/*/visualization/trade-cumulus-updraft-lens/frame**", (route) => {
     const member = route.request().url().includes(comparisonMoreMoistureId)
       ? comparisonStory.more_moisture
@@ -584,7 +638,7 @@ test.describe("mocked smoke: Build, Results, Explore path", () => {
     await expect(page.getByLabel("Canonical BOMEX Baseline workspace")).toBeVisible();
     await expect(page.getByLabel("True 3-D scalar field viewer")).toBeVisible();
     await expect(page.getByRole("slider", { name: "Saved output time" })).toBeVisible();
-    await expect(page.getByRole("complementary", { name: "Explore inspector" })).toBeVisible();
+    await expect(page.getByRole("complementary", { name: "Context" })).toBeVisible();
     await expect(page.getByText("Cloud formed")).toBeVisible();
     await expect(page.getByText("Deep convection not detected")).toHaveCount(0);
     await expect(page.getByRole("heading", { name: "Updraft Lens" })).toBeVisible({
@@ -597,12 +651,16 @@ test.describe("mocked smoke: Build, Results, Explore path", () => {
     await page.getByRole("button", { name: "Previous" }).click();
     await page.getByLabel("Updraft Lens slice position").fill("3");
     await expect(page.getByLabel("Updraft Lens slice position")).toHaveValue("3");
-    await expect(page.getByRole("heading", { name: "What am I seeing?" })).toBeVisible();
+    await expect(page.getByLabel("Current scientific context")).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: "Where is air rising and sinking through cloud?" }),
+    ).toBeVisible();
+    await page.getByRole("tab", { name: "Details" }).click();
     await expect(page.getByRole("heading", { name: "Simulation details" })).toBeVisible();
-    await page.getByRole("button", { name: "Collapse inspector" }).click();
-    await expect(page.getByRole("button", { name: "Open inspector" })).toBeVisible();
-    await page.getByRole("button", { name: "Open inspector" }).click();
-    await expect(page.getByRole("heading", { name: "What am I seeing?" })).toBeVisible();
+    await page.getByRole("button", { name: "Hide Context" }).click();
+    await expect(page.getByRole("button", { name: "Show Context" })).toBeVisible();
+    await page.getByRole("button", { name: "Show Context" }).click();
+    await expect(page.getByLabel("Current scientific context")).toBeVisible();
     await expect(page.getByRole("button", { name: "Compare" })).toHaveCount(0);
     await page.getByRole("button", { name: "Back to Trade Cumulus" }).click();
 
@@ -937,7 +995,7 @@ test.describe("mocked smoke: Build, Results, Explore path", () => {
     const moreMoistureControls = simulations.nth(1).getByLabel("3-D camera controls");
     await baselineControls.getByRole("button", { name: "Look along x" }).click();
     await expect(baselineControls).toContainText("Camera looking along the x axis");
-    await expect(moreMoistureControls).toContainText("Camera ready");
+    await expect(moreMoistureControls).toContainText("Camera set to overview");
 
     await page.setViewportSize({ width: 1440, height: 1000 });
     await simulations.nth(1).getByRole("button", { name: "Open More Moisture in Explore" }).click();
@@ -1117,10 +1175,14 @@ test.describe("mocked smoke: Build, Results, Explore path", () => {
       .getByRole("button", { name: /inspect .*row 2, column 2/i })
       .first()
       .click();
-    await expect(page.getByText(/what happened here/i).first()).toBeVisible();
-    await expect(page.getByText("Point ready")).toBeVisible();
-    await expect(page.getByText(/cloud water appeared locally/i)).toBeVisible();
-    await expect(page.getByText(/local max w/i)).toBeVisible();
+    const selectedEvidence = page.getByLabel("Selected native-grid evidence");
+    await expect(selectedEvidence).toBeVisible();
+    await expect(
+      selectedEvidence.getByRole("heading", { name: "Native-grid evidence" }),
+    ).toBeVisible();
+    await expect(selectedEvidence.getByText("Cloud water", { exact: true })).toBeVisible();
+    await expect(selectedEvidence.getByText("Native cell", { exact: true })).toBeVisible();
+    await page.getByRole("tab", { name: "Details" }).click();
     await page.getByText("Technical slice details").first().click();
     await expect(page.getByText(/finite values/i).first()).toBeVisible();
     await expect(page.getByText(/\[\[[\d.,\s]+\]\]/)).not.toBeVisible();
@@ -1591,25 +1653,34 @@ test.describe("mocked smoke: Build, Results, Explore path", () => {
   test("Explore keeps current context primary and persists notes below the viewers", async ({
     page,
   }) => {
-    await gotoResults(page);
-    await page.getByRole("button", { name: "Open in Explore" }).first().click();
+    await mockTradeCumulusWorld(page);
+    await gotoApp(page);
+    await page.getByRole("button", { name: "Enter Trade Cumulus" }).click();
+    await page
+      .getByLabel("Canonical BOMEX Baseline Simulation")
+      .getByRole("button", { name: "Explore" })
+      .click();
 
     await expect(page.getByLabel("Integrated Explore workspace")).toBeVisible({
       timeout: 10_000,
     });
-    await expect(page.getByRole("heading", { name: "What am I seeing?" })).toBeVisible();
-    await expect(page.getByRole("button", { name: "Science" })).toHaveCount(0);
+    await expect(page.getByLabel("Current scientific context")).toBeVisible();
+    await expect(page.getByRole("tab", { name: "Science" })).toBeVisible();
+    await expect(page.getByRole("tab", { name: "Notes" })).toBeVisible();
+    await expect(page.getByRole("tab", { name: "Details" })).toBeVisible();
     await expect(page.getByText("Process evidence")).toHaveCount(0);
 
-    const notebook = page.getByLabel("Simulation notebook", { exact: true });
-    await notebook.scrollIntoViewIfNeeded();
-    const notes = notebook.getByRole("textbox", { name: "Simulation notes" });
+    const support = page.getByLabel("Simulation support", { exact: true });
+    await support.scrollIntoViewIfNeeded();
+    await support.getByRole("tab", { name: "Notes" }).click();
+    const notes = support.getByRole("textbox", { name: /Notes for/ });
     await notes.fill("Watch the western cloud turret.");
-    await notebook.getByRole("button", { name: "Save note" }).click();
-    await expect(notebook.getByText("Note saved")).toBeVisible();
+    await support.getByRole("button", { name: "Save note" }).click();
+    await expect(support.getByRole("status")).toHaveText("Saved");
     await expect(notes).toHaveValue("Watch the western cloud turret.");
+    await support.getByRole("tab", { name: "Details" }).click();
     await expect(page.getByRole("heading", { name: "Simulation details" })).toBeVisible();
-    await expect(page.getByText("Visualization details")).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Field quality" })).toBeVisible();
   });
 
   test("Results to Explore loads cloud-forming qc and w fields", async ({ page }) => {
@@ -1695,7 +1766,9 @@ test.describe("mocked smoke: Build, Results, Explore path", () => {
     await expect(
       page.getByText(/No cloud water formed in this result; vertical velocity is available/i),
     ).toBeVisible();
-    await expect(page.getByText(/For this no-cloud result, use vertical velocity/)).toBeVisible();
+    await expect(page.getByLabel("Current scientific context")).toContainText(
+      "Use vertical velocity slices to inspect thermals that did not produce cloud.",
+    );
     await expect(page.getByText("No cloud formed here")).toHaveCount(0);
 
     await expect(page.getByText(/slice synced/i).first()).toBeVisible({ timeout: 10_000 });
@@ -1744,7 +1817,7 @@ test.describe("mocked smoke: Build, Results, Explore path", () => {
     await expect(page.getByRole("button", { name: "Retry 3-D layer" })).toBeVisible();
     await expect(page.getByText("Slice synced")).toBeVisible();
     await expect(page.getByRole("slider", { name: "Saved output time" })).toBeVisible();
-    await expect(page.getByRole("complementary", { name: "Explore inspector" })).toBeVisible();
+    await expect(page.getByRole("complementary", { name: "Context" })).toBeVisible();
   });
 
   test("Explore isolates a failed slice from the 3-D scene timeline and inspector", async ({
@@ -1765,7 +1838,7 @@ test.describe("mocked smoke: Build, Results, Explore path", () => {
     await expect(page.getByRole("button", { name: "Retry Field Slice" })).toBeVisible();
     await expect(page.getByLabel("True 3-D scalar field viewer")).toBeVisible();
     await expect(page.getByRole("slider", { name: "Saved output time" })).toBeVisible();
-    await expect(page.getByRole("complementary", { name: "Explore inspector" })).toBeVisible();
+    await expect(page.getByRole("complementary", { name: "Context" })).toBeVisible();
   });
 
   test("Explore desktop cockpit prioritizes viewers and supports either maximized view", async ({
@@ -1784,8 +1857,11 @@ test.describe("mocked smoke: Build, Results, Explore path", () => {
 
     const scene = page.getByLabel("True 3-D scalar field viewer");
     const slice = page.getByLabel("Field Slice");
-    const context = page.getByRole("complementary", { name: "Explore inspector" });
-    const notebook = page.getByLabel("Simulation notebook and details");
+    const context = page.getByRole("complementary", { name: "Context" });
+    const notebook = page.getByRole("region", {
+      name: "Simulation support",
+      exact: true,
+    });
     await expect(scene).toBeVisible({ timeout: 12_000 });
     await expect(slice).toBeVisible();
     await expect(context).toBeVisible();

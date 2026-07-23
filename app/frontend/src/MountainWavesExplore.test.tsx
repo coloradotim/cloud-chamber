@@ -1,4 +1,4 @@
-import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { MountainWavesExplore, mountainWavesCloudPointRendering } from "./MountainWavesExplore";
@@ -238,6 +238,28 @@ describe("MountainWavesExplore", () => {
     expect(screen.getAllByRole("button", { name: "Wave Cloud Lens" })).toHaveLength(1);
   });
 
+  it("uses the shared live Context and below-workspace support sections", async () => {
+    render(<MountainWavesExplore simulation={simulation} onBack={vi.fn()} />);
+    await screen.findByRole("heading", { name: "Wave Cloud Lens" });
+
+    const context = screen.getByLabelText("Context");
+    expect(
+      within(context).getByRole("heading", {
+        name: "Where does cloud sit within rising and descending wave motion?",
+      }),
+    ).toBeVisible();
+    expect(within(context).queryByRole("tab")).not.toBeInTheDocument();
+
+    const support = screen.getByLabelText("Simulation support");
+    for (const name of ["Science", "Notes", "Details"]) {
+      expect(within(support).getByRole("tab", { name })).toBeVisible();
+    }
+    fireEvent.click(within(support).getByRole("tab", { name: "Notes" }));
+    expect(
+      await screen.findByRole("textbox", { name: "Notes for Boulder Windstorm" }),
+    ).toBeVisible();
+  });
+
   it("waits for the displayed frame before advancing playback again", async () => {
     const playbackFrame = { ...frame, times_seconds: [0, 180, 360] };
     vi.mocked(fetch).mockResolvedValue(ok(playbackFrame));
@@ -293,7 +315,7 @@ describe("MountainWavesExplore", () => {
     await waitFor(() =>
       expect(fetch).toHaveBeenCalledWith(expect.stringContaining("field=w&time_index=-1")),
     );
-    expect(screen.getAllByRole("heading", { name: "Vertical velocity" })).toHaveLength(2);
+    expect(screen.getByRole("heading", { name: "Vertical velocity" })).toBeVisible();
     fireEvent.click(screen.getByRole("button", { name: "True physical scale" }));
     expect(screen.getByText(/equal x\/z physical scale/)).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Full domain" }));
@@ -408,7 +430,7 @@ describe("MountainWavesExplore", () => {
 
     resolveW?.(ok({ ...frame, field: { ...frame.field, key: "w" }, overlay: null }));
     await new Promise((resolve) => window.setTimeout(resolve, 0));
-    expect(screen.getAllByRole("heading", { name: "Cloud liquid water" })).toHaveLength(2);
+    expect(screen.getByRole("heading", { name: "Cloud liquid water" })).toBeVisible();
   });
 });
 

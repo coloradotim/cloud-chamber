@@ -4,7 +4,11 @@ import type { CSSProperties, MouseEvent as ReactMouseEvent } from "react";
 
 import "./App.css";
 import "./StormExaminationResearch.css";
-import { ExploreInspector, IntegratedExploreWorkspace } from "./IntegratedExploreWorkspace";
+import {
+  ExploreInspector,
+  ExploreSecondarySections,
+  IntegratedExploreWorkspace,
+} from "./IntegratedExploreWorkspace";
 
 export type LensId = "rotating_updraft" | "cloud_precipitation" | "low_level_interactions";
 export type ViewportId = "storm" | "full";
@@ -429,16 +433,25 @@ export function StormExaminationResearch() {
             onPlaybackSpeed={setPlaybackSpeed}
           />
 
-          <ExploreInspector
+          <ExploreInspector>
+            <StormContext frame={frame} lens={lens} viewport={viewport} />
+          </ExploreInspector>
+          <ExploreSecondarySections
+            label="Research support"
             sections={{
-              explain: <StormContext frame={frame} lens={lens} viewport={viewport} />,
-              notes: (
+              science: (
                 <section>
                   <h3>Gate C examination</h3>
                   <p>
                     This bounded surface evaluates whether one retained storm result supports a
                     legible Storms World. It is not a product route or a final Lens contract.
                   </p>
+                </section>
+              ),
+              notes: (
+                <section>
+                  <h3>Simulation notes</h3>
+                  <p>Durable notes are available from the Supercells World Explore route.</p>
                 </section>
               ),
               details: <StormDetails frame={frame} />,

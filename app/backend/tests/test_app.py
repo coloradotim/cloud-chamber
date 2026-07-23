@@ -38,6 +38,78 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
 BASELINE_TEMPLATE = REPO_ROOT / "scenarios/lower-atmosphere/baseline-shallow-cumulus.json"
 
 
+@pytest.mark.parametrize(
+    ("world_slug", "world_id", "simulation_id"),
+    [
+        (
+            "trade-cumulus",
+            "trade_cumulus",
+            "trade_cumulus_canonical_bomex",
+        ),
+        (
+            "mountain-waves",
+            "mountain_waves",
+            "mountain_waves_boulder_moist_reference",
+        ),
+        (
+            "supercells",
+            "supercells",
+            "supercells_quarter_circle_reference",
+        ),
+    ],
+)
+def test_simulation_note_api_saves_reloads_and_clears_for_each_world(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    world_slug: str,
+    world_id: str,
+    simulation_id: str,
+) -> None:
+    settings = SimpleNamespace(runtime_home=tmp_path)
+    monkeypatch.setattr("cloud_chamber.app.load_settings", lambda: settings)
+    monkeypatch.setattr(
+        "cloud_chamber.app._simulation_note_target_exists",
+        lambda *_args, **_kwargs: True,
+    )
+    client = TestClient(app)
+    path = f"/api/worlds/{world_slug}/simulations/{simulation_id}/note"
+
+    empty = client.get(path)
+    saved = client.put(path, json={"text": f"Observation for {world_id}."})
+    reloaded = client.get(path)
+    cleared = client.put(path, json={"text": ""})
+
+    assert empty.status_code == 200
+    assert empty.json() == {"note": None}
+    assert saved.status_code == 200
+    assert saved.json()["note"]["world_id"] == world_id
+    assert saved.json()["note"]["simulation_id"] == simulation_id
+    assert saved.json()["note"]["text"] == f"Observation for {world_id}."
+    assert reloaded.json() == saved.json()
+    assert cleared.status_code == 200
+    assert cleared.json() == {"note": None}
+    assert client.get(path).json() == {"note": None}
+
+
+def test_simulation_note_api_fails_closed_for_unknown_simulation(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "cloud_chamber.app.load_settings",
+        lambda: SimpleNamespace(runtime_home=tmp_path),
+    )
+    monkeypatch.setattr(
+        "cloud_chamber.app._simulation_note_target_exists",
+        lambda *_args, **_kwargs: False,
+    )
+
+    response = TestClient(app).get("/api/worlds/supercells/simulations/not-a-simulation/note")
+
+    assert response.status_code == 404
+    assert response.json()["detail"] == "Cloud World Simulation not found."
+
+
 def _world_summary_payload() -> dict[str, object]:
     return {
         "world_id": "trade_cumulus",

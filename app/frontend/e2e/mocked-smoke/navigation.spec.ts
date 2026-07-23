@@ -11,7 +11,11 @@ import {
 import { mockCloudChamberApis } from "../fixtures";
 
 function rgbChannels(value: string) {
-  const channels = value.match(/\d+(\.\d+)?/g)?.slice(0, 3).map(Number) ?? [];
+  const channels =
+    value
+      .match(/\d+(\.\d+)?/g)
+      ?.slice(0, 3)
+      .map(Number) ?? [];
   return {
     red: channels[0] ?? 0,
     green: channels[1] ?? 0,
@@ -22,9 +26,7 @@ function rgbChannels(value: string) {
 function relativeLuminance({ red, green, blue }: ReturnType<typeof rgbChannels>) {
   const values = [red, green, blue].map((channel) => {
     const normalized = channel / 255;
-    return normalized <= 0.03928
-      ? normalized / 12.92
-      : ((normalized + 0.055) / 1.055) ** 2.4;
+    return normalized <= 0.03928 ? normalized / 12.92 : ((normalized + 0.055) / 1.055) ** 2.4;
   });
   return values[0] * 0.2126 + values[1] * 0.7152 + values[2] * 0.0722;
 }
@@ -82,7 +84,9 @@ test.describe("mocked smoke: app shell", () => {
     await gotoApp(page);
 
     const shellBackground = rgbChannels(
-      await page.locator(".app-shell").evaluate((element) => getComputedStyle(element).backgroundColor),
+      await page
+        .locator(".app-shell")
+        .evaluate((element) => getComputedStyle(element).backgroundColor),
     );
     const activeWorkspace = page.getByRole("button", { name: /^Results$/ });
     const activeBackground = rgbChannels(
@@ -125,8 +129,7 @@ test.describe("mocked smoke: app shell", () => {
       await expect(page.getByRole("heading", { name: "Experiment Notebook" })).toBeVisible();
       await gotoExplore(page);
       await expect(page.getByLabel("Explore this result")).toBeVisible();
-      await expect(page.getByRole("heading", { name: "What am I seeing?" }))
-        .toBeVisible();
+      await expect(page.getByLabel("Current scientific context")).toBeVisible();
     });
   }
 });

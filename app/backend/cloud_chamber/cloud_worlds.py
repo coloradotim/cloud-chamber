@@ -371,6 +371,39 @@ def trade_cumulus_world_detail(settings: CloudChamberSettings) -> TradeCumulusWo
     )
 
 
+def trade_cumulus_simulation_exists(
+    settings: CloudChamberSettings,
+    simulation_id: str,
+) -> bool:
+    """Resolve one stable Simulation identity without building the complete World."""
+    known = {
+        spec.simulation_id: _load_known_simulation(settings, spec)
+        for spec in (_REFERENCE_SPEC, _MORE_MOISTURE_SPEC)
+    }
+    if simulation_id in known:
+        return known[simulation_id].metadata is not None
+
+    other_metadata = [
+        metadata
+        for metadata in list_result_metadata(settings)
+        if metadata.result_id
+        not in {
+            PRESENTATION_BASELINE_RESULT_ID,
+            PRESENTATION_MORE_MOISTURE_RESULT_ID,
+        }
+        and _is_trade_cumulus_result(metadata)
+    ]
+    retained, _ = _ordinary_simulations(
+        other_metadata,
+        known_metadata={
+            record.record.simulation_id: record.metadata
+            for record in known.values()
+            if record.record.simulation_id is not None and record.metadata is not None
+        },
+    )
+    return any(record.simulation_id == simulation_id for record in retained)
+
+
 def configuration_differences(
     left: ResultMetadata, right: ResultMetadata
 ) -> list[ConfigurationDifference]:
