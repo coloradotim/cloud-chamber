@@ -59,8 +59,10 @@ def _write_retained_fixture(runtime_home: Path) -> Path:
         qg[0, 2, 2, 2] = 0.004
         surface = np.zeros((1, len(y), len(x)), dtype=np.float32)
         surface[0, 2, 2] = number
-        u = np.full(shape, 12.0, dtype=np.float32)
-        v = np.full(shape, -4.0, dtype=np.float32)
+        u = np.full(shape, 5.0, dtype=np.float32)
+        v = np.full(shape, -1.0, dtype=np.float32)
+        u[0, 1] = 12.0
+        v[0, 1] = -4.0
         dataset = xr.Dataset(
             data_vars={
                 "winterp": (("time", "zh", "yh", "xh"), w, {"units": "m/s"}),
@@ -103,15 +105,20 @@ def test_rotating_updraft_returns_coordinated_native_slices(tmp_path: Path) -> N
     assert frame.plan.level_km == pytest.approx(3.25)
     assert frame.plan.primary.key == "winterp"
     assert frame.plan.primary.evidence_kind == "native"
-    assert frame.plan.x_indices == [1, 2, 3]
-    assert frame.plan.y_indices == [1, 2, 3]
-    assert np.asarray(frame.plan.primary.values).shape == (3, 3)
+    assert frame.plan.x_indices == [1, 2]
+    assert frame.plan.y_indices == [1, 2]
+    assert np.asarray(frame.plan.primary.values).shape == (2, 2)
     assert frame.plan.overlays["vertical_vorticity"].units == "s^-1"
+    assert frame.plan.overlays["total_condensate"].units == "g/kg"
+    assert frame.xz_section.overlays["vertical_vorticity"].units == "s^-1"
     assert frame.xz_section.cross_section_coordinate_km == pytest.approx(0)
     assert frame.yz_section.cross_section_coordinate_km == pytest.approx(0)
-    assert frame.xz_section.horizontal_indices == [1, 2, 3]
-    assert frame.yz_section.horizontal_indices == [1, 2, 3]
+    assert frame.xz_section.horizontal_indices == [1, 2]
+    assert frame.yz_section.horizontal_indices == [1, 2]
     assert frame.primary_updraft.w_m_s == pytest.approx(46)
+    assert "combine rising motion" in frame.what_to_notice_now
+    assert frame.what_to_notice_by_view is not None
+    assert "this xz section intersects" in frame.what_to_notice_by_view["xz"]
     assert all("tmp" not in value for value in frame.provenance.values())
 
 
@@ -128,11 +135,20 @@ def test_cloud_and_precipitation_labels_derived_hydrometeor_grouping(tmp_path: P
     assert frame.plan.categories.evidence_kind == "derived"
     assert frame.plan.categories.source_fields == ["qc", "qr", "qi", "qs", "qg"]
     assert "max total-condensate level" in frame.plan.categories.derivation
+    assert frame.plan.selection_z_indices is not None
+    assert frame.plan.selection_z_indices[2][2] == 2
     assert frame.plan.primary.units == "g/kg"
+    assert frame.plan.overlays["vertical_velocity"].evidence_kind == "derived"
+    assert "sampled at each x/y cell's level" in (
+        frame.plan.overlays["vertical_velocity"].derivation or ""
+    )
     assert frame.xz_section.categories is not None
     assert frame.xz_section.overlays["reflectivity"].evidence_kind == "native"
     assert frame.selected_point.values["total_condensate"] == pytest.approx(2)
     assert frame.selected_point.evidence_kind["total_condensate"] == "derived"
+    assert frame.what_to_notice_by_view is not None
+    assert "responsible for that category" in frame.what_to_notice_by_view["plan"]
+    assert "this yz section" in frame.what_to_notice_by_view["yz"]
 
 
 def test_low_level_view_combines_motion_rain_and_model_relative_flow(tmp_path: Path) -> None:
@@ -157,6 +173,25 @@ def test_low_level_view_combines_motion_rain_and_model_relative_flow(tmp_path: P
     assert "multiplied by 10" in (frame.plan.overlays["accumulated_surface_rain"].derivation or "")
     assert frame.selected_point.states[0] == "Descending"
     assert frame.selected_point.coordinate_frame.startswith("translating model frame")
+    assert frame.what_to_notice_by_view is not None
+    assert "historical rain footprint" in frame.what_to_notice_by_view["plan"]
+    assert "current precipitating condensate" in frame.what_to_notice_by_view["xz"]
+
+
+def test_storm_viewport_is_fixed_across_saved_outputs(tmp_path: Path) -> None:
+    _write_retained_fixture(tmp_path)
+    settings = _settings(tmp_path)
+
+    first = supercells_explore_frame(settings, time_index=0, viewport="storm")
+    last = supercells_explore_frame(settings, time_index=8, viewport="storm")
+
+    assert first.viewport_bounds_km == last.viewport_bounds_km
+    assert first.viewport_bounds_km == {
+        "x_min": -35.5,
+        "x_max": 24.5,
+        "y_min": -33.5,
+        "y_max": 26.5,
+    }
 
 
 def test_retained_identity_mismatch_fails_closed(tmp_path: Path) -> None:
@@ -183,10 +218,14 @@ def test_product_frame_adds_bounded_volume_layers_without_changing_science_path(
     assert frame.scene is not None
     layers = {layer.key: layer for layer in frame.scene.layers}
     assert layers["storm_cloud_body"].threshold_label.endswith("0.05 g/kg")
-    assert layers["vertical_motion"].scale is not None
-    assert layers["vertical_motion"].scale.scale_id == "supercell_full_depth_vertical_velocity_v1"
+    assert layers["rising_core"].scale is not None
+    assert layers["rising_core"].scale.scale_id == "supercell_midlevel_vertical_velocity_v1"
+    assert layers["rising_core"].default_visible is True
+    assert layers["strong_descent"].default_visible is False
     assert layers["cyclonic_rotation"].source_fields == ["zvort"]
+    assert layers["cyclonic_rotation"].threshold_label.endswith("0.01 s^-1 in rising air")
     assert layers["updraft_helicity"].default_visible is True
+    assert "300 m^2/s^2" in layers["updraft_helicity"].threshold_label
     assert layers["reflectivity"].default_visible is False
     assert all(layer.returned_count <= layer.source_count for layer in layers.values())
 
@@ -218,5 +257,17 @@ def test_product_low_level_scene_identifies_model_relative_flow(tmp_path: Path) 
     assert frame.scene is not None
     assert frame.scene.wind_vectors
     assert frame.scene.wind_vectors[0].z_km == pytest.approx(1.25)
+    assert frame.scene.coordinate_extents_km["z"]["max"] == pytest.approx(5.25)
+    assert frame.scene.coordinate_sizes["z"] == 3
+    layers = {layer.key: layer for layer in frame.scene.layers}
+    precipitation = layers["precipitating_condensate"]
+    assert precipitation.scale is not None
+    assert precipitation.scale.scale_id == "supercell_low_level_precipitating_condensate_v1"
+    assert "through 3.25 km" in precipitation.threshold_label
+    assert max(point[2] for point in precipitation.points) <= 3.25
+    assert max(point[2] for point in layers["reflectivity"].points) <= 5.25
+    assert frame.plan.wind_vectors[0].u_m_s == pytest.approx(12)
+    assert layers["precipitating_condensate"].default_visible is True
+    assert frame.plan.overlays["low_level_precipitating_condensate"].units == "g/kg"
     assert frame.selected_point.coordinate_frame.startswith("translating model frame")
     assert "cold pool" in frame.caveats[-1]

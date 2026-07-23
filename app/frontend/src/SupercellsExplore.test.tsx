@@ -19,6 +19,7 @@ vi.mock("./True3DViewer", () => ({
     onToggleMaximize,
     onSelectStormPoint,
     compactDisplayControls,
+    cameraPreset,
   }: {
     fieldLabel: string;
     activeSliceLabel: string;
@@ -26,10 +27,12 @@ vi.mock("./True3DViewer", () => ({
     onToggleMaximize: () => void;
     onSelectStormPoint: (point: [number, number, number, number, number]) => void;
     compactDisplayControls: ReactNode;
+    cameraPreset: string;
   }) => (
     <section aria-label="Mock 3-D storm scene">
       <h2>{fieldLabel}</h2>
       <p>{activeSliceLabel}</p>
+      <p>Camera: {cameraPreset}</p>
       <button type="button" onClick={() => onSelectStormPoint([9.1, 19.1, 3.1, 12, 0])}>
         Select 3-D point
       </button>
@@ -141,13 +144,6 @@ function sceneLayers(lens: LensId): VolumeLayer[] {
           { code: 5, key: "qg", label: "Hail-treated large ice", color: "#7c4d8f" },
         ],
       },
-      {
-        ...base,
-        key: "vertical_motion",
-        display_name: "Strong vertical motion",
-        rendering: "signed_scalar",
-        default_visible: false,
-      },
     ];
   }
   if (lens === "low_level_interactions") {
@@ -157,7 +153,7 @@ function sceneLayers(lens: LensId): VolumeLayer[] {
         key: "storm_cloud_body",
         display_name: "Storm cloud body",
         rendering: "neutral_cloud",
-        default_visible: true,
+        default_visible: false,
         scale: null,
       },
       {
@@ -175,6 +171,14 @@ function sceneLayers(lens: LensId): VolumeLayer[] {
         rendering: "scalar",
         default_visible: true,
       },
+      {
+        ...base,
+        key: "precipitating_condensate",
+        display_name: "Low-level precipitating condensate",
+        units: "g/kg",
+        rendering: "scalar",
+        default_visible: true,
+      },
     ];
   }
   return [
@@ -188,10 +192,17 @@ function sceneLayers(lens: LensId): VolumeLayer[] {
     },
     {
       ...base,
-      key: "vertical_motion",
-      display_name: "Strong vertical motion",
+      key: "rising_core",
+      display_name: "Rising core",
       rendering: "signed_scalar",
       default_visible: true,
+    },
+    {
+      ...base,
+      key: "strong_descent",
+      display_name: "Strong descent",
+      rendering: "signed_scalar",
+      default_visible: false,
     },
     {
       ...base,
@@ -243,6 +254,12 @@ function frameFor(url: string): StormExaminationFrame {
         : lens === "cloud_precipitation"
           ? "How are cloud and precipitation organized through the storm?"
           : "How do ascent, descent, rain, and horizontal flow meet beneath the storm?",
+    what_to_notice_now: "This saved output contains coordinated frame-specific evidence.",
+    what_to_notice_by_view: {
+      plan: "Plan evidence at this saved output.",
+      xz: "X-z evidence at this saved output.",
+      yz: "Y-z evidence at this saved output.",
+    },
     time_index: timeIndex,
     time_seconds: times[timeIndex],
     times_seconds: times,
@@ -335,13 +352,26 @@ function frameFor(url: string): StormExaminationFrame {
       y_km: yCoordinates,
       level_index: 1,
       level_km: 3,
+      selection_z_indices:
+        lens === "cloud_precipitation"
+          ? [
+              [0, 2, 2],
+              [1, 2, 1],
+              [0, 1, 2],
+            ]
+          : null,
       primary: field(),
       overlays: {
         vertical_vorticity: field("zvort", "Vertical vorticity"),
         updraft_helicity: field("uh", "Updraft helicity"),
-        vertical_velocity: field("winterp", "Vertical velocity"),
-        composite_reflectivity: field("dbz", "Reflectivity"),
-        accumulated_surface_rain: field("rain", "Accumulated rain"),
+      vertical_velocity: field("winterp", "Vertical velocity"),
+      composite_reflectivity: field("dbz", "Reflectivity"),
+      accumulated_surface_rain: field("rain", "Accumulated rain"),
+      total_condensate: field("total_condensate", "Total condensate"),
+      low_level_precipitating_condensate: field(
+          "precipitating_condensate",
+          "Current precipitating condensate",
+        ),
       },
       categories: null,
       wind_vectors: [{ x_km: 0, y_km: 10, u_m_s: 12, v_m_s: 5, magnitude_m_s: 13 }],
@@ -352,11 +382,14 @@ function frameFor(url: string): StormExaminationFrame {
       coordinate_extents_km: {
         x: { min: viewport === "storm" ? -30 : -60, max: viewport === "storm" ? 30 : 60 },
         y: { min: viewport === "storm" ? -30 : -60, max: viewport === "storm" ? 30 : 60 },
-        z: { min: 0.25, max: 19.75 },
+        z: { min: 0.25, max: lens === "low_level_interactions" ? 5.25 : 19.75 },
       },
       coordinate_sizes: { x: 120, y: 120, z: 40 },
       layers: sceneLayers(lens),
-      wind_vectors: [{ x_km: 0, y_km: 10, z_km: 1.25, u_m_s: 12, v_m_s: 5, magnitude_m_s: 13 }],
+      wind_vectors:
+        lens === "low_level_interactions"
+          ? [{ x_km: 0, y_km: 10, z_km: 1.25, u_m_s: 12, v_m_s: 5, magnitude_m_s: 13 }]
+          : [],
       wind_reference_m_s: 25,
       point_budget: 20_000,
       source_history_file: `cm1out_${String(timeIndex + 1).padStart(6, "0")}.nc`,
@@ -382,6 +415,7 @@ function section(orientation: "xz" | "yz", horizontal: "x" | "y", coordinate: nu
       precipitating_condensate: field("precipitating_condensate", "Precipitating condensate"),
       reflectivity: field("dbz", "Reflectivity"),
       vertical_velocity: field(),
+      vertical_vorticity: field("zvort", "Vertical vorticity"),
     },
     categories: null,
   };
@@ -441,6 +475,7 @@ describe("SupercellsExplore", () => {
       "aria-pressed",
       "true",
     );
+    expect(screen.getByLabelText("Mock 3-D storm scene")).toHaveTextContent("Camera: look_along_y");
   });
 
   it("keeps lens defaults, viewport, evidence orientation, and native selection synchronized", async () => {
@@ -456,21 +491,47 @@ describe("SupercellsExplore", () => {
     );
     expect(await screen.findByRole("heading", { name: "Cloud and Precipitation" })).toBeVisible();
     await waitFor(() =>
-      expect(
-        screen.getAllByLabelText("Hydrometeors").some((control) => control.matches(":checked")),
-      ).toBe(true),
+      expect(screen.getByLabelText("Dominant hydrometeor")).toBeChecked(),
     );
-    expect(screen.getByLabelText("Vertical motion")).toBeChecked();
+    expect(screen.getByLabelText("Vertical-motion contours")).toBeChecked();
+    expect(screen.getByText("X-z evidence at this saved output.")).toBeVisible();
+    expect(
+      screen.getByText(/This storm-core native section shows the dominant hydrometeor/),
+    ).toBeVisible();
 
-    fireEvent.click(
-      within(screen.getByLabelText("Slice orientation")).getByRole("button", {
-        name: "Vertical x-z",
-      }),
+    const orientation = within(screen.getByLabelText("Slice orientation"));
+    expect(orientation.getByRole("button", { name: "Vertical x-z" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
     );
     expect((await screen.findAllByText("xz section at y = 10.0 km")).length).toBeGreaterThan(1);
     expect(screen.getByLabelText("Mock 3-D storm scene")).toHaveTextContent(
       "xz section at y = 10.0 km",
     );
+    fireEvent.click(orientation.getByRole("button", { name: "Horizontal x-y" }));
+    fireEvent.click(screen.getByLabelText("Hydrometeor plan plan view"), {
+      clientX: 250,
+      clientY: 150,
+    });
+    await waitFor(() =>
+      expect(fetch).toHaveBeenCalledWith(
+        expect.stringMatching(/x_index=1&y_index=0&z_index=2/),
+        expect.anything(),
+      ),
+    );
+    fireEvent.click(orientation.getByRole("button", { name: "Vertical y-z" }));
+    expect((await screen.findAllByText("yz section at x = 0.0 km")).length).toBeGreaterThan(1);
+    expect(screen.getByText("Y-z evidence at this saved output.")).toBeVisible();
+
+    fireEvent.click(screen.getByRole("button", { name: "Rotating Updraft" }));
+    await screen.findByRole("heading", { name: "Rotating Updraft" });
+    fireEvent.click(screen.getByRole("button", { name: "Cloud and Precipitation" }));
+    await screen.findByRole("heading", { name: "Cloud and Precipitation" });
+    expect(
+      within(screen.getByLabelText("Slice orientation")).getByRole("button", {
+        name: "Vertical y-z",
+      }),
+    ).toHaveAttribute("aria-pressed", "true");
 
     fireEvent.click(screen.getByRole("button", { name: "Full domain" }));
     await waitFor(() =>

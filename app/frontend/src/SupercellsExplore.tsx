@@ -12,13 +12,29 @@ import {
   StormSectionPlot,
   type ViewportId,
 } from "./StormExaminationResearch";
-import { type StormScenePayload, type StormScenePoint, True3DViewer } from "./True3DViewer";
+import {
+  type CameraPreset,
+  type StormScenePayload,
+  type StormScenePoint,
+  True3DViewer,
+} from "./True3DViewer";
 
 import "./StormExaminationResearch.css";
 import "./SupercellsExplore.css";
 
 type EvidenceView = "plan" | "xz" | "yz";
 type FocusedViewer = "scene" | "evidence" | null;
+type LensPresentation = {
+  viewport: ViewportId;
+  evidenceView: EvidenceView;
+  overlays: OverlayState;
+  visibleLayerKeys: string[] | null;
+  categoryCodes: number[];
+  cameraPreset: CameraPreset;
+  sceneOpacity: number;
+  scenePointSize: number;
+  selection: Selection | null;
+};
 
 const LENSES: Array<{ id: LensId; label: string }> = [
   { id: "rotating_updraft", label: "Rotating Updraft" },
@@ -42,27 +58,31 @@ export function SupercellsExplore({
   onBack: () => void;
 }) {
   const [lens, setLens] = useState<LensId>("rotating_updraft");
-  const [viewport, setViewport] = useState<ViewportId>("storm");
   const [timeIndex, setTimeIndex] = useState(5);
   const [frame, setFrame] = useState<StormExaminationFrame | null>(null);
-  const [selection, setSelection] = useState<Selection | null>(null);
-  const [evidenceView, setEvidenceView] = useState<EvidenceView>("plan");
+  const [presentations, setPresentations] = useState<Record<LensId, LensPresentation>>(
+    lensPresentationDefaults,
+  );
+  const presentation = presentations[lens];
+  const {
+    viewport,
+    evidenceView,
+    overlays,
+    categoryCodes,
+    cameraPreset,
+    sceneOpacity,
+    scenePointSize,
+    selection,
+  } = presentation;
+  const visibleLayerKeys = presentation.visibleLayerKeys ?? [];
   const [focusedViewer, setFocusedViewer] = useState<FocusedViewer>(null);
   const [contextCollapsed, setContextCollapsed] = useState(false);
-  const [overlays, setOverlays] = useState<OverlayState>(() => overlayDefaults("rotating_updraft"));
-  const [visibleLayerKeys, setVisibleLayerKeys] = useState<string[]>([]);
-  const [categoryCodes, setCategoryCodes] = useState<number[]>(
-    HYDROMETEOR_CODES.map((item) => item.code),
-  );
-  const [sceneOpacity, setSceneOpacity] = useState(1);
-  const [scenePointSize, setScenePointSize] = useState(1);
   const [playing, setPlaying] = useState(false);
   const [playbackSpeed, setPlaybackSpeed] = useState(1);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [retryNonce, setRetryNonce] = useState(0);
   const frameCache = useRef(new Map<string, StormExaminationFrame>());
-  const defaultsLens = useRef<LensId | null>(null);
   const contextBeforeEvidenceFocus = useRef(false);
 
   const requestKey = frameRequestKey(lens, viewport, timeIndex, selection);
@@ -114,14 +134,21 @@ export function SupercellsExplore({
   }, [loadFrame, retryNonce]);
 
   useEffect(() => {
-    if (!frame?.scene || frame.lens_id !== lens || defaultsLens.current === lens) return;
-    defaultsLens.current = lens;
-    setVisibleLayerKeys(
-      frame.scene.layers.filter((layer) => layer.default_visible).map((layer) => layer.key),
-    );
-    setOverlays(overlayDefaults(lens));
-    setCategoryCodes(HYDROMETEOR_CODES.map((item) => item.code));
-  }, [frame, lens]);
+    if (
+      !frame?.scene ||
+      frame.lens_id !== lens ||
+      presentations[lens].visibleLayerKeys !== null
+    )
+      return;
+    const layerKeys = frame.scene.layers
+      .filter((layer) => layer.default_visible)
+      .map((layer) => layer.key);
+    if (lens === "low_level_interactions") layerKeys.push("model_relative_wind");
+    setPresentations((current) => ({
+      ...current,
+      [lens]: { ...current[lens], visibleLayerKeys: layerKeys },
+    }));
+  }, [frame, lens, presentations]);
 
   useEffect(() => {
     if (!playing || loading || !frame) return;
@@ -147,13 +174,20 @@ export function SupercellsExplore({
 
   function chooseLens(next: LensId) {
     setPlaying(false);
+    setFrame(null);
     setLens(next);
-    defaultsLens.current = null;
   }
 
   function selectPoint(next: Selection) {
     setPlaying(false);
-    setSelection(next);
+    updatePresentation({ selection: next });
+  }
+
+  function updatePresentation(patch: Partial<LensPresentation>) {
+    setPresentations((current) => ({
+      ...current,
+      [lens]: { ...current[lens], ...patch },
+    }));
   }
 
   function selectScenePoint(point: StormScenePoint) {
@@ -166,9 +200,11 @@ export function SupercellsExplore({
   }
 
   function toggleLayer(key: string, visible: boolean) {
-    setVisibleLayerKeys((current) =>
-      visible ? [...new Set([...current, key])] : current.filter((item) => item !== key),
-    );
+    updatePresentation({
+      visibleLayerKeys: visible
+        ? [...new Set([...visibleLayerKeys, key])]
+        : visibleLayerKeys.filter((item) => item !== key),
+    });
   }
 
   function toggleEvidenceFocus() {
@@ -242,11 +278,12 @@ export function SupercellsExplore({
                 provenanceLabel="Retained native CM1 history; deterministic bounded selection."
                 noCloudMessage="No visible storm layers at this saved output."
                 windVectors={windVectors}
-                showWindVectors={lens === "low_level_interactions" && overlays.wind}
+                showWindVectors={visibleLayerKeys.includes("model_relative_wind")}
                 windMode="total"
                 windReferenceMps={frame.scene.wind_reference_m_s}
                 windArrowDomainFraction={0.055}
                 compactWorkspace
+                compactDisplayLabel="3-D layers"
                 maximized={focusedViewer === "scene"}
                 onToggleMaximize={() =>
                   setFocusedViewer((current) => (current === "scene" ? null : "scene"))
@@ -266,6 +303,8 @@ export function SupercellsExplore({
                     : null
                 }
                 onSelectStormPoint={selectScenePoint}
+                cameraPreset={cameraPreset}
+                onCameraPresetChange={(next) => updatePresentation({ cameraPreset: next })}
                 compactDisplayControls={
                   <StormDisplayControls
                     frame={frame}
@@ -274,12 +313,16 @@ export function SupercellsExplore({
                     pointSize={scenePointSize}
                     categoryCodes={categoryCodes}
                     onLayer={toggleLayer}
-                    onOpacity={setSceneOpacity}
-                    onPointSize={setScenePointSize}
-                    onCategoryCodes={setCategoryCodes}
+                    onOpacity={(next) => updatePresentation({ sceneOpacity: next })}
+                    onPointSize={(next) => updatePresentation({ scenePointSize: next })}
+                    onCategoryCodes={(next) => updatePresentation({ categoryCodes: next })}
                   />
                 }
               />
+            ) : loading ? (
+              <div className="supercells-loading-surface" role="status">
+                Loading 3-D Lens...
+              </div>
             ) : (
               <LocalFailure
                 title="3-D storm scene unavailable"
@@ -293,7 +336,7 @@ export function SupercellsExplore({
           <section className="supercells-evidence" aria-label="Coordinated storm evidence">
             <header className="instrument-header">
               <div>
-                <h2>{evidenceTitle(evidenceView)}</h2>
+                <h2>{evidenceTitle(frame, evidenceView)}</h2>
                 <p>{activeSliceLabel}</p>
               </div>
               <div className="instrument-actions">
@@ -304,7 +347,7 @@ export function SupercellsExplore({
                       type="button"
                       className={evidenceView === view ? "active-control" : ""}
                       aria-pressed={evidenceView === view}
-                      onClick={() => setEvidenceView(view)}
+                      onClick={() => updatePresentation({ evidenceView: view })}
                     >
                       {sliceControlLabel(view)}
                     </button>
@@ -354,7 +397,11 @@ export function SupercellsExplore({
                     />
                   )}
                 </div>
-                <StormLegend frame={frame} overlays={overlays} />
+                <StormLegend frame={frame} overlays={overlays} evidenceView={evidenceView} />
+              </div>
+            ) : loading ? (
+              <div className="supercells-loading-surface" role="status">
+                Loading coordinated evidence...
               </div>
             ) : (
               <LocalFailure
@@ -371,7 +418,14 @@ export function SupercellsExplore({
             onCollapsedChange={setContextCollapsed}
             showCollapseControl={false}
             sections={{
-              explain: <SupercellExplanation frame={frame} lens={lens} viewport={viewport} />,
+              explain: (
+                <SupercellExplanation
+                  frame={frame}
+                  lens={lens}
+                  viewport={viewport}
+                  evidenceView={evidenceView}
+                />
+              ),
               science: <SupercellScience frame={frame} selected={selection !== null} />,
               notes: <SupercellNotes />,
               details: <SupercellDetails frame={frame} simulation={simulation} />,
@@ -384,14 +438,12 @@ export function SupercellsExplore({
           viewport={viewport}
           evidenceView={evidenceView}
           overlays={overlays}
-          visibleLayerKeys={visibleLayerKeys}
           onViewport={(next) => {
             setPlaying(false);
-            setViewport(next);
+            updatePresentation({ viewport: next });
           }}
-          onEvidenceView={setEvidenceView}
-          onOverlays={setOverlays}
-          onLayer={toggleLayer}
+          onEvidenceView={(next) => updatePresentation({ evidenceView: next })}
+          onOverlays={(next) => updatePresentation({ overlays: next })}
         />
 
         <SupercellTimeline
@@ -436,6 +488,7 @@ function StormDisplayControls({
 }) {
   return (
     <section className="supercells-display-controls" aria-label="3-D storm display controls">
+      <strong className="supercells-display-heading">3-D layers</strong>
       <div className="supercells-layer-list">
         {frame.scene?.layers.map((layer) => (
           <label key={layer.key}>
@@ -447,6 +500,18 @@ function StormDisplayControls({
             {layer.display_name}
           </label>
         ))}
+        {Boolean(frame.scene?.wind_vectors.length) && (
+          <label>
+            <input
+              type="checkbox"
+              checked={visibleLayerKeys.includes("model_relative_wind")}
+              onChange={(event) =>
+                onLayer("model_relative_wind", event.currentTarget.checked)
+              }
+            />
+            Model-relative wind at 1.25 km
+          </label>
+        )}
       </div>
       {frame.lens_id === "cloud_precipitation" && (
         <fieldset className="supercells-category-filters">
@@ -504,26 +569,21 @@ function StormExploreControls({
   viewport,
   evidenceView,
   overlays,
-  visibleLayerKeys,
   onViewport,
   onEvidenceView,
   onOverlays,
-  onLayer,
 }: {
   lens: LensId;
   viewport: ViewportId;
   evidenceView: EvidenceView;
   overlays: OverlayState;
-  visibleLayerKeys: string[];
   onViewport: (value: ViewportId) => void;
   onEvidenceView: (value: EvidenceView) => void;
   onOverlays: (value: OverlayState) => void;
-  onLayer: (key: string, visible: boolean) => void;
 }) {
-  const controls = overlayControls(lens);
+  const controls = overlayControls(lens, evidenceView);
   function update(control: OverlayControl, checked: boolean) {
     onOverlays({ ...overlays, [control.overlayKey]: checked });
-    if (control.layerKey) onLayer(control.layerKey, checked);
   }
   return (
     <section className="supercells-control-deck" aria-label="Supercell visualization controls">
@@ -565,16 +625,12 @@ function StormExploreControls({
         </div>
       </fieldset>
       <fieldset className="supercells-overlay-controls">
-        <legend>Overlays</legend>
+        <legend>2-D evidence</legend>
         {controls.map((control) => (
           <label key={control.label}>
             <input
               type="checkbox"
-              checked={
-                control.layerKey
-                  ? visibleLayerKeys.includes(control.layerKey)
-                  : overlays[control.overlayKey]
-              }
+              checked={overlays[control.overlayKey]}
               onChange={(event) => update(control, event.currentTarget.checked)}
             />
             {control.label}
@@ -588,42 +644,37 @@ function StormExploreControls({
 type OverlayControl = {
   label: string;
   overlayKey: keyof OverlayState;
-  layerKey?: string;
 };
 
-function overlayControls(lens: LensId): OverlayControl[] {
+function overlayControls(lens: LensId, evidenceView: EvidenceView): OverlayControl[] {
   if (lens === "rotating_updraft") {
-    return [
-      { label: "Cloud body", overlayKey: "condensate", layerKey: "storm_cloud_body" },
-      { label: "Vertical motion", overlayKey: "verticalMotion", layerKey: "vertical_motion" },
-      { label: "Rotation", overlayKey: "rotation", layerKey: "cyclonic_rotation" },
-      { label: "2-5 km UH", overlayKey: "updraftHelicity", layerKey: "updraft_helicity" },
-      { label: "Reflectivity", overlayKey: "reflectivity", layerKey: "reflectivity" },
+    const controls: OverlayControl[] = [
+      { label: "Cloud boundary", overlayKey: "condensate" },
+      { label: "Rotation contour", overlayKey: "rotation" },
+      { label: "Reflectivity contour", overlayKey: "reflectivity" },
     ];
+    if (evidenceView === "plan") {
+      controls.splice(2, 0, { label: "2-5 km UH footprint", overlayKey: "updraftHelicity" });
+    }
+    return controls;
   }
   if (lens === "cloud_precipitation") {
     return [
-      { label: "Hydrometeors", overlayKey: "condensate", layerKey: "hydrometeor_categories" },
-      { label: "Reflectivity", overlayKey: "reflectivity", layerKey: "reflectivity" },
-      { label: "Vertical motion", overlayKey: "verticalMotion" },
+      { label: "Vertical-motion contours", overlayKey: "verticalMotion" },
+      { label: "Reflectivity contour", overlayKey: "reflectivity" },
     ];
   }
-  return [
-    { label: "Cloud body", overlayKey: "condensate", layerKey: "storm_cloud_body" },
-    {
-      label: "Low-level motion",
-      overlayKey: "verticalMotion",
-      layerKey: "low_level_vertical_motion",
-    },
-    { label: "Accumulated rain", overlayKey: "rain", layerKey: "accumulated_surface_rain" },
-    { label: "Model-relative flow", overlayKey: "wind" },
-    { label: "Reflectivity", overlayKey: "reflectivity", layerKey: "reflectivity" },
-    {
-      label: "Precipitating condensate",
-      overlayKey: "precipitatingCondensate",
-      layerKey: "precipitating_condensate",
-    },
+  const controls: OverlayControl[] = [
+    { label: "Current precipitation", overlayKey: "precipitatingCondensate" },
+    { label: "Reflectivity contour", overlayKey: "reflectivity" },
   ];
+  if (evidenceView === "plan") {
+    controls.unshift(
+      { label: "Accumulated rain (history)", overlayKey: "rain" },
+      { label: "Flow arrows at 1.25 km", overlayKey: "wind" },
+    );
+  }
+  return controls;
 }
 
 function SupercellTimeline({
@@ -735,10 +786,12 @@ function SupercellExplanation({
   frame,
   lens,
   viewport,
+  evidenceView,
 }: {
   frame: StormExaminationFrame | null;
   lens: LensId;
   viewport: ViewportId;
+  evidenceView: EvidenceView;
 }) {
   const question =
     frame?.lens_question ?? LENSES.find((item) => item.id === lens)?.label ?? "Storm evidence";
@@ -746,7 +799,13 @@ function SupercellExplanation({
     <section className="supercells-context-panel">
       <p className="eyebrow">{frame?.lens_name ?? "Supercell Lens"}</p>
       <h3>{question}</h3>
-      <p>{lensExplanation(lens)}</p>
+      <p>{lensExplanation(lens, evidenceView)}</p>
+      {frame && (
+        <div className="supercells-notice-now">
+          <strong>What to notice now</strong>
+          <p>{frame.what_to_notice_by_view?.[evidenceView] ?? frame.what_to_notice_now}</p>
+        </div>
+      )}
       <dl className="metric-grid">
         <Metric label="Simulation" value="Quarter-Circle Supercell" />
         <Metric label="Viewport" value={viewport === "storm" ? "Storm region" : "Full domain"} />
@@ -888,11 +947,50 @@ function overlayDefaults(lens: LensId): OverlayState {
     rotation: lens === "rotating_updraft",
     updraftHelicity: lens === "rotating_updraft",
     reflectivity: false,
-    condensate: true,
+    condensate: lens === "rotating_updraft",
     rain: lens === "low_level_interactions",
     wind: lens === "low_level_interactions",
-    precipitatingCondensate: false,
+    precipitatingCondensate: lens === "low_level_interactions",
     verticalMotion: true,
+  };
+}
+
+function lensPresentationDefaults(): Record<LensId, LensPresentation> {
+  const categoryCodes = HYDROMETEOR_CODES.map((item) => item.code);
+  return {
+    rotating_updraft: {
+      viewport: "storm",
+      evidenceView: "plan",
+      overlays: overlayDefaults("rotating_updraft"),
+      visibleLayerKeys: null,
+      categoryCodes,
+      cameraPreset: "look_along_y",
+      sceneOpacity: 1,
+      scenePointSize: 1,
+      selection: null,
+    },
+    cloud_precipitation: {
+      viewport: "storm",
+      evidenceView: "xz",
+      overlays: overlayDefaults("cloud_precipitation"),
+      visibleLayerKeys: null,
+      categoryCodes,
+      cameraPreset: "look_along_y",
+      sceneOpacity: 0.9,
+      scenePointSize: 0.9,
+      selection: null,
+    },
+    low_level_interactions: {
+      viewport: "storm",
+      evidenceView: "plan",
+      overlays: overlayDefaults("low_level_interactions"),
+      visibleLayerKeys: null,
+      categoryCodes,
+      cameraPreset: "low_level",
+      sceneOpacity: 1,
+      scenePointSize: 1,
+      selection: null,
+    },
   };
 }
 
@@ -929,12 +1027,12 @@ function nearestCoordinateIndex(
 }
 
 function evidenceSlice(frame: StormExaminationFrame, view: EvidenceView) {
-  const field = {
-    raw_field_name: frame.plan.primary.key,
-    display_name: frame.plan.primary.display_name,
-    units: frame.plan.primary.units,
-  };
   if (view === "plan") {
+    const field = {
+      raw_field_name: frame.plan.primary.key,
+      display_name: frame.plan.primary.display_name,
+      units: frame.plan.primary.units,
+    };
     return {
       field,
       selection: {
@@ -950,7 +1048,11 @@ function evidenceSlice(frame: StormExaminationFrame, view: EvidenceView) {
   }
   const section = view === "xz" ? frame.xz_section : frame.yz_section;
   return {
-    field,
+    field: {
+      raw_field_name: section.primary.key,
+      display_name: section.primary.display_name,
+      units: section.primary.units,
+    },
     selection: {
       orientation: view === "xz" ? ("vertical_x" as const) : ("vertical_y" as const),
       selected_dimension: view === "xz" ? "yh" : "xh",
@@ -965,12 +1067,21 @@ function evidenceSlice(frame: StormExaminationFrame, view: EvidenceView) {
 
 function evidenceLabel(frame: StormExaminationFrame, view: EvidenceView): string {
   if (view === "plan") {
+    if (frame.plan.selection_z_indices) {
+      return `${frame.plan.title} · column-derived at each cell's condensate maximum`;
+    }
     return `${frame.plan.title} · z = ${frame.plan.level_km.toFixed(2)} km`;
   }
   return view === "xz" ? frame.xz_section.title : frame.yz_section.title;
 }
 
-function evidenceTitle(view: EvidenceView): string {
+function evidenceTitle(
+  frame: StormExaminationFrame | null,
+  view: EvidenceView,
+): string {
+  if (view === "plan" && frame?.plan.selection_z_indices) {
+    return "Column-derived x-y view";
+  }
   return `${sliceControlLabel(view)} slice`;
 }
 
@@ -979,14 +1090,20 @@ function sliceControlLabel(view: EvidenceView): string {
   return view === "xz" ? "Vertical x-z" : "Vertical y-z";
 }
 
-function lensExplanation(lens: LensId): string {
+function lensExplanation(lens: LensId, evidenceView: EvidenceView): string {
   if (lens === "rotating_updraft") {
-    return "Signed vertical motion reveals ascent and descent; cyclonic vorticity and 2–5 km updraft helicity show where rising and rotating structure overlap.";
+    return evidenceView === "plan"
+      ? "The 3.25 km x-y slice pairs signed vertical motion with cyclonic vorticity and the 2–5 km updraft-helicity footprint, showing where ascent and rotation organize together."
+      : "This native vertical section pairs signed vertical motion with cyclonic-vorticity contours, showing whether the rotating rising core remains vertically connected.";
   }
   if (lens === "cloud_precipitation") {
-    return "Native cloud liquid, rain, cloud ice, snow, and hail-treated large ice are grouped by the dominant mass species while the inspector retains every value.";
+    return evidenceView === "plan"
+      ? "This column-derived x-y view assigns each cell the hydrometeor that dominates at its strongest-condensate level and samples vertical motion at that same level. Selecting a cell inspects the responsible native level in Context."
+      : "This storm-core native section shows the dominant hydrometeor at each cell. Vertical-motion contours remain subordinate, and every native species value remains available in Context.";
   }
-  return "Low-level vertical motion, accumulated rain, and model-relative horizontal flow show how ascent, descent, and precipitation meet beneath the storm without diagnosing a cold pool.";
+  return evidenceView === "plan"
+    ? "The fixed 3-D lower-troposphere view and 1.25 km x-y slice coordinate current motion, precipitating condensate, and model-relative flow with the historical accumulated-rain footprint without diagnosing a cold pool."
+    : "The 3-D view remains fixed on the lowest 5.25 km, while this native vertical section shows full-depth current ascent, descent, and precipitating condensate; accumulated surface rain remains a separate historical plan-view quantity.";
 }
 
 function scienceKeys(lens: LensId): string[] {

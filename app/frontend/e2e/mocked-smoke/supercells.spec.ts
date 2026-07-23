@@ -72,14 +72,21 @@ test.describe("mocked smoke: Supercells product path", () => {
     const planBox = await page.getByLabel("Midlevel storm structure plan view").boundingBox();
     expect((planBox?.width ?? 0) / (planBox?.height ?? 1)).toBeCloseTo(1, 1);
 
+    await expect(page.getByLabel("Camera view")).toHaveValue("look_along_y");
+    await page.getByLabel("Camera view").selectOption("top_down_xy");
     await page.getByRole("button", { name: "Cloud and Precipitation" }).click();
     await expect(page.getByRole("button", { name: "Cloud and Precipitation" })).toHaveAttribute(
       "aria-pressed",
       "true",
     );
+    await expect(
+      page
+        .getByLabel("Slice orientation")
+        .getByRole("button", { name: "Vertical x-z" }),
+    ).toHaveAttribute("aria-pressed", "true");
+    await expect(page.getByLabel("Camera view")).toHaveValue("look_along_y");
     await page.locator(".true3d-display-control > summary").click();
     await expect(page.getByLabel("Dominant hydrometeor")).toBeChecked();
-    await expect(page.getByLabel("Strong vertical motion")).not.toBeChecked();
     await expect(page.getByText("Hail-treated large ice").first()).toBeVisible();
 
     await page.getByRole("button", { name: "Low-Level Interactions" }).click();
@@ -87,13 +94,21 @@ test.describe("mocked smoke: Supercells product path", () => {
       "aria-pressed",
       "true",
     );
-    await expect(page.getByLabel("Model-relative flow")).toBeChecked();
-    await expect(page.getByLabel("Accumulated rain").first()).toBeChecked();
+    await expect(page.getByLabel("Flow arrows at 1.25 km")).toBeChecked();
+    await expect(page.getByLabel("Accumulated rain (history)").first()).toBeChecked();
+    await expect(page.getByLabel("Current precipitation")).toBeChecked();
+
+    await page.getByRole("button", { name: "Rotating Updraft" }).click();
+    await expect(page.getByLabel("Camera view")).toHaveValue("top_down_xy");
+    await page.getByRole("button", { name: "Low-Level Interactions" }).click();
 
     await page
       .getByLabel("Slice orientation")
       .getByRole("button", { name: "Vertical x-z" })
       .click();
+    await expect(page.getByLabel("Accumulated rain (history)")).toHaveCount(0);
+    await expect(page.getByLabel("Flow arrows at 1.25 km")).toHaveCount(0);
+    await expect(page.getByLabel("Current precipitation")).toBeChecked();
     await expect(page.getByText("Slice: xz section at y = 10.0 km")).toBeVisible();
     await expect(page.getByLabel("xz section at y = 10.0 km")).toBeVisible();
     const sectionBox = await page.getByLabel("xz section at y = 10.0 km").boundingBox();
@@ -270,6 +285,12 @@ function supercellsFrame(url: string) {
         : typedLens === "cloud_precipitation"
           ? "How are cloud and precipitation organized through the storm?"
           : "How do ascent, descent, rain, and horizontal flow meet beneath the storm?",
+    what_to_notice_now: "This saved output contains coordinated frame-specific evidence.",
+    what_to_notice_by_view: {
+      plan: "Plan evidence at this saved output.",
+      xz: "X-z evidence at this saved output.",
+      yz: "Y-z evidence at this saved output.",
+    },
     time_index: timeIndex,
     time_seconds: times[timeIndex],
     times_seconds: times,
@@ -392,6 +413,14 @@ function plan(lens: string, x: number[], y: number[]) {
     y_km: y,
     level_index: 1,
     level_km: 3,
+    selection_z_indices:
+      lens === "cloud_precipitation"
+        ? [
+            [0, 1, 2],
+            [1, 2, 1],
+            [0, 1, 2],
+          ]
+        : null,
     primary: field(),
     overlays: {
       vertical_vorticity: field("zvort", "Vertical vorticity"),
@@ -399,6 +428,11 @@ function plan(lens: string, x: number[], y: number[]) {
       vertical_velocity: field("winterp", "Vertical velocity"),
       composite_reflectivity: field("dbz", "Reflectivity"),
       accumulated_surface_rain: field("rain", "Accumulated rain"),
+      total_condensate: field("total_condensate", "Total condensate"),
+      low_level_precipitating_condensate: field(
+        "precipitating_condensate",
+        "Current precipitating condensate",
+      ),
     },
     categories: null,
     wind_vectors: [{ x_km: 0, y_km: 10, u_m_s: 12, v_m_s: 5, magnitude_m_s: 13 }],
@@ -416,6 +450,7 @@ function section(orientation: "xz" | "yz", horizontal: "x" | "y", coordinate: nu
     cross_section_coordinate_km: coordinate,
     primary: field(),
     overlays: {
+      vertical_vorticity: field("zvort", "Vertical vorticity"),
       total_condensate: field("total_condensate", "Total condensate"),
       precipitating_condensate: field("precipitating_condensate", "Precipitating condensate"),
       reflectivity: field("dbz", "Reflectivity"),
@@ -475,17 +510,23 @@ function scene(lens: string, viewport: string) {
     lens === "cloud_precipitation"
       ? [
           layer("hydrometeor_categories", "Dominant hydrometeor", "categorical", true, null),
-          layer("vertical_motion", "Strong vertical motion", "signed_scalar", false),
         ]
       : lens === "low_level_interactions"
         ? [
-            layer("storm_cloud_body", "Storm cloud body", "neutral_cloud", true, null),
+            layer("storm_cloud_body", "Storm cloud body", "neutral_cloud", false, null),
+            layer(
+              "precipitating_condensate",
+              "Low-level precipitating condensate",
+              "scalar",
+              true,
+            ),
             layer("low_level_vertical_motion", "Low-level vertical motion", "signed_scalar", true),
             layer("accumulated_surface_rain", "Accumulated rain", "scalar", true),
           ]
         : [
             layer("storm_cloud_body", "Storm cloud body", "neutral_cloud", true, null),
-            layer("vertical_motion", "Strong vertical motion", "signed_scalar", true),
+            layer("rising_core", "Rising core", "signed_scalar", true),
+            layer("strong_descent", "Strong descent", "signed_scalar", false),
             layer("cyclonic_rotation", "Cyclonic rotation", "scalar", true),
             layer("updraft_helicity", "2-5 km updraft helicity", "scalar", true),
           ];
@@ -493,7 +534,7 @@ function scene(lens: string, viewport: string) {
     coordinate_extents_km: {
       x: { min: -extent, max: extent },
       y: { min: -extent, max: extent },
-      z: { min: 0.25, max: 19.75 },
+      z: { min: 0.25, max: lens === "low_level_interactions" ? 5.25 : 19.75 },
     },
     coordinate_sizes: { x: 120, y: 120, z: 40 },
     layers,

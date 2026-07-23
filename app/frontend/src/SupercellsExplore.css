@@ -147,6 +147,14 @@
   font-size: 0.62rem;
 }
 
+.supercells-loading-surface {
+  display: grid;
+  min-height: 16rem;
+  place-items: center;
+  color: var(--color-text-muted);
+  font-weight: 700;
+}
+
 .supercells-evidence {
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
@@ -204,7 +212,8 @@
   grid-template-areas:
     "heading range"
     "scale scale"
-    "note overlays";
+    "note note"
+    "overlays overlays";
   grid-template-columns: minmax(0, 1fr) max-content;
   gap: 0.28rem 0.65rem;
   align-items: center;
@@ -281,7 +290,8 @@
 }
 
 .supercells-evidence .storm-overlay-key > div {
-  grid-template-columns: 1.1rem auto;
+  grid-template-columns: 1.1rem minmax(0, 1fr);
+  min-width: 0;
 }
 
 .supercells-workbench > .explore-inspector {
@@ -341,6 +351,27 @@
 .context-callout {
   border-left: 3px solid var(--color-accent-primary);
   padding-left: 0.5rem;
+}
+
+.supercells-notice-now {
+  display: grid;
+  gap: 0.18rem;
+  margin: 0.6rem 0;
+  border-left: 3px solid #4d7890;
+  padding: 0.45rem 0.55rem;
+  background: #eef6f9;
+}
+
+.supercells-notice-now strong {
+  color: var(--color-text-primary);
+  font-size: 0.72rem;
+}
+
+.supercells-notice-now p {
+  margin: 0;
+  color: var(--color-text-secondary);
+  font-size: 0.72rem;
+  line-height: 1.35;
 }
 
 .context-coordinate-frame {
@@ -484,6 +515,11 @@
 .supercells-display-controls {
   display: grid;
   gap: 0.65rem;
+}
+
+.supercells-display-heading {
+  color: var(--color-text-primary);
+  font-size: 0.72rem;
 }
 
 .supercells-layer-list,

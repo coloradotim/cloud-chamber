@@ -130,6 +130,7 @@ type True3DViewerProps = {
   showUpdraftLensLegend?: boolean;
   compactWorkspace?: boolean;
   compactDisplayControls?: ReactNode;
+  compactDisplayLabel?: string;
   maximized?: boolean;
   onToggleMaximize?: () => void;
   stormScene?: StormScenePayload | null;
@@ -139,6 +140,8 @@ type True3DViewerProps = {
   compactAxisLabels?: boolean;
   selectedPointCoordinates?: { x: number; y: number; z: number } | null;
   onSelectStormPoint?: (point: StormScenePoint) => void;
+  cameraPreset?: CameraPreset;
+  onCameraPresetChange?: (preset: CameraPreset) => void;
 };
 
 type SceneRefs = {
@@ -160,7 +163,12 @@ type SceneBounds = {
   maxRange: number;
 };
 
-type CameraPreset = "overview" | "top_down_xy" | "look_along_x" | "look_along_y";
+export type CameraPreset =
+  | "overview"
+  | "top_down_xy"
+  | "look_along_x"
+  | "look_along_y"
+  | "low_level";
 
 type AxisLabel = {
   axis: "x" | "y" | "z";
@@ -207,6 +215,7 @@ export function True3DViewer({
   showUpdraftLensLegend = true,
   compactWorkspace = false,
   compactDisplayControls,
+  compactDisplayLabel = "Display",
   maximized = false,
   onToggleMaximize,
   stormScene = null,
@@ -216,16 +225,22 @@ export function True3DViewer({
   compactAxisLabels = false,
   selectedPointCoordinates = null,
   onSelectStormPoint,
+  cameraPreset = "overview",
+  onCameraPresetChange,
 }: True3DViewerProps) {
   const mountRef = useRef<HTMLDivElement | null>(null);
   const axisLabelLayerRef = useRef<HTMLDivElement | null>(null);
   const refs = useRef<SceneRefs | null>(null);
   const axisOcclusionRef = useRef({ frame: updraftLensFrame, opacity: updraftLensOpacity });
   const stormSelectionRef = useRef(onSelectStormPoint);
+  const cameraPresetRef = useRef(cameraPreset);
   axisOcclusionRef.current = { frame: updraftLensFrame, opacity: updraftLensOpacity };
   stormSelectionRef.current = onSelectStormPoint;
+  cameraPresetRef.current = cameraPreset;
   const [renderError, setRenderError] = useState<string | null>(null);
   const [cameraStatus, setCameraStatus] = useState("Camera ready");
+  const [selectedCameraPreset, setSelectedCameraPreset] =
+    useState<CameraPreset>(cameraPreset);
   const [tallViewport, setTallViewport] = useState(false);
 
   const boundsKey = boundsSignature(pointCloud, stormScene);
@@ -240,16 +255,28 @@ export function True3DViewer({
   );
 
   const resetCamera = useCallback(() => {
-    applyCameraPreset("overview", refs.current, bounds);
-    setCameraStatus("Camera reset to overview");
-  }, [bounds]);
+    applyCameraPreset(
+      selectedCameraPreset,
+      refs.current,
+      bounds,
+      cameraDistanceScale(selectedCameraPreset, maximized),
+    );
+    setCameraStatus(`${cameraPresetStatus(selectedCameraPreset)} (reset)`);
+  }, [bounds, maximized, selectedCameraPreset]);
 
   const setCameraPreset = useCallback(
     (preset: CameraPreset) => {
-      applyCameraPreset(preset, refs.current, bounds);
+      setSelectedCameraPreset(preset);
+      applyCameraPreset(
+        preset,
+        refs.current,
+        bounds,
+        cameraDistanceScale(preset, maximized),
+      );
       setCameraStatus(cameraPresetStatus(preset));
+      onCameraPresetChange?.(preset);
     },
-    [bounds],
+    [bounds, maximized, onCameraPresetChange],
   );
 
   const zoomCamera = useCallback((direction: "in" | "out") => {
@@ -314,7 +341,7 @@ export function True3DViewer({
         MIDDLE: THREE.MOUSE.DOLLY,
         RIGHT: THREE.MOUSE.PAN,
       };
-      applyCameraPreset("overview", { camera, controls }, bounds);
+      applyCameraPreset(cameraPresetRef.current, { camera, controls }, bounds);
 
       let pointerDown: { x: number; y: number } | null = null;
       const handlePointerDown = (event: PointerEvent) => {
@@ -393,6 +420,17 @@ export function True3DViewer({
       return undefined;
     }
   }, [axisLabels, bounds]);
+
+  useEffect(() => {
+    setSelectedCameraPreset(cameraPreset);
+    applyCameraPreset(
+      cameraPreset,
+      refs.current,
+      bounds,
+      cameraDistanceScale(cameraPreset, maximized),
+    );
+    setCameraStatus(cameraPresetStatus(cameraPreset));
+  }, [bounds, cameraPreset, maximized]);
 
   useEffect(() => {
     const current = refs.current;
@@ -578,7 +616,7 @@ export function True3DViewer({
           {compactDisplayControls && (
             <details className="true3d-display-control">
               <summary>
-                <span>Display</span>
+                <span>{compactDisplayLabel}</span>
               </summary>
               <div className="true3d-display-panel">{compactDisplayControls}</div>
             </details>
@@ -587,13 +625,14 @@ export function True3DViewer({
             <span className="sr-only">Camera view</span>
             <select
               aria-label="Camera view"
-              defaultValue="overview"
+              value={selectedCameraPreset}
               onChange={(event) => setCameraPreset(event.target.value as CameraPreset)}
             >
               <option value="overview">Overview</option>
               <option value="top_down_xy">Top-down x-y</option>
               <option value="look_along_x">Look along x</option>
               <option value="look_along_y">Look along y</option>
+              <option value="low_level">Low-level</option>
             </select>
           </label>
           <button
@@ -1441,9 +1480,11 @@ function applyCameraPreset(
   preset: CameraPreset,
   refs: Pick<SceneRefs, "camera" | "controls"> | null,
   bounds: SceneBounds,
+  distanceScale = 1,
 ) {
   if (!refs) return;
-  const distance = Math.max(bounds.xRange, bounds.yRange, bounds.zRange) * 1.65;
+  const distance =
+    Math.max(bounds.xRange, bounds.yRange, bounds.zRange) * 1.65 * distanceScale;
   if (preset === "top_down_xy") {
     refs.camera.position.set(0, distance, 0.001);
     refs.camera.up.set(0, 0, -1);
@@ -1453,6 +1494,22 @@ function applyCameraPreset(
   } else if (preset === "look_along_y") {
     refs.camera.position.set(0, bounds.zRange * 0.22, distance);
     refs.camera.up.set(0, 1, 0);
+  } else if (preset === "low_level") {
+    const lowTarget = centeredCoordinate(
+      Math.min(bounds.z.max, bounds.z.min + 1.0),
+      bounds.z,
+    );
+    const xTarget = 0;
+    const yTarget = bounds.yRange * 0.18;
+    refs.camera.position.set(
+      xTarget + bounds.xRange * 0.18,
+      lowTarget + bounds.maxRange * 0.72,
+      yTarget + bounds.yRange * 0.42,
+    );
+    refs.camera.up.set(0, 1, 0);
+    refs.controls.target.set(xTarget, lowTarget, yTarget);
+    refs.controls.update();
+    return;
   } else {
     refs.camera.position.set(bounds.xRange * 0.85, bounds.zRange * 0.8, bounds.yRange * 1.18);
     refs.camera.up.set(0, 1, 0);
@@ -1461,12 +1518,19 @@ function applyCameraPreset(
   refs.controls.update();
 }
 
+function cameraDistanceScale(preset: CameraPreset, maximized: boolean): number {
+  if (!maximized || preset === "low_level") return 1;
+  if (preset === "top_down_xy") return 0.78;
+  return 0.62;
+}
+
 function cameraPresetStatus(preset: CameraPreset): string {
   const labels: Record<CameraPreset, string> = {
     overview: "Camera set to overview",
     top_down_xy: "Camera set to top-down x-y view",
     look_along_x: "Camera looking along the x axis",
     look_along_y: "Camera looking along the y axis",
+    low_level: "Camera focused on the low-level storm",
   };
   return labels[preset];
 }
