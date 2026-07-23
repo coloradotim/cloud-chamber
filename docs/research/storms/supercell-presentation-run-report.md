@@ -202,6 +202,33 @@ The longer duration adds useful evolution, but the later field is not treated
 as one tracked storm. The report does not assign split, merger, or parent-child
 lineage to the multiple convective structures.
 
+### Fixed World-scale disposition
+
+Whole-run diagnostics found four v1 scales that clipped accepted presentation
+output:
+
+| Field | Frames above v1 maximum | Observed maximum |
+|---|---:|---:|
+| Total condensate | 38 | 18.49 g/kg |
+| 2-5 km AGL updraft helicity | 64 | 1,827.89 m^2/s^2 |
+| Accumulated surface rain | 10 | 110.77 mm |
+| Reflectivity | 8 | 70.76 dBZ |
+
+The World therefore adopts reviewed fixed v2 scales:
+
+| Scale ID | Fixed range |
+|---|---:|
+| `supercell_total_condensate_v2` | 0-20 g/kg |
+| `supercell_updraft_helicity_v2` | 0-2,000 m^2/s^2 |
+| `supercell_accumulated_rain_v2` | 0-120 mm |
+| `supercell_reflectivity_v2` | -10-75 dBZ |
+
+These scales remain fixed across all 91 retained times. They are not recomputed
+by frame or run. The full-depth vertical-velocity v1 range remains adequate at
+-65 to +65 m/s and is unchanged. The updraft-helicity scale is positive-only
+because the displayed product is explicitly the cyclonic 2-5 km AGL UH layer;
+the accepted presentation run's displayed UH minimum is 0 m^2/s^2.
+
 ## Product adoption
 
 The validated run is wired to the existing stable product identity on this
@@ -214,9 +241,10 @@ backing_run_id: quarter-circle-supercell-presentation-v1-20260723
 default_explore_time: 4,440 s
 ```
 
-The World inventory remains metadata-only. It validates compact promotion
-evidence and file fingerprints without opening 91 NetCDF histories. A selected
-Explore frame opens only its selected history.
+The World inventory remains metadata-only. Its cache key includes size and
+modification-time identity for both manifests, the compact promotion evidence,
+and all 91 history files. It does not open NetCDF histories during inventory.
+A selected Explore frame opens only its selected history.
 
 Two bounded visualization products are available:
 
@@ -238,8 +266,8 @@ Measured local endpoint behavior:
 
 | Request | Latency | Serialized payload |
 |---|---:|---:|
-| World inventory, cold | 20 ms | 1,790 bytes |
-| World inventory, warm | 1 ms | 1,790 bytes |
+| World inventory, cold | 18 ms | 1,790 bytes |
+| World inventory, steady warm | 2 ms | 1,790 bytes |
 | Rotating Updraft, storm region | 0.93 s | 3.09 MB |
 | Cloud and Precipitation, storm region | 0.69 s | 3.20 MB |
 | Low-Level Interactions, storm region | 0.62 s | 3.02 MB |
@@ -261,7 +289,11 @@ The external review packet contains:
 - `native-review-summary.json`;
 - final desktop screenshots for all three Lenses, both viewports, selected
   point evidence, vertical sections, maximize/restore, and the 180-minute
-  endpoint.
+  endpoint;
+- `14-review-rotating-updraft-160min-v2.png`, showing the representative
+  1,827.9 m^2/s^2 late-run UH maximum with the adopted fixed scale;
+- `15-review-low-level-180min-v2.png`, showing the 110.8 mm final accumulated
+  rain maximum with the adopted fixed scale.
 
 The committed renderer reproduces the native scientific images from the
 preserved Gate B and presentation runs. Native CM1 output and generated media

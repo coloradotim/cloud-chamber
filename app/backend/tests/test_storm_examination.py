@@ -304,6 +304,19 @@ def test_presentation_inventory_uses_promotion_evidence_then_reads_selected_hist
     assert opened == ["cm1out_000038.nc"]
 
 
+def test_presentation_inventory_cache_invalidates_when_history_is_removed(
+    tmp_path: Path,
+) -> None:
+    run_dir = _write_retained_fixture(tmp_path, presentation=True)
+    settings = _settings(tmp_path)
+
+    assert len(storm_examination_inventory(settings)) == 91
+    (run_dir / "cm1out_000038.nc").unlink()
+
+    with pytest.raises(StormExaminationError, match="presentation output is unavailable"):
+        storm_examination_inventory(settings)
+
+
 def test_product_frame_adds_bounded_volume_layers_without_changing_science_path(
     tmp_path: Path,
 ) -> None:
@@ -332,7 +345,14 @@ def test_product_frame_adds_bounded_volume_layers_without_changing_science_path(
     assert layers["cyclonic_rotation"].threshold_label.endswith("0.01 s^-1 in rising air")
     assert layers["updraft_helicity"].default_visible is True
     assert "300 m^2/s^2" in layers["updraft_helicity"].threshold_label
+    assert layers["updraft_helicity"].scale is not None
+    assert layers["updraft_helicity"].scale.scale_id == "supercell_updraft_helicity_v2"
+    assert layers["updraft_helicity"].scale.minimum == 0
+    assert layers["updraft_helicity"].scale.maximum == 2_000
     assert layers["reflectivity"].default_visible is False
+    assert layers["reflectivity"].scale is not None
+    assert layers["reflectivity"].scale.scale_id == "supercell_reflectivity_v2"
+    assert layers["reflectivity"].scale.maximum == 75
     assert all(layer.returned_count <= layer.source_count for layer in layers.values())
 
 
@@ -353,7 +373,8 @@ def test_product_hydrometeor_scene_keeps_exact_large_ice_label(tmp_path: Path) -
     assert category_layer.default_visible is True
     assert category_layer.categories[-1].label == "Hail-treated large ice"
     assert category_layer.scale is not None
-    assert category_layer.scale.scale_id == "supercell_total_condensate_v1"
+    assert category_layer.scale.scale_id == "supercell_total_condensate_v2"
+    assert category_layer.scale.maximum == 20
 
 
 def test_product_low_level_scene_identifies_model_relative_flow(tmp_path: Path) -> None:
@@ -370,8 +391,12 @@ def test_product_low_level_scene_identifies_model_relative_flow(tmp_path: Path) 
     assert frame.scene.coordinate_sizes["z"] == 3
     layers = {layer.key: layer for layer in frame.scene.layers}
     precipitation = layers["precipitating_condensate"]
+    accumulated_rain = layers["accumulated_surface_rain"]
     assert precipitation.scale is not None
     assert precipitation.scale.scale_id == "supercell_low_level_precipitating_condensate_v1"
+    assert accumulated_rain.scale is not None
+    assert accumulated_rain.scale.scale_id == "supercell_accumulated_rain_v2"
+    assert accumulated_rain.scale.maximum == 120
     assert "through 3.25 km" in precipitation.threshold_label
     assert max(point[2] for point in precipitation.points) <= 3.25
     assert max(point[2] for point in layers["reflectivity"].points) <= 5.25

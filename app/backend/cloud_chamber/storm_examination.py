@@ -606,9 +606,8 @@ def _run_fingerprint(
     contract: _RunContract,
 ) -> tuple[tuple[str, int, int], ...]:
     paths = [run_dir / "run_manifest.json", run_dir / "case_manifest.json"]
-    if contract.evidence_filename is None:
-        paths.extend(run_dir / name for name in contract.history_filenames)
-    else:
+    paths.extend(run_dir / name for name in contract.history_filenames)
+    if contract.evidence_filename is not None:
         paths.append(run_dir / contract.evidence_filename)
     try:
         return tuple((path.name, path.stat().st_size, path.stat().st_mtime_ns) for path in paths)
@@ -1996,12 +1995,12 @@ def _w_scale(scale_id: str, maximum: float, breakpoints: list[float]) -> ScaleMe
 
 def _reflectivity_scale() -> ScaleMetadata:
     return ScaleMetadata(
-        scale_id="supercell_reflectivity_v1",
+        scale_id="supercell_reflectivity_v2",
         display_name="Reflectivity",
         units="dBZ",
         scale_type="fixed_continuous",
         minimum=-10,
-        maximum=70,
+        maximum=75,
         breakpoints=[20, 40, 60],
         colors=["#d8e5eb", "#8ac7b8", "#f1c453", "#d65332"],
     )
@@ -2009,12 +2008,12 @@ def _reflectivity_scale() -> ScaleMetadata:
 
 def _rain_scale() -> ScaleMetadata:
     return ScaleMetadata(
-        scale_id="supercell_accumulated_rain_v1",
+        scale_id="supercell_accumulated_rain_v2",
         display_name="Accumulated surface rain",
         units="mm",
         scale_type="fixed_continuous",
         minimum=0,
-        maximum=90,
+        maximum=120,
         breakpoints=[1, 10, 30, 60],
         colors=["#ffffff", "#c7e1ee", "#6daed1", "#236b9e", "#0b3557"],
     )
@@ -2022,12 +2021,12 @@ def _rain_scale() -> ScaleMetadata:
 
 def _condensate_scale() -> ScaleMetadata:
     return ScaleMetadata(
-        scale_id="supercell_total_condensate_v1",
+        scale_id="supercell_total_condensate_v2",
         display_name="Total condensate",
         units="g/kg",
         scale_type="fixed_continuous",
         minimum=0,
-        maximum=16,
+        maximum=20,
         breakpoints=[0.05, 0.5, 2, 8],
         colors=["#ffffff", "#d9eef2", "#86cbd7", "#3a91ae", "#15506f"],
     )
@@ -2061,12 +2060,12 @@ def _vorticity_scale() -> ScaleMetadata:
 
 def _uh_scale() -> ScaleMetadata:
     return ScaleMetadata(
-        scale_id="supercell_updraft_helicity_v1",
+        scale_id="supercell_updraft_helicity_v2",
         display_name="2-5 km AGL updraft helicity",
         units="m^2/s^2",
         scale_type="fixed_continuous",
-        minimum=-800,
-        maximum=800,
-        breakpoints=[100, 300, 600],
+        minimum=0,
+        maximum=2_000,
+        breakpoints=[300, 800, 1_400],
         colors=["#ffffff", "#f6b27d", "#d9583f", "#7f1d1d"],
     )
