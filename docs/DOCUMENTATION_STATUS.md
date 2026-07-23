@@ -217,6 +217,8 @@ After #421 merges, the immediate bounded follow-ups are:
 → #428 — shared Context and Science | Notes | Details information architecture
 ```
 
+Issue #428 may establish durable per-Simulation Notes as the first bounded durable-content contract. It must not also implement complete Explore-state persistence, resume, Saved Views, Saved Comparisons, or a generic annotation framework.
+
 The next program should then establish:
 
 ```text
