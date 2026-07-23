@@ -53,9 +53,22 @@ export function IntegratedExploreWorkspace({
   );
 }
 
-export function ExploreInspector({ sections }: { sections: InspectorSections }) {
-  const [collapsed, setCollapsed] = useState(false);
+export function ExploreInspector({
+  id,
+  sections,
+  collapsed: controlledCollapsed,
+  onCollapsedChange,
+  showCollapseControl = true,
+}: {
+  id?: string;
+  sections: InspectorSections;
+  collapsed?: boolean;
+  onCollapsedChange?: (collapsed: boolean) => void;
+  showCollapseControl?: boolean;
+}) {
+  const [internalCollapsed, setInternalCollapsed] = useState(false);
   const [activeTab, setActiveTab] = useState<InspectorTab>("explain");
+  const collapsed = controlledCollapsed ?? internalCollapsed;
   const tabbed = sections.science !== undefined;
   const activePanel =
     activeTab === "explain"
@@ -66,25 +79,36 @@ export function ExploreInspector({ sections }: { sections: InspectorSections }) 
           ? sections.notes
           : sections.details;
 
+  function toggleCollapsed() {
+    const next = !collapsed;
+    if (controlledCollapsed === undefined) setInternalCollapsed(next);
+    onCollapsedChange?.(next);
+  }
+
+  if (collapsed && !showCollapseControl) return null;
+
   return (
     <>
       <aside
+        id={id}
         className={`explore-inspector${collapsed ? " explore-inspector-collapsed" : ""}`}
         aria-label="Explore inspector"
         data-collapsed={collapsed ? "true" : "false"}
       >
         <header className="explore-inspector-header">
           {!collapsed && <strong>Context</strong>}
-          <button
-            type="button"
-            className="explore-inspector-toggle"
-            aria-expanded={!collapsed}
-            aria-label={collapsed ? "Open inspector" : "Collapse inspector"}
-            title={collapsed ? "Open inspector" : "Collapse inspector"}
-            onClick={() => setCollapsed((current) => !current)}
-          >
-            <span aria-hidden="true">{collapsed ? "\u00ab" : "\u00bb"}</span>
-          </button>
+          {showCollapseControl && (
+            <button
+              type="button"
+              className="explore-inspector-toggle"
+              aria-expanded={!collapsed}
+              aria-label={collapsed ? "Open inspector" : "Collapse inspector"}
+              title={collapsed ? "Open inspector" : "Collapse inspector"}
+              onClick={toggleCollapsed}
+            >
+              <span aria-hidden="true">{collapsed ? "\u00ab" : "\u00bb"}</span>
+            </button>
+          )}
         </header>
         <div hidden={collapsed}>
           {tabbed && (

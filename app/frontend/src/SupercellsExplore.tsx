@@ -48,6 +48,7 @@ export function SupercellsExplore({
   const [selection, setSelection] = useState<Selection | null>(null);
   const [evidenceView, setEvidenceView] = useState<EvidenceView>("plan");
   const [focusedViewer, setFocusedViewer] = useState<FocusedViewer>(null);
+  const [contextCollapsed, setContextCollapsed] = useState(false);
   const [overlays, setOverlays] = useState<OverlayState>(() => overlayDefaults("rotating_updraft"));
   const [visibleLayerKeys, setVisibleLayerKeys] = useState<string[]>([]);
   const [categoryCodes, setCategoryCodes] = useState<number[]>(
@@ -62,6 +63,7 @@ export function SupercellsExplore({
   const [retryNonce, setRetryNonce] = useState(0);
   const frameCache = useRef(new Map<string, StormExaminationFrame>());
   const defaultsLens = useRef<LensId | null>(null);
+  const contextBeforeEvidenceFocus = useRef(false);
 
   const requestKey = frameRequestKey(lens, viewport, timeIndex, selection);
   const loadFrame = useCallback(
@@ -169,6 +171,17 @@ export function SupercellsExplore({
     );
   }
 
+  function toggleEvidenceFocus() {
+    if (focusedViewer === "evidence") {
+      setFocusedViewer(null);
+      setContextCollapsed(contextBeforeEvidenceFocus.current);
+      return;
+    }
+    contextBeforeEvidenceFocus.current = contextCollapsed;
+    setContextCollapsed(true);
+    setFocusedViewer("evidence");
+  }
+
   return (
     <IntegratedExploreWorkspace
       worldName="Supercells"
@@ -182,7 +195,11 @@ export function SupercellsExplore({
         }`}
         aria-label="Supercells integrated Explore workspace"
       >
-        <div className="supercells-workbench">
+        <div
+          className={`supercells-workbench${
+            contextCollapsed ? " supercells-context-collapsed" : ""
+          }`}
+        >
           <section className="supercells-scene" aria-label="3-D storm scene">
             <div className="supercells-lens-switcher" aria-label="Supercell Lens">
               {LENSES.map((item) => (
@@ -280,7 +297,7 @@ export function SupercellsExplore({
                 <p>{activeSliceLabel}</p>
               </div>
               <div className="instrument-actions">
-                <div className="instrument-view-toggle" aria-label="Evidence view">
+                <div className="instrument-view-toggle" aria-label="Slice orientation">
                   {(["plan", "xz", "yz"] as EvidenceView[]).map((view) => (
                     <button
                       key={view}
@@ -289,7 +306,7 @@ export function SupercellsExplore({
                       aria-pressed={evidenceView === view}
                       onClick={() => setEvidenceView(view)}
                     >
-                      {view === "plan" ? "Plan" : view}
+                      {sliceControlLabel(view)}
                     </button>
                   ))}
                 </div>
@@ -300,11 +317,26 @@ export function SupercellsExplore({
                     focusedViewer === "evidence" ? "Restore evidence" : "Maximize evidence"
                   }
                   title={focusedViewer === "evidence" ? "Restore evidence" : "Maximize evidence"}
-                  onClick={() =>
-                    setFocusedViewer((current) => (current === "evidence" ? null : "evidence"))
-                  }
+                  onClick={toggleEvidenceFocus}
                 >
                   <span aria-hidden="true">⛶</span>
+                </button>
+                <button
+                  type="button"
+                  className="supercells-context-toggle"
+                  aria-expanded={!contextCollapsed}
+                  aria-controls={contextCollapsed ? undefined : "supercells-context-inspector"}
+                  aria-label={contextCollapsed ? "Open Context" : "Collapse Context"}
+                  title={contextCollapsed ? "Open Context" : "Collapse Context"}
+                  onClick={() => setContextCollapsed((current) => !current)}
+                >
+                  <span className="supercells-context-toggle-icon" aria-hidden="true">
+                    <span className="supercells-context-toggle-frame">
+                      <span className="supercells-context-toggle-panel">
+                        {contextCollapsed ? "\u2039" : "\u203a"}
+                      </span>
+                    </span>
+                  </span>
                 </button>
               </div>
             </header>
@@ -322,7 +354,7 @@ export function SupercellsExplore({
                     />
                   )}
                 </div>
-                <StormLegend frame={frame} />
+                <StormLegend frame={frame} overlays={overlays} />
               </div>
             ) : (
               <LocalFailure
@@ -334,6 +366,10 @@ export function SupercellsExplore({
           </section>
 
           <ExploreInspector
+            id="supercells-context-inspector"
+            collapsed={contextCollapsed}
+            onCollapsedChange={setContextCollapsed}
+            showCollapseControl={false}
             sections={{
               explain: <SupercellExplanation frame={frame} lens={lens} viewport={viewport} />,
               science: <SupercellScience frame={frame} selected={selection !== null} />,
@@ -513,7 +549,7 @@ function StormExploreControls({
         </div>
       </fieldset>
       <fieldset>
-        <legend>Evidence</legend>
+        <legend>Slice</legend>
         <div className="segmented-buttons">
           {(["plan", "xz", "yz"] as EvidenceView[]).map((view) => (
             <button
@@ -523,7 +559,7 @@ function StormExploreControls({
               aria-pressed={evidenceView === view}
               onClick={() => onEvidenceView(view)}
             >
-              {view === "plan" ? "Plan" : view}
+              {sliceControlLabel(view)}
             </button>
           ))}
         </div>
@@ -569,7 +605,7 @@ function overlayControls(lens: LensId): OverlayControl[] {
     return [
       { label: "Hydrometeors", overlayKey: "condensate", layerKey: "hydrometeor_categories" },
       { label: "Reflectivity", overlayKey: "reflectivity", layerKey: "reflectivity" },
-      { label: "Vertical motion", overlayKey: "verticalMotion", layerKey: "vertical_motion" },
+      { label: "Vertical motion", overlayKey: "verticalMotion" },
     ];
   }
   return [
@@ -851,7 +887,7 @@ function overlayDefaults(lens: LensId): OverlayState {
   return {
     rotation: lens === "rotating_updraft",
     updraftHelicity: lens === "rotating_updraft",
-    reflectivity: lens === "cloud_precipitation",
+    reflectivity: false,
     condensate: true,
     rain: lens === "low_level_interactions",
     wind: lens === "low_level_interactions",
@@ -935,7 +971,12 @@ function evidenceLabel(frame: StormExaminationFrame, view: EvidenceView): string
 }
 
 function evidenceTitle(view: EvidenceView): string {
-  return view === "plan" ? "Plan evidence" : `${view} evidence`;
+  return `${sliceControlLabel(view)} slice`;
+}
+
+function sliceControlLabel(view: EvidenceView): string {
+  if (view === "plan") return "Horizontal x-y";
+  return view === "xz" ? "Vertical x-z" : "Vertical y-z";
 }
 
 function lensExplanation(lens: LensId): string {

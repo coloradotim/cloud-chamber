@@ -1,6 +1,6 @@
 /* eslint-disable react-refresh/only-export-components */
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { MouseEvent as ReactMouseEvent } from "react";
+import type { CSSProperties, MouseEvent as ReactMouseEvent } from "react";
 
 import "./App.css";
 import "./StormExaminationResearch.css";
@@ -386,7 +386,7 @@ export function StormExaminationResearch() {
                     onSelect={selectPoint}
                   />
                 </div>
-                <StormLegend frame={frame} />
+                <StormLegend frame={frame} overlays={overlays} />
               </div>
             ) : (
               <div className="storm-loading" role="status">
@@ -623,6 +623,12 @@ export function StormPlanPlot({
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const geometryRef = useRef<PlotGeometry | null>(null);
+  const plotStyle = dataAspectStyle(
+    frame.viewport_bounds_km.x_min,
+    frame.viewport_bounds_km.x_max,
+    frame.viewport_bounds_km.y_min,
+    frame.viewport_bounds_km.y_max,
+  );
   useCanvasRender(canvasRef, () => {
     const canvas = canvasRef.current;
     if (canvas) geometryRef.current = drawPlan(canvas, frame, overlays);
@@ -643,7 +649,7 @@ export function StormPlanPlot({
   }
 
   return (
-    <figure className="storm-plot storm-plan-plot">
+    <figure className="storm-plot storm-plan-plot" style={plotStyle}>
       <figcaption>
         <div>
           <strong>{frame.plan.title}</strong>
@@ -675,6 +681,16 @@ export function StormSectionPlot({
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const geometryRef = useRef<PlotGeometry | null>(null);
+  const horizontalMinimum = section.horizontal_km[0];
+  const horizontalMaximum = section.horizontal_km.at(-1) ?? horizontalMinimum;
+  const verticalMinimum = section.z_km[0] - 0.25;
+  const verticalMaximum = (section.z_km.at(-1) ?? 20) + 0.25;
+  const plotStyle = dataAspectStyle(
+    horizontalMinimum,
+    horizontalMaximum,
+    verticalMinimum,
+    verticalMaximum,
+  );
   useCanvasRender(canvasRef, () => {
     const canvas = canvasRef.current;
     if (canvas) geometryRef.current = drawSection(canvas, section, frame, overlays);
@@ -706,7 +722,7 @@ export function StormSectionPlot({
   }
 
   return (
-    <figure className="storm-plot storm-section-plot">
+    <figure className="storm-plot storm-section-plot" style={plotStyle}>
       <figcaption>
         <strong>{section.title}</strong>
         <span>{section.primary.display_name}</span>
@@ -720,13 +736,21 @@ export function StormSectionPlot({
   );
 }
 
-export function StormLegend({ frame }: { frame: StormExaminationFrame }) {
+export function StormLegend({
+  frame,
+  overlays,
+}: {
+  frame: StormExaminationFrame;
+  overlays?: OverlayState;
+}) {
   if (frame.plan.categories) {
     return (
-      <aside className="storm-legend" aria-label="Hydrometeor legend">
-        <strong>Dominant hydrometeor</strong>
-        <small>at column condensate maximum</small>
-        <ol>
+      <aside className="storm-legend storm-category-legend" aria-label="Hydrometeor legend">
+        <div className="storm-legend-heading">
+          <strong>Dominant hydrometeor</strong>
+          <small>at column condensate maximum</small>
+        </div>
+        <ol className="storm-legend-scale">
           {frame.plan.categories.categories
             .filter((category) => category.code > 0)
             .map((category) => (
@@ -736,23 +760,29 @@ export function StormLegend({ frame }: { frame: StormExaminationFrame }) {
               </li>
             ))}
         </ol>
-        <p>
-          Mass: {formatValue(frame.plan.primary.selected_frame_minimum)} to{" "}
-          {formatValue(frame.plan.primary.selected_frame_maximum)} g/kg
-        </p>
-        <small>Derived category; native species retained in Context.</small>
-        <OverlayKey lens={frame.lens_id} />
+        <div className="storm-legend-range">
+          <span>
+            Mass {formatValue(frame.plan.primary.selected_frame_minimum)} to{" "}
+            {formatValue(frame.plan.primary.selected_frame_maximum)} g/kg
+          </span>
+        </div>
+        <small className="storm-legend-note">
+          Derived category; native species retained in Context.
+        </small>
+        <OverlayKey lens={frame.lens_id} overlays={overlays} />
       </aside>
     );
   }
   const scale = frame.plan.primary.scale;
   return (
     <aside className="storm-legend" aria-label={`${scale.display_name} legend`}>
-      <strong>w (m/s)</strong>
-      <p>Frame max {formatSigned(frame.plan.primary.selected_frame_maximum)}</p>
-      <ol>
+      <div className="storm-legend-heading">
+        <strong>w (m/s)</strong>
+        <small>Fixed across all retained times</small>
+      </div>
+      <ol className="storm-legend-scale">
         {scale.colors
-          .map((color, index) => ({ color, label: scaleIntervalLabel(scale, index) }))
+          .map((color, index) => ({ color, label: compactScaleIntervalLabel(scale, index) }))
           .reverse()
           .map((item) => (
             <li key={`${item.color}-${item.label}`}>
@@ -761,31 +791,30 @@ export function StormLegend({ frame }: { frame: StormExaminationFrame }) {
             </li>
           ))}
       </ol>
-      <p>Frame min {formatSigned(frame.plan.primary.selected_frame_minimum)}</p>
-      <small>Fixed across all retained times.</small>
-      <OverlayKey lens={frame.lens_id} />
+      <div className="storm-legend-range">
+        <span>Frame max {formatSigned(frame.plan.primary.selected_frame_maximum)}</span>
+        <span>Frame min {formatSigned(frame.plan.primary.selected_frame_minimum)}</span>
+      </div>
+      <OverlayKey lens={frame.lens_id} overlays={overlays} />
     </aside>
   );
 }
 
-function OverlayKey({ lens }: { lens: LensId }) {
-  const items =
-    lens === "rotating_updraft"
-      ? [
-          ["purple", "Cyclonic vorticity >= 0.01 s^-1"],
-          ["black", "UH >= 300 m^2/s^2"],
-          ["brown", "Reflectivity >= 35 dBZ"],
-        ]
-      : lens === "cloud_precipitation"
-        ? [
-            ["black", "Reflectivity >= 35 dBZ"],
-            ["signed", "w: red rising / blue descending"],
-          ]
-        : [
-            ["navy", "Rain footprint >= 2 mm"],
-            ["brown", "Reflectivity >= 35 dBZ"],
-            ["arrow", "Native model-relative flow"],
-          ];
+function OverlayKey({ lens, overlays }: { lens: LensId; overlays?: OverlayState }) {
+  const items: Array<[string, string]> = [];
+  if (lens === "rotating_updraft") {
+    if (overlays?.rotation) items.push(["purple", "Cyclonic vorticity >= 0.01 s^-1"]);
+    if (overlays?.updraftHelicity) items.push(["black", "UH >= 300 m^2/s^2"]);
+    if (overlays?.reflectivity) items.push(["brown", "Reflectivity >= 35 dBZ"]);
+  } else if (lens === "cloud_precipitation") {
+    if (overlays?.verticalMotion) items.push(["signed", "w >= +5 red / w <= -5 blue"]);
+    if (overlays?.reflectivity) items.push(["black", "Reflectivity >= 35 dBZ"]);
+  } else {
+    if (overlays?.rain) items.push(["navy", "Rain footprint >= 2 mm"]);
+    if (overlays?.reflectivity) items.push(["brown", "Reflectivity >= 35 dBZ"]);
+    if (overlays?.wind) items.push(["arrow", "Model-relative flow"]);
+  }
+  if (!items.length) return null;
   return (
     <div className="storm-overlay-key">
       {items.map(([kind, label]) => (
@@ -983,6 +1012,9 @@ function drawPlan(
       );
     }
   } else if (frame.lens_id === "cloud_precipitation") {
+    if (overlays.verticalMotion) {
+      drawSignedOutlines(context, geometry, frame.plan.overlays.vertical_velocity, 5);
+    }
     if (overlays.reflectivity) {
       drawThresholdOutline(
         context,
@@ -1108,16 +1140,43 @@ function plotGeometry(
   bounds: Record<"x_min" | "x_max" | "y_min" | "y_max", number>,
 ): PlotGeometry {
   const rect = canvas.getBoundingClientRect();
+  const availableWidth = Math.max(20, rect.width - left - right);
+  const availableHeight = Math.max(20, rect.height - top - bottom);
+  const modelWidth = Math.max(Number.EPSILON, bounds.x_max - bounds.x_min);
+  const modelHeight = Math.max(Number.EPSILON, bounds.y_max - bounds.y_min);
+  const modelAspect = modelWidth / modelHeight;
+  let width = availableWidth;
+  let height = width / modelAspect;
+  let fittedLeft = left;
+  let fittedTop = top;
+  if (height > availableHeight) {
+    height = availableHeight;
+    width = height * modelAspect;
+    fittedLeft += (availableWidth - width) / 2;
+  } else {
+    fittedTop += (availableHeight - height) / 2;
+  }
   return {
-    left,
-    top,
-    width: Math.max(20, rect.width - left - right),
-    height: Math.max(20, rect.height - top - bottom),
+    left: fittedLeft,
+    top: fittedTop,
+    width,
+    height,
     xMinimum: bounds.x_min,
     xMaximum: bounds.x_max,
     yMinimum: bounds.y_min,
     yMaximum: bounds.y_max,
   };
+}
+
+function dataAspectStyle(
+  horizontalMinimum: number,
+  horizontalMaximum: number,
+  verticalMinimum: number,
+  verticalMaximum: number,
+): CSSProperties {
+  const horizontalSpan = Math.max(Number.EPSILON, horizontalMaximum - horizontalMinimum);
+  const verticalSpan = Math.max(Number.EPSILON, verticalMaximum - verticalMinimum);
+  return { "--storm-data-aspect": horizontalSpan / verticalSpan } as CSSProperties;
 }
 
 function drawGrid(context: CanvasRenderingContext2D, geometry: PlotGeometry) {
@@ -1269,12 +1328,14 @@ function drawSignedOutlines(
   layer: FieldLayer,
   threshold: number,
 ) {
-  drawThresholdOutline(context, geometry, layer, threshold, "#b5221f", 1.25);
   const negative: FieldLayer = {
     ...layer,
     values: layer.values.map((row) => row.map((value) => (value === null ? null : -value))),
   };
-  drawThresholdOutline(context, geometry, negative, threshold, "#174f9c", 1.25);
+  drawThresholdOutline(context, geometry, layer, threshold, "rgba(255,255,255,0.94)", 4.2);
+  drawThresholdOutline(context, geometry, negative, threshold, "rgba(255,255,255,0.94)", 4.2);
+  drawThresholdOutline(context, geometry, layer, threshold, "#c72b22", 2.2);
+  drawThresholdOutline(context, geometry, negative, threshold, "#1559b0", 2.2);
 }
 
 function drawWindVectors(
@@ -1404,12 +1465,24 @@ function scaleColor(value: number, scale: ScaleMetadata): string {
   return scale.colors[Math.round(normalized * (scale.colors.length - 1))] ?? scale.colors[0];
 }
 
+function compactScaleIntervalLabel(scale: ScaleMetadata, index: number): string {
+  const lower = index === 0 ? null : scale.breakpoints[index - 1];
+  const upper = scale.breakpoints[index] ?? null;
+  if (lower === null) return `<${formatCompactLegendValue(upper ?? scale.minimum)}`;
+  if (upper === null) return `>=${formatCompactLegendValue(lower)}`;
+  return `${formatCompactLegendValue(lower)}–${formatCompactLegendValue(upper)}`;
+}
+
 function scaleIntervalLabel(scale: ScaleMetadata, index: number): string {
   const lower = index === 0 ? null : scale.breakpoints[index - 1];
   const upper = scale.breakpoints[index] ?? null;
   if (lower === null) return `< ${formatValue(upper ?? scale.minimum)}`;
   if (upper === null) return `>= ${formatValue(lower)}`;
   return `${formatValue(lower)} to < ${formatValue(upper)}`;
+}
+
+function formatCompactLegendValue(value: number): string {
+  return Number.isInteger(value) ? value.toFixed(0) : formatValue(value);
 }
 
 function withAlpha(hex: string, alpha: number): string {

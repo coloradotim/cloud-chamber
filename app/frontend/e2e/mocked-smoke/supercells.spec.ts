@@ -69,6 +69,8 @@ test.describe("mocked smoke: Supercells product path", () => {
     expect(sceneBox?.width ?? 0).toBeLessThan((evidenceBox?.width ?? 1) * 1.7);
     expect(evidenceBox?.width ?? 0).toBeGreaterThan(500);
     expect(contextBox?.width ?? 0).toBeGreaterThanOrEqual(288);
+    const planBox = await page.getByLabel("Midlevel storm structure plan view").boundingBox();
+    expect((planBox?.width ?? 0) / (planBox?.height ?? 1)).toBeCloseTo(1, 1);
 
     await page.getByRole("button", { name: "Cloud and Precipitation" }).click();
     await expect(page.getByRole("button", { name: "Cloud and Precipitation" })).toHaveAttribute(
@@ -88,9 +90,17 @@ test.describe("mocked smoke: Supercells product path", () => {
     await expect(page.getByLabel("Model-relative flow")).toBeChecked();
     await expect(page.getByLabel("Accumulated rain").first()).toBeChecked();
 
-    await page.getByLabel("Evidence view").getByRole("button", { name: "xz" }).click();
+    await page
+      .getByLabel("Slice orientation")
+      .getByRole("button", { name: "Vertical x-z" })
+      .click();
     await expect(page.getByText("Slice: xz section at y = 10.0 km")).toBeVisible();
     await expect(page.getByLabel("xz section at y = 10.0 km")).toBeVisible();
+    const sectionBox = await page.getByLabel("xz section at y = 10.0 km").boundingBox();
+    const sectionAspect = await page.locator(".storm-section-plot").evaluate((element) =>
+      Number(getComputedStyle(element).getPropertyValue("--storm-data-aspect")),
+    );
+    expect((sectionBox?.width ?? 0) / (sectionBox?.height ?? 1)).toBeCloseTo(sectionAspect, 1);
 
     await page.getByLabel("xz section at y = 10.0 km").click({ position: { x: 180, y: 120 } });
     await page.getByRole("tab", { name: "Science" }).click();
@@ -105,7 +115,20 @@ test.describe("mocked smoke: Supercells product path", () => {
     await page.getByRole("button", { name: "Maximize evidence" }).click();
     const evidenceMaximized = await page.getByLabel("Coordinated storm evidence").boundingBox();
     expect(evidenceMaximized?.width ?? 0).toBeGreaterThan((evidenceBefore?.width ?? 0) * 2);
+    await expect(page.getByRole("button", { name: "Open Context" })).toBeVisible();
+    await expect(page.getByLabel("Explore inspector")).toHaveCount(0);
+    const maximizedSectionBox = await page.getByLabel("xz section at y = 10.0 km").boundingBox();
+    expect(
+      (maximizedSectionBox?.width ?? 0) / (maximizedSectionBox?.height ?? 1),
+    ).toBeCloseTo(sectionAspect, 1);
+    await page.getByRole("button", { name: "Open Context" }).click();
+    await expect(page.getByLabel("Explore inspector")).toBeVisible();
     await page.getByRole("button", { name: "Restore evidence" }).click();
+
+    await page.getByRole("button", { name: "Collapse Context" }).click();
+    await expect(page.getByLabel("Explore inspector")).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Open Context" })).toBeVisible();
+    await page.getByRole("button", { name: "Open Context" }).click();
 
     await page.getByRole("button", { name: "Maximize 3-D viewer" }).click();
     await expect(page.getByRole("button", { name: "Restore 3-D viewer" })).toBeVisible();
@@ -147,6 +170,9 @@ test.describe("mocked smoke: Supercells product path", () => {
     expect(evidence?.height ?? 0).toBeGreaterThanOrEqual(398);
     expect(documentWidth).toBe(1024);
     expect(documentHeight).toBeLessThanOrEqual(856);
+    await expect(page.getByRole("heading", { name: "Horizontal x-y slice" })).toBeVisible();
+    const compactPlan = await page.getByLabel("Midlevel storm structure plan view").boundingBox();
+    expect((compactPlan?.width ?? 0) / (compactPlan?.height ?? 1)).toBeCloseTo(1, 1);
     await expect(page.getByRole("button", { name: "Maximize evidence" })).toBeInViewport();
     await expect(page.getByRole("button", { name: "Previous saved output" })).toBeInViewport();
     await expect(page.getByRole("button", { name: "Next saved output" })).toBeInViewport();
@@ -370,6 +396,7 @@ function plan(lens: string, x: number[], y: number[]) {
     overlays: {
       vertical_vorticity: field("zvort", "Vertical vorticity"),
       updraft_helicity: field("uh", "Updraft helicity"),
+      vertical_velocity: field("winterp", "Vertical velocity"),
       composite_reflectivity: field("dbz", "Reflectivity"),
       accumulated_surface_rain: field("rain", "Accumulated rain"),
     },

@@ -181,19 +181,30 @@
   padding: 0.3rem 0 0.3rem 0.65rem;
 }
 
-.storm-legend > strong {
+.storm-legend-heading {
+  display: grid;
+  gap: 0.06rem;
+}
+
+.storm-legend-heading > strong {
   font-size: 0.7rem;
 }
 
-.storm-legend > p,
-.storm-legend > small {
+.storm-legend-heading > small,
+.storm-legend-note,
+.storm-legend-range {
   margin: 0;
   color: var(--color-text-muted);
   font-size: 0.57rem;
   line-height: 1.25;
 }
 
-.storm-legend ol {
+.storm-legend-range {
+  display: grid;
+  gap: 0.08rem;
+}
+
+.storm-legend-scale {
   display: grid;
   gap: 0.05rem;
   margin: 0.15rem 0;
@@ -201,7 +212,7 @@
   list-style: none;
 }
 
-.storm-legend li {
+.storm-legend-scale li {
   display: grid;
   grid-template-columns: 0.55rem minmax(0, 1fr);
   gap: 0.28rem;
@@ -211,11 +222,11 @@
   line-height: 1.08;
 }
 
-.storm-legend li span {
+.storm-legend-scale li span {
   border: 1px solid rgba(49, 69, 82, 0.16);
 }
 
-.storm-legend li b {
+.storm-legend-scale li b {
   align-self: center;
   font-weight: 750;
 }

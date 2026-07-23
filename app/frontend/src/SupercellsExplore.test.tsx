@@ -339,6 +339,7 @@ function frameFor(url: string): StormExaminationFrame {
       overlays: {
         vertical_vorticity: field("zvort", "Vertical vorticity"),
         updraft_helicity: field("uh", "Updraft helicity"),
+        vertical_velocity: field("winterp", "Vertical velocity"),
         composite_reflectivity: field("dbz", "Reflectivity"),
         accumulated_surface_rain: field("rain", "Accumulated rain"),
       },
@@ -459,12 +460,12 @@ describe("SupercellsExplore", () => {
         screen.getAllByLabelText("Hydrometeors").some((control) => control.matches(":checked")),
       ).toBe(true),
     );
-    expect(
-      screen.getAllByLabelText("Vertical motion").every((control) => !control.matches(":checked")),
-    ).toBe(true);
+    expect(screen.getByLabelText("Vertical motion")).toBeChecked();
 
     fireEvent.click(
-      within(screen.getByLabelText("Evidence view")).getByRole("button", { name: "xz" }),
+      within(screen.getByLabelText("Slice orientation")).getByRole("button", {
+        name: "Vertical x-z",
+      }),
     );
     expect((await screen.findAllByText("xz section at y = 10.0 km")).length).toBeGreaterThan(1);
     expect(screen.getByLabelText("Mock 3-D storm scene")).toHaveTextContent(
@@ -509,6 +510,10 @@ describe("SupercellsExplore", () => {
     expect(screen.getByLabelText("Supercells integrated Explore workspace")).toHaveClass(
       "supercells-explore-focused-evidence",
     );
+    expect(screen.getByRole("button", { name: "Open Context" })).toBeVisible();
+    expect(screen.queryByLabelText("Explore inspector")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Open Context" }));
+    expect(screen.getByLabelText("Explore inspector")).toBeVisible();
     fireEvent.click(screen.getByRole("button", { name: "Restore evidence" }));
 
     expect(screen.getByRole("button", { name: "Rotating Updraft" })).toHaveAttribute(

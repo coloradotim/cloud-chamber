@@ -152,6 +152,7 @@ const frame: StormExaminationFrame = {
     overlays: {
       vertical_vorticity: layer("zvort", "Vertical vorticity"),
       updraft_helicity: layer("uh", "Updraft helicity"),
+      vertical_velocity: layer("winterp", "Vertical velocity"),
       composite_reflectivity: layer("dbz", "Reflectivity"),
       accumulated_surface_rain: layer("rain", "Rain"),
     },

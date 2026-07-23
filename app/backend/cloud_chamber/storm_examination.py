@@ -645,6 +645,15 @@ def _plan_view(
             "1000 * max_z(qc + qr + qi + qs + qg)",
         )
         categories = _column_hydrometeor_categories(view_fields, column_max)
+        overlays["vertical_velocity"] = _layer(
+            "winterp",
+            "Vertical velocity",
+            "m/s",
+            "native",
+            ["winterp"],
+            view_fields["winterp"][level_index],
+            _midlevel_w_scale(),
+        )
         title = "Cloud and precipitation structure"
         subtitle = "Dominant hydrometeor at the column's strongest condensate level"
         vectors = []
@@ -659,9 +668,7 @@ def _plan_view(
             _low_level_w_scale(),
         )
         title = "Low-level motion and rain footprint"
-        subtitle = (
-            "1.25 km vertical motion, accumulated rain, reflectivity, and model-relative flow"
-        )
+        subtitle = "1.25 km vertical motion, accumulated rain, and model-relative flow"
         categories = None
         vectors = _wind_vectors(view_fields, view_x_km, view_y_km)
     return PlanView(
