@@ -79,6 +79,9 @@ The presentation-quality and third-World program established:
 
 #428 — shared live Context, below-the-fold Science | Notes | Details, and
        durable per-Simulation Notes across all three Worlds — complete
+
+#395 — first-class Fun With Soundings workbench with five jobs, atmosphere
+       continuity, Past Experiments, and direct non-World Explore — complete
 ```
 
 The completed work preserves stable World and Simulation identities while allowing backing run assets to improve.
@@ -98,6 +101,11 @@ World-specific scientific content remains legitimate. Shared structure must not 
 Per-Simulation Notes are the first bounded durable-content contract. They use stable World and Simulation identity, persist across reloads, and fail visibly. They do not serialize complete Explore state, implement resume, create Saved Views, or establish a generic annotation framework.
 
 ## Next program: personal scientific memory
+
+Issue #432 is the next approved program in this sequence. Issue #394 remains
+queued and incomplete; it still depends on #435 and explicit PM activation.
+Completing #395 satisfies only the Fun With Soundings dependency named by
+#394.
 
 Establish one versioned, World-aware Explore-state contract before implementing Compare.
 

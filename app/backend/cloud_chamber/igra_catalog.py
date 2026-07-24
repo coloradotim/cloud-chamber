@@ -5,15 +5,14 @@ from __future__ import annotations
 import io
 import json
 import re
-import urllib.error
 import urllib.parse
-import urllib.request
 import zipfile
 from datetime import UTC, datetime
 from html.parser import HTMLParser
 from pathlib import Path
-from typing import Literal, cast
+from typing import Literal
 
+import httpx
 from pydantic import BaseModel, ConfigDict, Field
 
 from cloud_chamber.settings import CloudChamberSettings
@@ -533,13 +532,48 @@ def _fetch_url_text(url: str, *, max_bytes: int) -> str:
 
 def _fetch_url_bytes(url: str, *, max_bytes: int) -> bytes:
     try:
-        with urllib.request.urlopen(url, timeout=30) as response:
-            payload = cast(bytes, response.read(max_bytes + 1))
-    except (urllib.error.URLError, TimeoutError) as exc:
+        return _stream_url_bytes(url, max_bytes=max_bytes)
+    except (httpx.ConnectError, httpx.ConnectTimeout):
+        try:
+            transport = httpx.HTTPTransport(local_address="0.0.0.0", retries=1)
+            return _stream_url_bytes(url, max_bytes=max_bytes, transport=transport)
+        except (httpx.HTTPError, ValueError) as exc:
+            raise IGRACatalogError(f"Unable to fetch IGRA source URL: {url}") from exc
+    except (httpx.HTTPError, ValueError) as exc:
         raise IGRACatalogError(f"Unable to fetch IGRA source URL: {url}") from exc
-    if len(payload) > max_bytes:
-        raise IGRACatalogError(f"IGRA source URL exceeded maximum size: {url}")
-    return payload
+
+
+def _stream_url_bytes(
+    url: str,
+    *,
+    max_bytes: int,
+    transport: httpx.BaseTransport | None = None,
+) -> bytes:
+    client = (
+        httpx.Client(follow_redirects=True, timeout=httpx.Timeout(30))
+        if transport is None
+        else httpx.Client(
+            transport=transport,
+            follow_redirects=True,
+            timeout=httpx.Timeout(30),
+        )
+    )
+    with (
+        client,
+        client.stream("GET", url) as response,
+    ):
+        response.raise_for_status()
+        content_length = response.headers.get("content-length")
+        if content_length is not None and int(content_length) > max_bytes:
+            raise IGRACatalogError(f"IGRA source URL exceeded maximum size: {url}")
+        chunks: list[bytes] = []
+        payload_size = 0
+        for chunk in response.iter_bytes():
+            payload_size += len(chunk)
+            if payload_size > max_bytes:
+                raise IGRACatalogError(f"IGRA source URL exceeded maximum size: {url}")
+            chunks.append(chunk)
+        return b"".join(chunks)
 
 
 def _parse_optional_text(text: str) -> str | None:

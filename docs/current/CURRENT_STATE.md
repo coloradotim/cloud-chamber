@@ -26,16 +26,44 @@ entrance is a Cloud Worlds home with three accessible Worlds:
 Cloud Chamber
 ├── Trade Cumulus
 ├── Mountain Waves
-└── Supercells
+├── Supercells
+└── Fun With Soundings — atmospheric workbench
 ```
 
 Each World owns stable World and Simulation identities. Those product
 identities resolve to local retained run and result assets; they are not the
 same thing as CM1 run IDs, result IDs, or filesystem paths.
 
-**Fun With Soundings** is approved as a separate atmospheric workbench, not a
-Cloud World. It is not currently accessible as a first-class application
-destination. Issue #395 remains open for that work.
+**Fun With Soundings** is accessible as a separate atmospheric workbench, not
+a Cloud World. Its stable route is `/fun-with-soundings`, with a direct
+non-World Explore route at `/fun-with-soundings/explore/{result_id}`.
+
+## Fun With Soundings
+
+The workbench organizes the existing observed-atmosphere path into five jobs:
+
+```text
+Find Soundings → Candidates → Build & Run → Runs → Explore
+```
+
+Atmosphere selection remains visible across Find, Candidates, and Build & Run.
+The implementation reuses the existing package, local and LAN-worker execution,
+serial queue, ingest, storage, cleanup, and visualization paths.
+
+The workbench preserves explicit lifecycle language:
+
+- a **Run** is technical CM1 execution;
+- an ingested non-World record is an **Experiment**;
+- a World-owned **Simulation** is shown only when current World inventory
+  verifies stable Simulation identity and matching run and result links;
+- ambiguous, stale, or unavailable ownership evidence remains visibly legacy
+  or unassigned.
+
+The Runs job shows Soundings execution without claiming other use of the shared
+CM1 runner as workbench-owned. Past Experiments supports Soundings,
+legacy/unassigned, and verified World ownership views. A verified Simulation
+opens in its World; other retained Experiments open directly in non-World
+Explore.
 
 ## Accessible Cloud Worlds
 
@@ -139,7 +167,8 @@ The large NetCDF histories remain outside Git under the runtime home.
 Working infrastructure remains available even where its product placement is
 not final:
 
-- observed-sounding search, screening, caching, and package configuration;
+- observed-sounding search, screening, caching, and package configuration,
+  now organized in Fun With Soundings;
 - CM1 package generation and provenance review;
 - local CM1 launch, serial queueing, progress, cancellation, and ingest;
 - Results records with local notes, tags, diagnostics, and cleanup;
@@ -149,7 +178,7 @@ not final:
 
 Some of this infrastructure appears inside the current Trade Cumulus Lab.
 That transitional placement does not make Build or Results the final World Lab
-information architecture, and it does not make Fun With Soundings accessible.
+information architecture.
 
 ## Current Gaps
 
@@ -158,7 +187,6 @@ The implemented application does not yet provide:
 - durable Saved Views;
 - ordinary World-aware Compare beyond the featured Trade Cumulus Comparison;
 - one shared World-aware variation workflow across all accessible Worlds;
-- a first-class Fun With Soundings entrance;
 - durable persistence for complete Explore or comparison workspaces.
 
 Per-Simulation Notes are durable content, but camera, time, Lens, overlay,

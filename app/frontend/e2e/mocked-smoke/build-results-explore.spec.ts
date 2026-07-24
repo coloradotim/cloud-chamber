@@ -689,6 +689,86 @@ test.describe("mocked smoke: Build, Results, Explore path", () => {
     expect(browserErrors).toEqual([]);
   });
 
+  test("Fun With Soundings carries a selected atmosphere through runs and World ownership", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.unroute("**/api/worlds");
+    await page.unroute("**/api/comparisons/trade-cumulus-moisture-v1");
+    await mockTradeCumulusWorld(page);
+    await page.route("**/api/worlds/mountain-waves", (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ simulations: [] }),
+      }),
+    );
+    await page.route("**/api/worlds/supercells", (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ simulations: [] }),
+      }),
+    );
+    await page.route("**/api/results", (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          results: [comparisonBaselineResult, comparisonMoreMoistureResult, ...results],
+        }),
+      }),
+    );
+    await gotoApp(page);
+
+    await page.getByRole("button", { name: "Open Fun With Soundings" }).click();
+    await expect(page).toHaveURL(/\/fun-with-soundings$/);
+    await expect(page.getByRole("heading", { name: "Fun With Soundings" })).toBeVisible();
+    await expect(page.getByText("Atmospheric workbench", { exact: true })).toBeVisible();
+    await expect(page.getByText("Not a Cloud World", { exact: true })).toBeVisible();
+
+    const jobs = page.getByRole("navigation", { name: "Fun With Soundings sections" });
+    await expect(jobs.getByRole("button")).toHaveCount(5);
+    await jobs.getByRole("button", { name: "2 Candidates" }).click();
+    await page.getByText("Advanced filters", { exact: true }).click();
+    await page.getByRole("button", { name: "Apply advanced filters" }).click();
+
+    const valleyCard = page.getByLabel("Sounding candidate Valley, Nebraska (USM00072558)");
+    await expect(valleyCard).toBeVisible();
+    await valleyCard.getByRole("button", { name: "Configure run" }).click();
+    await expect(page.getByLabel("Selected sounding run setup")).toBeVisible();
+    await expect(page.getByLabel("Selected atmosphere")).toContainText(
+      "Valley, Nebraska (USM00072558)",
+    );
+
+    await page.getByRole("button", { name: "Add to run plan" }).click();
+    await expect(page.getByRole("region", { name: "Run plan" })).toBeVisible();
+    await page.getByRole("button", { name: "Create packages and queue selected runs" }).click();
+    await expect(page.getByText("1 queued locally")).toBeVisible();
+    await page.getByRole("button", { name: "Open Runs" }).click();
+    await expect(page.getByRole("heading", { name: "Past Experiments" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Refresh current work" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Refresh Experiments" })).toBeVisible();
+
+    await jobs.getByRole("button", { name: "5 Explore" }).click();
+    await expect(page).toHaveURL(/\/fun-with-soundings\/explore\/result-observed-sounding$/);
+    await expect(page.getByRole("combobox", { name: "Soundings Experiment" })).toHaveValue(
+      "result-observed-sounding",
+    );
+    await page.getByRole("button", { name: "Back to Past Experiments" }).click();
+
+    const pastRuns = page.getByRole("region", { name: "Past Experiments" });
+    await expect(
+      pastRuns.getByRole("button", { name: "Uploaded Sounding — Valley, Nebraska" }),
+    ).toBeVisible();
+    await pastRuns.getByRole("combobox", { name: "Ownership" }).selectOption("world");
+    const runsList = pastRuns.getByRole("region", { name: "Experiments list" });
+    await expect(runsList.getByRole("button", { name: "Open Trade Cumulus" })).toHaveCount(2);
+    await runsList.getByRole("button", { name: "Open Trade Cumulus" }).first().click();
+    await expect(page.getByRole("navigation", { name: "Trade Cumulus sections" })).toBeVisible();
+    await expect(page).toHaveURL(/\/$/);
+  });
+
   test("Build exposes the Golden Path scenario and creates a safe dry-run package", async ({
     page,
   }) => {
@@ -748,12 +828,12 @@ test.describe("mocked smoke: Build, Results, Explore path", () => {
       .selectOption("__observed_sounding_upload__");
     await expect(page.getByRole("heading", { name: "Observed Soundings" })).toBeVisible();
     await expect(page.getByRole("heading", { name: "Find interesting soundings" })).toBeVisible();
-    await expect(page.getByRole("tab", { name: "Cached recommendations" })).toHaveAttribute(
+    await expect(page.getByRole("tab", { name: "Station catalog" })).toHaveAttribute(
       "aria-selected",
       "true",
     );
     await expect(page.getByLabel("IGRA station sounding-data file")).not.toBeVisible();
-    await page.getByRole("tab", { name: "Upload IGRA station text" }).click();
+    await page.getByRole("tab", { name: "Upload IGRA file" }).click();
     await expect(page.getByLabel("IGRA station sounding-data file")).toBeVisible();
     await expect(page.getByLabel("Low-level humidity")).not.toBeVisible();
     await expect(page.getByLabel("Use uploaded sounding")).not.toBeVisible();

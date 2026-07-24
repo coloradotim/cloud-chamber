@@ -4,6 +4,11 @@ import type { CSSProperties, FormEvent, ReactNode } from "react";
 import "./App.css";
 import { CloudWorldsHome } from "./CloudWorldsHome";
 import {
+  FunWithSoundings,
+  type FunWithSoundingsSection,
+  type SelectedAtmosphereSummary,
+} from "./FunWithSoundings";
+import {
   ExploreContextContent,
   ExploreInspector,
   ExploreSelectedEvidence,
@@ -1103,6 +1108,8 @@ type PersistedRunConfiguration = {
   configuration_id?: string | null;
   case_id?: string | null;
   mapping_version?: string | null;
+  cloud_world_id?: string | null;
+  simulation_id?: string | null;
   cm1_values?: RunConfigurationCM1Values | null;
   expected_model_output_count?: number | null;
 };
@@ -1179,10 +1186,24 @@ type ResultCard = {
   completed_at: string | null;
   ingested_at: string;
   updated_at: string;
+  workbench_world_id?: "trade_cumulus" | "mountain_waves" | "supercells" | null;
+  workbench_simulation_id?: string | null;
+  workbench_simulation_name?: string | null;
 };
 
 type ResultsResponse = {
   results: ResultCard[];
+};
+
+type WorldResultOwnership = {
+  worldId: "trade_cumulus" | "mountain_waves" | "supercells";
+  simulationId: string;
+  simulationName: string;
+};
+
+type WorldResultOwnershipIndex = {
+  byResultId: Record<string, WorldResultOwnership | null>;
+  byRunId: Record<string, WorldResultOwnership | null>;
 };
 
 type ResultsBooleanFilter = "all" | "yes" | "no" | "unknown";
@@ -1205,6 +1226,16 @@ type ResultsFilterState = {
   sort: ResultsSortKey;
 };
 
+type SoundingsArchiveFilterState = {
+  search: string;
+  ownership: "sounding" | "legacy" | "world" | "all";
+  tag: string;
+  lifecycle: "all" | "saved" | "completed" | "needs_attention";
+  trust: "all" | "trusted" | "caveated" | "unassessed";
+  date: "all" | "7d" | "30d" | "365d";
+  sort: ResultsSortKey;
+};
+
 type RunStorageEntry = {
   run_id: string;
   scenario_id: string | null;
@@ -1212,6 +1243,8 @@ type RunStorageEntry = {
   lifecycle_state: string | null;
   validation_status: string | null;
   product_state: string | null;
+  input_source?: string | null;
+  has_observed_sounding?: boolean;
   run_configuration: PersistedRunConfiguration | null;
   pre_run_validation_report?: PreRunValidationReport | null;
   created_at: string | null;
@@ -1289,7 +1322,28 @@ type ProductLocation =
   | "mountain-world"
   | "mountain-explore"
   | "supercells-world"
-  | "supercells-explore";
+  | "supercells-explore"
+  | "soundings"
+  | "soundings-explore";
+
+function productLocationFromPath(pathname: string): ProductLocation {
+  if (pathname.startsWith("/fun-with-soundings/explore/")) return "soundings-explore";
+  if (pathname.startsWith("/fun-with-soundings")) return "soundings";
+  return "worlds";
+}
+
+function soundingsExploreResultIdFromPath(pathname: string): string | null {
+  const prefix = "/fun-with-soundings/explore/";
+  if (!pathname.startsWith(prefix)) return null;
+  const encodedResultId = pathname.slice(prefix.length).split("/")[0];
+  if (!encodedResultId) return null;
+  try {
+    return decodeURIComponent(encodedResultId);
+  } catch {
+    return null;
+  }
+}
+
 type WorldExploreContext =
   | { kind: "simulation"; displayName: string }
   | { kind: "lab_result"; displayName: string };
@@ -2032,6 +2086,134 @@ function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }
 
+const EMPTY_WORLD_RESULT_OWNERSHIP: WorldResultOwnershipIndex = {
+  byResultId: {},
+  byRunId: {},
+};
+
+async function fetchWorldResultOwnership(): Promise<{
+  index: WorldResultOwnershipIndex;
+  unavailableWorldNames: string[];
+}> {
+  const worlds: Array<{
+    worldId: WorldResultOwnership["worldId"];
+    displayName: string;
+    endpoint: string;
+  }> = [
+    {
+      worldId: "trade_cumulus",
+      displayName: "Trade Cumulus",
+      endpoint: "/api/worlds/trade-cumulus",
+    },
+    {
+      worldId: "mountain_waves",
+      displayName: "Mountain Waves",
+      endpoint: "/api/worlds/mountain-waves",
+    },
+    {
+      worldId: "supercells",
+      displayName: "Supercells",
+      endpoint: "/api/worlds/supercells",
+    },
+  ];
+  const settled = await Promise.allSettled(
+    worlds.map(async (world) => {
+      const response = await fetch(world.endpoint);
+      if (!response.ok) {
+        throw new Error(world.displayName);
+      }
+      const payload = await response.json();
+      if (!isObject(payload) || !Array.isArray(payload.simulations)) {
+        throw new Error(world.displayName);
+      }
+      return {
+        world,
+        simulations: payload.simulations.filter(isObject),
+      };
+    }),
+  );
+  const index: WorldResultOwnershipIndex = {
+    byResultId: {},
+    byRunId: {},
+  };
+  const unavailableWorldNames: string[] = [];
+
+  settled.forEach((result, indexPosition) => {
+    const world = worlds[indexPosition];
+    if (result.status === "rejected") {
+      unavailableWorldNames.push(world.displayName);
+      return;
+    }
+    result.value.simulations.forEach((simulation) => {
+      const simulationId = simulation.simulation_id;
+      const simulationName = simulation.display_name;
+      if (typeof simulationId !== "string" || typeof simulationName !== "string") return;
+      const ownership: WorldResultOwnership = {
+        worldId: world.worldId,
+        simulationId,
+        simulationName,
+      };
+      registerWorldOwnership(index.byResultId, simulation.result_id, ownership);
+      registerWorldOwnership(index.byRunId, simulation.run_id, ownership);
+    });
+  });
+
+  return { index, unavailableWorldNames };
+}
+
+function decorateResultsWithWorldOwnership(
+  results: ResultCard[],
+  index: WorldResultOwnershipIndex,
+): ResultCard[] {
+  return results.map((result) => {
+    const resultOwnership = index.byResultId[result.result_id];
+    const runOwnership = index.byRunId[result.run_id];
+    const ownership =
+      resultOwnership &&
+      runOwnership &&
+      sameWorldOwnership(resultOwnership, runOwnership) &&
+      declaredWorldOwnershipMatches(result, resultOwnership)
+        ? resultOwnership
+        : null;
+    return {
+      ...result,
+      workbench_world_id: ownership?.worldId ?? null,
+      workbench_simulation_id: ownership?.simulationId ?? null,
+      workbench_simulation_name: ownership?.simulationName ?? null,
+    };
+  });
+}
+
+function registerWorldOwnership(
+  index: Record<string, WorldResultOwnership | null>,
+  identifier: unknown,
+  ownership: WorldResultOwnership,
+) {
+  if (typeof identifier !== "string" || !identifier) return;
+  if (!(identifier in index)) {
+    index[identifier] = ownership;
+    return;
+  }
+  const existing = index[identifier];
+  if (!existing || !sameWorldOwnership(existing, ownership)) {
+    index[identifier] = null;
+  }
+}
+
+function sameWorldOwnership(left: WorldResultOwnership, right: WorldResultOwnership): boolean {
+  return left.worldId === right.worldId && left.simulationId === right.simulationId;
+}
+
+function declaredWorldOwnershipMatches(
+  result: ResultCard,
+  ownership: WorldResultOwnership,
+): boolean {
+  const declaredWorldId = result.run_configuration?.cloud_world_id;
+  if (declaredWorldId && declaredWorldId !== ownership.worldId) return false;
+  const declaredSimulationId = result.run_configuration?.simulation_id;
+  return !declaredSimulationId || declaredSimulationId === ownership.simulationId;
+}
+
 async function patchResultCard(
   resultId: string,
   update: Partial<Pick<ResultCard, "name" | "tags" | "notes">>,
@@ -2264,7 +2446,10 @@ async function responseError(response: Response, fallback: string): Promise<stri
 }
 
 export function App() {
-  const [productLocation, setProductLocation] = useState<ProductLocation>("worlds");
+  const [productLocation, setProductLocation] = useState<ProductLocation>(() =>
+    productLocationFromPath(window.location.pathname),
+  );
+  const [soundingsSection, setSoundingsSection] = useState<FunWithSoundingsSection>("find");
   const [supercellSimulation, setSupercellSimulation] = useState<SupercellSimulation | null>(null);
   const [mountainWavesSimulation, setMountainWavesSimulation] =
     useState<MountainWavesSimulation | null>(null);
@@ -2336,10 +2521,26 @@ export function App() {
   const [failedAutoFinalizingWorkerRunIds, setFailedAutoFinalizingWorkerRunIds] = useState<
     string[]
   >([]);
+
+  useEffect(() => {
+    const handleHistoryNavigation = () => {
+      const nextLocation = productLocationFromPath(window.location.pathname);
+      setProductLocation(nextLocation);
+      const routeResultId = soundingsExploreResultIdFromPath(window.location.pathname);
+      if (routeResultId) setSelectedResultId(routeResultId);
+    };
+    window.addEventListener("popstate", handleHistoryNavigation);
+    return () => window.removeEventListener("popstate", handleHistoryNavigation);
+  }, []);
   const [ingestedResultId, setIngestedResultId] = useState<string | null>(null);
   const [results, setResults] = useState<ResultCard[]>([]);
   const [selectedResultId, setSelectedResultId] = useState<string | null>(null);
   const selectedResultIdRef = useRef<string | null>(null);
+  const worldResultOwnershipRef = useRef<WorldResultOwnershipIndex>(EMPTY_WORLD_RESULT_OWNERSHIP);
+  const worldOwnershipLoadStartedRef = useRef(false);
+  const [worldOwnershipStatus, setWorldOwnershipStatus] = useState(
+    "World ownership is checked when Past Experiments opens.",
+  );
   const [comparisonStory, setComparisonStory] =
     useState<TradeCumulusComparisonStoryResponse | null>(null);
   const [comparisonStoryStatus, setComparisonStoryStatus] = useState<string | null>(null);
@@ -2411,9 +2612,17 @@ export function App() {
     fetchResults()
       .then((payload) => {
         if (!active) return;
-        const prioritized = prioritizeResults(payload.results);
+        const prioritized = prioritizeResults(
+          decorateResultsWithWorldOwnership(payload.results, worldResultOwnershipRef.current),
+        );
         setResults(prioritized);
-        setSelectedResultId((current) => current ?? prioritized[0]?.result_id ?? null);
+        setSelectedResultId((current) => {
+          const routeResultId = soundingsExploreResultIdFromPath(window.location.pathname);
+          if (routeResultId && prioritized.some((result) => result.result_id === routeResultId)) {
+            return routeResultId;
+          }
+          return current ?? prioritized[0]?.result_id ?? null;
+        });
         setResultsStatus(payload.results.length > 0 ? "Results loaded" : "No ingested results");
       })
       .catch((caught: unknown) => {
@@ -2445,6 +2654,36 @@ export function App() {
       active = false;
     };
   }, []);
+
+  useEffect(() => {
+    if (
+      (productLocation !== "soundings" && productLocation !== "soundings-explore") ||
+      worldOwnershipLoadStartedRef.current
+    )
+      return;
+    worldOwnershipLoadStartedRef.current = true;
+    setWorldOwnershipStatus("Checking retained Simulation ownership...");
+    void fetchWorldResultOwnership()
+      .then(({ index, unavailableWorldNames }) => {
+        worldResultOwnershipRef.current = index;
+        setResults((current) => decorateResultsWithWorldOwnership(current, index));
+        const linkedCount = new Set(
+          Object.values(index.byResultId)
+            .filter((ownership): ownership is WorldResultOwnership => ownership !== null)
+            .map((ownership) => `${ownership.worldId}:${ownership.simulationId}`),
+        ).size;
+        setWorldOwnershipStatus(
+          unavailableWorldNames.length > 0
+            ? `${linkedCount} retained Simulations verified. Could not check ${unavailableWorldNames.join(", ")}; affected Experiments remain unassigned.`
+            : `${linkedCount} retained Simulations verified across all Cloud Worlds.`,
+        );
+      })
+      .catch(() => {
+        setWorldOwnershipStatus(
+          "Cloud World ownership is temporarily unavailable; records remain unassigned rather than being silently reclassified.",
+        );
+      });
+  }, [productLocation]);
 
   useEffect(() => {
     let active = true;
@@ -2509,6 +2748,13 @@ export function App() {
         ? results.find((result) => result.result_id === selectedResultId)
         : results[0],
     [results, selectedResultId],
+  );
+  const soundingsExploreResults = useMemo(
+    () => results.filter((result) => resultArchiveOwnership(result) !== "world"),
+    [results],
+  );
+  const selectedSoundingsExploreResult = soundingsExploreResults.find(
+    (result) => result.result_id === selectedResultId,
   );
 
   useEffect(() => {
@@ -2719,11 +2965,11 @@ export function App() {
       handleSelectScenario(OBSERVED_SOUNDING_EXPERIMENT_ID);
     }
     if (sourcePath === "cached_recommendations") {
-      setCandidateStatus("Cached recommendations selected");
+      setCandidateStatus("Station catalog selected");
     } else if (sourcePath === "saved_candidates") {
       setCandidateStatus("Saved candidates selected");
     } else {
-      setObservedSoundingStatus((current) => current ?? "Upload an IGRA station text file");
+      setObservedSoundingStatus((current) => current ?? "Upload an IGRA station file");
     }
   }
 
@@ -2764,7 +3010,7 @@ export function App() {
   function handleSelectAllCachedStations() {
     setSelectedStationIds([]);
     setStationSelectionMode("all_cached");
-    markCandidateSearchSettingsChanged("All cached stations selected; search selected soundings");
+    markCandidateSearchSettingsChanged("Default station set restored; search soundings");
   }
 
   function handleClearSelectedStations() {
@@ -2884,12 +3130,12 @@ export function App() {
     }
   }
 
-  async function handlePrepareAndSearchLocalSoundings() {
+  async function handlePrepareAndSearchLocalSoundings(): Promise<boolean> {
     const stationIds = selectedStationIdsForCandidateRequest();
     if (stationSelectionMode === "selected" && stationIds.length === 0) {
       setCandidateError("Select at least one station, or switch to all cached stations.");
       setCandidateStatus("Station selection required");
-      return;
+      return false;
     }
     const resultLimit = boundedInteger(candidateResultLimit, 1, 500, 100);
     setCandidateError(null);
@@ -2927,11 +3173,13 @@ export function App() {
           ? "Recommendation run complete"
           : "Recommendation run found no matching candidates",
       );
+      return true;
     } catch (caught) {
       setCandidateError(
         caught instanceof Error ? caught.message : "Unable to search selected soundings.",
       );
       setCandidateStatus("Selected sounding search failed");
+      return false;
     }
   }
 
@@ -2950,17 +3198,15 @@ export function App() {
     }
   }
 
-  async function handleCacheIGRAStationFiles() {
-    const stationIds = selectedStationIdsForCandidateRequest();
+  async function handleCacheIGRAStationFiles(stationIdsOverride?: string[]) {
+    const stationIds = stationIdsOverride ?? selectedStationIdsForCandidateRequest();
     if (stationIds.length === 0) {
-      setCandidateError("Select one or more catalog stations to cache.");
-      setCandidateStatus("Station selection required");
+      setCandidateError("No station histories are available to download.");
+      setCandidateStatus("No station downloads needed");
       return;
     }
     setCandidateError(null);
-    setCandidateStatus(
-      `Caching ${stationIds.length} selected station${stationIds.length === 1 ? "" : "s"}`,
-    );
+    setCandidateStatus(`Caching ${stationIds.length} station${stationIds.length === 1 ? "" : "s"}`);
     try {
       const result = await cacheIGRARecentBatch({ stationIds });
       await refreshSoundingCandidateState(
@@ -3589,7 +3835,9 @@ export function App() {
   async function refreshResults(selectResultId?: string) {
     const comparisonRequest = fetchTradeCumulusComparisonStory();
     const payload = await fetchResults();
-    const prioritized = prioritizeResults(payload.results);
+    const prioritized = prioritizeResults(
+      decorateResultsWithWorldOwnership(payload.results, worldResultOwnershipRef.current),
+    );
     setResults(prioritized);
     setSelectedResultId((current) => {
       if (selectResultId) return selectResultId;
@@ -3613,9 +3861,81 @@ export function App() {
     return prioritized;
   }
 
+  function navigateProduct(location: ProductLocation, path: string) {
+    setProductLocation(location);
+    if (window.location.pathname !== path) {
+      window.history.pushState({ productLocation: location }, "", path);
+    }
+    document.documentElement.scrollTop = 0;
+    document.body.scrollTop = 0;
+  }
+
+  function returnHome() {
+    navigateProduct("worlds", "/");
+  }
+
+  function enterFunWithSoundings(section: FunWithSoundingsSection = soundingsSection) {
+    if (selectedScenarioId !== OBSERVED_SOUNDING_EXPERIMENT_ID) {
+      handleSelectScenario(OBSERVED_SOUNDING_EXPERIMENT_ID);
+    }
+    setSoundingsSection(section);
+    navigateProduct("soundings", "/fun-with-soundings");
+  }
+
   function selectOrdinaryResult(resultId: string) {
     setComparisonStoryActive(false);
     setSelectedResultId(resultId);
+  }
+
+  function openSoundingsResult(resultId: string, mode: "details" | "explore") {
+    const result = results.find((candidate) => candidate.result_id === resultId);
+    const worldId = resultCloudWorldId(result);
+    selectOrdinaryResult(resultId);
+    if (worldId === "trade_cumulus") {
+      setWorldSection("simulations");
+      navigateProduct("world", "/");
+      return;
+    }
+    if (worldId === "mountain_waves") {
+      setMountainWavesSimulation(null);
+      navigateProduct("mountain-world", "/");
+      return;
+    }
+    if (worldId === "supercells") {
+      setSupercellSimulation(null);
+      navigateProduct("supercells-world", "/");
+      return;
+    }
+    if (mode === "explore") {
+      navigateProduct(
+        "soundings-explore",
+        `/fun-with-soundings/explore/${encodeURIComponent(resultId)}`,
+      );
+      return;
+    }
+    setSoundingsSection("activity");
+    navigateProduct("soundings", "/fun-with-soundings");
+  }
+
+  function openSoundingsExploreSection() {
+    setSoundingsSection("explore");
+    const selectedSoundingsResult = soundingsExploreResults.find(
+      (result) => result.result_id === selectedResultId,
+    );
+    const resultToOpen = selectedSoundingsResult ?? soundingsExploreResults[0];
+    if (resultToOpen) {
+      openSoundingsResult(resultToOpen.result_id, "explore");
+      return;
+    }
+    navigateProduct("soundings", "/fun-with-soundings");
+  }
+
+  function handleSoundingsSectionChange(section: FunWithSoundingsSection) {
+    if (section === "explore") {
+      openSoundingsExploreSection();
+      return;
+    }
+    enterFunWithSoundings(section);
   }
 
   function enterWorldExplore(resultId: string, simulation?: SimulationRecord) {
@@ -3972,6 +4292,7 @@ export function App() {
 
   const buildWorkspace = (
     <BuildWorkspace
+      soundingsSection={productLocation === "soundings" ? soundingsSection : undefined}
       scenarioLoadState={scenarioLoadState}
       scenarioError={scenarioError}
       packageError={error}
@@ -4028,6 +4349,7 @@ export function App() {
       results={results}
       autoFinalizingWorkerRunIds={autoFinalizingWorkerRunIdSet}
       failedAutoFinalizingWorkerRunIds={failedAutoFinalizingWorkerRunIdSet}
+      onNavigateSoundingsSection={setSoundingsSection}
       onSelectScenario={handleSelectScenario}
       onControlChange={(id, value) =>
         setControls((current) => ({
@@ -4061,7 +4383,10 @@ export function App() {
       onScreenSoundingCandidates={handleScreenSoundingCandidates}
       onSaveSoundingCandidate={handleSaveSoundingCandidate}
       onRemoveSavedSoundingCandidate={handleRemoveSavedSoundingCandidate}
-      onSelectCandidateForRunSetup={handleSelectCandidateForRunSetup}
+      onSelectCandidateForRunSetup={(candidate, savedCandidate, activeStory) => {
+        handleSelectCandidateForRunSetup(candidate, savedCandidate, activeStory);
+        if (productLocation === "soundings") setSoundingsSection("build");
+      }}
       onAddSelectedSoundingToRunPlan={handleAddSelectedSoundingToRunPlan}
       onDuplicateRunPlanItem={handleDuplicateRunPlanItem}
       onRemoveRunPlanItem={handleRemoveRunPlanItem}
@@ -4093,10 +4418,18 @@ export function App() {
         else handleWorkspaceNavigation("explore");
       }}
       onOpenStoredResult={(resultId) => {
-        openOrdinaryResult(resultId, "results");
+        if (productLocation === "soundings") {
+          openSoundingsResult(resultId, "details");
+        } else {
+          openOrdinaryResult(resultId, "results");
+        }
       }}
       onExploreStoredResult={(resultId) => {
-        openOrdinaryResult(resultId, "explore");
+        if (productLocation === "soundings") {
+          openSoundingsResult(resultId, "explore");
+        } else {
+          openOrdinaryResult(resultId, "explore");
+        }
       }}
       onRefreshStorage={handleRefreshStorage}
       onPreviewRunDelete={handlePreviewRunDelete}
@@ -4109,10 +4442,12 @@ export function App() {
 
   const resultsWorkspace = (
     <ResultsWorkspace
+      context={productLocation === "soundings" ? "soundings" : "legacy"}
       results={results}
       selectedResult={selectedResult}
       selectedResultId={selectedResultId}
       resultsStatus={resultsStatus}
+      worldOwnershipStatus={productLocation === "soundings" ? worldOwnershipStatus : undefined}
       resultsError={resultsError}
       resultDeletePreview={resultDeletePreview}
       draft={resultDraft}
@@ -4127,6 +4462,10 @@ export function App() {
       onSubmit={handleResultUpdate}
       onRefreshResults={handleRefreshResults}
       onInspect={() => {
+        if (productLocation === "soundings" && selectedResultId) {
+          openSoundingsResult(selectedResultId, "explore");
+          return;
+        }
         setComparisonStoryActive(false);
         if (productLocation === "world" && selectedResultId) {
           enterWorldExplore(selectedResultId);
@@ -4142,6 +4481,11 @@ export function App() {
           setActiveSection("explore");
         }
       }}
+      onOpenResultInExplore={
+        productLocation === "soundings"
+          ? (resultId) => openSoundingsResult(resultId, "explore")
+          : undefined
+      }
       onPreviewResultDelete={handlePreviewResultDelete}
       onConfirmResultDelete={handleConfirmResultDelete}
       onCancelResultDelete={() => {
@@ -4202,13 +4546,24 @@ export function App() {
     activeWorldSimulation?.compare_suggestions.length &&
     worldDetail?.featured_comparison.open_available,
   );
+  const selectedAtmosphere = selectedAtmosphereSummary(
+    observedSoundingParse?.selected_sounding ?? null,
+    selectedCandidateScreening,
+    atmosphereSourcePath,
+  );
+  const soundingsAvailability = soundingWorkbenchAvailability(
+    scenarioLoadState,
+    scenarioError,
+    scenarios,
+  );
 
   return (
     <main
       className={`app-shell${
         productLocation === "explore" ||
         productLocation === "mountain-explore" ||
-        productLocation === "supercells-explore"
+        productLocation === "supercells-explore" ||
+        productLocation === "soundings-explore"
           ? " app-shell-explore"
           : ""
       }`}
@@ -4218,11 +4573,7 @@ export function App() {
           <h1>Cloud Chamber</h1>
         </div>
         {productLocation !== "worlds" && (
-          <button
-            type="button"
-            className="secondary-button"
-            onClick={() => setProductLocation("worlds")}
-          >
+          <button type="button" className="secondary-button" onClick={returnHome}>
             Home
           </button>
         )}
@@ -4242,8 +4593,28 @@ export function App() {
             setSupercellSimulation(null);
             setProductLocation("supercells-world");
           }}
+          onEnterFunWithSoundings={() => enterFunWithSoundings("find")}
+          soundingsAvailability={soundingsAvailability}
           fallback={legacyWorkspace}
         />
+      )}
+
+      {productLocation === "soundings" && (
+        <FunWithSoundings
+          activeSection={soundingsSection}
+          selectedAtmosphere={selectedAtmosphere}
+          onSectionChange={handleSoundingsSectionChange}
+          onBackHome={returnHome}
+        >
+          {soundingsSection === "activity" ? (
+            <div className="soundings-activity-layout">
+              {buildWorkspace}
+              {resultsWorkspace}
+            </div>
+          ) : (
+            buildWorkspace
+          )}
+        </FunWithSoundings>
       )}
 
       {productLocation === "world" && (
@@ -4305,6 +4676,37 @@ export function App() {
         </section>
       )}
 
+      {productLocation === "soundings-explore" && (
+        <section
+          className="world-context-workspace"
+          aria-label={`${
+            selectedSoundingsExploreResult?.name ?? "Soundings Explore"
+          } atmospheric experiment workspace`}
+        >
+          {selectedSoundingsExploreResult ? (
+            <ExploreWorkspace
+              selectedResult={selectedSoundingsExploreResult}
+              comparisonStory={null}
+              onBackToResults={() => enterFunWithSoundings("activity")}
+              onOpenResult={(resultId) => openSoundingsResult(resultId, "explore")}
+              worldName="Fun With Soundings"
+              simulationName={selectedSoundingsExploreResult.name}
+              resultOptions={soundingsExploreResults}
+              onSelectResult={(resultId) => openSoundingsResult(resultId, "explore")}
+              backLabel="Back to Past Experiments"
+              onBack={() => enterFunWithSoundings("activity")}
+            />
+          ) : (
+            <ScenarioStatePanel
+              title="This Soundings Experiment is not available in Explore"
+              body="Choose an ingested Soundings experiment. World-owned Simulations remain available from their Cloud World."
+              actionLabel="Back to Past Experiments"
+              onAction={() => enterFunWithSoundings("activity")}
+            />
+          )}
+        </section>
+      )}
+
       {(productLocation === "explore" || productLocation === "comparison") && (
         <section
           className="world-context-workspace"
@@ -4357,6 +4759,7 @@ export function App() {
 }
 
 function BuildWorkspace({
+  soundingsSection,
   scenarioLoadState,
   scenarioError,
   packageError,
@@ -4413,6 +4816,7 @@ function BuildWorkspace({
   results,
   autoFinalizingWorkerRunIds,
   failedAutoFinalizingWorkerRunIds,
+  onNavigateSoundingsSection,
   onSelectScenario,
   onControlChange,
   onRunConfigurationChange,
@@ -4473,6 +4877,7 @@ function BuildWorkspace({
   onConfirmRunDelete,
   onRetryScenarios,
 }: {
+  soundingsSection?: FunWithSoundingsSection;
   scenarioLoadState: ScenarioLoadState;
   scenarioError: string | null;
   packageError: string | null;
@@ -4527,8 +4932,10 @@ function BuildWorkspace({
   runDeletePreview: DeleteRunResponse | null;
   runDeleteMessage: string | null;
   results: ResultCard[];
+  soundingsLanguage?: boolean;
   autoFinalizingWorkerRunIds: Set<string>;
   failedAutoFinalizingWorkerRunIds: Set<string>;
+  onNavigateSoundingsSection: (section: FunWithSoundingsSection) => void;
   onSelectScenario: (scenarioId: string) => void;
   onControlChange: (controlId: string, value: string) => void;
   onRunConfigurationChange: (configuration: RunConfigurationInput) => void;
@@ -4552,8 +4959,8 @@ function BuildWorkspace({
   onCandidateResultLimitChange: (value: string) => void;
   onCandidateDetailChange: (candidateId: string) => void;
   onRefreshIGRAData: () => void;
-  onCacheIGRAStationFiles: () => void;
-  onPrepareAndSearchLocalSoundings: () => void;
+  onCacheIGRAStationFiles: (stationIds?: string[]) => void;
+  onPrepareAndSearchLocalSoundings: () => Promise<boolean>;
   onScreenSoundingCandidates: () => void;
   onSaveSoundingCandidate: (candidate: SoundingCandidate) => void;
   onRemoveSavedSoundingCandidate: (savedCandidateId: string) => void;
@@ -4613,6 +5020,266 @@ function BuildWorkspace({
       onCreateAndQueue={onCreateAndQueueRunPlan}
     />
   );
+  const atmosphereSourcePicker = (
+    <AtmosphereSourcePicker
+      sourcePath={atmosphereSourcePath}
+      savedCandidateCount={savedCandidates.length}
+      onChange={onAtmosphereSourcePathChange}
+    />
+  );
+  const candidatePanel = (mode: "find" | "candidates") => (
+    <ObservedAtmosphereCandidatesPanel
+      mode={mode}
+      catalog={igraCatalog}
+      cache={igraCache}
+      screeningInputs={screeningInputs}
+      searchIntent={searchIntent}
+      stationSelectionMode={stationSelectionMode}
+      selectedStationIds={selectedStationIds}
+      historyScope={candidateHistoryScope}
+      storyFilter={candidateStoryFilter}
+      storyFamilyFilter={candidateStoryFamilyFilter}
+      supportFilter={candidateSupportFilter}
+      sort={candidateSort}
+      stationSearch={candidateStationSearch}
+      readinessFilter={candidateReadinessFilter}
+      latestPerStation={candidateLatestPerStation}
+      resultLimit={candidateResultLimit}
+      status={candidateStatus}
+      error={candidateError}
+      screening={candidateScreening}
+      savedCandidates={savedCandidates}
+      selectedCandidateId={candidateDetailId}
+      onSearchIntentChange={onSearchIntentChange}
+      onStationSelectionModeChange={onStationSelectionModeChange}
+      onSelectedStationToggle={onSelectedStationToggle}
+      onSelectAllCachedStations={onSelectAllCachedStations}
+      onClearSelectedStations={onClearSelectedStations}
+      onHistoryScopeChange={onCandidateHistoryScopeChange}
+      onStoryFilterChange={onCandidateStoryFilterChange}
+      onStoryFamilyFilterChange={onCandidateStoryFamilyFilterChange}
+      onSupportFilterChange={onCandidateSupportFilterChange}
+      onSortChange={onCandidateSortChange}
+      onStationSearchChange={onCandidateStationSearchChange}
+      onReadinessFilterChange={onCandidateReadinessFilterChange}
+      onClearFilters={onClearCandidateAnalysisFilters}
+      onLatestPerStationChange={onCandidateLatestPerStationChange}
+      onResultLimitChange={onCandidateResultLimitChange}
+      onCandidateDetailChange={onCandidateDetailChange}
+      onRefreshIGRAData={onRefreshIGRAData}
+      onCacheStationFiles={onCacheIGRAStationFiles}
+      onPrepareAndSearch={async () => {
+        const searchCompleted = await onPrepareAndSearchLocalSoundings();
+        if (mode === "find" && searchCompleted) {
+          onNavigateSoundingsSection("candidates");
+        }
+        return searchCompleted;
+      }}
+      onScreen={onScreenSoundingCandidates}
+      onSave={onSaveSoundingCandidate}
+      onSelectForRunSetup={onSelectCandidateForRunSetup}
+    />
+  );
+  const savedCandidatesPanel = (
+    <SavedCandidatesSourcePanel
+      savedCandidates={savedCandidates}
+      status={candidateStatus}
+      error={candidateError}
+      onSave={onSaveSoundingCandidate}
+      onRemoveSaved={onRemoveSavedSoundingCandidate}
+      onSelectForRunSetup={onSelectCandidateForRunSetup}
+    />
+  );
+  const runWorkflowProps: LocalRunWorkflowPanelProps = {
+    dryRun,
+    runStatus,
+    runQueue,
+    runQueueStatus,
+    error: runWorkflowError,
+    lanWorkerConfig,
+    lanWorkerStatus,
+    lanWorkerError,
+    lanWorkerActionStatus,
+    ingestedResultId,
+    onRefreshRunStatus,
+    onLaunchLanWorkerRun,
+    onRefreshLanWorkerStatus,
+    onCollectLanWorkerRun,
+    onCleanupLanWorkerRun,
+    onIngestRun,
+    storageInventory,
+    storageStatus,
+    storageError,
+    runDeletePreview,
+    runDeleteMessage,
+    results,
+    soundingsLanguage: Boolean(soundingsSection),
+    autoFinalizingWorkerRunIds,
+    failedAutoFinalizingWorkerRunIds,
+    onLaunchStoredRun,
+    onLaunchStoredLanWorkerRun,
+    onRefreshStoredLanWorkerStatus,
+    onFinalizeStoredLanWorkerRun,
+    onIngestStoredRun,
+    onOpenInResults,
+    onInspectIngested,
+    onOpenStoredResult,
+    onExploreStoredResult,
+    onRefreshStorage,
+    onPreviewRunDelete,
+    onConfirmRunDelete,
+  };
+  const soundingsRunsPanel = <SoundingsRunsPanel {...runWorkflowProps} />;
+
+  if (soundingsSection) {
+    if (scenarioLoadState !== "loaded" || !selectedScenario) {
+      return (
+        <section className="soundings-job-panel">
+          <ScenarioStatePanel
+            title={
+              scenarioLoadState === "loading"
+                ? "Loading sounding infrastructure"
+                : scenarioLoadState === "empty"
+                  ? "No experiment templates available"
+                  : "Sounding infrastructure unavailable"
+            }
+            body={
+              scenarioLoadState === "loading"
+                ? "Cloud Chamber is checking the local scenario, package, and execution services."
+                : (scenarioError ??
+                  "The local backend did not provide the experiment template required by this workbench.")
+            }
+            actionLabel={scenarioLoadState === "loading" ? undefined : "Retry"}
+            onAction={scenarioLoadState === "loading" ? undefined : onRetryScenarios}
+          />
+        </section>
+      );
+    }
+
+    if (soundingsSection === "find") {
+      return (
+        <section className="soundings-job-panel" aria-label="Find Soundings">
+          {atmosphereSourcePicker}
+          {atmosphereSourcePath === "cached_recommendations" && candidatePanel("find")}
+          {atmosphereSourcePath === "saved_candidates" && savedCandidatesPanel}
+          {atmosphereSourcePath === "upload_igra_text" && (
+            <UploadSoundingSourcePanel
+              observedSoundingParse={observedSoundingParse}
+              observedSoundingStatus={observedSoundingStatus}
+              observedSoundingError={observedSoundingError}
+              selectedCandidateScreening={selectedCandidateScreening}
+              onObservedSoundingFile={onObservedSoundingFile}
+              onObservedSoundingTimeChange={onObservedSoundingTimeChange}
+            />
+          )}
+          {observedSoundingParse?.selected_sounding && (
+            <div className="soundings-next-action">
+              <div>
+                <strong>Atmosphere ready</strong>
+                <span>Continue to experiment setup or review candidate context first.</span>
+              </div>
+              <div className="button-row">
+                <button type="button" onClick={() => onNavigateSoundingsSection("build")}>
+                  Build an experiment
+                </button>
+                <button
+                  type="button"
+                  className="secondary-button"
+                  onClick={() => onNavigateSoundingsSection("candidates")}
+                >
+                  Review candidates
+                </button>
+              </div>
+            </div>
+          )}
+        </section>
+      );
+    }
+
+    if (soundingsSection === "candidates") {
+      return (
+        <section className="soundings-job-panel" aria-label="Sounding candidates">
+          {atmosphereSourcePicker}
+          {atmosphereSourcePath === "cached_recommendations" && candidatePanel("candidates")}
+          {atmosphereSourcePath === "saved_candidates" && savedCandidatesPanel}
+          {atmosphereSourcePath === "upload_igra_text" && (
+            <ScenarioStatePanel
+              title="Candidate screening uses cached profiles"
+              body="The uploaded atmosphere remains selected. Return to Find Soundings to choose another source, or continue directly to Build & Run."
+              actionLabel="Continue to Build & Run"
+              onAction={() => onNavigateSoundingsSection("build")}
+            />
+          )}
+        </section>
+      );
+    }
+
+    if (soundingsSection === "build") {
+      return (
+        <section className="soundings-job-panel" aria-label="Build and run sounding experiment">
+          {observedSoundingParse?.selected_sounding ? (
+            <SelectedSoundingRunSetupPanel
+              observedSounding={observedSoundingParse.selected_sounding}
+              selectedCandidateScreening={selectedCandidateScreening}
+              runConfiguration={runConfiguration}
+              runConfigurationPreview={runConfigurationPreview}
+              soundingsLanguage
+              onRunConfigurationChange={onRunConfigurationChange}
+              onAddSelectedSoundingToRunPlan={onAddSelectedSoundingToRunPlan}
+            />
+          ) : (
+            <ScenarioStatePanel
+              title="Select an atmosphere before configuring an experiment"
+              body="Choose a cached candidate or load an IGRA station file. Its source, time, and validation state will remain visible here."
+              actionLabel="Find an atmosphere"
+              onAction={() => onNavigateSoundingsSection("find")}
+            />
+          )}
+          {runPlanPanel}
+          {validationMessages.length > 0 && (
+            <div className="validation" role="alert">
+              {validationMessages.map((message) => (
+                <p key={message}>{message}</p>
+              ))}
+            </div>
+          )}
+          {packageError && (
+            <div className="validation" role="alert">
+              <p>{packageError}</p>
+            </div>
+          )}
+          {blockedPreRunValidationReport && (
+            <PreRunValidationReportPanel report={blockedPreRunValidationReport} />
+          )}
+          {(runPlanItems.length > 0 || dryRun || runStatus) && (
+            <div className="soundings-next-action">
+              <div>
+                <strong>Execution activity is preserved</strong>
+                <span>
+                  Leave this setup and return to queue, worker, ingest, and storage status.
+                </span>
+              </div>
+              <button type="button" onClick={() => onNavigateSoundingsSection("activity")}>
+                Open Runs
+              </button>
+            </div>
+          )}
+        </section>
+      );
+    }
+
+    if (soundingsSection === "explore") {
+      return (
+        <SoundingsExploreLanding
+          results={results.filter((result) => resultArchiveOwnership(result) !== "world")}
+          onOpen={onExploreStoredResult}
+          onViewRuns={() => onNavigateSoundingsSection("activity")}
+        />
+      );
+    }
+
+    return soundingsRunsPanel;
+  }
 
   return (
     <section className="workspace-section" aria-labelledby="build-title">
@@ -4892,6 +5559,7 @@ function BuildWorkspace({
             runDeletePreview={runDeletePreview}
             runDeleteMessage={runDeleteMessage}
             results={results}
+            soundingsLanguage={false}
             autoFinalizingWorkerRunIds={autoFinalizingWorkerRunIds}
             failedAutoFinalizingWorkerRunIds={failedAutoFinalizingWorkerRunIds}
             onLaunchStoredRun={onLaunchStoredRun}
@@ -5135,6 +5803,7 @@ function RunConfigurationPanel({
   onAddToRunPlan,
   onChange,
   embedded = false,
+  soundingsLanguage = false,
 }: {
   configuration: RunConfigurationInput;
   preview: RunConfiguration;
@@ -5142,6 +5811,7 @@ function RunConfigurationPanel({
   onAddToRunPlan?: () => void;
   onChange: (configuration: RunConfigurationInput) => void;
   embedded?: boolean;
+  soundingsLanguage?: boolean;
 }) {
   const recipeMismatchWarning = selectedCandidateScreening
     ? candidateRecipeMismatchWarning(selectedCandidateScreening)
@@ -5278,7 +5948,7 @@ function RunConfigurationPanel({
         <RunConfigurationSelect
           id="run-cadence"
           label="Output cadence"
-          description="Saved-output interval for Results and Explore."
+          description={`Saved-output interval for ${soundingsLanguage ? "Runs" : "Results"} and Explore.`}
           value={configuration.output_cadence}
           options={OUTPUT_CADENCE_OPTIONS}
           onChange={(value) => update("output_cadence", value)}
@@ -5485,35 +6155,24 @@ function AtmosphereSourcePicker({
   savedCandidateCount: number;
   onChange: (sourcePath: AtmosphereSourcePath) => void;
 }) {
-  const options: Array<{ value: AtmosphereSourcePath; label: string; description: string }> = [
+  const options: Array<{ value: AtmosphereSourcePath; label: string }> = [
     {
       value: "cached_recommendations",
-      label: "Cached recommendations",
-      description: "Search local cached soundings and review recommendation evidence.",
+      label: "Station catalog",
     },
     {
       value: "saved_candidates",
       label: `Saved candidates${savedCandidateCount > 0 ? ` (${savedCandidateCount})` : ""}`,
-      description: "Use your saved shortlist as the atmosphere source.",
     },
     {
       value: "upload_igra_text",
-      label: "Upload IGRA station text",
-      description: "Manually upload and validate a station text file.",
+      label: "Upload IGRA file",
     },
   ];
-  const selected = options.find((option) => option.value === sourcePath) ?? options[0];
   return (
-    <section className="experiment-summary atmosphere-source-panel" aria-label="Atmosphere source">
-      <div className="panel-heading-row">
-        <div>
-          <p className="eyebrow">Atmosphere source</p>
-          <h3>Choose one source path</h3>
-          <p className="field-help">{selected.description}</p>
-        </div>
-        <StatusBadge label={selected.label} tone="neutral" />
-      </div>
-      <div className="button-row source-path-tabs" role="tablist" aria-label="Atmosphere sources">
+    <section className="atmosphere-source-switcher" aria-label="Atmosphere source">
+      <strong>Source</strong>
+      <div className="source-path-tabs" role="tablist" aria-label="Atmosphere sources">
         {options.map((option) => (
           <button
             key={option.value}
@@ -5532,6 +6191,7 @@ function AtmosphereSourcePicker({
 }
 
 function ObservedAtmosphereCandidatesPanel({
+  mode = "combined",
   catalog,
   cache,
   screeningInputs,
@@ -5575,6 +6235,7 @@ function ObservedAtmosphereCandidatesPanel({
   onSave,
   onSelectForRunSetup,
 }: {
+  mode?: "combined" | "find" | "candidates";
   catalog: IGRACatalogResponse["catalog"] | null;
   cache: IGRACacheResponse | null;
   screeningInputs: ScreeningInput[];
@@ -5612,8 +6273,8 @@ function ObservedAtmosphereCandidatesPanel({
   onResultLimitChange: (value: string) => void;
   onCandidateDetailChange: (candidateId: string) => void;
   onRefreshIGRAData: () => void;
-  onCacheStationFiles: () => void;
-  onPrepareAndSearch: () => void;
+  onCacheStationFiles: (stationIds?: string[]) => void;
+  onPrepareAndSearch: () => void | Promise<boolean>;
   onScreen: () => void;
   onSave: (candidate: SoundingCandidate, tags?: string[], notes?: string | null) => void;
   onSelectForRunSetup: (
@@ -5622,6 +6283,10 @@ function ObservedAtmosphereCandidatesPanel({
     activeStory?: CandidateStoryId,
   ) => void;
 }) {
+  const [stationCatalogSearch, setStationCatalogSearch] = useState("");
+  const [showSpecificStations, setShowSpecificStations] = useState(
+    stationSelectionMode === "selected",
+  );
   const visibleCandidates = screening?.candidates ?? [];
   const selectedCandidate =
     visibleCandidates.find((candidate) => candidate.candidate_id === selectedCandidateId) ??
@@ -5683,13 +6348,31 @@ function ObservedAtmosphereCandidatesPanel({
     );
   }, [catalog?.zip_references, screeningInputs]);
   const selectedStationIdSet = useMemo(() => new Set(selectedStationIds), [selectedStationIds]);
+  const normalizedStationCatalogSearch = stationCatalogSearch.trim().toLowerCase();
+  const visibleStationOptions = stationOptions.filter((station) => {
+    if (!normalizedStationCatalogSearch) return true;
+    return [station.station_name, station.station_id]
+      .filter((value): value is string => Boolean(value))
+      .some((value) => value.toLowerCase().includes(normalizedStationCatalogSearch));
+  });
   const cachedStationOptions = stationOptions.filter((option) => option.cached);
+  const explicitlySelectedStationOptions = stationOptions.filter((option) =>
+    selectedStationIdSet.has(option.station_id),
+  );
   const activeStationOptions =
-    stationSelectionMode === "selected"
-      ? stationOptions.filter((option) => selectedStationIdSet.has(option.station_id))
-      : cachedStationOptions;
+    mode === "find" && stationSelectionMode === "all_cached"
+      ? stationOptions
+      : stationSelectionMode === "selected"
+        ? explicitlySelectedStationOptions
+        : cachedStationOptions;
   const selectedCachedStationOptions = activeStationOptions.filter((option) => option.cached);
   const selectedUncachedStationOptions = activeStationOptions.filter((option) => !option.cached);
+  const selectedStationsReadyToSearch =
+    selectedCachedStationOptions.length > 0 && selectedUncachedStationOptions.length === 0;
+  const catalogIsLoading = status.startsWith("Refreshing IGRA station catalog");
+  const stationFilesAreDownloading = status.startsWith("Caching ");
+  const candidateSearchIsRunning =
+    status.startsWith("Preparing selected soundings") || status.startsWith("Searching ");
   const selectedCachedSoundingCount = selectedCachedStationOptions.reduce(
     (total, option) => total + option.sounding_count,
     0,
@@ -5716,7 +6399,9 @@ function ObservedAtmosphereCandidatesPanel({
       : "No cached stations selected";
   const stationSelectionSummary =
     stationSelectionMode === "all_cached"
-      ? `All ${cachedStationOptions.length.toLocaleString()} cached station${cachedStationOptions.length === 1 ? "" : "s"}`
+      ? mode === "find"
+        ? `Entire ${stationOptions.length.toLocaleString()}-station catalog`
+        : `All ${cachedStationOptions.length.toLocaleString()} cached station${cachedStationOptions.length === 1 ? "" : "s"}`
       : `${selectedStationIds.length.toLocaleString()} selected station${selectedStationIds.length === 1 ? "" : "s"}`;
   const lastAnalysisSummary = screening
     ? `${visibleCandidates.length.toLocaleString()} shown from ${(
@@ -5746,198 +6431,510 @@ function ObservedAtmosphereCandidatesPanel({
       <div className="panel-heading-row">
         <div>
           <p className="eyebrow">Observed atmosphere</p>
-          <h3 id="sounding-candidates-title">Find interesting soundings</h3>
+          <h3 id="sounding-candidates-title">
+            {mode === "find"
+              ? "Find and download soundings"
+              : mode === "candidates"
+                ? "Screen interesting soundings"
+                : "Find interesting soundings"}
+          </h3>
           <p className="field-help">
-            Choose the stations and history to search, then review the matching candidate evidence.
+            {mode === "find"
+              ? "Download the regional station catalog, set the first-search criteria, and find an atmosphere to use."
+              : mode === "candidates"
+                ? "Choose the history to analyze, then review the matching candidate evidence."
+                : "Choose the stations and history to analyze, then review the matching candidate evidence."}
           </p>
         </div>
-        <p className="state-chip" role="status">
-          {status}
-        </p>
-      </div>
-
-      <section
-        className="candidate-search-controls"
-        aria-label="Prepare and search local soundings"
-      >
-        <div className="run-configuration-grid">
-          <label>
-            <span>Source region</span>
-            <select aria-label="Source region" value="great_plains_midwest" disabled>
-              <option value="great_plains_midwest">Great Plains / Midwest</option>
-            </select>
-            <small>Current local station catalog scope.</small>
-          </label>
-          <label>
-            <span>Search intent</span>
-            <select
-              aria-label="Search intent"
-              value={searchIntent}
-              onChange={(event) => onSearchIntentChange(event.target.value as SearchIntent)}
-            >
-              {SEARCH_INTENT_OPTIONS.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-              <option value="winter_disabled" disabled>
-                Cold season / winter (not supported yet)
-              </option>
-            </select>
-            <small>Sets the recommendation category and explanation focus.</small>
-          </label>
-          <label>
-            <span>History scope</span>
-            <select
-              aria-label="History scope"
-              value={historyScope}
-              onChange={(event) =>
-                onHistoryScopeChange(event.target.value as CandidateHistoryScope)
-              }
-            >
-              {HISTORY_SCOPE_OPTIONS.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
-            <small>
-              {HISTORY_SCOPE_OPTIONS.find((option) => option.value === historyScope)?.description}
-            </small>
-          </label>
-          {historyScope === "latest_per_station" && (
-            <label>
-              <span>Latest soundings per station</span>
-              <input
-                aria-label="Latest soundings per station"
-                type="number"
-                min="1"
-                max="2000"
-                value={latestPerStation}
-                onChange={(event) => onLatestPerStationChange(event.target.value)}
-              />
-              <small>Applied to each selected cached station.</small>
-            </label>
-          )}
-          <label>
-            <span>Returned candidate limit</span>
-            <input
-              aria-label="Returned candidate limit"
-              type="number"
-              min="1"
-              max="500"
-              value={resultLimit}
-              onChange={(event) => onResultLimitChange(event.target.value)}
-            />
-            <small>Limit is applied after the selected soundings are analyzed.</small>
-          </label>
-        </div>
-        <div className="candidate-search-set-summary" aria-label="Selected soundings">
-          <Metric label="Selected soundings" value={plannedAnalysisSummary} />
-          <Metric label="Station set" value={stationSelectionSummary} />
-          <Metric label="Cached inventory" value={cachedInventorySummary} />
-          <Metric
-            label="Uncached selected"
-            value={`${selectedUncachedStationOptions.length.toLocaleString()} station${selectedUncachedStationOptions.length === 1 ? "" : "s"}`}
-          />
-        </div>
-        <div className="candidate-discovery-actions" aria-label="Sounding search action">
-          <button type="button" onClick={onPrepareAndSearch}>
-            Search selected soundings
-          </button>
-        </div>
-      </section>
-
-      <section className="candidate-station-picker" aria-label="Station picker">
-        <div className="panel-heading-row">
-          <div>
-            <h4>Station set</h4>
-            <p className="field-help">
-              Search all cached stations, or choose specific stations to cache or analyze.
-            </p>
-          </div>
-          <div className="button-row">
-            <button
-              type="button"
-              className={
-                stationSelectionMode === "all_cached"
-                  ? "active-secondary-button"
-                  : "secondary-button"
-              }
-              onClick={onSelectAllCachedStations}
-            >
-              All cached stations
-            </button>
-            <button
-              type="button"
-              className={
-                stationSelectionMode === "selected" ? "active-secondary-button" : "secondary-button"
-              }
-              onClick={() => onStationSelectionModeChange("selected")}
-            >
-              Choose stations
-            </button>
-            <button type="button" className="secondary-button" onClick={onClearSelectedStations}>
-              Clear selected
-            </button>
-          </div>
-        </div>
-        {stationSelectionMode === "selected" ? (
-          <div className="station-picklist">
-            {stationOptions.length === 0 ? (
-              <p className="field-help">Refresh the IGRA catalog to load station choices.</p>
-            ) : (
-              stationOptions.map((station) => (
-                <label key={station.station_id} className="station-picklist-row">
-                  <input
-                    type="checkbox"
-                    checked={selectedStationIdSet.has(station.station_id)}
-                    onChange={() => onSelectedStationToggle(station.station_id)}
-                  />
-                  <span>
-                    <strong>{station.station_name ?? station.station_id}</strong>
-                    <small>
-                      {station.station_id} ·{" "}
-                      {station.cached
-                        ? `${station.sounding_count.toLocaleString()} cached sounding${station.sounding_count === 1 ? "" : "s"}`
-                        : "not cached"}
-                    </small>
-                  </span>
-                  <StatusBadge
-                    label={station.cached ? "Cached" : "Available to cache"}
-                    tone={station.cached ? "good" : "neutral"}
-                  />
-                </label>
-              ))
-            )}
-          </div>
-        ) : (
-          <p className="field-help">
-            Using all cached stations. Click Choose stations to pick specific stations or cache
-            uncached catalog stations.
+        {mode !== "find" && (
+          <p className="state-chip" role="status">
+            {status}
           </p>
         )}
-      </section>
+      </div>
 
-      <details className="candidate-cache-summary" aria-label="Local sounding data">
-        <summary>
-          {screeningInputs.length > 0
-            ? `Local data ready · ${cachedStationFiles.toLocaleString()} station file${cachedStationFiles === 1 ? "" : "s"} · ${cachedInventorySummary} · refreshed ${
-                catalog?.refreshed_at ? formatDate(catalog.refreshed_at) : "not refreshed here"
-              }`
-            : "No cached soundings ready"}
-        </summary>
-        <dl className="compact-metrics candidate-cache-metrics">
-          <Metric label="Region" value={catalog?.region.label ?? "Great Plains / Midwest"} />
-          <Metric
-            label="Catalog"
-            value={catalog?.refreshed_at ? formatDate(catalog.refreshed_at) : "Not refreshed here"}
-          />
-          <Metric label="Station files" value={cachedStationFiles.toLocaleString()} />
-          <Metric label="Parsed soundings" value={cachedInventorySummary} />
-          <Metric label="Last search" value={lastAnalysisSummary} />
-        </dl>
-      </details>
+      {mode !== "find" && (
+        <section
+          className="candidate-search-controls"
+          aria-label="Prepare and search local soundings"
+        >
+          <div className="run-configuration-grid">
+            <label>
+              <span>Source region</span>
+              <select aria-label="Source region" value="great_plains_midwest" disabled>
+                <option value="great_plains_midwest">Great Plains / Midwest</option>
+              </select>
+              <small>Current local station catalog scope.</small>
+            </label>
+            <label>
+              <span>Search intent</span>
+              <select
+                aria-label="Search intent"
+                value={searchIntent}
+                onChange={(event) => onSearchIntentChange(event.target.value as SearchIntent)}
+              >
+                {SEARCH_INTENT_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+                <option value="winter_disabled" disabled>
+                  Cold season / winter (not supported yet)
+                </option>
+              </select>
+              <small>Sets the recommendation category and explanation focus.</small>
+            </label>
+            <label>
+              <span>History scope</span>
+              <select
+                aria-label="History scope"
+                value={historyScope}
+                onChange={(event) =>
+                  onHistoryScopeChange(event.target.value as CandidateHistoryScope)
+                }
+              >
+                {HISTORY_SCOPE_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+              <small>
+                {HISTORY_SCOPE_OPTIONS.find((option) => option.value === historyScope)?.description}
+              </small>
+            </label>
+            {historyScope === "latest_per_station" && (
+              <label>
+                <span>Latest soundings per station</span>
+                <input
+                  aria-label="Latest soundings per station"
+                  type="number"
+                  min="1"
+                  max="2000"
+                  value={latestPerStation}
+                  onChange={(event) => onLatestPerStationChange(event.target.value)}
+                />
+                <small>Applied to each selected cached station.</small>
+              </label>
+            )}
+            <label>
+              <span>Returned candidate limit</span>
+              <input
+                aria-label="Returned candidate limit"
+                type="number"
+                min="1"
+                max="500"
+                value={resultLimit}
+                onChange={(event) => onResultLimitChange(event.target.value)}
+              />
+              <small>Limit is applied after the selected soundings are analyzed.</small>
+            </label>
+          </div>
+          <div className="candidate-search-set-summary" aria-label="Selected soundings">
+            <Metric label="Selected soundings" value={plannedAnalysisSummary} />
+            <Metric label="Station set" value={stationSelectionSummary} />
+            <Metric label="Cached inventory" value={cachedInventorySummary} />
+            <Metric
+              label="Uncached selected"
+              value={`${selectedUncachedStationOptions.length.toLocaleString()} station${selectedUncachedStationOptions.length === 1 ? "" : "s"}`}
+            />
+          </div>
+          <div className="candidate-discovery-actions" aria-label="Sounding search action">
+            <button type="button" onClick={onPrepareAndSearch}>
+              Search selected soundings
+            </button>
+          </div>
+        </section>
+      )}
+
+      {mode === "find" && (
+        <section className="sounding-discovery-flow" aria-label="Find downloadable soundings">
+          <section className="sounding-discovery-step">
+            <div className="sounding-discovery-step-number" aria-hidden="true">
+              1
+            </div>
+            <div className="sounding-discovery-step-content">
+              <div className="panel-heading-row">
+                <div>
+                  <h4>Weather station coverage</h4>
+                  <p className="field-help">
+                    {stationOptions.length > 0
+                      ? `The normal search uses all ${stationOptions.length.toLocaleString()} stations in ${catalog?.region.label ?? "the current region"}.`
+                      : "Load the regional station catalog to see profiles available for download."}
+                  </p>
+                </div>
+                <div className="button-row">
+                  <button
+                    type="button"
+                    className="secondary-button"
+                    disabled={catalogIsLoading}
+                    onClick={onRefreshIGRAData}
+                  >
+                    {catalogIsLoading
+                      ? "Loading station catalog..."
+                      : stationOptions.length > 0
+                        ? "Update catalog"
+                        : "Load catalog"}
+                  </button>
+                  {stationOptions.length > 0 && (
+                    <button
+                      type="button"
+                      className="secondary-button"
+                      onClick={() => {
+                        if (showSpecificStations) {
+                          onSelectAllCachedStations();
+                          setShowSpecificStations(false);
+                        } else {
+                          onStationSelectionModeChange("selected");
+                          setShowSpecificStations(true);
+                        }
+                      }}
+                    >
+                      {showSpecificStations ? "Use entire catalog" : "Choose specific stations"}
+                    </button>
+                  )}
+                </div>
+              </div>
+              {stationOptions.length > 0 && (
+                <>
+                  <dl className="station-coverage-summary" aria-label="Station coverage">
+                    <Metric label="Catalog" value={`${stationOptions.length} stations`} />
+                    <Metric label="Downloaded" value={`${cachedStationOptions.length} stations`} />
+                    <Metric
+                      label="Remaining"
+                      value={`${(stationOptions.length - cachedStationOptions.length).toLocaleString()} stations`}
+                    />
+                  </dl>
+                  {showSpecificStations && (
+                    <section
+                      className="specific-station-picker"
+                      aria-label="Choose specific stations"
+                    >
+                      <div className="station-catalog-toolbar">
+                        <label>
+                          <span>Find a station</span>
+                          <input
+                            type="search"
+                            value={stationCatalogSearch}
+                            placeholder="City or station ID"
+                            onChange={(event) => setStationCatalogSearch(event.target.value)}
+                          />
+                        </label>
+                        <p>
+                          {selectedStationIds.length > 0
+                            ? `${selectedStationIds.length.toLocaleString()} station${selectedStationIds.length === 1 ? "" : "s"} selected`
+                            : "Select the exceptions you want to search"}
+                        </p>
+                        {selectedStationIds.length > 0 && (
+                          <button
+                            type="button"
+                            className="secondary-button"
+                            onClick={onClearSelectedStations}
+                          >
+                            Clear
+                          </button>
+                        )}
+                      </div>
+                      <div className="station-picklist">
+                        {visibleStationOptions.length > 0 ? (
+                          visibleStationOptions.map((station) => (
+                            <label key={station.station_id} className="station-picklist-row">
+                              <input
+                                type="checkbox"
+                                checked={selectedStationIdSet.has(station.station_id)}
+                                onChange={() => onSelectedStationToggle(station.station_id)}
+                              />
+                              <span>
+                                <strong>{station.station_name ?? station.station_id}</strong>
+                                <small>
+                                  {station.station_id}
+                                  {station.latest_valid_time_utc
+                                    ? ` · latest ${formatDate(station.latest_valid_time_utc)}`
+                                    : ""}
+                                </small>
+                              </span>
+                              <StatusBadge
+                                label={station.cached ? "Downloaded" : "Available"}
+                                tone={station.cached ? "good" : "neutral"}
+                              />
+                            </label>
+                          ))
+                        ) : (
+                          <p className="field-help">
+                            No stations match “{stationCatalogSearch.trim()}”.
+                          </p>
+                        )}
+                      </div>
+                    </section>
+                  )}
+                </>
+              )}
+            </div>
+          </section>
+
+          <section className="sounding-discovery-step">
+            <div className="sounding-discovery-step-number" aria-hidden="true">
+              2
+            </div>
+            <div className="sounding-discovery-step-content">
+              <h4>Download station histories</h4>
+              <p className="field-help">
+                Histories stay on this computer. The normal path downloads every station in the
+                regional catalog before searching.
+              </p>
+              <div className="candidate-discovery-actions">
+                {selectedCachedStationOptions.length > 0 &&
+                selectedUncachedStationOptions.length === 0 ? (
+                  <StatusBadge
+                    label={`Ready · ${selectedCachedStationOptions.length.toLocaleString()} station${selectedCachedStationOptions.length === 1 ? "" : "s"} downloaded`}
+                    tone="good"
+                  />
+                ) : (
+                  <button
+                    type="button"
+                    disabled={
+                      selectedUncachedStationOptions.length === 0 || stationFilesAreDownloading
+                    }
+                    onClick={() =>
+                      onCacheStationFiles(
+                        selectedUncachedStationOptions.map((option) => option.station_id),
+                      )
+                    }
+                  >
+                    {stationFilesAreDownloading
+                      ? "Downloading sounding histories..."
+                      : selectedUncachedStationOptions.length > 0
+                        ? stationSelectionMode === "all_cached"
+                          ? `Download ${selectedUncachedStationOptions.length.toLocaleString()} remaining station histor${selectedUncachedStationOptions.length === 1 ? "y" : "ies"}`
+                          : `Download ${selectedUncachedStationOptions.length.toLocaleString()} selected station histor${selectedUncachedStationOptions.length === 1 ? "y" : "ies"}`
+                        : "Choose stations to download"}
+                  </button>
+                )}
+                {activeStationOptions.length > 0 && (
+                  <span className="field-help">
+                    {selectedCachedStationOptions.length.toLocaleString()} downloaded ·{" "}
+                    {selectedUncachedStationOptions.length.toLocaleString()} remaining
+                  </span>
+                )}
+              </div>
+            </div>
+          </section>
+
+          <section className="sounding-discovery-step">
+            <div className="sounding-discovery-step-number" aria-hidden="true">
+              3
+            </div>
+            <div className="sounding-discovery-step-content">
+              <div>
+                <h4>Search downloaded soundings</h4>
+                <p className="field-help">
+                  Choose what you want to find and how much station history to analyze. You can
+                  refine the same search later in Candidates.
+                </p>
+              </div>
+              <div
+                className="sounding-initial-search-controls"
+                aria-label="Initial sounding search options"
+              >
+                <label>
+                  <span>Search focus</span>
+                  <select
+                    aria-label="Search focus"
+                    value={searchIntent}
+                    onChange={(event) => onSearchIntentChange(event.target.value as SearchIntent)}
+                  >
+                    {SEARCH_INTENT_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                  <small>Sets the candidate question and initial evidence filters.</small>
+                </label>
+                <label>
+                  <span>Station history</span>
+                  <select
+                    aria-label="Station history"
+                    value={historyScope}
+                    onChange={(event) =>
+                      onHistoryScopeChange(event.target.value as CandidateHistoryScope)
+                    }
+                  >
+                    {HISTORY_SCOPE_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                  <small>
+                    {
+                      HISTORY_SCOPE_OPTIONS.find((option) => option.value === historyScope)
+                        ?.description
+                    }
+                  </small>
+                </label>
+                {historyScope === "latest_per_station" && (
+                  <label>
+                    <span>Latest per station</span>
+                    <input
+                      aria-label="Latest soundings per station"
+                      type="number"
+                      min="1"
+                      max="2000"
+                      value={latestPerStation}
+                      onChange={(event) => onLatestPerStationChange(event.target.value)}
+                    />
+                    <small>Most recent profiles to analyze from each selected station.</small>
+                  </label>
+                )}
+                <label>
+                  <span>Candidates to show</span>
+                  <input
+                    aria-label="Candidates to show"
+                    type="number"
+                    min="1"
+                    max="500"
+                    value={resultLimit}
+                    onChange={(event) => onResultLimitChange(event.target.value)}
+                  />
+                  <small>Applied after the selected profiles are analyzed.</small>
+                </label>
+              </div>
+              <div className="candidate-discovery-actions">
+                <button
+                  type="button"
+                  disabled={!selectedStationsReadyToSearch || candidateSearchIsRunning}
+                  onClick={onPrepareAndSearch}
+                >
+                  {candidateSearchIsRunning
+                    ? `Searching ${plannedAnalysisCount.toLocaleString()} soundings...`
+                    : selectedStationsReadyToSearch
+                      ? stationSelectionMode === "all_cached"
+                        ? `Search all ${selectedCachedStationOptions.length.toLocaleString()} stations`
+                        : `Search ${selectedCachedStationOptions.length.toLocaleString()} selected station${selectedCachedStationOptions.length === 1 ? "" : "s"}`
+                      : selectedUncachedStationOptions.length > 0
+                        ? "Download remaining station histories first"
+                        : "Choose stations to search"}
+                </button>
+                <span className="field-help" role="status">
+                  {candidateSearchIsRunning ? status : plannedAnalysisSummary}
+                </span>
+              </div>
+            </div>
+          </section>
+        </section>
+      )}
+
+      {mode === "combined" && (
+        <section className="candidate-station-picker" aria-label="Station picker">
+          <div className="panel-heading-row">
+            <div>
+              <h4>Station set</h4>
+              <p className="field-help">
+                Search all cached stations, or choose specific stations to cache or analyze.
+              </p>
+            </div>
+            <div className="button-row">
+              <button
+                type="button"
+                className={
+                  stationSelectionMode === "all_cached"
+                    ? "active-secondary-button"
+                    : "secondary-button"
+                }
+                onClick={onSelectAllCachedStations}
+              >
+                All cached stations
+              </button>
+              <button
+                type="button"
+                className={
+                  stationSelectionMode === "selected"
+                    ? "active-secondary-button"
+                    : "secondary-button"
+                }
+                onClick={() => onStationSelectionModeChange("selected")}
+              >
+                Choose stations
+              </button>
+              <button type="button" className="secondary-button" onClick={onClearSelectedStations}>
+                Clear selected
+              </button>
+            </div>
+          </div>
+          {stationSelectionMode === "selected" ? (
+            <div className="station-picklist">
+              {stationOptions.length === 0 ? (
+                <p className="field-help">Refresh the IGRA catalog to load station choices.</p>
+              ) : (
+                stationOptions.map((station) => (
+                  <label key={station.station_id} className="station-picklist-row">
+                    <input
+                      type="checkbox"
+                      checked={selectedStationIdSet.has(station.station_id)}
+                      onChange={() => onSelectedStationToggle(station.station_id)}
+                    />
+                    <span>
+                      <strong>{station.station_name ?? station.station_id}</strong>
+                      <small>
+                        {station.station_id} ·{" "}
+                        {station.cached
+                          ? `${station.sounding_count.toLocaleString()} cached sounding${station.sounding_count === 1 ? "" : "s"}`
+                          : "not cached"}
+                      </small>
+                    </span>
+                    <StatusBadge
+                      label={station.cached ? "Cached" : "Available to cache"}
+                      tone={station.cached ? "good" : "neutral"}
+                    />
+                  </label>
+                ))
+              )}
+            </div>
+          ) : (
+            <p className="field-help">
+              Using all cached stations. Click Choose stations to pick specific stations or cache
+              uncached catalog stations.
+            </p>
+          )}
+          <div className="candidate-discovery-actions">
+            <button type="button" className="secondary-button" onClick={onRefreshIGRAData}>
+              Refresh station catalog
+            </button>
+            <button
+              type="button"
+              disabled={selectedUncachedStationOptions.length === 0}
+              onClick={() => onCacheStationFiles()}
+            >
+              Cache selected stations
+            </button>
+          </div>
+        </section>
+      )}
+
+      {mode !== "candidates" && (
+        <details className="candidate-cache-summary" aria-label="Local sounding data">
+          <summary>
+            {screeningInputs.length > 0
+              ? `Local data ready · ${cachedStationFiles.toLocaleString()} station file${cachedStationFiles === 1 ? "" : "s"} · ${cachedInventorySummary} · refreshed ${
+                  catalog?.refreshed_at ? formatDate(catalog.refreshed_at) : "not refreshed here"
+                }`
+              : "No cached soundings ready"}
+          </summary>
+          <dl className="compact-metrics candidate-cache-metrics">
+            <Metric label="Region" value={catalog?.region.label ?? "Great Plains / Midwest"} />
+            <Metric
+              label="Catalog"
+              value={
+                catalog?.refreshed_at ? formatDate(catalog.refreshed_at) : "Not refreshed here"
+              }
+            />
+            <Metric label="Station files" value={cachedStationFiles.toLocaleString()} />
+            <Metric label="Parsed soundings" value={cachedInventorySummary} />
+            <Metric label="Last search" value={lastAnalysisSummary} />
+          </dl>
+        </details>
+      )}
 
       {error && (
         <div className="validation" role="alert">
@@ -5945,7 +6942,7 @@ function ObservedAtmosphereCandidatesPanel({
         </div>
       )}
 
-      {activeRefinements.length > 0 && (
+      {mode !== "find" && activeRefinements.length > 0 && (
         <div className="screening-guidance-note">
           <strong>Search filters applied</strong>
           <span>{activeRefinements.join(" · ")}</span>
@@ -5955,207 +6952,219 @@ function ObservedAtmosphereCandidatesPanel({
         </div>
       )}
 
-      <details className="candidate-advanced-filters">
-        <summary>Advanced filters</summary>
-        <div className="candidate-toolbar" aria-label="Advanced sounding candidate controls">
-          <label>
-            Story
-            <select
-              value={storyFilter}
-              onChange={(event) => onStoryFilterChange(event.target.value as CandidateStoryFilter)}
-            >
-              <option value="all">All screening stories</option>
-              <option value="deep_convection_trial">Deep-convection stories</option>
-              <option value="shallow_cumulus_candidate">Cloud-forming shallow cumulus</option>
-              <option value="dry_failed_candidate">Dry failed cumulus</option>
-              <option value="capped_suppressed_candidate">Capped / suppressed</option>
-              <option value="humid_rainy_candidate">Humid / rainy</option>
-              <option value="severe_thunderstorm_environment">
-                Severe thunderstorm environment
-              </option>
-              <option value="supercell_environment">Supercell-like environment</option>
-              <option value="high_cape_pulse_storm">High-CAPE pulse storm</option>
-              <option value="dry_microburst_inverted_v">Dry microburst / inverted-V</option>
-              <option value="squall_line_cold_pool_candidate">
-                Squall-line / cold-pool candidate
-              </option>
-              <option value="elevated_convection">Elevated convection</option>
-              <option value="needs_review">Needs review</option>
-              <option value="poor_or_incomplete_candidate">Poor or incomplete</option>
-            </select>
-          </label>
-          <label>
-            Story family
-            <select
-              value={storyFamilyFilter}
-              onChange={(event) =>
-                onStoryFamilyFilterChange(event.target.value as CandidateStoryFamilyFilter)
-              }
-            >
-              <option value="all">All families</option>
-              <option value="lower_atmosphere">Lower-atmosphere stories</option>
-              <option value="deep_convection">Deep-convection stories</option>
-              <option value="review">Needs review / incomplete</option>
-            </select>
-          </label>
-          <label>
-            Evidence tier
-            <select
-              value={supportFilter}
-              onChange={(event) =>
-                onSupportFilterChange(event.target.value as CandidateSupportFilter)
-              }
-            >
-              <option value="all">All evidence tiers</option>
-              <option value="supported">Supported</option>
-              <option value="weak">Plausible / caveated</option>
-              <option value="unavailable">Little or no signal</option>
-            </select>
-          </label>
-          <label>
-            Sort
-            <select
-              value={sort}
-              onChange={(event) => onSortChange(event.target.value as CandidateSort)}
-            >
-              <option value="best_match">Best match</option>
-              <option value="valid_time">Valid time</option>
-              <option value="station_id">Station ID</option>
-              <option value="station_name">Station name</option>
-              <option value="primary_story">Primary story</option>
-              <option value="story_family">Story family</option>
-              <option value="rank_score">Rank score</option>
-              <option value="deep_tower_opportunity">Experimental Deep-Tower evidence</option>
-              <option value="confidence">Confidence</option>
-              <option value="support">Evidence tier</option>
-              <option value="package_readiness">Package readiness</option>
-              <option value="observed_wind_available">Observed wind availability</option>
-              <option value="profile_top_m_agl">Profile top</option>
-              <option value="lowest_level_m_agl">Lowest usable level</option>
-              <option value="data_completeness_score">Data completeness</option>
-              <option value="low_level_qv_g_kg">Low-level qv</option>
-              <option value="mean_qv_0_500m_g_kg">Mean qv 0-500 m</option>
-              <option value="mean_qv_0_1000m_g_kg">Mean qv 0-1 km</option>
-              <option value="surface_t_td_spread_c">Surface T-Td spread</option>
-              <option value="estimated_lcl_height_m_agl">Estimated LCL</option>
-              <option value="lapse_rate_0_1000m_c_per_km">Low-level lapse rate</option>
-              <option value="midlevel_lapse_rate_700_500_hpa_c_per_km">Midlevel lapse rate</option>
-              <option value="cap_strength_proxy">Cap/inversion strength</option>
-              <option value="cap_height_m_agl">Cap/inversion height</option>
-              <option value="bulk_shear_0_1km_m_s">Bulk shear 0-1 km</option>
-              <option value="bulk_shear_0_3km_m_s">Bulk shear 0-3 km</option>
-              <option value="bulk_shear_0_6km_m_s">Bulk shear 0-6 km</option>
-              <option value="midlevel_dry_layer_proxy">Dry-layer proxy</option>
-              <option value="dry_microburst_inverted_v_proxy">Inverted-V proxy</option>
-              <option value="freezing_level_m_agl">Freezing level</option>
-            </select>
-          </label>
-          <label>
-            Result text search
-            <input
-              type="search"
-              value={stationSearch}
-              placeholder="Station name, ID, or story"
-              onChange={(event) => onStationSearchChange(event.target.value)}
-            />
-          </label>
-          <label>
-            Readiness
-            <select
-              value={readinessFilter}
-              onChange={(event) =>
-                onReadinessFilterChange(event.target.value as CandidateReadinessFilter)
-              }
-            >
-              <option value="all">All readiness states</option>
-              <option value="package_ready">Package-ready only</option>
-              <option value="blocked">Blocked / needs review</option>
-            </select>
-          </label>
-          <div className="candidate-toolbar-actions">
-            <button type="button" className="secondary-button" onClick={onScreen}>
-              Apply advanced filters
-            </button>
-            <button type="button" className="secondary-button" onClick={onRefreshIGRAData}>
-              Refresh catalog
-            </button>
-            <button
-              type="button"
-              className="secondary-button"
-              disabled={selectedUncachedStationOptions.length === 0}
-              onClick={onCacheStationFiles}
-            >
-              Cache selected stations
-            </button>
-          </div>
-        </div>
-        <dl className="compact-metrics">
-          <Metric label="Cached stations" value={cachedStations.toString()} />
-          <Metric label="Cached station files" value={cachedStationFiles.toString()} />
-          <Metric label="Selected soundings" value={plannedAnalysisSummary} />
-          <Metric label="Returned candidate limit" value={resultLimit} />
-        </dl>
-      </details>
-
-      <div className="candidate-workspace">
-        <section aria-label="Screened sounding candidates">
-          {screening && (
-            <div className="candidate-list-heading">
-              <h4>
-                {activeRefinements.length > 0 ? "Refined candidates" : "Screened cached soundings"}
-              </h4>
-              <p className="field-help">{filterTraceSummary.summary}</p>
-              {filterTraceSummary.detail && (
-                <p className="field-help candidate-filter-detail">{filterTraceSummary.detail}</p>
+      {mode !== "find" && (
+        <details className="candidate-advanced-filters">
+          <summary>Advanced filters</summary>
+          <div className="candidate-toolbar" aria-label="Advanced sounding candidate controls">
+            <label>
+              Story
+              <select
+                value={storyFilter}
+                onChange={(event) =>
+                  onStoryFilterChange(event.target.value as CandidateStoryFilter)
+                }
+              >
+                <option value="all">All screening stories</option>
+                <option value="deep_convection_trial">Deep-convection stories</option>
+                <option value="shallow_cumulus_candidate">Cloud-forming shallow cumulus</option>
+                <option value="dry_failed_candidate">Dry failed cumulus</option>
+                <option value="capped_suppressed_candidate">Capped / suppressed</option>
+                <option value="humid_rainy_candidate">Humid / rainy</option>
+                <option value="severe_thunderstorm_environment">
+                  Severe thunderstorm environment
+                </option>
+                <option value="supercell_environment">Supercell-like environment</option>
+                <option value="high_cape_pulse_storm">High-CAPE pulse storm</option>
+                <option value="dry_microburst_inverted_v">Dry microburst / inverted-V</option>
+                <option value="squall_line_cold_pool_candidate">
+                  Squall-line / cold-pool candidate
+                </option>
+                <option value="elevated_convection">Elevated convection</option>
+                <option value="needs_review">Needs review</option>
+                <option value="poor_or_incomplete_candidate">Poor or incomplete</option>
+              </select>
+            </label>
+            <label>
+              Story family
+              <select
+                value={storyFamilyFilter}
+                onChange={(event) =>
+                  onStoryFamilyFilterChange(event.target.value as CandidateStoryFamilyFilter)
+                }
+              >
+                <option value="all">All families</option>
+                <option value="lower_atmosphere">Lower-atmosphere stories</option>
+                <option value="deep_convection">Deep-convection stories</option>
+                <option value="review">Needs review / incomplete</option>
+              </select>
+            </label>
+            <label>
+              Evidence tier
+              <select
+                value={supportFilter}
+                onChange={(event) =>
+                  onSupportFilterChange(event.target.value as CandidateSupportFilter)
+                }
+              >
+                <option value="all">All evidence tiers</option>
+                <option value="supported">Supported</option>
+                <option value="weak">Plausible / caveated</option>
+                <option value="unavailable">Little or no signal</option>
+              </select>
+            </label>
+            <label>
+              Sort
+              <select
+                value={sort}
+                onChange={(event) => onSortChange(event.target.value as CandidateSort)}
+              >
+                <option value="best_match">Best match</option>
+                <option value="valid_time">Valid time</option>
+                <option value="station_id">Station ID</option>
+                <option value="station_name">Station name</option>
+                <option value="primary_story">Primary story</option>
+                <option value="story_family">Story family</option>
+                <option value="rank_score">Rank score</option>
+                <option value="deep_tower_opportunity">Experimental Deep-Tower evidence</option>
+                <option value="confidence">Confidence</option>
+                <option value="support">Evidence tier</option>
+                <option value="package_readiness">Package readiness</option>
+                <option value="observed_wind_available">Observed wind availability</option>
+                <option value="profile_top_m_agl">Profile top</option>
+                <option value="lowest_level_m_agl">Lowest usable level</option>
+                <option value="data_completeness_score">Data completeness</option>
+                <option value="low_level_qv_g_kg">Low-level qv</option>
+                <option value="mean_qv_0_500m_g_kg">Mean qv 0-500 m</option>
+                <option value="mean_qv_0_1000m_g_kg">Mean qv 0-1 km</option>
+                <option value="surface_t_td_spread_c">Surface T-Td spread</option>
+                <option value="estimated_lcl_height_m_agl">Estimated LCL</option>
+                <option value="lapse_rate_0_1000m_c_per_km">Low-level lapse rate</option>
+                <option value="midlevel_lapse_rate_700_500_hpa_c_per_km">
+                  Midlevel lapse rate
+                </option>
+                <option value="cap_strength_proxy">Cap/inversion strength</option>
+                <option value="cap_height_m_agl">Cap/inversion height</option>
+                <option value="bulk_shear_0_1km_m_s">Bulk shear 0-1 km</option>
+                <option value="bulk_shear_0_3km_m_s">Bulk shear 0-3 km</option>
+                <option value="bulk_shear_0_6km_m_s">Bulk shear 0-6 km</option>
+                <option value="midlevel_dry_layer_proxy">Dry-layer proxy</option>
+                <option value="dry_microburst_inverted_v_proxy">Inverted-V proxy</option>
+                <option value="freezing_level_m_agl">Freezing level</option>
+              </select>
+            </label>
+            <label>
+              Result text search
+              <input
+                type="search"
+                value={stationSearch}
+                placeholder="Station name, ID, or story"
+                onChange={(event) => onStationSearchChange(event.target.value)}
+              />
+            </label>
+            <label>
+              Readiness
+              <select
+                value={readinessFilter}
+                onChange={(event) =>
+                  onReadinessFilterChange(event.target.value as CandidateReadinessFilter)
+                }
+              >
+                <option value="all">All readiness states</option>
+                <option value="package_ready">Package-ready only</option>
+                <option value="blocked">Blocked / needs review</option>
+              </select>
+            </label>
+            <div className="candidate-toolbar-actions">
+              <button type="button" className="secondary-button" onClick={onScreen}>
+                Apply advanced filters
+              </button>
+              <button type="button" className="secondary-button" onClick={onRefreshIGRAData}>
+                Refresh catalog
+              </button>
+              {mode === "candidates" && (
+                <button
+                  type="button"
+                  className="secondary-button"
+                  disabled={selectedUncachedStationOptions.length === 0}
+                  onClick={() => onCacheStationFiles()}
+                >
+                  Cache selected stations
+                </button>
               )}
             </div>
-          )}
-          {visibleCandidates.length === 0 ? (
-            <div className="scenario-state-panel">
-              <h4>No screened candidates loaded</h4>
-              <p>
-                Refresh the IGRA catalog if needed, cache station files, then analyze
-                recommendations from the soundings already cached locally.
-              </p>
-            </div>
-          ) : (
-            <div className="candidate-list">
-              {visibleCandidates.map((candidate) => (
-                <SoundingCandidateCard
-                  key={candidate.candidate_id}
-                  candidate={candidate}
-                  storyFilter={storyFilter}
-                  storyFamilyFilter={storyFamilyFilter}
-                  selected={selectedCandidate?.candidate_id === candidate.candidate_id}
-                  saved={savedCandidateIds.has(candidate.candidate_id)}
-                  onSelect={() => onCandidateDetailChange(candidate.candidate_id)}
-                  onSave={() => onSave(candidate)}
-                  onSelectForRunSetup={(activeStory) =>
-                    onSelectForRunSetup(
-                      candidate,
-                      savedCandidates.find(
-                        (saved) => saved.candidate.candidate_id === candidate.candidate_id,
-                      ),
-                      activeStory,
-                    )
-                  }
-                />
-              ))}
-            </div>
-          )}
-        </section>
+          </div>
+          <dl className="compact-metrics">
+            <Metric label="Cached stations" value={cachedStations.toString()} />
+            <Metric label="Cached station files" value={cachedStationFiles.toString()} />
+            <Metric label="Selected soundings" value={plannedAnalysisSummary} />
+            <Metric label="Returned candidate limit" value={resultLimit} />
+          </dl>
+        </details>
+      )}
 
-        <SoundingCandidateDetail
-          candidate={selectedCandidate}
-          storyFilter={storyFilter}
-          storyFamilyFilter={storyFamilyFilter}
-          savedCandidate={selectedSavedCandidate}
-          onSave={onSave}
-          onSelectForRunSetup={(candidate, activeStory) =>
-            onSelectForRunSetup(candidate, selectedSavedCandidate ?? undefined, activeStory)
-          }
-        />
-      </div>
+      {mode !== "find" && (
+        <div className="candidate-workspace">
+          <section aria-label="Screened sounding candidates">
+            {screening && (
+              <div className="candidate-list-heading">
+                <h4>
+                  {activeRefinements.length > 0
+                    ? "Refined candidates"
+                    : "Screened cached soundings"}
+                </h4>
+                <p className="field-help">{filterTraceSummary.summary}</p>
+                {filterTraceSummary.detail && (
+                  <p className="field-help candidate-filter-detail">{filterTraceSummary.detail}</p>
+                )}
+              </div>
+            )}
+            {visibleCandidates.length === 0 ? (
+              <div className="scenario-state-panel">
+                <h4>No screened candidates loaded</h4>
+                <p>
+                  Refresh the IGRA catalog if needed, cache station files, then analyze
+                  recommendations from the soundings already cached locally.
+                </p>
+              </div>
+            ) : (
+              <div className="candidate-list">
+                {visibleCandidates.map((candidate) => (
+                  <SoundingCandidateCard
+                    key={candidate.candidate_id}
+                    candidate={candidate}
+                    storyFilter={storyFilter}
+                    storyFamilyFilter={storyFamilyFilter}
+                    selected={selectedCandidate?.candidate_id === candidate.candidate_id}
+                    saved={savedCandidateIds.has(candidate.candidate_id)}
+                    onSelect={() => onCandidateDetailChange(candidate.candidate_id)}
+                    onSave={() => onSave(candidate)}
+                    onSelectForRunSetup={(activeStory) =>
+                      onSelectForRunSetup(
+                        candidate,
+                        savedCandidates.find(
+                          (saved) => saved.candidate.candidate_id === candidate.candidate_id,
+                        ),
+                        activeStory,
+                      )
+                    }
+                  />
+                ))}
+              </div>
+            )}
+          </section>
+
+          <SoundingCandidateDetail
+            candidate={selectedCandidate}
+            storyFilter={storyFilter}
+            storyFamilyFilter={storyFamilyFilter}
+            savedCandidate={selectedSavedCandidate}
+            onSave={onSave}
+            onSelectForRunSetup={(candidate, activeStory) =>
+              onSelectForRunSetup(candidate, selectedSavedCandidate ?? undefined, activeStory)
+            }
+          />
+        </div>
+      )}
     </section>
   );
 }
@@ -6708,6 +7717,7 @@ function SelectedSoundingRunSetupPanel({
   selectedCandidateScreening,
   runConfiguration,
   runConfigurationPreview,
+  soundingsLanguage = false,
   onRunConfigurationChange,
   onAddSelectedSoundingToRunPlan,
 }: {
@@ -6715,6 +7725,7 @@ function SelectedSoundingRunSetupPanel({
   selectedCandidateScreening: Record<string, unknown> | null;
   runConfiguration: RunConfigurationInput;
   runConfigurationPreview: RunConfiguration;
+  soundingsLanguage?: boolean;
   onRunConfigurationChange: (configuration: RunConfigurationInput) => void;
   onAddSelectedSoundingToRunPlan: () => void;
 }) {
@@ -6775,6 +7786,7 @@ function SelectedSoundingRunSetupPanel({
         selectedCandidateScreening={selectedCandidateScreening}
         onAddToRunPlan={onAddSelectedSoundingToRunPlan}
         onChange={onRunConfigurationChange}
+        soundingsLanguage={soundingsLanguage}
         embedded
       />
     </section>
@@ -7337,10 +8349,12 @@ function RunPlanConfigurationFields({
 }
 
 function ResultsWorkspace({
+  context = "legacy",
   results,
   selectedResult,
   selectedResultId,
   resultsStatus,
+  worldOwnershipStatus,
   resultsError,
   resultDeletePreview,
   draft,
@@ -7352,14 +8366,17 @@ function ResultsWorkspace({
   onRefreshResults,
   onInspect,
   onCompare,
+  onOpenResultInExplore,
   onPreviewResultDelete,
   onConfirmResultDelete,
   onCancelResultDelete,
 }: {
+  context?: "legacy" | "soundings";
   results: ResultCard[];
   selectedResult: ResultCard | undefined;
   selectedResultId: string | null;
   resultsStatus: string;
+  worldOwnershipStatus?: string;
   resultsError: string | null;
   resultDeletePreview: DeleteResultResponse | null;
   draft: { name: string; tags: string; notes: string };
@@ -7371,6 +8388,7 @@ function ResultsWorkspace({
   onRefreshResults: () => void;
   onInspect: () => void;
   onCompare: () => void;
+  onOpenResultInExplore?: (resultId: string) => void;
   onPreviewResultDelete: (resultId: string) => void;
   onConfirmResultDelete: (resultId: string) => void;
   onCancelResultDelete: () => void;
@@ -7379,24 +8397,39 @@ function ResultsWorkspace({
     <section className="results-library" aria-labelledby="results-title">
       <div className="section-heading">
         <div>
-          <h2 id="results-title">Experiment Notebook</h2>
+          <p className="eyebrow">{context === "soundings" ? "Experiments" : "Results"}</p>
+          <h2 id="results-title">
+            {context === "soundings" ? "Past Experiments" : "Experiment Notebook"}
+          </h2>
           <p>
-            Review ingested cloud experiments, scan result cards, and open results for explanation.
+            {context === "soundings"
+              ? "Reopen completed, ingested Soundings Experiments. Use Ownership to inspect legacy records or verified World Simulations."
+              : "Review ingested cloud experiments, scan result cards, and open results for explanation."}
           </p>
         </div>
         <button type="button" onClick={onRefreshResults}>
-          Refresh results
+          {context === "soundings" ? "Refresh Experiments" : "Refresh results"}
         </button>
       </div>
       {resultsStatus !== "Results loaded" && resultsStatus !== "Loading results..." && (
         <p className="inline-status" role="status">
-          {resultsStatus}
+          {context === "soundings" ? soundingsExperimentStatus(resultsStatus) : resultsStatus}
+        </p>
+      )}
+      {context === "soundings" && worldOwnershipStatus && (
+        <p className="soundings-ownership-status" role="status">
+          {worldOwnershipStatus}
         </p>
       )}
 
-      {resultsError && <p role="alert">{resultsError}</p>}
+      {resultsError && (
+        <p role="alert">
+          {context === "soundings" ? soundingsExperimentStatus(resultsError) : resultsError}
+        </p>
+      )}
 
       <NotebookWorkspace
+        context={context}
         results={results}
         selectedResult={selectedResult}
         selectedResultId={selectedResultId}
@@ -7408,10 +8441,13 @@ function ResultsWorkspace({
         onSubmit={onSubmit}
         onInspect={onInspect}
         onCompare={onCompare}
-        onOpenResultInExplore={(resultId) => {
-          onSelectResult(resultId);
-          onInspect();
-        }}
+        onOpenResultInExplore={
+          onOpenResultInExplore ??
+          ((resultId) => {
+            onSelectResult(resultId);
+            onInspect();
+          })
+        }
         deletePreview={resultDeletePreview}
         onPreviewDelete={onPreviewResultDelete}
         onConfirmDelete={onConfirmResultDelete}
@@ -7422,6 +8458,7 @@ function ResultsWorkspace({
 }
 
 function NotebookWorkspace({
+  context = "legacy",
   results,
   selectedResult,
   selectedResultId,
@@ -7439,6 +8476,7 @@ function NotebookWorkspace({
   onConfirmDelete,
   onCancelDelete,
 }: {
+  context?: "legacy" | "soundings";
   results: ResultCard[];
   selectedResult: ResultCard | undefined;
   selectedResultId: string | null;
@@ -7457,32 +8495,83 @@ function NotebookWorkspace({
   onCancelDelete: () => void;
 }) {
   const [filters, setFilters] = useState<ResultsFilterState>(DEFAULT_RESULTS_FILTERS);
+  const [soundingsFilters, setSoundingsFilters] = useState<SoundingsArchiveFilterState>(
+    DEFAULT_SOUNDINGS_ARCHIVE_FILTERS,
+  );
   const scenarioOptions = useMemo(() => resultScenarioOptions(results), [results]);
-  const filteredResults = useMemo(() => filterAndSortResults(results, filters), [results, filters]);
-  const filtersActive = resultsFiltersActive(filters);
+  const filteredResults = useMemo(
+    () =>
+      context === "soundings"
+        ? filterSoundingsArchiveResults(results, soundingsFilters)
+        : filterAndSortResults(results, filters),
+    [context, filters, results, soundingsFilters],
+  );
+  const filtersActive =
+    context === "soundings"
+      ? soundingsArchiveFiltersActive(soundingsFilters)
+      : resultsFiltersActive(filters);
+  const visibleSelectedResult =
+    filteredResults.find((result) => result.result_id === selectedResultId) ??
+    filteredResults[0] ??
+    undefined;
+
+  useEffect(() => {
+    if (
+      context === "soundings" &&
+      visibleSelectedResult &&
+      visibleSelectedResult.result_id !== selectedResultId
+    ) {
+      onSelectResult(visibleSelectedResult.result_id);
+    }
+  }, [context, onSelectResult, selectedResultId, visibleSelectedResult]);
 
   return (
-    <section className="workspace-section" aria-label="Notebook entries">
-      <ResultsFilterBar
-        filters={filters}
-        scenarioOptions={scenarioOptions}
-        totalCount={results.length}
-        visibleCount={filteredResults.length}
-        onChange={setFilters}
-        onReset={() => setFilters(DEFAULT_RESULTS_FILTERS)}
-      />
+    <section
+      className="workspace-section"
+      aria-label={context === "soundings" ? "Past Experiments" : "Notebook entries"}
+    >
+      {context === "soundings" ? (
+        <SoundingsArchiveFilterBar
+          filters={soundingsFilters}
+          totalCount={results.length}
+          visibleCount={filteredResults.length}
+          onChange={setSoundingsFilters}
+          onReset={() => setSoundingsFilters(DEFAULT_SOUNDINGS_ARCHIVE_FILTERS)}
+        />
+      ) : (
+        <ResultsFilterBar
+          filters={filters}
+          scenarioOptions={scenarioOptions}
+          totalCount={results.length}
+          visibleCount={filteredResults.length}
+          onChange={setFilters}
+          onReset={() => setFilters(DEFAULT_RESULTS_FILTERS)}
+        />
+      )}
       <div className="results-layout">
         <ExperimentNotebookList
+          context={context}
           results={filteredResults}
           totalResults={results.length}
           filtersActive={filtersActive}
           selectedResultId={selectedResultId}
           onSelect={onSelectResult}
           onOpenExplore={onOpenResultInExplore}
-          onResetFilters={() => setFilters(DEFAULT_RESULTS_FILTERS)}
+          onResetFilters={() =>
+            context === "soundings"
+              ? setSoundingsFilters(DEFAULT_SOUNDINGS_ARCHIVE_FILTERS)
+              : setFilters(DEFAULT_RESULTS_FILTERS)
+          }
         />
         <ResultNotebookCard
-          result={selectedResult}
+          context={context}
+          result={
+            context === "soundings"
+              ? visibleSelectedResult?.result_id === selectedResult?.result_id
+                ? selectedResult
+                : undefined
+              : selectedResult
+          }
           draft={draft}
           comparisonStory={comparisonStory}
           comparisonStoryStatus={comparisonStoryStatus}
@@ -7512,6 +8601,8 @@ function ExploreWorkspace({
   backLabel,
   onBack,
   onCompare,
+  resultOptions,
+  onSelectResult,
 }: {
   selectedResult: ResultCard | undefined;
   comparisonStory: TradeCumulusComparisonStoryResponse | null;
@@ -7524,6 +8615,8 @@ function ExploreWorkspace({
   backLabel?: string;
   onBack?: () => void;
   onCompare?: () => void;
+  resultOptions?: ResultCard[];
+  onSelectResult?: (resultId: string) => void;
 }) {
   return (
     <section className="workspace-section explore-workspace" aria-label="Explore this result">
@@ -7552,6 +8645,8 @@ function ExploreWorkspace({
             backLabel={backLabel}
             onBack={onBack}
             onCompare={onCompare}
+            resultOptions={resultOptions}
+            onSelectResult={onSelectResult}
           />
         </section>
       )}
@@ -7576,6 +8671,8 @@ type LocalRunWorkflowPanelProps = {
   runDeletePreview: DeleteRunResponse | null;
   runDeleteMessage: string | null;
   results: ResultCard[];
+  soundingsLanguage?: boolean;
+  includePipeline?: boolean;
   autoFinalizingWorkerRunIds: Set<string>;
   failedAutoFinalizingWorkerRunIds: Set<string>;
   onRefreshRunStatus: () => void;
@@ -7598,7 +8695,7 @@ type LocalRunWorkflowPanelProps = {
   onConfirmRunDelete: (runId: string) => void;
 };
 
-function RunMonitorPanel(props: LocalRunWorkflowPanelProps) {
+function runActivityCounts(props: LocalRunWorkflowPanelProps) {
   const activeRunIds = new Set<string>();
   if (props.runQueue?.active_run_id) activeRunIds.add(props.runQueue.active_run_id);
   if (
@@ -7616,6 +8713,56 @@ function RunMonitorPanel(props: LocalRunWorkflowPanelProps) {
   const queuedCount = props.runQueue?.queued_count ?? 0;
   const completedCount =
     props.storageInventory?.runs.filter((run) => run.lifecycle_state === "completed").length ?? 0;
+  return { activeCount, queuedCount, completedCount };
+}
+
+function SoundingsExploreLanding({
+  results,
+  onOpen,
+  onViewRuns,
+}: {
+  results: ResultCard[];
+  onOpen: (resultId: string) => void;
+  onViewRuns: () => void;
+}) {
+  return (
+    <section className="soundings-explore-landing" aria-labelledby="soundings-explore-title">
+      <div className="section-heading">
+        <div>
+          <p className="eyebrow">Explore</p>
+          <h3 id="soundings-explore-title">Explore Soundings Experiments</h3>
+          <p>Inspect completed, ingested Soundings experiments.</p>
+        </div>
+      </div>
+      {results.length === 0 ? (
+        <section className="soundings-explore-empty">
+          <h4>No Soundings Experiment is ready to explore yet</h4>
+          <p>
+            Explore becomes available after a Soundings experiment completes and its output is
+            ingested.
+          </p>
+          <button type="button" onClick={onViewRuns}>
+            View current runs
+          </button>
+        </section>
+      ) : (
+        <div className="soundings-explore-ready-list" aria-label="Experiments ready to explore">
+          {results.map((result) => (
+            <button key={result.result_id} type="button" onClick={() => onOpen(result.result_id)}>
+              <strong>{result.name}</strong>
+              <span>
+                {result.observed_sounding?.station_name ?? result.input_source_label ?? "Sounding"}
+              </span>
+            </button>
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function RunMonitorPanel(props: LocalRunWorkflowPanelProps) {
+  const { activeCount, queuedCount, completedCount } = runActivityCounts(props);
   return (
     <details className="run-monitor-panel" open={activeCount > 0 || queuedCount > 0}>
       <summary>
@@ -7629,6 +8776,197 @@ function RunMonitorPanel(props: LocalRunWorkflowPanelProps) {
       </summary>
       <LocalRunWorkflowPanel {...props} />
     </details>
+  );
+}
+
+function SoundingsRunsPanel(props: LocalRunWorkflowPanelProps) {
+  const currentRunId = props.dryRun ? runIdFromPackage(props.dryRun) : null;
+  const inventoryRuns = props.storageInventory?.runs ?? [];
+  const isSoundingsRun = (runId: string) => {
+    if (runId === currentRunId) return true;
+    const run = inventoryRuns.find((candidate) => candidate.run_id === runId);
+    return run ? runWorkCategory(run, resultForRun(props.results, runId)) === "sounding" : false;
+  };
+  const soundingsInventory = props.storageInventory
+    ? {
+        ...props.storageInventory,
+        runs: inventoryRuns.filter((run) => isSoundingsRun(run.run_id)),
+        largest_runs: props.storageInventory.largest_runs.filter((run) =>
+          isSoundingsRun(run.run_id),
+        ),
+      }
+    : null;
+  const soundingsQueue = props.runQueue
+    ? {
+        ...props.runQueue,
+        entries: props.runQueue.entries.filter((entry) => isSoundingsRun(entry.run_id)),
+        active_run_id:
+          props.runQueue.active_run_id && isSoundingsRun(props.runQueue.active_run_id)
+            ? props.runQueue.active_run_id
+            : null,
+        queued_count: props.runQueue.entries.filter(
+          (entry) => entry.state === "queued" && isSoundingsRun(entry.run_id),
+        ).length,
+      }
+    : null;
+  const soundingsProps: LocalRunWorkflowPanelProps = {
+    ...props,
+    storageInventory: soundingsInventory,
+    runQueue: soundingsQueue,
+  };
+  const { activeCount, queuedCount, completedCount } = runActivityCounts(soundingsProps);
+  const activeRunId = soundingsQueue?.active_run_id ?? null;
+  const activeRun = soundingsInventory?.runs.find((run) => run.run_id === activeRunId);
+  const activeRunLabel =
+    activeRun?.scenario_name ?? activeRun?.scenario_id ?? activeRunId ?? "None";
+  const globalActiveRunId = props.runQueue?.active_run_id ?? null;
+  const globalActiveRun = inventoryRuns.find((run) => run.run_id === globalActiveRunId);
+  const externalActiveRunId =
+    globalActiveRunId && !isSoundingsRun(globalActiveRunId) ? globalActiveRunId : null;
+  const otherActionableRuns = selectPipelineRuns(
+    inventoryRuns.filter((run) => !isSoundingsRun(run.run_id)),
+    props.results,
+    null,
+    props.runQueue,
+  );
+  const worldWorkCount = otherActionableRuns.filter(
+    (run) => runWorkCategory(run, resultForRun(props.results, run.run_id)) === "world",
+  ).length;
+  const legacyWorkCount = otherActionableRuns.length - worldWorkCount;
+  const actionableRuns = selectPipelineRuns(
+    soundingsInventory?.runs ?? [],
+    props.results,
+    currentRunId,
+    soundingsQueue,
+  );
+  const hasTechnicalDetails = Boolean(
+    props.dryRun ||
+    props.runStatus ||
+    props.runQueue ||
+    props.lanWorkerConfig ||
+    props.lanWorkerStatus ||
+    props.storageInventory ||
+    props.error,
+  );
+
+  return (
+    <section className="soundings-runs-overview" aria-labelledby="soundings-runs-title">
+      <div className="section-heading soundings-runs-heading">
+        <div>
+          <p className="eyebrow">Runs</p>
+          <h3 id="soundings-runs-title">Run status</h3>
+          <p>
+            Track technical CM1 execution. Completed, ingested Experiments appear in Past
+            Experiments.
+          </p>
+        </div>
+        <button type="button" onClick={props.onRefreshStorage}>
+          Refresh current work
+        </button>
+      </div>
+
+      <dl className="soundings-run-summary" aria-label="Run summary">
+        <Metric label="Active" value={activeCount.toLocaleString()} />
+        <Metric label="Waiting" value={queuedCount.toLocaleString()} />
+        <Metric label="Current work" value={actionableRuns.length.toLocaleString()} />
+        <Metric label="Completed locally" value={completedCount.toLocaleString()} />
+      </dl>
+
+      {externalActiveRunId && (
+        <section
+          className="soundings-current-queue"
+          aria-label="Global runner occupied by other work"
+        >
+          <div>
+            <p className="eyebrow">Global CM1 runner</p>
+            <h4>Other Cloud Chamber work is running</h4>
+            <p>
+              Soundings execution is waiting for the shared runner. This is not a Soundings Run.
+            </p>
+          </div>
+          <dl>
+            <Metric
+              label="Work type"
+              value={
+                globalActiveRun
+                  ? runWorkCategoryLabel(
+                      runWorkCategory(
+                        globalActiveRun,
+                        resultForRun(props.results, globalActiveRun.run_id),
+                      ),
+                    )
+                  : "Legacy / unassigned work"
+              }
+            />
+            <Metric label="Active Run ID" value={externalActiveRunId} />
+          </dl>
+        </section>
+      )}
+
+      {(activeRunId || queuedCount > 0) && (
+        <section className="soundings-current-queue" aria-label="Current local queue">
+          <div>
+            <p className="eyebrow">Local queue</p>
+            <h4>{props.runQueue?.active_run_id ? "CM1 is running" : "Runs are waiting"}</h4>
+            <p>{props.runQueueStatus}</p>
+          </div>
+          <dl>
+            <Metric label="Active run" value={activeRunLabel} />
+            <Metric label="Waiting" value={queuedCount.toLocaleString()} />
+            <Metric
+              label="Last refresh"
+              value={
+                props.runQueue?.updated_at ? formatShortTime(props.runQueue.updated_at) : "Not yet"
+              }
+            />
+          </dl>
+        </section>
+      )}
+
+      {otherActionableRuns.length > 0 && (
+        <p className="soundings-ownership-status">
+          Other technical work is tracked outside this Soundings queue: {worldWorkCount}{" "}
+          World-associated · {legacyWorkCount} legacy / unassigned.
+        </p>
+      )}
+
+      <LocalPipelinePanel
+        inventory={soundingsInventory}
+        status={props.storageStatus}
+        error={props.storageError}
+        deletePreview={props.runDeletePreview}
+        deleteMessage={props.runDeleteMessage}
+        results={props.results}
+        soundingsLanguage
+        currentRunId={currentRunId}
+        runQueue={soundingsQueue}
+        lanWorkerConfigured={props.lanWorkerConfig?.configured ?? false}
+        autoFinalizingWorkerRunIds={props.autoFinalizingWorkerRunIds}
+        failedAutoFinalizingWorkerRunIds={props.failedAutoFinalizingWorkerRunIds}
+        showRefreshButton={false}
+        onLaunchStoredRun={props.onLaunchStoredRun}
+        onLaunchStoredLanWorkerRun={props.onLaunchStoredLanWorkerRun}
+        onRefreshStoredLanWorkerStatus={props.onRefreshStoredLanWorkerStatus}
+        onFinalizeStoredLanWorkerRun={props.onFinalizeStoredLanWorkerRun}
+        onIngestStoredRun={props.onIngestStoredRun}
+        onOpenStoredResult={props.onOpenStoredResult}
+        onExploreStoredResult={props.onExploreStoredResult}
+        onRefreshStorage={props.onRefreshStorage}
+        onPreviewDelete={props.onPreviewRunDelete}
+        onConfirmDelete={props.onConfirmRunDelete}
+      />
+
+      {hasTechnicalDetails && (
+        <details className="soundings-run-details">
+          <summary>Package, worker, queue, and runtime details</summary>
+          <p>
+            Open this only when you need package provenance, worker state, logs, or technical
+            troubleshooting.
+          </p>
+          <LocalRunWorkflowPanel {...soundingsProps} includePipeline={false} />
+        </details>
+      )}
+    </section>
   );
 }
 
@@ -7649,6 +8987,8 @@ function LocalRunWorkflowPanel({
   runDeletePreview,
   runDeleteMessage,
   results,
+  soundingsLanguage = false,
+  includePipeline = true,
   autoFinalizingWorkerRunIds,
   failedAutoFinalizingWorkerRunIds,
   onRefreshRunStatus,
@@ -7785,7 +9125,7 @@ function LocalRunWorkflowPanel({
             )}
             <p className="state-note">
               A generated package is not a completed CM1 result. Launch, output detection, ingest,
-              and saved result review are separate states.
+              and saved {soundingsLanguage ? "run review" : "result review"} are separate states.
             </p>
             {dryRun.report.run_configuration_summary && (
               <p className="state-note">
@@ -7831,6 +9171,7 @@ function LocalRunWorkflowPanel({
             error={lanWorkerError}
             ingestedResultId={ingestedResultId}
             canStart={false}
+            soundingsLanguage={soundingsLanguage}
             onLaunch={onLaunchLanWorkerRun}
             onRefresh={onRefreshLanWorkerStatus}
             onCollect={onCollectLanWorkerRun}
@@ -7838,7 +9179,11 @@ function LocalRunWorkflowPanel({
           />
         )}
 
-        <LocalRunQueuePanel queue={runQueue} status={runQueueStatus} />
+        <LocalRunQueuePanel
+          queue={runQueue}
+          status={runQueueStatus}
+          soundingsLanguage={soundingsLanguage}
+        />
 
         {runStatus ? (
           <div className="run-status-panel" aria-label="Local run status">
@@ -7978,11 +9323,17 @@ function LocalRunWorkflowPanel({
         )}
 
         {ingestedResultId && (
-          <div className="post-ingest-actions" aria-label="Ingested result actions">
-            <p>Result metadata created: {ingestedResultId}</p>
+          <div
+            className="post-ingest-actions"
+            aria-label={soundingsLanguage ? "Ingested run actions" : "Ingested result actions"}
+          >
+            <p>
+              {soundingsLanguage ? "Experiment record" : "Result metadata"} created:{" "}
+              {ingestedResultId}
+            </p>
             <div className="button-row">
               <button type="button" onClick={onOpenInResults}>
-                Open in Results
+                {soundingsLanguage ? "Open run" : "Open in Results"}
               </button>
               <button type="button" onClick={onInspectIngested}>
                 Open in Explore
@@ -7992,34 +9343,45 @@ function LocalRunWorkflowPanel({
         )}
       </div>
 
-      <LocalPipelinePanel
-        inventory={storageInventory}
-        status={storageStatus}
-        error={storageError}
-        deletePreview={runDeletePreview}
-        deleteMessage={runDeleteMessage}
-        results={results}
-        currentRunId={currentRunId}
-        runQueue={runQueue}
-        lanWorkerConfigured={lanWorkerConfig?.configured ?? false}
-        autoFinalizingWorkerRunIds={autoFinalizingWorkerRunIds}
-        failedAutoFinalizingWorkerRunIds={failedAutoFinalizingWorkerRunIds}
-        onLaunchStoredRun={onLaunchStoredRun}
-        onLaunchStoredLanWorkerRun={onLaunchStoredLanWorkerRun}
-        onRefreshStoredLanWorkerStatus={onRefreshStoredLanWorkerStatus}
-        onFinalizeStoredLanWorkerRun={onFinalizeStoredLanWorkerRun}
-        onIngestStoredRun={onIngestStoredRun}
-        onOpenStoredResult={onOpenStoredResult}
-        onExploreStoredResult={onExploreStoredResult}
-        onRefreshStorage={onRefreshStorage}
-        onPreviewDelete={onPreviewRunDelete}
-        onConfirmDelete={onConfirmRunDelete}
-      />
+      {includePipeline && (
+        <LocalPipelinePanel
+          inventory={storageInventory}
+          status={storageStatus}
+          error={storageError}
+          deletePreview={runDeletePreview}
+          deleteMessage={runDeleteMessage}
+          results={results}
+          soundingsLanguage={soundingsLanguage}
+          currentRunId={currentRunId}
+          runQueue={runQueue}
+          lanWorkerConfigured={lanWorkerConfig?.configured ?? false}
+          autoFinalizingWorkerRunIds={autoFinalizingWorkerRunIds}
+          failedAutoFinalizingWorkerRunIds={failedAutoFinalizingWorkerRunIds}
+          onLaunchStoredRun={onLaunchStoredRun}
+          onLaunchStoredLanWorkerRun={onLaunchStoredLanWorkerRun}
+          onRefreshStoredLanWorkerStatus={onRefreshStoredLanWorkerStatus}
+          onFinalizeStoredLanWorkerRun={onFinalizeStoredLanWorkerRun}
+          onIngestStoredRun={onIngestStoredRun}
+          onOpenStoredResult={onOpenStoredResult}
+          onExploreStoredResult={onExploreStoredResult}
+          onRefreshStorage={onRefreshStorage}
+          onPreviewDelete={onPreviewRunDelete}
+          onConfirmDelete={onConfirmRunDelete}
+        />
+      )}
     </section>
   );
 }
 
-function LocalRunQueuePanel({ queue, status }: { queue: RunQueueResponse | null; status: string }) {
+function LocalRunQueuePanel({
+  queue,
+  status,
+  soundingsLanguage = false,
+}: {
+  queue: RunQueueResponse | null;
+  status: string;
+  soundingsLanguage?: boolean;
+}) {
   const visibleEntries = visibleRunQueueEntries(queue);
   return (
     <section className="run-status-panel" aria-label="Local serial run queue">
@@ -8047,9 +9409,17 @@ function LocalRunQueuePanel({ queue, status }: { queue: RunQueueResponse | null;
             <li key={`${entry.run_id}-${entry.queued_at}`}>
               <strong>{entry.run_id}</strong>{" "}
               <span className="muted-inline">{runQueueEntryLabel(entry)}</span>
-              {entry.result_id && <span className="muted-inline"> result {entry.result_id}</span>}
+              {entry.result_id && (
+                <span className="muted-inline">
+                  {" "}
+                  {soundingsLanguage ? "run record" : "result"} {entry.result_id}
+                </span>
+              )}
               {entry.cleanup_status && (
-                <span className="muted-inline"> package retained for Results/Explore</span>
+                <span className="muted-inline">
+                  {" "}
+                  package retained for {soundingsLanguage ? "Runs" : "Results"}/Explore
+                </span>
               )}
             </li>
           ))}
@@ -8092,6 +9462,7 @@ function LanWorkerRunPanel({
   error,
   ingestedResultId,
   canStart,
+  soundingsLanguage = false,
   onLaunch,
   onRefresh,
   onCollect,
@@ -8106,6 +9477,7 @@ function LanWorkerRunPanel({
   error: string | null;
   ingestedResultId: string | null;
   canStart: boolean;
+  soundingsLanguage?: boolean;
   onLaunch: () => void;
   onRefresh: () => void;
   onCollect: () => void;
@@ -8214,7 +9586,8 @@ function LanWorkerRunPanel({
           )}
           {cleanupComplete && (
             <p className="state-note">
-              LAN worker cleanup complete. Results and Explore use the MacBook-local copy.
+              LAN worker cleanup complete. {soundingsLanguage ? "Runs" : "Results"} and Explore use
+              the MacBook-local copy.
             </p>
           )}
         </>
@@ -8230,11 +9603,13 @@ function LocalPipelinePanel({
   deletePreview,
   deleteMessage,
   results,
+  soundingsLanguage = false,
   currentRunId,
   runQueue,
   lanWorkerConfigured,
   autoFinalizingWorkerRunIds,
   failedAutoFinalizingWorkerRunIds,
+  showRefreshButton = true,
   onLaunchStoredRun,
   onLaunchStoredLanWorkerRun,
   onRefreshStoredLanWorkerStatus,
@@ -8252,11 +9627,13 @@ function LocalPipelinePanel({
   deletePreview: DeleteRunResponse | null;
   deleteMessage: string | null;
   results: ResultCard[];
+  soundingsLanguage?: boolean;
   currentRunId: string | null;
   runQueue: RunQueueResponse | null;
   lanWorkerConfigured: boolean;
   autoFinalizingWorkerRunIds: Set<string>;
   failedAutoFinalizingWorkerRunIds: Set<string>;
+  showRefreshButton?: boolean;
   onLaunchStoredRun: (manifestPath: string) => void;
   onLaunchStoredLanWorkerRun: (manifestPath: string) => void;
   onRefreshStoredLanWorkerStatus: (manifestPath: string) => void;
@@ -8275,31 +9652,39 @@ function LocalPipelinePanel({
     <section className="pipeline-panel" aria-labelledby="pipeline-title">
       <div className="panel-heading-row">
         <div>
-          <p className="eyebrow">Build pipeline</p>
-          <h4 id="pipeline-title">Packages and runs needing action</h4>
+          <p className="eyebrow">{soundingsLanguage ? "Queue and ingest" : "Build pipeline"}</p>
+          <h4 id="pipeline-title">
+            {soundingsLanguage ? "Runs in progress" : "Packages and runs needing action"}
+          </h4>
         </div>
         <StatusBadge label={panelStatus} tone={error ? "warning" : "neutral"} />
       </div>
       <p className="state-note">
-        Active packages and runs that still need launch, status review, troubleshooting, or ingest.
-        Ingested results live in Results; non-ingested package and run cleanup stays here.
+        {soundingsLanguage
+          ? "Only active, queued, blocked, or not-yet-ingested runs appear here."
+          : "Active packages and runs that still need launch, status review, troubleshooting, or ingest."}
+        {soundingsLanguage
+          ? " Completed records move to Past Experiments after ingest."
+          : " Ingested results live in Results; non-ingested package and run cleanup stays here."}
       </p>
       {error && <p role="alert">{error}</p>}
       {deleteMessage && <p role="status">{deleteMessage}</p>}
-      <div className="button-row">
-        <button type="button" className="secondary-button" onClick={onRefreshStorage}>
-          Refresh runs
-        </button>
-      </div>
+      {showRefreshButton && (
+        <div className="button-row">
+          <button type="button" className="secondary-button" onClick={onRefreshStorage}>
+            Refresh runs
+          </button>
+        </div>
+      )}
 
       {deletePreview && (
         <section className="delete-preview" aria-label="Local run delete preview">
           <h5>Delete local package/run data preview</h5>
           <p>
             Cleanup removes local generated package files, copied runtime files, CM1 output/logs if
-            present, and local sidecars stored under this run directory. It does not touch Results
-            entries, the source repo, the runtime home itself, or the external CM1 install. No files
-            have been deleted yet.
+            present, and local sidecars stored under this run directory. It does not touch{" "}
+            {soundingsLanguage ? "retained run records" : "Results entries"}, the source repo, the
+            runtime home itself, or the external CM1 install. No files have been deleted yet.
           </p>
           <dl className="metric-grid">
             <Metric label="Run ID" value={deletePreview.run_id} />
@@ -8319,8 +9704,9 @@ function LocalPipelinePanel({
 
       {runs.length === 0 ? (
         <p>
-          No active or incomplete packages/runs need Build action. Ingested experiments are managed
-          in Results.
+          {soundingsLanguage
+            ? "No runs need attention."
+            : "No active or incomplete packages/runs need Build action. Ingested experiments are managed in Results."}
         </p>
       ) : (
         <div className="pipeline-run-list" aria-label="Local packages and runs">
@@ -8329,6 +9715,7 @@ function LocalPipelinePanel({
               key={`${run.run_id}-${run.path ?? run.manifest_path ?? index}`}
               run={run}
               result={resultForRun(results, run.run_id)}
+              soundingsLanguage={soundingsLanguage}
               current={run.run_id === currentRunId}
               queueEntry={queueEntryForRun(runQueue, run.run_id)}
               lanWorkerConfigured={lanWorkerConfigured}
@@ -8353,6 +9740,7 @@ function LocalPipelinePanel({
 function PipelineRunCard({
   run,
   result,
+  soundingsLanguage = false,
   current,
   queueEntry,
   lanWorkerConfigured,
@@ -8369,6 +9757,7 @@ function PipelineRunCard({
 }: {
   run: RunStorageEntry;
   result: ResultCard | undefined;
+  soundingsLanguage?: boolean;
   current: boolean;
   queueEntry: RunQueueEntry | undefined;
   lanWorkerConfigured: boolean;
@@ -8409,8 +9798,10 @@ function PipelineRunCard({
   const stateTone = resultBacked ? "good" : pipelineRunTone(run, result);
   const nextStep =
     queueAutoIngested && !result
-      ? "Result auto-ingested. The run directory is retained because it backs Results and Explore."
-      : pipelineRunNextStep(run, result);
+      ? soundingsLanguage
+        ? "Run auto-ingested. The run directory is retained because it backs the run record and Explore."
+        : "Result auto-ingested. The run directory is retained because it backs Results and Explore."
+      : pipelineRunNextStep(run, result, soundingsLanguage);
   const showWorkerMessage = Boolean(run.worker_message && !run.worker_state);
   const runProgress = pipelineRunProgressSummary(run);
   const workerProgress = workerProgressSummary(run);
@@ -8827,8 +10218,16 @@ function pipelineRunTone(
   return "neutral";
 }
 
-function pipelineRunNextStep(run: RunStorageEntry, result: ResultCard | undefined): string {
-  if (result) return "Review and local result cleanup are available in Results.";
+function pipelineRunNextStep(
+  run: RunStorageEntry,
+  result: ResultCard | undefined,
+  soundingsLanguage = false,
+): string {
+  if (result) {
+    return soundingsLanguage
+      ? "Experiment review and local Run cleanup are available in Past Experiments."
+      : "Review and local result cleanup are available in Results.";
+  }
   if (run.worker_state === "running")
     return "CM1 is running on the LAN worker; refresh runs for status.";
   if (run.worker_state === "completed") {
@@ -9107,7 +10506,143 @@ function ResultsFilterBar({
   );
 }
 
+function SoundingsArchiveFilterBar({
+  filters,
+  totalCount,
+  visibleCount,
+  onChange,
+  onReset,
+}: {
+  filters: SoundingsArchiveFilterState;
+  totalCount: number;
+  visibleCount: number;
+  onChange: (filters: SoundingsArchiveFilterState) => void;
+  onReset: () => void;
+}) {
+  const update = (patch: Partial<SoundingsArchiveFilterState>) =>
+    onChange({ ...filters, ...patch });
+
+  return (
+    <section
+      className="results-filter-bar soundings-archive-filters"
+      aria-label="Past Experiments filters"
+    >
+      <div className="results-filter-summary">
+        <p>
+          Showing <strong>{visibleCount}</strong> of <strong>{totalCount}</strong> retained records
+        </p>
+        <button
+          type="button"
+          className="secondary-button"
+          onClick={onReset}
+          disabled={!soundingsArchiveFiltersActive(filters)}
+        >
+          Reset archive
+        </button>
+      </div>
+      <div className="results-filter-grid soundings-archive-primary-filters">
+        <label>
+          Search
+          <input
+            type="search"
+            value={filters.search}
+            onChange={(event) => update({ search: event.target.value })}
+            placeholder="name, station, run, or note"
+          />
+        </label>
+        <label>
+          Ownership
+          <select
+            value={filters.ownership}
+            onChange={(event) =>
+              update({ ownership: event.target.value as SoundingsArchiveFilterState["ownership"] })
+            }
+          >
+            <option value="sounding">Soundings Experiments</option>
+            <option value="legacy">Legacy / unassigned Experiments</option>
+            <option value="world">World-owned Simulations</option>
+            <option value="all">All retained work</option>
+          </select>
+        </label>
+        <label>
+          Sort
+          <select
+            value={filters.sort}
+            onChange={(event) => update({ sort: event.target.value as ResultsSortKey })}
+          >
+            <option value="newest">Newest first</option>
+            <option value="oldest">Oldest first</option>
+            <option value="name">Name A-Z</option>
+            <option value="scenario">Experiment type</option>
+            <option value="first_cloud">First cloud time</option>
+            <option value="max_qc">Maximum cloud water</option>
+            <option value="max_updraft">Maximum updraft</option>
+          </select>
+        </label>
+      </div>
+      <details className="soundings-archive-more-filters">
+        <summary>More filters</summary>
+        <div className="results-filter-grid soundings-archive-filter-grid">
+          <label>
+            Tag
+            <input
+              value={filters.tag}
+              onChange={(event) => update({ tag: event.target.value })}
+              placeholder="tag contains..."
+            />
+          </label>
+          <label>
+            Lifecycle
+            <select
+              value={filters.lifecycle}
+              onChange={(event) =>
+                update({
+                  lifecycle: event.target.value as SoundingsArchiveFilterState["lifecycle"],
+                })
+              }
+            >
+              <option value="all">All lifecycle states</option>
+              <option value="saved">Saved or protected</option>
+              <option value="completed">Completed output</option>
+              <option value="needs_attention">Needs attention</option>
+            </select>
+          </label>
+          <label>
+            Trust
+            <select
+              value={filters.trust}
+              onChange={(event) =>
+                update({ trust: event.target.value as SoundingsArchiveFilterState["trust"] })
+              }
+            >
+              <option value="all">All trust states</option>
+              <option value="trusted">Trusted</option>
+              <option value="caveated">Caveated or failed</option>
+              <option value="unassessed">Not assessed</option>
+            </select>
+          </label>
+          <label>
+            Date
+            <select
+              value={filters.date}
+              onChange={(event) =>
+                update({ date: event.target.value as SoundingsArchiveFilterState["date"] })
+              }
+            >
+              <option value="all">Any date</option>
+              <option value="7d">Last 7 days</option>
+              <option value="30d">Last 30 days</option>
+              <option value="365d">Last year</option>
+            </select>
+          </label>
+        </div>
+      </details>
+    </section>
+  );
+}
+
 function ExperimentNotebookList({
+  context = "legacy",
   results,
   totalResults,
   filtersActive,
@@ -9116,6 +10651,7 @@ function ExperimentNotebookList({
   onOpenExplore,
   onResetFilters,
 }: {
+  context?: "legacy" | "soundings";
   results: ResultCard[];
   totalResults: number;
   filtersActive: boolean;
@@ -9125,12 +10661,32 @@ function ExperimentNotebookList({
   onResetFilters: () => void;
 }) {
   if (results.length === 0) {
+    if (context === "soundings" && totalResults > 0 && !filtersActive) {
+      return (
+        <section className="notebook-list-panel empty-results" aria-label="Experiments list">
+          <p className="eyebrow">Soundings Experiments</p>
+          <h3>No ingested Soundings Experiments yet.</h3>
+          <p>
+            {totalResults.toLocaleString()} other retained record
+            {totalResults === 1 ? " is" : "s are"} available under Ownership.
+          </p>
+        </section>
+      );
+    }
     if (filtersActive && totalResults > 0) {
       return (
-        <section className="notebook-list-panel empty-results" aria-label="Results list">
+        <section
+          className="notebook-list-panel empty-results"
+          aria-label={context === "soundings" ? "Experiments list" : "Results list"}
+        >
           <p className="eyebrow">No matches</p>
-          <h3>No results match the current filters.</h3>
-          <p>Try clearing filters or widening the search to see the full experiment notebook.</p>
+          <h3>
+            No {context === "soundings" ? "Experiments" : "results"} match the current filters.
+          </h3>
+          <p>
+            Try clearing filters or widening the search to see the full{" "}
+            {context === "soundings" ? "Experiment archive" : "experiment notebook"}.
+          </p>
           <button type="button" onClick={onResetFilters}>
             Clear filters
           </button>
@@ -9138,25 +10694,37 @@ function ExperimentNotebookList({
       );
     }
     return (
-      <section className="notebook-list-panel empty-results" aria-label="Results list">
-        <p className="eyebrow">Notebook empty</p>
-        <h3>No ingested CM1 results yet.</h3>
-        <p>Completed and ingested CM1 runs will appear here as experiment notebook entries.</p>
+      <section
+        className="notebook-list-panel empty-results"
+        aria-label={context === "soundings" ? "Experiments list" : "Results list"}
+      >
+        <p className="eyebrow">
+          {context === "soundings" ? "Experiment archive empty" : "Notebook empty"}
+        </p>
+        <h3>No ingested CM1 {context === "soundings" ? "Experiments" : "results"} yet.</h3>
+        <p>
+          Completed and ingested CM1 runs will appear here as{" "}
+          {context === "soundings" ? "Experiments" : "experiment notebook entries"}.
+        </p>
       </section>
     );
   }
 
   return (
-    <section className="notebook-list-panel" aria-label="Results list">
+    <section
+      className="notebook-list-panel"
+      aria-label={context === "soundings" ? "Experiments list" : "Results list"}
+    >
       <p className="eyebrow">Experiment list</p>
       <div className="experiment-card-list">
         {results.map((result) => {
           const selected = result.result_id === selectedResultId;
+          const owner = resultCloudWorldId(result);
           return (
             <article
               key={result.result_id}
               className={`experiment-card${selected ? " selected-experiment-card" : ""}`}
-              aria-label={`${result.name} experiment`}
+              aria-label={`${result.name} Experiment`}
             >
               <div className="experiment-card-main">
                 <button
@@ -9176,13 +10744,25 @@ function ExperimentNotebookList({
                   <OutcomeBadge result={result} />
                   <StatusBadge label={rainWaterOutcome(result)} tone="neutral" />
                   <StatusBadge label={resultInputSourceLabel(result)} tone="neutral" />
+                  {context === "soundings" && (
+                    <StatusBadge
+                      label={
+                        owner
+                          ? `${cloudWorldDisplayName(owner)} Simulation`
+                          : result.input_source === "observed_sounding"
+                            ? "Sounding experiment"
+                            : "Legacy / unassigned"
+                      }
+                      tone={owner ? "good" : "neutral"}
+                    />
+                  )}
                 </div>
                 <p className="science-card-summary">{compactScienceSummary(result)}</p>
                 <p className="result-story">{resultStory(result)}</p>
               </div>
               <div className="experiment-card-actions">
                 <button type="button" onClick={() => onOpenExplore(result.result_id)}>
-                  Open in Explore
+                  {owner ? `Open ${cloudWorldDisplayName(owner)}` : "Open in Explore"}
                 </button>
               </div>
               <details className="technical-details">
@@ -9203,6 +10783,7 @@ function ExperimentNotebookList({
 }
 
 function ResultNotebookCard({
+  context = "legacy",
   result,
   draft,
   comparisonStory,
@@ -9216,6 +10797,7 @@ function ResultNotebookCard({
   onConfirmDelete,
   onCancelDelete,
 }: {
+  context?: "legacy" | "soundings";
   result: ResultCard | undefined;
   draft: { name: string; tags: string; notes: string };
   comparisonStory: TradeCumulusComparisonStoryResponse | null;
@@ -9231,8 +10813,14 @@ function ResultNotebookCard({
 }) {
   if (!result) {
     return (
-      <section className="status-panel" aria-label="Result detail">
-        <p>Select an ingested CM1 result to review its notebook card.</p>
+      <section
+        className="status-panel"
+        aria-label={context === "soundings" ? "Experiment detail" : "Result detail"}
+      >
+        <p>
+          Select an ingested CM1 {context === "soundings" ? "Experiment" : "result"} to review its{" "}
+          {context === "soundings" ? "record" : "notebook card"}.
+        </p>
       </section>
     );
   }
@@ -9245,10 +10833,15 @@ function ResultNotebookCard({
   );
 
   return (
-    <section className="notebook-card" aria-label="Result detail">
+    <section
+      className="notebook-card"
+      aria-label={context === "soundings" ? "Experiment detail" : "Result detail"}
+    >
       <div className="notebook-title">
         <div>
-          <p className="eyebrow">Notebook entry</p>
+          <p className="eyebrow">
+            {context === "soundings" ? "Experiment record" : "Notebook entry"}
+          </p>
           <h3>{result.name}</h3>
           <p>
             {result.scenario_name ?? humanize(result.scenario_id)} ·{" "}
@@ -9309,7 +10902,11 @@ function ResultNotebookCard({
         <Metric label="Latest output" value={formatSeconds(resultLatestOutputTime(result))} />
         <Metric
           label="Local data"
-          value="Run-directory backed; delete removes the result and local run files"
+          value={
+            context === "soundings"
+              ? "Experiment record backed by a local Run directory"
+              : "Run-directory backed; delete removes the result and local run files"
+          }
         />
       </dl>
 
@@ -9319,13 +10916,19 @@ function ResultNotebookCard({
           className="delete-preview result-delete-preview"
           aria-label="Result delete preview"
         >
-          <h4>Delete result and local run data preview</h4>
+          <h4>
+            Delete{" "}
+            {context === "soundings"
+              ? "Experiment and backing Run data preview"
+              : "result and local run data preview"}
+          </h4>
           <p>
-            This removes the ingested result, notebook edits, diagnostics, derived products, CM1
-            output, logs, and local run files stored under this run directory. The result will
-            disappear from Results, Explore, and local inventory after confirmation. It does not
-            touch the source repo, runtime home itself, or external CM1 install. No files have been
-            deleted yet.
+            This removes the ingested {context === "soundings" ? "Experiment record" : "result"},
+            notebook edits, diagnostics, derived products, CM1 output, logs, and local files stored
+            under its backing Run directory. The {context === "soundings" ? "Experiment" : "result"}{" "}
+            will disappear from {context === "soundings" ? "Past Experiments" : "Results"}, Explore,
+            and local inventory after confirmation. It does not touch the source repo, runtime home
+            itself, or external CM1 install. No files have been deleted yet.
           </p>
           <dl className="metric-grid">
             <Metric label="Run ID" value={visibleDeletePreview.run_id} />
@@ -9353,7 +10956,10 @@ function ResultNotebookCard({
               className="danger-button"
               onClick={() => onConfirmDelete(visibleDeletePreview.result_id)}
             >
-              Delete result and local run data
+              Delete{" "}
+              {context === "soundings"
+                ? "Experiment and backing Run data"
+                : "result and local run data"}
             </button>
           </div>
         </section>
@@ -9366,7 +10972,10 @@ function ResultNotebookCard({
           <Metric label="Scenario ID" value={result.scenario_id} />
           <Metric label="Lifecycle" value={result.source_lifecycle_state} />
           <Metric label="Product state" value={result.source_product_state} />
-          <Metric label="Result state" value={result.status} />
+          <Metric
+            label={context === "soundings" ? "Experiment state" : "Result state"}
+            value={result.status}
+          />
           <Metric label="Source model" value={result.source_model} />
           <Metric
             label="Input source"
@@ -9455,14 +11064,19 @@ function ResultNotebookCard({
             </button>
           )}
           <button type="button" onClick={onInspect}>
-            Open in Explore
+            {context === "soundings" && resultCloudWorldId(result)
+              ? `Open ${cloudWorldDisplayName(resultCloudWorldId(result)!)}`
+              : "Open in Explore"}
           </button>
           <button
             type="button"
             className="danger-button"
             onClick={() => onPreviewDelete(result.result_id)}
           >
-            Preview delete result and local run data
+            Preview delete{" "}
+            {context === "soundings"
+              ? "Experiment and backing Run data"
+              : "result and local run data"}
           </button>
           <button type="submit" className="secondary-button">
             Save changes
@@ -9794,6 +11408,8 @@ export function VisualizerSceneShell({
   backLabel,
   onBack,
   onCompare,
+  resultOptions,
+  onSelectResult,
 }: {
   result: ResultCard;
   worldName?: string;
@@ -9803,12 +11419,16 @@ export function VisualizerSceneShell({
   backLabel?: string;
   onBack?: () => void;
   onCompare?: () => void;
+  resultOptions?: ResultCard[];
+  onSelectResult?: (resultId: string) => void;
 }) {
   const resultId = result.result_id;
   const updraftLensEligible = tradeCumulusUpdraftLensEligible(result);
   const productWorldName = worldName ?? (updraftLensEligible ? "Trade Cumulus" : "Cloud Chamber");
   const productSimulationName =
     simulationName ?? worldSimulationDisplayName(result.result_id, result.name);
+  const productEntityLabel =
+    productWorldName === "Fun With Soundings" ? "Experiment" : "Simulation";
   const initialResultRef = useRef(result);
   if (initialResultRef.current.result_id !== resultId) {
     initialResultRef.current = result;
@@ -9910,10 +11530,16 @@ export function VisualizerSceneShell({
     autoActivatedUpdraftLensResultRef.current = null;
     updraftLensRequestRef.current += 1;
     setSceneStatus("Loading scene data...");
+    const defaultsRequest = fetchVisualizationDefaults(resultId).catch(() => null);
+    void defaultsRequest.then((defaults) => {
+      if (active && defaults) setViewDefaults(defaults);
+    });
     withTimeout(
       Promise.all([
         fetchVisualizationFields(resultId),
-        fetchVisualizationDefaults(resultId).catch(() => null),
+        withTimeout(defaultsRequest, "Visualization defaults are still loading.", 2_000).catch(
+          () => null,
+        ),
       ]),
       "Timed out loading visualization fields. Check the backend and retry.",
     )
@@ -10543,6 +12169,24 @@ export function VisualizerSceneShell({
       backLabel={backLabel}
       onBack={onBack}
       onCompare={onCompare}
+      headerActions={
+        resultOptions && resultOptions.length > 0 && onSelectResult ? (
+          <label className="soundings-explore-run-selector">
+            <span>Experiment</span>
+            <select
+              aria-label="Soundings Experiment"
+              value={resultId}
+              onChange={(event) => onSelectResult(event.target.value)}
+            >
+              {resultOptions.map((option) => (
+                <option key={option.result_id} value={option.result_id}>
+                  {soundingsExploreOptionLabel(option)}
+                </option>
+              ))}
+            </select>
+          </label>
+        ) : undefined
+      }
     >
       <section
         className={`visualizer-shell${focusedViewer ? ` visualizer-shell-focused-${focusedViewer}` : ""}`}
@@ -11016,6 +12660,7 @@ export function VisualizerSceneShell({
             <ResultExplanationPanel
               result={result}
               simulationName={productSimulationName}
+              entityLabel={productEntityLabel}
               tradeCumulus={updraftLensEligible}
               isNoCloudWithUpdraft={isNoCloudWithUpdraft}
               updraftLensActive={updraftLensActive}
@@ -11175,7 +12820,13 @@ export function VisualizerSceneShell({
 
         <ExploreSecondarySections
           sections={{
-            science: <TradeCumulusScience result={result} selectedRegion={selectedRegion} />,
+            science: (
+              <TradeCumulusScience
+                result={result}
+                selectedRegion={selectedRegion}
+                entityLabel={productEntityLabel}
+              />
+            ),
             notes: simulationRecord?.simulation_id ? (
               <SimulationNotes
                 worldId={simulationRecord.world_id}
@@ -11184,9 +12835,10 @@ export function VisualizerSceneShell({
               />
             ) : (
               <section className="simulation-note-failure">
-                <h3>Simulation notes</h3>
+                <h3>{productEntityLabel} notes</h3>
                 <p role="alert">
-                  Notes are unavailable because this result has no stable Simulation identity.
+                  Notes are unavailable because this result has no stable{" "}
+                  {productEntityLabel.toLowerCase()} identity.
                 </p>
               </section>
             ),
@@ -11346,6 +12998,7 @@ function ExploreRenderingControls({
 function ResultExplanationPanel({
   result,
   simulationName,
+  entityLabel,
   tradeCumulus,
   isNoCloudWithUpdraft,
   updraftLensActive,
@@ -11356,6 +13009,7 @@ function ResultExplanationPanel({
 }: {
   result: ResultCard;
   simulationName: string;
+  entityLabel: "Simulation" | "Experiment";
   tradeCumulus: boolean;
   isNoCloudWithUpdraft: boolean;
   updraftLensActive: boolean;
@@ -11403,7 +13057,7 @@ function ResultExplanationPanel({
         </div>
       }
       orientation={[
-        { label: "Simulation", value: simulationName },
+        { label: entityLabel, value: simulationName },
         { label: "View", value: identity },
         { label: "Model time", value: selectedTimeLabel },
         { label: "Slice", value: activeSliceLabel },
@@ -11411,7 +13065,7 @@ function ResultExplanationPanel({
           label: "Relevant caveat",
           value:
             result.runtime_integrity?.state === "caveated"
-              ? "This Simulation carries runtime-integrity caveats; see Details."
+              ? `This ${entityLabel} carries runtime-integrity caveats; see Details.`
               : "The view describes retained saved output, not continuous model evolution.",
         },
       ]}
@@ -11425,9 +13079,11 @@ function ResultExplanationPanel({
 function TradeCumulusScience({
   result,
   selectedRegion,
+  entityLabel,
 }: {
   result: ResultCard;
   selectedRegion: SelectedRegionRequest | null;
+  entityLabel: "Simulation" | "Experiment";
 }) {
   const [localHistory, setLocalHistory] = useState<SelectedRegionHistoryResponse | null>(null);
   const [localHistoryLoading, setLocalHistoryLoading] = useState(false);
@@ -11487,8 +13143,8 @@ function TradeCumulusScience({
       <h3>Cloud-field evolution</h3>
       <p>
         Follow the timing and magnitude of cloud water together with the vertical-motion envelope.
-        The Updraft Lens shows their spatial relationship at one saved time; these Simulation-wide
-        extrema summarize the retained history.
+        The Updraft Lens shows their spatial relationship at one saved time; these{" "}
+        {entityLabel.toLowerCase()}-wide extrema summarize the retained history.
       </p>
       <dl className="metric-grid compact-metric-grid">
         <Metric label="First cloud" value={formatSeconds(resultFirstCloudTime(result))} />
@@ -14556,6 +16212,16 @@ const DEFAULT_RESULTS_FILTERS: ResultsFilterState = {
   sort: "newest",
 };
 
+const DEFAULT_SOUNDINGS_ARCHIVE_FILTERS: SoundingsArchiveFilterState = {
+  search: "",
+  ownership: "sounding",
+  tag: "",
+  lifecycle: "all",
+  trust: "all",
+  date: "all",
+  sort: "newest",
+};
+
 function prioritizeResults(results: ResultCard[]): ResultCard[] {
   return [...results].sort((left, right) => resultPriority(right) - resultPriority(left));
 }
@@ -14582,8 +16248,127 @@ function filterAndSortResults(results: ResultCard[], filters: ResultsFilterState
     .sort((left, right) => compareResults(left, right, filters.sort));
 }
 
+function filterSoundingsArchiveResults(
+  results: ResultCard[],
+  filters: SoundingsArchiveFilterState,
+): ResultCard[] {
+  const query = filters.search.trim().toLowerCase();
+  const tag = filters.tag.trim().toLowerCase();
+  const minimumDate =
+    filters.date === "all"
+      ? null
+      : Date.now() -
+        {
+          "7d": 7,
+          "30d": 30,
+          "365d": 365,
+        }[filters.date] *
+          24 *
+          60 *
+          60 *
+          1000;
+  return [...results]
+    .filter((result) => resultMatchesSearch(result, query))
+    .filter((result) => {
+      const ownership = resultArchiveOwnership(result);
+      return filters.ownership === "all" || ownership === filters.ownership;
+    })
+    .filter(
+      (result) => !tag || result.tags.some((resultTag) => resultTag.toLowerCase().includes(tag)),
+    )
+    .filter((result) => {
+      if (filters.lifecycle === "all") return true;
+      if (filters.lifecycle === "saved") return result.saved || result.protected;
+      if (filters.lifecycle === "completed") {
+        return result.completed_at !== null && result.status !== "failed";
+      }
+      return (
+        result.status.includes("fail") ||
+        result.source_lifecycle_state.includes("fail") ||
+        (result.missing_required_output_fields?.length ?? 0) > 0
+      );
+    })
+    .filter((result) => {
+      if (filters.trust === "all") return true;
+      const state = result.runtime_integrity?.state ?? "not_assessed";
+      if (filters.trust === "trusted") return state === "trusted";
+      if (filters.trust === "unassessed") return state === "not_assessed";
+      return state === "caveated" || state === "failed";
+    })
+    .filter((result) => {
+      if (minimumDate === null) return true;
+      const timestamp = new Date(result.completed_at ?? result.created_at).getTime();
+      return Number.isFinite(timestamp) && timestamp >= minimumDate;
+    })
+    .sort((left, right) => compareResults(left, right, filters.sort));
+}
+
 function resultsFiltersActive(filters: ResultsFilterState): boolean {
   return JSON.stringify(filters) !== JSON.stringify(DEFAULT_RESULTS_FILTERS);
+}
+
+function soundingsArchiveFiltersActive(filters: SoundingsArchiveFilterState): boolean {
+  return JSON.stringify(filters) !== JSON.stringify(DEFAULT_SOUNDINGS_ARCHIVE_FILTERS);
+}
+
+function resultArchiveOwnership(result: ResultCard): "sounding" | "legacy" | "world" {
+  if (resultCloudWorldId(result)) return "world";
+  if (result.input_source === "observed_sounding" || result.observed_sounding) return "sounding";
+  return "legacy";
+}
+
+function runWorkCategory(
+  run: RunStorageEntry,
+  result: ResultCard | undefined,
+): "sounding" | "legacy" | "world" {
+  if (result && resultArchiveOwnership(result) === "world") return "world";
+  if (run.run_configuration?.cloud_world_id) return "world";
+  if (
+    result?.input_source === "observed_sounding" ||
+    result?.observed_sounding ||
+    run.input_source === "observed_sounding" ||
+    run.has_observed_sounding
+  ) {
+    return "sounding";
+  }
+  return "legacy";
+}
+
+function runWorkCategoryLabel(category: "sounding" | "legacy" | "world"): string {
+  if (category === "sounding") return "Soundings work";
+  if (category === "world") return "World-associated work";
+  return "Legacy / unassigned work";
+}
+
+function soundingsExploreOptionLabel(result: ResultCard): string {
+  const station =
+    result.observed_sounding?.station_name ?? result.input_source_label ?? result.name;
+  const validTime = result.observed_sounding?.valid_time_utc;
+  return validTime ? `${station} · ${formatDate(validTime)}` : station;
+}
+
+function resultCloudWorldId(
+  result: ResultCard | undefined,
+): "trade_cumulus" | "mountain_waves" | "supercells" | null {
+  const value = result?.workbench_world_id;
+  return value === "trade_cumulus" || value === "mountain_waves" || value === "supercells"
+    ? value
+    : null;
+}
+
+function cloudWorldDisplayName(worldId: "trade_cumulus" | "mountain_waves" | "supercells"): string {
+  if (worldId === "trade_cumulus") return "Trade Cumulus";
+  if (worldId === "mountain_waves") return "Mountain Waves";
+  return "Supercells";
+}
+
+function soundingsExperimentStatus(value: string): string {
+  const messages: Record<string, string> = {
+    "No ingested results": "No ingested Experiments",
+    "Results unavailable": "Experiments unavailable",
+    "Could not load results.": "Could not load Experiments.",
+  };
+  return messages[value] ?? value;
 }
 
 function resultScenarioOptions(results: ResultCard[]): Array<{ value: string; label: string }> {
@@ -14626,6 +16411,63 @@ function resultSearchText(result: ResultCard): string {
     .filter(Boolean)
     .join(" ")
     .toLowerCase();
+}
+
+function selectedAtmosphereSummary(
+  sounding: ObservedSoundingRecord | null,
+  candidateScreening: Record<string, unknown> | null,
+  sourcePath: AtmosphereSourcePath,
+): SelectedAtmosphereSummary | null {
+  if (!sounding) return null;
+  const source =
+    sourcePath === "cached_recommendations"
+      ? "Cached recommendation"
+      : sourcePath === "saved_candidates"
+        ? "Saved candidate"
+        : "Uploaded IGRA station text";
+  return {
+    station: selectedObservedSoundingStationLabel(sounding, candidateScreening),
+    validTime: formatDate(sounding.valid_time_utc),
+    source,
+    quality: humanize(sounding.validation.status),
+    usableLevels: sounding.levels.length,
+  };
+}
+
+function soundingWorkbenchAvailability(
+  loadState: ScenarioLoadState,
+  error: string | null,
+  scenarios: Scenario[],
+): {
+  state: "loading" | "available" | "partial" | "unavailable";
+  message: string;
+} {
+  if (loadState === "loading") {
+    return { state: "loading", message: "Checking local sounding infrastructure." };
+  }
+  if (loadState === "failed") {
+    return {
+      state: "unavailable",
+      message: error ?? "The local scenario and package service is unavailable.",
+    };
+  }
+  if (loadState === "empty") {
+    return {
+      state: "unavailable",
+      message: "The local backend returned no experiment templates.",
+    };
+  }
+  if (!scenarios.some((scenario) => scenario.id === OBSERVED_SOUNDING_BASE_SCENARIO_ID)) {
+    return {
+      state: "partial",
+      message:
+        "Sounding discovery is visible, but the observed-atmosphere package template is missing.",
+    };
+  }
+  return {
+    state: "available",
+    message: "Sounding discovery, package, execution, and archive services are available.",
+  };
 }
 
 function matchesBooleanFilter(

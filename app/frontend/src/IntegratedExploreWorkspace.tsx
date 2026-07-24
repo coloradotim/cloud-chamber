@@ -15,6 +15,7 @@ export function IntegratedExploreWorkspace({
   backLabel,
   onBack,
   onCompare,
+  headerActions,
   children,
 }: {
   worldName: string;
@@ -22,6 +23,7 @@ export function IntegratedExploreWorkspace({
   backLabel?: string;
   onBack?: () => void;
   onCompare?: () => void;
+  headerActions?: ReactNode;
   children: ReactNode;
 }) {
   return (
@@ -40,11 +42,14 @@ export function IntegratedExploreWorkspace({
           )}
           <h2>{simulationName}</h2>
         </div>
-        {onCompare && (
+        {(headerActions || onCompare) && (
           <div className="integrated-explore-actions">
-            <button type="button" onClick={onCompare}>
-              Compare
-            </button>
+            {headerActions}
+            {onCompare && (
+              <button type="button" onClick={onCompare}>
+                Compare
+              </button>
+            )}
           </div>
         )}
       </header>

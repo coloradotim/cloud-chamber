@@ -202,6 +202,8 @@ def test_inventory_classifies_valid_manifest_with_output_artifacts(tmp_path: Pat
     assert entry.lifecycle_state == "completed"
     assert entry.validation_status == "valid"
     assert entry.product_state == "completed_cm1_result"
+    assert entry.input_source == "generated_reference"
+    assert entry.has_observed_sounding is False
     assert entry.run_configuration is not None
     assert entry.run_configuration["duration"] == "short_6h"
     assert entry.pre_run_validation_report is not None

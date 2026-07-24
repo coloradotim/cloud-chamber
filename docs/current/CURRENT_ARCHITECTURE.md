@@ -47,6 +47,7 @@ World overview and section
 Trade Cumulus Explore and featured Comparison
 Mountain Waves World and Explore
 Supercells World and Explore
+Fun With Soundings workbench and direct Explore
 ```
 
 The Cloud Worlds home obtains inventory from `GET /api/worlds`. World-specific
@@ -58,12 +59,17 @@ GET /api/worlds/mountain-waves
 GET /api/worlds/supercells
 ```
 
-Fun With Soundings does not yet have a first-class product route.
+Fun With Soundings uses stable frontend routes:
 
-Legacy Build, Results, generic Explore, scenario, sounding, run, and result
-paths remain in the application. The current World home can fall back to those
-legacy surfaces when World inventory cannot load, and Trade Cumulus Lab embeds
-some of them. This is transitional compatibility, not the intended final
+```text
+/fun-with-soundings
+/fun-with-soundings/explore/{result_id}
+```
+
+Its five jobs compose existing sounding catalog, candidate screening, package,
+run, worker, ingest, storage, and visualization APIs rather than duplicating
+those execution paths. Trade Cumulus Lab still embeds some transitional Build
+and Results surfaces; that compatibility is not the intended final World Lab
 navigation model.
 
 ## World and Simulation Identity
@@ -83,6 +89,14 @@ availability logic. A built-in Simulation is available only when its expected
 artifacts, lineage, geometry, fields, and time inventory satisfy that World's
 contract. Invalid or conflicting content is reported rather than replaced with
 an arbitrary compatible-looking run.
+
+Fun With Soundings checks current World inventories before presenting a
+retained record as a Simulation. Promotion in the workbench requires one
+inventory entry with stable Simulation identity and matching current result and
+run links. `cloud_world_id` metadata alone, a one-sided identifier match,
+conflicting inventory entries, or an unavailable inventory does not establish
+ownership. Those records remain Experiments and are labeled legacy or
+unassigned.
 
 World responses are kept lightweight. Deep validation is performed at
 promotion or discovery boundaries and cached against artifact fingerprints
@@ -217,6 +231,7 @@ The current code keeps these states distinct:
 | Completed output | Expected output artifacts exist |
 | Runtime-integrity assessment | Backend trust state based on runtime and field evidence |
 | Promoted retained Simulation | Validated output is bound to a stable Simulation identity |
+| Experiment | Configured or retained non-World work, including unassigned output |
 | Ingested result metadata | Backend-created metadata exists beside a run |
 | Editable result sidecar | Optional local name, tag, or note state exists |
 | Backend-derived diagnostic | A quantity was calculated from CM1-derived data |
@@ -244,6 +259,13 @@ Result ingest writes `result_metadata.json` inside the original run directory.
 Editable name, tags, and notes may be stored in a sibling `result_card.json`.
 Deleting that run directory can remove the package, logs, NetCDF output, result
 metadata, and notebook state together.
+
+The product language follows the same state boundary: **Run** refers to
+technical execution, **Experiment** refers to non-World scientific work, and
+**Simulation** refers to a stable World-owned object verified by current World
+inventory. The storage inventory exposes bounded manifest input-source evidence
+so the Soundings Runs job can separate workbench execution from
+World-associated or legacy/unassigned technical work after reload.
 
 See [Ingest, Results, and Runtime Cleanup Lifecycle](INGEST_RESULTS_STORAGE_LIFECYCLE.md).
 
