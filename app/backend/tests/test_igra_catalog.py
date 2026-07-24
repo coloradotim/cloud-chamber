@@ -2,11 +2,13 @@ from __future__ import annotations
 
 import io
 import zipfile
+from collections.abc import Iterator
 from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
 
+import cloud_chamber.igra_catalog as igra_catalog
 from cloud_chamber.igra_catalog import (
     IGRACacheManifest,
     IGRACatalogError,
@@ -75,6 +77,61 @@ def station_zip(filename: str = "USM00072558-data-beg2025.txt") -> bytes:
     with zipfile.ZipFile(payload, "w") as archive:
         archive.writestr(filename, "#USM00072558 2025 01 01 00\n")
     return payload.getvalue()
+
+
+def test_fetch_url_bytes_uses_ipv4_transport_and_streaming_size_limit(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: dict[str, object] = {}
+
+    class FakeResponse:
+        headers = {"content-length": "4"}
+
+        def __enter__(self) -> FakeResponse:
+            return self
+
+        def __exit__(self, *_args: object) -> None:
+            return None
+
+        def raise_for_status(self) -> None:
+            return None
+
+        def iter_bytes(self) -> Iterator[bytes]:
+            yield b"ab"
+            yield b"cd"
+
+    class FakeClient:
+        def __init__(self, **kwargs: object) -> None:
+            calls["client"] = kwargs
+
+        def __enter__(self) -> FakeClient:
+            return self
+
+        def __exit__(self, *_args: object) -> None:
+            return None
+
+        def stream(self, method: str, url: str) -> FakeResponse:
+            calls["request"] = (method, url)
+            return FakeResponse()
+
+    def fake_transport(**kwargs: object) -> object:
+        calls["transport"] = kwargs
+        return object()
+
+    monkeypatch.setattr("cloud_chamber.igra_catalog.httpx.HTTPTransport", fake_transport)
+    monkeypatch.setattr("cloud_chamber.igra_catalog.httpx.Client", FakeClient)
+
+    payload = igra_catalog._fetch_url_bytes("https://example.test/sounding.zip", max_bytes=4)
+
+    assert payload == b"abcd"
+    assert calls["transport"] == {"local_address": "0.0.0.0", "retries": 1}
+    assert calls["request"] == ("GET", "https://example.test/sounding.zip")
+    client_options = calls["client"]
+    assert isinstance(client_options, dict)
+    assert client_options["follow_redirects"] is True
+
+    with pytest.raises(IGRACatalogError, match="exceeded maximum size"):
+        igra_catalog._fetch_url_bytes("https://example.test/sounding.zip", max_bytes=3)
 
 
 def test_recent_directory_parser_finds_station_period_zip_links() -> None:

@@ -66,11 +66,17 @@ describe("CloudWorldsHome", () => {
     const onEnterTradeCumulus = vi.fn();
     const onEnterMountainWaves = vi.fn();
     const onEnterSupercells = vi.fn();
+    const onEnterFunWithSoundings = vi.fn();
     render(
       <CloudWorldsHome
         onEnterTradeCumulus={onEnterTradeCumulus}
         onEnterMountainWaves={onEnterMountainWaves}
         onEnterSupercells={onEnterSupercells}
+        onEnterFunWithSoundings={onEnterFunWithSoundings}
+        soundingsAvailability={{
+          state: "available",
+          message: "Sounding infrastructure is available.",
+        }}
       />,
     );
 
@@ -82,12 +88,18 @@ describe("CloudWorldsHome", () => {
     expect(screen.getByText("Boulder Windstorm")).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Supercells" })).toBeInTheDocument();
     expect(screen.getByText("Quarter-Circle Supercell")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Fun With Soundings" })).toBeInTheDocument();
+    expect(screen.getByText("Atmospheric workbench")).toBeInTheDocument();
+    expect(screen.queryByText(/Installed Worlds/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Draft Worlds/i)).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Enter Trade Cumulus" }));
     fireEvent.click(screen.getByRole("button", { name: "Enter Mountain Waves" }));
     fireEvent.click(screen.getByRole("button", { name: "Enter Supercells" }));
+    fireEvent.click(screen.getByRole("button", { name: "Open Fun With Soundings" }));
     expect(onEnterTradeCumulus).toHaveBeenCalledOnce();
     expect(onEnterMountainWaves).toHaveBeenCalledOnce();
     expect(onEnterSupercells).toHaveBeenCalledOnce();
+    expect(onEnterFunWithSoundings).toHaveBeenCalledOnce();
   });
 
   it("shows bounded partial availability", async () => {
@@ -106,6 +118,7 @@ describe("CloudWorldsHome", () => {
         onEnterTradeCumulus={vi.fn()}
         onEnterMountainWaves={vi.fn()}
         onEnterSupercells={vi.fn()}
+        onEnterFunWithSoundings={vi.fn()}
       />,
     );
 
@@ -123,11 +136,13 @@ describe("CloudWorldsHome", () => {
         onEnterTradeCumulus={vi.fn()}
         onEnterMountainWaves={vi.fn()}
         onEnterSupercells={vi.fn()}
+        onEnterFunWithSoundings={vi.fn()}
         fallback={<div>Existing application remains available</div>}
       />,
     );
 
     expect(await screen.findByText("World inventory unavailable.")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Fun With Soundings" })).toBeInTheDocument();
     expect(screen.getByText("Existing application remains available")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Retry Worlds" }));
     await waitFor(() => expect(fetch).toHaveBeenCalledTimes(2));

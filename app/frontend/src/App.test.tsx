@@ -3716,6 +3716,7 @@ function downsampledCloudSliceResponse() {
 }
 
 beforeEach(() => {
+  window.history.replaceState({}, "", "/");
   let runStatusRefreshCount = 0;
   vi.stubGlobal(
     "fetch",
@@ -4086,6 +4087,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  window.history.replaceState({}, "", "/");
   vi.useRealTimers();
   vi.unstubAllGlobals();
 });
@@ -4404,6 +4406,197 @@ describe("App", () => {
     expect(screen.getByRole("heading", { name: "Return to the cloud field" })).toBeInTheDocument();
   });
 
+  it("opens the Soundings workbench as a stable runs workspace and returns World-owned runs", async () => {
+    mockWorldScopedApp();
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Open Fun With Soundings" }));
+    expect(window.location.pathname).toBe("/fun-with-soundings");
+    expect(await screen.findByRole("heading", { name: "Fun With Soundings" })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "4 Runs" }));
+    const pastRuns = (
+      await screen.findByRole("heading", {
+        name: "Past runs",
+      })
+    ).closest("section");
+    expect(pastRuns).not.toBeNull();
+    expect(within(pastRuns!).getByRole("button", { name: "Refresh archive" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Refresh current work" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Refresh results" })).not.toBeInTheDocument();
+
+    await screen.findByText(/retained Simulation identifiers linked/);
+    fireEvent.change(within(pastRuns!).getByRole("combobox", { name: "Ownership" }), {
+      target: { value: "world" },
+    });
+    const worldButtons = await screen.findAllByRole("button", { name: "Open Trade Cumulus" });
+    expect(worldButtons.length).toBeGreaterThan(0);
+
+    fireEvent.click(worldButtons[0]);
+    expect(
+      await screen.findByRole("navigation", { name: "Trade Cumulus sections" }),
+    ).toBeInTheDocument();
+    expect(window.location.pathname).toBe("/");
+  });
+
+  it("opens Soundings Explore directly and switches among ingested sounding runs", async () => {
+    mockWorldScopedApp();
+    const secondObservedResult = {
+      ...observedSoundingResultCard,
+      result_id: "result-observed-sounding-denver",
+      run_id: "dry-run-observed-sounding-denver",
+      name: "Uploaded Sounding — Denver, Colorado",
+      observed_sounding: {
+        ...observedSoundingResultCard.observed_sounding,
+        station_id: "USM00072469",
+        station_name: "Denver, Colorado",
+      },
+    };
+    const defaultFetch = vi.mocked(fetch).getMockImplementation();
+    vi.mocked(fetch).mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input) === "/api/results") {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              results: [observedSoundingResultCard, secondObservedResult],
+            }),
+            { status: 200 },
+          ),
+        );
+      }
+      return (
+        defaultFetch?.(input, init) ?? Promise.resolve(new Response("not found", { status: 404 }))
+      );
+    });
+
+    render(<App />);
+    fireEvent.click(await screen.findByRole("button", { name: "Open Fun With Soundings" }));
+    fireEvent.click(await screen.findByRole("button", { name: "5 Explore" }));
+
+    const runSelector = await screen.findByRole("combobox", { name: "Soundings run" });
+    expect(window.location.pathname).toBe(
+      `/fun-with-soundings/explore/${observedSoundingResultCard.result_id}`,
+    );
+    expect(runSelector).toHaveValue(observedSoundingResultCard.result_id);
+
+    fireEvent.change(runSelector, { target: { value: secondObservedResult.result_id } });
+    await waitFor(() => {
+      expect(window.location.pathname).toBe(
+        `/fun-with-soundings/explore/${secondObservedResult.result_id}`,
+      );
+    });
+    expect(screen.getByRole("heading", { name: secondObservedResult.name })).toBeInTheDocument();
+  });
+
+  it("guides an empty cache through station download and sounding search", async () => {
+    mockWorldScopedApp();
+    const defaultFetch = vi.mocked(fetch).getMockImplementation();
+    let stationDownloaded = false;
+    let cacheRequest = "";
+    let analyzeRequest = "";
+    const availableReference = {
+      ...igraCatalogResponse.catalog.zip_references[0],
+      cached_status: "not_cached",
+    };
+    const downloadedReference = {
+      ...availableReference,
+      cached_status: "cached_extracted",
+    };
+
+    vi.mocked(fetch).mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url === "/api/igra/recent/catalog") {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              catalog: {
+                ...igraCatalogResponse.catalog,
+                zip_references: [stationDownloaded ? downloadedReference : availableReference],
+              },
+            }),
+            { status: 200 },
+          ),
+        );
+      }
+      if (url === "/api/igra/recent/cache") {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              entries: stationDownloaded ? [igraCacheResponse.entries[0]] : [],
+              updated_at: "2026-07-01T12:00:00Z",
+            }),
+            { status: 200 },
+          ),
+        );
+      }
+      if (url === "/api/sounding-candidates/screening-inputs") {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              inputs: stationDownloaded ? [screeningInputsResponse.inputs[0]] : [],
+            }),
+            { status: 200 },
+          ),
+        );
+      }
+      if (url === "/api/igra/recent/cache-batch" && init?.method === "POST") {
+        cacheRequest = String(init.body ?? "");
+        stationDownloaded = true;
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              requested_limit: 10,
+              requested_station_ids: ["USM00072558"],
+              selected_count: 1,
+              cached_entries: [igraCacheResponse.entries[0]],
+              failed: [],
+              remaining_uncached_count: 0,
+            }),
+            { status: 200 },
+          ),
+        );
+      }
+      if (url === "/api/sounding-candidates/analyze") {
+        analyzeRequest = String(init?.body ?? "");
+        return Promise.resolve(
+          new Response(JSON.stringify(screeningResponseForRequest(init)), { status: 200 }),
+        );
+      }
+      return (
+        defaultFetch?.(input, init) ?? Promise.resolve(new Response("not found", { status: 404 }))
+      );
+    });
+
+    render(<App />);
+    fireEvent.click(await screen.findByRole("button", { name: "Open Fun With Soundings" }));
+
+    expect(
+      await screen.findByRole("heading", { name: "Find and download soundings" }),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/normal search uses all 1 stations/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Choose specific stations" })).toBeInTheDocument();
+    expect(screen.getByRole("combobox", { name: "Search focus" })).toHaveValue("best_overall");
+    expect(screen.getByRole("combobox", { name: "Station history" })).toHaveValue("all_cached");
+    expect(screen.queryByRole("checkbox")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Choose specific stations" }));
+    expect(screen.getByRole("checkbox", { name: /Valley, Nebraska/ })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Use entire catalog" }));
+    expect(screen.queryByRole("checkbox")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Download 1 remaining station history" }));
+
+    expect(await screen.findByText("Downloaded")).toBeInTheDocument();
+    expect(cacheRequest).toContain('"station_ids":["USM00072558"]');
+    fireEvent.click(screen.getByRole("button", { name: "Search all 1 stations" }));
+
+    expect(
+      await screen.findByRole("heading", { name: "Screen interesting soundings" }),
+    ).toBeInTheDocument();
+    expect(await screen.findByText("Recommendation run complete")).toBeInTheDocument();
+    expect(analyzeRequest).toContain('"station_ids":[]');
+  });
+
   it("returns from stable Simulation Explore and the featured Comparison to the World", async () => {
     mockWorldScopedApp();
     render(<App />);
@@ -4623,12 +4816,12 @@ describe("App", () => {
     fireEvent.click(await screen.findByRole("button", { name: "Build" }));
 
     expect(await screen.findByRole("heading", { name: "Observed Soundings" })).toBeInTheDocument();
-    expect(screen.getByRole("tab", { name: "Cached recommendations" })).toHaveAttribute(
+    expect(screen.getByRole("tab", { name: "Station catalog" })).toHaveAttribute(
       "aria-selected",
       "true",
     );
     expect(screen.queryByLabelText("IGRA station sounding-data file")).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole("tab", { name: "Upload IGRA station text" }));
+    fireEvent.click(screen.getByRole("tab", { name: "Upload IGRA file" }));
     expect(screen.getByLabelText("IGRA station sounding-data file")).toBeInTheDocument();
     expect(screen.queryByLabelText("Low-level humidity")).not.toBeInTheDocument();
     expect(screen.queryByLabelText("Use uploaded sounding")).not.toBeInTheDocument();
@@ -5089,7 +5282,7 @@ describe("App", () => {
       screen.queryByLabelText("Saved sounding candidate Valley, Nebraska (USM00072558)"),
     ).not.toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("tab", { name: "Cached recommendations" }));
+    fireEvent.click(screen.getByRole("tab", { name: "Station catalog" }));
     fireEvent.change(screen.getByLabelText("Story"), {
       target: { value: "needs_review" },
     });
@@ -5148,7 +5341,7 @@ describe("App", () => {
       target: { value: "__observed_sounding_upload__" },
     });
 
-    expect(await screen.findByRole("tab", { name: "Cached recommendations" })).toHaveAttribute(
+    expect(await screen.findByRole("tab", { name: "Station catalog" })).toHaveAttribute(
       "aria-selected",
       "true",
     );

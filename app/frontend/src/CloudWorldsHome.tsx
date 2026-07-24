@@ -63,11 +63,21 @@ export function CloudWorldsHome({
   onEnterTradeCumulus,
   onEnterMountainWaves,
   onEnterSupercells,
+  onEnterFunWithSoundings,
+  soundingsAvailability = {
+    state: "loading",
+    message: "Checking local sounding infrastructure.",
+  },
   fallback,
 }: {
   onEnterTradeCumulus: () => void;
   onEnterMountainWaves: () => void;
   onEnterSupercells: () => void;
+  onEnterFunWithSoundings: () => void;
+  soundingsAvailability?: {
+    state: "loading" | "available" | "partial" | "unavailable";
+    message: string;
+  };
   fallback?: ReactNode;
 }) {
   const [loadState, setLoadState] = useState<LoadState>({
@@ -104,6 +114,7 @@ export function CloudWorldsHome({
         <section className="status-panel" role="status">
           Loading Cloud Worlds...
         </section>
+        <WorkbenchCard availability={soundingsAvailability} onEnter={onEnterFunWithSoundings} />
       </section>
     );
   }
@@ -121,6 +132,7 @@ export function CloudWorldsHome({
             Retry Worlds
           </button>
         </section>
+        <WorkbenchCard availability={soundingsAvailability} onEnter={onEnterFunWithSoundings} />
         {fallback}
       </section>
     );
@@ -150,6 +162,7 @@ export function CloudWorldsHome({
           <p>No Cloud Worlds are installed.</p>
         </section>
       )}
+      <WorkbenchCard availability={soundingsAvailability} onEnter={onEnterFunWithSoundings} />
     </section>
   );
 }
@@ -198,6 +211,71 @@ function WorldCard({ world, onEnter }: { world: CloudWorldSummary; onEnter: () =
       <div className="world-card-action">
         <button type="button" onClick={onEnter}>
           Enter {world.display_name}
+        </button>
+      </div>
+    </article>
+  );
+}
+
+function WorkbenchCard({
+  availability,
+  onEnter,
+}: {
+  availability: {
+    state: "loading" | "available" | "partial" | "unavailable";
+    message: string;
+  };
+  onEnter: () => void;
+}) {
+  return (
+    <article className="world-card workbench-card" aria-labelledby="soundings-workbench-card-title">
+      <div className="world-card-main">
+        <div className="world-card-heading">
+          <div>
+            <p className="eyebrow">Atmospheric workbench</p>
+            <h2 id="soundings-workbench-card-title">Fun With Soundings</h2>
+          </div>
+          {availability.state !== "available" && (
+            <span className={`world-availability ${availability.state}`}>
+              {availability.state === "loading"
+                ? "Checking availability"
+                : availability.state === "partial"
+                  ? "Partially available"
+                  : "Unavailable"}
+            </span>
+          )}
+        </div>
+        <p className="world-description">
+          Find an observed atmosphere, screen its possibilities, and carry a bounded experiment
+          through package, run, ingest, and inspection.
+        </p>
+        {availability.state !== "available" && (
+          <p className="world-availability-message">{availability.message}</p>
+        )}
+      </div>
+
+      <dl className="world-card-metrics">
+        <div>
+          <dt>Sources</dt>
+          <dd>Cached or uploaded</dd>
+        </div>
+        <div>
+          <dt>Selection</dt>
+          <dd>Candidate screening</dd>
+        </div>
+        <div>
+          <dt>Execution</dt>
+          <dd>Local or LAN worker</dd>
+        </div>
+        <div>
+          <dt>History</dt>
+          <dd>Experiments and activity</dd>
+        </div>
+      </dl>
+
+      <div className="world-card-action">
+        <button type="button" onClick={onEnter}>
+          Open Fun With Soundings
         </button>
       </div>
     </article>
