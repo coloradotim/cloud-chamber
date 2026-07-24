@@ -1202,8 +1202,8 @@ type WorldResultOwnership = {
 };
 
 type WorldResultOwnershipIndex = {
-  byResultId: Record<string, WorldResultOwnership>;
-  byRunId: Record<string, WorldResultOwnership>;
+  byResultId: Record<string, WorldResultOwnership | null>;
+  byRunId: Record<string, WorldResultOwnership | null>;
 };
 
 type ResultsBooleanFilter = "all" | "yes" | "no" | "unknown";
@@ -1243,6 +1243,8 @@ type RunStorageEntry = {
   lifecycle_state: string | null;
   validation_status: string | null;
   product_state: string | null;
+  input_source?: string | null;
+  has_observed_sounding?: boolean;
   run_configuration: PersistedRunConfiguration | null;
   pre_run_validation_report?: PreRunValidationReport | null;
   created_at: string | null;
@@ -2151,12 +2153,8 @@ async function fetchWorldResultOwnership(): Promise<{
         simulationId,
         simulationName,
       };
-      if (typeof simulation.result_id === "string" && simulation.result_id) {
-        index.byResultId[simulation.result_id] = ownership;
-      }
-      if (typeof simulation.run_id === "string" && simulation.run_id) {
-        index.byRunId[simulation.run_id] = ownership;
-      }
+      registerWorldOwnership(index.byResultId, simulation.result_id, ownership);
+      registerWorldOwnership(index.byRunId, simulation.run_id, ownership);
     });
   });
 
@@ -2168,16 +2166,52 @@ function decorateResultsWithWorldOwnership(
   index: WorldResultOwnershipIndex,
 ): ResultCard[] {
   return results.map((result) => {
-    if (result.run_configuration?.cloud_world_id) return result;
-    const ownership = index.byResultId[result.result_id] ?? index.byRunId[result.run_id];
-    if (!ownership) return result;
+    const resultOwnership = index.byResultId[result.result_id];
+    const runOwnership = index.byRunId[result.run_id];
+    const ownership =
+      resultOwnership &&
+      runOwnership &&
+      sameWorldOwnership(resultOwnership, runOwnership) &&
+      declaredWorldOwnershipMatches(result, resultOwnership)
+        ? resultOwnership
+        : null;
     return {
       ...result,
-      workbench_world_id: ownership.worldId,
-      workbench_simulation_id: ownership.simulationId,
-      workbench_simulation_name: ownership.simulationName,
+      workbench_world_id: ownership?.worldId ?? null,
+      workbench_simulation_id: ownership?.simulationId ?? null,
+      workbench_simulation_name: ownership?.simulationName ?? null,
     };
   });
+}
+
+function registerWorldOwnership(
+  index: Record<string, WorldResultOwnership | null>,
+  identifier: unknown,
+  ownership: WorldResultOwnership,
+) {
+  if (typeof identifier !== "string" || !identifier) return;
+  if (!(identifier in index)) {
+    index[identifier] = ownership;
+    return;
+  }
+  const existing = index[identifier];
+  if (!existing || !sameWorldOwnership(existing, ownership)) {
+    index[identifier] = null;
+  }
+}
+
+function sameWorldOwnership(left: WorldResultOwnership, right: WorldResultOwnership): boolean {
+  return left.worldId === right.worldId && left.simulationId === right.simulationId;
+}
+
+function declaredWorldOwnershipMatches(
+  result: ResultCard,
+  ownership: WorldResultOwnership,
+): boolean {
+  const declaredWorldId = result.run_configuration?.cloud_world_id;
+  if (declaredWorldId && declaredWorldId !== ownership.worldId) return false;
+  const declaredSimulationId = result.run_configuration?.simulation_id;
+  return !declaredSimulationId || declaredSimulationId === ownership.simulationId;
 }
 
 async function patchResultCard(
@@ -2633,12 +2667,15 @@ export function App() {
       .then(({ index, unavailableWorldNames }) => {
         worldResultOwnershipRef.current = index;
         setResults((current) => decorateResultsWithWorldOwnership(current, index));
-        const linkedCount =
-          Object.keys(index.byResultId).length + Object.keys(index.byRunId).length;
+        const linkedCount = new Set(
+          Object.values(index.byResultId)
+            .filter((ownership): ownership is WorldResultOwnership => ownership !== null)
+            .map((ownership) => `${ownership.worldId}:${ownership.simulationId}`),
+        ).size;
         setWorldOwnershipStatus(
           unavailableWorldNames.length > 0
-            ? `${linkedCount} retained Simulation identifiers linked. Could not check ${unavailableWorldNames.join(", ")}.`
-            : `${linkedCount} retained Simulation identifiers linked across all Cloud Worlds.`,
+            ? `${linkedCount} retained Simulations verified. Could not check ${unavailableWorldNames.join(", ")}; affected Experiments remain unassigned.`
+            : `${linkedCount} retained Simulations verified across all Cloud Worlds.`,
         );
       })
       .catch(() => {
@@ -2713,7 +2750,7 @@ export function App() {
     [results, selectedResultId],
   );
   const soundingsExploreResults = useMemo(
-    () => results.filter((result) => resultArchiveOwnership(result) === "sounding"),
+    () => results.filter((result) => resultArchiveOwnership(result) !== "world"),
     [results],
   );
   const selectedSoundingsExploreResult = soundingsExploreResults.find(
@@ -4656,14 +4693,14 @@ export function App() {
               simulationName={selectedSoundingsExploreResult.name}
               resultOptions={soundingsExploreResults}
               onSelectResult={(resultId) => openSoundingsResult(resultId, "explore")}
-              backLabel="Back to Runs"
+              backLabel="Back to Past Experiments"
               onBack={() => enterFunWithSoundings("activity")}
             />
           ) : (
             <ScenarioStatePanel
-              title="This Soundings run is not available in Explore"
+              title="This Soundings Experiment is not available in Explore"
               body="Choose an ingested Soundings experiment. World-owned Simulations remain available from their Cloud World."
-              actionLabel="Back to Runs"
+              actionLabel="Back to Past Experiments"
               onAction={() => enterFunWithSoundings("activity")}
             />
           )}
@@ -5234,7 +5271,7 @@ function BuildWorkspace({
     if (soundingsSection === "explore") {
       return (
         <SoundingsExploreLanding
-          results={results.filter((result) => resultArchiveOwnership(result) === "sounding")}
+          results={results.filter((result) => resultArchiveOwnership(result) !== "world")}
           onOpen={onExploreStoredResult}
           onViewRuns={() => onNavigateSoundingsSection("activity")}
         />
@@ -8360,23 +8397,23 @@ function ResultsWorkspace({
     <section className="results-library" aria-labelledby="results-title">
       <div className="section-heading">
         <div>
-          <p className="eyebrow">{context === "soundings" ? "Archive" : "Results"}</p>
+          <p className="eyebrow">{context === "soundings" ? "Experiments" : "Results"}</p>
           <h2 id="results-title">
-            {context === "soundings" ? "Past runs" : "Experiment Notebook"}
+            {context === "soundings" ? "Past Experiments" : "Experiment Notebook"}
           </h2>
           <p>
             {context === "soundings"
-              ? "Reopen ingested Soundings runs. Use Ownership when you need legacy records or World-owned Simulations."
+              ? "Reopen completed, ingested Soundings Experiments. Use Ownership to inspect legacy records or verified World Simulations."
               : "Review ingested cloud experiments, scan result cards, and open results for explanation."}
           </p>
         </div>
         <button type="button" onClick={onRefreshResults}>
-          {context === "soundings" ? "Refresh archive" : "Refresh results"}
+          {context === "soundings" ? "Refresh Experiments" : "Refresh results"}
         </button>
       </div>
       {resultsStatus !== "Results loaded" && resultsStatus !== "Loading results..." && (
         <p className="inline-status" role="status">
-          {context === "soundings" ? soundingsRunLanguage(resultsStatus) : resultsStatus}
+          {context === "soundings" ? soundingsExperimentStatus(resultsStatus) : resultsStatus}
         </p>
       )}
       {context === "soundings" && worldOwnershipStatus && (
@@ -8387,7 +8424,7 @@ function ResultsWorkspace({
 
       {resultsError && (
         <p role="alert">
-          {context === "soundings" ? soundingsRunLanguage(resultsError) : resultsError}
+          {context === "soundings" ? soundingsExperimentStatus(resultsError) : resultsError}
         </p>
       )}
 
@@ -8491,7 +8528,7 @@ function NotebookWorkspace({
   return (
     <section
       className="workspace-section"
-      aria-label={context === "soundings" ? "Past runs" : "Notebook entries"}
+      aria-label={context === "soundings" ? "Past Experiments" : "Notebook entries"}
     >
       {context === "soundings" ? (
         <SoundingsArchiveFilterBar
@@ -8693,13 +8730,13 @@ function SoundingsExploreLanding({
       <div className="section-heading">
         <div>
           <p className="eyebrow">Explore</p>
-          <h3 id="soundings-explore-title">Explore sounding runs</h3>
+          <h3 id="soundings-explore-title">Explore Soundings Experiments</h3>
           <p>Inspect completed, ingested Soundings experiments.</p>
         </div>
       </div>
       {results.length === 0 ? (
         <section className="soundings-explore-empty">
-          <h4>No Soundings run is ready to explore yet</h4>
+          <h4>No Soundings Experiment is ready to explore yet</h4>
           <p>
             Explore becomes available after a Soundings experiment completes and its output is
             ingested.
@@ -8709,7 +8746,7 @@ function SoundingsExploreLanding({
           </button>
         </section>
       ) : (
-        <div className="soundings-explore-ready-list" aria-label="Runs ready to explore">
+        <div className="soundings-explore-ready-list" aria-label="Experiments ready to explore">
           {results.map((result) => (
             <button key={result.result_id} type="button" onClick={() => onOpen(result.result_id)}>
               <strong>{result.name}</strong>
@@ -8743,17 +8780,64 @@ function RunMonitorPanel(props: LocalRunWorkflowPanelProps) {
 }
 
 function SoundingsRunsPanel(props: LocalRunWorkflowPanelProps) {
-  const { activeCount, queuedCount, completedCount } = runActivityCounts(props);
   const currentRunId = props.dryRun ? runIdFromPackage(props.dryRun) : null;
-  const activeRunId = props.runQueue?.active_run_id ?? null;
-  const activeRun = props.storageInventory?.runs.find((run) => run.run_id === activeRunId);
+  const inventoryRuns = props.storageInventory?.runs ?? [];
+  const isSoundingsRun = (runId: string) => {
+    if (runId === currentRunId) return true;
+    const run = inventoryRuns.find((candidate) => candidate.run_id === runId);
+    return run ? runWorkCategory(run, resultForRun(props.results, runId)) === "sounding" : false;
+  };
+  const soundingsInventory = props.storageInventory
+    ? {
+        ...props.storageInventory,
+        runs: inventoryRuns.filter((run) => isSoundingsRun(run.run_id)),
+        largest_runs: props.storageInventory.largest_runs.filter((run) =>
+          isSoundingsRun(run.run_id),
+        ),
+      }
+    : null;
+  const soundingsQueue = props.runQueue
+    ? {
+        ...props.runQueue,
+        entries: props.runQueue.entries.filter((entry) => isSoundingsRun(entry.run_id)),
+        active_run_id:
+          props.runQueue.active_run_id && isSoundingsRun(props.runQueue.active_run_id)
+            ? props.runQueue.active_run_id
+            : null,
+        queued_count: props.runQueue.entries.filter(
+          (entry) => entry.state === "queued" && isSoundingsRun(entry.run_id),
+        ).length,
+      }
+    : null;
+  const soundingsProps: LocalRunWorkflowPanelProps = {
+    ...props,
+    storageInventory: soundingsInventory,
+    runQueue: soundingsQueue,
+  };
+  const { activeCount, queuedCount, completedCount } = runActivityCounts(soundingsProps);
+  const activeRunId = soundingsQueue?.active_run_id ?? null;
+  const activeRun = soundingsInventory?.runs.find((run) => run.run_id === activeRunId);
   const activeRunLabel =
     activeRun?.scenario_name ?? activeRun?.scenario_id ?? activeRunId ?? "None";
+  const globalActiveRunId = props.runQueue?.active_run_id ?? null;
+  const globalActiveRun = inventoryRuns.find((run) => run.run_id === globalActiveRunId);
+  const externalActiveRunId =
+    globalActiveRunId && !isSoundingsRun(globalActiveRunId) ? globalActiveRunId : null;
+  const otherActionableRuns = selectPipelineRuns(
+    inventoryRuns.filter((run) => !isSoundingsRun(run.run_id)),
+    props.results,
+    null,
+    props.runQueue,
+  );
+  const worldWorkCount = otherActionableRuns.filter(
+    (run) => runWorkCategory(run, resultForRun(props.results, run.run_id)) === "world",
+  ).length;
+  const legacyWorkCount = otherActionableRuns.length - worldWorkCount;
   const actionableRuns = selectPipelineRuns(
-    props.storageInventory?.runs ?? [],
+    soundingsInventory?.runs ?? [],
     props.results,
     currentRunId,
-    props.runQueue,
+    soundingsQueue,
   );
   const hasTechnicalDetails = Boolean(
     props.dryRun ||
@@ -8771,7 +8855,10 @@ function SoundingsRunsPanel(props: LocalRunWorkflowPanelProps) {
         <div>
           <p className="eyebrow">Runs</p>
           <h3 id="soundings-runs-title">Run status</h3>
-          <p>Track CM1 work in progress. Completed, ingested experiments appear in Past runs.</p>
+          <p>
+            Track technical CM1 execution. Completed, ingested Experiments appear in Past
+            Experiments.
+          </p>
         </div>
         <button type="button" onClick={props.onRefreshStorage}>
           Refresh current work
@@ -8785,7 +8872,38 @@ function SoundingsRunsPanel(props: LocalRunWorkflowPanelProps) {
         <Metric label="Completed locally" value={completedCount.toLocaleString()} />
       </dl>
 
-      {(props.runQueue?.active_run_id || queuedCount > 0) && (
+      {externalActiveRunId && (
+        <section
+          className="soundings-current-queue"
+          aria-label="Global runner occupied by other work"
+        >
+          <div>
+            <p className="eyebrow">Global CM1 runner</p>
+            <h4>Other Cloud Chamber work is running</h4>
+            <p>
+              Soundings execution is waiting for the shared runner. This is not a Soundings Run.
+            </p>
+          </div>
+          <dl>
+            <Metric
+              label="Work type"
+              value={
+                globalActiveRun
+                  ? runWorkCategoryLabel(
+                      runWorkCategory(
+                        globalActiveRun,
+                        resultForRun(props.results, globalActiveRun.run_id),
+                      ),
+                    )
+                  : "Legacy / unassigned work"
+              }
+            />
+            <Metric label="Active Run ID" value={externalActiveRunId} />
+          </dl>
+        </section>
+      )}
+
+      {(activeRunId || queuedCount > 0) && (
         <section className="soundings-current-queue" aria-label="Current local queue">
           <div>
             <p className="eyebrow">Local queue</p>
@@ -8805,8 +8923,15 @@ function SoundingsRunsPanel(props: LocalRunWorkflowPanelProps) {
         </section>
       )}
 
+      {otherActionableRuns.length > 0 && (
+        <p className="soundings-ownership-status">
+          Other technical work is tracked outside this Soundings queue: {worldWorkCount}{" "}
+          World-associated · {legacyWorkCount} legacy / unassigned.
+        </p>
+      )}
+
       <LocalPipelinePanel
-        inventory={props.storageInventory}
+        inventory={soundingsInventory}
         status={props.storageStatus}
         error={props.storageError}
         deletePreview={props.runDeletePreview}
@@ -8814,7 +8939,7 @@ function SoundingsRunsPanel(props: LocalRunWorkflowPanelProps) {
         results={props.results}
         soundingsLanguage
         currentRunId={currentRunId}
-        runQueue={props.runQueue}
+        runQueue={soundingsQueue}
         lanWorkerConfigured={props.lanWorkerConfig?.configured ?? false}
         autoFinalizingWorkerRunIds={props.autoFinalizingWorkerRunIds}
         failedAutoFinalizingWorkerRunIds={props.failedAutoFinalizingWorkerRunIds}
@@ -8838,7 +8963,7 @@ function SoundingsRunsPanel(props: LocalRunWorkflowPanelProps) {
             Open this only when you need package provenance, worker state, logs, or technical
             troubleshooting.
           </p>
-          <LocalRunWorkflowPanel {...props} includePipeline={false} />
+          <LocalRunWorkflowPanel {...soundingsProps} includePipeline={false} />
         </details>
       )}
     </section>
@@ -9203,7 +9328,8 @@ function LocalRunWorkflowPanel({
             aria-label={soundingsLanguage ? "Ingested run actions" : "Ingested result actions"}
           >
             <p>
-              {soundingsLanguage ? "Run record" : "Result metadata"} created: {ingestedResultId}
+              {soundingsLanguage ? "Experiment record" : "Result metadata"} created:{" "}
+              {ingestedResultId}
             </p>
             <div className="button-row">
               <button type="button" onClick={onOpenInResults}>
@@ -9538,7 +9664,7 @@ function LocalPipelinePanel({
           ? "Only active, queued, blocked, or not-yet-ingested runs appear here."
           : "Active packages and runs that still need launch, status review, troubleshooting, or ingest."}
         {soundingsLanguage
-          ? " Completed records move to Past runs after ingest."
+          ? " Completed records move to Past Experiments after ingest."
           : " Ingested results live in Results; non-ingested package and run cleanup stays here."}
       </p>
       {error && <p role="alert">{error}</p>}
@@ -10099,7 +10225,7 @@ function pipelineRunNextStep(
 ): string {
   if (result) {
     return soundingsLanguage
-      ? "Review and local run cleanup are available in Past runs."
+      ? "Experiment review and local Run cleanup are available in Past Experiments."
       : "Review and local result cleanup are available in Results.";
   }
   if (run.worker_state === "running")
@@ -10399,11 +10525,11 @@ function SoundingsArchiveFilterBar({
   return (
     <section
       className="results-filter-bar soundings-archive-filters"
-      aria-label="Past runs filters"
+      aria-label="Past Experiments filters"
     >
       <div className="results-filter-summary">
         <p>
-          Showing <strong>{visibleCount}</strong> of <strong>{totalCount}</strong> retained runs
+          Showing <strong>{visibleCount}</strong> of <strong>{totalCount}</strong> retained records
         </p>
         <button
           type="button"
@@ -10432,10 +10558,10 @@ function SoundingsArchiveFilterBar({
               update({ ownership: event.target.value as SoundingsArchiveFilterState["ownership"] })
             }
           >
-            <option value="sounding">Sounding runs</option>
-            <option value="legacy">Legacy / unassigned</option>
+            <option value="sounding">Soundings Experiments</option>
+            <option value="legacy">Legacy / unassigned Experiments</option>
             <option value="world">World-owned Simulations</option>
-            <option value="all">All retained runs</option>
+            <option value="all">All retained work</option>
           </select>
         </label>
         <label>
@@ -10537,11 +10663,11 @@ function ExperimentNotebookList({
   if (results.length === 0) {
     if (context === "soundings" && totalResults > 0 && !filtersActive) {
       return (
-        <section className="notebook-list-panel empty-results" aria-label="Runs list">
-          <p className="eyebrow">Sounding run archive</p>
-          <h3>No ingested Soundings runs yet.</h3>
+        <section className="notebook-list-panel empty-results" aria-label="Experiments list">
+          <p className="eyebrow">Soundings Experiments</p>
+          <h3>No ingested Soundings Experiments yet.</h3>
           <p>
-            {totalResults.toLocaleString()} other retained run
+            {totalResults.toLocaleString()} other retained record
             {totalResults === 1 ? " is" : "s are"} available under Ownership.
           </p>
         </section>
@@ -10551,13 +10677,15 @@ function ExperimentNotebookList({
       return (
         <section
           className="notebook-list-panel empty-results"
-          aria-label={context === "soundings" ? "Runs list" : "Results list"}
+          aria-label={context === "soundings" ? "Experiments list" : "Results list"}
         >
           <p className="eyebrow">No matches</p>
-          <h3>No {context === "soundings" ? "runs" : "results"} match the current filters.</h3>
+          <h3>
+            No {context === "soundings" ? "Experiments" : "results"} match the current filters.
+          </h3>
           <p>
             Try clearing filters or widening the search to see the full{" "}
-            {context === "soundings" ? "run archive" : "experiment notebook"}.
+            {context === "soundings" ? "Experiment archive" : "experiment notebook"}.
           </p>
           <button type="button" onClick={onResetFilters}>
             Clear filters
@@ -10568,15 +10696,15 @@ function ExperimentNotebookList({
     return (
       <section
         className="notebook-list-panel empty-results"
-        aria-label={context === "soundings" ? "Runs list" : "Results list"}
+        aria-label={context === "soundings" ? "Experiments list" : "Results list"}
       >
         <p className="eyebrow">
-          {context === "soundings" ? "Run archive empty" : "Notebook empty"}
+          {context === "soundings" ? "Experiment archive empty" : "Notebook empty"}
         </p>
-        <h3>No ingested CM1 {context === "soundings" ? "runs" : "results"} yet.</h3>
+        <h3>No ingested CM1 {context === "soundings" ? "Experiments" : "results"} yet.</h3>
         <p>
           Completed and ingested CM1 runs will appear here as{" "}
-          {context === "soundings" ? "retained runs" : "experiment notebook entries"}.
+          {context === "soundings" ? "Experiments" : "experiment notebook entries"}.
         </p>
       </section>
     );
@@ -10585,9 +10713,9 @@ function ExperimentNotebookList({
   return (
     <section
       className="notebook-list-panel"
-      aria-label={context === "soundings" ? "Runs list" : "Results list"}
+      aria-label={context === "soundings" ? "Experiments list" : "Results list"}
     >
-      <p className="eyebrow">{context === "soundings" ? "Run list" : "Experiment list"}</p>
+      <p className="eyebrow">Experiment list</p>
       <div className="experiment-card-list">
         {results.map((result) => {
           const selected = result.result_id === selectedResultId;
@@ -10596,7 +10724,7 @@ function ExperimentNotebookList({
             <article
               key={result.result_id}
               className={`experiment-card${selected ? " selected-experiment-card" : ""}`}
-              aria-label={`${result.name} ${context === "soundings" ? "run" : "experiment"}`}
+              aria-label={`${result.name} Experiment`}
             >
               <div className="experiment-card-main">
                 <button
@@ -10687,10 +10815,10 @@ function ResultNotebookCard({
     return (
       <section
         className="status-panel"
-        aria-label={context === "soundings" ? "Run detail" : "Result detail"}
+        aria-label={context === "soundings" ? "Experiment detail" : "Result detail"}
       >
         <p>
-          Select an ingested CM1 {context === "soundings" ? "run" : "result"} to review its{" "}
+          Select an ingested CM1 {context === "soundings" ? "Experiment" : "result"} to review its{" "}
           {context === "soundings" ? "record" : "notebook card"}.
         </p>
       </section>
@@ -10707,11 +10835,13 @@ function ResultNotebookCard({
   return (
     <section
       className="notebook-card"
-      aria-label={context === "soundings" ? "Run detail" : "Result detail"}
+      aria-label={context === "soundings" ? "Experiment detail" : "Result detail"}
     >
       <div className="notebook-title">
         <div>
-          <p className="eyebrow">{context === "soundings" ? "Run record" : "Notebook entry"}</p>
+          <p className="eyebrow">
+            {context === "soundings" ? "Experiment record" : "Notebook entry"}
+          </p>
           <h3>{result.name}</h3>
           <p>
             {result.scenario_name ?? humanize(result.scenario_id)} ·{" "}
@@ -10774,7 +10904,7 @@ function ResultNotebookCard({
           label="Local data"
           value={
             context === "soundings"
-              ? "Run-directory backed; delete removes the run record and local files"
+              ? "Experiment record backed by a local Run directory"
               : "Run-directory backed; delete removes the result and local run files"
           }
         />
@@ -10789,16 +10919,16 @@ function ResultNotebookCard({
           <h4>
             Delete{" "}
             {context === "soundings"
-              ? "run and local data preview"
+              ? "Experiment and backing Run data preview"
               : "result and local run data preview"}
           </h4>
           <p>
-            This removes the ingested {context === "soundings" ? "run record" : "result"}, notebook
-            edits, diagnostics, derived products, CM1 output, logs, and local run files stored under
-            this run directory. The {context === "soundings" ? "run" : "result"} will disappear from{" "}
-            {context === "soundings" ? "Past runs" : "Results"}, Explore, and local inventory after
-            confirmation. It does not touch the source repo, runtime home itself, or external CM1
-            install. No files have been deleted yet.
+            This removes the ingested {context === "soundings" ? "Experiment record" : "result"},
+            notebook edits, diagnostics, derived products, CM1 output, logs, and local files stored
+            under its backing Run directory. The {context === "soundings" ? "Experiment" : "result"}{" "}
+            will disappear from {context === "soundings" ? "Past Experiments" : "Results"}, Explore,
+            and local inventory after confirmation. It does not touch the source repo, runtime home
+            itself, or external CM1 install. No files have been deleted yet.
           </p>
           <dl className="metric-grid">
             <Metric label="Run ID" value={visibleDeletePreview.run_id} />
@@ -10826,7 +10956,10 @@ function ResultNotebookCard({
               className="danger-button"
               onClick={() => onConfirmDelete(visibleDeletePreview.result_id)}
             >
-              Delete {context === "soundings" ? "run and local data" : "result and local run data"}
+              Delete{" "}
+              {context === "soundings"
+                ? "Experiment and backing Run data"
+                : "result and local run data"}
             </button>
           </div>
         </section>
@@ -10840,7 +10973,7 @@ function ResultNotebookCard({
           <Metric label="Lifecycle" value={result.source_lifecycle_state} />
           <Metric label="Product state" value={result.source_product_state} />
           <Metric
-            label={context === "soundings" ? "Run state" : "Result state"}
+            label={context === "soundings" ? "Experiment state" : "Result state"}
             value={result.status}
           />
           <Metric label="Source model" value={result.source_model} />
@@ -10941,7 +11074,9 @@ function ResultNotebookCard({
             onClick={() => onPreviewDelete(result.result_id)}
           >
             Preview delete{" "}
-            {context === "soundings" ? "run and local data" : "result and local run data"}
+            {context === "soundings"
+              ? "Experiment and backing Run data"
+              : "result and local run data"}
           </button>
           <button type="submit" className="secondary-button">
             Save changes
@@ -12037,9 +12172,9 @@ export function VisualizerSceneShell({
       headerActions={
         resultOptions && resultOptions.length > 0 && onSelectResult ? (
           <label className="soundings-explore-run-selector">
-            <span>Run</span>
+            <span>Experiment</span>
             <select
-              aria-label="Soundings run"
+              aria-label="Soundings Experiment"
               value={resultId}
               onChange={(event) => onSelectResult(event.target.value)}
             >
@@ -16182,6 +16317,29 @@ function resultArchiveOwnership(result: ResultCard): "sounding" | "legacy" | "wo
   return "legacy";
 }
 
+function runWorkCategory(
+  run: RunStorageEntry,
+  result: ResultCard | undefined,
+): "sounding" | "legacy" | "world" {
+  if (result && resultArchiveOwnership(result) === "world") return "world";
+  if (run.run_configuration?.cloud_world_id) return "world";
+  if (
+    result?.input_source === "observed_sounding" ||
+    result?.observed_sounding ||
+    run.input_source === "observed_sounding" ||
+    run.has_observed_sounding
+  ) {
+    return "sounding";
+  }
+  return "legacy";
+}
+
+function runWorkCategoryLabel(category: "sounding" | "legacy" | "world"): string {
+  if (category === "sounding") return "Soundings work";
+  if (category === "world") return "World-associated work";
+  return "Legacy / unassigned work";
+}
+
 function soundingsExploreOptionLabel(result: ResultCard): string {
   const station =
     result.observed_sounding?.station_name ?? result.input_source_label ?? result.name;
@@ -16192,7 +16350,7 @@ function soundingsExploreOptionLabel(result: ResultCard): string {
 function resultCloudWorldId(
   result: ResultCard | undefined,
 ): "trade_cumulus" | "mountain_waves" | "supercells" | null {
-  const value = result?.run_configuration?.cloud_world_id ?? result?.workbench_world_id;
+  const value = result?.workbench_world_id;
   return value === "trade_cumulus" || value === "mountain_waves" || value === "supercells"
     ? value
     : null;
@@ -16204,12 +16362,13 @@ function cloudWorldDisplayName(worldId: "trade_cumulus" | "mountain_waves" | "su
   return "Supercells";
 }
 
-function soundingsRunLanguage(value: string): string {
-  return value
-    .replaceAll("Results", "Runs")
-    .replaceAll("results", "runs")
-    .replaceAll("Result", "Run")
-    .replaceAll("result", "run");
+function soundingsExperimentStatus(value: string): string {
+  const messages: Record<string, string> = {
+    "No ingested results": "No ingested Experiments",
+    "Results unavailable": "Experiments unavailable",
+    "Could not load results.": "Could not load Experiments.",
+  };
+  return messages[value] ?? value;
 }
 
 function resultScenarioOptions(results: ResultCard[]): Array<{ value: string; label: string }> {

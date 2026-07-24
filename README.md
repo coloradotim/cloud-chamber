@@ -3,7 +3,7 @@
 ## See clouds from the inside
 
 Cloud Chamber is a local, single-user atmospheric laboratory for exploring
-scientifically meaningful cloud simulations. The current application opens into
+scientifically meaningful cloud simulations. The current application provides
 three Cloud Worlds:
 
 | Cloud World | Current experience |
@@ -12,11 +12,17 @@ three Cloud Worlds:
 | **Mountain Waves** | A terrain-aware native two-dimensional x-z World with dry and moist Simulations, Field views, Wave Structure and Wave Cloud Lenses, and a working variation Lab. |
 | **Supercells** | A coordinated three-dimensional storm view plus native x-y, x-z, and y-z evidence for a retained quarter-circle Supercell Simulation and three storm Lenses. |
 
-The approved product direction also includes **Fun With Soundings**, a
-non-World atmospheric workbench. It is not currently accessible from the
-application. Sounding search, screening, package generation, run management,
-Results, and general Explore capabilities remain available through transitional
-paths, including the existing Trade Cumulus Lab.
+The home also provides **Fun With Soundings**, a first-class non-World
+atmospheric workbench. Its stable `/fun-with-soundings` route organizes work as
+**Find Soundings**, **Candidates**, **Build & Run**, **Runs**, and **Explore**.
+Direct non-World Explore routes use
+`/fun-with-soundings/explore/{result_id}`. The selected atmosphere remains
+visible as the user moves from source evidence through experiment setup.
+
+The workbench reuses the existing package, queue, worker, ingest, storage, and
+visualization services. **Runs** means technical execution; completed retained
+work is an **Experiment** unless a current Cloud World inventory verifies its
+stable **Simulation** identity and exact run/result linkage.
 
 Cloud Chamber is not a forecasting product. It uses idealized and source-backed
 CM1 experiments to make cloud structure and normally invisible atmospheric
@@ -29,7 +35,6 @@ The implemented application does not yet provide:
 - durable Saved Views;
 - ordinary World-aware Compare beyond the featured Trade Cumulus Comparison;
 - one shared variation workflow across all three Worlds;
-- a first-class Fun With Soundings destination;
 - durable persistence for complete Explore or comparison workspaces.
 
 These are current limitations, not decisions to remove the corresponding

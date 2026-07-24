@@ -6,6 +6,7 @@ from collections.abc import Iterator
 from datetime import UTC, datetime
 from pathlib import Path
 
+import httpx
 import pytest
 
 import cloud_chamber.igra_catalog as igra_catalog
@@ -79,7 +80,7 @@ def station_zip(filename: str = "USM00072558-data-beg2025.txt") -> bytes:
     return payload.getvalue()
 
 
-def test_fetch_url_bytes_uses_ipv4_transport_and_streaming_size_limit(
+def test_fetch_url_bytes_uses_ordinary_streaming_client(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     calls: dict[str, object] = {}
@@ -114,21 +115,162 @@ def test_fetch_url_bytes_uses_ipv4_transport_and_streaming_size_limit(
             calls["request"] = (method, url)
             return FakeResponse()
 
-    def fake_transport(**kwargs: object) -> object:
-        calls["transport"] = kwargs
-        return object()
-
-    monkeypatch.setattr("cloud_chamber.igra_catalog.httpx.HTTPTransport", fake_transport)
     monkeypatch.setattr("cloud_chamber.igra_catalog.httpx.Client", FakeClient)
 
     payload = igra_catalog._fetch_url_bytes("https://example.test/sounding.zip", max_bytes=4)
 
     assert payload == b"abcd"
-    assert calls["transport"] == {"local_address": "0.0.0.0", "retries": 1}
     assert calls["request"] == ("GET", "https://example.test/sounding.zip")
     client_options = calls["client"]
     assert isinstance(client_options, dict)
     assert client_options["follow_redirects"] is True
+    assert "transport" not in client_options
+
+
+def test_fetch_url_bytes_retries_connection_failure_with_ipv4_transport(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[dict[str, object]] = []
+    fallback_transport = object()
+
+    class FakeResponse:
+        headers = {"content-length": "4"}
+
+        def __enter__(self) -> FakeResponse:
+            return self
+
+        def __exit__(self, *_args: object) -> None:
+            return None
+
+        def raise_for_status(self) -> None:
+            return None
+
+        def iter_bytes(self) -> Iterator[bytes]:
+            yield b"fallback"
+
+    class FakeClient:
+        def __init__(self, **kwargs: object) -> None:
+            self.options = kwargs
+            calls.append(kwargs)
+
+        def __enter__(self) -> FakeClient:
+            return self
+
+        def __exit__(self, *_args: object) -> None:
+            return None
+
+        def stream(self, _method: str, url: str) -> FakeResponse:
+            if "transport" not in self.options:
+                raise httpx.ConnectError(
+                    "ordinary connection failed",
+                    request=httpx.Request("GET", url),
+                )
+            return FakeResponse()
+
+    transport_calls: list[dict[str, object]] = []
+
+    def fake_transport(**kwargs: object) -> object:
+        transport_calls.append(kwargs)
+        return fallback_transport
+
+    monkeypatch.setattr("cloud_chamber.igra_catalog.httpx.HTTPTransport", fake_transport)
+    monkeypatch.setattr("cloud_chamber.igra_catalog.httpx.Client", FakeClient)
+
+    payload = igra_catalog._fetch_url_bytes("https://example.test/sounding.zip", max_bytes=20)
+
+    assert payload == b"fallback"
+    assert transport_calls == [{"local_address": "0.0.0.0", "retries": 1}]
+    assert len(calls) == 2
+    assert "transport" not in calls[0]
+    assert calls[1]["transport"] is fallback_transport
+
+
+def test_fetch_url_bytes_does_not_retry_http_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    transport_called = False
+
+    class FakeResponse:
+        headers: dict[str, str] = {}
+
+        def __enter__(self) -> FakeResponse:
+            return self
+
+        def __exit__(self, *_args: object) -> None:
+            return None
+
+        def raise_for_status(self) -> None:
+            request = httpx.Request("GET", "https://example.test/failure")
+            response = httpx.Response(503, request=request)
+            raise httpx.HTTPStatusError(
+                "service unavailable",
+                request=request,
+                response=response,
+            )
+
+        def iter_bytes(self) -> Iterator[bytes]:
+            return iter(())
+
+    class FakeClient:
+        def __init__(self, **_kwargs: object) -> None:
+            return None
+
+        def __enter__(self) -> FakeClient:
+            return self
+
+        def __exit__(self, *_args: object) -> None:
+            return None
+
+        def stream(self, _method: str, _url: str) -> FakeResponse:
+            return FakeResponse()
+
+    def fake_transport(**_kwargs: object) -> object:
+        nonlocal transport_called
+        transport_called = True
+        return object()
+
+    monkeypatch.setattr("cloud_chamber.igra_catalog.httpx.HTTPTransport", fake_transport)
+    monkeypatch.setattr("cloud_chamber.igra_catalog.httpx.Client", FakeClient)
+
+    with pytest.raises(IGRACatalogError, match="Unable to fetch IGRA source URL"):
+        igra_catalog._fetch_url_bytes("https://example.test/failure", max_bytes=20)
+
+    assert transport_called is False
+
+
+def test_fetch_url_bytes_enforces_streaming_size_limit(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class FakeResponse:
+        headers: dict[str, str] = {}
+
+        def __enter__(self) -> FakeResponse:
+            return self
+
+        def __exit__(self, *_args: object) -> None:
+            return None
+
+        def raise_for_status(self) -> None:
+            return None
+
+        def iter_bytes(self) -> Iterator[bytes]:
+            yield b"ab"
+            yield b"cd"
+
+    class FakeClient:
+        def __init__(self, **_kwargs: object) -> None:
+            return None
+
+        def __enter__(self) -> FakeClient:
+            return self
+
+        def __exit__(self, *_args: object) -> None:
+            return None
+
+        def stream(self, _method: str, _url: str) -> FakeResponse:
+            return FakeResponse()
+
+    monkeypatch.setattr("cloud_chamber.igra_catalog.httpx.Client", FakeClient)
 
     with pytest.raises(IGRACatalogError, match="exceeded maximum size"):
         igra_catalog._fetch_url_bytes("https://example.test/sounding.zip", max_bytes=3)

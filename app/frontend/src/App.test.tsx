@@ -2268,6 +2268,8 @@ const storageRuns = [
     lifecycle_state: "packaged",
     validation_status: "valid",
     product_state: "packaged_dry_run_output",
+    input_source: "observed_sounding",
+    has_observed_sounding: true,
     run_configuration: defaultRunConfiguration,
     created_at: "2026-05-22T15:55:36Z",
     updated_at: "2026-05-22T16:05:36Z",
@@ -4406,7 +4408,7 @@ describe("App", () => {
     expect(screen.getByRole("heading", { name: "Return to the cloud field" })).toBeInTheDocument();
   });
 
-  it("opens the Soundings workbench as a stable runs workspace and returns World-owned runs", async () => {
+  it("opens the Soundings workbench with Experiments separate from verified Simulations", async () => {
     mockWorldScopedApp();
     render(<App />);
 
@@ -4415,18 +4417,24 @@ describe("App", () => {
     expect(await screen.findByRole("heading", { name: "Fun With Soundings" })).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "4 Runs" }));
-    const pastRuns = (
+    const pastExperiments = (
       await screen.findByRole("heading", {
-        name: "Past runs",
+        name: "Past Experiments",
       })
     ).closest("section");
-    expect(pastRuns).not.toBeNull();
-    expect(within(pastRuns!).getByRole("button", { name: "Refresh archive" })).toBeInTheDocument();
+    expect(pastExperiments).not.toBeNull();
+    expect(
+      within(pastExperiments!).getByRole("button", { name: "Refresh Experiments" }),
+    ).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Refresh current work" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Refresh results" })).not.toBeInTheDocument();
 
-    await screen.findByText(/retained Simulation identifiers linked/);
-    fireEvent.change(within(pastRuns!).getByRole("combobox", { name: "Ownership" }), {
+    expect(
+      await screen.findByText(
+        /retained Simulations verified\. Could not check Mountain Waves, Supercells; affected Experiments remain unassigned\./,
+      ),
+    ).toBeInTheDocument();
+    fireEvent.change(within(pastExperiments!).getByRole("combobox", { name: "Ownership" }), {
       target: { value: "world" },
     });
     const worldButtons = await screen.findAllByRole("button", { name: "Open Trade Cumulus" });
@@ -4437,6 +4445,59 @@ describe("App", () => {
       await screen.findByRole("navigation", { name: "Trade Cumulus sections" }),
     ).toBeInTheDocument();
     expect(window.location.pathname).toBe("/");
+  });
+
+  it("keeps unmatched World-associated metadata as an unassigned Experiment", async () => {
+    mockWorldScopedApp();
+    const unmatchedAssociatedResult = {
+      ...resultCard,
+      result_id: "result-unmatched-world-associated",
+      run_id: "run-unmatched-world-associated",
+      name: "Unmatched World-associated output",
+      run_configuration: {
+        ...defaultRunConfiguration,
+        cloud_world_id: "trade_cumulus",
+        simulation_id: "trade_cumulus_missing_simulation",
+      },
+    };
+    const defaultFetch = vi.mocked(fetch).getMockImplementation();
+    vi.mocked(fetch).mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input) === "/api/results") {
+        return Promise.resolve(
+          new Response(JSON.stringify({ results: [unmatchedAssociatedResult] }), { status: 200 }),
+        );
+      }
+      return (
+        defaultFetch?.(input, init) ?? Promise.resolve(new Response("not found", { status: 404 }))
+      );
+    });
+
+    render(<App />);
+    fireEvent.click(await screen.findByRole("button", { name: "Open Fun With Soundings" }));
+    fireEvent.click(screen.getByRole("button", { name: "4 Runs" }));
+
+    const pastExperiments = (
+      await screen.findByRole("heading", { name: "Past Experiments" })
+    ).closest("section");
+    expect(pastExperiments).not.toBeNull();
+    fireEvent.change(within(pastExperiments!).getByRole("combobox", { name: "Ownership" }), {
+      target: { value: "legacy" },
+    });
+    expect(await screen.findByText("Legacy / unassigned")).toBeInTheDocument();
+    const unmatchedCard = screen
+      .getByRole("article", { name: "Unmatched World-associated output Experiment" })
+      .closest("article");
+    expect(unmatchedCard).not.toBeNull();
+    fireEvent.click(within(unmatchedCard!).getByRole("button", { name: "Open in Explore" }));
+
+    await waitFor(() => {
+      expect(window.location.pathname).toBe(
+        "/fun-with-soundings/explore/result-unmatched-world-associated",
+      );
+    });
+    expect(
+      await screen.findByRole("heading", { name: "Unmatched World-associated output" }),
+    ).toBeInTheDocument();
   });
 
   it("opens Soundings Explore directly and switches among ingested sounding runs", async () => {
@@ -4473,7 +4534,7 @@ describe("App", () => {
     fireEvent.click(await screen.findByRole("button", { name: "Open Fun With Soundings" }));
     fireEvent.click(await screen.findByRole("button", { name: "5 Explore" }));
 
-    const runSelector = await screen.findByRole("combobox", { name: "Soundings run" });
+    const runSelector = await screen.findByRole("combobox", { name: "Soundings Experiment" });
     expect(window.location.pathname).toBe(
       `/fun-with-soundings/explore/${observedSoundingResultCard.result_id}`,
     );
@@ -4486,6 +4547,68 @@ describe("App", () => {
       );
     });
     expect(screen.getByRole("heading", { name: secondObservedResult.name })).toBeInTheDocument();
+  });
+
+  it("reports a non-Soundings global runner without claiming it as Soundings work", async () => {
+    mockWorldScopedApp();
+    const worldRun = {
+      ...storageRuns[0],
+      run_id: "mountain-waves-active-run",
+      input_source: "cm1_built_in",
+      has_observed_sounding: false,
+      run_configuration: {
+        ...defaultRunConfiguration,
+        cloud_world_id: "mountain_waves",
+        simulation_id: "mountain_waves_active_variation",
+      },
+      category: "running",
+      lifecycle_state: "running",
+    };
+    const occupiedQueue = {
+      ...emptyRunQueue,
+      active_run_id: worldRun.run_id,
+      entries: [
+        {
+          run_id: worldRun.run_id,
+          manifest_path: worldRun.manifest_path,
+          state: "running",
+          queued_at: "2026-07-24T12:00:00Z",
+          updated_at: "2026-07-24T12:01:00Z",
+        },
+      ],
+    };
+    const defaultFetch = vi.mocked(fetch).getMockImplementation();
+    vi.mocked(fetch).mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url === "/api/storage/inventory") {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              ...storageInventoryResponse,
+              runs: [worldRun],
+              largest_runs: [worldRun],
+            }),
+            { status: 200 },
+          ),
+        );
+      }
+      if (url === "/api/runs/queue") {
+        return Promise.resolve(new Response(JSON.stringify(occupiedQueue), { status: 200 }));
+      }
+      return (
+        defaultFetch?.(input, init) ?? Promise.resolve(new Response("not found", { status: 404 }))
+      );
+    });
+
+    render(<App />);
+    fireEvent.click(await screen.findByRole("button", { name: "Open Fun With Soundings" }));
+    fireEvent.click(screen.getByRole("button", { name: "4 Runs" }));
+
+    expect(
+      await screen.findByRole("heading", { name: "Other Cloud Chamber work is running" }),
+    ).toBeInTheDocument();
+    expect(screen.getByText("World-associated work")).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "CM1 is running" })).not.toBeInTheDocument();
   });
 
   it("guides an empty cache through station download and sounding search", async () => {

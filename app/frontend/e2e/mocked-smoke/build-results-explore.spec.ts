@@ -746,24 +746,23 @@ test.describe("mocked smoke: Build, Results, Explore path", () => {
     await page.getByRole("button", { name: "Create packages and queue selected runs" }).click();
     await expect(page.getByText("1 queued locally")).toBeVisible();
     await page.getByRole("button", { name: "Open Runs" }).click();
-    await expect(page.getByRole("heading", { name: "Past runs" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Past Experiments" })).toBeVisible();
     await expect(page.getByRole("button", { name: "Refresh current work" })).toBeVisible();
-    await expect(page.getByRole("button", { name: "Refresh archive" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Refresh Experiments" })).toBeVisible();
 
     await jobs.getByRole("button", { name: "5 Explore" }).click();
     await expect(page).toHaveURL(/\/fun-with-soundings\/explore\/result-observed-sounding$/);
-    await expect(page.getByRole("combobox", { name: "Soundings run" })).toHaveValue(
+    await expect(page.getByRole("combobox", { name: "Soundings Experiment" })).toHaveValue(
       "result-observed-sounding",
     );
-    await expect(page.getByText("Experiment", { exact: true })).toBeVisible();
-    await page.getByRole("button", { name: "Back to Runs" }).click();
+    await page.getByRole("button", { name: "Back to Past Experiments" }).click();
 
-    const pastRuns = page.getByRole("region", { name: "Past runs" });
+    const pastRuns = page.getByRole("region", { name: "Past Experiments" });
     await expect(
       pastRuns.getByRole("button", { name: "Uploaded Sounding — Valley, Nebraska" }),
     ).toBeVisible();
     await pastRuns.getByRole("combobox", { name: "Ownership" }).selectOption("world");
-    const runsList = pastRuns.getByRole("region", { name: "Runs list" });
+    const runsList = pastRuns.getByRole("region", { name: "Experiments list" });
     await expect(runsList.getByRole("button", { name: "Open Trade Cumulus" })).toHaveCount(2);
     await runsList.getByRole("button", { name: "Open Trade Cumulus" }).first().click();
     await expect(page.getByRole("navigation", { name: "Trade Cumulus sections" })).toBeVisible();

@@ -40,6 +40,8 @@ class RunStorageEntry(BaseModel):
     lifecycle_state: str | None = None
     validation_status: str | None = None
     product_state: str | None = None
+    input_source: str | None = None
+    has_observed_sounding: bool = False
     run_configuration: dict[str, object] | None = None
     pre_run_validation_report: dict[str, object] | None = None
     created_at: str | None = None
@@ -309,6 +311,8 @@ def _entry_from_manifest(
         lifecycle_state=manifest.lifecycle_state.value,
         validation_status=manifest.validation_status.value,
         product_state=manifest.provenance.product_state.value,
+        input_source=manifest.input_source,
+        has_observed_sounding=manifest.observed_sounding is not None,
         run_configuration=manifest.run_configuration,
         pre_run_validation_report=manifest.pre_run_validation_report,
         created_at=manifest.created_at.isoformat(),

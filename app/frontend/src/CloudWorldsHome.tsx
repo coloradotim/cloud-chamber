@@ -159,7 +159,7 @@ export function CloudWorldsHome({
         </div>
       ) : (
         <section className="status-panel">
-          <p>No Cloud Worlds are installed.</p>
+          <p>No Cloud Worlds are currently available.</p>
         </section>
       )}
       <WorkbenchCard availability={soundingsAvailability} onEnter={onEnterFunWithSoundings} />

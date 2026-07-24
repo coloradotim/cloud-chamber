@@ -45,7 +45,7 @@ Keep product approval separate from software availability:
 | Subject | Approved direction | Current implemented state |
 | --- | --- | --- |
 | Cloud Worlds | A growing collection of explorable cloud regimes | Trade Cumulus, Mountain Waves, and Supercells are accessible |
-| Fun With Soundings | A separate first-class atmospheric workbench | Not accessible; sounding and run capabilities remain in transitional paths |
+| Fun With Soundings | A separate first-class atmospheric workbench | Accessible with five jobs, direct non-World Explore, and conservative World ownership |
 | Saved Views | Durable user-curated views | Placeholder only; no durable Saved Views |
 | Compare | Related Simulations can be compared | One featured Trade Cumulus Comparison; no ordinary World-aware Compare |
 | Variation | Create a related Simulation from a World Simulation | Working Mountain Waves Lab path; no shared three-World workflow |
@@ -60,8 +60,10 @@ Compare, or Saved View placeholders merely to make all Worlds structurally
 identical.
 
 Fun With Soundings is an approved first-class workbench, not a Cloud World.
-Issue #395 remains queued; approval does not make the workbench accessible in
-the current application.
+Issue #395 implemented its stable entrance, Find Soundings, Candidates, Build &
+Run, Runs, Explore, atmosphere continuity, and Past Experiments ownership
+boundary. Runs remain technical execution; retained non-World work remains an
+Experiment; only current inventory-verified World objects are Simulations.
 
 The Trade Cumulus Product Slice remains subordinate to the North Star, Product
 Vision, approved PM decisions, Application Semantics, and the MVP. Being
@@ -78,7 +80,8 @@ repository authority for current implementation ordering. The latest approved
 PM comment and issue body still control the exact scope of each bounded task.
 
 The presentation-quality and three-World foundation is complete through #420,
-#423, #421, #429, and #428. All three Explore implementations now use one
+#423, #421, #429, and #428. The first-class Fun With Soundings workbench is
+complete through #395. All three Explore implementations now use one
 collapsible Context and shared below-the-fold Science, Notes, and Details
 structure. Per-Simulation Notes are the first durable content contract; complete
 Explore state and Saved Views remain unimplemented.
@@ -87,12 +90,15 @@ The next approved program is personal scientific memory: define one versioned,
 World-aware serializable Explore-state contract before ordinary resume, named
 Saved Views, or Compare work.
 
-Rewritten issues #394 and #395 and issues #432 through #438 record bounded
-follow-on product work for Activity and History, Fun With Soundings, durable
-Explore state and Saved Views, Compare and Saved Comparisons, variation
+Rewritten issue #394 and issues #432 through #438 record bounded
+follow-on product work for Activity and History, durable Explore state and
+Saved Views, Compare and Saved Comparisons, variation
 contracts, retained assets, and curated defaults. Their presence does not
 activate them or replace the sequencing authority. Issues #389, #390, and #391
 were closed as superseded and are not current assignment authority.
+
+Issue #394 remains queued and incomplete; its dependencies and explicit PM
+activation still govern any Activity and History reconciliation.
 
 Keep detailed ordering in Current Product Sequence and explicit later PM
 decisions rather than duplicating a second roadmap here.
