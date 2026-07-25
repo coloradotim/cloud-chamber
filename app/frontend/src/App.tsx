@@ -9,12 +9,23 @@ import {
   type SelectedAtmosphereSummary,
 } from "./FunWithSoundings";
 import {
+  ExploreCuratedDefaultNotice,
   ExploreContextContent,
   ExploreInspector,
   ExploreSelectedEvidence,
   ExploreSecondarySections,
   IntegratedExploreWorkspace,
+  ReturnToCuratedViewControl,
+  type ExploreCuratedNotice,
+  type ExploreSecondarySection,
 } from "./IntegratedExploreWorkspace";
+import {
+  curatedResolutionExplanation,
+  resolveCuratedView,
+  TRADE_CUMULUS_INITIAL_VIEW,
+  tradeCumulusCuratedView,
+  type TradeCumulusCuratedView,
+} from "./exploreCuratedDefaults";
 import { MountainWavesExplore } from "./MountainWavesExplore";
 import { type MountainWavesSimulation, MountainWavesWorld } from "./MountainWavesWorld";
 import { NativeSlicePositionControl } from "./NativeSlicePositionControl";
@@ -32,7 +43,7 @@ import {
   type TradeCumulusWorldDetail,
   type TradeCumulusWorldSection,
 } from "./TradeCumulusWorld";
-import { True3DViewer } from "./True3DViewer";
+import { type CameraPreset, type CameraTransform, True3DViewer } from "./True3DViewer";
 import {
   type UpdraftLensDefaults,
   type UpdraftLensFrame,
@@ -11447,6 +11458,12 @@ export function VisualizerSceneShell({
   const [opacity, setOpacity] = useState(0.68);
   const [pointSize, setPointSize] = useState(11);
   const [focusedViewer, setFocusedViewer] = useState<"scene" | "slice" | null>(null);
+  const [cameraPreset, setCameraPreset] = useState<CameraPreset>("overview");
+  const [cameraTransform, setCameraTransform] = useState<CameraTransform | null>(null);
+  const [displayControlsOpen, setDisplayControlsOpen] = useState(false);
+  const [contextCollapsed, setContextCollapsed] = useState(false);
+  const [secondarySection, setSecondarySection] = useState<ExploreSecondarySection>("science");
+  const [curatedNotice, setCuratedNotice] = useState<ExploreCuratedNotice | null>(null);
   const [pointCloud, setPointCloud] = useState<PointCloudResponse | null>(null);
   const [showSlicePlanes, setShowSlicePlanes] = useState(true);
   const [sliceFieldName, setSliceFieldName] = useState("qc");
@@ -11484,6 +11501,7 @@ export function VisualizerSceneShell({
   const ordinaryExploreStateRef = useRef<OrdinaryExploreState | null>(null);
   const updraftLensRequestRef = useRef(0);
   const autoActivatedUpdraftLensResultRef = useRef<string | null>(null);
+  const initialCuratedResultRef = useRef<string | null>(null);
   const maxPoints = 50_000;
 
   useEffect(() => {
@@ -11501,6 +11519,13 @@ export function VisualizerSceneShell({
     setThreshold(1e-6);
     setOpacity(0.68);
     setPointSize(11);
+    setFocusedViewer(null);
+    setCameraPreset("overview");
+    setCameraTransform(null);
+    setDisplayControlsOpen(false);
+    setContextCollapsed(false);
+    setSecondarySection("science");
+    setCuratedNotice(null);
     setPointCloud(null);
     setShowSlicePlanes(true);
     setSliceFieldName("qc");
@@ -11528,6 +11553,7 @@ export function VisualizerSceneShell({
     setUpdraftLensWindMode("perturbation");
     ordinaryExploreStateRef.current = null;
     autoActivatedUpdraftLensResultRef.current = null;
+    initialCuratedResultRef.current = null;
     updraftLensRequestRef.current += 1;
     setSceneStatus("Loading scene data...");
     const defaultsRequest = fetchVisualizationDefaults(resultId).catch(() => null);
@@ -11849,22 +11875,116 @@ export function VisualizerSceneShell({
     ],
   );
 
+  const applyTradeCumulusCuratedView = useCallback(
+    (viewId: TradeCumulusCuratedView["viewId"], source: "initial" | "return") => {
+      const definition = tradeCumulusCuratedView(simulationRecord?.simulation_id, viewId);
+      const targetFieldId = definition?.fieldId ?? sliceFieldName;
+      const targetField = catalog?.available_fields.find(
+        (field) => field.raw_field_name === targetFieldId,
+      );
+      const resolution = resolveCuratedView(definition, {
+        availableViewIds: updraftLensDefaults ? ["field", "updraft_lens"] : ["field"],
+        availableFieldIds: catalog?.available_fields.map((field) => field.raw_field_name),
+        availableScaleIds: updraftLensDefaults ? [updraftLensDefaults.w_scale_id] : undefined,
+        timesSeconds: (targetField?.time_coordinate_values ?? []).filter(
+          (value): value is number => typeof value === "number" && Number.isFinite(value),
+        ),
+        planeCoordinatesKm:
+          updraftLensDefaults?.default_plane_coordinate !== null &&
+          updraftLensDefaults?.default_plane_coordinate !== undefined
+            ? [updraftLensDefaults.default_plane_coordinate]
+            : [],
+        planeNativeIndices: updraftLensDefaults ? [updraftLensDefaults.default_plane_index] : [],
+      });
+
+      setIsPlaybackRunning(false);
+      if (source === "return") {
+        setFocusedViewer(null);
+        setContextCollapsed(false);
+        setSecondarySection("science");
+        setSelectedRegion(null);
+      }
+      setSceneError(null);
+      setSliceError(null);
+      setPointCloudError(null);
+      setCameraTransform(null);
+      ordinaryExploreStateRef.current = null;
+      if (resolution.value) {
+        const curated = resolution.value.definition;
+        const planeIndex = resolution.value.planeNativeIndex ?? 0;
+        setTimeIndex(resolution.value.timeIndex);
+        setPlaybackTimeIndex(resolution.value.timeIndex);
+        setPlaybackSpeed(curated.playbackSpeed);
+        setActiveSlicePlane(curated.plane.orientation);
+        setSliceOrientation(
+          curated.plane.orientation === "vertical_y" ? "vertical_y" : "vertical_x",
+        );
+        setVerticalSliceIndex(planeIndex);
+        setSelectedFieldName(curated.cloudFieldId);
+        setSliceFieldName(
+          curated.viewId === "updraft_lens" ? curated.fieldId : curated.cloudFieldId,
+        );
+        setThreshold(curated.cloudThresholdKgKg);
+        setOpacity(curated.cloudOpacity);
+        setPointSize(curated.cloudPointSizePx);
+        setUpdraftLensOpacity(curated.lensOpacity);
+        setShowSlicePlanes(curated.showSlicePlane);
+        setShowUpdraftLensBoundary(curated.showCloudBoundary);
+        setShowUpdraftLensWind(curated.showHorizontalWind);
+        setUpdraftLensWindMode(curated.windMode);
+        setCameraPreset(curated.cameraPreset);
+        setCameraTransform(curated.cameraTransform);
+        if (source === "return") {
+          setDisplayControlsOpen(curated.displayControlsOpen);
+        }
+        setUpdraftLensError(null);
+        setUpdraftLensFrame(null);
+        setUpdraftLensActive(curated.viewId === "updraft_lens");
+        ordinaryExploreStateRef.current =
+          curated.viewId === "updraft_lens"
+            ? {
+                selectedFieldName: curated.cloudFieldId,
+                sliceFieldName: curated.cloudFieldId,
+                showSlicePlanes: curated.showSlicePlane,
+                threshold: curated.cloudThresholdKgKg,
+              }
+            : null;
+      }
+      if (source === "return" || resolution.status !== "applied") {
+        setCuratedNotice({
+          status: resolution.status,
+          message: curatedResolutionExplanation(resolution),
+        });
+      } else {
+        setCuratedNotice(null);
+      }
+    },
+    [catalog, simulationRecord?.simulation_id, sliceFieldName, updraftLensDefaults],
+  );
+
   useEffect(() => {
     if (
       !updraftLensEligible ||
       updraftLensActive ||
       !updraftLensDefaults ||
       !catalog ||
-      autoActivatedUpdraftLensResultRef.current === resultId
+      initialCuratedResultRef.current === resultId
     ) {
+      return;
+    }
+    initialCuratedResultRef.current = resultId;
+    if (tradeCumulusCuratedView(simulationRecord?.simulation_id, TRADE_CUMULUS_INITIAL_VIEW)) {
+      applyTradeCumulusCuratedView(TRADE_CUMULUS_INITIAL_VIEW, "initial");
       return;
     }
     autoActivatedUpdraftLensResultRef.current = resultId;
     handleUpdraftLensToggle(true);
   }, [
+    applyTradeCumulusCuratedView,
     catalog,
     handleUpdraftLensToggle,
     resultId,
+    simulationRecord?.simulation_id,
     updraftLensActive,
     updraftLensDefaults,
     updraftLensEligible,
@@ -12170,21 +12290,42 @@ export function VisualizerSceneShell({
       onBack={onBack}
       onCompare={onCompare}
       headerActions={
-        resultOptions && resultOptions.length > 0 && onSelectResult ? (
-          <label className="soundings-explore-run-selector">
-            <span>Experiment</span>
-            <select
-              aria-label="Soundings Experiment"
-              value={resultId}
-              onChange={(event) => onSelectResult(event.target.value)}
-            >
-              {resultOptions.map((option) => (
-                <option key={option.result_id} value={option.result_id}>
-                  {soundingsExploreOptionLabel(option)}
-                </option>
-              ))}
-            </select>
-          </label>
+        tradeCumulusCuratedView(
+          simulationRecord?.simulation_id,
+          updraftLensActive ? "updraft_lens" : "field",
+        ) ||
+        (resultOptions && resultOptions.length > 0 && onSelectResult) ? (
+          <>
+            {tradeCumulusCuratedView(
+              simulationRecord?.simulation_id,
+              updraftLensActive ? "updraft_lens" : "field",
+            ) && (
+              <ReturnToCuratedViewControl
+                onReturn={() =>
+                  applyTradeCumulusCuratedView(
+                    updraftLensActive ? "updraft_lens" : "field",
+                    "return",
+                  )
+                }
+              />
+            )}
+            {resultOptions && resultOptions.length > 0 && onSelectResult && (
+              <label className="soundings-explore-run-selector">
+                <span>Experiment</span>
+                <select
+                  aria-label="Soundings Experiment"
+                  value={resultId}
+                  onChange={(event) => onSelectResult(event.target.value)}
+                >
+                  {resultOptions.map((option) => (
+                    <option key={option.result_id} value={option.result_id}>
+                      {soundingsExploreOptionLabel(option)}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
+          </>
         ) : undefined
       }
     >
@@ -12192,6 +12333,7 @@ export function VisualizerSceneShell({
         className={`visualizer-shell${focusedViewer ? ` visualizer-shell-focused-${focusedViewer}` : ""}`}
         aria-label="Integrated Explore workspace"
       >
+        <ExploreCuratedDefaultNotice notice={curatedNotice} />
         {sceneError && (
           <div className="workspace-catalog-error" role="alert">
             <p>{sceneError}</p>
@@ -12274,6 +12416,12 @@ export function VisualizerSceneShell({
               showUpdraftLensBoundary={updraftLensActive && showUpdraftLensBoundary}
               showUpdraftLensLegend={false}
               compactWorkspace
+              compactDisplayControlsOpen={displayControlsOpen}
+              onCompactDisplayControlsOpenChange={setDisplayControlsOpen}
+              cameraPreset={cameraPreset}
+              onCameraPresetChange={setCameraPreset}
+              cameraTransform={cameraTransform}
+              onCameraTransformChange={setCameraTransform}
               maximized={focusedViewer === "scene"}
               onToggleMaximize={() =>
                 setFocusedViewer((current) => (current === "scene" ? null : "scene"))
@@ -12656,7 +12804,7 @@ export function VisualizerSceneShell({
             )}
           </div>
 
-          <ExploreInspector>
+          <ExploreInspector collapsed={contextCollapsed} onCollapsedChange={setContextCollapsed}>
             <ResultExplanationPanel
               result={result}
               simulationName={productSimulationName}
@@ -12819,6 +12967,8 @@ export function VisualizerSceneShell({
         )}
 
         <ExploreSecondarySections
+          activeSection={secondarySection}
+          onActiveSectionChange={setSecondarySection}
           sections={{
             science: (
               <TradeCumulusScience

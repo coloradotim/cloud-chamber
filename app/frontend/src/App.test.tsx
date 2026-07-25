@@ -4539,6 +4539,9 @@ describe("App", () => {
       `/fun-with-soundings/explore/${observedSoundingResultCard.result_id}`,
     );
     expect(runSelector).toHaveValue(observedSoundingResultCard.result_id);
+    expect(
+      screen.queryByRole("button", { name: "Return to curated view" }),
+    ).not.toBeInTheDocument();
 
     fireEvent.change(runSelector, { target: { value: secondObservedResult.result_id } });
     await waitFor(() => {
@@ -7776,6 +7779,115 @@ describe("App", () => {
       "aria-pressed",
       "true",
     );
+  });
+
+  it("returns the current Trade Cumulus Field or Lens to its authored presentation", async () => {
+    mockWorldScopedApp();
+    const worldFetch = vi.mocked(fetch).getMockImplementation();
+    vi.mocked(fetch).mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes(comparisonBaselineResultCard.result_id)) {
+        if (url.endsWith("/visualization/fields")) {
+          return Promise.resolve(
+            new Response(JSON.stringify(tradeCumulusFieldCatalog), { status: 200 }),
+          );
+        }
+        if (url.endsWith("/trade-cumulus-updraft-lens/defaults")) {
+          return Promise.resolve(
+            new Response(JSON.stringify(tradeCumulusUpdraftLensDefaults), { status: 200 }),
+          );
+        }
+        if (url.includes("/visualization/defaults")) {
+          return Promise.resolve(
+            new Response(JSON.stringify(tradeCumulusViewDefaults), { status: 200 }),
+          );
+        }
+        if (url.includes("/visualization/slice")) {
+          return Promise.resolve(
+            new Response(JSON.stringify(tradeCumulusSliceResponse(url)), { status: 200 }),
+          );
+        }
+      }
+      return (
+        worldFetch?.(input, init) ?? Promise.resolve(new Response("not found", { status: 404 }))
+      );
+    });
+    render(<App />);
+    fireEvent.click(await screen.findByRole("button", { name: "Enter Trade Cumulus" }));
+    fireEvent.click(
+      within(await screen.findByLabelText("Canonical BOMEX Baseline Simulation")).getByRole(
+        "button",
+        { name: "Explore" },
+      ),
+    );
+
+    const viewMode = await screen.findByLabelText("Explore view mode");
+    const lensToggle = within(viewMode).getByRole("button", { name: "Updraft Lens" });
+    await waitFor(() => expect(lensToggle).toHaveAttribute("aria-pressed", "true"));
+    const displayDetails = screen
+      .getByText("Display", { selector: "summary span" })
+      .closest("details");
+    expect(displayDetails).not.toBeNull();
+    fireEvent.click(screen.getByText("Display", { selector: "summary span" }));
+    fireEvent(displayDetails!, new Event("toggle"));
+    expect(displayDetails).toHaveAttribute("open");
+
+    fireEvent.change(screen.getByLabelText("Time"), { target: { value: "0" } });
+    fireEvent.click(screen.getByRole("button", { name: "Horizontal x-y" }));
+    fireEvent.click(screen.getByLabelText("Cloud boundary"));
+    fireEvent.click(screen.getByLabelText("Horizontal wind"));
+    fireEvent.click(screen.getByRole("button", { name: "Total wind" }));
+    fireEvent.change(screen.getByLabelText("3-D scalar field"), { target: { value: "qv" } });
+    fireEvent.change(screen.getByLabelText("Layer opacity"), { target: { value: "0.45" } });
+    fireEvent.change(screen.getByLabelText("Point size"), { target: { value: "14" } });
+    fireEvent.change(screen.getByLabelText("Lens opacity"), { target: { value: "0.75" } });
+    fireEvent.change(screen.getByLabelText("Camera view"), {
+      target: { value: "look_along_x" },
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Return to curated view" }));
+    await waitFor(() => expect(screen.getByLabelText("Time")).toHaveValue("3"));
+
+    expect(lensToggle).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("button", { name: "Vertical x-z" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    expect(screen.getByLabelText("Updraft Lens slice position")).toHaveValue("1");
+    expect(screen.getByLabelText("Cloud boundary")).toBeChecked();
+    expect(screen.getByLabelText("Horizontal wind")).toBeChecked();
+    expect(screen.getByRole("button", { name: "Local departures" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    expect(screen.getByLabelText("3-D scalar field")).toHaveValue("ql");
+    expect(screen.getByLabelText("Layer opacity")).toHaveValue("0.68");
+    expect(screen.getByLabelText("Point size")).toHaveValue("11");
+    expect(screen.getByLabelText("Lens opacity")).toHaveValue("0.9");
+    expect(screen.getByLabelText("Camera view")).toHaveValue("overview");
+    await waitFor(() => expect(displayDetails).not.toHaveAttribute("open"));
+
+    const fieldToggle = within(viewMode).getByRole("button", { name: "Field" });
+    fireEvent.click(fieldToggle);
+    await screen.findByLabelText("Slice field");
+    fireEvent.change(screen.getByLabelText("Time"), { target: { value: "0" } });
+    fireEvent.change(screen.getByLabelText("3-D scalar field"), { target: { value: "qv" } });
+    fireEvent.click(screen.getByRole("button", { name: "Horizontal layer" }));
+    fireEvent.change(screen.getByLabelText("Layer opacity"), { target: { value: "0.4" } });
+    fireEvent.change(screen.getByLabelText("Point size"), { target: { value: "15" } });
+
+    fireEvent.click(screen.getByRole("button", { name: "Return to curated view" }));
+    await waitFor(() => expect(screen.getByLabelText("Time")).toHaveValue("3"));
+
+    expect(fieldToggle).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByLabelText("3-D scalar field")).toHaveValue("ql");
+    expect(screen.getByLabelText("Slice field")).toHaveValue("ql");
+    expect(screen.getByRole("button", { name: "Vertical x-z slice" })).toHaveClass(
+      "active-control",
+    );
+    expect(screen.getByLabelText("Slice position")).toHaveValue("1");
+    expect(screen.getByLabelText("Layer opacity")).toHaveValue("0.68");
+    expect(screen.getByLabelText("Point size")).toHaveValue("11");
   });
 
   it("ignores stale Updraft Lens frame responses", async () => {

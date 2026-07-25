@@ -5383,6 +5383,29 @@ details[open] > summary {
   white-space: nowrap;
 }
 
+.explore-curated-default-notice {
+  position: absolute;
+  z-index: 14;
+  top: 0.45rem;
+  right: 0.45rem;
+  max-width: min(34rem, 72%);
+  margin: 0;
+  border-left: 3px solid var(--color-accent-primary);
+  padding: 0.42rem 0.65rem;
+  pointer-events: none;
+  background: var(--color-surface);
+  color: var(--color-text-secondary);
+  font-size: 0.82rem;
+  box-shadow: var(--shadow-soft);
+}
+
+.explore-curated-default-notice-partially_incompatible,
+.explore-curated-default-notice-technical_fallback {
+  border-left-color: var(--color-warning);
+  background: var(--color-warning-soft);
+  color: var(--color-text-primary);
+}
+
 /* Integrated Explore uses a fixed desktop cockpit instead of the legacy stacked workbench. */
 @media (min-width: 1100px) {
   .app-shell-explore {
@@ -5470,6 +5493,24 @@ details[open] > summary {
 
   .integrated-explore-actions button {
     padding: 0.42rem 0.75rem;
+  }
+
+  .integrated-explore-actions .return-to-curated-view {
+    border-color: var(--color-border-strong);
+    background: var(--color-surface);
+    color: var(--color-accent-primary);
+    box-shadow: none;
+  }
+
+  .integrated-explore-workspace
+    .visualizer-shell:has(> .explore-curated-default-notice-partially_incompatible),
+  .integrated-explore-workspace
+    .visualizer-shell:has(> .explore-curated-default-notice-technical_fallback),
+  .integrated-explore-workspace
+    .supercells-explore-shell:has(> .explore-curated-default-notice-partially_incompatible),
+  .integrated-explore-workspace
+    .supercells-explore-shell:has(> .explore-curated-default-notice-technical_fallback) {
+    padding-top: 3.4rem;
   }
 
   .integrated-explore-workspace .visualizer-shell {

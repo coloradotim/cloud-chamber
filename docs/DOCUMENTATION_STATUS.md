@@ -50,6 +50,7 @@ Keep product approval separate from software availability:
 | Compare | Related Simulations can be compared | One featured Trade Cumulus Comparison; no ordinary World-aware Compare |
 | Variation | Create a related Simulation from a World Simulation | Working Mountain Waves Lab path; no shared three-World workflow |
 | Explore | World-specific science in a shared application vocabulary | Implemented separately for all three accessible Worlds |
+| Curated Explore defaults | Authored Simulation and Field/Lens starting states with complete reset and visible fallback | Implemented across all three accessible Worlds; not durable user state |
 
 The three Worlds share product vocabulary and core workspace behavior but may
 legitimately differ in geometry, Lenses, controls, comparison questions, and
@@ -86,14 +87,15 @@ collapsible Context and shared below-the-fold Science, Notes, and Details
 structure. Per-Simulation Notes are the first durable content contract; complete
 Explore state and Saved Views remain unimplemented.
 
-The next approved program is personal scientific memory: define one versioned,
-World-aware serializable Explore-state contract before ordinary resume, named
-Saved Views, or Compare work.
+The authored curated-default and complete reset contract is complete through
+#438. The next approved program is #432, personal scientific memory: define one
+versioned, World-aware serializable Explore-state contract and make durable
+resume and named Saved Views consume the authored fallback before Compare work.
 
-Rewritten issue #394 and issues #432 through #438 record bounded
+Rewritten issue #394 and issues #432 through #437 record bounded
 follow-on product work for Activity and History, durable Explore state and
 Saved Views, Compare and Saved Comparisons, variation
-contracts, retained assets, and curated defaults. Their presence does not
+contracts, and retained assets. Their presence does not
 activate them or replace the sequencing authority. Issues #389, #390, and #391
 were closed as superseded and are not current assignment authority.
 

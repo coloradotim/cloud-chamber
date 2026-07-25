@@ -124,6 +124,33 @@ The sections use native model coordinates. Moving between a Lens and a direct
 slice preserves the selected orientation and position where the underlying
 data permits.
 
+## Curated Explore Defaults
+
+Each Cloud World now owns typed authored Explore presentations. Initial open
+and **Return to curated view** consume the same definitions; component
+initialization is not a second source of scientific defaults.
+
+| World and view | Authored presentation |
+| --- | --- |
+| Trade Cumulus Field | Simulation-specific modeled time and vertical x-z plane, cloud-liquid field, overview camera, accepted cloud opacity and point size |
+| Trade Cumulus Updraft Lens | The same Simulation-specific time and plane, `trade_cumulus_updraft_velocity_v1`, overview camera, cloud boundary, perturbation wind, and accepted Lens opacity |
+| Dry Ridge Field or Wave Structure Lens | 2,160 s, full domain, expanded height; Field retains its selected supported field, while Wave Structure uses vertical velocity, horizontal wind, and potential-temperature contours |
+| Boulder Windstorm Field, Wave Structure, or Wave Cloud Lens | 7,200 s, focus region, expanded height; Field retains its selected supported field, while each Lens restores its accepted overlays and fixed scale |
+| Supercells Rotating Updraft | 4,440 s, storm region, horizontal x-y at z = 3.167 km, look-along-y camera, and the accepted rotation and updraft-helicity evidence |
+| Supercells Cloud and Precipitation | 4,440 s, storm region, vertical x-z at y = 0.75 km, look-along-y camera, and the accepted hydrometeor-category presentation |
+| Supercells Low-Level Interactions | 4,440 s, storm region, horizontal x-y at z = 1.167 km, low-level camera, and the accepted rain, precipitating-condensate, wind, and vertical-motion evidence |
+
+Return restores the authored state for the currently active Field or Lens. It
+does not switch views unexpectedly, change Simulation, erase Notes, or start
+playback. It also restores modeled time, physical plane, viewport, geometry,
+camera, layers, overlays, display settings, selection, Context, and the
+secondary Science section where those dimensions apply.
+
+The resolver reports authored-default application, partial incompatibility, or
+a technical fallback. Missing times, planes, fields, scales, or layers are
+explained visibly; fallback does not rewrite the authored definition or claim
+that a substituted scientific presentation is equivalent.
+
 ## Shared Scientific Presentation
 
 Current Explore surfaces use:
@@ -185,12 +212,15 @@ information architecture.
 The implemented application does not yet provide:
 
 - durable Saved Views;
+- ordinary last-active Explore-state resume;
 - ordinary World-aware Compare beyond the featured Trade Cumulus Comparison;
 - one shared World-aware variation workflow across all accessible Worlds;
 - durable persistence for complete Explore or comparison workspaces.
 
 Per-Simulation Notes are durable content, but camera, time, Lens, overlay,
 selection, and other complete Explore workspace state are not yet persisted.
+The authored curated-default contract is implemented and is the fallback that
+future resume and Saved Views must consume.
 Older issues #389, #390, and #391 are closed as superseded by the current
 three-World implementation sequence; they should not be read as active roadmap
 authority.

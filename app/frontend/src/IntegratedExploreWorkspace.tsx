@@ -1,4 +1,4 @@
-import { type KeyboardEvent, type ReactNode, useId, useRef, useState } from "react";
+import { type KeyboardEvent, type ReactNode, useEffect, useId, useRef, useState } from "react";
 
 export type ExploreSecondarySection = "science" | "notes" | "details";
 
@@ -7,6 +7,11 @@ export type ExploreSecondaryContent = Record<ExploreSecondarySection, ReactNode>
 export type ExploreContextMetric = {
   label: string;
   value: ReactNode;
+};
+
+export type ExploreCuratedNotice = {
+  status: "applied" | "partially_incompatible" | "technical_fallback";
+  message: string;
 };
 
 export function IntegratedExploreWorkspace({
@@ -210,17 +215,24 @@ export function ExploreSelectedEvidence({
 export function ExploreSecondarySections({
   sections,
   label = "Simulation support",
+  activeSection: controlledActiveSection,
+  onActiveSectionChange,
 }: {
   sections: ExploreSecondaryContent;
   label?: string;
+  activeSection?: ExploreSecondarySection;
+  onActiveSectionChange?: (section: ExploreSecondarySection) => void;
 }) {
-  const [activeSection, setActiveSection] = useState<ExploreSecondarySection>("science");
+  const [internalActiveSection, setInternalActiveSection] =
+    useState<ExploreSecondarySection>("science");
+  const activeSection = controlledActiveSection ?? internalActiveSection;
   const baseId = useId();
   const tabRefs = useRef<Partial<Record<ExploreSecondarySection, HTMLButtonElement | null>>>({});
   const orderedSections: ExploreSecondarySection[] = ["science", "notes", "details"];
 
   function selectSection(section: ExploreSecondarySection, focus = false) {
-    setActiveSection(section);
+    if (controlledActiveSection === undefined) setInternalActiveSection(section);
+    onActiveSectionChange?.(section);
     if (focus) tabRefs.current[section]?.focus();
   }
 
@@ -280,5 +292,40 @@ export function ExploreSecondarySections({
         </section>
       ))}
     </section>
+  );
+}
+
+export function ReturnToCuratedViewControl({ onReturn }: { onReturn: () => void }) {
+  return (
+    <button
+      type="button"
+      className="return-to-curated-view"
+      title="Restore the authored presentation for the current Field or Lens"
+      onClick={onReturn}
+    >
+      Return to curated view
+    </button>
+  );
+}
+
+export function ExploreCuratedDefaultNotice({ notice }: { notice: ExploreCuratedNotice | null }) {
+  const [visible, setVisible] = useState(Boolean(notice));
+
+  useEffect(() => {
+    setVisible(Boolean(notice));
+    if (!notice || notice.status !== "applied") return;
+    const timer = window.setTimeout(() => setVisible(false), 1_800);
+    return () => window.clearTimeout(timer);
+  }, [notice]);
+
+  if (!notice || !visible) return null;
+  return (
+    <p
+      className={`explore-curated-default-notice explore-curated-default-notice-${notice.status}`}
+      role="status"
+      aria-live="polite"
+    >
+      {notice.message}
+    </p>
   );
 }

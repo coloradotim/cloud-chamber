@@ -23,6 +23,8 @@ vi.mock("./True3DViewer", () => ({
     cameraTransform,
     onCameraTransformChange,
     windOverlayLabel,
+    compactDisplayControlsOpen,
+    onCompactDisplayControlsOpenChange,
   }: {
     fieldLabel: string;
     activeSliceLabel: string;
@@ -42,12 +44,15 @@ vi.mock("./True3DViewer", () => ({
       up: [number, number, number];
     }) => void;
     windOverlayLabel?: string;
+    compactDisplayControlsOpen?: boolean;
+    onCompactDisplayControlsOpenChange?: (open: boolean) => void;
   }) => (
     <section aria-label="Mock 3-D storm scene">
       <h2>{fieldLabel}</h2>
       <p>{activeSliceLabel}</p>
       <p>Camera: {cameraPreset}</p>
       <p>Camera position: {cameraTransform?.position.join(",") ?? "default"}</p>
+      <p>Display controls: {compactDisplayControlsOpen ? "open" : "closed"}</p>
       {windOverlayLabel && <p>{windOverlayLabel}</p>}
       <button
         type="button"
@@ -66,6 +71,12 @@ vi.mock("./True3DViewer", () => ({
       </button>
       <button type="button" onClick={onToggleMaximize}>
         {maximized ? "Restore scene" : "Maximize scene"}
+      </button>
+      <button
+        type="button"
+        onClick={() => onCompactDisplayControlsOpenChange?.(!compactDisplayControlsOpen)}
+      >
+        Toggle mock display controls
       </button>
       {compactDisplayControls}
     </section>
@@ -113,7 +124,17 @@ const wScale = {
   fixed_across_time: true,
 };
 
-function field(key = "winterp", displayName = "Vertical velocity"): FieldLayer {
+const supercellScaleIds = {
+  rotating_updraft: "supercell_midlevel_vertical_velocity_v1",
+  cloud_precipitation: "supercell_total_condensate_v2",
+  low_level_interactions: "supercell_low_level_vertical_velocity_v1",
+} as const;
+
+function field(
+  key = "winterp",
+  displayName = "Vertical velocity",
+  scaleId = wScale.scale_id,
+): FieldLayer {
   return {
     key,
     display_name: displayName,
@@ -128,11 +149,12 @@ function field(key = "winterp", displayName = "Vertical velocity"): FieldLayer {
     ],
     selected_frame_minimum: -8,
     selected_frame_maximum: 12,
-    scale: wScale,
+    scale: { ...wScale, scale_id: scaleId },
   };
 }
 
 function sceneLayers(lens: LensId): VolumeLayer[] {
+  const lensScaleId = supercellScaleIds[lens];
   const base = {
     units: "m/s",
     evidence_kind: "native" as const,
@@ -148,7 +170,7 @@ function sceneLayers(lens: LensId): VolumeLayer[] {
     threshold_label: "Fixed retained-run scale",
     default_opacity: 0.8,
     default_point_size: 1,
-    scale: wScale,
+    scale: { ...wScale, scale_id: lensScaleId },
     categories: [],
   };
   if (lens === "cloud_precipitation") {
@@ -389,7 +411,10 @@ function frameFor(url: string): StormExaminationFrame {
               [0, 1, 2],
             ]
           : null,
-      primary: field(),
+      primary:
+        lens === "cloud_precipitation"
+          ? field("total_condensate", "Total condensate", supercellScaleIds.cloud_precipitation)
+          : field("winterp", "Vertical velocity", supercellScaleIds[lens]),
       overlays: {
         vertical_vorticity: field("zvort", "Vertical vorticity"),
         updraft_helicity: field("uh", "Updraft helicity"),
@@ -405,8 +430,8 @@ function frameFor(url: string): StormExaminationFrame {
       categories: null,
       wind_vectors: [{ x_km: 0, y_km: 10, u_m_s: 12, v_m_s: 5, magnitude_m_s: 13 }],
     },
-    xz_section: section("xz", "x", yCoordinates[yIndex] ?? 10),
-    yz_section: section("yz", "y", xCoordinates[xIndex] ?? 0),
+    xz_section: section(lens, "xz", "x", yCoordinates[yIndex] ?? 10),
+    yz_section: section(lens, "yz", "y", xCoordinates[xIndex] ?? 0),
     scene: {
       coordinate_extents_km: {
         x: { min: viewport === "storm" ? -30 : -60, max: viewport === "storm" ? 30 : 60 },
@@ -444,7 +469,12 @@ function frameFor(url: string): StormExaminationFrame {
   };
 }
 
-function section(orientation: "xz" | "yz", horizontal: "x" | "y", coordinate: number) {
+function section(
+  lens: LensId,
+  orientation: "xz" | "yz",
+  horizontal: "x" | "y",
+  coordinate: number,
+) {
   return {
     orientation,
     title: `${orientation} section at ${orientation === "xz" ? "y" : "x"} = ${coordinate.toFixed(1)} km`,
@@ -453,7 +483,10 @@ function section(orientation: "xz" | "yz", horizontal: "x" | "y", coordinate: nu
     horizontal_km: [-10, 0, 10],
     z_km: [0.5, 3, 8],
     cross_section_coordinate_km: coordinate,
-    primary: field(),
+    primary:
+      lens === "cloud_precipitation"
+        ? field("total_condensate", "Total condensate", supercellScaleIds.cloud_precipitation)
+        : field("winterp", "Vertical velocity", supercellScaleIds[lens]),
     overlays: {
       total_condensate: field("total_condensate", "Total condensate"),
       precipitating_condensate: field("precipitating_condensate", "Precipitating condensate"),
@@ -801,6 +834,105 @@ describe("SupercellsExplore", () => {
     expect(await within(context).findByText("Selected cell")).toBeVisible();
     expect(within(context).getByRole("heading", { name: "Native-grid evidence" })).toBeVisible();
   });
+
+  it.each([
+    {
+      lens: "rotating_updraft" as const,
+      button: "Rotating Updraft",
+      orientation: "Horizontal x-y",
+      layer: "Storm cloud body",
+      opacity: "1",
+      pointSize: "1",
+      camera: "look_along_y",
+      positionLabel: "Horizontal x-y z position",
+      positionValue: "1",
+    },
+    {
+      lens: "cloud_precipitation" as const,
+      button: "Cloud and Precipitation",
+      orientation: "Vertical x-z",
+      layer: "Dominant hydrometeor",
+      opacity: "0.9",
+      pointSize: "0.9",
+      camera: "look_along_y",
+      positionLabel: "Vertical x-z y position",
+      positionValue: "1",
+    },
+    {
+      lens: "low_level_interactions" as const,
+      button: "Low-Level Interactions",
+      orientation: "Horizontal x-y",
+      layer: "Low-level vertical motion",
+      opacity: "1",
+      pointSize: "1",
+      camera: "low_level",
+      positionLabel: "Horizontal x-y z position",
+      positionValue: "0",
+    },
+  ])(
+    "returns $button to its complete authored presentation without switching lenses",
+    async ({
+      lens,
+      button,
+      orientation,
+      layer,
+      opacity,
+      pointSize,
+      camera,
+      positionLabel,
+      positionValue,
+    }) => {
+      render(<SupercellsExplore simulation={simulation} onBack={vi.fn()} />);
+      await waitForLensContext("rotating_updraft");
+      if (lens !== "rotating_updraft") {
+        fireEvent.click(screen.getByRole("button", { name: button }));
+        await waitForLensContext(lens);
+      }
+      await waitFor(() => expect(screen.getByLabelText(layer)).toBeInTheDocument());
+
+      fireEvent.click(screen.getByRole("button", { name: "Full domain" }));
+      const orientationControls = within(screen.getByLabelText("Slice orientation"));
+      fireEvent.click(
+        orientationControls.getByRole("button", {
+          name: orientation === "Vertical x-z" ? "Horizontal x-y" : "Vertical y-z",
+        }),
+      );
+      fireEvent.change(screen.getByLabelText("Saved output time"), {
+        target: { value: "10" },
+      });
+      fireEvent.click(screen.getByRole("button", { name: "Move mock camera" }));
+      fireEvent.click(screen.getByRole("button", { name: "Toggle mock display controls" }));
+      expect(screen.getByText("Display controls: open")).toBeVisible();
+      fireEvent.click(screen.getByLabelText(layer));
+      fireEvent.change(screen.getByRole("slider", { name: /Opacity/ }), {
+        target: { value: "0.35" },
+      });
+      fireEvent.change(screen.getByRole("slider", { name: /Point size/ }), {
+        target: { value: "1.7" },
+      });
+
+      fireEvent.click(screen.getByRole("button", { name: "Return to curated view" }));
+      await waitFor(() => expect(screen.getByLabelText("Saved output time")).toHaveValue("37"));
+
+      expect(screen.getByRole("button", { name: button })).toHaveAttribute("aria-pressed", "true");
+      expect(screen.getByRole("button", { name: "Storm region" })).toHaveAttribute(
+        "aria-pressed",
+        "true",
+      );
+      expect(
+        within(screen.getByLabelText("Slice orientation")).getByRole("button", {
+          name: orientation,
+        }),
+      ).toHaveAttribute("aria-pressed", "true");
+      expect(screen.getByLabelText(positionLabel)).toHaveValue(positionValue);
+      expect(screen.getByLabelText(layer)).toBeChecked();
+      expect(screen.getByRole("slider", { name: /Opacity/ })).toHaveValue(opacity);
+      expect(screen.getByRole("slider", { name: /Point size/ })).toHaveValue(pointSize);
+      expect(screen.getByLabelText("Mock 3-D storm scene")).toHaveTextContent(`Camera: ${camera}`);
+      expect(screen.getByText("Camera position: default")).toBeVisible();
+      expect(screen.getByText("Display controls: closed")).toBeVisible();
+    },
+  );
 
   it("preserves the lens and time while maximizing and restoring either scientific view", async () => {
     render(<SupercellsExplore simulation={simulation} onBack={vi.fn()} />);

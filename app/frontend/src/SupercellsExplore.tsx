@@ -1,12 +1,23 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import {
+  ExploreCuratedDefaultNotice,
   ExploreContextContent,
   ExploreInspector,
   ExploreSelectedEvidence,
   ExploreSecondarySections,
   IntegratedExploreWorkspace,
+  ReturnToCuratedViewControl,
+  type ExploreCuratedNotice,
+  type ExploreSecondarySection,
 } from "./IntegratedExploreWorkspace";
+import {
+  curatedResolutionExplanation,
+  resolveCuratedView,
+  SUPERCELLS_CURATED_VIEWS,
+  SUPERCELLS_INITIAL_LENS,
+  supercellsCuratedView,
+} from "./exploreCuratedDefaults";
 import { NativeSlicePositionControl } from "./NativeSlicePositionControl";
 import { SimulationNotes } from "./SimulationNotes";
 import type { SupercellSimulation } from "./SupercellsWorld";
@@ -48,6 +59,7 @@ type LensPresentation = {
   categoryCodes: number[];
   cameraPreset: CameraPreset;
   cameraTransform: CameraTransform | null;
+  displayControlsOpen: boolean;
   sceneOpacity: number;
   scenePointSize: number;
   selection: Selection | null;
@@ -75,7 +87,7 @@ export function SupercellsExplore({
   simulation: SupercellSimulation;
   onBack: () => void;
 }) {
-  const [lens, setLens] = useState<LensId>("rotating_updraft");
+  const [lens, setLens] = useState<LensId>(SUPERCELLS_INITIAL_LENS);
   const [timeIndex, setTimeIndex] = useState(simulation.default_explore_time_index);
   const [frame, setFrame] = useState<StormExaminationFrame | null>(null);
   const [presentations, setPresentations] =
@@ -88,6 +100,7 @@ export function SupercellsExplore({
     categoryCodes,
     cameraPreset,
     cameraTransform,
+    displayControlsOpen,
     sceneOpacity,
     scenePointSize,
     selection,
@@ -96,6 +109,8 @@ export function SupercellsExplore({
   const visibleLayerKeys = presentation.visibleLayerKeys ?? [];
   const [focusedViewer, setFocusedViewer] = useState<FocusedViewer>(null);
   const [contextCollapsed, setContextCollapsed] = useState(false);
+  const [secondarySection, setSecondarySection] = useState<ExploreSecondarySection>("science");
+  const [curatedNotice, setCuratedNotice] = useState<ExploreCuratedNotice | null>(null);
   const [playing, setPlaying] = useState(false);
   const [playbackSpeed, setPlaybackSpeed] = useState(1);
   const [loading, setLoading] = useState(true);
@@ -103,6 +118,7 @@ export function SupercellsExplore({
   const [retryNonce, setRetryNonce] = useState(0);
   const frameCache = useRef(new Map<string, StormExaminationFrame>());
   const contextBeforeEvidenceFocus = useRef(false);
+  const initialCuratedSimulationRef = useRef<string | null>(null);
 
   const requestKey = frameRequestKey(lens, viewport, timeIndex, selection);
   const loadFrame = useCallback(
@@ -152,19 +168,6 @@ export function SupercellsExplore({
     void loadFrame(controller.signal);
     return () => controller.abort();
   }, [loadFrame, retryNonce]);
-
-  useEffect(() => {
-    if (!frame?.scene || frame.lens_id !== lens || presentations[lens].visibleLayerKeys !== null)
-      return;
-    const layerKeys = frame.scene.layers
-      .filter((layer) => layer.default_visible)
-      .map((layer) => layer.key);
-    if (lens === "low_level_interactions") layerKeys.push("model_relative_wind");
-    setPresentations((current) => ({
-      ...current,
-      [lens]: { ...current[lens], visibleLayerKeys: layerKeys },
-    }));
-  }, [frame, lens, presentations]);
 
   useEffect(() => {
     if (!playing || loading || !frame) return;
@@ -265,12 +268,98 @@ export function SupercellsExplore({
     setFocusedViewer("evidence");
   }
 
+  const applyCuratedView = useCallback(
+    (source: "initial" | "return") => {
+      const definition = supercellsCuratedView(simulation.simulation_id, lens);
+      const authoredEvidenceView = definition?.evidenceOrientation ?? evidenceView;
+      const authoredSlice = frame ? slicePositionState(frame, authoredEvidenceView, null) : null;
+      const availableScaleIds = frame
+        ? [
+            frame.plan.primary.scale?.scale_id,
+            frame.xz_section.primary.scale?.scale_id,
+            frame.yz_section.primary.scale?.scale_id,
+            ...(frame.scene?.layers.map((layer) => layer.scale?.scale_id) ?? []),
+          ].filter((scaleId): scaleId is string => Boolean(scaleId))
+        : undefined;
+      const availableLayerIds = frame
+        ? [...(frame.scene?.layers.map((layer) => layer.key) ?? []), "model_relative_wind"]
+        : undefined;
+      const resolution = resolveCuratedView(definition, {
+        availableViewIds: LENSES.map((item) => item.id),
+        availableScaleIds,
+        availableLayerIds,
+        timesSeconds: frame?.times_seconds ?? [],
+        planeCoordinatesKm: authoredSlice?.coordinatesKm,
+        planeNativeIndices: authoredSlice?.nativeIndices,
+      });
+
+      if (source === "return") {
+        setPlaying(false);
+        setFocusedViewer(null);
+        setContextCollapsed(false);
+        setSecondarySection("science");
+        setError(null);
+      }
+      if (resolution.value && frame) {
+        const curated = resolution.value.definition;
+        const nextSelection = {
+          xIndex: frame.selected_point.x_index,
+          yIndex: frame.selected_point.y_index,
+          zIndex: frame.selected_point.z_index,
+        };
+        const planeIndex = resolution.value.planeNativeIndex;
+        if (planeIndex !== null) {
+          if (curated.plane.orientation === "horizontal") nextSelection.zIndex = planeIndex;
+          if (curated.plane.orientation === "vertical_x") nextSelection.yIndex = planeIndex;
+          if (curated.plane.orientation === "vertical_y") nextSelection.xIndex = planeIndex;
+        }
+        setTimeIndex(resolution.value.timeIndex);
+        if (source === "return") {
+          setPlaybackSpeed(curated.playbackSpeed);
+          setPresentations((current) => ({
+            ...current,
+            [lens]: {
+              viewport: curated.viewport,
+              evidenceView: curated.evidenceOrientation,
+              overlays: { ...curated.overlays },
+              visibleLayerKeys: [...curated.visibleLayerIds],
+              categoryCodes: [...curated.hydrometeorCategoryCodes],
+              cameraPreset: curated.cameraPreset,
+              cameraTransform: curated.cameraTransform,
+              displayControlsOpen: curated.displayControlsOpen,
+              sceneOpacity: curated.sceneOpacity,
+              scenePointSize: curated.scenePointSize,
+              selection: nextSelection,
+              selectedEvidenceVisible: curated.selectedEvidenceVisible,
+            },
+          }));
+        }
+      }
+      if (source === "return" || resolution.status !== "applied") {
+        setCuratedNotice({
+          status: resolution.status,
+          message: curatedResolutionExplanation(resolution),
+        });
+      } else {
+        setCuratedNotice(null);
+      }
+    },
+    [evidenceView, frame, lens, simulation.simulation_id],
+  );
+
+  useEffect(() => {
+    if (!frame || initialCuratedSimulationRef.current === simulation.simulation_id) return;
+    initialCuratedSimulationRef.current = simulation.simulation_id;
+    applyCuratedView("initial");
+  }, [applyCuratedView, frame, simulation.simulation_id]);
+
   return (
     <IntegratedExploreWorkspace
       worldName="Supercells"
       simulationName={simulation.display_name}
       backLabel="Back to Supercells"
       onBack={onBack}
+      headerActions={<ReturnToCuratedViewControl onReturn={() => applyCuratedView("return")} />}
     >
       <section
         className={`supercells-explore-shell${
@@ -278,6 +367,7 @@ export function SupercellsExplore({
         }`}
         aria-label="Supercells integrated Explore workspace"
       >
+        <ExploreCuratedDefaultNotice notice={curatedNotice} />
         <div
           className={`supercells-workbench${
             contextCollapsed ? " supercells-context-collapsed" : ""
@@ -332,6 +422,10 @@ export function SupercellsExplore({
                 windArrowDomainFraction={0.055}
                 compactWorkspace
                 compactDisplayLabel="3-D layers"
+                compactDisplayControlsOpen={displayControlsOpen}
+                onCompactDisplayControlsOpenChange={(next) =>
+                  updatePresentation({ displayControlsOpen: next })
+                }
                 maximized={focusedViewer === "scene"}
                 onToggleMaximize={() =>
                   setFocusedViewer((current) => (current === "scene" ? null : "scene"))
@@ -518,6 +612,8 @@ export function SupercellsExplore({
         />
 
         <ExploreSecondarySections
+          activeSection={secondarySection}
+          onActiveSectionChange={setSecondarySection}
           sections={{
             science: <SupercellScience frame={frame} lens={lens} />,
             notes: (
@@ -1122,62 +1218,26 @@ function Metric({ label, value }: { label: string; value: string }) {
   );
 }
 
-function overlayDefaults(lens: LensId): OverlayState {
-  return {
-    rotation: lens === "rotating_updraft",
-    updraftHelicity: lens === "rotating_updraft",
-    reflectivity: false,
-    condensate: lens === "rotating_updraft",
-    rain: lens === "low_level_interactions",
-    wind: lens === "low_level_interactions",
-    precipitatingCondensate: lens === "low_level_interactions",
-    verticalMotion: true,
-  };
-}
-
 function lensPresentationDefaults(): Record<LensId, LensPresentation> {
-  const categoryCodes = HYDROMETEOR_CODES.map((item) => item.code);
-  return {
-    rotating_updraft: {
-      viewport: "storm",
-      evidenceView: "plan",
-      overlays: overlayDefaults("rotating_updraft"),
-      visibleLayerKeys: null,
-      categoryCodes,
-      cameraPreset: "look_along_y",
-      cameraTransform: null,
-      sceneOpacity: 1,
-      scenePointSize: 1,
-      selection: null,
-      selectedEvidenceVisible: false,
-    },
-    cloud_precipitation: {
-      viewport: "storm",
-      evidenceView: "xz",
-      overlays: overlayDefaults("cloud_precipitation"),
-      visibleLayerKeys: null,
-      categoryCodes,
-      cameraPreset: "look_along_y",
-      cameraTransform: null,
-      sceneOpacity: 0.9,
-      scenePointSize: 0.9,
-      selection: null,
-      selectedEvidenceVisible: false,
-    },
-    low_level_interactions: {
-      viewport: "storm",
-      evidenceView: "plan",
-      overlays: overlayDefaults("low_level_interactions"),
-      visibleLayerKeys: null,
-      categoryCodes,
-      cameraPreset: "low_level",
-      cameraTransform: null,
-      sceneOpacity: 1,
-      scenePointSize: 1,
-      selection: null,
-      selectedEvidenceVisible: false,
-    },
-  };
+  return Object.fromEntries(
+    Object.entries(SUPERCELLS_CURATED_VIEWS).map(([lensId, curated]) => [
+      lensId,
+      {
+        viewport: curated.viewport,
+        evidenceView: curated.evidenceOrientation,
+        overlays: { ...curated.overlays },
+        visibleLayerKeys: [...curated.visibleLayerIds],
+        categoryCodes: [...curated.hydrometeorCategoryCodes],
+        cameraPreset: curated.cameraPreset,
+        cameraTransform: curated.cameraTransform,
+        displayControlsOpen: curated.displayControlsOpen,
+        sceneOpacity: curated.sceneOpacity,
+        scenePointSize: curated.scenePointSize,
+        selection: null,
+        selectedEvidenceVisible: curated.selectedEvidenceVisible,
+      },
+    ]),
+  ) as Record<LensId, LensPresentation>;
 }
 
 function filterHydrometeorCategories(

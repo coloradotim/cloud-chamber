@@ -1,4 +1,5 @@
 .supercells-explore-shell {
+  position: relative;
   display: grid;
   grid-template-rows: minmax(32rem, calc(100vh - 21rem)) auto auto auto;
   gap: 8px;
