@@ -250,15 +250,16 @@ export function useExploreStateLibrary(
       if (!worldId || !simulationId) throw new Error("Stable Simulation identity is unavailable.");
       const identity = `${worldId}/${simulationId}`;
       const signature = JSON.stringify(state);
-      if (
-        signature === lastResumeSignature.current ||
-        signature === activeResumeSignature.current ||
-        signature === queuedResume.current?.signature
-      ) {
-        return resumeDrain.current ?? Promise.resolve();
+      if (resumeDrain.current) {
+        if (signature === activeResumeSignature.current) {
+          queuedResume.current = null;
+        } else {
+          queuedResume.current = { state, signature };
+        }
+        return resumeDrain.current;
       }
+      if (signature === lastResumeSignature.current) return Promise.resolve();
       queuedResume.current = { state, signature };
-      if (resumeDrain.current) return resumeDrain.current;
 
       const drain = async () => {
         setSavingResume(true);

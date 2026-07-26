@@ -401,4 +401,120 @@ describe("useExploreStateLibrary", () => {
     expect(result.current.library?.last_active?.state.model_time_seconds).toBe(1_800);
     expect(persistedState.model_time_seconds).toBe(1_800);
   });
+
+  it("clears a different queued state when the newest state matches the active write", async () => {
+    const activeWrite = deferred<Response>();
+    const requestedStates: TradeCumulusExploreState[] = [];
+    const persisted = { state: null as TradeCumulusExploreState | null };
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((_input: RequestInfo | URL, init?: RequestInit) => {
+        if (init?.method !== "PUT") {
+          return Promise.resolve(
+            new Response(JSON.stringify(libraryResponse(null)), {
+              status: 200,
+              headers: { "Content-Type": "application/json" },
+            }),
+          );
+        }
+        const state = JSON.parse(String(init.body)).state as TradeCumulusExploreState;
+        requestedStates.push(state);
+        return activeWrite.promise.then((response) => {
+          persisted.state = state;
+          return response;
+        });
+      }),
+    );
+    const { result } = renderHook(() =>
+      useExploreStateLibrary("trade_cumulus", "trade_cumulus_canonical_bomex"),
+    );
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    const activeState = { ...tradeState, model_time_seconds: 900 };
+    const supersededState = { ...tradeState, model_time_seconds: 1_800 };
+    let drain!: Promise<void>;
+    act(() => {
+      drain = result.current.saveResume(activeState);
+      void result.current.saveResume(supersededState);
+      void result.current.saveResume(activeState);
+    });
+
+    expect(requestedStates).toEqual([activeState]);
+    expect(result.current.savingResume).toBe(true);
+    activeWrite.resolve(
+      new Response(JSON.stringify(libraryResponse(activeState)), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+    await act(async () => drain);
+
+    expect(requestedStates).toEqual([activeState]);
+    expect(result.current.savingResume).toBe(false);
+    expect(result.current.library?.last_active?.state.model_time_seconds).toBe(900);
+    expect(persisted.state?.model_time_seconds).toBe(900);
+  });
+
+  it("rewrites the persisted state when a different active write could overwrite it", async () => {
+    const activeWrite = deferred<Response>();
+    const latestWrite = deferred<Response>();
+    const persistedState = { ...tradeState, model_time_seconds: 900 };
+    let simulatedPersistedState = persistedState;
+    const requestedStates: TradeCumulusExploreState[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((_input: RequestInfo | URL, init?: RequestInit) => {
+        if (init?.method !== "PUT") {
+          return Promise.resolve(
+            new Response(JSON.stringify(libraryResponse(persistedState)), {
+              status: 200,
+              headers: { "Content-Type": "application/json" },
+            }),
+          );
+        }
+        const state = JSON.parse(String(init.body)).state as TradeCumulusExploreState;
+        requestedStates.push(state);
+        const write = requestedStates.length === 1 ? activeWrite.promise : latestWrite.promise;
+        return write.then((response) => {
+          simulatedPersistedState = state;
+          return response;
+        });
+      }),
+    );
+    const { result } = renderHook(() =>
+      useExploreStateLibrary("trade_cumulus", "trade_cumulus_canonical_bomex"),
+    );
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    const interveningState = { ...tradeState, model_time_seconds: 1_800 };
+    let drain!: Promise<void>;
+    act(() => {
+      drain = result.current.saveResume(interveningState);
+      void result.current.saveResume(persistedState);
+    });
+
+    expect(requestedStates).toEqual([interveningState]);
+    expect(result.current.savingResume).toBe(true);
+    activeWrite.resolve(
+      new Response(JSON.stringify(libraryResponse(interveningState)), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+    await waitFor(() => expect(requestedStates).toEqual([interveningState, persistedState]));
+    expect(result.current.library?.last_active?.state.model_time_seconds).toBe(900);
+    expect(result.current.savingResume).toBe(true);
+
+    latestWrite.resolve(
+      new Response(JSON.stringify(libraryResponse(persistedState)), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+    await act(async () => drain);
+
+    expect(result.current.savingResume).toBe(false);
+    expect(result.current.library?.last_active?.state.model_time_seconds).toBe(900);
+    expect(simulatedPersistedState.model_time_seconds).toBe(900);
+  });
 });
