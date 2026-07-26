@@ -51,6 +51,12 @@ from cloud_chamber.supercell_benchmark import (
     sha256_file,
     verify_gate_a_source_lock,
 )
+from cloud_chamber.supercell_hodograph import (
+    STRAIGHT_LINE_HODOGRAPH_ARTIFACT_FILENAME,
+    STRAIGHT_LINE_HODOGRAPH_CUSTOMIZATION_KIND,
+    STRAIGHT_LINE_HODOGRAPH_TARGET,
+    straight_line_hodograph_artifact,
+)
 
 SOURCE_RUN_ID = "quarter-circle-supercell-official-20260722T142521Z"
 SOURCE_EVIDENCE_FILENAME = "supercell_gate_b_evidence.json"
@@ -59,7 +65,21 @@ PRESENTATION_RUN_ID = "quarter-circle-supercell-presentation-v1-20260723"
 PRESENTATION_CASE_ID = "cm1_r21_1_quarter_circle_supercell_presentation_v1"
 CHARACTERIZATION_RUN_ID = "quarter-circle-supercell-presentation-characterization-20260723"
 CHARACTERIZATION_CASE_ID = "cm1_r21_1_quarter_circle_supercell_characterization_v1"
+STRAIGHT_LINE_PRESENTATION_RUN_ID = "straight-line-supercell-presentation-v1-20260726"
+STRAIGHT_LINE_PRESENTATION_CASE_ID = "cm1_r21_1_straight_line_supercell_presentation_v1"
+STRAIGHT_LINE_CHARACTERIZATION_RUN_ID = (
+    "straight-line-supercell-presentation-characterization-20260726"
+)
+STRAIGHT_LINE_CHARACTERIZATION_CASE_ID = "cm1_r21_1_straight_line_supercell_characterization_v1"
+QUARTER_CIRCLE_SIMULATION_ID = "supercells_quarter_circle_reference"
+STRAIGHT_LINE_SIMULATION_ID = "supercells_straight_line_hodograph"
 MINIMUM_POST_RUN_FREE_BYTES = 5 * 1024**3
+MEASURED_REFERENCE_RETAINED_BYTES = 8_873_437_520
+FINAL_RUN_STORAGE_RESERVATION_BYTES = 12 * 1024**3
+FINAL_CAMPAIGN_RUN_IDS = (
+    PRESENTATION_RUN_ID,
+    STRAIGHT_LINE_PRESENTATION_RUN_ID,
+)
 
 REQUIRED_3D_FIELDS = (
     "th",
@@ -181,6 +201,7 @@ class SupercellPresentationSpec:
     case_id: str
     duration_seconds: int
     output_cadence_seconds: int
+    hodograph: Literal["quarter_circle", "straight_line"] = "quarter_circle"
 
     @property
     def expected_times_seconds(self) -> tuple[int, ...]:
@@ -188,11 +209,33 @@ class SupercellPresentationSpec:
 
     @property
     def changed_assignments(self) -> dict[str, str]:
-        return {
+        assignments = {
             **BASE_PRESENTATION_ASSIGNMENTS,
             "timax": _fortran_float(self.duration_seconds),
             "tapfrq": _fortran_float(self.output_cadence_seconds),
         }
+        if self.hodograph == "straight_line":
+            assignments["iwnd"] = "12"
+        return assignments
+
+    @property
+    def expected_science_assignments(self) -> dict[str, str]:
+        return {
+            **LOCKED_SCIENCE_ASSIGNMENTS,
+            "iwnd": "12" if self.hodograph == "straight_line" else "2",
+        }
+
+    @property
+    def simulation_id(self) -> str:
+        if self.hodograph == "straight_line":
+            return STRAIGHT_LINE_SIMULATION_ID
+        return QUARTER_CIRCLE_SIMULATION_ID
+
+    @property
+    def display_name(self) -> str:
+        if self.hodograph == "straight_line":
+            return "Straight-Line Hodograph Supercell"
+        return "Quarter-Circle Supercell"
 
     @property
     def scalar_cells(self) -> int:
@@ -217,6 +260,22 @@ PRESENTATION_SPEC = SupercellPresentationSpec(
     duration_seconds=10_800,
     output_cadence_seconds=120,
 )
+STRAIGHT_LINE_CHARACTERIZATION_SPEC = SupercellPresentationSpec(
+    kind="characterization",
+    run_id=STRAIGHT_LINE_CHARACTERIZATION_RUN_ID,
+    case_id=STRAIGHT_LINE_CHARACTERIZATION_CASE_ID,
+    duration_seconds=300,
+    output_cadence_seconds=300,
+    hodograph="straight_line",
+)
+STRAIGHT_LINE_PRESENTATION_SPEC = SupercellPresentationSpec(
+    kind="final",
+    run_id=STRAIGHT_LINE_PRESENTATION_RUN_ID,
+    case_id=STRAIGHT_LINE_PRESENTATION_CASE_ID,
+    duration_seconds=10_800,
+    output_cadence_seconds=120,
+    hodograph="straight_line",
+)
 
 
 class NamelistDifference(BaseModel):
@@ -230,6 +289,7 @@ class NamelistDifference(BaseModel):
         "presentation_grid",
         "presentation_timing",
         "bounded_output_inventory",
+        "controlled_hodograph_geometry",
     ]
 
 
@@ -244,6 +304,14 @@ class PresentationStorageEstimate(BaseModel):
     uncompressed_numeric_history_floor_bytes: int
     compression_credit_bytes: Literal[0] = 0
     minimum_post_run_free_bytes: int = MINIMUM_POST_RUN_FREE_BYTES
+    gate_basis: Literal[
+        "uncompressed_numeric_floor",
+        "measured_retained_campaign_reservation",
+    ] = "uncompressed_numeric_floor"
+    measured_reference_retained_bytes: int | None = None
+    per_final_run_reservation_bytes: int | None = None
+    final_campaign_run_ids: list[str] = Field(default_factory=list)
+    final_campaign_runs_remaining: int = 1
     required_free_bytes: int
     available_free_bytes: int
     passed: bool
@@ -269,6 +337,8 @@ class SupercellPresentationEvidence(BaseModel):
     kind: Literal["characterization", "final"]
     run_id: str
     case_id: str
+    simulation_id: str
+    hodograph: Literal["quarter_circle", "straight_line"]
     source_run_id: str = SOURCE_RUN_ID
     implementation_commit: str
     grid: dict[str, int | float]
@@ -286,6 +356,7 @@ class SupercellPresentationEvidence(BaseModel):
     numbered_history_bytes: int
     retained_run_bytes: int
     available_free_bytes_after_validation: int
+    source_customization: dict[str, Any] | None = None
     runtime_warnings: list[str] = Field(default_factory=list)
     normal_completion: bool
 
@@ -300,12 +371,22 @@ class SupercellPresentationPackage:
     implementation_commit: str
 
 
-def spec_for_kind(kind: str) -> SupercellPresentationSpec:
+def spec_for_kind(
+    kind: str,
+    hodograph: str = "quarter_circle",
+) -> SupercellPresentationSpec:
+    if hodograph == "straight_line":
+        if kind == "characterization":
+            return STRAIGHT_LINE_CHARACTERIZATION_SPEC
+        if kind == "final":
+            return STRAIGHT_LINE_PRESENTATION_SPEC
     if kind == "characterization":
         return CHARACTERIZATION_SPEC
     if kind == "final":
         return PRESENTATION_SPEC
-    raise SupercellPresentationError(f"Unknown presentation-run kind: {kind}")
+    raise SupercellPresentationError(
+        f"Unknown presentation-run selection: kind={kind}, hodograph={hodograph}."
+    )
 
 
 def render_presentation_namelist(
@@ -356,7 +437,7 @@ def render_presentation_namelist(
 
     if {item.name for item in differences} != set(spec.changed_assignments):
         raise SupercellPresentationError("Presentation namelist differences are incomplete.")
-    for name, expected in LOCKED_SCIENCE_ASSIGNMENTS.items():
+    for name, expected in spec.expected_science_assignments.items():
         if not _same_assignment(generated.get(name), expected):
             raise SupercellPresentationError(f"Scientific assignment {name} did not remain fixed.")
 
@@ -383,13 +464,37 @@ def estimate_storage(
     ) * 4
     floor = history_bytes * len(spec.expected_times_seconds)
     available = shutil.disk_usage(target_dir).free
+    gate_basis: Literal[
+        "uncompressed_numeric_floor",
+        "measured_retained_campaign_reservation",
+    ] = "uncompressed_numeric_floor"
+    measured_reference_retained_bytes = None
+    per_final_run_reservation_bytes = None
+    campaign_run_ids: list[str] = []
+    campaign_runs_remaining = 1
     required = floor + MINIMUM_POST_RUN_FREE_BYTES
+    if spec.kind == "final":
+        gate_basis = "measured_retained_campaign_reservation"
+        measured_reference_retained_bytes = MEASURED_REFERENCE_RETAINED_BYTES
+        per_final_run_reservation_bytes = FINAL_RUN_STORAGE_RESERVATION_BYTES
+        campaign_run_ids = list(FINAL_CAMPAIGN_RUN_IDS)
+        completed = _completed_final_campaign_runs(target_dir.parent)
+        campaign_runs_remaining = len(set(FINAL_CAMPAIGN_RUN_IDS) - completed)
+        required = (
+            campaign_runs_remaining * FINAL_RUN_STORAGE_RESERVATION_BYTES
+            + MINIMUM_POST_RUN_FREE_BYTES
+        )
     return PresentationStorageEstimate(
         expected_history_count=len(spec.expected_times_seconds),
         scalar_grid=[240, 240, 60],
         scalar_3d_array_count=len(REQUIRED_3D_FIELDS),
         scalar_2d_array_count=len(REQUIRED_2D_FIELDS),
         uncompressed_numeric_history_floor_bytes=floor,
+        gate_basis=gate_basis,
+        measured_reference_retained_bytes=measured_reference_retained_bytes,
+        per_final_run_reservation_bytes=per_final_run_reservation_bytes,
+        final_campaign_run_ids=campaign_run_ids,
+        final_campaign_runs_remaining=campaign_runs_remaining,
         required_free_bytes=required,
         available_free_bytes=available,
         passed=available >= required,
@@ -419,22 +524,48 @@ def generate_presentation_package(
         "storage": target_dir / "storage_estimate.json",
         "package_report": target_dir / "presentation_package_report.json",
     }
+    if spec.hodograph == "straight_line":
+        paths["hodograph_customization"] = target_dir / STRAIGHT_LINE_HODOGRAPH_ARTIFACT_FILENAME
     try:
         generated_text, differences = render_presentation_namelist(
             provenance.supercell_namelist_path.read_text(),
             spec,
         )
         paths["namelist"].write_text(generated_text)
+        if spec.hodograph == "straight_line":
+            source_path = provenance.source_root / STRAIGHT_LINE_HODOGRAPH_TARGET
+            _write_json(
+                paths["hodograph_customization"],
+                straight_line_hodograph_artifact(source_path.read_text()),
+            )
+        wind_source = (
+            "a source-locked Cloud Chamber straight-line profile that preserves the "
+            "accepted iwnd=2 endpoint shear and layer-mean wind"
+            if spec.hodograph == "straight_line"
+            else "CM1 src/base.F iwnd=2 analytic quarter-circle wind profile"
+        )
         _write_json(
             paths["runtime_checklist"],
             {
-                "status": "empty_external_scientific_runtime_file_inventory",
-                "consumed_files": [],
-                "required_files": [],
+                "status": (
+                    "source_locked_hodograph_customization_declared"
+                    if spec.hodograph == "straight_line"
+                    else "empty_external_scientific_runtime_file_inventory"
+                ),
+                "consumed_files": (
+                    [STRAIGHT_LINE_HODOGRAPH_ARTIFACT_FILENAME]
+                    if spec.hodograph == "straight_line"
+                    else []
+                ),
+                "required_files": (
+                    [STRAIGHT_LINE_HODOGRAPH_ARTIFACT_FILENAME]
+                    if spec.hodograph == "straight_line"
+                    else []
+                ),
                 "source_candidates": {},
                 "scientific_state_sources": [
                     "CM1 src/base.F isnd=5 analytic Weisman-Klemp sounding",
-                    "CM1 src/base.F iwnd=2 analytic quarter-circle wind profile",
+                    wind_source,
                     "CM1 src/init3d.F iinit=1 deterministic warm bubble",
                 ],
             },
@@ -445,7 +576,18 @@ def generate_presentation_package(
                 "official_sha256": _sha256_text(provenance.supercell_namelist_path.read_text()),
                 "generated_sha256": _sha256_text(generated_text),
                 "differences": [item.model_dump() for item in differences],
-                "unchanged_scientific_assignments": LOCKED_SCIENCE_ASSIGNMENTS,
+                "expected_scientific_assignments": spec.expected_science_assignments,
+                "controlled_atmospheric_difference": (
+                    {
+                        "name": "hodograph_geometry",
+                        "official_iwnd": "2",
+                        "generated_iwnd": "12",
+                        "preserved_endpoint_shear_m_s": [31.0, 7.0],
+                        "preserved_layer_mean_wind_m_s": [13.5145538645, 6.1521128022],
+                    }
+                    if spec.hodograph == "straight_line"
+                    else None
+                ),
             },
         )
         storage = estimate_storage(spec, target_dir)
@@ -470,6 +612,8 @@ def generate_presentation_package(
             "kind": spec.kind,
             "run_id": spec.run_id,
             "case_id": spec.case_id,
+            "simulation_id": spec.simulation_id,
+            "hodograph": spec.hodograph,
             "source_run": source,
             "gate_a_source_lock": verify_gate_a_source_lock(),
             "cm1_provenance": provenance.report_record(),
@@ -497,6 +641,12 @@ def generate_presentation_package(
                 "profile_id": PRESENTATION_PROFILE_ID,
                 "kind": spec.kind,
                 "case_id": spec.case_id,
+                "simulation_id": spec.simulation_id,
+                "parent_simulation_id": (
+                    QUARTER_CIRCLE_SIMULATION_ID if spec.hodograph == "straight_line" else None
+                ),
+                "reference_simulation_id": QUARTER_CIRCLE_SIMULATION_ID,
+                "hodograph": spec.hodograph,
                 "source_run": source,
                 "source_lock": provenance.report_record(),
                 "gate_a_source_lock": verify_gate_a_source_lock(),
@@ -517,10 +667,23 @@ def generate_presentation_package(
                 "changed_namelist_assignments": spec.changed_assignments,
                 "generated_input_sha256": generated_hashes,
                 "storage_estimate": storage.model_dump(),
+                **(
+                    {"cm1_source_customization_kind": (STRAIGHT_LINE_HODOGRAPH_CUSTOMIZATION_KIND)}
+                    if spec.hodograph == "straight_line"
+                    else {}
+                ),
             },
             physical_question=(
-                "Does the accepted quarter-circle Supercell produce a materially more "
-                "detailed, smoother, and longer presentation Simulation?"
+                (
+                    "How does hodograph curvature change storm organization, rotating-updraft "
+                    "structure, precipitation, and low-level flow when the thermodynamic "
+                    "environment and numerical experiment remain otherwise matched?"
+                )
+                if spec.hodograph == "straight_line"
+                else (
+                    "Does the accepted quarter-circle Supercell produce a materially more "
+                    "detailed, smoother, and longer presentation Simulation?"
+                )
             ),
             expected_diagnostics=[
                 "three_accepted_supercell_lenses",
@@ -535,6 +698,11 @@ def generate_presentation_package(
                 input_sounding=None,
                 dry_run_report=str(paths["package_report"]),
                 runtime_file_checklist=[str(paths["runtime_checklist"])],
+                cm1_source_customization=(
+                    str(paths["hodograph_customization"])
+                    if spec.hodograph == "straight_line"
+                    else None
+                ),
             ),
             runtime_paths=RuntimePaths(runtime_home=str(settings.runtime_home.expanduser())),
             app=AppMetadata(app_version=__version__, commit=implementation_commit),
@@ -543,9 +711,13 @@ def generate_presentation_package(
             provenance=ProvenanceMetadata(product_state=ProductState.PACKAGED_DRY_RUN_OUTPUT),
             created_at=now,
             updated_at=now,
-            user=UserMetadata(name=f"Quarter-Circle Supercell {spec.kind}"),
+            user=UserMetadata(name=f"{spec.display_name} {spec.kind}"),
             required_output_fields=list(REQUIRED_OUTPUT_FIELDS),
-            input_source="CM1_r21.1_analytic_isnd5_iwnd2_iinit1",
+            input_source=(
+                "CM1_r21.1_analytic_isnd5_source_locked_straight_line_iwnd12_iinit1"
+                if spec.hodograph == "straight_line"
+                else "CM1_r21.1_analytic_isnd5_iwnd2_iinit1"
+            ),
             trigger_type="source_defined_deterministic_warm_bubble",
             trigger_parameters={
                 "center": "domain_center",
@@ -559,13 +731,21 @@ def generate_presentation_package(
                 "one_statistics_netcdf",
             ],
             run_limitations=[
-                "idealized_source_locked_quarter_circle_supercell",
+                (
+                    "idealized_source_locked_straight_line_hodograph_supercell"
+                    if spec.hodograph == "straight_line"
+                    else "idealized_source_locked_quarter_circle_supercell"
+                ),
                 "presentation_grid_and_timing_adaptation_not_exact_gate_b_reproduction",
                 "one_authorized_process_without_retry",
                 "translating_model_frame",
                 "15_to_20_km_rayleigh_layer",
             ],
-            manual_validation_status=f"issue_421_{spec.kind}_pending",
+            manual_validation_status=(
+                f"issue_444_straight_line_{spec.kind}_pending"
+                if spec.hodograph == "straight_line"
+                else f"issue_421_{spec.kind}_pending"
+            ),
         )
         write_run_manifest(paths["manifest"], manifest)
         _write_json(
@@ -576,6 +756,8 @@ def generate_presentation_package(
                 "kind": spec.kind,
                 "run_id": spec.run_id,
                 "case_id": spec.case_id,
+                "simulation_id": spec.simulation_id,
+                "hodograph": spec.hodograph,
                 "implementation_commit": implementation_commit,
                 "source_run": source,
                 "configuration_differences": [item.model_dump() for item in differences],
@@ -669,6 +851,15 @@ def verify_presentation_package(
         "configuration_differences"
     ):
         raise SupercellPresentationError("Presentation configuration audit changed.")
+    if package.spec.hodograph == "straight_line":
+        customization_path = Path(manifest.generated_inputs.cm1_source_customization or "")
+        expected_customization = straight_line_hodograph_artifact(
+            (provenance.source_root / STRAIGHT_LINE_HODOGRAPH_TARGET).read_text()
+        )
+        if json.loads(customization_path.read_text()) != expected_customization:
+            raise SupercellPresentationError(
+                "Straight-line hodograph source customization changed after packaging."
+            )
     if active_cm1_processes():
         raise SupercellPresentationError("Another CM1 or MPI process is active.")
     prior = _prior_execution(settings, package.spec)
@@ -697,16 +888,29 @@ def verify_presentation_package(
         "pinned_cm1_source_and_executable": True,
         "generated_input_hashes": bool(verified_inputs),
         "exact_declared_namelist_differences": True,
-        "scientific_setup_unchanged": True,
+        "unrelated_scientific_setup_unchanged": True,
+        "controlled_hodograph_identity": (
+            manifest.run_configuration.get("hodograph") == package.spec.hodograph
+        ),
         "expected_timeline": (
             tuple(manifest.run_configuration.get("expected_times_seconds", []))
             == package.spec.expected_times_seconds
         ),
-        "no_external_scientific_runtime_files": (manifest.generated_inputs.input_sounding is None),
+        "no_untracked_external_scientific_runtime_files": (
+            manifest.generated_inputs.input_sounding is None
+        ),
         "no_active_cm1_or_mpi_process": True,
         "no_prior_same_kind_process": True,
         "target_contains_no_output": True,
-        "no_compression_credit": storage.compression_credit_bytes == 0,
+        "no_unproven_compression_assumption": storage.compression_credit_bytes == 0,
+        "explicit_storage_gate_basis": (
+            storage.gate_basis == "uncompressed_numeric_floor"
+            or (
+                storage.gate_basis == "measured_retained_campaign_reservation"
+                and storage.measured_reference_retained_bytes == MEASURED_REFERENCE_RETAINED_BYTES
+                and storage.per_final_run_reservation_bytes == FINAL_RUN_STORAGE_RESERVATION_BYTES
+            )
+        ),
         "adequate_free_space": storage.passed,
     }
     preflight = PresentationPreflight(
@@ -740,6 +944,10 @@ def validate_completed_presentation_run(
     except GeneratedInputIdentityError as exc:
         raise SupercellPresentationError(str(exc)) from exc
     collect_cm1_provenance(settings)
+    source_customization = _validate_completed_source_customization(
+        manifest=manifest,
+        spec=package.spec,
+    )
     histories = _numbered_histories(package.package_dir)
     if len(histories) != len(package.spec.expected_times_seconds):
         raise SupercellPresentationError(
@@ -821,6 +1029,8 @@ def validate_completed_presentation_run(
         kind=package.spec.kind,
         run_id=package.spec.run_id,
         case_id=package.spec.case_id,
+        simulation_id=package.spec.simulation_id,
+        hodograph=package.spec.hodograph,
         implementation_commit=package.implementation_commit,
         grid={
             "nx": 240,
@@ -844,6 +1054,7 @@ def validate_completed_presentation_run(
         numbered_history_bytes=sum(path.stat().st_size for path in histories),
         retained_run_bytes=_directory_bytes(package.package_dir),
         available_free_bytes_after_validation=shutil.disk_usage(package.package_dir).free,
+        source_customization=source_customization,
         runtime_warnings=warnings,
         normal_completion=True,
     )
@@ -857,7 +1068,11 @@ def validate_completed_presentation_run(
             update={
                 "outputs": current.outputs.model_copy(update={"processed_artifacts": processed}),
                 "validation_status": ValidationStatus.VALID,
-                "manual_validation_status": f"issue_421_{package.spec.kind}_native_validated",
+                "manual_validation_status": (
+                    f"issue_444_straight_line_{package.spec.kind}_native_validated"
+                    if package.spec.hodograph == "straight_line"
+                    else f"issue_421_{package.spec.kind}_native_validated"
+                ),
                 "updated_at": datetime.now(UTC),
             }
         ),
@@ -911,6 +1126,79 @@ def _prior_execution(
         if manifest.lifecycle_state not in {LifecycleState.CREATED, LifecycleState.PACKAGED}:
             prior.append(manifest.run_id)
     return prior
+
+
+def _completed_final_campaign_runs(runs_dir: Path) -> set[str]:
+    completed: set[str] = set()
+    for run_id in FINAL_CAMPAIGN_RUN_IDS:
+        run_dir = runs_dir / run_id
+        manifest_path = run_dir / "run_manifest.json"
+        evidence_path = run_dir / "supercell_presentation_evidence.json"
+        if not manifest_path.is_file() or not evidence_path.is_file():
+            continue
+        try:
+            manifest = load_run_manifest(manifest_path)
+            evidence = json.loads(evidence_path.read_text())
+        except (OSError, ValueError, json.JSONDecodeError):
+            continue
+        if (
+            manifest.lifecycle_state == LifecycleState.COMPLETED
+            and manifest.execution.exit_code == 0
+            and manifest.validation_status == ValidationStatus.VALID
+            and evidence.get("run_id") == run_id
+            and evidence.get("normal_completion") is True
+        ):
+            completed.add(run_id)
+    return completed
+
+
+def _validate_completed_source_customization(
+    *,
+    manifest: RunManifest,
+    spec: SupercellPresentationSpec,
+) -> dict[str, Any] | None:
+    status = manifest.cm1_source_customization_status
+    if spec.hodograph == "quarter_circle":
+        if status is not None:
+            raise SupercellPresentationError(
+                "Quarter-circle reference unexpectedly reports a source customization."
+            )
+        return None
+    if not isinstance(status, dict):
+        raise SupercellPresentationError(
+            "Straight-line result has no applied source-customization evidence."
+        )
+    expected_artifact = json.loads(
+        Path(manifest.generated_inputs.cm1_source_customization or "").read_text()
+    )
+    expected = {
+        "schema_version": "cm1_source_customization_status_v1",
+        "customization_kind": STRAIGHT_LINE_HODOGRAPH_CUSTOMIZATION_KIND,
+        "original_target_sha256": expected_artifact.get("original_source_sha256"),
+        "patched_target_sha256": expected_artifact.get("patched_source_sha256"),
+        "patched_files": [str(STRAIGHT_LINE_HODOGRAPH_TARGET)],
+        "no_silent_hodograph_fallback": True,
+    }
+    mismatched = {
+        name: (status.get(name), value)
+        for name, value in expected.items()
+        if status.get(name) != value
+    }
+    if mismatched:
+        raise SupercellPresentationError(
+            f"Applied straight-line source customization changed: {mismatched}."
+        )
+    executable = Path(str(status.get("custom_executable", "")))
+    expected_executable_sha256 = status.get("custom_executable_sha256")
+    if (
+        not executable.is_file()
+        or not isinstance(expected_executable_sha256, str)
+        or sha256_file(executable) != expected_executable_sha256
+    ):
+        raise SupercellPresentationError(
+            "Applied straight-line custom executable identity is invalid."
+        )
+    return status
 
 
 def _numbered_histories(run_dir: Path) -> list[Path]:
@@ -989,7 +1277,10 @@ def _difference_reason(
     "presentation_grid",
     "presentation_timing",
     "bounded_output_inventory",
+    "controlled_hodograph_geometry",
 ]:
+    if name == "iwnd":
+        return "controlled_hodograph_geometry"
     if name in {"output_format", "output_filetype"}:
         return "output_transport"
     if name in {"nx", "ny", "nz", "dx", "dy", "dz"}:

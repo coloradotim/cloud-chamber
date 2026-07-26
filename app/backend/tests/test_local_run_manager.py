@@ -25,6 +25,12 @@ from cloud_chamber.run_manifest import (
     write_run_manifest,
 )
 from cloud_chamber.settings import CloudChamberSettings
+from cloud_chamber.supercell_hodograph import (
+    STRAIGHT_LINE_HODOGRAPH_CUSTOMIZATION_KIND,
+    STRAIGHT_LINE_HODOGRAPH_MARKER,
+    STRAIGHT_LINE_HODOGRAPH_SCHEMA_VERSION,
+    render_straight_line_hodograph_source,
+)
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 BASELINE_TEMPLATE = REPO_ROOT / "scenarios/lower-atmosphere/baseline-shallow-cumulus.json"
@@ -188,6 +194,14 @@ def write_fake_cm1_source_tree(settings: CloudChamberSettings) -> None:
 
   ENDIF
       end subroutine sfcflux
+"""
+    )
+    (src_dir / "base.F").write_text(
+        """      subroutine base
+!-----------------------------------------------------------------------
+
+      ENDIF    ! endif for iwnd options
+      end subroutine base
 """
     )
 
@@ -373,6 +387,81 @@ def test_launch_applies_differential_surface_source_customization_before_cm1(
     assert launched_manifest.cm1_source_customization_status == status_payload
     assert SFCPHYS_MARKER not in (cm1_root / "src" / "sfcphys.F").read_text()
     assert custom_executable.exists()
+
+
+def test_launch_applies_straight_line_hodograph_source_customization_before_cm1(
+    tmp_path: Path,
+) -> None:
+    settings = fake_settings(tmp_path)
+    assert settings.cm1_root is not None
+    cm1_root = settings.cm1_root
+    write_fake_cm1_source_tree(settings)
+    manifest_path = dry_run_manifest_path(tmp_path, run_id="straight-line")
+    manifest = load_run_manifest(manifest_path)
+    run_dir = Path(manifest.generated_inputs.run_directory)
+    source = (cm1_root / "src" / "base.F").read_text()
+    patched = render_straight_line_hodograph_source(source)
+    customization_path = run_dir / "straight_line_hodograph_customization.json"
+    customization_path.write_text(
+        json.dumps(
+            {
+                "schema_version": STRAIGHT_LINE_HODOGRAPH_SCHEMA_VERSION,
+                "customization_kind": STRAIGHT_LINE_HODOGRAPH_CUSTOMIZATION_KIND,
+                "target_relative_path": "src/base.F",
+                "marker": STRAIGHT_LINE_HODOGRAPH_MARKER,
+                "original_source_sha256": hashlib.sha256(source.encode()).hexdigest(),
+                "patched_source_sha256": hashlib.sha256(patched.encode()).hexdigest(),
+                "wind_profile": {"profile": "test"},
+            }
+        )
+    )
+    generated_hashes = dict(manifest.run_configuration.get("generated_input_sha256", {}))
+    generated_hashes[customization_path.name] = hashlib.sha256(
+        customization_path.read_bytes()
+    ).hexdigest()
+    write_run_manifest(
+        manifest_path,
+        manifest.model_copy(
+            update={
+                "generated_inputs": manifest.generated_inputs.model_copy(
+                    update={"cm1_source_customization": str(customization_path)}
+                ),
+                "run_configuration": {
+                    **manifest.run_configuration,
+                    "cm1_source_customization_kind": (STRAIGHT_LINE_HODOGRAPH_CUSTOMIZATION_KIND),
+                    "generated_input_sha256": generated_hashes,
+                },
+            }
+        ),
+    )
+    factory = FakeProcessFactory(FakeProcess())
+
+    def fake_build(
+        command: list[str],
+        *,
+        cwd: Path,
+        check: bool,
+        capture_output: bool,
+        text: bool,
+    ) -> subprocess.CompletedProcess[str]:
+        assert STRAIGHT_LINE_HODOGRAPH_MARKER in (cwd / "base.F").read_text()
+        assert STRAIGHT_LINE_HODOGRAPH_MARKER not in (cm1_root / "src" / "base.F").read_text()
+        return subprocess.CompletedProcess(command, 0, stdout="built\n", stderr="")
+
+    status = LocalRunManager(
+        settings=settings,
+        process_factory=factory,
+        source_build_runner=fake_build,
+    ).launch(manifest_path)
+
+    assert status.lifecycle_state == LifecycleState.RUNNING
+    custom_executable = run_dir / CUSTOM_EXECUTABLE_FILENAME
+    assert factory.commands == [[str(custom_executable)]]
+    status_payload = json.loads((run_dir / SOURCE_CUSTOMIZATION_STATUS_FILENAME).read_text())
+    assert status_payload["customization_kind"] == STRAIGHT_LINE_HODOGRAPH_CUSTOMIZATION_KIND
+    assert status_payload["patched_files"] == ["src/base.F"]
+    assert status_payload["no_silent_hodograph_fallback"] is True
+    assert status_payload["custom_executable_sha256"]
 
 
 def test_launch_refuses_tampered_differential_patch_data(tmp_path: Path) -> None:

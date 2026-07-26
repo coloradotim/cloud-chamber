@@ -1,12 +1,4 @@
-"""Apply Cloud Chamber CM1 source customizations outside the repo.
-
-CM1 remains an external dependency. Differential surface forcing needs a small
-source customization because the stock ``set_flx=1`` path writes uniform
-``thflux``/``qvflux`` fields from namelist constants. This module copies the
-configured external CM1 tree into an isolated runtime build tree, patches that
-copy, rebuilds ``cm1.exe``, copies the exact customized executable into the run
-directory, and records the operation beside the generated package.
-"""
+"""Apply source-locked Cloud Chamber CM1 customizations outside the repo."""
 
 from __future__ import annotations
 
@@ -23,6 +15,14 @@ from pathlib import Path
 
 from cloud_chamber.run_manifest import RunManifest
 from cloud_chamber.settings import CloudChamberSettings
+from cloud_chamber.supercell_hodograph import (
+    STRAIGHT_LINE_HODOGRAPH_CUSTOMIZATION_KIND,
+    STRAIGHT_LINE_HODOGRAPH_MARKER,
+    STRAIGHT_LINE_HODOGRAPH_SCHEMA_VERSION,
+    STRAIGHT_LINE_HODOGRAPH_TARGET,
+    StraightLineHodographError,
+    render_straight_line_hodograph_source,
+)
 from cloud_chamber.surface_forcing import (
     CM1_SOURCE_CUSTOMIZATION_FILENAME,
     DIFFERENTIAL_SURFACE_FORCING_MODE,
@@ -32,6 +32,7 @@ from cloud_chamber.surface_forcing import (
 CommandRunner = Callable[..., subprocess.CompletedProcess[str]]
 
 SOURCE_CUSTOMIZATION_STATUS_FILENAME = "cm1_source_customization_applied.json"
+SURFACE_FORCING_CUSTOMIZATION_KIND = "differential_surface_forcing_v0"
 SFCPHYS_MARKER = "CLOUD_CHAMBER_SURFACE_FORCING_PATCH_V0_SFCPHYS"
 
 SFCPHYS_TARGET = Path("src/sfcphys.F")
@@ -39,7 +40,7 @@ CUSTOM_EXECUTABLE_FILENAME = "cm1_cloud_chamber_custom.exe"
 
 
 class CM1SourceCustomizationError(RuntimeError):
-    """Raised when differential surface forcing cannot customize local CM1."""
+    """Raised when a declared source customization cannot rebuild local CM1."""
 
 
 @dataclass(frozen=True)
@@ -54,7 +55,10 @@ class CM1SourceCustomizationResult:
 
 
 def manifest_requires_cm1_source_customization(manifest: RunManifest) -> bool:
-    return manifest.run_configuration.get("surface_flux_mode") == DIFFERENTIAL_SURFACE_FORCING_MODE
+    return (
+        manifest.run_configuration.get("surface_flux_mode") == DIFFERENTIAL_SURFACE_FORCING_MODE
+        or manifest.run_configuration.get("cm1_source_customization_kind") is not None
+    )
 
 
 def prepare_cm1_source_customization(
@@ -63,36 +67,65 @@ def prepare_cm1_source_customization(
     manifest: RunManifest,
     command_runner: CommandRunner = subprocess.run,
 ) -> CM1SourceCustomizationResult | None:
-    """Patch and rebuild the external CM1 tree for differential surface forcing."""
+    """Patch and rebuild an isolated copy of the configured external CM1 tree."""
 
     if not manifest_requires_cm1_source_customization(manifest):
         return None
 
+    customization_kind = _customization_kind(manifest)
     if settings.cm1_root is None:
         raise CM1SourceCustomizationError(
-            "Differential surface forcing requires a configured CM1 root with source files."
+            "CM1 source customization requires a configured CM1 root with source files."
         )
     if settings.cm1_run_dir is None:
         raise CM1SourceCustomizationError(
-            "Differential surface forcing requires a configured CM1 run directory."
+            "CM1 source customization requires a configured CM1 run directory."
         )
 
     run_dir = Path(manifest.generated_inputs.run_directory).expanduser()
-    patch_path = _required_generated_path(
-        manifest.generated_inputs.surface_forcing_patch,
-        run_dir / SURFACE_FORCING_PATCH_FILENAME,
-        "surface forcing patch file",
-    )
     customization_path = _required_generated_path(
         manifest.generated_inputs.cm1_source_customization,
         run_dir / CM1_SOURCE_CUSTOMIZATION_FILENAME,
         "CM1 source customization manifest",
     )
-    _validate_patch_provenance(
-        manifest=manifest,
-        patch_path=patch_path,
-        customization_path=customization_path,
-    )
+    if customization_kind == SURFACE_FORCING_CUSTOMIZATION_KIND:
+        patch_path = _required_generated_path(
+            manifest.generated_inputs.surface_forcing_patch,
+            run_dir / SURFACE_FORCING_PATCH_FILENAME,
+            "surface forcing patch file",
+        )
+        _validate_patch_provenance(
+            manifest=manifest,
+            patch_path=patch_path,
+            customization_path=customization_path,
+        )
+        target_relative_path = SFCPHYS_TARGET
+        patch_source = _patch_sfcphys_text
+        expected_original_sha256 = None
+        expected_patched_sha256 = None
+        status_details: dict[str, object] = {
+            "surface_flux_mode": DIFFERENTIAL_SURFACE_FORCING_MODE,
+            "patch_file": str(patch_path),
+            "no_silent_uniform_fallback": True,
+        }
+    elif customization_kind == STRAIGHT_LINE_HODOGRAPH_CUSTOMIZATION_KIND:
+        customization = _validate_straight_line_hodograph_provenance(
+            manifest=manifest,
+            customization_path=customization_path,
+        )
+        target_relative_path = STRAIGHT_LINE_HODOGRAPH_TARGET
+        patch_source = render_straight_line_hodograph_source
+        expected_original_sha256 = str(customization["original_source_sha256"])
+        expected_patched_sha256 = str(customization["patched_source_sha256"])
+        status_details = {
+            "hodograph_profile": customization["wind_profile"],
+            "no_silent_hodograph_fallback": True,
+        }
+    else:
+        raise CM1SourceCustomizationError(
+            f"Unsupported CM1 source customization kind: {customization_kind}"
+        )
+
     src_dir = settings.cm1_root / "src"
     if not src_dir.exists():
         raise CM1SourceCustomizationError(f"CM1 source directory does not exist: {src_dir}")
@@ -111,11 +144,30 @@ def prepare_cm1_source_customization(
             shutil.rmtree(build_root)
         shutil.copytree(settings.cm1_root, build_root, ignore=_copytree_ignore)
         build_src_dir = build_root / "src"
-        target = build_root / SFCPHYS_TARGET
+        target = build_root / target_relative_path
         if not target.exists():
             raise CM1SourceCustomizationError(f"CM1 source file does not exist: {target}")
-        target.write_text(_patch_sfcphys_text(target.read_text()))
-        patched_files.append(str(SFCPHYS_TARGET))
+        original_source = target.read_text()
+        original_source_sha256 = _text_sha256(original_source)
+        if (
+            expected_original_sha256 is not None
+            and original_source_sha256 != expected_original_sha256
+        ):
+            raise CM1SourceCustomizationError(
+                "Configured CM1 source target does not match the packaged source lock: "
+                f"{original_source_sha256} != {expected_original_sha256}."
+            )
+        try:
+            patched_source = patch_source(original_source)
+        except StraightLineHodographError as exc:
+            raise CM1SourceCustomizationError(str(exc)) from exc
+        patched_source_sha256 = _text_sha256(patched_source)
+        if expected_patched_sha256 is not None and patched_source_sha256 != expected_patched_sha256:
+            raise CM1SourceCustomizationError(
+                "Rendered CM1 source target does not match the packaged customization identity."
+            )
+        target.write_text(patched_source)
+        patched_files.append(str(target_relative_path))
         build_command = ("make",)
         try:
             command_runner(
@@ -127,7 +179,7 @@ def prepare_cm1_source_customization(
             )
         except subprocess.CalledProcessError as exc:
             raise CM1SourceCustomizationError(
-                "Failed to rebuild CM1 after applying differential surface-forcing source "
+                "Failed to rebuild CM1 after applying the declared source "
                 f"customization in isolated build tree: {exc.stderr or exc.stdout or exc}"
             ) from exc
 
@@ -146,24 +198,25 @@ def prepare_cm1_source_customization(
     executable_sha256 = _file_sha256(executable_path)
 
     status_path = run_dir / SOURCE_CUSTOMIZATION_STATUS_FILENAME
-    status_payload = {
-        "schema_version": "cm1_source_customization_status_v0",
-        "surface_flux_mode": DIFFERENTIAL_SURFACE_FORCING_MODE,
+    status_payload: dict[str, object] = {
+        "schema_version": "cm1_source_customization_status_v1",
+        "customization_kind": customization_kind,
         "run_id": manifest.run_id,
         "applied_at": datetime.now(UTC).isoformat(),
         "cm1_root": str(settings.cm1_root),
         "cm1_run_dir": str(settings.cm1_run_dir),
         "source_hash": source_hash,
         "build_root": str(build_root),
-        "patch_file": str(patch_path),
         "customization_manifest": str(customization_path),
+        "original_target_sha256": original_source_sha256,
+        "patched_target_sha256": patched_source_sha256,
         "patched_files": patched_files,
         "source_restored_after_build": "not_modified_isolated_build_tree",
         "build_command": ["make"],
         "custom_executable": str(executable_path),
         "custom_executable_sha256": executable_sha256,
-        "no_silent_uniform_fallback": True,
     }
+    status_payload.update(status_details)
     status_path.write_text(json.dumps(status_payload, indent=2, sort_keys=True) + "\n")
     return CM1SourceCustomizationResult(
         status_path=status_path,
@@ -174,6 +227,17 @@ def prepare_cm1_source_customization(
         patched_files=tuple(patched_files),
         build_command=("make",),
     )
+
+
+def _customization_kind(manifest: RunManifest) -> str:
+    if manifest.run_configuration.get("surface_flux_mode") == DIFFERENTIAL_SURFACE_FORCING_MODE:
+        return SURFACE_FORCING_CUSTOMIZATION_KIND
+    kind = manifest.run_configuration.get("cm1_source_customization_kind")
+    if not isinstance(kind, str) or not kind:
+        raise CM1SourceCustomizationError(
+            "Run manifest declares source customization without a valid customization kind."
+        )
+    return kind
 
 
 def _required_generated_path(value: str | None, fallback: Path, label: str) -> Path:
@@ -228,16 +292,71 @@ def _validate_patch_provenance(
         )
 
 
+def _validate_straight_line_hodograph_provenance(
+    *,
+    manifest: RunManifest,
+    customization_path: Path,
+) -> dict[str, object]:
+    try:
+        customization = json.loads(customization_path.read_text())
+    except json.JSONDecodeError as exc:
+        raise CM1SourceCustomizationError(
+            f"Generated straight-line hodograph customization is invalid JSON: {customization_path}"
+        ) from exc
+    if not isinstance(customization, dict):
+        raise CM1SourceCustomizationError(
+            "Generated straight-line hodograph customization is not an object."
+        )
+    expected = {
+        "schema_version": STRAIGHT_LINE_HODOGRAPH_SCHEMA_VERSION,
+        "customization_kind": STRAIGHT_LINE_HODOGRAPH_CUSTOMIZATION_KIND,
+        "target_relative_path": str(STRAIGHT_LINE_HODOGRAPH_TARGET),
+        "marker": STRAIGHT_LINE_HODOGRAPH_MARKER,
+    }
+    mismatched = {
+        name: (customization.get(name), value)
+        for name, value in expected.items()
+        if customization.get(name) != value
+    }
+    if mismatched:
+        raise CM1SourceCustomizationError(
+            f"Straight-line hodograph customization identity changed: {mismatched}."
+        )
+    if (
+        manifest.run_configuration.get("cm1_source_customization_kind")
+        != STRAIGHT_LINE_HODOGRAPH_CUSTOMIZATION_KIND
+    ):
+        raise CM1SourceCustomizationError(
+            "Run manifest and generated straight-line hodograph customization disagree."
+        )
+    for name in ("original_source_sha256", "patched_source_sha256"):
+        value = customization.get(name)
+        if not isinstance(value, str) or len(value) != 64:
+            raise CM1SourceCustomizationError(
+                f"Straight-line hodograph customization is missing {name}."
+            )
+    wind_profile = customization.get("wind_profile")
+    if not isinstance(wind_profile, dict):
+        raise CM1SourceCustomizationError(
+            "Straight-line hodograph customization is missing its wind profile."
+        )
+    return customization
+
+
 def _fail_if_source_already_customized(cm1_root: Path) -> None:
     dirty_files = []
-    for relative_path in (SFCPHYS_TARGET,):
+    targets = (
+        (SFCPHYS_TARGET, SFCPHYS_MARKER),
+        (STRAIGHT_LINE_HODOGRAPH_TARGET, STRAIGHT_LINE_HODOGRAPH_MARKER),
+    )
+    for relative_path, marker in targets:
         path = cm1_root / relative_path
-        if path.exists() and SFCPHYS_MARKER in path.read_text(errors="replace"):
+        if path.exists() and marker in path.read_text(errors="replace"):
             dirty_files.append(str(relative_path))
     if dirty_files:
         raise CM1SourceCustomizationError(
-            "Configured CM1 source tree already contains Cloud Chamber differential "
-            "surface-forcing customization markers. Refusing to build from a dirty "
+            "Configured CM1 source tree already contains Cloud Chamber customization "
+            "markers. Refusing to build from a dirty "
             "source tree: " + ", ".join(dirty_files)
         )
 
@@ -284,7 +403,7 @@ def _built_executable_path(
         relative_run_dir = original_cm1_run_dir.relative_to(original_cm1_root)
     except ValueError as exc:
         raise CM1SourceCustomizationError(
-            "Differential surface forcing currently requires cm1_run_dir to live under cm1_root "
+            "CM1 source customization requires cm1_run_dir to live under cm1_root "
             "so the isolated build tree can identify the generated executable."
         ) from exc
     return build_root / relative_run_dir / "cm1.exe"
@@ -294,6 +413,10 @@ def _file_sha256(path: Path) -> str:
     digest = hashlib.sha256()
     digest.update(path.read_bytes())
     return digest.hexdigest()
+
+
+def _text_sha256(value: str) -> str:
+    return hashlib.sha256(value.encode("utf-8")).hexdigest()
 
 
 def _patch_sfcphys_text(source: str) -> str:
@@ -406,6 +529,7 @@ __all__ = [
     "CM1SourceCustomizationResult",
     "CUSTOM_EXECUTABLE_FILENAME",
     "SOURCE_CUSTOMIZATION_STATUS_FILENAME",
+    "SURFACE_FORCING_CUSTOMIZATION_KIND",
     "manifest_requires_cm1_source_customization",
     "prepare_cm1_source_customization",
 ]
