@@ -4720,6 +4720,65 @@ describe("App", () => {
     expect(screen.getByRole("heading", { name: secondObservedResult.name })).toBeInTheDocument();
   });
 
+  it("recovers a stale Soundings Explore URL into the empty Explore landing", async () => {
+    window.history.replaceState(
+      {},
+      "",
+      "/fun-with-soundings/explore/result-deleted-soundings-run",
+    );
+    const defaultFetch = vi.mocked(fetch).getMockImplementation();
+    vi.mocked(fetch).mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input) === "/api/results") {
+        return Promise.resolve(
+          new Response(JSON.stringify({ results: [] }), { status: 200 }),
+        );
+      }
+      return (
+        defaultFetch?.(input, init) ?? Promise.resolve(new Response("not found", { status: 404 }))
+      );
+    });
+
+    render(<App />);
+
+    expect(
+      await screen.findByRole("heading", {
+        name: "No Soundings Experiment is ready to explore yet",
+      }),
+    ).toBeInTheDocument();
+    expect(window.location.pathname).toBe("/fun-with-soundings");
+    expect(screen.getByRole("button", { name: "5 Explore" })).toHaveAttribute(
+      "aria-current",
+      "page",
+    );
+  });
+
+  it("keeps the empty Explore tab inside the Soundings workbench", async () => {
+    mockWorldScopedApp();
+    const defaultFetch = vi.mocked(fetch).getMockImplementation();
+    vi.mocked(fetch).mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input) === "/api/results") {
+        return Promise.resolve(
+          new Response(JSON.stringify({ results: [] }), { status: 200 }),
+        );
+      }
+      return (
+        defaultFetch?.(input, init) ?? Promise.resolve(new Response("not found", { status: 404 }))
+      );
+    });
+
+    render(<App />);
+    fireEvent.click(await screen.findByRole("button", { name: "Open Fun With Soundings" }));
+    fireEvent.click(await screen.findByRole("button", { name: "5 Explore" }));
+
+    expect(
+      await screen.findByRole("heading", {
+        name: "No Soundings Experiment is ready to explore yet",
+      }),
+    ).toBeInTheDocument();
+    expect(window.location.pathname).toBe("/fun-with-soundings");
+    expect(screen.getByRole("button", { name: "View current runs" })).toBeInTheDocument();
+  });
+
   it("reports a non-Soundings global runner without claiming it as Soundings work", async () => {
     mockWorldScopedApp();
     const worldRun = {

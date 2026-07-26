@@ -2572,6 +2572,7 @@ export function App() {
   const [ingestedResultId, setIngestedResultId] = useState<string | null>(null);
   const [results, setResults] = useState<ResultCard[]>([]);
   const [selectedResultId, setSelectedResultId] = useState<string | null>(null);
+  const [initialResultsLoadComplete, setInitialResultsLoadComplete] = useState(false);
   const selectedResultIdRef = useRef<string | null>(null);
   const worldResultOwnershipRef = useRef<WorldResultOwnershipIndex>(EMPTY_WORLD_RESULT_OWNERSHIP);
   const worldOwnershipLoadStartedRef = useRef(false);
@@ -2661,6 +2662,7 @@ export function App() {
           return current ?? prioritized[0]?.result_id ?? null;
         });
         setResultsStatus(payload.results.length > 0 ? "Results loaded" : "No ingested results");
+        setInitialResultsLoadComplete(true);
       })
       .catch((caught: unknown) => {
         if (!active) return;
@@ -2673,6 +2675,7 @@ export function App() {
         setComparisonStoryActive(false);
         setResultsError(caught instanceof Error ? caught.message : "Could not load results.");
         setResultsStatus("Results unavailable");
+        setInitialResultsLoadComplete(true);
       });
     fetchTradeCumulusComparisonStory().then((comparison) => {
       if (!active || resultsFailed) return;
@@ -2793,6 +2796,19 @@ export function App() {
   const selectedSoundingsExploreResult = soundingsExploreResults.find(
     (result) => result.result_id === selectedResultId,
   );
+
+  useEffect(() => {
+    if (
+      productLocation !== "soundings-explore" ||
+      !initialResultsLoadComplete ||
+      selectedSoundingsExploreResult
+    ) {
+      return;
+    }
+    setSoundingsSection("explore");
+    setProductLocation("soundings");
+    window.history.replaceState({ productLocation: "soundings" }, "", "/fun-with-soundings");
+  }, [initialResultsLoadComplete, productLocation, selectedSoundingsExploreResult]);
 
   useEffect(() => {
     selectedResultIdRef.current = selectedResultId;
@@ -4806,7 +4822,12 @@ export function App() {
             selectedSoundingsExploreResult?.name ?? "Soundings Explore"
           } atmospheric experiment workspace`}
         >
-          {selectedSoundingsExploreResult ? (
+          {!initialResultsLoadComplete ? (
+            <ScenarioStatePanel
+              title="Loading Soundings Explore"
+              body="Cloud Chamber is checking the retained Soundings experiment inventory."
+            />
+          ) : selectedSoundingsExploreResult ? (
             <ExploreWorkspace
               selectedResult={selectedSoundingsExploreResult}
               comparisonStory={null}
