@@ -32,13 +32,18 @@ processes visible.
 
 The implemented application does not yet provide:
 
-- durable Saved Views;
 - ordinary World-aware Compare beyond the featured Trade Cumulus Comparison;
 - one shared variation workflow across all three Worlds;
-- durable persistence for complete Explore or comparison workspaces.
+- Saved Comparisons or durable comparison workspaces.
 
 These are current limitations, not decisions to remove the corresponding
 approved product concepts.
+
+All three Cloud Worlds now persist the last coherent Explore state and named
+Saved Views by stable World and Simulation identity. Saved Views reopen as live
+examinations, support rename and delete, and report bounded incompatibility when
+retained output changes or is unavailable. Per-Simulation Notes remain a
+separate durable-content contract.
 
 ## Product authority
 
@@ -129,8 +134,15 @@ Cloud Chamber stores local runtime state outside Git by default:
   settings.json
   runs/
   cache/
+  explore-state/
   logs/
 ```
+
+Explore state is stored under
+`<runtime-home>/explore-state/<world_id>/<simulation_id>.json`. Each file
+contains one versioned, World-specific last-active state plus that Simulation's
+named Saved Views; writes are atomic and failures remain local to the state
+controls.
 
 The retained NetCDF histories that back built-in Simulations are large local
 assets under the runtime home. Stable World and Simulation identities resolve

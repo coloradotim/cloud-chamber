@@ -68,7 +68,7 @@ def test_simulation_note_api_saves_reloads_and_clears_for_each_world(
     settings = SimpleNamespace(runtime_home=tmp_path)
     monkeypatch.setattr("cloud_chamber.app.load_settings", lambda: settings)
     monkeypatch.setattr(
-        "cloud_chamber.app._simulation_note_target_exists",
+        "cloud_chamber.app._simulation_target_exists",
         lambda *_args, **_kwargs: True,
     )
     client = TestClient(app)
@@ -100,7 +100,7 @@ def test_simulation_note_api_fails_closed_for_unknown_simulation(
         lambda: SimpleNamespace(runtime_home=tmp_path),
     )
     monkeypatch.setattr(
-        "cloud_chamber.app._simulation_note_target_exists",
+        "cloud_chamber.app._simulation_target_exists",
         lambda *_args, **_kwargs: False,
     )
 
@@ -108,6 +108,130 @@ def test_simulation_note_api_fails_closed_for_unknown_simulation(
 
     assert response.status_code == 404
     assert response.json()["detail"] == "Cloud World Simulation not found."
+
+
+def _trade_explore_state_payload() -> dict[str, object]:
+    return {
+        "state_version": 1,
+        "world_id": "trade_cumulus",
+        "model_time_seconds": 12_060,
+        "context_collapsed": False,
+        "secondary_section": "science",
+        "selected_point": None,
+        "view_id": "updraft_lens",
+        "scene_field_id": "ql",
+        "slice_field_id": "w",
+        "fixed_scale_id": "trade_cumulus_updraft_velocity_v1",
+        "active_slice_plane": "vertical_x",
+        "slice_coordinate_km": 2.3666666,
+        "slice_native_index": 5,
+        "horizontal_slice_coordinate_km": None,
+        "threshold_native": 1e-6,
+        "layer_opacity": 0.68,
+        "point_size_px": 11,
+        "lens_opacity": 0.9,
+        "show_slice_plane": True,
+        "show_cloud_boundary": True,
+        "show_horizontal_wind": True,
+        "wind_mode": "perturbation",
+        "camera_preset": "overview",
+        "camera_transform": None,
+        "playback_speed": 1,
+        "display_controls_open": False,
+    }
+
+
+def test_explore_state_api_supports_resume_and_saved_view_crud(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "cloud_chamber.app.load_settings",
+        lambda: SimpleNamespace(runtime_home=tmp_path),
+    )
+    monkeypatch.setattr(
+        "cloud_chamber.app._simulation_target_exists",
+        lambda *_args, **_kwargs: True,
+    )
+    client = TestClient(app)
+    root = "/api/worlds/trade-cumulus/simulations/trade_cumulus_canonical_bomex"
+    state = _trade_explore_state_payload()
+
+    empty = client.get(f"{root}/explore-state")
+    resumed = client.put(f"{root}/explore-state/resume", json={"state": state})
+    created = client.post(
+        f"{root}/saved-views",
+        json={
+            "title": "Western turret",
+            "description": "Before weakening.",
+            "state": state,
+        },
+    )
+    saved_view_id = created.json()["library"]["saved_views"][0]["saved_view_id"]
+    renamed = client.patch(
+        f"{root}/saved-views/{saved_view_id}",
+        json={
+            "title": "Turret weakening",
+            "restoration_status": "partially_restorable",
+            "restoration_message": "Mapped to a nearby retained output.",
+        },
+    )
+    deleted = client.delete(f"{root}/saved-views/{saved_view_id}")
+
+    assert empty.status_code == 200
+    assert empty.json()["library"]["last_active"] is None
+    assert resumed.status_code == 200
+    assert resumed.json()["library"]["last_active"]["state"]["view_id"] == ("updraft_lens")
+    assert created.status_code == 201
+    assert renamed.status_code == 200
+    assert renamed.json()["library"]["saved_views"][0]["title"] == "Turret weakening"
+    assert renamed.json()["library"]["saved_views"][0]["restoration_status"] == (
+        "partially_restorable"
+    )
+    assert deleted.status_code == 200
+    assert deleted.json()["library"]["saved_views"] == []
+
+
+def test_explore_state_api_lists_saved_views_when_backing_output_is_missing(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    available = True
+    monkeypatch.setattr(
+        "cloud_chamber.app.load_settings",
+        lambda: SimpleNamespace(runtime_home=tmp_path),
+    )
+    monkeypatch.setattr(
+        "cloud_chamber.app._simulation_target_exists",
+        lambda *_args, **_kwargs: available,
+    )
+    client = TestClient(app)
+    root = "/api/worlds/trade-cumulus/simulations/trade_cumulus_canonical_bomex"
+    created = client.post(
+        f"{root}/saved-views",
+        json={"title": "Retained examination", "state": _trade_explore_state_payload()},
+    )
+    assert created.status_code == 201
+
+    available = False
+    missing = client.get(f"{root}/explore-state")
+    saved_view_id = created.json()["library"]["saved_views"][0]["saved_view_id"]
+    renamed = client.patch(
+        f"{root}/saved-views/{saved_view_id}",
+        json={"title": "Retained examination renamed"},
+    )
+
+    assert missing.status_code == 200
+    assert missing.json()["backing_simulation_available"] is False
+    assert missing.json()["library"]["saved_views"][0]["restoration_status"] == ("unavailable")
+    assert (
+        "backing retained output"
+        in (missing.json()["library"]["saved_views"][0]["restoration_message"])
+    )
+    assert renamed.status_code == 200
+    assert renamed.json()["backing_simulation_available"] is False
+    assert renamed.json()["library"]["saved_views"][0]["title"] == ("Retained examination renamed")
+    assert renamed.json()["library"]["saved_views"][0]["restoration_status"] == ("unavailable")
 
 
 def _world_summary_payload() -> dict[str, object]:

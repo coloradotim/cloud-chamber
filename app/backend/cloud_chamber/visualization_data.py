@@ -654,6 +654,7 @@ class SliceResponse(BaseModel):
     field: VisualizableField
     selection: SliceSelectionMetadata
     coordinate_units: dict[str, str | None] = Field(default_factory=dict)
+    coordinate_values: dict[str, list[float | str | None]] = Field(default_factory=dict)
     shape: list[int]
     dimension_order: list[str]
     data_encoding: VisualizationEncoding
@@ -1901,6 +1902,9 @@ def field_slice(
                 coordinate_units={
                     dimension: _coordinate_units(dataset, dimension) for dimension in sliced.dims
                 },
+                coordinate_values={
+                    dimension: _coordinate_values(dataset, dimension) for dimension in spatial_dims
+                },
                 shape=[int(size) for size in sliced.shape],
                 dimension_order=[str(dimension) for dimension in sliced.dims],
                 data_encoding=encoding,
@@ -1956,6 +1960,9 @@ def field_slice(
         coordinate_units = {
             dimension: _coordinate_units(dataset, dimension) for dimension in sliced.dims
         }
+        coordinate_values = {
+            dimension: _coordinate_values(dataset, dimension) for dimension in spatial_dims
+        }
         if vertical_dim and vertical_units and vertical_dim not in coordinate_units:
             coordinate_units[vertical_dim] = vertical_units
         return SliceResponse(
@@ -1965,6 +1972,7 @@ def field_slice(
             field=visual_field,
             selection=selection,
             coordinate_units=coordinate_units,
+            coordinate_values=coordinate_values,
             shape=[int(size) for size in sliced.shape],
             dimension_order=[str(dimension) for dimension in sliced.dims],
             data_encoding=encoding,

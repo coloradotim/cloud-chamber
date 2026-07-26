@@ -226,6 +226,17 @@ test.describe("mocked smoke: Supercells product path", () => {
     await expect(page.getByRole("button", { name: "Previous saved output" })).toBeInViewport();
     await expect(page.getByRole("button", { name: "Next saved output" })).toBeInViewport();
     await expect(page.getByRole("button", { name: "Play" })).toBeInViewport();
+
+    await page.locator("summary", { hasText: "Saved Views" }).click();
+    const savedViews = page.getByRole("region", { name: "Saved Views" });
+    await savedViews.getByLabel("Title", { exact: true }).fill("Narrow desktop examination");
+    await savedViews
+      .getByLabel("Description optional", { exact: true })
+      .fill("Verifies that the 3-D canvas cannot cover Saved View actions.");
+    await savedViews.getByRole("button", { name: "Save current view" }).click();
+    await expect(
+      savedViews.getByRole("heading", { name: "Narrow desktop examination" }),
+    ).toBeVisible();
   });
 });
 

@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { MountainWavesExplore, mountainWavesCloudPointRendering } from "./MountainWavesExplore";
 import type { MountainWavesSimulation } from "./MountainWavesWorld";
+import type { MountainWavesExploreState } from "./ExploreStatePersistence";
 
 const { cloudPointColor, cloudPointOpacity, nativeCloudCellPoints } =
   mountainWavesCloudPointRendering;
@@ -188,6 +189,51 @@ const frame = {
   },
 };
 
+const mountainResumeState: MountainWavesExploreState = {
+  state_version: 1,
+  world_id: "mountain_waves",
+  model_time_seconds: 7_200,
+  context_collapsed: true,
+  secondary_section: "details",
+  selected_point: null,
+  view_id: "wave_cloud",
+  field_id: "w",
+  fixed_scale_id: "mountain_waves_vertical_velocity_v1",
+  viewport_id: "full",
+  geometry_id: "physical",
+  overlays: {
+    cloud_points: true,
+    cloud_boundary: true,
+    saturation_contour: false,
+    horizontal_wind: true,
+    potential_temperature_contours: false,
+  },
+  cloud_opacity: 0.5,
+  cloud_point_size_px: 9,
+  playback_speed: 2,
+};
+
+function mountainExploreLibrary(lastActive: MountainWavesExploreState | null = null) {
+  return {
+    library: {
+      schema_version: 1,
+      world_id: "mountain_waves",
+      simulation_id: simulation.simulation_id,
+      last_active: lastActive
+        ? {
+            schema_version: 1,
+            world_id: "mountain_waves",
+            simulation_id: simulation.simulation_id,
+            captured_at: "2026-07-26T12:00:00Z",
+            state: lastActive,
+          }
+        : null,
+      saved_views: [],
+    },
+    backing_simulation_available: true,
+  };
+}
+
 describe("MountainWavesExplore", () => {
   const originalGetContext = HTMLCanvasElement.prototype.getContext;
 
@@ -196,6 +242,9 @@ describe("MountainWavesExplore", () => {
       "fetch",
       vi.fn((input: RequestInfo | URL) => {
         const url = String(input);
+        if (url.includes("/explore-state") || url.includes("/saved-views")) {
+          return Promise.resolve(ok(mountainExploreLibrary()));
+        }
         if (!url.includes("/frame?")) return Promise.resolve(ok(frame));
         const requestedIndex = Number(
           new URL(url, "http://localhost").searchParams.get("time_index"),
@@ -253,6 +302,130 @@ describe("MountainWavesExplore", () => {
     expect(screen.getByRole("slider", { name: /Saved output/ })).toHaveAttribute("max", "1");
     expect(screen.getByText(/Select a point in the cross-section/)).toBeInTheDocument();
     expect(screen.getAllByRole("button", { name: "Wave Cloud Lens" })).toHaveLength(1);
+  });
+
+  it("resumes the last coherent Mountain Waves examination after reload", async () => {
+    vi.mocked(fetch).mockImplementation((input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("/explore-state") || url.includes("/saved-views")) {
+        return Promise.resolve(ok(mountainExploreLibrary(mountainResumeState)));
+      }
+      const requestedIndex = Number(
+        new URL(url, "http://localhost").searchParams.get("time_index"),
+      );
+      const resolvedIndex = requestedIndex < 0 ? frame.time_index : requestedIndex;
+      return Promise.resolve(
+        ok({
+          ...frame,
+          time_index: resolvedIndex,
+          time_seconds: frame.times_seconds[resolvedIndex] ?? frame.time_seconds,
+        }),
+      );
+    });
+
+    render(<MountainWavesExplore simulation={simulation} onBack={vi.fn()} />);
+
+    expect(await screen.findByText("Last active view restored.")).toBeVisible();
+    expect(screen.getByLabelText("Saved output time")).toHaveValue("1");
+    expect(screen.getByRole("button", { name: "Full domain" })).toHaveClass("active-control");
+    expect(screen.getByRole("button", { name: "True physical scale" })).toHaveClass(
+      "active-control",
+    );
+    expect(screen.getByRole("button", { name: "Show Context" })).toBeVisible();
+    expect(screen.getByRole("tab", { name: "Details" })).toHaveAttribute("aria-selected", "true");
+  });
+
+  it("keeps a user edit made before the delayed startup state arrives", async () => {
+    let resolveStartupState!: (response: Response) => void;
+    const startupState = new Promise<Response>((resolve) => {
+      resolveStartupState = resolve;
+    });
+    vi.mocked(fetch).mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes("/explore-state") && !init?.method) return startupState;
+      if (url.includes("/explore-state") || url.includes("/saved-views")) {
+        return Promise.resolve(ok(mountainExploreLibrary()));
+      }
+      const requestedIndex = Number(
+        new URL(url, "http://localhost").searchParams.get("time_index"),
+      );
+      const resolvedIndex = requestedIndex < 0 ? frame.time_index : requestedIndex;
+      return Promise.resolve(
+        ok({
+          ...frame,
+          time_index: resolvedIndex,
+          time_seconds: frame.times_seconds[resolvedIndex] ?? frame.time_seconds,
+        }),
+      );
+    });
+
+    render(<MountainWavesExplore simulation={simulation} onBack={vi.fn()} />);
+    fireEvent.click(await screen.findByRole("button", { name: "Wave Structure Lens" }));
+    expect(screen.getByRole("button", { name: "Wave Structure Lens" })).toHaveClass(
+      "active-control",
+    );
+
+    act(() => resolveStartupState(ok(mountainExploreLibrary(mountainResumeState))));
+    await waitFor(() =>
+      expect(screen.queryByText("Loading Saved Views...")).not.toBeInTheDocument(),
+    );
+
+    expect(screen.getByRole("button", { name: "Wave Structure Lens" })).toHaveClass(
+      "active-control",
+    );
+    expect(screen.queryByText("Last active view restored.")).not.toBeInTheDocument();
+  });
+
+  it("falls back visibly when a retained Simulation no longer has the saved Field", async () => {
+    const incompatibleState: MountainWavesExploreState = {
+      ...mountainResumeState,
+      view_id: "field",
+      field_id: "cloud_liquid",
+    };
+    vi.mocked(fetch).mockImplementation((input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("/explore-state")) {
+        const response = mountainExploreLibrary(incompatibleState);
+        response.library.simulation_id = drySimulation.simulation_id;
+        if (response.library.last_active) {
+          response.library.last_active.simulation_id = drySimulation.simulation_id;
+        }
+        return Promise.resolve(ok(response));
+      }
+      return Promise.resolve(ok({ ...frame, dry_case: true, overlay: null }));
+    });
+
+    render(<MountainWavesExplore simulation={drySimulation} onBack={vi.fn()} />);
+
+    expect(
+      await screen.findByText(/saved Field cloud_liquid is unavailable in the retained output/),
+    ).toBeVisible();
+    expect(screen.getByRole("button", { name: "Wave Structure Lens" })).toHaveClass(
+      "active-control",
+    );
+  });
+
+  it("falls back visibly when the saved model time is no longer retained", async () => {
+    vi.mocked(fetch).mockImplementation((input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("/explore-state")) {
+        return Promise.resolve(
+          ok(
+            mountainExploreLibrary({
+              ...mountainResumeState,
+              model_time_seconds: 99_999,
+            }),
+          ),
+        );
+      }
+      return Promise.resolve(ok(frame));
+    });
+
+    render(<MountainWavesExplore simulation={simulation} onBack={vi.fn()} />);
+
+    expect(
+      await screen.findByText(/saved model time is outside the retained output's compatible range/),
+    ).toBeVisible();
   });
 
   it("uses the shared live Context and below-workspace support sections", async () => {
@@ -333,6 +506,11 @@ describe("MountainWavesExplore", () => {
   it("switches to direct Field inspection and preserves the geometry choice", async () => {
     render(<MountainWavesExplore simulation={simulation} onBack={vi.fn()} />);
     await screen.findByRole("heading", { name: "Wave Cloud Lens" });
+    await waitFor(() =>
+      expect(fetch).toHaveBeenCalledWith(
+        expect.stringContaining("field=cloud_over_wave&time_index=1"),
+      ),
+    );
     fireEvent.click(screen.getByRole("button", { name: "Field" }));
     await waitFor(() =>
       expect(fetch).toHaveBeenCalledWith(expect.stringContaining("field=w&time_index=1")),
