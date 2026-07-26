@@ -2985,7 +2985,12 @@ function sliceResponse({
             : ([0.4, 0.8, 1.2][levelIndex] ?? 0.8) * 1000
           : null,
     },
-    coordinate_units: isVertical ? { zh: "km", xh: "km" } : { yh: "km", xh: "km" },
+    coordinate_units: isSurface ? { yh: "km", xh: "km" } : { zh: "km", yh: "km", xh: "km" },
+    coordinate_values: {
+      zh: [0.4, 0.8, 1.2],
+      yh: [-3.2, 0, 3.2],
+      xh: [-3.2, 0, 3.2],
+    },
     shape: [2, 3],
     dimension_order: isVertical ? ["zh", "xh"] : ["yh", "xh"],
     data_encoding: "json",
@@ -7965,7 +7970,7 @@ describe("App", () => {
       active_slice_plane: "vertical_x",
       slice_coordinate_km: 0.05,
       slice_native_index: 1,
-      horizontal_slice_coordinate_km: 0.8,
+      horizontal_slice_coordinate_km: 0.3,
       threshold_native: 0.000001,
       layer_opacity: 0.5,
       point_size_px: 9,
@@ -8029,6 +8034,357 @@ describe("App", () => {
     expect(screen.getByRole("button", { name: "Show Context" })).toBeVisible();
     expect(screen.getByRole("tab", { name: "Details" })).toHaveAttribute("aria-selected", "true");
   });
+
+  it("keeps a user edit made before delayed Trade Cumulus startup state arrives", async () => {
+    mockTradeCumulusVisualizer();
+    const defaultFetch = vi.mocked(fetch).getMockImplementation();
+    let resolveStartupState!: (response: Response) => void;
+    const startupState = new Promise<Response>((resolve) => {
+      resolveStartupState = resolve;
+    });
+    const resumeState = {
+      state_version: 1,
+      world_id: "trade_cumulus",
+      model_time_seconds: 900,
+      context_collapsed: true,
+      secondary_section: "details",
+      selected_point: null,
+      view_id: "updraft_lens",
+      scene_field_id: "ql",
+      slice_field_id: "ql",
+      fixed_scale_id: "trade_cumulus_updraft_velocity_v1",
+      active_slice_plane: "vertical_x",
+      slice_coordinate_km: 0.05,
+      slice_native_index: 1,
+      horizontal_slice_coordinate_km: 0.3,
+      threshold_native: 0.000001,
+      layer_opacity: 0.5,
+      point_size_px: 9,
+      lens_opacity: 0.7,
+      show_slice_plane: true,
+      show_cloud_boundary: true,
+      show_horizontal_wind: false,
+      wind_mode: "total",
+      camera_preset: "look_along_x",
+      camera_transform: null,
+      playback_speed: 2,
+      display_controls_open: false,
+    };
+    vi.mocked(fetch).mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (
+        url ===
+          "/api/worlds/trade-cumulus/simulations/trade_cumulus_canonical_bomex/explore-state" &&
+        !init?.method
+      ) {
+        return startupState;
+      }
+      if (url.includes("/explore-state") || url.includes("/saved-views")) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              library: {
+                schema_version: 1,
+                world_id: "trade_cumulus",
+                simulation_id: "trade_cumulus_canonical_bomex",
+                last_active: null,
+                saved_views: [],
+              },
+              backing_simulation_available: true,
+            }),
+            { status: 200 },
+          ),
+        );
+      }
+      return (
+        defaultFetch?.(input, init) ?? Promise.resolve(new Response("not found", { status: 404 }))
+      );
+    });
+
+    render(
+      <VisualizerSceneShell
+        result={
+          tradeCumulusResultCard as unknown as Parameters<typeof VisualizerSceneShell>[0]["result"]
+        }
+        worldName="Trade Cumulus"
+        simulationName="Canonical BOMEX Baseline"
+        simulationRecord={worldBaselineSimulation}
+      />,
+    );
+
+    const fieldButton = await screen.findByRole("button", { name: "Field" });
+    fireEvent.click(fieldButton);
+    expect(fieldButton).toHaveAttribute("aria-pressed", "true");
+
+    act(() =>
+      resolveStartupState(
+        new Response(
+          JSON.stringify({
+            library: {
+              schema_version: 1,
+              world_id: "trade_cumulus",
+              simulation_id: "trade_cumulus_canonical_bomex",
+              last_active: {
+                schema_version: 1,
+                world_id: "trade_cumulus",
+                simulation_id: "trade_cumulus_canonical_bomex",
+                captured_at: "2026-07-26T12:00:00Z",
+                state: resumeState,
+              },
+              saved_views: [],
+            },
+            backing_simulation_available: true,
+          }),
+          { status: 200 },
+        ),
+      ),
+    );
+    await waitFor(() =>
+      expect(screen.queryByText("Loading Saved Views...")).not.toBeInTheDocument(),
+    );
+
+    expect(fieldButton).toHaveAttribute("aria-pressed", "true");
+    expect(screen.queryByText("Last active view restored.")).not.toBeInTheDocument();
+  });
+
+  it("captures a selected direct Field cell in physical native-grid coordinates", async () => {
+    mockTradeCumulusVisualizer();
+    const defaultFetch = vi.mocked(fetch).getMockImplementation();
+    let postedState: Record<string, unknown> | null = null;
+    vi.mocked(fetch).mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes("/explore-state")) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              library: {
+                schema_version: 1,
+                world_id: "trade_cumulus",
+                simulation_id: "trade_cumulus_canonical_bomex",
+                last_active: null,
+                saved_views: [],
+              },
+              backing_simulation_available: true,
+            }),
+            { status: 200 },
+          ),
+        );
+      }
+      if (url.includes("/saved-views") && init?.method === "POST") {
+        postedState = JSON.parse(String(init.body)).state as Record<string, unknown>;
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              library: {
+                schema_version: 1,
+                world_id: "trade_cumulus",
+                simulation_id: "trade_cumulus_canonical_bomex",
+                last_active: null,
+                saved_views: [],
+              },
+              backing_simulation_available: true,
+            }),
+            { status: 200 },
+          ),
+        );
+      }
+      return (
+        defaultFetch?.(input, init) ?? Promise.resolve(new Response("not found", { status: 404 }))
+      );
+    });
+
+    render(
+      <VisualizerSceneShell
+        result={
+          tradeCumulusResultCard as unknown as Parameters<typeof VisualizerSceneShell>[0]["result"]
+        }
+        worldName="Trade Cumulus"
+        simulationName="Canonical BOMEX Baseline"
+        simulationRecord={worldBaselineSimulation}
+      />,
+    );
+
+    const viewMode = await screen.findByLabelText("Explore view mode");
+    await waitFor(() =>
+      expect(within(viewMode).getByRole("button", { name: "Updraft Lens" })).toHaveAttribute(
+        "aria-pressed",
+        "true",
+      ),
+    );
+    fireEvent.click(within(viewMode).getByRole("button", { name: "Field" }));
+    await waitFor(() =>
+      expect(within(viewMode).getByRole("button", { name: "Field" })).toHaveAttribute(
+        "aria-pressed",
+        "true",
+      ),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Vertical x-z slice" }));
+    const heatmap = await screen.findByRole("img", { name: /Vertical x-z slice at y = .* heatmap/ });
+    fireEvent.click(within(heatmap).getByRole("button", { name: /row 1, column 2/i }));
+    expect(await screen.findByRole("heading", { name: "Native-grid evidence" })).toBeVisible();
+
+    fireEvent.click(screen.getByText(/^Saved Views/, { selector: "summary" }));
+    fireEvent.change(screen.getByLabelText("Title"), { target: { value: "Direct Field cell" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save current view" }));
+    await waitFor(() => expect(postedState).not.toBeNull());
+
+    expect(postedState).toMatchObject({
+      view_id: "field",
+      active_slice_plane: "vertical_x",
+      selected_point: {
+        x_km: 0,
+        y_km: 0,
+        z_km: 0.4,
+      },
+    });
+  });
+
+  it.each([
+    {
+      label: "horizontal",
+      activePlane: "horizontal" as const,
+      savedPlaneCoordinateKm: 0.8,
+      savedNativeIndex: 0,
+      expectedIndex: "1",
+    },
+    {
+      label: "vertical",
+      activePlane: "vertical_x" as const,
+      savedPlaneCoordinateKm: 0.1,
+      savedNativeIndex: 0,
+      expectedIndex: "1",
+    },
+  ])(
+    "restores a selected direct Field cell by physical coordinates after the $label inventory changes",
+    async ({
+      activePlane,
+      savedPlaneCoordinateKm,
+      savedNativeIndex,
+      expectedIndex,
+    }) => {
+      mockTradeCumulusVisualizer();
+      const defaultFetch = vi.mocked(fetch).getMockImplementation();
+      const resumeState = {
+        state_version: 1,
+        world_id: "trade_cumulus",
+        model_time_seconds: 900,
+        context_collapsed: false,
+        secondary_section: "explain",
+        selected_point: { x_km: 0.1, y_km: 0.1, z_km: 0.8 },
+        view_id: "field",
+        scene_field_id: "ql",
+        slice_field_id: "ql",
+        fixed_scale_id: null,
+        active_slice_plane: activePlane,
+        slice_coordinate_km: savedPlaneCoordinateKm,
+        slice_native_index: savedNativeIndex,
+        horizontal_slice_coordinate_km: 0.8,
+        threshold_native: 0.000001,
+        layer_opacity: 0.68,
+        point_size_px: 11,
+        lens_opacity: 1,
+        show_slice_plane: true,
+        show_cloud_boundary: true,
+        show_horizontal_wind: true,
+        wind_mode: "perturbation",
+        camera_preset: "overview",
+        camera_transform: null,
+        playback_speed: 1,
+        display_controls_open: false,
+      };
+      vi.mocked(fetch).mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        if (
+          url ===
+            "/api/worlds/trade-cumulus/simulations/trade_cumulus_canonical_bomex/explore-state" &&
+          !init?.method
+        ) {
+          return Promise.resolve(
+            new Response(
+              JSON.stringify({
+                library: {
+                  schema_version: 1,
+                  world_id: "trade_cumulus",
+                  simulation_id: "trade_cumulus_canonical_bomex",
+                  last_active: {
+                    schema_version: 1,
+                    world_id: "trade_cumulus",
+                    simulation_id: "trade_cumulus_canonical_bomex",
+                    captured_at: "2026-07-26T12:00:00Z",
+                    state: resumeState,
+                  },
+                  saved_views: [],
+                },
+                backing_simulation_available: true,
+              }),
+              { status: 200 },
+            ),
+          );
+        }
+        if (url.includes("/api/results/result-trade-cumulus/visualization/slice")) {
+          const parsed = new URL(url, "http://localhost");
+          const orientation = parsed.searchParams.get("orientation");
+          const selectedIndex = Number(parsed.searchParams.get("level_index") ?? 0);
+          const response = tradeCumulusSliceResponse(url);
+          const coordinateValues =
+            orientation === "horizontal"
+              ? {
+                  zh: [0.2, 0.8, 1.4],
+                  yh: [0, 0.1],
+                  xh: [-3.1, 0.1, 3.3],
+                }
+              : {
+                  zh: [0.2, 0.8],
+                  yh: [-0.4, 0.1],
+                  xh: [-3.1, 0.1, 3.3],
+                };
+          const selectedDimension = orientation === "horizontal" ? "zh" : "yh";
+          return Promise.resolve(
+            new Response(
+              JSON.stringify({
+                ...response,
+                selection: {
+                  ...response.selection,
+                  selected_dimension: selectedDimension,
+                  selected_index: selectedIndex,
+                  selected_coordinate_value:
+                    coordinateValues[selectedDimension][selectedIndex] ?? null,
+                  level_units: "km",
+                  level_coordinate_value:
+                    orientation === "horizontal"
+                      ? (coordinateValues.zh[selectedIndex] ?? null)
+                      : null,
+                },
+                coordinate_units: { zh: "km", yh: "km", xh: "km" },
+                coordinate_values: coordinateValues,
+              }),
+              { status: 200 },
+            ),
+          );
+        }
+        return (
+          defaultFetch?.(input, init) ?? Promise.resolve(new Response("not found", { status: 404 }))
+        );
+      });
+
+      render(
+        <VisualizerSceneShell
+          result={
+            tradeCumulusResultCard as unknown as Parameters<typeof VisualizerSceneShell>[0]["result"]
+          }
+          worldName="Trade Cumulus"
+          simulationName="Canonical BOMEX Baseline"
+          simulationRecord={worldBaselineSimulation}
+        />,
+      );
+
+      expect(await screen.findByText(/Last active view restored with adjustments/)).toBeVisible();
+      expect(screen.getByLabelText("Slice position")).toHaveValue(expectedIndex);
+      const selectedEvidence = await screen.findByRole("heading", { name: "Native-grid evidence" });
+      expect(selectedEvidence).toBeVisible();
+      expect(screen.getByText("x index 1 · y index 1 · z index 1")).toBeVisible();
+    },
+  );
 
   it("announces a Trade restoration only after target evidence loads and clears success on edit", async () => {
     let targetRequestCount = 0;

@@ -257,7 +257,8 @@ type PendingMountainCuratedRestore = {
 type PendingMountainSavedRestore = {
   state: MountainWavesExploreState;
   result: ExploreRestorationResult;
-  savedViewId: string | null;
+  source: "saved_view" | "last_active";
+  resolve: (result: ExploreRestorationResult) => void;
 };
 
 function mountainWaveAvailableOverlayIds(frame: MountainWaveFrame | null): string[] {
@@ -342,10 +343,10 @@ export function MountainWavesExplore({
   const [retryNonce, setRetryNonce] = useState(0);
   const requestSequence = useRef(0);
   const initialCuratedSimulationRef = useRef<string | null>(null);
+  const startupUserEditedRef = useRef(false);
   const curatedNoticeSignatureRef = useRef<string | null>(null);
   const exploreState = useExploreStateLibrary("mountain_waves", simulation.simulation_id);
   const saveExploreResume = exploreState.saveResume;
-  const updateExploreSavedView = exploreState.updateSavedView;
 
   const requestedField: MountainWaveField =
     viewMode === "cloud" ? "cloud_over_wave" : viewMode === "structure" ? "w" : field;
@@ -423,6 +424,7 @@ export function MountainWavesExplore({
       (simulation.moist_fields_available ? "wave_cloud" : "wave_structure");
     const nextDefinition = mountainWavesCuratedView(simulation.simulation_id, nextInitialView, "w");
     initialCuratedSimulationRef.current = null;
+    startupUserEditedRef.current = false;
     setViewMode(mountainViewMode(nextInitialView));
     setField(nextDefinition?.fieldId ?? "w");
     setGeometryMode(nextDefinition?.geometry ?? "expanded");
@@ -655,14 +657,14 @@ export function MountainWavesExplore({
     (
       savedState: ExploreWorldState,
       savedView: SavedViewRecord | null,
-    ): ExploreRestorationResult => {
+    ): Promise<ExploreRestorationResult> => {
       if (savedState.world_id !== "mountain_waves") {
         const result = {
           status: "unavailable" as const,
           message: "This Saved View belongs to another Cloud World.",
         };
         setCuratedNotice({ status: "technical_fallback", message: result.message });
-        return result;
+        return Promise.resolve(result);
       }
       const availableViews = simulation.moist_fields_available
         ? ["field", "wave_structure", "wave_cloud"]
@@ -673,7 +675,7 @@ export function MountainWavesExplore({
           message: "The saved Lens is unavailable for this Simulation.",
         };
         setCuratedNotice({ status: "technical_fallback", message: result.message });
-        return result;
+        return Promise.resolve(result);
       }
       if (!fieldOptions.includes(savedState.field_id)) {
         const result = {
@@ -681,7 +683,7 @@ export function MountainWavesExplore({
           message: `The saved Field ${savedState.field_id} is unavailable in the retained output.`,
         };
         setCuratedNotice({ status: "technical_fallback", message: result.message });
-        return result;
+        return Promise.resolve(result);
       }
       const mappedTime = nearestSavedCoordinate(
         frame?.times_seconds ?? [],
@@ -694,7 +696,7 @@ export function MountainWavesExplore({
           message: "The saved model time is outside the retained output's compatible range.",
         };
         setCuratedNotice({ status: "technical_fallback", message: result.message });
-        return result;
+        return Promise.resolve(result);
       }
 
       const partialMessages: string[] = [];
@@ -761,12 +763,14 @@ export function MountainWavesExplore({
         status: "applying",
         message: "Restoring the saved Mountain Waves examination and loading its evidence...",
       });
-      setPendingSavedRestore({
-        state: savedState,
-        result,
-        savedViewId: savedView?.saved_view_id ?? null,
+      return new Promise((resolve) => {
+        setPendingSavedRestore({
+          state: savedState,
+          result,
+          source: savedView ? "saved_view" : "last_active",
+          resolve,
+        });
       });
-      return result;
     },
     [fieldOptions, frame, simulation.moist_fields_available],
   );
@@ -780,9 +784,12 @@ export function MountainWavesExplore({
       return;
     }
     initialCuratedSimulationRef.current = simulation.simulation_id;
+    if (startupUserEditedRef.current) {
+      return;
+    }
     const resumeState = exploreState.library?.last_active?.state;
     if (resumeState?.world_id === "mountain_waves") {
-      applySavedExploreState(resumeState, null);
+      void applySavedExploreState(resumeState, null);
       return;
     }
     applyCuratedView(initialViewId, "initial");
@@ -800,15 +807,25 @@ export function MountainWavesExplore({
     if (!pendingSavedRestore) return;
     if (error) {
       const message = `The saved Mountain Waves examination could not be restored: ${error}`;
+      pendingSavedRestore.resolve({ status: "unavailable", message });
       setPendingSavedRestore(null);
       curatedNoticeSignatureRef.current = curatedStateSignature;
       setCuratedNotice({ status: "technical_fallback", message });
-      if (pendingSavedRestore.savedViewId) {
-        void updateExploreSavedView(pendingSavedRestore.savedViewId, {
-          restoration_status: "unavailable",
-          restoration_message: message,
-        });
-      }
+      return;
+    }
+    const targetViewMode = mountainViewMode(pendingSavedRestore.state.view_id);
+    const controlsMatch =
+      viewMode === targetViewMode &&
+      field === pendingSavedRestore.state.field_id &&
+      geometryMode === pendingSavedRestore.state.geometry_id &&
+      viewportMode === pendingSavedRestore.state.viewport_id &&
+      timeIndex !== null;
+    if (!controlsMatch) {
+      const message = "The saved Mountain Waves examination was interrupted before it loaded.";
+      pendingSavedRestore.resolve({ status: "unavailable", message });
+      setPendingSavedRestore(null);
+      curatedNoticeSignatureRef.current = curatedStateSignature;
+      setCuratedNotice({ status: "technical_fallback", message });
       return;
     }
     const expectedField =
@@ -822,15 +839,10 @@ export function MountainWavesExplore({
     }
     if (frame.scale.scale_id !== pendingSavedRestore.state.fixed_scale_id) {
       const message = `The saved scale ${pendingSavedRestore.state.fixed_scale_id} is unavailable for this output.`;
+      pendingSavedRestore.resolve({ status: "unavailable", message });
       setPendingSavedRestore(null);
       curatedNoticeSignatureRef.current = curatedStateSignature;
       setCuratedNotice({ status: "technical_fallback", message });
-      if (pendingSavedRestore.savedViewId) {
-        void updateExploreSavedView(pendingSavedRestore.savedViewId, {
-          restoration_status: "unavailable",
-          restoration_message: message,
-        });
-      }
       return;
     }
     if (
@@ -838,35 +850,34 @@ export function MountainWavesExplore({
       (!frame.overlay || !frame.pointer_context.relative_humidity_percent)
     ) {
       const message = "The saved Wave Cloud Lens requires cloud and relative-humidity evidence.";
+      pendingSavedRestore.resolve({ status: "unavailable", message });
       setPendingSavedRestore(null);
       curatedNoticeSignatureRef.current = curatedStateSignature;
       setCuratedNotice({ status: "technical_fallback", message });
-      if (pendingSavedRestore.savedViewId) {
-        void updateExploreSavedView(pendingSavedRestore.savedViewId, {
-          restoration_status: "unavailable",
-          restoration_message: message,
-        });
-      }
       return;
     }
+    pendingSavedRestore.resolve(pendingSavedRestore.result);
     setPendingSavedRestore(null);
     curatedNoticeSignatureRef.current = curatedStateSignature;
     setCuratedNotice({
       status:
         pendingSavedRestore.result.status === "healthy" ? "applied" : "partially_incompatible",
       message:
-        pendingSavedRestore.savedViewId === null
+        pendingSavedRestore.source === "last_active"
           ? pendingSavedRestore.result.message.replace("Saved View", "Last active view")
           : pendingSavedRestore.result.message,
     });
   }, [
     curatedStateSignature,
     error,
+    field,
     frame,
+    geometryMode,
     loading,
     pendingSavedRestore,
     timeIndex,
-    updateExploreSavedView,
+    viewMode,
+    viewportMode,
   ]);
 
   useEffect(() => {
@@ -994,6 +1005,9 @@ export function MountainWavesExplore({
       worldName="Mountain Waves"
       simulationName={simulation.display_name}
       onBack={onBack}
+      onUserInteractionCapture={() => {
+        if (exploreState.loading) startupUserEditedRef.current = true;
+      }}
       headerActions={
         <>
           <SavedViewsControl

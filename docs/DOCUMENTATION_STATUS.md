@@ -46,11 +46,11 @@ Keep product approval separate from software availability:
 | --- | --- | --- |
 | Cloud Worlds | A growing collection of explorable cloud regimes | Trade Cumulus, Mountain Waves, and Supercells are accessible |
 | Fun With Soundings | A separate first-class atmospheric workbench | Accessible with five jobs, direct non-World Explore, and conservative World ownership |
-| Saved Views | Durable user-curated views | Placeholder only; no durable Saved Views |
+| Saved Views | Durable user-curated views | Implemented across all three accessible Worlds as named live examinations with bounded restoration status |
 | Compare | Related Simulations can be compared | One featured Trade Cumulus Comparison; no ordinary World-aware Compare |
 | Variation | Create a related Simulation from a World Simulation | Working Mountain Waves Lab path; no shared three-World workflow |
 | Explore | World-specific science in a shared application vocabulary | Implemented separately for all three accessible Worlds |
-| Curated Explore defaults | Authored Simulation and Field/Lens starting states with complete reset and visible fallback | Implemented across all three accessible Worlds; not durable user state |
+| Curated Explore defaults | Authored Simulation and Field/Lens starting states with complete reset and visible fallback | Implemented across all three accessible Worlds as the fallback below explicit Saved Views and last-active state |
 
 The three Worlds share product vocabulary and core workspace behavior but may
 legitimately differ in geometry, Lenses, controls, comparison questions, and
@@ -84,17 +84,17 @@ The presentation-quality and three-World foundation is complete through #420,
 #423, #421, #429, and #428. The first-class Fun With Soundings workbench is
 complete through #395. All three Explore implementations now use one
 collapsible Context and shared below-the-fold Science, Notes, and Details
-structure. Per-Simulation Notes are the first durable content contract; complete
-Explore state and Saved Views remain unimplemented.
+structure. Per-Simulation Notes remain a separate durable content contract.
 
 The authored curated-default and complete reset contract is complete through
-#438. The next approved program is #432, personal scientific memory: define one
-versioned, World-aware serializable Explore-state contract and make durable
-resume and named Saved Views consume the authored fallback before Compare work.
+#438. Issue #432 completes the next personal-scientific-memory increment: one
+versioned World-aware Explore-state contract, ordinary last-active resume, and
+named Saved Views across all three Worlds. The next program in the approved
+sequence is #433, ordinary World-aware Compare. Saved Comparisons are explicitly
+outside #433 and remain unimplemented.
 
-Rewritten issue #394 and issues #432 through #437 record bounded
-follow-on product work for Activity and History, durable Explore state and
-Saved Views, Compare and Saved Comparisons, variation
+Rewritten issue #394 and issues #433 through #437 record bounded
+follow-on product work for Activity and History, Compare and Saved Comparisons, variation
 contracts, and retained assets. Their presence does not
 activate them or replace the sequencing authority. Issues #389, #390, and #391
 were closed as superseded and are not current assignment authority.

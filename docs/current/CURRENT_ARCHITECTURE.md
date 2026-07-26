@@ -213,7 +213,7 @@ Missing data does not mutate the authored definition or silently promote a
 different Field, Lens, scale, time, or plane. Initial open and complete reset
 both consume the same definition.
 
-Future durable state from #432 must use this precedence:
+Durable Explore state from #432 uses this precedence:
 
 ```text
 explicit Saved View
@@ -222,8 +222,54 @@ explicit Saved View
 > technical fallback
 ```
 
-This contract does not persist state, create Saved Views, or serialize
-arbitrary component internals.
+The durable contract consumes these authored definitions as its fallback. It
+does not duplicate authored scientific defaults or serialize arbitrary
+component internals.
+
+### Durable Explore-state contract
+
+`app/backend/cloud_chamber/explore_state.py` owns one versioned local library
+per stable World and Simulation:
+
+```text
+<runtime-home>/explore-state/<world_id>/<simulation_id>.json
+```
+
+The v1 library envelope contains a last-active snapshot and up to 100 Saved
+Views. Each snapshot has a common identity, modeled time, Context, secondary
+section, and selected-point vocabulary plus one explicit World-specific state:
+
+- Trade Cumulus Field or Updraft Lens, physical planes, 3-D display, wind,
+  scale, and camera state;
+- Mountain Waves Field or Lens, viewport, geometry, overlays, and cloud display
+  state;
+- Supercells Lens, evidence orientation and physical plane, layers, scales,
+  overlays, hydrometeor categories, and camera state.
+
+The backend rejects unknown fields, non-finite numeric values, unbounded
+collections, invalid identifiers, unsupported schemas, more than 100 Saved
+Views, and files larger than 2 MB. Writes use a temporary file, filesystem
+synchronization, and atomic replacement.
+
+The frontend loads the library once for the active stable Simulation. A delayed
+startup response cannot override an intervening user edit. Last-active writes
+are serialized and coalesced so only the newest queued coherent state remains
+authoritative. The state controls expose create, list, live reopen, rename, and
+delete for Saved Views.
+
+Opening a Saved View is transactional at the scientific-workspace boundary:
+the action remains pending until required time, coordinate, Field or Lens,
+scale, overlay, and selected-point evidence has loaded. Only the final
+`healthy`, `partially_restorable`, or `unavailable` result is written to Saved
+View metadata. Metadata persistence failure does not invalidate an otherwise
+usable restored examination.
+
+Restoration maps modeled time by seconds and planes and selections by physical
+native-grid coordinates within bounded tolerances. Native indices are only a
+provisional fallback while coordinate evidence loads. Missing fields, scales,
+coordinates, layers, or retained output fail visibly without silently changing
+scientific meaning. A missing backing Simulation preserves its Saved View
+library and reports those records unavailable.
 
 ## Scientific Payload Rules
 
@@ -347,9 +393,11 @@ Blank content clears the note. Read and write failures stay local to Notes and
 are reported in the interface. Notes do not become run identity, result
 metadata, or a general annotation model.
 
-Saved Views and complete Explore workspace state are not durably persisted.
-Authored curated defaults are source-controlled product definitions, not user
-state or persistence records.
+Saved Views and last-active Explore state are durably persisted through the
+versioned World-aware contract above. Authored curated defaults remain
+source-controlled product definitions rather than user state. Per-Simulation
+Notes remain independently stored under `simulation-notes` and are not copied
+into Saved Views.
 The only product Comparison currently exposed is the featured Trade Cumulus
 pair. World-aware variation exists for Mountain Waves but is not yet one shared
 cross-World system.
@@ -370,7 +418,7 @@ reused.
 
 - World shells and Explore implementations share vocabulary but still contain
   World-specific state and rendering code.
-- Durable resume, Saved Views, and general World-aware Compare are absent.
+- General World-aware Compare and Saved Comparisons are absent.
 - Variation is implemented only for Mountain Waves.
 - Legacy run, result, and sounding surfaces remain interleaved with the newer
   World application.

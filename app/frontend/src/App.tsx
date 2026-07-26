@@ -1429,6 +1429,7 @@ type SliceResponse = {
     level_meters: number | null;
   };
   coordinate_units: Record<string, string | null>;
+  coordinate_values?: Record<string, Array<number | string | null>>;
   shape: number[];
   dimension_order: string[];
   data_encoding: "json";
@@ -11430,9 +11431,11 @@ type PendingTradeCuratedRestore = {
 type PendingTradeSavedRestore = {
   state: TradeCumulusExploreState;
   result: ExploreRestorationResult;
-  savedViewId: string | null;
+  source: "saved_view" | "last_active";
+  resolve: (result: ExploreRestorationResult) => void;
   timeIndex: number;
   planeIndex: number;
+  horizontalPlaneIndex: number;
 };
 
 export function VisualizerSceneShell({
@@ -11534,13 +11537,13 @@ export function VisualizerSceneShell({
   const updraftLensRequestRef = useRef(0);
   const autoActivatedUpdraftLensResultRef = useRef<string | null>(null);
   const initialCuratedResultRef = useRef<string | null>(null);
+  const startupUserEditedRef = useRef(false);
   const curatedNoticeSignatureRef = useRef<string | null>(null);
   const exploreState = useExploreStateLibrary(
     isTradeCumulusWorldExplore ? "trade_cumulus" : null,
     isTradeCumulusWorldExplore ? (simulationRecord?.simulation_id ?? null) : null,
   );
   const saveExploreResume = exploreState.saveResume;
-  const updateExploreSavedView = exploreState.updateSavedView;
   const maxPoints = 50_000;
 
   useEffect(() => {
@@ -11595,6 +11598,7 @@ export function VisualizerSceneShell({
     ordinaryExploreStateRef.current = null;
     autoActivatedUpdraftLensResultRef.current = null;
     initialCuratedResultRef.current = null;
+    startupUserEditedRef.current = false;
     curatedNoticeSignatureRef.current = null;
     updraftLensRequestRef.current += 1;
     setSceneStatus("Loading scene data...");
@@ -11845,6 +11849,8 @@ export function VisualizerSceneShell({
       if (Number.isFinite(xKm) && Number.isFinite(yKm) && Number.isFinite(zKm)) {
         selectedPoint = { x_km: xKm, y_km: yKm, z_km: zKm };
       }
+    } else if (!updraftLensActive) {
+      selectedPoint = physicalPointFromFieldSlice(activeSlice, selectedRegion);
     }
     return {
       state_version: 1,
@@ -12211,14 +12217,14 @@ export function VisualizerSceneShell({
     (
       savedState: ExploreWorldState,
       savedView: SavedViewRecord | null,
-    ): ExploreRestorationResult => {
+    ): Promise<ExploreRestorationResult> => {
       if (savedState.world_id !== "trade_cumulus") {
         const result = {
           status: "unavailable" as const,
           message: "This Saved View belongs to another Cloud World.",
         };
         setCuratedNotice({ status: "technical_fallback", message: result.message });
-        return result;
+        return Promise.resolve(result);
       }
       const savedSceneField = catalog?.available_fields.find(
         (field) => field.raw_field_name === savedState.scene_field_id,
@@ -12236,7 +12242,7 @@ export function VisualizerSceneShell({
           message: "A saved Field or Lens is unavailable in the retained output.",
         };
         setCuratedNotice({ status: "technical_fallback", message: result.message });
-        return result;
+        return Promise.resolve(result);
       }
       if (
         savedState.fixed_scale_id &&
@@ -12247,7 +12253,7 @@ export function VisualizerSceneShell({
           message: `The saved scale ${savedState.fixed_scale_id} is unavailable.`,
         };
         setCuratedNotice({ status: "technical_fallback", message: result.message });
-        return result;
+        return Promise.resolve(result);
       }
       const timesSeconds = savedSliceField.time_coordinate_values
         .map((value) => Number(value))
@@ -12259,7 +12265,7 @@ export function VisualizerSceneShell({
           message: "The saved model time is outside the retained output's compatible range.",
         };
         setCuratedNotice({ status: "technical_fallback", message: result.message });
-        return result;
+        return Promise.resolve(result);
       }
 
       const partialMessages: string[] = [];
@@ -12268,49 +12274,83 @@ export function VisualizerSceneShell({
           `time ${Math.round(savedState.model_time_seconds).toLocaleString()} s mapped to ${Math.round(mappedTime.value).toLocaleString()} s`,
         );
       }
-      let planeIndex = savedState.slice_native_index;
-      const planeCoordinates =
+      const activeFieldSlice =
+        savedState.active_slice_plane === "horizontal" ? sceneHorizontalSlice : sceneVerticalSlice;
+      const mappedPlane =
         savedState.view_id === "updraft_lens" && updraftLensFrame
-          ? savedState.active_slice_plane === "horizontal"
-            ? updraftLensFrame.z_values_km
-            : savedState.active_slice_plane === "vertical_x"
-              ? updraftLensFrame.y_values_km
-              : updraftLensFrame.x_values_km
-          : [];
-      if (planeCoordinates.length > 0) {
-        const mappedPlane = nearestSavedCoordinate(
-          planeCoordinates,
-          savedState.slice_coordinate_km,
-          0.2,
-        );
-        if (!mappedPlane) {
-          const result = {
-            status: "unavailable" as const,
-            message: "The saved physical slice is outside the compatible native-grid range.",
-          };
-          setCuratedNotice({ status: "technical_fallback", message: result.message });
-          return result;
-        }
-        planeIndex = mappedPlane.index;
-        if (!mappedPlane.exact) {
-          partialMessages.push(
-            `slice ${savedState.slice_coordinate_km.toFixed(2)} km mapped to ${mappedPlane.value.toFixed(2)} km`,
-          );
-        }
-      } else if (
-        savedState.slice_native_index < 0 ||
-        savedState.slice_native_index >= Math.max(activeSliceMax, 1)
+          ? nearestSavedCoordinate(
+              savedState.active_slice_plane === "horizontal"
+                ? updraftLensFrame.z_values_km
+                : savedState.active_slice_plane === "vertical_x"
+                  ? updraftLensFrame.y_values_km
+                  : updraftLensFrame.x_values_km,
+              savedState.slice_coordinate_km,
+              0.2,
+            )
+          : mapSavedFieldPlane(activeFieldSlice, savedState.slice_coordinate_km, 0.2);
+      const planeEvidencePending =
+        savedState.view_id === "updraft_lens"
+          ? updraftLensFrame === null
+          : activeFieldSlice === null;
+      if (
+        !mappedPlane &&
+        planeEvidencePending &&
+        savedState.slice_native_index >= 0 &&
+        savedState.slice_native_index < Math.max(activeSliceMax, 1)
       ) {
+        // The native index is provisional until the requested Lens frame supplies coordinates.
+      } else if (!mappedPlane) {
         const result = {
           status: "unavailable" as const,
-          message: "The saved native slice index is unavailable in this retained output.",
+          message: "The saved physical slice is outside the compatible native-grid range.",
         };
         setCuratedNotice({ status: "technical_fallback", message: result.message });
-        return result;
+        return Promise.resolve(result);
+      }
+      const planeIndex = mappedPlane?.index ?? savedState.slice_native_index;
+      if (mappedPlane && !mappedPlane.exact) {
+        partialMessages.push(
+          `slice ${savedState.slice_coordinate_km.toFixed(2)} km mapped to ${mappedPlane.value.toFixed(2)} km`,
+        );
+      }
+
+      let horizontalPlaneIndex =
+        savedState.active_slice_plane === "horizontal" ? planeIndex : horizontalSliceLevel;
+      if (savedState.horizontal_slice_coordinate_km !== null) {
+        const mappedHorizontal =
+          savedState.view_id === "updraft_lens" && updraftLensFrame
+            ? nearestSavedCoordinate(
+                updraftLensFrame.z_values_km,
+                savedState.horizontal_slice_coordinate_km,
+                0.2,
+              )
+            : mapSavedFieldPlane(
+                sceneHorizontalSlice,
+                savedState.horizontal_slice_coordinate_km,
+                0.2,
+              );
+        const horizontalEvidencePending =
+          savedState.view_id === "updraft_lens"
+            ? updraftLensFrame === null
+            : sceneHorizontalSlice === null;
+        if (!mappedHorizontal && !horizontalEvidencePending) {
+          const result = {
+            status: "unavailable" as const,
+            message: "The saved horizontal 3-D slice is outside the compatible native-grid range.",
+          };
+          setCuratedNotice({ status: "technical_fallback", message: result.message });
+          return Promise.resolve(result);
+        }
+        if (mappedHorizontal) horizontalPlaneIndex = mappedHorizontal.index;
+        if (mappedHorizontal && !mappedHorizontal.exact) {
+          partialMessages.push(
+            `horizontal slice ${savedState.horizontal_slice_coordinate_km.toFixed(2)} km mapped to ${mappedHorizontal.value.toFixed(2)} km`,
+          );
+        }
       }
 
       let nextSelectedRegion: SelectedRegionRequest | null = null;
-      if (savedState.selected_point && updraftLensFrame) {
+      if (savedState.selected_point && savedState.view_id === "updraft_lens" && updraftLensFrame) {
         const mappedX = nearestSavedCoordinate(
           updraftLensFrame.x_values_km,
           savedState.selected_point.x_km,
@@ -12340,7 +12380,21 @@ export function VisualizerSceneShell({
           partialMessages.push("selected point could not be restored");
         }
       } else if (savedState.selected_point) {
-        partialMessages.push("selected point could not be restored");
+        const mappedPoint = mapPhysicalPointToFieldSlice(
+          savedState.active_slice_plane === "horizontal"
+            ? sceneHorizontalSlice
+            : sceneVerticalSlice,
+          savedState.selected_point,
+          0.2,
+        );
+        if (mappedPoint) {
+          nextSelectedRegion = mappedPoint.selection;
+          if (!mappedPoint.exact) {
+            partialMessages.push("selected point mapped to the nearest native cell");
+          }
+        } else {
+          partialMessages.push("selected point could not be restored");
+        }
       }
 
       const result: ExploreRestorationResult = {
@@ -12372,9 +12426,10 @@ export function VisualizerSceneShell({
       setSliceOrientation(
         savedState.active_slice_plane === "vertical_y" ? "vertical_y" : "vertical_x",
       );
-      if (savedState.active_slice_plane === "horizontal") {
-        setHorizontalSliceLevel(planeIndex);
-      } else {
+      setHorizontalSliceLevel(
+        savedState.active_slice_plane === "horizontal" ? planeIndex : horizontalPlaneIndex,
+      );
+      if (savedState.active_slice_plane !== "horizontal") {
         setVerticalSliceIndex(planeIndex);
       }
       setUpdraftLensOpacity(savedState.lens_opacity);
@@ -12408,16 +12463,28 @@ export function VisualizerSceneShell({
         status: "applying",
         message: "Restoring the saved Trade Cumulus examination and loading its evidence...",
       });
-      setPendingSavedRestore({
-        state: savedState,
-        result,
-        savedViewId: savedView?.saved_view_id ?? null,
-        timeIndex: mappedTime.index,
-        planeIndex,
+      return new Promise((resolve) => {
+        setPendingSavedRestore({
+          state: savedState,
+          result,
+          source: savedView ? "saved_view" : "last_active",
+          resolve,
+          timeIndex: mappedTime.index,
+          planeIndex,
+          horizontalPlaneIndex:
+            savedState.active_slice_plane === "horizontal" ? planeIndex : horizontalPlaneIndex,
+        });
       });
-      return result;
     },
-    [activeSliceMax, catalog?.available_fields, updraftLensDefaults, updraftLensFrame],
+    [
+      activeSliceMax,
+      catalog?.available_fields,
+      horizontalSliceLevel,
+      sceneHorizontalSlice,
+      sceneVerticalSlice,
+      updraftLensDefaults,
+      updraftLensFrame,
+    ],
   );
 
   useEffect(() => {
@@ -12432,9 +12499,12 @@ export function VisualizerSceneShell({
       return;
     }
     initialCuratedResultRef.current = resultId;
+    if (startupUserEditedRef.current) {
+      return;
+    }
     const resumeState = exploreState.library?.last_active?.state;
     if (resumeState?.world_id === "trade_cumulus") {
-      applySavedExploreState(resumeState, null);
+      void applySavedExploreState(resumeState, null);
       return;
     }
     if (tradeCumulusCuratedView(simulationRecord?.simulation_id, TRADE_CUMULUS_INITIAL_VIEW)) {
@@ -12807,11 +12877,14 @@ export function VisualizerSceneShell({
       sliceFieldName === savedState.slice_field_id &&
       activeSlicePlane === savedState.active_slice_plane &&
       activeSliceIndex === pendingSavedRestore.planeIndex &&
+      horizontalSliceLevel === pendingSavedRestore.horizontalPlaneIndex &&
       updraftLensActive === (savedState.view_id === "updraft_lens");
     if (!controlsMatch) {
+      const message = "The saved Trade Cumulus examination was interrupted before it loaded.";
+      pendingSavedRestore.resolve({ status: "unavailable", message });
       setPendingSavedRestore(null);
-      setCuratedNotice(null);
-      curatedNoticeSignatureRef.current = null;
+      curatedNoticeSignatureRef.current = curatedStateSignature;
+      setCuratedNotice({ status: "technical_fallback", message });
       return;
     }
 
@@ -12821,15 +12894,10 @@ export function VisualizerSceneShell({
       (savedState.view_id === "updraft_lens" ? updraftLensError : sliceError);
     if (relevantError) {
       const message = `The saved Trade Cumulus examination could not be restored: ${relevantError}`;
+      pendingSavedRestore.resolve({ status: "unavailable", message });
       setPendingSavedRestore(null);
       curatedNoticeSignatureRef.current = curatedStateSignature;
       setCuratedNotice({ status: "technical_fallback", message });
-      if (pendingSavedRestore.savedViewId) {
-        void updateExploreSavedView(pendingSavedRestore.savedViewId, {
-          restoration_status: "unavailable",
-          restoration_message: message,
-        });
-      }
       return;
     }
 
@@ -12845,26 +12913,30 @@ export function VisualizerSceneShell({
       updraftLensFrame.plane_index === pendingSavedRestore.planeIndex;
     const fieldSlice =
       savedState.active_slice_plane === "horizontal" ? sceneHorizontalSlice : sceneVerticalSlice;
+    const horizontalFieldSliceReady =
+      sceneHorizontalSlice?.field.raw_field_name === savedState.slice_field_id &&
+      sceneHorizontalSlice.selection.time_index === pendingSavedRestore.timeIndex &&
+      sceneHorizontalSlice.selection.orientation === "horizontal" &&
+      sceneHorizontalSlice.selection.selected_index === pendingSavedRestore.horizontalPlaneIndex;
+    const verticalFieldSliceReady =
+      !sliceSupportsVertical ||
+      (sceneVerticalSlice?.field.raw_field_name === savedState.slice_field_id &&
+        sceneVerticalSlice.selection.time_index === pendingSavedRestore.timeIndex &&
+        sceneVerticalSlice.selection.orientation === savedState.active_slice_plane &&
+        sceneVerticalSlice.selection.selected_index === pendingSavedRestore.planeIndex);
     const fieldSlicesReady =
       savedState.view_id === "field" &&
       !sliceLoading &&
-      fieldSlice?.field.raw_field_name === savedState.slice_field_id &&
-      fieldSlice.selection.time_index === pendingSavedRestore.timeIndex &&
-      fieldSlice.selection.orientation === savedState.active_slice_plane &&
-      fieldSlice.selection.selected_index === pendingSavedRestore.planeIndex;
+      horizontalFieldSliceReady &&
+      (savedState.active_slice_plane === "horizontal" || verticalFieldSliceReady);
     if (!sceneReady || (!lensReady && !fieldSlicesReady)) return;
 
     if (savedState.fixed_scale_id && updraftLensFrame?.w_scale_id !== savedState.fixed_scale_id) {
       const message = `The saved scale ${savedState.fixed_scale_id} is unavailable for this output.`;
+      pendingSavedRestore.resolve({ status: "unavailable", message });
       setPendingSavedRestore(null);
       curatedNoticeSignatureRef.current = curatedStateSignature;
       setCuratedNotice({ status: "technical_fallback", message });
-      if (pendingSavedRestore.savedViewId) {
-        void updateExploreSavedView(pendingSavedRestore.savedViewId, {
-          restoration_status: "unavailable",
-          restoration_message: message,
-        });
-      }
       return;
     }
 
@@ -12891,7 +12963,7 @@ export function VisualizerSceneShell({
             : savedState.active_slice_plane === "vertical_x"
               ? (updraftLensFrame?.y_values_km ?? [])
               : (updraftLensFrame?.x_values_km ?? [])
-          : [];
+          : slicePlaneCoordinateValuesKm(fieldSlice);
       const remappedPlane = nearestSavedCoordinate(
         coordinateInventory,
         savedState.slice_coordinate_km,
@@ -12906,6 +12978,10 @@ export function VisualizerSceneShell({
         setPendingSavedRestore({
           ...pendingSavedRestore,
           planeIndex: remappedPlane.index,
+          horizontalPlaneIndex:
+            savedState.active_slice_plane === "horizontal"
+              ? remappedPlane.index
+              : pendingSavedRestore.horizontalPlaneIndex,
           result: {
             status: "partially_restorable",
             message: `Saved View restored with adjustments: slice ${savedState.slice_coordinate_km.toFixed(2)} km mapped to ${remappedPlane.value.toFixed(2)} km.`,
@@ -12914,25 +12990,90 @@ export function VisualizerSceneShell({
         return;
       }
       const message = "The saved physical slice could not be matched to retained output.";
+      pendingSavedRestore.resolve({ status: "unavailable", message });
       setPendingSavedRestore(null);
       curatedNoticeSignatureRef.current = curatedStateSignature;
       setCuratedNotice({ status: "technical_fallback", message });
-      if (pendingSavedRestore.savedViewId) {
-        void updateExploreSavedView(pendingSavedRestore.savedViewId, {
-          restoration_status: "unavailable",
-          restoration_message: message,
-        });
-      }
       return;
     }
 
+    if (savedState.horizontal_slice_coordinate_km !== null) {
+      const loadedHorizontalCoordinateKm =
+        savedState.view_id === "updraft_lens"
+          ? (updraftLensFrame?.z_values_km[pendingSavedRestore.horizontalPlaneIndex] ?? null)
+          : coordinateKilometers(
+              sceneHorizontalSlice?.selection.selected_coordinate_value ??
+                sceneHorizontalSlice?.selection.level_coordinate_value ??
+                null,
+              sceneHorizontalSlice?.selection.level_units ?? null,
+            );
+      if (
+        loadedHorizontalCoordinateKm === null ||
+        Math.abs(
+          loadedHorizontalCoordinateKm - savedState.horizontal_slice_coordinate_km,
+        ) >
+          0.2 + Number.EPSILON
+      ) {
+        const remappedHorizontal = nearestSavedCoordinate(
+          savedState.view_id === "updraft_lens"
+            ? (updraftLensFrame?.z_values_km ?? [])
+            : slicePlaneCoordinateValuesKm(sceneHorizontalSlice),
+          savedState.horizontal_slice_coordinate_km,
+          0.2,
+        );
+        if (
+          remappedHorizontal &&
+          remappedHorizontal.index !== pendingSavedRestore.horizontalPlaneIndex
+        ) {
+          setHorizontalSliceLevel(remappedHorizontal.index);
+          setPendingSavedRestore({
+            ...pendingSavedRestore,
+            horizontalPlaneIndex: remappedHorizontal.index,
+            result: {
+              status: "partially_restorable",
+              message: `Saved View restored with adjustments: horizontal slice ${savedState.horizontal_slice_coordinate_km.toFixed(2)} km mapped to ${remappedHorizontal.value.toFixed(2)} km.`,
+            },
+          });
+          return;
+        }
+        const message = "The saved horizontal 3-D slice could not be matched to retained output.";
+        pendingSavedRestore.resolve({ status: "unavailable", message });
+        setPendingSavedRestore(null);
+        curatedNoticeSignatureRef.current = curatedStateSignature;
+        setCuratedNotice({ status: "technical_fallback", message });
+        return;
+      }
+    }
+
+    if (savedState.selected_point && !selectedRegion && savedState.view_id === "field") {
+      const remappedPoint = mapPhysicalPointToFieldSlice(
+        fieldSlice,
+        savedState.selected_point,
+        0.2,
+      );
+      if (remappedPoint) {
+        setSelectedRegion(remappedPoint.selection);
+        if (!remappedPoint.exact) {
+          setPendingSavedRestore({
+            ...pendingSavedRestore,
+            result: {
+              status: "partially_restorable",
+              message: "Saved View restored with adjustments: selected point mapped to the nearest native cell.",
+            },
+          });
+        }
+        return;
+      }
+    }
+
+    pendingSavedRestore.resolve(pendingSavedRestore.result);
     setPendingSavedRestore(null);
     curatedNoticeSignatureRef.current = curatedStateSignature;
     setCuratedNotice({
       status:
         pendingSavedRestore.result.status === "healthy" ? "applied" : "partially_incompatible",
       message:
-        pendingSavedRestore.savedViewId === null
+        pendingSavedRestore.source === "last_active"
           ? pendingSavedRestore.result.message.replace("Saved View", "Last active view")
           : pendingSavedRestore.result.message,
     });
@@ -12940,6 +13081,7 @@ export function VisualizerSceneShell({
     activeSliceIndex,
     activeSlicePlane,
     curatedStateSignature,
+    horizontalSliceLevel,
     isPlaybackRunning,
     pendingSavedRestore,
     playbackTimeIndex,
@@ -12950,15 +13092,16 @@ export function VisualizerSceneShell({
     sceneVerticalSlice,
     selectedEncoding,
     selectedFieldName,
+    selectedRegion,
     sliceError,
     sliceFieldName,
     sliceLoading,
+    sliceSupportsVertical,
     timeIndex,
     updraftLensActive,
     updraftLensError,
     updraftLensFrame,
     updraftLensLoading,
-    updateExploreSavedView,
   ]);
 
   useEffect(() => {
@@ -13050,6 +13193,9 @@ export function VisualizerSceneShell({
       backLabel={backLabel}
       onBack={onBack}
       onCompare={onCompare}
+      onUserInteractionCapture={() => {
+        if (exploreState.loading) startupUserEditedRef.current = true;
+      }}
       headerActions={
         isTradeCumulusWorldExplore ||
         (resultOptions && resultOptions.length > 0 && onSelectResult) ? (
@@ -14471,6 +14617,105 @@ function coordinateKilometers(
     return value / 1_000;
   }
   return value;
+}
+
+function sliceCoordinateValuesKm(slice: SliceResponse | null, dimension: string | null): number[] {
+  if (!slice || !dimension) return [];
+  const units = slice.coordinate_units[dimension];
+  return (slice.coordinate_values?.[dimension] ?? []).map(
+    (value) => coordinateKilometers(value, units) ?? Number.NaN,
+  );
+}
+
+function slicePlaneCoordinateValuesKm(slice: SliceResponse | null): number[] {
+  return sliceCoordinateValuesKm(slice, slice?.selection.selected_dimension ?? null);
+}
+
+function mapSavedFieldPlane(
+  slice: SliceResponse | null,
+  targetKm: number,
+  maximumDistanceKm: number,
+): { index: number; value: number; exact: boolean } | null {
+  const fromInventory = nearestSavedCoordinate(
+    slicePlaneCoordinateValuesKm(slice),
+    targetKm,
+    maximumDistanceKm,
+  );
+  if (fromInventory) return fromInventory;
+  if (!slice) return null;
+  const selectedCoordinateKm = coordinateKilometers(
+    slice.selection.selected_coordinate_value ?? slice.selection.level_coordinate_value,
+    slice.selection.level_units,
+  );
+  if (
+    selectedCoordinateKm === null ||
+    Math.abs(selectedCoordinateKm - targetKm) > maximumDistanceKm + Number.EPSILON
+  ) {
+    return null;
+  }
+  return {
+    index: slice.selection.selected_index,
+    value: selectedCoordinateKm,
+    exact: Math.abs(selectedCoordinateKm - targetKm) <= Number.EPSILON,
+  };
+}
+
+function physicalPointFromFieldSlice(
+  slice: SliceResponse | null,
+  selectedRegion: SelectedRegionRequest | null,
+): TradeCumulusExploreState["selected_point"] {
+  if (
+    !slice ||
+    !selectedRegion ||
+    selectedRegion.xIndex === undefined ||
+    selectedRegion.yIndex === undefined ||
+    selectedRegion.zIndex === undefined
+  ) {
+    return null;
+  }
+  const xName = slice.field.coordinate_names.x;
+  const yName = slice.field.coordinate_names.y;
+  const zName = slice.field.coordinate_names.vertical;
+  const xKm = sliceCoordinateValuesKm(slice, xName)[selectedRegion.xIndex];
+  const yKm = sliceCoordinateValuesKm(slice, yName)[selectedRegion.yIndex];
+  const zKm = sliceCoordinateValuesKm(slice, zName)[selectedRegion.zIndex];
+  return Number.isFinite(xKm) && Number.isFinite(yKm) && Number.isFinite(zKm)
+    ? { x_km: xKm, y_km: yKm, z_km: zKm }
+    : null;
+}
+
+function mapPhysicalPointToFieldSlice(
+  slice: SliceResponse | null,
+  point: TradeCumulusExploreState["selected_point"],
+  maximumDistanceKm: number,
+): { selection: SelectedRegionRequest; exact: boolean } | null {
+  if (!slice || !point || point.y_km === null) return null;
+  const x = nearestSavedCoordinate(
+    sliceCoordinateValuesKm(slice, slice.field.coordinate_names.x),
+    point.x_km,
+    maximumDistanceKm,
+  );
+  const y = nearestSavedCoordinate(
+    sliceCoordinateValuesKm(slice, slice.field.coordinate_names.y),
+    point.y_km,
+    maximumDistanceKm,
+  );
+  const z = nearestSavedCoordinate(
+    sliceCoordinateValuesKm(slice, slice.field.coordinate_names.vertical),
+    point.z_km,
+    maximumDistanceKm,
+  );
+  if (!x || !y || !z) return null;
+  return {
+    selection: {
+      regionType: "point",
+      xIndex: x.index,
+      yIndex: y.index,
+      zIndex: z.index,
+      neighborhood: 0,
+    },
+    exact: x.exact && y.exact && z.exact,
+  };
 }
 
 function selectedSliceCellValue(

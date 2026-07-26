@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -651,6 +651,39 @@ describe("SupercellsExplore", () => {
     ).toHaveAttribute("aria-pressed", "true");
     expect(screen.getByRole("button", { name: "Open Context" })).toBeVisible();
     expect(screen.getByRole("tab", { name: "Details" })).toHaveAttribute("aria-selected", "true");
+  });
+
+  it("keeps a user edit made before the delayed startup state arrives", async () => {
+    let resolveStartupState!: (response: Response) => void;
+    const startupState = new Promise<Response>((resolve) => {
+      resolveStartupState = resolve;
+    });
+    vi.mocked(fetch).mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes("/explore-state") && !init?.method) return startupState;
+      if (url.includes("/explore-state") || url.includes("/saved-views")) {
+        return Promise.resolve(ok(supercellsExploreLibrary()));
+      }
+      return Promise.resolve(ok(frameFor(url)));
+    });
+
+    render(<SupercellsExplore simulation={simulation} onBack={vi.fn()} />);
+    fireEvent.click(await screen.findByRole("button", { name: "Cloud and Precipitation" }));
+    expect(screen.getByRole("button", { name: "Cloud and Precipitation" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+
+    act(() => resolveStartupState(ok(supercellsExploreLibrary(supercellsResumeState))));
+    await waitFor(() =>
+      expect(screen.queryByText("Loading Saved Views...")).not.toBeInTheDocument(),
+    );
+
+    expect(screen.getByRole("button", { name: "Cloud and Precipitation" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    expect(screen.queryByText("Last active view restored.")).not.toBeInTheDocument();
   });
 
   it("reports removed layers and changed coordinate inventories as unavailable", async () => {

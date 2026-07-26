@@ -1,9 +1,18 @@
 import json
+import math
 from pathlib import Path
 
 import pytest
+from pydantic import ValidationError
 
+import cloud_chamber.explore_state as explore_state_module
 from cloud_chamber.explore_state import (
+    MAX_EXPLORE_STATE_FILE_BYTES,
+    MAX_FIXED_SCALE_IDS,
+    MAX_HYDROMETEOR_CATEGORY_CODES,
+    MAX_SAVED_VIEWS_PER_SIMULATION,
+    MAX_STATE_IDENTIFIER_CHARACTERS,
+    MAX_VISIBLE_LAYER_IDS,
     ExploreStateError,
     MountainWavesExploreState,
     MountainWavesOverlayState,
@@ -294,4 +303,142 @@ def test_explore_state_rejects_unsafe_identity(tmp_path: Path) -> None:
             settings,
             world_id="supercells",
             simulation_id="../outside",
+        )
+
+
+@pytest.mark.parametrize(
+    ("model", "payload"),
+    [
+        (
+            TradeCumulusExploreState,
+            {**trade_state().model_dump(), "model_time_seconds": math.inf},
+        ),
+        (
+            TradeCumulusExploreState,
+            {**trade_state().model_dump(), "slice_coordinate_km": math.nan},
+        ),
+        (
+            TradeCumulusExploreState,
+            {**trade_state().model_dump(), "threshold_native": math.inf},
+        ),
+        (
+            TradeCumulusExploreState,
+            {**trade_state().model_dump(), "point_size_px": math.inf},
+        ),
+        (
+            MountainWavesExploreState,
+            {**mountain_state().model_dump(), "cloud_opacity": math.nan},
+        ),
+        (
+            SupercellsExploreState,
+            {**supercells_state().model_dump(), "plane_coordinate_km": math.inf},
+        ),
+        (
+            SupercellsExploreState,
+            {
+                **supercells_state().model_dump(),
+                "camera_transform": {
+                    "position": [0, math.nan, 1],
+                    "target": [0, 0, 0],
+                    "up": [0, 0, 1],
+                },
+            },
+        ),
+        (
+            SupercellsExploreState,
+            {
+                **supercells_state().model_dump(),
+                "selected_point": {"x_km": 0, "y_km": math.inf, "z_km": 1},
+            },
+        ),
+    ],
+)
+def test_explore_state_rejects_non_finite_numeric_state(
+    model: type[TradeCumulusExploreState | MountainWavesExploreState | SupercellsExploreState],
+    payload: dict[str, object],
+) -> None:
+    with pytest.raises(ValidationError):
+        model.model_validate(payload)
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {
+            **trade_state().model_dump(),
+            "scene_field_id": "x" * (MAX_STATE_IDENTIFIER_CHARACTERS + 1),
+        },
+        {
+            **supercells_state().model_dump(),
+            "visible_layer_ids": ["layer"] * (MAX_VISIBLE_LAYER_IDS + 1),
+        },
+        {
+            **supercells_state().model_dump(),
+            "fixed_scale_ids": ["scale"] * (MAX_FIXED_SCALE_IDS + 1),
+        },
+        {
+            **supercells_state().model_dump(),
+            "hydrometeor_category_codes": list(range(MAX_HYDROMETEOR_CATEGORY_CODES + 1)),
+        },
+        {
+            **supercells_state().model_dump(),
+            "hydrometeor_category_codes": [256],
+        },
+    ],
+)
+def test_explore_state_rejects_oversized_world_collections_and_codes(
+    payload: dict[str, object],
+) -> None:
+    model = (
+        TradeCumulusExploreState
+        if payload["world_id"] == "trade_cumulus"
+        else SupercellsExploreState
+    )
+    with pytest.raises(ValidationError):
+        model.model_validate(payload)
+
+
+def test_saved_view_count_is_bounded(tmp_path: Path) -> None:
+    settings = load_settings(home=tmp_path)
+    for index in range(MAX_SAVED_VIEWS_PER_SIMULATION):
+        create_saved_view(
+            settings,
+            world_id="trade_cumulus",
+            simulation_id="trade_cumulus_canonical_bomex",
+            request=SavedViewCreate(title=f"View {index}", state=trade_state()),
+        )
+
+    with pytest.raises(ExploreStateError, match="at most 100 Saved Views"):
+        create_saved_view(
+            settings,
+            world_id="trade_cumulus",
+            simulation_id="trade_cumulus_canonical_bomex",
+            request=SavedViewCreate(title="One too many", state=trade_state()),
+        )
+
+
+def test_explore_state_file_size_is_bounded_on_read_and_write(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    settings = load_settings(home=tmp_path)
+    path = tmp_path / "explore-state" / "trade_cumulus" / "trade_cumulus_canonical_bomex.json"
+    path.parent.mkdir(parents=True)
+    path.write_bytes(b"x" * (MAX_EXPLORE_STATE_FILE_BYTES + 1))
+
+    with pytest.raises(ExploreStateError, match="size limit"):
+        load_explore_state_library(
+            settings,
+            world_id="trade_cumulus",
+            simulation_id="trade_cumulus_canonical_bomex",
+        )
+
+    path.unlink()
+    monkeypatch.setattr(explore_state_module, "MAX_EXPLORE_STATE_FILE_BYTES", 100)
+    with pytest.raises(ExploreStateError, match="size limit"):
+        save_last_active_explore_state(
+            settings,
+            world_id="trade_cumulus",
+            simulation_id="trade_cumulus_canonical_bomex",
+            state=trade_state(),
         )

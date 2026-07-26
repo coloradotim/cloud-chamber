@@ -1008,6 +1008,11 @@ def test_horizontal_qc_slice_uses_json_values_and_counts_non_finite(
     assert sliced.selection.level_meters == 400.0
     assert sliced.shape == [3, 4]
     assert sliced.dimension_order == ["yh", "xh"]
+    assert sliced.coordinate_values == {
+        "zh": [0.4, 0.8],
+        "yh": [0.0, 1.0, 2.0],
+        "xh": [0.0, 1.0, 2.0, 3.0],
+    }
     assert sliced.data_encoding == "json"
     assert sliced.values[0][0] is None
     assert sliced.stats.non_finite_count == 1
@@ -1039,9 +1044,15 @@ def test_vertical_qc_slices_have_stable_shape_and_order(tmp_path: Path) -> None:
     assert vertical_x.selection.selected_dimension == "yh"
     assert vertical_x.shape == [2, 4]
     assert vertical_x.dimension_order == ["zh", "xh"]
+    assert vertical_x.coordinate_values == {
+        "zh": [0.4, 0.8],
+        "yh": [0.0, 1.0, 2.0],
+        "xh": [0.0, 1.0, 2.0, 3.0],
+    }
     assert vertical_y.selection.selected_dimension == "xh"
     assert vertical_y.shape == [2, 3]
     assert vertical_y.dimension_order == ["zh", "yh"]
+    assert vertical_y.coordinate_values == vertical_x.coordinate_values
 
 
 def test_temperature_slice_is_available_when_direct_temperature_exists(tmp_path: Path) -> None:
@@ -1120,6 +1131,7 @@ def test_w_slice_uses_native_zf_grid(tmp_path: Path) -> None:
     assert sliced.selection.time_seconds == 900.0
     assert sliced.selection.level_coordinate_value == 0.8
     assert sliced.selection.level_meters == 800.0
+    assert sliced.coordinate_values["zf"] == [0.0, 0.4, 0.8]
     assert sliced.shape == [3, 4]
     assert sliced.stats.min == 60.0
     assert sliced.stats.max == 71.0

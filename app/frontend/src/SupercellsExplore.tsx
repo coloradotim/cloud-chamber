@@ -87,7 +87,8 @@ type PendingSupercellsCuratedRestore = {
 type PendingSupercellsSavedRestore = {
   state: SupercellsExploreState;
   result: ExploreRestorationResult;
-  savedViewId: string | null;
+  source: "saved_view" | "last_active";
+  resolve: (result: ExploreRestorationResult) => void;
   planeNativeIndex: number;
 };
 
@@ -229,10 +230,15 @@ export function SupercellsExplore({
   const frameCache = useRef(new Map<string, StormExaminationFrame>());
   const contextBeforeEvidenceFocus = useRef(false);
   const initialCuratedSimulationRef = useRef<string | null>(null);
+  const startupUserEditedRef = useRef(false);
   const curatedNoticeSignatureRef = useRef<string | null>(null);
   const exploreState = useExploreStateLibrary("supercells", simulation.simulation_id);
   const saveExploreResume = exploreState.saveResume;
-  const updateExploreSavedView = exploreState.updateSavedView;
+
+  useEffect(() => {
+    startupUserEditedRef.current = false;
+    initialCuratedSimulationRef.current = null;
+  }, [simulation.simulation_id]);
 
   const requestKey = frameRequestKey(lens, viewport, timeIndex, selection);
   const loadFrame = useCallback(
@@ -570,14 +576,14 @@ export function SupercellsExplore({
     (
       savedState: ExploreWorldState,
       savedView: SavedViewRecord | null,
-    ): ExploreRestorationResult => {
+    ): Promise<ExploreRestorationResult> => {
       if (savedState.world_id !== "supercells") {
         const result = {
           status: "unavailable" as const,
           message: "This Saved View belongs to another Cloud World.",
         };
         setCuratedNotice({ status: "technical_fallback", message: result.message });
-        return result;
+        return Promise.resolve(result);
       }
       if (!LENSES.some((item) => item.id === savedState.lens_id) || !frame?.scene) {
         const result = {
@@ -585,7 +591,7 @@ export function SupercellsExplore({
           message: "The saved Supercells Lens or its 3-D evidence is unavailable.",
         };
         setCuratedNotice({ status: "technical_fallback", message: result.message });
-        return result;
+        return Promise.resolve(result);
       }
       const mappedTime = nearestSavedCoordinate(
         frame.times_seconds,
@@ -602,7 +608,7 @@ export function SupercellsExplore({
           message: "The saved time or physical section is outside the compatible output range.",
         };
         setCuratedNotice({ status: "technical_fallback", message: result.message });
-        return result;
+        return Promise.resolve(result);
       }
 
       const partialMessages: string[] = [];
@@ -694,13 +700,15 @@ export function SupercellsExplore({
         status: "applying",
         message: "Restoring the saved Supercells examination and loading its evidence...",
       });
-      setPendingSavedRestore({
-        state: savedState,
-        result,
-        savedViewId: savedView?.saved_view_id ?? null,
-        planeNativeIndex,
+      return new Promise((resolve) => {
+        setPendingSavedRestore({
+          state: savedState,
+          result,
+          source: savedView ? "saved_view" : "last_active",
+          resolve,
+          planeNativeIndex,
+        });
       });
-      return result;
     },
     [frame],
   );
@@ -714,9 +722,12 @@ export function SupercellsExplore({
       return;
     }
     initialCuratedSimulationRef.current = simulation.simulation_id;
+    if (startupUserEditedRef.current) {
+      return;
+    }
     const resumeState = exploreState.library?.last_active?.state;
     if (resumeState?.world_id === "supercells") {
-      applySavedExploreState(resumeState, null);
+      void applySavedExploreState(resumeState, null);
       return;
     }
     applyCuratedView("initial");
@@ -733,15 +744,23 @@ export function SupercellsExplore({
     if (!pendingSavedRestore) return;
     if (error) {
       const message = `The saved Supercells examination could not be restored: ${error}`;
+      pendingSavedRestore.resolve({ status: "unavailable", message });
       setPendingSavedRestore(null);
       curatedNoticeSignatureRef.current = curatedStateSignature;
       setCuratedNotice({ status: "technical_fallback", message });
-      if (pendingSavedRestore.savedViewId) {
-        void updateExploreSavedView(pendingSavedRestore.savedViewId, {
-          restoration_status: "unavailable",
-          restoration_message: message,
-        });
-      }
+      return;
+    }
+    const controlsMatch =
+      lens === pendingSavedRestore.state.lens_id &&
+      viewport === pendingSavedRestore.state.viewport_id &&
+      evidenceView === pendingSavedRestore.state.evidence_view &&
+      timeIndex >= 0;
+    if (!controlsMatch) {
+      const message = "The saved Supercells examination was interrupted before it loaded.";
+      pendingSavedRestore.resolve({ status: "unavailable", message });
+      setPendingSavedRestore(null);
+      curatedNoticeSignatureRef.current = curatedStateSignature;
+      setCuratedNotice({ status: "technical_fallback", message });
       return;
     }
     if (
@@ -770,15 +789,10 @@ export function SupercellsExplore({
         ...missingOverlays.map((item) => `overlay ${item}`),
       ];
       const message = `The saved Supercells examination is unavailable because ${missing.join(", ")} could not be restored.`;
+      pendingSavedRestore.resolve({ status: "unavailable", message });
       setPendingSavedRestore(null);
       curatedNoticeSignatureRef.current = curatedStateSignature;
       setCuratedNotice({ status: "technical_fallback", message });
-      if (pendingSavedRestore.savedViewId) {
-        void updateExploreSavedView(pendingSavedRestore.savedViewId, {
-          restoration_status: "unavailable",
-          restoration_message: message,
-        });
-      }
       return;
     }
     const loadedPlaneMatches =
@@ -788,24 +802,27 @@ export function SupercellsExplore({
           ? frame.selected_point.y_index === pendingSavedRestore.planeNativeIndex
           : frame.selected_point.x_index === pendingSavedRestore.planeNativeIndex;
     if (!loadedPlaneMatches) return;
+    pendingSavedRestore.resolve(pendingSavedRestore.result);
     setPendingSavedRestore(null);
     curatedNoticeSignatureRef.current = curatedStateSignature;
     setCuratedNotice({
       status:
         pendingSavedRestore.result.status === "healthy" ? "applied" : "partially_incompatible",
       message:
-        pendingSavedRestore.savedViewId === null
+        pendingSavedRestore.source === "last_active"
           ? pendingSavedRestore.result.message.replace("Saved View", "Last active view")
           : pendingSavedRestore.result.message,
     });
   }, [
     curatedStateSignature,
+    evidenceView,
     error,
     frame,
+    lens,
     loading,
     pendingSavedRestore,
     timeIndex,
-    updateExploreSavedView,
+    viewport,
   ]);
 
   useEffect(() => {
@@ -961,6 +978,9 @@ export function SupercellsExplore({
       simulationName={simulation.display_name}
       backLabel="Back to Supercells"
       onBack={onBack}
+      onUserInteractionCapture={() => {
+        if (exploreState.loading) startupUserEditedRef.current = true;
+      }}
       headerActions={
         <>
           <SavedViewsControl

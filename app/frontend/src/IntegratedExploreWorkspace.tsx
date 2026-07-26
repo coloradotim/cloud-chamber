@@ -20,6 +20,7 @@ export function IntegratedExploreWorkspace({
   backLabel,
   onBack,
   onCompare,
+  onUserInteractionCapture,
   headerActions,
   children,
 }: {
@@ -28,11 +29,19 @@ export function IntegratedExploreWorkspace({
   backLabel?: string;
   onBack?: () => void;
   onCompare?: () => void;
+  onUserInteractionCapture?: () => void;
   headerActions?: ReactNode;
   children: ReactNode;
 }) {
   return (
-    <section className="integrated-explore-workspace" aria-label={`${simulationName} Explore`}>
+    <section
+      className="integrated-explore-workspace"
+      aria-label={`${simulationName} Explore`}
+      onPointerDownCapture={onUserInteractionCapture}
+      onClickCapture={onUserInteractionCapture}
+      onKeyDownCapture={onUserInteractionCapture}
+      onInputCapture={onUserInteractionCapture}
+    >
       <header className="integrated-explore-header">
         <div className="integrated-explore-identity">
           {onBack && (

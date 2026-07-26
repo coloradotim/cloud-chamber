@@ -85,6 +85,10 @@ The presentation-quality and third-World program established:
 
 #438 — typed World-aware curated Explore defaults, complete current-view
        Return to curated view, and visible bounded fallback — complete
+
+#432 — versioned World-aware Explore state, last-active resume, and named
+       Saved Views across Trade Cumulus, Mountain Waves, and Supercells
+       — complete
 ```
 
 The completed work preserves stable World and Simulation identities while allowing backing run assets to improve.
@@ -101,7 +105,10 @@ below the fold
 
 World-specific scientific content remains legitimate. Shared structure must not erase scientific or geometric differences.
 
-Per-Simulation Notes are the first bounded durable-content contract. They use stable World and Simulation identity, persist across reloads, and fail visibly. They do not serialize complete Explore state, implement resume, create Saved Views, or establish a generic annotation framework.
+Per-Simulation Notes are a bounded durable-content contract. They use stable
+World and Simulation identity, persist across reloads, and fail visibly. They
+remain separate from complete Explore state and Saved Views rather than
+becoming a generic annotation framework.
 
 Curated Explore defaults now define the intentional source-controlled
 presentation for each supported Simulation and Field or Lens. Initial open and
@@ -110,16 +117,14 @@ current Field or Lens without changing Simulation, erasing Notes, or starting
 playback. A visible technical fallback remains distinct from an authored
 scientific presentation.
 
-## Next program: personal scientific memory
+## Completed program: personal scientific memory
 
-Issue #432 is the next approved program in this sequence. Issue #394 remains
-queued and incomplete; it still depends on #435 and explicit PM activation.
-Completing #395 satisfies only the Fun With Soundings dependency named by
-#394.
+Issue #432 establishes one versioned, World-aware Explore-state contract before
+ordinary Compare. Issue #394 remains queued and incomplete; it still depends on
+#435 and explicit PM activation. Completing #395 satisfies only the Fun With
+Soundings dependency named by #394.
 
-Establish one versioned, World-aware Explore-state contract before implementing Compare.
-
-The contract should represent, as applicable:
+The implemented contract represents, as applicable:
 
 - World and stable Simulation identity;
 - model time or playback range;
@@ -129,10 +134,10 @@ The contract should represent, as applicable:
 - selected point or region;
 - overlays and meaningful display settings;
 - Context collapse state and active secondary-information section;
-- title and optional note;
+- Saved View title and optional short description;
 - schema version and bounded migration or failure behavior.
 
-Implement in this order:
+Implementation followed this order:
 
 ```text
 serializable Explore state
@@ -157,7 +162,15 @@ The curated-default tier and complete return behavior are implemented through
 #438. Issue #432 owns the durable state above that tier; it must consume rather
 than recreate these defaults.
 
-## Then: ordinary Compare and Saved Comparisons
+State is stored in bounded local libraries at
+`<runtime-home>/explore-state/<world_id>/<simulation_id>.json`. Saved Views
+reopen as live examinations, support rename and delete, preserve records when
+backing output is unavailable, and report healthy, partially restorable, or
+unavailable restoration. Notes remain separate.
+
+## Next program: ordinary World-aware Compare
+
+Issue #433 is the next program in this sequence.
 
 Build ordinary Compare from two compatible Explore states rather than creating a parallel examination model.
 
@@ -171,7 +184,7 @@ The current MVP decisions remain useful:
 - aligned, independent, and mixed states are supported;
 - no interpolation is presented as model output.
 
-Implement in this order:
+The current sequence remains:
 
 ```text
 ordinary World-aware Compare
@@ -179,6 +192,8 @@ ordinary World-aware Compare
 ```
 
 Trade Cumulus, Mountain Waves, and Supercells ask different comparison questions and may support different linked states.
+Issue #433 implements only ordinary Compare. It does not implement or claim
+Saved Comparisons; that later step requires separate approval and work.
 
 ## Variations require a fresh review
 

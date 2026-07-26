@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, renderHook, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
@@ -7,6 +7,7 @@ import {
   SavedViewsControl,
   type TradeCumulusExploreState,
   nearestSavedCoordinate,
+  useExploreStateLibrary,
 } from "./ExploreStatePersistence";
 
 const tradeState: TradeCumulusExploreState = {
@@ -55,8 +56,40 @@ const savedView: SavedViewRecord = {
   },
 };
 
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
+  });
+  return { promise, resolve, reject };
+}
+
+function libraryResponse(state: TradeCumulusExploreState | null) {
+  return {
+    library: {
+      schema_version: 1 as const,
+      world_id: "trade_cumulus",
+      simulation_id: "trade_cumulus_canonical_bomex",
+      last_active: state
+        ? {
+            schema_version: 1 as const,
+            world_id: "trade_cumulus",
+            simulation_id: "trade_cumulus_canonical_bomex",
+            captured_at: "2026-07-26T12:00:00Z",
+            state,
+          }
+        : null,
+      saved_views: [],
+    },
+    backing_simulation_available: true,
+  };
+}
+
 afterEach(() => {
   vi.restoreAllMocks();
+  vi.unstubAllGlobals();
 });
 
 describe("nearestSavedCoordinate", () => {
@@ -106,7 +139,7 @@ describe("SavedViewsControl", () => {
     const createSavedView = vi.fn().mockResolvedValue(undefined);
     const updateSavedView = vi.fn().mockResolvedValue(undefined);
     const deleteSavedView = vi.fn().mockResolvedValue(undefined);
-    const onOpen = vi.fn().mockReturnValue({
+    const onOpen = vi.fn().mockResolvedValue({
       status: "healthy",
       message: "Saved View restored.",
     });
@@ -173,5 +206,199 @@ describe("SavedViewsControl", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Delete" }));
     await waitFor(() => expect(deleteSavedView).toHaveBeenCalledWith(savedView.saved_view_id));
+  });
+
+  it("keeps a Saved View opening until its target evidence is coherent", async () => {
+    const restoration = deferred<{
+      status: "healthy";
+      message: string;
+    }>();
+    const updateSavedView = vi.fn().mockResolvedValue(undefined);
+    const controller: ExploreStateLibraryController = {
+      library: {
+        ...libraryResponse(null).library,
+        saved_views: [savedView],
+      },
+      loading: false,
+      error: null,
+      savingResume: false,
+      backingSimulationAvailable: true,
+      saveResume: vi.fn(),
+      createSavedView: vi.fn(),
+      updateSavedView,
+      deleteSavedView: vi.fn(),
+      retry: vi.fn(),
+    };
+
+    render(
+      <SavedViewsControl
+        controller={controller}
+        currentState={tradeState}
+        coherent
+        onOpen={() => restoration.promise}
+      />,
+    );
+
+    fireEvent.click(screen.getByText("Saved Views (1)"));
+    fireEvent.click(screen.getByRole("button", { name: "Open" }));
+    expect(screen.getByText("Opening Cloud turret...")).toBeVisible();
+    expect(screen.getByRole("button", { name: "Open" })).toBeDisabled();
+    expect(updateSavedView).not.toHaveBeenCalled();
+
+    restoration.resolve({ status: "healthy", message: "Saved View restored." });
+    await waitFor(() =>
+      expect(updateSavedView).toHaveBeenCalledWith(savedView.saved_view_id, {
+        restoration_status: "healthy",
+        restoration_message: "Saved View restored.",
+      }),
+    );
+    expect(screen.getByText("Saved View restored.")).toBeVisible();
+  });
+
+  it("records failed evidence loading only after restoration reaches a final state", async () => {
+    const updateSavedView = vi.fn().mockResolvedValue(undefined);
+    const controller: ExploreStateLibraryController = {
+      library: {
+        ...libraryResponse(null).library,
+        saved_views: [savedView],
+      },
+      loading: false,
+      error: null,
+      savingResume: false,
+      backingSimulationAvailable: true,
+      saveResume: vi.fn(),
+      createSavedView: vi.fn(),
+      updateSavedView,
+      deleteSavedView: vi.fn(),
+      retry: vi.fn(),
+    };
+
+    render(
+      <SavedViewsControl
+        controller={controller}
+        currentState={tradeState}
+        coherent
+        onOpen={vi.fn().mockResolvedValue({
+          status: "unavailable",
+          message: "The saved output evidence is unavailable.",
+        })}
+      />,
+    );
+
+    fireEvent.click(screen.getByText("Saved Views (1)"));
+    fireEvent.click(screen.getByRole("button", { name: "Open" }));
+
+    expect(await screen.findByText("The saved output evidence is unavailable.")).toBeVisible();
+    expect(updateSavedView).toHaveBeenCalledTimes(1);
+    expect(updateSavedView).toHaveBeenCalledWith(savedView.saved_view_id, {
+      restoration_status: "unavailable",
+      restoration_message: "The saved output evidence is unavailable.",
+    });
+  });
+
+  it("keeps a successful live restoration usable when status persistence fails", async () => {
+    const updateSavedView = vi.fn().mockRejectedValue(new Error("Local state is read-only."));
+    const controller: ExploreStateLibraryController = {
+      library: {
+        ...libraryResponse(null).library,
+        saved_views: [savedView],
+      },
+      loading: false,
+      error: null,
+      savingResume: false,
+      backingSimulationAvailable: true,
+      saveResume: vi.fn(),
+      createSavedView: vi.fn(),
+      updateSavedView,
+      deleteSavedView: vi.fn(),
+      retry: vi.fn(),
+    };
+
+    render(
+      <SavedViewsControl
+        controller={controller}
+        currentState={tradeState}
+        coherent
+        onOpen={vi.fn().mockResolvedValue({
+          status: "healthy",
+          message: "Saved View restored.",
+        })}
+      />,
+    );
+
+    fireEvent.click(screen.getByText("Saved Views (1)"));
+    fireEvent.click(screen.getByRole("button", { name: "Open" }));
+
+    expect(
+      await screen.findByText(
+        "Saved View restored. Its restoration status could not be recorded: Local state is read-only.",
+      ),
+    ).toBeVisible();
+    expect(updateSavedView).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("useExploreStateLibrary", () => {
+  it("serializes overlapping resume writes and leaves the newest state in client and storage", async () => {
+    const firstWrite = deferred<Response>();
+    const secondWrite = deferred<Response>();
+    const requestedStates: TradeCumulusExploreState[] = [];
+    let persistedState: TradeCumulusExploreState | null = null;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        if (init?.method !== "PUT") {
+          return Promise.resolve(
+            new Response(JSON.stringify(libraryResponse(null)), {
+              status: 200,
+              headers: { "Content-Type": "application/json" },
+            }),
+          );
+        }
+        expect(url).toContain("/explore-state/resume");
+        const state = JSON.parse(String(init.body)).state as TradeCumulusExploreState;
+        requestedStates.push(state);
+        return requestedStates.length === 1 ? firstWrite.promise : secondWrite.promise;
+      }),
+    );
+    const { result } = renderHook(() =>
+      useExploreStateLibrary("trade_cumulus", "trade_cumulus_canonical_bomex"),
+    );
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    const olderState = { ...tradeState, model_time_seconds: 900 };
+    const newestState = { ...tradeState, model_time_seconds: 1_800 };
+    let drain!: Promise<void>;
+    act(() => {
+      drain = result.current.saveResume(olderState);
+      void result.current.saveResume(newestState);
+    });
+    await waitFor(() => expect(result.current.savingResume).toBe(true));
+    expect(requestedStates).toEqual([olderState]);
+
+    persistedState = olderState;
+    firstWrite.resolve(
+      new Response(JSON.stringify(libraryResponse(olderState)), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+    await waitFor(() => expect(requestedStates).toEqual([olderState, newestState]));
+    expect(result.current.library?.last_active).toBeNull();
+    expect(result.current.savingResume).toBe(true);
+
+    persistedState = newestState;
+    secondWrite.resolve(
+      new Response(JSON.stringify(libraryResponse(newestState)), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+    await act(async () => drain);
+
+    expect(result.current.savingResume).toBe(false);
+    expect(result.current.library?.last_active?.state.model_time_seconds).toBe(1_800);
+    expect(persistedState.model_time_seconds).toBe(1_800);
   });
 });

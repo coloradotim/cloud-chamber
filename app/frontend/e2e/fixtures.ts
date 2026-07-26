@@ -1235,6 +1235,37 @@ export async function mockCloudChamberApis(page: Page) {
       updated_at: string;
     }
   >();
+  type MockExploreLibrary = {
+    schema_version: 1;
+    world_id: string;
+    simulation_id: string;
+    last_active: Record<string, unknown> | null;
+    saved_views: Array<Record<string, unknown>>;
+  };
+  const exploreLibraries = new Map<string, MockExploreLibrary>();
+  let savedViewSequence = 0;
+  const exploreIdentity = (requestUrl: string) => {
+    const segments = new URL(requestUrl).pathname.split("/");
+    const worldId = (segments[3] ?? "").replaceAll("-", "_");
+    const simulationId = decodeURIComponent(segments[5] ?? "");
+    return { worldId, simulationId, key: `${worldId}/${simulationId}` };
+  };
+  const exploreLibrary = (requestUrl: string) => {
+    const { worldId, simulationId, key } = exploreIdentity(requestUrl);
+    const existing = exploreLibraries.get(key);
+    if (existing) return existing;
+    const created: MockExploreLibrary = {
+      schema_version: 1,
+      world_id: worldId,
+      simulation_id: simulationId,
+      last_active: null,
+      saved_views: [],
+    };
+    exploreLibraries.set(key, created);
+    return created;
+  };
+  const exploreResponse = (route: Parameters<typeof json>[0], library: MockExploreLibrary) =>
+    json(route, { library, backing_simulation_available: true });
   let savedSoundingCandidates: Array<{
     saved_candidate_id: string;
     candidate: typeof shallowSoundingCandidate;
@@ -1283,6 +1314,76 @@ export async function mockCloudChamberApis(page: Page) {
       }
     }
     return json(route, { note: simulationNotes.get(key) ?? null });
+  });
+
+  await page.route("**/api/worlds/*/simulations/*/explore-state", (route) =>
+    exploreResponse(route, exploreLibrary(route.request().url())),
+  );
+
+  await page.route("**/api/worlds/*/simulations/*/explore-state/resume", (route) => {
+    const library = exploreLibrary(route.request().url());
+    const { worldId, simulationId } = exploreIdentity(route.request().url());
+    const request = route.request().postDataJSON() as { state: Record<string, unknown> };
+    library.last_active = {
+      schema_version: 1,
+      world_id: worldId,
+      simulation_id: simulationId,
+      captured_at: "2026-07-26T18:00:00Z",
+      state: request.state,
+    };
+    return exploreResponse(route, library);
+  });
+
+  await page.route("**/api/worlds/*/simulations/*/saved-views**", (route) => {
+    const library = exploreLibrary(route.request().url());
+    const { worldId, simulationId } = exploreIdentity(route.request().url());
+    const segments = new URL(route.request().url()).pathname.split("/");
+    const savedViewId = decodeURIComponent(segments[7] ?? "");
+    const method = route.request().method();
+    if (method === "POST") {
+      const request = route.request().postDataJSON() as {
+        title: string;
+        description?: string | null;
+        state: Record<string, unknown>;
+      };
+      savedViewSequence += 1;
+      const now = "2026-07-26T18:00:00Z";
+      library.saved_views.push({
+        saved_view_id: savedViewSequence.toString(16).padStart(32, "0"),
+        title: request.title,
+        description: request.description ?? null,
+        created_at: now,
+        updated_at: now,
+        restoration_status: "healthy",
+        restoration_message: null,
+        snapshot: {
+          schema_version: 1,
+          world_id: worldId,
+          simulation_id: simulationId,
+          captured_at: now,
+          state: request.state,
+        },
+      });
+      return exploreResponse(route, library);
+    }
+    const savedViewIndex = library.saved_views.findIndex(
+      (candidate) => candidate.saved_view_id === savedViewId,
+    );
+    if (savedViewIndex < 0) return json(route, { detail: "Saved View not found." }, 404);
+    if (method === "DELETE") {
+      library.saved_views.splice(savedViewIndex, 1);
+      return exploreResponse(route, library);
+    }
+    if (method === "PATCH") {
+      const request = route.request().postDataJSON() as Record<string, unknown>;
+      library.saved_views[savedViewIndex] = {
+        ...library.saved_views[savedViewIndex],
+        ...request,
+        updated_at: "2026-07-26T18:01:00Z",
+      };
+      return exploreResponse(route, library);
+    }
+    return exploreResponse(route, library);
   });
 
   await page.route("**/api/worlds", (route) => json(route, []));

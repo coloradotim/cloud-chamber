@@ -69,9 +69,9 @@ Explore.
 
 | World | Current content | Current surfaces | Current limitation |
 | --- | --- | --- | --- |
-| **Trade Cumulus** | Canonical BOMEX Baseline and More Moisture retained Simulations | Overview, Simulations, Saved Views placeholder, featured Comparison, Lab, and Explore | Saved Views are not durable; ordinary World-aware Compare is not implemented; Lab still embeds transitional Build and Results |
-| **Mountain Waves** | Dry Ridge and Boulder Windstorm retained Simulations | Overview, Simulations, variation Lab, and Explore | Variation is World-specific rather than shared; no ordinary Compare or Saved Views |
-| **Supercells** | Quarter-Circle Supercell retained Simulation | Overview, Simulations, and Explore | No variation Lab, ordinary Compare, or Saved Views |
+| **Trade Cumulus** | Canonical BOMEX Baseline and More Moisture retained Simulations | Overview, Simulations, featured Comparison, Lab, Explore resume, and Saved Views | Ordinary World-aware Compare is not implemented; Lab still embeds transitional Build and Results |
+| **Mountain Waves** | Dry Ridge and Boulder Windstorm retained Simulations | Overview, Simulations, variation Lab, Explore resume, and Saved Views | Variation is World-specific rather than shared; no ordinary Compare |
+| **Supercells** | Quarter-Circle Supercell retained Simulation | Overview, Simulations, Explore resume, and Saved Views | No variation Lab or ordinary Compare |
 
 The World Overview and Simulations surfaces use stable content identities and
 explicit availability states. Missing, invalid, or conflicting retained
@@ -151,6 +151,45 @@ a technical fallback. Missing times, planes, fields, scales, or layers are
 explained visibly; fallback does not rewrite the authored definition or claim
 that a substituted scientific presentation is equivalent.
 
+## Durable Explore State And Saved Views
+
+Each supported Simulation now stores the last coherent Explore examination and
+an explicitly managed list of named Saved Views. The common envelope is
+versioned and keyed to stable World and Simulation identity; Trade Cumulus,
+Mountain Waves, and Supercells retain explicit World-specific payloads rather
+than one flattened control inventory.
+
+Startup precedence is:
+
+```text
+explicitly opened Saved View
+> last active state
+> curated Simulation / active Field-or-Lens default
+> technical fallback
+```
+
+Resume waits for a coherent loaded target and does not persist transient
+loading, playback-running, maximize-only, or error state. User interaction made
+before a delayed resume response wins. Resume writes are serialized and
+coalesced so an older request cannot overwrite newer examination state.
+
+Saved Views can be created, listed, opened as live examinations, renamed, and
+deleted. Open remains visibly in progress until the required scientific
+evidence loads. Restoration status is recorded only after that result is known;
+a metadata-write failure is reported without invalidating the usable restored
+view. Missing retained output preserves the Saved View record and marks it
+unavailable.
+
+State is stored locally at:
+
+```text
+<runtime-home>/explore-state/<world_id>/<simulation_id>.json
+```
+
+Writes are atomic and bounded. Unsupported schemas, invalid values, oversized
+files, and persistence failures are visible local failures. Per-Simulation
+Notes remain separate and are not copied into Saved Views.
+
 ## Shared Scientific Presentation
 
 Current Explore surfaces use:
@@ -211,16 +250,13 @@ information architecture.
 
 The implemented application does not yet provide:
 
-- durable Saved Views;
-- ordinary last-active Explore-state resume;
 - ordinary World-aware Compare beyond the featured Trade Cumulus Comparison;
 - one shared World-aware variation workflow across all accessible Worlds;
-- durable persistence for complete Explore or comparison workspaces.
+- Saved Comparisons or durable comparison workspaces.
 
-Per-Simulation Notes are durable content, but camera, time, Lens, overlay,
-selection, and other complete Explore workspace state are not yet persisted.
-The authored curated-default contract is implemented and is the fallback that
-future resume and Saved Views must consume.
+Per-Simulation Notes and Explore state are separate durable contracts. Saved
+Views persist the live scientific examination dimensions owned by issue #432;
+they do not create Saved Comparisons or certify scientific validity.
 Older issues #389, #390, and #391 are closed as superseded by the current
 three-World implementation sequence; they should not be read as active roadmap
 authority.

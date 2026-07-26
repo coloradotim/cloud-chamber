@@ -196,22 +196,38 @@ export function useExploreStateLibrary(
   const [backingSimulationAvailable, setBackingSimulationAvailable] = useState(true);
   const [retryNonce, setRetryNonce] = useState(0);
   const lastResumeSignature = useRef<string | null>(null);
+  const activeResumeSignature = useRef<string | null>(null);
+  const queuedResume = useRef<{ state: ExploreWorldState; signature: string } | null>(null);
+  const resumeDrain = useRef<Promise<void> | null>(null);
+  const activeIdentity = useRef<string | null>(null);
 
   useEffect(() => {
     if (!worldId || !simulationId) {
+      activeIdentity.current = null;
+      queuedResume.current = null;
+      activeResumeSignature.current = null;
+      resumeDrain.current = null;
       setLibrary(null);
       setLoading(false);
       setError(null);
+      setSavingResume(false);
       setBackingSimulationAvailable(false);
       return;
     }
+    const identity = `${worldId}/${simulationId}`;
+    activeIdentity.current = identity;
+    queuedResume.current = null;
+    activeResumeSignature.current = null;
+    resumeDrain.current = null;
     const controller = new AbortController();
     setLoading(true);
     setError(null);
+    setSavingResume(false);
     setLibrary(null);
     lastResumeSignature.current = null;
     void exploreRequest(exploreStateUrl(worldId, simulationId), { signal: controller.signal })
       .then((response) => {
+        if (activeIdentity.current !== identity) return;
         setLibrary(response.library);
         setBackingSimulationAvailable(response.backing_simulation_available);
         lastResumeSignature.current = response.library.last_active
@@ -220,35 +236,67 @@ export function useExploreStateLibrary(
       })
       .catch((caught: unknown) => {
         if (caught instanceof DOMException && caught.name === "AbortError") return;
+        if (activeIdentity.current !== identity) return;
         setError(exploreErrorMessage(caught, "Unable to load Saved Views and resume state."));
       })
       .finally(() => {
-        if (!controller.signal.aborted) setLoading(false);
+        if (!controller.signal.aborted && activeIdentity.current === identity) setLoading(false);
       });
     return () => controller.abort();
   }, [retryNonce, simulationId, worldId]);
 
   const saveResume = useCallback(
-    async (state: ExploreWorldState) => {
+    (state: ExploreWorldState): Promise<void> => {
       if (!worldId || !simulationId) throw new Error("Stable Simulation identity is unavailable.");
+      const identity = `${worldId}/${simulationId}`;
       const signature = JSON.stringify(state);
-      if (signature === lastResumeSignature.current) return;
-      setSavingResume(true);
-      try {
-        const response = await exploreRequest(`${exploreStateUrl(worldId, simulationId)}/resume`, {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ state }),
-        });
-        lastResumeSignature.current = signature;
-        setLibrary(response.library);
-        setBackingSimulationAvailable(response.backing_simulation_available);
-        setError(null);
-      } catch (caught) {
-        setError(exploreErrorMessage(caught, "Unable to save Explore resume state."));
-      } finally {
-        setSavingResume(false);
+      if (
+        signature === lastResumeSignature.current ||
+        signature === activeResumeSignature.current ||
+        signature === queuedResume.current?.signature
+      ) {
+        return resumeDrain.current ?? Promise.resolve();
       }
+      queuedResume.current = { state, signature };
+      if (resumeDrain.current) return resumeDrain.current;
+
+      const drain = async () => {
+        setSavingResume(true);
+        while (queuedResume.current && activeIdentity.current === identity) {
+          const pending = queuedResume.current;
+          queuedResume.current = null;
+          activeResumeSignature.current = pending.signature;
+          try {
+            const response = await exploreRequest(
+              `${exploreStateUrl(worldId, simulationId)}/resume`,
+              {
+                method: "PUT",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ state: pending.state }),
+              },
+            );
+            if (activeIdentity.current !== identity) return;
+            if (queuedResume.current) continue;
+            lastResumeSignature.current = pending.signature;
+            setLibrary(response.library);
+            setBackingSimulationAvailable(response.backing_simulation_available);
+            setError(null);
+          } catch (caught) {
+            if (activeIdentity.current !== identity) return;
+            if (!queuedResume.current) {
+              setError(exploreErrorMessage(caught, "Unable to save Explore resume state."));
+            }
+          } finally {
+            activeResumeSignature.current = null;
+          }
+        }
+      };
+      const currentDrain = drain().finally(() => {
+        if (activeIdentity.current === identity) setSavingResume(false);
+        if (resumeDrain.current === currentDrain) resumeDrain.current = null;
+      });
+      resumeDrain.current = currentDrain;
+      return currentDrain;
     },
     [simulationId, worldId],
   );
@@ -256,18 +304,23 @@ export function useExploreStateLibrary(
   const createSavedView = useCallback(
     async (title: string, description: string, state: ExploreWorldState) => {
       if (!worldId || !simulationId) throw new Error("Stable Simulation identity is unavailable.");
-      const response = await exploreRequest(savedViewsUrl(worldId, simulationId), {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          title: title.trim(),
-          description: description.trim() || null,
-          state,
-        }),
-      });
-      setLibrary(response.library);
-      setBackingSimulationAvailable(response.backing_simulation_available);
-      setError(null);
+      try {
+        const response = await exploreRequest(savedViewsUrl(worldId, simulationId), {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            title: title.trim(),
+            description: description.trim() || null,
+            state,
+          }),
+        });
+        setLibrary(response.library);
+        setBackingSimulationAvailable(response.backing_simulation_available);
+        setError(null);
+      } catch (caught) {
+        setError(exploreErrorMessage(caught, "Unable to save this view."));
+        throw caught;
+      }
     },
     [simulationId, worldId],
   );
@@ -283,17 +336,22 @@ export function useExploreStateLibrary(
       },
     ) => {
       if (!worldId || !simulationId) throw new Error("Stable Simulation identity is unavailable.");
-      const response = await exploreRequest(
-        `${savedViewsUrl(worldId, simulationId)}/${encodeURIComponent(savedViewId)}`,
-        {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(update),
-        },
-      );
-      setLibrary(response.library);
-      setBackingSimulationAvailable(response.backing_simulation_available);
-      setError(null);
+      try {
+        const response = await exploreRequest(
+          `${savedViewsUrl(worldId, simulationId)}/${encodeURIComponent(savedViewId)}`,
+          {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(update),
+          },
+        );
+        setLibrary(response.library);
+        setBackingSimulationAvailable(response.backing_simulation_available);
+        setError(null);
+      } catch (caught) {
+        setError(exploreErrorMessage(caught, "Unable to update this Saved View."));
+        throw caught;
+      }
     },
     [simulationId, worldId],
   );
@@ -301,13 +359,18 @@ export function useExploreStateLibrary(
   const deleteSavedView = useCallback(
     async (savedViewId: string) => {
       if (!worldId || !simulationId) throw new Error("Stable Simulation identity is unavailable.");
-      const response = await exploreRequest(
-        `${savedViewsUrl(worldId, simulationId)}/${encodeURIComponent(savedViewId)}`,
-        { method: "DELETE" },
-      );
-      setLibrary(response.library);
-      setBackingSimulationAvailable(response.backing_simulation_available);
-      setError(null);
+      try {
+        const response = await exploreRequest(
+          `${savedViewsUrl(worldId, simulationId)}/${encodeURIComponent(savedViewId)}`,
+          { method: "DELETE" },
+        );
+        setLibrary(response.library);
+        setBackingSimulationAvailable(response.backing_simulation_available);
+        setError(null);
+      } catch (caught) {
+        setError(exploreErrorMessage(caught, "Unable to delete this Saved View."));
+        throw caught;
+      }
     },
     [simulationId, worldId],
   );
@@ -338,7 +401,7 @@ export function SavedViewsControl({
   onOpen: (
     state: ExploreWorldState,
     savedView: SavedViewRecord,
-  ) => Promise<ExploreRestorationResult> | ExploreRestorationResult;
+  ) => Promise<ExploreRestorationResult>;
 }) {
   const panelId = useId();
   const [title, setTitle] = useState("");
@@ -370,8 +433,15 @@ export function SavedViewsControl({
   async function openSavedView(savedView: SavedViewRecord) {
     setActionState("saving");
     setActionMessage(`Opening ${savedView.title}...`);
+    let result: ExploreRestorationResult;
     try {
-      const result = await onOpen(savedView.snapshot.state, savedView);
+      result = await onOpen(savedView.snapshot.state, savedView);
+    } catch (caught) {
+      setActionState("failed");
+      setActionMessage(exploreErrorMessage(caught, "Unable to open this Saved View."));
+      return;
+    }
+    try {
       await controller.updateSavedView(savedView.saved_view_id, {
         restoration_status: result.status,
         restoration_message: result.message,
@@ -379,13 +449,13 @@ export function SavedViewsControl({
       setActionState(result.status === "unavailable" ? "failed" : "idle");
       setActionMessage(result.message);
     } catch (caught) {
-      const message = exploreErrorMessage(caught, "Unable to open this Saved View.");
       setActionState("failed");
-      setActionMessage(message);
-      await controller.updateSavedView(savedView.saved_view_id, {
-        restoration_status: "unavailable",
-        restoration_message: message,
-      });
+      setActionMessage(
+        `${result.message} Its restoration status could not be recorded: ${exploreErrorMessage(
+          caught,
+          "local persistence failed.",
+        )}`,
+      );
     }
   }
 

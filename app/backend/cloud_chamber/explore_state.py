@@ -19,9 +19,26 @@ EXPLORE_STATE_SCHEMA_VERSION: Literal[1] = 1
 WORLD_STATE_VERSION: Literal[1] = 1
 MAX_SAVED_VIEW_TITLE_CHARACTERS = 120
 MAX_SAVED_VIEW_DESCRIPTION_CHARACTERS = 1_000
+MAX_SAVED_VIEWS_PER_SIMULATION = 100
+MAX_EXPLORE_STATE_FILE_BYTES = 2_000_000
+MAX_STATE_IDENTIFIER_CHARACTERS = 128
+MAX_VISIBLE_LAYER_IDS = 32
+MAX_FIXED_SCALE_IDS = 16
+MAX_HYDROMETEOR_CATEGORY_CODES = 16
 _IDENTITY_PATTERN = re.compile(r"^[a-z0-9][a-z0-9_-]{0,127}$")
 _SAVED_VIEW_ID_PATTERN = re.compile(r"^[a-f0-9]{32}$")
 _LOCK = RLock()
+
+FiniteFloat = Annotated[float, Field(allow_inf_nan=False)]
+UnitIntervalFloat = Annotated[float, Field(ge=0, le=1, allow_inf_nan=False)]
+PositiveDisplayFloat = Annotated[float, Field(gt=0, le=100, allow_inf_nan=False)]
+PlaybackSpeedFloat = Annotated[float, Field(gt=0, le=16, allow_inf_nan=False)]
+StateIdentifier = Annotated[
+    str,
+    Field(min_length=1, max_length=MAX_STATE_IDENTIFIER_CHARACTERS),
+]
+NativeIndex = Annotated[int, Field(ge=0, le=10_000_000)]
+HydrometeorCategoryCode = Annotated[int, Field(ge=0, le=255)]
 
 
 class ExploreStateError(ValueError):
@@ -31,24 +48,24 @@ class ExploreStateError(ValueError):
 class ExplorePoint(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    x_km: float
-    y_km: float | None = None
-    z_km: float
+    x_km: FiniteFloat
+    y_km: FiniteFloat | None = None
+    z_km: FiniteFloat
 
 
 class CameraTransform(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    position: tuple[float, float, float]
-    target: tuple[float, float, float]
-    up: tuple[float, float, float]
+    position: tuple[FiniteFloat, FiniteFloat, FiniteFloat]
+    target: tuple[FiniteFloat, FiniteFloat, FiniteFloat]
+    up: tuple[FiniteFloat, FiniteFloat, FiniteFloat]
 
 
 class ExploreWorldStateBase(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     state_version: Literal[1] = WORLD_STATE_VERSION
-    model_time_seconds: float
+    model_time_seconds: FiniteFloat
     context_collapsed: bool = False
     secondary_section: Literal["science", "notes", "details"] = "science"
     selected_point: ExplorePoint | None = None
@@ -57,17 +74,17 @@ class ExploreWorldStateBase(BaseModel):
 class TradeCumulusExploreState(ExploreWorldStateBase):
     world_id: Literal["trade_cumulus"]
     view_id: Literal["field", "updraft_lens"]
-    scene_field_id: str
-    slice_field_id: str
-    fixed_scale_id: str | None = None
+    scene_field_id: StateIdentifier
+    slice_field_id: StateIdentifier
+    fixed_scale_id: StateIdentifier | None = None
     active_slice_plane: Literal["horizontal", "vertical_x", "vertical_y"]
-    slice_coordinate_km: float
-    slice_native_index: int = Field(ge=0)
-    horizontal_slice_coordinate_km: float | None = None
-    threshold_native: float
-    layer_opacity: float = Field(ge=0, le=1)
-    point_size_px: float = Field(gt=0, le=100)
-    lens_opacity: float = Field(ge=0, le=1)
+    slice_coordinate_km: FiniteFloat
+    slice_native_index: NativeIndex
+    horizontal_slice_coordinate_km: FiniteFloat | None = None
+    threshold_native: FiniteFloat
+    layer_opacity: UnitIntervalFloat
+    point_size_px: PositiveDisplayFloat
+    lens_opacity: UnitIntervalFloat
     show_slice_plane: bool
     show_cloud_boundary: bool
     show_horizontal_wind: bool
@@ -80,7 +97,7 @@ class TradeCumulusExploreState(ExploreWorldStateBase):
         "low_level",
     ]
     camera_transform: CameraTransform | None = None
-    playback_speed: float = Field(gt=0, le=16)
+    playback_speed: PlaybackSpeedFloat
     display_controls_open: bool = False
 
 
@@ -103,13 +120,13 @@ class MountainWavesExploreState(ExploreWorldStateBase):
         "cloud_liquid",
         "relative_humidity",
     ]
-    fixed_scale_id: str
+    fixed_scale_id: StateIdentifier
     viewport_id: Literal["focus", "full"]
     geometry_id: Literal["expanded", "physical"]
     overlays: MountainWavesOverlayState
-    cloud_opacity: float = Field(ge=0, le=1)
-    cloud_point_size_px: float = Field(gt=0, le=100)
-    playback_speed: float = Field(gt=0, le=16)
+    cloud_opacity: UnitIntervalFloat
+    cloud_point_size_px: PositiveDisplayFloat
+    playback_speed: PlaybackSpeedFloat
 
 
 class SupercellsOverlayState(BaseModel):
@@ -134,11 +151,13 @@ class SupercellsExploreState(ExploreWorldStateBase):
     ]
     viewport_id: Literal["storm", "full"]
     evidence_view: Literal["plan", "xz", "yz"]
-    plane_coordinate_km: float
-    visible_layer_ids: list[str]
-    fixed_scale_ids: list[str]
+    plane_coordinate_km: FiniteFloat
+    visible_layer_ids: list[StateIdentifier] = Field(max_length=MAX_VISIBLE_LAYER_IDS)
+    fixed_scale_ids: list[StateIdentifier] = Field(max_length=MAX_FIXED_SCALE_IDS)
     overlays: SupercellsOverlayState
-    hydrometeor_category_codes: list[int]
+    hydrometeor_category_codes: list[HydrometeorCategoryCode] = Field(
+        max_length=MAX_HYDROMETEOR_CATEGORY_CODES
+    )
     camera_preset: Literal[
         "overview",
         "top_down_xy",
@@ -147,10 +166,10 @@ class SupercellsExploreState(ExploreWorldStateBase):
         "low_level",
     ]
     camera_transform: CameraTransform | None = None
-    scene_opacity: float = Field(ge=0, le=1)
-    scene_point_size: float = Field(gt=0, le=100)
+    scene_opacity: UnitIntervalFloat
+    scene_point_size: PositiveDisplayFloat
     selected_evidence_visible: bool
-    playback_speed: float = Field(gt=0, le=16)
+    playback_speed: PlaybackSpeedFloat
     display_controls_open: bool = False
 
 
@@ -164,8 +183,8 @@ class ExploreStateSnapshot(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     schema_version: Literal[1] = EXPLORE_STATE_SCHEMA_VERSION
-    world_id: str
-    simulation_id: str
+    world_id: StateIdentifier
+    simulation_id: StateIdentifier
     captured_at: datetime
     state: ExploreWorldState
 
@@ -190,10 +209,13 @@ class ExploreStateLibrary(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     schema_version: Literal[1] = EXPLORE_STATE_SCHEMA_VERSION
-    world_id: str
-    simulation_id: str
+    world_id: StateIdentifier
+    simulation_id: StateIdentifier
     last_active: ExploreStateSnapshot | None = None
-    saved_views: list[SavedViewRecord] = Field(default_factory=list)
+    saved_views: list[SavedViewRecord] = Field(
+        default_factory=list,
+        max_length=MAX_SAVED_VIEWS_PER_SIMULATION,
+    )
 
 
 class ExploreStateLibraryResponse(BaseModel):
@@ -248,6 +270,10 @@ def load_explore_state_library(
         if not path.exists():
             return ExploreStateLibrary(world_id=world_id, simulation_id=simulation_id)
         try:
+            if path.stat().st_size > MAX_EXPLORE_STATE_FILE_BYTES:
+                raise ExploreStateError(
+                    "The saved Explore-state file exceeds the supported local size limit."
+                )
             raw_payload = json.loads(path.read_text())
             migration_required = (
                 isinstance(raw_payload, dict) and raw_payload.get("schema_version") == 0
@@ -311,6 +337,10 @@ def create_saved_view(
             simulation_id=simulation_id,
         )
         _validate_state_identity(world_id, request.state)
+        if len(library.saved_views) >= MAX_SAVED_VIEWS_PER_SIMULATION:
+            raise ExploreStateError(
+                f"A Simulation can retain at most {MAX_SAVED_VIEWS_PER_SIMULATION} Saved Views."
+            )
         now = datetime.now(UTC)
         title = request.title.strip()
         if not title:
@@ -415,11 +445,14 @@ def _write_library(settings: CloudChamberSettings, library: ExploreStateLibrary)
         world_id=library.world_id,
         simulation_id=library.simulation_id,
     )
+    serialized = library.model_dump_json(indent=2) + "\n"
+    if len(serialized.encode("utf-8")) > MAX_EXPLORE_STATE_FILE_BYTES:
+        raise ExploreStateError("The Explore state exceeds the supported local size limit.")
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary_path = path.with_name(f".{path.name}.{uuid4().hex}.tmp")
     try:
         with temporary_path.open("x") as handle:
-            handle.write(library.model_dump_json(indent=2) + "\n")
+            handle.write(serialized)
             handle.flush()
             os.fsync(handle.fileno())
         os.replace(temporary_path, path)
