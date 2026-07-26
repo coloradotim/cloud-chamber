@@ -140,7 +140,7 @@ class WorldCapabilities(BaseModel):
     featured_comparison: bool
     lab: Literal[True] = True
     saved_views: Literal[False] = False
-    ordinary_compare: Literal[False] = False
+    ordinary_compare: Literal[True] = True
 
 
 class CloudWorldSummary(BaseModel):

@@ -72,9 +72,14 @@ type LabSection = "activity" | "create" | "history";
 export function MountainWavesWorld({
   onBackToWorlds,
   onExploreSimulation,
+  onCompareSimulation,
 }: {
   onBackToWorlds: () => void;
   onExploreSimulation: (simulation: MountainWavesSimulation) => void;
+  onCompareSimulation?: (
+    simulation: MountainWavesSimulation,
+    targetSimulationId: string | null,
+  ) => void;
 }) {
   const [section, setSection] = useState<WorldSection>("overview");
   const [labSection, setLabSection] = useState<LabSection>("create");
@@ -203,6 +208,15 @@ export function MountainWavesWorld({
                   simulation={simulation}
                   onExplore={onExploreSimulation}
                   onCreateVariation={openVariation}
+                  onCompare={
+                    onCompareSimulation
+                      ? (candidate) =>
+                          onCompareSimulation(
+                            candidate,
+                            mountainWavesCompareTarget(world.simulations, candidate),
+                          )
+                      : undefined
+                  }
                 />
               ))}
           </div>
@@ -239,6 +253,15 @@ export function MountainWavesWorld({
                 simulation={simulation}
                 onExplore={onExploreSimulation}
                 onCreateVariation={openVariation}
+                onCompare={
+                  onCompareSimulation
+                    ? (candidate) =>
+                        onCompareSimulation(
+                          candidate,
+                          mountainWavesCompareTarget(world.simulations, candidate),
+                        )
+                    : undefined
+                }
               />
             ))}
           </div>
@@ -351,10 +374,12 @@ function MountainWavesSimulationCard({
   simulation,
   onExplore,
   onCreateVariation,
+  onCompare,
 }: {
   simulation: MountainWavesSimulation;
   onExplore: (simulation: MountainWavesSimulation) => void;
   onCreateVariation: (simulationId: string) => void;
+  onCompare?: (simulation: MountainWavesSimulation) => void;
 }) {
   return (
     <article className="simulation-card">
@@ -410,6 +435,16 @@ function MountainWavesSimulationCard({
         >
           Explore
         </button>
+        {onCompare && (
+          <button
+            type="button"
+            className="secondary-button"
+            disabled={!simulation.inspectable}
+            onClick={() => onCompare(simulation)}
+          >
+            Compare
+          </button>
+        )}
         {simulation.can_create_variation && (
           <button
             type="button"
@@ -421,6 +456,24 @@ function MountainWavesSimulationCard({
         )}
       </div>
     </article>
+  );
+}
+
+function mountainWavesCompareTarget(
+  simulations: MountainWavesSimulation[],
+  simulation: MountainWavesSimulation,
+): string | null {
+  if (simulation.parent_simulation_id) return simulation.parent_simulation_id;
+  const child = simulations.find(
+    (candidate) =>
+      candidate.inspectable && candidate.parent_simulation_id === simulation.simulation_id,
+  );
+  if (child) return child.simulation_id;
+  return (
+    simulations.find(
+      (candidate) =>
+        candidate.inspectable && candidate.simulation_id !== simulation.simulation_id,
+    )?.simulation_id ?? null
   );
 }
 

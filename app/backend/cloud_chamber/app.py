@@ -55,8 +55,10 @@ from cloud_chamber.lan_worker import (
 from cloud_chamber.local_run_manager import LocalRunManager, LocalRunManagerError, RunStatus
 from cloud_chamber.local_run_queue import LocalRunQueueError, LocalRunQueueManager
 from cloud_chamber.mountain_wave_terrain_visualization import (
+    MountainWavesCompareFrame,
     MountainWaveTerrainField,
     MountainWaveTerrainVisualizationError,
+    mountain_waves_compare_frame_from_native_outputs,
     mountain_waves_frame_from_native_outputs,
     preserved_mountain_wave_terrain_frame,
 )
@@ -183,6 +185,10 @@ from cloud_chamber.visualization_data import (
     time_series_product,
     vertical_profile,
     view_defaults,
+)
+from cloud_chamber.world_compare import (
+    WorldCompareDescriptor,
+    world_compare_descriptor,
 )
 
 app = FastAPI(
@@ -655,6 +661,26 @@ def get_supercells_world() -> SupercellsWorldDetail:
 
 
 @app.get(
+    "/api/worlds/{world_slug}/compare",
+    response_model=WorldCompareDescriptor,
+)
+def get_world_compare_descriptor(
+    world_slug: str,
+    left_simulation_id: str | None = None,
+    right_simulation_id: str | None = None,
+) -> WorldCompareDescriptor:
+    try:
+        return world_compare_descriptor(
+            load_settings(),
+            world_slug=world_slug,
+            left_simulation_id=left_simulation_id,
+            right_simulation_id=right_simulation_id,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.get(
     "/api/worlds/{world_id}/simulations/{simulation_id}/note",
     response_model=SimulationNoteResponse,
 )
@@ -970,6 +996,40 @@ def get_mountain_waves_simulation_frame(
     except (OSError, MountainWaveTerrainVisualizationError) as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return response.model_dump(mode="json")
+
+
+@app.get(
+    "/api/worlds/mountain-waves/simulations/{simulation_id}/compare-frame",
+    response_model=MountainWavesCompareFrame,
+)
+def get_mountain_waves_compare_frame(
+    simulation_id: str,
+    field: MountainWaveTerrainField = "w",
+    time_index: int = 0,
+) -> MountainWavesCompareFrame:
+    try:
+        record, manifest, _manifest_path = mountain_waves_run_manifest(
+            load_settings(), simulation_id
+        )
+        if not record.inspectable:
+            raise MountainWaveTerrainVisualizationError(
+                f"Simulation {simulation_id} does not have inspectable completed output."
+            )
+        return mountain_waves_compare_frame_from_native_outputs(
+            output_paths=[Path(value).expanduser() for value in manifest.outputs.netcdf_paths],
+            namelist_path=Path(manifest.generated_inputs.namelist_input or "").expanduser(),
+            field=field,
+            time_index=time_index,
+            run_id=manifest.run_id,
+            case_label=record.display_name,
+            implementation_commit=manifest.app.commit or "unknown",
+            dry_case=not record.moist_fields_available,
+            caveats=[*record.caveats, *record.warnings],
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except (OSError, MountainWaveTerrainVisualizationError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @app.post("/api/storage/delete-run")

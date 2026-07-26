@@ -310,7 +310,7 @@ def _world_detail_payload() -> dict[str, object]:
             "featured_comparison": True,
             "lab": True,
             "saved_views": False,
-            "ordinary_compare": False,
+            "ordinary_compare": True,
         },
         "caveats": [],
     }

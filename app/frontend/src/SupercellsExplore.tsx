@@ -187,9 +187,11 @@ function runtimeSupercellsOverlays(overlays: SupercellsExploreState["overlays"])
 export function SupercellsExplore({
   simulation,
   onBack,
+  onCompare,
 }: {
   simulation: SupercellSimulation;
   onBack: () => void;
+  onCompare?: () => void;
 }) {
   const [lens, setLens] = useState<LensId>(SUPERCELLS_INITIAL_LENS);
   const [timeIndex, setTimeIndex] = useState(simulation.default_explore_time_index);
@@ -978,6 +980,7 @@ export function SupercellsExplore({
       simulationName={simulation.display_name}
       backLabel="Back to Supercells"
       onBack={onBack}
+      onCompare={onCompare}
       onUserInteractionCapture={() => {
         if (exploreState.loading) startupUserEditedRef.current = true;
       }}

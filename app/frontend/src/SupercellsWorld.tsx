@@ -40,9 +40,11 @@ type WorldSection = "overview" | "simulations";
 export function SupercellsWorld({
   onBackToWorlds,
   onExploreSimulation,
+  onCompare,
 }: {
   onBackToWorlds: () => void;
   onExploreSimulation: (simulation: SupercellSimulation) => void;
+  onCompare?: () => void;
 }) {
   const [section, setSection] = useState<WorldSection>("overview");
   const [world, setWorld] = useState<SupercellsWorldDetail | null>(null);
@@ -141,7 +143,11 @@ export function SupercellsWorld({
           <p className="world-availability-message">{world.availability_message}</p>
         )}
         <div className="simulation-card-grid supercells-simulation-grid">
-          <SupercellSimulationCard simulation={simulation} onExplore={onExploreSimulation} />
+          <SupercellSimulationCard
+            simulation={simulation}
+            onExplore={onExploreSimulation}
+            onCompare={onCompare}
+          />
         </div>
         {section === "overview" && <p className="world-science-note">{world.caveats[0]}</p>}
       </section>
@@ -152,9 +158,11 @@ export function SupercellsWorld({
 function SupercellSimulationCard({
   simulation,
   onExplore,
+  onCompare,
 }: {
   simulation: SupercellSimulation;
   onExplore: (simulation: SupercellSimulation) => void;
+  onCompare?: () => void;
 }) {
   return (
     <article className="simulation-card supercell-simulation-card">
@@ -199,6 +207,11 @@ function SupercellSimulationCard({
         >
           Explore
         </button>
+        {onCompare && (
+          <button type="button" className="secondary-button" onClick={onCompare}>
+            Compare
+          </button>
+        )}
       </div>
     </article>
   );
