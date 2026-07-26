@@ -1,12 +1,26 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import {
+  ExploreCuratedDefaultNotice,
   ExploreContextContent,
   ExploreInspector,
   ExploreSelectedEvidence,
   ExploreSecondarySections,
   IntegratedExploreWorkspace,
+  ReturnToCuratedViewControl,
+  type ExploreCuratedNotice,
+  type ExploreSecondarySection,
 } from "./IntegratedExploreWorkspace";
+import {
+  curatedResolutionExplanation,
+  resolveCuratedView,
+  SUPERCELLS_CURATED_VIEWS,
+  SUPERCELLS_INITIAL_LENS,
+  supercellsCuratedView,
+  type CuratedDefaultResolution,
+  type ResolvedCuratedView,
+  type SupercellsCuratedView,
+} from "./exploreCuratedDefaults";
 import { NativeSlicePositionControl } from "./NativeSlicePositionControl";
 import { SimulationNotes } from "./SimulationNotes";
 import type { SupercellSimulation } from "./SupercellsWorld";
@@ -48,10 +62,17 @@ type LensPresentation = {
   categoryCodes: number[];
   cameraPreset: CameraPreset;
   cameraTransform: CameraTransform | null;
+  displayControlsOpen: boolean;
   sceneOpacity: number;
   scenePointSize: number;
   selection: Selection | null;
   selectedEvidenceVisible: boolean;
+};
+
+type PendingSupercellsCuratedRestore = {
+  resolution: CuratedDefaultResolution<ResolvedCuratedView<SupercellsCuratedView>>;
+  target: ResolvedCuratedView<SupercellsCuratedView>;
+  source: "initial" | "return";
 };
 
 const LENSES: Array<{ id: LensId; label: string }> = [
@@ -68,6 +89,45 @@ const HYDROMETEOR_CODES = [
   { code: 5, label: "Hail-treated large ice" },
 ];
 
+function supercellsCuratedCapabilities(frame: StormExaminationFrame | null) {
+  if (!frame) {
+    return {
+      availableFieldIds: [] as string[],
+      availableScaleIds: [] as string[],
+      availableLayerIds: [] as string[],
+      availableOverlayIds: [] as string[],
+    };
+  }
+  const views = [frame.plan, frame.xz_section, frame.yz_section];
+  const fieldIds = new Set<string>();
+  const scaleIds = new Set<string>();
+  const overlayIds = new Set<string>();
+  views.forEach((view) => {
+    fieldIds.add(view.primary.key);
+    scaleIds.add(view.primary.scale.scale_id);
+    Object.entries(view.overlays).forEach(([overlayId, overlay]) => {
+      overlayIds.add(overlayId);
+      fieldIds.add(overlay.key);
+      scaleIds.add(overlay.scale.scale_id);
+    });
+  });
+  const layerIds = new Set(frame.scene?.layers.map((layer) => layer.key) ?? []);
+  frame.scene?.layers.forEach((layer) => {
+    layer.source_fields.forEach((fieldId) => fieldIds.add(fieldId));
+    if (layer.scale) scaleIds.add(layer.scale.scale_id);
+  });
+  if ((frame.scene?.wind_vectors.length ?? 0) > 0 || frame.plan.wind_vectors.length > 0) {
+    layerIds.add("model_relative_wind");
+    overlayIds.add("model_relative_wind");
+  }
+  return {
+    availableFieldIds: [...fieldIds],
+    availableScaleIds: [...scaleIds],
+    availableLayerIds: [...layerIds],
+    availableOverlayIds: [...overlayIds],
+  };
+}
+
 export function SupercellsExplore({
   simulation,
   onBack,
@@ -75,7 +135,7 @@ export function SupercellsExplore({
   simulation: SupercellSimulation;
   onBack: () => void;
 }) {
-  const [lens, setLens] = useState<LensId>("rotating_updraft");
+  const [lens, setLens] = useState<LensId>(SUPERCELLS_INITIAL_LENS);
   const [timeIndex, setTimeIndex] = useState(simulation.default_explore_time_index);
   const [frame, setFrame] = useState<StormExaminationFrame | null>(null);
   const [presentations, setPresentations] =
@@ -88,14 +148,22 @@ export function SupercellsExplore({
     categoryCodes,
     cameraPreset,
     cameraTransform,
+    displayControlsOpen,
     sceneOpacity,
     scenePointSize,
     selection,
     selectedEvidenceVisible,
   } = presentation;
-  const visibleLayerKeys = presentation.visibleLayerKeys ?? [];
+  const visibleLayerKeys = useMemo(
+    () => presentation.visibleLayerKeys ?? [],
+    [presentation.visibleLayerKeys],
+  );
   const [focusedViewer, setFocusedViewer] = useState<FocusedViewer>(null);
   const [contextCollapsed, setContextCollapsed] = useState(false);
+  const [secondarySection, setSecondarySection] = useState<ExploreSecondarySection>("science");
+  const [curatedNotice, setCuratedNotice] = useState<ExploreCuratedNotice | null>(null);
+  const [pendingCuratedRestore, setPendingCuratedRestore] =
+    useState<PendingSupercellsCuratedRestore | null>(null);
   const [playing, setPlaying] = useState(false);
   const [playbackSpeed, setPlaybackSpeed] = useState(1);
   const [loading, setLoading] = useState(true);
@@ -103,6 +171,8 @@ export function SupercellsExplore({
   const [retryNonce, setRetryNonce] = useState(0);
   const frameCache = useRef(new Map<string, StormExaminationFrame>());
   const contextBeforeEvidenceFocus = useRef(false);
+  const initialCuratedSimulationRef = useRef<string | null>(null);
+  const curatedNoticeSignatureRef = useRef<string | null>(null);
 
   const requestKey = frameRequestKey(lens, viewport, timeIndex, selection);
   const loadFrame = useCallback(
@@ -154,19 +224,6 @@ export function SupercellsExplore({
   }, [loadFrame, retryNonce]);
 
   useEffect(() => {
-    if (!frame?.scene || frame.lens_id !== lens || presentations[lens].visibleLayerKeys !== null)
-      return;
-    const layerKeys = frame.scene.layers
-      .filter((layer) => layer.default_visible)
-      .map((layer) => layer.key);
-    if (lens === "low_level_interactions") layerKeys.push("model_relative_wind");
-    setPresentations((current) => ({
-      ...current,
-      [lens]: { ...current[lens], visibleLayerKeys: layerKeys },
-    }));
-  }, [frame, lens, presentations]);
-
-  useEffect(() => {
     if (!playing || loading || !frame) return;
     const timer = window.setTimeout(() => {
       setTimeIndex((current) => (current >= frame.times_seconds.length - 1 ? 0 : current + 1));
@@ -191,6 +248,29 @@ export function SupercellsExplore({
     (item) => item.time_seconds === frame.time_seconds,
   );
   const windVectors = frame?.scene?.wind_vectors ?? [];
+  const curatedStateSignature = useMemo(
+    () =>
+      JSON.stringify({
+        lens,
+        timeIndex,
+        presentations,
+        focusedViewer,
+        contextCollapsed,
+        secondarySection,
+        playing,
+        playbackSpeed,
+      }),
+    [
+      contextCollapsed,
+      focusedViewer,
+      lens,
+      playbackSpeed,
+      playing,
+      presentations,
+      secondarySection,
+      timeIndex,
+    ],
+  );
 
   function chooseLens(next: LensId) {
     setPlaying(false);
@@ -265,12 +345,227 @@ export function SupercellsExplore({
     setFocusedViewer("evidence");
   }
 
+  function retryFrame() {
+    curatedNoticeSignatureRef.current = null;
+    setCuratedNotice(null);
+    setRetryNonce((current) => current + 1);
+  }
+
+  const applyCuratedView = useCallback(
+    (source: "initial" | "return") => {
+      const definition = supercellsCuratedView(simulation.simulation_id, lens);
+      const authoredEvidenceView = definition?.evidenceOrientation ?? evidenceView;
+      const authoredSlice = frame ? slicePositionState(frame, authoredEvidenceView, null) : null;
+      const capabilities = supercellsCuratedCapabilities(frame);
+      const resolution = resolveCuratedView(definition, {
+        availableViewIds: LENSES.map((item) => item.id),
+        ...capabilities,
+        timesSeconds: frame?.times_seconds ?? [],
+        planeCoordinatesKm: authoredSlice?.coordinatesKm,
+        planeNativeIndices: authoredSlice?.nativeIndices,
+      });
+
+      if (!resolution.value || !frame) {
+        setPendingCuratedRestore(null);
+        curatedNoticeSignatureRef.current = curatedStateSignature;
+        setCuratedNotice({
+          status: resolution.status,
+          message: curatedResolutionExplanation(resolution),
+        });
+        return;
+      }
+      const curated = resolution.value.definition;
+      const nextSelection = {
+        xIndex: frame.selected_point.x_index,
+        yIndex: frame.selected_point.y_index,
+        zIndex: frame.selected_point.z_index,
+      };
+      const planeIndex = resolution.value.planeNativeIndex;
+      if (planeIndex !== null) {
+        if (curated.plane.orientation === "horizontal") nextSelection.zIndex = planeIndex;
+        if (curated.plane.orientation === "vertical_x") nextSelection.yIndex = planeIndex;
+        if (curated.plane.orientation === "vertical_y") nextSelection.xIndex = planeIndex;
+      }
+      setTimeIndex(resolution.value.timeIndex);
+      setPlaying(false);
+      if (source === "return") {
+        setFocusedViewer(null);
+        setContextCollapsed(curated.contextCollapsed);
+        setSecondarySection(curated.secondarySection);
+        setPlaybackSpeed(curated.playbackSpeed);
+        setPresentations((current) => ({
+          ...current,
+          [lens]: {
+            viewport: curated.viewport,
+            evidenceView: curated.evidenceOrientation,
+            overlays: { ...curated.overlays },
+            visibleLayerKeys: [...curated.visibleLayerIds],
+            categoryCodes: [...curated.hydrometeorCategoryCodes],
+            cameraPreset: curated.cameraPreset,
+            cameraTransform: curated.cameraTransform,
+            displayControlsOpen: curated.displayControlsOpen,
+            sceneOpacity: curated.sceneOpacity,
+            scenePointSize: curated.scenePointSize,
+            selection: nextSelection,
+            selectedEvidenceVisible: curated.selectedEvidenceVisible,
+          },
+        }));
+        setError(null);
+        setFrame(null);
+        setRetryNonce((current) => current + 1);
+        setCuratedNotice({
+          status: "applying",
+          message: `Restoring the curated ${LENSES.find((item) => item.id === lens)?.label ?? "Lens"} view and loading its scientific evidence...`,
+        });
+      } else {
+        setCuratedNotice(null);
+      }
+      setPendingCuratedRestore({
+        resolution,
+        target: resolution.value,
+        source,
+      });
+    },
+    [curatedStateSignature, evidenceView, frame, lens, simulation.simulation_id],
+  );
+
+  useEffect(() => {
+    if (!frame || initialCuratedSimulationRef.current === simulation.simulation_id) return;
+    initialCuratedSimulationRef.current = simulation.simulation_id;
+    applyCuratedView("initial");
+  }, [applyCuratedView, frame, simulation.simulation_id]);
+
+  useEffect(() => {
+    if (!pendingCuratedRestore) return;
+    const { resolution, source, target } = pendingCuratedRestore;
+    const curated = target.definition;
+    const planeIndex = target.planeNativeIndex;
+    const selectionMatches =
+      source === "initial" ||
+      (selection !== null &&
+        (curated.plane.orientation !== "horizontal" || selection.zIndex === planeIndex) &&
+        (curated.plane.orientation !== "vertical_x" || selection.yIndex === planeIndex) &&
+        (curated.plane.orientation !== "vertical_y" || selection.xIndex === planeIndex));
+    const controlsMatch =
+      lens === curated.viewId &&
+      timeIndex === target.timeIndex &&
+      !playing &&
+      viewport === curated.viewport &&
+      evidenceView === curated.evidenceOrientation &&
+      JSON.stringify(overlays) === JSON.stringify(curated.overlays) &&
+      JSON.stringify(visibleLayerKeys) === JSON.stringify(curated.visibleLayerIds) &&
+      JSON.stringify(categoryCodes) === JSON.stringify(curated.hydrometeorCategoryCodes) &&
+      cameraPreset === curated.cameraPreset &&
+      JSON.stringify(cameraTransform) === JSON.stringify(curated.cameraTransform) &&
+      displayControlsOpen === curated.displayControlsOpen &&
+      sceneOpacity === curated.sceneOpacity &&
+      scenePointSize === curated.scenePointSize &&
+      selectedEvidenceVisible === curated.selectedEvidenceVisible &&
+      selectionMatches;
+    if (!controlsMatch) {
+      setPendingCuratedRestore(null);
+      setCuratedNotice(null);
+      curatedNoticeSignatureRef.current = null;
+      return;
+    }
+    if (error) {
+      setPendingCuratedRestore(null);
+      curatedNoticeSignatureRef.current = curatedStateSignature;
+      setCuratedNotice({
+        status: "technical_fallback",
+        message: `The curated ${LENSES.find((item) => item.id === lens)?.label ?? "Lens"} view could not be restored: ${error} Use Retry frame to try again.`,
+      });
+      return;
+    }
+    const loadedPlaneMatches =
+      planeIndex === null ||
+      (curated.plane.orientation === "horizontal" && frame?.plan.level_index === planeIndex) ||
+      (curated.plane.orientation === "vertical_x" &&
+        frame?.selected_point.y_index === planeIndex) ||
+      (curated.plane.orientation === "vertical_y" && frame?.selected_point.x_index === planeIndex);
+    if (
+      loading ||
+      !frame ||
+      frame.lens_id !== curated.viewId ||
+      frame.viewport !== curated.viewport ||
+      frame.time_index !== target.timeIndex ||
+      !loadedPlaneMatches
+    ) {
+      return;
+    }
+    const loadedSlice = slicePositionState(frame, curated.evidenceOrientation, null);
+    if (!loadedSlice) {
+      setPendingCuratedRestore(null);
+      curatedNoticeSignatureRef.current = curatedStateSignature;
+      setCuratedNotice({
+        status: "technical_fallback",
+        message: `The curated ${LENSES.find((item) => item.id === lens)?.label ?? "Lens"} view could not be restored because its authored slice orientation is unavailable.`,
+      });
+      return;
+    }
+    const confirmedResolution = resolveCuratedView(curated, {
+      availableViewIds: LENSES.map((item) => item.id),
+      ...supercellsCuratedCapabilities(frame),
+      timesSeconds: frame.times_seconds,
+      planeCoordinatesKm: loadedSlice.coordinatesKm,
+      planeNativeIndices: loadedSlice.nativeIndices,
+    });
+    if (!confirmedResolution.value) {
+      setPendingCuratedRestore(null);
+      curatedNoticeSignatureRef.current = curatedStateSignature;
+      setCuratedNotice({
+        status: "technical_fallback",
+        message: curatedResolutionExplanation(confirmedResolution),
+      });
+      return;
+    }
+    setPendingCuratedRestore(null);
+    curatedNoticeSignatureRef.current = curatedStateSignature;
+    if (source === "return" || resolution.status !== "applied") {
+      setCuratedNotice({
+        status: resolution.status,
+        message: curatedResolutionExplanation(resolution),
+      });
+    } else {
+      setCuratedNotice(null);
+    }
+  }, [
+    cameraPreset,
+    cameraTransform,
+    categoryCodes,
+    curatedStateSignature,
+    displayControlsOpen,
+    error,
+    evidenceView,
+    frame,
+    lens,
+    loading,
+    overlays,
+    pendingCuratedRestore,
+    playing,
+    sceneOpacity,
+    scenePointSize,
+    selectedEvidenceVisible,
+    selection,
+    timeIndex,
+    viewport,
+    visibleLayerKeys,
+  ]);
+
+  useEffect(() => {
+    if (!curatedNotice || pendingCuratedRestore || !curatedNoticeSignatureRef.current) return;
+    if (curatedNoticeSignatureRef.current === curatedStateSignature) return;
+    curatedNoticeSignatureRef.current = null;
+    setCuratedNotice(null);
+  }, [curatedNotice, curatedStateSignature, pendingCuratedRestore]);
+
   return (
     <IntegratedExploreWorkspace
       worldName="Supercells"
       simulationName={simulation.display_name}
       backLabel="Back to Supercells"
       onBack={onBack}
+      headerActions={<ReturnToCuratedViewControl onReturn={() => applyCuratedView("return")} />}
     >
       <section
         className={`supercells-explore-shell${
@@ -278,6 +573,7 @@ export function SupercellsExplore({
         }`}
         aria-label="Supercells integrated Explore workspace"
       >
+        <ExploreCuratedDefaultNotice notice={curatedNotice} />
         <div
           className={`supercells-workbench${
             contextCollapsed ? " supercells-context-collapsed" : ""
@@ -332,6 +628,10 @@ export function SupercellsExplore({
                 windArrowDomainFraction={0.055}
                 compactWorkspace
                 compactDisplayLabel="3-D layers"
+                compactDisplayControlsOpen={displayControlsOpen}
+                onCompactDisplayControlsOpenChange={(next) =>
+                  updatePresentation({ displayControlsOpen: next })
+                }
                 maximized={focusedViewer === "scene"}
                 onToggleMaximize={() =>
                   setFocusedViewer((current) => (current === "scene" ? null : "scene"))
@@ -377,7 +677,7 @@ export function SupercellsExplore({
               <LocalFailure
                 title="3-D storm scene unavailable"
                 message={error ?? "The selected frame did not provide a bounded 3-D scene."}
-                onRetry={() => setRetryNonce((current) => current + 1)}
+                onRetry={retryFrame}
               />
             )}
             {loading && frame && <div className="supercells-frame-loading">Loading frame...</div>}
@@ -463,7 +763,7 @@ export function SupercellsExplore({
               <LocalFailure
                 title="Storm evidence unavailable"
                 message={error ?? "The selected plan or section could not be loaded."}
-                onRetry={() => setRetryNonce((current) => current + 1)}
+                onRetry={retryFrame}
               />
             )}
           </section>
@@ -518,6 +818,8 @@ export function SupercellsExplore({
         />
 
         <ExploreSecondarySections
+          activeSection={secondarySection}
+          onActiveSectionChange={setSecondarySection}
           sections={{
             science: <SupercellScience frame={frame} lens={lens} />,
             notes: (
@@ -1122,62 +1424,26 @@ function Metric({ label, value }: { label: string; value: string }) {
   );
 }
 
-function overlayDefaults(lens: LensId): OverlayState {
-  return {
-    rotation: lens === "rotating_updraft",
-    updraftHelicity: lens === "rotating_updraft",
-    reflectivity: false,
-    condensate: lens === "rotating_updraft",
-    rain: lens === "low_level_interactions",
-    wind: lens === "low_level_interactions",
-    precipitatingCondensate: lens === "low_level_interactions",
-    verticalMotion: true,
-  };
-}
-
 function lensPresentationDefaults(): Record<LensId, LensPresentation> {
-  const categoryCodes = HYDROMETEOR_CODES.map((item) => item.code);
-  return {
-    rotating_updraft: {
-      viewport: "storm",
-      evidenceView: "plan",
-      overlays: overlayDefaults("rotating_updraft"),
-      visibleLayerKeys: null,
-      categoryCodes,
-      cameraPreset: "look_along_y",
-      cameraTransform: null,
-      sceneOpacity: 1,
-      scenePointSize: 1,
-      selection: null,
-      selectedEvidenceVisible: false,
-    },
-    cloud_precipitation: {
-      viewport: "storm",
-      evidenceView: "xz",
-      overlays: overlayDefaults("cloud_precipitation"),
-      visibleLayerKeys: null,
-      categoryCodes,
-      cameraPreset: "look_along_y",
-      cameraTransform: null,
-      sceneOpacity: 0.9,
-      scenePointSize: 0.9,
-      selection: null,
-      selectedEvidenceVisible: false,
-    },
-    low_level_interactions: {
-      viewport: "storm",
-      evidenceView: "plan",
-      overlays: overlayDefaults("low_level_interactions"),
-      visibleLayerKeys: null,
-      categoryCodes,
-      cameraPreset: "low_level",
-      cameraTransform: null,
-      sceneOpacity: 1,
-      scenePointSize: 1,
-      selection: null,
-      selectedEvidenceVisible: false,
-    },
-  };
+  return Object.fromEntries(
+    Object.entries(SUPERCELLS_CURATED_VIEWS).map(([lensId, curated]) => [
+      lensId,
+      {
+        viewport: curated.viewport,
+        evidenceView: curated.evidenceOrientation,
+        overlays: { ...curated.overlays },
+        visibleLayerKeys: [...curated.visibleLayerIds],
+        categoryCodes: [...curated.hydrometeorCategoryCodes],
+        cameraPreset: curated.cameraPreset,
+        cameraTransform: curated.cameraTransform,
+        displayControlsOpen: curated.displayControlsOpen,
+        sceneOpacity: curated.sceneOpacity,
+        scenePointSize: curated.scenePointSize,
+        selection: null,
+        selectedEvidenceVisible: curated.selectedEvidenceVisible,
+      },
+    ]),
+  ) as Record<LensId, LensPresentation>;
 }
 
 function filterHydrometeorCategories(

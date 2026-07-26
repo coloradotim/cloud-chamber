@@ -183,6 +183,48 @@ user-authored per-Simulation content, and Details owns technical and provenance
 information. World-specific geometry and science remain in their World
 components rather than being forced through one generic renderer.
 
+### Authored default-state contract
+
+`app/frontend/src/exploreCuratedDefaults.ts` defines the current authored
+Explore presentations. The contract has a small common identity and interaction
+vocabulary plus explicit Trade Cumulus, Mountain Waves, and Supercells payloads.
+It deliberately does not flatten the Worlds into one arbitrary React-state
+object.
+
+Stable definitions use:
+
+- World and stable Simulation identity rather than backing run ID;
+- modeled seconds rather than frame index;
+- physical section coordinates rather than native array index;
+- stable Field, Lens, scale, layer, and overlay IDs;
+- explicit camera, viewport, geometry, Context, and secondary-section state.
+
+At runtime, the resolver maps modeled time and physical plane to available
+native coordinates. Its bounded result is one of:
+
+```text
+applied
+partially_incompatible
+technical_fallback
+```
+
+Partial and fallback results carry visible incompatibility explanations.
+Missing data does not mutate the authored definition or silently promote a
+different Field, Lens, scale, time, or plane. Initial open and complete reset
+both consume the same definition.
+
+Future durable state from #432 must use this precedence:
+
+```text
+explicit Saved View
+> last active state
+> curated Simulation / active Field-or-Lens default
+> technical fallback
+```
+
+This contract does not persist state, create Saved Views, or serialize
+arbitrary component internals.
+
 ## Scientific Payload Rules
 
 Explore payloads preserve several implementation boundaries:
@@ -225,6 +267,8 @@ The current code keeps these states distinct:
 | State | Current meaning |
 | --- | --- |
 | Stable World or Simulation identity | Product-owned identity independent of a current run |
+| Authored curated Explore state | Product-owned initial and reset presentation for a stable Simulation and Field or Lens |
+| Curated-default resolution | Compatibility result mapping authored modeled time and physical coordinates to available retained data |
 | Configured package | CM1-facing inputs exist, but no CM1 output is implied |
 | Queued or running process | An external CM1 execution is waiting or active |
 | Completed process | CM1 exited; scientific output may still be missing or invalid |
@@ -304,6 +348,8 @@ are reported in the interface. Notes do not become run identity, result
 metadata, or a general annotation model.
 
 Saved Views and complete Explore workspace state are not durably persisted.
+Authored curated defaults are source-controlled product definitions, not user
+state or persistence records.
 The only product Comparison currently exposed is the featured Trade Cumulus
 pair. World-aware variation exists for Mountain Waves but is not yet one shared
 cross-World system.
@@ -324,7 +370,7 @@ reused.
 
 - World shells and Explore implementations share vocabulary but still contain
   World-specific state and rendering code.
-- Durable Saved Views and general World-aware Compare are absent.
+- Durable resume, Saved Views, and general World-aware Compare are absent.
 - Variation is implemented only for Mountain Waves.
 - Legacy run, result, and sounding surfaces remain interleaved with the newer
   World application.

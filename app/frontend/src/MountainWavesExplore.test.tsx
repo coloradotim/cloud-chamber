@@ -53,7 +53,7 @@ const frame = {
   case_label: "Boulder Windstorm",
   time_index: 0,
   time_seconds: 0,
-  times_seconds: [0, 180],
+  times_seconds: [0, 7_200],
   dry_case: false,
   field: {
     key: "cloud_over_wave",
@@ -192,7 +192,24 @@ describe("MountainWavesExplore", () => {
   const originalGetContext = HTMLCanvasElement.prototype.getContext;
 
   beforeEach(() => {
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(ok(frame)));
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((input: RequestInfo | URL) => {
+        const url = String(input);
+        if (!url.includes("/frame?")) return Promise.resolve(ok(frame));
+        const requestedIndex = Number(
+          new URL(url, "http://localhost").searchParams.get("time_index"),
+        );
+        const resolvedIndex = requestedIndex < 0 ? frame.time_index : requestedIndex;
+        return Promise.resolve(
+          ok({
+            ...frame,
+            time_index: resolvedIndex,
+            time_seconds: frame.times_seconds[resolvedIndex] ?? frame.time_seconds,
+          }),
+        );
+      }),
+    );
     vi.stubGlobal(
       "ResizeObserver",
       class {
@@ -263,7 +280,12 @@ describe("MountainWavesExplore", () => {
   it("waits for the displayed frame before advancing playback again", async () => {
     const playbackFrame = { ...frame, times_seconds: [0, 180, 360] };
     vi.mocked(fetch).mockResolvedValue(ok(playbackFrame));
-    render(<MountainWavesExplore simulation={simulation} onBack={vi.fn()} />);
+    render(
+      <MountainWavesExplore
+        simulation={{ ...simulation, simulation_id: "mountain_waves_test_variation" }}
+        onBack={vi.fn()}
+      />,
+    );
     await screen.findByRole("heading", { name: "Wave Cloud Lens" });
 
     let resolveSecondFrame: ((response: Response) => void) | undefined;
@@ -313,7 +335,7 @@ describe("MountainWavesExplore", () => {
     await screen.findByRole("heading", { name: "Wave Cloud Lens" });
     fireEvent.click(screen.getByRole("button", { name: "Field" }));
     await waitFor(() =>
-      expect(fetch).toHaveBeenCalledWith(expect.stringContaining("field=w&time_index=-1")),
+      expect(fetch).toHaveBeenCalledWith(expect.stringContaining("field=w&time_index=1")),
     );
     expect(screen.getByRole("heading", { name: "Vertical velocity" })).toBeVisible();
     fireEvent.click(screen.getByRole("button", { name: "True physical scale" }));
@@ -353,12 +375,62 @@ describe("MountainWavesExplore", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Wave Structure Lens" }));
     await waitFor(() =>
-      expect(fetch).toHaveBeenCalledWith(expect.stringContaining("field=w&time_index=-1")),
+      expect(fetch).toHaveBeenCalledWith(expect.stringContaining("field=w&time_index=1")),
     );
     expect(screen.queryByRole("checkbox", { name: "Cloud points" })).not.toBeInTheDocument();
     expect(screen.queryByRole("checkbox", { name: "RH = 100%" })).not.toBeInTheDocument();
     expect(screen.getByRole("checkbox", { name: "Potential temperature" })).toBeChecked();
     expect(screen.getByRole("heading", { name: "Wave Structure Lens" })).toBeInTheDocument();
+  });
+
+  it("returns the current Mountain Waves Lens to its complete authored view without deleting notes", async () => {
+    render(<MountainWavesExplore simulation={simulation} onBack={vi.fn()} />);
+    await screen.findByRole("heading", { name: "Wave Cloud Lens" });
+
+    const support = screen.getByLabelText("Simulation support");
+    fireEvent.click(within(support).getByRole("tab", { name: "Notes" }));
+    const notes = await screen.findByRole("textbox", { name: "Notes for Boulder Windstorm" });
+    fireEvent.change(notes, { target: { value: "Keep this observation." } });
+
+    fireEvent.click(screen.getByRole("button", { name: "Full domain" }));
+    fireEvent.click(screen.getByRole("button", { name: "True physical scale" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "Horizontal wind" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "Cloud boundary" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "RH = 100%" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "Potential temperature" }));
+    fireEvent.change(screen.getByRole("slider", { name: "Cloud opacity" }), {
+      target: { value: "0.35" },
+    });
+    fireEvent.change(screen.getByRole("slider", { name: "Cloud point size" }), {
+      target: { value: "7" },
+    });
+    fireEvent.change(screen.getByRole("slider", { name: /Saved output/ }), {
+      target: { value: "0" },
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Return to curated view" }));
+    await waitFor(() => expect(screen.queryByText("Loading frame...")).not.toBeInTheDocument());
+
+    expect(screen.getByRole("button", { name: "Wave Cloud Lens" })).toHaveClass("active-control");
+    expect(screen.getByRole("button", { name: "Focus region" })).toHaveClass("active-control");
+    expect(screen.getByRole("button", { name: "Expanded height" })).toHaveClass("active-control");
+    expect(screen.getByRole("checkbox", { name: "Horizontal wind" })).toBeChecked();
+    expect(screen.getByRole("checkbox", { name: "Cloud points" })).toBeChecked();
+    expect(screen.getByRole("checkbox", { name: "Cloud boundary" })).toBeChecked();
+    expect(screen.getByRole("checkbox", { name: "RH = 100%" })).toBeChecked();
+    expect(screen.getByRole("checkbox", { name: "Potential temperature" })).not.toBeChecked();
+    expect(screen.getByRole("slider", { name: "Cloud opacity" })).toHaveValue("0.68");
+    expect(screen.getByRole("slider", { name: "Cloud point size" })).toHaveValue("11");
+    expect(screen.getByRole("slider", { name: /Saved output/ })).toHaveValue("1");
+    expect(within(support).getByRole("tab", { name: "Science" })).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
+
+    fireEvent.click(within(support).getByRole("tab", { name: "Notes" }));
+    expect(screen.getByRole("textbox", { name: "Notes for Boulder Windstorm" })).toHaveValue(
+      "Keep this observation.",
+    );
   });
 
   it("opens a dry Simulation in the Wave Structure Lens without moist-only controls", async () => {

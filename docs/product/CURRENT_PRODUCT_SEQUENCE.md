@@ -82,6 +82,9 @@ The presentation-quality and third-World program established:
 
 #395 — first-class Fun With Soundings workbench with five jobs, atmosphere
        continuity, Past Experiments, and direct non-World Explore — complete
+
+#438 — typed World-aware curated Explore defaults, complete current-view
+       Return to curated view, and visible bounded fallback — complete
 ```
 
 The completed work preserves stable World and Simulation identities while allowing backing run assets to improve.
@@ -99,6 +102,13 @@ below the fold
 World-specific scientific content remains legitimate. Shared structure must not erase scientific or geometric differences.
 
 Per-Simulation Notes are the first bounded durable-content contract. They use stable World and Simulation identity, persist across reloads, and fail visibly. They do not serialize complete Explore state, implement resume, create Saved Views, or establish a generic annotation framework.
+
+Curated Explore defaults now define the intentional source-controlled
+presentation for each supported Simulation and Field or Lens. Initial open and
+Return to curated view consume the same definitions. Return restores the
+current Field or Lens without changing Simulation, erasing Notes, or starting
+playback. A visible technical fallback remains distinct from an authored
+scientific presentation.
 
 ## Next program: personal scientific memory
 
@@ -142,6 +152,10 @@ explicit Saved View
 ```
 
 Provide a clear return to the curated default state.
+
+The curated-default tier and complete return behavior are implemented through
+#438. Issue #432 owns the durable state above that tier; it must consume rather
+than recreate these defaults.
 
 ## Then: ordinary Compare and Saved Comparisons
 

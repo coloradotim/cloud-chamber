@@ -2,12 +2,26 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { MouseEvent as ReactMouseEvent } from "react";
 
 import {
+  ExploreCuratedDefaultNotice,
   ExploreContextContent,
   ExploreInspector,
   ExploreSelectedEvidence,
   ExploreSecondarySections,
   IntegratedExploreWorkspace,
+  ReturnToCuratedViewControl,
+  type ExploreCuratedNotice,
+  type ExploreSecondarySection,
 } from "./IntegratedExploreWorkspace";
+import {
+  curatedResolutionExplanation,
+  mountainWavesCuratedView,
+  mountainWavesInitialView,
+  resolveCuratedView,
+  type CuratedDefaultResolution,
+  type MountainWavesCuratedView,
+  type MountainWavesFieldId,
+  type ResolvedCuratedView,
+} from "./exploreCuratedDefaults";
 import type { MountainWavesSimulation } from "./MountainWavesWorld";
 import { SimulationNotes } from "./SimulationNotes";
 import { scalarPointPixelSize } from "./True3DViewer.utils";
@@ -213,6 +227,36 @@ const FIELD_LABELS: Record<Exclude<MountainWaveField, "cloud_over_wave">, string
   theta_perturbation: "Potential-temperature perturbation",
 };
 
+function mountainViewMode(viewId: MountainWavesCuratedView["viewId"]): ViewMode {
+  if (viewId === "wave_cloud") return "cloud";
+  if (viewId === "wave_structure") return "structure";
+  return "field";
+}
+
+function mountainCuratedViewId(viewMode: ViewMode): MountainWavesCuratedView["viewId"] {
+  if (viewMode === "cloud") return "wave_cloud";
+  if (viewMode === "structure") return "wave_structure";
+  return "field";
+}
+
+type PendingMountainCuratedRestore = {
+  resolution: CuratedDefaultResolution<ResolvedCuratedView<MountainWavesCuratedView>>;
+  target: ResolvedCuratedView<MountainWavesCuratedView>;
+  source: "initial" | "return";
+};
+
+function mountainWaveAvailableOverlayIds(frame: MountainWaveFrame | null): string[] {
+  if (!frame) return [];
+  const available: string[] = [];
+  if (frame.pointer_context.horizontal_wind_m_s.length > 0) available.push("horizontal_wind");
+  if (frame.pointer_context.potential_temperature_k.length > 0) {
+    available.push("potential_temperature_contours");
+  }
+  if (frame.overlay) available.push("cloud_points", "cloud_boundary");
+  if (frame.pointer_context.relative_humidity_percent) available.push("saturation_contour");
+  return available;
+}
+
 export function MountainWavesExplore({
   simulation,
   onBack,
@@ -220,30 +264,68 @@ export function MountainWavesExplore({
   simulation: MountainWavesSimulation;
   onBack: () => void;
 }) {
-  const [viewMode, setViewMode] = useState<ViewMode>(
-    simulation.moist_fields_available ? "cloud" : "structure",
+  const initialViewId =
+    mountainWavesInitialView(simulation.simulation_id) ??
+    (simulation.moist_fields_available ? "wave_cloud" : "wave_structure");
+  const initialCuratedDefinition = mountainWavesCuratedView(
+    simulation.simulation_id,
+    initialViewId,
+    "w",
   );
-  const [field, setField] = useState<Exclude<MountainWaveField, "cloud_over_wave">>("w");
-  const [geometryMode, setGeometryMode] = useState<GeometryMode>("expanded");
-  const [viewportMode, setViewportMode] = useState<ViewportMode | null>(null);
+  const [viewMode, setViewMode] = useState<ViewMode>(mountainViewMode(initialViewId));
+  const [field, setField] = useState<Exclude<MountainWaveField, "cloud_over_wave">>(
+    initialCuratedDefinition?.fieldId ?? "w",
+  );
+  const [geometryMode, setGeometryMode] = useState<GeometryMode>(
+    initialCuratedDefinition?.geometry ?? "expanded",
+  );
+  const [viewportMode, setViewportMode] = useState<ViewportMode | null>(
+    initialCuratedDefinition?.viewport ?? null,
+  );
   const [timeIndex, setTimeIndex] = useState<number | null>(null);
   const [frame, setFrame] = useState<MountainWaveFrame | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [playing, setPlaying] = useState(false);
-  const [playbackSpeed, setPlaybackSpeed] = useState(1);
+  const [playbackSpeed, setPlaybackSpeed] = useState(initialCuratedDefinition?.playbackSpeed ?? 1);
   const [selectedPoint, setSelectedPoint] = useState<PointSelection | null>(null);
-  const [cloudPoints, setCloudPoints] = useState(true);
-  const [cloudBoundary, setCloudBoundary] = useState(true);
-  const [saturationContour, setSaturationContour] = useState(true);
-  const [horizontalWind, setHorizontalWind] = useState(true);
+  const [cloudPoints, setCloudPoints] = useState(
+    initialCuratedDefinition?.overlays.cloudPoints ?? true,
+  );
+  const [cloudBoundary, setCloudBoundary] = useState(
+    initialCuratedDefinition?.overlays.cloudBoundary ?? true,
+  );
+  const [saturationContour, setSaturationContour] = useState(
+    initialCuratedDefinition?.overlays.saturationContour ?? true,
+  );
+  const [horizontalWind, setHorizontalWind] = useState(
+    initialCuratedDefinition?.overlays.horizontalWind ?? true,
+  );
   const [structurePotentialTemperatureContours, setStructurePotentialTemperatureContours] =
-    useState(true);
-  const [cloudPotentialTemperatureContours, setCloudPotentialTemperatureContours] = useState(false);
-  const [cloudOpacity, setCloudOpacity] = useState(0.68);
-  const [cloudPointSize, setCloudPointSize] = useState(11);
+    useState(
+      initialViewId === "wave_structure"
+        ? (initialCuratedDefinition?.overlays.potentialTemperatureContours ?? true)
+        : true,
+    );
+  const [cloudPotentialTemperatureContours, setCloudPotentialTemperatureContours] = useState(
+    initialViewId === "wave_cloud"
+      ? (initialCuratedDefinition?.overlays.potentialTemperatureContours ?? false)
+      : false,
+  );
+  const [cloudOpacity, setCloudOpacity] = useState(initialCuratedDefinition?.cloudOpacity ?? 0.68);
+  const [cloudPointSize, setCloudPointSize] = useState(
+    initialCuratedDefinition?.cloudPointSizePx ?? 11,
+  );
   const [maximized, setMaximized] = useState(false);
+  const [contextCollapsed, setContextCollapsed] = useState(false);
+  const [secondarySection, setSecondarySection] = useState<ExploreSecondarySection>("science");
+  const [curatedNotice, setCuratedNotice] = useState<ExploreCuratedNotice | null>(null);
+  const [pendingCuratedRestore, setPendingCuratedRestore] =
+    useState<PendingMountainCuratedRestore | null>(null);
+  const [retryNonce, setRetryNonce] = useState(0);
   const requestSequence = useRef(0);
+  const initialCuratedSimulationRef = useRef<string | null>(null);
+  const curatedNoticeSignatureRef = useRef<string | null>(null);
 
   const requestedField: MountainWaveField =
     viewMode === "cloud" ? "cloud_over_wave" : viewMode === "structure" ? "w" : field;
@@ -290,7 +372,7 @@ export function MountainWavesExplore({
     return () => {
       requestSequence.current += 1;
     };
-  }, [loadFrame]);
+  }, [loadFrame, retryNonce]);
 
   useEffect(() => {
     const requestedTimeIndex = timeIndex ?? frame?.time_index ?? null;
@@ -316,8 +398,42 @@ export function MountainWavesExplore({
   }, [simulation.moist_fields_available, viewMode]);
 
   useEffect(() => {
-    setViewportMode(null);
-  }, [simulation.simulation_id]);
+    const nextInitialView =
+      mountainWavesInitialView(simulation.simulation_id) ??
+      (simulation.moist_fields_available ? "wave_cloud" : "wave_structure");
+    const nextDefinition = mountainWavesCuratedView(simulation.simulation_id, nextInitialView, "w");
+    initialCuratedSimulationRef.current = null;
+    setViewMode(mountainViewMode(nextInitialView));
+    setField(nextDefinition?.fieldId ?? "w");
+    setGeometryMode(nextDefinition?.geometry ?? "expanded");
+    setViewportMode(nextDefinition?.viewport ?? null);
+    setTimeIndex(null);
+    setPlaying(false);
+    setPlaybackSpeed(nextDefinition?.playbackSpeed ?? 1);
+    setSelectedPoint(null);
+    setCloudPoints(nextDefinition?.overlays.cloudPoints ?? true);
+    setCloudBoundary(nextDefinition?.overlays.cloudBoundary ?? true);
+    setSaturationContour(nextDefinition?.overlays.saturationContour ?? true);
+    setHorizontalWind(nextDefinition?.overlays.horizontalWind ?? true);
+    if (nextInitialView === "wave_structure") {
+      setStructurePotentialTemperatureContours(
+        nextDefinition?.overlays.potentialTemperatureContours ?? true,
+      );
+    }
+    if (nextInitialView === "wave_cloud") {
+      setCloudPotentialTemperatureContours(
+        nextDefinition?.overlays.potentialTemperatureContours ?? false,
+      );
+    }
+    setCloudOpacity(nextDefinition?.cloudOpacity ?? 0.68);
+    setCloudPointSize(nextDefinition?.cloudPointSizePx ?? 11);
+    setMaximized(false);
+    setContextCollapsed(false);
+    setSecondarySection("science");
+    setCuratedNotice(null);
+    setPendingCuratedRestore(null);
+    curatedNoticeSignatureRef.current = null;
+  }, [simulation.moist_fields_available, simulation.simulation_id]);
 
   const fieldOptions = useMemo(
     () =>
@@ -328,18 +444,248 @@ export function MountainWavesExplore({
     [frame?.field_options],
   );
   const selectedEvidence = selectedPoint && frame ? pointEvidence(frame, selectedPoint) : null;
+  const curatedStateSignature = useMemo(
+    () =>
+      JSON.stringify({
+        viewMode,
+        field,
+        geometryMode,
+        viewportMode,
+        timeIndex,
+        playing,
+        playbackSpeed,
+        selectedPoint,
+        cloudPoints,
+        cloudBoundary,
+        saturationContour,
+        horizontalWind,
+        structurePotentialTemperatureContours,
+        cloudPotentialTemperatureContours,
+        cloudOpacity,
+        cloudPointSize,
+        maximized,
+        contextCollapsed,
+        secondarySection,
+      }),
+    [
+      cloudBoundary,
+      cloudOpacity,
+      cloudPointSize,
+      cloudPoints,
+      cloudPotentialTemperatureContours,
+      contextCollapsed,
+      field,
+      geometryMode,
+      horizontalWind,
+      maximized,
+      playbackSpeed,
+      playing,
+      saturationContour,
+      secondarySection,
+      selectedPoint,
+      structurePotentialTemperatureContours,
+      timeIndex,
+      viewMode,
+      viewportMode,
+    ],
+  );
+
+  const applyCuratedView = useCallback(
+    (viewId: MountainWavesCuratedView["viewId"], source: "initial" | "return") => {
+      const activeField = field as MountainWavesFieldId;
+      const definition = mountainWavesCuratedView(simulation.simulation_id, viewId, activeField);
+      const resolution = resolveCuratedView(definition, {
+        availableViewIds: simulation.moist_fields_available
+          ? ["field", "wave_structure", "wave_cloud"]
+          : ["field", "wave_structure"],
+        availableFieldIds: frame?.field_options ?? [],
+        availableScaleIds: frame ? [frame.scale.scale_id] : undefined,
+        availableOverlayIds: mountainWaveAvailableOverlayIds(frame),
+        timesSeconds: frame?.times_seconds ?? [],
+      });
+
+      if (!resolution.value) {
+        setPendingCuratedRestore(null);
+        curatedNoticeSignatureRef.current = curatedStateSignature;
+        setCuratedNotice({
+          status: resolution.status,
+          message: curatedResolutionExplanation(resolution),
+        });
+        return;
+      }
+      const curated = resolution.value.definition;
+      setTimeIndex(resolution.value.timeIndex);
+      setPlaying(false);
+      if (source === "return") {
+        setSelectedPoint(curated.selection);
+        setMaximized(false);
+        setContextCollapsed(curated.contextCollapsed);
+        setSecondarySection(curated.secondarySection);
+        setPlaybackSpeed(curated.playbackSpeed);
+        setGeometryMode(curated.geometry);
+        setViewportMode(curated.viewport);
+        setHorizontalWind(curated.overlays.horizontalWind);
+        setCloudPoints(curated.overlays.cloudPoints);
+        setCloudBoundary(curated.overlays.cloudBoundary);
+        setSaturationContour(curated.overlays.saturationContour);
+        if (viewId === "wave_cloud") {
+          setCloudPotentialTemperatureContours(curated.overlays.potentialTemperatureContours);
+        } else if (viewId === "wave_structure") {
+          setStructurePotentialTemperatureContours(curated.overlays.potentialTemperatureContours);
+        }
+        setCloudOpacity(curated.cloudOpacity);
+        setCloudPointSize(curated.cloudPointSizePx);
+        setError(null);
+        setFrame(null);
+        setRetryNonce((current) => current + 1);
+        setCuratedNotice({
+          status: "applying",
+          message: `Restoring the curated ${
+            viewId === "field"
+              ? "Field"
+              : viewId === "wave_cloud"
+                ? "Wave Cloud Lens"
+                : "Wave Structure Lens"
+          } view and loading its scientific evidence...`,
+        });
+      } else {
+        setCuratedNotice(null);
+      }
+      setPendingCuratedRestore({
+        resolution,
+        target: resolution.value,
+        source,
+      });
+    },
+    [
+      curatedStateSignature,
+      field,
+      frame,
+      simulation.moist_fields_available,
+      simulation.simulation_id,
+    ],
+  );
+
+  useEffect(() => {
+    if (!frame || initialCuratedSimulationRef.current === simulation.simulation_id) return;
+    initialCuratedSimulationRef.current = simulation.simulation_id;
+    applyCuratedView(initialViewId, "initial");
+  }, [applyCuratedView, frame, initialViewId, simulation.simulation_id]);
+
+  useEffect(() => {
+    if (!pendingCuratedRestore) return;
+    const { resolution, source, target } = pendingCuratedRestore;
+    const curated = target.definition;
+    const targetViewMode = mountainViewMode(curated.viewId);
+    const controlsMatch =
+      viewMode === targetViewMode &&
+      (curated.viewId !== "field" || field === curated.fieldId) &&
+      timeIndex === target.timeIndex &&
+      !playing &&
+      geometryMode === curated.geometry &&
+      viewportMode === curated.viewport;
+    if (!controlsMatch) {
+      setPendingCuratedRestore(null);
+      setCuratedNotice(null);
+      curatedNoticeSignatureRef.current = null;
+      return;
+    }
+    if (error) {
+      setPendingCuratedRestore(null);
+      curatedNoticeSignatureRef.current = curatedStateSignature;
+      setCuratedNotice({
+        status: "technical_fallback",
+        message: `The curated ${
+          curated.viewId === "field"
+            ? "Field"
+            : curated.viewId === "wave_cloud"
+              ? "Wave Cloud Lens"
+              : "Wave Structure Lens"
+        } view could not be restored: ${error} Use Retry frame to try again.`,
+      });
+      return;
+    }
+    const expectedFrameField =
+      curated.viewId === "wave_cloud"
+        ? "cloud_over_wave"
+        : curated.viewId === "wave_structure"
+          ? "w"
+          : curated.fieldId;
+    if (
+      loading ||
+      !frame ||
+      frame.time_index !== target.timeIndex ||
+      frame.field.key !== expectedFrameField
+    ) {
+      return;
+    }
+    const confirmedResolution = resolveCuratedView(curated, {
+      availableViewIds: simulation.moist_fields_available
+        ? ["field", "wave_structure", "wave_cloud"]
+        : ["field", "wave_structure"],
+      availableFieldIds: frame.field_options,
+      availableScaleIds: [frame.scale.scale_id],
+      availableOverlayIds: mountainWaveAvailableOverlayIds(frame),
+      timesSeconds: frame.times_seconds,
+    });
+    if (!confirmedResolution.value) {
+      setPendingCuratedRestore(null);
+      curatedNoticeSignatureRef.current = curatedStateSignature;
+      setCuratedNotice({
+        status: "technical_fallback",
+        message: curatedResolutionExplanation(confirmedResolution),
+      });
+      return;
+    }
+    setPendingCuratedRestore(null);
+    curatedNoticeSignatureRef.current = curatedStateSignature;
+    if (source === "return" || resolution.status !== "applied") {
+      setCuratedNotice({
+        status: resolution.status,
+        message: curatedResolutionExplanation(resolution),
+      });
+    } else {
+      setCuratedNotice(null);
+    }
+  }, [
+    curatedStateSignature,
+    error,
+    field,
+    frame,
+    geometryMode,
+    loading,
+    pendingCuratedRestore,
+    playing,
+    simulation.moist_fields_available,
+    timeIndex,
+    viewMode,
+    viewportMode,
+  ]);
+
+  useEffect(() => {
+    if (!curatedNotice || pendingCuratedRestore || !curatedNoticeSignatureRef.current) return;
+    if (curatedNoticeSignatureRef.current === curatedStateSignature) return;
+    curatedNoticeSignatureRef.current = null;
+    setCuratedNotice(null);
+  }, [curatedNotice, curatedStateSignature, pendingCuratedRestore]);
 
   return (
     <IntegratedExploreWorkspace
       worldName="Mountain Waves"
       simulationName={simulation.display_name}
       onBack={onBack}
+      headerActions={
+        <ReturnToCuratedViewControl
+          onReturn={() => applyCuratedView(mountainCuratedViewId(viewMode), "return")}
+        />
+      }
     >
       <section
         className={`visualizer-shell mountain-waves-explore-shell${
           maximized ? " mountain-waves-explore-shell-maximized" : ""
         }`}
       >
+        <ExploreCuratedDefaultNotice notice={curatedNotice} />
         <section className="mountain-waves-scientific-view" aria-label="Mountain Waves x-z view">
           <header className="instrument-header mountain-waves-instrument-header">
             <div>
@@ -401,7 +747,14 @@ export function MountainWavesExplore({
               <section className="layer-local-error mountain-waves-local-error">
                 <h3>Saved output unavailable</h3>
                 <p role="alert">{error}</p>
-                <button type="button" onClick={() => void loadFrame()}>
+                <button
+                  type="button"
+                  onClick={() => {
+                    curatedNoticeSignatureRef.current = null;
+                    setCuratedNotice(null);
+                    setRetryNonce((current) => current + 1);
+                  }}
+                >
                   Retry frame
                 </button>
               </section>
@@ -603,7 +956,7 @@ export function MountainWavesExplore({
           onPlaybackSpeed={setPlaybackSpeed}
         />
 
-        <ExploreInspector>
+        <ExploreInspector collapsed={contextCollapsed} onCollapsedChange={setContextCollapsed}>
           <MountainWavesContext
             simulation={simulation}
             frame={frame}
@@ -616,6 +969,8 @@ export function MountainWavesExplore({
         </ExploreInspector>
 
         <ExploreSecondarySections
+          activeSection={secondarySection}
+          onActiveSectionChange={setSecondarySection}
           sections={{
             science: (
               <MountainWavesScience simulation={simulation} frame={frame} viewMode={viewMode} />

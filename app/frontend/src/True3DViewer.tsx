@@ -138,6 +138,8 @@ type True3DViewerProps = {
   compactWorkspace?: boolean;
   compactDisplayControls?: ReactNode;
   compactDisplayLabel?: string;
+  compactDisplayControlsOpen?: boolean;
+  onCompactDisplayControlsOpenChange?: (open: boolean) => void;
   maximized?: boolean;
   onToggleMaximize?: () => void;
   stormScene?: StormScenePayload | null;
@@ -226,6 +228,8 @@ export function True3DViewer({
   compactWorkspace = false,
   compactDisplayControls,
   compactDisplayLabel = "Display",
+  compactDisplayControlsOpen,
+  onCompactDisplayControlsOpenChange,
   maximized = false,
   onToggleMaximize,
   stormScene = null,
@@ -249,6 +253,7 @@ export function True3DViewer({
   const cameraTransformRef = useRef(cameraTransform);
   const cameraTransformChangeRef = useRef(onCameraTransformChange);
   const appliedCameraPresetRef = useRef(cameraPreset);
+  const compactDisplayDetailsRef = useRef<HTMLDetailsElement | null>(null);
   axisOcclusionRef.current = { frame: updraftLensFrame, opacity: updraftLensOpacity };
   stormSelectionRef.current = onSelectStormPoint;
   cameraPresetRef.current = cameraPreset;
@@ -258,6 +263,16 @@ export function True3DViewer({
   const [cameraStatus, setCameraStatus] = useState("Camera ready");
   const [selectedCameraPreset, setSelectedCameraPreset] = useState<CameraPreset>(cameraPreset);
   const [tallViewport, setTallViewport] = useState(false);
+
+  useEffect(() => {
+    if (
+      typeof compactDisplayControlsOpen === "boolean" &&
+      compactDisplayDetailsRef.current &&
+      compactDisplayDetailsRef.current.open !== compactDisplayControlsOpen
+    ) {
+      compactDisplayDetailsRef.current.open = compactDisplayControlsOpen;
+    }
+  }, [compactDisplayControlsOpen]);
 
   const boundsKey = boundsSignature(pointCloud, stormScene);
   const bounds = useMemo(() => sceneBoundsFromSignature(boundsKey), [boundsKey]);
@@ -657,7 +672,19 @@ export function True3DViewer({
       {compactWorkspace ? (
         <div className="true3d-controls true3d-controls-compact" aria-label="3-D camera controls">
           {compactDisplayControls && (
-            <details className="true3d-display-control">
+            <details
+              ref={compactDisplayDetailsRef}
+              className="true3d-display-control"
+              open={compactDisplayControlsOpen}
+              onToggle={(event) => {
+                if (
+                  typeof compactDisplayControlsOpen !== "boolean" ||
+                  event.currentTarget.open !== compactDisplayControlsOpen
+                ) {
+                  onCompactDisplayControlsOpenChange?.(event.currentTarget.open);
+                }
+              }}
+            >
               <summary>
                 <span>{compactDisplayLabel}</span>
               </summary>

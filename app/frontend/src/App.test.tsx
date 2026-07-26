@@ -3,6 +3,7 @@ import { act } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { App, VisualizerSceneShell } from "./App";
+import type { SimulationRecord } from "./TradeCumulusWorld";
 
 const defaultRunConfiguration = {
   configuration_id: "short_6h__cells_64__local_6km__standard_15min__full",
@@ -3331,7 +3332,10 @@ const tradeCumulusFieldCatalog = {
     },
     fieldCatalogResponse.available_fields[5],
     fieldCatalogResponse.available_fields[1],
-  ],
+  ].map((field) => ({
+    ...field,
+    time_coordinate_values: [0, 900, 1800, 12_060],
+  })),
 };
 
 const tradeCumulusViewDefaults = {
@@ -3385,7 +3389,7 @@ const tradeCumulusUpdraftLensDefaults = {
   default_time_method: "max_finite_domain_mean_cwp_at_or_after_10800_seconds",
   default_plane_dimension: "y",
   default_plane_index: 1,
-  default_plane_coordinate: 0.05,
+  default_plane_coordinate: 2.366666555404663,
   default_plane_units: "km",
   default_plane_method: "greatest_coherent_positive_w_times_ql_score",
   cloud_threshold_kg_kg: 1e-6,
@@ -3495,21 +3499,38 @@ function tradeCumulusUpdraftLensFrame({
   };
 }
 
-function tradeCumulusPointCloudResponse() {
-  const response = pointCloudResponse({ field: "qc", timeIndex: 2 });
+function tradeCumulusPointCloudResponse({
+  field = "ql",
+  timeIndex = 2,
+}: {
+  field?: "ql" | "qv";
+  timeIndex?: number;
+} = {}) {
+  const sourceField = field === "ql" ? "qc" : field;
+  const response = pointCloudResponse({ field: sourceField, timeIndex });
+  const fieldMetadata =
+    tradeCumulusFieldCatalog.available_fields.find(
+      (candidate) => candidate.raw_field_name === field,
+    ) ?? tradeCumulusFieldCatalog.available_fields[0];
   return {
     ...response,
     result_id: "result-trade-cumulus",
     run_id: "trade-cumulus",
     scenario_id: "bomex_trade_cumulus_baseline_v0",
-    field: tradeCumulusFieldCatalog.available_fields[0],
-    selection: { ...response.selection, field: "ql" },
+    field: fieldMetadata,
+    selection: { ...response.selection, field },
   };
 }
 
 function tradeCumulusSliceResponse(url: string) {
   const parsed = new URL(url, "http://localhost");
-  const field = parsed.searchParams.get("field") === "w" ? "w" : "qc";
+  const requestedField = parsed.searchParams.get("field") ?? "ql";
+  const sourceField = requestedField === "ql" ? "qc" : requestedField;
+  const field = (
+    ["qc", "w", "qr", "theta", "temperature", "qv", "dbz", "rain"].includes(sourceField)
+      ? sourceField
+      : "qc"
+  ) as MockVisualFieldName;
   const response = sliceResponse({
     field,
     orientation:
@@ -3527,9 +3548,9 @@ function tradeCumulusSliceResponse(url: string) {
     run_id: "trade-cumulus",
     scenario_id: "bomex_trade_cumulus_baseline_v0",
     field:
-      field === "w"
-        ? tradeCumulusFieldCatalog.available_fields[1]
-        : tradeCumulusFieldCatalog.available_fields[0],
+      tradeCumulusFieldCatalog.available_fields.find(
+        (candidate) => candidate.raw_field_name === requestedField,
+      ) ?? tradeCumulusFieldCatalog.available_fields[0],
   };
 }
 
@@ -4149,8 +4170,17 @@ function mockTradeCumulusVisualizer(
       );
     }
     if (url.includes("/api/results/result-trade-cumulus/visualization/point-cloud")) {
+      const parsed = new URL(url, "http://localhost");
       return Promise.resolve(
-        new Response(JSON.stringify(tradeCumulusPointCloudResponse()), { status: 200 }),
+        new Response(
+          JSON.stringify(
+            tradeCumulusPointCloudResponse({
+              field: parsed.searchParams.get("field") === "qv" ? "qv" : "ql",
+              timeIndex: Number(parsed.searchParams.get("time_index") ?? 2),
+            }),
+          ),
+          { status: 200 },
+        ),
       );
     }
     if (url.includes("/api/results/result-trade-cumulus/visualization/slice")) {
@@ -4274,7 +4304,7 @@ const cloudWorldSummary = {
   availability_message: "Reference, variation, and featured comparison are available.",
 };
 
-const worldBaselineSimulation = {
+const worldBaselineSimulation: SimulationRecord = {
   simulation_id: "trade_cumulus_canonical_bomex",
   display_name: "Canonical BOMEX Baseline",
   role: "reference",
@@ -4297,7 +4327,7 @@ const worldBaselineSimulation = {
   completed_at: null,
 };
 
-const worldMoreMoistureSimulation = {
+const worldMoreMoistureSimulation: SimulationRecord = {
   ...worldBaselineSimulation,
   simulation_id: "trade_cumulus_more_moisture",
   display_name: "More Moisture",
@@ -4539,6 +4569,9 @@ describe("App", () => {
       `/fun-with-soundings/explore/${observedSoundingResultCard.result_id}`,
     );
     expect(runSelector).toHaveValue(observedSoundingResultCard.result_id);
+    expect(
+      screen.queryByRole("button", { name: "Return to curated view" }),
+    ).not.toBeInTheDocument();
 
     fireEvent.change(runSelector, { target: { value: secondObservedResult.result_id } });
     await waitFor(() => {
@@ -7776,6 +7809,333 @@ describe("App", () => {
       "aria-pressed",
       "true",
     );
+  });
+
+  it("returns the current Trade Cumulus Field or Lens to its authored presentation", async () => {
+    mockWorldScopedApp();
+    const worldFetch = vi.mocked(fetch).getMockImplementation();
+    vi.mocked(fetch).mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes(comparisonBaselineResultCard.result_id)) {
+        if (url.endsWith("/visualization/fields")) {
+          return Promise.resolve(
+            new Response(JSON.stringify(tradeCumulusFieldCatalog), { status: 200 }),
+          );
+        }
+        if (url.endsWith("/trade-cumulus-updraft-lens/defaults")) {
+          return Promise.resolve(
+            new Response(JSON.stringify(tradeCumulusUpdraftLensDefaults), { status: 200 }),
+          );
+        }
+        if (url.includes("/visualization/defaults")) {
+          return Promise.resolve(
+            new Response(JSON.stringify(tradeCumulusViewDefaults), { status: 200 }),
+          );
+        }
+        if (url.includes("/visualization/point-cloud")) {
+          const parsed = new URL(url, "http://localhost");
+          return Promise.resolve(
+            new Response(
+              JSON.stringify(
+                tradeCumulusPointCloudResponse({
+                  field: parsed.searchParams.get("field") === "qv" ? "qv" : "ql",
+                  timeIndex: Number(parsed.searchParams.get("time_index") ?? 0),
+                }),
+              ),
+              { status: 200 },
+            ),
+          );
+        }
+        if (url.includes("/trade-cumulus-updraft-lens/frame")) {
+          const parsed = new URL(url, "http://localhost");
+          return Promise.resolve(
+            new Response(
+              JSON.stringify(
+                tradeCumulusUpdraftLensFrame({
+                  timeIndex: Number(parsed.searchParams.get("time_index") ?? 0),
+                  planeIndex: Number(parsed.searchParams.get("plane_index") ?? 1),
+                }),
+              ),
+              { status: 200 },
+            ),
+          );
+        }
+        if (url.includes("/visualization/slice")) {
+          return Promise.resolve(
+            new Response(JSON.stringify(tradeCumulusSliceResponse(url)), { status: 200 }),
+          );
+        }
+      }
+      return (
+        worldFetch?.(input, init) ?? Promise.resolve(new Response("not found", { status: 404 }))
+      );
+    });
+    render(<App />);
+    fireEvent.click(await screen.findByRole("button", { name: "Enter Trade Cumulus" }));
+    fireEvent.click(
+      within(await screen.findByLabelText("Canonical BOMEX Baseline Simulation")).getByRole(
+        "button",
+        { name: "Explore" },
+      ),
+    );
+
+    const viewMode = await screen.findByLabelText("Explore view mode");
+    const lensToggle = within(viewMode).getByRole("button", { name: "Updraft Lens" });
+    await waitFor(() => expect(lensToggle).toHaveAttribute("aria-pressed", "true"));
+    const displayDetails = screen
+      .getByText("Display", { selector: "summary span" })
+      .closest("details");
+    expect(displayDetails).not.toBeNull();
+    fireEvent.click(screen.getByText("Display", { selector: "summary span" }));
+    fireEvent(displayDetails!, new Event("toggle"));
+    expect(displayDetails).toHaveAttribute("open");
+
+    fireEvent.change(screen.getByLabelText("Time"), { target: { value: "0" } });
+    fireEvent.click(screen.getByRole("button", { name: "Horizontal x-y" }));
+    fireEvent.click(screen.getByLabelText("Cloud boundary"));
+    fireEvent.click(screen.getByLabelText("Horizontal wind"));
+    fireEvent.click(screen.getByRole("button", { name: "Total wind" }));
+    fireEvent.change(screen.getByLabelText("3-D scalar field"), { target: { value: "qv" } });
+    fireEvent.change(screen.getByLabelText("Layer opacity"), { target: { value: "0.45" } });
+    fireEvent.change(screen.getByLabelText("Point size"), { target: { value: "14" } });
+    fireEvent.change(screen.getByLabelText("Lens opacity"), { target: { value: "0.75" } });
+    fireEvent.change(screen.getByLabelText("Camera view"), {
+      target: { value: "look_along_x" },
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Return to curated view" }));
+    await waitFor(() => expect(screen.getByLabelText("Time")).toHaveValue("3"));
+
+    expect(lensToggle).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("button", { name: "Vertical x-z" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    expect(screen.getByLabelText("Updraft Lens slice position")).toHaveValue("1");
+    expect(screen.getByLabelText("Cloud boundary")).toBeChecked();
+    expect(screen.getByLabelText("Horizontal wind")).toBeChecked();
+    expect(screen.getByRole("button", { name: "Local departures" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    expect(screen.getByLabelText("3-D scalar field")).toHaveValue("ql");
+    expect(screen.getByLabelText("Layer opacity")).toHaveValue("0.68");
+    expect(screen.getByLabelText("Point size")).toHaveValue("11");
+    expect(screen.getByLabelText("Lens opacity")).toHaveValue("0.9");
+    expect(screen.getByLabelText("Camera view")).toHaveValue("overview");
+    await waitFor(() => expect(displayDetails).not.toHaveAttribute("open"));
+
+    const fieldToggle = within(viewMode).getByRole("button", { name: "Field" });
+    fireEvent.click(fieldToggle);
+    await screen.findByLabelText("Slice field");
+    fireEvent.change(screen.getByLabelText("Time"), { target: { value: "0" } });
+    fireEvent.change(screen.getByLabelText("3-D scalar field"), { target: { value: "qv" } });
+    fireEvent.click(screen.getByRole("button", { name: "Horizontal layer" }));
+    fireEvent.change(screen.getByLabelText("Layer opacity"), { target: { value: "0.4" } });
+    fireEvent.change(screen.getByLabelText("Point size"), { target: { value: "15" } });
+
+    fireEvent.click(screen.getByRole("button", { name: "Return to curated view" }));
+    await waitFor(() => expect(screen.getByLabelText("Time")).toHaveValue("3"));
+
+    expect(fieldToggle).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByLabelText("3-D scalar field")).toHaveValue("qv");
+    expect(screen.getByLabelText("Slice field")).toHaveValue("qv");
+    expect(screen.getByRole("button", { name: "Vertical x-z slice" })).toHaveClass(
+      "active-control",
+    );
+    expect(screen.getByLabelText("Slice position")).toHaveValue("1");
+    expect(screen.getByLabelText("Layer opacity")).toHaveValue("0.68");
+    expect(screen.getByLabelText("Point size")).toHaveValue("11");
+  });
+
+  it("announces a Trade restoration only after target evidence loads and clears success on edit", async () => {
+    let targetRequestCount = 0;
+    let resolveRestore: ((response: Response) => void) | undefined;
+    mockTradeCumulusVisualizer((url) => {
+      const parsed = new URL(url, "http://localhost");
+      const timeIndex = Number(parsed.searchParams.get("time_index") ?? 0);
+      if (timeIndex !== 3) {
+        return Promise.resolve(
+          new Response(JSON.stringify(tradeCumulusUpdraftLensFrame({ timeIndex })), {
+            status: 200,
+          }),
+        );
+      }
+      targetRequestCount += 1;
+      if (targetRequestCount === 1) {
+        return Promise.resolve(
+          new Response(JSON.stringify(tradeCumulusUpdraftLensFrame({ timeIndex })), {
+            status: 200,
+          }),
+        );
+      }
+      return new Promise((resolve) => {
+        resolveRestore = resolve;
+      });
+    });
+    render(
+      <VisualizerSceneShell
+        result={
+          tradeCumulusResultCard as unknown as Parameters<typeof VisualizerSceneShell>[0]["result"]
+        }
+        worldName="Trade Cumulus"
+        simulationName="Canonical BOMEX Baseline"
+        simulationRecord={worldBaselineSimulation}
+      />,
+    );
+
+    const lensToggle = await screen.findByRole("button", { name: "Updraft Lens" });
+    await waitFor(() => expect(lensToggle).toHaveAttribute("aria-pressed", "true"));
+    await screen.findByText("Lens synced");
+    fireEvent.change(screen.getByLabelText("Time"), { target: { value: "0" } });
+    await waitFor(() => expect(screen.getByLabelText("Time")).toHaveValue("0"));
+
+    fireEvent.click(screen.getByRole("button", { name: "Return to curated view" }));
+    expect(
+      await screen.findByText(/Restoring the curated Updraft Lens view and loading/),
+    ).toBeVisible();
+    expect(screen.queryByText("Curated Updraft Lens view restored.")).not.toBeInTheDocument();
+
+    await act(async () => {
+      resolveRestore?.(
+        new Response(JSON.stringify(tradeCumulusUpdraftLensFrame({ timeIndex: 3 })), {
+          status: 200,
+        }),
+      );
+    });
+    expect(await screen.findByText("Curated Updraft Lens view restored.")).toBeVisible();
+
+    fireEvent.change(screen.getByLabelText("Time"), { target: { value: "0" } });
+    await waitFor(() =>
+      expect(screen.queryByText("Curated Updraft Lens view restored.")).not.toBeInTheDocument(),
+    );
+  });
+
+  it("keeps Trade restoration errors and retry access visible when target evidence fails", async () => {
+    let targetRequestCount = 0;
+    mockTradeCumulusVisualizer((url) => {
+      const parsed = new URL(url, "http://localhost");
+      const timeIndex = Number(parsed.searchParams.get("time_index") ?? 0);
+      if (timeIndex === 3) {
+        targetRequestCount += 1;
+        if (targetRequestCount > 1) {
+          return Promise.resolve(new Response("Target Lens frame failed.", { status: 500 }));
+        }
+      }
+      return Promise.resolve(
+        new Response(JSON.stringify(tradeCumulusUpdraftLensFrame({ timeIndex })), {
+          status: 200,
+        }),
+      );
+    });
+    render(
+      <VisualizerSceneShell
+        result={
+          tradeCumulusResultCard as unknown as Parameters<typeof VisualizerSceneShell>[0]["result"]
+        }
+        worldName="Trade Cumulus"
+        simulationName="Canonical BOMEX Baseline"
+        simulationRecord={worldBaselineSimulation}
+      />,
+    );
+
+    await screen.findByText("Lens synced");
+    fireEvent.change(screen.getByLabelText("Time"), { target: { value: "0" } });
+    fireEvent.click(screen.getByRole("button", { name: "Return to curated view" }));
+
+    expect(await screen.findByText("Updraft Lens slice unavailable")).toBeVisible();
+    expect(screen.getByRole("button", { name: "Retry Lens slice" })).toBeVisible();
+    expect(
+      await screen.findByText(/curated Updraft Lens view could not be restored/),
+    ).toBeVisible();
+    expect(screen.queryByText("Curated Updraft Lens view restored.")).not.toBeInTheDocument();
+  });
+
+  it("applies the authored More Moisture coordinates through the integrated Trade surface", async () => {
+    mockTradeCumulusVisualizer();
+    const defaultFetch = vi.mocked(fetch).getMockImplementation();
+    vi.mocked(fetch).mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.endsWith("/visualization/fields")) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              ...tradeCumulusFieldCatalog,
+              available_fields: tradeCumulusFieldCatalog.available_fields.map((field) => ({
+                ...field,
+                time_coordinate_values: [0, 4_800, 9_600, 13_920],
+              })),
+            }),
+            { status: 200 },
+          ),
+        );
+      }
+      if (url.endsWith("/trade-cumulus-updraft-lens/defaults")) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              ...tradeCumulusUpdraftLensDefaults,
+              default_time_index: 3,
+              default_time_seconds: 13_920,
+              default_plane_coordinate: 1.6333333253860474,
+            }),
+            { status: 200 },
+          ),
+        );
+      }
+      return (
+        defaultFetch?.(input, init) ?? Promise.resolve(new Response("not found", { status: 404 }))
+      );
+    });
+    render(
+      <VisualizerSceneShell
+        result={
+          tradeCumulusResultCard as unknown as Parameters<typeof VisualizerSceneShell>[0]["result"]
+        }
+        worldName="Trade Cumulus"
+        simulationName="More Moisture"
+        simulationRecord={worldMoreMoistureSimulation}
+      />,
+    );
+
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Updraft Lens" })).toHaveAttribute(
+        "aria-pressed",
+        "true",
+      ),
+    );
+    expect(screen.getByLabelText("Time")).toHaveValue("3");
+    expect(screen.getByLabelText("Updraft Lens slice position")).toHaveValue("1");
+  });
+
+  it("exposes a technical fallback without changing an ordinary retained Trade Simulation", async () => {
+    mockTradeCumulusVisualizer();
+    render(
+      <VisualizerSceneShell
+        result={
+          tradeCumulusResultCard as unknown as Parameters<typeof VisualizerSceneShell>[0]["result"]
+        }
+        worldName="Trade Cumulus"
+        simulationName="Retained Trade Trial"
+        simulationRecord={{
+          ...worldBaselineSimulation,
+          simulation_id: "trade_cumulus_retained_trial",
+          display_name: "Retained Trade Trial",
+        }}
+      />,
+    );
+
+    await screen.findByText("Lens synced");
+    const field = await screen.findByLabelText("3-D scalar field");
+    fireEvent.change(field, { target: { value: "qv" } });
+    await waitFor(() => expect(field).toHaveValue("qv"));
+    fireEvent.click(screen.getByRole("button", { name: "Return to curated view" }));
+
+    expect(
+      await screen.findByText(/No authored curated view is available for this Simulation/),
+    ).toBeVisible();
+    expect(field).toHaveValue("qv");
+    expect(screen.getByRole("tab", { name: "Details" })).toBeVisible();
   });
 
   it("ignores stale Updraft Lens frame responses", async () => {
