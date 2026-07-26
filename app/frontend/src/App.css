@@ -5388,7 +5388,8 @@ details[open] > summary {
   z-index: 14;
   top: 0.45rem;
   right: 0.45rem;
-  max-width: min(34rem, 72%);
+  left: 0.45rem;
+  max-width: none;
   margin: 0;
   border-left: 3px solid var(--color-accent-primary);
   padding: 0.42rem 0.65rem;
@@ -5397,6 +5398,10 @@ details[open] > summary {
   color: var(--color-text-secondary);
   font-size: 0.82rem;
   box-shadow: var(--shadow-soft);
+}
+
+.explore-curated-default-notice-applying {
+  border-left-color: var(--color-text-secondary);
 }
 
 .explore-curated-default-notice-partially_incompatible,
@@ -5502,14 +5507,8 @@ details[open] > summary {
     box-shadow: none;
   }
 
-  .integrated-explore-workspace
-    .visualizer-shell:has(> .explore-curated-default-notice-partially_incompatible),
-  .integrated-explore-workspace
-    .visualizer-shell:has(> .explore-curated-default-notice-technical_fallback),
-  .integrated-explore-workspace
-    .supercells-explore-shell:has(> .explore-curated-default-notice-partially_incompatible),
-  .integrated-explore-workspace
-    .supercells-explore-shell:has(> .explore-curated-default-notice-technical_fallback) {
+  .integrated-explore-workspace .visualizer-shell:has(> .explore-curated-default-notice),
+  .integrated-explore-workspace .supercells-explore-shell:has(> .explore-curated-default-notice) {
     padding-top: 3.4rem;
   }
 
@@ -5863,6 +5862,14 @@ details[open] > summary {
   .integrated-explore-workspace .updraft-lens-slice-without-legend {
     width: 100%;
     max-width: none;
+  }
+
+  .integrated-explore-workspace .layer-local-error-slice {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.35rem;
+    padding: 0.8rem;
   }
 
   .updraft-lens-instrument-body {

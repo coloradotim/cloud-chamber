@@ -10,7 +10,7 @@ export type ExploreContextMetric = {
 };
 
 export type ExploreCuratedNotice = {
-  status: "applied" | "partially_incompatible" | "technical_fallback";
+  status: "applying" | "applied" | "partially_incompatible" | "technical_fallback";
   message: string;
 };
 

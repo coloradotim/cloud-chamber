@@ -282,8 +282,8 @@ function frameFor(url: string): StormExaminationFrame {
   const yIndex = Number(search.get("y_index") ?? 1);
   const zIndex = Number(search.get("z_index") ?? 1);
   const xCoordinates = [-10, 0, 10];
-  const yCoordinates = [-10, 10, 20];
-  const zCoordinates = [0.5, 3, 8];
+  const yCoordinates = lens === "cloud_precipitation" ? [-10, 0.75, 20] : [-10, 10, 20];
+  const zCoordinates = lens === "low_level_interactions" ? [1.1666667461395264, 3, 8] : [0.5, 3, 8];
   const names = {
     rotating_updraft: "Rotating Updraft",
     cloud_precipitation: "Cloud and Precipitation",
@@ -670,7 +670,7 @@ describe("SupercellsExplore", () => {
 
     await waitFor(() =>
       expect(fetch).toHaveBeenCalledWith(
-        expect.stringMatching(/x_index=1&y_index=0&z_index=2/),
+        expect.stringMatching(/x_index=1&y_index=1&z_index=2/),
         expect.anything(),
       ),
     );
@@ -771,9 +771,9 @@ describe("SupercellsExplore", () => {
       "aria-pressed",
       "true",
     );
-    expect((await screen.findAllByText("xz section at y = 10.0 km")).length).toBeGreaterThan(1);
+    expect((await screen.findAllByText("xz section at y = 0.8 km")).length).toBeGreaterThan(1);
     expect(screen.getByLabelText("Mock 3-D storm scene")).toHaveTextContent(
-      "xz section at y = 10.0 km",
+      "xz section at y = 0.8 km",
     );
     fireEvent.click(orientation.getByRole("button", { name: "Horizontal x-y" }));
     fireEvent.click(screen.getByLabelText("Hydrometeor plan plan view"), {
@@ -782,7 +782,7 @@ describe("SupercellsExplore", () => {
     });
     await waitFor(() =>
       expect(fetch).toHaveBeenCalledWith(
-        expect.stringMatching(/x_index=1&y_index=0&z_index=2/),
+        expect.stringMatching(/x_index=1&y_index=1&z_index=2/),
         expect.anything(),
       ),
     );
@@ -828,7 +828,7 @@ describe("SupercellsExplore", () => {
       ),
     );
     expect(screen.getByLabelText("Mock 3-D storm scene")).toHaveTextContent(
-      "xz section at y = 10.0 km",
+      "xz section at y = 0.8 km",
     );
     const context = screen.getByLabelText("Context");
     expect(await within(context).findByText("Selected cell")).toBeVisible();

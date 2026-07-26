@@ -53,7 +53,7 @@ const frame = {
   case_label: "Boulder Windstorm",
   time_index: 0,
   time_seconds: 0,
-  times_seconds: [0, 180],
+  times_seconds: [0, 7_200],
   dry_case: false,
   field: {
     key: "cloud_over_wave",
@@ -192,7 +192,24 @@ describe("MountainWavesExplore", () => {
   const originalGetContext = HTMLCanvasElement.prototype.getContext;
 
   beforeEach(() => {
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(ok(frame)));
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((input: RequestInfo | URL) => {
+        const url = String(input);
+        if (!url.includes("/frame?")) return Promise.resolve(ok(frame));
+        const requestedIndex = Number(
+          new URL(url, "http://localhost").searchParams.get("time_index"),
+        );
+        const resolvedIndex = requestedIndex < 0 ? frame.time_index : requestedIndex;
+        return Promise.resolve(
+          ok({
+            ...frame,
+            time_index: resolvedIndex,
+            time_seconds: frame.times_seconds[resolvedIndex] ?? frame.time_seconds,
+          }),
+        );
+      }),
+    );
     vi.stubGlobal(
       "ResizeObserver",
       class {

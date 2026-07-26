@@ -26,13 +26,30 @@ export type CuratedPhysicalPlane = {
   coordinateKm: number;
 };
 
+export type CuratedPresentationRequirements = {
+  requiredFieldIds: string[];
+  requiredScaleIds: string[];
+  requiredLayerIds: string[];
+  requiredOverlayIds: string[];
+  optionalOverlayIds: string[];
+};
+
+export type CuratedCoordinateCompatibility = {
+  maximumTimeOffsetSeconds: number;
+  maximumPlaneOffsetKm: number | null;
+};
+
 export type TradeCumulusCuratedView = CuratedCommonState & {
   worldId: "trade_cumulus";
   simulationId: "trade_cumulus_canonical_bomex" | "trade_cumulus_more_moisture";
   viewId: "field" | "updraft_lens";
-  fieldId: "ql" | "w";
-  cloudFieldId: "ql";
+  fieldId: string;
+  sceneFieldId: string;
+  sliceFieldId: string;
+  cloudFieldId: "ql" | null;
   fixedScaleId: "trade_cumulus_updraft_velocity_v1" | null;
+  requirements: CuratedPresentationRequirements;
+  compatibility: CuratedCoordinateCompatibility;
   plane: CuratedPhysicalPlane;
   cameraPreset: CameraPreset;
   cameraTransform: CameraTransform | null;
@@ -63,6 +80,8 @@ export type MountainWavesCuratedView = CuratedCommonState & {
     | "mountain_waves_cloud_liquid_v1"
     | "mountain_waves_relative_humidity_v1"
     | "mountain_waves_theta_perturbation_v1";
+  requirements: CuratedPresentationRequirements;
+  compatibility: CuratedCoordinateCompatibility;
   geometry: "expanded";
   viewport: "focus" | "full";
   plotFraming: "fit_viewport";
@@ -105,6 +124,8 @@ export type SupercellsCuratedView = CuratedCommonState & {
   displayControlsOpen: false;
   visibleLayerIds: string[];
   fixedScaleIds: string[];
+  requirements: CuratedPresentationRequirements;
+  compatibility: CuratedCoordinateCompatibility;
   overlays: SupercellsOverlayState;
   hydrometeorCategoryCodes: readonly number[];
   sceneOpacity: number;
@@ -122,6 +143,7 @@ export type CuratedDefaultCapabilities = {
   availableFieldIds?: string[];
   availableScaleIds?: string[];
   availableLayerIds?: string[];
+  availableOverlayIds?: string[];
   timesSeconds: number[];
   planeCoordinatesKm?: number[];
   planeNativeIndices?: number[];
@@ -157,6 +179,8 @@ export const TRADE_CUMULUS_INITIAL_VIEW = "updraft_lens" as const;
 export function tradeCumulusCuratedView(
   simulationId: string | null | undefined,
   viewId: TradeCumulusCuratedView["viewId"],
+  sceneFieldId = "ql",
+  sliceFieldId = sceneFieldId,
 ): TradeCumulusCuratedView | null {
   if (
     simulationId !== "trade_cumulus_canonical_bomex" &&
@@ -165,14 +189,30 @@ export function tradeCumulusCuratedView(
     return null;
   }
   const presentation = TRADE_CUMULUS_PRESENTATIONS[simulationId];
+  const isLens = viewId === "updraft_lens";
+  const resolvedSceneFieldId = isLens ? "ql" : sceneFieldId;
+  const resolvedSliceFieldId = isLens ? "w" : sliceFieldId;
   return {
     ...COMMON_STATE,
     worldId: "trade_cumulus",
     simulationId,
     viewId,
-    fieldId: viewId === "field" ? "ql" : "w",
-    cloudFieldId: "ql",
-    fixedScaleId: viewId === "updraft_lens" ? "trade_cumulus_updraft_velocity_v1" : null,
+    fieldId: resolvedSliceFieldId,
+    sceneFieldId: resolvedSceneFieldId,
+    sliceFieldId: resolvedSliceFieldId,
+    cloudFieldId: isLens ? "ql" : null,
+    fixedScaleId: isLens ? "trade_cumulus_updraft_velocity_v1" : null,
+    requirements: {
+      requiredFieldIds: [...new Set([resolvedSceneFieldId, resolvedSliceFieldId])],
+      requiredScaleIds: isLens ? ["trade_cumulus_updraft_velocity_v1"] : [],
+      requiredLayerIds: [],
+      requiredOverlayIds: isLens ? ["cloud_boundary", "horizontal_wind", "vertical_velocity"] : [],
+      optionalOverlayIds: [],
+    },
+    compatibility: {
+      maximumTimeOffsetSeconds: 180,
+      maximumPlaneOffsetKm: 0.2,
+    },
     modeledTimeSeconds: presentation.modeledTimeSeconds,
     plane: {
       orientation: "vertical_x",
@@ -228,6 +268,14 @@ export function mountainWavesCuratedView(
   }
   if (simulationId === "mountain_waves_dry_ridge" && viewId === "wave_cloud") return null;
   const activeField = viewId === "field" ? fieldId : "w";
+  const requiredFieldIds =
+    viewId === "wave_cloud" ? ["w", "cloud_liquid", "relative_humidity"] : [activeField];
+  const requiredOverlayIds =
+    viewId === "wave_cloud"
+      ? ["horizontal_wind", "cloud_points", "cloud_boundary", "saturation_contour"]
+      : viewId === "wave_structure"
+        ? ["horizontal_wind", "potential_temperature_contours"]
+        : [];
   return {
     ...COMMON_STATE,
     worldId: "mountain_waves",
@@ -235,6 +283,17 @@ export function mountainWavesCuratedView(
     viewId,
     fieldId: activeField,
     fixedScaleId: MOUNTAIN_WAVES_SCALE_IDS[activeField],
+    requirements: {
+      requiredFieldIds,
+      requiredScaleIds: [MOUNTAIN_WAVES_SCALE_IDS[activeField]],
+      requiredLayerIds: [],
+      requiredOverlayIds,
+      optionalOverlayIds: [],
+    },
+    compatibility: {
+      maximumTimeOffsetSeconds: 180,
+      maximumPlaneOffsetKm: null,
+    },
     modeledTimeSeconds: MOUNTAIN_WAVES_TIME_SECONDS[simulationId],
     geometry: "expanded",
     viewport: simulationId === "mountain_waves_dry_ridge" ? "full" : "focus",
@@ -274,6 +333,27 @@ export const SUPERCELLS_CURATED_VIEWS: Record<SupercellsLensId, SupercellsCurate
     cameraPreset: "look_along_y",
     visibleLayerIds: ["storm_cloud_body", "rising_core", "cyclonic_rotation", "updraft_helicity"],
     fixedScaleIds: ["supercell_midlevel_vertical_velocity_v1"],
+    requirements: {
+      requiredFieldIds: ["winterp"],
+      requiredScaleIds: ["supercell_midlevel_vertical_velocity_v1"],
+      requiredLayerIds: [
+        "storm_cloud_body",
+        "rising_core",
+        "cyclonic_rotation",
+        "updraft_helicity",
+      ],
+      requiredOverlayIds: [
+        "vertical_velocity",
+        "vertical_vorticity",
+        "updraft_helicity",
+        "total_condensate",
+      ],
+      optionalOverlayIds: [],
+    },
+    compatibility: {
+      maximumTimeOffsetSeconds: 180,
+      maximumPlaneOffsetKm: 0.2,
+    },
     overlays: {
       rotation: true,
       updraftHelicity: true,
@@ -295,6 +375,17 @@ export const SUPERCELLS_CURATED_VIEWS: Record<SupercellsLensId, SupercellsCurate
     cameraPreset: "look_along_y",
     visibleLayerIds: ["hydrometeor_categories"],
     fixedScaleIds: ["supercell_total_condensate_v2"],
+    requirements: {
+      requiredFieldIds: ["total_condensate"],
+      requiredScaleIds: ["supercell_total_condensate_v2"],
+      requiredLayerIds: ["hydrometeor_categories"],
+      requiredOverlayIds: ["vertical_velocity"],
+      optionalOverlayIds: [],
+    },
+    compatibility: {
+      maximumTimeOffsetSeconds: 180,
+      maximumPlaneOffsetKm: 0.2,
+    },
     overlays: {
       rotation: false,
       updraftHelicity: false,
@@ -321,6 +412,27 @@ export const SUPERCELLS_CURATED_VIEWS: Record<SupercellsLensId, SupercellsCurate
       "model_relative_wind",
     ],
     fixedScaleIds: ["supercell_low_level_vertical_velocity_v1"],
+    requirements: {
+      requiredFieldIds: ["winterp"],
+      requiredScaleIds: ["supercell_low_level_vertical_velocity_v1"],
+      requiredLayerIds: [
+        "low_level_vertical_motion",
+        "accumulated_surface_rain",
+        "precipitating_condensate",
+        "model_relative_wind",
+      ],
+      requiredOverlayIds: [
+        "vertical_velocity",
+        "accumulated_surface_rain",
+        "low_level_precipitating_condensate",
+        "model_relative_wind",
+      ],
+      optionalOverlayIds: [],
+    },
+    compatibility: {
+      maximumTimeOffsetSeconds: 180,
+      maximumPlaneOffsetKm: 0.2,
+    },
     overlays: {
       rotation: false,
       updraftHelicity: false,
@@ -359,23 +471,23 @@ export function resolveCuratedView<T extends WorldCuratedView>(
   const partial: string[] = [];
   const viewId = curatedViewId(definition);
   validateAvailable(capabilities.availableViewIds, viewId, "view", blockers);
-  if ("fieldId" in definition) {
-    validateAvailable(capabilities.availableFieldIds, definition.fieldId, "field", blockers);
-  }
-  const scaleIds =
-    "fixedScaleIds" in definition
-      ? definition.fixedScaleIds
-      : definition.fixedScaleId
-        ? [definition.fixedScaleId]
-        : [];
-  scaleIds.forEach((scaleId) =>
+  definition.requirements.requiredFieldIds.forEach((fieldId) =>
+    validateAvailable(capabilities.availableFieldIds, fieldId, "field", blockers),
+  );
+  definition.requirements.requiredScaleIds.forEach((scaleId) =>
     validateAvailable(capabilities.availableScaleIds, scaleId, "scale", blockers),
   );
-  if ("visibleLayerIds" in definition) {
-    definition.visibleLayerIds.forEach((layerId) =>
-      validateAvailable(capabilities.availableLayerIds, layerId, "layer", blockers),
-    );
-  }
+  definition.requirements.requiredLayerIds.forEach((layerId) =>
+    validateAvailable(capabilities.availableLayerIds, layerId, "layer", blockers),
+  );
+  definition.requirements.requiredOverlayIds.forEach((overlayId) =>
+    validateAvailable(capabilities.availableOverlayIds, overlayId, "overlay", blockers),
+  );
+  definition.requirements.optionalOverlayIds.forEach((overlayId) => {
+    if (!capabilities.availableOverlayIds?.includes(overlayId)) {
+      partial.push(`optional overlay ${overlayId} is unavailable`);
+    }
+  });
   if (blockers.length > 0) {
     return technicalFallback(
       `The authored ${curatedViewLabel(definition)} view is incompatible with the available output. Current compatible controls remain in use.`,
@@ -391,6 +503,17 @@ export function resolveCuratedView<T extends WorldCuratedView>(
     );
   }
   if (!nearlyEqual(resolvedTime.value, definition.modeledTimeSeconds)) {
+    if (
+      resolvedTime.distance >
+      definition.compatibility.maximumTimeOffsetSeconds + Number.EPSILON
+    ) {
+      return technicalFallback(
+        `The authored ${curatedViewLabel(definition)} time is outside the supported coordinate-mapping range. Current compatible controls remain in use.`,
+        [
+          `nearest saved output is ${formatNumber(resolvedTime.distance)} s from the authored time; maximum compatible offset is ${formatNumber(definition.compatibility.maximumTimeOffsetSeconds)} s`,
+        ],
+      );
+    }
     partial.push(
       `authored time ${formatNumber(definition.modeledTimeSeconds)} s resolved to nearest saved output ${formatNumber(resolvedTime.value)} s`,
     );
@@ -413,6 +536,22 @@ export function resolveCuratedView<T extends WorldCuratedView>(
     planeNativeIndex =
       capabilities.planeNativeIndices?.[resolvedPlane.index] ?? resolvedPlane.index;
     if (!nearlyEqual(resolvedPlane.value, definition.plane.coordinateKm)) {
+      const maximumPlaneOffsetKm = definition.compatibility.maximumPlaneOffsetKm;
+      if (
+        maximumPlaneOffsetKm === null ||
+        resolvedPlane.distance > maximumPlaneOffsetKm + Number.EPSILON
+      ) {
+        return technicalFallback(
+          `The authored ${curatedViewLabel(definition)} plane is outside the supported coordinate-mapping range. Current compatible controls remain in use.`,
+          [
+            `nearest native plane is ${formatNumber(resolvedPlane.distance)} km from the authored plane${
+              maximumPlaneOffsetKm === null
+                ? ""
+                : `; maximum compatible offset is ${formatNumber(maximumPlaneOffsetKm)} km`
+            }`,
+          ],
+        );
+      }
       partial.push(
         `authored plane ${formatNumber(definition.plane.coordinateKm)} km resolved to nearest native plane ${formatNumber(resolvedPlane.value)} km`,
       );
@@ -487,8 +626,7 @@ function validateAvailable(
   label: string,
   blockers: string[],
 ) {
-  if (available && !available.includes(expected))
-    blockers.push(`${label} ${expected} is unavailable`);
+  if (!available?.includes(expected)) blockers.push(`${label} ${expected} is unavailable`);
 }
 
 function nearestIndex(values: number[], target: number) {
@@ -502,7 +640,7 @@ function nearestIndex(values: number[], target: number) {
       distance = candidateDistance;
     }
   }
-  return { index, value: values[index] };
+  return { index, value: values[index], distance };
 }
 
 function nearlyEqual(left: number, right: number): boolean {

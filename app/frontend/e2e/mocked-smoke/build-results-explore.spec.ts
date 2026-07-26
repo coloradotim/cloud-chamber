@@ -351,7 +351,33 @@ const comparisonUpdraftScale = {
 
 type ComparisonMember = typeof comparisonStory.baseline;
 
-function comparisonPointCloud(member: ComparisonMember) {
+function authoredExplorePresentation(member: ComparisonMember) {
+  return member.control_state === "baseline"
+    ? {
+        time_index: 100,
+        time_seconds: 12_060,
+        plane_index: 1,
+        plane_coordinate: 2.366666555404663,
+      }
+    : {
+        time_index: 116,
+        time_seconds: 13_920,
+        plane_index: 1,
+        plane_coordinate: 1.6333333253860474,
+      };
+}
+
+function frameTimeSeconds(member: ComparisonMember, timeIndex: number) {
+  if (timeIndex === member.curated_view.time_index) return member.curated_view.time_seconds;
+  const authored = authoredExplorePresentation(member);
+  if (timeIndex === authored.time_index) return authored.time_seconds;
+  return timeIndex * 120;
+}
+
+function comparisonPointCloud(
+  member: ComparisonMember,
+  timeIndex = member.curated_view.time_index,
+) {
   const offset = member.control_state === "baseline" ? 0 : 0.45;
   const points: Array<[number, number, number, number]> = [
     [-1.8 + offset, -0.8, 0.5, 0.00035],
@@ -367,8 +393,8 @@ function comparisonPointCloud(member: ComparisonMember) {
     field: { raw_field_name: "ql", display_name: "Cloud water", units: "kg/kg" },
     selection: {
       field: "ql",
-      time_index: member.curated_view.time_index,
-      time_seconds: member.curated_view.time_seconds,
+      time_index: timeIndex,
+      time_seconds: frameTimeSeconds(member, timeIndex),
       threshold: 1e-6,
       max_points: 50_000,
     },
@@ -407,7 +433,14 @@ function comparisonPointCloud(member: ComparisonMember) {
   };
 }
 
-function comparisonLensFrame(member: ComparisonMember) {
+function comparisonLensFrame(
+  member: ComparisonMember,
+  {
+    timeIndex = member.curated_view.time_index,
+    planeIndex = member.curated_view.plane_index,
+  }: { timeIndex?: number; planeIndex?: number } = {},
+) {
+  const authored = authoredExplorePresentation(member);
   const values =
     member.control_state === "baseline"
       ? [
@@ -424,12 +457,17 @@ function comparisonLensFrame(member: ComparisonMember) {
         ];
   return {
     result_id: member.result_id,
-    time_index: member.curated_view.time_index,
-    time_seconds: member.curated_view.time_seconds,
+    time_index: timeIndex,
+    time_seconds: frameTimeSeconds(member, timeIndex),
     orientation: "vertical_x",
     plane_dimension: "y",
-    plane_index: member.curated_view.plane_index,
-    plane_coordinate: member.curated_view.plane_coordinate,
+    plane_index: planeIndex,
+    plane_coordinate:
+      planeIndex === authored.plane_index
+        ? authored.plane_coordinate
+        : planeIndex === member.curated_view.plane_index
+          ? member.curated_view.plane_coordinate
+          : -3.2 + planeIndex * 0.1,
     plane_units: "km",
     dimension_order: ["z", "x"],
     x_indices: [0, 1, 2, 3],
@@ -480,6 +518,7 @@ function comparisonLensFrame(member: ComparisonMember) {
 }
 
 function comparisonLensDefaults(member: ComparisonMember) {
+  const authored = authoredExplorePresentation(member);
   return {
     result_id: member.result_id,
     case_id: "bomex_trade_cumulus_baseline_v0",
@@ -487,14 +526,14 @@ function comparisonLensDefaults(member: ComparisonMember) {
     primary_field: "w",
     cloud_field: "ql",
     orientation: "vertical_x",
-    default_time_index: member.curated_view.time_index,
-    default_time_seconds: member.curated_view.time_seconds,
-    default_time_method: "curated_comparison_view",
+    default_time_index: authored.time_index,
+    default_time_seconds: authored.time_seconds,
+    default_time_method: "authored_simulation_presentation",
     default_plane_dimension: "y",
-    default_plane_index: member.curated_view.plane_index,
-    default_plane_coordinate: member.curated_view.plane_coordinate,
+    default_plane_index: authored.plane_index,
+    default_plane_coordinate: authored.plane_coordinate,
     default_plane_units: "km",
-    default_plane_method: "curated_comparison_view",
+    default_plane_method: "authored_simulation_presentation",
     cloud_threshold_kg_kg: 1e-6,
     ...comparisonUpdraftScale,
     wind_target_level_m: 600,
@@ -507,6 +546,76 @@ function comparisonLensDefaults(member: ComparisonMember) {
     total_wind_reference_m_s: 8.8,
     wind_arrow_domain_fraction: 0.08,
     provenance: comparisonLensFrame(member).provenance,
+    caveats: [],
+  };
+}
+
+function comparisonFieldCatalog(member: ComparisonMember) {
+  const times = Array.from(
+    { length: Math.max(member.curated_view.time_index + 1, 181) },
+    (_, index) => index * 120,
+  );
+  const authored = authoredExplorePresentation(member);
+  times[authored.time_index] = authored.time_seconds;
+  const provenance = {
+    source_model: "CM1",
+    result_id: member.result_id,
+    run_id: member.run_id,
+    scenario_id: "bomex_trade_cumulus_baseline_v0",
+    source_product_state: "completed_cm1_result",
+    result_state: "ingested",
+    processing_method: "native-grid field catalog",
+    rendering_method: "visualization-ready metadata",
+    provenance_label: "CM1-derived Trade Cumulus visualization fields",
+  };
+  const fields = [
+    {
+      raw_field_name: "ql",
+      canonical_field_name: "cloud_water",
+      display_name: "Cloud liquid",
+      units: "kg/kg",
+      dimensions: ["time", "zh", "yh", "xh"],
+      native_grid: "zh/yh/xh",
+      vertical: "zh",
+    },
+    {
+      raw_field_name: "qv",
+      canonical_field_name: "water_vapor",
+      display_name: "Water vapor",
+      units: "kg/kg",
+      dimensions: ["time", "zh", "yh", "xh"],
+      native_grid: "zh/yh/xh",
+      vertical: "zh",
+    },
+    {
+      raw_field_name: "w",
+      canonical_field_name: "vertical_velocity",
+      display_name: "Vertical velocity",
+      units: "m/s",
+      dimensions: ["time", "zf", "yh", "xh"],
+      native_grid: "zf/yh/xh",
+      vertical: "zf",
+    },
+  ];
+  return {
+    result_id: member.result_id,
+    run_id: member.run_id,
+    scenario_id: "bomex_trade_cumulus_baseline_v0",
+    source_model: "CM1",
+    available_fields: fields.map((field) => ({
+      ...field,
+      shape: [times.length, 64, 128, 128],
+      coordinate_names: {
+        time: "time",
+        vertical: field.vertical,
+        y: "yh",
+        x: "xh",
+      },
+      time_coordinate_values: times,
+      provenance,
+      caveats: ["native_grid_no_interpolation"],
+    })),
+    provenance,
     caveats: [],
   };
 }
@@ -539,13 +648,26 @@ async function mockTradeCumulusComparison(page: Parameters<typeof mockCloudChamb
   );
   await page.route("**/api/results/*/visualization/point-cloud**", (route) => {
     const url = route.request().url();
+    const parsed = new URL(url);
     const member = url.includes(comparisonMoreMoistureId)
       ? comparisonStory.more_moisture
       : comparisonStory.baseline;
     return route.fulfill({
       status: 200,
       contentType: "application/json",
-      body: JSON.stringify(comparisonPointCloud(member)),
+      body: JSON.stringify(
+        comparisonPointCloud(member, Number(parsed.searchParams.get("time_index") ?? 0)),
+      ),
+    });
+  });
+  await page.route("**/api/results/*/visualization/fields", (route) => {
+    const member = route.request().url().includes(comparisonMoreMoistureId)
+      ? comparisonStory.more_moisture
+      : comparisonStory.baseline;
+    return route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify(comparisonFieldCatalog(member)),
     });
   });
   await page.route(
@@ -562,13 +684,20 @@ async function mockTradeCumulusComparison(page: Parameters<typeof mockCloudChamb
     },
   );
   await page.route("**/api/results/*/visualization/trade-cumulus-updraft-lens/frame**", (route) => {
-    const member = route.request().url().includes(comparisonMoreMoistureId)
+    const url = route.request().url();
+    const parsed = new URL(url);
+    const member = url.includes(comparisonMoreMoistureId)
       ? comparisonStory.more_moisture
       : comparisonStory.baseline;
     return route.fulfill({
       status: 200,
       contentType: "application/json",
-      body: JSON.stringify(comparisonLensFrame(member)),
+      body: JSON.stringify(
+        comparisonLensFrame(member, {
+          timeIndex: Number(parsed.searchParams.get("time_index") ?? 0),
+          planeIndex: Number(parsed.searchParams.get("plane_index") ?? 0),
+        }),
+      ),
     });
   });
 }
