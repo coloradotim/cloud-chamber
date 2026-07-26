@@ -4,6 +4,7 @@ import {
   type ExplorePoint,
   type ExploreWorldState,
   type MountainWavesExploreState,
+  type SupercellsExploreState,
   type TradeCumulusExploreState,
 } from "./ExploreStatePersistence";
 import {
@@ -13,7 +14,15 @@ import {
   type MountainWavesViewMode,
 } from "./MountainWavesExplore";
 import { NativeSlicePositionControl } from "./NativeSlicePositionControl";
-import { True3DViewer } from "./True3DViewer";
+import { type StormScenePayload, type StormScenePoint, True3DViewer } from "./True3DViewer";
+import {
+  type OverlayState,
+  type Selection,
+  type StormExaminationFrame,
+  StormLegend,
+  StormPlanPlot,
+  StormSectionPlot,
+} from "./StormExaminationResearch";
 import {
   type UpdraftLensFrame,
   type UpdraftLensPointSelection,
@@ -22,6 +31,7 @@ import {
 import { timeIndexForSeconds } from "./WorldCompare.logic";
 import {
   isMountainState,
+  isSupercellsState,
   isTradeState,
   type ComparePerformanceSample,
   type CompareSide,
@@ -53,6 +63,9 @@ export function WorldCompareSideVisual(props: SideVisualProps) {
   }
   if (props.simulation.world_id === "mountain_waves" && isMountainState(props.state)) {
     return <MountainWavesCompareVisual {...props} state={props.state} />;
+  }
+  if (props.simulation.world_id === "supercells" && isSupercellsState(props.state)) {
+    return <SupercellsCompareVisual {...props} state={props.state} />;
   }
   return (
     <section className="compare-side-error" role="alert">
@@ -101,7 +114,10 @@ function TradeCumulusCompareVisual({
     [frame],
   );
   const planeIndex = frame
-    ? Math.max(0, planeValues.findIndex((value) => value === frame.plane_coordinate))
+    ? Math.max(
+        0,
+        planeValues.findIndex((value) => value === frame.plane_coordinate),
+      )
     : state.slice_native_index;
   const selectedLensEvidence = useMemo(
     () => (frame ? tradeSelectedEvidence(frame, state.selected_point) : null),
@@ -147,7 +163,13 @@ function TradeCumulusCompareVisual({
           thresholdLabel={`${formatNumber(state.threshold_native * 1_000)} g/kg`}
           opacity={state.layer_opacity}
           pointSize={state.point_size_px}
-          status={cloud.error ? "Cloud field unavailable" : cloud.loading ? "Loading cloud field" : "Cloud field ready"}
+          status={
+            cloud.error
+              ? "Cloud field unavailable"
+              : cloud.loading
+                ? "Loading cloud field"
+                : "Cloud field ready"
+          }
           provenanceLabel={cloud.data?.provenance.provenance_label ?? "Native CM1 scalar cells"}
           noCloudMessage="No cloud cells meet the selected threshold."
           compactWorkspace
@@ -182,7 +204,10 @@ function TradeCumulusCompareVisual({
             }
           />
           <div className="compare-plane-controls">
-            <div className="segmented-control" aria-label={`${simulation.display_name} slice plane`}>
+            <div
+              className="segmented-control"
+              aria-label={`${simulation.display_name} slice plane`}
+            >
               {(
                 [
                   ["horizontal", "Horizontal x-y"],
@@ -254,12 +279,7 @@ function MountainWavesCompareVisual({
     field,
     time_index: String(timeIndex),
   })}`;
-  const response = useBoundedJson<MountainCompareFrame>(
-    side,
-    url,
-    onFrameState,
-    onPerformance,
-  );
+  const response = useBoundedJson<MountainCompareFrame>(side, url, onFrameState, onPerformance);
   const sourceFrame = useMemo(
     () => (response.data ? expandMountainCompareFrame(response.data) : null),
     [response.data],
@@ -333,16 +353,492 @@ function MountainWavesCompareVisual({
             horizontalWind={state.overlays.horizontal_wind}
             potentialTemperatureContours={state.overlays.potential_temperature_contours}
             fixedScaleLabel={
-              commonMountainScale
-                ? "Fixed across both Simulations"
-                : "Fixed across this Simulation"
+              commonMountainScale ? "Fixed across both Simulations" : "Fixed across this Simulation"
             }
           />
         </div>
       )}
-      <CompareLoadState loading={response.loading} error={response.error} onRetry={response.retry} />
+      <CompareLoadState
+        loading={response.loading}
+        error={response.error}
+        onRetry={response.retry}
+      />
     </section>
   );
+}
+
+function SupercellsCompareVisual({
+  side,
+  simulation,
+  state,
+  onStateChange,
+  onFrameState,
+  onPerformance,
+  onEvidence,
+}: Omit<SideVisualProps, "state"> & { state: SupercellsExploreState }) {
+  const [surface, setSurface] = useState<"scene" | "evidence">("evidence");
+  const timeIndex = timeIndexForSeconds(simulation, state.model_time_seconds);
+  const indices = supercellRequestIndices(simulation, state);
+  const search = new URLSearchParams({
+    lens: state.lens_id,
+    viewport: state.viewport_id,
+    time_index: String(timeIndex),
+  });
+  if (indices.x !== null) search.set("x_index", String(indices.x));
+  if (indices.y !== null) search.set("y_index", String(indices.y));
+  if (indices.z !== null) search.set("z_index", String(indices.z));
+  const url = `/api/worlds/supercells/simulations/${simulation.simulation_id}/frame?${search}`;
+  const response = useBoundedJson<StormExaminationFrame>(side, url, onFrameState, onPerformance);
+  const frame = response.data;
+  const overlays = supercellOverlayState(state);
+  const scene = useMemo(
+    () => filterSupercellScene(frame?.scene ?? null, state.hydrometeor_category_codes),
+    [frame?.scene, state.hydrometeor_category_codes],
+  );
+  const evidence = useMemo(
+    () => (frame && state.selected_point ? supercellSelectedEvidence(frame) : null),
+    [frame, state.selected_point],
+  );
+
+  useEffect(() => {
+    onEvidence?.(side, evidence);
+  }, [evidence, onEvidence, side]);
+
+  function select(selection: Selection) {
+    if (!frame) return;
+    const point = supercellPhysicalPoint(frame, selection);
+    onStateChange({
+      ...state,
+      selected_point: point,
+      selected_evidence_visible: true,
+      plane_coordinate_km:
+        state.evidence_view === "plan"
+          ? point.z_km
+          : state.evidence_view === "xz"
+            ? (point.y_km ?? state.plane_coordinate_km)
+            : point.x_km,
+    });
+  }
+
+  function selectScenePoint(point: StormScenePoint) {
+    onStateChange({
+      ...state,
+      selected_point: { x_km: point[0], y_km: point[1], z_km: point[2] },
+      selected_evidence_visible: true,
+    });
+  }
+
+  function showEvidence(view: SupercellsExploreState["evidence_view"]) {
+    const selected = state.selected_point;
+    const coordinate =
+      view === "plan"
+        ? (selected?.z_km ?? frame?.plan.level_km ?? state.plane_coordinate_km)
+        : view === "xz"
+          ? (selected?.y_km ?? 0)
+          : (selected?.x_km ?? 0);
+    onStateChange({
+      ...state,
+      evidence_view: view,
+      plane_coordinate_km: coordinate,
+    });
+    setSurface("evidence");
+  }
+
+  return (
+    <section className="compare-scientific-view compare-supercell-view">
+      <nav
+        className="compare-supercell-surface-tabs segmented-control"
+        aria-label={`${simulation.display_name} scientific surface`}
+      >
+        <button
+          type="button"
+          className={surface === "scene" ? "active-control" : ""}
+          onClick={() => setSurface("scene")}
+        >
+          3-D
+        </button>
+        {(
+          [
+            ["plan", "Horizontal x-y"],
+            ["xz", "Vertical x-z"],
+            ["yz", "Vertical y-z"],
+          ] as const
+        ).map(([view, label]) => (
+          <button
+            type="button"
+            key={view}
+            className={
+              surface === "evidence" && state.evidence_view === view ? "active-control" : ""
+            }
+            onClick={() => showEvidence(view)}
+          >
+            {label}
+          </button>
+        ))}
+      </nav>
+
+      {frame && surface === "scene" && frame.scene ? (
+        <div className="compare-supercell-scene">
+          <True3DViewer
+            resultName={simulation.display_name}
+            pointCloud={null}
+            fieldLabel={frame.lens_name}
+            valueChannelLabel="Native and explicitly derived Supercell layers."
+            activeSlice={supercellEvidenceSlice(frame, state.evidence_view)}
+            activeSliceLabel={supercellEvidenceLabel(frame, state.evidence_view)}
+            showSlicePlane={
+              state.evidence_view !== "plan" || frame.plan.selection_z_indices === null
+            }
+            selectedRegion={
+              state.selected_point
+                ? {
+                    xIndex: frame.selected_point.x_index,
+                    yIndex: frame.selected_point.y_index,
+                    zIndex: frame.selected_point.z_index,
+                  }
+                : null
+            }
+            coordinateSizes={frame.scene.coordinate_sizes}
+            selectedTimeLabel={formatSeconds(frame.time_seconds)}
+            sceneTimeLabel={formatSeconds(frame.time_seconds)}
+            thresholdLabel="Lens-owned fixed thresholds"
+            opacity={1}
+            pointSize={1}
+            status={response.loading ? "Loading frame" : "Scene synchronized"}
+            provenanceLabel="Retained native CM1 history; deterministic bounded selection."
+            noCloudMessage="No visible storm layers at this saved output."
+            windVectors={frame.scene.wind_vectors}
+            showWindVectors={state.overlays.wind}
+            windMode="total"
+            windReferenceMps={frame.scene.wind_reference_m_s}
+            windOverlayLabel={`Model-relative wind at z = ${frame.plan.level_km.toFixed(2)} km`}
+            windArrowDomainFraction={0.055}
+            compactWorkspace
+            compactDisplayLabel="3-D layers"
+            compactDisplayControlsOpen={state.display_controls_open}
+            onCompactDisplayControlsOpenChange={(display_controls_open) =>
+              onStateChange({ ...state, display_controls_open })
+            }
+            stormScene={scene}
+            visibleStormLayerKeys={state.visible_layer_ids}
+            stormOpacity={state.scene_opacity}
+            stormPointSize={state.scene_point_size}
+            compactAxisLabels
+            selectedPointCoordinates={
+              state.selected_point
+                ? {
+                    x: frame.selected_point.x_km,
+                    y: frame.selected_point.y_km,
+                    z: frame.selected_point.z_km,
+                  }
+                : null
+            }
+            onSelectStormPoint={selectScenePoint}
+            cameraPreset={state.camera_preset}
+            onCameraPresetChange={(camera_preset) => onStateChange({ ...state, camera_preset })}
+            cameraTransform={state.camera_transform}
+            onCameraTransformChange={(camera_transform) =>
+              onStateChange({ ...state, camera_transform })
+            }
+            compactDisplayControls={
+              <CompareStormLayerControls
+                frame={frame}
+                state={state}
+                onStateChange={onStateChange}
+              />
+            }
+          />
+        </div>
+      ) : frame && surface === "evidence" ? (
+        <div className="compare-supercell-evidence">
+          <div className="compare-supercell-plot">
+            {state.evidence_view === "plan" ? (
+              <StormPlanPlot frame={frame} overlays={overlays} onSelect={select} />
+            ) : (
+              <StormSectionPlot
+                frame={frame}
+                section={state.evidence_view === "xz" ? frame.xz_section : frame.yz_section}
+                overlays={overlays}
+                onSelect={select}
+              />
+            )}
+          </div>
+          <StormLegend frame={frame} overlays={overlays} evidenceView={state.evidence_view} />
+        </div>
+      ) : null}
+      <CompareLoadState
+        loading={response.loading}
+        error={response.error}
+        onRetry={response.retry}
+      />
+    </section>
+  );
+}
+
+function CompareStormLayerControls({
+  frame,
+  state,
+  onStateChange,
+}: {
+  frame: StormExaminationFrame;
+  state: SupercellsExploreState;
+  onStateChange: (state: ExploreWorldState) => void;
+}) {
+  return (
+    <section className="compare-storm-layer-controls" aria-label="3-D storm layers">
+      {frame.scene?.layers.map((layer) => (
+        <label key={layer.key}>
+          <input
+            type="checkbox"
+            checked={state.visible_layer_ids.includes(layer.key)}
+            onChange={(event) =>
+              onStateChange({
+                ...state,
+                visible_layer_ids: event.currentTarget.checked
+                  ? [...state.visible_layer_ids, layer.key]
+                  : state.visible_layer_ids.filter((key) => key !== layer.key),
+              })
+            }
+          />
+          {layer.display_name}
+        </label>
+      ))}
+      {Boolean(frame.scene?.wind_vectors.length) && (
+        <label>
+          <input
+            type="checkbox"
+            checked={state.overlays.wind}
+            onChange={(event) =>
+              onStateChange({
+                ...state,
+                overlays: { ...state.overlays, wind: event.currentTarget.checked },
+              })
+            }
+          />
+          Model-relative wind
+        </label>
+      )}
+    </section>
+  );
+}
+
+function supercellRequestIndices(
+  simulation: CompareSimulationDescriptor,
+  state: SupercellsExploreState,
+): { x: number | null; y: number | null; z: number | null } {
+  const selected = state.selected_point;
+  const indices = {
+    x: selected
+      ? coordinateIndex(selected.x_km, simulation.grid.x_extent_km, simulation.grid.nx)
+      : null,
+    y:
+      selected?.y_km !== null && selected?.y_km !== undefined
+        ? coordinateIndex(
+            selected.y_km,
+            simulation.grid.y_extent_km ?? simulation.grid.x_extent_km,
+            simulation.grid.ny,
+          )
+        : null,
+    z: selected
+      ? coordinateIndex(selected.z_km, simulation.grid.z_extent_km, simulation.grid.nz)
+      : null,
+  };
+  if (state.evidence_view === "plan") {
+    indices.z = coordinateIndex(
+      state.plane_coordinate_km,
+      simulation.grid.z_extent_km,
+      simulation.grid.nz,
+    );
+  } else if (state.evidence_view === "xz") {
+    indices.y = coordinateIndex(
+      state.plane_coordinate_km,
+      simulation.grid.y_extent_km ?? simulation.grid.x_extent_km,
+      simulation.grid.ny,
+    );
+  } else {
+    indices.x = coordinateIndex(
+      state.plane_coordinate_km,
+      simulation.grid.x_extent_km,
+      simulation.grid.nx,
+    );
+  }
+  return indices;
+}
+
+function coordinateIndex(coordinate: number, extent: [number, number], count: number): number {
+  const spacing = (extent[1] - extent[0]) / count;
+  return Math.max(
+    0,
+    Math.min(count - 1, Math.round((coordinate - extent[0] - spacing / 2) / spacing)),
+  );
+}
+
+function supercellOverlayState(state: SupercellsExploreState): OverlayState {
+  return {
+    rotation: state.overlays.rotation,
+    updraftHelicity: state.overlays.updraft_helicity,
+    reflectivity: state.overlays.reflectivity,
+    condensate: state.overlays.condensate,
+    rain: state.overlays.rain,
+    wind: state.overlays.wind,
+    precipitatingCondensate: state.overlays.precipitating_condensate,
+    verticalMotion: state.overlays.vertical_motion,
+  };
+}
+
+function filterSupercellScene(
+  source: StormExaminationFrame["scene"],
+  categoryCodes: number[],
+): StormScenePayload | null {
+  if (!source) return null;
+  return {
+    coordinate_extents_km: source.coordinate_extents_km,
+    layers: source.layers.map((layer) =>
+      layer.key === "hydrometeor_categories"
+        ? {
+            ...layer,
+            points: layer.points.filter((point) => categoryCodes.includes(point[4])),
+          }
+        : layer,
+    ),
+  };
+}
+
+function supercellPhysicalPoint(frame: StormExaminationFrame, selection: Selection): ExplorePoint {
+  return {
+    x_km: supercellCoordinate(frame, "x", selection.xIndex),
+    y_km: supercellCoordinate(frame, "y", selection.yIndex),
+    z_km: supercellCoordinate(frame, "z", selection.zIndex),
+  };
+}
+
+function supercellCoordinate(
+  frame: StormExaminationFrame,
+  axis: "x" | "y" | "z",
+  nativeIndex: number,
+): number {
+  const indices = frame.scene?.coordinate_indices[axis] ?? [];
+  const values = frame.scene?.coordinate_values_km[axis] ?? [];
+  const position = indices.indexOf(nativeIndex);
+  if (position >= 0 && Number.isFinite(values[position])) return values[position];
+  if (axis === "x") {
+    const planPosition = frame.plan.x_indices.indexOf(nativeIndex);
+    return frame.plan.x_km[planPosition] ?? frame.selected_point.x_km;
+  }
+  if (axis === "y") {
+    const planPosition = frame.plan.y_indices.indexOf(nativeIndex);
+    return frame.plan.y_km[planPosition] ?? frame.selected_point.y_km;
+  }
+  return frame.xz_section.z_km[nativeIndex] ?? frame.selected_point.z_km;
+}
+
+function supercellSelectedEvidence(frame: StormExaminationFrame): CompareSelectedEvidence {
+  const point = frame.selected_point;
+  const keys =
+    frame.lens_id === "rotating_updraft"
+      ? [
+          ["vertical_velocity", "Vertical velocity"],
+          ["vertical_vorticity", "Vertical vorticity"],
+          ["updraft_helicity", "2-5 km AGL updraft helicity"],
+          ["total_condensate", "Total condensate"],
+          ["reflectivity", "Reflectivity"],
+        ]
+      : frame.lens_id === "cloud_precipitation"
+        ? [
+            ["vertical_velocity", "Vertical velocity"],
+            ["total_condensate", "Total condensate"],
+            ["cloud_liquid", "Cloud liquid"],
+            ["rain_water", "Rain water"],
+            ["cloud_ice", "Cloud ice"],
+            ["snow", "Snow"],
+            ["hail_treated_large_ice", "Hail-treated large ice"],
+            ["reflectivity", "Reflectivity"],
+          ]
+        : [
+            ["vertical_velocity", "Vertical velocity"],
+            ["total_condensate", "Total condensate"],
+            ["accumulated_surface_rain", "Accumulated rain"],
+            ["model_relative_u", "Model-relative u"],
+            ["model_relative_v", "Model-relative v"],
+            ["reflectivity", "Reflectivity"],
+          ];
+  return {
+    title: `Native cell at x ${point.x_km.toFixed(1)}, y ${point.y_km.toFixed(
+      1,
+    )}, z ${point.z_km.toFixed(2)} km`,
+    states: point.states,
+    metrics: [
+      {
+        label: "Model time",
+        value: formatSeconds(point.model_time_seconds),
+        numericValue: point.model_time_seconds,
+        units: "s",
+      },
+      ...keys.map(([key, label]) => {
+        const value = point.values[key];
+        const units = point.units[key] ?? "";
+        return {
+          label,
+          value: `${formatNumber(value)}${units ? ` ${units}` : ""}`,
+          numericValue: value,
+          units,
+        };
+      }),
+    ],
+  };
+}
+
+function supercellEvidenceSlice(
+  frame: StormExaminationFrame,
+  view: SupercellsExploreState["evidence_view"],
+) {
+  if (view === "plan") {
+    return {
+      field: {
+        raw_field_name: frame.plan.primary.key,
+        display_name: frame.plan.primary.display_name,
+        units: frame.plan.primary.units,
+      },
+      selection: {
+        orientation: "horizontal" as const,
+        selected_dimension: "zh",
+        selected_index: frame.plan.level_index,
+        selected_coordinate_value: frame.plan.level_km,
+        level_coordinate_value: frame.plan.level_km,
+        level_units: "km",
+        level_meters: frame.plan.level_km * 1_000,
+      },
+    };
+  }
+  const section = view === "xz" ? frame.xz_section : frame.yz_section;
+  return {
+    field: {
+      raw_field_name: section.primary.key,
+      display_name: section.primary.display_name,
+      units: section.primary.units,
+    },
+    selection: {
+      orientation: view === "xz" ? ("vertical_x" as const) : ("vertical_y" as const),
+      selected_dimension: view === "xz" ? "yh" : "xh",
+      selected_index: view === "xz" ? frame.selected_point.y_index : frame.selected_point.x_index,
+      selected_coordinate_value: section.cross_section_coordinate_km,
+      level_coordinate_value: null,
+      level_units: "km",
+      level_meters: null,
+    },
+  };
+}
+
+function supercellEvidenceLabel(
+  frame: StormExaminationFrame,
+  view: SupercellsExploreState["evidence_view"],
+): string {
+  if (view === "plan") {
+    return frame.plan.selection_z_indices
+      ? `${frame.plan.title} · column-derived at each cell's condensate maximum`
+      : `${frame.plan.title} · z = ${frame.plan.level_km.toFixed(2)} km`;
+  }
+  return view === "xz" ? frame.xz_section.title : frame.yz_section.title;
 }
 
 function CompareLoadState({
@@ -553,9 +1049,7 @@ type MountainCompareFrame = {
 function expandMountainCompareFrame(compact: MountainCompareFrame): MountainWaveFrame {
   const xCentersM = compact.x_center_km.map((value) => value * 1_000);
   const terrainM = compact.terrain_km.map((value) => value * 1_000);
-  const scalarHeightM = compact.scalar_height_km.map((row) =>
-    row.map((value) => value * 1_000),
-  );
+  const scalarHeightM = compact.scalar_height_km.map((row) => row.map((value) => value * 1_000));
   const xEdgesM = coordinateEdges(xCentersM);
   const fullHeightM = fullLevelHeights(scalarHeightM, terrainM);
   return {
@@ -612,9 +1106,7 @@ function fullLevelHeights(scalar: number[][], terrain: number[]): number[][] {
   const columns = scalar[0]?.length ?? 0;
   const rows: number[][] = [terrain.slice()];
   for (let z = 1; z < scalar.length; z += 1) {
-    rows.push(
-      Array.from({ length: columns }, (_, x) => (scalar[z - 1][x] + scalar[z][x]) / 2),
-    );
+    rows.push(Array.from({ length: columns }, (_, x) => (scalar[z - 1][x] + scalar[z][x]) / 2));
   }
   rows.push(
     Array.from({ length: columns }, (_, x) => {
@@ -735,8 +1227,7 @@ function mountainSelectedEvidence(
     frame.pointer_context.vertical_velocity_m_s[point.zIndex]?.[point.xIndex] ?? null;
   const thetaPerturbation =
     frame.pointer_context.theta_perturbation_k[point.zIndex]?.[point.xIndex] ?? null;
-  const cloud =
-    frame.pointer_context.cloud_liquid_g_kg?.[point.zIndex]?.[point.xIndex] ?? null;
+  const cloud = frame.pointer_context.cloud_liquid_g_kg?.[point.zIndex]?.[point.xIndex] ?? null;
   const relativeHumidity =
     frame.pointer_context.relative_humidity_percent?.[point.zIndex]?.[point.xIndex] ?? null;
   const states = [motionState(verticalVelocity)];
@@ -868,13 +1359,7 @@ async function responseMessage(response: Response, fallback: string): Promise<st
   }
 }
 
-export function CompareControlGroup({
-  label,
-  children,
-}: {
-  label: string;
-  children: ReactNode;
-}) {
+export function CompareControlGroup({ label, children }: { label: string; children: ReactNode }) {
   return (
     <div className="compare-control-group">
       <span>{label}</span>

@@ -155,6 +155,9 @@ from cloud_chamber.supercells_world import (
     REFERENCE_SIMULATION_ID as SUPERCELLS_REFERENCE_SIMULATION_ID,
 )
 from cloud_chamber.supercells_world import (
+    STRAIGHT_LINE_SIMULATION_ID as SUPERCELLS_STRAIGHT_LINE_SIMULATION_ID,
+)
+from cloud_chamber.supercells_world import (
     SupercellsWorldDetail,
     SupercellsWorldSummary,
     supercells_world_detail,
@@ -1251,11 +1254,10 @@ def get_supercells_simulation_frame(
     y_index: int | None = None,
     z_index: int | None = None,
 ) -> dict[str, object]:
-    if simulation_id != SUPERCELLS_REFERENCE_SIMULATION_ID:
-        raise HTTPException(status_code=404, detail="Supercell Simulation not found.")
     try:
         frame = supercells_explore_frame(
             load_settings(),
+            simulation_id=simulation_id,
             lens=lens,
             time_index=time_index,
             viewport=viewport,
@@ -1264,7 +1266,8 @@ def get_supercells_simulation_frame(
             z_index=z_index,
         )
     except StormExaminationError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+        status_code = 404 if "Simulation is unavailable" in str(exc) else 400
+        raise HTTPException(status_code=status_code, detail=str(exc)) from exc
     return frame.model_dump(mode="json")
 
 
@@ -1317,7 +1320,10 @@ def _simulation_target_exists(
     if world_id == "mountain_waves":
         return mountain_waves_simulation(settings, simulation_id) is not None
     if world_id == "supercells":
-        return simulation_id == SUPERCELLS_REFERENCE_SIMULATION_ID
+        return simulation_id in {
+            SUPERCELLS_REFERENCE_SIMULATION_ID,
+            SUPERCELLS_STRAIGHT_LINE_SIMULATION_ID,
+        }
     return False
 
 

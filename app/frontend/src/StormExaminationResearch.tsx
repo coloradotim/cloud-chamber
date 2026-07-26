@@ -152,7 +152,10 @@ export type StormExaminationFrame = {
   schema_version: "storm_examination_gate_c_v1" | "supercells_explore_v1";
   authority_state: "issue_418_gate_c_research_not_product" | "supercells_product_world";
   world_id: "supercells" | null;
-  simulation_id: "supercells_quarter_circle_reference" | null;
+  simulation_id:
+    | "supercells_quarter_circle_reference"
+    | "supercells_straight_line_hodograph"
+    | null;
   run_id: string;
   case_id: string;
   simulation_label: string;

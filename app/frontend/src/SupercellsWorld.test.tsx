@@ -8,7 +8,8 @@ const world: SupercellsWorldDetail = {
   display_name: "Supercells",
   short_description: "Inspect an evolving idealized rotating storm.",
   availability_state: "available",
-  availability_message: "The Quarter-Circle Supercell is available.",
+  availability_message:
+    "Quarter-Circle and Straight-Line Hodograph Supercells are available for Explore and Compare.",
   reference_simulation: {
     simulation_id: "supercells_quarter_circle_reference",
     display_name: "Quarter-Circle Supercell",
@@ -16,6 +17,8 @@ const world: SupercellsWorldDetail = {
     world_id: "supercells",
     run_id: "quarter-circle-supercell-presentation-v1-20260723",
     case_id: "cm1_r21_1_quarter_circle_supercell_presentation_v1",
+    parent_simulation_id: null,
+    reference_simulation_id: "supercells_quarter_circle_reference",
     technical_state: "available",
     technical_state_message: "Ninety-one retained histories are available.",
     explore_available: true,
@@ -30,12 +33,21 @@ const world: SupercellsWorldDetail = {
   capabilities: {
     reference_explore: true,
     lab: false,
-    compare: false,
+    compare: true,
     saved_views: false,
   },
   caveats: ["This idealized benchmark is not a forecast or a reconstruction of a real storm."],
 };
-world.simulations = [world.reference_simulation];
+const straightLineSimulation: SupercellsWorldDetail["simulations"][number] = {
+  ...world.reference_simulation,
+  simulation_id: "supercells_straight_line_hodograph",
+  display_name: "Straight-Line Hodograph Supercell",
+  role: "variation",
+  run_id: "straight-line-supercell-presentation-v1-20260726",
+  case_id: "cm1_r21_1_straight_line_supercell_presentation_v1",
+  parent_simulation_id: "supercells_quarter_circle_reference",
+};
+world.simulations = [world.reference_simulation, straightLineSimulation];
 
 describe("SupercellsWorld", () => {
   beforeEach(() => {
@@ -47,20 +59,32 @@ describe("SupercellsWorld", () => {
     vi.unstubAllGlobals();
   });
 
-  it("exposes only the approved Overview, Simulations, and Explore path", async () => {
+  it("exposes the real controlled pair for Explore and Compare", async () => {
     vi.mocked(fetch).mockResolvedValue(ok(world));
     const onExplore = vi.fn();
+    const onCompare = vi.fn();
     const onBack = vi.fn();
-    render(<SupercellsWorld onBackToWorlds={onBack} onExploreSimulation={onExplore} />);
+    render(
+      <SupercellsWorld
+        onBackToWorlds={onBack}
+        onExploreSimulation={onExplore}
+        onCompare={onCompare}
+      />,
+    );
 
     expect(await screen.findByRole("heading", { name: "Supercells" })).toBeInTheDocument();
     const navigation = screen.getByRole("navigation", { name: "Supercells sections" });
     expect(within(navigation).getByRole("button", { name: "Overview" })).toBeVisible();
     expect(within(navigation).getByRole("button", { name: "Simulations" })).toBeVisible();
     expect(within(navigation).queryByRole("button", { name: /Lab|Compare|Saved/ })).toBeNull();
+    expect(
+      screen.getByRole("heading", { name: "Straight-Line Hodograph Supercell" }),
+    ).toBeVisible();
 
-    fireEvent.click(screen.getByRole("button", { name: "Explore" }));
+    fireEvent.click(screen.getAllByRole("button", { name: "Explore" })[0]);
     expect(onExplore).toHaveBeenCalledWith(world.reference_simulation);
+    fireEvent.click(screen.getAllByRole("button", { name: "Compare" })[1]);
+    expect(onCompare).toHaveBeenCalledWith(straightLineSimulation);
 
     fireEvent.click(
       within(screen.getByRole("navigation", { name: "Breadcrumb" })).getByRole("button"),
@@ -73,6 +97,7 @@ describe("SupercellsWorld", () => {
       ...world,
       availability_state: "unavailable",
       availability_message: "The retained Supercell output is missing.",
+      capabilities: { ...world.capabilities, reference_explore: false, compare: false },
       reference_simulation: {
         ...world.reference_simulation,
         technical_state: "missing",
@@ -85,7 +110,19 @@ describe("SupercellsWorld", () => {
       },
       simulations: [],
     };
-    unavailable.simulations = [unavailable.reference_simulation];
+    unavailable.simulations = [
+      unavailable.reference_simulation,
+      {
+        ...straightLineSimulation,
+        technical_state: "missing",
+        technical_state_message: "The retained run directory could not be found.",
+        explore_available: false,
+        saved_output_count: 0,
+        model_start_seconds: null,
+        model_end_seconds: null,
+        history_cadence_seconds: null,
+      },
+    ];
     vi.mocked(fetch).mockResolvedValue(ok(unavailable));
     render(<SupercellsWorld onBackToWorlds={vi.fn()} onExploreSimulation={vi.fn()} />);
 

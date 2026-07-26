@@ -9,10 +9,7 @@ import type {
   TradeCumulusExploreState,
 } from "./ExploreStatePersistence";
 import { WorldCompare } from "./WorldCompare";
-import type {
-  CompareSimulationDescriptor,
-  WorldCompareDescriptor,
-} from "./WorldCompare.types";
+import type { CompareSimulationDescriptor, WorldCompareDescriptor } from "./WorldCompare.types";
 
 vi.mock("./WorldCompareAdapters", async (importOriginal) => {
   const original = await importOriginal<typeof import("./WorldCompareAdapters")>();
@@ -74,14 +71,24 @@ vi.mock("./WorldCompareAdapters", async (importOriginal) => {
           </section>
         );
       }
+      const supercellsState = props.state.world_id === "supercells" ? props.state : null;
       return (
         <section aria-label={`${props.simulation.display_name} test frame`}>
           Native frame at {props.state.model_time_seconds} s ·{" "}
-          {"lens_id" in props.state
-            ? props.state.lens_id
+          {supercellsState
+            ? supercellsState.lens_id
             : "view_id" in props.state
               ? props.state.view_id
               : "field"}
+          {supercellsState && (
+            <span>
+              {" "}
+              · {supercellsState.evidence_view} at {supercellsState.plane_coordinate_km} km · camera{" "}
+              {supercellsState.camera_transform?.position.join(",") ??
+                supercellsState.camera_preset}{" "}
+              · selected {supercellsState.selected_point?.x_km ?? "none"}
+            </span>
+          )}
           <button
             type="button"
             onClick={() => {
@@ -100,6 +107,38 @@ vi.mock("./WorldCompareAdapters", async (importOriginal) => {
           >
             Select {props.simulation.display_name} point
           </button>
+          {supercellsState && (
+            <>
+              <button
+                type="button"
+                onClick={() =>
+                  props.onStateChange({
+                    ...supercellsState,
+                    evidence_view: "xz",
+                    plane_coordinate_km: -10,
+                  })
+                }
+              >
+                Move {props.simulation.display_name} section
+              </button>
+              <button
+                type="button"
+                onClick={() =>
+                  props.onStateChange({
+                    ...supercellsState,
+                    camera_preset: "look_along_x",
+                    camera_transform: {
+                      position: [10, 12, 14],
+                      target: [1, 2, 3],
+                      up: [0, 1, 0],
+                    },
+                  })
+                }
+              >
+                Move {props.simulation.display_name} camera
+              </button>
+            </>
+          )}
         </section>
       );
     },
@@ -317,11 +356,7 @@ function mountainSimulation(
 }
 
 function mountainDescriptor(): WorldCompareDescriptor {
-  const dry = mountainSimulation(
-    "mountain_waves_dry_ridge",
-    "Dry Ridge — Wave Mechanics",
-    false,
-  );
+  const dry = mountainSimulation("mountain_waves_dry_ridge", "Dry Ridge — Wave Mechanics", false);
   const moist = mountainSimulation(
     "mountain_waves_boulder_moist_reference",
     "Boulder Windstorm — Moist Reference",
@@ -371,9 +406,9 @@ function supercellsState(
     lens_id: lensId,
     viewport_id: "storm",
     evidence_view: "plan",
-    plane_coordinate_km: 3.25,
-    visible_layer_ids: ["vertical_motion"],
-    fixed_scale_ids: ["supercells_vertical_velocity_v1"],
+    plane_coordinate_km: 3.1666669845581055,
+    visible_layer_ids: ["storm_cloud_body", "rising_core"],
+    fixed_scale_ids: ["supercell_midlevel_vertical_velocity_v1"],
     overlays: {
       rotation: true,
       updraft_helicity: true,
@@ -400,16 +435,19 @@ function supercellsSimulation(
   displayName: string,
   modelTimeSeconds: number,
 ): CompareSimulationDescriptor {
+  const reference = simulationId === "supercells_quarter_circle_reference";
   return {
     simulation_id: simulationId,
     display_name: displayName,
     world_id: "supercells",
-    role: simulationId === "reference" ? "reference" : "variation",
+    role: reference ? "reference" : "variation",
     run_id: `${simulationId}-run`,
     result_id: `${simulationId}-result`,
-    case_id: "quarter-circle",
-    parent_simulation_id: simulationId === "reference" ? null : "reference",
-    reference_simulation_id: "reference",
+    case_id: reference
+      ? "cm1_r21_1_quarter_circle_supercell_presentation_v1"
+      : "cm1_r21_1_straight_line_supercell_presentation_v1",
+    parent_simulation_id: reference ? null : "supercells_quarter_circle_reference",
+    reference_simulation_id: "supercells_quarter_circle_reference",
     lineage_state: "known",
     availability_state: "available",
     availability_message: "Available",
@@ -418,12 +456,12 @@ function supercellsSimulation(
       topology: "native_3d",
       nx: 240,
       ny: 240,
-      nz: 100,
-      dx_m: 250,
-      dy_m: 250,
-      dz_m: 200,
-      x_extent_km: [-38, 22],
-      y_extent_km: [-28, 32],
+      nz: 60,
+      dx_m: 500,
+      dy_m: 500,
+      dz_m: 333.3333333,
+      x_extent_km: [-60, 60],
+      y_extent_km: [-60, 60],
       z_extent_km: [0, 20],
     },
     time: {
@@ -434,13 +472,13 @@ function supercellsSimulation(
       saved_output_count: 3,
       interpolation_allowed: false,
     },
-    available_field_ids: [],
-    available_view_ids: [
-      "rotating_updraft",
-      "cloud_precipitation",
-      "low_level_interactions",
+    available_field_ids: ["winterp", "total_condensate"],
+    available_view_ids: ["rotating_updraft", "cloud_precipitation", "low_level_interactions"],
+    fixed_scale_ids: [
+      "supercell_midlevel_vertical_velocity_v1",
+      "supercell_total_condensate_v2",
+      "supercell_low_level_vertical_velocity_v1",
     ],
-    fixed_scale_ids: ["supercells_vertical_velocity_v1"],
     plane_orientations: ["horizontal", "vertical_x", "vertical_y"],
     camera_mapping: "normalized_3d",
     initial_state: supercellsState("rotating_updraft", modelTimeSeconds),
@@ -449,8 +487,16 @@ function supercellsSimulation(
 }
 
 function supercellsFixtureDescriptor(): WorldCompareDescriptor {
-  const left = supercellsSimulation("reference", "Reference Supercell", 0);
-  const right = supercellsSimulation("fixture-variation", "Fixture Variation", 240);
+  const left = supercellsSimulation(
+    "supercells_quarter_circle_reference",
+    "Quarter-Circle Supercell",
+    0,
+  );
+  const right = supercellsSimulation(
+    "supercells_straight_line_hodograph",
+    "Straight-Line Hodograph Supercell",
+    240,
+  );
   return {
     schema_version: "world_compare_v1",
     world_id: "supercells",
@@ -464,15 +510,11 @@ function supercellsFixtureDescriptor(): WorldCompareDescriptor {
     compatibility: {
       same_world: true,
       both_inspectable: true,
-      relationship: "Fixture Variation is a child of Reference Supercell.",
-      controlled_pair: false,
-      controlled_pair_message: "Deterministic test fixture only.",
+      relationship: "Straight-Line Hodograph Supercell is a child of Quarter-Circle Supercell.",
+      controlled_pair: true,
+      controlled_pair_message: "Only hodograph curvature changed in this controlled pair.",
       shared_field_ids: [],
-      shared_view_ids: [
-        "cloud_precipitation",
-        "low_level_interactions",
-        "rotating_updraft",
-      ],
+      shared_view_ids: ["cloud_precipitation", "low_level_interactions", "rotating_updraft"],
       shared_fixed_scale_ids: ["supercells_vertical_velocity_v1"],
       exact_time_link_available: true,
       nearest_time_link_available: true,
@@ -502,13 +544,7 @@ describe("WorldCompare", () => {
   });
 
   it("reviews lineage and exact material differences before loading frames", async () => {
-    render(
-      <WorldCompare
-        worldSlug="trade-cumulus"
-        onBack={vi.fn()}
-        onOpenSimulation={vi.fn()}
-      />,
-    );
+    render(<WorldCompare worldSlug="trade-cumulus" onBack={vi.fn()} onOpenSimulation={vi.fn()} />);
 
     expect(
       await screen.findByRole("heading", {
@@ -523,13 +559,7 @@ describe("WorldCompare", () => {
   });
 
   it("supports aligned and independent state plus per-side selected evidence", async () => {
-    render(
-      <WorldCompare
-        worldSlug="trade-cumulus"
-        onBack={vi.fn()}
-        onOpenSimulation={vi.fn()}
-      />,
-    );
+    render(<WorldCompare worldSlug="trade-cumulus" onBack={vi.fn()} onOpenSimulation={vi.fn()} />);
     fireEvent.click(await screen.findByRole("button", { name: "Open dual view" }));
 
     expect(await screen.findByLabelText("Canonical BOMEX Baseline test frame")).toBeVisible();
@@ -557,13 +587,7 @@ describe("WorldCompare", () => {
     vi.mocked(fetch).mockResolvedValueOnce(
       new Response(JSON.stringify(tradeDescriptor("moisture-failed")), { status: 200 }),
     );
-    render(
-      <WorldCompare
-        worldSlug="trade-cumulus"
-        onBack={vi.fn()}
-        onOpenSimulation={vi.fn()}
-      />,
-    );
+    render(<WorldCompare worldSlug="trade-cumulus" onBack={vi.fn()} onOpenSimulation={vi.fn()} />);
     fireEvent.click(await screen.findByRole("button", { name: "Open dual view" }));
 
     expect(await screen.findByLabelText("Canonical BOMEX Baseline test frame")).toBeVisible();
@@ -575,13 +599,7 @@ describe("WorldCompare", () => {
     vi.mocked(fetch).mockResolvedValueOnce(
       new Response(JSON.stringify(mountainDescriptor()), { status: 200 }),
     );
-    render(
-      <WorldCompare
-        worldSlug="mountain-waves"
-        onBack={vi.fn()}
-        onOpenSimulation={vi.fn()}
-      />,
-    );
+    render(<WorldCompare worldSlug="mountain-waves" onBack={vi.fn()} onOpenSimulation={vi.fn()} />);
     fireEvent.click(await screen.findByRole("button", { name: "Open dual view" }));
 
     const rightSide = await screen.findByRole("article", {
@@ -602,43 +620,67 @@ describe("WorldCompare", () => {
       within(rightSide).queryByLabelText("Boulder Windstorm — Moist Reference cloud opacity"),
     ).not.toBeInTheDocument();
     expect(
-      within(rightSide).queryByLabelText(
-        "Boulder Windstorm — Moist Reference cloud point size",
-      ),
+      within(rightSide).queryByLabelText("Boulder Windstorm — Moist Reference cloud point size"),
     ).not.toBeInTheDocument();
   });
 
-  it("coordinates two deterministic Supercells fixture states through the shared shell", async () => {
+  it("coordinates the controlled Supercells pair through the shared shell", async () => {
     vi.mocked(fetch).mockResolvedValueOnce(
       new Response(JSON.stringify(supercellsFixtureDescriptor()), { status: 200 }),
     );
-    render(
-      <WorldCompare worldSlug="supercells" onBack={vi.fn()} onOpenSimulation={vi.fn()} />,
-    );
+    render(<WorldCompare worldSlug="supercells" onBack={vi.fn()} onOpenSimulation={vi.fn()} />);
     fireEvent.click(await screen.findByRole("button", { name: "Open dual view" }));
 
-    expect(await screen.findByLabelText("Reference Supercell test frame")).toHaveTextContent(
+    expect(await screen.findByLabelText("Quarter-Circle Supercell test frame")).toHaveTextContent(
       "0 s",
     );
-    expect(screen.getByLabelText("Fixture Variation test frame")).toHaveTextContent("240 s");
+    expect(screen.getByLabelText("Straight-Line Hodograph Supercell test frame")).toHaveTextContent(
+      "240 s",
+    );
     fireEvent.click(screen.getByRole("button", { name: "Aligned" }));
     await waitFor(() =>
-      expect(screen.getByLabelText("Fixture Variation test frame")).toHaveTextContent("0 s"),
+      expect(
+        screen.getByLabelText("Straight-Line Hodograph Supercell test frame"),
+      ).toHaveTextContent("0 s"),
     );
     expect(screen.getByRole("checkbox", { name: /^Time$/ })).toBeChecked();
     expect(screen.getByRole("checkbox", { name: /^Field \/ Lens$/ })).toBeChecked();
     expect(screen.getByRole("checkbox", { name: /^Camera$/ })).toBeChecked();
+    expect(screen.getByRole("checkbox", { name: /^Slice plane$/ })).toBeChecked();
+    expect(screen.getByRole("checkbox", { name: /^Selection$/ })).toBeChecked();
 
     const leftSide = screen.getByRole("article", {
-      name: "Reference Supercell comparison side",
+      name: "Quarter-Circle Supercell comparison side",
     });
     fireEvent.click(
-      within(leftSide).getByRole("button", { name: "Cloud and Precipitation" }),
+      within(leftSide).getByRole("button", { name: "Move Quarter-Circle Supercell section" }),
     );
     await waitFor(() =>
-      expect(screen.getByLabelText("Fixture Variation test frame")).toHaveTextContent(
-        "cloud_precipitation",
-      ),
+      expect(
+        screen.getByLabelText("Straight-Line Hodograph Supercell test frame"),
+      ).toHaveTextContent("xz at -10 km"),
+    );
+    fireEvent.click(
+      within(leftSide).getByRole("button", { name: "Move Quarter-Circle Supercell camera" }),
+    );
+    await waitFor(() =>
+      expect(
+        screen.getByLabelText("Straight-Line Hodograph Supercell test frame"),
+      ).toHaveTextContent("camera 10,12,14"),
+    );
+    fireEvent.click(
+      within(leftSide).getByRole("button", { name: "Select Quarter-Circle Supercell point" }),
+    );
+    await waitFor(() =>
+      expect(
+        screen.getByLabelText("Straight-Line Hodograph Supercell test frame"),
+      ).toHaveTextContent("selected 1"),
+    );
+    fireEvent.click(within(leftSide).getByRole("button", { name: "Cloud and Precipitation" }));
+    await waitFor(() =>
+      expect(
+        screen.getByLabelText("Straight-Line Hodograph Supercell test frame"),
+      ).toHaveTextContent("cloud_precipitation"),
     );
 
     fireEvent.click(screen.getByText("Compare technical details", { exact: true }));
@@ -703,9 +745,7 @@ describe("WorldCompare", () => {
       ),
     );
 
-    render(
-      <WorldCompare worldSlug="supercells" onBack={vi.fn()} onOpenSimulation={vi.fn()} />,
-    );
+    render(<WorldCompare worldSlug="supercells" onBack={vi.fn()} onOpenSimulation={vi.fn()} />);
 
     expect(await screen.findByLabelText("No second Simulation")).toBeVisible();
     expect(screen.getByText(/it is not cloned/)).toBeVisible();

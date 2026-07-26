@@ -299,9 +299,7 @@
   width: 38px;
 }
 
-.world-compare-workspace-grid
-  > .explore-inspector-collapsed
-  .explore-inspector-header {
+.world-compare-workspace-grid > .explore-inspector-collapsed .explore-inspector-header {
   justify-content: center;
   padding-inline: 3px;
   border-bottom: 0;
@@ -376,10 +374,30 @@
 }
 
 .compare-side-controls .segmented-control button,
-.compare-toolbar .segmented-control button {
+.compare-toolbar .segmented-control button,
+.compare-supercell-surface-tabs button {
   min-height: 32px;
+  border: 1px solid transparent;
+  border-radius: 4px;
   padding: 5px 8px;
+  background: transparent;
+  box-shadow: none;
+  color: var(--compare-muted);
   white-space: nowrap;
+}
+
+.compare-side-controls .segmented-control button:hover,
+.compare-side-controls .segmented-control button:focus-visible,
+.compare-toolbar .segmented-control button:hover,
+.compare-toolbar .segmented-control button:focus-visible,
+.compare-supercell-surface-tabs button:hover,
+.compare-supercell-surface-tabs button:focus-visible,
+.compare-side-controls .segmented-control .active-control,
+.compare-toolbar .segmented-control .active-control,
+.compare-supercell-surface-tabs .active-control {
+  border-color: #bdd8e8;
+  background: var(--color-accent-soft);
+  color: var(--color-accent-primary);
 }
 
 .compare-side-controls input[type="range"] {
@@ -487,6 +505,150 @@
   align-items: center;
   padding-top: 3px;
   border-top: 1px solid #dbe6ec;
+}
+
+.compare-supercell-view {
+  grid-template-rows: auto minmax(0, 1fr);
+  min-height: 510px;
+}
+
+.compare-supercell-surface-tabs {
+  z-index: 2;
+  display: flex;
+  gap: 2px;
+  align-items: center;
+  padding: 7px 10px;
+  border-bottom: 1px solid var(--compare-line);
+  background: #f8fbfd;
+}
+
+.compare-supercell-surface-tabs button {
+  min-height: 31px;
+  padding: 4px 8px;
+  font-size: 0.7rem;
+}
+
+.compare-supercell-scene,
+.compare-supercell-scene .visualizer-shell,
+.compare-supercell-scene .three-d-viewer-shell {
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+}
+
+.compare-supercell-evidence {
+  display: grid;
+  grid-template-rows: minmax(350px, 1fr) auto;
+  gap: 7px;
+  min-width: 0;
+  min-height: 0;
+  padding: 9px;
+}
+
+.compare-supercell-plot {
+  display: grid;
+  place-items: center;
+  min-width: 0;
+  min-height: 0;
+}
+
+.compare-supercell-plot .storm-plot {
+  width: auto;
+  height: 100%;
+  max-width: 100%;
+  max-height: 100%;
+  margin: auto;
+  aspect-ratio: var(--storm-data-aspect);
+}
+
+.compare-supercell-evidence > .storm-legend {
+  align-self: stretch;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 4px 9px;
+  padding: 7px 0 0;
+  border-top: 1px solid var(--compare-line);
+  border-left: 0;
+}
+
+.compare-supercell-evidence .storm-legend-heading {
+  align-self: center;
+}
+
+.compare-supercell-evidence .storm-legend-scale {
+  grid-column: 1 / -1;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 3px 7px;
+  margin: 0;
+}
+
+.compare-supercell-evidence .storm-legend-scale li {
+  grid-template-columns: 7px minmax(0, 1fr);
+  gap: 3px;
+  min-width: 0;
+  font-size: 0.52rem;
+}
+
+.compare-supercell-evidence .storm-legend-range {
+  align-self: center;
+  white-space: nowrap;
+}
+
+.compare-supercell-evidence .storm-legend-note {
+  align-self: center;
+}
+
+.compare-supercell-evidence .storm-overlay-key {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  align-items: center;
+  margin: 0;
+  padding-top: 5px;
+}
+
+.compare-supercell-evidence .storm-overlay-key > div {
+  grid-template-columns: 18px auto;
+}
+
+.compare-storm-layer-controls {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 5px 12px;
+  min-width: 270px;
+}
+
+.compare-storm-layer-controls label {
+  display: flex;
+  gap: 5px;
+  align-items: center;
+  min-width: 0;
+  font-size: 0.72rem;
+}
+
+.compare-side-controls .native-slice-position-range {
+  display: grid;
+  grid-template-columns: minmax(130px, 1fr) auto;
+  gap: 6px;
+  min-width: 250px;
+}
+
+.compare-side-controls .native-slice-position-range input {
+  width: 100%;
+}
+
+.compare-side-controls .slice-position-label {
+  display: grid;
+  min-width: 86px;
+  font-size: 0.68rem;
+}
+
+.compare-side-controls .slice-position-label small {
+  color: var(--compare-muted);
+}
+
+.compare-side-controls .slice-move-buttons {
+  display: none;
 }
 
 .compare-trade-field .visualizer-shell,
@@ -648,9 +810,7 @@
     max-height: 40px;
   }
 
-  .world-compare-workspace-grid
-    > .explore-inspector-collapsed
-    .explore-inspector-header {
+  .world-compare-workspace-grid > .explore-inspector-collapsed .explore-inspector-header {
     justify-content: flex-end;
     padding-inline: 8px;
   }
@@ -733,6 +893,14 @@
 
   .compare-mountain-plot .mountain-waves-canvas-wrap {
     height: 202px;
+  }
+
+  .compare-supercell-view {
+    min-height: 460px;
+  }
+
+  .compare-supercell-evidence {
+    grid-template-rows: minmax(300px, 1fr) auto;
   }
 
   .compare-side-header {

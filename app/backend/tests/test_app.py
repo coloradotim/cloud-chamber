@@ -452,6 +452,7 @@ def test_supercells_product_api_defaults_to_presentation_mature_frame(
     assert response.json()["time_index"] == 37
     assert calls == [
         {
+            "simulation_id": "supercells_quarter_circle_reference",
             "lens": "rotating_updraft",
             "time_index": 37,
             "viewport": "storm",

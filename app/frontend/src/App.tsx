@@ -4791,12 +4791,7 @@ export function App() {
             setSupercellSimulation(simulation);
             setProductLocation("supercells-explore");
           }}
-          onCompare={() =>
-            openWorldComparison(
-              "supercells",
-              "supercells_quarter_circle_reference",
-            )
-          }
+          onCompare={(simulation) => openWorldComparison("supercells", simulation.simulation_id)}
         />
       )}
 

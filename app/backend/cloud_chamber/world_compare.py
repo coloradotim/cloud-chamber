@@ -273,25 +273,74 @@ def _supercells_descriptor(
 ) -> WorldCompareDescriptor:
     world = supercells_world_detail(settings)
     simulations = [_supercell_simulation(item) for item in world.simulations]
-    selected_left = left_simulation_id or world.reference_simulation.simulation_id
-    left = _simulation_by_id(simulations, selected_left)
-    if right_simulation_id:
-        _simulation_by_id(simulations, right_simulation_id)
-        raise ValueError("Supercells has no distinct second Simulation to compare.")
+    available = [item for item in simulations if item.inspectable]
+    if len(available) < 2:
+        requested_left = left_simulation_id or world.reference_simulation.simulation_id
+        requested = _simulation_by_id(simulations, requested_left)
+        left = requested if requested.inspectable or not available else available[0]
+        if right_simulation_id is not None:
+            requested_right = _simulation_by_id(simulations, right_simulation_id)
+            if requested_right.inspectable and requested_right.simulation_id != left.simulation_id:
+                raise ValueError(
+                    "Supercells Compare requires two retained, inspectable Simulations."
+                )
+        return WorldCompareDescriptor(
+            world_id="supercells",
+            display_name=world.display_name,
+            simulations=simulations,
+            default_left_simulation_id=left.simulation_id,
+            default_right_simulation_id=None,
+            selected_left_simulation_id=left.simulation_id,
+            selected_right_simulation_id=None,
+            material_differences=[],
+            compatibility=None,
+            no_second_simulation_message=(
+                "Supercells currently has one retained Simulation. Compare requires two "
+                "distinct Simulations in the same World; this reference is not cloned."
+            ),
+        )
+    left, right = _selected_pair(
+        available,
+        left_simulation_id or "supercells_quarter_circle_reference",
+        right_simulation_id or "supercells_straight_line_hodograph",
+    )
+    reverse = left.simulation_id == "supercells_straight_line_hodograph"
+    differences = [
+        CompareDifference(
+            path="atmosphere.hodograph_geometry",
+            label="Hodograph geometry",
+            category="atmospheric",
+            left_value="Straight line" if reverse else "Quarter circle",
+            right_value="Quarter circle" if reverse else "Straight line",
+        )
+    ]
+    compatibility = _compatibility(
+        left,
+        right,
+        relationship=_relationship(left, right),
+        controlled_pair=(
+            {left.simulation_id, right.simulation_id}
+            == {
+                "supercells_quarter_circle_reference",
+                "supercells_straight_line_hodograph",
+            }
+        ),
+        controlled_message=(
+            "Only hodograph curvature changed; thermodynamics, trigger, grid, timing, "
+            "output inventory, model translation, and numerical options are matched. "
+            "Coordinates and local evidence are compared without claiming storm-object lineage."
+        ),
+    )
     return WorldCompareDescriptor(
         world_id="supercells",
         display_name=world.display_name,
         simulations=simulations,
-        default_left_simulation_id=left.simulation_id,
-        default_right_simulation_id=None,
+        default_left_simulation_id="supercells_quarter_circle_reference",
+        default_right_simulation_id="supercells_straight_line_hodograph",
         selected_left_simulation_id=left.simulation_id,
-        selected_right_simulation_id=None,
-        material_differences=[],
-        compatibility=None,
-        no_second_simulation_message=(
-            "Supercells currently has one retained Simulation. Compare requires two "
-            "distinct Simulations in the same World; this reference is not cloned."
-        ),
+        selected_right_simulation_id=right.simulation_id,
+        material_differences=differences,
+        compatibility=compatibility,
     )
 
 
@@ -471,7 +520,8 @@ def _supercell_simulation(
         role=record.role,
         run_id=record.run_id,
         case_id=record.case_id,
-        reference_simulation_id=record.simulation_id,
+        parent_simulation_id=record.parent_simulation_id,
+        reference_simulation_id=record.reference_simulation_id,
         lineage_state=record.lineage_state,
         availability_state=record.technical_state,
         availability_message=record.technical_state_message,

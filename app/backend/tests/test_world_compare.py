@@ -230,6 +230,11 @@ def test_supercells_compare_does_not_clone_the_only_simulation(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     reference = SupercellSimulationRecord(
+        simulation_id="supercells_quarter_circle_reference",
+        display_name="Quarter-Circle Supercell",
+        role="reference",
+        run_id="quarter-circle",
+        case_id="quarter-circle-case",
         technical_state="available",
         technical_state_message="Available",
         explore_available=True,
@@ -257,6 +262,73 @@ def test_supercells_compare_does_not_clone_the_only_simulation(
     assert len(descriptor.simulations) == 1
     assert descriptor.simulations[0].grid.nx == 240
     assert descriptor.simulations[0].grid.z_extent_km == (0.0, 20.0)
+
+
+def test_supercells_compare_uses_real_controlled_hodograph_pair(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    reference = SupercellSimulationRecord(
+        simulation_id="supercells_quarter_circle_reference",
+        display_name="Quarter-Circle Supercell",
+        role="reference",
+        run_id="quarter-circle",
+        case_id="quarter-circle-case",
+        technical_state="available",
+        technical_state_message="Available",
+        explore_available=True,
+        saved_output_count=91,
+        model_start_seconds=0,
+        model_end_seconds=10_800,
+        history_cadence_seconds=120,
+    )
+    straight = SupercellSimulationRecord(
+        simulation_id="supercells_straight_line_hodograph",
+        display_name="Straight-Line Hodograph Supercell",
+        role="variation",
+        run_id="straight-line",
+        case_id="straight-line-case",
+        parent_simulation_id=reference.simulation_id,
+        technical_state="available",
+        technical_state_message="Available",
+        explore_available=True,
+        saved_output_count=91,
+        model_start_seconds=0,
+        model_end_seconds=10_800,
+        history_cadence_seconds=120,
+    )
+    monkeypatch.setattr(
+        "cloud_chamber.world_compare.supercells_world_detail",
+        lambda _settings: SimpleNamespace(
+            display_name="Supercells",
+            simulations=[reference, straight],
+            reference_simulation=reference,
+        ),
+    )
+
+    descriptor = world_compare_descriptor(_settings(tmp_path), world_slug="supercells")
+
+    assert descriptor.selected_left_simulation_id == reference.simulation_id
+    assert descriptor.selected_right_simulation_id == straight.simulation_id
+    assert descriptor.compatibility is not None
+    assert descriptor.compatibility.controlled_pair is True
+    assert descriptor.compatibility.camera_link_available is True
+    assert descriptor.compatibility.physical_plane_link_available is True
+    assert descriptor.compatibility.selection_link_available is True
+    assert descriptor.compatibility.shared_view_ids == [
+        "cloud_precipitation",
+        "low_level_interactions",
+        "rotating_updraft",
+    ]
+    assert len(descriptor.material_differences) == 1
+    difference = descriptor.material_differences[0]
+    assert difference.path == "atmosphere.hodograph_geometry"
+    assert (difference.left_value, difference.right_value) == (
+        "Quarter circle",
+        "Straight line",
+    )
+    assert "without claiming storm-object lineage" in (
+        descriptor.compatibility.controlled_pair_message
+    )
 
 
 def test_native_subset_is_bounded_ordered_and_never_interpolated() -> None:

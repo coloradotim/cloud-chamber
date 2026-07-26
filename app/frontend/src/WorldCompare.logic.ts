@@ -1,4 +1,5 @@
 import type { CameraPreset, CameraTransform } from "./True3DViewer";
+import { SUPERCELLS_CURATED_VIEWS } from "./exploreCuratedDefaults";
 import {
   isMountainState,
   isSupercellsState,
@@ -167,7 +168,33 @@ export const WORLD_COMPARE_ADAPTERS: Record<CompareWorldId, WorldCompareAdapter>
       ) {
         return state;
       }
-      return { ...state, lens_id: viewId as typeof state.lens_id };
+      const lensId = viewId as typeof state.lens_id;
+      const curated = SUPERCELLS_CURATED_VIEWS[lensId];
+      return {
+        ...state,
+        lens_id: lensId,
+        evidence_view: curated.evidenceOrientation,
+        plane_coordinate_km: curated.plane.coordinateKm,
+        visible_layer_ids: [...curated.visibleLayerIds],
+        fixed_scale_ids: [...curated.fixedScaleIds],
+        overlays: {
+          rotation: curated.overlays.rotation,
+          updraft_helicity: curated.overlays.updraftHelicity,
+          reflectivity: curated.overlays.reflectivity,
+          condensate: curated.overlays.condensate,
+          rain: curated.overlays.rain,
+          wind: curated.overlays.wind,
+          precipitating_condensate: curated.overlays.precipitatingCondensate,
+          vertical_motion: curated.overlays.verticalMotion,
+        },
+        hydrometeor_category_codes: [...curated.hydrometeorCategoryCodes],
+        camera_preset: curated.cameraPreset,
+        camera_transform: curated.cameraTransform,
+        scene_opacity: curated.sceneOpacity,
+        scene_point_size: curated.scenePointSize,
+        selected_point: null,
+        selected_evidence_visible: false,
+      };
     },
     fieldId: () => null,
     setField: (state) => state,
@@ -217,11 +244,7 @@ export function timeIndexForSeconds(
 ): number {
   const exactIndex = descriptor.time.times_seconds.indexOf(seconds);
   if (exactIndex >= 0) return exactIndex;
-  const nearest = nearestCompareTime(
-    descriptor,
-    seconds,
-    Number.POSITIVE_INFINITY,
-  );
+  const nearest = nearestCompareTime(descriptor, seconds, Number.POSITIVE_INFINITY);
   return nearest ? descriptor.time.times_seconds.indexOf(nearest.value) : 0;
 }
 

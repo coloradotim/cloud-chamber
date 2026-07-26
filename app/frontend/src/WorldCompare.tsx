@@ -7,6 +7,7 @@ import {
   ExploreSelectedEvidence,
   IntegratedExploreWorkspace,
 } from "./IntegratedExploreWorkspace";
+import { NativeSlicePositionControl } from "./NativeSlicePositionControl";
 import {
   CompareControlGroup,
   type CompareSelectedEvidence,
@@ -22,6 +23,7 @@ import {
 } from "./WorldCompare.logic";
 import {
   isMountainState,
+  isSupercellsState,
   isTradeState,
   type CompareDifference,
   type CompareLinkModes,
@@ -242,13 +244,7 @@ export function WorldCompare({
   const applyAlignedPreset = useCallback(() => {
     if (!descriptor || !states) return;
     const nextLinks = alignedLinks(descriptor);
-    const synchronized = synchronizeState(
-      descriptor,
-      "left",
-      states.left,
-      states.right,
-      nextLinks,
-    );
+    const synchronized = synchronizeState(descriptor, "left", states.left, states.right, nextLinks);
     setLinks(nextLinks);
     setStates({ left: states.left, right: synchronized.state });
     setMappingNotices(synchronized.notices);
@@ -327,22 +323,17 @@ export function WorldCompare({
   }, [descriptor?.world_id, links.view, sideScales]);
 
   const handleScale = useCallback((side: CompareSide, scale: TerrainScale | null) => {
-    setSideScales((current) =>
-      current[side] === scale ? current : { ...current, [side]: scale },
-    );
+    setSideScales((current) => (current[side] === scale ? current : { ...current, [side]: scale }));
   }, []);
 
-  const handleEvidence = useCallback(
-    (side: CompareSide, item: CompareSelectedEvidence | null) => {
-      setEvidence((current) =>
-        evidenceSignature(current[side]) === evidenceSignature(item)
-          ? current
-          : { ...current, [side]: item },
-      );
-      if (item) setContextCollapsed(false);
-    },
-    [],
-  );
+  const handleEvidence = useCallback((side: CompareSide, item: CompareSelectedEvidence | null) => {
+    setEvidence((current) =>
+      evidenceSignature(current[side]) === evidenceSignature(item)
+        ? current
+        : { ...current, [side]: item },
+    );
+    if (item) setContextCollapsed(false);
+  }, []);
 
   if (descriptorLoading) {
     return <CompareStatus title="Loading Compare" body="Reading bounded World metadata..." />;
@@ -379,7 +370,9 @@ export function WorldCompare({
     );
   }
   if (!leftSimulation || !adapter) {
-    return <CompareStatus title="Compare is unavailable" body="Simulation identity is incomplete." />;
+    return (
+      <CompareStatus title="Compare is unavailable" body="Simulation identity is incomplete." />
+    );
   }
 
   if (phase === "review" || !states) {
@@ -448,10 +441,7 @@ export function WorldCompare({
               );
             })}
           </div>
-          <ExploreInspector
-            collapsed={contextCollapsed}
-            onCollapsedChange={setContextCollapsed}
-          >
+          <ExploreInspector collapsed={contextCollapsed} onCollapsedChange={setContextCollapsed}>
             <CompareContext
               descriptor={descriptor}
               left={leftSimulation}
@@ -499,8 +489,7 @@ function ComparePairReview({
         <p className="eyebrow">Compare setup</p>
         <h3 id="compare-review-title">Review the two Simulations before loading frames</h3>
         <p>
-          Compare is transient. It does not create a Saved Comparison or change either
-          Simulation.
+          Compare is transient. It does not create a Saved Comparison or change either Simulation.
         </p>
       </header>
       <div className="compare-pair-selectors">
@@ -566,7 +555,9 @@ function ComparePairReview({
             </div>
             <div>
               <dt>Physical slice plane</dt>
-              <dd>{compatibility.physical_plane_link_available ? "Available" : "Not applicable"}</dd>
+              <dd>
+                {compatibility.physical_plane_link_available ? "Available" : "Not applicable"}
+              </dd>
             </div>
             <div>
               <dt>Camera</dt>
@@ -806,12 +797,17 @@ function CompareSidePanel({
   const currentView = adapter.viewId(state);
   const fieldOptions = simulation.available_field_ids;
   return (
-    <article className="compare-side-panel" aria-label={`${simulation.display_name} comparison side`}>
+    <article
+      className="compare-side-panel"
+      aria-label={`${simulation.display_name} comparison side`}
+    >
       <header className="compare-side-header">
         <div>
           <p className="eyebrow">{side === "left" ? "Left Simulation" : "Right Simulation"}</p>
           <h3>{simulation.display_name}</h3>
-          <p>{formatSeconds(state.model_time_seconds)} · {viewDisplayName(currentView)}</p>
+          <p>
+            {formatSeconds(state.model_time_seconds)} · {viewDisplayName(currentView)}
+          </p>
         </div>
         <button type="button" className="secondary-button" onClick={onOpen}>
           Open in Explore
@@ -837,7 +833,9 @@ function CompareSidePanel({
             <select
               aria-label={`${simulation.display_name} Field`}
               value={adapter.fieldId(state) ?? fieldOptions[0]}
-              onChange={(event) => onStateChange(adapter.setField(state, event.currentTarget.value))}
+              onChange={(event) =>
+                onStateChange(adapter.setField(state, event.currentTarget.value))
+              }
             >
               {fieldOptions.map((field) => (
                 <option key={field} value={field}>
@@ -906,6 +904,130 @@ function WorldSpecificControls({
             }
           />
         </label>
+      </>
+    );
+  }
+  if (isSupercellsState(state)) {
+    const planeValues = supercellPlaneCoordinates(simulation, state.evidence_view);
+    const positionIndex = nearestNumberIndex(planeValues, state.plane_coordinate_km);
+    const overlayOptions = supercellOverlayOptions(state.lens_id, state.evidence_view);
+    return (
+      <>
+        <CompareControlGroup label="Viewport">
+          <div className="segmented-control">
+            <button
+              type="button"
+              className={state.viewport_id === "storm" ? "active-control" : ""}
+              onClick={() => onStateChange({ ...state, viewport_id: "storm" })}
+            >
+              Storm region
+            </button>
+            <button
+              type="button"
+              className={state.viewport_id === "full" ? "active-control" : ""}
+              onClick={() => onStateChange({ ...state, viewport_id: "full" })}
+            >
+              Full domain
+            </button>
+          </div>
+        </CompareControlGroup>
+        <CompareControlGroup label="Slice position">
+          <NativeSlicePositionControl
+            id={`compare-${simulation.simulation_id}-supercell-plane`}
+            ariaLabel={`${simulation.display_name} slice position`}
+            plane={
+              state.evidence_view === "plan"
+                ? "horizontal"
+                : state.evidence_view === "xz"
+                  ? "vertical_x"
+                  : "vertical_y"
+            }
+            positionIndex={positionIndex}
+            positionCount={planeValues.length}
+            positionLabel={`${supercellPlaneAxis(state.evidence_view)} ${(
+              planeValues[positionIndex] ?? 0
+            ).toFixed(2)} km`}
+            indexLabel={`native index ${positionIndex}`}
+            onPositionChange={(nextIndex) => {
+              const coordinate = planeValues[nextIndex];
+              if (!Number.isFinite(coordinate)) return;
+              const selected = state.selected_point ?? { x_km: 0, y_km: 0, z_km: 0 };
+              onStateChange({
+                ...state,
+                plane_coordinate_km: coordinate,
+                selected_point:
+                  state.evidence_view === "plan"
+                    ? { ...selected, z_km: coordinate }
+                    : state.evidence_view === "xz"
+                      ? { ...selected, y_km: coordinate }
+                      : { ...selected, x_km: coordinate },
+              });
+            }}
+            compact
+          />
+        </CompareControlGroup>
+        <CompareControlGroup label="Evidence overlays">
+          <div className="compare-overlay-controls">
+            {overlayOptions.map((option) => (
+              <label key={option.key}>
+                <input
+                  type="checkbox"
+                  checked={state.overlays[option.key]}
+                  onChange={(event) =>
+                    onStateChange({
+                      ...state,
+                      overlays: {
+                        ...state.overlays,
+                        [option.key]: event.currentTarget.checked,
+                      },
+                    })
+                  }
+                />
+                {option.label}
+              </label>
+            ))}
+          </div>
+        </CompareControlGroup>
+        <CompareControlGroup label="3-D rendering">
+          <div className="compare-cloud-render-controls">
+            <label>
+              <span>Opacity</span>
+              <input
+                type="range"
+                aria-label={`${simulation.display_name} scene opacity`}
+                min={0.25}
+                max={1.25}
+                step={0.05}
+                value={state.scene_opacity}
+                onChange={(event) =>
+                  onStateChange({
+                    ...state,
+                    scene_opacity: Number(event.currentTarget.value),
+                  })
+                }
+              />
+              <output>{state.scene_opacity.toFixed(2)}x</output>
+            </label>
+            <label>
+              <span>Point size</span>
+              <input
+                type="range"
+                aria-label={`${simulation.display_name} scene point size`}
+                min={0.5}
+                max={1.8}
+                step={0.1}
+                value={state.scene_point_size}
+                onChange={(event) =>
+                  onStateChange({
+                    ...state,
+                    scene_point_size: Number(event.currentTarget.value),
+                  })
+                }
+              />
+              <output>{state.scene_point_size.toFixed(1)}x</output>
+            </label>
+          </div>
+        </CompareControlGroup>
       </>
     );
   }
@@ -1074,6 +1196,74 @@ function WorldSpecificControls({
       )}
     </>
   );
+}
+
+function supercellPlaneAxis(view: "plan" | "xz" | "yz"): "x" | "y" | "z" {
+  return view === "plan" ? "z" : view === "xz" ? "y" : "x";
+}
+
+function supercellPlaneCoordinates(
+  simulation: CompareSimulationDescriptor,
+  view: "plan" | "xz" | "yz",
+): number[] {
+  const axis = supercellPlaneAxis(view);
+  const extent =
+    axis === "x"
+      ? simulation.grid.x_extent_km
+      : axis === "y"
+        ? (simulation.grid.y_extent_km ?? simulation.grid.x_extent_km)
+        : simulation.grid.z_extent_km;
+  const count =
+    axis === "x" ? simulation.grid.nx : axis === "y" ? simulation.grid.ny : simulation.grid.nz;
+  const spacing = (extent[1] - extent[0]) / count;
+  return Array.from({ length: count }, (_, index) => extent[0] + (index + 0.5) * spacing);
+}
+
+function nearestNumberIndex(values: number[], target: number): number {
+  return values.reduce(
+    (nearest, value, index) =>
+      Math.abs(value - target) < Math.abs(values[nearest] - target) ? index : nearest,
+    0,
+  );
+}
+
+function supercellOverlayOptions(
+  lens: "rotating_updraft" | "cloud_precipitation" | "low_level_interactions",
+  evidenceView: "plan" | "xz" | "yz",
+): Array<{
+  key:
+    | "rotation"
+    | "updraft_helicity"
+    | "reflectivity"
+    | "condensate"
+    | "rain"
+    | "wind"
+    | "precipitating_condensate"
+    | "vertical_motion";
+  label: string;
+}> {
+  if (lens === "rotating_updraft") {
+    return [
+      { key: "condensate", label: "Cloud boundary" },
+      { key: "rotation", label: "Rotation contour" },
+      ...(evidenceView === "plan"
+        ? [{ key: "updraft_helicity" as const, label: "2-5 km UH footprint" }]
+        : []),
+      { key: "reflectivity", label: "Reflectivity contour" },
+    ];
+  }
+  if (lens === "cloud_precipitation") {
+    return [
+      { key: "vertical_motion", label: "Vertical-motion contours" },
+      { key: "reflectivity", label: "Reflectivity contour" },
+    ];
+  }
+  return [
+    { key: "precipitating_condensate", label: "Current precipitation" },
+    { key: "rain", label: "Accumulated rain" },
+    { key: "wind", label: "Model-relative flow" },
+    { key: "reflectivity", label: "Reflectivity contour" },
+  ];
 }
 
 function CompareTimeline({
@@ -1280,8 +1470,8 @@ function CompareTechnicalDetails({
         <div>
           <dt>Bounded frame cache</dt>
           <dd>
-            {performance.cache_entries.left} left / {performance.cache_entries.right} right · max
-            6 per side
+            {performance.cache_entries.left} left / {performance.cache_entries.right} right · max 6
+            per side
           </dd>
         </div>
         <div>
@@ -1409,6 +1599,13 @@ function synchronizeState(
       slice_native_index: source.slice_native_index,
     };
   }
+  if (links.plane && isSupercellsState(source) && isSupercellsState(next)) {
+    next = {
+      ...next,
+      evidence_view: source.evidence_view,
+      plane_coordinate_km: source.plane_coordinate_km,
+    };
+  }
   if (links.camera) {
     const preset = adapter.cameraPreset(source);
     if (preset) {
@@ -1525,19 +1722,14 @@ function formatSpacing(grid: CompareSimulationDescriptor["grid"]): string {
   if (grid.topology === "native_2d_xz") {
     return `${formatMeters(grid.dx_m)} x / ${formatMeters(grid.dz_m)} z · native 2-D x-z`;
   }
-  return `${formatMeters(grid.dx_m)} × ${formatMeters(grid.dy_m)} × ${formatMeters(
-    grid.dz_m,
-  )}`;
+  return `${formatMeters(grid.dx_m)} × ${formatMeters(grid.dy_m)} × ${formatMeters(grid.dz_m)}`;
 }
 
 function formatMeters(value: number): string {
   return value >= 1_000 ? `${formatNumber(value / 1_000)} km` : `${formatNumber(value)} m`;
 }
 
-function formatDifferenceValue(
-  difference: CompareDifference,
-  side: "left" | "right",
-): string {
+function formatDifferenceValue(difference: CompareDifference, side: "left" | "right"): string {
   const known = side === "left" ? difference.left_known : difference.right_known;
   if (!known) return "Unknown";
   const value = side === "left" ? difference.left_value : difference.right_value;

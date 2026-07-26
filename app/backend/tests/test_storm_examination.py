@@ -52,6 +52,8 @@ def _write_retained_fixture(
                 "run_id": run_id,
                 "case_id": case_id,
                 "implementation_commit": implementation_commit,
+                "simulation_id": ("supercells_quarter_circle_reference" if presentation else None),
+                "hodograph": "quarter_circle",
             }
         )
     )
@@ -129,6 +131,8 @@ def _write_retained_fixture(
                     "kind": "final",
                     "run_id": run_id,
                     "case_id": case_id,
+                    "simulation_id": "supercells_quarter_circle_reference",
+                    "hodograph": "quarter_circle",
                     "source_run_id": PRESERVED_RUN_ID,
                     "implementation_commit": implementation_commit,
                     "grid": {
