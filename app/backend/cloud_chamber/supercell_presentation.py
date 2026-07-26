@@ -552,15 +552,12 @@ def generate_presentation_package(
                     if spec.hodograph == "straight_line"
                     else "empty_external_scientific_runtime_file_inventory"
                 ),
-                "consumed_files": (
-                    [STRAIGHT_LINE_HODOGRAPH_ARTIFACT_FILENAME]
+                "consumed_files": [],
+                "required_files": [],
+                "packaged_source_customization": (
+                    STRAIGHT_LINE_HODOGRAPH_ARTIFACT_FILENAME
                     if spec.hodograph == "straight_line"
-                    else []
-                ),
-                "required_files": (
-                    [STRAIGHT_LINE_HODOGRAPH_ARTIFACT_FILENAME]
-                    if spec.hodograph == "straight_line"
-                    else []
+                    else None
                 ),
                 "source_candidates": {},
                 "scientific_state_sources": [

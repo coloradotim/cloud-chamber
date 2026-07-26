@@ -375,6 +375,15 @@ def test_straight_line_package_declares_hashed_source_customization(
         Path(manifest.generated_inputs.cm1_source_customization or "").name
         == "straight_line_hodograph_customization.json"
     )
+    runtime_checklist = json.loads(
+        Path(manifest.generated_inputs.runtime_file_checklist[0]).read_text()
+    )
+    assert runtime_checklist["consumed_files"] == []
+    assert runtime_checklist["required_files"] == []
+    assert (
+        runtime_checklist["packaged_source_customization"]
+        == "straight_line_hodograph_customization.json"
+    )
     assert case_manifest["hodograph"] == "straight_line"
     assert verify_presentation_package(
         settings=settings,
