@@ -12,6 +12,15 @@ import {
   type ExploreSecondarySection,
 } from "./IntegratedExploreWorkspace";
 import {
+  nearestSavedCoordinate,
+  SavedViewsControl,
+  useExploreStateLibrary,
+  type ExploreRestorationResult,
+  type ExploreWorldState,
+  type SavedViewRecord,
+  type SupercellsExploreState,
+} from "./ExploreStatePersistence";
+import {
   curatedResolutionExplanation,
   resolveCuratedView,
   SUPERCELLS_CURATED_VIEWS,
@@ -75,6 +84,13 @@ type PendingSupercellsCuratedRestore = {
   source: "initial" | "return";
 };
 
+type PendingSupercellsSavedRestore = {
+  state: SupercellsExploreState;
+  result: ExploreRestorationResult;
+  savedViewId: string | null;
+  planeNativeIndex: number;
+};
+
 const LENSES: Array<{ id: LensId; label: string }> = [
   { id: "rotating_updraft", label: "Rotating Updraft" },
   { id: "cloud_precipitation", label: "Cloud and Precipitation" },
@@ -128,6 +144,45 @@ function supercellsCuratedCapabilities(frame: StormExaminationFrame | null) {
   };
 }
 
+function enabledSupercellsOverlayIds(overlays: OverlayState): string[] {
+  return [
+    overlays.rotation ? "vertical_vorticity" : null,
+    overlays.updraftHelicity ? "updraft_helicity" : null,
+    overlays.reflectivity ? "reflectivity" : null,
+    overlays.condensate ? "total_condensate" : null,
+    overlays.rain ? "accumulated_surface_rain" : null,
+    overlays.wind ? "model_relative_wind" : null,
+    overlays.precipitatingCondensate ? "low_level_precipitating_condensate" : null,
+    overlays.verticalMotion ? "vertical_velocity" : null,
+  ].filter((overlayId): overlayId is string => overlayId !== null);
+}
+
+function persistedSupercellsOverlays(overlays: OverlayState): SupercellsExploreState["overlays"] {
+  return {
+    rotation: overlays.rotation,
+    updraft_helicity: overlays.updraftHelicity,
+    reflectivity: overlays.reflectivity,
+    condensate: overlays.condensate,
+    rain: overlays.rain,
+    wind: overlays.wind,
+    precipitating_condensate: overlays.precipitatingCondensate,
+    vertical_motion: overlays.verticalMotion,
+  };
+}
+
+function runtimeSupercellsOverlays(overlays: SupercellsExploreState["overlays"]): OverlayState {
+  return {
+    rotation: overlays.rotation,
+    updraftHelicity: overlays.updraft_helicity,
+    reflectivity: overlays.reflectivity,
+    condensate: overlays.condensate,
+    rain: overlays.rain,
+    wind: overlays.wind,
+    precipitatingCondensate: overlays.precipitating_condensate,
+    verticalMotion: overlays.vertical_motion,
+  };
+}
+
 export function SupercellsExplore({
   simulation,
   onBack,
@@ -164,6 +219,8 @@ export function SupercellsExplore({
   const [curatedNotice, setCuratedNotice] = useState<ExploreCuratedNotice | null>(null);
   const [pendingCuratedRestore, setPendingCuratedRestore] =
     useState<PendingSupercellsCuratedRestore | null>(null);
+  const [pendingSavedRestore, setPendingSavedRestore] =
+    useState<PendingSupercellsSavedRestore | null>(null);
   const [playing, setPlaying] = useState(false);
   const [playbackSpeed, setPlaybackSpeed] = useState(1);
   const [loading, setLoading] = useState(true);
@@ -173,6 +230,9 @@ export function SupercellsExplore({
   const contextBeforeEvidenceFocus = useRef(false);
   const initialCuratedSimulationRef = useRef<string | null>(null);
   const curatedNoticeSignatureRef = useRef<string | null>(null);
+  const exploreState = useExploreStateLibrary("supercells", simulation.simulation_id);
+  const saveExploreResume = exploreState.saveResume;
+  const updateExploreSavedView = exploreState.updateSavedView;
 
   const requestKey = frameRequestKey(lens, viewport, timeIndex, selection);
   const loadFrame = useCallback(
@@ -248,6 +308,83 @@ export function SupercellsExplore({
     (item) => item.time_seconds === frame.time_seconds,
   );
   const windVectors = frame?.scene?.wind_vectors ?? [];
+  const capturedExploreState = useMemo<SupercellsExploreState | null>(() => {
+    if (!frame) return null;
+    const activeEvidence =
+      evidenceView === "plan"
+        ? frame.plan
+        : evidenceView === "xz"
+          ? frame.xz_section
+          : frame.yz_section;
+    const visibleLayerScales =
+      frame.scene?.layers
+        .filter((layer) => visibleLayerKeys.includes(layer.key))
+        .map((layer) => layer.scale?.scale_id)
+        .filter((scaleId): scaleId is string => Boolean(scaleId)) ?? [];
+    const planeCoordinateKm =
+      slicePosition?.coordinatesKm[slicePosition.positionIndex] ??
+      (evidenceView === "plan"
+        ? frame.plan.level_km
+        : evidenceView === "xz"
+          ? frame.xz_section.cross_section_coordinate_km
+          : frame.yz_section.cross_section_coordinate_km);
+    return {
+      state_version: 1,
+      world_id: "supercells",
+      model_time_seconds: frame.time_seconds,
+      context_collapsed: contextCollapsed,
+      secondary_section: secondarySection,
+      selected_point:
+        selection === null
+          ? null
+          : {
+              x_km: frame.selected_point.x_km,
+              y_km: frame.selected_point.y_km,
+              z_km: frame.selected_point.z_km,
+            },
+      lens_id: lens,
+      viewport_id: viewport,
+      evidence_view: evidenceView,
+      plane_coordinate_km: planeCoordinateKm,
+      visible_layer_ids: [...visibleLayerKeys],
+      fixed_scale_ids: [...new Set([activeEvidence.primary.scale.scale_id, ...visibleLayerScales])],
+      overlays: persistedSupercellsOverlays(overlays),
+      hydrometeor_category_codes: [...categoryCodes],
+      camera_preset: cameraPreset,
+      camera_transform: cameraTransform,
+      scene_opacity: sceneOpacity,
+      scene_point_size: scenePointSize,
+      selected_evidence_visible: selectedEvidenceVisible,
+      playback_speed: playbackSpeed,
+      display_controls_open: displayControlsOpen,
+    };
+  }, [
+    cameraPreset,
+    cameraTransform,
+    categoryCodes,
+    contextCollapsed,
+    displayControlsOpen,
+    evidenceView,
+    frame,
+    lens,
+    overlays,
+    playbackSpeed,
+    sceneOpacity,
+    scenePointSize,
+    secondarySection,
+    selectedEvidenceVisible,
+    selection,
+    slicePosition,
+    viewport,
+    visibleLayerKeys,
+  ]);
+  const exploreStateCoherent =
+    capturedExploreState !== null &&
+    !loading &&
+    !error &&
+    !playing &&
+    !focusedViewer &&
+    frame?.time_index === timeIndex;
   const curatedStateSignature = useMemo(
     () =>
       JSON.stringify({
@@ -429,11 +566,270 @@ export function SupercellsExplore({
     [curatedStateSignature, evidenceView, frame, lens, simulation.simulation_id],
   );
 
+  const applySavedExploreState = useCallback(
+    (
+      savedState: ExploreWorldState,
+      savedView: SavedViewRecord | null,
+    ): ExploreRestorationResult => {
+      if (savedState.world_id !== "supercells") {
+        const result = {
+          status: "unavailable" as const,
+          message: "This Saved View belongs to another Cloud World.",
+        };
+        setCuratedNotice({ status: "technical_fallback", message: result.message });
+        return result;
+      }
+      if (!LENSES.some((item) => item.id === savedState.lens_id) || !frame?.scene) {
+        const result = {
+          status: "unavailable" as const,
+          message: "The saved Supercells Lens or its 3-D evidence is unavailable.",
+        };
+        setCuratedNotice({ status: "technical_fallback", message: result.message });
+        return result;
+      }
+      const mappedTime = nearestSavedCoordinate(
+        frame.times_seconds,
+        savedState.model_time_seconds,
+        180,
+      );
+      const targetSlice = slicePositionState(frame, savedState.evidence_view, null);
+      const mappedPlane = targetSlice
+        ? nearestSavedCoordinate(targetSlice.coordinatesKm, savedState.plane_coordinate_km, 0.2)
+        : null;
+      if (!mappedTime || !targetSlice || !mappedPlane) {
+        const result = {
+          status: "unavailable" as const,
+          message: "The saved time or physical section is outside the compatible output range.",
+        };
+        setCuratedNotice({ status: "technical_fallback", message: result.message });
+        return result;
+      }
+
+      const partialMessages: string[] = [];
+      if (!mappedTime.exact) {
+        partialMessages.push(
+          `time ${Math.round(savedState.model_time_seconds).toLocaleString()} s mapped to ${Math.round(mappedTime.value).toLocaleString()} s`,
+        );
+      }
+      if (!mappedPlane.exact) {
+        partialMessages.push(
+          `section ${savedState.plane_coordinate_km.toFixed(2)} km mapped to ${mappedPlane.value.toFixed(2)} km`,
+        );
+      }
+      let nextSelection: Selection = {
+        xIndex: frame.selected_point.x_index,
+        yIndex: frame.selected_point.y_index,
+        zIndex: frame.selected_point.z_index,
+      };
+      const planeNativeIndex = targetSlice.nativeIndices[mappedPlane.index];
+      if (targetSlice.axis === "x") nextSelection.xIndex = planeNativeIndex;
+      if (targetSlice.axis === "y") nextSelection.yIndex = planeNativeIndex;
+      if (targetSlice.axis === "z") nextSelection.zIndex = planeNativeIndex;
+      if (savedState.selected_point) {
+        const x = nearestSavedCoordinate(
+          frame.scene.coordinate_values_km.x,
+          savedState.selected_point.x_km,
+          2,
+        );
+        const y = nearestSavedCoordinate(
+          frame.scene.coordinate_values_km.y,
+          savedState.selected_point.y_km ?? frame.selected_point.y_km,
+          2,
+        );
+        const z = nearestSavedCoordinate(
+          frame.scene.coordinate_values_km.z,
+          savedState.selected_point.z_km,
+          2,
+        );
+        if (x && y && z) {
+          nextSelection = {
+            xIndex: frame.scene.coordinate_indices.x[x.index],
+            yIndex: frame.scene.coordinate_indices.y[y.index],
+            zIndex: frame.scene.coordinate_indices.z[z.index],
+          };
+          if (!x.exact || !y.exact || !z.exact) {
+            partialMessages.push("selected point mapped to the nearest native cell");
+          }
+        } else {
+          partialMessages.push("selected point could not be restored");
+        }
+      }
+
+      const result: ExploreRestorationResult = {
+        status: partialMessages.length > 0 ? "partially_restorable" : "healthy",
+        message:
+          partialMessages.length > 0
+            ? `Saved View restored with adjustments: ${partialMessages.join("; ")}.`
+            : "Saved View restored.",
+      };
+      setPendingCuratedRestore(null);
+      setPlaying(false);
+      setFocusedViewer(null);
+      setLens(savedState.lens_id);
+      setTimeIndex(mappedTime.index);
+      setPlaybackSpeed(savedState.playback_speed);
+      setContextCollapsed(savedState.context_collapsed);
+      setSecondarySection(savedState.secondary_section);
+      setPresentations((current) => ({
+        ...current,
+        [savedState.lens_id]: {
+          viewport: savedState.viewport_id,
+          evidenceView: savedState.evidence_view,
+          overlays: runtimeSupercellsOverlays(savedState.overlays),
+          visibleLayerKeys: [...savedState.visible_layer_ids],
+          categoryCodes: [...savedState.hydrometeor_category_codes],
+          cameraPreset: savedState.camera_preset,
+          cameraTransform: savedState.camera_transform,
+          displayControlsOpen: savedState.display_controls_open,
+          sceneOpacity: savedState.scene_opacity,
+          scenePointSize: savedState.scene_point_size,
+          selection: nextSelection,
+          selectedEvidenceVisible: savedState.selected_evidence_visible,
+        },
+      }));
+      setError(null);
+      setFrame(null);
+      setRetryNonce((current) => current + 1);
+      setCuratedNotice({
+        status: "applying",
+        message: "Restoring the saved Supercells examination and loading its evidence...",
+      });
+      setPendingSavedRestore({
+        state: savedState,
+        result,
+        savedViewId: savedView?.saved_view_id ?? null,
+        planeNativeIndex,
+      });
+      return result;
+    },
+    [frame],
+  );
+
   useEffect(() => {
-    if (!frame || initialCuratedSimulationRef.current === simulation.simulation_id) return;
+    if (
+      !frame ||
+      exploreState.loading ||
+      initialCuratedSimulationRef.current === simulation.simulation_id
+    ) {
+      return;
+    }
     initialCuratedSimulationRef.current = simulation.simulation_id;
+    const resumeState = exploreState.library?.last_active?.state;
+    if (resumeState?.world_id === "supercells") {
+      applySavedExploreState(resumeState, null);
+      return;
+    }
     applyCuratedView("initial");
-  }, [applyCuratedView, frame, simulation.simulation_id]);
+  }, [
+    applyCuratedView,
+    applySavedExploreState,
+    exploreState.library?.last_active?.state,
+    exploreState.loading,
+    frame,
+    simulation.simulation_id,
+  ]);
+
+  useEffect(() => {
+    if (!pendingSavedRestore) return;
+    if (error) {
+      const message = `The saved Supercells examination could not be restored: ${error}`;
+      setPendingSavedRestore(null);
+      curatedNoticeSignatureRef.current = curatedStateSignature;
+      setCuratedNotice({ status: "technical_fallback", message });
+      if (pendingSavedRestore.savedViewId) {
+        void updateExploreSavedView(pendingSavedRestore.savedViewId, {
+          restoration_status: "unavailable",
+          restoration_message: message,
+        });
+      }
+      return;
+    }
+    if (
+      loading ||
+      !frame ||
+      frame.time_index !== timeIndex ||
+      frame.lens_id !== pendingSavedRestore.state.lens_id ||
+      frame.viewport !== pendingSavedRestore.state.viewport_id
+    ) {
+      return;
+    }
+    const capabilities = supercellsCuratedCapabilities(frame);
+    const missingLayers = pendingSavedRestore.state.visible_layer_ids.filter(
+      (layerId) => !capabilities.availableLayerIds.includes(layerId),
+    );
+    const missingScales = pendingSavedRestore.state.fixed_scale_ids.filter(
+      (scaleId) => !capabilities.availableScaleIds.includes(scaleId),
+    );
+    const missingOverlays = enabledSupercellsOverlayIds(
+      runtimeSupercellsOverlays(pendingSavedRestore.state.overlays),
+    ).filter((overlayId) => !capabilities.availableOverlayIds.includes(overlayId));
+    if (missingLayers.length > 0 || missingScales.length > 0 || missingOverlays.length > 0) {
+      const missing = [
+        ...missingLayers.map((item) => `layer ${item}`),
+        ...missingScales.map((item) => `scale ${item}`),
+        ...missingOverlays.map((item) => `overlay ${item}`),
+      ];
+      const message = `The saved Supercells examination is unavailable because ${missing.join(", ")} could not be restored.`;
+      setPendingSavedRestore(null);
+      curatedNoticeSignatureRef.current = curatedStateSignature;
+      setCuratedNotice({ status: "technical_fallback", message });
+      if (pendingSavedRestore.savedViewId) {
+        void updateExploreSavedView(pendingSavedRestore.savedViewId, {
+          restoration_status: "unavailable",
+          restoration_message: message,
+        });
+      }
+      return;
+    }
+    const loadedPlaneMatches =
+      pendingSavedRestore.state.evidence_view === "plan"
+        ? frame.plan.level_index === pendingSavedRestore.planeNativeIndex
+        : pendingSavedRestore.state.evidence_view === "xz"
+          ? frame.selected_point.y_index === pendingSavedRestore.planeNativeIndex
+          : frame.selected_point.x_index === pendingSavedRestore.planeNativeIndex;
+    if (!loadedPlaneMatches) return;
+    setPendingSavedRestore(null);
+    curatedNoticeSignatureRef.current = curatedStateSignature;
+    setCuratedNotice({
+      status:
+        pendingSavedRestore.result.status === "healthy" ? "applied" : "partially_incompatible",
+      message:
+        pendingSavedRestore.savedViewId === null
+          ? pendingSavedRestore.result.message.replace("Saved View", "Last active view")
+          : pendingSavedRestore.result.message,
+    });
+  }, [
+    curatedStateSignature,
+    error,
+    frame,
+    loading,
+    pendingSavedRestore,
+    timeIndex,
+    updateExploreSavedView,
+  ]);
+
+  useEffect(() => {
+    if (
+      initialCuratedSimulationRef.current !== simulation.simulation_id ||
+      !exploreStateCoherent ||
+      !capturedExploreState ||
+      pendingCuratedRestore ||
+      pendingSavedRestore
+    ) {
+      return;
+    }
+    const timer = window.setTimeout(() => {
+      void saveExploreResume(capturedExploreState);
+    }, 800);
+    return () => window.clearTimeout(timer);
+  }, [
+    capturedExploreState,
+    exploreStateCoherent,
+    pendingCuratedRestore,
+    pendingSavedRestore,
+    saveExploreResume,
+    simulation.simulation_id,
+  ]);
 
   useEffect(() => {
     if (!pendingCuratedRestore) return;
@@ -565,7 +961,17 @@ export function SupercellsExplore({
       simulationName={simulation.display_name}
       backLabel="Back to Supercells"
       onBack={onBack}
-      headerActions={<ReturnToCuratedViewControl onReturn={() => applyCuratedView("return")} />}
+      headerActions={
+        <>
+          <SavedViewsControl
+            controller={exploreState}
+            currentState={capturedExploreState}
+            coherent={exploreStateCoherent}
+            onOpen={(state, savedView) => applySavedExploreState(state, savedView)}
+          />
+          <ReturnToCuratedViewControl onReturn={() => applyCuratedView("return")} />
+        </>
+      }
     >
       <section
         className={`supercells-explore-shell${

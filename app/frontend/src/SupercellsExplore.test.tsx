@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { SupercellsExplore } from "./SupercellsExplore";
+import type { SupercellsExploreState } from "./ExploreStatePersistence";
 import type {
   FieldLayer,
   LensId,
@@ -100,6 +101,60 @@ const simulation: SupercellSimulation = {
   default_explore_time_index: 37,
   lineage_state: "known",
 };
+
+const supercellsResumeState: SupercellsExploreState = {
+  state_version: 1,
+  world_id: "supercells",
+  model_time_seconds: 4_560,
+  context_collapsed: true,
+  secondary_section: "details",
+  selected_point: { x_km: 0, y_km: -10, z_km: 8 },
+  lens_id: "rotating_updraft",
+  viewport_id: "full",
+  evidence_view: "xz",
+  plane_coordinate_km: -10,
+  visible_layer_ids: ["storm_cloud_body", "rising_core", "cyclonic_rotation", "updraft_helicity"],
+  fixed_scale_ids: ["supercell_midlevel_vertical_velocity_v1"],
+  overlays: {
+    rotation: true,
+    updraft_helicity: true,
+    reflectivity: false,
+    condensate: false,
+    rain: false,
+    wind: false,
+    precipitating_condensate: false,
+    vertical_motion: true,
+  },
+  hydrometeor_category_codes: [1, 2, 3, 4, 5],
+  camera_preset: "look_along_x",
+  camera_transform: null,
+  scene_opacity: 0.6,
+  scene_point_size: 1.2,
+  selected_evidence_visible: true,
+  playback_speed: 2,
+  display_controls_open: false,
+};
+
+function supercellsExploreLibrary(lastActive: SupercellsExploreState | null = null) {
+  return {
+    library: {
+      schema_version: 1,
+      world_id: "supercells",
+      simulation_id: simulation.simulation_id,
+      last_active: lastActive
+        ? {
+            schema_version: 1,
+            world_id: "supercells",
+            simulation_id: simulation.simulation_id,
+            captured_at: "2026-07-26T12:00:00Z",
+            state: lastActive,
+          }
+        : null,
+      saved_views: [],
+    },
+    backing_simulation_available: true,
+  };
+}
 
 const wScale = {
   scale_id: "supercells_vertical_velocity_v1",
@@ -516,7 +571,13 @@ describe("SupercellsExplore", () => {
   beforeEach(() => {
     vi.stubGlobal(
       "fetch",
-      vi.fn((input: RequestInfo | URL) => Promise.resolve(ok(frameFor(String(input))))),
+      vi.fn((input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url.includes("/explore-state") || url.includes("/saved-views")) {
+          return Promise.resolve(ok(supercellsExploreLibrary()));
+        }
+        return Promise.resolve(ok(frameFor(url)));
+      }),
     );
     vi.stubGlobal(
       "ResizeObserver",
@@ -564,6 +625,75 @@ describe("SupercellsExplore", () => {
       "true",
     );
     expect(screen.getByLabelText("Mock 3-D storm scene")).toHaveTextContent("Camera: look_along_y");
+  });
+
+  it("resumes the last coherent Supercells examination after reload", async () => {
+    vi.mocked(fetch).mockImplementation((input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("/explore-state") || url.includes("/saved-views")) {
+        return Promise.resolve(ok(supercellsExploreLibrary(supercellsResumeState)));
+      }
+      return Promise.resolve(ok(frameFor(url)));
+    });
+
+    render(<SupercellsExplore simulation={simulation} onBack={vi.fn()} />);
+
+    expect(await screen.findByText("Last active view restored.")).toBeVisible();
+    expect(screen.getByLabelText("Saved output time")).toHaveValue("38");
+    expect(screen.getByRole("button", { name: "Full domain" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    expect(
+      within(screen.getByLabelText("Slice orientation")).getByRole("button", {
+        name: "Vertical x-z",
+      }),
+    ).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("button", { name: "Open Context" })).toBeVisible();
+    expect(screen.getByRole("tab", { name: "Details" })).toHaveAttribute("aria-selected", "true");
+  });
+
+  it("reports removed layers and changed coordinate inventories as unavailable", async () => {
+    vi.mocked(fetch).mockImplementation((input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("/explore-state")) {
+        return Promise.resolve(
+          ok(
+            supercellsExploreLibrary({
+              ...supercellsResumeState,
+              plane_coordinate_km: -10,
+              visible_layer_ids: [...supercellsResumeState.visible_layer_ids, "renamed_core"],
+            }),
+          ),
+        );
+      }
+      return Promise.resolve(ok(frameFor(url)));
+    });
+
+    const { unmount } = render(<SupercellsExplore simulation={simulation} onBack={vi.fn()} />);
+    expect(await screen.findByText(/layer renamed_core could not be restored/)).toBeVisible();
+    unmount();
+
+    vi.mocked(fetch).mockImplementation((input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("/explore-state")) {
+        return Promise.resolve(
+          ok(
+            supercellsExploreLibrary({
+              ...supercellsResumeState,
+              plane_coordinate_km: 200,
+            }),
+          ),
+        );
+      }
+      return Promise.resolve(ok(frameFor(url)));
+    });
+    render(<SupercellsExplore simulation={simulation} onBack={vi.fn()} />);
+    expect(
+      await screen.findByText(
+        /saved time or physical section is outside the compatible output range/,
+      ),
+    ).toBeVisible();
   });
 
   it("moves each evidence orientation through native planes and keeps a user plane across time", async () => {

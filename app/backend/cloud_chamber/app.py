@@ -23,6 +23,20 @@ from cloud_chamber.dry_run_package import (
     generate_dry_run_package,
     read_dry_run_report,
 )
+from cloud_chamber.explore_state import (
+    ExploreResumeUpdate,
+    ExploreStateError,
+    ExploreStateLibrary,
+    ExploreStateLibraryResponse,
+    SavedViewCreate,
+    SavedViewUpdate,
+    create_saved_view,
+    delete_saved_view,
+    explore_state_library_exists,
+    load_explore_state_library,
+    save_last_active_explore_state,
+    update_saved_view,
+)
 from cloud_chamber.igra_catalog import (
     IGRACatalogError,
     cache_station_zip_from_catalog,
@@ -646,8 +660,8 @@ def get_supercells_world() -> SupercellsWorldDetail:
 )
 def get_simulation_note(world_id: str, simulation_id: str) -> SimulationNoteResponse:
     settings = load_settings()
-    canonical_world_id = _canonical_note_world_id(world_id)
-    if not _simulation_note_target_exists(
+    canonical_world_id = _canonical_world_id(world_id)
+    if not _simulation_target_exists(
         canonical_world_id,
         simulation_id,
         settings=settings,
@@ -674,8 +688,8 @@ def put_simulation_note(
     request: SimulationNoteUpdate,
 ) -> SimulationNoteResponse:
     settings = load_settings()
-    canonical_world_id = _canonical_note_world_id(world_id)
-    if not _simulation_note_target_exists(
+    canonical_world_id = _canonical_world_id(world_id)
+    if not _simulation_target_exists(
         canonical_world_id,
         simulation_id,
         settings=settings,
@@ -691,6 +705,186 @@ def put_simulation_note(
     except SimulationNoteError as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
     return SimulationNoteResponse(note=note)
+
+
+def _explore_state_response(
+    library: ExploreStateLibrary,
+    *,
+    backing_simulation_available: bool,
+) -> ExploreStateLibraryResponse:
+    if not backing_simulation_available:
+        library = library.model_copy(
+            update={
+                "saved_views": [
+                    record.model_copy(
+                        update={
+                            "restoration_status": "unavailable",
+                            "restoration_message": "The backing retained output is unavailable.",
+                        }
+                    )
+                    for record in library.saved_views
+                ]
+            }
+        )
+    return ExploreStateLibraryResponse(
+        library=library,
+        backing_simulation_available=backing_simulation_available,
+    )
+
+
+@app.get(
+    "/api/worlds/{world_id}/simulations/{simulation_id}/explore-state",
+    response_model=ExploreStateLibraryResponse,
+)
+def get_simulation_explore_state(
+    world_id: str,
+    simulation_id: str,
+) -> ExploreStateLibraryResponse:
+    settings = load_settings()
+    canonical_world_id = _canonical_world_id(world_id)
+    backing_available = _simulation_target_exists(
+        canonical_world_id,
+        simulation_id,
+        settings=settings,
+    )
+    try:
+        library_exists = explore_state_library_exists(
+            settings,
+            world_id=canonical_world_id,
+            simulation_id=simulation_id,
+        )
+        if not backing_available and not library_exists:
+            raise HTTPException(status_code=404, detail="Cloud World Simulation not found.")
+        library = load_explore_state_library(
+            settings,
+            world_id=canonical_world_id,
+            simulation_id=simulation_id,
+        )
+    except ExploreStateError as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+    return _explore_state_response(
+        library,
+        backing_simulation_available=backing_available,
+    )
+
+
+@app.put(
+    "/api/worlds/{world_id}/simulations/{simulation_id}/explore-state/resume",
+    response_model=ExploreStateLibraryResponse,
+)
+def put_simulation_explore_resume(
+    world_id: str,
+    simulation_id: str,
+    request: ExploreResumeUpdate,
+) -> ExploreStateLibraryResponse:
+    settings = load_settings()
+    canonical_world_id = _canonical_world_id(world_id)
+    if not _simulation_target_exists(
+        canonical_world_id,
+        simulation_id,
+        settings=settings,
+    ):
+        raise HTTPException(status_code=404, detail="Cloud World Simulation not found.")
+    try:
+        library = save_last_active_explore_state(
+            settings,
+            world_id=canonical_world_id,
+            simulation_id=simulation_id,
+            state=request.state,
+        )
+    except ExploreStateError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return _explore_state_response(library, backing_simulation_available=True)
+
+
+@app.post(
+    "/api/worlds/{world_id}/simulations/{simulation_id}/saved-views",
+    response_model=ExploreStateLibraryResponse,
+    status_code=201,
+)
+def post_simulation_saved_view(
+    world_id: str,
+    simulation_id: str,
+    request: SavedViewCreate,
+) -> ExploreStateLibraryResponse:
+    settings = load_settings()
+    canonical_world_id = _canonical_world_id(world_id)
+    if not _simulation_target_exists(
+        canonical_world_id,
+        simulation_id,
+        settings=settings,
+    ):
+        raise HTTPException(status_code=404, detail="Cloud World Simulation not found.")
+    try:
+        library = create_saved_view(
+            settings,
+            world_id=canonical_world_id,
+            simulation_id=simulation_id,
+            request=request,
+        )
+    except ExploreStateError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return _explore_state_response(library, backing_simulation_available=True)
+
+
+@app.patch(
+    "/api/worlds/{world_id}/simulations/{simulation_id}/saved-views/{saved_view_id}",
+    response_model=ExploreStateLibraryResponse,
+)
+def patch_simulation_saved_view(
+    world_id: str,
+    simulation_id: str,
+    saved_view_id: str,
+    request: SavedViewUpdate,
+) -> ExploreStateLibraryResponse:
+    settings = load_settings()
+    canonical_world_id = _canonical_world_id(world_id)
+    try:
+        library = update_saved_view(
+            settings,
+            world_id=canonical_world_id,
+            simulation_id=simulation_id,
+            saved_view_id=saved_view_id,
+            request=request,
+        )
+    except ExploreStateError as exc:
+        status_code = 404 if str(exc) == "Saved View not found." else 400
+        raise HTTPException(status_code=status_code, detail=str(exc)) from exc
+    return _explore_state_response(
+        library,
+        backing_simulation_available=_simulation_target_exists(
+            canonical_world_id, simulation_id, settings=settings
+        ),
+    )
+
+
+@app.delete(
+    "/api/worlds/{world_id}/simulations/{simulation_id}/saved-views/{saved_view_id}",
+    response_model=ExploreStateLibraryResponse,
+)
+def delete_simulation_saved_view(
+    world_id: str,
+    simulation_id: str,
+    saved_view_id: str,
+) -> ExploreStateLibraryResponse:
+    settings = load_settings()
+    canonical_world_id = _canonical_world_id(world_id)
+    try:
+        library = delete_saved_view(
+            settings,
+            world_id=canonical_world_id,
+            simulation_id=simulation_id,
+            saved_view_id=saved_view_id,
+        )
+    except ExploreStateError as exc:
+        status_code = 404 if str(exc) == "Saved View not found." else 400
+        raise HTTPException(status_code=status_code, detail=str(exc)) from exc
+    return _explore_state_response(
+        library,
+        backing_simulation_available=_simulation_target_exists(
+            canonical_world_id, simulation_id, settings=settings
+        ),
+    )
 
 
 @app.get(
@@ -1038,7 +1232,7 @@ def get_storm_examination_frame(
     return result.model_dump(mode="json")
 
 
-def _canonical_note_world_id(world_id: str) -> str:
+def _canonical_world_id(world_id: str) -> str:
     aliases = {
         "trade-cumulus": "trade_cumulus",
         "trade_cumulus": "trade_cumulus",
@@ -1052,7 +1246,7 @@ def _canonical_note_world_id(world_id: str) -> str:
     return canonical
 
 
-def _simulation_note_target_exists(
+def _simulation_target_exists(
     world_id: str,
     simulation_id: str,
     *,
