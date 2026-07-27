@@ -82,12 +82,39 @@ test.describe("mocked smoke: real Supercells Compare adapter", () => {
     await page.getByRole("button", { name: "Aligned" }).click();
     await expect(page.getByLabel("Vertical velocity legend")).toHaveCount(2);
     await expect(page.getByLabel("Quarter-Circle Supercell saved output time")).toBeVisible();
+
+    const left = page.getByLabel("Quarter-Circle Supercell comparison side");
+    const right = page.getByLabel("Straight-Line Hodograph Supercell comparison side");
+    await left.getByRole("button", { name: "3-D", exact: true }).click();
+    await right.getByRole("button", { name: "3-D", exact: true }).click();
+    await expect(page.locator(".true3d-canvas")).toHaveCount(2);
+    await expect
+      .poll(() =>
+        page.locator(".true3d-canvas").evaluateAll((canvases) =>
+          canvases.map((canvas) => ({
+            width: (canvas as HTMLCanvasElement).width,
+            height: (canvas as HTMLCanvasElement).height,
+          })),
+        ),
+      )
+      .toEqual([
+        expect.objectContaining({ width: expect.any(Number), height: expect.any(Number) }),
+        expect.objectContaining({ width: expect.any(Number), height: expect.any(Number) }),
+      ]);
+    const canvasDimensions = await page.locator(".true3d-canvas").evaluateAll((canvases) =>
+      canvases.map((canvas) => ({
+        width: (canvas as HTMLCanvasElement).width,
+        height: (canvas as HTMLCanvasElement).height,
+      })),
+    );
+    expect(canvasDimensions.every(({ width, height }) => width >= 400 && height >= 280)).toBe(true);
+    await left.getByRole("button", { name: "Horizontal x-y", exact: true }).click();
+    await right.getByRole("button", { name: "Horizontal x-y", exact: true }).click();
     await page.screenshot({
       path: "test-results/supercells-compare-preview-1728x1117.png",
       fullPage: true,
     });
 
-    const left = page.getByLabel("Quarter-Circle Supercell comparison side");
     await left.getByRole("button", { name: "Cloud and Precipitation" }).click();
     await expect(page.getByLabel("Hydrometeor legend")).toHaveCount(2);
     await left.getByRole("button", { name: "Low-Level Interactions" }).click();

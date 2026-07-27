@@ -168,11 +168,11 @@ reopen as live examinations, support rename and delete, preserve records when
 backing output is unavailable, and report healthy, partially restorable, or
 unavailable restoration. Notes remain separate.
 
-## Next program: ordinary World-aware Compare
+## Completed program: ordinary World-aware Compare
 
-Issue #433 is the next program in this sequence.
-
-Build ordinary Compare from two compatible Explore states rather than creating a parallel examination model.
+Issue #433 establishes ordinary Compare across the three accessible Worlds.
+It builds comparison from two compatible Explore states rather than creating a
+parallel examination model.
 
 The current MVP decisions remain useful:
 
@@ -194,6 +194,15 @@ ordinary World-aware Compare
 Trade Cumulus, Mountain Waves, and Supercells ask different comparison questions and may support different linked states.
 Issue #433 implements only ordinary Compare. It does not implement or claim
 Saved Comparisons; that later step requires separate approval and work.
+
+The Supercells acceptance endpoint is the real retained Quarter-Circle
+Supercell and Straight-Line Hodograph Supercell pair. It exercises all three
+Lenses, physical horizontal and vertical sections, selected native evidence,
+compatible camera mapping, aligned and independent operation, request
+cancellation, and one-sided failure recovery. The controlled pair changes
+hodograph curvature while retaining the other presentation-run contract.
+Coordinates and local evidence are comparable; storm objects are not assigned
+cross-Simulation lineage.
 
 ## Variations require a fresh review
 

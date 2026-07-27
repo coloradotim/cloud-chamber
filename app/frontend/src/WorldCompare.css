@@ -529,11 +529,25 @@
 }
 
 .compare-supercell-scene,
-.compare-supercell-scene .visualizer-shell,
-.compare-supercell-scene .three-d-viewer-shell {
+.compare-supercell-scene > .true3d-viewer {
   min-width: 0;
   min-height: 0;
   height: 100%;
+}
+
+.compare-supercell-scene > .true3d-viewer {
+  grid-template-rows: minmax(0, 1fr) auto;
+  border: 0;
+  border-radius: 0;
+  padding: 0;
+}
+
+.compare-supercell-scene .true3d-scene-frame {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  border: 0;
+  border-radius: 0;
 }
 
 .compare-supercell-evidence {
@@ -673,8 +687,14 @@
 }
 
 .compare-side-error {
+  inset: 50% 16px auto;
+  transform: translateY(-50%);
   border-color: #d89b91;
   color: #7b2b1f;
+}
+
+.compare-side-error h4 {
+  margin: 0 0 3px;
 }
 
 .compare-side-error p {

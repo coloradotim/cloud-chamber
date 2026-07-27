@@ -398,9 +398,36 @@ versioned World-aware contract above. Authored curated defaults remain
 source-controlled product definitions rather than user state. Per-Simulation
 Notes remain independently stored under `simulation-notes` and are not copied
 into Saved Views.
-The only product Comparison currently exposed is the featured Trade Cumulus
-pair. World-aware variation exists for Mountain Waves but is not yet one shared
-cross-World system.
+
+## Ordinary Compare Architecture
+
+Each World exposes a lightweight comparison descriptor through:
+
+```text
+GET /api/worlds/{world_id}/compare
+```
+
+The descriptor resolves stable Simulation identity, retained-output
+availability, lineage, material configuration differences, compatibility, and
+the supported coordination dimensions before the frontend requests scientific
+frames. The frontend then composes the existing World frame APIs and
+World-specific renderers into a shared pair-review and dual-workspace shell.
+
+Compare state uses the same versioned World-specific Explore vocabulary but is
+held only in the current browser session. Aligned, independent, and mixed
+coordination can link modeled seconds, compatible Field or Lens state,
+physical plane coordinates, normalized cameras where honest, and selected
+native evidence. There is no interpolation presented as model output.
+
+Each side owns bounded frame caching, request cancellation, loading, failure,
+and retry behavior. One failed request does not discard the other side.
+Supercells additionally exercises the architecture with two real retained
+Simulations and all three Lenses. Physical coordinates and local evidence are
+compared without assigning lineage to changing storm objects.
+
+Ordinary Compare does not write the Explore-state library, create a Saved
+Comparison, or mutate either Simulation. World-aware variation exists for
+Mountain Waves but is not yet one shared cross-World system.
 
 ## Product and Research Boundaries
 
@@ -418,7 +445,7 @@ reused.
 
 - World shells and Explore implementations share vocabulary but still contain
   World-specific state and rendering code.
-- General World-aware Compare and Saved Comparisons are absent.
+- Ordinary World-aware Compare is transient; Saved Comparisons are absent.
 - Variation is implemented only for Mountain Waves.
 - Legacy run, result, and sounding surfaces remain interleaved with the newer
   World application.
