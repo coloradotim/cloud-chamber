@@ -250,6 +250,59 @@ class MountainWaveTerrainFrame(BaseModel):
     )
 
 
+class MountainWavesComparePointerContext(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    horizontal_wind_m_s: list[list[float]]
+    vertical_velocity_m_s: list[list[float]]
+    potential_temperature_k: list[list[float]]
+    theta_perturbation_k: list[list[float]]
+    cloud_liquid_g_kg: list[list[float]] | None = None
+    relative_humidity_percent: list[list[float]] | None = None
+
+
+class MountainWavesCompareCloudOverlay(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    values: list[list[float]]
+    threshold_g_kg: float
+    maximum_g_kg: float
+
+
+class MountainWavesCompareFrame(BaseModel):
+    """Display-bounded native-cell samples for linked dual-view Compare."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    schema_version: Literal["mountain_waves_compare_v1"] = "mountain_waves_compare_v1"
+    run_id: str
+    case_label: str
+    time_index: int
+    time_seconds: int
+    times_seconds: list[int]
+    dry_case: bool
+    field: TerrainFieldMetadata
+    field_options: list[MountainWaveTerrainField]
+    values: list[list[float]]
+    native_x_indices: list[int]
+    native_z_indices: list[int]
+    x_center_km: list[float]
+    terrain_km: list[float]
+    scalar_height_km: list[list[float]]
+    pointer_context: MountainWavesComparePointerContext
+    cloud_overlay: MountainWavesCompareCloudOverlay | None
+    viewport: TerrainViewportMetadata
+    lens: TerrainLensMetadata
+    scale: TerrainScale
+    source_shape: tuple[int, int]
+    display_shape: tuple[int, int]
+    display_sampling: Literal["ordered_native_cell_subset_no_interpolation"] = (
+        "ordered_native_cell_subset_no_interpolation"
+    )
+    performance: TerrainPerformance
+    caveats: list[str] = Field(default_factory=list)
+
+
 @dataclass(frozen=True)
 class _MountainWavesRunMetadata:
     fingerprint: tuple[tuple[str, int, int, int], ...]
@@ -675,6 +728,176 @@ def mountain_waves_frame_from_native_outputs(
         caveats=caveats,
     )
     return _measure_serialization(response) if measure_serialization else response
+
+
+def mountain_waves_compare_frame_from_native_outputs(
+    *,
+    output_paths: list[Path],
+    namelist_path: Path,
+    field: MountainWaveTerrainField,
+    time_index: int,
+    run_id: str,
+    case_label: str,
+    implementation_commit: str,
+    dry_case: bool,
+    caveats: list[str],
+    maximum_columns: int = 120,
+    maximum_rows: int = 80,
+) -> MountainWavesCompareFrame:
+    """Return a bounded display subset while preserving native cell identity."""
+    source = mountain_waves_frame_from_native_outputs(
+        output_paths=output_paths,
+        namelist_path=namelist_path,
+        field=field,
+        time_index=time_index,
+        run_id=run_id,
+        case_label=case_label,
+        implementation_commit=implementation_commit,
+        dry_case=dry_case,
+        caveats=caveats,
+        measure_serialization=False,
+    )
+    source_rows = len(source.values)
+    source_columns = len(source.values[0]) if source.values else 0
+    if source_rows == 0 or source_columns == 0 or source.pointer_context is None:
+        raise MountainWaveTerrainVisualizationError(
+            "Mountain Waves Compare requires a non-empty native x-z frame."
+        )
+    if source.viewport is None or source.lens is None:
+        raise MountainWaveTerrainVisualizationError(
+            "Mountain Waves Compare metadata is unavailable."
+        )
+    x_indices = _ordered_sample_indices(source_columns, maximum_columns)
+    z_indices = _ordered_sample_indices(source_rows, maximum_rows)
+    overlay = source.overlay
+    compact = MountainWavesCompareFrame(
+        run_id=source.run_id,
+        case_label=source.case_label,
+        time_index=source.time_index,
+        time_seconds=source.time_seconds,
+        times_seconds=source.times_seconds,
+        dry_case=source.dry_case,
+        field=source.field,
+        field_options=source.field_options,
+        values=_sample_native_grid(source.values, z_indices, x_indices),
+        native_x_indices=x_indices,
+        native_z_indices=z_indices,
+        x_center_km=[source.geometry.x_center_m[index] / 1_000.0 for index in x_indices],
+        terrain_km=[source.geometry.terrain_m[index] / 1_000.0 for index in x_indices],
+        scalar_height_km=[
+            [source.geometry.scalar_height_m[z_index][x_index] / 1_000.0 for x_index in x_indices]
+            for z_index in z_indices
+        ],
+        pointer_context=MountainWavesComparePointerContext(
+            horizontal_wind_m_s=_sample_native_grid(
+                source.pointer_context.horizontal_wind_m_s,
+                z_indices,
+                x_indices,
+            ),
+            vertical_velocity_m_s=_sample_native_grid(
+                source.pointer_context.vertical_velocity_m_s,
+                z_indices,
+                x_indices,
+            ),
+            potential_temperature_k=_sample_native_grid(
+                source.pointer_context.potential_temperature_k,
+                z_indices,
+                x_indices,
+            ),
+            theta_perturbation_k=_sample_native_grid(
+                source.pointer_context.theta_perturbation_k,
+                z_indices,
+                x_indices,
+            ),
+            cloud_liquid_g_kg=(
+                _sample_native_grid(
+                    source.pointer_context.cloud_liquid_g_kg,
+                    z_indices,
+                    x_indices,
+                )
+                if source.pointer_context.cloud_liquid_g_kg is not None
+                else None
+            ),
+            relative_humidity_percent=(
+                _sample_native_grid(
+                    source.pointer_context.relative_humidity_percent,
+                    z_indices,
+                    x_indices,
+                )
+                if source.pointer_context.relative_humidity_percent is not None
+                else None
+            ),
+        ),
+        cloud_overlay=(
+            MountainWavesCompareCloudOverlay(
+                values=_sample_native_grid(overlay.values, z_indices, x_indices),
+                threshold_g_kg=overlay.threshold,
+                maximum_g_kg=overlay.maximum,
+            )
+            if overlay is not None
+            else None
+        ),
+        viewport=source.viewport,
+        lens=source.lens,
+        scale=source.scale,
+        source_shape=(source_rows, source_columns),
+        display_shape=(len(z_indices), len(x_indices)),
+        performance=TerrainPerformance(extraction_ms=source.performance.extraction_ms),
+        caveats=[
+            *source.caveats,
+            (
+                "Compare paints an ordered subset of native scalar cells for display; "
+                "values and coordinates are not interpolated."
+            ),
+        ],
+    )
+    return _measure_compare_serialization(compact)
+
+
+def _ordered_sample_indices(length: int, maximum_count: int) -> list[int]:
+    if length <= 0:
+        return []
+    if maximum_count <= 1 or length <= maximum_count:
+        return list(range(length))
+    return sorted(
+        {int(round(index * (length - 1) / (maximum_count - 1))) for index in range(maximum_count)}
+    )
+
+
+def _sample_native_grid(
+    values: list[list[float]],
+    row_indices: list[int],
+    column_indices: list[int],
+) -> list[list[float]]:
+    return [
+        [values[row_index][column_index] for column_index in column_indices]
+        for row_index in row_indices
+    ]
+
+
+def _measure_compare_serialization(
+    response: MountainWavesCompareFrame,
+) -> MountainWavesCompareFrame:
+    started = perf_counter()
+    response.model_dump_json()
+    elapsed_ms = (perf_counter() - started) * 1_000.0
+    measured = response.model_copy(
+        update={
+            "performance": response.performance.model_copy(update={"serialization_ms": elapsed_ms})
+        }
+    )
+    for _attempt in range(4):
+        payload_bytes = len(measured.model_dump_json().encode("utf-8"))
+        if payload_bytes == measured.performance.serialized_payload_bytes:
+            break
+        measured = measured.model_copy(
+            update={
+                "performance": measured.performance.model_copy(
+                    update={"serialized_payload_bytes": payload_bytes}
+                )
+            }
+        )
+    return measured
 
 
 def clear_mountain_waves_run_metadata_cache() -> None:

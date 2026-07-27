@@ -4401,9 +4401,137 @@ const tradeCumulusWorldDetail = {
     featured_comparison: true,
     lab: true,
     saved_views: false,
-    ordinary_compare: false,
+    ordinary_compare: true,
   },
   caveats: [],
+};
+
+const tradeCumulusCompareDescriptor = {
+  schema_version: "world_compare_v1",
+  world_id: "trade_cumulus",
+  display_name: "Trade Cumulus",
+  simulations: [
+    {
+      simulation_id: "trade_cumulus_canonical_bomex",
+      display_name: "Canonical BOMEX Baseline",
+      world_id: "trade_cumulus",
+      role: "reference",
+      run_id: comparisonBaselineResultCard.run_id,
+      result_id: comparisonBaselineResultCard.result_id,
+      case_id: "bomex_trade_cumulus_baseline_v0",
+      parent_simulation_id: null,
+      reference_simulation_id: null,
+      lineage_state: "canonical",
+      availability_state: "available",
+      availability_message: "Available",
+      inspectable: true,
+      grid: {
+        topology: "native_3d",
+        nx: 96,
+        ny: 96,
+        nz: 100,
+        dx_m: 66.67,
+        dy_m: 66.67,
+        dz_m: 30,
+        x_extent_km: [-3.2, 3.2],
+        y_extent_km: [-3.2, 3.2],
+        z_extent_km: [0, 3],
+      },
+      time: {
+        times_seconds: [0, 60, 120],
+        start_seconds: 0,
+        end_seconds: 120,
+        cadence_seconds: 60,
+        saved_output_count: 3,
+        interpolation_allowed: false,
+      },
+      available_field_ids: ["ql"],
+      available_view_ids: ["field", "updraft_lens"],
+      fixed_scale_ids: ["trade_cumulus_updraft_velocity_v1"],
+      plane_orientations: ["horizontal", "vertical_x", "vertical_y"],
+      camera_mapping: "normalized_3d",
+      initial_state: { world_id: "trade_cumulus" },
+      caveats: [],
+    },
+    {
+      simulation_id: "trade_cumulus_more_moisture",
+      display_name: "More Moisture",
+      world_id: "trade_cumulus",
+      role: "variation",
+      run_id: comparisonMoreResultCard.run_id,
+      result_id: comparisonMoreResultCard.result_id,
+      case_id: "bomex_trade_cumulus_baseline_v0",
+      parent_simulation_id: "trade_cumulus_canonical_bomex",
+      reference_simulation_id: "trade_cumulus_canonical_bomex",
+      lineage_state: "known",
+      availability_state: "available",
+      availability_message: "Available",
+      inspectable: true,
+      grid: {
+        topology: "native_3d",
+        nx: 96,
+        ny: 96,
+        nz: 100,
+        dx_m: 66.67,
+        dy_m: 66.67,
+        dz_m: 30,
+        x_extent_km: [-3.2, 3.2],
+        y_extent_km: [-3.2, 3.2],
+        z_extent_km: [0, 3],
+      },
+      time: {
+        times_seconds: [0, 60, 120],
+        start_seconds: 0,
+        end_seconds: 120,
+        cadence_seconds: 60,
+        saved_output_count: 3,
+        interpolation_allowed: false,
+      },
+      available_field_ids: ["ql"],
+      available_view_ids: ["field", "updraft_lens"],
+      fixed_scale_ids: ["trade_cumulus_updraft_velocity_v1"],
+      plane_orientations: ["horizontal", "vertical_x", "vertical_y"],
+      camera_mapping: "normalized_3d",
+      initial_state: { world_id: "trade_cumulus" },
+      caveats: [],
+    },
+  ],
+  default_left_simulation_id: "trade_cumulus_canonical_bomex",
+  default_right_simulation_id: "trade_cumulus_more_moisture",
+  selected_left_simulation_id: "trade_cumulus_canonical_bomex",
+  selected_right_simulation_id: "trade_cumulus_more_moisture",
+  material_differences: [
+    {
+      path: "surface_moisture_flux",
+      label: "Surface moisture supply",
+      category: "atmospheric",
+      left_value: 0.052,
+      right_value: 0.078,
+      left_known: true,
+      right_known: true,
+      units: "g/kg m/s",
+      material: true,
+    },
+  ],
+  compatibility: {
+    same_world: true,
+    both_inspectable: true,
+    relationship: "Reference and approved variation",
+    controlled_pair: true,
+    controlled_pair_message: "Surface moisture supply is the declared material difference.",
+    shared_field_ids: ["ql"],
+    shared_view_ids: ["field", "updraft_lens"],
+    shared_fixed_scale_ids: ["trade_cumulus_updraft_velocity_v1"],
+    exact_time_link_available: true,
+    nearest_time_link_available: true,
+    time_tolerance_seconds: 30,
+    physical_plane_link_available: true,
+    camera_link_available: true,
+    selection_link_available: true,
+    blockers: [],
+  },
+  no_second_simulation_message: null,
+  persistence: "transient_only",
 };
 
 function mockWorldScopedApp(storyStatus = 200) {
@@ -4417,6 +4545,11 @@ function mockWorldScopedApp(storyStatus = 200) {
     if (url === "/api/worlds/trade-cumulus") {
       return Promise.resolve(
         new Response(JSON.stringify(tradeCumulusWorldDetail), { status: 200 }),
+      );
+    }
+    if (url.startsWith("/api/worlds/trade-cumulus/compare")) {
+      return Promise.resolve(
+        new Response(JSON.stringify(tradeCumulusCompareDescriptor), { status: 200 }),
       );
     }
     return (
@@ -4585,6 +4718,65 @@ describe("App", () => {
       );
     });
     expect(screen.getByRole("heading", { name: secondObservedResult.name })).toBeInTheDocument();
+  });
+
+  it("recovers a stale Soundings Explore URL into the empty Explore landing", async () => {
+    window.history.replaceState(
+      {},
+      "",
+      "/fun-with-soundings/explore/result-deleted-soundings-run",
+    );
+    const defaultFetch = vi.mocked(fetch).getMockImplementation();
+    vi.mocked(fetch).mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input) === "/api/results") {
+        return Promise.resolve(
+          new Response(JSON.stringify({ results: [] }), { status: 200 }),
+        );
+      }
+      return (
+        defaultFetch?.(input, init) ?? Promise.resolve(new Response("not found", { status: 404 }))
+      );
+    });
+
+    render(<App />);
+
+    expect(
+      await screen.findByRole("heading", {
+        name: "No Soundings Experiment is ready to explore yet",
+      }),
+    ).toBeInTheDocument();
+    expect(window.location.pathname).toBe("/fun-with-soundings");
+    expect(screen.getByRole("button", { name: "5 Explore" })).toHaveAttribute(
+      "aria-current",
+      "page",
+    );
+  });
+
+  it("keeps the empty Explore tab inside the Soundings workbench", async () => {
+    mockWorldScopedApp();
+    const defaultFetch = vi.mocked(fetch).getMockImplementation();
+    vi.mocked(fetch).mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input) === "/api/results") {
+        return Promise.resolve(
+          new Response(JSON.stringify({ results: [] }), { status: 200 }),
+        );
+      }
+      return (
+        defaultFetch?.(input, init) ?? Promise.resolve(new Response("not found", { status: 404 }))
+      );
+    });
+
+    render(<App />);
+    fireEvent.click(await screen.findByRole("button", { name: "Open Fun With Soundings" }));
+    fireEvent.click(await screen.findByRole("button", { name: "5 Explore" }));
+
+    expect(
+      await screen.findByRole("heading", {
+        name: "No Soundings Experiment is ready to explore yet",
+      }),
+    ).toBeInTheDocument();
+    expect(window.location.pathname).toBe("/fun-with-soundings");
+    expect(screen.getByRole("button", { name: "View current runs" })).toBeInTheDocument();
   });
 
   it("reports a non-Soundings global runner without claiming it as Soundings work", async () => {
@@ -4780,13 +4972,13 @@ describe("App", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Open Comparison" }));
     expect(
-      await screen.findByLabelText("More Moisture versus Baseline workspace"),
+      await screen.findByRole("heading", {
+        name: "Review the two Simulations before loading frames",
+      }),
     ).toBeInTheDocument();
-    expect(
-      screen.getByRole("heading", { name: "Trade Cumulus: Baseline and More Moisture" }),
-    ).toBeInTheDocument();
-    expect(screen.getAllByText("0.052 g/kg m/s")).toHaveLength(2);
-    expect(screen.getAllByText("0.078 g/kg m/s")).toHaveLength(2);
+    expect(screen.getByText("Surface moisture supply")).toBeInTheDocument();
+    expect(screen.getByText("0.0520 g/kg m/s")).toBeInTheDocument();
+    expect(screen.getByText("0.0780 g/kg m/s")).toBeInTheDocument();
     expect(screen.queryByText(/g\/g m\/s/)).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Back to Trade Cumulus" }));
     expect(
@@ -4833,16 +5025,18 @@ describe("App", () => {
     expect(screen.queryByText(/Select an ingested result/)).not.toBeInTheDocument();
   });
 
-  it("fails closed when World Comparison availability disagrees with the story endpoint", async () => {
+  it("opens ordinary Compare even when the retired featured-story endpoint is unavailable", async () => {
     mockWorldScopedApp(409);
     render(<App />);
     fireEvent.click(await screen.findByRole("button", { name: "Enter Trade Cumulus" }));
     fireEvent.click(await screen.findByRole("button", { name: "Open Comparison" }));
 
     expect(
-      await screen.findByText("The featured Comparison evidence is inconsistent."),
+      await screen.findByRole("heading", {
+        name: "Review the two Simulations before loading frames",
+      }),
     ).toBeInTheDocument();
-    expect(screen.getByLabelText("More Moisture versus Baseline workspace")).toBeInTheDocument();
+    expect(screen.getByText("Reference and approved variation")).toBeInTheDocument();
     expect(screen.queryByLabelText("Selected Explore result")).not.toBeInTheDocument();
   });
 

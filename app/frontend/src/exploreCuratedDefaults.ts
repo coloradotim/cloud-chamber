@@ -100,6 +100,9 @@ export type SupercellsLensId =
   | "rotating_updraft"
   | "cloud_precipitation"
   | "low_level_interactions";
+export type SupercellsSimulationId =
+  | "supercells_quarter_circle_reference"
+  | "supercells_straight_line_hodograph";
 
 export type SupercellsOverlayState = {
   rotation: boolean;
@@ -114,7 +117,7 @@ export type SupercellsOverlayState = {
 
 export type SupercellsCuratedView = CuratedCommonState & {
   worldId: "supercells";
-  simulationId: "supercells_quarter_circle_reference";
+  simulationId: SupercellsSimulationId;
   viewId: SupercellsLensId;
   viewport: "storm";
   evidenceOrientation: "plan" | "xz" | "yz";
@@ -452,8 +455,16 @@ export function supercellsCuratedView(
   simulationId: string,
   lensId: SupercellsLensId,
 ): SupercellsCuratedView | null {
-  if (simulationId !== "supercells_quarter_circle_reference") return null;
-  return SUPERCELLS_CURATED_VIEWS[lensId];
+  if (
+    simulationId !== "supercells_quarter_circle_reference" &&
+    simulationId !== "supercells_straight_line_hodograph"
+  ) {
+    return null;
+  }
+  return {
+    ...SUPERCELLS_CURATED_VIEWS[lensId],
+    simulationId,
+  };
 }
 
 export function resolveCuratedView<T extends WorldCuratedView>(

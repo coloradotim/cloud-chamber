@@ -35,15 +35,18 @@ import type { MountainWavesSimulation } from "./MountainWavesWorld";
 import { SimulationNotes } from "./SimulationNotes";
 import { scalarPointPixelSize } from "./True3DViewer.utils";
 
-type MountainWaveField =
+export type MountainWaveField =
   | "w"
   | "theta_perturbation"
   | "cloud_liquid"
   | "relative_humidity"
   | "cloud_over_wave";
-type ViewMode = "field" | "structure" | "cloud";
-type GeometryMode = "expanded" | "physical";
-type ViewportMode = "focus" | "full";
+export type MountainWavesViewMode = "field" | "structure" | "cloud";
+export type MountainWavesGeometryMode = "expanded" | "physical";
+export type MountainWavesViewportMode = "focus" | "full";
+type ViewMode = MountainWavesViewMode;
+type GeometryMode = MountainWavesGeometryMode;
+type ViewportMode = MountainWavesViewportMode;
 
 type FieldMetadata = {
   key: MountainWaveField;
@@ -116,7 +119,7 @@ type CloudOverlay = {
   maximum: number;
 };
 
-type MountainWaveFrame = {
+export type MountainWaveFrame = {
   schema_version: "mountain_waves_explore_v1";
   run_id: string;
   case_label: string;
@@ -276,9 +279,11 @@ function mountainWaveAvailableOverlayIds(frame: MountainWaveFrame | null): strin
 export function MountainWavesExplore({
   simulation,
   onBack,
+  onCompare,
 }: {
   simulation: MountainWavesSimulation;
   onBack: () => void;
+  onCompare?: () => void;
 }) {
   const initialViewId =
     mountainWavesInitialView(simulation.simulation_id) ??
@@ -1005,6 +1010,7 @@ export function MountainWavesExplore({
       worldName="Mountain Waves"
       simulationName={simulation.display_name}
       onBack={onBack}
+      onCompare={onCompare}
       onUserInteractionCapture={() => {
         if (exploreState.loading) startupUserEditedRef.current = true;
       }}
@@ -1102,7 +1108,7 @@ export function MountainWavesExplore({
               </section>
             ) : frame ? (
               <>
-                <TerrainPlot
+                <MountainWavesTerrainPlot
                   frame={frame}
                   geometryMode={geometryMode}
                   viewportMode={viewportMode ?? frame.viewport.default_mode}
@@ -1332,7 +1338,7 @@ export function MountainWavesExplore({
   );
 }
 
-function TerrainPlot({
+export function MountainWavesTerrainPlot({
   frame,
   geometryMode,
   viewportMode,
@@ -1460,18 +1466,20 @@ function TerrainPlot({
   );
 }
 
-function MountainWavesLegend({
+export function MountainWavesLegend({
   frame,
   viewMode,
   cloudPoints,
   horizontalWind,
   potentialTemperatureContours,
+  fixedScaleLabel = "Fixed across this Simulation",
 }: {
   frame: MountainWaveFrame;
   viewMode: ViewMode;
   cloudPoints: boolean;
   horizontalWind: boolean;
   potentialTemperatureContours: boolean;
+  fixedScaleLabel?: string;
 }) {
   const title =
     viewMode !== "field" || frame.field.key === "w"
@@ -1491,7 +1499,7 @@ function MountainWavesLegend({
         ))}
       </ol>
       <p>Frame min {formatSigned(frame.scale.selected_time_minimum)}</p>
-      <small>Fixed across this Simulation</small>
+      <small>{fixedScaleLabel}</small>
       {viewMode === "cloud" && cloudPoints && frame.overlay && (
         <div className="mountain-waves-cloud-key">
           <span className="mountain-waves-cloud-point-key" aria-hidden="true" />

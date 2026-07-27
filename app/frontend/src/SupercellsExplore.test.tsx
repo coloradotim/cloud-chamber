@@ -91,6 +91,8 @@ const simulation: SupercellSimulation = {
   world_id: "supercells",
   run_id: "quarter-circle-supercell-presentation-v1-20260723",
   case_id: "cm1_r21_1_quarter_circle_supercell_presentation_v1",
+  parent_simulation_id: null,
+  reference_simulation_id: "supercells_quarter_circle_reference",
   technical_state: "available",
   technical_state_message: "Available",
   explore_available: true,

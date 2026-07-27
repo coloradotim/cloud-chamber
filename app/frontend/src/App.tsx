@@ -66,6 +66,8 @@ import {
   updraftLensBoundaryPath,
   updraftLensColor,
 } from "./UpdraftLensSlice";
+import { WorldCompare } from "./WorldCompare";
+import type { CompareWorldSlug } from "./WorldCompare.types";
 
 type ControlOption = {
   value: string;
@@ -1369,6 +1371,12 @@ function soundingsExploreResultIdFromPath(pathname: string): string | null {
 type WorldExploreContext =
   | { kind: "simulation"; displayName: string }
   | { kind: "lab_result"; displayName: string };
+type WorldCompareNavigation = {
+  worldSlug: CompareWorldSlug;
+  leftSimulationId: string | null;
+  rightSimulationId: string | null;
+  resumeExistingState: boolean;
+};
 type ScenarioLoadState = "loading" | "loaded" | "failed" | "empty";
 
 type ProvenancePayload = {
@@ -2480,7 +2488,13 @@ export function App() {
   const [worldLabSection, setWorldLabSection] = useState<TradeCumulusLabSection>("results");
   const [worldDetail, setWorldDetail] = useState<TradeCumulusWorldDetail | null>(null);
   const [worldExploreContext, setWorldExploreContext] = useState<WorldExploreContext | null>(null);
-  const [worldComparisonStatus, setWorldComparisonStatus] = useState<string | null>(null);
+  const [worldCompareNavigation, setWorldCompareNavigation] =
+    useState<WorldCompareNavigation>({
+      worldSlug: "trade-cumulus",
+      leftSimulationId: null,
+      rightSimulationId: null,
+      resumeExistingState: false,
+    });
   const [activeSection, setActiveSection] = useState<WorkspaceSection>("results");
   const [scenarios, setScenarios] = useState<Scenario[]>([]);
   const [selectedScenarioId, setSelectedScenarioId] = useState(OBSERVED_SOUNDING_EXPERIMENT_ID);
@@ -2558,6 +2572,7 @@ export function App() {
   const [ingestedResultId, setIngestedResultId] = useState<string | null>(null);
   const [results, setResults] = useState<ResultCard[]>([]);
   const [selectedResultId, setSelectedResultId] = useState<string | null>(null);
+  const [initialResultsLoadComplete, setInitialResultsLoadComplete] = useState(false);
   const selectedResultIdRef = useRef<string | null>(null);
   const worldResultOwnershipRef = useRef<WorldResultOwnershipIndex>(EMPTY_WORLD_RESULT_OWNERSHIP);
   const worldOwnershipLoadStartedRef = useRef(false);
@@ -2647,6 +2662,7 @@ export function App() {
           return current ?? prioritized[0]?.result_id ?? null;
         });
         setResultsStatus(payload.results.length > 0 ? "Results loaded" : "No ingested results");
+        setInitialResultsLoadComplete(true);
       })
       .catch((caught: unknown) => {
         if (!active) return;
@@ -2659,6 +2675,7 @@ export function App() {
         setComparisonStoryActive(false);
         setResultsError(caught instanceof Error ? caught.message : "Could not load results.");
         setResultsStatus("Results unavailable");
+        setInitialResultsLoadComplete(true);
       });
     fetchTradeCumulusComparisonStory().then((comparison) => {
       if (!active || resultsFailed) return;
@@ -2779,6 +2796,19 @@ export function App() {
   const selectedSoundingsExploreResult = soundingsExploreResults.find(
     (result) => result.result_id === selectedResultId,
   );
+
+  useEffect(() => {
+    if (
+      productLocation !== "soundings-explore" ||
+      !initialResultsLoadComplete ||
+      selectedSoundingsExploreResult
+    ) {
+      return;
+    }
+    setSoundingsSection("explore");
+    setProductLocation("soundings");
+    window.history.replaceState({ productLocation: "soundings" }, "", "/fun-with-soundings");
+  }, [initialResultsLoadComplete, productLocation, selectedSoundingsExploreResult]);
 
   useEffect(() => {
     selectedResultIdRef.current = selectedResultId;
@@ -4029,34 +4059,74 @@ export function App() {
     enterWorldExplore(simulation.result_id, simulation);
   }
 
-  async function openWorldComparison() {
+  function openWorldComparison(
+    worldSlug: CompareWorldSlug = "trade-cumulus",
+    leftSimulationId: string | null = null,
+    rightSimulationId: string | null = null,
+    resumeExistingState = false,
+  ) {
     setComparisonStoryActive(false);
-    setWorldComparisonStatus("Loading featured Comparison...");
+    setWorldCompareNavigation({
+      worldSlug,
+      leftSimulationId,
+      rightSimulationId,
+      resumeExistingState,
+    });
     setProductLocation("comparison");
-    const comparison = comparisonStory
-      ? { story: comparisonStory, status: null }
-      : await fetchTradeCumulusComparisonStory();
-    setComparisonStory(comparison.story);
-    setComparisonStoryStatus(comparison.status);
-    if (!comparison.story) {
-      setComparisonStoryMemberIds([]);
-      setWorldComparisonStatus(
-        comparison.status ?? "The featured Comparison is currently unavailable.",
+  }
+
+  async function openCompareSimulation(worldSlug: CompareWorldSlug, simulationId: string) {
+    if (worldSlug === "trade-cumulus") {
+      const simulation = worldDetail?.simulations.find(
+        (candidate) => candidate.simulation_id === simulationId,
       );
+      if (simulation) await openWorldSimulation(simulation);
       return;
     }
-    setComparisonStoryMemberIds([
-      comparison.story.baseline.result_id,
-      comparison.story.more_moisture.result_id,
-    ]);
-    setComparisonStoryActive(true);
-    setWorldComparisonStatus(null);
+    if (worldSlug === "mountain-waves") {
+      const response = await fetch("/api/worlds/mountain-waves");
+      if (!response.ok) return;
+      const world = (await response.json()) as {
+        simulations: MountainWavesSimulation[];
+      };
+      const simulation = world.simulations.find(
+        (candidate) => candidate.simulation_id === simulationId,
+      );
+      if (simulation) {
+        setMountainWavesSimulation(simulation);
+        setProductLocation("mountain-explore");
+      }
+      return;
+    }
+    const response = await fetch("/api/worlds/supercells");
+    if (!response.ok) return;
+    const world = (await response.json()) as {
+      simulations: SupercellSimulation[];
+    };
+    const simulation = world.simulations.find(
+      (candidate) => candidate.simulation_id === simulationId,
+    );
+    if (simulation) {
+      setSupercellSimulation(simulation);
+      setProductLocation("supercells-explore");
+    }
+  }
+
+  function returnFromWorldCompare() {
+    if (worldCompareNavigation.worldSlug === "mountain-waves") {
+      setProductLocation("mountain-world");
+      return;
+    }
+    if (worldCompareNavigation.worldSlug === "supercells") {
+      setProductLocation("supercells-world");
+      return;
+    }
+    returnToTradeCumulus();
   }
 
   function returnToTradeCumulus() {
     setComparisonStoryActive(false);
     setWorldExploreContext(null);
-    setWorldComparisonStatus(null);
     setProductLocation("world");
   }
 
@@ -4551,10 +4621,8 @@ export function App() {
   );
 
   const worldContextName =
-    productLocation === "comparison"
-      ? "More Moisture versus Baseline"
-      : (worldExploreContext?.displayName ??
-        worldSimulationDisplayName(selectedResult?.result_id, selectedResult?.name));
+    worldExploreContext?.displayName ??
+    worldSimulationDisplayName(selectedResult?.result_id, selectedResult?.name);
   const labResultContext =
     productLocation === "explore" && worldExploreContext?.kind === "lab_result";
   const activeWorldSimulation =
@@ -4565,8 +4633,25 @@ export function App() {
       : null;
   const activeResultAssetPath =
     storageInventory?.runs.find((run) => run.run_id === selectedResult?.run_id)?.path ?? null;
+  const worldCompareTargetId = (() => {
+    if (!activeWorldSimulation || !worldDetail) return null;
+    const featuredComparison = worldDetail.featured_comparison;
+    if (
+      activeWorldSimulation.simulation_id ===
+      featuredComparison.baseline_simulation_id
+    ) {
+      return featuredComparison.more_moisture_simulation_id;
+    }
+    if (
+      activeWorldSimulation.simulation_id ===
+      featuredComparison.more_moisture_simulation_id
+    ) {
+      return featuredComparison.baseline_simulation_id;
+    }
+    return activeWorldSimulation.compare_suggestions?.[0]?.target_simulation_id ?? null;
+  })();
   const worldCompareAvailable = Boolean(
-    activeWorldSimulation?.compare_suggestions.length &&
+    worldCompareTargetId &&
     worldDetail?.featured_comparison.open_available,
   );
   const selectedAtmosphere = selectedAtmosphereSummary(
@@ -4584,6 +4669,7 @@ export function App() {
     <main
       className={`app-shell${
         productLocation === "explore" ||
+        productLocation === "comparison" ||
         productLocation === "mountain-explore" ||
         productLocation === "supercells-explore" ||
         productLocation === "soundings-explore"
@@ -4648,7 +4734,14 @@ export function App() {
           onLabSectionChange={setWorldLabSection}
           onBackToWorlds={() => setProductLocation("worlds")}
           onExploreSimulation={openWorldSimulation}
-          onOpenFeaturedComparison={openWorldComparison}
+          onOpenFeaturedComparison={(simulation) =>
+            openWorldComparison(
+              "trade-cumulus",
+              simulation?.simulation_id ?? null,
+              simulation?.compare_suggestions?.[0]?.target_simulation_id ?? null,
+              false,
+            )
+          }
           onWorldDetailChange={setWorldDetail}
           buildContent={buildWorkspace}
           resultsContent={resultsWorkspace}
@@ -4662,6 +4755,13 @@ export function App() {
             setMountainWavesSimulation(simulation);
             setProductLocation("mountain-explore");
           }}
+          onCompareSimulation={(simulation, targetSimulationId) =>
+            openWorldComparison(
+              "mountain-waves",
+              simulation.simulation_id,
+              targetSimulationId,
+            )
+          }
         />
       )}
 
@@ -4673,6 +4773,13 @@ export function App() {
           <MountainWavesExplore
             simulation={mountainWavesSimulation}
             onBack={() => setProductLocation("mountain-world")}
+            onCompare={() =>
+              openWorldComparison(
+                "mountain-waves",
+                mountainWavesSimulation.simulation_id,
+                mountainWavesSimulation.parent_simulation_id,
+              )
+            }
           />
         </section>
       )}
@@ -4684,6 +4791,7 @@ export function App() {
             setSupercellSimulation(simulation);
             setProductLocation("supercells-explore");
           }}
+          onCompare={(simulation) => openWorldComparison("supercells", simulation.simulation_id)}
         />
       )}
 
@@ -4695,6 +4803,9 @@ export function App() {
           <SupercellsExplore
             simulation={supercellSimulation}
             onBack={() => setProductLocation("supercells-world")}
+            onCompare={() =>
+              openWorldComparison("supercells", supercellSimulation.simulation_id)
+            }
           />
         </section>
       )}
@@ -4706,7 +4817,12 @@ export function App() {
             selectedSoundingsExploreResult?.name ?? "Soundings Explore"
           } atmospheric experiment workspace`}
         >
-          {selectedSoundingsExploreResult ? (
+          {!initialResultsLoadComplete ? (
+            <ScenarioStatePanel
+              title="Loading Soundings Explore"
+              body="Cloud Chamber is checking the retained Soundings experiment inventory."
+            />
+          ) : selectedSoundingsExploreResult ? (
             <ExploreWorkspace
               selectedResult={selectedSoundingsExploreResult}
               comparisonStory={null}
@@ -4730,51 +4846,52 @@ export function App() {
         </section>
       )}
 
-      {(productLocation === "explore" || productLocation === "comparison") && (
+      {productLocation === "comparison" && (
+        <section className="world-context-workspace" aria-label="World Compare workspace">
+          <WorldCompare
+            worldSlug={worldCompareNavigation.worldSlug}
+            initialLeftSimulationId={worldCompareNavigation.leftSimulationId}
+            initialRightSimulationId={worldCompareNavigation.rightSimulationId}
+            resumeExistingState={worldCompareNavigation.resumeExistingState}
+            onBack={returnFromWorldCompare}
+            onOpenSimulation={(simulationId) =>
+              void openCompareSimulation(worldCompareNavigation.worldSlug, simulationId)
+            }
+          />
+        </section>
+      )}
+
+      {productLocation === "explore" && (
         <section
           className="world-context-workspace"
           aria-label={`${worldContextName}${labResultContext ? " Lab result" : ""} workspace`}
         >
-          {productLocation === "comparison" && (
-            <header className="world-context-header">
-              <nav className="world-breadcrumb" aria-label="Breadcrumb">
-                <button type="button" onClick={() => setProductLocation("worlds")}>
-                  Cloud Worlds
-                </button>
-                <span aria-hidden="true">/</span>
-                <button type="button" onClick={returnToTradeCumulus}>
-                  Trade Cumulus
-                </button>
-                <span aria-hidden="true">/</span>
-                <span>{worldContextName}</span>
-              </nav>
-              <button type="button" onClick={returnToTradeCumulus}>
-                Back to Trade Cumulus
-              </button>
-            </header>
-          )}
-          {productLocation === "comparison" && (!comparisonStoryActive || !comparisonStory) ? (
-            <section className="status-panel" role="status">
-              <p>{worldComparisonStatus ?? "Loading featured Comparison..."}</p>
-            </section>
-          ) : (
-            <ExploreWorkspace
-              selectedResult={selectedResult}
-              comparisonStory={productLocation === "comparison" ? comparisonStory : null}
-              onBackToResults={returnToTradeCumulus}
-              onOpenResult={(resultId) => {
-                selectOrdinaryResult(resultId);
-                enterWorldExplore(resultId);
-              }}
-              worldName={labResultContext ? "Trade Cumulus Lab" : "Trade Cumulus"}
-              simulationName={worldContextName}
-              simulationRecord={activeWorldSimulation}
-              assetPath={activeResultAssetPath}
-              backLabel={labResultContext ? "Back to Lab Results" : "Back to Trade Cumulus"}
-              onBack={labResultContext ? returnToLabResults : returnToTradeCumulus}
-              onCompare={worldCompareAvailable ? () => void openWorldComparison() : undefined}
-            />
-          )}
+          <ExploreWorkspace
+            selectedResult={selectedResult}
+            comparisonStory={null}
+            onBackToResults={returnToTradeCumulus}
+            onOpenResult={(resultId) => {
+              selectOrdinaryResult(resultId);
+              enterWorldExplore(resultId);
+            }}
+            worldName={labResultContext ? "Trade Cumulus Lab" : "Trade Cumulus"}
+            simulationName={worldContextName}
+            simulationRecord={activeWorldSimulation}
+            assetPath={activeResultAssetPath}
+            backLabel={labResultContext ? "Back to Lab Results" : "Back to Trade Cumulus"}
+            onBack={labResultContext ? returnToLabResults : returnToTradeCumulus}
+            onCompare={
+              worldCompareAvailable && activeWorldSimulation
+                ? () =>
+                    openWorldComparison(
+                      "trade-cumulus",
+                      activeWorldSimulation.simulation_id,
+                      worldCompareTargetId,
+                      true,
+                    )
+                : undefined
+            }
+          />
         </section>
       )}
     </main>

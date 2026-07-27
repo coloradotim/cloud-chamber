@@ -1,12 +1,14 @@
 import { useCallback, useEffect, useState } from "react";
 
 export type SupercellSimulation = {
-  simulation_id: "supercells_quarter_circle_reference";
-  display_name: "Quarter-Circle Supercell";
-  role: "reference";
+  simulation_id: "supercells_quarter_circle_reference" | "supercells_straight_line_hodograph";
+  display_name: string;
+  role: "reference" | "variation";
   world_id: "supercells";
   run_id: string;
   case_id: string;
+  parent_simulation_id: string | null;
+  reference_simulation_id: "supercells_quarter_circle_reference";
   technical_state: "available" | "missing" | "invalid";
   technical_state_message: string;
   explore_available: boolean;
@@ -29,7 +31,7 @@ export type SupercellsWorldDetail = {
   capabilities: {
     reference_explore: boolean;
     lab: false;
-    compare: false;
+    compare: boolean;
     saved_views: false;
   };
   caveats: string[];
@@ -40,9 +42,11 @@ type WorldSection = "overview" | "simulations";
 export function SupercellsWorld({
   onBackToWorlds,
   onExploreSimulation,
+  onCompare,
 }: {
   onBackToWorlds: () => void;
   onExploreSimulation: (simulation: SupercellSimulation) => void;
+  onCompare?: (simulation: SupercellSimulation) => void;
 }) {
   const [section, setSection] = useState<WorldSection>("overview");
   const [world, setWorld] = useState<SupercellsWorldDetail | null>(null);
@@ -99,7 +103,15 @@ export function SupercellsWorld({
     );
   }
 
-  const simulation = world.reference_simulation;
+  const inspectableSimulations = world.simulations.filter(
+    (simulation) => simulation.explore_available,
+  );
+  const simulations =
+    section === "overview"
+      ? inspectableSimulations.length
+        ? inspectableSimulations
+        : [world.reference_simulation]
+      : world.simulations;
   return (
     <section className="world-shell" aria-label="Supercells World">
       <WorldBreadcrumb onBackToWorlds={onBackToWorlds} />
@@ -133,15 +145,20 @@ export function SupercellsWorld({
                 : "Retained Supercell Simulations"}
             </h3>
           </div>
-          {section === "simulations" && (
-            <p>{simulation.explore_available ? "1 inspectable" : "0 inspectable"}</p>
-          )}
+          {section === "simulations" && <p>{inspectableSimulations.length} inspectable</p>}
         </div>
         {world.availability_state !== "available" && (
           <p className="world-availability-message">{world.availability_message}</p>
         )}
         <div className="simulation-card-grid supercells-simulation-grid">
-          <SupercellSimulationCard simulation={simulation} onExplore={onExploreSimulation} />
+          {simulations.map((simulation) => (
+            <SupercellSimulationCard
+              key={simulation.simulation_id}
+              simulation={simulation}
+              onExplore={onExploreSimulation}
+              onCompare={world.capabilities.compare ? onCompare : undefined}
+            />
+          ))}
         </div>
         {section === "overview" && <p className="world-science-note">{world.caveats[0]}</p>}
       </section>
@@ -152,15 +169,19 @@ export function SupercellsWorld({
 function SupercellSimulationCard({
   simulation,
   onExplore,
+  onCompare,
 }: {
   simulation: SupercellSimulation;
   onExplore: (simulation: SupercellSimulation) => void;
+  onCompare?: (simulation: SupercellSimulation) => void;
 }) {
   return (
     <article className="simulation-card supercell-simulation-card">
       <div className="simulation-card-heading">
         <div>
-          <p className="eyebrow">Reference Simulation</p>
+          <p className="eyebrow">
+            {simulation.role === "reference" ? "Reference Simulation" : "Controlled Variation"}
+          </p>
           <h3>{simulation.display_name}</h3>
         </div>
         {simulation.technical_state !== "available" && (
@@ -199,6 +220,11 @@ function SupercellSimulationCard({
         >
           Explore
         </button>
+        {onCompare && (
+          <button type="button" className="secondary-button" onClick={() => onCompare(simulation)}>
+            Compare
+          </button>
+        )}
       </div>
     </article>
   );
@@ -239,6 +265,21 @@ function validateSupercellsWorld(payload: unknown): SupercellsWorldDetail {
     typeof reference.default_explore_time_index !== "number"
   ) {
     throw new Error("Supercells reference Simulation identity is invalid.");
+  }
+  const simulationIds = new Set([
+    "supercells_quarter_circle_reference",
+    "supercells_straight_line_hodograph",
+  ]);
+  if (
+    payload.simulations.some(
+      (simulation) =>
+        !isRecord(simulation) ||
+        !simulationIds.has(String(simulation.simulation_id)) ||
+        typeof simulation.display_name !== "string" ||
+        (simulation.role !== "reference" && simulation.role !== "variation"),
+    )
+  ) {
+    throw new Error("Supercells Simulation inventory is invalid.");
   }
   return payload as SupercellsWorldDetail;
 }

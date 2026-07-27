@@ -93,7 +93,7 @@ const world: TradeCumulusWorldDetail = {
     featured_comparison: true,
     lab: true,
     saved_views: false,
-    ordinary_compare: false,
+    ordinary_compare: true,
   },
   caveats: [],
 };

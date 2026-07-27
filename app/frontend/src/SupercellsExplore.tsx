@@ -187,9 +187,11 @@ function runtimeSupercellsOverlays(overlays: SupercellsExploreState["overlays"])
 export function SupercellsExplore({
   simulation,
   onBack,
+  onCompare,
 }: {
   simulation: SupercellSimulation;
   onBack: () => void;
+  onCompare?: () => void;
 }) {
   const [lens, setLens] = useState<LensId>(SUPERCELLS_INITIAL_LENS);
   const [timeIndex, setTimeIndex] = useState(simulation.default_explore_time_index);
@@ -978,6 +980,7 @@ export function SupercellsExplore({
       simulationName={simulation.display_name}
       backLabel="Back to Supercells"
       onBack={onBack}
+      onCompare={onCompare}
       onUserInteractionCapture={() => {
         if (exploreState.loading) startupUserEditedRef.current = true;
       }}
@@ -1698,7 +1701,7 @@ function SupercellExplanation({
         ) : undefined
       }
       orientation={[
-        { label: "Simulation", value: "Quarter-Circle Supercell" },
+        { label: "Simulation", value: frame?.simulation_label ?? "Supercell Simulation" },
         { label: "View", value: sliceControlLabel(evidenceView) },
         { label: "Viewport", value: viewport === "storm" ? "Storm region" : "Full domain" },
         { label: "Model time", value: formatTime(frame?.time_seconds ?? 0) },
@@ -2120,7 +2123,7 @@ async function fetchSupercellFrame(
   if (
     payload.schema_version !== "supercells_explore_v1" ||
     payload.world_id !== "supercells" ||
-    payload.simulation_id !== "supercells_quarter_circle_reference"
+    payload.simulation_id !== simulationId
   ) {
     throw new Error("Supercell frame response does not match the production World contract.");
   }

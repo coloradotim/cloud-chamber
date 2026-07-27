@@ -21,6 +21,18 @@ EXPECTED_TIMES_SECONDS = tuple(range(0, 7_201, 900))
 HISTORY_FILENAMES = tuple(f"cm1out_{index:06d}.nc" for index in range(1, 10))
 PRESENTATION_RUN_ID = "quarter-circle-supercell-presentation-v1-20260723"
 PRESENTATION_CASE_ID = "cm1_r21_1_quarter_circle_supercell_presentation_v1"
+STRAIGHT_LINE_PRESENTATION_RUN_ID = "straight-line-supercell-presentation-v1-20260726"
+STRAIGHT_LINE_PRESENTATION_CASE_ID = "cm1_r21_1_straight_line_supercell_presentation_v1"
+SupercellSimulationId = Literal[
+    "supercells_quarter_circle_reference",
+    "supercells_straight_line_hodograph",
+]
+QUARTER_CIRCLE_SIMULATION_ID: Literal["supercells_quarter_circle_reference"] = (
+    "supercells_quarter_circle_reference"
+)
+STRAIGHT_LINE_SIMULATION_ID: Literal["supercells_straight_line_hodograph"] = (
+    "supercells_straight_line_hodograph"
+)
 PRESENTATION_TIMES_SECONDS = tuple(range(0, 10_801, 120))
 PRESENTATION_HISTORY_FILENAMES = tuple(f"cm1out_{index:06d}.nc" for index in range(1, 92))
 PRESENTATION_EVIDENCE_FILENAME = "supercell_presentation_evidence.json"
@@ -75,6 +87,9 @@ GATE_C_STORM_VIEW_BOUNDS_KM = {
 class _RunContract:
     run_id: str
     case_id: str
+    simulation_id: str | None
+    simulation_label: str
+    hodograph: Literal["quarter_circle", "straight_line"]
     expected_times_seconds: tuple[int, ...]
     history_filenames: tuple[str, ...]
     evidence_filename: str | None
@@ -84,6 +99,9 @@ class _RunContract:
 GATE_C_RUN = _RunContract(
     run_id=PRESERVED_RUN_ID,
     case_id=PRESERVED_CASE_ID,
+    simulation_id=None,
+    simulation_label="Official CM1 r21.1 quarter-circle benchmark",
+    hodograph="quarter_circle",
     expected_times_seconds=EXPECTED_TIMES_SECONDS,
     history_filenames=HISTORY_FILENAMES,
     evidence_filename=None,
@@ -92,11 +110,29 @@ GATE_C_RUN = _RunContract(
 PRESENTATION_RUN = _RunContract(
     run_id=PRESENTATION_RUN_ID,
     case_id=PRESENTATION_CASE_ID,
+    simulation_id=QUARTER_CIRCLE_SIMULATION_ID,
+    simulation_label="Quarter-Circle Supercell presentation simulation",
+    hodograph="quarter_circle",
     expected_times_seconds=PRESENTATION_TIMES_SECONDS,
     history_filenames=PRESENTATION_HISTORY_FILENAMES,
     evidence_filename=PRESENTATION_EVIDENCE_FILENAME,
     unavailable_label="accepted presentation output",
 )
+STRAIGHT_LINE_PRESENTATION_RUN = _RunContract(
+    run_id=STRAIGHT_LINE_PRESENTATION_RUN_ID,
+    case_id=STRAIGHT_LINE_PRESENTATION_CASE_ID,
+    simulation_id=STRAIGHT_LINE_SIMULATION_ID,
+    simulation_label="Straight-Line Hodograph Supercell presentation simulation",
+    hodograph="straight_line",
+    expected_times_seconds=PRESENTATION_TIMES_SECONDS,
+    history_filenames=PRESENTATION_HISTORY_FILENAMES,
+    evidence_filename=PRESENTATION_EVIDENCE_FILENAME,
+    unavailable_label="controlled straight-line presentation output",
+)
+PRODUCT_RUNS: dict[str, _RunContract] = {
+    QUARTER_CIRCLE_SIMULATION_ID: PRESENTATION_RUN,
+    STRAIGHT_LINE_SIMULATION_ID: STRAIGHT_LINE_PRESENTATION_RUN,
+}
 
 W_COLORS = (
     "#4b0082",
@@ -277,7 +313,7 @@ class StormExaminationFrame(BaseModel):
         "issue_418_gate_c_research_not_product", "supercells_product_world"
     ] = "issue_418_gate_c_research_not_product"
     world_id: Literal["supercells"] | None = None
-    simulation_id: Literal["supercells_quarter_circle_reference"] | None = None
+    simulation_id: str | None = None
     run_id: str
     case_id: str
     simulation_label: str
@@ -323,19 +359,33 @@ def preserved_storm_examination_frame(
         x_index=x_index,
         y_index=y_index,
         z_index=z_index,
+        selected_x_index=None,
+        selected_y_index=None,
+        selected_z_index=None,
         purpose="research",
     )
+
+
+def _product_contract(simulation_id: str) -> _RunContract:
+    contract = PRODUCT_RUNS.get(simulation_id)
+    if contract is None:
+        raise StormExaminationError(f"Supercell Simulation is unavailable: {simulation_id}.")
+    return contract
 
 
 def supercells_explore_frame(
     settings: CloudChamberSettings,
     *,
+    simulation_id: str = QUARTER_CIRCLE_SIMULATION_ID,
     lens: LensId = "rotating_updraft",
     time_index: int = DEFAULT_PRESENTATION_TIME_INDEX,
     viewport: ViewportId = "storm",
     x_index: int | None = None,
     y_index: int | None = None,
     z_index: int | None = None,
+    selected_x_index: int | None = None,
+    selected_y_index: int | None = None,
+    selected_z_index: int | None = None,
 ) -> StormExaminationFrame:
     """Return the production Supercells frame from the accepted Gate C science path."""
     return _storm_frame(
@@ -346,16 +396,22 @@ def supercells_explore_frame(
         x_index=x_index,
         y_index=y_index,
         z_index=z_index,
+        selected_x_index=selected_x_index,
+        selected_y_index=selected_y_index,
+        selected_z_index=selected_z_index,
         purpose="product",
+        product_contract=_product_contract(simulation_id),
     )
 
 
 def storm_examination_inventory(
     settings: CloudChamberSettings,
+    simulation_id: str = QUARTER_CIRCLE_SIMULATION_ID,
 ) -> tuple[tuple[Path, float], ...]:
     """Return the cached, identity-validated production history inventory."""
-    run_dir = settings.runtime_home.expanduser() / "runs" / PRESENTATION_RUN_ID
-    return _validated_inventory(run_dir, PRESENTATION_RUN)
+    contract = _product_contract(simulation_id)
+    run_dir = settings.runtime_home.expanduser() / "runs" / contract.run_id
+    return _validated_inventory(run_dir, contract)
 
 
 def _storm_frame(
@@ -367,11 +423,17 @@ def _storm_frame(
     x_index: int | None,
     y_index: int | None,
     z_index: int | None,
+    selected_x_index: int | None,
+    selected_y_index: int | None,
+    selected_z_index: int | None,
     purpose: FramePurpose,
+    product_contract: _RunContract | None = None,
 ) -> StormExaminationFrame:
     """Extract coordinated, bounded views from one retained native history."""
     started = time.perf_counter()
-    contract = PRESENTATION_RUN if purpose == "product" else GATE_C_RUN
+    contract = product_contract if purpose == "product" else GATE_C_RUN
+    if contract is None:
+        raise StormExaminationError("A product Simulation contract is required.")
     run_dir = settings.runtime_home.expanduser() / "runs" / contract.run_id
     inventory = _validated_inventory(run_dir, contract)
     checked_time_index = _checked_index(time_index, len(inventory), "time_index")
@@ -423,10 +485,25 @@ def _storm_frame(
         )
     primary_z, primary_y, primary_x = primary_index
     default_level = _default_level_index(lens, z_km, primary_z)
-    selected_x = _checked_index(x_index if x_index is not None else primary_x, len(x_km), "x_index")
-    selected_y = _checked_index(y_index if y_index is not None else primary_y, len(y_km), "y_index")
-    selected_z = _checked_index(
+    section_x = _checked_index(x_index if x_index is not None else primary_x, len(x_km), "x_index")
+    section_y = _checked_index(y_index if y_index is not None else primary_y, len(y_km), "y_index")
+    section_z = _checked_index(
         z_index if z_index is not None else default_level, len(z_km), "z_index"
+    )
+    selected_x = _checked_index(
+        selected_x_index if selected_x_index is not None else section_x,
+        len(x_km),
+        "selected_x_index",
+    )
+    selected_y = _checked_index(
+        selected_y_index if selected_y_index is not None else section_y,
+        len(y_km),
+        "selected_y_index",
+    )
+    selected_z = _checked_index(
+        selected_z_index if selected_z_index is not None else section_z,
+        len(z_km),
+        "selected_z_index",
     )
 
     primary = PointMarker(
@@ -443,7 +520,7 @@ def _storm_frame(
     if purpose == "product" and viewport == "full":
         x_indices = x_indices[::2]
         y_indices = y_indices[::2]
-    plan = _plan_view(lens, fields, x_km, y_km, z_km, selected_z, x_indices, y_indices)
+    plan = _plan_view(lens, fields, x_km, y_km, z_km, section_z, x_indices, y_indices)
     xz_section = _vertical_section(
         lens,
         "xz",
@@ -451,8 +528,8 @@ def _storm_frame(
         x_km,
         y_km,
         z_km,
-        selected_x,
-        selected_y,
+        section_x,
+        section_y,
         x_indices,
         y_indices,
     )
@@ -463,8 +540,8 @@ def _storm_frame(
         x_km,
         y_km,
         z_km,
-        selected_x,
-        selected_y,
+        section_x,
+        section_y,
         x_indices,
         y_indices,
     )
@@ -495,7 +572,7 @@ def _storm_frame(
             y_indices,
             native_x_indices,
             native_y_indices,
-            selected_z,
+            section_z,
             history_path.name,
             viewport,
         )
@@ -512,14 +589,10 @@ def _storm_frame(
             else "issue_418_gate_c_research_not_product"
         ),
         world_id="supercells" if purpose == "product" else None,
-        simulation_id="supercells_quarter_circle_reference" if purpose == "product" else None,
+        simulation_id=contract.simulation_id if purpose == "product" else None,
         run_id=contract.run_id,
         case_id=contract.case_id,
-        simulation_label=(
-            "Quarter-Circle Supercell presentation simulation"
-            if purpose == "product"
-            else "Official CM1 r21.1 quarter-circle benchmark"
-        ),
+        simulation_label=contract.simulation_label,
         lens_id=lens,
         lens_name=lens_name,
         lens_question=lens_question,
@@ -696,7 +769,11 @@ def _presentation_evidence_inventory(
         or evidence.get("kind") != "final"
         or evidence.get("run_id") != contract.run_id
         or evidence.get("case_id") != contract.case_id
+        or evidence.get("simulation_id") != contract.simulation_id
+        or evidence.get("hodograph") != contract.hodograph
         or evidence.get("source_run_id") != PRESERVED_RUN_ID
+        or case_manifest.get("simulation_id") != contract.simulation_id
+        or case_manifest.get("hodograph") != contract.hodograph
         or evidence.get("implementation_commit") != case_manifest.get("implementation_commit")
         or evidence.get("grid")
         != {

@@ -300,9 +300,137 @@ const tradeCumulusWorld = {
     featured_comparison: true,
     lab: true,
     saved_views: false,
-    ordinary_compare: false,
+    ordinary_compare: true,
   },
   caveats: [],
+};
+
+function compareTradeState(
+  member: typeof comparisonStory.baseline | typeof comparisonStory.more_moisture,
+) {
+  return {
+    state_version: 1,
+    world_id: "trade_cumulus",
+    model_time_seconds: member.curated_view.time_seconds,
+    context_collapsed: true,
+    secondary_section: "notes",
+    selected_point: null,
+    view_id: "updraft_lens",
+    scene_field_id: "ql",
+    slice_field_id: "w",
+    fixed_scale_id: "trade_cumulus_updraft_velocity_v1",
+    active_slice_plane: "vertical_x",
+    slice_coordinate_km: member.curated_view.plane_coordinate,
+    slice_native_index: member.curated_view.plane_index,
+    horizontal_slice_coordinate_km: 1,
+    threshold_native: 1e-6,
+    layer_opacity: 0.68,
+    point_size_px: 11,
+    lens_opacity: 0.9,
+    show_slice_plane: true,
+    show_cloud_boundary: true,
+    show_horizontal_wind: true,
+    wind_mode: "perturbation",
+    camera_preset: "overview",
+    camera_transform: null,
+    playback_speed: 1,
+    display_controls_open: false,
+  };
+}
+
+function compareTradeSimulation(
+  simulation: typeof worldBaselineSimulation,
+  member: typeof comparisonStory.baseline | typeof comparisonStory.more_moisture,
+) {
+  return {
+    simulation_id: simulation.simulation_id,
+    display_name: simulation.display_name,
+    world_id: "trade_cumulus",
+    role: simulation.role,
+    run_id: simulation.run_id,
+    result_id: simulation.result_id,
+    case_id: simulation.case_id,
+    parent_simulation_id: simulation.parent_simulation_id,
+    reference_simulation_id: simulation.reference_simulation_id,
+    lineage_state: simulation.lineage_state,
+    availability_state: simulation.technical_state,
+    availability_message: simulation.technical_state_message,
+    inspectable: simulation.explore_available,
+    grid: {
+      topology: "native_3d",
+      nx: 96,
+      ny: 96,
+      nz: 100,
+      dx_m: 6400 / 96,
+      dy_m: 6400 / 96,
+      dz_m: 30,
+      x_extent_km: [-3.2, 3.2],
+      y_extent_km: [-3.2, 3.2],
+      z_extent_km: [0, 3],
+    },
+    time: {
+      times_seconds: Array.from({ length: 181 }, (_, index) => index * 120),
+      start_seconds: 0,
+      end_seconds: 21_600,
+      cadence_seconds: 120,
+      saved_output_count: 181,
+      interpolation_allowed: false,
+    },
+    available_field_ids: ["ql"],
+    available_view_ids: ["field", "updraft_lens"],
+    fixed_scale_ids: ["trade_cumulus_updraft_velocity_v1"],
+    plane_orientations: ["horizontal", "vertical_x", "vertical_y"],
+    camera_mapping: "normalized_3d",
+    initial_state: compareTradeState(member),
+    caveats: [],
+  };
+}
+
+const tradeCumulusCompareDescriptor = {
+  schema_version: "world_compare_v1",
+  world_id: "trade_cumulus",
+  display_name: "Trade Cumulus",
+  simulations: [
+    compareTradeSimulation(worldBaselineSimulation, comparisonStory.baseline),
+    compareTradeSimulation(worldMoreMoistureSimulation, comparisonStory.more_moisture),
+  ],
+  default_left_simulation_id: worldBaselineSimulation.simulation_id,
+  default_right_simulation_id: worldMoreMoistureSimulation.simulation_id,
+  selected_left_simulation_id: worldBaselineSimulation.simulation_id,
+  selected_right_simulation_id: worldMoreMoistureSimulation.simulation_id,
+  material_differences: [
+    {
+      path: "run_configuration.surface_moisture_flux_g_g_m_s",
+      label: "Surface moisture supply",
+      category: "atmospheric",
+      left_value: 0.052,
+      right_value: 0.078,
+      left_known: true,
+      right_known: true,
+      units: "g/kg m/s",
+      material: true,
+    },
+  ],
+  compatibility: {
+    same_world: true,
+    both_inspectable: true,
+    relationship: "More Moisture is a child of Canonical BOMEX Baseline.",
+    controlled_pair: true,
+    controlled_pair_message:
+      "Only surface moisture supply changed; the retained pair is a controlled comparison.",
+    shared_field_ids: ["ql"],
+    shared_view_ids: ["field", "updraft_lens"],
+    shared_fixed_scale_ids: ["trade_cumulus_updraft_velocity_v1"],
+    exact_time_link_available: true,
+    nearest_time_link_available: true,
+    time_tolerance_seconds: 180,
+    physical_plane_link_available: true,
+    camera_link_available: true,
+    selection_link_available: true,
+    blockers: [],
+  },
+  no_second_simulation_message: null,
+  persistence: "transient_only",
 };
 
 const cloudWorldSummary = {
@@ -718,6 +846,13 @@ async function mockTradeCumulusWorld(page: Parameters<typeof mockCloudChamberApi
       body: JSON.stringify(tradeCumulusWorld),
     }),
   );
+  await page.route("**/api/worlds/trade-cumulus/compare**", (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify(tradeCumulusCompareDescriptor),
+    }),
+  );
 }
 
 test.describe("mocked smoke: Build, Results, Explore path", () => {
@@ -790,14 +925,29 @@ test.describe("mocked smoke: Build, Results, Explore path", () => {
     await expect(page.getByRole("button", { name: "Show Context" })).toBeVisible();
     await page.getByRole("button", { name: "Show Context" }).click();
     await expect(page.getByLabel("Current scientific context")).toBeVisible();
-    await expect(page.getByRole("button", { name: "Compare" })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Compare" })).toBeVisible();
     await page.getByRole("button", { name: "Back to Trade Cumulus" }).click();
 
     await page.getByRole("button", { name: "Open Comparison" }).click();
     await expect(
-      page.getByRole("heading", { name: "Trade Cumulus: Baseline and More Moisture" }),
+      page.getByRole("heading", {
+        name: "Review the two Simulations before loading frames",
+      }),
     ).toBeVisible();
-    await expect(page.getByLabel("More Moisture versus Baseline workspace")).toBeVisible();
+    await expect(page.getByText("0.0520 g/kg m/s")).toBeVisible();
+    await expect(page.getByText("0.0780 g/kg m/s")).toBeVisible();
+    await page.getByRole("button", { name: "Open dual view" }).click();
+    await expect(page.getByLabel("Trade Cumulus Compare")).toBeVisible();
+    await expect(page.getByLabel("Canonical BOMEX Baseline comparison side")).toBeVisible();
+    await expect(page.getByLabel("More Moisture comparison side")).toBeVisible();
+    await expect(page.getByRole("button", { name: "Independent" })).toHaveClass(
+      /active-control/,
+    );
+    await page.getByRole("button", { name: "Aligned" }).click();
+    await expect(page.getByRole("checkbox", { name: "Time", exact: true })).toBeChecked();
+    await expect(
+      page.getByRole("checkbox", { name: "Field / Lens", exact: true }),
+    ).toBeChecked();
     await page.getByRole("button", { name: "Back to Trade Cumulus" }).click();
 
     await page.getByRole("button", { name: "Lab", exact: true }).click();

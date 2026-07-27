@@ -310,7 +310,7 @@ def _world_detail_payload() -> dict[str, object]:
             "featured_comparison": True,
             "lab": True,
             "saved_views": False,
-            "ordinary_compare": False,
+            "ordinary_compare": True,
         },
         "caveats": [],
     }
@@ -452,12 +452,16 @@ def test_supercells_product_api_defaults_to_presentation_mature_frame(
     assert response.json()["time_index"] == 37
     assert calls == [
         {
+            "simulation_id": "supercells_quarter_circle_reference",
             "lens": "rotating_updraft",
             "time_index": 37,
             "viewport": "storm",
             "x_index": None,
             "y_index": None,
             "z_index": None,
+            "selected_x_index": None,
+            "selected_y_index": None,
+            "selected_z_index": None,
         }
     ]
 

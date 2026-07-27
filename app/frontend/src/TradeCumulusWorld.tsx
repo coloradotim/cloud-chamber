@@ -67,7 +67,7 @@ export type TradeCumulusWorldDetail = {
     featured_comparison: boolean;
     lab: true;
     saved_views: false;
-    ordinary_compare: false;
+    ordinary_compare: true;
   };
   caveats: string[];
 };
@@ -96,7 +96,7 @@ export function TradeCumulusWorld({
 }: {
   onBackToWorlds: () => void;
   onExploreSimulation: (simulation: SimulationRecord) => void;
-  onOpenFeaturedComparison: () => void;
+  onOpenFeaturedComparison: (simulation?: SimulationRecord) => void;
   buildContent: ReactNode;
   resultsContent: ReactNode;
   section?: TradeCumulusWorldSection;
@@ -277,7 +277,7 @@ function Overview({
 }: {
   world: TradeCumulusWorldDetail;
   onExploreSimulation: (simulation: SimulationRecord) => void;
-  onOpenFeaturedComparison: () => void;
+  onOpenFeaturedComparison: (simulation?: SimulationRecord) => void;
   onOpenLab: () => void;
 }) {
   const moreMoisture = world.simulations.find(
@@ -302,14 +302,14 @@ function Overview({
           simulation={world.reference_simulation}
           comparisonAvailable={world.featured_comparison.open_available}
           onExplore={onExploreSimulation}
-          onCompare={onOpenFeaturedComparison}
+          onCompare={() => onOpenFeaturedComparison(world.reference_simulation)}
         />
         {moreMoisture && moreMoisture.technical_state !== "missing" && (
           <SimulationCard
             simulation={moreMoisture}
             comparisonAvailable={world.featured_comparison.open_available}
             onExplore={onExploreSimulation}
-            onCompare={onOpenFeaturedComparison}
+            onCompare={() => onOpenFeaturedComparison(moreMoisture)}
           />
         )}
         {comparisonMatchesReference && (
@@ -345,7 +345,7 @@ function SimulationsSection({
 }: {
   world: TradeCumulusWorldDetail;
   onExploreSimulation: (simulation: SimulationRecord) => void;
-  onOpenFeaturedComparison: () => void;
+  onOpenFeaturedComparison: (simulation?: SimulationRecord) => void;
 }) {
   return (
     <section className="world-section" aria-labelledby="world-simulations-title">
@@ -366,7 +366,7 @@ function SimulationsSection({
             simulation={simulation}
             comparisonAvailable={world.featured_comparison.open_available}
             onExplore={onExploreSimulation}
-            onCompare={onOpenFeaturedComparison}
+            onCompare={() => onOpenFeaturedComparison(simulation)}
           />
         ))}
       </div>
@@ -478,7 +478,7 @@ function ComparisonsSection({
   onOpenFeaturedComparison,
 }: {
   world: TradeCumulusWorldDetail;
-  onOpenFeaturedComparison: () => void;
+  onOpenFeaturedComparison: (simulation?: SimulationRecord) => void;
 }) {
   return (
     <section className="world-section" aria-labelledby="world-comparisons-title">
@@ -678,7 +678,7 @@ function isCapabilities(value: unknown): boolean {
     typeof value.featured_comparison === "boolean" &&
     value.lab === true &&
     value.saved_views === false &&
-    value.ordinary_compare === false
+    value.ordinary_compare === true
   );
 }
 

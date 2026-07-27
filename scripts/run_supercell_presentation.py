@@ -43,13 +43,18 @@ def main(argv: list[str] | None = None) -> int:
     mode.add_argument("--execute", action="store_true")
     mode.add_argument("--validate", action="store_true")
     parser.add_argument("--kind", choices=("characterization", "final"), required=True)
+    parser.add_argument(
+        "--hodograph",
+        choices=("quarter_circle", "straight_line"),
+        default="quarter_circle",
+    )
     parser.add_argument("--runtime-home")
     parser.add_argument("--poll-seconds", type=float, default=5.0)
     args = parser.parse_args(argv)
     settings = load_settings(
         home=Path(args.runtime_home).expanduser() if args.runtime_home else None
     )
-    spec = spec_for_kind(args.kind)
+    spec = spec_for_kind(args.kind, args.hodograph)
     try:
         if args.package:
             package = generate_presentation_package(settings=settings, spec=spec)

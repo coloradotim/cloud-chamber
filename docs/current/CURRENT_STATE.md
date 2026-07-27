@@ -69,9 +69,9 @@ Explore.
 
 | World | Current content | Current surfaces | Current limitation |
 | --- | --- | --- | --- |
-| **Trade Cumulus** | Canonical BOMEX Baseline and More Moisture retained Simulations | Overview, Simulations, featured Comparison, Lab, Explore resume, and Saved Views | Ordinary World-aware Compare is not implemented; Lab still embeds transitional Build and Results |
-| **Mountain Waves** | Dry Ridge and Boulder Windstorm retained Simulations | Overview, Simulations, variation Lab, Explore resume, and Saved Views | Variation is World-specific rather than shared; no ordinary Compare |
-| **Supercells** | Quarter-Circle Supercell retained Simulation | Overview, Simulations, Explore resume, and Saved Views | No variation Lab or ordinary Compare |
+| **Trade Cumulus** | Canonical BOMEX Baseline and More Moisture retained Simulations | Overview, Simulations, featured and ordinary Compare, Lab, Explore resume, and Saved Views | Lab still embeds transitional Build and Results; Saved Comparisons are absent |
+| **Mountain Waves** | Dry Ridge and Boulder Windstorm retained Simulations | Overview, Simulations, ordinary Compare, variation Lab, Explore resume, and Saved Views | Variation remains World-specific; Saved Comparisons are absent |
+| **Supercells** | Quarter-Circle and Straight-Line Hodograph retained Simulations | Overview, Simulations, ordinary Compare, Explore resume, and Saved Views | No variation Lab or Saved Comparisons |
 
 The World Overview and Simulations surfaces use stable content identities and
 explicit availability states. Missing, invalid, or conflicting retained
@@ -190,6 +190,26 @@ Writes are atomic and bounded. Unsupported schemas, invalid values, oversized
 files, and persistence failures are visible local failures. Per-Simulation
 Notes remain separate and are not copied into Saved Views.
 
+## Ordinary Compare
+
+Each accessible World can compare two compatible retained Simulations through
+one ordinary Compare workflow. The pair-review step presents lineage,
+configuration differences, retained-output compatibility, and caveats before
+loading frames. The live workspace supports aligned, independent, and mixed
+coordination of modeled time, Field or Lens, physical slice plane, compatible
+camera state, and selected-point evidence.
+
+Compare coordinates existing Simulation and Explore state without creating a
+new scientific object. Its state is transient: it does not create a Saved
+Comparison or alter either Simulation or its Saved Views.
+
+Supercells now exercises the complete workflow with a controlled real pair:
+Quarter-Circle Supercell and Straight-Line Hodograph Supercell. The two
+Simulations retain matched thermodynamics, trigger, grid, timing, output
+inventory, model translation, and numerical options while changing hodograph
+curvature. Compare maps physical coordinates and local native evidence; it
+does not claim that storm structures on the two sides have object lineage.
+
 ## Shared Scientific Presentation
 
 Current Explore surfaces use:
@@ -224,6 +244,7 @@ CM1 output:
 | Mountain Waves | Dry Ridge | `dry-mountain-wave-presentation-v1-20260722` |
 | Mountain Waves | Boulder Windstorm | `moist-mountain-wave-presentation-v1-20260722` |
 | Supercells | Quarter-Circle Supercell | `quarter-circle-supercell-presentation-v1-20260723` |
+| Supercells | Straight-Line Hodograph Supercell | `straight-line-supercell-presentation-v1-20260726` |
 
 These run IDs identify current local artifacts, not permanent product identity.
 The large NetCDF histories remain outside Git under the runtime home.
@@ -250,7 +271,6 @@ information architecture.
 
 The implemented application does not yet provide:
 
-- ordinary World-aware Compare beyond the featured Trade Cumulus Comparison;
 - one shared World-aware variation workflow across all accessible Worlds;
 - Saved Comparisons or durable comparison workspaces.
 

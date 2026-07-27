@@ -21,6 +21,7 @@ from cloud_chamber.run_manifest import (
     ScenarioReference,
     UserMetadata,
     ValidationStatus,
+    load_run_manifest,
     write_run_manifest,
 )
 from cloud_chamber.settings import CloudChamberSettings
@@ -33,8 +34,10 @@ from cloud_chamber.supercell_benchmark import (
 )
 from cloud_chamber.supercell_presentation import (
     CHARACTERIZATION_SPEC,
+    FINAL_RUN_STORAGE_RESERVATION_BYTES,
     MINIMUM_POST_RUN_FREE_BYTES,
     PRESENTATION_SPEC,
+    STRAIGHT_LINE_CHARACTERIZATION_SPEC,
     PresentationStorageEstimate,
     estimate_storage,
     generate_presentation_package,
@@ -71,6 +74,8 @@ def _settings(tmp_path: Path) -> CloudChamberSettings:
 def _provenance(tmp_path: Path) -> CM1Provenance:
     root = tmp_path / "cm1"
     run_dir = root / "run"
+    (root / "src").mkdir(parents=True, exist_ok=True)
+    (root / "src/base.F").write_text("fake source\n")
     namelist = root / "official-namelist.input"
     namelist.write_text(_official_namelist())
     executable = run_dir / "cm1.exe"
@@ -167,7 +172,39 @@ def test_namelist_changes_only_declared_presentation_assignments() -> None:
     assert " timax = 10800.0," in rendered
 
 
-def test_storage_floor_uses_no_compression_credit(tmp_path: Path) -> None:
+def test_straight_line_namelist_changes_only_hodograph_beyond_reference() -> None:
+    rendered, differences = render_presentation_namelist(
+        _official_namelist(),
+        STRAIGHT_LINE_CHARACTERIZATION_SPEC,
+    )
+
+    assert " iwnd = 12," in rendered
+    assert {item.name for item in differences} == set(
+        STRAIGHT_LINE_CHARACTERIZATION_SPEC.changed_assignments
+    )
+    assert next(item for item in differences if item.name == "iwnd").reason == (
+        "controlled_hodograph_geometry"
+    )
+    assert {
+        name: value
+        for name, value in STRAIGHT_LINE_CHARACTERIZATION_SPEC.expected_science_assignments.items()
+        if name != "iwnd"
+    } == {
+        name: value
+        for name, value in supercell_presentation.LOCKED_SCIENCE_ASSIGNMENTS.items()
+        if name != "iwnd"
+    }
+
+
+def test_storage_floor_uses_no_compression_credit(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        supercell_presentation,
+        "_completed_final_campaign_runs",
+        lambda _runs_dir: set(),
+    )
     storage = estimate_storage(PRESENTATION_SPEC, tmp_path)
     expected_history_bytes = (
         len(supercell_presentation.REQUIRED_3D_FIELDS) * 240 * 240 * 60
@@ -177,8 +214,33 @@ def test_storage_floor_uses_no_compression_credit(tmp_path: Path) -> None:
     assert storage.expected_history_count == 91
     assert storage.uncompressed_numeric_history_floor_bytes == expected_history_bytes * 91
     assert storage.compression_credit_bytes == 0
+    assert storage.gate_basis == "measured_retained_campaign_reservation"
+    assert storage.final_campaign_runs_remaining == 2
     assert storage.required_free_bytes == (
-        storage.uncompressed_numeric_history_floor_bytes + MINIMUM_POST_RUN_FREE_BYTES
+        2 * FINAL_RUN_STORAGE_RESERVATION_BYTES + MINIMUM_POST_RUN_FREE_BYTES
+    )
+
+
+def test_second_final_run_gate_reserves_only_the_remaining_run(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        supercell_presentation,
+        "_completed_final_campaign_runs",
+        lambda _runs_dir: {supercell_presentation.PRESENTATION_RUN_ID},
+    )
+
+    storage = estimate_storage(STRAIGHT_LINE_CHARACTERIZATION_SPEC, tmp_path)
+    final_storage = estimate_storage(
+        supercell_presentation.STRAIGHT_LINE_PRESENTATION_SPEC,
+        tmp_path,
+    )
+
+    assert storage.gate_basis == "uncompressed_numeric_floor"
+    assert final_storage.final_campaign_runs_remaining == 1
+    assert final_storage.required_free_bytes == (
+        FINAL_RUN_STORAGE_RESERVATION_BYTES + MINIMUM_POST_RUN_FREE_BYTES
     )
 
 
@@ -205,6 +267,106 @@ def test_package_and_preflight_are_nonexecuting_and_fail_closed(
         "collect_cm1_provenance",
         lambda _settings: provenance,
     )
+    storage_estimates = iter(
+        [
+            PresentationStorageEstimate(
+                expected_history_count=2,
+                scalar_grid=[240, 240, 60],
+                scalar_3d_array_count=19,
+                scalar_2d_array_count=4,
+                uncompressed_numeric_history_floor_bytes=1,
+                required_free_bytes=2,
+                available_free_bytes=10,
+                passed=True,
+            ),
+            PresentationStorageEstimate(
+                expected_history_count=2,
+                scalar_grid=[240, 240, 60],
+                scalar_3d_array_count=19,
+                scalar_2d_array_count=4,
+                uncompressed_numeric_history_floor_bytes=1,
+                required_free_bytes=2,
+                available_free_bytes=10,
+                passed=True,
+            ),
+            PresentationStorageEstimate(
+                expected_history_count=2,
+                scalar_grid=[240, 240, 60],
+                scalar_3d_array_count=19,
+                scalar_2d_array_count=4,
+                uncompressed_numeric_history_floor_bytes=1,
+                required_free_bytes=1,
+                available_free_bytes=9,
+                passed=True,
+            ),
+        ]
+    )
+    monkeypatch.setattr(
+        supercell_presentation,
+        "estimate_storage",
+        lambda _spec, _path: next(storage_estimates),
+    )
+
+    package = generate_presentation_package(
+        settings=settings,
+        spec=CHARACTERIZATION_SPEC,
+    )
+    preflight = verify_presentation_package(
+        settings=settings,
+        package=package,
+        require_clean_head=True,
+    )
+
+    assert preflight.passed is True
+    assert all(preflight.checks.values())
+    assert preflight.storage.required_free_bytes == 1
+    assert preflight.storage.available_free_bytes == 9
+    assert not list(package.package_dir.glob("cm1out_*.nc"))
+    assert json.loads(package.case_manifest_path.read_text())["execution_authorization"] == {
+        "duration_seconds": 300,
+        "process_count": 1,
+        "retry_allowed": False,
+        "tuning_matrix_allowed": False,
+    }
+
+
+def test_straight_line_package_declares_hashed_source_customization(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    settings = _settings(tmp_path)
+    _write_accepted_source(settings)
+    provenance = _provenance(tmp_path)
+    artifact = {
+        "schema_version": "supercell_straight_line_hodograph_v1",
+        "customization_kind": "straight_line_hodograph_v1",
+        "target_relative_path": "src/base.F",
+        "marker": "CLOUD_CHAMBER_STRAIGHT_LINE_HODOGRAPH_V1",
+        "original_source_sha256": "1" * 64,
+        "patched_source_sha256": "2" * 64,
+        "wind_profile": {"profile": "test"},
+    }
+    monkeypatch.setattr(
+        supercell_presentation,
+        "verified_clean_git_commit",
+        lambda: "implementation",
+    )
+    monkeypatch.setattr(supercell_presentation, "active_cm1_processes", lambda: [])
+    monkeypatch.setattr(
+        supercell_presentation,
+        "verify_gate_a_source_lock",
+        lambda: {"logical_path": "gate-a.md", "sha256": "source-lock"},
+    )
+    monkeypatch.setattr(
+        supercell_presentation,
+        "collect_cm1_provenance",
+        lambda _settings: provenance,
+    )
+    monkeypatch.setattr(
+        supercell_presentation,
+        "straight_line_hodograph_artifact",
+        lambda _source: artifact,
+    )
     monkeypatch.setattr(
         supercell_presentation,
         "estimate_storage",
@@ -222,23 +384,39 @@ def test_package_and_preflight_are_nonexecuting_and_fail_closed(
 
     package = generate_presentation_package(
         settings=settings,
-        spec=CHARACTERIZATION_SPEC,
+        spec=STRAIGHT_LINE_CHARACTERIZATION_SPEC,
     )
-    preflight = verify_presentation_package(
+    manifest = load_run_manifest(package.manifest_path)
+    case_manifest = json.loads(package.case_manifest_path.read_text())
+
+    assert manifest.run_configuration["simulation_id"] == (
+        supercell_presentation.STRAIGHT_LINE_SIMULATION_ID
+    )
+    assert manifest.run_configuration["parent_simulation_id"] == (
+        supercell_presentation.QUARTER_CIRCLE_SIMULATION_ID
+    )
+    assert manifest.run_configuration["cm1_source_customization_kind"] == (
+        "straight_line_hodograph_v1"
+    )
+    assert (
+        Path(manifest.generated_inputs.cm1_source_customization or "").name
+        == "straight_line_hodograph_customization.json"
+    )
+    runtime_checklist = json.loads(
+        Path(manifest.generated_inputs.runtime_file_checklist[0]).read_text()
+    )
+    assert runtime_checklist["consumed_files"] == []
+    assert runtime_checklist["required_files"] == []
+    assert (
+        runtime_checklist["packaged_source_customization"]
+        == "straight_line_hodograph_customization.json"
+    )
+    assert case_manifest["hodograph"] == "straight_line"
+    assert verify_presentation_package(
         settings=settings,
         package=package,
         require_clean_head=True,
-    )
-
-    assert preflight.passed is True
-    assert all(preflight.checks.values())
-    assert not list(package.package_dir.glob("cm1out_*.nc"))
-    assert json.loads(package.case_manifest_path.read_text())["execution_authorization"] == {
-        "duration_seconds": 300,
-        "process_count": 1,
-        "retry_allowed": False,
-        "tuning_matrix_allowed": False,
-    }
+    ).passed
 
 
 def test_completed_validation_rejects_non_finite_required_field(
