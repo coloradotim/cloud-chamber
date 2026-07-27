@@ -11963,6 +11963,7 @@ export function VisualizerSceneShell({
     }
     let selectedPoint: TradeCumulusExploreState["selected_point"] = null;
     if (
+      updraftLensActive &&
       updraftLensFrame &&
       selectedRegion?.xIndex !== undefined &&
       selectedRegion.yIndex !== undefined &&
