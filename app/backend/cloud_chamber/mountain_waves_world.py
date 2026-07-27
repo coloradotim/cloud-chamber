@@ -75,7 +75,7 @@ class MountainWavesWorldSummary(BaseModel):
     reference_available: bool
     simulation_count: int
     saved_view_count: Literal[0] = 0
-    saved_comparison_count: Literal[0] = 0
+    saved_comparison_count: int = 0
     featured_comparison_count: Literal[0] = 0
     active_run_count: int
     completed_uninspected_run_count: int

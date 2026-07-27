@@ -154,7 +154,13 @@ describe("MountainWavesWorld", () => {
 
   it("presents the retained references and opens either Simulation", async () => {
     const onExplore = vi.fn();
-    render(<MountainWavesWorld onBackToWorlds={vi.fn()} onExploreSimulation={onExplore} />);
+    render(
+      <MountainWavesWorld
+        onBackToWorlds={vi.fn()}
+        onExploreSimulation={onExplore}
+        onOpenSavedComparison={vi.fn()}
+      />,
+    );
 
     expect(await screen.findByRole("heading", { name: "Mountain Waves" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Dry Ridge" })).toBeInTheDocument();
@@ -165,7 +171,13 @@ describe("MountainWavesWorld", () => {
   });
 
   it("opens the shared Lab on the selected parent", async () => {
-    render(<MountainWavesWorld onBackToWorlds={vi.fn()} onExploreSimulation={vi.fn()} />);
+    render(
+      <MountainWavesWorld
+        onBackToWorlds={vi.fn()}
+        onExploreSimulation={vi.fn()}
+        onOpenSavedComparison={vi.fn()}
+      />,
+    );
     await screen.findByRole("heading", { name: "Boulder Windstorm" });
     const createButtons = screen.getAllByRole("button", { name: "Create variation" });
     fireEvent.click(createButtons[0]);

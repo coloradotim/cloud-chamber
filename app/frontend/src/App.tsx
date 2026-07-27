@@ -1375,6 +1375,7 @@ type WorldCompareNavigation = {
   worldSlug: CompareWorldSlug;
   leftSimulationId: string | null;
   rightSimulationId: string | null;
+  savedComparisonId: string | null;
   resumeExistingState: boolean;
 };
 type ScenarioLoadState = "loading" | "loaded" | "failed" | "empty";
@@ -2488,13 +2489,13 @@ export function App() {
   const [worldLabSection, setWorldLabSection] = useState<TradeCumulusLabSection>("results");
   const [worldDetail, setWorldDetail] = useState<TradeCumulusWorldDetail | null>(null);
   const [worldExploreContext, setWorldExploreContext] = useState<WorldExploreContext | null>(null);
-  const [worldCompareNavigation, setWorldCompareNavigation] =
-    useState<WorldCompareNavigation>({
-      worldSlug: "trade-cumulus",
-      leftSimulationId: null,
-      rightSimulationId: null,
-      resumeExistingState: false,
-    });
+  const [worldCompareNavigation, setWorldCompareNavigation] = useState<WorldCompareNavigation>({
+    worldSlug: "trade-cumulus",
+    leftSimulationId: null,
+    rightSimulationId: null,
+    savedComparisonId: null,
+    resumeExistingState: false,
+  });
   const [activeSection, setActiveSection] = useState<WorkspaceSection>("results");
   const [scenarios, setScenarios] = useState<Scenario[]>([]);
   const [selectedScenarioId, setSelectedScenarioId] = useState(OBSERVED_SOUNDING_EXPERIMENT_ID);
@@ -4070,7 +4071,20 @@ export function App() {
       worldSlug,
       leftSimulationId,
       rightSimulationId,
+      savedComparisonId: null,
       resumeExistingState,
+    });
+    setProductLocation("comparison");
+  }
+
+  function openSavedWorldComparison(worldSlug: CompareWorldSlug, savedComparisonId: string) {
+    setComparisonStoryActive(false);
+    setWorldCompareNavigation({
+      worldSlug,
+      leftSimulationId: null,
+      rightSimulationId: null,
+      savedComparisonId,
+      resumeExistingState: false,
     });
     setProductLocation("comparison");
   }
@@ -4636,23 +4650,16 @@ export function App() {
   const worldCompareTargetId = (() => {
     if (!activeWorldSimulation || !worldDetail) return null;
     const featuredComparison = worldDetail.featured_comparison;
-    if (
-      activeWorldSimulation.simulation_id ===
-      featuredComparison.baseline_simulation_id
-    ) {
+    if (activeWorldSimulation.simulation_id === featuredComparison.baseline_simulation_id) {
       return featuredComparison.more_moisture_simulation_id;
     }
-    if (
-      activeWorldSimulation.simulation_id ===
-      featuredComparison.more_moisture_simulation_id
-    ) {
+    if (activeWorldSimulation.simulation_id === featuredComparison.more_moisture_simulation_id) {
       return featuredComparison.baseline_simulation_id;
     }
     return activeWorldSimulation.compare_suggestions?.[0]?.target_simulation_id ?? null;
   })();
   const worldCompareAvailable = Boolean(
-    worldCompareTargetId &&
-    worldDetail?.featured_comparison.open_available,
+    worldCompareTargetId && worldDetail?.featured_comparison.open_available,
   );
   const selectedAtmosphere = selectedAtmosphereSummary(
     observedSoundingParse?.selected_sounding ?? null,
@@ -4742,6 +4749,9 @@ export function App() {
               false,
             )
           }
+          onOpenSavedComparison={(savedComparisonId) =>
+            openSavedWorldComparison("trade-cumulus", savedComparisonId)
+          }
           onWorldDetailChange={setWorldDetail}
           buildContent={buildWorkspace}
           resultsContent={resultsWorkspace}
@@ -4756,11 +4766,10 @@ export function App() {
             setProductLocation("mountain-explore");
           }}
           onCompareSimulation={(simulation, targetSimulationId) =>
-            openWorldComparison(
-              "mountain-waves",
-              simulation.simulation_id,
-              targetSimulationId,
-            )
+            openWorldComparison("mountain-waves", simulation.simulation_id, targetSimulationId)
+          }
+          onOpenSavedComparison={(savedComparisonId) =>
+            openSavedWorldComparison("mountain-waves", savedComparisonId)
           }
         />
       )}
@@ -4792,6 +4801,9 @@ export function App() {
             setProductLocation("supercells-explore");
           }}
           onCompare={(simulation) => openWorldComparison("supercells", simulation.simulation_id)}
+          onOpenSavedComparison={(savedComparisonId) =>
+            openSavedWorldComparison("supercells", savedComparisonId)
+          }
         />
       )}
 
@@ -4803,9 +4815,7 @@ export function App() {
           <SupercellsExplore
             simulation={supercellSimulation}
             onBack={() => setProductLocation("supercells-world")}
-            onCompare={() =>
-              openWorldComparison("supercells", supercellSimulation.simulation_id)
-            }
+            onCompare={() => openWorldComparison("supercells", supercellSimulation.simulation_id)}
           />
         </section>
       )}
@@ -4852,6 +4862,7 @@ export function App() {
             worldSlug={worldCompareNavigation.worldSlug}
             initialLeftSimulationId={worldCompareNavigation.leftSimulationId}
             initialRightSimulationId={worldCompareNavigation.rightSimulationId}
+            savedComparisonId={worldCompareNavigation.savedComparisonId}
             resumeExistingState={worldCompareNavigation.resumeExistingState}
             onBack={returnFromWorldCompare}
             onOpenSimulation={(simulationId) =>
@@ -11952,6 +11963,7 @@ export function VisualizerSceneShell({
     }
     let selectedPoint: TradeCumulusExploreState["selected_point"] = null;
     if (
+      updraftLensActive &&
       updraftLensFrame &&
       selectedRegion?.xIndex !== undefined &&
       selectedRegion.yIndex !== undefined &&
@@ -13126,9 +13138,7 @@ export function VisualizerSceneShell({
             );
       if (
         loadedHorizontalCoordinateKm === null ||
-        Math.abs(
-          loadedHorizontalCoordinateKm - savedState.horizontal_slice_coordinate_km,
-        ) >
+        Math.abs(loadedHorizontalCoordinateKm - savedState.horizontal_slice_coordinate_km) >
           0.2 + Number.EPSILON
       ) {
         const remappedHorizontal = nearestSavedCoordinate(
@@ -13175,7 +13185,8 @@ export function VisualizerSceneShell({
             ...pendingSavedRestore,
             result: {
               status: "partially_restorable",
-              message: "Saved View restored with adjustments: selected point mapped to the nearest native cell.",
+              message:
+                "Saved View restored with adjustments: selected point mapped to the nearest native cell.",
             },
           });
         }

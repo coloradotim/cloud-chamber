@@ -94,6 +94,7 @@ const world: TradeCumulusWorldDetail = {
     lab: true,
     saved_views: false,
     ordinary_compare: true,
+    saved_comparisons: true,
   },
   caveats: [],
 };
@@ -215,6 +216,7 @@ function renderWorld(
       onBackToWorlds={vi.fn()}
       onExploreSimulation={overrides.onExploreSimulation ?? vi.fn()}
       onOpenFeaturedComparison={overrides.onOpenFeaturedComparison ?? vi.fn()}
+      onOpenSavedComparison={vi.fn()}
       buildContent={<div>Build workspace retained</div>}
       resultsContent={<div>Results workspace retained</div>}
       initialLabSection="build"

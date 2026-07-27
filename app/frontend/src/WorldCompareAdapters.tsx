@@ -48,6 +48,8 @@ type SideVisualProps = {
   commonMountainScale?: TerrainScale | null;
   onMountainScale?: (side: CompareSide, scale: TerrainScale | null) => void;
   onEvidence?: (side: CompareSide, evidence: CompareSelectedEvidence | null) => void;
+  presentation?: "scene" | "evidence";
+  onPresentationChange?: (side: CompareSide, presentation: "scene" | "evidence") => void;
 };
 
 export type TerrainScale = MountainWaveFrame["scale"];
@@ -375,8 +377,10 @@ function SupercellsCompareVisual({
   onFrameState,
   onPerformance,
   onEvidence,
+  presentation = "evidence",
+  onPresentationChange,
 }: Omit<SideVisualProps, "state"> & { state: SupercellsExploreState }) {
-  const [surface, setSurface] = useState<"scene" | "evidence">("evidence");
+  const surface = presentation;
   const timeIndex = timeIndexForSeconds(simulation, state.model_time_seconds);
   const indices = supercellRequestIndices(simulation, state);
   const search = new URLSearchParams({
@@ -439,7 +443,7 @@ function SupercellsCompareVisual({
       evidence_view: view,
       plane_coordinate_km: coordinate,
     });
-    setSurface("evidence");
+    onPresentationChange?.(side, "evidence");
   }
 
   return (
@@ -451,7 +455,7 @@ function SupercellsCompareVisual({
         <button
           type="button"
           className={surface === "scene" ? "active-control" : ""}
-          onClick={() => setSurface("scene")}
+          onClick={() => onPresentationChange?.(side, "scene")}
         >
           3-D
         </button>

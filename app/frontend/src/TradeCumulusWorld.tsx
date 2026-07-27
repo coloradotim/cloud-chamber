@@ -1,5 +1,7 @@
 import { type ReactNode, useCallback, useEffect, useState } from "react";
 
+import { SavedComparisonsCollection } from "./SavedComparisons";
+
 export type ConfigurationDifference = {
   path: string;
   label: string;
@@ -68,6 +70,7 @@ export type TradeCumulusWorldDetail = {
     lab: true;
     saved_views: false;
     ordinary_compare: true;
+    saved_comparisons: true;
   };
   caveats: string[];
 };
@@ -77,6 +80,7 @@ export type TradeCumulusWorldSection =
   | "simulations"
   | "saved_views"
   | "comparisons"
+  | "saved_comparisons"
   | "lab";
 export type TradeCumulusLabSection = "build" | "results";
 
@@ -84,6 +88,7 @@ export function TradeCumulusWorld({
   onBackToWorlds,
   onExploreSimulation,
   onOpenFeaturedComparison,
+  onOpenSavedComparison,
   buildContent,
   resultsContent,
   section: controlledSection,
@@ -97,6 +102,7 @@ export function TradeCumulusWorld({
   onBackToWorlds: () => void;
   onExploreSimulation: (simulation: SimulationRecord) => void;
   onOpenFeaturedComparison: (simulation?: SimulationRecord) => void;
+  onOpenSavedComparison: (savedComparisonId: string) => void;
   buildContent: ReactNode;
   resultsContent: ReactNode;
   section?: TradeCumulusWorldSection;
@@ -210,6 +216,7 @@ export function TradeCumulusWorld({
             "simulations",
             "saved_views",
             "comparisons",
+            "saved_comparisons",
             "lab",
           ] as TradeCumulusWorldSection[]
         ).map((item) => (
@@ -242,6 +249,11 @@ export function TradeCumulusWorld({
       {section === "saved_views" && <SavedViewsSection />}
       {section === "comparisons" && (
         <ComparisonsSection world={world} onOpenFeaturedComparison={onOpenFeaturedComparison} />
+      )}
+      {section === "saved_comparisons" && (
+        <section className="world-section">
+          <SavedComparisonsCollection worldSlug="trade-cumulus" onOpen={onOpenSavedComparison} />
+        </section>
       )}
       {section === "lab" && (
         <LabWorkspace
@@ -286,8 +298,7 @@ function Overview({
       simulation.parent_simulation_id === world.reference_simulation.simulation_id,
   );
   const comparisonMatchesReference =
-    world.featured_comparison.baseline_simulation_id ===
-    world.reference_simulation.simulation_id;
+    world.featured_comparison.baseline_simulation_id === world.reference_simulation.simulation_id;
   return (
     <section className="world-section" aria-labelledby="world-overview-title">
       <div className="world-section-heading">
@@ -704,6 +715,7 @@ function sectionLabel(section: TradeCumulusWorldSection): string {
     simulations: "Simulations",
     saved_views: "Saved Views",
     comparisons: "Comparisons",
+    saved_comparisons: "Saved Comparisons",
     lab: "Lab",
   }[section];
 }

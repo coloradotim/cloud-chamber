@@ -4721,17 +4721,11 @@ describe("App", () => {
   });
 
   it("recovers a stale Soundings Explore URL into the empty Explore landing", async () => {
-    window.history.replaceState(
-      {},
-      "",
-      "/fun-with-soundings/explore/result-deleted-soundings-run",
-    );
+    window.history.replaceState({}, "", "/fun-with-soundings/explore/result-deleted-soundings-run");
     const defaultFetch = vi.mocked(fetch).getMockImplementation();
     vi.mocked(fetch).mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
       if (String(input) === "/api/results") {
-        return Promise.resolve(
-          new Response(JSON.stringify({ results: [] }), { status: 200 }),
-        );
+        return Promise.resolve(new Response(JSON.stringify({ results: [] }), { status: 200 }));
       }
       return (
         defaultFetch?.(input, init) ?? Promise.resolve(new Response("not found", { status: 404 }))
@@ -4757,9 +4751,7 @@ describe("App", () => {
     const defaultFetch = vi.mocked(fetch).getMockImplementation();
     vi.mocked(fetch).mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
       if (String(input) === "/api/results") {
-        return Promise.resolve(
-          new Response(JSON.stringify({ results: [] }), { status: 200 }),
-        );
+        return Promise.resolve(new Response(JSON.stringify({ results: [] }), { status: 200 }));
       }
       return (
         defaultFetch?.(input, init) ?? Promise.resolve(new Response("not found", { status: 404 }))
@@ -8413,7 +8405,9 @@ describe("App", () => {
       ),
     );
     fireEvent.click(screen.getByRole("button", { name: "Vertical x-z slice" }));
-    const heatmap = await screen.findByRole("img", { name: /Vertical x-z slice at y = .* heatmap/ });
+    const heatmap = await screen.findByRole("img", {
+      name: /Vertical x-z slice at y = .* heatmap/,
+    });
     fireEvent.click(within(heatmap).getByRole("button", { name: /row 1, column 2/i }));
     expect(await screen.findByRole("heading", { name: "Native-grid evidence" })).toBeVisible();
 
@@ -8450,12 +8444,7 @@ describe("App", () => {
     },
   ])(
     "restores a selected direct Field cell by physical coordinates after the $label inventory changes",
-    async ({
-      activePlane,
-      savedPlaneCoordinateKm,
-      savedNativeIndex,
-      expectedIndex,
-    }) => {
+    async ({ activePlane, savedPlaneCoordinateKm, savedNativeIndex, expectedIndex }) => {
       mockTradeCumulusVisualizer();
       const defaultFetch = vi.mocked(fetch).getMockImplementation();
       const resumeState = {
@@ -8564,7 +8553,9 @@ describe("App", () => {
       render(
         <VisualizerSceneShell
           result={
-            tradeCumulusResultCard as unknown as Parameters<typeof VisualizerSceneShell>[0]["result"]
+            tradeCumulusResultCard as unknown as Parameters<
+              typeof VisualizerSceneShell
+            >[0]["result"]
           }
           worldName="Trade Cumulus"
           simulationName="Canonical BOMEX Baseline"

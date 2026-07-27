@@ -89,6 +89,12 @@ The presentation-quality and third-World program established:
 #432 — versioned World-aware Explore state, last-active resume, and named
        Saved Views across Trade Cumulus, Mountain Waves, and Supercells
        — complete
+
+#433 — ordinary World-aware Compare across all three Worlds, including the
+       real controlled Supercells pair — complete
+
+#434 — durable World-owned Saved Comparisons that reopen as live dual
+       examinations — complete
 ```
 
 The completed work preserves stable World and Simulation identities while allowing backing run assets to improve.
@@ -168,7 +174,7 @@ reopen as live examinations, support rename and delete, preserve records when
 backing output is unavailable, and report healthy, partially restorable, or
 unavailable restoration. Notes remain separate.
 
-## Completed program: ordinary World-aware Compare
+## Completed program: World-aware Compare and Saved Comparisons
 
 Issue #433 establishes ordinary Compare across the three accessible Worlds.
 It builds comparison from two compatible Explore states rather than creating a
@@ -184,7 +190,7 @@ The current MVP decisions remain useful:
 - aligned, independent, and mixed states are supported;
 - no interpolation is presented as model output.
 
-The current sequence remains:
+The implemented sequence is:
 
 ```text
 ordinary World-aware Compare
@@ -192,8 +198,11 @@ ordinary World-aware Compare
 ```
 
 Trade Cumulus, Mountain Waves, and Supercells ask different comparison questions and may support different linked states.
-Issue #433 implements only ordinary Compare. It does not implement or claim
-Saved Comparisons; that later step requires separate approval and work.
+Issue #433 establishes ordinary Compare. Issue #434 adds Saved Comparisons as
+immutable World-owned workspace snapshots with editable metadata, direct live
+reopen, current-descriptor reconciliation, missing-dependency recovery, and
+reverse dependency lookup. They remain separate from per-Simulation Saved
+Views and Notes.
 
 The Supercells acceptance endpoint is the real retained Quarter-Circle
 Supercell and Straight-Line Hodograph Supercell pair. It exercises all three

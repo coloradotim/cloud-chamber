@@ -136,9 +136,7 @@ export type ComparePerformanceSummary = {
 export type WorldCompareAdapter = {
   worldId: CompareWorldId;
   viewLabel: string;
-  viewOptions: (
-    simulation: CompareSimulationDescriptor,
-  ) => Array<{ id: string; label: string }>;
+  viewOptions: (simulation: CompareSimulationDescriptor) => Array<{ id: string; label: string }>;
   viewId: (state: ExploreWorldState) => string;
   setView: (state: ExploreWorldState, viewId: string) => ExploreWorldState;
   fieldId: (state: ExploreWorldState) => string | null;

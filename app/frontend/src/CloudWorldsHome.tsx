@@ -25,7 +25,7 @@ export type MountainWavesWorldSummary = {
   reference_available: boolean;
   simulation_count: number;
   saved_view_count: 0;
-  saved_comparison_count: 0;
+  saved_comparison_count: number;
   featured_comparison_count: 0;
   active_run_count: number;
   completed_uninspected_run_count: number;
@@ -41,7 +41,7 @@ export type SupercellsWorldSummary = {
   reference_available: boolean;
   simulation_count: number;
   saved_view_count: 0;
-  saved_comparison_count: 0;
+  saved_comparison_count: number;
   featured_comparison_count: 0;
   active_run_count: 0;
   completed_uninspected_run_count: 0;
@@ -333,7 +333,7 @@ function isWorldSummary(value: unknown): value is CloudWorldSummary {
       typeof value.reference_available === "boolean" &&
       isNonnegativeNumber(value.simulation_count) &&
       value.saved_view_count === 0 &&
-      value.saved_comparison_count === 0 &&
+      isNonnegativeNumber(value.saved_comparison_count) &&
       value.featured_comparison_count === 0 &&
       value.active_run_count === 0 &&
       value.completed_uninspected_run_count === 0 &&
@@ -349,7 +349,7 @@ function isWorldSummary(value: unknown): value is CloudWorldSummary {
       typeof value.reference_available === "boolean" &&
       isNonnegativeNumber(value.simulation_count) &&
       value.saved_view_count === 0 &&
-      value.saved_comparison_count === 0 &&
+      isNonnegativeNumber(value.saved_comparison_count) &&
       value.featured_comparison_count === 0 &&
       isNonnegativeNumber(value.active_run_count) &&
       isNonnegativeNumber(value.completed_uninspected_run_count) &&
