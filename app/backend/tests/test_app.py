@@ -459,6 +459,9 @@ def test_supercells_product_api_defaults_to_presentation_mature_frame(
             "x_index": None,
             "y_index": None,
             "z_index": None,
+            "selected_x_index": None,
+            "selected_y_index": None,
+            "selected_z_index": None,
         }
     ]
 

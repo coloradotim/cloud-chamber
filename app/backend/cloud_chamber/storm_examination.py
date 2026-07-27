@@ -359,6 +359,9 @@ def preserved_storm_examination_frame(
         x_index=x_index,
         y_index=y_index,
         z_index=z_index,
+        selected_x_index=None,
+        selected_y_index=None,
+        selected_z_index=None,
         purpose="research",
     )
 
@@ -380,6 +383,9 @@ def supercells_explore_frame(
     x_index: int | None = None,
     y_index: int | None = None,
     z_index: int | None = None,
+    selected_x_index: int | None = None,
+    selected_y_index: int | None = None,
+    selected_z_index: int | None = None,
 ) -> StormExaminationFrame:
     """Return the production Supercells frame from the accepted Gate C science path."""
     return _storm_frame(
@@ -390,6 +396,9 @@ def supercells_explore_frame(
         x_index=x_index,
         y_index=y_index,
         z_index=z_index,
+        selected_x_index=selected_x_index,
+        selected_y_index=selected_y_index,
+        selected_z_index=selected_z_index,
         purpose="product",
         product_contract=_product_contract(simulation_id),
     )
@@ -414,6 +423,9 @@ def _storm_frame(
     x_index: int | None,
     y_index: int | None,
     z_index: int | None,
+    selected_x_index: int | None,
+    selected_y_index: int | None,
+    selected_z_index: int | None,
     purpose: FramePurpose,
     product_contract: _RunContract | None = None,
 ) -> StormExaminationFrame:
@@ -473,10 +485,25 @@ def _storm_frame(
         )
     primary_z, primary_y, primary_x = primary_index
     default_level = _default_level_index(lens, z_km, primary_z)
-    selected_x = _checked_index(x_index if x_index is not None else primary_x, len(x_km), "x_index")
-    selected_y = _checked_index(y_index if y_index is not None else primary_y, len(y_km), "y_index")
-    selected_z = _checked_index(
+    section_x = _checked_index(x_index if x_index is not None else primary_x, len(x_km), "x_index")
+    section_y = _checked_index(y_index if y_index is not None else primary_y, len(y_km), "y_index")
+    section_z = _checked_index(
         z_index if z_index is not None else default_level, len(z_km), "z_index"
+    )
+    selected_x = _checked_index(
+        selected_x_index if selected_x_index is not None else section_x,
+        len(x_km),
+        "selected_x_index",
+    )
+    selected_y = _checked_index(
+        selected_y_index if selected_y_index is not None else section_y,
+        len(y_km),
+        "selected_y_index",
+    )
+    selected_z = _checked_index(
+        selected_z_index if selected_z_index is not None else section_z,
+        len(z_km),
+        "selected_z_index",
     )
 
     primary = PointMarker(
@@ -493,7 +520,7 @@ def _storm_frame(
     if purpose == "product" and viewport == "full":
         x_indices = x_indices[::2]
         y_indices = y_indices[::2]
-    plan = _plan_view(lens, fields, x_km, y_km, z_km, selected_z, x_indices, y_indices)
+    plan = _plan_view(lens, fields, x_km, y_km, z_km, section_z, x_indices, y_indices)
     xz_section = _vertical_section(
         lens,
         "xz",
@@ -501,8 +528,8 @@ def _storm_frame(
         x_km,
         y_km,
         z_km,
-        selected_x,
-        selected_y,
+        section_x,
+        section_y,
         x_indices,
         y_indices,
     )
@@ -513,8 +540,8 @@ def _storm_frame(
         x_km,
         y_km,
         z_km,
-        selected_x,
-        selected_y,
+        section_x,
+        section_y,
         x_indices,
         y_indices,
     )
@@ -545,7 +572,7 @@ def _storm_frame(
             y_indices,
             native_x_indices,
             native_y_indices,
-            selected_z,
+            section_z,
             history_path.name,
             viewport,
         )

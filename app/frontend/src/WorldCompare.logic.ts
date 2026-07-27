@@ -1,5 +1,6 @@
 import type { CameraPreset, CameraTransform } from "./True3DViewer";
 import { SUPERCELLS_CURATED_VIEWS } from "./exploreCuratedDefaults";
+import type { ExplorePoint, SupercellsExploreState } from "./ExploreStatePersistence";
 import {
   isMountainState,
   isSupercellsState,
@@ -201,7 +202,8 @@ export const WORLD_COMPARE_ADAPTERS: Record<CompareWorldId, WorldCompareAdapter>
     modelTime: (state) => state.model_time_seconds,
     setModelTime: (state, seconds) => ({ ...state, model_time_seconds: seconds }),
     selectedPoint: (state) => state.selected_point,
-    setSelectedPoint: (state, point) => ({ ...state, selected_point: point }),
+    setSelectedPoint: (state, point) =>
+      isSupercellsState(state) ? setSupercellSelectedPoint(state, point) : state,
     cameraPreset: (state) => (isSupercellsState(state) ? state.camera_preset : null),
     setCamera: (state, preset, transform) =>
       isSupercellsState(state)
@@ -210,6 +212,25 @@ export const WORLD_COMPARE_ADAPTERS: Record<CompareWorldId, WorldCompareAdapter>
     cameraTransform: (state) => (isSupercellsState(state) ? state.camera_transform : null),
   },
 };
+
+export function setSupercellSelectedPoint(
+  state: SupercellsExploreState,
+  point: ExplorePoint | null,
+): SupercellsExploreState {
+  return {
+    ...state,
+    selected_point: point,
+    selected_evidence_visible: point !== null,
+    plane_coordinate_km:
+      point === null
+        ? state.plane_coordinate_km
+        : state.evidence_view === "plan"
+          ? point.z_km
+          : state.evidence_view === "xz"
+            ? (point.y_km ?? state.plane_coordinate_km)
+            : point.x_km,
+  };
+}
 
 export function nearestCompareTime(
   descriptor: CompareSimulationDescriptor,

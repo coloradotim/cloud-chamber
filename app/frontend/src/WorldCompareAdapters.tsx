@@ -28,7 +28,7 @@ import {
   type UpdraftLensPointSelection,
   UpdraftLensSlice,
 } from "./UpdraftLensSlice";
-import { timeIndexForSeconds } from "./WorldCompare.logic";
+import { setSupercellSelectedPoint, timeIndexForSeconds } from "./WorldCompare.logic";
 import {
   isMountainState,
   isSupercellsState,
@@ -387,6 +387,9 @@ function SupercellsCompareVisual({
   if (indices.x !== null) search.set("x_index", String(indices.x));
   if (indices.y !== null) search.set("y_index", String(indices.y));
   if (indices.z !== null) search.set("z_index", String(indices.z));
+  if (indices.selectedX !== null) search.set("selected_x_index", String(indices.selectedX));
+  if (indices.selectedY !== null) search.set("selected_y_index", String(indices.selectedY));
+  if (indices.selectedZ !== null) search.set("selected_z_index", String(indices.selectedZ));
   const url = `/api/worlds/supercells/simulations/${simulation.simulation_id}/frame?${search}`;
   const response = useBoundedJson<StormExaminationFrame>(side, url, onFrameState, onPerformance);
   const frame = response.data;
@@ -396,8 +399,11 @@ function SupercellsCompareVisual({
     [frame?.scene, state.hydrometeor_category_codes],
   );
   const evidence = useMemo(
-    () => (frame && state.selected_point ? supercellSelectedEvidence(frame) : null),
-    [frame, state.selected_point],
+    () =>
+      frame && state.selected_point && state.selected_evidence_visible
+        ? supercellSelectedEvidence(frame)
+        : null,
+    [frame, state.selected_evidence_visible, state.selected_point],
   );
 
   useEffect(() => {
@@ -407,29 +413,21 @@ function SupercellsCompareVisual({
   function select(selection: Selection) {
     if (!frame) return;
     const point = supercellPhysicalPoint(frame, selection);
-    onStateChange({
-      ...state,
-      selected_point: point,
-      selected_evidence_visible: true,
-      plane_coordinate_km:
-        state.evidence_view === "plan"
-          ? point.z_km
-          : state.evidence_view === "xz"
-            ? (point.y_km ?? state.plane_coordinate_km)
-            : point.x_km,
-    });
+    onStateChange(setSupercellSelectedPoint(state, point));
   }
 
   function selectScenePoint(point: StormScenePoint) {
-    onStateChange({
-      ...state,
-      selected_point: { x_km: point[0], y_km: point[1], z_km: point[2] },
-      selected_evidence_visible: true,
-    });
+    onStateChange(
+      setSupercellSelectedPoint(state, {
+        x_km: point[0],
+        y_km: point[1],
+        z_km: point[2],
+      }),
+    );
   }
 
   function showEvidence(view: SupercellsExploreState["evidence_view"]) {
-    const selected = state.selected_point;
+    const selected = state.selected_evidence_visible ? state.selected_point : null;
     const coordinate =
       view === "plan"
         ? (selected?.z_km ?? frame?.plan.level_km ?? state.plane_coordinate_km)
@@ -490,7 +488,7 @@ function SupercellsCompareVisual({
               state.evidence_view !== "plan" || frame.plan.selection_z_indices === null
             }
             selectedRegion={
-              state.selected_point
+              state.selected_point && state.selected_evidence_visible
                 ? {
                     xIndex: frame.selected_point.x_index,
                     yIndex: frame.selected_point.y_index,
@@ -525,7 +523,7 @@ function SupercellsCompareVisual({
             stormPointSize={state.scene_point_size}
             compactAxisLabels
             selectedPointCoordinates={
-              state.selected_point
+              state.selected_point && state.selected_evidence_visible
                 ? {
                     x: frame.selected_point.x_km,
                     y: frame.selected_point.y_km,
@@ -553,13 +551,19 @@ function SupercellsCompareVisual({
         <div className="compare-supercell-evidence">
           <div className="compare-supercell-plot">
             {state.evidence_view === "plan" ? (
-              <StormPlanPlot frame={frame} overlays={overlays} onSelect={select} />
+              <StormPlanPlot
+                frame={frame}
+                overlays={overlays}
+                onSelect={select}
+                showSelection={state.selected_evidence_visible}
+              />
             ) : (
               <StormSectionPlot
                 frame={frame}
                 section={state.evidence_view === "xz" ? frame.xz_section : frame.yz_section}
                 overlays={overlays}
                 onSelect={select}
+                showSelection={state.selected_evidence_visible}
               />
             )}
           </div>
@@ -625,13 +629,23 @@ function CompareStormLayerControls({
 function supercellRequestIndices(
   simulation: CompareSimulationDescriptor,
   state: SupercellsExploreState,
-): { x: number | null; y: number | null; z: number | null } {
-  const selected = state.selected_point;
+): {
+  x: number | null;
+  y: number | null;
+  z: number | null;
+  selectedX: number | null;
+  selectedY: number | null;
+  selectedZ: number | null;
+} {
+  const selected = state.selected_evidence_visible ? state.selected_point : null;
   const indices = {
-    x: selected
+    x: null as number | null,
+    y: null as number | null,
+    z: null as number | null,
+    selectedX: selected
       ? coordinateIndex(selected.x_km, simulation.grid.x_extent_km, simulation.grid.nx)
       : null,
-    y:
+    selectedY:
       selected?.y_km !== null && selected?.y_km !== undefined
         ? coordinateIndex(
             selected.y_km,
@@ -639,7 +653,7 @@ function supercellRequestIndices(
             simulation.grid.ny,
           )
         : null,
-    z: selected
+    selectedZ: selected
       ? coordinateIndex(selected.z_km, simulation.grid.z_extent_km, simulation.grid.nz)
       : null,
   };

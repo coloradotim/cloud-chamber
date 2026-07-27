@@ -1253,6 +1253,9 @@ def get_supercells_simulation_frame(
     x_index: int | None = None,
     y_index: int | None = None,
     z_index: int | None = None,
+    selected_x_index: int | None = None,
+    selected_y_index: int | None = None,
+    selected_z_index: int | None = None,
 ) -> dict[str, object]:
     try:
         frame = supercells_explore_frame(
@@ -1264,6 +1267,9 @@ def get_supercells_simulation_frame(
             x_index=x_index,
             y_index=y_index,
             z_index=z_index,
+            selected_x_index=selected_x_index,
+            selected_y_index=selected_y_index,
+            selected_z_index=selected_z_index,
         )
     except StormExaminationError as exc:
         status_code = 404 if "Simulation is unavailable" in str(exc) else 400

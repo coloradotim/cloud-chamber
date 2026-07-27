@@ -289,11 +289,17 @@ export function WorldCompare({
         Math.max(0, index + offset),
       );
       if (nextIndex === index) return false;
-      updateSideState(side, {
-        ...current,
-        model_time_seconds: simulation.time.times_seconds[nextIndex],
-        selected_point: null,
-      });
+      const adapter = WORLD_COMPARE_ADAPTERS[descriptor.world_id];
+      updateSideState(
+        side,
+        adapter.setSelectedPoint(
+          {
+            ...current,
+            model_time_seconds: simulation.time.times_seconds[nextIndex],
+          },
+          null,
+        ),
+      );
       return true;
     },
     [descriptor, leftSimulation, rightSimulation, states, updateSideState],
@@ -448,7 +454,13 @@ export function WorldCompare({
               right={rightSimulation}
               evidence={evidence}
               onClear={(side) => {
-                updateSideState(side, { ...states[side], selected_point: null });
+                updateSideState(
+                  side,
+                  WORLD_COMPARE_ADAPTERS[descriptor.world_id].setSelectedPoint(
+                    states[side],
+                    null,
+                  ),
+                );
                 setEvidence((current) => ({ ...current, [side]: null }));
               }}
             />
@@ -951,16 +963,9 @@ function WorldSpecificControls({
             onPositionChange={(nextIndex) => {
               const coordinate = planeValues[nextIndex];
               if (!Number.isFinite(coordinate)) return;
-              const selected = state.selected_point ?? { x_km: 0, y_km: 0, z_km: 0 };
               onStateChange({
                 ...state,
                 plane_coordinate_km: coordinate,
-                selected_point:
-                  state.evidence_view === "plan"
-                    ? { ...selected, z_km: coordinate }
-                    : state.evidence_view === "xz"
-                      ? { ...selected, y_km: coordinate }
-                      : { ...selected, x_km: coordinate },
               });
             }}
             compact
@@ -1338,11 +1343,16 @@ function CompareTimeline({
                 value={index}
                 onChange={(event) => {
                   const nextIndex = Number(event.currentTarget.value);
-                  onStateChange(side, {
-                    ...state,
-                    model_time_seconds: simulation.time.times_seconds[nextIndex],
-                    selected_point: null,
-                  });
+                  onStateChange(
+                    side,
+                    WORLD_COMPARE_ADAPTERS[descriptor.world_id].setSelectedPoint(
+                      {
+                        ...state,
+                        model_time_seconds: simulation.time.times_seconds[nextIndex],
+                      },
+                      null,
+                    ),
+                  );
                 }}
               />
               <strong>{formatSeconds(state.model_time_seconds)}</strong>

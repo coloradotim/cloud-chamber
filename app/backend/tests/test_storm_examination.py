@@ -391,6 +391,35 @@ def test_product_frame_exposes_native_plane_inventory_and_honors_selected_height
     assert frame.scene.coordinate_values_km["z"] == pytest.approx([0.25, 1.25, 3.25, 10.25, 15.25])
 
 
+def test_product_frame_keeps_section_position_separate_from_selected_point(
+    tmp_path: Path,
+) -> None:
+    _write_retained_fixture(tmp_path, presentation=True)
+
+    frame = supercells_explore_frame(
+        _settings(tmp_path),
+        lens="rotating_updraft",
+        time_index=5,
+        viewport="storm",
+        x_index=2,
+        y_index=1,
+        z_index=4,
+        selected_x_index=3,
+        selected_y_index=2,
+        selected_z_index=1,
+    )
+
+    assert frame.plan.level_index == 4
+    assert frame.xz_section.cross_section_coordinate_km == pytest.approx(-30)
+    assert frame.yz_section.cross_section_coordinate_km == pytest.approx(0)
+    assert frame.selected_point.x_index == 3
+    assert frame.selected_point.y_index == 2
+    assert frame.selected_point.z_index == 1
+    assert frame.selected_point.x_km == pytest.approx(30)
+    assert frame.selected_point.y_km == pytest.approx(0)
+    assert frame.selected_point.z_km == pytest.approx(1.25)
+
+
 def test_product_hydrometeor_scene_keeps_exact_large_ice_label(tmp_path: Path) -> None:
     _write_retained_fixture(tmp_path, presentation=True)
 

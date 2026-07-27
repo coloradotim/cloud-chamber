@@ -12,11 +12,13 @@ vi.mock("./True3DViewer", () => ({
     stormScene,
     status,
     compactDisplayControls,
+    onSelectStormPoint,
   }: {
     pointCloud: { frame_marker?: string } | null;
     stormScene?: { layers: Array<{ key: string }> } | null;
     status: string;
     compactDisplayControls?: ReactNode;
+    onSelectStormPoint?: (point: [number, number, number, number, number]) => void;
   }) => (
     <section aria-label="mock 3-D field">
       <span>{status}</span>
@@ -24,6 +26,14 @@ vi.mock("./True3DViewer", () => ({
         {pointCloud?.frame_marker ??
           (stormScene ? `storm scene ${stormScene.layers.length}` : "no frame")}
       </span>
+      {onSelectStormPoint && (
+        <button
+          type="button"
+          onClick={() => onSelectStormPoint([1.25, 2.25, 3.1666667, 8, 1])}
+        >
+          Select mock 3-D point
+        </button>
+      )}
       {compactDisplayControls}
     </section>
   ),
@@ -403,7 +413,7 @@ describe("WorldCompareSideVisual request lifecycle", () => {
       .mockResolvedValue(new Response(JSON.stringify(supercellPayload()), { status: 200 }));
     vi.stubGlobal("fetch", fetchMock);
 
-    render(
+    const { rerender } = render(
       <WorldCompareSideVisual
         side="right"
         simulation={supercellSimulation}
@@ -428,11 +438,62 @@ describe("WorldCompareSideVisual request lifecycle", () => {
     expect(screen.getByText("storm scene 1")).toBeVisible();
     expect(screen.getByRole("checkbox", { name: "Storm cloud body" })).toBeChecked();
 
+    fireEvent.click(screen.getByRole("button", { name: "Select mock 3-D point" }));
+    const selectedState = onStateChange.mock.lastCall?.[0] as SupercellsExploreState;
+    expect(selectedState).toEqual(
+      expect.objectContaining({
+        selected_point: {
+          x_km: 1.25,
+          y_km: 2.25,
+          z_km: 3.1666667,
+        },
+        selected_evidence_visible: true,
+        plane_coordinate_km: 3.1666667,
+      }),
+    );
+    rerender(
+      <WorldCompareSideVisual
+        side="right"
+        simulation={supercellSimulation}
+        state={selectedState}
+        onStateChange={onStateChange}
+        onFrameState={vi.fn()}
+        onPerformance={vi.fn()}
+        onEvidence={onEvidence}
+      />,
+    );
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+    const selectedRequest = String(fetchMock.mock.calls[1][0]);
+    expect(selectedRequest).toContain("z_index=9");
+    expect(selectedRequest).toContain("selected_x_index=122");
+    expect(selectedRequest).toContain("selected_y_index=124");
+    expect(selectedRequest).toContain("selected_z_index=9");
+
+    rerender(
+      <WorldCompareSideVisual
+        side="right"
+        simulation={supercellSimulation}
+        state={{
+          ...selectedState,
+          evidence_view: "xz",
+          plane_coordinate_km: -10,
+        }}
+        onStateChange={onStateChange}
+        onFrameState={vi.fn()}
+        onPerformance={vi.fn()}
+        onEvidence={onEvidence}
+      />,
+    );
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(3));
+    const independentSectionRequest = String(fetchMock.mock.calls[2][0]);
+    expect(independentSectionRequest).toContain("y_index=100");
+    expect(independentSectionRequest).toContain("selected_y_index=124");
+
     fireEvent.click(screen.getByRole("button", { name: "Vertical x-z" }));
     expect(onStateChange).toHaveBeenLastCalledWith(
       expect.objectContaining({
         evidence_view: "xz",
-        plane_coordinate_km: 0,
+        plane_coordinate_km: 2.25,
       }),
     );
     expect(onEvidence).toHaveBeenCalledWith("right", null);

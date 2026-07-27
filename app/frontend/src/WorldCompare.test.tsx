@@ -86,15 +86,31 @@ vi.mock("./WorldCompareAdapters", async (importOriginal) => {
               · {supercellsState.evidence_view} at {supercellsState.plane_coordinate_km} km · camera{" "}
               {supercellsState.camera_transform?.position.join(",") ??
                 supercellsState.camera_preset}{" "}
-              · selected {supercellsState.selected_point?.x_km ?? "none"}
+              · selected{" "}
+              {supercellsState.selected_point
+                ? `${supercellsState.selected_point.x_km},${supercellsState.selected_point.y_km},${supercellsState.selected_point.z_km}`
+                : "none"}{" "}
+              · evidence {supercellsState.selected_evidence_visible ? "visible" : "hidden"}
             </span>
           )}
           <button
             type="button"
             onClick={() => {
+              const selectedPoint = { x_km: 1, y_km: 2, z_km: 0.5 };
               props.onStateChange({
                 ...props.state,
-                selected_point: { x_km: 1, y_km: 2, z_km: 0.5 },
+                selected_point: selectedPoint,
+                ...(supercellsState
+                  ? {
+                      selected_evidence_visible: true,
+                      plane_coordinate_km:
+                        supercellsState.evidence_view === "plan"
+                          ? selectedPoint.z_km
+                          : supercellsState.evidence_view === "xz"
+                            ? selectedPoint.y_km
+                            : selectedPoint.x_km,
+                    }
+                  : {}),
               });
               props.onEvidence(props.side, {
                 title: `${props.simulation.display_name} selected point`,
@@ -120,6 +136,18 @@ vi.mock("./WorldCompareAdapters", async (importOriginal) => {
                 }
               >
                 Move {props.simulation.display_name} section
+              </button>
+              <button
+                type="button"
+                onClick={() =>
+                  props.onStateChange({
+                    ...supercellsState,
+                    evidence_view: "yz",
+                    plane_coordinate_km: -12,
+                  })
+                }
+              >
+                Use {props.simulation.display_name} y-z section
               </button>
               <button
                 type="button"
@@ -686,6 +714,88 @@ describe("WorldCompare", () => {
     fireEvent.click(screen.getByText("Compare technical details", { exact: true }));
     expect(screen.getByText(/right: 12 ms, 1.0 KB/)).toBeVisible();
     expect(screen.getByText("transient only")).toBeVisible();
+  });
+
+  it("moves a Supercells section without creating selected evidence", async () => {
+    vi.mocked(fetch).mockResolvedValueOnce(
+      new Response(JSON.stringify(supercellsFixtureDescriptor()), { status: 200 }),
+    );
+    render(<WorldCompare worldSlug="supercells" onBack={vi.fn()} onOpenSimulation={vi.fn()} />);
+    fireEvent.click(await screen.findByRole("button", { name: "Open dual view" }));
+
+    const leftSide = await screen.findByRole("article", {
+      name: "Quarter-Circle Supercell comparison side",
+    });
+    fireEvent.change(
+      within(leftSide).getByLabelText("Quarter-Circle Supercell slice position"),
+      { target: { value: "10" } },
+    );
+
+    expect(screen.getByLabelText("Quarter-Circle Supercell test frame")).toHaveTextContent(
+      "selected none · evidence hidden",
+    );
+    expect(screen.queryByLabelText("Selected native-grid evidence")).not.toBeInTheDocument();
+  });
+
+  it("keeps linked Supercells selection coherent while plane linking is independent", async () => {
+    vi.mocked(fetch).mockResolvedValueOnce(
+      new Response(JSON.stringify(supercellsFixtureDescriptor()), { status: 200 }),
+    );
+    render(<WorldCompare worldSlug="supercells" onBack={vi.fn()} onOpenSimulation={vi.fn()} />);
+    fireEvent.click(await screen.findByRole("button", { name: "Open dual view" }));
+
+    const leftSide = await screen.findByRole("article", {
+      name: "Quarter-Circle Supercell comparison side",
+    });
+    const rightSide = screen.getByRole("article", {
+      name: "Straight-Line Hodograph Supercell comparison side",
+    });
+    const selectionLink = screen.getByRole("checkbox", { name: /^Selection$/ });
+    const planeLink = screen.getByRole("checkbox", { name: /^Slice plane$/ });
+    fireEvent.click(selectionLink);
+    expect(selectionLink).toBeChecked();
+    expect(planeLink).not.toBeChecked();
+
+    fireEvent.click(
+      within(rightSide).getByRole("button", {
+        name: "Use Straight-Line Hodograph Supercell y-z section",
+      }),
+    );
+    await waitFor(() =>
+      expect(
+        screen.getByLabelText("Straight-Line Hodograph Supercell test frame"),
+      ).toHaveTextContent("yz at -12 km"),
+    );
+
+    fireEvent.click(
+      within(leftSide).getByRole("button", { name: "Select Quarter-Circle Supercell point" }),
+    );
+    await waitFor(() => {
+      expect(screen.getByLabelText("Quarter-Circle Supercell test frame")).toHaveTextContent(
+        "selected 1,2,0.5 · evidence visible",
+      );
+      expect(
+        screen.getByLabelText("Straight-Line Hodograph Supercell test frame"),
+      ).toHaveTextContent("yz at 1 km");
+      expect(
+        screen.getByLabelText("Straight-Line Hodograph Supercell test frame"),
+      ).toHaveTextContent("selected 1,2,0.5 · evidence visible");
+    });
+    expect(planeLink).not.toBeChecked();
+
+    fireEvent.click(
+      within(screen.getByLabelText("Selected native-grid evidence")).getByRole("button", {
+        name: "Clear",
+      }),
+    );
+    await waitFor(() => {
+      expect(screen.getByLabelText("Quarter-Circle Supercell test frame")).toHaveTextContent(
+        "selected none · evidence hidden",
+      );
+      expect(
+        screen.getByLabelText("Straight-Line Hodograph Supercell test frame"),
+      ).toHaveTextContent("selected none · evidence hidden");
+    });
   });
 
   it("shows an honest no-second-Simulation state for Supercells", async () => {
