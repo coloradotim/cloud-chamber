@@ -870,13 +870,17 @@ def verify_presentation_package(
     stored = PresentationStorageEstimate.model_validate_json(
         package.storage_estimate_path.read_text()
     )
-    available = shutil.disk_usage(package.package_dir).free
-    storage = stored.model_copy(
-        update={
-            "available_free_bytes": available,
-            "passed": available >= stored.required_free_bytes,
-        }
-    )
+    storage = estimate_storage(package.spec, package.package_dir)
+    mutable_storage_fields = {
+        "final_campaign_runs_remaining",
+        "required_free_bytes",
+        "available_free_bytes",
+        "passed",
+    }
+    if stored.model_dump(exclude=mutable_storage_fields) != storage.model_dump(
+        exclude=mutable_storage_fields
+    ):
+        raise SupercellPresentationError("Presentation storage contract changed after packaging.")
     checks = {
         "clean_implementation_head": (
             not require_clean_head or verified_clean_git_commit() == package.implementation_commit

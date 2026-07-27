@@ -267,19 +267,44 @@ def test_package_and_preflight_are_nonexecuting_and_fail_closed(
         "collect_cm1_provenance",
         lambda _settings: provenance,
     )
+    storage_estimates = iter(
+        [
+            PresentationStorageEstimate(
+                expected_history_count=2,
+                scalar_grid=[240, 240, 60],
+                scalar_3d_array_count=19,
+                scalar_2d_array_count=4,
+                uncompressed_numeric_history_floor_bytes=1,
+                required_free_bytes=2,
+                available_free_bytes=10,
+                passed=True,
+            ),
+            PresentationStorageEstimate(
+                expected_history_count=2,
+                scalar_grid=[240, 240, 60],
+                scalar_3d_array_count=19,
+                scalar_2d_array_count=4,
+                uncompressed_numeric_history_floor_bytes=1,
+                required_free_bytes=2,
+                available_free_bytes=10,
+                passed=True,
+            ),
+            PresentationStorageEstimate(
+                expected_history_count=2,
+                scalar_grid=[240, 240, 60],
+                scalar_3d_array_count=19,
+                scalar_2d_array_count=4,
+                uncompressed_numeric_history_floor_bytes=1,
+                required_free_bytes=1,
+                available_free_bytes=9,
+                passed=True,
+            ),
+        ]
+    )
     monkeypatch.setattr(
         supercell_presentation,
         "estimate_storage",
-        lambda _spec, _path: PresentationStorageEstimate(
-            expected_history_count=2,
-            scalar_grid=[240, 240, 60],
-            scalar_3d_array_count=19,
-            scalar_2d_array_count=4,
-            uncompressed_numeric_history_floor_bytes=1,
-            required_free_bytes=1,
-            available_free_bytes=10,
-            passed=True,
-        ),
+        lambda _spec, _path: next(storage_estimates),
     )
 
     package = generate_presentation_package(
@@ -294,6 +319,8 @@ def test_package_and_preflight_are_nonexecuting_and_fail_closed(
 
     assert preflight.passed is True
     assert all(preflight.checks.values())
+    assert preflight.storage.required_free_bytes == 1
+    assert preflight.storage.available_free_bytes == 9
     assert not list(package.package_dir.glob("cm1out_*.nc"))
     assert json.loads(package.case_manifest_path.read_text())["execution_authorization"] == {
         "duration_seconds": 300,
