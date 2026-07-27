@@ -69,9 +69,9 @@ Explore.
 
 | World | Current content | Current surfaces | Current limitation |
 | --- | --- | --- | --- |
-| **Trade Cumulus** | Canonical BOMEX Baseline and More Moisture retained Simulations | Overview, Simulations, featured and ordinary Compare, Lab, Explore resume, and Saved Views | Lab still embeds transitional Build and Results; Saved Comparisons are absent |
-| **Mountain Waves** | Dry Ridge and Boulder Windstorm retained Simulations | Overview, Simulations, ordinary Compare, variation Lab, Explore resume, and Saved Views | Variation remains World-specific; Saved Comparisons are absent |
-| **Supercells** | Quarter-Circle and Straight-Line Hodograph retained Simulations | Overview, Simulations, ordinary Compare, Explore resume, and Saved Views | No variation Lab or Saved Comparisons |
+| **Trade Cumulus** | Canonical BOMEX Baseline and More Moisture retained Simulations | Overview, Simulations, featured and ordinary Compare, Saved Comparisons, Lab, Explore resume, and Saved Views | Lab still embeds transitional Build and Results |
+| **Mountain Waves** | Dry Ridge and Boulder Windstorm retained Simulations | Overview, Simulations, ordinary Compare, Saved Comparisons, variation Lab, Explore resume, and Saved Views | Variation remains World-specific |
+| **Supercells** | Quarter-Circle and Straight-Line Hodograph retained Simulations | Overview, Simulations, ordinary Compare, Saved Comparisons, Explore resume, and Saved Views | No variation Lab |
 
 The World Overview and Simulations surfaces use stable content identities and
 explicit availability states. Missing, invalid, or conflicting retained
@@ -190,7 +190,7 @@ Writes are atomic and bounded. Unsupported schemas, invalid values, oversized
 files, and persistence failures are visible local failures. Per-Simulation
 Notes remain separate and are not copied into Saved Views.
 
-## Ordinary Compare
+## Compare And Saved Comparisons
 
 Each accessible World can compare two compatible retained Simulations through
 one ordinary Compare workflow. The pair-review step presents lineage,
@@ -199,9 +199,28 @@ loading frames. The live workspace supports aligned, independent, and mixed
 coordination of modeled time, Field or Lens, physical slice plane, compatible
 camera state, and selected-point evidence.
 
-Compare coordinates existing Simulation and Explore state without creating a
-new scientific object. Its state is transient: it does not create a Saved
-Comparison or alter either Simulation or its Saved Views.
+Compare coordinates existing Simulation and Explore state without altering
+either Simulation or its Saved Views. A coherent stopped workspace can be
+saved as a new immutable Saved Comparison. It captures both explicit
+World-specific Explore states, link modes, Context collapse, and Supercells
+per-side scientific surface, but not frame payloads, caches, errors, or
+playback-running state.
+
+Saved Comparisons are listed within their owning World and reopen directly
+into the live dual workspace. Current modeled times, physical planes, fields,
+scales, cameras, and selections are reconciled against current Simulation
+descriptors. Healthy, adjusted, and unavailable restoration remain explicit.
+A missing dependency preserves the record and permits deliberate same-World
+replacement as a transient pair; the original snapshot is not rewritten.
+
+State is stored at:
+
+```text
+<runtime-home>/saved-comparisons/<world_id>.json
+```
+
+Titles, scientific questions, and restoration metadata are editable. The
+workspace snapshot is immutable; further work is saved as a new comparison.
 
 Supercells now exercises the complete workflow with a controlled real pair:
 Quarter-Circle Supercell and Straight-Line Hodograph Supercell. The two
@@ -271,12 +290,12 @@ information architecture.
 
 The implemented application does not yet provide:
 
-- one shared World-aware variation workflow across all accessible Worlds;
-- Saved Comparisons or durable comparison workspaces.
+- one shared World-aware variation workflow across all accessible Worlds.
 
 Per-Simulation Notes and Explore state are separate durable contracts. Saved
-Views persist the live scientific examination dimensions owned by issue #432;
-they do not create Saved Comparisons or certify scientific validity.
+Views persist one live scientific examination. Saved Comparisons persist two
+coordinated examinations and remain separate from Notes and scientific
+validity.
 Older issues #389, #390, and #391 are closed as superseded by the current
 three-World implementation sequence; they should not be read as active roadmap
 authority.

@@ -119,7 +119,7 @@ def test_trade_compare_uses_the_approved_pair_and_exact_material_difference(
 
     descriptor = world_compare_descriptor(_settings(tmp_path), world_slug="trade-cumulus")
 
-    assert descriptor.persistence == "transient_only"
+    assert descriptor.persistence == "saved_comparisons"
     assert descriptor.selected_left_simulation_id == baseline.simulation_id
     assert descriptor.selected_right_simulation_id == moisture.simulation_id
     assert descriptor.compatibility is not None

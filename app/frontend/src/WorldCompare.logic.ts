@@ -1,6 +1,12 @@
 import type { CameraPreset, CameraTransform } from "./True3DViewer";
 import { SUPERCELLS_CURATED_VIEWS } from "./exploreCuratedDefaults";
-import type { ExplorePoint, SupercellsExploreState } from "./ExploreStatePersistence";
+import type {
+  ExplorePoint,
+  ExploreWorldState,
+  MountainWavesExploreState,
+  SupercellsExploreState,
+  TradeCumulusExploreState,
+} from "./ExploreStatePersistence";
 import {
   isMountainState,
   isSupercellsState,
@@ -257,6 +263,216 @@ export function nearestCompareTime(
       ? null
       : `Requested ${formatSeconds(requestedSeconds)}; showing nearest saved output at ${formatSeconds(closest)}.`,
   };
+}
+
+export type SavedStateRestoration = {
+  state: ExploreWorldState;
+  status: "healthy" | "partially_restorable" | "unavailable";
+  messages: string[];
+};
+
+export function reconcileSavedCompareState(
+  savedState: ExploreWorldState,
+  simulation: CompareSimulationDescriptor,
+  timeToleranceSeconds: number,
+): SavedStateRestoration {
+  if (savedState.world_id !== simulation.world_id) {
+    return {
+      state: simulation.initial_state,
+      status: "unavailable",
+      messages: ["The saved state belongs to a different Cloud World."],
+    };
+  }
+  const messages: string[] = [];
+  let state = structuredClone(savedState);
+  const nearest = nearestCompareTime(
+    simulation,
+    savedState.model_time_seconds,
+    timeToleranceSeconds,
+  );
+  if (nearest) {
+    state = { ...state, model_time_seconds: nearest.value };
+    if (!nearest.exact && nearest.message) messages.push(nearest.message);
+  } else {
+    const values = simulation.time.times_seconds;
+    if (!values.length) {
+      return {
+        state: simulation.initial_state,
+        status: "unavailable",
+        messages: ["The Simulation has no retained modeled times."],
+      };
+    }
+    const closest = values.reduce((best, value) =>
+      Math.abs(value - savedState.model_time_seconds) <
+      Math.abs(best - savedState.model_time_seconds)
+        ? value
+        : best,
+    );
+    state = { ...state, model_time_seconds: closest };
+    messages.push(`Saved modeled time is no longer retained; showing ${formatSeconds(closest)}.`);
+  }
+
+  const adapter = WORLD_COMPARE_ADAPTERS[simulation.world_id];
+  if (!simulation.available_view_ids.includes(adapter.viewId(state))) {
+    state = {
+      ...simulation.initial_state,
+      model_time_seconds: state.model_time_seconds,
+    } as ExploreWorldState;
+    messages.push("The saved view is unavailable; the current default view is shown.");
+  }
+
+  const fieldId = adapter.fieldId(state);
+  if (fieldId && !simulation.available_field_ids.includes(fieldId)) {
+    state = adapter.setField(state, simulation.available_field_ids[0] ?? fieldId);
+    messages.push("The saved field is unavailable; a compatible field is shown.");
+  }
+
+  if (isTradeState(state)) {
+    state = reconcileTradeState(state, simulation, messages);
+  } else if (isMountainState(state)) {
+    state = reconcileMountainState(state, simulation, messages);
+  } else if (isSupercellsState(state)) {
+    state = reconcileSupercellsState(state, simulation, messages);
+  }
+
+  const cameraTransform = adapter.cameraTransform(state);
+  const cameraPreset = adapter.cameraPreset(state);
+  if (
+    cameraTransform &&
+    cameraPreset &&
+    (simulation.camera_mapping !== "normalized_3d" ||
+      !cameraTargetWithinGrid(cameraTransform.target, simulation))
+  ) {
+    state = adapter.setCamera(state, cameraPreset, null);
+    messages.push("The saved camera target is outside the current domain and was reset.");
+  }
+
+  const selection = state.selected_point;
+  if (selection && !pointWithinGrid(selection, simulation)) {
+    state = adapter.setSelectedPoint(state, null);
+    messages.push("The saved selected point is outside the current domain and was cleared.");
+  }
+  return {
+    state,
+    status: messages.length ? "partially_restorable" : "healthy",
+    messages,
+  };
+}
+
+function cameraTargetWithinGrid(
+  target: CameraTransform["target"],
+  simulation: CompareSimulationDescriptor,
+): boolean {
+  return (
+    within(target[0], simulation.grid.x_extent_km) &&
+    within(target[2], simulation.grid.z_extent_km) &&
+    (simulation.grid.y_extent_km === null || within(target[1], simulation.grid.y_extent_km))
+  );
+}
+
+function reconcileTradeState(
+  state: TradeCumulusExploreState,
+  simulation: CompareSimulationDescriptor,
+  messages: string[],
+): TradeCumulusExploreState {
+  let next = state;
+  if (next.fixed_scale_id && !simulation.fixed_scale_ids.includes(next.fixed_scale_id)) {
+    next = { ...next, fixed_scale_id: null };
+    messages.push("The saved fixed scale is unavailable; the current field scale is used.");
+  }
+  const extent =
+    next.active_slice_plane === "horizontal"
+      ? simulation.grid.z_extent_km
+      : next.active_slice_plane === "vertical_x"
+        ? simulation.grid.y_extent_km
+        : simulation.grid.x_extent_km;
+  const count =
+    next.active_slice_plane === "horizontal"
+      ? simulation.grid.nz
+      : next.active_slice_plane === "vertical_x"
+        ? simulation.grid.ny
+        : simulation.grid.nx;
+  if (extent) {
+    const coordinate = clamp(next.slice_coordinate_km, extent[0], extent[1]);
+    const nativeIndex = coordinateIndex(coordinate, extent, count);
+    if (coordinate !== next.slice_coordinate_km || nativeIndex !== next.slice_native_index) {
+      next = {
+        ...next,
+        slice_coordinate_km: coordinate,
+        slice_native_index: nativeIndex,
+      };
+      messages.push("The saved slice was mapped to the current physical domain.");
+    }
+  }
+  return next;
+}
+
+function reconcileMountainState(
+  state: MountainWavesExploreState,
+  simulation: CompareSimulationDescriptor,
+  messages: string[],
+): MountainWavesExploreState {
+  if (simulation.fixed_scale_ids.includes(state.fixed_scale_id)) return state;
+  const fallback =
+    simulation.fixed_scale_ids.find((scale) => scale.includes(state.field_id)) ??
+    simulation.fixed_scale_ids[0] ??
+    state.fixed_scale_id;
+  messages.push("The saved fixed scale is unavailable; the current compatible scale is used.");
+  return { ...state, fixed_scale_id: fallback };
+}
+
+function reconcileSupercellsState(
+  state: SupercellsExploreState,
+  simulation: CompareSimulationDescriptor,
+  messages: string[],
+): SupercellsExploreState {
+  const fixedScaleIds = state.fixed_scale_ids.filter((scale) =>
+    simulation.fixed_scale_ids.includes(scale),
+  );
+  let next =
+    fixedScaleIds.length === state.fixed_scale_ids.length
+      ? state
+      : { ...state, fixed_scale_ids: fixedScaleIds };
+  if (fixedScaleIds.length !== state.fixed_scale_ids.length) {
+    messages.push("Unavailable fixed scales were removed from the restored Lens.");
+  }
+  const extent =
+    next.evidence_view === "plan"
+      ? simulation.grid.z_extent_km
+      : next.evidence_view === "xz"
+        ? simulation.grid.y_extent_km
+        : simulation.grid.x_extent_km;
+  if (extent) {
+    const coordinate = clamp(next.plane_coordinate_km, extent[0], extent[1]);
+    if (coordinate !== next.plane_coordinate_km) {
+      next = { ...next, plane_coordinate_km: coordinate };
+      messages.push("The saved evidence plane was clamped to the current physical domain.");
+    }
+  }
+  return next;
+}
+
+function pointWithinGrid(point: ExplorePoint, simulation: CompareSimulationDescriptor): boolean {
+  return (
+    within(point.x_km, simulation.grid.x_extent_km) &&
+    within(point.z_km, simulation.grid.z_extent_km) &&
+    (simulation.grid.y_extent_km === null ||
+      point.y_km === null ||
+      within(point.y_km, simulation.grid.y_extent_km))
+  );
+}
+
+function within(value: number, extent: [number, number]): boolean {
+  return value >= extent[0] && value <= extent[1];
+}
+
+function clamp(value: number, minimum: number, maximum: number): number {
+  return Math.min(maximum, Math.max(minimum, value));
+}
+
+function coordinateIndex(coordinate: number, extent: [number, number], count: number): number {
+  if (count <= 1 || extent[1] === extent[0]) return 0;
+  return Math.round(((coordinate - extent[0]) / (extent[1] - extent[0])) * (count - 1));
 }
 
 export function timeIndexForSeconds(

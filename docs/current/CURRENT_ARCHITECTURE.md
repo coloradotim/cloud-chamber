@@ -399,7 +399,7 @@ source-controlled product definitions rather than user state. Per-Simulation
 Notes remain independently stored under `simulation-notes` and are not copied
 into Saved Views.
 
-## Ordinary Compare Architecture
+## Compare And Saved Comparison Architecture
 
 Each World exposes a lightweight comparison descriptor through:
 
@@ -413,8 +413,8 @@ the supported coordination dimensions before the frontend requests scientific
 frames. The frontend then composes the existing World frame APIs and
 World-specific renderers into a shared pair-review and dual-workspace shell.
 
-Compare state uses the same versioned World-specific Explore vocabulary but is
-held only in the current browser session. Aligned, independent, and mixed
+Live Compare state uses the same versioned World-specific Explore vocabulary.
+Aligned, independent, and mixed
 coordination can link modeled seconds, compatible Field or Lens state,
 physical plane coordinates, normalized cameras where honest, and selected
 native evidence. There is no interpolation presented as model output.
@@ -425,9 +425,34 @@ Supercells additionally exercises the architecture with two real retained
 Simulations and all three Lenses. Physical coordinates and local evidence are
 compared without assigning lineage to changing storm objects.
 
-Ordinary Compare does not write the Explore-state library, create a Saved
-Comparison, or mutate either Simulation. World-aware variation exists for
-Mountain Waves but is not yet one shared cross-World system.
+Saved Comparison CRUD is exposed at:
+
+```text
+GET    /api/worlds/{world_id}/saved-comparisons
+POST   /api/worlds/{world_id}/saved-comparisons
+GET    /api/worlds/{world_id}/saved-comparisons/{saved_comparison_id}
+PATCH  /api/worlds/{world_id}/saved-comparisons/{saved_comparison_id}
+DELETE /api/worlds/{world_id}/saved-comparisons/{saved_comparison_id}
+GET    /api/saved-comparison-dependents
+```
+
+Each World owns one bounded atomic library at
+`<runtime-home>/saved-comparisons/<world_id>.json`. The immutable workspace
+snapshot composes two explicit `ExploreWorldState` payloads, link modes,
+Context collapse, and Supercells per-side scene/evidence presentation. It
+does not persist frame payloads, caches, request errors, or active playback.
+PATCH updates metadata and restoration status, not the snapshot.
+
+Direct reopen gives the saved state precedence over per-Simulation
+last-active state. The frontend reconciles modeled seconds and physical
+coordinates against the current descriptor, loads both live sides, then
+records healthy, partially restorable, or unavailable status. Missing
+dependencies remain discoverable through reverse lookup and can be replaced
+only in a transient unsaved pair.
+
+Saved Comparisons do not write the per-Simulation Explore-state library or
+mutate either Simulation. World-aware variation exists for Mountain Waves but
+is not yet one shared cross-World system.
 
 ## Product and Research Boundaries
 
@@ -445,7 +470,7 @@ reused.
 
 - World shells and Explore implementations share vocabulary but still contain
   World-specific state and rendering code.
-- Ordinary World-aware Compare is transient; Saved Comparisons are absent.
+- Saved Comparisons are local filesystem state and do not synchronize across devices.
 - Variation is implemented only for Mountain Waves.
 - Legacy run, result, and sounding surfaces remain interleaved with the newer
   World application.

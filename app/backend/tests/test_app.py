@@ -29,6 +29,7 @@ from cloud_chamber.run_manifest import (
     load_run_manifest,
     write_run_manifest,
 )
+from cloud_chamber.saved_comparisons import CapturedPairSummary
 from cloud_chamber.trade_cumulus_comparison_story import (
     TradeCumulusComparisonStoryConflict,
     TradeCumulusComparisonStoryNotFound,
@@ -232,6 +233,99 @@ def test_explore_state_api_lists_saved_views_when_backing_output_is_missing(
     assert renamed.json()["backing_simulation_available"] is False
     assert renamed.json()["library"]["saved_views"][0]["title"] == ("Retained examination renamed")
     assert renamed.json()["library"]["saved_views"][0]["restoration_status"] == ("unavailable")
+
+
+def test_saved_comparison_api_supports_world_owned_crud_and_dependencies(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    available = {
+        "trade_cumulus_canonical_bomex",
+        "trade_cumulus_more_moisture",
+    }
+    monkeypatch.setattr(
+        "cloud_chamber.app.load_settings",
+        lambda: SimpleNamespace(runtime_home=tmp_path),
+    )
+    monkeypatch.setattr(
+        "cloud_chamber.app._saved_comparison_simulation_exists",
+        lambda _world, simulation, **_kwargs: simulation in available,
+    )
+    monkeypatch.setattr(
+        "cloud_chamber.app.world_compare_descriptor", lambda *_args, **_kwargs: object()
+    )
+    monkeypatch.setattr(
+        "cloud_chamber.app.captured_pair_summary_from_descriptor",
+        lambda _descriptor: CapturedPairSummary(
+            left_display_name="Canonical BOMEX Baseline",
+            right_display_name="More Moisture",
+            relationship="Reference and controlled variation",
+            controlled_pair=True,
+            controlled_pair_message="Only surface moisture supply changed.",
+        ),
+    )
+    client = TestClient(app)
+    root = "/api/worlds/trade-cumulus/saved-comparisons"
+    state = _trade_explore_state_payload()
+    workspace = {
+        "schema_version": 1,
+        "world_id": "trade_cumulus",
+        "left_simulation_id": "trade_cumulus_canonical_bomex",
+        "right_simulation_id": "trade_cumulus_more_moisture",
+        "left_state": state,
+        "right_state": {**state, "model_time_seconds": 12_180},
+        "links": {
+            "time": True,
+            "view": True,
+            "plane": True,
+            "camera": False,
+            "selection": False,
+        },
+        "context_collapsed": False,
+        "supercells_presentation": None,
+    }
+
+    created = client.post(
+        root,
+        json={
+            "title": "Moisture response",
+            "scientific_question": "How does added moisture alter the cloud field?",
+            "workspace": workspace,
+        },
+    )
+    saved_comparison_id = created.json()["record"]["saved_comparison_id"]
+    listed = client.get(root)
+    fetched = client.get(f"{root}/{saved_comparison_id}")
+    updated = client.patch(
+        f"{root}/{saved_comparison_id}",
+        json={
+            "title": "Moisture response at 12 ks",
+            "restoration_status": "partially_restorable",
+            "restoration_message": "Nearest retained output used.",
+        },
+    )
+    dependents = client.get(
+        "/api/saved-comparison-dependents",
+        params={
+            "world_id": "trade_cumulus",
+            "simulation_id": "trade_cumulus_more_moisture",
+        },
+    )
+    available.remove("trade_cumulus_more_moisture")
+    missing = client.get(f"{root}/{saved_comparison_id}")
+    deleted = client.delete(f"{root}/{saved_comparison_id}")
+
+    assert created.status_code == 201
+    assert listed.status_code == 200
+    assert len(listed.json()["saved_comparisons"]) == 1
+    assert fetched.json()["record"]["workspace"] == workspace
+    assert updated.json()["record"]["title"] == "Moisture response at 12 ks"
+    assert updated.json()["record"]["workspace"] == workspace
+    assert dependents.json()[0]["side"] == "right"
+    assert missing.json()["effective_restoration_status"] == "unavailable"
+    assert missing.json()["dependencies"][1]["available"] is False
+    assert deleted.status_code == 204
+    assert client.get(root).json()["saved_comparisons"] == []
 
 
 def _world_summary_payload() -> dict[str, object]:

@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 
+import { SavedComparisonsCollection } from "./SavedComparisons";
+
 export type SupercellSimulation = {
   simulation_id: "supercells_quarter_circle_reference" | "supercells_straight_line_hodograph";
   display_name: string;
@@ -33,20 +35,23 @@ export type SupercellsWorldDetail = {
     lab: false;
     compare: boolean;
     saved_views: false;
+    saved_comparisons: true;
   };
   caveats: string[];
 };
 
-type WorldSection = "overview" | "simulations";
+type WorldSection = "overview" | "simulations" | "saved_comparisons";
 
 export function SupercellsWorld({
   onBackToWorlds,
   onExploreSimulation,
   onCompare,
+  onOpenSavedComparison,
 }: {
   onBackToWorlds: () => void;
   onExploreSimulation: (simulation: SupercellSimulation) => void;
   onCompare?: (simulation: SupercellSimulation) => void;
+  onOpenSavedComparison: (savedComparisonId: string) => void;
 }) {
   const [section, setSection] = useState<WorldSection>("overview");
   const [world, setWorld] = useState<SupercellsWorldDetail | null>(null);
@@ -123,45 +128,55 @@ export function SupercellsWorld({
       </header>
 
       <nav className="world-section-nav" aria-label="Supercells sections">
-        {(["overview", "simulations"] as WorldSection[]).map((item) => (
+        {(["overview", "simulations", "saved_comparisons"] as WorldSection[]).map((item) => (
           <button
             key={item}
             type="button"
             className={section === item ? "active-control" : ""}
             onClick={() => setSection(item)}
           >
-            {item === "overview" ? "Overview" : "Simulations"}
+            {item === "overview"
+              ? "Overview"
+              : item === "simulations"
+                ? "Simulations"
+                : "Saved Comparisons"}
           </button>
         ))}
       </nav>
 
-      <section className="world-section" aria-labelledby={`supercells-${section}-title`}>
-        <div className="world-section-heading">
-          <div>
-            <p className="eyebrow">{section === "overview" ? "Overview" : "Simulations"}</p>
-            <h3 id={`supercells-${section}-title`}>
-              {section === "overview"
-                ? "Enter the rotating storm"
-                : "Retained Supercell Simulations"}
-            </h3>
+      {section === "saved_comparisons" ? (
+        <section className="world-section">
+          <SavedComparisonsCollection worldSlug="supercells" onOpen={onOpenSavedComparison} />
+        </section>
+      ) : (
+        <section className="world-section" aria-labelledby={`supercells-${section}-title`}>
+          <div className="world-section-heading">
+            <div>
+              <p className="eyebrow">{section === "overview" ? "Overview" : "Simulations"}</p>
+              <h3 id={`supercells-${section}-title`}>
+                {section === "overview"
+                  ? "Enter the rotating storm"
+                  : "Retained Supercell Simulations"}
+              </h3>
+            </div>
+            {section === "simulations" && <p>{inspectableSimulations.length} inspectable</p>}
           </div>
-          {section === "simulations" && <p>{inspectableSimulations.length} inspectable</p>}
-        </div>
-        {world.availability_state !== "available" && (
-          <p className="world-availability-message">{world.availability_message}</p>
-        )}
-        <div className="simulation-card-grid supercells-simulation-grid">
-          {simulations.map((simulation) => (
-            <SupercellSimulationCard
-              key={simulation.simulation_id}
-              simulation={simulation}
-              onExplore={onExploreSimulation}
-              onCompare={world.capabilities.compare ? onCompare : undefined}
-            />
-          ))}
-        </div>
-        {section === "overview" && <p className="world-science-note">{world.caveats[0]}</p>}
-      </section>
+          {world.availability_state !== "available" && (
+            <p className="world-availability-message">{world.availability_message}</p>
+          )}
+          <div className="simulation-card-grid supercells-simulation-grid">
+            {simulations.map((simulation) => (
+              <SupercellSimulationCard
+                key={simulation.simulation_id}
+                simulation={simulation}
+                onExplore={onExploreSimulation}
+                onCompare={world.capabilities.compare ? onCompare : undefined}
+              />
+            ))}
+          </div>
+          {section === "overview" && <p className="world-science-note">{world.caveats[0]}</p>}
+        </section>
+      )}
     </section>
   );
 }

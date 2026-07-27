@@ -35,6 +35,7 @@ const world: SupercellsWorldDetail = {
     lab: false,
     compare: true,
     saved_views: false,
+    saved_comparisons: true,
   },
   caveats: ["This idealized benchmark is not a forecast or a reconstruction of a real storm."],
 };
@@ -69,6 +70,7 @@ describe("SupercellsWorld", () => {
         onBackToWorlds={onBack}
         onExploreSimulation={onExplore}
         onCompare={onCompare}
+        onOpenSavedComparison={vi.fn()}
       />,
     );
 
@@ -76,7 +78,8 @@ describe("SupercellsWorld", () => {
     const navigation = screen.getByRole("navigation", { name: "Supercells sections" });
     expect(within(navigation).getByRole("button", { name: "Overview" })).toBeVisible();
     expect(within(navigation).getByRole("button", { name: "Simulations" })).toBeVisible();
-    expect(within(navigation).queryByRole("button", { name: /Lab|Compare|Saved/ })).toBeNull();
+    expect(within(navigation).getByRole("button", { name: "Saved Comparisons" })).toBeVisible();
+    expect(within(navigation).queryByRole("button", { name: /Lab|Compare$/ })).toBeNull();
     expect(
       screen.getByRole("heading", { name: "Straight-Line Hodograph Supercell" }),
     ).toBeVisible();
@@ -124,7 +127,13 @@ describe("SupercellsWorld", () => {
       },
     ];
     vi.mocked(fetch).mockResolvedValue(ok(unavailable));
-    render(<SupercellsWorld onBackToWorlds={vi.fn()} onExploreSimulation={vi.fn()} />);
+    render(
+      <SupercellsWorld
+        onBackToWorlds={vi.fn()}
+        onExploreSimulation={vi.fn()}
+        onOpenSavedComparison={vi.fn()}
+      />,
+    );
 
     expect(await screen.findByText("The retained run directory could not be found.")).toBeVisible();
     expect(screen.getByRole("button", { name: "Explore" })).toBeDisabled();
@@ -137,7 +146,13 @@ describe("SupercellsWorld", () => {
         new Response(JSON.stringify({ detail: "Output inventory failed." }), { status: 503 }),
       )
       .mockResolvedValueOnce(ok(world));
-    render(<SupercellsWorld onBackToWorlds={vi.fn()} onExploreSimulation={vi.fn()} />);
+    render(
+      <SupercellsWorld
+        onBackToWorlds={vi.fn()}
+        onExploreSimulation={vi.fn()}
+        onOpenSavedComparison={vi.fn()}
+      />,
+    );
 
     expect(await screen.findByRole("alert")).toHaveTextContent("Output inventory failed.");
     fireEvent.click(screen.getByRole("button", { name: "Retry Supercells" }));

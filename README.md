@@ -32,9 +32,7 @@ processes visible.
 
 The implemented application does not yet provide:
 
-- ordinary World-aware Compare beyond the featured Trade Cumulus Comparison;
-- one shared variation workflow across all three Worlds;
-- Saved Comparisons or durable comparison workspaces.
+- one shared variation workflow across all three Worlds.
 
 These are current limitations, not decisions to remove the corresponding
 approved product concepts.
@@ -44,6 +42,11 @@ Saved Views by stable World and Simulation identity. Saved Views reopen as live
 examinations, support rename and delete, and report bounded incompatibility when
 retained output changes or is unavailable. Per-Simulation Notes remain a
 separate durable-content contract.
+
+Ordinary Compare is available for real retained pairs in all three Worlds.
+Coherent, stopped workspaces can be saved as immutable World-owned Saved
+Comparisons and reopened directly as live examinations. Saved Comparisons are
+local to the configured runtime home and do not synchronize between devices.
 
 ## Product authority
 
@@ -135,6 +138,7 @@ Cloud Chamber stores local runtime state outside Git by default:
   runs/
   cache/
   explore-state/
+  saved-comparisons/
   logs/
 ```
 
@@ -143,6 +147,11 @@ Explore state is stored under
 contains one versioned, World-specific last-active state plus that Simulation's
 named Saved Views; writes are atomic and failures remain local to the state
 controls.
+
+Saved Comparisons are stored at
+`<runtime-home>/saved-comparisons/<world_id>.json`. Each bounded World library
+contains immutable dual-Explore snapshots plus editable title, question, and
+restoration metadata.
 
 The retained NetCDF histories that back built-in Simulations are large local
 assets under the runtime home. Stable World and Simulation identities resolve

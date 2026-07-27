@@ -181,7 +181,7 @@ def test_world_summary_and_detail_map_exact_known_pair(
     assert trade_cumulus.reference_available is True
     assert trade_cumulus.simulation_count == 2
     assert trade_cumulus.saved_view_count == 0
-    assert trade_cumulus.saved_comparison_count == 1
+    assert trade_cumulus.saved_comparison_count == 0
     assert summaries_by_id["mountain_waves"].availability_state == "unavailable"
     assert summaries_by_id["supercells"].availability_state == "unavailable"
     assert detail.reference_simulation.simulation_id == REFERENCE_SIMULATION_ID

@@ -101,6 +101,21 @@ from cloud_chamber.runtime_storage import (
     delete_runtime_run,
     runtime_storage_inventory,
 )
+from cloud_chamber.saved_comparisons import (
+    SavedComparisonCreate,
+    SavedComparisonDependent,
+    SavedComparisonEntry,
+    SavedComparisonError,
+    SavedComparisonLibraryResponse,
+    SavedComparisonUpdate,
+    captured_pair_summary_from_descriptor,
+    create_saved_comparison,
+    delete_saved_comparison,
+    get_saved_comparison,
+    list_saved_comparisons,
+    saved_comparison_dependents,
+    update_saved_comparison,
+)
 from cloud_chamber.scenario_catalog import (
     load_scenario_template,
     load_scenario_templates,
@@ -680,6 +695,155 @@ def get_world_compare_descriptor(
             right_simulation_id=right_simulation_id,
         )
     except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.get(
+    "/api/worlds/{world_id}/saved-comparisons",
+    response_model=SavedComparisonLibraryResponse,
+)
+def get_world_saved_comparisons(world_id: str) -> SavedComparisonLibraryResponse:
+    settings = load_settings()
+    canonical_world_id = _canonical_world_id(world_id)
+    try:
+        return list_saved_comparisons(
+            settings,
+            world_id=canonical_world_id,
+            simulation_exists=lambda owner, simulation: _saved_comparison_simulation_exists(
+                owner,
+                simulation,
+                settings=settings,
+            ),
+        )
+    except SavedComparisonError as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@app.get(
+    "/api/worlds/{world_id}/saved-comparisons/{saved_comparison_id}",
+    response_model=SavedComparisonEntry,
+)
+def get_world_saved_comparison(
+    world_id: str,
+    saved_comparison_id: str,
+) -> SavedComparisonEntry:
+    settings = load_settings()
+    canonical_world_id = _canonical_world_id(world_id)
+    try:
+        return get_saved_comparison(
+            settings,
+            world_id=canonical_world_id,
+            saved_comparison_id=saved_comparison_id,
+            simulation_exists=lambda owner, simulation: _saved_comparison_simulation_exists(
+                owner,
+                simulation,
+                settings=settings,
+            ),
+        )
+    except SavedComparisonError as exc:
+        status_code = 404 if str(exc) == "Saved Comparison not found." else 400
+        raise HTTPException(status_code=status_code, detail=str(exc)) from exc
+
+
+@app.post(
+    "/api/worlds/{world_id}/saved-comparisons",
+    response_model=SavedComparisonEntry,
+    status_code=201,
+)
+def post_world_saved_comparison(
+    world_id: str,
+    request: SavedComparisonCreate,
+) -> SavedComparisonEntry:
+    settings = load_settings()
+    canonical_world_id = _canonical_world_id(world_id)
+    try:
+        descriptor = world_compare_descriptor(
+            settings,
+            world_slug=_world_slug(canonical_world_id),
+            left_simulation_id=request.workspace.left_simulation_id,
+            right_simulation_id=request.workspace.right_simulation_id,
+        )
+        return create_saved_comparison(
+            settings,
+            world_id=canonical_world_id,
+            request=request,
+            captured_pair=captured_pair_summary_from_descriptor(descriptor),
+            simulation_exists=lambda owner, simulation: _saved_comparison_simulation_exists(
+                owner,
+                simulation,
+                settings=settings,
+            ),
+        )
+    except (SavedComparisonError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.patch(
+    "/api/worlds/{world_id}/saved-comparisons/{saved_comparison_id}",
+    response_model=SavedComparisonEntry,
+)
+def patch_world_saved_comparison(
+    world_id: str,
+    saved_comparison_id: str,
+    request: SavedComparisonUpdate,
+) -> SavedComparisonEntry:
+    settings = load_settings()
+    canonical_world_id = _canonical_world_id(world_id)
+    try:
+        return update_saved_comparison(
+            settings,
+            world_id=canonical_world_id,
+            saved_comparison_id=saved_comparison_id,
+            request=request,
+            simulation_exists=lambda owner, simulation: _saved_comparison_simulation_exists(
+                owner,
+                simulation,
+                settings=settings,
+            ),
+        )
+    except SavedComparisonError as exc:
+        status_code = 404 if str(exc) == "Saved Comparison not found." else 400
+        raise HTTPException(status_code=status_code, detail=str(exc)) from exc
+
+
+@app.delete(
+    "/api/worlds/{world_id}/saved-comparisons/{saved_comparison_id}",
+    status_code=204,
+)
+def delete_world_saved_comparison(
+    world_id: str,
+    saved_comparison_id: str,
+) -> None:
+    settings = load_settings()
+    canonical_world_id = _canonical_world_id(world_id)
+    try:
+        delete_saved_comparison(
+            settings,
+            world_id=canonical_world_id,
+            saved_comparison_id=saved_comparison_id,
+        )
+    except SavedComparisonError as exc:
+        status_code = 404 if str(exc) == "Saved Comparison not found." else 400
+        raise HTTPException(status_code=status_code, detail=str(exc)) from exc
+
+
+@app.get(
+    "/api/saved-comparison-dependents",
+    response_model=list[SavedComparisonDependent],
+)
+def get_saved_comparison_dependents(
+    world_id: str,
+    simulation_id: str,
+) -> list[SavedComparisonDependent]:
+    settings = load_settings()
+    canonical_world_id = _canonical_world_id(world_id)
+    try:
+        return saved_comparison_dependents(
+            settings,
+            world_id=canonical_world_id,
+            simulation_id=simulation_id,
+        )
+    except SavedComparisonError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
@@ -1315,6 +1479,14 @@ def _canonical_world_id(world_id: str) -> str:
     return canonical
 
 
+def _world_slug(world_id: str) -> str:
+    return {
+        "trade_cumulus": "trade-cumulus",
+        "mountain_waves": "mountain-waves",
+        "supercells": "supercells",
+    }[world_id]
+
+
 def _simulation_target_exists(
     world_id: str,
     simulation_id: str,
@@ -1330,6 +1502,25 @@ def _simulation_target_exists(
             SUPERCELLS_REFERENCE_SIMULATION_ID,
             SUPERCELLS_STRAIGHT_LINE_SIMULATION_ID,
         }
+    return False
+
+
+def _saved_comparison_simulation_exists(
+    world_id: str,
+    simulation_id: str,
+    *,
+    settings: CloudChamberSettings,
+) -> bool:
+    if world_id == "trade_cumulus":
+        return trade_cumulus_simulation_exists(settings, simulation_id)
+    if world_id == "mountain_waves":
+        simulation = mountain_waves_simulation(settings, simulation_id)
+        return simulation is not None and simulation.inspectable
+    if world_id == "supercells":
+        return any(
+            simulation.simulation_id == simulation_id and simulation.explore_available
+            for simulation in supercells_world_detail(settings).simulations
+        )
     return False
 
 

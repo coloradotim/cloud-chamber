@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 
 import { MountainWavesVariationEditor } from "./MountainWavesVariationEditor";
+import { SavedComparisonsCollection } from "./SavedComparisons";
 
 export type MountainWavesDifference = {
   label: string;
@@ -66,13 +67,14 @@ export type MountainWavesWorldDetail = {
   caveats: string[];
 };
 
-type WorldSection = "overview" | "simulations" | "lab";
+type WorldSection = "overview" | "simulations" | "saved_comparisons" | "lab";
 type LabSection = "activity" | "create" | "history";
 
 export function MountainWavesWorld({
   onBackToWorlds,
   onExploreSimulation,
   onCompareSimulation,
+  onOpenSavedComparison,
 }: {
   onBackToWorlds: () => void;
   onExploreSimulation: (simulation: MountainWavesSimulation) => void;
@@ -80,6 +82,7 @@ export function MountainWavesWorld({
     simulation: MountainWavesSimulation,
     targetSimulationId: string | null,
   ) => void;
+  onOpenSavedComparison: (savedComparisonId: string) => void;
 }) {
   const [section, setSection] = useState<WorldSection>("overview");
   const [labSection, setLabSection] = useState<LabSection>("create");
@@ -176,7 +179,7 @@ export function MountainWavesWorld({
       </header>
 
       <nav className="world-section-nav" aria-label="Mountain Waves sections">
-        {(["overview", "simulations", "lab"] as WorldSection[]).map((item) => (
+        {(["overview", "simulations", "saved_comparisons", "lab"] as WorldSection[]).map((item) => (
           <button
             key={item}
             type="button"
@@ -265,6 +268,12 @@ export function MountainWavesWorld({
               />
             ))}
           </div>
+        </section>
+      )}
+
+      {section === "saved_comparisons" && (
+        <section className="world-section">
+          <SavedComparisonsCollection worldSlug="mountain-waves" onOpen={onOpenSavedComparison} />
         </section>
       )}
 
@@ -471,8 +480,7 @@ function mountainWavesCompareTarget(
   if (child) return child.simulation_id;
   return (
     simulations.find(
-      (candidate) =>
-        candidate.inspectable && candidate.simulation_id !== simulation.simulation_id,
+      (candidate) => candidate.inspectable && candidate.simulation_id !== simulation.simulation_id,
     )?.simulation_id ?? null
   );
 }
@@ -543,7 +551,10 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 function sectionLabel(section: WorldSection): string {
-  return section === "overview" ? "Overview" : section === "simulations" ? "Simulations" : "Lab";
+  if (section === "overview") return "Overview";
+  if (section === "simulations") return "Simulations";
+  if (section === "saved_comparisons") return "Saved Comparisons";
+  return "Lab";
 }
 
 function capitalize(value: string): string {

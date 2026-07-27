@@ -72,6 +72,7 @@ class SupercellsCapabilities(BaseModel):
     lab: Literal[False] = False
     compare: bool
     saved_views: Literal[False] = False
+    saved_comparisons: Literal[True] = True
 
 
 class SupercellsWorldSummary(BaseModel):
@@ -86,7 +87,7 @@ class SupercellsWorldSummary(BaseModel):
     reference_available: bool
     simulation_count: int
     saved_view_count: Literal[0] = 0
-    saved_comparison_count: Literal[0] = 0
+    saved_comparison_count: int = 0
     featured_comparison_count: Literal[0] = 0
     active_run_count: Literal[0] = 0
     completed_uninspected_run_count: Literal[0] = 0

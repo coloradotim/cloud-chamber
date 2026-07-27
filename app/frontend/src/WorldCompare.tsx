@@ -9,6 +9,12 @@ import {
 } from "./IntegratedExploreWorkspace";
 import { NativeSlicePositionControl } from "./NativeSlicePositionControl";
 import {
+  SaveComparisonControl,
+  type SavedComparisonEntry,
+  type SavedComparisonWorkspace,
+  type SupercellsComparePresentation,
+} from "./SavedComparisons";
+import {
   CompareControlGroup,
   type CompareSelectedEvidence,
   type TerrainScale,
@@ -17,6 +23,7 @@ import {
 import {
   mapCamera,
   nearestCompareTime,
+  reconcileSavedCompareState,
   timeIndexForSeconds,
   validateWorldCompareDescriptor,
   WORLD_COMPARE_ADAPTERS,
@@ -41,6 +48,7 @@ type WorldCompareProps = {
   worldSlug: CompareWorldSlug;
   initialLeftSimulationId?: string | null;
   initialRightSimulationId?: string | null;
+  savedComparisonId?: string | null;
   resumeExistingState?: boolean;
   onBack: () => void;
   onOpenSimulation: (simulationId: string) => void;
@@ -51,6 +59,7 @@ type SideStatus = Record<CompareSide, "loading" | "ready" | "error">;
 type SideEvidence = Record<CompareSide, CompareSelectedEvidence | null>;
 type SideScales = Record<CompareSide, TerrainScale | null>;
 type PlaybackTarget = "linked" | CompareSide | null;
+type ComparePhase = "review" | "workspace" | "recovery";
 
 const INDEPENDENT_LINKS: CompareLinkModes = {
   time: false,
@@ -64,6 +73,7 @@ export function WorldCompare({
   worldSlug,
   initialLeftSimulationId = null,
   initialRightSimulationId = null,
+  savedComparisonId = null,
   resumeExistingState = false,
   onBack,
   onOpenSimulation,
@@ -71,7 +81,7 @@ export function WorldCompare({
   const [descriptor, setDescriptor] = useState<WorldCompareDescriptor | null>(null);
   const [descriptorLoading, setDescriptorLoading] = useState(true);
   const [descriptorError, setDescriptorError] = useState<string | null>(null);
-  const [phase, setPhase] = useState<"review" | "workspace">("review");
+  const [phase, setPhase] = useState<ComparePhase>("review");
   const [states, setStates] = useState<SideStates | null>(null);
   const [links, setLinks] = useState<CompareLinkModes>(INDEPENDENT_LINKS);
   const [mappingNotices, setMappingNotices] = useState<string[]>([]);
@@ -83,6 +93,18 @@ export function WorldCompare({
   const [sideScales, setSideScales] = useState<SideScales>({ left: null, right: null });
   const [contextCollapsed, setContextCollapsed] = useState(true);
   const [playbackTarget, setPlaybackTarget] = useState<PlaybackTarget>(null);
+  const [savedEntry, setSavedEntry] = useState<SavedComparisonEntry | null>(null);
+  const [savedPairReplaced, setSavedPairReplaced] = useState(false);
+  const [saveMessage, setSaveMessage] = useState<string | null>(null);
+  const [restorationMessages, setRestorationMessages] = useState<string[]>([]);
+  const [restorationStatus, setRestorationStatus] = useState<
+    "healthy" | "partially_restorable" | "unavailable"
+  >("healthy");
+  const [restorationReportPending, setRestorationReportPending] = useState(false);
+  const [presentations, setPresentations] = useState<SupercellsComparePresentation>({
+    left: "evidence",
+    right: "evidence",
+  });
   const [performance, setPerformance] = useState<ComparePerformanceSummary>({
     first_useful_dual_view_ms: null,
     cache_entries: { left: 0, right: 0 },
@@ -99,16 +121,13 @@ export function WorldCompare({
       if (leftId) search.set("left_simulation_id", leftId);
       if (rightId) search.set("right_simulation_id", rightId);
       try {
-        const response = await fetch(
-          `/api/worlds/${worldSlug}/compare${search.size ? `?${search}` : ""}`,
-        );
-        if (!response.ok) {
-          throw new Error(await responseMessage(response, "World Compare could not be loaded."));
-        }
-        const payload = validateWorldCompareDescriptor(await response.json());
+        const payload = await fetchCompareDescriptor(worldSlug, search);
         setDescriptor(payload);
         setPhase("review");
         setStates(null);
+        setSavedEntry(null);
+        setSavedPairReplaced(false);
+        setRestorationReportPending(false);
         setPlaybackTarget(null);
         setMappingNotices([]);
       } catch (caught) {
@@ -124,8 +143,143 @@ export function WorldCompare({
   );
 
   useEffect(() => {
+    if (savedComparisonId) return;
     void loadDescriptor(initialLeftSimulationId, initialRightSimulationId);
-  }, [initialLeftSimulationId, initialRightSimulationId, loadDescriptor]);
+  }, [initialLeftSimulationId, initialRightSimulationId, loadDescriptor, savedComparisonId]);
+
+  const enterSavedWorkspace = useCallback(
+    (
+      entry: SavedComparisonEntry,
+      compareDescriptor: WorldCompareDescriptor,
+      leftId: string,
+      rightId: string,
+      pairReplaced: boolean,
+    ) => {
+      const left = selectedSimulation(compareDescriptor, leftId);
+      const right = selectedSimulation(compareDescriptor, rightId);
+      const compatibility = compareDescriptor.compatibility;
+      if (!left || !right || !compatibility) {
+        throw new Error("The Saved Comparison pair is not available for live inspection.");
+      }
+      const leftRestoration = reconcileSavedCompareState(
+        entry.record.workspace.left_state,
+        left,
+        compatibility.time_tolerance_seconds,
+      );
+      const rightRestoration = reconcileSavedCompareState(
+        entry.record.workspace.right_state,
+        right,
+        compatibility.time_tolerance_seconds,
+      );
+      const messages = [...leftRestoration.messages, ...rightRestoration.messages];
+      if (pairSummaryChanged(entry, compareDescriptor)) {
+        messages.push(
+          "Current pair metadata differs from the captured summary; the saved summary remains unchanged.",
+        );
+      }
+      if (pairReplaced) {
+        messages.push(
+          "One or more missing Simulations were replaced. This is a transient pair, not the saved pair.",
+        );
+      }
+      const uniqueMessages = [...new Set(messages)];
+      const unavailable =
+        leftRestoration.status === "unavailable" || rightRestoration.status === "unavailable";
+      const partial =
+        pairReplaced ||
+        uniqueMessages.length > 0 ||
+        leftRestoration.status === "partially_restorable" ||
+        rightRestoration.status === "partially_restorable";
+      setDescriptor(compareDescriptor);
+      setStates({
+        left: leftRestoration.state,
+        right: rightRestoration.state,
+      });
+      setLinks(entry.record.workspace.links);
+      setContextCollapsed(entry.record.workspace.context_collapsed);
+      setPresentations(
+        entry.record.workspace.supercells_presentation ?? {
+          left: "evidence",
+          right: "evidence",
+        },
+      );
+      setRestorationMessages(uniqueMessages);
+      setRestorationStatus(
+        unavailable ? "unavailable" : partial ? "partially_restorable" : "healthy",
+      );
+      setSavedEntry(entry);
+      setSavedPairReplaced(pairReplaced);
+      setRestorationReportPending(!pairReplaced);
+      setMappingNotices([]);
+      setPlaybackTarget(null);
+      setSaveMessage(null);
+      setSideStatus({ left: "loading", right: "loading" });
+      setPhase("workspace");
+      workspaceStartedAt.current = window.performance.now();
+    },
+    [],
+  );
+
+  useEffect(() => {
+    if (!savedComparisonId) return;
+    let canceled = false;
+    async function loadSaved() {
+      setDescriptorLoading(true);
+      setDescriptorError(null);
+      setRestorationReportPending(false);
+      try {
+        const response = await fetch(
+          `/api/worlds/${worldSlug}/saved-comparisons/${savedComparisonId}`,
+        );
+        if (!response.ok) {
+          throw new Error(await responseMessage(response, "Saved Comparison could not be loaded."));
+        }
+        const entry = (await response.json()) as SavedComparisonEntry;
+        if (canceled) return;
+        setSavedEntry(entry);
+        const missing = entry.dependencies.some((dependency) => !dependency.available);
+        if (missing) {
+          const fallback = await fetchCompareDescriptor(worldSlug, new URLSearchParams());
+          if (canceled) return;
+          setDescriptor(fallback);
+          setStates(null);
+          setRestorationStatus("unavailable");
+          setRestorationMessages(
+            entry.effective_restoration_message
+              ? [entry.effective_restoration_message]
+              : ["A retained Simulation required by this Saved Comparison is unavailable."],
+          );
+          setPhase("recovery");
+        } else {
+          const search = new URLSearchParams({
+            left_simulation_id: entry.record.workspace.left_simulation_id,
+            right_simulation_id: entry.record.workspace.right_simulation_id,
+          });
+          const compareDescriptor = await fetchCompareDescriptor(worldSlug, search);
+          if (canceled) return;
+          enterSavedWorkspace(
+            entry,
+            compareDescriptor,
+            entry.record.workspace.left_simulation_id,
+            entry.record.workspace.right_simulation_id,
+            false,
+          );
+        }
+      } catch (caught) {
+        if (canceled) return;
+        setDescriptor(null);
+        setDescriptorError(
+          caught instanceof Error ? caught.message : "Saved Comparison could not be loaded.",
+        );
+      } finally {
+        if (!canceled) setDescriptorLoading(false);
+      }
+    }
+    void loadSaved();
+    return () => {
+      canceled = true;
+    };
+  }, [enterSavedWorkspace, savedComparisonId, worldSlug]);
 
   const leftSimulation = descriptor
     ? selectedSimulation(descriptor, descriptor.selected_left_simulation_id)
@@ -151,6 +305,11 @@ export function WorldCompare({
     setStates({ left: leftState, right: rightState });
     setLinks(INDEPENDENT_LINKS);
     setMappingNotices([]);
+    setPresentations({ left: "evidence", right: "evidence" });
+    setRestorationMessages([]);
+    setRestorationStatus("healthy");
+    setSavedPairReplaced(false);
+    setSaveMessage(null);
     setPhase("workspace");
     setSideStatus({ left: "loading", right: "loading" });
   }, [descriptor, leftSimulation, resumeExistingState, rightSimulation]);
@@ -178,6 +337,40 @@ export function WorldCompare({
     const elapsed = window.performance.now() - workspaceStartedAt.current;
     setPerformance((current) => ({ ...current, first_useful_dual_view_ms: elapsed }));
   }, [performance.first_useful_dual_view_ms, phase, sideStatus]);
+
+  useEffect(() => {
+    if (
+      !savedEntry ||
+      !restorationReportPending ||
+      savedPairReplaced ||
+      sideStatus.left !== "ready" ||
+      sideStatus.right !== "ready"
+    ) {
+      return;
+    }
+    const id = savedEntry.record.saved_comparison_id;
+    setRestorationReportPending(false);
+    void fetch(`/api/worlds/${worldSlug}/saved-comparisons/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        restoration_status: restorationStatus,
+        restoration_message: restorationMessages.join(" ") || null,
+      }),
+    }).then((response) => {
+      if (!response.ok) {
+        setSaveMessage("The comparison opened, but its restoration status could not be recorded.");
+      }
+    });
+  }, [
+    restorationMessages,
+    restorationReportPending,
+    restorationStatus,
+    savedEntry,
+    savedPairReplaced,
+    sideStatus,
+    worldSlug,
+  ]);
 
   const handlePerformance = useCallback((sample: ComparePerformanceSample) => {
     setPerformance((current) => {
@@ -341,6 +534,31 @@ export function WorldCompare({
     if (item) setContextCollapsed(false);
   }, []);
 
+  const openRecoveredPair = useCallback(
+    async (leftId: string, rightId: string) => {
+      if (!savedEntry) return;
+      setDescriptorLoading(true);
+      setDescriptorError(null);
+      try {
+        const compareDescriptor = await fetchCompareDescriptor(
+          worldSlug,
+          new URLSearchParams({
+            left_simulation_id: leftId,
+            right_simulation_id: rightId,
+          }),
+        );
+        enterSavedWorkspace(savedEntry, compareDescriptor, leftId, rightId, true);
+      } catch (caught) {
+        setDescriptorError(
+          caught instanceof Error ? caught.message : "Replacement pair could not be loaded.",
+        );
+      } finally {
+        setDescriptorLoading(false);
+      }
+    },
+    [enterSavedWorkspace, savedEntry, worldSlug],
+  );
+
   if (descriptorLoading) {
     return <CompareStatus title="Loading Compare" body="Reading bounded World metadata..." />;
   }
@@ -350,8 +568,27 @@ export function WorldCompare({
         title="Compare is unavailable"
         body={descriptorError ?? "World Compare metadata is unavailable."}
         actionLabel="Retry"
-        onAction={() => void loadDescriptor(initialLeftSimulationId, initialRightSimulationId)}
+        onAction={() =>
+          savedComparisonId
+            ? window.location.reload()
+            : void loadDescriptor(initialLeftSimulationId, initialRightSimulationId)
+        }
       />
+    );
+  }
+  if (phase === "recovery" && savedEntry) {
+    return (
+      <IntegratedExploreWorkspace
+        worldName={descriptor.display_name}
+        simulationName={savedEntry.record.title}
+        onBack={onBack}
+      >
+        <SavedComparisonRecovery
+          entry={savedEntry}
+          simulations={descriptor.simulations}
+          onOpen={(leftId, rightId) => void openRecoveredPair(leftId, rightId)}
+        />
+      </IntegratedExploreWorkspace>
     );
   }
   if (descriptor.no_second_simulation_message || !rightSimulation) {
@@ -399,18 +636,92 @@ export function WorldCompare({
     );
   }
 
+  const savedWorkspace: SavedComparisonWorkspace = {
+    schema_version: 1,
+    world_id: descriptor.world_id,
+    left_simulation_id: leftSimulation.simulation_id,
+    right_simulation_id: rightSimulation.simulation_id,
+    left_state: states.left,
+    right_state: states.right,
+    links,
+    context_collapsed: contextCollapsed,
+    supercells_presentation: descriptor.world_id === "supercells" ? presentations : null,
+  };
+  const saveDisabled =
+    playbackTarget !== null || sideStatus.left !== "ready" || sideStatus.right !== "ready";
+
   return (
     <IntegratedExploreWorkspace
       worldName={descriptor.display_name}
       simulationName={`${leftSimulation.display_name} and ${rightSimulation.display_name}`}
       onBack={onBack}
       headerActions={
-        <button type="button" className="secondary-button" onClick={() => setPhase("review")}>
-          Change pair
-        </button>
+        <div className="compare-header-actions">
+          <SaveComparisonControl
+            worldSlug={worldSlug}
+            workspace={savedWorkspace}
+            disabled={saveDisabled}
+            saveAsNew={savedEntry !== null || savedPairReplaced}
+            onSaved={(entry) => {
+              setSavedEntry(entry);
+              setSavedPairReplaced(false);
+              setRestorationReportPending(false);
+              setSaveMessage(`Saved as "${entry.record.title}".`);
+            }}
+          />
+          <button
+            type="button"
+            className="secondary-button"
+            onClick={() => {
+              setSavedEntry(null);
+              setSavedPairReplaced(false);
+              setRestorationReportPending(false);
+              setSaveMessage(null);
+              setStates(null);
+              setPhase("review");
+            }}
+          >
+            Change pair
+          </button>
+        </div>
       }
     >
       <section className="world-compare-shell" aria-label={`${descriptor.display_name} Compare`}>
+        {(savedEntry || saveMessage || restorationMessages.length > 0) && (
+          <section className="compare-saved-state-banner" aria-label="Saved Comparison status">
+            <div>
+              <strong>
+                {savedPairReplaced
+                  ? "Transient replacement pair"
+                  : savedEntry
+                    ? `Saved Comparison: ${savedEntry.record.title}`
+                    : "Live comparison"}
+              </strong>
+              <p>
+                {savedPairReplaced
+                  ? "This workspace is not the saved pair. The original remains unchanged."
+                  : "You are viewing current retained output from an immutable saved workspace."}
+              </p>
+            </div>
+            {restorationStatus !== "healthy" && (
+              <span className={`compare-restoration-chip ${restorationStatus}`}>
+                {restorationStatus === "unavailable" ? "Unavailable" : "Adjusted"}
+              </span>
+            )}
+          </section>
+        )}
+        {restorationMessages.length > 0 && (
+          <div className="compare-mapping-notices" role="status">
+            {restorationMessages.map((message) => (
+              <span key={message}>{message}</span>
+            ))}
+          </div>
+        )}
+        {saveMessage && (
+          <p className="compare-save-message" role="status">
+            {saveMessage}
+          </p>
+        )}
         <CompareToolbar
           descriptor={descriptor}
           links={links}
@@ -443,6 +754,13 @@ export function WorldCompare({
                   commonMountainScale={commonMountainScale}
                   onMountainScale={handleScale}
                   onEvidence={handleEvidence}
+                  presentation={presentations[side]}
+                  onPresentationChange={(targetSide, presentation) =>
+                    setPresentations((current) => ({
+                      ...current,
+                      [targetSide]: presentation,
+                    }))
+                  }
                 />
               );
             })}
@@ -456,10 +774,7 @@ export function WorldCompare({
               onClear={(side) => {
                 updateSideState(
                   side,
-                  WORLD_COMPARE_ADAPTERS[descriptor.world_id].setSelectedPoint(
-                    states[side],
-                    null,
-                  ),
+                  WORLD_COMPARE_ADAPTERS[descriptor.world_id].setSelectedPoint(states[side], null),
                 );
                 setEvidence((current) => ({ ...current, [side]: null }));
               }}
@@ -500,9 +815,7 @@ function ComparePairReview({
       <header>
         <p className="eyebrow">Compare setup</p>
         <h3 id="compare-review-title">Review the two Simulations before loading frames</h3>
-        <p>
-          Compare is transient. It does not create a Saved Comparison or change either Simulation.
-        </p>
+        <p>Arrange a live comparison, then save the complete examination when it is coherent.</p>
       </header>
       <div className="compare-pair-selectors">
         <SimulationSelector
@@ -605,18 +918,25 @@ function SimulationSelector({
   value,
   simulations,
   exclude,
+  placeholder,
   onChange,
 }: {
   label: string;
   value: string;
   simulations: CompareSimulationDescriptor[];
   exclude: string;
+  placeholder?: string;
   onChange: (value: string) => void;
 }) {
   return (
     <label>
       <span>{label}</span>
       <select value={value} onChange={(event) => onChange(event.currentTarget.value)}>
+        {placeholder && (
+          <option value="" disabled>
+            {placeholder}
+          </option>
+        )}
         {simulations.map((simulation) => (
           <option
             key={simulation.simulation_id}
@@ -791,6 +1111,8 @@ function CompareSidePanel({
   commonMountainScale,
   onMountainScale,
   onEvidence,
+  presentation,
+  onPresentationChange,
 }: {
   side: CompareSide;
   simulation: CompareSimulationDescriptor;
@@ -803,6 +1125,8 @@ function CompareSidePanel({
   commonMountainScale: TerrainScale | null;
   onMountainScale: (side: CompareSide, scale: TerrainScale | null) => void;
   onEvidence: (side: CompareSide, evidence: CompareSelectedEvidence | null) => void;
+  presentation: "scene" | "evidence";
+  onPresentationChange: (side: CompareSide, presentation: "scene" | "evidence") => void;
 }) {
   const adapter = WORLD_COMPARE_ADAPTERS[descriptor.world_id];
   const viewOptions = adapter.viewOptions(simulation);
@@ -873,6 +1197,8 @@ function CompareSidePanel({
         commonMountainScale={commonMountainScale}
         onMountainScale={onMountainScale}
         onEvidence={onEvidence}
+        presentation={presentation}
+        onPresentationChange={onPresentationChange}
       />
     </article>
   );
@@ -1508,7 +1834,7 @@ function CompareTechnicalDetails({
         </div>
         <div>
           <dt>Persistence</dt>
-          <dd>{descriptor.persistence.replace("_", " ")}</dd>
+          <dd>{descriptor.persistence.replaceAll("_", " ")}</dd>
         </div>
       </dl>
     </details>
@@ -1663,6 +1989,120 @@ function selectedSimulation(
 ): CompareSimulationDescriptor | null {
   return (
     descriptor.simulations.find((simulation) => simulation.simulation_id === simulationId) ?? null
+  );
+}
+
+function SavedComparisonRecovery({
+  entry,
+  simulations,
+  onOpen,
+}: {
+  entry: SavedComparisonEntry;
+  simulations: CompareSimulationDescriptor[];
+  onOpen: (leftId: string, rightId: string) => void;
+}) {
+  const inspectable = simulations.filter((simulation) => simulation.inspectable);
+  const leftDependency = entry.dependencies.find((dependency) => dependency.side === "left");
+  const rightDependency = entry.dependencies.find((dependency) => dependency.side === "right");
+  const initialLeft =
+    inspectable.find(
+      (simulation) =>
+        leftDependency?.available && simulation.simulation_id === leftDependency.simulation_id,
+    )?.simulation_id ?? "";
+  const initialRight =
+    inspectable.find(
+      (simulation) =>
+        rightDependency?.available &&
+        simulation.simulation_id === rightDependency.simulation_id &&
+        simulation.simulation_id !== initialLeft,
+    )?.simulation_id ?? "";
+  const [leftId, setLeftId] = useState(initialLeft);
+  const [rightId, setRightId] = useState(initialRight);
+  return (
+    <section className="saved-comparison-recovery" aria-labelledby="saved-recovery-title">
+      <header>
+        <p className="eyebrow">Saved Comparison unavailable</p>
+        <h3 id="saved-recovery-title">{entry.record.title}</h3>
+        <p>
+          The saved workspace is intact, but one or more retained Simulations are missing. Replace
+          them deliberately to inspect a transient pair; the original Saved Comparison will not be
+          changed.
+        </p>
+        {entry.record.scientific_question && (
+          <p className="saved-recovery-question">
+            <strong>Question:</strong> {entry.record.scientific_question}
+          </p>
+        )}
+        <p className="saved-recovery-relationship">
+          <strong>Captured relationship:</strong> {entry.record.captured_pair.relationship}
+        </p>
+      </header>
+      <div className="saved-recovery-dependencies">
+        {entry.dependencies.map((dependency) => (
+          <div key={dependency.side}>
+            <span>{dependency.side === "left" ? "Saved left" : "Saved right"}</span>
+            <strong>{dependency.display_name}</strong>
+            <span className={dependency.available ? "state-chip" : "compare-caveat-chip"}>
+              {dependency.available ? "Available" : "Missing"}
+            </span>
+          </div>
+        ))}
+      </div>
+      <div className="compare-pair-selectors">
+        <SimulationSelector
+          label="Replacement left"
+          value={leftId}
+          simulations={inspectable}
+          exclude={rightId}
+          placeholder="Choose a current Simulation"
+          onChange={setLeftId}
+        />
+        <SimulationSelector
+          label="Replacement right"
+          value={rightId}
+          simulations={inspectable}
+          exclude={leftId}
+          placeholder="Choose a current Simulation"
+          onChange={setRightId}
+        />
+      </div>
+      <button
+        type="button"
+        disabled={!leftId || !rightId || leftId === rightId}
+        onClick={() => onOpen(leftId, rightId)}
+      >
+        Open transient replacement pair
+      </button>
+    </section>
+  );
+}
+
+async function fetchCompareDescriptor(
+  worldSlug: CompareWorldSlug,
+  search: URLSearchParams,
+): Promise<WorldCompareDescriptor> {
+  const response = await fetch(
+    `/api/worlds/${worldSlug}/compare${search.size ? `?${search}` : ""}`,
+  );
+  if (!response.ok) {
+    throw new Error(await responseMessage(response, "World Compare could not be loaded."));
+  }
+  return validateWorldCompareDescriptor(await response.json());
+}
+
+function pairSummaryChanged(
+  entry: SavedComparisonEntry,
+  descriptor: WorldCompareDescriptor,
+): boolean {
+  const compatibility = descriptor.compatibility;
+  if (!compatibility) return true;
+  const captured = entry.record.captured_pair;
+  return (
+    captured.relationship !== compatibility.relationship ||
+    captured.controlled_pair !== compatibility.controlled_pair ||
+    captured.controlled_pair_message !== compatibility.controlled_pair_message ||
+    JSON.stringify(captured.material_differences) !==
+      JSON.stringify(descriptor.material_differences)
   );
 }
 

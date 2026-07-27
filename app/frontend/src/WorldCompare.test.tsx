@@ -1,5 +1,5 @@
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type {
@@ -8,6 +8,7 @@ import type {
   SupercellsExploreState,
   TradeCumulusExploreState,
 } from "./ExploreStatePersistence";
+import type { SavedComparisonEntry } from "./SavedComparisons";
 import { WorldCompare } from "./WorldCompare";
 import type { CompareSimulationDescriptor, WorldCompareDescriptor } from "./WorldCompare.types";
 
@@ -20,7 +21,7 @@ vi.mock("./WorldCompareAdapters", async (importOriginal) => {
       simulation: CompareSimulationDescriptor;
       state: ExploreWorldState;
       onStateChange: (state: ExploreWorldState) => void;
-      onFrameState: (side: "left" | "right", state: "ready" | "error") => void;
+      onFrameState: (side: "left" | "right", state: "loading" | "ready" | "error") => void;
       onPerformance: (sample: {
         side: "left" | "right";
         key: string;
@@ -41,12 +42,16 @@ vi.mock("./WorldCompareAdapters", async (importOriginal) => {
           }>;
         } | null,
       ) => void;
+      presentation: "scene" | "evidence";
+      onPresentationChange: (side: "left" | "right", presentation: "scene" | "evidence") => void;
     }) => {
       const failed = props.simulation.simulation_id.endsWith("-failed");
+      const startsPending = props.simulation.simulation_id.endsWith("-pending");
+      const [pending, setPending] = useState(startsPending);
       const { onFrameState, onPerformance, side } = props;
       useEffect(() => {
-        onFrameState(side, failed ? "error" : "ready");
-        if (!failed) {
+        onFrameState(side, failed ? "error" : pending ? "loading" : "ready");
+        if (!failed && !pending) {
           onPerformance({
             side,
             key: `${props.simulation.simulation_id}-${props.state.model_time_seconds}`,
@@ -59,10 +64,21 @@ vi.mock("./WorldCompareAdapters", async (importOriginal) => {
         failed,
         onFrameState,
         onPerformance,
+        pending,
         props.simulation.simulation_id,
         props.state.model_time_seconds,
         side,
       ]);
+      if (pending) {
+        return (
+          <section aria-label={`${props.simulation.display_name} pending frame`}>
+            Waiting for a coherent frame.
+            <button type="button" onClick={() => setPending(false)}>
+              Finish {props.simulation.display_name} frame
+            </button>
+          </section>
+        );
+      }
       if (failed) {
         return (
           <section role="alert" aria-label={`${props.simulation.display_name} frame failure`}>
@@ -125,6 +141,18 @@ vi.mock("./WorldCompareAdapters", async (importOriginal) => {
           </button>
           {supercellsState && (
             <>
+              <button
+                type="button"
+                onClick={() =>
+                  props.onPresentationChange(
+                    props.side,
+                    props.presentation === "scene" ? "evidence" : "scene",
+                  )
+                }
+              >
+                Show {props.simulation.display_name}{" "}
+                {props.presentation === "scene" ? "evidence" : "scene"}
+              </button>
               <button
                 type="button"
                 onClick={() =>
@@ -247,7 +275,7 @@ function tradeSimulation(
       saved_output_count: 3,
       interpolation_allowed: false,
     },
-    available_field_ids: ["ql"],
+    available_field_ids: ["ql", "w"],
     available_view_ids: ["field", "updraft_lens"],
     fixed_scale_ids: ["trade_cumulus_updraft_velocity_v1"],
     plane_orientations: ["horizontal", "vertical_x", "vertical_y"],
@@ -257,9 +285,14 @@ function tradeSimulation(
   };
 }
 
-function tradeDescriptor(rightId = "moisture"): WorldCompareDescriptor {
-  const left = tradeSimulation("baseline", "Canonical BOMEX Baseline", 0);
-  const right = tradeSimulation(rightId, "More Moisture", 120);
+function tradeDescriptor(
+  rightId = "moisture",
+  leftId = "baseline",
+  leftDisplayName = "Canonical BOMEX Baseline",
+  rightDisplayName = "More Moisture",
+): WorldCompareDescriptor {
+  const left = tradeSimulation(leftId, leftDisplayName, 0);
+  const right = tradeSimulation(rightId, rightDisplayName, 120);
   return {
     schema_version: "world_compare_v1",
     world_id: "trade_cumulus",
@@ -288,7 +321,7 @@ function tradeDescriptor(rightId = "moisture"): WorldCompareDescriptor {
       relationship: "More Moisture is a child of Canonical BOMEX Baseline.",
       controlled_pair: true,
       controlled_pair_message: "Only surface moisture supply changed.",
-      shared_field_ids: ["ql"],
+      shared_field_ids: ["ql", "w"],
       shared_view_ids: ["field", "updraft_lens"],
       shared_fixed_scale_ids: ["trade_cumulus_updraft_velocity_v1"],
       exact_time_link_available: true,
@@ -300,7 +333,68 @@ function tradeDescriptor(rightId = "moisture"): WorldCompareDescriptor {
       blockers: [],
     },
     no_second_simulation_message: null,
-    persistence: "transient_only",
+    persistence: "saved_comparisons",
+  };
+}
+
+function savedTradeEntry({
+  leftAvailable = true,
+  rightAvailable = true,
+  rightSimulationId = "moisture",
+  relationship,
+}: {
+  leftAvailable?: boolean;
+  rightAvailable?: boolean;
+  rightSimulationId?: string;
+  relationship?: string;
+} = {}): SavedComparisonEntry {
+  const descriptor = tradeDescriptor();
+  return {
+    record: {
+      saved_comparison_id: "a".repeat(32),
+      title: "Moisture response",
+      scientific_question: "How does added moisture change cloud growth?",
+      created_at: "2026-07-27T12:00:00Z",
+      updated_at: "2026-07-27T12:00:00Z",
+      restoration_status: "healthy",
+      restoration_message: null,
+      captured_pair: {
+        left_display_name: "Canonical BOMEX Baseline",
+        right_display_name: "More Moisture",
+        relationship: relationship ?? descriptor.compatibility!.relationship,
+        controlled_pair: descriptor.compatibility!.controlled_pair,
+        controlled_pair_message: descriptor.compatibility!.controlled_pair_message,
+        material_differences: descriptor.material_differences,
+      },
+      workspace: {
+        schema_version: 1,
+        world_id: "trade_cumulus",
+        left_simulation_id: "baseline",
+        right_simulation_id: rightSimulationId,
+        left_state: tradeState(60),
+        right_state: tradeState(120),
+        links: { time: false, view: true, plane: true, camera: false, selection: false },
+        context_collapsed: false,
+        supercells_presentation: null,
+      },
+    },
+    dependencies: [
+      {
+        side: "left",
+        simulation_id: "baseline",
+        display_name: "Canonical BOMEX Baseline",
+        available: leftAvailable,
+      },
+      {
+        side: "right",
+        simulation_id: rightSimulationId,
+        display_name: "More Moisture",
+        available: rightAvailable,
+      },
+    ],
+    effective_restoration_status: leftAvailable && rightAvailable ? "healthy" : "unavailable",
+    effective_restoration_message:
+      leftAvailable && rightAvailable ? null : "A retained Simulation is missing.",
   };
 }
 
@@ -419,7 +513,7 @@ function mountainDescriptor(): WorldCompareDescriptor {
       blockers: [],
     },
     no_second_simulation_message: null,
-    persistence: "transient_only",
+    persistence: "saved_comparisons",
   };
 }
 
@@ -553,7 +647,7 @@ function supercellsFixtureDescriptor(): WorldCompareDescriptor {
       blockers: [],
     },
     no_second_simulation_message: null,
-    persistence: "transient_only",
+    persistence: "saved_comparisons",
   };
 }
 
@@ -713,7 +807,7 @@ describe("WorldCompare", () => {
 
     fireEvent.click(screen.getByText("Compare technical details", { exact: true }));
     expect(screen.getByText(/right: 12 ms, 1.0 KB/)).toBeVisible();
-    expect(screen.getByText("transient only")).toBeVisible();
+    expect(screen.getByText("saved comparisons")).toBeVisible();
   });
 
   it("moves a Supercells section without creating selected evidence", async () => {
@@ -726,10 +820,9 @@ describe("WorldCompare", () => {
     const leftSide = await screen.findByRole("article", {
       name: "Quarter-Circle Supercell comparison side",
     });
-    fireEvent.change(
-      within(leftSide).getByLabelText("Quarter-Circle Supercell slice position"),
-      { target: { value: "10" } },
-    );
+    fireEvent.change(within(leftSide).getByLabelText("Quarter-Circle Supercell slice position"), {
+      target: { value: "10" },
+    });
 
     expect(screen.getByLabelText("Quarter-Circle Supercell test frame")).toHaveTextContent(
       "selected none · evidence hidden",
@@ -849,7 +942,7 @@ describe("WorldCompare", () => {
           compatibility: null,
           no_second_simulation_message:
             "Supercells currently has one retained Simulation; it is not cloned.",
-          persistence: "transient_only",
+          persistence: "saved_comparisons",
         }),
         { status: 200 },
       ),
@@ -860,5 +953,283 @@ describe("WorldCompare", () => {
     expect(await screen.findByLabelText("No second Simulation")).toBeVisible();
     expect(screen.getByText(/it is not cloned/)).toBeVisible();
     expect(screen.queryByRole("button", { name: "Open dual view" })).not.toBeInTheDocument();
+  });
+
+  it("reopens a Saved Comparison directly from its immutable workspace", async () => {
+    const descriptor = tradeDescriptor();
+    const savedEntry = savedTradeEntry();
+    vi.mocked(fetch)
+      .mockResolvedValueOnce(new Response(JSON.stringify(savedEntry), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify(descriptor), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify(savedEntry), { status: 200 }));
+
+    render(
+      <WorldCompare
+        worldSlug="trade-cumulus"
+        savedComparisonId={savedEntry.record.saved_comparison_id}
+        onBack={vi.fn()}
+        onOpenSimulation={vi.fn()}
+      />,
+    );
+
+    expect(await screen.findByText("Saved Comparison: Moisture response")).toBeVisible();
+    expect(screen.queryByText(/Review the two Simulations/)).not.toBeInTheDocument();
+    expect(screen.getByLabelText("Canonical BOMEX Baseline test frame")).toHaveTextContent("60 s");
+    expect(screen.getByLabelText("More Moisture test frame")).toHaveTextContent("120 s");
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Save as new comparison" })).toBeEnabled(),
+    );
+    await waitFor(() =>
+      expect(fetch).toHaveBeenCalledWith(
+        `/api/worlds/trade-cumulus/saved-comparisons/${savedEntry.record.saved_comparison_id}`,
+        expect.objectContaining({ method: "PATCH" }),
+      ),
+    );
+  });
+
+  it("records restoration only after both saved sides reach coherent frames", async () => {
+    const descriptor = tradeDescriptor("moisture-pending");
+    const savedEntry = savedTradeEntry({ rightSimulationId: "moisture-pending" });
+    vi.mocked(fetch)
+      .mockResolvedValueOnce(new Response(JSON.stringify(savedEntry), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify(descriptor), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify(savedEntry), { status: 200 }));
+
+    render(
+      <WorldCompare
+        worldSlug="trade-cumulus"
+        savedComparisonId={savedEntry.record.saved_comparison_id}
+        onBack={vi.fn()}
+        onOpenSimulation={vi.fn()}
+      />,
+    );
+
+    expect(await screen.findByLabelText("More Moisture pending frame")).toBeVisible();
+    expect(fetch).toHaveBeenCalledTimes(2);
+    fireEvent.click(screen.getByRole("button", { name: "Finish More Moisture frame" }));
+    await waitFor(() =>
+      expect(fetch).toHaveBeenCalledWith(
+        `/api/worlds/trade-cumulus/saved-comparisons/${savedEntry.record.saved_comparison_id}`,
+        expect.objectContaining({ method: "PATCH" }),
+      ),
+    );
+  });
+
+  it("keeps an opened comparison usable when restoration metadata cannot be persisted", async () => {
+    const descriptor = tradeDescriptor();
+    const savedEntry = savedTradeEntry();
+    vi.mocked(fetch)
+      .mockResolvedValueOnce(new Response(JSON.stringify(savedEntry), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify(descriptor), { status: 200 }))
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ detail: "write failed" }), { status: 500 }),
+      );
+
+    render(
+      <WorldCompare
+        worldSlug="trade-cumulus"
+        savedComparisonId={savedEntry.record.saved_comparison_id}
+        onBack={vi.fn()}
+        onOpenSimulation={vi.fn()}
+      />,
+    );
+
+    expect(await screen.findByLabelText("Canonical BOMEX Baseline test frame")).toBeVisible();
+    expect(
+      await screen.findByText(
+        "The comparison opened, but its restoration status could not be recorded.",
+      ),
+    ).toBeVisible();
+    expect(screen.getByLabelText("More Moisture test frame")).toBeVisible();
+  });
+
+  it("reports captured pair metadata drift without rewriting saved history", async () => {
+    const descriptor = tradeDescriptor();
+    const savedEntry = savedTradeEntry({ relationship: "Captured historical relationship." });
+    vi.mocked(fetch)
+      .mockResolvedValueOnce(new Response(JSON.stringify(savedEntry), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify(descriptor), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify(savedEntry), { status: 200 }));
+
+    render(
+      <WorldCompare
+        worldSlug="trade-cumulus"
+        savedComparisonId={savedEntry.record.saved_comparison_id}
+        onBack={vi.fn()}
+        onOpenSimulation={vi.fn()}
+      />,
+    );
+
+    expect(
+      await screen.findByText(
+        "Current pair metadata differs from the captured summary; the saved summary remains unchanged.",
+      ),
+    ).toBeVisible();
+    await waitFor(() =>
+      expect(fetch).toHaveBeenCalledWith(
+        `/api/worlds/trade-cumulus/saved-comparisons/${savedEntry.record.saved_comparison_id}`,
+        expect.objectContaining({ method: "PATCH" }),
+      ),
+    );
+    expect(savedEntry.record.captured_pair.relationship).toBe("Captured historical relationship.");
+  });
+
+  it.each([
+    {
+      name: "missing left",
+      entry: savedTradeEntry({ leftAvailable: false }),
+      descriptor: tradeDescriptor(
+        "moisture",
+        "current-left",
+        "Current left replacement",
+        "More Moisture",
+      ),
+      choices: { left: "current-left", right: null },
+    },
+    {
+      name: "missing right",
+      entry: savedTradeEntry({ rightAvailable: false }),
+      descriptor: tradeDescriptor(
+        "current-right",
+        "baseline",
+        "Canonical BOMEX Baseline",
+        "Current right replacement",
+      ),
+      choices: { left: null, right: "current-right" },
+    },
+    {
+      name: "both missing",
+      entry: savedTradeEntry({ leftAvailable: false, rightAvailable: false }),
+      descriptor: tradeDescriptor(
+        "current-right",
+        "current-left",
+        "Current left replacement",
+        "Current right replacement",
+      ),
+      choices: { left: "current-left", right: "current-right" },
+    },
+  ])(
+    "requires deliberate same-World replacement for $name without mutating the source",
+    async ({ entry, descriptor, choices }) => {
+      vi.mocked(fetch)
+        .mockResolvedValueOnce(new Response(JSON.stringify(entry), { status: 200 }))
+        .mockResolvedValueOnce(new Response(JSON.stringify(descriptor), { status: 200 }))
+        .mockResolvedValueOnce(new Response(JSON.stringify(descriptor), { status: 200 }));
+
+      render(
+        <WorldCompare
+          worldSlug="trade-cumulus"
+          savedComparisonId={entry.record.saved_comparison_id}
+          onBack={vi.fn()}
+          onOpenSimulation={vi.fn()}
+        />,
+      );
+
+      expect(await screen.findByText("Saved Comparison unavailable")).toBeVisible();
+      expect(screen.getByText(/How does added moisture change cloud growth/)).toBeVisible();
+      expect(screen.getByText(/Captured relationship/)).toBeVisible();
+      const openReplacement = screen.getByRole("button", {
+        name: "Open transient replacement pair",
+      });
+      expect(openReplacement).toBeDisabled();
+      if (choices.left) {
+        fireEvent.change(screen.getByLabelText("Replacement left"), {
+          target: { value: choices.left },
+        });
+      }
+      if (choices.right) {
+        fireEvent.change(screen.getByLabelText("Replacement right"), {
+          target: { value: choices.right },
+        });
+      }
+      expect(openReplacement).toBeEnabled();
+      fireEvent.click(openReplacement);
+
+      expect(await screen.findByText("Transient replacement pair")).toBeVisible();
+      expect(screen.getByText(/original remains unchanged/)).toBeVisible();
+      await waitFor(() =>
+        expect(screen.getByRole("button", { name: "Save as new comparison" })).toBeEnabled(),
+      );
+      await waitFor(() => expect(fetch).toHaveBeenCalledTimes(3));
+      expect(vi.mocked(fetch).mock.calls.some(([, init]) => init?.method === "PATCH")).toBe(false);
+      expect(entry.record.workspace.left_simulation_id).toBe("baseline");
+      expect(entry.record.workspace.right_simulation_id).toBe("moisture");
+    },
+  );
+
+  it("captures link, Context, Explore, and Supercells surface state exactly", async () => {
+    const descriptor = supercellsFixtureDescriptor();
+    const created = {
+      ...savedTradeEntry(),
+      record: {
+        ...savedTradeEntry().record,
+        saved_comparison_id: "b".repeat(32),
+        title: "Rotating updraft surfaces",
+      },
+    };
+    vi.mocked(fetch)
+      .mockResolvedValueOnce(new Response(JSON.stringify(descriptor), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify(created), { status: 201 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify(created), { status: 200 }));
+    render(<WorldCompare worldSlug="supercells" onBack={vi.fn()} onOpenSimulation={vi.fn()} />);
+    fireEvent.click(await screen.findByRole("button", { name: "Open dual view" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Aligned" }));
+    fireEvent.click(screen.getByRole("button", { name: "Show Quarter-Circle Supercell scene" }));
+    fireEvent.click(screen.getByRole("button", { name: "Show Context" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save comparison" }));
+    fireEvent.change(screen.getByLabelText("Title"), {
+      target: { value: "Rotating updraft surfaces" },
+    });
+    fireEvent.click(
+      within(screen.getByRole("dialog")).getByRole("button", { name: "Save comparison" }),
+    );
+
+    await waitFor(() =>
+      expect(
+        vi
+          .mocked(fetch)
+          .mock.calls.some(
+            ([url, init]) =>
+              url === "/api/worlds/supercells/saved-comparisons" && init?.method === "POST",
+          ),
+      ).toBe(true),
+    );
+    const createCall = vi
+      .mocked(fetch)
+      .mock.calls.find(
+        ([url, init]) =>
+          url === "/api/worlds/supercells/saved-comparisons" && init?.method === "POST",
+      );
+    const body = JSON.parse(String(createCall?.[1]?.body)) as {
+      workspace: {
+        world_id: string;
+        left_state: ExploreWorldState;
+        right_state: ExploreWorldState;
+        links: Record<string, boolean>;
+        context_collapsed: boolean;
+        supercells_presentation: { left: string; right: string };
+      };
+    };
+    expect(body.workspace).toMatchObject({
+      world_id: "supercells",
+      links: { time: true, view: true, plane: true, camera: true, selection: true },
+      context_collapsed: false,
+      supercells_presentation: { left: "scene", right: "evidence" },
+    });
+    expect(body.workspace.left_state).toMatchObject({
+      world_id: "supercells",
+      lens_id: "rotating_updraft",
+    });
+    expect(body.workspace.right_state).toMatchObject({
+      world_id: "supercells",
+      lens_id: "rotating_updraft",
+    });
+  });
+
+  it("disables saving while comparison playback is running", async () => {
+    render(<WorldCompare worldSlug="trade-cumulus" onBack={vi.fn()} onOpenSimulation={vi.fn()} />);
+    fireEvent.click(await screen.findByRole("button", { name: "Open dual view" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Play Canonical BOMEX Baseline" }));
+    expect(screen.getByRole("button", { name: "Save comparison" })).toBeDisabled();
   });
 });

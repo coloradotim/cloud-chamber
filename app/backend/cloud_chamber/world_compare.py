@@ -141,7 +141,7 @@ class WorldCompareDescriptor(BaseModel):
     material_differences: list[CompareDifference]
     compatibility: CompareCompatibility | None
     no_second_simulation_message: str | None = None
-    persistence: Literal["transient_only"] = "transient_only"
+    persistence: Literal["saved_comparisons"] = "saved_comparisons"
 
 
 def world_compare_descriptor(
@@ -378,7 +378,7 @@ def _trade_simulation(record: SimulationRecord) -> CompareSimulationDescriptor:
             z_extent_km=(0.0, 3.0),
         ),
         time=_regular_time_descriptor(14_400, 60),
-        available_field_ids=["ql"],
+        available_field_ids=["ql", "w"],
         available_view_ids=["field", "updraft_lens"],
         fixed_scale_ids=["trade_cumulus_updraft_velocity_v1"],
         plane_orientations=["horizontal", "vertical_x", "vertical_y"],

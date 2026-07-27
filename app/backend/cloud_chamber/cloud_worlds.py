@@ -21,6 +21,7 @@ from cloud_chamber.result_ingest import (
     result_metadata_from_json,
 )
 from cloud_chamber.run_manifest import LifecycleState, RunManifestError, load_run_manifest
+from cloud_chamber.saved_comparisons import SavedComparisonError, saved_comparison_count
 from cloud_chamber.settings import CloudChamberSettings
 from cloud_chamber.supercells_world import SupercellsWorldSummary, supercells_world_detail
 from cloud_chamber.trade_cumulus_comparison_story import (
@@ -141,6 +142,7 @@ class WorldCapabilities(BaseModel):
     lab: Literal[True] = True
     saved_views: Literal[False] = False
     ordinary_compare: Literal[True] = True
+    saved_comparisons: Literal[True] = True
 
 
 class CloudWorldSummary(BaseModel):
@@ -187,7 +189,7 @@ class TradeCumulusWorldDetail(BaseModel):
         return CloudWorldSummary(
             reference_available=self.reference_simulation.technical_state == "available",
             simulation_count=available_simulations,
-            saved_comparison_count=1 if comparison_available else 0,
+            saved_comparison_count=0,
             featured_comparison_count=1 if comparison_available else 0,
             active_run_count=self.lab_summary.active_run_count,
             completed_uninspected_run_count=self.lab_summary.completed_uninspected_run_count,
@@ -273,11 +275,33 @@ def list_cloud_world_summaries(
     settings: CloudChamberSettings,
 ) -> list[CloudWorldSummary | MountainWavesWorldSummary | SupercellsWorldSummary]:
     """Return real Cloud Worlds without assigning one shared scientific framing."""
-    return [
+    summaries: list[CloudWorldSummary | MountainWavesWorldSummary | SupercellsWorldSummary] = [
         trade_cumulus_world_detail(settings).summary(),
         mountain_waves_world_detail(settings).summary(),
         supercells_world_detail(settings).summary(),
     ]
+    return [
+        summary.model_copy(
+            update={
+                "saved_comparison_count": _saved_comparison_count_or_zero(
+                    settings,
+                    world_id=summary.world_id,
+                )
+            }
+        )
+        for summary in summaries
+    ]
+
+
+def _saved_comparison_count_or_zero(
+    settings: CloudChamberSettings,
+    *,
+    world_id: str,
+) -> int:
+    try:
+        return saved_comparison_count(settings, world_id=world_id)
+    except SavedComparisonError:
+        return 0
 
 
 def trade_cumulus_world_detail(settings: CloudChamberSettings) -> TradeCumulusWorldDetail:

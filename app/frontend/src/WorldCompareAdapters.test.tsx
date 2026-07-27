@@ -27,10 +27,7 @@ vi.mock("./True3DViewer", () => ({
           (stormScene ? `storm scene ${stormScene.layers.length}` : "no frame")}
       </span>
       {onSelectStormPoint && (
-        <button
-          type="button"
-          onClick={() => onSelectStormPoint([1.25, 2.25, 3.1666667, 8, 1])}
-        >
+        <button type="button" onClick={() => onSelectStormPoint([1.25, 2.25, 3.1666667, 8, 1])}>
           Select mock 3-D point
         </button>
       )}
@@ -408,6 +405,7 @@ describe("WorldCompareSideVisual request lifecycle", () => {
   it("loads the real Supercells frame contract and exposes 3-D plus physical sections", async () => {
     const onStateChange = vi.fn();
     const onEvidence = vi.fn();
+    const onPresentationChange = vi.fn();
     const fetchMock = vi
       .fn()
       .mockResolvedValue(new Response(JSON.stringify(supercellPayload()), { status: 200 }));
@@ -422,6 +420,8 @@ describe("WorldCompareSideVisual request lifecycle", () => {
         onFrameState={vi.fn()}
         onPerformance={vi.fn()}
         onEvidence={onEvidence}
+        presentation="evidence"
+        onPresentationChange={onPresentationChange}
       />,
     );
 
@@ -435,6 +435,20 @@ describe("WorldCompareSideVisual request lifecycle", () => {
       "lens=rotating_updraft&viewport=storm&time_index=1",
     );
     fireEvent.click(screen.getByRole("button", { name: "3-D" }));
+    expect(onPresentationChange).toHaveBeenCalledWith("right", "scene");
+    rerender(
+      <WorldCompareSideVisual
+        side="right"
+        simulation={supercellSimulation}
+        state={supercellState}
+        onStateChange={onStateChange}
+        onFrameState={vi.fn()}
+        onPerformance={vi.fn()}
+        onEvidence={onEvidence}
+        presentation="scene"
+        onPresentationChange={onPresentationChange}
+      />,
+    );
     expect(screen.getByText("storm scene 1")).toBeVisible();
     expect(screen.getByRole("checkbox", { name: "Storm cloud body" })).toBeChecked();
 
@@ -460,6 +474,8 @@ describe("WorldCompareSideVisual request lifecycle", () => {
         onFrameState={vi.fn()}
         onPerformance={vi.fn()}
         onEvidence={onEvidence}
+        presentation="scene"
+        onPresentationChange={onPresentationChange}
       />,
     );
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
@@ -482,6 +498,8 @@ describe("WorldCompareSideVisual request lifecycle", () => {
         onFrameState={vi.fn()}
         onPerformance={vi.fn()}
         onEvidence={onEvidence}
+        presentation="scene"
+        onPresentationChange={onPresentationChange}
       />,
     );
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(3));

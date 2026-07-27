@@ -99,7 +99,7 @@ export type WorldCompareDescriptor = {
   material_differences: CompareDifference[];
   compatibility: CompareCompatibility | null;
   no_second_simulation_message: string | null;
-  persistence: "transient_only";
+  persistence: "saved_comparisons";
 };
 
 export type CompareLinkModes = {
@@ -136,9 +136,7 @@ export type ComparePerformanceSummary = {
 export type WorldCompareAdapter = {
   worldId: CompareWorldId;
   viewLabel: string;
-  viewOptions: (
-    simulation: CompareSimulationDescriptor,
-  ) => Array<{ id: string; label: string }>;
+  viewOptions: (simulation: CompareSimulationDescriptor) => Array<{ id: string; label: string }>;
   viewId: (state: ExploreWorldState) => string;
   setView: (state: ExploreWorldState, viewId: string) => ExploreWorldState;
   fieldId: (state: ExploreWorldState) => string | null;
